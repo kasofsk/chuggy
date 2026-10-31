@@ -1,7 +1,7 @@
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
-import { asTaskId, asTicketId } from "../../domain/ids.ts";
+import { asTaskId, asTicketId, type TicketId } from "../../domain/ids.ts";
 import type { TaskIdentity } from "../../domain/generated/modelTypes.ts";
 import {
   asConfigurationRevisionId,
@@ -37,6 +37,8 @@ import {
   type ExecutionResource,
   type ExecutionResultResource,
   type ExecutionSummary,
+  type LatestExecutionListQuery,
+  type LatestExecutionPage,
   type OperationalReadStore,
   type OutputDefinition,
   type ResultArtifactResource,
@@ -370,19 +372,18 @@ function selectedStatuses(
 
 /**
  * One page of the project's executions in `(ticket, task)` ascending order,
- * which is the order the machine authorized them in. Execution identity is a
- * random stem with the task appended, so ordering by it would order a ticket's
- * history arbitrarily; the cursor is the position in this order rather than
- * that identity, and the row comparison keeps it total.
+ * which is the order the machine authorized them in, narrowed to `executions`
+ * where it names any. Execution identity is a random stem with the task
+ * appended, so ordering by it would order a ticket's history arbitrarily; the
+ * cursor is the position in this order, and the row comparison keeps it total.
  */
 async function executionRows(
   pool: pg.Pool,
   partition: Partition,
   query: ExecutionListQuery,
   reader: Principal,
+  executions: string[] | null = null,
 ): Promise<readonly ExecutionViewRow[]> {
-  const afterTicket = query.after?.ticket ?? null;
-  const afterTask = query.after?.task ?? null;
   const found = await pool.query<ExecutionViewRow>(
     sql`SELECT e.execution,e.ticket::text AS ticket,e.task::text AS task,
                t.kind AS task_kind,t.cycle::text AS cycle,
@@ -437,9 +438,10 @@ async function executionRows(
              ORDER BY a.attempt_number DESC LIMIT 1) live ON true
           CROSS JOIN LATERAL (SELECT (CASE WHEN e.status='Launching' AND live.started_at IS NOT NULL THEN 'Running' ELSE e.status END)::text AS status) s
          WHERE e.tenant=${partition.tenant} AND e.project=${partition.project}
-           AND (${afterTicket}::bigint IS NULL
-                OR (e.ticket,e.task)>(${afterTicket}::bigint,${afterTask}::bigint))
+           AND (${query.after?.ticket ?? null}::bigint IS NULL
+                OR (e.ticket,e.task)>(${query.after?.ticket ?? null}::bigint,${query.after?.task ?? null}::bigint))
            AND (${query.ticket ?? null}::bigint IS NULL OR e.ticket=${query.ticket ?? null})
+           AND (${executions}::text[] IS NULL OR e.execution=ANY(${executions}::text[]))
            AND s.status=ANY(${[...selectedStatuses(query)]}::text[])
          ORDER BY e.ticket,e.task LIMIT ${query.limit + 1}`,
   );
@@ -453,9 +455,22 @@ async function executionPage(
   reader: Principal,
 ): Promise<ExecutionPage> {
   const rows = await executionRows(pool, partition, query, reader);
-  const page = rows.slice(0, query.limit);
-  const summaries = page.map(executionSummary);
+  const summaries = rows.slice(0, query.limit).map(executionSummary);
   const next = rows.length > query.limit ? summaries.at(-1) : undefined;
+  return {
+    executions: await executionPageAnswered(pool, partition, summaries),
+    ...(next === undefined
+      ? {}
+      : { nextAfter: { ticket: next.ticket, task: next.task } }),
+  };
+}
+
+/** A page's summaries with their workers labelled and their runs totalled. */
+async function executionPageAnswered(
+  pool: pg.Pool,
+  partition: Partition,
+  summaries: readonly ExecutionSummary[],
+): Promise<readonly ExecutionSummary[]> {
   const workers = await postgresWorkerCatalog(
     pool,
     executionSummaryImages(summaries),
@@ -465,16 +480,60 @@ async function executionPage(
     partition,
     summaries.map((summary) => summary.execution),
   );
-  return {
-    executions: summaries.map((summary) =>
-      executionSummaryTotalled(
-        executionSummaryLabelled(summary, workers),
-        totals,
-      ),
+  return summaries.map((summary) =>
+    executionSummaryTotalled(
+      executionSummaryLabelled(summary, workers),
+      totals,
     ),
-    ...(next === undefined
-      ? {}
-      : { nextAfter: { ticket: next.ticket, task: next.task } }),
+  );
+}
+
+/**
+ * Each ticket's highest task, highest ticket first, below the cursor's ticket.
+ * The unique `(tenant, project, ticket, task)` index answers it in that order,
+ * so a page reads no further back than its own size.
+ */
+async function latestExecutionPositions(
+  pool: pg.Pool,
+  partition: Partition,
+  query: LatestExecutionListQuery,
+): Promise<readonly { execution: string; ticket: TicketId }[]> {
+  const found = await pool.query<{ execution: string; ticket: string }>(
+    sql`SELECT DISTINCT ON (e.ticket) e.execution,e.ticket::text AS ticket
+          FROM execution e
+         WHERE e.tenant=${partition.tenant} AND e.project=${partition.project}
+           AND (${query.after ?? null}::bigint IS NULL OR e.ticket<${query.after ?? null})
+         ORDER BY e.ticket DESC,e.task DESC LIMIT ${query.limit + 1}`,
+  );
+  return found.rows.map((row) => ({
+    execution: row.execution,
+    ticket: asTicketId(projectRowCounter(row.ticket, "execution ticket")),
+  }));
+}
+
+async function latestExecutionPage(
+  pool: pg.Pool,
+  partition: Partition,
+  query: LatestExecutionListQuery,
+  reader: Principal,
+): Promise<LatestExecutionPage> {
+  const positions = await latestExecutionPositions(pool, partition, query);
+  const page = positions.slice(0, query.limit);
+  const next = positions.length > query.limit ? page.at(-1) : undefined;
+  const rows =
+    page.length === 0
+      ? []
+      : await executionRows(
+          pool,
+          partition,
+          { limit: page.length },
+          reader,
+          page.map((at) => at.execution),
+        );
+  const summaries = rows.map(executionSummary).toReversed();
+  return {
+    executions: await executionPageAnswered(pool, partition, summaries),
+    ...(next === undefined ? {} : { nextAfter: next.ticket }),
   };
 }
 
@@ -687,6 +746,8 @@ export function postgresOperationalReads(pool: pg.Pool): OperationalReadStore {
     },
     executions: (partition, query, reader) =>
       executionPage(pool, partition, query, reader),
+    latestExecutions: (partition, query, reader) =>
+      latestExecutionPage(pool, partition, query, reader),
     execution: (partition, execution, reader) =>
       executionResource(pool, partition, execution, reader),
   };

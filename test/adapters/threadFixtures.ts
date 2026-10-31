@@ -93,6 +93,7 @@ export const unservedNativeWeb: Parameters<typeof createNativeHttpApp>[0] = {
   nativeActions: unserved("native actions"),
   execution: unserved("execution"),
   executions: unserved("executions"),
+  latestExecutions: unserved("latest executions"),
   operationalStatus: unserved("operational status"),
   hostedRuns: unserved("hosted runs"),
   abilities: unserved("abilities"),

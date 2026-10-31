@@ -117,6 +117,16 @@ export interface ExecutionListQuery {
   readonly selection?: ExecutionSelection;
 }
 
+/**
+ * Each ticket's latest execution, its highest task of any status, highest
+ * ticket first. A page resumes below the last ticket it answered, so the read
+ * has no task position and no state selection to carry.
+ */
+export interface LatestExecutionListQuery {
+  readonly after?: TicketId;
+  readonly limit: number;
+}
+
 export interface ExecutionSummary {
   readonly execution: ExecutionId;
   readonly ticket: TicketId;
@@ -273,6 +283,11 @@ export interface ExecutionPage {
   readonly nextAfter?: ExecutionPageCursor;
 }
 
+export interface LatestExecutionPage {
+  readonly executions: readonly ExecutionSummary[];
+  readonly nextAfter?: TicketId;
+}
+
 export interface OperationalReadStore {
   status(partition: Partition): Promise<ProjectOperationalStatus>;
   executions(
@@ -280,6 +295,11 @@ export interface OperationalReadStore {
     query: ExecutionListQuery,
     reader: Principal,
   ): Promise<ExecutionPage>;
+  latestExecutions(
+    partition: Partition,
+    query: LatestExecutionListQuery,
+    reader: Principal,
+  ): Promise<LatestExecutionPage>;
   execution(
     partition: Partition,
     execution: ExecutionId,
@@ -313,17 +333,28 @@ export function executionSelectionRefused(
   );
 }
 
-export function checkedExecutionListQuery(
-  query: ExecutionListQuery,
-): ExecutionListQuery {
+function checkedExecutionPageLimit(limit: number): void {
   if (
-    !Number.isSafeInteger(query.limit) ||
-    query.limit < 1 ||
-    query.limit > executionPageLimitMax
+    !Number.isSafeInteger(limit) ||
+    limit < 1 ||
+    limit > executionPageLimitMax
   )
     throw new RangeError(
       `execution page limit must be between 1 and ${String(executionPageLimitMax)}`,
     );
+}
+
+export function checkedLatestExecutionListQuery(
+  query: LatestExecutionListQuery,
+): LatestExecutionListQuery {
+  checkedExecutionPageLimit(query.limit);
+  return query;
+}
+
+export function checkedExecutionListQuery(
+  query: ExecutionListQuery,
+): ExecutionListQuery {
+  checkedExecutionPageLimit(query.limit);
   if (query.selection?.selection === "Selected") {
     const states = query.selection.states;
     if (states.length < 1) throw executionSelectionRefused(undefined);

@@ -8,18 +8,6 @@
  * THE FIRST COLUMN IS THE TICKET'S TITLE, which the wire carries on the ticket
  * itself: the title its brief names, or the first line of its intent where the
  * brief names none. Nothing here derives it.
- *
- * A row says which of three things is true of its execution columns:
- * they are joined, this ticket has never run, or what the index holds for it is
- * not answerable. The third is drawn as itself, because a dash meaning "not
- * read" and a dash meaning "never ran" are the same dash.
- *
- * AND JOINED IS DECIDED ON COMPLETENESS, NOT ON PRESENCE. An entry a truncated
- * walk left behind may have been superseded by an execution that walk never
- * reached, so drawing it as current would report a failed ticket as passed —
- * the same conflation, one level down. Such a row is unreachable rather than
- * joined, and its execution columns are not filled from an answer that may be
- * stale.
  */
 
 import type {
@@ -31,22 +19,11 @@ import type { TicketPhase } from "../../../../src/contract/rosters.ts";
 import { capabilitiesShortened, workerLabel } from "./labels.ts";
 import type { Label } from "./labels.ts";
 import { projectExecutionIndexAt } from "./projectExecutionIndex.ts";
-import type {
-  ProjectExecutionIndex,
-  ProjectExecutionKnown,
-} from "./projectExecutionIndex.ts";
+import type { ProjectExecutionIndex } from "./projectExecutionIndex.ts";
 import { setVerdict } from "./ticketLedger.ts";
 import type { SetVerdict } from "./ticketLedger.ts";
 import { ticketBadgeLabel } from "./ticketSections.ts";
 import type { UpNextOpenDependency } from "./upNextOrder.ts";
-
-export const projectTableExecutionReads = [
-  "Joined",
-  "NoneRegistered",
-  "IndexTruncated",
-] as const;
-export type ProjectTableExecutionRead =
-  (typeof projectTableExecutionReads)[number];
 
 export interface ProjectTableRow {
   readonly ticket: number;
@@ -59,7 +36,6 @@ export interface ProjectTableRow {
   readonly creator: string | undefined;
   readonly phase: TicketPhase;
   readonly badge: string | undefined;
-  readonly executionRead: ProjectTableExecutionRead;
   /** The joined execution as the ticket's ledger judges it, a set of one, so
    * the row draws it in the word and hue the ticket page does. */
   readonly executionVerdict: SetVerdict | undefined;
@@ -85,16 +61,6 @@ export function projectTableRunsOn(execution: ExecutionSummary): Label {
   }
 }
 
-/** An entry no walk finished is not this ticket's latest, so the row is one the
- * index did not answer rather than one it did. */
-export function projectTableExecutionRead(
-  known: ProjectExecutionKnown | undefined,
-  indexTruncated: boolean,
-): ProjectTableExecutionRead {
-  if (known !== undefined) return known.complete ? "Joined" : "IndexTruncated";
-  return indexTruncated ? "IndexTruncated" : "NoneRegistered";
-}
-
 /** The later of two instants a row's activity might carry, compared as
  * instants rather than as strings, because a lexical compare gets a
  * timezone-shifted wire string wrong. */
@@ -114,11 +80,8 @@ function laterActivityAt(
  * the column has no empty arm. */
 export function projectTableRow(
   ticket: TicketResponse,
-  known: ProjectExecutionKnown | undefined,
-  indexTruncated: boolean,
+  execution: ExecutionSummary | undefined,
 ): ProjectTableRow {
-  const read = projectTableExecutionRead(known, indexTruncated);
-  const execution = read === "Joined" ? known?.execution : undefined;
   return {
     ticket: ticket.ticket,
     title: ticket.title,
@@ -126,7 +89,6 @@ export function projectTableRow(
     creator: ticket.creator,
     phase: ticket.phase,
     badge: ticketBadgeLabel(ticket.phase, ticket.escalation),
-    executionRead: read,
     executionVerdict:
       execution === undefined ? undefined : setVerdict([execution]),
     runsOn: execution === undefined ? undefined : projectTableRunsOn(execution),
@@ -144,10 +106,6 @@ export function projectTableRows(
   index: ProjectExecutionIndex,
 ): readonly ProjectTableRow[] {
   return tickets.map((ticket) =>
-    projectTableRow(
-      ticket,
-      projectExecutionIndexAt(index, ticket.ticket),
-      index.truncated,
-    ),
+    projectTableRow(ticket, projectExecutionIndexAt(index, ticket.ticket)),
   );
 }

@@ -257,6 +257,19 @@ test("an executions page asks for the size it wants", async () => {
   );
 });
 
+test("an executions page asks for each ticket's latest by name", async () => {
+  const held = recording(() => ({ executions: [] }));
+  await apiExecutions(held.ports, partition, {
+    limit: 100,
+    latest: true,
+    cursor: "next",
+  });
+  expect(held.urls[0]).toBe(
+    `${nativeHttpBasePath}/tenants/acme/projects/at%20las` +
+      `/executions?cursor=next&limit=100&latest=true`,
+  );
+});
+
 test("the inventory carries its cursor and stops when there is none", async () => {
   const held = recording((url) =>
     url.includes("cursor=next")

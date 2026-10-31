@@ -26,6 +26,7 @@ import {
   type PhysicalAttempt,
 } from "../../src/interpreter/executionScheduler.ts";
 import { id } from "../domain/fixtures.ts";
+import type { TicketId } from "../../src/domain/ids.ts";
 import { checkOutputOutput } from "../../src/interpreter/operationsView.ts";
 import {
   schedulerArtifact,
@@ -495,6 +496,83 @@ test("a ticket's executions are read and paged in task order", async () => {
       ],
     ],
   );
+});
+
+/** Every page a walk of the latest read answers with, as `(ticket, task)` positions. */
+async function operationalLatestWalked(
+  reads: OperationalReadStore,
+  partition: Partition,
+  limit: number,
+  pagesMax: number,
+): Promise<number[][][]> {
+  const pages: number[][][] = [];
+  let after: TicketId | undefined;
+  for (let page = 0; page < pagesMax; page += 1) {
+    const answered = await reads.latestExecutions(
+      partition,
+      { limit, ...(after === undefined ? {} : { after }) },
+      reader,
+    );
+    pages.push(answered.executions.map((row) => [row.ticket, row.task]));
+    after = answered.nextAfter;
+    if (after === undefined) return pages;
+  }
+  throw new Error(
+    "operational read: the latest walk did not reach the end of the list",
+  );
+}
+
+async function operationalCancelled(
+  partition: Partition,
+  ticket: number,
+  task: number,
+): Promise<void> {
+  await rig.harness.query(
+    `UPDATE execution SET status='Cancelled', terminal_at=now()
+      WHERE tenant=$1 AND project=$2 AND ticket=$3 AND task=$4`,
+    [partition.tenant, partition.project, ticket, task],
+  );
+}
+
+/**
+ * Two tickets of several tasks each, walked a ticket a page: each answers once,
+ * with its highest task whatever that task's status, and a status on an
+ * earlier task does not move the answer.
+ */
+test("the latest read answers each ticket's highest task, highest ticket first", async () => {
+  const label = "operational-latest";
+  const project = await schedulerProject(rig, label, { tasks: 3 });
+  await operationalRegistered(project, project.request, label);
+  const further = await schedulerFurtherTicket(
+    rig,
+    project,
+    project.memory,
+    `${label}-next`,
+    4,
+  );
+  await operationalRegistered(project, further.request, `${label}-next`);
+  await operationalCancelled(project.partition, project.ticket, project.tasks);
+  await operationalCancelled(project.partition, further.ticket, 1);
+
+  const reads = postgresOperationalReads(ingress);
+  const walked = await operationalLatestWalked(reads, project.partition, 1, 3);
+  assert.deepEqual(walked, [
+    [[further.ticket, further.tasks]],
+    [[project.ticket, project.tasks]],
+  ]);
+  const page = await reads.latestExecutions(
+    project.partition,
+    { limit: 2 },
+    reader,
+  );
+  assert.deepEqual(
+    page.executions.map((row) => [row.ticket, row.task, row.status]),
+    [
+      [further.ticket, further.tasks, "Queued"],
+      [project.ticket, project.tasks, "Cancelled"],
+    ],
+  );
+  assert.equal(page.nextAfter, undefined);
 });
 
 /** Opens `opened` attempts of one execution, losing all but the last. */

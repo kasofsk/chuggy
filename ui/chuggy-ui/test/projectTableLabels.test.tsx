@@ -28,7 +28,7 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { ProjectTable } from "../app/browser/ProjectTable.tsx";
 import {
-  cellExecutionUnread,
+  cellAbsent,
   TicketRowExecutionCell,
 } from "../app/browser/TicketCells.tsx";
 import type { ProjectTableRow } from "../app/core/projectTableRows.ts";
@@ -308,7 +308,7 @@ test("an escalated row answers its kind on the phase chip's hover", async () => 
   expect((await screen.findByRole("tooltip")).textContent).toBe("work failed");
 });
 
-test("a row whose index was truncated draws no chip for its execution", () => {
+test("a row with nothing joined draws no chip for its execution", () => {
   const row: ProjectTableRow = {
     ticket: 9,
     title: undefined,
@@ -316,7 +316,6 @@ test("a row whose index was truncated draws no chip for its execution", () => {
     creator: undefined,
     phase: "Work",
     badge: undefined,
-    executionRead: "IndexTruncated",
     executionVerdict: undefined,
     runsOn: undefined,
     activityAt: "2026-08-26T00:00:00Z",
@@ -324,8 +323,39 @@ test("a row whose index was truncated draws no chip for its execution", () => {
     revokedDependencies: [],
   };
   render(<TicketRowExecutionCell row={row} />);
-  expect(screen.getByText(cellExecutionUnread)).toBeDefined();
+  expect(screen.getByText(cellAbsent)).toBeDefined();
+  expect(screen.queryByText("not read")).toBeNull();
   expect(document.querySelector(".pill")).toBeNull();
+});
+
+test("a row with nothing joined has no execution slot, and no sentence names a page budget", async () => {
+  await drawTableWith([ticket, escalated], [execution]);
+  const unjoined = screen.getByText("Escalated ticket").closest("li");
+  expect(unjoined?.querySelector(".ticket-list-execution")).toBeNull();
+  expect(
+    screen
+      .getByText(title)
+      .closest("li")
+      ?.querySelector(".ticket-list-execution"),
+  ).not.toBeNull();
+  expect(document.body.textContent).not.toContain("not read");
+  expect(document.body.textContent).not.toContain("page budget");
+});
+
+test("while the index loads no row says not read", async () => {
+  await drawTableWith(
+    [ticket, escalated],
+    [],
+    (served) =>
+      ((url: string, init?: RequestInit) =>
+        url.includes("/executions")
+          ? new Promise<Response>(() => undefined)
+          : served(url, init)) as typeof fetch,
+  );
+  expect(screen.getByText("Escalated ticket")).toBeDefined();
+  expect(document.querySelector(".ticket-list-execution")).toBeNull();
+  expect(document.body.textContent).not.toContain("not read");
+  expect(document.body.textContent).not.toContain("page budget");
 });
 
 test("the last activity column draws the relative reading and answers the absolute on hover", async () => {

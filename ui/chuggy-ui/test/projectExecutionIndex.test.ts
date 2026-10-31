@@ -68,7 +68,7 @@ test("a ticket's column is the execution registered latest", () => {
       status: "Launching",
     }),
   ]);
-  expect(projectExecutionIndexAt(index, 1)?.execution.execution).toBe("e2");
+  expect(projectExecutionIndexAt(index, 1)?.execution).toBe("e2");
 });
 
 test("an execution frame updates one row's status and leaves the others", () => {
@@ -77,12 +77,10 @@ test("an execution frame updates one row's status and leaves the others", () => 
     execution({ execution: "e1", ticket: 1, status: "Terminal" }),
   );
   expect(
-    projectExecutionIndexAt(folded ?? projectExecutionIndexEmpty, 1)?.execution
-      .status,
+    projectExecutionIndexAt(folded ?? projectExecutionIndexEmpty, 1)?.status,
   ).toBe("Terminal");
   expect(
-    projectExecutionIndexAt(folded ?? projectExecutionIndexEmpty, 2)?.execution
-      .status,
+    projectExecutionIndexAt(folded ?? projectExecutionIndexEmpty, 2)?.status,
   ).toBe("Queued");
 });
 
@@ -92,8 +90,7 @@ test("an execution for a ticket the index has not got joins it", () => {
     execution({ execution: "e9", ticket: 9, status: "Admitted" }),
   );
   expect(
-    projectExecutionIndexAt(folded ?? projectExecutionIndexEmpty, 9)?.execution
-      .status,
+    projectExecutionIndexAt(folded ?? projectExecutionIndexEmpty, 9)?.status,
   ).toBe("Admitted");
 });
 
@@ -108,8 +105,7 @@ test("a frame older than the execution held leaves the row alone", () => {
     }),
   );
   expect(
-    projectExecutionIndexAt(folded ?? projectExecutionIndexEmpty, 1)?.execution
-      .execution,
+    projectExecutionIndexAt(folded ?? projectExecutionIndexEmpty, 1)?.execution,
   ).toBe("e1");
 });
 
@@ -123,9 +119,12 @@ interface WalkAsked {
   readonly cursor: string | undefined;
 }
 
+/** A wire answering `pagesOf(selection)` pages of `perPage` executions each,
+ * each page's tickets after the last, refusing the `failAt`th ask. */
 function walking(
   pagesOf: (selection: ProjectExecutionSelection) => number,
   failAt?: number,
+  perPage = 1,
 ): {
   readonly readPage: (
     selection: ProjectExecutionSelection,
@@ -149,7 +148,12 @@ function walking(
       return Promise.resolve({
         outcome: "Ok",
         value: {
-          executions: [execution({ execution: identity, ticket: at })],
+          executions: Array.from({ length: perPage }, (_unused, slot) =>
+            execution({
+              execution: `${identity}-${String(slot)}`,
+              ticket: (at - 1) * perPage + slot + 1,
+            }),
+          ),
           ...(last ? {} : { nextCursor: identity }),
         },
       });
@@ -157,12 +161,14 @@ function walking(
   };
 }
 
-test("a walk that the wire ends is complete and says so", async () => {
+test("a walk reads each ticket's latest, and the wire ending it ends the read", async () => {
   const held = walking(() => 2);
   const answered = await projectExecutionIndexRead(held.readPage);
-  expect(held.asked.map((one) => one.selection)).toStrictEqual(["All", "All"]);
-  expect(held.asked[1]?.cursor).toBe("All-1");
-  expect(answered.outcome === "Ok" && answered.value.truncated).toBe(false);
+  expect(held.asked.map((one) => one.selection)).toStrictEqual([
+    "Latest",
+    "Latest",
+  ]);
+  expect(held.asked[1]?.cursor).toBe("Latest-1");
   expect(
     answered.outcome === "Ok" && projectExecutionIndexAt(answered.value, 1),
   ).toBeDefined();
@@ -171,60 +177,58 @@ test("a walk that the wire ends is complete and says so", async () => {
   ).toBeDefined();
 });
 
-test("a walk the wire ended answers for every ticket it holds", async () => {
-  const held = walking(() => 2);
+/** The read grows with tickets, so a project whose history is many times its
+ * ticket count is joined whole as long as its tickets fit the budget. */
+test("a project whose tickets fit the budget is joined for every ticket", async () => {
+  const perPage = 100;
+  const held = walking(() => projectExecutionPagesMax, undefined, perPage);
   const answered = await projectExecutionIndexRead(held.readPage);
-  expect(
-    answered.outcome === "Ok" &&
-      projectExecutionIndexAt(answered.value, 1)?.complete,
-  ).toBe(true);
+  const tickets = projectExecutionPagesMax * perPage;
+  const joined =
+    answered.outcome === "Ok" ? Object.keys(answered.value.latest).length : 0;
+  expect(joined).toBe(tickets);
+  expect(held.asked.some((one) => one.selection === "NonTerminal")).toBe(false);
 });
 
-test("an entry a truncated walk left is not called that ticket's latest", async () => {
+test("a walk stopped by its budget asks again for what is running", async () => {
   const held = walking((selection) =>
-    selection === "All" ? projectExecutionPagesMax + 5 : 1,
+    selection === "Latest" ? projectExecutionPagesMax + 5 : 1,
   );
-  const answered = await projectExecutionIndexRead(held.readPage);
-  expect(
-    answered.outcome === "Ok" &&
-      projectExecutionIndexAt(answered.value, 2)?.complete,
-  ).toBe(false);
-});
-
-test("the running walk confirms the tickets it reached, truncation or not", async () => {
-  const held = walking((selection) =>
-    selection === "All" ? projectExecutionPagesMax + 5 : 1,
-  );
-  const answered = await projectExecutionIndexRead(held.readPage);
-  expect(
-    answered.outcome === "Ok" &&
-      projectExecutionIndexAt(answered.value, 1)?.complete,
-  ).toBe(true);
-});
-
-test("a frame answers for its ticket however the walk that preceded it ended", () => {
-  const truncated = projectExecutionIndexFold(
-    { latest: {}, truncated: true },
-    execution({ execution: "e5", ticket: 5, status: "Running" }),
-  );
-  expect(
-    projectExecutionIndexAt(truncated ?? projectExecutionIndexEmpty, 5)
-      ?.complete,
-  ).toBe(true);
-});
-
-test("a walk stopped by its budget is truncated and asks again for what is running", async () => {
-  const held = walking((selection) =>
-    selection === "All" ? projectExecutionPagesMax + 5 : 1,
-  );
-  const answered = await projectExecutionIndexRead(held.readPage);
-  expect(held.asked.filter((one) => one.selection === "All").length).toBe(
+  await projectExecutionIndexRead(held.readPage);
+  expect(held.asked.filter((one) => one.selection === "Latest").length).toBe(
     projectExecutionPagesMax,
   );
   expect(
     held.asked.filter((one) => one.selection === "NonTerminal").length,
   ).toBe(1);
-  expect(answered.outcome === "Ok" && answered.value.truncated).toBe(true);
+});
+
+/** A ticket older than the budget is past the latest walk, and the running walk
+ * is what joins it. */
+test("a walk stopped by its budget still leaves a running row exact", async () => {
+  const old = 4000;
+  const answering = (selection: ProjectExecutionSelection) =>
+    Promise.resolve<ApiResult<ExecutionsResponse>>({
+      outcome: "Ok",
+      value:
+        selection === "Latest"
+          ? {
+              executions: [execution({ execution: "new", ticket: 5000 })],
+              nextCursor: "more",
+            }
+          : {
+              executions: [
+                execution({ execution: "old", ticket: old, status: "Running" }),
+              ],
+            },
+    });
+  const answered = await projectExecutionIndexRead(answering);
+  const kept =
+    answered.outcome === "Ok"
+      ? projectExecutionIndexAt(answered.value, old)
+      : undefined;
+  expect(kept?.execution).toBe("old");
+  expect(kept?.status).toBe("Running");
 });
 
 test("a complete walk never asks the running read at all", async () => {
@@ -239,28 +243,21 @@ test("a walk that will not read at all answers with the refusal", async () => {
   expect(answered.outcome).toBe("Unreachable");
 });
 
-/**
- * The refused walk is given pages until it reaches a ticket the one-page
- * running walk cannot answer for, because a ticket both walks carry is one the
- * merge would supply whether or not the refused walk kept anything.
- */
-test("a walk refused partway keeps what it had and calls itself truncated", async () => {
-  const held = walking((selection) => (selection === "All" ? 5 : 1), 3);
+test("a walk refused partway keeps what it had and asks what is running", async () => {
+  const held = walking((selection) => (selection === "Latest" ? 5 : 1), 3);
   const answered = await projectExecutionIndexRead(held.readPage);
-  expect(answered.outcome === "Ok" && answered.value.truncated).toBe(true);
   const kept =
     answered.outcome === "Ok"
       ? projectExecutionIndexAt(answered.value, 2)
       : undefined;
-  expect(kept?.execution.execution).toBe("All-2");
-  expect(kept?.complete).toBe(false);
+  expect(kept?.execution).toBe("Latest-2-0");
+  expect(held.asked.at(-1)?.selection).toBe("NonTerminal");
 });
 
 /**
- * The merge's other direction: a ticket whose truncated first walk holds a
- * newer terminal execution while the running walk carries an older one still
- * queued. Taking the arriving entry would draw a failed ticket as running, and
- * call it joined.
+ * The merge's other direction: a ticket whose latest is a newer terminal
+ * execution while the running walk carries an older one still queued. Taking
+ * the arriving entry would draw a failed ticket as running.
  */
 test("the running walk does not replace a newer entry with an older one", () => {
   const answering = (selection: ProjectExecutionSelection) =>
@@ -268,7 +265,7 @@ test("the running walk does not replace a newer entry with an older one", () => 
       outcome: "Ok",
       value: {
         executions: [
-          selection === "All"
+          selection === "Latest"
             ? execution({
                 execution: "e-later",
                 ticket: 1,
@@ -283,7 +280,7 @@ test("the running walk does not replace a newer entry with an older one", () => 
                 status: "Queued",
               }),
         ],
-        ...(selection === "All" ? { nextCursor: "e-later" } : {}),
+        ...(selection === "Latest" ? { nextCursor: "e-later" } : {}),
       },
     });
   return projectExecutionIndexRead(answering).then((answered) => {
@@ -291,7 +288,6 @@ test("the running walk does not replace a newer entry with an older one", () => 
       answered.outcome === "Ok"
         ? projectExecutionIndexAt(answered.value, 1)
         : undefined;
-    expect(kept?.execution.execution).toBe("e-later");
-    expect(kept?.complete).toBe(false);
+    expect(kept?.execution).toBe("e-later");
   });
 });

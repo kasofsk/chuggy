@@ -27,7 +27,6 @@ function row(
     creator: undefined,
     phase,
     badge: undefined,
-    executionRead: "NoneRegistered",
     executionVerdict: undefined,
     runsOn: undefined,
     activityAt: "2026-08-27T11:00:00Z",

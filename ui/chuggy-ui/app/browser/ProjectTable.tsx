@@ -36,7 +36,7 @@ import { phaseLabel } from "../core/codeLabels.ts";
 import { creatorLabel } from "../core/labels.ts";
 import type { PanelState } from "../core/freshness.ts";
 import { projectAbilityRefused } from "../core/projectAbilities.ts";
-import { projectExecutionIndexUnread } from "../core/projectExecutionIndex.ts";
+import { projectExecutionIndexEmpty } from "../core/projectExecutionIndex.ts";
 import { repositoryLabel } from "../core/projectRepositories.ts";
 import type { ProjectExecutionIndex } from "../core/projectExecutionIndex.ts";
 import {
@@ -229,7 +229,7 @@ function TicketListExecution(props: {
   readonly row: ProjectTableRow;
 }): ReactNode {
   const row = props.row;
-  if (row.executionRead === "NoneRegistered") return null;
+  if (row.executionVerdict === undefined) return null;
   return (
     <span className="ticket-list-execution">
       <TicketRowExecutionCell row={row} />
@@ -583,7 +583,7 @@ export function ProjectTable(): ReactNode {
   const index =
     executions.state === "Ready"
       ? executions.value
-      : projectExecutionIndexUnread;
+      : projectExecutionIndexEmpty;
   if (
     tickets.state.state === "Ready" &&
     ticketFilterProjectEmpty(choices.filter, tickets.state.value)
@@ -606,12 +606,6 @@ export function ProjectTable(): ReactNode {
       {executions.state === "Failed" ? (
         <p className="panel-failed">
           what each ticket ran could not be read — {executions.reason}
-        </p>
-      ) : null}
-      {executions.state === "Ready" && index.truncated ? (
-        <p className="panel-absent">
-          the index of what each ticket ran was truncated at its page budget, so
-          the rows it did not reach say “not read” rather than nothing
         </p>
       ) : null}
       {partialFailure === undefined ? null : (

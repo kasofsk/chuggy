@@ -1,7 +1,7 @@
 /**
  * A row the phase page did not carry — named only by an open action or a held
- * proposal — drawn from the ticket's own read: its title, a dash where it never
- * ran, and "not read" only while that read has not answered or has failed.
+ * proposal — drawn from the ticket's own read: its title, and a dash where it
+ * never ran or where that read has not answered or has failed.
  */
 
 // jscpd:ignore-start -- the imports and vi.mock factories a case cannot hoist out
@@ -195,12 +195,12 @@ test("a ticket only an open action names is named, and says it never ran", async
   expect(cell(11, "last activity")).not.toBe("—");
 });
 
-test("a ticket whose own read failed or has not answered says not read", async () => {
+test("a ticket whose own read failed or has not answered draws the dash", async () => {
   drawInbox({ proposed: [7, 8], tickets: { 8: unanswered } });
   await settled();
   for (const ticket of [7, 8]) {
     expect(cell(ticket, "title")).toBe(`—${String(ticket)}`);
-    expect(cell(ticket, "last execution")).toBe("not read");
+    expect(cell(ticket, "last execution")).toBe("—");
     expect(cell(ticket, "last activity")).toBe("—");
   }
 });

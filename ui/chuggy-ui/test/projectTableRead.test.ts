@@ -81,16 +81,20 @@ test("a first read of an entry nothing has written asks for one page", async () 
 });
 
 test("a walk's first page carries no cursor and its next carries the one it was given", () => {
-  expect(projectExecutionPage("All", undefined).cursor).toBeUndefined();
-  expect(projectExecutionPage("All", "opaque").cursor).toBe("opaque");
+  expect(projectExecutionPage("Latest", undefined).cursor).toBeUndefined();
+  expect(projectExecutionPage("Latest", "opaque").cursor).toBe("opaque");
 });
 
-test("a walk states the size it wants and names only the selection it filters", () => {
-  expect(projectExecutionPage("All", undefined).limit).toBe(
+test("a walk states the size it wants and names only the read it walks", () => {
+  expect(projectExecutionPage("Latest", undefined).limit).toBe(
     nativeHttpPageItemsMax,
   );
-  expect(projectExecutionPage("All", undefined).state).toBeUndefined();
-  expect(projectExecutionPage("NonTerminal", undefined).state).toBe(
-    "NonTerminal",
-  );
+  expect(projectExecutionPage("Latest", undefined)).toStrictEqual({
+    limit: nativeHttpPageItemsMax,
+    latest: true,
+  });
+  expect(projectExecutionPage("NonTerminal", undefined)).toStrictEqual({
+    limit: nativeHttpPageItemsMax,
+    state: "NonTerminal",
+  });
 });

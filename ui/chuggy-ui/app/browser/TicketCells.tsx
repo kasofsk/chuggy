@@ -7,13 +7,10 @@
  * are drawn, so a screen that built its own `Link` would be a second place the
  * path has to change. `TicketTitleCell` is the `th` the inbox's table needs
  * around them; a screen that is not a table takes the pieces directly. The
- * execution columns are the same arrangement for a different reason: a dash
- * meaning "not read" and a dash meaning "never ran" are the same dash, and
- * which one a row shows — and whether it draws as a chip at all — is a
- * decision two screens must not answer differently. The activity piece is the
- * same arrangement again: a ticket's last movement is one instant however it
- * is joined, so it is read as how long ago it was in one place rather than
- * drawn on two screens as two strings that happen to agree today.
+ * execution column and the activity piece are the same arrangement: whether a
+ * row's execution draws as a chip, and how long ago a ticket last moved, are
+ * read in one place rather than drawn on two screens as two answers that
+ * happen to agree today.
  */
 
 import { Link } from "@tanstack/react-router";
@@ -28,8 +25,6 @@ import { Pill } from "./ui/Pill.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
 
 export const cellAbsent = "—";
-
-export const cellExecutionUnread = "not read";
 
 /** What the ticket is called: the title, or the dash a brief that names none
  * still draws, linking to the ticket page. Undecorated, so a screen that does
@@ -89,30 +84,15 @@ export function TicketTitleCell(props: {
   );
 }
 
-/** What an execution column says when there is nothing to join, which is not
- * the same thing as a dash. */
-export function ticketRowExecutionCell(
-  row: ProjectTableRow,
-  drawn: string | undefined,
-): string {
-  if (row.executionRead === "IndexTruncated") return cellExecutionUnread;
-  return drawn ?? cellAbsent;
-}
-
 /** An execution column drawn as its own chip where an execution is joined, in
- * the word and hue the ticket's ledger draws it in, and as plain dim text
- * where nothing is joined or the index did not reach this row — a chip would
- * claim a standing the row does not have. */
+ * the word and hue the ticket's ledger draws it in, and as the dim dash where
+ * nothing is joined. */
 export function TicketRowExecutionCell(props: {
   readonly row: ProjectTableRow;
 }): ReactNode {
   const verdict = props.row.executionVerdict;
   if (verdict === undefined)
-    return (
-      <span className="text-ink-3">
-        {ticketRowExecutionCell(props.row, undefined)}
-      </span>
-    );
+    return <span className="text-ink-3">{cellAbsent}</span>;
   return <Pill tone={verdictTone(verdict)}>{verdict}</Pill>;
 }
 

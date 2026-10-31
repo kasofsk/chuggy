@@ -110,9 +110,12 @@ import type {
 import { checkedDispatchViewQuery } from "./dispatchView.ts";
 import {
   checkedExecutionListQuery,
+  checkedLatestExecutionListQuery,
   type ExecutionListQuery,
   type ExecutionPage,
   type ExecutionResource,
+  type LatestExecutionListQuery,
+  type LatestExecutionPage,
   type OperationalReadStore,
   type OutputContentPort,
   type OutputContentRead,
@@ -726,6 +729,11 @@ export interface NativeWeb {
     partition: Partition,
     query: ExecutionListQuery,
   ): Promise<AuthorizedResult<ExecutionPage>>;
+  latestExecutions(
+    principal: Principal,
+    partition: Partition,
+    query: LatestExecutionListQuery,
+  ): Promise<AuthorizedResult<LatestExecutionPage>>;
   execution(
     principal: Principal,
     partition: Partition,
@@ -1422,7 +1430,11 @@ function nativeSubmitMethod(
 
 type NativeOperationalMethods = Pick<
   NativeWeb,
-  "operationalStatus" | "executions" | "execution" | "outputContent"
+  | "operationalStatus"
+  | "executions"
+  | "latestExecutions"
+  | "execution"
+  | "outputContent"
 >;
 
 function nativeOperationalMethods(
@@ -1452,6 +1464,17 @@ function nativeOperationalMethods(
             value: await operations().executions(
               partition,
               checkedExecutionListQuery(query),
+              principal,
+            ),
+          },
+    latestExecutions: async (principal, partition, query) =>
+      (await access.authorize(principal, partition, "Read")) === undefined
+        ? { result: "NotFound" }
+        : {
+            result: "Authorized",
+            value: await operations().latestExecutions(
+              partition,
+              checkedLatestExecutionListQuery(query),
               principal,
             ),
           },

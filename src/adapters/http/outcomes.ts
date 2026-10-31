@@ -52,6 +52,7 @@ import type {
 import type {
   ExecutionPage,
   ExecutionResource,
+  LatestExecutionPage,
   ProjectOperationalStatus,
   OutputContentRead,
 } from "../../interpreter/operationsView.ts";
@@ -143,6 +144,7 @@ import {
   encodeDraftCursor,
   encodeExecutionCursor,
   encodeInventoryCursor,
+  encodeLatestExecutionCursor,
   encodeNativeActionCursor,
   encodeTicketActivityCursor,
 } from "./contract.ts";
@@ -660,6 +662,25 @@ export function executionsResponse(
           ? {}
           : {
               nextCursor: encodeExecutionCursor(
+                partition,
+                result.value.nextAfter,
+              ),
+            }),
+      });
+}
+
+export function latestExecutionsResponse(
+  partition: Partition,
+  result: AuthorizedResult<LatestExecutionPage>,
+): NativeHttpResponse {
+  return result.result === "NotFound"
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, {
+        executions: result.value.executions,
+        ...(result.value.nextAfter === undefined
+          ? {}
+          : {
+              nextCursor: encodeLatestExecutionCursor(
                 partition,
                 result.value.nextAfter,
               ),
