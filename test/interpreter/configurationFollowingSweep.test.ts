@@ -18,6 +18,7 @@ import {
   configurationFollowingMovesMax,
   configurationFollowingPageTicketsMax,
   configurationFollowingReport,
+  configurationFollowingTicketsReadMax,
   followConfigurations,
   type ConfigurationFollowingBinding,
   type ConfigurationFollowingCandidate,
@@ -272,4 +273,43 @@ test("a run offers no more moves than its bound", async () => {
   });
   assert.equal(ports.moves.length, configurationFollowingMovesMax);
   assert.equal(run.stopped, "Moves");
+});
+
+test("a run whose read bound falls inside a page of its last binding says it stopped short", async () => {
+  const short = configurationFollowingPageTicketsMax / 2;
+  const other: ConfigurationFollowingBinding = {
+    ...binding,
+    partition: { ...binding.partition, project: asProjectId("other") },
+  };
+  const sizes = new Map([
+    [binding, short],
+    [other, configurationFollowingTicketsReadMax],
+  ]);
+  const asked: number[] = [];
+  const ports: ConfigurationFollowingPort = {
+    candidates: ({ binding: swept, after, max }) => {
+      asked.push(max);
+      const size = sizes.get(swept) ?? 0;
+      return Promise.resolve({
+        candidates: Array.from(
+          { length: Math.max(0, Math.min(max, size - after)) },
+          (_, index) => candidate(after + index + 1, same),
+        ),
+        canonicals,
+      });
+    },
+    move: () => Promise.resolve(accepted()),
+  };
+  const run = await followConfigurations({
+    bindings: [binding, other],
+    port: ports,
+    now: () => 0,
+    deadlineAtMs: 1,
+  });
+  assert.equal(asked.at(-1), short);
+  assert.equal(run.stopped, "TicketsRead");
+  assert.equal(
+    configurationFollowingReport(run).at(-1)?.line,
+    "configuration following stopped short: TicketsRead",
+  );
 });

@@ -297,16 +297,10 @@ async function configurationFollowingPage(
   state: ConfigurationFollowingState,
   binding: ConfigurationFollowingBinding,
   after: number,
+  max: number,
 ): Promise<ConfigurationFollowingCandidates | undefined> {
   try {
-    const page = await state.port.candidates({
-      binding,
-      after,
-      max: Math.min(
-        configurationFollowingPageTicketsMax,
-        configurationFollowingTicketsReadMax - state.ticketsRead,
-      ),
-    });
+    const page = await state.port.candidates({ binding, after, max });
     for (const [revision, canonical] of page.canonicals)
       state.canonicals.set(revision, canonical);
     return page;
@@ -325,7 +319,11 @@ async function configurationFollowingBinding(
   for (;;) {
     const stopped = configurationFollowingStopped(state, "Candidates");
     if (stopped !== undefined) return stopped;
-    const page = await configurationFollowingPage(state, binding, after);
+    const max = Math.min(
+      configurationFollowingPageTicketsMax,
+      configurationFollowingTicketsReadMax - state.ticketsRead,
+    );
+    const page = await configurationFollowingPage(state, binding, after, max);
     if (page === undefined) return undefined;
     state.ticketsRead += page.candidates.length;
     for (const candidate of page.candidates) {
@@ -341,8 +339,7 @@ async function configurationFollowingBinding(
       );
       if (reached !== undefined) return reached;
     }
-    if (page.candidates.length < configurationFollowingPageTicketsMax)
-      return undefined;
+    if (page.candidates.length < max) return undefined;
   }
 }
 
