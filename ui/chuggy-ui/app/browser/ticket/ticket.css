@@ -343,6 +343,11 @@
     color: var(--ink-3);
   }
 
+  .ticket-config-following {
+    font-size: var(--text-sm);
+    color: var(--ink-2);
+  }
+
   /* Delivery: one line a declared action — its name, its mark and the report
      the mark was read from — with a failure's own words beneath. */
 

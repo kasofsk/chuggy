@@ -138,7 +138,10 @@ import type { RunStepEvidence } from "./runEvidence.ts";
 import { type PublicInstant } from "./publicResource.ts";
 import { hostedRunsGranted, memberAuthorities } from "./projectAccess.ts";
 import { projectAbilities } from "./projectAbilities.ts";
-import type { ProjectAbilitiesResponse } from "../contract/responses.ts";
+import type {
+  ProjectAbilitiesResponse,
+  TicketFollowing,
+} from "../contract/responses.ts";
 import type { ProjectAccess, ProjectAccessKind } from "./projectAccess.ts";
 import type { Authority } from "./operationInbox.ts";
 import type {
@@ -436,6 +439,8 @@ export interface TicketResource {
   readonly program?: ReleaseAuthoringProgram;
   /** The dependencies that same release or update named, ascending; its draft may since name others. */
   readonly dependencies?: readonly TicketId[];
+  /** Where a Pending ticket that follows stands against the revision its repository's newest import declares under the same name. */
+  readonly following?: TicketFollowing;
   readonly runTotals?: RunTotals;
 }
 

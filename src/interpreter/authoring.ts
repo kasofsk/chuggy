@@ -21,6 +21,11 @@ import {
   nativeHttpPageItemsMax,
 } from "../contract/http.ts";
 import {
+  releasePairingFaults,
+  type DraftReleaseRefusalCode,
+  type ReleasePairingFault,
+} from "../contract/rosters.ts";
+import {
   bootstrapConfigurationName,
   bootstrapConfigurationRevisionPrefix,
 } from "../contract/responses.ts";
@@ -46,7 +51,6 @@ import type {
   DraftBrief,
   ReleaseBrief,
 } from "./ticketBrief.ts";
-import type { BoundaryRefusalCode } from "./refusal.ts";
 import {
   authoredTaskConfigurationReadiness,
   briefsAnyAgent,
@@ -97,28 +101,11 @@ export type TicketConfiguration =
       readonly selection: CatalogSelection;
     };
 
-/**
- * The faults about the pairing of a brief and a configuration rather than
- * either document, either alone being fine: a configuration commanding no check
- * stage contradicts a brief that appends check lines to it, a brief naming no
- * repository has nothing to pair with, a configuration imported from a
- * repository contradicts a brief working in a different one, and a program
- * leaving out the task a brief's check lines join would never run them. A
- * revision of the draft mends each, so each is refused under its own code
- * rather than as the configuration's.
- */
-export const releasePairingFaults = [
-  "BriefChecksUncommanded",
-  "BriefNamesNoRepository",
-  "ConfigurationFromAnotherRepository",
-  "SelectionUnknown",
-  "SelectionUnsupported",
-  "ProgramExceedsPlan",
-  "ProgramSkipsBriefChecks",
-  "OverridesUnsupported",
-  "OverridesUnknown",
-] as const satisfies readonly BoundaryRefusalCode[];
-export type ReleasePairingFault = (typeof releasePairingFaults)[number];
+export {
+  releasePairingFaults,
+  type DraftReleaseRefusalCode,
+  type ReleasePairingFault,
+};
 
 /** Why one configuration is not releasable: a fault of the document, or of its pairing with a brief. */
 export type ReleaseConfigurationFault =
@@ -127,9 +114,6 @@ export type ReleaseConfigurationFault =
   | TaskConfigurationFault
   | WorkloadConfigurationFault
   | ReleasePairingFault;
-
-export type DraftReleaseRefusalCode =
-  ReleasePairingFault | "ConfigurationInvalid";
 
 /**
  * What a release refused for one fault is answered with: a pairing fault under

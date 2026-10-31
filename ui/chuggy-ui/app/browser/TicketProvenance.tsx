@@ -30,6 +30,7 @@ import type {
 } from "../../../../src/contract/responses.ts";
 import { apiConfiguration } from "../core/apiRoutes.ts";
 import { briefLandingLine, landingLabel } from "../core/codeLabels.ts";
+import { ticketFollowingSentence } from "../core/codeSentences.ts";
 import type {
   ConfigurationBrief,
   ConfigurationEvaluation,
@@ -1036,7 +1037,9 @@ function ConfigurationPanel(props: {
   readonly version: TicketResponse["configurationVersion"];
   readonly overrides: TicketResponse["overrides"];
   readonly selection: TicketResponse["selection"];
+  readonly following: TicketResponse["following"];
 }): ReactNode {
+  const stays = ticketFollowingSentence(props.following);
   const state = usePanelResource(
     props.partition,
     "Configuration",
@@ -1061,6 +1064,9 @@ function ConfigurationPanel(props: {
         ) : undefined
       }
     >
+      {stays === undefined ? null : (
+        <p className="ticket-config-following">{stays}</p>
+      )}
       <PanelUnready state={state} />
       {state.state === "Ready" ? (
         <ConfigurationBody
@@ -1099,6 +1105,7 @@ export function TicketProvenance(props: {
           version={props.ticket?.configurationVersion}
           overrides={props.ticket?.overrides}
           selection={props.ticket?.selection}
+          following={props.ticket?.following}
         />
       )}
     </>

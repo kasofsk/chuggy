@@ -2,7 +2,8 @@
  * The importer's sweep against a real database: a Pending ticket following
  * its newest revision is moved through 102's doors where the head changes what
  * it runs, and only then, and every move is decided by the writer as an
- * update under the importer's `Service` authority.
+ * update under the importer's `Service` authority. The ticket's own read
+ * answers the same verdict against its repository's newest import.
  */
 
 import assert from "node:assert/strict";
@@ -11,7 +12,12 @@ import { after, before, test } from "node:test";
 import type pg from "pg";
 
 import { postgresConfigurationFollowing } from "../../src/adapters/postgres/configurationFollowing.ts";
-import { configurationImporterRole } from "../../src/adapters/postgres/schema.ts";
+import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
+import { postgresRepositoryConfigurationImportAttempts } from "../../src/adapters/postgres/repositoryConfiguration.ts";
+import {
+  apiRole,
+  configurationImporterRole,
+} from "../../src/adapters/postgres/schema.ts";
 import type { ConfigurationSelection } from "../../src/contract/configurationSelection.ts";
 import type { ReleaseAuthoringProgram } from "../../src/contract/authoring.ts";
 import type { TicketId } from "../../src/domain/ids.ts";
@@ -59,11 +65,14 @@ import {
 
 let harness: PostgresHarness;
 let importer: pg.Pool;
+let api: pg.Pool;
 before(async () => {
   harness = await postgresHarnessOpen();
   importer = postgresHarnessRolePool(configurationImporterRole);
+  api = postgresHarnessRolePool(apiRole);
 });
 after(async () => {
+  await api.end();
   await importer.end();
   await harness.close();
 });
@@ -723,4 +732,170 @@ test("a ticket updated between the read and the move is refused stale by the wri
     authoring_version: 4,
     released: 4,
   });
+});
+
+/** Keeps an import of the project's binding at `commit` as the newest attempted, through the API's own door. */
+function attempted(
+  project: Project,
+  commit: GitObjectId | undefined,
+  result: "Imported" | "Unavailable" = "Imported",
+): Promise<void> {
+  return postgresRepositoryConfigurationImportAttempts(api).record({
+    partition: project.partition,
+    repository: project.repository,
+    ...(commit === undefined ? {} : { commit }),
+    outcome: { result },
+  });
+}
+
+/** What the ticket's own read, through the API's credential, says of its following. */
+async function following(project: Project, ticket: TicketId) {
+  const read = await postgresNativeReads(api).ticket(project.partition, ticket);
+  assert.ok(read !== undefined, "the ticket reads");
+  return read.following;
+}
+
+/** Every ticket of the project's page, through the API's credential, and whether its row carries a following. */
+async function pageFollowing(project: Project) {
+  const page = await postgresNativeReads(api).project(project.partition, {
+    limit: 10,
+  });
+  assert.ok(page.result === "Found");
+  return page.project.tickets.map((ticket) => [
+    ticket.ticket,
+    "following" in ticket,
+  ]);
+}
+
+test("the ticket's own read answers Current and Moves, which a person's unreleased revision does not change, and the project's page carries neither", async () => {
+  const project = await followingProject("read-moves");
+  const held = await imported(project, commits.first, catalog());
+  const moves = await released(project, held);
+  const current = await released(
+    project,
+    await imported(project, commits.first, catalog(), "same"),
+  );
+  await attempted(project, commits.first);
+  assert.deepEqual(
+    await following(project, moves),
+    { verdict: "Current" },
+    "a ticket on its repository's newest revision is current",
+  );
+  await imported(project, commits.second, reviewChanged);
+  await imported(project, commits.second, catalog(), "same");
+  await attempted(project, commits.second);
+  assert.deepEqual(await following(project, moves), { verdict: "Moves" });
+  assert.deepEqual(await following(project, current), { verdict: "Current" });
+  assert.deepEqual(await pageFollowing(project), [
+    [moves, false],
+    [current, false],
+  ]);
+  assert.equal(
+    (await personRevises(project, moves, 1, held)).revised,
+    "Revised",
+  );
+  assert.deepEqual(await following(project, moves), { verdict: "Moves" });
+  assert.deepEqual(await importerOperations(project), []);
+});
+
+test("the ticket's own read answers Held under the release's code, and Trimmed", async () => {
+  const twoStages = (value: Catalog) => {
+    part(value, "plans")["standard"] = [
+      { name: "review", evaluators: ["review"] },
+      { name: "tests", evaluators: ["tests"] },
+    ];
+  };
+  const project = await followingProject("read-held");
+  const dropped = await released(
+    project,
+    await imported(project, commits.first, catalog()),
+    { work: "alternative" },
+  );
+  const trimmed = await released(
+    project,
+    await imported(project, commits.first, catalog(twoStages), "trimmed"),
+  );
+  await imported(
+    project,
+    commits.second,
+    catalog((value) => {
+      delete part(value, "workloads")["alternative"];
+    }),
+  );
+  await imported(
+    project,
+    commits.second,
+    catalog((value) => {
+      twoStages(value);
+      part(value, "workloads")["review"] = agent("Review it harder.");
+    }),
+    "trimmed",
+  );
+  await attempted(project, commits.second);
+  assert.deepEqual(await following(project, dropped), {
+    verdict: "Held",
+    code: "SelectionUnknown",
+  });
+  assert.deepEqual(await following(project, trimmed), { verdict: "Trimmed" });
+});
+
+test("a following ticket whose repository has no stored head carries no following", async () => {
+  const project = await followingProject("read-headless");
+  const ticket = await released(
+    project,
+    await imported(project, commits.first, catalog()),
+  );
+  assert.equal(await following(project, ticket), undefined, "no import kept");
+  await attempted(project, undefined, "Unavailable");
+  assert.equal(
+    await following(project, ticket),
+    undefined,
+    "the newest import did not import",
+  );
+  await imported(project, commits.second, catalog(), "other");
+  await attempted(project, commits.second);
+  assert.equal(
+    await following(project, ticket),
+    undefined,
+    "the newest import declares no revision of the held name",
+  );
+  await imported(project, commits.third, reviewChanged);
+  await attempted(project, commits.third);
+  assert.deepEqual(await following(project, ticket), { verdict: "Moves" });
+});
+
+test("a pinned ticket and a ticket no longer Pending carry no following", async () => {
+  const project = await followingProject("read-none");
+  const pinned = await released(
+    project,
+    await imported(project, commits.first, catalog()),
+    { configuration: "Pinned" },
+  );
+  const working = await released(
+    project,
+    await imported(project, commits.first, catalog(), "working"),
+  );
+  const version = project.memory().ticketVersions.get(working);
+  assert.ok(version !== undefined);
+  const unique = randomUUID();
+  assert.equal(
+    await project.decide({
+      partition: project.partition,
+      operation: asOperationId(`dispatch-${unique}`),
+      authority: person,
+      key: asIdempotencyKey(`dispatch-${unique}`),
+      command: {
+        version: 1,
+        command: "ManualDispatch",
+        ticket: working,
+        expectedTicketVersion: version,
+      },
+    }),
+    "Committed",
+  );
+  await imported(project, commits.second, reviewChanged);
+  await imported(project, commits.second, reviewChanged, "working");
+  await attempted(project, commits.second);
+  assert.equal(await following(project, pinned), undefined);
+  assert.equal(await following(project, working), undefined);
 });

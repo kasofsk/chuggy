@@ -13,6 +13,7 @@ import {
   type CanonicalConfiguration,
 } from "../../src/interpreter/authoring.ts";
 import {
+  configurationFollowingRead,
   configurationFollowingVerdict,
   type ConfigurationFollowingTicket,
 } from "../../src/interpreter/configurationFollowing.ts";
@@ -244,5 +245,68 @@ test("a head that would leave the brief's checks unrun holds the ticket", () => 
       ticket(head, { selection, brief: withChecks }),
     ),
     { verdict: "Held", fault: "BriefChecksUncommanded" },
+  );
+});
+
+test("a ticket's own read answers the verdict without the program, and a held one under the code a release is refused with", () => {
+  const changed = catalog((value) => {
+    field(value, "workloads")["review"] = agent("Review it harder.");
+  });
+  const trimmedHeld = catalog((value) => {
+    field(value, "plans")["standard"] = [
+      { name: "review", evaluators: ["review"] },
+      { name: "tests", evaluators: ["tests"] },
+    ];
+  });
+  const shapeless = catalog((value) => {
+    field(value, "workloads")["review"] = { runner: "Agent" };
+  });
+  assert.deepEqual(configurationFollowingRead(ticket(catalog())), {
+    verdict: "Current",
+  });
+  assert.deepEqual(configurationFollowingRead(ticket(changed)), {
+    verdict: "Moves",
+  });
+  assert.deepEqual(
+    configurationFollowingRead(ticket(changed, { held: trimmedHeld })),
+    { verdict: "Trimmed" },
+  );
+  assert.deepEqual(
+    configurationFollowingRead(
+      ticket(canonicalConfigurationOf({ version: 1 })),
+    ),
+    { verdict: "Held", code: "SelectionUnsupported" },
+  );
+  assert.deepEqual(configurationFollowingRead(ticket(shapeless)), {
+    verdict: "Held",
+    code: "ConfigurationInvalid",
+  });
+});
+
+test("a ticket's own read answers nothing where its choice, or else its held catalog's default, pins it", () => {
+  const changed = catalog((value) => {
+    field(value, "workloads")["review"] = agent("Review it harder.");
+  });
+  const unchosen = catalog((value) => {
+    delete field(value, "defaults")["configuration"];
+  });
+  assert.equal(
+    configurationFollowingRead(
+      ticket(changed, { selection: { configuration: "Pinned" } }),
+    ),
+    undefined,
+  );
+  assert.equal(
+    configurationFollowingRead(ticket(changed, { held: unchosen })),
+    undefined,
+  );
+  assert.deepEqual(
+    configurationFollowingRead(
+      ticket(changed, {
+        held: unchosen,
+        selection: { configuration: "Latest" },
+      }),
+    ),
+    { verdict: "Moves" },
   );
 });
