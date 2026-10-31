@@ -1812,6 +1812,19 @@ test("the gear offers where the pane sits on every page but a thread's own", asy
   styleless();
 });
 
+/** Below two columns the pane is the whole body or the strip under the pages
+ * wherever it sits, so the gear offers no placement there. */
+test("below two columns the gear offers no placement", async () => {
+  await mounted(viewportNarrowEm - 1);
+  const menu = await settingsOpened();
+  expect(within(menu).getByText("Theme")).toBeDefined();
+  expect(within(menu).queryByText("Chat position")).toBeNull();
+  expect(
+    within(menu).queryByRole("menuitemradio", { name: "Left" }),
+  ).toBeNull();
+  styleless();
+});
+
 /** The reader's own thread and another member's, each read as itself. */
 function twoThreadsServed(): typeof fetch {
   return ((url: string) => {

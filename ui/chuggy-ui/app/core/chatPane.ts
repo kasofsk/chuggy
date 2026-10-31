@@ -219,6 +219,13 @@ export function chatPaneYielded(
   return twoColumn ? chatPaneRestored(state) : chatPaneToggled(state);
 }
 
+/** Whether the reader is offered where the pane sits, which they are not where
+ * the viewport does not divide: the pane there is the whole body or the strip
+ * under the pages wherever it sits. */
+export function chatPanePlaceable(twoColumn: boolean): boolean {
+  return twoColumn;
+}
+
 /** The pane moved to a placement the reader picked, keeping how it takes the
  * frame. */
 export function chatPaneRepositioned(
@@ -661,15 +668,15 @@ function chatPaneTrailChanged(
   }
 }
 
-/** The moves the frame offers the reader now: the gear, the window, a thread
- * and a reload always, the edge wherever it is drawn, and the controls the
- * pane draws as it is presented, which take it to or from the whole body only
- * where the frame divides. */
+/** The moves the frame offers the reader now: the window, a thread and a
+ * reload always, the gear where it offers a placement, the edge wherever it is
+ * drawn, and the controls the pane draws as it is presented, which take it to
+ * or from the whole body only where the frame divides. */
 export function chatPaneTrailOffered(
   trail: ChatPaneTrail,
 ): readonly ChatPaneMove["move"][] {
   const always = [
-    "Placed",
+    ...(chatPanePlaceable(trail.twoColumn) ? (["Placed"] as const) : []),
     trail.twoColumn ? "Narrowed" : "Widened",
     "Resized",
     "Visited",

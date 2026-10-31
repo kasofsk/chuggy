@@ -1,7 +1,7 @@
 /**
  * Everything a reader reaches rarely, behind one gear in the bar: the pages
  * that set the open project up, how the console looks, where the chat pane
- * sits where the frame has one, and signing out.
+ * sits where the frame divides and has one, and signing out.
  *
  * A reader visits these once and forgets them — so the bar carries the gear
  * and they live inside it, rather than each spending bar width on every
@@ -19,6 +19,7 @@ import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { navEntryCurrent, shellSetupNav } from "../../core/shellNav.ts";
 import {
   chatPaneOnPage,
+  chatPanePlaceable,
   chatPanePlacements,
   chatPaneRepositioned,
 } from "../../core/chatPane.ts";
@@ -113,10 +114,12 @@ function SettingsTheme(): ReactNode {
   );
 }
 
-/** Where the pane sits, offered on every page that draws one. */
+/** Where the pane sits, offered on every page that draws one where the
+ * viewport divides. */
 function SettingsChatPlacement(): ReactNode {
   const held = useChatPane();
   const route = useParams({ strict: false });
+  if (!chatPanePlaceable(held.twoColumn)) return null;
   if (chatPaneOnPage(held.state, route) === undefined) return null;
   return (
     <>
@@ -137,8 +140,8 @@ function SettingsChatPlacement(): ReactNode {
   );
 }
 
-/** The project's setup pages, each a link that also puts a pane that filled
- * the body back beside the pages, as a screen's entry in the bar does. */
+/** The project's setup pages, each a link that also moves a pane that filled
+ * the body out of the way, as a screen's entry in the bar does. */
 function SettingsSetup(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {

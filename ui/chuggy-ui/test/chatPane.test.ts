@@ -552,15 +552,15 @@ test("a trail offers the controls the pane draws as presented, and the edge only
     "Collapsed",
     "Restored",
   ]);
-  expect(chatPaneTrailOffered(trailWalked({ move: "Narrowed" }))[1]).toBe(
+  expect(chatPaneTrailOffered(trailWalked({ move: "Narrowed" }))[0]).toBe(
     "Widened",
   );
 });
 
 /** Below two columns the pane is the whole body or the strip, so a trail
- * there offers no full-screen control and never draws it docked. */
-test("below two columns a trail offers no full screen and draws no pane under the pages", () => {
-  const always = ["Placed", "Widened", "Resized", "Visited", "Reloaded"];
+ * there offers no placement or full-screen control and never draws it docked. */
+test("below two columns a trail offers no placement or full screen and draws no pane under the pages", () => {
+  const always = ["Widened", "Resized", "Visited", "Reloaded"];
   const narrowed: ChatPaneMove = { move: "Narrowed" };
   const docked = trailWalked(draggedHalf, collapsed, expanded, narrowed);
   expect(docked.hold.stored?.presentation).toBe("Docked");
