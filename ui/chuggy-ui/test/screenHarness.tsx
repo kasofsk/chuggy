@@ -212,11 +212,11 @@ export async function drawnStrict(
 
 /** The two routes any mounted `TicketPage` reaches beside its own read, for a
  * case with nothing of its own to say about them: no native action offered,
- * and a dispatch view too stale to act on. `undefined` where a case's route
- * has already answered a URL of its own before falling back to this one. */
+ * and a dispatch view reset, which offers nothing to dispatch. `undefined`
+ * where a case's route has already answered a URL of its own before falling
+ * back to this one. */
 export function ticketPageAmbientRoute(url: string): Response | undefined {
-  if (url.includes("/dispatch-view"))
-    return answer({ result: "Stale", reason: "TokenStale" });
+  if (url.includes("/dispatch-view")) return answer({ result: "Reset" });
   if (url.includes("/native-actions")) return answer({ actions: [] });
   return undefined;
 }
