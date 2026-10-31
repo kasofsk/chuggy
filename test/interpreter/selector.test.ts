@@ -4,7 +4,10 @@ import { test } from "node:test";
 import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
 import {
   agenticRefusalReasonCharsMax,
+  configurationCanonicalCharsMax,
   leadAttentionRecheckMs,
+  nativeHttpDraftEvaluatorsMax,
+  nativeHttpDraftStagesMax,
   selectorFailedDecisionsPerViewMax,
   selectorSettingsTextCharsMax,
 } from "../../src/contract/http.ts";
@@ -582,6 +585,55 @@ test("an oversized final candidate advances the scan to Exhausted", async () => 
     ),
     undefined,
   );
+});
+
+/**
+ * A configuration at its longest, every character three bytes, on a candidate
+ * whose program is as wide as authoring allows, weighs more than the page
+ * budget a default lead runs under. A turn holds it without its canonical, so
+ * it is a candidate the lead is shown rather than one too large to show, and
+ * the observation stored still carries the canonical whole.
+ */
+test("a candidate whose configuration is at its longest is observed, not too large", async () => {
+  const candidate: DispatchCandidate = {
+    ...viewCandidate,
+    program: Array.from({ length: nativeHttpDraftStagesMax }, () => ({
+      key: Number.MAX_SAFE_INTEGER,
+      evaluators: Array.from({ length: nativeHttpDraftEvaluatorsMax }, () => ({
+        key: Number.MAX_SAFE_INTEGER,
+      })),
+    })),
+    configurationCanonical: "€".repeat(configurationCanonicalCharsMax),
+  };
+  const bytesMax = Math.floor(leadInputBytesMax(resolved()) / 2);
+  assert.ok(
+    new TextEncoder().encode(JSON.stringify([candidate])).length > bytesMax,
+  );
+  const observation = await observeSelectorProject(
+    {
+      partition,
+      notificationCursor: 0,
+      revision: 0,
+      attention: "Monitoring",
+      handoffNote: {},
+      candidateScan: { state: "Unstarted" },
+    },
+    {
+      ...promptObservationSource(),
+      dispatchView: () =>
+        Promise.resolve({
+          ...candidateDispatchPage(partition, "b".repeat(64)),
+          candidates: [candidate],
+        }),
+    },
+    refusalWrites(),
+    noneHeld,
+    movedPage,
+    selectorNotificationPageLimit,
+    bytesMax,
+  );
+  assert.equal(observation?.resourceLimit, undefined);
+  assert.deepEqual(observation?.candidates, [candidate]);
 });
 
 /** One observation of a page holding the one candidate, against the ledger given. */
@@ -1341,7 +1393,7 @@ test("an observation over its resource limit is a recorded failure, not a quiet 
           candidates: [
             {
               ...viewCandidate,
-              configurationCanonical: "x".repeat(leadInputBytesMax(resolved())),
+              configurationRevision: "x".repeat(leadInputBytesMax(resolved())),
             },
           ],
         }),
@@ -1595,7 +1647,7 @@ test("an oversized candidate without room is still a recorded failure", async ()
         candidates: [
           {
             ...viewCandidate,
-            configurationCanonical: "x".repeat(leadInputBytesMax(resolved())),
+            configurationRevision: "x".repeat(leadInputBytesMax(resolved())),
           },
         ],
       }),
@@ -1802,7 +1854,7 @@ test("an oversized candidate is a turn at once under a raised attention", async 
         oversized
           ? {
               ...viewCandidate,
-              configurationCanonical: "x".repeat(leadInputBytesMax(resolved())),
+              configurationRevision: "x".repeat(leadInputBytesMax(resolved())),
             }
           : viewCandidate,
       ],

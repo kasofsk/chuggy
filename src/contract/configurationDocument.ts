@@ -32,6 +32,7 @@ import { z } from "zod";
 import { briefFinalizationSchema } from "./brief.ts";
 import {
   configurationCanonicalCharsMax,
+  configurationPromptTextCharsMax,
   nativeHttpDraftEvaluatorsMax,
   repositoryConfigurationNameCharsMax,
 } from "./http.ts";
@@ -640,10 +641,10 @@ export const configurationPromptTextPattern =
   /^[^\u0000-\u0008\u000b-\u001f\u007f-\u009f\ud800-\udfff]*$/u;
 
 /** The words an agent workload is briefed with, as written. */
-const configurationPromptTextSchema = z
+export const configurationPromptTextSchema = z
   .string()
   .min(1)
-  .max(configurationCanonicalCharsMax)
+  .max(configurationPromptTextCharsMax)
   .regex(configurationPromptTextPattern);
 
 /** A prompt by its text, by the file holding it, or both once an import has read that file. */

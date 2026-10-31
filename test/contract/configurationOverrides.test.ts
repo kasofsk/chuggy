@@ -7,10 +7,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import { configurationPromptTextSchema } from "../../src/contract/configurationDocument.ts";
 import {
   configurationOverridesSchema,
   configurationWithOverrides,
 } from "../../src/contract/configurationOverrides.ts";
+import {
+  configurationCanonicalCharsMax,
+  configurationPromptTextCharsMax,
+} from "../../src/contract/http.ts";
 
 const pinned = {
   version: 1,
@@ -182,5 +187,32 @@ test("a workload override naming a field no workload has is refused by the schem
       workloads: { build: { colour: "blue" } },
     }).success,
     false,
+  );
+});
+
+/**
+ * A prompt override is text a ticket carries rather than a file an import
+ * read, so no file's cap reaches it, and a configuration may now be longer
+ * than one prompt may.
+ */
+test("a prompt override longer than one prompt may be is refused, at any length a configuration may be", () => {
+  const over = "p".repeat(configurationPromptTextCharsMax + 1);
+  assert.ok(over.length < configurationCanonicalCharsMax);
+  assert.equal(configurationPromptTextSchema.safeParse(over).success, false);
+  assert.equal(
+    configurationPromptTextSchema.safeParse(over.slice(1)).success,
+    true,
+  );
+  assert.equal(
+    configurationOverridesSchema.safeParse({
+      workloads: { build: { prompt: { text: over } } },
+    }).success,
+    false,
+  );
+  assert.equal(
+    configurationOverridesSchema.safeParse({
+      workloads: { build: { prompt: { text: over.slice(1) } } },
+    }).success,
+    true,
   );
 });

@@ -724,8 +724,11 @@ export const nativeHttpDraftStagesMax = 100;
 /** How many evaluators one authored stage lists. */
 export const nativeHttpDraftEvaluatorsMax = 100;
 
-/** The longest canonical configuration one revision holds, which 007's column checks. */
-export const configurationCanonicalCharsMax = 65_536;
+/** The longest canonical configuration one revision holds, which 101's column checks. */
+export const configurationCanonicalCharsMax = 131_072;
+
+/** The longest text one prompt holds, which one invocation must carry whole. */
+export const configurationPromptTextCharsMax = 65_536;
 
 /**
  * What one observation carries that is neither a text a project set nor a page
