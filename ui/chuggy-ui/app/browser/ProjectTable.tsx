@@ -106,6 +106,8 @@ import "./ProjectTable.css";
 
 interface TicketRowsHeld {
   readonly state: PanelState<ProjectTicketRows>;
+  /** The rows drawn are an earlier ask's, standing until this one answers. */
+  readonly kept: boolean;
   readonly readMore: (() => void) | undefined;
   readonly reading: boolean;
 }
@@ -165,6 +167,7 @@ function useTicketRows(
   };
   return {
     state,
+    kept,
     readMore:
       more === undefined || reading
         ? undefined
@@ -619,6 +622,7 @@ export function ProjectTable(props: {
       : projectExecutionIndexEmpty;
   if (
     tickets.state.state === "Ready" &&
+    !tickets.kept &&
     ticketFilterProjectEmpty(ask, tickets.state.value)
   )
     return <ProjectTableEmpty partition={partition} authoring={authoring} />;

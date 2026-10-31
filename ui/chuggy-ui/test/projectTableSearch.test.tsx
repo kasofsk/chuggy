@@ -314,3 +314,21 @@ test("a Show more whose first finished page holds only rows already drawn reads 
   ]);
   expect(showMores()).toBe(0);
 });
+
+test("leaving a search that matched nothing keeps the list's controls drawn until the default list answers", async () => {
+  const active = heldAnswer();
+  const drawn = await drawnAt({ q: "nomatch" }, (asked) => {
+    if (asked.get("q") === "nomatch") return served([], { matched: 0 });
+    return asked.get("active") === "true"
+      ? active.answered.then(() => served([held(150, "Work")]))
+      : served([]);
+  });
+  expect(screen.getByRole("status").textContent).toBe("0 matching tickets");
+  await typedAndWaited("");
+  expect(drawn.written).toStrictEqual([{}]);
+  expect(screen.queryByText("No tickets")).toBeNull();
+  expect(screen.getByLabelText("Search tickets")).toBeDefined();
+  active.release(served([]));
+  await settled();
+  expect(titlesDrawn()).toStrictEqual(["Ticket 150"]);
+});
