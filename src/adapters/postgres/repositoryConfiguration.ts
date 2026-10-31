@@ -2,6 +2,11 @@
 
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
+import { z } from "zod";
+
+import { repositoryConfigurationImportRefusalsKeptMax } from "../../contract/http.ts";
+import { repositoryConfigurationRefusalSchema } from "../../contract/responses.ts";
+import type { ReleaseConfigurationFault } from "../../interpreter/authoring.ts";
 
 import { asGitObjectId, asRepositoryId } from "../../interpreter/finalizer.ts";
 import type {
@@ -17,6 +22,8 @@ import {
   type RepositoryConfigurationImportAttempt,
   type RepositoryConfigurationImportAttemptOutcome,
   type RepositoryConfigurationImportAttempts,
+  type RepositoryConfigurationImportRefusalsKept,
+  type RepositoryConfigurationRefusal,
 } from "../../interpreter/repositoryConfiguration.ts";
 import type { RepositoryConfigurationImportAttemptsRead } from "../../interpreter/repositoryOnboarding.ts";
 
@@ -64,9 +71,49 @@ export function postgresRepositoryConfigurationImportAttempts(
               ${attempt.partition.tenant},${attempt.partition.project},
               ${attempt.repository},${attempt.commit ?? null},
               ${attempt.outcome.result},
-              ${attempt.outcome.result === "SnapshotAbsent" ? attempt.outcome.absent : null})::text AS recorded`,
+              ${attempt.outcome.result === "SnapshotAbsent" ? attempt.outcome.absent : null},
+              ${"refusals" in attempt.outcome ? JSON.stringify(attempt.outcome.refusals) : null}::jsonb,
+              ${"refusals" in attempt.outcome ? attempt.outcome.refusalCount : null}::integer)::text AS recorded`,
       );
     },
+  };
+}
+
+/** The refusals a kept attempt holds, as the import found them. */
+const repositoryConfigurationImportRowRefusalsSchema = z
+  .array(repositoryConfigurationRefusalSchema)
+  .min(1)
+  .max(repositoryConfigurationImportRefusalsKeptMax);
+
+/** One stored attempt's refusals, where it holds any, refusing a row holding half of them. */
+function repositoryConfigurationImportAttemptRowRefusals(
+  refusals: unknown,
+  refusalCount: number | null,
+): RepositoryConfigurationImportRefusalsKept | undefined {
+  if (refusals === null && refusalCount === null) return undefined;
+  if (refusals === null || refusalCount === null)
+    throw new Error("a kept import attempt holds refusals it does not count");
+  return {
+    refusals: repositoryConfigurationImportRowRefusalsSchema
+      .parse(refusals)
+      .map((refusal): RepositoryConfigurationRefusal => ({
+        path: refusal.path,
+        fault: refusal.fault,
+        ...(refusal.configurationFault === undefined
+          ? {}
+          : {
+              configurationFault:
+                refusal.configurationFault as ReleaseConfigurationFault,
+            }),
+        ...(refusal.reference === undefined
+          ? {}
+          : { reference: refusal.reference }),
+        ...(refusal.chars === undefined ? {} : { chars: refusal.chars }),
+        ...(refusal.charsMax === undefined
+          ? {}
+          : { charsMax: refusal.charsMax }),
+      })),
+    refusalCount,
   };
 }
 
@@ -74,18 +121,28 @@ export function postgresRepositoryConfigurationImportAttempts(
 function repositoryConfigurationImportAttemptRowOutcome(
   result: string,
   absent: string | null,
+  refusals: unknown,
+  refusalCount: number | null,
 ): RepositoryConfigurationImportAttemptOutcome {
   const word = allRepositoryConfigurationImportAttemptResults.find(
     (known) => known === result,
   );
   if (word === undefined)
     throw new Error("a kept import attempt names an unknown result");
+  const refused = repositoryConfigurationImportAttemptRowRefusals(
+    refusals,
+    refusalCount,
+  );
+  if (refused !== undefined && word !== "DeclarationsRefused")
+    throw new Error("a kept import attempt holds refusals beside no refusal");
   if (word !== "SnapshotAbsent") {
     if (absent !== null)
       throw new Error(
         "a kept import attempt names an absence beside no snapshot",
       );
-    return { result: word };
+    return word === "DeclarationsRefused" && refused !== undefined
+      ? { result: word, ...refused }
+      : { result: word };
   }
   const lacked = allRepositoryConfigurationImportAbsences.find(
     (known) => known === absent,
@@ -106,10 +163,12 @@ async function readRepositoryConfigurationImportAttempts(
     repository_commit: string | null;
     result: string;
     absent: string | null;
+    refusals: unknown;
+    refusal_count: number | null;
   }>(
     sql`SELECT repository,
                to_char(attempted_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS attempted_at,
-               repository_commit,result,absent
+               repository_commit,result,absent,refusals,refusal_count
           FROM repository_configuration_import
          WHERE tenant=${partition.tenant} AND project=${partition.project}
            AND repository=ANY(${[...repositories]}::text[])`,
@@ -128,6 +187,8 @@ async function readRepositoryConfigurationImportAttempts(
           outcome: repositoryConfigurationImportAttemptRowOutcome(
             row.result,
             row.absent,
+            row.refusals,
+            row.refusal_count,
           ),
         },
       ];

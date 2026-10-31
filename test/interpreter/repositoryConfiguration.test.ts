@@ -7,12 +7,16 @@ import {
   asGitObjectId,
   asRepositoryId,
 } from "../../src/interpreter/finalizer.ts";
-import { repositoryConfigurationIgnoredAnsweredMax } from "../../src/contract/http.ts";
+import {
+  repositoryConfigurationIgnoredAnsweredMax,
+  repositoryConfigurationImportRefusalsKeptMax,
+} from "../../src/contract/http.ts";
 import {
   importRepositoryConfigurationPartitions,
   importRepositoryConfigurations,
   repositoryConfigurationIgnored,
   repositoryConfigurationImportReadiness,
+  repositoryConfigurationImportRefusalsKept,
   repositoryConfigurationRoot,
   type ProjectRepositoryBindingRead,
   type RepositoryConfigurationIgnored,
@@ -534,4 +538,29 @@ test("an import of a commit declaring none says what its `.chug/` holds instead"
     result: "Imported",
     declarations: 0,
   });
+});
+
+test("a refused import keeps its first refusals and how many there were, and none is no refusal", () => {
+  const refusals = Array.from(
+    { length: repositoryConfigurationImportRefusalsKeptMax + 2 },
+    (_, at) => ({
+      path: `${repositoryConfigurationRoot}work-${String(at)}.json`,
+      fault: "DocumentUnreadable" as const,
+    }),
+  );
+  assert.deepEqual(repositoryConfigurationImportRefusalsKept(refusals), {
+    refusals: refusals.slice(0, repositoryConfigurationImportRefusalsKeptMax),
+    refusalCount: repositoryConfigurationImportRefusalsKeptMax + 2,
+  });
+  assert.deepEqual(
+    repositoryConfigurationImportRefusalsKept(refusals.slice(0, 1)),
+    {
+      refusals: refusals.slice(0, 1),
+      refusalCount: 1,
+    },
+  );
+  assert.throws(
+    () => repositoryConfigurationImportRefusalsKept([]),
+    RangeError,
+  );
 });

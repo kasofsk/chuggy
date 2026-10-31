@@ -729,6 +729,7 @@ test("the authoring rosters are exhaustive over the model unions", () => {
     EnvelopeInvalid: true,
     NameInvalid: true,
     ConfigurationInvalid: true,
+    ConfigurationTooLong: true,
     DuplicateName: true,
     DuplicatePath: true,
     ReferenceAbsent: true,

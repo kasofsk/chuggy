@@ -7,9 +7,15 @@
  * nothing where the line already draws what it came to as no fault.
  */
 
-import type { RepositoryConfigurationImportAttemptResponse } from "../../../../src/contract/responses.ts";
+import type {
+  ProjectRepositoryListedResponse,
+  RepositoryConfigurationImportAttemptResponse,
+  RepositoryConfigurationRefusalResponse,
+} from "../../../../src/contract/responses.ts";
+import type { RepositoryConfigurationFault } from "../../../../src/contract/rosters.ts";
 
 import type { ApiResult } from "./apiRequest.ts";
+import { groupedDigits } from "./figures.ts";
 import { commitLabel, type Label } from "./labels.ts";
 import { repositoryRefusalStatus } from "./projectRepositories.ts";
 
@@ -146,4 +152,78 @@ export function repositoryImportNote(
   if (kept && repositoryImportFaultless(line.word)) return undefined;
   const word = repositoryImportRefusal(pressed.answered);
   return repositoryImportFaultless(word) ? undefined : word;
+}
+
+/** Each fault a refused file is refused for, in the console's words. */
+const repositoryImportFaultWords: Readonly<
+  Record<RepositoryConfigurationFault, string>
+> = {
+  TooManyDeclarations: "Too many files",
+  PathInvalid: "Path not allowed",
+  SymlinkRefused: "Symlink",
+  ContentTooLarge: "File too large",
+  DocumentUnreadable: "Not JSON",
+  EnvelopeInvalid: "Not a configuration file",
+  NameInvalid: "Name invalid",
+  ConfigurationInvalid: "Configuration invalid",
+  ConfigurationTooLong: "Too long",
+  DuplicateName: "Name declared twice",
+  DuplicatePath: "File listed twice",
+  ReferenceAbsent: "Referenced file missing",
+  TooManyReferences: "Too many referenced files",
+};
+
+/** One refusal's fault in words: a configuration too long as its length against the limit, and a missing reference by its path. */
+export function repositoryImportFault(
+  refusal: RepositoryConfigurationRefusalResponse,
+): string {
+  if (
+    refusal.fault === "ConfigurationTooLong" &&
+    refusal.chars !== undefined &&
+    refusal.charsMax !== undefined
+  )
+    return `${groupedDigits(refusal.chars)} of ${groupedDigits(refusal.charsMax)} characters`;
+  if (refusal.fault === "ReferenceAbsent" && refusal.reference !== undefined)
+    return `Missing ${refusal.reference}`;
+  return repositoryImportFaultWords[refusal.fault];
+}
+
+/**
+ * What a refused import says under its line: the first file refused and its
+ * fault, and how many more were. Nothing where the attempt was not refused or
+ * keeps no refusals.
+ */
+export function repositoryImportRefusedFile(
+  lastImport: RepositoryConfigurationImportAttemptResponse | undefined,
+): string | undefined {
+  const outcome = lastImport?.outcome;
+  if (outcome?.result !== "DeclarationsRefused") return undefined;
+  const [first] = outcome.refusals ?? [];
+  if (first === undefined) return undefined;
+  const more = (outcome.refusalCount ?? 1) - 1;
+  return [
+    first.path,
+    repositoryImportFault(first),
+    ...(more > 0 ? [`${groupedDigits(more)} more`] : []),
+  ].join(" · ");
+}
+
+/** What the notice over a project's tickets and its Inbox says of a refused import. */
+export const repositoryImportRefusedLabel = "Import refused";
+
+/**
+ * The live bindings whose newest import was refused, oldest bound first. A
+ * retired binding is never imported again, so its refusal would never clear,
+ * and it counts for nothing.
+ */
+export function repositoryImportsRefused(
+  bindings: readonly ProjectRepositoryListedResponse[],
+): readonly string[] {
+  return bindings
+    .filter(
+      (binding) =>
+        binding.retiredAt === undefined &&
+        binding.lastImport?.outcome.result === "DeclarationsRefused",
+    )
+    .map((binding) => binding.repository);
 }

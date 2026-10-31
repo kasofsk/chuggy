@@ -64,6 +64,7 @@ import { migration094 } from "../../src/adapters/postgres/schema/migrations/094-
 import { migration097 } from "../../src/adapters/postgres/schema/migrations/097-personal-runners-take-no-sessions.ts";
 import { migration098 } from "../../src/adapters/postgres/schema/migrations/098-personal-runners-hold-no-sessions.ts";
 import { migration099 } from "../../src/adapters/postgres/schema/migrations/099-attempt-claimed-at.ts";
+import { migration100 } from "../../src/adapters/postgres/schema/migrations/100-configuration-import-refusals.ts";
 import { migration081 } from "../../src/adapters/postgres/schema/migrations/081-promotion-declined.ts";
 import { migration082 } from "../../src/adapters/postgres/schema/migrations/082-decline-kept-unread.ts";
 import { migration083 } from "../../src/adapters/postgres/schema/migrations/083-attempt-base-ref.ts";
@@ -2264,7 +2265,7 @@ test("067 keeps no attempt for any binding that stood, and lets the API and the 
        VALUES('tenant-5','project-5','repository-5','epoch-5')`,
     );
     assert.equal(await migrationHasFunction(subject, door), false);
-    assert.ok((await postgresMigrate(subject)).includes(migration067.version));
+    await installationAt(subject, migration067.version);
     assert.deepEqual(
       (
         await subject.query(
@@ -2371,7 +2372,7 @@ async function importAttemptBound067(subject: pg.Pool): Promise<void> {
      INSERT INTO project_repository(tenant,project,repository,recovery_epoch)
      VALUES('tenant-5','project-5','repository-5','epoch-5')`,
   );
-  await postgresMigrate(subject);
+  await installationAt(subject, migration067.version);
 }
 
 test("067 keeps one attempt a binding, each replacing the one before, and admits only what an attempt can be", async () => {
@@ -3641,6 +3642,150 @@ test("099 stamps a live attempt a runner holds with its opening and no other, an
           },
         ],
       );
+    },
+  );
+});
+
+/** One attempt written through 100's door, answering the refusal where it was refused. */
+function importAttemptRecorded100(
+  subject: pg.Pool,
+  result: string,
+  refusals: unknown,
+  refusalCount: number | null,
+): Promise<string | undefined> {
+  return subject
+    .query(
+      `SELECT ${repositoryConfigurationImportRecordFunction}
+         ('tenant-5','project-5','repository-5',$1,$2,NULL,$3::jsonb,$4)`,
+      [
+        "a".repeat(40),
+        result,
+        refusals === null ? null : JSON.stringify(refusals),
+        refusalCount,
+      ],
+    )
+    .then(
+      () => undefined,
+      (failure: unknown) => String(failure),
+    );
+}
+
+/** The refusals 100 keeps of the bound repository, beside its result. */
+async function importAttemptKept100(subject: pg.Pool): Promise<unknown> {
+  return (
+    await subject.query(
+      `SELECT result,refusals,refusal_count FROM repository_configuration_import
+        WHERE tenant='tenant-5' AND project='project-5'`,
+    )
+  ).rows;
+}
+
+const importRefusal100 = {
+  path: ".chug/configurations/basic-coding.json",
+  fault: "DocumentUnreadable",
+};
+
+/** A database at 100 holding one bound repository whose refused attempt was kept by 067's door. */
+async function importAttemptBound100(subject: pg.Pool): Promise<void> {
+  await importAttemptBound067(subject);
+  assert.equal(
+    await importAttemptRecorded067(subject, [
+      "repository-5",
+      importAttemptCommit067,
+      "DeclarationsRefused",
+      null,
+    ]),
+    undefined,
+  );
+  await installationAt(subject, migration100.version);
+}
+
+test("100 keeps a refused attempt that stood with no refusals, and replaces 067's door with one keeping them", async () => {
+  await migrationDatabase("configuration_import_refusals", async (subject) => {
+    await importAttemptBound100(subject);
+    assert.deepEqual(await importAttemptKept100(subject), [
+      { result: "DeclarationsRefused", refusals: null, refusal_count: null },
+    ]);
+    assert.equal(
+      await migrationHasFunction(
+        subject,
+        `${repositoryConfigurationImportRecordFunction}(text,text,text,text,text,text)`,
+      ),
+      false,
+    );
+    const door = `${repositoryConfigurationImportRecordFunction}(text,text,text,text,text,text,jsonb,integer)`;
+    assert.deepEqual(await importAttemptDoorDeclared067(subject, door), [
+      {
+        owner: boundaryOwnerRole,
+        definer: true,
+        settings: "search_path=pg_catalog, public, pg_temp",
+        api: true,
+        importer: true,
+        selector: false,
+        public: false,
+      },
+    ]);
+    assert.deepEqual(
+      (
+        (await importAttemptGrants067(subject)) as {
+          privilege_type: string;
+          columns: string;
+        }[]
+      )
+        .filter((grant) => grant.privilege_type === "UPDATE")
+        .map((grant) => grant.columns),
+      ["absent,attempted_at,refusal_count,refusals,repository_commit,result"],
+    );
+  });
+});
+
+/** Six refusals, one more than an attempt keeps. */
+const importRefusals100 = Array.from({ length: 6 }, () => importRefusal100);
+
+/** Each set of refusals 100 refuses, and the constraint it is refused by. */
+const importRefusalsRefused100 = [
+  ["Imported", [importRefusal100], 1, /_refusals_are_a_refused_imports/u],
+  ["DeclarationsRefused", [importRefusal100], null, /_refusals_are_counted/u],
+  ["DeclarationsRefused", null, 1, /_refusals_are_counted/u],
+  ["DeclarationsRefused", importRefusals100, 6, /_refusals_are_bounded/u],
+  ["DeclarationsRefused", [], 1, /_refusals_are_bounded/u],
+  [
+    "DeclarationsRefused",
+    [importRefusal100, importRefusal100],
+    1,
+    /_refusals_are_bounded/u,
+  ],
+  ["DeclarationsRefused", importRefusal100, 1, /_refusals_are_bounded/u],
+] as const;
+
+test("100 keeps refusals only on a refusal, bounded and counted, and the next attempt clears them", async () => {
+  await migrationDatabase(
+    "configuration_import_refusal_rows",
+    async (subject) => {
+      await importAttemptBound100(subject);
+      const kept = importRefusals100.slice(0, 5);
+      assert.equal(
+        await importAttemptRecorded100(subject, "DeclarationsRefused", kept, 6),
+        undefined,
+      );
+      assert.deepEqual(await importAttemptKept100(subject), [
+        { result: "DeclarationsRefused", refusals: kept, refusal_count: 6 },
+      ]);
+      assert.equal(
+        await importAttemptRecorded100(subject, "Imported", null, null),
+        undefined,
+      );
+      assert.deepEqual(await importAttemptKept100(subject), [
+        { result: "Imported", refusals: null, refusal_count: null },
+      ]);
+      for (const [result, refusals, count, refusal] of importRefusalsRefused100)
+        assert.match(
+          String(
+            await importAttemptRecorded100(subject, result, refusals, count),
+          ),
+          refusal,
+          `${result} ${JSON.stringify(refusals)} ${String(count)}`,
+        );
     },
   );
 });

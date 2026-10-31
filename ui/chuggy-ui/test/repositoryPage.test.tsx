@@ -692,6 +692,35 @@ test.each([
   },
 );
 
+test("a refused import names the file it was refused for and its fault under the line", async () => {
+  await drawPage({
+    bound: [
+      attempted({
+        attemptedAt: "2026-10-17T11:59:30.000000Z",
+        commit: attemptCommit,
+        outcome: {
+          result: "DeclarationsRefused",
+          refusals: [
+            {
+              path: ".chug/configurations/basic-coding.json",
+              fault: "ConfigurationTooLong",
+              chars: 70_412,
+              charsMax: 65_536,
+            },
+          ],
+          refusalCount: 3,
+        },
+      }),
+    ],
+  });
+  expect(importLine()).toBe("Last importInvalid30s agocfaca0a");
+  expect(
+    within(sectionOf("Configurations")).getByText(
+      ".chug/configurations/basic-coding.json · 70,412 of 65,536 characters · 2 more",
+    ),
+  ).toBeDefined();
+});
+
 /**
  * The import names the repository and no commit, so the server imports the
  * head it reads; the button is working until the listing it redraws from has
