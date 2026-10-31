@@ -2,11 +2,10 @@
  * The project stream vocabulary: what a frame must carry to be understood, and
  * what a reader may do with it.
  *
- * A change frame's representation is the GET's own body, so the cases that
- * prove it start from `src/adapters/http/outcomes.ts` and feed what it emits
- * back through the stream. Three kinds are written out here instead: `Project`,
- * whose representation is the inventory entry that no encoder emits alone, and
- * `AgenticRefusal` and `Session`, whose encoders arrive with their routes.
+ * A change frame's representation comes from `src/adapters/http/outcomes.ts`,
+ * so these cases start there and feed what it emits to the stream's parser.
+ * `AgenticRefusal` and `Session` are written out instead: the stream sends both
+ * as tombstones, so what is held here is that their schemas admit a body.
  */
 
 import assert from "node:assert/strict";
@@ -15,8 +14,9 @@ import test from "node:test";
 import {
   configurationResponse,
   draftResponse,
-  executionResponse,
+  executionSummaryResponse,
   operationResponse,
+  projectEntryResponse,
   ticketNativeActionsResponse,
   ticketResponse,
 } from "../../src/adapters/http/outcomes.ts";
@@ -33,7 +33,7 @@ import { asTicketId } from "../../src/domain/ids.ts";
 import { populated } from "../interpreter/roster.ts";
 import {
   configuration,
-  execution,
+  executionSummary,
   draft as draftResource,
   operation,
   partition,
@@ -105,14 +105,17 @@ const nativeActionRepresentation = ticketNativeActionsResponse([
   },
 ]).body;
 
-/** One representation per kind, each as the kind's own GET route emits it. */
+/** One representation per kind, each from the builder that kind's frame takes. */
 const representations: Readonly<Record<ProjectChangeKind, unknown>> = {
   Ticket: ticketRepresentation,
-  Execution: executionResponse(execution).body,
+  Execution: executionSummaryResponse(executionSummary).body,
   Draft: draftResponse(draftResource).body,
   Configuration: configurationResponse(configuration).body,
   Operation: operationResponse(operation).body,
-  Project: partition,
+  Project: projectEntryResponse({
+    result: "Found",
+    project: { partition, sequence: 9, tickets: [] },
+  }).body,
   NativeAction: nativeActionRepresentation,
   AgenticRefusal: ticketAgenticRefusalsRepresentation,
   Session: leadRepresentation,
@@ -136,7 +139,7 @@ test("a change frame carries the GET's own representation under its identity", (
   );
 });
 
-test("every kind parses the body its own GET route answers with", () => {
+test("every kind parses the representation its frame carries", () => {
   for (const kind of populated(projectChangeKinds, "the change kinds")) {
     const event = parseProjectStreamEvent({
       event: kind,

@@ -2,25 +2,30 @@
  * The versioned project event stream, as server-sent events.
  *
  * A change frame names its kind in `event:`, the change log's global sequence
- * in `id:`, and carries in `data:` the resource identity together with the
- * representation the kind's GET route would have answered with — exactly that
- * body, parsed here by exactly that schema, which is what
- * `projectChangeRepresentationSchemas` pins kind by kind. A browser writes the
- * representation into its cache under that identity and does not refetch on a
- * live event; a null representation is a tombstone, meaning the resource is no
- * longer readable and the cache entry is dropped. `Project` is the one kind
- * that is not written: its representation is the inventory entry, which is less
- * than a project read returns, so a `Project` frame invalidates the project
- * head and the browser refetches it. `Execution` carries the executions list's
- * row rather than the execution's own read, so a browser folds it into a list
- * and re-reads the execution where it is shown. `NativeAction` names a ticket as its
- * identity too, and carries what that ticket has open for a person to answer
- * rather than the ticket itself: an approval is opened and answered without the
- * ticket's own phase or sequence moving, so the two are separate resources
- * under one identity, and `AgenticRefusal` is the same arrangement for what the
- * lead declined to dispatch. `Session` names a session as its identity and
- * carries the lead read, so a page watching a lead sees a turn move without
- * polling for it. `ready` opens the stream, `reset` says the requested
+ * in `id:`, and carries in `data:` the resource identity together with its
+ * representation, parsed here by the schema that
+ * `projectChangeRepresentationSchemas` pins for the kind. Most kinds carry the
+ * body their GET route answers, which a browser writes into its cache under
+ * that identity without refetching. A null representation is a tombstone: the
+ * frame carries none of the resource, so a browser reads its key again rather
+ * than dropping it, and a list folds the row out.
+ *
+ * `Project` and `Execution` carry less than their own read, so neither is
+ * written. `Project`'s representation is the inventory entry, so a `Project`
+ * frame invalidates the partition and what is mounted under it reads again.
+ * `Execution`'s is the executions list's row, so a browser folds it into a list
+ * and re-reads the execution where it is shown.
+ *
+ * `NativeAction` names a ticket as its identity too, and carries what that
+ * ticket has open for a person to answer rather than the ticket itself: an
+ * approval is opened and answered without the ticket's own phase or sequence
+ * moving, so the two are separate resources under one identity.
+ * `AgenticRefusal` is the same arrangement for what the lead declined to
+ * dispatch, and `Session` names a session as its identity for the lead read.
+ * The schemas of those two admit that body and the stream sends them as
+ * tombstones, so a page watching a lead sees a turn move by reading it again.
+ *
+ * `ready` opens the stream, `reset` says the requested
  * `Last-Event-ID` is no longer retained and the client must reload from the GET
  * routes — each naming in `id:` a sequence the console can resume from, so a
  * console that has seen no change still has a place to keep — and `source`
