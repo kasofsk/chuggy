@@ -24,6 +24,7 @@ import {
 } from "../../src/contract/brief.ts";
 import { briefingLineCharsMax } from "../../src/contract/workerTask.ts";
 import type { ConfigurationOverrides } from "../../src/contract/configurationOverrides.ts";
+import { configurationFollowings } from "../../src/contract/configurationDocument.ts";
 import type { TicketId } from "../../src/domain/ids.ts";
 import {
   asCanonicalConfiguration,
@@ -3335,6 +3336,39 @@ test("a draft's selection is written with its revision and read back, and a cata
     ),
     [{ selection: { evaluation: "tested" } }],
   );
+});
+
+test("a draft's choice of the revision it follows is written and read back as it named it, and released with the ticket", async () => {
+  for (const configuration of configurationFollowings) {
+    const selection = { evaluation: "tested", configuration };
+    const fixture = await draftFixture(
+      catalogConfiguration,
+      postgresHarnessBrief,
+      undefined,
+      selection,
+    );
+    const { partition, store, draft, revision } = fixture;
+    assert.deepEqual(draft.selection, selection);
+    assert.deepEqual(
+      (
+        await store.draftRevision(partition, {
+          ticket: draft.ticket,
+          authoringVersion: draft.authoringVersion,
+          configurationRevision: revision,
+        })
+      )?.selection,
+      selection,
+    );
+    const decide = await fixtureWriter(fixture, `following-${configuration}`);
+    assert.equal(await decide(releaseSubmission(fixture)), "Committed");
+    assert.deepEqual(
+      await harness.query(
+        "SELECT selection FROM ticket_definition WHERE tenant=$1 AND project=$2 AND ticket=$3",
+        [partition.tenant, partition.project, draft.ticket],
+      ),
+      [{ selection }],
+    );
+  }
 });
 
 test("a release's revision is read at the keys it pins, as it was written whatever the draft is revised to, and none is read at keys no revision holds", async () => {

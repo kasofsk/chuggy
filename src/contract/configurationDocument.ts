@@ -784,12 +784,23 @@ export const finalizerSchema = z.strictObject({
   approvalRequired: z.boolean().optional(),
 });
 
-/** The catalog entries a ticket runs on where it selects none. */
+/**
+ * Which revision of its configuration a ticket runs on: the one it was
+ * released on, or the newest of the same repository configuration.
+ */
+export const configurationFollowings = ["Pinned", "Latest"] as const;
+export type ConfigurationFollowing = (typeof configurationFollowings)[number];
+
+export const configurationFollowingSchema = z.enum(configurationFollowings);
+
+/** The catalog entries a ticket runs on where it selects none, and the revision it follows where it chooses none. */
 export const workloadDefaultsSchema = z.strictObject({
   work: configurationCatalogNameSchema,
   evaluation: configurationCatalogNameSchema,
   finalization: configurationCatalogNameSchema.optional(),
+  configuration: configurationFollowingSchema.optional(),
 });
+export type WorkloadDefaults = z.output<typeof workloadDefaultsSchema>;
 
 /** The configuration that is a catalog: workloads, the plans that run them, finalizers, and the defaults. */
 export const workloadConfigurationSchema = z

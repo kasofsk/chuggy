@@ -218,7 +218,9 @@ function Configuration(props: FormDrawn): ReactNode {
 }
 
 /** What each field of a selection is called where it is chosen. */
-const selectionLabels: Readonly<Record<keyof CatalogSelected, string>> = {
+const selectionLabels: Readonly<
+  Record<Exclude<keyof CatalogSelected, "configuration">, string>
+> = {
   work: "Work",
   evaluation: "Evaluation",
   finalization: "Finalizer",

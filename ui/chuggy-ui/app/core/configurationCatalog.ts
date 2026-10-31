@@ -16,7 +16,11 @@
 
 import { z } from "zod";
 
-import { workloadConfigurationVersion } from "../../../../src/contract/configurationDocument.ts";
+import {
+  configurationFollowings,
+  type ConfigurationFollowing,
+  workloadConfigurationVersion,
+} from "../../../../src/contract/configurationDocument.ts";
 import type { ConfigurationSelection } from "../../../../src/contract/configurationSelection.ts";
 import {
   briefFinalizationModes,
@@ -67,6 +71,7 @@ const catalogSchema = z.looseObject({
     work: z.string(),
     evaluation: z.string(),
     finalization: z.string().optional().catch(undefined),
+    configuration: z.enum(configurationFollowings).optional().catch(undefined),
   }),
 });
 
@@ -107,6 +112,7 @@ export interface ConfigurationCatalog {
     readonly work: string;
     readonly evaluation: string;
     readonly finalization?: string;
+    readonly configuration?: ConfigurationFollowing;
   };
 }
 
@@ -168,15 +174,23 @@ export function configurationCatalogOf(
       ...(catalog.defaults.finalization === undefined
         ? {}
         : { finalization: catalog.defaults.finalization }),
+      ...(catalog.defaults.configuration === undefined
+        ? {}
+        : { configuration: catalog.defaults.configuration }),
     },
   };
 }
 
-/** The entries a ticket runs on: what it selects, and the catalog's default for what it does not. */
+/**
+ * The entries a ticket runs on: what it selects, and the catalog's default for
+ * what it does not. The revision it follows is what it chose and nothing else,
+ * so a catalog changing its default moves no ticket that chose.
+ */
 export interface CatalogSelected {
   readonly work: string;
   readonly evaluation: string;
   readonly finalization: string | undefined;
+  readonly configuration: ConfigurationFollowing | undefined;
 }
 
 export function configurationCatalogSelected(
@@ -187,6 +201,7 @@ export function configurationCatalogSelected(
     work: selection?.work ?? catalog.defaults.work,
     evaluation: selection?.evaluation ?? catalog.defaults.evaluation,
     finalization: selection?.finalization ?? catalog.defaults.finalization,
+    configuration: selection?.configuration,
   };
 }
 
@@ -198,7 +213,7 @@ export function configurationCatalogWorkload(
   return catalog.workloads.find((workload) => workload.name === name);
 }
 
-/** The selection with every field naming its default left out, which is the selection a ticket taking it holds. */
+/** The selection with every entry naming its default left out, which is the selection a ticket taking it holds, and the revision it follows where it chose one. */
 export function configurationCatalogSelection(
   catalog: ConfigurationCatalog,
   selected: CatalogSelected,
@@ -213,6 +228,9 @@ export function configurationCatalogSelection(
     selected.finalization === defaults.finalization
       ? {}
       : { finalization: selected.finalization }),
+    ...(selected.configuration === undefined
+      ? {}
+      : { configuration: selected.configuration }),
   };
 }
 

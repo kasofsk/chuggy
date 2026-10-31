@@ -6,6 +6,10 @@
 
 import { expect, test } from "vitest";
 
+import {
+  configurationFollowings,
+  type ConfigurationFollowing,
+} from "../../../src/contract/configurationDocument.ts";
 import type { TicketResponse } from "../../../src/contract/responses.ts";
 import {
   ticketYamlOf,
@@ -228,4 +232,100 @@ test("an edit keeps the draft's selection, and a duplicate the released ticket's
     partial: false,
   });
   expect(seeded.form.selection).toStrictEqual({ evaluation: "gated" });
+});
+
+/** The catalog offer with its defaults naming the revision its tickets follow. */
+function followingOffers(defaulted: ConfigurationFollowing) {
+  const offer = creationCatalogOffer();
+  const { configuration } = offer.initialization;
+  const catalog = JSON.parse(configuration.canonical) as {
+    readonly defaults: object;
+  };
+  return [
+    {
+      ...offer,
+      initialization: {
+        ...offer.initialization,
+        configuration: {
+          ...configuration,
+          canonical: JSON.stringify({
+            ...catalog,
+            defaults: { ...catalog.defaults, configuration: defaulted },
+          }),
+        },
+      },
+    },
+  ];
+}
+
+test("the revision a ticket follows is sent, written and read back as it named it, the catalog's default among them", () => {
+  for (const defaulted of configurationFollowings) {
+    const following = followingOffers(defaulted);
+    const over = { ...context, offers: following };
+    for (const configuration of configurationFollowings) {
+      const form = creationSelectionChosen(
+        { ...catalogForm(), selection: { configuration } },
+        following,
+        { work: "quick", configuration },
+        bound,
+      );
+      const sent = creationBodyFrom(following, form, bound);
+      expect(sent.assembled === "Body" && sent.body.selection).toStrictEqual({
+        work: "quick",
+        configuration,
+      });
+      const text = ticketYamlOf(form, over);
+      expect(text).toContain(`  configuration: ${configuration}\n`);
+      const read = ticketYamlRead(text, over);
+      expect(read.problems).toStrictEqual([]);
+      expect(read.form).toStrictEqual(form);
+    }
+  }
+});
+
+test("a ticket naming no revision writes none and reads back naming none", () => {
+  for (const defaulted of configurationFollowings) {
+    const following = followingOffers(defaulted);
+    const over = { ...context, offers: following };
+    const form = creationSelectionChosen(
+      catalogForm(),
+      following,
+      { work: "quick" },
+      bound,
+    );
+    const text = ticketYamlOf(form, over);
+    expect(text).not.toContain("  configuration:");
+    const read = ticketYamlRead(text, over);
+    expect(read.form?.selection).toStrictEqual({ work: "quick" });
+  }
+});
+
+test("a revision other than Pinned or Latest is refused at its value, and the vocabulary offers those two", () => {
+  const text = "title: t\nintent: i\nselection:\n  configuration: Newest\n";
+  const read = ticketYamlRead(text, context);
+  expect(read.form).toBe(undefined);
+  expect(read.problems.map((problem) => problem.message)).toStrictEqual([
+    "name one of Pinned, Latest",
+  ]);
+  expect(text.slice(read.problems[0]?.from, read.problems[0]?.to)).toBe(
+    "Newest",
+  );
+  const offered = ticketYamlVocabulary(context.base, context).find(
+    (key) => key.key === "configuration" && key.place === "Workload",
+  );
+  expect(offered?.values.map((value) => value.label)).toStrictEqual([
+    "Pinned",
+    "Latest",
+  ]);
+});
+
+test("an edit keeps the revision the draft follows", () => {
+  const draft = {
+    ...creationDraft,
+    configurationRevision: "c1",
+    selection: { configuration: "Pinned" as const },
+  };
+  expect(editFormFrom(draft, bound, "c1").selection).toStrictEqual({
+    configuration: "Pinned",
+  });
 });

@@ -6,8 +6,12 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
+import { configurationFollowings } from "../../src/contract/configurationDocument.ts";
+import { configurationsResponseSchema } from "../../src/contract/responses.ts";
 import {
+  asConfigurationRevisionId,
   canonicalConfigurationOf,
+  configurationRevisionSummary,
   draftInitializationPolicy,
   draftReleaseReadiness,
   releaseConfigurationReadiness,
@@ -23,6 +27,8 @@ import { catalogSelectedFinalizer } from "../../src/interpreter/workloadConfigur
 import { asBriefCheckLine } from "../../src/interpreter/ticketBrief.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
+import { asPublicInstant } from "../../src/interpreter/publicResource.ts";
+import { configurationRevisionDigest } from "../../src/interpreter/configurationDigest.ts";
 import {
   materialDigest,
   releasedTicketDefinition,
@@ -215,6 +221,14 @@ test("a catalog takes overrides of its workloads alone, and a document takes no 
     }),
     { readiness: "Incomplete", fault: "SelectionUnsupported" },
   );
+  for (const configuration of configurationFollowings)
+    assert.deepEqual(
+      draftReleaseReadiness(document, brief, undefined, undefined, {
+        configuration,
+      }),
+      { readiness: "Incomplete", fault: "SelectionUnsupported" },
+      configuration,
+    );
   assert.deepEqual(
     draftReleaseReadiness(document, brief, undefined, {
       workloads: { build: { practices: [] } },
@@ -442,4 +456,78 @@ test("a catalog asks for approval only where the finalizer its ticket selects do
     "a selection the catalog does not hold is a policy finalization cannot read",
   );
   assert.deepEqual(catalogSelectedFinalizer(catalog, undefined), {});
+});
+
+test("a catalog's default revision is Pinned or Latest, and any other is no catalog", () => {
+  for (const configuration of configurationFollowings)
+    assert.equal(
+      releaseConfigurationReadiness(
+        canonicalConfigurationOf({
+          ...catalog,
+          defaults: { ...catalog.defaults, configuration },
+        }),
+      ).readiness,
+      "Ready",
+    );
+  assert.deepEqual(
+    releaseConfigurationReadiness(
+      canonicalConfigurationOf({
+        ...catalog,
+        defaults: { ...catalog.defaults, configuration: "Newest" },
+      }),
+    ),
+    { readiness: "Incomplete", fault: "ReleaseShapeInvalid" },
+  );
+});
+
+test("the revision a ticket follows is no part of what its release resolves, and a catalog naming none digests as it did", () => {
+  const digestOf = (
+    selection: Parameters<typeof ticketConfigurationReadiness>[3],
+  ) =>
+    materialDigest(
+      ticketDefinitionMaterial({
+        authoring: thoroughAuthoring,
+        ticket: ticketOf(selection),
+      }),
+    );
+  const unchosen = digestOf({ evaluation: "thorough" });
+  assert.equal(
+    unchosen,
+    "79e402366fde6e252e89fbd275b93f4b43ae86d7272109e5fea5b25c7c84087f",
+  );
+  for (const configuration of configurationFollowings)
+    assert.equal(
+      digestOf({ evaluation: "thorough", configuration }),
+      unchosen,
+      configuration,
+    );
+  assert.equal(
+    configurationRevisionDigest(canonical),
+    "1534185d9edf8ef65ab3c8b7ebb0635697ccc57213f8cf258e47c4b2b6dda35f",
+  );
+});
+
+test("a configuration summary names the revision its catalog's tickets follow, and none where the catalog names none", () => {
+  const defaultsOf = (defaults: object) => {
+    const summary = configurationsResponseSchema.parse({
+      configurations: [
+        configurationRevisionSummary({
+          revision: asConfigurationRevisionId("revision"),
+          digest: "digest",
+          createdAt: asPublicInstant("2026-10-31T12:00:00Z"),
+          provenance: { source: "Authored" },
+          canonical: canonicalConfigurationOf({ ...catalog, defaults }),
+        }),
+      ],
+    }).configurations[0];
+    return summary?.readiness === "Ready"
+      ? summary.catalog?.defaults
+      : undefined;
+  };
+  for (const configuration of configurationFollowings)
+    assert.deepEqual(defaultsOf({ ...catalog.defaults, configuration }), {
+      ...catalog.defaults,
+      configuration,
+    });
+  assert.deepEqual(defaultsOf(catalog.defaults), catalog.defaults);
 });

@@ -21,6 +21,8 @@ import { Tabs } from "radix-ui";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { TicketBriefBody } from "../../../../src/contract/brief.ts";
+import type { ConfigurationFollowing } from "../../../../src/contract/configurationDocument.ts";
+import { configurationFollowingOf } from "../../../../src/contract/configurationSelection.ts";
 import type {
   ConfigurationResponse,
   DraftResponse,
@@ -863,6 +865,8 @@ function CatalogSummary(props: {
   readonly catalog: ConfigurationCatalog;
   readonly overrides: CatalogOverrides;
   readonly selected: CatalogSelected;
+  /** The revision the ticket runs on, resolved from its choice and then its catalog's. */
+  readonly following: ConfigurationFollowing;
   readonly work: CatalogWorkload | undefined;
 }): ReactNode {
   const { catalog, overrides, selected, work } = props;
@@ -903,6 +907,11 @@ function CatalogSummary(props: {
               : "Lands unapproved"
         }
       />
+      <SummaryCell
+        name="Version"
+        value={props.following}
+        meta={selected.configuration === undefined ? "Default" : "Selected"}
+      />
     </div>
   );
 }
@@ -927,6 +936,7 @@ function CatalogBody(props: {
         catalog={catalog}
         overrides={overrides}
         selected={selected}
+        following={configurationFollowingOf(props.selection, catalog.defaults)}
         work={work}
       />
       <div className="ticket-config-instructions">

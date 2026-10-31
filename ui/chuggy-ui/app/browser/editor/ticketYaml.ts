@@ -58,6 +58,7 @@ import { briefFinalizationModes } from "../../../../../src/contract/rosters.ts";
 import type { BriefFinalizationMode } from "../../../../../src/contract/rosters.ts";
 import { landingEffect } from "../../core/codeLabels.ts";
 import { repositoryLabel } from "../../core/projectRepositories.ts";
+import { configurationFollowings } from "../../../../../src/contract/configurationDocument.ts";
 import type { ConfigurationSelection } from "../../../../../src/contract/configurationSelection.ts";
 import {
   configurationCatalogSelected,
@@ -216,7 +217,7 @@ function ticketYamlCanonical(
     .configuration.canonical;
 }
 
-/** The selection a form runs, every field written out, its catalog's defaults among them. */
+/** The selection a form runs, every entry written out, its catalog's defaults among them, and the revision it follows only where it chose one. */
 function ticketYamlSelectionShown(
   context: TicketYamlContext,
   form: TicketCreationForm,
@@ -230,6 +231,9 @@ function ticketYamlSelectionShown(
     ...(selected.finalization === undefined
       ? {}
       : { finalization: selected.finalization }),
+    ...(selected.configuration === undefined
+      ? {}
+      : { configuration: selected.configuration }),
   };
 }
 
@@ -382,9 +386,10 @@ const ticketYamlSelectionFields = [
   "work",
   "evaluation",
   "finalization",
+  "configuration",
 ] as const;
 
-/** The names one field of a selection may take: the catalog's workloads, plans or finalizers. */
+/** The values one field of a selection may take: the catalog's workloads, plans or finalizers, or the revisions a ticket may follow. */
 function ticketYamlSelectionNames(
   catalog: ConfigurationCatalog,
   field: (typeof ticketYamlSelectionFields)[number],
@@ -396,10 +401,12 @@ function ticketYamlSelectionNames(
       return [...catalog.plans.keys()];
     case "finalization":
       return catalog.finalizers.map((finalizer) => finalizer.name);
+    case "configuration":
+      return configurationFollowings;
   }
 }
 
-/** The selection a text writes, each field a name the catalog holds and a field naming its default left out. */
+/** The selection a text writes, each entry a name the catalog holds and one naming its default left out, and the revision it follows kept as written. */
 function ticketYamlSelectionOf(
   node: unknown,
   catalog: ConfigurationCatalog,
@@ -410,7 +417,11 @@ function ticketYamlSelectionOf(
     return ticketYamlRefused(
       `write the selection as a map of ${ticketYamlSelectionFields.join(", ")}`,
     );
-  const named: Partial<Record<string, string>> = {};
+  const named: {
+    -readonly [
+      Field in keyof ConfigurationSelection
+    ]: ConfigurationSelection[Field];
+  } = {};
   for (const pair of node.items as readonly TicketYamlPair[]) {
     const field = ticketYamlSelectionFields.find(
       (one) => one === ticketYamlKeyNameOf(pair),
@@ -428,7 +439,11 @@ function ticketYamlSelectionOf(
         `name one of ${names.join(", ")}`,
         ticketYamlSpanOf(pair.value),
       );
-    named[field] = text.value;
+    if (field === "configuration")
+      named.configuration = configurationFollowings.find(
+        (following) => following === text.value,
+      );
+    else named[field] = text.value;
   }
   return ticketYamlTook(
     configurationCatalogSelection(
@@ -968,7 +983,7 @@ function ticketYamlConfiguredDescribed(
       values: [],
     },
     selection: {
-      hint: `what this ticket runs from its catalog, each of ${ticketYamlSelectionFields.join(", ")} a name the catalog holds and its default where left out`,
+      hint: `what this ticket runs from its catalog: each of work, evaluation and finalization a name the catalog holds, configuration ${configurationFollowings.join(" or ")}, and each its default where left out`,
       values: [],
     },
     workloads: {
@@ -987,6 +1002,8 @@ function ticketYamlSelectionKeys(
     work: "the workload that does the work",
     evaluation: "the plan whose stages judge the work",
     finalization: "the finalizer that lands the work",
+    configuration:
+      "the revision it runs on: the one it was released on, or the newest",
   } as const;
   return ticketYamlSelectionFields.map((field) => ({
     key: field,

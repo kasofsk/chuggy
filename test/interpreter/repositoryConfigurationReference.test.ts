@@ -18,6 +18,7 @@ import {
   asRecoveryEpoch,
   asTenantId,
 } from "../../src/interpreter/projectStore.ts";
+import { configurationFollowings } from "../../src/contract/configurationDocument.ts";
 import { configurationCanonicalCharsMax } from "../../src/contract/http.ts";
 import { canonicalJson } from "../../src/interpreter/authoring.ts";
 import {
@@ -245,6 +246,36 @@ test("a workload file that is not a workload refuses as an invalid configuration
   assert.equal(found.readiness, "Refused");
   if (found.readiness !== "Refused") return;
   assert.equal(found.faults[0]?.fault, "ConfigurationInvalid");
+});
+
+test("a catalog's default revision imports as Pinned or Latest, and any other value is refused", () => {
+  const importOf = (configuration: unknown) =>
+    repositoryConfigurationImportReadiness({
+      repository,
+      commit,
+      files: [
+        catalogDeclaration({
+          ...catalog,
+          defaults: { ...catalog.defaults, configuration },
+        }),
+      ],
+      referenced: referencedOf(everyFile),
+    });
+  for (const configuration of configurationFollowings) {
+    const found = importOf(configuration);
+    assert.equal(found.readiness, "Ready", configuration);
+    if (found.readiness !== "Ready") continue;
+    const stored = JSON.parse(found.declarations[0]?.canonical ?? "{}") as {
+      readonly defaults?: unknown;
+    };
+    assert.deepEqual(stored.defaults, { ...catalog.defaults, configuration });
+  }
+  for (const configuration of ["Newest", "pinned", ""]) {
+    const found = importOf(configuration);
+    assert.equal(found.readiness, "Refused", configuration);
+    if (found.readiness !== "Refused") continue;
+    assert.equal(found.faults[0]?.fault, "ConfigurationInvalid");
+  }
 });
 
 test("a snapshot naming more files than an import reads is refused whole", () => {

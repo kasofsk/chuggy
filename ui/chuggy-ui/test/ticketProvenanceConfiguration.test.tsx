@@ -405,6 +405,45 @@ test("a catalog draws what the ticket selected of it: its work's prompt, its pla
   expect(screen.queryByText("Do it fast.")).toBeNull();
 });
 
+/** The fixture catalog with its defaults naming the revision its tickets follow. */
+function catalogFollowing(configuration: string): string {
+  const parsed = JSON.parse(creationCatalogCanonical) as {
+    readonly defaults: object;
+  };
+  return JSON.stringify({
+    ...parsed,
+    defaults: { ...parsed.defaults, configuration },
+  });
+}
+
+test("a catalog ticket draws the revision it runs on: its own choice, else its catalog's default, else Pinned", async () => {
+  const cases = [
+    [
+      creationCatalogCanonical,
+      { configuration: "Latest" },
+      "Latest",
+      "Selected",
+    ],
+    [
+      catalogFollowing("Latest"),
+      { configuration: "Pinned" },
+      "Pinned",
+      "Selected",
+    ],
+    [catalogFollowing("Latest"), undefined, "Latest", "Default"],
+    [creationCatalogCanonical, undefined, "Pinned", "Default"],
+  ] as const;
+  for (const [served, selection, value, meta] of cases) {
+    await drawTicket(served, undefined, undefined, selection);
+    await sectionOpened("Provenance");
+    const cell = screen.getByText("Version").closest(".ticket-config-cell");
+    if (!(cell instanceof HTMLElement)) throw new Error("no Version cell");
+    expect(within(cell).getByText(value)).toBeDefined();
+    expect(within(cell).getByText(meta)).toBeDefined();
+    cleanup();
+  }
+});
+
 /** A catalog stage of several evaluators is drawn as a list of them, so the row says they do not run one after another. */
 test("a catalog plan says its stages run in order, and that a stage's several evaluators run side by side", async () => {
   await drawTicket(creationCatalogCanonical, undefined, undefined, {
