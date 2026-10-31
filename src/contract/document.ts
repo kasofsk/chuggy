@@ -4,7 +4,7 @@
  * beside them.
  */
 
-import { z } from "zod";
+import type { z } from "zod";
 import { nativeHttpEndpoints } from "./endpoints.ts";
 
 import {
@@ -39,10 +39,11 @@ import {
 } from "./requests.ts";
 import { workerPoolRedemptionSchema } from "./workerPool.ts";
 import { actionReportDocumentSchema } from "./actionReport.ts";
+import { contractJsonSchemaInput } from "./jsonSchema.ts";
 
 /** A request body as the JSON Schema of what its parser takes, which is the body a client sends. */
 function nativeHttpContractDocumentInput(schema: z.ZodType): unknown {
-  return z.toJSONSchema(schema, { io: "input" });
+  return contractJsonSchemaInput(schema);
 }
 
 /** Every request body the document publishes, as the JSON Schema its own parser induces. */

@@ -35,6 +35,7 @@ import {
   nativeHttpDraftEvaluatorsMax,
   repositoryConfigurationNameCharsMax,
 } from "./http.ts";
+import { contractJsonSchemaInput } from "./jsonSchema.ts";
 import { outputRenderers } from "./rosters.ts";
 import { artifactPathCharsMax } from "./workerDocuments.ts";
 import {
@@ -842,5 +843,5 @@ export const configurationDocumentSchemaMediaType = "application/schema+json";
 
 /** The JSON Schema of one file, as `GET /api/v1/configuration-schema` answers with it. */
 export function configurationDocumentJsonSchema(): z.core.JSONSchema.BaseSchema {
-  return z.toJSONSchema(configurationDocumentSchema, { io: "input" });
+  return contractJsonSchemaInput(configurationDocumentSchema);
 }
