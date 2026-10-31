@@ -136,13 +136,8 @@ function drawInbox(
   return api;
 }
 
-test("a row names the ticket it is about beside its number", async () => {
-  drawInbox(served);
-  expect(await screen.findByText("Serve the reason")).toBeDefined();
-});
-
-test("an answered row stays until a Ticket frame moves it out of the section", async () => {
-  const api = apiDouble({ operation: operationAt("Pending"), route: served });
+/** The inbox over `api`, and the stream its frames are pushed down. */
+function drawInboxOver(api: ApiDouble): ReturnType<typeof openedStream> {
   vi.stubGlobal("fetch", api.fetch);
   const server = openedStream();
   render(
@@ -156,6 +151,17 @@ test("an answered row stays until a Ticket frame moves it out of the section", a
       <InboxScreen partition={atlas} />
     </ScreenHarness>,
   );
+  return server;
+}
+
+test("a row names the ticket it is about beside its number", async () => {
+  drawInbox(served);
+  expect(await screen.findByText("Serve the reason")).toBeDefined();
+});
+
+test("an answered row stays until a Ticket frame moves it out of the section", async () => {
+  const api = apiDouble({ operation: operationAt("Pending"), route: served });
+  const server = drawInboxOver(api);
   await settled();
   expect(screen.getByRole("button", { name: "resume" })).toBeDefined();
 
@@ -354,19 +360,7 @@ test("a ticket escalating while the inbox is open draws how its last run ended",
     operation: operationAt("Pending"),
     route: (url) => served(url, tickets),
   });
-  vi.stubGlobal("fetch", api.fetch);
-  const server = openedStream();
-  render(
-    <ScreenHarness
-      partition={atlas}
-      client={
-        new QueryClient({ defaultOptions: { queries: { retry: false } } })
-      }
-      transport={server.ports.fetch}
-    >
-      <InboxScreen partition={atlas} />
-    </ScreenHarness>,
-  );
+  const server = drawInboxOver(api);
   await settled();
   expect(screen.getByText("Inbox is clear")).toBeDefined();
   tickets = [
