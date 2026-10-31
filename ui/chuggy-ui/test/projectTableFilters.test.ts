@@ -1,6 +1,6 @@
 /**
- * What a filter, an order and a search ask the wire for, what they read and
- * write under, and when they offer a next page.
+ * What a filter, an order and a search ask the wire for, and what they read and
+ * write under.
  */
 
 import { expect, test } from "vitest";
@@ -9,7 +9,6 @@ import { nativeHttpPageItemsMax } from "../../../src/contract/http.ts";
 import {
   ticketFilterAll,
   ticketFilterList,
-  ticketFilterMoreNext,
   ticketFilterPage,
   ticketFilterPhases,
   ticketFilterProjectEmpty,
@@ -20,11 +19,7 @@ import type {
   TicketFilter,
   TicketListAsk,
 } from "../app/core/projectTableFilters.ts";
-import {
-  projectTicketPagesMax,
-  projectTicketRowsEmpty,
-  projectTicketRowsMax,
-} from "../app/core/projectTicketPages.ts";
+import { projectTicketRowsEmpty } from "../app/core/projectTicketPages.ts";
 import { phaseRoster } from "../../../src/contract/rosters.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 
@@ -126,41 +121,6 @@ test("a page after the first carries the cursor it was given", () => {
   expect(
     ticketFilterPage(filtered("Pending"), { read: 0, cursor: "opaque" }).cursor,
   ).toBe("opaque");
-});
-
-test("more is offered from where the last page left off", () => {
-  expect(
-    ticketFilterMoreNext({
-      ...projectTicketRowsEmpty,
-      pagesRead: 1,
-      next: { read: 1, cursor: undefined },
-    }),
-  ).toStrictEqual({ read: 1, cursor: undefined });
-});
-
-test("more is not offered past a bound or with nothing left to read", () => {
-  expect(ticketFilterMoreNext(ended)).toBeUndefined();
-  const again = { read: 0, cursor: "again" };
-  expect(
-    ticketFilterMoreNext({
-      ...projectTicketRowsEmpty,
-      pagesRead: projectTicketPagesMax,
-      next: again,
-    }),
-  ).toBeUndefined();
-  expect(
-    ticketFilterMoreNext({
-      ...projectTicketRowsEmpty,
-      pagesRead: 1,
-      next: again,
-      tickets: Array.from({ length: projectTicketRowsMax }, (_unused, at) => ({
-        ticket: at + 1,
-        phase: "Pending" as const,
-        sequence: 1,
-        ...ticketInstants,
-      })),
-    }),
-  ).toBeUndefined();
 });
 
 test("only the unfiltered, unsearched list, holding nothing and with nothing left to read, says the project is empty", () => {

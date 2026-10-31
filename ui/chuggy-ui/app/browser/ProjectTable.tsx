@@ -19,8 +19,8 @@
  * A read gathers as many pages as the reader had asked for, because the entry
  * it writes is under the partition prefix that the degraded stream's fallback
  * and a `Project` frame both invalidate; rebuilding it from the first page
- * would take a reader's pages away on a timer. "Show more" appends one page to
- * the entry.
+ * would take a reader's pages away on a timer. "Show more" appends to the entry
+ * the next page that adds a row.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -43,7 +43,6 @@ import type { ProjectExecutionIndex } from "../core/projectExecutionIndex.ts";
 import {
   ticketFilterAll,
   ticketFilterList,
-  ticketFilterMoreNext,
   ticketFilterPage,
   ticketFilterProjectEmpty,
   ticketFilterReadsCount,
@@ -55,13 +54,11 @@ import type {
 import { projectTableRows } from "../core/projectTableRows.ts";
 import type { ProjectTableRow } from "../core/projectTableRows.ts";
 import {
-  projectTicketRowsAfterPage,
+  projectTicketRowsHaveMore,
+  projectTicketRowsMore,
   projectTicketRowsRead,
 } from "../core/projectTicketPages.ts";
-import type {
-  ProjectTicketRows,
-  ProjectTicketRowsNext,
-} from "../core/projectTicketPages.ts";
+import type { ProjectTicketRows } from "../core/projectTicketPages.ts";
 import {
   ticketListQueryWith,
   ticketListSearchOf,
@@ -148,23 +145,20 @@ function useTicketRows(
     ticketRowsRead(client, at, partition, ask),
   );
   const rows = state.state === "Ready" && !kept ? state.value : undefined;
-  const next = rows === undefined ? undefined : ticketFilterMoreNext(rows);
-  const readMore = (from: ProjectTicketRowsNext) => {
+  const more =
+    rows === undefined || !projectTicketRowsHaveMore(rows) ? undefined : rows;
+  const readMore = (from: ProjectTicketRows) => {
     setReading(true);
     void (async () => {
-      const answered = await apiProject(
-        ports,
-        partition,
-        ticketFilterPage(ask, from),
-      );
-      client.setQueryData<ProjectTicketRows>(key, (previous) =>
-        previous === undefined
-          ? previous
-          : projectTicketRowsAfterPage(
-              previous,
-              answered,
-              ticketFilterReadsCount(ask),
-            ),
+      await projectTicketRowsMore(
+        from,
+        (update) =>
+          client.setQueryData<ProjectTicketRows>(key, (previous) =>
+            previous === undefined ? previous : update(previous),
+          ),
+        (cursor, read) =>
+          apiProject(ports, partition, ticketFilterPage(ask, { read, cursor })),
+        ticketFilterReadsCount(ask),
       );
       setReading(false);
     })();
@@ -172,10 +166,10 @@ function useTicketRows(
   return {
     state,
     readMore:
-      next === undefined || reading
+      more === undefined || reading
         ? undefined
         : () => {
-            readMore(next);
+            readMore(more);
           },
     reading,
   };

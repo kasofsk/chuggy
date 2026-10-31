@@ -24,7 +24,8 @@
  *
  * A LIST MAY BE MORE THAN ONE READ, each paged to its end before the next
  * begins, and a page that adds no row is not one a reader asked for: a read
- * gathers past it, so a list whose first read is empty opens on its second.
+ * and a "Show more" both gather past it, so a list whose first read is empty
+ * opens on its second and a press draws a row wherever one is left.
  */
 
 import { ticketResponseSchema } from "../../../../src/contract/responses.ts";
@@ -34,7 +35,7 @@ import type {
 } from "../../../../src/contract/responses.ts";
 import type { TicketPhase } from "../../../../src/contract/rosters.ts";
 
-import type { ApiResult } from "./apiRequest.ts";
+import type { ApiFailure, ApiResult } from "./apiRequest.ts";
 import { panelReason } from "./freshness.ts";
 
 export const projectTicketPagesMax = 20;
@@ -140,6 +141,53 @@ export function projectTicketRowsHaveMore(rows: ProjectTicketRows): boolean {
   );
 }
 
+/** Whether a page carries a ticket the rows do not hold yet. */
+function projectTicketRowsAdds(
+  rows: ProjectTicketRows,
+  page: ProjectResponse,
+): boolean {
+  const held = new Set(rows.tickets.map((ticket) => ticket.ticket));
+  return page.tickets.some((ticket) => !held.has(ticket.ticket));
+}
+
+type ProjectTicketPageRead = (
+  cursor: string | undefined,
+  read: number,
+) => Promise<ApiResult<ProjectResponse>>;
+
+/** Where a gather writes each page it reads, answering the rows as they then
+ * stand, or undefined where there are none to write to. */
+type ProjectTicketRowsLand = (
+  update: (rows: ProjectTicketRows) => ProjectTicketRows,
+) => ProjectTicketRows | undefined;
+
+/**
+ * Reads on from `from` until `pages` pages have each added a row, the list's
+ * reads end or a bound is reached, landing every page as it answers. Answers
+ * the refusal that stopped it, if one did; the pages before it have landed.
+ */
+async function projectTicketRowsGather(
+  from: ProjectTicketRows,
+  land: ProjectTicketRowsLand,
+  readPage: ProjectTicketPageRead,
+  reads: number,
+  pages: number,
+): Promise<ApiFailure | undefined> {
+  let rows: ProjectTicketRows | undefined = from;
+  let wanted = pages;
+  for (let page = 0; page < wanted && rows !== undefined; page += 1) {
+    const next: ProjectTicketRowsNext | undefined =
+      rows.pagesRead === 0 ? projectTicketRowsFirst : rows.next;
+    if (next === undefined) break;
+    const answered = await readPage(next.cursor, next.read);
+    if (answered.outcome !== "Ok") return answered;
+    if (!projectTicketRowsAdds(rows, answered.value)) wanted += 1;
+    rows = land((held) => projectTicketRowsAppend(held, answered.value, reads));
+    if (rows === undefined || !projectTicketRowsHaveMore(rows)) break;
+  }
+  return undefined;
+}
+
 /**
  * The pages a read gathers: one on a first read, and as many as the reader had
  * asked for on a refetch, and one more for each that added no row. A refusal is
@@ -149,32 +197,40 @@ export function projectTicketRowsHaveMore(rows: ProjectTicketRows): boolean {
  */
 export async function projectTicketRowsRead(
   previous: ProjectTicketRows | undefined,
-  readPage: (
-    cursor: string | undefined,
-    read: number,
-  ) => Promise<ApiResult<ProjectResponse>>,
+  readPage: ProjectTicketPageRead,
   reads = 1,
 ): Promise<ApiResult<ProjectTicketRows>> {
-  let wanted = Math.max(previous?.pagesRead ?? 1, 1);
   let rows = projectTicketRowsEmpty;
-  for (let page = 0; page < wanted; page += 1) {
-    const next = rows.pagesRead === 0 ? projectTicketRowsFirst : rows.next;
-    if (next === undefined) break;
-    const answered = await readPage(next.cursor, next.read);
-    if (answered.outcome !== "Ok") {
-      const held = rows.pagesRead === 0 ? previous : rows;
-      if (held === undefined) return answered;
-      return {
-        outcome: "Ok",
-        value: projectTicketRowsFailed(held, panelReason(answered)),
-      };
-    }
-    const held = rows.tickets.length;
-    rows = projectTicketRowsAppend(rows, answered.value, reads);
-    if (!projectTicketRowsHaveMore(rows)) break;
-    if (rows.tickets.length === held) wanted += 1;
-  }
-  return { outcome: "Ok", value: rows };
+  const refused = await projectTicketRowsGather(
+    rows,
+    (update) => (rows = update(rows)),
+    readPage,
+    reads,
+    Math.max(previous?.pagesRead ?? 1, 1),
+  );
+  if (refused === undefined) return { outcome: "Ok", value: rows };
+  const held = rows.pagesRead === 0 ? previous : rows;
+  if (held === undefined) return refused;
+  return {
+    outcome: "Ok",
+    value: projectTicketRowsFailed(held, panelReason(refused)),
+  };
+}
+
+/**
+ * What a reader's "Show more" does to the rows `land` holds: one page that adds
+ * a row, read past as many as add none, so a press draws something whenever
+ * the list has anything left. A refusal is recorded on the rows it reached.
+ */
+export async function projectTicketRowsMore(
+  rows: ProjectTicketRows,
+  land: ProjectTicketRowsLand,
+  readPage: ProjectTicketPageRead,
+  reads = 1,
+): Promise<void> {
+  const refused = await projectTicketRowsGather(rows, land, readPage, reads, 1);
+  if (refused !== undefined)
+    land((held) => projectTicketRowsFailed(held, panelReason(refused)));
 }
 
 function projectTicketRowsWithout(

@@ -17,10 +17,7 @@ import type { TicketPhase } from "../../../../src/contract/rosters.ts";
 import type { ProjectPage } from "./apiRoutes.ts";
 import { projectListFolded, projectListReread } from "./projectQueryKeys.ts";
 import type { ProjectList } from "./projectQueryKeys.ts";
-import {
-  projectTicketRowsFold,
-  projectTicketRowsHaveMore,
-} from "./projectTicketPages.ts";
+import { projectTicketRowsFold } from "./projectTicketPages.ts";
 import type {
   ProjectTicketRows,
   ProjectTicketRowsNext,
@@ -128,14 +125,6 @@ export function ticketFilterPage(
   if (read === undefined)
     throw new RangeError(`the ticket list has no read ${String(next.read)}`);
   return next.cursor === undefined ? read : { ...read, cursor: next.cursor };
-}
-
-/** Where the next page is asked for, and undefined when either bound says
- * there is no next page. */
-export function ticketFilterMoreNext(
-  rows: ProjectTicketRows,
-): ProjectTicketRowsNext | undefined {
-  return projectTicketRowsHaveMore(rows) ? rows.next : undefined;
 }
 
 /** Whether a read says the project holds no ticket at all, which only the

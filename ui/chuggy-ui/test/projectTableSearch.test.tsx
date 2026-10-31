@@ -292,3 +292,25 @@ test("one Show more continues the active list into what finished before it, draw
   ]);
   expect(showMores()).toBe(0);
 });
+
+test("a Show more whose first finished page holds only rows already drawn reads past it to one that adds a row", async () => {
+  const drawn = await drawnAt({}, (asked) => {
+    if (asked.get("active") === "true")
+      return served([held(150, "Work"), held(148, "Done")]);
+    if (asked.get("cursor") === "finished-2")
+      return served([held(100, "Revoked")]);
+    return served([held(148, "Done")], { nextCursor: "finished-2" });
+  });
+  await press("Show more");
+  expect(
+    drawn.asked
+      .filter((asked) => asked.has("phase"))
+      .map((asked) => asked.get("cursor")),
+  ).toStrictEqual([null, "finished-2"]);
+  expect(titlesDrawn()).toStrictEqual([
+    "Ticket 150",
+    "Ticket 148",
+    "Ticket 100",
+  ]);
+  expect(showMores()).toBe(0);
+});
