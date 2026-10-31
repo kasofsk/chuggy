@@ -25,6 +25,7 @@ import type { z } from "zod";
 import {
   type agentWorkloadSchema,
   type commandsWorkloadSchema,
+  type ConfigurationFollowing,
   type evaluationPlanStageSchema,
   type finalizerSchema,
   workloadConfigurationSchema,
@@ -77,6 +78,7 @@ export type WorkloadConfiguration = Readonly<Record<string, unknown>> & {
     readonly work: string;
     readonly evaluation: string;
     readonly finalization?: string;
+    readonly configuration?: ConfigurationFollowing;
   };
   readonly outputs?: unknown;
 };
@@ -186,7 +188,7 @@ export type CatalogSelectionRead =
   | { readonly selected: "Selected"; readonly value: CatalogSelection }
   | {
       readonly selected: "Unknown";
-      readonly field: keyof ConfigurationSelection;
+      readonly field: Exclude<keyof ConfigurationSelection, "configuration">;
     };
 
 /** The workload a catalog holds under a name, which readiness has already held to exist. */

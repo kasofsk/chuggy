@@ -10,6 +10,7 @@
  */
 
 import {
+  configurationFollowingSchema,
   configurationReferencePathSchema,
   configurationRequirementCapabilitiesMax,
 } from "./configurationDocument.ts";
@@ -1112,6 +1113,7 @@ const configurationSummarySchema = z.discriminatedUnion("readiness", [
           work: z.string().min(1),
           evaluation: z.string().min(1),
           finalization: z.string().min(1).optional(),
+          configuration: configurationFollowingSchema.optional(),
         }),
       })
       .optional(),

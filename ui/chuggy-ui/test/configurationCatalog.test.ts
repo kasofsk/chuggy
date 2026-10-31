@@ -12,6 +12,7 @@ import {
   configurationCatalogSelected,
   configurationCatalogSelection,
 } from "../app/core/configurationCatalog.ts";
+import { configurationFollowings } from "../../../src/contract/configurationDocument.ts";
 import {
   creationCatalogCanonical,
   creationCatalogOffer,
@@ -67,6 +68,7 @@ test("a selection runs its defaults where it names nothing, and holds only what 
     work: "build",
     evaluation: "review",
     finalization: "land",
+    configuration: undefined,
   });
   const selected = configurationCatalogSelected(read, {
     work: "quick",
@@ -75,6 +77,49 @@ test("a selection runs its defaults where it names nothing, and holds only what 
   expect(configurationCatalogSelection(read, selected)).toStrictEqual({
     work: "quick",
   });
+});
+
+/** The fixture catalog with its defaults naming the revision its tickets follow. */
+function catalogFollowing(configuration: unknown) {
+  const parsed = JSON.parse(creationCatalogCanonical) as {
+    readonly defaults: object;
+  };
+  return configurationCatalogOf(
+    JSON.stringify({
+      ...parsed,
+      defaults: { ...parsed.defaults, configuration },
+    }),
+  );
+}
+
+test("a catalog reads the revision its tickets follow, and a value it cannot read as none", () => {
+  for (const configuration of configurationFollowings)
+    expect(catalogFollowing(configuration)?.defaults.configuration).toBe(
+      configuration,
+    );
+  expect(catalogFollowing("Newest")?.defaults).toStrictEqual(
+    catalog().defaults,
+  );
+});
+
+test("a selection keeps the revision it follows as it named it through a rebuild, the catalog's default among them, and names none where it named none", () => {
+  for (const defaulted of configurationFollowings) {
+    const read = catalogFollowing(defaulted);
+    if (read === undefined) throw new Error("the fixture is a catalog");
+    for (const configuration of configurationFollowings)
+      expect(
+        configurationCatalogSelection(read, {
+          ...configurationCatalogSelected(read, { configuration }),
+          work: "quick",
+        }),
+      ).toStrictEqual({ work: "quick", configuration });
+    expect(
+      configurationCatalogSelection(read, {
+        ...configurationCatalogSelected(read, {}),
+        work: "quick",
+      }),
+    ).toStrictEqual({ work: "quick" });
+  }
 });
 
 test("a selected plan draws the program, its length and the stage its commands run in", () => {

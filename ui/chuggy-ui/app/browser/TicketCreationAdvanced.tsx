@@ -11,7 +11,16 @@
 
 import type { ReactNode } from "react";
 
+import {
+  configurationFollowings,
+  type ConfigurationFollowing,
+} from "../../../../src/contract/configurationDocument.ts";
+import {
+  configurationFollowingOf,
+  type ConfigurationSelection,
+} from "../../../../src/contract/configurationSelection.ts";
 import type { DraftInitializationResponse } from "../../../../src/contract/responses.ts";
+import { configurationCatalogOf } from "../core/configurationCatalog.ts";
 import {
   programPlanned,
   programShort,
@@ -50,10 +59,10 @@ function ChoiceRow<T>(props: {
       <select
         value={render(props.chosen)}
         onChange={(event) => {
-          const found = options.find(
+          const found = options.findIndex(
             (value) => render(value) === event.target.value,
           );
-          if (found !== undefined) onChoose(found);
+          if (found !== -1) onChoose(options[found] as T);
         }}
       >
         {options.map((value) => (
@@ -99,6 +108,45 @@ function Dependencies(
         <p className="panel-note">Not every ticket is listed</p>
       ) : null}
     </fieldset>
+  );
+}
+
+/** The selection with the revision it follows chosen, or left to its catalog. */
+function configurationVersionChosen(
+  selection: ConfigurationSelection,
+  configuration: ConfigurationFollowing | undefined,
+): ConfigurationSelection {
+  const rest = { ...selection };
+  delete rest.configuration;
+  return configuration === undefined ? rest : { ...rest, configuration };
+}
+
+/**
+ * Which revision of a catalog the ticket runs on: one it chose, kept as chosen
+ * even where it is the default, or none, which is the catalog's default.
+ */
+function ConfigurationVersion(
+  props: FormEdit & { readonly initialization: DraftInitializationResponse },
+): ReactNode {
+  const { form, onChange } = props;
+  const catalog = configurationCatalogOf(
+    props.initialization.configuration.canonical,
+  );
+  if (catalog === undefined) return null;
+  const defaulted = configurationFollowingOf(undefined, catalog.defaults);
+  return (
+    <ChoiceRow<ConfigurationFollowing | undefined>
+      label="Configuration version"
+      offered={[undefined, ...configurationFollowings]}
+      chosen={form.selection.configuration}
+      render={(value) => value ?? `Default (${defaulted})`}
+      onChoose={(value) => {
+        onChange({
+          ...form,
+          selection: configurationVersionChosen(form.selection, value),
+        });
+      }}
+    />
   );
 }
 
@@ -208,6 +256,11 @@ export function TicketCreationAdvanced(
   return (
     <Panel title="Advanced" collapsible={{ open: false }}>
       <div className="grid gap-2">
+        <ConfigurationVersion
+          form={form}
+          onChange={onChange}
+          initialization={initialization}
+        />
         <Dependencies
           form={form}
           onChange={onChange}
