@@ -1,7 +1,7 @@
 /**
  * The chat pane's state as the shell holds it: read from the store once, and
- * written back on every move. Until the reader moves it, it is the default the
- * viewport's width decides, so a viewport that changes width redraws it.
+ * held as the core says on every move, which writes it back only where the
+ * viewport divides. A viewport that changes width redraws it.
  *
  * The frame draws from it and the pane's own controls move it, and the two are
  * far enough apart in the tree that passing it down would thread it through
@@ -24,16 +24,17 @@ import {
 import type { ReactNode } from "react";
 
 import {
-  chatPaneDefaultAt,
-  chatPaneRead,
-  chatPaneRestored,
-  chatPaneWrite,
+  chatPaneHoldRead,
+  chatPaneHoldState,
+  chatPaneHoldWritten,
+  chatPaneYielded,
 } from "../../core/chatPane.ts";
 import type { ChatPaneChosen, ChatPaneState } from "../../core/chatPane.ts";
 import { persistentStore } from "../ports.ts";
 
 interface ChatPaneHeld {
   readonly state: ChatPaneState;
+  readonly twoColumn: boolean;
   readonly moveTo: (next: ChatPaneState) => void;
   readonly chosen: ChatPaneChosen | undefined;
   readonly choose: (next: ChatPaneChosen) => void;
@@ -45,18 +46,19 @@ export function ChatPaneProvider(props: {
   readonly twoColumn: boolean;
   readonly children: ReactNode;
 }): ReactNode {
-  const [stored, setStored] = useState<ChatPaneState | undefined>(() =>
-    chatPaneRead(persistentStore),
+  const twoColumn = props.twoColumn;
+  const [hold, setHold] = useState(() => chatPaneHoldRead(persistentStore));
+  const state = chatPaneHoldState(hold, twoColumn);
+  const moveTo = useCallback(
+    (next: ChatPaneState) => {
+      setHold(chatPaneHoldWritten(persistentStore, hold, next, twoColumn));
+    },
+    [hold, twoColumn],
   );
-  const state = stored ?? chatPaneDefaultAt(props.twoColumn);
-  const moveTo = useCallback((next: ChatPaneState) => {
-    chatPaneWrite(persistentStore, next);
-    setStored(next);
-  }, []);
   const [chosen, choose] = useState<ChatPaneChosen | undefined>(undefined);
   const held = useMemo<ChatPaneHeld>(
-    () => ({ state, moveTo, chosen, choose }),
-    [state, moveTo, chosen],
+    () => ({ state, twoColumn, moveTo, chosen, choose }),
+    [state, twoColumn, moveTo, chosen],
   );
   return (
     <chatPaneContext.Provider value={held}>
@@ -74,14 +76,14 @@ export function useChatPane(): ChatPaneHeld {
 
 /**
  * What pressing for a screen does to the pane: one that had filled the body
- * goes back beside the pages, since the reader is asking to see the screen and
- * a pane still over the whole body would answer by drawing the chat again. A
- * pane the reader put away stays away — that press was theirs too.
+ * goes back beside the pages, or to the strip where the viewport does not
+ * divide, since the reader is asking to see the screen. A pane the reader put
+ * away stays away — that press was theirs too.
  */
 export function useChatPaneYields(): () => void {
   const held = useChatPane();
   return () => {
-    if (held.state.presentation === "Full")
-      held.moveTo(chatPaneRestored(held.state));
+    const yielded = chatPaneYielded(held.state, held.twoColumn);
+    if (yielded !== held.state) held.moveTo(yielded);
   };
 }

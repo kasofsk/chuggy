@@ -185,8 +185,8 @@ function chatPaneOpenKey(): string {
 }
 
 /** How much of the frame the pane takes, which is the move a reader makes
- * while reading. Where it sits is set once and lives in the bar's settings
- * menu instead. */
+ * while reading, and only collapsing where the viewport does not divide. Where
+ * it sits is set once and lives in the bar's settings menu instead. */
 function ChatPaneControls(props: {
   readonly placement: ChatPanePlacement;
 }): ReactNode {
@@ -194,7 +194,7 @@ function ChatPaneControls(props: {
   const state = held.state;
   return (
     <>
-      {state.presentation === "Full" ? (
+      {!held.twoColumn ? null : state.presentation === "Full" ? (
         <ChatPaneIconButton
           glyph="restore"
           label="Exit full screen"

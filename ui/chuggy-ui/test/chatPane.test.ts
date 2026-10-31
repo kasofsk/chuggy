@@ -19,6 +19,9 @@ import {
   chatPaneFilled,
   chatPaneHeaderDoor,
   chatPaneHolding,
+  chatPaneHoldRead,
+  chatPaneHoldState,
+  chatPaneHoldWritten,
   chatPaneKept,
   chatPaneLayoutId,
   chatPaneLayoutKept,
@@ -45,6 +48,7 @@ import {
   chatPaneTrailOffered,
   chatPaneTrailStarted,
   chatPaneWrite,
+  chatPaneYielded,
 } from "../app/core/chatPane.ts";
 import type {
   ChatPaneMove,
@@ -102,10 +106,65 @@ test("a pane nobody moved is docked where the viewport divides and over the whol
   const narrow = chatPaneDefaultAt(false);
   expect(narrow).toStrictEqual(chatPaneFilled(chatPaneDefault));
   expect(chatPaneNarrowed(narrow, false)).toStrictEqual(narrow);
-  expect(chatPaneNarrowed(chatPaneRestored(narrow), false)).toStrictEqual({
-    placement: "Bottom",
-    presentation: "Docked",
-  });
+  expect(chatPaneNarrowed(chatPaneRestored(narrow), false)).toStrictEqual(
+    narrow,
+  );
+});
+
+/** Docked under the pages the pane takes a share of every page, so a phone
+ * opens it over the whole body whatever a desk stored. */
+test("below two columns the pane opens over the whole body whatever is stored, and at two columns what is stored wins", () => {
+  for (const presentation of ["Docked", "Full"] as const) {
+    const stored = { placement: "Left", presentation } as const;
+    const hold = chatPaneHoldRead(
+      storeDouble({ [chatPaneStoreKey]: JSON.stringify(stored) }),
+    );
+    expect(chatPaneHoldState(hold, false)).toStrictEqual(
+      chatPaneDefaultAt(false),
+    );
+    expect(chatPaneHoldState(hold, true)).toStrictEqual(stored);
+  }
+  const unstored = chatPaneHoldRead(storeDouble({}));
+  expect(chatPaneHoldState(unstored, true)).toStrictEqual(chatPaneDefault);
+});
+
+test("below two columns a collapse and an expand are held for the page and never stored, so a reload opens it whole", () => {
+  const stored = JSON.stringify(chatPaneDefault);
+  const held: Record<string, string> = { [chatPaneStoreKey]: stored };
+  const store = storeDouble(held);
+  const opened = chatPaneHoldRead(store);
+  const toggled = (hold: typeof opened): typeof opened =>
+    chatPaneHoldWritten(
+      store,
+      hold,
+      chatPaneToggled(chatPaneHoldState(hold, false)),
+      false,
+    );
+  const collapsed = toggled(opened);
+  expect(chatPaneHoldState(collapsed, false).presentation).toBe("Collapsed");
+  expect(chatPaneHoldState(toggled(collapsed), false)).toStrictEqual(
+    chatPaneDefaultAt(false),
+  );
+  expect(held[chatPaneStoreKey]).toBe(stored);
+  expect(chatPaneHoldState(collapsed, true)).toStrictEqual(chatPaneDefault);
+  expect(chatPaneHoldState(chatPaneHoldRead(store), false)).toStrictEqual(
+    chatPaneDefaultAt(false),
+  );
+  const docked = chatPaneHoldWritten(store, collapsed, chatPaneDefault, false);
+  expect(chatPaneHoldState(docked, false).presentation).toBe("Full");
+  expect(held[chatPaneStoreKey]).toBe(stored);
+  const left = chatPaneRepositioned(chatPaneDefault, "Left");
+  chatPaneHoldWritten(store, opened, left, true);
+  expect(chatPaneRead(store)).toStrictEqual(left);
+});
+
+test("pressing for a screen puts a full pane beside the pages at two columns and in the strip below them", () => {
+  const full = chatPaneFilled(chatPaneDefault);
+  expect(chatPaneYielded(full, true)).toStrictEqual(chatPaneDefault);
+  expect(chatPaneYielded(full, false)).toStrictEqual(chatPaneToggled(full));
+  for (const twoColumn of [true, false])
+    for (const state of [chatPaneDefault, chatPaneToggled(chatPaneDefault)])
+      expect(chatPaneYielded(state, twoColumn)).toBe(state);
 });
 
 /** The width the reader leaves the pane at is kept as a layout of its own and
@@ -124,11 +183,15 @@ test("a stored state carrying a width this console no longer keeps still reads",
   });
 });
 
-test("a viewport too narrow to divide stacks a docked pane under the pages", () => {
-  expect(chatPaneNarrowed(chatPaneDefault, false)).toStrictEqual({
-    placement: "Bottom",
-    presentation: "Docked",
-  });
+test("a viewport too narrow to divide draws a docked pane over the whole body", () => {
+  expect(chatPaneNarrowed(chatPaneDefault, false)).toStrictEqual(
+    chatPaneFilled(chatPaneDefault),
+  );
+  for (const placement of chatPanePlacements)
+    expect(
+      chatPaneNarrowed({ placement, presentation: "Docked" }, false)
+        .presentation,
+    ).toBe("Full");
   expect(chatPaneNarrowed(chatPaneDefault, true)).toStrictEqual(
     chatPaneDefault,
   );
@@ -192,9 +255,11 @@ test("the frame divides across for a pane beside the pages or none, and down for
     chatPaneOrientation(chatPaneRepositioned(chatPaneDefault, "Left")),
   ).toBe("horizontal");
   expect(chatPaneOrientation(bottomFull)).toBe("vertical");
-  expect(chatPaneOrientation(chatPaneNarrowed(chatPaneDefault, false))).toBe(
-    "vertical",
-  );
+  expect(
+    chatPaneOrientation(
+      chatPaneNarrowed(chatPaneToggled(chatPaneDefault), false),
+    ),
+  ).toBe("vertical");
   expect(chatPaneOrientation(undefined)).toBe("horizontal");
 });
 
@@ -216,7 +281,9 @@ test("the panels are named in the order drawn: the pages alone, the pane alone, 
     chatPaneLayoutPanels(chatPaneRepositioned(chatPaneDefault, "Left")),
   ).toStrictEqual([chat.Left, pages]);
   expect(
-    chatPaneLayoutPanels(chatPaneNarrowed(chatPaneDefault, false)),
+    chatPaneLayoutPanels(
+      chatPaneNarrowed(chatPaneToggled(chatPaneDefault), false),
+    ),
   ).toStrictEqual([pages, chat.Bottom]);
   expect(chatPaneLayoutPanels(bottomFull)).toStrictEqual([chat.Bottom]);
 });
@@ -457,7 +524,7 @@ test("under the pages the pane keeps the share it was laid at as the frame's hei
  * drag that moves no presentation is not a choice. */
 test("narrowed before the reader chose, the pane is over the whole body, and docked again widened", () => {
   const narrowed = trailWalked(draggedHalf, { move: "Narrowed" });
-  expect(narrowed.chosen).toBeUndefined();
+  expect(narrowed.hold.stored).toBeUndefined();
   expect(chatPaneTrailDrawn(narrowed).state).toStrictEqual(
     chatPaneFilled(chatPaneDefault),
   );
@@ -488,6 +555,37 @@ test("a trail offers the controls the pane draws as presented, and the edge only
   expect(chatPaneTrailOffered(trailWalked({ move: "Narrowed" }))[1]).toBe(
     "Widened",
   );
+});
+
+/** Below two columns the pane is the whole body or the strip, so a trail
+ * there offers no full-screen control and never draws it docked. */
+test("below two columns a trail offers no full screen and draws no pane under the pages", () => {
+  const always = ["Placed", "Widened", "Resized", "Visited", "Reloaded"];
+  const narrowed: ChatPaneMove = { move: "Narrowed" };
+  const docked = trailWalked(draggedHalf, collapsed, expanded, narrowed);
+  expect(docked.hold.stored?.presentation).toBe("Docked");
+  expect(chatPaneTrailDrawn(docked).state.presentation).toBe("Full");
+  expect(chatPaneTrailOffered(docked)).toStrictEqual([...always, "Collapsed"]);
+  const strip = chatPaneTrailMoved(docked, collapsed);
+  expect(chatPaneTrailOffered(strip)).toStrictEqual([
+    ...always,
+    "Expanded",
+    "Dragged",
+  ]);
+  for (const back of [
+    expanded,
+    { move: "Reloaded" },
+    { move: "Dragged", share: 50 },
+  ] satisfies readonly ChatPaneMove[]) {
+    const drawn = chatPaneTrailDrawn(chatPaneTrailMoved(strip, back));
+    expect(drawn.state.presentation, back.move).toBe("Full");
+    expect(drawn.share, back.move).toBeUndefined();
+  }
+  expect(chatPaneTrailMoved(strip, expanded).hold.stored).toBe(
+    docked.hold.stored,
+  );
+  const widened = chatPaneTrailMoved(strip, { move: "Widened" });
+  expect(chatPaneTrailDrawn(widened).state).toStrictEqual(chatPaneDefault);
 });
 
 test("a trail refuses a move the frame does not offer", () => {

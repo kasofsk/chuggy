@@ -12,11 +12,13 @@
  * The placement and the presentation are what a reader chose and what a reload
  * has to keep, so they are read from and written to a key-value store here
  * rather than held only in a component, and so is the share the reader dragged
- * the column to. A reader who has chosen nothing is drawn a default the
- * viewport decides: docked where it divides, and the whole body where it does
- * not, since docked there the pane takes a share of every page. The
- * presentation stays the one record of whether the pane is collapsed: a drag across the
- * collapse threshold moves it, as the pane's own control does.
+ * the column to. A reader who has chosen nothing is drawn docked. Where the
+ * viewport does not divide, the pane is the whole body or the strip and never
+ * docked, since docked there it takes a share of every page; it opens whole on
+ * every load, and what a reader moves it to there is held for the page's life
+ * and never stored. The presentation stays the one record of whether the pane
+ * is collapsed: a drag across the collapse threshold moves it, as the pane's
+ * own control does.
  *
  * THE TRAIL IS THE PANE AFTER A READER'S MOVES, a model the frame is held to:
  * which panels it draws and the pane's share of them, stated as the rules the
@@ -81,8 +83,8 @@ const chatPaneDefaultNarrow: ChatPaneState = {
   presentation: "Full",
 };
 
-/** Where a pane the reader has never moved is drawn from, which is the whole
- * body on a viewport too narrow to divide. */
+/** Where a pane is drawn from on a load until the reader moves it, which is
+ * the whole body on a viewport too narrow to divide. */
 export function chatPaneDefaultAt(twoColumn: boolean): ChatPaneState {
   return twoColumn ? chatPaneDefault : chatPaneDefaultNarrow;
 }
@@ -135,18 +137,86 @@ export function chatPaneStripped(state: ChatPaneState): boolean {
 }
 
 /**
- * The pane as a viewport too narrow to divide can draw it: docked beside the
- * pages it would leave neither a usable width, and its strip beside them takes
- * width the pages cannot spare, so either stacks under them instead. What the
- * reader stored is untouched, and a viewport that widens again draws it where
- * they put it.
+ * The pane as a viewport too narrow to divide can draw it: docked it would take
+ * a share of every page, so it is the whole body there, and its strip beside
+ * the pages takes width they cannot spare, so it stacks under them instead.
  */
 export function chatPaneNarrowed(
   state: ChatPaneState,
   twoColumn: boolean,
 ): ChatPaneState {
-  if (twoColumn || state.presentation === "Full") return state;
-  return { placement: "Bottom", presentation: state.presentation };
+  if (twoColumn) return state;
+  return chatPaneStripped(state)
+    ? { placement: "Bottom", presentation: "Collapsed" }
+    : chatPaneFilled(state);
+}
+
+/** What the shell holds of the pane: what the reader stored, and where a
+ * viewport too narrow to divide has had it moved since the page loaded. */
+export interface ChatPaneHold {
+  readonly stored: ChatPaneState | undefined;
+  readonly paged: ChatPaneState;
+}
+
+export function chatPaneHoldRead(store: KeyValuePort): ChatPaneHold {
+  return chatPaneHoldLoaded(chatPaneRead(store));
+}
+
+/** What a load holds of what the reader stored. */
+export function chatPaneHoldLoaded(
+  stored: ChatPaneState | undefined,
+): ChatPaneHold {
+  return { stored, paged: chatPaneDefaultAt(false) };
+}
+
+/** The pane the shell draws from: what the reader stored where the viewport
+ * divides, else the default, and where it does not, what the page holds. */
+export function chatPaneHoldState(
+  hold: ChatPaneHold,
+  twoColumn: boolean,
+): ChatPaneState {
+  return twoColumn ? (hold.stored ?? chatPaneDefaultAt(true)) : hold.paged;
+}
+
+/** The pane moved, held for the page's life where the viewport does not
+ * divide, and stored where it does. */
+export function chatPaneHoldMoved(
+  hold: ChatPaneHold,
+  next: ChatPaneState,
+  twoColumn: boolean,
+): ChatPaneHold {
+  if (twoColumn) return { stored: next, paged: hold.paged };
+  return { stored: hold.stored, paged: chatPaneNarrowHeld(next) };
+}
+
+/** A move the narrow viewport holds, which is to the strip or the whole body
+ * and never docked. */
+function chatPaneNarrowHeld(state: ChatPaneState): ChatPaneState {
+  return chatPaneStripped(state) ? state : chatPaneFilled(state);
+}
+
+/** The pane moved, and written to the store where it is stored. */
+export function chatPaneHoldWritten(
+  store: KeyValuePort,
+  hold: ChatPaneHold,
+  next: ChatPaneState,
+  twoColumn: boolean,
+): ChatPaneHold {
+  const moved = chatPaneHoldMoved(hold, next, twoColumn);
+  if (moved.stored !== hold.stored && moved.stored !== undefined)
+    chatPaneWrite(store, moved.stored);
+  return moved;
+}
+
+/** What pressing for a screen moves a pane over the whole body to so the
+ * screen is seen: beside the pages where the viewport divides, and the strip
+ * where it does not. Any other pane stays as the reader left it. */
+export function chatPaneYielded(
+  state: ChatPaneState,
+  twoColumn: boolean,
+): ChatPaneState {
+  if (state.presentation !== "Full") return state;
+  return twoColumn ? chatPaneRestored(state) : chatPaneToggled(state);
 }
 
 /** The pane moved to a placement the reader picked, keeping how it takes the
@@ -371,8 +441,9 @@ export interface ChatPaneTrail {
   readonly frame: ChatPaneTrailFrame;
   readonly twoColumn: boolean;
   readonly heightEm: number;
-  /** What the reader chose, which is nothing until they move the pane. */
-  readonly chosen: ChatPaneState | undefined;
+  /** What the reader chose: stored, which is nothing until they move the
+   * pane, and held for the page's life where the frame does not divide. */
+  readonly hold: ChatPaneHold;
   /** The share the reader last dragged the pane open to, by the panels it
    * divided. */
   readonly stored: Readonly<Record<string, number>>;
@@ -428,7 +499,7 @@ export function chatPaneTrailStarted(frame: ChatPaneTrailFrame): ChatPaneTrail {
     frame,
     twoColumn: true,
     heightEm: frame.heightEm,
-    chosen: undefined,
+    hold: chatPaneHoldLoaded(undefined),
     stored: {},
     laid: {},
   };
@@ -437,7 +508,7 @@ export function chatPaneTrailStarted(frame: ChatPaneTrailFrame): ChatPaneTrail {
 /** The pane as the shell holds it, which is the default until the reader
  * chooses. */
 export function chatPaneTrailHeld(trail: ChatPaneTrail): ChatPaneState {
-  return trail.chosen ?? chatPaneDefaultAt(trail.twoColumn);
+  return chatPaneHoldState(trail.hold, trail.twoColumn);
 }
 
 /** A size the pane states, as a share of an axis this many `em` long. */
@@ -513,7 +584,10 @@ function chatPaneTrailDragged(
   const stored = { [drawn.panels.join()]: Math.min(share, bounds.chatMax) };
   return {
     ...trail,
-    chosen: moved === held ? trail.chosen : moved,
+    hold:
+      moved === held
+        ? trail.hold
+        : chatPaneHoldMoved(trail.hold, moved, trail.twoColumn),
     stored: collapsed ? trail.stored : { ...trail.stored, ...stored },
     laid: collapsed ? trail.laid : { ...trail.laid, ...stored },
   };
@@ -543,7 +617,8 @@ export function chatPaneTrailMoved(
 }
 
 /** What one move changes. A thread's own page leaves the frame to draw again
- * what it drew, a height changes no share laid, and a reload forgets them. */
+ * what it drew, a height changes no share laid, and a reload forgets them and
+ * what the page held. */
 function chatPaneTrailChanged(
   trail: ChatPaneTrail,
   move: ChatPaneMove,
@@ -551,7 +626,7 @@ function chatPaneTrailChanged(
   const held = chatPaneTrailHeld(trail);
   const chose = (chosen: ChatPaneState): ChatPaneTrail => ({
     ...trail,
-    chosen,
+    hold: chatPaneHoldMoved(trail.hold, chosen, trail.twoColumn),
   });
   switch (move.move) {
     case "Placed":
@@ -576,7 +651,11 @@ function chatPaneTrailChanged(
     case "Visited":
       return trail;
     case "Reloaded":
-      return { ...trail, laid: {} };
+      return {
+        ...trail,
+        hold: chatPaneHoldLoaded(trail.hold.stored),
+        laid: {},
+      };
     case "Dragged":
       return chatPaneTrailDragged(trail, move.share);
   }
@@ -584,7 +663,8 @@ function chatPaneTrailChanged(
 
 /** The moves the frame offers the reader now: the gear, the window, a thread
  * and a reload always, the edge wherever it is drawn, and the controls the
- * pane draws as it is presented. */
+ * pane draws as it is presented, which take it to or from the whole body only
+ * where the frame divides. */
 export function chatPaneTrailOffered(
   trail: ChatPaneTrail,
 ): readonly ChatPaneMove["move"][] {
@@ -601,7 +681,9 @@ export function chatPaneTrailOffered(
     case "Collapsed":
       return [...always, "Expanded", "Dragged"];
     case "Full":
-      return [...always, "Collapsed", "Restored"];
+      return trail.twoColumn
+        ? [...always, "Collapsed", "Restored"]
+        : [...always, "Collapsed"];
   }
 }
 
