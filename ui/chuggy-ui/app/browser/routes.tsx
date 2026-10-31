@@ -21,7 +21,7 @@ import type {
   ErrorComponentProps,
   RouterHistory,
 } from "@tanstack/react-router";
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import type { ReactNode } from "react";
 
 import { apiProjectInventoryAll } from "../core/apiRoutes.ts";
@@ -43,6 +43,8 @@ import {
 } from "../core/projectCreation.ts";
 import type { ProjectCreationQuery } from "../core/projectCreation.ts";
 import { ticketDuplicateQueryOf } from "../core/ticketDuplicate.ts";
+import { ticketListQueryOf } from "../core/ticketListView.ts";
+import type { TicketListQuery } from "../core/ticketListView.ts";
 import type { TicketDuplicateQuery } from "../core/ticketDuplicate.ts";
 import { usePanelInventory } from "./api.ts";
 import { CatalogPage } from "./catalog/CatalogPage.tsx";
@@ -147,10 +149,26 @@ const partitionRoute = createRoute({
   component: PartitionLayout,
 });
 
+/** The ticket list, whose search and sort are the address's, written in place
+ * rather than pushed, so typing is not a history of its own. */
+function ProjectTableRoute(): ReactNode {
+  const navigate = useNavigate({ from: projectRoute.fullPath });
+  const onQuery = useCallback(
+    (query: TicketListQuery) => {
+      void navigate({ search: query, replace: true });
+    },
+    [navigate],
+  );
+  return <ProjectTable query={projectRoute.useSearch()} onQuery={onQuery} />;
+}
+
 const projectRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/",
-  component: ProjectTable,
+  component: ProjectTableRoute,
+  validateSearch: (
+    search: Readonly<Record<string, unknown>>,
+  ): TicketListQuery => ticketListQueryOf(search),
 });
 
 const inboxRoute = createRoute({

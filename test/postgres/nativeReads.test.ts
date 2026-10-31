@@ -11,7 +11,10 @@ import {
 } from "./harness.ts";
 import { seedOpenAction } from "./nativeActionFixture.ts";
 import { postgresReadHarness } from "./readHarness.ts";
-import type { TicketResource } from "../../src/interpreter/nativeWeb.ts";
+import type {
+  ProjectReadQuery,
+  TicketResource,
+} from "../../src/interpreter/nativeWeb.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import { id } from "../domain/fixtures.ts";
 import { encodeEntry } from "../../src/interpreter/wire.ts";
@@ -58,6 +61,7 @@ async function seedEntry(
   label: string,
   seq: number,
   entry = JSON.stringify({ seq, event: { type: "TicketRevoked", value: 1 } }),
+  committedAt = new Date(seededEntryAt(seq)),
 ): Promise<void> {
   const submission = postgresHarnessSubmission(partition, label);
   await subject.harness.inbox.accept(submission);
@@ -80,7 +84,7 @@ async function seedEntry(
       `digest-${label}`,
       epoch,
       submission.operation,
-      new Date(seededEntryAt(seq)).toISOString(),
+      committedAt.toISOString(),
       entry,
     ],
   );
@@ -1096,4 +1100,160 @@ test("a ticket names the member its first revision was drafted under, in the det
       `the ${order} page answers what the detail read does`,
     );
   }
+});
+
+const hourMs = 3_600_000;
+
+/**
+ * Tickets whose titles a search can and cannot hold, a literal `%` and `_`
+ * among them, and a number that is a prefix of another's. Ticket 2 finished a
+ * day and an hour ago and ticket 3 an hour ago; ticket 1 is Pending and has not
+ * moved since the year began.
+ */
+async function seedSearchable(label: string): Promise<Partition> {
+  const partition = await postgresHarnessProject(subject.harness.store, label);
+  const keys = [partition.tenant, partition.project];
+  const nowMs = Date.now();
+  const tickets = [
+    [1, "Pending", "Fix the gate", undefined],
+    [2, "Done", "Reach 100% coverage", nowMs - 25 * hourMs],
+    [3, "Done", "The gate_keeper", nowMs - hourMs],
+    [4, "Work", "Plain work", undefined],
+    [5, "Revoked", "100 percent of nothing", undefined],
+    [12, "Work", "Ticket twelve", undefined],
+    [121, "Work", "Another GATE", undefined],
+  ] as const;
+  await subject.harness.query(
+    `UPDATE project SET head=${String(tickets.length)} WHERE tenant=$1 AND project=$2`,
+    keys,
+  );
+  for (const [index, [ticket, phase, title, finishedMs]] of tickets.entries()) {
+    const seq = index + 1;
+    await seedEntry(
+      partition,
+      `${label}-${String(ticket)}`,
+      seq,
+      undefined,
+      finishedMs === undefined ? undefined : new Date(finishedMs),
+    );
+    await subject.harness.query(
+      `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq)
+       VALUES ($1,$2,$3,$4,$5)`,
+      [...keys, ticket, phase, seq],
+    );
+    await subject.harness.query(
+      `INSERT INTO ticket_definition (tenant,project,ticket,definition,digest,brief)
+       VALUES ($1,$2,$3,'{}','digest',$4)`,
+      [...keys, ticket, JSON.stringify({ title })],
+    );
+  }
+  return partition;
+}
+
+/** Every ticket a walk of `query` reaches, one page of `limit` at a time, in the order it reached them, with the count each page answered. */
+async function searchWalked(
+  partition: Partition,
+  query: Omit<ProjectReadQuery, "limit">,
+  limit: number,
+): Promise<{ readonly tickets: number[]; readonly matched: unknown[] }> {
+  const reads = postgresNativeReads(subject.pool);
+  const tickets: number[] = [];
+  const matched: unknown[] = [];
+  let next: Partial<ProjectReadQuery> = {};
+  for (let page = 0; page < 20; page += 1) {
+    const read = await reads.project(partition, { ...query, ...next, limit });
+    assert.equal(read.result, "Found");
+    if (read.result !== "Found") break;
+    tickets.push(...read.project.tickets.map(({ ticket }) => ticket));
+    matched.push(read.project.matched);
+    const { nextAfter, nextRecentActivityAfter, nextNumberAfter } =
+      read.project;
+    if (nextAfter !== undefined) next = { after: nextAfter };
+    else if (nextRecentActivityAfter !== undefined)
+      next = { recentActivityAfter: nextRecentActivityAfter };
+    else if (nextNumberAfter !== undefined)
+      next = { numberAfter: nextNumberAfter };
+    else return { tickets, matched };
+  }
+  throw new Error("native read case: a walk did not end");
+}
+
+test("a search matches part of a title ignoring case, or the ticket's whole number", async () => {
+  const partition = await seedSearchable("native-search");
+  const tickets = async (search: string) =>
+    (await searchWalked(partition, { search }, 100)).tickets;
+  assert.deepEqual(await tickets("gate"), [1, 3, 121]);
+  assert.deepEqual(await tickets("%"), [2], "a % is itself and no wildcard");
+  assert.deepEqual(await tickets("_"), [3], "an _ is itself and no wildcard");
+  assert.deepEqual(await tickets("#121"), [121]);
+  assert.deepEqual(await tickets("121"), [121]);
+  assert.deepEqual(await tickets("#12"), [12]);
+  assert.deepEqual(await tickets("#12a"), []);
+});
+
+test("a search's count is every ticket it matched, on every page of its walk", async () => {
+  const partition = await seedSearchable("native-search-count");
+  const walked = await searchWalked(
+    partition,
+    { search: "gate", order: "RecentActivity" },
+    1,
+  );
+  assert.deepEqual(walked.tickets, [121, 3, 1]);
+  assert.deepEqual(walked.matched, [3, 3, 3]);
+  const done = await searchWalked(
+    partition,
+    {
+      search: "gate",
+      phaseFilter: { selection: "Selected", phases: ["Done"] },
+    },
+    1,
+  );
+  assert.deepEqual(done, { tickets: [3], matched: [1] });
+  assert.deepEqual(
+    (await searchWalked(partition, {}, 100)).matched,
+    [undefined],
+    "a read naming no search counts nothing",
+  );
+});
+
+test("the orders by number walk every ticket once, across pages, from either end", async () => {
+  const partition = await seedSearchable("native-number-orders");
+  const every = [1, 2, 3, 4, 5, 12, 121];
+  assert.deepEqual(
+    (await searchWalked(partition, { order: "Oldest" }, 2)).tickets,
+    every,
+  );
+  assert.deepEqual(
+    (await searchWalked(partition, { order: "Newest" }, 2)).tickets,
+    every.toReversed(),
+  );
+  assert.deepEqual(
+    (
+      await searchWalked(
+        partition,
+        { order: "Newest", phaseFilter: { selection: "NonTerminal" } },
+        2,
+      )
+    ).tickets,
+    [121, 12, 4, 1],
+  );
+});
+
+test("the active list holds a quiet Pending ticket and what finished within the window, and nothing finished before it", async () => {
+  const partition = await seedSearchable("native-active");
+  assert.deepEqual(
+    (
+      await searchWalked(
+        partition,
+        { active: true, order: "RecentActivity" },
+        2,
+      )
+    ).tickets,
+    [121, 12, 4, 3, 1],
+  );
+  assert.deepEqual(
+    (await searchWalked(partition, { active: true, search: "gate" }, 100))
+      .tickets,
+    [1, 3, 121],
+  );
 });

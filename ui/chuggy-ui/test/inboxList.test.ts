@@ -212,7 +212,7 @@ test("a count with a further page unread says so, at the page cap too", () => {
         "again",
       ),
     );
-  expect(walked.nextCursor).toBe("again");
+  expect(walked.next?.cursor).toBe("again");
   expect(phaseCountLabel(walked)).toBe(`${String(projectTicketPagesMax)}+`);
   expect(
     phaseCountLabel(

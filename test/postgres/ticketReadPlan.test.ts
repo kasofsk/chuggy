@@ -11,7 +11,8 @@
  * carries a JIT block: a server that could not JIT would otherwise pass the
  * case for the wrong reason. The identity page is not controlled, because on
  * an empty projection its limit over the key's order is planned cheap at
- * either estimate.
+ * either estimate, and neither is the searched page, whose rows are read by
+ * identity once its positions are picked.
  */
 
 import assert from "node:assert/strict";
@@ -69,6 +70,17 @@ const ticketReadsPlanned: readonly TicketReadPlanned[] = [
     read: (reads, partition) =>
       reads.project(partition, { order: "RecentActivity", limit: 100 }),
     controlled: true,
+  },
+  {
+    name: "the searched active page",
+    read: (reads, partition) =>
+      reads.project(partition, {
+        order: "RecentActivity",
+        limit: 100,
+        search: "gate",
+        active: true,
+      }),
+    controlled: false,
   },
   {
     name: "the ticket read",

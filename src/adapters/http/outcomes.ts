@@ -147,6 +147,7 @@ import {
   encodeLatestExecutionCursor,
   encodeNativeActionCursor,
   encodeTicketActivityCursor,
+  encodeTicketNumberCursor,
 } from "./contract.ts";
 import {
   encodeDispatchViewResponse,
@@ -479,6 +480,17 @@ export function projectResponse(result: ProjectRead): NativeHttpResponse {
                 result.project.nextRecentActivityAfter,
               ),
             }),
+        ...(result.project.nextNumberAfter === undefined
+          ? {}
+          : {
+              nextCursor: encodeTicketNumberCursor(
+                result.project.partition,
+                result.project.nextNumberAfter,
+              ),
+            }),
+        ...(result.project.matched === undefined
+          ? {}
+          : { matched: result.project.matched }),
       });
   }
 }

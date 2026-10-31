@@ -25,6 +25,7 @@
 
 import {
   hashKey,
+  keepPreviousData,
   notifyManager,
   queryOptions,
   useQueries,
@@ -304,6 +305,28 @@ export function usePanelList<T>(
 ): PanelState<T> {
   useProjectListRefresh(list);
   return usePanelQuery(list.key, read, polledMs);
+}
+
+/**
+ * A list as `usePanelList` reads it, whose key moves with what a reader asks
+ * for: the entry it moved from is drawn until the new key answers, so the rows
+ * on screen stand while the next ones are read. `kept` says the rows drawn are
+ * that earlier entry's, which nothing may be appended to under the new key.
+ */
+export function usePanelListKept<T>(
+  list: ProjectList<T>,
+  read: PanelRead<T>,
+): { readonly state: PanelState<T>; readonly kept: boolean } {
+  useProjectListRefresh(list);
+  const ports = useApiPorts();
+  const query = useQuery({
+    ...panelQueryOptions(ports, list.key, read, undefined),
+    placeholderData: keepPreviousData,
+  });
+  return {
+    state: usePanelAbsenceKept(list.key, query, panelQueryState(query)),
+    kept: query.isPlaceholderData,
+  };
 }
 
 /**

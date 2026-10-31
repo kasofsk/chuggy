@@ -12,6 +12,7 @@ import {
   asPublicInstant,
   checkedProjectReadQuery,
   nativeActionPageLimitMax,
+  ticketSearchNumber,
   nativeWeb,
   oidcPrincipal,
   type NativeRepositoryConfigurationImportPorts,
@@ -124,6 +125,46 @@ test("ticket ordering cursors cannot cross ordering contracts", () => {
       recentActivityAfter: { sequence: 2, ticket: id(1) },
     }),
   );
+});
+
+test("a project read's search is trimmed and bounded, and a number cursor names the order it is read in", () => {
+  assert.doesNotThrow(() =>
+    checkedProjectReadQuery({ limit: 10, search: "#121", active: true }),
+  );
+  for (const search of ["", " gate", "x".repeat(201)])
+    assert.throws(
+      () => checkedProjectReadQuery({ limit: 10, search }),
+      RangeError,
+    );
+  assert.doesNotThrow(() =>
+    checkedProjectReadQuery({
+      limit: 10,
+      order: "Newest",
+      numberAfter: { order: "Newest", ticket: id(4) },
+    }),
+  );
+  assert.throws(
+    () =>
+      checkedProjectReadQuery({
+        limit: 10,
+        order: "Oldest",
+        numberAfter: { order: "Newest", ticket: id(4) },
+      }),
+    RangeError,
+  );
+  assert.throws(
+    () => checkedProjectReadQuery({ limit: 10, order: "Oldest", after: id(4) }),
+    RangeError,
+  );
+});
+
+test("a search names a ticket by its whole number, with or without a leading #", () => {
+  assert.equal(ticketSearchNumber("121"), 121);
+  assert.equal(ticketSearchNumber("#121"), 121);
+  assert.equal(ticketSearchNumber("#12a"), undefined);
+  assert.equal(ticketSearchNumber("1.5"), undefined);
+  assert.equal(ticketSearchNumber("0"), undefined);
+  assert.equal(ticketSearchNumber("9".repeat(20)), undefined);
 });
 
 function ticketRead(calls: string[]): NativeReadStore["ticket"] {

@@ -15,8 +15,8 @@ import { ticketRowsRead } from "../app/browser/ProjectTable.tsx";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
 import { projectExecutionPage } from "../app/core/projectExecutionIndex.ts";
 import {
-  ticketFilterAll,
   ticketFilterList,
+  ticketListAskDefault,
 } from "../app/core/projectTableFilters.ts";
 import { projectTicketRowsEmpty } from "../app/core/projectTicketPages.ts";
 import { ticketInstants } from "./ticketInstants.ts";
@@ -61,13 +61,13 @@ test("the ticket read takes its page count from the entry it is replacing", asyn
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  client.setQueryData(ticketFilterList(partition, ticketFilterAll).key, {
+  client.setQueryData(ticketFilterList(partition, ticketListAskDefault).key, {
     ...projectTicketRowsEmpty,
     pagesRead: 3,
-    nextCursor: "after-0",
+    next: { read: 0, cursor: "after-0" },
   });
   const held = recording();
-  await ticketRowsRead(client, held.ports, partition, ticketFilterAll);
+  await ticketRowsRead(client, held.ports, partition, ticketListAskDefault);
   expect(held.urls.length).toBe(3);
 });
 
@@ -77,7 +77,7 @@ test("a first read of an entry nothing has written asks for one page", async () 
     new QueryClient({ defaultOptions: { queries: { retry: false } } }),
     held.ports,
     partition,
-    ticketFilterAll,
+    ticketListAskDefault,
   );
   expect(held.urls.length).toBe(1);
 });

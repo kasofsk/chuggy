@@ -30,7 +30,11 @@ import {
   type ExecutionStatus,
 } from "../../interpreter/executionScheduler.ts";
 import type { ForgeInstallationId } from "../../interpreter/forgeInstallation.ts";
-import type { Principal } from "../../interpreter/nativeWeb.ts";
+import type {
+  Principal,
+  ProjectReadQuery,
+  TicketNumberOrder,
+} from "../../interpreter/nativeWeb.ts";
 import {
   executionSelectionRefused,
   type ExecutionListQuery,
@@ -80,6 +84,7 @@ import {
 import {
   agenticRefusalsAnsweredMax,
   imageMediaTypes,
+  isBoundedText,
   nativeHttpBodyBytesMax,
   nativeHttpError,
   nativeHttpHeaderBytesMax,
@@ -89,6 +94,7 @@ import {
   projectArtifactUploadBytesMax,
   selectorHistoryLimitMax,
   selectorProposalDispatchesAnsweredMax,
+  ticketSearchCharsMax,
 } from "../../contract/http.ts";
 import { asProjectArtifactId } from "../../interpreter/finalizerPreparation.ts";
 import {
@@ -99,6 +105,7 @@ import {
   parseInventoryCursor,
   parseNativeActionCursor,
   parseTicketActivityCursor,
+  parseTicketNumberCursor,
   parseForgeAuthorization,
   parseForgeCredentialRequest,
   parseForgeInstallationId,
@@ -675,45 +682,100 @@ function partitionOf(
   );
 }
 
+/**
+ * A project read's parameters. `after` is identity's cursor and the public
+ * number it always was; every other order resumes from an opaque cursor of its
+ * own, and a cursor one order issued is refused by another.
+ */
+function projectReadQueryOf(
+  value: unknown,
+  partition: Partition,
+): ProjectReadQuery {
+  const query = fieldsOnly(value, [
+    "active",
+    "after",
+    "cursor",
+    "limit",
+    "minimumSequence",
+    "order",
+    "phase",
+    "q",
+  ]);
+  const after = query["after"];
+  const order = query["order"];
+  if (
+    order !== undefined &&
+    order !== "RecentActivity" &&
+    order !== "Newest" &&
+    order !== "Oldest"
+  )
+    throw new TypeError("order is invalid");
+  if (query["cursor"] !== undefined && order === undefined)
+    throw new TypeError("cursor requires an order");
+  if (after !== undefined && order !== undefined)
+    throw new TypeError("after orders identity alone");
+  return {
+    ...(after === undefined ? {} : { after: asTicketIdField(query, "after") }),
+    limit: integerField(query, "limit", 50),
+    ...(order === undefined ? {} : { order }),
+    ...(query["cursor"] === undefined || order === undefined
+      ? {}
+      : projectReadCursor(textField(query, "cursor"), order, partition)),
+    ...(query["minimumSequence"] === undefined
+      ? {}
+      : { minimumSequence: integerField(query, "minimumSequence") }),
+    ...phaseFilter(query["phase"]),
+    ...(query["q"] === undefined ? {} : { search: searchField(query, "q") }),
+    ...(query["active"] !== undefined && activeField(query["active"])
+      ? { active: true }
+      : {}),
+  };
+}
+
+/** The position an order's own cursor names, refusing one another order issued. */
+function projectReadCursor(
+  cursor: string,
+  order: "RecentActivity" | TicketNumberOrder,
+  partition: Partition,
+): Pick<ProjectReadQuery, "recentActivityAfter" | "numberAfter"> {
+  if (order === "RecentActivity")
+    return {
+      recentActivityAfter: parseTicketActivityCursor(cursor, partition),
+    };
+  const numberAfter = parseTicketNumberCursor(cursor, partition);
+  if (numberAfter.order !== order)
+    throw new RangeError("cursor belongs to another order");
+  return { numberAfter };
+}
+
+/** A search as a ticket list is read under: trimmed, and then neither empty nor past its bound. */
+function searchField(
+  fields: Readonly<Record<string, unknown>>,
+  name: string,
+): string {
+  const search = textField(fields, name).trim();
+  if (!isBoundedText(search, ticketSearchCharsMax))
+    throw new RangeError(
+      `${name} must be from 1 to ${String(ticketSearchCharsMax)} characters`,
+    );
+  return search;
+}
+
+function activeField(value: unknown): boolean {
+  if (value === "true") return true;
+  if (value === "false") return false;
+  throw new TypeError("active is not true or false");
+}
+
 function registerProject(app: FastifyInstance, web: InitialNativeWeb): void {
   const root = "/api/v1/tenants/:tenant/projects/:project";
   const projectRead = async (request: FastifyRequest, reply: FastifyReply) => {
-    const query = fieldsOnly(request.query, [
-      "after",
-      "cursor",
-      "limit",
-      "minimumSequence",
-      "order",
-      "phase",
-    ]);
-    const after = query["after"];
-    const order = query["order"];
-    if (order !== undefined && order !== "RecentActivity")
-      throw new TypeError("order is invalid");
-    if (query["cursor"] !== undefined && order !== "RecentActivity")
-      throw new TypeError("cursor requires recent activity order");
-    if (after !== undefined && order === "RecentActivity")
-      throw new TypeError("after cannot order recent activity");
     const partition = partitionOf(request);
-    const result = await web.project(principalOf(request), partition, {
-      ...(after === undefined
-        ? {}
-        : { after: asTicketIdField(query, "after") }),
-      limit: integerField(query, "limit", 50),
-      ...(order === undefined ? {} : { order }),
-      ...(query["cursor"] === undefined
-        ? {}
-        : {
-            recentActivityAfter: parseTicketActivityCursor(
-              textField(query, "cursor"),
-              partition,
-            ),
-          }),
-      ...(query["minimumSequence"] === undefined
-        ? {}
-        : { minimumSequence: integerField(query, "minimumSequence") }),
-      ...phaseFilter(query["phase"]),
-    });
+    const result = await web.project(
+      principalOf(request),
+      partition,
+      projectReadQueryOf(request.query, partition),
+    );
     nativeHttpSend(reply, projectResponse(result));
   };
   app.get(root, projectRead);
