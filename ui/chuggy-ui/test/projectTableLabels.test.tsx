@@ -42,10 +42,6 @@ import {
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import {
-  ticketDispatchViewOf,
-  ticketPageCandidate,
-} from "./ticketPageFixture.ts";
-import {
   abilitiesEvery,
   abilitiesOver,
   abilitiesUnrefusing,
@@ -154,23 +150,6 @@ async function drawTableWith(
     operation: { operation: "op-one", state: "Pending" },
     route: (url) => {
       if (url.includes("/executions")) return answer({ executions });
-      if (url.includes("/dispatch-view"))
-        return answer(
-          ticketDispatchViewOf(
-            atlas,
-            tickets.flatMap((one) => {
-              const held = one as {
-                readonly ticket: number;
-                readonly phase: string;
-                readonly openDependencies?: readonly unknown[];
-              };
-              return held.phase === "Pending" &&
-                (held.openDependencies ?? []).length === 0
-                ? [{ ...ticketPageCandidate, ticket: held.ticket }]
-                : [];
-            }),
-          ),
-        );
       const phases = new URL(url, "http://stub").searchParams.getAll("phase");
       return answer({
         partition: atlas,
@@ -315,6 +294,7 @@ test("a row with nothing joined draws no chip for its execution", () => {
     repository: undefined,
     creator: undefined,
     phase: "Work",
+    sequence: 1,
     badge: undefined,
     executionVerdict: undefined,
     runsOn: undefined,

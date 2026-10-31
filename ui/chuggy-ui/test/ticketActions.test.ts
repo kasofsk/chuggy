@@ -13,7 +13,7 @@ import { escalationKinds, phaseRoster } from "../../../src/contract/rosters.ts";
 import type { TicketPhase } from "../../../src/contract/rosters.ts";
 import {
   actionsFor,
-  manualDispatchAction,
+  manualDispatchActionOf,
   ticketActionSentence,
 } from "../app/core/ticketActions.ts";
 import { ticketInstants } from "./ticketInstants.ts";
@@ -88,7 +88,7 @@ test("resume says what its own wall does, and one wall reworks", () => {
 });
 
 test("manual dispatch echoes only the candidate version the view supplied", () => {
-  const action = manualDispatchAction(7, {
+  const action = manualDispatchActionOf(7, {
     result: "Page",
     token: {
       tenant: "acme",
@@ -122,5 +122,5 @@ test("manual dispatch echoes only the candidate version the view supplied", () =
 });
 
 test("manual dispatch is absent when the strict view does not offer the ticket", () => {
-  expect(manualDispatchAction(7, { result: "Reset" })).toBeUndefined();
+  expect(manualDispatchActionOf(7, { result: "Reset" })).toBeUndefined();
 });

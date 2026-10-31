@@ -50,7 +50,7 @@ import type { ParkedOverridesTyped } from "../core/parkedOverrides.ts";
 import type { ProjectAbilities } from "../core/projectAbilities.ts";
 import { projectLeadDispatches } from "../core/projectLead.ts";
 import {
-  manualDispatchAction,
+  manualDispatchActionOf,
   ticketDispatchList,
 } from "../core/ticketActions.ts";
 import {
@@ -213,7 +213,7 @@ function standingOf(
   const dispatchState = props.reads.dispatchState;
   const dispatch =
     dispatchState.state === "Ready"
-      ? manualDispatchAction(props.ticket, dispatchState.value)
+      ? manualDispatchActionOf(props.ticket, dispatchState.value)
       : undefined;
   return {
     offers: ticketOffers(props.reads.openState, ticket, dispatch),

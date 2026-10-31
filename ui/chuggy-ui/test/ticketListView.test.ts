@@ -26,6 +26,7 @@ function row(
     repository: undefined,
     creator: undefined,
     phase,
+    sequence: 1,
     badge: undefined,
     executionVerdict: undefined,
     runsOn: undefined,

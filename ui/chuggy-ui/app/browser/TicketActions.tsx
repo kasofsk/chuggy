@@ -36,10 +36,7 @@ import type {
   TicketResponse,
   DispatchViewResponse,
 } from "../../../../src/contract/responses.ts";
-import {
-  apiCancelOperation,
-  apiTicketDispatchView,
-} from "../core/apiRoutes.ts";
+import { apiCancelOperation } from "../core/apiRoutes.ts";
 import type { ApiPorts } from "../core/apiRequest.ts";
 import { base64urlFromBytes } from "../core/base64url.ts";
 import {
@@ -78,7 +75,7 @@ import {
   ticketOffersStartable,
 } from "../core/ticketOffers.ts";
 import type { TicketOffers } from "../core/ticketOffers.ts";
-import { useApiPorts, usePanelList } from "./api.ts";
+import { useApiPorts } from "./api.ts";
 import { useProjectAbilities } from "./projectAbilities.tsx";
 import { applyResourceArrival } from "./stream.tsx";
 import {
@@ -673,16 +670,16 @@ export interface TicketRowDispatch {
 }
 
 /**
- * The Dispatch a ready row of the ticket list offers, as the press its state
- * chip answers and the notes its follow draws beside it. The reader's
- * abilities and the project's runner take it away as they take it on the
- * ticket page, and a press is followed by the same submission the ticket page
- * would follow.
+ * The Dispatch a ready row of the ticket list offers, expecting the version the
+ * row was drawn at, as the press its state chip answers and the notes its
+ * follow draws beside it. The reader's abilities and the project's runner take
+ * it away as they take it on the ticket page, and a press is followed by the
+ * same submission the ticket page would follow.
  */
-function TicketRowDispatchDrawn(props: {
+export function TicketRowDispatchScope(props: {
   readonly partition: PartitionIdentity;
   readonly ticket: number;
-  readonly dispatch: TicketAction | undefined;
+  readonly sequence: number;
   readonly children: (
     dispatch: TicketRowDispatch | undefined,
     notes: ReactNode,
@@ -695,7 +692,7 @@ function TicketRowDispatchDrawn(props: {
       {
         offers: "Actions",
         editable: false,
-        actions: props.dispatch === undefined ? [] : [props.dispatch],
+        actions: [manualDispatchAction(props.ticket, props.sequence)],
       },
       abilities,
     ),
@@ -722,35 +719,5 @@ function TicketRowDispatchDrawn(props: {
         )
       }
     </TicketActingScope>
-  );
-}
-
-/** A ready row reads the one page of the dispatch view that names it, because
- * a dispatch names the version it was offered. */
-export function TicketRowDispatchScope(props: {
-  readonly partition: PartitionIdentity;
-  readonly ticket: number;
-  readonly children: (
-    dispatch: TicketRowDispatch | undefined,
-    notes: ReactNode,
-  ) => ReactNode;
-}): ReactNode {
-  const { partition, ticket } = props;
-  const dispatchState = usePanelList(
-    ticketDispatchList(partition, ticket),
-    (ports) => apiTicketDispatchView(ports, partition, ticket),
-  );
-  return (
-    <TicketRowDispatchDrawn
-      partition={partition}
-      ticket={ticket}
-      dispatch={
-        dispatchState.state === "Ready"
-          ? manualDispatchAction(ticket, dispatchState.value)
-          : undefined
-      }
-    >
-      {props.children}
-    </TicketRowDispatchDrawn>
   );
 }
