@@ -345,8 +345,9 @@ export interface OperationalReadStore {
   ): Promise<ExecutionResource | undefined>;
   /**
    * The execution `latestExecutions` answers for each of `tickets` that has
-   * run one, as the list answers it but untotalled, read in one statement
-   * however many tickets it names.
+   * run one, as the list answers it but untotalled, in statements bounded by
+   * the tickets it names rather than one per ticket: their positions, then
+   * their rows.
    */
   ticketLatestExecutions(
     partition: Partition,

@@ -1302,11 +1302,10 @@ test("a ticket that ran again reads its later execution as its latest", async ()
 });
 
 /**
- * A page's worth of tickets is one statement on the executions' rows, whatever
- * ran, and it is bounded by the page: the positions are read by ticket, and the
- * rows by the positions alone.
+ * A page's worth of tickets is two statements on the executions, not one per
+ * ticket: the positions are read by ticket, and the rows by the positions alone.
  */
-test("the latest executions of a whole page are read in one execution query", async () => {
+test("the latest executions of a whole page are read in two execution statements", async () => {
   const label = "operational-ticket-page";
   const project = await schedulerProject(rig, label, { tasks: 2 });
   await operationalRegistered(project, project.request, label);
