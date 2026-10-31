@@ -8,5 +8,8 @@
     "network": true,
     "filesystem": "WriteWorkspace",
     "mayCompleteTask": false
+  },
+  "resources": {
+    "cpus": 6
   }
 }
