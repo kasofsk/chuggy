@@ -8,6 +8,7 @@
  */
 
 import {
+  createBrowserHistory,
   createRootRoute,
   createRoute,
   createRouter,
@@ -16,7 +17,10 @@ import {
   useParams,
   useRouter,
 } from "@tanstack/react-router";
-import type { ErrorComponentProps } from "@tanstack/react-router";
+import type {
+  ErrorComponentProps,
+  RouterHistory,
+} from "@tanstack/react-router";
 import { useEffect } from "react";
 import type { ReactNode } from "react";
 
@@ -362,11 +366,18 @@ function RouteNotFound(): ReactNode {
   return <EmptyState variant="page" label="Not found" />;
 }
 
-export const consoleRouter = createRouter({
-  routeTree,
-  defaultErrorComponent: RouteFailed,
-  defaultNotFoundComponent: RouteNotFound,
-});
+/** The router over whichever history it is handed: the browser's for the
+ * console, a memory one for a suite that drives the whole tree. */
+export function consoleRouterOver(history: RouterHistory) {
+  return createRouter({
+    routeTree,
+    history,
+    defaultErrorComponent: RouteFailed,
+    defaultNotFoundComponent: RouteNotFound,
+  });
+}
+
+export const consoleRouter = consoleRouterOver(createBrowserHistory());
 
 declare module "@tanstack/react-router" {
   interface Register {

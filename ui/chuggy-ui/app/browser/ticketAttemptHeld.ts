@@ -77,6 +77,7 @@ export function ticketAttemptDropped(
   partition: PartitionIdentity,
   ticket: number,
 ): void {
+  // eslint-disable-next-line no-restricted-syntax -- the record is no read and nothing is drawn from it, and this file is the whole of when it ends
   client.removeQueries({
     queryKey: ticketAttemptKey(partition, ticket),
     exact: true,
