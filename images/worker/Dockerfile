@@ -1,7 +1,7 @@
 # The zod the image installs as the agent SDK's peer. It is declared before any
 # stage because two of them read it: the `core` stage holds it to the core's
 # lock and the `runtime` stage installs it.
-ARG ZOD_VERSION=4.5.4
+ARG ZOD_VERSION=4.6.7
 
 # The Track Record the image ships, declared here for the same reason: the
 # `track-record` stage builds it and the `worker` stage holds the binary to it.
