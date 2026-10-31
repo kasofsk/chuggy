@@ -757,12 +757,14 @@ export async function apiProjectInventoryAll(
 }
 
 export interface ProjectPage {
+  readonly active?: true | undefined;
   readonly after?: number | undefined;
   readonly cursor?: string | undefined;
   readonly limit?: number | undefined;
   readonly minimumSequence?: number | undefined;
-  readonly order?: "RecentActivity" | undefined;
+  readonly order?: "RecentActivity" | "Newest" | "Oldest" | undefined;
   readonly phase?: readonly string[] | undefined;
+  readonly q?: string | undefined;
 }
 
 export function apiProject(
@@ -774,12 +776,14 @@ export function apiProject(
   return apiGet(
     ports,
     apiPath(partitionPath(partition), {
+      active: page.active === true ? "true" : undefined,
       after: page.after,
       cursor: page.cursor,
       limit: page.limit,
       minimumSequence: page.minimumSequence,
       order: page.order,
       phase: page.phase,
+      q: page.q,
     }),
     (value) => projectResponseSchema.parse(value),
     signal,

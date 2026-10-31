@@ -1,6 +1,6 @@
 /**
- * Which of a filter's rows the ticket list draws, in what order, and what each
- * row's state chip says.
+ * The order the ticket list draws the rows it read in, what each row's state
+ * chip says, and what of the list the page's address holds.
  *
  * A PENDING TICKET IS READY OR BLOCKED, which is the one thing a reader scanning
  * the list needs from it: whether anything stands between it and a dispatch.
@@ -11,14 +11,16 @@
  * finished. Pending rows are ordered nearest to dispatchable first by
  * `upNextOrdered`, so the ready ones lead them.
  *
- * WHAT FINISHED A WHILE AGO IS HELD BACK. A Done or Revoked row whose last
- * activity is older than a day is not drawn until the reader asks for more, a
- * page at a time and newest first, so the list opens on what is live; a search
- * reaches into what is held back the same way.
+ * THE SEARCH AND THE ORDER BY NUMBER ARE THE SERVER'S. They are asked of the
+ * read, so what they draw is the project's rather than the rows one page held.
+ * The State and Activity sorts order the rows read and state nothing about the
+ * project: they read the active list, which holds every active row.
  */
 
+import { ticketSearchCharsMax } from "../../../../src/contract/http.ts";
 import type { TicketPhase } from "../../../../src/contract/rosters.ts";
 
+import type { TicketListOrder } from "./projectTableFilters.ts";
 import type { ProjectTableRow } from "./projectTableRows.ts";
 import { upNextOrdered } from "./upNextOrder.ts";
 
@@ -37,9 +39,69 @@ export const ticketListSortTitles: Readonly<Record<TicketListSort, string>> = {
   Activity: "Last activity",
 };
 
-/** The sort a stored word names, State where it names none. */
-export function ticketListSortOf(stored: string | null): TicketListSort {
-  return ticketListSorts.find((sort) => sort === stored) ?? "State";
+/** The sort a word names, State where it names none. */
+export function ticketListSortOf(word: unknown): TicketListSort {
+  return ticketListSorts.find((sort) => sort === word) ?? "State";
+}
+
+/** The order a sort reads the list in; State and Activity order what the active list holds. */
+export function ticketListSortOrder(sort: TicketListSort): TicketListOrder {
+  return sort === "Newest" || sort === "Oldest" ? sort : "RecentActivity";
+}
+
+/** How long typing must stand before the list is read under it. */
+export const ticketListSearchWaitMs = 250;
+
+/** What a reader typed, as the read is asked it: trimmed, cut to the server's
+ * bound, and nothing where nothing is left. */
+export function ticketListSearchOf(typed: string): string | undefined {
+  const search = [...typed.trim()]
+    .slice(0, ticketSearchCharsMax)
+    .join("")
+    .trim();
+  return search === "" ? undefined : search;
+}
+
+/** What of the list the page's address holds, so a link carries the view and a reload keeps it. */
+export interface TicketListQuery {
+  readonly q?: string;
+  readonly sort?: TicketListSort;
+}
+
+/** The address with its search or its sort replaced; State, being the sort
+ * an address naming none is drawn in, is written as none. */
+export function ticketListQueryWith(
+  query: TicketListQuery,
+  change:
+    { readonly q: string | undefined } | { readonly sort: TicketListSort },
+): TicketListQuery {
+  const q = "q" in change ? change.q : query.q;
+  const sort = "sort" in change ? change.sort : query.sort;
+  return {
+    ...(q === undefined ? {} : { q }),
+    ...(sort === undefined || sort === "State" ? {} : { sort }),
+  };
+}
+
+/** The view an address names. The router parses each value as JSON, so a
+ * search written by hand as `?q=121`, `?q=true` or `?q=null` arrives as
+ * something other than text, and is read back as the text it was. */
+export function ticketListQueryOf(
+  search: Readonly<Record<string, unknown>>,
+): TicketListQuery {
+  const typed = search["q"];
+  const q =
+    typeof typed === "string" ||
+    typeof typed === "number" ||
+    typeof typed === "boolean" ||
+    typed === null
+      ? ticketListSearchOf(String(typed))
+      : undefined;
+  const sort = ticketListSorts.find((each) => each === search["sort"]);
+  return {
+    ...(q === undefined ? {} : { q }),
+    ...(sort === undefined ? {} : { sort }),
+  };
 }
 
 /** What a row's chip says: its phase, a Pending one read as Ready or Blocked. */
@@ -70,22 +132,6 @@ const ticketListPhaseOrder: readonly TicketPhase[] = [
   "Revoked",
 ];
 
-/** How long a finished row stays drawn without asking for it. */
-export const ticketListRecentMs = 86_400_000;
-
-/** How many held-back rows one "Show more" draws. */
-export const ticketListOlderPage = 20;
-
-function ticketListFinished(phase: TicketPhase): boolean {
-  return phase === "Done" || phase === "Revoked";
-}
-
-function ticketListRecent(row: ProjectTableRow, nowMs: number): boolean {
-  if (!ticketListFinished(row.phase)) return true;
-  const at = Date.parse(row.activityAt);
-  return at >= nowMs - ticketListRecentMs;
-}
-
 function ticketListByActivity(a: ProjectTableRow, b: ProjectTableRow): number {
   return (
     Date.parse(b.activityAt) - Date.parse(a.activityAt) || b.ticket - a.ticket
@@ -103,64 +149,18 @@ function ticketListByState(
   });
 }
 
-function ticketListSorted(
+/** The rows to draw, in order: the orders by number are the read's own. */
+export function ticketListShown(
   rows: readonly ProjectTableRow[],
   sort: TicketListSort,
 ): readonly ProjectTableRow[] {
   switch (sort) {
     case "State":
       return ticketListByState(rows);
-    case "Newest":
-      return [...rows].sort((a, b) => b.ticket - a.ticket);
-    case "Oldest":
-      return [...rows].sort((a, b) => a.ticket - b.ticket);
     case "Activity":
       return [...rows].sort(ticketListByActivity);
+    case "Newest":
+    case "Oldest":
+      return rows;
   }
-}
-
-/** Whether a row's title, or its number, holds what was typed. */
-function ticketListMatches(row: ProjectTableRow, search: string): boolean {
-  const typed = search.trim().toLocaleLowerCase();
-  if (typed === "") return true;
-  const number = typed.replace(/^#/u, "");
-  return (
-    (row.title ?? "").toLocaleLowerCase().includes(typed) ||
-    String(row.ticket) === number
-  );
-}
-
-export interface TicketListShown {
-  /** The rows to draw, in order. */
-  readonly shown: readonly ProjectTableRow[];
-  /** How many rows the read holds that are not held back. */
-  readonly active: number;
-  /** How many matching rows are still held back. */
-  readonly remaining: number;
-}
-
-export function ticketListShown(
-  rows: readonly ProjectTableRow[],
-  view: {
-    readonly sort: TicketListSort;
-    readonly search: string;
-    readonly older: number;
-    readonly nowMs: number;
-  },
-): TicketListShown {
-  const matching = rows.filter((row) => ticketListMatches(row, view.search));
-  const held = matching
-    .filter((row) => !ticketListRecent(row, view.nowMs))
-    .sort(ticketListByActivity);
-  const revealed = new Set(held.slice(0, Math.max(0, view.older)));
-  return {
-    shown: ticketListSorted(
-      matching.filter(
-        (row) => ticketListRecent(row, view.nowMs) || revealed.has(row),
-      ),
-      view.sort,
-    ),
-    active: rows.filter((row) => ticketListRecent(row, view.nowMs)).length,
-    remaining: held.length - revealed.size,
-  };
 }

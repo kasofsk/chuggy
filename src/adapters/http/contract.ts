@@ -75,6 +75,7 @@ import { asPublicInstant } from "../../interpreter/publicResource.ts";
 import type {
   NativeActionPosition,
   TicketActivityPosition,
+  TicketNumberPosition,
 } from "../../interpreter/nativeWeb.ts";
 import { checkedSelectorDecisionReference } from "../../interpreter/dispatchView.ts";
 import type { ForgeCredentialRequest } from "../../interpreter/forgeCredentials.ts";
@@ -134,6 +135,11 @@ const configurationCursorSchema = inventoryCursorSchema.extend({
 
 const ticketActivityCursorSchema = inventoryCursorSchema.extend({
   sequence: z.number().int().safe().nonnegative(),
+  ticket: z.number().int().safe().positive(),
+});
+
+const ticketNumberCursorSchema = inventoryCursorSchema.extend({
+  order: z.enum(["Newest", "Oldest"]),
   ticket: z.number().int().safe().positive(),
 });
 
@@ -496,6 +502,20 @@ export const {
     ticket: asTicketId(cursor.ticket),
   }),
   (cursor) => ({ sequence: cursor.sequence, ticket: cursor.ticket }),
+);
+
+/** A position by ticket number, which names its order, so the other order refuses it. */
+export const {
+  encode: encodeTicketNumberCursor,
+  parse: parseTicketNumberCursor,
+} = projectCursorCodec(
+  "ticket number",
+  ticketNumberCursorSchema,
+  (cursor): TicketNumberPosition => ({
+    order: cursor.order,
+    ticket: asTicketId(cursor.ticket),
+  }),
+  (cursor) => ({ order: cursor.order, ticket: cursor.ticket }),
 );
 
 export const { encode: encodeExecutionCursor, parse: parseExecutionCursor } =

@@ -22,8 +22,8 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import {
-  ticketFilterAll,
   ticketFilterList,
+  ticketListAskDefault,
 } from "../../core/projectTableFilters.ts";
 import { usePanelList } from "../api.ts";
 import { ticketRowsRead } from "../ProjectTable.tsx";
@@ -39,8 +39,8 @@ export function TicketReferenceWiring(props: {
   const client = useQueryClient();
   const navigate = useNavigate();
   const state = usePanelList(
-    ticketFilterList(partition, ticketFilterAll),
-    (ports) => ticketRowsRead(client, ports, partition, ticketFilterAll),
+    ticketFilterList(partition, ticketListAskDefault),
+    (ports) => ticketRowsRead(client, ports, partition, ticketListAskDefault),
   );
   const known = useMemo(() => {
     const byNumber = new Map<number, TicketReferenceFacts>();

@@ -10,6 +10,7 @@ import {
   imageMediaTypes,
   nativeHttpBodyBytesMax,
   nativeHttpMediaType,
+  ticketSearchCharsMax,
 } from "../../src/contract/http.ts";
 import {
   briefIntentCharsMax,
@@ -24,6 +25,7 @@ import {
   asPrincipal,
   asPublicInstant,
   type NativeWeb,
+  type ProjectReadQuery,
   type TicketNativeAction,
 } from "../../src/interpreter/nativeWeb.ts";
 import {
@@ -51,6 +53,8 @@ import {
   encodeDraftCursor,
   encodeExecutionCursor,
   encodeLatestExecutionCursor,
+  encodeTicketActivityCursor,
+  encodeTicketNumberCursor,
   parsePartition,
 } from "../../src/adapters/http/contract.ts";
 import {
@@ -352,6 +356,21 @@ function fakeDrafts(
   };
 }
 
+/** What a project read names beyond what it always could, which a read naming none of it leaves out of its call. */
+function projectReadNewFields(query: ProjectReadQuery): string {
+  return [
+    ...(query.search === undefined ? [] : [`q=${query.search}`]),
+    ...(query.active === undefined ? [] : [`active=${String(query.active)}`]),
+    ...(query.numberAfter === undefined
+      ? []
+      : [
+          `after=${query.numberAfter.order}/${String(query.numberAfter.ticket)}`,
+        ]),
+  ]
+    .map((field) => `:${field}`)
+    .join("");
+}
+
 function fakeWeb(calls: string[]): ServedNativeWeb {
   return {
     ...unreadableLeadReads(),
@@ -389,7 +408,7 @@ function fakeWeb(calls: string[]): ServedNativeWeb {
     },
     project: (_principal, _partition, query) => {
       calls.push(
-        `project:${String(query.limit)}:${query.order ?? "Identity"}:${String(query.recentActivityAfter?.sequence ?? "")}`,
+        `project:${String(query.limit)}:${query.order ?? "Identity"}:${String(query.recentActivityAfter?.sequence ?? "")}${projectReadNewFields(query)}`,
       );
       return Promise.resolve({ result: "NotFound" });
     },
@@ -1295,7 +1314,7 @@ test("recent activity ordering requires its opaque cursor contract", async () =>
     404,
   );
   assert.equal(
-    (await app.inject({ url: `${root}?order=Newest`, headers })).statusCode,
+    (await app.inject({ url: `${root}?order=Sideways`, headers })).statusCode,
     400,
   );
   assert.equal(
@@ -1313,6 +1332,71 @@ test("recent activity ordering requires its opaque cursor contract", async () =>
     400,
   );
   assert.deepEqual(calls, ["project:50:RecentActivity:"]);
+});
+
+test("a ticket search is trimmed and refused empty or past its bound", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const root = "/api/v1/tenants/tenant/projects/project/tickets";
+  const headers = { authorization: "Bearer valid" };
+  const status = async (query: string) =>
+    (await app.inject({ url: `${root}?${query}`, headers })).statusCode;
+  assert.equal(await status(`q=${encodeURIComponent("  #121 ")}`), 404);
+  assert.equal(await status(`q=${"x".repeat(ticketSearchCharsMax)}`), 404);
+  assert.equal(await status("q="), 400);
+  assert.equal(await status(`q=${encodeURIComponent("   ")}`), 400);
+  assert.equal(await status(`q=${"x".repeat(ticketSearchCharsMax + 1)}`), 400);
+  assert.equal(await status("active=true&order=Newest&phase=Done"), 404);
+  assert.equal(await status("active=yes"), 400);
+  assert.deepEqual(calls, [
+    "project:50:Identity::q=#121",
+    `project:50:Identity::q=${"x".repeat(ticketSearchCharsMax)}`,
+    "project:50:Newest::active=true",
+  ]);
+});
+
+test("a cursor one ticket order issued is refused by every other", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const root = "/api/v1/tenants/tenant/projects/project/tickets";
+  const headers = { authorization: "Bearer valid" };
+  const partition = {
+    tenant: asTenantId("tenant"),
+    project: asProjectId("project"),
+  };
+  const newest = encodeTicketNumberCursor(partition, {
+    order: "Newest",
+    ticket: asTicketId(4),
+  });
+  const activity = encodeTicketActivityCursor(partition, {
+    sequence: 9,
+    ticket: asTicketId(4),
+  });
+  const status = async (order: string, cursor: string) =>
+    (
+      await app.inject({
+        url: `${root}?order=${order}&cursor=${encodeURIComponent(cursor)}`,
+        headers,
+      })
+    ).statusCode;
+  assert.equal(await status("Newest", newest), 404);
+  assert.equal(await status("Oldest", newest), 400);
+  assert.equal(await status("RecentActivity", newest), 400);
+  assert.equal(await status("Newest", activity), 400);
+  assert.equal(await status("RecentActivity", activity), 404);
+  assert.equal(
+    (
+      await app.inject({
+        url: `${root}?cursor=${encodeURIComponent(newest)}`,
+        headers,
+      })
+    ).statusCode,
+    400,
+  );
+  assert.deepEqual(calls, [
+    "project:50:Newest::after=Newest/4",
+    "project:50:RecentActivity:9",
+  ]);
 });
 
 /** A position the server itself would have minted, which is the only value the

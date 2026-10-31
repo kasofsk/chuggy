@@ -16,10 +16,12 @@ import {
   encodeInventoryCursor,
   encodeNativeActionCursor,
   encodeTicketActivityCursor,
+  encodeTicketNumberCursor,
   parseExecutionCursor,
   parseInventoryCursor,
   parseNativeActionCursor,
   parseTicketActivityCursor,
+  parseTicketNumberCursor,
   parseRepositoryConfigurationImport,
   parseDraftCreation,
   parseDraftRevision,
@@ -587,6 +589,15 @@ const cursorCompatibilityCases = [
       }),
     parse: parseTicketActivityCursor,
     payload: { sequence: 3, ticket: 7 },
+  },
+  {
+    encode: () =>
+      encodeTicketNumberCursor(parsePartition("t", "p"), {
+        order: "Oldest",
+        ticket: id(7),
+      }),
+    parse: parseTicketNumberCursor,
+    payload: { order: "Oldest", ticket: 7 },
   },
   {
     encode: () =>

@@ -3,8 +3,8 @@
  * reader's own table has.
  *
  * IT IS THE TABLE'S OWN ENTRY, NOT A SECOND READ. The list is keyed by
- * `ticketFilterAll`, which is the key the Tickets screen holds its unfiltered
- * rows under, so opening the list costs a read only when nothing has read that
+ * `ticketListAskDefault`, which is the key the Tickets screen holds its
+ * unfiltered, unsearched rows under, so opening the list costs a read only when nothing has read that
  * yet, paging the table deeper offers more tickets here, and a change frame
  * that rewrites a row rewrites it in both places at once.
  *
@@ -22,8 +22,8 @@ import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { conversationMentionItem } from "../../core/conversationMention.ts";
 import type { ConversationMentionItem } from "../../core/conversationMention.ts";
 import {
-  ticketFilterAll,
   ticketFilterList,
+  ticketListAskDefault,
 } from "../../core/projectTableFilters.ts";
 import { usePanelList } from "../api.ts";
 import { ticketRowsRead } from "../ProjectTable.tsx";
@@ -33,8 +33,8 @@ export function useConversationMentions(
 ): readonly ConversationMentionItem[] {
   const client = useQueryClient();
   const state = usePanelList(
-    ticketFilterList(partition, ticketFilterAll),
-    (ports) => ticketRowsRead(client, ports, partition, ticketFilterAll),
+    ticketFilterList(partition, ticketListAskDefault),
+    (ports) => ticketRowsRead(client, ports, partition, ticketListAskDefault),
   );
   /** The same array until the rows themselves change: the popover derives its
    * navigable list from this, and a fresh array on every render would put the
