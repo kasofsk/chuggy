@@ -45,7 +45,7 @@
     "libpg-query": "^17.7.4",
     "prettier": "^3.9.6",
     "typescript": "^6.0.3",
-    "typescript-eslint": "^8.67.0"
+    "typescript-eslint": "8.72.0"
   },
   "type": "module",
   "workspaces": [
@@ -78,6 +78,8 @@
     "zod": "^4.4.3"
   },
   "overrides": {
-    "typescript": "$typescript"
+    "typescript": "$typescript",
+    "minimatch": "^11.0.1",
+    "typescript-eslint": "$typescript-eslint"
   }
 }
