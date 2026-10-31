@@ -2,8 +2,9 @@
  * The console's chat pane: every thread the reader can reach, beside every page
  * rather than on one.
  *
- * The pane holds the reader's own open thread that moved last by default, and
- * its history is how any other is reached, their own open ones among them.
+ * The pane holds the reader's own open thread that moved last when it is first
+ * read, and holds it until it closes, and its history is how any other is
+ * reached, their own open ones among them.
  * Each thread also has a page of its own, which the pane links to and which
  * draws no pane, so no thread is drawn twice.
  * Collapsing it leaves the strip its own control expands, rather than nothing —
@@ -25,6 +26,7 @@ import type {
 import { apiOpenThread, apiThreads } from "../../core/apiRoutes.ts";
 import {
   chatPaneChosenIn,
+  chatPaneDefaulted,
   chatPaneFilled,
   chatPaneHeaderDoor,
   chatPaneHolding,
@@ -39,8 +41,10 @@ import {
   conversationExchangesStopped,
 } from "../../core/conversation.ts";
 import { panelReason } from "../../core/freshness.ts";
+import { sessionChangeKindNamed } from "../../core/leadTranscript.ts";
 import { projectAbilityRefused } from "../../core/projectAbilities.ts";
-import { projectListReread } from "../../core/projectQueryKeys.ts";
+import { projectLeadSessionKind } from "../../core/projectLead.ts";
+import { projectListRereadNamed } from "../../core/projectQueryKeys.ts";
 import {
   threadKeptClosed,
   threadKeptWith,
@@ -84,11 +88,19 @@ import {
 } from "./chatPaneIcons.tsx";
 import { ChatPaneHistory, ChatPaneThreadActions } from "./ChatPaneHistory.tsx";
 
+/** The listing the pane reads, which lists no lead session and so is not read
+ * again on the frames of one. */
 function useChatPaneThreads(
   partition: PartitionIdentity,
 ): readonly ThreadEntryResponse[] | undefined {
   const state = usePanelList(
-    projectListReread<ThreadsResponse>(partition, "Session", threadsListName),
+    projectListRereadNamed<ThreadsResponse>(
+      partition,
+      "Session",
+      threadsListName,
+      (change) =>
+        sessionChangeKindNamed(change.resource) !== projectLeadSessionKind,
+    ),
     (ports) => apiThreads(ports, partition),
   );
   return state.state === "Ready" ? state.value.threads : undefined;
@@ -487,8 +499,8 @@ function useChatPaneDoor(partition: PartitionIdentity): {
 }
 
 /**
- * Which thread the open pane draws: the one the reader chose, which the shell
- * holds so it outlives the pane, or the one the pane holds for them, kept off
+ * Which thread the open pane draws: the one the reader chose, or the one the
+ * pane holds for them, both held by the shell so they outlive the pane, kept off
  * the screen while a first message is being sent and until the thread that
  * message opened has been read.
  */
@@ -513,11 +525,24 @@ function useChatPaneOpenHeld(partition: PartitionIdentity): {
     setStarting(false);
     setOpening(undefined);
   }, []);
-  const { chosen: picked, choose } = useChatPane();
+  const {
+    chosen: picked,
+    choose,
+    defaulted: kept,
+    holdDefault,
+  } = useChatPane();
   const chosen = chatPaneChosenIn(picked, partition);
+  const held = chatPaneChosenIn(kept, partition);
+  const defaulted = chatPaneDefaulted(threads, held);
+  useEffect(() => {
+    if (defaulted === held) return;
+    holdDefault(
+      defaulted === undefined ? undefined : { partition, session: defaulted },
+    );
+  }, [defaulted, held, holdDefault, partition]);
   return {
     threads,
-    holding: chatPaneHolding(threads, chosen),
+    holding: chatPaneHolding(threads, chosen, held),
     named,
     starting,
     opening,

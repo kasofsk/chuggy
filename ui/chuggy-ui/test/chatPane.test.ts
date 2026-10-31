@@ -12,6 +12,7 @@ import { expect, test } from "vitest";
 
 import {
   chatPaneChosenIn,
+  chatPaneDefaulted,
   chatPaneContentDrawn,
   chatPaneDefault,
   chatPaneDefaultAt,
@@ -682,13 +683,14 @@ test("a pick is held in the project it was made in and in no other", () => {
 });
 
 test("a listing that has not answered holds nothing", () => {
-  expect(chatPaneHolding(undefined, undefined)).toBeUndefined();
+  expect(chatPaneHolding(undefined, undefined, undefined)).toBeUndefined();
 });
 
 test("a reader with no thread of their own holds none", () => {
   expect(
     chatPaneHolding(
       [threadEntry({ session: "other", mine: false })],
+      undefined,
       undefined,
     ),
   ).toBeUndefined();
@@ -705,6 +707,7 @@ test("of the reader's own open threads, the pane holds the one that moved last",
         lastActivityAt: "2026-09-02T11:00:00Z",
       }),
     ],
+    undefined,
     undefined,
   );
   expect(holding).toBe("later");
@@ -723,11 +726,13 @@ test("a closed thread of the reader's own is not the one the pane holds", () => 
         threadEntry({ session: "mine", mine: true }),
       ],
       undefined,
+      undefined,
     ),
   ).toBe("mine");
   expect(
     chatPaneHolding(
       [threadEntry({ session: "old", mine: true, state: "Closed" })],
+      undefined,
       undefined,
     ),
   ).toBeUndefined();
@@ -741,8 +746,8 @@ test("a thread picked out of the history is the one the pane holds", () => {
     threadEntry({ session: "mine", mine: true }),
     threadEntry({ session: "old", mine: true, state: "Closed" }),
   ];
-  expect(chatPaneHolding(threads, "other")).toBe("other");
-  expect(chatPaneHolding(threads, "old")).toBe("old");
+  expect(chatPaneHolding(threads, "other", "mine")).toBe("other");
+  expect(chatPaneHolding(threads, "old", "mine")).toBe("old");
 });
 
 /** A thread just started is not in the listing yet — the frame that stales it
@@ -753,9 +758,47 @@ test("a thread the reader named is held before the listing carries it", () => {
     chatPaneHolding(
       [threadEntry({ session: "mine", mine: true })],
       "just-opened",
+      "mine",
     ),
   ).toBe("just-opened");
-  expect(chatPaneHolding(undefined, "just-opened")).toBe("just-opened");
+  expect(chatPaneHolding(undefined, "just-opened", undefined)).toBe(
+    "just-opened",
+  );
+});
+
+/** The box under the pane belongs to the thread it draws, so another of the
+ * reader's threads moving does not move the pane, nor does a listing that did
+ * not answer. */
+test("the thread the pane holds for the reader stays held while it is listed open", () => {
+  const threads = [
+    threadEntry({ session: "held", mine: true }),
+    threadEntry({
+      session: "moved",
+      mine: true,
+      lastActivityAt: "2026-09-02T11:00:00Z",
+    }),
+  ];
+  expect(chatPaneDefaulted(threads, undefined)).toBe("moved");
+  expect(chatPaneDefaulted(threads, "held")).toBe("held");
+  expect(chatPaneHolding(threads, undefined, "held")).toBe("held");
+  expect(chatPaneDefaulted(undefined, "held")).toBe("held");
+  expect(chatPaneDefaulted(undefined, undefined)).toBeUndefined();
+});
+
+test("the thread the pane holds for the reader moves on once it is closed or no longer listed", () => {
+  const later = threadEntry({
+    session: "later",
+    mine: true,
+    lastActivityAt: "2026-09-02T11:00:00Z",
+  });
+  expect(
+    chatPaneDefaulted(
+      [threadEntry({ session: "held", mine: true, state: "Closed" }), later],
+      "held",
+    ),
+  ).toBe("later");
+  expect(chatPaneDefaulted([later], "held")).toBe("later");
+  expect(chatPaneDefaulted([], "held")).toBeUndefined();
 });
 
 function unhostedSaid(
