@@ -20,9 +20,9 @@
  * carries the lead read, so a page watching a lead sees a turn move without
  * polling for it. `ready` opens the stream, `reset` says the requested
  * `Last-Event-ID` is no longer retained and the client must reload from the GET
- * routes — each naming in `id:` the log's head, so a console that has seen no
- * change still has a place to resume from — and `source` reports whether the change log behind the stream is live
- * or degraded.
+ * routes — each naming in `id:` a sequence the console can resume from, so a
+ * console that has seen no change still has a place to keep — and `source`
+ * reports whether the change log behind the stream is live or degraded.
  */
 
 import { z } from "zod";
@@ -181,7 +181,7 @@ export type ProjectChangeEvent = {
   };
 }[ProjectChangeKind];
 
-/** A control frame's head is optional, because a server that predates it names none. */
+/** A control frame's sequence is optional, because a server that predates it names none. */
 export type ProjectStreamEvent =
   | ProjectChangeEvent
   | {
@@ -245,7 +245,7 @@ function projectChangeEvent(
   }
 }
 
-/** The head a control frame names, where it names one. */
+/** The sequence a control frame names, where it names one. */
 function projectControlSequence(frame: ProjectStreamFrame): {
   readonly sequence?: number;
 } {
