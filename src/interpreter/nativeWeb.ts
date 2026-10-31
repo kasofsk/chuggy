@@ -157,12 +157,10 @@ import {
 } from "./sessionPlacement.ts";
 import type { SelectorOperationalContextRead } from "./selectorOperationalContext.ts";
 import {
-  agenticRefusalIsSuperseded,
   agenticRefusals,
   checkedAgenticRefusalsLimit,
   type AgenticRefusalRead,
   type AgenticRefusalsRead,
-  type AgenticRefusalStanding,
   type TicketAgenticRefusalsRead,
 } from "./agenticRefusal.ts";
 import {
@@ -1810,25 +1808,6 @@ async function nativeSessionTranscriptPage(
   };
 }
 
-/** Whether each standing refusal has been cleared by its ticket being authored again. */
-async function nativeStandingRefusals(
-  reads: NativeReadStore,
-  partition: Partition,
-  refusals: readonly Omit<AgenticRefusalStanding, "superseded">[],
-): Promise<readonly AgenticRefusalStanding[]> {
-  return Promise.all(
-    refusals.map(async (refusal) => {
-      const held = await reads.ticket(partition, refusal.ticket);
-      return {
-        ...refusal,
-        superseded:
-          held !== undefined &&
-          agenticRefusalIsSuperseded(refusal, held.sequence),
-      };
-    }),
-  );
-}
-
 type NativeLeadMethods = Pick<
   NativeWeb,
   | "lead"
@@ -2407,7 +2386,6 @@ function nativeThreadReadMethods(
  */
 function nativeLeadRecordMethods(
   access: ProjectAccess,
-  reads: NativeReadStore,
   leads?: NativeLeadPorts,
 ): Pick<
   NativeWeb,
@@ -2426,7 +2404,7 @@ function nativeLeadRecordMethods(
       const page = found.refusals.slice(0, asked);
       return {
         result: "Found",
-        refusals: await nativeStandingRefusals(reads, partition, page),
+        refusals: page,
         more: found.refusals.length > asked,
       };
     },
@@ -2462,12 +2440,11 @@ function nativeLeadRecordMethods(
 /** The lead's read side, whose two halves reach the boundary as one. */
 function nativeLeadReadMethods(
   access: ProjectAccess,
-  reads: NativeReadStore,
   leads?: NativeLeadPorts,
 ): NativeLeadMethods {
   return {
     ...nativeLeadSessionMethods(access, leads),
-    ...nativeLeadRecordMethods(access, reads, leads),
+    ...nativeLeadRecordMethods(access, leads),
   };
 }
 
@@ -2657,7 +2634,7 @@ export function nativeWeb(
 ): NativeWeb {
   return {
     ...nativeRunEvidenceMethods(access, runEvidenceReads, runEvidenceContents),
-    ...nativeLeadReadMethods(access, reads, leads),
+    ...nativeLeadReadMethods(access, leads),
     ...nativeThreadMethods(access, threads, sessionRoutes, projectArtifacts),
     hostedRuns: nativeHostedRunsMethod(access),
     abilities: (principal, partition) =>

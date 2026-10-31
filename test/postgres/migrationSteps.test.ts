@@ -67,6 +67,10 @@ import { migration099 } from "../../src/adapters/postgres/schema/migrations/099-
 import { migration100 } from "../../src/adapters/postgres/schema/migrations/100-configuration-import-refusals.ts";
 import { migration101 } from "../../src/adapters/postgres/schema/migrations/101-longer-configurations.ts";
 import { migration102 } from "../../src/adapters/postgres/schema/migrations/102-configuration-following.ts";
+import {
+  migration103,
+  ticketReadFunctionsAt103,
+} from "../../src/adapters/postgres/schema/migrations/103-ticket-reads-estimate-one-row.ts";
 import { configurationCanonicalCharsMax } from "../../src/contract/http.ts";
 import { migration081 } from "../../src/adapters/postgres/schema/migrations/081-promotion-declined.ts";
 import { migration082 } from "../../src/adapters/postgres/schema/migrations/082-decline-kept-unread.ts";
@@ -3917,6 +3921,37 @@ test("102 installs the importer's two following doors, owned by the boundary and
           ],
           door,
         );
+    },
+  );
+});
+
+/** The estimate each function a ticket read joins per ticket is planned at, by its signature. */
+async function ticketReadRows103(subject: pg.Pool): Promise<unknown> {
+  return (
+    await subject.query(
+      `SELECT prorows::int AS rows FROM pg_proc
+        WHERE oid = ANY($1::regprocedure[]) ORDER BY oid`,
+      [[...ticketReadFunctionsAt103]],
+    )
+  ).rows;
+}
+
+test("103 plans the three functions a ticket read joins per ticket at one row each", async () => {
+  await migrationDatabaseAt(
+    migration103.version - 1,
+    "ticket_reads_estimate",
+    async (subject) => {
+      assert.deepEqual(
+        await ticketReadRows103(subject),
+        ticketReadFunctionsAt103.map(() => ({ rows: 1000 })),
+      );
+      assert.ok(
+        (await postgresMigrate(subject)).includes(migration103.version),
+      );
+      assert.deepEqual(
+        await ticketReadRows103(subject),
+        ticketReadFunctionsAt103.map(() => ({ rows: 1 })),
+      );
     },
   );
 });

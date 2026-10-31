@@ -100,6 +100,7 @@ import { migration099 } from "./099-attempt-claimed-at.ts";
 import { migration100 } from "./100-configuration-import-refusals.ts";
 import { migration101 } from "./101-longer-configurations.ts";
 import { migration102 } from "./102-configuration-following.ts";
+import { migration103 } from "./103-ticket-reads-estimate-one-row.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -205,4 +206,5 @@ export const migrations: readonly Migration[] = [
   migration100,
   migration101,
   migration102,
+  migration103,
 ];
