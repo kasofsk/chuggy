@@ -145,6 +145,7 @@ import {
   TicketRowExecutionCell,
   TicketTitleCell,
 } from "./TicketCells.tsx";
+import { RepositoryImportRefusedNotice } from "./repositories/RepositoryImportRefused.tsx";
 import { Button } from "./ui/Button.tsx";
 import { Notice } from "./ui/Notice.tsx";
 import { useRunReason } from "./RunEvidence.tsx";
@@ -749,6 +750,7 @@ export function InboxScreen(props: {
   return (
     <>
       <ScreenTitle>Inbox</ScreenTitle>
+      <RepositoryImportRefusedNotice partition={partition} />
       <InboxNotices executions={executions} index={index} held={inbox} />
       <InboxProposalNotice answers={proposed} />
       <DataPanel title={ticketSectionTitles[inboxSection]} state={inbox.panel}>

@@ -85,6 +85,7 @@ import {
   TicketTitleNumber,
   TicketTitleWords,
 } from "./TicketCells.tsx";
+import { RepositoryImportRefusedNotice } from "./repositories/RepositoryImportRefused.tsx";
 import { Button, ButtonLink } from "./ui/Button.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { Identity } from "./ui/Identity.tsx";
@@ -532,6 +533,7 @@ function ProjectTableEmpty(props: {
   return (
     <>
       <ProjectTableTitle />
+      <RepositoryImportRefusedNotice partition={props.partition} />
       <EmptyState
         variant="page"
         label="No tickets"
@@ -592,6 +594,7 @@ export function ProjectTable(): ReactNode {
   return (
     <section className="ticket-list-page" aria-label="Tickets" data-fills-width>
       <ProjectTableTitle />
+      <RepositoryImportRefusedNotice partition={partition} />
       <TicketListControls
         search={search}
         onSearch={setSearch}

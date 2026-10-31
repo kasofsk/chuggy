@@ -51,6 +51,10 @@ import {
   abilitiesUnrefusing,
 } from "./projectAbilitiesFixture.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
+import {
+  repositoryImportListedOver,
+  repositoryImportRefusedBinding,
+} from "./repositoryImportFixture.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -547,4 +551,34 @@ test("a reader who may not dispatch sees a ready row's chip, not a button", asyn
   );
   expect(screen.getByText("Ready").tagName).toBe("SPAN");
   expect(screen.queryByRole("button", { name: /^Dispatch/u })).toBeNull();
+});
+
+test("a live binding whose newest import was refused raises one notice over the tickets, linking to it", async () => {
+  await drawTableWith(
+    [ticket],
+    [execution],
+    repositoryImportListedOver([
+      repositoryImportRefusedBinding(repository),
+      repositoryImportRefusedBinding(
+        "https://github.com/acme/gears.git",
+        "2026-10-18T00:00:00Z",
+      ),
+    ]),
+  );
+  expect(screen.getByText(/^Import refused/u).textContent).toBe(
+    "Import refused · acme/widgets",
+  );
+  expect(screen.getByRole("link", { name: "acme/widgets" })).toBeDefined();
+});
+
+test("a project with no tickets still carries the notice of a refused import", async () => {
+  await drawTableWith(
+    [],
+    [],
+    repositoryImportListedOver([repositoryImportRefusedBinding(repository)]),
+  );
+  expect(screen.getByText("No tickets")).toBeDefined();
+  expect(screen.getByText(/^Import refused/u).textContent).toBe(
+    "Import refused · acme/widgets",
+  );
 });

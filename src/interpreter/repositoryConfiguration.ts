@@ -11,8 +11,9 @@
  */
 
 import {
+  asCanonicalConfiguration,
   asConfigurationRevisionId,
-  canonicalConfigurationOf,
+  canonicalJson,
   releaseConfigurationReadiness,
   type CanonicalConfiguration,
   type ConfigurationRevisionId,
@@ -42,7 +43,9 @@ import {
   type RepositoryConfigurationPath,
 } from "./repositoryConfigurationIdentity.ts";
 import {
+  configurationCanonicalCharsMax,
   repositoryConfigurationIgnoredAnsweredMax,
+  repositoryConfigurationImportRefusalsKeptMax,
   textCodePointsCount,
 } from "../contract/http.ts";
 import {
@@ -216,17 +219,24 @@ export type RepositoryConfigurationFault =
   | "EnvelopeInvalid"
   | "NameInvalid"
   | "ConfigurationInvalid"
+  | "ConfigurationTooLong"
   | "DuplicateName"
   | "DuplicatePath"
   | "ReferenceAbsent"
   | "TooManyReferences";
 
-/** A file refused, and the file it names by reference where that is what was refused. */
+/**
+ * A file refused, the file it names by reference where that is what was
+ * refused, and a `ConfigurationTooLong` configuration's canonical length
+ * against the longest one may be.
+ */
 export interface RepositoryConfigurationRefusal {
   readonly path: string;
   readonly fault: RepositoryConfigurationFault;
   readonly configurationFault?: ReleaseConfigurationFault;
   readonly reference?: string;
+  readonly chars?: number;
+  readonly charsMax?: number;
 }
 
 export type RepositoryConfigurationImportReadiness =
@@ -323,9 +333,11 @@ export const allRepositoryConfigurationImportAbsences = [
 ] as const;
 
 /**
- * How one import came out, as its attempt is kept: the outcome's word, and
- * what was absent where that word is `SnapshotAbsent`. What an outcome carries
- * only for its own answer is not kept.
+ * How one import came out, as its attempt is kept: the outcome's word, what was
+ * absent where that word is `SnapshotAbsent`, and where it is
+ * `DeclarationsRefused` the first refusals and how many there were, which one
+ * kept before refusals were holds none. What an outcome carries only for its
+ * own answer is not kept.
  */
 export type RepositoryConfigurationImportAttemptOutcome =
   | {
@@ -337,7 +349,28 @@ export type RepositoryConfigurationImportAttemptOutcome =
   | {
       readonly result: "SnapshotAbsent";
       readonly absent: (typeof allRepositoryConfigurationImportAbsences)[number];
-    };
+    }
+  | ({
+      readonly result: "DeclarationsRefused";
+    } & RepositoryConfigurationImportRefusalsKept);
+
+/** A refused import's first refusals as its attempt keeps them, and how many it was refused for. */
+export interface RepositoryConfigurationImportRefusalsKept {
+  readonly refusals: readonly RepositoryConfigurationRefusal[];
+  readonly refusalCount: number;
+}
+
+/** The refusals one refused import keeps, which are its first. */
+export function repositoryConfigurationImportRefusalsKept(
+  faults: readonly RepositoryConfigurationRefusal[],
+): RepositoryConfigurationImportRefusalsKept {
+  if (faults.length === 0)
+    throw new RangeError("a refused import names no refusal");
+  return {
+    refusals: faults.slice(0, repositoryConfigurationImportRefusalsKeptMax),
+    refusalCount: faults.length,
+  };
+}
 
 /**
  * The import of one binding that finished last, `attemptedAt` the instant it
@@ -367,9 +400,13 @@ function importRepositoryConfigurationsAttemptOutcome(
   switch (outcome.result) {
     case "SnapshotAbsent":
       return { result: outcome.result, absent: outcome.absent };
+    case "DeclarationsRefused":
+      return {
+        result: outcome.result,
+        ...repositoryConfigurationImportRefusalsKept(outcome.faults),
+      };
     case "Unavailable":
     case "SnapshotRefused":
-    case "DeclarationsRefused":
     case "IdentityConflict":
     case "StaleBinding":
     case "Imported":
@@ -1208,9 +1245,23 @@ function repositoryConfigurationEnvelope(
       fault: resolved.fault,
       reference: resolved.reference,
     };
+  let encoded: string;
   let canonical: CanonicalConfiguration;
   try {
-    canonical = canonicalConfigurationOf(resolved.configuration);
+    encoded = canonicalJson(resolved.configuration);
+  } catch {
+    return { path: file.path, fault: "ConfigurationInvalid" };
+  }
+  // eslint-disable-next-line no-restricted-syntax -- this bound is in UTF-16 code units, as `asCanonicalConfiguration` measures it
+  if (encoded.length > configurationCanonicalCharsMax)
+    return {
+      path: file.path,
+      fault: "ConfigurationTooLong",
+      chars: encoded.length,
+      charsMax: configurationCanonicalCharsMax,
+    };
+  try {
+    canonical = asCanonicalConfiguration(encoded);
   } catch {
     return { path: file.path, fault: "ConfigurationInvalid" };
   }

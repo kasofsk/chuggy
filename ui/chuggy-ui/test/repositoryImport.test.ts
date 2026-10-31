@@ -7,12 +7,16 @@ import { expect, test } from "vitest";
 
 import type { RepositoryConfigurationImportAttemptResponse } from "../../../src/contract/responses.ts";
 import {
+  repositoryConfigurationFaults,
   repositoryConfigurationImportAbsences,
   repositoryConfigurationImportResults,
 } from "../../../src/contract/rosters.ts";
 import {
+  repositoryImportFault,
   repositoryImportLine,
   repositoryImportNote,
+  repositoryImportRefusedFile,
+  repositoryImportsRefused,
 } from "../app/core/repositoryImport.ts";
 import { repositoryImportTone } from "../app/core/tones.ts";
 
@@ -181,4 +185,96 @@ test("a miss beside a new attempt the line draws as no fault leaves nothing to b
     ),
   ).toBe("Invalid");
   expect(repositoryImportNote(undefined, refused)).toBe(undefined);
+});
+
+const refusedPath = ".chug/configurations/basic-coding.json";
+
+test("every fault a file is refused for is the console's own words, a configuration too long its length against the limit", () => {
+  expect(
+    repositoryConfigurationFaults.map((fault) => [
+      fault,
+      repositoryImportFault({ path: refusedPath, fault }),
+    ]),
+  ).toStrictEqual([
+    ["TooManyDeclarations", "Too many files"],
+    ["PathInvalid", "Path not allowed"],
+    ["SymlinkRefused", "Symlink"],
+    ["ContentTooLarge", "File too large"],
+    ["DocumentUnreadable", "Not JSON"],
+    ["EnvelopeInvalid", "Not a configuration file"],
+    ["NameInvalid", "Name invalid"],
+    ["ConfigurationInvalid", "Configuration invalid"],
+    ["ConfigurationTooLong", "Too long"],
+    ["DuplicateName", "Name declared twice"],
+    ["DuplicatePath", "File listed twice"],
+    ["ReferenceAbsent", "Referenced file missing"],
+    ["TooManyReferences", "Too many referenced files"],
+  ]);
+  expect(
+    repositoryImportFault({
+      path: refusedPath,
+      fault: "ConfigurationTooLong",
+      chars: 70_412,
+      charsMax: 65_536,
+    }),
+  ).toBe("70,412 of 65,536 characters");
+  expect(
+    repositoryImportFault({
+      path: refusedPath,
+      fault: "ReferenceAbsent",
+      reference: ".chug/workloads/ci.json",
+    }),
+  ).toBe("Missing .chug/workloads/ci.json");
+});
+
+test("a refused import names its first file and fault and how many more, and no other attempt names any", () => {
+  const refused = (refusalCount: number) =>
+    repositoryImportRefusedFile({
+      attemptedAt,
+      commit,
+      outcome: {
+        result: "DeclarationsRefused",
+        refusals: [{ path: refusedPath, fault: "DocumentUnreadable" }],
+        refusalCount,
+      },
+    });
+  expect(refused(1)).toBe(`${refusedPath} · Not JSON`);
+  expect(refused(7)).toBe(`${refusedPath} · Not JSON · 6 more`);
+  expect(
+    repositoryImportRefusedFile({
+      attemptedAt,
+      outcome: { result: "DeclarationsRefused" },
+    }),
+  ).toBeUndefined();
+  expect(
+    repositoryImportRefusedFile({
+      attemptedAt,
+      outcome: { result: "Imported" },
+    }),
+  ).toBeUndefined();
+  expect(repositoryImportRefusedFile(undefined)).toBeUndefined();
+});
+
+test("only a live binding whose newest import was refused is counted refused", () => {
+  const listed = (
+    repository: string,
+    result: "DeclarationsRefused" | "Imported",
+    retiredAt?: string,
+  ) => ({
+    repository,
+    boundAt: attemptedAt,
+    landing: { mode: "Push" as const },
+    pipelinesWritable: false,
+    configured: false as const,
+    lastImport: { attemptedAt, outcome: { result } },
+    ...(retiredAt === undefined ? {} : { retiredAt }),
+  });
+  expect(
+    repositoryImportsRefused([
+      listed("live-refused", "DeclarationsRefused"),
+      listed("retired-refused", "DeclarationsRefused", attemptedAt),
+      listed("imported", "Imported"),
+      { ...listed("never", "Imported"), lastImport: undefined },
+    ]),
+  ).toStrictEqual(["live-refused"]);
 });

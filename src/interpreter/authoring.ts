@@ -585,7 +585,8 @@ function canonicalValue(value: unknown): unknown {
   return result;
 }
 
-function canonicalJson(value: unknown): string {
+/** One parsed configuration as JSON with its keys sorted and no whitespace, refusing what no configuration may hold. */
+export function canonicalJson(value: unknown): string {
   const encoded = JSON.stringify(canonicalValue(value));
   if (encoded === undefined)
     throw new TypeError("canonical configuration: value is not JSON");

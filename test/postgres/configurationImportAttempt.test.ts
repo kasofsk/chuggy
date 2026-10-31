@@ -13,6 +13,10 @@ import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 import type pg from "pg";
 
+import {
+  configurationCanonicalCharsMax,
+  repositoryConfigurationImportRefusalsKeptMax,
+} from "../../src/contract/http.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import {
   postgresProjectRepositoryRetirement,
@@ -192,7 +196,19 @@ const atCommit: readonly ImportCase[] = [
     label: "invalid",
     head: branchAt(commitOf("6")),
     snapshot: declarationFiles("{"),
-    kept: { commit: commitOf("6"), outcome: { result: "DeclarationsRefused" } },
+    kept: {
+      commit: commitOf("6"),
+      outcome: {
+        result: "DeclarationsRefused",
+        refusals: [
+          {
+            path: [".chug", "configurations", "work.json"].join("/"),
+            fault: "DocumentUnreadable",
+          },
+        ],
+        refusalCount: 1,
+      },
+    },
   },
   {
     label: "conflicted",
@@ -551,4 +567,109 @@ test("a repository bound again after another project retired it carries none of 
     );
     assert.deepEqual(await hasAttempt(next), [true, false]);
   }
+});
+
+/** A snapshot of `count` declaration files, none of them a document. */
+function unreadableFiles(count: number): RepositoryConfigurationSnapshotRead {
+  return {
+    read: "Snapshot",
+    files: Array.from({ length: count }, (_, at) => ({
+      path: [".chug", "configurations", `work-${String(at)}.json`].join("/"),
+      kind: "File" as const,
+      content: "{",
+    })),
+  };
+}
+
+/**
+ * A listing carries a binding's attempt whole, so what a refused one keeps is
+ * bounded: its first refusals, and how many there were.
+ */
+test("a refused import keeps its first refusals and how many there were, answers them on the listing, and a later import clears them", async () => {
+  const refused: ImportCase = {
+    label: "refused",
+    head: branchAt(commitOf("9")),
+    snapshot: unreadableFiles(repositoryConfigurationImportRefusalsKeptMax + 2),
+    kept: { outcome: { result: "Imported" } },
+  };
+  const bound = await bindCases("import-attempt-refusals", [refused]);
+  const [repository] = bound.repositories;
+  if (repository === undefined) throw new Error("no repository was bound");
+  const web = routeOver(bound);
+  await web.importRepositoryConfigurations(principal, bound.partition, {
+    repository,
+  });
+  assert.deepEqual(
+    (await listedOf(bound.partition)).get(repository)?.lastImport?.outcome,
+    {
+      result: "DeclarationsRefused",
+      refusals: Array.from(
+        { length: repositoryConfigurationImportRefusalsKeptMax },
+        (_, at) => ({
+          path: [".chug", "configurations", `work-${String(at)}.json`].join(
+            "/",
+          ),
+          fault: "DocumentUnreadable",
+        }),
+      ),
+      refusalCount: repositoryConfigurationImportRefusalsKeptMax + 2,
+    },
+  );
+
+  const mended = new Map([
+    [
+      repository,
+      { ...refused, head: branchAt(commitOf("a")), snapshot: declared },
+    ],
+  ]);
+  await routeOver({
+    ...bound,
+    answered: mended,
+  }).importRepositoryConfigurations(principal, bound.partition, { repository });
+  assert.deepEqual(
+    (await listedOf(bound.partition)).get(repository)?.lastImport?.outcome,
+    {
+      result: "Imported",
+    },
+  );
+  assert.deepEqual(
+    (
+      await pool.query<{ refusals: unknown; refusal_count: number | null }>(
+        `SELECT refusals,refusal_count FROM repository_configuration_import
+          WHERE tenant=$1 AND project=$2 AND repository=$3`,
+        [bound.partition.tenant, bound.partition.project, repository],
+      )
+    ).rows,
+    [{ refusals: null, refusal_count: null }],
+  );
+});
+
+test("a refusal of a configuration too long is kept with its length and the limit", async () => {
+  const partition = postgresHarnessPartition("import-attempt-too-long");
+  await harness.store.createProject(partition);
+  const repository = asRepositoryId(
+    await fixtureBoundRepository(harness, pool, partition, "too-long"),
+  );
+  const outcome = {
+    result: "DeclarationsRefused",
+    refusals: [
+      {
+        path: [".chug", "configurations", "work.json"].join("/"),
+        fault: "ConfigurationTooLong",
+        chars: configurationCanonicalCharsMax + 1,
+        charsMax: configurationCanonicalCharsMax,
+      },
+    ],
+    refusalCount: 1,
+  } as const;
+  await postgresRepositoryConfigurationImportAttempts(importerPool).record({
+    partition,
+    repository,
+    commit: commitOf("b"),
+    outcome,
+  });
+  assert.deepEqual(
+    (await listedOf(partition)).get(repository)?.lastImport?.outcome,
+    outcome,
+  );
 });
