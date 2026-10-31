@@ -126,7 +126,7 @@ export const briefingTemplateSections: readonly BriefingSectionId[] = [
 ];
 
 /** The wording revision every rendered briefing records, moved by any edit to the text below. */
-export const briefingTemplateVersion = 12;
+export const briefingTemplateVersion = 13;
 
 /** The heading one section renders under, which varies by role and by carrier. */
 export function briefingHeading(
@@ -201,6 +201,7 @@ export const briefingPipelinesUnwritable: readonly string[] = [
 export const briefingReworkPreface: readonly string[] = [
   "Evaluators of an earlier change made for this ticket reported the findings below.",
   "Address what the reports name before anything else; where a report names a command, run it before you report.",
+  "Add commits on top of the commit this workspace is at. An amended or rebased commit is refused and the run's work is lost, so a finding about a commit's message is answered in the message of a new commit.",
 ];
 
 /**

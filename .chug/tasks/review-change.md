@@ -95,7 +95,9 @@ a preset reads exactly like a rule that is working.
     from the names alone. Agent-written code is navigated by grep, and
     predictable names are the index.
 12. **The commit message carries the why** — why this change, now: the
-    reasoning that would otherwise have been a comment.
+    reasoning that would otherwise have been a comment. A pushed commit keeps
+    its message, so a finding names what is missing for the next commit's
+    message to carry, and never asks for a rewrite.
 13. **New behaviour lands with a test at the lowest tier that can express it**,
     and every fix lands with a regression test.
 14. **Contract-first.** A change to the core names the contract it changes. If
