@@ -327,8 +327,9 @@ test("the bar spans the frame rather than sharing the row with the pane", async 
 });
 
 /** A docked pane under the pages takes a share of every page's height, so a
- * narrow viewport starts with the chat over the body under the bar. */
-test("under that width it starts over the whole body, and leaving it docks it under the pages", async () => {
+ * narrow viewport draws the chat over the body under the bar or as the strip,
+ * and never stores either. */
+test("under that width it starts over the whole body with no full-screen control, and collapsing leaves the strip under the pages", async () => {
   await mounted(viewportTwoColumnEm - 1);
   expect(chatDrawn()).not.toBeNull();
   expect(navDrawn()).not.toBeNull();
@@ -336,47 +337,71 @@ test("under that width it starts over the whole body, and leaving it docks it un
   expect(document.querySelector("[data-chat]")?.getAttribute("data-chat")).toBe(
     "full",
   );
-  expect(localStorage.getItem(chatPaneStoreKey)).toBeNull();
+  expect(screen.queryByRole("button", { name: "Full screen" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Exit full screen" })).toBeNull();
   styleless();
-  await pressed("Exit full screen");
-  expect(chatDrawn()).not.toBeNull();
+  await pressed("Collapse");
+  expect(chatDrawn()).toBeNull();
   expect(frameDivided()).toBe("down pages | chat-bottom");
   expect(edgeDrawn().getAttribute("aria-orientation")).toBe("horizontal");
+  await pressed("Expand chat");
+  expect(frameDivided()).toBe("across chat-right");
+  expect(localStorage.getItem(chatPaneStoreKey)).toBeNull();
   styleless();
 });
 
-/** What the reader chose is theirs at every width: a pane they expanded is
- * not put away again because the viewport is narrow. */
-test("under that width a pane the reader expanded starts expanded", async () => {
-  localStorage.setItem(
-    chatPaneStoreKey,
-    JSON.stringify({ placement: "Right", presentation: "Docked" }),
-  );
+/** What a desk stored is kept for the desk: a narrow viewport opens the pane
+ * whole however it was left, writes nothing over it, and a desk draws it as
+ * stored again. */
+test("under that width a pane stored docked or full opens over the whole body, and widened is drawn as stored", async () => {
+  for (const presentation of ["Docked", "Full"]) {
+    const stored = JSON.stringify({ placement: "Left", presentation });
+    localStorage.setItem(chatPaneStoreKey, stored);
+    const frame = await mounted(viewportTwoColumnEm - 1);
+    expect(frameDivided(), presentation).toBe("across chat-right");
+    await pressed("Collapse");
+    await pressed("Expand chat");
+    expect(localStorage.getItem(chatPaneStoreKey), presentation).toBe(stored);
+    viewportAtEm(viewportDeskEm);
+    await frame.redrawn();
+    expect(frameDivided(), presentation).toBe(
+      presentation === "Docked"
+        ? "across chat-left | pages"
+        : "across chat-left",
+    );
+    cleanup();
+  }
+  styleless();
+});
+
+/** The strip under the pages is put away for the page's life only, so a
+ * reload opens the pane whole again. */
+test("under that width a reload after a collapse opens the pane over the whole body", async () => {
   await mounted(viewportTwoColumnEm - 1);
-  expect(chatDrawn()).not.toBeNull();
+  await pressed("Collapse");
   expect(frameDivided()).toBe("down pages | chat-bottom");
+  cleanup();
+  await mounted(viewportTwoColumnEm - 1);
+  expect(frameDivided()).toBe("across chat-right");
+  expect(localStorage.getItem(chatPaneStoreKey)).toBeNull();
   styleless();
 });
 
-/** The glyph follows where the pane is drawn, which on a narrow viewport is
+/** The strip's glyph follows where it is drawn, which on a narrow viewport is
  * under the pages whatever placement the reader stored. */
-test("under that width the controls draw vertical glyphs, and the strip is named Chat", async () => {
-  localStorage.setItem(
-    chatPaneStoreKey,
-    JSON.stringify({ placement: "Right", presentation: "Collapsed" }),
-  );
+test("under that width the strip draws a vertical glyph, and is named Chat", async () => {
   await mounted(viewportTwoColumnEm - 1);
-  const glyph = (name: string): string =>
-    Array.from(
-      screen.getByRole("button", { name }).querySelectorAll("path"),
-      (path) => path.getAttribute("d"),
-    ).join(" ");
-  expect(glyph("Expand chat")).toContain("M3 15h18M9 10l3-3 3 3");
+  await pressed("Collapse");
+  const glyph = Array.from(
+    screen
+      .getByRole("button", { name: "Expand chat" })
+      .querySelectorAll("path"),
+    (path) => path.getAttribute("d"),
+  ).join(" ");
+  expect(glyph).toContain("M3 15h18M9 10l3-3 3 3");
   expect(
     screen.getByRole("button", { name: "Expand chat" }).textContent,
   ).toContain("Chat");
-  await pressed("Expand chat");
-  expect(glyph("Collapse")).toContain("M3 15h18M15 8l-3 3-3-3");
   styleless();
 });
 
@@ -518,8 +543,8 @@ test("the edge is a hairline in the edge's colour, and the stronger one while ho
 });
 
 test("the edge under the pages is a hairline across the frame", async () => {
-  paneDocked();
   await mounted(viewportTwoColumnEm - 1);
+  await pressed("Collapse");
   const edge = edgeDrawn();
   expect(edge.getAttribute("aria-orientation")).toBe("horizontal");
   expect(sheetDeclared(sheetRules(shellSheet, []), edge, "height")).toBe(
@@ -561,9 +586,8 @@ function paneUnderLeast(): readonly (readonly string[])[] {
 }
 
 /** Beside the pages the panel is under the pane's least only while a drag
- * into the strip is held; below them the least is a height, which the query
- * cannot read. */
-test("beside the pages a panel under the pane's least draws none of it, and below them it does", async () => {
+ * into the strip is held; over the whole body no edge is drawn to hold. */
+test("beside the pages a panel under the pane's least draws none of it, and over the whole body it does", async () => {
   paneDocked();
   const frame = await mounted(viewportDeskEm);
   const hidden = ["hidden", "hidden"];
@@ -574,7 +598,7 @@ test("beside the pages a panel under the pane's least draws none of it, and belo
       expect(sheetDeclared(rules, part, "visibility")).toBe("");
   viewportAtEm(viewportTwoColumnEm - 1, {});
   await frame.redrawn();
-  expect(frameDivided()).toBe("down pages | chat-bottom");
+  expect(frameDivided()).toBe("across chat-right");
   expect(paneUnderLeast()).toEqual([
     ["", ""],
     ["", ""],
@@ -1013,6 +1037,7 @@ function paneDocked(): void {
  * it, so every screen is still one press away. */
 test("on a phone a full screen keeps the banner and the bar, and pressing a screen draws it", async () => {
   pageDrawn = () => <p>the screen</p>;
+  paneDocked();
   await mounted(viewportNarrowEm - 1);
   expect(frameDivided()).toBe("across chat-right");
   expect(chatDrawn()).not.toBeNull();
@@ -1025,8 +1050,13 @@ test("on a phone a full screen keeps the banner and the bar, and pressing a scre
   });
   await settled();
   expect(frameDivided()).toBe("down pages | chat-bottom");
+  expect(chatDrawn()).toBeNull();
+  expect(screen.getByRole("button", { name: "Expand chat" })).toBeDefined();
   expect(screen.getByText("the screen")).toBeDefined();
   expect(navDrawn()).not.toBeNull();
+  expect(localStorage.getItem(chatPaneStoreKey)).toBe(
+    JSON.stringify({ placement: "Right", presentation: "Docked" }),
+  );
   styleless();
 });
 
@@ -1231,15 +1261,18 @@ test("a width dragged beside the pages and a height dragged under them are each 
   styleless();
 });
 
-/** A viewport narrowing past the two-column width stacks the pane the reader
- * left docked under the pages, at its own height there, and draws the page
- * once through it. */
+/** A viewport narrowing past the two-column width stacks the strip the reader
+ * left there under the pages, and draws the page once through it. */
 test("a page outlives the viewport narrowing past the two-column width", async () => {
   paneDocked();
   pageDrawn = () => <input aria-label="Draft" />;
-  const frame = await mounted(viewportDeskEm, undefined, undefined, {
+  const frame = await mounted(viewportTwoColumnEm - 1, undefined, undefined, {
     heightEm: frameTallEm,
   });
+  await pressed("Collapse");
+  viewportAtEm(viewportDeskEm, { heightEm: frameTallEm });
+  await frame.redrawn();
+  expect(frameDivided()).toBe("across pages | chat-right");
   const draft = screen.getByRole<HTMLInputElement>("textbox", {
     name: "Draft",
   });
@@ -1247,22 +1280,21 @@ test("a page outlives the viewport narrowing past the two-column width", async (
   viewportAtEm(viewportTwoColumnEm - 1, { heightEm: frameTallEm });
   await frame.redrawn();
   expect(frameDivided()).toBe("down pages | chat-bottom");
-  expect(edgeShare()).toBeCloseTo(pagesOverDefaultShare());
   expect(screen.getByRole("textbox", { name: "Draft" })).toBe(draft);
   expect(draft.value).toBe("half a thought");
   styleless();
 });
 
 /** The pages drawn alone on a thread's own page divide nothing, so a viewport
- * widened there leaves the pane under the pages to be laid beside them on the
+ * widened there leaves the strip under the pages to be laid beside them on the
  * way back. */
 test("a viewport widened on a thread's own page lays the pane beside the pages on the way back", async () => {
   paneDocked();
   const frame = await mounted(viewportTwoColumnEm - 1, undefined, undefined, {
     heightEm: frameTallEm,
   });
+  await pressed("Collapse");
   expect(frameDivided()).toBe("down pages | chat-bottom");
-  expect(edgeShare()).toBeCloseTo(pagesOverDefaultShare());
   routeParams = { ...atlas, session: threadMineSession };
   await frame.redrawn();
   expect(frameDivided()).toBe("across pages");
@@ -1444,7 +1476,7 @@ function walkChecked(trail: ChatPaneTrail, where: string): void {
     where,
   ).toBe(strip);
   expect(localStorage.getItem(chatPaneStoreKey), where).toBe(
-    trail.chosen === undefined ? null : JSON.stringify(trail.chosen),
+    trail.hold.stored === undefined ? null : JSON.stringify(trail.hold.stored),
   );
   if (drawn.share === undefined) {
     expect(screen.queryByRole("separator"), where).toBeNull();
@@ -1676,11 +1708,12 @@ test.each([
     ],
   ],
   [
-    "dragged, narrowed past the two-column width, restored, and widened",
+    "dragged, narrowed past the two-column width, collapsed, expanded, and widened",
     [
       draggedAcross,
       { move: "Narrowed" },
-      { move: "Restored" },
+      { move: "Collapsed" },
+      { move: "Expanded" },
       { move: "Widened" },
     ],
   ],
@@ -1770,6 +1803,19 @@ test("the gear offers where the pane sits on every page but a thread's own", asy
   cleanup();
   routeParams = { ...atlas, session: threadMineSession };
   await mounted(viewportDeskEm);
+  const menu = await settingsOpened();
+  expect(within(menu).getByText("Theme")).toBeDefined();
+  expect(within(menu).queryByText("Chat position")).toBeNull();
+  expect(
+    within(menu).queryByRole("menuitemradio", { name: "Left" }),
+  ).toBeNull();
+  styleless();
+});
+
+/** Below two columns the pane is the whole body or the strip under the pages
+ * wherever it sits, so the gear offers no placement there. */
+test("below two columns the gear offers no placement", async () => {
+  await mounted(viewportNarrowEm - 1);
   const menu = await settingsOpened();
   expect(within(menu).getByText("Theme")).toBeDefined();
   expect(within(menu).queryByText("Chat position")).toBeNull();

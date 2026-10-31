@@ -50,8 +50,8 @@ const navDotFills: Readonly<Record<Tone, string>> = {
   neutral: "bg-ink-3",
 };
 
-/** One screen's entry, which also puts a pane that filled the body back
- * beside the pages. */
+/** One screen's entry, which also moves a pane that filled the body out of
+ * the way, as `useChatPaneYields` says. */
 export function TopBarNavEntry(props: { readonly entry: NavEntry }): ReactNode {
   const entry = props.entry;
   const yields = useChatPaneYields();
