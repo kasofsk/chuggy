@@ -1441,13 +1441,17 @@ test("every outcome the bind door answers with is carried out as its own", async
 test("what a project binds is its readers' to read and nobody else's", async () => {
   const refused = fixtureService(["Administer"]);
   assert.deepEqual(
-    await refused.service.projectRepositories(principal, partition),
+    await refused.service.projectRepositories(principal, partition, {
+      reach: true,
+    }),
     { result: "NotFound" },
   );
   assert.deepEqual(refused.asked.askedProject, ["Read"]);
   const reading = fixtureService(["Read"]);
   assert.deepEqual(
-    await reading.service.projectRepositories(principal, partition),
+    await reading.service.projectRepositories(principal, partition, {
+      reach: true,
+    }),
     {
       result: "Repositories",
       repositories: [
@@ -2173,7 +2177,9 @@ test("the listing answers what the project holds for each binding, and marks it 
   ];
   for (const [stepHeld, configurationsHeld] of cases) {
     const { service, wrote } = fixtureService(["Read"], { stepHeld });
-    const listed = await service.projectRepositories(principal, partition);
+    const listed = await service.projectRepositories(principal, partition, {
+      reach: true,
+    });
     const binding = {
       repository,
       boundAt: "2026-09-11T01:00:00Z",
@@ -2243,6 +2249,7 @@ test("a binding the worker App's installation does not select is listed with tha
   const listed = await unselected.service.projectRepositories(
     principal,
     partition,
+    { reach: true },
   );
   assert.deepEqual(listed.result === "Repositories" && listed.repositories, [
     {
@@ -2261,6 +2268,7 @@ test("a binding the worker App's installation does not select is listed with tha
   const covered = await selected.service.projectRepositories(
     principal,
     partition,
+    { reach: true },
   );
   assert.deepEqual(covered.result === "Repositories" && covered.repositories, [
     listedBinding,
@@ -2283,7 +2291,9 @@ test("a binding whose installation could not be read is listed unknown, and one 
     ],
   ] as const) {
     const { service } = fixtureService(["Read"], given);
-    const listed = await service.projectRepositories(principal, partition);
+    const listed = await service.projectRepositories(principal, partition, {
+      reach: true,
+    });
     assert.deepEqual(listed.result === "Repositories" && listed.repositories, [
       { ...listedBinding, workerReach },
     ]);
@@ -2298,6 +2308,7 @@ test("a retired binding and a deployment holding no worker App carry no reach, a
   const listed = await retired.service.projectRepositories(
     principal,
     partition,
+    { reach: true },
   );
   assert.deepEqual(listed.result === "Repositories" && listed.repositories, [
     { ...listedBinding, retiredAt: fixtureRetiredAt },
@@ -2309,12 +2320,27 @@ test("a retired binding and a deployment holding no worker App carry no reach, a
   const answered = await portalOnly.service.projectRepositories(
     principal,
     partition,
+    { reach: true },
   );
   assert.deepEqual(
     answered.result === "Repositories" && answered.repositories,
     [listedBinding],
   );
   assert.deepEqual([...retired.wrote.listed, ...portalOnly.wrote.listed], []);
+});
+
+test("a read that does not ask for reach carries none on a binding the worker App does not select, and asks no forge", async () => {
+  const unasked = fixtureService(["Read"], workerReachGiven([]));
+  const listed = await unasked.service.projectRepositories(
+    principal,
+    partition,
+    { reach: false },
+  );
+  assert.deepEqual(listed.result === "Repositories" && listed.repositories, [
+    listedBinding,
+  ]);
+  assert.deepEqual(unasked.wrote.listed, []);
+  assert.deepEqual(unasked.wrote.compared, []);
 });
 
 test("a bind the worker App's installation does not select is still bound, with the reason beside it", async () => {
@@ -2383,7 +2409,9 @@ test("the listing answers the last import attempted of each binding, and none of
     [new Map([[repository, lastImport]]), lastImport],
   ] as const) {
     const { service, wrote } = fixtureService(["Read"], { attempted });
-    const listed = await service.projectRepositories(principal, partition);
+    const listed = await service.projectRepositories(principal, partition, {
+      reach: true,
+    });
     assert.deepEqual(
       listed.result === "Repositories" &&
         listed.repositories.map((row) =>
@@ -2410,7 +2438,9 @@ test("a bootstrap that no longer releases is not held, and the step meets it rat
     "Administer",
     "Read",
   ]);
-  const listed = await service.projectRepositories(principal, partition);
+  const listed = await service.projectRepositories(principal, partition, {
+    reach: true,
+  });
   assert.deepEqual(
     listed.result === "Repositories" &&
       listed.repositories.map((row) => row.configured),
@@ -2488,7 +2518,9 @@ test("a bootstrap of an earlier text is still held, and its repository's configu
     "Read",
   ]);
   const held = { result: "Bootstrapped", revision: bootstrapRevision };
-  const listed = await service.projectRepositories(principal, partition);
+  const listed = await service.projectRepositories(principal, partition, {
+    reach: true,
+  });
   assert.deepEqual(
     listed.result === "Repositories" &&
       listed.repositories.map(
@@ -2574,7 +2606,9 @@ function fixtureBareService(
     configurations: { ...ports.configurations, authoring: revisions.authoring },
   });
   const held = async () => {
-    const read = await service.projectRepositories(principal, partition);
+    const read = await service.projectRepositories(principal, partition, {
+      reach: true,
+    });
     assert.equal(read.result, "Repositories");
     return read.result === "Repositories"
       ? read.repositories.map((row) => [

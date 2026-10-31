@@ -2086,7 +2086,7 @@ export const projectRepositoryListedSchema =
     configurationsHeld: projectRepositoryConfigurationsHeldSchema.optional(),
     /** Absent on a binding no import was attempted of. */
     lastImport: repositoryConfigurationImportAttemptSchema.optional(),
-    /** Absent on a retired binding, and as at the bind. */
+    /** Absent on a retired binding, as at the bind, and on every binding a `reach=false` read answers. */
     workerReach: projectRepositoryWorkerReachSchema.optional(),
   });
 export type ProjectRepositoryListedResponse = z.infer<

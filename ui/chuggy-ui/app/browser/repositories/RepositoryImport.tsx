@@ -16,7 +16,6 @@ import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { RepositoryConfigurationImportAttemptResponse } from "../../../../../src/contract/responses.ts";
 import { apiImportRepositoryConfigurations } from "../../core/apiRoutes.ts";
 import { agoFigure } from "../../core/figures.ts";
-import { projectResourceKey } from "../../core/projectQueryKeys.ts";
 import {
   repositoryImportLabel,
   repositoryImportLine,
@@ -33,7 +32,7 @@ import { Figure } from "../ui/Figure.tsx";
 import { Identity } from "../ui/Identity.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Pill } from "../ui/Pill.tsx";
-import { projectRepositoriesResource } from "./AddRepository.tsx";
+import { projectRepositoriesInvalidated } from "./AddRepository.tsx";
 
 /** One Import now: whether its request is out, and how the last one was answered. */
 export interface RepositoryImporting {
@@ -66,13 +65,7 @@ export function useRepositoryImportNow(
           partition,
           { repository },
         );
-        await client.invalidateQueries({
-          queryKey: projectResourceKey(
-            partition,
-            "Project",
-            projectRepositoriesResource,
-          ),
-        });
+        await projectRepositoriesInvalidated(client, partition);
         setBusy(false);
         setPressed({ answered, over });
       })();

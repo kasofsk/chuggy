@@ -24,6 +24,11 @@
     "all": "omit latest, or latest=false: every revision, newest first",
     "latest": "latest=true: the newest revision of each repository and name, newest first, and each revision imported from no repository, a bootstrap among them, as its own; a cursor pages that narrowed listing"
   },
+  "repositoryReachFilter": {
+    "query": "reach",
+    "all": "omit reach, or reach=true: each live binding with what the worker App reaches of it, asked of the forge",
+    "unasked": "reach=false: the same bindings, the forge not asked and no binding carrying workerReach, which says nothing of what the worker App reaches"
+  },
   "identities": {
     "installation": "canonical UUID authority identity",
     "tenant": "percent-encoded opaque UTF-8 path segment",

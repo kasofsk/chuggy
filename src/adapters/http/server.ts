@@ -1019,7 +1019,7 @@ function registerOperationalRoutes(
     const latest = record(request.query)["latest"];
     nativeHttpSend(
       reply,
-      latest !== undefined && latestField(latest)
+      latest !== undefined && booleanQueryField("latest", latest)
         ? latestExecutionsResponse(
             partition,
             await web.latestExecutions(
@@ -1747,12 +1747,16 @@ function registerProjectRepositories(
   app.get(
     "/api/v1/tenants/:tenant/projects/:project/repositories",
     async (request, reply) => {
+      const reach = record(request.query)["reach"];
       nativeHttpSend(
         reply,
         projectRepositoriesResponse(
           await onboarding.projectRepositories(
             principalOf(request),
             partitionOf(request),
+            {
+              reach: reach === undefined || booleanQueryField("reach", reach),
+            },
           ),
         ),
       );
@@ -1994,10 +1998,10 @@ function registerOperations(app: FastifyInstance, web: InitialNativeWeb): void {
   });
 }
 
-function latestField(value: unknown): boolean {
+function booleanQueryField(name: string, value: unknown): boolean {
   if (value === "true") return true;
   if (value === "false") return false;
-  throw new TypeError("latest is not true or false");
+  throw new TypeError(`${name} is not true or false`);
 }
 
 function registerConfigurations(
@@ -2020,7 +2024,9 @@ function registerConfigurations(
             ),
           }),
       limit: integerField(query, "limit", 50),
-      ...(latest === undefined ? {} : { latest: latestField(latest) }),
+      ...(latest === undefined
+        ? {}
+        : { latest: booleanQueryField("latest", latest) }),
     });
     nativeHttpSend(reply, configurationsResponse(result));
   });

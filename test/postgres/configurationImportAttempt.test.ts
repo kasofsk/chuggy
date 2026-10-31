@@ -491,7 +491,7 @@ async function listedOf(
     access: fixtureMember,
     credentials: { credential: () => Promise.reject(new Error("unasked")) },
     forgeApps: [],
-  }).projectRepositories(principal, partition);
+  }).projectRepositories(principal, partition, { reach: true });
   assert.equal(listed.result, "Repositories");
   if (listed.result !== "Repositories") return new Map();
   return new Map(listed.repositories.map((row) => [row.repository, row]));

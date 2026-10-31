@@ -100,7 +100,7 @@ function routed(
     const url = request.url;
     const own = answered(request);
     if (own !== undefined) return own;
-    if (url.endsWith("/repositories"))
+    if (url.endsWith("/repositories?reach=false"))
       return answer({
         repositories: [creationListed(creationBinding(chuggy), "Imported")],
       });
@@ -180,7 +180,7 @@ test("a submit the project moved under, whose re-read fails, keeps the form and 
   const sent = await drawCreation(({ method, url }) => {
     if (method === "POST" && url.endsWith("/drafts"))
       return answer({ error: { code: "DraftInitializationStale" } }, 409);
-    return failing.on && url.endsWith("/repositories")
+    return failing.on && url.endsWith("/repositories?reach=false")
       ? unreadable()
       : undefined;
   });
@@ -232,7 +232,9 @@ test("text typed into the form survives a read of the project that fails behind 
   });
   const sent = await drawCreation(
     ({ url }) =>
-      failing.on && url.endsWith("/repositories") ? unreadable() : undefined,
+      failing.on && url.endsWith("/repositories?reach=false")
+        ? unreadable()
+        : undefined,
     undefined,
     client,
   );
@@ -254,7 +256,9 @@ test("a submit in flight keeps its outcome through a read of the project that fa
   let drafts = 0;
   await drawCreation(
     ({ url }) =>
-      failing.on && url.endsWith("/repositories") ? unreadable() : undefined,
+      failing.on && url.endsWith("/repositories?reach=false")
+        ? unreadable()
+        : undefined,
     (served) =>
       ((url: string, init?: { readonly method?: string }) => {
         if (init?.method !== "POST" || !url.endsWith("/drafts"))

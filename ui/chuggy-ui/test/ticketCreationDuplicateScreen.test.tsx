@@ -150,7 +150,7 @@ function routed(project: Project): (request: SentRequest) => Response {
         state: "Succeeded",
         decidedSequence: 43,
       });
-    if (url.endsWith("/repositories"))
+    if (url.endsWith("/repositories?reach=false"))
       return answer({
         repositories: project.bindings ?? [
           creationListed(creationBinding(chuggy), "Imported"),
