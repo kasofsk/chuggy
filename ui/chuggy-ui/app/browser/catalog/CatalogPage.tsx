@@ -201,6 +201,8 @@ function CatalogRevision(props: {
     "Configuration",
     props.revision,
     (ports) => apiConfiguration(ports, props.partition, props.revision),
+    undefined,
+    "Streamed",
   );
   if (state.state !== "Ready") return <PanelUnready state={state} />;
   const configuration = state.value;

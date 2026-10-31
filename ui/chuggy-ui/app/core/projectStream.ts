@@ -85,6 +85,12 @@ export function projectStreamCarrying(status: ProjectStreamStatus): boolean {
   return status.connection === "Open" && status.source === "live";
 }
 
+/** Whether the stream is open and has answered, so it holds a position every
+ * frame after it is replayed from — which a quiet stream does too. */
+export function projectStreamHolding(status: ProjectStreamStatus): boolean {
+  return status.connection === "Open" && status.answered;
+}
+
 /**
  * A first open that has not settled: a connection that has never had the chance
  * to fail. Nothing has stopped arriving and there is nothing to warn a reader

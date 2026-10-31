@@ -338,6 +338,8 @@ function SetRowRan(
     "Execution",
     first.execution,
     (ports) => apiExecution(ports, partition, first.execution),
+    undefined,
+    "Streamed",
   );
   const read = state.state === "Ready" ? state.value : undefined;
   const opened = useRunResultOpened(partition, first.execution, read);

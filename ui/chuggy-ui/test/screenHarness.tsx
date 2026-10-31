@@ -12,7 +12,7 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import { StrictMode } from "react";
+import { StrictMode, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import { vi } from "vitest";
 
@@ -312,4 +312,37 @@ export async function press(name: string): Promise<void> {
     fireEvent.click(screen.getByRole("button", { name }));
   });
   await settled();
+}
+
+export interface Visit {
+  readonly Visited: (props: { readonly children: ReactNode }) => ReactNode;
+  /** The screen left or returned to, and what that set off flushed. */
+  readonly visited: (here: boolean) => Promise<void>;
+}
+
+/** A screen that can be left and returned to under the providers that hold
+ * it, as a reader leaves one for another screen of the same project. */
+export function visitHeld(): Visit {
+  let here = true;
+  const listeners = new Set<() => void>();
+  const subscribe = (listener: () => void): (() => void) => {
+    listeners.add(listener);
+    return () => {
+      listeners.delete(listener);
+    };
+  };
+  function Visited(props: { readonly children: ReactNode }): ReactNode {
+    const present = useSyncExternalStore(subscribe, () => here);
+    return present ? props.children : null;
+  }
+  return {
+    Visited,
+    visited: async (next) => {
+      await turned(() => {
+        here = next;
+        for (const listener of listeners) listener();
+      });
+      await settled();
+    },
+  };
 }

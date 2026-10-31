@@ -20,6 +20,7 @@ import {
   apiDouble,
   openedStream,
   ScreenHarness,
+  visitHeld,
   settled,
   turned,
 } from "./screenHarness.tsx";
@@ -50,8 +51,15 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 // jscpd:ignore-end -- the case's own doubles resume here
 
+/** Every address the page read, in order. */
+const requested: string[] = [];
+
+/** The page left and returned to under the stream it was drawn with. */
+let visit = visitHeld();
+
 beforeEach(() => {
   viewportAtEm(viewportDeskEm);
+  requested.length = 0;
 });
 
 afterEach(() => {
@@ -136,8 +144,12 @@ function drawn(
       return answer({ partition: atlas, sequence: 169, tickets: [after] });
     },
   });
-  vi.stubGlobal("fetch", api.fetch);
+  vi.stubGlobal("fetch", (url: string, init?: object) => {
+    requested.push(url);
+    return api.fetch(url, init);
+  });
   const server = openedStream();
+  visit = visitHeld();
   render(
     <ScreenHarness
       partition={atlas}
@@ -146,10 +158,16 @@ function drawn(
       }
       transport={server.ports.fetch}
     >
-      <TicketPage />
+      <visit.Visited>
+        <TicketPage />
+      </visit.Visited>
     </ScreenHarness>,
   );
   return server;
+}
+
+function ticketReads(): number {
+  return requested.filter((url) => url.endsWith("/tickets/21")).length;
 }
 
 function cyclesDrawn(): number {
@@ -225,4 +243,27 @@ test("a dispatch's confirmed row leaves the ledger grouped and the brief drawn",
   expect(screen.queryByText("Ungrouped · program not loaded")).toBeNull();
   expect(cyclesDrawn()).toBe(3);
   expect(screen.getAllByText(intent)).toHaveLength(briefDrawn);
+});
+
+test("a ticket returned to while the stream holds its position is not read again, and draws what a frame wrote while it was left", async () => {
+  const server = drawn();
+  await settled();
+  expect(ticketReads()).toBe(1);
+
+  await visit.visited(false);
+  await turned(() => {
+    server.push(
+      frame("Ticket", "200", {
+        version: 1,
+        resource: "21",
+        representation: resumedRow,
+      }),
+    );
+  });
+  await settled();
+  await visit.visited(true);
+
+  expect(ticketReads()).toBe(1);
+  expect(screen.getAllByText("Evaluating").length).toBeGreaterThan(0);
+  expect(cyclesDrawn()).toBe(3);
 });

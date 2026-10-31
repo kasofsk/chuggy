@@ -308,6 +308,7 @@ function useInboxTicketsUnheld(
     "Ticket",
     tickets.map(String),
     (resource, ports) => apiTicket(ports, partition, Number(resource)),
+    "Streamed",
   );
   const read = new Map<number, TicketResponse>();
   tickets.forEach((ticket, at) => {

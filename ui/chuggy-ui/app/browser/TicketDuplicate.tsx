@@ -77,6 +77,7 @@ function DuplicateDependencies(
     "Ticket",
     dependencies.map(String),
     (resource, readPorts) => apiTicket(readPorts, partition, Number(resource)),
+    "Streamed",
   );
   const revoked = ticketDuplicateRevoked(dependencies, states);
   if (revoked === undefined)
@@ -91,12 +92,16 @@ function DuplicateRead(props: DuplicateProps): ReactNode {
     "Draft",
     String(from),
     (readPorts) => apiDraft(readPorts, partition, from),
+    undefined,
+    "Streamed",
   );
   const ticketState = usePanelResource(
     partition,
     "Ticket",
     String(from),
     (readPorts) => apiTicket(readPorts, partition, from),
+    undefined,
+    "Streamed",
   );
   if (draftState.state !== "Ready") return <PanelUnready state={draftState} />;
   if (ticketState.state === "Pending" || ticketState.state === "Failed")
