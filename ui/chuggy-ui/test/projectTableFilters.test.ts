@@ -57,7 +57,7 @@ test("a filter's key stays under its partition, so a reset still reaches it", ()
 test("the active list folds a frame in, and a searched or numbered one reads again", () => {
   expect(
     ticketFilterList(partition, ticketListAskDefault).refresh.refresh,
-  ).toBe("Fold");
+  ).toBe("FoldElseReread");
   expect(
     ticketFilterList(partition, { ...ticketListAskDefault, search: "gate" })
       .refresh.refresh,

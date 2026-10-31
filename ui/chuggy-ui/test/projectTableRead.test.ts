@@ -1,19 +1,17 @@
 /**
- * The two lines of the screen that are not drawing: what the ticket read takes
- * its page count from, and what a walk's second page asks for.
+ * The line of the screen that is not drawing: what the ticket read takes its
+ * page count from.
  *
- * Both are one expression in a component, and replacing either silently undoes
- * a fix the rows depend on, so each is driven here — the first against a real
- * query cache and a recording transport, and neither against a renderer.
+ * It is one expression in a component, and replacing it silently undoes a fix
+ * the rows depend on, so it is driven here against a real query cache and a
+ * recording transport rather than a renderer.
  */
 
 import { QueryClient } from "@tanstack/react-query";
 import { expect, test } from "vitest";
 
-import { nativeHttpPageItemsMax } from "../../../src/contract/http.ts";
 import { ticketRowsRead } from "../app/browser/ProjectTable.tsx";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
-import { projectExecutionPage } from "../app/core/projectExecutionIndex.ts";
 import {
   ticketFilterList,
   ticketListAskDefault,
@@ -80,23 +78,4 @@ test("a first read of an entry nothing has written asks for one page", async () 
     ticketListAskDefault,
   );
   expect(held.urls.length).toBe(1);
-});
-
-test("a walk's first page carries no cursor and its next carries the one it was given", () => {
-  expect(projectExecutionPage("Latest", undefined).cursor).toBeUndefined();
-  expect(projectExecutionPage("Latest", "opaque").cursor).toBe("opaque");
-});
-
-test("a walk states the size it wants and names only the read it walks", () => {
-  expect(projectExecutionPage("Latest", undefined).limit).toBe(
-    nativeHttpPageItemsMax,
-  );
-  expect(projectExecutionPage("Latest", undefined)).toStrictEqual({
-    limit: nativeHttpPageItemsMax,
-    latest: true,
-  });
-  expect(projectExecutionPage("NonTerminal", undefined)).toStrictEqual({
-    limit: nativeHttpPageItemsMax,
-    state: "NonTerminal",
-  });
 });

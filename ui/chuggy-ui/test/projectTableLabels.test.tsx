@@ -26,6 +26,10 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
+import {
+  executionSummarySchema,
+  ticketLatestExecutionSchema,
+} from "../../../src/contract/responses.ts";
 import { ProjectTable } from "../app/browser/ProjectTable.tsx";
 import {
   cellAbsent,
@@ -77,6 +81,7 @@ vi.mock("@tanstack/react-router", () => ({
 beforeEach(resizeObserverStubbed);
 
 afterEach(() => {
+  executionsAsked.length = 0;
   cleanup();
   vi.unstubAllGlobals();
   localStorage.clear();
@@ -139,6 +144,30 @@ const escalated = {
   ...ticketInstants,
 };
 
+/** Every executions read the table issued, which it issues none of. */
+const executionsAsked: string[] = [];
+
+/** Each ticket as the tickets list carries it: with the latest of the
+ * executions a case names for it, where it names any. */
+function ticketsCarrying(
+  tickets: readonly unknown[],
+  executions: readonly unknown[],
+): readonly unknown[] {
+  return tickets.map((one) => {
+    const number = (one as { readonly ticket: number }).ticket;
+    const latest = executions
+      .map((each) => executionSummarySchema.parse(each))
+      .filter((each) => each.ticket === number)
+      .sort((a, b) => b.task - a.task)[0];
+    return latest === undefined
+      ? one
+      : {
+          ...(one as object),
+          latestExecution: ticketLatestExecutionSchema.parse(latest),
+        };
+  });
+}
+
 /** The table drawn from whatever tickets and executions a case wants, the
  * abilities read answering as the tickets do unless the case hands a `fetch`
  * of its own over them. */
@@ -147,15 +176,19 @@ async function drawTableWith(
   executions: readonly unknown[],
   over: (served: typeof fetch) => typeof fetch = (served) => served,
 ): Promise<void> {
+  const carrying = ticketsCarrying(tickets, executions);
   const api = apiDouble({
     operation: { operation: "op-one", state: "Pending" },
     route: (url) => {
-      if (url.includes("/executions")) return answer({ executions });
+      if (url.includes("/executions")) {
+        executionsAsked.push(url);
+        return answer({ executions });
+      }
       const phases = new URL(url, "http://stub").searchParams.getAll("phase");
       return answer({
         partition: atlas,
         sequence: 8,
-        tickets: tickets.filter(
+        tickets: carrying.filter(
           (one) =>
             phases.length === 0 ||
             phases.includes((one as { readonly phase: string }).phase),
@@ -325,20 +358,28 @@ test("a row with nothing joined has no execution slot, and no sentence names a p
   expect(document.body.textContent).not.toContain("page budget");
 });
 
-test("while the index loads no row says not read", async () => {
-  await drawTableWith(
-    [ticket, escalated],
-    [],
-    (served) =>
-      ((url: string, init?: RequestInit) =>
-        url.includes("/executions")
-          ? new Promise<Response>(() => undefined)
-          : served(url, init)) as typeof fetch,
-  );
+test("opening the list issues no executions read", async () => {
+  await drawTableWith([ticket, escalated], [execution]);
   expect(screen.getByText("Escalated ticket")).toBeDefined();
-  expect(document.querySelector(".ticket-list-execution")).toBeNull();
-  expect(document.body.textContent).not.toContain("not read");
-  expect(document.body.textContent).not.toContain("page budget");
+  expect(screen.getByText("Running")).toBeDefined();
+  expect(executionsAsked).toStrictEqual([]);
+});
+
+/** Ticket 1 of a project whose executions span far more pages than a walk
+ * of the executions route ever read: its row carries its own. */
+test("a ticket older than every page of executions draws its execution", async () => {
+  await drawTableWith(
+    [{ ...ticket, ticket: 1 }],
+    [
+      {
+        ...execution,
+        ticket: 1,
+        identity: { type: "WorkTask", value: { ticket: 1, cycle: 1 } },
+      },
+    ],
+  );
+  expect(screen.getByText("Running")).toBeDefined();
+  expect(executionsAsked).toStrictEqual([]);
 });
 
 test("the last activity column draws the relative reading and answers the absolute on hover", async () => {

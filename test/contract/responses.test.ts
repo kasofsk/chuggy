@@ -105,6 +105,7 @@ import {
   ticketResponseSchema,
   workerPoolCredentialsSchema,
 } from "../../src/contract/responses.ts";
+import { ticketLatestExecution } from "../../src/interpreter/operationsView.ts";
 import { authoringSchema } from "../../src/contract/authoring.ts";
 import { briefRepositoryCharsMax } from "../../src/contract/brief.ts";
 import { classify } from "../../src/contract/outcomes.ts";
@@ -229,6 +230,36 @@ test("a project read and a ticket read parse as the contract names them", () => 
     ).phase,
     "Done",
   );
+});
+
+test("a tickets list row carries its latest execution, and a ticket's own read has no such field", () => {
+  const ticket = {
+    ticket: asTicketId(3),
+    phase: "Work" as const,
+    sequence: 9,
+    ...ticketCarried,
+  };
+  const latestExecution = ticketLatestExecution(executionSummary);
+  const parsed = projectResponseSchema.parse(
+    JSON.parse(
+      JSON.stringify(
+        projectResponse({
+          result: "Found",
+          project: {
+            partition,
+            sequence: 9,
+            tickets: [{ ...ticket, latestExecution }, ticket],
+          },
+        }).body,
+      ),
+    ),
+  );
+  assert.deepEqual(
+    parsed.tickets[0]?.latestExecution,
+    JSON.parse(JSON.stringify(latestExecution)),
+  );
+  assert.equal(parsed.tickets[1]?.latestExecution, undefined);
+  assert.ok(!("latestExecution" in ticketResponseSchema.shape));
 });
 
 test("a ticket's following parses as each verdict, a held one only under a code a release is refused with", () => {

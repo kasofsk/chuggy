@@ -895,12 +895,9 @@ export interface ExecutionsPage {
   readonly limit?: number | undefined;
   readonly ticket?: number | undefined;
   readonly state?: string | undefined;
-  readonly latest?: boolean | undefined;
 }
 
-/** The list is `(ticket, task)` ascending, and the cursor is a position in it;
- * `latest` reads each ticket's highest task instead, highest ticket first,
- * under a cursor of its own. */
+/** The list is `(ticket, task)` ascending, and the cursor is a position in it. */
 export function apiExecutions(
   ports: ApiPorts,
   partition: PartitionIdentity,
@@ -913,7 +910,6 @@ export function apiExecutions(
       limit: page.limit,
       ticket: page.ticket,
       state: page.state,
-      latest: page.latest === undefined ? undefined : String(page.latest),
     }),
     (value) => executionsResponseSchema.parse(value),
   );

@@ -3,13 +3,13 @@
  * reader searches, sorts and filters to what needs them, what is moving and
  * what is next.
  *
- * The tickets and what they ran are two reads under two keys, so a `Ticket`
- * frame moves a row and an `Execution` frame changes what one row says it is
- * running, without either disturbing the other. The filter, the search and the
- * order a sort reads in are asked of the wire, and the rows on screen stand
- * until the read under a new choice answers; the search and the sort are the
- * page's address, so a link holds the view. A project holding no ticket at all
- * offers the first instead.
+ * Each row carries its ticket's latest execution, so a `Ticket` frame moves a
+ * row and an `Execution` frame changes what one row says it is running, both
+ * folded into the one entry the rows are read under. The filter, the search
+ * and the order a sort reads in are asked of the wire, and the rows on screen
+ * stand until the read under a new choice answers; the search and the sort are
+ * the page's address, so a link holds the view. A project holding no ticket at
+ * all offers the first instead.
  *
  * A ROW OFFERS ONE ACTION, DISPATCH, AS ITS READY CHIP. A ready row reads the
  * dispatch view for the version a dispatch names, and its chip is the button;
@@ -37,9 +37,7 @@ import { phaseLabel } from "../core/codeLabels.ts";
 import { creatorLabel } from "../core/labels.ts";
 import type { PanelState } from "../core/freshness.ts";
 import { projectAbilityRefused } from "../core/projectAbilities.ts";
-import { projectExecutionIndexEmpty } from "../core/projectExecutionIndex.ts";
 import { repositoryLabel } from "../core/projectRepositories.ts";
-import type { ProjectExecutionIndex } from "../core/projectExecutionIndex.ts";
 import {
   ticketFilterAll,
   ticketFilterList,
@@ -51,7 +49,7 @@ import type {
   TicketFilter,
   TicketListAsk,
 } from "../core/projectTableFilters.ts";
-import { projectTableRows } from "../core/projectTableRows.ts";
+import { projectTableRow } from "../core/projectTableRows.ts";
 import type { ProjectTableRow } from "../core/projectTableRows.ts";
 import {
   projectTicketRowsHaveMore,
@@ -80,7 +78,6 @@ import type { Tone } from "../core/tones.ts";
 import { useApiPorts, usePanelListKept } from "./api.ts";
 import { useCreatorEmails } from "./creatorEmails.ts";
 import { PanelUnready } from "./DataPanel.tsx";
-import { useProjectExecutionIndex } from "./executionIndex.ts";
 import { useNowMs } from "./Freshness.tsx";
 import { persistentStore } from "./ports.ts";
 import { useProjectAbilities } from "./projectAbilities.tsx";
@@ -242,7 +239,7 @@ function TicketListState(props: {
   );
 }
 
-/** What the row is running and where, where the index joined anything to it. */
+/** What the row is running and where, where its ticket carries an execution. */
 function TicketListExecution(props: {
   readonly row: ProjectTableRow;
 }): ReactNode {
@@ -473,7 +470,6 @@ function ticketListStatus(
  * the one line a read that is not ready is drawn as. */
 function TicketListRows(props: {
   readonly state: PanelState<ProjectTicketRows>;
-  readonly index: ProjectExecutionIndex;
   readonly partition: PartitionIdentity;
   readonly nowMs: number;
   readonly sort: TicketListSort;
@@ -484,7 +480,7 @@ function TicketListRows(props: {
   const state = props.state;
   if (state.state !== "Ready") return <PanelUnready state={state} />;
   const shown = ticketListShown(
-    projectTableRows(state.value.tickets, props.index),
+    state.value.tickets.map(projectTableRow),
     props.sort,
   );
   const status = ticketListStatus(state.value, props.searching);
@@ -610,16 +606,11 @@ export function ProjectTable(props: {
     search: props.query.q,
   };
   const tickets = useTicketRows(partition, ask);
-  const executions = useProjectExecutionIndex(partition);
   const nowMs = useNowMs();
   const authoring = !projectAbilityRefused(
     useProjectAbilities(partition),
     "mutate",
   );
-  const index =
-    executions.state === "Ready"
-      ? executions.value
-      : projectExecutionIndexEmpty;
   if (
     tickets.state.state === "Ready" &&
     !tickets.kept &&
@@ -642,11 +633,6 @@ export function ProjectTable(props: {
         filter={choices.filter}
         onFilter={choices.filtered}
       />
-      {executions.state === "Failed" ? (
-        <p className="panel-failed">
-          what each ticket ran could not be read — {executions.reason}
-        </p>
-      ) : null}
       {partialFailure === undefined ? null : (
         <p className="panel-failed">
           a further page could not be read — {partialFailure}
@@ -654,7 +640,6 @@ export function ProjectTable(props: {
       )}
       <TicketListRows
         state={tickets.state}
-        index={index}
         partition={partition}
         nowMs={nowMs}
         sort={sort}

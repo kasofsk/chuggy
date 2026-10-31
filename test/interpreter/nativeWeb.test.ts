@@ -20,7 +20,15 @@ import {
   type NativeReadStore,
   type NativeSubmission,
   type ProjectAccess,
+  type TicketResource,
 } from "../../src/interpreter/nativeWeb.ts";
+import {
+  ticketLatestExecution,
+  type ExecutionSummary,
+  type OperationalReadStore,
+} from "../../src/interpreter/operationsView.ts";
+import { ticketLatestExecutionSchema } from "../../src/contract/responses.ts";
+import { executionSummary } from "../contract/representations.ts";
 import {
   asAuthorityKind,
   asAuthoritySubject,
@@ -2259,4 +2267,108 @@ test("the session a submission came through reaches the inbox, and the authority
     accepted.map((submission) => submission.authority),
     [authority, authority],
   );
+});
+
+/** The tickets list's page with what the operational store answers beside it, and every page of tickets the store was asked for. */
+function projectLatestWeb(
+  tickets: readonly TicketResource[],
+  latest: readonly ExecutionSummary[],
+): { readonly web: NativeWeb; readonly asked: (readonly number[])[] } {
+  const asked: (readonly number[])[] = [];
+  const unserved = () => Promise.reject(new Error("not served"));
+  const operational: OperationalReadStore = {
+    status: unserved,
+    executions: unserved,
+    latestExecutions: unserved,
+    execution: unserved,
+    executionSummary: unserved,
+    ticketLatestExecutions: (_partition, named) => {
+      asked.push([...named]);
+      return Promise.resolve(latest);
+    },
+  };
+  const reads: NativeReadStore = {
+    ...readStore([]),
+    project: () =>
+      Promise.resolve({
+        result: "Found",
+        project: { partition, sequence: 4, tickets },
+      }),
+  };
+  const web = nativeWeb(
+    {
+      authorize: () => Promise.resolve(authority),
+      authorizeTenant: () => Promise.resolve(undefined),
+      authorizeSite: projectAccessSiteRefused,
+    },
+    reads,
+    {
+      accept: unserved,
+      cancel: unserved,
+      operation: () => Promise.resolve(undefined),
+    },
+    authoringStore([]),
+    { read: unserved },
+    openExecutionBacklogGuard,
+    undefined,
+    undefined,
+    operational,
+  );
+  return { web, asked };
+}
+
+function projectLatestTicket(ticket: number): TicketResource {
+  return {
+    ticket: id(ticket),
+    revision: 1,
+    phase: "Work",
+    sequence: ticket,
+    changedAt: asPublicInstant("2026-01-01T00:00:00Z"),
+    revokedDependencies: [],
+    openDependencies: [],
+  };
+}
+
+test("a tickets page carries each row's latest execution, asked of the store once for the whole page", async () => {
+  const tickets = Array.from(
+    { length: nativeHttpPageItemsMax },
+    (_unused, at) => projectLatestTicket(at + 1),
+  );
+  const ran: ExecutionSummary = {
+    ...executionSummary,
+    ticket: id(2),
+    runStartedAt: asPublicInstant("2026-01-01T00:01:00Z"),
+    worker: { name: "worker", version: "1" },
+  };
+  const { web, asked } = projectLatestWeb(tickets, [ran]);
+  const read = await web.project(principal, partition, {
+    limit: nativeHttpPageItemsMax,
+  });
+  assert.equal(read.result, "Found");
+  if (read.result !== "Found") return;
+  assert.deepEqual(asked, [tickets.map((ticket) => ticket.ticket)]);
+  assert.deepEqual(read.project.tickets[1], {
+    ...projectLatestTicket(2),
+    latestExecution: ticketLatestExecution(ran),
+  });
+  assert.deepEqual(
+    Object.keys(ticketLatestExecution(ran)).sort(),
+    Object.keys(ticketLatestExecutionSchema.shape).sort(),
+  );
+  assert.deepEqual(read.project.tickets[0], projectLatestTicket(1));
+  assert.equal(
+    read.project.tickets.filter(
+      (ticket) => ticket.latestExecution !== undefined,
+    ).length,
+    1,
+  );
+});
+
+test("an empty tickets page asks the operational store nothing", async () => {
+  const { web, asked } = projectLatestWeb([], []);
+  assert.equal(
+    (await web.project(principal, partition, { limit: 10 })).result,
+    "Found",
+  );
+  assert.deepEqual(asked, []);
 });

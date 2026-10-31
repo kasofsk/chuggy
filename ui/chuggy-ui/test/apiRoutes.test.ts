@@ -258,19 +258,6 @@ test("an executions page asks for the size it wants", async () => {
   );
 });
 
-test("an executions page asks for each ticket's latest by name", async () => {
-  const held = recording(() => ({ executions: [] }));
-  await apiExecutions(held.ports, partition, {
-    limit: 100,
-    latest: true,
-    cursor: "next",
-  });
-  expect(held.urls[0]).toBe(
-    `${nativeHttpBasePath}/tenants/acme/projects/at%20las` +
-      `/executions?cursor=next&limit=100&latest=true`,
-  );
-});
-
 test("a configurations page asks for the newest of each name by name, and for every revision by saying nothing", async () => {
   const held = recording(() => ({ configurations: [] }));
   await apiConfigurations(held.ports, partition, {

@@ -537,6 +537,40 @@ async function latestExecutionPage(
   };
 }
 
+/**
+ * Each of `tickets`' highest task, as `latestExecutionPositions` picks it, its
+ * positions read first through the `(tenant, project, ticket, task)` index and
+ * then its rows, labelled by the worker catalog.
+ */
+async function ticketLatestExecutions(
+  pool: pg.Pool,
+  partition: Partition,
+  tickets: readonly TicketId[],
+  reader: Principal,
+): Promise<readonly ExecutionSummary[]> {
+  if (tickets.length === 0) return [];
+  const positions = await pool.query<{ execution: string }>(
+    sql`SELECT DISTINCT ON (e.ticket) e.execution FROM execution e
+         WHERE e.tenant=${partition.tenant} AND e.project=${partition.project}
+           AND e.ticket=ANY(${tickets.map(String)}::bigint[])
+         ORDER BY e.ticket,e.task DESC`,
+  );
+  if (positions.rows.length === 0) return [];
+  const rows = await executionRows(
+    pool,
+    partition,
+    { limit: positions.rows.length },
+    reader,
+    positions.rows.map((row) => row.execution),
+  );
+  const summaries = rows.map(executionSummary);
+  const workers = await postgresWorkerCatalog(
+    pool,
+    executionSummaryImages(summaries),
+  );
+  return summaries.map((summary) => executionSummaryLabelled(summary, workers));
+}
+
 async function oneExecution(
   pool: pg.Pool,
   partition: Partition,
@@ -755,6 +789,8 @@ export function postgresOperationalReads(pool: pg.Pool): OperationalReadStore {
       executionPage(pool, partition, query, reader),
     latestExecutions: (partition, query, reader) =>
       latestExecutionPage(pool, partition, query, reader),
+    ticketLatestExecutions: (partition, tickets, reader) =>
+      ticketLatestExecutions(pool, partition, tickets, reader),
     execution: (partition, execution, reader) =>
       executionResource(pool, partition, execution, reader),
     executionSummary: async (partition, execution, reader) => {

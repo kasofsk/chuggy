@@ -121,6 +121,8 @@ import {
   type OutputContentPort,
   type OutputContentRead,
   type ProjectOperationalStatus,
+  type TicketLatestExecution,
+  ticketLatestExecution,
 } from "./operationsView.ts";
 import {
   checkedRunTranscriptAfter,
@@ -449,6 +451,8 @@ export interface TicketResource {
   /** Where a Pending ticket that follows stands against the revision its repository's newest import declares under the same name. */
   readonly following?: TicketFollowing;
   readonly runTotals?: RunTotals;
+  /** The execution `latestExecutions` answers for the ticket, where one has run; only the tickets list carries it. */
+  readonly latestExecution?: TicketLatestExecution;
 }
 
 /**
@@ -2632,15 +2636,48 @@ export function nativeThreadMethods(
   };
 }
 
+/** A page of tickets with each one's latest execution beside it, read for the whole page at once. */
+async function nativeProjectLatestExecutions(
+  operationalReads: OperationalReadStore | undefined,
+  partition: Partition,
+  project: ProjectResource,
+  reader: Principal,
+): Promise<ProjectResource> {
+  if (project.tickets.length === 0) return project;
+  if (operationalReads === undefined)
+    throw new Error("native web: no operational read store was composed");
+  const latest = new Map<TicketId, TicketLatestExecution>();
+  for (const summary of await operationalReads.ticketLatestExecutions(
+    partition,
+    project.tickets.map((ticket) => ticket.ticket),
+    reader,
+  )) {
+    if (latest.has(summary.ticket))
+      throw new Error("native web: a ticket has two latest executions");
+    latest.set(summary.ticket, ticketLatestExecution(summary));
+  }
+  return {
+    ...project,
+    tickets: project.tickets.map((ticket) => {
+      const execution = latest.get(ticket.ticket);
+      return execution === undefined
+        ? ticket
+        : { ...ticket, latestExecution: execution };
+    }),
+  };
+}
+
 /**
  * The reads answered from the projection rather than from a service, each
  * reauthorizing before it reaches the store. They are one group because they
  * are one store's reads and because a boundary listing them inline is a
- * boundary nobody can see the shape of.
+ * boundary nobody can see the shape of; the tickets list alone reaches past
+ * the projection, for each row's latest execution.
  */
 function nativeProjectionMethods(
   access: ProjectAccess,
   reads: NativeReadStore,
+  operationalReads?: OperationalReadStore,
 ): Pick<
   NativeWeb,
   "operation" | "project" | "ticket" | "ticketNativeActions" | "nativeActions"
@@ -2649,10 +2686,25 @@ function nativeProjectionMethods(
     operation: authorizedProjectRead(access, (partition, operation) =>
       reads.operation(partition, operation),
     ),
-    project: async (principal, partition, query) =>
-      (await access.authorize(principal, partition, "Read")) === undefined
-        ? { result: "NotFound" }
-        : reads.project(partition, checkedProjectReadQuery(query)),
+    project: async (principal, partition, query) => {
+      if ((await access.authorize(principal, partition, "Read")) === undefined)
+        return { result: "NotFound" };
+      const read = await reads.project(
+        partition,
+        checkedProjectReadQuery(query),
+      );
+      return read.result === "Found"
+        ? {
+            ...read,
+            project: await nativeProjectLatestExecutions(
+              operationalReads,
+              partition,
+              read.project,
+              principal,
+            ),
+          }
+        : read;
+    },
     ...nativeTicketMethods(access, reads),
   };
 }
@@ -2732,7 +2784,7 @@ export function nativeWeb(
       selectorContexts,
     ),
     submit: nativeSubmitMethod(access, inbox, backlog, authoring),
-    ...nativeProjectionMethods(access, reads),
+    ...nativeProjectionMethods(access, reads, operationalReads),
     cancel: nativeCancelMethod(access, reads, inbox),
     notifications: authorizedProjectValue(access, (partition, cursor) =>
       notifications.read(partition, checkedNotificationCursor(cursor)),

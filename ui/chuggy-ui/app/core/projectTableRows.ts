@@ -1,9 +1,6 @@
 /**
- * One row of the project table: a ticket, joined to whatever it is running.
- *
- * The join is derived on the way to the screen rather than stored, so the two
- * reads behind it — the ticket page and the index of what each ticket ran —
- * stay separate cache entries that separate frames fold into.
+ * One row of the project table: a ticket, and what its latest execution says
+ * it is running, which the tickets list carries on the ticket itself.
  *
  * THE FIRST COLUMN IS THE TICKET'S TITLE, which the wire carries on the ticket
  * itself: the title its brief names, or the first line of its intent where the
@@ -11,15 +8,13 @@
  */
 
 import type {
-  ExecutionSummary,
-  TicketResponse,
+  ProjectTicket,
+  TicketLatestExecution,
 } from "../../../../src/contract/responses.ts";
 import type { TicketPhase } from "../../../../src/contract/rosters.ts";
 
 import { capabilitiesShortened, workerLabel } from "./labels.ts";
 import type { Label } from "./labels.ts";
-import { projectExecutionIndexAt } from "./projectExecutionIndex.ts";
-import type { ProjectExecutionIndex } from "./projectExecutionIndex.ts";
 import { setVerdict } from "./ticketLedger.ts";
 import type { SetVerdict } from "./ticketLedger.ts";
 import { ticketBadgeLabel } from "./ticketSections.ts";
@@ -39,7 +34,7 @@ export interface ProjectTableRow {
    * version a Dispatch from the row expects. */
   readonly sequence: number;
   readonly badge: string | undefined;
-  /** The joined execution as the ticket's ledger judges it, a set of one, so
+  /** The latest execution as the ticket's ledger judges it, a set of one, so
    * the row draws it in the word and hue the ticket page does. */
   readonly executionVerdict: SetVerdict | undefined;
   readonly runsOn: Label | undefined;
@@ -51,7 +46,7 @@ export interface ProjectTableRow {
 /** What the task was placed on, named where the catalog names it: a container
  * is its worker or the image the catalog holds no worker for, a capability task
  * is what it asked its runner for. */
-export function projectTableRunsOn(execution: ExecutionSummary): Label {
+export function projectTableRunsOn(execution: TicketLatestExecution): Label {
   const requirement = execution.requirement;
   switch (requirement.mode) {
     case "Container":
@@ -78,13 +73,11 @@ function laterActivityAt(
 }
 
 /** The ticket's own last activity is the later of its own last move and its
- * joined execution's, so a run that outlasted the ticket's own journal entry
+ * latest execution's, so a run that outlasted the ticket's own journal entry
  * still reads as the newer of the two. Every ticket carries `changedAt`, so
  * the column has no empty arm. */
-export function projectTableRow(
-  ticket: TicketResponse,
-  execution: ExecutionSummary | undefined,
-): ProjectTableRow {
+export function projectTableRow(ticket: ProjectTicket): ProjectTableRow {
+  const execution = ticket.latestExecution;
   return {
     ticket: ticket.ticket,
     title: ticket.title,
@@ -103,13 +96,4 @@ export function projectTableRow(
     openDependencies: ticket.openDependencies,
     revokedDependencies: ticket.revokedDependencies,
   };
-}
-
-export function projectTableRows(
-  tickets: readonly TicketResponse[],
-  index: ProjectExecutionIndex,
-): readonly ProjectTableRow[] {
-  return tickets.map((ticket) =>
-    projectTableRow(ticket, projectExecutionIndexAt(index, ticket.ticket)),
-  );
 }

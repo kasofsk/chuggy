@@ -38,7 +38,7 @@ import {
   agenticRefusalsAnsweredMax,
   selectorProposalDispatchesAnsweredMax,
 } from "../../../../src/contract/http.ts";
-import type { TicketResponse } from "../../../../src/contract/responses.ts";
+import type { ProjectTicket } from "../../../../src/contract/responses.ts";
 import type {
   AgenticRefusalResponse,
   AgenticRefusalsResponse,
@@ -54,7 +54,7 @@ import type { ProjectTicketRows } from "./projectTicketPages.ts";
 
 export interface InboxEntry {
   readonly ticket: number;
-  readonly held: TicketResponse | undefined;
+  readonly held: ProjectTicket | undefined;
   readonly actions: readonly ProjectNativeActionResponse[];
   readonly refusals: readonly AgenticRefusalResponse[];
   readonly proposals: readonly SelectorProposalResponse[];
@@ -89,7 +89,7 @@ interface InboxUnionReads {
 
 function inboxUnionEntry(
   ticket: number,
-  held: TicketResponse | undefined,
+  held: ProjectTicket | undefined,
   reads: InboxUnionReads,
 ): InboxEntry {
   return {
