@@ -64,6 +64,7 @@ const read: AgenticRefusalRead = {
         reason: "the dependency is still failing",
         decision: "selector-decision-1",
         recordedAt: "2026-09-02T12:00:00.000Z",
+        superseded: false,
       },
     ]),
   ledger: () => Promise.resolve(ledger),

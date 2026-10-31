@@ -83,7 +83,12 @@ export const postgresIdleFailureDefault: PostgresIdleFailure = (failure) => {
   process.stderr.write(`postgres: an idle client failed: ${failure.message}\n`);
 };
 
-/** Opens a bounded pool against the URL, applying the statement cap to every session it hands out. */
+/**
+ * Opens a bounded pool against the URL, applying the statement cap to every
+ * session it hands out, and JIT off: the statements this adapter issues are
+ * short reads and writes, and one whose estimate passes `jit_above_cost`
+ * spends more compiling than running.
+ */
 export function postgresPool(
   url: string,
   limits: PostgresLimits = postgresLimitsDefault,
@@ -94,6 +99,7 @@ export function postgresPool(
     max: limits.connectionsMax,
     connectionTimeoutMillis: limits.connectionWaitMs,
     statement_timeout: limits.statementTimeoutMs,
+    options: "-c jit=off",
   });
   pool.on("error", onIdleFailure);
   return pool;

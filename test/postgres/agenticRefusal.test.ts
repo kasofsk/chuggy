@@ -75,6 +75,42 @@ test("a decision's refusals become the project's standing refusals", async () =>
   );
 });
 
+test("a standing refusal is superseded where its ticket's projection has moved past the version it was refused at", async () => {
+  const partition = await leadRigProject(rig, "superseded");
+  const decision = await leadRigDecision(rig, partition, "superseded");
+  await rig.writes.record({
+    partition,
+    decision,
+    refusals: [
+      { ticket: asTicketId(41), ticketVersion: 3, reason: "no capacity" },
+      { ticket: asTicketId(42), ticketVersion: 2, reason: "needs a brief" },
+      { ticket: asTicketId(43), ticketVersion: 5, reason: "not yet created" },
+    ],
+    lifts: [],
+  });
+  for (const [ticket, seq] of [
+    [41, 3],
+    [42, 4],
+  ] as const)
+    await rig.sessions.harness.query(
+      `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq)
+       VALUES ($1,$2,$3,'Pending',$4)`,
+      [partition.tenant, partition.project, ticket, seq],
+    );
+
+  assert.deepEqual(
+    (await rig.apiRefusals.standing(partition, refusalsBoundless)).map(
+      (refusal) => [refusal.ticket, refusal.superseded],
+    ),
+    [
+      [41, false],
+      [42, true],
+      [43, false],
+    ],
+    "at its version, moved past it, and with no projection to compare against",
+  );
+});
+
 test("a lift is a row and the ticket stops standing refused", async () => {
   const partition = await leadRigProject(rig, "lift");
   const refused = await leadRigDecision(rig, partition, "lift-refuse");

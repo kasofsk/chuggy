@@ -17,6 +17,11 @@
  * decided: a predicate written here would run as a role holding no privilege
  * on the relation, and a fold written here would page the whole ledger to
  * learn one fact per ticket.
+ *
+ * WHETHER A STANDING REFUSAL IS SUPERSEDED IS JOINED, NOT READ PER TICKET. The
+ * page carries the sequence each refused ticket's projection holds, through the
+ * API's own grant on the relation, so a page is one statement however many
+ * refusals stand on it.
  */
 
 import { sql } from "@ts-safeql/sql-tag";
@@ -24,11 +29,13 @@ import type pg from "pg";
 
 import { asTicketId } from "../../domain/ids.ts";
 import {
+  agenticRefusalIsSuperseded,
   allAgenticRefusalEvents,
   type AgenticRefusalEntry,
   type AgenticRefusalRead,
   type AgenticRefusalRecord,
   type AgenticRefusalSelectorRead,
+  type AgenticRefusalStanding,
   type AgenticRefusalWrite,
 } from "../../interpreter/agenticRefusal.ts";
 import { projectRowCounter } from "./rows.ts";
@@ -41,6 +48,11 @@ interface StandingRefusalRow {
   readonly reason: string | null;
   readonly selector_decision: string | null;
   readonly recorded_at: Date | null;
+}
+
+/** One standing refusal beside the sequence its ticket's projection holds, null where the project holds no such ticket. */
+interface StandingRefusalHeldRow extends StandingRefusalRow {
+  readonly held_seq: string | null;
 }
 
 /** One ledger entry, which is a standing row plus what the entry was and where it sits. */
@@ -70,6 +82,22 @@ function standingRefusalOf(row: StandingRefusalRow): AgenticRefusalRecord {
     reason: sessionRowText(row.reason, "reason"),
     decision: sessionRowText(row.selector_decision, "decision"),
     recordedAt: refusalInstant(row.recorded_at),
+  };
+}
+
+/** A standing refusal, superseded where its ticket has moved past the version it was refused at. */
+function standingRefusalHeldOf(
+  row: StandingRefusalHeldRow,
+): AgenticRefusalStanding {
+  const refusal = standingRefusalOf(row);
+  return {
+    ...refusal,
+    superseded:
+      row.held_seq !== null &&
+      agenticRefusalIsSuperseded(
+        refusal,
+        projectRowCounter(row.held_seq, "agentic refusal ticket sequence"),
+      ),
   };
 }
 
@@ -140,13 +168,17 @@ export function postgresAgenticRefusalStanding(
 export function postgresAgenticRefusalReads(pool: pg.Pool): AgenticRefusalRead {
   return {
     standing: async (partition, limit) => {
-      const found = await pool.query<StandingRefusalRow>(
-        sql`SELECT ticket::text AS ticket,ticket_version::text AS ticket_version,
-                   reason,selector_decision,recorded_at
+      const found = await pool.query<StandingRefusalHeldRow>(
+        sql`SELECT s.ticket::text AS ticket,s.ticket_version::text AS ticket_version,
+                   s.reason,s.selector_decision,s.recorded_at,t.seq::text AS held_seq
               FROM read_standing_agentic_refusals(
-                     ${partition.tenant},${partition.project},${limit})`,
+                     ${partition.tenant},${partition.project},${limit}) s
+              LEFT JOIN ticket_projection t
+                ON t.tenant=${partition.tenant} AND t.project=${partition.project}
+               AND t.ticket=s.ticket
+             ORDER BY s.ticket`,
       );
-      return found.rows.map(standingRefusalOf);
+      return found.rows.map(standingRefusalHeldOf);
     },
 
     ledger: async (partition, ticket, limit) => {
