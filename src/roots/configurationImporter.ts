@@ -31,6 +31,11 @@
  * saying so. The listing is ordered by age, so a deployment holding more
  * bindings than one run may read imports the same prefix for ever, and a clean
  * exit would be the only thing telling anyone otherwise.
+ *
+ * A BINDING THIS RUN IMPORTED IS THEN FOLLOWED: each Pending ticket on it that
+ * follows its newest revision is moved where the head changes what it runs.
+ * The sweep stops short of the job's deadline and says so, and a ticket it
+ * failed on leaves the run non-zero as a binding does.
  */
 
 import { githubInstallationTokensSettleMs } from "../adapters/forge/githubInstallationTokens.ts";
@@ -40,6 +45,7 @@ import {
   type GitRepositoryConfigurationRemoteFailed,
 } from "../adapters/git/gitRepositoryConfiguration.ts";
 import { postgresAuthoring } from "../adapters/postgres/authoring.ts";
+import { postgresConfigurationFollowing } from "../adapters/postgres/configurationFollowing.ts";
 import { postgresPool } from "../adapters/postgres/pool.ts";
 import { postgresRepositoryActions } from "../adapters/postgres/repositoryAction.ts";
 import { postgresRepositoryBindingListing } from "../adapters/postgres/repositoryBinding.ts";
@@ -57,6 +63,11 @@ import {
   composeForgeRepositoryMinting,
 } from "../compose.ts";
 import {
+  configurationFollowingReport,
+  followConfigurations,
+  type ConfigurationFollowingBinding,
+} from "../interpreter/configurationFollowingSweep.ts";
+import {
   asAuthorityKind,
   asAuthoritySubject,
 } from "../interpreter/operationInbox.ts";
@@ -68,6 +79,7 @@ import {
   repositoryBindingsPerImportMax,
 } from "../interpreter/repositoryConfiguration.ts";
 import { schemaCompatibilityPrecondition } from "../interpreter/serviceRuntime.ts";
+import { ticketServiceDefaults } from "../interpreter/ticketService.ts";
 import { finalizerGitEnvironmentNames } from "../interpreter/finalizerSettings.ts";
 import { configurationImporterConfig } from "./configurationImporterConfig.ts";
 
@@ -82,6 +94,12 @@ const configurationImporterRetryPauseMs = githubInstallationTokensSettleMs;
 
 /** The most one run's retries take together, pauses included, past which a read git died on is not tried again. */
 const configurationImporterRetrySecsMax = 60;
+
+/** The job's `activeDeadlineSeconds`, which its manifest sets and the run has to finish inside. */
+const configurationImporterActiveDeadlineSecs = 600;
+
+/** How long before that deadline the sweep stops: room for the door call in hand, each bounded by the pool's statement timeout, and the pool's end. */
+const configurationImporterFollowingMarginSecs = 60;
 
 /** Prints one remote read that failed beside the binding it was for, where every failure a run reports is printed. */
 function configurationImporterRemoteFailed(
@@ -159,7 +177,51 @@ function configurationImporterPorts(
   };
 }
 
+/** The bindings this run imported its configurations at, which are the only ones swept. */
+function configurationImporterFollowed(
+  run: Awaited<ReturnType<typeof importBoundRepositories>>,
+): readonly ConfigurationFollowingBinding[] {
+  return run.imports.flatMap((bound) =>
+    bound.result.result === "Imported"
+      ? [
+          {
+            partition: bound.partition,
+            repository: bound.repository,
+            commit: bound.result.commit,
+          },
+        ]
+      : [],
+  );
+}
+
+/** Follows every binding the run imported, printing each line, and answers how many tickets it failed on. */
+async function configurationImporterFollow(
+  pool: ReturnType<typeof postgresPool>,
+  run: Awaited<ReturnType<typeof importBoundRepositories>>,
+  startedAtMs: number,
+): Promise<number> {
+  const followed = await followConfigurations({
+    bindings: configurationImporterFollowed(run),
+    port: postgresConfigurationFollowing(
+      pool,
+      authority,
+      ticketServiceDefaults,
+    ),
+    now: () => Date.now(),
+    deadlineAtMs:
+      startedAtMs +
+      (configurationImporterActiveDeadlineSecs -
+        configurationImporterFollowingMarginSecs) *
+        1000,
+  });
+  const report = configurationFollowingReport(followed);
+  for (const { line, failed } of report)
+    (failed ? process.stderr : process.stdout).write(`${line}\n`);
+  return report.filter((reported) => reported.failed).length;
+}
+
 async function main(): Promise<void> {
+  const startedAtMs = Date.now();
   const config = configurationImporterConfig(process.env);
   const pool = postgresPool(config.database.url, config.database.limits);
   try {
@@ -175,11 +237,14 @@ async function main(): Promise<void> {
     for (const bound of run.imports)
       for (const { line, failed } of boundRepositoryImportReport(bound))
         (failed ? process.stderr : process.stdout).write(`${line}\n`);
-    const refused = boundRepositoryImportRefusal(
-      run,
-      repositoryBindingsPerImportMax,
-    );
-    if (refused !== undefined) throw new Error(refused);
+    const failed = await configurationImporterFollow(pool, run, startedAtMs);
+    const refused = [
+      boundRepositoryImportRefusal(run, repositoryBindingsPerImportMax),
+      ...(failed === 0
+        ? []
+        : [`following failed on ${String(failed)} tickets or bindings`]),
+    ].filter((refusal) => refusal !== undefined);
+    if (refused.length > 0) throw new Error(refused.join("; "));
   } finally {
     await pool.end();
   }

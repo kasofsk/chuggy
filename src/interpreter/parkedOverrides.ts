@@ -44,7 +44,7 @@ export type ParkedOverridesVerdict =
     };
 
 /** The digest of the definition one set of overrides resolves, or the fault where the configuration it makes is not ready. */
-function parkedOverridesDefinitionDigest(
+export function parkedOverridesDefinitionDigest(
   ticket: ParkedTicketResolution,
   overrides: ConfigurationOverrides | undefined,
 ):

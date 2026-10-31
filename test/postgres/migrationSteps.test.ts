@@ -66,6 +66,7 @@ import { migration098 } from "../../src/adapters/postgres/schema/migrations/098-
 import { migration099 } from "../../src/adapters/postgres/schema/migrations/099-attempt-claimed-at.ts";
 import { migration100 } from "../../src/adapters/postgres/schema/migrations/100-configuration-import-refusals.ts";
 import { migration101 } from "../../src/adapters/postgres/schema/migrations/101-longer-configurations.ts";
+import { migration102 } from "../../src/adapters/postgres/schema/migrations/102-configuration-following.ts";
 import { configurationCanonicalCharsMax } from "../../src/contract/http.ts";
 import { migration081 } from "../../src/adapters/postgres/schema/migrations/081-promotion-declined.ts";
 import { migration082 } from "../../src/adapters/postgres/schema/migrations/082-decline-kept-unread.ts";
@@ -102,6 +103,8 @@ import {
   leadCloseFunction,
   leadRefusalReadFunction,
   leadSessionFunction,
+  configurationFollowingCandidatesFunction,
+  configurationFollowingMoveFunction,
   configurationImporterRole,
   executionPlacementSetFunction,
   finalizerRole,
@@ -3861,6 +3864,59 @@ test("101 keeps every revision that stood, and admits a canonical as long as a c
         ).rows,
         [{ revision: "at-limit" }, { revision: "stood" }],
       );
+    },
+  );
+});
+
+/** How one of 102's doors is declared, and which roles may execute it. */
+async function followingDoorDeclared102(
+  subject: pg.Pool,
+  door: string,
+): Promise<unknown> {
+  return (
+    await subject.query(
+      `SELECT pg_get_userbyid(p.proowner) AS owner, p.prosecdef AS definer,
+              array_to_string(p.proconfig,',') AS settings,
+              has_function_privilege($2,p.oid,'EXECUTE') AS importer,
+              has_function_privilege($3,p.oid,'EXECUTE') AS api,
+              has_function_privilege($4,p.oid,'EXECUTE') AS writer,
+              has_function_privilege('public',p.oid,'EXECUTE') AS public
+         FROM pg_proc p WHERE p.oid = to_regprocedure($1)`,
+      [door, configurationImporterRole, apiRole, ticketServiceRole],
+    )
+  ).rows;
+}
+
+test("102 installs the importer's two following doors, owned by the boundary and executable by the importer alone", async () => {
+  await migrationDatabaseAt(
+    migration102.version - 1,
+    "configuration_following",
+    async (subject) => {
+      const doors = [
+        `${configurationFollowingCandidatesFunction}(text,text,text,text,text,bigint,integer)`,
+        `${configurationFollowingMoveFunction}(text,text,bigint,bigint,text,text,text,text,bigint,bigint)`,
+      ];
+      for (const door of doors)
+        assert.equal(await migrationHasFunction(subject, door), false, door);
+      assert.ok(
+        (await postgresMigrate(subject)).includes(migration102.version),
+      );
+      for (const door of doors)
+        assert.deepEqual(
+          await followingDoorDeclared102(subject, door),
+          [
+            {
+              owner: boundaryOwnerRole,
+              definer: true,
+              settings: "search_path=pg_catalog, public, pg_temp",
+              importer: true,
+              api: false,
+              writer: false,
+              public: false,
+            },
+          ],
+          door,
+        );
     },
   );
 });

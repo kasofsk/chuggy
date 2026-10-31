@@ -983,8 +983,17 @@ function draftInitializationStagesMax(
  * with its plan's evaluators; or the domain's default plan where the document
  * lists none.
  */
-function draftInitializationProgram(
+export function draftInitializationProgram(
   config: Config,
+  ticket: TicketConfiguration | undefined,
+): ReleaseAuthoringProgram;
+/** A catalog's program is its selected plan's alone, so no deployment's constants are read for one. */
+export function draftInitializationProgram(
+  config: undefined,
+  ticket: Extract<TicketConfiguration, { readonly version: 2 }>,
+): ReleaseAuthoringProgram;
+export function draftInitializationProgram(
+  config: Config | undefined,
   ticket: TicketConfiguration | undefined,
 ): ReleaseAuthoringProgram {
   if (ticket?.version === 2)
@@ -995,15 +1004,19 @@ function draftInitializationProgram(
       })),
     }));
   const evaluations = ticket?.configuration.evaluations;
-  return evaluations === undefined
-    ? defaultPlan(config).map((stage) => ({
-        key: stage.key,
-        evaluators: stage.evaluators.map((entry) => ({ key: entry.key })),
-      }))
-    : evaluations.map((_block, index) => ({
-        key: index + 1,
-        evaluators: [{ key: 1 }],
-      }));
+  if (evaluations !== undefined)
+    return evaluations.map((_block, index) => ({
+      key: index + 1,
+      evaluators: [{ key: 1 }],
+    }));
+  if (config === undefined)
+    throw new RangeError(
+      "draft initialization: a document listing no evaluations needs the domain's default plan",
+    );
+  return defaultPlan(config).map((stage) => ({
+    key: stage.key,
+    evaluators: stage.evaluators.map((entry) => ({ key: entry.key })),
+  }));
 }
 
 /**

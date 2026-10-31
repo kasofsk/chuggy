@@ -269,6 +269,12 @@ export const ticketRunnerLossFunction = "ticket_runner_loss";
 export const runnerLostTicketsFunction = "runner_lost_tickets";
 /** The scheduler's door for answering one such escalation as a person would. */
 export const runnerLossResumeFunction = "submit_runner_loss_resume";
+/** The Pending tickets the importer may move onto a repository head's revision. */
+export const configurationFollowingCandidatesFunction =
+  "configuration_following_candidates";
+/** The importer's door for moving one such ticket onto that revision. */
+export const configurationFollowingMoveFunction =
+  "follow_configuration_revision";
 /** The failed run step an escalated ticket's work or evaluation stopped at. */
 export const ticketRunStepFailureFunction = "ticket_run_step_failure";
 /** The dependencies a ticket's last update named. */
