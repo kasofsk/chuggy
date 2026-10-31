@@ -21,6 +21,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import type { Query, QueryClient } from "@tanstack/react-query";
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -32,6 +33,7 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { ProjectChangeKind } from "../../../../src/contract/events.ts";
 import { apiBearerOver } from "../core/apiPorts.ts";
+import { ApiOutcomeError } from "../core/apiRequest.ts";
 import { projectCacheCommands } from "../core/projectCacheCommands.ts";
 import type {
   ProjectCacheCommand,
@@ -56,7 +58,7 @@ import type {
   ProjectQueryKey,
 } from "../core/projectQueryKeys.ts";
 import type { StreamPorts } from "../core/streamConnection.ts";
-import { deadlineMs, nowMs, sleepMs, streamFetch } from "./ports.ts";
+import { deadlineMs, logWarned, nowMs, sleepMs, streamFetch } from "./ports.ts";
 import { useSessionGeneration, useSessionHolder } from "./session.tsx";
 
 export const projectListFoldsMax = 32;
@@ -79,11 +81,13 @@ interface ProjectStreamWiring {
   readonly folds: Set<ProjectListRegistration>;
 }
 
-/** What a partition's stream is saying, and whether the grace has run out. */
+/** What a partition's stream is saying, whether the grace has run out, and
+ * whether this console has been answered in a shape it cannot read. */
 interface ProjectStreamSaying {
   readonly status: ProjectStreamStatus;
   readonly lapsed: boolean;
   readonly fallbackExhausted: boolean;
+  readonly outdated: boolean;
 }
 
 const streamStatusInitial: ProjectStreamStatus = {
@@ -196,6 +200,7 @@ function useStreamConnection(
   partition: PartitionIdentity,
   folds: ReadonlySet<ProjectListRegistration>,
   ports: StreamPorts,
+  outdate: () => void,
 ): ProjectStreamStatus {
   const client = useQueryClient();
   const generation = useSessionGeneration();
@@ -229,6 +234,7 @@ function useStreamConnection(
         },
         onStatus: setStatus,
         onSkipped: () => {
+          outdate();
           void client.invalidateQueries({
             queryKey: projectPartitionKey({ tenant, project }),
           });
@@ -239,8 +245,41 @@ function useStreamConnection(
     return () => {
       opened.stop();
     };
-  }, [ports, client, folds, tenant, project, generation]);
+  }, [ports, client, folds, outdate, tenant, project, generation]);
   return status;
+}
+
+/** A read the console's own schema refused, which `apiRead` answers `Unreadable`. */
+function streamOutdatedRead(error: unknown): boolean {
+  return (
+    error instanceof ApiOutcomeError && error.result.outcome === "Unreadable"
+  );
+}
+
+/**
+ * Whether this console has met an answer it cannot read — a frame the stream
+ * skipped, or a read answered `Unreadable` — which is an API newer than the
+ * console. Nothing unsets it, because only a reload makes the console newer.
+ */
+function useStreamOutdated(): readonly [boolean, () => void] {
+  const client = useQueryClient();
+  const [outdated, setOutdated] = useState(false);
+  const outdate = useCallback(() => {
+    setOutdated(true);
+  }, []);
+  useEffect(
+    () =>
+      client.getQueryCache().subscribe((event) => {
+        if (
+          event.type === "updated" &&
+          event.action.type === "error" &&
+          streamOutdatedRead(event.action.error)
+        )
+          outdate();
+      }),
+    [client, outdate],
+  );
+  return [outdated, outdate];
 }
 
 /**
@@ -362,7 +401,8 @@ export function ProjectStreamProvider(props: {
 }): ReactNode {
   const folds = useMemo(() => new Set<ProjectListRegistration>(), []);
   const ports = useStreamPortsMade(props.transport);
-  const status = useStreamConnection(props.partition, folds, ports);
+  const [outdated, outdate] = useStreamOutdated();
+  const status = useStreamConnection(props.partition, folds, ports, outdate);
   const carrying = projectStreamCarrying(status);
   const lapsed = useStreamLapsed(props.partition, carrying);
   const fallbackExhausted = useStreamFallback(props.partition, lapsed);
@@ -372,8 +412,8 @@ export function ProjectStreamProvider(props: {
     [ports, folds],
   );
   const saying = useMemo<ProjectStreamSaying>(
-    () => ({ status, lapsed, fallbackExhausted }),
-    [status, lapsed, fallbackExhausted],
+    () => ({ status, lapsed, fallbackExhausted, outdated }),
+    [status, lapsed, fallbackExhausted, outdated],
   );
   return (
     <ProjectStreamContext.Provider value={wiring}>
@@ -439,11 +479,18 @@ export function useProjectFallbackExhausted(): boolean {
   return useProjectStreamSaying().fallbackExhausted;
 }
 
+/** Whether this console has been answered in a shape it cannot read. */
+export function useProjectStreamOutdated(): boolean {
+  return useProjectStreamSaying().outdated;
+}
+
 /**
- * A list's refresh, registered for as long as the screen is mounted and refused
- * past the registration budget. `usePanelList` is the caller that matters: this
- * is exported for the suite that drives the registry with no panel under it,
- * and a registration with no query beneath it refreshes nothing.
+ * A list's refresh, registered for as long as the screen is mounted — past the
+ * registration budget too, with the overrun logged, because the budget only
+ * makes a leak visible and a screen that stopped drawing would be worse.
+ * `usePanelList` is the caller that matters: this is exported for the suite
+ * that drives the registry with no panel under it, and a registration with no
+ * query beneath it refreshes nothing.
  */
 export function useProjectListRefresh<T>(list: ProjectList<T>): void {
   const { folds } = useProjectStreamWiring();
@@ -455,7 +502,9 @@ export function useProjectListRefresh<T>(list: ProjectList<T>): void {
   const named = JSON.stringify(list.key);
   useEffect(() => {
     if (folds.size >= projectListFoldsMax)
-      throw new RangeError("more list folds are registered than are allowed");
+      logWarned(
+        `more than ${String(projectListFoldsMax)} list folds are registered, which is a leak`,
+      );
     const registration: ProjectListRegistration = {
       kind,
       key: JSON.parse(named) as ProjectQueryKey,

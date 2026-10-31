@@ -76,6 +76,7 @@ import {
   clipboardWritten,
   elapsedMs,
   persistentStore,
+  reloadLocation,
   syntaxWorkerOpened,
 } from "./ports.ts";
 import { ChatPane } from "./shell/ChatPane.tsx";
@@ -94,8 +95,10 @@ import {
 import {
   useProjectFallbackExhausted,
   useProjectStreamLapsed,
+  useProjectStreamOutdated,
   useProjectStreamStatus,
 } from "./stream.tsx";
+import { Button } from "./ui/Button.tsx";
 import { CopyProvider } from "./ui/copyHeld.tsx";
 import { MarkdownProvider } from "./ui/markdownHeld.ts";
 import { Notice } from "./ui/Notice.tsx";
@@ -117,6 +120,29 @@ export function StreamBanner(): ReactNode {
       heading={notice.notice === "Reconnecting" ? "Reconnecting" : "Not live"}
       detail={notice.detail}
     />
+  );
+}
+
+/**
+ * What the reader is told once this console has been answered in a shape it
+ * cannot read. It reloads only when pressed, because a reload loses whatever
+ * someone is typing.
+ */
+export function VersionBanner(): ReactNode {
+  if (!useProjectStreamOutdated()) return null;
+  return (
+    <Notice
+      tone="info"
+      role="status"
+      heading="New version"
+      detail="The API has changed since this console loaded"
+    >
+      <div className="flex">
+        <Button size="sm" onClick={reloadLocation}>
+          Reload
+        </Button>
+      </div>
+    </Notice>
   );
 }
 
@@ -151,6 +177,7 @@ function ShellHeader(props: {
     <div className="grid grid-cols-[minmax(0,1fr)]">
       <div className="shell-banner">
         <StreamBanner />
+        <VersionBanner />
       </div>
       <TopBar partition={props.partition} />
       <Separator.Root decorative className="h-px bg-edge" />
