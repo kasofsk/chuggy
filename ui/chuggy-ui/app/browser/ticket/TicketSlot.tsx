@@ -13,7 +13,7 @@ import type {
   ReasonAttempt,
   TicketSlot as Slot,
 } from "../../core/ticketSituation.ts";
-import { useRunReason } from "../RunEvidence.tsx";
+import { RunReasonText, useRunReason } from "../RunEvidence.tsx";
 import { TicketNow } from "./TicketNow.tsx";
 
 import "./ticket.css";
@@ -39,7 +39,7 @@ function NeedsYouStep(props: {
   );
 }
 
-/** The first line of what the worker of a lost or stopped job kept, its whole on hover. */
+/** The first line of what the worker of a lost or stopped job kept, its whole below it. */
 function NeedsYouReason(props: {
   readonly partition: PartitionIdentity;
   readonly reason: ReasonAttempt;
@@ -50,9 +50,14 @@ function NeedsYouReason(props: {
     props.reason.attempt,
   );
   return reason === undefined ? null : (
-    <p className="ticket-card-reason" title={reason.full}>
-      {reason.line}
-    </p>
+    <>
+      <p className="ticket-card-reason">{reason.line}</p>
+      <RunReasonText
+        partition={props.partition}
+        execution={props.reason.execution}
+        attempt={props.reason.attempt}
+      />
+    </>
   );
 }
 

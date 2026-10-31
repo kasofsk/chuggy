@@ -323,7 +323,7 @@ export function useRunReason(
 }
 
 /** The worker's reason whole, where a row draws its first line cut short. */
-function RunReasonText(props: {
+export function RunReasonText(props: {
   readonly partition: PartitionIdentity;
   readonly execution: string;
   readonly attempt: string;
