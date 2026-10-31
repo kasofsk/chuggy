@@ -47,7 +47,11 @@ beforeEach(() => {
 function render(node: ReactNode): ReturnType<typeof drawn> {
   return drawn(
     <SessionProvider holder={holderDouble()}>
-      <QueryClientProvider client={new QueryClient()}>
+      <QueryClientProvider
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      >
         {node}
       </QueryClientProvider>
     </SessionProvider>,
@@ -300,7 +304,11 @@ test("a brief's images are drawn as images, from the project's read of each", as
   });
   render(
     <SessionProvider holder={holderDouble()}>
-      <QueryClientProvider client={new QueryClient()}>
+      <QueryClientProvider
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      >
         <TicketBrief
           partition={briefPartition}
           state={released({

@@ -119,6 +119,8 @@ interface SettingsServer {
   readonly written: () => unknown;
   readonly writes: () => readonly unknown[];
   readonly reads: () => number;
+  /** Every read on the page asked again, as a refresh in the background asks. */
+  readonly reread: () => Promise<void>;
 }
 
 interface SettingsInit {
@@ -137,6 +139,8 @@ interface SettingsScript {
   readonly lead?: unknown;
   /** Where the lead runs and the runners it waits on, live where unsaid. */
   readonly placement?: SessionPlacementResponse;
+  /** Whether the settings read fails, asked at each read. */
+  readonly failing?: () => boolean;
 }
 
 /** The page over a server whose answer to the write the case decides, whose
@@ -165,13 +169,18 @@ async function drawSettings(
         answer(script.placement ?? sessionPlacementBody()),
       );
     reads += 1;
+    if (script.failing?.() === true)
+      return Promise.resolve(answer({ error: { code: "InternalError" } }, 500));
     return Promise.resolve(answer(read));
   }) as unknown as typeof fetch;
   vi.stubGlobal("fetch", fetching);
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   render(
     <ScreenHarness
       partition={leadPartition}
-      client={new QueryClient()}
+      client={client}
       transport={openedStream().ports.fetch}
     >
       <LeadSettingsPage />
@@ -182,6 +191,10 @@ async function drawSettings(
     written: () => writes[writes.length - 1],
     writes: () => writes,
     reads: () => reads,
+    reread: async () => {
+      await turned(() => void client.invalidateQueries());
+      await settled();
+    },
   };
 }
 
@@ -908,6 +921,26 @@ test("text typed while a save is in flight survives the answer", async () => {
     box("North Star").value,
     "the answer to a save took back what was typed while it was in flight",
   ).toBe("typed while the save was in flight");
+});
+
+/** A read in the background that fails leaves an open section as the reader
+ * left it, rather than taking the page and what they typed away. */
+test("an open edit survives a read of the settings that fails behind it", async () => {
+  const failing = { on: false };
+  const server = await drawSettings({ failing: () => failing.on });
+  await turned(() => {
+    edit("North Star");
+  });
+  await turned(() => {
+    fireEvent.change(box("North Star"), {
+      target: { value: "typed before the read failed" },
+    });
+  });
+  failing.on = true;
+  const before = server.reads();
+  await server.reread();
+  expect(server.reads()).toBeGreaterThan(before);
+  expect(box("North Star").value).toBe("typed before the read failed");
 });
 
 /**

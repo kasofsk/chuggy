@@ -67,7 +67,9 @@ async function drawRefusals(
   render(
     <ScreenHarness
       partition={leadPartition}
-      client={new QueryClient()}
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
       transport={server.ports.fetch}
     >
       <LeadRefusals

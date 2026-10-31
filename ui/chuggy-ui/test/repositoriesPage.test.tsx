@@ -305,7 +305,9 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
   const page = (
     <ScreenHarness
       partition={leadPartition}
-      client={new QueryClient()}
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
       transport={(drawing.stream ?? openedStream()).ports.fetch}
     >
       <RepositoriesPage />

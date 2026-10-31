@@ -152,7 +152,9 @@ async function drawInquiries(served: {
   }) as unknown as typeof fetch;
   vi.stubGlobal("fetch", fetching);
   const stream = openedStream();
-  const client = new QueryClient();
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   const head = "head" in served ? served.head : leadStream;
   const panel = (partition: PartitionIdentity, at: string | undefined) => (
     <ScreenHarness

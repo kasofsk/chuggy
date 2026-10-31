@@ -21,7 +21,11 @@ import type { ReactNode } from "react";
 
 import { TicketCreation } from "../app/browser/TicketCreation.tsx";
 import { configurationsPartialLabel } from "../app/core/repositoryConfigurations.ts";
-import { creationStaleSentence } from "../app/core/ticketCreationRun.ts";
+import {
+  creationProjectNotActiveSentence,
+  creationStaleSentence,
+  creationStaleUnreadSentence,
+} from "../app/core/ticketCreationRun.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import {
   abilitiesEvery,
@@ -120,13 +124,14 @@ function routed(
 async function drawCreation(
   answered: (request: SentRequest) => Response | undefined,
   over: (served: typeof fetch) => typeof fetch = (served) => served,
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
 ): Promise<readonly SentRequest[]> {
   const scripted = scriptedFetch(routed(answered));
   vi.stubGlobal("fetch", over(scripted.fetch));
   render(
     <ScreenHarness
       partition={creationPartition}
-      client={new QueryClient()}
+      client={client}
       transport={openedStream().ports.fetch}
     >
       <TicketCreation />
@@ -167,10 +172,10 @@ test("an offer that could not be read is left out, said, and the one left is ask
 
 /**
  * A submit the project moved under reads the project again and says so. Where
- * that read fails, saying so over a form still fenced where it was would be
- * false, so the failure is what the screen draws.
+ * that read fails, the form stays as the reader left it and says it was not
+ * updated, and the note does not claim the read it could not make.
  */
-test("a submit the project moved under, whose re-read fails, draws that failure", async () => {
+test("a submit the project moved under, whose re-read fails, keeps the form and says it was not updated", async () => {
   const failing = { on: false };
   const sent = await drawCreation(({ method, url }) => {
     if (method === "POST" && url.endsWith("/drafts"))
@@ -192,8 +197,87 @@ test("a submit the project moved under, whose re-read fails, draws that failure"
   });
   await settled();
   expect(sent.filter((one) => one.method === "POST").length).toBe(1);
-  expect(screen.getByText(/^Failed to load · /u)).toBeTruthy();
+  expect(screen.getByText("Not updated")).toBeTruthy();
+  expect(
+    screen.getByPlaceholderText<HTMLTextAreaElement>("what this ticket is for")
+      .value,
+  ).toBe("ship it");
+  expect(screen.queryByText(/^Failed to load · /u)).toBeNull();
   expect(screen.queryByText(creationStaleSentence)).toBeNull();
+  expect(screen.getByText(creationStaleUnreadSentence)).toBeTruthy();
+});
+
+/** The project's reads failing from here on, and every read asked again, as a
+ * refresh in the background asks. */
+async function rereadFailing(
+  failing: { on: boolean },
+  client: QueryClient,
+): Promise<void> {
+  failing.on = true;
+  await turned(() => void client.invalidateQueries());
+  await settled();
+}
+
+function purposeBox(): HTMLTextAreaElement {
+  return screen.getByPlaceholderText<HTMLTextAreaElement>(
+    "what this ticket is for",
+  );
+}
+
+/** A read in the background that fails leaves the form as the reader left it. */
+test("text typed into the form survives a read of the project that fails behind it", async () => {
+  const failing = { on: false };
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const sent = await drawCreation(
+    ({ url }) =>
+      failing.on && url.endsWith("/repositories") ? unreadable() : undefined,
+    undefined,
+    client,
+  );
+  fireEvent.change(purposeBox(), { target: { value: "ship it" } });
+  const before = sent.length;
+  await rereadFailing(failing, client);
+  expect(sent.length).toBeGreaterThan(before);
+  expect(purposeBox().value).toBe("ship it");
+});
+
+/** A submit still out when a read in the background fails keeps its outcome,
+ * so the reader is told what became of it rather than pressing again. */
+test("a submit in flight keeps its outcome through a read of the project that fails", async () => {
+  const failing = { on: false };
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const drafted = heldAnswer();
+  let drafts = 0;
+  await drawCreation(
+    ({ url }) =>
+      failing.on && url.endsWith("/repositories") ? unreadable() : undefined,
+    (served) =>
+      ((url: string, init?: { readonly method?: string }) => {
+        if (init?.method !== "POST" || !url.endsWith("/drafts"))
+          return served(url, init);
+        drafts += 1;
+        return drafted.answered;
+      }) as typeof fetch,
+    client,
+  );
+  await offeredNames();
+  await turned(() => {
+    fireEvent.click(screen.getByRole("menuitemradio", { name: "development" }));
+  });
+  fireEvent.change(purposeBox(), { target: { value: "ship it" } });
+  await turned(() => {
+    fireEvent.click(screen.getByRole("button", { name: "Create ticket" }));
+  });
+  await rereadFailing(failing, client);
+  drafted.release(answer({ error: { code: "ProjectNotActive" } }, 409));
+  await settled();
+  expect(screen.getByText(creationProjectNotActiveSentence)).toBeTruthy();
+  expect(purposeBox().value).toBe("ship it");
+  expect(drafts).toBe(1);
 });
 
 /**

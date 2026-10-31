@@ -5,7 +5,9 @@
  * is when the server saw the world rather than when this tab heard about it;
  * the cache's own update time stands in otherwise. Absence and failure are
  * separate states carrying their reason, so that neither is ever drawn as an
- * empty healthy table.
+ * empty healthy table. A read that fails behind an answer leaves the answer
+ * drawn, saying it was not updated, so nothing a reader holds beneath a panel
+ * is taken away by a read they never asked for.
  */
 
 import { ApiOutcomeError } from "./apiRequest.ts";
@@ -20,9 +22,15 @@ export type PanelState<T> =
       readonly state: "Ready";
       readonly value: T;
       readonly observedAtMs: number | undefined;
+      readonly rereadFailed?: boolean;
+      readonly retry?: () => void;
     }
   | { readonly state: "Absent"; readonly reason: string }
-  | { readonly state: "Failed"; readonly reason: string };
+  | {
+      readonly state: "Failed";
+      readonly reason: string;
+      readonly retry?: () => void;
+    };
 
 /** The resource's own observation when it states one, and the cache's if not. */
 export function panelObservedAtMs(
@@ -67,36 +75,34 @@ export interface PanelQuery<T> {
   readonly dataUpdatedAt: number;
 }
 
-/** A cache entry is the resource itself, so a failure arrives as the error. */
-export function panelStateFromQuery<T>(query: PanelQuery<T>): PanelState<T> {
-  if (query.error instanceof ApiOutcomeError)
-    return query.error.result.outcome === "Absent"
-      ? { state: "Absent", reason: panelReason(query.error.result) }
-      : { state: "Failed", reason: panelReason(query.error.result) };
-  if (query.error !== null && query.error !== undefined)
-    return {
-      state: "Failed",
-      reason:
-        query.error instanceof Error ? query.error.message : "the read failed",
-    };
-  if (query.isPending || query.data === undefined) return { state: "Pending" };
-  return {
-    state: "Ready",
-    value: query.data,
-    observedAtMs: panelObservedAtMs(
-      query.data,
-      query.dataUpdatedAt === 0 ? undefined : query.dataUpdatedAt,
-    ),
-  };
+function panelFailureReason(error: unknown): string | undefined {
+  if (error instanceof ApiOutcomeError) return panelReason(error.result);
+  if (error === null || error === undefined) return undefined;
+  return error instanceof Error ? error.message : "the read failed";
 }
 
-/** A polled read's state: its last answer stands across a poll that failed,
- * since a poll is asked on a clock rather than because anything moved, so only
- * a read that has never answered is unread. */
-export function panelStatePolled<T>(query: PanelQuery<T>): PanelState<T> {
-  return panelStateFromQuery(
-    query.data === undefined ? query : { ...query, error: null },
-  );
+/** A cache entry is the resource itself, so a failure arrives as the error. An
+ * answer of absent wins, because the resource is gone; otherwise an answer held
+ * wins over a read that failed, and only a read never answered is failed. */
+export function panelStateFromQuery<T>(query: PanelQuery<T>): PanelState<T> {
+  const reason = panelFailureReason(query.error);
+  if (
+    reason !== undefined &&
+    query.error instanceof ApiOutcomeError &&
+    query.error.result.outcome === "Absent"
+  )
+    return { state: "Absent", reason };
+  if (!query.isPending && query.data !== undefined) {
+    const observedAtMs = panelObservedAtMs(
+      query.data,
+      query.dataUpdatedAt === 0 ? undefined : query.dataUpdatedAt,
+    );
+    return reason === undefined
+      ? { state: "Ready", value: query.data, observedAtMs }
+      : { state: "Ready", value: query.data, observedAtMs, rereadFailed: true };
+  }
+  if (reason !== undefined) return { state: "Failed", reason };
+  return { state: "Pending" };
 }
 
 /** Whole units only, because a panel header is read at a glance. The rounding

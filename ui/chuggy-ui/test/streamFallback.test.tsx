@@ -46,7 +46,9 @@ function Spent(): ReactNode {
 async function heldEntryAfter(
   transport: StreamTransport,
 ): Promise<QueryClient> {
-  const client = new QueryClient();
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   client.setQueryData(held, {
     ticket: 3,
     phase: "Work",

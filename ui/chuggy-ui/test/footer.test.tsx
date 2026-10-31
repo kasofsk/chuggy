@@ -68,7 +68,9 @@ function mount(children: ReactNode): void {
   render(
     <ScreenHarness
       partition={atlas}
-      client={new QueryClient()}
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
       transport={server.ports.fetch}
     >
       {children}

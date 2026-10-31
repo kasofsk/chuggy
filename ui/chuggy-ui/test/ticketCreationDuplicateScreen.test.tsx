@@ -200,7 +200,9 @@ async function drawDuplicate(
 }> {
   const scripted = scriptedFetch(routed(project));
   vi.stubGlobal("fetch", over(scripted.fetch));
-  const client = new QueryClient();
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   const transport = openedStream().ports.fetch;
   const harnessed = (inner: ReactNode): ReactNode => (
     <ScreenHarness

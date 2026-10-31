@@ -31,7 +31,9 @@ export function threadConversationMounted(
   server: StreamServer,
 ): ThreadConversationMounted {
   const holder = holderDouble();
-  const client = new QueryClient();
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   const drawn = (shown: ThreadResponse): ReactNode => (
     <SessionProvider holder={holder}>
       <QueryClientProvider client={client}>

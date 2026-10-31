@@ -104,7 +104,11 @@ function draw(
   offers: readonly CreationOffer[] = [basic, sonnet],
 ): void {
   render(
-    <QueryClientProvider client={new QueryClient()}>
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
       <CreationForm
         ports={ports}
         partition={creationPartition}

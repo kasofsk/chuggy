@@ -64,15 +64,14 @@ export function useChatHost(tenant: string): PanelState<ChatHostResponse> {
   );
 }
 
-/** The host read again, or afresh with nothing held once it is taken off, since a polled read keeps its last answer through a failed one. */
+/** The host read again, after a change to it. */
 async function chatHostReread(
   client: QueryClient,
   tenant: string,
-  forgotten: boolean,
 ): Promise<void> {
-  const queryKey = tenantResourceKey(tenant, chatHostResource);
-  if (forgotten) await client.resetQueries({ queryKey });
-  else await client.invalidateQueries({ queryKey });
+  await client.invalidateQueries({
+    queryKey: tenantResourceKey(tenant, chatHostResource),
+  });
 }
 
 /** Where a change to the host got to: a token minted, the host taken off, or refused with why. */
@@ -270,7 +269,7 @@ function useChatHostWriting(tenant: string): ChatHostWriting {
     setWrite({ write: "Writing" });
     const removed = await apiDeregisterChatHost(ports, tenant);
     const done = removed.outcome === "Ok" || removed.outcome === "Absent";
-    await chatHostReread(client, tenant, done);
+    await chatHostReread(client, tenant);
     setWrite(
       done
         ? { write: "Idle" }
@@ -287,7 +286,7 @@ function useChatHostWriting(tenant: string): ChatHostWriting {
     remove: () => void remove(),
     done: () => {
       setWrite({ write: "Idle" });
-      void chatHostReread(client, tenant, false);
+      void chatHostReread(client, tenant);
     },
   };
 }

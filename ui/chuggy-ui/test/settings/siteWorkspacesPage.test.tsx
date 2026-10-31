@@ -135,7 +135,7 @@ test("a cut list says so under its table, in the People page's words", async () 
   expect(workspacesDrawn()).toHaveLength(workspacesListed.tenants.length);
 });
 
-test("a list loading or failed is the read's own line, with no table and no action", async () => {
+test("a list loading or failed is the read's own line, with no table and no action but reading it again", async () => {
   await drawWorkspaces({ listing: unanswered });
   expect(screen.getByText("Loading…")).toBeTruthy();
   expect(screen.queryByRole("table")).toBeNull();
@@ -146,7 +146,9 @@ test("a list loading or failed is the read's own line, with no table and no acti
     screen.getByText("Failed to load · the API failed with InternalError"),
   ).toBeTruthy();
   expect(screen.queryByRole("table")).toBeNull();
-  expect(screen.queryAllByRole("button")).toStrictEqual([]);
+  expect(
+    screen.queryAllByRole("button").map((button) => button.textContent),
+  ).toStrictEqual(["Retry"]);
   expect(screen.queryByText(workspacesWithheld)).toBeNull();
 });
 
@@ -180,7 +182,7 @@ test.each([
   },
 );
 
-test("the abilities loading or failed is the page's unready line, with no list read and no word on who creates", async () => {
+test("the abilities loading or failed is the page's unready line, with no list read, no word on who creates, and no action but reading it again", async () => {
   const loading = await drawWorkspaces({ abilities: unanswered });
   expect(screen.getByText("Loading…")).toBeTruthy();
   expect(workspaceListReads(loading)).toBe(0);
@@ -192,6 +194,8 @@ test("the abilities loading or failed is the page's unready line, with no list r
     screen.getByText("Failed to load · the API failed with InternalError"),
   ).toBeTruthy();
   expect(workspaceListReads(failed)).toBe(0);
-  expect(screen.queryAllByRole("button")).toStrictEqual([]);
+  expect(
+    screen.queryAllByRole("button").map((button) => button.textContent),
+  ).toStrictEqual(["Retry"]);
   expect(screen.queryByText(workspacesWithheld)).toBeNull();
 });

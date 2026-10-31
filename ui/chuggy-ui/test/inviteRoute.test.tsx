@@ -59,7 +59,11 @@ test("a person returning from sign-in to the invite page is drawn it, and their 
   render(
     <SessionProvider holder={returned}>
       <InviteProvider holder={holder}>
-        <App queryClient={new QueryClient()} />
+        <App
+          queryClient={
+            new QueryClient({ defaultOptions: { queries: { retry: false } } })
+          }
+        />
       </InviteProvider>
     </SessionProvider>,
   );
@@ -81,7 +85,11 @@ test("a browser with no session is drawn the invite page at its address, and the
   const tree = (
     <SessionProvider holder={session}>
       <InviteProvider holder={holder}>
-        <App queryClient={new QueryClient()} />
+        <App
+          queryClient={
+            new QueryClient({ defaultOptions: { queries: { retry: false } } })
+          }
+        />
       </InviteProvider>
     </SessionProvider>
   );

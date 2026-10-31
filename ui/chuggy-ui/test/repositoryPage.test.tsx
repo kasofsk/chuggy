@@ -225,7 +225,9 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
   render(
     <ScreenHarness
       partition={leadPartition}
-      client={new QueryClient()}
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
       transport={openedStream().ports.fetch}
     >
       <RepositoryPage />

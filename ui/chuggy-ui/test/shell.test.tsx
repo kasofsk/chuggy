@@ -188,7 +188,9 @@ function shellRoute(url: string): Response {
 async function mounted(
   em: number,
   served?: typeof fetch,
-  client: QueryClient = new QueryClient(),
+  client: QueryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  }),
   frame: ViewportFrame = {},
 ): Promise<{ readonly redrawn: () => Promise<void> }> {
   const api = apiDouble({
@@ -2709,7 +2711,9 @@ function movingServed(moving: PaneMoving, served: typeof fetch): typeof fetch {
  * which every screen then reads as withheld, and the box holds the message
  * until the route is read as runners again. */
 test("a message the hosted grant refuses where the read said runners is held until runners are read again", async () => {
-  const client = new QueryClient();
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   const moving: PaneMoving = { thread: "Pool", refusing: "/messages" };
   await mounted(
     viewportDeskEm,
@@ -2766,7 +2770,9 @@ test.each([
 ] as const)(
   "%s the hosted grant refuses while the placement reads fail stays held",
   async (_said, refusing, held) => {
-    const client = new QueryClient();
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
     const moving: PaneMoving = { thread: "Pool", refusing };
     await mounted(
       viewportDeskEm,
@@ -2800,7 +2806,9 @@ async function typedUnhosted(
   held: boolean,
   moving: PaneMoving,
 ): Promise<QueryClient> {
-  const client = new QueryClient();
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   await mounted(
     viewportDeskEm,
     movingServed(moving, grantReadServed(false, ownThread(held))),
@@ -2858,7 +2866,9 @@ test.each([
 ] as const)(
   "%s the hosted grant refuses after a poll landed mid-send stays held",
   async (_said, refusing, held) => {
-    const client = new QueryClient();
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
     let refuses = (): void => undefined;
     const gate = new Promise<void>((resolve) => {
       refuses = resolve;
@@ -2914,7 +2924,9 @@ test.each([
 /** The open's refusal is the newest word on the grant, wherever its read
  * stands. */
 test("a first message the hosted grant refuses has every screen read the grant as withheld", async () => {
-  const client = new QueryClient();
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   const moving: PaneMoving = { thread: "Pool", refusing: "/threads" };
   await mounted(viewportDeskEm, movingServed(moving, threadServed([])), client);
   await helloSent();
@@ -2934,7 +2946,9 @@ test.each([
 ] as const)(
   "New the hosted grant refuses while the placement reads fail says so (%s)",
   async (_said, held) => {
-    const client = new QueryClient();
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
     const moving: PaneMoving = { thread: "Pool", refusing: "/threads" };
     await mounted(
       viewportDeskEm,
@@ -3136,7 +3150,9 @@ test.each([
       refusing: "/threads",
     };
     const served = movingServed(moving, threadServed([]));
-    const client = new QueryClient();
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
     await mounted(
       viewportDeskEm,
       ((url: string, init?: { readonly method?: string }) =>

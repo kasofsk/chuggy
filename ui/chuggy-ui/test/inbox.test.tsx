@@ -121,7 +121,9 @@ function drawInbox(
   render(
     <ScreenHarness
       partition={atlas}
-      client={new QueryClient()}
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
       transport={openedStream().ports.fetch}
     >
       <InboxScreen partition={atlas} />
@@ -142,7 +144,9 @@ test("an answered row stays until a Ticket frame moves it out of the section", a
   render(
     <ScreenHarness
       partition={atlas}
-      client={new QueryClient()}
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
       transport={server.ports.fetch}
     >
       <InboxScreen partition={atlas} />

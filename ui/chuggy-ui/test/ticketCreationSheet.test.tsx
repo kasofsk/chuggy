@@ -71,7 +71,11 @@ function drawEveryRow(): HTMLElement {
     [binding],
   );
   const { container } = render(
-    <QueryClientProvider client={new QueryClient()}>
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
       <div className="creation">
         <CreationFields
           form={form}

@@ -86,7 +86,11 @@ interface Api {
 function draw(ports: ApiPorts, start: CreationStart): readonly number[] {
   const created: number[] = [];
   render(
-    <QueryClientProvider client={new QueryClient()}>
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
       <CreationForm
         ports={ports}
         partition={creationPartition}

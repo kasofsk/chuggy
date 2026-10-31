@@ -249,7 +249,9 @@ export async function runPageDrawn(
   const view = render(
     <ScreenHarness
       partition={partition}
-      client={new QueryClient()}
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
       transport={server.ports.fetch}
     >
       <TicketPage />

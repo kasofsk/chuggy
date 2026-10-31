@@ -24,7 +24,9 @@ afterEach(() => {
 /** The hook under one thread, with every message and stop held for the case. */
 function held(doors: StageDoors) {
   vi.stubGlobal("fetch", stageDoor(doors));
-  const client = new QueryClient();
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   return renderHook(
     () =>
       useThreadSend({

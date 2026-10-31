@@ -13,7 +13,7 @@
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
-import { QueryClient } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import type { RenderResult } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
@@ -29,6 +29,7 @@ import {
   ticketLandedNowhere,
   ticketLandingsNone,
   turned,
+  queryClientUnretried,
 } from "./screenHarness.tsx";
 import { nativeHttpMediaType } from "../../../src/contract/http.ts";
 import { ticketAttemptKey } from "../app/core/ticketActions.ts";
@@ -281,7 +282,7 @@ test("a follow that throws leaves the panel settled and says why", async () => {
     openActions: () => answer({ actions: [] }),
   });
   vi.stubGlobal("fetch", api.fetch);
-  mounted(new QueryClient());
+  mounted(queryClientUnretried());
   await settled();
 
   waiting.mode = "throw";
@@ -296,7 +297,7 @@ test("a follow that throws leaves the panel settled and says why", async () => {
 
 test("a panel remounted mid-follow picks the attempt back up", async () => {
   const api = accepting();
-  const client = new QueryClient();
+  const client = queryClientUnretried();
   const view = await following(api, client);
 
   await turned(view.unmount);
@@ -317,7 +318,7 @@ test("an unread action list offers nothing the phase alone would allow", async (
   });
 
   vi.stubGlobal("fetch", api.fetch);
-  mounted(new QueryClient());
+  mounted(queryClientUnretried());
   await settled();
 
   expect(button("Resume")).toBeNull();
@@ -357,7 +358,7 @@ async function following(
 test("a resume pressed in the card is followed in the bar, which holds its own buttons too", async () => {
   const api = accepting();
   vi.stubGlobal("fetch", api.fetch);
-  const { container } = mounted(new QueryClient());
+  const { container } = mounted(queryClientUnretried());
   await settled();
   const card = screen.getByRole("status", { name: "Needs you" });
   const bar = container.querySelector<HTMLElement>(".ticket-status");
@@ -385,7 +386,7 @@ test("a resume pressed in the card is followed in the bar, which holds its own b
 });
 
 test("a cancellation that throws is said rather than swallowed", async () => {
-  await following(accepting(deferred), new QueryClient());
+  await following(accepting(deferred), queryClientUnretried());
 
   waiting.mode = "throw";
   await turned(() => {
@@ -399,7 +400,7 @@ test("a cancellation that throws is said rather than swallowed", async () => {
 test("an accepted cancellation ends the attempt it was asked about", async () => {
   await following(
     accepting((operation) => answer({ operation, state: "Cancelled" })),
-    new QueryClient(),
+    queryClientUnretried(),
   );
 
   await turned(() => {
@@ -413,7 +414,7 @@ test("an accepted cancellation ends the attempt it was asked about", async () =>
 });
 
 test("moving to another ticket leaves the first ticket's attempt behind", async () => {
-  const client = new QueryClient();
+  const client = queryClientUnretried();
   const view = await following(accepting(), client);
 
   await navigated(view, client, "12");
@@ -427,7 +428,7 @@ test("moving to another ticket leaves the first ticket's attempt behind", async 
 test("the attempt held for the ticket arrived at is the one picked up", async () => {
   const api = accepting();
   vi.stubGlobal("fetch", api.fetch);
-  const client = new QueryClient();
+  const client = queryClientUnretried();
   client.setQueryData<TicketAttempt>(ticketAttemptKey(atlas, 12), {
     action: {
       action: "Resume",
@@ -456,7 +457,7 @@ test("a refused cancellation does not outlive the follow it was about", async ()
     answer({ error: { code: "OperationTerminal" } }, 409),
   );
   waiting.mode = "step";
-  await following(api, new QueryClient());
+  await following(api, queryClientUnretried());
 
   await turned(() => {
     screen.getByRole("button", { name: "Cancel" }).click();
@@ -478,7 +479,7 @@ test("an unmount with the submission in flight still holds its identity", async 
     openActions: () => answer({ actions: [] }),
   });
   vi.stubGlobal("fetch", api.fetch);
-  const client = new QueryClient();
+  const client = queryClientUnretried();
   const view = mounted(client);
   await settled();
   await turned(() => {
@@ -508,7 +509,7 @@ test("a submission the API never took is made again under the same identity", as
     openActions: () => answer({ actions: [] }),
   });
   vi.stubGlobal("fetch", api.fetch);
-  const client = new QueryClient();
+  const client = queryClientUnretried();
   client.setQueryData<TicketAttempt>(ticketAttemptKey(atlas, 11), {
     action: {
       action: "Resume",
@@ -530,7 +531,7 @@ test("a cancellation does not overwrite a follow that ended while it was asked",
   const cancelling = held();
   waiting.mode = "step";
   const api = accepting(() => cancelling.answering);
-  await following(api, new QueryClient());
+  await following(api, queryClientUnretried());
 
   await turned(() => {
     screen.getByRole("button", { name: "Cancel" }).click();
@@ -552,7 +553,7 @@ test("a cancellation is applied to the operation it asked about and no other", a
   const cancelling = held();
   waiting.mode = "step";
   const api = accepting(() => cancelling.answering);
-  const client = new QueryClient();
+  const client = queryClientUnretried();
   await following(api, client);
 
   await turned(() => {
@@ -588,7 +589,7 @@ test("a submission whose answer was lost keeps the identity it was made under", 
     openActions: () => answer({ actions: [] }),
   });
   vi.stubGlobal("fetch", api.fetch);
-  const client = new QueryClient();
+  const client = queryClientUnretried();
   mounted(client);
   await settled();
   await turned(() => {
@@ -640,14 +641,14 @@ async function pressedAgain(api: Served): Promise<void> {
 
 test("pressing again reaches the held attempt rather than drawing a second", async () => {
   const api = losing();
-  await unanswered(api, new QueryClient());
+  await unanswered(api, queryClientUnretried());
   await pressedAgain(api);
 });
 
 test("a press naming another action still resolves the attempt that is held", async () => {
   waiting.mode = "step";
   const api = losing();
-  await unanswered(api, new QueryClient());
+  await unanswered(api, queryClientUnretried());
 
   await turned(() => {
     screen.getByRole("button", { name: "Revoke" }).click();
@@ -676,7 +677,7 @@ function refusing(): Served {
 test("a submission the API refuses leaves no record to ask about again", async () => {
   const api = refusing();
   vi.stubGlobal("fetch", api.fetch);
-  const client = new QueryClient();
+  const client = queryClientUnretried();
   mounted(client);
   await settled();
   await turned(() => {
@@ -693,7 +694,7 @@ test("a submission the API refuses leaves no record to ask about again", async (
 test("a refusal leaves the next press free to mean a new intent", async () => {
   const api = refusing();
   vi.stubGlobal("fetch", api.fetch);
-  mounted(new QueryClient());
+  mounted(queryClientUnretried());
   await settled();
   await turned(() => {
     screen.getByRole("button", { name: "Resume" }).click();
@@ -722,7 +723,7 @@ function faulting(): Served {
 test("a faulted submission may have been taken, so its identity is kept", async () => {
   const api = faulting();
   vi.stubGlobal("fetch", api.fetch);
-  const client = new QueryClient();
+  const client = queryClientUnretried();
   mounted(client);
   await settled();
   await turned(() => {

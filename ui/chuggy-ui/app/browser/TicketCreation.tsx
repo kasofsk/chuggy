@@ -78,6 +78,7 @@ import {
   createAndReleaseTicket,
   creationContextList,
   creationContextSentence,
+  creationStaleUnreadSentence,
   creationTicketExistsSentence,
   readCreationContext,
 } from "../core/ticketCreationRun.ts";
@@ -810,8 +811,10 @@ function useCreationSubmit(props: {
       return;
     }
     setAttempt(creationAttemptOf(created));
-    if (created.created === "Stale")
-      await client.invalidateQueries({ queryKey });
+    if (created.created !== "Stale") return;
+    await client.invalidateQueries({ queryKey });
+    if (mounted.current && client.getQueryState(queryKey)?.status === "error")
+      setAttempt({ attempt: "Stale", reason: creationStaleUnreadSentence });
   };
 
   return { attempt, submit };

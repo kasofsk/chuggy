@@ -1,5 +1,4 @@
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
-import { QueryClient } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
@@ -13,6 +12,7 @@ import {
   ScreenHarness,
   settled,
   turned,
+  queryClientUnretried,
 } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { ticketInstants } from "./ticketInstants.ts";
@@ -150,7 +150,7 @@ async function drawTicket(named: Named): Promise<void> {
   render(
     <ScreenHarness
       partition={atlas}
-      client={new QueryClient()}
+      client={queryClientUnretried()}
       transport={openedStream().ports.fetch}
     >
       <TicketPage />

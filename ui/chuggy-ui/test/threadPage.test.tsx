@@ -139,6 +139,7 @@ async function mountedAt(
   path: string,
   over: (served: typeof fetch) => typeof fetch = (served) => served,
   frame?: ViewportFrame,
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
 ): Promise<ReturnType<typeof routerAt>> {
   viewportAtEm(viewportDeskEm, frame);
   vi.stubGlobal(
@@ -150,7 +151,7 @@ async function mountedAt(
   render(
     <ScreenHarness
       partition={threadPartition}
-      client={new QueryClient()}
+      client={client}
       transport={openedStream().ports.fetch}
     >
       <RouterProvider router={router} />
@@ -206,6 +207,40 @@ test("a thread that cannot be read draws the read's own line, and no pane", asyn
   expect(screen.queryByRole("region", { name: "Conversation" })).toBeNull();
   expect(chatDrawn()).toBeNull();
   styleless();
+});
+
+/** A read of the thread in the background that fails leaves the composer
+ * holding what the reader was writing. */
+test("the composer keeps what was typed through a read of the thread that fails", async () => {
+  const failing = { on: false };
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  let reads = 0;
+  await mountedAt(
+    threadPath(threadMineSession),
+    (served) =>
+      ((url: string) => {
+        if (!url.endsWith(`/threads/${threadMineSession}`)) return served(url);
+        reads += 1;
+        return failing.on
+          ? Promise.resolve(answer({ error: { code: "InternalError" } }, 500))
+          : served(url);
+      }) as typeof fetch,
+    undefined,
+    client,
+  );
+  fireEvent.change(screen.getByRole("textbox", { name: "Message" }), {
+    target: { value: "written before the read failed" },
+  });
+  failing.on = true;
+  const before = reads;
+  await turned(() => void client.invalidateQueries());
+  await settled();
+  expect(reads).toBeGreaterThan(before);
+  expect(
+    screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Message" }).value,
+  ).toBe("written before the read failed");
 });
 
 /** Whose thread it is, is the server's `mine`: another member's is read with

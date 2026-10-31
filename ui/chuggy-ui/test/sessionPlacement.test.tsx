@@ -29,7 +29,11 @@ afterEach(() => {
 
 function wrapper(props: { readonly children: ReactNode }): ReactNode {
   return (
-    <QueryClientProvider client={new QueryClient()}>
+    <QueryClientProvider
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+    >
       <SessionProvider holder={holderDouble()}>
         {props.children}
       </SessionProvider>
@@ -58,7 +62,9 @@ test("a runner that comes back is read as live within one poll", async () => {
 /** Reads are counted rather than timed, so two that land in one millisecond
  * are two, and one that fails is none. */
 test("the placement's reads count every answer and no failure", async () => {
-  const client = new QueryClient();
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   const key = projectResourceKey(
     threadPartition,
     "Project",

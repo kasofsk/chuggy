@@ -3,16 +3,31 @@
  * and the three states a read is in when it is not ready.
  *
  * Absence and failure are drawn as themselves with the reason — an empty table
- * that looks healthy is what this composition exists to make impossible. It
- * holds the state and the clock so that the panel primitive holds neither.
+ * that looks healthy is what this composition exists to make impossible. A
+ * read that failed behind an answer keeps the answer drawn, saying where its
+ * freshness would that it was not updated. It holds the state and the clock so
+ * that the panel primitive holds neither.
  */
 
 import type { ReactNode } from "react";
 
 import type { PanelState } from "../core/freshness.ts";
 import { Freshness } from "./Freshness.tsx";
+import { Button } from "./ui/Button.tsx";
 import { Notice } from "./ui/Notice.tsx";
 import { Panel } from "./ui/Panel.tsx";
+
+/** Retry for a failed read, or nothing when the read carries no retry. */
+function PanelRetry(props: {
+  readonly retry: (() => void) | undefined;
+}): ReactNode {
+  if (props.retry === undefined) return null;
+  return (
+    <Button size="sm" variant="quiet" onClick={props.retry}>
+      Retry
+    </Button>
+  );
+}
 
 /**
  * A read that is not ready, as the one line it is drawn as. Said here once
@@ -36,15 +51,35 @@ export function PanelUnready<T>(props: {
       );
     case "Failed":
       return (
-        <Notice
-          tone="danger"
-          inline
-          detail={`Failed to load · ${state.reason}`}
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <Notice
+            tone="danger"
+            inline
+            detail={`Failed to load · ${state.reason}`}
+          />
+          <PanelRetry retry={state.retry} />
+        </div>
       );
     case "Ready":
       return null;
   }
+}
+
+/** When a ready read was observed, or that its last read failed and it was not
+ * updated. */
+function PanelFreshness(props: {
+  readonly observedAtMs: number | undefined;
+  readonly rereadFailed: boolean | undefined;
+  readonly retry: (() => void) | undefined;
+}): ReactNode {
+  if (props.rereadFailed !== true)
+    return <Freshness observedAtMs={props.observedAtMs} />;
+  return (
+    <span className="inline-flex items-center gap-2">
+      <span className="freshness freshness-stale">Not updated</span>
+      <PanelRetry retry={props.retry} />
+    </span>
+  );
 }
 
 export function DataPanel<T>(props: {
@@ -58,7 +93,11 @@ export function DataPanel<T>(props: {
       title={props.title}
       meta={
         state.state === "Ready" ? (
-          <Freshness observedAtMs={state.observedAtMs} />
+          <PanelFreshness
+            observedAtMs={state.observedAtMs}
+            rereadFailed={state.rereadFailed}
+            retry={state.retry}
+          />
         ) : undefined
       }
     >
@@ -84,7 +123,11 @@ export function DataSection<T>(props: {
       {state.state === "Ready" ? (
         <>
           <div className="flex justify-end">
-            <Freshness observedAtMs={state.observedAtMs} />
+            <PanelFreshness
+              observedAtMs={state.observedAtMs}
+              rereadFailed={state.rereadFailed}
+              retry={state.retry}
+            />
           </div>
           {props.children(state.value)}
         </>

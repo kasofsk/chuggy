@@ -35,15 +35,3 @@ export async function personalRunnerReread(
     queryKey: tenantResourceKey(tenant, personalRunnerResource),
   });
 }
-
-/** The runners read afresh with nothing held, for one of them taken off: a
- * polled read keeps its last answer through a failed one, and a member with
- * none is answered as absent. */
-export async function personalRunnerForgotten(
-  client: QueryClient,
-  tenant: string,
-): Promise<void> {
-  await client.resetQueries({
-    queryKey: tenantResourceKey(tenant, personalRunnerResource),
-  });
-}
