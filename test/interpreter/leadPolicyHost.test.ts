@@ -406,6 +406,51 @@ test("a decision is one turn, and the turn's result is the decision", async () =
   assert.equal(execution.implementationRevision, "selector-build-1");
 });
 
+test("a turn names each candidate's configuration rather than carrying its canonical", async () => {
+  const double = mailboxDouble({ agentReference: "agent-session-9" });
+  await policyOf(double).execute(request, new AbortController().signal);
+  const input = double.offers[0]?.input ?? "";
+  assert.ok(!input.includes("configurationCanonical"));
+  assert.deepEqual(
+    parseLeadObservation(input).candidates.map((shown) => [
+      shown.ticket,
+      shown.ticketVersion,
+      shown.configurationRevision,
+      shown.configurationDigest,
+    ]),
+    observation.candidates.map((held) => [
+      held.ticket,
+      held.ticketVersion,
+      held.configurationRevision,
+      held.configurationDigest,
+    ]),
+  );
+});
+
+test("a dispatch is checked against the observation's candidates, not the turn's", async () => {
+  const dispatching = (expectedTicketVersion: number) =>
+    mailboxDouble({
+      agentReference: "agent-session-9",
+      result: JSON.stringify({
+        version: 1,
+        dispatches: [{ ticket: 43, expectedTicketVersion }],
+        attention: "Monitoring",
+        handoffNote: {},
+      }),
+    });
+  const execution = (await policyOf(dispatching(1)).execute(
+    request,
+    new AbortController().signal,
+  )) as SelectorPolicyExecution;
+  assert.deepEqual(execution.result.dispatches, [
+    { ticket: 43, expectedTicketVersion: 1 },
+  ]);
+  await assert.rejects(
+    policyOf(dispatching(2)).execute(request, new AbortController().signal),
+    /fences on a version the observation did not show/u,
+  );
+});
+
 test("a turn that measured nothing spends the host's own wall clock", async () => {
   const double = mailboxDouble({ agentReference: "agent-session-9" });
   const policy = leadSelectorPolicy(

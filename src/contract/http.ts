@@ -725,14 +725,6 @@ export const nativeHttpDraftEvaluatorsMax = 100;
 export const configurationCanonicalCharsMax = 65_536;
 
 /**
- * What one character of an already-JSON text weighs once it is embedded as a
- * JSON string. It is two rather than six because a canonical configuration
- * carries no control character, and one rather than two would be a bound the
- * quotes in every JSON document already exceed.
- */
-const jsonEmbeddedTextCharChars = 2;
-
-/**
  * What one observation carries that is neither a text a project set nor a page
  * of something: its version, its decision reference, its partition, its view
  * token and its operational context.
@@ -795,8 +787,12 @@ export const leadObservedStageCharsMax = stringifiedObjectChars([
 /** The configuration name one candidate's version label names. */
 export const repositoryConfigurationNameCharsMax = 128;
 
-/** Every field one dispatch candidate carries but the configuration, at its own bound. */
-const candidateOwnMembers: readonly (readonly [string, number])[] = [
+/**
+ * What one dispatch candidate weighs in a lead turn: the counters, the two
+ * pages authoring bounds, and the identities naming the revision it was pinned
+ * under. The turn names that configuration rather than embedding its canonical.
+ */
+export const leadObservedCandidateCharsMax = stringifiedObjectChars([
   ["ticket", candidateCounterDigitsMax],
   ["ticketVersion", candidateCounterDigitsMax],
   [
@@ -819,29 +815,6 @@ const candidateOwnMembers: readonly (readonly [string, number])[] = [
   ],
   ["configurationRevision", jsonStringChars(nativeHttpPathSegmentCharsMax)],
   ["configurationDigest", jsonStringChars(artifactDigestChars)],
-];
-
-/**
- * What one dispatch candidate weighs beyond the configuration it pins: the
- * counters, the two pages authoring bounds, and the identities naming the
- * revision it was pinned under.
- */
-export const leadObservedCandidateFixedCharsMax =
-  stringifiedObjectChars(candidateOwnMembers);
-
-/**
- * What one dispatch candidate weighs, the canonical counted as the member it is
- * so the key naming it is weighed where every other key is. The configuration
- * is the whole of a candidate's size — it embeds the text 007 bounds rather
- * than a reference to it — so a ceiling below that is a page the view composes
- * and the mailbox refuses.
- */
-export const leadObservedCandidateCharsMax = stringifiedObjectChars([
-  ...candidateOwnMembers,
-  [
-    "configurationCanonical",
-    configurationCanonicalCharsMax * jsonEmbeddedTextCharChars + 2,
-  ],
 ]);
 
 /**

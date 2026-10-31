@@ -21,8 +21,6 @@ import {
   leadObservationFixedCharsMax,
   leadObservedChangeCharsMax,
   artifactDigestChars,
-  configurationCanonicalCharsMax,
-  leadObservedCandidateFixedCharsMax,
   nativeHttpDraftDependenciesMax,
   nativeHttpDraftEvaluatorsMax,
   nativeHttpDraftStagesMax,
@@ -1262,9 +1260,8 @@ test("a model name past what the measure column holds is refused", async () => {
 
 /**
  * One candidate at its ceiling: every field at the bound its own constant
- * gives it — the three authored pages full, the identities at the identity bound
- * with every character escaped, and a canonical configuration of the length 007
- * bounds whose every character is a quote the embedding must escape.
+ * gives it — the three authored pages full, and the identities at the identity
+ * bound with every character escaped.
  */
 function maximalCandidate(ticket: number): Record<string, unknown> {
   return {
@@ -1286,7 +1283,6 @@ function maximalCandidate(ticket: number): Record<string, unknown> {
     },
     configurationRevision: escapedText(nativeHttpPathSegmentCharsMax),
     configurationDigest: "c".repeat(artifactDigestChars),
-    configurationCanonical: '"'.repeat(configurationCanonicalCharsMax),
   };
 }
 
@@ -1377,21 +1373,10 @@ test("the widest observation the parts admit is one the mailbox row holds", asyn
 });
 
 test("one candidate at its ceiling is one the derivation makes room for", () => {
-  const one = maximalCandidate(1);
-  const whole = JSON.stringify(one).length;
-  const fixed =
-    JSON.stringify({ ...one, configurationCanonical: "" }).length - 2;
+  const whole = JSON.stringify(maximalCandidate(1)).length;
   assert.ok(
-    fixed > nativeHttpDraftStagesMax,
+    whole > nativeHttpDraftStagesMax,
     "the widest candidate carries both authored pages full",
-  );
-  assert.ok(
-    fixed <= leadObservedCandidateFixedCharsMax,
-    `a candidate's own fields weigh ${String(fixed)} against ${String(leadObservedCandidateFixedCharsMax)}`,
-  );
-  assert.ok(
-    whole > configurationCanonicalCharsMax,
-    "a candidate embeds the canonical text rather than a reference to it",
   );
   assert.ok(
     whole <= leadObservedCandidateCharsMax,

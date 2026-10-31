@@ -15,10 +15,10 @@
  * so what an installation ends on is whichever migration last moved it, and
  * that is the one rendering a derivation can be compared against.
  *
- * THE SECOND RELATION IS THE ONE THE FIRST DOES NOT IMPLY. The floor is the
- * mailbox bound today because the input bound is too, and a mailbox that grew
- * in two steps would leave a project able to widen `inputBytesPerDecision` past
- * a budget still pinned to the older figure — which is #552 reached by widening
+ * THE SECOND RELATION IS THE ONE THE FIRST DOES NOT IMPLY. The floor covers
+ * the mailbox bound today because the input bound is no wider, and a mailbox
+ * that grew in two steps would leave a project able to widen
+ * `inputBytesPerDecision` past a budget still pinned to the older figure — which is #552 reached by widening
  * the input alone, the one thing the derivation promises cannot happen.
  */
 
@@ -29,8 +29,11 @@ import { leadObservationTokensPerDecisionAt011 } from "../../src/adapters/postgr
 import { sessionTurnInputCharsMax } from "../../src/contract/http.ts";
 import { leadObservationBytesMax } from "../../src/interpreter/selector.ts";
 
-test("the floor is the widest observation the mailbox row holds", () => {
-  assert.equal(leadObservationTokensPerDecisionAt011, sessionTurnInputCharsMax);
+test("the floor is never under the widest observation the mailbox row holds", () => {
+  assert.ok(
+    leadObservationTokensPerDecisionAt011 >= sessionTurnInputCharsMax,
+    `the floor is ${String(leadObservationTokensPerDecisionAt011)} against a mailbox bound of ${String(sessionTurnInputCharsMax)}`,
+  );
 });
 
 test("the floor is never under the input a project may widen to", () => {
