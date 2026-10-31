@@ -75,7 +75,6 @@ import {
   projectChangeResourceCharsMax,
   sessionIdentityCharsMax,
   sessionPromptCeilings,
-  sessionTurnInputCharsMax,
   sessionTurnResultCharsMax,
 } from "../../src/contract/http.ts";
 import { briefFinalizationDefault } from "../../src/interpreter/ticketBrief.ts";
@@ -624,7 +623,7 @@ test("the installed session constraints match the runtime", async () => {
       "session_turn",
       "session_turn_text_is_bounded",
     );
-    assert.ok(input?.includes(String(sessionTurnInputCharsMax)));
+    assert.ok(input?.includes(String(leadObservationTokensPerDecisionAt011)));
     assert.ok(input?.includes(String(sessionTurnResultCharsMax)));
   });
 });

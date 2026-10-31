@@ -77,6 +77,7 @@ import type {
   LeadTurnStanding,
   LeadTurnWithdrawn,
 } from "./leadMailbox.ts";
+import type { DispatchCandidate } from "./dispatchView.ts";
 import { leadSystemPrompt } from "./leadTools.ts";
 import { asPrincipal } from "./principal.ts";
 import type { ProjectAccess } from "./projectAccess.ts";
@@ -85,6 +86,7 @@ import {
   leadObservedRefusals,
   parseLeadDecision,
   type LeadObservationDocument,
+  type LeadObservedCandidate,
   type LeadObservedRefusal,
   type LeadSeeding,
   type LeadSeedingDecision,
@@ -226,6 +228,22 @@ function leadTurnInstructions(request: SelectorPolicyRequest): string {
   });
 }
 
+function leadObservationDocumentCandidate(
+  candidate: DispatchCandidate,
+): LeadObservedCandidate {
+  return {
+    ticket: candidate.ticket,
+    ticketVersion: candidate.ticketVersion,
+    dependencies: candidate.dependencies,
+    program: candidate.program,
+    configurationRevision: candidate.configurationRevision,
+    configurationDigest: candidate.configurationDigest,
+    ...(candidate.configurationVersion === undefined
+      ? {}
+      : { configurationVersion: candidate.configurationVersion }),
+  };
+}
+
 function leadObservationDocument(
   request: SelectorPolicyRequest,
   partition: Partition,
@@ -238,7 +256,9 @@ function leadObservationDocument(
     partition,
     ...(seeding === undefined ? {} : { seeding }),
     changes: request.observation.changes,
-    candidates: request.observation.candidates,
+    candidates: request.observation.candidates.map(
+      leadObservationDocumentCandidate,
+    ),
     token: request.observation.token,
     operationalContext: request.observation.operationalContext,
     handoffNote: request.observation.handoffNote,

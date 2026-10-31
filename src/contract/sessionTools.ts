@@ -44,7 +44,7 @@ import {
   configurationCanonicalCharsMax,
   jsonStringChars,
   jsonTextBytes,
-  leadObservedCandidateFixedCharsMax,
+  leadObservedCandidateCharsMax,
   nativeHttpBodyBytesMax,
   nativeHttpRoutes,
   projectArtifactUploadBytesMax,
@@ -184,7 +184,7 @@ const chuggyToolCharBytesMax = 4;
  * at its heaviest, and an ordinary answer's bound for the page around it.
  */
 export const chuggyToolDispatchViewResponseBytesMax =
-  leadObservedCandidateFixedCharsMax +
+  leadObservedCandidateCharsMax +
   jsonStringChars(0) +
   configurationCanonicalCharsMax * chuggyToolCharBytesMax +
   nativeHttpBodyBytesMax;

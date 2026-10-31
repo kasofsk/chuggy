@@ -86,6 +86,16 @@ export interface LeadSeeding {
   readonly notificationCursor: number;
 }
 
+/**
+ * One dispatch candidate as a turn shows it: named by the revision and digest
+ * of its configuration rather than carrying the canonical, which a lead reads
+ * through `read_configuration`.
+ */
+export type LeadObservedCandidate = Omit<
+  DispatchCandidate,
+  "configurationCanonical"
+>;
+
 export interface LeadObservationDocument {
   readonly version: typeof leadTurnDocumentVersion;
   readonly decision: string;
@@ -101,7 +111,7 @@ export interface LeadObservationDocument {
   /** Present only on a turn to a session that has bound no agent reference. */
   readonly seeding?: LeadSeeding;
   readonly changes: readonly ProjectNotification[];
-  readonly candidates: readonly DispatchCandidate[];
+  readonly candidates: readonly LeadObservedCandidate[];
   readonly token: DispatchViewToken;
   readonly operationalContext: SelectorOperationalContext;
   readonly handoffNote: JsonValue;
