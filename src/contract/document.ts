@@ -183,7 +183,7 @@ export function nativeHttpContractDocument(): unknown {
     notifications: "bounded-polling",
     events: "sse",
     eventRepresentations:
-      "a change frame carries the body its kind's own read answers, except Execution, which carries the row the executions list answers for that execution and none of its attempts or result; a page showing the execution reads those from the execution's own route",
+      "a change frame carries the body its kind's own read answers, except Project, which carries the project's inventory entry; Execution, which carries the row the executions list answers for that execution and none of its attempts or result; and AgenticRefusal and Session, which carry null; a page showing one of these reads it from its own route",
     caching: "no-store",
     cors: "same-origin",
     credentials: "authorization bearer header; no cookies",

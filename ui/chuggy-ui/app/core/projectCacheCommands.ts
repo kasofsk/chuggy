@@ -7,18 +7,17 @@
  * wire's schema rejects never reaches this module at all: `projectStream.ts`
  * skips the frame and has the partition read again.
  *
- * `Project` IS THE KIND THAT INVALIDATES RATHER THAN WRITES, as the contract's
- * own header says: its representation is the inventory entry, which is less
- * than reading the project returns, so the partition is invalidated and every
- * query under it reads again. Every other kind carries its GET body and is
- * written under its resource's key — `Ticket` through `ticketArrival`, the rule
- * the page's own confirmations are written by too, so the command carries that
- * rule as a function of whatever the key holds when it is applied.
+ * A FRAME CARRYING ITS KIND'S GET BODY IS WRITTEN under its resource's key —
+ * `Ticket` through `ticketArrival`, the rule the page's own confirmations are
+ * written by too, so the command carries that rule as a function of whatever
+ * the key holds when it is applied.
  *
- * `Execution` IS THE KIND WHOSE KEY IS REREAD RATHER THAN WRITTEN: its frame
- * carries the executions list's row, which is less than the execution's own
- * read holds under that key, so the row is folded into lists and the key is
- * invalidated, which reads it again only where a screen has it mounted.
+ * `Project` AND `Execution` CARRY LESS THAN THEIR OWN READ, as the contract's
+ * own header says, so neither is written. `Project`'s representation is the
+ * inventory entry, so the partition is invalidated and what is mounted under
+ * it reads again. `Execution`'s is the executions list's row, so the row is
+ * folded into lists and the key is invalidated, which reads it again only where
+ * a screen has it mounted.
  *
  * The commands are returned rather than performed, which is what lets every
  * case be held against the contract's own events with no cache present.

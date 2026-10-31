@@ -1,8 +1,7 @@
 /**
  * The server-sent-events transport for the project stream and the thread live
  * stream: each one's frame encoding, the socket a hub writes through, and the
- * read that turns a change row into the representation the changed kind's own
- * GET route would have answered with.
+ * read that turns a change row into the changed kind's representation.
  *
  * THE RESPONSE HEAD IS WRITTEN BY THE FIRST FRAME, not by the handler. Every
  * refusal a stream can be given — no bearer, no access, no capacity, or a read
@@ -10,10 +9,11 @@
  * handed over has frames waiting for it already; a refusal that had sent a 200
  * first would be a refusal a browser reads as a stream.
  *
- * A REPRESENTATION IS THE GET'S OWN BODY, taken from the same builder the route
- * takes it from rather than assembled again here, and a status that is not a
- * 200 is the tombstone: the resource the row named is no longer readable. An
- * execution's is the row its list answers, read without its attempts or result.
+ * A REPRESENTATION IS BUILT IN `outcomes.ts`, not assembled again here, and a
+ * status that is not a 200 is the tombstone: the resource the row named is no
+ * longer readable. Most kinds take the builder their GET route takes. A
+ * project's is its inventory entry, and an execution's is the row its list
+ * answers, read without its attempts or result.
  */
 
 import type { FastifyReply } from "fastify";
@@ -95,10 +95,9 @@ async function ticketKeyedRead(
 }
 
 /**
- * Every kind's read, through the builder its own route answers with. The two
- * kinds no route answers yet are read as tombstones: a frame carrying none of
- * the resource is what the contract already means by a cache entry to drop, and
- * a read that raised would reset every open stream on the project instead.
+ * Every kind's read. The kinds `StreamedNativeWeb` holds no read for are read as
+ * tombstones: a frame carrying none of the resource has a browser read it again,
+ * and a read that raised would reset every open stream on the project instead.
  */
 export function projectResourceReader(
   web: StreamedNativeWeb,
