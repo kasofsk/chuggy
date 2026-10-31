@@ -23,6 +23,7 @@ function row(
     repository: undefined,
     creator: undefined,
     phase: "Escalated",
+    sequence: 1,
     badge: "work failed",
     executionVerdict,
     runsOn: undefined,

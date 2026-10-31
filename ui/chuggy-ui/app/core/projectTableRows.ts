@@ -35,6 +35,9 @@ export interface ProjectTableRow {
    * drawn by `creatorLabel` against the project's people. */
   readonly creator: string | undefined;
   readonly phase: TicketPhase;
+  /** The journal entry that last changed the ticket's own row, which is the
+   * version a Dispatch from the row expects. */
+  readonly sequence: number;
   readonly badge: string | undefined;
   /** The joined execution as the ticket's ledger judges it, a set of one, so
    * the row draws it in the word and hue the ticket page does. */
@@ -88,6 +91,7 @@ export function projectTableRow(
     repository: ticket.repository,
     creator: ticket.creator,
     phase: ticket.phase,
+    sequence: ticket.sequence,
     badge: ticketBadgeLabel(ticket.phase, ticket.escalation),
     executionVerdict:
       execution === undefined ? undefined : setVerdict([execution]),

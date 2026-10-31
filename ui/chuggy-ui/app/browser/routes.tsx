@@ -14,7 +14,9 @@ import {
   Outlet,
   useNavigate,
   useParams,
+  useRouter,
 } from "@tanstack/react-router";
+import type { ErrorComponentProps } from "@tanstack/react-router";
 import { useEffect } from "react";
 import type { ReactNode } from "react";
 
@@ -67,6 +69,7 @@ import { ThreadPage } from "./ThreadPage.tsx";
 import { TicketCreationFrom } from "./TicketDuplicate.tsx";
 import { TicketEdit } from "./TicketEdit.tsx";
 import { TicketPage } from "./TicketPage.tsx";
+import { Button } from "./ui/Button.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 
 export function Landing(): ReactNode {
@@ -332,7 +335,38 @@ const routeTree = rootRoute.addChildren([
   ]),
 ]);
 
-export const consoleRouter = createRouter({ routeTree });
+/** A screen that threw, drawn where the screen was: inside the shell for a
+ * screen below one, so the way elsewhere stands, and alone at the root for
+ * the shell itself. Reload draws the screen again. */
+function RouteFailed(props: ErrorComponentProps): ReactNode {
+  const router = useRouter();
+  return (
+    <EmptyState
+      variant="page"
+      label="Page failed"
+      action={
+        <Button
+          onClick={() => {
+            props.reset();
+            void router.invalidate();
+          }}
+        >
+          Reload
+        </Button>
+      }
+    />
+  );
+}
+
+function RouteNotFound(): ReactNode {
+  return <EmptyState variant="page" label="Not found" />;
+}
+
+export const consoleRouter = createRouter({
+  routeTree,
+  defaultErrorComponent: RouteFailed,
+  defaultNotFoundComponent: RouteNotFound,
+});
 
 declare module "@tanstack/react-router" {
   interface Register {
