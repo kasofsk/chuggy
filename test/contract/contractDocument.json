@@ -1689,6 +1689,10 @@
               "type": "string",
               "maxLength": 64,
               "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$"
+            },
+            "configuration": {
+              "type": "string",
+              "enum": ["Pinned", "Latest"]
             }
           },
           "additionalProperties": false
@@ -2436,6 +2440,10 @@
               "type": "string",
               "maxLength": 64,
               "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9._-]*[A-Za-z0-9])?$"
+            },
+            "configuration": {
+              "type": "string",
+              "enum": ["Pinned", "Latest"]
             }
           },
           "additionalProperties": false

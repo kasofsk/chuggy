@@ -79,6 +79,7 @@ test("the caret asks for a key, a value, a list item's value or a stage's key", 
     asked: "Value",
     key: "evaluators",
     typed: 0,
+    nested: true,
   });
   expect(chugEditorAsked("intent: |", [])).toBeUndefined();
 });
@@ -108,6 +109,29 @@ test("what is offered is the vocabulary's, a stage's keys only in a stage", () =
   expect(
     chugEditorOffered({ asked: "Value", key: "title", typed: 0 }, vocabulary),
   ).toStrictEqual([]);
+});
+
+test("a nested key's values are its own where a top-level key shares its name", () => {
+  const shared: readonly TicketYamlKey[] = [
+    { key: "configuration", hint: "which", values: [{ label: "development" }] },
+    {
+      key: "configuration",
+      hint: "which revision",
+      values: [{ label: "Pinned" }, { label: "Latest" }],
+      place: "Workload",
+    },
+  ];
+  const offered = (before: string, above: readonly string[]) => {
+    const asked = chugEditorAsked(before, above);
+    return asked === undefined
+      ? []
+      : chugEditorOffered(asked, shared).map((option) => option.label);
+  };
+  expect(offered("configuration: ", [])).toStrictEqual(["development"]);
+  expect(offered("  configuration: ", ["selection:"])).toStrictEqual([
+    "Pinned",
+    "Latest",
+  ]);
 });
 
 test("a hint is found only on the key a pointer rests on", () => {
