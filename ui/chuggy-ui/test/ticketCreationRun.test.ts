@@ -28,6 +28,7 @@ import {
   creationBootstrapRevision,
   creationDeclared,
   creationDraft,
+  creationHistoryDeep,
   creationInitialization,
   creationListed,
   creationPartition,
@@ -143,8 +144,8 @@ test("a project binding nothing is walked, newest first, until a revision is rea
   ).toStrictEqual(["r3"]);
   expect(held.calls).toStrictEqual([
     `GET ${partitionBase}/repositories`,
-    `GET ${partitionBase}/configurations`,
-    `GET ${partitionBase}/configurations?cursor=next`,
+    `GET ${partitionBase}/configurations?latest=true`,
+    `GET ${partitionBase}/configurations?cursor=next&latest=true`,
     `GET ${partitionBase}/draft-initializations/r3`,
   ]);
 });
@@ -188,10 +189,31 @@ test("a repository declaring several is read as each of them, with its own initi
   expect(read.value.partial).toBe(false);
   expect(held.calls).toStrictEqual([
     `GET ${partitionBase}/repositories`,
-    `GET ${partitionBase}/configurations`,
+    `GET ${partitionBase}/configurations?latest=true`,
     `GET ${partitionBase}/draft-initializations/n-development`,
     `GET ${partitionBase}/draft-initializations/n-sonnet`,
   ]);
+});
+
+/** Every revision is a history longer than any budget, and only the newest of
+ * each name is what a new ticket is drawn from. */
+test("a repository whose newest revisions lie past the budget's reach of every revision is offered from one read", async () => {
+  const held = project(
+    creationHistoryDeep(chuggy, scratch),
+    bindings(imported(chuggy)),
+  );
+  const read = await readCreationContext(held.ports, creationPartition);
+  expect(offeredOf(read)).toStrictEqual([
+    false,
+    ["development", "development-sonnet"],
+  ]);
+  expect(held.calls.slice(0, 2)).toStrictEqual([
+    `GET ${partitionBase}/repositories`,
+    `GET ${partitionBase}/configurations?latest=true`,
+  ]);
+  expect(
+    held.calls.filter((call) => call.includes("/configurations")).length,
+  ).toBe(1);
 });
 
 /** The bindings are read in the same motion, and whole: whether the form asks
@@ -321,7 +343,7 @@ function bootstrapPath(repository: string): string {
 function firstPageAndOffers(...bootstraps: readonly string[]) {
   return [
     `GET ${partitionBase}/repositories`,
-    `GET ${partitionBase}/configurations`,
+    `GET ${partitionBase}/configurations?latest=true`,
     ...bootstraps.map(
       (repository) => `GET ${partitionBase}${bootstrapPath(repository)}`,
     ),

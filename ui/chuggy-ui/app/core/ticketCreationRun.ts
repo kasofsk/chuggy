@@ -295,8 +295,11 @@ export async function readCreationContext(
   const bound = await apiProjectRepositories(ports, partition);
   if (bound.outcome !== "Ok") return bound;
   const repositories = bound.value.repositories;
-  const walked = await readProjectConfigurations(ports, partition, (held) =>
-    creationConfigurationsDecided(held, repositories),
+  const walked = await readProjectConfigurations(
+    ports,
+    partition,
+    true,
+    (held) => creationConfigurationsDecided(held, repositories),
   );
   if (walked.outcome !== "Ok") return walked;
   const { configurations, partial } = walked.value;

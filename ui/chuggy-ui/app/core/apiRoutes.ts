@@ -1029,14 +1029,22 @@ export function apiNotifications(
   );
 }
 
+/** The project's revisions newest first; `latest` reads only the newest of
+ * each repository and name, beside every revision no repository imported. */
 export function apiConfigurations(
   ports: ApiPorts,
   partition: PartitionIdentity,
-  page: { readonly cursor?: string | undefined } = {},
+  page: {
+    readonly cursor?: string | undefined;
+    readonly latest?: boolean | undefined;
+  } = {},
 ): Promise<ApiResult<ConfigurationsResponse>> {
   return apiGet(
     ports,
-    apiPath(apiSegments(partition, "configurations"), { cursor: page.cursor }),
+    apiPath(apiSegments(partition, "configurations"), {
+      cursor: page.cursor,
+      latest: page.latest === undefined ? undefined : String(page.latest),
+    }),
     (value) => configurationsResponseSchema.parse(value),
   );
 }

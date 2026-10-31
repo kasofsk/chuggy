@@ -12,13 +12,16 @@ import { expect, test } from "vitest";
 import { nativeHttpBasePath } from "../../../src/contract/http.ts";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
 import { configurationPagesMax } from "../app/core/apiRoutes.ts";
+import { catalogConfigurationsOf } from "../app/core/catalogConfigurations.ts";
 import {
   readProjectConfigurations,
+  readProjectConfigurationsVersions,
   repositoryConfigurationRow,
   repositoryConfigurations,
 } from "../app/core/repositoryConfigurations.ts";
 import {
   creationDeclared as declared,
+  creationHistoryDeep,
   creationPartition,
   creationSummary,
 } from "./ticketCreationFixture.ts";
@@ -128,7 +131,11 @@ test("the revisions are walked to the cursor's end, and no further than the budg
     configurations: [declared(`r${String(call)}`, chuggy, "chuggy")],
     nextCursor: "more",
   }));
-  const walked = await readProjectConfigurations(ports, creationPartition);
+  const walked = await readProjectConfigurations(
+    ports,
+    creationPartition,
+    false,
+  );
   expect(walked.outcome === "Ok" && walked.value.configurations.length).toBe(
     configurationPagesMax,
   );
@@ -145,7 +152,11 @@ test("a walk the cursor ended read all of it", async () => {
     configurations: [declared(`r${String(call)}`, chuggy, "chuggy")],
     nextCursor: call === 2 ? undefined : "more",
   }));
-  const walked = await readProjectConfigurations(ports, creationPartition);
+  const walked = await readProjectConfigurations(
+    ports,
+    creationPartition,
+    false,
+  );
   expect(walked.outcome === "Ok" && walked.value.partial).toBe(false);
   expect(calls.length).toBe(2);
 });
@@ -160,7 +171,11 @@ test("a walk stopped by the budget says so, whether or not it drew rows", async 
     configurations: [],
     nextCursor: "more",
   }));
-  const walked = await readProjectConfigurations(ports, creationPartition);
+  const walked = await readProjectConfigurations(
+    ports,
+    creationPartition,
+    false,
+  );
   expect(walked.outcome === "Ok" && walked.value.configurations).toStrictEqual(
     [],
   );
@@ -178,6 +193,88 @@ test("a refused page is the answer, and no rows are drawn from a partial read", 
     bearer: () => Promise.resolve("token"),
     sleepMs: () => Promise.resolve(),
   };
-  const walked = await readProjectConfigurations(ports, creationPartition);
+  const walked = await readProjectConfigurations(
+    ports,
+    creationPartition,
+    false,
+  );
   expect(walked.outcome).not.toBe("Ok");
+});
+
+/** The listing a history answers, page by page and by the path asked. */
+function historyPorts(
+  calls: string[],
+  history: (path: string) => unknown,
+): ApiPorts {
+  return pagingPorts(
+    calls,
+    () => history(calls.at(-1) ?? "") as Record<string, unknown>,
+  );
+}
+
+test("a repository past the budget's reach of every revision is its page's rows from one read of the newest", async () => {
+  const calls: string[] = [];
+  const read = await readProjectConfigurations(
+    historyPorts(calls, creationHistoryDeep(chuggy, scratch)),
+    creationPartition,
+    true,
+  );
+  if (read.outcome !== "Ok") throw new Error("the read was refused");
+  expect(read.value.partial).toBe(false);
+  expect(calls).toStrictEqual([
+    `${nativeHttpBasePath}/tenants/acme/projects/atlas/configurations?latest=true`,
+  ]);
+  expect(
+    repositoryConfigurations(read.value.configurations, chuggy).map(
+      (summary) => summary.revision,
+    ),
+  ).toStrictEqual(["d-sonnet", "d-development"]);
+});
+
+/**
+ * The catalog offers older versions too, so it walks every revision as well,
+ * and a configuration the walk never reached is still listed by its newest.
+ */
+test("the catalog's read lists every configuration's newest after the versions the walk reached", async () => {
+  const calls: string[] = [];
+  const deep = creationHistoryDeep(chuggy, scratch);
+  const read = await readProjectConfigurationsVersions(
+    historyPorts(calls, (path) => {
+      const page = deep(path) as { configurations: unknown[] };
+      return path.includes("?")
+        ? page
+        : {
+            ...page,
+            configurations: [
+              declared("x-other", scratch, "other"),
+              {
+                ...declared("x-older", scratch, "other", "Ready", older),
+                digest: "b".repeat(64),
+              },
+              ...page.configurations,
+            ],
+          };
+    }),
+    creationPartition,
+  );
+  if (read.outcome !== "Ok") throw new Error("the read was refused");
+  expect(read.value.partial).toBe(false);
+  expect(calls.length).toBe(1 + configurationPagesMax);
+  const catalog = catalogConfigurationsOf(read.value.configurations);
+  expect(
+    catalog.map((configuration) => [
+      configuration.name,
+      configuration.versions.map((summary) => summary.revision),
+    ]),
+  ).toStrictEqual([
+    ["other", ["x-other", "x-older"]],
+    ["development-sonnet", ["d-sonnet"]],
+    ["development", ["d-development"]],
+    ["dropped", ["d-dropped"]],
+  ]);
+  expect(
+    read.value.configurations.filter(
+      (summary) => summary.revision === "x-other",
+    ).length,
+  ).toBe(1);
 });
