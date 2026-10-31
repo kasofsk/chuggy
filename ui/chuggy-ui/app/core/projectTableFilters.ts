@@ -1,6 +1,6 @@
 /**
- * What a chosen filter is on the wire, in the cache, to the fold and on the
- * screen.
+ * What a chosen filter, order and search are on the wire, in the cache, to the
+ * fold and on the screen.
  *
  * Each is a decision about one filter and none of them touches a browser,
  * so they are proved beside the accumulation they parametrise rather than
@@ -11,16 +11,20 @@
 
 import { nativeHttpPageItemsMax } from "../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
+import { phaseRoster } from "../../../../src/contract/rosters.ts";
 import type { TicketPhase } from "../../../../src/contract/rosters.ts";
 
 import type { ProjectPage } from "./apiRoutes.ts";
-import { projectListFolded } from "./projectQueryKeys.ts";
+import { projectListFolded, projectListReread } from "./projectQueryKeys.ts";
 import type { ProjectList } from "./projectQueryKeys.ts";
 import {
   projectTicketRowsFold,
   projectTicketRowsHaveMore,
 } from "./projectTicketPages.ts";
-import type { ProjectTicketRows } from "./projectTicketPages.ts";
+import type {
+  ProjectTicketRows,
+  ProjectTicketRowsNext,
+} from "./projectTicketPages.ts";
 
 export const ticketFilterAll = "All";
 
@@ -35,63 +39,116 @@ export function ticketFilterPhases(
   return filter === ticketFilterAll ? undefined : [filter];
 }
 
+/** The order a list is read in: by last activity, or by ticket number from either end. */
+export type TicketListOrder = "RecentActivity" | "Newest" | "Oldest";
+
+/** What the list asks the wire for: the filter's phases, the order its sort reads in, and the search, where there is one. */
+export interface TicketListAsk {
+  readonly filter: TicketFilter;
+  readonly order: TicketListOrder;
+  readonly search: string | undefined;
+}
+
+/** The list a reader who has chosen nothing is drawn, which a ticket reference and a mention read too. */
+export const ticketListAskDefault: TicketListAsk = {
+  filter: ticketFilterAll,
+  order: "RecentActivity",
+  search: undefined,
+};
+
+/** Whether the list is the active one: no search, by recent activity, kept live by folding frames. */
+function ticketListAskActive(ask: TicketListAsk): boolean {
+  return ask.search === undefined && ask.order === "RecentActivity";
+}
+
 /**
- * One entry per filter: they hold different rows, and a shared entry would let
- * one filter's page walk answer another's. The fold is here with the key rather
- * than in the component, because the phases a filter admits decide both which
- * rows a read asks for and which rows a frame is allowed to add.
+ * One entry per filter, order and search, since a shared entry would let one's
+ * page walk answer another's. The active list folds a frame in, within the
+ * phases its filter admits; a list under a search or an order by number is read
+ * again on a frame, because whether the ticket belongs to it, and where, is the
+ * server's to say.
  */
 export function ticketFilterList(
   partition: PartitionIdentity,
-  filter: TicketFilter,
+  ask: TicketListAsk,
 ): ProjectList<ProjectTicketRows> {
+  const name = `table:${ask.filter}:${ask.order}:${ask.search ?? ""}`;
+  if (!ticketListAskActive(ask))
+    return projectListReread<ProjectTicketRows>(partition, "Ticket", name);
   return projectListFolded<ProjectTicketRows>(
     partition,
     "Ticket",
-    `table:${filter}`,
+    name,
     (previous, change) =>
       projectTicketRowsFold(
         previous,
         change.resource,
         change.representation,
-        ticketFilterPhases(filter),
+        ticketFilterPhases(ask.filter),
       ),
   );
+}
+
+/**
+ * The reads the list is drawn from, in order: any list but the active one is a
+ * single read. The active list is what is neither Done nor Revoked or finished
+ * lately, and then, where the filter admits a finished phase, what finished
+ * before that by recency, a row both hold being drawn once.
+ */
+function ticketFilterReads(ask: TicketListAsk): readonly ProjectPage[] {
+  const phases = ticketFilterPhases(ask.filter);
+  const asked: ProjectPage = {
+    order: ask.order,
+    limit: nativeHttpPageItemsMax,
+    ...(phases === undefined ? {} : { phase: phases }),
+  };
+  if (ask.search !== undefined) return [{ ...asked, q: ask.search }];
+  if (!ticketListAskActive(ask)) return [asked];
+  const finished = (phases ?? phaseRoster).filter(
+    (phase) => phase === "Done" || phase === "Revoked",
+  );
+  return [
+    { ...asked, active: true },
+    ...(finished.length === 0 ? [] : [{ ...asked, phase: finished }]),
+  ];
+}
+
+/** How many reads the list is drawn from. */
+export function ticketFilterReadsCount(ask: TicketListAsk): number {
+  return ticketFilterReads(ask).length;
 }
 
 /** The page size is asked for rather than left to the route's default, so the
  * row cap the accumulation holds is a bound this console can actually reach. */
 export function ticketFilterPage(
-  filter: TicketFilter,
-  cursor: string | undefined,
+  ask: TicketListAsk,
+  next: ProjectTicketRowsNext,
 ): ProjectPage {
-  const phases = ticketFilterPhases(filter);
-  return {
-    order: "RecentActivity",
-    limit: nativeHttpPageItemsMax,
-    ...(cursor === undefined ? {} : { cursor }),
-    ...(phases === undefined ? {} : { phase: phases }),
-  };
+  const read = ticketFilterReads(ask)[next.read];
+  if (read === undefined)
+    throw new RangeError(`the ticket list has no read ${String(next.read)}`);
+  return next.cursor === undefined ? read : { ...read, cursor: next.cursor };
 }
 
-/** The cursor the next page is asked for with, and undefined when either bound
- * says there is no next page. */
-export function ticketFilterMoreCursor(
+/** Where the next page is asked for, and undefined when either bound says
+ * there is no next page. */
+export function ticketFilterMoreNext(
   rows: ProjectTicketRows,
-): string | undefined {
-  return projectTicketRowsHaveMore(rows) ? rows.nextCursor : undefined;
+): ProjectTicketRowsNext | undefined {
+  return projectTicketRowsHaveMore(rows) ? rows.next : undefined;
 }
 
 /** Whether a read says the project holds no ticket at all, which only the
- * unfiltered read can say, and only once nothing further is left to read. */
+ * unfiltered list can say, and only once nothing further is left to read. */
 export function ticketFilterProjectEmpty(
-  filter: TicketFilter,
+  ask: TicketListAsk,
   rows: ProjectTicketRows,
 ): boolean {
   return (
-    filter === ticketFilterAll &&
+    ask.filter === ticketFilterAll &&
+    ask.search === undefined &&
     rows.tickets.length === 0 &&
-    rows.nextCursor === undefined &&
+    rows.next === undefined &&
     rows.failure === undefined
   );
 }

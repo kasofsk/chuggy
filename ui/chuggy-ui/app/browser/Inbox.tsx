@@ -238,7 +238,7 @@ function useInboxPhaseRows(partition: PartitionIdentity): {
     ),
   );
   const rows = state.state === "Ready" ? state.value : undefined;
-  const cursor = rows?.nextCursor;
+  const cursor = rows?.next?.cursor;
   const readMore = () => {
     setReading(true);
     void (async () => {

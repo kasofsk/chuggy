@@ -65,7 +65,7 @@ const firstPage = page(
 test("a page appends its tickets and carries the cursor it answered with", () => {
   const rows = projectTicketRowsAppend(projectTicketRowsEmpty, firstPage);
   expect(rows.tickets.map((ticket) => ticket.ticket)).toStrictEqual([1, 2]);
-  expect(rows.nextCursor).toBe("after-one");
+  expect(rows.next?.cursor).toBe("after-one");
   expect(rows.pagesRead).toBe(1);
   expect(projectTicketRowsHaveMore(rows)).toBe(true);
 });
@@ -82,7 +82,7 @@ test("a second page appends after the first and repeats no ticket", () => {
   expect(second.tickets.map((ticket) => ticket.ticket)).toStrictEqual([
     1, 2, 3,
   ]);
-  expect(second.nextCursor).toBeUndefined();
+  expect(second.next).toBeUndefined();
   expect(projectTicketRowsHaveMore(second)).toBe(false);
 });
 
@@ -138,7 +138,7 @@ test("a page walk stops at the page budget even while a cursor is offered", () =
         "again",
       ),
     );
-  expect(rows.nextCursor).toBe("again");
+  expect(rows.next?.cursor).toBe("again");
   expect(projectTicketRowsHaveMore(rows)).toBe(false);
 });
 
@@ -219,7 +219,7 @@ test("a page that could not be read keeps the rows and says why", () => {
   });
   expect(after.tickets.map((ticket) => ticket.ticket)).toStrictEqual([1, 2]);
   expect(after.failure).toContain("the network went away");
-  expect(after.nextCursor).toBe("after-one");
+  expect(after.next?.cursor).toBe("after-one");
 });
 
 test("a page that reads clears the failure the last one recorded", () => {
@@ -380,4 +380,55 @@ test("a read stops early when the wire says there is no next page", async () => 
     held.readPage,
   );
   expect(held.cursors.length).toBe(1);
+});
+
+test("a list of two reads goes on to the second as the first ends, and draws a row both hold once", () => {
+  const first = projectTicketRowsAppend(
+    projectTicketRowsEmpty,
+    page([{ ticket: 2, phase: "Done", sequence: 3, ...ticketInstants }]),
+    2,
+  );
+  expect(first.next).toStrictEqual({ read: 1, cursor: undefined });
+  const second = projectTicketRowsAppend(
+    first,
+    page([
+      { ticket: 2, phase: "Done", sequence: 3, ...ticketInstants },
+      { ticket: 1, phase: "Done", sequence: 1, ...ticketInstants },
+    ]),
+    2,
+  );
+  expect(second.tickets.map((ticket) => ticket.ticket)).toStrictEqual([2, 1]);
+  expect(second.next).toBeUndefined();
+});
+
+test("a read gathers past a page that adds no row, into the next read", async () => {
+  const asked: [string | undefined, number][] = [];
+  const answers = [
+    page([]),
+    page([{ ticket: 1, phase: "Done", sequence: 1, ...ticketInstants }]),
+  ];
+  const answered = await projectTicketRowsRead(
+    undefined,
+    (cursor, read) => {
+      asked.push([cursor, read]);
+      const answer = answers[asked.length - 1];
+      if (answer === undefined) throw new Error("a page nobody offered");
+      return Promise.resolve({ outcome: "Ok", value: answer });
+    },
+    2,
+  );
+  expect(asked).toStrictEqual([
+    [undefined, 0],
+    [undefined, 1],
+  ]);
+  expect(ticketsOf(answered)).toStrictEqual([1]);
+});
+
+test("the count a search matched is the last page's", () => {
+  const rows = projectTicketRowsAppend(projectTicketRowsEmpty, {
+    ...firstPage,
+    matched: 7,
+  });
+  expect(rows.matched).toBe(7);
+  expect(projectTicketRowsAppend(rows, page([])).matched).toBeUndefined();
 });

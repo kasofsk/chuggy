@@ -137,7 +137,7 @@ export function inboxUnion(
   return {
     entries,
     more:
-      rows?.nextCursor !== undefined ||
+      rows?.next !== undefined ||
       actions?.nextCursor !== undefined ||
       refused?.more === true ||
       proposals?.more === true,

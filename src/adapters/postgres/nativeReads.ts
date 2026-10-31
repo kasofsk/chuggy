@@ -4,6 +4,7 @@ import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
 import { briefTitleCharsMax } from "../../contract/brief.ts";
+import { ticketActiveFinishedHours } from "../../contract/http.ts";
 import {
   blockedReasons,
   escalationKinds,
@@ -32,6 +33,7 @@ import {
   type TicketDependencyResource,
   type TicketPhaseFilter,
   type TicketResource,
+  ticketSearchNumber,
 } from "../../interpreter/nativeWeb.ts";
 import {
   allNativeActionKinds,
@@ -242,39 +244,74 @@ function projectionPhase(value: string): Phase {
   return phase;
 }
 
+/** A page's rows in the order it answers them, and the row the next page resumes after. */
+interface ProjectTicketPage {
+  readonly rows: readonly TicketProjectionRow[];
+  readonly next: TicketPosition | undefined;
+  readonly matched: number | undefined;
+}
+
+/** Where a ticket stands in every order a page is read in. */
+interface TicketPosition {
+  readonly ticket: string;
+  readonly seq: string;
+}
+
 function projectResource(
   partition: Partition,
   head: string,
-  rows: readonly TicketProjectionRow[],
-  limit: number,
+  page: ProjectTicketPage,
   order: ProjectReadQuery["order"],
 ): ProjectResource {
-  const page = rows.slice(0, limit);
-  const next = rows.length > limit ? page.at(-1) : undefined;
-  const resource: ProjectResource = {
+  return {
     partition,
     sequence: projectRowCounter(head, "project projection watermark"),
-    tickets: page.map(ticketResource),
+    tickets: page.rows.map(ticketResource),
+    ...(page.next === undefined
+      ? {}
+      : projectResourceNext(page.next, order ?? "Identity")),
+    ...(page.matched === undefined ? {} : { matched: page.matched }),
   };
-  return next === undefined
-    ? resource
-    : {
-        ...resource,
-        ...(order === "RecentActivity"
-          ? {
-              nextRecentActivityAfter: {
-                sequence: projectRowCounter(next.seq, "ticket activity cursor"),
-                ticket: asTicketId(
-                  projectRowCounter(next.ticket, "ticket page cursor"),
-                ),
-              },
-            }
-          : {
-              nextAfter: asTicketId(
-                projectRowCounter(next.ticket, "ticket page cursor"),
-              ),
-            }),
+}
+
+/** The cursor the order a page was read in resumes from, after `next`. */
+function projectResourceNext(
+  next: TicketPosition,
+  order: NonNullable<ProjectReadQuery["order"]>,
+): Pick<
+  ProjectResource,
+  "nextAfter" | "nextRecentActivityAfter" | "nextNumberAfter"
+> {
+  const ticket = asTicketId(
+    projectRowCounter(next.ticket, "ticket page cursor"),
+  );
+  switch (order) {
+    case "Identity":
+      return { nextAfter: ticket };
+    case "RecentActivity":
+      return {
+        nextRecentActivityAfter: {
+          sequence: projectRowCounter(next.seq, "ticket activity cursor"),
+          ticket,
+        },
       };
+    case "Newest":
+    case "Oldest":
+      return { nextNumberAfter: { order, ticket } };
+  }
+}
+
+/** The first `limit` rows a read over one more than that answered, and the last of them where there was more. */
+function projectTicketPageOf(
+  rows: readonly TicketProjectionRow[],
+  limit: number,
+): ProjectTicketPage {
+  const page = rows.slice(0, limit);
+  return {
+    rows: page,
+    next: rows.length > limit ? page.at(-1) : undefined,
+    matched: undefined,
+  };
 }
 
 function selectedPhases(
@@ -576,17 +613,11 @@ async function readProject(
       await client.query("COMMIT");
       return { result: "Behind", observedSequence: head };
     }
-    const tickets = await readProjectTickets(client, partition, query);
+    const page = await readProjectTickets(client, partition, query);
     await client.query("COMMIT");
     return {
       result: "Found",
-      project: projectResource(
-        partition,
-        standing.head,
-        tickets,
-        query.limit,
-        query.order,
-      ),
+      project: projectResource(partition, standing.head, page, query.order),
     };
   } catch (cause) {
     await client.query("ROLLBACK").catch(() => undefined);
@@ -596,14 +627,138 @@ async function readProject(
   }
 }
 
+/**
+ * A read naming no search, no activity and no order by number is the page it
+ * always was. Any other is picked as positions first and its rows read after,
+ * in that order, by identity.
+ */
 async function readProjectTickets(
   client: pg.PoolClient,
   partition: Partition,
   query: ProjectReadQuery,
-): Promise<readonly TicketProjectionRow[]> {
-  return query.order === "RecentActivity"
-    ? readTicketsByActivity(client, partition, query)
-    : readTicketsByIdentity(client, partition, query);
+): Promise<ProjectTicketPage> {
+  if (
+    query.search === undefined &&
+    query.active !== true &&
+    (query.order === undefined ||
+      query.order === "Identity" ||
+      query.order === "RecentActivity")
+  )
+    return projectTicketPageOf(
+      query.order === "RecentActivity"
+        ? await readTicketsByActivity(client, partition, query)
+        : await readTicketsByIdentity(client, partition, query),
+      query.limit,
+    );
+  return readTicketsByPosition(client, partition, query);
+}
+
+/** The positions a page picked, in its order, each array null where it picked none, and how many the read matched. */
+interface TicketPositionsRow {
+  readonly matched: string;
+  readonly tickets: string[] | null;
+  readonly seqs: string[] | null;
+}
+
+/**
+ * The positions of one more than a page, in the order the read names, with
+ * how many tickets its search, phases and activity select across the project.
+ * The count is over the selection before any cursor, so every page of one
+ * walk answers the same count.
+ */
+async function readTicketPositions(
+  client: pg.PoolClient,
+  partition: Partition,
+  query: ProjectReadQuery,
+): Promise<{
+  readonly matched: number;
+  readonly positions: readonly TicketPosition[];
+}> {
+  const order =
+    query.order === "Identity" ? "Oldest" : (query.order ?? "Oldest");
+  const afterTicket =
+    query.after ??
+    query.numberAfter?.ticket ??
+    query.recentActivityAfter?.ticket ??
+    null;
+  const found = await client.query<TicketPositionsRow>(
+    sql`WITH selected AS (
+          SELECT t.ticket,t.seq
+            FROM ticket_projection t
+            LEFT JOIN ticket_definition b
+              ON b.tenant=t.tenant AND b.project=t.project AND b.ticket=t.ticket
+           WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
+             AND t.phase = ANY(${[...selectedPhases(query.phaseFilter)]}::text[])
+             AND (${query.active === true}::boolean IS FALSE
+               OR t.phase NOT IN ('Done','Revoked')
+               OR (SELECT c.committed_at FROM journal_entry c
+                    WHERE c.tenant=t.tenant AND c.project=t.project AND c.seq=t.seq)
+                  >= now() - make_interval(hours => ${ticketActiveFinishedHours}::int))
+             AND (${query.search ?? null}::text IS NULL
+               OR strpos(lower(coalesce(b.brief->>'title',left(substring(b.brief->>'intent' from
+                    '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'')),
+                    lower(${query.search ?? null}::text)) > 0
+               OR t.ticket = ${query.search === undefined ? null : (ticketSearchNumber(query.search) ?? null)}::bigint)),
+        page AS (
+          SELECT s.ticket,s.seq,
+                 row_number() OVER (ORDER BY
+                   CASE WHEN ${order}::text='Oldest' THEN s.ticket END,
+                   CASE WHEN ${order}::text='Newest' THEN s.ticket END DESC,
+                   s.seq DESC,s.ticket DESC) AS place
+            FROM selected s
+           WHERE ${afterTicket}::bigint IS NULL
+              OR CASE ${order}::text
+                   WHEN 'Oldest' THEN s.ticket>${afterTicket}::bigint
+                   WHEN 'Newest' THEN s.ticket<${afterTicket}::bigint
+                   ELSE (s.seq,s.ticket) <
+                        (${query.recentActivityAfter?.sequence ?? null}::bigint,${afterTicket}::bigint)
+                 END
+           ORDER BY place LIMIT ${query.limit + 1})
+        SELECT (SELECT count(*) FROM selected)::text AS matched,
+               (SELECT array_agg(p.ticket::text ORDER BY p.place) FROM page p) AS tickets,
+               (SELECT array_agg(p.seq::text ORDER BY p.place) FROM page p) AS seqs`,
+  );
+  const row = found.rows[0];
+  if (row === undefined) throw new Error("native read: no positions row");
+  const seqs = row.seqs ?? [];
+  return {
+    matched: projectRowCounter(row.matched, "tickets matched"),
+    positions: (row.tickets ?? []).map((ticket, place) => {
+      const seq = seqs[place];
+      if (seq === undefined)
+        throw new Error("native read: a ticket's position has no sequence");
+      return { ticket, seq };
+    }),
+  };
+}
+
+/** A page picked as positions, its rows read by identity and put back in the order the positions name. */
+async function readTicketsByPosition(
+  client: pg.PoolClient,
+  partition: Partition,
+  query: ProjectReadQuery,
+): Promise<ProjectTicketPage> {
+  const { matched, positions } = await readTicketPositions(
+    client,
+    partition,
+    query,
+  );
+  const page = positions.slice(0, query.limit);
+  const rows = await readTicketsByIdentity(client, partition, {
+    limit: page.length,
+    tickets: page.map((position) => position.ticket),
+  });
+  const byTicket = new Map(rows.map((row) => [row.ticket, row]));
+  return {
+    rows: page.map((position) => {
+      const row = byTicket.get(position.ticket);
+      if (row === undefined)
+        throw new Error("native read: a ticket's position has no row");
+      return row;
+    }),
+    next: positions.length > query.limit ? page.at(-1) : undefined,
+    matched: query.search === undefined ? undefined : matched,
+  };
 }
 
 /** The same page ordered by when each ticket last moved, newest first. */
@@ -666,12 +821,20 @@ async function readTicketsByActivity(
   return found.rows;
 }
 
-/** The page ordered by ticket identity, which is what a cursor pages through. */
+/**
+ * The page ordered by ticket identity, which is what a cursor pages through,
+ * or the rows of the tickets a page picked by position.
+ */
 async function readTicketsByIdentity(
   client: pg.PoolClient,
   partition: Partition,
-  query: ProjectReadQuery,
+  query:
+    | ProjectReadQuery
+    | { readonly limit: number; readonly tickets: readonly string[] },
 ): Promise<readonly TicketProjectionRow[]> {
+  const after = "after" in query ? query.after : undefined;
+  const phaseFilter = "phaseFilter" in query ? query.phaseFilter : undefined;
+  const tickets = "tickets" in query ? [...query.tickets] : null;
   const found = await client.query<TicketProjectionRow>(
     sql`SELECT t.ticket,t.revision,t.phase,t.seq,t.escalation,t.escalation_evidence,
                to_jsonb(l)::text AS lost, to_jsonb(f)::text AS failed,
@@ -718,8 +881,9 @@ async function readTicketsByIdentity(
           LEFT JOIN LATERAL ticket_runner_loss(t.tenant,t.project,t.ticket) l ON true
           LEFT JOIN LATERAL ticket_run_step_failure(t.tenant,t.project,t.ticket) f ON true
         WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
-          AND t.ticket>${query.after ?? 0}
-          AND t.phase = ANY(${[...selectedPhases(query.phaseFilter)]}::text[])
+          AND t.ticket>${after ?? 0}
+          AND (${tickets}::bigint[] IS NULL OR t.ticket = ANY(${tickets}::bigint[]))
+          AND t.phase = ANY(${[...selectedPhases(phaseFilter)]}::text[])
         ORDER BY t.ticket LIMIT ${query.limit + 1}`,
   );
   return found.rows;

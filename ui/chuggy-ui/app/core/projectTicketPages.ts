@@ -21,6 +21,10 @@
  * it wants a filter rather than more rows. Deriving one from the other would
  * make whichever came second unreachable, and an unreachable bound is one
  * nothing can prove.
+ *
+ * A LIST MAY BE MORE THAN ONE READ, each paged to its end before the next
+ * begins, and a page that adds no row is not one a reader asked for: a read
+ * gathers past it, so a list whose first read is empty opens on its second.
  */
 
 import { ticketResponseSchema } from "../../../../src/contract/responses.ts";
@@ -36,17 +40,33 @@ import { panelReason } from "./freshness.ts";
 export const projectTicketPagesMax = 20;
 export const projectTicketRowsMax = 500;
 
+/** Where the next page is read: which of the list's reads, from its start or from the cursor its last page answered. */
+export interface ProjectTicketRowsNext {
+  readonly read: number;
+  readonly cursor: string | undefined;
+}
+
+/** Where a list's first page is read. */
+const projectTicketRowsFirst: ProjectTicketRowsNext = {
+  read: 0,
+  cursor: undefined,
+};
+
 export interface ProjectTicketRows {
   readonly tickets: readonly TicketResponse[];
-  readonly nextCursor: string | undefined;
+  /** Undefined before the first page and once every read has answered its last. */
+  readonly next: ProjectTicketRowsNext | undefined;
   readonly pagesRead: number;
+  /** How many tickets the server says a search matched, as the last page answered it. */
+  readonly matched: number | undefined;
   readonly failure: string | undefined;
 }
 
 export const projectTicketRowsEmpty: ProjectTicketRows = {
   tickets: [],
-  nextCursor: undefined,
+  next: undefined,
   pagesRead: 0,
+  matched: undefined,
   failure: undefined,
 };
 
@@ -67,14 +87,27 @@ function projectTicketRowsMerged(
   return merged;
 }
 
+/** Where the read after `page` resumes: the same read where it named a cursor, else the start of the read after it, else nowhere. */
+function projectTicketRowsNextAfter(
+  read: number,
+  page: ProjectResponse,
+  reads: number,
+): ProjectTicketRowsNext | undefined {
+  if (page.nextCursor !== undefined) return { read, cursor: page.nextCursor };
+  return read + 1 < reads ? { read: read + 1, cursor: undefined } : undefined;
+}
+
+/** `reads` is how many reads the list is drawn from, and the page is one of the read `previous` names next. */
 export function projectTicketRowsAppend(
   previous: ProjectTicketRows,
   page: ProjectResponse,
+  reads = 1,
 ): ProjectTicketRows {
   return {
     tickets: projectTicketRowsMerged(previous.tickets, page.tickets),
-    nextCursor: page.nextCursor,
+    next: projectTicketRowsNextAfter(previous.next?.read ?? 0, page, reads),
     pagesRead: previous.pagesRead + 1,
+    matched: page.matched,
     failure: undefined,
   };
 }
@@ -92,15 +125,16 @@ export function projectTicketRowsFailed(
 export function projectTicketRowsAfterPage(
   previous: ProjectTicketRows,
   answered: ApiResult<ProjectResponse>,
+  reads = 1,
 ): ProjectTicketRows {
   return answered.outcome === "Ok"
-    ? projectTicketRowsAppend(previous, answered.value)
+    ? projectTicketRowsAppend(previous, answered.value, reads)
     : projectTicketRowsFailed(previous, panelReason(answered));
 }
 
 export function projectTicketRowsHaveMore(rows: ProjectTicketRows): boolean {
   return (
-    rows.nextCursor !== undefined &&
+    rows.next !== undefined &&
     rows.pagesRead < projectTicketPagesMax &&
     rows.tickets.length < projectTicketRowsMax
   );
@@ -108,20 +142,25 @@ export function projectTicketRowsHaveMore(rows: ProjectTicketRows): boolean {
 
 /**
  * The pages a read gathers: one on a first read, and as many as the reader had
- * asked for on a refetch. A refusal is answered with the rows there are — the
- * ones just gathered, or the ones being replaced — and only a read holding none
- * at all answers with the refusal itself.
+ * asked for on a refetch, and one more for each that added no row. A refusal is
+ * answered with the rows there are — the ones just gathered, or the ones being
+ * replaced — and only a read holding none at all answers with the refusal
+ * itself.
  */
 export async function projectTicketRowsRead(
   previous: ProjectTicketRows | undefined,
-  readPage: (cursor: string | undefined) => Promise<ApiResult<ProjectResponse>>,
+  readPage: (
+    cursor: string | undefined,
+    read: number,
+  ) => Promise<ApiResult<ProjectResponse>>,
+  reads = 1,
 ): Promise<ApiResult<ProjectTicketRows>> {
-  const wanted = Math.max(previous?.pagesRead ?? 1, 1);
+  let wanted = Math.max(previous?.pagesRead ?? 1, 1);
   let rows = projectTicketRowsEmpty;
   for (let page = 0; page < wanted; page += 1) {
-    const answered = await readPage(
-      rows.pagesRead === 0 ? undefined : rows.nextCursor,
-    );
+    const next = rows.pagesRead === 0 ? projectTicketRowsFirst : rows.next;
+    if (next === undefined) break;
+    const answered = await readPage(next.cursor, next.read);
     if (answered.outcome !== "Ok") {
       const held = rows.pagesRead === 0 ? previous : rows;
       if (held === undefined) return answered;
@@ -130,8 +169,10 @@ export async function projectTicketRowsRead(
         value: projectTicketRowsFailed(held, panelReason(answered)),
       };
     }
-    rows = projectTicketRowsAppend(rows, answered.value);
+    const held = rows.tickets.length;
+    rows = projectTicketRowsAppend(rows, answered.value, reads);
     if (!projectTicketRowsHaveMore(rows)) break;
+    if (rows.tickets.length === held) wanted += 1;
   }
   return { outcome: "Ok", value: rows };
 }

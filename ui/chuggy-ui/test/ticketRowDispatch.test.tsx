@@ -98,7 +98,7 @@ async function drawnReady(
       client={client}
       transport={openedStream().ports.fetch}
     >
-      <ProjectTable />
+      <ProjectTable query={{}} onQuery={() => undefined} />
     </ScreenHarness>,
   );
   await settled();

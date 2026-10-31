@@ -19,6 +19,12 @@
     "nonTerminal": "phase=NonTerminal",
     "selected": "repeat phase with one or more exact phase names"
   },
+  "ticketListQuery": {
+    "search": "q: from 1 to 200 characters once trimmed; a ticket matches where its title holds them, ignoring case and with every character as itself, or where they are its number, whole, with or without a leading #; the answer carries matched, how many tickets the read selects across the project",
+    "active": "active=true: the tickets neither Done nor Revoked, and those that became either within the last 24 hours",
+    "order": "omit order: by ticket, ascending, resumed by after; RecentActivity: last activity first; Newest and Oldest: by ticket, descending and ascending; each resumed by a cursor of its own that another order refuses",
+    "composition": "each composes with phase and with the others"
+  },
   "configurationLatestFilter": {
     "query": "latest",
     "all": "omit latest, or latest=false: every revision, newest first",

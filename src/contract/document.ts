@@ -14,6 +14,8 @@ import {
   nativeHttpVersion,
   personalRunnersMax,
   threadsOpenDefault,
+  ticketActiveFinishedHours,
+  ticketSearchCharsMax,
 } from "./http.ts";
 import {
   draftCreationSchema,
@@ -137,6 +139,23 @@ const runnerNotes = {
     "a member the tenant permits to register a personal runner mints, under the same permit and bound, a single-use token for their chat host in the tenant; redeeming it at the same route a runner's token is redeemed at registers the member's one chat host there, replacing any other and ending every session the replaced one held, and answers once with a file of kind ChatHost naming the tenant and the member and no project or capabilities; a chat host serves its member's threads and inquiries in every project of the tenant they may read, and needs no list; its owner reads its newest poll and whether it is live, and takes it off, which ends every session it held",
 };
 
+/** How a project's ticket list is narrowed and ordered, which every read of it composes. */
+const ticketListNotes = {
+  ticketPhaseFilter: {
+    query: "phase",
+    all: "omit phase",
+    nonTerminal: "phase=NonTerminal",
+    selected: "repeat phase with one or more exact phase names",
+  },
+  ticketListQuery: {
+    search: `q: from 1 to ${String(ticketSearchCharsMax)} characters once trimmed; a ticket matches where its title holds them, ignoring case and with every character as itself, or where they are its number, whole, with or without a leading #; the answer carries matched, how many tickets the read selects across the project`,
+    active: `active=true: the tickets neither Done nor Revoked, and those that became either within the last ${String(ticketActiveFinishedHours)} hours`,
+    order:
+      "omit order: by ticket, ascending, resumed by after; RecentActivity: last activity first; Newest and Oldest: by ticket, descending and ascending; each resumed by a cursor of its own that another order refuses",
+    composition: "each composes with phase and with the others",
+  },
+};
+
 export function nativeHttpContractDocument(): unknown {
   return {
     version: nativeHttpVersion,
@@ -154,12 +173,7 @@ export function nativeHttpContractDocument(): unknown {
     caching: "no-store",
     cors: "same-origin",
     credentials: "authorization bearer header; no cookies",
-    ticketPhaseFilter: {
-      query: "phase",
-      all: "omit phase",
-      nonTerminal: "phase=NonTerminal",
-      selected: "repeat phase with one or more exact phase names",
-    },
+    ...ticketListNotes,
     configurationLatestFilter: {
       query: "latest",
       all: "omit latest, or latest=false: every revision, newest first",

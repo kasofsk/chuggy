@@ -100,7 +100,10 @@ import { populated } from "../interpreter/roster.ts";
 import { id } from "../domain/fixtures.ts";
 import { plainAuthoring } from "../actor/harness.ts";
 import { asDraftBrief } from "../../src/interpreter/ticketBrief.ts";
-import { parseDraftRevision } from "../../src/adapters/http/contract.ts";
+import {
+  parseDraftRevision,
+  parseTicketNumberCursor,
+} from "../../src/adapters/http/contract.ts";
 import { repositoryConfigurationWorkFile } from "../interpreter/repositoryConfigurationFixture.ts";
 
 const partition = {
@@ -441,6 +444,34 @@ test("recent ticket pages expose only an opaque continuation cursor", () => {
     JSON.stringify(found.body).includes("nextRecentActivityAfter"),
     false,
   );
+});
+
+test("a page by ticket number answers an opaque cursor naming its order, and a search its count", () => {
+  const found = projectResponse({
+    result: "Found",
+    project: {
+      partition,
+      sequence: 7,
+      tickets: [],
+      nextNumberAfter: { order: "Oldest", ticket: id(2) },
+      matched: 3,
+    },
+  });
+  const body = found.body as { nextCursor: string; matched: number };
+  assert.deepEqual(parseTicketNumberCursor(body.nextCursor, partition), {
+    order: "Oldest",
+    ticket: 2,
+  });
+  assert.equal(body.matched, 3);
+  assert.equal(JSON.stringify(body).includes("nextNumberAfter"), false);
+});
+
+test("a page naming no search carries no count", () => {
+  const found = projectResponse({
+    result: "Found",
+    project: { partition, sequence: 7, tickets: [] },
+  });
+  assert.deepEqual(found.body, { partition, sequence: 7, tickets: [] });
 });
 
 test("cancellation maps every closed inbox result", () => {

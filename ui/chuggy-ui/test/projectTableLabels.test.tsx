@@ -8,9 +8,9 @@
  * and drawn whole in the markup. The last activity reading carries the
  * absolute instant on hover, which is a fact about `Figure`'s tooltip.
  *
- * The order the list draws, the filter a kept word reads as, and what is held
- * back are here too: the selection is proved in the core, and only a drawn
- * list proves the screen draws it.
+ * The order the list draws and the filter a kept word reads as are here too:
+ * the selection is proved in the core, and only a drawn list proves the screen
+ * draws it.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -171,7 +171,7 @@ async function drawTableWith(
       }
       transport={openedStream().ports.fetch}
     >
-      <ProjectTable />
+      <ProjectTable query={{}} onQuery={() => undefined} />
     </ScreenHarness>,
   );
   await settled();
@@ -405,19 +405,6 @@ test("a kept word that names no phase is the unfiltered read", async () => {
   expect(titlesDrawn()).toEqual(["Escalated ticket", title]);
 });
 
-test("a search keeps the rows whose title or number it names, and says how many", async () => {
-  await drawTableWith([ticket, escalated], [execution]);
-  fireEvent.change(screen.getByLabelText("Search tickets"), {
-    target: { value: "escalated" },
-  });
-  expect(titlesDrawn()).toEqual(["Escalated ticket"]);
-  expect(screen.getByRole("status").textContent).toBe("1 matching ticket");
-  fireEvent.change(screen.getByLabelText("Search tickets"), {
-    target: { value: "#11" },
-  });
-  expect(titlesDrawn()).toEqual([title]);
-});
-
 const finished = {
   ticket: 13,
   title: "Finished ticket",
@@ -528,20 +515,6 @@ test("the state sort draws what needs you, then what moves, then what waits, the
     "Finished ticket",
     "Revoked",
   ]);
-});
-
-/** Finished more than a day before the clock, so held back until asked for. */
-test("a row that finished long ago is held back behind Show more", async () => {
-  const long = {
-    ...finished,
-    ticket: 19,
-    title: "Finished long ago",
-    changedAt: "2026-08-01T00:00:00Z",
-  };
-  await drawTableWith([ticket, long], [execution]);
-  expect(titlesDrawn()).toEqual([title]);
-  fireEvent.click(screen.getByRole("button", { name: "Show more (1 older)" }));
-  expect(titlesDrawn()).toEqual([title, "Finished long ago"]);
 });
 
 test("a ready row's chip is the dispatch, and no row offers resume or revoke", async () => {
