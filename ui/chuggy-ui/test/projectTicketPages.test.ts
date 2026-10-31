@@ -424,13 +424,16 @@ function readingTwoReads(answers: readonly (readonly ProjectResponse[])[]): {
   };
 }
 
-test("a first read is its first page even where that page is empty", async () => {
+test("a first read draws only its first page even where that page is empty", async () => {
   const held = readingTwoReads([
     [page([])],
     [page([{ ticket: 1, phase: "Done", sequence: 1, ...ticketInstants }])],
   ]);
   const answered = await projectTicketRowsRead(undefined, held.readPage, 2);
-  expect(held.asked).toStrictEqual([[undefined, 0]]);
+  expect(held.asked).toStrictEqual([
+    [undefined, 0],
+    [undefined, 1],
+  ]);
   expect(ticketsOf(answered)).toStrictEqual([]);
   expect(answered.outcome === "Ok" && answered.value.next).toStrictEqual({
     read: 1,
@@ -472,11 +475,19 @@ test("a refetch over an empty active page reads the pages the reader had, howeve
   expect(held.asked).toStrictEqual([
     [undefined, 0],
     [undefined, 1],
+    [undefined, 1],
     [undefined, 0],
     [undefined, 1],
     [undefined, 0],
     [undefined, 1],
   ]);
+});
+
+test("a first read whose every read is empty has nothing left to offer", async () => {
+  const held = readingTwoReads([[page([])], [page([])]]);
+  const answered = await projectTicketRowsRead(undefined, held.readPage, 2);
+  expect(answered.outcome === "Ok" && answered.value.next).toBeUndefined();
+  expect(answered.outcome === "Ok" && answered.value.pagesRead).toBe(1);
 });
 
 test("the count a search matched is the last page's", () => {

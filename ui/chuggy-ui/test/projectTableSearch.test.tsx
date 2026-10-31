@@ -322,7 +322,10 @@ test("an empty active list says so and offers the finished tickets behind one Sh
   expect(screen.getByRole("status").textContent).toBe(
     "No active or recently finished tickets.",
   );
-  expect(drawn.asked.filter((asked) => asked.has("phase"))).toStrictEqual([]);
+  expect(titlesDrawn()).toStrictEqual([]);
+  const activeReads = drawn.asked.filter((asked) => asked.has("active"));
+  const finishedReads = drawn.asked.filter((asked) => asked.has("phase"));
+  expect(finishedReads.length).toBe(activeReads.length);
   expect(showMores()).toBe(1);
   await press("Show more");
   expect(titlesDrawn()).toStrictEqual(["Ticket 120"]);

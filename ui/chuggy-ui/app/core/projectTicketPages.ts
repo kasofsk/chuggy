@@ -25,7 +25,9 @@
  * A LIST MAY BE MORE THAN ONE READ, each paged to its end before the next
  * begins. A first read is its first page, empty or not, so an empty active
  * read says so; a "Show more" reads past a page that adds no row, so a press
- * draws a row wherever one is left.
+ * draws a row wherever one is left. A first read that drew nothing asks the
+ * reads after it whether anything is left, and draws none of what they hold:
+ * a list with nothing behind its button is a project with no ticket.
  */
 
 import { ticketResponseSchema } from "../../../../src/contract/responses.ts";
@@ -190,6 +192,31 @@ async function projectTicketRowsGather(
   return undefined;
 }
 
+/** The rows with `next` moved past each further read whose first page is
+ * empty and last, so a list holding nothing offers a press only where a row is
+ * behind it. A page that holds a row is left for that press to draw. */
+async function projectTicketRowsEnded(
+  rows: ProjectTicketRows,
+  readPage: ProjectTicketPageRead,
+  reads: number,
+): Promise<ProjectTicketRows> {
+  let held = rows;
+  for (let asked = 0; asked < reads; asked += 1) {
+    const next = held.next;
+    if (held.tickets.length > 0 || next?.cursor !== undefined) break;
+    if (next === undefined) break;
+    const answered = await readPage(undefined, next.read);
+    if (answered.outcome !== "Ok") break;
+    const page = answered.value;
+    if (page.tickets.length > 0 || page.nextCursor !== undefined) break;
+    held = {
+      ...held,
+      next: projectTicketRowsNextAfter(next.read, page, reads),
+    };
+  }
+  return held;
+}
+
 /**
  * The pages a read gathers: one on a first read, and on a refetch exactly as
  * many as the entry it replaces had read, so a refetch never reads further
@@ -212,7 +239,11 @@ export async function projectTicketRowsRead(
     Math.max(previous?.pagesRead ?? 1, 1),
     false,
   );
-  if (refused === undefined) return { outcome: "Ok", value: rows };
+  if (refused === undefined)
+    return {
+      outcome: "Ok",
+      value: await projectTicketRowsEnded(rows, readPage, reads),
+    };
   const held = rows.pagesRead === 0 ? previous : rows;
   if (held === undefined) return refused;
   return {
