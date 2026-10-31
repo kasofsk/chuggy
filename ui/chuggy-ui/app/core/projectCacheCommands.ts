@@ -4,9 +4,8 @@
  * The frame arrives already parsed by the kind's own schema — that is
  * `parseProjectStreamEvent`'s job and this module takes its word for it — so
  * every case here is a total function of a typed event. A representation the
- * wire's schema rejects never reaches this module at all: the parse throws in
- * the transport, `projectStreamDrain` ends the connection, and the reopen with
- * its backoff and its open-failure budget is the handling.
+ * wire's schema rejects never reaches this module at all: `projectStream.ts`
+ * skips the frame and has the partition read again.
  *
  * `Project` IS THE KIND THAT INVALIDATES RATHER THAN WRITES, as the contract's
  * own header says: its representation is the inventory entry, which is less
@@ -51,7 +50,7 @@ export type ProjectCacheCommand =
       readonly key: ProjectQueryKey;
       readonly revise: (held: unknown) => ProjectResourceArrival;
     }
-  | { readonly command: "DropResource"; readonly key: ProjectQueryKey }
+  | { readonly command: "RereadResource"; readonly key: ProjectQueryKey }
   | {
       readonly command: "FoldLists";
       readonly kind: ProjectChangeKind;
@@ -69,7 +68,8 @@ function projectCacheInvalidation(
 }
 
 /** Every writer of a ticket's key writes a ticket, which is what lets the held
- * value be taken as one. */
+ * value be taken as one. A tombstone has its key read again rather than
+ * removed, so what is mounted on it stays until that read answers. */
 function projectCacheResource(
   key: ProjectQueryKey,
   event: ProjectChangeEvent,
@@ -88,7 +88,7 @@ function projectCacheResource(
   }
   const representation: unknown = event.data.representation;
   return representation === null
-    ? { command: "DropResource", key }
+    ? { command: "RereadResource", key }
     : { command: "WriteResource", key, representation };
 }
 

@@ -125,7 +125,7 @@ test("a ticket frame is written by the rule the page's confirmations share", () 
   });
 });
 
-test("a null representation drops the entry rather than leaving it stale", () => {
+test("a null representation has the entry read again rather than left stale", () => {
   const commands = projectCacheCommands(
     partition,
     decoded({
@@ -135,7 +135,7 @@ test("a null representation drops the entry rather than leaving it stale", () =>
     }),
   );
   expect(commands[0]).toEqual({
-    command: "DropResource",
+    command: "RereadResource",
     key: projectResourceKey(partition, "Ticket", "3"),
   });
   expect(commands[1]).toEqual({
@@ -187,7 +187,7 @@ test("a representation the kind's schema rejects never becomes an event", () => 
 
 /**
  * A held key is the console's own working state and no read of the wire, so a
- * partition reset must reach it and no `WriteResource` or `DropResource` ever
+ * partition reset must reach it and no `WriteResource` or `RereadResource` ever
  * can. Both halves are the position of one element: inside the partition
  * prefix every command shares, and outside every kind a frame can name.
  */

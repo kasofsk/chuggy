@@ -281,12 +281,15 @@ export function ScreenHarness(props: {
   );
 }
 
-/** One turn of the tree, which is also what wraps a click a case makes. */
+/** One turn of the tree, which is also what wraps a click a case makes. The
+ * second timer is the cache's: it tells its observers of a write a timer after
+ * the write, so a frame the first turn delivered is drawn by the second. */
 export async function turned(
   doing: () => void = () => undefined,
 ): Promise<void> {
   await act(async () => {
     doing();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     await new Promise((resolve) => setTimeout(resolve, 0));
   });
 }
