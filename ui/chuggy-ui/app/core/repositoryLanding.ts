@@ -1,7 +1,7 @@
 /**
  * A binding's settings as one section edits them: its landing default and
  * whether its jobs may write its pipeline definitions, the choice a reader
- * holds, the write it becomes, and what that write answered.
+ * holds, the write it becomes, and what a refusal of that write says.
  *
  * A WRITE A SETTING MOVED UNDER IS NOT RETRIED. Every write carries each
  * setting as the page read it as well as the value it wants, so two
@@ -22,7 +22,7 @@ import type {
 import type { BriefFinalizationMode } from "../../../../src/contract/rosters.ts";
 import type { z } from "zod";
 
-import type { ApiResult } from "./apiRequest.ts";
+import type { ApiFailure } from "./apiRequest.ts";
 import { panelReason } from "./freshness.ts";
 
 /** What the reader has chosen of each setting, beside the value the page read it against. */
@@ -114,33 +114,33 @@ export function repositoryLandingWrite(
   };
 }
 
-/** Where the last write stands, both answers that moved a setting carrying
- * the binding behind it. */
-export type RepositoryLandingSaved =
-  | { readonly saved: "Idle" }
-  | { readonly saved: "Writing" }
-  | { readonly saved: "Written"; readonly binding: ProjectRepositoryResponse }
-  | { readonly saved: "Conflict"; readonly binding: ProjectRepositoryResponse }
-  | { readonly saved: "Failed"; readonly reason: string };
-
 /** The code the route names a moved setting by. The wire publishes no roster of
  * its error codes, so it is read as the string it arrives as. */
 const repositoryLandingMovedCode = "RepositoryLandingMoved";
 
-export function repositoryLandingAnswered(
-  result: ApiResult<ProjectRepositoryResponse>,
-): RepositoryLandingSaved {
-  if (result.outcome === "Ok")
-    return { saved: "Written", binding: result.value };
+/** What a refusal of the write moved for says. */
+export const repositoryLandingMovedLine = "Settings moved";
+
+/** The binding as it stands, where the write was refused because a setting
+ * moved under it. */
+export function repositoryLandingMoved(
+  failure: ApiFailure | undefined,
+): ProjectRepositoryResponse | undefined {
   if (
-    result.outcome === "Conflict" &&
-    result.code === repositoryLandingMovedCode
-  ) {
-    const read = projectRepositoryLandingConflictSchema.safeParse(result.body);
-    if (read.success)
-      return { saved: "Conflict", binding: read.data.repository };
-  }
-  return { saved: "Failed", reason: panelReason(result) };
+    failure?.outcome !== "Conflict" ||
+    failure.code !== repositoryLandingMovedCode
+  )
+    return undefined;
+  const read = projectRepositoryLandingConflictSchema.safeParse(failure.body);
+  return read.success ? read.data.repository : undefined;
+}
+
+/** The line a refused write is drawn as: a moved setting, or the failure
+ * with its reason. */
+export function repositoryLandingRefusal(failure: ApiFailure): string {
+  return repositoryLandingMoved(failure) === undefined
+    ? `Failed · ${panelReason(failure)}`
+    : repositoryLandingMovedLine;
 }
 
 /** What only the listing says of a binding: what the project holds for it. */

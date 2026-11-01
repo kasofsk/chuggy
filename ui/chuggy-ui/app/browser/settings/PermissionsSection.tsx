@@ -2,20 +2,20 @@
  * One level's permissions as one card: a row a permission, and in each row
  * every holder as a chip, in the order the rows give them, or `Nobody`.
  *
- * It reads nothing, sends nothing and is given no workspace, so any level's
- * page draws its list with it, ready or not: a list the reader is not answered
- * is the one line its page gives, and a cut one says so under the table. Each
- * holder a route removes from a permission the reader may change ends in a
- * remove button, and what pressing it does is the removal's: the card only
- * holds the one question a removal of a permission manager asks first, and the
- * one line a refusal leaves in its row. Each permission the reader may change
+ * It reads nothing, sends only the writes it is given and is given no
+ * workspace, so any level's page draws its list with it, ready or not: a list
+ * the reader is not answered is the one line its page gives, and a cut one
+ * says so under the table. Each holder a route removes from a permission the
+ * reader may change ends in a remove button, and what pressing it sends is the
+ * removal's write: the card only holds the one question a removal of a
+ * permission manager asks first, and the one line a refusal leaves in its row. Each permission the reader may change
  * ends in `Add`, offering what the addition says the row offers.
  */
 
 import { useState } from "react";
 import type { ReactNode } from "react";
 
-import type { ApiResult } from "../../core/apiRequest.ts";
+import type { ConsoleWrite } from "../../core/consoleWrite.ts";
 import type { PanelState } from "../../core/freshness.ts";
 import {
   permissionHolderRemovable,
@@ -27,10 +27,8 @@ import {
   type PermissionHolder,
   type PermissionRow,
 } from "../../core/permissions.ts";
-import {
-  accessFailureLabel,
-  tenantPeopleTruncated,
-} from "../../core/tenantPeople.ts";
+import { tenantPeopleTruncated } from "../../core/tenantPeople.ts";
+import { useConsoleWrite } from "../consoleWrite.tsx";
 import { PanelUnready } from "../DataPanel.tsx";
 import { Chip } from "../ui/Chip.tsx";
 import { Confirm } from "../ui/Confirm.tsx";
@@ -39,23 +37,16 @@ import { Table } from "../ui/Table.tsx";
 import {
   PermissionAddition,
   PermissionPersonName,
+  type PermissionHolderPressed,
   type PermissionsAddition,
 } from "./PermissionAddition.tsx";
 
 import "./permissions.css";
 
-/** Whether a row's holders may be removed, and what removing one does. */
+/** Whether a row's holders may be removed, and the write that removes one. */
 export interface PermissionsRemoval<Authority extends PermissionAuthority> {
   readonly removable: (row: PermissionRow<Authority>) => boolean;
-  readonly remove: (
-    row: PermissionRow<Authority>,
-    holder: PermissionHolder,
-  ) => Promise<ApiResult<undefined>>;
-}
-
-interface PermissionRemovalPressed<Authority extends PermissionAuthority> {
-  readonly row: PermissionRow<Authority>;
-  readonly holder: PermissionHolder;
+  readonly write: ConsoleWrite<PermissionHolderPressed<Authority>, undefined>;
 }
 
 /** One removal at a time in a card, from the press to the line it leaves. */
@@ -63,46 +54,39 @@ interface PermissionsRemovalState<Authority extends PermissionAuthority> {
   readonly busy: boolean;
   readonly note:
     { readonly authority: Authority; readonly words: string } | undefined;
-  readonly asking: PermissionRemovalPressed<Authority> | undefined;
-  readonly press: (pressed: PermissionRemovalPressed<Authority>) => void;
-  readonly send: (pressed: PermissionRemovalPressed<Authority>) => void;
+  readonly asking: PermissionHolderPressed<Authority> | undefined;
+  readonly press: (pressed: PermissionHolderPressed<Authority>) => void;
+  readonly send: (pressed: PermissionHolderPressed<Authority>) => void;
   readonly cancel: () => void;
 }
 
 function usePermissionsSectionRemoval<Authority extends PermissionAuthority>(
   removal: PermissionsRemoval<Authority>,
 ): PermissionsRemovalState<Authority> {
-  const [busy, setBusy] = useState(false);
-  const [note, setNote] =
-    useState<PermissionsRemovalState<Authority>["note"]>(undefined);
+  const removing = useConsoleWrite(removal.write, { drawn: true });
   const [asking, setAsking] = useState<
-    PermissionRemovalPressed<Authority> | undefined
+    PermissionHolderPressed<Authority> | undefined
   >(undefined);
-  const send = (pressed: PermissionRemovalPressed<Authority>): void => {
-    setBusy(true);
-    setNote(undefined);
-    void (async () => {
-      const answered = await removal.remove(pressed.row, pressed.holder);
-      setAsking(undefined);
-      setBusy(false);
-      setNote(
-        answered.outcome === "Ok"
-          ? undefined
-          : {
-              authority: pressed.row.authority,
-              words: accessFailureLabel(answered),
-            },
-      );
-    })();
+  const refused = removing.error;
+  const pressed = removing.variables;
+  const send = (sent: PermissionHolderPressed<Authority>): void => {
+    removing.mutate(sent, {
+      onSettled: () => {
+        setAsking(undefined);
+      },
+    });
   };
   return {
-    busy,
-    note,
+    busy: removing.isPending,
+    note:
+      refused === null || pressed === undefined
+        ? undefined
+        : { authority: pressed.row.authority, words: refused.message },
     asking,
     send,
-    press: (pressed) => {
-      if (permissionRemovalAsks(pressed.row)) setAsking(pressed);
-      else send(pressed);
+    press: (sent) => {
+      if (permissionRemovalAsks(sent.row)) setAsking(sent);
+      else send(sent);
     },
     cancel: () => {
       setAsking(undefined);

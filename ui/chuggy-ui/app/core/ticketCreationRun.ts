@@ -54,6 +54,7 @@ import {
   configurationPagesMax,
 } from "./apiRoutes.ts";
 import type { ApiFailure, ApiPorts, ApiResult } from "./apiRequest.ts";
+import { ConsoleWriteRefused } from "./consoleWrite.ts";
 import { panelReason } from "./freshness.ts";
 import {
   draftRevisionFailureSentence,
@@ -164,6 +165,39 @@ export type TicketCreationEnded =
       readonly ticket: number;
       readonly held: CreationDraftHeld;
     };
+
+/** A creation's submit that made no ticket. */
+export type TicketCreationUnmade = Exclude<
+  TicketCreationEnded,
+  { readonly created: "Created" }
+>;
+
+/** An edit's submit that released no update. */
+export type TicketUpdateUnmade = Exclude<
+  TicketCreated,
+  { readonly created: "Created" }
+>;
+
+/** A creation's submit thrown as its refusal: the sentence its screen draws,
+ * beside how it ended, which holds the draft the next submit goes back to. */
+export class TicketCreationRefused extends ConsoleWriteRefused {
+  readonly ended: TicketCreationUnmade;
+
+  constructor(sentence: string, ended: TicketCreationUnmade) {
+    super(sentence);
+    this.ended = ended;
+  }
+}
+
+/** An edit's submit thrown as its refusal, beside how it ended. */
+export class TicketUpdateRefused extends ConsoleWriteRefused {
+  readonly ended: TicketUpdateUnmade;
+
+  constructor(sentence: string, ended: TicketUpdateUnmade) {
+    super(sentence);
+    this.ended = ended;
+  }
+}
 
 /** The conflict a creation route answers where the fence this body carries moved. */
 export const creationStaleSentence =

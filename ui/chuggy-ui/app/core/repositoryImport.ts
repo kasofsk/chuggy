@@ -14,7 +14,7 @@ import type {
 } from "../../../../src/contract/responses.ts";
 import type { RepositoryConfigurationFault } from "../../../../src/contract/rosters.ts";
 
-import type { ApiResult } from "./apiRequest.ts";
+import type { ApiFailure, ApiResult } from "./apiRequest.ts";
 import { groupedDigits } from "./figures.ts";
 import { commitLabel, type Label } from "./labels.ts";
 import { repositoryRefusalStatus } from "./projectRepositories.ts";
@@ -118,9 +118,7 @@ const repositoryImportRefusals: Readonly<
 };
 
 /** A refused import's answer as one word, the line's own where the route names the outcome it kept. */
-function repositoryImportRefusal(
-  result: Exclude<ApiResult<{ readonly imported: true }>, { outcome: "Ok" }>,
-): string {
+function repositoryImportRefusal(result: ApiFailure): string {
   if (result.outcome === "Rejected")
     return repositoryImportRefusals[result.code] ?? "Refused";
   if (result.outcome === "Conflict")
@@ -152,6 +150,11 @@ export function repositoryImportNote(
   if (kept && repositoryImportFaultless(line.word)) return undefined;
   const word = repositoryImportRefusal(pressed.answered);
   return repositoryImportFaultless(word) ? undefined : word;
+}
+
+/** What a refused Import now says under the line, where it says anything. */
+export function repositoryImportRefused(failure: ApiFailure): string {
+  return `Not imported · ${repositoryImportRefusal(failure)}`;
 }
 
 /** Each fault a refused file is refused for, in the console's words. */

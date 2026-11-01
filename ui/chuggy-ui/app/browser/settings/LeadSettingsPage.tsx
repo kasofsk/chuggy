@@ -32,7 +32,6 @@ import {
 import type {
   SelectorProjectOverrides,
   SelectorSettingsDraft,
-  SelectorSettingsSaved,
   SelectorSettingsSectionName,
 } from "../../core/selectorSettingsForm.ts";
 import {
@@ -48,11 +47,14 @@ import {
   useSessionRunnerShort,
 } from "../sessionPlacement.tsx";
 import {
-  selectorSettingsSaved,
+  selectorSettingsShown,
   useSelectorSettingsDraft,
   useSelectorSettingsWriting,
 } from "../selectorSettingsWriting.ts";
-import type { SelectorSettingsWriting } from "../selectorSettingsWriting.ts";
+import type {
+  SelectorSettingsShown,
+  SelectorSettingsWriting,
+} from "../selectorSettingsWriting.ts";
 import { Notice } from "../ui/Notice.tsx";
 import { SelectorLimitsSection } from "./lead/SelectorLimitsSection.tsx";
 import { SelectorRevisions } from "./lead/SelectorRevisions.tsx";
@@ -83,7 +85,7 @@ function SelectorSettingsSections(props: {
   const editing = chrome.editing;
   const savable =
     selectorSettingsWrite(chrome.draft).overrides !== undefined &&
-    chrome.writing.saved.saved !== "Writing";
+    !chrome.writing.saving.isPending;
   return (
     <>
       {selectorSettingsTextNames.map((name) => (
@@ -95,7 +97,7 @@ function SelectorSettingsSections(props: {
           editing={editing === name}
           editable={editing === undefined}
           savable={savable}
-          saved={selectorSettingsSaved(chrome.writing, name)}
+          saved={selectorSettingsShown(chrome.writing, name)}
           onChange={chrome.onChange}
           onEdit={() => {
             chrome.onOpen(name);
@@ -119,7 +121,7 @@ function SelectorSettingsSections(props: {
         editing={editing === "limits"}
         editable={editing === undefined}
         savable={savable}
-        saved={selectorSettingsSaved(chrome.writing, "limits")}
+        saved={selectorSettingsShown(chrome.writing, "limits")}
         onChange={chrome.onChange}
         onEdit={() => {
           chrome.onOpen("limits");
@@ -142,6 +144,7 @@ function SelectorSettingsForm(props: {
 }): ReactNode {
   const held = useSelectorSettingsDraft(props.settings);
   const writing = useSelectorSettingsWriting<SelectorSettingsWriter>(
+    "Settings",
     props.partition,
     held,
   );
@@ -172,8 +175,8 @@ function SelectorSettingsForm(props: {
       <SelectorSettingsSections chrome={chrome} />
       <SelectorSettingsHistory
         partition={props.partition}
-        busy={writing.saved.saved === "Writing"}
-        saved={selectorSettingsSaved(writing, "revisions")}
+        busy={writing.saving.isPending}
+        saved={selectorSettingsShown(writing, "revisions")}
         onRestore={(overrides) => {
           writing.write("revisions", overrides, () => undefined);
         }}
@@ -185,7 +188,7 @@ function SelectorSettingsForm(props: {
 function SelectorSettingsHistory(props: {
   readonly partition: PartitionIdentity;
   readonly busy: boolean;
-  readonly saved: SelectorSettingsSaved;
+  readonly saved: SelectorSettingsShown | undefined;
   readonly onRestore: (overrides: SelectorProjectOverrides) => void;
 }): ReactNode {
   const partition = props.partition;

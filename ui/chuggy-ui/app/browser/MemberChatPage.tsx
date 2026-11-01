@@ -166,12 +166,7 @@ function MemberChatThread(props: {
     <>
       <MemberChatBar {...props}>
         {state.state === "Ready" ? (
-          <ChatPaneThreadActions
-            home={home}
-            thread={state.value}
-            at="Page"
-            onChanged={reread}
-          />
+          <ChatPaneThreadActions home={home} thread={state.value} at="Page" />
         ) : (
           <h1 className="text-ink-1 font-strong min-w-0 flex-1 truncate text-md">
             Thread

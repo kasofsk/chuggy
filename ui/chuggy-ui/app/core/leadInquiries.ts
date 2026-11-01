@@ -29,13 +29,14 @@
  * A BOX BELONGS TO A PROJECT, AND THERE IS ONE PER PROJECT RATHER THAN ONE
  * SHARED. A panel is reconciled rather than replaced when only the route's
  * params move, so whatever it holds outlives the project it was held for — and
- * every one of the four things a box holds is about one project's door: the
- * question typed at it, the pair a send is outstanding under, whether a press is
- * outstanding at all, and what the last press answered. Held as one value keyed
- * by the project, none of them can be read as another project's, no answer can
- * land on a page it was not asked from, and a project's pair survives a reader
- * visiting another and coming back — which is what a single slot per box could
- * not do however carefully it was scoped.
+ * every one of the three things a box holds is about one project's door: the
+ * question typed at it, the pair a send is outstanding under, and what the last
+ * press answered. Held as one value keyed by the project, none of them can be
+ * read as another project's, no answer can land on a page it was not asked
+ * from, and a project's pair survives a reader visiting another and coming back
+ * — which is what a single slot per box could not do however carefully it was
+ * scoped. Whether a press is out is the project's own write, kept under a key
+ * that names the project.
  */
 
 import type { z } from "zod";
@@ -50,9 +51,9 @@ import {
   hostedRunsNotGrantedCode,
   noRunnerCode,
 } from "../../../../src/contract/rosters.ts";
-import type { LeadInquiryAccepted } from "../../../../src/contract/responses.ts";
-import type { ApiResult } from "./apiRequest.ts";
+import type { ApiFailure } from "./apiRequest.ts";
 import { panelReason } from "./freshness.ts";
+import { sessionRunnerNoticeWord } from "./sessionRunners.ts";
 
 /**
  * How much entropy an inquiry's pair is named with. It is its own constant
@@ -181,18 +182,23 @@ export const inquiryRefusalWordUnknown = "Refused";
  * word for it is chosen from the outcome instead. */
 export const inquiryRefusalWordNoLead = "No lead";
 
-/** What the last ask did, in the one line the box says it in. */
-export type InquiryAsk =
-  | { readonly ask: "Idle" }
-  | { readonly ask: "Asking" }
-  | { readonly ask: "Asked"; readonly session: string }
+/** Why the door did not take a question, as the box draws it. */
+export type InquiryAskRefusal =
   | { readonly ask: "Refused"; readonly word: string }
   | { readonly ask: "NoRunner" }
   | { readonly ask: "Failed"; readonly reason: string };
 
+/** What a press was answered, which the box keeps until the next press. */
+export type InquiryAskAnswer =
+  { readonly ask: "Asked"; readonly session: string } | InquiryAskRefusal;
+
+/** What the last ask was answered, in the one line the box says it in, where
+ * one has been. A press still out is the write's to say, not the box's. */
+export type InquiryAsk = { readonly ask: "Idle" } | InquiryAskAnswer;
+
 /** A refusal for no runner of the asker's own is its own arm, since the box
  * says where one is added. */
-function inquiryRefused(code: string): InquiryAsk {
+function inquiryRefused(code: string): InquiryAskRefusal {
   if (code === noRunnerCode) return { ask: "NoRunner" };
   return {
     ask: "Refused",
@@ -201,28 +207,37 @@ function inquiryRefused(code: string): InquiryAsk {
 }
 
 /**
- * What the door answered, as the box draws it. A refusal is the lead's own
+ * What the door's refusal is, as the box draws it. A refusal is the lead's own
  * answer and is drawn as a word; everything else is this console or the network
  * failing, and is drawn with the reason, because the two are not the same news
  * and a reader who cannot tell them apart cannot tell whether to ask again.
  */
-export function inquiryAskAnswered(
-  result: ApiResult<LeadInquiryAccepted>,
-): InquiryAsk {
-  switch (result.outcome) {
-    case "Ok":
-      return { ask: "Asked", session: result.value.session };
+export function inquiryAskRefused(failure: ApiFailure): InquiryAskRefusal {
+  switch (failure.outcome) {
     case "Absent":
       return { ask: "Refused", word: inquiryRefusalWordNoLead };
     case "Conflict":
     case "Retryable":
     case "Rejected":
-      return inquiryRefused(result.code);
+      return inquiryRefused(failure.code);
     case "Unauthenticated":
     case "Fault":
     case "Unreachable":
     case "Unreadable":
-      return { ask: "Failed", reason: panelReason(result) };
+      return { ask: "Failed", reason: panelReason(failure) };
+  }
+}
+
+/** The line a refusal is drawn as, which is the word, the runner notice's own
+ * word, or the failure with its reason. */
+export function inquiryAskRefusalSentence(refusal: InquiryAskRefusal): string {
+  switch (refusal.ask) {
+    case "Refused":
+      return refusal.word;
+    case "NoRunner":
+      return sessionRunnerNoticeWord("NoRunner", "Inquiry");
+    case "Failed":
+      return `Failed · ${refusal.reason}`;
   }
 }
 
@@ -308,9 +323,10 @@ export function inquiryBoxTyped(box: InquiryBox, typed: string): InquiryBox {
   return { ...box, typed };
 }
 
-/** A press going out: the box says so, and holds the pair it went out under. */
+/** A press going out: the box holds the pair it went out under, and the last
+ * press's answer is no longer what it says. */
 export function inquiryBoxSent(box: InquiryBox, draw: InquiryDraw): InquiryBox {
-  return { ...box, ask: { ask: "Asking" }, held: draw };
+  return { ...box, ask: { ask: "Idle" }, held: draw };
 }
 
 /**
@@ -323,7 +339,7 @@ export function inquiryBoxSent(box: InquiryBox, draw: InquiryDraw): InquiryBox {
 export function inquiryBoxAnswered(
   box: InquiryBox,
   sent: InquiryDraw,
-  answer: InquiryAsk,
+  answer: InquiryAskAnswer,
 ): InquiryBox {
   if (answer.ask !== "Asked") return { ...box, ask: answer };
   const moved = inquiryQuestion(box.typed) !== sent.question;

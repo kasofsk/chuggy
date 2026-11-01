@@ -20,6 +20,7 @@ import type { ReactNode } from "react";
 import { expect, vi } from "vitest";
 
 import type { AccessCallerTenant } from "../../../src/contract/accessPlane.ts";
+import { ConsoleWriteToasts } from "../app/browser/consoleWrite.tsx";
 import { SessionProvider } from "../app/browser/session.tsx";
 import { answer, holderDouble, settled, turned } from "./screenHarness.tsx";
 
@@ -114,6 +115,30 @@ export async function drawn(
     </SessionProvider>,
   );
   await settled();
+}
+
+/** The children over the cache handed in, beside the toasts the shell mounts
+ * once, and the hand that draws or leaves them while the toasts stay. */
+export async function redrawable(
+  children: ReactNode,
+  client: QueryClient,
+): Promise<(shown: boolean) => Promise<void>> {
+  const tree = (shown: boolean): ReactNode => (
+    <SessionProvider holder={holderDouble()}>
+      <QueryClientProvider client={client}>
+        {shown ? children : null}
+        <ConsoleWriteToasts />
+      </QueryClientProvider>
+    </SessionProvider>
+  );
+  const view = render(tree(true));
+  await settled();
+  return async (shown) => {
+    await turned(() => {
+      view.rerender(tree(shown));
+    });
+    await settled();
+  };
 }
 
 export function typed(label: string, value: string): void {

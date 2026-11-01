@@ -2090,6 +2090,33 @@ function heldBack(): {
   };
 }
 
+/** An open outlives the pane that pressed New, and the thread it opened is
+ * chosen in the shell, so the pane brought back holds it. */
+test("a thread opened while the pane was collapsed is the one the pane holds when expanded", async () => {
+  const opening = heldBack();
+  const read: string[] = [];
+  const served = threadServed([]);
+  await mounted(viewportDeskEm, ((
+    url: string,
+    init?: { readonly method?: string },
+  ) => {
+    if (init?.method === "POST")
+      return opening.let.then(() => served(url, init));
+    read.push(url);
+    return served(url, init);
+  }) as unknown as typeof fetch);
+  await pressed("New");
+  await pressed("Collapse");
+  await turned(opening.go);
+  await settled();
+  await pressed("Expand chat");
+  expect(read.some((url) => url.endsWith(`/threads/${openedSession}`))).toBe(
+    true,
+  );
+  expect(screen.getByRole("region", { name: "Conversation" })).toBeDefined();
+  styleless();
+});
+
 /** The asks the pane draws that say "hello". */
 function helloAsks(): readonly Element[] {
   return Array.from(

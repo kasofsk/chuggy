@@ -20,7 +20,11 @@ import {
   siteWorkspaceLinkWords,
 } from "../../core/siteWorkspaceLinks.ts";
 import { siteWorkspaceCreateAccountsLabel } from "../../core/siteWorkspaces.ts";
-import { InviteLinksListing, InviteLinkWho } from "./InviteLinksListing.tsx";
+import {
+  inviteLinkRevocationWrite,
+  InviteLinksListing,
+  InviteLinkWho,
+} from "./InviteLinksListing.tsx";
 import { SettingsListingNone } from "./SettingsListing.tsx";
 import { siteWorkspaceLinksReread } from "./siteWorkspacesResource.ts";
 
@@ -94,8 +98,11 @@ export function SiteWorkspaceLinks(props: {
           ) : undefined,
       }}
       revocable={(link) => siteWorkspaceLinkRevocable(abilities, link)}
-      revoke={apiRevokeSiteWorkspaceLink}
-      reread={(client) => siteWorkspaceLinksReread(client, tenant)}
+      revocation={inviteLinkRevocationWrite(
+        ["site-workspace-link-revocation", tenant],
+        apiRevokeSiteWorkspaceLink,
+        (client) => siteWorkspaceLinksReread(client, tenant),
+      )}
     />
   );
 }

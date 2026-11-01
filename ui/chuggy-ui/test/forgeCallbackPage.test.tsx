@@ -14,7 +14,13 @@ import { ForgeCallbackPage } from "../app/browser/ForgeCallbackPage.tsx";
 import { forgeAuthorizeTransactionKey } from "../app/core/forgeAuthorization.ts";
 import { forgeInstallTransactionKey } from "../app/core/forgeInstallation.ts";
 import { forgeReturnKey } from "../app/core/forgeReturn.ts";
-import { answer, drawnStrict, settled } from "./screenHarness.tsx";
+import {
+  answer,
+  drawnStrict,
+  heldAnswer,
+  settled,
+  turned,
+} from "./screenHarness.tsx";
 import type { DrawnStrict, SentRequest } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
@@ -130,7 +136,7 @@ afterEach(() => {
 });
 
 function drawCallback(
-  redeemed: () => Response = () => answer(authorized),
+  redeemed: () => Response | Promise<Response> = () => answer(authorized),
   described: () => Response = () => answer(apps),
 ): Promise<DrawnStrict> {
   return drawnStrict(<ForgeCallbackPage />, (request) =>
@@ -321,6 +327,42 @@ test("a code the forge would not redeem returns with Refused, and goes on to no 
   expect(held.navigated.at(-1)).toStrictEqual(returned);
   expect(heldWord()).toMatchObject({ standing: "Failed", status: "Refused" });
 });
+
+/** The redemption outlives the page, so where it sends the person is decided
+ * by its answer and not by whether the page is still drawn. */
+test.each<readonly [string, () => Response, () => void]>([
+  [
+    "goes on to the install it leaves to be made",
+    () => answer(nothing),
+    () => {
+      expect(leftFor().address).toBe(portal.installUrl);
+    },
+  ],
+  [
+    "returns with Refused",
+    refusedWith("AuthorizationRefused", 422),
+    () => {
+      expect(held.navigated.at(-1)).toStrictEqual(returned);
+      expect(heldWord()).toMatchObject({
+        standing: "Failed",
+        status: "Refused",
+      });
+    },
+  ],
+])(
+  "a code answered after its page was left %s",
+  async (_where, redeemed, arrived) => {
+    const redeeming = heldAnswer();
+    await drawCallback(() => redeeming.answered);
+    cleanup();
+    held.navigated.length = 0;
+    await turned(() => {
+      redeeming.release(redeemed());
+    });
+    await settled();
+    arrived();
+  },
+);
 
 test("a code the forge spent before it could be read returns with Start again", async () => {
   const { sent } = await drawCallback(refusedWith("AuthorizationSpent", 502));

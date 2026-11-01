@@ -20,11 +20,12 @@
  * own.
  */
 
-import { useQueryClient } from "@tanstack/react-query";
 import { useNavigate } from "@tanstack/react-router";
+import type { UseNavigateResult } from "@tanstack/react-router";
 import { useId, useState } from "react";
 import type { ReactNode } from "react";
 
+import type { ProjectCreatedResponse } from "../../../../src/contract/responses.ts";
 import { apiCreateProject } from "../core/apiRoutes.ts";
 import { base64urlFromBytes } from "../core/base64url.ts";
 import {
@@ -32,11 +33,13 @@ import {
   claudeCodeLineAbout,
   claudeCodeLineCopy,
 } from "../core/claudeCodeLine.ts";
+import { consoleWriteKey } from "../core/consoleWrite.ts";
+import type { ConsoleWrite } from "../core/consoleWrite.ts";
 import { lastProjectWrite } from "../core/lastProject.ts";
 import { operationIdBytesCount } from "../core/operationFollow.ts";
 import {
   projectCreationNameFault,
-  projectCreationOutcome,
+  projectCreationRefusal,
   projectCreationSendable,
   projectCreationStanding,
   projectNameRule,
@@ -63,7 +66,8 @@ import {
   callerTenantsQuery,
   projectsInventoryQuery,
 } from "../core/tenantQueries.ts";
-import { useApiPorts, usePanelState } from "./api.ts";
+import { usePanelState } from "./api.ts";
+import { useConsoleWrite } from "./consoleWrite.tsx";
 import { PanelUnready } from "./DataPanel.tsx";
 import { Footer } from "./Footer.tsx";
 import {
@@ -213,6 +217,30 @@ function ProjectCreationWorkspace(
   }
 }
 
+/** One creation under the identity its press drew or repeated, over once the
+ * projects inventory has been read again with it, and then the new project's
+ * repositories, whether or not the form is still drawn. */
+function projectCreationWrite(
+  navigate: UseNavigateResult<string>,
+): ConsoleWrite<ProjectCreationSent, ProjectCreatedResponse> {
+  return {
+    mutationKey: consoleWriteKey("project-creation"),
+    write: (ports, sent) =>
+      apiCreateProject(ports, sent.fields, sent.operation),
+    refusal: projectCreationRefusal,
+    landed: async (client, partition) => {
+      lastProjectWrite(persistentStore, partition);
+      await client.invalidateQueries({
+        queryKey: projectsInventoryQuery().queryKey,
+      });
+      void navigate({
+        to: "/$tenant/$project/repositories",
+        params: partition,
+      });
+    },
+  };
+}
+
 /** The press that sends these two names, and the line a refusal of them left,
  * which is drawn only while the form holds the names it answered. */
 function useProjectCreationSend(fields: ProjectCreationFields): {
@@ -220,36 +248,20 @@ function useProjectCreationSend(fields: ProjectCreationFields): {
   readonly status: string | undefined;
   readonly create: () => void;
 } {
-  const ports = useApiPorts();
-  const client = useQueryClient();
   const navigate = useNavigate();
-  const [sent, setSent] = useState<ProjectCreationSent | undefined>(undefined);
-  const [busy, setBusy] = useState(false);
-  const standing = projectCreationStanding(sent, fields);
+  const creating = useConsoleWrite(projectCreationWrite(navigate), {
+    drawn: (_, sent) => projectCreationStanding(sent, fields) !== undefined,
+  });
+  const standing = projectCreationStanding(creating.variables, fields);
   const create = (): void => {
     const operation = standing?.operation ?? drawnOperation();
-    setSent({ fields, operation, status: undefined });
-    setBusy(true);
-    void (async () => {
-      const outcome = projectCreationOutcome(
-        await apiCreateProject(ports, fields, operation),
-      );
-      setBusy(false);
-      if (outcome.outcome === "Refused") {
-        setSent({ fields, operation, status: outcome.status });
-        return;
-      }
-      lastProjectWrite(persistentStore, outcome.partition);
-      await client.invalidateQueries({
-        queryKey: projectsInventoryQuery().queryKey,
-      });
-      void navigate({
-        to: "/$tenant/$project/repositories",
-        params: outcome.partition,
-      });
-    })();
+    creating.mutate({ fields, operation });
   };
-  return { busy, status: standing?.status, create };
+  return {
+    busy: creating.isPending,
+    status: standing === undefined ? undefined : creating.error?.message,
+    create,
+  };
 }
 
 function ProjectCreationForm(props: {

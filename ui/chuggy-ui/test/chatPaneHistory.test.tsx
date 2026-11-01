@@ -15,8 +15,10 @@ import {
   screen,
   within,
 } from "@testing-library/react";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
+import { consoleQueryClient } from "../app/core/consoleWrite.ts";
 import { SessionProvider } from "../app/browser/session.tsx";
 import {
   ChatPaneHistory,
@@ -221,18 +223,20 @@ async function renderedActions(
   } = {},
 ): Promise<void> {
   render(
-    <SessionProvider holder={holderDouble()}>
-      <CopyProvider write={drawn.write ?? (() => Promise.resolve(true))}>
-        <Routed>
-          <ChatPaneThreadActions
-            home={threadHome}
-            thread={threadEntry(thread)}
-            viewOnly={drawn.viewOnly ?? false}
-            at={drawn.at ?? "Pane"}
-          />
-        </Routed>
-      </CopyProvider>
-    </SessionProvider>,
+    <QueryClientProvider client={consoleQueryClient()}>
+      <SessionProvider holder={holderDouble()}>
+        <CopyProvider write={drawn.write ?? (() => Promise.resolve(true))}>
+          <Routed>
+            <ChatPaneThreadActions
+              home={threadHome}
+              thread={threadEntry(thread)}
+              viewOnly={drawn.viewOnly ?? false}
+              at={drawn.at ?? "Pane"}
+            />
+          </Routed>
+        </CopyProvider>
+      </SessionProvider>
+    </QueryClientProvider>,
   );
   await settled();
 }

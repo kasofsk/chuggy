@@ -20,7 +20,7 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -35,8 +35,7 @@ import { base64urlFromBytes } from "../core/base64url.ts";
 import {
   escalationKindSentence,
   nativeActionKindSentence,
-  operationRefusalSentence,
-  operationStateSentence,
+  operationFailureSentence,
 } from "../core/codeSentences.ts";
 import {
   phaseLabel,
@@ -46,11 +45,17 @@ import {
 } from "../core/codeLabels.ts";
 import type { PanelState } from "../core/freshness.ts";
 import {
+  ConsoleWriteProgress,
+  ConsoleWriteRefused,
+  consoleWriteKey,
+} from "../core/consoleWrite.ts";
+import type { ConsoleWrite } from "../core/consoleWrite.ts";
+import {
   inboxAnswerInFlight,
-  inboxAnswersEmpty,
-  inboxAnswersWith,
+  inboxAnswerRefusal,
+  inboxStepSentence,
 } from "../core/inboxAnswers.ts";
-import type { InboxAnswer, InboxAnswers } from "../core/inboxAnswers.ts";
+import type { InboxAnswer } from "../core/inboxAnswers.ts";
 import {
   inboxEntryPhased,
   inboxPage,
@@ -62,10 +67,11 @@ import type { InboxRows } from "../core/inboxList.ts";
 import { nativeActionsAnswers } from "../core/nativeActionAnswers.ts";
 import { projectAbilityRefused } from "../core/projectAbilities.ts";
 import {
-  followOperation,
   operationIdBytesCount,
+  operationSubmitting,
 } from "../core/operationFollow.ts";
 import type { OperationStep } from "../core/operationFollow.ts";
+import { followOperationProgressed } from "../core/operationProgress.ts";
 import { projectTableRow } from "../core/projectTableRows.ts";
 import type { ProjectTableRow } from "../core/projectTableRows.ts";
 import { actionsFor, ticketActionSentence } from "../core/ticketActions.ts";
@@ -73,6 +79,7 @@ import type { TicketAction } from "../core/ticketActions.ts";
 import { ticketSectionTitles } from "../core/ticketSections.ts";
 import { agenticRefusalStandingTone } from "../core/tones.ts";
 import { useApiPorts, usePanelState } from "./api.ts";
+import { useConsoleWrite, useConsoleWriteProgress } from "./consoleWrite.tsx";
 import { DataPanel } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
 import {
@@ -147,38 +154,6 @@ export function useInboxRows(partition: PartitionIdentity): InboxRowsHeld {
         : readMore,
     reading,
   };
-}
-
-/** A follow that outlived its screen has nowhere to report, so it stops here. */
-function useLiving(): { readonly current: boolean } {
-  const living = useRef(true);
-  useEffect(() => {
-    living.current = true;
-    return () => {
-      living.current = false;
-    };
-  }, []);
-  return living;
-}
-
-/** What the row says about the answer it is carrying, in the reader's terms. */
-function inboxStepSentence(step: OperationStep): string {
-  switch (step.step) {
-    case "Submitting":
-      return "submitting…";
-    case "Backlogged":
-      return `the API is deferring this (${step.code})`;
-    case "Following":
-      return "waiting on the actor…";
-    case "Confirming":
-      return "waiting for the project to catch up…";
-    case "Settled":
-      return step.refusal === undefined
-        ? operationStateSentence(step.state)
-        : operationRefusalSentence(step.refusal);
-    case "Abandoned":
-      return step.reason;
-  }
 }
 
 /** An open action's admitted answers, and the phase's own where none is open. */
@@ -356,16 +331,87 @@ function InboxRefusal(props: {
   );
 }
 
+/** One press of a row's answer: what was answered, the identity it drew, and
+ * where its follow reports. */
+interface InboxAnswerPressed {
+  readonly action: TicketAction;
+  readonly operation: string;
+  readonly progress: ConsoleWriteProgress<OperationStep>;
+}
+
+/** One ticket's answer, followed to settlement and refused wherever the actor
+ * did not take it. The rows are not read again for it: a frame or a poll is
+ * what moves a row. */
+function inboxAnswerWrite(
+  partition: PartitionIdentity,
+  ticket: number,
+): ConsoleWrite<InboxAnswerPressed, OperationStep> {
+  return {
+    mutationKey: consoleWriteKey(
+      "inbox-answer",
+      partition.tenant,
+      partition.project,
+      ticket,
+    ),
+    write: async (ports, pressed) => {
+      const step = await followOperationProgressed(
+        ports,
+        partition,
+        { operation: pressed.operation, mutation: pressed.action.mutation },
+        ticket,
+        pressed.progress,
+        "the answer failed",
+      );
+      const refused = inboxAnswerRefusal(step);
+      if (refused !== undefined) throw new ConsoleWriteRefused(refused);
+      return { outcome: "Ok", value: step };
+    },
+    refusal: operationFailureSentence,
+  };
+}
+
+/** A row's answer and the press that sends one, each row answering under its
+ * own ticket's key. */
+function useInboxAnswer(
+  partition: PartitionIdentity,
+  ticket: number,
+): {
+  readonly answer: InboxAnswer | undefined;
+  readonly onAnswer: (action: TicketAction) => void;
+} {
+  const writing = useConsoleWrite(inboxAnswerWrite(partition, ticket), {
+    drawn: true,
+  });
+  const reported = useConsoleWriteProgress(writing.variables?.progress);
+  const step =
+    reported ?? (writing.isPending ? operationSubmitting() : undefined);
+  const action = writing.variables?.action;
+  const answer = useMemo(
+    () =>
+      action === undefined || step === undefined ? undefined : { action, step },
+    [action, step],
+  );
+  return {
+    answer,
+    onAnswer: (pressed) => {
+      writing.mutate({
+        action: pressed,
+        operation: base64urlFromBytes(drawBytes(operationIdBytesCount)),
+        progress: new ConsoleWriteProgress<OperationStep>(),
+      });
+    },
+  };
+}
+
 /** One row, drawn from the row its entry carries whatever put it here. */
 function InboxRow(props: {
   readonly entry: InboxEntryResponse;
   readonly partition: PartitionIdentity;
-  readonly answer: InboxAnswer | undefined;
   readonly proposed: InboxProposalAnswers;
   readonly nowMs: number;
-  readonly onAnswer: (action: TicketAction) => void;
 }): ReactNode {
   const row = projectTableRow(props.entry.ticket);
+  const { answer, onAnswer } = useInboxAnswer(props.partition, row.ticket);
   return (
     <tr>
       <TicketTitleCell
@@ -389,8 +435,8 @@ function InboxRow(props: {
         <InboxActions
           partition={props.partition}
           entry={props.entry}
-          answer={props.answer}
-          onAnswer={props.onAnswer}
+          answer={answer}
+          onAnswer={onAnswer}
         />
         <InboxProposalActions
           proposals={props.entry.proposals}
@@ -398,9 +444,7 @@ function InboxRow(props: {
         />
       </td>
       <td className="text-ink-3">
-        {props.answer === undefined
-          ? cellAbsent
-          : inboxStepSentence(props.answer.step)}
+        {answer === undefined ? cellAbsent : inboxStepSentence(answer.step)}
       </td>
     </tr>
   );
@@ -409,10 +453,8 @@ function InboxRow(props: {
 function InboxTable(props: {
   readonly entries: readonly InboxEntryResponse[];
   readonly partition: PartitionIdentity;
-  readonly answers: InboxAnswers;
   readonly proposed: InboxProposalAnswers;
   readonly nowMs: number;
-  readonly onAnswer: (ticket: number, action: TicketAction) => void;
 }): ReactNode {
   return (
     <Table caption={ticketSectionTitles[inboxSection]}>
@@ -432,49 +474,13 @@ function InboxTable(props: {
             key={entry.ticket.ticket}
             entry={entry}
             partition={props.partition}
-            answer={props.answers[String(entry.ticket.ticket)]}
             proposed={props.proposed}
             nowMs={props.nowMs}
-            onAnswer={(action) => {
-              props.onAnswer(entry.ticket.ticket, action);
-            }}
           />
         ))}
       </tbody>
     </Table>
   );
-}
-
-/**
- * The follows in flight and finished, keyed by the ticket each one is about.
- * Nothing here writes either list: a row that left because this asked it to
- * would be this screen's opinion rather than the project's.
- */
-function useInboxAnswers(partition: PartitionIdentity): {
-  readonly answers: InboxAnswers;
-  readonly answer: (ticket: number, action: TicketAction) => void;
-} {
-  const ports = useApiPorts();
-  const living = useLiving();
-  const [answers, setAnswers] = useState<InboxAnswers>(inboxAnswersEmpty);
-  const answer = (ticket: number, action: TicketAction) => {
-    void followOperation(
-      ports,
-      partition,
-      {
-        operation: base64urlFromBytes(drawBytes(operationIdBytesCount)),
-        mutation: action.mutation,
-      },
-      ticket,
-      (step) => {
-        if (living.current)
-          setAnswers((held) =>
-            inboxAnswersWith(held, ticket, { action, step }),
-          );
-      },
-    );
-  };
-  return { answers, answer };
 }
 
 /** A further page the reader asked for that could not be read, beside the rows that were. */
@@ -494,7 +500,6 @@ export function InboxScreen(props: {
 }): ReactNode {
   const partition = props.partition;
   const inbox = useInboxRows(partition);
-  const answering = useInboxAnswers(partition);
   const proposed = useInboxProposalAnswers(partition);
   const nowMs = useNowMs();
   return (
@@ -511,10 +516,8 @@ export function InboxScreen(props: {
             <InboxTable
               entries={rows.entries}
               partition={partition}
-              answers={answering.answers}
               proposed={proposed}
               nowMs={nowMs}
-              onAnswer={answering.answer}
             />
           )
         }

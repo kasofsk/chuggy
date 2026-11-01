@@ -287,6 +287,50 @@ test("a second duplicate, a reload and a plain new ticket each start their own f
   expect(title()).toBe("Ship it");
 });
 
+test("a creation in flight is taken up by the form that pressed it and by no other", async () => {
+  const { redraw } = await drawDuplicate(11);
+  await press("Create ticket");
+  const creating = (): HTMLElement =>
+    screen.getByRole("button", { name: "Create ticket" });
+  expect(creating()).toHaveProperty("disabled", true);
+
+  for (const other of [13, undefined]) {
+    await redraw(other);
+    expect(creating(), String(other)).toHaveProperty("disabled", false);
+  }
+  await redraw(11);
+  expect(creating()).toHaveProperty("disabled", true);
+});
+
+test("an upload in flight is drawn by the form it attaches to and by no other", async () => {
+  const { redraw } = await drawDuplicate(
+    11,
+    undefined,
+    (served) =>
+      ((url: string, init?: { readonly method?: string }) =>
+        init?.method === "POST" && url.endsWith("/artifacts")
+          ? new Promise<Response>(() => undefined)
+          : served(url, init)) as typeof fetch,
+  );
+  await turned(() => {
+    fireEvent.change(screen.getByLabelText("Attach images"), {
+      target: {
+        files: [new File([new Uint8Array([1])], "shot", { type: "image/png" })],
+      },
+    });
+  });
+  await settled();
+  const uploading = (): boolean => screen.queryByText(/uploading…/u) !== null;
+  expect(uploading()).toBe(true);
+
+  for (const other of [13, undefined]) {
+    await redraw(other);
+    expect(uploading(), String(other)).toBe(false);
+  }
+  await redraw(11);
+  expect(uploading()).toBe(true);
+});
+
 test("an original on a retired binding opens with no repository, and says so", async () => {
   await drawDuplicate(13, {
     drafts: [thirteen],

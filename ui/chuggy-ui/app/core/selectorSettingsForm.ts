@@ -34,8 +34,13 @@ import type {
   SelectorSettingsConflictResponse,
 } from "../../../../src/contract/responses.ts";
 
-import type { ApiResult } from "./apiRequest.ts";
-import { bytesSetFigure, countFigure, spanSetFigure } from "./figures.ts";
+import type { ApiFailure } from "./apiRequest.ts";
+import {
+  bytesSetFigure,
+  countFigure,
+  instantFigure,
+  spanSetFigure,
+} from "./figures.ts";
 import type { Figure } from "./figures.ts";
 import { panelReason } from "./freshness.ts";
 import { selectorModeTone } from "./tones.ts";
@@ -539,52 +544,37 @@ export function selectorSettingsDispatchCell(
   };
 }
 
-/**
- * Where the last write stands, which is the one line the form says. Both
- * answers that moved the revision carry the settings behind it, because the
- * read the page holds is now stale and the next write has to be made against
- * what the route just said is there.
- */
-export type SelectorSettingsSaved =
-  | { readonly saved: "Idle" }
-  | { readonly saved: "Writing" }
-  | {
-      readonly saved: "Written";
-      readonly revision: number;
-      readonly settings: SelectorProjectSettingsResponse;
-    }
-  | {
-      readonly saved: "Conflict";
-      readonly revision: number;
-      readonly settings: SelectorProjectSettingsResponse;
-      readonly movedBy?: SelectorSettingsConflictResponse["movedBy"];
-    }
-  | { readonly saved: "Failed"; readonly reason: string };
+/** The settings a write lost its fence to, and who moved them where the route
+ * names them; nothing for any other refusal. */
+export function selectorSettingsConflictOf(
+  failure: ApiFailure | undefined,
+): SelectorSettingsConflictResponse | undefined {
+  if (failure?.outcome !== "Conflict") return undefined;
+  const read = selectorSettingsConflictResponseSchema.safeParse(failure.body);
+  return read.success ? read.data : undefined;
+}
+
+/** Who moved the revision a write lost its fence to, and when, as one line. */
+function selectorSettingsMovedByText(
+  movedBy: NonNullable<SelectorSettingsConflictResponse["movedBy"]>,
+  nowMs: number,
+): string {
+  const at = instantFigure(movedBy.recordedAt, nowMs);
+  return `Changed by ${movedBy.administrator.subject} at ${at.kind === "Instant" ? at.text : "—"}`;
+}
 
 /**
- * What the write answered. A conflict is drawn as the revision that moved and
- * is never retried, because the settings behind it are somebody else's write.
+ * The line a refused write is drawn as. A conflict is drawn as the revision
+ * that moved, or who moved it, and is never retried, because the settings
+ * behind it are somebody else's write.
  */
-export function selectorSettingsAnswered(
-  result: ApiResult<SelectorProjectSettingsResponse>,
-): SelectorSettingsSaved {
-  if (result.outcome === "Ok")
-    return {
-      saved: "Written",
-      revision: result.value.revision,
-      settings: result.value,
-    };
-  if (result.outcome === "Conflict") {
-    const read = selectorSettingsConflictResponseSchema.safeParse(result.body);
-    if (read.success)
-      return {
-        saved: "Conflict",
-        revision: read.data.settings.revision,
-        settings: read.data.settings,
-        ...(read.data.movedBy === undefined
-          ? {}
-          : { movedBy: read.data.movedBy }),
-      };
-  }
-  return { saved: "Failed", reason: panelReason(result) };
+export function selectorSettingsRefusal(
+  failure: ApiFailure,
+  nowMs: number,
+): string {
+  const conflict = selectorSettingsConflictOf(failure);
+  if (conflict === undefined) return `Failed · ${panelReason(failure)}`;
+  if (conflict.movedBy === undefined)
+    return `Conflict · ${String(conflict.settings.revision)}`;
+  return selectorSettingsMovedByText(conflict.movedBy, nowMs);
 }

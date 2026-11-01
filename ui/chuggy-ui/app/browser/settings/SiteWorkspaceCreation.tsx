@@ -17,41 +17,44 @@
  * a note, and no workspace and no person, since whoever opens the link names
  * the workspace and owns it. A link made replaces the form with its address,
  * which only `Done` or Escape puts away, because the address is shown this
- * once. The dialog's state is the one place that link's token is, and
- * closing the dialog drops it.
+ * once. The write that made the link is the one place its token is, and
+ * closing the dialog lets that write go.
  */
 
-import { useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import type { ReactNode } from "react";
 
 import type {
   AccessInviteLinkMinted,
+  AccessOwnerInvited,
   AccessSiteAbilities,
+  AccessWorkspaceLinkCreation,
 } from "../../../../../src/contract/accessPlane.ts";
 import {
   apiInviteSiteOwner,
   apiMintSiteWorkspaceLink,
 } from "../../core/accessRoutes.ts";
+import { consoleWriteKey } from "../../core/consoleWrite.ts";
+import type { ConsoleWrite } from "../../core/consoleWrite.ts";
 import { inviteLinkSendWords } from "../../core/inviteLinks.ts";
 import type { InviteMode } from "../../core/inviteLinks.ts";
 import {
   siteWorkspaceLinkBody,
   siteWorkspaceLinkNoteFault,
-  siteWorkspaceLinkOutcome,
   siteWorkspaceLinkSendable,
   siteWorkspaceLinkWords,
 } from "../../core/siteWorkspaceLinks.ts";
 import {
   siteWorkspaceBlank,
   siteWorkspaceCreateAccountsLabel,
+  siteWorkspaceCreatedLine,
   siteWorkspaceHeld,
   siteWorkspaceNameFault,
-  siteWorkspaceOutcome,
+  siteWorkspaceRefusal,
   siteWorkspaceSendable,
 } from "../../core/siteWorkspaces.ts";
 import type { SiteWorkspaceForm } from "../../core/siteWorkspaces.ts";
-import { useApiPorts } from "../api.ts";
+import { useConsoleWrite } from "../consoleWrite.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { Dialog } from "../ui/Dialog.tsx";
 import {
@@ -71,7 +74,7 @@ interface SiteWorkspaceCreating {
   /** The note a link is made with, which a person's invitation does not carry. */
   readonly note: string;
   readonly mode: InviteMode;
-  /** The link this opening made, which is the one place its token is. */
+  /** The link this opening made, which only the write that made it holds. */
   readonly made: AccessInviteLinkMinted | undefined;
   readonly busy: boolean;
   /** The line the last refusal left, until the form is changed or sent again. */
@@ -81,36 +84,33 @@ interface SiteWorkspaceCreating {
   readonly choose: (mode: InviteMode) => void;
   /** The dialog opening: nothing typed, a person to invite, and nothing said yet. */
   readonly begin: () => void;
-  /** The dialog closing, which is where a link it made is dropped, its token with it. */
+  /** The dialog closing, which is where the write that made a link is let go, its token with it. */
   readonly forget: () => void;
   readonly create: () => void;
   readonly mint: () => void;
 }
 
-/** One request from its press to its answer, and the line a refusal leaves. */
-function useSiteWorkspaceSent(): {
-  readonly busy: boolean;
-  readonly refused: string | undefined;
-  readonly quiet: () => void;
-  readonly send: (asked: () => Promise<string | undefined>) => void;
-} {
-  const [busy, setBusy] = useState(false);
-  const [refused, setRefused] = useState<string | undefined>(undefined);
+/** One workspace created, over once the site's list has answered again. */
+function siteWorkspaceCreationWrite(
+  tenant: string,
+): ConsoleWrite<SiteWorkspaceForm, AccessOwnerInvited> {
   return {
-    busy,
-    refused,
-    quiet: () => {
-      setRefused(undefined);
-    },
-    send: (asked) => {
-      setBusy(true);
-      setRefused(undefined);
-      void (async () => {
-        const line = await asked();
-        setBusy(false);
-        setRefused(line);
-      })();
-    },
+    mutationKey: consoleWriteKey("site-workspace-creation", tenant),
+    write: (ports, form) => apiInviteSiteOwner(ports, form),
+    refusal: siteWorkspaceRefusal,
+    landed: (client) => siteWorkspacesReread(client, tenant),
+  };
+}
+
+/** One workspace link made, over once the site's links have answered again. */
+function siteWorkspaceLinkWrite(
+  tenant: string,
+): ConsoleWrite<AccessWorkspaceLinkCreation, AccessInviteLinkMinted> {
+  return {
+    mutationKey: consoleWriteKey("site-workspace-link", tenant),
+    write: (ports, body) => apiMintSiteWorkspaceLink(ports, body),
+    refusal: siteWorkspaceRefusal,
+    landed: (client) => siteWorkspaceLinksReread(client, tenant),
   };
 }
 
@@ -119,51 +119,36 @@ function useSiteWorkspaceSent(): {
 function useSiteWorkspaceCreation(
   tenant: string,
   abilities: AccessSiteAbilities,
+  open: boolean,
   onCreated: (line: string) => void,
 ): SiteWorkspaceCreating {
-  const ports = useApiPorts();
-  const client = useQueryClient();
   const [typed, setTyped] = useState(() => siteWorkspaceBlank(abilities));
   const [note, setNote] = useState("");
   const [mode, setMode] = useState<InviteMode>("Person");
-  const [made, setMade] = useState<AccessInviteLinkMinted>();
-  const { busy, refused, quiet, send } = useSiteWorkspaceSent();
+  const creating = useConsoleWrite(siteWorkspaceCreationWrite(tenant), {
+    drawn: open,
+  });
+  const minting = useConsoleWrite(siteWorkspaceLinkWrite(tenant), {
+    drawn: open,
+  });
   const form = siteWorkspaceHeld(typed, abilities);
+  const quiet = (): void => {
+    creating.reset();
+    minting.reset();
+  };
   const quieted =
     <Held,>(hold: (held: Held) => void) =>
     (held: Held): void => {
       hold(held);
       quiet();
     };
-  const created = async (): Promise<string | undefined> => {
-    const outcome = siteWorkspaceOutcome(
-      form,
-      await apiInviteSiteOwner(ports, form),
-    );
-    if (outcome.outcome === "Refused") return outcome.line;
-    onCreated(outcome.line);
-    void siteWorkspacesReread(client, tenant);
-    return undefined;
-  };
-  const minted = async (): Promise<string | undefined> => {
-    const outcome = siteWorkspaceLinkOutcome(
-      await apiMintSiteWorkspaceLink(
-        ports,
-        siteWorkspaceLinkBody(form.createAccounts, note),
-      ),
-    );
-    if (outcome.outcome === "Refused") return outcome.line;
-    setMade(outcome.minted);
-    void siteWorkspaceLinksReread(client, tenant);
-    return undefined;
-  };
   return {
     form,
     note,
     mode,
-    made,
-    busy,
-    refused,
+    made: minting.isSuccess ? minting.data : undefined,
+    busy: creating.isPending || minting.isPending,
+    refused: (creating.error ?? minting.error)?.message,
     change: quieted(setTyped),
     annotate: quieted(setNote),
     choose: quieted(setMode),
@@ -173,14 +158,18 @@ function useSiteWorkspaceCreation(
       setMode("Person");
       quiet();
     },
-    forget: () => {
-      setMade(undefined);
-    },
+    forget: minting.reset,
     create: () => {
-      send(created);
+      minting.reset();
+      creating.mutate(form, {
+        onSuccess: (created, sent) => {
+          onCreated(siteWorkspaceCreatedLine(sent, created));
+        },
+      });
     },
     mint: () => {
-      send(minted);
+      creating.reset();
+      minting.mutate(siteWorkspaceLinkBody(form.createAccounts, note));
     },
   };
 }
@@ -333,6 +322,7 @@ export function SiteWorkspaceNew(props: {
   const creating = useSiteWorkspaceCreation(
     props.tenant,
     props.abilities,
+    open,
     (line) => {
       setOpen(false);
       props.onSaid(line);

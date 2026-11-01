@@ -1,7 +1,8 @@
 /**
  * An escalated ticket's overrides on the card that asks about it, closed until
- * asked for: the fields a parked ticket may change, drawn as the form draws
- * them, with one action that saves and the follow of it to settlement.
+ * asked for or a save of them is out: the fields a parked ticket may change,
+ * drawn as the form draws them, with one action that saves and the follow of
+ * it to settlement.
  *
  * WHAT WAS TYPED AND THE SAVE ARE THE PAGE'S AND NOT THIS PANEL'S, because the
  * Resume beside it is withheld while either says the ticket does not yet hold
@@ -11,8 +12,8 @@
  * and what is held the same again.
  */
 
-import { useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useRef, useState } from "react";
+import type { QueryClient } from "@tanstack/react-query";
+import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
@@ -23,17 +24,27 @@ import type {
 } from "../../../../../src/contract/responses.ts";
 import { configurationQuery } from "../../core/configurationQueries.ts";
 import { base64urlFromBytes } from "../../core/base64url.ts";
-import { operationRefusalLabel } from "../../core/codeLabels.ts";
-import { operationRefusalSentence } from "../../core/codeSentences.ts";
 import {
-  followOperation,
+  operationFailureSentence,
+  operationRefusalSentence,
+} from "../../core/codeSentences.ts";
+import {
+  ConsoleWriteProgress,
+  ConsoleWriteRefused,
+  consoleWriteKey,
+} from "../../core/consoleWrite.ts";
+import type { ConsoleWrite } from "../../core/consoleWrite.ts";
+import {
   operationFinished,
   operationIdBytesCount,
+  operationSubmitting,
 } from "../../core/operationFollow.ts";
 import type { OperationStep } from "../../core/operationFollow.ts";
+import { followOperationProgressed } from "../../core/operationProgress.ts";
 import {
   parkedOverrideFields,
   parkedOverridesChange,
+  parkedOverridesRefusal,
   parkedOverridesShown,
   parkedOverridesUnsaved,
 } from "../../core/parkedOverrides.ts";
@@ -41,7 +52,8 @@ import type { ParkedOverridesTyped } from "../../core/parkedOverrides.ts";
 import { projectAbilityRefused } from "../../core/projectAbilities.ts";
 import { ticketQuery } from "../../core/ticketQueries.ts";
 import { overrideDocumentOf } from "../../core/ticketOverrides.ts";
-import { useApiPorts, usePanelState } from "../api.ts";
+import { usePanelState } from "../api.ts";
+import { useConsoleWrite, useConsoleWriteProgress } from "../consoleWrite.tsx";
 import { ConfigurationOverrides } from "../ConfigurationOverrides.tsx";
 import { PanelUnready } from "../DataPanel.tsx";
 import { drawBytes } from "../ports.ts";
@@ -69,91 +81,99 @@ function ParkedOverridesNote(props: {
   if (step === undefined) return null;
   if (!operationFinished(step))
     return <Notice tone="live" inline role="status" detail="Saving…" />;
-  if (step.step === "Abandoned")
-    return (
-      <Notice
-        tone="danger"
-        inline
-        role="alert"
-        detail={`Not saved · ${step.reason}`}
-      />
-    );
-  if (step.refusal !== undefined)
-    return (
-      <Notice
-        tone="danger"
-        inline
-        role="alert"
-        detail={`Not saved · ${operationRefusalLabel(step.refusal.type)}`}
-        more={operationRefusalSentence(step.refusal)}
-      />
-    );
-  return step.state === "Answered" ? (
-    <Notice tone="info" inline role="status" detail="Overrides saved" />
-  ) : (
-    <Notice tone="danger" inline role="alert" detail="Not saved" />
+  const refused = parkedOverridesRefusal(step);
+  if (refused === undefined)
+    return <Notice tone="info" inline role="status" detail="Overrides saved" />;
+  const refusal = step.step === "Settled" ? step.refusal : undefined;
+  return (
+    <Notice
+      tone="danger"
+      inline
+      role="alert"
+      detail={refused}
+      {...(refusal === undefined
+        ? {}
+        : { more: operationRefusalSentence(refusal) })}
+    />
   );
 }
 
-/** Where a card's save has got to, and the press that starts one. */
+/** Where a card's save has got to, whether it is still going until the ticket
+ * it changed has been read again, which withholds Resume as typing does, and
+ * the press that starts one. */
 export interface ParkedOverridesSaving {
   readonly step: OperationStep | undefined;
+  readonly busy: boolean;
   readonly save: (mutation: PublicMutation) => void;
 }
 
-/** Whether a save is still going, which withholds Resume as typing does. */
-export function parkedOverridesSaving(saving: ParkedOverridesSaving): boolean {
-  return saving.step !== undefined && !operationFinished(saving.step);
+/** One press of Save: the change, the identity it drew, and where its follow
+ * reports. */
+interface ParkedOverridesPressed {
+  readonly mutation: PublicMutation;
+  readonly operation: string;
+  readonly progress: ConsoleWriteProgress<OperationStep>;
 }
 
-/** One save at a time, followed to settlement and abandoned with the page. */
+/** A save followed to settlement, over only once a settled one's ticket has
+ * been read again; every ending but an answered change is its refusal. */
+function parkedOverridesWrite(
+  partition: PartitionIdentity,
+  ticket: number,
+): ConsoleWrite<ParkedOverridesPressed, OperationStep> {
+  const reread = (client: QueryClient): Promise<void> =>
+    client.invalidateQueries({
+      queryKey: ticketQuery(partition, ticket).queryKey,
+      exact: true,
+    });
+  return {
+    mutationKey: consoleWriteKey(
+      "parked-overrides",
+      partition.tenant,
+      partition.project,
+      ticket,
+    ),
+    write: async (ports, pressed, client) => {
+      const step = await followOperationProgressed(
+        ports,
+        partition,
+        { operation: pressed.operation, mutation: pressed.mutation },
+        ticket,
+        pressed.progress,
+        "the save failed",
+      );
+      const refused = parkedOverridesRefusal(step);
+      if (refused === undefined) return { outcome: "Ok", value: step };
+      if (step.step === "Settled") await reread(client);
+      throw new ConsoleWriteRefused(refused);
+    },
+    refusal: (failure) => `Not saved · ${operationFailureSentence(failure)}`,
+    landed: (client) => reread(client),
+  };
+}
+
+/** One save at a time, followed to settlement whether or not the card that
+ * pressed it is still drawn; its refusal is the card's where the card is. */
 export function useParkedOverridesSave(
   partition: PartitionIdentity,
   ticket: number,
+  drawn: boolean,
 ): ParkedOverridesSaving {
-  const ports = useApiPorts();
-  const client = useQueryClient();
-  const [step, setStep] = useState<OperationStep | undefined>(undefined);
-  const running = useRef<AbortController | undefined>(undefined);
-  useEffect(
-    () => () => {
-      running.current?.abort(new Error("the card that saved this is gone"));
-    },
-    [],
-  );
-  const save = (mutation: PublicMutation): void => {
-    running.current?.abort(new Error("another save took this card"));
-    const controller = new AbortController();
-    running.current = controller;
-    const operation = base64urlFromBytes(drawBytes(operationIdBytesCount));
-    const report = (next: OperationStep): void => {
-      if (!controller.signal.aborted) setStep(next);
-    };
-    void followOperation(
-      ports,
-      partition,
-      { operation, mutation },
-      ticket,
-      report,
-      controller.signal,
-    )
-      .then((followed) => {
-        if (controller.signal.aborted) return;
-        if (followed.step.step === "Settled")
-          void client.invalidateQueries({
-            queryKey: ticketQuery(partition, ticket).queryKey,
-            exact: true,
-          });
-      })
-      .catch((thrown: unknown) => {
-        report({
-          step: "Abandoned",
-          reason: thrown instanceof Error ? thrown.message : "the save failed",
-          refused: false,
-        });
+  const writing = useConsoleWrite(parkedOverridesWrite(partition, ticket), {
+    drawn,
+  });
+  const step = useConsoleWriteProgress(writing.variables?.progress);
+  return {
+    step: step ?? (writing.isPending ? operationSubmitting() : undefined),
+    busy: writing.isPending,
+    save: (mutation) => {
+      writing.mutate({
+        mutation,
+        operation: base64urlFromBytes(drawBytes(operationIdBytesCount)),
+        progress: new ConsoleWriteProgress<OperationStep>(),
       });
+    },
   };
-  return { step, save };
 }
 
 /** The panel, once the configuration the ticket pins has been read. */
@@ -174,7 +194,7 @@ function ParkedOverridesEdit(props: {
   const [invalid, setInvalid] = useState(false);
   const shown = parkedOverridesShown(typed, fence, ticket.overrides);
   const unsaved = parkedOverridesUnsaved(typed, fence, ticket.overrides);
-  const busy = parkedOverridesSaving(saving);
+  const busy = saving.busy;
   const refused = projectAbilityRefused(
     useProjectAbilities(props.partition),
     "overrideTicketConfig",
@@ -243,7 +263,10 @@ export function ParkedOverrides(props: {
   )
     return null;
   return (
-    <Panel title="Overrides" collapsible={{ open: false }}>
+    <Panel
+      title="Overrides"
+      collapsible={{ open: props.saving.step !== undefined }}
+    >
       <PanelUnready state={state} />
       {state.state === "Ready" ? (
         <ParkedOverridesEdit {...props} canonical={state.value.canonical} />

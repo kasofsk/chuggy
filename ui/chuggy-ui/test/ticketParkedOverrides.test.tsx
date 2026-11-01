@@ -28,6 +28,7 @@ import { TicketPage } from "../app/browser/TicketPage.tsx";
 import { creationCatalogCanonical } from "./ticketCreationFixture.ts";
 import {
   answer,
+  heldAnswer,
   openedStream,
   ScreenHarness,
   settled,
@@ -322,6 +323,43 @@ test("a member changes the model, saves, resumes, and the page draws the new mod
   await settled();
   const model = screen.getByText("--model=opus");
   expect(model.closest("div")?.textContent).toContain("Overridden");
+});
+
+test("Save overrides stays busy until the ticket the change answered has been read again", async () => {
+  serving("WorkFailureEscalated");
+  const served = globalThis.fetch;
+  const reread = heldAnswer();
+  let holding = false;
+  let held = "";
+  vi.stubGlobal(
+    "fetch",
+    (url: string, init?: { method?: string; body?: string }) => {
+      if (!holding || init?.method === "POST" || !url.endsWith("/tickets/11"))
+        return served(url, init);
+      held = url;
+      return reread.answered;
+    },
+  );
+  const card = await drawn();
+  await overridesOpened(card);
+  await modelTyped(card, "opus");
+  holding = true;
+
+  await pressed(card, "Save overrides");
+  expect(card.textContent).toContain("Overrides saved");
+  expect(
+    within(card).getByRole("button", { name: "Save overrides" }),
+  ).toHaveProperty("disabled", true);
+  expect(within(card).queryByRole("button", { name: "Resume" })).toBeNull();
+
+  expect(held).not.toBe("");
+  holding = false;
+  const answered = await served(held);
+  await turned(() => {
+    reread.release(answered);
+  });
+  await settled();
+  expect(within(card).getByRole("button", { name: "Resume" })).toBeDefined();
 });
 
 test("a refused change is drawn on the card, holding what was typed, and Resume stays withheld", async () => {

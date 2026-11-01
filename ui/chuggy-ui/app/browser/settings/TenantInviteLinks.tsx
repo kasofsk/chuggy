@@ -19,7 +19,11 @@ import {
   inviteLinkRevocable,
   inviteLinksWords,
 } from "../../core/inviteLinks.ts";
-import { InviteLinksListing, InviteLinkWho } from "./InviteLinksListing.tsx";
+import {
+  inviteLinkRevocationWrite,
+  InviteLinksListing,
+  InviteLinkWho,
+} from "./InviteLinksListing.tsx";
 import { tenantInviteLinksReread } from "./tenantPeopleResource.ts";
 import { TenantHeldProjects, TenantHeldWords } from "./TenantPersonRow.tsx";
 
@@ -64,8 +68,11 @@ export function TenantInviteLinks(props: {
           ) : undefined,
       }}
       revocable={(link) => inviteLinkRevocable(abilities, link)}
-      revoke={(ports, link) => apiRevokeTenantInviteLink(ports, tenant, link)}
-      reread={(client) => tenantInviteLinksReread(client, tenant)}
+      revocation={inviteLinkRevocationWrite(
+        ["tenant-invite-link-revocation", tenant],
+        (ports, link) => apiRevokeTenantInviteLink(ports, tenant, link),
+        (client) => tenantInviteLinksReread(client, tenant),
+      )}
     />
   );
 }

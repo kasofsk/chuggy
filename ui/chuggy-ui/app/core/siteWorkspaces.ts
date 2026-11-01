@@ -2,7 +2,7 @@
  * The site's workspaces as their page draws them, and the site inviting a
  * person into a workspace of their own: what a row says of a workspace, what
  * the form holds, what each field may hold before anything is sent, what is
- * sent, and what one answer came to, as the one line it leaves.
+ * sent, and the one line a creation or a refusal leaves.
  *
  * Every field rule is the access contract's own schema, so this only spares
  * the reader a round trip to be told what the plane would refuse anyway. The
@@ -23,7 +23,7 @@ import {
   type AccessSiteTenant,
 } from "../../../../src/contract/accessPlane.ts";
 
-import type { ApiFailure, ApiResult } from "./apiRequest.ts";
+import type { ApiFailure } from "./apiRequest.ts";
 import {
   projectCreationNameFault,
   tenantNameReservedFault,
@@ -108,13 +108,6 @@ export function siteWorkspaceSendable(form: SiteWorkspaceForm): boolean {
   return accessOwnerInvitationSchema.safeParse(form).success;
 }
 
-/** What one creation came to, as the line it leaves. A `200` replay is a
- * creation too, because the workspace it names is the person's. */
-export interface SiteWorkspaceOutcome {
-  readonly outcome: "Created" | "Refused";
-  readonly line: string;
-}
-
 /** What the dialog's one line says of an answer that made nothing. */
 export function siteWorkspaceRefusal(failure: ApiFailure): string {
   switch (failure.outcome) {
@@ -133,14 +126,12 @@ export function siteWorkspaceRefusal(failure: ApiFailure): string {
   }
 }
 
-export function siteWorkspaceOutcome(
+/** The line a creation leaves: the workspace answered and the person typed.
+ * A `200` replay is a creation too, because the workspace it names is the
+ * person's. */
+export function siteWorkspaceCreatedLine(
   sent: SiteWorkspaceForm,
-  result: ApiResult<AccessOwnerInvited>,
-): SiteWorkspaceOutcome {
-  if (result.outcome !== "Ok")
-    return { outcome: "Refused", line: siteWorkspaceRefusal(result) };
-  return {
-    outcome: "Created",
-    line: `${result.value.tenant} created · ${sent.github} signs in with GitHub`,
-  };
+  created: AccessOwnerInvited,
+): string {
+  return `${created.tenant} created · ${sent.github} signs in with GitHub`;
 }

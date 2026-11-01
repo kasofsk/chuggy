@@ -584,19 +584,7 @@ test("Unbind asks by the repository's name, and says what it ends and what it le
   });
 });
 
-test("an unbind the route retired leaves nothing to say, and a refusal is its word", () => {
-  expect(
-    repositoryUnbindNote({
-      outcome: "Ok",
-      value: {
-        repository: "https://forge.test/kasofsk/chuggy",
-        boundAt: "2026-09-11T00:00:00Z",
-        landing: { mode: "Push" },
-        pipelinesWritable: false,
-        retiredAt: "2026-09-14T00:00:00Z",
-      },
-    }),
-  ).toBeUndefined();
+test("a refused unbind is its word", () => {
   expect(
     repositoryUnbindNote({
       outcome: "Retryable",

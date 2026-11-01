@@ -61,6 +61,8 @@ import {
 } from "./ticketReleasing.tsx";
 import type { TicketDoor } from "./ticketReleasing.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
+import { SessionProvider } from "../app/browser/session.tsx";
+import { holderDouble, settled } from "./screenHarness.tsx";
 
 /** The runner has no globals, so each case tears down the tree it rendered,
  * and starts in a browser that remembers no choice. */
@@ -158,21 +160,23 @@ function drawOffered(
   partition = creationPartition,
 ): { readonly rerender: (next: Omit<ReadyContext, "context">) => void } {
   const tree = (next: Omit<ReadyContext, "context">) => (
-    <QueryClientProvider
-      client={
-        new QueryClient({ defaultOptions: { queries: { retry: false } } })
-      }
-    >
-      <CreationForm
-        ports={ports}
-        partition={partition}
-        queryKey={queryKey}
-        context={{ context: "Ready", ...next }}
-        start="Waits"
-        onCreated={(ticket) => created.push(ticket)}
-        existing={(ticket) => <a href="/there">Ticket {ticket}</a>}
-      />
-    </QueryClientProvider>
+    <SessionProvider holder={holderDouble()}>
+      <QueryClientProvider
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      >
+        <CreationForm
+          ports={ports}
+          partition={partition}
+          queryKey={queryKey}
+          context={{ context: "Ready", ...next }}
+          start="Waits"
+          onCreated={(ticket) => created.push(ticket)}
+          existing={(ticket) => <a href="/there">Ticket {ticket}</a>}
+        />
+      </QueryClientProvider>
+    </SessionProvider>
   );
   const drawn = render(tree(context));
   return {
@@ -310,6 +314,24 @@ test("a release that settles as succeeded navigates, and to that ticket", async 
   await waitFor(() => {
     expect(created).toStrictEqual([creationDraft.ticket]);
   });
+});
+
+/** A second press between the ticket made and the screen going to it would
+ * draw a new identity and make a second ticket. */
+test("a ticket made holds the submit until the screen goes to it", async () => {
+  const held = api({ state: "Succeeded" });
+  const created: number[] = [];
+  draw(held.ports, created);
+  typeIntent("ship it");
+  submit();
+  await waitFor(() => {
+    expect(created).toStrictEqual([creationDraft.ticket]);
+  });
+  await settled();
+  expect(screen.getByRole("button", { name: "Create ticket" })).toHaveProperty(
+    "disabled",
+    true,
+  );
 });
 
 /** What the form says a submit ended in, whole. */

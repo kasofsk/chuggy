@@ -59,6 +59,10 @@ const waiting = vi.hoisted<{
  * in, and whether the API has heard of it at all. */
 const standing = vi.hoisted(() => ({ state: "Pending", known: true }));
 
+/** A decision the ticket's read has not reached, which holds a follow that
+ * hears it at `Confirming`. */
+const decidedSequenceAhead = 99;
+
 /** Which ticket the reader is on, which a case changes without unmounting —
  * `ticketRoute` carries no key, so the page is one instance across the move. */
 const viewing = vi.hoisted(() => ({ ticket: "11" }));
@@ -169,6 +173,9 @@ function served(scripted: {
         operation: operationAsked(url),
         acceptedAt: "2026-08-26T10:00:00Z",
         state: standing.state,
+        ...(standing.state === "Succeeded"
+          ? { decidedSequence: decidedSequenceAhead }
+          : {}),
       });
     }
     if (url.includes("/native-actions")) return scripted.openActions();
@@ -295,7 +302,7 @@ test("a follow that throws leaves the panel settled and says why", async () => {
   expect(button("Resume")?.hasAttribute("disabled")).toBe(false);
 });
 
-test("a panel remounted mid-follow picks the attempt back up", async () => {
+test("a panel remounted mid-follow draws the follow that kept running", async () => {
   const api = accepting();
   const client = queryClientUnretried();
   const view = await following(api, client);
@@ -304,7 +311,7 @@ test("a panel remounted mid-follow picks the attempt back up", async () => {
   mounted(client);
   await settled();
 
-  expect(api.urls.filter(polling)).not.toEqual([]);
+  expect(api.urls.filter(polling)).toEqual([]);
   expect(screen.getByText("Waiting for actor…")).toBeDefined();
   expect(button("Cancel")).not.toBeNull();
   expect(api.posts()).toBe(1);
@@ -472,6 +479,29 @@ test("a refused cancellation does not outlive the follow it was about", async ()
   expect(screen.queryByText(/^Cancel refused · /)).toBeNull();
 });
 
+test("a cancellation refused once its follow is confirming is still said", async () => {
+  const refusing = held();
+  waiting.mode = "step";
+  await following(
+    accepting(() => refusing.answering),
+    queryClientUnretried(),
+  );
+
+  await turned(() => {
+    screen.getByRole("button", { name: "Cancel" }).click();
+  });
+  standing.state = "Succeeded";
+  await stepped();
+  expect(button("Cancel")).toBeNull();
+
+  await turned(() => {
+    refusing.answer(answer({ error: { code: "OperationTerminal" } }, 409));
+  });
+  await settled();
+
+  expect(screen.getByText(/^Cancel refused · /)).toBeDefined();
+});
+
 test("an unmount with the submission in flight still holds its identity", async () => {
   const submitting = held();
   const api = served({
@@ -494,7 +524,7 @@ test("an unmount with the submission in flight still holds its identity", async 
   await settled();
 
   expect(screen.getByText("Waiting for actor…")).toBeDefined();
-  expect(api.urls.filter(polling)).not.toEqual([]);
+  expect(api.urls.filter(polling)).toEqual([]);
   expect(api.identities()).toHaveLength(1);
   expect(api.posts()).toBe(1);
 });

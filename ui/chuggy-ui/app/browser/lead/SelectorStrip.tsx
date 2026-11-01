@@ -17,13 +17,16 @@ import {
 } from "../../core/selectorSettingsForm.ts";
 import type {
   SelectorSettingsDraft,
-  SelectorSettingsSaved,
   SelectorSettingsStripCell,
 } from "../../core/selectorSettingsForm.ts";
 import type { SelectorProjectOverrides } from "../../core/selectorSettingsForm.ts";
 import { Button } from "../ui/Button.tsx";
 import { Pill } from "../ui/Pill.tsx";
-import { SelectorSettingsSavedNotice } from "../settings/lead/SelectorSection.tsx";
+import {
+  SelectorSettingsSavedNotice,
+  selectorSettingsNoticed,
+} from "../settings/lead/SelectorSection.tsx";
+import type { SelectorSettingsShown } from "../selectorSettingsWriting.ts";
 
 import "../settings/lead/selector.css";
 
@@ -68,7 +71,7 @@ export function SelectorStrip(props: {
   readonly settings: SelectorProjectSettingsResponse;
   readonly editable: boolean;
   readonly busy: boolean;
-  readonly saved: SelectorSettingsSaved;
+  readonly saved: SelectorSettingsShown | undefined;
   readonly onPress: (overrides: SelectorProjectOverrides) => void;
 }): ReactNode {
   return (
@@ -87,11 +90,11 @@ export function SelectorStrip(props: {
           onPress={props.onPress}
         />
       </div>
-      {props.saved.saved === "Idle" ? null : (
+      {selectorSettingsNoticed(props.saved) ? (
         <div className="flex items-center gap-2">
           <SelectorSettingsSavedNotice saved={props.saved} />
         </div>
-      )}
+      ) : null}
     </>
   );
 }

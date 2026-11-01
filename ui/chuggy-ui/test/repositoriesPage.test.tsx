@@ -41,6 +41,7 @@ import {
   openedStream,
   ScreenHarness,
   settled,
+  turned,
 } from "./screenHarness.tsx";
 import { frame, streamServer } from "./streamDouble.ts";
 import type { StreamServer } from "./streamDouble.ts";
@@ -274,6 +275,8 @@ interface Drawing {
   readonly over?: (served: typeof fetch) => typeof fetch;
   /** The project's stream, where a case is about one that is down or pushes. */
   readonly stream?: StreamServer;
+  /** The cache the page is drawn under, where a case draws it twice over one. */
+  readonly client?: QueryClient;
 }
 
 async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
@@ -307,6 +310,7 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
     <ScreenHarness
       partition={leadPartition}
       client={
+        drawing.client ??
         new QueryClient({ defaultOptions: { queries: { retry: false } } })
       }
       transport={(drawing.stream ?? openedStream()).ports.fetch}
@@ -2010,6 +2014,40 @@ test("a refused retry draws its refusal and stales nothing", async () => {
   expect(raised).toStrictEqual([]);
 });
 
+/** A retry out says nothing new until it answers, so the row keeps what the
+ * last one answered rather than falling back to the bare word. */
+test("a retry pressed again after a refusal keeps that refusal on the row while it is out", async () => {
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const conflict = (): Response =>
+    answer({ error: { code: "Busy", message: "busy" } }, 409);
+  let presses = 0;
+  await drawPage({
+    bound: unconfigured,
+    posted: () => {
+      presses += 1;
+      return presses === 1 ? conflict() : gate.then(conflict);
+    },
+  });
+  await retryFirst();
+  expect(bindingRowsText()[0]).toBe("kasofsk/chuggyConflictRetry");
+  await retryFirst();
+  expect(
+    bindingRowsText()[0],
+    "a retry out drew the bare word in place of the last refusal",
+  ).toBe("kasofsk/chuggyConflictRetry");
+  expect(
+    within(sectionOf("Repositories"))
+      .getByRole("button", { name: "Retry" })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+  await turned(release);
+  await settled();
+  expect(bindingRowsText()[0]).toBe("kasofsk/chuggyConflictRetry");
+});
+
 /** A retired binding leaves the listing, so the one refusal that finds it retired reads the listing again. */
 test("a retry that meets the binding retired stales the bindings the page drew", async () => {
   await drawPage({
@@ -2551,6 +2589,40 @@ test.each([
   },
 );
 
+/** An unbind outlives the listing that asked it, so a listing drawn again
+ * while it is out has to say what it answers. */
+test("a listing drawn again while an unbind is out asks its question busy, and says the refusal under it", async () => {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const unbinding = heldAnswer();
+  await drawPage({
+    bound: liveAndRetired,
+    posted: () => unbinding.answered,
+    client,
+  });
+  await unbindAnswered("Unbind");
+  cleanup();
+  await drawPage({ bound: liveAndRetired, client });
+
+  expect(
+    within(unbindAsked() ?? document.body)
+      .getByRole("button", {
+        name: "Unbind",
+      })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+
+  await turned(() => {
+    unbinding.release(deferred());
+  });
+  await settled();
+
+  const said = unbindAsked()?.nextElementSibling;
+  expect(said?.getAttribute("role")).toBe("status");
+  expect(said?.textContent).toBe("Deferring");
+});
+
 /** Binding a retired repository again is a bind the route answers, so the
  * picker offers it as any repository this project does not bind. */
 test("the picker offers a repository whose binding is retired, marks a live one Bound, and binds the retired one when pressed", async () => {
@@ -2573,4 +2645,46 @@ test("the picker offers a repository whose binding is retired, marks a live one 
   expect(sent.find((one) => one.method === "POST")?.body).toStrictEqual({
     repository: freeUrl,
   });
+});
+
+/** A press is over when the bindings it changed have answered, so a second
+ * press is never drawn against a list that has not been read again. */
+test("a bind keeps its row busy until the bindings it changed have been read again", async () => {
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let posted = false;
+  await drawPage({
+    posted: () => {
+      posted = true;
+      return answer(
+        {
+          repository: freeUrl,
+          landing: { mode: "Push" },
+          configurations: { result: "Imported", count: 2 },
+        },
+        201,
+      );
+    },
+    over: (served) =>
+      ((url: string, init?: Init) =>
+        posted && (init?.method ?? "GET") === "GET" && !url.includes("/forge")
+          ? gate.then(() => served(url, init))
+          : served(url, init)) as unknown as typeof fetch,
+  });
+  await chooseFree();
+  const row = (): HTMLElement =>
+    within(screen.getByRole("dialog")).getByRole("button", {
+      name: "gdoteof/scratch",
+    });
+  expect(row().hasAttribute("disabled")).toBe(true);
+
+  await turned(release);
+  await settled();
+
+  expect(row().hasAttribute("disabled")).toBe(false);
+  expect(statusesOf()).toStrictEqual([
+    "gdoteof/scratch · Configurations imported · New ticket",
+  ]);
 });

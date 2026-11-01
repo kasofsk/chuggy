@@ -71,10 +71,7 @@ test("a discard empties every box and tells the listeners", () => {
     told += 1;
   });
   typing(store, "why");
-  store.outstanding.take("one");
-  expect(store.outstanding.taken("one")).toBe(true);
   store.discard();
   expect(store.boxes()).toStrictEqual({});
-  expect(store.outstanding.taken("one")).toBe(false);
   expect(told).toBe(2);
 });

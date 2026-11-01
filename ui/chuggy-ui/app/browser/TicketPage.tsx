@@ -92,7 +92,6 @@ import {
 } from "./ticket/TicketSections.tsx";
 import {
   ParkedOverrides,
-  parkedOverridesSaving,
   useParkedOverridesSave,
 } from "./ticket/ParkedOverrides.tsx";
 import { TicketSlot } from "./ticket/TicketSlot.tsx";
@@ -236,8 +235,12 @@ function useParkedStanding(
   const [typed, setTyped] = useState<ParkedOverridesTyped | undefined>(
     undefined,
   );
-  const saving = useParkedOverridesSave(props.partition, props.ticket);
   const ticket = readValue(props.reads.ticketState);
+  const saving = useParkedOverridesSave(
+    props.partition,
+    props.ticket,
+    ticket !== undefined && fence !== undefined,
+  );
   if (ticket === undefined || fence === undefined)
     return { overrides: null, withheld: false };
   return {
@@ -252,8 +255,7 @@ function useParkedStanding(
       />
     ),
     withheld:
-      parkedOverridesUnsaved(typed, fence, ticket.overrides) ||
-      parkedOverridesSaving(saving),
+      parkedOverridesUnsaved(typed, fence, ticket.overrides) || saving.busy,
   };
 }
 

@@ -17,19 +17,23 @@
  */
 
 import { useQueryClient } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type {
   PersonalRunnerPermitResponse,
   PersonalRunnerResponse,
+  WorkerPoolTokenResponse,
 } from "../../../../../src/contract/responses.ts";
-import type { ApiResult } from "../../core/apiRequest.ts";
+import type { ApiFailure, ApiResult } from "../../core/apiRequest.ts";
 import {
   apiDeregisterPersonalRunner,
   apiMintPersonalRunnerToken,
   apiPersonalRunnerServes,
 } from "../../core/apiRoutes.ts";
+import { consoleWriteKey } from "../../core/consoleWrite.ts";
+import type { ConsoleWrite } from "../../core/consoleWrite.ts";
 import { instantFigure } from "../../core/figures.ts";
 import type { PanelState } from "../../core/freshness.ts";
 import { panelReason } from "../../core/freshness.ts";
@@ -46,17 +50,23 @@ import {
   runnerStandingLabel,
   runnerTokenLifetimeSecs,
 } from "../../core/runners.ts";
-import type { RunnerMint } from "../../core/runners.ts";
+import type { RunnerAsk } from "../../core/runners.ts";
 import {
   personalRunnerPermitQuery,
   projectsInventoryQuery,
 } from "../../core/tenantQueries.ts";
 import { runnerStandingTone } from "../../core/tones.ts";
-import { useApiPorts, usePanelState } from "../api.ts";
+import { usePanelState } from "../api.ts";
+import { useConsoleWrite } from "../consoleWrite.tsx";
+import type { ConsoleWriting } from "../consoleWrite.tsx";
 import { useNowMs } from "../Freshness.tsx";
 import { personalRunnerReread, usePersonalRunner } from "../personalRunner.ts";
-import { RunnerAskForm } from "../RunnerAsk.tsx";
-import { RunnerSteps } from "../RunnerSteps.tsx";
+import {
+  RunnerMintOpened,
+  runnerMintRefusal,
+  useRunnerMinting,
+} from "../RunnerAsk.tsx";
+import type { RunnerMinting } from "../RunnerAsk.tsx";
 import { RunnerVersion } from "../RunnerVersion.tsx";
 import { HostListingHead, MyChatHost, useChatHost } from "./MyChatHost.tsx";
 import { Button } from "../ui/Button.tsx";
@@ -78,39 +88,97 @@ import {
 
 type PersonalRunnerListed = PersonalRunnerResponse["runners"][number];
 
-/** Where a change to the runners got to: sent, or refused with why. */
-type MyRunnerWrite =
-  | { readonly write: "Idle" }
-  | { readonly write: "Writing" }
-  | { readonly write: "Failed"; readonly reason: string };
-
-interface MyRunnerWriting {
-  readonly write: MyRunnerWrite;
-  /** `removal` where the change takes a runner off, which a 404 says was done already. */
-  readonly send: (
-    sent: Promise<ApiResult<undefined>>,
-    removal?: boolean,
-  ) => Promise<void>;
+/** A project the reader's runners take work in, or stop taking it in. */
+interface MyRunnerServed {
+  readonly project: string;
+  readonly served: boolean;
 }
 
-/** One change at a time, the runners read again once it has landed. */
-function useMyRunnerWriting(tenant: string): MyRunnerWriting {
-  const client = useQueryClient();
-  const [write, setWrite] = useState<MyRunnerWrite>({ write: "Idle" });
+/** The runners read again whatever a change answered, and a removal a 404
+ * answers taken as done already. */
+async function myRunnerWritten(
+  client: QueryClient,
+  tenant: string,
+  sent: Promise<ApiResult<undefined>>,
+  removal: boolean,
+): Promise<ApiResult<undefined>> {
+  const answered = await sent;
+  await personalRunnerReread(client, tenant);
+  return removal && answered.outcome === "Absent"
+    ? { outcome: "Ok", value: undefined }
+    : answered;
+}
+
+function myRunnerRefusal(failure: ApiFailure): string {
+  return `Refused · ${panelReason(failure)}`;
+}
+
+function myRunnerRemovalWrite(tenant: string): ConsoleWrite<string, undefined> {
   return {
-    write,
-    send: async (sent, removal = false) => {
-      setWrite({ write: "Writing" });
-      const answered = await sent;
-      const done =
-        answered.outcome === "Ok" || (removal && answered.outcome === "Absent");
-      await personalRunnerReread(client, tenant);
-      setWrite(
-        done
-          ? { write: "Idle" }
-          : { write: "Failed", reason: panelReason(answered) },
-      );
-    },
+    mutationKey: consoleWriteKey("personal-runner-removal", tenant),
+    write: (ports, runner, client) =>
+      myRunnerWritten(
+        client,
+        tenant,
+        apiDeregisterPersonalRunner(ports, tenant, runner),
+        true,
+      ),
+    refusal: myRunnerRefusal,
+  };
+}
+
+function myRunnerServesWrite(
+  tenant: string,
+): ConsoleWrite<MyRunnerServed, undefined> {
+  return {
+    mutationKey: consoleWriteKey("personal-runner-serves", tenant),
+    write: (ports, served, client) =>
+      myRunnerWritten(
+        client,
+        tenant,
+        apiPersonalRunnerServes(
+          ports,
+          { tenant, project: served.project },
+          served.served,
+        ),
+        false,
+      ),
+    refusal: myRunnerRefusal,
+  };
+}
+
+function myRunnerTokenWrite(
+  tenant: string,
+): ConsoleWrite<RunnerAsk, WorkerPoolTokenResponse> {
+  return {
+    mutationKey: consoleWriteKey("personal-runner-token-mint", tenant),
+    write: (ports) =>
+      apiMintPersonalRunnerToken(ports, tenant, {
+        lifetimeSecs: runnerTokenLifetimeSecs,
+      }),
+    refusal: runnerMintRefusal,
+  };
+}
+
+/** One change at a time: a runner taken off or a project moved, each pressed
+ * only while neither is under way, and the refusal of the last pressed. */
+interface MyRunnerWriting {
+  readonly removing: ConsoleWriting<string, undefined>;
+  readonly serving: ConsoleWriting<MyRunnerServed, undefined>;
+  readonly busy: boolean;
+  readonly refused: string | undefined;
+}
+
+function useMyRunnerWriting(tenant: string): MyRunnerWriting {
+  const removing = useConsoleWrite(myRunnerRemovalWrite(tenant), {
+    drawn: true,
+  });
+  const serving = useConsoleWrite(myRunnerServesWrite(tenant), { drawn: true });
+  return {
+    removing,
+    serving,
+    busy: removing.isPending || serving.isPending,
+    refused: (removing.error ?? serving.error)?.message,
   };
 }
 
@@ -118,8 +186,7 @@ function useMyRunnerWriting(tenant: string): MyRunnerWriting {
 function MyRunnerRegister(props: {
   readonly granted: boolean;
   readonly room: boolean;
-  readonly mint: RunnerMint;
-  readonly onMint: (mint: RunnerMint) => void;
+  readonly minting: RunnerMinting;
   /** Drawn as the one thing to do, which it is where the reader holds none. */
   readonly leading: boolean;
 }): ReactNode {
@@ -130,50 +197,12 @@ function MyRunnerRegister(props: {
     <Button
       size="sm"
       variant={props.leading ? "primary" : "default"}
-      disabled={props.mint.mint !== "Idle"}
-      onClick={() => {
-        props.onMint({ mint: "Asking" });
-      }}
+      disabled={props.minting.opened}
+      onClick={props.minting.open}
     >
       Register runner
     </Button>
   );
-}
-
-/** The ask a token is minted for and the steps it is handed over in, where the press opened them. */
-function MyRunnerMinting(props: {
-  readonly tenant: string;
-  readonly mint: RunnerMint;
-  readonly onMint: (mint: RunnerMint) => void;
-}): ReactNode {
-  const ports = useApiPorts();
-  const client = useQueryClient();
-  const { mint, onMint } = props;
-  if (mint.mint === "Minted")
-    return (
-      <RunnerSteps
-        minted={mint.minted}
-        ask={mint.ask}
-        kind="Personal"
-        onDone={() => {
-          onMint({ mint: "Idle" });
-          void personalRunnerReread(client, props.tenant);
-        }}
-      />
-    );
-  if (mint.mint === "Asking" || mint.mint === "Minting")
-    return (
-      <RunnerAskForm
-        mint={mint}
-        onMint={onMint}
-        minted={() =>
-          apiMintPersonalRunnerToken(ports, props.tenant, {
-            lifetimeSecs: runnerTokenLifetimeSecs,
-          })
-        }
-      />
-    );
-  return null;
 }
 
 /** One runner's removal at a time, from its press through its question to its answer. */
@@ -187,29 +216,26 @@ interface MyRunnerRemoving {
 }
 
 function useMyRunnerRemoving(
-  tenant: string,
   held: PersonalRunnerResponse,
   writing: MyRunnerWriting,
 ): MyRunnerRemoving {
-  const ports = useApiPorts();
   const [asking, setAsking] = useState<string | undefined>(undefined);
   return {
     asking: held.runners.some((runner) => runner.id === asking)
       ? asking
       : undefined,
-    busy: writing.write.write === "Writing",
+    busy: writing.busy,
     press: setAsking,
     cancel: () => {
       setAsking(undefined);
     },
     send: (runner) => {
-      void (async () => {
-        await writing.send(
-          apiDeregisterPersonalRunner(ports, tenant, runner),
-          true,
-        );
-        setAsking(undefined);
-      })();
+      writing.serving.reset();
+      writing.removing.mutate(runner, {
+        onSettled: () => {
+          setAsking(undefined);
+        },
+      });
     },
   };
 }
@@ -369,19 +395,16 @@ function MyRunnerProjectAdd(props: {
 
 /** The projects every runner of the reader's takes work in, each removable, and the ones they may be given. */
 function MyRunnerProjects(props: {
-  readonly tenant: string;
   readonly held: PersonalRunnerResponse;
   readonly addable: readonly string[] | undefined;
   readonly writing: MyRunnerWriting;
 }): ReactNode {
-  const ports = useApiPorts();
-  const { tenant, held, writing } = props;
-  const busy = writing.write.write === "Writing";
+  const { held, writing } = props;
+  const busy = writing.busy;
   const serves = (project: string, served: boolean): void => {
     if (busy) return;
-    void writing.send(
-      apiPersonalRunnerServes(ports, { tenant, project }, served),
-    );
+    writing.removing.reset();
+    writing.serving.mutate({ project, served });
   };
   return (
     <SettingsListingSection
@@ -446,23 +469,18 @@ function MyRunnersHeld(props: {
   readonly listed: (table: ReactNode) => ReactNode;
 }): ReactNode {
   const writing = useMyRunnerWriting(props.tenant);
-  const removing = useMyRunnerRemoving(props.tenant, props.held, writing);
+  const removing = useMyRunnerRemoving(props.held, writing);
   return (
     <>
       {props.listed(<MyRunnersTable held={props.held} removing={removing} />)}
       <MyRunnerProjects
-        tenant={props.tenant}
         held={props.held}
         addable={props.addable}
         writing={writing}
       />
-      {writing.write.write === "Failed" ? (
-        <Notice
-          tone="danger"
-          inline
-          detail={`Refused · ${writing.write.reason}`}
-        />
-      ) : null}
+      {writing.refused === undefined ? null : (
+        <Notice tone="danger" inline detail={writing.refused} />
+      )}
     </>
   );
 }
@@ -480,10 +498,13 @@ function MyRunners(props: {
   readonly permit: PanelState<PersonalRunnerPermitResponse>;
   readonly addable: readonly string[] | undefined;
 }): ReactNode {
-  const [mint, setMint] = useState<RunnerMint>({ mint: "Idle" });
+  const client = useQueryClient();
   const { runner, permit } = props;
   const held = runner.state === "Ready" ? runner.value : undefined;
   const granted = permit.state === "Ready" && permit.value.granted;
+  const minting = useRunnerMinting(myRunnerTokenWrite(props.tenant), {
+    drawn: held !== undefined || (runner.state === "Absent" && granted),
+  });
   if (held === undefined && runner.state !== "Absent")
     return <SettingsListingUnread state={runner} withheld={myRunnerWithheld} />;
   if (held === undefined && permit.state !== "Ready")
@@ -498,13 +519,19 @@ function MyRunners(props: {
         <MyRunnerRegister
           granted={granted}
           room={myRunnerRoom(held)}
-          mint={mint}
-          onMint={setMint}
+          minting={minting}
           leading={held === undefined}
         />
       }
     >
-      <MyRunnerMinting tenant={props.tenant} mint={mint} onMint={setMint} />
+      <RunnerMintOpened
+        minting={minting}
+        kind="Personal"
+        onDone={() => {
+          minting.close();
+          void personalRunnerReread(client, props.tenant);
+        }}
+      />
       {table}
     </SettingsListingSection>
   );

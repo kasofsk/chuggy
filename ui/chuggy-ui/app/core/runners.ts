@@ -1,7 +1,7 @@
 /**
  * What the Runners page draws, derived: the words for where a project's work
  * and sessions run and what decided it, the draft a placement is chosen in,
- * what a write answered, and the package a machine is made a runner with, from
+ * what a refused write is drawn as, and the package a machine is made a runner with, from
  * the command that installs it to the one that registers the machine.
  */
 
@@ -9,7 +9,6 @@ import type {
   ExecutionPlacementResponse,
   SessionPlacementResponse,
   WorkerPoolsResponse,
-  WorkerPoolTokenResponse,
 } from "../../../../src/contract/responses.ts";
 import {
   hostedRunsNotGrantedCode,
@@ -24,7 +23,7 @@ import type {
   PlacementRouteSource,
   SessionRunnerStanding,
 } from "../../../../src/contract/rosters.ts";
-import type { ApiResult } from "./apiRequest.ts";
+import type { ApiFailure } from "./apiRequest.ts";
 import { panelReason } from "./freshness.ts";
 import type { PanelState } from "./freshness.ts";
 
@@ -213,21 +212,6 @@ export function runnerRegisterCommand(
   return `${installed.program} register${personal} --api ${origin} --token=${token}${chat}${host}${declared}`;
 }
 
-/**
- * Where minting a registration token has got to: nothing pressed, the ask the
- * reader fills in with why the last was refused, the mint, and the steps the
- * token is handed over in with what the reader asked.
- */
-export type RunnerMint =
-  | { readonly mint: "Idle" }
-  | { readonly mint: "Asking"; readonly reason?: string }
-  | { readonly mint: "Minting" }
-  | {
-      readonly mint: "Minted";
-      readonly minted: WorkerPoolTokenResponse;
-      readonly ask: RunnerAsk;
-    };
-
 /** Where `Add runner` is drawn: in the panel's head, or under the line an empty roster is said in. */
 export type RunnerAddPlace = "Head" | "Empty";
 
@@ -336,31 +320,17 @@ export function runnersPlacementRoute(
   return placementRoutes.find((route) => route === value);
 }
 
-/** What one placement's write answered. */
-export type RunnersPlacementAnswer<Placement> =
-  | { readonly saved: "Written"; readonly placement: Placement }
-  | { readonly saved: "Unhosted" }
-  | { readonly saved: "Failed"; readonly reason: string };
+/** Whether a placement's write was refused for the hosted grant, which the
+ * section draws apart from any other refusal. */
+export function runnersPlacementUnhosted(failure: ApiFailure): boolean {
+  return (
+    failure.outcome === "Rejected" && failure.code === hostedRunsNotGrantedCode
+  );
+}
 
-/** Where a save of the section got to, and with a refusal, whether the
- * placement written before it landed, since that one stands. */
-export type RunnersPlacementSaved =
-  | { readonly saved: "Idle" }
-  | { readonly saved: "Writing" }
-  | { readonly saved: "Written" }
-  | { readonly saved: "Unhosted"; readonly landed: boolean }
-  | {
-      readonly saved: "Failed";
-      readonly reason: string;
-      readonly landed: boolean;
-    };
-
-export function runnersPlacementAnswered<Placement>(
-  result: ApiResult<Placement>,
-): RunnersPlacementAnswer<Placement> {
-  if (result.outcome === "Ok")
-    return { saved: "Written", placement: result.value };
-  if (result.outcome === "Rejected" && result.code === hostedRunsNotGrantedCode)
-    return { saved: "Unhosted" };
-  return { saved: "Failed", reason: panelReason(result) };
+/** The line a refused placement's write leaves in the section. */
+export function runnersPlacementRefusal(failure: ApiFailure): string {
+  return runnersPlacementUnhosted(failure)
+    ? "Needs hosted runs"
+    : `Failed · ${panelReason(failure)}`;
 }

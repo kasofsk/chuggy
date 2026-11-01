@@ -66,6 +66,7 @@ import { LeadNote, useLeadTranscript } from "./lead/LeadTranscript.tsx";
 import { SelectorStrip } from "./lead/SelectorStrip.tsx";
 import { useProjectAbilityRead } from "./projectAbilities.tsx";
 import {
+  selectorSettingsShown,
   useSelectorSettingsDraft,
   useSelectorSettingsWriting,
 } from "./selectorSettingsWriting.ts";
@@ -165,14 +166,18 @@ function LeadSelectorStripReady(props: {
   readonly settings: SelectorProjectSettingsResponse;
 }): ReactNode {
   const held = useSelectorSettingsDraft(props.settings);
-  const writing = useSelectorSettingsWriting<"strip">(props.partition, held);
+  const writing = useSelectorSettingsWriting<"strip">(
+    "Lead",
+    props.partition,
+    held,
+  );
   return (
     <SelectorStrip
       draft={held.draft}
       settings={props.settings}
       editable
-      busy={writing.saved.saved === "Writing"}
-      saved={writing.saved}
+      busy={writing.saving.isPending}
+      saved={selectorSettingsShown(writing, "strip")}
       onPress={(overrides) => {
         writing.write("strip", overrides, () => undefined);
       }}

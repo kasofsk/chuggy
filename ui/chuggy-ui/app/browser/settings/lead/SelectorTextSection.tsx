@@ -13,11 +13,11 @@ import {
 } from "../../../core/selectorSettingsForm.ts";
 import type {
   SelectorSettingsDraft,
-  SelectorSettingsSaved,
   SelectorSettingsTextName,
 } from "../../../core/selectorSettingsForm.ts";
 import { Button } from "../../ui/Button.tsx";
 import { Textarea } from "../../ui/Textarea.tsx";
+import type { SelectorSettingsShown } from "../../selectorSettingsWriting.ts";
 import { SelectorSection } from "./SelectorSection.tsx";
 
 import "./selector.css";
@@ -40,7 +40,7 @@ export function SelectorTextSection(props: {
   readonly editing: boolean;
   readonly editable: boolean;
   readonly savable: boolean;
-  readonly saved: SelectorSettingsSaved;
+  readonly saved: SelectorSettingsShown | undefined;
   readonly onChange: (draft: SelectorSettingsDraft) => void;
   readonly onEdit: () => void;
   readonly onCancel: () => void;

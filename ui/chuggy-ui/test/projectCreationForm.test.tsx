@@ -18,6 +18,7 @@ import {
   ProjectSwitcher,
   projectSwitcherCreateText,
 } from "../app/browser/shell/ProjectSwitcher.tsx";
+import { consoleQueryClient } from "../app/core/consoleWrite.ts";
 import { lastProjectRead } from "../app/core/lastProject.ts";
 import { memberChatRoutes } from "../app/core/memberChat.ts";
 import {
@@ -29,13 +30,14 @@ import {
   answerLine,
   drawn,
   pressed,
+  redrawable,
   ruleUnder,
   served,
   submit,
   typed,
 } from "./projectCreationDrawn.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
-import { answer, settled } from "./screenHarness.tsx";
+import { answer, heldAnswer, settled, turned } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import type * as RouterModule from "@tanstack/react-router";
 
@@ -147,6 +149,54 @@ test("a created project is opened at its repositories and remembered", async () 
     { to: "/$tenant/$project/repositories", params: partition },
   ]);
   expect(lastProjectRead(persistentStore)).toEqual(partition);
+});
+
+/** The creation outlives the form, so the project it made is opened whether or
+ * not the form is still drawn when it answers. */
+test("a project created after its form was left is still opened at its repositories", async () => {
+  const creating = heldAnswer();
+  served([], () => creating.answered);
+  await drawn(<Landing />);
+  typed("Workspace", partition.tenant);
+  typed("Project", partition.project);
+  await pressed();
+  cleanup();
+  await turned(() => {
+    creating.release(answer(partition, 201));
+  });
+  await settled();
+  expect(held.went).toEqual([
+    { to: "/$tenant/$project/repositories", params: partition },
+  ]);
+  expect(lastProjectRead(persistentStore)).toEqual(partition);
+});
+
+/** A form drawn again holds none of the names the creation was sent with, so
+ * the refusal is drawn nowhere on it and is the shell's toast instead. */
+test("a creation refused after its form was drawn again empty is a toast and no line", async () => {
+  const creating = heldAnswer();
+  served([], () => creating.answered);
+  const shown = await redrawable(<Landing />, consoleQueryClient());
+  typed("Workspace", partition.tenant);
+  typed("Project", partition.project);
+  await pressed();
+  await shown(false);
+  await shown(true);
+  expect(submit()).toHaveProperty("disabled", true);
+
+  await turned(() => {
+    creating.release(
+      answer({ error: { code: "TenantTaken", message: "taken" } }, 409),
+    );
+  });
+  await settled();
+
+  expect(answerLine()).toBeNull();
+  expect(
+    [...document.querySelectorAll(".toast-line")].map(
+      (line) => line.textContent,
+    ),
+  ).toStrictEqual(["Taken"]);
 });
 
 test("a refusal is one short line, and the form stays where it was", async () => {

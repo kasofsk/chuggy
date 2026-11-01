@@ -9,28 +9,32 @@
  *
  * A REFUSAL IS SAID UNDER THE QUESTION IT ANSWERED, which stays drawn until
  * the reader cancels it or presses again, and the binding's row is left as it
- * was.
+ * was. A listing drawn again while an unbind is out asks its question again,
+ * busy, so the answer it takes up has somewhere to be said.
  */
 
-import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
+import type { ProjectRepositoryResponse } from "../../../../../src/contract/responses.ts";
 import { apiRetireProjectRepository } from "../../core/apiRoutes.ts";
+import { consoleWriteKey } from "../../core/consoleWrite.ts";
+import type { ConsoleWrite } from "../../core/consoleWrite.ts";
+import { projectRepositoriesInvalidated } from "../../core/projectQueries.ts";
 import {
   repositoryUnbindNote,
   repositoryUnbindQuestion,
 } from "../../core/projectRepositories.ts";
-import { useApiPorts } from "../api.ts";
+import { useConsoleWrite } from "../consoleWrite.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Confirm } from "../ui/Confirm.tsx";
 import { Notice } from "../ui/Notice.tsx";
-import { projectRepositoriesInvalidated } from "../../core/projectQueries.ts";
 
 /** One unbind at a time across the listing, from its press to its answer. */
 export interface RepositoryUnbinding {
-  /** The repository whose question is drawn. */
+  /** The repository whose question is drawn: the one asked, or the one whose
+   * unbind is out or was refused. */
   readonly asking: string | undefined;
   readonly busy: boolean;
   /** The word the last refusal of the asked unbind is drawn as. */
@@ -40,39 +44,53 @@ export interface RepositoryUnbinding {
   readonly send: (repository: string) => void;
 }
 
+/** One unbind, over only once the listing it retired a row of has been read
+ * again. */
+function repositoryUnbindWrite(
+  partition: PartitionIdentity,
+): ConsoleWrite<string, ProjectRepositoryResponse> {
+  return {
+    mutationKey: consoleWriteKey(
+      "repository-unbind",
+      partition.tenant,
+      partition.project,
+    ),
+    write: (ports, repository) =>
+      apiRetireProjectRepository(ports, partition, { repository }),
+    refusal: repositoryUnbindNote,
+    landed: (client) => projectRepositoriesInvalidated(client, partition),
+  };
+}
+
 export function useRepositoryUnbinding(
   partition: PartitionIdentity,
 ): RepositoryUnbinding {
-  const ports = useApiPorts();
-  const client = useQueryClient();
+  const unbinding = useConsoleWrite(repositoryUnbindWrite(partition), {
+    drawn: true,
+  });
   const [asking, setAsking] = useState<string | undefined>(undefined);
-  const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<string | undefined>(undefined);
   const asked = (repository: string | undefined): void => {
-    setNote(undefined);
+    unbinding.reset();
     setAsking(repository);
   };
+  const standing =
+    unbinding.isPending || unbinding.error !== null
+      ? unbinding.variables
+      : undefined;
   return {
-    asking,
-    busy,
-    note,
+    asking: asking ?? standing,
+    busy: unbinding.isPending,
+    note: unbinding.error?.message,
     press: asked,
     cancel: () => {
       asked(undefined);
     },
     send: (repository) => {
-      setBusy(true);
-      setNote(undefined);
-      void (async () => {
-        const refused = repositoryUnbindNote(
-          await apiRetireProjectRepository(ports, partition, { repository }),
-        );
-        if (refused === undefined)
-          await projectRepositoriesInvalidated(client, partition);
-        setBusy(false);
-        if (refused === undefined) setAsking(undefined);
-        else setNote(refused);
-      })();
+      unbinding.mutate(repository, {
+        onSuccess: () => {
+          setAsking(undefined);
+        },
+      });
     },
   };
 }

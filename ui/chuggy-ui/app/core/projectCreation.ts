@@ -1,6 +1,6 @@
 /**
  * Creating a project: what each name may be, the workspace the form's address
- * may start it on, which press repeats the last, and what one answer came to,
+ * may start it on, which press repeats the last, and what a refusal came to,
  * in a line short enough to sit under the form.
  *
  * The name rule is the wire's own schema, so this only spares the reader a
@@ -9,15 +9,13 @@
 
 import type { z } from "zod";
 
-import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import {
   projectNameCharsMax,
   projectNameSchema,
 } from "../../../../src/contract/requests.ts";
 import type { projectCreationSchema } from "../../../../src/contract/requests.ts";
-import type { ProjectCreatedResponse } from "../../../../src/contract/responses.ts";
 
-import type { ApiResult } from "./apiRequest.ts";
+import type { ApiFailure } from "./apiRequest.ts";
 
 export type ProjectCreationForm = z.infer<typeof projectCreationSchema>;
 
@@ -85,12 +83,11 @@ export function projectCreationSendable(form: ProjectCreationForm): boolean {
   );
 }
 
-/** What the last press sent: its two names, the operation identity they went
- * under, and the line a refusal left, none while it is unanswered. */
+/** What the last press sent: its two names, and the operation identity they
+ * went under. */
 export interface ProjectCreationSent {
   readonly fields: ProjectCreationForm;
   readonly operation: string;
-  readonly status: string | undefined;
 }
 
 /** What was sent, while the form still holds its two names: a press then
@@ -104,10 +101,6 @@ export function projectCreationStanding(
     ? sent
     : undefined;
 }
-
-export type ProjectCreationOutcome =
-  | { readonly outcome: "Created"; readonly partition: PartitionIdentity }
-  | { readonly outcome: "Refused"; readonly status: string };
 
 function projectCreationConflict(code: string): string {
   switch (code) {
@@ -134,34 +127,23 @@ function projectCreationRejected(code: string): string {
   }
 }
 
-/** What one creation came to. A `200` replay is a creation too, because the
- * project it names stands and is the caller's. */
-export function projectCreationOutcome(
-  result: ApiResult<ProjectCreatedResponse>,
-): ProjectCreationOutcome {
-  switch (result.outcome) {
-    case "Ok":
-      return { outcome: "Created", partition: result.value };
+/** The one short line a refused creation is drawn as. */
+export function projectCreationRefusal(failure: ApiFailure): string {
+  switch (failure.outcome) {
     case "Conflict":
-      return {
-        outcome: "Refused",
-        status: projectCreationConflict(result.code),
-      };
+      return projectCreationConflict(failure.code);
     case "Rejected":
-      return {
-        outcome: "Refused",
-        status: projectCreationRejected(result.code),
-      };
+      return projectCreationRejected(failure.code);
     case "Absent":
     case "Retryable":
-      return { outcome: "Refused", status: "Unavailable" };
+      return "Unavailable";
     case "Unauthenticated":
-      return { outcome: "Refused", status: "Not signed in" };
+      return "Not signed in";
     case "Fault":
-      return { outcome: "Refused", status: "Failed" };
+      return "Failed";
     case "Unreachable":
-      return { outcome: "Refused", status: "Unreachable" };
+      return "Unreachable";
     case "Unreadable":
-      return { outcome: "Refused", status: "Unreadable" };
+      return "Unreadable";
   }
 }

@@ -15,6 +15,7 @@
  * every frame the project sends.
  */
 
+import type { QueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
@@ -32,13 +33,23 @@ import {
   chatPaneToggled,
   chatPaneUnhosted,
 } from "../../core/chatPane.ts";
-import type { ChatPaneHeaderDoor, ChatPaneState } from "../../core/chatPane.ts";
+import type {
+  ChatPaneChosen,
+  ChatPaneHeaderDoor,
+  ChatPaneState,
+} from "../../core/chatPane.ts";
 import {
   conversationExchangeSent,
   conversationExchangesStopped,
 } from "../../core/conversation.ts";
+import { consoleWriteKey } from "../../core/consoleWrite.ts";
+import type { ConsoleWrite } from "../../core/consoleWrite.ts";
 import { panelReason } from "../../core/freshness.ts";
 import { projectAbilityRefused } from "../../core/projectAbilities.ts";
+import {
+  hostedRunsQuery,
+  sessionPlacementQuery,
+} from "../../core/projectQueries.ts";
 import {
   threadKeptClosed,
   threadKeptWith,
@@ -58,7 +69,8 @@ import type {
 import { threadsQuery } from "../../core/sessionQueries.ts";
 import { sessionRefusedNoRunner } from "../../core/sessionRunners.ts";
 import { threadHomeOf } from "../../core/threadHome.ts";
-import { useApiPorts, usePanelState } from "../api.ts";
+import { usePanelState } from "../api.ts";
+import { useConsoleWrite } from "../consoleWrite.tsx";
 import { drawBytes } from "../ports.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { Conversation } from "../conversation/Conversation.tsx";
@@ -117,6 +129,77 @@ function ChatPaneStartDoor(props: {
   );
 }
 
+/** What an open from New answered that the pane acts on: the thread it
+ * opened, or the door it met, counting the placement reads before a refusal
+ * over the hosted grant. */
+type ChatPaneOpened =
+  | { readonly opened: "Opened"; readonly session: string }
+  | { readonly opened: "Unhosted"; readonly readsAt: number }
+  | { readonly opened: "NoRunner" };
+
+/** What an open changed of the door's reads: a refusal over the grant writes
+ * it ungranted, either refusal reads the placement again, and an open on a
+ * route read as hosted writes the grant given. */
+async function chatPaneOpenLanded(
+  client: QueryClient,
+  partition: PartitionIdentity,
+  opened: ChatPaneOpened,
+): Promise<void> {
+  const hosted = hostedRunsQuery(partition).queryKey;
+  const placement = sessionPlacementQuery(partition).queryKey;
+  switch (opened.opened) {
+    case "Opened":
+      if (client.getQueryData(placement)?.thread.route === "InCluster")
+        client.setQueryData(hosted, { granted: true });
+      return;
+    case "Unhosted":
+      client.setQueryData(hosted, { granted: false });
+      await client.invalidateQueries({ queryKey: placement });
+      return;
+    case "NoRunner":
+      await client.invalidateQueries({ queryKey: placement });
+      return;
+  }
+}
+
+/** One open from New, under the key the control holds, its refusal said as
+ * the header's row says it. The thread it opened is chosen in the shell, which
+ * outlives the pane, whether or not the pane is still drawn. */
+function chatPaneOpenWrite(
+  partition: PartitionIdentity,
+  choose: (chosen: ChatPaneChosen) => void,
+): ConsoleWrite<string, ChatPaneOpened> {
+  return {
+    mutationKey: consoleWriteKey(
+      "thread-open",
+      partition.tenant,
+      partition.project,
+    ),
+    write: async (ports, key, client) => {
+      const answer = await apiOpenThread(ports, partition, key);
+      if (threadUnhosted(answer)) {
+        const placement = sessionPlacementQuery(partition).queryKey;
+        const readsAt = client.getQueryState(placement)?.dataUpdateCount ?? 0;
+        return { outcome: "Ok", value: { opened: "Unhosted", readsAt } };
+      }
+      if (sessionRefusedNoRunner(answer))
+        return { outcome: "Ok", value: { opened: "NoRunner" } };
+      if (answer.outcome !== "Ok") return answer;
+      return {
+        outcome: "Ok",
+        value: { opened: "Opened", session: answer.value.session },
+      };
+    },
+    refusal: (failure) =>
+      `Refused · ${threadOpenAtLimit(failure) ? threadLimitWord : panelReason(failure)}`,
+    landed: (client, opened) => {
+      if (opened.opened === "Opened")
+        choose({ partition, session: opened.session });
+      return chatPaneOpenLanded(client, partition, opened);
+    },
+  };
+}
+
 /**
  * The offer to start a thread beside those the reader holds, opened under a key
  * held until an open answers, so a press after one that failed reaches the
@@ -126,50 +209,44 @@ function ChatPaneStartDoor(props: {
 function ChatPaneStartControl(props: {
   readonly partition: PartitionIdentity;
   readonly onOpened: (session: string) => void;
-  readonly onRefused: (answer: "Unhosted" | "NoRunner") => void;
+  /** What the door met, newer than the reads of it. */
+  readonly onRefused: (refusal: ThreadSend) => void;
   /** What the door would answer that nothing under the header says. */
   readonly header: ChatPaneHeaderDoor;
 }): ReactNode {
-  const ports = useApiPorts();
-  const [busy, setBusy] = useState(false);
-  const [refused, setRefused] = useState<string | undefined>(undefined);
+  const opening = useConsoleWrite(
+    chatPaneOpenWrite(props.partition, useChatPane().choose),
+    { drawn: true },
+  );
   const [key, setKey] = useState(chatPaneOpenKey);
+  const answered = (opened: ChatPaneOpened): void => {
+    switch (opened.opened) {
+      case "Opened":
+        setKey(chatPaneOpenKey());
+        props.onOpened(opened.session);
+        return;
+      case "Unhosted":
+        props.onRefused({ send: "Unhosted", readsAt: opened.readsAt });
+        return;
+      case "NoRunner":
+        props.onRefused({ send: "Idle" });
+        return;
+    }
+  };
   return (
     <>
       <ChatPaneIconButton
         glyph="new"
         label="New"
-        busy={busy}
-        disabled={busy}
+        busy={opening.isPending}
+        disabled={opening.isPending}
         onClick={() => {
-          setBusy(true);
-          setRefused(undefined);
-          void apiOpenThread(ports, props.partition, key).then((result) => {
-            setBusy(false);
-            if (threadUnhosted(result)) {
-              props.onRefused("Unhosted");
-              return;
-            }
-            if (sessionRefusedNoRunner(result)) {
-              props.onRefused("NoRunner");
-              return;
-            }
-            if (result.outcome !== "Ok") {
-              setRefused(
-                threadOpenAtLimit(result)
-                  ? threadLimitWord
-                  : panelReason(result),
-              );
-              return;
-            }
-            setKey(chatPaneOpenKey());
-            props.onOpened(result.value.session);
-          });
+          opening.mutate(key, { onSuccess: answered });
         }}
       />
-      {refused === undefined ? null : (
+      {opening.error === null ? null : (
         <ChatPaneHeaderRow>
-          <Notice tone="danger" inline detail={`Refused · ${refused}`} />
+          <Notice tone="danger" inline detail={opening.error.message} />
         </ChatPaneHeaderRow>
       )}
       <ChatPaneStartDoor partition={props.partition} header={props.header} />
@@ -462,7 +539,7 @@ function ChatPaneBody(props: {
 function useChatPaneDoor(partition: PartitionIdentity): {
   readonly door: ThreadDoor;
   readonly refusal: ThreadSend;
-  readonly refused: (answer: "Unhosted" | "NoRunner") => void;
+  readonly met: (refusal: ThreadSend) => void;
   readonly opened: () => void;
 } {
   const door = useThreadDoor(partition);
@@ -470,12 +547,7 @@ function useChatPaneDoor(partition: PartitionIdentity): {
   return {
     door: door.door,
     refusal,
-    refused: (answer) => {
-      if (answer === "Unhosted") door.learnt(false);
-      void door.refused().then((met) => {
-        setRefusal(answer === "Unhosted" ? met : { send: "Idle" });
-      });
-    },
+    met: setRefusal,
     /** The grant had to allow the open only where the route was read as hosted. */
     opened: () => {
       setRefusal({ send: "Idle" });
@@ -602,10 +674,10 @@ function ChatPaneOpen(props: {
             partition={props.partition}
             onOpened={(session) => {
               pane.chose(session);
-              door.opened();
+              door.met({ send: "Idle" });
             }}
-            onRefused={(answer) => {
-              door.refused(answer);
+            onRefused={(refusal) => {
+              door.met(refusal);
               pane.stayed();
             }}
             header={chatPaneHeaderDoor(door.door, drawn, held, door.refusal)}

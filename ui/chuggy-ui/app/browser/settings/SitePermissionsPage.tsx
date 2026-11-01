@@ -35,7 +35,7 @@ import {
   sitePermissionsWithheld,
 } from "../../core/permissions.ts";
 import {
-  usePermissionsChange,
+  permissionsChange,
   type PermissionChange,
   type PermissionHolderRoutes,
 } from "./permissionsChange.ts";
@@ -81,8 +81,9 @@ function SitePermissions(props: {
   readonly read: PanelState<AccessSiteAuthorities>;
   readonly people: AccessTenantPeople | undefined;
 }): ReactNode {
-  const change = usePermissionsChange<AccessSiteAuthority>({
+  const change = permissionsChange<AccessSiteAuthority>({
     tenant: props.tenant,
+    scope: [props.tenant],
     level: "Site",
     abilities: undefined,
     people: props.people,

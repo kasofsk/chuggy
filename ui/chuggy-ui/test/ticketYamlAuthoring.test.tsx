@@ -6,7 +6,6 @@
  * the screen around it.
  */
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   cleanup,
   fireEvent,
@@ -19,14 +18,13 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { nativeHttpBasePath } from "../../../src/contract/http.ts";
 import { ticketYamlStoreKey } from "../app/browser/editor/authoringGuards.tsx";
-import { CreationForm } from "../app/browser/TicketCreation.tsx";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
 import {
   creationStageOf,
   creationSubmitEffect,
 } from "../app/core/ticketCreation.ts";
 import type { CreationOffer } from "../app/core/ticketCreation.ts";
-import { creationContextList } from "../app/core/ticketCreationRun.ts";
+import { creationFormDrawn } from "./creationFormDrawn.tsx";
 import { answeringApi } from "./answeringApi.ts";
 import type { Sent } from "./answeringApi.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
@@ -74,27 +72,11 @@ function draw(
 ): boolean[] {
   const dirty: boolean[] = [];
   render(
-    <QueryClientProvider
-      client={
-        new QueryClient({ defaultOptions: { queries: { retry: false } } })
-      }
-    >
-      <CreationForm
-        ports={ports}
-        partition={creationPartition}
-        queryKey={creationContextList(creationPartition).key}
-        context={{
-          context: "Ready",
-          offers,
-          partial: false,
-          repositories: [],
-        }}
-        start="Waits"
-        onCreated={(ticket) => created.push(ticket)}
-        existing={(ticket) => <a href="/there">Ticket {ticket}</a>}
-        onDirty={(held) => dirty.push(held)}
-      />
-    </QueryClientProvider>,
+    creationFormDrawn(ports, offers, {
+      onCreated: (ticket) => created.push(ticket),
+      existing: (ticket) => <a href="/there">Ticket {ticket}</a>,
+      onDirty: (held) => dirty.push(held),
+    }),
   );
   return dirty;
 }

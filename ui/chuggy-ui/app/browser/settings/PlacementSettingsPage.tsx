@@ -16,7 +16,7 @@
  */
 
 import { useParams } from "@tanstack/react-router";
-import { useQueryClient } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type { ReactNode } from "react";
 
@@ -34,6 +34,12 @@ import {
   apiWriteSessionPlacement,
 } from "../../core/apiRoutes.ts";
 import {
+  ConsoleWriteProgress,
+  consoleWriteAnswered,
+  consoleWriteKey,
+} from "../../core/consoleWrite.ts";
+import type { ConsoleWrite } from "../../core/consoleWrite.ts";
+import {
   executionPlacementQuery,
   sessionPlacementQuery,
 } from "../../core/projectQueries.ts";
@@ -42,11 +48,12 @@ import { settingsRoutes } from "../../core/settingsNav.ts";
 import {
   runnerRouteLabel,
   runnerRouteSourceLabel,
-  runnersPlacementAnswered,
   runnersPlacementDraft,
   runnersPlacementMoved,
   runnersPlacementOptions,
+  runnersPlacementRefusal,
   runnersPlacementRoute,
+  runnersPlacementUnhosted,
   runnersPlacementWrites,
   runnerStandingLabel,
 } from "../../core/runners.ts";
@@ -54,10 +61,11 @@ import type {
   RunnersPlacementDraft,
   RunnersPlacementMoves,
   RunnersPlacementOption,
-  RunnersPlacementSaved,
   RunnersPlacementWrites,
 } from "../../core/runners.ts";
-import { useApiPorts, usePanelState } from "../api.ts";
+import { usePanelState } from "../api.ts";
+import { useConsoleWrite, useConsoleWriteProgress } from "../consoleWrite.tsx";
+import type { ConsoleWriting } from "../consoleWrite.tsx";
 import { PanelUnready } from "../DataPanel.tsx";
 import { useSessionPlacement } from "../sessionPlacement.tsx";
 import { Notice } from "../ui/Notice.tsx";
@@ -142,31 +150,30 @@ function PlacementChoice(props: {
 }
 
 function PlacementNotice(props: {
-  readonly saved: RunnersPlacementSaved;
+  readonly saving: ConsoleWriting<PlacementSave, unknown>;
 }): ReactNode {
-  const saved = props.saved;
-  switch (saved.saved) {
-    case "Idle":
-      return null;
-    case "Writing":
-      return <Notice tone="info" inline detail="Writing" />;
-    case "Written":
-      return <Notice tone="live" inline detail="Written" />;
-    case "Unhosted":
-      return (
-        <>
-          <PlacementLanded landed={saved.landed} />
-          <Notice tone="parked" inline detail="Needs hosted runs" />
-        </>
-      );
-    case "Failed":
-      return (
-        <>
-          <PlacementLanded landed={saved.landed} />
-          <Notice tone="danger" inline detail={`Failed · ${saved.reason}`} />
-        </>
-      );
+  const saving = props.saving;
+  const step = useConsoleWriteProgress(saving.variables?.progress);
+  if (saving.isPending) return <Notice tone="info" inline detail="Writing" />;
+  if (saving.error !== null) {
+    const failure = saving.error.failure;
+    return (
+      <>
+        <PlacementLanded landed={step === "ExecutionWritten"} />
+        <Notice
+          tone={
+            failure !== undefined && runnersPlacementUnhosted(failure)
+              ? "parked"
+              : "danger"
+          }
+          inline
+          detail={saving.error.message}
+        />
+      </>
+    );
   }
+  if (saving.isSuccess) return <Notice tone="live" inline detail="Written" />;
+  return null;
 }
 
 /** The placement a save wrote before the one refused, which stands. */
@@ -214,74 +221,67 @@ function PlacementEditor(props: {
   );
 }
 
-interface PlacementWriting {
-  readonly saved: RunnersPlacementSaved;
-  readonly reset: () => void;
-  readonly write: (writes: RunnersPlacementWrites, wrote: () => void) => void;
+/** A save's step: work and evaluation written, so a refusal of the session
+ * placement after it leaves that one standing. */
+type PlacementSaveStep = "ExecutionWritten";
+
+/** One press of Save: what it writes, and where it reports its step. */
+interface PlacementSave {
+  readonly writes: RunnersPlacementWrites;
+  readonly progress: ConsoleWriteProgress<PlacementSaveStep>;
+}
+
+/** A written placement is the newest read of it, so a read still in flight,
+ * which was asked before the write, is cancelled rather than let land over it. */
+async function placementHeld<T>(
+  client: QueryClient,
+  key: ProjectQueryKeyOf<T>,
+  placement: T,
+): Promise<void> {
+  await client.cancelQueries({ queryKey: key });
+  client.setQueryData(key, placement);
 }
 
 /**
  * The doors the section writes through: work and evaluation, then a thread and
- * the lead once the first has landed, each only where the draft moved it. A
- * write that landed is the newest read of its placement, so the page holds it.
+ * the lead once the first has landed, each only where the draft moved it. The
+ * first is held as its newest read as soon as it lands, since it stands
+ * whatever the second answers.
  */
-function usePlacementWriting(partition: PartitionIdentity): PlacementWriting {
-  const ports = useApiPorts();
-  const client = useQueryClient();
-  const [saved, setSaved] = useState<RunnersPlacementSaved>({ saved: "Idle" });
-  /** A read still in flight was asked before the write, so it is cancelled
-   * rather than let land over it. */
-  const held = async <T,>(
-    key: ProjectQueryKeyOf<T>,
-    placement: T,
-  ): Promise<void> => {
-    await client.cancelQueries({ queryKey: key });
-    client.setQueryData(key, placement);
-  };
-  const written = async (writes: RunnersPlacementWrites): Promise<boolean> => {
-    let landed = false;
-    if (writes.execution !== undefined) {
-      const execution = runnersPlacementAnswered(
-        await apiWriteExecutionPlacement(ports, partition, writes.execution),
-      );
-      if (execution.saved !== "Written") {
-        setSaved({ ...execution, landed });
-        return false;
-      }
-      await held(
-        executionPlacementQuery(partition).queryKey,
-        execution.placement,
-      );
-      landed = true;
-    }
-    if (writes.session !== undefined) {
-      const session = runnersPlacementAnswered(
-        await apiWriteSessionPlacement(ports, partition, writes.session),
-      );
-      if (session.saved !== "Written") {
-        setSaved({ ...session, landed });
-        return false;
-      }
-      await held(sessionPlacementQuery(partition).queryKey, session.placement);
-    }
-    return true;
-  };
+function placementWrite(
+  partition: PartitionIdentity,
+): ConsoleWrite<PlacementSave, SessionPlacementResponse | undefined> {
   return {
-    saved,
-    reset: () => {
-      setSaved({ saved: "Idle" });
-    },
-    write: (writes, wrote) => {
-      if (writes.execution === undefined && writes.session === undefined) {
-        wrote();
-        return;
+    mutationKey: consoleWriteKey(
+      "runners-placement",
+      partition.tenant,
+      partition.project,
+    ),
+    write: async (ports, { writes, progress }, client) => {
+      if (writes.execution !== undefined) {
+        const execution = consoleWriteAnswered(
+          await apiWriteExecutionPlacement(ports, partition, writes.execution),
+          runnersPlacementRefusal,
+        );
+        await placementHeld(
+          client,
+          executionPlacementQuery(partition).queryKey,
+          execution,
+        );
+        progress.report("ExecutionWritten");
       }
-      setSaved({ saved: "Writing" });
-      void written(writes).then((landed) => {
-        if (!landed) return;
-        setSaved({ saved: "Written" });
-        wrote();
-      });
+      if (writes.session === undefined)
+        return { outcome: "Ok", value: undefined };
+      return apiWriteSessionPlacement(ports, partition, writes.session);
+    },
+    refusal: runnersPlacementRefusal,
+    landed: async (client, session) => {
+      if (session !== undefined)
+        await placementHeld(
+          client,
+          sessionPlacementQuery(partition).queryKey,
+          session,
+        );
     },
   };
 }
@@ -291,12 +291,14 @@ function PlacementSection(props: {
   readonly execution: ExecutionPlacementResponse;
   readonly session: SessionPlacementResponse;
 }): ReactNode {
-  const writing = usePlacementWriting(props.partition);
+  const saving = useConsoleWrite(placementWrite(props.partition), {
+    drawn: true,
+  });
+  const shown = saving.isPending || saving.error !== null || saving.isSuccess;
   const [editing, setEditing] = useState(false);
   const [moves, setMoves] = useState<RunnersPlacementMoves>({});
   const read = runnersPlacementDraft(props.execution, props.session);
   const draft = runnersPlacementMoved(read, moves);
-  const saved = writing.saved;
   const choices = {
     execution: props.execution.choices,
     session: props.session.choices,
@@ -307,23 +309,30 @@ function PlacementSection(props: {
       about="Where this project's agents run."
       editing={editing}
       editable={choices.execution.length > 0 && choices.session.length > 0}
-      savable={saved.saved !== "Writing"}
+      savable={!saving.isPending}
       footLead={null}
-      {...(saved.saved === "Idle"
-        ? {}
-        : { notice: <PlacementNotice saved={saved} /> })}
+      {...(shown ? { notice: <PlacementNotice saving={saving} /> } : {})}
       onEdit={() => {
         setMoves({});
-        writing.reset();
+        saving.reset();
         setEditing(true);
       }}
       onCancel={() => {
         setEditing(false);
       }}
       onSave={() => {
-        writing.write(runnersPlacementWrites(read, draft), () => {
+        const writes = runnersPlacementWrites(read, draft);
+        if (writes.execution === undefined && writes.session === undefined)
           setEditing(false);
-        });
+        else
+          saving.mutate(
+            { writes, progress: new ConsoleWriteProgress() },
+            {
+              onSuccess: () => {
+                setEditing(false);
+              },
+            },
+          );
       }}
     >
       {editing ? (

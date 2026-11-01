@@ -1,7 +1,8 @@
 /**
  * A workspace's invite links, decided with no renderer: the address a made
- * link is handed out as, what a link's form sends, what making one came to,
- * the word and the access a row draws, and which links the reader may revoke.
+ * link is handed out as, what a link's form sends, the line a refused one
+ * leaves, the word and the access a row draws, and which links the reader may
+ * revoke.
  */
 
 import { expect, test } from "vitest";
@@ -20,10 +21,13 @@ import {
   inviteLinkRevocable,
   inviteLinkRevocationNote,
   inviteLinkStateLabel,
-  tenantInviteLinkOutcome,
   tenantInviteLinkSendable,
 } from "../app/core/inviteLinks.ts";
-import { tenantInvitationBlank } from "../app/core/tenantPeople.ts";
+import {
+  accessFailureLabel,
+  tenantInvitationBlank,
+  tenantInvitationRefusalRereads,
+} from "../app/core/tenantPeople.ts";
 
 const open: AccessInviteLink = {
   link: "l-1",
@@ -80,27 +84,16 @@ test("a link's form is sendable with a role alone, and not with more projects th
   ).toBe(false);
 });
 
-test("a link made is its mint's answer, and a workspace at its limit says so and rereads nothing", () => {
-  const minted = { link: "l-1", token: "t", expiresAtMs: 2, newAccounts: true };
-  expect(
-    tenantInviteLinkOutcome({ outcome: "Ok", value: minted }),
-  ).toStrictEqual({ outcome: "Made", minted });
-  expect(
-    tenantInviteLinkOutcome({
-      outcome: "Conflict",
-      code: accessInviteLinkLimitReachedCode,
-      body: {},
-    }),
-  ).toStrictEqual({
-    outcome: "Refused",
-    status: "Link limit reached",
-    reread: false,
-  });
-  expect(tenantInviteLinkOutcome({ outcome: "Absent" })).toStrictEqual({
-    outcome: "Refused",
-    status: "Not available",
-    reread: true,
-  });
+test("a workspace at its link limit says so and rereads nothing, and an absent answer rereads", () => {
+  const limit = {
+    outcome: "Conflict",
+    code: accessInviteLinkLimitReachedCode,
+    body: {},
+  } as const;
+  expect(accessFailureLabel(limit)).toBe("Link limit reached");
+  expect(tenantInvitationRefusalRereads(limit)).toBe(false);
+  expect(accessFailureLabel({ outcome: "Absent" })).toBe("Not available");
+  expect(tenantInvitationRefusalRereads({ outcome: "Absent" })).toBe(true);
 });
 
 test("every state a link is in has its own word", () => {

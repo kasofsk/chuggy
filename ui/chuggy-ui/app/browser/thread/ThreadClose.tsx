@@ -16,15 +16,14 @@
  * press met.
  */
 
-import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
-import { apiCloseThread } from "../../core/apiRoutes.ts";
-import { panelReason } from "../../core/freshness.ts";
-import { useApiPorts } from "../api.ts";
+import { threadHomeOf } from "../../core/threadHome.ts";
+import { useConsoleWrite } from "../consoleWrite.tsx";
 import { Button, type ButtonSize, type ButtonVariant } from "../ui/Button.tsx";
 import { Notice } from "../ui/Notice.tsx";
+import { threadCloseWrite } from "./ThreadEntryLabel.tsx";
 
 export function ThreadClose(props: {
   readonly partition: PartitionIdentity;
@@ -32,31 +31,25 @@ export function ThreadClose(props: {
   readonly variant: ButtonVariant;
   readonly size?: ButtonSize;
 }): ReactNode {
-  const ports = useApiPorts();
-  const [closing, setClosing] = useState(false);
-  const [refused, setRefused] = useState<string | undefined>(undefined);
+  const closing = useConsoleWrite(
+    threadCloseWrite(threadHomeOf(props.partition), props.session),
+    { drawn: true },
+  );
   return (
     <>
       <Button
         variant={props.variant}
         size={props.size}
-        busy={closing}
-        disabled={closing}
+        busy={closing.isPending}
+        disabled={closing.isPending}
         onClick={() => {
-          setClosing(true);
-          setRefused(undefined);
-          void apiCloseThread(ports, props.partition, props.session).then(
-            (closed) => {
-              setClosing(false);
-              if (closed.outcome !== "Ok") setRefused(panelReason(closed));
-            },
-          );
+          closing.mutate(undefined);
         }}
       >
         Close
       </Button>
-      {refused === undefined ? null : (
-        <Notice tone="danger" inline detail={`Refused · ${refused}`} />
+      {closing.error === null ? null : (
+        <Notice tone="danger" inline detail={closing.error.message} />
       )}
     </>
   );

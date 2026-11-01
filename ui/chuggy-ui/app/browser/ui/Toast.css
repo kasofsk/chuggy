@@ -1,0 +1,41 @@
+/* Toast: lines stacked in the page's lower corner, across the foot on a
+   phone, each a danger wash with its Dismiss at the end. */
+
+@layer ui {
+  .toast-viewport {
+    position: fixed;
+    inset-block-end: 0;
+    inset-inline-end: 0;
+    z-index: 2;
+    display: grid;
+    gap: var(--space-2);
+    width: min(var(--measure), 100%);
+    margin: 0;
+    padding: var(--space-4);
+    list-style: none;
+    outline: none;
+  }
+
+  .toast-viewport:empty {
+    display: none;
+  }
+
+  .toast {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4);
+    background: var(--wash-fail);
+    color: var(--ink-1);
+    border: var(--hairline) solid var(--edge-strong);
+    border-radius: var(--radius-3);
+    font: var(--weight-regular) var(--text-md) / var(--leading-dense)
+      var(--font-prose);
+  }
+
+  .toast-line {
+    flex: 1;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+}

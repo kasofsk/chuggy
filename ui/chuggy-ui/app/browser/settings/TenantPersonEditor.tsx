@@ -13,7 +13,6 @@
  * first, and no box is pressable while it is.
  */
 
-import { useQueryClient } from "@tanstack/react-query";
 import { useId, useState } from "react";
 import type { ReactNode } from "react";
 
@@ -35,9 +34,14 @@ import {
   apiRemoveUnscopedChat,
 } from "../../core/accessRoutes.ts";
 import {
+  ConsoleWriteProgress,
+  consoleWriteKey,
+} from "../../core/consoleWrite.ts";
+import type { ConsoleWrite } from "../../core/consoleWrite.ts";
+import {
+  accessFailureLabel,
   tenantPersonBoxChecked,
   tenantPersonChangeAsks,
-  tenantPersonChangeNote,
   tenantPersonName,
   tenantRunnerRemovalOffered,
   tenantPersonProjectBox,
@@ -49,7 +53,7 @@ import type {
   TenantPersonBox,
   TenantPersonChange,
 } from "../../core/tenantPeople.ts";
-import { useApiPorts } from "../api.ts";
+import { useConsoleWrite, useConsoleWriteProgress } from "../consoleWrite.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { Confirm } from "../ui/Confirm.tsx";
@@ -99,54 +103,72 @@ interface TenantPersonChanging {
   readonly cancel: () => void;
 }
 
-/** One change at a time for one person, from the press to the line it leaves. */
+/** One press of a box: its change, and where the write says it was answered. */
+interface TenantPersonChangePressed {
+  readonly change: TenantPersonChange;
+  readonly progress: ConsoleWriteProgress<"Answered">;
+}
+
+/** One grant or removal for one person, over once the list and the abilities
+ * have answered again; a refusal leaves them to be read again behind it. */
+function tenantPersonChangeWrite(
+  tenant: string,
+  subject: string,
+): ConsoleWrite<TenantPersonChangePressed, undefined> {
+  return {
+    mutationKey: consoleWriteKey("tenant-person-change", tenant, subject),
+    write: async (ports, pressed, client) => {
+      const answered = await tenantPersonChangeSent(
+        ports,
+        tenant,
+        subject,
+        pressed.change,
+      );
+      pressed.progress.report("Answered");
+      if (answered.outcome !== "Ok") void tenantPeopleReread(client, tenant);
+      return answered;
+    },
+    refusal: accessFailureLabel,
+    landed: (client) => tenantPeopleReread(client, tenant),
+  };
+}
+
+/** One change at a time for one person, from the press to the line it leaves:
+ * the editor is freed once the change is answered, and its boxes once the list
+ * has been read again. */
 function useTenantPersonChange(
   tenant: string,
   person: AccessTenantPerson,
+  open: boolean,
 ): TenantPersonChanging {
-  const ports = useApiPorts();
-  const client = useQueryClient();
-  const [sending, setSending] = useState<TenantPersonChange | undefined>(
-    undefined,
+  const writing = useConsoleWrite(
+    tenantPersonChangeWrite(tenant, person.subject),
+    { drawn: open },
   );
-  const [unanswered, setUnanswered] = useState(false);
-  const [note, setNote] = useState<string | undefined>(undefined);
+  const answered =
+    useConsoleWriteProgress(writing.variables?.progress) === "Answered";
   const [asking, setAsking] = useState<TenantPersonChange | undefined>(
     undefined,
   );
   const send = (change: TenantPersonChange): void => {
-    setSending(change);
-    setUnanswered(true);
-    setNote(undefined);
-    void (async () => {
-      const answered = await tenantPersonChangeSent(
-        ports,
-        tenant,
-        person.subject,
-        change,
-      );
-      const refused = tenantPersonChangeNote(answered);
-      setUnanswered(false);
-      setAsking(undefined);
-      setNote(refused);
-      if (refused !== undefined) {
-        setSending(undefined);
-        void tenantPeopleReread(client, tenant);
-        return;
-      }
-      await tenantPeopleReread(client, tenant);
-      setSending(undefined);
-    })();
+    writing.mutate(
+      { change, progress: new ConsoleWriteProgress() },
+      {
+        onSettled: () => {
+          setAsking(undefined);
+        },
+      },
+    );
   };
   return {
-    sending,
-    unanswered,
-    note,
-    asking,
+    sending: writing.isPending ? writing.variables?.change : undefined,
+    unanswered: writing.isPending && !answered,
+    note: writing.error?.message,
+    asking: writing.isPending && answered ? undefined : asking,
     send,
     begin: () => {
       setAsking(undefined);
-      setNote(undefined);
+      writing.reset();
     },
     press: (change) => {
       if (tenantPersonChangeAsks(person, change)) setAsking(change);
@@ -268,7 +290,7 @@ export function TenantPersonEditor(props: {
   readonly abilities: AccessTenantAbilities | undefined;
 }): ReactNode {
   const [open, setOpen] = useState(false);
-  const changing = useTenantPersonChange(props.tenant, props.person);
+  const changing = useTenantPersonChange(props.tenant, props.person, open);
   const name = tenantPersonName(props.person).name;
   const busy = changing.unanswered;
   return (

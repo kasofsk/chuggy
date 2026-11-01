@@ -11,7 +11,7 @@
  */
 
 import { useProjectAbilities } from "./projectAbilities.tsx";
-import { useQueryClient } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
@@ -25,10 +25,11 @@ import type {
 import type { ApiPorts } from "../core/apiRequest.ts";
 import { base64urlFromBytes } from "../core/base64url.ts";
 import type { PanelState } from "../core/freshness.ts";
-import {
-  operationIdBytesCount,
-  operationSubmitting,
-} from "../core/operationFollow.ts";
+import { operationFailureSentence } from "../core/codeSentences.ts";
+import { ConsoleWriteProgress, consoleWriteKey } from "../core/consoleWrite.ts";
+import type { ConsoleWrite } from "../core/consoleWrite.ts";
+import { operationIdBytesCount } from "../core/operationFollow.ts";
+import type { OperationStep } from "../core/operationFollow.ts";
 import {
   creationContextQuery,
   draftInitializationQuery,
@@ -44,8 +45,14 @@ import type {
   CreationOffer,
   TicketCreationForm,
 } from "../core/ticketCreation.ts";
-import { reviseAndUpdateTicket } from "../core/ticketCreationRun.ts";
-import type { CreationContext } from "../core/ticketCreationRun.ts";
+import {
+  TicketUpdateRefused,
+  reviseAndUpdateTicket,
+} from "../core/ticketCreationRun.ts";
+import type {
+  CreationContext,
+  TicketUpdateRequest,
+} from "../core/ticketCreationRun.ts";
 import {
   editFormFrom,
   editOfferListed,
@@ -55,6 +62,8 @@ import {
 import type { EditOffers } from "../core/ticketEdit.ts";
 import { draftQuery, ticketQuery } from "../core/ticketQueries.ts";
 import { useApiPorts, usePanelState } from "./api.ts";
+import { useConsoleWrite, useConsoleWriteProgress } from "./consoleWrite.tsx";
+import type { ConsoleWriting } from "./consoleWrite.tsx";
 import { DataPanel, PanelUnready } from "./DataPanel.tsx";
 import {
   ticketYamlForgotten,
@@ -68,7 +77,8 @@ import {
   AttemptNote,
   CreationContextAbsent,
   CreationFields,
-  useMounted,
+  attemptHeldDraft,
+  attemptRunning,
 } from "./TicketCreation.tsx";
 import type { Attempt } from "./TicketCreation.tsx";
 
@@ -78,12 +88,86 @@ interface EditSubject {
   readonly draft: DraftResponse;
 }
 
+/** One press of an edit's submit: what it sends, and where it reports. */
+interface EditPressed {
+  readonly request: TicketUpdateRequest;
+  readonly progress: ConsoleWriteProgress<OperationStep>;
+}
+
+/** Whether an edit holds the form: while it runs, and once it has updated the
+ * ticket for a press of this form's, until the screen goes to it. */
+function editWriting(writing: ConsoleWriting<EditPressed, number>): boolean {
+  return writing.isPending || (writing.isSuccess && !writing.takenUp);
+}
+
+/** What an edit's write has come to, as its note draws it. */
+function editAttemptOf(
+  writing: ConsoleWriting<EditPressed, number>,
+  step: OperationStep | undefined,
+): Attempt {
+  if (editWriting(writing)) return attemptRunning(step);
+  if (writing.isSuccess) return { attempt: "Idle" };
+  const error = writing.error;
+  if (error === null) return { attempt: "Idle" };
+  if (!(error instanceof TicketUpdateRefused))
+    return { attempt: "Failed", reason: error.message, held: undefined };
+  const ended = error.ended;
+  return ended.created === "Stale"
+    ? { attempt: "Stale", reason: ended.reason }
+    : { attempt: "Failed", reason: ended.reason, held: ended.held };
+}
+
 /**
- * One submit, from the revision it assembles to the state it leaves behind.
- * Whatever it ends in, the ticket and its draft are read again: a revision
- * the update did not land has moved the draft's version, and a refusal for a
+ * An edit through the ports the form was handed. Whatever it ends in, the
+ * ticket and its draft are read again before it is over: a revision the
+ * update did not land has moved the draft's version, and a refusal for a
  * stale revision is answered by the one the ticket is at now.
  */
+function editWrite(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  ticket: number,
+): ConsoleWrite<EditPressed, number> {
+  const reread = (client: QueryClient): Promise<unknown> =>
+    Promise.all([
+      client.invalidateQueries({
+        queryKey: ticketQuery(partition, ticket).queryKey,
+      }),
+      client.invalidateQueries({
+        queryKey: draftQuery(partition, ticket).queryKey,
+      }),
+    ]);
+  return {
+    mutationKey: consoleWriteKey(
+      "ticket-update",
+      partition.tenant,
+      partition.project,
+      ticket,
+    ),
+    write: async (_ports, pressed, client) => {
+      const updated = await reviseAndUpdateTicket(
+        ports,
+        partition,
+        pressed.request,
+        (step) => {
+          pressed.progress.report(step);
+        },
+      );
+      if (updated.created === "Created")
+        return { outcome: "Ok", value: updated.ticket };
+      await reread(client);
+      const reason =
+        updated.created === "Stale"
+          ? updated.reason
+          : `${updated.reason}${attemptHeldDraft(updated.held?.draft, "Update")}`;
+      throw new TicketUpdateRefused(reason, updated);
+    },
+    refusal: operationFailureSentence,
+    landed: reread,
+  };
+}
+
+/** One submit, from the revision it assembles to the state it leaves behind. */
 function useEditSubmit(props: {
   readonly ports: ApiPorts;
   readonly partition: PartitionIdentity;
@@ -95,26 +179,17 @@ function useEditSubmit(props: {
   readonly onUpdated: () => void;
 }): {
   readonly attempt: Attempt;
-  readonly submit: (form: TicketCreationForm) => Promise<void>;
+  readonly busy: boolean;
+  readonly submit: (form: TicketCreationForm) => void;
 } {
-  const client = useQueryClient();
-  const mounted = useMounted();
-  const [attempt, setAttempt] = useState<Attempt>({ attempt: "Idle" });
   const { partition, subject } = props;
+  const writing = useConsoleWrite(
+    editWrite(props.ports, partition, subject.ticket.ticket),
+    { drawn: true },
+  );
+  const step = useConsoleWriteProgress(writing.variables?.progress);
 
-  const reread = async (): Promise<void> => {
-    const ticket = subject.ticket.ticket;
-    await Promise.all([
-      client.invalidateQueries({
-        queryKey: ticketQuery(partition, ticket).queryKey,
-      }),
-      client.invalidateQueries({
-        queryKey: draftQuery(partition, ticket).queryKey,
-      }),
-    ]);
-  };
-
-  const submit = async (form: TicketCreationForm): Promise<void> => {
+  const submit = (form: TicketCreationForm): void => {
     const assembled = editRevisionFrom(
       subject.draft,
       props.offers,
@@ -127,30 +202,22 @@ function useEditSubmit(props: {
       return;
     }
     props.onFaults([]);
-    setAttempt({ attempt: "Running", step: operationSubmitting() });
-    const operation = base64urlFromBytes(drawBytes(operationIdBytesCount));
-    const updated = await reviseAndUpdateTicket(
-      props.ports,
-      partition,
-      { ticket: subject.ticket, body: assembled.body, operation },
-      (step) => {
-        if (mounted.current) setAttempt({ attempt: "Running", step });
-      },
-    );
-    await reread();
-    if (!mounted.current) return;
-    if (updated.created === "Created") {
-      props.onUpdated();
-      return;
-    }
-    setAttempt(
-      updated.created === "Stale"
-        ? { attempt: "Stale", reason: updated.reason }
-        : { attempt: "Failed", reason: updated.reason, held: updated.held },
+    const request: TicketUpdateRequest = {
+      ticket: subject.ticket,
+      body: assembled.body,
+      operation: base64urlFromBytes(drawBytes(operationIdBytesCount)),
+    };
+    writing.mutate(
+      { request, progress: new ConsoleWriteProgress<OperationStep>() },
+      { onSuccess: props.onUpdated },
     );
   };
 
-  return { attempt, submit };
+  return {
+    attempt: editAttemptOf(writing, step),
+    busy: editWriting(writing),
+    submit,
+  };
 }
 
 interface EditFormProps {
@@ -213,10 +280,8 @@ export function EditForm(props: EditFormProps): ReactNode {
         }
         storeKey={storeKey}
         submitLabel="revise and release"
-        busy={running.attempt.attempt === "Running"}
-        onSubmit={(held) => {
-          void running.submit(held);
-        }}
+        busy={running.busy}
+        onSubmit={running.submit}
         onDirty={props.onDirty}
         fields={
           <CreationFields
@@ -227,7 +292,7 @@ export function EditForm(props: EditFormProps): ReactNode {
             partial={props.partial === true}
             repositories={repositories}
             standing={standing}
-            api={props}
+            api={{ ports: props.ports, partition: props.partition, storeKey }}
           />
         }
       />

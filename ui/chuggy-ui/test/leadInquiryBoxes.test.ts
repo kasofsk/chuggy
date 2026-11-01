@@ -33,6 +33,7 @@ import {
 } from "../app/core/leadInquiries.ts";
 import type {
   InquiryAsk,
+  InquiryAskAnswer,
   InquiryBoxes,
   InquiryDraw,
 } from "../app/core/leadInquiries.ts";
@@ -65,7 +66,7 @@ const walkPartitions: readonly [PartitionIdentity, PartitionIdentity] = [
 
 const walkQuestions = ["why", "why not", "  why  ", ""] as const;
 
-const walkAnswers: readonly InquiryAsk[] = [
+const walkAnswers: readonly InquiryAskAnswer[] = [
   { ask: "Asked", session: "inq-taken" },
   { ask: "Refused", word: "In flight" },
   { ask: "Failed", reason: "the API could not be reached" },

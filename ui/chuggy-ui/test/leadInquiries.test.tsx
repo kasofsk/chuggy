@@ -987,6 +987,46 @@ test("one project's last word is not drawn on another's page", async () => {
 });
 
 /**
+ * WHAT THE BOX LAST SAID IS KEPT AS LONG AS THE BOX IS. The write that said it
+ * is collected once nothing observes it, so a reader who leaves a project for
+ * longer than that and comes back still finds what their last press answered.
+ */
+test.each([
+  ["an accepted press", undefined, "Asked"],
+  ["a refusal", () => refusal("InquiriesInFlight"), "In flight"],
+] as const)(
+  "%s is still said by a box come back to after its write was collected",
+  async (_named, asked, said) => {
+    const server = await drawInquiries({
+      listing: () => ({ inquiries: [] }),
+      ...(asked === undefined ? {} : { asked }),
+    });
+    await turned(() => {
+      typed("why is ticket 41 waiting?");
+    });
+    await turned(ask);
+    await settled();
+    expect(screen.getByText(said)).toBeDefined();
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      await server.moveTo(elsewhere);
+      const writes = server.client.getMutationCache();
+      expect(writes.getAll().length).toBe(1);
+      const collectedMs = writes.getAll()[0]?.gcTime ?? 0;
+      vi.advanceTimersByTime(collectedMs + 1);
+      expect(writes.getAll(), "the write was not collected").toStrictEqual([]);
+      await server.moveTo(leadPartition);
+    } finally {
+      vi.useRealTimers();
+    }
+    expect(
+      screen.queryByText(said),
+      "a box came back to without what its last press answered",
+    ).not.toBeNull();
+  },
+);
+
+/**
  * AN ACCEPTED PRESS RE-READS THE PROJECT IT WAS ASKED IN. The answer may arrive
  * after the reader has moved on, and re-reading whichever project is on screen
  * would leave the asked project's listing without the inquiry that was just

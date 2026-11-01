@@ -23,21 +23,22 @@ import {
   projectRepositoriesQuery,
   projectRepositoriesReachUnaskedQuery,
 } from "../../core/projectQueries.ts";
+import { consoleWriteKey } from "../../core/consoleWrite.ts";
+import type { ConsoleWrite } from "../../core/consoleWrite.ts";
 import {
   projectRepositoriesWith,
-  repositoryLandingAnswered,
   repositoryLandingChosen,
   repositoryLandingDraft,
+  repositoryLandingMoved,
   repositoryLandingRebased,
+  repositoryLandingRefusal,
   repositoryLandingRestored,
   repositoryLandingSavable,
   repositoryLandingWrite,
 } from "../../core/repositoryLanding.ts";
-import type {
-  RepositoryLandingDraft,
-  RepositoryLandingSaved,
-} from "../../core/repositoryLanding.ts";
-import { useApiPorts } from "../api.ts";
+import type { RepositoryLandingDraft } from "../../core/repositoryLanding.ts";
+import { useConsoleWrite } from "../consoleWrite.tsx";
+import type { ConsoleWriting } from "../consoleWrite.tsx";
 import { useProjectAbilities } from "../projectAbilities.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { RadioGroup } from "../ui/RadioGroup.tsx";
@@ -51,23 +52,27 @@ const landingOptions = briefFinalizationModes.map((mode) => ({
 
 /** What the last write did, in the one line the section says it in. */
 function RepositoryLandingNotice(props: {
-  readonly saved: RepositoryLandingSaved;
+  readonly saving: ConsoleWriting<
+    RepositoryLandingDraft,
+    ProjectRepositoryResponse
+  >;
 }): ReactNode {
-  const saved = props.saved;
-  switch (saved.saved) {
-    case "Idle":
-      return null;
-    case "Writing":
-      return <Notice tone="info" inline detail="Writing" />;
-    case "Written":
-      return <Notice tone="live" inline detail="Written" />;
-    case "Conflict":
-      return <Notice tone="parked" inline detail="Settings moved" />;
-    case "Failed":
-      return (
-        <Notice tone="danger" inline detail={`Failed · ${saved.reason}`} />
-      );
-  }
+  const saving = props.saving;
+  if (saving.isPending) return <Notice tone="info" inline detail="Writing" />;
+  if (saving.error !== null)
+    return (
+      <Notice
+        tone={
+          repositoryLandingMoved(saving.error.failure) === undefined
+            ? "danger"
+            : "parked"
+        }
+        inline
+        detail={saving.error.message}
+      />
+    );
+  if (saving.isSuccess) return <Notice tone="live" inline detail="Written" />;
+  return null;
 }
 
 interface RepositoryLandingHeld {
@@ -94,57 +99,44 @@ function useRepositoryLandingDraft(
   return { draft, setDraft };
 }
 
-interface RepositoryLandingWriting {
-  readonly saved: RepositoryLandingSaved;
-  readonly write: (wrote: () => void) => void;
-  readonly reload: () => void;
-}
-
 /**
- * The one door the binding's settings write through. A write that landed IS
- * the newest read of its row, so it is written into the bindings the page
- * holds, and the read with reach is staled, rather than left for a refetch
- * nothing schedules: the route raises no frame.
+ * The one door the binding's settings write through, one section's under a key
+ * of its own. A write that landed IS the newest read of its row, so it is
+ * written into the bindings the page holds, and the read with reach is read
+ * again, rather than left for a refetch nothing schedules: the route raises no
+ * frame.
  */
-function useRepositoryLandingWriting(
+function repositorySettingWrite(
   partition: PartitionIdentity,
   repository: string,
-  held: RepositoryLandingHeld,
-): RepositoryLandingWriting {
-  const ports = useApiPorts();
-  const client = useQueryClient();
-  const [saved, setSaved] = useState<RepositoryLandingSaved>({ saved: "Idle" });
-  const key = projectRepositoriesReachUnaskedQuery(partition).queryKey;
+  title: string,
+): ConsoleWrite<RepositoryLandingDraft, ProjectRepositoryResponse> {
   return {
-    saved,
-    reload: () => {
-      void projectRepositoriesInvalidated(client, partition);
-    },
-    write: (wrote) => {
-      setSaved({ saved: "Writing" });
-      void (async () => {
-        const answered = repositoryLandingAnswered(
-          await apiWriteProjectRepositoryLanding(
-            ports,
-            partition,
-            repositoryLandingWrite(held.draft, repository),
-          ),
-        );
-        setSaved(answered);
-        if (answered.saved === "Written") {
-          client.setQueryData(key, (bindings) =>
-            bindings === undefined
-              ? bindings
-              : projectRepositoriesWith(bindings, answered.binding),
-          );
-          void client.invalidateQueries({
-            queryKey: projectRepositoriesQuery(partition).queryKey,
-          });
-          wrote();
-        }
-        if (answered.saved === "Conflict")
-          held.setDraft(repositoryLandingRebased(held.draft, answered.binding));
-      })();
+    mutationKey: consoleWriteKey(
+      "repository-setting",
+      partition.tenant,
+      partition.project,
+      repository,
+      title,
+    ),
+    write: (ports, draft) =>
+      apiWriteProjectRepositoryLanding(
+        ports,
+        partition,
+        repositoryLandingWrite(draft, repository),
+      ),
+    refusal: repositoryLandingRefusal,
+    landed: async (client, binding) => {
+      client.setQueryData(
+        projectRepositoriesReachUnaskedQuery(partition).queryKey,
+        (bindings) =>
+          bindings === undefined
+            ? bindings
+            : projectRepositoriesWith(bindings, binding),
+      );
+      await client.invalidateQueries({
+        queryKey: projectRepositoriesQuery(partition).queryKey,
+      });
     },
   };
 }
@@ -163,14 +155,19 @@ export function RepositorySettingSection(props: {
   readonly body: (held: RepositoryLandingHeld, editing: boolean) => ReactNode;
 }): ReactNode {
   const held = useRepositoryLandingDraft(props.binding);
-  const writing = useRepositoryLandingWriting(
-    props.partition,
-    props.binding.repository,
-    held,
+  const client = useQueryClient();
+  const saving = useConsoleWrite(
+    repositorySettingWrite(
+      props.partition,
+      props.binding.repository,
+      props.title,
+    ),
+    { drawn: true },
   );
   const [editing, setEditing] = useState(false);
   const abilities = useProjectAbilities(props.partition);
-  const saved = writing.saved;
+  const shown = saving.isPending || saving.error !== null || saving.isSuccess;
+  const moved = repositoryLandingMoved(saving.error?.failure);
   return (
     <SettingsSection
       title={props.title}
@@ -178,14 +175,18 @@ export function RepositorySettingSection(props: {
       editing={editing}
       editable
       readOnly={projectAbilityRefused(abilities, "administer")}
-      savable={
-        repositoryLandingSavable(held.draft) && saved.saved !== "Writing"
-      }
+      savable={repositoryLandingSavable(held.draft) && !saving.isPending}
       footLead={null}
-      {...(saved.saved === "Idle"
+      {...(shown
+        ? { notice: <RepositoryLandingNotice saving={saving} /> }
+        : {})}
+      {...(moved === undefined
         ? {}
-        : { notice: <RepositoryLandingNotice saved={saved} /> })}
-      {...(saved.saved === "Conflict" ? { onReload: writing.reload } : {})}
+        : {
+            onReload: () => {
+              void projectRepositoriesInvalidated(client, props.partition);
+            },
+          })}
       onEdit={() => {
         setEditing(true);
       }}
@@ -194,8 +195,16 @@ export function RepositorySettingSection(props: {
         setEditing(false);
       }}
       onSave={() => {
-        writing.write(() => {
-          setEditing(false);
+        const draft = held.draft;
+        saving.mutate(draft, {
+          onSuccess: () => {
+            setEditing(false);
+          },
+          onError: (refused) => {
+            const standing = repositoryLandingMoved(refused.failure);
+            if (standing !== undefined)
+              held.setDraft(repositoryLandingRebased(draft, standing));
+          },
         });
       }}
     >
