@@ -28,7 +28,7 @@ import { consoleWriteKey } from "../../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../../core/consoleWrite.ts";
 import { ownerFallbackQuery } from "../../core/projectQueries.ts";
 import { usePanelState } from "../api.ts";
-import { useConsoleWrite } from "../consoleWrite.tsx";
+import { ConsoleWriteRefusedWords, useConsoleWrite } from "../consoleWrite.tsx";
 import type { ConsoleWriting } from "../consoleWrite.tsx";
 import { PanelUnready } from "../DataPanel.tsx";
 import { Notice } from "../ui/Notice.tsx";
@@ -45,7 +45,11 @@ function OwnerFallbackNotice(props: {
   const saving = props.saving;
   if (saving.isPending) return <Notice tone="info" inline detail="Writing" />;
   if (saving.error !== null)
-    return <Notice tone="danger" inline detail={saving.error.message} />;
+    return (
+      <Notice tone="danger" inline>
+        <ConsoleWriteRefusedWords refused={saving.error} />
+      </Notice>
+    );
   if (saving.isSuccess) return <Notice tone="live" inline detail="Written" />;
   return null;
 }

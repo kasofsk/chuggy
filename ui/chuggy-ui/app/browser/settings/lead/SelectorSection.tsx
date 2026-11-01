@@ -11,6 +11,7 @@ import type { ReactNode } from "react";
 import { instantFigure } from "../../../core/figures.ts";
 import type { SelectorSettingsConflictResponse } from "../../../../../../src/contract/responses.ts";
 import { selectorSettingsConflictOf } from "../../../core/selectorSettingsForm.ts";
+import { ConsoleWriteRefusedWords } from "../../consoleWrite.tsx";
 import { useNowMs } from "../../Freshness.tsx";
 import type { SelectorSettingsShown } from "../../selectorSettingsWriting.ts";
 import { Figure } from "../../ui/Figure.tsx";
@@ -55,9 +56,15 @@ export function SelectorSettingsSavedNotice(props: {
   if (saved.error !== null) {
     const conflict = selectorSettingsConflictOf(saved.error.failure);
     if (conflict === undefined)
-      return <Notice tone="danger" inline detail={saved.error.message} />;
+      return (
+        <Notice tone="danger" inline>
+          <ConsoleWriteRefusedWords refused={saved.error} />
+        </Notice>
+      );
     return conflict.movedBy === undefined ? (
-      <Notice tone="parked" inline detail={saved.error.message} />
+      <Notice tone="parked" inline>
+        <ConsoleWriteRefusedWords refused={saved.error} />
+      </Notice>
     ) : (
       <Notice tone="parked" inline>
         <SelectorSettingsMovedBy movedBy={conflict.movedBy} />

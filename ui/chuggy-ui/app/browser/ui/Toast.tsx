@@ -12,11 +12,14 @@ import { Toast as RadixToast } from "radix-ui";
 import type { ReactNode } from "react";
 
 import { buttonLookClassName } from "./Button.tsx";
+import { Tooltip } from "./Tooltip.tsx";
 import "./Toast.css";
 
 export interface ToastLine {
   readonly id: number;
   readonly line: string;
+  /** On hover of the line, for a reader reporting it. */
+  readonly detail?: string | undefined;
 }
 
 export function Toasts(props: {
@@ -36,7 +39,9 @@ export function Toasts(props: {
           }}
         >
           <RadixToast.Description className="toast-line">
-            {toast.line}
+            <Tooltip text={toast.detail}>
+              <span>{toast.line}</span>
+            </Tooltip>
           </RadixToast.Description>
           <RadixToast.Close
             className={buttonLookClassName({ variant: "quiet", size: "sm" })}

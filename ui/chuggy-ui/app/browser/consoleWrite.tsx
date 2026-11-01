@@ -1,6 +1,6 @@
 /**
- * The one way a screen writes: `useConsoleWrite` over a mutation, and the toast
- * that draws a refusal whose screen was left.
+ * The one way a screen writes: `useConsoleWrite` over a mutation, the words a
+ * refusal is drawn in, and the toast that draws one whose screen was left.
  *
  * A WRITE OUTLIVES ITS SCREEN. Nothing aborts it on unmount, and a screen that
  * mounts while one is in flight under its key takes it up and draws it as its
@@ -27,6 +27,7 @@ import type { ReactNode } from "react";
 
 import {
   consoleWriteAnswered,
+  consoleWriteRefusedDetail,
   consoleWriteRefusedOf,
   consoleWriteWatchOf,
 } from "../core/consoleWrite.ts";
@@ -37,6 +38,7 @@ import type {
 } from "../core/consoleWrite.ts";
 import { useApiPorts } from "./api.ts";
 import { Toasts } from "./ui/Toast.tsx";
+import { Tooltip } from "./ui/Tooltip.tsx";
 
 /** What a screen draws of its write, and the press that makes one. What a
  * press asks to be told is told only while the screen that pressed is mounted. */
@@ -212,10 +214,24 @@ export function ConsoleWriteToasts(): ReactNode {
       toasts={unseen.map((refused) => ({
         id: refused.id,
         line: refused.sentence,
+        detail: refused.detail,
       }))}
       onDismiss={(id) => {
         watch.dismissed(id);
       }}
     />
+  );
+}
+
+/** A refused write's sentence, with what its failure carries beyond it on
+ * hover of the sentence and never in it. */
+export function ConsoleWriteRefusedWords(props: {
+  readonly refused: ConsoleWriteRefused;
+  readonly className?: string;
+}): ReactNode {
+  return (
+    <Tooltip text={consoleWriteRefusedDetail(props.refused)}>
+      <span className={props.className}>{props.refused.message}</span>
+    </Tooltip>
   );
 }

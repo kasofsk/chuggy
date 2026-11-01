@@ -24,7 +24,10 @@ import {
 } from "../../core/apiRoutes.ts";
 import type { ApiFailure, ApiResult } from "../../core/apiRequest.ts";
 import { consoleWriteKey } from "../../core/consoleWrite.ts";
-import type { ConsoleWrite } from "../../core/consoleWrite.ts";
+import type {
+  ConsoleWrite,
+  ConsoleWriteRefused,
+} from "../../core/consoleWrite.ts";
 import { instantFigure } from "../../core/figures.ts";
 import { failureWords } from "../../core/failureWords.ts";
 import type { PanelState } from "../../core/freshness.ts";
@@ -36,7 +39,7 @@ import {
 import { chatHostQuery } from "../../core/tenantQueries.ts";
 import { runnerStandingTone } from "../../core/tones.ts";
 import { usePanelState } from "../api.ts";
-import { useConsoleWrite } from "../consoleWrite.tsx";
+import { ConsoleWriteRefusedWords, useConsoleWrite } from "../consoleWrite.tsx";
 import type { ConsoleWriting } from "../consoleWrite.tsx";
 import { useNowMs } from "../Freshness.tsx";
 import { RunnerVersion } from "../RunnerVersion.tsx";
@@ -264,7 +267,9 @@ function ChatHostWritten(props: {
       <ChatHostMinted minted={minted} short={short} onDone={writing.done} />
     );
   return writing.refused === undefined ? null : (
-    <Notice tone="danger" inline detail={writing.refused} />
+    <Notice tone="danger" inline>
+      <ConsoleWriteRefusedWords refused={writing.refused} />
+    </Notice>
   );
 }
 
@@ -273,7 +278,7 @@ function ChatHostWritten(props: {
 interface ChatHostWriting {
   readonly minting: ConsoleWriting<undefined, WorkerPoolTokenResponse>;
   readonly asking: boolean;
-  readonly refused: string | undefined;
+  readonly refused: ConsoleWriteRefused | undefined;
   readonly busy: boolean;
   readonly mint: () => void;
   readonly ask: () => void;
@@ -291,7 +296,7 @@ function useChatHostWriting(tenant: string): ChatHostWriting {
   return {
     minting,
     asking,
-    refused: (minting.error ?? removing.error)?.message,
+    refused: minting.error ?? removing.error ?? undefined,
     busy:
       asking || minting.isPending || minting.isSuccess || removing.isPending,
     mint: () => {

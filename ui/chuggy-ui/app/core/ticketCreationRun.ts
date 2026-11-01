@@ -55,7 +55,6 @@ import {
 } from "./apiRoutes.ts";
 import type { ApiFailure, ApiPorts, ApiResult } from "./apiRequest.ts";
 import { ConsoleWriteRefused } from "./consoleWrite.ts";
-import { readFailedLine } from "./failureWords.ts";
 import {
   draftRevisionFailureSentence,
   draftRevisionRefusalSentence,
@@ -152,6 +151,8 @@ export type TicketCreated<Held extends DraftHeld = DraftHeld> =
       readonly created: "Refused";
       readonly reason: string;
       readonly held: Held | undefined;
+      /** The held draft's read, where its failing is why nothing was written. */
+      readonly unread?: ApiFailure | undefined;
     };
 
 /**
@@ -227,10 +228,9 @@ export function creationDraftHeldSentence(held: CreationDraftHeld): string {
   return `${standing}; submitting again goes back to that draft rather than creating another`;
 }
 
-/** A held draft that could not be read, which is read before it is written. */
-export function creationDraftUnreadSentence(failure: ApiFailure): string {
-  return readFailedLine("Draft", failure);
-}
+/** What a submit did to a held draft it could not read, which it reads before
+ * it writes. */
+export const creationDraftUnreadSentence = "nothing was written to the draft";
 
 /** A held draft read as deleted, which no later submit goes back to. */
 export function creationDraftDeletedSentence(ticket: number): string {
@@ -421,11 +421,13 @@ function creationDraftHolds(
 function creationRefused(
   reason: string,
   held: CreationDraftHeld,
+  unread?: ApiFailure,
 ): TicketCreationEnded {
   return {
     created: "Refused",
     reason: `${reason} — ${creationDraftHeldSentence(held)}`,
     held,
+    ...(unread === undefined ? {} : { unread }),
   };
 }
 
@@ -468,7 +470,7 @@ async function creationDraftRevised(
   const ticket = held.draft.ticket;
   const read = await apiDraft(ports, partition, ticket);
   if (read.outcome !== "Ok")
-    return creationRefused(creationDraftUnreadSentence(read), held);
+    return creationRefused(creationDraftUnreadSentence, held, read);
   const closed = creationDraftClosed(read.value, held);
   if (closed !== undefined) return closed;
   const revised = await apiReviseDraft(ports, partition, ticket, {

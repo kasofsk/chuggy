@@ -70,7 +70,7 @@ import { threadsQuery } from "../../core/sessionQueries.ts";
 import { sessionRefusedNoRunner } from "../../core/sessionRunners.ts";
 import { threadHomeOf } from "../../core/threadHome.ts";
 import { usePanelState } from "../api.ts";
-import { useConsoleWrite } from "../consoleWrite.tsx";
+import { ConsoleWriteRefusedWords, useConsoleWrite } from "../consoleWrite.tsx";
 import { drawBytes } from "../ports.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { Conversation } from "../conversation/Conversation.tsx";
@@ -248,7 +248,9 @@ function ChatPaneStartControl(props: {
       />
       {opening.error === null ? null : (
         <ChatPaneHeaderRow>
-          <Notice tone="danger" inline detail={opening.error.message} />
+          <Notice tone="danger" inline>
+            <ConsoleWriteRefusedWords refused={opening.error} />
+          </Notice>
         </ChatPaneHeaderRow>
       )}
       <ChatPaneStartDoor partition={props.partition} header={props.header} />

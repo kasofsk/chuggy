@@ -14,7 +14,10 @@ import type { ReactNode } from "react";
 import { threadTitleCharsMax } from "../../../../../src/contract/http.ts";
 import type { ThreadEntryResponse } from "../../../../../src/contract/responses.ts";
 import { consoleWriteKey } from "../../core/consoleWrite.ts";
-import type { ConsoleWrite } from "../../core/consoleWrite.ts";
+import type {
+  ConsoleWrite,
+  ConsoleWriteRefused,
+} from "../../core/consoleWrite.ts";
 import { failureWords } from "../../core/failureWords.ts";
 import {
   apiCloseThreadAt,
@@ -29,8 +32,8 @@ import { memberChatReread } from "./threadRead.ts";
 export interface ThreadEntryActions {
   readonly renaming: boolean;
   readonly busy: boolean;
-  /** The sentence the last press was refused in. */
-  readonly refused: string | undefined;
+  /** What the last press was refused in. */
+  readonly refused: ConsoleWriteRefused | undefined;
   readonly closable: boolean;
   /** Whether renaming this thread is the reader's to do: the door is
    * owner-scoped and refuses `NotYourThread` otherwise, so a thread that is
@@ -100,7 +103,7 @@ export function useThreadEntryActions(
   return {
     renaming,
     busy: renames.isPending || closes.isPending,
-    refused: (renames.error ?? closes.error)?.message,
+    refused: renames.error ?? closes.error ?? undefined,
     closable: offered.includes("Close"),
     renameable: offered.includes("Rename"),
     startRename: () => {

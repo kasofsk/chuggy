@@ -19,7 +19,7 @@ import type {
   RunnerKind,
   RunnerPackageName,
 } from "../core/runners.ts";
-import { useConsoleWrite } from "./consoleWrite.tsx";
+import { ConsoleWriteRefusedWords, useConsoleWrite } from "./consoleWrite.tsx";
 import type { ConsoleWriteShown, ConsoleWriting } from "./consoleWrite.tsx";
 import { Button } from "./ui/Button.tsx";
 import { Checkbox } from "./ui/Checkbox.tsx";
@@ -231,7 +231,9 @@ function RunnerAskForm(props: { readonly minting: RunnerMinting }): ReactNode {
         fault={fault}
       />
       {writing.error === null ? null : (
-        <Notice tone="danger" inline detail={writing.error.message} />
+        <Notice tone="danger" inline>
+          <ConsoleWriteRefusedWords refused={writing.error} />
+        </Notice>
       )}
       <RunnerAskPresses
         busy={writing.isPending}

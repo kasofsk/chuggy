@@ -60,6 +60,7 @@ import {
   ticketRefusedFirst,
 } from "./ticketReleasing.tsx";
 import type { TicketDoor } from "./ticketReleasing.tsx";
+import { readFailedLines } from "./readFailedLines.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { SessionProvider } from "../app/browser/session.tsx";
 import { holderDouble, settled } from "./screenHarness.tsx";
@@ -696,7 +697,12 @@ test("a held draft that cannot be read is said, written nothing, and read again 
   held.since();
   typeIntent("ship that");
   await submitted();
-  expect(note()).toBe(`Draft · Not read · Server error — ${draftUnreleased}`);
+  expect(note()).toBe(`nothing was written to the draft — ${draftUnreleased}`);
+  expect(readFailedLines()).toStrictEqual(["Draft · Not read · Server error"]);
+  fireEvent.focus(screen.getByText("Server error"));
+  expect((await screen.findByRole("tooltip")).textContent).toBe(
+    "InternalError",
+  );
   expect(held.since()).toStrictEqual([draftRead]);
   reads.failing = false;
   submit();

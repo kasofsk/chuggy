@@ -25,6 +25,7 @@ import { navRoutes } from "../../core/shellNav.ts";
 import type { ThreadHome } from "../../core/threadHome.ts";
 import { threadLabel, threadsByStanding } from "../../core/threads.ts";
 import { threadStandingTone } from "../../core/tones.ts";
+import { ConsoleWriteRefusedWords } from "../consoleWrite.tsx";
 import { useNowMs } from "../Freshness.tsx";
 import { currentOrigin } from "../ports.ts";
 import { buttonLookClassName } from "../ui/Button.tsx";
@@ -492,7 +493,9 @@ export function ChatPaneThreadActions(props: {
       ) : null}
       {actions.refused === undefined ? null : (
         <ChatPaneHeaderRow>
-          <Notice tone="danger" inline detail={actions.refused} />
+          <Notice tone="danger" inline>
+            <ConsoleWriteRefusedWords refused={actions.refused} />
+          </Notice>
         </ChatPaneHeaderRow>
       )}
     </>

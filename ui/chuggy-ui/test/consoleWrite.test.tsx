@@ -193,3 +193,33 @@ test("a write the server faulted on is sent once", async () => {
   ).toBeDefined();
   expect(writesSent(page.sent)).toBe(1);
 });
+
+test("a refusal's code is not in its line, and is on hover of it", async () => {
+  await drawn(consoleQueryClient(), () =>
+    answer({ error: { code: "Fault" } }, 500),
+  );
+  await saved();
+  await settled();
+
+  const line = within(sectionOf(sectionTitle)).getByText(refusedSentence);
+  expect(line.closest(".notice")?.textContent).toBe(refusedSentence);
+  fireEvent.focus(line);
+  expect((await screen.findByRole("tooltip")).textContent).toBe("Fault");
+});
+
+test("a refusal's code is not in its toast, and is on hover of it", async () => {
+  const held = heldAnswer();
+  const page = await drawn(consoleQueryClient(), () => held.answered);
+  await saved();
+  await page.shown(false);
+  await turned(() => {
+    held.release(answer({ error: { code: "Fault" } }, 500));
+  });
+  await settled();
+
+  expect(toastLines()).toStrictEqual([refusedSentence]);
+  const toast = document.querySelector(".toast-line span");
+  if (toast === null) throw new Error("the refusal drew no toast");
+  fireEvent.focus(toast);
+  expect((await screen.findByRole("tooltip")).textContent).toBe("Fault");
+});

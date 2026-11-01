@@ -23,7 +23,6 @@ import { repositoryImportRefused } from "../app/core/repositoryImport.ts";
 import { repositoryLandingRefusal } from "../app/core/repositoryLanding.ts";
 import { runnersPlacementRefusal } from "../app/core/runners.ts";
 import { selectorSettingsRefusal } from "../app/core/selectorSettingsForm.ts";
-import { creationDraftUnreadSentence } from "../app/core/ticketCreationRun.ts";
 
 const every: { readonly [O in ApiFailure["outcome"]]: ApiFailure } = {
   Unauthenticated: { outcome: "Unauthenticated" },
@@ -130,7 +129,6 @@ const writeLines: readonly (readonly [
     (failure) => inquiryAskRefusalSentence(inquiryAskRefused(failure)),
   ],
   ["an import pressed", repositoryImportRefused],
-  ["a held draft revised", creationDraftUnreadSentence],
 ];
 
 test("no write's line says its refusal twice, or carries a code", () => {
