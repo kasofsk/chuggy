@@ -13,6 +13,7 @@ import { expect, test } from "vitest";
 import { nativeHttpBasePath } from "../../../src/contract/http.ts";
 import type { ProjectRepositoryListedResponse } from "../../../src/contract/responses.ts";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
+import { consoleWriteRefusedDetail } from "../app/core/consoleWrite.ts";
 import { configurationPagesMax } from "../app/core/apiRoutes.ts";
 import {
   createAndReleaseTicket,
@@ -21,6 +22,7 @@ import {
   creationProjectNotActiveSentence,
   readCreationContext,
   reviseAndUpdateTicket,
+  TicketUpdateRefused,
 } from "../app/core/ticketCreationRun.ts";
 import {
   creationBinding,
@@ -785,6 +787,26 @@ test("an update nobody saw settle says so, holding the revised draft", async () 
     reason: "Still pending",
     held: { draft: revisedDraft },
   });
+});
+
+test("an update whose release the API faults keeps its code on hover and in no line", async () => {
+  const pending = updateAnswers({});
+  const held = answering((method, path) =>
+    method === "POST"
+      ? { status: 500, body: { error: { code: "InternalError" } } }
+      : pending(method, path),
+  );
+  const updated = await reviseAndUpdateTicket(
+    held.ports,
+    creationPartition,
+    updateSubmission,
+    () => undefined,
+  );
+  if (updated.created !== "Refused") throw new Error(updated.created);
+  expect(updated.reason).toBe("Server error");
+  const refused = new TicketUpdateRefused(updated.reason, updated);
+  expect(refused.message).not.toContain("InternalError");
+  expect(consoleWriteRefusedDetail(refused)).toBe("InternalError");
 });
 
 test("an update onto a ticket that waits on this one says it would never start", async () => {
