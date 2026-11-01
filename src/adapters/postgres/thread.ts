@@ -657,11 +657,10 @@ export function postgresThreadSeeding(pool: pg.Pool): ThreadSeedingRead {
         ticket: string | null;
         reason: string | null;
       }>(
-        sql`SELECT standing.ticket::text AS ticket,standing.reason
-              FROM read_standing_agentic_refusals(
-                     ${partition.tenant},${partition.project},${limit}) standing
-             WHERE standing.ticket = ANY(${[...tickets]}::bigint[])
-             ORDER BY standing.ticket`,
+        sql`SELECT ticket::text AS ticket,reason
+              FROM read_thread_agentic_refusals(
+                     ${partition.tenant},${partition.project},
+                     ${[...tickets]}::bigint[],${limit})`,
       );
       return found.rows.map((row): ThreadSeededRefusal => ({
         ticket: projectRowCounter(
