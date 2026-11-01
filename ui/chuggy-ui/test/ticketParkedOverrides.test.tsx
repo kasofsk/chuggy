@@ -25,6 +25,10 @@ import type { ReactNode } from "react";
 import type { ConfigurationOverrides } from "../../../src/contract/configurationOverrides.ts";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { TicketPage } from "../app/browser/TicketPage.tsx";
+import {
+  consoleQueryClient,
+  consoleWriteWatchOf,
+} from "../app/core/consoleWrite.ts";
 import { creationCatalogCanonical } from "./ticketCreationFixture.ts";
 import {
   answer,
@@ -229,13 +233,15 @@ function serving(
   };
 }
 
-async function drawn(): Promise<HTMLElement> {
+async function drawn(
+  client: QueryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  }),
+): Promise<HTMLElement> {
   render(
     <ScreenHarness
       partition={atlas}
-      client={
-        new QueryClient({ defaultOptions: { queries: { retry: false } } })
-      }
+      client={client}
       transport={openedStream().ports.fetch}
     >
       <TicketPage />
@@ -380,6 +386,56 @@ test("a refused change is drawn on the card, holding what was typed, and Resume 
   await pressed(card, "Discard");
   expect(within(card).getByRole("button", { name: "Resume" })).toBeDefined();
 });
+
+/** The served double with the save's settlement held until `release`. */
+function settlementHeld(): {
+  readonly asked: () => boolean;
+  readonly release: () => Promise<void>;
+} {
+  const served = globalThis.fetch;
+  const settlement = heldAnswer();
+  let held = "";
+  vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+    if (held !== "" || !url.includes("/operations/")) return served(url, init);
+    held = url;
+    return settlement.answered;
+  });
+  return {
+    asked: () => held !== "",
+    release: async () => {
+      const answered = await served(held);
+      await turned(() => {
+        settlement.release(answered);
+      });
+      await settled();
+    },
+  };
+}
+
+test.each([
+  ["open", false, 0],
+  ["closed", true, 1],
+])(
+  "a change refused while its panel is %s is the card's or the shell's toast",
+  async (_said, closed, toasts) => {
+    serving("WorkFailureEscalated", "OverridesMoveDefinition");
+    const settlement = settlementHeld();
+    const client = consoleQueryClient();
+    const card = await drawn(client);
+    await overridesOpened(card);
+    await modelTyped(card, "opus");
+    await pressed(card, "Save overrides");
+    expect(settlement.asked()).toBe(true);
+    if (closed) await overridesOpened(card);
+
+    await settlement.release();
+    const sentence = "Not saved · Overrides would change the definition";
+    expect(card.textContent?.includes(sentence)).toBe(!closed);
+    expect(
+      consoleWriteWatchOf(client).unseen.map((unseen) => unseen.sentence),
+    ).toEqual(Array.from({ length: toasts }, () => sentence));
+  },
+);
 
 test("a change keeps an override the card does not draw, as the ticket holds it", async () => {
   const instructions = { work: { instructions: ["Do the held work."] } };
