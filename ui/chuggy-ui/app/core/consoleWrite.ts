@@ -9,8 +9,9 @@
  * A REFUSAL NOBODY DRAWS IS KEPT TO BE SHOWN. A mounted screen watches its
  * write's key, and is asked, as each refusal under it lands, whether it draws
  * that refusal where it stands now; one no screen draws — the screen that
- * asked was left, or stands where the refusal is not drawn — is held here
- * until the shell has shown it and the reader has let it go.
+ * asked was left, or stands where the refusal is not drawn — is handed to the
+ * client's store, which holds it until the shell has shown it and the reader
+ * has let it go.
  */
 
 import {
@@ -128,8 +129,57 @@ export interface ConsoleWriteUnseen {
   readonly detail: string | undefined;
 }
 
+/** The refusals no screen took, and how many have been kept, which names the
+ * next one. */
+export interface ConsoleWriteUnseenHeld {
+  readonly kept: number;
+  readonly unseen: readonly ConsoleWriteUnseen[];
+}
+
 /** The refusals held for the shell at most, the oldest let go first. */
 export const consoleWriteUnseenMax = 3;
+
+export const consoleWriteUnseenHeldEmpty: ConsoleWriteUnseenHeld = {
+  kept: 0,
+  unseen: [],
+};
+
+/** What the shell draws of a refusal, before it is named. */
+export type ConsoleWriteUnseenSaid = Omit<ConsoleWriteUnseen, "id">;
+
+export function consoleWriteUnseenSaidOf(
+  refused: ConsoleWriteRefused,
+): ConsoleWriteUnseenSaid {
+  return {
+    sentence: refused.message,
+    detail: consoleWriteRefusedDetail(refused),
+  };
+}
+
+/** The refusals once `said` is kept, named one past the last kept. */
+export function consoleWriteUnseenKept(
+  held: ConsoleWriteUnseenHeld,
+  said: ConsoleWriteUnseenSaid,
+): ConsoleWriteUnseenHeld {
+  const kept = held.kept + 1;
+  return {
+    kept,
+    unseen: [...held.unseen, { id: kept, ...said }].slice(
+      -consoleWriteUnseenMax,
+    ),
+  };
+}
+
+/** The refusals once the reader let `id` go. */
+export function consoleWriteUnseenDismissed(
+  held: ConsoleWriteUnseenHeld,
+  id: number,
+): ConsoleWriteUnseenHeld {
+  return {
+    ...held,
+    unseen: held.unseen.filter((unseen) => unseen.id !== id),
+  };
+}
 
 /** Whether a screen draws a refusal under its key, asked as the refusal lands
  * with the variables its write was sent with. */
@@ -138,13 +188,11 @@ export type ConsoleWriteDrawn = (
   variables: unknown,
 ) => boolean;
 
-/** Which write keys mounted screens watch, and the refusals that landed where
- * none of them draws it. */
+/** Which write keys mounted screens watch, and who hears a refusal that
+ * landed where none of them draws it. */
 export class ConsoleWriteWatch {
   readonly #watching = new Map<string, Set<ConsoleWriteDrawn>>();
-  readonly #listeners = new Set<() => void>();
-  #unseen: readonly ConsoleWriteUnseen[] = [];
-  #kept = 0;
+  #unseen: ((refused: ConsoleWriteRefused) => void) | undefined = undefined;
 
   /** Watching `key`, asking `drawn` of each refusal under it, until the
    * release this answers is called. */
@@ -161,8 +209,14 @@ export class ConsoleWriteWatch {
     };
   }
 
-  /** A write under `key` was refused: kept for the shell where no screen
-   * watching that key draws it. */
+  /** Who hears each refusal no watching screen draws, in place of any before
+   * it; with nobody, such a refusal is let go. */
+  unseenHeard(heard: (refused: ConsoleWriteRefused) => void): void {
+    this.#unseen = heard;
+  }
+
+  /** A write under `key` was refused: handed on where no screen watching that
+   * key draws it. */
   refused(
     key: MutationKey | undefined,
     refused: ConsoleWriteRefused,
@@ -172,36 +226,7 @@ export class ConsoleWriteWatch {
       key === undefined ? undefined : this.#watching.get(hashKey(key));
     if ([...(watchers ?? [])].some((drawn) => drawn(refused, variables)))
       return;
-    this.#kept += 1;
-    this.#unseen = [
-      ...this.#unseen,
-      {
-        id: this.#kept,
-        sentence: refused.message,
-        detail: consoleWriteRefusedDetail(refused),
-      },
-    ].slice(-consoleWriteUnseenMax);
-    this.#told();
-  }
-
-  get unseen(): readonly ConsoleWriteUnseen[] {
-    return this.#unseen;
-  }
-
-  dismissed(id: number): void {
-    this.#unseen = this.#unseen.filter((unseen) => unseen.id !== id);
-    this.#told();
-  }
-
-  subscribe(listener: () => void): () => void {
-    this.#listeners.add(listener);
-    return () => {
-      this.#listeners.delete(listener);
-    };
-  }
-
-  #told(): void {
-    for (const listener of this.#listeners) listener();
+    this.#unseen?.(refused);
   }
 }
 

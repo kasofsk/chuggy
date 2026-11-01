@@ -93,6 +93,54 @@ export default tseslint.config(
       ],
     },
   },
+  // A browser that refuses storage throws on the first touch of it, and the
+  // ports are what answer that.
+  {
+    files: ["app/**/*.ts", "app/**/*.tsx"],
+    ignores: ["app/browser/ports.ts"],
+    rules: {
+      "no-restricted-globals": [
+        "error",
+        {
+          name: "localStorage",
+          message:
+            "storage is reached through `persistentStore` in `app/browser/ports.ts`",
+        },
+        {
+          name: "sessionStorage",
+          message:
+            "storage is reached through `transientStore` in `app/browser/ports.ts`",
+        },
+      ],
+    },
+  },
+  // What a new holder would keep is a slice's. These four subscribe to what
+  // the store cannot hold: the session, the viewport, the query cache and a
+  // write's own progress.
+  {
+    files: ["app/**/*.ts", "app/**/*.tsx"],
+    ignores: [
+      "app/browser/session.tsx",
+      "app/browser/shell/viewport.ts",
+      "app/browser/api.ts",
+      "app/browser/consoleWrite.tsx",
+    ],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "react",
+              importNames: ["useSyncExternalStore"],
+              message:
+                "state a component does not own is a slice's, read through `useConsoleSelector` in `app/browser/store.ts`",
+            },
+          ],
+        },
+      ],
+    },
+  },
   // This file, which no program of the console's typechecks and which runs on
   // Node rather than in a browser.
   {

@@ -38,10 +38,8 @@ import {
   queryClientUnretried,
 } from "./screenHarness.tsx";
 import { nativeHttpMediaType } from "../../../src/contract/http.ts";
-import {
-  consoleQueryClient,
-  consoleWriteWatchOf,
-} from "../app/core/consoleWrite.ts";
+import { consoleQueryClient } from "../app/core/consoleWrite.ts";
+import { consoleWriteUnseenOf } from "../app/browser/consoleWriteUnseen.ts";
 import type { ConsoleStore } from "../app/browser/store.ts";
 import {
   ticketAttemptAt,
@@ -565,7 +563,9 @@ async function cancelRefusedUndrawn(
 
   expect(screen.queryByText(/^Cancel refused · /)).toBeNull();
   expect(
-    consoleWriteWatchOf(client).unseen.map((unseen) => unseen.sentence),
+    consoleWriteUnseenOf(tabStoreOf(client).getState()).map(
+      (unseen) => unseen.sentence,
+    ),
   ).toEqual([expect.stringMatching(/^Cancel refused · /)]);
 }
 
@@ -606,7 +606,7 @@ test("a cancellation refused while its follow is drawn is no toast", async () =>
   await settled();
 
   expect(screen.getByText(/^Cancel refused · /)).toBeDefined();
-  expect(consoleWriteWatchOf(client).unseen).toEqual([]);
+  expect(consoleWriteUnseenOf(tabStoreOf(client).getState())).toEqual([]);
 });
 
 /** `api` with the ticket's own read answering `Absent` once `gone.absent` is
@@ -679,7 +679,7 @@ test("a submission refused once the ticket's read is not ready is the shell's to
   });
   await settled();
 
-  const [toast, ...more] = consoleWriteWatchOf(client).unseen;
+  const [toast, ...more] = consoleWriteUnseenOf(tabStoreOf(client).getState());
   expect(more).toEqual([]);
   expect(toast).toBeDefined();
   expect(screen.queryByText(toast?.sentence ?? "")).toBeNull();

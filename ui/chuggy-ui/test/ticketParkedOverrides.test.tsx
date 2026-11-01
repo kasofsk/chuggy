@@ -25,10 +25,10 @@ import type { ReactNode } from "react";
 import type { ConfigurationOverrides } from "../../../src/contract/configurationOverrides.ts";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { TicketPage } from "../app/browser/TicketPage.tsx";
-import {
-  consoleQueryClient,
-  consoleWriteWatchOf,
-} from "../app/core/consoleWrite.ts";
+import { consoleQueryClient } from "../app/core/consoleWrite.ts";
+import { consoleStoreBare } from "./consoleStoreBare.tsx";
+import type { ConsoleStore } from "../app/browser/store.ts";
+import { consoleWriteUnseenOf } from "../app/browser/consoleWriteUnseen.ts";
 import { creationCatalogCanonical } from "./ticketCreationFixture.ts";
 import {
   answer,
@@ -237,12 +237,14 @@ async function drawn(
   client: QueryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   }),
+  store?: ConsoleStore,
 ): Promise<HTMLElement> {
   render(
     <ScreenHarness
       partition={atlas}
       client={client}
       transport={openedStream().ports.fetch}
+      {...(store === undefined ? {} : { store })}
     >
       <TicketPage />
     </ScreenHarness>,
@@ -421,7 +423,8 @@ test.each([
     serving("WorkFailureEscalated", "OverridesMoveDefinition");
     const settlement = settlementHeld();
     const client = consoleQueryClient();
-    const card = await drawn(client);
+    const store = consoleStoreBare(client);
+    const card = await drawn(client, store);
     await overridesOpened(card);
     await modelTyped(card, "opus");
     await pressed(card, "Save overrides");
@@ -432,7 +435,7 @@ test.each([
     const sentence = "Not saved · Overrides would change the definition";
     expect(card.textContent?.includes(sentence)).toBe(!closed);
     expect(
-      consoleWriteWatchOf(client).unseen.map((unseen) => unseen.sentence),
+      consoleWriteUnseenOf(store.getState()).map((unseen) => unseen.sentence),
     ).toEqual(Array.from({ length: toasts }, () => sentence));
   },
 );

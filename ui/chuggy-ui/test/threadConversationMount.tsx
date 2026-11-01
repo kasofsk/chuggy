@@ -38,14 +38,14 @@ export function threadConversationMounted(
   const drawn = (shown: ThreadResponse): ReactNode => (
     <SessionProvider holder={holder}>
       <QueryClientProvider client={client}>
-        <ProjectStreamProvider
-          partition={threadPartition}
-          transport={server.ports.fetch}
-        >
-          <ConsoleStoreProvided>
+        <ConsoleStoreProvided>
+          <ProjectStreamProvider
+            partition={threadPartition}
+            transport={server.ports.fetch}
+          >
             <ThreadConversation partition={threadPartition} thread={shown} />
-          </ConsoleStoreProvided>
-        </ProjectStreamProvider>
+          </ProjectStreamProvider>
+        </ConsoleStoreProvided>
       </QueryClientProvider>
     </SessionProvider>
   );

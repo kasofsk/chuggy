@@ -80,6 +80,7 @@ import {
   reloadLocation,
   syntaxWorkerOpened,
 } from "./ports.ts";
+import { consoleOutdatedOf } from "./consoleOutdated.ts";
 import { ConsoleWriteToasts } from "./consoleWrite.tsx";
 import { ChatPane } from "./shell/ChatPane.tsx";
 import { useChatPane } from "./shell/chatPaneHeld.ts";
@@ -97,9 +98,9 @@ import {
 import {
   useProjectFallbackExhausted,
   useProjectStreamLapsed,
-  useProjectStreamOutdated,
   useProjectStreamStatus,
 } from "./stream.tsx";
+import { useConsoleSelector } from "./store.ts";
 import { Button } from "./ui/Button.tsx";
 import { CopyProvider } from "./ui/copyHeld.tsx";
 import { MarkdownProvider } from "./ui/markdownHeld.ts";
@@ -133,7 +134,7 @@ export function StreamBanner(): ReactNode {
  * someone is typing.
  */
 export function VersionBanner(): ReactNode {
-  if (!useProjectStreamOutdated()) return null;
+  if (!useConsoleSelector(consoleOutdatedOf)) return null;
   return (
     <Notice
       tone="info"

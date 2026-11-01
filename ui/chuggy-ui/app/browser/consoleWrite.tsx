@@ -37,6 +37,11 @@ import type {
   ConsoleWriteRefused,
 } from "../core/consoleWrite.ts";
 import { useApiPorts } from "./api.ts";
+import {
+  consoleWriteUnseenLetGo,
+  consoleWriteUnseenOf,
+} from "./consoleWriteUnseen.ts";
+import { useConsoleDispatch, useConsoleSelector } from "./store.ts";
 import { Toasts } from "./ui/Toast.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
 
@@ -204,11 +209,8 @@ export function useConsoleWriteProgress<S>(
 
 /** The refusals no mounted screen took, drawn once for the whole console. */
 export function ConsoleWriteToasts(): ReactNode {
-  const watch = consoleWriteWatchOf(useQueryClient());
-  const unseen = useSyncExternalStore(
-    (changed) => watch.subscribe(changed),
-    () => watch.unseen,
-  );
+  const dispatch = useConsoleDispatch();
+  const unseen = useConsoleSelector(consoleWriteUnseenOf);
   return (
     <Toasts
       toasts={unseen.map((refused) => ({
@@ -217,7 +219,7 @@ export function ConsoleWriteToasts(): ReactNode {
         detail: refused.detail,
       }))}
       onDismiss={(id) => {
-        watch.dismissed(id);
+        dispatch(consoleWriteUnseenLetGo(id));
       }}
     />
   );

@@ -25,10 +25,8 @@ import type {
 import { selectorProposalNotHeldCode } from "../../../src/contract/rosters.ts";
 import { InboxScreen } from "../app/browser/Inbox.tsx";
 import type { ConsoleStore } from "../app/browser/store.ts";
-import {
-  consoleQueryClient,
-  consoleWriteWatchOf,
-} from "../app/core/consoleWrite.ts";
+import { consoleQueryClient } from "../app/core/consoleWrite.ts";
+import { consoleWriteUnseenOf } from "../app/browser/consoleWriteUnseen.ts";
 import { inboxAsked, inboxBody, inboxEntry } from "./inboxFixture.ts";
 import {
   abilitiesEvery,
@@ -419,7 +417,7 @@ const other: SelectorProposalResponse = { decision: "dec-two", tickets: [9] };
  * them all go, which is the read a refusal waits on before it lands.
  */
 function drawRefusedBeside(): {
-  readonly client: QueryClient;
+  readonly store: ConsoleStore;
   readonly reread: () => void;
 } {
   const waiting: (() => void)[] = [];
@@ -450,17 +448,21 @@ function drawRefusedBeside(): {
     abilitiesFetch(abilitiesEvery, ((url: string, init?: { method?: string }) =>
       Promise.resolve(respond(url, init))) as typeof fetch),
   );
-  const client = inboxDrawn(consoleQueryClient());
+  const client = consoleQueryClient();
+  const store = consoleStoreBare(client);
+  inboxDrawn(client, store);
   return {
-    client,
+    store,
     reread: () => {
       for (const release of waiting.splice(0)) release();
     },
   };
 }
 
-function unseen(client: QueryClient): readonly string[] {
-  return consoleWriteWatchOf(client).unseen.map((refused) => refused.sentence);
+function unseen(store: ConsoleStore): readonly string[] {
+  return consoleWriteUnseenOf(store.getState()).map(
+    (refused) => refused.sentence,
+  );
 }
 
 const refusedSentence = "Proposal 7, 8 · Failed · InternalError";
@@ -476,7 +478,7 @@ test("a refused review the notice says is no toast", async () => {
   await settled();
 
   expect(said()).toBe(refusedSentence);
-  expect(unseen(api.client)).toStrictEqual([]);
+  expect(unseen(api.store)).toStrictEqual([]);
 });
 
 test("a refused review whose notice a later answer took is the shell's toast", async () => {
@@ -496,5 +498,5 @@ test("a refused review whose notice a later answer took is the shell's toast", a
   await settled();
 
   expect(said()).toBe("Proposal 9 · Approved");
-  expect(unseen(api.client)).toStrictEqual([refusedSentence]);
+  expect(unseen(api.store)).toStrictEqual([refusedSentence]);
 });
