@@ -40,10 +40,8 @@ export const operationStepsMax = operationAttemptsMax * 2 + 4;
 export type OperationSubmission = z.infer<typeof submissionSchema>;
 
 /**
- * Why a follow stopped short of an answer. A wait that outlasted the budget
- * names the wait; a step the machine had no transition for is `OutOfOrder`,
- * and a follow that took every step it may is `Overstepped`. An answered
- * failure keeps the outcome the contract classified, and a throw its message.
+ * Why a follow stopped short of an answer: the wait that outlasted the budget,
+ * a step out of order, every step taken, or what an answer or a throw said.
  */
 export type OperationAbandonCause =
   | {
