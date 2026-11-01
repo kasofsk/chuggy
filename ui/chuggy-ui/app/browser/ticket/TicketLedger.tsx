@@ -15,7 +15,7 @@
  * rows never falls short of the cycle's own rollup beside them.
  */
 
-import { useCallback, useState } from "react";
+import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
@@ -24,15 +24,17 @@ import type {
   ExecutionSummary,
   ExecutionsResponse,
 } from "../../../../../src/contract/responses.ts";
-import { apiExecution, apiExecutions } from "../../core/apiRoutes.ts";
+import type { PanelState } from "../../core/freshness.ts";
+import {
+  executionQuery,
+  ticketExecutionsQuery,
+} from "../../core/executionQueries.ts";
 import { spanFigure, spendFigures, whenFigure } from "../../core/figures.ts";
 import type { Spend } from "../../core/figures.ts";
 import {
   executionRequirementLabel,
   executionSizeLabel,
 } from "../../core/labels.ts";
-import { projectListFolded } from "../../core/projectQueryKeys.ts";
-import type { ProjectListChange } from "../../core/projectQueryKeys.ts";
 import { runReasonAttempt, runRefusalOf } from "../../core/runReason.ts";
 import { runResultLineOf } from "../../core/runResult.ts";
 import type { RunResultOpened } from "../../core/runResult.ts";
@@ -49,7 +51,6 @@ import type {
   TicketLandingsJoined,
   TicketLandingsState,
 } from "../../core/ticketLandings.ts";
-import { ticketExecutionsFolded } from "../../core/ticketExecutions.ts";
 import type {
   Cycle,
   EvaluatorRow,
@@ -69,7 +70,7 @@ import {
   ticketLedger,
 } from "../../core/ticketLedger.ts";
 import { stageArm, verdictTone } from "../../core/tones.ts";
-import { usePanelList, usePanelResource } from "../api.ts";
+import { usePanelState } from "../api.ts";
 import { DataPanel } from "../DataPanel.tsx";
 import { useRunReason } from "../RunEvidence.tsx";
 import { RunConversationFollowed } from "../RunTranscript.tsx";
@@ -333,13 +334,8 @@ function SetRowRan(
 ): ReactNode {
   const first = props.first;
   const { partition } = props.chrome;
-  const state = usePanelResource(
-    partition,
-    "Execution",
-    first.execution,
-    (ports) => apiExecution(ports, partition, first.execution),
-    undefined,
-    "Streamed",
+  const state = usePanelState(
+    executionQuery(partition, first.execution, "Streamed"),
   );
   const read = state.state === "Ready" ? state.value : undefined;
   const opened = useRunResultOpened(partition, first.execution, read);
@@ -718,16 +714,8 @@ export function UngroupedRows(props: {
 export function useTicketExecutions(
   partition: PartitionIdentity,
   ticket: number,
-): ReturnType<typeof usePanelList<ExecutionsResponse>> {
-  const fold = useCallback(
-    (previous: ExecutionsResponse | undefined, change: ProjectListChange) =>
-      ticketExecutionsFolded(ticket, previous, change),
-    [ticket],
-  );
-  return usePanelList(
-    projectListFolded(partition, "Execution", `ticket:${String(ticket)}`, fold),
-    (ports) => apiExecutions(ports, partition, { ticket }),
-  );
+): PanelState<ExecutionsResponse> {
+  return usePanelState(ticketExecutionsQuery(partition, ticket));
 }
 
 /** One row's one detail is open at a time, which is the state the whole
@@ -776,7 +764,7 @@ function TicketRows(props: {
 
 export function TicketLedgerPanel(props: {
   readonly partition: PartitionIdentity;
-  readonly page: ReturnType<typeof usePanelList<ExecutionsResponse>>;
+  readonly page: PanelState<ExecutionsResponse>;
   readonly program: TicketProgram | undefined;
   readonly landings: TicketLandingsState;
   readonly nowMs: number;

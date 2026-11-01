@@ -12,47 +12,33 @@ import type {
   AccessSiteAuthorities,
   AccessTenantAuthorities,
 } from "../../../../../src/contract/accessPlane.ts";
-import {
-  apiSiteAbilities,
-  apiSiteAuthorities,
-  apiTenantAuthorities,
-} from "../../core/accessRoutes.ts";
 import type { PanelState } from "../../core/freshness.ts";
-import { tenantResourceKey } from "../../core/projectQueryKeys.ts";
-import { usePanelTenantResource } from "../api.ts";
+import {
+  siteAbilitiesQuery,
+  sitePermissionsQuery,
+  tenantPermissionsQuery,
+} from "../../core/tenantQueries.ts";
+import { usePanelState } from "../api.ts";
 import { tenantPeopleReread } from "./tenantPeopleResource.ts";
-
-/** No frame names these reads. */
-export const tenantPermissionsResource = "access-authorities";
-
-export const sitePermissionsResource = "access-site-authorities";
-
-export const siteAbilitiesResource = "access-site-abilities";
 
 export function useTenantAuthorities(
   tenant: string,
 ): PanelState<AccessTenantAuthorities> {
-  return usePanelTenantResource(tenant, tenantPermissionsResource, (ports) =>
-    apiTenantAuthorities(ports, tenant),
-  );
+  return usePanelState(tenantPermissionsQuery(tenant));
 }
 
 /** The site's list, held under the workspace whose page reads it. */
 export function useSiteAuthorities(
   tenant: string,
 ): PanelState<AccessSiteAuthorities> {
-  return usePanelTenantResource(tenant, sitePermissionsResource, (ports) =>
-    apiSiteAuthorities(ports),
-  );
+  return usePanelState(sitePermissionsQuery(tenant));
 }
 
 /** What the reader may do on the site, held under the workspace whose settings read it. */
 export function useSiteAbilities(
   tenant: string,
 ): PanelState<AccessSiteAbilities> {
-  return usePanelTenantResource(tenant, siteAbilitiesResource, (ports) =>
-    apiSiteAbilities(ports),
-  );
+  return usePanelState(siteAbilitiesQuery(tenant));
 }
 
 export async function tenantPermissionsReread(
@@ -62,13 +48,9 @@ export async function tenantPermissionsReread(
   await Promise.all([
     tenantPeopleReread(client, tenant),
     ...[
-      tenantPermissionsResource,
-      sitePermissionsResource,
-      siteAbilitiesResource,
-    ].map((resource) =>
-      client.invalidateQueries({
-        queryKey: tenantResourceKey(tenant, resource),
-      }),
-    ),
+      tenantPermissionsQuery(tenant),
+      sitePermissionsQuery(tenant),
+      siteAbilitiesQuery(tenant),
+    ].map((query) => client.invalidateQueries({ queryKey: query.queryKey })),
   ]);
 }

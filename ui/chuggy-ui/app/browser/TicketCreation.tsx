@@ -76,11 +76,9 @@ import type {
 } from "../core/ticketCreation.ts";
 import {
   createAndReleaseTicket,
-  creationContextList,
   creationContextSentence,
   creationStaleUnreadSentence,
   creationTicketExistsSentence,
-  readCreationContext,
 } from "../core/ticketCreationRun.ts";
 import type {
   CreationContext,
@@ -92,7 +90,8 @@ import { ticketDuplicateDroppedSentence } from "../core/ticketDuplicate.ts";
 import type { TicketDuplicateSeed } from "../core/ticketDuplicate.ts";
 import { operationSubmitting } from "../core/operationFollow.ts";
 import type { OperationStep } from "../core/operationFollow.ts";
-import { usePanelList, useApiPorts } from "./api.ts";
+import { creationContextQuery } from "../core/configurationQueries.ts";
+import { usePanelState, useApiPorts } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import {
   ticketConfigurationKept,
@@ -1062,11 +1061,9 @@ function CreationScreenRead(props: {
     useWorkRunner(partition, "Reader"),
   );
   const standing = creationStandingOf(useProjectAbilities(partition));
-  const list = creationContextList(partition);
-  const queryKey = list.key;
-  const state = usePanelList(list, (readPorts) =>
-    readCreationContext(readPorts, partition),
-  );
+  const query = creationContextQuery(partition);
+  const queryKey = query.queryKey;
+  const state = usePanelState(query);
   return (
     <DataPanel title="Draft" state={state}>
       {(context) =>

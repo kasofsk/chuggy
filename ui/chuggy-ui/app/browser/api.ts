@@ -1,67 +1,40 @@
 /**
- * The API, as this browser's ports and as the hooks a screen reads it through.
+ * The API, as this browser's ports and as the one bridge a screen reads a
+ * console query through.
  *
- * A query holds the resource itself and not a wrapper, so that a live change
- * frame can be written into the same key with `setQueryData`; a failed read
- * therefore arrives as the error, carrying the outcome the contract classified.
- *
- * There is a hook per kind of key and none that takes a key. WHAT THAT MAKES
- * UNWRITABLE IS A LIST ENTRY WITH NO REFRESH, and only that: `usePanelList`
- * takes a `ProjectList`, which cannot be made without one, so the omission that
- * left a dispatch panel reading once is now a compile error.
- *
- * IT PROMISES NOTHING ABOUT A RESOURCE. `usePanelResource` takes the resource
- * name as a string, and a name no frame carries typechecks: the evidence panels
- * read parts under an execution — a run's turns, its configuration, an
- * artifact's body — while the change log names the bare execution id. Those
- * entries are reached by the partition's own refetch and by nothing else, which
- * is the freshness a finished run's evidence needs and is not live.
- *
- * A READ IS KEPT ONLY WHERE ITS CALLER SAYS SO. `Streamed` marks a key a frame
- * writes or rereads, which is not read again on a visit while the stream holds
- * its position, since the frames have kept it; a key `projectStreamedNamed`
- * does not admit is refused when it is read.
+ * What a read is — its key, its fetch, its type and its freshness — is the
+ * query's, in `core/consoleQuery.ts` and the factories built on it. What is
+ * here is only what needs this tab: the session the ports run under, whether
+ * the stream holds its position, and the cache.
  */
 
 import {
   hashKey,
-  keepPreviousData,
   notifyManager,
   queryOptions,
-  useQueries,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
-import type { UseQueryResult } from "@tanstack/react-query";
+import type {
+  QueryKey,
+  UseQueryResult,
+  keepPreviousData,
+} from "@tanstack/react-query";
 import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
 
-import type { PartitionIdentity } from "../../../../src/contract/http.ts";
-import type { ProjectChangeKind } from "../../../../src/contract/events.ts";
 import { apiPortsOver } from "../core/apiPorts.ts";
 import { apiOrThrow } from "../core/apiRequest.ts";
-import type { ApiPorts, ApiResult } from "../core/apiRequest.ts";
+import type { ApiPorts } from "../core/apiRequest.ts";
+import type { ConsoleQuery } from "../core/consoleQuery.ts";
 import { panelReason, panelStateFromQuery } from "../core/freshness.ts";
 import type { PanelState } from "../core/freshness.ts";
-import {
-  callerResourceKey,
-  projectResourceKey,
-  projectStreamedNamed,
-  projectsInventoryKey,
-  tenantResourceKey,
-} from "../core/projectQueryKeys.ts";
-import type { ProjectList, ProjectQueryKey } from "../core/projectQueryKeys.ts";
 import { apiFetch, sleepMs } from "./ports.ts";
 import { useSessionHolder } from "./session.tsx";
-import { useProjectListRefresh, useProjectStreamHolding } from "./stream.tsx";
-
-type PanelRead<T> = (
-  ports: ApiPorts,
-  signal: AbortSignal,
-) => Promise<ApiResult<T>>;
-
-/** Whether a resource read is kept while the stream holds its position, as
- * one a frame writes or rereads is, or read again whenever a screen mounts. */
-export type PanelResourceKept = "Streamed" | "Read";
+import {
+  useProjectListRefresh,
+  useProjectStreamHolding,
+  useProjectStreamHoldingAsked,
+} from "./stream.tsx";
 
 /**
  * The ports every read runs on, where a refusal the session could not see
@@ -77,45 +50,40 @@ export function useApiPorts(): ApiPorts {
   );
 }
 
-/** One key's read, the same however many keys a screen asks for at once, so a
- * key two screens read is read one way. */
-function panelQueryOptions<T>(
+/** One query's options, the same however many queries a screen asks for at
+ * once, so a key two screens read is read one way: kept for ever while the
+ * stream holds its position under a `Streamed` read, whose frames keep it, and
+ * stale at once otherwise. */
+export function panelQueryOptions<T>(
   ports: ApiPorts,
-  key: ProjectQueryKey,
-  read: PanelRead<T>,
-  polledMs: number | undefined,
-  staleMs = 0,
+  streamHolding: boolean,
+  query: ConsoleQuery<T>,
 ) {
   return queryOptions({
-    queryKey: key,
-    queryFn: async ({ signal }) =>
-      apiOrThrow(await read(ports, signal), panelReason),
-    refetchInterval: polledMs ?? false,
-    staleTime: staleMs,
+    queryKey: query.queryKey,
+    queryFn: async ({ signal, client }) =>
+      apiOrThrow(
+        await query.read(ports, signal, client.getQueryData(query.queryKey)),
+        panelReason,
+      ),
+    refetchInterval: query.polledMs ?? false,
+    staleTime: query.kept === "Streamed" && streamHolding ? Infinity : 0,
   });
 }
 
-/** How long the resources' reads stay fresh: for ever while the stream holds
- * its position under a `Streamed` read, whose frames keep them, and never
- * otherwise. */
-function usePanelResourceStaleMs(
-  kind: ProjectChangeKind,
-  resources: readonly string[],
-  kept: PanelResourceKept,
-): number {
-  const holding = useProjectStreamHolding();
-  if (kept === "Read") return 0;
-  for (const resource of resources)
-    if (!projectStreamedNamed(kind, resource))
-      throw new Error(
-        `a ${kind} read of ${resource} is kept, and no frame names it`,
-      );
-  return holding ? Infinity : 0;
+/** What turns a console query into the cache's options under this tab's ports
+ * and stream, for `useQueries` over several of them. */
+export function usePanelQueryOptions(): <T>(
+  query: ConsoleQuery<T>,
+) => ReturnType<typeof panelQueryOptions<T>> {
+  const ports = useApiPorts();
+  const streamHolding = useProjectStreamHolding();
+  return (query) => panelQueryOptions(ports, streamHolding, query);
 }
 
 /** The query's state, carrying a press that reads it again where its last read
  * failed. */
-function panelQueryState<T>(query: UseQueryResult<T>): PanelState<T> {
+export function panelQueryState<T>(query: UseQueryResult<T>): PanelState<T> {
   const state = panelStateFromQuery<T>({
     data: query.data,
     error: query.error,
@@ -139,7 +107,7 @@ function panelQueryState<T>(query: UseQueryResult<T>): PanelState<T> {
  * that answer taken away with it.
  */
 function usePanelAbsenceKept<T>(
-  key: ProjectQueryKey,
+  key: QueryKey,
   query: UseQueryResult<T>,
   state: PanelState<T>,
 ): PanelState<T> {
@@ -157,237 +125,65 @@ function usePanelAbsenceKept<T>(
     : state;
 }
 
-function usePanelQuery<T>(
-  key: ProjectQueryKey,
-  read: PanelRead<T>,
-  polledMs?: number,
-  asked = true,
-  staleMs = 0,
-): PanelState<T> {
-  const ports = useApiPorts();
-  const query = useQuery({
-    ...panelQueryOptions(ports, key, read, polledMs, staleMs),
-    enabled: asked,
-  });
-  return usePanelAbsenceKept(key, query, panelQueryState(query));
-}
-
-/** One resource of one kind, written by the frame that names it — or a part
- * under one, which no frame names and the partition's refetch reaches. One
- * that moves where no frame says so is read again every `polledMs` while a
- * screen draws it and the tab is in view. */
-export function usePanelResource<T>(
-  partition: PartitionIdentity,
-  kind: ProjectChangeKind,
-  resource: string,
-  read: PanelRead<T>,
-  polledMs?: number,
-  kept: PanelResourceKept = "Read",
-): PanelState<T> {
-  const staleMs = usePanelResourceStaleMs(kind, [resource], kept);
-  return usePanelQuery(
-    projectResourceKey(partition, kind, resource),
-    read,
-    polledMs,
-    true,
-    staleMs,
-  );
-}
-
-/** A resource as `usePanelResource` reads it, requested only while `asked`
- * and pending while not, whatever an earlier read left under its key. */
-export function usePanelResourceAsked<T>(
-  partition: PartitionIdentity,
-  kind: ProjectChangeKind,
-  resource: string,
-  read: PanelRead<T>,
-  polledMs: number | undefined,
-  asked: boolean,
-  kept: PanelResourceKept = "Read",
-): PanelState<T> {
-  const staleMs = usePanelResourceStaleMs(kind, [resource], kept);
-  const state = usePanelQuery(
-    projectResourceKey(partition, kind, resource),
-    read,
-    polledMs,
-    asked,
-    staleMs,
-  );
-  return asked ? state : { state: "Pending" };
-}
-
-/** A resource as `usePanelResource` reads it, with whether its read has ever
- * come back, which a read that failed cannot say by being pending again on
- * every retry. */
-export function usePanelResourceSettled<T>(
-  partition: PartitionIdentity,
-  kind: ProjectChangeKind,
-  resource: string,
-  read: PanelRead<T>,
-  polledMs?: number,
-): { readonly state: PanelState<T>; readonly settled: boolean } {
-  const ports = useApiPorts();
-  const key = projectResourceKey(partition, kind, resource);
-  const query = useQuery(panelQueryOptions(ports, key, read, polledMs));
-  return {
-    state: usePanelAbsenceKept(key, query, panelQueryState(query)),
-    settled: query.isFetched,
-  };
-}
-
-/** Several resources of one kind, each under the key `usePanelResource` reads
- * it at, so a frame naming one writes it and a screen drawing one shares it. */
-export function usePanelResources<T>(
-  partition: PartitionIdentity,
-  kind: ProjectChangeKind,
-  resources: readonly string[],
-  read: (
-    resource: string,
-    ports: ApiPorts,
-    signal: AbortSignal,
-  ) => Promise<ApiResult<T>>,
-  kept: PanelResourceKept = "Read",
-): readonly PanelState<T>[] {
-  const staleMs = usePanelResourceStaleMs(kind, resources, kept);
-  return usePanelResourcesRead(partition, kind, resources, read, true, staleMs);
-}
-
-/** Several resources as `usePanelResources` reads them, answered from what a
- * screen drawing one already read and never requested here, so one no screen
- * has read is pending. */
-export function usePanelResourcesHeld<T>(
-  partition: PartitionIdentity,
-  kind: ProjectChangeKind,
-  resources: readonly string[],
-  read: (
-    resource: string,
-    ports: ApiPorts,
-    signal: AbortSignal,
-  ) => Promise<ApiResult<T>>,
-): readonly PanelState<T>[] {
-  return usePanelResourcesRead(partition, kind, resources, read, false, 0);
-}
-
-function usePanelResourcesRead<T>(
-  partition: PartitionIdentity,
-  kind: ProjectChangeKind,
-  resources: readonly string[],
-  read: (
-    resource: string,
-    ports: ApiPorts,
-    signal: AbortSignal,
-  ) => Promise<ApiResult<T>>,
-  requested: boolean,
-  staleMs: number,
-): readonly PanelState<T>[] {
-  const ports = useApiPorts();
-  const queries = useQueries({
-    queries: resources.map((resource) => ({
-      ...panelQueryOptions(
-        ports,
-        projectResourceKey(partition, kind, resource),
-        (readPorts, signal) => read(resource, readPorts, signal),
-        undefined,
-        staleMs,
-      ),
-      enabled: requested,
-    })),
-  });
-  return queries.map((query) => panelQueryState<T>(query));
-}
-
-/** A list entry, whose refresh the list itself carries and this registers,
- * read again every `polledMs` as well where a caller names one. */
-export function usePanelList<T>(
-  list: ProjectList<T>,
-  read: PanelRead<T>,
-  polledMs?: number,
-): PanelState<T> {
-  useProjectListRefresh(list);
-  return usePanelQuery(list.key, read, polledMs);
-}
+/** What a screen may say of one query beyond what the query says of itself:
+ * whether it is asked for at all, and what is drawn until it answers. */
+export type PanelQueryObserved<T> = ConsoleQuery<T> & {
+  readonly enabled?: boolean;
+  readonly placeholderData?: typeof keepPreviousData;
+};
 
 /**
- * A list as `usePanelList` reads it, whose key moves with what a reader asks
- * for: the entry it moved from is drawn until the new key answers, so the rows
- * on screen stand while the next ones are read. `kept` says the rows drawn are
- * that earlier entry's, which nothing may be appended to under the new key.
+ * The bridge from a console query to the state a panel draws, registering a
+ * list's refresh for as long as the screen is mounted. `combine` is handed the
+ * cache's own answer beside that state, for what a screen reads off the query
+ * itself.
  */
-export function usePanelListKept<T>(
-  list: ProjectList<T>,
-  read: PanelRead<T>,
-): { readonly state: PanelState<T>; readonly kept: boolean } {
-  useProjectListRefresh(list);
+export function usePanelState<T>(query: PanelQueryObserved<T>): PanelState<T>;
+export function usePanelState<T, S>(
+  query: PanelQueryObserved<T>,
+  combine: (state: PanelState<T>, answer: UseQueryResult<T>) => S,
+): S;
+export function usePanelState<T, S>(
+  query: PanelQueryObserved<T>,
+  combine?: (state: PanelState<T>, answer: UseQueryResult<T>) => S,
+): PanelState<T> | S {
+  useProjectListRefresh("list" in query ? query.list : undefined);
   const ports = useApiPorts();
-  const query = useQuery({
-    ...panelQueryOptions(ports, list.key, read, undefined),
-    placeholderData: keepPreviousData,
+  const streamHolding = useProjectStreamHoldingAsked(query.kept === "Streamed");
+  const answer = useQuery({
+    ...panelQueryOptions(ports, streamHolding, query),
+    enabled: query.enabled ?? true,
+    ...(query.placeholderData === undefined
+      ? {}
+      : { placeholderData: query.placeholderData }),
   });
-  return {
-    state: usePanelAbsenceKept(list.key, query, panelQueryState(query)),
-    kept: query.isPlaceholderData,
-  };
-}
-
-/**
- * The inventory, which belongs to no partition and so has no refresh path of
- * its own: `["projects"]` is outside `projectPartitionKey`, so neither a
- * `Project` frame nor the fallback's refetch reaches it and the switcher's list
- * is the one this tab opened with, or last created a project in
- * (kasofsk/chuggy#439).
- */
-export function usePanelInventory<T>(read: PanelRead<T>): PanelState<T> {
-  return usePanelQuery(projectsInventoryKey(), read);
-}
-
-/** One tenant's own resource, shared by every project under it and so outside
- * any one partition's refresh path — the same arrangement as `usePanelInventory`,
- * for a read that belongs to the tenant rather than to no partition at all.
- * Where a caller names a `polledMs` it is read again on that clock, as
- * `usePanelResource` reads one. */
-export function usePanelTenantResource<T>(
-  tenant: string,
-  resource: string,
-  read: PanelRead<T>,
-  polledMs?: number,
-): PanelState<T> {
-  return usePanelQuery(tenantResourceKey(tenant, resource), read, polledMs);
+  const state = usePanelAbsenceKept(
+    query.queryKey,
+    answer,
+    panelQueryState(answer),
+  );
+  return combine === undefined ? state : combine(state, answer);
 }
 
 /** How many times one key's read has answered: every read that landed and
- * every write held as one moves it, and a failed read does not. The cache
- * tells its listeners inside another component's render whenever a query is
- * built there, so this hears it once the cache's batch is over, as the
- * library's own hooks of the cache do. */
-export function usePanelAnswers(key: ProjectQueryKey): number {
+ * every write held as one moves it, and a failed read does not. Only that
+ * key's events are heard, and the cache tells its listeners inside another
+ * component's render whenever a query is built there, so this hears them once
+ * the cache's batch is over, as the library's own hooks of the cache do. */
+export function usePanelAnswers(key: QueryKey): number {
   const client = useQueryClient();
+  const keyed = hashKey(key);
   const subscribe = useCallback(
     (changed: () => void) =>
-      client.getQueryCache().subscribe(notifyManager.batchCalls(changed)),
-    [client],
+      client.getQueryCache().subscribe(
+        notifyManager.batchCalls((event) => {
+          if (event.query.queryHash === keyed) changed();
+        }),
+      ),
+    [client, keyed],
   );
   return useSyncExternalStore(
     subscribe,
     () => client.getQueryState(key)?.dataUpdateCount ?? 0,
   );
-}
-
-/** Reads one key again now, answering once the read has how many reads had
- * answered when it was asked. */
-export function usePanelReread(key: ProjectQueryKey): () => Promise<number> {
-  const client = useQueryClient();
-  return async () => {
-    const reads = client.getQueryState(key)?.dataUpdateCount ?? 0;
-    await client.invalidateQueries({ queryKey: key });
-    return reads;
-  };
-}
-
-/** The reader's own resource, outside every tenant and so every refresh path,
- * as `usePanelInventory`'s is: read when a screen drawing it mounts. */
-export function usePanelCallerResource<T>(
-  resource: string,
-  read: PanelRead<T>,
-): PanelState<T> {
-  return usePanelQuery(callerResourceKey(resource), read);
 }

@@ -9,26 +9,22 @@ import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
-import { apiProjectRepositories } from "../../core/apiRoutes.ts";
+import { projectRepositoriesReachUnaskedQuery } from "../../core/projectQueries.ts";
 import { repositoryLabel } from "../../core/projectRepositories.ts";
 import {
   repositoryImportRefusedLabel,
   repositoryImportsRefused,
 } from "../../core/repositoryImport.ts";
-import { usePanelResource } from "../api.ts";
+import { usePanelState } from "../api.ts";
 import { Notice } from "../ui/Notice.tsx";
-import { projectRepositoriesReachUnaskedResource } from "./AddRepository.tsx";
 import { repositoryRoutePath } from "./RepositoryPage.tsx";
 
 export function RepositoryImportRefusedNotice(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
   const partition = props.partition;
-  const bindings = usePanelResource(
-    partition,
-    "Project",
-    projectRepositoriesReachUnaskedResource,
-    (ports) => apiProjectRepositories(ports, partition, { reach: false }),
+  const bindings = usePanelState(
+    projectRepositoriesReachUnaskedQuery(partition),
   );
   if (bindings.state !== "Ready") return null;
   const [first, ...more] = repositoryImportsRefused(

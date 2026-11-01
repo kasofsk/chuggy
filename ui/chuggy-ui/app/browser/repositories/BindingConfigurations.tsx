@@ -22,7 +22,7 @@ import { useApiPorts } from "../api.ts";
 import { useProjectAbilities } from "../projectAbilities.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Pill } from "../ui/Pill.tsx";
-import { projectRepositoriesInvalidated } from "./AddRepository.tsx";
+import { projectRepositoriesInvalidated } from "../../core/projectQueries.ts";
 
 /** One retry, from the request it sends to the status it leaves on the row. */
 function useBindingConfigurationsRetry(

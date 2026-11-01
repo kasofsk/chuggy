@@ -13,10 +13,11 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, expect, test } from "vitest";
 
-import { usePanelCallerResource } from "../app/browser/api.ts";
+import { usePanelState } from "../app/browser/api.ts";
 import { DataPanel } from "../app/browser/DataPanel.tsx";
 import { SessionProvider } from "../app/browser/session.tsx";
 import type { ApiResult } from "../app/core/apiRequest.ts";
+import { consoleCallerQuery } from "../app/core/consoleQuery.ts";
 import { panelQueryDefaults } from "../app/core/panelQueryDefaults.ts";
 import { holderDouble, settled, turned } from "./screenHarness.tsx";
 
@@ -37,7 +38,7 @@ interface Probe {
 function Probed(props: {
   readonly read: () => Promise<ApiResult<string>>;
 }): ReactNode {
-  const state = usePanelCallerResource<string>("probe", props.read);
+  const state = usePanelState(consoleCallerQuery("probe", props.read));
   return (
     <DataPanel title="Probe" state={state}>
       {(value) => <p>{value}</p>}

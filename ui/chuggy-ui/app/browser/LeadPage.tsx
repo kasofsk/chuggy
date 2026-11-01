@@ -26,7 +26,6 @@ import type {
   LeadTurnResponse,
   SelectorProjectSettingsResponse,
 } from "../../../../src/contract/responses.ts";
-import { apiLead, apiSelectorSettings } from "../core/apiRoutes.ts";
 import { conversationExchanges } from "../core/conversation.ts";
 import {
   costFigure,
@@ -34,21 +33,16 @@ import {
   tokenCountFigure,
 } from "../core/figures.ts";
 import type { PanelState } from "../core/freshness.ts";
-import {
-  leadSessionNamed,
-  leadStreamBatches,
-  leadStreamListed,
-  sessionChangeKindNamed,
-} from "../core/leadTranscript.ts";
+import { leadStreamBatches, leadStreamListed } from "../core/leadTranscript.ts";
 import {
   projectLeadAbsenceLine,
   projectLeadAbsencePolledMs,
   projectLeadFound,
   projectLeadPanelState,
   projectLeadPresent,
-  projectLeadSessionKind,
 } from "../core/projectLead.ts";
-import { projectListRereadNamed } from "../core/projectQueryKeys.ts";
+import { selectorSettingsQuery } from "../core/projectQueries.ts";
+import { leadQuery } from "../core/sessionQueries.ts";
 import { sessionRunnerShortWord } from "../core/sessionRunners.ts";
 import type { SessionRunnerShort } from "../core/sessionRunners.ts";
 import {
@@ -60,7 +54,7 @@ import {
   sessionStateTone,
   sessionTurnStateTone,
 } from "../core/tones.ts";
-import { usePanelList, usePanelResource } from "./api.ts";
+import { usePanelState } from "./api.ts";
 import { Conversation } from "./conversation/Conversation.tsx";
 import { DataPanel, PanelUnready } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
@@ -72,7 +66,6 @@ import { LeadNote, useLeadTranscript } from "./lead/LeadTranscript.tsx";
 import { SelectorStrip } from "./lead/SelectorStrip.tsx";
 import { useProjectAbilityRead } from "./projectAbilities.tsx";
 import {
-  selectorSettingsResource,
   useSelectorSettingsDraft,
   useSelectorSettingsWriting,
 } from "./selectorSettingsWriting.ts";
@@ -88,8 +81,6 @@ import { Pill } from "./ui/Pill.tsx";
 import { Table } from "./ui/Table.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
 
-export const leadListName = "lead";
-
 /**
  * The lead read, re-read on the `Session` frames that name its own session and
  * left alone by the rest, a project holding a session per thread beside its
@@ -104,18 +95,12 @@ export function useLead(
 ): PanelState<LeadReadResponse> {
   const [session, setSession] = useState<string | undefined>(undefined);
   const [absent, setAbsent] = useState(false);
-  const state = usePanelList(
-    projectListRereadNamed<LeadReadResponse>(
+  const state = usePanelState(
+    leadQuery(
       partition,
-      "Session",
-      leadListName,
-      (change) =>
-        session === undefined
-          ? sessionChangeKindNamed(change.resource) === projectLeadSessionKind
-          : leadSessionNamed(change.resource) === session,
+      session,
+      absent ? projectLeadAbsencePolledMs : undefined,
     ),
-    (ports) => apiLead(ports, partition),
-    absent ? projectLeadAbsencePolledMs : undefined,
   );
   const named =
     state.state === "Ready"
@@ -200,12 +185,7 @@ function LeadSelectorStripRead(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
   const partition = props.partition;
-  const state = usePanelResource(
-    partition,
-    "Project",
-    selectorSettingsResource,
-    (ports) => apiSelectorSettings(ports, partition),
-  );
+  const state = usePanelState(selectorSettingsQuery(partition));
   if (state.state !== "Ready") return <PanelUnready state={state} />;
   return (
     <LeadSelectorStripReady partition={partition} settings={state.value} />

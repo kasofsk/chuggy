@@ -17,10 +17,10 @@ import type {
   RunTurnsResponse,
 } from "../../../../src/contract/responses.ts";
 import {
-  apiRunConfiguration,
-  apiRunError,
-  apiRunTurns,
-} from "../core/apiRoutes.ts";
+  runConfigurationQuery,
+  runErrorQuery,
+  runTurnsQuery,
+} from "../core/executionQueries.ts";
 import { sinceFigure, whenFigure } from "../core/figures.ts";
 import {
   runConfigurationArgvSentence,
@@ -45,7 +45,7 @@ import {
   runCountLabel,
   runDurationLabel,
 } from "../core/runTotals.ts";
-import { usePanelResource } from "./api.ts";
+import { usePanelState } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import { MarkdownReport } from "./ui/MarkdownReport.tsx";
 import { RunTranscript } from "./RunTranscript.tsx";
@@ -59,15 +59,6 @@ type ExecutionAttempt = ExecutionResponse["attempts"][number];
 type RunTotalsValue = NonNullable<
   NonNullable<ExecutionAttempt["run"]>["totals"]
 >;
-
-/** One part of one attempt, named under the execution the frames carry. */
-function attemptResource(
-  execution: string,
-  attempt: string,
-  part: string,
-): string {
-  return `${execution}/attempts/${attempt}/${part}`;
-}
 
 export function RunTotalsLine(props: {
   readonly totals: RunTotalsValue;
@@ -138,18 +129,8 @@ function RunTurns(props: {
 }): ReactNode {
   const [walked, setWalked] = useState<readonly number[]>([]);
   const after = walked.at(-1);
-  const state = usePanelResource(
-    props.partition,
-    "Execution",
-    attemptResource(
-      props.execution,
-      props.attempt,
-      `turns/${String(after ?? 0)}`,
-    ),
-    (ports) =>
-      apiRunTurns(ports, props.partition, props.execution, props.attempt, {
-        after,
-      }),
+  const state = usePanelState(
+    runTurnsQuery(props.partition, props.execution, props.attempt, after),
   );
   return (
     <DataPanel title="turns" state={state}>
@@ -276,17 +257,8 @@ function RunConfiguration(props: {
   readonly execution: string;
   readonly attempt: string;
 }): ReactNode {
-  const state = usePanelResource(
-    props.partition,
-    "Execution",
-    attemptResource(props.execution, props.attempt, "configuration"),
-    (ports) =>
-      apiRunConfiguration(
-        ports,
-        props.partition,
-        props.execution,
-        props.attempt,
-      ),
+  const state = usePanelState(
+    runConfigurationQuery(props.partition, props.execution, props.attempt),
   );
   return (
     <DataPanel title="configuration" state={state}>
@@ -313,12 +285,7 @@ export function useRunReason(
   execution: string,
   attempt: string,
 ): RunReason | undefined {
-  const state = usePanelResource(
-    partition,
-    "Execution",
-    attemptResource(execution, attempt, "error"),
-    (ports) => apiRunError(ports, partition, execution, attempt),
-  );
+  const state = usePanelState(runErrorQuery(partition, execution, attempt));
   return state.state === "Ready" ? runReasonOf(state.value.content) : undefined;
 }
 

@@ -13,23 +13,17 @@ import type {
   AccessSiteTenants,
   AccessWorkspaceLinks,
 } from "../../../../../src/contract/accessPlane.ts";
-import {
-  apiSiteTenants,
-  apiSiteWorkspaceLinks,
-} from "../../core/accessRoutes.ts";
 import type { PanelState } from "../../core/freshness.ts";
-import { tenantResourceKey } from "../../core/projectQueryKeys.ts";
-import { usePanelTenantResource } from "../api.ts";
-
-/** No frame names this read. */
-export const siteWorkspacesResource = "access-site-tenants";
+import {
+  siteWorkspaceLinksQuery,
+  siteWorkspacesQuery,
+} from "../../core/tenantQueries.ts";
+import { usePanelState } from "../api.ts";
 
 export function useSiteWorkspaces(
   tenant: string,
 ): PanelState<AccessSiteTenants> {
-  return usePanelTenantResource(tenant, siteWorkspacesResource, (ports) =>
-    apiSiteTenants(ports),
-  );
+  return usePanelState(siteWorkspacesQuery(tenant));
 }
 
 export async function siteWorkspacesReread(
@@ -37,19 +31,15 @@ export async function siteWorkspacesReread(
   tenant: string,
 ): Promise<void> {
   await client.invalidateQueries({
-    queryKey: tenantResourceKey(tenant, siteWorkspacesResource),
+    queryKey: siteWorkspacesQuery(tenant).queryKey,
   });
 }
-
-export const siteWorkspaceLinksResource = "access-site-workspace-links";
 
 /** Absent on a plane that keeps no links, and to a reader who may make no workspace. */
 export function useSiteWorkspaceLinks(
   tenant: string,
 ): PanelState<AccessWorkspaceLinks> {
-  return usePanelTenantResource(tenant, siteWorkspaceLinksResource, (ports) =>
-    apiSiteWorkspaceLinks(ports),
-  );
+  return usePanelState(siteWorkspaceLinksQuery(tenant));
 }
 
 export async function siteWorkspaceLinksReread(
@@ -57,6 +47,6 @@ export async function siteWorkspaceLinksReread(
   tenant: string,
 ): Promise<void> {
   await client.invalidateQueries({
-    queryKey: tenantResourceKey(tenant, siteWorkspaceLinksResource),
+    queryKey: siteWorkspaceLinksQuery(tenant).queryKey,
   });
 }

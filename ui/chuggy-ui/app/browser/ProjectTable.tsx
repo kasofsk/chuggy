@@ -23,15 +23,13 @@
  * the next page that adds a row.
  */
 
-import { useQueryClient } from "@tanstack/react-query";
-import type { QueryClient } from "@tanstack/react-query";
+import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import { phaseRoster } from "../../../../src/contract/rosters.ts";
-import type { ApiPorts, ApiResult } from "../core/apiRequest.ts";
 import { apiProject } from "../core/apiRoutes.ts";
 import { phaseLabel } from "../core/codeLabels.ts";
 import { creatorLabel } from "../core/labels.ts";
@@ -40,7 +38,6 @@ import { projectAbilityRefused } from "../core/projectAbilities.ts";
 import { repositoryLabel } from "../core/projectRepositories.ts";
 import {
   ticketFilterAll,
-  ticketFilterList,
   ticketFilterPage,
   ticketFilterProjectEmpty,
   ticketFilterReadsCount,
@@ -54,9 +51,9 @@ import type { ProjectTableRow } from "../core/projectTableRows.ts";
 import {
   projectTicketRowsHaveMore,
   projectTicketRowsMore,
-  projectTicketRowsRead,
 } from "../core/projectTicketPages.ts";
 import type { ProjectTicketRows } from "../core/projectTicketPages.ts";
+import { ticketRowsQuery } from "../core/ticketQueries.ts";
 import {
   ticketListQueryWith,
   ticketListSearchOf,
@@ -75,7 +72,7 @@ import type {
 } from "../core/ticketListView.ts";
 import { phaseTone } from "../core/tones.ts";
 import type { Tone } from "../core/tones.ts";
-import { useApiPorts, usePanelListKept } from "./api.ts";
+import { useApiPorts, usePanelState } from "./api.ts";
 import { useCreatorEmails } from "./creatorEmails.ts";
 import { PanelUnready } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
@@ -109,39 +106,20 @@ interface TicketRowsHeld {
   readonly reading: boolean;
 }
 
-/**
- * The read the ticket query runs, which takes how many pages to gather from the
- * entry it is about to replace. Exported because that is the whole of what
- * makes a refetch keep a reader's pages, and a suite can hand it a cache.
- */
-export function ticketRowsRead(
-  client: QueryClient,
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-  ask: TicketListAsk,
-): Promise<ApiResult<ProjectTicketRows>> {
-  const key = ticketFilterList(partition, ask).key;
-  return projectTicketRowsRead(
-    client.getQueryData<ProjectTicketRows>(key),
-    (cursor, read) =>
-      apiProject(ports, partition, ticketFilterPage(ask, { read, cursor })),
-    ticketFilterReadsCount(ask),
-  );
-}
-
 /** The rows for one filter, order and search, the refresh that keeps them
  * live, and the read that appends the next page to them. */
 function useTicketRows(
   partition: PartitionIdentity,
   ask: TicketListAsk,
 ): TicketRowsHeld {
-  const list = ticketFilterList(partition, ask);
-  const key = list.key;
+  const query = ticketRowsQuery(partition, ask);
+  const key = query.queryKey;
   const client = useQueryClient();
   const ports = useApiPorts();
   const [reading, setReading] = useState(false);
-  const { state, kept } = usePanelListKept(list, (at) =>
-    ticketRowsRead(client, at, partition, ask),
+  const { state, kept } = usePanelState(
+    { ...query, placeholderData: keepPreviousData },
+    (state, answer) => ({ state, kept: answer.isPlaceholderData }),
   );
   const rows = state.state === "Ready" && !kept ? state.value : undefined;
   const more =
@@ -152,7 +130,7 @@ function useTicketRows(
       await projectTicketRowsMore(
         from,
         (update) =>
-          client.setQueryData<ProjectTicketRows>(key, (previous) =>
+          client.setQueryData(key, (previous) =>
             previous === undefined ? previous : update(previous),
           ),
         (cursor, read) =>

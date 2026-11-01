@@ -11,17 +11,13 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
-import type { TicketLandingsResponse } from "../../../../../src/contract/responses.ts";
-import { apiTicketLandings } from "../../core/apiRoutes.ts";
 import { sinceFigure } from "../../core/figures.ts";
-import { projectListRereadNamed } from "../../core/projectQueryKeys.ts";
 import { runCountLabel } from "../../core/runTotals.ts";
 import { cycleLabel } from "../../core/ticketLedger.ts";
+import { ticketLandingsQuery } from "../../core/ticketQueries.ts";
 import {
   ticketLandingFragment,
   ticketLandingFragmentSays,
-  ticketLandingsListName,
-  ticketLandingsPolledMs,
   ticketLandingsRead,
 } from "../../core/ticketLandings.ts";
 import type {
@@ -31,7 +27,7 @@ import type {
   TicketLandingProposal,
   TicketLandingsState,
 } from "../../core/ticketLandings.ts";
-import { usePanelList } from "../api.ts";
+import { usePanelState } from "../api.ts";
 import { Field, Fields } from "../ui/Fields.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Identity } from "../ui/Identity.tsx";
@@ -45,16 +41,7 @@ export function useTicketLandings(
   ticket: number,
 ): TicketLandingsState {
   return ticketLandingsRead(
-    usePanelList(
-      projectListRereadNamed<TicketLandingsResponse>(
-        partition,
-        "Ticket",
-        ticketLandingsListName(ticket),
-        (change) => change.resource === String(ticket),
-      ),
-      (ports) => apiTicketLandings(ports, partition, ticket),
-      ticketLandingsPolledMs,
-    ),
+    usePanelState(ticketLandingsQuery(partition, ticket)),
   );
 }
 

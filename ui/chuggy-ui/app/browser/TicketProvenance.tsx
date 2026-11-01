@@ -28,7 +28,7 @@ import type {
   DraftResponse,
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
-import { apiConfiguration } from "../core/apiRoutes.ts";
+import { configurationQuery } from "../core/configurationQueries.ts";
 import { briefLandingLine, landingLabel } from "../core/codeLabels.ts";
 import { ticketFollowingSentence } from "../core/codeSentences.ts";
 import type {
@@ -62,7 +62,7 @@ import {
   digestShortened,
 } from "../core/labels.ts";
 import { draftReleaseOf, draftUnreleasedLabel } from "../core/ticketEdit.ts";
-import { usePanelResource } from "./api.ts";
+import { usePanelState } from "./api.ts";
 import { useCreatorEmails } from "./creatorEmails.ts";
 import { DataSection, PanelUnready } from "./DataPanel.tsx";
 import { Disclosure } from "./ui/Disclosure.tsx";
@@ -1040,13 +1040,8 @@ function ConfigurationPanel(props: {
   readonly following: TicketResponse["following"];
 }): ReactNode {
   const stays = ticketFollowingSentence(props.following);
-  const state = usePanelResource(
-    props.partition,
-    "Configuration",
-    props.revision,
-    (ports) => apiConfiguration(ports, props.partition, props.revision),
-    undefined,
-    "Streamed",
+  const state = usePanelState(
+    configurationQuery(props.partition, props.revision, "Streamed"),
   );
   return (
     <Panel

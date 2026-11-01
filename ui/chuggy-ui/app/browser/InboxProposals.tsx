@@ -17,7 +17,7 @@ import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { SelectorProposalResponse } from "../../../../src/contract/responses.ts";
 import type { SelectorReviewOutcome } from "../../../../src/contract/rosters.ts";
 import { apiReviewSelectorProposal } from "../core/apiRoutes.ts";
-import { inboxList } from "../core/inboxList.ts";
+import { inboxQuery } from "../core/ticketQueries.ts";
 import {
   inboxProposalAnswered,
   inboxProposalNoteClamped,
@@ -73,7 +73,9 @@ export function useInboxProposalAnswers(
         ),
       );
       setLast({ proposal, step });
-      await client.invalidateQueries({ queryKey: inboxList(partition).key });
+      await client.invalidateQueries({
+        queryKey: inboxQuery(partition).queryKey,
+      });
       setSending((was) => {
         const still = new Set(was);
         still.delete(proposal.decision);

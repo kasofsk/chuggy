@@ -28,9 +28,7 @@ import type { ApiResult } from "../../core/apiRequest.ts";
 import {
   apiDeregisterPersonalRunner,
   apiMintPersonalRunnerToken,
-  apiPersonalRunnerPermit,
   apiPersonalRunnerServes,
-  apiProjectInventoryAll,
 } from "../../core/apiRoutes.ts";
 import { instantFigure } from "../../core/figures.ts";
 import type { PanelState } from "../../core/freshness.ts";
@@ -49,12 +47,12 @@ import {
   runnerTokenLifetimeSecs,
 } from "../../core/runners.ts";
 import type { RunnerMint } from "../../core/runners.ts";
-import { runnerStandingTone } from "../../core/tones.ts";
 import {
-  useApiPorts,
-  usePanelInventory,
-  usePanelTenantResource,
-} from "../api.ts";
+  personalRunnerPermitQuery,
+  projectsInventoryQuery,
+} from "../../core/tenantQueries.ts";
+import { runnerStandingTone } from "../../core/tones.ts";
+import { useApiPorts, usePanelState } from "../api.ts";
 import { useNowMs } from "../Freshness.tsx";
 import { personalRunnerReread, usePersonalRunner } from "../personalRunner.ts";
 import { RunnerAskForm } from "../RunnerAsk.tsx";
@@ -77,9 +75,6 @@ import {
   SettingsListingUnread,
   SettingsListingWithheld,
 } from "./SettingsListing.tsx";
-
-/** No frame names this read, so a fresh visit is what reaches it. */
-const personalRunnerPermitResource = "personal-runner-permit";
 
 type PersonalRunnerListed = PersonalRunnerResponse["runners"][number];
 
@@ -527,14 +522,10 @@ function MyRunners(props: {
 
 export function MyRunnerPage(): ReactNode {
   const tenant = useSettingsTenant();
-  const permit = usePanelTenantResource(
-    tenant,
-    personalRunnerPermitResource,
-    (ports) => apiPersonalRunnerPermit(ports, tenant),
-  );
+  const permit = usePanelState(personalRunnerPermitQuery(tenant));
   const runner = usePersonalRunner(tenant);
   const host = useChatHost(tenant);
-  const inventory = usePanelInventory((ports) => apiProjectInventoryAll(ports));
+  const inventory = usePanelState(projectsInventoryQuery());
   return (
     <SettingsPage title="My runners">
       <SettingsListing>

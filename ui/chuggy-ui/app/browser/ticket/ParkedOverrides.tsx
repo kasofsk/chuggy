@@ -21,7 +21,7 @@ import type {
   NativeActionResponse,
   TicketResponse,
 } from "../../../../../src/contract/responses.ts";
-import { apiConfiguration } from "../../core/apiRoutes.ts";
+import { configurationQuery } from "../../core/configurationQueries.ts";
 import { base64urlFromBytes } from "../../core/base64url.ts";
 import { operationRefusalLabel } from "../../core/codeLabels.ts";
 import { operationRefusalSentence } from "../../core/codeSentences.ts";
@@ -39,9 +39,9 @@ import {
 } from "../../core/parkedOverrides.ts";
 import type { ParkedOverridesTyped } from "../../core/parkedOverrides.ts";
 import { projectAbilityRefused } from "../../core/projectAbilities.ts";
-import { projectResourceKey } from "../../core/projectQueryKeys.ts";
+import { ticketQuery } from "../../core/ticketQueries.ts";
 import { overrideDocumentOf } from "../../core/ticketOverrides.ts";
-import { useApiPorts, usePanelResource } from "../api.ts";
+import { useApiPorts, usePanelState } from "../api.ts";
 import { ConfigurationOverrides } from "../ConfigurationOverrides.tsx";
 import { PanelUnready } from "../DataPanel.tsx";
 import { drawBytes } from "../ports.ts";
@@ -141,7 +141,7 @@ export function useParkedOverridesSave(
         if (controller.signal.aborted) return;
         if (followed.step.step === "Settled")
           void client.invalidateQueries({
-            queryKey: projectResourceKey(partition, "Ticket", String(ticket)),
+            queryKey: ticketQuery(partition, ticket).queryKey,
             exact: true,
           });
       })
@@ -235,12 +235,7 @@ export function ParkedOverrides(props: {
   readonly saving: ParkedOverridesSaving;
 }): ReactNode {
   const revision = props.ticket.configurationRevision ?? "";
-  const state = usePanelResource(
-    props.partition,
-    "Configuration",
-    revision,
-    (ports) => apiConfiguration(ports, props.partition, revision),
-  );
+  const state = usePanelState(configurationQuery(props.partition, revision));
   if (revision === "") return null;
   if (
     state.state === "Ready" &&

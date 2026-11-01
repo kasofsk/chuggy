@@ -20,7 +20,7 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ExecutionSummary } from "../../../../../src/contract/responses.ts";
-import { apiExecution } from "../../core/apiRoutes.ts";
+import { executionQuery } from "../../core/executionQueries.ts";
 import { conversationArgumentLine } from "../../core/conversation.ts";
 import { sinceFigure } from "../../core/figures.ts";
 import { runnerWait, runnerWaitWord } from "../../core/myRunner.ts";
@@ -36,7 +36,7 @@ import {
 import type { RunNow, RunNowAttempt, RunNowCall } from "../../core/runNow.ts";
 import { settingsRoutes } from "../../core/settingsNav.ts";
 import type { RunningNow } from "../../core/ticketSituation.ts";
-import { usePanelResource } from "../api.ts";
+import { usePanelState } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { usePersonalRunner } from "../personalRunner.ts";
 import { RunConversation, useRunTranscript } from "../RunTranscript.tsx";
@@ -267,13 +267,8 @@ export function TicketNow(props: {
 }): ReactNode {
   const { partition, running } = props;
   const execution = running.execution;
-  const state = usePanelResource(
-    partition,
-    "Execution",
-    execution.execution,
-    (ports) => apiExecution(ports, partition, execution.execution),
-    undefined,
-    "Streamed",
+  const state = usePanelState(
+    executionQuery(partition, execution.execution, "Streamed"),
   );
   const read = state.state === "Ready" ? state.value : undefined;
   const attempt = read === undefined ? undefined : runNowAttempt(read);

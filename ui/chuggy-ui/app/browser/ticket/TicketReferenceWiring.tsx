@@ -21,27 +21,19 @@ import { useMemo } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
-import {
-  ticketFilterList,
-  ticketListAskDefault,
-} from "../../core/projectTableFilters.ts";
-import { usePanelList } from "../api.ts";
-import { ticketRowsRead } from "../ProjectTable.tsx";
+import { ticketListAskDefault } from "../../core/projectTableFilters.ts";
+import { ticketRowsQuery } from "../../core/ticketQueries.ts";
+import { usePanelState } from "../api.ts";
 import { TicketReferenceProvider } from "../ui/ticketReferenceHeld.tsx";
 import type { TicketReferenceFacts } from "../ui/ticketReferenceHeld.tsx";
-import { useQueryClient } from "@tanstack/react-query";
 
 export function TicketReferenceWiring(props: {
   readonly partition: PartitionIdentity;
   readonly children: ReactNode;
 }): ReactNode {
   const partition = props.partition;
-  const client = useQueryClient();
   const navigate = useNavigate();
-  const state = usePanelList(
-    ticketFilterList(partition, ticketListAskDefault),
-    (ports) => ticketRowsRead(client, ports, partition, ticketListAskDefault),
-  );
+  const state = usePanelState(ticketRowsQuery(partition, ticketListAskDefault));
   const known = useMemo(() => {
     const byNumber = new Map<number, TicketReferenceFacts>();
     if (state.state === "Ready")

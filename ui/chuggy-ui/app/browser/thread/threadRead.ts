@@ -20,46 +20,21 @@ import type {
   ChatThreadsResponse,
   ThreadResponse,
 } from "../../../../../src/contract/responses.ts";
-import {
-  apiChatAbilities,
-  apiChatThread,
-  apiChatThreads,
-  apiThread,
-} from "../../core/apiRoutes.ts";
 import type { PanelState } from "../../core/freshness.ts";
-import { leadSessionNamed } from "../../core/leadTranscript.ts";
-import { memberChatThreadPolledMs } from "../../core/memberChat.ts";
+import { threadQuery } from "../../core/sessionQueries.ts";
 import {
-  projectListRereadNamed,
-  tenantResourceKey,
-} from "../../core/projectQueryKeys.ts";
-import { sessionPlacementPolledMs } from "../../core/sessionRunners.ts";
+  chatAbilitiesQuery,
+  memberChatThreadQuery,
+  memberChatThreadsQuery,
+} from "../../core/tenantQueries.ts";
 import { threadWriting } from "../../core/threads.ts";
-import { usePanelList, usePanelTenantResource } from "../api.ts";
-
-/** The list entry the whole listing keeps, which the chat pane's history reads
- * and every thread read is named apart from. */
-export const threadsListName = "threads";
-
-/** The list entry one thread read keeps, named by the session it draws so two
- * threads open at once are two entries and not one. */
-export function threadListName(session: string): string {
-  return `thread-${session}`;
-}
+import { usePanelState } from "../api.ts";
 
 export function useThread(
   partition: PartitionIdentity,
   session: string,
 ): PanelState<ThreadResponse> {
-  return usePanelList(
-    projectListRereadNamed<ThreadResponse>(
-      partition,
-      "Session",
-      threadListName(session),
-      (change) => leadSessionNamed(change.resource) === session,
-    ),
-    (ports) => apiThread(ports, partition, session),
-  );
+  return usePanelState(threadQuery(partition, session));
 }
 
 /** One thread of the reader's own chat, which no frame names and so is read
@@ -71,33 +46,18 @@ export function useMemberThread(
   session: string,
 ): PanelState<ThreadResponse> {
   const [writing, setWriting] = useState(false);
-  const state = usePanelTenantResource(
-    tenant,
-    memberChatThreadResource(session),
-    (ports) => apiChatThread(ports, tenant, session),
-    writing ? memberChatThreadPolledMs : sessionPlacementPolledMs,
-  );
+  const state = usePanelState(memberChatThreadQuery(tenant, session, writing));
   const now = state.state === "Ready" && threadWriting(state.value);
   if (now !== writing) setWriting(now);
   return state;
 }
-
-/** The tenant's entry one thread of the reader's own chat is kept under. */
-export function memberChatThreadResource(session: string): string {
-  return `chat-${threadListName(session)}`;
-}
-
-/** The tenant's entry the reader's own chat keeps its listing under. */
-export const memberChatThreadsResource = `chat-${threadsListName}`;
 
 /** What the reader may do at their tenant's chat, read as a screen drawing it
  * mounts. */
 export function useChatAbilities(
   tenant: string,
 ): PanelState<ChatAbilitiesResponse> {
-  return usePanelTenantResource(tenant, "chat-abilities", (ports) =>
-    apiChatAbilities(ports, tenant),
-  );
+  return usePanelState(chatAbilitiesQuery(tenant));
 }
 
 /** Reads the reader's own chat again now, its listing and the one thread a
@@ -107,14 +67,14 @@ export async function memberChatReread(
   tenant: string,
   session: string,
 ): Promise<void> {
-  await Promise.all(
-    [memberChatThreadsResource, memberChatThreadResource(session)].map(
-      (resource) =>
-        client.invalidateQueries({
-          queryKey: tenantResourceKey(tenant, resource),
-        }),
-    ),
-  );
+  await Promise.all([
+    client.invalidateQueries({
+      queryKey: memberChatThreadsQuery(tenant).queryKey,
+    }),
+    client.invalidateQueries({
+      queryKey: memberChatThreadQuery(tenant, session).queryKey,
+    }),
+  ]);
 }
 
 /** The reader's own threads at their tenant, read again at the pace a
@@ -122,10 +82,5 @@ export async function memberChatReread(
 export function useMemberChatThreads(
   tenant: string,
 ): PanelState<ChatThreadsResponse> {
-  return usePanelTenantResource(
-    tenant,
-    memberChatThreadsResource,
-    (ports) => apiChatThreads(ports, tenant),
-    sessionPlacementPolledMs,
-  );
+  return usePanelState(memberChatThreadsQuery(tenant));
 }

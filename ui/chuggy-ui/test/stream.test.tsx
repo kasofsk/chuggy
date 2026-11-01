@@ -39,7 +39,10 @@ import {
   projectListRereadNamed,
   projectResourceKey,
 } from "../app/core/projectQueryKeys.ts";
-import type { ProjectList } from "../app/core/projectQueryKeys.ts";
+import type {
+  ProjectList,
+  ProjectQueryKey,
+} from "../app/core/projectQueryKeys.ts";
 import { creationContextList } from "../app/core/ticketCreationRun.ts";
 import {
   ticketFilterList,
@@ -53,7 +56,8 @@ import {
   StreamBanner,
   VersionBanner,
 } from "../app/browser/Shell.tsx";
-import { usePanelList } from "../app/browser/api.ts";
+import { usePanelState } from "../app/browser/api.ts";
+import { consoleListQuery } from "../app/core/consoleQuery.ts";
 import { ApiOutcomeError } from "../app/core/apiRequest.ts";
 import {
   ProjectStreamProvider,
@@ -265,7 +269,9 @@ async function refreshedEntry<T>(
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  client.setQueryData(list.key, held);
+  /** Erased, since a case seeds an entry its list would not hold. */
+  const erased: ProjectQueryKey = list.key;
+  client.setQueryData(erased, held);
   const server = streamServer([{ status: 200, chunks: [change], hold: true }]);
   function Registered(): ReactNode {
     useProjectListRefresh(list);
@@ -821,9 +827,11 @@ test("frames nothing on screen reads draw no list holder again, nor does a statu
   const renders: number[] = [];
   function Holder(): ReactNode {
     renders.push(1);
-    usePanelList(
-      namingList("Draft", "drafts"),
-      () => new Promise(() => undefined),
+    usePanelState(
+      consoleListQuery(
+        namingList("Draft", "drafts"),
+        () => new Promise(() => undefined),
+      ),
     );
     return null;
   }

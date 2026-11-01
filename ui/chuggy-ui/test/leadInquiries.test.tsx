@@ -17,10 +17,9 @@ import type { ReactNode } from "react";
 
 import {
   LeadInquiries,
-  leadInquiriesListName,
   useInquiryBoxes,
 } from "../app/browser/lead/LeadInquiries.tsx";
-import { projectListRereadNamed } from "../app/core/projectQueryKeys.ts";
+import { leadInquiriesQuery } from "../app/core/sessionQueries.ts";
 import {
   answer,
   openedStream,
@@ -1008,14 +1007,8 @@ test("an accepted press re-reads the project it was asked in", async () => {
   await turned(ask);
   await server.moveTo(elsewhere);
   const staleness = (partition: PartitionIdentity) =>
-    server.client.getQueryState(
-      projectListRereadNamed<unknown>(
-        partition,
-        "Session",
-        leadInquiriesListName,
-        () => true,
-      ).key,
-    )?.isInvalidated;
+    server.client.getQueryState(leadInquiriesQuery(partition).queryKey)
+      ?.isInvalidated;
   await turned(release);
   await settled();
   expect(

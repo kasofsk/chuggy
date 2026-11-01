@@ -14,47 +14,31 @@ import type {
   AccessTenantAbilities,
   AccessTenantPeople,
 } from "../../../../../src/contract/accessPlane.ts";
-import {
-  apiTenantAbilities,
-  apiTenantInviteLinks,
-  apiTenantPeople,
-} from "../../core/accessRoutes.ts";
 import type { PanelState } from "../../core/freshness.ts";
-import { tenantResourceKey } from "../../core/projectQueryKeys.ts";
-import { usePanelTenantResource } from "../api.ts";
-
-/** No frame names this read, so a change's own invalidation is what reaches it. */
-export const tenantPeopleResource = "access-people";
-
-export const tenantPeopleAbilitiesResource = "access-abilities";
-
-export const tenantInviteLinksResource = "access-invite-links";
+import {
+  tenantAbilitiesQuery,
+  tenantInviteLinksQuery,
+  tenantPeopleQuery,
+} from "../../core/tenantQueries.ts";
+import { usePanelState } from "../api.ts";
 
 export function useTenantPeople(
   tenant: string,
 ): PanelState<AccessTenantPeople> {
-  return usePanelTenantResource(tenant, tenantPeopleResource, (ports) =>
-    apiTenantPeople(ports, tenant),
-  );
+  return usePanelState(tenantPeopleQuery(tenant));
 }
 
 export function useTenantAbilities(
   tenant: string,
 ): PanelState<AccessTenantAbilities> {
-  return usePanelTenantResource(
-    tenant,
-    tenantPeopleAbilitiesResource,
-    (ports) => apiTenantAbilities(ports, tenant),
-  );
+  return usePanelState(tenantAbilitiesQuery(tenant));
 }
 
 /** Absent on a plane that keeps no links, and to a reader the people list is not answered to. */
 export function useTenantInviteLinks(
   tenant: string,
 ): PanelState<AccessInviteLinks> {
-  return usePanelTenantResource(tenant, tenantInviteLinksResource, (ports) =>
-    apiTenantInviteLinks(ports, tenant),
-  );
+  return usePanelState(tenantInviteLinksQuery(tenant));
 }
 
 export async function tenantInviteLinksReread(
@@ -62,7 +46,7 @@ export async function tenantInviteLinksReread(
   tenant: string,
 ): Promise<void> {
   await client.invalidateQueries({
-    queryKey: tenantResourceKey(tenant, tenantInviteLinksResource),
+    queryKey: tenantInviteLinksQuery(tenant).queryKey,
   });
 }
 
@@ -72,10 +56,10 @@ export async function tenantPeopleReread(
 ): Promise<void> {
   await Promise.all([
     client.invalidateQueries({
-      queryKey: tenantResourceKey(tenant, tenantPeopleResource),
+      queryKey: tenantPeopleQuery(tenant).queryKey,
     }),
     client.invalidateQueries({
-      queryKey: tenantResourceKey(tenant, tenantPeopleAbilitiesResource),
+      queryKey: tenantAbilitiesQuery(tenant).queryKey,
     }),
   ]);
 }

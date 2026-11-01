@@ -46,7 +46,7 @@ import type {
   LeadInquiriesResponse,
   LeadInquiryResponse,
 } from "../../../../../src/contract/responses.ts";
-import { apiAskLead, apiLeadInquiries } from "../../core/apiRoutes.ts";
+import { apiAskLead } from "../../core/apiRoutes.ts";
 import { base64urlFromBytes } from "../../core/base64url.ts";
 import {
   costFigure,
@@ -67,17 +67,14 @@ import {
   inquiryIdentityBytesCount,
   inquiryQuestion,
   inquiryQuestionFault,
-  inquirySessionKind,
 } from "../../core/leadInquiries.ts";
 import type { InquiryAsk } from "../../core/leadInquiries.ts";
-import { sessionChangeKindNamed } from "../../core/leadTranscript.ts";
 import { inquiryBoxesHeld } from "./inquiryBoxes.ts";
 import type { InquiryBoxStore } from "./inquiryBoxes.ts";
 import { projectAbilityRefused } from "../../core/projectAbilities.ts";
-import { projectListRereadNamed } from "../../core/projectQueryKeys.ts";
-import type { ProjectList } from "../../core/projectQueryKeys.ts";
+import { leadInquiriesQuery } from "../../core/sessionQueries.ts";
 import { sessionTurnStateTone } from "../../core/tones.ts";
-import { useApiPorts, usePanelList } from "../api.ts";
+import { useApiPorts, usePanelState } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { drawBytes } from "../ports.ts";
 import { useProjectAbilities, ViewOnlyNotice } from "../projectAbilities.tsx";
@@ -96,8 +93,6 @@ import { Tooltip } from "../ui/Tooltip.tsx";
 
 import "./LeadInquiries.css";
 
-export const leadInquiriesListName = "inquiries";
-
 /**
  * The boxes as a screen reads them: the store's own, and a render whenever it
  * moves.
@@ -114,23 +109,6 @@ export type InquiryBoxesHeld = InquiryBoxStore;
 export function useInquiryBoxes(): InquiryBoxesHeld {
   useSyncExternalStore(inquiryBoxesHeld.subscribe, inquiryBoxesHeld.boxes);
   return inquiryBoxesHeld;
-}
-
-/**
- * One project's inquiries, re-read on the `Session` frames naming an inquiry
- * and left alone by every other kind. Built from a project rather than closed
- * over the one on screen, because an accepted press re-reads the project it was
- * asked in and that is not always the project being drawn when it answers.
- */
-function leadInquiriesList(
-  partition: PartitionIdentity,
-): ProjectList<LeadInquiriesResponse> {
-  return projectListRereadNamed<LeadInquiriesResponse>(
-    partition,
-    "Session",
-    leadInquiriesListName,
-    (change) => sessionChangeKindNamed(change.resource) === inquirySessionKind,
-  );
 }
 
 /** What the last ask did, in the one line the box says it in. */
@@ -359,9 +337,7 @@ export function LeadInquiries(props: {
 }): ReactNode {
   const partition = props.partition;
   const client = useQueryClient();
-  const state = usePanelList(leadInquiriesList(partition), (ports) =>
-    apiLeadInquiries(ports, partition),
-  );
+  const state = usePanelState(leadInquiriesQuery(partition));
   return (
     <Panel title="Inquiries">
       {props.head === undefined ? null : (
@@ -370,7 +346,7 @@ export function LeadInquiries(props: {
           held={props.held}
           onAsked={(at) => {
             void client.invalidateQueries({
-              queryKey: leadInquiriesList(at).key,
+              queryKey: leadInquiriesQuery(at).queryKey,
               exact: true,
             });
           }}

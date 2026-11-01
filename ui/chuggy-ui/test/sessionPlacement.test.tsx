@@ -11,11 +11,10 @@ import { afterEach, expect, test, vi } from "vitest";
 
 import { SessionProvider } from "../app/browser/session.tsx";
 import {
-  sessionPlacementResource,
   useSessionPlacementReads,
   useSessionRunnerShort,
 } from "../app/browser/sessionPlacement.tsx";
-import { projectResourceKey } from "../app/core/projectQueryKeys.ts";
+import { sessionPlacementQuery } from "../app/core/projectQueries.ts";
 import { sessionPlacementPolledMs } from "../app/core/sessionRunners.ts";
 import { answer, holderDouble, settled } from "./screenHarness.tsx";
 import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
@@ -65,11 +64,7 @@ test("the placement's reads count every answer and no failure", async () => {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  const key = projectResourceKey(
-    threadPartition,
-    "Project",
-    sessionPlacementResource,
-  );
+  const key = sessionPlacementQuery(threadPartition).queryKey;
   const { result } = renderHook(
     () => useSessionPlacementReads(threadPartition),
     {

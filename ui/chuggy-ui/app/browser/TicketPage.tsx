@@ -25,13 +25,7 @@ import type {
   TicketNativeActionsResponse,
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
-import {
-  apiConfiguration,
-  apiDraft,
-  apiTicket,
-  apiTicketDispatchView,
-  apiTicketNativeActions,
-} from "../core/apiRoutes.ts";
+import { configurationQuery } from "../core/configurationQueries.ts";
 import type { PanelState } from "../core/freshness.ts";
 import type { TicketDeliveryState } from "../core/ticketDelivery.ts";
 import {
@@ -49,10 +43,7 @@ import {
 import type { ParkedOverridesTyped } from "../core/parkedOverrides.ts";
 import type { ProjectAbilities } from "../core/projectAbilities.ts";
 import { projectLeadDispatches } from "../core/projectLead.ts";
-import {
-  manualDispatchActionOf,
-  ticketDispatchList,
-} from "../core/ticketActions.ts";
+import { manualDispatchActionOf } from "../core/ticketActions.ts";
 import {
   offersAnswered,
   offersDispatchByHand,
@@ -62,14 +53,16 @@ import {
 } from "../core/ticketOffers.ts";
 import type { TicketOffers } from "../core/ticketOffers.ts";
 import { ticketPageFacts } from "../core/ticketPageFacts.ts";
+import {
+  draftQuery,
+  ticketDispatchQuery,
+  ticketNativeActionsQuery,
+  ticketQuery,
+} from "../core/ticketQueries.ts";
 import type { TicketPageFacts } from "../core/ticketPageFacts.ts";
 import { resumedFrom, ticketSlot } from "../core/ticketSituation.ts";
 import type { TicketSlot as Slot } from "../core/ticketSituation.ts";
-import {
-  usePanelList,
-  usePanelResource,
-  usePanelResourceAsked,
-} from "./api.ts";
+import { usePanelState } from "./api.ts";
 import { FreshnessInstants, useNowMs } from "./Freshness.tsx";
 import { useLead } from "./LeadPage.tsx";
 import { currentAnchor } from "./ports.ts";
@@ -176,16 +169,15 @@ function useSetupOverridable(
       ? undefined
       : parkedOverridesFence(ticket, readValue(props.reads.openState)?.actions);
   const revision = ticket?.configurationRevision ?? "";
-  const state = usePanelResourceAsked(
-    props.partition,
-    "Configuration",
-    revision,
-    (ports) => apiConfiguration(ports, props.partition, revision),
-    undefined,
+  const asked =
     fence !== undefined &&
-      revision !== "" &&
-      ticket?.escalation?.failed?.evidence === "RunSetupFailed",
-  );
+    revision !== "" &&
+    ticket?.escalation?.failed?.evidence === "RunSetupFailed";
+  const read = usePanelState({
+    ...configurationQuery(props.partition, revision),
+    enabled: asked,
+  });
+  const state = asked ? read : ({ state: "Pending" } as const);
   return parkedSetupOverridable(
     fence,
     state.state === "Ready" ? state.value.canonical : undefined,
@@ -417,32 +409,10 @@ export function TicketPage(): ReactNode {
   };
   const ticket = Number(params.ticket);
   const nowMs = useNowMs();
-  const ticketState = usePanelResource(
-    partition,
-    "Ticket",
-    String(ticket),
-    (ports) => apiTicket(ports, partition, ticket),
-    undefined,
-    "Streamed",
-  );
-  const draftState = usePanelResource(
-    partition,
-    "Draft",
-    String(ticket),
-    (ports) => apiDraft(ports, partition, ticket),
-    undefined,
-    "Streamed",
-  );
-  const openState = usePanelResource(
-    partition,
-    "NativeAction",
-    String(ticket),
-    (ports) => apiTicketNativeActions(ports, partition, ticket),
-  );
-  const dispatchState = usePanelList(
-    ticketDispatchList(partition, ticket),
-    (ports) => apiTicketDispatchView(ports, partition, ticket),
-  );
+  const ticketState = usePanelState(ticketQuery(partition, ticket, "Streamed"));
+  const draftState = usePanelState(draftQuery(partition, ticket, "Streamed"));
+  const openState = usePanelState(ticketNativeActionsQuery(partition, ticket));
+  const dispatchState = usePanelState(ticketDispatchQuery(partition, ticket));
   const pageState = useTicketExecutions(partition, ticket);
   const leadState = useLead(partition);
   const deliveryState = useTicketDelivery(partition, ticket);
