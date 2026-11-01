@@ -150,16 +150,34 @@ function apiHeaders(
   return headers;
 }
 
-/** An empty body is not a JSON document, and neither is one that will not parse. */
-function apiBody(text: string): unknown {
-  if (text.trim() === "") return undefined;
-  return JSON.parse(text);
+/** What a request answers with once it has been sent: a classified response,
+ * or one of the answers no status describes. */
+type ApiAnswer = ApiOutcome | ApiNoAnswer;
+
+/**
+ * A body that will not parse still arrived, so its status decides it: a refusal
+ * reads as it would with no body at all, and a success whose body cannot be read
+ * is `Unreadable` rather than a success with nothing in it.
+ */
+function apiAnswer(response: Response, text: string): ApiAnswer {
+  const header = (name: string) => response.headers.get(name);
+  if (text.trim() === "") return classify(response.status, header, undefined);
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch (failure: unknown) {
+    const bare = classify(response.status, header, undefined);
+    return bare.outcome === "Ok" || bare.outcome === "Accepted"
+      ? { outcome: "Unreadable", reason: apiReason(failure) }
+      : bare;
+  }
+  return classify(response.status, header, body);
 }
 
 async function apiOnce(
   ports: ApiPorts,
   request: ApiRequest,
-): Promise<ApiOutcome> {
+): Promise<ApiAnswer> {
   const deadline = apiDeadline(
     request.timeoutMs ?? apiTimeoutMsDefault,
     request.signal,
@@ -174,11 +192,7 @@ async function apiOnce(
       ...(body === undefined ? {} : { body }),
       signal: deadline.signal,
     });
-    return classify(
-      response.status,
-      (name) => response.headers.get(name),
-      apiBody(await response.text()),
-    );
+    return apiAnswer(response, await response.text());
   } finally {
     deadline.done();
   }
@@ -192,10 +206,8 @@ function apiReason(failure: unknown): string {
 async function apiAttempts(
   ports: ApiPorts,
   request: ApiRequest,
-): Promise<
-  ApiOutcome | { readonly outcome: "Unreachable"; readonly reason: string }
-> {
-  let last: ApiOutcome | undefined;
+): Promise<ApiAnswer> {
+  let last: ApiAnswer | undefined;
   for (let attempt = 0; attempt < apiAttemptsMax; attempt += 1) {
     try {
       last = await apiOnce(ports, request);
@@ -226,9 +238,7 @@ async function apiAttempts(
 export async function apiSend(
   ports: ApiPorts,
   request: ApiRequest,
-): Promise<
-  ApiOutcome | { readonly outcome: "Unreachable"; readonly reason: string }
-> {
+): Promise<ApiAnswer> {
   const answered = await apiAttempts(ports, request);
   if (answered.outcome !== "Unauthenticated" || ports.renew === undefined)
     return answered;

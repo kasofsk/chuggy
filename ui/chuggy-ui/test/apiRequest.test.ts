@@ -16,6 +16,8 @@ import type { ApiFetchInit, ApiPorts } from "../app/core/apiRequest.ts";
 interface Answer {
   readonly status: number;
   readonly body?: unknown;
+  /** Sent as it is rather than as JSON, for a body that is not a document. */
+  readonly text?: string;
   readonly headers?: Record<string, string>;
 }
 
@@ -45,7 +47,8 @@ function harness(answers: readonly Answer[], bearer = "token"): Harness {
           headers: { get: (name: string) => headers[name] ?? null },
           text: () =>
             Promise.resolve(
-              answer.body === undefined ? "" : JSON.stringify(answer.body),
+              answer.text ??
+                (answer.body === undefined ? "" : JSON.stringify(answer.body)),
             ),
         } as unknown as Response);
       },
@@ -248,4 +251,51 @@ test("a port holding no renewal leaves the refusal as it arrived", async () => {
 
   expect(result.outcome).toBe("Unauthenticated");
   expect(held.sent).toHaveLength(1);
+});
+
+const htmlPage = "<!doctype html><title>Bad gateway</title>";
+
+test("a success whose body is not JSON is unreadable, not unreachable", async () => {
+  const result = await apiSend(
+    harness([{ status: 200, text: htmlPage }]).ports,
+    installation,
+  );
+  expect(result.outcome).toBe("Unreadable");
+  expect(result).toHaveProperty("reason", expect.any(String));
+});
+
+test("a refusal whose body is not JSON reads as the same refusal with no body", async () => {
+  const html = await apiSend(
+    harness([{ status: 502, text: htmlPage }]).ports,
+    installation,
+  );
+  const empty = await apiSend(harness([{ status: 502 }]).ports, installation);
+  expect(html).toEqual(empty);
+  expect(html.outcome).toBe("Fault");
+});
+
+test("a refused bearer answered in HTML still reaches the renewal", async () => {
+  const held = harness([
+    { status: 401, text: htmlPage },
+    { status: 200, body: {} },
+  ]);
+  const port = renewing(held, [true]);
+
+  const result = await apiSend(port.ports, installation);
+
+  expect(result.outcome).toBe("Ok");
+  expect(port.asked()).toBe(1);
+  expect(held.sent).toHaveLength(2);
+});
+
+test("a fetch that rejects is unreachable", async () => {
+  const held = harness([]);
+  const result = await apiSend(
+    {
+      ...held.ports,
+      fetch: () => Promise.reject(new TypeError("Failed to fetch")),
+    },
+    installation,
+  );
+  expect(result).toEqual({ outcome: "Unreachable", reason: "Failed to fetch" });
 });

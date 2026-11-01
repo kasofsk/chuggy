@@ -302,7 +302,7 @@ test("the submit asks first, and refuses while a problem stands", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Create ticket" }));
   const again = await screen.findByRole("dialog");
   expect(again.textContent).toContain("intent: ship it");
-  expect(again.textContent).toMatch(/Nothing is wrong/u);
+  expect(again.textContent).toMatch(/No problems/u);
   fireEvent.click(within(again).getByRole("button", { name: "Create ticket" }));
   await waitFor(() => {
     expect(created).toStrictEqual([creationDraft.ticket]);

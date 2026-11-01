@@ -269,7 +269,6 @@ test("a walk that runs out of budget knows nothing about the project", async () 
   const read = await readCreationContext(held.ports, creationPartition);
   expect(read.outcome === "Ok" && read.value).toStrictEqual({
     context: "ReadyConfigurationUnknown",
-    pagesRead: configurationPagesMax,
   });
   expect(
     held.calls.filter((call) => call.includes("/configurations")).length,
@@ -444,10 +443,7 @@ test("not knowing, there being none and there being nowhere are drawn as three w
   const sentences = [
     creationContextSentence({ context: "NoRepository" }),
     creationContextSentence({ context: "NoReadyConfiguration" }),
-    creationContextSentence({
-      context: "ReadyConfigurationUnknown",
-      pagesRead: configurationPagesMax,
-    }),
+    creationContextSentence({ context: "ReadyConfigurationUnknown" }),
   ];
   expect(new Set(sentences).size).toBe(3);
   expect(sentences[0]).toBe("No repository bound");
