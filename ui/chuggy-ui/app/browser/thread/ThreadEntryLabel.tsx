@@ -25,9 +25,9 @@ import {
   threadHomeNamed,
 } from "../../core/threadHome.ts";
 import type { ThreadHome } from "../../core/threadHome.ts";
+import { memberChatReread } from "../../core/tenantQueries.ts";
 import { threadActions } from "../../core/threads.ts";
 import { useConsoleWrite } from "../consoleWrite.tsx";
-import { memberChatReread } from "./threadRead.ts";
 
 export interface ThreadEntryActions {
   readonly renaming: boolean;

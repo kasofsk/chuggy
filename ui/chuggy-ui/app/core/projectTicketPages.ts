@@ -134,18 +134,6 @@ export function projectTicketRowsFailed(
   return { ...previous, failure };
 }
 
-/** What a page asked for after the first does to the rows, refusal included:
- * the first page has no rows to keep, so its refusal is the panel's own. */
-export function projectTicketRowsAfterPage(
-  previous: ProjectTicketRows,
-  answered: ApiResult<ProjectResponse>,
-  reads = 1,
-): ProjectTicketRows {
-  return answered.outcome === "Ok"
-    ? projectTicketRowsAppend(previous, answered.value, reads)
-    : projectTicketRowsFailed(previous, answered);
-}
-
 export function projectTicketRowsHaveMore(rows: ProjectTicketRows): boolean {
   return (
     rows.next !== undefined &&

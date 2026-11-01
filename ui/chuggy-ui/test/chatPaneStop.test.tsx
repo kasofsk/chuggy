@@ -3,7 +3,8 @@
  * thread with that press, so its Stop is there from the press and not from
  * the read of the thread it opened, and a turn stopped there is never drawn
  * as out by the thread that takes the composer's place. Until that read, a
- * press in the composer after its message was taken reaches the same thread.
+ * press in the composer after its message was taken reaches the same thread,
+ * and the composer stays until each of its presses is taken.
  */
 
 import {
@@ -273,9 +274,8 @@ test("a correction pressed while the stop of a taken first message lands goes to
   ]);
 });
 
-test("a press with an image whose upload answers after the first message was taken sends to the thread that message opened", async () => {
-  const pane = await paneOpened();
-  await stageSent(asked);
+/** An image pasted into the first box, drawn there before the case goes on. */
+async function imagePasted(): Promise<void> {
   fireEvent.paste(stageBox(), {
     clipboardData: {
       files: [
@@ -287,6 +287,12 @@ test("a press with an image whose upload answers after the first message was tak
   await waitFor(() => {
     expect(screen.getAllByRole("img").length).toBeGreaterThan(0);
   });
+}
+
+test("a press with an image whose upload answers after the first message was taken sends to the thread that message opened", async () => {
+  const pane = await paneOpened();
+  await stageSent(asked);
+  await imagePasted();
   await stageSent("and this one");
   expect(pane.uploads).toHaveLength(1);
 
@@ -311,4 +317,65 @@ test("a press with an image whose upload answers after the first message was tak
       },
     ],
   ]);
+});
+
+test("a press with an image still uploading when the thread the first message opened is read sends to that thread, and the first box gives way once it lands", async () => {
+  const pane = await paneOpened();
+  await stageSent(asked);
+  await imagePasted();
+  await stageSent("and this one");
+  await taken(pane, 0);
+  await pane.read(threadAt(pane.sends[0]?.turn ?? "", "Queued"));
+
+  await act(async () => {
+    pane.uploads[0]?.(answer({ artifact: "artifact-1", digest: "d" }, 201));
+    await Promise.resolve();
+  });
+  await settled();
+  expect(
+    pane.opens,
+    "the press after the read opened a thread of its own",
+  ).toStrictEqual([session]);
+  expect(pane.sends.map((sent) => sent.session)).toStrictEqual([
+    session,
+    session,
+  ]);
+  expect(threadDrawn(pane.container), "a press is still out").toBe(false);
+
+  await taken(pane, 1);
+  await waitFor(() => {
+    expect(threadDrawn(pane.container), "the first box stuck").toBe(true);
+  });
+  expect(pane.opens).toStrictEqual([session]);
+});
+
+test("a second message refused before the thread the first opened is read stays in the first box, and its retry goes to that thread", async () => {
+  const pane = await paneOpened();
+  await stageSent(asked);
+  await taken(pane, 0);
+  await stageSent("and 42");
+  await stageAnswered(pane.sends[1], { error: { code: "Invalid" } }, 400);
+  expect(stageBox().value).toBe("and 42");
+
+  await pane.read(threadAt(pane.sends[0]?.turn ?? "", "Queued"));
+  expect(stageBox().value, "the refused text stopped being drawn").toBe(
+    "and 42",
+  );
+  expect(threadDrawn(pane.container)).toBe(false);
+
+  await act(async () => {
+    fireEvent.keyDown(stageBox(), { key: "Enter" });
+    await Promise.resolve();
+  });
+  expect(pane.sends.map((sent) => sent.session)).toStrictEqual([
+    session,
+    session,
+    session,
+  ]);
+  expect(pane.sends[2]?.turn).toBe(pane.sends[1]?.turn);
+  await taken(pane, 2);
+  await waitFor(() => {
+    expect(threadDrawn(pane.container), "the first box stuck").toBe(true);
+  });
+  expect(pane.opens).toStrictEqual([session]);
 });

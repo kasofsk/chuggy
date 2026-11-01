@@ -11,10 +11,7 @@
  * measured run agreed on and reports disagreement as disagreement, which is the
  * one thing a single `RunTotals` cannot say about itself, and it reports how
  * many of the executions it was handed carried figures at all, so a caller
- * never reads a sum over a third of a set as a sum over the set. `runStageRows`
- * sums through `runTotalsSummed` and still takes the basis of the first run it
- * is handed, which holds only while the basis roster has the single member it
- * has today.
+ * never reads a sum over a third of a set as a sum over the set.
  *
  * TIME IS READ BY A CLOCK, NOT BY A STRING. `instantSchema` promises only a
  * non-empty string, so `runSpanOf` orders by what parses as an instant and
@@ -28,11 +25,7 @@ import type {
   RunTotals,
   TaskIdentity,
 } from "../../../../src/contract/responses.ts";
-import {
-  executionTaskKinds,
-  type ExecutionTaskKind,
-  type RunCostBasis,
-} from "../../../../src/contract/rosters.ts";
+import type { RunCostBasis } from "../../../../src/contract/rosters.ts";
 
 /** Millionths of a dollar in a dollar, which is the unit a durable row holds. */
 const costUsdMicrosPerUsd = 1_000_000;
@@ -235,22 +228,6 @@ export function runSpanOf(summaries: readonly ExecutionSummary[]): RunSpan {
   return { from: started[0], to: open ? undefined : ended.at(-1) };
 }
 
-/**
- * One stage of one kind in one work cycle, and what the executions grouped
- * under it spent. A stage number is only unique within its own cycle, and a
- * generation only within its own stage, so a row never merges two cycles'
- * same-numbered stage, nor two generations of one stage, into one figure.
- */
-export interface RunStageRow {
-  readonly cycle: number;
-  readonly taskKind: ExecutionTaskKind;
-  readonly stage: number | undefined;
-  readonly generation: number | undefined;
-  readonly executions: number;
-  readonly measured: number;
-  readonly totals: RunTotals | undefined;
-}
-
 /** Which work cycle a task belongs to, a work task's own or an evaluation's. */
 export function identityCycle(identity: TaskIdentity): number {
   return identity.type === "WorkTask"
@@ -258,94 +235,8 @@ export function identityCycle(identity: TaskIdentity): number {
     : identity.value.workCycle;
 }
 
-/** An evaluation task's own stage, absent for a work task. */
-function identityStage(identity: TaskIdentity): number | undefined {
-  return identity.type === "WorkTask" ? undefined : identity.value.stage;
-}
-
-/** An evaluation task's own generation, absent for a work task. */
-function identityGeneration(identity: TaskIdentity): number | undefined {
-  return identity.type === "WorkTask" ? undefined : identity.value.generation;
-}
-
 /** The word a generation past the first draws as, never "run" — one spelling
  * for every generation past the first, the model's own word for it. */
 export function generationLabel(generation: number): string | undefined {
   return generation <= 1 ? undefined : `generation ${String(generation)}`;
-}
-
-function runStageKey(summary: ExecutionSummary): string {
-  const stage = identityStage(summary.identity);
-  const generation = identityGeneration(summary.identity);
-  return `${String(identityCycle(summary.identity))}/${summary.taskKind}/${stage === undefined ? "" : String(stage)}/${generation === undefined ? "" : String(generation)}`;
-}
-
-/** Cycle order first, then stage, then generation, then the order the program runs the kinds in. */
-function runStageBefore(left: RunStageRow, right: RunStageRow): number {
-  const cycles = left.cycle - right.cycle;
-  if (cycles !== 0) return cycles;
-  const stages = (left.stage ?? 0) - (right.stage ?? 0);
-  if (stages !== 0) return stages;
-  const generations = (left.generation ?? 0) - (right.generation ?? 0);
-  return generations === 0
-    ? executionTaskKinds.indexOf(left.taskKind) -
-        executionTaskKinds.indexOf(right.taskKind)
-    : generations;
-}
-
-/**
- * The ticket's executions grouped on the cycle and stage of the program that
- * ran them, each row stating how many of its executions carry figures at all.
- */
-export function runStageRows(
-  summaries: readonly ExecutionSummary[],
-): readonly RunStageRow[] {
-  const grouped = new Map<string, ExecutionSummary[]>();
-  for (const summary of summaries) {
-    const key = runStageKey(summary);
-    const held = grouped.get(key);
-    if (held === undefined) grouped.set(key, [summary]);
-    else held.push(summary);
-  }
-  const rows: RunStageRow[] = [];
-  for (const group of grouped.values()) {
-    const first = group[0];
-    if (first === undefined) continue;
-    const measured = group.flatMap((summary) =>
-      summary.runTotals === undefined ? [] : [summary.runTotals],
-    );
-    rows.push({
-      cycle: identityCycle(first.identity),
-      taskKind: first.taskKind,
-      stage: identityStage(first.identity),
-      generation: identityGeneration(first.identity),
-      executions: group.length,
-      measured: measured.length,
-      totals: runTotalsSummed(measured),
-    });
-  }
-  return rows.sort(runStageBefore);
-}
-
-/** How many executions the row groups, and how many of them carry figures. */
-export function runStageCoverageSentence(row: RunStageRow): string {
-  const executions =
-    row.executions === 1
-      ? "1 execution"
-      : `${String(row.executions)} executions`;
-  return `${executions}, ${String(row.measured)} with figures`;
-}
-
-/** What the row is called: the cycle it ran in, the stage within it, and the
- * generation past the first if it is one. */
-export function runStageLabel(row: RunStageRow): string {
-  const kind = row.taskKind.toLowerCase();
-  const cycle = `cycle ${String(row.cycle)}`;
-  const stage =
-    row.stage === undefined ? kind : `${kind} stage ${String(row.stage)}`;
-  const generation =
-    row.generation === undefined ? undefined : generationLabel(row.generation);
-  return generation === undefined
-    ? `${cycle} ${stage}`
-    : `${cycle} ${stage} · ${generation}`;
 }

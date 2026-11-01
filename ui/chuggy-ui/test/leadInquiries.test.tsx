@@ -13,7 +13,9 @@
 import { QueryClient } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
+import { useEffect } from "react";
 import type { ReactNode } from "react";
+import { useStore } from "react-redux";
 
 import { LeadInquiries } from "../app/browser/lead/LeadInquiries.tsx";
 import { leadInquiriesQuery } from "../app/core/sessionQueries.ts";
@@ -83,9 +85,19 @@ function InquiryHolder(props: {
   );
 }
 
+/** Counts each dispatch the store under it is handed. */
+function DispatchesCounted(props: { readonly counted: () => void }): null {
+  const store = useStore();
+  const { counted } = props;
+  useEffect(() => store.subscribe(counted), [store, counted]);
+  return null;
+}
+
 interface InquiryServer {
   readonly stream: ReturnType<typeof openedStream>;
   readonly reads: () => number;
+  /** How many actions the store has been handed since the panel was drawn. */
+  readonly dispatches: () => number;
   readonly posts: () => readonly unknown[];
   readonly postUrls: () => readonly string[];
   readonly readUrls: () => readonly string[];
@@ -96,6 +108,9 @@ interface InquiryServer {
    * box is reconciled rather than remounted and keeps everything it holds.
    */
   readonly moveTo: (partition: PartitionIdentity) => Promise<void>;
+  /** The same instance under another project's params, with the head drawn
+   * throughout, so nothing between the two unmounts the box. */
+  readonly paramsMoved: (partition: PartitionIdentity) => Promise<void>;
 }
 
 interface InquiryInit {
@@ -103,12 +118,9 @@ interface InquiryInit {
   readonly body?: string;
 }
 
-/**
- * The panel over a server whose listing the case may move under it and whose
- * answer to the post the case decides. `head` is the lead's runtime reference,
- * which is the only thing the page knows that decides whether a box is drawn.
- */
-async function drawInquiries(served: {
+/** What a case serves the panel: its listing, its answer to a post, and the
+ * head that decides whether a box is drawn. */
+interface InquiryServed {
   readonly listing: () => LeadInquiriesResponse;
   readonly asked?: (
     body: unknown,
@@ -118,7 +130,11 @@ async function drawInquiries(served: {
   /** Held open so a case can read the box while a press is still in flight. */
   readonly gate?: () => Promise<void>;
   readonly placement?: SessionPlacementResponse;
-}): Promise<InquiryServer> {
+}
+
+/** The server a case serves, stubbed as the page's fetch, and what it was
+ * asked. */
+function inquiryDoorStubbed(served: InquiryServed) {
   let reads = 0;
   const posts: unknown[] = [];
   const postUrls: string[] = [];
@@ -144,34 +160,58 @@ async function drawInquiries(served: {
     return Promise.resolve(answer(served.listing()));
   }) as unknown as typeof fetch;
   vi.stubGlobal("fetch", fetching);
+  return {
+    reads: () => reads,
+    posts: () => posts,
+    postUrls: () => postUrls,
+    readUrls: () => readUrls,
+  };
+}
+
+/**
+ * The panel over a server whose listing the case may move under it and whose
+ * answer to the post the case decides. `head` is the lead's runtime reference,
+ * which is the only thing the page knows that decides whether a box is drawn.
+ */
+async function drawInquiries(served: InquiryServed): Promise<InquiryServer> {
+  const door = inquiryDoorStubbed(served);
   const stream = openedStream();
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   const head = "head" in served ? served.head : leadStream;
+  let dispatches = 0;
+  const counted = () => {
+    dispatches += 1;
+  };
   const panel = (partition: PartitionIdentity, at: string | undefined) => (
     <ScreenHarness
       partition={partition}
       client={client}
       transport={stream.ports.fetch}
     >
+      <DispatchesCounted counted={counted} />
       <InquiryHolder partition={partition} head={at} />
     </ScreenHarness>
   );
   const drawn = render(panel(leadPartition, head));
   await settled();
   return {
+    ...door,
     stream,
-    reads: () => reads,
-    posts: () => posts,
-    postUrls: () => postUrls,
-    readUrls: () => readUrls,
+    dispatches: () => dispatches,
     client,
     moveTo: async (partition: PartitionIdentity) => {
       await turned(() => {
         drawn.rerender(panel(partition, undefined));
       });
       await settled();
+      await turned(() => {
+        drawn.rerender(panel(partition, head));
+      });
+      await settled();
+    },
+    paramsMoved: async (partition: PartitionIdentity) => {
       await turned(() => {
         drawn.rerender(panel(partition, head));
       });
@@ -1020,13 +1060,12 @@ test.each([
   },
 );
 
-/**
- * AN ACCEPTED PRESS RE-READS THE PROJECT IT WAS ASKED IN. The answer may arrive
- * after the reader has moved on, and re-reading whichever project is on screen
- * would leave the asked project's listing without the inquiry that was just
- * opened while re-reading a project nothing happened to.
- */
-test("an accepted press re-reads the project it was asked in", async () => {
+/** A question asked, its answer held, and the reader moved to another
+ * project before it lands. */
+async function askedThenAway(): Promise<{
+  readonly server: InquiryServer;
+  readonly release: () => void;
+}> {
   let release = (): void => undefined;
   const gate = new Promise<void>((resolve) => {
     release = resolve;
@@ -1040,6 +1079,17 @@ test("an accepted press re-reads the project it was asked in", async () => {
   });
   await turned(ask);
   await server.moveTo(elsewhere);
+  return { server, release };
+}
+
+/**
+ * AN ACCEPTED PRESS RE-READS THE PROJECT IT WAS ASKED IN. The answer may arrive
+ * after the reader has moved on, and re-reading whichever project is on screen
+ * would leave the asked project's listing without the inquiry that was just
+ * opened while re-reading a project nothing happened to.
+ */
+test("an accepted press re-reads the project it was asked in", async () => {
+  const { server, release } = await askedThenAway();
   const staleness = (partition: PartitionIdentity) =>
     server.client.getQueryState(leadInquiriesQuery(partition).queryKey)
       ?.isInvalidated;
@@ -1162,3 +1212,66 @@ test("a question asked again after it was answered takes a new pair", async () =
     "a pair the door had already taken was sent a second time",
   ).not.toBe(sent[0]);
 });
+
+/** A keystroke is the box's own, and only what leaves it reaches the store. */
+test("typing a question dispatches nothing", async () => {
+  const server = await drawInquiries({ listing: () => ({ inquiries: [] }) });
+  const before = server.dispatches();
+  await turned(() => {
+    typed("why");
+    typed("why is");
+    typed("why is ticket 41 waiting?");
+  });
+  expect(server.dispatches(), "a keystroke was dispatched").toBe(before);
+  expect(screen.getByLabelText<HTMLTextAreaElement>("Question").value).toBe(
+    "why is ticket 41 waiting?",
+  );
+});
+
+test("a question left by clicking away is there on return, through another project", async () => {
+  const server = await drawInquiries({ listing: () => ({ inquiries: [] }) });
+  await turned(() => {
+    typed("why is ticket 41 waiting?");
+    fireEvent.blur(screen.getByLabelText("Question"));
+  });
+  await server.moveTo(elsewhere);
+  expect(screen.getByLabelText<HTMLTextAreaElement>("Question").value).toBe("");
+  await server.moveTo(leadPartition);
+  expect(
+    screen.getByLabelText<HTMLTextAreaElement>("Question").value,
+    "a question left by clicking away was gone on return",
+  ).toBe("why is ticket 41 waiting?");
+});
+
+test("a question typed and not left is not drawn in the next project's box", async () => {
+  const server = await drawInquiries({ listing: () => ({ inquiries: [] }) });
+  await turned(() => {
+    typed("why is ticket 41 waiting?");
+  });
+  await server.paramsMoved(elsewhere);
+  expect(
+    screen.getByLabelText<HTMLTextAreaElement>("Question").value,
+    "one project's question was drawn in another project's box",
+  ).toBe("");
+});
+
+/** The answer is written to the project's box wherever the reader is, so the
+ * question it answered is gone from the box they come back to. */
+test.each([
+  ["while the reader is away", "Away"],
+  ["after the reader is back", "Back"],
+] as const)(
+  "an accepted question is cleared from the box when its answer lands %s",
+  async (_named, lands) => {
+    const { server, release } = await askedThenAway();
+    if (lands === "Back") await server.moveTo(leadPartition);
+    await turned(release);
+    await settled();
+    if (lands === "Away") await server.moveTo(leadPartition);
+    expect(screen.getByText("Asked")).toBeDefined();
+    expect(
+      screen.getByLabelText<HTMLTextAreaElement>("Question").value,
+      "an answered question was left in the box",
+    ).toBe("");
+  },
+);

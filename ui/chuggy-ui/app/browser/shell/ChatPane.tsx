@@ -333,18 +333,20 @@ function ChatPaneUnsendable(props: {
  * answered and draws nothing: the pane draws the thread from then, in place of
  * the composer that message was typed in. A turn stopped in that composer is
  * waited for until the read lists it ended, so the thread is never drawn
- * saying a turn drawn stopped is out.
+ * saying a turn drawn stopped is out, and so is every press of that composer
+ * still out or held, so none opens a thread of its own or loses its text.
  */
 function ChatPaneOpening(props: {
   readonly partition: PartitionIdentity;
   readonly session: string;
   readonly stopping: ReadonlySet<string>;
+  readonly unsettled: boolean;
   readonly onRead: () => void;
 }): ReactNode {
   const state = useThread(props.partition, props.session);
   const ended = state.state === "Ready" ? threadTurnsEnded(state.value) : [];
   const awaited = [...props.stopping].some((turn) => !ended.includes(turn));
-  const read = state.state !== "Pending" && !awaited;
+  const read = state.state !== "Pending" && !awaited && !props.unsettled;
   const onRead = props.onRead;
   useEffect(() => {
     if (read) onRead();
@@ -356,10 +358,10 @@ function ChatPaneOpening(props: {
  * The composer a reader with no thread types in, whose first press opens one,
  * mounted afresh in each project so its text does not cross, and drawing the
  * project's own first record, so neither does that thread. It stays drawn
- * until that message is sent and the thread it opened has been read, so
- * neither the thread arriving in the listing mid-send nor the read of it takes
- * away the text or the message drawn above it, and while it holds text a door
- * read as `unhosted` holds that text read-only.
+ * until each message it pressed is sent and the thread they went to has been
+ * read, so neither the thread arriving in the listing mid-send nor the read of
+ * it takes away the text or the message drawn above it, and while it holds
+ * text a door read as `unhosted` holds that text read-only.
  */
 function ChatPaneFirst(props: {
   readonly partition: PartitionIdentity;
@@ -388,6 +390,7 @@ function ChatPaneFirst(props: {
         partition={props.partition}
         session={props.opening}
         stopping={sends.stopping}
+        unsettled={sends.unsettled}
         onRead={props.onRead}
       />
     );

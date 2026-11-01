@@ -5,6 +5,8 @@
  * write to it invalidates it by the query's own key.
  */
 
+import type { QueryClient } from "@tanstack/query-core";
+
 import {
   apiCallerTenants,
   apiSiteAbilities,
@@ -114,6 +116,23 @@ export function memberChatThreadQuery(
     (ports) => apiChatThread(ports, tenant, session),
     writing ? memberChatThreadPolledMs : sessionPlacementPolledMs,
   );
+}
+
+/** Reads the reader's own chat again now, its listing and the one thread a
+ * change was made to, which no frame will name. */
+export async function memberChatReread(
+  client: QueryClient,
+  tenant: string,
+  session: string,
+): Promise<void> {
+  await Promise.all([
+    client.invalidateQueries({
+      queryKey: memberChatThreadsQuery(tenant).queryKey,
+    }),
+    client.invalidateQueries({
+      queryKey: memberChatThreadQuery(tenant, session).queryKey,
+    }),
+  ]);
 }
 
 export function siteWorkspacesQuery(tenant: string) {

@@ -11,7 +11,6 @@
  * under no project, so no frame names one and its reads are polled instead.
  */
 
-import type { QueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
@@ -58,23 +57,6 @@ export function useChatAbilities(
   tenant: string,
 ): PanelState<ChatAbilitiesResponse> {
   return usePanelState(chatAbilitiesQuery(tenant));
-}
-
-/** Reads the reader's own chat again now, its listing and the one thread a
- * change was made to, which no frame will name. */
-export async function memberChatReread(
-  client: QueryClient,
-  tenant: string,
-  session: string,
-): Promise<void> {
-  await Promise.all([
-    client.invalidateQueries({
-      queryKey: memberChatThreadsQuery(tenant).queryKey,
-    }),
-    client.invalidateQueries({
-      queryKey: memberChatThreadQuery(tenant, session).queryKey,
-    }),
-  ]);
 }
 
 /** The reader's own threads at their tenant, read again at the pace a

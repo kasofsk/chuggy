@@ -39,9 +39,13 @@
  */
 
 import { useIsMutating, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import type { ReactNode } from "react";
 
-import { inquiryQuestionCharsMax } from "../../../../../src/contract/http.ts";
+import {
+  inquiryQuestionCharsMax,
+  partitionPath,
+} from "../../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type {
   LeadInquiriesResponse,
@@ -234,12 +238,20 @@ function LeadAsk(props: { readonly partition: PartitionIdentity }): ReactNode {
   const pending =
     useIsMutating({ mutationKey: write.mutationKey, exact: true }) > 0;
   const box = useInquiryBox(partition);
-  const question = inquiryQuestion(box.typed);
+  const [draft, setDraft] = useState<string | undefined>(undefined);
+  const typed = draft ?? box.typed;
+  const question = inquiryQuestion(typed);
   const fault = inquiryQuestionFault(question);
-  const shown = box.typed === "" ? undefined : fault;
+  const shown = typed === "" ? undefined : fault;
+  const left = () => {
+    if (draft === undefined) return;
+    dispatch(inquiryBoxTypedAt({ partition, typed: draft }));
+    setDraft(undefined);
+  };
   const submit = () => {
     if (client.isMutating({ mutationKey: write.mutationKey, exact: true }) > 0)
       return;
+    left();
     const draw = inquiryDraw(box.held, question, partition, () =>
       base64urlFromBytes(drawBytes(inquiryIdentityBytesCount)),
     );
@@ -256,12 +268,11 @@ function LeadAsk(props: { readonly partition: PartitionIdentity }): ReactNode {
             className="inquiry-ask-text w-full resize-y"
             aria-label="Question"
             aria-invalid={shown !== undefined}
-            value={box.typed}
+            value={typed}
             onChange={(event) => {
-              dispatch(
-                inquiryBoxTypedAt({ partition, typed: event.target.value }),
-              );
+              setDraft(event.target.value);
             }}
+            onBlur={left}
           />
           <span className="num">{`${String(question.length)} / ${String(inquiryQuestionCharsMax)}`}</span>
           {shown === undefined ? null : <Pill tone="fail">{shown}</Pill>}
@@ -368,7 +379,9 @@ function LeadAskOffered(props: {
 }): ReactNode {
   const abilities = useProjectAbilities(props.partition);
   if (projectAbilityRefused(abilities, "mutate")) return <ViewOnlyNotice />;
-  return <LeadAsk partition={props.partition} />;
+  return (
+    <LeadAsk key={partitionPath(props.partition)} partition={props.partition} />
+  );
 }
 
 export function LeadInquiries(props: {

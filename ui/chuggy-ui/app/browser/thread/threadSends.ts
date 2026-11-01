@@ -76,6 +76,7 @@ import {
   sessionPlacementQuery,
 } from "../../core/projectQueries.ts";
 import { sessionRefusedNoRunner } from "../../core/sessionRunners.ts";
+import { memberChatReread } from "../../core/tenantQueries.ts";
 import {
   apiOpenThreadAt,
   apiStopThreadTurnAt,
@@ -136,7 +137,6 @@ import type {
   ThreadSendFlight,
   ThreadSendsCarried,
 } from "../storeExtra.ts";
-import { memberChatReread } from "./threadRead.ts";
 
 /** Which record an action writes. */
 interface ThreadSendAt {

@@ -29,7 +29,6 @@ import {
   useState,
 } from "react";
 import type { ReactNode } from "react";
-import { useDispatch } from "react-redux";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { ProjectChangeKind } from "../../../../src/contract/events.ts";
@@ -62,6 +61,7 @@ import type { StreamPorts } from "../core/streamConnection.ts";
 import { consoleOutdatedHeard } from "./consoleOutdated.ts";
 import { deadlineMs, logWarned, nowMs, sleepMs, streamFetch } from "./ports.ts";
 import { useSessionGeneration, useSessionHolder } from "./session.tsx";
+import { useConsoleDispatch } from "./store.ts";
 
 export const projectListFoldsMax = 32;
 export const streamGraceMs = 10_000;
@@ -221,8 +221,7 @@ function useStreamConnection(
   ports: StreamPorts,
 ): ProjectStreamStatus {
   const client = useQueryClient();
-  /** react-redux's own, because `store.ts` reaches this file through `api.ts`. */
-  const dispatch = useDispatch();
+  const dispatch = useConsoleDispatch();
   const generation = useSessionGeneration();
   const [status, setStatus] =
     useState<ProjectStreamStatus>(streamStatusInitial);

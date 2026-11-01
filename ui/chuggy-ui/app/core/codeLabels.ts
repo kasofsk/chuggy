@@ -24,7 +24,6 @@ import {
   type changeProposalMergeWaits,
   type changeProposalMerges,
   type changeProposalStatuses,
-  type finalizationAttemptOutcomes,
   type finalizationFailureKinds,
   type BlockedReason,
   type BriefFinalizationMode,
@@ -213,20 +212,6 @@ export function ticketLandingStateLabel(state: TicketLandingState): string {
       return "Proposed";
     case "Invalidated":
       return "Invalidated";
-  }
-}
-
-/** What one finalization attempt came to. */
-export function finalizationAttemptOutcomeLabel(
-  outcome: (typeof finalizationAttemptOutcomes)[number],
-): string {
-  switch (outcome) {
-    case "Prepared":
-      return "Prepared";
-    case "Failed":
-      return "Failed";
-    case "Landed":
-      return "Already landed";
   }
 }
 

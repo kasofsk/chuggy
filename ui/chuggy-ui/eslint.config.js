@@ -23,6 +23,26 @@ import eslint from "@eslint/js";
 import reactHooks from "eslint-plugin-react-hooks";
 import tseslint from "typescript-eslint";
 
+// `removeQueries` and `resetQueries` take a cache entry away before anything
+// is read in its place, so every screen drawn from it unmounts, and what a
+// reader had typed into it goes with it. `invalidateQueries` reads again and
+// keeps what is drawn until the answer lands. A call that truly has no
+// screen under it carries an inline disable saying why. A later block setting
+// `no-restricted-syntax` replaces this list for the files it matches, so it
+// spreads this list into its own.
+const consoleQueriesKept = [
+  {
+    selector: "MemberExpression[property.name='removeQueries']",
+    message:
+      "removing an entry unmounts what is drawn from it; invalidate it instead",
+  },
+  {
+    selector: "MemberExpression[property.name='resetQueries']",
+    message:
+      "resetting an entry unmounts what is drawn from it; invalidate it instead",
+  },
+];
+
 export default tseslint.config(
   { ignores: ["dist/**", "node_modules/**"] },
   eslint.configs.recommended,
@@ -70,27 +90,10 @@ export default tseslint.config(
       /* jscpd:ignore-end — the rule list above is the root's, deliberately */
     },
   },
-  // `removeQueries` and `resetQueries` take a cache entry away before anything
-  // is read in its place, so every screen drawn from it unmounts, and what a
-  // reader had typed into it goes with it. `invalidateQueries` reads again and
-  // keeps what is drawn until the answer lands. A call that truly has no
-  // screen under it carries an inline disable saying why.
   {
     files: ["app/**/*.ts", "app/**/*.tsx"],
     rules: {
-      "no-restricted-syntax": [
-        "error",
-        {
-          selector: "MemberExpression[property.name='removeQueries']",
-          message:
-            "removing an entry unmounts what is drawn from it; invalidate it instead",
-        },
-        {
-          selector: "MemberExpression[property.name='resetQueries']",
-          message:
-            "resetting an entry unmounts what is drawn from it; invalidate it instead",
-        },
-      ],
+      "no-restricted-syntax": ["error", ...consoleQueriesKept],
     },
   },
   // A browser that refuses storage throws on the first touch of it, and the
@@ -110,6 +113,29 @@ export default tseslint.config(
           name: "sessionStorage",
           message:
             "storage is reached through `transientStore` in `app/browser/ports.ts`",
+        },
+      ],
+      "no-restricted-properties": [
+        "error",
+        ...["window", "globalThis"].flatMap((object) => [
+          {
+            object,
+            property: "localStorage",
+            message:
+              "storage is reached through `persistentStore` in `app/browser/ports.ts`",
+          },
+          {
+            object,
+            property: "sessionStorage",
+            message:
+              "storage is reached through `transientStore` in `app/browser/ports.ts`",
+          },
+        ]),
+        {
+          object: "document",
+          property: "cookie",
+          message:
+            "cookies are reached through `cookiesRead` and `cookieWritten` in `app/browser/ports.ts`",
         },
       ],
     },
@@ -137,6 +163,15 @@ export default tseslint.config(
                 "state a component does not own is a slice's, read through `useConsoleSelector` in `app/browser/store.ts`",
             },
           ],
+        },
+      ],
+      "no-restricted-syntax": [
+        "error",
+        ...consoleQueriesKept,
+        {
+          selector: "MemberExpression[property.name='useSyncExternalStore']",
+          message:
+            "state a component does not own is a slice's, read through `useConsoleSelector` in `app/browser/store.ts`",
         },
       ],
     },

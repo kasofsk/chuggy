@@ -154,6 +154,9 @@ export interface ThreadSendHeld {
   readonly stopping: ReadonlySet<string>;
   /** How many presses of Stop the door's answer took back. */
   readonly takenBack: number;
+  /** Whether a press of this box is out or held, which a box that gave way
+   * would lose. */
+  readonly unsettled: boolean;
 }
 
 /** What a thread's message carries as images: the message door's own bound,
@@ -296,9 +299,7 @@ function useThreadSendAt(
     input.ended ?? threadSendNothingEnded,
   );
   const standing = threadSendStanding(send, input.takes, door);
-  const idled = (): void => {
-    dispatch(threadSendIdledAt({ name }));
-  };
+  const idled = () => dispatch(threadSendIdledAt({ name }));
   const back = closed ? undefined : threadSendBack(name, record.kept, dispatch);
   const { onStarted } = input;
   const composer: ConversationComposerProps = {
@@ -337,5 +338,7 @@ function useThreadSendAt(
     holds: standing.send === "Unhosted",
     ...(back === undefined ? {} : { back }),
   };
-  return { composer, sending, stopping, takenBack: record.takenBack };
+  const { takenBack } = record;
+  const unsettled = record.pressesOut > 0 || record.held !== undefined;
+  return { composer, sending, stopping, takenBack, unsettled };
 }

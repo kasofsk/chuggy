@@ -16,7 +16,6 @@ import type {
 import type { ApiResult } from "../app/core/apiRequest.ts";
 import {
   projectTicketPagesMax,
-  projectTicketRowsAfterPage,
   projectTicketRowsAppend,
   projectTicketRowsEmpty,
   projectTicketRowsFold,
@@ -217,33 +216,6 @@ test("a list with no page read yet is not invented by a frame", () => {
       undefined,
     ),
   ).toBeUndefined();
-});
-
-test("a page that could not be read keeps the rows and says why", () => {
-  const rows = projectTicketRowsAppend(projectTicketRowsEmpty, firstPage);
-  const after = projectTicketRowsAfterPage(rows, {
-    outcome: "Unreachable",
-    reason: "the network went away",
-  });
-  expect(after.tickets.map((ticket) => ticket.ticket)).toStrictEqual([1, 2]);
-  expect(after.failure).toStrictEqual({
-    outcome: "Unreachable",
-    reason: "the network went away",
-  });
-  expect(after.next?.cursor).toBe("after-one");
-});
-
-test("a page that reads clears the failure the last one recorded", () => {
-  const failed = projectTicketRowsAfterPage(
-    projectTicketRowsAppend(projectTicketRowsEmpty, firstPage),
-    { outcome: "Unreachable", reason: "the network went away" },
-  );
-  const after = projectTicketRowsAfterPage(failed, {
-    outcome: "Ok",
-    value: page([{ ticket: 3, phase: "Done", sequence: 1, ...ticketInstants }]),
-  });
-  expect(after.failure).toBeUndefined();
-  expect(after.tickets.map((ticket) => ticket.ticket)).toStrictEqual([1, 2, 3]);
 });
 
 const unreachable: ApiResult<ProjectResponse> = {

@@ -8,23 +8,14 @@
 
 import { expect, test } from "vitest";
 
-import type {
-  ExecutionSummary,
-  RunTotals,
-  TaskIdentity,
-} from "../../../src/contract/responses.ts";
+import type { RunTotals } from "../../../src/contract/responses.ts";
 import {
   generationLabel,
   runCostLabel,
   runCountLabel,
   runDurationLabel,
-  runStageCoverageSentence,
-  runStageLabel,
-  runStageRows,
   runTotalsSummed,
 } from "../app/core/runTotals.ts";
-
-const digest = "a".repeat(64);
 
 function totals(over: Partial<RunTotals> = {}): RunTotals {
   return {
@@ -48,53 +39,6 @@ function totals(over: Partial<RunTotals> = {}): RunTotals {
         costUsdMicros: 100_000,
       },
     ],
-    ...over,
-  };
-}
-
-/** A work task's identity, in the cycle a case names. */
-function workIdentity(cycle: number): TaskIdentity {
-  return { type: "WorkTask", value: { ticket: 7, cycle } };
-}
-
-/** An evaluation task's identity, its stage and cycle a case names, its
- * generation the first unless a case reworks, its evaluator held constant. */
-function evalIdentity(
-  cycle: number,
-  stage: number,
-  generation = 1,
-): TaskIdentity {
-  return {
-    type: "EvaluationTask",
-    value: { ticket: 7, workCycle: cycle, stage, generation, evaluator: 1 },
-  };
-}
-
-function summary(
-  execution: string,
-  over: Partial<ExecutionSummary> = {},
-): ExecutionSummary {
-  return {
-    execution,
-    ticket: 7,
-    task: 1,
-    taskKind: "Work",
-    identity: workIdentity(1),
-    cluster: "rig",
-    configurationRevision: "r1",
-    requirementIdentity: "req-1",
-    requirement: {
-      mode: "Container",
-      operatingSystem: "Linux",
-      architecture: "Amd64",
-      image: "chuggy/worker",
-    },
-    requirementDigest: digest,
-    requirementSource: "PlatformDefault",
-    platformDefaultVersion: 1,
-    status: "Terminal",
-    retriesSpent: 0,
-    registeredAt: "2026-08-27T00:00:00Z",
     ...over,
   };
 }
@@ -183,113 +127,4 @@ test("a sum carries no run's own outcome labels", () => {
   ]);
   expect(summed?.resultSubtype).toBeUndefined();
   expect(summed?.stopReason).toBeUndefined();
-});
-
-/** A run that ended badly still spent what it spent; a total that left it out
- * would be the one figure a reader is looking for. */
-test("a stage's total counts every execution's figures, whatever it ended as", () => {
-  const rows = runStageRows([
-    summary("e1", {
-      taskKind: "Evaluation",
-      identity: evalIdentity(1, 1),
-      runTotals: totals({ costUsdMicros: 1_000 }),
-    }),
-    summary("e2", {
-      taskKind: "Evaluation",
-      identity: evalIdentity(1, 1),
-      status: "Terminal",
-      outcome: "Failed",
-      runTotals: totals({ costUsdMicros: 2_000 }),
-    }),
-    summary("e3", {
-      taskKind: "Evaluation",
-      identity: evalIdentity(1, 1),
-      status: "Running",
-      runTotals: totals({ costUsdMicros: 4_000 }),
-    }),
-  ]);
-  expect(rows).toHaveLength(1);
-  expect(rows[0]?.totals?.costUsdMicros).toBe(7_000);
-  expect(rows[0]?.executions).toBe(3);
-  expect(rows[0]?.measured).toBe(3);
-});
-
-test("the rows are one per cycle, kind and stage, in the order the program runs them", () => {
-  const rows = runStageRows([
-    summary("e1", { taskKind: "Evaluation", identity: evalIdentity(1, 2) }),
-    summary("e2", { identity: workIdentity(1) }),
-    summary("e3", { taskKind: "Evaluation", identity: evalIdentity(1, 1) }),
-    summary("e4", { identity: workIdentity(1) }),
-  ]);
-  expect(rows.map(runStageLabel)).toEqual([
-    "cycle 1 work",
-    "cycle 1 evaluation stage 1",
-    "cycle 1 evaluation stage 2",
-  ]);
-  expect(rows[0]?.executions).toBe(2);
-});
-
-test("two cycles sharing a stage number keep their totals apart", () => {
-  const rows = runStageRows([
-    summary("e1", {
-      taskKind: "Evaluation",
-      identity: evalIdentity(1, 1),
-      runTotals: totals({ costUsdMicros: 1_000 }),
-    }),
-    summary("e2", {
-      taskKind: "Evaluation",
-      identity: evalIdentity(2, 1),
-      runTotals: totals({ costUsdMicros: 5_000 }),
-    }),
-  ]);
-  expect(rows.map(runStageLabel)).toEqual([
-    "cycle 1 evaluation stage 1",
-    "cycle 2 evaluation stage 1",
-  ]);
-  expect(rows.map((row) => row.totals?.costUsdMicros)).toEqual([1_000, 5_000]);
-});
-
-test("two generations of one stage keep their totals apart", () => {
-  const rows = runStageRows([
-    summary("e1", {
-      taskKind: "Evaluation",
-      identity: evalIdentity(1, 1, 1),
-      runTotals: totals({ costUsdMicros: 1_000 }),
-    }),
-    summary("e2", {
-      taskKind: "Evaluation",
-      identity: evalIdentity(1, 1, 2),
-      runTotals: totals({ costUsdMicros: 5_000 }),
-    }),
-  ]);
-  expect(rows.map(runStageLabel)).toEqual([
-    "cycle 1 evaluation stage 1",
-    "cycle 1 evaluation stage 1 · generation 2",
-  ]);
-  expect(rows.map((row) => row.totals?.costUsdMicros)).toEqual([1_000, 5_000]);
-});
-
-test("an execution carrying no figures is counted and not measured", () => {
-  const rows = runStageRows([
-    summary("e1", { taskKind: "Evaluation", identity: evalIdentity(1, 1) }),
-  ]);
-  expect(rows[0]?.executions).toBe(1);
-  expect(rows[0]?.measured).toBe(0);
-  expect(rows[0]?.totals).toBeUndefined();
-});
-
-test("a row says how many executions it groups and how many were measured", () => {
-  const row = {
-    cycle: 1,
-    taskKind: "Work" as const,
-    stage: 1,
-    generation: undefined,
-    executions: 2,
-    measured: 1,
-    totals: undefined,
-  };
-  expect(runStageCoverageSentence(row)).toBe("2 executions, 1 with figures");
-  expect(runStageCoverageSentence({ ...row, executions: 1, measured: 0 })).toBe(
-    "1 execution, 0 with figures",
-  );
 });
