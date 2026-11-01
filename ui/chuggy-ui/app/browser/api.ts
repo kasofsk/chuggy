@@ -25,6 +25,7 @@ import {
 import type {
   InfiniteData,
   Query,
+  QueryCacheNotifyEvent,
   QueryClient,
   QueryKey,
   QueryObserverOptions,
@@ -272,9 +273,11 @@ export type PanelPagesObserved<P, Param, R> = ConsolePagesQuery<P, Param, R> & {
 /** A page after the first that could not be read, or a reread behind rows
  * that could not, while the rows already read stand. */
 export interface PanelPagesFailure {
+  /** Why the last read to fail did. */
   readonly reason: string;
-  /** Whether it was the reader's own press, whose page can be asked for again. */
-  readonly more: boolean;
+  /** Why the reader's own press failed, whose page can be asked for again,
+   * standing until a read lands. */
+  readonly more: string | undefined;
 }
 
 export interface PanelPages<R> {
@@ -285,6 +288,32 @@ export interface PanelPages<R> {
   /** The reader's press, where the list has a next page to give it. */
   readonly readMore: (() => void) | undefined;
   readonly reading: boolean;
+}
+
+/** Each list's press that failed, held beside its entry rather than read off
+ * it, since a reread beginning after the press clears the entry's account of
+ * which read failed, and a frame written into the entry clears its error. */
+const panelPagesPressFailed = new WeakMap<object, Error>();
+
+/** A press's failure is heard as it lands, before any screen draws it, and
+ * stands until a read lands; a frame's write is no read. */
+function usePanelPagesPressHeard(client: QueryClient, keyed: string): void {
+  useEffect(
+    () =>
+      client.getQueryCache().subscribe((event: QueryCacheNotifyEvent) => {
+        if (event.type !== "updated" || event.query.queryHash !== keyed) return;
+        const action = event.action;
+        if (action.type === "success" && action.manual !== true)
+          panelPagesPressFailed.delete(event.query);
+        const failed: unknown = action.type === "error" ? action.error : null;
+        if (
+          failed instanceof Error &&
+          event.query.state.fetchMeta?.fetchMore !== undefined
+        )
+          panelPagesPressFailed.set(event.query, failed);
+      }),
+    [client, keyed],
+  );
 }
 
 /**
@@ -302,6 +331,7 @@ export function usePanelPages<P, Param, R>(
   const client = useQueryClient();
   const keyed = hashKey(query.queryKey);
   const pressing = useRef<string | undefined>(undefined);
+  usePanelPagesPressHeard(client, keyed);
   const answer = useInfiniteQuery({
     ...panelPagesOptions(ports, client, query),
     ...(query.placeholderData === undefined
@@ -314,13 +344,18 @@ export function usePanelPages<P, Param, R>(
   useEffect(() => {
     observed.current = keyed;
   });
-  const more = answer.isFetchNextPageError;
+  const held = client.getQueryCache().get(keyed);
+  const pressFailed =
+    held === undefined ? undefined : panelPagesPressFailed.get(held);
   const state = usePanelAbsenceKept(
     query.queryKey,
     answer,
-    panelQueryState({ ...answer, error: more ? null : answer.error }),
+    panelQueryState({
+      ...answer,
+      error: answer.error === pressFailed ? null : answer.error,
+    }),
   );
-  const reason = panelFailureReason(answer.error);
+  const reason = panelFailureReason(answer.error ?? pressFailed);
   const kept = answer.isPlaceholderData;
   const readMore = (): void => {
     if (pressing.current === keyed) return;
@@ -345,7 +380,7 @@ export function usePanelPages<P, Param, R>(
     failure:
       reason === undefined || answer.data === undefined || kept
         ? undefined
-        : { reason, more },
+        : { reason, more: panelFailureReason(pressFailed) },
     readMore:
       answer.hasNextPage && !kept && !answer.isFetchingNextPage
         ? readMore

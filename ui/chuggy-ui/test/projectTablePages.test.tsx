@@ -264,6 +264,27 @@ test("a Show more that could not be read keeps the rows, says why, and can be as
   expect(screen.queryByText(/^a further page could not be read/u)).toBeNull();
 });
 
+/** A frame folds into the entry by writing it, which is no read landing. */
+test("a Show more that could not be read is still said once a frame writes into the list", async () => {
+  const drawn = await drawnAt({}, (asked) =>
+    asked.get("cursor") === "active-2"
+      ? answer({ error: "InternalError", message: "boom" }, 500)
+      : activePaged(asked),
+  );
+  await press("Show more");
+  act(() => {
+    drawn.client.setQueryData(
+      ticketRowsQuery(atlas, ticketListAskDefault).queryKey,
+      (pages) => (pages === undefined ? pages : { ...pages }),
+    );
+  });
+  await settled();
+  expect(titlesDrawn()).toStrictEqual(["Ticket 150"]);
+  expect(
+    screen.getByText(/^a further page could not be read — /u),
+  ).toBeDefined();
+});
+
 /** Every ticket in the phase each read asks for. */
 function phased(asked: URLSearchParams): Response {
   const phases = asked.getAll("phase");

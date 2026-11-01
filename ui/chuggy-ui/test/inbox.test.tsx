@@ -23,6 +23,7 @@ import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { ticketLatestExecutionSchema } from "../../../src/contract/responses.ts";
 import type { ProjectTicket } from "../../../src/contract/responses.ts";
 import { InboxScreen } from "../app/browser/Inbox.tsx";
+import { inboxProposalsPolledMs } from "../app/core/inboxProposals.ts";
 import {
   answer,
   apiDouble,
@@ -565,4 +566,74 @@ test("a further page that could not be read keeps the rows, says why, and can be
   expect(screen.getByText("Later")).toBeDefined();
   expect(screen.queryByText(/^a further page could not be read/u)).toBeNull();
   expect(screen.queryByRole("button", { name: "more" })).toBeNull();
+});
+
+/** A press's failure is the rows' until a read lands: a poll reading the inbox
+ * again neither takes it away nor turns it into the panel's, and the panel
+ * says "Not updated" only once the poll itself has failed. */
+test("a further page that could not be read is said through a poll that runs, fails and answers", async () => {
+  vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+  let polled: "Answering" | "Held" | "Failing" = "Answering";
+  let release: () => void = () => undefined;
+  const firstPage = (url: string): boolean =>
+    inboxAsked(url) && !url.includes("cursor=");
+  let firstAsked = 0;
+  drawInbox(
+    (url) => {
+      if (!inboxAsked(url)) return served(url);
+      if (!url.includes("cursor="))
+        return polled === "Failing"
+          ? answer({ error: "InternalError", message: "boom" }, 500)
+          : answer(
+              inboxBody([inboxEntry(escalated)], {
+                count: 2,
+                nextCursor: "page-2",
+              }),
+            );
+      return answer({ error: "InternalError", message: "boom" }, 500);
+    },
+    (served) =>
+      ((url: string, init?: RequestInit) => {
+        if (!firstPage(url)) return served(url, init);
+        firstAsked += 1;
+        if (polled !== "Held") return served(url, init);
+        return new Promise<void>((resolve) => {
+          release = resolve;
+        }).then(() => served(url, init));
+      }) as typeof fetch,
+  );
+  try {
+    await settled();
+    await turned(() => {
+      fireEvent.click(screen.getByRole("button", { name: "more" }));
+    });
+    await settled();
+    const said = /^a further page could not be read — /u;
+    expect(screen.getByText(said)).toBeDefined();
+    polled = "Held";
+    const asked = firstAsked;
+    await turned(() => {
+      vi.advanceTimersByTime(inboxProposalsPolledMs);
+    });
+    await settled();
+    expect(firstAsked).toBe(asked + 1);
+    expect(screen.getByText(said)).toBeDefined();
+    expect(screen.queryByText("Not updated")).toBeNull();
+    polled = "Failing";
+    await turned(release);
+    await settled();
+    expect(screen.getByText(said)).toBeDefined();
+    expect(screen.getByText("Not updated")).toBeDefined();
+    polled = "Answering";
+    await turned(() => {
+      vi.advanceTimersByTime(inboxProposalsPolledMs);
+    });
+    await settled();
+    expect(firstAsked).toBe(asked + 2);
+    expect(screen.queryByText(/^a further page could not be read/u)).toBeNull();
+    expect(screen.queryByText("Not updated")).toBeNull();
+    expect(screen.getByText("Serve the reason")).toBeDefined();
+  } finally {
+    vi.useRealTimers();
+  }
 });

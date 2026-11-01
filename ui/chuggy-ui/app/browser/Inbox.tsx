@@ -117,8 +117,7 @@ export interface InboxRowsHeld {
 export function useInboxRows(partition: PartitionIdentity): InboxRowsHeld {
   const pages = usePanelPages(inboxQuery(partition));
   const panel = pages.state;
-  const failure =
-    pages.failure?.more === true ? pages.failure.reason : undefined;
+  const failure = pages.failure?.more;
   const rows =
     panel.state === "Ready" ? { ...panel.value, failure } : undefined;
   return {
