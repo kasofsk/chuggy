@@ -137,7 +137,7 @@ function creation(
   };
 }
 
-const unreleased = "Draft 12 kept";
+const unreleased = "Draft 12 kept · Not released";
 const unknown = "Draft 12 kept · Maybe released";
 const invalid = "Configuration or overrides cannot run";
 const pending = "Still pending";

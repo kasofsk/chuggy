@@ -316,9 +316,9 @@ export function operationFailureSentence(failure: ApiFailure): string {
     case "Retryable":
       return `Try later · ${mutationDeferralSentence(failure.code)}`;
     case "Unreachable":
-      return `Offline · ${failure.reason}`;
+      return `Server unreachable · ${failure.reason}`;
     case "Unreadable":
-      return `Update needed · ${failure.reason}`;
+      return `Unreadable answer · ${failure.reason}`;
     case "Conflict":
     case "Rejected":
     case "Fault": {

@@ -448,7 +448,7 @@ test("a configuration named in the YAML after a refused release is what the held
   const editor = await toYaml();
   type(editor, "configuration: development\nintent: ship it\n");
   await submitAsked();
-  await screen.findByText(/Draft 12 kept$/u);
+  await screen.findByText(/Draft 12 kept · Not released/u);
   type(editor, "configuration: development-sonnet\nintent: ship it\n");
   await submitAsked();
   await waitFor(() => {

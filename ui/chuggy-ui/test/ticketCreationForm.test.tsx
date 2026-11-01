@@ -350,7 +350,7 @@ async function submitted(): Promise<void> {
   });
 }
 
-const draftUnreleased = "Draft 12 kept";
+const draftUnreleased = "Draft 12 kept · Not released";
 const draftUnknown = "Draft 12 kept · Maybe released";
 
 test("a release that settles undecided draws the reason and its unreleased draft, and navigates nowhere", async () => {
@@ -462,7 +462,7 @@ test("a held draft the form still describes is released again, unrevised, under 
   draw(held.ports, []);
   typeIntent("ship it");
   submit();
-  await screen.findByText(/Draft 12 kept$/u);
+  await screen.findByText(/Draft 12 kept · Not released/u);
   submit();
   await waitFor(() => {
     expect(releases(held.sent).length).toBe(2);
@@ -1236,7 +1236,7 @@ test("a configuration chosen after a refused release is what the held draft is r
   await chooseConfiguration("development");
   await chooseRepository("gdoteof/scratch");
   submit();
-  await screen.findByText(/Draft 12 kept$/u);
+  await screen.findByText(/Draft 12 kept · Not released/u);
   await chooseConfiguration(bootstrapConfigurationName);
   submit();
   await waitFor(() => {

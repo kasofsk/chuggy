@@ -95,6 +95,17 @@ test("a failure the wire has no refusal for still says what it was", () => {
   ).toContain("the connection was closed");
 });
 
+/** An answer that does not parse is the server's fault, so the line names the
+ * answer and offers the reader no remedy of their own. */
+test("an answer that cannot be read is said to be one, not a reason to update", () => {
+  const said = operationFailureSentence({
+    outcome: "Unreadable",
+    reason: "expected string at title",
+  });
+  expect(said).toMatch(/^Unreadable answer · /u);
+  expect(said).not.toContain("Update");
+});
+
 /** The two fallbacks carry the same sentinel, which is what lets
  * `test/ui/mutationSentences.test.ts` tell a rostered answer from a fallback. */
 test("a deferral belonging to no roster is named as one this console does not know", () => {

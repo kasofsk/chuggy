@@ -234,7 +234,7 @@ export const creationDraftChangedSentence =
  * submit goes back to whatever the form then says. */
 export function creationDraftHeldSentence(held: CreationDraftHeld): string {
   const draft = `Draft ${String(held.draft.ticket)}`;
-  return held.unsettled ? `${draft} kept · Maybe released` : `${draft} kept`;
+  return `${draft} kept · ${held.unsettled ? "Maybe released" : "Not released"}`;
 }
 
 /** What a submit did to a held draft it could not read, which it reads before

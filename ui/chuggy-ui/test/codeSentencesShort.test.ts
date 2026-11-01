@@ -164,6 +164,13 @@ test("every line a creation's submit says is one short line", () => {
   ]);
 });
 
+test("a held draft's line says whether it was released, settled or not", () => {
+  expect(creationDraftHeldSentence(held)).toMatch(/· Not released$/u);
+  expect(creationDraftHeldSentence({ ...held, unsettled: true })).toMatch(
+    /· Maybe released$/u,
+  );
+});
+
 test("a panel never read says so in one word", () => {
   expect(freshnessLabel(Date.now(), undefined)).toBe("Unknown");
 });
