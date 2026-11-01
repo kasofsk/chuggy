@@ -2,11 +2,15 @@
  * The one record a ticket panel keeps of a submission it is still following,
  * and the whole of when that record goes away.
  *
+ * THE MUTATION CACHE DOES NOT KEEP THIS. A write that settled is never run
+ * again and is collected once no screen observes it, so what a follow left
+ * unanswered would be forgotten, and the next press would draw a second
+ * identity for one intent.
+ *
  * THE CACHE'S OWN EXPIRY IS TURNED OFF, AND REMOVAL IS THIS FILE'S. The entry
  * has no reader of its own, and `gcTime` for such an entry is armed once when
  * the entry is built and is not restarted by a later write — so a timed record
- * would be collected part-way through a follow that is still running, and the
- * panel remounting after that would offer a submission it had already made. A
+ * would be collected while the submission it names is still unanswered. A
  * follow has no wall clock to bound it either: a deferred submission waits
  * whatever `retry-after` the server names, up to the contract's cap, on every
  * one of its attempts.

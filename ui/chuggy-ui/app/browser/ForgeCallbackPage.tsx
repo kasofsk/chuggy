@@ -14,12 +14,16 @@ import type { UseNavigateResult } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
+import type { ForgeAuthorizationResponse } from "../../../../src/contract/responses.ts";
 import type { ForgeAppName } from "../../../../src/contract/rosters.ts";
 import type { ApiPorts } from "../core/apiRequest.ts";
 import { apiForgeApps, apiForgeAuthorization } from "../core/apiRoutes.ts";
+import { consoleWriteKey } from "../core/consoleWrite.ts";
+import type { ConsoleWrite } from "../core/consoleWrite.ts";
 import {
   forgeAuthorizationDeclined,
   forgeAuthorizationInstall,
+  forgeAuthorizationRefusal,
   forgeAuthorizationWord,
   forgeAuthorizeTake,
   forgeCallbackDecision,
@@ -38,6 +42,7 @@ import { forgePressSentOn } from "../core/forgePress.ts";
 import type { ForgePress } from "../core/forgePress.ts";
 import { forgeSetupUnexpected } from "../core/forgeSetup.ts";
 import { useApiPorts } from "./api.ts";
+import { useConsoleWrite } from "./consoleWrite.tsx";
 import { Footer } from "./Footer.tsx";
 import { forgeReturnNavigate } from "./forgeReturnNavigate.ts";
 import {
@@ -71,13 +76,56 @@ async function forgeCallbackSentOn(
   return true;
 }
 
-async function forgeCallbackAnswer(
+/** A return that redeems its code. */
+type ForgeCallbackRedeem = Extract<
+  ForgeCallbackDecision,
+  { readonly decision: "Redeem" }
+>;
+
+/** The code redeemed for the tenant the transaction names, with its verifier. */
+const forgeCallbackRedeemWrite: ConsoleWrite<
+  ForgeCallbackRedeem,
+  ForgeAuthorizationResponse
+> = {
+  mutationKey: consoleWriteKey("forge-authorization"),
+  write: (ports, { code, transaction }) =>
+    apiForgeAuthorization(ports, transaction.tenant, {
+      forge: "github",
+      code,
+      redirectUri: forgeCallbackRedirectUri(currentOrigin()),
+      codeVerifier: transaction.verifier,
+    }),
+  refusal: (failure) => forgeAuthorizationRefusal(failure).status,
+};
+
+/** Where a redeemed code sends the person: on to the install it leaves to be
+ * made, or back where they pressed with the word it came to. */
+async function forgeCallbackRedeemed(
   ports: ApiPorts,
   navigate: UseNavigateResult<string>,
-  decision: ForgeCallbackDecision,
+  transaction: ForgePress,
+  answered: ForgeAuthorizationResponse,
 ): Promise<void> {
+  const redeemed = { outcome: "Ok", value: answered } as const;
+  const app = forgeAuthorizationInstall(redeemed, transaction.installs);
+  if (app !== undefined && (await forgeCallbackSentOn(ports, transaction, app)))
+    return;
+  await forgeReturnNavigate(
+    navigate,
+    transaction,
+    forgeAuthorizationWord(redeemed),
+  );
+}
+
+/** What the return answers before any code is redeemed, and the redemption it
+ * asks for where it has one. */
+function forgeCallbackAnswer(
+  navigate: UseNavigateResult<string>,
+  decision: ForgeCallbackDecision,
+  redeem: (decision: ForgeCallbackRedeem) => void,
+): void {
   if (decision.decision === "Declined") {
-    await forgeReturnNavigate(
+    void forgeReturnNavigate(
       navigate,
       decision.transaction,
       forgeAuthorizationDeclined,
@@ -90,21 +138,7 @@ async function forgeCallbackAnswer(
     replace: true,
   });
   if (decision.decision === "Unexpected") return;
-  const { code, transaction } = decision;
-  const answered = await apiForgeAuthorization(ports, transaction.tenant, {
-    forge: "github",
-    code,
-    redirectUri: forgeCallbackRedirectUri(currentOrigin()),
-    codeVerifier: transaction.verifier,
-  });
-  const app = forgeAuthorizationInstall(answered, transaction.installs);
-  if (app !== undefined && (await forgeCallbackSentOn(ports, transaction, app)))
-    return;
-  await forgeReturnNavigate(
-    navigate,
-    transaction,
-    forgeAuthorizationWord(answered),
-  );
+  redeem(decision);
 }
 
 function ForgeCallbackDrawn(props: {
@@ -139,12 +173,34 @@ export function ForgeCallbackPage(): ReactNode {
   const [decision] = useState<ForgeCallbackDecision>(() =>
     forgeCallbackDecision(query, forgeAuthorizeTake(transientStore)),
   );
+  const redeeming = useConsoleWrite(forgeCallbackRedeemWrite);
+  const redeemingMutate = redeeming.mutate;
   const answered = useRef(false);
   useEffect(() => {
     if (answered.current) return;
     answered.current = true;
-    void forgeCallbackAnswer(ports, navigate, decision);
-  }, [ports, navigate, decision]);
+    forgeCallbackAnswer(navigate, decision, (redeem) => {
+      redeemingMutate(redeem, {
+        onSuccess: (redeemed) => {
+          void forgeCallbackRedeemed(
+            ports,
+            navigate,
+            redeem.transaction,
+            redeemed,
+          );
+        },
+        onError: (refused) => {
+          void forgeReturnNavigate(
+            navigate,
+            redeem.transaction,
+            refused.failure === undefined
+              ? undefined
+              : forgeAuthorizationRefusal(refused.failure),
+          );
+        },
+      });
+    });
+  }, [ports, navigate, decision, redeemingMutate]);
   return (
     <div className="grid min-h-dvh content-start gap-4 p-4">
       <main className="grid gap-3">

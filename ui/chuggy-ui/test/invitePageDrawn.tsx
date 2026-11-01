@@ -1,16 +1,19 @@
 /**
  * The invite page drawn as the console's root mounts it, under `StrictMode`
- * and over the holder's doubles, against a plane a case scripts: what it sent
- * the plane of a token, the buttons it draws, and the page taken down and
- * mounted again in the same document.
+ * and the console's cache and over the holder's doubles, against a plane a
+ * case scripts: what it sent the plane of a token, the buttons it draws, and
+ * the page taken down and mounted again in the same document.
  */
 
+import { QueryClientProvider } from "@tanstack/react-query";
+import type { QueryClient } from "@tanstack/react-query";
 import { render, screen } from "@testing-library/react";
 import { StrictMode } from "react";
 import type { ReactNode } from "react";
 import { vi } from "vitest";
 
 import type { ConsoleConfiguration } from "../app/core/configuration.ts";
+import { consoleQueryClient } from "../app/core/consoleWrite.ts";
 import type { InviteHolder } from "../app/core/inviteHolder.ts";
 import type { SessionHolder, SessionPhase } from "../app/core/sessionHolder.ts";
 import { InvitePage, InviteProvider } from "../app/browser/InvitePage.tsx";
@@ -29,14 +32,20 @@ export const inviteGranted = {
   projects: [{ project: "atlas", roles: ["Viewer"] }],
 };
 
-function page(session: SessionHolder, invite: InviteHolder): ReactNode {
+function page(
+  session: SessionHolder,
+  invite: InviteHolder,
+  client: QueryClient,
+): ReactNode {
   return (
     <StrictMode>
-      <SessionProvider holder={session}>
-        <InviteProvider holder={invite}>
-          <InvitePage />
-        </InviteProvider>
-      </SessionProvider>
+      <QueryClientProvider client={client}>
+        <SessionProvider holder={session}>
+          <InviteProvider holder={invite}>
+            <InvitePage />
+          </InviteProvider>
+        </SessionProvider>
+      </QueryClientProvider>
     </StrictMode>
   );
 }
@@ -64,7 +73,8 @@ export async function inviteOpened(
     served.answered ?? (() => answer(inviteGranted)),
   );
   vi.stubGlobal("fetch", scripted.fetch);
-  let view = render(page(session, holder));
+  const client = consoleQueryClient();
+  let view = render(page(session, holder, client));
   await settled();
   return {
     browser,
@@ -72,7 +82,7 @@ export async function inviteOpened(
     sent: scripted.sent,
     remount: async () => {
       view.unmount();
-      view = render(page(session, holder));
+      view = render(page(session, holder, client));
       await settled();
     },
   };

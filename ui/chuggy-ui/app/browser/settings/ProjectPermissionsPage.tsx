@@ -33,7 +33,7 @@ import {
 } from "../../core/permissions.ts";
 import { settingsRoutes } from "../../core/settingsNav.ts";
 import {
-  usePermissionsChange,
+  permissionsChange,
   type PermissionChange,
   type PermissionHolderRoutes,
 } from "./permissionsChange.ts";
@@ -97,8 +97,9 @@ function ProjectPermissions(props: {
 }): ReactNode {
   const partition = props.partition;
   const read = useProjectAuthorities(partition);
-  const change = usePermissionsChange<AccessProjectAuthority>({
+  const change = permissionsChange<AccessProjectAuthority>({
     tenant: partition.tenant,
+    scope: [partition.tenant, partition.project],
     level: "Project",
     abilities: undefined,
     people: props.people,

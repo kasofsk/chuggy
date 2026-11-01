@@ -23,6 +23,8 @@ import {
 import { answeringApi } from "./answeringApi.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { sheetDeclared, sheetNarrowCondition, sheetRules } from "./sheet.ts";
+import { SessionProvider } from "../app/browser/session.tsx";
+import { holderDouble } from "./screenHarness.tsx";
 
 beforeEach(resizeObserverStubbed);
 
@@ -71,25 +73,27 @@ function drawEveryRow(): HTMLElement {
     [binding],
   );
   const { container } = render(
-    <QueryClientProvider
-      client={
-        new QueryClient({ defaultOptions: { queries: { retry: false } } })
-      }
-    >
-      <div className="creation">
-        <CreationFields
-          form={form}
-          onChange={() => undefined}
-          faults={[]}
-          offers={[creationOffer(undefined, { commandedCheckStage: 1 })]}
-          repositories={[binding]}
-          api={{
-            ports: answeringApi(() => ({ status: 404, body: {} })).ports,
-            partition: creationPartition,
-          }}
-        />
-      </div>
-    </QueryClientProvider>,
+    <SessionProvider holder={holderDouble()}>
+      <QueryClientProvider
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      >
+        <div className="creation">
+          <CreationFields
+            form={form}
+            onChange={() => undefined}
+            faults={[]}
+            offers={[creationOffer(undefined, { commandedCheckStage: 1 })]}
+            repositories={[binding]}
+            api={{
+              ports: answeringApi(() => ({ status: 404, body: {} })).ports,
+              partition: creationPartition,
+            }}
+          />
+        </div>
+      </QueryClientProvider>
+    </SessionProvider>,
   );
   fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
   return container;

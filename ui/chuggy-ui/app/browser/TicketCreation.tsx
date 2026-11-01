@@ -14,9 +14,8 @@
  * the form still holding what was typed.
  */
 
-import { useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useId, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 import {
@@ -31,6 +30,9 @@ import type {
 import { briefFinalizationModes } from "../../../../src/contract/rosters.ts";
 import type { ApiPorts } from "../core/apiRequest.ts";
 import { base64urlFromBytes } from "../core/base64url.ts";
+import { operationFailureSentence } from "../core/codeSentences.ts";
+import { ConsoleWriteProgress, consoleWriteKey } from "../core/consoleWrite.ts";
+import type { ConsoleWrite } from "../core/consoleWrite.ts";
 import type { ProjectQueryKey } from "../core/projectQueryKeys.ts";
 import { landingEffect, landingLabel } from "../core/codeLabels.ts";
 import { repositoryLabel } from "../core/projectRepositories.ts";
@@ -75,6 +77,7 @@ import type {
   TicketCreationForm,
 } from "../core/ticketCreation.ts";
 import {
+  TicketCreationRefused,
   createAndReleaseTicket,
   creationContextSentence,
   creationStaleUnreadSentence,
@@ -84,7 +87,8 @@ import type {
   CreationContext,
   CreationDraftHeld,
   DraftHeld,
-  TicketCreationEnded,
+  TicketCreationRequest,
+  TicketCreationUnmade,
 } from "../core/ticketCreationRun.ts";
 import { ticketDuplicateDroppedSentence } from "../core/ticketDuplicate.ts";
 import type { TicketDuplicateSeed } from "../core/ticketDuplicate.ts";
@@ -92,6 +96,8 @@ import { operationSubmitting } from "../core/operationFollow.ts";
 import type { OperationStep } from "../core/operationFollow.ts";
 import { creationContextQuery } from "../core/configurationQueries.ts";
 import { usePanelState, useApiPorts } from "./api.ts";
+import { useConsoleWrite, useConsoleWriteProgress } from "./consoleWrite.tsx";
+import type { ConsoleWriting } from "./consoleWrite.tsx";
 import { DataPanel } from "./DataPanel.tsx";
 import {
   ticketConfigurationKept,
@@ -526,7 +532,7 @@ function Landing(props: FormEdit): ReactNode {
 /** What a failed update left in the draft, which only one that got as far as
  * the draft has anything to say about. A creation's reason says where its own
  * draft stands, that being more than one thing. */
-function attemptHeldDraft(
+export function attemptHeldDraft(
   draft: DraftResponse | undefined,
   motion: CreationMotion,
 ): string {
@@ -602,18 +608,6 @@ function Overrides(
       <Fault field="overrides" faults={general} />
     </Panel>
   );
-}
-
-/** A submit that outlived its screen has nowhere to report, so it stops there. */
-export function useMounted(): { readonly current: boolean } {
-  const mounted = useRef(true);
-  useEffect(
-    () => () => {
-      mounted.current = false;
-    },
-    [],
-  );
-  return mounted;
 }
 
 interface CreationFieldsProps extends FormEdit {
@@ -700,9 +694,7 @@ type CreationAttempt =
 
 /** What a submit that made no ticket leaves on the screen, and holds for the
  * next one. */
-function creationAttemptOf(
-  ended: Exclude<TicketCreationEnded, { readonly created: "Created" }>,
-): CreationAttempt {
+function creationAttemptEnded(ended: TicketCreationUnmade): CreationAttempt {
   switch (ended.created) {
     case "Stale":
       return { attempt: "Stale", reason: ended.reason };
@@ -744,9 +736,84 @@ function CreationAttemptNote(props: {
   );
 }
 
-interface CreationSubmit {
-  readonly attempt: CreationAttempt;
-  readonly submit: (form: TicketCreationForm) => Promise<void>;
+/** Where a submit's follow has got to, the step a write reports before its
+ * release is submitted being the submission's first. */
+export function attemptRunning(step: OperationStep | undefined): {
+  readonly attempt: "Running";
+  readonly step: OperationStep;
+} {
+  return { attempt: "Running", step: step ?? operationSubmitting() };
+}
+
+/** What a creation's write has come to, as its note draws it. A ticket made
+ * stays drawn as the follow that made it until the screen goes to it. */
+function creationAttemptOf(
+  writing: ConsoleWriting<CreationPressed, number>,
+  step: OperationStep | undefined,
+): CreationAttempt {
+  if (writing.isPending || writing.isSuccess) return attemptRunning(step);
+  const error = writing.error;
+  if (error === null) return { attempt: "Idle" };
+  if (error instanceof TicketCreationRefused)
+    return creationAttemptEnded(error.ended);
+  return { attempt: "Failed", reason: error.message, held: undefined };
+}
+
+/** The sentence a submit that made no ticket is refused in, which is the
+ * one its note leads with. */
+function creationUnmadeSentence(ended: TicketCreationUnmade): string {
+  return ended.created === "Exists"
+    ? creationTicketExistsSentence(ended.ticket)
+    : ended.reason;
+}
+
+/** One press of a creation's submit: what it sends, and where it reports. */
+interface CreationPressed {
+  readonly request: TicketCreationRequest;
+  readonly progress: ConsoleWriteProgress<OperationStep>;
+}
+
+/**
+ * A creation through the ports the form was handed, refused wherever it made
+ * no ticket. A stale fence is refused once the context has been read again,
+ * and as the read that failed where it could not be.
+ */
+function creationWrite(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  queryKey: ProjectQueryKey,
+): ConsoleWrite<CreationPressed, number> {
+  return {
+    mutationKey: consoleWriteKey(
+      "ticket-creation",
+      partition.tenant,
+      partition.project,
+    ),
+    write: async (_ports, pressed, client) => {
+      const created = await createAndReleaseTicket(
+        ports,
+        partition,
+        pressed.request,
+        (step) => {
+          pressed.progress.report(step);
+        },
+      );
+      if (created.created === "Created")
+        return { outcome: "Ok", value: created.ticket };
+      if (created.created !== "Stale")
+        throw new TicketCreationRefused(
+          creationUnmadeSentence(created),
+          created,
+        );
+      await client.invalidateQueries({ queryKey });
+      const ended =
+        client.getQueryState(queryKey)?.status === "error"
+          ? { created: "Stale" as const, reason: creationStaleUnreadSentence }
+          : created;
+      throw new TicketCreationRefused(ended.reason, ended);
+    },
+    refusal: operationFailureSentence,
+  };
 }
 
 /** An operation identity nothing has been sent under. */
@@ -769,54 +836,38 @@ function useCreationSubmit(props: {
   readonly dispatches: boolean;
   readonly onFaults: (faults: readonly CreationFault[]) => void;
   readonly onCreated: (ticket: number) => void;
-}): CreationSubmit {
-  const client = useQueryClient();
-  const mounted = useMounted();
-  const [attempt, setAttempt] = useState<CreationAttempt>({ attempt: "Idle" });
-  const {
-    dispatches,
-    standing,
-    offers,
-    onCreated,
-    onFaults,
-    ports,
-    partition,
-    queryKey,
-    repositories,
-  } = props;
+}): {
+  readonly attempt: CreationAttempt;
+  readonly busy: boolean;
+  readonly submit: (form: TicketCreationForm) => void;
+} {
+  const { dispatches, standing, offers, onFaults, repositories } = props;
+  const writing = useConsoleWrite(
+    creationWrite(props.ports, props.partition, props.queryKey),
+  );
+  const step = useConsoleWriteProgress(writing.variables?.progress);
+  const attempt = creationAttemptOf(writing, step);
 
-  const submit = async (form: TicketCreationForm): Promise<void> => {
+  const submit = (form: TicketCreationForm): void => {
     const assembled = creationBodyFrom(offers, form, repositories, standing);
     if (assembled.assembled === "Faults") {
       onFaults(assembled.faults);
       return;
     }
     onFaults([]);
-    const held = creationAttemptHeld(attempt);
-    const operation = operationDrawn();
-    const dispatchOperation = dispatches ? operationDrawn() : undefined;
-    setAttempt({ attempt: "Running", step: operationSubmitting() });
-    const created = await createAndReleaseTicket(
-      ports,
-      partition,
-      { body: assembled.body, operation, held, dispatchOperation },
-      (step) => {
-        if (mounted.current) setAttempt({ attempt: "Running", step });
-      },
+    const request: TicketCreationRequest = {
+      body: assembled.body,
+      operation: operationDrawn(),
+      held: creationAttemptHeld(attempt),
+      dispatchOperation: dispatches ? operationDrawn() : undefined,
+    };
+    writing.mutate(
+      { request, progress: new ConsoleWriteProgress<OperationStep>() },
+      { onSuccess: props.onCreated },
     );
-    if (!mounted.current) return;
-    if (created.created === "Created") {
-      onCreated(created.ticket);
-      return;
-    }
-    setAttempt(creationAttemptOf(created));
-    if (created.created !== "Stale") return;
-    await client.invalidateQueries({ queryKey });
-    if (mounted.current && client.getQueryState(queryKey)?.status === "error")
-      setAttempt({ attempt: "Stale", reason: creationStaleUnreadSentence });
   };
 
-  return { attempt, submit };
+  return { attempt, busy: writing.isPending, submit };
 }
 
 /**
@@ -957,10 +1008,8 @@ export function CreationForm(props: CreationFormProps): ReactNode {
             <AddRunnerLink partition={props.partition} />
           ) : undefined
         }
-        busy={running.attempt.attempt === "Running"}
-        onSubmit={(form) => {
-          void running.submit(form);
-        }}
+        busy={running.busy}
+        onSubmit={running.submit}
         onDirty={props.onDirty}
         fields={
           <CreationFields

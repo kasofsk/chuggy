@@ -10,11 +10,13 @@
 
 import { useParams } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
-import type { WorkerPoolsResponse } from "../../../../src/contract/responses.ts";
+import type {
+  WorkerPoolsResponse,
+  WorkerPoolTokenResponse,
+} from "../../../../src/contract/responses.ts";
 import { apiMintWorkerPoolToken } from "../core/apiRoutes.ts";
 import { instantFigure } from "../core/figures.ts";
 import type { PanelState } from "../core/freshness.ts";
@@ -27,11 +29,17 @@ import {
   runnerCapabilityLabel,
   runnerTokenLifetimeSecs,
 } from "../core/runners.ts";
-import type { RunnerMint } from "../core/runners.ts";
-import { useApiPorts, usePanelState } from "./api.ts";
+import type { RunnerAsk } from "../core/runners.ts";
+import { consoleWriteKey } from "../core/consoleWrite.ts";
+import type { ConsoleWrite } from "../core/consoleWrite.ts";
+import { usePanelState } from "./api.ts";
 import { PanelUnready } from "./DataPanel.tsx";
-import { RunnerAskForm } from "./RunnerAsk.tsx";
-import { RunnerSteps } from "./RunnerSteps.tsx";
+import {
+  RunnerMintOpened,
+  runnerMintRefusal,
+  useRunnerMinting,
+} from "./RunnerAsk.tsx";
+import type { RunnerMinting } from "./RunnerAsk.tsx";
 import { RunnerVersion } from "./RunnerVersion.tsx";
 import { useNowMs } from "./Freshness.tsx";
 import { ScreenTitle } from "./shell/slots.tsx";
@@ -86,10 +94,28 @@ function RunnerRoster(props: {
   );
 }
 
+/** The project's pool token minted, which changes nothing a read draws until
+ * a machine registers with it. */
+function runnersPoolTokenWrite(
+  partition: PartitionIdentity,
+): ConsoleWrite<RunnerAsk, WorkerPoolTokenResponse> {
+  return {
+    mutationKey: consoleWriteKey(
+      "pool-token-mint",
+      partition.tenant,
+      partition.project,
+    ),
+    write: (ports) =>
+      apiMintWorkerPoolToken(ports, partition, {
+        lifetimeSecs: runnerTokenLifetimeSecs,
+      }),
+    refusal: runnerMintRefusal,
+  };
+}
+
 /** The press that opens the ask a registration token is minted for, which only an administrator is offered. */
 function AddRunner(props: {
-  readonly mint: RunnerMint;
-  readonly onMint: (mint: RunnerMint) => void;
+  readonly minting: RunnerMinting;
   /** Drawn as the one thing to do, which it is under an empty roster. */
   readonly leading: boolean;
 }): ReactNode {
@@ -97,10 +123,8 @@ function AddRunner(props: {
     <Button
       size="sm"
       variant={props.leading ? "primary" : "default"}
-      disabled={props.mint.mint !== "Idle"}
-      onClick={() => {
-        props.onMint({ mint: "Asking" });
-      }}
+      disabled={props.minting.opened}
+      onClick={props.minting.open}
     >
       Add runner
     </Button>
@@ -114,17 +138,14 @@ function RunnersSection(props: {
   readonly administers: boolean;
 }): ReactNode {
   const client = useQueryClient();
-  const ports = useApiPorts();
-  const [mint, setMint] = useState<RunnerMint>({ mint: "Idle" });
   const { partition, roster } = props;
+  const minting = useRunnerMinting(runnersPoolTokenWrite(partition));
   const place = runnerAddPlace({
     administers: props.administers,
     roster,
-    opened: mint.mint !== "Idle",
+    opened: minting.opened,
   });
-  const add = (
-    <AddRunner mint={mint} onMint={setMint} leading={place === "Empty"} />
-  );
+  const add = <AddRunner minting={minting} leading={place === "Empty"} />;
   return (
     <Panel
       variant="section"
@@ -132,30 +153,16 @@ function RunnersSection(props: {
       about="Machines that run this project's agents."
       {...(place === "Head" ? { meta: add } : {})}
     >
-      {mint.mint === "Asking" || mint.mint === "Minting" ? (
-        <RunnerAskForm
-          mint={mint}
-          onMint={setMint}
-          minted={() =>
-            apiMintWorkerPoolToken(ports, partition, {
-              lifetimeSecs: runnerTokenLifetimeSecs,
-            })
-          }
-        />
-      ) : null}
-      {mint.mint === "Minted" ? (
-        <RunnerSteps
-          minted={mint.minted}
-          ask={mint.ask}
-          kind="Pool"
-          onDone={() => {
-            setMint({ mint: "Idle" });
-            void client.invalidateQueries({
-              queryKey: workerPoolsQuery(partition).queryKey,
-            });
-          }}
-        />
-      ) : null}
+      <RunnerMintOpened
+        minting={minting}
+        kind="Pool"
+        onDone={() => {
+          minting.close();
+          void client.invalidateQueries({
+            queryKey: workerPoolsQuery(partition).queryKey,
+          });
+        }}
+      />
       <PanelUnready state={roster} />
       {roster.state === "Ready" ? (
         <RunnerRoster

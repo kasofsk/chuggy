@@ -11,6 +11,7 @@ import {
   inboxProposalAnswered,
   inboxProposalNoteClamped,
   inboxProposalReview,
+  inboxProposalSentence,
   inboxProposalStepWord,
 } from "../app/core/inboxProposals.ts";
 import { selectorReviewFeedbackCharsMax } from "../../../src/contract/http.ts";
@@ -67,4 +68,20 @@ test("a note is held to what the wire takes", () => {
     selectorReviewFeedbackCharsMax,
   );
   expect(inboxProposalNoteClamped("short")).toBe("short");
+});
+
+test("a review's line names its decision's tickets, then the word, then why it failed", () => {
+  const proposal = { decision: "dec-a", tickets: [7, 8] };
+  expect(
+    inboxProposalSentence({
+      proposal,
+      step: { step: "Answered", outcome: "Approved" },
+    }),
+  ).toBe("Proposal 7, 8 · Approved");
+  expect(
+    inboxProposalSentence({
+      proposal,
+      step: { step: "Failed", why: "InternalError" },
+    }),
+  ).toBe("Proposal 7, 8 · Failed · InternalError");
 });

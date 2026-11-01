@@ -36,6 +36,8 @@ import { answeringApi } from "./answeringApi.ts";
 import type { Answer, Sent } from "./answeringApi.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
+import { SessionProvider } from "../app/browser/session.tsx";
+import { holderDouble } from "./screenHarness.tsx";
 
 beforeEach(() => {
   resizeObserverStubbed();
@@ -109,20 +111,22 @@ function draw(
   offers: readonly CreationOffer[] = creationOffers,
 ): void {
   render(
-    <QueryClientProvider
-      client={
-        new QueryClient({ defaultOptions: { queries: { retry: false } } })
-      }
-    >
-      <EditForm
-        ports={ports}
-        partition={creationPartition}
-        subject={{ ticket, draft: held }}
-        edit={editOffersFrom(held, offers, undefined)}
-        bound={[]}
-        onUpdated={() => updated.push("updated")}
-      />
-    </QueryClientProvider>,
+    <SessionProvider holder={holderDouble()}>
+      <QueryClientProvider
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      >
+        <EditForm
+          ports={ports}
+          partition={creationPartition}
+          subject={{ ticket, draft: held }}
+          edit={editOffersFrom(held, offers, undefined)}
+          bound={[]}
+          onUpdated={() => updated.push("updated")}
+        />
+      </QueryClientProvider>
+    </SessionProvider>,
   );
 }
 

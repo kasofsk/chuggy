@@ -1,8 +1,8 @@
 /**
  * A workspace's invite links, decided with no renderer: the address a made
- * link is handed out as, what a link's form may hold before it is sent and
- * what making one came to, the word and the access a link's row draws, which
- * links the reader may revoke, and what a revocation leaves to be said.
+ * link is handed out as, what a link's form may hold before it is sent, the
+ * word and the access a link's row draws, which links the reader may revoke,
+ * and what a revocation leaves to be said.
  *
  * The plane asks of a link exactly what it asks of an invitation, so a link's
  * form is the part of an invitation's that says what is granted, imported
@@ -18,7 +18,6 @@ import {
   accessInvitationGrantsSchema,
   accessInviteLinkEndedCode,
   type AccessInviteLink,
-  type AccessInviteLinkMinted,
   type AccessTenantAbilities,
 } from "../../../../src/contract/accessPlane.ts";
 
@@ -30,14 +29,12 @@ import {
   tenantHeldProjectLines,
   tenantHeldWords,
   tenantInvitationGrantsBody,
-  tenantInvitationRefused,
   tenantRoleOffered,
 } from "./tenantPeople.ts";
 import type {
   TenantHeld,
   TenantHeldProjectLine,
   TenantInvitationGrantsForm,
-  TenantInvitationRefused,
 } from "./tenantPeople.ts";
 
 /** Where a link is opened, which is the one page the console serves there. */
@@ -71,19 +68,6 @@ export function tenantInviteLinkSendable(
   return accessInvitationGrantsSchema.safeParse(
     tenantInvitationGrantsBody(form),
   ).success;
-}
-
-/** What making a link came to: the mint's answer, or a refusal as an invitation's is drawn. */
-export type TenantInviteLinkOutcome =
-  | { readonly outcome: "Made"; readonly minted: AccessInviteLinkMinted }
-  | TenantInvitationRefused;
-
-export function tenantInviteLinkOutcome(
-  result: ApiResult<AccessInviteLinkMinted>,
-): TenantInviteLinkOutcome {
-  return result.outcome === "Ok"
-    ? { outcome: "Made", minted: result.value }
-    : tenantInvitationRefused(result);
 }
 
 /** One link's state as the word its row draws. */

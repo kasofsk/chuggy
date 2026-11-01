@@ -1,7 +1,8 @@
 /**
  * What an escalated ticket's card offers of its overrides: the fields the
  * contract says a parked ticket may change, seeded from what the ticket holds,
- * and the change that makes it hold what was typed.
+ * the change that makes it hold what was typed, and what a save of it that
+ * was not answered says.
  *
  * THE CHANGE CARRIES THE WHOLE OF WHAT THE TICKET IS TO HOLD. A field the card
  * does not draw is sent as the ticket holds it, because the change replaces
@@ -24,7 +25,9 @@ import type {
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
 
+import { operationRefusalLabel } from "./codeLabels.ts";
 import { configurationCatalogOf } from "./configurationCatalog.ts";
+import type { OperationStep } from "./operationFollow.ts";
 import { projectAbilityRefused } from "./projectAbilities.ts";
 import type { ProjectAbilities } from "./projectAbilities.ts";
 import { overridesHeldOf, overridesNestedOf } from "./ticketOverrides.ts";
@@ -161,4 +164,16 @@ export function parkedOverridesChange(
       overrides: parsed.data,
     },
   };
+}
+
+/** What a save that ended without the change being answered says, and
+ * nothing for one that was. */
+export function parkedOverridesRefusal(
+  step: OperationStep,
+): string | undefined {
+  if (step.step === "Abandoned") return `Not saved · ${step.reason}`;
+  if (step.step !== "Settled") return "Not saved";
+  if (step.refusal !== undefined)
+    return `Not saved · ${operationRefusalLabel(step.refusal.type)}`;
+  return step.state === "Answered" ? undefined : "Not saved";
 }

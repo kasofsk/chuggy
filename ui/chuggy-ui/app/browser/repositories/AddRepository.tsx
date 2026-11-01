@@ -58,7 +58,10 @@ import {
   apiBindProjectRepository,
   apiForgeInstallationRepositories,
 } from "../../core/apiRoutes.ts";
+import type { ProjectRepositoryBindAnswer } from "../../core/apiRoutes.ts";
 import type { PanelState } from "../../core/freshness.ts";
+import { consoleWriteKey } from "../../core/consoleWrite.ts";
+import type { ConsoleWrite } from "../../core/consoleWrite.ts";
 import { operationIdBytesCount } from "../../core/operationFollow.ts";
 import { projectRepositoriesInvalidated } from "../../core/projectQueries.ts";
 import {
@@ -85,7 +88,9 @@ import type {
 } from "../../core/projectRepositories.ts";
 import type { WorkRunner } from "../../core/workRunner.ts";
 import { forgeReachableQuery } from "../../core/tenantQueries.ts";
-import { useApiPorts, usePanelState } from "../api.ts";
+import { usePanelState } from "../api.ts";
+import { useConsoleWrite } from "../consoleWrite.tsx";
+import type { ConsoleWriting } from "../consoleWrite.tsx";
 import { PanelUnready } from "../DataPanel.tsx";
 import { currentPath, drawBytes } from "../ports.ts";
 import { Button } from "../ui/Button.tsx";
@@ -329,43 +334,73 @@ function useRowsDrawn(
   return rows;
 }
 
-/** One bind, from the identity it spends to the line it leaves behind, with
- * `bound` told of one the route accepted. */
+/** One press of a row: the repository, and the identity the press drew. */
+interface RepositoryBindPressed {
+  readonly choice: RepositoryChoice;
+  readonly identity: string;
+}
+
+/** One bind, from the identity its press drew to the line it leaves behind,
+ * over only once the bindings it changed have been read again. */
+function repositoryBindWrite(
+  partition: PartitionIdentity,
+): ConsoleWrite<RepositoryBindPressed, ProjectRepositoryBindAnswer> {
+  return {
+    mutationKey: consoleWriteKey(
+      "repository-bind",
+      partition.tenant,
+      partition.project,
+    ),
+    write: (ports, pressed) =>
+      apiBindProjectRepository(
+        ports,
+        partition,
+        { repository: pressed.choice.repository.url },
+        pressed.identity,
+      ),
+    refusal: (failure) =>
+      repositoryBindNote(repositoryBindOutcome(failure)).status,
+    landed: (client) => projectRepositoriesInvalidated(client, partition),
+  };
+}
+
+/** The line a bind left: what it bound, or the refusal in the same place. */
+function repositoryBindNoted(
+  binding: ConsoleWriting<RepositoryBindPressed, ProjectRepositoryBindAnswer>,
+): RepositoryNote | undefined {
+  if (binding.error !== null)
+    return { status: binding.error.message, ticketOffered: false };
+  if (binding.isPending || binding.data === undefined) return undefined;
+  return repositoryBindNote(
+    repositoryBindOutcome({ outcome: "Ok", value: binding.data }),
+  );
+}
+
+/** A press of a row bound under the identity it drew, with `bound` told of
+ * one the route accepted once the bindings have been read again. */
 function useRepositoryBind(
   partition: PartitionIdentity,
   bound: () => void,
 ): {
+  readonly binding: ConsoleWriting<
+    RepositoryBindPressed,
+    ProjectRepositoryBindAnswer
+  >;
   readonly note: RepositoryNote | undefined;
-  readonly busy: boolean;
   readonly bind: (choice: RepositoryChoice) => void;
 } {
-  const ports = useApiPorts();
-  const client = useQueryClient();
-  const [note, setNote] = useState<RepositoryNote | undefined>(undefined);
-  const [busy, setBusy] = useState(false);
-  return {
-    note,
-    busy,
-    bind: (choice) => {
-      setBusy(true);
-      setNote(undefined);
-      void (async () => {
-        const outcome = repositoryBindOutcome(
-          await apiBindProjectRepository(
-            ports,
-            partition,
-            { repository: choice.repository.url },
-            base64urlFromBytes(drawBytes(operationIdBytesCount)),
-          ),
-        );
-        setBusy(false);
-        setNote(repositoryBindNote(outcome));
-        if (outcome.outcome === "Refused") return;
-        bound();
-        await projectRepositoriesInvalidated(client, partition);
-      })();
-    },
+  const binding = useConsoleWrite(repositoryBindWrite(partition));
+  const note = repositoryBindNoted(binding);
+  const bind = (choice: RepositoryChoice): void => {
+    binding.mutate(
+      {
+        choice,
+        identity: base64urlFromBytes(drawBytes(operationIdBytesCount)),
+      },
+      { onSuccess: bound },
+    );
   };
+  return { binding, note, bind };
 }
 
 function AddRepositoryBody(props: {
@@ -382,7 +417,7 @@ function AddRepositoryBody(props: {
     props.installations,
     props.workers,
   );
-  const binding = useRepositoryBind(partition, props.onBound);
+  const { binding, note, bind } = useRepositoryBind(partition, props.onBound);
   const drawn = useRowsDrawn(
     state.state === "Ready" ? state.value.repositories : undefined,
   );
@@ -402,8 +437,8 @@ function AddRepositoryBody(props: {
           renderRow={(choice) => (
             <RepositoryChoiceRow
               choice={choice}
-              busy={binding.busy}
-              onChoose={binding.bind}
+              busy={binding.isPending}
+              onChoose={bind}
             />
           )}
         />
@@ -418,13 +453,13 @@ function AddRepositoryBody(props: {
         <RepositoryWorkerGrant
           tenant={partition.tenant}
           workerless={state.value.workerless}
-          chosen={binding.busy || binding.note !== undefined}
+          chosen={binding.isPending || note !== undefined}
         />
       ) : null}
-      {binding.note === undefined ? null : (
+      {note === undefined ? null : (
         <AddRepositoryNote
           partition={partition}
-          note={binding.note}
+          note={note}
           runner={props.runner}
         />
       )}

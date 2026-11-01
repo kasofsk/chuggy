@@ -10,7 +10,7 @@ import type { ProjectCreatedResponse } from "../../../src/contract/responses.ts"
 import type { ApiResult } from "../app/core/apiRequest.ts";
 import {
   projectCreationNameFault,
-  projectCreationOutcome,
+  projectCreationRefusal,
   projectCreationSendable,
   projectCreationStanding,
   projectNameRule,
@@ -20,8 +20,7 @@ import {
 const partition = { tenant: "vteng", project: "chuggy" };
 
 function status(result: ApiResult<ProjectCreatedResponse>): string {
-  const outcome = projectCreationOutcome(result);
-  return outcome.outcome === "Refused" ? outcome.status : "Created";
+  return result.outcome === "Ok" ? "Created" : projectCreationRefusal(result);
 }
 
 test("a name the wire refuses is refused before it is sent, and an empty one says nothing", () => {
@@ -57,13 +56,6 @@ test("what was sent stands only while the form holds both of its names", () => {
     projectCreationStanding(sent, { ...partition, project: "arbbot" }),
   ).toBeUndefined();
   expect(projectCreationStanding(undefined, partition)).toBeUndefined();
-});
-
-test("a creation or its replay is the project it names", () => {
-  expect(projectCreationOutcome({ outcome: "Ok", value: partition })).toEqual({
-    outcome: "Created",
-    partition,
-  });
 });
 
 test("each refusal is one short line of its own", () => {

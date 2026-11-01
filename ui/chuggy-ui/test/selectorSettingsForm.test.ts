@@ -1,16 +1,17 @@
 /**
  * The selector settings draft's own decisions, with no renderer: what a strip
- * press writes, what a limit box parses to, and what a write's own answer
- * carries through to the saved state.
+ * press writes, what a limit box parses to, and what a refused write's
+ * conflict carries through to the section.
  */
 
 import { expect, test } from "vitest";
 
 import type { SelectorProjectSettingsResponse } from "../../../src/contract/responses.ts";
 import {
-  selectorSettingsAnswered,
+  selectorSettingsConflictOf,
   selectorSettingsDispatchCell,
   selectorSettingsModeCell,
+  selectorSettingsRefusal,
   selectorSettingsTextOverriddenAtRead,
   selectorSettingsWrite,
 } from "../app/core/selectorSettingsForm.ts";
@@ -133,11 +134,10 @@ test("overridden-at-read reads the read side, not a live edit", () => {
   expect(selectorSettingsTextOverriddenAtRead(draft, "basePrompt")).toBe(false);
 });
 
-/** The route's own nit: `movedBy` reaches `SelectorSettingsSaved` only through
- * the spread on the `Conflict` arm, and nothing else here would fail if it
- * were dropped. */
+/** The route's own nit: `movedBy` reaches the section only through the
+ * conflict's own read, and nothing else here would fail if it were dropped. */
 test("a conflict carries who moved the revision, when the route names them", () => {
-  const answered = selectorSettingsAnswered({
+  const answered = selectorSettingsConflictOf({
     outcome: "Conflict",
     code: "SettingsRevisionConflict",
     body: {
@@ -148,17 +148,48 @@ test("a conflict carries who moved the revision, when the route names them", () 
       },
     },
   });
-  if (answered.saved !== "Conflict") throw new Error("expected a conflict");
+  if (answered === undefined) throw new Error("expected a conflict");
   expect(answered.movedBy?.administrator.subject).toBe("dave@vteng.io");
 });
 
 /** Revision zero has no history row, so a conflict against it names nobody. */
 test("a conflict with no history row carries no mover", () => {
-  const answered = selectorSettingsAnswered({
+  const answered = selectorSettingsConflictOf({
     outcome: "Conflict",
     code: "SettingsRevisionConflict",
     body: { settings },
   });
-  if (answered.saved !== "Conflict") throw new Error("expected a conflict");
+  if (answered === undefined) throw new Error("expected a conflict");
   expect(answered.movedBy).toBeUndefined();
+});
+
+/** A refused write is drawn as one line, which is also what a reader who left
+ * the page is told. */
+test("a refusal is the conflict's revision, its mover, or the failure's reason", () => {
+  const nowMs = Date.parse("2026-09-05T18:00:00.000Z");
+  const conflict = {
+    outcome: "Conflict",
+    code: "SettingsRevisionConflict",
+  } as const;
+  expect(
+    selectorSettingsRefusal({ ...conflict, body: { settings } }, nowMs),
+  ).toBe(`Conflict · ${String(settings.revision)}`);
+  expect(
+    selectorSettingsRefusal(
+      {
+        ...conflict,
+        body: {
+          settings,
+          movedBy: {
+            administrator: { kind: "member", subject: "dave@vteng.io" },
+            recordedAt: "2026-09-05T17:20:00.000Z",
+          },
+        },
+      },
+      nowMs,
+    ),
+  ).toMatch(/^Changed by dave@vteng\.io at \S/u);
+  expect(
+    selectorSettingsRefusal({ ...conflict, body: undefined }, nowMs),
+  ).toMatch(/^Failed · /u);
 });

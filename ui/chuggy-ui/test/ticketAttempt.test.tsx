@@ -295,7 +295,7 @@ test("a follow that throws leaves the panel settled and says why", async () => {
   expect(button("Resume")?.hasAttribute("disabled")).toBe(false);
 });
 
-test("a panel remounted mid-follow picks the attempt back up", async () => {
+test("a panel remounted mid-follow draws the follow that kept running", async () => {
   const api = accepting();
   const client = queryClientUnretried();
   const view = await following(api, client);
@@ -304,7 +304,7 @@ test("a panel remounted mid-follow picks the attempt back up", async () => {
   mounted(client);
   await settled();
 
-  expect(api.urls.filter(polling)).not.toEqual([]);
+  expect(api.urls.filter(polling)).toEqual([]);
   expect(screen.getByText("Waiting for actor…")).toBeDefined();
   expect(button("Cancel")).not.toBeNull();
   expect(api.posts()).toBe(1);
@@ -494,7 +494,7 @@ test("an unmount with the submission in flight still holds its identity", async 
   await settled();
 
   expect(screen.getByText("Waiting for actor…")).toBeDefined();
-  expect(api.urls.filter(polling)).not.toEqual([]);
+  expect(api.urls.filter(polling)).toEqual([]);
   expect(api.identities()).toHaveLength(1);
   expect(api.posts()).toBe(1);
 });

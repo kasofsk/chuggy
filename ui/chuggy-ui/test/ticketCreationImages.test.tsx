@@ -7,7 +7,6 @@
  * refused release left held, and come back with a YAML this browser kept.
  */
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   cleanup,
   fireEvent,
@@ -19,18 +18,16 @@ import {
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { briefImagesMax } from "../../../src/contract/brief.ts";
-import { SessionProvider } from "../app/browser/session.tsx";
-import { CreationForm } from "../app/browser/TicketCreation.tsx";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
 import {
   ticketYamlImagesStored,
   ticketYamlStoreKey,
 } from "../app/browser/editor/authoringGuards.tsx";
-import { creationContextList } from "../app/core/ticketCreationRun.ts";
+import { creationFormDrawn } from "./creationFormDrawn.tsx";
 import { answeringApi } from "./answeringApi.ts";
 import type { Answer, Sent } from "./answeringApi.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
-import { answer, holderDouble } from "./screenHarness.tsx";
+import { answer } from "./screenHarness.tsx";
 import {
   creationDeclared,
   creationDraft,
@@ -99,28 +96,9 @@ function draw(
   offers = creationOffers,
 ): void {
   render(
-    <SessionProvider holder={holderDouble()}>
-      <QueryClientProvider
-        client={
-          new QueryClient({ defaultOptions: { queries: { retry: false } } })
-        }
-      >
-        <CreationForm
-          ports={ports}
-          partition={creationPartition}
-          queryKey={creationContextList(creationPartition).key}
-          context={{
-            context: "Ready",
-            offers,
-            partial: false,
-            repositories: [],
-          }}
-          start="Waits"
-          onCreated={(ticket) => created.push(ticket)}
-          existing={() => null}
-        />
-      </QueryClientProvider>
-    </SessionProvider>,
+    creationFormDrawn(ports, offers, {
+      onCreated: (ticket) => created.push(ticket),
+    }),
   );
 }
 

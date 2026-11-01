@@ -61,6 +61,8 @@ import {
 } from "./ticketReleasing.tsx";
 import type { TicketDoor } from "./ticketReleasing.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
+import { SessionProvider } from "../app/browser/session.tsx";
+import { holderDouble } from "./screenHarness.tsx";
 
 /** The runner has no globals, so each case tears down the tree it rendered,
  * and starts in a browser that remembers no choice. */
@@ -158,21 +160,23 @@ function drawOffered(
   partition = creationPartition,
 ): { readonly rerender: (next: Omit<ReadyContext, "context">) => void } {
   const tree = (next: Omit<ReadyContext, "context">) => (
-    <QueryClientProvider
-      client={
-        new QueryClient({ defaultOptions: { queries: { retry: false } } })
-      }
-    >
-      <CreationForm
-        ports={ports}
-        partition={partition}
-        queryKey={queryKey}
-        context={{ context: "Ready", ...next }}
-        start="Waits"
-        onCreated={(ticket) => created.push(ticket)}
-        existing={(ticket) => <a href="/there">Ticket {ticket}</a>}
-      />
-    </QueryClientProvider>
+    <SessionProvider holder={holderDouble()}>
+      <QueryClientProvider
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+      >
+        <CreationForm
+          ports={ports}
+          partition={partition}
+          queryKey={queryKey}
+          context={{ context: "Ready", ...next }}
+          start="Waits"
+          onCreated={(ticket) => created.push(ticket)}
+          existing={(ticket) => <a href="/there">Ticket {ticket}</a>}
+        />
+      </QueryClientProvider>
+    </SessionProvider>
   );
   const drawn = render(tree(context));
   return {

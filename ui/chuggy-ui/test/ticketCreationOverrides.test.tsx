@@ -8,7 +8,6 @@
  * its model as an argument and one naming none.
  */
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   cleanup,
   fireEvent,
@@ -19,10 +18,10 @@ import {
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ComponentProps } from "react";
 
-import { CreationForm } from "../app/browser/TicketCreation.tsx";
+import type { CreationForm } from "../app/browser/TicketCreation.tsx";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
 import type { CreationOffer } from "../app/core/ticketCreation.ts";
-import { creationContextList } from "../app/core/ticketCreationRun.ts";
+import { creationFormDrawn } from "./creationFormDrawn.tsx";
 import { answeringApi } from "./answeringApi.ts";
 import { chooseConfiguration } from "./creationPicker.ts";
 import type { Sent } from "./answeringApi.ts";
@@ -32,7 +31,6 @@ import {
   creationDeclared,
   creationDraft,
   creationOffer,
-  creationPartition,
 } from "./ticketCreationFixture.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 
@@ -103,29 +101,7 @@ function draw(
   extra: Partial<ComponentProps<typeof CreationForm>> = {},
   offers: readonly CreationOffer[] = [basic, sonnet],
 ): void {
-  render(
-    <QueryClientProvider
-      client={
-        new QueryClient({ defaultOptions: { queries: { retry: false } } })
-      }
-    >
-      <CreationForm
-        ports={ports}
-        partition={creationPartition}
-        queryKey={creationContextList(creationPartition).key}
-        context={{
-          context: "Ready",
-          offers,
-          partial: false,
-          repositories: [],
-        }}
-        start="Waits"
-        onCreated={() => undefined}
-        existing={() => null}
-        {...extra}
-      />
-    </QueryClientProvider>,
-  );
+  render(creationFormDrawn(ports, offers, extra));
 }
 
 function model(): HTMLInputElement {

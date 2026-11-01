@@ -15,7 +15,8 @@ import { inquiryQuestionCharsMax } from "../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { leadInquirySchema } from "../../../src/contract/requests.ts";
 import {
-  inquiryAskAnswered,
+  inquiryAskRefusalSentence,
+  inquiryAskRefused,
   inquiryAskerAbsent,
   inquiryAskerNamed,
   inquiryAsking,
@@ -180,15 +181,6 @@ test("a pair drawn for one project is not sent to another's door", () => {
   ).toStrictEqual(first);
 });
 
-test("the door's answer is drawn as the fork it opened", () => {
-  expect(
-    inquiryAskAnswered({
-      outcome: "Ok",
-      value: { session: "inq-1", turn: "inq-turn-1", ordinal: 1 },
-    }),
-  ).toStrictEqual({ ask: "Asked", session: "inq-1" });
-});
-
 /**
  * EVERY REFUSAL IN THE ROSTER IS DRAWN AS ITS OWN WORD. A code the roster does
  * not hold is still drawn as a refusal, because a box that went quiet on an
@@ -196,7 +188,7 @@ test("the door's answer is drawn as the fork it opened", () => {
  */
 test("each refusal the door states is drawn as one word", () => {
   const drawnAs = (code: string) =>
-    inquiryAskAnswered({ outcome: "Conflict", code, body: undefined });
+    inquiryAskRefused({ outcome: "Conflict", code, body: undefined });
   for (const [code, word] of Object.entries(inquiryRefusalWords))
     expect(drawnAs(code), code).toStrictEqual({ ask: "Refused", word });
   expect(drawnAs("SomethingElse")).toStrictEqual({
@@ -204,14 +196,14 @@ test("each refusal the door states is drawn as one word", () => {
     word: inquiryRefusalWordUnknown,
   });
   expect(
-    inquiryAskAnswered({
+    inquiryAskRefused({
       outcome: "Retryable",
       code: "InquiriesInFlight",
       retryAfterSeconds: 5,
     }),
   ).toStrictEqual({ ask: "Refused", word: "In flight" });
   expect(
-    inquiryAskAnswered({
+    inquiryAskRefused({
       outcome: "Rejected",
       code: "X",
       status: 400,
@@ -224,7 +216,7 @@ test("each refusal the door states is drawn as one word", () => {
  * of its own rather than a word. */
 test("a refusal for no runner is drawn apart from the words", () => {
   expect(
-    inquiryAskAnswered({
+    inquiryAskRefused({
       outcome: "Rejected",
       code: "NoRunner",
       status: 403,
@@ -235,7 +227,7 @@ test("a refusal for no runner is drawn apart from the words", () => {
 
 /** A `404` carries no code at all, so the word for it comes from the outcome. */
 test("a project with no lead is refused in a word of its own", () => {
-  expect(inquiryAskAnswered({ outcome: "Absent" })).toStrictEqual({
+  expect(inquiryAskRefused({ outcome: "Absent" })).toStrictEqual({
     ask: "Refused",
     word: inquiryRefusalWordNoLead,
   });
@@ -253,7 +245,7 @@ test("what never reached the lead is a failure with its reason, not a refusal", 
     { outcome: "Unreachable", reason: "offline" } as const,
     { outcome: "Unreadable", reason: "not json" } as const,
   ]) {
-    const answered = inquiryAskAnswered(result);
+    const answered = inquiryAskRefused(result);
     expect(answered.ask, result.outcome).toBe("Failed");
   }
 });
@@ -271,4 +263,16 @@ test("an inquiry the listing names no asker for is drawn as absent", () => {
     inquiryAskerAbsent.split(" ").length,
     "the absent asker is a word",
   ).toBe(1);
+});
+
+/** A refusal's line is what the box draws, and what a reader who left the
+ * project is told. */
+test("a refusal is said as its word, the runner's own word, or the failure's reason", () => {
+  expect(inquiryAskRefusalSentence({ ask: "Refused", word: "In flight" })).toBe(
+    "In flight",
+  );
+  expect(inquiryAskRefusalSentence({ ask: "NoRunner" })).toBe("No chat host");
+  expect(inquiryAskRefusalSentence({ ask: "Failed", reason: "offline" })).toBe(
+    "Failed · offline",
+  );
 });

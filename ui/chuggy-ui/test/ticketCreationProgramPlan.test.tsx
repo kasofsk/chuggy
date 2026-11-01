@@ -6,7 +6,6 @@
  * offered both, and sends what they drew.
  */
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   cleanup,
   fireEvent,
@@ -17,16 +16,13 @@ import {
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ComponentProps } from "react";
 
-import { CreationForm } from "../app/browser/TicketCreation.tsx";
+import type { CreationForm } from "../app/browser/TicketCreation.tsx";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
 import { creationFormFrom } from "../app/core/ticketCreation.ts";
-import { creationContextList } from "../app/core/ticketCreationRun.ts";
+import { creationFormDrawn } from "./creationFormDrawn.tsx";
 import { answeringApi } from "./answeringApi.ts";
 import type { Sent } from "./answeringApi.ts";
-import {
-  creationGatedOffer,
-  creationPartition,
-} from "./ticketCreationFixture.ts";
+import { creationGatedOffer } from "./ticketCreationFixture.ts";
 import { ticketReleasing } from "./ticketReleasing.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 
@@ -53,24 +49,7 @@ function draw(
   ports: ApiPorts,
   extra: Partial<ComponentProps<typeof CreationForm>> = {},
 ): void {
-  render(
-    <QueryClientProvider
-      client={
-        new QueryClient({ defaultOptions: { queries: { retry: false } } })
-      }
-    >
-      <CreationForm
-        ports={ports}
-        partition={creationPartition}
-        queryKey={creationContextList(creationPartition).key}
-        context={{ context: "Ready", offers, partial: false, repositories: [] }}
-        start="Waits"
-        onCreated={() => undefined}
-        existing={() => null}
-        {...extra}
-      />
-    </QueryClientProvider>,
-  );
+  render(creationFormDrawn(ports, offers, extra));
   fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
 }
 

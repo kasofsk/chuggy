@@ -63,6 +63,13 @@ export function inboxProposalStepWord(step: InboxProposalStep): string {
   }
 }
 
+/** The line one review leaves behind once its row may have left: the tickets
+ * its decision named, then the word, then why where it failed. */
+export function inboxProposalSentence(answer: InboxProposalAnswer): string {
+  const why = answer.step.step === "Failed" ? ` · ${answer.step.why}` : "";
+  return `Proposal ${answer.proposal.tickets.join(", ")} · ${inboxProposalStepWord(answer.step)}${why}`;
+}
+
 /** A note is held to what the wire takes as it is typed, so a review is never refused for its length. */
 export function inboxProposalNoteClamped(typed: string): string {
   return typed.slice(0, selectorReviewFeedbackCharsMax);

@@ -12,7 +12,7 @@ import type {
 import { forgeApps } from "../../../../src/contract/rosters.ts";
 import type { ForgeAppName } from "../../../../src/contract/rosters.ts";
 
-import type { ApiResult } from "./apiRequest.ts";
+import type { ApiFailure, ApiResult } from "./apiRequest.ts";
 import { base64urlFromBytes } from "./base64url.ts";
 import { forgePressOf } from "./forgePress.ts";
 import type { ForgePress } from "./forgePress.ts";
@@ -192,9 +192,16 @@ function forgeAuthorizationWordAnswered(
 export function forgeAuthorizationWord(
   result: ApiResult<ForgeAuthorizationResponse>,
 ): ForgeReturnWord | undefined {
-  switch (result.outcome) {
-    case "Ok":
-      return forgeAuthorizationWordAnswered(result.value);
+  if (result.outcome === "Ok")
+    return forgeAuthorizationWordAnswered(result.value);
+  return forgeAuthorizationRefusal(result);
+}
+
+/** What a refused redemption came to, as the word the person returns with. */
+export function forgeAuthorizationRefusal(
+  failure: ApiFailure,
+): ForgeReturnWord {
+  switch (failure.outcome) {
     case "Rejected":
       return forgeAuthorizationWordFailed("Refused");
     case "Absent":
@@ -207,7 +214,7 @@ export function forgeAuthorizationWord(
       return forgeAuthorizationWordFailed("Not signed in");
     case "Fault":
       return forgeAuthorizationWordFailed(
-        result.code === "AuthorizationSpent"
+        failure.code === "AuthorizationSpent"
           ? forgeAuthorizationSpent
           : "Failed",
       );

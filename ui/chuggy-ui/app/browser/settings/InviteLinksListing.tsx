@@ -10,13 +10,14 @@
  * again and nothing is said, and any other refusal is one line under its row.
  */
 
-import { useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { AccessInviteLink } from "../../../../../src/contract/accessPlane.ts";
 import type { ApiPorts, ApiResult } from "../../core/apiRequest.ts";
+import { consoleWriteKey } from "../../core/consoleWrite.ts";
+import type { ConsoleWrite } from "../../core/consoleWrite.ts";
 import { instantFigureAtMs } from "../../core/figures.ts";
 import {
   inviteLinkRevocationNote,
@@ -24,10 +25,13 @@ import {
   inviteLinkStateLabel,
   inviteLinksWords,
 } from "../../core/inviteLinks.ts";
-import { tenantPersonName } from "../../core/tenantPeople.ts";
+import {
+  accessFailureLabel,
+  tenantPersonName,
+} from "../../core/tenantPeople.ts";
 import type { TenantSubject } from "../../core/tenantPeople.ts";
 import { inviteLinkStateTone } from "../../core/tones.ts";
-import { useApiPorts } from "../api.ts";
+import { useConsoleWrite } from "../consoleWrite.tsx";
 import { useNowMs } from "../Freshness.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Confirm } from "../ui/Confirm.tsx";
@@ -56,17 +60,35 @@ export interface InviteLinkColumn<Link> {
   readonly cell: (link: Link, nowMs: number) => ReactNode;
 }
 
-/** What one list hands the frame: its two columns, and how its links are revoked and read again. */
+/** What one list hands the frame: its two columns, which links it may revoke, and the write that revokes one. */
 export interface InviteLinksListed<Link extends InviteLinkListed> {
   readonly links: readonly Link[];
   readonly first: InviteLinkColumn<Link>;
   readonly third: InviteLinkColumn<Link>;
   readonly revocable: (link: Link) => boolean;
-  readonly revoke: (
-    ports: ApiPorts,
-    link: string,
-  ) => Promise<ApiResult<undefined>>;
-  readonly reread: (client: QueryClient) => Promise<void>;
+  readonly revocation: ConsoleWrite<string, undefined>;
+}
+
+/** One list's revocation of a link, keyed under `named`: one done or of a
+ * link already ended is over once the list has answered again, and any other
+ * refusal leaves the list to be read again behind it. */
+export function inviteLinkRevocationWrite(
+  named: readonly string[],
+  revoke: (ports: ApiPorts, link: string) => Promise<ApiResult<undefined>>,
+  reread: (client: QueryClient) => Promise<void>,
+): ConsoleWrite<string, undefined> {
+  return {
+    mutationKey: consoleWriteKey(...named),
+    write: async (ports, link, client) => {
+      const answered = await revoke(ports, link);
+      if (inviteLinkRevocationNote(answered) === undefined)
+        return { outcome: "Ok", value: undefined };
+      void reread(client);
+      return answered;
+    },
+    refusal: accessFailureLabel,
+    landed: (client) => reread(client),
+  };
 }
 
 interface InviteLinkRevoking {
@@ -81,37 +103,34 @@ interface InviteLinkRevoking {
 }
 
 /** One revocation at a time, from its press through its question to its
- * answer, after which the list is read again whatever the answer was. */
+ * answer. */
 function useInviteLinkRevoking(
-  listed: Pick<InviteLinksListed<InviteLinkListed>, "revoke" | "reread">,
+  revocation: ConsoleWrite<string, undefined>,
 ): InviteLinkRevoking {
-  const ports = useApiPorts();
-  const client = useQueryClient();
+  const revoking = useConsoleWrite(revocation);
   const [asking, setAsking] = useState<string | undefined>(undefined);
-  const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<InviteLinkRevoking["note"]>(undefined);
+  const refused = revoking.error;
+  const revoked = revoking.variables;
   return {
     asking,
-    busy,
-    note,
+    busy: revoking.isPending,
+    note:
+      refused === null || revoked === undefined
+        ? undefined
+        : { link: revoked, words: refused.message },
     press: (link) => {
-      setNote(undefined);
+      revoking.reset();
       setAsking(link);
     },
     cancel: () => {
       setAsking(undefined);
     },
     send: (link) => {
-      setBusy(true);
-      void (async () => {
-        const words = inviteLinkRevocationNote(
-          await listed.revoke(ports, link),
-        );
-        setBusy(false);
-        setAsking(undefined);
-        setNote(words === undefined ? undefined : { link, words });
-        await listed.reread(client);
-      })();
+      revoking.mutate(link, {
+        onSettled: () => {
+          setAsking(undefined);
+        },
+      });
     },
   };
 }
@@ -309,7 +328,7 @@ function InviteLinkRows<Link extends InviteLinkListed>(
 export function InviteLinksListing<Link extends InviteLinkListed>(
   props: InviteLinksListed<Link>,
 ): ReactNode {
-  const revoking = useInviteLinkRevoking(props);
+  const revoking = useInviteLinkRevoking(props.revocation);
   const nowMs = useNowMs();
   if (props.links.length === 0) return null;
   const revocable = props.links.filter((link) => props.revocable(link));

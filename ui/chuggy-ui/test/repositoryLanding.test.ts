@@ -14,10 +14,11 @@ import type { BriefFinalizationMode } from "../../../src/contract/rosters.ts";
 import {
   projectRepositoriesWith,
   projectRepositoryBound,
-  repositoryLandingAnswered,
   repositoryLandingChosen,
   repositoryLandingDraft,
+  repositoryLandingMoved,
   repositoryLandingPipelinesChosen,
+  repositoryLandingRefusal,
   repositoryLandingRebased,
   repositoryLandingRestored,
   repositoryLandingSavable,
@@ -124,55 +125,40 @@ test("a rebase takes each arriving setting, and only an untouched choice with it
   });
 });
 
-test("an accepted write is the binding it answered", () => {
-  expect(
-    repositoryLandingAnswered({
-      outcome: "Ok",
-      value: binding(chuggy, "PullRequest"),
-    }),
-  ).toStrictEqual({
-    saved: "Written",
-    binding: binding(chuggy, "PullRequest"),
-  });
-});
-
 /** The route names a moved landing by one code, and the body under it is the
  * row as it now stands; anything else is a failure with its reason. */
 test("only the moved code with a readable body is a conflict", () => {
-  expect(
-    repositoryLandingAnswered({
-      outcome: "Conflict",
-      code: "RepositoryLandingMoved",
-      body: { repository: binding(chuggy, "PullRequest") },
-    }),
-  ).toStrictEqual({
-    saved: "Conflict",
-    binding: binding(chuggy, "PullRequest"),
-  });
-  expect(
-    repositoryLandingAnswered({
-      outcome: "Conflict",
-      code: "RepositoryLandingMoved",
-      body: { repository: { repository: chuggy } },
-    }),
-  ).toStrictEqual({
-    saved: "Failed",
-    reason: "the API refused this read as RepositoryLandingMoved",
-  });
-  expect(
-    repositoryLandingAnswered({
-      outcome: "Conflict",
-      code: "SomethingElse",
-      body: undefined,
-    }),
-  ).toStrictEqual({
-    saved: "Failed",
-    reason: "the API refused this read as SomethingElse",
-  });
-  expect(repositoryLandingAnswered({ outcome: "Absent" })).toStrictEqual({
-    saved: "Failed",
-    reason: "the API has no such resource, or will not show it to you",
-  });
+  const moved = {
+    outcome: "Conflict",
+    code: "RepositoryLandingMoved",
+    body: { repository: binding(chuggy, "PullRequest") },
+  } as const;
+  expect(repositoryLandingMoved(moved)).toStrictEqual(
+    binding(chuggy, "PullRequest"),
+  );
+  expect(repositoryLandingRefusal(moved)).toBe("Settings moved");
+  const unreadable = {
+    outcome: "Conflict",
+    code: "RepositoryLandingMoved",
+    body: { repository: { repository: chuggy } },
+  } as const;
+  expect(repositoryLandingMoved(unreadable)).toBeUndefined();
+  expect(repositoryLandingRefusal(unreadable)).toBe(
+    "Failed · the API refused this read as RepositoryLandingMoved",
+  );
+  const other = {
+    outcome: "Conflict",
+    code: "SomethingElse",
+    body: undefined,
+  } as const;
+  expect(repositoryLandingMoved(other)).toBeUndefined();
+  expect(repositoryLandingRefusal(other)).toBe(
+    "Failed · the API refused this read as SomethingElse",
+  );
+  expect(repositoryLandingMoved({ outcome: "Absent" })).toBeUndefined();
+  expect(repositoryLandingRefusal({ outcome: "Absent" })).toBe(
+    "Failed · the API has no such resource, or will not show it to you",
+  );
 });
 
 /** The listing is what every other screen reads the landing from, so the row

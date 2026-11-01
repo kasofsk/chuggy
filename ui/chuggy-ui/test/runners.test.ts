@@ -1,6 +1,6 @@
 /**
  * The Runners page's words and drafts, derived: what a route and its source
- * are called, which route a draft starts on, what a write answered, the
+ * are called, which route a draft starts on, what a refused write says, the
  * package a machine is handed with its commands and its guide, and where the
  * control that hands it over is drawn.
  */
@@ -13,6 +13,7 @@ import type {
   WorkerPoolsResponse,
 } from "../../../src/contract/responses.ts";
 import { sessionRunnerStandings } from "../../../src/contract/rosters.ts";
+import { panelReason } from "../app/core/freshness.ts";
 import type { PanelState } from "../app/core/freshness.ts";
 import {
   runnerAddPlace,
@@ -24,10 +25,11 @@ import {
   runnerPackages,
   runnerRegisterCommand,
   runnerStandingLabel,
-  runnersPlacementAnswered,
   runnersPlacementDraft,
   runnersPlacementMoved,
   runnersPlacementOptions,
+  runnersPlacementRefusal,
+  runnersPlacementUnhosted,
   runnersPlacementWrites,
 } from "../app/core/runners.ts";
 
@@ -134,25 +136,24 @@ test("a runner standing is one word, and no runner at all is None", () => {
 });
 
 test("a write refused for the hosted grant is told apart from any other refusal", () => {
-  expect(
-    runnersPlacementAnswered({
-      outcome: "Rejected",
-      code: "HostedRunsNotGranted",
-      status: 403,
-      body: undefined,
-    }),
-  ).toStrictEqual({ saved: "Unhosted" });
-  expect(
-    runnersPlacementAnswered({
-      outcome: "Rejected",
-      code: "InvalidRequest",
-      status: 400,
-      body: undefined,
-    }).saved,
-  ).toBe("Failed");
-  expect(
-    runnersPlacementAnswered({ outcome: "Ok", value: hosted }),
-  ).toStrictEqual({ saved: "Written", placement: hosted });
+  const unhosted = {
+    outcome: "Rejected",
+    code: "HostedRunsNotGranted",
+    status: 403,
+    body: undefined,
+  } as const;
+  const invalid = {
+    outcome: "Rejected",
+    code: "InvalidRequest",
+    status: 400,
+    body: undefined,
+  } as const;
+  expect(runnersPlacementUnhosted(unhosted)).toBe(true);
+  expect(runnersPlacementRefusal(unhosted)).toBe("Needs hosted runs");
+  expect(runnersPlacementUnhosted(invalid)).toBe(false);
+  expect(runnersPlacementRefusal(invalid)).toBe(
+    `Failed · ${panelReason(invalid)}`,
+  );
 });
 
 test("setup offers the Linux package: what it needs, the command that installs its current release, and its guide", () => {

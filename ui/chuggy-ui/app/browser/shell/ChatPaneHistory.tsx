@@ -446,14 +446,8 @@ export function ChatPaneThreadActions(props: {
   /** The reader may change no thread, so Rename and Close are not offered. */
   readonly viewOnly?: boolean;
   readonly at: ChatPaneThreadActionsAt;
-  /** Told each rename or close that lands, for a thread no frame names. */
-  readonly onChanged?: () => void;
 }): ReactNode {
-  const actions = useThreadEntryActions(
-    props.home,
-    props.thread,
-    props.onChanged,
-  );
+  const actions = useThreadEntryActions(props.home, props.thread);
   const [confirming, setConfirming] = useState(false);
   return (
     <>
@@ -498,11 +492,7 @@ export function ChatPaneThreadActions(props: {
       ) : null}
       {actions.refused === undefined ? null : (
         <ChatPaneHeaderRow>
-          <Notice
-            tone="danger"
-            inline
-            detail={`Refused · ${actions.refused}`}
-          />
+          <Notice tone="danger" inline detail={actions.refused} />
         </ChatPaneHeaderRow>
       )}
     </>

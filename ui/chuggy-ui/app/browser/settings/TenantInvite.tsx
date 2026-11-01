@@ -14,11 +14,11 @@
  * because the address is shown this once.
  */
 
-import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type {
+  AccessInvited,
   AccessInviteLinkMinted,
   AccessTenantAbilities,
   AccessTenantRole,
@@ -27,32 +27,31 @@ import {
   apiInviteTenantPerson,
   apiMintTenantInviteLink,
 } from "../../core/accessRoutes.ts";
+import { consoleWriteKey } from "../../core/consoleWrite.ts";
+import type { ConsoleWrite } from "../../core/consoleWrite.ts";
 import {
   inviteLinkSendWords,
-  tenantInviteLinkOutcome,
   tenantInviteLinkSendable,
 } from "../../core/inviteLinks.ts";
 import type { InviteMode } from "../../core/inviteLinks.ts";
 import {
+  accessFailureLabel,
   projectRoleOffered,
   tenantInvitationBlank,
   tenantInvitationBody,
   tenantInvitationGrantsBody,
-  tenantInvitationOutcome,
   tenantInvitationProjects,
   tenantInvitationProjectsFault,
   tenantInvitationProjectToggled,
+  tenantInvitationRefusalRereads,
   tenantInvitationRoleChosen,
   tenantInvitationRoleOpening,
   tenantInvitationRoles,
   tenantInvitationSendable,
   tenantRoleLabel,
 } from "../../core/tenantPeople.ts";
-import type {
-  TenantInvitationForm,
-  TenantInvitationRefused,
-} from "../../core/tenantPeople.ts";
-import { useApiPorts } from "../api.ts";
+import type { TenantInvitationForm } from "../../core/tenantPeople.ts";
+import { useConsoleWrite } from "../consoleWrite.tsx";
 import { Dialog } from "../ui/Dialog.tsx";
 import { RadioGroup } from "../ui/RadioGroup.tsx";
 import {
@@ -98,7 +97,7 @@ function TenantInviteRole(props: {
 interface TenantInviting {
   readonly form: TenantInvitationForm;
   readonly mode: InviteMode;
-  /** The link this opening made, which is the one place its token is. */
+  /** The link this opening made, which only the write that made it holds. */
   readonly made: AccessInviteLinkMinted | undefined;
   readonly busy: boolean;
   readonly status: string | undefined;
@@ -110,32 +109,52 @@ interface TenantInviting {
   readonly mint: () => void;
 }
 
-/** One request from its press to its answer, and the line a refusal leaves. */
-function useTenantInviteSent(): {
-  readonly busy: boolean;
-  readonly status: string | undefined;
-  readonly quiet: () => void;
-  readonly send: (
-    asked: () => Promise<TenantInvitationRefused | undefined>,
-  ) => void;
-} {
-  const [busy, setBusy] = useState(false);
-  const [status, setStatus] = useState<string | undefined>(undefined);
+/** One person invited, over once the list and the abilities have answered
+ * again; an absent answer leaves them to be read again behind it. */
+function tenantInvitationWrite(
+  tenant: string,
+): ConsoleWrite<TenantInvitationForm, AccessInvited> {
   return {
-    busy,
-    status,
-    quiet: () => {
-      setStatus(undefined);
+    mutationKey: consoleWriteKey("tenant-invitation", tenant),
+    write: async (ports, form, client) => {
+      const answered = await apiInviteTenantPerson(
+        ports,
+        tenant,
+        tenantInvitationBody(form),
+      );
+      if (answered.outcome !== "Ok" && tenantInvitationRefusalRereads(answered))
+        void tenantPeopleReread(client, tenant);
+      return answered;
     },
-    send: (asked) => {
-      setBusy(true);
-      setStatus(undefined);
-      void (async () => {
-        const refused = await asked();
-        setBusy(false);
-        setStatus(refused?.status);
-      })();
+    refusal: accessFailureLabel,
+    landed: (client) => tenantPeopleReread(client, tenant),
+  };
+}
+
+/** One link made, over once the links have answered again; an absent answer
+ * leaves them and the people to be read again behind it. */
+function tenantInviteLinkWrite(
+  tenant: string,
+): ConsoleWrite<TenantInvitationForm, AccessInviteLinkMinted> {
+  return {
+    mutationKey: consoleWriteKey("tenant-invite-link", tenant),
+    write: async (ports, form, client) => {
+      const answered = await apiMintTenantInviteLink(
+        ports,
+        tenant,
+        tenantInvitationGrantsBody(form),
+      );
+      if (
+        answered.outcome !== "Ok" &&
+        tenantInvitationRefusalRereads(answered)
+      ) {
+        void tenantInviteLinksReread(client, tenant);
+        void tenantPeopleReread(client, tenant);
+      }
+      return answered;
     },
+    refusal: accessFailureLabel,
+    landed: (client) => tenantInviteLinksReread(client, tenant),
   };
 }
 
@@ -146,42 +165,20 @@ function useTenantInvite(
   blank: TenantInvitationForm,
   onInvited: () => void,
 ): TenantInviting {
-  const ports = useApiPorts();
-  const client = useQueryClient();
   const [form, setForm] = useState(blank);
   const [mode, setMode] = useState<InviteMode>("Person");
-  const [made, setMade] = useState<AccessInviteLinkMinted>();
-  const { busy, status, quiet, send } = useTenantInviteSent();
-  const invited = async (): Promise<TenantInvitationRefused | undefined> => {
-    const outcome = tenantInvitationOutcome(
-      await apiInviteTenantPerson(ports, tenant, tenantInvitationBody(form)),
-    );
-    if (outcome.outcome === "Invited") onInvited();
-    if (outcome.outcome === "Invited" || outcome.reread)
-      void tenantPeopleReread(client, tenant);
-    return outcome.outcome === "Refused" ? outcome : undefined;
-  };
-  const minted = async (): Promise<TenantInvitationRefused | undefined> => {
-    const outcome = tenantInviteLinkOutcome(
-      await apiMintTenantInviteLink(
-        ports,
-        tenant,
-        tenantInvitationGrantsBody(form),
-      ),
-    );
-    if (outcome.outcome === "Made") setMade(outcome.minted);
-    if (outcome.outcome === "Made" || outcome.reread)
-      void tenantInviteLinksReread(client, tenant);
-    if (outcome.outcome === "Refused" && outcome.reread)
-      void tenantPeopleReread(client, tenant);
-    return outcome.outcome === "Refused" ? outcome : undefined;
+  const inviting = useConsoleWrite(tenantInvitationWrite(tenant));
+  const minting = useConsoleWrite(tenantInviteLinkWrite(tenant));
+  const quiet = (): void => {
+    inviting.reset();
+    minting.reset();
   };
   return {
     form,
     mode,
-    made,
-    busy,
-    status,
+    made: minting.isSuccess ? minting.data : undefined,
+    busy: inviting.isPending || minting.isPending,
+    status: (inviting.error ?? minting.error)?.message,
     change: setForm,
     choose: (chosen) => {
       setMode(chosen);
@@ -190,14 +187,15 @@ function useTenantInvite(
     begin: (opened) => {
       setForm(opened);
       setMode("Person");
-      setMade(undefined);
       quiet();
     },
     invite: () => {
-      send(invited);
+      minting.reset();
+      inviting.mutate(form, { onSuccess: onInvited });
     },
     mint: () => {
-      send(minted);
+      inviting.reset();
+      minting.mutate(form);
     },
   };
 }

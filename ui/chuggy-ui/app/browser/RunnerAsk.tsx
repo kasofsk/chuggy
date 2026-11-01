@@ -10,15 +10,22 @@ import { useId, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { WorkerPoolTokenResponse } from "../../../../src/contract/responses.ts";
-import type { ApiResult } from "../core/apiRequest.ts";
+import type { ApiFailure } from "../core/apiRequest.ts";
+import type { ConsoleWrite } from "../core/consoleWrite.ts";
 import { panelReason } from "../core/freshness.ts";
 import { runnerAskRead, runnerPackages } from "../core/runners.ts";
-import type { RunnerMint, RunnerPackageName } from "../core/runners.ts";
+import type {
+  RunnerAsk,
+  RunnerKind,
+  RunnerPackageName,
+} from "../core/runners.ts";
+import { useConsoleWrite } from "./consoleWrite.tsx";
+import type { ConsoleWriting } from "./consoleWrite.tsx";
 import { Button } from "./ui/Button.tsx";
 import { Checkbox } from "./ui/Checkbox.tsx";
 import { Disclosure } from "./ui/Disclosure.tsx";
 import { Input } from "./ui/Input.tsx";
-import { useFocusedUnheld } from "./RunnerSteps.tsx";
+import { RunnerSteps, useFocusedUnheld } from "./RunnerSteps.tsx";
 import { Notice } from "./ui/Notice.tsx";
 import { ToggleGroup } from "./ui/ToggleGroup.tsx";
 
@@ -141,23 +148,56 @@ function RunnerAskPresses(props: {
   );
 }
 
+/** The line a refused mint leaves in its ask. */
+export function runnerMintRefusal(failure: ApiFailure): string {
+  return `Refused · ${panelReason(failure)}`;
+}
+
+/** A registration token's mint, from the press that opens its ask through
+ * the token it answered, which stands with the ask it declares until closed. */
+export interface RunnerMinting {
+  readonly writing: ConsoleWriting<RunnerAsk, WorkerPoolTokenResponse>;
+  /** Whether the ask or the steps are drawn. */
+  readonly opened: boolean;
+  readonly open: () => void;
+  readonly close: () => void;
+}
+
+export function useRunnerMinting(
+  write: ConsoleWrite<RunnerAsk, WorkerPoolTokenResponse>,
+): RunnerMinting {
+  const [asking, setAsking] = useState(false);
+  const writing = useConsoleWrite(write);
+  return {
+    writing,
+    opened:
+      asking ||
+      writing.isPending ||
+      writing.error !== null ||
+      writing.isSuccess,
+    open: () => {
+      setAsking(true);
+    },
+    close: () => {
+      setAsking(false);
+      writing.reset();
+    },
+  };
+}
+
 /**
  * The ask, while it is filled in and while the caller mints its token, a
  * project's pool token or a member's own. It takes the focus as it is drawn
  * only where nothing holds it, as the steps do, since the press that opened it
  * can be gone from under it.
  */
-export function RunnerAskForm(props: {
-  readonly mint: Extract<RunnerMint, { readonly mint: "Asking" | "Minting" }>;
-  readonly onMint: (mint: RunnerMint) => void;
-  readonly minted: () => Promise<ApiResult<WorkerPoolTokenResponse>>;
-}): ReactNode {
+function RunnerAskForm(props: { readonly minting: RunnerMinting }): ReactNode {
   const [chosen, setChosen] = useState<RunnerPackageName>("linux");
   const [host, setHost] = useState(false);
   const [typed, setTyped] = useState("");
   const [fault, setFault] = useState<string | undefined>(undefined);
   const [advanced, setAdvanced] = useState(false);
-  const busy = props.mint.mint === "Minting";
+  const writing = props.minting.writing;
   const form = useFocusedUnheld<HTMLFormElement>();
   return (
     <form
@@ -173,15 +213,7 @@ export function RunnerAskForm(props: {
           setAdvanced(true);
           return;
         }
-        props.onMint({ mint: "Minting" });
-        void (async () => {
-          const minted = await props.minted();
-          props.onMint(
-            minted.outcome === "Ok"
-              ? { mint: "Minted", minted: minted.value, ask: read.ask }
-              : { mint: "Asking", reason: panelReason(minted) },
-          );
-        })();
+        writing.mutate(read.ask);
       }}
     >
       <RunnerMachine chosen={chosen} onChoose={setChosen} />
@@ -197,19 +229,34 @@ export function RunnerAskForm(props: {
         }}
         fault={fault}
       />
-      {props.mint.mint === "Asking" && props.mint.reason !== undefined ? (
-        <Notice
-          tone="danger"
-          inline
-          detail={`Refused · ${props.mint.reason}`}
-        />
-      ) : null}
+      {writing.error === null ? null : (
+        <Notice tone="danger" inline detail={writing.error.message} />
+      )}
       <RunnerAskPresses
-        busy={busy}
-        onCancel={() => {
-          props.onMint({ mint: "Idle" });
-        }}
+        busy={writing.isPending}
+        onCancel={props.minting.close}
       />
     </form>
   );
+}
+
+/** The ask while the token is unminted, and once it is, the steps it is
+ * handed over in, until `onDone` closes them. */
+export function RunnerMintOpened(props: {
+  readonly minting: RunnerMinting;
+  readonly kind: RunnerKind;
+  readonly onDone: () => void;
+}): ReactNode {
+  const { minting } = props;
+  const { data: minted, variables: ask } = minting.writing;
+  if (minted !== undefined && ask !== undefined)
+    return (
+      <RunnerSteps
+        minted={minted}
+        ask={ask}
+        kind={props.kind}
+        onDone={props.onDone}
+      />
+    );
+  return minting.opened ? <RunnerAskForm minting={minting} /> : null;
 }

@@ -1,8 +1,9 @@
 /**
  * A workspace's people: who each one is, the words what they hold is drawn in
- * on their row, the boxes their editor holds, what a change to a person or an
- * invitation came to, which change is asked first, what an invitation's fields
- * may hold before anything is sent, and which changes it offers.
+ * on their row, the boxes their editor holds, the line a refused change or
+ * invitation is drawn as and whether it reads the list again, which change is
+ * asked first, what an invitation's fields may hold before anything is sent,
+ * and which changes it offers.
  *
  * What an invitation grants is a form of its own, as the contract's schema is:
  * an invitation of a person adds who they are to it, and an invite link is
@@ -37,14 +38,13 @@ import {
   type AccessAuthorityPerson,
   type AccessInvitation,
   type AccessInvitationGrants,
-  type AccessInvited,
   type AccessProjectRole,
   type AccessTenantAbilities,
   type AccessTenantPerson,
   type AccessTenantRole,
 } from "../../../../src/contract/accessPlane.ts";
 
-import type { ApiFailure, ApiResult } from "./apiRequest.ts";
+import type { ApiFailure } from "./apiRequest.ts";
 
 /** What the page draws for a reader the list is not answered to. */
 export const tenantPeopleWithheld = "A workspace admin manages people";
@@ -158,13 +158,6 @@ export function accessFailureLabel(failure: ApiFailure): string {
     case "Unreadable":
       return "Unreadable";
   }
-}
-
-/** What one grant or removal came to: nothing to say, or its line. */
-export function tenantPersonChangeNote(
-  result: ApiResult<undefined>,
-): string | undefined {
-  return result.outcome === "Ok" ? undefined : accessFailureLabel(result);
 }
 
 /** One role held or not, on the workspace or on one of its projects, or
@@ -697,33 +690,9 @@ export function tenantInvitationRoleChosen(
   );
 }
 
-/** An invitation or an invite link the plane did not take. An absent answer
- * is a plane that invites nobody or a reader no longer an admin, and reading
- * the list again is what tells the two apart. */
-export interface TenantInvitationRefused {
-  readonly outcome: "Refused";
-  readonly status: string;
-  readonly reread: boolean;
-}
-
-export function tenantInvitationRefused(
-  failure: ApiFailure,
-): TenantInvitationRefused {
-  return {
-    outcome: "Refused",
-    status: accessFailureLabel(failure),
-    reread: failure.outcome === "Absent",
-  };
-}
-
-/** What one invitation came to. */
-export type TenantInvitationOutcome =
-  { readonly outcome: "Invited" } | TenantInvitationRefused;
-
-export function tenantInvitationOutcome(
-  result: ApiResult<AccessInvited>,
-): TenantInvitationOutcome {
-  return result.outcome === "Ok"
-    ? { outcome: "Invited" }
-    : tenantInvitationRefused(result);
+/** Whether an invitation or an invite link the plane did not take leaves the
+ * list to be read again: an absent answer is a plane that invites nobody or a
+ * reader no longer an admin, and reading the list again tells the two apart. */
+export function tenantInvitationRefusalRereads(failure: ApiFailure): boolean {
+  return failure.outcome === "Absent";
 }

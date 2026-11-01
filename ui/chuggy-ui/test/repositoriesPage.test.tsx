@@ -41,6 +41,7 @@ import {
   openedStream,
   ScreenHarness,
   settled,
+  turned,
 } from "./screenHarness.tsx";
 import { frame, streamServer } from "./streamDouble.ts";
 import type { StreamServer } from "./streamDouble.ts";
@@ -2573,4 +2574,46 @@ test("the picker offers a repository whose binding is retired, marks a live one 
   expect(sent.find((one) => one.method === "POST")?.body).toStrictEqual({
     repository: freeUrl,
   });
+});
+
+/** A press is over when the bindings it changed have answered, so a second
+ * press is never drawn against a list that has not been read again. */
+test("a bind keeps its row busy until the bindings it changed have been read again", async () => {
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  let posted = false;
+  await drawPage({
+    posted: () => {
+      posted = true;
+      return answer(
+        {
+          repository: freeUrl,
+          landing: { mode: "Push" },
+          configurations: { result: "Imported", count: 2 },
+        },
+        201,
+      );
+    },
+    over: (served) =>
+      ((url: string, init?: Init) =>
+        posted && (init?.method ?? "GET") === "GET" && !url.includes("/forge")
+          ? gate.then(() => served(url, init))
+          : served(url, init)) as unknown as typeof fetch,
+  });
+  await chooseFree();
+  const row = (): HTMLElement =>
+    within(screen.getByRole("dialog")).getByRole("button", {
+      name: "gdoteof/scratch",
+    });
+  expect(row().hasAttribute("disabled")).toBe(true);
+
+  await turned(release);
+  await settled();
+
+  expect(row().hasAttribute("disabled")).toBe(false);
+  expect(statusesOf()).toStrictEqual([
+    "gdoteof/scratch · Configurations imported · New ticket",
+  ]);
 });

@@ -34,7 +34,7 @@ import {
   tenantPermissionsWithheld,
 } from "../../core/permissions.ts";
 import {
-  usePermissionsChange,
+  permissionsChange,
   type PermissionChange,
   type PermissionHolderRoutes,
 } from "./permissionsChange.ts";
@@ -79,8 +79,9 @@ function TenantPermissions(props: {
   readonly people: AccessTenantPeople | undefined;
 }): ReactNode {
   const tenant = props.tenant;
-  const change = usePermissionsChange<AccessTenantAuthority>({
+  const change = permissionsChange<AccessTenantAuthority>({
     tenant,
+    scope: [tenant],
     level: "Tenant",
     abilities: props.abilities,
     people: props.people,

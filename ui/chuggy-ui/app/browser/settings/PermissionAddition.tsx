@@ -10,7 +10,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { AccessAuthorityPerson } from "../../../../../src/contract/accessPlane.ts";
-import type { ApiResult } from "../../core/apiRequest.ts";
+import type { ConsoleWrite } from "../../core/consoleWrite.ts";
 import {
   permissionChoiceHolder,
   permissionChoiceValue,
@@ -20,18 +20,25 @@ import {
   type PermissionHolder,
   type PermissionRow,
 } from "../../core/permissions.ts";
-import {
-  accessFailureLabel,
-  tenantPersonName,
-} from "../../core/tenantPeople.ts";
+import { tenantPersonName } from "../../core/tenantPeople.ts";
+import { useConsoleWrite } from "../consoleWrite.tsx";
+import type { ConsoleWriting } from "../consoleWrite.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Dialog } from "../ui/Dialog.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
 import { RadioGroup } from "../ui/RadioGroup.tsx";
 import { SearchableRoster } from "../ui/SearchableRoster.tsx";
 
+/** One press of a row's holder: the row, and the holder it sends. */
+export interface PermissionHolderPressed<
+  Authority extends PermissionAuthority,
+> {
+  readonly row: PermissionRow<Authority>;
+  readonly holder: PermissionHolder;
+}
+
 /** Whether a row may be given a holder, what it offers, the people to choose
- * among, and what adding one does. */
+ * among, and the write that adds one to it. */
 export interface PermissionsAddition<Authority extends PermissionAuthority> {
   readonly addable: (row: PermissionRow<Authority>) => boolean;
   readonly choices: (
@@ -40,41 +47,9 @@ export interface PermissionsAddition<Authority extends PermissionAuthority> {
   readonly people: (
     row: PermissionRow<Authority>,
   ) => readonly AccessAuthorityPerson[];
-  readonly add: (
+  readonly write: (
     row: PermissionRow<Authority>,
-    holder: PermissionHolder,
-  ) => Promise<ApiResult<undefined>>;
-}
-
-/** One addition, from the press to the dialog closing or the line it leaves. */
-function usePermissionAdding(
-  add: (holder: PermissionHolder) => Promise<ApiResult<undefined>>,
-  onAdded: () => void,
-): {
-  readonly busy: boolean;
-  readonly note: string | undefined;
-  readonly begin: () => void;
-  readonly send: (holder: PermissionHolder) => void;
-} {
-  const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState<string | undefined>(undefined);
-  return {
-    busy,
-    note,
-    begin: () => {
-      setNote(undefined);
-    },
-    send: (holder) => {
-      setBusy(true);
-      setNote(undefined);
-      void (async () => {
-        const answered = await add(holder);
-        setBusy(false);
-        if (answered.outcome === "Ok") onAdded();
-        else setNote(accessFailureLabel(answered));
-      })();
-    },
-  };
+  ) => ConsoleWrite<PermissionHolderPressed<Authority>, undefined>;
 }
 
 /** A person's name as a permission draws it: their address, or their subject
@@ -211,18 +186,23 @@ function PermissionAdditionBody(props: {
   );
 }
 
-function PermissionAdditionFoot(props: {
+function PermissionAdditionFoot<Authority extends PermissionAuthority>(props: {
+  readonly row: PermissionRow<Authority>;
   readonly holder: PermissionHolder | undefined;
-  readonly adding: ReturnType<typeof usePermissionAdding>;
+  readonly adding: ConsoleWriting<
+    PermissionHolderPressed<Authority>,
+    undefined
+  >;
+  readonly onAdded: () => void;
   readonly onCancel: () => void;
 }): ReactNode {
-  const { holder, adding } = props;
+  const { row, holder, adding } = props;
   return (
     <>
       <Button
         variant="quiet"
         size="sm"
-        disabled={adding.busy}
+        disabled={adding.isPending}
         onClick={props.onCancel}
       >
         Cancel
@@ -230,10 +210,11 @@ function PermissionAdditionFoot(props: {
       <Button
         variant="primary"
         size="sm"
-        disabled={holder === undefined || adding.busy}
-        busy={adding.busy}
+        disabled={holder === undefined || adding.isPending}
+        busy={adding.isPending}
         onClick={() => {
-          if (holder !== undefined) adding.send(holder);
+          if (holder !== undefined)
+            adding.mutate({ row, holder }, { onSuccess: props.onAdded });
         }}
       >
         Add
@@ -266,12 +247,7 @@ export function PermissionAddition<
   const row = props.row;
   const addition = props.addition;
   const draft = usePermissionDraft();
-  const adding = usePermissionAdding(
-    (holder) => addition.add(row, holder),
-    () => {
-      setOpen(false);
-    },
-  );
+  const adding = useConsoleWrite(addition.write(row));
   const choices = addition.choices(row);
   return (
     <Dialog
@@ -289,17 +265,21 @@ export function PermissionAddition<
       onOpenChange={(opened) => {
         if (opened) {
           draft.begin();
-          adding.begin();
+          adding.reset();
         }
         setOpen(opened);
       }}
-      busy={adding.busy}
-      note={adding.note}
+      busy={adding.isPending}
+      note={adding.error?.message}
       foot={
         choices.length === 0 ? undefined : (
           <PermissionAdditionFoot
+            row={row}
             holder={permissionChoiceHolder(draft.choice, draft.person)}
             adding={adding}
+            onAdded={() => {
+              setOpen(false);
+            }}
             onCancel={() => {
               setOpen(false);
             }}

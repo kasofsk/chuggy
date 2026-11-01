@@ -20,16 +20,17 @@ import type {
   SelectorSettingsFieldChange,
   SelectorSettingsRevisionDiff,
 } from "../../../core/selectorSettingsHistory.ts";
-import type {
-  SelectorProjectOverrides,
-  SelectorSettingsSaved,
-} from "../../../core/selectorSettingsForm.ts";
+import type { SelectorProjectOverrides } from "../../../core/selectorSettingsForm.ts";
 import { PanelUnready } from "../../DataPanel.tsx";
+import type { SelectorSettingsShown } from "../../selectorSettingsWriting.ts";
 import { Button, buttonLookClassName } from "../../ui/Button.tsx";
 import { EmptyState } from "../../ui/EmptyState.tsx";
 import { Figure } from "../../ui/Figure.tsx";
 import { Panel } from "../../ui/Panel.tsx";
-import { SelectorSettingsSavedNotice } from "./SelectorSection.tsx";
+import {
+  SelectorSettingsSavedNotice,
+  selectorSettingsNoticed,
+} from "./SelectorSection.tsx";
 
 import "./selector.css";
 
@@ -169,7 +170,7 @@ export function SelectorRevisions(props: {
   readonly state: PanelState<SelectorSettingsHistoryResponse>;
   readonly nowMs: number;
   readonly busy: boolean;
-  readonly saved: SelectorSettingsSaved;
+  readonly saved: SelectorSettingsShown | undefined;
   readonly onRestore: (overrides: SelectorProjectOverrides) => void;
 }): ReactNode {
   const state = props.state;
@@ -179,9 +180,9 @@ export function SelectorRevisions(props: {
       title="Revisions"
       about="Every save, newest first."
       foot={
-        props.saved.saved === "Idle" ? undefined : (
+        selectorSettingsNoticed(props.saved) ? (
           <SelectorSettingsSavedNotice saved={props.saved} />
-        )
+        ) : undefined
       }
     >
       <PanelUnready state={state} />

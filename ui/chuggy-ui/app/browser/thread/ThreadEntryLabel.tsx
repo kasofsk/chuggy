@@ -13,15 +13,23 @@ import type { ReactNode } from "react";
 
 import { threadTitleCharsMax } from "../../../../../src/contract/http.ts";
 import type { ThreadEntryResponse } from "../../../../../src/contract/responses.ts";
+import { consoleWriteKey } from "../../core/consoleWrite.ts";
+import type { ConsoleWrite } from "../../core/consoleWrite.ts";
 import { panelReason } from "../../core/freshness.ts";
-import { apiCloseThreadAt, apiRenameThreadAt } from "../../core/threadHome.ts";
+import {
+  apiCloseThreadAt,
+  apiRenameThreadAt,
+  threadHomeNamed,
+} from "../../core/threadHome.ts";
 import type { ThreadHome } from "../../core/threadHome.ts";
 import { threadActions } from "../../core/threads.ts";
-import { useApiPorts } from "../api.ts";
+import { useConsoleWrite } from "../consoleWrite.tsx";
+import { memberChatReread } from "./threadRead.ts";
 
 export interface ThreadEntryActions {
   readonly renaming: boolean;
   readonly busy: boolean;
+  /** The sentence the last press was refused in. */
   readonly refused: string | undefined;
   readonly closable: boolean;
   /** Whether renaming this thread is the reader's to do: the door is
@@ -35,24 +43,60 @@ export interface ThreadEntryActions {
   readonly close: () => void;
 }
 
+/** One change to a thread, keyed by the thread it changes, and over once a
+ * thread of the reader's own chat, which no frame names, has been read again. */
+function threadEntryWrite<V>(
+  named: string,
+  home: ThreadHome,
+  session: string,
+  write: ConsoleWrite<V, unknown>["write"],
+): ConsoleWrite<V, unknown> {
+  return {
+    mutationKey: consoleWriteKey(named, threadHomeNamed(home), session),
+    write,
+    refusal: (failure) => `Refused · ${panelReason(failure)}`,
+    landed: async (client) => {
+      if (home.scope === "Member")
+        await memberChatReread(client, home.tenant, session);
+    },
+  };
+}
+
+/** The thread renamed to the title its press typed. */
+function threadRenameWrite(
+  home: ThreadHome,
+  session: string,
+): ConsoleWrite<string, unknown> {
+  return threadEntryWrite("thread-rename", home, session, (ports, title) =>
+    apiRenameThreadAt(ports, home, session, title),
+  );
+}
+
+/** The thread closed, wherever the control that closes it is drawn. */
+export function threadCloseWrite(
+  home: ThreadHome,
+  session: string,
+): ConsoleWrite<undefined, unknown> {
+  return threadEntryWrite("thread-close", home, session, (ports) =>
+    apiCloseThreadAt(ports, home, session),
+  );
+}
+
 /** The rename and close state for one thread, called once and shared by the
- * title it swaps and the menu beside it. `changed` is told each change that
- * lands, for a thread no frame names. */
+ * title it swaps and the menu beside it. */
 export function useThreadEntryActions(
   home: ThreadHome,
   thread: Pick<ThreadEntryResponse, "session" | "mine" | "state">,
-  changed: () => void = () => undefined,
 ): ThreadEntryActions {
-  const ports = useApiPorts();
   const [renaming, setRenaming] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [refused, setRefused] = useState<string | undefined>(undefined);
+  const renames = useConsoleWrite(threadRenameWrite(home, thread.session));
+  const closes = useConsoleWrite(threadCloseWrite(home, thread.session));
   const offered = threadActions(thread);
 
   return {
     renaming,
-    busy,
-    refused,
+    busy: renames.isPending || closes.isPending,
+    refused: (renames.error ?? closes.error)?.message,
     closable: offered.includes("Close"),
     renameable: offered.includes("Rename"),
     startRename: () => {
@@ -62,28 +106,16 @@ export function useThreadEntryActions(
       setRenaming(false);
     },
     submitRename: (title: string) => {
-      setBusy(true);
-      setRefused(undefined);
-      void apiRenameThreadAt(ports, home, thread.session, title).then(
-        (result) => {
-          setBusy(false);
-          if (result.outcome !== "Ok") {
-            setRefused(panelReason(result));
-            return;
-          }
+      closes.reset();
+      renames.mutate(title, {
+        onSuccess: () => {
           setRenaming(false);
-          changed();
         },
-      );
+      });
     },
     close: () => {
-      setBusy(true);
-      setRefused(undefined);
-      void apiCloseThreadAt(ports, home, thread.session).then((result) => {
-        setBusy(false);
-        if (result.outcome !== "Ok") setRefused(panelReason(result));
-        else changed();
-      });
+      renames.reset();
+      closes.mutate(undefined);
     },
   };
 }

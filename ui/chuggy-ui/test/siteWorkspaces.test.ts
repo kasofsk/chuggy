@@ -12,15 +12,12 @@ import {
   accessNotPermittedCode,
   accessTenantTakenCode,
 } from "../../../src/contract/accessPlane.ts";
-import type {
-  AccessOwnerInvited,
-  AccessSiteAbilities,
-} from "../../../src/contract/accessPlane.ts";
+import type { AccessSiteAbilities } from "../../../src/contract/accessPlane.ts";
 import {
   projectNameCharsMax,
   reservedTenantNames,
 } from "../../../src/contract/requests.ts";
-import type { ApiResult } from "../app/core/apiRequest.ts";
+import type { ApiFailure } from "../app/core/apiRequest.ts";
 import {
   projectNameLengthFault,
   projectNameRule,
@@ -28,11 +25,12 @@ import {
 } from "../app/core/projectCreation.ts";
 import {
   siteWorkspaceBlank,
+  siteWorkspaceCreatedLine,
   siteWorkspaceHeld,
   siteWorkspaceInvitesLabel,
   siteWorkspaceNameFault,
   siteWorkspaceOffered,
-  siteWorkspaceOutcome,
+  siteWorkspaceRefusal,
   siteWorkspacesCountLine,
   siteWorkspaceSendable,
   siteWorkspaceUnnamedLine,
@@ -55,8 +53,8 @@ const typed: SiteWorkspaceForm = {
   createAccounts: true,
 };
 
-function line(result: ApiResult<AccessOwnerInvited>): string {
-  return siteWorkspaceOutcome(typed, result).line;
+function line(failure: ApiFailure): string {
+  return siteWorkspaceRefusal(failure);
 }
 
 test("the list and its form are drawn to a reader who may make a workspace, and to no other", () => {
@@ -154,29 +152,26 @@ test("a form is sent only when the plane's own schema takes every field of it", 
 test("a creation or its replay names the workspace answered and the person typed", () => {
   for (const created of [true, false])
     expect(
-      siteWorkspaceOutcome(typed, {
-        outcome: "Ok",
-        value: { tenant: "northwind-answered", subject: "s-owner", created },
+      siteWorkspaceCreatedLine(typed, {
+        tenant: "northwind-answered",
+        subject: "s-owner",
+        created,
       }),
-    ).toStrictEqual({
-      outcome: "Created",
-      line: "northwind-answered created · octocat signs in with GitHub",
-    });
+    ).toBe("northwind-answered created · octocat signs in with GitHub");
 });
 
-test("each refusal is one short line of its own, and none a creation", () => {
-  const conflict = (code: string): ApiResult<AccessOwnerInvited> => ({
+test("each refusal is one short line of its own", () => {
+  const conflict = (code: string): ApiFailure => ({
     outcome: "Conflict",
     code,
     body: undefined,
   });
-  const rejected = (code: string): ApiResult<AccessOwnerInvited> => ({
+  const rejected = (code: string): ApiFailure => ({
     outcome: "Rejected",
     code,
     status: 422,
     body: undefined,
   });
-  expect(siteWorkspaceOutcome(typed, conflict("Any")).outcome).toBe("Refused");
   expect(line(conflict(accessTenantTakenCode))).toBe("Name taken");
   expect(line(rejected(accessNotPermittedCode))).toBe("Not permitted");
   expect(line(rejected(accessInvitationCodes.AccountNotPermitted))).toBe(

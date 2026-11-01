@@ -19,8 +19,10 @@ import type {
   ImageMediaType,
   PartitionIdentity,
 } from "../../../../src/contract/http.ts";
-import type { ApiPorts } from "../core/apiRequest.ts";
+import type { ApiPorts, ApiResult } from "../core/apiRequest.ts";
 import { apiUploadProjectArtifact } from "../core/apiRoutes.ts";
+import { consoleWriteKey } from "../core/consoleWrite.ts";
+import type { ConsoleWrite } from "../core/consoleWrite.ts";
 import {
   creationImageMediaType,
   creationImagesBoundSentence,
@@ -29,6 +31,7 @@ import {
   creationImageUploadSentence,
 } from "../core/ticketCreation.ts";
 import type { TicketCreationForm } from "../core/ticketCreation.ts";
+import { useConsoleWrite } from "./consoleWrite.tsx";
 import { ProjectImage, useProjectImageHeld } from "./ProjectImage.tsx";
 import { Button } from "./ui/Button.tsx";
 
@@ -43,11 +46,6 @@ interface FormEdit {
   readonly onChange: (form: TicketCreationForm) => void;
 }
 
-type Attaching =
-  | { readonly attaching: "Idle" }
-  | { readonly attaching: "Uploading" }
-  | { readonly attaching: "Refused"; readonly reason: string };
-
 /** One image as the bytes it is, and what its upload answered. */
 interface CreationImageUploaded {
   readonly artifact: string;
@@ -55,13 +53,12 @@ interface CreationImageUploaded {
   readonly content: Uint8Array<ArrayBuffer>;
 }
 
-/** Every file uploaded in order, or the sentence the first that failed is
- * refused in. */
+/** Every file uploaded in order, or the answer of the first that failed. */
 async function creationImagesUploaded(
   ports: ApiPorts,
   partition: PartitionIdentity,
   files: readonly File[],
-): Promise<readonly CreationImageUploaded[] | string> {
+): Promise<ApiResult<readonly CreationImageUploaded[]>> {
   const uploaded: CreationImageUploaded[] = [];
   for (const file of files) {
     const mediaType = creationImageMediaType(file.type);
@@ -71,66 +68,75 @@ async function creationImagesUploaded(
       mediaType,
       content,
     });
-    if (answered.outcome !== "Ok") return creationImageUploadSentence(answered);
+    if (answered.outcome !== "Ok") return answered;
     uploaded.push({ artifact: answered.value.artifact, mediaType, content });
   }
-  return uploaded;
+  return { outcome: "Ok", value: uploaded };
+}
+
+/** One attaching through the ports the field was handed, the bytes it sent
+ * written as the project's read of each image before it is over. */
+function creationImagesWrite(
+  api: CreationImagesApi,
+  held: ReturnType<typeof useProjectImageHeld>,
+): ConsoleWrite<readonly File[], readonly CreationImageUploaded[]> {
+  const { ports, partition } = api;
+  return {
+    mutationKey: consoleWriteKey(
+      "creation-images",
+      partition.tenant,
+      partition.project,
+    ),
+    write: (_ports, files) => creationImagesUploaded(ports, partition, files),
+    refusal: creationImageUploadSentence,
+    landed: (_client, uploaded) => {
+      for (const image of uploaded)
+        held(image.artifact, image.mediaType, image.content);
+      return Promise.resolve();
+    },
+  };
 }
 
 /** What one attaching does: uploads what it takes of the files offered, and
- * adds the identities to the form as it is once every upload has answered. */
+ * adds the identities to the form as it is once every upload has answered.
+ * `bound` is what the offer itself was refused in, said once nothing else is. */
 function useCreationImagesAttach(props: FormEdit & CreationImagesApi) {
-  const { ports, partition } = props;
   const latest = useRef(props);
   useEffect(() => {
     latest.current = props;
   });
-  const drawn = useRef(true);
-  useEffect(() => {
-    drawn.current = true;
-    return () => {
-      drawn.current = false;
-    };
-  }, []);
-  const held = useProjectImageHeld(partition);
-  const [attaching, setAttaching] = useState<Attaching>({ attaching: "Idle" });
-  const attach = async (files: readonly File[]): Promise<void> => {
+  const uploading = useConsoleWrite(
+    creationImagesWrite(props, useProjectImageHeld(props.partition)),
+  );
+  const [bound, setBound] = useState<string | undefined>(undefined);
+  const attach = (files: readonly File[]): void => {
     const offered = creationImagesTaken(props.form.images.length, files);
-    const refused: Attaching =
-      offered.refused === undefined
-        ? { attaching: "Idle" }
-        : { attaching: "Refused", reason: offered.refused };
+    setBound(offered.refused);
     if (offered.taken.length === 0) {
-      setAttaching(refused);
+      uploading.reset();
       return;
     }
-    setAttaching({ attaching: "Uploading" });
-    const uploaded = await creationImagesUploaded(
-      ports,
-      partition,
-      offered.taken,
-    );
-    if (!drawn.current) return;
-    if (typeof uploaded === "string") {
-      setAttaching({ attaching: "Refused", reason: uploaded });
-      return;
-    }
-    for (const image of uploaded)
-      held(image.artifact, image.mediaType, image.content);
-    const now = latest.current.form;
-    latest.current.onChange({
-      ...now,
-      images: [...now.images, ...uploaded.map((image) => image.artifact)],
+    uploading.mutate(offered.taken, {
+      onSuccess: (uploaded) => {
+        const now = latest.current.form;
+        latest.current.onChange({
+          ...now,
+          images: [...now.images, ...uploaded.map((image) => image.artifact)],
+        });
+      },
     });
-    setAttaching(refused);
   };
-  return { attaching, attach };
+  const refused = uploading.isPending
+    ? undefined
+    : (uploading.error?.message ?? bound);
+  return { busy: uploading.isPending, refused, attach };
 }
 
 /** The line beside the control: what the last attaching came to, and how
  * many of the bound the ticket holds. */
 function CreationImagesNote(props: {
-  readonly attaching: Attaching;
+  readonly busy: boolean;
+  readonly refused: string | undefined;
   readonly count: number;
 }): ReactNode {
   return (
@@ -138,10 +144,10 @@ function CreationImagesNote(props: {
       <span className="num">
         {props.count} / {briefImagesMax}
       </span>
-      {props.attaching.attaching === "Uploading" ? " · uploading…" : null}
-      {props.attaching.attaching === "Refused" ? (
-        <span className="text-tone-fail"> · {props.attaching.reason}</span>
-      ) : null}
+      {props.busy ? " · uploading…" : null}
+      {props.refused === undefined ? null : (
+        <span className="text-tone-fail"> · {props.refused}</span>
+      )}
     </p>
   );
 }
@@ -218,11 +224,10 @@ export function CreationImages(
   props: FormEdit & { readonly api: CreationImagesApi },
 ): ReactNode {
   const { form } = props;
-  const { attaching, attach } = useCreationImagesAttach({
+  const { busy, refused, attach } = useCreationImagesAttach({
     ...props,
     ...props.api,
   });
-  const busy = attaching.attaching === "Uploading";
   const offered = (
     files: FileList | null,
     event: { readonly preventDefault: () => void },
@@ -230,7 +235,7 @@ export function CreationImages(
     const held = Array.from(files ?? []);
     if (held.length === 0) return;
     event.preventDefault();
-    if (!busy) void attach(held);
+    if (!busy) attach(held);
   };
   return (
     <fieldset
@@ -254,11 +259,13 @@ export function CreationImages(
       <CreationImagesPick
         full={form.images.length >= briefImagesMax}
         busy={busy}
-        onFiles={(files) => {
-          void attach(files);
-        }}
+        onFiles={attach}
       />
-      <CreationImagesNote attaching={attaching} count={form.images.length} />
+      <CreationImagesNote
+        busy={busy}
+        refused={refused}
+        count={form.images.length}
+      />
     </fieldset>
   );
 }

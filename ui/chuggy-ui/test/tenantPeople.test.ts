@@ -22,6 +22,7 @@ import {
 } from "../../../src/contract/accessPlane.ts";
 import {
   accessCodeLabel,
+  accessFailureLabel,
   projectRoleLabel,
   projectRoleOffered,
   tenantInvitationAccountLine,
@@ -31,7 +32,7 @@ import {
   tenantInvitationGithubFault,
   tenantInvitationGrantsBody,
   tenantInvitationOffered,
-  tenantInvitationOutcome,
+  tenantInvitationRefusalRereads,
   tenantInvitationProjects,
   tenantInvitationProjectsFault,
   tenantInvitationProjectToggled,
@@ -47,7 +48,6 @@ import {
   tenantUnscopedChatOffered,
   tenantPersonBoxChecked,
   tenantPersonChangeAsks,
-  tenantPersonChangeNote,
   tenantPersonEditOffered,
   tenantHeldEveryProject,
   tenantHeldWords,
@@ -218,18 +218,15 @@ test("each change asked first has its own question and line", () => {
   });
 });
 
-test("a change answered says nothing, and a refused one its line", () => {
-  expect(tenantPersonChangeNote({ outcome: "Ok", value: undefined })).toBe(
-    undefined,
-  );
+test("a refused change says its line", () => {
   expect(
-    tenantPersonChangeNote({
+    accessFailureLabel({
       outcome: "Conflict",
       code: accessLastTenantAdministratorCode,
       body: {},
     }),
   ).toBe("Only admin · grant another first");
-  expect(tenantPersonChangeNote({ outcome: "Absent" })).toBe("Not available");
+  expect(accessFailureLabel({ outcome: "Absent" })).toBe("Not available");
 });
 
 test("principals from another sign-in are counted only where there are any", () => {
@@ -302,29 +299,18 @@ test("more projects than one invitation names is a fault, and is not sendable", 
   expect(tenantInvitationSendable(many)).toBe(false);
 });
 
-test("an invitation answered closes, a named refusal stays, and an absent one rereads", () => {
-  expect(
-    tenantInvitationOutcome({
-      outcome: "Ok",
-      value: { subject: "s-1", created: false },
-    }),
-  ).toStrictEqual({ outcome: "Invited" });
-  expect(
-    tenantInvitationOutcome({
-      outcome: "Conflict",
-      code: accessInvitationCodes.EmailHeld,
-      body: {},
-    }),
-  ).toStrictEqual({
-    outcome: "Refused",
-    status: "Email held by another account · use another address",
-    reread: false,
-  });
-  expect(tenantInvitationOutcome({ outcome: "Absent" })).toStrictEqual({
-    outcome: "Refused",
-    status: "Not available",
-    reread: true,
-  });
+test("a named refusal of an invitation says its line and rereads nothing, and an absent one rereads", () => {
+  const held = {
+    outcome: "Conflict",
+    code: accessInvitationCodes.EmailHeld,
+    body: {},
+  } as const;
+  expect(accessFailureLabel(held)).toBe(
+    "Email held by another account · use another address",
+  );
+  expect(tenantInvitationRefusalRereads(held)).toBe(false);
+  expect(accessFailureLabel({ outcome: "Absent" })).toBe("Not available");
+  expect(tenantInvitationRefusalRereads({ outcome: "Absent" })).toBe(true);
 });
 
 const abilities: AccessTenantAbilities = {

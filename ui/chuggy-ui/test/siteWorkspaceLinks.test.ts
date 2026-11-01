@@ -1,7 +1,7 @@
 /**
  * The site's workspace links, decided with no renderer: what a note may be
- * before it is sent, what a link is sent as, what making one came to, and
- * which links a reader may revoke.
+ * before it is sent, what a link is sent as, the line a refused one leaves,
+ * and which links a reader may revoke.
  */
 
 import { expect, test } from "vitest";
@@ -12,17 +12,16 @@ import {
   accessWorkspaceLinkNoteCharsMax,
 } from "../../../src/contract/accessPlane.ts";
 import type {
-  AccessInviteLinkMinted,
   AccessSiteAbilities,
   AccessWorkspaceLink,
 } from "../../../src/contract/accessPlane.ts";
 import {
   siteWorkspaceLinkBody,
   siteWorkspaceLinkNoteFault,
-  siteWorkspaceLinkOutcome,
   siteWorkspaceLinkRevocable,
   siteWorkspaceLinkSendable,
 } from "../app/core/siteWorkspaceLinks.ts";
+import { siteWorkspaceRefusal } from "../app/core/siteWorkspaces.ts";
 
 const atBound = "n".repeat(accessWorkspaceLinkNoteCharsMax);
 
@@ -68,19 +67,6 @@ test("a link may be sent with no note, with one the plane would read, and with n
   ).toBe(false);
 });
 
-const minted: AccessInviteLinkMinted = {
-  link: "w-new",
-  token: "t0ken-made_2",
-  expiresAtMs: 2,
-  newAccounts: true,
-};
-
-test("a link made is handed on as the plane answered it", () => {
-  expect(
-    siteWorkspaceLinkOutcome({ outcome: "Ok", value: minted }),
-  ).toStrictEqual({ outcome: "Made", minted });
-});
-
 test.each([
   [
     "a site at its limit of open links",
@@ -108,10 +94,7 @@ test.each([
     "Failed",
   ],
 ] as const)("%s is the dialog's one line", (_named, result, line) => {
-  expect(siteWorkspaceLinkOutcome(result)).toStrictEqual({
-    outcome: "Refused",
-    line,
-  });
+  expect(siteWorkspaceRefusal(result)).toBe(line);
 });
 
 const none: AccessSiteAbilities = {

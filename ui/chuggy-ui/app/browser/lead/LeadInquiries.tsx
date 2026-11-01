@@ -28,15 +28,17 @@
  * THERE IS A BOX PER PROJECT AND NONE OF THEM IS THIS PANEL'S. The question
  * typed at a box, the pair a send is outstanding under, whether a press is
  * outstanding at all and what the last press answered are all one project's, so
- * a project names which box is read, which box a press writes to, and which
+ * a project names which box is read, which write a press is, and which
  * project's listing an accepted press re-reads — and every one of them outlives
- * this panel, the page above it and the route, because `lead/inquiryBoxes.ts`
- * holds them for the tab. Nothing crosses between projects and nothing is lost
- * to a navigation: a reader who leaves and comes back finds what they left,
- * whichever way they left.
+ * this panel, the page above it and the route: `lead/inquiryBoxes.ts` holds the
+ * box for the tab, and the press is a write under a key naming the project.
+ * Nothing crosses between projects and nothing is lost to a navigation: a
+ * reader who leaves and comes back finds what they left, whichever way they
+ * left.
  */
 
-import { useQueryClient } from "@tanstack/react-query";
+import { useMutationState, useQueryClient } from "@tanstack/react-query";
+import type { MutationKey, MutationStatus } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 
@@ -44,10 +46,16 @@ import { inquiryQuestionCharsMax } from "../../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type {
   LeadInquiriesResponse,
+  LeadInquiryAccepted,
   LeadInquiryResponse,
 } from "../../../../../src/contract/responses.ts";
 import { apiAskLead } from "../../core/apiRoutes.ts";
 import { base64urlFromBytes } from "../../core/base64url.ts";
+import { consoleWriteKey } from "../../core/consoleWrite.ts";
+import type {
+  ConsoleWrite,
+  ConsoleWriteRefused,
+} from "../../core/consoleWrite.ts";
 import {
   costFigure,
   durationFigure,
@@ -55,11 +63,11 @@ import {
   tokenCountFigure,
 } from "../../core/figures.ts";
 import {
-  inquiryAskAnswered,
+  inquiryAskRefusalSentence,
+  inquiryAskRefused,
   inquiryAskerNamed,
   inquiryAsking,
   inquiryBoxAnswered,
-  inquiryBoxName,
   inquiryBoxOf,
   inquiryBoxSent,
   inquiryBoxTyped,
@@ -68,13 +76,17 @@ import {
   inquiryQuestion,
   inquiryQuestionFault,
 } from "../../core/leadInquiries.ts";
-import type { InquiryAsk } from "../../core/leadInquiries.ts";
+import type {
+  InquiryAskRefusal,
+  InquiryDraw,
+} from "../../core/leadInquiries.ts";
 import { inquiryBoxesHeld } from "./inquiryBoxes.ts";
 import type { InquiryBoxStore } from "./inquiryBoxes.ts";
 import { projectAbilityRefused } from "../../core/projectAbilities.ts";
 import { leadInquiriesQuery } from "../../core/sessionQueries.ts";
 import { sessionTurnStateTone } from "../../core/tones.ts";
-import { useApiPorts, usePanelState } from "../api.ts";
+import { usePanelState } from "../api.ts";
+import { useConsoleWrite } from "../consoleWrite.tsx";
 import { PanelUnready } from "../DataPanel.tsx";
 import { drawBytes } from "../ports.ts";
 import { useProjectAbilities, ViewOnlyNotice } from "../projectAbilities.tsx";
@@ -111,21 +123,74 @@ export function useInquiryBoxes(): InquiryBoxesHeld {
   return inquiryBoxesHeld;
 }
 
+/** One project's asks, keyed by the project the box is. */
+function leadAskWrite(
+  partition: PartitionIdentity,
+  held: InquiryBoxesHeld,
+): ConsoleWrite<InquiryDraw, LeadInquiryAccepted> {
+  return {
+    mutationKey: consoleWriteKey(
+      "lead-inquiry",
+      partition.tenant,
+      partition.project,
+    ),
+    write: (ports, draw) =>
+      apiAskLead(ports, draw.partition, inquiryAsking(draw)),
+    refusal: (failure) => inquiryAskRefusalSentence(inquiryAskRefused(failure)),
+    landed: (client, _accepted, draw) => {
+      held.write(draw.partition, (box) => inquiryBoxAnswered(box, draw));
+      return client.invalidateQueries({
+        queryKey: leadInquiriesQuery(draw.partition).queryKey,
+        exact: true,
+      });
+    },
+  };
+}
+
+/** The last ask a project's box made, from whichever mount made it. */
+interface LeadAskLast {
+  readonly status: MutationStatus;
+  readonly error: ConsoleWriteRefused | null;
+}
+
+/** The latest ask under the box's key, answered or not, so a reader who comes
+ * back to a project finds what its last press said. */
+function useLeadAskLast(key: MutationKey): LeadAskLast | undefined {
+  return useMutationState({
+    filters: { mutationKey: key, exact: true },
+    select: (mutation): LeadAskLast => ({
+      status: mutation.state.status,
+      error: mutation.state.error as ConsoleWriteRefused | null,
+    }),
+  }).at(-1);
+}
+
+/** Why the last ask was refused, where it was. */
+function leadAskRefusal(
+  last: LeadAskLast | undefined,
+): InquiryAskRefusal | undefined {
+  const error = last?.error ?? null;
+  if (error === null) return undefined;
+  return error.failure === undefined
+    ? { ask: "Failed", reason: error.message }
+    : inquiryAskRefused(error.failure);
+}
+
 /** What the last ask did, in the one line the box says it in. */
 function LeadAskNotice(props: {
   readonly partition: PartitionIdentity;
-  readonly ask: InquiryAsk;
+  readonly last: LeadAskLast | undefined;
 }): ReactNode {
-  const ask = props.ask;
-  switch (ask.ask) {
-    case "Idle":
-      return null;
-    case "Asking":
-      return <Notice tone="info" inline detail="Asking" />;
-    case "Asked":
-      return <Notice tone="live" inline detail="Asked" />;
+  const status = props.last?.status;
+  if (status === "pending")
+    return <Notice tone="info" inline detail="Asking" />;
+  if (status === "success") return <Notice tone="live" inline detail="Asked" />;
+  const sentence = props.last?.error?.message ?? "";
+  const refusal = leadAskRefusal(props.last);
+  if (refusal === undefined) return null;
+  switch (refusal.ask) {
     case "Refused":
-      return <Notice tone="parked" inline detail={ask.word} />;
+      return <Notice tone="parked" inline detail={sentence} />;
     case "NoRunner":
       return (
         <SessionRunnerNotice
@@ -135,7 +200,7 @@ function LeadAskNotice(props: {
         />
       );
     case "Failed":
-      return <Notice tone="danger" inline detail={`Failed · ${ask.reason}`} />;
+      return <Notice tone="danger" inline detail={sentence} />;
   }
 }
 
@@ -143,12 +208,13 @@ function LeadAskNotice(props: {
  * press was refused, which says why in its own word. */
 function LeadAskRunner(props: {
   readonly partition: PartitionIdentity;
-  readonly ask: InquiryAsk;
+  readonly last: LeadAskLast | undefined;
 }): ReactNode {
   const runner = useSessionRunnerShort(props.partition, "lead", "inquiry");
+  const refused = leadAskRefusal(props.last)?.ask;
   return runner === undefined ||
-    props.ask.ask === "Refused" ||
-    props.ask.ask === "NoRunner" ? null : (
+    refused === "Refused" ||
+    refused === "NoRunner" ? null : (
     <SessionRunnerNotice
       partition={props.partition}
       session="Inquiry"
@@ -162,49 +228,42 @@ function LeadAskRunner(props: {
  * — a press a disabled control never dispatches is a branch nothing can reach,
  * so a second check inside the press would be a control nothing can prove.
  *
- * ONE PRESS IS ONE QUESTION, AND THE FLAG THAT SAYS SO IS A REF RATHER THAN THE
+ * ONE PRESS IS ONE QUESTION, AND WHAT SAYS SO IS THE CACHE RATHER THAN THE
  * DRAWN STATE — two presses inside one render both read the render they were
- * drawn from, so the control being disabled by the next one stops neither; it is
- * released on every answer, a refusal that latched the box shut leaving a reader
- * nothing to try again with, and the pair is held until one is accepted, so a
- * re-send is the retry the door is idempotent on rather than a second question
+ * drawn from, so the control being disabled by the next one stops neither,
+ * while a write is pending in the cache from the moment it is sent; it is over
+ * on every answer, a refusal that latched the box shut leaving a reader nothing
+ * to try again with, and the pair is held until one is accepted, so a re-send
+ * is the retry the door is idempotent on rather than a second question
  * spending the second of the asker's two.
  */
 function LeadAsk(props: {
   readonly partition: PartitionIdentity;
   readonly held: InquiryBoxesHeld;
-  readonly onAsked: (partition: PartitionIdentity) => void;
 }): ReactNode {
-  const ports = useApiPorts();
+  const client = useQueryClient();
   const partition = props.partition;
-  const { write, outstanding } = props.held;
-  const boxes = props.held.boxes();
-  const box = inquiryBoxOf(boxes, partition);
+  const write = leadAskWrite(partition, props.held);
+  const asking = useConsoleWrite(write);
+  const last = useLeadAskLast(write.mutationKey);
+  const box = inquiryBoxOf(props.held.boxes(), partition);
   const question = inquiryQuestion(box.typed);
   const fault = inquiryQuestionFault(question);
   const shown = box.typed === "" ? undefined : fault;
+  const pending = last?.status === "pending";
   const submit = () => {
-    const name = inquiryBoxName(partition);
-    if (outstanding.taken(name)) return;
-    outstanding.take(name);
+    if (client.isMutating({ mutationKey: write.mutationKey, exact: true }) > 0)
+      return;
     const draw = inquiryDraw(box.held, question, partition, () =>
       base64urlFromBytes(drawBytes(inquiryIdentityBytesCount)),
     );
-    write(partition, (held) => inquiryBoxSent(held, draw));
-    void (async () => {
-      const answered = inquiryAskAnswered(
-        await apiAskLead(ports, draw.partition, inquiryAsking(draw)),
-      );
-      outstanding.release(name);
-      write(draw.partition, (held) => inquiryBoxAnswered(held, draw, answered));
-      if (answered.ask !== "Asked") return;
-      props.onAsked(draw.partition);
-    })();
+    props.held.write(partition, (held) => inquiryBoxSent(held, draw));
+    asking.mutate(draw);
   };
   return (
     <div className="grid min-w-0 gap-2 pb-3">
-      <LeadAskNotice partition={partition} ask={box.ask} />
-      <LeadAskRunner partition={partition} ask={box.ask} />
+      <LeadAskNotice partition={partition} last={last} />
+      <LeadAskRunner partition={partition} last={last} />
       <Fields>
         <Field name="Question">
           <textarea
@@ -214,7 +273,9 @@ function LeadAsk(props: {
             value={box.typed}
             onChange={(event) => {
               const typed = event.target.value;
-              write(partition, (held) => inquiryBoxTyped(held, typed));
+              props.held.write(partition, (held) =>
+                inquiryBoxTyped(held, typed),
+              );
             }}
           />
           <span className="num">{`${String(question.length)} / ${String(inquiryQuestionCharsMax)}`}</span>
@@ -224,8 +285,8 @@ function LeadAsk(props: {
       <div className="justify-self-start">
         <Button
           variant="primary"
-          busy={box.ask.ask === "Asking"}
-          disabled={fault !== undefined || box.ask.ask === "Asking"}
+          busy={pending}
+          disabled={fault !== undefined || pending}
           onClick={submit}
         >
           Ask
@@ -320,7 +381,6 @@ function LeadInquiryList(props: {
 function LeadAskOffered(props: {
   readonly partition: PartitionIdentity;
   readonly held: InquiryBoxesHeld;
-  readonly onAsked: (partition: PartitionIdentity) => void;
 }): ReactNode {
   const abilities = useProjectAbilities(props.partition);
   if (projectAbilityRefused(abilities, "mutate")) return <ViewOnlyNotice />;
@@ -336,21 +396,11 @@ export function LeadInquiries(props: {
   readonly nowMs: number;
 }): ReactNode {
   const partition = props.partition;
-  const client = useQueryClient();
   const state = usePanelState(leadInquiriesQuery(partition));
   return (
     <Panel title="Inquiries">
       {props.head === undefined ? null : (
-        <LeadAskOffered
-          partition={partition}
-          held={props.held}
-          onAsked={(at) => {
-            void client.invalidateQueries({
-              queryKey: leadInquiriesQuery(at).queryKey,
-              exact: true,
-            });
-          }}
-        />
+        <LeadAskOffered partition={partition} held={props.held} />
       )}
       <PanelUnready state={state} />
       {state.state === "Ready" ? (

@@ -1,7 +1,7 @@
 /**
  * The site's workspace links, decided with no renderer: what a link's form may
- * hold and is sent as, what making one came to, the words its list has of its
- * own, and which links the reader may revoke.
+ * hold and is sent as, the words its list has of its own, and which links the
+ * reader may revoke.
  *
  * A workspace link names nobody and no workspace, so all its form holds is
  * the box that hands account creation on, held as the workspace's own form
@@ -12,16 +12,13 @@ import {
   accessWorkspaceLinkCreationSchema,
   accessWorkspaceLinkNoteCharsMax,
   accessWorkspaceLinkNoteSchema,
-  type AccessInviteLinkMinted,
   type AccessSiteAbilities,
   type AccessWorkspaceLink,
   type AccessWorkspaceLinkCreation,
 } from "../../../../src/contract/accessPlane.ts";
 import { textCodePointsCount } from "../../../../src/contract/http.ts";
 
-import type { ApiResult } from "./apiRequest.ts";
 import { projectNameLengthFault } from "./projectCreation.ts";
-import { siteWorkspaceRefusal } from "./siteWorkspaces.ts";
 
 /** The words the site's list of links has that a workspace's does not. */
 export const siteWorkspaceLinkWords = {
@@ -53,19 +50,6 @@ export function siteWorkspaceLinkSendable(
   creation: AccessWorkspaceLinkCreation,
 ): boolean {
   return accessWorkspaceLinkCreationSchema.safeParse(creation).success;
-}
-
-/** What making a link came to: the mint's answer, or the dialog's one line. */
-export type SiteWorkspaceLinkOutcome =
-  | { readonly outcome: "Made"; readonly minted: AccessInviteLinkMinted }
-  | { readonly outcome: "Refused"; readonly line: string };
-
-export function siteWorkspaceLinkOutcome(
-  result: ApiResult<AccessInviteLinkMinted>,
-): SiteWorkspaceLinkOutcome {
-  return result.outcome === "Ok"
-    ? { outcome: "Made", minted: result.value }
-    : { outcome: "Refused", line: siteWorkspaceRefusal(result) };
 }
 
 /** Whether a row offers the reader its link's revocation: an open link, and

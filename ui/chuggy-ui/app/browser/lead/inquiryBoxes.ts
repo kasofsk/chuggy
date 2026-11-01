@@ -33,23 +33,12 @@ export interface InquiryBoxStore {
     next: (box: InquiryBox) => InquiryBox,
   ) => void;
   readonly subscribe: (listener: () => void) => () => void;
-  /**
-   * Whether a project has a press outstanding, taken and released by the press
-   * itself: two presses inside one render read one render, so what says a press
-   * is out cannot be the drawn state.
-   */
-  readonly outstanding: {
-    readonly taken: (name: string) => boolean;
-    readonly take: (name: string) => void;
-    readonly release: (name: string) => void;
-  };
   /** Everything forgotten. Nothing in the console calls this; a case does. */
   readonly discard: () => void;
 }
 
 export function inquiryBoxStore(): InquiryBoxStore {
   let boxes: InquiryBoxes = {};
-  const outstanding = new Set<string>();
   const listeners = new Set<() => void>();
   const told = () => {
     for (const listener of [...listeners]) listener();
@@ -64,14 +53,8 @@ export function inquiryBoxStore(): InquiryBoxStore {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    outstanding: {
-      taken: (name) => outstanding.has(name),
-      take: (name) => outstanding.add(name),
-      release: (name) => outstanding.delete(name),
-    },
     discard: () => {
       boxes = {};
-      outstanding.clear();
       told();
     },
   };

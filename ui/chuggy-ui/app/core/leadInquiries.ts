@@ -29,13 +29,13 @@
  * A BOX BELONGS TO A PROJECT, AND THERE IS ONE PER PROJECT RATHER THAN ONE
  * SHARED. A panel is reconciled rather than replaced when only the route's
  * params move, so whatever it holds outlives the project it was held for — and
- * every one of the four things a box holds is about one project's door: the
- * question typed at it, the pair a send is outstanding under, whether a press is
- * outstanding at all, and what the last press answered. Held as one value keyed
- * by the project, none of them can be read as another project's, no answer can
- * land on a page it was not asked from, and a project's pair survives a reader
- * visiting another and coming back — which is what a single slot per box could
- * not do however carefully it was scoped.
+ * both things a box holds are about one project's door: the question typed at
+ * it, and the pair a send is outstanding under. Held as one value keyed by the
+ * project, neither can be read as another project's, and a project's pair
+ * survives a reader visiting another and coming back — which is what a single
+ * slot per box could not do however carefully it was scoped. Whether a press
+ * is out and what the last one answered are the project's own write, kept
+ * under a key that names the project.
  */
 
 import type { z } from "zod";
@@ -50,9 +50,9 @@ import {
   hostedRunsNotGrantedCode,
   noRunnerCode,
 } from "../../../../src/contract/rosters.ts";
-import type { LeadInquiryAccepted } from "../../../../src/contract/responses.ts";
-import type { ApiResult } from "./apiRequest.ts";
+import type { ApiFailure } from "./apiRequest.ts";
 import { panelReason } from "./freshness.ts";
+import { sessionRunnerNoticeWord } from "./sessionRunners.ts";
 
 /**
  * How much entropy an inquiry's pair is named with. It is its own constant
@@ -181,18 +181,15 @@ export const inquiryRefusalWordUnknown = "Refused";
  * word for it is chosen from the outcome instead. */
 export const inquiryRefusalWordNoLead = "No lead";
 
-/** What the last ask did, in the one line the box says it in. */
-export type InquiryAsk =
-  | { readonly ask: "Idle" }
-  | { readonly ask: "Asking" }
-  | { readonly ask: "Asked"; readonly session: string }
+/** Why the door did not take a question, as the box draws it. */
+export type InquiryAskRefusal =
   | { readonly ask: "Refused"; readonly word: string }
   | { readonly ask: "NoRunner" }
   | { readonly ask: "Failed"; readonly reason: string };
 
 /** A refusal for no runner of the asker's own is its own arm, since the box
  * says where one is added. */
-function inquiryRefused(code: string): InquiryAsk {
+function inquiryRefused(code: string): InquiryAskRefusal {
   if (code === noRunnerCode) return { ask: "NoRunner" };
   return {
     ask: "Refused",
@@ -201,59 +198,54 @@ function inquiryRefused(code: string): InquiryAsk {
 }
 
 /**
- * What the door answered, as the box draws it. A refusal is the lead's own
+ * What the door's refusal is, as the box draws it. A refusal is the lead's own
  * answer and is drawn as a word; everything else is this console or the network
  * failing, and is drawn with the reason, because the two are not the same news
  * and a reader who cannot tell them apart cannot tell whether to ask again.
  */
-export function inquiryAskAnswered(
-  result: ApiResult<LeadInquiryAccepted>,
-): InquiryAsk {
-  switch (result.outcome) {
-    case "Ok":
-      return { ask: "Asked", session: result.value.session };
+export function inquiryAskRefused(failure: ApiFailure): InquiryAskRefusal {
+  switch (failure.outcome) {
     case "Absent":
       return { ask: "Refused", word: inquiryRefusalWordNoLead };
     case "Conflict":
     case "Retryable":
     case "Rejected":
-      return inquiryRefused(result.code);
+      return inquiryRefused(failure.code);
     case "Unauthenticated":
     case "Fault":
     case "Unreachable":
     case "Unreadable":
-      return { ask: "Failed", reason: panelReason(result) };
+      return { ask: "Failed", reason: panelReason(failure) };
+  }
+}
+
+/** The line a refusal is drawn as, which is the word, the runner notice's own
+ * word, or the failure with its reason. */
+export function inquiryAskRefusalSentence(refusal: InquiryAskRefusal): string {
+  switch (refusal.ask) {
+    case "Refused":
+      return refusal.word;
+    case "NoRunner":
+      return sessionRunnerNoticeWord("NoRunner", "Inquiry");
+    case "Failed":
+      return `Failed · ${refusal.reason}`;
   }
 }
 
 /**
- * Everything one project's box holds: what has been typed at it, the pair a
- * send it has not had accepted went out under, and what its last press
- * answered.
+ * Everything one project's box holds: what has been typed at it, and the pair a
+ * send it has not had accepted went out under.
  */
 export interface InquiryBox {
   readonly typed: string;
-  readonly ask: InquiryAsk;
   readonly held: InquiryDraw | undefined;
 }
 
-export const inquiryBoxEmpty: InquiryBox = {
-  typed: "",
-  ask: { ask: "Idle" },
-  held: undefined,
-};
+export const inquiryBoxEmpty: InquiryBox = { typed: "", held: undefined };
 
-/** A box per project, which is the panel's whole memory of what has been asked
+/** A box per project, which is the panel's whole memory of what has been typed
  * at it. A project nobody has typed at has an empty box rather than no box. */
 export type InquiryBoxes = Readonly<Record<string, InquiryBox>>;
-
-/**
- * How many projects' boxes are kept at once. A reader bounces between a handful
- * of projects and this holds far more than that, so the bound is house rule 9's
- * — a record with no limit at all is unbounded in the length of a session —
- * rather than a limit a reader is meant to feel.
- */
-export const inquiryBoxesMax = 32;
 
 /** Whether a box is worth a place in the record, which is whether it holds
  * anything a reader would miss: what they typed, or a pair a door has not
@@ -278,13 +270,9 @@ export function inquiryBoxOf(
   return boxes[inquiryBoxName(partition)] ?? inquiryBoxEmpty;
 }
 
-/**
- * A box written, with the record kept bounded: a box holding nothing a reader
- * would miss is dropped rather than filed, and past the cap the oldest box
- * holding nothing is evicted. A BOX HOLDING A PAIR IS NEVER EVICTED — keeping
- * one until its door takes it is the whole of what this record is for — so a
- * reader with more outstanding sends than the cap keeps them all.
- */
+/** A box written, and a box holding nothing a reader would miss dropped rather
+ * than filed, so the record grows only by what a reader typed or a door has not
+ * taken. */
 export function inquiryBoxWith(
   boxes: InquiryBoxes,
   partition: PartitionIdentity,
@@ -292,13 +280,8 @@ export function inquiryBoxWith(
 ): InquiryBoxes {
   const name = inquiryBoxName(partition);
   const written: Record<string, InquiryBox> = { ...boxes };
-  if (inquiryBoxHolds(box) || box.ask.ask !== "Idle") written[name] = box;
+  if (inquiryBoxHolds(box)) written[name] = box;
   else delete written[name];
-  if (Object.keys(written).length <= inquiryBoxesMax) return written;
-  const spare = Object.keys(written).find(
-    (held) => held !== name && !inquiryBoxHolds(written[held] ?? box),
-  );
-  if (spare !== undefined) delete written[spare];
   return written;
 }
 
@@ -308,24 +291,22 @@ export function inquiryBoxTyped(box: InquiryBox, typed: string): InquiryBox {
   return { ...box, typed };
 }
 
-/** A press going out: the box says so, and holds the pair it went out under. */
+/** A press going out: the box holds the pair it went out under. */
 export function inquiryBoxSent(box: InquiryBox, draw: InquiryDraw): InquiryBox {
-  return { ...box, ask: { ask: "Asking" }, held: draw };
+  return { ...box, held: draw };
 }
 
 /**
- * A press answered: a pair the door took is spent, and so is the question it
- * asked — unless the reader has since typed a different one, theirs not being
- * the question that was answered and taking it away being this box editing
- * their next one. Every other answer leaves both the question and the pair, a
- * send that did not land being one to re-send under the pair it went out under.
+ * A press the door took: the pair is spent, and so is the question it asked —
+ * unless the reader has since typed a different one, theirs not being the
+ * question that was answered and taking it away being this box editing their
+ * next one. A refusal leaves the box as it is, a send that did not land being
+ * one to re-send under the pair it went out under.
  */
 export function inquiryBoxAnswered(
   box: InquiryBox,
   sent: InquiryDraw,
-  answer: InquiryAsk,
 ): InquiryBox {
-  if (answer.ask !== "Asked") return { ...box, ask: answer };
   const moved = inquiryQuestion(box.typed) !== sent.question;
-  return { typed: moved ? box.typed : "", ask: answer, held: undefined };
+  return { typed: moved ? box.typed : "", held: undefined };
 }

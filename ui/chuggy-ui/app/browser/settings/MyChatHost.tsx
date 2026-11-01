@@ -22,6 +22,9 @@ import {
   apiDeregisterChatHost,
   apiMintChatHostToken,
 } from "../../core/apiRoutes.ts";
+import type { ApiFailure, ApiResult } from "../../core/apiRequest.ts";
+import { consoleWriteKey } from "../../core/consoleWrite.ts";
+import type { ConsoleWrite } from "../../core/consoleWrite.ts";
 import { instantFigure } from "../../core/figures.ts";
 import type { PanelState } from "../../core/freshness.ts";
 import { panelReason } from "../../core/freshness.ts";
@@ -32,7 +35,9 @@ import {
 } from "../../core/runners.ts";
 import { chatHostQuery } from "../../core/tenantQueries.ts";
 import { runnerStandingTone } from "../../core/tones.ts";
-import { useApiPorts, usePanelState } from "../api.ts";
+import { usePanelState } from "../api.ts";
+import { useConsoleWrite } from "../consoleWrite.tsx";
+import type { ConsoleWriting } from "../consoleWrite.tsx";
 import { useNowMs } from "../Freshness.tsx";
 import { RunnerVersion } from "../RunnerVersion.tsx";
 import { Button } from "../ui/Button.tsx";
@@ -64,13 +69,42 @@ async function chatHostReread(
   });
 }
 
-/** Where a change to the host got to: a token minted, the host taken off, or refused with why. */
-type ChatHostWrite =
-  | { readonly write: "Idle" }
-  | { readonly write: "Writing" }
-  | { readonly write: "Minted"; readonly minted: WorkerPoolTokenResponse }
-  | { readonly write: "Removing" }
-  | { readonly write: "Failed"; readonly reason: string };
+function chatHostRefusal(failure: ApiFailure): string {
+  return `Refused · ${panelReason(failure)}`;
+}
+
+/** The token a host registers with, which changes nothing a read draws until
+ * a host registers with it. */
+function chatHostMintWrite(
+  tenant: string,
+): ConsoleWrite<undefined, WorkerPoolTokenResponse> {
+  return {
+    mutationKey: consoleWriteKey("chat-host-token-mint", tenant),
+    write: (ports) =>
+      apiMintChatHostToken(ports, tenant, {
+        lifetimeSecs: runnerTokenLifetimeSecs,
+      }),
+    refusal: chatHostRefusal,
+  };
+}
+
+/** The host taken off, a 404 taken as done already, and read again whatever
+ * the removal answered. */
+function chatHostRemovalWrite(
+  tenant: string,
+): ConsoleWrite<undefined, undefined> {
+  return {
+    mutationKey: consoleWriteKey("chat-host-removal", tenant),
+    write: async (ports, _variables, client): Promise<ApiResult<undefined>> => {
+      const removed = await apiDeregisterChatHost(ports, tenant);
+      await chatHostReread(client, tenant);
+      return removed.outcome === "Absent"
+        ? { outcome: "Ok", value: undefined }
+        : removed;
+    },
+    refusal: chatHostRefusal,
+  };
+}
 
 function ChatHostRow(props: {
   readonly host: ChatHostResponse;
@@ -167,71 +201,79 @@ function ChatHostTable(props: {
   );
 }
 
-/** What the last change left: the token minted with its expiry, the question a removal waits on, or why it was refused. */
-function ChatHostWritten(props: {
-  readonly write: ChatHostWrite;
+function ChatHostMinted(props: {
+  readonly minted: WorkerPoolTokenResponse;
   /** The short id of the host the reader holds, where they hold one. */
   readonly short: string | undefined;
-  readonly onRemove: () => void;
   readonly onDone: () => void;
 }): ReactNode {
   const nowMs = useNowMs();
-  const { write } = props;
-  switch (write.write) {
-    case "Idle":
-    case "Writing":
-      return null;
-    case "Minted":
-      return (
-        <div className="grid min-w-0 gap-2">
-          <CopyBox
-            about={
-              <>
-                Registers your chat host once · expires{" "}
-                <Figure
-                  figure={instantFigure(
-                    new Date(write.minted.expiresAtMs).toISOString(),
-                    nowMs,
-                  )}
-                />
-              </>
-            }
-            text={write.minted.token}
-            copyLabel="Copy token"
-          />
-          {props.short === undefined ? null : (
-            <p className="text-sm text-ink-3">
-              {`Registering with it replaces chat host ${props.short} and ends the sessions it is running.`}
-            </p>
-          )}
-          <div>
-            <Button size="sm" onClick={props.onDone}>
-              Done
-            </Button>
-          </div>
-        </div>
-      );
-    case "Removing":
-      return (
-        <Confirm
-          question={`Remove chat host ${props.short ?? ""}?`}
-          confirm="Remove"
-          busy={false}
-          onConfirm={props.onRemove}
-          onCancel={props.onDone}
-        >
-          {`Chat host ${props.short ?? ""} stops taking your chats and questions in this workspace, and the sessions it is running now end.`}
-        </Confirm>
-      );
-    case "Failed":
-      return (
-        <Notice tone="danger" inline detail={`Refused · ${write.reason}`} />
-      );
-  }
+  return (
+    <div className="grid min-w-0 gap-2">
+      <CopyBox
+        about={
+          <>
+            Registers your chat host once · expires{" "}
+            <Figure
+              figure={instantFigure(
+                new Date(props.minted.expiresAtMs).toISOString(),
+                nowMs,
+              )}
+            />
+          </>
+        }
+        text={props.minted.token}
+        copyLabel="Copy token"
+      />
+      {props.short === undefined ? null : (
+        <p className="text-sm text-ink-3">
+          {`Registering with it replaces chat host ${props.short} and ends the sessions it is running.`}
+        </p>
+      )}
+      <div>
+        <Button size="sm" onClick={props.onDone}>
+          Done
+        </Button>
+      </div>
+    </div>
+  );
 }
 
+/** What the last change left: the token minted with its expiry, the question a removal waits on, or why it was refused. */
+function ChatHostWritten(props: {
+  readonly writing: ChatHostWriting;
+  /** The short id of the host the reader holds, where they hold one. */
+  readonly short: string | undefined;
+}): ReactNode {
+  const { writing, short } = props;
+  const minted = writing.minting.data;
+  if (writing.asking)
+    return (
+      <Confirm
+        question={`Remove chat host ${short ?? ""}?`}
+        confirm="Remove"
+        busy={false}
+        onConfirm={writing.remove}
+        onCancel={writing.done}
+      >
+        {`Chat host ${short ?? ""} stops taking your chats and questions in this workspace, and the sessions it is running now end.`}
+      </Confirm>
+    );
+  if (minted !== undefined)
+    return (
+      <ChatHostMinted minted={minted} short={short} onDone={writing.done} />
+    );
+  return writing.refused === undefined ? null : (
+    <Notice tone="danger" inline detail={writing.refused} />
+  );
+}
+
+/** One change at a time: a token minted, or the host taken off once asked,
+ * and the refusal of the last pressed. */
 interface ChatHostWriting {
-  readonly write: ChatHostWrite;
+  readonly minting: ConsoleWriting<undefined, WorkerPoolTokenResponse>;
+  readonly asking: boolean;
+  readonly refused: string | undefined;
   readonly busy: boolean;
   readonly mint: () => void;
   readonly ask: () => void;
@@ -239,43 +281,33 @@ interface ChatHostWriting {
   readonly done: () => void;
 }
 
-/** One change at a time, the host read again once it has landed. */
 function useChatHostWriting(tenant: string): ChatHostWriting {
-  const ports = useApiPorts();
   const client = useQueryClient();
-  const [write, setWrite] = useState<ChatHostWrite>({ write: "Idle" });
-  const mint = async (): Promise<void> => {
-    setWrite({ write: "Writing" });
-    const minted = await apiMintChatHostToken(ports, tenant, {
-      lifetimeSecs: runnerTokenLifetimeSecs,
-    });
-    setWrite(
-      minted.outcome === "Ok"
-        ? { write: "Minted", minted: minted.value }
-        : { write: "Failed", reason: panelReason(minted) },
-    );
-  };
-  const remove = async (): Promise<void> => {
-    setWrite({ write: "Writing" });
-    const removed = await apiDeregisterChatHost(ports, tenant);
-    const done = removed.outcome === "Ok" || removed.outcome === "Absent";
-    await chatHostReread(client, tenant);
-    setWrite(
-      done
-        ? { write: "Idle" }
-        : { write: "Failed", reason: panelReason(removed) },
-    );
-  };
+  const [asking, setAsking] = useState(false);
+  const minting = useConsoleWrite(chatHostMintWrite(tenant));
+  const removing = useConsoleWrite(chatHostRemovalWrite(tenant));
   return {
-    write,
-    busy: write.write !== "Idle" && write.write !== "Failed",
-    mint: () => void mint(),
-    ask: () => {
-      setWrite({ write: "Removing" });
+    minting,
+    asking,
+    refused: (minting.error ?? removing.error)?.message,
+    busy:
+      asking || minting.isPending || minting.isSuccess || removing.isPending,
+    mint: () => {
+      removing.reset();
+      minting.mutate(undefined);
     },
-    remove: () => void remove(),
+    ask: () => {
+      minting.reset();
+      removing.reset();
+      setAsking(true);
+    },
+    remove: () => {
+      setAsking(false);
+      removing.mutate(undefined);
+    },
     done: () => {
-      setWrite({ write: "Idle" });
+      minting.reset();
+      setAsking(false);
       void chatHostReread(client, tenant);
     },
   };
@@ -308,10 +340,8 @@ export function MyChatHost(props: {
       }
     >
       <ChatHostWritten
-        write={writing.write}
+        writing={writing}
         short={held === undefined ? undefined : myRunnerShort(held.id)}
-        onRemove={writing.remove}
-        onDone={writing.done}
       />
       {held !== undefined ? (
         <ChatHostTable host={held} busy={writing.busy} onRemove={writing.ask} />

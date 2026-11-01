@@ -80,7 +80,7 @@ function RepositoryDeclared(props: {
       >
         <RepositoryImportLine
           lastImport={props.binding.lastImport}
-          pressed={importing.pressed}
+          refused={importing.refused}
         />
         <PanelUnready state={state} />
         {read === undefined ? null : (

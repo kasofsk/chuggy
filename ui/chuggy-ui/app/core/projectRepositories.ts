@@ -551,15 +551,11 @@ export function repositoryUnbindQuestion(
   };
 }
 
-/** What an unbind leaves to be said: nothing where the route retired the
- * binding, and the word its refusal is drawn as otherwise. */
-export function repositoryUnbindNote(
-  result: ApiResult<ProjectRepositoryResponse>,
-): string | undefined {
-  if (result.outcome === "Ok") return undefined;
-  if (result.outcome === "Rejected") return "Refused";
-  if (result.outcome === "Conflict") return "Conflict";
-  return repositoryRefusalStatus(result);
+/** The word a refused unbind is drawn as. */
+export function repositoryUnbindNote(failure: ApiFailure): string {
+  if (failure.outcome === "Rejected") return "Refused";
+  if (failure.outcome === "Conflict") return "Conflict";
+  return repositoryRefusalStatus(failure);
 }
 
 export type RepositoryBindOutcome =

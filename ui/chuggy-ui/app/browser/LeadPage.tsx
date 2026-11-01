@@ -66,6 +66,7 @@ import { LeadNote, useLeadTranscript } from "./lead/LeadTranscript.tsx";
 import { SelectorStrip } from "./lead/SelectorStrip.tsx";
 import { useProjectAbilityRead } from "./projectAbilities.tsx";
 import {
+  selectorSettingsShown,
   useSelectorSettingsDraft,
   useSelectorSettingsWriting,
 } from "./selectorSettingsWriting.ts";
@@ -171,8 +172,8 @@ function LeadSelectorStripReady(props: {
       draft={held.draft}
       settings={props.settings}
       editable
-      busy={writing.saved.saved === "Writing"}
-      saved={writing.saved}
+      busy={writing.saving.isPending}
+      saved={selectorSettingsShown(writing, "strip")}
       onPress={(overrides) => {
         writing.write("strip", overrides, () => undefined);
       }}

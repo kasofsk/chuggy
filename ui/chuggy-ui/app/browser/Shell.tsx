@@ -23,7 +23,8 @@
  * fit beside a page.
  *
  * The banner is not decoration — it is the only place a reader learns that what
- * the screens below are showing is no longer arriving live.
+ * the screens below are showing is no longer arriving live. The toasts are the
+ * only place a refusal is drawn whose screen the reader has left.
  */
 
 import { Outlet, useParams } from "@tanstack/react-router";
@@ -79,6 +80,7 @@ import {
   reloadLocation,
   syntaxWorkerOpened,
 } from "./ports.ts";
+import { ConsoleWriteToasts } from "./consoleWrite.tsx";
 import { ChatPane } from "./shell/ChatPane.tsx";
 import { ChatPaneProvider, useChatPane } from "./shell/chatPaneHeld.tsx";
 import { DetailsPane } from "./shell/DetailsPane.tsx";
@@ -460,6 +462,7 @@ export function Shell(props: {
             <ChatPaneProvider twoColumn={twoColumn}>
               <ShellDrawn partition={props.partition} twoColumn={twoColumn} />
             </ChatPaneProvider>
+            <ConsoleWriteToasts />
           </TicketReferenceWiring>
         </MarkdownProvider>
       </CopyProvider>

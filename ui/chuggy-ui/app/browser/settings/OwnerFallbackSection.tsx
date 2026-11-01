@@ -8,7 +8,6 @@
  * those.
  */
 
-import { useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type { ReactNode } from "react";
 
@@ -25,8 +24,12 @@ import {
   ownerFallbackPinned,
   ownerFallbackValue,
 } from "../../core/myRunner.ts";
+import { consoleWriteKey } from "../../core/consoleWrite.ts";
+import type { ConsoleWrite } from "../../core/consoleWrite.ts";
 import { ownerFallbackQuery } from "../../core/projectQueries.ts";
-import { useApiPorts, usePanelState } from "../api.ts";
+import { usePanelState } from "../api.ts";
+import { useConsoleWrite } from "../consoleWrite.tsx";
+import type { ConsoleWriting } from "../consoleWrite.tsx";
 import { PanelUnready } from "../DataPanel.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Panel } from "../ui/Panel.tsx";
@@ -35,28 +38,42 @@ import { SettingsSection } from "../ui/SettingsSection.tsx";
 
 const ownerFallbackTitle = "Personal runners";
 
-type OwnerFallbackSaved =
-  | { readonly saved: "Idle" }
-  | { readonly saved: "Writing" }
-  | { readonly saved: "Written" }
-  | { readonly saved: "Failed"; readonly reason: string };
-
+/** The write's line: under way, landed, or refused in the write's own words. */
 function OwnerFallbackNotice(props: {
-  readonly saved: OwnerFallbackSaved;
+  readonly saving: ConsoleWriting<OwnerFallback | undefined, unknown>;
 }): ReactNode {
-  const saved = props.saved;
-  switch (saved.saved) {
-    case "Idle":
-      return null;
-    case "Writing":
-      return <Notice tone="info" inline detail="Writing" />;
-    case "Written":
-      return <Notice tone="live" inline detail="Written" />;
-    case "Failed":
-      return (
-        <Notice tone="danger" inline detail={`Failed · ${saved.reason}`} />
-      );
-  }
+  const saving = props.saving;
+  if (saving.isPending) return <Notice tone="info" inline detail="Writing" />;
+  if (saving.error !== null)
+    return <Notice tone="danger" inline detail={saving.error.message} />;
+  if (saving.isSuccess) return <Notice tone="live" inline detail="Written" />;
+  return null;
+}
+
+/** The project's fallback written, and the read under it answered before the
+ * write is over. */
+function ownerFallbackWrite(
+  partition: PartitionIdentity,
+): ConsoleWrite<OwnerFallback | undefined, ProjectOwnerFallbackResponse> {
+  return {
+    mutationKey: consoleWriteKey(
+      "owner-fallback",
+      partition.tenant,
+      partition.project,
+    ),
+    write: (ports, fallback) =>
+      apiWriteOwnerFallback(
+        ports,
+        partition,
+        fallback === undefined ? {} : { fallback },
+      ),
+    refusal: (failure) => `Failed · ${panelReason(failure)}`,
+    landed: async (client, written) => {
+      const key = ownerFallbackQuery(partition).queryKey;
+      await client.cancelQueries({ queryKey: key });
+      client.setQueryData(key, written);
+    },
+  };
 }
 
 function OwnerFallbackRead(props: {
@@ -97,44 +114,24 @@ function OwnerFallbackEditing(props: {
   readonly partition: PartitionIdentity;
   readonly read: ProjectOwnerFallbackResponse;
 }): ReactNode {
-  const ports = useApiPorts();
-  const client = useQueryClient();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<OwnerFallback | undefined>(
     props.read.fallback,
   );
-  const [saved, setSaved] = useState<OwnerFallbackSaved>({ saved: "Idle" });
-  const write = async (): Promise<void> => {
-    setSaved({ saved: "Writing" });
-    const answered = await apiWriteOwnerFallback(
-      ports,
-      props.partition,
-      draft === undefined ? {} : { fallback: draft },
-    );
-    if (answered.outcome !== "Ok") {
-      setSaved({ saved: "Failed", reason: panelReason(answered) });
-      return;
-    }
-    const key = ownerFallbackQuery(props.partition).queryKey;
-    await client.cancelQueries({ queryKey: key });
-    client.setQueryData(key, answered.value);
-    setSaved({ saved: "Written" });
-    setEditing(false);
-  };
+  const saving = useConsoleWrite(ownerFallbackWrite(props.partition));
+  const shown = saving.isPending || saving.error !== null || saving.isSuccess;
   return (
     <SettingsSection
       title={ownerFallbackTitle}
       about={`Whether a member's own runners take the work they start here. ${ownerFallbackPinned}`}
       editing={editing}
       editable={props.read.administers}
-      savable={saved.saved !== "Writing"}
+      savable={!saving.isPending}
       footLead={null}
-      {...(saved.saved === "Idle"
-        ? {}
-        : { notice: <OwnerFallbackNotice saved={saved} /> })}
+      {...(shown ? { notice: <OwnerFallbackNotice saving={saving} /> } : {})}
       onEdit={() => {
         setDraft(props.read.fallback);
-        setSaved({ saved: "Idle" });
+        saving.reset();
         setEditing(true);
       }}
       onCancel={() => {
@@ -142,7 +139,12 @@ function OwnerFallbackEditing(props: {
       }}
       onSave={() => {
         if (draft === props.read.fallback) setEditing(false);
-        else void write();
+        else
+          saving.mutate(draft, {
+            onSuccess: () => {
+              setEditing(false);
+            },
+          });
       }}
     >
       {editing ? (

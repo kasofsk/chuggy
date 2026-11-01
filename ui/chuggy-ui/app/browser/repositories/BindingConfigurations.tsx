@@ -7,24 +7,57 @@
  * meets the binding retired, redraws the listing.
  */
 
-import { useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { apiConfigureProjectRepository } from "../../core/apiRoutes.ts";
+import { consoleWriteKey } from "../../core/consoleWrite.ts";
+import type { ConsoleWrite } from "../../core/consoleWrite.ts";
 import { projectAbilityRefused } from "../../core/projectAbilities.ts";
+import { projectRepositoriesInvalidated } from "../../core/projectQueries.ts";
 import {
   repositoryConfigureStatus,
   type RepositoryStepStatus,
 } from "../../core/projectRepositories.ts";
-import { useApiPorts } from "../api.ts";
+import { useConsoleWrite } from "../consoleWrite.tsx";
 import { useProjectAbilities } from "../projectAbilities.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Pill } from "../ui/Pill.tsx";
-import { projectRepositoriesInvalidated } from "../../core/projectQueries.ts";
 
-/** One retry, from the request it sends to the status it leaves on the row. */
+/** What the row draws before a retry has answered. */
+const bindingConfigurationsDeferred: RepositoryStepStatus = {
+  status: "Deferred",
+  retry: true,
+};
+
+/** One retry, from the request it sends to the status it leaves on the row. A
+ * binding found retired is no refusal of it, because the listing redrawn says so. */
+function bindingConfigurationsRetryWrite(
+  partition: PartitionIdentity,
+  repository: string,
+): ConsoleWrite<undefined, RepositoryStepStatus> {
+  return {
+    mutationKey: consoleWriteKey(
+      "repository-configure",
+      partition.tenant,
+      partition.project,
+      repository,
+    ),
+    write: async (ports) => {
+      const answered = await apiConfigureProjectRepository(ports, partition, {
+        repository,
+      });
+      const retired =
+        answered.outcome === "Conflict" &&
+        answered.code === "RepositoryRetired";
+      if (answered.outcome !== "Ok" && !retired) return answered;
+      return { outcome: "Ok", value: repositoryConfigureStatus(answered) };
+    },
+    refusal: (failure) => repositoryConfigureStatus(failure).status,
+    landed: (client) => projectRepositoriesInvalidated(client, partition),
+  };
+}
+
 function useBindingConfigurationsRetry(
   partition: PartitionIdentity,
   repository: string,
@@ -33,31 +66,18 @@ function useBindingConfigurationsRetry(
   readonly busy: boolean;
   readonly retry: () => void;
 } {
-  const ports = useApiPorts();
-  const client = useQueryClient();
-  const [status, setStatus] = useState<RepositoryStepStatus>({
-    status: "Deferred",
-    retry: true,
-  });
-  const [busy, setBusy] = useState(false);
+  const retrying = useConsoleWrite(
+    bindingConfigurationsRetryWrite(partition, repository),
+  );
+  const status =
+    retrying.error === null
+      ? (retrying.data ?? bindingConfigurationsDeferred)
+      : { status: retrying.error.message, retry: true };
   return {
     status,
-    busy,
+    busy: retrying.isPending,
     retry: () => {
-      setBusy(true);
-      void (async () => {
-        const answered = await apiConfigureProjectRepository(ports, partition, {
-          repository,
-        });
-        setBusy(false);
-        setStatus(repositoryConfigureStatus(answered));
-        const redrawn =
-          answered.outcome === "Ok" ||
-          (answered.outcome === "Conflict" &&
-            answered.code === "RepositoryRetired");
-        if (!redrawn) return;
-        await projectRepositoriesInvalidated(client, partition);
-      })();
+      retrying.mutate(undefined);
     },
   };
 }

@@ -27,13 +27,13 @@ import {
 import type {
   SelectorSettingsDraft,
   SelectorSettingsLimitName,
-  SelectorSettingsSaved,
 } from "../../../core/selectorSettingsForm.ts";
 import type { SelectorProjectSettingsResponse } from "../../../../../../src/contract/responses.ts";
 import { Button } from "../../ui/Button.tsx";
 import { Figure } from "../../ui/Figure.tsx";
 import { Input } from "../../ui/Input.tsx";
 import { Pill } from "../../ui/Pill.tsx";
+import type { SelectorSettingsShown } from "../../selectorSettingsWriting.ts";
 import { SelectorSection } from "./SelectorSection.tsx";
 
 import "./selector.css";
@@ -132,7 +132,7 @@ export function SelectorLimitsSection(props: {
   readonly editing: boolean;
   readonly editable: boolean;
   readonly savable: boolean;
-  readonly saved: SelectorSettingsSaved;
+  readonly saved: SelectorSettingsShown | undefined;
   readonly onChange: (draft: SelectorSettingsDraft) => void;
   readonly onEdit: () => void;
   readonly onCancel: () => void;
