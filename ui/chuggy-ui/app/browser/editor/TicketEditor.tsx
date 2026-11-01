@@ -12,6 +12,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 
+import { persistentStore } from "../ports.ts";
 import { Button } from "../ui/Button.tsx";
 import { createChugEditor } from "./chugEditor.ts";
 import type { EditorHandle } from "./chugEditor.ts";
@@ -66,26 +67,18 @@ function useEditorHandle(props: TicketEditorProps): {
 
 /**
  * Whether vim keys are on outlives the editor, because it is how this author
- * types rather than a fact about the document. Browser storage can throw or
- * come back empty, so a reader that fails is simply an author who is not a vim
- * user, and a write that fails costs the preference and nothing else.
+ * types rather than a fact about the document. A read the store cannot make is
+ * an author who is not a vim user, and a write it cannot make costs the
+ * preference and nothing else: it is still applied to this editor.
  */
 const vimStorageKey = "chug.editor.vim";
 
 function ticketEditorVimRemembered(): boolean {
-  try {
-    return window.localStorage.getItem(vimStorageKey) === "true";
-  } catch {
-    return false;
-  }
+  return persistentStore.read(vimStorageKey) === "true";
 }
 
 function ticketEditorVimKept(enabled: boolean): void {
-  try {
-    window.localStorage.setItem(vimStorageKey, String(enabled));
-  } catch {
-    /** A preference that cannot be stored is still applied to this editor. */
-  }
+  persistentStore.write(vimStorageKey, String(enabled));
 }
 
 function EditorActions(props: {

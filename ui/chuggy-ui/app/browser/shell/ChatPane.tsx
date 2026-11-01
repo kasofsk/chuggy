@@ -19,6 +19,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
+import { partitionPath } from "../../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ThreadEntryResponse } from "../../../../../src/contract/responses.ts";
 import { apiOpenThread } from "../../core/apiRoutes.ts";
@@ -390,7 +391,8 @@ function ChatPaneOpening(props: {
  * It stays drawn until that message is sent and the thread it opened has been
  * read, so neither the thread arriving in the listing mid-send nor the read of
  * it takes away the text or the message drawn above it, and while it holds
- * text a door read as `unhosted` holds that text read-only.
+ * text a door read as `unhosted` holds that text read-only. It is mounted
+ * afresh in each project, so neither the text nor a thread it opened crosses.
  */
 function ChatPaneFirst(props: {
   readonly partition: PartitionIdentity;
@@ -528,6 +530,7 @@ function ChatPaneBody(props: {
     );
   return (
     <ChatPaneFirst
+      key={partitionPath(props.partition)}
       partition={props.partition}
       unhosted={props.unhosted}
       opening={props.opening}
@@ -564,7 +567,7 @@ function useChatPaneDoor(partition: PartitionIdentity): {
  * Which thread the open pane draws: the one the reader chose, or the one the
  * pane holds for them, both held by the shell so they outlive the pane, kept off
  * the screen while a first message is being sent and until the thread that
- * message opened has been read.
+ * message opened has been read, and only in the project it was sent in.
  */
 function useChatPaneOpenHeld(partition: PartitionIdentity): {
   readonly threads: readonly ThreadEntryResponse[] | undefined;
@@ -587,6 +590,11 @@ function useChatPaneOpenHeld(partition: PartitionIdentity): {
     setStarting(false);
     setOpening(undefined);
   }, []);
+  const [heldIn, setHeldIn] = useState(() => partitionPath(partition));
+  if (heldIn !== partitionPath(partition)) {
+    setHeldIn(partitionPath(partition));
+    read();
+  }
   const {
     chosen: picked,
     choose,
