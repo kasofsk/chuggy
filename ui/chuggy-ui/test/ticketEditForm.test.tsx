@@ -37,7 +37,7 @@ import type { Answer, Sent } from "./answeringApi.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { SessionProvider } from "../app/browser/session.tsx";
-import { holderDouble } from "./screenHarness.tsx";
+import { holderDouble, settled } from "./screenHarness.tsx";
 
 beforeEach(() => {
   resizeObserverStubbed();
@@ -180,7 +180,9 @@ test("the dependencies are offered to change, the held ones kept and the ticket 
   });
 });
 
-test("a submit revises the draft, then releases the update, then leaves", async () => {
+/** An intent retyped and submitted over a draft revised to version 4, waited
+ * on until the form has been told the ticket is updated. */
+async function updatedOnce(): Promise<readonly Sent[]> {
   const held = api({ status: 200, body: { ...draft, authoringVersion: 4 } });
   const updated: string[] = [];
   draw(held.ports, updated);
@@ -191,7 +193,12 @@ test("a submit revises the draft, then releases the update, then leaves", async 
   await waitFor(() => {
     expect(updated).toStrictEqual(["updated"]);
   });
-  const writes = held.sent.filter((one) => one.method !== "GET");
+  return held.sent;
+}
+
+test("a submit revises the draft, then releases the update, then leaves", async () => {
+  const sent = await updatedOnce();
+  const writes = sent.filter((one) => one.method !== "GET");
   expect(writes.map((one) => `${one.method} ${one.path}`)).toStrictEqual([
     expect.stringMatching(/^PUT .*\/drafts\/12$/u),
     expect.stringMatching(/^POST .*\/operations$/u),
@@ -209,6 +216,14 @@ test("a submit revises the draft, then releases the update, then leaves", async 
       authoringVersion: 4,
     },
   });
+});
+
+test("an update made holds the submit until the screen goes to it", async () => {
+  await updatedOnce();
+  await settled();
+  expect(
+    screen.getByRole("button", { name: "revise and release" }),
+  ).toHaveProperty("disabled", true);
 });
 
 test("a revision the door refuses is said in its own words, and nothing is released", async () => {

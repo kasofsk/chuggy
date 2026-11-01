@@ -20,7 +20,7 @@ import type {
   RunnerPackageName,
 } from "../core/runners.ts";
 import { useConsoleWrite } from "./consoleWrite.tsx";
-import type { ConsoleWriting } from "./consoleWrite.tsx";
+import type { ConsoleWriteShown, ConsoleWriting } from "./consoleWrite.tsx";
 import { Button } from "./ui/Button.tsx";
 import { Checkbox } from "./ui/Checkbox.tsx";
 import { Disclosure } from "./ui/Disclosure.tsx";
@@ -165,9 +165,10 @@ export interface RunnerMinting {
 
 export function useRunnerMinting(
   write: ConsoleWrite<RunnerAsk, WorkerPoolTokenResponse>,
+  shown: ConsoleWriteShown<RunnerAsk>,
 ): RunnerMinting {
   const [asking, setAsking] = useState(false);
-  const writing = useConsoleWrite(write);
+  const writing = useConsoleWrite(write, shown);
   return {
     writing,
     opened:

@@ -107,7 +107,7 @@ interface InviteLinkRevoking {
 function useInviteLinkRevoking(
   revocation: ConsoleWrite<string, undefined>,
 ): InviteLinkRevoking {
-  const revoking = useConsoleWrite(revocation);
+  const revoking = useConsoleWrite(revocation, { drawn: true });
   const [asking, setAsking] = useState<string | undefined>(undefined);
   const refused = revoking.error;
   const revoked = revoking.variables;

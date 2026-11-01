@@ -202,6 +202,7 @@ function useInviteRedemption(
   const invite = useInviteHolder();
   const redeeming = useConsoleWrite(
     inviteRedemptionWrite(invite, token, domain),
+    { drawn: true },
   );
   const { mutate } = redeeming;
   useEffect(() => {
@@ -234,7 +235,9 @@ function useInviteNaming(
 ): InviteNamed {
   const invite = useInviteHolder();
   const [name, setName] = useState("");
-  const naming = useConsoleWrite(inviteNamingWrite(invite, token, domain));
+  const naming = useConsoleWrite(inviteNamingWrite(invite, token, domain), {
+    drawn: true,
+  });
   const sending = naming.isPending || naming.isSuccess;
   return {
     name,

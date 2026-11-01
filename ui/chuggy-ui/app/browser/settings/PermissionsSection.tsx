@@ -63,7 +63,7 @@ interface PermissionsRemovalState<Authority extends PermissionAuthority> {
 function usePermissionsSectionRemoval<Authority extends PermissionAuthority>(
   removal: PermissionsRemoval<Authority>,
 ): PermissionsRemovalState<Authority> {
-  const removing = useConsoleWrite(removal.write);
+  const removing = useConsoleWrite(removal.write, { drawn: true });
   const [asking, setAsking] = useState<
     PermissionHolderPressed<Authority> | undefined
   >(undefined);

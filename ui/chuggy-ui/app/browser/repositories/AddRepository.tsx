@@ -389,7 +389,9 @@ function useRepositoryBind(
   readonly note: RepositoryNote | undefined;
   readonly bind: (choice: RepositoryChoice) => void;
 } {
-  const binding = useConsoleWrite(repositoryBindWrite(partition));
+  const binding = useConsoleWrite(repositoryBindWrite(partition), {
+    drawn: true,
+  });
   const note = repositoryBindNoted(binding);
   const bind = (choice: RepositoryChoice): void => {
     binding.mutate(

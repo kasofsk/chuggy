@@ -170,8 +170,10 @@ interface MyRunnerWriting {
 }
 
 function useMyRunnerWriting(tenant: string): MyRunnerWriting {
-  const removing = useConsoleWrite(myRunnerRemovalWrite(tenant));
-  const serving = useConsoleWrite(myRunnerServesWrite(tenant));
+  const removing = useConsoleWrite(myRunnerRemovalWrite(tenant), {
+    drawn: true,
+  });
+  const serving = useConsoleWrite(myRunnerServesWrite(tenant), { drawn: true });
   return {
     removing,
     serving,
@@ -497,10 +499,12 @@ function MyRunners(props: {
   readonly addable: readonly string[] | undefined;
 }): ReactNode {
   const client = useQueryClient();
-  const minting = useRunnerMinting(myRunnerTokenWrite(props.tenant));
   const { runner, permit } = props;
   const held = runner.state === "Ready" ? runner.value : undefined;
   const granted = permit.state === "Ready" && permit.value.granted;
+  const minting = useRunnerMinting(myRunnerTokenWrite(props.tenant), {
+    drawn: held !== undefined || (runner.state === "Absent" && granted),
+  });
   if (held === undefined && runner.state !== "Absent")
     return <SettingsListingUnread state={runner} withheld={myRunnerWithheld} />;
   if (held === undefined && permit.state !== "Ready")

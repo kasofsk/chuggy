@@ -39,6 +39,9 @@ import { Button } from "./ui/Button.tsx";
 export interface CreationImagesApi {
   readonly ports: ApiPorts;
   readonly partition: PartitionIdentity;
+  /** Where the form the images are attached to keeps its YAML, which is the
+   * one form an attaching under it is taken up by. */
+  readonly storeKey: string;
 }
 
 interface FormEdit {
@@ -82,11 +85,7 @@ function creationImagesWrite(
 ): ConsoleWrite<readonly File[], readonly CreationImageUploaded[]> {
   const { ports, partition } = api;
   return {
-    mutationKey: consoleWriteKey(
-      "creation-images",
-      partition.tenant,
-      partition.project,
-    ),
+    mutationKey: consoleWriteKey("creation-images", api.storeKey),
     write: (_ports, files) => creationImagesUploaded(ports, partition, files),
     refusal: creationImageUploadSentence,
     landed: (_client, uploaded) => {
@@ -107,6 +106,7 @@ function useCreationImagesAttach(props: FormEdit & CreationImagesApi) {
   });
   const uploading = useConsoleWrite(
     creationImagesWrite(props, useProjectImageHeld(props.partition)),
+    { drawn: true },
   );
   const [bound, setBound] = useState<string | undefined>(undefined);
   const attach = (files: readonly File[]): void => {

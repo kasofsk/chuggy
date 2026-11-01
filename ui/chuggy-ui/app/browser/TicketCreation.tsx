@@ -745,13 +745,22 @@ export function attemptRunning(step: OperationStep | undefined): {
   return { attempt: "Running", step: step ?? operationSubmitting() };
 }
 
+/** Whether a creation holds the form: while it runs, and once it has made a
+ * ticket this form pressed for, until the screen goes to it. */
+function creationWriting(
+  writing: ConsoleWriting<CreationPressed, number>,
+): boolean {
+  return writing.isPending || (writing.isSuccess && !writing.takenUp);
+}
+
 /** What a creation's write has come to, as its note draws it. A ticket made
  * stays drawn as the follow that made it until the screen goes to it. */
 function creationAttemptOf(
   writing: ConsoleWriting<CreationPressed, number>,
   step: OperationStep | undefined,
 ): CreationAttempt {
-  if (writing.isPending || writing.isSuccess) return attemptRunning(step);
+  if (creationWriting(writing)) return attemptRunning(step);
+  if (writing.isSuccess) return { attempt: "Idle" };
   const error = writing.error;
   if (error === null) return { attempt: "Idle" };
   if (error instanceof TicketCreationRefused)
@@ -782,13 +791,10 @@ function creationWrite(
   ports: ApiPorts,
   partition: PartitionIdentity,
   queryKey: ProjectQueryKey,
+  storeKey: string,
 ): ConsoleWrite<CreationPressed, number> {
   return {
-    mutationKey: consoleWriteKey(
-      "ticket-creation",
-      partition.tenant,
-      partition.project,
-    ),
+    mutationKey: consoleWriteKey("ticket-creation", storeKey),
     write: async (_ports, pressed, client) => {
       const created = await createAndReleaseTicket(
         ports,
@@ -830,6 +836,8 @@ function useCreationSubmit(props: {
   readonly ports: ApiPorts;
   readonly partition: PartitionIdentity;
   readonly queryKey: ProjectQueryKey;
+  /** The form's own, so a creation is taken up by the form that pressed it. */
+  readonly storeKey: string;
   readonly standing: AuthoringStanding;
   readonly offers: readonly CreationOffer[];
   readonly repositories: readonly ProjectRepositoryResponse[];
@@ -843,7 +851,8 @@ function useCreationSubmit(props: {
 } {
   const { dispatches, standing, offers, onFaults, repositories } = props;
   const writing = useConsoleWrite(
-    creationWrite(props.ports, props.partition, props.queryKey),
+    creationWrite(props.ports, props.partition, props.queryKey, props.storeKey),
+    { drawn: true },
   );
   const step = useConsoleWriteProgress(writing.variables?.progress);
   const attempt = creationAttemptOf(writing, step);
@@ -867,7 +876,7 @@ function useCreationSubmit(props: {
     );
   };
 
-  return { attempt, busy: writing.isPending, submit };
+  return { attempt, busy: creationWriting(writing), submit };
 }
 
 /**
@@ -979,6 +988,7 @@ export function CreationForm(props: CreationFormProps): ReactNode {
     ports: props.ports,
     partition: props.partition,
     queryKey: props.queryKey,
+    storeKey,
     offers,
     repositories,
     dispatches: props.start === "Starts",
@@ -1021,7 +1031,7 @@ export function CreationForm(props: CreationFormProps): ReactNode {
             repositories={repositories}
             standing={standing}
             branchProposed={creationBranchProposed(held.form)}
-            api={props}
+            api={{ ports: props.ports, partition: props.partition, storeKey }}
           />
         }
       />

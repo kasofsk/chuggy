@@ -162,6 +162,7 @@ export function RepositorySettingSection(props: {
       props.binding.repository,
       props.title,
     ),
+    { drawn: true },
   );
   const [editing, setEditing] = useState(false);
   const abilities = useProjectAbilities(props.partition);

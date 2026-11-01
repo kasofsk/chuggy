@@ -119,13 +119,18 @@ function siteWorkspaceLinkWrite(
 function useSiteWorkspaceCreation(
   tenant: string,
   abilities: AccessSiteAbilities,
+  open: boolean,
   onCreated: (line: string) => void,
 ): SiteWorkspaceCreating {
   const [typed, setTyped] = useState(() => siteWorkspaceBlank(abilities));
   const [note, setNote] = useState("");
   const [mode, setMode] = useState<InviteMode>("Person");
-  const creating = useConsoleWrite(siteWorkspaceCreationWrite(tenant));
-  const minting = useConsoleWrite(siteWorkspaceLinkWrite(tenant));
+  const creating = useConsoleWrite(siteWorkspaceCreationWrite(tenant), {
+    drawn: open,
+  });
+  const minting = useConsoleWrite(siteWorkspaceLinkWrite(tenant), {
+    drawn: open,
+  });
   const form = siteWorkspaceHeld(typed, abilities);
   const quiet = (): void => {
     creating.reset();
@@ -317,6 +322,7 @@ export function SiteWorkspaceNew(props: {
   const creating = useSiteWorkspaceCreation(
     props.tenant,
     props.abilities,
+    open,
     (line) => {
       setOpen(false);
       props.onSaid(line);

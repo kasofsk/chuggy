@@ -291,7 +291,9 @@ function PlacementSection(props: {
   readonly execution: ExecutionPlacementResponse;
   readonly session: SessionPlacementResponse;
 }): ReactNode {
-  const saving = useConsoleWrite(placementWrite(props.partition));
+  const saving = useConsoleWrite(placementWrite(props.partition), {
+    drawn: true,
+  });
   const shown = saving.isPending || saving.error !== null || saving.isSuccess;
   const [editing, setEditing] = useState(false);
   const [moves, setMoves] = useState<RunnersPlacementMoves>({});

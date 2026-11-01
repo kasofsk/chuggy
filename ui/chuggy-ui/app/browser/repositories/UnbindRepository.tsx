@@ -65,7 +65,9 @@ function repositoryUnbindWrite(
 export function useRepositoryUnbinding(
   partition: PartitionIdentity,
 ): RepositoryUnbinding {
-  const unbinding = useConsoleWrite(repositoryUnbindWrite(partition));
+  const unbinding = useConsoleWrite(repositoryUnbindWrite(partition), {
+    drawn: true,
+  });
   const [asking, setAsking] = useState<string | undefined>(undefined);
   const asked = (repository: string | undefined): void => {
     unbinding.reset();

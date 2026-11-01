@@ -70,6 +70,7 @@ function useBindingConfigurationsRetry(
 } {
   const retrying = useConsoleWrite(
     bindingConfigurationsRetryWrite(partition, repository),
+    { drawn: true },
   );
   const answered: RepositoryStepStatus | undefined = retrying.isPending
     ? undefined

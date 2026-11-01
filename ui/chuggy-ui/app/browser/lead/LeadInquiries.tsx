@@ -232,7 +232,7 @@ function LeadAsk(props: {
   const client = useQueryClient();
   const partition = props.partition;
   const write = leadAskWrite(partition, props.held);
-  const asking = useConsoleWrite(write);
+  const asking = useConsoleWrite(write, { drawn: true });
   const pending =
     useIsMutating({ mutationKey: write.mutationKey, exact: true }) > 0;
   const box = inquiryBoxOf(props.held.boxes(), partition);

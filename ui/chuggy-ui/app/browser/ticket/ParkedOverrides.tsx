@@ -1,7 +1,8 @@
 /**
  * An escalated ticket's overrides on the card that asks about it, closed until
- * asked for: the fields a parked ticket may change, drawn as the form draws
- * them, with one action that saves and the follow of it to settlement.
+ * asked for or a save of them is out: the fields a parked ticket may change,
+ * drawn as the form draws them, with one action that saves and the follow of
+ * it to settlement.
  *
  * WHAT WAS TYPED AND THE SAVE ARE THE PAGE'S AND NOT THIS PANEL'S, because the
  * Resume beside it is withheld while either says the ticket does not yet hold
@@ -97,15 +98,13 @@ function ParkedOverridesNote(props: {
   );
 }
 
-/** Where a card's save has got to, and the press that starts one. */
+/** Where a card's save has got to, whether it is still going until the ticket
+ * it changed has been read again, which withholds Resume as typing does, and
+ * the press that starts one. */
 export interface ParkedOverridesSaving {
   readonly step: OperationStep | undefined;
+  readonly busy: boolean;
   readonly save: (mutation: PublicMutation) => void;
-}
-
-/** Whether a save is still going, which withholds Resume as typing does. */
-export function parkedOverridesSaving(saving: ParkedOverridesSaving): boolean {
-  return saving.step !== undefined && !operationFinished(saving.step);
 }
 
 /** One press of Save: the change, the identity it drew, and where its follow
@@ -154,15 +153,19 @@ function parkedOverridesWrite(
 }
 
 /** One save at a time, followed to settlement whether or not the card that
- * pressed it is still drawn. */
+ * pressed it is still drawn; its refusal is the card's where the card is. */
 export function useParkedOverridesSave(
   partition: PartitionIdentity,
   ticket: number,
+  drawn: boolean,
 ): ParkedOverridesSaving {
-  const writing = useConsoleWrite(parkedOverridesWrite(partition, ticket));
+  const writing = useConsoleWrite(parkedOverridesWrite(partition, ticket), {
+    drawn,
+  });
   const step = useConsoleWriteProgress(writing.variables?.progress);
   return {
     step: step ?? (writing.isPending ? operationSubmitting() : undefined),
+    busy: writing.isPending,
     save: (mutation) => {
       writing.mutate({
         mutation,
@@ -191,7 +194,7 @@ function ParkedOverridesEdit(props: {
   const [invalid, setInvalid] = useState(false);
   const shown = parkedOverridesShown(typed, fence, ticket.overrides);
   const unsaved = parkedOverridesUnsaved(typed, fence, ticket.overrides);
-  const busy = parkedOverridesSaving(saving);
+  const busy = saving.busy;
   const refused = projectAbilityRefused(
     useProjectAbilities(props.partition),
     "overrideTicketConfig",
@@ -260,7 +263,10 @@ export function ParkedOverrides(props: {
   )
     return null;
   return (
-    <Panel title="Overrides" collapsible={{ open: false }}>
+    <Panel
+      title="Overrides"
+      collapsible={{ open: props.saving.step !== undefined }}
+    >
       <PanelUnready state={state} />
       {state.state === "Ready" ? (
         <ParkedOverridesEdit {...props} canonical={state.value.canonical} />

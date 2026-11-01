@@ -379,7 +379,9 @@ function useInboxAnswer(
   readonly answer: InboxAnswer | undefined;
   readonly onAnswer: (action: TicketAction) => void;
 } {
-  const writing = useConsoleWrite(inboxAnswerWrite(partition, ticket));
+  const writing = useConsoleWrite(inboxAnswerWrite(partition, ticket), {
+    drawn: true,
+  });
   const reported = useConsoleWriteProgress(writing.variables?.progress);
   const step =
     reported ?? (writing.isPending ? operationSubmitting() : undefined);

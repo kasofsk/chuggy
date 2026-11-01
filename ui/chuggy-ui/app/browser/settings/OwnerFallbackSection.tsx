@@ -118,7 +118,9 @@ function OwnerFallbackEditing(props: {
   const [draft, setDraft] = useState<OwnerFallback | undefined>(
     props.read.fallback,
   );
-  const saving = useConsoleWrite(ownerFallbackWrite(props.partition));
+  const saving = useConsoleWrite(ownerFallbackWrite(props.partition), {
+    drawn: true,
+  });
   const shown = saving.isPending || saving.error !== null || saving.isSuccess;
   return (
     <SettingsSection

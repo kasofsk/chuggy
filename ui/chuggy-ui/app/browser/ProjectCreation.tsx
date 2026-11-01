@@ -249,7 +249,9 @@ function useProjectCreationSend(fields: ProjectCreationFields): {
   readonly create: () => void;
 } {
   const navigate = useNavigate();
-  const creating = useConsoleWrite(projectCreationWrite(navigate));
+  const creating = useConsoleWrite(projectCreationWrite(navigate), {
+    drawn: (_, sent) => projectCreationStanding(sent, fields) !== undefined,
+  });
   const standing = projectCreationStanding(creating.variables, fields);
   const create = (): void => {
     const operation = standing?.operation ?? drawnOperation();

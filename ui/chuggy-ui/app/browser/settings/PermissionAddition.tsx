@@ -247,8 +247,10 @@ export function PermissionAddition<
   const row = props.row;
   const addition = props.addition;
   const draft = usePermissionDraft();
-  const adding = useConsoleWrite(addition.write(row));
   const choices = addition.choices(row);
+  const adding = useConsoleWrite(addition.write(row), {
+    drawn: open && choices.length > 0,
+  });
   return (
     <Dialog
       title="Add holder"

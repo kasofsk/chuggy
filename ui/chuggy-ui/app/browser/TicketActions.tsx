@@ -505,8 +505,12 @@ function useTicketActionWrite(
   ticket: number,
 ): TicketActing {
   const client = useQueryClient();
-  const writing = useConsoleWrite(ticketActionWrite(partition, ticket));
-  const cancelling = useConsoleWrite(ticketCancelWrite(partition, ticket));
+  const writing = useConsoleWrite(ticketActionWrite(partition, ticket), {
+    drawn: true,
+  });
+  const cancelling = useConsoleWrite(ticketCancelWrite(partition, ticket), {
+    drawn: true,
+  });
   const attempt = useTicketActionAttempt(
     writing.variables,
     ticketAttemptRead(client, partition, ticket),
@@ -526,7 +530,7 @@ function useTicketActionWrite(
   }, []);
 
   const refusedOperation =
-    following && step.step === "Following" ? step.operation : undefined;
+    following && "operation" in step ? step.operation : undefined;
   const submitting: Submitting = {
     attempt,
     refused:

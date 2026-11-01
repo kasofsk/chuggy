@@ -89,8 +89,12 @@ export function useThreadEntryActions(
   thread: Pick<ThreadEntryResponse, "session" | "mine" | "state">,
 ): ThreadEntryActions {
   const [renaming, setRenaming] = useState(false);
-  const renames = useConsoleWrite(threadRenameWrite(home, thread.session));
-  const closes = useConsoleWrite(threadCloseWrite(home, thread.session));
+  const renames = useConsoleWrite(threadRenameWrite(home, thread.session), {
+    drawn: true,
+  });
+  const closes = useConsoleWrite(threadCloseWrite(home, thread.session), {
+    drawn: true,
+  });
   const offered = threadActions(thread);
 
   return {

@@ -284,8 +284,10 @@ interface ChatHostWriting {
 function useChatHostWriting(tenant: string): ChatHostWriting {
   const client = useQueryClient();
   const [asking, setAsking] = useState(false);
-  const minting = useConsoleWrite(chatHostMintWrite(tenant));
-  const removing = useConsoleWrite(chatHostRemovalWrite(tenant));
+  const minting = useConsoleWrite(chatHostMintWrite(tenant), { drawn: true });
+  const removing = useConsoleWrite(chatHostRemovalWrite(tenant), {
+    drawn: true,
+  });
   return {
     minting,
     asking,

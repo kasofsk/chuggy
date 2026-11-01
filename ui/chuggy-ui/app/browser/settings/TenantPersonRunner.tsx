@@ -38,6 +38,7 @@ export function TenantPersonRunner(props: {
   const [asking, setAsking] = useState(false);
   const removing = useConsoleWrite(
     tenantPersonRunnerRemovalWrite(props.tenant, props.subject),
+    { drawn: true },
   );
   const line =
     removing.error?.message ??

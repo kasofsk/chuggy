@@ -139,9 +139,11 @@ function tenantPersonChangeWrite(
 function useTenantPersonChange(
   tenant: string,
   person: AccessTenantPerson,
+  open: boolean,
 ): TenantPersonChanging {
   const writing = useConsoleWrite(
     tenantPersonChangeWrite(tenant, person.subject),
+    { drawn: open },
   );
   const answered =
     useConsoleWriteProgress(writing.variables?.progress) === "Answered";
@@ -288,7 +290,7 @@ export function TenantPersonEditor(props: {
   readonly abilities: AccessTenantAbilities | undefined;
 }): ReactNode {
   const [open, setOpen] = useState(false);
-  const changing = useTenantPersonChange(props.tenant, props.person);
+  const changing = useTenantPersonChange(props.tenant, props.person, open);
   const name = tenantPersonName(props.person).name;
   const busy = changing.unanswered;
   return (

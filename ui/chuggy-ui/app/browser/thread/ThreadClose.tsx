@@ -33,6 +33,7 @@ export function ThreadClose(props: {
 }): ReactNode {
   const closing = useConsoleWrite(
     threadCloseWrite(threadHomeOf(props.partition), props.session),
+    { drawn: true },
   );
   return (
     <>

@@ -145,7 +145,8 @@ export interface InboxProposalAnswers {
 }
 
 /** Every review of the project's decisions the cache holds, watched for as
- * long as the inbox is drawn so the notice is what says a refusal. */
+ * long as the inbox is drawn so the notice is what says a refusal the server
+ * answered; one it never answered is reported to no notice. */
 function useInboxProposalReviewsWatched(partition: PartitionIdentity): void {
   const client = useQueryClient();
   const keys = useMutationState({
@@ -156,7 +157,9 @@ function useInboxProposalReviewsWatched(partition: PartitionIdentity): void {
   useEffect(
     () => {
       const watch = consoleWriteWatchOf(client);
-      const released = keys.map((key) => watch.watched(key));
+      const released = keys.map((key) =>
+        watch.watched(key, (refused) => refused.failure !== undefined),
+      );
       return () => {
         for (const release of released) release();
       };
@@ -253,7 +256,7 @@ function InboxProposalAction(props: {
 }): ReactNode {
   const proposal = props.proposal;
   const write = inboxProposalReviewWrite(props.partition, proposal);
-  const reviewing = useConsoleWrite(write);
+  const reviewing = useConsoleWrite(write, { drawn: true });
   const sending =
     useIsMutating({ mutationKey: write.mutationKey, exact: true }) > 0;
   const answer = (outcome: SelectorReviewOutcome, note: string): void => {

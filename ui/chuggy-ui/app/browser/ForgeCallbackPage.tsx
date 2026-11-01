@@ -188,7 +188,9 @@ export function ForgeCallbackPage(): ReactNode {
   const [decision] = useState<ForgeCallbackDecision>(() =>
     forgeCallbackDecision(query, forgeAuthorizeTake(transientStore)),
   );
-  const redeeming = useConsoleWrite(forgeCallbackRedeemWrite(ports, navigate));
+  const redeeming = useConsoleWrite(forgeCallbackRedeemWrite(ports, navigate), {
+    drawn: (refused) => refused.failure !== undefined,
+  });
   const redeemingMutate = redeeming.mutate;
   const answered = useRef(false);
   useEffect(() => {

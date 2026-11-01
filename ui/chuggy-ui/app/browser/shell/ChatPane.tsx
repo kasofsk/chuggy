@@ -216,6 +216,7 @@ function ChatPaneStartControl(props: {
 }): ReactNode {
   const opening = useConsoleWrite(
     chatPaneOpenWrite(props.partition, useChatPane().choose),
+    { drawn: true },
   );
   const [key, setKey] = useState(chatPaneOpenKey);
   const answered = (opened: ChatPaneOpened): void => {

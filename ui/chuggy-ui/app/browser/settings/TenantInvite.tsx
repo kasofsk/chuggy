@@ -163,12 +163,17 @@ function tenantInviteLinkWrite(
 function useTenantInvite(
   tenant: string,
   blank: TenantInvitationForm,
+  open: boolean,
   onInvited: () => void,
 ): TenantInviting {
   const [form, setForm] = useState(blank);
   const [mode, setMode] = useState<InviteMode>("Person");
-  const inviting = useConsoleWrite(tenantInvitationWrite(tenant));
-  const minting = useConsoleWrite(tenantInviteLinkWrite(tenant));
+  const inviting = useConsoleWrite(tenantInvitationWrite(tenant), {
+    drawn: open,
+  });
+  const minting = useConsoleWrite(tenantInviteLinkWrite(tenant), {
+    drawn: open,
+  });
   const quiet = (): void => {
     inviting.reset();
     minting.reset();
@@ -332,7 +337,7 @@ function TenantInviteDialog(props: {
   const [open, setOpen] = useState(false);
   const offered = tenantInvitationProjects(props.abilities, props.projects);
   const blank = tenantInvitationBlank(props.opening, offered);
-  const inviting = useTenantInvite(props.tenant, blank, () => {
+  const inviting = useTenantInvite(props.tenant, blank, open, () => {
     setOpen(false);
   });
   const moved = (opened: boolean): void => {

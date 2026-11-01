@@ -6,11 +6,11 @@
  * write the console cannot tell landed is one it must not send again, so the
  * cache's mutations never retry on their own.
  *
- * A REFUSAL NOBODY IS WATCHING IS KEPT TO BE SHOWN. A screen showing a write
- * says it is watching that write's key for as long as it is mounted, and draws
- * the refusal itself; one that lands under a key nothing watches — the screen
- * that asked was left — is held here until the shell has shown it and the
- * reader has let it go.
+ * A REFUSAL NOBODY DRAWS IS KEPT TO BE SHOWN. A mounted screen watches its
+ * write's key, and is asked, as each refusal under it lands, whether it draws
+ * that refusal where it stands now; one no screen draws — the screen that
+ * asked was left, or stands where the refusal is not drawn — is held here
+ * until the shell has shown it and the reader has let it go.
  */
 
 import { MutationCache, QueryClient, hashKey } from "@tanstack/query-core";
@@ -114,33 +114,52 @@ export interface ConsoleWriteUnseen {
 /** The refusals held for the shell at most, the oldest let go first. */
 export const consoleWriteUnseenMax = 3;
 
-/** Which write keys a mounted screen is showing, and the refusals that landed
- * under none of them. */
+/** Whether a screen draws a refusal under its key, asked as the refusal lands
+ * with the variables its write was sent with. */
+export type ConsoleWriteDrawn = (
+  refused: ConsoleWriteRefused,
+  variables: unknown,
+) => boolean;
+
+/** Which write keys mounted screens watch, and the refusals that landed where
+ * none of them draws it. */
 export class ConsoleWriteWatch {
-  readonly #watching = new Map<string, number>();
+  readonly #watching = new Map<string, Set<ConsoleWriteDrawn>>();
   readonly #listeners = new Set<() => void>();
   #unseen: readonly ConsoleWriteUnseen[] = [];
-  #drawn = 0;
+  #kept = 0;
 
-  /** Watching `key` until the release this answers is called. */
-  watched(key: MutationKey): () => void {
+  /** Watching `key`, asking `drawn` of each refusal under it, until the
+   * release this answers is called. */
+  watched(key: MutationKey, drawn: ConsoleWriteDrawn): () => void {
     const hashed = hashKey(key);
-    this.#watching.set(hashed, (this.#watching.get(hashed) ?? 0) + 1);
+    const watchers = this.#watching.get(hashed) ?? new Set();
+    const watcher: ConsoleWriteDrawn = (refused, variables) =>
+      drawn(refused, variables);
+    watchers.add(watcher);
+    this.#watching.set(hashed, watchers);
     return () => {
-      const left = (this.#watching.get(hashed) ?? 1) - 1;
-      if (left > 0) this.#watching.set(hashed, left);
-      else this.#watching.delete(hashed);
+      watchers.delete(watcher);
+      if (watchers.size === 0) this.#watching.delete(hashed);
     };
   }
 
-  /** A write under `key` was refused: kept for the shell where nothing
-   * mounted is showing that key. */
-  refused(key: MutationKey | undefined, sentence: string): void {
-    if (key !== undefined && this.#watching.has(hashKey(key))) return;
-    this.#drawn += 1;
-    this.#unseen = [...this.#unseen, { id: this.#drawn, sentence }].slice(
-      -consoleWriteUnseenMax,
-    );
+  /** A write under `key` was refused: kept for the shell where no screen
+   * watching that key draws it. */
+  refused(
+    key: MutationKey | undefined,
+    refused: ConsoleWriteRefused,
+    variables: unknown,
+  ): void {
+    const watchers =
+      key === undefined ? undefined : this.#watching.get(hashKey(key));
+    if ([...(watchers ?? [])].some((drawn) => drawn(refused, variables)))
+      return;
+    this.#kept += 1;
+    this.#unseen = [
+      ...this.#unseen,
+      { id: this.#kept, sentence: refused.message },
+    ].slice(-consoleWriteUnseenMax);
     this.#told();
   }
 
@@ -181,10 +200,11 @@ export function consoleWriteWatchOf(client: QueryClient): ConsoleWriteWatch {
 export function consoleQueryClient(): QueryClient {
   return new QueryClient({
     mutationCache: new MutationCache({
-      onError: (error, _variables, _context, mutation, { client }) => {
+      onError: (error, variables, _context, mutation, { client }) => {
         consoleWriteWatchOf(client).refused(
           mutation.options.mutationKey,
-          consoleWriteRefusedOf(error).message,
+          consoleWriteRefusedOf(error),
+          variables,
         );
       },
     }),

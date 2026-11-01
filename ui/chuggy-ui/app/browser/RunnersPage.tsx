@@ -139,7 +139,9 @@ function RunnersSection(props: {
 }): ReactNode {
   const client = useQueryClient();
   const { partition, roster } = props;
-  const minting = useRunnerMinting(runnersPoolTokenWrite(partition));
+  const minting = useRunnerMinting(runnersPoolTokenWrite(partition), {
+    drawn: true,
+  });
   const place = runnerAddPlace({
     administers: props.administers,
     roster,

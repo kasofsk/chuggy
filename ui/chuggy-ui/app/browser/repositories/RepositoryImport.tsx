@@ -97,6 +97,7 @@ export function useRepositoryImportNow(
 ): RepositoryImporting {
   const importing = useConsoleWrite(
     repositoryImportWrite(partition, repository),
+    { drawn: true },
   );
   return {
     busy: importing.isPending,

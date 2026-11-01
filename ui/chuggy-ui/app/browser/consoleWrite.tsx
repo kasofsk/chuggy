@@ -5,6 +5,10 @@
  * A WRITE OUTLIVES ITS SCREEN. Nothing aborts it on unmount, and a screen that
  * mounts while one is in flight under its key takes it up and draws it as its
  * own, pending and then answered.
+ *
+ * A SCREEN SAYS WHERE IT DRAWS A REFUSAL. Being mounted is not drawing: a
+ * closed dialog, or a form holding other names than the write was sent with,
+ * draws none, and a refusal there is the shell's toast.
  */
 
 import {
@@ -13,8 +17,12 @@ import {
   useMutationState,
   useQueryClient,
 } from "@tanstack/react-query";
-import type { MutationStatus, UseMutateFunction } from "@tanstack/react-query";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import type {
+  MutationKey,
+  MutationStatus,
+  UseMutateFunction,
+} from "@tanstack/react-query";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 
 import {
@@ -38,6 +46,9 @@ export interface ConsoleWriting<V, T> {
   readonly error: ConsoleWriteRefused | null;
   readonly data: T | undefined;
   readonly variables: V | undefined;
+  /** Whether what is drawn is a write this mount took up rather than pressed,
+   * so that what its press asked to be told is told to nobody. */
+  readonly takenUp: boolean;
   readonly mutate: UseMutateFunction<T, ConsoleWriteRefused, V>;
   readonly reset: () => void;
 }
@@ -85,23 +96,52 @@ function useConsoleWriteTakenUp<V, T>(
   };
 }
 
-/**
- * One write, sent once per press and never again on its own. Its refusal is
- * `error`, in the sentence the write names; it is pending until what it
- * changed has been read again; and for as long as the screen is mounted a
- * refusal under its key is the screen's to draw and not the shell's.
- */
-export function useConsoleWrite<V, T>(
-  write: ConsoleWrite<V, T>,
-): ConsoleWriting<V, T> {
-  const ports = useApiPorts();
+/** Whether a screen draws its write's refusal where it stands now, or of a
+ * refusal of the variables its write was sent with; asked as the screen last
+ * rendered it, when the refusal lands. */
+export interface ConsoleWriteShown<V> {
+  readonly drawn:
+    boolean | ((refused: ConsoleWriteRefused, variables: V) => boolean);
+}
+
+/** The key watched while the screen is mounted, asking `drawn` as the screen
+ * last rendered it. */
+function useConsoleWriteWatched<V>(
+  key: MutationKey,
+  drawn: ConsoleWriteShown<V>["drawn"],
+): void {
   const client = useQueryClient();
-  const keyed = hashKey(write.mutationKey);
+  const keyed = hashKey(key);
+  const latest = useRef(drawn);
+  useEffect(() => {
+    latest.current = drawn;
+  });
   useEffect(
-    () => consoleWriteWatchOf(client).watched(write.mutationKey),
+    () =>
+      consoleWriteWatchOf(client).watched(key, (refused, variables) => {
+        const standing = latest.current;
+        return typeof standing === "boolean"
+          ? standing
+          : standing(refused, variables as V);
+      }),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the key is watched by its hash, which a fresh array of the same parts keeps
     [client, keyed],
   );
+}
+
+/**
+ * One write, sent once per press and never again on its own. Its refusal is
+ * `error`, in the sentence the write names; it is pending until what it
+ * changed has been read again; and a refusal under its key that `shown.drawn`
+ * says this screen draws is the screen's and not the shell's.
+ */
+export function useConsoleWrite<V, T>(
+  write: ConsoleWrite<V, T>,
+  shown: ConsoleWriteShown<V>,
+): ConsoleWriting<V, T> {
+  const ports = useApiPorts();
+  const client = useQueryClient();
+  useConsoleWriteWatched(write.mutationKey, shown.drawn);
   const own = useMutation<T, ConsoleWriteRefused, V>({
     mutationKey: write.mutationKey,
     mutationFn: async (variables) => {
@@ -134,6 +174,7 @@ export function useConsoleWrite<V, T>(
       error: own.error,
       data: own.data,
       variables: own.variables,
+      takenUp: false,
       mutate: own.mutate,
       reset,
     };
@@ -143,6 +184,7 @@ export function useConsoleWrite<V, T>(
     error: standing.error,
     data: standing.data,
     variables: standing.variables,
+    takenUp: true,
     mutate: own.mutate,
     reset,
   };

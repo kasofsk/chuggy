@@ -151,6 +151,7 @@ export function useSelectorSettingsWriting<TWriter extends string>(
   const client = useQueryClient();
   const saving = useConsoleWrite(
     selectorSettingsSaveWrite<TWriter>(page, partition),
+    { drawn: true },
   );
   return {
     saving,

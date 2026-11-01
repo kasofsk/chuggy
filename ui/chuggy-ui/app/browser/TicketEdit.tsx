@@ -94,12 +94,19 @@ interface EditPressed {
   readonly progress: ConsoleWriteProgress<OperationStep>;
 }
 
+/** Whether an edit holds the form: while it runs, and once it has updated the
+ * ticket for a press of this form's, until the screen goes to it. */
+function editWriting(writing: ConsoleWriting<EditPressed, number>): boolean {
+  return writing.isPending || (writing.isSuccess && !writing.takenUp);
+}
+
 /** What an edit's write has come to, as its note draws it. */
 function editAttemptOf(
   writing: ConsoleWriting<EditPressed, number>,
   step: OperationStep | undefined,
 ): Attempt {
-  if (writing.isPending || writing.isSuccess) return attemptRunning(step);
+  if (editWriting(writing)) return attemptRunning(step);
+  if (writing.isSuccess) return { attempt: "Idle" };
   const error = writing.error;
   if (error === null) return { attempt: "Idle" };
   if (!(error instanceof TicketUpdateRefused))
@@ -178,6 +185,7 @@ function useEditSubmit(props: {
   const { partition, subject } = props;
   const writing = useConsoleWrite(
     editWrite(props.ports, partition, subject.ticket.ticket),
+    { drawn: true },
   );
   const step = useConsoleWriteProgress(writing.variables?.progress);
 
@@ -207,7 +215,7 @@ function useEditSubmit(props: {
 
   return {
     attempt: editAttemptOf(writing, step),
-    busy: writing.isPending,
+    busy: editWriting(writing),
     submit,
   };
 }
@@ -284,7 +292,7 @@ export function EditForm(props: EditFormProps): ReactNode {
             partial={props.partial === true}
             repositories={repositories}
             standing={standing}
-            api={props}
+            api={{ ports: props.ports, partition: props.partition, storeKey }}
           />
         }
       />

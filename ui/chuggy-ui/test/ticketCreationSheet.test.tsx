@@ -89,6 +89,7 @@ function drawEveryRow(): HTMLElement {
             api={{
               ports: answeringApi(() => ({ status: 404, body: {} })).ports,
               partition: creationPartition,
+              storeKey: "chug.ticket-yaml.sheet",
             }}
           />
         </div>
