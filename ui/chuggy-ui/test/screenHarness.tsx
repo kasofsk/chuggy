@@ -21,6 +21,8 @@ import type { SessionHolder } from "../app/core/sessionHolder.ts";
 import { SessionProvider } from "../app/browser/session.tsx";
 import { ShellSlots, useShellSlotHolder } from "../app/browser/shell/slots.tsx";
 import { ProjectStreamProvider } from "../app/browser/stream.tsx";
+import type { ConsoleStore } from "../app/browser/store.ts";
+import { ConsoleStoreProvided } from "./consoleStoreProvided.tsx";
 import { frame, streamServer } from "./streamDouble.ts";
 import type { StreamServer } from "./streamDouble.ts";
 
@@ -194,8 +196,10 @@ export async function drawnStrict(
     <StrictMode>
       <SessionProvider holder={holder}>
         <QueryClientProvider client={client}>
-          <span>{nudge}</span>
-          {page}
+          <ConsoleStoreProvided>
+            <span>{nudge}</span>
+            {page}
+          </ConsoleStoreProvided>
         </QueryClientProvider>
       </SessionProvider>
     </StrictMode>
@@ -262,20 +266,24 @@ export function ScreenHarness(props: {
   readonly partition: PartitionIdentity;
   readonly client: QueryClient;
   readonly transport: StreamTransport;
+  /** The case's own store, where what it holds must outlive this harness. */
+  readonly store?: ConsoleStore;
   readonly children: ReactNode;
 }): ReactNode {
   return (
     <SessionProvider holder={holderDouble()}>
       <QueryClientProvider client={props.client}>
-        <ProjectStreamProvider
-          partition={props.partition}
-          transport={props.transport}
-        >
-          <ShellSlots>
-            <ScreenHarnessSlotSinks />
-            {props.children}
-          </ShellSlots>
-        </ProjectStreamProvider>
+        <ConsoleStoreProvided store={props.store}>
+          <ProjectStreamProvider
+            partition={props.partition}
+            transport={props.transport}
+          >
+            <ShellSlots>
+              <ScreenHarnessSlotSinks />
+              {props.children}
+            </ShellSlots>
+          </ProjectStreamProvider>
+        </ConsoleStoreProvided>
       </QueryClientProvider>
     </SessionProvider>
   );

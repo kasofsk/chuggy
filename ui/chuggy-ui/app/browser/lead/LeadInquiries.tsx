@@ -31,14 +31,14 @@
  * a project names which box is read, which write a press is, and which
  * project's listing an accepted press re-reads — and every one of them outlives
  * this panel, the page above it and the route: `lead/inquiryBoxes.ts` holds the
- * box for the tab, and the press is a write under a key naming the project.
+ * box in the console's store, and the press is a write under a key naming the
+ * project.
  * Nothing crosses between projects and nothing is lost to a navigation: a
  * reader who leaves and comes back finds what they left, whichever way they
  * left.
  */
 
 import { useIsMutating, useQueryClient } from "@tanstack/react-query";
-import { useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 
 import { inquiryQuestionCharsMax } from "../../../../../src/contract/http.ts";
@@ -63,18 +63,22 @@ import {
   inquiryAskRefused,
   inquiryAskerNamed,
   inquiryAsking,
-  inquiryBoxAnswered,
-  inquiryBoxOf,
-  inquiryBoxSent,
-  inquiryBoxTyped,
   inquiryDraw,
   inquiryIdentityBytesCount,
   inquiryQuestion,
   inquiryQuestionFault,
 } from "../../core/leadInquiries.ts";
-import type { InquiryAsk, InquiryDraw } from "../../core/leadInquiries.ts";
-import { inquiryBoxesHeld } from "./inquiryBoxes.ts";
-import type { InquiryBoxStore } from "./inquiryBoxes.ts";
+import type {
+  InquiryAsk,
+  InquiryBox,
+  InquiryDraw,
+} from "../../core/leadInquiries.ts";
+import {
+  inquiryBoxAnsweredAt,
+  inquiryBoxAt,
+  inquiryBoxSentAt,
+  inquiryBoxTypedAt,
+} from "./inquiryBoxes.ts";
 import { projectAbilityRefused } from "../../core/projectAbilities.ts";
 import { leadInquiriesQuery } from "../../core/sessionQueries.ts";
 import { sessionTurnStateTone } from "../../core/tones.ts";
@@ -83,6 +87,8 @@ import { useConsoleWrite } from "../consoleWrite.tsx";
 import { PanelUnready } from "../DataPanel.tsx";
 import { drawBytes } from "../ports.ts";
 import { useProjectAbilities, ViewOnlyNotice } from "../projectAbilities.tsx";
+import { useConsoleDispatch, useConsoleSelector } from "../store.ts";
+import type { ConsoleDispatch } from "../store.ts";
 import {
   SessionRunnerNotice,
   useSessionRunnerShort,
@@ -98,22 +104,9 @@ import { Tooltip } from "../ui/Tooltip.tsx";
 
 import "./LeadInquiries.css";
 
-/**
- * The boxes as a screen reads them: the store's own, and a render whenever it
- * moves.
- *
- * WHAT IS HELD IS THE MODULE'S AND NOT THIS TREE'S, because the pair is a
- * de-duplication token and every component boundary is another way to lose one —
- * the head that gates the control is absent on the render after a project
- * switch, on a lead that has never settled a turn and on one whose read failed,
- * and the page itself is replaced by a click on any sibling screen, all of which
- * `inquiryBoxes.ts` argues at length while this is only how a screen reads it.
- */
-export type InquiryBoxesHeld = InquiryBoxStore;
-
-export function useInquiryBoxes(): InquiryBoxesHeld {
-  useSyncExternalStore(inquiryBoxesHeld.subscribe, inquiryBoxesHeld.boxes);
-  return inquiryBoxesHeld;
+/** One project's box as a screen reads it, and a render whenever it moves. */
+function useInquiryBox(partition: PartitionIdentity): InquiryBox {
+  return useConsoleSelector((state) => inquiryBoxAt(state, partition));
 }
 
 /**
@@ -124,7 +117,7 @@ export function useInquiryBoxes(): InquiryBoxesHeld {
  */
 function leadAskWrite(
   partition: PartitionIdentity,
-  held: InquiryBoxesHeld,
+  dispatch: ConsoleDispatch,
 ): ConsoleWrite<InquiryDraw, LeadInquiryAccepted> {
   return {
     mutationKey: consoleWriteKey(
@@ -136,10 +129,10 @@ function leadAskWrite(
       apiAskLead(ports, draw.partition, inquiryAsking(draw)),
     refusal: (failure) => inquiryAskRefusalSentence(inquiryAskRefused(failure)),
     landed: (client, accepted, draw) => {
-      held.write(draw.partition, (box) =>
-        inquiryBoxAnswered(box, draw, {
-          ask: "Asked",
-          session: accepted.session,
+      dispatch(
+        inquiryBoxAnsweredAt({
+          draw,
+          answer: { ask: "Asked", session: accepted.session },
         }),
       );
       return client.invalidateQueries({
@@ -148,17 +141,17 @@ function leadAskWrite(
       });
     },
     refused: (error, draw) => {
-      held.write(draw.partition, (box) =>
-        inquiryBoxAnswered(
-          box,
+      dispatch(
+        inquiryBoxAnsweredAt({
           draw,
-          error.failure === undefined
-            ? {
-                ask: "Failed",
-                words: { word: "Failed", detail: error.message },
-              }
-            : inquiryAskRefused(error.failure),
-        ),
+          answer:
+            error.failure === undefined
+              ? {
+                  ask: "Failed",
+                  words: { word: "Failed", detail: error.message },
+                }
+              : inquiryAskRefused(error.failure),
+        }),
       );
     },
   };
@@ -232,17 +225,15 @@ function LeadAskRunner(props: {
  * is the retry the door is idempotent on rather than a second question
  * spending the second of the asker's two.
  */
-function LeadAsk(props: {
-  readonly partition: PartitionIdentity;
-  readonly held: InquiryBoxesHeld;
-}): ReactNode {
+function LeadAsk(props: { readonly partition: PartitionIdentity }): ReactNode {
   const client = useQueryClient();
+  const dispatch = useConsoleDispatch();
   const partition = props.partition;
-  const write = leadAskWrite(partition, props.held);
+  const write = leadAskWrite(partition, dispatch);
   const asking = useConsoleWrite(write, { drawn: true });
   const pending =
     useIsMutating({ mutationKey: write.mutationKey, exact: true }) > 0;
-  const box = inquiryBoxOf(props.held.boxes(), partition);
+  const box = useInquiryBox(partition);
   const question = inquiryQuestion(box.typed);
   const fault = inquiryQuestionFault(question);
   const shown = box.typed === "" ? undefined : fault;
@@ -252,7 +243,7 @@ function LeadAsk(props: {
     const draw = inquiryDraw(box.held, question, partition, () =>
       base64urlFromBytes(drawBytes(inquiryIdentityBytesCount)),
     );
-    props.held.write(partition, (held) => inquiryBoxSent(held, draw));
+    dispatch(inquiryBoxSentAt(draw));
     asking.mutate(draw);
   };
   return (
@@ -267,9 +258,8 @@ function LeadAsk(props: {
             aria-invalid={shown !== undefined}
             value={box.typed}
             onChange={(event) => {
-              const typed = event.target.value;
-              props.held.write(partition, (held) =>
-                inquiryBoxTyped(held, typed),
+              dispatch(
+                inquiryBoxTypedAt({ partition, typed: event.target.value }),
               );
             }}
           />
@@ -375,19 +365,16 @@ function LeadInquiryList(props: {
 /** The box, or the one line where the reader may ask nothing. */
 function LeadAskOffered(props: {
   readonly partition: PartitionIdentity;
-  readonly held: InquiryBoxesHeld;
 }): ReactNode {
   const abilities = useProjectAbilities(props.partition);
   if (projectAbilityRefused(abilities, "mutate")) return <ViewOnlyNotice />;
-  return <LeadAsk {...props} />;
+  return <LeadAsk partition={props.partition} />;
 }
 
 export function LeadInquiries(props: {
   readonly partition: PartitionIdentity;
   /** The lead's runtime reference, which is the head a fork is taken from. */
   readonly head: string | undefined;
-  /** The boxes, which are the module's and outlive this panel and its page. */
-  readonly held: InquiryBoxesHeld;
   readonly nowMs: number;
 }): ReactNode {
   const partition = props.partition;
@@ -395,7 +382,7 @@ export function LeadInquiries(props: {
   return (
     <Panel title="Inquiries">
       {props.head === undefined ? null : (
-        <LeadAskOffered partition={partition} held={props.held} />
+        <LeadAskOffered partition={partition} />
       )}
       <PanelUnready state={state} />
       {state.state === "Ready" ? (

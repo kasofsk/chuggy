@@ -19,6 +19,7 @@
     "@codemirror/state": "^6.7.6",
     "@codemirror/view": "^6.43.13",
     "@lezer/highlight": "^1.2.4",
+    "@reduxjs/toolkit": "^2.13.0",
     "@replit/codemirror-vim": "^6.4.0",
     "@tanstack/query-core": "^5.102.5",
     "@tanstack/react-query": "^5.102.5",
@@ -32,6 +33,7 @@
     "radix-ui": "^1.6.7",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
+    "react-redux": "^9.3.1",
     "react-resizable-panels": "^4.14.3",
     "yaml": "^2.9.1",
     "zod": "^4.4.3"

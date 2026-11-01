@@ -1,6 +1,6 @@
 /**
- * The console's one process root: it builds the ports, the session and the
- * cache, mounts the tree, and then completes whatever the redirect brought
+ * The console's one process root: it builds the ports, the session, the cache
+ * and the store, mounts the tree, and then completes whatever the redirect brought
  * back.
  *
  * Loading happens after the first render rather than before it, so a slow or
@@ -25,6 +25,7 @@ import "../styles/utilities.css";
 
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+import { Provider } from "react-redux";
 
 import { createInviteHolder } from "../core/inviteHolder.ts";
 import { consoleQueryClient } from "../core/consoleWrite.ts";
@@ -46,10 +47,13 @@ import {
   sessionBegin,
   sessionHolderOpened,
 } from "./session.tsx";
+import { consoleStore } from "./store.ts";
 import { themeChoiceApply, themeChoiceRead } from "./theme.ts";
 import "../styles.css";
 
 const queryClient = consoleQueryClient();
+
+const store = consoleStore();
 
 const holder = sessionHolderOpened();
 
@@ -76,7 +80,9 @@ createRoot(container).render(
   <StrictMode>
     <SessionProvider holder={holder}>
       <InviteProvider holder={invite}>
-        <App queryClient={queryClient} />
+        <Provider store={store}>
+          <App queryClient={queryClient} />
+        </Provider>
       </InviteProvider>
     </SessionProvider>
   </StrictMode>,
