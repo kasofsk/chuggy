@@ -133,6 +133,24 @@ residue() {
 	return 1
 }
 
+# One linter process per configuration. A console under `ui/` carries an
+# `eslint.config.js` of its own, which the linter applies to the files below
+# it, and each configuration's typed rules hold a TypeScript program of their
+# own; one process holding both outgrows the heap V8 sizes for a container. The
+# root's run is told to skip each console's directory, so the runs are a
+# partition of what `eslint .` reads and not a narrowing of it.
+lint() {
+	rc=0
+	for config in ui/*/eslint.config.js; do
+		[ -f "$config" ] || continue
+		console="${config%/eslint.config.js}"
+		set -- "$@" --ignore-pattern "$console/**"
+		CHUG_SAFEQL_DATABASE_URL= ./node_modules/.bin/eslint "$console" || rc=1
+	done
+	CHUG_SAFEQL_DATABASE_URL= ./node_modules/.bin/eslint "$@" . || rc=1
+	return "$rc"
+}
+
 if [ "$run_static" -eq 1 ]; then
 	stage "  residue  " residue
 	stage "  typecheck" ./node_modules/.bin/tsc --noEmit
@@ -140,7 +158,7 @@ if [ "$run_static" -eq 1 ]; then
 	# Lint is the server-free half of the query checking: the SafeQL block in
 	# eslint.config.js activates on CHUG_SAFEQL_DATABASE_URL, and an operator
 	# who exports it shell-wide must not make this stage need a database.
-	stage "  lint     " env CHUG_SAFEQL_DATABASE_URL= ./node_modules/.bin/eslint .
+	stage "  lint     " lint
 	stage "  format   " ./node_modules/.bin/prettier --check --log-level warn .
 fi
 

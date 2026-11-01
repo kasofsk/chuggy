@@ -203,6 +203,27 @@ cp "$ROOT/tsconfig.json" "$R/.claude/worktrees/agent-x/tsconfig.json"
 seal
 check "a checkout nested under .claude/ is not this tree's source" 0 "$RC" "0 stage(s) failed"
 
+# A console under ui/ is linted by its own configuration, in a run of its own,
+# and the root's run skips it: a finding there is still a finding, and the
+# root's own sources are still linted beside it.
+fixture
+clean_source
+mkdir -p "$R/ui/console"
+printf '%s\n' 'export default [{ rules: { "no-debugger": "error" } }];' > "$R/ui/console/eslint.config.js"
+printf '%s\n' 'debugger;' > "$R/ui/console/stray.js"
+{
+	printf '%s\n' 'export async function work(): Promise<void> {'
+	printf '%s\n' '  return Promise.resolve();'
+	printf '%s\n' '}'
+	printf '%s\n' 'export function caller(): void {'
+	printf '%s\n' '  work();'
+	printf '%s\n' '}'
+} > "$R/src/domain/floating.ts"
+seal
+check "a console's own configuration lints it" 1 "$RC" "ui/console/stray.js"
+check "with the rule that configuration names" 1 "$RC" "no-debugger"
+check "while the root's run still lints the root's sources" 1 "$RC" "no-floating-promises"
+
 # --- What the unit stage runs ------------------------------------------------
 #
 # `check-conformance.sh`, `check-random.sh`, `check-postgres.sh` and
