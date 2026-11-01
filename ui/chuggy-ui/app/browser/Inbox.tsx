@@ -30,6 +30,7 @@ import type {
   RunStepFailure,
 } from "../../../../src/contract/responses.ts";
 import { apiInbox } from "../core/apiRoutes.ts";
+import { inboxQuery } from "../core/ticketQueries.ts";
 import { base64urlFromBytes } from "../core/base64url.ts";
 import {
   escalationKindSentence,
@@ -44,7 +45,6 @@ import {
   runStepLabel,
 } from "../core/codeLabels.ts";
 import type { PanelState } from "../core/freshness.ts";
-import { inboxProposalsPolledMs } from "../core/inboxProposals.ts";
 import {
   inboxAnswerInFlight,
   inboxAnswersEmpty,
@@ -53,11 +53,9 @@ import {
 import type { InboxAnswer, InboxAnswers } from "../core/inboxAnswers.ts";
 import {
   inboxEntryPhased,
-  inboxList,
   inboxPage,
   inboxRowsAfterPage,
   inboxRowsHaveMore,
-  inboxRowsRead,
   inboxSection,
 } from "../core/inboxList.ts";
 import type { InboxRows } from "../core/inboxList.ts";
@@ -74,7 +72,7 @@ import { actionsFor, ticketActionSentence } from "../core/ticketActions.ts";
 import type { TicketAction } from "../core/ticketActions.ts";
 import { ticketSectionTitles } from "../core/ticketSections.ts";
 import { agenticRefusalStandingTone } from "../core/tones.ts";
-import { useApiPorts, usePanelList } from "./api.ts";
+import { useApiPorts, usePanelState } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
 import {
@@ -117,19 +115,12 @@ export interface InboxRowsHeld {
  * what makes the header's claim above true rather than merely intended.
  */
 export function useInboxRows(partition: PartitionIdentity): InboxRowsHeld {
-  const list = inboxList(partition);
-  const key = list.key;
+  const query = inboxQuery(partition);
+  const key = query.queryKey;
   const client = useQueryClient();
   const ports = useApiPorts();
   const [reading, setReading] = useState(false);
-  const panel = usePanelList(
-    list,
-    (at) =>
-      inboxRowsRead(client.getQueryData<InboxRows>(key), (cursor) =>
-        apiInbox(at, partition, inboxPage(cursor)),
-      ),
-    inboxProposalsPolledMs,
-  );
+  const panel = usePanelState(query);
   const rows = panel.state === "Ready" ? panel.value : undefined;
   const readMore = () => {
     setReading(true);
@@ -139,7 +130,7 @@ export function useInboxRows(partition: PartitionIdentity): InboxRowsHeld {
         partition,
         inboxPage(rows?.nextCursor),
       );
-      client.setQueryData<InboxRows>(key, (previous) =>
+      client.setQueryData(key, (previous) =>
         previous === undefined
           ? previous
           : inboxRowsAfterPage(previous, answered),

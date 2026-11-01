@@ -22,11 +22,6 @@ import type {
   ProjectRepositoryResponse,
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
-import {
-  apiDraft,
-  apiDraftInitialization,
-  apiTicket,
-} from "../core/apiRoutes.ts";
 import type { ApiPorts } from "../core/apiRequest.ts";
 import { base64urlFromBytes } from "../core/base64url.ts";
 import type { PanelState } from "../core/freshness.ts";
@@ -34,7 +29,10 @@ import {
   operationIdBytesCount,
   operationSubmitting,
 } from "../core/operationFollow.ts";
-import { projectResourceKey } from "../core/projectQueryKeys.ts";
+import {
+  creationContextQuery,
+  draftInitializationQuery,
+} from "../core/configurationQueries.ts";
 import { ticketRevisable } from "../core/ticketActions.ts";
 import {
   creationRepositories,
@@ -46,11 +44,7 @@ import type {
   CreationOffer,
   TicketCreationForm,
 } from "../core/ticketCreation.ts";
-import {
-  creationContextList,
-  readCreationContext,
-  reviseAndUpdateTicket,
-} from "../core/ticketCreationRun.ts";
+import { reviseAndUpdateTicket } from "../core/ticketCreationRun.ts";
 import type { CreationContext } from "../core/ticketCreationRun.ts";
 import {
   editFormFrom,
@@ -59,7 +53,8 @@ import {
   editRevisionFrom,
 } from "../core/ticketEdit.ts";
 import type { EditOffers } from "../core/ticketEdit.ts";
-import { useApiPorts, usePanelList, usePanelResource } from "./api.ts";
+import { draftQuery, ticketQuery } from "../core/ticketQueries.ts";
+import { useApiPorts, usePanelState } from "./api.ts";
 import { DataPanel, PanelUnready } from "./DataPanel.tsx";
 import {
   ticketYamlForgotten,
@@ -108,13 +103,13 @@ function useEditSubmit(props: {
   const { partition, subject } = props;
 
   const reread = async (): Promise<void> => {
-    const ticket = String(subject.ticket.ticket);
+    const ticket = subject.ticket.ticket;
     await Promise.all([
       client.invalidateQueries({
-        queryKey: projectResourceKey(partition, "Ticket", ticket),
+        queryKey: ticketQuery(partition, ticket).queryKey,
       }),
       client.invalidateQueries({
-        queryKey: projectResourceKey(partition, "Draft", ticket),
+        queryKey: draftQuery(partition, ticket).queryKey,
       }),
     ]);
   };
@@ -257,12 +252,7 @@ function EditOwnOfferRead(
   props: EditOffersReadProps & { readonly revision: string },
 ): ReactNode {
   const { draft, offers, partition, revision } = props;
-  const state = usePanelResource(
-    partition,
-    "Configuration",
-    `${revision}/draft-initialization`,
-    (readPorts) => apiDraftInitialization(readPorts, partition, revision),
-  );
+  const state = usePanelState(draftInitializationQuery(partition, revision));
   const own = state.state === "Ready" ? state.value : undefined;
   const edit = useMemo(
     () => editOffersFrom(draft, offers, own),
@@ -364,26 +354,9 @@ function TicketEditRead(props: {
   const navigate = useNavigate();
   const [dirty, setDirty] = useState(false);
   const guard = useAuthoringGuards(dirty);
-  const ticketState = usePanelResource(
-    partition,
-    "Ticket",
-    String(ticket),
-    (readPorts) => apiTicket(readPorts, partition, ticket),
-    undefined,
-    "Streamed",
-  );
-  const draftState = usePanelResource(
-    partition,
-    "Draft",
-    String(ticket),
-    (readPorts) => apiDraft(readPorts, partition, ticket),
-    undefined,
-    "Streamed",
-  );
-  const contextState = usePanelList(
-    creationContextList(partition),
-    (readPorts) => readCreationContext(readPorts, partition),
-  );
+  const ticketState = usePanelState(ticketQuery(partition, ticket, "Streamed"));
+  const draftState = usePanelState(draftQuery(partition, ticket, "Streamed"));
+  const contextState = usePanelState(creationContextQuery(partition));
   return (
     <DataPanel title="Draft" state={contextState}>
       {(context) =>

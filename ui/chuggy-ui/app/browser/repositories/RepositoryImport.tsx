@@ -32,7 +32,7 @@ import { Figure } from "../ui/Figure.tsx";
 import { Identity } from "../ui/Identity.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Pill } from "../ui/Pill.tsx";
-import { projectRepositoriesInvalidated } from "./AddRepository.tsx";
+import { projectRepositoriesInvalidated } from "../../core/projectQueries.ts";
 
 /** One Import now: whether its request is out, and how the last one was answered. */
 export interface RepositoryImporting {

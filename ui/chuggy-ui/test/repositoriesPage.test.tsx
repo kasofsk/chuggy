@@ -341,7 +341,7 @@ const bindingsKeys = [
   "project",
   leadPartition.tenant,
   leadPartition.project,
-  "Project",
+  "partition",
   resource,
 ]);
 

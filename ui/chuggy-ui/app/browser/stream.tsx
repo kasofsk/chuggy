@@ -21,6 +21,7 @@ import { hashKey, useQueryClient } from "@tanstack/react-query";
 import type { Query, QueryClient } from "@tanstack/react-query";
 import {
   createContext,
+  use,
   useCallback,
   useContext,
   useEffect,
@@ -444,13 +445,6 @@ export function ProjectStreamProvider(props: {
   );
 }
 
-function useProjectStreamWiring(): ProjectStreamWiring {
-  const wiring = useContext(ProjectStreamContext);
-  if (wiring === undefined)
-    throw new Error("the stream was read outside the provider that holds it");
-  return wiring;
-}
-
 function useProjectStreamSaying(): ProjectStreamSaying {
   const saying = useContext(ProjectStreamSayingContext);
   if (saying === undefined)
@@ -466,6 +460,14 @@ export function useProjectStreamStatus(): ProjectStreamStatus {
  * there is no provider to hold one. */
 export function useProjectStreamHolding(): boolean {
   const saying = useContext(ProjectStreamSayingContext);
+  return saying !== undefined && projectStreamHolding(saying.status);
+}
+
+/** `useProjectStreamHolding`, heard only where `asked`, so a screen that does
+ * not ask is not drawn again whenever the stream's status moves. */
+export function useProjectStreamHoldingAsked(asked: boolean): boolean {
+  if (!asked) return false;
+  const saying = use(ProjectStreamSayingContext);
   return saying !== undefined && projectStreamHolding(saying.status);
 }
 
@@ -545,23 +547,32 @@ function projectListRefreshErased<T>(
  * A list's refresh, and one for each kind alongside it, registered for as
  * long as the screen is mounted — past the registration budget too, with the
  * overrun logged, because the budget only makes a leak visible and a screen
- * that stopped drawing would be worse.
- * `usePanelList` is the caller that matters: this is exported for the suite
+ * that stopped drawing would be worse; a read that is no list registers
+ * nothing, and needs no stream to read under.
+ * `usePanelState` is the caller that matters: this is exported for the suite
  * that drives the registry with no panel under it, and a registration with no
  * query beneath it refreshes nothing.
  */
-export function useProjectListRefresh<T>(list: ProjectList<T>): void {
-  const { folds } = useProjectStreamWiring();
+export function useProjectListRefresh<T>(
+  list: ProjectList<T> | undefined,
+): void {
+  const wiring = useContext(ProjectStreamContext);
+  if (list !== undefined && wiring === undefined)
+    throw new Error("the stream was read outside the provider that holds it");
+  const folds = wiring?.folds;
   const held = useRef(list);
   useEffect(() => {
     held.current = list;
   }, [list]);
-  const kind = list.kind;
-  const named = JSON.stringify(list.key);
-  const alongside = (Object.keys(list.alongside) as ProjectChangeKind[])
-    .sort()
-    .join(",");
+  const kind = list?.kind;
+  const named = list === undefined ? undefined : JSON.stringify(list.key);
+  const alongside =
+    list === undefined
+      ? ""
+      : (Object.keys(list.alongside) as ProjectChangeKind[]).sort().join(",");
   useEffect(() => {
+    if (folds === undefined || kind === undefined || named === undefined)
+      return;
     if (folds.size >= projectListFoldsMax)
       logWarned(
         `more than ${String(projectListFoldsMax)} list folds are registered, which is a leak`,
@@ -571,7 +582,7 @@ export function useProjectListRefresh<T>(list: ProjectList<T>): void {
       {
         kind,
         key,
-        refresh: () => projectListRefreshErased(held.current.refresh),
+        refresh: () => projectListRefreshHeld(held.current?.refresh),
       },
       ...(alongside === ""
         ? []
@@ -579,12 +590,7 @@ export function useProjectListRefresh<T>(list: ProjectList<T>): void {
       ).map((other): ProjectListRegistration => ({
         kind: other,
         key,
-        refresh: () => {
-          const refresh = held.current.alongside[other];
-          return refresh === undefined
-            ? { refresh: "Fold", fold: (previous) => previous }
-            : projectListRefreshErased(refresh);
-        },
+        refresh: () => projectListRefreshHeld(held.current?.alongside[other]),
       })),
     ];
     for (const registration of registrations) folds.add(registration);
@@ -592,4 +598,14 @@ export function useProjectListRefresh<T>(list: ProjectList<T>): void {
       for (const registration of registrations) folds.delete(registration);
     };
   }, [folds, kind, named, alongside]);
+}
+
+/** A refresh the screen holds now, and one that leaves the entry as it is
+ * where the screen no longer holds one for that kind. */
+function projectListRefreshHeld<T>(
+  refresh: ProjectListRefresh<T> | undefined,
+): ProjectListRefresh<unknown> {
+  return refresh === undefined
+    ? { refresh: "Fold", fold: (previous) => previous }
+    : projectListRefreshErased(refresh);
 }

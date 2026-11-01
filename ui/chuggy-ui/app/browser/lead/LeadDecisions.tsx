@@ -30,8 +30,6 @@ import type {
   SelectorDecisionResponse,
   SelectorHistoryResponse,
 } from "../../../../../src/contract/responses.ts";
-import { selectorHistoryLimitMax } from "../../../../../src/contract/http.ts";
-import { apiSelectorHistory } from "../../core/apiRoutes.ts";
 import {
   costFigure,
   durationFigure,
@@ -43,18 +41,15 @@ import {
   leadDecisionsNewestFirst,
   leadDecisionSummary,
 } from "../../core/leadTranscript.ts";
+import { leadDecisionsQuery } from "../../core/sessionQueries.ts";
 import { navRoutes } from "../../core/shellNav.ts";
 import { leadDispatchArm } from "../../core/tones.ts";
 import type { Tone } from "../../core/tones.ts";
-import { usePanelResource } from "../api.ts";
+import { usePanelState } from "../api.ts";
 import { DataPanel } from "../DataPanel.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Ledger, LedgerBlock, LedgerGroup, LedgerRow } from "../ui/Ledger.tsx";
-
-/** A resource name no frame carries, so nothing writes this entry and the
- * partition's own refetch is what reaches it. */
-export const leadDecisionsResource = "selector-history";
 
 /** What one decision cost and how long it took, as the group's own roll-up. */
 function LeadDecisionRollup(props: {
@@ -242,16 +237,7 @@ export function LeadDecisions(props: {
   readonly nowMs: number;
 }): ReactNode {
   const partition = props.partition;
-  const state = usePanelResource(
-    partition,
-    "Session",
-    leadDecisionsResource,
-    (ports) =>
-      apiSelectorHistory(ports, partition, {
-        order: "newest",
-        limit: selectorHistoryLimitMax,
-      }),
-  );
+  const state = usePanelState(leadDecisionsQuery(partition));
   return (
     <DataPanel title="Decisions" state={state}>
       {(history) => (

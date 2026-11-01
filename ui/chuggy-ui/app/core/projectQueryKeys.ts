@@ -23,6 +23,10 @@
  * the same reason again: which workspaces hold them is a fact about the
  * reader, asked on a page that is in none yet.
  *
+ * `["project", tenant, project, "partition", resource]` is one partition's
+ * entry that no frame names. It is under the partition for its refetch and
+ * under no kind, so nothing a frame of one addresses reaches it.
+ *
  * NOT EVERY ENTRY IS A READ. `projectHeldKey` is what a screen keeps for itself
  * — the cache being the only thing under a partition that outlives the screen
  * that wrote it. Its marker is outside the kinds, so nothing addressed by kind
@@ -47,6 +51,8 @@
  * other.
  */
 
+import type { DataTag } from "@tanstack/query-core";
+
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { ProjectChangeKind } from "../../../../src/contract/events.ts";
 
@@ -55,12 +61,17 @@ export const projectsQueryScope = "projects";
 export const tenantQueryScope = "tenant";
 export const callerQueryScope = "caller";
 export const projectListMarker = "list";
+export const projectPartitionMarker = "partition";
 
 /** Neither a kind nor a list of one, which is what keeps a held entry out of
  * the reach of everything the stream applies. */
 export const projectHeldMarker = "held";
 
 export type ProjectQueryKey = readonly unknown[];
+
+/** A key and the type of what is held under it, which the cache's own reads
+ * and writes take their type from. */
+export type ProjectQueryKeyOf<T> = DataTag<ProjectQueryKey, T>;
 
 export function projectsInventoryKey(): ProjectQueryKey {
   return [projectsQueryScope];
@@ -91,6 +102,14 @@ export function projectResourceKey(
   resource: string,
 ): ProjectQueryKey {
   return [...projectPartitionKey(partition), kind, resource];
+}
+
+/** One partition's entry that no frame names, reached by its refetch alone. */
+export function projectPartitionResourceKey(
+  partition: PartitionIdentity,
+  resource: string,
+): ProjectQueryKey {
+  return [...projectPartitionKey(partition), projectPartitionMarker, resource];
 }
 
 const projectStreamedTicket = /^[1-9][0-9]*$/u;
@@ -213,7 +232,7 @@ export type ProjectListFold<T> = (
 /** A list entry and the refresh that keeps it live, which are one value. */
 export interface ProjectList<T> {
   readonly kind: ProjectChangeKind;
-  readonly key: ProjectQueryKey;
+  readonly key: ProjectQueryKeyOf<T>;
   readonly refresh: ProjectListRefresh<T>;
   /** The other kinds whose frames reach the entry, each by its own refresh. */
   readonly alongside: Partial<Record<ProjectChangeKind, ProjectListRefresh<T>>>;
@@ -228,7 +247,7 @@ function projectListOf<T>(
 ): ProjectList<T> {
   return {
     kind,
-    key: projectListKey(partition, kind, name),
+    key: projectListKey(partition, kind, name) as ProjectQueryKeyOf<T>,
     refresh,
     alongside: {},
     [projectListWitness]: true,

@@ -13,7 +13,6 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { RepositoryConfigurationHeadResponse } from "../../../../../src/contract/responses.ts";
-import { apiRepositoryConfigurationHead } from "../../core/apiRoutes.ts";
 import { catalogQueryImported } from "../../core/catalogConfigurations.ts";
 import type { CatalogQuery } from "../../core/catalogConfigurations.ts";
 import { catalogEntriesOf } from "../../core/catalogEntries.ts";
@@ -25,7 +24,8 @@ import {
   catalogHeadText,
 } from "../../core/catalogHead.ts";
 import { configurationCatalogOf } from "../../core/configurationCatalog.ts";
-import { usePanelResourceAsked } from "../api.ts";
+import { configurationHeadQuery } from "../../core/configurationQueries.ts";
+import { usePanelState } from "../api.ts";
 import type { PanelState } from "../../core/freshness.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { ConfigurationBody } from "../TicketProvenance.tsx";
@@ -38,14 +38,11 @@ function useCatalogHead(
   repository: string,
   asked: boolean,
 ): PanelState<RepositoryConfigurationHeadResponse> {
-  return usePanelResourceAsked(
-    partition,
-    "Configuration",
-    `head:${repository}`,
-    (ports) => apiRepositoryConfigurationHead(ports, partition, repository),
-    undefined,
-    asked,
-  );
+  const state = usePanelState({
+    ...configurationHeadQuery(partition, repository),
+    enabled: asked,
+  });
+  return asked ? state : { state: "Pending" };
 }
 
 /** The head against the newest import of one configuration, read once a reader asks. */

@@ -33,7 +33,6 @@ import type { ReactNode, RefObject } from "react";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type {
   TicketNativeActionsResponse,
-  TicketResponse,
   DispatchViewResponse,
 } from "../../../../src/contract/responses.ts";
 import { apiCancelOperation } from "../core/apiRoutes.ts";
@@ -58,13 +57,14 @@ import type {
   OperationFollowed,
   OperationStep,
 } from "../core/operationFollow.ts";
-import { projectResourceKey } from "../core/projectQueryKeys.ts";
 import { sessionRunnerShortWord } from "../core/sessionRunners.ts";
 import { ticketArrival } from "../core/ticketArrival.ts";
 import {
-  manualDispatchAction,
-  ticketDispatchList,
-} from "../core/ticketActions.ts";
+  ticketDispatchQuery,
+  ticketNativeActionsQuery,
+  ticketQuery,
+} from "../core/ticketQueries.ts";
+import { manualDispatchAction } from "../core/ticketActions.ts";
 import type {
   TicketAction,
   TicketActionName,
@@ -162,19 +162,21 @@ function followWrittenBack(
   ticket: number,
   followed: OperationFollowed,
 ): void {
-  const openKey = projectResourceKey(partition, "NativeAction", String(ticket));
-  void client.invalidateQueries({ queryKey: openKey, exact: true });
   void client.invalidateQueries({
-    queryKey: ticketDispatchList(partition, ticket).key,
+    queryKey: ticketNativeActionsQuery(partition, ticket).queryKey,
+    exact: true,
+  });
+  void client.invalidateQueries({
+    queryKey: ticketDispatchQuery(partition, ticket).queryKey,
     exact: true,
   });
   const confirmed = followed.ticket;
   if (confirmed === undefined) return;
-  const key = projectResourceKey(partition, "Ticket", String(ticket));
+  const key = ticketQuery(partition, ticket).queryKey;
   applyResourceArrival(
     client,
     key,
-    ticketArrival(client.getQueryData<TicketResponse>(key), {
+    ticketArrival(client.getQueryData(key), {
       carried: "ProjectRow",
       ticket: confirmed,
     }),

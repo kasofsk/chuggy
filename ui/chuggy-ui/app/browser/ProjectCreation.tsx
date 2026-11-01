@@ -25,7 +25,6 @@ import { useNavigate } from "@tanstack/react-router";
 import { useId, useState } from "react";
 import type { ReactNode } from "react";
 
-import { apiCallerTenants, apiSiteAbilities } from "../core/accessRoutes.ts";
 import { apiCreateProject } from "../core/apiRoutes.ts";
 import { base64urlFromBytes } from "../core/base64url.ts";
 import {
@@ -59,8 +58,12 @@ import type {
   ProjectCreationWorkspaceOffer,
   ProjectCreationWorkspaceSaid,
 } from "../core/projectCreationWorkspace.ts";
-import { projectsInventoryKey } from "../core/projectQueryKeys.ts";
-import { useApiPorts, usePanelCallerResource } from "./api.ts";
+import {
+  callerSiteAbilitiesQuery,
+  callerTenantsQuery,
+  projectsInventoryQuery,
+} from "../core/tenantQueries.ts";
+import { useApiPorts, usePanelState } from "./api.ts";
 import { PanelUnready } from "./DataPanel.tsx";
 import { Footer } from "./Footer.tsx";
 import {
@@ -69,7 +72,6 @@ import {
   drawBytes,
   persistentStore,
 } from "./ports.ts";
-import { siteAbilitiesResource } from "./settings/tenantPermissionsResource.ts";
 import { TopBar } from "./shell/TopBar.tsx";
 import { Button } from "./ui/Button.tsx";
 import { CopyBox } from "./ui/CopyBox.tsx";
@@ -78,9 +80,6 @@ import { EmptyState } from "./ui/EmptyState.tsx";
 import { Input } from "./ui/Input.tsx";
 import { Notice } from "./ui/Notice.tsx";
 import { Picker } from "./ui/Picker.tsx";
-
-/** No frame names this read. */
-const callerTenantsResource = "access-workspaces";
 
 const fieldClassName = "grid gap-1 text-sm text-ink-2";
 
@@ -241,7 +240,9 @@ function useProjectCreationSend(fields: ProjectCreationFields): {
         return;
       }
       lastProjectWrite(persistentStore, outcome.partition);
-      await client.invalidateQueries({ queryKey: projectsInventoryKey() });
+      await client.invalidateQueries({
+        queryKey: projectsInventoryQuery().queryKey,
+      });
       void navigate({
         to: "/$tenant/$project/repositories",
         params: outcome.partition,
@@ -315,12 +316,8 @@ export function ProjectCreation(props: {
   readonly lead?: ReactNode;
 }): ReactNode {
   const offer = projectCreationWorkspaceOffer(
-    usePanelCallerResource(callerTenantsResource, (ports) =>
-      apiCallerTenants(ports),
-    ),
-    usePanelCallerResource(siteAbilitiesResource, (ports) =>
-      apiSiteAbilities(ports),
-    ),
+    usePanelState(callerTenantsQuery()),
+    usePanelState(callerSiteAbilitiesQuery()),
     props.workspace,
   );
   if (offer.offer === "Withheld")

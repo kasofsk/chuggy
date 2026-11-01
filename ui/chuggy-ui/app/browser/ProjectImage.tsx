@@ -17,16 +17,10 @@ import type {
   PartitionIdentity,
 } from "../../../../src/contract/http.ts";
 import type { ProjectArtifactResponse } from "../../../../src/contract/responses.ts";
-import { apiProjectArtifact } from "../core/apiRoutes.ts";
 import { conversationBase64 } from "../core/conversationAttachments.ts";
-import { projectResourceKey } from "../core/projectQueryKeys.ts";
-import { usePanelResource } from "./api.ts";
+import { projectImageQuery } from "../core/projectQueries.ts";
+import { usePanelState } from "./api.ts";
 import { PanelUnready } from "./DataPanel.tsx";
-
-/** The resource one image is read under, beside the project's other reads. */
-export function projectImageResource(artifact: string): string {
-  return `artifacts/${artifact}`;
-}
 
 export function ProjectImage(props: {
   readonly partition: PartitionIdentity;
@@ -34,12 +28,8 @@ export function ProjectImage(props: {
   readonly alt: string;
   readonly className: string;
 }): ReactNode {
-  const state = usePanelResource(
-    props.partition,
-    "Project",
-    projectImageResource(props.artifact),
-    (ports, signal) =>
-      apiProjectArtifact(ports, props.partition, props.artifact, signal),
+  const state = usePanelState(
+    projectImageQuery(props.partition, props.artifact),
   );
   if (state.state !== "Ready") return <PanelUnready state={state} />;
   return (
@@ -62,9 +52,6 @@ export function useProjectImageHeld(
       content: conversationBase64(content),
       encoding: "base64",
     };
-    client.setQueryData(
-      projectResourceKey(partition, "Project", projectImageResource(artifact)),
-      read,
-    );
+    client.setQueryData(projectImageQuery(partition, artifact).queryKey, read);
   };
 }

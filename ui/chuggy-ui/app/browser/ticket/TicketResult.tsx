@@ -9,6 +9,7 @@
  * A work summary that is refused draws the result's report instead.
  */
 
+import { useQueries } from "@tanstack/react-query";
 import { useState } from "react";
 import type { ReactNode } from "react";
 
@@ -17,7 +18,7 @@ import type {
   ExecutionResponse,
   OutputContentResponse,
 } from "../../../../../src/contract/responses.ts";
-import { apiOutputContent } from "../../core/apiRoutes.ts";
+import { outputContentQuery } from "../../core/executionQueries.ts";
 import type { PanelState } from "../../core/freshness.ts";
 import {
   runResultCommandsRead,
@@ -26,15 +27,15 @@ import {
 } from "../../core/runResult.ts";
 import type { RunCommand, RunResultOpened } from "../../core/runResult.ts";
 import { runCommandTone } from "../../core/tones.ts";
-import { usePanelResource, usePanelResourcesHeld } from "../api.ts";
+import {
+  panelQueryState,
+  usePanelQueryOptions,
+  usePanelState,
+} from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { Disclosure } from "../ui/Disclosure.tsx";
 import { MarkdownReport } from "../ui/MarkdownReport.tsx";
 import { Pill } from "../ui/Pill.tsx";
-
-function runResultOutputResource(execution: string, ordinal: number): string {
-  return `${execution}/artifacts/${String(ordinal)}`;
-}
 
 /** One output of one execution, read as the details' preview reads it. */
 function useRunResultOutput(
@@ -42,16 +43,12 @@ function useRunResultOutput(
   execution: string,
   ordinal: number,
 ): PanelState<OutputContentResponse> {
-  return usePanelResource(
-    partition,
-    "Execution",
-    runResultOutputResource(execution, ordinal),
-    (ports) => apiOutputContent(ports, partition, execution, ordinal),
-  );
+  return usePanelState(outputContentQuery(partition, execution, ordinal));
 }
 
 /** The row's result expander, as its listing chose it and as the read of a
- * stage's commands, where one was opened, has answered since. */
+ * stage's commands, where one was opened, has answered since — answered from
+ * what a screen drawing that output already read, and never requested here. */
 export function useRunResultOpened(
   partition: PartitionIdentity,
   execution: string,
@@ -59,15 +56,15 @@ export function useRunResultOpened(
 ): RunResultOpened | undefined {
   const opened = read === undefined ? undefined : runResultOpenedOf(read);
   const commands = opened?.opened === "Commands" ? opened.commands : undefined;
-  const [held] = usePanelResourcesHeld(
-    partition,
-    "Execution",
-    commands === undefined
-      ? []
-      : [runResultOutputResource(execution, commands)],
-    (_resource, ports) =>
-      apiOutputContent(ports, partition, execution, commands ?? 0),
-  );
+  const options = usePanelQueryOptions();
+  const [held] = useQueries({
+    queries: (commands === undefined ? [] : [commands]).map((ordinal) => ({
+      ...options(outputContentQuery(partition, execution, ordinal)),
+      enabled: false,
+    })),
+    combine: (answers) => answers.map((answer) => panelQueryState(answer)),
+  });
+
   return opened === undefined
     ? undefined
     : runResultOpenedSettled(opened, held);

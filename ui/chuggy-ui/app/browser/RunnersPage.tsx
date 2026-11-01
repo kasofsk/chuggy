@@ -15,21 +15,20 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { WorkerPoolsResponse } from "../../../../src/contract/responses.ts";
-import {
-  apiExecutionPlacement,
-  apiMintWorkerPoolToken,
-  apiWorkerPools,
-} from "../core/apiRoutes.ts";
+import { apiMintWorkerPoolToken } from "../core/apiRoutes.ts";
 import { instantFigure } from "../core/figures.ts";
 import type { PanelState } from "../core/freshness.ts";
-import { projectResourceKey } from "../core/projectQueryKeys.ts";
+import {
+  executionPlacementQuery,
+  workerPoolsQuery,
+} from "../core/projectQueries.ts";
 import {
   runnerAddPlace,
   runnerCapabilityLabel,
   runnerTokenLifetimeSecs,
 } from "../core/runners.ts";
 import type { RunnerMint } from "../core/runners.ts";
-import { useApiPorts, usePanelResource } from "./api.ts";
+import { useApiPorts, usePanelState } from "./api.ts";
 import { PanelUnready } from "./DataPanel.tsx";
 import { RunnerAskForm } from "./RunnerAsk.tsx";
 import { RunnerSteps } from "./RunnerSteps.tsx";
@@ -42,10 +41,6 @@ import { Figure } from "./ui/Figure.tsx";
 import { Notice } from "./ui/Notice.tsx";
 import { Panel } from "./ui/Panel.tsx";
 import { Table } from "./ui/Table.tsx";
-import { executionPlacementResource } from "./workRunner.tsx";
-
-/** No frame names this read, so the partition's own refetch is what reaches it. */
-const workerPoolsResource = "worker-pools";
 
 /** This page's own address, which its reads are from. */
 export const runnersRoutePath = "/$tenant/$project/runners";
@@ -156,11 +151,7 @@ function RunnersSection(props: {
           onDone={() => {
             setMint({ mint: "Idle" });
             void client.invalidateQueries({
-              queryKey: projectResourceKey(
-                partition,
-                "Project",
-                workerPoolsResource,
-              ),
+              queryKey: workerPoolsQuery(partition).queryKey,
             });
           }}
         />
@@ -185,18 +176,8 @@ export function RunnersPage(): ReactNode {
     tenant: params.tenant,
     project: params.project,
   };
-  const placement = usePanelResource(
-    partition,
-    "Project",
-    executionPlacementResource,
-    (ports) => apiExecutionPlacement(ports, partition),
-  );
-  const pools = usePanelResource(
-    partition,
-    "Project",
-    workerPoolsResource,
-    (ports) => apiWorkerPools(ports, partition),
-  );
+  const placement = usePanelState(executionPlacementQuery(partition));
+  const pools = usePanelState(workerPoolsQuery(partition));
   return (
     <div className="grid min-w-0 max-w-settings gap-4">
       <ScreenTitle>Runners</ScreenTitle>

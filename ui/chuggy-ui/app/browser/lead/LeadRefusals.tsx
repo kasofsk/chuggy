@@ -15,19 +15,16 @@ import type {
   AgenticRefusalResponse,
   AgenticRefusalsResponse,
 } from "../../../../../src/contract/responses.ts";
-import { apiAgenticRefusals } from "../../core/apiRoutes.ts";
 import { instantFigure } from "../../core/figures.ts";
 import { agenticRefusalStanding } from "../../core/leadTranscript.ts";
-import { projectListReread } from "../../core/projectQueryKeys.ts";
+import { agenticRefusalsQuery } from "../../core/sessionQueries.ts";
 import { agenticRefusalStandingTone } from "../../core/tones.ts";
-import { usePanelList } from "../api.ts";
+import { usePanelState } from "../api.ts";
 import { DataPanel } from "../DataPanel.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import { Table } from "../ui/Table.tsx";
-
-export const leadRefusalsListName = "lead";
 
 function LeadRefusalRow(props: {
   readonly refusal: AgenticRefusalResponse;
@@ -92,14 +89,7 @@ export function LeadRefusals(props: {
   readonly nowMs: number;
 }): ReactNode {
   const partition = props.partition;
-  const state = usePanelList(
-    projectListReread<AgenticRefusalsResponse>(
-      partition,
-      "AgenticRefusal",
-      leadRefusalsListName,
-    ),
-    (ports) => apiAgenticRefusals(ports, partition),
-  );
+  const state = usePanelState(agenticRefusalsQuery(partition));
   return (
     <DataPanel title="Refusals" state={state}>
       {(refusals) => (

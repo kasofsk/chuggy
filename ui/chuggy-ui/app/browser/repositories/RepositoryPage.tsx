@@ -16,20 +16,20 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ProjectRepositoryListedResponse } from "../../../../../src/contract/responses.ts";
-import { apiProjectRepositories } from "../../core/apiRoutes.ts";
+import { repositoryConfigurationsQuery } from "../../core/configurationQueries.ts";
 import { projectAbilityRefused } from "../../core/projectAbilities.ts";
+import { projectRepositoriesReachUnaskedQuery } from "../../core/projectQueries.ts";
 import {
   repositoryLabel,
   repositoryUnbound,
 } from "../../core/projectRepositories.ts";
 import { projectRepositoryBound } from "../../core/repositoryLanding.ts";
 import {
-  readProjectConfigurations,
   repositoryConfigurationRow,
   repositoryConfigurations,
 } from "../../core/repositoryConfigurations.ts";
 import { navRoutes } from "../../core/shellNav.ts";
-import { usePanelResource } from "../api.ts";
+import { usePanelState } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { useProjectAbilities } from "../projectAbilities.tsx";
 import { TopBarSlot } from "../shell/slots.tsx";
@@ -37,7 +37,6 @@ import { Breadcrumb, BreadcrumbLink } from "../ui/Breadcrumb.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
 import { Panel } from "../ui/Panel.tsx";
 import { Pill } from "../ui/Pill.tsx";
-import { projectRepositoriesReachUnaskedResource } from "./AddRepository.tsx";
 import {
   RepositoryImportButton,
   RepositoryImportLine,
@@ -50,10 +49,6 @@ import { RepositoryWorkflowFilesSection } from "./RepositoryWorkflowFilesSection
 /** This page's own address, which its reads take their partition from. */
 export const repositoryRoutePath = "/$tenant/$project/repositories/$repository";
 
-/** No frame names either read, so the partition's own refetch is what reaches
- * them; the revisions are the project's, so every repository's page shares one. */
-const repositoryConfigurationsResource = "repository-configurations";
-
 /** What this repository declares under `.chug/configurations`, and when it was last imported. */
 function RepositoryDeclared(props: {
   readonly partition: PartitionIdentity;
@@ -61,12 +56,7 @@ function RepositoryDeclared(props: {
 }): ReactNode {
   const partition = props.partition;
   const repository = props.binding.repository;
-  const state = usePanelResource(
-    partition,
-    "Configuration",
-    repositoryConfigurationsResource,
-    (ports) => readProjectConfigurations(ports, partition, true),
-  );
+  const state = usePanelState(repositoryConfigurationsQuery(partition));
   const importing = useRepositoryImportNow(
     partition,
     repository,
@@ -113,11 +103,8 @@ export function RepositoryPage(): ReactNode {
     project: params.project,
   };
   const repository = params.repository;
-  const bindings = usePanelResource(
-    partition,
-    "Project",
-    projectRepositoriesReachUnaskedResource,
-    (ports) => apiProjectRepositories(ports, partition, { reach: false }),
+  const bindings = usePanelState(
+    projectRepositoriesReachUnaskedQuery(partition),
   );
   const binding =
     bindings.state === "Ready"

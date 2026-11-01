@@ -11,40 +11,23 @@ import type {
   AccessProjectPeople,
 } from "../../../../../src/contract/accessPlane.ts";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
-import {
-  apiProjectAuthorities,
-  apiProjectPeople,
-} from "../../core/accessRoutes.ts";
 import type { PanelState } from "../../core/freshness.ts";
-import { projectResourceKey } from "../../core/projectQueryKeys.ts";
-import { usePanelResource } from "../api.ts";
-
-/** No frame names these reads, so the partition's own refetch and a change's invalidation are what reach them. */
-export const projectPermissionsResource = "access-authorities";
-
-export const projectPeopleResource = "access-people";
+import {
+  projectPeopleQuery,
+  projectPermissionsQuery,
+} from "../../core/projectQueries.ts";
+import { usePanelState } from "../api.ts";
 
 export function useProjectAuthorities(
   partition: PartitionIdentity,
 ): PanelState<AccessProjectAuthorities> {
-  return usePanelResource(
-    partition,
-    "Project",
-    projectPermissionsResource,
-    (ports) =>
-      apiProjectAuthorities(ports, partition.tenant, partition.project),
-  );
+  return usePanelState(projectPermissionsQuery(partition));
 }
 
 export function useProjectPeople(
   partition: PartitionIdentity,
 ): PanelState<AccessProjectPeople> {
-  return usePanelResource(
-    partition,
-    "Project",
-    projectPeopleResource,
-    (ports) => apiProjectPeople(ports, partition.tenant, partition.project),
-  );
+  return usePanelState(projectPeopleQuery(partition));
 }
 
 export async function projectPermissionsReread(
@@ -52,10 +35,8 @@ export async function projectPermissionsReread(
   partition: PartitionIdentity,
 ): Promise<void> {
   await Promise.all(
-    [projectPermissionsResource, projectPeopleResource].map((resource) =>
-      client.invalidateQueries({
-        queryKey: projectResourceKey(partition, "Project", resource),
-      }),
+    [projectPermissionsQuery(partition), projectPeopleQuery(partition)].map(
+      (query) => client.invalidateQueries({ queryKey: query.queryKey }),
     ),
   );
 }

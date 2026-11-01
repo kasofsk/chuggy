@@ -24,7 +24,7 @@ import type {
 import { useCallback, useEffect } from "react";
 import type { ReactNode } from "react";
 
-import { apiProjectInventoryAll } from "../core/apiRoutes.ts";
+import { projectsInventoryQuery } from "../core/tenantQueries.ts";
 import { catalogQueryOf } from "../core/catalogConfigurations.ts";
 import type { CatalogQuery } from "../core/catalogConfigurations.ts";
 import {
@@ -46,7 +46,7 @@ import { ticketDuplicateQueryOf } from "../core/ticketDuplicate.ts";
 import { ticketListQueryOf } from "../core/ticketListView.ts";
 import type { TicketListQuery } from "../core/ticketListView.ts";
 import type { TicketDuplicateQuery } from "../core/ticketDuplicate.ts";
-import { usePanelInventory } from "./api.ts";
+import { usePanelState } from "./api.ts";
 import { CatalogPage } from "./catalog/CatalogPage.tsx";
 import { DataPanel } from "./DataPanel.tsx";
 import { ForgeCallbackPage } from "./ForgeCallbackPage.tsx";
@@ -80,7 +80,7 @@ import { EmptyState } from "./ui/EmptyState.tsx";
 
 export function Landing(): ReactNode {
   const navigate = useNavigate();
-  const state = usePanelInventory((ports) => apiProjectInventoryAll(ports));
+  const state = usePanelState(projectsInventoryQuery());
   const chosen =
     state.state === "Ready"
       ? lastProjectOrFirst(lastProjectRead(persistentStore), state.value)

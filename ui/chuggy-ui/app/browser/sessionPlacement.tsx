@@ -4,17 +4,16 @@
  * or the reader's chat host, cannot take a turn now.
  */
 
+import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { SessionPlacementResponse } from "../../../../src/contract/responses.ts";
-import { apiSessionPlacement } from "../core/apiRoutes.ts";
 import type { PanelState } from "../core/freshness.ts";
-import { projectResourceKey } from "../core/projectQueryKeys.ts";
+import { sessionPlacementQuery } from "../core/projectQueries.ts";
 import { navRoutes } from "../core/shellNav.ts";
 import {
-  sessionPlacementPolledMs,
   sessionPlacementShort,
   sessionRunnerAdded,
   sessionRunnerNoticeWord,
@@ -24,28 +23,18 @@ import type {
   SessionRunnerShort,
 } from "../core/sessionRunners.ts";
 import { settingsRoutes } from "../core/settingsNav.ts";
-import {
-  usePanelAnswers,
-  usePanelReread,
-  usePanelResourceSettled,
-} from "./api.ts";
+import { usePanelAnswers, usePanelState } from "./api.ts";
 import { Notice } from "./ui/Notice.tsx";
-
-/** No frame names the placement or a runner's poll, so the read is polled. */
-export const sessionPlacementResource = "session-placement";
 
 /** The placement, with whether its read has ever come back. */
 export function useSessionPlacementSettled(partition: PartitionIdentity): {
   readonly state: PanelState<SessionPlacementResponse>;
   readonly settled: boolean;
 } {
-  return usePanelResourceSettled(
-    partition,
-    "Project",
-    sessionPlacementResource,
-    (ports) => apiSessionPlacement(ports, partition),
-    sessionPlacementPolledMs,
-  );
+  return usePanelState(sessionPlacementQuery(partition), (state, answer) => ({
+    state,
+    settled: answer.isFetched,
+  }));
 }
 
 export function useSessionPlacement(
@@ -71,9 +60,7 @@ export function useSessionRunnerShort(
 /** How many times the placement has answered: every read that landed and
  * every write held as one moves it, and a failed read does not. */
 export function useSessionPlacementReads(partition: PartitionIdentity): number {
-  return usePanelAnswers(
-    projectResourceKey(partition, "Project", sessionPlacementResource),
-  );
+  return usePanelAnswers(sessionPlacementQuery(partition).queryKey);
 }
 
 /** Reads the placement again now, for a door whose refusal is newer than it:
@@ -82,9 +69,13 @@ export function useSessionPlacementReads(partition: PartitionIdentity): number {
 export function useSessionPlacementStale(
   partition: PartitionIdentity,
 ): () => Promise<number> {
-  return usePanelReread(
-    projectResourceKey(partition, "Project", sessionPlacementResource),
-  );
+  const client = useQueryClient();
+  const key = sessionPlacementQuery(partition).queryKey;
+  return async () => {
+    const reads = client.getQueryState(key)?.dataUpdateCount ?? 0;
+    await client.invalidateQueries({ queryKey: key });
+    return reads;
+  };
 }
 
 function SessionRunnerAddLink(props: {

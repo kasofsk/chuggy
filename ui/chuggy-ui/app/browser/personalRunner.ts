@@ -6,25 +6,15 @@
 import type { QueryClient } from "@tanstack/react-query";
 
 import type { PersonalRunnerResponse } from "../../../../src/contract/responses.ts";
-import { apiPersonalRunner } from "../core/apiRoutes.ts";
 import type { PanelState } from "../core/freshness.ts";
-import { tenantResourceKey } from "../core/projectQueryKeys.ts";
-import { sessionPlacementPolledMs } from "../core/sessionRunners.ts";
-import { usePanelTenantResource } from "./api.ts";
-
-/** No frame says a runner polled, so the read is polled at the pace a session's standing is. */
-export const personalRunnerResource = "personal-runner";
+import { personalRunnerQuery } from "../core/tenantQueries.ts";
+import { usePanelState } from "./api.ts";
 
 /** Answered as absent where the reader holds none. */
 export function usePersonalRunner(
   tenant: string,
 ): PanelState<PersonalRunnerResponse> {
-  return usePanelTenantResource(
-    tenant,
-    personalRunnerResource,
-    (ports) => apiPersonalRunner(ports, tenant),
-    sessionPlacementPolledMs,
-  );
+  return usePanelState(personalRunnerQuery(tenant));
 }
 
 export async function personalRunnerReread(
@@ -32,6 +22,6 @@ export async function personalRunnerReread(
   tenant: string,
 ): Promise<void> {
   await client.invalidateQueries({
-    queryKey: tenantResourceKey(tenant, personalRunnerResource),
+    queryKey: personalRunnerQuery(tenant).queryKey,
   });
 }

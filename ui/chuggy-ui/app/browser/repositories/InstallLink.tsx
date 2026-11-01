@@ -14,7 +14,6 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { ForgeAppName } from "../../../../../src/contract/rosters.ts";
-import { apiForgeApps } from "../../core/apiRoutes.ts";
 import {
   forgeInstallBegin,
   forgeInstallLabel,
@@ -22,13 +21,10 @@ import {
   forgeInstallState,
   forgeInstallUrl,
 } from "../../core/forgeInstallation.ts";
-import { usePanelTenantResource } from "../api.ts";
+import { forgeAppsQuery } from "../../core/tenantQueries.ts";
+import { usePanelState } from "../api.ts";
 import { drawBytes, transientStore } from "../ports.ts";
 import { buttonLookClassName } from "../ui/Button.tsx";
-
-/** No frame names this read; what reaches it is whichever refresh the scope
- * it is read under follows. */
-export const forgeAppsResource = "forge-apps";
 
 export function InstallLink(props: {
   readonly tenant: string;
@@ -38,9 +34,7 @@ export function InstallLink(props: {
   readonly label?: string;
 }): ReactNode {
   const tenant = props.tenant;
-  const state = usePanelTenantResource(tenant, forgeAppsResource, (ports) =>
-    apiForgeApps(ports),
-  );
+  const state = usePanelState(forgeAppsQuery(tenant));
   const [installState] = useState(() => forgeInstallState(drawBytes));
   const held =
     state.state === "Ready"
