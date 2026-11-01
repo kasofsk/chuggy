@@ -26,16 +26,23 @@ import { InboxScreen } from "../app/browser/Inbox.tsx";
 import {
   answer,
   apiDouble,
+  heldAnswer,
   openedStream,
   operationAt,
   ScreenHarness,
+  press,
   settled,
   turned,
 } from "./screenHarness.tsx";
 import type { ApiDouble } from "./screenHarness.tsx";
 import { frame } from "./streamDouble.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
-import { inboxAnswered, inboxEntry } from "./inboxFixture.ts";
+import {
+  inboxAnswered,
+  inboxAsked,
+  inboxBody,
+  inboxEntry,
+} from "./inboxFixture.ts";
 import { leadRefusals } from "./leadFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import {
@@ -527,3 +534,108 @@ test.each(inboxFrames)(
     expect(asked.filter((url) => !url.includes("/inbox"))).toStrictEqual([]);
   },
 );
+
+/** A second escalated ticket, which the inbox's second page holds. */
+const escalatedLater: ProjectTicket = {
+  ...escalated,
+  ticket: 5,
+  title: "Serve the second reason",
+};
+
+/** The inbox answered in two pages, the first carrying `first` and naming a
+ * cursor to the second, which holds the later escalation; every other route
+ * answers as `served` does. Each inbox read is recorded by the cursor it
+ * asked from, and a read of the first page while `holding` answers once its
+ * held answer is released. */
+function drawInboxPaged(first: () => ProjectTicket) {
+  const asked: (string | null)[] = [];
+  const holds: ReturnType<typeof heldAnswer>[] = [];
+  const paging = { holding: false };
+  const api = apiDouble({
+    operation: operationAt("Pending"),
+    route: (url) => served(url),
+  });
+  const pages = (url: string): Response | Promise<Response> => {
+    const cursor = new URL(url, "http://stub").searchParams.get("cursor");
+    asked.push(cursor);
+    if (cursor !== null) return answer(inboxBody([inboxEntry(escalatedLater)]));
+    const page = (): Response =>
+      answer(
+        inboxBody([inboxEntry(first())], { count: 2, nextCursor: "inbox-2" }),
+      );
+    if (!paging.holding) return page();
+    const hold = heldAnswer();
+    holds.push(hold);
+    return hold.answered.then(page);
+  };
+  const server = drawInboxOver({
+    ...api,
+    fetch: ((url: string, init?: RequestInit) =>
+      inboxAsked(url)
+        ? Promise.resolve(pages(url))
+        : api.fetch(url, init)) as typeof fetch,
+  });
+  return { asked, holds, paging, server };
+}
+
+test("a more pressed while the inbox is read again keeps its page and a frame folded meanwhile, and the read is asked again for the pages held", async () => {
+  let run: unknown = undefined;
+  const drawn = drawInboxPaged(() =>
+    run === undefined
+      ? escalated
+      : {
+          ...escalated,
+          latestExecution: ticketLatestExecutionSchema.parse(run),
+        },
+  );
+  await settled();
+  drawn.paging.holding = true;
+  await turned(() => {
+    drawn.server.push(
+      frame("Ticket", "7", {
+        version: 1,
+        resource: "4",
+        representation: escalated,
+      }),
+    );
+  });
+  run = failedRun;
+  await turned(() => {
+    drawn.server.push(
+      frame("Execution", "8", {
+        version: 1,
+        resource: "e4",
+        representation: failedRun,
+      }),
+    );
+  });
+  await settled();
+  expect(screen.getByText("Failed")).toBeDefined();
+  const pressedAt = drawn.asked.length;
+  await press("more");
+  expect(screen.getByText("Serve the second reason")).toBeDefined();
+  expect(screen.getByText("Failed")).toBeDefined();
+  const [stale, restarted] = drawn.holds;
+  stale?.release(answer({}));
+  await settled();
+  expect(screen.getByText("Serve the second reason")).toBeDefined();
+  restarted?.release(answer({}));
+  await settled();
+  expect(screen.getByText("Serve the reason")).toBeDefined();
+  expect(screen.getByText("Serve the second reason")).toBeDefined();
+  expect(screen.getByText("Failed")).toBeDefined();
+  expect(drawn.asked.slice(pressedAt)).toStrictEqual([
+    "inbox-2",
+    null,
+    "inbox-2",
+  ]);
+});
+
+test("a more pressed while no read of the inbox is running starts none", async () => {
+  const drawn = drawInboxPaged(() => escalated);
+  await settled();
+  const pressedAt = drawn.asked.length;
+  await press("more");
+  expect(screen.getByText("Serve the second reason")).toBeDefined();
+  expect(drawn.asked.slice(pressedAt)).toStrictEqual(["inbox-2"]);
+});

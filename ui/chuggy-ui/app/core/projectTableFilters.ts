@@ -31,6 +31,13 @@ export const ticketFilterAll = "All";
 /** Every ticket, or the tickets in one phase. */
 export type TicketFilter = TicketPhase | typeof ticketFilterAll;
 
+/** The filter a word names, or undefined where it names none. */
+export function ticketFilterOf(word: unknown): TicketFilter | undefined {
+  return word === ticketFilterAll
+    ? ticketFilterAll
+    : phaseRoster.find((phase) => phase === word);
+}
+
 /** Undefined rather than every phase, because a read that names them all is a
  * read the route would answer the same way with a longer query. */
 export function ticketFilterPhases(

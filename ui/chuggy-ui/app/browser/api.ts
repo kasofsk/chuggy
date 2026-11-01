@@ -16,6 +16,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import type {
+  QueryClient,
   QueryKey,
   UseQueryResult,
   keepPreviousData,
@@ -69,6 +70,19 @@ export function panelQueryOptions<T>(
     refetchInterval: query.polledMs ?? false,
     staleTime: query.kept === "Streamed" && streamHolding ? Infinity : 0,
   });
+}
+
+/**
+ * After a press has written pages into a list's entry, the read of that entry
+ * running, if one is, started again. It gathered from the entry as it stood
+ * when it began, so it would land with fewer pages than the press wrote. The
+ * restart cancels it silently, keeping every write since it began, the frames
+ * folded among them, and gathers every page the entry now holds; a press that
+ * finds no read running starts none.
+ */
+export function panelReadRestarted(client: QueryClient, key: QueryKey): void {
+  if (client.isFetching({ queryKey: key, exact: true }) === 0) return;
+  void client.invalidateQueries({ queryKey: key, exact: true });
 }
 
 /** What turns a console query into the cache's options under this tab's ports

@@ -100,6 +100,15 @@ test("the address holds a search and a sort, and drops what names neither", () =
   expect(ticketListQueryOf({ q: ["gate"] })).toStrictEqual({});
 });
 
+test("the address holds a filter naming All or a phase, and drops one naming neither", () => {
+  expect(ticketListQueryOf({ filter: "Escalated" })).toStrictEqual({
+    filter: "Escalated",
+  });
+  expect(ticketListQueryOf({ filter: "All" })).toStrictEqual({ filter: "All" });
+  for (const filter of ["NeedsYou", "escalated", ["Done"], 3, null])
+    expect(ticketListQueryOf({ filter })).toStrictEqual({});
+});
+
 test("a search written by hand in the address is read as the text it was", () => {
   for (const [address, q] of [
     ["?q=121", "121"],
@@ -126,4 +135,20 @@ test("a search or a sort written to the address keeps the other, and State is wr
   expect(
     ticketListQueryWith({ q: "gate", sort: "Newest" }, { q: undefined }),
   ).toStrictEqual({ sort: "Newest" });
+});
+
+test("a filter written to the address keeps the search and the sort, and All is written as itself", () => {
+  expect(
+    ticketListQueryWith({ q: "gate", sort: "Oldest" }, { filter: "Done" }),
+  ).toStrictEqual({ q: "gate", sort: "Oldest", filter: "Done" });
+  expect(
+    ticketListQueryWith({ filter: "Done" }, { filter: "All" }),
+  ).toStrictEqual({ filter: "All" });
+  expect(
+    ticketListQueryWith({ filter: "Done" }, { sort: "Newest" }),
+  ).toStrictEqual({ sort: "Newest", filter: "Done" });
+  expect(ticketListQueryWith({ filter: "Done" }, { q: "gate" })).toStrictEqual({
+    q: "gate",
+    filter: "Done",
+  });
 });
