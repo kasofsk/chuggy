@@ -19,7 +19,12 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { ChatPane } from "../app/browser/shell/ChatPane.tsx";
 import { useChatPane } from "../app/browser/shell/chatPaneHeld.ts";
 import type { ConsoleStore } from "../app/browser/store.ts";
+import { threadSendAt } from "../app/browser/thread/threadSends.ts";
 import { ThreadPage } from "../app/browser/ThreadPage.tsx";
+import {
+  threadSendRecordEmpty,
+  threadSendRecordName,
+} from "../app/core/threads.ts";
 import { consoleStoreBare } from "./consoleStoreBare.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { Routed } from "./routed.tsx";
@@ -27,7 +32,12 @@ import { answer, ScreenHarness, settled } from "./screenHarness.tsx";
 import { elementScrollToStubbed } from "./scrolling.ts";
 import { streamServer } from "./streamDouble.ts";
 import { styleless } from "./styleless.ts";
-import { threadBody, threadEntry, threadPartition } from "./threadFixture.ts";
+import {
+  threadBody,
+  threadEntry,
+  threadHome,
+  threadPartition,
+} from "./threadFixture.ts";
 import {
   stageAnswered,
   stageBox,
@@ -124,6 +134,7 @@ function PaneHeld(): ReactNode {
 type Screen = "Pane" | "Page" | "Elsewhere";
 
 interface Drawn {
+  readonly store: ConsoleStore;
   readonly to: (shown: Screen) => Promise<void>;
 }
 
@@ -159,6 +170,7 @@ async function drawn(shown: Screen, strict = false): Promise<Drawn> {
   const view = render(tree(shown), { reactStrictMode: strict });
   await settled();
   return {
+    store,
     to: async (at) => {
       view.rerender(tree(at));
       await settled();
@@ -304,7 +316,7 @@ function threadDrawn(): boolean {
   return document.querySelector("[role=region][data-fills-page]") !== null;
 }
 
-test("a first message whose thread opened but whose send was refused in view draws that thread after the pane collapsed and expanded, and the next message opens no second thread", async () => {
+test("a first message whose thread opened but whose send was refused in view keeps the first box after the pane collapsed and expanded, and the next message reaches that thread, whose read hands over to it", async () => {
   const listed: string[] = [];
   const site = siteStubbed(listed);
   await drawn("Pane");
@@ -317,9 +329,7 @@ test("a first message whose thread opened but whose send was refused in view dra
 
   await collapsed();
   await expanded();
-  await waitFor(() => {
-    expect(threadDrawn()).toBe(true);
-  });
+  expect(threadDrawn()).toBe(false);
   await stageSent(words);
   await settled();
   expect(site.opens).toHaveLength(1);
@@ -327,7 +337,76 @@ test("a first message whose thread opened but whose send was refused in view dra
     opened,
     opened,
   ]);
+  const sent = site.sends[1];
+  await stageAnswered(sent, { turn: sent?.turn, ordinal: 1 }, 202);
+  await waitFor(() => {
+    expect(threadDrawn()).toBe(true);
+  });
 });
+
+test("a first press whose open's answer was lost while its box was drawn, pressed again after the pane collapsed and expanded, opens under the same key", async () => {
+  const site = siteStubbed([], true);
+  await drawn("Pane");
+  await stageSent(words);
+  await settled();
+  await act(async () => {
+    site.opens[0]?.(answer({ error: { code: "InternalError" } }, 500));
+    await Promise.resolve();
+  });
+  await settled();
+  expect(stageBox().value).toBe(words);
+
+  await collapsed();
+  await expanded();
+  await stageSent(words);
+  await settled();
+  expect(site.opens).toHaveLength(2);
+  expect(site.keys[1], "the open drew a fresh key").toStrictEqual(site.keys[0]);
+});
+
+/** The thread `session` chosen out of the pane's history. */
+async function picked(session: string): Promise<void> {
+  fireEvent.keyDown(screen.getByRole("button", { name: "History" }), {
+    key: "ArrowDown",
+  });
+  const row = await screen.findByRole("menuitemradio", {
+    name: new RegExp(`^${session}`, "u"),
+  });
+  await act(async () => {
+    fireEvent.click(row);
+    await Promise.resolve();
+  });
+  await settled();
+}
+
+test.each([
+  ["picking a thread", () => picked(held)],
+  ["opening one with New", () => pressed("New")],
+])(
+  "during a start, %s draws it and empties the first record",
+  async (_, ended) => {
+    const listed: string[] = [];
+    const site = siteStubbed(listed);
+    const tab = await drawn("Pane");
+    await stageSent(words);
+    await settled();
+    await stageAnswered(site.sends[0], refusal, 400);
+    listed.push(held);
+    await collapsed();
+    await expanded();
+    const first = threadSendRecordName(threadHome, undefined);
+    expect(threadSendAt(tab.store.getState(), first).opened).toBe(opened);
+    expect(threadDrawn()).toBe(false);
+
+    await ended();
+    await waitFor(() => {
+      expect(threadDrawn()).toBe(true);
+    });
+    expect(threadSendAt(tab.store.getState(), first)).toBe(
+      threadSendRecordEmpty,
+    );
+  },
+);
 
 test("a first message answered while the pane is collapsed is drawn in its thread on expanding, through the read of that thread", async () => {
   const site = siteStubbed([]);

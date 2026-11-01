@@ -519,6 +519,12 @@ function useChatPaneDoor(partition: PartitionIdentity): {
  * the listing says takes nothing more goes, drawn or not, since its box would
  * hold it read-only. Each project has its own record, so a send that answers
  * after the project changed lands in its own.
+ *
+ * THE START ENDS ONLY WITH THAT READ, A PICK, NEW'S OPEN OR ITS REFUSAL, and
+ * the project's first record ends with it. A refused first message leaves the
+ * start standing, so the first box stays drawn, over the thread its open
+ * answered if there was one, until a message is taken or the reader picks or
+ * opens a thread; a collapse ends none of it.
  */
 function useChatPaneOpenHeld(partition: PartitionIdentity): {
   readonly threads: readonly ThreadEntryResponse[] | undefined;

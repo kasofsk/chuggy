@@ -8,6 +8,10 @@
  * while no box that pressed was drawn goes in the thread's box when one is,
  * said as its own last press, unless the thread takes nothing more.
  *
+ * A BOX GOING ENDS NOTHING OF ITS RECORD. A first box's ends as
+ * `threadSends.ts` says, so the next first box drawn draws what it left, a
+ * refusal's note among it, as any thread's box does.
+ *
  * A REFUSAL IS SAID IN ONE LINE: what was not done, with no code of the API's.
  */
 
@@ -23,11 +27,7 @@ import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { memberChatDoor } from "../../core/memberChat.ts";
 import { hostedRunsQuery } from "../../core/projectQueries.ts";
 import { chatHostQuery } from "../../core/tenantQueries.ts";
-import {
-  threadHomeFromNamed,
-  threadHomeNamed,
-  threadHomeOf,
-} from "../../core/threadHome.ts";
+import { threadHomeOf } from "../../core/threadHome.ts";
 import type { ThreadHome } from "../../core/threadHome.ts";
 import {
   threadKeptClosed,
@@ -60,7 +60,6 @@ import { useConsoleDispatch, useConsoleSelector } from "../store.ts";
 import { Notice } from "../ui/Notice.tsx";
 import {
   threadSendAt,
-  threadSendFirstDrawn,
   threadSendIdledAt,
   threadSendKeptAttached,
   threadSendKeptClosed,
@@ -234,35 +233,24 @@ function useThreadSendDrawn(): () => boolean {
   return useCallback(() => drawn.current, []);
 }
 
-/**
- * What the record lets go of for what is drawn: the messages the read lists,
- * what is kept for a thread that takes nothing more, and a first box's record
- * once no first box of its home is drawn.
- */
+/** What the record lets go of for what is drawn: the messages the read lists,
+ * and what is kept for a thread that takes nothing more. */
 function useThreadSendLetGo(
   name: string,
-  home: ThreadHome,
   made: {
-    readonly first: boolean;
     readonly unlisted: boolean;
     readonly listed: readonly string[];
     readonly closed: boolean;
   },
 ): void {
   const dispatch = useConsoleDispatch();
-  const { first, unlisted, listed, closed } = made;
-  const named = threadHomeNamed(home);
+  const { unlisted, listed, closed } = made;
   useEffect(() => {
     if (unlisted) dispatch(threadSendListedAt({ name, listed }));
   }, [unlisted, listed, name, dispatch]);
   useEffect(() => {
     if (closed) dispatch(threadSendKeptClosed(name));
   }, [closed, name, dispatch]);
-  useEffect(() => {
-    if (first)
-      return dispatch(threadSendFirstDrawn(threadHomeFromNamed(named)));
-    return undefined;
-  }, [first, named, dispatch]);
 }
 
 /** What is kept for the thread, handed to its box. */
@@ -297,8 +285,7 @@ function useThreadSendAt(
   const listed = input.listed ?? threadSendNothingListed;
   const sending = threadSendingWithout(record.sending, listed);
   const closed = threadKeptClosed(record, input.takes);
-  useThreadSendLetGo(name, home, {
-    first: input.session === undefined,
+  useThreadSendLetGo(name, {
     unlisted: sending !== record.sending,
     listed,
     closed,

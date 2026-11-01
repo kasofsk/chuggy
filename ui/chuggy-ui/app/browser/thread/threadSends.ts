@@ -23,6 +23,14 @@
  * its message is taken, so a press after a failed open reaches the thread that
  * one may have opened, and one after a failed send the thread it opened.
  *
+ * WHAT ENDS A FIRST RECORD IS SOMETHING THAT HAPPENED, AND A BOX GOING IS NOT
+ * THAT. A project's ends as its pane's start does: the thread a first message
+ * opened read, a thread picked or opened with New, or New refused. A member's
+ * has no pane, so it ends once its message is taken. Either leaves a press
+ * still out or a message kept, and a stop answered after its record ended
+ * writes nothing. So a refused first message keeps its key and the thread its
+ * open answered however often its box is drawn again.
+ *
  * THE GRANT IS ASKED ONLY WHERE THE THREAD RUNS IN CLUSTER. A member's own
  * chat asks none, and carries no images, which only a project keeps.
  *
@@ -36,7 +44,12 @@
  * goes to the thread it reached; a send handed back leaves nothing to stop.
  *
  * IMAGES AND SENDS ON THEIR WAY ARE `extra`'s, by turn, since bytes and
- * promises never enter the store. An image goes once no record names its turn.
+ * promises never enter the store. A kept message's images are always held. A
+ * press the door took back in a drawn box holds its own only where its turn
+ * holds them already or fewer turns hold any than the mailbox takes, and past
+ * that a retry is a turn of its own. An image goes at the pruning after a
+ * press ends or a kept message is let go, once no record names its turn, so
+ * a record a reducer emptied gives its images up at the next one.
  */
 
 import { createSlice } from "@reduxjs/toolkit";
@@ -61,7 +74,11 @@ import {
   sessionPlacementQuery,
 } from "../../core/projectQueries.ts";
 import { sessionRefusedNoRunner } from "../../core/sessionRunners.ts";
-import { apiOpenThreadAt, apiStopThreadTurnAt } from "../../core/threadHome.ts";
+import {
+  apiOpenThreadAt,
+  apiStopThreadTurnAt,
+  threadHomeOf,
+} from "../../core/threadHome.ts";
 import type { ThreadHome } from "../../core/threadHome.ts";
 import { threadMessageSent } from "../../core/threadSendRun.ts";
 import {
@@ -78,7 +95,6 @@ import {
   threadSendIdled,
   threadSendListed,
   threadSendOpened,
-  threadSendRecordEmpty,
   threadSendRecordName,
   threadSendRecordOf,
   threadSendRecordWith,
@@ -104,10 +120,13 @@ import type {
 } from "../../core/threads.ts";
 import { drawBytes } from "../ports.ts";
 import {
+  chatPaneOpenedAt,
   chatPaneOpeningAt,
+  chatPanePickedAt,
   chatPaneReadAt,
   chatPaneRecordAt,
   chatPaneStartingAt,
+  chatPaneStayedAt,
 } from "../shell/chatPanes.ts";
 import type { ChatPanesHeld } from "../shell/chatPanes.ts";
 import type {
@@ -123,6 +142,16 @@ interface ThreadSendAt {
 }
 
 const threadSendRecordsEmpty: ThreadSendRecords = {};
+
+/** The records once a project's pane ends its start, with that project's
+ * first record left as `threadSendFirstLeft` says. */
+function threadSendStartEnded(
+  records: ThreadSendRecords,
+  partition: PartitionIdentity,
+): ThreadSendRecords {
+  const name = threadSendRecordName(threadHomeOf(partition), undefined);
+  return threadSendRecordWith(records, name, threadSendFirstLeft);
+}
 
 /** The reducer that writes one record as `move` says. */
 function threadSendMove<P extends ThreadSendAt>(
@@ -179,6 +208,21 @@ export const threadSends = createSlice({
         },
       ) => threadStopTakenBack(record, payload.turn, payload.stop),
     ),
+  },
+  extraReducers: (builder) => {
+    builder
+      .addCase(chatPaneReadAt, (records, action) =>
+        threadSendStartEnded(records, action.payload),
+      )
+      .addCase(chatPaneStayedAt, (records, action) =>
+        threadSendStartEnded(records, action.payload),
+      )
+      .addCase(chatPanePickedAt, (records, action) =>
+        threadSendStartEnded(records, action.payload.partition),
+      )
+      .addCase(chatPaneOpenedAt, (records, action) =>
+        threadSendStartEnded(records, action.payload.partition),
+      );
   },
   selectors: {
     threadSendAt: (records, name: string) => threadSendRecordOf(records, name),
@@ -344,6 +388,20 @@ function threadSendImagesPruned(
     if (!named.has(turn)) carried.images.delete(turn);
 }
 
+/** Whether a press the door did not take holds its images for a retry: a
+ * kept message's always, since they are the reader's message, and otherwise
+ * where its turn holds them already or fewer turns hold any than the mailbox
+ * takes. */
+function threadSendImagesHeld(
+  carried: ThreadSendsCarried,
+  turn: string,
+  away: boolean,
+): boolean {
+  return (
+    away || carried.images.has(turn) || carried.images.size < threadBacklogMax
+  );
+}
+
 /** One press, as the box that pressed hands it over. */
 export interface ThreadSendPress {
   readonly home: ThreadHome;
@@ -385,8 +443,8 @@ function threadSendSession(
 }
 
 /** What a message taken changes beyond its record: a member's own chat read
- * again, and a project's first message handed over to the pane, with the
- * grant its open proved. */
+ * again, and its first record ended, since no pane starts it; and a project's
+ * first message handed over to the pane, with the grant its open proved. */
 function threadSendLanded(
   press: ThreadSendPress,
   session: string,
@@ -395,6 +453,12 @@ function threadSendLanded(
     const { home } = press;
     if (home.scope === "Member") {
       void memberChatReread(extra.client, home.tenant, session);
+      if (press.session === undefined)
+        dispatch(
+          threadSendFirstLeftAt({
+            name: threadSendRecordName(home, undefined),
+          }),
+        );
       return;
     }
     if (press.session !== undefined) return;
@@ -467,7 +531,12 @@ export function threadSendPressed(
     let back = false;
     const said = (send: ThreadSend): void => {
       const away = press.drawn?.() !== true;
-      if (send.send !== "Sent") carried.images.set(turn, attached);
+      if (
+        send.send !== "Sent" &&
+        attached.length > 0 &&
+        threadSendImagesHeld(carried, turn, away)
+      )
+        carried.images.set(turn, attached);
       dispatch(threadSendEndedAt({ name, sent, send, away }));
       threadSendImagesPruned(getState().threadSends, carried);
       back = send.send !== "Sent" && !away;
@@ -557,43 +626,6 @@ export function threadSendKeptListed(
       if (threadKeptClosed(record, threadTakesMessages(thread)))
         dispatch(threadSendKeptClosed(name));
     }
-  };
-}
-
-/** A first box went. Where its record empties, a project's pane ends the
- * start too, so it draws the thread an open answered rather than a first box
- * that would open another. */
-function threadSendFirstGone(home: ThreadHome): ThreadSendsThunk<void> {
-  return (dispatch, getState) => {
-    const name = threadSendRecordName(home, undefined);
-    dispatch(threadSendLetGo(threadSendFirstLeftAt({ name })));
-    const emptied = threadSendAt(getState(), name) === threadSendRecordEmpty;
-    if (emptied && home.scope === "Project")
-      dispatch(chatPaneReadAt(home.partition));
-  };
-}
-
-/**
- * A first box drawn, answering how it is let go. Its record goes only once no
- * first box of its home is drawn after the cleanup that let it go, so a box
- * drawn again at once, as `StrictMode` draws every box it mounts, keeps what
- * the box took in its first drawing.
- */
-export function threadSendFirstDrawn(
-  home: ThreadHome,
-): ThreadSendsThunk<() => void> {
-  return (dispatch, _getState, extra) => {
-    const name = threadSendRecordName(home, undefined);
-    const { firstDrawn } = extra.threadSends;
-    firstDrawn.set(name, (firstDrawn.get(name) ?? 0) + 1);
-    return () => {
-      const left = (firstDrawn.get(name) ?? 1) - 1;
-      if (left > 0) firstDrawn.set(name, left);
-      else firstDrawn.delete(name);
-      queueMicrotask(() => {
-        if (!firstDrawn.has(name)) dispatch(threadSendFirstGone(home));
-      });
-    };
   };
 }
 

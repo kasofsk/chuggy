@@ -290,6 +290,23 @@ test("a first message opens a thread of the reader's own chat, and the page move
   styleless();
 });
 
+test("a first message taken leaves nothing of it drawn back on the first box", async () => {
+  const router = await mountedAt(`/tenants/${tenant}/chat`);
+  await sent("hello");
+  expect(router.state.location.pathname).toBe(
+    `/tenants/${tenant}/chat/${openedSession}`,
+  );
+  await turned(() => {
+    void router.navigate({ to: "/tenants/$tenant/chat", params: { tenant } });
+  });
+  await settled();
+  expect(
+    screen.getByRole("heading", { level: 1, name: "New chat" }),
+  ).toBeDefined();
+  expect(screen.queryByText("hello")).toBeNull();
+  styleless();
+});
+
 test("a message sent to an open thread reads it again at once", async () => {
   await mountedAt(`/tenants/${tenant}/chat/${ownSession}`);
   const served = globalThis.fetch;

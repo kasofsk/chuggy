@@ -32,6 +32,7 @@ import {
   threadSendFirstLeft,
   threadSendOpened,
   threadSendRecordEmpty,
+  threadSendRecordWith,
   threadSendTaken,
   threadSendTurnsNamed,
   threadOpenAtLimit,
@@ -47,6 +48,8 @@ import {
   threadSendingWithout,
   threadSendStanding,
   threadStopFrom,
+  threadStopPressedOn,
+  threadStopTakenBack,
   threadStoppingWith,
   threadStoppingWithout,
   threadStoreDue,
@@ -340,6 +343,21 @@ describe("what a press of Stop came to", () => {
     expect(threadStopFrom({ outcome: "Absent" })).toStrictEqual({
       stop: "Refused",
     });
+  });
+
+  test("a stop answered once its record no longer names the turn leaves the record as it is, and writes no record", () => {
+    const answered = { stop: "Refused" } as const;
+    expect(threadStopTakenBack(threadSendRecordEmpty, "t1", answered)).toBe(
+      threadSendRecordEmpty,
+    );
+    const records = {};
+    expect(
+      threadSendRecordWith(records, "a", (record) =>
+        threadStopTakenBack(record, "t1", answered),
+      ),
+    ).toBe(records);
+    const stopping = threadStopPressedOn(threadSendRecordEmpty, "t1");
+    expect(threadStopTakenBack(stopping, "t1", answered).takenBack).toBe(1);
   });
 });
 
@@ -707,7 +725,7 @@ describe("what is kept for a thread that is not drawn", () => {
     expect(threadKeptClosed(threadSendRecordEmpty, false)).toBe(false);
   });
 
-  test("a first box leaves nothing unless a press is out or a message kept", () => {
+  test("a first record leaves nothing unless a press is out or a message kept", () => {
     const out = threadSendBegan(threadSendRecordEmpty, one);
     expect(threadSendFirstLeft(out)).toBe(out);
     const kept = pressed(threadSendRecordEmpty, one, true);

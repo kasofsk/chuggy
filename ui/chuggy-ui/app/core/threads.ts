@@ -390,6 +390,11 @@ export interface ThreadSendRecord {
   readonly opened: string | undefined;
 }
 
+/** A record per composer. A record is short, so the set is not bounded, and
+ * none is evicted: a first box's key dropped before its open answered would
+ * let the next press open a second thread. A kept message's images are never
+ * dropped either: they are the reader's message, and each needed a press whose
+ * box went before the door answered. */
 export type ThreadSendRecords = Readonly<Record<string, ThreadSendRecord>>;
 
 export const threadSendRecordEmpty: ThreadSendRecord = {
@@ -420,13 +425,16 @@ export function threadSendRecordOf(
   return records[name] ?? threadSendRecordEmpty;
 }
 
-/** The records with one written. */
+/** The records with one written, and the same records where `next` leaves
+ * it as it was. */
 export function threadSendRecordWith(
   records: ThreadSendRecords,
   name: string,
   next: (record: ThreadSendRecord) => ThreadSendRecord,
 ): ThreadSendRecords {
-  return { ...records, [name]: next(threadSendRecordOf(records, name)) };
+  const record = threadSendRecordOf(records, name);
+  const written = next(record);
+  return written === record ? records : { ...records, [name]: written };
 }
 
 /** A press began: drawn from now under its turn, and out until it ends. */
@@ -486,8 +494,9 @@ export function threadSendEnded(
   };
 }
 
-/** What a first box leaves when it goes: nothing, unless a press is still out
- * or a message is kept, so the next first box starts clean. */
+/** What a first record leaves once its start is over: nothing, unless a
+ * press is still out or a message is kept, so the next first box starts
+ * clean. */
 export function threadSendFirstLeft(
   record: ThreadSendRecord,
 ): ThreadSendRecord {
@@ -531,13 +540,15 @@ export function threadStopPressedOn(
 /**
  * A press of Stop taken back: at once and uncounted where the door handed its
  * message back, and counted where the door's answer stopped nothing, a refusal
- * said as the note.
+ * said as the note. Where the record no longer names the turn, as one ended
+ * since the press does not, it is left as it is.
  */
 export function threadStopTakenBack(
   record: ThreadSendRecord,
   turn: string,
   stop: ThreadStop | undefined,
 ): ThreadSendRecord {
+  if (!record.stopping.includes(turn)) return record;
   const stopping = threadStoppingWithout(record.stopping, turn);
   if (stop === undefined) return { ...record, stopping };
   const counted = { ...record, stopping, takenBack: record.takenBack + 1 };
