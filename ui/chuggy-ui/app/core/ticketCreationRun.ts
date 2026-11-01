@@ -180,12 +180,13 @@ export type TicketUpdateUnmade = Exclude<
 >;
 
 /** A creation's submit thrown as its refusal: the sentence its screen draws,
- * beside how it ended, which holds the draft the next submit goes back to. */
+ * beside how it ended, which holds the draft the next submit goes back to,
+ * and the held draft's failed read where that is why it ended. */
 export class TicketCreationRefused extends ConsoleWriteRefused {
   readonly ended: TicketCreationUnmade;
 
   constructor(sentence: string, ended: TicketCreationUnmade) {
-    super(sentence);
+    super(sentence, ended.created === "Refused" ? ended.unread : undefined);
     this.ended = ended;
   }
 }
