@@ -1,8 +1,9 @@
 /**
  * The pane's first composer across a project switch: a thread one project's
  * press opened, and the text that press kept, stay in that project, so a press
- * in the next one opens a thread of its own, and a first message still waited
- * on there keeps no thread of the next one off the screen.
+ * in the next one opens a thread of its own, a first message still waited
+ * on there keeps no thread of the next one off the screen, and one answered
+ * after the switch draws nothing of its thread in the next.
  */
 
 import { QueryClient } from "@tanstack/react-query";
@@ -45,15 +46,19 @@ const other: PartitionIdentity = { tenant: "acme", project: "borealis" };
 const otherHeld = "thread-borealis";
 
 /** Each project's open answers a thread named for that project, and the
- * listing of the first holds none, and of the other `listed`. */
-function doorsStubbed(
-  listed: readonly string[] = [],
-): StageDoors & { readonly opens: string[] } {
+ * listing of the first holds none, and of the other `listed`. Every path
+ * anything but a send asked for is kept in `asked`. */
+function doorsStubbed(listed: readonly string[] = []): StageDoors & {
+  readonly opens: string[];
+  readonly asked: string[];
+} {
   const doors: StageDoors = { batches: [[]], sends: [], stops: [] };
   const opens: string[] = [];
+  const asked: string[] = [];
   vi.stubGlobal(
     "fetch",
     stageDoor(doors, (url, method) => {
+      asked.push(url.pathname);
       if (url.pathname.endsWith(`/threads/${otherHeld}`))
         return answer(
           threadBody({ session: otherHeld, streamless: true, turns: [] }),
@@ -74,7 +79,7 @@ function doorsStubbed(
       );
     }),
   );
-  return { ...doors, opens };
+  return { ...doors, opens, asked };
 }
 
 function pane(server: StreamServer, partition: PartitionIdentity) {
@@ -139,4 +144,26 @@ test("a first message refused in one project keeps no thread of the next off the
     view.container.querySelector("[role=region][data-fills-page]"),
     "the thread the next project holds was not drawn",
   ).not.toBeNull();
+});
+
+test("a first message answered after a project switch reads nothing of its thread in the next", async () => {
+  const doors = doorsStubbed();
+  const server = streamServer([stageProjectOpening, stageProjectOpening]);
+  const view = render(pane(server, threadPartition));
+  await settled();
+  await stageSent("for atlas");
+  expect(doors.sends.map((sent) => sent.session)).toStrictEqual(["thread-a"]);
+
+  view.rerender(pane(server, other));
+  await settled();
+  const sent = doors.sends[0];
+  await stageAnswered(sent, { turn: sent?.turn, ordinal: 1 }, 202);
+
+  expect(
+    doors.asked.filter(
+      (path) => path.includes("/borealis/") && path.includes("thread-a"),
+    ),
+  ).toStrictEqual([]);
+  expect(screen.queryByText("for atlas")).toBeNull();
+  expect(stageBox().value).toBe("");
 });

@@ -283,8 +283,8 @@ function streamOutdatedRead(error: unknown): boolean {
 /**
  * Whether this console has met an answer whose shape it cannot read — a frame
  * the stream skipped, or a read whose document the schema refused — which is an
- * API newer than the console. Within the partition nothing unsets it, because
- * only a reload makes the console newer; leaving the partition unmounts it.
+ * API newer than the console. Nothing unsets it, because only a reload makes the
+ * console newer.
  */
 function useStreamOutdated(): readonly [boolean, () => void] {
   const client = useQueryClient();
