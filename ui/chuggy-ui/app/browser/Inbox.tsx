@@ -539,7 +539,7 @@ export function InboxScreen(props: {
           </Button>
         </div>
       )}
-      {inbox.reading ? <p className="panel-note">reading…</p> : null}
+      {inbox.reading ? <p className="panel-note">Loading…</p> : null}
     </>
   );
 }

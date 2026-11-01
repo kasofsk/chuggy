@@ -234,9 +234,7 @@ test("a revision the door refuses is said in its own words, and nothing is relea
   const updated: string[] = [];
   draw(held.ports, updated);
   submit();
-  await screen.findByText(
-    "the draft is closed to revision: only a pending ticket's draft can be revised",
-  );
+  await screen.findByText("Draft closed · Ticket no longer pending");
   expect(updated).toStrictEqual([]);
   expect(held.sent.some((one) => one.path.endsWith("/operations"))).toBe(false);
 });

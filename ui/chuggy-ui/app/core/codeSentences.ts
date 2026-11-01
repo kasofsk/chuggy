@@ -32,15 +32,15 @@ import type { ApiFailure } from "./apiRequest.ts";
 export function escalationKindSentence(kind: EscalationKind): string {
   switch (kind) {
     case "WorkFailureEscalated":
-      return "the work failed or its run did not finish";
+      return "Work failed or did not finish";
     case "EvaluationFailureEscalated":
-      return "this ticket has failed evaluation more times than rework allows";
+      return "Out of rework";
     case "WorkExecutionUnavailableEscalated":
-      return "the platform could not run this ticket's contract";
+      return "Work could not be run";
     case "EvaluationBlockedEscalated":
-      return "an evaluator could not run or its run did not finish";
+      return "Evaluation could not run or finish";
     case "FinalizationUnavailableEscalated":
-      return "the platform could not finalize this ticket";
+      return "Finalizing could not run";
   }
 }
 
@@ -58,15 +58,15 @@ export function nativeActionKindSentence(kind: NativeActionKind): string {
 export function operationStateSentence(state: OperationState): string {
   switch (state) {
     case "Pending":
-      return "the actor has not decided this yet";
+      return "Not decided yet";
     case "Succeeded":
-      return "the actor accepted it";
+      return "Accepted";
     case "Refused":
-      return "the actor refused it";
+      return "Not accepted";
     case "Answered":
-      return "the operation was answered without a decision being journaled";
+      return "Closed without a decision";
     case "Cancelled":
-      return "the operation was cancelled before it was decided";
+      return "Called off before a decision";
   }
 }
 
@@ -98,9 +98,9 @@ function operationRefusalTickets(tickets: readonly number[]): string {
 function operationRefusalTask(task: TaskIdentity): string {
   switch (task.type) {
     case "WorkTask":
-      return `the work of cycle ${String(task.value.cycle)}`;
+      return `cycle ${String(task.value.cycle)} work`;
     case "EvaluationTask":
-      return `evaluator ${String(task.value.evaluator)} of stage ${String(task.value.stage)}, generation ${String(task.value.generation)}, in work cycle ${String(task.value.workCycle)}`;
+      return `cycle ${String(task.value.workCycle)} stage ${String(task.value.stage)}`;
   }
 }
 
@@ -110,35 +110,35 @@ function operationRefusalTicketSentence(
 ): string {
   switch (refused.type) {
     case "TicketAlreadyExists":
-      return `${operationRefusalTicket(refused.value)} already exists, so there is nothing left to release`;
+      return `${operationRefusalTicket(refused.value)} already exists · Nothing to release`;
     case "DependenciesNotFound":
-      return `${operationRefusalTicket(refused.value.ticket)} depends on ${operationRefusalTickets(refused.value.dependencies)}, which the project has no ticket for`;
+      return `${operationRefusalTicket(refused.value.ticket)} depends on missing ${operationRefusalTickets(refused.value.dependencies)}`;
     case "DependenciesRevoked":
-      return `${operationRefusalTicket(refused.value.ticket)} cannot come to depend on ${operationRefusalTickets(refused.value.dependencies)}, which ${refused.value.dependencies.length === 1 ? "was" : "were"} revoked and will never be done; depend on a ticket that is still open`;
+      return `${operationRefusalTicket(refused.value.ticket)} depends on revoked ${operationRefusalTickets(refused.value.dependencies)} · Pick open ones`;
     case "DependencyCycle":
       return refused.value.dependencies.length === 1
-        ? `${operationRefusalTicket(refused.value.ticket)} cannot depend on ${operationRefusalTickets(refused.value.dependencies)}, which already waits on it, so neither could ever start`
-        : `${operationRefusalTicket(refused.value.ticket)} cannot depend on ${operationRefusalTickets(refused.value.dependencies)}, which already wait on it, so none of them could ever start`;
+        ? `${operationRefusalTickets(refused.value.dependencies)} already waits on ${operationRefusalTicket(refused.value.ticket)} · Cannot depend on it`
+        : `${operationRefusalTickets(refused.value.dependencies)} already wait on ${operationRefusalTicket(refused.value.ticket)} · Cannot depend on them`;
     case "SelfDependency":
-      return `${operationRefusalTicket(refused.value)} names itself as a dependency; revise it to depend only on other tickets`;
+      return `${operationRefusalTicket(refused.value)} depends on itself · Remove that dependency`;
     case "TicketNotFound":
-      return `the project has no ticket ${operationRefusalTicket(refused.value)}`;
+      return `No ticket ${operationRefusalTicket(refused.value)}`;
     case "TicketNotPending":
-      return `${operationRefusalTicket(refused.value)} is no longer pending, and only a pending ticket accepts this`;
+      return `${operationRefusalTicket(refused.value)} is no longer pending`;
     case "TicketIdentityMismatch":
-      return `what was submitted describes a different ticket from ${operationRefusalTicket(refused.value)}`;
+      return `Not the same ticket as ${operationRefusalTicket(refused.value)}`;
     case "TicketRevisionStale":
-      return `this was written against revision ${String(refused.value.expected)} of ${operationRefusalTicket(refused.value.ticket)}, which is at revision ${String(refused.value.current)} now`;
+      return `${operationRefusalTicket(refused.value.ticket)} moved from revision ${String(refused.value.expected)} to revision ${String(refused.value.current)}`;
     case "DependenciesIncomplete":
-      return `${operationRefusalTicket(refused.value.ticket)} waits on ${operationRefusalTickets(refused.value.dependencies)}, which ${refused.value.dependencies.length === 1 ? "is" : "are"} not done yet`;
+      return `${operationRefusalTicket(refused.value.ticket)} waits on ${operationRefusalTickets(refused.value.dependencies)} · Not done yet`;
     case "TicketNotRevocable":
-      return `${operationRefusalTicket(refused.value)} is past the point where it can be revoked`;
+      return `${operationRefusalTicket(refused.value)} can no longer be revoked`;
     case "TicketNotResumable":
-      return `${operationRefusalTicket(refused.value)} is not stopped at anything a resume can pick up`;
+      return `${operationRefusalTicket(refused.value)} has nothing to resume`;
     case "TaskNotCurrent":
-      return `the report was for ${operationRefusalTask(refused.value.task)} of ${operationRefusalTicket(refused.value.ticket)}, which is not the task the ticket is waiting on`;
+      return `Report for ${operationRefusalTask(refused.value.task)} of ${operationRefusalTicket(refused.value.ticket)} · Not current`;
     case "FinalizationNotCurrent":
-      return `the finalization result was for work cycle ${String(refused.value.workCycle)}, generation ${String(refused.value.generation)} of ${operationRefusalTicket(refused.value.ticket)}, which is not the finalization the ticket is waiting on`;
+      return `Finalizing result for cycle ${String(refused.value.workCycle)} of ${operationRefusalTicket(refused.value.ticket)} · Not current`;
   }
 }
 
@@ -147,41 +147,41 @@ export function operationRefusalSentence(refused: OperationRefusal): string {
   if ("value" in refused) return operationRefusalTicketSentence(refused);
   switch (refused.type) {
     case "AuthoringChanged":
-      return "the ticket's authoring changed after this was submitted";
+      return "Draft changed since submit";
     case "ConfigurationInvalid":
-      return "the configuration is not one the project will run, as written or as overridden";
+      return "Configuration or overrides cannot run";
     case "TicketChanged":
-      return "the ticket changed after this was submitted";
+      return "Ticket changed since submit";
     case "SelectionChanged":
-      return "the dispatch selection this answered is no longer the current one";
+      return "Dispatch selection out of date";
     case "ExecutionSourceUnreadable":
-      return "the repository reference this ticket's work would start from is not on the remote";
+      return "Start branch or commit not on the remote";
     case "ExecutionSourceDenied":
-      return "the remote declined the credential this project holds for the repository";
+      return "Remote refused this project's credential";
     case "BriefNamesNoRepository":
-      return "the brief names no repository; revise it to name one the project binds";
+      return "Brief names no repository · Name a bound one";
     case "BriefChecksUncommanded":
-      return "the configuration has no check stage; remove the brief's checks or name a configuration with one";
+      return "No check stage · Drop the brief's checks";
     case "ConfigurationFromAnotherRepository":
-      return "the configuration was imported from another repository; name one from the brief's repository";
+      return "Configuration not from the brief's repository";
     case "SelectionUnknown":
-      return "the draft selects a workload, plan or finalizer the configuration's catalog does not hold";
+      return "Workload, plan or finalizer not in the catalog";
     case "SelectionUnsupported":
-      return "only a version 2 configuration takes a selection; revise the draft to ask the configuration for what it holds";
+      return "Selection needs a version 2 configuration";
     case "ProgramExceedsPlan":
-      return "the program names a stage or evaluator past the selected evaluation plan; draw it from that plan's stages";
+      return "Program goes past the plan's stages";
     case "ProgramSkipsBriefChecks":
-      return "the program leaves out the stage or evaluator the brief's checks run in; restore it, or remove the brief's checks";
+      return "Program skips the brief's checks · Restore them";
     case "OverridesUnsupported":
-      return "a catalog takes overrides only of its workloads, and a version 1 configuration takes none of workloads; revise the draft's overrides to fit its configuration";
+      return "Overrides do not fit this configuration";
     case "OverridesUnknown":
-      return "the overrides name a workload, or a prompt file, the configuration's catalog does not hold";
+      return "Overrides name an unknown workload or prompt";
     case "TicketCapacityReached":
-      return "the project has no room for this ticket: it holds as many unfinished tickets as this deployment allows, so finish or revoke one to make room";
+      return "Project full · Finish or revoke a ticket";
     case "FinalizationRequestClosed":
-      return "the finalization request this result answered had closed before the result was decided, though the ticket still waits on that finalization";
+      return "Finalizing request closed · Ticket still waiting";
     case "OverridesMoveDefinition":
-      return "these overrides would change the definition the ticket was released with; while it is parked only how its worker is started may change";
+      return "Only start settings can change while parked";
   }
 }
 
@@ -199,9 +199,9 @@ export function ticketFollowingSentence(
     case "Moves":
       return undefined;
     case "Held":
-      return `Stays on this revision rather than the newest: ${operationRefusalSentence({ type: following.code })}`;
+      return `Not moved · ${operationRefusalSentence({ type: following.code })}`;
     case "Trimmed":
-      return "Stays on this revision rather than the newest: its program runs less than its plan, and was signed off against this one";
+      return "Not moved · Program skips part of its plan";
   }
 }
 
@@ -224,15 +224,15 @@ export type MutationRefusalCode = (typeof mutationRefusalCodes)[number];
 export function mutationRefusalSentence(code: MutationRefusalCode): string {
   switch (code) {
     case "IdempotencyConflict":
-      return "a different command was already submitted under this one's key";
+      return "Clashes with an earlier submit";
     case "InvalidMutation":
-      return "the API would not accept the mutation this console built";
+      return "Request not valid";
     case "MutationNotAdmitted":
-      return "the project is not admitting this kind of mutation at the moment";
+      return "Project not taking this right now";
     case "OperationNotPending":
-      return "that operation had already been decided, so there was nothing left to call off";
+      return "Already decided · Nothing to cancel";
     case "ProgramSkipsPlannedEvaluations":
-      return "the program leaves out part of its plan, which your role may not release; draw the whole plan, or ask an administrator";
+      return "Partial plan needs an administrator · Use the whole plan";
   }
 }
 
@@ -252,9 +252,9 @@ export function draftRevisionRefusalSentence(
 ): string {
   switch (code) {
     case "DraftChanged":
-      return "the draft changed while this form was open — it has been read again, so submitting now revises the current one";
+      return "Draft changed · Submit again";
     case "DraftNotEditable":
-      return "the draft is closed to revision: only a pending ticket's draft can be revised";
+      return "Draft closed · Ticket no longer pending";
   }
 }
 
@@ -281,13 +281,13 @@ export type MutationDeferralCode = (typeof mutationDeferralCodes)[number];
 export function mutationDeferralSentence(code: string): string {
   switch (mutationDeferralCodeOf(code)) {
     case "DispatchBacklog":
-      return "the project has more waiting to be dispatched than it will take at once";
+      return "Dispatch queue full";
     case "MailboxBackpressure":
-      return "the actor's mailbox is full";
+      return "Project queue full";
     case "MailboxUnavailable":
-      return "the actor's mailbox is not reachable";
+      return "Project unreachable";
     case undefined:
-      return `the API asked for this to be sent again, and named a reason this console does not know (${code})`;
+      return `Unknown reason (${code})`;
   }
 }
 
@@ -310,21 +310,21 @@ function mutationDeferralCodeOf(
 export function operationFailureSentence(failure: ApiFailure): string {
   switch (failure.outcome) {
     case "Unauthenticated":
-      return "this session is not signed in";
+      return "Signed out · Sign in again";
     case "Absent":
-      return "the API has no such operation, or will not show it to you";
+      return "Not found, or not visible to you";
     case "Retryable":
-      return `it kept being sent again and kept being deferred: ${mutationDeferralSentence(failure.code)}`;
+      return `Try later · ${mutationDeferralSentence(failure.code)}`;
     case "Unreachable":
-      return `the API could not be reached: ${failure.reason}`;
+      return `Server unreachable · ${failure.reason}`;
     case "Unreadable":
-      return `the API answered something this console cannot read: ${failure.reason}`;
+      return `Unreadable answer · ${failure.reason}`;
     case "Conflict":
     case "Rejected":
     case "Fault": {
       const declined = mutationRefusalCodeOf(failure.code);
       if (declined !== undefined) return mutationRefusalSentence(declined);
-      return `the API refused this, and named a reason this console does not know (${failure.code})`;
+      return `Refused · Unknown reason (${failure.code})`;
     }
   }
 }

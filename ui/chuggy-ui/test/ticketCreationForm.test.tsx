@@ -350,10 +350,8 @@ async function submitted(): Promise<void> {
   });
 }
 
-const draftUnreleased =
-  "draft 12 was created and not released; submitting again goes back to that draft rather than creating another";
-const draftUnknown =
-  "draft 12 was created, and whether it was released is not known; submitting again goes back to that draft rather than creating another";
+const draftUnreleased = "Draft 12 kept · Not released";
+const draftUnknown = "Draft 12 kept · Maybe released";
 
 test("a release that settles undecided draws the reason and its unreleased draft, and navigates nowhere", async () => {
   const held = api({ state: "Cancelled" });
@@ -361,9 +359,7 @@ test("a release that settles undecided draws the reason and its unreleased draft
   draw(held.ports, created);
   typeIntent("ship it");
   await submitted();
-  expect(note()).toBe(
-    `the operation was cancelled before it was decided — ${draftUnreleased}`,
-  );
+  expect(note()).toBe(`Called off before a decision · ${draftUnreleased}`);
   expect(created).toStrictEqual([]);
 });
 
@@ -373,7 +369,7 @@ test("a follow that runs out of budget navigates nowhere either, and does not ca
   draw(held.ports, created);
   typeIntent("ship it");
   await submitted();
-  expect(note()).toBe(`Still pending — ${draftUnknown}`);
+  expect(note()).toBe(`Still pending · ${draftUnknown}`);
   expect(created).toStrictEqual([]);
 });
 
@@ -398,7 +394,7 @@ test("what was typed survives a re-render and a fresh initialization", async () 
       .value,
   ).toBe("ship it");
   submit();
-  await screen.findByText(/read again/u);
+  await screen.findByText(/Project changed · Submit again/u);
   expect(
     screen.getByPlaceholderText<HTMLTextAreaElement>("what this ticket is for")
       .value,
@@ -466,7 +462,7 @@ test("a held draft the form still describes is released again, unrevised, under 
   draw(held.ports, []);
   typeIntent("ship it");
   submit();
-  await screen.findByText(/was created and not released/u);
+  await screen.findByText(/Draft 12 kept · Not released/u);
   submit();
   await waitFor(() => {
     expect(releases(held.sent).length).toBe(2);
@@ -507,7 +503,7 @@ const releasedAndConfirmed = (version: number): readonly string[] => [
   "GET ?after=11&limit=1&minimumSequence=42",
 ];
 
-const refusedNote = `the configuration is not one the project will run, as written or as overridden — ${draftUnreleased}`;
+const refusedNote = `Configuration or overrides cannot run · ${draftUnreleased}`;
 
 /** The form over a door, and what was sent since the case last asked. */
 function drawHeld(
@@ -571,13 +567,13 @@ test("an intent retyped after a refused release is read, revised into the held d
 async function neverLearned(held: ReturnType<typeof drawHeld>): Promise<void> {
   typeIntent("ship it");
   await submitted();
-  expect(note()).toBe(`Still pending — ${draftUnknown}`);
+  expect(note()).toBe(`Still pending · ${draftUnknown}`);
   ticketDoorDecides(held.door, held.door.releases[0], "Succeeded");
   held.since();
 }
 
 const existsNote =
-  "#12 already exists: an earlier release of this draft went through, and what has been changed here since is not in it — Ticket 12";
+  "#12 already exists · Changes since are not in it — Ticket 12";
 
 /**
  * The ticket is as the form first said, and what it says now is in none: the
@@ -660,7 +656,7 @@ test.each([
     typeIntent("ship that");
     await submitted();
     expect(note()).toBe(
-      `the API refused this, and named a reason this console does not know (InternalError) — ${draftUnreleased}`,
+      `Refused · Unknown reason (InternalError) · ${draftUnreleased}`,
     );
     expect(held.since()).toStrictEqual([draftRead, "PUT /drafts/12 at 3"]);
     expect(
@@ -693,7 +689,7 @@ test("a held draft that cannot be read is said, written nothing, and read again 
   held.since();
   typeIntent("ship that");
   await submitted();
-  expect(note()).toBe(`nothing was written to the draft — ${draftUnreleased}`);
+  expect(note()).toBe(`Draft not written · ${draftUnreleased}`);
   expect(readFailedLines()).toStrictEqual(["Draft · Not read · Server error"]);
   fireEvent.focus(screen.getByText("Server error"));
   expect((await screen.findByRole("tooltip")).textContent).toBe(
@@ -1240,7 +1236,7 @@ test("a configuration chosen after a refused release is what the held draft is r
   await chooseConfiguration("development");
   await chooseRepository("gdoteof/scratch");
   submit();
-  await screen.findByText(/was created and not released/u);
+  await screen.findByText(/Draft 12 kept · Not released/u);
   await chooseConfiguration(bootstrapConfigurationName);
   submit();
   await waitFor(() => {

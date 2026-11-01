@@ -22,12 +22,10 @@ import {
   operationStateSentence,
 } from "../app/core/codeSentences.ts";
 
-/** A sentence is prose, is distinct, and quotes no member of its own roster. */
+/** A line is distinct and quotes no member of its own roster. */
 function sentences(said: readonly string[], roster: readonly string[]): void {
-  for (const sentence of said) {
-    expect(sentence).toContain(" ");
+  for (const sentence of said)
     for (const code of roster) expect(sentence).not.toContain(code);
-  }
   expect(new Set(said).size).toBe(said.length);
 }
 
@@ -84,7 +82,7 @@ test("a failure carrying an actor's refusal code is named as unrecognised", () =
     code: "TicketChanged",
     body: undefined,
   });
-  expect(said).toContain("does not know");
+  expect(said).toContain("Unknown reason");
   expect(said).toContain("TicketChanged");
 });
 
@@ -97,11 +95,22 @@ test("a failure the wire has no refusal for still says what it was", () => {
   ).toContain("the connection was closed");
 });
 
+/** An answer that does not parse is the server's fault, so the line names the
+ * answer and offers the reader no remedy of their own. */
+test("an answer that cannot be read is said to be one, not a reason to update", () => {
+  const said = operationFailureSentence({
+    outcome: "Unreadable",
+    reason: "expected string at title",
+  });
+  expect(said).toMatch(/^Unreadable answer · /u);
+  expect(said).not.toContain("Update");
+});
+
 /** The two fallbacks carry the same sentinel, which is what lets
  * `test/ui/mutationSentences.test.ts` tell a rostered answer from a fallback. */
 test("a deferral belonging to no roster is named as one this console does not know", () => {
   const said = mutationDeferralSentence("SubmissionQuotaExhausted");
-  expect(said).toContain("does not know");
+  expect(said).toContain("Unknown reason");
   expect(said).toContain("SubmissionQuotaExhausted");
 });
 
@@ -114,6 +123,6 @@ test("a code belonging to no roster is named as one this console does not know",
     status: 400,
     body: undefined,
   });
-  expect(said).toContain("does not know");
+  expect(said).toContain("Unknown reason");
   expect(said).toContain("InvalidRequest");
 });

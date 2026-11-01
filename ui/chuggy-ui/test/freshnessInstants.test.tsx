@@ -44,5 +44,5 @@ test("a stamp never observed has no instant to hover", () => {
     </FreshnessInstants>,
   );
   expect(container.querySelector("[tabindex]")).toBeNull();
-  expect(container.textContent).toBe("never observed");
+  expect(container.textContent).toBe("Unknown");
 });
