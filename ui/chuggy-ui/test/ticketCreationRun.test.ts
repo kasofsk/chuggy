@@ -452,7 +452,7 @@ test("not knowing, there being none and there being nowhere are drawn as three w
   expect(new Set(sentences).size).toBe(3);
   expect(sentences[0]).toBe("No repository bound");
   expect(sentences[1]).toBe("No configuration");
-  expect(sentences[2]).toContain(String(configurationPagesMax));
+  expect(sentences[2]).toBe("No ready configuration found");
 });
 
 const refusal = (status: number, code: string): Answer => ({
@@ -831,7 +831,7 @@ test("an update onto a ticket that waits on this one says it would never start",
   );
   expect(updated).toStrictEqual({
     created: "Refused",
-    reason: "#14 already waits on #12 · Cannot depend on it",
+    reason: "#12 cannot depend on #14 · Would form a cycle",
     held: { draft: revisedDraft },
   });
 });

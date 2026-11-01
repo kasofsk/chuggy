@@ -193,7 +193,7 @@ export function TenantAccountsPage(): ReactNode {
       <Panel
         variant="section"
         title="Accounts"
-        about="The forge accounts this workspace has connected, and the apps each holds."
+        about="Connected accounts and their apps"
         meta={
           <span className="flex items-center gap-2">
             {withheld ? null : (

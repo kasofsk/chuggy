@@ -345,7 +345,7 @@ test("an answer that is not the read's is a failed read too, and draws no line o
     }),
   );
   const row = await deliveryOpened(container);
-  expect(readFailedLines(row)).toStrictEqual(["Not read · Update needed"]);
+  expect(readFailedLines(row)).toStrictEqual(["Not read · Unreadable"]);
   expect(linesDrawn(row)).toEqual([]);
 });
 

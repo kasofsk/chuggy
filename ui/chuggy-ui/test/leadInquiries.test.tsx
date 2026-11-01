@@ -351,7 +351,7 @@ test("a listing past the bound is refused rather than drawn", async () => {
     rows().length,
     "a listing past the route's own bound was drawn anyway",
   ).toBe(0);
-  expect(readFailedLines()).toStrictEqual(["Not read · Update needed"]);
+  expect(readFailedLines()).toStrictEqual(["Not read · Unreadable"]);
 });
 
 /** A lead that has never settled a turn has no head to fork from, so there is

@@ -290,7 +290,7 @@ test("the submit asks first, and refuses while a problem stands", async () => {
   const editor = await toYaml();
   fireEvent.click(screen.getByRole("button", { name: "Create ticket" }));
   const asked = await screen.findByRole("dialog");
-  expect(asked.textContent).toMatch(/One problem must be fixed/u);
+  expect(asked.textContent).toMatch(/One problem to fix before sending/u);
   const confirm = within(asked).getByRole("button", {
     name: "Create ticket",
     description: creationSubmitEffect("Waits"),

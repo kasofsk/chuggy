@@ -21,6 +21,7 @@ import {
   operationFailureSentence,
   operationStateSentence,
 } from "../app/core/codeSentences.ts";
+import { failureWords } from "../app/core/failureWords.ts";
 
 /** A line is distinct and quotes no member of its own roster. */
 function sentences(said: readonly string[], roster: readonly string[]): void {
@@ -33,8 +34,9 @@ test("every escalation kind reads as a distinct sentence and not as its code", (
   sentences(escalationKinds.map(escalationKindSentence), escalationKinds);
 });
 
-test("every operation state reads as a distinct sentence and not as its name", () => {
-  sentences(operationStates.map(operationStateSentence), operationStates);
+/** A state's name is a plain word, which its sentence may be. */
+test("every operation state reads as a distinct sentence", () => {
+  sentences(operationStates.map(operationStateSentence), []);
 });
 
 test("every boundary refusal reads as a distinct sentence and not as its code", () => {
@@ -86,24 +88,24 @@ test("a failure carrying an actor's refusal code is named as unrecognised", () =
   expect(said).toContain("TicketChanged");
 });
 
-test("a failure the wire has no refusal for still says what it was", () => {
-  expect(
-    operationFailureSentence({
-      outcome: "Unreachable",
-      reason: "the connection was closed",
-    }),
-  ).toContain("the connection was closed");
-});
-
-/** An answer that does not parse is the server's fault, so the line names the
- * answer and offers the reader no remedy of their own. */
-test("an answer that cannot be read is said to be one, not a reason to update", () => {
-  const said = operationFailureSentence({
-    outcome: "Unreadable",
-    reason: "expected string at title",
-  });
-  expect(said).toMatch(/^Unreadable answer · /u);
-  expect(said).not.toContain("Update");
+/** What was thrown is the failure's detail, drawn on hover of its word. */
+test("a failure the wire has no refusal for is its word, and carries no thrown text", () => {
+  for (const [failure, word] of [
+    [
+      { outcome: "Unreachable", reason: "the connection was closed" },
+      "No connection",
+    ],
+    [
+      { outcome: "Unreadable", reason: "expected string at title" },
+      "Unreadable",
+    ],
+  ] as const) {
+    expect(operationFailureSentence(failure)).toBe(word);
+    expect(failureWords(failure)).toStrictEqual({
+      word,
+      detail: failure.reason,
+    });
+  }
 });
 
 /** The two fallbacks carry the same sentinel, which is what lets

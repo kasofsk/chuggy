@@ -307,7 +307,7 @@ test("the panel keeps the digest and the full revision on a caption line", async
   );
 });
 
-const caption = "As configured · a run's exact prompt is in its conversation";
+const caption = "As configured · Exact prompt in the run's conversation";
 
 test("a ticket with no overrides is drawn as its pinned configuration, marking nothing", async () => {
   await drawTicket();
@@ -384,7 +384,7 @@ test("instructions the ticket overrode are drawn as the override, and the captio
   expect(within(instructions()).queryByText(caption)).toBeNull();
   expect(
     within(instructions()).getByText(
-      "As configured with this ticket's overrides · a run's exact prompt is in its conversation",
+      "With overrides · Exact prompt in the run's conversation",
     ),
   ).toBeDefined();
   const heading = within(instructions()).getByRole("heading", {
@@ -453,13 +453,16 @@ test("a following ticket held on its revision, or trimmed, says why in one line,
   const cases = [
     [
       { verdict: "Held", code: "SelectionUnknown" },
-      "Not moved · Workload, plan or finalizer not in the catalog",
+      "Stays on this revision · Workload, plan or finalizer not in the catalog",
     ],
     [
       { verdict: "Held", code: "ConfigurationInvalid" },
-      "Not moved · Configuration or overrides cannot run",
+      "Stays on this revision · Configuration or overrides cannot run",
     ],
-    [{ verdict: "Trimmed" }, "Not moved · Program skips part of its plan"],
+    [
+      { verdict: "Trimmed" },
+      "Stays on this revision · Program skips part of its plan",
+    ],
     [{ verdict: "Current" }, undefined],
     [{ verdict: "Moves" }, undefined],
     [undefined, undefined],

@@ -674,7 +674,7 @@ const endings: readonly (readonly [
     "the operation is cancelled undecided",
     "Cancelled",
     () => undefined,
-    "Called off before a decision",
+    "Cancelled before a decision",
     false,
   ],
 ];

@@ -129,7 +129,7 @@ function OwnerFallbackEditing(props: {
   return (
     <SettingsSection
       title={ownerFallbackTitle}
-      about={`Whether a member's own runners take the work they start here. ${ownerFallbackPinned}`}
+      about={`Take a member's own work · ${ownerFallbackPinned}`}
       editing={editing}
       editable={props.read.administers}
       savable={!saving.isPending}

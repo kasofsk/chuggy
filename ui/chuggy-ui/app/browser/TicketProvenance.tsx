@@ -448,8 +448,8 @@ function ConfigurationInstructionsBar(props: {
       {props.tabs}
       <span className="ticket-config-heading-caption">
         {configured
-          ? "As configured · a run's exact prompt is in its conversation"
-          : "As configured with this ticket's overrides · a run's exact prompt is in its conversation"}
+          ? "As configured · Exact prompt in the run's conversation"
+          : "With overrides · Exact prompt in the run's conversation"}
       </span>
     </div>
   );

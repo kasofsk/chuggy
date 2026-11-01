@@ -114,7 +114,7 @@ export function creationContextSentence(
     case "NoReadyConfiguration":
       return "No configuration";
     case "ReadyConfigurationUnknown":
-      return `No ready configuration in the newest ${String(context.pagesRead)} pages`;
+      return "No ready configuration found";
   }
 }
 

@@ -75,14 +75,14 @@ test("a dependency refused for what it is says what to depend on instead", () =>
     "#41 depends on revoked #17 and #23 · Pick open ones",
   );
   expect(operationRefusalSentence(samples.DependencyCycle)).toBe(
-    "#17 already waits on #41 · Cannot depend on it",
+    "#41 cannot depend on #17 · Would form a cycle",
   );
   expect(
     operationRefusalSentence({
       type: "DependencyCycle",
       value: { ticket: 41, dependencies: [17, 23] },
     }),
-  ).toBe("#17 and #23 already wait on #41 · Cannot depend on them");
+  ).toBe("#41 cannot depend on #17 and #23 · Would form a cycle");
 });
 
 test("a stale revision names the one written against and the one held", () => {

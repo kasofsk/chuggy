@@ -78,8 +78,8 @@ function ticketYamlLineOf(text: string, offset: number): number {
 function ticketYamlProblemsSentence(count: number): string {
   if (count === 0) return "Nothing is wrong with this ticket.";
   return count === 1
-    ? "One problem must be fixed before this ticket can be sent."
-    : `${String(count)} problems must be fixed before this ticket can be sent.`;
+    ? "One problem to fix before sending"
+    : `${String(count)} problems to fix before sending`;
 }
 
 function ProblemList(props: {

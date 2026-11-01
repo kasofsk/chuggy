@@ -12,6 +12,11 @@
  * be unknown rather than explained away, so a reader is told the console has
  * nothing for it — and so the suite above can tell a rostered answer from a
  * fallback, which is the only thing that makes its forward direction bite.
+ *
+ * A LINE'S LENGTH IS HELD PER PART. A line joined from two, as a creation's
+ * refusal is to where its draft stands in `‹reason› · ‹held›`, keeps both facts
+ * and may run longer than either;
+ * `ui/chuggy-ui/test/codeSentencesShort.test.ts` holds each part to the limit.
  */
 
 import {
@@ -27,6 +32,7 @@ import type {
   TicketFollowing,
 } from "../../../../src/contract/responses.ts";
 import type { ApiFailure } from "./apiRequest.ts";
+import { failureWords } from "./failureWords.ts";
 
 /** Which wall the ticket hit, in the person's own terms. */
 export function escalationKindSentence(kind: EscalationKind): string {
@@ -62,11 +68,11 @@ export function operationStateSentence(state: OperationState): string {
     case "Succeeded":
       return "Accepted";
     case "Refused":
-      return "Not accepted";
+      return "Refused";
     case "Answered":
       return "Closed without a decision";
     case "Cancelled":
-      return "Called off before a decision";
+      return "Cancelled before a decision";
   }
 }
 
@@ -116,9 +122,7 @@ function operationRefusalTicketSentence(
     case "DependenciesRevoked":
       return `${operationRefusalTicket(refused.value.ticket)} depends on revoked ${operationRefusalTickets(refused.value.dependencies)} · Pick open ones`;
     case "DependencyCycle":
-      return refused.value.dependencies.length === 1
-        ? `${operationRefusalTickets(refused.value.dependencies)} already waits on ${operationRefusalTicket(refused.value.ticket)} · Cannot depend on it`
-        : `${operationRefusalTickets(refused.value.dependencies)} already wait on ${operationRefusalTicket(refused.value.ticket)} · Cannot depend on them`;
+      return `${operationRefusalTicket(refused.value.ticket)} cannot depend on ${operationRefusalTickets(refused.value.dependencies)} · Would form a cycle`;
     case "SelfDependency":
       return `${operationRefusalTicket(refused.value)} depends on itself · Remove that dependency`;
     case "TicketNotFound":
@@ -199,9 +203,9 @@ export function ticketFollowingSentence(
     case "Moves":
       return undefined;
     case "Held":
-      return `Not moved · ${operationRefusalSentence({ type: following.code })}`;
+      return `Stays on this revision · ${operationRefusalSentence({ type: following.code })}`;
     case "Trimmed":
-      return "Not moved · Program skips part of its plan";
+      return "Stays on this revision · Program skips part of its plan";
   }
 }
 
@@ -316,9 +320,8 @@ export function operationFailureSentence(failure: ApiFailure): string {
     case "Retryable":
       return `Try later · ${mutationDeferralSentence(failure.code)}`;
     case "Unreachable":
-      return `Server unreachable · ${failure.reason}`;
     case "Unreadable":
-      return `Unreadable answer · ${failure.reason}`;
+      return failureWords(failure).word;
     case "Conflict":
     case "Rejected":
     case "Fault": {

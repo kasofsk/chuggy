@@ -67,8 +67,8 @@ test("every outcome is one word of at most two", () => {
     Retryable: "Busy",
     Rejected: "Refused",
     Fault: "Server error",
-    Unreachable: "Offline",
-    Unreadable: "Update needed",
+    Unreachable: "No connection",
+    Unreadable: "Unreadable",
   });
   for (const failure of failures)
     expect(
@@ -94,10 +94,10 @@ test("what an outcome carries beyond its word is its detail, and in no word or l
 
 test("a failed read is its noun, that it was not read, and its word, and an absence says only that it is not found", () => {
   expect(readFailedLine("Tickets", every.Unreachable)).toBe(
-    "Tickets · Not read · Offline",
+    "Tickets · Not read · No connection",
   );
   expect(readFailedLine(undefined, every.Unreachable)).toBe(
-    "Not read · Offline",
+    "Not read · No connection",
   );
   expect(readFailedLine("More", every.Fault)).toBe(
     "More · Not read · Server error",
@@ -110,7 +110,7 @@ test("a throw in place of an answer is drawn in the same words as an answer the 
   const thrown = failureOfThrown(new Error("boom"));
   expect(thrown).toStrictEqual({ outcome: "Unreadable", reason: "boom" });
   expect(failureWords(thrown)).toStrictEqual({
-    word: "Update needed",
+    word: "Unreadable",
     detail: "boom",
   });
 });

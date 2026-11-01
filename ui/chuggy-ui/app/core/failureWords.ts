@@ -28,9 +28,9 @@ export function failureWords(result: ApiFailure): FailureWords {
     case "Fault":
       return { word: "Server error", detail: result.code };
     case "Unreachable":
-      return { word: "Offline", detail: result.reason };
+      return { word: "No connection", detail: result.reason };
     case "Unreadable":
-      return { word: "Update needed", detail: result.reason };
+      return { word: "Unreadable", detail: result.reason };
   }
 }
 

@@ -302,7 +302,7 @@ test("a release refused for a reader who may dispatch is drawn as a creation's, 
     expect(document.querySelector(".panel-failed")).not.toBeNull();
   });
   expect(document.querySelector(".panel-failed")?.textContent).not.toContain(
-    "the draft holds this revision",
+    "Draft version",
   );
   expect(screen.queryByText(starting)).toBeNull();
   expect(mutations(api.sent)).toStrictEqual(["ReleaseDraft"]);

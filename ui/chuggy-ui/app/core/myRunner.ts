@@ -63,8 +63,7 @@ export function ownerFallbackLabel(
 }
 
 /** An execution keeps the fallback it was registered under, so a change reaches only work started after it. */
-export const ownerFallbackPinned =
-  "Applies to work started after a change; work already waiting keeps the setting it started under.";
+export const ownerFallbackPinned = "Changes reach new work only";
 
 /** One plain line for what each value does to a member's own work. */
 export function ownerFallbackAbout(
