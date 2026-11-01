@@ -4,7 +4,7 @@
  * A DECISION IS ANSWERED WHOLE, so a decision naming two tickets puts the same
  * question on both rows, and either row's answer is the other's too.
  *
- * NO FRAME NAMES A HELD DECISION, so the read is polled while anything draws
+ * NO FRAME NAMES A HELD DECISION, so the inbox is polled while anything draws
  * it and read again as soon as this tab answers.
  */
 
@@ -12,29 +12,15 @@ import { selectorReviewFeedbackCharsMax } from "../../../../src/contract/http.ts
 import type {
   SelectorProposalResponse,
   SelectorProposalReviewResponse,
-  SelectorProposalsResponse,
 } from "../../../../src/contract/responses.ts";
 import {
   selectorProposalNotHeldCode,
   type SelectorReviewOutcome,
 } from "../../../../src/contract/rosters.ts";
 import type { ApiResult } from "./apiRequest.ts";
-import type { PanelState } from "./freshness.ts";
 
-/** How often the held decisions are read again while the inbox or its badge is drawn. */
+/** How often the inbox is read again for its held decisions while it or its badge is drawn. */
 export const inboxProposalsPolledMs = 15_000;
-
-/**
- * What the inbox holds of the read: its answer, nothing where the reader may
- * not dispatch, and unread otherwise. Absence is the server declining to show
- * the reader a question they cannot answer, which is no proposal for them.
- */
-export function inboxProposalsHeld(
-  state: PanelState<SelectorProposalsResponse>,
-): SelectorProposalsResponse | undefined {
-  if (state.state === "Ready") return state.value;
-  return state.state === "Absent" ? { proposals: [], more: false } : undefined;
-}
 
 /** What one review came to: answered, refused as no longer held, or failed. */
 export type InboxProposalStep =

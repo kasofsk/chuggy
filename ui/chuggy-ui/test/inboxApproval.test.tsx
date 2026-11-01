@@ -1,12 +1,12 @@
 /**
  * A finalization approval reaching the inbox and leaving it, which no pure
- * function can express: the row's membership is decided by two reads, a live
- * frame and the cache between them.
+ * function can express: the row's membership is the server's, read again on a
+ * live frame, and the cache holds it between.
  *
- * `Finalization` is not a phase the inbox's filter holds, so the phase page here
- * is empty throughout and every row on screen arrived because a question was
- * opened on the stream. The shell is mounted beside the screen, so the badge
- * and the list are read as the one value they are meant to be.
+ * `Finalization` is not a phase the inbox holds by itself, so every row on
+ * screen is there because the server says a question is open on it. The shell
+ * is mounted beside the screen, so the badge and the list are read as the one
+ * value they are meant to be.
  */
 
 // jscpd:ignore-start -- the imports and vi.mock factories a case cannot hoist out
@@ -16,6 +16,11 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
+import type {
+  InboxEntryResponse,
+  ProjectNativeActionResponse,
+  ProjectTicket,
+} from "../../../src/contract/responses.ts";
 import { InboxScreen } from "../app/browser/Inbox.tsx";
 import { Shell } from "../app/browser/Shell.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
@@ -31,6 +36,8 @@ import {
 } from "./screenHarness.tsx";
 import { frame } from "./streamDouble.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
+import { inboxAsked, inboxBody, inboxEntry } from "./inboxFixture.ts";
+import { ticketInstants } from "./ticketInstants.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -64,35 +71,39 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const approval = {
+const approval: ProjectNativeActionResponse = {
+  ticket: 11,
   action: "action-eleven",
   kind: "FinalizationApproval",
   authorizingSequence: 51,
   admits: ["Approve", "Decline"],
 };
 
-/** The routes a mounted inbox reads, with the two the cases vary given as
- * whatever that case wants those two reads to answer. */
-function serving(served: {
-  readonly actions: () => Response;
-  readonly phase: () => Response;
-}): (url: string) => Response {
-  return (url) => {
-    if (url.includes("/native-actions")) return served.actions();
+const finalizing: ProjectTicket = {
+  ticket: 11,
+  title: "Land the release notes",
+  phase: "Finalization",
+  sequence: 6,
+  ...ticketInstants,
+};
+
+const awaiting = inboxEntry(finalizing, { actions: [approval] });
+
+/** The routes a mounted shell reads, the inbox answering what `inbox` holds or failing where it is `undefined`. */
+function serving(inbox: () => readonly InboxEntryResponse[] | undefined) {
+  return (url: string): Response => {
+    if (inboxAsked(url)) {
+      const entries = inbox();
+      return entries === undefined
+        ? answer({ error: { code: "InternalError", message: "fault" } }, 500)
+        : answer(inboxBody(entries));
+    }
     if (url.includes("/executions")) return answer({ executions: [] });
-    if (url.includes("/selector-proposals"))
-      return answer({ proposals: [], more: false });
-    if (url.includes("/tenants/")) return served.phase();
+    if (url.includes("/tenants/"))
+      return answer({ partition: atlas, sequence: 9, tickets: [] });
     return answer({ projects: [atlas] });
   };
 }
-
-/** Nothing in an inbox phase and nothing open that a first read can see, so the
- * stream is the only way a row gets here. */
-const served = serving({
-  actions: () => answer({ actions: [] }),
-  phase: () => answer({ partition: atlas, sequence: 9, tickets: [] }),
-});
 
 /** The count the rail's inbox entry carries after its label, and nothing where
  * the inbox is clear. */
@@ -133,16 +144,17 @@ function mounted(route: (url: string) => Response): {
 }
 
 test("an approval opening puts its ticket in the inbox and its answer takes it out", async () => {
-  const held = mounted(served);
-  const api = held.api;
-  const server = held.server;
+  let entries: readonly InboxEntryResponse[] = [];
+  const { api, server } = mounted(serving(() => entries));
   await settled();
   expect(screen.getByText("Inbox is clear")).toBeDefined();
   expect(badge()).toBeUndefined();
 
+  entries = [awaiting];
   await turned(() => {
     server.push(openActions([approval]));
   });
+  await settled();
   expect(screen.getByRole("button", { name: "approve" })).toBeDefined();
   expect(screen.getByRole("button", { name: "decline" })).toBeDefined();
   expect(screen.getByText("awaiting your approval")).toBeDefined();
@@ -158,46 +170,42 @@ test("an approval opening puts its ticket in the inbox and its answer takes it o
   ).not.toBeNull();
   expect(badge()).toBe("1");
 
+  entries = [];
   await turned(() => {
     server.push(openActions([]));
   });
+  await settled();
   expect(screen.queryByRole("button", { name: "approve" })).toBeNull();
   expect(screen.getByText("Inbox is clear")).toBeDefined();
   expect(badge()).toBeUndefined();
 });
 
 /**
- * The crossed pair: the phase page refuses and the open-actions read answers.
- * A badge counting a question the panel will not draw is worse than either half
- * alone — the person is told something needs them and given nowhere to do it.
+ * One read is one failed state. A reread that fails keeps the approval it last
+ * drew answerable and the badge counting it, and says only that it was not
+ * updated.
  */
-test("a phase page that refuses leaves the approval it did not list answerable", async () => {
-  mounted(
-    serving({
-      actions: () => answer({ actions: [{ ticket: 11, ...approval }] }),
-      phase: () => answer({ code: "InternalError" }, 500),
-    }),
-  );
+test("a reread that fails leaves the approval it drew answerable, and counted", async () => {
+  let entries: readonly InboxEntryResponse[] | undefined = [awaiting];
+  const { server } = mounted(serving(() => entries));
+  await settled();
+  expect(badge()).toBe("1");
+  entries = undefined;
+  await turned(() => {
+    server.push(openActions([approval]));
+  });
   await settled();
   expect(badge()).toBe("1");
   expect(screen.getByRole("button", { name: "approve" })).toBeDefined();
-  expect(screen.getByRole("button", { name: "decline" })).toBeDefined();
   expect(screen.getByText("awaiting your approval")).toBeDefined();
-  expect(
-    screen.getByText(/the tickets a phase parks could not be read/u),
-  ).toBeDefined();
+  expect(screen.getByText("Not updated")).toBeDefined();
   expect(screen.queryByText("Inbox is clear")).toBeNull();
 });
 
 /** The served policy refuses `style-src` but `'self'`, so nothing drawn here —
  * loaded, answered or clicked — may append a runtime style element. */
 test("nothing the inbox draws is a runtime style element", async () => {
-  const held = mounted(
-    serving({
-      actions: () => answer({ actions: [{ ticket: 11, ...approval }] }),
-      phase: () => answer({ partition: atlas, sequence: 9, tickets: [] }),
-    }),
-  );
+  const held = mounted(serving(() => [awaiting]));
   await settled();
   expect(document.querySelectorAll("style").length).toBe(0);
   await turned(() => {

@@ -35,3 +35,21 @@ export function postgresReadHarness(): PostgresReadHarness {
     },
   };
 }
+
+/**
+ * What in a statement correlates a subquery or a function on an outer row's
+ * partition rather than binding it from parameters: PostgreSQL runs such a
+ * subquery again for each outer row, which the partition alone bounds. A
+ * join's own condition is not one.
+ */
+export function postgresStatementCorrelated(text: string): readonly string[] {
+  const unjoined = text.replace(
+    /\bON\s+(\w+)\.tenant=(\w+)\.tenant\s+AND\s+\1\.project=\2\.project\b/gu,
+    "",
+  );
+  return (
+    unjoined.match(
+      /\b\w+\.(?:tenant|project)\s*=\s*\w+\.(?:tenant|project)\b|\(\s*\w+\.tenant\s*,\s*\w+\.project\b/gu,
+    ) ?? []
+  );
+}

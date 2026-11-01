@@ -193,7 +193,10 @@ export type ProjectListRefresh<T> =
     }
   | {
       readonly refresh: "RereadNamed";
-      readonly names: (change: ProjectListChange) => boolean;
+      readonly names: (
+        change: ProjectListChange,
+        previous: T | undefined,
+      ) => boolean;
     };
 
 /** Held by no literal a caller can write, so a `ProjectList` is one of the
@@ -201,7 +204,7 @@ export type ProjectListRefresh<T> =
  * what the brand stops is a list assembled rather than one taken apart. */
 const projectListWitness: unique symbol = Symbol("projectListWitness");
 
-/** What a frame of a kind other than the list's own does to its entry. */
+/** What a frame of a kind other than the list's own folds into its entry. */
 export type ProjectListFold<T> = (
   previous: T | undefined,
   change: ProjectListChange,
@@ -212,8 +215,8 @@ export interface ProjectList<T> {
   readonly kind: ProjectChangeKind;
   readonly key: ProjectQueryKey;
   readonly refresh: ProjectListRefresh<T>;
-  /** The other kinds whose frames fold into the entry, each by its own fold. */
-  readonly alongside: Partial<Record<ProjectChangeKind, ProjectListFold<T>>>;
+  /** The other kinds whose frames reach the entry, each by its own refresh. */
+  readonly alongside: Partial<Record<ProjectChangeKind, ProjectListRefresh<T>>>;
   readonly [projectListWitness]: true;
 }
 
@@ -281,7 +284,7 @@ export function projectListRereadNamed<T>(
   partition: PartitionIdentity,
   kind: ProjectChangeKind,
   name: string,
-  names: (change: ProjectListChange) => boolean,
+  names: (change: ProjectListChange, previous: T | undefined) => boolean,
 ): ProjectList<T> {
   return projectListOf(partition, kind, name, {
     refresh: "RereadNamed",
@@ -299,7 +302,27 @@ export function projectListAlongside<T>(
   kind: ProjectChangeKind,
   fold: ProjectListFold<T>,
 ): ProjectList<T> {
+  return projectListAlongsideOf(list, kind, { refresh: "Fold", fold });
+}
+
+/**
+ * The same list, read again on every frame of a further kind — where a list
+ * holds what the server derives from that kind as well as from its own, as the
+ * inbox holds a ticket because an action is open on it.
+ */
+export function projectListAlongsideReread<T>(
+  list: ProjectList<T>,
+  kind: ProjectChangeKind,
+): ProjectList<T> {
+  return projectListAlongsideOf(list, kind, { refresh: "Reread" });
+}
+
+function projectListAlongsideOf<T>(
+  list: ProjectList<T>,
+  kind: ProjectChangeKind,
+  refresh: ProjectListRefresh<T>,
+): ProjectList<T> {
   if (kind === list.kind)
     throw new RangeError(`a list's own kind ${kind} folds by its own refresh`);
-  return { ...list, alongside: { ...list.alongside, [kind]: fold } };
+  return { ...list, alongside: { ...list.alongside, [kind]: refresh } };
 }

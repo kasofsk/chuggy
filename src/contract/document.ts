@@ -8,6 +8,7 @@ import type { z } from "zod";
 import { nativeHttpEndpoints } from "./endpoints.ts";
 
 import {
+  inboxPhases,
   nativeHttpBasePath,
   nativeHttpMediaType,
   nativeHttpRoutes,
@@ -211,6 +212,7 @@ export function nativeHttpContractDocument(): unknown {
       "installation settings are defaults; an absent override inherits one, and a write replaces the whole set under the revision it was read at",
     selectorProposals:
       "where a project's dispatch mode is ApprovalRequired each lead decision is held until a principal who may dispatch its tickets answers it whole: an approval dispatches each ticket it named that has not moved since, and a rejection ends it; the note given with either is in the lead's next observation, and answering a decision no longer held is a conflict",
+    inbox: `one entry for each ticket a person is needed for: one in ${inboxPhases.join(" or ")}, one with an open native action, one a refusal of the lead's stands on, and one a decision held for approval names, which a reader who may not dispatch is shown none of, nor counted; each entry is the row the tickets list answers, latestExecution included, with the ticket's open actions, standing refusals and held decisions; last activity first as the tickets list orders it, resumed by the cursor a page answers, and count is every ticket the inbox holds, on every page`,
     threadLimit: `a member holds at most their limit of open threads in a project, ${String(threadsOpenDefault)} until an administrator of the project sets theirs; opening is idempotent on the key its client sends, answering the thread that key opened whatever its state, and an open at the limit is refused ThreadLimitReached; a limit lowered below what a member holds closes nothing`,
     forgeInstallations:
       "a tenant's administrator claims an account by authorizing this deployment's app on the forge, which claims each account the forge says they own and nothing else; each tenant holds its own claim, and a claim is never released",

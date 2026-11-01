@@ -1,7 +1,7 @@
 /**
  * The lead's held decisions in the inbox: a row per ticket a decision names,
  * Approve and Reject answering the decision whole, and the row leaving only
- * when the held decisions read again no longer name it.
+ * when the inbox read again no longer names it.
  */
 
 // jscpd:ignore-start -- the imports and vi.mock factories a case cannot hoist out
@@ -18,20 +18,20 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { selectorReviewFeedbackCharsMax } from "../../../src/contract/http.ts";
-import type { SelectorProposalResponse } from "../../../src/contract/responses.ts";
+import type {
+  ProjectTicket,
+  SelectorProposalResponse,
+} from "../../../src/contract/responses.ts";
 import { selectorProposalNotHeldCode } from "../../../src/contract/rosters.ts";
 import { InboxScreen } from "../app/browser/Inbox.tsx";
-import { projectAbilitiesResource } from "../app/browser/projectAbilities.tsx";
-import { projectResourceKey } from "../app/core/projectQueryKeys.ts";
+import { inboxAsked, inboxBody, inboxEntry } from "./inboxFixture.ts";
 import {
   abilitiesEvery,
   abilitiesFetch,
-  abilitiesNone,
-  addressesKept,
   unanswered,
 } from "./projectAbilitiesFixture.ts";
-import type { AbilitiesAnswer } from "./projectAbilitiesFixture.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
+import { ticketInstants } from "./ticketInstants.ts";
 import {
   answer,
   openedStream,
@@ -65,6 +65,27 @@ afterEach(() => {
 });
 
 const both: SelectorProposalResponse = { decision: "dec-one", tickets: [7, 8] };
+
+/** A released ticket a decision would dispatch, which no phase of the inbox holds. */
+function proposedTicket(ticket: number): ProjectTicket {
+  return { ticket, phase: "Pending", sequence: ticket, ...ticketInstants };
+}
+
+/** The inbox over the decisions still held: one entry for each ticket any of them names. */
+function inboxOver(held: readonly SelectorProposalResponse[]): Response {
+  const tickets = [...new Set(held.flatMap((proposal) => proposal.tickets))];
+  return answer(
+    inboxBody(
+      tickets.map((ticket) =>
+        inboxEntry(proposedTicket(ticket), {
+          proposals: held.filter((proposal) =>
+            proposal.tickets.includes(ticket),
+          ),
+        }),
+      ),
+    ),
+  );
+}
 
 interface Reviewed {
   readonly url: string;
@@ -103,14 +124,8 @@ function drawProject(served: {
   readonly unanswered?: boolean;
   /** The review is answered, but never the read after it. */
   readonly rereadHeld?: boolean;
-  /** A reader who may not dispatch, whom the read answers as it answers a project they cannot see. */
-  readonly absent?: boolean;
-  /** What the abilities read answers: every door unless the case says, and `undefined` never answers it. */
-  readonly abilities?: AbilitiesAnswer;
 }): {
   readonly reviewed: readonly Reviewed[];
-  readonly proposalsAsked: () => number;
-  readonly client: QueryClient;
 } {
   const reviewed: Reviewed[] = [];
   let held = [...served.held];
@@ -142,31 +157,23 @@ function drawProject(served: {
           )
         : answer({ decision: named.decision, outcome: body.outcome });
     }
-    if (url.includes("/selector-proposals")) {
+    if (inboxAsked(url)) {
       if (answered && served.rereadHeld === true) return undefined;
-      return served.absent === true
-        ? answer({ error: { code: "NotFound", message: "absent" } }, 404)
-        : answer({ proposals: held, more: false });
+      return inboxOver(held);
     }
-    if (url.includes("/agentic-refusals"))
-      return answer({ refusals: [], more: false });
-    if (url.includes("/native-actions")) return answer({ actions: [] });
     if (url.includes("/executions")) return answer({ executions: [] });
     return answer({ partition: atlas, sequence: 9, tickets: [] });
   };
-  const kept = addressesKept(
+  vi.stubGlobal(
+    "fetch",
     abilitiesFetch(
-      "abilities" in served ? served.abilities : abilitiesEvery,
+      abilitiesEvery,
       ((url: string, init?: { method?: string; body?: string }) =>
         respond(url, init) ?? unanswered()) as typeof fetch,
     ),
   );
-  vi.stubGlobal("fetch", kept.fetch);
-  return {
-    reviewed,
-    proposalsAsked: () => kept.sentTo("/selector-proposals"),
-    client: inboxDrawn(),
-  };
+  inboxDrawn();
+  return { reviewed };
 }
 
 /** The row a ticket's number link sits in. */
@@ -325,80 +332,4 @@ test("a review the server failed says why, and leaves the decision to answer aga
       .getByRole("button", { name: "approve" })
       .hasAttribute("disabled"),
   ).toBe(false);
-});
-
-test("a reader who may not dispatch has no proposal and no notice", async () => {
-  drawProject({ held: [both], absent: true });
-  await settled();
-  expect(screen.queryByText("Proposal")).toBeNull();
-  expect(screen.queryByText(/^Proposals ·/u)).toBeNull();
-  expect(screen.getByText("Inbox is clear")).toBeDefined();
-});
-
-test("a reader the abilities read says may not dispatch is never sent the held decisions read", async () => {
-  const api = drawProject({
-    held: [both],
-    abilities: { ...abilitiesEvery, dispatch: false },
-  });
-  await settled();
-  expect(api.proposalsAsked()).toBe(0);
-  expect(screen.queryByText("Proposal")).toBeNull();
-  expect(screen.getByText("Inbox is clear")).toBeDefined();
-});
-
-test("the held decisions are not read while the abilities read is unanswered", async () => {
-  const api = drawProject({ held: [both], abilities: undefined });
-  await settled();
-  expect(api.proposalsAsked()).toBe(0);
-  expect(screen.queryByText("Proposal")).toBeNull();
-});
-
-test("the held decisions are read once the abilities read says the reader may dispatch", async () => {
-  const api = drawProject({
-    held: [both],
-    abilities: { ...abilitiesNone, dispatch: true },
-  });
-  await settled();
-  expect(api.proposalsAsked()).toBeGreaterThan(0);
-  expect(within(row(7)).getByText("Proposal")).toBeDefined();
-});
-
-/** A read that went wrong says nothing of what the reader may do, so the
- * decisions are read as they were before there was anything to ask. */
-test.each([
-  [
-    "failed",
-    answer({ error: { code: "InternalError", message: "fault" } }, 500),
-  ],
-  [
-    "was absent",
-    answer({ error: { code: "NotFound", message: "absent" } }, 404),
-  ],
-])(
-  "the held decisions are read by a reader whose abilities read %s",
-  async (_, refusal) => {
-    const api = drawProject({
-      held: [both],
-      abilities: Promise.resolve(refusal),
-    });
-    await settled();
-    expect(api.proposalsAsked()).toBeGreaterThan(0);
-    expect(within(row(7)).getByText("Proposal")).toBeDefined();
-  },
-);
-
-/** A poll that has stopped leaves its last answer in the cache, and a row
- * drawn from it would offer an answer the server now refuses. */
-test("held decisions already read are not drawn once the reader may no longer dispatch", async () => {
-  const api = drawProject({ held: [both] });
-  await settled();
-  expect(within(row(7)).getByText("Proposal")).toBeDefined();
-  await turned(() => {
-    api.client.setQueryData(
-      projectResourceKey(atlas, "Project", projectAbilitiesResource),
-      { ...abilitiesEvery, dispatch: false },
-    );
-  });
-  await settled();
-  expect(screen.queryByText("Proposal")).toBeNull();
 });

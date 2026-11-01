@@ -8,6 +8,7 @@
 
 import { expect, test } from "vitest";
 
+import { inboxPhases } from "../../../src/contract/http.ts";
 import { escalationKinds, phaseRoster } from "../../../src/contract/rosters.ts";
 import type {
   EscalationKind,
@@ -44,6 +45,11 @@ test("the sections partition the roster, leaving no phase in two and none in non
     ticketSectionPhases(section),
   );
   expect([...gathered].sort()).toStrictEqual([...phaseRoster].sort());
+});
+
+/** The server decides the inbox by the contract's phases, so the section that draws it is held to the same list. */
+test("the Needs you section holds exactly the phases the inbox is read by", () => {
+  expect(ticketSectionPhases("NeedsYou")).toStrictEqual(inboxPhases);
 });
 
 const badgeOfKind: Readonly<Record<EscalationKind, string>> = {

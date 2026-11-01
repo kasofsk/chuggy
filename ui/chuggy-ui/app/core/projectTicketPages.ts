@@ -386,7 +386,7 @@ export function projectTicketRowsFolded(
 
 /** Whether an execution is its ticket's latest over the one held, in the order
  * `latest=true` answers: the higher task, the same execution being itself. */
-function projectTicketExecutionLater(
+export function projectTicketExecutionLater(
   held: TicketLatestExecution | undefined,
   arriving: TicketLatestExecution,
 ): boolean {

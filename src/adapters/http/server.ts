@@ -64,6 +64,7 @@ import type {
   ProjectStreamHub,
 } from "../../interpreter/projectStream.ts";
 import type { SelectorProjectSettingsAdministration } from "../../interpreter/selectorProjectSettings.ts";
+import type { ProjectInbox } from "../../interpreter/projectInbox.ts";
 import type { SelectorProposalReviews } from "../../interpreter/selectorReview.ts";
 import type { ForgeCredentialMinting } from "../../interpreter/forgeCredentials.ts";
 import type { RepositoryOnboarding } from "../../interpreter/repositoryOnboarding.ts";
@@ -175,6 +176,7 @@ import {
   latestExecutionsResponse,
   operationalStatusResponse,
   agenticRefusalsResponse,
+  inboxResponse,
   hostedRunsResponse,
   projectAbilitiesResponse,
   leadResponse,
@@ -909,6 +911,35 @@ function registerSelectorHistory(
       ),
     );
   });
+}
+
+/** The lead's held decisions and the inbox that holds them, each where it was composed. */
+function registerReviewsAndInbox(
+  app: FastifyInstance,
+  proposalReviews: SelectorProposalReviews | undefined,
+  inbox: ProjectInbox | undefined,
+): void {
+  if (proposalReviews !== undefined)
+    registerSelectorProposals(app, proposalReviews);
+  if (inbox !== undefined) registerInbox(app, inbox);
+}
+
+/** The inbox, one page at a time under the tickets list's own activity cursor. */
+function registerInbox(app: FastifyInstance, inbox: ProjectInbox): void {
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.inbox,
+    (request, principal, partition) => {
+      const query = nativeHttpEndpoints.inbox.query.parse(request.query);
+      return inbox.read(principal, partition, {
+        ...(query.cursor === undefined
+          ? {}
+          : { after: parseTicketActivityCursor(query.cursor, partition) }),
+        limit: query.limit,
+      });
+    },
+    inboxResponse,
+  );
 }
 
 /** The lead's held decisions, read and answered by a principal who may dispatch. */
@@ -2934,6 +2965,7 @@ export function createNativeHttpApp(
   ownerFallback?: ProjectOwnerFallbackAdministration,
   threadLimits?: ThreadLimitAdministration,
   chat?: MemberChat,
+  inbox?: ProjectInbox,
 ): FastifyInstance {
   const app = nativeHttpServer(limits);
   const partitionRoot = "/api/v1/tenants/:tenant/projects/:project";
@@ -2952,8 +2984,7 @@ export function createNativeHttpApp(
   registerSelectorHistory(app, web, partitionRoot);
   if (selectorSettings !== undefined)
     registerSelectorSettings(app, selectorSettings);
-  if (proposalReviews !== undefined)
-    registerSelectorProposals(app, proposalReviews);
+  registerReviewsAndInbox(app, proposalReviews, inbox);
   if (forgeCredentials !== undefined)
     registerForgeCredentials(app, forgeCredentials);
   if (onboarding !== undefined) registerOnboarding(app, onboarding);

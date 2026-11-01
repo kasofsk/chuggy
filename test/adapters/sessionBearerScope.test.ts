@@ -158,6 +158,7 @@ function scopedApp(
     recorded(reached, "ownerFallback"),
     recorded(reached, "threadLimits"),
     memberChatRecorded(reached, granted),
+    recorded(reached, "inbox"),
   );
 }
 

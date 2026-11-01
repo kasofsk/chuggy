@@ -8,6 +8,8 @@
 
 import { z } from "zod";
 
+import type { TicketPhase } from "./rosters.ts";
+
 /** How many code points `text` holds, which is what zod's `.max()` reads on a
  * string past its bound — not `String.length`'s UTF-16 units. */
 export function textCodePointsCount(text: string): number {
@@ -96,6 +98,12 @@ export const nativeHttpPageItemsDefault = 50;
 
 /** The longest search a ticket list is read under, counted after trimming. */
 export const ticketSearchCharsMax = 200;
+
+/**
+ * The phases that put a ticket in the inbox by themselves, which is the
+ * console's "Needs you" section: Escalated is the model's `hasOpenHumanTask`.
+ */
+export const inboxPhases: readonly TicketPhase[] = ["Escalated"];
 
 /**
  * How long a finished ticket stays in the active list: one is active while it
@@ -513,6 +521,7 @@ export const nativeHttpRoutes = {
   ticketLandings: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/tickets/:ticket/landings`,
   nativeActions: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/native-actions`,
   agenticRefusals: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/agentic-refusals`,
+  inbox: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/inbox`,
   operationalStatus: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/operational-status`,
   selectorContext: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/selector-context`,
   selectorSettings: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/selector-settings`,

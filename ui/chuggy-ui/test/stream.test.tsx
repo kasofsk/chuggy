@@ -34,7 +34,9 @@ import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import type { ProjectChangeKind } from "../../../src/contract/events.ts";
 import {
   projectListAlongside,
+  projectListAlongsideReread,
   projectListFolded,
+  projectListRereadNamed,
   projectResourceKey,
 } from "../app/core/projectQueryKeys.ts";
 import type { ProjectList } from "../app/core/projectQueryKeys.ts";
@@ -317,6 +319,39 @@ test("a list folds a frame of a kind alongside its own by that kind's fold", asy
   );
   const client = await refreshedEntry(list, []);
   expect(client.getQueryData(list.key)).toEqual(["ticket:3"]);
+});
+
+test("a list is read again on a frame of a kind alongside it that rereads it, and left alone by its own kind's fold", async () => {
+  const list = projectListAlongsideReread(
+    namingList("Draft", "rereading"),
+    "Ticket",
+  );
+  const client = await refreshedEntry(list, []);
+  expect(client.getQueryState(list.key)?.isInvalidated).toBe(true);
+  expect(client.getQueryData(list.key)).toEqual([]);
+});
+
+/** A named reread is told what the entry holds, so a frame about a row it has is one it can recognise. */
+test("a named reread is asked with the entry the frame would stale", async () => {
+  const asked: unknown[] = [];
+  const list = projectListRereadNamed<readonly string[]>(
+    atlas,
+    "Ticket",
+    "named",
+    (change, previous) => {
+      asked.push([change.resource, previous]);
+      return previous?.includes(change.resource) === true;
+    },
+  );
+  const holding = await refreshedEntry(list, ["3"]);
+  expect(holding.getQueryState(list.key)?.isInvalidated).toBe(true);
+  cleanup();
+  const other = await refreshedEntry(list, ["4"]);
+  expect(other.getQueryState(list.key)?.isInvalidated).toBe(false);
+  expect(asked).toStrictEqual([
+    ["3", ["3"]],
+    ["3", ["4"]],
+  ]);
 });
 
 /** A `Ticket` frame carries no latest execution, so a ticket the rows have not

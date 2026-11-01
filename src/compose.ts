@@ -46,7 +46,11 @@ import {
 import { gitPromotion } from "./adapters/git/gitPromotion.ts";
 import { postgresOperationInbox } from "./adapters/postgres/operationInbox.ts";
 import { postgresLeadInquiries } from "./adapters/postgres/leadInquiry.ts";
-import { postgresNativeReads } from "./adapters/postgres/nativeReads.ts";
+import {
+  postgresInboxReads,
+  postgresNativeReads,
+} from "./adapters/postgres/nativeReads.ts";
+import { projectInbox, type ProjectInbox } from "./interpreter/projectInbox.ts";
 import {
   postgresAuthoring,
   postgresRepositoryConfigurationsHeld,
@@ -129,7 +133,10 @@ import {
   postgresSelectorState,
 } from "./adapters/postgres/selector.ts";
 import { authorizedProjectInventory } from "./interpreter/projectInventory.ts";
-import { postgresAgenticRefusalLedger } from "./adapters/postgres/agenticRefusal.ts";
+import {
+  postgresAgenticRefusalLedger,
+  postgresAgenticRefusalReads,
+} from "./adapters/postgres/agenticRefusal.ts";
 import { postgresLeadMailbox } from "./adapters/postgres/leadMailbox.ts";
 import type { LeadSessionMint } from "./interpreter/leadMailbox.ts";
 import {
@@ -376,6 +383,23 @@ export function composeSelectorProposalReviews(
     access,
     postgresSelectorProposalReviews(selectorReviewPool),
   );
+}
+
+/**
+ * The inbox over the API pool, with the refusals it reads there and the held
+ * decisions it reads through the review role, as the proposals route does.
+ */
+export function composeProjectInbox(
+  apiPool: pg.Pool,
+  selectorReviewPool: pg.Pool,
+  access: ProjectAccess,
+): ProjectInbox {
+  return projectInbox(access, {
+    store: postgresInboxReads(apiPool),
+    operationalReads: postgresOperationalReads(apiPool),
+    refusals: postgresAgenticRefusalReads(apiPool),
+    proposals: composeSelectorProposalReviews(selectorReviewPool, access),
+  });
 }
 
 /**

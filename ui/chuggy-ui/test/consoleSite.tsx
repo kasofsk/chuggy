@@ -59,18 +59,17 @@ import {
   forgeInstallationPermissionsResponseSchema,
   forgeInstallationsResponseSchema,
   hostedRunsResponseSchema,
+  inboxResponseSchema,
   leadReadResponseSchema,
   leadTranscriptResponseSchema,
   personalRunnerPermitResponseSchema,
   personalRunnerResponseSchema,
   projectAbilitiesResponseSchema,
   projectInventoryResponseSchema,
-  projectNativeActionsResponseSchema,
   projectOwnerFallbackResponseSchema,
   projectRepositoriesResponseSchema,
   projectResponseSchema,
   selectorProjectSettingsResponseSchema,
-  selectorProposalsResponseSchema,
   selectorSettingsHistoryResponseSchema,
   sessionPlacementResponseSchema,
   threadResponseSchema,
@@ -81,6 +80,7 @@ import {
   ticketResponseSchema,
   workerPoolsResponseSchema,
 } from "../../../src/contract/responses.ts";
+import type { InboxResponse } from "../../../src/contract/responses.ts";
 import { InviteProvider } from "../app/browser/InvitePage.tsx";
 import { consoleRouterOver } from "../app/browser/routes.tsx";
 import { SessionProvider, useSilentRefresh } from "../app/browser/session.tsx";
@@ -161,6 +161,29 @@ export const consoleRouteParameters: Readonly<Record<string, string>> = {
   repository: encodeURIComponent(consoleRepository),
 };
 
+/** The ticket the lead refuses, which a held decision of its own also names:
+ * the one entry the inbox holds, and the one Reject's note is typed under. */
+export const consoleInboxTicket = 42;
+
+const consoleInbox: InboxResponse = {
+  entries: [
+    {
+      ticket: {
+        ...ticketPageTicket,
+        phase: "Pending",
+        ticket: consoleInboxTicket,
+      },
+      actions: [],
+      refusals: leadRefusals(false).refusals,
+      proposals: [
+        { decision: "selector-decision-2", tickets: [consoleInboxTicket] },
+      ],
+    },
+  ],
+  count: 1,
+  more: false,
+};
+
 /** One read the site answers: the paths it is asked on, the schema the
  * console parses it with, and the fixture it is answered with. */
 interface ConsoleRead {
@@ -222,14 +245,9 @@ const consoleReads: readonly ConsoleRead[] = [
     body: () => leadTranscriptPage(0, 1),
   },
   {
-    path: consoleReadAt(`${projectPath}/selector-proposals`),
-    schema: selectorProposalsResponseSchema,
-    body: () => ({ proposals: [], more: false }),
-  },
-  {
-    path: consoleReadAt(`${projectPath}/native-actions`),
-    schema: projectNativeActionsResponseSchema,
-    body: () => ({ actions: [] }),
+    path: consoleReadAt(`${projectPath}/inbox`),
+    schema: inboxResponseSchema,
+    body: () => consoleInbox,
   },
   {
     path: consoleReadAt(`${projectPath}/agentic-refusals`),
@@ -507,6 +525,8 @@ export interface ConsoleSite extends ConsoleNetwork {
   up: boolean;
   /** A route that answers a fault until it is cleared. */
   failing: RegExp | undefined;
+  /** Every read the console sent, by its path and query. */
+  readonly reads: string[];
   /** Every request the table had no route for. */
   readonly unrouted: string[];
   /** Every fixture its route's schema refused, with why. */
@@ -548,6 +568,7 @@ function consoleSiteLate<T>(answered: () => T | Promise<T>): Promise<T> {
 
 function consoleSiteRead(site: ConsoleSite, url: string): Response {
   const address = new URL(url, "http://console.test");
+  site.reads.push(`${address.pathname}${address.search}`);
   const read = consoleReads.find((entry) => entry.path.test(address.pathname));
   if (read === undefined) {
     site.unrouted.push(`GET ${url}`);
@@ -631,6 +652,7 @@ export function consoleSiteOpened(): ConsoleSite {
   const site: ConsoleSite = {
     up: true,
     failing: undefined,
+    reads: [],
     unrouted: [],
     drifted: [],
     updatesInRender: [],
@@ -807,24 +829,26 @@ export function consoleSiteEachCase(made: (site: ConsoleSite) => void): void {
   });
 }
 
-/** The console mounted at `path` over the site, as `main.tsx` mounts it. */
+/** The console mounted at `path` over the site, as `main.tsx` mounts it —
+ * under `StrictMode` unless `strict` is false, which mounts the tree once as a
+ * production build does, so a case can count what one mount reads. */
 export function consoleMounted(
   path: string,
   session: ConsoleSession = consoleSession(),
+  strict = true,
 ): void {
   const client = new QueryClient({
     defaultOptions: { queries: panelQueryDefaults },
   });
   const invite = inviteBrowser({ pathname: path });
-  render(
-    <StrictMode>
-      <SessionProvider holder={session.holder}>
-        <InviteProvider holder={invite.holder}>
-          <ConsoleSignedIn path={path} client={client} />
-        </InviteProvider>
-      </SessionProvider>
-    </StrictMode>,
+  const tree = (
+    <SessionProvider holder={session.holder}>
+      <InviteProvider holder={invite.holder}>
+        <ConsoleSignedIn path={path} client={client} />
+      </InviteProvider>
+    </SessionProvider>
   );
+  render(strict ? <StrictMode>{tree}</StrictMode> : tree);
 }
 
 /** The fake clock moved on by `ms`, every timer and read it releases run and
