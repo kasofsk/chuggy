@@ -563,6 +563,24 @@ function useChatPaneDoor(partition: PartitionIdentity): {
   };
 }
 
+/** The project the pane is drawn in, as of its last commit, forgetting what
+ * the last one held, through `read`, when it changes. */
+function useChatPaneOpenHeldIn(
+  partition: PartitionIdentity,
+  read: () => void,
+): { readonly current: string } {
+  const [heldIn, setHeldIn] = useState(() => partitionPath(partition));
+  if (heldIn !== partitionPath(partition)) {
+    setHeldIn(partitionPath(partition));
+    read();
+  }
+  const current = useRef(heldIn);
+  useEffect(() => {
+    current.current = heldIn;
+  });
+  return current;
+}
+
 /**
  * Which thread the open pane draws: the one the reader chose, or the one the
  * pane holds for them, both held by the shell so they outlive the pane, kept off
@@ -592,15 +610,7 @@ function useChatPaneOpenHeld(partition: PartitionIdentity): {
     setStarting(false);
     setOpening(undefined);
   }, []);
-  const [heldIn, setHeldIn] = useState(() => partitionPath(partition));
-  if (heldIn !== partitionPath(partition)) {
-    setHeldIn(partitionPath(partition));
-    read();
-  }
-  const current = useRef(heldIn);
-  useEffect(() => {
-    current.current = heldIn;
-  });
+  const current = useChatPaneOpenHeldIn(partition, read);
   const {
     chosen: picked,
     choose,
