@@ -275,6 +275,8 @@ interface Drawing {
   readonly over?: (served: typeof fetch) => typeof fetch;
   /** The project's stream, where a case is about one that is down or pushes. */
   readonly stream?: StreamServer;
+  /** The cache the page is drawn under, where a case draws it twice over one. */
+  readonly client?: QueryClient;
 }
 
 async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
@@ -308,6 +310,7 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
     <ScreenHarness
       partition={leadPartition}
       client={
+        drawing.client ??
         new QueryClient({ defaultOptions: { queries: { retry: false } } })
       }
       transport={(drawing.stream ?? openedStream()).ports.fetch}
@@ -2585,6 +2588,40 @@ test.each([
     expect(unbindOffers()).toStrictEqual(unbindOffered);
   },
 );
+
+/** An unbind outlives the listing that asked it, so a listing drawn again
+ * while it is out has to say what it answers. */
+test("a listing drawn again while an unbind is out asks its question busy, and says the refusal under it", async () => {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const unbinding = heldAnswer();
+  await drawPage({
+    bound: liveAndRetired,
+    posted: () => unbinding.answered,
+    client,
+  });
+  await unbindAnswered("Unbind");
+  cleanup();
+  await drawPage({ bound: liveAndRetired, client });
+
+  expect(
+    within(unbindAsked() ?? document.body)
+      .getByRole("button", {
+        name: "Unbind",
+      })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+
+  await turned(() => {
+    unbinding.release(deferred());
+  });
+  await settled();
+
+  const said = unbindAsked()?.nextElementSibling;
+  expect(said?.getAttribute("role")).toBe("status");
+  expect(said?.textContent).toBe("Deferring");
+});
 
 /** Binding a retired repository again is a bind the route answers, so the
  * picker offers it as any repository this project does not bind. */

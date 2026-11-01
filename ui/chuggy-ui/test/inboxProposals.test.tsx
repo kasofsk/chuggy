@@ -126,6 +126,7 @@ function drawProject(served: {
   readonly rereadHeld?: boolean;
 }): {
   readonly reviewed: readonly Reviewed[];
+  readonly client: QueryClient;
 } {
   const reviewed: Reviewed[] = [];
   let held = [...served.held];
@@ -172,8 +173,8 @@ function drawProject(served: {
         respond(url, init) ?? unanswered()) as typeof fetch,
     ),
   );
-  inboxDrawn();
-  return { reviewed };
+  const client = inboxDrawn();
+  return { reviewed, client };
 }
 
 /** The row a ticket's number link sits in. */
@@ -289,6 +290,23 @@ test("an answered decision cannot be answered again before the read that removes
   });
   await settled();
   expect(api.reviewed.length).toBe(1);
+  expect(said()).toBe("Proposal 7, 8 · Approved");
+});
+
+/** A settled review nothing observes is collected from the cache, and the line
+ * is the inbox's own, so it is still said once that happens. */
+test("an answer is still said once its review has been collected", async () => {
+  const api = drawProject({ held: [both] });
+  await settled();
+  await turned(() => {
+    within(row(7)).getByRole("button", { name: "approve" }).click();
+  });
+  await settled();
+  await turned(() => {
+    const cache = api.client.getMutationCache();
+    for (const review of cache.getAll()) cache.remove(review);
+  });
+  await settled();
   expect(said()).toBe("Proposal 7, 8 · Approved");
 });
 

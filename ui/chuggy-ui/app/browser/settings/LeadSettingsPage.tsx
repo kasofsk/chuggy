@@ -144,6 +144,7 @@ function SelectorSettingsForm(props: {
 }): ReactNode {
   const held = useSelectorSettingsDraft(props.settings);
   const writing = useSelectorSettingsWriting<SelectorSettingsWriter>(
+    "Settings",
     props.partition,
     held,
   );

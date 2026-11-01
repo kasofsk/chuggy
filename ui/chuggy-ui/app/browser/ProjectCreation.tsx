@@ -21,6 +21,7 @@
  */
 
 import { useNavigate } from "@tanstack/react-router";
+import type { UseNavigateResult } from "@tanstack/react-router";
 import { useId, useState } from "react";
 import type { ReactNode } from "react";
 
@@ -217,21 +218,28 @@ function ProjectCreationWorkspace(
 }
 
 /** One creation under the identity its press drew or repeated, over once the
- * projects inventory has been read again with it. */
-const projectCreationWrite: ConsoleWrite<
-  ProjectCreationSent,
-  ProjectCreatedResponse
-> = {
-  mutationKey: consoleWriteKey("project-creation"),
-  write: (ports, sent) => apiCreateProject(ports, sent.fields, sent.operation),
-  refusal: projectCreationRefusal,
-  landed: async (client, partition) => {
-    lastProjectWrite(persistentStore, partition);
-    await client.invalidateQueries({
-      queryKey: projectsInventoryQuery().queryKey,
-    });
-  },
-};
+ * projects inventory has been read again with it, and then the new project's
+ * repositories, whether or not the form is still drawn. */
+function projectCreationWrite(
+  navigate: UseNavigateResult<string>,
+): ConsoleWrite<ProjectCreationSent, ProjectCreatedResponse> {
+  return {
+    mutationKey: consoleWriteKey("project-creation"),
+    write: (ports, sent) =>
+      apiCreateProject(ports, sent.fields, sent.operation),
+    refusal: projectCreationRefusal,
+    landed: async (client, partition) => {
+      lastProjectWrite(persistentStore, partition);
+      await client.invalidateQueries({
+        queryKey: projectsInventoryQuery().queryKey,
+      });
+      void navigate({
+        to: "/$tenant/$project/repositories",
+        params: partition,
+      });
+    },
+  };
+}
 
 /** The press that sends these two names, and the line a refusal of them left,
  * which is drawn only while the form holds the names it answered. */
@@ -241,21 +249,11 @@ function useProjectCreationSend(fields: ProjectCreationFields): {
   readonly create: () => void;
 } {
   const navigate = useNavigate();
-  const creating = useConsoleWrite(projectCreationWrite);
+  const creating = useConsoleWrite(projectCreationWrite(navigate));
   const standing = projectCreationStanding(creating.variables, fields);
   const create = (): void => {
     const operation = standing?.operation ?? drawnOperation();
-    creating.mutate(
-      { fields, operation },
-      {
-        onSuccess: (partition) => {
-          void navigate({
-            to: "/$tenant/$project/repositories",
-            params: partition,
-          });
-        },
-      },
-    );
+    creating.mutate({ fields, operation });
   };
   return {
     busy: creating.isPending,

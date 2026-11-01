@@ -82,22 +82,6 @@ type ForgeCallbackRedeem = Extract<
   { readonly decision: "Redeem" }
 >;
 
-/** The code redeemed for the tenant the transaction names, with its verifier. */
-const forgeCallbackRedeemWrite: ConsoleWrite<
-  ForgeCallbackRedeem,
-  ForgeAuthorizationResponse
-> = {
-  mutationKey: consoleWriteKey("forge-authorization"),
-  write: (ports, { code, transaction }) =>
-    apiForgeAuthorization(ports, transaction.tenant, {
-      forge: "github",
-      code,
-      redirectUri: forgeCallbackRedirectUri(currentOrigin()),
-      codeVerifier: transaction.verifier,
-    }),
-  refusal: (failure) => forgeAuthorizationRefusal(failure).status,
-};
-
 /** Where a redeemed code sends the person: on to the install it leaves to be
  * made, or back where they pressed with the word it came to. */
 async function forgeCallbackRedeemed(
@@ -115,6 +99,37 @@ async function forgeCallbackRedeemed(
     transaction,
     forgeAuthorizationWord(redeemed),
   );
+}
+
+/** The code redeemed for the tenant the transaction names, with its verifier,
+ * and the person sent on from its answer whether or not this page is still
+ * drawn. */
+function forgeCallbackRedeemWrite(
+  ports: ApiPorts,
+  navigate: UseNavigateResult<string>,
+): ConsoleWrite<ForgeCallbackRedeem, ForgeAuthorizationResponse> {
+  return {
+    mutationKey: consoleWriteKey("forge-authorization"),
+    write: (_ports, { code, transaction }) =>
+      apiForgeAuthorization(ports, transaction.tenant, {
+        forge: "github",
+        code,
+        redirectUri: forgeCallbackRedirectUri(currentOrigin()),
+        codeVerifier: transaction.verifier,
+      }),
+    refusal: (failure) => forgeAuthorizationRefusal(failure).status,
+    landed: (_client, redeemed, redeem) =>
+      forgeCallbackRedeemed(ports, navigate, redeem.transaction, redeemed),
+    refused: (refused, redeem) => {
+      void forgeReturnNavigate(
+        navigate,
+        redeem.transaction,
+        refused.failure === undefined
+          ? undefined
+          : forgeAuthorizationRefusal(refused.failure),
+      );
+    },
+  };
 }
 
 /** What the return answers before any code is redeemed, and the redemption it
@@ -173,32 +188,14 @@ export function ForgeCallbackPage(): ReactNode {
   const [decision] = useState<ForgeCallbackDecision>(() =>
     forgeCallbackDecision(query, forgeAuthorizeTake(transientStore)),
   );
-  const redeeming = useConsoleWrite(forgeCallbackRedeemWrite);
+  const redeeming = useConsoleWrite(forgeCallbackRedeemWrite(ports, navigate));
   const redeemingMutate = redeeming.mutate;
   const answered = useRef(false);
   useEffect(() => {
     if (answered.current) return;
     answered.current = true;
     forgeCallbackAnswer(navigate, decision, (redeem) => {
-      redeemingMutate(redeem, {
-        onSuccess: (redeemed) => {
-          void forgeCallbackRedeemed(
-            ports,
-            navigate,
-            redeem.transaction,
-            redeemed,
-          );
-        },
-        onError: (refused) => {
-          void forgeReturnNavigate(
-            navigate,
-            redeem.transaction,
-            refused.failure === undefined
-              ? undefined
-              : forgeAuthorizationRefusal(refused.failure),
-          );
-        },
-      });
+      redeemingMutate(redeem);
     });
   }, [ports, navigate, decision, redeemingMutate]);
   return (

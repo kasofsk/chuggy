@@ -9,7 +9,8 @@
  *
  * A REFUSAL IS SAID UNDER THE QUESTION IT ANSWERED, which stays drawn until
  * the reader cancels it or presses again, and the binding's row is left as it
- * was.
+ * was. A listing drawn again while an unbind is out asks its question again,
+ * busy, so the answer it takes up has somewhere to be said.
  */
 
 import { useState } from "react";
@@ -32,7 +33,8 @@ import { Notice } from "../ui/Notice.tsx";
 
 /** One unbind at a time across the listing, from its press to its answer. */
 export interface RepositoryUnbinding {
-  /** The repository whose question is drawn. */
+  /** The repository whose question is drawn: the one asked, or the one whose
+   * unbind is out or was refused. */
   readonly asking: string | undefined;
   readonly busy: boolean;
   /** The word the last refusal of the asked unbind is drawn as. */
@@ -69,8 +71,12 @@ export function useRepositoryUnbinding(
     unbinding.reset();
     setAsking(repository);
   };
+  const standing =
+    unbinding.isPending || unbinding.error !== null
+      ? unbinding.variables
+      : undefined;
   return {
-    asking,
+    asking: asking ?? standing,
     busy: unbinding.isPending,
     note: unbinding.error?.message,
     press: asked,

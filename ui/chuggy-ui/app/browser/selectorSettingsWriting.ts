@@ -72,6 +72,11 @@ export interface SelectorSettingsPressed<TWriter extends string> {
   readonly overrides: SelectorProjectOverrides;
 }
 
+/** The page a write was pressed on, each writing under a key of its own so a
+ * page that mounts takes up only its own write, and a refusal of the other's
+ * is the shell's to show. */
+export type SelectorSettingsPage = "Lead" | "Settings";
+
 /**
  * The whole override set written under the draft's revision. A write that
  * landed IS the newest read, so it is written into the settings key rather
@@ -80,6 +85,7 @@ export interface SelectorSettingsPressed<TWriter extends string> {
  * and be told by itself that somebody else wrote.
  */
 function selectorSettingsSaveWrite<TWriter extends string>(
+  page: SelectorSettingsPage,
   partition: PartitionIdentity,
 ): ConsoleWrite<
   SelectorSettingsPressed<TWriter>,
@@ -88,6 +94,7 @@ function selectorSettingsSaveWrite<TWriter extends string>(
   return {
     mutationKey: consoleWriteKey(
       "selector-settings",
+      page,
       partition.tenant,
       partition.project,
     ),
@@ -137,11 +144,14 @@ export interface SelectorSettingsWriting<TWriter extends string> {
  * only refuse.
  */
 export function useSelectorSettingsWriting<TWriter extends string>(
+  page: SelectorSettingsPage,
   partition: PartitionIdentity,
   held: SelectorSettingsHeld,
 ): SelectorSettingsWriting<TWriter> {
   const client = useQueryClient();
-  const saving = useConsoleWrite(selectorSettingsSaveWrite<TWriter>(partition));
+  const saving = useConsoleWrite(
+    selectorSettingsSaveWrite<TWriter>(page, partition),
+  );
   return {
     saving,
     reload: () => {

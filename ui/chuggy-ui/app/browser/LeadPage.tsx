@@ -166,7 +166,11 @@ function LeadSelectorStripReady(props: {
   readonly settings: SelectorProjectSettingsResponse;
 }): ReactNode {
   const held = useSelectorSettingsDraft(props.settings);
-  const writing = useSelectorSettingsWriting<"strip">(props.partition, held);
+  const writing = useSelectorSettingsWriting<"strip">(
+    "Lead",
+    props.partition,
+    held,
+  );
   return (
     <SelectorStrip
       draft={held.draft}

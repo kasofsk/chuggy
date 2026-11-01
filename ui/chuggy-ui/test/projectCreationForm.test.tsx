@@ -35,7 +35,7 @@ import {
   typed,
 } from "./projectCreationDrawn.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
-import { answer, settled } from "./screenHarness.tsx";
+import { answer, heldAnswer, settled, turned } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import type * as RouterModule from "@tanstack/react-router";
 
@@ -143,6 +143,26 @@ test("a created project is opened at its repositories and remembered", async () 
   await pressed();
   expect(posted.map((one) => one.body)).toEqual([partition]);
   expect(posted[0]?.key).toBeTruthy();
+  expect(held.went).toEqual([
+    { to: "/$tenant/$project/repositories", params: partition },
+  ]);
+  expect(lastProjectRead(persistentStore)).toEqual(partition);
+});
+
+/** The creation outlives the form, so the project it made is opened whether or
+ * not the form is still drawn when it answers. */
+test("a project created after its form was left is still opened at its repositories", async () => {
+  const creating = heldAnswer();
+  served([], () => creating.answered);
+  await drawn(<Landing />);
+  typed("Workspace", partition.tenant);
+  typed("Project", partition.project);
+  await pressed();
+  cleanup();
+  await turned(() => {
+    creating.release(answer(partition, 201));
+  });
+  await settled();
   expect(held.went).toEqual([
     { to: "/$tenant/$project/repositories", params: partition },
   ]);

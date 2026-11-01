@@ -16,7 +16,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import type { MutationKey, QueryClient } from "@tanstack/react-query";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -53,13 +53,35 @@ import type { NoticeTone } from "./ui/Notice.tsx";
 import { Pill } from "./ui/Pill.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
 
-/** One press of Approve or Reject, and where its answer is reported as soon as
- * the server gives it, before the inbox has been read again. */
+/** One press of Approve or Reject. */
 interface InboxProposalPressed {
   readonly proposal: SelectorProposalResponse;
   readonly outcome: SelectorReviewOutcome;
   readonly note: string;
-  readonly progress: ConsoleWriteProgress<InboxProposalStep>;
+}
+
+/** An answer to a review, and the project whose inbox it was given in. */
+interface InboxProposalHeard {
+  readonly partition: PartitionIdentity;
+  readonly answer: InboxProposalAnswer;
+}
+
+const inboxProposalHeards = new WeakMap<
+  QueryClient,
+  ConsoleWriteProgress<InboxProposalHeard>
+>();
+
+/** Where a client's reviews report each answer as soon as the server gives
+ * it, before the inbox has been read again, so an inbox drawn after the press
+ * hears it too. */
+function inboxProposalHeardOf(
+  client: QueryClient,
+): ConsoleWriteProgress<InboxProposalHeard> {
+  const standing = inboxProposalHeards.get(client);
+  if (standing !== undefined) return standing;
+  const heard = new ConsoleWriteProgress<InboxProposalHeard>();
+  inboxProposalHeards.set(client, heard);
+  return heard;
 }
 
 /** The reviews of a project's decisions, or of one decision. */
@@ -99,7 +121,13 @@ function inboxProposalReviewWrite(
         pressed.proposal.decision,
         inboxProposalReview(pressed.outcome, pressed.note),
       );
-      pressed.progress.report(inboxProposalAnswered(result));
+      inboxProposalHeardOf(client).report({
+        partition,
+        answer: {
+          proposal: pressed.proposal,
+          step: inboxProposalAnswered(result),
+        },
+      });
       if (result.outcome !== "Ok")
         await inboxProposalReviewReread(client, partition);
       return result;
@@ -118,22 +146,17 @@ export interface InboxProposalAnswers {
 
 /** Every review of the project's decisions the cache holds, watched for as
  * long as the inbox is drawn so the notice is what says a refusal. */
-function useInboxProposalReviews(
-  partition: PartitionIdentity,
-): readonly (InboxProposalPressed | undefined)[] {
+function useInboxProposalReviewsWatched(partition: PartitionIdentity): void {
   const client = useQueryClient();
-  const reviews = useMutationState({
+  const keys = useMutationState({
     filters: { mutationKey: inboxProposalReviewKey(partition) },
-    select: (mutation) => ({
-      key: mutation.options.mutationKey ?? [],
-      pressed: mutation.state.variables as InboxProposalPressed | undefined,
-    }),
+    select: (mutation) => mutation.options.mutationKey ?? [],
   });
-  const keyed = reviews.map((review) => hashKey(review.key)).join(" ");
+  const keyed = keys.map((key) => hashKey(key)).join(" ");
   useEffect(
     () => {
       const watch = consoleWriteWatchOf(client);
-      const released = reviews.map((review) => watch.watched(review.key));
+      const released = keys.map((key) => watch.watched(key));
       return () => {
         for (const release of released) release();
       };
@@ -141,33 +164,30 @@ function useInboxProposalReviews(
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the keys are watched by their hashes, which fresh arrays of the same parts keep
     [client, keyed],
   );
-  return reviews.map((review) => review.pressed);
 }
 
-/** The inbox's reviews, and the last one the server has answered. */
+/** The inbox's reviews, and the last one the server answered while it was
+ * drawn, held for as long as the inbox is. */
 export function useInboxProposalAnswers(
   partition: PartitionIdentity,
 ): InboxProposalAnswers {
-  const reviews = useInboxProposalReviews(partition);
-  const answered = useSyncExternalStore(
-    (changed) => {
-      const left = reviews.map((pressed) =>
-        pressed?.progress.subscribe(changed),
-      );
-      return () => {
-        for (const leave of left) leave?.();
-      };
-    },
-    () => reviews.findLast((pressed) => pressed?.progress.step !== undefined),
-  );
-  const step = answered?.progress.step;
-  return {
-    partition,
-    last:
-      answered === undefined || step === undefined
-        ? undefined
-        : { proposal: answered.proposal, step },
-  };
+  const client = useQueryClient();
+  useInboxProposalReviewsWatched(partition);
+  const [last, setLast] = useState<InboxProposalAnswer | undefined>(undefined);
+  const { tenant, project } = partition;
+  useEffect(() => {
+    const heard = inboxProposalHeardOf(client);
+    return heard.subscribe(() => {
+      const told = heard.step;
+      if (
+        told !== undefined &&
+        told.partition.tenant === tenant &&
+        told.partition.project === project
+      )
+        setLast(told.answer);
+    });
+  }, [client, tenant, project]);
+  return { partition, last };
 }
 
 /** Why a proposed ticket is here, and what else its decision would dispatch. */
@@ -241,7 +261,6 @@ function InboxProposalAction(props: {
       proposal,
       outcome,
       note,
-      progress: new ConsoleWriteProgress<InboxProposalStep>(),
     });
   };
   return (

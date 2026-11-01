@@ -33,7 +33,11 @@ import {
   chatPaneToggled,
   chatPaneUnhosted,
 } from "../../core/chatPane.ts";
-import type { ChatPaneHeaderDoor, ChatPaneState } from "../../core/chatPane.ts";
+import type {
+  ChatPaneChosen,
+  ChatPaneHeaderDoor,
+  ChatPaneState,
+} from "../../core/chatPane.ts";
 import {
   conversationExchangeSent,
   conversationExchangesStopped,
@@ -159,9 +163,11 @@ async function chatPaneOpenLanded(
 }
 
 /** One open from New, under the key the control holds, its refusal said as
- * the header's row says it. */
+ * the header's row says it. The thread it opened is chosen in the shell, which
+ * outlives the pane, whether or not the pane is still drawn. */
 function chatPaneOpenWrite(
   partition: PartitionIdentity,
+  choose: (chosen: ChatPaneChosen) => void,
 ): ConsoleWrite<string, ChatPaneOpened> {
   return {
     mutationKey: consoleWriteKey(
@@ -186,7 +192,11 @@ function chatPaneOpenWrite(
     },
     refusal: (failure) =>
       `Refused · ${threadOpenAtLimit(failure) ? threadLimitWord : panelReason(failure)}`,
-    landed: (client, opened) => chatPaneOpenLanded(client, partition, opened),
+    landed: (client, opened) => {
+      if (opened.opened === "Opened")
+        choose({ partition, session: opened.session });
+      return chatPaneOpenLanded(client, partition, opened);
+    },
   };
 }
 
@@ -204,7 +214,9 @@ function ChatPaneStartControl(props: {
   /** What the door would answer that nothing under the header says. */
   readonly header: ChatPaneHeaderDoor;
 }): ReactNode {
-  const opening = useConsoleWrite(chatPaneOpenWrite(props.partition));
+  const opening = useConsoleWrite(
+    chatPaneOpenWrite(props.partition, useChatPane().choose),
+  );
   const [key, setKey] = useState(chatPaneOpenKey);
   const answered = (opened: ChatPaneOpened): void => {
     switch (opened.opened) {
