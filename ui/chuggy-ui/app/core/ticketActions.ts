@@ -21,8 +21,8 @@ import type { PublicMutation } from "../../../../src/contract/requests.ts";
 import type { TicketResponse } from "../../../../src/contract/responses.ts";
 import type { DispatchViewResponse } from "../../../../src/contract/responses.ts";
 
-import { projectHeldKey, projectListReread } from "./projectQueryKeys.ts";
-import type { ProjectList, ProjectQueryKey } from "./projectQueryKeys.ts";
+import { projectListReread } from "./projectQueryKeys.ts";
+import type { ProjectList } from "./projectQueryKeys.ts";
 
 /** Settled, or past the point of no return: the complement of `revocableIn`. */
 export const ticketUnrevocablePhases: readonly TicketPhase[] = [
@@ -107,18 +107,44 @@ export interface TicketAttempt {
   readonly operation: string;
 }
 
-/**
- * Where an attempt in flight is held, so that the panel unmounting does not
- * take the record of it with it. It is the cache and not component state
- * because the cache outlives the panel, and it is a held key rather than a
- * resource one because it is the console's own working state and not a read of
- * anything the stream carries.
- */
-export function ticketAttemptKey(
+/** Every attempt a tab holds, at most one per ticket of each project. */
+export type TicketAttempts = Readonly<Record<string, TicketAttempt>>;
+
+/** What a ticket's attempt is filed under, its names encoded rather than
+ * joined so that no two tickets share one. */
+function ticketAttemptName(
   partition: PartitionIdentity,
   ticket: number,
-): ProjectQueryKey {
-  return projectHeldKey(partition, `attempt:${String(ticket)}`);
+): string {
+  return JSON.stringify([partition.tenant, partition.project, ticket]);
+}
+
+export function ticketAttemptOf(
+  attempts: TicketAttempts,
+  partition: PartitionIdentity,
+  ticket: number,
+): TicketAttempt | undefined {
+  return attempts[ticketAttemptName(partition, ticket)];
+}
+
+/** The ticket's attempt held, in place of any held before it. */
+export function ticketAttemptWith(
+  attempts: TicketAttempts,
+  partition: PartitionIdentity,
+  ticket: number,
+  attempt: TicketAttempt,
+): TicketAttempts {
+  return { ...attempts, [ticketAttemptName(partition, ticket)]: attempt };
+}
+
+export function ticketAttemptWithout(
+  attempts: TicketAttempts,
+  partition: PartitionIdentity,
+  ticket: number,
+): TicketAttempts {
+  const written: Record<string, TicketAttempt> = { ...attempts };
+  delete written[ticketAttemptName(partition, ticket)];
+  return written;
 }
 
 /** The Dispatch that names the ticket version its press expects, which the

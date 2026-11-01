@@ -33,6 +33,7 @@ import {
   press,
   settled,
   turned,
+  visitHeld,
 } from "./screenHarness.tsx";
 import type { ApiDouble } from "./screenHarness.tsx";
 import { frame } from "./streamDouble.ts";
@@ -638,4 +639,68 @@ test("a more pressed while no read of the inbox is running starts none", async (
   await press("more");
   expect(screen.getByText("Serve the second reason")).toBeDefined();
   expect(drawn.asked.slice(pressedAt)).toStrictEqual(["inbox-2"]);
+});
+
+/** Every operation identity a request names, submitted or polled. */
+function inboxIdentityNamed(
+  url: string,
+  init?: RequestInit,
+): string | undefined {
+  if (init?.method === "POST") {
+    const body: unknown = JSON.parse(
+      typeof init.body === "string" ? init.body : "null",
+    );
+    return (body as { readonly operation?: string }).operation;
+  }
+  return url.includes("/operations/")
+    ? url.slice(url.lastIndexOf("/") + 1)
+    : undefined;
+}
+
+/**
+ * A submission whose answer was lost may still have been taken, so a press of
+ * the row after it, on an inbox drawn again, asks about that submission rather
+ * than drawing a second identity for the one intent.
+ */
+test("an inbox press after a lost answer sends the same operation identity as the first press", async () => {
+  const api = apiDouble({ operation: operationAt("Pending"), route: served });
+  const named: string[] = [];
+  const lost = { answer: true };
+  vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+    const identity = inboxIdentityNamed(url, init);
+    if (identity !== undefined) named.push(identity);
+    if (init?.method === "POST" && lost.answer) {
+      lost.answer = false;
+      return Promise.reject(new Error("the connection went"));
+    }
+    return api.fetch(url, init);
+  });
+  const visit = visitHeld();
+  render(
+    <ScreenHarness
+      partition={atlas}
+      client={
+        new QueryClient({ defaultOptions: { queries: { retry: false } } })
+      }
+      transport={openedStream().ports.fetch}
+    >
+      <visit.Visited>
+        <InboxScreen partition={atlas} />
+      </visit.Visited>
+    </ScreenHarness>,
+  );
+  await settled();
+  await press("resume");
+  const first = named[0];
+  expect(first).toBeDefined();
+  expect(
+    screen.getByRole("button", { name: "resume" }).hasAttribute("disabled"),
+  ).toBe(false);
+
+  await visit.visited(false);
+  await visit.visited(true);
+  await press("resume");
+
+  expect(named.length).toBeGreaterThan(1);
+  expect(new Set(named)).toStrictEqual(new Set([first]));
 });

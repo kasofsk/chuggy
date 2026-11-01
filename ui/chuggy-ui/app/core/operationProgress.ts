@@ -12,7 +12,8 @@ import { followOperation, operationAbandoned } from "./operationFollow.ts";
 import type { OperationStep, OperationSubmission } from "./operationFollow.ts";
 
 /** The step the follow ended at, a throw reported as abandoned for `unsaid`
- * where it carries no message of its own. */
+ * where it carries no message of its own, from the submission unless it is
+ * `startedFrom` another step. */
 export async function followOperationProgressed(
   ports: ApiPorts,
   partition: PartitionIdentity,
@@ -20,6 +21,7 @@ export async function followOperationProgressed(
   ticket: number,
   progress: ConsoleWriteProgress<OperationStep>,
   unsaid: string,
+  startedFrom?: OperationStep,
 ): Promise<OperationStep> {
   try {
     const followed = await followOperation(
@@ -30,6 +32,8 @@ export async function followOperationProgressed(
       (step) => {
         progress.report(step);
       },
+      undefined,
+      startedFrom,
     );
     return followed.step;
   } catch (thrown: unknown) {

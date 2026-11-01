@@ -1,6 +1,6 @@
 /**
- * The creation form as a case draws it: under the session and the cache it
- * writes through, on a context read Ready with the offers the case names, and
+ * The creation form as a case draws it: under the session, the cache it
+ * writes through and a store of its own, on a context read Ready with the offers the case names, and
  * with whatever else the case says laid over that.
  */
 
@@ -14,6 +14,7 @@ import type { CreationOffer } from "../app/core/ticketCreation.ts";
 import { creationContextList } from "../app/core/ticketCreationRun.ts";
 import { holderDouble, queryClientUnretried } from "./screenHarness.tsx";
 import { creationPartition } from "./ticketCreationFixture.ts";
+import { ConsoleStoreProvided } from "./consoleStoreProvided.tsx";
 
 export function creationFormDrawn(
   ports: ApiPorts,
@@ -23,21 +24,23 @@ export function creationFormDrawn(
   return (
     <SessionProvider holder={holderDouble()}>
       <QueryClientProvider client={queryClientUnretried()}>
-        <CreationForm
-          ports={ports}
-          partition={creationPartition}
-          queryKey={creationContextList(creationPartition).key}
-          context={{
-            context: "Ready",
-            offers,
-            partial: false,
-            repositories: [],
-          }}
-          start="Waits"
-          onCreated={() => undefined}
-          existing={() => null}
-          {...extra}
-        />
+        <ConsoleStoreProvided>
+          <CreationForm
+            ports={ports}
+            partition={creationPartition}
+            queryKey={creationContextList(creationPartition).key}
+            context={{
+              context: "Ready",
+              offers,
+              partial: false,
+              repositories: [],
+            }}
+            start="Waits"
+            onCreated={() => undefined}
+            existing={() => null}
+            {...extra}
+          />
+        </ConsoleStoreProvided>
       </QueryClientProvider>
     </SessionProvider>
   );

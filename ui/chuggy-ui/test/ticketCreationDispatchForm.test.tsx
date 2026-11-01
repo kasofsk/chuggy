@@ -43,6 +43,7 @@ import {
 import type { TicketDispatching } from "./ticketDispatching.ts";
 import type * as RouterModule from "@tanstack/react-router";
 import { SessionProvider } from "../app/browser/session.tsx";
+import { ConsoleStoreProvided } from "./consoleStoreProvided.tsx";
 import { holderDouble } from "./screenHarness.tsx";
 
 vi.mock(
@@ -94,20 +95,22 @@ function draw(ports: ApiPorts, start: CreationStart): readonly number[] {
           new QueryClient({ defaultOptions: { queries: { retry: false } } })
         }
       >
-        <CreationForm
-          ports={ports}
-          partition={creationPartition}
-          queryKey={creationContextList(creationPartition).key}
-          start={start}
-          context={{
-            context: "Ready",
-            offers: creationOffers,
-            partial: false,
-            repositories: [],
-          }}
-          onCreated={(ticket) => created.push(ticket)}
-          existing={() => null}
-        />
+        <ConsoleStoreProvided>
+          <CreationForm
+            ports={ports}
+            partition={creationPartition}
+            queryKey={creationContextList(creationPartition).key}
+            start={start}
+            context={{
+              context: "Ready",
+              offers: creationOffers,
+              partial: false,
+              repositories: [],
+            }}
+            onCreated={(ticket) => created.push(ticket)}
+            existing={() => null}
+          />
+        </ConsoleStoreProvided>
       </QueryClientProvider>
     </SessionProvider>,
   );

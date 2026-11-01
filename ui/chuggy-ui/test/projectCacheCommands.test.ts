@@ -10,17 +10,13 @@
 
 import { expect, test } from "vitest";
 
-import {
-  parseProjectStreamEvent,
-  projectChangeKinds,
-} from "../../../src/contract/events.ts";
+import { parseProjectStreamEvent } from "../../../src/contract/events.ts";
 import type { ProjectStreamFrame } from "../../../src/contract/events.ts";
 import { projectCacheCommands } from "../app/core/projectCacheCommands.ts";
 import {
   projectPartitionKey,
   projectResourceKey,
 } from "../app/core/projectQueryKeys.ts";
-import { ticketAttemptKey } from "../app/core/ticketActions.ts";
 import { leadSession, leadSessionResource } from "./leadFixture.ts";
 import { runSummary } from "./runPageFixture.tsx";
 import { ticketInstants } from "./ticketInstants.ts";
@@ -211,20 +207,6 @@ test("a representation the kind's schema rejects never becomes an event", () => 
       data: { version: 1, resource: "3", representation: { ticket: "three" } },
     }),
   ).toThrow();
-});
-
-/**
- * A held key is the console's own working state and no read of the wire, so a
- * partition reset must reach it and no `WriteResource` or `RereadResource` ever
- * can. Both halves are the position of one element: inside the partition
- * prefix every command shares, and outside every kind a frame can name.
- */
-test("a key a screen holds is inside the partition and outside every kind", () => {
-  const prefix = projectPartitionKey(partition);
-  const held = ticketAttemptKey(partition, 3);
-  expect(held.slice(0, prefix.length)).toEqual(prefix);
-  for (const kind of projectChangeKinds)
-    expect(held[prefix.length]).not.toBe(kind);
 });
 
 /**

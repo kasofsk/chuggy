@@ -33,7 +33,10 @@ import { base64urlFromBytes } from "../core/base64url.ts";
 import { readFailedLine } from "../core/failureWords.ts";
 import { operationFailureSentence } from "../core/codeSentences.ts";
 import { ConsoleWriteProgress, consoleWriteKey } from "../core/consoleWrite.ts";
-import type { ConsoleWrite } from "../core/consoleWrite.ts";
+import type {
+  ConsoleWrite,
+  ConsoleWriteRefused,
+} from "../core/consoleWrite.ts";
 import type { ProjectQueryKey } from "../core/projectQueryKeys.ts";
 import { landingEffect, landingLabel } from "../core/codeLabels.ts";
 import { repositoryLabel } from "../core/projectRepositories.ts";
@@ -81,6 +84,7 @@ import {
   TicketCreationRefused,
   createAndReleaseTicket,
   creationContextSentence,
+  creationDraftHeldSentence,
   creationStaleUnreadSentence,
   creationTicketExistsSentence,
 } from "../core/ticketCreationRun.ts";
@@ -99,6 +103,12 @@ import { creationContextQuery } from "../core/configurationQueries.ts";
 import { usePanelState, useApiPorts } from "./api.ts";
 import { useConsoleWrite, useConsoleWriteProgress } from "./consoleWrite.tsx";
 import type { ConsoleWriting } from "./consoleWrite.tsx";
+import {
+  creationDraftHeldAt,
+  creationDraftKeptAt,
+} from "./creationDraftsHeld.ts";
+import { useConsoleDispatch, useConsoleSelector } from "./store.ts";
+import type { ConsoleDispatch } from "./store.ts";
 import { DataPanel, ReadFailed } from "./DataPanel.tsx";
 import {
   ticketConfigurationKept,
@@ -691,14 +701,16 @@ export function CreationFields(props: CreationFieldsProps): ReactNode {
   );
 }
 
-/** A creation's attempt, which alone may end at a ticket it did not make. */
+/** A creation's attempt, which alone may end at a ticket it did not make,
+ * and alone may find a draft held by a submit this screen did not see end. */
 type CreationAttempt =
   | Attempt<CreationDraftHeld>
   | {
       readonly attempt: "Exists";
       readonly ticket: number;
       readonly held: CreationDraftHeld;
-    };
+    }
+  | { readonly attempt: "Held"; readonly held: CreationDraftHeld };
 
 /** What a submit that made no ticket leaves on the screen, and holds for the
  * next one. */
@@ -728,6 +740,15 @@ function creationAttemptHeld(
     : undefined;
 }
 
+/** What a refused creation hands on, read as its note reads it. */
+function creationRefusedHeld(
+  refused: ConsoleWriteRefused,
+): CreationDraftHeld | undefined {
+  return refused instanceof TicketCreationRefused
+    ? creationAttemptHeld(creationAttemptEnded(refused.ended))
+    : undefined;
+}
+
 /**
  * What a creation's submit ended in. A ticket found already made is said with
  * the way to it, the form being left as it is: what it has changed since is
@@ -739,6 +760,10 @@ function CreationAttemptNote(props: {
   readonly existing: (ticket: number) => ReactNode;
 }): ReactNode {
   const attempt = props.attempt;
+  if (attempt.attempt === "Held")
+    return (
+      <p className="panel-note">{creationDraftHeldSentence(attempt.held)}</p>
+    );
   if (attempt.attempt !== "Exists")
     return <AttemptNote attempt={attempt} motion={props.motion} />;
   return (
@@ -767,15 +792,18 @@ function creationWriting(
 }
 
 /** What a creation's write has come to, as its note draws it. A ticket made
- * stays drawn as the follow that made it until the screen goes to it. */
+ * stays drawn as the follow that made it until the screen goes to it, and a
+ * screen that saw no submit end says what one left held. */
 function creationAttemptOf(
   writing: ConsoleWriting<CreationPressed, number>,
   step: OperationStep | undefined,
+  held: CreationDraftHeld | undefined,
 ): CreationAttempt {
   if (creationWriting(writing)) return attemptRunning(step);
   if (writing.isSuccess) return { attempt: "Idle" };
   const error = writing.error;
-  if (error === null) return { attempt: "Idle" };
+  if (error === null)
+    return held === undefined ? { attempt: "Idle" } : { attempt: "Held", held };
   if (error instanceof TicketCreationRefused)
     return creationAttemptEnded(error.ended);
   return { attempt: "Failed", reason: error.message, held: undefined };
@@ -799,14 +827,17 @@ interface CreationPressed {
 
 /**
  * A creation through the ports the form was handed, refused wherever it made
- * no ticket. A stale fence is refused once the context has been read again,
- * and as the read that failed where it could not be.
+ * no ticket, a stale fence once the context has been read again and as the
+ * read that failed where it could not be. Every ending keeps what it hands
+ * the next submit under the form's key, whether or not the form is still
+ * drawn, and a ticket made hands on nothing.
  */
 function creationWrite(
   ports: ApiPorts,
   partition: PartitionIdentity,
   queryKey: ProjectQueryKey,
   storeKey: string,
+  dispatch: ConsoleDispatch,
 ): ConsoleWrite<CreationPressed, number> {
   return {
     mutationKey: consoleWriteKey("ticket-creation", storeKey),
@@ -834,6 +865,15 @@ function creationWrite(
       throw new TicketCreationRefused(ended.reason, ended);
     },
     refusal: operationFailureSentence,
+    landed: () => {
+      dispatch(creationDraftKeptAt({ storeKey, held: undefined }));
+      return Promise.resolve();
+    },
+    refused: (refused) => {
+      dispatch(
+        creationDraftKeptAt({ storeKey, held: creationRefusedHeld(refused) }),
+      );
+    },
   };
 }
 
@@ -865,12 +905,22 @@ function useCreationSubmit(props: {
   readonly submit: (form: TicketCreationForm) => void;
 } {
   const { dispatches, standing, offers, onFaults, repositories } = props;
+  const dispatch = useConsoleDispatch();
   const writing = useConsoleWrite(
-    creationWrite(props.ports, props.partition, props.queryKey, props.storeKey),
+    creationWrite(
+      props.ports,
+      props.partition,
+      props.queryKey,
+      props.storeKey,
+      dispatch,
+    ),
     { drawn: true },
   );
   const step = useConsoleWriteProgress(writing.variables?.progress);
-  const attempt = creationAttemptOf(writing, step);
+  const held = useConsoleSelector((state) =>
+    creationDraftHeldAt(state, props.storeKey),
+  );
+  const attempt = creationAttemptOf(writing, step, held);
 
   const submit = (form: TicketCreationForm): void => {
     const assembled = creationBodyFrom(offers, form, repositories, standing);
@@ -882,7 +932,7 @@ function useCreationSubmit(props: {
     const request: TicketCreationRequest = {
       body: assembled.body,
       operation: operationDrawn(),
-      held: creationAttemptHeld(attempt),
+      held,
       dispatchOperation: dispatches ? operationDrawn() : undefined,
     };
     writing.mutate(

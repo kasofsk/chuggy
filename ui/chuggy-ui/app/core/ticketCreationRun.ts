@@ -135,6 +135,30 @@ export interface CreationDraftHeld extends DraftHeld {
   readonly unsettled: boolean;
 }
 
+/** Every form's held draft, by the form's own key, kept until a ticket is
+ * made of it or a submit hands on none. */
+export type CreationDraftsHeld = Readonly<Record<string, CreationDraftHeld>>;
+
+export function creationDraftHeldOf(
+  helds: CreationDraftsHeld,
+  storeKey: string,
+): CreationDraftHeld | undefined {
+  return helds[storeKey];
+}
+
+/** What a submit's ending hands on to the next, and none dropping the one
+ * held before it. */
+export function creationDraftsHeldWith(
+  helds: CreationDraftsHeld,
+  storeKey: string,
+  held: CreationDraftHeld | undefined,
+): CreationDraftsHeld {
+  const written: Record<string, CreationDraftHeld> = { ...helds };
+  if (held === undefined) delete written[storeKey];
+  else written[storeKey] = held;
+  return written;
+}
+
 export interface TicketCreationRequest {
   readonly body: CreationBody;
   /** What a release nothing has sent yet goes under. */
