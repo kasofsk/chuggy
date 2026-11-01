@@ -787,7 +787,7 @@ function creationUnmadeSentence(ended: TicketCreationUnmade): string {
   if (ended.created === "Exists")
     return creationTicketExistsSentence(ended.ticket);
   return ended.created === "Refused" && ended.unread !== undefined
-    ? `${readFailedLine("Draft", ended.unread)} — ${ended.reason}`
+    ? `${readFailedLine("Draft", ended.unread)} · ${ended.reason}`
     : ended.reason;
 }
 

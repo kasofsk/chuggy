@@ -17,7 +17,6 @@ import {
   operationStates,
 } from "../../../src/contract/rosters.ts";
 import type { ApiFailure } from "../app/core/apiRequest.ts";
-import { configurationPagesMax } from "../app/core/apiRoutes.ts";
 import {
   draftRevisionFailureSentence,
   draftRevisionRefusalCodes,
@@ -158,10 +157,7 @@ test("every line a creation's submit says is one short line", () => {
   expectShort([
     creationContextSentence({ context: "NoRepository" }),
     creationContextSentence({ context: "NoReadyConfiguration" }),
-    creationContextSentence({
-      context: "ReadyConfigurationUnknown",
-      pagesRead: configurationPagesMax,
-    }),
+    creationContextSentence({ context: "ReadyConfigurationUnknown" }),
     creationStaleSentence,
     creationStaleUnreadSentence,
     creationProjectNotActiveSentence,

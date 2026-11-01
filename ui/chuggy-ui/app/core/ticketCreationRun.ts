@@ -51,7 +51,6 @@ import {
   apiProjectRepositories,
   apiReviseDraft,
   apiTicketDispatchView,
-  configurationPagesMax,
 } from "./apiRoutes.ts";
 import type { ApiFailure, ApiPorts, ApiResult } from "./apiRequest.ts";
 import { ConsoleWriteRefused } from "./consoleWrite.ts";
@@ -98,10 +97,7 @@ export type CreationContext =
     }
   | { readonly context: "NoRepository" }
   | { readonly context: "NoReadyConfiguration" }
-  | {
-      readonly context: "ReadyConfigurationUnknown";
-      readonly pagesRead: number;
-    };
+  | { readonly context: "ReadyConfigurationUnknown" };
 
 /** What a context with no configuration in it says: no repository to hold one,
  * no ready one in a repository, and not knowing, each apart. */
@@ -299,11 +295,7 @@ function creationContextUnoffered(
   repositories: readonly ProjectRepositoryResponse[],
   partial: boolean,
 ): CreationContext {
-  if (partial)
-    return {
-      context: "ReadyConfigurationUnknown",
-      pagesRead: configurationPagesMax,
-    };
+  if (partial) return { context: "ReadyConfigurationUnknown" };
   return {
     context:
       creationRepositories(repositories).length === 0
