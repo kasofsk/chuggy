@@ -390,10 +390,10 @@ export interface ThreadSendRecord {
   readonly opened: string | undefined;
 }
 
-/** A record per composer. A record is short, so the set is not bounded, and
- * none is evicted: a first box's key dropped before its open answered would
- * let the next press open a second thread. A kept message's images are never
- * dropped either: they are the reader's message, and each needed a press whose
+/** A record per composer, each short, so the set is not bounded and none is
+ * evicted: a first box's key dropped before its open answered would let the
+ * next press open a second thread. Nor are a kept message's images ever
+ * dropped, since they are the reader's message, and each needed a press whose
  * box went before the door answered. */
 export type ThreadSendRecords = Readonly<Record<string, ThreadSendRecord>>;
 
