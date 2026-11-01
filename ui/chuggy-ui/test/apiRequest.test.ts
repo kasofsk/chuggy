@@ -151,6 +151,7 @@ test("a body the schema rejects is unreadable rather than cached", async () => {
   expect(result).toEqual({
     outcome: "Unreadable",
     reason: "not an installation",
+    shapeRefused: true,
   });
 });
 
@@ -262,6 +263,7 @@ test("a success whose body is not JSON is unreadable, not unreachable", async ()
   );
   expect(result.outcome).toBe("Unreadable");
   expect(result).toHaveProperty("reason", expect.any(String));
+  expect(result).not.toHaveProperty("shapeRefused");
 });
 
 test("a refusal whose body is not JSON reads as the same refusal with no body", async () => {

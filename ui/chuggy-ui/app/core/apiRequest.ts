@@ -76,10 +76,18 @@ type ApiRefusal = Exclude<
   { readonly outcome: "Ok" } | { readonly outcome: "Accepted" }
 >;
 
-/** What a network answers with instead of a status, and what a parser answers. */
+/**
+ * What a network answers with instead of a status, and what a parser answers.
+ * `shapeRefused` marks the one `Unreadable` that is a JSON document the wire's
+ * parser rejected, which only an API newer than this console answers.
+ */
 type ApiNoAnswer =
   | { readonly outcome: "Unreachable"; readonly reason: string }
-  | { readonly outcome: "Unreadable"; readonly reason: string };
+  | {
+      readonly outcome: "Unreadable";
+      readonly reason: string;
+      readonly shapeRefused?: true;
+    };
 
 export type ApiResult<T> =
   { readonly outcome: "Ok"; readonly value: T } | ApiRefusal | ApiNoAnswer;
@@ -260,6 +268,10 @@ export async function apiRead<T>(
   try {
     return { outcome: "Ok", value: parse(outcome.body) };
   } catch (failure: unknown) {
-    return { outcome: "Unreadable", reason: apiReason(failure) };
+    return {
+      outcome: "Unreadable",
+      reason: apiReason(failure),
+      shapeRefused: true,
+    };
   }
 }
