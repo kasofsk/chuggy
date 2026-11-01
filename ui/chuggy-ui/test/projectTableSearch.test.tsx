@@ -34,7 +34,9 @@ import {
   press,
   ScreenHarness,
   settled,
+  turned,
 } from "./screenHarness.tsx";
+import { frame } from "./streamDouble.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
@@ -100,7 +102,8 @@ function projectAsked(url: string): ProjectAsked {
 /**
  * The Tickets screen at an address holding `initial`, which it writes into as
  * a route would, over a project whose read `answered` decides. Every project
- * read is recorded, and every address written.
+ * read is recorded, every address written, and the stream is handed back for
+ * the frames a case pushes down it.
  */
 async function drawnAt(
   initial: TicketListQuery,
@@ -108,6 +111,7 @@ async function drawnAt(
 ): Promise<{
   readonly asked: readonly URLSearchParams[];
   readonly written: readonly TicketListQuery[];
+  readonly server: ReturnType<typeof openedStream>;
 }> {
   const asked: URLSearchParams[] = [];
   const written: TicketListQuery[] = [];
@@ -128,19 +132,20 @@ async function drawnAt(
     }, []);
     return <ProjectTable query={query} onQuery={onQuery} />;
   }
+  const server = openedStream();
   render(
     <ScreenHarness
       partition={atlas}
       client={
         new QueryClient({ defaultOptions: { queries: { retry: false } } })
       }
-      transport={openedStream().ports.fetch}
+      transport={server.ports.fetch}
     >
       <Addressed />
     </ScreenHarness>,
   );
   await settled();
-  return { asked, written };
+  return { asked, written, server };
 }
 
 /** The titles the list draws, in the order it draws them. */
@@ -348,4 +353,146 @@ test("leaving a search that matched nothing keeps the list's controls drawn unti
   active.release(served([]));
   await settled();
   expect(titlesDrawn()).toStrictEqual(["Ticket 150"]);
+});
+
+/** Which page each read asked for: the active list's, or the finished list's
+ * from its start or from a cursor. */
+function pagesAsked(asked: readonly URLSearchParams[]): readonly string[] {
+  return asked.map((each) =>
+    each.has("active") ? "active" : (each.get("cursor") ?? "finished"),
+  );
+}
+
+/** A ticket's frame, as the stream carries it. */
+function ticketFrame(id: string, ticket: unknown): string {
+  return frame("Ticket", id, {
+    version: 1,
+    resource: String((ticket as { readonly ticket: number }).ticket),
+    representation: ticket,
+  });
+}
+
+test("a Show more pressed while the list is read again keeps its page and a frame folded meanwhile, and the read is asked again for the pages held", async () => {
+  const rereads = [heldAnswer(), heldAnswer()];
+  let holding = false;
+  const drawn = await drawnAt({}, (asked) => {
+    if (asked.get("active") !== "true") return served([held(120, "Done")]);
+    if (!holding) return served([held(150, "Work")]);
+    const reread = rereads.shift();
+    const answered = served([
+      held(151, "Work"),
+      held(150, "Work", { title: "Ticket 150, renamed" }),
+    ]);
+    return reread === undefined
+      ? answered
+      : reread.answered.then(() => answered);
+  });
+  const [stale, restarted] = rereads;
+  holding = true;
+  await turned(() => {
+    drawn.server.push(ticketFrame("1", held(151, "Work")));
+  });
+  await turned(() => {
+    drawn.server.push(
+      ticketFrame("2", held(150, "Work", { title: "Ticket 150, renamed" })),
+    );
+  });
+  await settled();
+  expect(titlesDrawn()).toStrictEqual(["Ticket 150, renamed"]);
+  const pressedAt = drawn.asked.length;
+  await press("Show more");
+  expect(titlesDrawn()).toStrictEqual(["Ticket 150, renamed", "Ticket 120"]);
+  stale?.release(served([]));
+  await settled();
+  expect(titlesDrawn()).toStrictEqual(["Ticket 150, renamed", "Ticket 120"]);
+  restarted?.release(served([]));
+  await settled();
+  expect(titlesDrawn()).toStrictEqual([
+    "Ticket 151",
+    "Ticket 150, renamed",
+    "Ticket 120",
+  ]);
+  expect(pagesAsked(drawn.asked.slice(pressedAt))).toStrictEqual([
+    "finished",
+    "active",
+    "finished",
+  ]);
+});
+
+test("a Show more pressed while no read of the list is running starts none", async () => {
+  const drawn = await drawnAt({}, (asked) =>
+    asked.get("active") === "true"
+      ? served([held(150, "Work")])
+      : served([held(120, "Done")]),
+  );
+  const pressedAt = drawn.asked.length;
+  await press("Show more");
+  expect(titlesDrawn()).toStrictEqual(["Ticket 150", "Ticket 120"]);
+  expect(pagesAsked(drawn.asked.slice(pressedAt))).toStrictEqual(["finished"]);
+});
+
+/** The filter the list is drawn under, as its control names it. */
+function filterDrawn(): string | null {
+  return screen.getByRole("button", { name: /^Filter/u }).textContent;
+}
+
+/** The phases each read asked for, one read to an entry. */
+function phasesAsked(asked: readonly URLSearchParams[]): readonly string[] {
+  return asked.map((each) => each.getAll("phase").join(","));
+}
+
+/** Escalated and Done tickets alike, so a read under either filter draws one. */
+function servedByPhase(asked: URLSearchParams): Response {
+  const phases = asked.getAll("phase");
+  return served(
+    [held(4, "Escalated"), held(120, "Done")].filter(
+      (one) =>
+        phases.length === 0 ||
+        phases.includes((one as { readonly phase: string }).phase),
+    ),
+  );
+}
+
+const ticketListFilterStored = "chug.ticket-list.filter";
+
+test("a filter the address names is the list drawn, whatever this browser kept", async () => {
+  localStorage.setItem(ticketListFilterStored, "Done");
+  const drawn = await drawnAt({ filter: "Escalated" }, servedByPhase);
+  expect(titlesDrawn()).toStrictEqual(["Ticket 4"]);
+  expect(new Set(phasesAsked(drawn.asked))).toStrictEqual(
+    new Set(["Escalated"]),
+  );
+  expect(filterDrawn()).toContain("Escalated");
+  expect(drawn.written).toStrictEqual([]);
+});
+
+test("where the address names no filter the kept one is drawn, and one kept by another tab later does not move it", async () => {
+  localStorage.setItem(ticketListFilterStored, "Escalated");
+  const drawn = await drawnAt({}, servedByPhase);
+  expect(titlesDrawn()).toStrictEqual(["Ticket 4"]);
+  localStorage.setItem(ticketListFilterStored, "Done");
+  fireEvent.keyDown(screen.getByRole("button", { name: /^Sort/u }), {
+    key: "ArrowDown",
+  });
+  await screen.findByRole("menu");
+  fireEvent.click(screen.getByRole("menuitemradio", { name: "Oldest first" }));
+  await settled();
+  expect(drawn.written).toStrictEqual([{ sort: "Oldest" }]);
+  expect(titlesDrawn()).toStrictEqual(["Ticket 4"]);
+  expect(new Set(phasesAsked(drawn.asked))).toStrictEqual(
+    new Set(["Escalated"]),
+  );
+});
+
+test("a filter chosen is written to the address and kept by this browser", async () => {
+  const drawn = await drawnAt({ q: "gate" }, servedByPhase);
+  fireEvent.keyDown(screen.getByRole("button", { name: /^Filter/u }), {
+    key: "ArrowDown",
+  });
+  await screen.findByRole("menu");
+  fireEvent.click(screen.getByRole("menuitemradio", { name: "Done" }));
+  await settled();
+  expect(drawn.written).toStrictEqual([{ q: "gate", filter: "Done" }]);
+  expect(localStorage.getItem(ticketListFilterStored)).toBe("Done");
+  expect(titlesDrawn()).toStrictEqual(["Ticket 120"]);
 });

@@ -78,7 +78,7 @@ import { actionsFor, ticketActionSentence } from "../core/ticketActions.ts";
 import type { TicketAction } from "../core/ticketActions.ts";
 import { ticketSectionTitles } from "../core/ticketSections.ts";
 import { agenticRefusalStandingTone } from "../core/tones.ts";
-import { useApiPorts, usePanelState } from "./api.ts";
+import { panelReadRestarted, useApiPorts, usePanelState } from "./api.ts";
 import { useConsoleWrite, useConsoleWriteProgress } from "./consoleWrite.tsx";
 import { DataPanel } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
@@ -142,6 +142,7 @@ export function useInboxRows(partition: PartitionIdentity): InboxRowsHeld {
           ? previous
           : inboxRowsAfterPage(previous, answered),
       );
+      panelReadRestarted(client, key);
       setReading(false);
     })();
   };

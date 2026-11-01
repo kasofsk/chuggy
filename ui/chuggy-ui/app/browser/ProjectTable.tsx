@@ -7,9 +7,9 @@
  * row and an `Execution` frame changes what one row says it is running, both
  * folded into the one entry the rows are read under. The filter, the search
  * and the order a sort reads in are asked of the wire, and the rows on screen
- * stand until the read under a new choice answers; the search and the sort are
- * the page's address, so a link holds the view. A project holding no ticket at
- * all offers the first instead.
+ * stand until the read under a new choice answers; the search, the sort and
+ * the filter are the page's address, so a link holds the view. A project
+ * holding no ticket at all offers the first instead.
  *
  * A ROW OFFERS ONE ACTION, DISPATCH, AS ITS READY CHIP. A ready row reads the
  * dispatch view for the version a dispatch names, and its chip is the button;
@@ -20,7 +20,7 @@
  * it writes is under the partition prefix that the degraded stream's fallback
  * and a `Project` frame both invalidate; rebuilding it from the first page
  * would take a reader's pages away on a timer. "Show more" appends to the entry
- * the next page that adds a row.
+ * the next page that adds a row, and restarts a read it finds running.
  */
 
 import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
@@ -38,6 +38,7 @@ import { projectAbilityRefused } from "../core/projectAbilities.ts";
 import { repositoryLabel } from "../core/projectRepositories.ts";
 import {
   ticketFilterAll,
+  ticketFilterOf,
   ticketFilterPage,
   ticketFilterProjectEmpty,
   ticketFilterReadsCount,
@@ -72,7 +73,7 @@ import type {
 } from "../core/ticketListView.ts";
 import { phaseTone } from "../core/tones.ts";
 import type { Tone } from "../core/tones.ts";
-import { useApiPorts, usePanelState } from "./api.ts";
+import { panelReadRestarted, useApiPorts, usePanelState } from "./api.ts";
 import { useCreatorEmails } from "./creatorEmails.ts";
 import { PanelUnready } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
@@ -137,6 +138,7 @@ function useTicketRows(
           apiProject(ports, partition, ticketFilterPage(ask, { read, cursor })),
         ticketFilterReadsCount(ask),
       );
+      panelReadRestarted(client, key);
       setReading(false);
     })();
   };
@@ -156,8 +158,8 @@ function useTicketRows(
 /** Where this browser keeps the reader's filter. */
 const ticketListFilterStoreKey = "chug.ticket-list.filter";
 
-function ticketListFilterOf(stored: string | null): TicketFilter {
-  return phaseRoster.find((phase) => phase === stored) ?? ticketFilterAll;
+function ticketListFilterOf(word: unknown): TicketFilter {
+  return ticketFilterOf(word) ?? ticketFilterAll;
 }
 
 /** What a row's chip says and the tone it is drawn in. */
@@ -528,16 +530,21 @@ function ProjectTableEmpty(props: {
   );
 }
 
-/** The reader's filter, as this browser last kept it. */
-function useTicketListFilter() {
-  const [filter, setFilter] = useState(() =>
+/** The reader's filter: the address's, else the one this browser kept as the
+ * list mounted, so a choice in another tab does not move this one. A choice is
+ * written to both. */
+function useTicketListFilter(
+  query: TicketListQuery,
+  onQuery: (query: TicketListQuery) => void,
+) {
+  const [kept] = useState(() =>
     ticketListFilterOf(persistentStore.read(ticketListFilterStoreKey)),
   );
   return {
-    filter,
+    filter: query.filter ?? kept,
     filtered: (next: TicketFilter): void => {
-      setFilter(next);
       persistentStore.write(ticketListFilterStoreKey, next);
+      onQuery(ticketListQueryWith(query, { filter: next }));
     },
   };
 }
@@ -575,7 +582,7 @@ export function ProjectTable(props: {
   readonly onQuery: (query: TicketListQuery) => void;
 }): ReactNode {
   const partition = useParams({ from: "/$tenant/$project" });
-  const choices = useTicketListFilter();
+  const choices = useTicketListFilter(props.query, props.onQuery);
   const [typed, setTyped] = useTicketListTyped(props.query, props.onQuery);
   const sort = ticketListSortOf(props.query.sort);
   const ask: TicketListAsk = {
