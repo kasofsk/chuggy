@@ -23,8 +23,11 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import type {
+  InfiniteData,
+  Query,
   QueryClient,
   QueryKey,
+  QueryObserverOptions,
   UseQueryResult,
   keepPreviousData,
 } from "@tanstack/react-query";
@@ -49,7 +52,7 @@ import {
   panelStateFromQuery,
 } from "../core/freshness.ts";
 import type { PanelState } from "../core/freshness.ts";
-import { panelPagesDefaults } from "../core/panelQueryDefaults.ts";
+import { panelPagesFailedAgain } from "../core/panelQueryDefaults.ts";
 import { apiFetch, sleepMs } from "./ports.ts";
 import { useSessionHolder } from "./session.tsx";
 import {
@@ -197,20 +200,54 @@ export function usePanelState<T, S>(
   return combine === undefined ? state : combine(state, answer);
 }
 
+/** Whether a paged list's failed read is asked again on its own: as the cache
+ * says of every read, except where `panelPagesFailedAgain` says it may not be.
+ * A cache that says nothing of retrying retries nothing here, and one that
+ * says nothing of focus or reconnect reads again, as the library would. */
+function panelPagesAskedAgain<P, Param>(
+  client: QueryClient,
+  query: ConsolePagesQuery<P, Param, unknown>,
+) {
+  const cache = client.getDefaultOptions().queries;
+  /** The cache's defaults are written over any query, which this one is. */
+  const refetched =
+    (on: QueryObserverOptions["refetchOnWindowFocus"]) =>
+    (
+      asked: Query<P, Error, InfiniteData<P, Param>, ProjectQueryKey>,
+    ): boolean | "always" =>
+      panelPagesFailedAgain(asked.state, query.rereadHeldAgain) &&
+      (typeof on === "function" ? on(asked as Query) : (on ?? true));
+  return {
+    refetchOnWindowFocus: refetched(cache?.refetchOnWindowFocus),
+    refetchOnReconnect: refetched(cache?.refetchOnReconnect),
+    retry: (failures: number, error: Error): boolean => {
+      const retry = cache?.retry;
+      return (
+        panelPagesFailedAgain(
+          client.getQueryState(query.queryKey),
+          query.rereadHeldAgain,
+        ) &&
+        (typeof retry === "function"
+          ? retry(failures, error)
+          : typeof retry === "number"
+            ? failures < retry
+            : retry === true)
+      );
+    },
+  };
+}
+
 /** A paged list's options under this tab's ports: each page its own read,
  * from where the pages before it say the next begins, the rows drawn from the
  * pages through `select`, and a failed read asked again only as
- * `panelPagesDefaults` says. */
+ * `panelPagesAskedAgain` says. */
 export function panelPagesOptions<P, Param, R>(
   ports: ApiPorts,
   client: QueryClient,
   query: ConsolePagesQuery<P, Param, R>,
 ) {
   return infiniteQueryOptions<P, Error, R, ProjectQueryKey, Param>({
-    ...panelPagesDefaults(
-      () => client.getQueryState(query.queryKey),
-      query.rereadHeldAgain,
-    ),
+    ...panelPagesAskedAgain(client, query),
     queryKey: query.queryKey,
     /** The context's page parameter is a conditional type the library leaves
      * unresolved over a generic `Param`, which is what `initialPageParam` and

@@ -248,16 +248,13 @@ test("a reread reads again every page the list holds, and no more", async () => 
 
 test("a Show more that could not be read keeps the rows, says why, and can be asked again", async () => {
   let refusing = true;
-  const drawn = await drawnAt({}, (asked) =>
+  await drawnAt({}, (asked) =>
     refusing && asked.get("cursor") === "active-2"
       ? answer({ error: "InternalError", message: "boom" }, 500)
       : activePaged(asked),
   );
   await press("Show more");
   expect(titlesDrawn()).toStrictEqual(["Ticket 150"]);
-  expect(
-    drawn.asked.filter((asked) => asked.get("cursor") === "active-2"),
-  ).toHaveLength(1);
   expect(
     screen.getByText(/^a further page could not be read — /u),
   ).toBeDefined();

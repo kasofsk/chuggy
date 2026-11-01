@@ -21,7 +21,10 @@ import { panelPagesOptions } from "../app/browser/api.ts";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
 import { ticketListAskDefault } from "../app/core/projectTableFilters.ts";
 import { projectTicketPagesMax } from "../app/core/projectTicketPages.ts";
-import { panelQueryRetriesMax } from "../app/core/panelQueryDefaults.ts";
+import {
+  panelQueryDefaults,
+  panelQueryRetriesMax,
+} from "../app/core/panelQueryDefaults.ts";
 import { ticketRowsQuery } from "../app/core/ticketQueries.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 
@@ -71,11 +74,12 @@ function endless(_asked: URLSearchParams, at: number): Served {
   return { tickets: [pending(at)], nextCursor: `after-${String(at)}` };
 }
 
-/** The unfiltered rows' infinite query over `ports`, as the bridge builds it,
- * or as it would for a list whose reread behind held pages is asked again. */
+/** The unfiltered rows' infinite query over `ports` on the console's defaults,
+ * as the bridge builds it, or as it would for a list whose reread behind held
+ * pages is asked again. */
 function observed(ports: ApiPorts, rereadHeldAgain = false) {
   const client = new QueryClient({
-    defaultOptions: { queries: { retry: false, retryDelay: 0 } },
+    defaultOptions: { queries: { ...panelQueryDefaults, retryDelay: 0 } },
   });
   const options = panelPagesOptions(ports, client, {
     ...ticketRowsQuery(partition, ticketListAskDefault),

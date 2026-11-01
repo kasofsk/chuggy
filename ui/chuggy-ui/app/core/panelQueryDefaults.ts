@@ -60,23 +60,6 @@ export function panelPagesFailedAgain(
   return rereadHeldAgain || query?.data === undefined;
 }
 
-/** `panelQueryDefaults` for a paged list, whose query's state `held` answers. */
-export function panelPagesDefaults(
-  held: () => PanelPagesStatus | undefined,
-  rereadHeldAgain: boolean,
-) {
-  const refetched = (query: { readonly state: PanelPagesStatus }): boolean =>
-    panelQueryFailedRefetched(query) &&
-    panelPagesFailedAgain(query.state, rereadHeldAgain);
-  return {
-    refetchOnWindowFocus: refetched,
-    refetchOnReconnect: refetched,
-    retry: (failures: number, error: unknown): boolean =>
-      panelPagesFailedAgain(held(), rereadHeldAgain) &&
-      panelQueryRetried(failures, error),
-  } as const;
-}
-
 export const panelQueryDefaults = {
   refetchOnWindowFocus: panelQueryFailedRefetched,
   refetchOnReconnect: panelQueryFailedRefetched,
