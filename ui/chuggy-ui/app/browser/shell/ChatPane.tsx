@@ -16,9 +16,10 @@
  */
 
 import type { QueryClient } from "@tanstack/react-query";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
+import { partitionPath } from "../../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ThreadEntryResponse } from "../../../../../src/contract/responses.ts";
 import { apiOpenThread } from "../../core/apiRoutes.ts";
@@ -386,7 +387,8 @@ function ChatPaneOpening(props: {
 }
 
 /**
- * The composer a reader with no thread types in, whose first press opens one.
+ * The composer a reader with no thread types in, whose first press opens one,
+ * mounted afresh in each project so neither its text nor that thread crosses.
  * It stays drawn until that message is sent and the thread it opened has been
  * read, so neither the thread arriving in the listing mid-send nor the read of
  * it takes away the text or the message drawn above it, and while it holds
@@ -528,6 +530,7 @@ function ChatPaneBody(props: {
     );
   return (
     <ChatPaneFirst
+      key={partitionPath(props.partition)}
       partition={props.partition}
       unhosted={props.unhosted}
       opening={props.opening}
@@ -560,11 +563,30 @@ function useChatPaneDoor(partition: PartitionIdentity): {
   };
 }
 
+/** The project the pane is drawn in, as of its last commit, forgetting what
+ * the last one held, through `read`, when it changes. */
+function useChatPaneOpenHeldIn(
+  partition: PartitionIdentity,
+  read: () => void,
+): { readonly current: string } {
+  const [heldIn, setHeldIn] = useState(() => partitionPath(partition));
+  if (heldIn !== partitionPath(partition)) {
+    setHeldIn(partitionPath(partition));
+    read();
+  }
+  const current = useRef(heldIn);
+  useEffect(() => {
+    current.current = heldIn;
+  });
+  return current;
+}
+
 /**
  * Which thread the open pane draws: the one the reader chose, or the one the
  * pane holds for them, both held by the shell so they outlive the pane, kept off
  * the screen while a first message is being sent and until the thread that
- * message opened has been read.
+ * message opened has been read, and only in the project it was sent in. A
+ * send that answers after the project has changed is not taken.
  */
 function useChatPaneOpenHeld(partition: PartitionIdentity): {
   readonly threads: readonly ThreadEntryResponse[] | undefined;
@@ -576,7 +598,8 @@ function useChatPaneOpenHeld(partition: PartitionIdentity): {
   readonly chose: (session: string) => void;
   readonly began: () => void;
   readonly stayed: () => void;
-  readonly sent: (session: string) => void;
+  /** Whether the thread was taken, which it is not once the project changed. */
+  readonly sent: (session: string) => boolean;
   readonly read: () => void;
 } {
   const threads = useChatPaneThreads(partition);
@@ -587,6 +610,7 @@ function useChatPaneOpenHeld(partition: PartitionIdentity): {
     setStarting(false);
     setOpening(undefined);
   }, []);
+  const current = useChatPaneOpenHeldIn(partition, read);
   const {
     chosen: picked,
     choose,
@@ -620,9 +644,11 @@ function useChatPaneOpenHeld(partition: PartitionIdentity): {
       setStarting(false);
     },
     sent: (session) => {
+      if (current.current !== partitionPath(partition)) return false;
       choose({ partition, session });
       setNamed(true);
       setOpening(session);
+      return true;
     },
     read,
   };
@@ -708,8 +734,7 @@ function ChatPaneOpen(props: {
           kept={kept}
           onStarting={pane.began}
           onStarted={(session) => {
-            pane.sent(session);
-            door.opened();
+            if (pane.sent(session)) door.opened();
           }}
           onRead={pane.read}
         />

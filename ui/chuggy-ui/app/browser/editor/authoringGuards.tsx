@@ -17,6 +17,7 @@ import { Component, useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
+import { persistentStore } from "../ports.ts";
 
 /** The browser refuses the unload only if the handler is attached when it fires. */
 function useUnloadGuard(dirty: boolean): void {
@@ -76,24 +77,15 @@ export function ticketYamlDuplicateStoreKey(
 }
 
 /**
- * Browser storage can throw or come back empty, so a read that fails is a
- * screen with nothing kept, and a write that fails costs the copy and nothing
- * else.
+ * A read the store cannot make is a screen with nothing kept, and a write it
+ * cannot make costs the copy and nothing else: the text is still on screen.
  */
 export function ticketYamlStored(key: string): string | undefined {
-  try {
-    return window.localStorage.getItem(key) ?? undefined;
-  } catch {
-    return undefined;
-  }
+  return persistentStore.read(key) ?? undefined;
 }
 
 export function ticketYamlKept(key: string, text: string): void {
-  try {
-    window.localStorage.setItem(key, text);
-  } catch {
-    /** The text is still on screen; only the copy is lost. */
-  }
+  persistentStore.write(key, text);
 }
 
 /** Where the images a kept YAML may name are kept: beside it. */
@@ -128,12 +120,8 @@ export function ticketYamlImagesKept(
 }
 
 export function ticketYamlForgotten(key: string): void {
-  try {
-    window.localStorage.removeItem(key);
-    window.localStorage.removeItem(ticketYamlImagesStoreKey(key));
-  } catch {
-    /** Nothing kept can be read back either. */
-  }
+  persistentStore.remove(key);
+  persistentStore.remove(ticketYamlImagesStoreKey(key));
 }
 
 /** Where the configuration a reader last chose for a new ticket is kept: per

@@ -270,17 +270,21 @@ function useStreamConnection(
   return status;
 }
 
-/** A read the console's own schema refused, which `apiRead` answers `Unreadable`. */
+/** A JSON document the console's own schema refused, and not a body that was
+ * never JSON, which a proxy's page answers too. */
 function streamOutdatedRead(error: unknown): boolean {
   return (
-    error instanceof ApiOutcomeError && error.result.outcome === "Unreadable"
+    error instanceof ApiOutcomeError &&
+    error.result.outcome === "Unreadable" &&
+    error.result.shapeRefused === true
   );
 }
 
 /**
- * Whether this console has met an answer it cannot read — a frame the stream
- * skipped, or a read answered `Unreadable` — which is an API newer than the
- * console. Nothing unsets it, because only a reload makes the console newer.
+ * Whether this console has met an answer whose shape it cannot read — a frame
+ * the stream skipped, or a read whose document the schema refused — which is an
+ * API newer than the console. Nothing unsets it, because only a reload makes the
+ * console newer.
  */
 function useStreamOutdated(): readonly [boolean, () => void] {
   const client = useQueryClient();

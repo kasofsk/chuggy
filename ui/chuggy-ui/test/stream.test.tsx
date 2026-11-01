@@ -58,7 +58,7 @@ import {
 } from "../app/browser/Shell.tsx";
 import { usePanelState } from "../app/browser/api.ts";
 import { consoleListQuery } from "../app/core/consoleQuery.ts";
-import { ApiOutcomeError } from "../app/core/apiRequest.ts";
+import { apiOrThrow, apiRead } from "../app/core/apiRequest.ts";
 import {
   ProjectStreamProvider,
   projectListFoldsMax,
@@ -998,27 +998,62 @@ test("a frame this console cannot read offers a reload once, keeps offering it, 
   expect(platform.reloadLocation).toHaveBeenCalledTimes(1);
 });
 
+/** A read whose success carries `text`, made the way every read is made, and
+ * whose schema refuses whatever JSON it is handed. */
+function UnreadAnswering(props: { readonly text: string }): ReactNode {
+  useQuery({
+    queryKey: ["unread", props.text],
+    queryFn: async () =>
+      apiOrThrow(
+        await apiRead(
+          {
+            fetch: () => Promise.resolve(new Response(props.text)),
+            bearer: () => Promise.resolve(undefined),
+            sleepMs: () => Promise.resolve(),
+          },
+          { method: "GET", path: "/api/v1/unread" },
+          () => {
+            throw new TypeError("unrecognized key");
+          },
+        ),
+        (failure) => failure.outcome,
+      ),
+  });
+  return null;
+}
+
 test("a read this console's schema refuses offers the same reload", async () => {
   platform.reloadLocation.mockClear();
   const server = streamServer([
     { status: 200, chunks: [ready, sourceLive], hold: true },
   ]);
-  function Unread(): ReactNode {
-    useQuery({
-      queryKey: ["unread"],
-      queryFn: () => {
-        throw new ApiOutcomeError(
-          { outcome: "Unreadable", reason: "unrecognized key" },
-          "unrecognized key",
-        );
-      },
-    });
-    return null;
-  }
-  const drawn = versionDrawn(clientMade(), server, <Unread />);
+  const drawn = versionDrawn(
+    clientMade(),
+    server,
+    <UnreadAnswering text={JSON.stringify({ novel: true })} />,
+  );
   await settled();
   expect(drawn.getAllByText("New version")).toHaveLength(1);
   expect(platform.reloadLocation).not.toHaveBeenCalled();
+});
+
+/** A proxy's own page at 200 is no word from the API at all. */
+test("a read answered with a page that is not JSON offers no reload", async () => {
+  const server = streamServer([
+    { status: 200, chunks: [ready, sourceLive], hold: true },
+  ]);
+  const client = clientMade();
+  const drawn = versionDrawn(
+    client,
+    server,
+    <UnreadAnswering text="<!doctype html><title>Sign in</title>" />,
+  );
+  await settled();
+  expect(
+    client.getQueryState(["unread", "<!doctype html><title>Sign in</title>"])
+      ?.status,
+  ).toBe("error");
+  expect(drawn.queryByText("New version")).toBeNull();
 });
 
 test("a console that reads what it is answered offers no reload", async () => {
