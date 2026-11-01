@@ -96,7 +96,16 @@ test("every refusal a settled operation carries is one short line", () => {
       type: "TaskNotCurrent",
       value: {
         ticket,
-        task: { type: "WorkTask", value: { ticket, cycle: 12 } },
+        task: {
+          type: "EvaluationTask",
+          value: {
+            ticket,
+            workCycle: 12,
+            stage: 10,
+            generation: 4,
+            evaluator: 6,
+          },
+        },
       },
     }),
     operationRefusalSentence({
