@@ -554,6 +554,90 @@ test("a cancellation refused while its follow is drawn is no toast", async () =>
   expect(consoleWriteWatchOf(client).unseen).toEqual([]);
 });
 
+/** `api` with the ticket's own read answering `Absent` once `gone.absent` is
+ * set, which takes the status bar's actions and their notes off the page. */
+function ticketGoing(api: Served, gone: { absent: boolean }): Served {
+  return {
+    ...api,
+    fetch: ((url: string, init?: Sent) =>
+      gone.absent && /\/tickets\/\d+$/.test(url)
+        ? Promise.resolve(answer({ error: { code: "Absent" } }, 404))
+        : api.fetch(url, init)) as unknown as typeof fetch,
+  };
+}
+
+/** The ticket read again, answering `Absent`, so no follow's notes are drawn. */
+async function ticketGone(
+  client: QueryClient,
+  gone: { absent: boolean },
+): Promise<void> {
+  gone.absent = true;
+  await turned(() => {
+    void client.invalidateQueries();
+  });
+  await settled();
+  expect(button("Cancel")).toBeNull();
+}
+
+test("a cancellation refused once the ticket's read is not ready is the shell's toast", async () => {
+  const refusing = held();
+  const gone = { absent: false };
+  const client = consoleQueryClient();
+  await following(
+    ticketGoing(
+      accepting(() => refusing.answering),
+      gone,
+    ),
+    client,
+  );
+  await turned(() => {
+    screen.getByRole("button", { name: "Cancel" }).click();
+  });
+  await ticketGone(client, gone);
+
+  await turned(() => {
+    refusing.answer(answer({ error: { code: "OperationTerminal" } }, 409));
+  });
+  await settled();
+
+  expect(screen.queryByText(/^Cancel refused · /)).toBeNull();
+  expect(
+    consoleWriteWatchOf(client).unseen.map((unseen) => unseen.sentence),
+  ).toEqual([expect.stringMatching(/^Cancel refused · /)]);
+});
+
+test("a submission refused once the ticket's read is not ready is the shell's toast", async () => {
+  const submitting = held();
+  const gone = { absent: false };
+  const client = consoleQueryClient();
+  vi.stubGlobal(
+    "fetch",
+    ticketGoing(
+      served({
+        submission: () => submitting.answering,
+        openActions: () => answer({ actions: [] }),
+      }),
+      gone,
+    ).fetch,
+  );
+  mounted(client);
+  await settled();
+  await turned(() => {
+    screen.getByRole("button", { name: "Resume" }).click();
+  });
+  await ticketGone(client, gone);
+
+  await turned(() => {
+    submitting.answer(answer({ error: { code: "Fault" } }, 500));
+  });
+  await settled();
+
+  const [toast, ...more] = consoleWriteWatchOf(client).unseen;
+  expect(more).toEqual([]);
+  expect(toast).toBeDefined();
+  expect(screen.queryByText(toast?.sentence ?? "")).toBeNull();
+});
+
 test("an unmount with the submission in flight still holds its identity", async () => {
   const submitting = held();
   const api = served({

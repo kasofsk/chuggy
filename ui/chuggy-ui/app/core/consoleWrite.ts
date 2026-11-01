@@ -13,7 +13,12 @@
  * until the shell has shown it and the reader has let it go.
  */
 
-import { MutationCache, QueryClient, hashKey } from "@tanstack/query-core";
+import {
+  MutationCache,
+  QueryClient,
+  hashKey,
+  notifyManager,
+} from "@tanstack/query-core";
 import type { MutationKey } from "@tanstack/query-core";
 
 import type { ApiFailure, ApiPorts, ApiResult } from "./apiRequest.ts";
@@ -196,16 +201,20 @@ export function consoleWriteWatchOf(client: QueryClient): ConsoleWriteWatch {
 }
 
 /** The console's cache: reads kept as `panelQueryDefaults` says, writes sent
- * once, and a refusal handed to the watch of the client it landed in. */
+ * once, and a refusal handed to the watch of the client it landed in once
+ * what the cache told its readers before it has been told, so a screen is
+ * asked of what it drew of a reread the write awaited. */
 export function consoleQueryClient(): QueryClient {
   return new QueryClient({
     mutationCache: new MutationCache({
       onError: (error, variables, _context, mutation, { client }) => {
-        consoleWriteWatchOf(client).refused(
-          mutation.options.mutationKey,
-          consoleWriteRefusedOf(error),
-          variables,
-        );
+        notifyManager.schedule(() => {
+          consoleWriteWatchOf(client).refused(
+            mutation.options.mutationKey,
+            consoleWriteRefusedOf(error),
+            variables,
+          );
+        });
       },
     }),
     defaultOptions: {

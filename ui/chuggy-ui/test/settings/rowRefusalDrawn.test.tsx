@@ -1,11 +1,11 @@
 /**
  * A refusal a settings list draws in the row it names is the list's while that
  * row is drawn, and the shell's toast once a reread has taken the row away
- * before the refusal landed: an invite link's revocation, and a permission's
- * removal.
+ * before the refusal landed, the reread the refusal itself starts as much as
+ * any other: an invite link's revocation, and a permission's removal.
  */
 
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
 import {
   cleanup,
@@ -18,7 +18,10 @@ import { afterEach, expect, test } from "vitest";
 import type { ReactNode } from "react";
 
 import { SessionProvider } from "../../app/browser/session.tsx";
-import { InviteLinksListing } from "../../app/browser/settings/InviteLinksListing.tsx";
+import {
+  InviteLinksListing,
+  inviteLinkRevocationWrite,
+} from "../../app/browser/settings/InviteLinksListing.tsx";
 import type { InviteLinkListed } from "../../app/browser/settings/InviteLinksListing.tsx";
 import { PermissionsSection } from "../../app/browser/settings/PermissionsSection.tsx";
 import type { PermissionHolderPressed } from "../../app/browser/settings/PermissionAddition.tsx";
@@ -155,6 +158,75 @@ test("a revocation refused once a reread took its row away is the shell's toast"
 
   expect(screen.queryByText(refusedSentence)).toBeNull();
   expect(unseen(client)).toEqual([refusedSentence]);
+});
+
+const linksKey = ["revoke-reread-links"];
+
+/** What the links read answers, once `answered` has. */
+interface LinksHeld {
+  links: InviteLinkListed[];
+  answered: Promise<void>;
+}
+
+/** The listing over a read of `held`, revoked by the real write, whose
+ * revocation is refused `Absent` and ends `l-one`, holding the reread until
+ * the hand this answers releases it. */
+function linksRead(client: QueryClient, held: LinksHeld): () => void {
+  let release: () => void = () => undefined;
+  function LinksRead(): ReactNode {
+    const read = useQuery({
+      queryKey: linksKey,
+      queryFn: () => held.answered.then(() => held.links),
+    });
+    return links(
+      read.data ?? [],
+      inviteLinkRevocationWrite(
+        ["revoke-reread"],
+        () => {
+          held.links = held.links.filter((link) => link.link !== "l-one");
+          held.answered = new Promise((resolve) => {
+            release = resolve;
+          });
+          return Promise.resolve({ outcome: "Absent" });
+        },
+        (client) => client.invalidateQueries({ queryKey: linksKey }),
+      ),
+    );
+  }
+  drawnOver(client, <LinksRead />);
+  return () => {
+    release();
+  };
+}
+
+test("a revocation refused whose own reread takes its row away is the shell's toast once that reread is drawn", async () => {
+  const client = consoleQueryClient();
+  const release = linksRead(client, {
+    links: [linkOf("l-one"), linkOf("l-two")],
+    answered: Promise.resolve(),
+  });
+  await settled();
+  await turned(() => {
+    fireEvent.click(screen.getByRole("button", { name: "Revoke" }));
+  });
+  await turned(() => {
+    fireEvent.click(
+      within(screen.getByRole("group", { name: "Revoke link" })).getByRole(
+        "button",
+        { name: "Revoke" },
+      ),
+    );
+  });
+  await settled();
+  expect(screen.getByText("l-one")).toBeDefined();
+  expect(unseen(client)).toEqual([]);
+
+  await turned(release);
+  await settled();
+
+  expect(screen.queryByText("l-one")).toBeNull();
+  expect(screen.queryByText("Not available")).toBeNull();
+  expect(unseen(client)).toEqual(["Not available"]);
 });
 
 const developers: PermissionRow<"DeveloperGranters"> = {

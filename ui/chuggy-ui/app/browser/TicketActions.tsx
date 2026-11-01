@@ -498,15 +498,17 @@ function useTicketActionAttempt(
  * is a narrower projection than the ticket's own read and a live frame may
  * already have written a later one, and the open actions are read again rather
  * than written because what the follow learned is that the question was
- * answered and not what is open now.
+ * answered and not what is open now. `drawn` says whether the caller draws
+ * `FollowNotes`, which is where either write's refusal is said.
  */
 function useTicketActionWrite(
   partition: PartitionIdentity,
   ticket: number,
+  drawn: boolean,
 ): TicketActing {
   const client = useQueryClient();
   const writing = useConsoleWrite(ticketActionWrite(partition, ticket), {
-    drawn: true,
+    drawn,
   });
   const attempt = useTicketActionAttempt(
     writing.variables,
@@ -517,7 +519,7 @@ function useTicketActionWrite(
   const refusedOperation =
     following && "operation" in step ? step.operation : undefined;
   const cancelling = useConsoleWrite(ticketCancelWrite(partition, ticket), {
-    drawn: (_, operation) => operation === refusedOperation,
+    drawn: (_, operation) => drawn && operation === refusedOperation,
   });
 
   useEffect(() => {
@@ -559,9 +561,12 @@ export interface TicketActing {
 function TicketActingHeld(props: {
   readonly partition: PartitionIdentity;
   readonly ticket: number;
+  readonly drawn: boolean;
   readonly children: (acting: TicketActing) => ReactNode;
 }): ReactNode {
-  return props.children(useTicketActionWrite(props.partition, props.ticket));
+  return props.children(
+    useTicketActionWrite(props.partition, props.ticket, props.drawn),
+  );
 }
 
 /**
@@ -575,6 +580,8 @@ function TicketActingHeld(props: {
 export function TicketActingScope(props: {
   readonly partition: PartitionIdentity;
   readonly ticket: number;
+  /** Whether the children draw `FollowNotes` where they stand now. */
+  readonly drawn: boolean;
   readonly children: (acting: TicketActing) => ReactNode;
 }): ReactNode {
   const { tenant, project } = props.partition;
@@ -583,6 +590,7 @@ export function TicketActingScope(props: {
       key={`${tenant}/${project}/${String(props.ticket)}`}
       partition={props.partition}
       ticket={props.ticket}
+      drawn={props.drawn}
     >
       {props.children}
     </TicketActingHeld>
@@ -760,7 +768,7 @@ export function TicketRowDispatchScope(props: {
   if (offered === undefined) return props.children(undefined, null);
   const effect = ticketActionEffect("Dispatch", { kind: "NoPoint" }).effect;
   return (
-    <TicketActingScope partition={props.partition} ticket={props.ticket}>
+    <TicketActingScope partition={props.partition} ticket={props.ticket} drawn>
       {(acting) =>
         props.children(
           {

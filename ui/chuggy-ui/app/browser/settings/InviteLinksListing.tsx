@@ -71,7 +71,8 @@ export interface InviteLinksListed<Link extends InviteLinkListed> {
 
 /** One list's revocation of a link, keyed under `named`: one done or of a
  * link already ended is over once the list has answered again, and any other
- * refusal leaves the list to be read again behind it. */
+ * refusal lands once the list has answered again, so it is asked whether it is
+ * drawn of the list that reread left. */
 export function inviteLinkRevocationWrite(
   named: readonly string[],
   revoke: (ports: ApiPorts, link: string) => Promise<ApiResult<undefined>>,
@@ -83,7 +84,7 @@ export function inviteLinkRevocationWrite(
       const answered = await revoke(ports, link);
       if (inviteLinkRevocationNote(answered) === undefined)
         return { outcome: "Ok", value: undefined };
-      void reread(client);
+      await reread(client);
       return answered;
     },
     refusal: accessFailureLabel,
