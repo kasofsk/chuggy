@@ -2,14 +2,15 @@
  * The lead's refusal ledger as PostgreSQL answers it, every port
  * `src/interpreter/agenticRefusal.ts`'s and none declared here. Each door is a
  * `SECURITY DEFINER` function 059 declares, but the ticket-set read, which is
- * 073's.
+ * 073's, and the binding read, which is 104's.
  *
  * THE SELECTOR'S POOL AND THE API'S OPEN DIFFERENT DOORS.
  * `postgresAgenticRefusalLedger` and `postgresAgenticRefusalStanding` run on the
  * selector service's pool and reach `record_agentic_refusals` and
  * `standing_agentic_refusals_among`; `postgresAgenticRefusalReads` runs on the
  * API's and reaches `read_standing_agentic_refusals` and
- * `read_agentic_refusals`. Neither role is granted the other's, so handing both
+ * `read_agentic_refusals`, and `postgresAgenticRefusalBinding` runs there too and
+ * reaches `read_binding_agentic_refusals`. Neither role is granted the other's, so handing both
  * to one pool here would make that separation a comment rather than a grant.
  *
  * STANDING IS NOT SELECTED, IT IS ANSWERED. Which tickets currently stand
@@ -31,6 +32,7 @@ import { asTicketId } from "../../domain/ids.ts";
 import {
   agenticRefusalIsSuperseded,
   allAgenticRefusalEvents,
+  type AgenticRefusalBindingRead,
   type AgenticRefusalEntry,
   type AgenticRefusalRead,
   type AgenticRefusalRecord,
@@ -156,6 +158,26 @@ export function postgresAgenticRefusalStanding(
                      ${[...tickets]}::bigint[])`,
       );
       return found.rows.map(standingRefusalOf);
+    },
+  };
+}
+
+/** The standing refusals whose ticket has not moved past them, over the API's pool. */
+export function postgresAgenticRefusalBinding(
+  pool: pg.Pool,
+): AgenticRefusalBindingRead {
+  return {
+    binding: async (partition, limit) => {
+      const found = await pool.query<StandingRefusalRow>(
+        sql`SELECT ticket::text AS ticket,ticket_version::text AS ticket_version,
+                   reason,selector_decision,recorded_at
+              FROM read_binding_agentic_refusals(
+                     ${partition.tenant},${partition.project},${limit})`,
+      );
+      return found.rows.map((row) => ({
+        ...standingRefusalOf(row),
+        superseded: false,
+      }));
     },
   };
 }

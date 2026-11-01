@@ -9,14 +9,14 @@
  * it once. So a lift is its own entry, standing is "the latest entry for the
  * ticket is a refusal", and standing rule 3 is why nothing stores it.
  *
- * SUPERSESSION IS NOT STORED EITHER. A refusal cleared by a new authoring
- * version is a comparison between the refusal's `ticketVersion` and the version
- * whoever is reading already holds, so the reader makes it and the ledger keeps
- * saying what the lead did.
+ * SUPERSESSION IS NOT STORED EITHER. A refusal the ticket has moved past is a
+ * comparison between the refusal's `ticketVersion` and the version whoever is
+ * reading already holds, so the reader makes it and the ledger keeps saying what
+ * the lead did.
  *
  * IT IS NOT A NATIVE ACTION. Nothing here is addressed to a person and nothing
  * here admits an answer: the lead refuses, the record says so, and a ticket
- * leaves the refusal behind by being authored again.
+ * leaves the refusal behind by moving past the version it was refused at.
  */
 
 import { agenticRefusalsAnsweredMax } from "../contract/http.ts";
@@ -134,6 +134,18 @@ export interface AgenticRefusalStanding extends AgenticRefusalRecord {
   readonly superseded: boolean;
 }
 
+/**
+ * The inbox's read: the standing refusals whose ticket has not moved past them,
+ * compared below the bound, because a refusal on a ticket that is no longer a
+ * candidate stands for good and would otherwise fill it.
+ */
+export interface AgenticRefusalBindingRead {
+  binding(
+    partition: Partition,
+    limit: number,
+  ): Promise<readonly AgenticRefusalStanding[]>;
+}
+
 /** One page of a project's standing refusals, as the API answers it. */
 export type AgenticRefusalsRead =
   | { readonly result: "NotFound" }
@@ -177,7 +189,7 @@ export function agenticRefusalStanding(
   };
 }
 
-/** Whether a refusal has been cleared by the ticket being authored again. */
+/** Whether the ticket has moved past the version it was refused at. */
 export function agenticRefusalIsSuperseded(
   refusal: AgenticRefusalRecord,
   ticketVersion: number,

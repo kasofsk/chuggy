@@ -70,7 +70,6 @@ import {
 import type { OperationStep } from "../core/operationFollow.ts";
 import { projectTableRow } from "../core/projectTableRows.ts";
 import type { ProjectTableRow } from "../core/projectTableRows.ts";
-import { agenticRefusalStanding } from "../core/leadTranscript.ts";
 import { actionsFor, ticketActionSentence } from "../core/ticketActions.ts";
 import type { TicketAction } from "../core/ticketActions.ts";
 import { ticketSectionTitles } from "../core/ticketSections.ts";
@@ -350,18 +349,17 @@ function InboxWhy(props: {
   );
 }
 
-/** Whether the lead is declining to dispatch this ticket, and whether that
- * still binds. The reason is on hover, because a row is one line. */
+/** That the lead is declining to dispatch this ticket. The reason is on hover,
+ * because a row is one line. */
 function InboxRefusal(props: {
   readonly entry: InboxEntryResponse;
 }): ReactNode {
   const refusal = props.entry.refusals[0];
   if (refusal === undefined) return null;
-  const standing = agenticRefusalStanding(refusal);
   return (
     <Tooltip text={refusal.reason}>
       <span>
-        <Pill tone={agenticRefusalStandingTone(standing)}>{standing}</Pill>
+        <Pill tone={agenticRefusalStandingTone("Standing")}>Standing</Pill>
       </span>
     </Tooltip>
   );

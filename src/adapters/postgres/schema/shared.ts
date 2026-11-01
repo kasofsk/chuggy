@@ -204,6 +204,8 @@ export const leadTurnWithdrawFunction = "withdraw_lead_turn";
 export const agenticRefusalLedgerReadFunction = "read_agentic_refusals";
 export const agenticRefusalStandingReadFunction =
   "read_standing_agentic_refusals";
+export const agenticRefusalBindingReadFunction =
+  "read_binding_agentic_refusals";
 export const selectorInteractionsReadFunction = "read_selector_interactions";
 export const selectorPlanningIntentReadFunction =
   "read_selector_planning_intent";

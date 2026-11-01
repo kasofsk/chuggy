@@ -394,6 +394,48 @@ test("the standing among a ticket set answers past the page standing fills", asy
   );
 });
 
+test("the refusals that bind leave out what a ticket moved past, and those rows take none of the bound", async () => {
+  const partition = await leadRigProject(rig, "binding");
+  const tickets = ticketsCounted(agenticRefusalsAnsweredMax + 3);
+  await refusalsAmongRecorded(partition, "binding", tickets);
+  const binds = tickets.slice(-3, -2);
+  const lifted = tickets.slice(-2, -1);
+  await rig.writes.record({
+    partition,
+    decision: await leadRigDecision(rig, partition, "binding-lift", {
+      notificationCursor: tickets.length,
+    }),
+    refusals: [],
+    lifts: lifted.map((ticket) => ({ ticket })),
+  });
+  for (const ticket of tickets.slice(0, -1))
+    await rig.sessions.harness.query(
+      `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq)
+       VALUES ($1,$2,$3,'Pending',$4)`,
+      [
+        partition.tenant,
+        partition.project,
+        ticket,
+        binds.includes(ticket) || lifted.includes(ticket) ? 1 : 2,
+      ],
+    );
+
+  assert.equal(
+    (await rig.apiRefusals.standing(partition, refusalsBoundless)).filter(
+      (refusal) => !refusal.superseded,
+    ).length,
+    0,
+    "the standing page is filled by rows the ticket moved past",
+  );
+  assert.deepEqual(
+    (await rig.apiRefusalsBinding.binding(partition, refusalsBoundless)).map(
+      (refusal) => [refusal.ticket, refusal.superseded],
+    ),
+    binds.map((ticket) => [ticket, false]),
+    "the one at its version, and neither the one lifted nor the one with no projection",
+  );
+});
+
 test("the standing among a ticket set answers no lift and no ticket it was not given", async () => {
   const partition = await leadRigProject(rig, "among-exact");
   const refused = await leadRigDecision(rig, partition, "among-refuse");

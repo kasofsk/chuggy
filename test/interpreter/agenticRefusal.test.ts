@@ -82,7 +82,7 @@ test("a ledger whose latest entry is a lift stands on nothing", () => {
   assert.equal(standing?.decision, "selector-decision-3");
 });
 
-test("a refusal is superseded exactly where the ticket has been authored again", () => {
+test("a refusal is superseded exactly where the ticket has moved past the version it was refused at", () => {
   const standing = agenticRefusalStanding([entry(1, "Refused", 2)]);
   assert.ok(standing !== undefined);
   assert.equal(agenticRefusalIsSuperseded(standing, 2), false);

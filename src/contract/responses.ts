@@ -1434,7 +1434,7 @@ export const agenticRefusalResponseSchema = z.object({
   reason: z.string().min(1).max(agenticRefusalReasonCharsMax),
   decision: identitySchema,
   recordedAt: instantSchema,
-  /** Whether the ticket has been authored again since the refusal was made. */
+  /** Whether the ticket has moved past the version it was refused at. */
   superseded: z.boolean(),
 });
 export type AgenticRefusalResponse = z.infer<
@@ -1643,8 +1643,9 @@ export type SelectorProposalsResponse = z.infer<
 >;
 
 /**
- * One ticket the inbox holds: the row the tickets list answers for it, and
- * what each of the other three reads says about it, any of them empty.
+ * One ticket the inbox holds: the row the tickets list answers for it, its
+ * open actions, the refusals it has not moved past and the decisions naming
+ * it, any of them empty.
  */
 export const inboxEntryResponseSchema = z.object({
   ticket: projectTicketSchema,

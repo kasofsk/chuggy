@@ -612,7 +612,7 @@ export function leadDecisionSummary(
   return said.length === 0 ? "None" : said.join(" · ");
 }
 
-/** Whether a refusal still binds, or the ticket has been authored again since. */
+/** Whether a refusal still binds, or the ticket has moved past it. */
 export const agenticRefusalStandings = ["Standing", "Superseded"] as const;
 
 export type AgenticRefusalStanding = (typeof agenticRefusalStandings)[number];
