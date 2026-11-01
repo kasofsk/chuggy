@@ -212,9 +212,7 @@ function panelPagesAskedAgain<P, Param>(
   /** The cache's defaults are written over any query, which this one is. */
   const refetched =
     (on: QueryObserverOptions["refetchOnWindowFocus"]) =>
-    (
-      asked: Query<P, Error, InfiniteData<P, Param>, ProjectQueryKey>,
-    ): boolean | "always" =>
+    (asked: Query<P, Error, InfiniteData<P, Param>>): boolean | "always" =>
       panelPagesFailedAgain(asked.state, query.rereadHeldAgain) &&
       (typeof on === "function" ? on(asked as Query) : (on ?? true));
   return {
