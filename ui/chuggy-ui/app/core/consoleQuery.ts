@@ -10,8 +10,12 @@
  * type does not compile.
  *
  * WHAT IS UNWRITABLE IS A LIST ENTRY WITH NO REFRESH, and only that:
- * `consoleListQuery` takes a `ProjectList`, which cannot be made without one,
- * and is the only builder whose key is a list's.
+ * `consoleListQuery` and `consolePagesQuery` take a `ProjectList`, which
+ * cannot be made without one, and are the only builders whose key is a list's.
+ *
+ * A PAGED LIST IS ONE ENTRY OF PAGES, read a page at a time from where the
+ * pages before it say the next begins, and read again from its first page as
+ * many pages as it holds. Its rows are derived from its pages.
  *
  * IT PROMISES NOTHING ABOUT A RESOURCE. A resource is named by a string, and a
  * name no frame carries typechecks: the evidence panels read parts under an
@@ -25,6 +29,8 @@
  * its position, since the frames have kept it; a key `projectStreamedNamed`
  * does not admit is refused when its read is made.
  */
+
+import type { InfiniteData } from "@tanstack/query-core";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { ProjectChangeKind } from "../../../../src/contract/events.ts";
@@ -74,6 +80,66 @@ export interface ConsoleListQuery<T> {
 }
 
 export type ConsoleQuery<T> = ConsoleResourceQuery<T> | ConsoleListQuery<T>;
+
+/** How a paged list is read and drawn: `P` a page, `Param` where one is read
+ * from, and `R` the rows the pages draw. */
+export interface ConsolePaging<P, Param, R> {
+  /** One page, read from `at`. */
+  readonly read: (
+    ports: ApiPorts,
+    signal: AbortSignal,
+    at: Param,
+  ) => Promise<ApiResult<P>>;
+  readonly first: Param;
+  /** Where the page after the pages is read, or undefined where none is. */
+  readonly next: (pages: InfiniteData<P, Param>) => Param | undefined;
+  readonly rows: (pages: InfiniteData<P, Param>) => R;
+  /** Whether a reader's press reads on past the page it has just read. */
+  readonly readsPast: (pages: InfiniteData<P, Param>) => boolean;
+  /** How many pages the list holds at the most, which bounds a press too. */
+  readonly pagesMax: number;
+}
+
+/** A paged list entry's read, whose refresh the list itself carries. */
+export interface ConsolePagesQuery<P, Param, R> extends ConsolePaging<
+  P,
+  Param,
+  R
+> {
+  readonly queryKey: ProjectQueryKeyOf<InfiniteData<P, Param>>;
+  readonly list: ProjectList<InfiniteData<P, Param>>;
+  readonly polledMs: number | undefined;
+}
+
+/** What asking for the next page came to: the pages held once it was over,
+ * and whether the read it ended on failed. */
+export interface ConsolePagesAnswer<P, Param> {
+  readonly pages: InfiniteData<P, Param> | undefined;
+  readonly failed: boolean;
+}
+
+/**
+ * A reader's press: the next page asked for until one lands that the list does
+ * not read past, the list has no next page, or a read fails. An ask that joins
+ * a reread already running lands no page, so the next is asked for again over
+ * what the reread answered; `pagesMax` asks at the most.
+ */
+export async function consolePagesMore<P, Param, R>(
+  paging: ConsolePaging<P, Param, R>,
+  held: number,
+  asked: () => Promise<ConsolePagesAnswer<P, Param>>,
+): Promise<void> {
+  let pagesHeld = held;
+  for (let ask = 0; ask < paging.pagesMax; ask += 1) {
+    const answered = await asked();
+    const pages = answered.pages;
+    if (answered.failed || pages === undefined) return;
+    const landed = pages.pages.length > pagesHeld;
+    pagesHeld = pages.pages.length;
+    if (paging.next(pages) === undefined) return;
+    if (landed && !paging.readsPast(pages)) return;
+  }
+}
 
 function consoleResourceQueryOf<T>(
   key: ProjectQueryKey,
@@ -133,6 +199,15 @@ export function consoleListQuery<T>(
   polledMs?: number,
 ): ConsoleListQuery<T> {
   return { queryKey: list.key, list, read, kept: "Read", polledMs };
+}
+
+/** A paged list entry, read again every `polledMs` as well where a caller names one. */
+export function consolePagesQuery<P, Param, R>(
+  list: ProjectList<InfiniteData<P, Param>>,
+  paging: ConsolePaging<P, Param, R>,
+  polledMs?: number,
+): ConsolePagesQuery<P, Param, R> {
+  return { ...paging, queryKey: list.key, list, polledMs };
 }
 
 /** One tenant's own resource, shared by every project under it and so outside

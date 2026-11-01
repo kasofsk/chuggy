@@ -1,18 +1,12 @@
 /**
- * The rows the project table holds, and what a page, a live frame or a refused
- * read does to them.
+ * The rows the project table holds, the pages they are read from, and what a
+ * page, a live frame or a refused read does to them.
  *
- * The accumulation is the cache entry itself, so the pages a reader has asked
- * for and the frames that arrived since are one value and a fold does not have
- * to reach past the query it is registered on. A page that will not read keeps
- * the rows already there and records why, because a table that empties itself
- * on a refusal is a table that says the project is empty.
- *
- * A REFETCH IS NOT A FIRST READ. The entry this accumulation lives in sits
- * under the partition prefix that the degraded stream's fallback and a
- * `Project` frame both invalidate, so rebuilding it from the first page alone
- * would take a reader's pages away on a timer. That is why a read gathers as
- * many pages as the entry it is replacing had, and why a refusal keeps them.
+ * The entry is the pages as read, each with where the read after it resumes,
+ * and the rows are derived from them, so the pages a reader has asked for and
+ * the frames that arrived since are one value and a fold does not have to
+ * reach past the query it is registered on. A refetch reads the pages again
+ * from the first, as many as the entry holds and no more.
  *
  * TWO BOUNDS, AND NEITHER IMPLIES THE OTHER. The page budget stops a server
  * that keeps answering with a cursor, and bites first when the pages are small.
@@ -23,12 +17,14 @@
  * nothing can prove.
  *
  * A LIST MAY BE MORE THAN ONE READ, each paged to its end before the next
- * begins. A first read is its first page, empty or not, so an empty active
- * read says so; a "Show more" reads past a page that adds no row, so a press
- * draws a row wherever one is left. A first read that drew nothing asks the
- * reads after it whether anything is left, and draws none of what they hold:
- * a list with nothing behind its button is a project with no ticket.
+ * begins. A first page is drawn empty or not, so an empty active read says so;
+ * a "Show more" reads past a page that adds no row, so a press draws a row
+ * wherever one is left. A first page that drew nothing asks the reads after it
+ * whether anything is left, and draws none of what they hold: a list with
+ * nothing behind its button is a project with no ticket.
  */
+
+import type { InfiniteData } from "@tanstack/query-core";
 
 import {
   executionSummarySchema,
@@ -44,11 +40,11 @@ import type {
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { TicketPhase } from "../../../../src/contract/rosters.ts";
 
-import type { ApiFailure, ApiResult } from "./apiRequest.ts";
-import { panelReason } from "./freshness.ts";
+import type { ApiResult } from "./apiRequest.ts";
 import {
   projectListAlongside,
   projectListFoldedElseReread,
+  projectListPagesEach,
 } from "./projectQueryKeys.ts";
 import type { ProjectList } from "./projectQueryKeys.ts";
 
@@ -62,18 +58,37 @@ export interface ProjectTicketRowsNext {
 }
 
 /** Where a list's first page is read. */
-const projectTicketRowsFirst: ProjectTicketRowsNext = {
+export const projectTicketRowsFirst: ProjectTicketRowsNext = {
   read: 0,
   cursor: undefined,
 };
 
-export interface ProjectTicketRows {
+/** What holds ticket rows: the rows drawn, or one page of them. */
+interface ProjectTicketsHeld {
   readonly tickets: readonly ProjectTicket[];
+}
+
+/** One page as read, and where the read after it resumes. */
+export interface ProjectTicketPage extends ProjectTicketsHeld {
+  /** Undefined once every read has answered its last. */
+  readonly next: ProjectTicketRowsNext | undefined;
+  /** How many tickets the server says a search matched. */
+  readonly matched: number | undefined;
+}
+
+/** The entry the rows are read under: every page read, and where each was read from. */
+export type ProjectTicketPages = InfiniteData<
+  ProjectTicketPage,
+  ProjectTicketRowsNext
+>;
+
+export interface ProjectTicketRows extends ProjectTicketsHeld {
   /** Undefined before the first page and once every read has answered its last. */
   readonly next: ProjectTicketRowsNext | undefined;
   readonly pagesRead: number;
   /** How many tickets the server says a search matched, as the last page answered it. */
   readonly matched: number | undefined;
+  /** Why a page could not be read, while the rows already read stand. */
   readonly failure: string | undefined;
 }
 
@@ -112,39 +127,34 @@ function projectTicketRowsNextAfter(
   return read + 1 < reads ? { read: read + 1, cursor: undefined } : undefined;
 }
 
-/** `reads` is how many reads the list is drawn from, and the page is one of the read `previous` names next. */
-export function projectTicketRowsAppend(
-  previous: ProjectTicketRows,
+/** `reads` is how many reads the list is drawn from, and `at` is where the page was read. */
+export function projectTicketPageOf(
+  at: ProjectTicketRowsNext,
   page: ProjectResponse,
   reads = 1,
-): ProjectTicketRows {
+): ProjectTicketPage {
   return {
-    tickets: projectTicketRowsMerged(previous.tickets, page.tickets),
-    next: projectTicketRowsNextAfter(previous.next?.read ?? 0, page, reads),
-    pagesRead: previous.pagesRead + 1,
+    tickets: page.tickets,
+    next: projectTicketRowsNextAfter(at.read, page, reads),
     matched: page.matched,
-    failure: undefined,
   };
 }
 
-/** The cursor is kept, so the same page can be asked for again. */
-export function projectTicketRowsFailed(
-  previous: ProjectTicketRows,
-  reason: string,
+/** The rows the pages draw, in the order they were read. */
+export function projectTicketRowsOf(
+  pages: ProjectTicketPages,
 ): ProjectTicketRows {
-  return { ...previous, failure: reason };
-}
-
-/** What a page asked for after the first does to the rows, refusal included:
- * the first page has no rows to keep, so its refusal is the panel's own. */
-export function projectTicketRowsAfterPage(
-  previous: ProjectTicketRows,
-  answered: ApiResult<ProjectResponse>,
-  reads = 1,
-): ProjectTicketRows {
-  return answered.outcome === "Ok"
-    ? projectTicketRowsAppend(previous, answered.value, reads)
-    : projectTicketRowsFailed(previous, panelReason(answered));
+  let tickets: readonly ProjectTicket[] = [];
+  for (const page of pages.pages)
+    tickets = projectTicketRowsMerged(tickets, page.tickets);
+  const last = pages.pages.at(-1);
+  return {
+    tickets,
+    next: last?.next,
+    pagesRead: pages.pages.length,
+    matched: last?.matched,
+    failure: undefined,
+  };
 }
 
 export function projectTicketRowsHaveMore(rows: ProjectTicketRows): boolean {
@@ -155,13 +165,24 @@ export function projectTicketRowsHaveMore(rows: ProjectTicketRows): boolean {
   );
 }
 
-/** Whether a page carries a ticket the rows do not hold yet. */
-function projectTicketRowsAdds(
-  rows: ProjectTicketRows,
-  page: ProjectResponse,
-): boolean {
-  const held = new Set(rows.tickets.map((ticket) => ticket.ticket));
-  return page.tickets.some((ticket) => !held.has(ticket.ticket));
+/** Where the page after the pages is read, or undefined where a bound or the reads' end says none is. */
+export function projectTicketPagesNext(
+  pages: ProjectTicketPages,
+): ProjectTicketRowsNext | undefined {
+  const rows = projectTicketRowsOf(pages);
+  return projectTicketRowsHaveMore(rows) ? rows.next : undefined;
+}
+
+/** Whether the last page carries no ticket the pages before it do not, which a press reads past. */
+export function projectTicketPagesReadPast(pages: ProjectTicketPages): boolean {
+  const last = pages.pages.at(-1);
+  if (last === undefined) return false;
+  const held = new Set(
+    pages.pages
+      .slice(0, -1)
+      .flatMap((page) => page.tickets.map((ticket) => ticket.ticket)),
+  );
+  return !last.tickets.some((ticket) => !held.has(ticket.ticket));
 }
 
 type ProjectTicketPageRead = (
@@ -169,128 +190,51 @@ type ProjectTicketPageRead = (
   read: number,
 ) => Promise<ApiResult<ProjectResponse>>;
 
-/** Where a gather writes each page it reads, answering the rows as they then
- * stand, or undefined where there are none to write to. */
-type ProjectTicketRowsLand = (
-  update: (rows: ProjectTicketRows) => ProjectTicketRows,
-) => ProjectTicketRows | undefined;
-
-/**
- * Reads on from `from` until `pages` pages have answered — or, `pastEmpty`,
- * have each added a row — the list's reads end or a bound is reached, landing
- * every page as it answers. Answers the refusal that stopped it, if one did;
- * the pages before it have landed.
- */
-async function projectTicketRowsGather(
-  from: ProjectTicketRows,
-  land: ProjectTicketRowsLand,
+/** `next` moved past each further read whose first page is empty and last,
+ * so a list holding nothing offers a press only where a row is behind it. A
+ * page that holds a row is left for that press to draw. */
+async function projectTicketPageEnded(
+  next: ProjectTicketRowsNext | undefined,
   readPage: ProjectTicketPageRead,
   reads: number,
-  pages: number,
-  pastEmpty: boolean,
-): Promise<ApiFailure | undefined> {
-  let rows: ProjectTicketRows | undefined = from;
-  let wanted = pages;
-  for (let page = 0; page < wanted && rows !== undefined; page += 1) {
-    const next: ProjectTicketRowsNext | undefined =
-      rows.pagesRead === 0 ? projectTicketRowsFirst : rows.next;
-    if (next === undefined) break;
-    const answered = await readPage(next.cursor, next.read);
-    if (answered.outcome !== "Ok") return answered;
-    if (pastEmpty && !projectTicketRowsAdds(rows, answered.value)) wanted += 1;
-    rows = land((held) => projectTicketRowsAppend(held, answered.value, reads));
-    if (rows === undefined || !projectTicketRowsHaveMore(rows)) break;
-  }
-  return undefined;
-}
-
-/** The rows with `next` moved past each further read whose first page is
- * empty and last, so a list holding nothing offers a press only where a row is
- * behind it. A page that holds a row is left for that press to draw. */
-async function projectTicketRowsEnded(
-  rows: ProjectTicketRows,
-  readPage: ProjectTicketPageRead,
-  reads: number,
-): Promise<ProjectTicketRows> {
-  let held = rows;
+): Promise<ProjectTicketRowsNext | undefined> {
+  let held = next;
   for (let asked = 0; asked < reads; asked += 1) {
-    const next = held.next;
-    if (held.tickets.length > 0 || next?.cursor !== undefined) break;
-    if (next === undefined) break;
-    const answered = await readPage(undefined, next.read);
+    if (held === undefined || held.cursor !== undefined) break;
+    const answered = await readPage(undefined, held.read);
     if (answered.outcome !== "Ok") break;
     const page = answered.value;
     if (page.tickets.length > 0 || page.nextCursor !== undefined) break;
-    held = {
-      ...held,
-      next: projectTicketRowsNextAfter(next.read, page, reads),
-    };
+    held = projectTicketRowsNextAfter(held.read, page, reads);
   }
   return held;
 }
 
-/**
- * The pages a read gathers: one on a first read, and on a refetch exactly as
- * many as the entry it replaces had read, so a refetch never reads further
- * than the last one did. A refusal is
- * answered with the rows there are — the ones just gathered, or the ones being
- * replaced — and only a read holding none at all answers with the refusal
- * itself.
- */
-export async function projectTicketRowsRead(
-  previous: ProjectTicketRows | undefined,
+/** One page, read where `at` says; the list's first page, where it draws
+ * nothing, asks the reads after it whether anything is left. */
+export async function projectTicketPageRead(
   readPage: ProjectTicketPageRead,
+  at: ProjectTicketRowsNext,
   reads = 1,
-): Promise<ApiResult<ProjectTicketRows>> {
-  let rows = projectTicketRowsEmpty;
-  const refused = await projectTicketRowsGather(
-    rows,
-    (update) => (rows = update(rows)),
-    readPage,
-    reads,
-    Math.max(previous?.pagesRead ?? 1, 1),
-    false,
-  );
-  if (refused === undefined)
-    return {
-      outcome: "Ok",
-      value: await projectTicketRowsEnded(rows, readPage, reads),
-    };
-  const held = rows.pagesRead === 0 ? previous : rows;
-  if (held === undefined) return refused;
+): Promise<ApiResult<ProjectTicketPage>> {
+  const answered = await readPage(at.cursor, at.read);
+  if (answered.outcome !== "Ok") return answered;
+  const page = projectTicketPageOf(at, answered.value, reads);
+  const first = at.read === 0 && at.cursor === undefined;
+  if (!first || page.tickets.length > 0) return { outcome: "Ok", value: page };
   return {
     outcome: "Ok",
-    value: projectTicketRowsFailed(held, panelReason(refused)),
+    value: {
+      ...page,
+      next: await projectTicketPageEnded(page.next, readPage, reads),
+    },
   };
 }
 
-/**
- * What a reader's "Show more" does to the rows `land` holds: one page that adds
- * a row, read past as many as add none, so a press draws something whenever
- * the list has anything left. A refusal is recorded on the rows it reached.
- */
-export async function projectTicketRowsMore(
-  rows: ProjectTicketRows,
-  land: ProjectTicketRowsLand,
-  readPage: ProjectTicketPageRead,
-  reads = 1,
-): Promise<void> {
-  const refused = await projectTicketRowsGather(
-    rows,
-    land,
-    readPage,
-    reads,
-    1,
-    true,
-  );
-  if (refused !== undefined)
-    land((held) => projectTicketRowsFailed(held, panelReason(refused)));
-}
-
-function projectTicketRowsWithout(
-  rows: ProjectTicketRows,
+function projectTicketRowsWithout<R extends ProjectTicketsHeld>(
+  rows: R,
   ticket: number,
-): ProjectTicketRows {
+): R {
   return {
     ...rows,
     tickets: rows.tickets.filter((held) => held.ticket !== ticket),
@@ -298,10 +242,10 @@ function projectTicketRowsWithout(
 }
 
 /** A ticket's frame carries no latest execution, so a row keeps the one it has. */
-function projectTicketRowsWith(
-  rows: ProjectTicketRows,
+function projectTicketRowsWith<R extends ProjectTicketsHeld>(
+  rows: R,
   arriving: TicketResponse,
-): ProjectTicketRows {
+): R {
   return {
     ...rows,
     tickets: rows.tickets.map((ticket) =>
@@ -315,18 +259,19 @@ function projectTicketRowsWith(
 }
 
 /**
- * A `Ticket` frame folded into the rows: the representation is the ticket read's
- * own body, a null one is a tombstone, a ticket the phases no longer admit
- * leaves, and anything else leaves the rows alone because a list that cannot
- * read a frame is better stale than wrong. A ticket the rows have not got is
- * left to the read `projectTicketRowsRereads` asks for.
+ * A `Ticket` frame folded into the rows, or into one page of them: the
+ * representation is the ticket read's own body, a null one is a tombstone, a
+ * ticket the phases no longer admit leaves, and anything else leaves the rows
+ * alone because a list that cannot read a frame is better stale than wrong. A
+ * ticket the rows have not got is left to the read `projectTicketRowsRereads`
+ * asks for.
  */
-export function projectTicketRowsFold(
-  previous: ProjectTicketRows | undefined,
+export function projectTicketRowsFold<R extends ProjectTicketsHeld>(
+  previous: R | undefined,
   resource: string,
   representation: unknown,
   phases: readonly TicketPhase[] | undefined,
-): ProjectTicketRows | undefined {
+): R | undefined {
   if (previous === undefined) return previous;
   if (representation === null) {
     const gone = Number(resource);
@@ -348,7 +293,7 @@ export function projectTicketRowsFold(
  * execution, and the read answers the row with one.
  */
 export function projectTicketRowsRereads(
-  previous: ProjectTicketRows | undefined,
+  previous: ProjectTicketsHeld | undefined,
   representation: unknown,
   phases: readonly TicketPhase[] | undefined,
 ): boolean {
@@ -360,26 +305,33 @@ export function projectTicketRowsRereads(
 }
 
 /** The list of the rows within `phases`, kept live by `Ticket` and
- * `Execution` frames alike. */
+ * `Execution` frames alike: a frame folds into every page, and whether it
+ * rereads is asked of every row the pages hold. */
 export function projectTicketRowsFolded(
   partition: PartitionIdentity,
   name: string,
   phases: readonly TicketPhase[] | undefined,
-): ProjectList<ProjectTicketRows> {
+): ProjectList<ProjectTicketPages> {
   return projectTicketRowsLive(
-    projectListFoldedElseReread<ProjectTicketRows>(
+    projectListFoldedElseReread<ProjectTicketPages>(
       partition,
       "Ticket",
       name,
       (previous, change) =>
-        projectTicketRowsFold(
-          previous,
-          change.resource,
+        projectListPagesEach(previous, (page) =>
+          projectTicketRowsFold(
+            page,
+            change.resource,
+            change.representation,
+            phases,
+          ),
+        ),
+      (previous, change) =>
+        projectTicketRowsRereads(
+          previous === undefined ? undefined : projectTicketRowsOf(previous),
           change.representation,
           phases,
         ),
-      (previous, change) =>
-        projectTicketRowsRereads(previous, change.representation, phases),
     ),
   );
 }
@@ -398,15 +350,15 @@ export function projectTicketExecutionLater(
 }
 
 /**
- * An `Execution` frame folded into the rows: the row of its ticket takes it as
- * its latest execution where it is, and a frame that will not read — a
- * tombstone among them — an older execution's, or one for a ticket the rows do
- * not hold leaves every row where it was.
+ * An `Execution` frame folded into the rows, or into one page of them: the row
+ * of its ticket takes it as its latest execution where it is, and a frame that
+ * will not read — a tombstone among them — an older execution's, or one for a
+ * ticket the rows do not hold leaves every row where it was.
  */
-export function projectTicketRowsExecutionFold(
-  previous: ProjectTicketRows | undefined,
+export function projectTicketRowsExecutionFold<R extends ProjectTicketsHeld>(
+  previous: R | undefined,
   representation: unknown,
-): ProjectTicketRows | undefined {
+): R | undefined {
   if (previous === undefined) return previous;
   const read = executionSummarySchema.safeParse(representation);
   if (!read.success) return previous;
@@ -425,11 +377,13 @@ export function projectTicketRowsExecutionFold(
   };
 }
 
-/** A list of ticket rows that an `Execution` frame keeps live as well. */
+/** A list of ticket pages that an `Execution` frame keeps live as well. */
 export function projectTicketRowsLive(
-  list: ProjectList<ProjectTicketRows>,
-): ProjectList<ProjectTicketRows> {
+  list: ProjectList<ProjectTicketPages>,
+): ProjectList<ProjectTicketPages> {
   return projectListAlongside(list, "Execution", (previous, change) =>
-    projectTicketRowsExecutionFold(previous, change.representation),
+    projectListPagesEach(previous, (page) =>
+      projectTicketRowsExecutionFold(page, change.representation),
+    ),
   );
 }

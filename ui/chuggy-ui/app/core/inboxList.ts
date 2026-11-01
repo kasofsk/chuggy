@@ -15,11 +15,13 @@
  * otherwise. No frame names a held decision, so the read is polled while
  * anything draws it.
  *
- * A REREAD IS NOT A FIRST READ: it gathers as many pages as the rows it
- * replaces had, so a reader's "more" is not taken away on a frame, and one that
- * fails answers the failure, which leaves the rows it would have replaced on
- * screen.
+ * The entry is the pages as read, and the rows are derived from them. A
+ * reread reads again as many pages as the entry holds, so a reader's "more" is
+ * not taken away on a frame, and one that fails leaves the pages it would have
+ * replaced on screen.
  */
+
+import type { InfiniteData } from "@tanstack/query-core";
 
 import {
   inboxPhases,
@@ -38,11 +40,10 @@ import type {
 } from "../../../../src/contract/responses.ts";
 
 import type { InboxPage } from "./apiRoutes.ts";
-import type { ApiResult } from "./apiRequest.ts";
-import { panelReason } from "./freshness.ts";
 import {
   projectListAlongside,
   projectListAlongsideReread,
+  projectListPagesEach,
   projectListRereadNamed,
 } from "./projectQueryKeys.ts";
 import type { ProjectList, ProjectListChange } from "./projectQueryKeys.ts";
@@ -56,14 +57,21 @@ export const inboxListName = "inbox";
 export const inboxPagesMax = 20;
 export const inboxEntriesMax = 500;
 
-export interface InboxRows {
+/** What holds inbox entries: the rows drawn, or one page of them. */
+interface InboxEntriesHeld {
   readonly entries: readonly InboxEntryResponse[];
+}
+
+/** The entry the inbox is read under: every page read, and the cursor each was read from. */
+export type InboxPages = InfiniteData<InboxResponse, string | undefined>;
+
+export interface InboxRows extends InboxEntriesHeld {
   /** Every ticket the inbox holds, as the last page answered it. */
   readonly count: number;
   /** Undefined before the first page and once the last has answered. */
   readonly nextCursor: string | undefined;
   readonly pagesRead: number;
-  /** Why the page a reader asked for after the first could not be read. */
+  /** Why the page a reader asked for after the first could not be read, while the rows already read stand. */
   readonly failure: string | undefined;
 }
 
@@ -113,39 +121,22 @@ export function inboxRowsHaveMore(rows: InboxRows): boolean {
   );
 }
 
-type InboxPageRead = (
-  cursor: string | undefined,
-) => Promise<ApiResult<InboxResponse>>;
-
-/** The pages a read gathers: one on a first read, and on a reread as many as the rows it replaces had. */
-export async function inboxRowsRead(
-  previous: InboxRows | undefined,
-  readPage: InboxPageRead,
-): Promise<ApiResult<InboxRows>> {
-  const wanted = Math.min(Math.max(previous?.pagesRead ?? 1, 1), inboxPagesMax);
+/** The rows the pages draw, in the order they were read. */
+export function inboxRowsOf(pages: InboxPages): InboxRows {
   let rows = inboxRowsEmpty;
-  for (let page = 0; page < wanted; page += 1) {
-    const answered = await readPage(rows.nextCursor);
-    if (answered.outcome !== "Ok") return answered;
-    rows = inboxRowsAppend(rows, answered.value);
-    if (!inboxRowsHaveMore(rows)) break;
-  }
-  return { outcome: "Ok", value: rows };
+  for (const page of pages.pages) rows = inboxRowsAppend(rows, page);
+  return rows;
 }
 
-/** What a reader's "more" does to the rows: the page appended, or why it could not be read. */
-export function inboxRowsAfterPage(
-  previous: InboxRows,
-  answered: ApiResult<InboxResponse>,
-): InboxRows {
-  return answered.outcome === "Ok"
-    ? inboxRowsAppend(previous, answered.value)
-    : { ...previous, failure: panelReason(answered) };
+/** The cursor the page after the pages is read from, or undefined where a bound or the last page says none is. */
+export function inboxPagesNext(pages: InboxPages): string | undefined {
+  const rows = inboxRowsOf(pages);
+  return inboxRowsHaveMore(rows) ? rows.nextCursor : undefined;
 }
 
 /** Whether a `Ticket` frame is about a ticket the rows hold, or one whose phase the inbox holds. */
 export function inboxRowsRereads(
-  previous: InboxRows | undefined,
+  previous: InboxEntriesHeld | undefined,
   change: ProjectListChange,
 ): boolean {
   const ticket = Number(change.resource);
@@ -157,11 +148,11 @@ export function inboxRowsRereads(
   return read.success && inboxPhases.includes(read.data.phase);
 }
 
-/** An `Execution` frame taken as its ticket's latest where the rows hold that ticket and it is later than the one held. */
-export function inboxRowsExecutionFold(
-  previous: InboxRows | undefined,
+/** An `Execution` frame taken as its ticket's latest where the rows, or one page of them, hold that ticket and it is later than the one held. */
+export function inboxRowsExecutionFold<R extends InboxEntriesHeld>(
+  previous: R | undefined,
   representation: unknown,
-): InboxRows | undefined {
+): R | undefined {
   if (previous === undefined) return previous;
   const read = executionSummarySchema.safeParse(representation);
   if (!read.success) return previous;
@@ -184,15 +175,21 @@ export function inboxRowsExecutionFold(
   };
 }
 
-/** The inbox's one key under the partition, with every frame that reaches it. */
+/** The inbox's one key under the partition, with every frame that reaches
+ * it: a frame folds into every page, and whether it rereads is asked of every
+ * entry the pages hold. */
 export function inboxList(
   partition: PartitionIdentity,
-): ProjectList<InboxRows> {
-  const named = projectListRereadNamed<InboxRows>(
+): ProjectList<InboxPages> {
+  const named = projectListRereadNamed<InboxPages>(
     partition,
     "Ticket",
     inboxListName,
-    (change, previous) => inboxRowsRereads(previous, change),
+    (change, previous) =>
+      inboxRowsRereads(
+        previous === undefined ? undefined : inboxRowsOf(previous),
+        change,
+      ),
   );
   return projectListAlongside(
     projectListAlongsideReread(
@@ -201,7 +198,9 @@ export function inboxList(
     ),
     "Execution",
     (previous, change) =>
-      inboxRowsExecutionFold(previous, change.representation),
+      projectListPagesEach(previous, (page) =>
+        inboxRowsExecutionFold(page, change.representation),
+      ),
   );
 }
 

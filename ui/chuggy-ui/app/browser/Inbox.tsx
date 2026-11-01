@@ -18,9 +18,8 @@
  * `ui/chuggy-ui/test/inboxProposals.test.tsx` hold that.
  */
 
-import { useQueryClient } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -29,7 +28,6 @@ import type {
   RunnerLoss,
   RunStepFailure,
 } from "../../../../src/contract/responses.ts";
-import { apiInbox } from "../core/apiRoutes.ts";
 import { inboxQuery } from "../core/ticketQueries.ts";
 import { base64urlFromBytes } from "../core/base64url.ts";
 import {
@@ -56,13 +54,7 @@ import {
   inboxStepSentence,
 } from "../core/inboxAnswers.ts";
 import type { InboxAnswer } from "../core/inboxAnswers.ts";
-import {
-  inboxEntryPhased,
-  inboxPage,
-  inboxRowsAfterPage,
-  inboxRowsHaveMore,
-  inboxSection,
-} from "../core/inboxList.ts";
+import { inboxEntryPhased, inboxSection } from "../core/inboxList.ts";
 import type { InboxRows } from "../core/inboxList.ts";
 import { nativeActionsAnswers } from "../core/nativeActionAnswers.ts";
 import { projectAbilityRefused } from "../core/projectAbilities.ts";
@@ -78,7 +70,7 @@ import { actionsFor, ticketActionSentence } from "../core/ticketActions.ts";
 import type { TicketAction } from "../core/ticketActions.ts";
 import { ticketSectionTitles } from "../core/ticketSections.ts";
 import { agenticRefusalStandingTone } from "../core/tones.ts";
-import { useApiPorts, usePanelState } from "./api.ts";
+import { usePanelPages } from "./api.ts";
 import { useConsoleWrite, useConsoleWriteProgress } from "./consoleWrite.tsx";
 import { DataPanel } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
@@ -119,40 +111,21 @@ export interface InboxRowsHeld {
 /**
  * The inbox, read under its one key and polled for the held decisions no frame
  * names. The badge and the panel take the same value through this, which is
- * what makes the header's claim above true rather than merely intended.
+ * what makes the header's claim above true rather than merely intended, and
+ * a "more" that failed is said on the rows where a failed reread is the panel's.
  */
 export function useInboxRows(partition: PartitionIdentity): InboxRowsHeld {
-  const query = inboxQuery(partition);
-  const key = query.queryKey;
-  const client = useQueryClient();
-  const ports = useApiPorts();
-  const [reading, setReading] = useState(false);
-  const panel = usePanelState(query);
-  const rows = panel.state === "Ready" ? panel.value : undefined;
-  const readMore = () => {
-    setReading(true);
-    void (async () => {
-      const answered = await apiInbox(
-        ports,
-        partition,
-        inboxPage(rows?.nextCursor),
-      );
-      client.setQueryData(key, (previous) =>
-        previous === undefined
-          ? previous
-          : inboxRowsAfterPage(previous, answered),
-      );
-      setReading(false);
-    })();
-  };
+  const pages = usePanelPages(inboxQuery(partition));
+  const panel = pages.state;
+  const failure =
+    pages.failure?.more === true ? pages.failure.reason : undefined;
+  const rows =
+    panel.state === "Ready" ? { ...panel.value, failure } : undefined;
   return {
     panel,
     rows,
-    readMore:
-      rows === undefined || !inboxRowsHaveMore(rows) || reading
-        ? undefined
-        : readMore,
-    reading,
+    readMore: pages.readMore,
+    reading: pages.reading,
   };
 }
 

@@ -6,12 +6,19 @@
  * query's, in `core/consoleQuery.ts` and the factories built on it. What is
  * here is only what needs this tab: the session the ports run under, whether
  * the stream holds its position, and the cache.
+ *
+ * A PAGED LIST IS READ THROUGH `usePanelPages`, the same bridge over an
+ * infinite query: a reader's press asks for the next page, a reread reads the
+ * pages again from the first, and the cache runs the two one after the other,
+ * so neither lands over the other.
  */
 
 import {
   hashKey,
+  infiniteQueryOptions,
   notifyManager,
   queryOptions,
+  useInfiniteQuery,
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
@@ -20,13 +27,25 @@ import type {
   UseQueryResult,
   keepPreviousData,
 } from "@tanstack/react-query";
-import { useCallback, useMemo, useState, useSyncExternalStore } from "react";
+import {
+  useCallback,
+  useMemo,
+  useRef,
+  useState,
+  useSyncExternalStore,
+} from "react";
 
 import { apiPortsOver } from "../core/apiPorts.ts";
 import { apiOrThrow } from "../core/apiRequest.ts";
 import type { ApiPorts } from "../core/apiRequest.ts";
-import type { ConsoleQuery } from "../core/consoleQuery.ts";
-import { panelReason, panelStateFromQuery } from "../core/freshness.ts";
+import type { ProjectQueryKey } from "../core/projectQueryKeys.ts";
+import { consolePagesMore } from "../core/consoleQuery.ts";
+import type { ConsolePagesQuery, ConsoleQuery } from "../core/consoleQuery.ts";
+import {
+  panelFailureReason,
+  panelReason,
+  panelStateFromQuery,
+} from "../core/freshness.ts";
 import type { PanelState } from "../core/freshness.ts";
 import { apiFetch, sleepMs } from "./ports.ts";
 import { useSessionHolder } from "./session.tsx";
@@ -81,9 +100,19 @@ export function usePanelQueryOptions(): <T>(
   return (query) => panelQueryOptions(ports, streamHolding, query);
 }
 
+/** What of a query's answer its panel state is drawn from, a list's pages or
+ * one resource alike. */
+interface PanelQueryAnswer<T> {
+  readonly data: T | undefined;
+  readonly error: Error | null;
+  readonly isPending: boolean;
+  readonly dataUpdatedAt: number;
+  readonly refetch: () => Promise<unknown>;
+}
+
 /** The query's state, carrying a press that reads it again where its last read
  * failed. */
-export function panelQueryState<T>(query: UseQueryResult<T>): PanelState<T> {
+export function panelQueryState<T>(query: PanelQueryAnswer<T>): PanelState<T> {
   const state = panelStateFromQuery<T>({
     data: query.data,
     error: query.error,
@@ -108,7 +137,7 @@ export function panelQueryState<T>(query: UseQueryResult<T>): PanelState<T> {
  */
 function usePanelAbsenceKept<T>(
   key: QueryKey,
-  query: UseQueryResult<T>,
+  query: { readonly isFetched: boolean },
   state: PanelState<T>,
 ): PanelState<T> {
   const keyed = hashKey(key);
@@ -163,6 +192,112 @@ export function usePanelState<T, S>(
     panelQueryState(answer),
   );
   return combine === undefined ? state : combine(state, answer);
+}
+
+/** A paged list's options under this tab's ports: each page its own read,
+ * from where the pages before it say the next begins, and the rows drawn from
+ * the pages through `select`. */
+export function panelPagesOptions<P, Param, R>(
+  ports: ApiPorts,
+  query: ConsolePagesQuery<P, Param, R>,
+) {
+  return infiniteQueryOptions<P, Error, R, ProjectQueryKey, Param>({
+    queryKey: query.queryKey,
+    /** The context's page parameter is a conditional type the library leaves
+     * unresolved over a generic `Param`, which is what `initialPageParam` and
+     * `getNextPageParam` make it. */
+    queryFn: async ({ signal, pageParam }) =>
+      apiOrThrow(
+        await query.read(ports, signal, pageParam as Param),
+        panelReason,
+      ),
+    initialPageParam: query.first,
+    getNextPageParam: (_last, pages, _lastAt, pageParams) =>
+      query.next({ pages, pageParams }),
+    select: query.rows,
+    refetchInterval: query.polledMs ?? false,
+    staleTime: 0,
+  });
+}
+
+/** What a screen may say of a paged list beyond what the list says of itself. */
+export type PanelPagesObserved<P, Param, R> = ConsolePagesQuery<P, Param, R> & {
+  readonly placeholderData?: typeof keepPreviousData;
+};
+
+/** A page after the first that could not be read, or a reread behind rows
+ * that could not, while the rows already read stand. */
+export interface PanelPagesFailure {
+  readonly reason: string;
+  /** Whether it was the reader's own press, whose page can be asked for again. */
+  readonly more: boolean;
+}
+
+export interface PanelPages<R> {
+  readonly state: PanelState<R>;
+  /** The rows drawn are an earlier ask's, standing until this one answers. */
+  readonly kept: boolean;
+  readonly failure: PanelPagesFailure | undefined;
+  /** The reader's press, where the list has a next page to give it. */
+  readonly readMore: (() => void) | undefined;
+  readonly reading: boolean;
+}
+
+/**
+ * `usePanelState` for a paged list: its rows as a panel draws them, the press
+ * that reads the next page, and why a page could not be read. A press that
+ * fails is no reread failing, so the panel draws the rows as answered, and a
+ * second press while one is out is the first.
+ */
+export function usePanelPages<P, Param, R>(
+  query: PanelPagesObserved<P, Param, R>,
+): PanelPages<R> {
+  useProjectListRefresh(query.list);
+  const ports = useApiPorts();
+  const client = useQueryClient();
+  const pressing = useRef(false);
+  const answer = useInfiniteQuery({
+    ...panelPagesOptions(ports, query),
+    ...(query.placeholderData === undefined
+      ? {}
+      : { placeholderData: query.placeholderData }),
+  });
+  const more = answer.isFetchNextPageError;
+  const state = usePanelAbsenceKept(
+    query.queryKey,
+    answer,
+    panelQueryState({ ...answer, error: more ? null : answer.error }),
+  );
+  const reason = panelFailureReason(answer.error);
+  const kept = answer.isPlaceholderData;
+  const readMore = (): void => {
+    if (pressing.current) return;
+    pressing.current = true;
+    void consolePagesMore(
+      query,
+      client.getQueryData(query.queryKey)?.pages.length ?? 0,
+      async () => {
+        await answer.fetchNextPage({ cancelRefetch: false });
+        const held = client.getQueryState(query.queryKey);
+        return { pages: held?.data, failed: held?.status === "error" };
+      },
+    ).finally(() => {
+      pressing.current = false;
+    });
+  };
+  return {
+    state,
+    kept,
+    failure:
+      reason === undefined || answer.data === undefined || kept
+        ? undefined
+        : { reason, more },
+    readMore:
+      answer.hasNextPage && !kept && !answer.isFetchingNextPage
+        ? readMore
+        : undefined,
+    reading: answer.isFetchingNextPage,
+  };
 }
 
 /** How many times one key's read has answered: every read that landed and

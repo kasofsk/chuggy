@@ -22,6 +22,7 @@ import {
   projectTicketRowsLive,
 } from "./projectTicketPages.ts";
 import type {
+  ProjectTicketPages,
   ProjectTicketRows,
   ProjectTicketRowsNext,
 } from "./projectTicketPages.ts";
@@ -72,11 +73,11 @@ function ticketListAskActive(ask: TicketListAsk): boolean {
 export function ticketFilterList(
   partition: PartitionIdentity,
   ask: TicketListAsk,
-): ProjectList<ProjectTicketRows> {
+): ProjectList<ProjectTicketPages> {
   const name = `table:${ask.filter}:${ask.order}:${ask.search ?? ""}`;
   if (!ticketListAskActive(ask))
     return projectTicketRowsLive(
-      projectListReread<ProjectTicketRows>(partition, "Ticket", name),
+      projectListReread<ProjectTicketPages>(partition, "Ticket", name),
     );
   return projectTicketRowsFolded(
     partition,

@@ -6,7 +6,6 @@
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { TicketLandingsResponse } from "../../../../src/contract/responses.ts";
-import type { ApiPorts, ApiResult } from "./apiRequest.ts";
 import {
   apiDraft,
   apiInbox,
@@ -17,9 +16,19 @@ import {
   apiTicketLandings,
   apiTicketNativeActions,
 } from "./apiRoutes.ts";
-import { inboxList, inboxPage, inboxRowsRead } from "./inboxList.ts";
+import {
+  inboxList,
+  inboxPage,
+  inboxPagesMax,
+  inboxPagesNext,
+  inboxRowsOf,
+} from "./inboxList.ts";
 import { inboxProposalsPolledMs } from "./inboxProposals.ts";
-import { consoleListQuery, consoleProjectQuery } from "./consoleQuery.ts";
+import {
+  consoleListQuery,
+  consolePagesQuery,
+  consoleProjectQuery,
+} from "./consoleQuery.ts";
 import type { ConsoleQueryKept } from "./consoleQuery.ts";
 import { projectListRereadNamed } from "./projectQueryKeys.ts";
 import {
@@ -28,8 +37,14 @@ import {
   ticketFilterReadsCount,
 } from "./projectTableFilters.ts";
 import type { TicketListAsk } from "./projectTableFilters.ts";
-import { projectTicketRowsRead } from "./projectTicketPages.ts";
-import type { ProjectTicketRows } from "./projectTicketPages.ts";
+import {
+  projectTicketPageRead,
+  projectTicketPagesMax,
+  projectTicketPagesNext,
+  projectTicketPagesReadPast,
+  projectTicketRowsFirst,
+  projectTicketRowsOf,
+} from "./projectTicketPages.ts";
 import { ticketDispatchList } from "./ticketActions.ts";
 import {
   ticketDeliveryPolledMs,
@@ -125,43 +140,42 @@ export function ticketLandingsQuery(
   );
 }
 
-/** The read the ticket rows run, which takes how many pages to gather from
- * the entry it is about to replace: the whole of what makes a refetch keep a
- * reader's pages. */
-function ticketRowsRead(
-  held: ProjectTicketRows | undefined,
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-  ask: TicketListAsk,
-): Promise<ApiResult<ProjectTicketRows>> {
-  return projectTicketRowsRead(
-    held,
-    (cursor, read) =>
-      apiProject(ports, partition, ticketFilterPage(ask, { read, cursor })),
-    ticketFilterReadsCount(ask),
-  );
-}
-
-/** The project's rows for one filter, order and search. */
+/** The project's rows for one filter, order and search, a page at a time. */
 export function ticketRowsQuery(
   partition: PartitionIdentity,
   ask: TicketListAsk,
 ) {
-  return consoleListQuery(
-    ticketFilterList(partition, ask),
-    (ports, _signal, held) => ticketRowsRead(held, ports, partition, ask),
-  );
+  const reads = ticketFilterReadsCount(ask);
+  return consolePagesQuery(ticketFilterList(partition, ask), {
+    read: (ports, _signal, at) =>
+      projectTicketPageRead(
+        (cursor, read) =>
+          apiProject(ports, partition, ticketFilterPage(ask, { read, cursor })),
+        at,
+        reads,
+      ),
+    first: projectTicketRowsFirst,
+    next: projectTicketPagesNext,
+    rows: projectTicketRowsOf,
+    readsPast: projectTicketPagesReadPast,
+    pagesMax: projectTicketPagesMax,
+  });
 }
 
-/** The inbox, read under its one key and polled for the held decisions no
- * frame names, gathering as many pages as the entry it replaces had. */
+/** The inbox, read under its one key a page at a time and polled for the held
+ * decisions no frame names. */
 export function inboxQuery(partition: PartitionIdentity) {
-  return consoleListQuery(
+  return consolePagesQuery(
     inboxList(partition),
-    (ports, _signal, held) =>
-      inboxRowsRead(held, (cursor) =>
+    {
+      read: (ports, _signal, cursor: string | undefined) =>
         apiInbox(ports, partition, inboxPage(cursor)),
-      ),
+      first: undefined,
+      next: inboxPagesNext,
+      rows: inboxRowsOf,
+      readsPast: () => false,
+      pagesMax: inboxPagesMax,
+    },
     inboxProposalsPolledMs,
   );
 }

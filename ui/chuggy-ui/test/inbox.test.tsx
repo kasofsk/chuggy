@@ -35,7 +35,12 @@ import {
 import type { ApiDouble } from "./screenHarness.tsx";
 import { frame } from "./streamDouble.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
-import { inboxAnswered, inboxEntry } from "./inboxFixture.ts";
+import {
+  inboxAnswered,
+  inboxAsked,
+  inboxBody,
+  inboxEntry,
+} from "./inboxFixture.ts";
 import { leadRefusals } from "./leadFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import {
@@ -527,3 +532,37 @@ test.each(inboxFrames)(
     expect(asked.filter((url) => !url.includes("/inbox"))).toStrictEqual([]);
   },
 );
+
+/** A "more" that could not be read is said beside the rows, which stand, and
+ * is the press offered again; the panel itself draws no failed read. */
+test("a further page that could not be read keeps the rows, says why, and can be asked for again", async () => {
+  let refusing = true;
+  const later: ProjectTicket = { ...escalated, ticket: 5, title: "Later" };
+  drawInbox((url) => {
+    if (!inboxAsked(url)) return served(url);
+    if (!url.includes("cursor="))
+      return answer(
+        inboxBody([inboxEntry(escalated)], { count: 2, nextCursor: "page-2" }),
+      );
+    return refusing
+      ? answer({ error: "InternalError", message: "boom" }, 500)
+      : answer(inboxBody([inboxEntry(later)], undefined));
+  });
+  await settled();
+  await turned(() => {
+    fireEvent.click(screen.getByRole("button", { name: "more" }));
+  });
+  await settled();
+  expect(screen.getByText("Serve the reason")).toBeDefined();
+  expect(
+    screen.getByText(/^a further page could not be read — /u),
+  ).toBeDefined();
+  refusing = false;
+  await turned(() => {
+    fireEvent.click(screen.getByRole("button", { name: "more" }));
+  });
+  await settled();
+  expect(screen.getByText("Later")).toBeDefined();
+  expect(screen.queryByText(/^a further page could not be read/u)).toBeNull();
+  expect(screen.queryByRole("button", { name: "more" })).toBeNull();
+});

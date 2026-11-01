@@ -51,7 +51,7 @@
  * other.
  */
 
-import type { DataTag } from "@tanstack/query-core";
+import type { DataTag, InfiniteData } from "@tanstack/query-core";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { ProjectChangeKind } from "../../../../src/contract/events.ts";
@@ -344,4 +344,17 @@ function projectListAlongsideOf<T>(
   if (kind === list.kind)
     throw new RangeError(`a list's own kind ${kind} folds by its own refresh`);
   return { ...list, alongside: { ...list.alongside, [kind]: refresh } };
+}
+
+/** A paged entry with `each` applied to every page, which is how a frame
+ * reaches a row on any page the entry holds; an entry not read yet stays so. */
+export function projectListPagesEach<P, Param>(
+  previous: InfiniteData<P, Param> | undefined,
+  each: (page: P) => P | undefined,
+): InfiniteData<P, Param> | undefined {
+  if (previous === undefined) return previous;
+  return {
+    ...previous,
+    pages: previous.pages.map((page) => each(page) ?? page),
+  };
 }

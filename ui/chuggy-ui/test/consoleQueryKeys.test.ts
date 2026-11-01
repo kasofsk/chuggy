@@ -12,7 +12,7 @@ import { expect, expectTypeOf, test } from "vitest";
 
 import type { TicketResponse } from "../../../src/contract/responses.ts";
 import { consoleListQuery } from "../app/core/consoleQuery.ts";
-import type { InboxRows } from "../app/core/inboxList.ts";
+import type { InboxPages } from "../app/core/inboxList.ts";
 import { projectAbilitiesQuery } from "../app/core/projectQueries.ts";
 import { inboxQuery, ticketQuery } from "../app/core/ticketQueries.ts";
 
@@ -34,8 +34,10 @@ test("a resource's key is read and written at its own type and no other", () => 
 test("a list's key is read and written at its entry's type and no other", () => {
   const client = new QueryClient();
   const key = inboxQuery(atlas).queryKey;
-  expectTypeOf(client.getQueryData(key)).toEqualTypeOf<InboxRows | undefined>();
-  // @ts-expect-error the inbox's entry written with something that is not its rows
+  expectTypeOf(client.getQueryData(key)).toEqualTypeOf<
+    InboxPages | undefined
+  >();
+  // @ts-expect-error the inbox's entry written with something that is not its pages
   client.setQueryData(key, 3);
   expect(client.getQueryData(key)).toBe(3);
 });

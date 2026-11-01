@@ -75,7 +75,7 @@ export interface PanelQuery<T> {
   readonly dataUpdatedAt: number;
 }
 
-function panelFailureReason(error: unknown): string | undefined {
+export function panelFailureReason(error: unknown): string | undefined {
   if (error instanceof ApiOutcomeError) return panelReason(error.result);
   if (error === null || error === undefined) return undefined;
   return error instanceof Error ? error.message : "the read failed";

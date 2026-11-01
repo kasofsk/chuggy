@@ -48,7 +48,10 @@ import {
   ticketFilterList,
   ticketListAskDefault,
 } from "../app/core/projectTableFilters.ts";
-import { projectTicketRowsEmpty } from "../app/core/projectTicketPages.ts";
+import { inboxList } from "../app/core/inboxList.ts";
+import type { InboxPages } from "../app/core/inboxList.ts";
+import type { ProjectTicketPages } from "../app/core/projectTicketPages.ts";
+import type { ProjectTicket } from "../../../src/contract/responses.ts";
 import type { SessionHolder } from "../app/core/sessionHolder.ts";
 import { SessionProvider } from "../app/browser/session.tsx";
 import {
@@ -70,6 +73,7 @@ import type * as BrowserPorts from "../app/browser/ports.ts";
 import { streamReopenDelayMsMin } from "../app/core/streamConnection.ts";
 import { frame, streamServer } from "./streamDouble.ts";
 import type { StreamServer } from "./streamDouble.ts";
+import { runSummary } from "./runPageFixture.tsx";
 import { ticketInstants } from "./ticketInstants.ts";
 
 const graces = vi.hoisted(() => ({ parked: [] as (() => void)[] }));
@@ -360,17 +364,97 @@ test("a named reread is asked with the entry the frame would stale", async () =>
   ]);
 });
 
+/** A ticket list's entry as the cache holds it: one page per `pages`, each
+ * read from where the one before it left off. */
+function ticketPages(
+  ...pages: readonly (readonly unknown[])[]
+): ProjectTicketPages {
+  return {
+    pages: pages.map((tickets) => ({
+      tickets: tickets as ProjectTicket[],
+      next: undefined,
+      matched: undefined,
+    })),
+    pageParams: pages.map((_tickets, at) => ({
+      read: 0,
+      cursor: at === 0 ? undefined : `after-${String(at)}`,
+    })),
+  };
+}
+
 /** A `Ticket` frame carries no latest execution, so a ticket the rows have not
  * got is the read's to answer, and one they hold is folded with its cell. */
 test("a ticket list reads again for a ticket it has not got, and folds one it holds", async () => {
   const list = ticketFilterList(atlas, ticketListAskDefault);
-  const absent = await refreshedEntry(list, projectTicketRowsEmpty);
+  const absent = await refreshedEntry(list, ticketPages([]));
   expect(absent.getQueryState(list.key)?.isInvalidated).toBe(true);
   cleanup();
-  const holding = { ...projectTicketRowsEmpty, tickets: [{ ...ticket }] };
+  const holding = ticketPages([{ ...ticket }]);
   const held = await refreshedEntry(list, holding);
   expect(held.getQueryState(list.key)?.isInvalidated).toBe(false);
   expect(held.getQueryData(list.key)).toStrictEqual(holding);
+});
+
+test("a ticket's frame folds into its row on the second page, and the list is not read again for it", async () => {
+  const list = ticketFilterList(atlas, ticketListAskDefault);
+  const other = { ...ticket, ticket: 1, sequence: 1 };
+  const client = await refreshedEntry(
+    list,
+    ticketPages([other], [{ ...ticket, sequence: 2 }]),
+  );
+  expect(client.getQueryState(list.key)?.isInvalidated).toBe(false);
+  expect(client.getQueryData(list.key)).toStrictEqual(
+    ticketPages([other], [ticket]),
+  );
+});
+
+/** The inbox's entry as the cache holds it, one page per `pages`. */
+function inboxPages(...pages: readonly (readonly unknown[])[]): InboxPages {
+  return {
+    pages: pages.map((tickets) => ({
+      entries: tickets.map((held) => ({
+        ticket: held as ProjectTicket,
+        actions: [],
+        refusals: [],
+        proposals: [],
+      })),
+      count: tickets.length,
+      more: false,
+    })),
+    pageParams: pages.map((_tickets, at) =>
+      at === 0 ? undefined : `after-${String(at)}`,
+    ),
+  };
+}
+
+test("the inbox is read again for a ticket it holds on its second page", async () => {
+  const list = inboxList(atlas);
+  const client = await refreshedEntry(
+    list,
+    inboxPages([{ ...ticket, ticket: 1, phase: "Escalated" }], [ticket]),
+  );
+  expect(client.getQueryState(list.key)?.isInvalidated).toBe(true);
+});
+
+test("an execution's frame becomes the latest of an inbox entry on the second page", async () => {
+  const list = inboxList(atlas);
+  const escalated = { ...ticket, ticket: 1, phase: "Escalated" };
+  const client = await refreshedEntry(
+    list,
+    inboxPages([escalated], [ticket]),
+    frame("Execution", "5", {
+      version: 1,
+      resource: "e1",
+      representation: runSummary({
+        ticket: 3,
+        identity: { type: "WorkTask", value: { ticket: 3, cycle: 1 } },
+      }),
+    }),
+  );
+  const pages = client.getQueryData(list.key)?.pages;
+  expect(pages?.[0]?.entries[0]?.ticket.latestExecution).toBeUndefined();
+  expect(pages?.[1]?.entries[0]?.ticket.latestExecution?.execution).toBe("e1");
+  expect(client.getQueryState(list.key)?.isInvalidated).toBe(false);
 });
 
 /**

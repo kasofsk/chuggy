@@ -23,15 +23,14 @@ import {
   inboxEntryPhased,
   inboxPage,
   inboxPagesMax,
-  inboxRowsAfterPage,
+  inboxPagesNext,
   inboxRowsAppend,
   inboxRowsEmpty,
   inboxRowsExecutionFold,
-  inboxRowsRead,
+  inboxRowsOf,
   inboxRowsRereads,
 } from "../app/core/inboxList.ts";
-import type { InboxRows } from "../app/core/inboxList.ts";
-import type { ApiFailure } from "../app/core/apiRequest.ts";
+import type { InboxPages } from "../app/core/inboxList.ts";
 import { inboxBody, inboxEntry } from "./inboxFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 
@@ -48,12 +47,6 @@ const parked = inboxBody(
 );
 
 const last = inboxBody([inboxEntry(ticketAt(1, "Escalated"))]);
-
-const fault: ApiFailure = {
-  outcome: "Fault",
-  code: "InternalError",
-  status: 500,
-};
 
 test("the page asks for as much as the wire answers, from the cursor it is given", () => {
   expect(inboxPage(undefined)).toStrictEqual({ limit: nativeHttpPageItemsMax });
@@ -91,67 +84,37 @@ test("a page after the first is appended, a ticket already held kept where it is
   ]);
 });
 
-/** A "more" that fails keeps the rows and says why; one that answers clears it. */
-test("a further page the reader asked for that failed is said beside the rows", () => {
-  const held = inboxRowsAppend(inboxRowsEmpty, parked);
-  const failed = inboxRowsAfterPage(held, fault);
-  expect(failed.entries).toStrictEqual(held.entries);
-  expect(failed.failure).toBeDefined();
-  expect(
-    inboxRowsAfterPage(failed, { outcome: "Ok", value: last }).failure,
-  ).toBeUndefined();
-});
-
-/** Every page a read asked for, answering each from `pages` in turn. */
-function pagesServed(pages: readonly (InboxResponse | undefined)[]): {
-  readonly read: (
-    cursor: string | undefined,
-  ) => ReturnType<Parameters<typeof inboxRowsRead>[1]>;
-  readonly asked: (string | undefined)[];
-} {
-  const asked: (string | undefined)[] = [];
+/** The pages as the cache holds them, each read from the cursor the one before it answered. */
+function pagesOf(pages: readonly InboxResponse[]): InboxPages {
   return {
-    asked,
-    read: (cursor) => {
-      const page = pages[asked.length];
-      asked.push(cursor);
-      return Promise.resolve(
-        page === undefined ? fault : { outcome: "Ok", value: page },
-      );
-    },
+    pages: [...pages],
+    pageParams: pages.map((_page, at) => pages[at - 1]?.nextCursor),
   };
 }
 
-test("a first read is one page, and a reread is as many as the rows it replaces held", async () => {
-  const first = pagesServed([parked, last]);
-  const read = await inboxRowsRead(undefined, first.read);
-  expect(first.asked).toStrictEqual([undefined]);
-  expect(read.outcome).toBe("Ok");
-  const walked = inboxRowsAppend(inboxRowsAppend(inboxRowsEmpty, parked), last);
-  const again = pagesServed([parked, last]);
-  const reread = await inboxRowsRead(walked, again.read);
-  expect(again.asked).toStrictEqual([undefined, "after-two"]);
-  expect(reread).toStrictEqual({ outcome: "Ok", value: walked });
+test("the rows the pages draw are the pages appended in the order they were read", () => {
+  expect(inboxRowsOf(pagesOf([parked, last]))).toStrictEqual(
+    inboxRowsAppend(inboxRowsAppend(inboxRowsEmpty, parked), last),
+  );
+  expect(inboxPagesNext(pagesOf([parked]))).toBe("after-two");
+  expect(inboxPagesNext(pagesOf([parked, last]))).toBeUndefined();
 });
 
-/** The failure is the read's answer, so the rows it would have replaced stay drawn. */
-test("a reread that fails on any page answers the failure", async () => {
-  const walked = inboxRowsAppend(inboxRowsAppend(inboxRowsEmpty, parked), last);
-  const failing = pagesServed([parked]);
-  expect((await inboxRowsRead(walked, failing.read)).outcome).toBe("Fault");
-});
-
-test("a reread never gathers past the page bound", async () => {
+test("no page is offered past the page bound", () => {
   const endless = inboxBody([inboxEntry(ticketAt(1, "Escalated"))], {
     count: 1,
     nextCursor: "again",
   });
-  const held: InboxRows = { ...inboxRowsEmpty, pagesRead: inboxPagesMax * 2 };
-  const served = pagesServed(
-    Array.from({ length: inboxPagesMax * 2 }, () => endless),
-  );
-  await inboxRowsRead(held, served.read);
-  expect(served.asked).toHaveLength(inboxPagesMax);
+  expect(
+    inboxPagesNext(
+      pagesOf(Array.from({ length: inboxPagesMax - 1 }, () => endless)),
+    ),
+  ).toBe("again");
+  expect(
+    inboxPagesNext(
+      pagesOf(Array.from({ length: inboxPagesMax }, () => endless)),
+    ),
+  ).toBeUndefined();
 });
 
 test("a Ticket frame rereads the inbox for a ticket it holds or a phase it holds, and for nothing else", () => {

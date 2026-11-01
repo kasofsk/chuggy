@@ -23,6 +23,7 @@
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
+import type { RouterHistory } from "@tanstack/react-router";
 import { act, cleanup, render } from "@testing-library/react";
 import { StrictMode, useState } from "react";
 import type { ReactNode } from "react";
@@ -750,13 +751,11 @@ export function consoleSession(renewEveryMs?: number): ConsoleSession {
 /** What `App` draws once signed in, with the router handed in rather than
  * the browser's, and the renewal timer `App` runs. */
 function ConsoleSignedIn(props: {
-  readonly path: string;
+  readonly history: RouterHistory;
   readonly client: QueryClient;
 }): ReactNode {
   useSilentRefresh();
-  const [router] = useState(() =>
-    consoleRouterOver(createMemoryHistory({ initialEntries: [props.path] })),
-  );
+  const [router] = useState(() => consoleRouterOver(props.history));
   return (
     <QueryClientProvider client={props.client}>
       <RouterProvider router={router} />
@@ -831,24 +830,27 @@ export function consoleSiteEachCase(made: (site: ConsoleSite) => void): void {
 
 /** The console mounted at `path` over the site, as `main.tsx` mounts it —
  * under `StrictMode` unless `strict` is false, which mounts the tree once as a
- * production build does, so a case can count what one mount reads. */
+ * production build does, so a case can count what one mount reads. The
+ * history it navigates is handed back, for a case that goes back. */
 export function consoleMounted(
   path: string,
   session: ConsoleSession = consoleSession(),
   strict = true,
-): void {
+): RouterHistory {
   const client = new QueryClient({
     defaultOptions: { queries: panelQueryDefaults },
   });
   const invite = inviteBrowser({ pathname: path });
+  const history = createMemoryHistory({ initialEntries: [path] });
   const tree = (
     <SessionProvider holder={session.holder}>
       <InviteProvider holder={invite.holder}>
-        <ConsoleSignedIn path={path} client={client} />
+        <ConsoleSignedIn history={history} client={client} />
       </InviteProvider>
     </SessionProvider>
   );
   render(strict ? <StrictMode>{tree}</StrictMode> : tree);
+  return history;
 }
 
 /** The fake clock moved on by `ms`, every timer and read it releases run and

@@ -7,30 +7,30 @@
  * row and an `Execution` frame changes what one row says it is running, both
  * folded into the one entry the rows are read under. The filter, the search
  * and the order a sort reads in are asked of the wire, and the rows on screen
- * stand until the read under a new choice answers; the search and the sort are
- * the page's address, so a link holds the view. A project holding no ticket at
- * all offers the first instead.
+ * stand until the read under a new choice answers; the search, the sort and
+ * the filter are the page's address, so a link holds the view, and the filter
+ * this browser last chose is drawn where the address names none. A project
+ * holding no ticket at all offers the first instead.
  *
  * A ROW OFFERS ONE ACTION, DISPATCH, AS ITS READY CHIP. A ready row reads the
  * dispatch view for the version a dispatch names, and its chip is the button;
  * every other action is the ticket page's, which holds the reads that decide
  * what a resume or a revoke does.
  *
- * A read gathers as many pages as the reader had asked for, because the entry
- * it writes is under the partition prefix that the degraded stream's fallback
- * and a `Project` frame both invalidate; rebuilding it from the first page
- * would take a reader's pages away on a timer. "Show more" appends to the entry
- * the next page that adds a row.
+ * A reread reads again as many pages as the reader had asked for, because the
+ * entry is under the partition prefix that the degraded stream's fallback and
+ * a `Project` frame both invalidate; rebuilding it from the first page would
+ * take a reader's pages away on a timer. "Show more" reads the next page that
+ * adds a row.
  */
 
-import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
+import { keepPreviousData } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import { phaseRoster } from "../../../../src/contract/rosters.ts";
-import { apiProject } from "../core/apiRoutes.ts";
 import { phaseLabel } from "../core/codeLabels.ts";
 import { creatorLabel } from "../core/labels.ts";
 import type { PanelState } from "../core/freshness.ts";
@@ -38,9 +38,7 @@ import { projectAbilityRefused } from "../core/projectAbilities.ts";
 import { repositoryLabel } from "../core/projectRepositories.ts";
 import {
   ticketFilterAll,
-  ticketFilterPage,
   ticketFilterProjectEmpty,
-  ticketFilterReadsCount,
 } from "../core/projectTableFilters.ts";
 import type {
   TicketFilter,
@@ -48,13 +46,10 @@ import type {
 } from "../core/projectTableFilters.ts";
 import { projectTableRow } from "../core/projectTableRows.ts";
 import type { ProjectTableRow } from "../core/projectTableRows.ts";
-import {
-  projectTicketRowsHaveMore,
-  projectTicketRowsMore,
-} from "../core/projectTicketPages.ts";
 import type { ProjectTicketRows } from "../core/projectTicketPages.ts";
 import { ticketRowsQuery } from "../core/ticketQueries.ts";
 import {
+  ticketListFilterNamed,
   ticketListQueryWith,
   ticketListSearchOf,
   ticketListSearchWaitMs,
@@ -72,7 +67,7 @@ import type {
 } from "../core/ticketListView.ts";
 import { phaseTone } from "../core/tones.ts";
 import type { Tone } from "../core/tones.ts";
-import { useApiPorts, usePanelState } from "./api.ts";
+import { usePanelPages } from "./api.ts";
 import { useCreatorEmails } from "./creatorEmails.ts";
 import { PanelUnready } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
@@ -107,58 +102,30 @@ interface TicketRowsHeld {
 }
 
 /** The rows for one filter, order and search, the refresh that keeps them
- * live, and the read that appends the next page to them. */
+ * live, and the press that reads the next page; a page or a reread that
+ * could not be read is said on the rows the list already holds. */
 function useTicketRows(
   partition: PartitionIdentity,
   ask: TicketListAsk,
 ): TicketRowsHeld {
-  const query = ticketRowsQuery(partition, ask);
-  const key = query.queryKey;
-  const client = useQueryClient();
-  const ports = useApiPorts();
-  const [reading, setReading] = useState(false);
-  const { state, kept } = usePanelState(
-    { ...query, placeholderData: keepPreviousData },
-    (state, answer) => ({ state, kept: answer.isPlaceholderData }),
-  );
-  const rows = state.state === "Ready" && !kept ? state.value : undefined;
-  const more =
-    rows === undefined || !projectTicketRowsHaveMore(rows) ? undefined : rows;
-  const readMore = (from: ProjectTicketRows) => {
-    setReading(true);
-    void (async () => {
-      await projectTicketRowsMore(
-        from,
-        (update) =>
-          client.setQueryData(key, (previous) =>
-            previous === undefined ? previous : update(previous),
-          ),
-        (cursor, read) =>
-          apiProject(ports, partition, ticketFilterPage(ask, { read, cursor })),
-        ticketFilterReadsCount(ask),
-      );
-      setReading(false);
-    })();
-  };
+  const pages = usePanelPages({
+    ...ticketRowsQuery(partition, ask),
+    placeholderData: keepPreviousData,
+  });
+  const failure = pages.failure?.reason;
   return {
-    state,
-    kept,
-    readMore:
-      more === undefined || reading
-        ? undefined
-        : () => {
-            readMore(more);
-          },
-    reading,
+    state:
+      pages.state.state === "Ready"
+        ? { ...pages.state, value: { ...pages.state.value, failure } }
+        : pages.state,
+    kept: pages.kept,
+    readMore: pages.readMore,
+    reading: pages.reading,
   };
 }
 
 /** Where this browser keeps the reader's filter. */
 const ticketListFilterStoreKey = "chug.ticket-list.filter";
-
-function ticketListFilterOf(stored: string | null): TicketFilter {
-  return phaseRoster.find((phase) => phase === stored) ?? ticketFilterAll;
-}
 
 /** What a row's chip says and the tone it is drawn in. */
 function ticketListStandingTone(standing: TicketListStanding): Tone {
@@ -420,7 +387,7 @@ function TicketListControls(props: {
             })),
           ]}
           onChoose={(chosen) => {
-            props.onFilter(ticketListFilterOf(chosen));
+            props.onFilter(ticketListFilterNamed(chosen) ?? ticketFilterAll);
           }}
           align="end"
         />
@@ -528,16 +495,21 @@ function ProjectTableEmpty(props: {
   );
 }
 
-/** The reader's filter, as this browser last kept it. */
-function useTicketListFilter() {
-  const [filter, setFilter] = useState(() =>
-    ticketListFilterOf(persistentStore.read(ticketListFilterStoreKey)),
-  );
+/** The filter the address names, or the one this browser last kept where it
+ * names none; choosing one writes both. */
+function useTicketListFilter(
+  query: TicketListQuery,
+  onQuery: (query: TicketListQuery) => void,
+) {
+  const filter =
+    query.filter ??
+    ticketListFilterNamed(persistentStore.read(ticketListFilterStoreKey)) ??
+    ticketFilterAll;
   return {
     filter,
     filtered: (next: TicketFilter): void => {
-      setFilter(next);
       persistentStore.write(ticketListFilterStoreKey, next);
+      onQuery(ticketListQueryWith(query, { filter: next }));
     },
   };
 }
@@ -575,7 +547,7 @@ export function ProjectTable(props: {
   readonly onQuery: (query: TicketListQuery) => void;
 }): ReactNode {
   const partition = useParams({ from: "/$tenant/$project" });
-  const choices = useTicketListFilter();
+  const choices = useTicketListFilter(props.query, props.onQuery);
   const [typed, setTyped] = useTicketListTyped(props.query, props.onQuery);
   const sort = ticketListSortOf(props.query.sort);
   const ask: TicketListAsk = {

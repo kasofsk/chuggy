@@ -18,9 +18,11 @@
  */
 
 import { ticketSearchCharsMax } from "../../../../src/contract/http.ts";
+import { phaseRoster } from "../../../../src/contract/rosters.ts";
 import type { TicketPhase } from "../../../../src/contract/rosters.ts";
 
-import type { TicketListOrder } from "./projectTableFilters.ts";
+import { ticketFilterAll } from "./projectTableFilters.ts";
+import type { TicketFilter, TicketListOrder } from "./projectTableFilters.ts";
 import type { ProjectTableRow } from "./projectTableRows.ts";
 import { upNextOrdered } from "./upNextOrder.ts";
 
@@ -62,24 +64,38 @@ export function ticketListSearchOf(typed: string): string | undefined {
   return search === "" ? undefined : search;
 }
 
-/** What of the list the page's address holds, so a link carries the view and a reload keeps it. */
+/** The filter a word names, or undefined where it names none. */
+export function ticketListFilterNamed(word: unknown): TicketFilter | undefined {
+  return word === ticketFilterAll
+    ? ticketFilterAll
+    : phaseRoster.find((phase) => phase === word);
+}
+
+/** What of the list the page's address holds, so a link carries the view and
+ * a reload keeps it. A filter it names none of is the one this browser kept,
+ * so All is written whenever it is chosen. */
 export interface TicketListQuery {
   readonly q?: string;
   readonly sort?: TicketListSort;
+  readonly filter?: TicketFilter;
 }
 
-/** The address with its search or its sort replaced; State, being the sort
- * an address naming none is drawn in, is written as none. */
+/** The address with its search, its sort or its filter replaced; State, being
+ * the sort an address naming none is drawn in, is written as none. */
 export function ticketListQueryWith(
   query: TicketListQuery,
   change:
-    { readonly q: string | undefined } | { readonly sort: TicketListSort },
+    | { readonly q: string | undefined }
+    | { readonly sort: TicketListSort }
+    | { readonly filter: TicketFilter },
 ): TicketListQuery {
   const q = "q" in change ? change.q : query.q;
   const sort = "sort" in change ? change.sort : query.sort;
+  const filter = "filter" in change ? change.filter : query.filter;
   return {
     ...(q === undefined ? {} : { q }),
     ...(sort === undefined || sort === "State" ? {} : { sort }),
+    ...(filter === undefined ? {} : { filter }),
   };
 }
 
@@ -98,9 +114,11 @@ export function ticketListQueryOf(
       ? ticketListSearchOf(String(typed))
       : undefined;
   const sort = ticketListSorts.find((each) => each === search["sort"]);
+  const filter = ticketListFilterNamed(search["filter"]);
   return {
     ...(q === undefined ? {} : { q }),
     ...(sort === undefined ? {} : { sort }),
+    ...(filter === undefined ? {} : { filter }),
   };
 }
 

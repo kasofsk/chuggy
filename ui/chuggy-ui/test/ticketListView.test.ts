@@ -127,3 +127,27 @@ test("a search or a sort written to the address keeps the other, and State is wr
     ticketListQueryWith({ q: "gate", sort: "Newest" }, { q: undefined }),
   ).toStrictEqual({ sort: "Newest" });
 });
+
+test("the address holds a filter of a phase or of every phase, and drops a word that names neither", () => {
+  expect(ticketListQueryOf({ filter: "Escalated" })).toStrictEqual({
+    filter: "Escalated",
+  });
+  expect(ticketListQueryOf(defaultParseSearch("?filter=All"))).toStrictEqual({
+    filter: "All",
+  });
+  expect(ticketListQueryOf({ filter: "NeedsYou" })).toStrictEqual({});
+  expect(ticketListQueryOf({ filter: ["Work"] })).toStrictEqual({});
+});
+
+test("a filter written to the address keeps the search and the sort, and they keep it", () => {
+  expect(
+    ticketListQueryWith({ q: "gate", sort: "Oldest" }, { filter: "All" }),
+  ).toStrictEqual({ q: "gate", sort: "Oldest", filter: "All" });
+  expect(ticketListQueryWith({ filter: "Work" }, { q: "gate" })).toStrictEqual({
+    q: "gate",
+    filter: "Work",
+  });
+  expect(
+    ticketListQueryWith({ filter: "Work" }, { sort: "Newest" }),
+  ).toStrictEqual({ sort: "Newest", filter: "Work" });
+});

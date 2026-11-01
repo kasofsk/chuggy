@@ -149,8 +149,8 @@ const partitionRoute = createRoute({
   component: PartitionLayout,
 });
 
-/** The ticket list, whose search and sort are the address's, written in place
- * rather than pushed, so typing is not a history of its own. */
+/** The ticket list, whose search, sort and filter are the address's, written
+ * in place rather than pushed, so typing is not a history of its own. */
 function ProjectTableRoute(): ReactNode {
   const navigate = useNavigate({ from: projectRoute.fullPath });
   const onQuery = useCallback(
