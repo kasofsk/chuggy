@@ -72,6 +72,6 @@ test("a bound repository with no ready revision says no configuration and links 
 
 test("a walk that ran out of budget keeps its own sentence", async () => {
   await drawn({ context: "ReadyConfigurationUnknown", pagesRead: 3 });
-  expect(screen.getByText(/the newest 3 pages/)).toBeTruthy();
+  expect(screen.getByText("No ready configuration found")).toBeTruthy();
   expect(screen.queryByRole("link")).toBeNull();
 });

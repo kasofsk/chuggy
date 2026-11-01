@@ -540,7 +540,7 @@ export function attemptHeldDraft(
   motion: CreationMotion,
 ): string {
   if (draft === undefined || motion !== "Update") return "";
-  return ` — the draft holds this revision at version ${String(draft.authoringVersion)}, not released`;
+  return ` · Draft version ${String(draft.authoringVersion)} not released`;
 }
 
 export function AttemptNote(props: {

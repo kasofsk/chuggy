@@ -230,7 +230,7 @@ function ChatHostMinted(props: {
       />
       {props.short === undefined ? null : (
         <p className="text-sm text-ink-3">
-          {`Registering with it replaces chat host ${props.short} and ends the sessions it is running.`}
+          {`Replaces chat host ${props.short} · Ends its sessions`}
         </p>
       )}
       <div>

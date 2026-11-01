@@ -151,14 +151,14 @@ test("an absent list draws the one notice and no control", async () => {
   expect(readFailedLines()).toStrictEqual([]);
 });
 
-test("a failed list draws its word, and one that is not JSON draws as offline", async () => {
+test("a failed list draws its word, and one that is not JSON draws as no connection", async () => {
   await drawPeople({ listing: () => answer({}, 500) });
   expect(readFailedLines()).toStrictEqual(["Not read · Server error"]);
   cleanup();
   await drawPeople({
     listing: () => new Response("<!doctype html>", { status: 200 }),
   });
-  expect(readFailedLines()).toStrictEqual(["Not read · Offline"]);
+  expect(readFailedLines()).toStrictEqual(["Not read · No connection"]);
 });
 
 test("a person's editor is a dialog named for them, closed by Done", async () => {

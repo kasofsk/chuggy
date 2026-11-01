@@ -401,9 +401,7 @@ test("a member's chat host is drawn with whether it has polled, and registering 
   ).toStrictEqual([["/chat-host-registration-tokens", { lifetimeSecs: 3600 }]]);
   expect(screen.getByText("tok_host-1")).toBeTruthy();
   expect(
-    screen.getByText(
-      "Registering with it replaces chat host 5be0d7aa and ends the sessions it is running.",
-    ),
+    screen.getByText("Replaces chat host 5be0d7aa · Ends its sessions"),
   ).toBeTruthy();
   await press("Done");
   expect(screen.queryByText("tok_host-1")).toBeNull();

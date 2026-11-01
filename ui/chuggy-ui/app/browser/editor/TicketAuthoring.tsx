@@ -84,7 +84,7 @@ function YamlSide(props: TicketYamlAuthoringProps): ReactNode {
         <Notice
           tone="danger"
           inline
-          detail="The YAML editor could not load; the form still holds this ticket."
+          detail="YAML editor did not load · Form still holds this ticket"
         />
       }
     >

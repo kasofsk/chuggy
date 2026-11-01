@@ -306,8 +306,13 @@ test("Close asks what closing does before it closes", async () => {
   });
   expect(screen.queryByRole("menu")).toBeNull();
   const asked = screen.getByRole("group", { name: "Close this thread?" });
-  expect(asked.textContent).toContain("cannot be undone");
-  expect(asked.textContent).toContain("not yours");
+  expect(
+    [...asked.querySelectorAll("p > span")].map((line) => line.textContent),
+  ).toStrictEqual([
+    "Not your thread · Ends it for its owner too",
+    "Stays in History · Takes no more messages",
+    "Drops any reply in progress · Cannot be undone",
+  ]);
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
   expect(
     screen.queryByRole("group", { name: "Close this thread?" }),

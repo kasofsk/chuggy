@@ -497,11 +497,7 @@ test("a project naming no fallback is read in plain words, says a change reaches
   expect(
     section.getByText("Personal runners take no work started from now on."),
   ).toBeTruthy();
-  expect(
-    section.getByText(
-      /Applies to work started after a change; work already waiting keeps the setting it started under\./u,
-    ),
-  ).toBeTruthy();
+  expect(section.getByText(/Changes reach new work only/u)).toBeTruthy();
   expect(
     section.getByRole("button", { name: "Edit" }).hasAttribute("disabled"),
   ).toBe(true);

@@ -259,11 +259,15 @@ function ChatPaneCloseConfirm(props: {
       onConfirm={props.onConfirm}
       onCancel={props.onCancel}
     >
-      {props.mine
-        ? ""
-        : "This thread is not yours; closing it ends it for its owner too. "}
-      It stays readable in History, but it will take no more messages, and a
-      reply still in progress is abandoned. This cannot be undone.
+      {props.mine ? null : (
+        <span className="block">
+          Not your thread · Ends it for its owner too
+        </span>
+      )}
+      <span className="block">Stays in History · Takes no more messages</span>
+      <span className="block">
+        Drops any reply in progress · Cannot be undone
+      </span>
     </Confirm>
   );
 }

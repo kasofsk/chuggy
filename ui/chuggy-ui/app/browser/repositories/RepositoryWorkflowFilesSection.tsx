@@ -29,7 +29,7 @@ export function RepositoryWorkflowFilesSection(props: {
       partition={props.partition}
       binding={props.binding}
       title="Workflow files"
-      about="Lets jobs change GitHub workflow files. The App needs Workflows too."
+      about="Lets jobs change workflow files · App needs Workflows"
       body={(held, editing) => (
         <RadioGroup
           label="Workflow files"

@@ -48,7 +48,7 @@ test("an absent read and a failed read say which they are, each in its word unde
   const lines = view.container.querySelectorAll(".read-failed .notice");
   expect([...lines].map((line) => line.textContent)).toStrictEqual([
     "Not found",
-    "Not read · Offline",
+    "Not read · No connection",
   ]);
   expect(lines[0]?.classList.contains("notice-parked")).toBe(true);
   expect(lines[1]?.classList.contains("notice-danger")).toBe(true);
@@ -70,7 +70,7 @@ test("a panel's failed read does not repeat its title", () => {
   expect(screen.getAllByText(/Tickets/u)).toHaveLength(1);
   expect(
     view.container.querySelector(".read-failed .notice")?.textContent,
-  ).toBe("Not read · Offline");
+  ).toBe("Not read · No connection");
 });
 
 test("a failed read's detail is on hover of its word and in no line", async () => {

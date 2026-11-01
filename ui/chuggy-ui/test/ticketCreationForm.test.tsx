@@ -359,7 +359,7 @@ test("a release that settles undecided draws the reason and its unreleased draft
   draw(held.ports, created);
   typeIntent("ship it");
   await submitted();
-  expect(note()).toBe(`Called off before a decision · ${draftUnreleased}`);
+  expect(note()).toBe(`Cancelled before a decision · ${draftUnreleased}`);
   expect(created).toStrictEqual([]);
 });
 

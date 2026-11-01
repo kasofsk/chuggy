@@ -262,5 +262,5 @@ test("a run's configuration that will not read says so under its title, and does
     [...drawn.container.querySelectorAll(".read-failed .notice")].map(
       (line) => line.textContent,
     ),
-  ).toStrictEqual(["Not read · Update needed"]);
+  ).toStrictEqual(["Not read · Unreadable"]);
 });

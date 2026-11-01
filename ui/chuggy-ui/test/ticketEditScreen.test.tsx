@@ -376,7 +376,7 @@ test("a refused update of a ticket moved off such a name is said over what was t
   await chooseConfiguration("development");
   await retitleAndSubmit();
   expect(document.querySelector(".panel-failed")?.textContent).toBe(
-    `${operationStateSentence("Cancelled")} — the draft holds this revision at version ${String(creationDraft.authoringVersion + 1)}, not released`,
+    `${operationStateSentence("Cancelled")} · Draft version ${String(creationDraft.authoringVersion + 1)} not released`,
   );
   expect(configurationChosen()).toContain("development");
   expect(configurationChosen()).not.toContain("opus");

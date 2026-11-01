@@ -1,6 +1,6 @@
 /**
  * That every line `codeSentences.ts` and `ticketCreationRun.ts` hand a screen
- * fits one short line in words a reader needs no glossary for.
+ * is short in each of its parts, in words a reader needs no glossary for.
  *
  * Each switch is driven across its whole roster with realistic values, and the
  * samples are keyed by code, so a member the wire gains does not compile here
@@ -56,7 +56,8 @@ const internalWords =
 
 function expectShort(lines: readonly string[]): void {
   for (const line of lines) {
-    expect(line.length, line).toBeLessThanOrEqual(lineLengthMax);
+    for (const part of line.split(" · "))
+      expect(part.length, line).toBeLessThanOrEqual(lineLengthMax);
     expect(line, line).not.toMatch(internalWords);
   }
 }
@@ -184,10 +185,14 @@ test("a panel never read says so in one word", () => {
   expect(freshnessLabel(Date.now(), undefined)).toBe("Unknown");
 });
 
-test("a line over the limit or in the repository's own words is caught", () => {
+test("a part of a line over the limit or in the repository's own words is caught, and a joined line holds each part to it", () => {
   expect(() => {
     expectShort(["x".repeat(lineLengthMax + 1)]);
   }).toThrow();
+  expect(() => {
+    expectShort([`Held · ${"x".repeat(lineLengthMax + 1)}`]);
+  }).toThrow();
+  expectShort([`${"x".repeat(lineLengthMax)} · ${"x".repeat(lineLengthMax)}`]);
   expect(() => {
     expectShort(["Mailbox full"]);
   }).toThrow();

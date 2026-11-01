@@ -283,7 +283,7 @@ export function CatalogPage(props: {
         <EmptyState
           variant="page"
           label="No configuration imported"
-          detail="A repository's catalogs live under .chug/configurations; once one is imported, its workloads, plans, finalizers and prompts are listed here."
+          detail="Import one from .chug/configurations"
         />
       ) : (
         <>

@@ -405,7 +405,7 @@ test("the workflow files section says they are off until a binding allows them",
   const section = sectionOf("Workflow files");
   expect(
     within(section).getByText(
-      "Lets jobs change GitHub workflow files. The App needs Workflows too.",
+      "Lets jobs change workflow files · App needs Workflows",
     ),
   ).toBeTruthy();
   expect(chosenWorkflowFiles()).toBe("Off");
