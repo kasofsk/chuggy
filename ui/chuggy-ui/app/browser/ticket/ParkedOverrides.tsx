@@ -22,6 +22,7 @@ import type {
   NativeActionResponse,
   TicketResponse,
 } from "../../../../../src/contract/responses.ts";
+import { operationAbandonWords } from "../../core/codeLabels.ts";
 import { configurationQuery } from "../../core/configurationQueries.ts";
 import { base64urlFromBytes } from "../../core/base64url.ts";
 import {
@@ -35,6 +36,7 @@ import {
 } from "../../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../../core/consoleWrite.ts";
 import {
+  operationAbandonFailure,
   operationFinished,
   operationIdBytesCount,
   operationSubmitting,
@@ -60,6 +62,7 @@ import { drawBytes } from "../ports.ts";
 import { useProjectAbilities } from "../projectAbilities.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Notice } from "../ui/Notice.tsx";
+import { Tooltip } from "../ui/Tooltip.tsx";
 import { Panel } from "../ui/Panel.tsx";
 import { configurationCatalogOf } from "../../core/configurationCatalog.ts";
 
@@ -90,11 +93,20 @@ function ParkedOverridesNote(props: {
       tone="danger"
       inline
       role="alert"
-      detail={refused}
       {...(refusal === undefined
         ? {}
         : { more: operationRefusalSentence(refusal) })}
-    />
+    >
+      <Tooltip
+        text={
+          step.step === "Abandoned"
+            ? operationAbandonWords(step.cause).detail
+            : undefined
+        }
+      >
+        <span>{refused}</span>
+      </Tooltip>
+    </Notice>
   );
 }
 
@@ -147,7 +159,7 @@ function parkedOverridesWrite(
       const refused = parkedOverridesRefusal(step);
       if (refused === undefined) return { outcome: "Ok", value: step };
       if (step.step === "Settled") await reread(client);
-      throw new ConsoleWriteRefused(refused);
+      throw new ConsoleWriteRefused(refused, operationAbandonFailure(step));
     },
     refusal: (failure) => `Not saved · ${operationFailureSentence(failure)}`,
     landed: (client) => reread(client),

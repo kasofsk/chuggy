@@ -53,6 +53,7 @@ import type { ConsoleWrite } from "../core/consoleWrite.ts";
 import {
   inboxAnswerInFlight,
   inboxAnswerRefusal,
+  inboxStepDetail,
   inboxStepSentence,
 } from "../core/inboxAnswers.ts";
 import type { InboxAnswer } from "../core/inboxAnswers.ts";
@@ -67,6 +68,7 @@ import type { InboxRows } from "../core/inboxList.ts";
 import { nativeActionsAnswers } from "../core/nativeActionAnswers.ts";
 import { projectAbilityRefused } from "../core/projectAbilities.ts";
 import {
+  operationAbandonFailure,
   operationIdBytesCount,
   operationSubmitting,
 } from "../core/operationFollow.ts";
@@ -364,7 +366,8 @@ function inboxAnswerWrite(
         "the answer failed",
       );
       const refused = inboxAnswerRefusal(step);
-      if (refused !== undefined) throw new ConsoleWriteRefused(refused);
+      if (refused !== undefined)
+        throw new ConsoleWriteRefused(refused, operationAbandonFailure(step));
       return { outcome: "Ok", value: step };
     },
     refusal: operationFailureSentence,
@@ -445,7 +448,13 @@ function InboxRow(props: {
         />
       </td>
       <td className="text-ink-3">
-        {answer === undefined ? cellAbsent : inboxStepSentence(answer.step)}
+        {answer === undefined ? (
+          cellAbsent
+        ) : (
+          <Tooltip text={inboxStepDetail(answer.step)}>
+            <span>{inboxStepSentence(answer.step)}</span>
+          </Tooltip>
+        )}
       </td>
     </tr>
   );

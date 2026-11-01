@@ -28,7 +28,7 @@ test("a pending read says it is loading and draws no value", () => {
   expect(screen.getByText("Loading…")).toBeDefined();
 });
 
-test("an absent read and a failed read say which they are, each as the panel's noun and its word", () => {
+test("an absent read and a failed read say which they are, each in its word under the panel's title", () => {
   const view = render(
     <>
       <DataPanel title="Draft" state={{ state: "Absent" }}>
@@ -47,12 +47,30 @@ test("an absent read and a failed read say which they are, each as the panel's n
   );
   const lines = view.container.querySelectorAll(".read-failed .notice");
   expect([...lines].map((line) => line.textContent)).toStrictEqual([
-    "Draft · Not found",
-    "Cycles · Not read · Offline",
+    "Not found",
+    "Not read · Offline",
   ]);
   expect(lines[0]?.classList.contains("notice-parked")).toBe(true);
   expect(lines[1]?.classList.contains("notice-danger")).toBe(true);
   expect(view.container.querySelector(".panel-meta")).toBeNull();
+});
+
+test("a panel's failed read does not repeat its title", () => {
+  const view = render(
+    <DataPanel
+      title="Tickets"
+      state={{
+        state: "Failed",
+        failure: { outcome: "Unreachable", reason: "fetch failed" },
+      }}
+    >
+      {(value: string) => <p>{value}</p>}
+    </DataPanel>,
+  );
+  expect(screen.getAllByText(/Tickets/u)).toHaveLength(1);
+  expect(
+    view.container.querySelector(".read-failed .notice")?.textContent,
+  ).toBe("Not read · Offline");
 });
 
 test("a failed read's detail is on hover of its word and in no line", async () => {

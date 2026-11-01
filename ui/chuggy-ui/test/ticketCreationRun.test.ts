@@ -782,7 +782,7 @@ test("an update nobody saw settle says so, holding the revised draft", async () 
   );
   expect(updated).toStrictEqual({
     created: "Refused",
-    reason: "the operation is still pending after the attempt budget",
+    reason: "Still pending",
     held: { draft: revisedDraft },
   });
 });

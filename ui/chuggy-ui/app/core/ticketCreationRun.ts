@@ -55,6 +55,7 @@ import {
 } from "./apiRoutes.ts";
 import type { ApiFailure, ApiPorts, ApiResult } from "./apiRequest.ts";
 import { ConsoleWriteRefused } from "./consoleWrite.ts";
+import { operationAbandonWords } from "./codeLabels.ts";
 import {
   draftRevisionFailureSentence,
   draftRevisionRefusalSentence,
@@ -518,7 +519,11 @@ function releasedTicket<Held extends DraftHeld>(
   held: Held,
 ): TicketCreated<Held> {
   if (step.step === "Abandoned")
-    return { created: "Refused", reason: step.reason, held };
+    return {
+      created: "Refused",
+      reason: operationAbandonWords(step.cause).word,
+      held,
+    };
   if (step.step !== "Settled")
     return {
       created: "Refused",

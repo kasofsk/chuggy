@@ -7,6 +7,7 @@
  * did not accept is the answer's refusal, said in the words the row draws.
  */
 
+import { operationAbandonWords } from "./codeLabels.ts";
 import {
   operationRefusalSentence,
   operationStateSentence,
@@ -32,20 +33,27 @@ export function inboxAnswerInFlight(step: OperationStep | undefined): boolean {
 export function inboxStepSentence(step: OperationStep): string {
   switch (step.step) {
     case "Submitting":
-      return "submitting…";
+      return "Submitting";
     case "Backlogged":
-      return `the API is deferring this (${step.code})`;
+      return "Busy";
     case "Following":
-      return "waiting on the actor…";
+      return "Waiting";
     case "Confirming":
-      return "waiting for the project to catch up…";
+      return "Updating";
     case "Settled":
       return step.refusal === undefined
         ? operationStateSentence(step.state)
         : operationRefusalSentence(step.refusal);
     case "Abandoned":
-      return step.reason;
+      return operationAbandonWords(step.cause).word;
   }
+}
+
+/** What a reader reporting an abandoned answer reads on hover of its word. */
+export function inboxStepDetail(step: OperationStep): string | undefined {
+  return step.step === "Abandoned"
+    ? operationAbandonWords(step.cause).detail
+    : undefined;
 }
 
 /** The row's sentence for a follow that ended without the actor accepting or

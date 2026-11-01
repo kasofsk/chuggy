@@ -11,6 +11,7 @@
 
 import { expect, test } from "vitest";
 
+import { projectSourceStates } from "../../../src/contract/events.ts";
 import type { ProjectStreamEvent } from "../../../src/contract/events.ts";
 import {
   openProjectStream,
@@ -21,13 +22,17 @@ import {
   projectStreamUnanswered,
   projectStreamUrl,
 } from "../app/core/projectStream.ts";
-import type { ProjectStreamStatus } from "../app/core/projectStream.ts";
+import type {
+  ProjectStreamNotice,
+  ProjectStreamStatus,
+} from "../app/core/projectStream.ts";
 import {
   streamDelayMs,
   streamOpenFailuresMax,
   streamReopenDelayMsMax,
   streamReopenDelayMsMin,
 } from "../app/core/streamConnection.ts";
+import type { StreamCause } from "../app/core/streamConnection.ts";
 import { frame, streamServer } from "./streamDouble.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 
@@ -472,5 +477,76 @@ test("a stream past the grace is reconnecting while it climbs, and not live once
   ).toBe("NotLive");
   expect(
     projectStreamNotice(statusAt("Open", "degraded"), true, false),
-  ).toEqual({ notice: "NotLive", detail: "Change log degraded" });
+  ).toEqual({ notice: "NotLive", detail: "Updates delayed" });
+});
+
+/** The decision as it stood while the banner still drew a sentence, kept as
+ * the reference the notice must go on matching. */
+function projectStreamNoticeBefore(
+  status: ProjectStreamStatus,
+  lapsed: boolean,
+  exhausted: boolean,
+): ProjectStreamNotice["notice"] {
+  if (!lapsed || projectStreamCarrying(status)) return "Quiet";
+  if (projectStreamUnanswered(status)) return "Quiet";
+  if (exhausted) return "NotLive";
+  return status.connection === "Opening" || status.connection === "Waiting"
+    ? "Reconnecting"
+    : "NotLive";
+}
+
+test("the banner shows exactly when it did, for every connection, source, cause, lapse and exhaustion", () => {
+  const connections = ["Opening", "Open", "Waiting", "Stopped"] as const;
+  const sources = [...projectSourceStates, "unknown"] as const;
+  const causes = [
+    undefined,
+    "Closed",
+    "Silent",
+    "Failed",
+    "Answered",
+    "Busy",
+    "Refused",
+    "Unstable",
+  ] as const satisfies readonly (StreamCause | undefined)[];
+  const flags = [false, true] as const;
+  let decided = 0;
+  for (const connection of connections)
+    for (const source of sources)
+      for (const cause of causes)
+        for (const answered of flags)
+          for (const lapsed of flags)
+            for (const exhausted of flags) {
+              const status = { connection, source, cause, answered };
+              const notice = projectStreamNotice(status, lapsed, exhausted);
+              expect(notice.notice).toBe(
+                projectStreamNoticeBefore(status, lapsed, exhausted),
+              );
+              decided += 1;
+            }
+  expect(decided).toBe(
+    connections.length * sources.length * causes.length * 2 * 2 * 2,
+  );
+});
+
+test("reconnecting is its heading alone, and not live says why only where a reader can act on it", () => {
+  const status = (
+    connection: ProjectStreamStatus["connection"],
+    source: ProjectStreamStatus["source"],
+    cause: StreamCause | undefined,
+  ): ProjectStreamStatus => ({ connection, source, cause, answered: true });
+  expect(
+    projectStreamNotice(status("Waiting", "degraded", "Refused"), true, false),
+  ).toEqual({ notice: "Reconnecting" });
+  expect(
+    projectStreamNotice(status("Stopped", "live", "Refused"), true, false),
+  ).toEqual({ notice: "NotLive", detail: "Refused" });
+  expect(
+    projectStreamNotice(status("Stopped", "degraded", "Refused"), true, false),
+  ).toEqual({ notice: "NotLive", detail: "Updates delayed" });
+  expect(
+    projectStreamNotice(status("Waiting", "live", "Failed"), true, true),
+  ).toEqual({ notice: "NotLive", detail: "Reload to catch up" });
+  expect(
+    projectStreamNotice(status("Stopped", "live", "Closed"), true, false),
+  ).toEqual({ notice: "NotLive" });
 });

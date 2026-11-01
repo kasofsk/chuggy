@@ -139,7 +139,7 @@ const unknown =
   "draft 12 was created, and whether it was released is not known; submitting again goes back to that draft rather than creating another";
 const invalid =
   "the configuration is not one the project will run, as written or as overridden";
-const pending = "the operation is still pending after the attempt budget";
+const pending = "Still pending";
 const fencedOut = "the ticket's authoring changed after this was submitted";
 
 const draftRead = "GET /drafts/12";
@@ -607,8 +607,7 @@ const declined: Answer = {
   status: 409,
   body: { error: { code: "MutationNotAdmitted" } },
 };
-const notAdmitted =
-  "the project is not admitting this kind of mutation at the moment";
+const notAdmitted = "Refused";
 
 /** One release's ending, by what answers its submission and its polls. */
 const endings: readonly (readonly [
@@ -631,7 +630,7 @@ const endings: readonly (readonly [
     "Pending",
     (method, path) =>
       method === "POST" && path.endsWith("/operations") ? failed : undefined,
-    "the API refused this, and named a reason this console does not know (InternalError)",
+    "Server error",
     true,
   ],
   [

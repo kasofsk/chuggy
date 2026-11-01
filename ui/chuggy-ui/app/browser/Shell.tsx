@@ -120,7 +120,9 @@ export function StreamBanner(): ReactNode {
       tone="parked"
       role="status"
       heading={notice.notice === "Reconnecting" ? "Reconnecting" : "Not live"}
-      detail={notice.detail}
+      {...(notice.notice === "NotLive" && notice.detail !== undefined
+        ? { detail: notice.detail }
+        : {})}
     />
   );
 }
