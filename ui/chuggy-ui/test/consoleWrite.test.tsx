@@ -52,7 +52,7 @@ afterEach(() => {
 const sectionTitle = "Personal runners";
 
 /** The sentence the section draws for the refusal every case is answered. */
-const refusedSentence = /^Failed · /u;
+const refusedSentence = "Server error";
 
 interface Drawn {
   readonly view: RenderResult;

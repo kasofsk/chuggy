@@ -36,6 +36,7 @@ import {
   siteAuthoritiesStarting,
   unanswered,
 } from "./permissionsFixture.tsx";
+import { readFailedLines } from "../readFailedLines.ts";
 
 vi.mock("../../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
@@ -81,7 +82,7 @@ test("a reader the site's list is absent to sees the one line and no table", asy
     within(section).getByText("A site admin manages permissions"),
   ).toBeTruthy();
   expect(within(section).queryByRole("table")).toBeNull();
-  expect(screen.queryByText(/^Not available/u)).toBeNull();
+  expect(readFailedLines()).toStrictEqual([]);
 });
 
 test("the site's read loading or failed is its unready line, with no table", async () => {
@@ -90,11 +91,7 @@ test("the site's read loading or failed is its unready line, with no table", asy
   cleanup();
   await drawSitePermissions({ site: () => answer({}, 500) });
   const site = sectionOf("Site");
-  expect(
-    within(site).getByText(
-      "Failed to load · the API failed with InternalError",
-    ),
-  ).toBeTruthy();
+  expect(readFailedLines(site)).toStrictEqual(["Not read · Server error"]);
   expect(within(site).queryByRole("table")).toBeNull();
 });
 

@@ -42,7 +42,7 @@ import {
   spanSetFigure,
 } from "./figures.ts";
 import type { Figure } from "./figures.ts";
-import { panelReason } from "./freshness.ts";
+import { failureWords } from "./failureWords.ts";
 import { selectorModeTone } from "./tones.ts";
 import type { Tone } from "./tones.ts";
 
@@ -573,7 +573,7 @@ export function selectorSettingsRefusal(
   nowMs: number,
 ): string {
   const conflict = selectorSettingsConflictOf(failure);
-  if (conflict === undefined) return `Failed · ${panelReason(failure)}`;
+  if (conflict === undefined) return failureWords(failure).word;
   if (conflict.movedBy === undefined)
     return `Conflict · ${String(conflict.settings.revision)}`;
   return selectorSettingsMovedByText(conflict.movedBy, nowMs);

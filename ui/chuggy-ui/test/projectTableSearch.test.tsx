@@ -39,6 +39,7 @@ import {
 import { frame } from "./streamDouble.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { ticketInstants } from "./ticketInstants.ts";
+import { readFailedLines } from "./readFailedLines.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
@@ -296,6 +297,21 @@ test("one Show more continues the active list into what finished before it, draw
     "Ticket 100",
   ]);
   expect(showMores()).toBe(0);
+});
+
+test("a further page that could not be read says so in one line, keeping its rows and its Show more", async () => {
+  await drawnAt({}, (asked) => {
+    if (asked.get("active") === "true") return served([held(150, "Work")]);
+    if (asked.get("cursor") === "finished-2")
+      return answer({ error: { code: "InternalError", message: "no" } }, 500);
+    return served([held(120, "Done")], { nextCursor: "finished-2" });
+  });
+  await press("Show more");
+  await press("Show more");
+  expect(titlesDrawn()).toStrictEqual(["Ticket 150", "Ticket 120"]);
+  expect(readFailedLines()).toStrictEqual(["More · Not read · Server error"]);
+  expect(document.body.textContent).not.toContain("InternalError");
+  expect(showMores()).toBe(1);
 });
 
 test("a Show more whose first finished page holds only rows already drawn reads past it to one that adds a row", async () => {

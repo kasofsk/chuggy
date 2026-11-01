@@ -12,7 +12,7 @@ import type { ReactNode } from "react";
 import type { WorkerPoolTokenResponse } from "../../../../src/contract/responses.ts";
 import type { ApiFailure } from "../core/apiRequest.ts";
 import type { ConsoleWrite } from "../core/consoleWrite.ts";
-import { panelReason } from "../core/freshness.ts";
+import { failureWords } from "../core/failureWords.ts";
 import { runnerAskRead, runnerPackages } from "../core/runners.ts";
 import type {
   RunnerAsk,
@@ -150,7 +150,7 @@ function RunnerAskPresses(props: {
 
 /** The line a refused mint leaves in its ask. */
 export function runnerMintRefusal(failure: ApiFailure): string {
-  return `Refused · ${panelReason(failure)}`;
+  return failureWords(failure).word;
 }
 
 /** A registration token's mint, from the press that opens its ask through

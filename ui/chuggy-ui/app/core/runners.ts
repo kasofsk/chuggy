@@ -24,7 +24,7 @@ import type {
   SessionRunnerStanding,
 } from "../../../../src/contract/rosters.ts";
 import type { ApiFailure } from "./apiRequest.ts";
-import { panelReason } from "./freshness.ts";
+import { failureWords } from "./failureWords.ts";
 import type { PanelState } from "./freshness.ts";
 
 /** A runner package as the console hands it to a reader. */
@@ -332,5 +332,5 @@ export function runnersPlacementUnhosted(failure: ApiFailure): boolean {
 export function runnersPlacementRefusal(failure: ApiFailure): string {
   return runnersPlacementUnhosted(failure)
     ? "Needs hosted runs"
-    : `Failed · ${panelReason(failure)}`;
+    : failureWords(failure).word;
 }

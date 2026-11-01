@@ -215,7 +215,7 @@ function TicketNowRun(props: {
         <>
           {walk.held.failure === undefined ? null : (
             <PanelUnready
-              state={{ state: "Failed", reason: walk.held.failure }}
+              state={{ state: "Failed", failure: walk.held.failure }}
             />
           )}
           <TicketNowSaid

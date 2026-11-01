@@ -46,6 +46,7 @@ import {
   refused,
   unscopedChatPath,
 } from "./tenantPeopleFixture.tsx";
+import { readFailedLines } from "../readFailedLines.ts";
 
 vi.mock("../../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
@@ -147,21 +148,17 @@ test("an absent list draws the one notice and no control", async () => {
   expect(screen.getByText("A workspace admin manages people")).toBeTruthy();
   expect(screen.queryAllByRole("button")).toStrictEqual([]);
   expect(screen.queryByRole("table")).toBeNull();
-  expect(screen.queryByText(/^Not available/u)).toBeNull();
+  expect(readFailedLines()).toStrictEqual([]);
 });
 
-test("a failed list draws its reason, and one that is not JSON draws as unreachable", async () => {
+test("a failed list draws its word, and one that is not JSON draws as offline", async () => {
   await drawPeople({ listing: () => answer({}, 500) });
-  expect(
-    screen.getByText("Failed to load · the API failed with InternalError"),
-  ).toBeTruthy();
+  expect(readFailedLines()).toStrictEqual(["Not read · Server error"]);
   cleanup();
   await drawPeople({
     listing: () => new Response("<!doctype html>", { status: 200 }),
   });
-  expect(
-    screen.getByText(/^Failed to load · the API could not be reached/u),
-  ).toBeTruthy();
+  expect(readFailedLines()).toStrictEqual(["Not read · Offline"]);
 });
 
 test("a person's editor is a dialog named for them, closed by Done", async () => {
@@ -519,7 +516,7 @@ test("abilities absent beside a list that was answered leave the tables without 
   await drawPeople({ abilities: () => answer({}, 404) });
   expect(personRow("ada@example.com")).toBeTruthy();
   expect(screen.queryAllByRole("button")).toStrictEqual([]);
-  expect(screen.getAllByText(/^Not available/u)).toHaveLength(1);
+  expect(readFailedLines()).toStrictEqual(["Not found"]);
 });
 
 test("a reader who may give hosted runs is offered them on every person, checked where held", async () => {

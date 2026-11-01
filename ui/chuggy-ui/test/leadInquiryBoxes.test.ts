@@ -69,7 +69,7 @@ const walkQuestions = ["why", "why not", "  why  ", ""] as const;
 const walkAnswers: readonly InquiryAskAnswer[] = [
   { ask: "Asked", session: "inq-taken" },
   { ask: "Refused", word: "In flight" },
-  { ask: "Failed", reason: "the API could not be reached" },
+  { ask: "Failed", words: { word: "Offline" } },
 ];
 
 type WalkStep =

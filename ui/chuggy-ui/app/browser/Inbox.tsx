@@ -80,7 +80,7 @@ import { ticketSectionTitles } from "../core/ticketSections.ts";
 import { agenticRefusalStandingTone } from "../core/tones.ts";
 import { panelReadRestarted, useApiPorts, usePanelState } from "./api.ts";
 import { useConsoleWrite, useConsoleWriteProgress } from "./consoleWrite.tsx";
-import { DataPanel } from "./DataPanel.tsx";
+import { DataPanel, ReadFailed } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
 import {
   InboxProposalActions,
@@ -490,7 +490,7 @@ function InboxPageFailure(props: {
 }): ReactNode {
   const failure = props.rows?.failure;
   return failure === undefined ? null : (
-    <p className="panel-failed">a further page could not be read — {failure}</p>
+    <ReadFailed subject="More" failure={failure} />
   );
 }
 

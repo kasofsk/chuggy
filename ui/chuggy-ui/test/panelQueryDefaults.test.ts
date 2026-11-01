@@ -9,7 +9,7 @@ import { expect, test } from "vitest";
 
 import { ApiOutcomeError, apiOrThrow } from "../app/core/apiRequest.ts";
 import type { ApiFailure } from "../app/core/apiRequest.ts";
-import { panelReason } from "../app/core/freshness.ts";
+import { readFailedLine } from "../app/core/failureWords.ts";
 import {
   panelQueryDefaults,
   panelQueryFailedRefetched,
@@ -29,7 +29,7 @@ const failures: Readonly<Record<ApiFailure["outcome"], ApiFailure>> = {
 };
 
 function failed(failure: ApiFailure): ApiOutcomeError {
-  return new ApiOutcomeError(failure, panelReason(failure));
+  return new ApiOutcomeError(failure, readFailedLine(undefined, failure));
 }
 
 test("only a read that failed is read again on focus or reconnect", () => {
@@ -64,7 +64,9 @@ test("a cache on the defaults asks a failing read again up to the bound and then
       queryKey: ["probe"],
       queryFn: () => {
         reads += 1;
-        return apiOrThrow(failures.Fault, panelReason);
+        return apiOrThrow(failures.Fault, (failure) =>
+          readFailedLine(undefined, failure),
+        );
       },
     })
     .catch(() => undefined);

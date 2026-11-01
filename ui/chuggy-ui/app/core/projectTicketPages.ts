@@ -45,7 +45,6 @@ import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { TicketPhase } from "../../../../src/contract/rosters.ts";
 
 import type { ApiFailure, ApiResult } from "./apiRequest.ts";
-import { panelReason } from "./freshness.ts";
 import {
   projectListAlongside,
   projectListFoldedElseReread,
@@ -74,7 +73,7 @@ export interface ProjectTicketRows {
   readonly pagesRead: number;
   /** How many tickets the server says a search matched, as the last page answered it. */
   readonly matched: number | undefined;
-  readonly failure: string | undefined;
+  readonly failure: ApiFailure | undefined;
 }
 
 export const projectTicketRowsEmpty: ProjectTicketRows = {
@@ -130,9 +129,9 @@ export function projectTicketRowsAppend(
 /** The cursor is kept, so the same page can be asked for again. */
 export function projectTicketRowsFailed(
   previous: ProjectTicketRows,
-  reason: string,
+  failure: ApiFailure,
 ): ProjectTicketRows {
-  return { ...previous, failure: reason };
+  return { ...previous, failure };
 }
 
 /** What a page asked for after the first does to the rows, refusal included:
@@ -144,7 +143,7 @@ export function projectTicketRowsAfterPage(
 ): ProjectTicketRows {
   return answered.outcome === "Ok"
     ? projectTicketRowsAppend(previous, answered.value, reads)
-    : projectTicketRowsFailed(previous, panelReason(answered));
+    : projectTicketRowsFailed(previous, answered);
 }
 
 export function projectTicketRowsHaveMore(rows: ProjectTicketRows): boolean {
@@ -260,7 +259,7 @@ export async function projectTicketRowsRead(
   if (held === undefined) return refused;
   return {
     outcome: "Ok",
-    value: projectTicketRowsFailed(held, panelReason(refused)),
+    value: projectTicketRowsFailed(held, refused),
   };
 }
 
@@ -284,7 +283,7 @@ export async function projectTicketRowsMore(
     true,
   );
   if (refused !== undefined)
-    land((held) => projectTicketRowsFailed(held, panelReason(refused)));
+    land((held) => projectTicketRowsFailed(held, refused));
 }
 
 function projectTicketRowsWithout(

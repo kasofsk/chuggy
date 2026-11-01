@@ -153,7 +153,10 @@ function leadAskWrite(
           box,
           draw,
           error.failure === undefined
-            ? { ask: "Failed", reason: error.message }
+            ? {
+                ask: "Failed",
+                words: { word: "Failed", detail: error.message },
+              }
             : inquiryAskRefused(error.failure),
         ),
       );
@@ -186,7 +189,11 @@ function LeadAskNotice(props: {
       );
     case "Failed":
       return (
-        <Notice tone="danger" inline detail={inquiryAskRefusalSentence(ask)} />
+        <Notice tone="danger" inline>
+          <Tooltip text={ask.words.detail}>
+            <span>{inquiryAskRefusalSentence(ask)}</span>
+          </Tooltip>
+        </Notice>
       );
   }
 }

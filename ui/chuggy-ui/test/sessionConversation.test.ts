@@ -216,7 +216,7 @@ test("an unlisted stream's shortfalls stand beside the marker and what was gathe
   const items = sessionConversationItems({
     held: heldOf({
       entries: [entryOf({ type: "user", message: said("hi") })],
-      failure: "the API failed with InternalError",
+      failure: { outcome: "Fault", code: "InternalError", status: 500 },
       truncated: true,
       elided: 2,
       entriesDropped: 1,
@@ -244,7 +244,7 @@ test("an unlisted stream's shortfalls stand beside the marker and what was gathe
 
 test("a read that failed, an unreached tail, elided batches and dropped entries each say themselves", () => {
   const items = itemsOf({
-    failure: "Fault · 500",
+    failure: { outcome: "Fault", code: "InternalError", status: 500 },
     unreached: true,
     elided: 2,
     entriesDropped: 3,
@@ -258,7 +258,10 @@ test("a read that failed, an unreached tail, elided batches and dropped entries 
   expect(
     items.map((item) => (item.item === "Marker" ? item.marker : undefined)),
   ).toStrictEqual([
-    { marker: "Failure", reason: "Fault · 500" },
+    {
+      marker: "Failure",
+      failure: { outcome: "Fault", code: "InternalError", status: 500 },
+    },
     { marker: "Unreached" },
     { marker: "Capped", sentence: "Elided · 2 batches" },
     { marker: "Dropped", count: 3 },

@@ -15,7 +15,7 @@ import { threadTitleCharsMax } from "../../../../../src/contract/http.ts";
 import type { ThreadEntryResponse } from "../../../../../src/contract/responses.ts";
 import { consoleWriteKey } from "../../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../../core/consoleWrite.ts";
-import { panelReason } from "../../core/freshness.ts";
+import { failureWords } from "../../core/failureWords.ts";
 import {
   apiCloseThreadAt,
   apiRenameThreadAt,
@@ -54,7 +54,7 @@ function threadEntryWrite<V>(
   return {
     mutationKey: consoleWriteKey(named, threadHomeNamed(home), session),
     write,
-    refusal: (failure) => `Refused · ${panelReason(failure)}`,
+    refusal: (failure) => failureWords(failure).word,
     landed: async (client) => {
       if (home.scope === "Member")
         await memberChatReread(client, home.tenant, session);

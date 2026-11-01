@@ -45,6 +45,7 @@ import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { frame } from "./streamDouble.ts";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
+import { readFailedLines } from "./readFailedLines.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -326,11 +327,11 @@ test("a read that fails is drawn as a failed read in this row, and the page arou
   expect(within(deliveryRow(container)).getByRole("button").textContent).toBe(
     "DeliveryNot read",
   );
-  expect(screen.queryAllByText(/Failed to load/u)).toEqual([]);
+  expect(readFailedLines()).toEqual([]);
   const row = await deliveryOpened(container);
-  expect(within(row).getByText(/^Failed to load · /u)).toBeDefined();
+  expect(readFailedLines(row)).toStrictEqual(["Not read · Server error"]);
   expect(linesDrawn(row)).toEqual([]);
-  expect(screen.getAllByText(/Failed to load/u)).toHaveLength(1);
+  expect(readFailedLines()).toHaveLength(1);
   expect(container.querySelector(".ticket-status")?.textContent).toContain(
     "Done",
   );
@@ -344,7 +345,7 @@ test("an answer that is not the read's is a failed read too, and draws no line o
     }),
   );
   const row = await deliveryOpened(container);
-  expect(within(row).getByText(/^Failed to load · /u)).toBeDefined();
+  expect(readFailedLines(row)).toStrictEqual(["Not read · Update needed"]);
   expect(linesDrawn(row)).toEqual([]);
 });
 

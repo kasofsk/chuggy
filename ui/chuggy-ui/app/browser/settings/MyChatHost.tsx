@@ -26,8 +26,8 @@ import type { ApiFailure, ApiResult } from "../../core/apiRequest.ts";
 import { consoleWriteKey } from "../../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../../core/consoleWrite.ts";
 import { instantFigure } from "../../core/figures.ts";
+import { failureWords } from "../../core/failureWords.ts";
 import type { PanelState } from "../../core/freshness.ts";
-import { panelReason } from "../../core/freshness.ts";
 import { myRunnerShort } from "../../core/myRunner.ts";
 import {
   runnerStandingLabel,
@@ -70,7 +70,7 @@ async function chatHostReread(
 }
 
 function chatHostRefusal(failure: ApiFailure): string {
-  return `Refused · ${panelReason(failure)}`;
+  return failureWords(failure).word;
 }
 
 /** The token a host registers with, which changes nothing a read draws until

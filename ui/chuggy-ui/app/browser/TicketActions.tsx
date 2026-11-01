@@ -89,7 +89,7 @@ import {
   ticketAttemptHeld,
   ticketAttemptRead,
 } from "./ticketAttemptHeld.ts";
-import { PanelUnready } from "./DataPanel.tsx";
+import { PanelUnready, ReadFailed } from "./DataPanel.tsx";
 import { drawBytes } from "./ports.ts";
 import { TicketDuplicateOffer } from "./ticket/TicketDuplicateOffer.tsx";
 import { TicketEditOffer } from "./ticket/TicketEditOffer.tsx";
@@ -690,11 +690,7 @@ export function TicketBarActions(props: TicketActionsProps): ReactNode {
       )}
       <TicketDuplicateOffer partition={props.partition} ticket={props.ticket} />
       {props.dispatchState.state === "Failed" ? (
-        <Notice
-          tone="parked"
-          inline
-          detail={`Dispatch unavailable · ${props.dispatchState.reason}`}
-        />
+        <ReadFailed subject="Dispatch" failure={props.dispatchState.failure} />
       ) : null}
       {props.byHand ? (
         <Notice tone="info" inline detail="No lead · Dispatched by hand" />

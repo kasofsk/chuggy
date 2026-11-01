@@ -41,6 +41,7 @@ import type { TicketAttempt } from "../app/core/ticketActions.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
+import { readFailedLines } from "./readFailedLines.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -334,7 +335,7 @@ test("an unread action list offers nothing the phase alone would allow", async (
 
   expect(button("Resume")).toBeNull();
   expect(button("Revoke")).toBeNull();
-  expect(screen.getByText(/^Failed to load · /)).toBeDefined();
+  expect(readFailedLines()).toStrictEqual(["Not read · Server error"]);
 });
 
 /** An API that accepts the submission and leaves the operation pending, which

@@ -13,7 +13,6 @@ import type {
   WorkerPoolsResponse,
 } from "../../../src/contract/responses.ts";
 import { sessionRunnerStandings } from "../../../src/contract/rosters.ts";
-import { panelReason } from "../app/core/freshness.ts";
 import type { PanelState } from "../app/core/freshness.ts";
 import {
   runnerAddPlace,
@@ -151,9 +150,7 @@ test("a write refused for the hosted grant is told apart from any other refusal"
   expect(runnersPlacementUnhosted(unhosted)).toBe(true);
   expect(runnersPlacementRefusal(unhosted)).toBe("Needs hosted runs");
   expect(runnersPlacementUnhosted(invalid)).toBe(false);
-  expect(runnersPlacementRefusal(invalid)).toBe(
-    `Failed · ${panelReason(invalid)}`,
-  );
+  expect(runnersPlacementRefusal(invalid)).toBe("Refused");
 });
 
 test("setup offers the Linux package: what it needs, the command that installs its current release, and its guide", () => {
@@ -321,7 +318,13 @@ test("the control is drawn nowhere while the roster is unread, and in the head w
   ).toBeUndefined();
   for (const state of ["Absent", "Failed"] as const)
     expect(
-      runnerAddPlace({ ...adding, roster: { state, reason: "no" } }),
+      runnerAddPlace({
+        ...adding,
+        roster:
+          state === "Absent"
+            ? { state }
+            : { state, failure: { outcome: "Unreachable", reason: "no" } },
+      }),
       state,
     ).toBe("Head");
 });

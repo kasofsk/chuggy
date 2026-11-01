@@ -61,9 +61,7 @@ test("the door asks for the member's chat host and no grant", () => {
   const idle = { send: "Idle" } as const;
   const standing = (door: ReturnType<typeof memberChatDoor>) =>
     threadSendStanding(idle, true, door).send;
-  expect(standing(memberChatDoor({ state: "Absent", reason: "" }, 1))).toBe(
-    "NoRunner",
-  );
+  expect(standing(memberChatDoor({ state: "Absent" }, 1))).toBe("NoRunner");
   expect(
     standing(
       memberChatDoor(

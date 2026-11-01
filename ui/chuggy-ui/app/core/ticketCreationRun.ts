@@ -55,7 +55,7 @@ import {
 } from "./apiRoutes.ts";
 import type { ApiFailure, ApiPorts, ApiResult } from "./apiRequest.ts";
 import { ConsoleWriteRefused } from "./consoleWrite.ts";
-import { panelReason } from "./freshness.ts";
+import { readFailedLine } from "./failureWords.ts";
 import {
   draftRevisionFailureSentence,
   draftRevisionRefusalSentence,
@@ -229,7 +229,7 @@ export function creationDraftHeldSentence(held: CreationDraftHeld): string {
 
 /** A held draft that could not be read, which is read before it is written. */
 export function creationDraftUnreadSentence(failure: ApiFailure): string {
-  return `the draft could not be read, so nothing was written to it: ${panelReason(failure)}`;
+  return readFailedLine("Draft", failure);
 }
 
 /** A held draft read as deleted, which no later submit goes back to. */

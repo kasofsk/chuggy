@@ -60,9 +60,7 @@ export function projectLeadPanelState(
 ): PanelState<LeadResponse> {
   if (state.state !== "Ready") return state;
   const lead = projectLeadFound(state.value);
-  return lead === undefined
-    ? { state: "Absent", reason: "the project has no lead" }
-    : { ...state, value: lead };
+  return lead === undefined ? { state: "Absent" } : { ...state, value: lead };
 }
 
 /**

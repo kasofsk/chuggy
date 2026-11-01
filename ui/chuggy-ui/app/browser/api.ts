@@ -27,7 +27,8 @@ import { apiPortsOver } from "../core/apiPorts.ts";
 import { apiOrThrow } from "../core/apiRequest.ts";
 import type { ApiPorts } from "../core/apiRequest.ts";
 import type { ConsoleQuery } from "../core/consoleQuery.ts";
-import { panelReason, panelStateFromQuery } from "../core/freshness.ts";
+import { readFailedLine } from "../core/failureWords.ts";
+import { panelStateFromQuery } from "../core/freshness.ts";
 import type { PanelState } from "../core/freshness.ts";
 import { apiFetch, sleepMs } from "./ports.ts";
 import { useSessionHolder } from "./session.tsx";
@@ -65,7 +66,7 @@ export function panelQueryOptions<T>(
     queryFn: async ({ signal, client }) =>
       apiOrThrow(
         await query.read(ports, signal, client.getQueryData(query.queryKey)),
-        panelReason,
+        (failure) => readFailedLine(undefined, failure),
       ),
     refetchInterval: query.polledMs ?? false,
     staleTime: query.kept === "Streamed" && streamHolding ? Infinity : 0,
@@ -126,16 +127,13 @@ function usePanelAbsenceKept<T>(
   state: PanelState<T>,
 ): PanelState<T> {
   const keyed = hashKey(key);
-  const [kept, setKept] = useState<
-    { readonly keyed: string; readonly reason: string } | undefined
-  >(undefined);
+  const [kept, setKept] = useState<string | undefined>(undefined);
   const stands = state.state === "Pending" || state.state === "Failed";
   if (state.state === "Absent") {
-    if (kept?.keyed !== keyed || kept.reason !== state.reason)
-      setKept({ keyed, reason: state.reason });
+    if (kept !== keyed) setKept(keyed);
   } else if (!stands && kept !== undefined) setKept(undefined);
-  return stands && query.isFetched && kept?.keyed === keyed
-    ? { state: "Absent", reason: kept.reason }
+  return stands && query.isFetched && kept === keyed
+    ? { state: "Absent" }
     : state;
 }
 

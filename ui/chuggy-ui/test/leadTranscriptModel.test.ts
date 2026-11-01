@@ -19,6 +19,7 @@
 import { expect, test } from "vitest";
 
 import type { LeadTranscriptResponse } from "../../../src/contract/responses.ts";
+import type { ApiFailure } from "../app/core/apiRequest.ts";
 import {
   leadTranscriptDrawn,
   leadTranscriptEntriesHeldMax,
@@ -198,7 +199,7 @@ interface ModelReference {
   readonly entries: readonly string[];
   readonly holding: readonly string[];
   readonly holdingUnknown: boolean;
-  readonly failure: string | undefined;
+  readonly failure: ApiFailure | undefined;
 }
 
 /**
@@ -209,7 +210,7 @@ function modelReference(
   events: readonly LeadTranscriptEvent[],
 ): ModelReference {
   let runs: ModelSegment[] = [modelSegmentEmpty];
-  let failure: string | undefined;
+  let failure: ApiFailure | undefined;
   for (const event of events) {
     if (event.event === "StreamChange") {
       runs = [modelSegmentEmpty];
@@ -217,7 +218,7 @@ function modelReference(
       continue;
     }
     if (event.event === "Failure") {
-      failure = event.reason;
+      failure = event.failure;
       continue;
     }
     failure = undefined;
@@ -280,7 +281,11 @@ function modelEvent(
   highWaterBatch: number,
 ): LeadTranscriptEvent | undefined {
   const roll = random();
-  if (roll < 0.08) return { event: "Failure", reason: "the API failed" };
+  if (roll < 0.08)
+    return {
+      event: "Failure",
+      failure: { outcome: "Fault", code: "InternalError", status: 500 },
+    };
   if (roll < 0.12) return { event: "StreamChange", stream: "model-stream" };
   const after = leadTranscriptNextAfter(pane, highWaterBatch);
   if (after === undefined) return undefined;

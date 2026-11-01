@@ -232,7 +232,10 @@ test("the status bar names the newest landing only while it is live", () => {
 test("a read that never answered holds no landings, and one that did holds them all", () => {
   expect(ticketLandingsHeld({ state: "Pending" })).toEqual([]);
   expect(
-    ticketLandingsHeld({ state: "Failed", reason: "the read failed" }),
+    ticketLandingsHeld({
+      state: "Failed",
+      failure: { outcome: "Unreachable", reason: "the read failed" },
+    }),
   ).toEqual([]);
   const read = ticketLandingsRead({
     state: "Ready",

@@ -33,8 +33,13 @@ test("a project is led or not only once a read has said", () => {
   expect(projectLeadPresent(ready(lead))).toBe(true);
   expect(projectLeadPresent(ready(none))).toBe(false);
   expect(projectLeadPresent({ state: "Pending" })).toBeUndefined();
-  expect(projectLeadPresent({ state: "Failed", reason: "no" })).toBeUndefined();
-  expect(projectLeadPresent({ state: "Absent", reason: "no" })).toBeUndefined();
+  expect(
+    projectLeadPresent({
+      state: "Failed",
+      failure: { outcome: "Unreachable", reason: "no" },
+    }),
+  ).toBeUndefined();
+  expect(projectLeadPresent({ state: "Absent" })).toBeUndefined();
 });
 
 test("the lead page draws a lead it was answered, and is absent where there is none", () => {
@@ -44,7 +49,10 @@ test("the lead page draws a lead it was answered, and is absent where there is n
     observedAtMs: 5,
   });
   expect(projectLeadPanelState(ready(none)).state).toBe("Absent");
-  const failed = { state: "Failed", reason: "no" } as const;
+  const failed = {
+    state: "Failed",
+    failure: { outcome: "Unreachable", reason: "no" },
+  } as const;
   expect(projectLeadPanelState(failed)).toBe(failed);
 });
 
@@ -190,7 +198,10 @@ test("a lead dispatches where one stands or will open, and not otherwise", () =>
   expect(projectLeadDispatches(ready(none))).toBe(false);
   expect(projectLeadDispatches({ state: "Pending" })).toBeUndefined();
   expect(
-    projectLeadDispatches({ state: "Failed", reason: "no" }),
+    projectLeadDispatches({
+      state: "Failed",
+      failure: { outcome: "Unreachable", reason: "no" },
+    }),
   ).toBeUndefined();
 });
 
@@ -205,10 +216,6 @@ test("a server that gives no reason reads as tickets run by hand, and a lead or 
     projectLeadAbsenceLine({ state: "Pending" }, laterMs, undefined),
   ).toBeUndefined();
   expect(
-    projectLeadAbsenceLine(
-      { state: "Absent", reason: "no" },
-      laterMs,
-      undefined,
-    ),
+    projectLeadAbsenceLine({ state: "Absent" }, laterMs, undefined),
   ).toBeUndefined();
 });

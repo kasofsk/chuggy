@@ -15,7 +15,7 @@ import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ProjectOwnerFallbackResponse } from "../../../../../src/contract/responses.ts";
 import type { OwnerFallback } from "../../../../../src/contract/rosters.ts";
 import { apiWriteOwnerFallback } from "../../core/apiRoutes.ts";
-import { panelReason } from "../../core/freshness.ts";
+import { failureWords } from "../../core/failureWords.ts";
 import {
   ownerFallbackAbout,
   ownerFallbackChoices,
@@ -67,7 +67,7 @@ function ownerFallbackWrite(
         partition,
         fallback === undefined ? {} : { fallback },
       ),
-    refusal: (failure) => `Failed · ${panelReason(failure)}`,
+    refusal: (failure) => failureWords(failure).word,
     landed: async (client, written) => {
       const key = ownerFallbackQuery(partition).queryKey;
       await client.cancelQueries({ queryKey: key });

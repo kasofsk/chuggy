@@ -165,7 +165,7 @@ test("a conflict with no history row carries no mover", () => {
 
 /** A refused write is drawn as one line, which is also what a reader who left
  * the page is told. */
-test("a refusal is the conflict's revision, its mover, or the failure's reason", () => {
+test("a refusal is the conflict's revision, its mover, or the failure's word", () => {
   const nowMs = Date.parse("2026-09-05T18:00:00.000Z");
   const conflict = {
     outcome: "Conflict",
@@ -189,7 +189,7 @@ test("a refusal is the conflict's revision, its mover, or the failure's reason",
       nowMs,
     ),
   ).toMatch(/^Changed by dave@vteng\.io at \S/u);
-  expect(
-    selectorSettingsRefusal({ ...conflict, body: undefined }, nowMs),
-  ).toMatch(/^Failed · /u);
+  expect(selectorSettingsRefusal({ ...conflict, body: undefined }, nowMs)).toBe(
+    "Refused",
+  );
 });

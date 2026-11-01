@@ -143,22 +143,16 @@ test("only the moved code with a readable body is a conflict", () => {
     body: { repository: { repository: chuggy } },
   } as const;
   expect(repositoryLandingMoved(unreadable)).toBeUndefined();
-  expect(repositoryLandingRefusal(unreadable)).toBe(
-    "Failed · the API refused this read as RepositoryLandingMoved",
-  );
+  expect(repositoryLandingRefusal(unreadable)).toBe("Refused");
   const other = {
     outcome: "Conflict",
     code: "SomethingElse",
     body: undefined,
   } as const;
   expect(repositoryLandingMoved(other)).toBeUndefined();
-  expect(repositoryLandingRefusal(other)).toBe(
-    "Failed · the API refused this read as SomethingElse",
-  );
+  expect(repositoryLandingRefusal(other)).toBe("Refused");
   expect(repositoryLandingMoved({ outcome: "Absent" })).toBeUndefined();
-  expect(repositoryLandingRefusal({ outcome: "Absent" })).toBe(
-    "Failed · the API has no such resource, or will not show it to you",
-  );
+  expect(repositoryLandingRefusal({ outcome: "Absent" })).toBe("Not found");
 });
 
 /** The listing is what every other screen reads the landing from, so the row

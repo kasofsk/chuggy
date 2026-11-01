@@ -47,6 +47,7 @@ import type {
   SessionPlacementResponse,
 } from "../../../src/contract/responses.ts";
 import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
+import { readFailedLines } from "./readFailedLines.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
@@ -350,7 +351,7 @@ test("a listing past the bound is refused rather than drawn", async () => {
     rows().length,
     "a listing past the route's own bound was drawn anyway",
   ).toBe(0);
-  expect(screen.getByText(/^Failed to load · /u)).toBeDefined();
+  expect(readFailedLines()).toStrictEqual(["Not read · Update needed"]);
 });
 
 /** A lead that has never settled a turn has no head to fork from, so there is
@@ -715,7 +716,7 @@ test("a re-send after a send that did not land carries the same pair", async () 
   });
   await turned(ask);
   await settled();
-  expect(screen.getByText(/^Failed · /u)).toBeDefined();
+  expect(screen.getByText("Server error")).toBeDefined();
   await turned(ask);
   await settled();
   const sent = sessionsPosted(server);
@@ -812,7 +813,7 @@ test("a pair drawn for one project is not posted to another after a switch", asy
   });
   await turned(ask);
   await settled();
-  expect(screen.getByText(/^Failed · /u)).toBeDefined();
+  expect(screen.getByText("Server error")).toBeDefined();
   await server.moveTo(elsewhere);
   expect(
     screen.getByLabelText<HTMLTextAreaElement>("Question").value,
@@ -945,7 +946,7 @@ test("a box carried into another project is not wedged", async () => {
   await turned(ask);
   await settled();
   expect(
-    screen.getByText(/^Failed · /u),
+    screen.getByText("Server error"),
     "the door was meant to take the name and lose the answer",
   ).toBeDefined();
   await server.moveTo(elsewhere);

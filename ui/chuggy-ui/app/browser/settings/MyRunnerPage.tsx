@@ -35,8 +35,8 @@ import {
 import { consoleWriteKey } from "../../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../../core/consoleWrite.ts";
 import { instantFigure } from "../../core/figures.ts";
+import { failureWords } from "../../core/failureWords.ts";
 import type { PanelState } from "../../core/freshness.ts";
-import { panelReason } from "../../core/freshness.ts";
 import {
   myRunnerAddable,
   myRunnerRemovalLine,
@@ -110,7 +110,7 @@ async function myRunnerWritten(
 }
 
 function myRunnerRefusal(failure: ApiFailure): string {
-  return `Refused · ${panelReason(failure)}`;
+  return failureWords(failure).word;
 }
 
 function myRunnerRemovalWrite(tenant: string): ConsoleWrite<string, undefined> {

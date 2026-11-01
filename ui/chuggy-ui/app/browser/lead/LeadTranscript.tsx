@@ -35,7 +35,6 @@ import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { LeadTranscriptResponse } from "../../../../../src/contract/responses.ts";
 import type { ApiPorts, ApiResult } from "../../core/apiRequest.ts";
 import { apiLeadTranscript } from "../../core/apiRoutes.ts";
-import { panelReason } from "../../core/freshness.ts";
 import {
   leadTranscriptCursorsFrom,
   leadTranscriptDrawn,
@@ -189,7 +188,7 @@ export function useLeadTranscript(
         const answered = await reads.asked(after);
         reads.taken(after);
         if (answered.outcome !== "Ok") {
-          stepped({ event: "Failure", reason: panelReason(answered) });
+          stepped({ event: "Failure", failure: answered });
           return;
         }
         stepped({ event: "Page", page: answered.value, highWaterBatch, after });

@@ -679,13 +679,13 @@ test("the line under Add says what is missing, and carries a step only where it 
   ])[] = [
     [{ state: "Pending" }, authorizing, undefined, undefined],
     [
-      { state: "Absent", reason: "withheld" },
+      { state: "Absent" },
       authorizing,
       "A workspace admin adds repositories",
       undefined,
     ],
     [
-      { state: "Failed", reason: "down" },
+      { state: "Failed", failure: { outcome: "Unreachable", reason: "down" } },
       authorizing,
       "Accounts failed to load",
       undefined,
@@ -699,13 +699,13 @@ test("the line under Add says what is missing, and carries a step only where it 
     ],
     [
       claimed(),
-      { state: "Absent", reason: "no app" },
+      { state: "Absent" },
       "GitHub not configured · ask an operator",
       undefined,
     ],
     [
       claimed(),
-      { state: "Failed", reason: "down" },
+      { state: "Failed", failure: { outcome: "Unreachable", reason: "down" } },
       "GitHub unavailable",
       undefined,
     ],

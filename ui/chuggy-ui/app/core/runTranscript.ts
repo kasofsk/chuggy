@@ -35,6 +35,7 @@ import {
   conversationMessageFiller,
   conversationMessageInterruption,
 } from "./conversation.ts";
+import type { ApiFailure } from "./apiRequest.ts";
 import { freshnessLabel, panelObservedAtMs } from "./freshness.ts";
 import { runCountLabel } from "./runTotals.ts";
 
@@ -100,7 +101,7 @@ export interface RunTranscriptHeld {
   readonly batches: readonly RunTranscriptBatch[];
   readonly observedAt: string | undefined;
   readonly complete: boolean;
-  readonly failure: string | undefined;
+  readonly failure: ApiFailure | undefined;
   /** How many batches that draw the pane keeps, raised a page by each earlier
    * read. */
   readonly capacity: number;
@@ -246,9 +247,9 @@ export function runTranscriptEarlierMerged(
 /** A read that did not answer leaves what is held alone and says why. */
 export function runTranscriptFailed(
   held: RunTranscriptHeld,
-  reason: string,
+  failure: ApiFailure,
 ): RunTranscriptHeld {
-  return { ...held, failure: reason };
+  return { ...held, failure };
 }
 
 /** No more can arrive, or when the newest batch the server holds was recorded. */

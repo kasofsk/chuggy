@@ -84,8 +84,11 @@ test("the edit screen is offered to a Pending ticket and to no other", () => {
 test("a read that has not answered offers nothing, whatever the phase enables", () => {
   const unread: PanelState<TicketNativeActionsResponse>[] = [
     { state: "Pending" },
-    { state: "Failed", reason: "the API failed with Fault" },
-    { state: "Absent", reason: "the API has no such resource" },
+    {
+      state: "Failed",
+      failure: { outcome: "Unreachable", reason: "the API failed with Fault" },
+    },
+    { state: "Absent" },
   ];
   expect(offered(ready([]))).not.toEqual([]);
   for (const open of unread)

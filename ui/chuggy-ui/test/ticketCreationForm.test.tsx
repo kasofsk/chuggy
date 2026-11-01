@@ -696,9 +696,7 @@ test("a held draft that cannot be read is said, written nothing, and read again 
   held.since();
   typeIntent("ship that");
   await submitted();
-  expect(note()).toBe(
-    `the draft could not be read, so nothing was written to it: the API failed with InternalError — ${draftUnreleased}`,
-  );
+  expect(note()).toBe(`Draft · Not read · Server error — ${draftUnreleased}`);
   expect(held.since()).toStrictEqual([draftRead]);
   reads.failing = false;
   submit();

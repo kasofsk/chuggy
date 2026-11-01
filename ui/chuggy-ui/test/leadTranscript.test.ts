@@ -936,13 +936,13 @@ test("a read that fails after a reset still says why", () => {
   const reset = paged(walked, cutPage(3, ["uuid-c"], ["uuid-c"]), 2);
   const failed = leadTranscriptStep(reset, {
     event: "Failure",
-    reason: "the API failed with InternalError",
+    failure: { outcome: "Fault", code: "InternalError", status: 500 },
   });
   const drawn = leadTranscriptDrawn(failed);
   expect(
     drawn.failure,
     "the reason a read gave was dropped because a re-walk was in flight",
-  ).toBe("the API failed with InternalError");
+  ).toStrictEqual({ outcome: "Fault", code: "InternalError", status: 500 });
   expect(drawn.entries.length).toBe(2);
   expect(drawn.holdingUnknown).toBe(true);
 });
@@ -951,11 +951,12 @@ test("a read that fails after a reset still says why", () => {
 test("a failure is drawn until the next page answers", () => {
   const failed = leadTranscriptStep(leadTranscriptPaneEmpty, {
     event: "Failure",
-    reason: "the API could not be reached",
+    failure: { outcome: "Unreachable", reason: "fetch failed" },
   });
-  expect(leadTranscriptDrawn(failed).failure).toBe(
-    "the API could not be reached",
-  );
+  expect(leadTranscriptDrawn(failed).failure).toStrictEqual({
+    outcome: "Unreachable",
+    reason: "fetch failed",
+  });
   const answered = paged(failed, cutPage(1, ["uuid-a"], ["uuid-a"], 1), 1);
   expect(leadTranscriptDrawn(answered).failure).toBeUndefined();
 });

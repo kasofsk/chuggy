@@ -20,6 +20,7 @@ import type { ApiResult } from "../app/core/apiRequest.ts";
 import { consoleCallerQuery } from "../app/core/consoleQuery.ts";
 import { panelQueryDefaults } from "../app/core/panelQueryDefaults.ts";
 import { holderDouble, settled, turned } from "./screenHarness.tsx";
+import { readFailedLines } from "./readFailedLines.ts";
 
 afterEach(cleanup);
 
@@ -73,7 +74,7 @@ async function drawProbe(probe: Probe): Promise<QueryClient> {
 async function drawnFailed(): Promise<Probe> {
   const probe: Probe = { failing: true, reads: 0, answered: "answered" };
   await drawProbe(probe);
-  expect(screen.getByText(/^Failed to load · /u)).toBeDefined();
+  expect(readFailedLines()).toStrictEqual(["Probe · Not read · Server error"]);
   probe.failing = false;
   return probe;
 }
@@ -129,7 +130,7 @@ test("a read that fails behind an answer keeps it drawn, says Not updated, and R
   await settled();
   expect(screen.getByText("first")).toBeDefined();
   expect(screen.getByText("Not updated")).toBeDefined();
-  expect(screen.queryByText(/^Failed to load · /u)).toBeNull();
+  expect(readFailedLines()).toStrictEqual([]);
   probe.failing = false;
   probe.answered = "second";
   await turned(() => {

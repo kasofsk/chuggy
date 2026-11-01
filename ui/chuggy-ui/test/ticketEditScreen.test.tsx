@@ -53,6 +53,7 @@ import {
   draftPanelText,
 } from "./projectAbilitiesFixture.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
+import { readFailedLines } from "./readFailedLines.ts";
 
 /**
  * Whether a wait ever ends. Held while the screen is drawn, so the fallback a
@@ -312,7 +313,7 @@ test("a held revision that cannot be read is said, and the reader is asked rathe
         ? answer({ error: { code: "ConfigurationNotFound" } }, 404)
         : undefined,
   });
-  expect(screen.getByText(/^Not available · /u)).toBeTruthy();
+  expect(readFailedLines()).toStrictEqual(["Not found"]);
   expect(configurationChosen()).toContain("Choose");
   await retitleAndSubmit();
   expect(screen.getByText(creationFaultSentence("configuration"))).toBeTruthy();

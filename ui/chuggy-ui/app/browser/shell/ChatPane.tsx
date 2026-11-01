@@ -44,7 +44,7 @@ import {
 } from "../../core/conversation.ts";
 import { consoleWriteKey } from "../../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../../core/consoleWrite.ts";
-import { panelReason } from "../../core/freshness.ts";
+import { failureWords } from "../../core/failureWords.ts";
 import { projectAbilityRefused } from "../../core/projectAbilities.ts";
 import {
   hostedRunsQuery,
@@ -191,7 +191,9 @@ function chatPaneOpenWrite(
       };
     },
     refusal: (failure) =>
-      `Refused · ${threadOpenAtLimit(failure) ? threadLimitWord : panelReason(failure)}`,
+      threadOpenAtLimit(failure)
+        ? `Refused · ${threadLimitWord}`
+        : failureWords(failure).word,
     landed: (client, opened) => {
       if (opened.opened === "Opened")
         choose({ partition, session: opened.session });

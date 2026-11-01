@@ -23,7 +23,7 @@ import type { BriefFinalizationMode } from "../../../../src/contract/rosters.ts"
 import type { z } from "zod";
 
 import type { ApiFailure } from "./apiRequest.ts";
-import { panelReason } from "./freshness.ts";
+import { failureWords } from "./failureWords.ts";
 
 /** What the reader has chosen of each setting, beside the value the page read it against. */
 export interface RepositoryLandingDraft {
@@ -136,10 +136,10 @@ export function repositoryLandingMoved(
 }
 
 /** The line a refused write is drawn as: a moved setting, or the failure
- * with its reason. */
+ * in its word. */
 export function repositoryLandingRefusal(failure: ApiFailure): string {
   return repositoryLandingMoved(failure) === undefined
-    ? `Failed · ${panelReason(failure)}`
+    ? failureWords(failure).word
     : repositoryLandingMovedLine;
 }
 

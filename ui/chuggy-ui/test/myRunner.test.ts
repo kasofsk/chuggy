@@ -217,7 +217,7 @@ test("taking a member's runners off says whether there were any it could take", 
   );
   expect(
     memberRunnerRemoved({ outcome: "Fault", code: "Internal", status: 500 }),
-  ).toMatch(/^Refused · /u);
+  ).toBe("Server error");
 });
 
 test("a thread's, an inquiry's and a member's own chat's missing runner is added on the member's own page, and the lead's on the project's", () => {
