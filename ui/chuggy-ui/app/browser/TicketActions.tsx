@@ -508,15 +508,17 @@ function useTicketActionWrite(
   const writing = useConsoleWrite(ticketActionWrite(partition, ticket), {
     drawn: true,
   });
-  const cancelling = useConsoleWrite(ticketCancelWrite(partition, ticket), {
-    drawn: true,
-  });
   const attempt = useTicketActionAttempt(
     writing.variables,
     ticketAttemptRead(client, partition, ticket),
   );
   const step = attempt?.step;
   const following = step !== undefined && !operationFinished(step);
+  const refusedOperation =
+    following && "operation" in step ? step.operation : undefined;
+  const cancelling = useConsoleWrite(ticketCancelWrite(partition, ticket), {
+    drawn: (_, operation) => operation === refusedOperation,
+  });
 
   useEffect(() => {
     const held = ticketAttemptRead(client, partition, ticket);
@@ -529,8 +531,6 @@ function useTicketActionWrite(
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the pick-up is this mount's, and a later render must not follow the same operation twice
   }, []);
 
-  const refusedOperation =
-    following && "operation" in step ? step.operation : undefined;
   const submitting: Submitting = {
     attempt,
     refused:

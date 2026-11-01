@@ -32,6 +32,10 @@ import {
   queryClientUnretried,
 } from "./screenHarness.tsx";
 import { nativeHttpMediaType } from "../../../src/contract/http.ts";
+import {
+  consoleQueryClient,
+  consoleWriteWatchOf,
+} from "../app/core/consoleWrite.ts";
 import { ticketAttemptKey } from "../app/core/ticketActions.ts";
 import type { TicketAttempt } from "../app/core/ticketActions.ts";
 import { ticketInstants } from "./ticketInstants.ts";
@@ -141,7 +145,7 @@ interface Served {
  */
 function served(scripted: {
   readonly submission: (operation: string) => Response | Promise<Response>;
-  readonly openActions: () => Response;
+  readonly openActions: () => Response | Promise<Response>;
   readonly cancellation?: (operation: string) => Response | Promise<Response>;
 }): Served {
   const urls: string[] = [];
@@ -500,6 +504,54 @@ test("a cancellation refused once its follow is confirming is still said", async
   await settled();
 
   expect(screen.getByText(/^Cancel refused · /)).toBeDefined();
+});
+
+test("a cancellation refused once its operation has finished is the shell's toast", async () => {
+  const refusing = held();
+  const rereading = held();
+  let reread = false;
+  waiting.mode = "step";
+  const api = served({
+    submission: (operation) => answer({ operation, state: "Pending" }, 202),
+    openActions: () => (reread ? rereading.answering : answer({ actions: [] })),
+    cancellation: () => refusing.answering,
+  });
+  const client = consoleQueryClient();
+  await following(api, client);
+
+  await turned(() => {
+    screen.getByRole("button", { name: "Cancel" }).click();
+  });
+  reread = true;
+  standing.state = "Answered";
+  await stepped();
+  expect(screen.getByText("Resume answered")).toBeDefined();
+
+  await turned(() => {
+    refusing.answer(answer({ error: { code: "OperationTerminal" } }, 409));
+  });
+  await settled();
+
+  expect(screen.queryByText(/^Cancel refused · /)).toBeNull();
+  expect(
+    consoleWriteWatchOf(client).unseen.map((unseen) => unseen.sentence),
+  ).toEqual([expect.stringMatching(/^Cancel refused · /)]);
+});
+
+test("a cancellation refused while its follow is drawn is no toast", async () => {
+  const client = consoleQueryClient();
+  await following(
+    accepting(() => answer({ error: { code: "OperationTerminal" } }, 409)),
+    client,
+  );
+
+  await turned(() => {
+    screen.getByRole("button", { name: "Cancel" }).click();
+  });
+  await settled();
+
+  expect(screen.getByText(/^Cancel refused · /)).toBeDefined();
+  expect(consoleWriteWatchOf(client).unseen).toEqual([]);
 });
 
 test("an unmount with the submission in flight still holds its identity", async () => {

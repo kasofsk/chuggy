@@ -24,6 +24,10 @@ import type {
 } from "../../../src/contract/responses.ts";
 import { selectorProposalNotHeldCode } from "../../../src/contract/rosters.ts";
 import { InboxScreen } from "../app/browser/Inbox.tsx";
+import {
+  consoleQueryClient,
+  consoleWriteWatchOf,
+} from "../app/core/consoleWrite.ts";
 import { inboxAsked, inboxBody, inboxEntry } from "./inboxFixture.ts";
 import {
   abilitiesEvery,
@@ -94,10 +98,9 @@ interface Reviewed {
 
 /** The inbox over whatever `fetch` the case has stubbed, and the cache it
  * reads into. */
-function inboxDrawn(): QueryClient {
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
+function inboxDrawn(
+  client = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+): QueryClient {
   render(
     <ScreenHarness
       partition={atlas}
@@ -350,4 +353,92 @@ test("a review the server failed says why, and leaves the decision to answer aga
       .getByRole("button", { name: "approve" })
       .hasAttribute("disabled"),
   ).toBe(false);
+});
+
+const other: SelectorProposalResponse = { decision: "dec-two", tickets: [9] };
+
+/**
+ * `both` refused as a fault and `other` approved, under the console's own
+ * cache; every read of the inbox after the first is held until the case lets
+ * them all go, which is the read a refusal waits on before it lands.
+ */
+function drawRefusedBeside(): {
+  readonly client: QueryClient;
+  readonly reread: () => void;
+} {
+  const waiting: (() => void)[] = [];
+  let reviewed = false;
+  const respond = (
+    url: string,
+    init?: { method?: string },
+  ): Response | Promise<Response> => {
+    if (init?.method === "POST") {
+      reviewed = true;
+      return url.includes(`/selector-proposals/${both.decision}/`)
+        ? answer({ error: { code: "InternalError", message: "fault" } }, 500)
+        : answer({ decision: other.decision, outcome: "Approved" });
+    }
+    if (inboxAsked(url))
+      return reviewed
+        ? new Promise<Response>((resolve) =>
+            waiting.push(() => {
+              resolve(inboxOver([both, other]));
+            }),
+          )
+        : inboxOver([both, other]);
+    if (url.includes("/executions")) return answer({ executions: [] });
+    return answer({ partition: atlas, sequence: 9, tickets: [] });
+  };
+  vi.stubGlobal(
+    "fetch",
+    abilitiesFetch(abilitiesEvery, ((url: string, init?: { method?: string }) =>
+      Promise.resolve(respond(url, init))) as typeof fetch),
+  );
+  const client = inboxDrawn(consoleQueryClient());
+  return {
+    client,
+    reread: () => {
+      for (const release of waiting.splice(0)) release();
+    },
+  };
+}
+
+function unseen(client: QueryClient): readonly string[] {
+  return consoleWriteWatchOf(client).unseen.map((refused) => refused.sentence);
+}
+
+const refusedSentence = "Proposal 7, 8 · Failed · InternalError";
+
+test("a refused review the notice says is no toast", async () => {
+  const api = drawRefusedBeside();
+  await settled();
+  await turned(() => {
+    within(row(7)).getByRole("button", { name: "approve" }).click();
+  });
+  await settled();
+  await turned(api.reread);
+  await settled();
+
+  expect(said()).toBe(refusedSentence);
+  expect(unseen(api.client)).toStrictEqual([]);
+});
+
+test("a refused review whose notice a later answer took is the shell's toast", async () => {
+  const api = drawRefusedBeside();
+  await settled();
+  await turned(() => {
+    within(row(7)).getByRole("button", { name: "approve" }).click();
+  });
+  await settled();
+  await turned(() => {
+    within(row(9)).getByRole("button", { name: "approve" }).click();
+  });
+  await settled();
+  expect(said()).toBe("Proposal 9 · Approved");
+
+  await turned(api.reread);
+  await settled();
+
+  expect(said()).toBe("Proposal 9 · Approved");
+  expect(unseen(api.client)).toStrictEqual([refusedSentence]);
 });

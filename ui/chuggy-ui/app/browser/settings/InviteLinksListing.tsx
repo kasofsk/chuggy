@@ -103,11 +103,14 @@ interface InviteLinkRevoking {
 }
 
 /** One revocation at a time, from its press through its question to its
- * answer. */
+ * answer, whose refusal is drawn under its row while `links` holds it. */
 function useInviteLinkRevoking(
   revocation: ConsoleWrite<string, undefined>,
+  links: readonly InviteLinkListed[],
 ): InviteLinkRevoking {
-  const revoking = useConsoleWrite(revocation, { drawn: true });
+  const revoking = useConsoleWrite(revocation, {
+    drawn: (_, revoked) => links.some((link) => link.link === revoked),
+  });
   const [asking, setAsking] = useState<string | undefined>(undefined);
   const refused = revoking.error;
   const revoked = revoking.variables;
@@ -328,7 +331,7 @@ function InviteLinkRows<Link extends InviteLinkListed>(
 export function InviteLinksListing<Link extends InviteLinkListed>(
   props: InviteLinksListed<Link>,
 ): ReactNode {
-  const revoking = useInviteLinkRevoking(props.revocation);
+  const revoking = useInviteLinkRevoking(props.revocation, props.links);
   const nowMs = useNowMs();
   if (props.links.length === 0) return null;
   const revocable = props.links.filter((link) => props.revocable(link));

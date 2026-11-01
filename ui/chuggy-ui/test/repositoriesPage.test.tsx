@@ -22,6 +22,10 @@ import type { ReactNode } from "react";
 
 import { RepositoriesPage } from "../app/browser/RepositoriesPage.tsx";
 import { apiTimeoutMsDefault } from "../app/core/apiRequest.ts";
+import {
+  consoleQueryClient,
+  consoleWriteWatchOf,
+} from "../app/core/consoleWrite.ts";
 import { forgeAuthorizeTransactionKey } from "../app/core/forgeAuthorization.ts";
 import { forgeInstallTransactionKey } from "../app/core/forgeInstallation.ts";
 import { fallbackIntervalMs } from "../app/core/projectFallback.ts";
@@ -2621,6 +2625,45 @@ test("a listing drawn again while an unbind is out asks its question busy, and s
   const said = unbindAsked()?.nextElementSibling;
   expect(said?.getAttribute("role")).toBe("status");
   expect(said?.textContent).toBe("Deferring");
+});
+
+/** A listing read again to no live binding while an unbind is out draws no
+ * question to say its refusal under. */
+test("an unbind refused once the listing holds no live binding is the shell's toast", async () => {
+  const client = consoleQueryClient();
+  const unbinding = heldAnswer();
+  await drawPage({
+    bound: liveAndRetired,
+    rebound: { repositories: [liveAndRetired.repositories[1]] },
+    posted: () => unbinding.answered,
+    client,
+  });
+  await unbindAnswered("Unbind");
+  await turned(() => {
+    void client.invalidateQueries();
+  });
+  await settled();
+  expect(
+    within(sectionOf("Repositories")).getByText("No repository bound"),
+  ).toBeDefined();
+
+  await turned(() => {
+    unbinding.release(answer({}, 404));
+  });
+  await settled();
+
+  expect(
+    consoleWriteWatchOf(client).unseen.map((unseen) => unseen.sentence),
+  ).toStrictEqual(["Not found"]);
+});
+
+test("an unbind refused under its question is no toast", async () => {
+  const client = consoleQueryClient();
+  await drawPage({ bound: liveAndRetired, posted: deferred, client });
+  await unbindAnswered("Unbind");
+
+  expect(unbindAsked()?.nextElementSibling?.textContent).toBe("Deferring");
+  expect(consoleWriteWatchOf(client).unseen).toStrictEqual([]);
 });
 
 /** Binding a retired repository again is a bind the route answers, so the

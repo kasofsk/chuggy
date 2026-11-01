@@ -150,16 +150,17 @@ function BindingRow(props: {
 
 /**
  * The listing's unbinding, where it has a column of them: the abilities read
- * did not refuse this reader the permit it asks.
+ * did not refuse this reader the permit it asks, and a binding is listed.
  */
 function useBindingUnbinding(
   partition: PartitionIdentity,
+  listed: boolean,
 ): RepositoryUnbinding | undefined {
-  const unbinding = useRepositoryUnbinding(partition);
   const refused = projectAbilityRefused(
     useProjectAbilities(partition),
     "administer",
   );
+  const unbinding = useRepositoryUnbinding(partition, listed && !refused);
   return refused ? undefined : unbinding;
 }
 
@@ -171,7 +172,10 @@ function BindingTable(props: {
   readonly action: ReactNode;
 }): ReactNode {
   const nowMs = useNowMs();
-  const unbinding = useBindingUnbinding(props.partition);
+  const unbinding = useBindingUnbinding(
+    props.partition,
+    props.bindings.length > 0,
+  );
   if (props.bindings.length === 0)
     return props.action === undefined ? (
       <EmptyState label="No repository bound" />

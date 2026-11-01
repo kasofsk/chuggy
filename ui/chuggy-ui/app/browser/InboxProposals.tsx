@@ -16,7 +16,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import type { MutationKey, QueryClient } from "@tanstack/react-query";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -31,7 +31,10 @@ import {
   consoleWriteKey,
   consoleWriteWatchOf,
 } from "../core/consoleWrite.ts";
-import type { ConsoleWrite } from "../core/consoleWrite.ts";
+import type {
+  ConsoleWrite,
+  ConsoleWriteRefused,
+} from "../core/consoleWrite.ts";
 import { inboxQuery } from "../core/ticketQueries.ts";
 import {
   inboxProposalAnswered,
@@ -144,11 +147,28 @@ export interface InboxProposalAnswers {
   readonly last: InboxProposalAnswer | undefined;
 }
 
+/** Whether the notice says `refused`, which it does only while the answer
+ * it holds is that refusal: one the server never answered is reported to no
+ * notice, and a later answer takes its place. */
+function inboxProposalNoticeDraws(
+  last: InboxProposalAnswer | undefined,
+  refused: ConsoleWriteRefused,
+): boolean {
+  return last !== undefined && inboxProposalSentence(last) === refused.message;
+}
+
 /** Every review of the project's decisions the cache holds, watched for as
- * long as the inbox is drawn so the notice is what says a refusal the server
- * answered; one it never answered is reported to no notice. */
-function useInboxProposalReviewsWatched(partition: PartitionIdentity): void {
+ * long as the inbox is drawn so the notice is what says a refusal it holds,
+ * asked of the answer it last drew. */
+function useInboxProposalReviewsWatched(
+  partition: PartitionIdentity,
+  last: InboxProposalAnswer | undefined,
+): void {
   const client = useQueryClient();
+  const drawn = useRef(last);
+  useEffect(() => {
+    drawn.current = last;
+  });
   const keys = useMutationState({
     filters: { mutationKey: inboxProposalReviewKey(partition) },
     select: (mutation) => mutation.options.mutationKey ?? [],
@@ -158,7 +178,9 @@ function useInboxProposalReviewsWatched(partition: PartitionIdentity): void {
     () => {
       const watch = consoleWriteWatchOf(client);
       const released = keys.map((key) =>
-        watch.watched(key, (refused) => refused.failure !== undefined),
+        watch.watched(key, (refused) =>
+          inboxProposalNoticeDraws(drawn.current, refused),
+        ),
       );
       return () => {
         for (const release of released) release();
@@ -175,8 +197,8 @@ export function useInboxProposalAnswers(
   partition: PartitionIdentity,
 ): InboxProposalAnswers {
   const client = useQueryClient();
-  useInboxProposalReviewsWatched(partition);
   const [last, setLast] = useState<InboxProposalAnswer | undefined>(undefined);
+  useInboxProposalReviewsWatched(partition, last);
   const { tenant, project } = partition;
   useEffect(() => {
     const heard = inboxProposalHeardOf(client);
@@ -247,16 +269,19 @@ function InboxProposalReject(props: {
 }
 
 /** Approve and Reject for one decision, each press its own review of it, and
- * neither pressable while any row's review of the decision is out. */
+ * neither pressable while any row's review of the decision is out; a refusal
+ * is the inbox's notice. */
 function InboxProposalAction(props: {
-  readonly partition: PartitionIdentity;
+  readonly answers: InboxProposalAnswers;
   readonly proposal: SelectorProposalResponse;
   readonly rejecting: boolean;
   readonly onRejecting: (rejecting: boolean) => void;
 }): ReactNode {
   const proposal = props.proposal;
-  const write = inboxProposalReviewWrite(props.partition, proposal);
-  const reviewing = useConsoleWrite(write, { drawn: true });
+  const write = inboxProposalReviewWrite(props.answers.partition, proposal);
+  const reviewing = useConsoleWrite(write, {
+    drawn: (refused) => inboxProposalNoticeDraws(props.answers.last, refused),
+  });
   const sending =
     useIsMutating({ mutationKey: write.mutationKey, exact: true }) > 0;
   const answer = (outcome: SelectorReviewOutcome, note: string): void => {
@@ -315,7 +340,7 @@ export function InboxProposalActions(props: {
   return props.proposals.map((proposal) => (
     <InboxProposalAction
       key={proposal.decision}
-      partition={props.answers.partition}
+      answers={props.answers}
       proposal={proposal}
       rejecting={rejecting === proposal.decision}
       onRejecting={(opened) => {

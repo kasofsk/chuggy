@@ -72,8 +72,8 @@ function threadRenameWrite(
   );
 }
 
-/** The thread closed, wherever the control that closes it is drawn. */
-export function threadCloseWrite(
+/** The thread closed, from its entry's actions. */
+function threadCloseWrite(
   home: ThreadHome,
   session: string,
 ): ConsoleWrite<undefined, unknown> {
