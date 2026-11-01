@@ -4,17 +4,15 @@
  * or whose message the door handed back, is taken back at once.
  */
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, renderHook } from "@testing-library/react";
-import type { ReactNode } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 
-import { SessionProvider } from "../app/browser/session.tsx";
 import { useThreadSend } from "../app/browser/thread/threadSend.tsx";
-import { holderDouble, settled } from "./screenHarness.tsx";
+import { settled } from "./screenHarness.tsx";
 import { threadPartition } from "./threadFixture.ts";
 import { stageAnswered, stageDoor } from "./threadStopStage.tsx";
 import type { StageDoors } from "./threadStopStage.tsx";
+import { threadSendWrapped } from "./threadSendWrapped.tsx";
 
 afterEach(() => {
   cleanup();
@@ -24,9 +22,6 @@ afterEach(() => {
 /** The hook under one thread, with every message and stop held for the case. */
 function held(doors: StageDoors) {
   vi.stubGlobal("fetch", stageDoor(doors));
-  const client = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
   return renderHook(
     () =>
       useThreadSend({
@@ -34,15 +29,7 @@ function held(doors: StageDoors) {
         session: "thread-1",
         takes: true,
       }),
-    {
-      wrapper: (props: { readonly children: ReactNode }) => (
-        <QueryClientProvider client={client}>
-          <SessionProvider holder={holderDouble()}>
-            {props.children}
-          </SessionProvider>
-        </QueryClientProvider>
-      ),
-    },
+    { wrapper: threadSendWrapped() },
   );
 }
 

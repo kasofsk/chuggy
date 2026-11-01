@@ -19,7 +19,7 @@ import {
   chatPaneToggled,
 } from "../app/core/chatPane.ts";
 import type { ChatPaneState } from "../app/core/chatPane.ts";
-import { ConsoleStoreProvided } from "./consoleStoreProvided.tsx";
+import { ConsoleStoreBareProvided } from "./consoleStoreBare.tsx";
 import { viewportAtEm } from "./viewport.ts";
 
 afterEach(() => {
@@ -54,9 +54,9 @@ function Held(): ReactNode {
 function drawn(twoColumn: boolean): ReactNode {
   viewportAt(twoColumn);
   return (
-    <ConsoleStoreProvided>
+    <ConsoleStoreBareProvided>
       <Held />
-    </ConsoleStoreProvided>
+    </ConsoleStoreBareProvided>
   );
 }
 
@@ -128,9 +128,9 @@ function Moved(): ReactNode {
 function moving(twoColumn: boolean): ReactNode {
   viewportAt(twoColumn);
   return (
-    <ConsoleStoreProvided>
+    <ConsoleStoreBareProvided>
       <Moved />
-    </ConsoleStoreProvided>
+    </ConsoleStoreBareProvided>
   );
 }
 

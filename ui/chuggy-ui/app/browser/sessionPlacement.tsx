@@ -4,7 +4,6 @@
  * or the reader's chat host, cannot take a turn now.
  */
 
-import { useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
@@ -61,21 +60,6 @@ export function useSessionRunnerShort(
  * every write held as one moves it, and a failed read does not. */
 export function useSessionPlacementReads(partition: PartitionIdentity): number {
   return usePanelAnswers(sessionPlacementQuery(partition).queryKey);
-}
-
-/** Reads the placement again now, for a door whose refusal is newer than it:
- * the route or the reader's runner has moved since the last poll. Answers, once
- * the read has, how many reads had answered when the refusal arrived. */
-export function useSessionPlacementStale(
-  partition: PartitionIdentity,
-): () => Promise<number> {
-  const client = useQueryClient();
-  const key = sessionPlacementQuery(partition).queryKey;
-  return async () => {
-    const reads = client.getQueryState(key)?.dataUpdateCount ?? 0;
-    await client.invalidateQueries({ queryKey: key });
-    return reads;
-  };
 }
 
 function SessionRunnerAddLink(props: {

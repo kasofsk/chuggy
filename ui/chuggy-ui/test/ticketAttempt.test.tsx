@@ -42,7 +42,6 @@ import {
   consoleQueryClient,
   consoleWriteWatchOf,
 } from "../app/core/consoleWrite.ts";
-import { consoleStore } from "../app/browser/store.ts";
 import type { ConsoleStore } from "../app/browser/store.ts";
 import {
   ticketAttemptAt,
@@ -53,6 +52,7 @@ import { ticketInstants } from "./ticketInstants.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 import { readFailedLines } from "./readFailedLines.ts";
+import { consoleStoreBare } from "./consoleStoreBare.tsx";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -235,7 +235,7 @@ const tabStores = new WeakMap<QueryClient, ConsoleStore>();
 function tabStoreOf(client: QueryClient): ConsoleStore {
   const standing = tabStores.get(client);
   if (standing !== undefined) return standing;
-  const store = consoleStore();
+  const store = consoleStoreBare(client);
   tabStores.set(client, store);
   return store;
 }

@@ -41,6 +41,7 @@ import {
   threadTranscriptPage,
 } from "./threadFixture.ts";
 import { readFailedLines } from "./readFailedLines.ts";
+import { ConsoleStoreProvided } from "./consoleStoreProvided.tsx";
 
 beforeEach(() => {
   resizeObserverStubbed();
@@ -174,7 +175,9 @@ async function mountedAt(
           new QueryClient({ defaultOptions: { queries: { retry: false } } })
         }
       >
-        <RouterProvider router={router} />
+        <ConsoleStoreProvided>
+          <RouterProvider router={router} />
+        </ConsoleStoreProvided>
       </QueryClientProvider>
     </SessionProvider>,
   );

@@ -6,8 +6,8 @@
  * WHAT NEVER ENTERS IT. A server's answer, which is TanStack Query's, and a
  * held draft's `DraftResponse` is not one: it is the console's own record of
  * its submission, and nothing refreshes it. A token or a one-time secret; a
- * function; a DOM node; a promise; and text that changes per token or per
- * keystroke. The one exception is the question typed
+ * function; a DOM node; a promise; bytes; and text that changes per token or
+ * per keystroke. The one exception is the question typed
  * at an inquiry box, because the pair held beside it is a retry of that
  * question and no other, so the two are kept together or not at all. What the URL
  * holds stays in the URL, and what only one component draws stays in that
@@ -18,7 +18,9 @@
  * beside the query client, and once by each case, so no state crosses from one
  * case to the next. A write that reports into it takes the dispatch when it
  * mounts, and the store outliving every screen is what keeps that dispatch
- * good after the screen is gone.
+ * good after the screen is gone. A thunk reaches the API and the query cache
+ * through its `extra`, made over the services the store is given, and so does
+ * what a thunk holds that may not enter the store.
  *
  * THE DEVTOOLS ARE A DEVELOPMENT BUILD'S, because what a reader typed is in
  * the actions they log.
@@ -31,6 +33,9 @@ import { creationDraftsHeld } from "./creationDraftsHeld.ts";
 import { inboxProposalHeard } from "./inboxProposalHeard.ts";
 import { inquiryBoxes } from "./lead/inquiryBoxes.ts";
 import { chatPanes } from "./shell/chatPanes.ts";
+import { threadSendsCarriedMade } from "./storeExtra.ts";
+import type { ConsoleExtra, ConsoleServices } from "./storeExtra.ts";
+import { threadSends } from "./thread/threadSends.ts";
 import { ticketAttempts } from "./ticketAttempts.ts";
 
 const consoleReducer = combineSlices(
@@ -39,13 +44,19 @@ const consoleReducer = combineSlices(
   ticketAttempts,
   creationDraftsHeld,
   chatPanes,
+  threadSends,
 );
 
 export type ConsoleState = ReturnType<typeof consoleReducer>;
 
-export function consoleStore() {
+export function consoleStore(services: ConsoleServices) {
+  const extra: ConsoleExtra = {
+    ...services,
+    threadSends: threadSendsCarriedMade(),
+  };
   return configureStore({
     reducer: consoleReducer,
+    middleware: (defaults) => defaults({ thunk: { extraArgument: extra } }),
     devTools: import.meta.env.DEV,
   });
 }

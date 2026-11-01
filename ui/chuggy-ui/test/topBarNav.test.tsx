@@ -18,7 +18,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { TopBarNavEntry } from "../app/browser/shell/TopBar.tsx";
 import { shellNav } from "../app/core/shellNav.ts";
-import { ConsoleStoreProvided } from "./consoleStoreProvided.tsx";
+import { ConsoleStoreBareProvided } from "./consoleStoreBare.tsx";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
@@ -30,7 +30,7 @@ afterEach(() => {
 
 function Bar(): ReactNode {
   return (
-    <ConsoleStoreProvided>
+    <ConsoleStoreBareProvided>
       <nav aria-label="Console">
         <ul>
           {shellNav({ partition: atlas }).map((entry) => (
@@ -39,7 +39,7 @@ function Bar(): ReactNode {
         </ul>
       </nav>
       <Outlet />
-    </ConsoleStoreProvided>
+    </ConsoleStoreBareProvided>
   );
 }
 

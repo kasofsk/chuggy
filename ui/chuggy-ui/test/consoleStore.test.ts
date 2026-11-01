@@ -7,7 +7,6 @@
 
 import { expect, test } from "vitest";
 
-import { consoleStore } from "../app/browser/store.ts";
 import {
   inquiryBoxAnsweredAt,
   inquiryBoxAt,
@@ -22,6 +21,7 @@ import {
 } from "../app/browser/inboxProposalHeard.ts";
 import { inquiryBoxEmpty, inquiryDraw } from "../app/core/leadInquiries.ts";
 import type { InboxProposalAnswer } from "../app/core/inboxProposals.ts";
+import { consoleStoreBare } from "./consoleStoreBare.tsx";
 
 const atlas = { tenant: "acme", project: "atlas" };
 const borealis = { tenant: "acme", project: "borealis" };
@@ -32,14 +32,16 @@ const approved: InboxProposalAnswer = {
 };
 
 test("each store holds its own boxes, so nothing crosses from one to the next", () => {
-  const first = consoleStore();
+  const first = consoleStoreBare();
   first.dispatch(inquiryBoxTypedAt({ partition: atlas, typed: "why" }));
   expect(inquiryBoxAt(first.getState(), atlas).typed).toBe("why");
-  expect(inquiryBoxAt(consoleStore().getState(), atlas)).toBe(inquiryBoxEmpty);
+  expect(inquiryBoxAt(consoleStoreBare().getState(), atlas)).toBe(
+    inquiryBoxEmpty,
+  );
 });
 
 test("a box keeps its pair through a refusal and spends it on an accepted send", () => {
-  const store = consoleStore();
+  const store = consoleStoreBare();
   store.dispatch(inquiryBoxTypedAt({ partition: atlas, typed: "why" }));
   const draw = inquiryDraw(undefined, "why", atlas, () => "pair-1");
   store.dispatch(inquiryBoxSentAt(draw));
@@ -63,7 +65,7 @@ test("a box keeps its pair through a refusal and spends it on an accepted send",
 });
 
 test("an inbox answer is heard only while an inbox of its project is drawn", () => {
-  const store = consoleStore();
+  const store = consoleStoreBare();
   store.dispatch(inboxProposalHeardAt({ partition: atlas, answer: approved }));
   store.dispatch(inboxProposalDrawnAt(atlas));
   expect(
@@ -78,7 +80,7 @@ test("an inbox answer is heard only while an inbox of its project is drawn", () 
 /** A strict double-invoke draws, leaves and draws again, and the line it
  * heard dies only with the last inbox of its project. */
 test("an inbox answer dies with the last inbox of its project", () => {
-  const store = consoleStore();
+  const store = consoleStoreBare();
   store.dispatch(inboxProposalDrawnAt(atlas));
   store.dispatch(inboxProposalDrawnAt(atlas));
   store.dispatch(inboxProposalHeardAt({ partition: atlas, answer: approved }));

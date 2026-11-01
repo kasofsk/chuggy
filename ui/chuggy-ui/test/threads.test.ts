@@ -27,7 +27,13 @@ import {
   threadActions,
   threadKeptClosed,
   threadKeptWith,
-  threadKeptWithout,
+  threadSendBegan,
+  threadSendEnded,
+  threadSendFirstLeft,
+  threadSendOpened,
+  threadSendRecordEmpty,
+  threadSendTaken,
+  threadSendTurnsNamed,
   threadOpenAtLimit,
   threadOpenKeyBytesCount,
   threadOpenKeyMinted,
@@ -54,7 +60,11 @@ import {
   threadWriting,
   threadsByStanding,
 } from "../app/core/threads.ts";
-import type { ThreadDoor, ThreadSending } from "../app/core/threads.ts";
+import type {
+  ThreadDoor,
+  ThreadSending,
+  ThreadSendRecord,
+} from "../app/core/threads.ts";
 import { threadEntry, threadWakeInput } from "./threadFixture.ts";
 
 function turnOf(turn: Partial<ThreadTurnResponse>): ThreadTurnResponse {
@@ -637,38 +647,76 @@ describe("whether a store the thread does not name is missing", () => {
 
 describe("what is kept for a thread that is not drawn", () => {
   const refused = { send: "Refused", what: "Send" } as const;
-  const shot = { mediaType: "image/png", content: new Uint8Array([1]) };
-  const one = { text: "one", attached: [shot], turn: "t1", send: refused };
-  const two = { text: "two", attached: [], turn: "t2", send: refused };
-
-  test("a thread is held one text, a second handed back going under the first as a text no one turn sent", () => {
-    const first = threadKeptWith(new Map(), "a", one);
-    expect([...first]).toStrictEqual([["a", one]]);
-    const both = threadKeptWith(threadKeptWith(first, "b", two), "a", two);
-    expect(both.get("a")).toStrictEqual({
-      text: "one\n\ntwo",
-      attached: [shot],
-      turn: undefined,
+  const one = { turn: "t1", text: "one" };
+  const two = { turn: "t2", text: "two" };
+  const pressed = (
+    record: ThreadSendRecord,
+    sent: { readonly turn: string; readonly text: string },
+    away: boolean,
+  ): ThreadSendRecord =>
+    threadSendEnded(threadSendBegan(record, sent), {
+      sent,
       send: refused,
+      away,
     });
-    expect(both.get("b")).toBe(two);
+
+  test("a thread is kept one text, a second handed back going under the first as a text no one turn sent", () => {
+    const first = pressed(threadSendRecordEmpty, one, true);
+    expect(first.kept).toStrictEqual({ text: "one", turns: ["t1"] });
+    expect(first.held, "the kept text is the record's last press").toBe(one);
+    const both = pressed(first, two, true);
+    expect(both.kept).toStrictEqual({
+      text: "one\n\ntwo",
+      turns: ["t1", "t2"],
+    });
+    expect(both.held, "no one turn sent what is kept").toBeUndefined();
+    expect(threadKeptWith(undefined, { text: "x", turns: [] })).toStrictEqual({
+      text: "x",
+      turns: [],
+    });
   });
 
-  test("what a box took is held no longer, and the same is handed back where nothing was held for it", () => {
-    const held = threadKeptWith(new Map(), "a", one);
-    expect(threadKeptWithout(held, ["b"])).toBe(held);
-    expect([...threadKeptWithout(held, ["a"])]).toStrictEqual([]);
+  test("a press refused while a box that pressed is drawn keeps nothing, and is held for the next press", () => {
+    const drawn = pressed(threadSendRecordEmpty, one, false);
+    expect(drawn.kept).toBeUndefined();
+    expect(drawn.held).toBe(one);
+    expect(drawn.sending).toStrictEqual([]);
+    expect(drawn.pressesOut).toBe(0);
   });
 
-  test("a thread the listing says takes nothing more is one to hold nothing for", () => {
-    const held = threadKeptWith(threadKeptWith(new Map(), "a", one), "b", two);
-    expect(
-      threadKeptClosed(held, [
-        { session: "a", state: "Closed" },
-        { session: "b", state: "Open" },
-        { session: "c", state: "Closed" },
-      ]),
-    ).toStrictEqual(["a"]);
+  test("what a box took is kept no longer, and the turns it named are named no longer", () => {
+    const kept = pressed(threadSendRecordEmpty, one, true);
+    expect([...threadSendTurnsNamed({ a: kept })]).toStrictEqual(["t1"]);
+    const taken = threadSendTaken(kept);
+    expect(taken.kept).toBeUndefined();
+    expect([...threadSendTurnsNamed({ a: taken })], "held").toStrictEqual([
+      "t1",
+    ]);
+    const sent = threadSendEnded(threadSendBegan(taken, one), {
+      sent: one,
+      send: { send: "Sent", ordinal: 1 },
+      away: true,
+    });
+    expect([...threadSendTurnsNamed({ a: sent })]).toStrictEqual([]);
+  });
+
+  test("a thread that takes nothing more is one to keep nothing for", () => {
+    const kept = pressed(threadSendRecordEmpty, one, true);
+    expect(threadKeptClosed(kept, false)).toBe(true);
+    expect(threadKeptClosed(kept, true)).toBe(false);
+    expect(threadKeptClosed(threadSendRecordEmpty, false)).toBe(false);
+  });
+
+  test("a first box leaves nothing unless a press is out or a message kept", () => {
+    const out = threadSendBegan(threadSendRecordEmpty, one);
+    expect(threadSendFirstLeft(out)).toBe(out);
+    const kept = pressed(threadSendRecordEmpty, one, true);
+    expect(threadSendFirstLeft(kept)).toBe(kept);
+    const opened = threadSendOpened(
+      pressed(threadSendRecordEmpty, one, false),
+      "thread-1",
+    );
+    expect(threadSendFirstLeft(opened)).toBe(threadSendRecordEmpty);
   });
 });
 

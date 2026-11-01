@@ -16,7 +16,6 @@
  */
 
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useQueryClient } from "@tanstack/react-query";
 import { useMemo } from "react";
 import type { ReactNode } from "react";
 
@@ -45,7 +44,6 @@ import { TopBar } from "./shell/TopBar.tsx";
 import { StreamPortsProvider } from "./stream.tsx";
 import { MemberThreadConversation } from "./thread/ThreadConversation.tsx";
 import {
-  memberChatReread,
   useChatAbilities,
   useMemberChatThreads,
   useMemberThread,
@@ -156,12 +154,8 @@ function MemberChatThread(props: {
   readonly own: readonly ThreadEntryResponse[];
   readonly projects: readonly MemberChatProjectThread[];
 }): ReactNode {
-  const client = useQueryClient();
   const state = useMemberThread(props.tenant, props.session);
   const home = { scope: "Member", tenant: props.tenant } as const;
-  const reread = (): void => {
-    void memberChatReread(client, props.tenant, props.session);
-  };
   return (
     <>
       <MemberChatBar {...props}>
@@ -179,7 +173,6 @@ function MemberChatThread(props: {
             tenant={props.tenant}
             thread={state.value}
             named
-            onSent={reread}
           />
         </div>
       ) : (
@@ -197,7 +190,6 @@ function MemberChatOpen(props: {
 }): ReactNode {
   const { tenant, session } = props;
   const navigate = useNavigate();
-  const client = useQueryClient();
   const threads = useMemberChatThreads(tenant);
   const { own, projects } = memberChatThreadsParted(
     tenant,
@@ -229,7 +221,6 @@ function MemberChatOpen(props: {
         <MemberChatFirst
           tenant={tenant}
           onStarted={(started) => {
-            void memberChatReread(client, tenant, started);
             void navigate({
               to: memberChatRoutes.thread,
               params: { tenant, session: started },

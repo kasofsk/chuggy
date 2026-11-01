@@ -27,12 +27,14 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { Provider } from "react-redux";
 
+import { apiPortsOver } from "../core/apiPorts.ts";
 import { createInviteHolder } from "../core/inviteHolder.ts";
 import { consoleQueryClient } from "../core/consoleWrite.ts";
 import { App } from "./App.tsx";
 import { InviteProvider } from "./InvitePage.tsx";
 import {
   anchorHeard,
+  apiFetch,
   cookiesRead,
   cookieWritten,
   currentAnchor,
@@ -41,6 +43,7 @@ import {
   reloadLocation,
   replaceLocation,
   replacePath,
+  sleepMs,
 } from "./ports.ts";
 import {
   SessionProvider,
@@ -53,9 +56,12 @@ import "../styles.css";
 
 const queryClient = consoleQueryClient();
 
-const store = consoleStore();
-
 const holder = sessionHolderOpened();
+
+const store = consoleStore({
+  ports: apiPortsOver(holder, apiFetch, sleepMs),
+  client: queryClient,
+});
 
 const invite = createInviteHolder({
   location: currentLocation,

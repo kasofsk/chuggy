@@ -1,8 +1,9 @@
 /**
  * The chat pane as the console holds it: where it sits and how much of the
  * frame it takes, and a record per project of the thread the reader picked,
- * the thread held for a reader who picked none, and New's open key. What each
- * move does is `core/chatPane.ts`'s.
+ * the thread held for a reader who picked none, New's open key, and a first
+ * message's hand-over to the thread it opened. What each move does is
+ * `core/chatPane.ts`'s.
  *
  * A store a browser refuses is read as empty and written to in vain, so what is
  * drawn is the state held here and never a re-read. A pick is not stored,
@@ -23,11 +24,16 @@ import {
   chatPaneHoldRead,
   chatPaneHoldWritten,
   chatPaneOpened,
+  chatPaneOpening,
   chatPaneOpenKeyHeld,
   chatPanePicked,
+  chatPaneOpeningRead,
   chatPaneRecordOf,
   chatPaneRecordWith,
+  chatPaneStarting,
+  chatPaneStayed,
 } from "../../core/chatPane.ts";
+import type { ChatPaneRecord } from "../../core/chatPane.ts";
 import type {
   ChatPaneHold,
   ChatPaneRecords,
@@ -48,6 +54,18 @@ export interface ChatPanesHeld {
 interface ChatPaneSessionAt {
   readonly partition: PartitionIdentity;
   readonly session: string;
+}
+
+/** The pane's records with one project's moved by `move`. */
+function chatPanesWith(
+  held: ChatPanesHeld,
+  partition: PartitionIdentity,
+  move: (record: ChatPaneRecord) => ChatPaneRecord,
+): ChatPanesHeld {
+  return {
+    ...held,
+    records: chatPaneRecordWith(held.records, partition, move),
+  };
 }
 
 export const chatPanes = createSlice({
@@ -105,6 +123,16 @@ export const chatPanes = createSlice({
         (record) => chatPaneOpened(record, action.payload.session),
       ),
     }),
+    chatPaneStartingAt: (held, action: PayloadAction<PartitionIdentity>) =>
+      chatPanesWith(held, action.payload, chatPaneStarting),
+    chatPaneStayedAt: (held, action: PayloadAction<PartitionIdentity>) =>
+      chatPanesWith(held, action.payload, chatPaneStayed),
+    chatPaneOpeningAt: (held, action: PayloadAction<ChatPaneSessionAt>) =>
+      chatPanesWith(held, action.payload.partition, (record) =>
+        chatPaneOpening(record, action.payload.session),
+      ),
+    chatPaneReadAt: (held, action: PayloadAction<PartitionIdentity>) =>
+      chatPanesWith(held, action.payload, chatPaneOpeningRead),
   },
   selectors: {
     chatPaneHoldOf: (held) => held.hold,
@@ -119,6 +147,10 @@ export const {
   chatPaneDefaultHeldAt,
   chatPaneOpenKeyHeldAt,
   chatPaneOpenedAt,
+  chatPaneStartingAt,
+  chatPaneStayedAt,
+  chatPaneOpeningAt,
+  chatPaneReadAt,
 } = chatPanes.actions;
 
 export const { chatPaneHoldOf, chatPaneRecordAt } = chatPanes.selectors;

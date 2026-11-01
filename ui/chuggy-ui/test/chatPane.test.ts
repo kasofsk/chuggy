@@ -690,11 +690,15 @@ test("a record is a project's own, and an open answered picks its thread and spe
     picked: "opened",
     defaulted: "held",
     openKey: undefined,
+    starting: false,
+    opening: undefined,
   });
   expect(chatPaneRecordOf(records, beta)).toStrictEqual({
     picked: "picked-b",
     defaulted: undefined,
     openKey: "key-b",
+    starting: false,
+    opening: undefined,
   });
   expect(
     chatPaneRecordOf(records, { ...atlas, tenant: "other" }),
@@ -702,6 +706,8 @@ test("a record is a project's own, and an open answered picks its thread and spe
     picked: undefined,
     defaulted: undefined,
     openKey: undefined,
+    starting: false,
+    opening: undefined,
   });
 });
 

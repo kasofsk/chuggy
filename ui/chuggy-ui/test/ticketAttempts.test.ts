@@ -7,7 +7,6 @@
 import { expect, test } from "vitest";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
-import { consoleStore } from "../app/browser/store.ts";
 import {
   ticketAttemptAt,
   ticketAttemptDroppedAt,
@@ -19,6 +18,7 @@ import {
   operationSubmitting,
 } from "../app/core/operationFollow.ts";
 import type { TicketAttempt } from "../app/core/ticketActions.ts";
+import { consoleStoreBare } from "./consoleStoreBare.tsx";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 const borealis: PartitionIdentity = { tenant: "acme", project: "borealis" };
@@ -34,7 +34,7 @@ function resuming(ticket: number, operation: string): TicketAttempt {
 }
 
 test("what ends a held record is the console dropping it, and only that ticket's", () => {
-  const store = consoleStore();
+  const store = consoleStoreBare();
   const attempt = (partition: PartitionIdentity, ticket: number) =>
     ticketAttemptAt(store.getState(), partition, ticket);
   store.dispatch(
@@ -65,7 +65,7 @@ test("what ends a held record is the console dropping it, and only that ticket's
 });
 
 test("a press where nothing stands draws an identity and holds it before it is sent", () => {
-  const store = consoleStore();
+  const store = consoleStoreBare();
   const action = resuming(11, "unused").action;
   const pressed = store.dispatch(ticketAttemptPressed(atlas, 11, action));
   expect(pressed.startedFrom).toEqual(operationSubmitting());
@@ -74,7 +74,7 @@ test("a press where nothing stands draws an identity and holds it before it is s
 });
 
 test("a press where a record stands follows it, even where it names another action", () => {
-  const store = consoleStore();
+  const store = consoleStoreBare();
   store.dispatch(
     ticketAttemptHeldAt({
       partition: atlas,
