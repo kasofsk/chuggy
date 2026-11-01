@@ -15,8 +15,8 @@
  *
  * A LINE'S LENGTH IS HELD PER PART. A line joined from two, as a creation's
  * refusal is to where its draft stands in `‹reason› · ‹held›`, keeps both facts
- * and may run longer than either; `test/codeSentencesShort.test.ts` holds each
- * part to the limit.
+ * and may run longer than either;
+ * `ui/chuggy-ui/test/codeSentencesShort.test.ts` holds each part to the limit.
  */
 
 import {
