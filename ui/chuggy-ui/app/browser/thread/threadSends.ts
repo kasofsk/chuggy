@@ -563,13 +563,37 @@ export function threadSendKeptListed(
 /** A first box went. Where its record empties, a project's pane ends the
  * start too, so it draws the thread an open answered rather than a first box
  * that would open another. */
-export function threadSendFirstGone(home: ThreadHome): ThreadSendsThunk<void> {
+function threadSendFirstGone(home: ThreadHome): ThreadSendsThunk<void> {
   return (dispatch, getState) => {
     const name = threadSendRecordName(home, undefined);
     dispatch(threadSendLetGo(threadSendFirstLeftAt({ name })));
     const emptied = threadSendAt(getState(), name) === threadSendRecordEmpty;
     if (emptied && home.scope === "Project")
       dispatch(chatPaneReadAt(home.partition));
+  };
+}
+
+/**
+ * A first box drawn, answering how it is let go. Its record goes only once no
+ * first box of its home is drawn after the cleanup that let it go, so a box
+ * drawn again at once, as `StrictMode` draws every box it mounts, keeps what
+ * the box took in its first drawing.
+ */
+export function threadSendFirstDrawn(
+  home: ThreadHome,
+): ThreadSendsThunk<() => void> {
+  return (dispatch, _getState, extra) => {
+    const name = threadSendRecordName(home, undefined);
+    const { firstDrawn } = extra.threadSends;
+    firstDrawn.set(name, (firstDrawn.get(name) ?? 0) + 1);
+    return () => {
+      const left = (firstDrawn.get(name) ?? 1) - 1;
+      if (left > 0) firstDrawn.set(name, left);
+      else firstDrawn.delete(name);
+      queueMicrotask(() => {
+        if (!firstDrawn.has(name)) dispatch(threadSendFirstGone(home));
+      });
+    };
   };
 }
 

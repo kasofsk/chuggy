@@ -22,10 +22,12 @@ export interface ConsoleServices {
 export type ThreadSendFlight = Promise<string | undefined>;
 
 /** What the thread sends hold that is bytes or a promise, each by the turn a
- * record names it under, and what each image the project took answered. */
+ * record names it under, what each image the project took answered, and how
+ * many first boxes are drawn by the record they draw. */
 export interface ThreadSendsCarried {
   readonly images: Map<string, readonly ConversationAttachment[]>;
   readonly flights: Map<string, ThreadSendFlight>;
+  readonly firstDrawn: Map<string, number>;
   readonly uploaded: WeakMap<
     ConversationAttachment,
     { readonly project: string; readonly artifact: string }
@@ -37,5 +39,10 @@ export interface ConsoleExtra extends ConsoleServices {
 }
 
 export function threadSendsCarriedMade(): ThreadSendsCarried {
-  return { images: new Map(), flights: new Map(), uploaded: new WeakMap() };
+  return {
+    images: new Map(),
+    flights: new Map(),
+    firstDrawn: new Map(),
+    uploaded: new WeakMap(),
+  };
 }

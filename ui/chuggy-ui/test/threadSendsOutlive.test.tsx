@@ -128,8 +128,9 @@ interface Drawn {
 }
 
 /** One tab drawing `shown` under one store and client, which every screen it
- * moves to keeps. */
-async function drawn(shown: Screen): Promise<Drawn> {
+ * moves to keeps, under `StrictMode` where `strict` says, as `main.tsx` draws
+ * the console. */
+async function drawn(shown: Screen, strict = false): Promise<Drawn> {
   const server = streamServer([stageProjectOpening], "token", [
     stageLiveOpening(),
     stageLiveOpening(),
@@ -155,7 +156,7 @@ async function drawn(shown: Screen): Promise<Drawn> {
       </Routed>
     </ScreenHarness>
   );
-  const view = render(tree(shown));
+  const view = render(tree(shown), { reactStrictMode: strict });
   await settled();
   return {
     to: async (at) => {
@@ -259,6 +260,29 @@ test("a first message refused with the pane collapsed is back in the box on expa
   ]);
 });
 
+test("a first message whose thread is listed, refused with the pane collapsed under StrictMode, is back in the box on expanding, and the next press opens no second thread", async () => {
+  const listed: string[] = [];
+  const site = siteStubbed(listed);
+  await drawn("Pane", true);
+  await stageSent(words);
+  await settled();
+  expect(site.opens).toHaveLength(1);
+  listed.push(opened);
+
+  await collapsed();
+  await stageAnswered(site.sends[0], refusal, 400);
+  await expanded();
+  expect(stageBox().value).toBe(words);
+  expect(screen.getAllByText("Not sent")).toHaveLength(1);
+
+  await pressedAgain();
+  expect(site.opens).toHaveLength(1);
+  expect(site.sends.map((sent) => sent.session)).toStrictEqual([
+    opened,
+    opened,
+  ]);
+});
+
 test("a first press whose open's answer was lost, pressed again after the pane collapsed and expanded, opens under the same key and one thread results", async () => {
   const site = siteStubbed([], true);
   await drawn("Pane");
@@ -334,6 +358,22 @@ test("a first message answered while the pane is collapsed is drawn in its threa
     expect(threadDrawn()).toBe(true);
   });
   expect(stageBox().value).toBe("");
+  expect(site.opens).toHaveLength(1);
+});
+
+test("a first message answered while the pane is collapsed under StrictMode is drawn in its thread on expanding", async () => {
+  const site = siteStubbed([]);
+  await drawn("Pane", true);
+  await stageSent(words);
+  await settled();
+
+  await collapsed();
+  const [sent] = site.sends;
+  await stageAnswered(sent, { turn: sent?.turn, ordinal: 1 }, 202);
+  await expanded();
+  await waitFor(() => {
+    expect(threadDrawn()).toBe(true);
+  });
   expect(site.opens).toHaveLength(1);
 });
 

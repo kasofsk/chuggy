@@ -60,7 +60,7 @@ import { useConsoleDispatch, useConsoleSelector } from "../store.ts";
 import { Notice } from "../ui/Notice.tsx";
 import {
   threadSendAt,
-  threadSendFirstGone,
+  threadSendFirstDrawn,
   threadSendIdledAt,
   threadSendKeptAttached,
   threadSendKeptClosed,
@@ -237,7 +237,7 @@ function useThreadSendDrawn(): () => boolean {
 /**
  * What the record lets go of for what is drawn: the messages the read lists,
  * what is kept for a thread that takes nothing more, and a first box's record
- * as the box goes.
+ * once no first box of its home is drawn.
  */
 function useThreadSendLetGo(
   name: string,
@@ -258,12 +258,11 @@ function useThreadSendLetGo(
   useEffect(() => {
     if (closed) dispatch(threadSendKeptClosed(name));
   }, [closed, name, dispatch]);
-  useEffect(
-    () => () => {
-      if (first) dispatch(threadSendFirstGone(threadHomeFromNamed(named)));
-    },
-    [first, named, dispatch],
-  );
+  useEffect(() => {
+    if (first)
+      return dispatch(threadSendFirstDrawn(threadHomeFromNamed(named)));
+    return undefined;
+  }, [first, named, dispatch]);
 }
 
 /** What is kept for the thread, handed to its box. */
