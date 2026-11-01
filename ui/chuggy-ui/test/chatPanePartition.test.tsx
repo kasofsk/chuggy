@@ -7,12 +7,11 @@
  */
 
 import { QueryClient } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { ChatPane } from "../app/browser/shell/ChatPane.tsx";
-import { ChatPaneProvider } from "../app/browser/shell/chatPaneHeld.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { Routed } from "./routed.tsx";
 import { answer, ScreenHarness, settled } from "./screenHarness.tsx";
@@ -29,10 +28,12 @@ import {
   stageSent,
 } from "./threadStopStage.tsx";
 import type { StageDoors } from "./threadStopStage.tsx";
+import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 
 beforeEach(() => {
   resizeObserverStubbed();
   elementScrollToStubbed();
+  viewportAtEm(viewportDeskEm);
 });
 
 afterEach(() => {
@@ -90,12 +91,10 @@ function pane(server: StreamServer, partition: PartitionIdentity) {
       transport={server.ports.fetch}
     >
       <Routed>
-        <ChatPaneProvider twoColumn>
-          <ChatPane
-            partition={partition}
-            chat={{ placement: "Right", presentation: "Docked" }}
-          />
-        </ChatPaneProvider>
+        <ChatPane
+          partition={partition}
+          chat={{ placement: "Right", presentation: "Docked" }}
+        />
       </Routed>
     </ScreenHarness>
   );
@@ -166,4 +165,71 @@ test("a first message answered after a project switch reads nothing of its threa
   ).toStrictEqual([]);
   expect(screen.queryByText("for atlas")).toBeNull();
   expect(stageBox().value).toBe("");
+});
+
+/** Two threads of the reader's own in each project, the first having moved
+ * last, each read as idle. */
+function picksStubbed(): void {
+  const doors: StageDoors = { batches: [[]], sends: [], stops: [] };
+  const sessions = (borealis: boolean): readonly string[] =>
+    borealis ? ["b-first", "b-second"] : ["a-first", "a-second"];
+  vi.stubGlobal(
+    "fetch",
+    stageDoor(doors, (url) => {
+      const borealis = url.pathname.includes("/borealis/");
+      if (url.pathname.endsWith("/threads"))
+        return answer({
+          threads: sessions(borealis).map((session, at) =>
+            threadEntry({
+              session,
+              mine: true,
+              title: session,
+              ...(at === 0 ? { lastActivityAt: "2026-09-02T11:00:00Z" } : {}),
+            }),
+          ),
+        });
+      const read = sessions(borealis).find((session) =>
+        url.pathname.endsWith(`/threads/${session}`),
+      );
+      if (read === undefined) return undefined;
+      return answer(threadBody({ session: read, streamless: true }));
+    }),
+  );
+}
+
+/** The thread titled `title` picked out of the history. */
+async function pickedOutOfHistory(title: string): Promise<void> {
+  fireEvent.keyDown(screen.getByRole("button", { name: "History" }), {
+    key: "ArrowDown",
+  });
+  const row = await screen.findByRole("menuitemradio", {
+    name: new RegExp(`^${title},`, "u"),
+  });
+  fireEvent.click(row);
+  await settled();
+}
+
+test("a pick in one project is held through a pick in another and a return to the first", async () => {
+  picksStubbed();
+  const server = streamServer([
+    stageProjectOpening,
+    stageProjectOpening,
+    stageProjectOpening,
+  ]);
+  const view = render(pane(server, threadPartition));
+  await settled();
+  await pickedOutOfHistory("a-second");
+  expect(screen.getByRole("heading", { name: "a-second" })).toBeDefined();
+
+  view.rerender(pane(server, other));
+  await settled();
+  await pickedOutOfHistory("b-second");
+  expect(screen.getByRole("heading", { name: "b-second" })).toBeDefined();
+
+  view.rerender(pane(server, threadPartition));
+  await settled();
+  expect(
+    screen.queryByRole("heading", { name: "a-second" }),
+    "the pick in the other project took the first project's",
+  ).not.toBeNull();
 });

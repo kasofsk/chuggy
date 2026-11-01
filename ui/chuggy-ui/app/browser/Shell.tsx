@@ -82,7 +82,7 @@ import {
 } from "./ports.ts";
 import { ConsoleWriteToasts } from "./consoleWrite.tsx";
 import { ChatPane } from "./shell/ChatPane.tsx";
-import { ChatPaneProvider, useChatPane } from "./shell/chatPaneHeld.tsx";
+import { useChatPane } from "./shell/chatPaneHeld.ts";
 import { DetailsPane } from "./shell/DetailsPane.tsx";
 import { TicketReferenceWiring } from "./ticket/TicketReferenceWiring.tsx";
 import { ShellSlots } from "./shell/slots.tsx";
@@ -461,9 +461,7 @@ export function Shell(props: {
       <CopyProvider write={clipboardWritten}>
         <MarkdownProvider clock={elapsedMs} syntax={syntaxWorkerOpened}>
           <TicketReferenceWiring partition={props.partition}>
-            <ChatPaneProvider twoColumn={twoColumn}>
-              <ShellDrawn partition={props.partition} twoColumn={twoColumn} />
-            </ChatPaneProvider>
+            <ShellDrawn partition={props.partition} twoColumn={twoColumn} />
             <ConsoleWriteToasts />
           </TicketReferenceWiring>
         </MarkdownProvider>

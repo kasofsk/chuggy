@@ -24,7 +24,6 @@ import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ThreadEntryResponse } from "../../../../../src/contract/responses.ts";
 import { apiOpenThread } from "../../core/apiRoutes.ts";
 import {
-  chatPaneChosenIn,
   chatPaneDefaulted,
   chatPaneFilled,
   chatPaneHeaderDoor,
@@ -34,11 +33,7 @@ import {
   chatPaneToggled,
   chatPaneUnhosted,
 } from "../../core/chatPane.ts";
-import type {
-  ChatPaneChosen,
-  ChatPaneHeaderDoor,
-  ChatPaneState,
-} from "../../core/chatPane.ts";
+import type { ChatPaneHeaderDoor, ChatPaneState } from "../../core/chatPane.ts";
 import {
   conversationExchangeSent,
   conversationExchangesStopped,
@@ -57,8 +52,6 @@ import {
   threadKeptWithout,
   threadLimitWord,
   threadOpenAtLimit,
-  threadOpenKeyBytesCount,
-  threadOpenKeyMinted,
   threadTurnsEnded,
   threadUnhosted,
 } from "../../core/threads.ts";
@@ -72,7 +65,6 @@ import { sessionRefusedNoRunner } from "../../core/sessionRunners.ts";
 import { threadHomeOf } from "../../core/threadHome.ts";
 import { usePanelState } from "../api.ts";
 import { ConsoleWriteRefusedWords, useConsoleWrite } from "../consoleWrite.tsx";
-import { drawBytes } from "../ports.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { Conversation } from "../conversation/Conversation.tsx";
 import { useProjectAbilities, ViewOnlyNotice } from "../projectAbilities.tsx";
@@ -87,8 +79,17 @@ import type { ThreadKeptAway } from "../thread/threadSend.tsx";
 import { useThread } from "../thread/threadRead.ts";
 import { Button } from "../ui/Button.tsx";
 import { Notice } from "../ui/Notice.tsx";
+import { useConsoleDispatch, useConsoleSelector } from "../store.ts";
+import type { ConsoleDispatch } from "../store.ts";
 import type { ChatPanePlacement } from "../../core/chatPane.ts";
-import { useChatPane } from "./chatPaneHeld.tsx";
+import { useChatPane } from "./chatPaneHeld.ts";
+import {
+  chatPaneDefaultHeldAt,
+  chatPaneOpenedAt,
+  chatPaneOpenPressed,
+  chatPanePickedAt,
+  chatPaneRecordAt,
+} from "./chatPanes.ts";
 import {
   ChatPaneHeaderRow,
   ChatPaneIcon,
@@ -163,12 +164,13 @@ async function chatPaneOpenLanded(
   }
 }
 
-/** One open from New, under the key the control holds, its refusal said as
- * the header's row says it. The thread it opened is chosen in the shell, which
- * outlives the pane, whether or not the pane is still drawn. */
+/** One open from New, under the key the project's record holds, its refusal
+ * said as the header's row says it. The thread it opened is picked and the key
+ * spent in the store, which outlives the pane, whether or not the pane is
+ * still drawn. */
 function chatPaneOpenWrite(
   partition: PartitionIdentity,
-  choose: (chosen: ChatPaneChosen) => void,
+  dispatch: ConsoleDispatch,
 ): ConsoleWrite<string, ChatPaneOpened> {
   return {
     mutationKey: consoleWriteKey(
@@ -197,7 +199,7 @@ function chatPaneOpenWrite(
         : failureWords(failure).word,
     landed: (client, opened) => {
       if (opened.opened === "Opened")
-        choose({ partition, session: opened.session });
+        dispatch(chatPaneOpenedAt({ partition, session: opened.session }));
       return chatPaneOpenLanded(client, partition, opened);
     },
   };
@@ -217,15 +219,14 @@ function ChatPaneStartControl(props: {
   /** What the door would answer that nothing under the header says. */
   readonly header: ChatPaneHeaderDoor;
 }): ReactNode {
+  const dispatch = useConsoleDispatch();
   const opening = useConsoleWrite(
-    chatPaneOpenWrite(props.partition, useChatPane().choose),
+    chatPaneOpenWrite(props.partition, dispatch),
     { drawn: true },
   );
-  const [key, setKey] = useState(chatPaneOpenKey);
   const answered = (opened: ChatPaneOpened): void => {
     switch (opened.opened) {
       case "Opened":
-        setKey(chatPaneOpenKey());
         props.onOpened(opened.session);
         return;
       case "Unhosted":
@@ -244,7 +245,9 @@ function ChatPaneStartControl(props: {
         busy={opening.isPending}
         disabled={opening.isPending}
         onClick={() => {
-          opening.mutate(key, { onSuccess: answered });
+          opening.mutate(dispatch(chatPaneOpenPressed(props.partition)), {
+            onSuccess: answered,
+          });
         }}
       />
       {opening.error === null ? null : (
@@ -257,11 +260,6 @@ function ChatPaneStartControl(props: {
       <ChatPaneStartDoor partition={props.partition} header={props.header} />
     </>
   );
-}
-
-/** A key no open has been asked under. */
-function chatPaneOpenKey(): string {
-  return threadOpenKeyMinted(drawBytes(threadOpenKeyBytesCount));
 }
 
 /** How much of the frame the pane takes, which is the move a reader makes
@@ -583,10 +581,10 @@ function useChatPaneOpenHeldIn(
 
 /**
  * Which thread the open pane draws: the one the reader chose, or the one the
- * pane holds for them, both held by the shell so they outlive the pane, kept off
- * the screen while a first message is being sent and until the thread that
- * message opened has been read, and only in the project it was sent in. A
- * send that answers after the project has changed is not taken.
+ * pane holds for them, both held in the project's record so they outlive the
+ * pane, kept off the screen while a first message is being sent and until the
+ * thread that message opened has been read, and only in the project it was
+ * sent in. A send that answers after the project has changed is not taken.
  */
 function useChatPaneOpenHeld(partition: PartitionIdentity): {
   readonly threads: readonly ThreadEntryResponse[] | undefined;
@@ -611,29 +609,24 @@ function useChatPaneOpenHeld(partition: PartitionIdentity): {
     setOpening(undefined);
   }, []);
   const current = useChatPaneOpenHeldIn(partition, read);
-  const {
-    chosen: picked,
-    choose,
-    defaulted: kept,
-    holdDefault,
-  } = useChatPane();
-  const chosen = chatPaneChosenIn(picked, partition);
-  const held = chatPaneChosenIn(kept, partition);
+  const dispatch = useConsoleDispatch();
+  const record = useConsoleSelector((state) =>
+    chatPaneRecordAt(state, partition),
+  );
+  const held = record.defaulted;
   const defaulted = chatPaneDefaulted(threads, held);
   useEffect(() => {
     if (defaulted === held) return;
-    holdDefault(
-      defaulted === undefined ? undefined : { partition, session: defaulted },
-    );
-  }, [defaulted, held, holdDefault, partition]);
+    dispatch(chatPaneDefaultHeldAt({ partition, session: defaulted }));
+  }, [defaulted, held, dispatch, partition]);
   return {
     threads,
-    holding: chatPaneHolding(threads, chosen, held),
+    holding: chatPaneHolding(threads, record.picked, held),
     named,
     starting,
     opening,
     chose: (session) => {
-      choose({ partition, session });
+      dispatch(chatPanePickedAt({ partition, session }));
       setNamed(true);
       read();
     },
@@ -645,7 +638,7 @@ function useChatPaneOpenHeld(partition: PartitionIdentity): {
     },
     sent: (session) => {
       if (current.current !== partitionPath(partition)) return false;
-      choose({ partition, session });
+      dispatch(chatPanePickedAt({ partition, session }));
       setNamed(true);
       setOpening(session);
       return true;

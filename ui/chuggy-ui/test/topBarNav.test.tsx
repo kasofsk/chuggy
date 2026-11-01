@@ -13,20 +13,24 @@ import {
 } from "@tanstack/react-router";
 import { cleanup, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
-import { ChatPaneProvider } from "../app/browser/shell/chatPaneHeld.tsx";
 import { TopBarNavEntry } from "../app/browser/shell/TopBar.tsx";
 import { shellNav } from "../app/core/shellNav.ts";
+import { ConsoleStoreProvided } from "./consoleStoreProvided.tsx";
+import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 function Bar(): ReactNode {
   return (
-    <ChatPaneProvider twoColumn>
+    <ConsoleStoreProvided>
       <nav aria-label="Console">
         <ul>
           {shellNav({ partition: atlas }).map((entry) => (
@@ -35,7 +39,7 @@ function Bar(): ReactNode {
         </ul>
       </nav>
       <Outlet />
-    </ChatPaneProvider>
+    </ConsoleStoreProvided>
   );
 }
 
@@ -64,6 +68,7 @@ async function drawnAt(path: string): Promise<readonly string[]> {
       ]),
     ]),
   });
+  viewportAtEm(viewportDeskEm);
   render(<RouterProvider router={router} />);
   await screen.findByRole("navigation", { name: "Console" });
   return screen

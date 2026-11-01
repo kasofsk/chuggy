@@ -694,25 +694,81 @@ export function chatPaneTrailOffered(
   }
 }
 
-/** The thread the reader picked for the pane to hold, and the project they
- * picked it in. */
-export interface ChatPaneChosen {
-  readonly partition: PartitionIdentity;
-  readonly session: string;
+/** What the pane holds in one project: the thread the reader picked, the one
+ * held for a reader who picked none, and the key New's next open is asked
+ * under until an open answers. */
+export interface ChatPaneRecord {
+  readonly picked: string | undefined;
+  readonly defaulted: string | undefined;
+  readonly openKey: string | undefined;
 }
 
-/** The pick the pane holds in a project, which is none where it was made in
- * another: the pick outlives the pane, and the frame outlives a change of
- * project. */
-export function chatPaneChosenIn(
-  chosen: ChatPaneChosen | undefined,
+/** A record per project. A record is a few short strings, so the set is not
+ * bounded, and none is evicted: an open key dropped before an open answered
+ * would let the next press take a second slot for one intent. */
+export type ChatPaneRecords = Readonly<Record<string, ChatPaneRecord>>;
+
+const chatPaneRecordEmpty: ChatPaneRecord = {
+  picked: undefined,
+  defaulted: undefined,
+  openKey: undefined,
+};
+
+/** What a project's record is filed under, its names encoded rather than
+ * joined so that no two projects share one. */
+function chatPaneRecordName(partition: PartitionIdentity): string {
+  return JSON.stringify([partition.tenant, partition.project]);
+}
+
+export function chatPaneRecordOf(
+  records: ChatPaneRecords,
   partition: PartitionIdentity,
-): string | undefined {
-  if (chosen === undefined) return undefined;
-  const same =
-    chosen.partition.tenant === partition.tenant &&
-    chosen.partition.project === partition.project;
-  return same ? chosen.session : undefined;
+): ChatPaneRecord {
+  return records[chatPaneRecordName(partition)] ?? chatPaneRecordEmpty;
+}
+
+/** The records with one project's written. */
+export function chatPaneRecordWith(
+  records: ChatPaneRecords,
+  partition: PartitionIdentity,
+  next: (record: ChatPaneRecord) => ChatPaneRecord,
+): ChatPaneRecords {
+  const record = next(chatPaneRecordOf(records, partition));
+  return { ...records, [chatPaneRecordName(partition)]: record };
+}
+
+/** The reader named a thread, from the history or by starting one. */
+export function chatPanePicked(
+  record: ChatPaneRecord,
+  session: string,
+): ChatPaneRecord {
+  return { ...record, picked: session };
+}
+
+/** The thread held for a reader who picked none, as `chatPaneDefaulted`
+ * decided it. */
+export function chatPaneDefaultHeld(
+  record: ChatPaneRecord,
+  session: string | undefined,
+): ChatPaneRecord {
+  return { ...record, defaulted: session };
+}
+
+/** The key New asks its open under, held before the open is made. */
+export function chatPaneOpenKeyHeld(
+  record: ChatPaneRecord,
+  key: string,
+): ChatPaneRecord {
+  return { ...record, openKey: key };
+}
+
+/** An open from New answered with its thread: the thread is picked and the key
+ * is spent, together, so the next press is an open of its own. */
+export function chatPaneOpened(
+  record: ChatPaneRecord,
+  session: string,
+): ChatPaneRecord {
+  return { picked: session, defaulted: record.defaulted, openKey: undefined };
 }
 
 /**

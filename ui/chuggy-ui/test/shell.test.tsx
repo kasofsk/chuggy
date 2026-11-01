@@ -2091,7 +2091,7 @@ function heldBack(): {
 }
 
 /** An open outlives the pane that pressed New, and the thread it opened is
- * chosen in the shell, so the pane brought back holds it. */
+ * picked in the store, so the pane brought back holds it. */
 test("a thread opened while the pane was collapsed is the one the pane holds when expanded", async () => {
   const opening = heldBack();
   const read: string[] = [];
@@ -2288,6 +2288,64 @@ test("New pressed again after a failed open asks under the same key, and after a
   expect(keys[1], "a retried open minted a fresh key").toBe(keys[0]);
   expect(keys[2], "a start after an opened one reused its key").not.toBe(
     keys[1],
+  );
+  styleless();
+});
+
+/** New's key is held beside the pane rather than in it, so a press after a
+ * lost answer asks under it again though the pane was put away between. */
+test("New pressed after a lost answer, with the pane collapsed and expanded between, asks under the same key", async () => {
+  const posts: string[] = [];
+  const keys: string[] = [];
+  await mounted(
+    viewportDeskEm,
+    heldThreadServed(
+      posts,
+      () =>
+        keys.length === 1
+          ? Promise.reject(new TypeError("the answer was lost"))
+          : anotherOpened(),
+      keys,
+    ),
+  );
+  await pressed("New");
+  await pressed("Collapse");
+  await pressed("Expand chat");
+  await pressed("New");
+  expect(keys).toHaveLength(2);
+  expect(keys[1], "the pane brought back minted a fresh key").toBe(keys[0]);
+  styleless();
+});
+
+/** An open that answers with no pane drawn is still the one that spends its
+ * key, so the thread it opened is held and the next New is an open of its
+ * own. */
+test("an open that answers while the pane is collapsed is drawn when expanded, and the next New asks under another key", async () => {
+  const opening = heldBack();
+  const keys: string[] = [];
+  const served = threadServed([]);
+  await mounted(viewportDeskEm, ((
+    url: string,
+    init?: { readonly method?: string; readonly body?: string },
+  ) => {
+    if (init?.method !== "POST") return served(url, init);
+    const asked = JSON.parse(init.body ?? "null") as { readonly key: string };
+    keys.push(asked.key);
+    return keys.length === 1
+      ? opening.let.then(() => served(url, init))
+      : served(url, init);
+  }) as unknown as typeof fetch);
+  await pressed("New");
+  await pressed("Collapse");
+  await turned(opening.go);
+  await settled();
+  await pressed("Expand chat");
+  expect(screen.getByRole("region", { name: "Conversation" })).toBeDefined();
+  expect(composerDrawn()).toBeDefined();
+  await pressed("New");
+  expect(keys).toHaveLength(2);
+  expect(keys[1], "the open that answered left its key standing").not.toBe(
+    keys[0],
   );
   styleless();
 });
