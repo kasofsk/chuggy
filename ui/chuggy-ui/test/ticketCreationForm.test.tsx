@@ -63,6 +63,7 @@ import type { TicketDoor } from "./ticketReleasing.tsx";
 import { readFailedLines } from "./readFailedLines.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { SessionProvider } from "../app/browser/session.tsx";
+import { ConsoleStoreProvided } from "./consoleStoreProvided.tsx";
 import { holderDouble, settled } from "./screenHarness.tsx";
 
 /** The runner has no globals, so each case tears down the tree it rendered,
@@ -167,15 +168,17 @@ function drawOffered(
           new QueryClient({ defaultOptions: { queries: { retry: false } } })
         }
       >
-        <CreationForm
-          ports={ports}
-          partition={partition}
-          queryKey={queryKey}
-          context={{ context: "Ready", ...next }}
-          start="Waits"
-          onCreated={(ticket) => created.push(ticket)}
-          existing={(ticket) => <a href="/there">Ticket {ticket}</a>}
-        />
+        <ConsoleStoreProvided>
+          <CreationForm
+            ports={ports}
+            partition={partition}
+            queryKey={queryKey}
+            context={{ context: "Ready", ...next }}
+            start="Waits"
+            onCreated={(ticket) => created.push(ticket)}
+            existing={(ticket) => <a href="/there">Ticket {ticket}</a>}
+          />
+        </ConsoleStoreProvided>
       </QueryClientProvider>
     </SessionProvider>
   );

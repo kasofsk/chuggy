@@ -21,8 +21,8 @@
  * mounts again draws it. Its identity is held before the submission is made
  * and outlives the follow too, because a follow can end without the API ever
  * saying what it did: the record is what a mount picks up and a press reaches
- * by the same path, `attemptPressed`, and the pick-up polls, because only the
- * API can say whether the identity it names ever arrived.
+ * by the same path, `ticketAttemptPressed`, and the pick-up polls, because
+ * only the API can say whether the identity it names ever arrived.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -37,7 +37,6 @@ import type {
 } from "../../../../src/contract/responses.ts";
 import { apiCancelOperation } from "../core/apiRoutes.ts";
 import type { ApiPorts } from "../core/apiRequest.ts";
-import { base64urlFromBytes } from "../core/base64url.ts";
 import {
   operationFailureLabel,
   operationStepLabel,
@@ -58,8 +57,6 @@ import {
   operationAnswered,
   operationFinished,
   operationFollowing,
-  operationIdBytesCount,
-  operationSubmitting,
 } from "../core/operationFollow.ts";
 import type {
   OperationFollowed,
@@ -86,13 +83,15 @@ import type { TicketOffers } from "../core/ticketOffers.ts";
 import { useConsoleWrite, useConsoleWriteProgress } from "./consoleWrite.tsx";
 import { useProjectAbilities } from "./projectAbilities.tsx";
 import { applyResourceArrival } from "./stream.tsx";
+import { useConsoleDispatch, useConsoleSelector } from "./store.ts";
+import type { ConsoleDispatch } from "./store.ts";
 import {
-  ticketAttemptDropped,
-  ticketAttemptHeld,
-  ticketAttemptRead,
-} from "./ticketAttemptHeld.ts";
+  ticketAttemptAt,
+  ticketAttemptDroppedAt,
+  ticketAttemptPressed,
+} from "./ticketAttempts.ts";
+import type { TicketAttemptPress } from "./ticketAttempts.ts";
 import { PanelUnready, ReadFailed } from "./DataPanel.tsx";
-import { drawBytes } from "./ports.ts";
 import { TicketDuplicateOffer } from "./ticket/TicketDuplicateOffer.tsx";
 import { TicketEditOffer } from "./ticket/TicketEditOffer.tsx";
 import {
@@ -209,45 +208,16 @@ interface TicketActionPressed {
   readonly controller: AbortController;
 }
 
-function ticketActionPressedOf(
-  held: TicketAttempt,
-  startedFrom: OperationStep,
-): TicketActionPressed {
+function ticketActionPressedOf({
+  held,
+  startedFrom,
+}: TicketAttemptPress): TicketActionPressed {
   return {
     held,
     startedFrom,
     progress: new ConsoleWriteProgress<OperationStep>(),
     controller: new AbortController(),
   };
-}
-
-/**
- * ONE INTENT IS ONE IDENTITY: a press draws one only where nothing is held, and
- * reaches what is held by the path a mount takes otherwise. A follow the API
- * never answered leaves its record standing and the buttons come back, and what
- * stands is a submission the machine may be working on — so it is polled to an
- * end rather than replaced, even where the press names another action, and the
- * reader's new intent waits for the buttons that come back when this one
- * settles.
- */
-function attemptPressed(
-  client: QueryClient,
-  partition: PartitionIdentity,
-  ticket: number,
-  action: TicketAction,
-): TicketActionPressed {
-  const standing = ticketAttemptRead(client, partition, ticket);
-  if (standing !== undefined)
-    return ticketActionPressedOf(
-      standing,
-      operationFollowing(standing.operation),
-    );
-  const held = {
-    action,
-    operation: base64urlFromBytes(drawBytes(operationIdBytesCount)),
-  };
-  ticketAttemptHeld(client, partition, ticket, held);
-  return ticketActionPressedOf(held, operationSubmitting());
 }
 
 function ticketActionWriteKey(
@@ -327,6 +297,7 @@ async function ticketActionFollowed(
 function ticketActionWrite(
   partition: PartitionIdentity,
   ticket: number,
+  dispatch: ConsoleDispatch,
 ): ConsoleWrite<TicketActionPressed, undefined> {
   return {
     mutationKey: ticketActionWriteKey(partition, ticket),
@@ -341,7 +312,7 @@ function ticketActionWrite(
       if (pressed.controller.signal.aborted || step === undefined)
         return { outcome: "Ok", value: undefined };
       if (operationAnswered(step))
-        ticketAttemptDropped(client, partition, ticket);
+        dispatch(ticketAttemptDroppedAt({ partition, ticket }));
       if (followed !== undefined)
         await followWrittenBack(client, partition, ticket, followed);
       const drawn = operationStepLabel(step, pressed.held.action.action);
@@ -365,7 +336,7 @@ function ticketActionWrite(
  * watching it.
  */
 function attemptCancelled(
-  client: QueryClient,
+  dispatch: ConsoleDispatch,
   partition: PartitionIdentity,
   ticket: number,
   standing: TicketActionPressed,
@@ -379,7 +350,7 @@ function attemptCancelled(
       refusal: undefined,
     });
   standing.controller.abort(new Error(attemptCancelledReason));
-  ticketAttemptDropped(client, partition, ticket);
+  dispatch(ticketAttemptDroppedAt({ partition, ticket }));
 }
 
 /**
@@ -395,6 +366,7 @@ function attemptCancelled(
 function ticketCancelWrite(
   partition: PartitionIdentity,
   ticket: number,
+  dispatch: ConsoleDispatch,
 ): ConsoleWrite<string, undefined> {
   return {
     mutationKey: consoleWriteKey(
@@ -419,7 +391,7 @@ function ticketCancelWrite(
         return { outcome: "Ok", value: undefined };
       if (!answered.accepted)
         throw new ConsoleWriteRefused(`Cancel refused · ${answered.said}`);
-      attemptCancelled(client, partition, ticket, standing);
+      attemptCancelled(dispatch, partition, ticket, standing);
       return { outcome: "Ok", value: undefined };
     },
     refusal: (failure) => `Cancel refused · ${operationFailureLabel(failure)}`,
@@ -515,28 +487,33 @@ function useTicketActionWrite(
   drawn: boolean,
 ): TicketActing {
   const client = useQueryClient();
-  const writing = useConsoleWrite(ticketActionWrite(partition, ticket), {
-    drawn,
-  });
-  const attempt = useTicketActionAttempt(
-    writing.variables,
-    ticketAttemptRead(client, partition, ticket),
+  const dispatch = useConsoleDispatch();
+  const writing = useConsoleWrite(
+    ticketActionWrite(partition, ticket, dispatch),
+    { drawn },
   );
+  const standing = useConsoleSelector((state) =>
+    ticketAttemptAt(state, partition, ticket),
+  );
+  const attempt = useTicketActionAttempt(writing.variables, standing);
   const step = attempt?.step;
   const following = step !== undefined && !operationFinished(step);
   const refusedOperation =
     following && "operation" in step ? step.operation : undefined;
-  const cancelling = useConsoleWrite(ticketCancelWrite(partition, ticket), {
-    drawn: (_, operation) => drawn && operation === refusedOperation,
-  });
+  const cancelling = useConsoleWrite(
+    ticketCancelWrite(partition, ticket, dispatch),
+    { drawn: (_, operation) => drawn && operation === refusedOperation },
+  );
 
   useEffect(() => {
-    const held = ticketAttemptRead(client, partition, ticket);
-    if (held === undefined) return;
+    if (standing === undefined) return;
     const mutationKey = ticketActionWriteKey(partition, ticket);
     if (client.isMutating({ mutationKey, exact: true }) > 0) return;
     writing.mutate(
-      ticketActionPressedOf(held, operationFollowing(held.operation)),
+      ticketActionPressedOf({
+        held: standing,
+        startedFrom: operationFollowing(standing.operation),
+      }),
     );
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the pick-up is this mount's, and a later render must not follow the same operation twice
   }, []);
@@ -549,7 +526,11 @@ function useTicketActionWrite(
         : undefined,
     submit: (action) => {
       cancelling.reset();
-      writing.mutate(attemptPressed(client, partition, ticket, action));
+      writing.mutate(
+        ticketActionPressedOf(
+          dispatch(ticketAttemptPressed(partition, ticket, action)),
+        ),
+      );
     },
     cancel: (operation) => {
       cancelling.mutate(operation);

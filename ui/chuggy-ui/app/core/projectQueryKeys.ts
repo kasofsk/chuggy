@@ -27,19 +27,6 @@
  * entry that no frame names. It is under the partition for its refetch and
  * under no kind, so nothing a frame of one addresses reaches it.
  *
- * NOT EVERY ENTRY IS A READ. `projectHeldKey` is what a screen keeps for itself
- * — the cache being the only thing under a partition that outlives the screen
- * that wrote it. Its marker is outside the kinds, so nothing addressed by kind
- * reaches it: neither a frame's write or drop, which name a resource under one,
- * nor a list refresh, which names a list under one. What does reach it is
- * everything addressed by the partition prefix — the reset's invalidation and
- * the fallback's — and that is safe rather than accidental: an invalidation
- * refetches the queries a reader is watching, and a held entry is watched by no
- * reader and has no fetch to run, so being marked stale is the whole of what
- * happens to it. Being under that prefix is what scopes it: one partition's
- * held state is named apart from another's, and a reader who leaves a project
- * leaves what a screen there was holding behind rather than carrying it over.
- *
  * A resource key and a list key are refreshed by different halves of the
  * stream, which is why only one of them is a bare function here. The stream
  * writes a resource key itself, from the frame that carries that resource; a
@@ -62,10 +49,6 @@ export const tenantQueryScope = "tenant";
 export const callerQueryScope = "caller";
 export const projectListMarker = "list";
 export const projectPartitionMarker = "partition";
-
-/** Neither a kind nor a list of one, which is what keeps a held entry out of
- * the reach of everything the stream applies. */
-export const projectHeldMarker = "held";
 
 export type ProjectQueryKey = readonly unknown[];
 
@@ -144,22 +127,6 @@ export function projectStreamedNamed(
     resource !== projectListMarker &&
     pattern.test(resource)
   );
-}
-
-/** Every held entry of one partition, which is what an option registered for
- * all of them at once is registered against. */
-export function projectHeldScope(
-  partition: PartitionIdentity,
-): ProjectQueryKey {
-  return [...projectPartitionKey(partition), projectHeldMarker];
-}
-
-/** One partition's own working state, named by the screen that keeps it. */
-export function projectHeldKey(
-  partition: PartitionIdentity,
-  name: string,
-): ProjectQueryKey {
-  return [...projectHeldScope(partition), name];
 }
 
 function projectListKey(

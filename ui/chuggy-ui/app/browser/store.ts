@@ -2,9 +2,11 @@
  * The console's store: the browser-only state that must outlive what draws it,
  * one slice per cell, for the life of the tab and no longer.
  *
- * WHAT NEVER ENTERS IT. A server's answer, which is TanStack Query's; a token
- * or a one-time secret; a function; a DOM node; a promise; and text that
- * changes per token or per keystroke. The one exception is the question typed
+ * WHAT NEVER ENTERS IT. A server's answer, which is TanStack Query's, and a
+ * held draft's `DraftResponse` is not one: it is the console's own record of
+ * its submission, and nothing refreshes it. A token or a one-time secret; a
+ * function; a DOM node; a promise; and text that changes per token or per
+ * keystroke. The one exception is the question typed
  * at an inquiry box, because the pair held beside it is a retry of that
  * question and no other, so the two are kept together or not at all. What the URL
  * holds stays in the URL, and what only one component draws stays in that
@@ -24,10 +26,17 @@
 import { combineSlices, configureStore } from "@reduxjs/toolkit";
 import { useDispatch, useSelector } from "react-redux";
 
+import { creationDraftsHeld } from "./creationDraftsHeld.ts";
 import { inboxProposalHeard } from "./inboxProposalHeard.ts";
 import { inquiryBoxes } from "./lead/inquiryBoxes.ts";
+import { ticketAttempts } from "./ticketAttempts.ts";
 
-const consoleReducer = combineSlices(inquiryBoxes, inboxProposalHeard);
+const consoleReducer = combineSlices(
+  inquiryBoxes,
+  inboxProposalHeard,
+  ticketAttempts,
+  creationDraftsHeld,
+);
 
 export type ConsoleState = ReturnType<typeof consoleReducer>;
 

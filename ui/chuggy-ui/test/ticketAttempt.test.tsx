@@ -42,7 +42,12 @@ import {
   consoleQueryClient,
   consoleWriteWatchOf,
 } from "../app/core/consoleWrite.ts";
-import { ticketAttemptKey } from "../app/core/ticketActions.ts";
+import { consoleStore } from "../app/browser/store.ts";
+import type { ConsoleStore } from "../app/browser/store.ts";
+import {
+  ticketAttemptAt,
+  ticketAttemptHeldAt,
+} from "../app/browser/ticketAttempts.ts";
 import type { TicketAttempt } from "../app/core/ticketActions.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
@@ -223,11 +228,41 @@ function submissionIdentity(body: unknown): string {
   return typeof named === "string" ? named : "unnamed";
 }
 
+/** The store of the tab a client is of, made beside it as `main.tsx` makes
+ * one beside the other, so a remount over the same client is the same tab. */
+const tabStores = new WeakMap<QueryClient, ConsoleStore>();
+
+function tabStoreOf(client: QueryClient): ConsoleStore {
+  const standing = tabStores.get(client);
+  if (standing !== undefined) return standing;
+  const store = consoleStore();
+  tabStores.set(client, store);
+  return store;
+}
+
+function attemptHeld(
+  client: QueryClient,
+  ticket: number,
+  attempt: TicketAttempt,
+): void {
+  tabStoreOf(client).dispatch(
+    ticketAttemptHeldAt({ partition: atlas, ticket, attempt }),
+  );
+}
+
+function attemptRead(
+  client: QueryClient,
+  ticket: number,
+): TicketAttempt | undefined {
+  return ticketAttemptAt(tabStoreOf(client).getState(), atlas, ticket);
+}
+
 function page(client: QueryClient): ReactNode {
   return (
     <ScreenHarness
       partition={atlas}
       client={client}
+      store={tabStoreOf(client)}
       transport={openedStream().ports.fetch}
     >
       <TicketPage />
@@ -451,7 +486,7 @@ test("the attempt held for the ticket arrived at is the one picked up", async ()
   const api = accepting();
   vi.stubGlobal("fetch", api.fetch);
   const client = queryClientUnretried();
-  client.setQueryData<TicketAttempt>(ticketAttemptKey(atlas, 12), {
+  attemptHeld(client, 12, {
     action: {
       action: "Resume",
       mutation: { mutation: "ResumeTicket", ticket: 12 },
@@ -688,7 +723,7 @@ test("a submission the API never took is made again under the same identity", as
   });
   vi.stubGlobal("fetch", api.fetch);
   const client = queryClientUnretried();
-  client.setQueryData<TicketAttempt>(ticketAttemptKey(atlas, 11), {
+  attemptHeld(client, 11, {
     action: {
       action: "Resume",
       mutation: { mutation: "ResumeTicket", ticket: 11 },
@@ -756,9 +791,7 @@ test("a cancellation is applied to the operation it asked about and no other", a
 
   expect(screen.getByText("Waiting for actor…")).toBeDefined();
   expect(screen.queryByText("Resume cancelled")).toBeNull();
-  expect(
-    client.getQueryData<TicketAttempt>(ticketAttemptKey(atlas, 11))?.operation,
-  ).toBe(second);
+  expect(attemptRead(client, 11)?.operation).toBe(second);
 });
 
 test("a submission whose answer was lost keeps the identity it was made under", async () => {
@@ -778,9 +811,7 @@ test("a submission whose answer was lost keeps the identity it was made under", 
   const drawn = api.identities()[0];
   expect(drawn).toBeDefined();
   expect(button("Resume")?.hasAttribute("disabled")).toBe(false);
-  expect(
-    client.getQueryData<TicketAttempt>(ticketAttemptKey(atlas, 11))?.operation,
-  ).toBe(drawn);
+  expect(attemptRead(client, 11)?.operation).toBe(drawn);
 });
 
 /** A submission whose answer never came back, which is the one ending that
@@ -864,9 +895,7 @@ test("a submission the API refuses leaves no record to ask about again", async (
   await settled();
 
   expect(api.identities()).toHaveLength(1);
-  expect(
-    client.getQueryData<TicketAttempt>(ticketAttemptKey(atlas, 11)),
-  ).toBeUndefined();
+  expect(attemptRead(client, 11)).toBeUndefined();
 });
 
 test("a refusal leaves the next press free to mean a new intent", async () => {
@@ -925,9 +954,7 @@ test("a faulted submission may have been taken, so its identity is kept", async 
   });
   await settled();
 
-  expect(
-    client.getQueryData<TicketAttempt>(ticketAttemptKey(atlas, 11))?.operation,
-  ).toBe(api.identities()[0]);
+  expect(attemptRead(client, 11)?.operation).toBe(api.identities()[0]);
 
   await pressedAgain(api);
 });

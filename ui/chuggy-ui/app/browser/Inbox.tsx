@@ -31,7 +31,6 @@ import type {
 } from "../../../../src/contract/responses.ts";
 import { apiInbox } from "../core/apiRoutes.ts";
 import { inboxQuery } from "../core/ticketQueries.ts";
-import { base64urlFromBytes } from "../core/base64url.ts";
 import {
   escalationKindSentence,
   nativeActionKindSentence,
@@ -69,15 +68,14 @@ import { nativeActionsAnswers } from "../core/nativeActionAnswers.ts";
 import { projectAbilityRefused } from "../core/projectAbilities.ts";
 import {
   operationAbandonFailure,
-  operationIdBytesCount,
-  operationSubmitting,
+  operationAnswered,
 } from "../core/operationFollow.ts";
 import type { OperationStep } from "../core/operationFollow.ts";
 import { followOperationProgressed } from "../core/operationProgress.ts";
 import { projectTableRow } from "../core/projectTableRows.ts";
 import type { ProjectTableRow } from "../core/projectTableRows.ts";
 import { actionsFor, ticketActionSentence } from "../core/ticketActions.ts";
-import type { TicketAction } from "../core/ticketActions.ts";
+import type { TicketAction, TicketAttempt } from "../core/ticketActions.ts";
 import { ticketSectionTitles } from "../core/ticketSections.ts";
 import { agenticRefusalStandingTone } from "../core/tones.ts";
 import { panelReadRestarted, useApiPorts, usePanelState } from "./api.ts";
@@ -91,9 +89,14 @@ import {
   useInboxProposalAnswers,
 } from "./InboxProposals.tsx";
 import type { InboxProposalAnswers } from "./InboxProposals.tsx";
-import { drawBytes } from "./ports.ts";
 import { useProjectAbilities } from "./projectAbilities.tsx";
 import { ScreenTitle } from "./shell/slots.tsx";
+import { useConsoleDispatch } from "./store.ts";
+import type { ConsoleDispatch } from "./store.ts";
+import {
+  ticketAttemptDroppedAt,
+  ticketAttemptPressed,
+} from "./ticketAttempts.ts";
 import {
   TicketRevokeConfirm,
   useTicketRevokeAsk,
@@ -334,20 +337,22 @@ function InboxRefusal(props: {
   );
 }
 
-/** One press of a row's answer: what was answered, the identity it drew, and
- * where its follow reports. */
+/** One press of a row's answer: the ticket's attempt it follows, the step it
+ * starts from, and where its follow reports. */
 interface InboxAnswerPressed {
-  readonly action: TicketAction;
-  readonly operation: string;
+  readonly held: TicketAttempt;
+  readonly startedFrom: OperationStep;
   readonly progress: ConsoleWriteProgress<OperationStep>;
 }
 
 /** One ticket's answer, followed to settlement and refused wherever the actor
- * did not take it. The rows are not read again for it: a frame or a poll is
- * what moves a row. */
+ * did not take it, its attempt dropped where the API has answered for it as
+ * the ticket page drops it. The rows are not read again for it: a frame or a
+ * poll is what moves a row. */
 function inboxAnswerWrite(
   partition: PartitionIdentity,
   ticket: number,
+  dispatch: ConsoleDispatch,
 ): ConsoleWrite<InboxAnswerPressed, OperationStep> {
   return {
     mutationKey: consoleWriteKey(
@@ -357,14 +362,18 @@ function inboxAnswerWrite(
       ticket,
     ),
     write: async (ports, pressed) => {
+      const { held } = pressed;
       const step = await followOperationProgressed(
         ports,
         partition,
-        { operation: pressed.operation, mutation: pressed.action.mutation },
+        { operation: held.operation, mutation: held.action.mutation },
         ticket,
         pressed.progress,
         "the answer failed",
+        pressed.startedFrom,
       );
+      if (operationAnswered(step))
+        dispatch(ticketAttemptDroppedAt({ partition, ticket }));
       const refused = inboxAnswerRefusal(step);
       if (refused !== undefined)
         throw new ConsoleWriteRefused(refused, operationAbandonFailure(step));
@@ -375,7 +384,8 @@ function inboxAnswerWrite(
 }
 
 /** A row's answer and the press that sends one, each row answering under its
- * own ticket's key. */
+ * own ticket's key and through the ticket's one attempt, so a press where one
+ * stands follows it rather than drawing a second identity. */
 function useInboxAnswer(
   partition: PartitionIdentity,
   ticket: number,
@@ -383,13 +393,16 @@ function useInboxAnswer(
   readonly answer: InboxAnswer | undefined;
   readonly onAnswer: (action: TicketAction) => void;
 } {
-  const writing = useConsoleWrite(inboxAnswerWrite(partition, ticket), {
-    drawn: true,
-  });
+  const dispatch = useConsoleDispatch();
+  const writing = useConsoleWrite(
+    inboxAnswerWrite(partition, ticket, dispatch),
+    { drawn: true },
+  );
   const reported = useConsoleWriteProgress(writing.variables?.progress);
   const step =
-    reported ?? (writing.isPending ? operationSubmitting() : undefined);
-  const action = writing.variables?.action;
+    reported ??
+    (writing.isPending ? writing.variables?.startedFrom : undefined);
+  const action = writing.variables?.held.action;
   const answer = useMemo(
     () =>
       action === undefined || step === undefined ? undefined : { action, step },
@@ -399,8 +412,7 @@ function useInboxAnswer(
     answer,
     onAnswer: (pressed) => {
       writing.mutate({
-        action: pressed,
-        operation: base64urlFromBytes(drawBytes(operationIdBytesCount)),
+        ...dispatch(ticketAttemptPressed(partition, ticket, pressed)),
         progress: new ConsoleWriteProgress<OperationStep>(),
       });
     },
