@@ -12,6 +12,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
@@ -470,4 +471,39 @@ test("a press in the pane is drawn on the same thread's own page, with its Stop"
   await tab.to("Page");
   expect(stageColumn(document.body)).toContain(`> ${words}`);
   expect(stageButton()).toBe("Stop");
+});
+
+test("a first message the hosted grant refused while the pane was collapsed is back in its box, read-only, on expanding with the grant still refused", async () => {
+  const site = siteStubbed([], true);
+  const door = globalThis.fetch;
+  let granted = true;
+  vi.stubGlobal("fetch", (address: string, init?: RequestInit) =>
+    !granted && address.endsWith("/hosted-runs")
+      ? Promise.resolve(answer({ granted }))
+      : door(address, init),
+  );
+  await drawn("Pane");
+  await stageSent(words);
+  await settled();
+  expect(site.opens).toHaveLength(1);
+
+  await collapsed();
+  granted = false;
+  await act(async () => {
+    site.opens[0]?.(answer({ error: { code: "HostedRunsNotGranted" } }, 403));
+    await Promise.resolve();
+  });
+  await settled();
+  await expanded();
+  expect(
+    within(screen.getByRole("region", { name: "Conversation" })).getByText(
+      "Needs hosted runs",
+    ),
+  ).toBeTruthy();
+  expect(
+    screen.queryByRole("textbox", { name: "Message" }),
+    "the kept message was hidden behind the notice",
+  ).not.toBeNull();
+  expect(stageBox().value).toBe(words);
+  expect(stageBox().readOnly).toBe(true);
 });

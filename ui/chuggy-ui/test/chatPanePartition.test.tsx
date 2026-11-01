@@ -3,11 +3,18 @@
  * press opened, and the text that press kept, stay in that project, so a press
  * in the next one opens a thread of its own, a first message still waited
  * on there keeps no thread of the next one off the screen, and one answered
- * after the switch draws nothing of its thread in the next.
+ * after the switch draws nothing of its thread in the next. What New met in
+ * one project's door is not said in the next.
  */
 
 import { QueryClient } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
@@ -83,11 +90,15 @@ function doorsStubbed(listed: readonly string[] = []): StageDoors & {
   return { ...doors, opens, asked };
 }
 
-function pane(server: StreamServer, partition: PartitionIdentity) {
+function pane(
+  server: StreamServer,
+  partition: PartitionIdentity,
+  held: QueryClient = client,
+) {
   return (
     <ScreenHarness
       partition={partition}
-      client={client}
+      client={held}
       transport={server.ports.fetch}
     >
       <Routed>
@@ -232,4 +243,36 @@ test("a pick in one project is held through a pick in another and a return to th
     screen.queryByRole("heading", { name: "a-second" }),
     "the pick in the other project took the first project's",
   ).not.toBeNull();
+});
+
+test("New the hosted grant refused in one project leaves the next project's first box drawn", async () => {
+  const doors: StageDoors = { batches: [[]], sends: [], stops: [] };
+  vi.stubGlobal(
+    "fetch",
+    stageDoor(doors, (url, method) => {
+      if (!url.pathname.endsWith("/threads")) return undefined;
+      if (method !== "POST") return answer({ threads: [] });
+      return answer({ error: { code: "HostedRunsNotGranted" } }, 403);
+    }),
+  );
+  const server = streamServer([stageProjectOpening, stageProjectOpening]);
+  const held = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const view = render(pane(server, threadPartition, held));
+  await settled();
+  await act(async () => {
+    fireEvent.click(screen.getByRole("button", { name: "New" }));
+    await Promise.resolve();
+  });
+  await settled();
+  expect(screen.getByText("Needs hosted runs")).toBeTruthy();
+
+  view.rerender(pane(server, other, held));
+  await settled();
+  expect(
+    screen.queryByText("Needs hosted runs"),
+    "New's refusal in the last project was said in this one",
+  ).toBeNull();
+  expect(stageBox().value).toBe("");
 });

@@ -2,10 +2,17 @@
  * The first message of a thread, stopped: the pane's composer opens the
  * thread with that press, so its Stop is there from the press and not from
  * the read of the thread it opened, and a turn stopped there is never drawn
- * as out by the thread that takes the composer's place.
+ * as out by the thread that takes the composer's place. Until that read, a
+ * press in the composer after its message was taken reaches the same thread.
  */
 
-import { cleanup } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import type { ThreadResponse } from "../../../src/contract/responses.ts";
@@ -23,6 +30,7 @@ import {
 import {
   stageAlarms,
   stageAnswered,
+  stageBox,
   stageButton,
   stageColumn,
   stageColumnIs,
@@ -51,27 +59,42 @@ const asked = "where does 41 stand";
 interface Pane extends StageDoors {
   readonly container: HTMLElement;
   readonly server: StreamServer;
-  /** What the read of the thread the press opened answers, once a case says;
+  /** The thread each open answered, in order. */
+  readonly opens: string[];
+  /** Each image upload, held until the case answers it. */
+  readonly uploads: ((response: Response) => void)[];
+  /** What the read of the thread a press opened answers, once a case says;
    * a read asked before then waits for it. */
   readonly read: (thread: ThreadResponse) => Promise<void>;
 }
 
-/** The pane of a reader with no thread, whose first press opens one. */
+/** The pane of a reader with no thread, whose first press opens one, and
+ * each open after it a thread of its own. */
 async function paneOpened(): Promise<Pane> {
   const doors: StageDoors = { batches: [[]], sends: [], stops: [] };
-  let listed: ThreadResponse | undefined;
-  const waiting: ((response: Response) => void)[] = [];
+  const opens: string[] = [];
+  const uploads: ((response: Response) => void)[] = [];
+  const listed = new Map<string, ThreadResponse>();
+  const waiting = new Map<string, ((response: Response) => void)[]>();
   vi.stubGlobal(
     "fetch",
     stageDoor(doors, (url, method) => {
-      if (url.pathname.endsWith(`/threads/${session}`))
-        return listed === undefined
-          ? new Promise<Response>((resolve) => waiting.push(resolve))
-          : answer(listed);
+      if (url.pathname.endsWith("/artifacts"))
+        return new Promise<Response>((answered) => uploads.push(answered));
+      const read = /\/threads\/([^/]+)$/u.exec(url.pathname)?.[1];
+      if (read !== undefined) {
+        const thread = listed.get(read);
+        if (thread !== undefined) return answer(thread);
+        return new Promise<Response>((resolve) => {
+          waiting.set(read, [...(waiting.get(read) ?? []), resolve]);
+        });
+      }
       if (!url.pathname.endsWith("/threads")) return undefined;
-      return method === "POST"
-        ? answer(threadEntry({ session, mine: true }), 201)
-        : answer({ threads: [] });
+      if (method !== "POST") return answer({ threads: [] });
+      const opened =
+        opens.length === 0 ? session : `${session}-${String(opens.length + 1)}`;
+      opens.push(opened);
+      return answer(threadEntry({ session: opened, mine: true }), 201);
     }),
   );
   const { server, container } = await stagePaneMounted();
@@ -79,14 +102,18 @@ async function paneOpened(): Promise<Pane> {
     ...doors,
     server,
     container,
+    opens,
+    uploads,
     read: async (thread) => {
-      listed = thread;
-      for (const answered of waiting.splice(0)) answered(answer(thread));
+      listed.set(thread.session, thread);
+      for (const answered of waiting.get(thread.session) ?? [])
+        answered(answer(thread));
+      waiting.delete(thread.session);
       await turned(() => {
         server.push(
           frame("Session", "1", {
             version: 1,
-            resource: threadSessionResource(session, "turn"),
+            resource: threadSessionResource(thread.session, "turn"),
             representation: null,
           }),
         );
@@ -190,4 +217,98 @@ test("a first message nobody stopped is Stop until its thread is read, and Stop 
   expect(stageButton()).toBe("Stop");
   expect(threadDrawn(pane.container)).toBe(true);
   expect(pane.stops).toStrictEqual([]);
+});
+
+/** The message `at` sent, answered as taken. */
+async function taken(pane: Pane, at: number): Promise<void> {
+  const sent = pane.sends[at];
+  await stageAnswered(sent, { turn: sent?.turn, ordinal: at + 1 }, 202);
+}
+
+test("a press in the first box after its message was taken, before the thread it opened is read, sends to that thread", async () => {
+  const pane = await paneOpened();
+  await stageSent(asked);
+  await taken(pane, 0);
+  expect(threadDrawn(pane.container), "the thread is not read yet").toBe(false);
+
+  await stageSent("and 42");
+  await settled();
+  expect(pane.opens, "the press opened a thread of its own").toStrictEqual([
+    session,
+  ]);
+  expect(pane.sends.map((sent) => sent.session)).toStrictEqual([
+    session,
+    session,
+  ]);
+});
+
+test("a correction pressed while the stop of a taken first message lands goes to its thread, and the first box gives way once that thread reads the stopped turn ended", async () => {
+  const pane = await paneOpened();
+  await stageSent(asked);
+  await taken(pane, 0);
+  await stageStopped();
+  expect(pane.stops.map((stop) => stop.session)).toStrictEqual([session]);
+
+  await stageSent("where does 42 stand");
+  await stageAnswered(pane.stops[0], { stopped: "Stopped" });
+  await taken(pane, 1);
+  const [first, second] = pane.sends.map((sent) => sent.turn);
+  await pane.read(
+    threadBody({
+      session,
+      streamless: true,
+      turns: [
+        stageTurn(1, first ?? "", asked, "Stopped"),
+        stageTurn(2, second ?? "", "where does 42 stand", "Queued"),
+      ],
+    }),
+  );
+  await waitFor(() => {
+    expect(threadDrawn(pane.container), "the first box stuck").toBe(true);
+  });
+  expect(pane.opens).toStrictEqual([session]);
+  expect(pane.sends.map((sent) => sent.session)).toStrictEqual([
+    session,
+    session,
+  ]);
+});
+
+test("a press with an image whose upload answers after the first message was taken sends to the thread that message opened", async () => {
+  const pane = await paneOpened();
+  await stageSent(asked);
+  fireEvent.paste(stageBox(), {
+    clipboardData: {
+      files: [
+        new File([new Uint8Array([1, 2, 3])], "shot", { type: "image/png" }),
+      ],
+      types: ["Files"],
+    },
+  });
+  await waitFor(() => {
+    expect(screen.getAllByRole("img").length).toBeGreaterThan(0);
+  });
+  await stageSent("and this one");
+  expect(pane.uploads).toHaveLength(1);
+
+  await taken(pane, 0);
+  await act(async () => {
+    pane.uploads[0]?.(answer({ artifact: "artifact-1", digest: "d" }, 201));
+    await Promise.resolve();
+  });
+  await settled();
+  expect(
+    pane.opens,
+    "the press after its upload opened a thread of its own",
+  ).toStrictEqual([session]);
+  expect(pane.sends.map((sent) => [sent.session, sent.body])).toStrictEqual([
+    [session, { turn: pane.sends[0]?.turn, message: asked }],
+    [
+      session,
+      {
+        turn: pane.sends[1]?.turn,
+        message: "and this one",
+        images: ["artifact-1"],
+      },
+    ],
+  ]);
 });

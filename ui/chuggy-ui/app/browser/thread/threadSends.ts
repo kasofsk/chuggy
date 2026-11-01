@@ -21,7 +21,9 @@
  *
  * A FIRST BOX OPENS ITS THREAD UNDER ONE KEY, held from its first open until
  * its message is taken, so a press after a failed open reaches the thread that
- * one may have opened, and one after a failed send the thread it opened.
+ * one may have opened, and one after a failed send the thread it opened. A
+ * project's press after the message was taken reaches the thread its pane
+ * awaits the read of.
  *
  * WHAT ENDS A FIRST RECORD IS SOMETHING THAT HAPPENED, AND A BOX GOING IS NOT
  * THAT. A project's ends as its pane's start does: the thread a first message
@@ -422,18 +424,39 @@ export interface ThreadSendPressEnded {
   readonly started: string | undefined;
 }
 
-/** The thread a press sends to: the box's own, the one its first open
- * answered, or one opened now under the key its record holds. */
+/** The thread a box's press or stop reaches without opening one: the box's
+ * own, the one a first box's open answered, or the one its message opened
+ * while the pane awaits its read. */
+function threadSendStandingTo(
+  state: {
+    readonly threadSends: ThreadSendRecords;
+    readonly chatPanes: ChatPanesHeld;
+  },
+  home: ThreadHome,
+  session: string | undefined,
+): string | undefined {
+  const name = threadSendRecordName(home, session);
+  const standing = session ?? threadSendAt(state, name).opened;
+  if (standing !== undefined || home.scope === "Member") return standing;
+  return chatPaneRecordAt(state, home.partition).opening;
+}
+
+/** The thread a press sends to: the one standing, or one opened now under
+ * the key its record holds. */
 function threadSendSession(
   press: ThreadSendPress,
   name: string,
 ): ThreadSendsThunk<Promise<string | ThreadSend>> {
   return async (dispatch, getState, extra) => {
-    const record = threadSendAt(getState(), name);
-    const standing = press.session ?? record.opened;
+    const standing = threadSendStandingTo(
+      getState(),
+      press.home,
+      press.session,
+    );
     if (standing !== undefined) return standing;
     const key =
-      record.openKey ?? threadOpenKeyMinted(drawBytes(threadOpenKeyBytesCount));
+      threadSendAt(getState(), name).openKey ??
+      threadOpenKeyMinted(drawBytes(threadOpenKeyBytesCount));
     dispatch(threadSendOpenKeyHeldAt({ name, key }));
     const open = await threadSendOpenedAs(extra, press.home, key);
     if ("send" in open) return open;
@@ -550,23 +573,6 @@ export function threadSendPressed(
   };
 }
 
-/** The thread a stop with no send on its way goes to: the record's own, the
- * one a first box's open answered, or the one its message opened while the
- * pane awaits its read. */
-function threadStopTo(
-  state: {
-    readonly threadSends: ThreadSendRecords;
-    readonly chatPanes: ChatPanesHeld;
-  },
-  home: ThreadHome,
-  session: string | undefined,
-): string | undefined {
-  const name = threadSendRecordName(home, session);
-  const standing = session ?? threadSendAt(state, name).opened;
-  if (standing !== undefined || home.scope === "Member") return standing;
-  return chatPaneRecordAt(state, home.partition).opening;
-}
-
 /** One press of Stop: on the thread its send reaches where that is on its
  * way, and otherwise on the record's own thread. It answers once the door has,
  * or once there is nothing to ask it. */
@@ -578,7 +584,7 @@ export function threadStopPressed(stop: {
   return async (dispatch, getState, extra) => {
     const { home, turn } = stop;
     const name = threadSendRecordName(home, stop.session);
-    const to = threadStopTo(getState(), home, stop.session);
+    const to = threadSendStandingTo(getState(), home, stop.session);
     dispatch(threadStoppingAt({ name, turn }));
     const reached = await (extra.threadSends.flights.get(turn) ??
       Promise.resolve(to));
