@@ -38,8 +38,7 @@ import type {
 } from "../../../../src/contract/responses.ts";
 
 import type { InboxPage } from "./apiRoutes.ts";
-import type { ApiResult } from "./apiRequest.ts";
-import { panelReason } from "./freshness.ts";
+import type { ApiFailure, ApiResult } from "./apiRequest.ts";
 import {
   projectListAlongside,
   projectListAlongsideReread,
@@ -64,7 +63,7 @@ export interface InboxRows {
   readonly nextCursor: string | undefined;
   readonly pagesRead: number;
   /** Why the page a reader asked for after the first could not be read. */
-  readonly failure: string | undefined;
+  readonly failure: ApiFailure | undefined;
 }
 
 export const inboxRowsEmpty: InboxRows = {
@@ -140,7 +139,7 @@ export function inboxRowsAfterPage(
 ): InboxRows {
   return answered.outcome === "Ok"
     ? inboxRowsAppend(previous, answered.value)
-    : { ...previous, failure: panelReason(answered) };
+    : { ...previous, failure: answered };
 }
 
 /** Whether a `Ticket` frame is about a ticket the rows hold, or one whose phase the inbox holds. */

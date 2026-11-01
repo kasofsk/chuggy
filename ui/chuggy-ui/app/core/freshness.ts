@@ -4,15 +4,16 @@
  * A resource that states its own `observedAt` is the better answer, because it
  * is when the server saw the world rather than when this tab heard about it;
  * the cache's own update time stands in otherwise. Absence and failure are
- * separate states carrying their reason, so that neither is ever drawn as an
- * empty healthy table. A read that fails behind an answer leaves the answer
- * drawn, saying it was not updated, so nothing a reader holds beneath a panel
- * is taken away by a read they never asked for.
+ * separate states, a failure carrying its outcome, so that neither is ever
+ * drawn as an empty healthy table. A read that fails behind an answer leaves
+ * the answer drawn, saying it was not updated, so nothing a reader holds
+ * beneath a panel is taken away by a read they never asked for.
  */
 
 import { ApiOutcomeError } from "./apiRequest.ts";
 import type { ApiFailure } from "./apiRequest.ts";
 import { agoText } from "./figures.ts";
+import { failureOfThrown } from "./failureWords.ts";
 
 export const freshnessStaleAfterMs = 60_000;
 
@@ -25,10 +26,10 @@ export type PanelState<T> =
       readonly rereadFailed?: boolean;
       readonly retry?: () => void;
     }
-  | { readonly state: "Absent"; readonly reason: string }
+  | { readonly state: "Absent" }
   | {
       readonly state: "Failed";
-      readonly reason: string;
+      readonly failure: ApiFailure;
       readonly retry?: () => void;
     };
 
@@ -47,27 +48,6 @@ export function panelObservedAtMs(
   return dataUpdatedAtMs;
 }
 
-export function panelReason(result: ApiFailure): string {
-  switch (result.outcome) {
-    case "Unauthenticated":
-      return "this session is not signed in";
-    case "Absent":
-      return "the API has no such resource, or will not show it to you";
-    case "Conflict":
-      return `the API refused this read as ${result.code}`;
-    case "Retryable":
-      return `the API asked to be tried again and kept saying so`;
-    case "Rejected":
-      return `the API rejected this read as ${result.code}`;
-    case "Fault":
-      return `the API failed with ${result.code}`;
-    case "Unreachable":
-      return `the API could not be reached: ${result.reason}`;
-    case "Unreadable":
-      return `the API answered something this console cannot read: ${result.reason}`;
-  }
-}
-
 export interface PanelQuery<T> {
   readonly data: T | undefined;
   readonly error: unknown;
@@ -75,33 +55,28 @@ export interface PanelQuery<T> {
   readonly dataUpdatedAt: number;
 }
 
-function panelFailureReason(error: unknown): string | undefined {
-  if (error instanceof ApiOutcomeError) return panelReason(error.result);
+function panelFailure(error: unknown): ApiFailure | undefined {
+  if (error instanceof ApiOutcomeError) return error.result;
   if (error === null || error === undefined) return undefined;
-  return error instanceof Error ? error.message : "the read failed";
+  return failureOfThrown(error);
 }
 
 /** A cache entry is the resource itself, so a failure arrives as the error. An
  * answer of absent wins, because the resource is gone; otherwise an answer held
  * wins over a read that failed, and only a read never answered is failed. */
 export function panelStateFromQuery<T>(query: PanelQuery<T>): PanelState<T> {
-  const reason = panelFailureReason(query.error);
-  if (
-    reason !== undefined &&
-    query.error instanceof ApiOutcomeError &&
-    query.error.result.outcome === "Absent"
-  )
-    return { state: "Absent", reason };
+  const failure = panelFailure(query.error);
+  if (failure?.outcome === "Absent") return { state: "Absent" };
   if (!query.isPending && query.data !== undefined) {
     const observedAtMs = panelObservedAtMs(
       query.data,
       query.dataUpdatedAt === 0 ? undefined : query.dataUpdatedAt,
     );
-    return reason === undefined
+    return failure === undefined
       ? { state: "Ready", value: query.data, observedAtMs }
       : { state: "Ready", value: query.data, observedAtMs, rereadFailed: true };
   }
-  if (reason !== undefined) return { state: "Failed", reason };
+  if (failure !== undefined) return { state: "Failed", failure };
   return { state: "Pending" };
 }
 

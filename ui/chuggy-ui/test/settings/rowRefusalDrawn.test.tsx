@@ -301,9 +301,7 @@ test("a removal refused once a reread withheld the list is the shell's toast", a
   const held =
     heldRefusal<PermissionHolderPressed<"DeveloperGranters">>("remove-gone");
   const redrawn = await removing(client, held.write);
-  await redrawn(
-    permissions({ state: "Absent", reason: "withheld" }, held.write),
-  );
+  await redrawn(permissions({ state: "Absent" }, held.write));
 
   await turned(held.refuse);
   await settled();

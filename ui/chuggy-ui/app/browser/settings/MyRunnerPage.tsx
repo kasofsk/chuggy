@@ -33,10 +33,13 @@ import {
   apiPersonalRunnerServes,
 } from "../../core/apiRoutes.ts";
 import { consoleWriteKey } from "../../core/consoleWrite.ts";
-import type { ConsoleWrite } from "../../core/consoleWrite.ts";
+import type {
+  ConsoleWrite,
+  ConsoleWriteRefused,
+} from "../../core/consoleWrite.ts";
 import { instantFigure } from "../../core/figures.ts";
+import { failureWords } from "../../core/failureWords.ts";
 import type { PanelState } from "../../core/freshness.ts";
-import { panelReason } from "../../core/freshness.ts";
 import {
   myRunnerAddable,
   myRunnerRemovalLine,
@@ -57,7 +60,7 @@ import {
 } from "../../core/tenantQueries.ts";
 import { runnerStandingTone } from "../../core/tones.ts";
 import { usePanelState } from "../api.ts";
-import { useConsoleWrite } from "../consoleWrite.tsx";
+import { ConsoleWriteRefusedWords, useConsoleWrite } from "../consoleWrite.tsx";
 import type { ConsoleWriting } from "../consoleWrite.tsx";
 import { useNowMs } from "../Freshness.tsx";
 import { personalRunnerReread, usePersonalRunner } from "../personalRunner.ts";
@@ -110,7 +113,7 @@ async function myRunnerWritten(
 }
 
 function myRunnerRefusal(failure: ApiFailure): string {
-  return `Refused · ${panelReason(failure)}`;
+  return failureWords(failure).word;
 }
 
 function myRunnerRemovalWrite(tenant: string): ConsoleWrite<string, undefined> {
@@ -166,7 +169,7 @@ interface MyRunnerWriting {
   readonly removing: ConsoleWriting<string, undefined>;
   readonly serving: ConsoleWriting<MyRunnerServed, undefined>;
   readonly busy: boolean;
-  readonly refused: string | undefined;
+  readonly refused: ConsoleWriteRefused | undefined;
 }
 
 function useMyRunnerWriting(tenant: string): MyRunnerWriting {
@@ -178,7 +181,7 @@ function useMyRunnerWriting(tenant: string): MyRunnerWriting {
     removing,
     serving,
     busy: removing.isPending || serving.isPending,
-    refused: (removing.error ?? serving.error)?.message,
+    refused: removing.error ?? serving.error ?? undefined,
   };
 }
 
@@ -479,7 +482,9 @@ function MyRunnersHeld(props: {
         writing={writing}
       />
       {writing.refused === undefined ? null : (
-        <Notice tone="danger" inline detail={writing.refused} />
+        <Notice tone="danger" inline>
+          <ConsoleWriteRefusedWords refused={writing.refused} />
+        </Notice>
       )}
     </>
   );

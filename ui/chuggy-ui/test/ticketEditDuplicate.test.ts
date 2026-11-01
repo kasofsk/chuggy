@@ -226,7 +226,14 @@ test("a dependency is revoked by its own read, and one that could not be read is
   expect(
     ticketDuplicateRevoked(
       [7, 8, 9],
-      [read("Revoked"), read("Done"), { state: "Failed", reason: "down" }],
+      [
+        read("Revoked"),
+        read("Done"),
+        {
+          state: "Failed",
+          failure: { outcome: "Unreachable", reason: "down" },
+        },
+      ],
     ),
   ).toStrictEqual([7]);
 });

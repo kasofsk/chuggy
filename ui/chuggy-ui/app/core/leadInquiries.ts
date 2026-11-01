@@ -52,7 +52,8 @@ import {
   noRunnerCode,
 } from "../../../../src/contract/rosters.ts";
 import type { ApiFailure } from "./apiRequest.ts";
-import { panelReason } from "./freshness.ts";
+import { failureWords } from "./failureWords.ts";
+import type { FailureWords } from "./failureWords.ts";
 import { sessionRunnerNoticeWord } from "./sessionRunners.ts";
 
 /**
@@ -186,7 +187,7 @@ export const inquiryRefusalWordNoLead = "No lead";
 export type InquiryAskRefusal =
   | { readonly ask: "Refused"; readonly word: string }
   | { readonly ask: "NoRunner" }
-  | { readonly ask: "Failed"; readonly reason: string };
+  | { readonly ask: "Failed"; readonly words: FailureWords };
 
 /** What a press was answered, which the box keeps until the next press. */
 export type InquiryAskAnswer =
@@ -209,8 +210,9 @@ function inquiryRefused(code: string): InquiryAskRefusal {
 /**
  * What the door's refusal is, as the box draws it. A refusal is the lead's own
  * answer and is drawn as a word; everything else is this console or the network
- * failing, and is drawn with the reason, because the two are not the same news
- * and a reader who cannot tell them apart cannot tell whether to ask again.
+ * failing, and is drawn in the failure's own word, because the two are not the
+ * same news and a reader who cannot tell them apart cannot tell whether to ask
+ * again.
  */
 export function inquiryAskRefused(failure: ApiFailure): InquiryAskRefusal {
   switch (failure.outcome) {
@@ -224,12 +226,12 @@ export function inquiryAskRefused(failure: ApiFailure): InquiryAskRefusal {
     case "Fault":
     case "Unreachable":
     case "Unreadable":
-      return { ask: "Failed", reason: panelReason(failure) };
+      return { ask: "Failed", words: failureWords(failure) };
   }
 }
 
 /** The line a refusal is drawn as, which is the word, the runner notice's own
- * word, or the failure with its reason. */
+ * word, or the failure's. */
 export function inquiryAskRefusalSentence(refusal: InquiryAskRefusal): string {
   switch (refusal.ask) {
     case "Refused":
@@ -237,7 +239,7 @@ export function inquiryAskRefusalSentence(refusal: InquiryAskRefusal): string {
     case "NoRunner":
       return sessionRunnerNoticeWord("NoRunner", "Inquiry");
     case "Failed":
-      return `Failed · ${refusal.reason}`;
+      return refusal.words.word;
   }
 }
 

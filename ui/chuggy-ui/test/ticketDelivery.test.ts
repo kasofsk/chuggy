@@ -168,8 +168,12 @@ test("a row is drawn for a line to show and for a read that did not answer, and 
       answered(deliveryLandedWith([deliveryFailedBare])),
       true,
     ],
-    ["a read that failed", { state: "Failed", reason: "Fault" }, true],
-    ["a read with no answer", { state: "Absent", reason: "Absent" }, true],
+    [
+      "a read that failed",
+      { state: "Failed", failure: { outcome: "Unreachable", reason: "Fault" } },
+      true,
+    ],
+    ["a read with no answer", { state: "Absent" }, true],
   ];
   for (const [what, state, expected] of drawn)
     expect(ticketDeliveryDrawn(state), what).toBe(expected);
@@ -238,11 +242,15 @@ test("a read that answers in one request lands before the answer it replaces is 
 test("a closed row says a read that did not answer was not read, and a row not drawn says nothing, whatever the clock", () => {
   for (const nowMs of [answeredAtMs, answeredAtMs + freshnessStaleAfterMs]) {
     expect(
-      ticketDeliverySummary({ state: "Failed", reason: "Fault" }, nowMs),
+      ticketDeliverySummary(
+        {
+          state: "Failed",
+          failure: { outcome: "Unreachable", reason: "Fault" },
+        },
+        nowMs,
+      ),
     ).toBe("Not read");
-    expect(
-      ticketDeliverySummary({ state: "Absent", reason: "Absent" }, nowMs),
-    ).toBe("Not read");
+    expect(ticketDeliverySummary({ state: "Absent" }, nowMs)).toBe("Not read");
     expect(ticketDeliverySummary({ state: "Pending" }, nowMs)).toBeUndefined();
     expect(
       ticketDeliverySummary(answered(ticketLandedNowhere), nowMs),
@@ -256,7 +264,10 @@ test("the read's state is kept as it stands, its answer alone turned into lines"
     value: ticketDeliveryLines(deliveryLandedWith([deliveryFailedBare])),
     observedAtMs: answeredAtMs,
   });
-  const failed = { state: "Failed", reason: "Unreachable" } as const;
+  const failed = {
+    state: "Failed",
+    failure: { outcome: "Unreachable", reason: "Unreachable" },
+  } as const;
   expect(ticketDeliveryRead(failed)).toBe(failed);
 });
 

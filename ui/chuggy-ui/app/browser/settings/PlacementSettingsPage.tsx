@@ -64,7 +64,11 @@ import type {
   RunnersPlacementWrites,
 } from "../../core/runners.ts";
 import { usePanelState } from "../api.ts";
-import { useConsoleWrite, useConsoleWriteProgress } from "../consoleWrite.tsx";
+import {
+  ConsoleWriteRefusedWords,
+  useConsoleWrite,
+  useConsoleWriteProgress,
+} from "../consoleWrite.tsx";
 import type { ConsoleWriting } from "../consoleWrite.tsx";
 import { PanelUnready } from "../DataPanel.tsx";
 import { useSessionPlacement } from "../sessionPlacement.tsx";
@@ -167,8 +171,9 @@ function PlacementNotice(props: {
               : "danger"
           }
           inline
-          detail={saving.error.message}
-        />
+        >
+          <ConsoleWriteRefusedWords refused={saving.error} />
+        </Notice>
       </>
     );
   }

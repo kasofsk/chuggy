@@ -23,6 +23,7 @@ import {
   workspacesListed,
   workspacesWithheld,
 } from "./siteWorkspacesFixture.tsx";
+import { readFailedLines } from "../readFailedLines.ts";
 
 vi.mock("../../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
@@ -142,9 +143,7 @@ test("a list loading or failed is the read's own line, with no table and no acti
   expect(screen.queryAllByRole("button")).toStrictEqual([]);
   cleanup();
   await drawWorkspaces({ listing: () => answer({}, 500) });
-  expect(
-    screen.getByText("Failed to load · the API failed with InternalError"),
-  ).toBeTruthy();
+  expect(readFailedLines()).toStrictEqual(["Not read · Server error"]);
   expect(screen.queryByRole("table")).toBeNull();
   expect(
     screen.queryAllByRole("button").map((button) => button.textContent),
@@ -156,7 +155,7 @@ test("a list absent to a reader the abilities offered it is who creates workspac
   await drawWorkspaces({ listing: () => answer({}, 404) });
   expect(screen.getByText(workspacesWithheld)).toBeTruthy();
   expect(screen.queryAllByRole("button")).toStrictEqual([]);
-  expect(screen.queryByText(/^Not available/u)).toBeNull();
+  expect(readFailedLines()).toStrictEqual([]);
 });
 
 test.each([
@@ -178,7 +177,7 @@ test.each([
     expect(screen.queryByRole("table")).toBeNull();
     expect(screen.queryByRole("region")).toBeNull();
     expect(screen.queryAllByRole("button")).toStrictEqual([]);
-    expect(screen.queryByText(/^Not available/u)).toBeNull();
+    expect(readFailedLines()).toStrictEqual([]);
   },
 );
 
@@ -190,9 +189,7 @@ test("the abilities loading or failed is the page's unready line, with no list r
   expect(screen.queryByText(workspacesWithheld)).toBeNull();
   cleanup();
   const failed = await drawWorkspaces({ abilities: () => answer({}, 500) });
-  expect(
-    screen.getByText("Failed to load · the API failed with InternalError"),
-  ).toBeTruthy();
+  expect(readFailedLines()).toStrictEqual(["Not read · Server error"]);
   expect(workspaceListReads(failed)).toBe(0);
   expect(
     screen.queryAllByRole("button").map((button) => button.textContent),

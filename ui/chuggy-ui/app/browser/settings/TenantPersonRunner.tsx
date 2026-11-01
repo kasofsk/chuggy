@@ -12,7 +12,7 @@ import { apiDeregisterMemberRunner } from "../../core/apiRoutes.ts";
 import { consoleWriteKey } from "../../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../../core/consoleWrite.ts";
 import { memberRunnerRemoved } from "../../core/myRunner.ts";
-import { useConsoleWrite } from "../consoleWrite.tsx";
+import { ConsoleWriteRefusedWords, useConsoleWrite } from "../consoleWrite.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Confirm } from "../ui/Confirm.tsx";
 
@@ -41,10 +41,13 @@ export function TenantPersonRunner(props: {
     { drawn: true },
   );
   const line =
-    removing.error?.message ??
-    (removing.isSuccess
-      ? memberRunnerRemoved({ outcome: "Ok", value: undefined })
-      : undefined);
+    removing.error === null ? (
+      removing.isSuccess ? (
+        memberRunnerRemoved({ outcome: "Ok", value: undefined })
+      ) : undefined
+    ) : (
+      <ConsoleWriteRefusedWords refused={removing.error} />
+    );
   return (
     <div role="group" aria-labelledby={labelled} className="grid gap-2">
       <span id={labelled} className="text-sm text-ink-3">

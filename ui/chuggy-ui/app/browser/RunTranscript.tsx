@@ -24,7 +24,6 @@ import type { ApiResult } from "../core/apiRequest.ts";
 import { apiRunTranscript } from "../core/apiRoutes.ts";
 import { runConfigurationQuery } from "../core/executionQueries.ts";
 import { conversationExchanges } from "../core/conversation.ts";
-import { panelReason } from "../core/freshness.ts";
 import { runPromptOfPanel } from "../core/runConfiguration.ts";
 import type { RunPrompt } from "../core/runConfiguration.ts";
 import {
@@ -45,6 +44,7 @@ import type {
 } from "../core/runTranscript.ts";
 import { useApiPorts, usePanelState } from "./api.ts";
 import { Conversation } from "./conversation/Conversation.tsx";
+import { ReadFailed } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
 import { Panel } from "./ui/Panel.tsx";
 
@@ -70,7 +70,7 @@ function runTranscriptAnswered(
 ): RunTranscriptHeld {
   return answered.outcome === "Ok"
     ? merge(held, answered.value)
-    : runTranscriptFailed(held, panelReason(answered));
+    : runTranscriptFailed(held, answered);
 }
 
 /** The read walk: the newest batches first, then those above what is held a
@@ -217,7 +217,7 @@ export function RunConversation(props: {
   return (
     <>
       {failure === undefined ? null : (
-        <p className="panel-failed">could not be read — {failure}</p>
+        <ReadFailed subject="Transcript" failure={failure} />
       )}
       <div
         role="group"

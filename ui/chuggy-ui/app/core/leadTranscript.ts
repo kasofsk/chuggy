@@ -72,6 +72,7 @@ import type {
   LeadTranscriptResponse,
   SelectorDecisionResponse,
 } from "../../../../src/contract/responses.ts";
+import type { ApiFailure } from "./apiRequest.ts";
 
 /** As much of the note the lead left its successor as the lead read carries. */
 export type LeadHandoffNote = LeadResponse["handoffNote"];
@@ -147,7 +148,7 @@ export interface LeadTranscriptPane {
   readonly stream: string | undefined;
   readonly fold: LeadTranscriptFold;
   readonly kept: LeadTranscriptFold | undefined;
-  readonly failure: string | undefined;
+  readonly failure: ApiFailure | undefined;
 }
 
 export const leadTranscriptPaneEmpty: LeadTranscriptPane = {
@@ -164,7 +165,7 @@ export const leadTranscriptPaneEmpty: LeadTranscriptPane = {
  */
 export interface LeadTranscriptHeld extends LeadTranscriptFold {
   readonly stream: string | undefined;
-  readonly failure: string | undefined;
+  readonly failure: ApiFailure | undefined;
   /**
    * Whether the walk has not reached the mark it was read against: batches
    * below it left unread, a cursor a page would not move, or a re-walk that
@@ -355,7 +356,7 @@ export type LeadTranscriptEvent =
        * passed since. */
       readonly after: number;
     }
-  | { readonly event: "Failure"; readonly reason: string }
+  | { readonly event: "Failure"; readonly failure: ApiFailure }
   | { readonly event: "StreamChange"; readonly stream: string | undefined };
 
 /**
@@ -428,7 +429,7 @@ export function leadTranscriptStep(
         event.after,
       );
     case "Failure":
-      return { ...pane, failure: event.reason };
+      return { ...pane, failure: event.failure };
     case "StreamChange":
       return { ...leadTranscriptPaneEmpty, stream: event.stream };
   }

@@ -42,6 +42,7 @@ import type {
   ConversationMeasures,
   ConversationStanding,
 } from "../../core/conversation.ts";
+import { failureWords, readFailedLine } from "../../core/failureWords.ts";
 import type { Figure as FigureValue } from "../../core/figures.ts";
 import {
   costAmountFigure,
@@ -53,6 +54,7 @@ import { conversationStandingArm } from "../../core/tones.ts";
 import { CopyButton } from "../ui/CopyButton.tsx";
 import { useCopyHeld } from "../ui/copyHeld.tsx";
 import { Figure } from "../ui/Figure.tsx";
+import { Tooltip } from "../ui/Tooltip.tsx";
 import { ConversationGlyph } from "./ConversationCard.tsx";
 
 import "./conversation.css";
@@ -67,10 +69,11 @@ export type ConversationStandingDrawn = Exclude<
 /**
  * A centred line that belongs to neither speaker. `ruled` draws a hairline
  * through it, which is what separates a fact about the record from a turn the
- * runtime opened.
+ * runtime opened, and `detail` is on hover of the words.
  */
 export function ConversationSystemLine(props: {
   readonly words: string;
+  readonly detail?: string | undefined;
   readonly ruled?: boolean;
 }): ReactNode {
   const rule =
@@ -80,7 +83,9 @@ export function ConversationSystemLine(props: {
   return (
     <p className="text-ink-3 flex items-center justify-center gap-3 text-xs">
       {rule}
-      <span>{props.words}</span>
+      <Tooltip text={props.detail}>
+        <span>{props.words}</span>
+      </Tooltip>
       {rule}
     </p>
   );
@@ -98,7 +103,7 @@ export function conversationMarkerWords(marker: ConversationMarker): string {
     case "Unreadable":
       return "Unreadable";
     case "Failure":
-      return `Failed · ${marker.reason}`;
+      return readFailedLine(undefined, marker.failure);
     case "Truncated":
       return "Truncated";
     case "Dropped":
@@ -110,6 +115,15 @@ export function conversationMarkerWords(marker: ConversationMarker): string {
     case "NoStore":
       return "No store";
   }
+}
+
+/** What a marker carries beyond its words, for a reader reporting it. */
+export function conversationMarkerDetail(
+  marker: ConversationMarker,
+): string | undefined {
+  return marker.marker === "Failure"
+    ? failureWords(marker.failure).detail
+    : undefined;
 }
 
 /** The arms a reader must not mistake for a settled turn keep their hue, a

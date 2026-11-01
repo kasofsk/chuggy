@@ -122,13 +122,14 @@ test("a stage's commands become its Report once their read is refused or does no
     ),
   ).toBe(commands);
   expect(runResultOpenedSettled(commands, ready("not json"))).toEqual(report);
-  expect(
-    runResultOpenedSettled(commands, { state: "Absent", reason: "gone" }),
-  ).toEqual(report);
+  expect(runResultOpenedSettled(commands, { state: "Absent" })).toEqual(report);
   expect(
     runResultOpenedSettled(
       { ...commands, report: undefined },
-      { state: "Failed", reason: "refused" },
+      {
+        state: "Failed",
+        failure: { outcome: "Unreachable", reason: "refused" },
+      },
     ),
   ).toBeUndefined();
 });

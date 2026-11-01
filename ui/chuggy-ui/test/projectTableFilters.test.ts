@@ -139,7 +139,7 @@ test("only the unfiltered, unsearched list, holding nothing and with nothing lef
   expect(
     ticketFilterProjectEmpty(ticketListAskDefault, {
       ...ended,
-      failure: "Unreachable",
+      failure: { outcome: "Unreachable", reason: "offline" },
     }),
   ).toBe(false);
   expect(

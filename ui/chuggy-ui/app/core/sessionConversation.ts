@@ -87,7 +87,7 @@ function sessionConversationMarkers(
   const shortfalls: readonly ConversationMarker[] = [
     ...(held.failure === undefined
       ? []
-      : [{ marker: "Failure", reason: held.failure } as const]),
+      : [{ marker: "Failure", failure: held.failure } as const]),
     ...(shortfall === undefined ? [] : [shortfall]),
     ...(held.elided === 0 ? [] : [sessionConversationElision(held.elided)]),
     ...(held.entriesDropped === 0

@@ -40,7 +40,10 @@ export const workRunnerUnread: WorkRunnerRead<never> = {
 };
 
 export const workRunnerFailed: WorkRunnerRead<never> = {
-  state: { state: "Failed", reason: "the read failed" },
+  state: {
+    state: "Failed",
+    failure: { outcome: "Unreachable", reason: "the read failed" },
+  },
   settled: true,
 };
 

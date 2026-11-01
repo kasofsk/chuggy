@@ -1030,7 +1030,9 @@ test("a Restore that fails says so on the Revisions card", async () => {
     fireEvent.click(restores[0] as HTMLElement);
   });
   await settled();
-  expect(within(sectionOf("Revisions")).getByText(/Failed/)).toBeDefined();
+  expect(
+    within(sectionOf("Revisions")).getByText("Server error"),
+  ).toBeDefined();
   expect(server.writes()).toHaveLength(1);
 });
 

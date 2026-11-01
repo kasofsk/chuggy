@@ -307,10 +307,15 @@ test("the prompt follows the snapshot's read, and a failed read is not a missing
     text: "do the thing",
   });
   expect(runPromptOfPanel(ready("{"))).toEqual({ prompt: "Unreadable" });
-  expect(runPromptOfPanel({ state: "Absent", reason: "gone" })).toEqual({
+  expect(runPromptOfPanel({ state: "Absent" })).toEqual({
     prompt: "NotKept",
   });
-  expect(runPromptOfPanel({ state: "Failed", reason: "down" })).toEqual({
+  expect(
+    runPromptOfPanel({
+      state: "Failed",
+      failure: { outcome: "Unreachable", reason: "down" },
+    }),
+  ).toEqual({
     prompt: "Unreadable",
   });
   expect(runPromptRead("not json")).toEqual({ prompt: "Unreadable" });

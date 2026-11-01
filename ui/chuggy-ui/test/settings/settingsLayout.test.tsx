@@ -77,6 +77,7 @@ import {
   peopleListed,
   peoplePath,
 } from "./tenantPeopleFixture.tsx";
+import { readFailedLines } from "../readFailedLines.ts";
 
 const copied = vi.hoisted((): string[] => []);
 
@@ -370,7 +371,7 @@ test.each([
     );
     expect(readsOf(drawn, siteAbilitiesPath)).toBeGreaterThan(0);
     expect(groupsDrawn()).toStrictEqual(projectGroups);
-    expect(screen.queryByText(/^Failed to load/u)).toBeNull();
+    expect(readFailedLines()).toStrictEqual([]);
   },
 );
 

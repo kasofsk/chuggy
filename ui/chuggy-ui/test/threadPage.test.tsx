@@ -50,6 +50,7 @@ import {
 } from "./threadFixture.ts";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 import type { ViewportFrame } from "./viewport.ts";
+import { readFailedLines } from "./readFailedLines.ts";
 
 beforeEach(() => {
   resizeObserverStubbed();
@@ -203,7 +204,7 @@ test("a thread's address draws its conversation as the page, with no chat pane a
 
 test("a thread that cannot be read draws the read's own line, and no pane", async () => {
   await mountedAt(threadPath(missingSession));
-  expect(screen.getByText(/^Not available · /u)).toBeDefined();
+  expect(readFailedLines()).toStrictEqual(["Not found"]);
   expect(screen.queryByRole("region", { name: "Conversation" })).toBeNull();
   expect(chatDrawn()).toBeNull();
   styleless();

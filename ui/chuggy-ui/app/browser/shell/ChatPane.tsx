@@ -44,7 +44,7 @@ import {
 } from "../../core/conversation.ts";
 import { consoleWriteKey } from "../../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../../core/consoleWrite.ts";
-import { panelReason } from "../../core/freshness.ts";
+import { failureWords } from "../../core/failureWords.ts";
 import { projectAbilityRefused } from "../../core/projectAbilities.ts";
 import {
   hostedRunsQuery,
@@ -70,7 +70,7 @@ import { threadsQuery } from "../../core/sessionQueries.ts";
 import { sessionRefusedNoRunner } from "../../core/sessionRunners.ts";
 import { threadHomeOf } from "../../core/threadHome.ts";
 import { usePanelState } from "../api.ts";
-import { useConsoleWrite } from "../consoleWrite.tsx";
+import { ConsoleWriteRefusedWords, useConsoleWrite } from "../consoleWrite.tsx";
 import { drawBytes } from "../ports.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { Conversation } from "../conversation/Conversation.tsx";
@@ -191,7 +191,9 @@ function chatPaneOpenWrite(
       };
     },
     refusal: (failure) =>
-      `Refused · ${threadOpenAtLimit(failure) ? threadLimitWord : panelReason(failure)}`,
+      threadOpenAtLimit(failure)
+        ? `Refused · ${threadLimitWord}`
+        : failureWords(failure).word,
     landed: (client, opened) => {
       if (opened.opened === "Opened")
         choose({ partition, session: opened.session });
@@ -246,7 +248,9 @@ function ChatPaneStartControl(props: {
       />
       {opening.error === null ? null : (
         <ChatPaneHeaderRow>
-          <Notice tone="danger" inline detail={opening.error.message} />
+          <Notice tone="danger" inline>
+            <ConsoleWriteRefusedWords refused={opening.error} />
+          </Notice>
         </ChatPaneHeaderRow>
       )}
       <ChatPaneStartDoor partition={props.partition} header={props.header} />

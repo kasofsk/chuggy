@@ -361,9 +361,8 @@ test("a mint the API refuses says so and draws no step", async () => {
     written: [answer({ error: { code: "Forbidden", message: "no" } }, 403)],
   });
   await addRunner();
-  expect(
-    within(sectionOf("Runners")).getByText(/^Refused · /u).textContent,
-  ).toContain("Forbidden");
+  expect(within(sectionOf("Runners")).getByText("Refused")).toBeDefined();
+  expect(sectionOf("Runners").textContent).not.toContain("Forbidden");
   expect(screen.queryByRole("list", { name: "Add runner" })).toBeNull();
   expect(screen.queryByRole("link", { name: "Setup guide" })).toBeNull();
   expect(screen.getByRole("form", { name: "Runner" })).toBeTruthy();

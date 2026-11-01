@@ -33,6 +33,7 @@ import {
   removeButtons,
   unanswered,
 } from "./permissionsFixture.tsx";
+import { readFailedLines } from "../readFailedLines.ts";
 
 vi.mock("../../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
@@ -101,7 +102,7 @@ test("a reader the project's list is absent to sees the one line and no table", 
     within(section).getByText("A project admin manages permissions"),
   ).toBeTruthy();
   expect(within(section).queryByRole("table")).toBeNull();
-  expect(screen.queryByText(/^Not available/u)).toBeNull();
+  expect(readFailedLines()).toStrictEqual([]);
 });
 
 test("the project's read loading or failed is its unready line, and a cut list says so", async () => {
@@ -109,11 +110,9 @@ test("the project's read loading or failed is its unready line, and a cut list s
   expect(within(sectionOf("Project")).getByText("Loading…")).toBeTruthy();
   cleanup();
   await drawProjectPermissions({ authorities: () => answer({}, 500) });
-  expect(
-    within(sectionOf("Project")).getByText(
-      "Failed to load · the API failed with InternalError",
-    ),
-  ).toBeTruthy();
+  expect(readFailedLines(sectionOf("Project"))).toStrictEqual([
+    "Not read · Server error",
+  ]);
   cleanup();
   await drawProjectPermissions({
     authorities: () =>

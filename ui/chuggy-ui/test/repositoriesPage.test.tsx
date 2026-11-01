@@ -60,6 +60,7 @@ import {
 import { workRunnerOver, workRunnerUnreadable } from "./workRunnerReads.ts";
 import type { WorkRunnerReads } from "./workRunnerReads.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
+import { readFailedLines } from "./readFailedLines.ts";
 
 interface Held {
   readonly redirects: string[];
@@ -1397,9 +1398,11 @@ test("a picker open in a tab out of view asks nothing, and reads again at the in
 });
 
 /** What the picker draws of a read that did not answer, `null` where nothing. */
-function rosterUnread(): HTMLElement | null {
-  return within(screen.getByRole("dialog")).queryByText(
-    /^(?:Loading|Failed to load|Not available)/u,
+function rosterUnread(): Element | null {
+  const dialog = screen.getByRole("dialog");
+  return (
+    within(dialog).queryByText(/^Loading/u) ??
+    dialog.querySelector(".read-failed .notice")
   );
 }
 
@@ -1486,9 +1489,7 @@ test("the first reading of an opening still says what it met, after an opening w
   reopened.release(answer({}, 404));
   await settled();
   expect(pickerRows()).toStrictEqual([]);
-  expect(rosterUnread()?.textContent).toBe(
-    "Not available · the API has no such resource, or will not show it to you",
-  );
+  expect(rosterUnread()?.textContent).toBe("Not found");
 });
 
 /** A failure a person was told of is not followed by a roster that draws and
@@ -1858,11 +1859,9 @@ test("a listing that fails is a picker that offers nothing", async () => {
   await settled();
   const picker = within(screen.getByRole("dialog"));
   expect(picker.queryByRole("button", { name: "kasofsk/chuggy" })).toBeNull();
-  expect(
-    picker.getByText(
-      "Failed to load · the API asked to be tried again and kept saying so",
-    ),
-  ).toBeTruthy();
+  expect(readFailedLines(screen.getByRole("dialog"))).toStrictEqual([
+    "Not read · Busy",
+  ]);
 });
 
 /**

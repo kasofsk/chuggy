@@ -113,6 +113,7 @@ import {
   threadTurnBoundaryHeading,
   threadTurnRecordedLastLine,
 } from "../../../../src/contract/threadSeeding.ts";
+import type { ApiFailure } from "./apiRequest.ts";
 import { runCountLabel } from "./runTotals.ts";
 import { threadWakeDrawn } from "./threads.ts";
 import type { ThreadSending } from "./threads.ts";
@@ -316,7 +317,7 @@ export type ConversationMarker =
   | { readonly marker: "Elision"; readonly bytes: number }
   | { readonly marker: "Capped"; readonly sentence: string }
   | { readonly marker: "Unreadable" }
-  | { readonly marker: "Failure"; readonly reason: string }
+  | { readonly marker: "Failure"; readonly failure: ApiFailure }
   | { readonly marker: "Truncated" }
   | { readonly marker: "Dropped"; readonly count: number }
   | { readonly marker: "Unreached" }

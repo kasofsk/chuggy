@@ -21,6 +21,7 @@ import { answer, drawnStrict, settled } from "../screenHarness.tsx";
 import type { DrawnStrict, SentRequest } from "../screenHarness.tsx";
 import { leadPartition } from "../leadFixture.ts";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
+import { readFailedLines } from "../readFailedLines.ts";
 
 const held = vi.hoisted((): { redirects: string[] } => ({ redirects: [] }));
 
@@ -309,7 +310,7 @@ test("a reader the accounts are withheld from is told who connects them and offe
   expect(
     accounts.getByText("A workspace admin connects GitHub accounts"),
   ).toBeTruthy();
-  expect(accounts.queryByText(/^Not available/)).toBeNull();
+  expect(readFailedLines(sectionOf("Accounts"))).toStrictEqual([]);
   expect(accounts.queryAllByRole("button")).toStrictEqual([]);
   expect(accounts.queryAllByRole("link")).toStrictEqual([]);
 });
@@ -318,11 +319,9 @@ test("a reader the accounts are withheld from is told who connects them and offe
  * forbidden listing above, which this reader's standing rather than a fault. */
 test("a listing that failed keeps its own line", async () => {
   await drawAccounts({ listing: () => answer({}, 500) });
-  expect(
-    within(sectionOf("Accounts")).getByText(
-      "Failed to load · the API failed with InternalError",
-    ),
-  ).toBeTruthy();
+  expect(readFailedLines(sectionOf("Accounts"))).toStrictEqual([
+    "Not read · Server error",
+  ]);
 });
 
 /** The forge's own page for one installation, as the permissions read answers it. */

@@ -1495,7 +1495,10 @@ describe("the mailbox overlay, on a whole record the page is behind on", () => {
             item: "Marker",
             marker:
               marker === "Failure"
-                ? { marker, reason: "read failed" }
+                ? {
+                    marker,
+                    failure: { outcome: "Unreachable", reason: "read failed" },
+                  }
                 : { marker },
           },
         ],

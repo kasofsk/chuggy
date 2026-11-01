@@ -23,7 +23,11 @@ import type { ReactNode } from "react";
 
 import { ConsoleWriteToasts } from "../app/browser/consoleWrite.tsx";
 import { OwnerFallbackSection } from "../app/browser/settings/OwnerFallbackSection.tsx";
-import { consoleQueryClient } from "../app/core/consoleWrite.ts";
+import {
+  consoleQueryClient,
+  consoleWriteWatchOf,
+} from "../app/core/consoleWrite.ts";
+import { TicketCreationRefused } from "../app/core/ticketCreationRun.ts";
 import {
   answer,
   heldAnswer,
@@ -52,7 +56,7 @@ afterEach(() => {
 const sectionTitle = "Personal runners";
 
 /** The sentence the section draws for the refusal every case is answered. */
-const refusedSentence = /^Failed · /u;
+const refusedSentence = "Server error";
 
 interface Drawn {
   readonly view: RenderResult;
@@ -192,4 +196,68 @@ test("a write the server faulted on is sent once", async () => {
     within(sectionOf(sectionTitle)).getByText(refusedSentence),
   ).toBeDefined();
   expect(writesSent(page.sent)).toBe(1);
+});
+
+test("a refusal's code is not in its line, and is on hover of it", async () => {
+  await drawn(consoleQueryClient(), () =>
+    answer({ error: { code: "Fault" } }, 500),
+  );
+  await saved();
+  await settled();
+
+  const line = within(sectionOf(sectionTitle)).getByText(refusedSentence);
+  expect(line.closest(".notice")?.textContent).toBe(refusedSentence);
+  fireEvent.focus(line);
+  expect((await screen.findByRole("tooltip")).textContent).toBe("Fault");
+});
+
+test("a refusal's code is not in its toast, and is on hover of it", async () => {
+  const held = heldAnswer();
+  const page = await drawn(consoleQueryClient(), () => held.answered);
+  await saved();
+  await page.shown(false);
+  await turned(() => {
+    held.release(answer({ error: { code: "Fault" } }, 500));
+  });
+  await settled();
+
+  expect(toastLines()).toStrictEqual([refusedSentence]);
+  const toast = document.querySelector(".toast-line span");
+  if (toast === null) throw new Error("the refusal drew no toast");
+  fireEvent.focus(toast);
+  expect((await screen.findByRole("tooltip")).textContent).toBe("Fault");
+});
+
+test("a creation refused for its held draft's failed read keeps that read's code on hover of its toast", async () => {
+  const client = consoleQueryClient();
+  render(
+    <ScreenHarness
+      partition={leadPartition}
+      client={client}
+      transport={openedStream().ports.fetch}
+    >
+      <ConsoleWriteToasts />
+    </ScreenHarness>,
+  );
+  const sentence = "Draft · Not read · Server error";
+  await turned(() => {
+    consoleWriteWatchOf(client).refused(
+      undefined,
+      new TicketCreationRefused(sentence, {
+        created: "Refused",
+        reason: sentence,
+        held: undefined,
+        unread: { outcome: "Fault", code: "InternalError", status: 500 },
+      }),
+      undefined,
+    );
+  });
+
+  expect(toastLines()).toStrictEqual([sentence]);
+  const toast = document.querySelector(".toast-line span");
+  if (toast === null) throw new Error("the refusal drew no toast");
+  fireEvent.focus(toast);
+  expect((await screen.findByRole("tooltip")).textContent).toBe(
+    "InternalError",
+  );
 });

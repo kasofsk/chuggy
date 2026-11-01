@@ -37,8 +37,11 @@ function ready<T>(value: T): PanelState<T> {
 }
 
 const pending = { state: "Pending" } as const;
-const absent = { state: "Absent", reason: "no such resource" } as const;
-const failed = { state: "Failed", reason: "the plane failed" } as const;
+const absent = { state: "Absent" } as const;
+const failed = {
+  state: "Failed",
+  failure: { outcome: "Unreachable", reason: "the plane failed" },
+} as const;
 
 function administered(tenant: string): AccessCallerTenant {
   return { tenant, roles: ["Admin"], administer: true };

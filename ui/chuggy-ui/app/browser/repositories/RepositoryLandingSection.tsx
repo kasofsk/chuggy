@@ -37,7 +37,7 @@ import {
   repositoryLandingWrite,
 } from "../../core/repositoryLanding.ts";
 import type { RepositoryLandingDraft } from "../../core/repositoryLanding.ts";
-import { useConsoleWrite } from "../consoleWrite.tsx";
+import { ConsoleWriteRefusedWords, useConsoleWrite } from "../consoleWrite.tsx";
 import type { ConsoleWriting } from "../consoleWrite.tsx";
 import { useProjectAbilities } from "../projectAbilities.tsx";
 import { Notice } from "../ui/Notice.tsx";
@@ -68,8 +68,9 @@ function RepositoryLandingNotice(props: {
             : "parked"
         }
         inline
-        detail={saving.error.message}
-      />
+      >
+        <ConsoleWriteRefusedWords refused={saving.error} />
+      </Notice>
     );
   if (saving.isSuccess) return <Notice tone="live" inline detail="Written" />;
   return null;

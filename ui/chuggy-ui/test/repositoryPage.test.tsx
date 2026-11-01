@@ -542,9 +542,7 @@ test("a refused write says so and leaves the edit open", async () => {
     fireEvent.click(screen.getByRole("radio", { name: "Pull request" }));
   });
   await press("Save changes");
-  expect(
-    screen.getByText("Failed · the API rejected this read as RepositoryLocked"),
-  ).toBeTruthy();
+  expect(screen.getByText("Refused")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Save changes" })).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Reload" })).toBeNull();
 });

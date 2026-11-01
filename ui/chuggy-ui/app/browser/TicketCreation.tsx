@@ -28,8 +28,9 @@ import type {
   ProjectRepositoryResponse,
 } from "../../../../src/contract/responses.ts";
 import { briefFinalizationModes } from "../../../../src/contract/rosters.ts";
-import type { ApiPorts } from "../core/apiRequest.ts";
+import type { ApiFailure, ApiPorts } from "../core/apiRequest.ts";
 import { base64urlFromBytes } from "../core/base64url.ts";
+import { readFailedLine } from "../core/failureWords.ts";
 import { operationFailureSentence } from "../core/codeSentences.ts";
 import { ConsoleWriteProgress, consoleWriteKey } from "../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../core/consoleWrite.ts";
@@ -98,7 +99,7 @@ import { creationContextQuery } from "../core/configurationQueries.ts";
 import { usePanelState, useApiPorts } from "./api.ts";
 import { useConsoleWrite, useConsoleWriteProgress } from "./consoleWrite.tsx";
 import type { ConsoleWriting } from "./consoleWrite.tsx";
-import { DataPanel } from "./DataPanel.tsx";
+import { DataPanel, ReadFailed } from "./DataPanel.tsx";
 import {
   ticketConfigurationKept,
   ticketConfigurationStored,
@@ -143,6 +144,8 @@ export type Attempt<Held extends DraftHeld = DraftHeld> =
       readonly attempt: "Failed";
       readonly reason: string;
       readonly held: Held | undefined;
+      /** The held draft's read, where its failing is why nothing was written. */
+      readonly unread?: ApiFailure | undefined;
     }
   | { readonly attempt: "Stale"; readonly reason: string };
 
@@ -559,10 +562,15 @@ export function AttemptNote(props: {
       return <p className="panel-absent">{attempt.reason}</p>;
     case "Failed":
       return (
-        <p className="panel-failed">
-          {attempt.reason}
-          {attemptHeldDraft(attempt.held?.draft, motion)}
-        </p>
+        <>
+          {attempt.unread === undefined ? null : (
+            <ReadFailed subject="Draft" failure={attempt.unread} />
+          )}
+          <p className="panel-failed">
+            {attempt.reason}
+            {attemptHeldDraft(attempt.held?.draft, motion)}
+          </p>
+        </>
       );
   }
 }
@@ -701,7 +709,12 @@ function creationAttemptEnded(ended: TicketCreationUnmade): CreationAttempt {
     case "Exists":
       return { attempt: "Exists", ticket: ended.ticket, held: ended.held };
     case "Refused":
-      return { attempt: "Failed", reason: ended.reason, held: ended.held };
+      return {
+        attempt: "Failed",
+        reason: ended.reason,
+        held: ended.held,
+        unread: ended.unread,
+      };
   }
 }
 
@@ -771,8 +784,10 @@ function creationAttemptOf(
 /** The sentence a submit that made no ticket is refused in, which is the
  * one its note leads with. */
 function creationUnmadeSentence(ended: TicketCreationUnmade): string {
-  return ended.created === "Exists"
-    ? creationTicketExistsSentence(ended.ticket)
+  if (ended.created === "Exists")
+    return creationTicketExistsSentence(ended.ticket);
+  return ended.created === "Refused" && ended.unread !== undefined
+    ? `${readFailedLine("Draft", ended.unread)} — ${ended.reason}`
     : ended.reason;
 }
 

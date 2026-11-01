@@ -22,6 +22,7 @@ import {
 import type { MutationKey } from "@tanstack/query-core";
 
 import type { ApiFailure, ApiPorts, ApiResult } from "./apiRequest.ts";
+import { failureWords } from "./failureWords.ts";
 import { panelQueryDefaults } from "./panelQueryDefaults.ts";
 
 /** What a write the API or the console refused threw: the sentence its screen
@@ -34,6 +35,16 @@ export class ConsoleWriteRefused extends Error {
     this.name = "ConsoleWriteRefused";
     this.failure = failure;
   }
+}
+
+/** What a refusal carries beyond its sentence, for a reader reporting it: the
+ * detail of the outcome the API answered, where it answered. */
+export function consoleWriteRefusedDetail(
+  refused: ConsoleWriteRefused,
+): string | undefined {
+  return refused.failure === undefined
+    ? undefined
+    : failureWords(refused.failure).detail;
 }
 
 /** The value a write answered, or its refusal thrown in its screen's words. */
@@ -114,6 +125,7 @@ export class ConsoleWriteProgress<S> {
 export interface ConsoleWriteUnseen {
   readonly id: number;
   readonly sentence: string;
+  readonly detail: string | undefined;
 }
 
 /** The refusals held for the shell at most, the oldest let go first. */
@@ -163,7 +175,11 @@ export class ConsoleWriteWatch {
     this.#kept += 1;
     this.#unseen = [
       ...this.#unseen,
-      { id: this.#kept, sentence: refused.message },
+      {
+        id: this.#kept,
+        sentence: refused.message,
+        detail: consoleWriteRefusedDetail(refused),
+      },
     ].slice(-consoleWriteUnseenMax);
     this.#told();
   }

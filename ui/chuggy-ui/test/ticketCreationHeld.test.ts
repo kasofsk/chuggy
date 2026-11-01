@@ -408,7 +408,7 @@ test("a held draft that cannot be read is written nothing, and is read again by 
   const refused = await form.submit();
   expect(await form.submit(changed)).toStrictEqual({
     sent: [draftRead],
-    said: `the draft could not be read, so nothing was written to it: the API failed with InternalError — ${unreleased}`,
+    said: `nothing was written to the draft — ${unreleased}`,
     held: refused.held,
   });
   reads.failing = false;

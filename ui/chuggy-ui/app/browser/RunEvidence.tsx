@@ -46,7 +46,7 @@ import {
   runDurationLabel,
 } from "../core/runTotals.ts";
 import { usePanelState } from "./api.ts";
-import { DataPanel } from "./DataPanel.tsx";
+import { DataPanel, ReadFailed } from "./DataPanel.tsx";
 import { MarkdownReport } from "./ui/MarkdownReport.tsx";
 import { RunTranscript } from "./RunTranscript.tsx";
 import { Disclosure } from "./ui/Disclosure.tsx";
@@ -204,7 +204,12 @@ function RunConfigurationFileRow(props: {
 function RunConfigurationBody(props: { readonly content: string }): ReactNode {
   const reading = runConfigurationRead(props.content);
   if (reading.reading === "Unreadable")
-    return <p className="panel-failed">Unreadable · {reading.reason}</p>;
+    return (
+      <ReadFailed
+        subject="configuration"
+        failure={{ outcome: "Unreadable", reason: reading.reason }}
+      />
+    );
   const snapshot = reading.snapshot;
   const head = runConfigurationHead(snapshot);
   const argv = runConfigurationArgvSentence(snapshot);

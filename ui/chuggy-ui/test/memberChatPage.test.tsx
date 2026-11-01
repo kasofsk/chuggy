@@ -40,6 +40,7 @@ import {
   threadEntry,
   threadTranscriptPage,
 } from "./threadFixture.ts";
+import { readFailedLines } from "./readFailedLines.ts";
 
 beforeEach(() => {
   resizeObserverStubbed();
@@ -248,7 +249,7 @@ test("abilities not read yet draw the page as loading, and no composer", async (
 
 test("abilities whose read failed say so, and draw no composer", async () => {
   await mountedAt(`/tenants/${tenant}/chat`, { abilities: "Failed" });
-  expect(screen.getByText(/^Failed to load · /u)).toBeDefined();
+  expect(readFailedLines()).toStrictEqual(["Not read · Server error"]);
   expect(screen.queryByText(memberChatWithheld)).toBeNull();
   expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
   styleless();

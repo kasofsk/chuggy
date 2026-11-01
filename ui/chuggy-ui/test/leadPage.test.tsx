@@ -399,7 +399,7 @@ test("a strip press that fails says so beside the strip", async () => {
     fireEvent.click(screen.getByRole("button", { name: "Pause" }));
   });
   await settled();
-  expect(screen.getByText(/Failed/)).toBeDefined();
+  expect(screen.getByText("Server error")).toBeDefined();
   expect(server.writes()).toHaveLength(1);
 });
 
@@ -1328,7 +1328,7 @@ test("a transcript read that failed says so rather than drawing an empty log", a
   vi.stubGlobal("fetch", api.fetch);
   await mountLead();
   expect(
-    screen.getByText(/^Failed · /u),
+    screen.getByText("Not read · Server error"),
     "a transcript that could not be read was drawn as a log with nothing in it",
   ).toBeDefined();
   expect(
@@ -1511,7 +1511,7 @@ test("a read that fails after a cut moved still draws its reason", async () => {
     "the read failed with no re-walk under it, so nothing here is about one",
   ).toBeGreaterThan(1);
   expect(
-    screen.getByText(/^Failed · /u),
+    screen.getByText("Not read · Server error"),
     "a read that failed across a re-walk said nothing to the reader",
   ).toBeDefined();
   expect(screen.queryByText("No conversation")).toBeNull();
@@ -1836,7 +1836,7 @@ test("a project switch and a return leave the box and its pair where they were",
   });
   await settled();
   styleless();
-  expect(screen.getByText(/^Failed · /u)).toBeDefined();
+  expect(screen.getByText("Server error")).toBeDefined();
   await moveTo({ tenant: "acme", project: "beta" });
   expect(
     box().value,
@@ -1878,7 +1878,7 @@ test("a click away to another screen and back keeps the box and its pair", async
   });
   await settled();
   styleless();
-  expect(screen.getByText(/^Failed · /u)).toBeDefined();
+  expect(screen.getByText("Server error")).toBeDefined();
   await away();
   expect(
     box().value,

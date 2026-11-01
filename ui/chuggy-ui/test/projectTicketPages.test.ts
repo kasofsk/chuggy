@@ -226,7 +226,10 @@ test("a page that could not be read keeps the rows and says why", () => {
     reason: "the network went away",
   });
   expect(after.tickets.map((ticket) => ticket.ticket)).toStrictEqual([1, 2]);
-  expect(after.failure).toContain("the network went away");
+  expect(after.failure).toStrictEqual({
+    outcome: "Unreachable",
+    reason: "the network went away",
+  });
   expect(after.next?.cursor).toBe("after-one");
 });
 
@@ -302,8 +305,8 @@ test("a refetch that will not read keeps the rows it was replacing", async () =>
   const held = reading([unreachable]);
   const answered = await projectTicketRowsRead(previous, held.readPage);
   expect(ticketsOf(answered)).toStrictEqual([1, 2]);
-  expect(answered.outcome === "Ok" && answered.value.failure).toContain(
-    "the network went away",
+  expect(answered.outcome === "Ok" && answered.value.failure).toStrictEqual(
+    unreachable,
   );
 });
 
@@ -588,5 +591,5 @@ test("a press that is refused records why on the rows it reached and keeps where
   const after = await pressed(from, [unreachable]);
   expect(after.rows.tickets).toStrictEqual(from.tickets);
   expect(after.rows.next).toStrictEqual(from.next);
-  expect(after.rows.failure).toContain("the network went away");
+  expect(after.rows.failure).toStrictEqual(unreachable);
 });

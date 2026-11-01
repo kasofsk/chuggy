@@ -82,6 +82,7 @@ import { ConversationCard } from "./ConversationCard.tsx";
 import {
   ConversationMetaLine,
   ConversationSystemLine,
+  conversationMarkerDetail,
   conversationMarkerWords,
 } from "./ConversationLines.tsx";
 import type { ConversationStandingDrawn } from "./ConversationLines.tsx";
@@ -348,6 +349,7 @@ export function ConversationAskMessage(): ReactNode {
         <ConversationSystemLine
           key={at}
           words={conversationMarkerWords(marker)}
+          detail={conversationMarkerDetail(marker)}
           ruled
         />
       ))}

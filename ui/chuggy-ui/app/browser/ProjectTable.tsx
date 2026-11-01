@@ -75,7 +75,7 @@ import { phaseTone } from "../core/tones.ts";
 import type { Tone } from "../core/tones.ts";
 import { panelReadRestarted, useApiPorts, usePanelState } from "./api.ts";
 import { useCreatorEmails } from "./creatorEmails.ts";
-import { PanelUnready } from "./DataPanel.tsx";
+import { PanelUnready, ReadFailed } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
 import { persistentStore } from "./ports.ts";
 import { useProjectAbilities } from "./projectAbilities.tsx";
@@ -619,9 +619,7 @@ export function ProjectTable(props: {
         onFilter={choices.filtered}
       />
       {partialFailure === undefined ? null : (
-        <p className="panel-failed">
-          a further page could not be read — {partialFailure}
-        </p>
+        <ReadFailed subject="More" failure={partialFailure} />
       )}
       <TicketListRows
         state={tickets.state}

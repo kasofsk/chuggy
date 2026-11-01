@@ -14,7 +14,6 @@ import {
   freshnessLabel,
   freshnessStaleAfterMs,
   panelObservedAtMs,
-  panelReason,
   panelStateFromQuery,
 } from "../app/core/freshness.ts";
 
@@ -49,7 +48,7 @@ test("a resource that states when it was observed is believed over the cache", (
   expect(panelObservedAtMs({}, nowMs)).toBe(nowMs);
 });
 
-test("absence and failure are separate states, each carrying its reason", () => {
+test("absence and failure are separate states, failure carrying its outcome", () => {
   const absent = panelStateFromQuery({
     data: undefined,
     error: new ApiOutcomeError({ outcome: "Absent" }, "gone"),
@@ -63,20 +62,20 @@ test("absence and failure are separate states, each carrying its reason", () => 
   } as const;
   const failed = panelStateFromQuery({
     data: undefined,
-    error: new ApiOutcomeError(fault, panelReason(fault)),
+    error: new ApiOutcomeError(fault, "read"),
     isPending: false,
     dataUpdatedAt: 0,
   });
   expect(absent.state).toBe("Absent");
   expect(failed.state).toBe("Failed");
-  expect(failed.state === "Failed" && failed.reason).toContain("InternalError");
+  expect(failed.state === "Failed" && failed.failure).toStrictEqual(fault);
 });
 
 test("a query that failed is never drawn as an empty ready panel", () => {
   const result = { outcome: "Absent" } as const;
   const state = panelStateFromQuery({
     data: undefined,
-    error: new ApiOutcomeError(result, panelReason(result)),
+    error: new ApiOutcomeError(result, "read"),
     isPending: false,
     dataUpdatedAt: 0,
   });
@@ -140,7 +139,7 @@ test("an answer held stays ready through any run of reads that fail after it, sa
     for (const failure of failures) {
       query = {
         ...query,
-        error: new ApiOutcomeError(failure, panelReason(failure)),
+        error: new ApiOutcomeError(failure, "read"),
       };
       expect(panelStateFromQuery(query)).toStrictEqual({
         state: "Ready",
@@ -167,11 +166,11 @@ test("an answer of absent wins over an answer held, because the resource is gone
   expect(
     panelStateFromQuery({
       data: { route: "Pool" },
-      error: new ApiOutcomeError(absent, panelReason(absent)),
+      error: new ApiOutcomeError(absent, "read"),
       isPending: false,
       dataUpdatedAt: nowMs,
     }),
-  ).toStrictEqual({ state: "Absent", reason: panelReason(absent) });
+  ).toStrictEqual({ state: "Absent" });
 });
 
 test("a read that never answered is failed, however it failed", () => {
@@ -179,9 +178,9 @@ test("a read that never answered is failed, however it failed", () => {
     expect(
       panelStateFromQuery({
         data: undefined,
-        error: new ApiOutcomeError(failure, panelReason(failure)),
+        error: new ApiOutcomeError(failure, "read"),
         isPending: false,
         dataUpdatedAt: 0,
       }),
-    ).toStrictEqual({ state: "Failed", reason: panelReason(failure) });
+    ).toStrictEqual({ state: "Failed", failure });
 });

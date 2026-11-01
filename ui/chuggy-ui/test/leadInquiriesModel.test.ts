@@ -267,12 +267,15 @@ test("an inquiry the listing names no asker for is drawn as absent", () => {
 
 /** A refusal's line is what the box draws, and what a reader who left the
  * project is told. */
-test("a refusal is said as its word, the runner's own word, or the failure's reason", () => {
+test("a refusal is said as its word, the runner's own word, or the failure's word", () => {
   expect(inquiryAskRefusalSentence({ ask: "Refused", word: "In flight" })).toBe(
     "In flight",
   );
   expect(inquiryAskRefusalSentence({ ask: "NoRunner" })).toBe("No chat host");
-  expect(inquiryAskRefusalSentence({ ask: "Failed", reason: "offline" })).toBe(
-    "Failed · offline",
-  );
+  expect(
+    inquiryAskRefusalSentence({
+      ask: "Failed",
+      words: { word: "Offline", detail: "fetch failed" },
+    }),
+  ).toBe("Offline");
 });

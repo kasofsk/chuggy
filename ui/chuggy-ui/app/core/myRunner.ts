@@ -18,7 +18,7 @@ import type {
 import { ownerFallbacks } from "../../../../src/contract/rosters.ts";
 import type { OwnerFallback } from "../../../../src/contract/rosters.ts";
 import type { ApiResult } from "./apiRequest.ts";
-import { panelReason } from "./freshness.ts";
+import { failureWords } from "./failureWords.ts";
 import { executionStarting } from "./ticketLedger.ts";
 
 /** What a member is told where the workspace has not let them register one. */
@@ -150,7 +150,7 @@ export function runnerWait(
 export function memberRunnerRemoved(result: ApiResult<undefined>): string {
   if (result.outcome === "Ok") return "Runners removed";
   if (result.outcome === "Absent") return "No runner you may remove";
-  return `Refused · ${panelReason(result)}`;
+  return failureWords(result).word;
 }
 
 export function runnerWaitWord(wait: RunnerWait): string {
