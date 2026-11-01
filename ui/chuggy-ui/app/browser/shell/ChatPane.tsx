@@ -387,12 +387,12 @@ function ChatPaneOpening(props: {
 }
 
 /**
- * The composer a reader with no thread types in, whose first press opens one.
+ * The composer a reader with no thread types in, whose first press opens one,
+ * mounted afresh in each project so neither its text nor that thread crosses.
  * It stays drawn until that message is sent and the thread it opened has been
  * read, so neither the thread arriving in the listing mid-send nor the read of
  * it takes away the text or the message drawn above it, and while it holds
- * text a door read as `unhosted` holds that text read-only. It is mounted
- * afresh in each project, so neither the text nor a thread it opened crosses.
+ * text a door read as `unhosted` holds that text read-only.
  */
 function ChatPaneFirst(props: {
   readonly partition: PartitionIdentity;
