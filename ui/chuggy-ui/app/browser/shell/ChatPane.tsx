@@ -512,16 +512,13 @@ function useChatPaneDoor(partition: PartitionIdentity): {
 }
 
 /**
- * Which thread the open pane draws: the one the reader chose, or the one the
- * pane holds for them, both held in the project's record so they outlive the
- * pane, and kept off the screen from a first press until the thread a message
- * opened is read, the reader picks or opens one, or New is refused, the
- * project's first record ending with that start, so a refused first message
- * keeps the first box over the thread its open answered through any collapse;
- * and what is kept for a
- * thread the listing says takes nothing more goes, drawn or not, since its box
- * would hold it read-only. Each project has its own record, so a send that
- * answers after the project changed lands in its own.
+ * Which thread the open pane draws: the one the reader chose or the one the
+ * pane holds for them, both in the project's record, so they outlive the pane
+ * and a send that answers after the project changed lands in its own. Neither
+ * is drawn from a first press until the pane's start ends, which keeps a
+ * refused first message's box over the thread its open answered through any
+ * collapse, and what is kept for a thread the listing says takes nothing more
+ * goes, drawn or not, since its box would hold it read-only.
  */
 function useChatPaneOpenHeld(partition: PartitionIdentity): {
   readonly threads: readonly ThreadEntryResponse[] | undefined;

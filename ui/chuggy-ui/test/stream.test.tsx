@@ -68,6 +68,7 @@ import {
 } from "../app/browser/stream.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { streamReopenDelayMsMin } from "../app/core/streamConnection.ts";
+import { ConsoleStoreProvided } from "./consoleStoreProvided.tsx";
 import { frame, streamServer } from "./streamDouble.ts";
 import type { StreamServer } from "./streamDouble.ts";
 import { ticketInstants } from "./ticketInstants.ts";
@@ -145,14 +146,16 @@ function Harness(props: {
   return (
     <SessionProvider holder={props.holder}>
       <QueryClientProvider client={props.client}>
-        <ProjectStreamProvider
-          partition={props.partition}
-          {...(props.transport === undefined
-            ? {}
-            : { transport: props.transport })}
-        >
-          {props.children}
-        </ProjectStreamProvider>
+        <ConsoleStoreProvided>
+          <ProjectStreamProvider
+            partition={props.partition}
+            {...(props.transport === undefined
+              ? {}
+              : { transport: props.transport })}
+          >
+            {props.children}
+          </ProjectStreamProvider>
+        </ConsoleStoreProvided>
       </QueryClientProvider>
     </SessionProvider>
   );
@@ -996,6 +999,61 @@ test("a frame this console cannot read offers a reload once, keeps offering it, 
   expect(platform.reloadLocation).not.toHaveBeenCalled();
   fireEvent.click(drawn.getByRole("button", { name: "Reload" }));
   expect(platform.reloadLocation).toHaveBeenCalledTimes(1);
+});
+
+/** The banner under a project's stream, or the projects list with no stream
+ * at all, over one store, as the routes draw a reader moving between them. */
+function projectsVisited(
+  client: QueryClient,
+  server: StreamServer,
+): {
+  readonly container: HTMLElement;
+  readonly visited: (partition: PartitionIdentity | undefined) => void;
+} {
+  const holder = holderDouble();
+  const tree = (partition: PartitionIdentity | undefined): ReactNode => (
+    <SessionProvider holder={holder}>
+      <QueryClientProvider client={client}>
+        <ConsoleStoreProvided>
+          {partition === undefined ? (
+            <p>projects</p>
+          ) : (
+            <ProjectStreamProvider
+              key={partition.project}
+              partition={partition}
+              transport={server.ports.fetch}
+            >
+              <VersionBanner />
+            </ProjectStreamProvider>
+          )}
+        </ConsoleStoreProvided>
+      </QueryClientProvider>
+    </SessionProvider>
+  );
+  const view = render(tree(atlas));
+  return {
+    container: view.container,
+    visited: (partition) => {
+      view.rerender(tree(partition));
+    },
+  };
+}
+
+test("the reload offered under one project is still offered under the next", async () => {
+  const server = streamServer([
+    { status: 200, chunks: [ready, sourceLive, changeUnread("5")], hold: true },
+    { status: 200, chunks: [ready, sourceLive], hold: true },
+  ]);
+  const { container, visited } = projectsVisited(clientMade(), server);
+  const drawn = within(container);
+  await settled();
+  expect(drawn.getAllByText("New version")).toHaveLength(1);
+
+  visited(undefined);
+  await settled();
+  visited(beta);
+  await settled();
+  expect(drawn.getAllByText("New version")).toHaveLength(1);
 });
 
 /** A read whose success carries `text`, made the way every read is made, and

@@ -22,10 +22,10 @@ import type { ReactNode } from "react";
 
 import { RepositoriesPage } from "../app/browser/RepositoriesPage.tsx";
 import { apiTimeoutMsDefault } from "../app/core/apiRequest.ts";
-import {
-  consoleQueryClient,
-  consoleWriteWatchOf,
-} from "../app/core/consoleWrite.ts";
+import { consoleQueryClient } from "../app/core/consoleWrite.ts";
+import { consoleStoreBare } from "./consoleStoreBare.tsx";
+import type { ConsoleStore } from "../app/browser/store.ts";
+import { consoleWriteUnseenOf } from "../app/browser/consoleWriteUnseen.ts";
 import { forgeAuthorizeTransactionKey } from "../app/core/forgeAuthorization.ts";
 import { forgeInstallTransactionKey } from "../app/core/forgeInstallation.ts";
 import { fallbackIntervalMs } from "../app/core/projectFallback.ts";
@@ -282,6 +282,8 @@ interface Drawing {
   readonly stream?: StreamServer;
   /** The cache the page is drawn under, where a case draws it twice over one. */
   readonly client?: QueryClient;
+  /** The store made over that cache, where a case reads what it kept. */
+  readonly store?: ConsoleStore;
 }
 
 async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
@@ -319,6 +321,7 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
         new QueryClient({ defaultOptions: { queries: { retry: false } } })
       }
       transport={(drawing.stream ?? openedStream()).ports.fetch}
+      {...(drawing.store === undefined ? {} : { store: drawing.store })}
     >
       <RepositoriesPage />
     </ScreenHarness>
@@ -2630,12 +2633,14 @@ test("a listing drawn again while an unbind is out asks its question busy, and s
  * question to say its refusal under. */
 test("an unbind refused once the listing holds no live binding is the shell's toast", async () => {
   const client = consoleQueryClient();
+  const store = consoleStoreBare(client);
   const unbinding = heldAnswer();
   await drawPage({
     bound: liveAndRetired,
     rebound: { repositories: [liveAndRetired.repositories[1]] },
     posted: () => unbinding.answered,
     client,
+    store,
   });
   await unbindAnswered("Unbind");
   await turned(() => {
@@ -2652,17 +2657,18 @@ test("an unbind refused once the listing holds no live binding is the shell's to
   await settled();
 
   expect(
-    consoleWriteWatchOf(client).unseen.map((unseen) => unseen.sentence),
+    consoleWriteUnseenOf(store.getState()).map((unseen) => unseen.sentence),
   ).toStrictEqual(["Not found"]);
 });
 
 test("an unbind refused under its question is no toast", async () => {
   const client = consoleQueryClient();
-  await drawPage({ bound: liveAndRetired, posted: deferred, client });
+  const store = consoleStoreBare(client);
+  await drawPage({ bound: liveAndRetired, posted: deferred, client, store });
   await unbindAnswered("Unbind");
 
   expect(unbindAsked()?.nextElementSibling?.textContent).toBe("Deferring");
-  expect(consoleWriteWatchOf(client).unseen).toStrictEqual([]);
+  expect(consoleWriteUnseenOf(store.getState())).toStrictEqual([]);
 });
 
 /** Binding a retired repository again is a bind the route answers, so the

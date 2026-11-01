@@ -22,6 +22,7 @@ import { expect, vi } from "vitest";
 import type { AccessCallerTenant } from "../../../src/contract/accessPlane.ts";
 import { ConsoleWriteToasts } from "../app/browser/consoleWrite.tsx";
 import { SessionProvider } from "../app/browser/session.tsx";
+import { ConsoleStoreProvided } from "./consoleStoreProvided.tsx";
 import { answer, holderDouble, settled, turned } from "./screenHarness.tsx";
 
 export interface ProjectCreationPosted {
@@ -126,8 +127,10 @@ export async function redrawable(
   const tree = (shown: boolean): ReactNode => (
     <SessionProvider holder={holderDouble()}>
       <QueryClientProvider client={client}>
-        {shown ? children : null}
-        <ConsoleWriteToasts />
+        <ConsoleStoreProvided>
+          {shown ? children : null}
+          <ConsoleWriteToasts />
+        </ConsoleStoreProvided>
       </QueryClientProvider>
     </SessionProvider>
   );

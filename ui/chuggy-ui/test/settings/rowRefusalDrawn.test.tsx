@@ -29,8 +29,10 @@ import {
   ConsoleWriteRefused,
   consoleQueryClient,
   consoleWriteKey,
-  consoleWriteWatchOf,
 } from "../../app/core/consoleWrite.ts";
+import { consoleStoreBare } from "../consoleStoreBare.tsx";
+import type { ConsoleStore } from "../../app/browser/store.ts";
+import { consoleWriteUnseenOf } from "../../app/browser/consoleWriteUnseen.ts";
 import type { ConsoleWrite } from "../../app/core/consoleWrite.ts";
 import type { PanelState } from "../../app/core/freshness.ts";
 import type { PermissionRow } from "../../app/core/permissions.ts";
@@ -82,8 +84,10 @@ function drawnOver(
   };
 }
 
-function unseen(client: QueryClient): readonly string[] {
-  return consoleWriteWatchOf(client).unseen.map((refused) => refused.sentence);
+function unseen(store: ConsoleStore): readonly string[] {
+  return consoleWriteUnseenOf(store.getState()).map(
+    (refused) => refused.sentence,
+  );
 }
 
 function linkOf(link: string): InviteLinkListed {
@@ -137,6 +141,7 @@ async function revoking(
 
 test("a revocation refused while its row is drawn is said under the row, and no toast", async () => {
   const client = consoleQueryClient();
+  const store = consoleStoreBare(client);
   const held = heldRefusal<string>("revoke-drawn");
   await revoking(client, held.write);
 
@@ -144,11 +149,12 @@ test("a revocation refused while its row is drawn is said under the row, and no 
   await settled();
 
   expect(screen.getByText(refusedSentence)).toBeDefined();
-  expect(unseen(client)).toEqual([]);
+  expect(unseen(store)).toEqual([]);
 });
 
 test("a revocation refused once a reread took its row away is the shell's toast", async () => {
   const client = consoleQueryClient();
+  const store = consoleStoreBare(client);
   const held = heldRefusal<string>("revoke-gone");
   const redrawn = await revoking(client, held.write);
   await redrawn(links([linkOf("l-two")], held.write));
@@ -157,7 +163,7 @@ test("a revocation refused once a reread took its row away is the shell's toast"
   await settled();
 
   expect(screen.queryByText(refusedSentence)).toBeNull();
-  expect(unseen(client)).toEqual([refusedSentence]);
+  expect(unseen(store)).toEqual([refusedSentence]);
 });
 
 const linksKey = ["revoke-reread-links"];
@@ -201,6 +207,7 @@ function linksRead(client: QueryClient, held: LinksHeld): () => void {
 
 test("a revocation refused whose own reread takes its row away is the shell's toast once that reread is drawn", async () => {
   const client = consoleQueryClient();
+  const store = consoleStoreBare(client);
   const release = linksRead(client, {
     links: [linkOf("l-one"), linkOf("l-two")],
     answered: Promise.resolve(),
@@ -219,14 +226,14 @@ test("a revocation refused whose own reread takes its row away is the shell's to
   });
   await settled();
   expect(screen.getByText("l-one")).toBeDefined();
-  expect(unseen(client)).toEqual([]);
+  expect(unseen(store)).toEqual([]);
 
   await turned(release);
   await settled();
 
   expect(screen.queryByText("l-one")).toBeNull();
   expect(screen.queryByText("Not available")).toBeNull();
-  expect(unseen(client)).toEqual(["Not available"]);
+  expect(unseen(store)).toEqual(["Not available"]);
 });
 
 const developers: PermissionRow<"DeveloperGranters"> = {
@@ -285,6 +292,7 @@ async function removing(
 
 test("a removal refused while its row is drawn is said in the row, and no toast", async () => {
   const client = consoleQueryClient();
+  const store = consoleStoreBare(client);
   const held =
     heldRefusal<PermissionHolderPressed<"DeveloperGranters">>("remove-drawn");
   await removing(client, held.write);
@@ -293,11 +301,12 @@ test("a removal refused while its row is drawn is said in the row, and no toast"
   await settled();
 
   expect(screen.getByText(refusedSentence)).toBeDefined();
-  expect(unseen(client)).toEqual([]);
+  expect(unseen(store)).toEqual([]);
 });
 
 test("a removal refused once a reread withheld the list is the shell's toast", async () => {
   const client = consoleQueryClient();
+  const store = consoleStoreBare(client);
   const held =
     heldRefusal<PermissionHolderPressed<"DeveloperGranters">>("remove-gone");
   const redrawn = await removing(client, held.write);
@@ -307,5 +316,5 @@ test("a removal refused once a reread withheld the list is the shell's toast", a
   await settled();
 
   expect(screen.queryByText(refusedSentence)).toBeNull();
-  expect(unseen(client)).toEqual([refusedSentence]);
+  expect(unseen(store)).toEqual([refusedSentence]);
 });

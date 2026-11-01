@@ -22,7 +22,6 @@ import type { Query, QueryClient } from "@tanstack/react-query";
 import {
   createContext,
   use,
-  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -30,11 +29,11 @@ import {
   useState,
 } from "react";
 import type { ReactNode } from "react";
+import { useDispatch } from "react-redux";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { ProjectChangeKind } from "../../../../src/contract/events.ts";
 import { apiBearerOver } from "../core/apiPorts.ts";
-import { ApiOutcomeError } from "../core/apiRequest.ts";
 import { projectCacheCommands } from "../core/projectCacheCommands.ts";
 import type {
   ProjectCacheCommand,
@@ -60,6 +59,7 @@ import type {
   ProjectQueryKey,
 } from "../core/projectQueryKeys.ts";
 import type { StreamPorts } from "../core/streamConnection.ts";
+import { consoleOutdatedHeard } from "./consoleOutdated.ts";
 import { deadlineMs, logWarned, nowMs, sleepMs, streamFetch } from "./ports.ts";
 import { useSessionGeneration, useSessionHolder } from "./session.tsx";
 
@@ -83,13 +83,11 @@ interface ProjectStreamWiring {
   readonly folds: Set<ProjectListRegistration>;
 }
 
-/** What a partition's stream is saying, whether the grace has run out, and
- * whether this console has been answered in a shape it cannot read. */
+/** What a partition's stream is saying, and whether the grace has run out. */
 interface ProjectStreamSaying {
   readonly status: ProjectStreamStatus;
   readonly lapsed: boolean;
   readonly fallbackExhausted: boolean;
-  readonly outdated: boolean;
 }
 
 const streamStatusInitial: ProjectStreamStatus = {
@@ -221,9 +219,10 @@ function useStreamConnection(
   partition: PartitionIdentity,
   folds: ReadonlySet<ProjectListRegistration>,
   ports: StreamPorts,
-  outdate: () => void,
 ): ProjectStreamStatus {
   const client = useQueryClient();
+  /** react-redux's own, because `store.ts` reaches this file through `api.ts`. */
+  const dispatch = useDispatch();
   const generation = useSessionGeneration();
   const [status, setStatus] =
     useState<ProjectStreamStatus>(streamStatusInitial);
@@ -255,7 +254,7 @@ function useStreamConnection(
         },
         onStatus: setStatus,
         onSkipped: () => {
-          outdate();
+          dispatch(consoleOutdatedHeard());
           void client.invalidateQueries({
             queryKey: projectPartitionKey({ tenant, project }),
           });
@@ -266,45 +265,8 @@ function useStreamConnection(
     return () => {
       opened.stop();
     };
-  }, [ports, client, folds, outdate, tenant, project, generation]);
+  }, [ports, client, dispatch, folds, tenant, project, generation]);
   return status;
-}
-
-/** A JSON document the console's own schema refused, and not a body that was
- * never JSON, which a proxy's page answers too. */
-function streamOutdatedRead(error: unknown): boolean {
-  return (
-    error instanceof ApiOutcomeError &&
-    error.result.outcome === "Unreadable" &&
-    error.result.shapeRefused === true
-  );
-}
-
-/**
- * Whether this console has met an answer whose shape it cannot read — a frame
- * the stream skipped, or a read whose document the schema refused — which is an
- * API newer than the console. Nothing unsets it, because only a reload makes the
- * console newer.
- */
-function useStreamOutdated(): readonly [boolean, () => void] {
-  const client = useQueryClient();
-  const [outdated, setOutdated] = useState(false);
-  const outdate = useCallback(() => {
-    setOutdated(true);
-  }, []);
-  useEffect(
-    () =>
-      client.getQueryCache().subscribe((event) => {
-        if (
-          event.type === "updated" &&
-          event.action.type === "error" &&
-          streamOutdatedRead(event.action.error)
-        )
-          outdate();
-      }),
-    [client, outdate],
-  );
-  return [outdated, outdate];
 }
 
 /**
@@ -426,8 +388,7 @@ export function ProjectStreamProvider(props: {
 }): ReactNode {
   const folds = useMemo(() => new Set<ProjectListRegistration>(), []);
   const ports = useStreamPortsMade(props.transport);
-  const [outdated, outdate] = useStreamOutdated();
-  const status = useStreamConnection(props.partition, folds, ports, outdate);
+  const status = useStreamConnection(props.partition, folds, ports);
   const carrying = projectStreamCarrying(status);
   const lapsed = useStreamLapsed(props.partition, carrying);
   const fallbackExhausted = useStreamFallback(props.partition, lapsed);
@@ -437,8 +398,8 @@ export function ProjectStreamProvider(props: {
     [ports, folds],
   );
   const saying = useMemo<ProjectStreamSaying>(
-    () => ({ status, lapsed, fallbackExhausted, outdated }),
-    [status, lapsed, fallbackExhausted, outdated],
+    () => ({ status, lapsed, fallbackExhausted }),
+    [status, lapsed, fallbackExhausted],
   );
   return (
     <ProjectStreamContext.Provider value={wiring}>
@@ -510,11 +471,6 @@ export function useStreamPorts(): StreamPorts {
 
 export function useProjectFallbackExhausted(): boolean {
   return useProjectStreamSaying().fallbackExhausted;
-}
-
-/** Whether this console has been answered in a shape it cannot read. */
-export function useProjectStreamOutdated(): boolean {
-  return useProjectStreamSaying().outdated;
 }
 
 /** A list's own refresh, over an entry whose type the registry has erased. */

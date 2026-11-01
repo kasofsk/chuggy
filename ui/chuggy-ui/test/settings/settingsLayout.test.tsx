@@ -49,6 +49,7 @@ import {
   settled,
   turned,
 } from "../screenHarness.tsx";
+import { ConsoleStoreProvided } from "../consoleStoreProvided.tsx";
 import type { SentRequest } from "../screenHarness.tsx";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
 import {
@@ -172,7 +173,9 @@ async function drawnSettings(
           new QueryClient({ defaultOptions: { queries: { retry: false } } })
         }
       >
-        <RouterProvider router={router} />
+        <ConsoleStoreProvided>
+          <RouterProvider router={router} />
+        </ConsoleStoreProvided>
       </QueryClientProvider>
     </SessionProvider>,
   );
