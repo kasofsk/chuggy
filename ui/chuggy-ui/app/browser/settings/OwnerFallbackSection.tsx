@@ -15,10 +15,7 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ProjectOwnerFallbackResponse } from "../../../../../src/contract/responses.ts";
 import type { OwnerFallback } from "../../../../../src/contract/rosters.ts";
-import {
-  apiOwnerFallback,
-  apiWriteOwnerFallback,
-} from "../../core/apiRoutes.ts";
+import { apiWriteOwnerFallback } from "../../core/apiRoutes.ts";
 import { panelReason } from "../../core/freshness.ts";
 import {
   ownerFallbackAbout,
@@ -28,14 +25,13 @@ import {
   ownerFallbackPinned,
   ownerFallbackValue,
 } from "../../core/myRunner.ts";
-import { projectResourceKey } from "../../core/projectQueryKeys.ts";
-import { useApiPorts, usePanelResource } from "../api.ts";
+import { ownerFallbackQuery } from "../../core/projectQueries.ts";
+import { useApiPorts, usePanelState } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Panel } from "../ui/Panel.tsx";
 import { RadioGroup } from "../ui/RadioGroup.tsx";
 import { SettingsSection } from "../ui/SettingsSection.tsx";
-import { ownerFallbackResource } from "../workRunner.tsx";
 
 const ownerFallbackTitle = "Personal runners";
 
@@ -119,11 +115,7 @@ function OwnerFallbackEditing(props: {
       setSaved({ saved: "Failed", reason: panelReason(answered) });
       return;
     }
-    const key = projectResourceKey(
-      props.partition,
-      "Project",
-      ownerFallbackResource,
-    );
+    const key = ownerFallbackQuery(props.partition).queryKey;
     await client.cancelQueries({ queryKey: key });
     client.setQueryData(key, answered.value);
     setSaved({ saved: "Written" });
@@ -166,12 +158,7 @@ export function OwnerFallbackSection(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
   const partition = props.partition;
-  const read = usePanelResource(
-    partition,
-    "Project",
-    ownerFallbackResource,
-    (ports) => apiOwnerFallback(ports, partition),
-  );
+  const read = usePanelState(ownerFallbackQuery(partition));
   return read.state === "Ready" ? (
     <OwnerFallbackEditing partition={partition} read={read.value} />
   ) : (

@@ -70,16 +70,11 @@ import {
   threadMessageImagesMax,
 } from "../../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
-import {
-  apiHostedRuns,
-  apiUploadProjectArtifact,
-} from "../../core/apiRoutes.ts";
+import { apiUploadProjectArtifact } from "../../core/apiRoutes.ts";
 import type { ConversationAttachment } from "../../core/conversationAttachments.ts";
 import { memberChatDoor } from "../../core/memberChat.ts";
-import {
-  projectResourceKey,
-  tenantResourceKey,
-} from "../../core/projectQueryKeys.ts";
+import { hostedRunsQuery } from "../../core/projectQueries.ts";
+import { chatHostQuery } from "../../core/tenantQueries.ts";
 import { apiOpenThreadAt, threadHomeOf } from "../../core/threadHome.ts";
 import type { ThreadHome } from "../../core/threadHome.ts";
 import { threadMessageSent } from "../../core/threadSendRun.ts";
@@ -109,7 +104,7 @@ import type {
 } from "../../core/threads.ts";
 import { sessionRefusedNoRunner } from "../../core/sessionRunners.ts";
 import type { SessionRunnerShort } from "../../core/sessionRunners.ts";
-import { useApiPorts, usePanelAnswers, usePanelResource } from "../api.ts";
+import { useApiPorts, usePanelAnswers, usePanelState } from "../api.ts";
 import type {
   ConversationComposerProps,
   ConversationSent,
@@ -122,7 +117,7 @@ import {
   useSessionPlacementReads,
   useSessionPlacementStale,
 } from "../sessionPlacement.tsx";
-import { chatHostResource, useChatHost } from "../settings/MyChatHost.tsx";
+import { useChatHost } from "../settings/MyChatHost.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { useThreadStop } from "./threadStop.ts";
 import type { ThreadStopHeld } from "./threadStop.ts";
@@ -173,30 +168,21 @@ async function threadSendUploaded(
   return images;
 }
 
-/** No frame names the grant, so the partition's own refetch reaches it, and a
- * thread door's answer is written over it as the newer word on the question. */
-export const hostedRunsResource = "hosted-runs";
-
 /** Whether the project's tenant grants the reader hosted runs, unknown until a
- * read has said, and where a door's own answer to the same question goes. */
+ * read has said, and where a door's own answer to the same question goes: no
+ * frame names the grant, so the partition's own refetch reaches it, and a
+ * thread door's answer is written over it as the newer word on the question. */
 export function useHostedRuns(partition: PartitionIdentity): {
   readonly granted: boolean | undefined;
   readonly learnt: (granted: boolean) => void;
 } {
   const client = useQueryClient();
-  const state = usePanelResource(
-    partition,
-    "Project",
-    hostedRunsResource,
-    (ports) => apiHostedRuns(ports, partition),
-  );
+  const query = hostedRunsQuery(partition);
+  const state = usePanelState(query);
   return {
     granted: state.state === "Ready" ? state.value.granted : undefined,
     learnt: (granted) => {
-      client.setQueryData(
-        projectResourceKey(partition, "Project", hostedRunsResource),
-        { granted },
-      );
+      client.setQueryData(query.queryKey, { granted });
     },
   };
 }
@@ -238,7 +224,7 @@ export function useThreadDoor(partition: PartitionIdentity): ThreadDoorHeld {
  * never as unhosted. */
 export function useMemberThreadDoor(tenant: string): ThreadDoorHeld {
   const host = useChatHost(tenant);
-  const reads = usePanelAnswers(tenantResourceKey(tenant, chatHostResource));
+  const reads = usePanelAnswers(chatHostQuery(tenant).queryKey);
   return {
     door: memberChatDoor(host, reads),
     learnt: () => undefined,

@@ -31,8 +31,6 @@ import {
   viewportNarrowEm,
   viewportTwoColumnEm,
 } from "../app/browser/shell/viewport.ts";
-import { sessionPlacementResource } from "../app/browser/sessionPlacement.tsx";
-import { hostedRunsResource } from "../app/browser/thread/threadSend.tsx";
 import {
   chatPanePanels,
   chatPanePlacements,
@@ -53,7 +51,10 @@ import type {
   ChatPaneTrail,
   ChatPaneTrailFrame,
 } from "../app/core/chatPane.ts";
-import { projectResourceKey } from "../app/core/projectQueryKeys.ts";
+import {
+  hostedRunsQuery,
+  sessionPlacementQuery,
+} from "../app/core/projectQueries.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { seededRandom } from "./seededRandom.ts";
 import { elementScrollToStubbed } from "./scrolling.ts";
@@ -2674,7 +2675,7 @@ test("New the door refuses for no runner closes nothing, and the box says so", a
 async function placementReread(client: QueryClient): Promise<void> {
   await turned(() => {
     void client.invalidateQueries({
-      queryKey: projectResourceKey(atlas, "Project", sessionPlacementResource),
+      queryKey: sessionPlacementQuery(atlas).queryKey,
     });
   });
   await settled();
@@ -2731,11 +2732,9 @@ test("a message the hosted grant refuses where the read said runners is held unt
   expect(
     within(conversationRegion()).getByText("Needs hosted runs"),
   ).toBeTruthy();
-  expect(
-    client.getQueryData(
-      projectResourceKey(atlas, "Project", hostedRunsResource),
-    ),
-  ).toStrictEqual({ granted: false });
+  expect(client.getQueryData(hostedRunsQuery(atlas).queryKey)).toStrictEqual({
+    granted: false,
+  });
   moving.thread = "Pool";
   moving.refusing = undefined;
   await placementReread(client);
@@ -2930,11 +2929,9 @@ test("a first message the hosted grant refuses has every screen read the grant a
   const moving: PaneMoving = { thread: "Pool", refusing: "/threads" };
   await mounted(viewportDeskEm, movingServed(moving, threadServed([])), client);
   await helloSent();
-  expect(
-    client.getQueryData(
-      projectResourceKey(atlas, "Project", hostedRunsResource),
-    ),
-  ).toStrictEqual({ granted: false });
+  expect(client.getQueryData(hostedRunsQuery(atlas).queryKey)).toStrictEqual({
+    granted: false,
+  });
   styleless();
 });
 

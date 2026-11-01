@@ -30,11 +30,14 @@ import type {
   SessionRunnerStanding,
 } from "../../../../../src/contract/rosters.ts";
 import {
-  apiExecutionPlacement,
   apiWriteExecutionPlacement,
   apiWriteSessionPlacement,
 } from "../../core/apiRoutes.ts";
-import { projectResourceKey } from "../../core/projectQueryKeys.ts";
+import {
+  executionPlacementQuery,
+  sessionPlacementQuery,
+} from "../../core/projectQueries.ts";
+import type { ProjectQueryKeyOf } from "../../core/projectQueryKeys.ts";
 import { settingsRoutes } from "../../core/settingsNav.ts";
 import {
   runnerRouteLabel,
@@ -54,18 +57,14 @@ import type {
   RunnersPlacementSaved,
   RunnersPlacementWrites,
 } from "../../core/runners.ts";
-import { useApiPorts, usePanelResource } from "../api.ts";
+import { useApiPorts, usePanelState } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
-import {
-  sessionPlacementResource,
-  useSessionPlacement,
-} from "../sessionPlacement.tsx";
+import { useSessionPlacement } from "../sessionPlacement.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Panel } from "../ui/Panel.tsx";
 import { RadioGroup } from "../ui/RadioGroup.tsx";
 import { SettingsSection } from "../ui/SettingsSection.tsx";
 import { Table } from "../ui/Table.tsx";
-import { executionPlacementResource } from "../workRunner.tsx";
 import { OwnerFallbackSection } from "./OwnerFallbackSection.tsx";
 import { SettingsPage } from "./SettingsPage.tsx";
 
@@ -232,8 +231,10 @@ function usePlacementWriting(partition: PartitionIdentity): PlacementWriting {
   const [saved, setSaved] = useState<RunnersPlacementSaved>({ saved: "Idle" });
   /** A read still in flight was asked before the write, so it is cancelled
    * rather than let land over it. */
-  const held = async (resource: string, placement: unknown): Promise<void> => {
-    const key = projectResourceKey(partition, "Project", resource);
+  const held = async <T,>(
+    key: ProjectQueryKeyOf<T>,
+    placement: T,
+  ): Promise<void> => {
     await client.cancelQueries({ queryKey: key });
     client.setQueryData(key, placement);
   };
@@ -247,7 +248,10 @@ function usePlacementWriting(partition: PartitionIdentity): PlacementWriting {
         setSaved({ ...execution, landed });
         return false;
       }
-      await held(executionPlacementResource, execution.placement);
+      await held(
+        executionPlacementQuery(partition).queryKey,
+        execution.placement,
+      );
       landed = true;
     }
     if (writes.session !== undefined) {
@@ -258,7 +262,7 @@ function usePlacementWriting(partition: PartitionIdentity): PlacementWriting {
         setSaved({ ...session, landed });
         return false;
       }
-      await held(sessionPlacementResource, session.placement);
+      await held(sessionPlacementQuery(partition).queryKey, session.placement);
     }
     return true;
   };
@@ -344,12 +348,7 @@ export function PlacementSettingsPage(): ReactNode {
     tenant: params.tenant,
     project: params.project,
   };
-  const placement = usePanelResource(
-    partition,
-    "Project",
-    executionPlacementResource,
-    (ports) => apiExecutionPlacement(ports, partition),
-  );
+  const placement = usePanelState(executionPlacementQuery(partition));
   const sessions = useSessionPlacement(partition);
   return (
     <SettingsPage title="Placement">

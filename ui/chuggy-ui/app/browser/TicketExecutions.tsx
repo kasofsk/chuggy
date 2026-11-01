@@ -18,7 +18,10 @@ import type {
   OutputContentResponse,
 } from "../../../../src/contract/responses.ts";
 import type { ResultVerdict } from "../../../../src/contract/rosters.ts";
-import { apiExecution, apiOutputContent } from "../core/apiRoutes.ts";
+import {
+  executionQuery,
+  outputContentQuery,
+} from "../core/executionQueries.ts";
 import {
   artifactPreviewJson,
   artifactPreviewOffer,
@@ -28,7 +31,7 @@ import { runArtifactsListed } from "../core/runSummary.ts";
 import { runCountLabel } from "../core/runTotals.ts";
 import type { SetVerdict } from "../core/ticketLedger.ts";
 import { verdictTone } from "../core/tones.ts";
-import { usePanelResource } from "./api.ts";
+import { usePanelState } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import { RunEvidence } from "./RunEvidence.tsx";
 import { Disclosure } from "./ui/Disclosure.tsx";
@@ -95,12 +98,8 @@ function ArtifactPreview(props: {
   readonly ordinal: number;
   readonly name: string;
 }): ReactNode {
-  const state = usePanelResource(
-    props.partition,
-    "Execution",
-    `${props.execution}/artifacts/${String(props.ordinal)}`,
-    (ports) =>
-      apiOutputContent(ports, props.partition, props.execution, props.ordinal),
+  const state = usePanelState(
+    outputContentQuery(props.partition, props.execution, props.ordinal),
   );
   return (
     <DataPanel title="Preview" state={state}>
@@ -254,13 +253,8 @@ export function ExecutionDetail(props: {
   readonly execution: string;
   readonly nowMs: number;
 }): ReactNode {
-  const state = usePanelResource(
-    props.partition,
-    "Execution",
-    props.execution,
-    (ports) => apiExecution(ports, props.partition, props.execution),
-    undefined,
-    "Streamed",
+  const state = usePanelState(
+    executionQuery(props.partition, props.execution, "Streamed"),
   );
   return (
     <DataPanel title="Runs" state={state}>

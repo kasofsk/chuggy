@@ -21,10 +21,6 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { SelectorProjectSettingsResponse } from "../../../../../src/contract/responses.ts";
-import {
-  apiSelectorSettings,
-  apiSelectorSettingsHistory,
-} from "../../core/apiRoutes.ts";
 import { projectLeadPresent } from "../../core/projectLead.ts";
 import { settingsRoutes } from "../../core/settingsNav.ts";
 import {
@@ -39,7 +35,11 @@ import type {
   SelectorSettingsSaved,
   SelectorSettingsSectionName,
 } from "../../core/selectorSettingsForm.ts";
-import { usePanelResource } from "../api.ts";
+import {
+  selectorSettingsHistoryQuery,
+  selectorSettingsQuery,
+} from "../../core/projectQueries.ts";
+import { usePanelState } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { useNowMs } from "../Freshness.tsx";
 import { useLead, useLeadAbsenceLine } from "../LeadPage.tsx";
@@ -48,7 +48,6 @@ import {
   useSessionRunnerShort,
 } from "../sessionPlacement.tsx";
 import {
-  selectorSettingsResource,
   selectorSettingsSaved,
   useSelectorSettingsDraft,
   useSelectorSettingsWriting,
@@ -59,10 +58,6 @@ import { SelectorLimitsSection } from "./lead/SelectorLimitsSection.tsx";
 import { SelectorRevisions } from "./lead/SelectorRevisions.tsx";
 import { SelectorTextSection } from "./lead/SelectorTextSection.tsx";
 import { SettingsPage } from "./SettingsPage.tsx";
-
-/** No frame names either read, so the partition's own refetch is what reaches
- * them. */
-export const selectorSettingsHistoryResource = "selector-settings-history";
 
 /** Which part of the page the last write belongs to, so its answer is drawn
  * where it was asked for and nowhere else. */
@@ -195,12 +190,7 @@ function SelectorSettingsHistory(props: {
 }): ReactNode {
   const partition = props.partition;
   const nowMs = useNowMs();
-  const state = usePanelResource(
-    partition,
-    "Project",
-    selectorSettingsHistoryResource,
-    (ports) => apiSelectorSettingsHistory(ports, partition),
-  );
+  const state = usePanelState(selectorSettingsHistoryQuery(partition));
   return (
     <SelectorRevisions
       state={state}
@@ -246,12 +236,7 @@ export function LeadSettingsPage(): ReactNode {
     tenant: params.tenant,
     project: params.project,
   };
-  const state = usePanelResource(
-    partition,
-    "Project",
-    selectorSettingsResource,
-    (ports) => apiSelectorSettings(ports, partition),
-  );
+  const state = usePanelState(selectorSettingsQuery(partition));
   return (
     <SettingsPage
       title="Lead"

@@ -19,11 +19,8 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
-import type {
-  ThreadEntryResponse,
-  ThreadsResponse,
-} from "../../../../../src/contract/responses.ts";
-import { apiOpenThread, apiThreads } from "../../core/apiRoutes.ts";
+import type { ThreadEntryResponse } from "../../../../../src/contract/responses.ts";
+import { apiOpenThread } from "../../core/apiRoutes.ts";
 import {
   chatPaneChosenIn,
   chatPaneDefaulted,
@@ -41,10 +38,7 @@ import {
   conversationExchangesStopped,
 } from "../../core/conversation.ts";
 import { panelReason } from "../../core/freshness.ts";
-import { sessionChangeKindNamed } from "../../core/leadTranscript.ts";
 import { projectAbilityRefused } from "../../core/projectAbilities.ts";
-import { projectLeadSessionKind } from "../../core/projectLead.ts";
-import { projectListRereadNamed } from "../../core/projectQueryKeys.ts";
 import {
   threadKeptClosed,
   threadKeptWith,
@@ -61,9 +55,10 @@ import type {
   ThreadKeptHeld,
   ThreadSend,
 } from "../../core/threads.ts";
+import { threadsQuery } from "../../core/sessionQueries.ts";
 import { sessionRefusedNoRunner } from "../../core/sessionRunners.ts";
 import { threadHomeOf } from "../../core/threadHome.ts";
-import { useApiPorts, usePanelList } from "../api.ts";
+import { useApiPorts, usePanelState } from "../api.ts";
 import { drawBytes } from "../ports.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { Conversation } from "../conversation/Conversation.tsx";
@@ -76,7 +71,7 @@ import {
   useThreadSend,
 } from "../thread/threadSend.tsx";
 import type { ThreadKeptAway } from "../thread/threadSend.tsx";
-import { threadsListName, useThread } from "../thread/threadRead.ts";
+import { useThread } from "../thread/threadRead.ts";
 import { Button } from "../ui/Button.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import type { ChatPanePlacement } from "../../core/chatPane.ts";
@@ -93,16 +88,7 @@ import { ChatPaneHistory, ChatPaneThreadActions } from "./ChatPaneHistory.tsx";
 function useChatPaneThreads(
   partition: PartitionIdentity,
 ): readonly ThreadEntryResponse[] | undefined {
-  const state = usePanelList(
-    projectListRereadNamed<ThreadsResponse>(
-      partition,
-      "Session",
-      threadsListName,
-      (change) =>
-        sessionChangeKindNamed(change.resource) !== projectLeadSessionKind,
-    ),
-    (ports) => apiThreads(ports, partition),
-  );
+  const state = usePanelState(threadsQuery(partition));
   return state.state === "Ready" ? state.value.threads : undefined;
 }
 

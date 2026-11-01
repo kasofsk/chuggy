@@ -9,14 +9,13 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
-import { apiForgeApps } from "../../core/apiRoutes.ts";
-import { usePanelTenantResource } from "../api.ts";
+import { forgeAppsQuery } from "../../core/tenantQueries.ts";
+import { usePanelState } from "../api.ts";
 import { forgeAuthorizeRedirect } from "../forgeAuthorizeRedirect.ts";
 import { forgeSetupNotConfigured } from "../ForgeSetupPage.tsx";
 import { pageRestoredHeard, redirect } from "../ports.ts";
 import { Button } from "../ui/Button.tsx";
 import type { ButtonVariant } from "../ui/Button.tsx";
-import { forgeAppsResource } from "./InstallLink.tsx";
 
 export function ConnectGithub(props: {
   readonly tenant: string;
@@ -24,9 +23,7 @@ export function ConnectGithub(props: {
   readonly variant?: ButtonVariant | undefined;
 }): ReactNode {
   const tenant = props.tenant;
-  const state = usePanelTenantResource(tenant, forgeAppsResource, (ports) =>
-    apiForgeApps(ports),
-  );
+  const state = usePanelState(forgeAppsQuery(tenant));
   const [leaving, setLeaving] = useState(false);
   /** A page the browser restores as it was left still says it is leaving, and
    * the person who came back to it has nothing else to press. */

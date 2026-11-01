@@ -23,10 +23,6 @@ import type { ReactNode } from "react";
 import type { ForgeAppName } from "../../../../../src/contract/rosters.ts";
 import type { ForgeInstallationResponse } from "../../../../../src/contract/responses.ts";
 import {
-  apiForgeInstallationPermissions,
-  apiForgeInstallations,
-} from "../../core/apiRoutes.ts";
-import {
   forgeAccountInstallationId,
   forgeAccountRows,
 } from "../../core/forgeInstallation.ts";
@@ -39,7 +35,11 @@ import {
   forgeAppStandingTone,
   forgeInstallationPermissionsTone,
 } from "../../core/tones.ts";
-import { usePanelTenantResource } from "../api.ts";
+import {
+  forgeInstallationPermissionsQuery,
+  forgeInstallationsQuery,
+} from "../../core/tenantQueries.ts";
+import { usePanelState } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { currentPath } from "../ports.ts";
 import { ConnectGithub } from "../repositories/ConnectGithub.tsx";
@@ -56,28 +56,14 @@ import { Table } from "../ui/Table.tsx";
 import { buttonLookClassName } from "../ui/Button.tsx";
 import { SettingsPage, useSettingsTenant } from "./SettingsPage.tsx";
 
-/** No frame names this read, so a fresh visit is what reaches it. */
-export const forgeInstallationsResource = "forge-installations";
-
-/** No frame names this read either; each installation's is its own. */
-export const forgeInstallationPermissionsResource =
-  "forge-installation-permissions";
-
 /** An installed app as its installation stands, which says more than
  * Installed only once the forge has answered that it is behind. */
 function InstalledApp(props: {
   readonly tenant: string;
   readonly installationId: string;
 }): ReactNode {
-  const read = usePanelTenantResource(
-    props.tenant,
-    `${forgeInstallationPermissionsResource}/${props.installationId}`,
-    (ports) =>
-      apiForgeInstallationPermissions(
-        ports,
-        props.tenant,
-        props.installationId,
-      ),
+  const read = usePanelState(
+    forgeInstallationPermissionsQuery(props.tenant, props.installationId),
   );
   if (read.state !== "Ready" || read.value.permissions !== "Behind")
     return <Pill tone={forgeAppStandingTone("Installed")}>Installed</Pill>;
@@ -195,11 +181,7 @@ function AccountTable(props: {
 export function TenantAccountsPage(): ReactNode {
   const tenant = useSettingsTenant();
   const returned = useForgeReturned(tenant);
-  const accounts = usePanelTenantResource(
-    tenant,
-    forgeInstallationsResource,
-    (ports) => apiForgeInstallations(ports, tenant),
-  );
+  const accounts = usePanelState(forgeInstallationsQuery(tenant));
   const installations =
     accounts.state === "Ready" ? accounts.value.installations : undefined;
   const withheld = accounts.state === "Absent";

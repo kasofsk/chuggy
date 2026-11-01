@@ -43,11 +43,6 @@ import type {
   ForgeInstallationResponse,
   ProjectRepositoryListedResponse,
 } from "../../../../src/contract/responses.ts";
-import {
-  apiForgeApps,
-  apiForgeInstallations,
-  apiProjectRepositories,
-} from "../core/apiRoutes.ts";
 import { instantFigure } from "../core/figures.ts";
 import {
   forgePortalInstallations,
@@ -67,16 +62,18 @@ import type {
   RepositoryOffersLine,
   RepositoryOffersStep,
 } from "../core/projectRepositories.ts";
+import {
+  projectForgeAppsQuery,
+  projectRepositoriesQuery,
+} from "../core/projectQueries.ts";
+import { forgeInstallationsQuery } from "../core/tenantQueries.ts";
 import type { WorkRunner } from "../core/workRunner.ts";
-import { usePanelResource, usePanelTenantResource } from "./api.ts";
+import { usePanelState } from "./api.ts";
 import { PanelUnready } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
 import { currentAnchor, currentPath } from "./ports.ts";
 import { useProjectAbilities } from "./projectAbilities.tsx";
-import {
-  AddRepository,
-  projectRepositoriesResource,
-} from "./repositories/AddRepository.tsx";
+import { AddRepository } from "./repositories/AddRepository.tsx";
 import { BindingConfigurations } from "./repositories/BindingConfigurations.tsx";
 import { BindingWorkerReach } from "./repositories/BindingWorkerReach.tsx";
 import { ConnectGithub } from "./repositories/ConnectGithub.tsx";
@@ -84,7 +81,7 @@ import {
   ForgeReturned,
   useForgeReturned,
 } from "./repositories/ForgeReturned.tsx";
-import { forgeAppsResource, InstallLink } from "./repositories/InstallLink.tsx";
+import { InstallLink } from "./repositories/InstallLink.tsx";
 import { repositoryRoutePath } from "./repositories/RepositoryPage.tsx";
 import {
   UnbindAsked,
@@ -92,7 +89,6 @@ import {
   useRepositoryUnbinding,
 } from "./repositories/UnbindRepository.tsx";
 import type { RepositoryUnbinding } from "./repositories/UnbindRepository.tsx";
-import { forgeInstallationsResource } from "./settings/TenantAccountsPage.tsx";
 import { ScreenTitle } from "./shell/slots.tsx";
 import { Button } from "./ui/Button.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
@@ -356,23 +352,9 @@ export function RepositoriesPage(): ReactNode {
     tenant: params.tenant,
     project: params.project,
   };
-  const accounts = usePanelTenantResource(
-    partition.tenant,
-    forgeInstallationsResource,
-    (ports) => apiForgeInstallations(ports, partition.tenant),
-  );
-  const apps = usePanelResource(
-    partition,
-    "Project",
-    forgeAppsResource,
-    (ports) => apiForgeApps(ports),
-  );
-  const bindings = usePanelResource(
-    partition,
-    "Project",
-    projectRepositoriesResource,
-    (ports) => apiProjectRepositories(ports, partition, { reach: true }),
-  );
+  const accounts = usePanelState(forgeInstallationsQuery(partition.tenant));
+  const apps = usePanelState(projectForgeAppsQuery(partition));
+  const bindings = usePanelState(projectRepositoriesQuery(partition));
   const returned = useForgeReturned(partition.tenant);
   const runner = useWorkRunner(partition, "Reader");
   return (

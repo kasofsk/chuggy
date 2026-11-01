@@ -544,6 +544,24 @@ printf '%s\n' 'import { decide } from "../core/decide.ts"' 'export const draw = 
 seal
 check "a decision may reach the contract, and what draws may reach it" 0 "$RC" "graph clean"
 
+# The query cache's renderer-free core is on the list and its React bindings
+# are not: a key's data type is the first's, and the second is a renderer.
+fixture
+mkdir -p "$R/ui/chuggy-ui/app/core"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
+printf '%s\n' 'import type { DataTag } from "@tanstack/query-core"' 'export type Keyed = DataTag<readonly unknown[], number>' > "$R/ui/chuggy-ui/app/core/keyed.ts"
+seal
+check "a decision may reach the query cache's renderer-free core" 0 "$RC" "graph clean"
+
+fixture
+mkdir -p "$R/ui/chuggy-ui/app/core"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
+printf '%s\n' 'import type { DataTag } from "@tanstack/react-query"' 'export type Keyed = DataTag<readonly unknown[], number>' > "$R/ui/chuggy-ui/app/core/keyed.ts"
+seal
+check "a decision may not reach the query cache's React bindings" 1 "$RC" "chuggy-ui-decisions-render-nothing:"
+
 # --- chuggy-ui's terminal program --------------------------------------------
 
 # The one directory under ui/ that Node runs: an adapter there reaches a module

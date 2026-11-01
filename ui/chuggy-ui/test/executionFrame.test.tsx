@@ -13,9 +13,9 @@ import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
-import { usePanelResource } from "../app/browser/api.ts";
+import { usePanelState } from "../app/browser/api.ts";
 import { useTicketExecutions } from "../app/browser/ticket/TicketLedger.tsx";
-import { apiExecution } from "../app/core/apiRoutes.ts";
+import { executionQuery } from "../app/core/executionQueries.ts";
 import { projectResourceKey } from "../app/core/projectQueryKeys.ts";
 import { streamReopenDelayMsMin } from "../app/core/streamConnection.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
@@ -58,14 +58,7 @@ const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 const executionKey = projectResourceKey(atlas, "Execution", "e1");
 
 function ExecutionProbe(): ReactNode {
-  const state = usePanelResource(
-    atlas,
-    "Execution",
-    "e1",
-    (ports) => apiExecution(ports, atlas, "e1"),
-    undefined,
-    "Streamed",
-  );
+  const state = usePanelState(executionQuery(atlas, "e1", "Streamed"));
   return (
     <p>
       {state.state === "Ready"

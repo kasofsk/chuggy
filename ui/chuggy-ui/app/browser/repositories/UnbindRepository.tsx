@@ -26,7 +26,7 @@ import { useApiPorts } from "../api.ts";
 import { Button } from "../ui/Button.tsx";
 import { Confirm } from "../ui/Confirm.tsx";
 import { Notice } from "../ui/Notice.tsx";
-import { projectRepositoriesInvalidated } from "./AddRepository.tsx";
+import { projectRepositoriesInvalidated } from "../../core/projectQueries.ts";
 
 /** One unbind at a time across the listing, from its press to its answer. */
 export interface RepositoryUnbinding {

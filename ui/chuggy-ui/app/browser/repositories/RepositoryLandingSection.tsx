@@ -13,15 +13,16 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
-import type {
-  ProjectRepositoriesResponse,
-  ProjectRepositoryResponse,
-} from "../../../../../src/contract/responses.ts";
+import type { ProjectRepositoryResponse } from "../../../../../src/contract/responses.ts";
 import { briefFinalizationModes } from "../../../../../src/contract/rosters.ts";
 import { apiWriteProjectRepositoryLanding } from "../../core/apiRoutes.ts";
 import { landingEffect, landingLabel } from "../../core/codeLabels.ts";
 import { projectAbilityRefused } from "../../core/projectAbilities.ts";
-import { projectResourceKey } from "../../core/projectQueryKeys.ts";
+import {
+  projectRepositoriesInvalidated,
+  projectRepositoriesQuery,
+  projectRepositoriesReachUnaskedQuery,
+} from "../../core/projectQueries.ts";
 import {
   projectRepositoriesWith,
   repositoryLandingAnswered,
@@ -41,11 +42,6 @@ import { useProjectAbilities } from "../projectAbilities.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { RadioGroup } from "../ui/RadioGroup.tsx";
 import { SettingsSection } from "../ui/SettingsSection.tsx";
-import {
-  projectRepositoriesInvalidated,
-  projectRepositoriesReachUnaskedResource,
-  projectRepositoriesResource,
-} from "./AddRepository.tsx";
 
 const landingOptions = briefFinalizationModes.map((mode) => ({
   value: mode,
@@ -118,11 +114,7 @@ function useRepositoryLandingWriting(
   const ports = useApiPorts();
   const client = useQueryClient();
   const [saved, setSaved] = useState<RepositoryLandingSaved>({ saved: "Idle" });
-  const key = projectResourceKey(
-    partition,
-    "Project",
-    projectRepositoriesReachUnaskedResource,
-  );
+  const key = projectRepositoriesReachUnaskedQuery(partition).queryKey;
   return {
     saved,
     reload: () => {
@@ -140,19 +132,13 @@ function useRepositoryLandingWriting(
         );
         setSaved(answered);
         if (answered.saved === "Written") {
-          client.setQueryData(
-            key,
-            (bindings: ProjectRepositoriesResponse | undefined) =>
-              bindings === undefined
-                ? bindings
-                : projectRepositoriesWith(bindings, answered.binding),
+          client.setQueryData(key, (bindings) =>
+            bindings === undefined
+              ? bindings
+              : projectRepositoriesWith(bindings, answered.binding),
           );
           void client.invalidateQueries({
-            queryKey: projectResourceKey(
-              partition,
-              "Project",
-              projectRepositoriesResource,
-            ),
+            queryKey: projectRepositoriesQuery(partition).queryKey,
           });
           wrote();
         }

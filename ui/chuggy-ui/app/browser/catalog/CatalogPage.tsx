@@ -16,7 +16,6 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ConfigurationSummary } from "../../../../../src/contract/responses.ts";
-import { apiConfiguration } from "../../core/apiRoutes.ts";
 import {
   catalogConfigurationHolding,
   catalogConfigurationNewestFrom,
@@ -30,14 +29,15 @@ import type {
 } from "../../core/catalogConfigurations.ts";
 import { catalogEntriesOf } from "../../core/catalogEntries.ts";
 import { configurationCatalogOf } from "../../core/configurationCatalog.ts";
+import {
+  catalogConfigurationsQuery,
+  configurationQuery,
+} from "../../core/configurationQueries.ts";
 import { instantFigure } from "../../core/figures.ts";
 import { configurationCommitShort } from "../../core/labels.ts";
 import { repositoryLabel } from "../../core/projectRepositories.ts";
-import {
-  configurationsPartialLabel,
-  readProjectConfigurationsVersions,
-} from "../../core/repositoryConfigurations.ts";
-import { usePanelResource } from "../api.ts";
+import { configurationsPartialLabel } from "../../core/repositoryConfigurations.ts";
+import { usePanelState } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { useNowMs } from "../Freshness.tsx";
 import { ScreenTitle } from "../shell/slots.tsx";
@@ -196,13 +196,8 @@ function CatalogRevision(props: {
   readonly revision: string;
   readonly selected: string | undefined;
 }): ReactNode {
-  const state = usePanelResource(
-    props.partition,
-    "Configuration",
-    props.revision,
-    (ports) => apiConfiguration(ports, props.partition, props.revision),
-    undefined,
-    "Streamed",
+  const state = usePanelState(
+    configurationQuery(props.partition, props.revision, "Streamed"),
   );
   if (state.state !== "Ready") return <PanelUnready state={state} />;
   const configuration = state.value;
@@ -270,19 +265,11 @@ function CatalogDrawn(props: {
   );
 }
 
-/** Not the repository page's read, which holds only the newest revisions. */
-const catalogConfigurationsResource = "catalog-configurations";
-
 export function CatalogPage(props: {
   readonly query: CatalogQuery;
 }): ReactNode {
   const partition = useCatalogPartition();
-  const state = usePanelResource(
-    partition,
-    "Configuration",
-    catalogConfigurationsResource,
-    (ports) => readProjectConfigurationsVersions(ports, partition),
-  );
+  const state = usePanelState(catalogConfigurationsQuery(partition));
   const read = state.state === "Ready" ? state.value : undefined;
   const configurations =
     read === undefined ? [] : catalogConfigurationsOf(read.configurations);

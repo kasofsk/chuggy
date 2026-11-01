@@ -10,18 +10,14 @@
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
-import { apiTicketActionReach } from "../../core/apiRoutes.ts";
-import {
-  ticketDeliveryPolledMs,
-  ticketDeliveryRead,
-  ticketDeliveryResource,
-} from "../../core/ticketDelivery.ts";
+import { ticketDeliveryRead } from "../../core/ticketDelivery.ts";
 import type {
   TicketDeliveryLine,
   TicketDeliveryState,
 } from "../../core/ticketDelivery.ts";
+import { ticketDeliveryQuery } from "../../core/ticketQueries.ts";
 import { actionReachArm } from "../../core/tones.ts";
-import { usePanelResource } from "../api.ts";
+import { usePanelState } from "../api.ts";
 import { DataSection } from "../DataPanel.tsx";
 import { Identity } from "../ui/Identity.tsx";
 import { Pill } from "../ui/Pill.tsx";
@@ -34,13 +30,7 @@ export function useTicketDelivery(
   ticket: number,
 ): TicketDeliveryState {
   return ticketDeliveryRead(
-    usePanelResource(
-      partition,
-      "Ticket",
-      ticketDeliveryResource(ticket),
-      (ports) => apiTicketActionReach(ports, partition, ticket),
-      ticketDeliveryPolledMs,
-    ),
+    usePanelState(ticketDeliveryQuery(partition, ticket)),
   );
 }
 

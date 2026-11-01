@@ -22,10 +22,10 @@ import type {
   ProjectChangeKind,
   ProjectStreamEvent,
 } from "../../../src/contract/events.ts";
-import { usePanelResource } from "../app/browser/api.ts";
-import type { PanelResourceKept } from "../app/browser/api.ts";
+import { usePanelState } from "../app/browser/api.ts";
 import { applyResourceArrival } from "../app/browser/stream.tsx";
-import { apiTicket } from "../app/core/apiRoutes.ts";
+import { consoleProjectQuery } from "../app/core/consoleQuery.ts";
+import type { ConsoleQueryKept } from "../app/core/consoleQuery.ts";
 import { projectCacheCommands } from "../app/core/projectCacheCommands.ts";
 import {
   projectListMarker,
@@ -34,6 +34,7 @@ import {
   projectStreamedResources,
 } from "../app/core/projectQueryKeys.ts";
 import { projectStreamHolding } from "../app/core/projectStream.ts";
+import { ticketQuery } from "../app/core/ticketQueries.ts";
 import type { ProjectStreamConnection } from "../app/core/projectStream.ts";
 import { streamReopenDelayMsMin } from "../app/core/streamConnection.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
@@ -160,15 +161,8 @@ test("a stream holds its position only while open and answered", () => {
       ).toBe(connection === "Open" && answered);
 });
 
-function TicketProbe(props: { readonly kept: PanelResourceKept }): ReactNode {
-  const state = usePanelResource(
-    atlas,
-    "Ticket",
-    "3",
-    (ports) => apiTicket(ports, atlas, 3),
-    undefined,
-    props.kept,
-  );
+function TicketProbe(props: { readonly kept: ConsoleQueryKept }): ReactNode {
+  const state = usePanelState(ticketQuery(atlas, 3, props.kept));
   return <p>{state.state === "Ready" ? state.value.phase : state.state}</p>;
 }
 
@@ -180,7 +174,7 @@ interface ProbeDrawn {
 }
 
 async function probeDrawn(
-  kept: PanelResourceKept,
+  kept: ConsoleQueryKept,
   server: StreamServer = openedStream(),
 ): Promise<ProbeDrawn> {
   const scripted = scriptedFetch(() => answer(ticketRead));
@@ -275,13 +269,15 @@ test("a screen's own confirmation is drawn over a streamed read with no read", a
 });
 
 function PartProbe(): ReactNode {
-  const state = usePanelResource(
-    atlas,
-    "Execution",
-    "ex-one/artifacts/1",
-    () => Promise.resolve({ outcome: "Absent" as const }),
-    undefined,
-    "Streamed",
+  const state = usePanelState(
+    consoleProjectQuery(
+      atlas,
+      "Execution",
+      "ex-one/artifacts/1",
+      () => Promise.resolve({ outcome: "Absent" as const }),
+      undefined,
+      "Streamed",
+    ),
   );
   return <p>{state.state}</p>;
 }

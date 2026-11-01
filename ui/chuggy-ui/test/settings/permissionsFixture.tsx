@@ -24,17 +24,14 @@ import type {
 } from "../../../../src/contract/accessPlane.ts";
 import { ProjectPermissionsPage } from "../../app/browser/settings/ProjectPermissionsPage.tsx";
 import { SitePermissionsPage } from "../../app/browser/settings/SitePermissionsPage.tsx";
-import {
-  tenantPeopleAbilitiesResource,
-  tenantPeopleResource,
-} from "../../app/browser/settings/tenantPeopleResource.ts";
 import { TenantPermissionsPage } from "../../app/browser/settings/TenantPermissionsPage.tsx";
 import {
-  siteAbilitiesResource,
-  sitePermissionsResource,
-  tenantPermissionsResource,
-} from "../../app/browser/settings/tenantPermissionsResource.ts";
-import { tenantResourceKey } from "../../app/core/projectQueryKeys.ts";
+  siteAbilitiesQuery,
+  sitePermissionsQuery,
+  tenantAbilitiesQuery,
+  tenantPeopleQuery,
+  tenantPermissionsQuery,
+} from "../../app/core/tenantQueries.ts";
 import {
   answer,
   drawnStrict,
@@ -321,15 +318,15 @@ export function drawSitePermissions(
 export function expectPermissionsReread(
   invalidated: MockInstance<QueryClient["invalidateQueries"]>,
 ): void {
-  for (const resource of [
-    tenantPermissionsResource,
-    sitePermissionsResource,
-    siteAbilitiesResource,
-    tenantPeopleResource,
-    tenantPeopleAbilitiesResource,
+  for (const query of [
+    tenantPermissionsQuery,
+    sitePermissionsQuery,
+    siteAbilitiesQuery,
+    tenantPeopleQuery,
+    tenantAbilitiesQuery,
   ])
     expect(invalidated).toHaveBeenCalledWith({
-      queryKey: tenantResourceKey(permissionsTenant, resource),
+      queryKey: query(permissionsTenant).queryKey,
     });
 }
 

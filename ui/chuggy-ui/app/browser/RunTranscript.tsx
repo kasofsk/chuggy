@@ -21,7 +21,8 @@ import type {
   RunTranscriptResponse,
 } from "../../../../src/contract/responses.ts";
 import type { ApiResult } from "../core/apiRequest.ts";
-import { apiRunConfiguration, apiRunTranscript } from "../core/apiRoutes.ts";
+import { apiRunTranscript } from "../core/apiRoutes.ts";
+import { runConfigurationQuery } from "../core/executionQueries.ts";
 import { conversationExchanges } from "../core/conversation.ts";
 import { panelReason } from "../core/freshness.ts";
 import { runPromptOfPanel } from "../core/runConfiguration.ts";
@@ -42,7 +43,7 @@ import type {
   RunTranscriptHeld,
   RunTranscriptReading,
 } from "../core/runTranscript.ts";
-import { useApiPorts, usePanelResource } from "./api.ts";
+import { useApiPorts, usePanelState } from "./api.ts";
 import { Conversation } from "./conversation/Conversation.tsx";
 import { useNowMs } from "./Freshness.tsx";
 import { Panel } from "./ui/Panel.tsx";
@@ -191,11 +192,8 @@ function RunConversationPrompted(props: {
 }): ReactNode {
   const { partition, execution } = props;
   const attempt = props.attempt.attempt;
-  const state = usePanelResource(
-    partition,
-    "Execution",
-    `${execution}/attempts/${attempt}/configuration`,
-    (ports) => apiRunConfiguration(ports, partition, execution, attempt),
+  const state = usePanelState(
+    runConfigurationQuery(partition, execution, attempt),
   );
   return (
     <RunConversationDrawn

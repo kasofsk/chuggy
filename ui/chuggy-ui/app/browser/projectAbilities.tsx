@@ -7,34 +7,21 @@
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
-import { apiProjectAbilities } from "../core/apiRoutes.ts";
-import type { ApiPorts } from "../core/apiRequest.ts";
 import { projectAbilityRead } from "../core/projectAbilities.ts";
 import type {
   ProjectAbilities,
   ProjectAbility,
   ProjectAbilityRead,
 } from "../core/projectAbilities.ts";
-import { usePanelResource, usePanelResourceSettled } from "./api.ts";
+import { projectAbilitiesQuery } from "../core/projectQueries.ts";
+import { usePanelState } from "./api.ts";
 import { Notice } from "./ui/Notice.tsx";
-
-/** No frame names the abilities, so the partition's own refetch reaches them. */
-export const projectAbilitiesResource = "abilities";
-
-function abilitiesRead(partition: PartitionIdentity) {
-  return (ports: ApiPorts) => apiProjectAbilities(ports, partition);
-}
 
 /** What the abilities read answered, and nothing where it has not. */
 export function useProjectAbilities(
   partition: PartitionIdentity,
 ): ProjectAbilities {
-  const state = usePanelResource(
-    partition,
-    "Project",
-    projectAbilitiesResource,
-    abilitiesRead(partition),
-  );
+  const state = usePanelState(projectAbilitiesQuery(partition));
   return state.state === "Ready" ? state.value : undefined;
 }
 
@@ -44,11 +31,9 @@ export function useProjectAbilityRead(
   partition: PartitionIdentity,
   ability: ProjectAbility,
 ): ProjectAbilityRead {
-  const { state, settled } = usePanelResourceSettled(
-    partition,
-    "Project",
-    projectAbilitiesResource,
-    abilitiesRead(partition),
+  const { state, settled } = usePanelState(
+    projectAbilitiesQuery(partition),
+    (state, answer) => ({ state, settled: answer.isFetched }),
   );
   return projectAbilityRead(
     state.state === "Ready" ? state.value : undefined,

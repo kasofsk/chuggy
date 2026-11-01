@@ -19,7 +19,6 @@ import type {
   WorkerPoolTokenResponse,
 } from "../../../../../src/contract/responses.ts";
 import {
-  apiChatHost,
   apiDeregisterChatHost,
   apiMintChatHostToken,
 } from "../../core/apiRoutes.ts";
@@ -27,14 +26,13 @@ import { instantFigure } from "../../core/figures.ts";
 import type { PanelState } from "../../core/freshness.ts";
 import { panelReason } from "../../core/freshness.ts";
 import { myRunnerShort } from "../../core/myRunner.ts";
-import { tenantResourceKey } from "../../core/projectQueryKeys.ts";
 import {
   runnerStandingLabel,
   runnerTokenLifetimeSecs,
 } from "../../core/runners.ts";
-import { sessionPlacementPolledMs } from "../../core/sessionRunners.ts";
+import { chatHostQuery } from "../../core/tenantQueries.ts";
 import { runnerStandingTone } from "../../core/tones.ts";
-import { useApiPorts, usePanelTenantResource } from "../api.ts";
+import { useApiPorts, usePanelState } from "../api.ts";
 import { useNowMs } from "../Freshness.tsx";
 import { RunnerVersion } from "../RunnerVersion.tsx";
 import { Button } from "../ui/Button.tsx";
@@ -51,17 +49,9 @@ import {
   SettingsListingUnread,
 } from "./SettingsListing.tsx";
 
-/** No frame says a host polled, so the read is polled at the pace a session's standing is. */
-export const chatHostResource = "chat-host";
-
 /** Answered as absent where the reader registers none. */
 export function useChatHost(tenant: string): PanelState<ChatHostResponse> {
-  return usePanelTenantResource(
-    tenant,
-    chatHostResource,
-    (ports) => apiChatHost(ports, tenant),
-    sessionPlacementPolledMs,
-  );
+  return usePanelState(chatHostQuery(tenant));
 }
 
 /** The host read again, after a change to it. */
@@ -70,7 +60,7 @@ async function chatHostReread(
   tenant: string,
 ): Promise<void> {
   await client.invalidateQueries({
-    queryKey: tenantResourceKey(tenant, chatHostResource),
+    queryKey: chatHostQuery(tenant).queryKey,
   });
 }
 

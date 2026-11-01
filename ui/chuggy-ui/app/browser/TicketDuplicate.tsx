@@ -10,6 +10,7 @@
  * creation, and nothing ties the ticket it makes to the one it started from.
  */
 
+import { useQueries } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
 import { useState } from "react";
 import type { ReactNode } from "react";
@@ -18,12 +19,12 @@ import type {
   DraftResponse,
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
-import { apiDraft, apiTicket } from "../core/apiRoutes.ts";
+import { draftQuery, ticketQuery } from "../core/ticketQueries.ts";
 import {
   ticketDuplicateRevoked,
   ticketDuplicateSeed,
 } from "../core/ticketDuplicate.ts";
-import { usePanelResource, usePanelResources } from "./api.ts";
+import { panelQueryState, usePanelQueryOptions, usePanelState } from "./api.ts";
 import { PanelUnready } from "./DataPanel.tsx";
 import { ticketConfigurationStored } from "./editor/authoringGuards.tsx";
 import {
@@ -72,13 +73,13 @@ function DuplicateDependencies(
   const { partition } = props;
   const [draft] = useState(props.draft);
   const dependencies = draft.authoring.dependencies;
-  const states = usePanelResources(
-    partition,
-    "Ticket",
-    dependencies.map(String),
-    (resource, readPorts) => apiTicket(readPorts, partition, Number(resource)),
-    "Streamed",
-  );
+  const options = usePanelQueryOptions();
+  const states = useQueries({
+    queries: dependencies.map((dependency) =>
+      options(ticketQuery(partition, dependency, "Streamed")),
+    ),
+    combine: (answers) => answers.map((answer) => panelQueryState(answer)),
+  });
   const revoked = ticketDuplicateRevoked(dependencies, states);
   if (revoked === undefined)
     return <PanelUnready state={{ state: "Pending" }} />;
@@ -87,22 +88,8 @@ function DuplicateDependencies(
 
 function DuplicateRead(props: DuplicateProps): ReactNode {
   const { from, partition } = props;
-  const draftState = usePanelResource(
-    partition,
-    "Draft",
-    String(from),
-    (readPorts) => apiDraft(readPorts, partition, from),
-    undefined,
-    "Streamed",
-  );
-  const ticketState = usePanelResource(
-    partition,
-    "Ticket",
-    String(from),
-    (readPorts) => apiTicket(readPorts, partition, from),
-    undefined,
-    "Streamed",
-  );
+  const draftState = usePanelState(draftQuery(partition, from, "Streamed"));
+  const ticketState = usePanelState(ticketQuery(partition, from, "Streamed"));
   if (draftState.state !== "Ready") return <PanelUnready state={draftState} />;
   if (ticketState.state === "Pending" || ticketState.state === "Failed")
     return <PanelUnready state={ticketState} />;

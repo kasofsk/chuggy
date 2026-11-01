@@ -222,6 +222,15 @@ export function repositoryWorkerLine(
   return workerless.length > 0 ? "Missing" : undefined;
 }
 
+/** The roster an opening of the picker draws. */
+export interface ForgeReachable {
+  readonly repositories: readonly ForgeRepositoryResponse[];
+  readonly truncated: boolean;
+  /** The addresses among them the worker app was read not to grant, and
+   * `undefined` until its listings are read. */
+  readonly workerless: readonly string[] | undefined;
+}
+
 /** How often an open picker reads its roster again by itself. */
 export const repositoryRosterPolledMs = 15_000;
 

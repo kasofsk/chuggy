@@ -42,7 +42,6 @@
  */
 
 import { useQueryClient } from "@tanstack/react-query";
-import type { QueryClient } from "@tanstack/react-query";
 import { useState } from "react";
 import type { ReactNode } from "react";
 
@@ -61,10 +60,7 @@ import {
 } from "../../core/apiRoutes.ts";
 import type { PanelState } from "../../core/freshness.ts";
 import { operationIdBytesCount } from "../../core/operationFollow.ts";
-import {
-  projectResourceKey,
-  tenantResourceKey,
-} from "../../core/projectQueryKeys.ts";
+import { projectRepositoriesInvalidated } from "../../core/projectQueries.ts";
 import {
   repositoriesTruncated,
   repositoriesWorkerless,
@@ -81,13 +77,15 @@ import {
   repositoryWorkerReading,
 } from "../../core/projectRepositories.ts";
 import type {
+  ForgeReachable,
   InstallationGrant,
   RepositoryChoice,
   RepositoryDrawn,
   RepositoryNote,
 } from "../../core/projectRepositories.ts";
 import type { WorkRunner } from "../../core/workRunner.ts";
-import { useApiPorts, usePanelTenantResource } from "../api.ts";
+import { forgeReachableQuery } from "../../core/tenantQueries.ts";
+import { useApiPorts, usePanelState } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { currentPath, drawBytes } from "../ports.ts";
 import { Button } from "../ui/Button.tsx";
@@ -97,45 +95,10 @@ import { SearchableRoster } from "../ui/SearchableRoster.tsx";
 import { InstallLink } from "./InstallLink.tsx";
 import { RepositoryNextStep } from "./RepositoryNextStep.tsx";
 
-/** The roster's entry under the tenant's key, where nothing reads it but the
- * picker that draws it. */
-export const forgeReachableResource = "forge-reachable";
-
-/** No frame names these reads, so the partition's own refetch is what
- * reaches them: a bind raises none, so the bind invalidates both. The first
- * asks what the worker App reaches of each binding and the second does not, so
- * they hold different answers under different keys. */
-export const projectRepositoriesResource = "project-repositories";
-export const projectRepositoriesReachUnaskedResource =
-  "project-repositories-reach-unasked";
-
-/** Both reads of a project's bindings, which a write to a binding leaves stale. */
-export async function projectRepositoriesInvalidated(
-  client: QueryClient,
-  partition: PartitionIdentity,
-): Promise<void> {
-  await Promise.all(
-    [projectRepositoriesResource, projectRepositoriesReachUnaskedResource].map(
-      (resource) =>
-        client.invalidateQueries({
-          queryKey: projectResourceKey(partition, "Project", resource),
-        }),
-    ),
-  );
-}
-
-interface Reachable {
-  readonly repositories: readonly ForgeRepositoryResponse[];
-  readonly truncated: boolean;
-  /** The addresses among them the worker app was read not to grant, and
-   * `undefined` until its listings are read. */
-  readonly workerless: readonly string[] | undefined;
-}
-
 function reachableOf(
   portal: readonly InstallationGrant[],
   worker: readonly InstallationGrant[] | undefined,
-): Reachable {
+): ForgeReachable {
   return {
     repositories: portal.flatMap((grant) => grant.repositories),
     truncated: portal.some((grant) => grant.truncated),
@@ -209,8 +172,8 @@ async function readReachable(
   tenant: string,
   installations: readonly ForgeInstallationResponse[],
   workers: readonly ForgeInstallationResponse[],
-  drawn: (roster: Reachable) => void,
-): Promise<ApiResult<Reachable>> {
+  drawn: (roster: ForgeReachable) => void,
+): Promise<ApiResult<ForgeReachable>> {
   const portal = await readPortalGrants(ports, tenant, installations);
   if (portal.outcome !== "Ok") return portal;
   drawn(reachableOf(portal.value, undefined));
@@ -225,7 +188,7 @@ async function rereadReachable(
   tenant: string,
   installations: readonly ForgeInstallationResponse[],
   workers: readonly ForgeInstallationResponse[],
-): Promise<Reachable | undefined> {
+): Promise<ForgeReachable | undefined> {
   const portal = await readPortalGrants(ports, tenant, installations);
   if (portal.outcome !== "Ok") return undefined;
   const worker = await readWorkerGrants(ports, tenant, workers);
@@ -316,18 +279,15 @@ function useReachable(
   tenant: string,
   installations: readonly ForgeInstallationResponse[],
   workers: readonly ForgeInstallationResponse[],
-): PanelState<Reachable> {
+): PanelState<ForgeReachable> {
   const client = useQueryClient();
-  const key = tenantResourceKey(tenant, forgeReachableResource);
   /** Whether this opening's first reading has drawn the portal app's roster,
    * which is what a reading made by itself stands on. */
   const [firstDrawn, setFirstDrawn] = useState(false);
   const [rereads, setRereads] = useState(0);
-  return usePanelTenantResource(
+  const query = forgeReachableQuery(
     tenant,
-    forgeReachableResource,
-    async (ports, signal) => {
-      const stood = client.getQueryData<Reachable>(key);
+    async (ports, signal, stood) => {
       if (firstDrawn && stood !== undefined) {
         setRereads((made) => made + 1);
         const whole = await rereadReachable(
@@ -340,12 +300,13 @@ function useReachable(
       }
       return readReachable(ports, tenant, installations, workers, (roster) => {
         if (signal.aborted) return;
-        client.setQueryData(key, roster);
+        client.setQueryData(query.queryKey, roster);
         setFirstDrawn(true);
       });
     },
     firstDrawn ? repositoryRosterRereadMs(rereads) : undefined,
   );
+  return usePanelState(query);
 }
 
 /**

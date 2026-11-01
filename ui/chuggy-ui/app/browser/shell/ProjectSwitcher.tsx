@@ -16,7 +16,7 @@ import { useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
-import { apiProjectInventoryAll } from "../../core/apiRoutes.ts";
+import { projectsInventoryQuery } from "../../core/tenantQueries.ts";
 import { lastProjectWrite } from "../../core/lastProject.ts";
 import {
   memberChatOpens,
@@ -24,7 +24,7 @@ import {
   memberChatRoutes,
 } from "../../core/memberChat.ts";
 import { projectCreationRoutePath } from "../../core/projectCreation.ts";
-import { usePanelInventory } from "../api.ts";
+import { usePanelState } from "../api.ts";
 import { persistentStore } from "../ports.ts";
 import { useChatAbilities } from "../thread/threadRead.ts";
 import { Notice } from "../ui/Notice.tsx";
@@ -76,7 +76,7 @@ function ProjectSwitcherPicker(props: {
   readonly chats: boolean;
 }): ReactNode {
   const navigate = useNavigate();
-  const state = usePanelInventory((ports) => apiProjectInventoryAll(ports));
+  const state = usePanelState(projectsInventoryQuery());
   if (state.state !== "Ready")
     return <Notice tone="parked" inline detail="Projects unavailable" />;
   const { tenant } = props;

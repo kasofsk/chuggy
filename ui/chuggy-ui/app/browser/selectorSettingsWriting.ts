@@ -19,7 +19,7 @@ import { useState } from "react";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { SelectorProjectSettingsResponse } from "../../../../src/contract/responses.ts";
 import { apiWriteSelectorSettings } from "../core/apiRoutes.ts";
-import { projectResourceKey } from "../core/projectQueryKeys.ts";
+import { selectorSettingsQuery } from "../core/projectQueries.ts";
 import {
   selectorSettingsAnswered,
   selectorSettingsDraft,
@@ -31,10 +31,6 @@ import type {
   SelectorSettingsSaved,
 } from "../core/selectorSettingsForm.ts";
 import { useApiPorts } from "./api.ts";
-
-/** No frame names either read, so the partition's own refetch is what reaches
- * them. */
-export const selectorSettingsResource = "selector-settings";
 
 export interface SelectorSettingsHeld {
   readonly draft: SelectorSettingsDraft;
@@ -114,11 +110,7 @@ export function useSelectorSettingsWriting<TWriter extends string>(
   const client = useQueryClient();
   const [saved, setSaved] = useState<SelectorSettingsSaved>({ saved: "Idle" });
   const [writer, setWriter] = useState<TWriter | undefined>(undefined);
-  const key = projectResourceKey(
-    partition,
-    "Project",
-    selectorSettingsResource,
-  );
+  const key = selectorSettingsQuery(partition).queryKey;
   return {
     saved,
     writer,
