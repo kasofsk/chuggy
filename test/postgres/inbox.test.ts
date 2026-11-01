@@ -20,7 +20,7 @@ import { postgresInboxReads } from "../../src/adapters/postgres/nativeReads.ts";
 import { postgresOperationalReads } from "../../src/adapters/postgres/operationalReads.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import type {
-  AgenticRefusalRead,
+  AgenticRefusalBindingRead,
   AgenticRefusalStanding,
 } from "../../src/interpreter/agenticRefusal.ts";
 import { asExecutionId } from "../../src/interpreter/schedulerIdentity.ts";
@@ -94,7 +94,7 @@ async function inboxProject(
 function inboxRefusals(
   partition: Partition,
   tickets: readonly number[],
-): AgenticRefusalRead {
+): AgenticRefusalBindingRead {
   const standing: AgenticRefusalStanding[] = tickets.map((ticket) => ({
     ticket: asTicketId(ticket),
     ticketVersion: 1,
@@ -104,11 +104,10 @@ function inboxRefusals(
     superseded: false,
   }));
   return {
-    standing: (asked, limit) =>
+    binding: (asked, limit) =>
       Promise.resolve(
         asked.project === partition.project ? standing.slice(0, limit) : [],
       ),
-    ledger: () => Promise.reject(new Error("the inbox reads no ledger")),
   };
 }
 

@@ -350,7 +350,7 @@ export function actionReachArm(reach: ActionReach): ActionReachArm {
   }
 }
 
-/** Whether a refusal still binds, or a later authoring has overtaken it. */
+/** Whether a refusal still binds, or the ticket has moved past it. */
 export function agenticRefusalStandingTone(
   standing: AgenticRefusalStanding,
 ): Tone {

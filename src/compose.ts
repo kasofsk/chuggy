@@ -134,8 +134,8 @@ import {
 } from "./adapters/postgres/selector.ts";
 import { authorizedProjectInventory } from "./interpreter/projectInventory.ts";
 import {
+  postgresAgenticRefusalBinding,
   postgresAgenticRefusalLedger,
-  postgresAgenticRefusalReads,
 } from "./adapters/postgres/agenticRefusal.ts";
 import { postgresLeadMailbox } from "./adapters/postgres/leadMailbox.ts";
 import type { LeadSessionMint } from "./interpreter/leadMailbox.ts";
@@ -397,7 +397,7 @@ export function composeProjectInbox(
   return projectInbox(access, {
     store: postgresInboxReads(apiPool),
     operationalReads: postgresOperationalReads(apiPool),
-    refusals: postgresAgenticRefusalReads(apiPool),
+    refusals: postgresAgenticRefusalBinding(apiPool),
     proposals: composeSelectorProposalReviews(selectorReviewPool, access),
   });
 }

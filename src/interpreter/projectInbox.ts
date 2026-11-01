@@ -8,6 +8,10 @@
  * each to the bound its own route answers, and the store is handed the tickets
  * they name; the phases and the open actions it reads itself.
  *
+ * A REFUSAL ITS TICKET HAS MOVED PAST NEEDS NOBODY: the ticket was revoked,
+ * dispatched, or changed and is the lead's to weigh again. The read that
+ * answers refusals here leaves those out.
+ *
  * A READER WHO MAY NOT DISPATCH IS SHOWN NO HELD DECISION, as the proposals
  * route answers them, so a ticket only a decision names is neither in that
  * reader's entries nor in their count.
@@ -21,7 +25,7 @@ import {
 import type { TicketId } from "../domain/ids.ts";
 import type { Phase } from "../domain/phase.ts";
 import type {
-  AgenticRefusalRead,
+  AgenticRefusalBindingRead,
   AgenticRefusalStanding,
 } from "./agenticRefusal.ts";
 import type { AuthorizedResult } from "./authorizedProject.ts";
@@ -95,7 +99,7 @@ export interface ProjectInboxPorts {
     OperationalReadStore,
     "ticketLatestExecutions"
   >;
-  readonly refusals: AgenticRefusalRead;
+  readonly refusals: AgenticRefusalBindingRead;
   readonly proposals: SelectorProposalReviews;
 }
 
@@ -170,7 +174,7 @@ export function projectInbox(
       const asked = checkedProjectInboxQuery(query);
       if ((await access.authorize(principal, partition, "Read")) === undefined)
         return { result: "NotFound" };
-      const refusals = await ports.refusals.standing(
+      const refusals = await ports.refusals.binding(
         partition,
         agenticRefusalsAnsweredMax,
       );

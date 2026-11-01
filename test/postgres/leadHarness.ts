@@ -20,6 +20,7 @@ import type pg from "pg";
 
 import { postgresAgenticRefusalReads } from "../../src/adapters/postgres/agenticRefusal.ts";
 import {
+  postgresAgenticRefusalBinding,
   postgresAgenticRefusalStanding,
   postgresAgenticRefusalLedger,
 } from "../../src/adapters/postgres/agenticRefusal.ts";
@@ -38,6 +39,7 @@ import {
 import { postgresSelectorState } from "../../src/adapters/postgres/selector.ts";
 import { sessionRigAttempt, type SessionRigAttempt } from "./sessionHarness.ts";
 import type {
+  AgenticRefusalBindingRead,
   AgenticRefusalRead,
   AgenticRefusalSelectorRead,
   AgenticRefusalWrite,
@@ -85,6 +87,7 @@ export interface LeadRig {
   readonly writes: AgenticRefusalWrite;
   readonly selectorStanding: AgenticRefusalSelectorRead;
   readonly apiRefusals: AgenticRefusalRead;
+  readonly apiRefusalsBinding: AgenticRefusalBindingRead;
   readonly apiLead: PostgresLeadReads;
   readonly close: () => Promise<void>;
 }
@@ -102,6 +105,7 @@ export async function leadRigOpen(): Promise<LeadRig> {
     writes: postgresAgenticRefusalLedger(selectorPool),
     selectorStanding: postgresAgenticRefusalStanding(selectorPool),
     apiRefusals: postgresAgenticRefusalReads(apiPool),
+    apiRefusalsBinding: postgresAgenticRefusalBinding(apiPool),
     apiLead: postgresLeadReads(apiPool),
     close: async () => {
       await apiPool.end();

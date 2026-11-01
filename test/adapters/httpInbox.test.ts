@@ -86,10 +86,7 @@ function appOver(access: ReadonlySet<ProjectAccessKind>) {
     projectInbox(granted, {
       store,
       operationalReads: { ticketLatestExecutions: () => Promise.resolve([]) },
-      refusals: {
-        standing: () => Promise.resolve([]),
-        ledger: () => Promise.resolve([]),
-      },
+      refusals: { binding: () => Promise.resolve([]) },
       proposals,
     }),
   );
