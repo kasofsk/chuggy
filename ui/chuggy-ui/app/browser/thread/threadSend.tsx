@@ -23,7 +23,11 @@ import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { memberChatDoor } from "../../core/memberChat.ts";
 import { hostedRunsQuery } from "../../core/projectQueries.ts";
 import { chatHostQuery } from "../../core/tenantQueries.ts";
-import { threadHomeOf } from "../../core/threadHome.ts";
+import {
+  threadHomeFromNamed,
+  threadHomeNamed,
+  threadHomeOf,
+} from "../../core/threadHome.ts";
 import type { ThreadHome } from "../../core/threadHome.ts";
 import {
   threadKeptClosed,
@@ -237,6 +241,7 @@ function useThreadSendDrawn(): () => boolean {
  */
 function useThreadSendLetGo(
   name: string,
+  home: ThreadHome,
   made: {
     readonly first: boolean;
     readonly unlisted: boolean;
@@ -246,6 +251,7 @@ function useThreadSendLetGo(
 ): void {
   const dispatch = useConsoleDispatch();
   const { first, unlisted, listed, closed } = made;
+  const named = threadHomeNamed(home);
   useEffect(() => {
     if (unlisted) dispatch(threadSendListedAt({ name, listed }));
   }, [unlisted, listed, name, dispatch]);
@@ -254,9 +260,9 @@ function useThreadSendLetGo(
   }, [closed, name, dispatch]);
   useEffect(
     () => () => {
-      if (first) dispatch(threadSendFirstGone(name));
+      if (first) dispatch(threadSendFirstGone(threadHomeFromNamed(named)));
     },
-    [first, name, dispatch],
+    [first, named, dispatch],
   );
 }
 
@@ -292,7 +298,7 @@ function useThreadSendAt(
   const listed = input.listed ?? threadSendNothingListed;
   const sending = threadSendingWithout(record.sending, listed);
   const closed = threadKeptClosed(record, input.takes);
-  useThreadSendLetGo(name, {
+  useThreadSendLetGo(name, home, {
     first: input.session === undefined,
     unlisted: sending !== record.sending,
     listed,

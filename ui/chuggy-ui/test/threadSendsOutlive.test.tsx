@@ -295,6 +295,31 @@ function threadDrawn(): boolean {
   return document.querySelector("[role=region][data-fills-page]") !== null;
 }
 
+test("a first message whose thread opened but whose send was refused in view draws that thread after the pane collapsed and expanded, and the next message opens no second thread", async () => {
+  const listed: string[] = [];
+  const site = siteStubbed(listed);
+  await drawn("Pane");
+  await stageSent(words);
+  await settled();
+  expect(site.opens).toHaveLength(1);
+  listed.push(opened);
+  await stageAnswered(site.sends[0], refusal, 400);
+  expect(stageBox().value).toBe(words);
+
+  await collapsed();
+  await expanded();
+  await waitFor(() => {
+    expect(threadDrawn()).toBe(true);
+  });
+  await stageSent(words);
+  await settled();
+  expect(site.opens).toHaveLength(1);
+  expect(site.sends.map((sent) => sent.session)).toStrictEqual([
+    opened,
+    opened,
+  ]);
+});
+
 test("a first message answered while the pane is collapsed is drawn in its thread on expanding, through the read of that thread", async () => {
   const site = siteStubbed([]);
   await drawn("Pane");

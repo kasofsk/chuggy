@@ -78,6 +78,7 @@ import {
   threadSendIdled,
   threadSendListed,
   threadSendOpened,
+  threadSendRecordEmpty,
   threadSendRecordName,
   threadSendRecordOf,
   threadSendRecordWith,
@@ -104,6 +105,7 @@ import type {
 import { drawBytes } from "../ports.ts";
 import {
   chatPaneOpeningAt,
+  chatPaneReadAt,
   chatPaneRecordAt,
   chatPaneStartingAt,
 } from "../shell/chatPanes.ts";
@@ -558,9 +560,17 @@ export function threadSendKeptListed(
   };
 }
 
-/** A first box went. */
-export function threadSendFirstGone(name: string): ThreadSendsThunk<void> {
-  return threadSendLetGo(threadSendFirstLeftAt({ name }));
+/** A first box went. Where its record empties, a project's pane ends the
+ * start too, so it draws the thread an open answered rather than a first box
+ * that would open another. */
+export function threadSendFirstGone(home: ThreadHome): ThreadSendsThunk<void> {
+  return (dispatch, getState) => {
+    const name = threadSendRecordName(home, undefined);
+    dispatch(threadSendLetGo(threadSendFirstLeftAt({ name })));
+    const emptied = threadSendAt(getState(), name) === threadSendRecordEmpty;
+    if (emptied && home.scope === "Project")
+      dispatch(chatPaneReadAt(home.partition));
+  };
 }
 
 /** The images a kept message's turns carried, in order. */
