@@ -5,9 +5,7 @@
  * the server summed them over every execution and this screen may hold only a
  * page. The by-stage table is grouped here from the page and priced through
  * `runSpendOf`, which reports the basis every measured run agreed on and
- * reports disagreement as disagreement; `runStageRows` takes the first run's
- * basis instead, which is the finding kasofsk/chuggy#454 names, so this does
- * not use it.
+ * reports disagreement as disagreement.
  */
 
 import type { ReactNode } from "react";

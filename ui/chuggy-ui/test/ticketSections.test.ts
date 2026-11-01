@@ -18,8 +18,6 @@ import {
   escalationBadgeLabel,
   ticketBadgeLabel,
   ticketSectionOf,
-  ticketSectionPhases,
-  ticketSectionRoster,
 } from "../app/core/ticketSections.ts";
 import type { TicketSection } from "../app/core/ticketSections.ts";
 
@@ -40,16 +38,11 @@ test.each(phaseRoster)(
   },
 );
 
-test("the sections partition the roster, leaving no phase in two and none in none", () => {
-  const gathered = ticketSectionRoster.flatMap((section) =>
-    ticketSectionPhases(section),
-  );
-  expect([...gathered].sort()).toStrictEqual([...phaseRoster].sort());
-});
-
 /** The server decides the inbox by the contract's phases, so the section that draws it is held to the same list. */
 test("the Needs you section holds exactly the phases the inbox is read by", () => {
-  expect(ticketSectionPhases("NeedsYou")).toStrictEqual(inboxPhases);
+  expect(
+    phaseRoster.filter((phase) => ticketSectionOf(phase) === "NeedsYou"),
+  ).toStrictEqual(inboxPhases);
 });
 
 const badgeOfKind: Readonly<Record<EscalationKind, string>> = {

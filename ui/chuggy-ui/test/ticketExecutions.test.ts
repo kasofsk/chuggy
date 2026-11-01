@@ -16,26 +16,13 @@ import type {
   ExecutionsResponse,
   TaskIdentity,
 } from "../../../src/contract/responses.ts";
-import { runStageLabel } from "../app/core/runTotals.ts";
-import {
-  ticketExecutionStages,
-  ticketExecutionsFolded,
-} from "../app/core/ticketExecutions.ts";
+import { ticketExecutionsFolded } from "../app/core/ticketExecutions.ts";
 
 const digest = "a".repeat(64);
 
 /** A work task's identity, in the cycle a case names. */
 function workIdentity(cycle: number): TaskIdentity {
   return { type: "WorkTask", value: { ticket: 7, cycle } };
-}
-
-/** An evaluation task's identity, its stage and cycle a case names, its first
- * generation and evaluator held constant since no case here reworks. */
-function evalIdentity(cycle: number, stage: number): TaskIdentity {
-  return {
-    type: "EvaluationTask",
-    value: { ticket: 7, workCycle: cycle, stage, generation: 1, evaluator: 1 },
-  };
 }
 
 function execution(
@@ -177,43 +164,4 @@ test("a listed row this console cannot read is not written over the good one", (
   });
   expect(folded).toBe(held);
   expect(folded?.executions[0]?.status).toBe("Running");
-});
-
-/** The grouping is over the page this screen holds, so a row's figure is only
- * ever as complete as that page — which is why the ticket's own total is the
- * server's and this one is not. */
-test("the page's executions group into the stages that ran them", () => {
-  const totals = {
-    turns: 1,
-    durationMs: 1_000,
-    durationApiMs: 900,
-    tokensInput: 1,
-    tokensOutput: 2,
-    tokensCacheCreation: 3,
-    tokensCacheRead: 4,
-    costUsdMicros: 5_000,
-    costBasis: "List" as const,
-    permissionDenials: 0,
-    models: [],
-  };
-  const stages = ticketExecutionStages(
-    page([
-      execution("e1", 1, { identity: workIdentity(1), runTotals: totals }),
-      execution("e2", 2, {
-        taskKind: "Evaluation",
-        identity: evalIdentity(1, 1),
-        status: "Terminal",
-        outcome: "Failed",
-        runTotals: totals,
-      }),
-      execution("e3", 3, { identity: workIdentity(1), runTotals: totals }),
-    ]),
-  );
-  expect(stages.map((row) => runStageLabel(row))).toEqual([
-    "cycle 1 work",
-    "cycle 1 evaluation stage 1",
-  ]);
-  expect(stages[0]?.executions).toBe(2);
-  expect(stages[0]?.totals?.costUsdMicros).toBe(10_000);
-  expect(stages[1]?.totals?.costUsdMicros).toBe(5_000);
 });

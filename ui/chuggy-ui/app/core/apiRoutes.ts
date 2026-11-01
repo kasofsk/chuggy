@@ -28,8 +28,6 @@ import {
   forgeInstallationPermissionsResponseSchema,
   forgeInstallationsResponseSchema,
   forgeRepositoriesResponseSchema,
-  installationResponseSchema,
-  notificationsResponseSchema,
   operationAcceptanceSchema,
   operationResponseSchema,
   outputContentResponseSchema,
@@ -73,8 +71,6 @@ import type {
   ForgeInstallationPermissionsResponse,
   ForgeInstallationsResponse,
   ForgeRepositoriesResponse,
-  InstallationResponse,
-  NotificationsResponse,
   OperationAcceptance,
   OperationResponse,
   OutputContentResponse,
@@ -252,14 +248,6 @@ function apiScopedEndpoint<
       (value) => endpoint.response.parse(value),
     );
   };
-}
-
-export function apiInstallation(
-  ports: ApiPorts,
-): Promise<ApiResult<InstallationResponse>> {
-  return apiGet(ports, nativeHttpRoutes.installation, (value) =>
-    installationResponseSchema.parse(value),
-  );
 }
 
 /**
@@ -876,11 +864,6 @@ export const apiInbox = apiProjectEndpoint(
   }),
 );
 
-export const apiOperationalStatus = apiProjectEndpoint(
-  nativeHttpEndpoints.operationalStatus,
-  (partition) => ({ parameters: partition }),
-);
-
 export interface ExecutionsPage {
   readonly cursor?: string | undefined;
   readonly limit?: number | undefined;
@@ -1012,18 +995,6 @@ export function apiOperation(
     apiSegments(partition, "operations", operation),
     (value) => operationResponseSchema.parse(value),
     signal,
-  );
-}
-
-export function apiNotifications(
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-  page: { readonly after?: number | undefined } = {},
-): Promise<ApiResult<NotificationsResponse>> {
-  return apiGet(
-    ports,
-    apiPath(apiSegments(partition, "notifications"), { after: page.after }),
-    (value) => notificationsResponseSchema.parse(value),
   );
 }
 
@@ -1196,12 +1167,6 @@ export const apiThreadTranscript = apiProjectEndpoint(
 export const apiLeadInquiries = apiProjectEndpoint(
   nativeHttpEndpoints.leadInquiries,
   (partition) => ({ parameters: partition }),
-);
-
-/** One inquiry: what was asked, and the answer where the fork has given one. */
-export const apiLeadInquiry = apiProjectEndpoint(
-  nativeHttpEndpoints.leadInquiry,
-  (partition, session: string) => ({ parameters: { ...partition, session } }),
 );
 
 /**

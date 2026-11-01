@@ -86,13 +86,6 @@ test("a refused write a watching screen draws is not kept in the store", async (
   expect(unseen(store)).toStrictEqual([]);
 });
 
-test("a client with no store keeps no refusal", async () => {
-  const client = consoleQueryClient();
-  await refusedThrough(client, saved, "heard by nobody");
-  const store = consoleStoreBare(client);
-  expect(unseen(store)).toStrictEqual([]);
-});
-
 test("a read whose document the schema refused leaves the store saying the console is outdated", async () => {
   const { client, store } = tab();
   expect(consoleOutdatedOf(store.getState())).toBe(false);

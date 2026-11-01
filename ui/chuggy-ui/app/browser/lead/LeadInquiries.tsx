@@ -26,22 +26,28 @@
  * the box says when theirs cannot take it, whatever the project's others do.
  *
  * THERE IS A BOX PER PROJECT AND NONE OF THEM IS THIS PANEL'S. The question
- * typed at a box, the pair a send is outstanding under, whether a press is
- * outstanding at all and what the last press answered are all one project's, so
- * a project names which box is read, which write a press is, and which
+ * once it leaves the box, the pair a send is outstanding under, whether a press
+ * is outstanding at all and what the last press answered are all one project's,
+ * so a project names which box is read, which write a press is, and which
  * project's listing an accepted press re-reads — and every one of them outlives
  * this panel, the page above it and the route: `lead/inquiryBoxes.ts` holds the
  * box in the console's store, and the press is a write under a key naming the
  * project.
- * Nothing crosses between projects and nothing is lost to a navigation: a
- * reader who leaves and comes back finds what they left, whichever way they
- * left.
+ * A question leaves the box on a blur or a press. Until then a keystroke is the
+ * box's own, and text typed and never left goes with the box. Nothing crosses
+ * between projects, and the pair, the pending press and the last answer are
+ * not lost to a navigation: a reader who leaves and comes back finds them,
+ * whichever way they left.
  */
 
 import { useIsMutating, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import type { ReactNode } from "react";
 
-import { inquiryQuestionCharsMax } from "../../../../../src/contract/http.ts";
+import {
+  inquiryQuestionCharsMax,
+  partitionPath,
+} from "../../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type {
   LeadInquiriesResponse,
@@ -234,12 +240,20 @@ function LeadAsk(props: { readonly partition: PartitionIdentity }): ReactNode {
   const pending =
     useIsMutating({ mutationKey: write.mutationKey, exact: true }) > 0;
   const box = useInquiryBox(partition);
-  const question = inquiryQuestion(box.typed);
+  const [draft, setDraft] = useState<string | undefined>(undefined);
+  const typed = draft ?? box.typed;
+  const question = inquiryQuestion(typed);
   const fault = inquiryQuestionFault(question);
-  const shown = box.typed === "" ? undefined : fault;
+  const shown = typed === "" ? undefined : fault;
+  const left = () => {
+    if (draft === undefined) return;
+    dispatch(inquiryBoxTypedAt({ partition, typed: draft }));
+    setDraft(undefined);
+  };
   const submit = () => {
     if (client.isMutating({ mutationKey: write.mutationKey, exact: true }) > 0)
       return;
+    left();
     const draw = inquiryDraw(box.held, question, partition, () =>
       base64urlFromBytes(drawBytes(inquiryIdentityBytesCount)),
     );
@@ -256,12 +270,11 @@ function LeadAsk(props: { readonly partition: PartitionIdentity }): ReactNode {
             className="inquiry-ask-text w-full resize-y"
             aria-label="Question"
             aria-invalid={shown !== undefined}
-            value={box.typed}
+            value={typed}
             onChange={(event) => {
-              dispatch(
-                inquiryBoxTypedAt({ partition, typed: event.target.value }),
-              );
+              setDraft(event.target.value);
             }}
+            onBlur={left}
           />
           <span className="num">{`${String(question.length)} / ${String(inquiryQuestionCharsMax)}`}</span>
           {shown === undefined ? null : <Pill tone="fail">{shown}</Pill>}
@@ -368,7 +381,9 @@ function LeadAskOffered(props: {
 }): ReactNode {
   const abilities = useProjectAbilities(props.partition);
   if (projectAbilityRefused(abilities, "mutate")) return <ViewOnlyNotice />;
-  return <LeadAsk partition={props.partition} />;
+  return (
+    <LeadAsk key={partitionPath(props.partition)} partition={props.partition} />
+  );
 }
 
 export function LeadInquiries(props: {

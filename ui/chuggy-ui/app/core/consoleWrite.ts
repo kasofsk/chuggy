@@ -192,7 +192,7 @@ export type ConsoleWriteDrawn = (
  * landed where none of them draws it. */
 export class ConsoleWriteWatch {
   readonly #watching = new Map<string, Set<ConsoleWriteDrawn>>();
-  #unseen: ((refused: ConsoleWriteRefused) => void) | undefined = undefined;
+  #onUnseen: ((refused: ConsoleWriteRefused) => void) | undefined = undefined;
 
   /** Watching `key`, asking `drawn` of each refusal under it, until the
    * release this answers is called. */
@@ -212,7 +212,7 @@ export class ConsoleWriteWatch {
   /** Who hears each refusal no watching screen draws, in place of any before
    * it; with nobody, such a refusal is let go. */
   unseenHeard(heard: (refused: ConsoleWriteRefused) => void): void {
-    this.#unseen = heard;
+    this.#onUnseen = heard;
   }
 
   /** A write under `key` was refused: handed on where no screen watching that
@@ -226,7 +226,7 @@ export class ConsoleWriteWatch {
       key === undefined ? undefined : this.#watching.get(hashKey(key));
     if ([...(watchers ?? [])].some((drawn) => drawn(refused, variables)))
       return;
-    this.#unseen?.(refused);
+    this.#onUnseen?.(refused);
   }
 }
 

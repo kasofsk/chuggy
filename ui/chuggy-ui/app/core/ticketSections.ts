@@ -15,7 +15,6 @@
  * on, and the rows are a window that cannot say what is unblocked outside it.
  */
 
-import { phaseRoster } from "../../../../src/contract/rosters.ts";
 import type {
   EscalationKind,
   TicketPhase,
@@ -55,14 +54,6 @@ export function ticketSectionOf(phase: TicketPhase): TicketSection {
     case "Revoked":
       return "Stopped";
   }
-}
-
-/** Derived from the roster rather than listed, so a phase the wire gains is a
- * compile error in the mapping above and not a phase no section holds. */
-export function ticketSectionPhases(
-  section: TicketSection,
-): readonly TicketPhase[] {
-  return phaseRoster.filter((phase) => ticketSectionOf(phase) === section);
 }
 
 export function escalationBadgeLabel(kind: EscalationKind): string {

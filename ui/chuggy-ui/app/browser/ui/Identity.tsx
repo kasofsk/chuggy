@@ -17,8 +17,6 @@ import "./Identity.css";
 
 export const identityForms = ["inline", "block"] as const;
 
-export type IdentityForm = (typeof identityForms)[number];
-
 export function Identity(props: {
   readonly label: Label;
   readonly block?: boolean;

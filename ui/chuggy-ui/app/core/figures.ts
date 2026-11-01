@@ -47,8 +47,6 @@ export const figureKinds = [
   "Absent",
 ] as const;
 
-export type FigureKind = (typeof figureKinds)[number];
-
 export type Figure =
   | { readonly kind: "Cost"; readonly text: string; readonly basis?: string }
   | { readonly kind: "Tokens"; readonly text: string }

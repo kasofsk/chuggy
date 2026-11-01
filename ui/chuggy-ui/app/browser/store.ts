@@ -3,25 +3,26 @@
  * one slice per cell, for the life of the tab and no longer. What outlives the
  * tab is the port's, and `chatPanes` reads and writes it there.
  *
- * EACH KIND OF STATE HAS ONE HOME. A server's answer is TanStack Query's.
- * Where the reader is, and what a list filters by, is the URL's. What one
- * component draws, typing included, is that component's. A one-shot write is
- * `useConsoleWrite`'s. What must outlive a screen, or that screens share, is a
- * slice's, and a flow of several steps is a thunk. What must outlive the tab is
- * `persistentStore`'s. Credentials are the session and invite holders'. What a
- * mounted provider owns and goes with it, such as a DOM node, a measurement or
- * a live connection's status, is that provider's.
+ * EACH KIND OF STATE HAS ONE HOME. A server's answer is TanStack Query's. A
+ * transcript's walk is the exception: it folds every page of one read in its
+ * component and starts again on each mount. Where the reader is, and what a
+ * list filters by, is the URL's. What one component draws, typing included, is
+ * that component's. A write is `useConsoleWrite`'s, however many requests it
+ * sends: one press has one outcome, and its steps and its abort are carried in
+ * its variables, so they live and go with it. What must outlive a screen, or
+ * that screens share, is a slice's, and a flow with state past one write, such
+ * as a send with its queue and its stop, is a thunk. What must outlive the tab
+ * is `persistentStore`'s. Credentials are the session and invite holders'. What
+ * a mounted provider owns and goes with it, such as a DOM node, a measurement
+ * or a live connection's status, is that provider's.
  *
  * WHAT NEVER ENTERS IT. A server's answer, which is TanStack Query's, and a
  * held draft's `DraftResponse` is not one: it is the console's own record of
  * its submission, and nothing refreshes it. A token or a one-time secret; a
  * function; a DOM node; a promise; bytes; and text that changes per token or
- * per keystroke. The one exception is the question typed
- * at an inquiry box, because the pair held beside it is a retry of that
- * question and no other, so the two are kept together or not at all. What the URL
- * holds stays in the URL, and what only one component draws stays in that
- * component. A cell enters only because something must survive the screen
- * that drew it.
+ * per keystroke. What the URL holds stays in the URL, and what only one
+ * component draws stays in that component. A cell enters only because
+ * something must survive the screen that drew it.
  *
  * THERE IS NO MODULE'S STORE. `consoleStore` is called once by `main.tsx`,
  * beside the query client, and once by each case, so no state crosses from one

@@ -39,7 +39,6 @@ import {
   apiHostedRuns,
   apiLead,
   apiLeadInquiries,
-  apiLeadInquiry,
   apiLeadTranscript,
   apiInbox,
   apiOpenThread,
@@ -433,28 +432,14 @@ test("the reader's abilities hang from the partition and are read door by door",
 });
 
 /**
- * The three doors of one question hang from the lead's own segment, and the
+ * The two doors of a question hang from the lead's own segment, and the
  * listing takes no query at all — a limit or a cursor this console invented
  * would be a query arm the route rejects the whole read for.
  */
 test("the inquiries hang from the lead's segment and take no query", async () => {
-  const inquiry = {
-    session: "inq-1",
-    asker: "subject-1",
-    mine: true,
-    state: "Open",
-    turnState: "Queued",
-    ordinal: 1,
-    question: "why",
-    askedAt: "2026-09-01T11:00:00Z",
-  };
-  const held = recording((url) =>
-    url.endsWith("/inquiries") ? { inquiries: [] } : inquiry,
-  );
+  const held = recording(() => ({ inquiries: [] }));
   await apiLeadInquiries(held.ports, partition);
   expect(held.urls[0]).toBe(`${partitionPath}/lead/inquiries`);
-  await apiLeadInquiry(held.ports, partition, "inq/1");
-  expect(held.urls[1]).toBe(`${partitionPath}/lead/inquiries/inq%2F1`);
   const asking = recording(() => ({
     session: "inq-1",
     turn: "inq-turn-1",
