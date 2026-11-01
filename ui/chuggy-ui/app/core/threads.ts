@@ -96,6 +96,8 @@ import type { ApiFailure, ApiResult } from "./apiRequest.ts";
 import { base64urlFromBytes } from "./base64url.ts";
 import { conversationAttachmentsSame } from "./conversationAttachments.ts";
 import type { ConversationAttachment } from "./conversationAttachments.ts";
+import { threadHomeNamed } from "./threadHome.ts";
+import type { ThreadHome } from "./threadHome.ts";
 import {
   sessionRefusedNoRunner,
   sessionRunnerShort,
@@ -333,56 +335,254 @@ export interface ThreadSending {
   readonly text: string;
 }
 
-/** A message a thread's door handed back, and what the press ended as. */
-export interface ThreadKept extends ThreadPressed {
-  /** The turn the text was sent as, where it is one message's. */
-  readonly turn: string | undefined;
-  readonly send: ThreadSend;
+/** A message a thread's door handed back while no box of it was drawn: its
+ * text, and the turns whose images go back with it. */
+export interface ThreadKept {
+  readonly text: string;
+  readonly turns: readonly string[];
 }
 
-/** What each thread is held for, by session: one text a thread. */
-export type ThreadKeptHeld = ReadonlyMap<string, ThreadKept>;
-
-/** What is held with one more message handed back to `session`: under one held
- * for it already, a blank line between, as a text no one turn sent. */
+/** What is kept with one more message handed back: under one kept already, a
+ * blank line between, as a text no one turn sent. */
 export function threadKeptWith(
-  held: ThreadKeptHeld,
-  session: string,
+  before: ThreadKept | undefined,
   kept: ThreadKept,
-): ThreadKeptHeld {
-  const before = held.get(session);
-  return new Map(held).set(
-    session,
-    before === undefined
-      ? kept
-      : {
-          ...kept,
-          text: `${before.text}\n\n${kept.text}`,
-          attached: [...before.attached, ...kept.attached],
-          turn: undefined,
-        },
+): ThreadKept {
+  return before === undefined
+    ? kept
+    : {
+        text: `${before.text}\n\n${kept.text}`,
+        turns: [...before.turns, ...kept.turns],
+      };
+}
+
+/** Whether what is kept for a thread goes because its box is read-only: the
+ * thread takes nothing more. */
+export function threadKeptClosed(
+  record: Pick<ThreadSendRecord, "kept">,
+  takes: boolean,
+): boolean {
+  return !takes && record.kept !== undefined;
+}
+
+/**
+ * What a tab holds of one composer's presses, wherever it is drawn: a thread's
+ * by its session, and a first box's, which has no session, by its home alone.
+ * Images and the presses on their way are not in it; each is named by its turn.
+ */
+export interface ThreadSendRecord {
+  readonly send: ThreadSend;
+  /** The last press the door did not take, which the next press of the same
+   * text and images posts under again. */
+  readonly held: ThreadSending | undefined;
+  readonly sending: readonly ThreadSending[];
+  /** The turns a press of Stop named, less each press taken back. */
+  readonly stopping: readonly string[];
+  /** How many presses of Stop the door's answer took back. */
+  readonly takenBack: number;
+  readonly kept: ThreadKept | undefined;
+  /** How many presses have not ended. */
+  readonly pressesOut: number;
+  /** A first box's open key, held from its first open until its message is
+   * taken. */
+  readonly openKey: string | undefined;
+  /** The thread a first box's open answered, until its message is taken. */
+  readonly opened: string | undefined;
+}
+
+/** A record per composer, each short, so the set is not bounded and none is
+ * evicted: a first box's key dropped before its open answered would let the
+ * next press open a second thread. Nor are a kept message's images ever
+ * dropped, since they are the reader's message, and each needed a press whose
+ * box went before the door answered. */
+export type ThreadSendRecords = Readonly<Record<string, ThreadSendRecord>>;
+
+export const threadSendRecordEmpty: ThreadSendRecord = {
+  send: { send: "Idle" },
+  held: undefined,
+  sending: [],
+  stopping: [],
+  takenBack: 0,
+  kept: undefined,
+  pressesOut: 0,
+  openKey: undefined,
+  opened: undefined,
+};
+
+/** What one composer's record is filed under: its home as `threadHomeNamed`
+ * names it, and its session, which a first box has none of. */
+export function threadSendRecordName(
+  home: ThreadHome,
+  session: string | undefined,
+): string {
+  return JSON.stringify([threadHomeNamed(home), session ?? null]);
+}
+
+export function threadSendRecordOf(
+  records: ThreadSendRecords,
+  name: string,
+): ThreadSendRecord {
+  return records[name] ?? threadSendRecordEmpty;
+}
+
+/** The records with one written, and the same records where `next` leaves
+ * it as it was. */
+export function threadSendRecordWith(
+  records: ThreadSendRecords,
+  name: string,
+  next: (record: ThreadSendRecord) => ThreadSendRecord,
+): ThreadSendRecords {
+  const record = threadSendRecordOf(records, name);
+  const written = next(record);
+  return written === record ? records : { ...records, [name]: written };
+}
+
+/** A press began: drawn from now under its turn, and out until it ends. */
+export function threadSendBegan(
+  record: ThreadSendRecord,
+  sent: ThreadSending,
+): ThreadSendRecord {
+  return {
+    ...record,
+    send: { send: "Sending" },
+    sending: threadSendingWith(record.sending, sent),
+    pressesOut: record.pressesOut + 1,
+  };
+}
+
+/** A first box's open answered with its thread. */
+export function threadSendOpened(
+  record: ThreadSendRecord,
+  session: string,
+): ThreadSendRecord {
+  return { ...record, opened: session };
+}
+
+/**
+ * A press ended as the door answered it. One the door took is held no longer,
+ * and spends a first box's key and thread; one it did not take is held for the
+ * next press and drawn no longer, since its text goes back, and where no box
+ * that pressed is drawn the text is kept for the next box of the thread, under
+ * any kept before it.
+ */
+export function threadSendEnded(
+  record: ThreadSendRecord,
+  ended: {
+    readonly sent: ThreadSending;
+    readonly send: ThreadSend;
+    readonly away: boolean;
+  },
+): ThreadSendRecord {
+  const { sent, send } = ended;
+  const out = { ...record, send, pressesOut: record.pressesOut - 1 };
+  if (send.send === "Sent")
+    return { ...out, held: undefined, openKey: undefined, opened: undefined };
+  const unsent = {
+    ...out,
+    held: sent,
+    sending: threadSendingWithout(record.sending, [sent.turn]),
+  };
+  if (!ended.away) return unsent;
+  const kept = threadKeptWith(record.kept, {
+    text: sent.text,
+    turns: [sent.turn],
+  });
+  return {
+    ...unsent,
+    kept,
+    held: record.kept === undefined ? sent : undefined,
+  };
+}
+
+/** What a first record leaves once its start is over: nothing, unless a
+ * press is still out or a message is kept, so the next first box starts
+ * clean. */
+export function threadSendFirstLeft(
+  record: ThreadSendRecord,
+): ThreadSendRecord {
+  return record.pressesOut > 0 || record.kept !== undefined
+    ? record
+    : threadSendRecordEmpty;
+}
+
+/** The reader moved past what the note said: an edit, or a press of Stop. */
+export function threadSendIdled(record: ThreadSendRecord): ThreadSendRecord {
+  return { ...record, send: { send: "Idle" } };
+}
+
+/** The messages drawn less those the mailbox read lists. */
+export function threadSendListed(
+  record: ThreadSendRecord,
+  listed: readonly string[],
+): ThreadSendRecord {
+  return { ...record, sending: threadSendingWithout(record.sending, listed) };
+}
+
+/** A box holds what was kept. */
+export function threadSendTaken(record: ThreadSendRecord): ThreadSendRecord {
+  return { ...record, kept: undefined };
+}
+
+/** What was kept goes with what it was refused as, where `threadKeptClosed`
+ * says the box would hold it read-only. */
+export function threadSendClosed(record: ThreadSendRecord): ThreadSendRecord {
+  return { ...record, kept: undefined, send: { send: "Idle" } };
+}
+
+/** A press of Stop: its turn reads stopped from the press. */
+export function threadStopPressedOn(
+  record: ThreadSendRecord,
+  turn: string,
+): ThreadSendRecord {
+  return { ...record, stopping: threadStoppingWith(record.stopping, turn) };
+}
+
+/**
+ * A press of Stop taken back: at once and uncounted where the door handed its
+ * message back, and counted where the door's answer stopped nothing, a refusal
+ * said as the note. Where the record no longer names the turn, as one ended
+ * since the press does not, it is left as it is.
+ */
+export function threadStopTakenBack(
+  record: ThreadSendRecord,
+  turn: string,
+  stop: ThreadStop | undefined,
+): ThreadSendRecord {
+  if (!record.stopping.includes(turn)) return record;
+  const stopping = threadStoppingWithout(record.stopping, turn);
+  if (stop === undefined) return { ...record, stopping };
+  const counted = { ...record, stopping, takenBack: record.takenBack + 1 };
+  if (stop.stop !== "Refused") return counted;
+  const cause = stop.cause === undefined ? {} : { cause: stop.cause };
+  return {
+    ...counted,
+    send: { send: "Refused", what: "Stop", turn, ...cause },
+  };
+}
+
+/** Every turn the records name, whose images are held for them. */
+export function threadSendTurnsNamed(
+  records: ThreadSendRecords,
+): ReadonlySet<string> {
+  return new Set(
+    Object.values(records).flatMap((record) => [
+      ...(record.held === undefined ? [] : [record.held.turn]),
+      ...(record.kept?.turns ?? []),
+    ]),
   );
 }
 
-/** What is held less the sessions named, and the same where it holds none. */
-export function threadKeptWithout(
-  held: ThreadKeptHeld,
-  sessions: readonly string[],
-): ThreadKeptHeld {
-  const left = [...held].filter(([session]) => !sessions.includes(session));
-  return left.length === held.size ? held : new Map(left);
-}
-
-/** The sessions held for whose thread the listing says takes nothing more. */
-export function threadKeptClosed(
-  held: ThreadKeptHeld,
-  threads: readonly Pick<ThreadEntryResponse, "session" | "state">[],
-): readonly string[] {
-  return threads
-    .filter(
-      (thread) => held.has(thread.session) && !threadTakesMessages(thread),
-    )
-    .map((thread) => thread.session);
+/** The send drawn: a stop's refusal goes once the read lists its turn ended,
+ * since nothing is left to stop. */
+export function threadSendShown(
+  send: ThreadSend,
+  ended: readonly string[],
+): ThreadSend {
+  return send.send === "Refused" &&
+    send.what === "Stop" &&
+    ended.includes(send.turn)
+    ? { send: "Idle" }
+    : send;
 }
 
 /** The messages sent with one more, last. A page holds no more of them than

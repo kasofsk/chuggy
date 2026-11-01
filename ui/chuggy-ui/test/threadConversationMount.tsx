@@ -15,6 +15,7 @@ import type {
 import { SessionProvider } from "../app/browser/session.tsx";
 import { ProjectStreamProvider } from "../app/browser/stream.tsx";
 import { ThreadConversation } from "../app/browser/thread/ThreadConversation.tsx";
+import { ConsoleStoreProvided } from "./consoleStoreProvided.tsx";
 import { answer, holderDouble } from "./screenHarness.tsx";
 import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
 import type { StreamServer } from "./streamDouble.ts";
@@ -41,7 +42,9 @@ export function threadConversationMounted(
           partition={threadPartition}
           transport={server.ports.fetch}
         >
-          <ThreadConversation partition={threadPartition} thread={shown} />
+          <ConsoleStoreProvided>
+            <ThreadConversation partition={threadPartition} thread={shown} />
+          </ConsoleStoreProvided>
         </ProjectStreamProvider>
       </QueryClientProvider>
     </SessionProvider>

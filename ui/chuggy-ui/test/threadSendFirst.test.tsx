@@ -5,7 +5,6 @@
  * to a composer, read before a press or met by one.
  */
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   act,
   cleanup,
@@ -13,14 +12,13 @@ import {
   renderHook,
   screen,
 } from "@testing-library/react";
-import type { ReactNode } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 
-import { SessionProvider } from "../app/browser/session.tsx";
 import { useThreadSend } from "../app/browser/thread/threadSend.tsx";
-import { answer, holderDouble, settled } from "./screenHarness.tsx";
+import { answer, settled } from "./screenHarness.tsx";
 import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
 import { threadEntry, threadPartition } from "./threadFixture.ts";
+import { threadSendWrapped } from "./threadSendWrapped.tsx";
 
 afterEach(() => {
   cleanup();
@@ -71,20 +69,6 @@ function doorAnswering(messageStatuses: readonly number[]): Posted[] {
   );
 }
 
-function wrapper(props: { readonly children: ReactNode }): ReactNode {
-  return (
-    <QueryClientProvider
-      client={
-        new QueryClient({ defaultOptions: { queries: { retry: false } } })
-      }
-    >
-      <SessionProvider holder={holderDouble()}>
-        {props.children}
-      </SessionProvider>
-    </QueryClientProvider>
-  );
-}
-
 test("a refused first message is sent again into the thread it opened", async () => {
   const posted = doorAnswering([400]);
   const started: string[] = [];
@@ -96,7 +80,7 @@ test("a refused first message is sent again into the thread it opened", async ()
         takes: true,
         onStarted: (session) => started.push(session),
       }),
-    { wrapper },
+    { wrapper: threadSendWrapped() },
   );
   let first: unknown;
   await act(async () => {
@@ -142,7 +126,7 @@ function firstComposer(): ReturnType<
         session: undefined,
         takes: true,
       }),
-    { wrapper },
+    { wrapper: threadSendWrapped() },
   );
 }
 
@@ -190,7 +174,7 @@ test("a press is held from the press, under the turn it posts, until the mailbox
         takes: true,
         listed,
       }),
-    { wrapper, initialProps: [] as readonly string[] },
+    { wrapper: threadSendWrapped(), initialProps: [] as readonly string[] },
   );
   let sent: Promise<unknown> = Promise.resolve();
   act(() => {
@@ -221,7 +205,7 @@ test("a press the door refuses is held no longer", async () => {
         session: "thread-1",
         takes: true,
       }),
-    { wrapper },
+    { wrapper: threadSendWrapped() },
   );
   let sent: Promise<unknown> = Promise.resolve();
   act(() => {
@@ -245,7 +229,7 @@ test("a send the hosted grant refuses keeps the text and stops the composer taki
         session: "thread-1",
         takes: true,
       }),
-    { wrapper },
+    { wrapper: threadSendWrapped() },
   );
   let sent: unknown;
   await act(async () => {
@@ -279,7 +263,7 @@ test("a grant read as not given holds the composer before anything is typed", as
         session: "thread-1",
         takes: true,
       }),
-    { wrapper },
+    { wrapper: threadSendWrapped() },
   );
   expect(
     result.current.composer.takes,
@@ -302,7 +286,7 @@ test("a thread that takes no messages is not held for the grant", async () => {
         session: "thread-1",
         takes: false,
       }),
-    { wrapper },
+    { wrapper: threadSendWrapped() },
   );
   await settled();
   expect(result.current.composer.takes).toBe(false);

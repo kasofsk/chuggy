@@ -695,12 +695,17 @@ export function chatPaneTrailOffered(
 }
 
 /** What the pane holds in one project: the thread the reader picked, the one
- * held for a reader who picked none, and the key New's next open is asked
- * under until an open answers. */
+ * held for a reader who picked none, the key New's next open is asked under
+ * until an open answers, and a first message's hand-over to its thread. */
 export interface ChatPaneRecord {
   readonly picked: string | undefined;
   readonly defaulted: string | undefined;
   readonly openKey: string | undefined;
+  /** A first message was pressed, so the first box stays drawn until the
+   * thread it opened has been read. */
+  readonly starting: boolean;
+  /** The thread a first message opened, while its read is awaited. */
+  readonly opening: string | undefined;
 }
 
 /** A record per project. A record is a few short strings, so the set is not
@@ -712,6 +717,8 @@ const chatPaneRecordEmpty: ChatPaneRecord = {
   picked: undefined,
   defaulted: undefined,
   openKey: undefined,
+  starting: false,
+  opening: undefined,
 };
 
 /** What a project's record is filed under, its names encoded rather than
@@ -737,12 +744,35 @@ export function chatPaneRecordWith(
   return { ...records, [chatPaneRecordName(partition)]: record };
 }
 
-/** The reader named a thread, from the history or by starting one. */
+/** The reader named a thread out of the history, which ends any start. */
 export function chatPanePicked(
   record: ChatPaneRecord,
   session: string,
 ): ChatPaneRecord {
-  return { ...record, picked: session };
+  return { ...chatPaneOpeningRead(record), picked: session };
+}
+
+/** A first message was pressed. */
+export function chatPaneStarting(record: ChatPaneRecord): ChatPaneRecord {
+  return { ...record, starting: true };
+}
+
+/** The door refused New, so the pane goes on as it was. */
+export function chatPaneStayed(record: ChatPaneRecord): ChatPaneRecord {
+  return { ...record, starting: false };
+}
+
+/** A first message was taken: its thread is picked, and drawn once read. */
+export function chatPaneOpening(
+  record: ChatPaneRecord,
+  session: string,
+): ChatPaneRecord {
+  return { ...record, picked: session, opening: session };
+}
+
+/** The thread a first message opened has been read, or the start is over. */
+export function chatPaneOpeningRead(record: ChatPaneRecord): ChatPaneRecord {
+  return { ...record, starting: false, opening: undefined };
 }
 
 /** The thread held for a reader who picked none, as `chatPaneDefaulted`
@@ -763,12 +793,13 @@ export function chatPaneOpenKeyHeld(
 }
 
 /** An open from New answered with its thread: the thread is picked and the key
- * is spent, together, so the next press is an open of its own. */
+ * is spent, together, so the next press is an open of its own, and opening a
+ * thread ends any start. */
 export function chatPaneOpened(
   record: ChatPaneRecord,
   session: string,
 ): ChatPaneRecord {
-  return { picked: session, defaulted: record.defaulted, openKey: undefined };
+  return { ...chatPanePicked(record, session), openKey: undefined };
 }
 
 /**

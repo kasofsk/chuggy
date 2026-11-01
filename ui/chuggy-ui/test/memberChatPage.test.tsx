@@ -41,6 +41,7 @@ import {
   threadTranscriptPage,
 } from "./threadFixture.ts";
 import { readFailedLines } from "./readFailedLines.ts";
+import { ConsoleStoreProvided } from "./consoleStoreProvided.tsx";
 
 beforeEach(() => {
   resizeObserverStubbed();
@@ -174,7 +175,9 @@ async function mountedAt(
           new QueryClient({ defaultOptions: { queries: { retry: false } } })
         }
       >
-        <RouterProvider router={router} />
+        <ConsoleStoreProvided>
+          <RouterProvider router={router} />
+        </ConsoleStoreProvided>
       </QueryClientProvider>
     </SessionProvider>,
   );
@@ -284,6 +287,23 @@ test("a first message opens a thread of the reader's own chat, and the page move
   expect(router.state.location.pathname).toBe(
     `/tenants/${tenant}/chat/${openedSession}`,
   );
+  styleless();
+});
+
+test("a first message taken leaves nothing of it drawn back on the first box", async () => {
+  const router = await mountedAt(`/tenants/${tenant}/chat`);
+  await sent("hello");
+  expect(router.state.location.pathname).toBe(
+    `/tenants/${tenant}/chat/${openedSession}`,
+  );
+  await turned(() => {
+    void router.navigate({ to: "/tenants/$tenant/chat", params: { tenant } });
+  });
+  await settled();
+  expect(
+    screen.getByRole("heading", { level: 1, name: "New chat" }),
+  ).toBeDefined();
+  expect(screen.queryByText("hello")).toBeNull();
   styleless();
 });
 

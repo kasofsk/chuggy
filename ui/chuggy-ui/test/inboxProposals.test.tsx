@@ -24,7 +24,6 @@ import type {
 } from "../../../src/contract/responses.ts";
 import { selectorProposalNotHeldCode } from "../../../src/contract/rosters.ts";
 import { InboxScreen } from "../app/browser/Inbox.tsx";
-import { consoleStore } from "../app/browser/store.ts";
 import type { ConsoleStore } from "../app/browser/store.ts";
 import {
   consoleQueryClient,
@@ -46,6 +45,7 @@ import {
   turned,
 } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
+import { consoleStoreBare } from "./consoleStoreBare.tsx";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -185,8 +185,11 @@ function drawProject(served: {
         ? served.reviewHeld.then(() => respond(url, init) ?? unanswered())
         : (respond(url, init) ?? unanswered())) as typeof fetch),
   );
-  const store = consoleStore();
-  const client = inboxDrawn(undefined, store);
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const store = consoleStoreBare(client);
+  inboxDrawn(client, store);
   return { reviewed, client, store };
 }
 

@@ -7,6 +7,7 @@
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, expect, test } from "vitest";
 import type { ReactNode } from "react";
+import { Provider } from "react-redux";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import {
@@ -18,13 +19,12 @@ import {
   chatPaneRecordAt,
 } from "../app/browser/shell/chatPanes.ts";
 import {
-  consoleStore,
   useConsoleDispatch,
   useConsoleSelector,
 } from "../app/browser/store.ts";
 import type { ConsoleStore } from "../app/browser/store.ts";
 import { chatPaneHoldState, chatPaneStoreKey } from "../app/core/chatPane.ts";
-import { ConsoleStoreProvided } from "./consoleStoreProvided.tsx";
+import { consoleStoreBare } from "./consoleStoreBare.tsx";
 
 afterEach(() => {
   cleanup();
@@ -37,18 +37,18 @@ const borealis: PartitionIdentity = { tenant: "acme", project: "borealis" };
 const leftDocked = { placement: "Left", presentation: "Docked" } as const;
 
 test("a move at two columns is stored, and a new store reads it back", () => {
-  const store = consoleStore();
+  const store = consoleStoreBare();
   store.dispatch(chatPaneMoved(leftDocked, true));
   expect(chatPaneHoldOf(store.getState()).stored).toStrictEqual(leftDocked);
   expect(localStorage.getItem(chatPaneStoreKey)).toBe(
     JSON.stringify(leftDocked),
   );
-  const reloaded = chatPaneHoldOf(consoleStore().getState());
+  const reloaded = chatPaneHoldOf(consoleStoreBare().getState());
   expect(chatPaneHoldState(reloaded, true)).toStrictEqual(leftDocked);
 });
 
 test("a move below two columns is held and stores nothing, and a new store holds none of it", () => {
-  const store = consoleStore();
+  const store = consoleStoreBare();
   store.dispatch(
     chatPaneMoved({ placement: "Right", presentation: "Collapsed" }, false),
   );
@@ -56,13 +56,13 @@ test("a move below two columns is held and stores nothing, and a new store holds
     chatPaneHoldState(chatPaneHoldOf(store.getState()), false),
   ).toStrictEqual({ placement: "Right", presentation: "Collapsed" });
   expect(localStorage.getItem(chatPaneStoreKey)).toBeNull();
-  const reloaded = chatPaneHoldOf(consoleStore().getState());
+  const reloaded = chatPaneHoldOf(consoleStoreBare().getState());
   expect(reloaded.stored).toBeUndefined();
   expect(chatPaneHoldState(reloaded, false).presentation).toBe("Full");
 });
 
 test("New's key stands until an open answers in its project, and only there", () => {
-  const store = consoleStore();
+  const store = consoleStoreBare();
   const first = store.dispatch(chatPaneOpenPressed(atlas));
   expect(store.dispatch(chatPaneOpenPressed(atlas))).toBe(first);
   const other = store.dispatch(chatPaneOpenPressed(borealis));
@@ -93,11 +93,7 @@ function Pick(): ReactNode {
 }
 
 function picking(store: ConsoleStore, drawn: boolean): ReactNode {
-  return (
-    <ConsoleStoreProvided store={store}>
-      {drawn ? <Pick /> : null}
-    </ConsoleStoreProvided>
-  );
+  return <Provider store={store}>{drawn ? <Pick /> : null}</Provider>;
 }
 
 function shown(): string {
@@ -107,7 +103,7 @@ function shown(): string {
 /** A thread's own page draws no pane, so what the reader picked has to be
  * held by something that page does not take away. */
 test("a pick outlives the part that made it, and is there when that part is drawn again", () => {
-  const store = consoleStore();
+  const store = consoleStoreBare();
   const view = render(picking(store, true));
   expect(shown()).toBe("none");
   act(() => {

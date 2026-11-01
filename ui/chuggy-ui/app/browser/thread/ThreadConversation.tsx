@@ -117,11 +117,7 @@ import {
   useThreadDoor,
   useThreadSend,
 } from "./threadSend.tsx";
-import type {
-  ThreadKeptAway,
-  ThreadSendHeld,
-  ThreadSendInput,
-} from "./threadSend.tsx";
+import type { ThreadSendHeld, ThreadSendInput } from "./threadSend.tsx";
 
 /** The turns named, as one set that is the same set while they are the same
  * turns. */
@@ -281,8 +277,6 @@ interface ThreadConversationProps {
   /** Whether the reader named this thread rather than arriving at it, which is
    * what puts the caret in the composer as it mounts. */
   readonly named?: boolean;
-  /** What whoever mounts the thread keeps for it while it is not drawn. */
-  readonly away?: ThreadKeptAway;
 }
 
 /** What a thread's composer is made from, out of its own read. */
@@ -295,7 +289,6 @@ function threadSendMade(
     takes: threadTakesMessages(thread),
     listed: thread.turns.map((turn) => turn.turn),
     ended: threadTurnsEnded(thread),
-    away: props.away,
   };
 }
 
@@ -308,7 +301,7 @@ export function ThreadConversation(
   });
   const mentions = useConversationMentions(props.partition);
   const image = useThreadImage(props.partition);
-  const door = useThreadDoor(props.partition).door;
+  const door = useThreadDoor(props.partition);
   const abilities = useProjectAbilities(props.partition);
   return (
     <ThreadConversationAt
@@ -325,17 +318,13 @@ export function ThreadConversation(
 /** One thread of the reader's own chat, which mentions nothing and carries no
  * image, and is theirs to write to. */
 export function MemberThreadConversation(
-  props: ThreadConversationProps & {
-    readonly tenant: string;
-    readonly onSent: () => void;
-  },
+  props: ThreadConversationProps & { readonly tenant: string },
 ): ReactNode {
   const sends = useMemberThreadSend({
     ...threadSendMade(props),
     tenant: props.tenant,
-    onSent: props.onSent,
   });
-  const door = useMemberThreadDoor(props.tenant).door;
+  const door = useMemberThreadDoor(props.tenant);
   return (
     <ThreadConversationAt
       {...props}

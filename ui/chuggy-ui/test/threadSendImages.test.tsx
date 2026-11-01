@@ -5,18 +5,16 @@
  * of either releases the turn, and an upload that fails sends nothing.
  */
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { act, cleanup, renderHook } from "@testing-library/react";
-import type { ReactNode } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { threadMessageImagesMax } from "../../../src/contract/http.ts";
-import { SessionProvider } from "../app/browser/session.tsx";
 import { useThreadSend } from "../app/browser/thread/threadSend.tsx";
 import type { ConversationAttachment } from "../app/core/conversationAttachments.ts";
-import { answer, holderDouble } from "./screenHarness.tsx";
+import { answer } from "./screenHarness.tsx";
 import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
 import { threadPartition } from "./threadFixture.ts";
+import { threadSendWrapped } from "./threadSendWrapped.tsx";
 
 afterEach(() => {
   cleanup();
@@ -73,20 +71,6 @@ function backlogged(): Response {
   });
 }
 
-function wrapper(props: { readonly children: ReactNode }): ReactNode {
-  return (
-    <QueryClientProvider
-      client={
-        new QueryClient({ defaultOptions: { queries: { retry: false } } })
-      }
-    >
-      <SessionProvider holder={holderDouble()}>
-        {props.children}
-      </SessionProvider>
-    </QueryClientProvider>
-  );
-}
-
 function sending() {
   return renderHook(
     () =>
@@ -95,7 +79,7 @@ function sending() {
         session: "thread-1",
         takes: true,
       }),
-    { wrapper },
+    { wrapper: threadSendWrapped() },
   );
 }
 

@@ -14,7 +14,7 @@ import type { ReactNode } from "react";
 import type { KeyValuePort } from "../app/core/sessionHolder.ts";
 import { SettingsMenu } from "../app/browser/shell/SettingsMenu.tsx";
 import { SessionProvider } from "../app/browser/session.tsx";
-import { ConsoleStoreProvided } from "./consoleStoreProvided.tsx";
+import { ConsoleStoreBareProvided } from "./consoleStoreBare.tsx";
 import { holderDouble } from "./screenHarness.tsx";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 import {
@@ -86,9 +86,9 @@ async function themeMenuOpened(): Promise<void> {
   viewportAtEm(viewportDeskEm);
   render(
     <SessionProvider holder={holderDouble()}>
-      <ConsoleStoreProvided>
+      <ConsoleStoreBareProvided>
         <SettingsMenu partition={undefined} />
-      </ConsoleStoreProvided>
+      </ConsoleStoreBareProvided>
     </SessionProvider>,
   );
   fireEvent.keyDown(screen.getByRole("button", { name: "Settings" }), {
