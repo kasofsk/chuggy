@@ -2636,35 +2636,33 @@ export function nativeThreadMethods(
   };
 }
 
-/** A page of tickets with each one's latest execution beside it, read for the whole page at once. */
-async function nativeProjectLatestExecutions(
-  operationalReads: OperationalReadStore | undefined,
+/** Tickets with each one's latest execution beside it, read for all of them at once. */
+export async function ticketsWithLatestExecutions(
+  operationalReads:
+    Pick<OperationalReadStore, "ticketLatestExecutions"> | undefined,
   partition: Partition,
-  project: ProjectResource,
+  tickets: readonly TicketResource[],
   reader: Principal,
-): Promise<ProjectResource> {
-  if (project.tickets.length === 0) return project;
+): Promise<readonly TicketResource[]> {
+  if (tickets.length === 0) return tickets;
   if (operationalReads === undefined)
     throw new Error("native web: no operational read store was composed");
   const latest = new Map<TicketId, TicketLatestExecution>();
   for (const summary of await operationalReads.ticketLatestExecutions(
     partition,
-    project.tickets.map((ticket) => ticket.ticket),
+    tickets.map((ticket) => ticket.ticket),
     reader,
   )) {
     if (latest.has(summary.ticket))
       throw new Error("native web: a ticket has two latest executions");
     latest.set(summary.ticket, ticketLatestExecution(summary));
   }
-  return {
-    ...project,
-    tickets: project.tickets.map((ticket) => {
-      const execution = latest.get(ticket.ticket);
-      return execution === undefined
-        ? ticket
-        : { ...ticket, latestExecution: execution };
-    }),
-  };
+  return tickets.map((ticket) => {
+    const execution = latest.get(ticket.ticket);
+    return execution === undefined
+      ? ticket
+      : { ...ticket, latestExecution: execution };
+  });
 }
 
 /**
@@ -2696,12 +2694,15 @@ function nativeProjectionMethods(
       return read.result === "Found"
         ? {
             ...read,
-            project: await nativeProjectLatestExecutions(
-              operationalReads,
-              partition,
-              read.project,
-              principal,
-            ),
+            project: {
+              ...read.project,
+              tickets: await ticketsWithLatestExecutions(
+                operationalReads,
+                partition,
+                read.project.tickets,
+                principal,
+              ),
+            },
           }
         : read;
     },

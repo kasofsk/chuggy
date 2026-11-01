@@ -99,6 +99,7 @@ export const sessionBearerRouteClasses = {
   ticketLandings: partitionRead,
   nativeActions: partitionRead,
   agenticRefusals: partitionRead,
+  inbox: partitionRead,
   operationalStatus: partitionRead,
   selectorContext: partitionRead,
   selectorSettings: { GET: "Partition", PUT: "Partition" },

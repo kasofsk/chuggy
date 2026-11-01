@@ -18,6 +18,7 @@ import {
   postgresHarnessConfiguration,
   postgresHarnessRolePool,
 } from "./harness.ts";
+import { postgresStatementCorrelated } from "./readHarness.ts";
 import {
   asExecutionId,
   asPlacementId,
@@ -1303,7 +1304,8 @@ test("a ticket that ran again reads its later execution as its latest", async ()
 
 /**
  * A page's worth of tickets is two statements on the executions, not one per
- * ticket: the positions are read by ticket, and the rows by the positions alone.
+ * ticket: the positions are read by ticket, and the rows by the positions alone,
+ * neither correlating a subquery on an outer row's partition.
  */
 test("the latest executions of a whole page are read in two execution statements", async () => {
   const label = "operational-ticket-page";
@@ -1336,4 +1338,5 @@ test("the latest executions of a whole page are read in two execution statements
     ),
   );
   assert.ok(heard.length <= 3);
+  assert.deepEqual(heard.flatMap(postgresStatementCorrelated), []);
 });

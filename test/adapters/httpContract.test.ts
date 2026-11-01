@@ -55,6 +55,7 @@ const routesInOrder = [
   "/api/v1/tenants/:tenant/projects/:project/tickets/:ticket/landings",
   "/api/v1/tenants/:tenant/projects/:project/native-actions",
   "/api/v1/tenants/:tenant/projects/:project/agentic-refusals",
+  "/api/v1/tenants/:tenant/projects/:project/inbox",
   "/api/v1/tenants/:tenant/projects/:project/operational-status",
   "/api/v1/tenants/:tenant/projects/:project/selector-context",
   "/api/v1/tenants/:tenant/projects/:project/selector-settings",

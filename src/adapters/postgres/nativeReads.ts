@@ -41,6 +41,11 @@ import {
   type NativeActionKind,
   type NativeActionResolution,
 } from "../../interpreter/projectCommand.ts";
+import type {
+  InboxReadPage,
+  InboxReadQuery,
+  InboxReadStore,
+} from "../../interpreter/projectInbox.ts";
 import {
   allOperationStates,
   asOperationId,
@@ -846,14 +851,14 @@ async function readTicketsByIdentity(
                to_char(c.committed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS changed_at,
                (SELECT array_agg(d.ticket::text ORDER BY d.ticket)
                   FROM ticket_projection d
-                 WHERE t.phase='Pending' AND d.tenant=t.tenant AND d.project=t.project
+                 WHERE t.phase='Pending' AND d.tenant=${partition.tenant} AND d.project=${partition.project}
                    AND d.phase='Revoked'
                    AND coalesce(w.deps,r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))
                  AS revoked_dependencies,
                (SELECT json_agg(json_build_object('ticket',d.ticket::text,'phase',d.phase)
                                 ORDER BY d.ticket)
                   FROM ticket_projection d
-                 WHERE t.phase='Pending' AND d.tenant=t.tenant AND d.project=t.project
+                 WHERE t.phase='Pending' AND d.tenant=${partition.tenant} AND d.project=${partition.project}
                    AND d.phase NOT IN ('Done','Revoked')
                    AND coalesce(w.deps,r.deps,'[]'::jsonb) @> to_jsonb(d.ticket))::text
                  AS open_dependencies
@@ -870,16 +875,16 @@ async function readTicketsByIdentity(
                    (CASE WHEN j.entry IS JSON OBJECT
                          THEN j.entry::jsonb->'event'->'value'->'dependencies' END) AS deps
               FROM journal_entry j
-             WHERE j.tenant=t.tenant AND j.project=t.project
+             WHERE j.tenant=${partition.tenant} AND j.project=${partition.project}
                AND (CASE WHEN j.entry IS JSON OBJECT
                          THEN j.entry::jsonb->'event'->>'type' END)
                      = 'TicketCreated'
                AND (CASE WHEN j.entry IS JSON OBJECT
                          THEN j.entry::jsonb->'event'->'value'->'id' END)=to_jsonb(t.ticket)
              ORDER BY j.seq LIMIT 1) r ON true
-          LEFT JOIN LATERAL ticket_updated_dependencies(t.tenant,t.project,t.ticket) w ON true
-          LEFT JOIN LATERAL ticket_runner_loss(t.tenant,t.project,t.ticket) l ON true
-          LEFT JOIN LATERAL ticket_run_step_failure(t.tenant,t.project,t.ticket) f ON true
+          LEFT JOIN LATERAL ticket_updated_dependencies(${partition.tenant},${partition.project},t.ticket) w ON true
+          LEFT JOIN LATERAL ticket_runner_loss(${partition.tenant},${partition.project},t.ticket) l ON true
+          LEFT JOIN LATERAL ticket_run_step_failure(${partition.tenant},${partition.project},t.ticket) f ON true
         WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
           AND t.ticket>${after ?? 0}
           AND (${tickets}::bigint[] IS NULL OR t.ticket = ANY(${tickets}::bigint[]))
@@ -1138,6 +1143,141 @@ function nativeReadsActions(
           LIMIT ${query.limit + 1}`,
       );
       return nativeActionPage(found.rows, query.limit);
+    },
+  };
+}
+
+/**
+ * The inbox's positions: one more than a page of the tickets in `phases`, with
+ * an open action or among `named`, last activity first, and how many the union
+ * holds before any cursor. Both reads of `native_action` and the projection
+ * bind the partition themselves and neither is correlated on the other, so the
+ * union is read once however many rows it holds.
+ */
+async function readInboxPositions(
+  client: pg.PoolClient,
+  partition: Partition,
+  query: InboxReadQuery,
+): Promise<{
+  readonly count: number;
+  readonly positions: readonly TicketPosition[];
+}> {
+  const found = await client.query<TicketPositionsRow>(
+    sql`WITH named AS (
+          SELECT a.ticket FROM native_action a
+           WHERE a.tenant=${partition.tenant} AND a.project=${partition.project}
+             AND a.state='Open'
+          UNION
+          SELECT unnest(${query.named.map(String)}::bigint[])),
+        selected AS (
+          SELECT t.ticket,t.seq FROM ticket_projection t
+           WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
+             AND (t.phase = ANY(${[...query.phases]}::text[])
+               OR t.ticket IN (SELECT n.ticket FROM named n))),
+        page AS (
+          SELECT s.ticket,s.seq FROM selected s
+           WHERE ${query.after?.sequence ?? null}::bigint IS NULL
+              OR (s.seq,s.ticket) <
+                 (${query.after?.sequence ?? null}::bigint,${query.after?.ticket ?? null}::bigint)
+           ORDER BY s.seq DESC,s.ticket DESC LIMIT ${query.limit + 1})
+        SELECT (SELECT count(*) FROM selected)::text AS matched,
+               (SELECT array_agg(p.ticket::text ORDER BY p.seq DESC,p.ticket DESC) FROM page p) AS tickets,
+               (SELECT array_agg(p.seq::text ORDER BY p.seq DESC,p.ticket DESC) FROM page p) AS seqs`,
+  );
+  const row = found.rows[0];
+  if (row === undefined) throw new Error("inbox read: no positions row");
+  const seqs = row.seqs ?? [];
+  return {
+    count: projectRowCounter(row.matched, "inbox tickets"),
+    positions: (row.tickets ?? []).map((ticket, place) => {
+      const seq = seqs[place];
+      if (seq === undefined)
+        throw new Error("inbox read: a ticket's position has no sequence");
+      return { ticket, seq };
+    }),
+  };
+}
+
+/** The open actions of the page's tickets, which is one each at the most. */
+async function readInboxActions(
+  client: pg.PoolClient,
+  partition: Partition,
+  tickets: readonly string[],
+): Promise<InboxReadPage["actions"]> {
+  const found = await client.query<ProjectNativeActionRow>(
+    sql`SELECT a.ticket::text AS ticket,a.action,a.kind,
+               a.authorizing_seq::text AS authorizing_seq,
+               array_agg(r.resolution) AS resolutions
+          FROM native_action a
+          JOIN native_action_resolution r
+            ON r.tenant=a.tenant AND r.project=a.project AND r.action=a.action
+         WHERE a.tenant=${partition.tenant} AND a.project=${partition.project}
+           AND a.state='Open' AND a.ticket = ANY(${[...tickets]}::bigint[])
+         GROUP BY a.ticket,a.action,a.kind,a.authorizing_seq
+         ORDER BY a.authorizing_seq DESC,a.action DESC
+         LIMIT ${tickets.length + 1}`,
+  );
+  if (found.rows.length > tickets.length)
+    throw new Error("inbox read: a ticket has two open actions");
+  return nativeActionPage(found.rows, tickets.length).actions;
+}
+
+/** A page of the inbox, its positions picked first and its rows and actions read by them. */
+async function readInboxPage(
+  client: pg.PoolClient,
+  partition: Partition,
+  query: InboxReadQuery,
+): Promise<InboxReadPage> {
+  const { count, positions } = await readInboxPositions(
+    client,
+    partition,
+    query,
+  );
+  const page = positions.slice(0, query.limit);
+  if (page.length === 0) return { count, tickets: [], actions: [] };
+  const tickets = page.map((position) => position.ticket);
+  const rows = await readTicketsByIdentity(client, partition, {
+    limit: page.length,
+    tickets,
+  });
+  const byTicket = new Map(rows.map((row) => [row.ticket, row]));
+  const next = positions.length > query.limit ? page.at(-1) : undefined;
+  return {
+    count,
+    tickets: page.map((position) => {
+      const row = byTicket.get(position.ticket);
+      if (row === undefined)
+        throw new Error("inbox read: a ticket's position has no row");
+      return ticketResource(row);
+    }),
+    actions: await readInboxActions(client, partition, tickets),
+    ...(next === undefined
+      ? {}
+      : {
+          nextAfter: {
+            sequence: projectRowCounter(next.seq, "inbox cursor"),
+            ticket: asTicketId(projectRowCounter(next.ticket, "inbox cursor")),
+          },
+        }),
+  };
+}
+
+/** The inbox, read in one transaction so its count, rows and actions are one moment's. */
+export function postgresInboxReads(pool: pg.Pool): InboxReadStore {
+  return {
+    inbox: async (partition, query) => {
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
+        const page = await readInboxPage(client, partition, query);
+        await client.query("COMMIT");
+        return page;
+      } catch (cause) {
+        await client.query("ROLLBACK").catch(() => undefined);
+        throw cause;
+      } finally {
+        client.release();
+      }
     },
   };
 }

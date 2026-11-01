@@ -3,6 +3,7 @@ import { ticketActionReachResponseSchema } from "./actionReach.ts";
 import { fieldsOnly, integerField, textField } from "./fields.ts";
 import { z } from "zod";
 import {
+  nativeHttpPageItemsDefault,
   nativeHttpPageItemsMax,
   nativeHttpRoutes,
   sessionStorePageBatchesMax,
@@ -43,6 +44,7 @@ import {
   leadInquiryAcceptedSchema,
   selectorProposalsResponseSchema,
   selectorProposalReviewResponseSchema,
+  inboxResponseSchema,
   ticketLandingsResponseSchema,
   repositoryConfigurationHeadResponseSchema,
 } from "./responses.ts";
@@ -280,6 +282,18 @@ export const nativeHttpEndpoints = {
     path: nativeHttpRoutes.leadInquiries,
     body: leadInquirySchema,
     response: leadInquiryAcceptedSchema,
+  },
+  inbox: {
+    method: "GET",
+    path: nativeHttpRoutes.inbox,
+    query: endpointQuery({
+      cursor: z
+        .unknown()
+        .transform((value) => textField({ cursor: value }, "cursor"))
+        .optional(),
+      limit: endpointInteger("limit", nativeHttpPageItemsDefault),
+    }),
+    response: inboxResponseSchema,
   },
   selectorProposals: {
     method: "GET",

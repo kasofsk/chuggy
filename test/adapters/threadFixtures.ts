@@ -4,6 +4,7 @@ import type { RepositoryOnboarding } from "../../src/interpreter/repositoryOnboa
 import type { ProjectCreation } from "../../src/interpreter/projectCreation.ts";
 import type { SessionPlacementAdministration } from "../../src/interpreter/sessionPlacement.ts";
 import type { SelectorProposalReviews } from "../../src/interpreter/selectorReview.ts";
+import type { ProjectInbox } from "../../src/interpreter/projectInbox.ts";
 import {
   asPrincipal,
   type NativeWeb,
@@ -118,6 +119,7 @@ export function servedNativeHttpApp(
   creation?: ProjectCreation,
   sessionPlacement?: SessionPlacementAdministration,
   proposalReviews?: SelectorProposalReviews,
+  inbox?: ProjectInbox,
 ) {
   return createNativeHttpApp(
     web,
@@ -149,5 +151,14 @@ export function servedNativeHttpApp(
     undefined,
     sessionPlacement,
     proposalReviews,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    inbox,
   );
 }

@@ -101,7 +101,7 @@ function TopBarNav(props: {
       lead === undefined
         ? undefined
         : { word: lead.state, tone: sessionStateTone(lead.state) },
-    inboxCount: inboxCountLabel(inbox.union),
+    inboxCount: inboxCountLabel(inbox.rows),
     abilities,
   });
   return (

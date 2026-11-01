@@ -36,6 +36,7 @@ import {
   type LeadTranscriptRead,
   type LeadTurnRecord,
 } from "../../interpreter/leadRead.ts";
+import type { ProjectInboxPage } from "../../interpreter/projectInbox.ts";
 import type { SelectorHistoryRead } from "../../interpreter/selectorHistory.ts";
 import type {
   SelectorProposalReviews,
@@ -2431,6 +2432,24 @@ export function selectorProposalsResponse(
   return result.result === "NotFound"
     ? response(404, nativeHttpError("NotFound", "Resource not found."))
     : response(200, { proposals: result.proposals, more: result.more });
+}
+
+/** One page of the inbox, its cursor the tickets list's own for the same order. */
+export function inboxResponse(
+  result: AuthorizedResult<ProjectInboxPage>,
+  partition: Partition,
+): NativeHttpResponse {
+  if (result.result === "NotFound")
+    return response(404, nativeHttpError("NotFound", "Resource not found."));
+  const page = result.value;
+  return response(200, {
+    entries: page.entries,
+    count: page.count,
+    more: page.nextAfter !== undefined,
+    ...(page.nextAfter === undefined
+      ? {}
+      : { nextCursor: encodeTicketActivityCursor(partition, page.nextAfter) }),
+  });
 }
 
 /** A decision no longer held — answered by someone else, or never held — is the conflict. */

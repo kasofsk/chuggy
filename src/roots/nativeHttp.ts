@@ -53,6 +53,7 @@ import {
   composeForgeRepositoryMinting,
   composeNativeWeb,
   composeExecutionPlacement,
+  composeProjectInbox,
   composeProjectOwnerFallback,
   composeThreadLimits,
   composeMemberChat,
@@ -1542,6 +1543,7 @@ async function main(): Promise<void> {
     composeProjectOwnerFallback(pool, access),
     composeThreadLimits(pool, access, authenticationConfig.issuer),
     composeMemberChat(pool, access, threads),
+    composeProjectInbox(pool, selectorReviewPool, access),
   );
   nativeStopping(app, pools, [hub, threadLive]);
   await nativeListening(app);

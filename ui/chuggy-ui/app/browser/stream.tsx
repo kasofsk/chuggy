@@ -17,7 +17,7 @@
  * changes draws only what reads the status.
  */
 
-import { useQueryClient } from "@tanstack/react-query";
+import { hashKey, useQueryClient } from "@tanstack/react-query";
 import type { Query, QueryClient } from "@tanstack/react-query";
 import {
   createContext,
@@ -143,7 +143,7 @@ function applyListRefresh(
       });
       return;
     case "RereadNamed":
-      if (refresh.names(change))
+      if (refresh.names(change, client.getQueryData(registered.key)))
         void client.invalidateQueries({
           queryKey: registered.key,
           exact: true,
@@ -171,6 +171,9 @@ export function applyResourceArrival(
   }
 }
 
+/** A frame reaches each list once, however many components draw it: every
+ * registration under one key reads the same entry, and a second reread would
+ * restart the first. */
 function applyCommand(
   client: QueryClient,
   folds: ReadonlySet<ProjectListRegistration>,
@@ -198,9 +201,14 @@ function applyCommand(
         resource: command.resource,
         representation: command.representation,
       };
-      for (const registered of folds)
-        if (registered.kind === command.kind)
-          applyListRefresh(client, registered, change);
+      const applied = new Set<string>();
+      for (const registered of folds) {
+        if (registered.kind !== command.kind) continue;
+        const keyed = hashKey(registered.key);
+        if (applied.has(keyed)) continue;
+        applied.add(keyed);
+        applyListRefresh(client, registered, change);
+      }
       return;
     }
     default:
@@ -509,8 +517,13 @@ function projectListRefreshErased<T>(
 ): ProjectListRefresh<unknown> {
   switch (current.refresh) {
     case "Reread":
-    case "RereadNamed":
       return current;
+    case "RereadNamed":
+      return {
+        refresh: "RereadNamed",
+        names: (change, previous) =>
+          current.names(change, previous as T | undefined),
+      };
     case "Fold":
       return {
         refresh: "Fold",
@@ -529,7 +542,7 @@ function projectListRefreshErased<T>(
 }
 
 /**
- * A list's refresh, and a fold for each kind alongside it, registered for as
+ * A list's refresh, and one for each kind alongside it, registered for as
  * long as the screen is mounted — past the registration budget too, with the
  * overrun logged, because the budget only makes a leak visible and a screen
  * that stopped drawing would be worse.
@@ -566,15 +579,12 @@ export function useProjectListRefresh<T>(list: ProjectList<T>): void {
       ).map((other): ProjectListRegistration => ({
         kind: other,
         key,
-        refresh: () => ({
-          refresh: "Fold",
-          fold: (previous, change) => {
-            const fold = held.current.alongside[other];
-            return fold === undefined
-              ? previous
-              : fold(previous as T | undefined, change);
-          },
-        }),
+        refresh: () => {
+          const refresh = held.current.alongside[other];
+          return refresh === undefined
+            ? { refresh: "Fold", fold: (previous) => previous }
+            : projectListRefreshErased(refresh);
+        },
       })),
     ];
     for (const registration of registrations) folds.add(registration);

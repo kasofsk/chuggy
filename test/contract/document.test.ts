@@ -69,6 +69,7 @@ const documentRouteNames = [
   "forgeInstallationRepositories",
   "forgeInstallations",
   "hostedRuns",
+  "inbox",
   "installation",
   "lead",
   "leadInquiries",

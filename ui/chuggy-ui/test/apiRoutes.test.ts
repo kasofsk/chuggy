@@ -41,7 +41,7 @@ import {
   apiLeadInquiries,
   apiLeadInquiry,
   apiLeadTranscript,
-  apiNativeActions,
+  apiInbox,
   apiOpenThread,
   apiOwnerFallback,
   apiPersonalRunnerPermit,
@@ -56,7 +56,6 @@ import {
   apiSelectorHistory,
   apiSelectorSettings,
   apiSelectorSettingsHistory,
-  apiSelectorProposals,
   apiStopThreadTurn,
   apiStopTimeoutMs,
   apiTicket,
@@ -349,19 +348,16 @@ test("an action reach that outlives the console's own deadline is a read that fa
   vi.useRealTimers();
 });
 
-test("the project's open questions are one segment under the partition", async () => {
-  const held = recording(() => ({ actions: [] }));
-  await apiNativeActions(held.ports, partition);
+test("the inbox is one segment under the partition, asking the page it is given", async () => {
+  const held = recording(() => ({ entries: [], count: 0, more: false }));
+  await apiInbox(held.ports, partition, {});
   expect(held.urls[0]).toBe(
-    `${nativeHttpBasePath}/tenants/acme/projects/at%20las/native-actions`,
+    `${nativeHttpBasePath}/tenants/acme/projects/at%20las/inbox`,
   );
-  await apiNativeActions(held.ports, partition, {
-    cursor: "after-eleven",
-    limit: 100,
-  });
+  await apiInbox(held.ports, partition, { cursor: "after-eleven", limit: 100 });
   expect(held.urls[1]).toBe(
     `${nativeHttpBasePath}/tenants/acme/projects/at%20las` +
-      `/native-actions?cursor=after-eleven&limit=100`,
+      `/inbox?cursor=after-eleven&limit=100`,
   );
 });
 
@@ -547,15 +543,11 @@ test("the settings are read, written whole and paged for their revisions", async
 
 /** A review names its decision in the path and carries the answer and the note
  * as the body, so a decision's identity is escaped like any other segment. */
-test("the held proposals are read and answered under the project's own segment", async () => {
-  const held = recordingRequests((url) =>
-    url.endsWith("/review")
-      ? { decision: "dec one", outcome: "Rejected" }
-      : { proposals: [{ decision: "dec one", tickets: [7] }], more: false },
-  );
-  expect((await apiSelectorProposals(held.ports, partition)).outcome).toBe(
-    "Ok",
-  );
+test("a held proposal is answered under the project's own segment", async () => {
+  const held = recordingRequests(() => ({
+    decision: "dec one",
+    outcome: "Rejected",
+  }));
   expect(
     await apiReviewSelectorProposal(held.ports, partition, "dec one", {
       outcome: "Rejected",
@@ -572,7 +564,6 @@ test("the held proposals are read and answered under the project's own segment",
       request.init.body,
     ]),
   ).toStrictEqual([
-    ["GET", `${partitionPath}/selector-proposals`, undefined],
     [
       "POST",
       `${partitionPath}/selector-proposals/dec%20one/review`,

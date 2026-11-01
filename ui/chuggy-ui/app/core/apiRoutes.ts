@@ -37,7 +37,6 @@ import {
   projectArtifactUploadedResponseSchema,
   projectCreatedSchema,
   projectInventoryResponseSchema,
-  projectNativeActionsResponseSchema,
   projectRepositoriesResponseSchema,
   projectRepositoryAlreadyBoundSchema,
   projectRepositoryBoundSchema,
@@ -83,7 +82,6 @@ import type {
   ProjectArtifactUploadedResponse,
   ProjectCreatedResponse,
   ProjectInventoryResponse,
-  ProjectNativeActionsResponse,
   ProjectRepositoriesResponse,
   ProjectRepositoryAlreadyBoundResponse,
   ProjectRepositoryBoundResponse,
@@ -864,26 +862,19 @@ export const apiTicketLandings = apiProjectEndpoint(
   (partition, ticket: number) => ({ parameters: { ...partition, ticket } }),
 );
 
-export interface NativeActionsPage {
+export interface InboxPage {
   readonly cursor?: string | undefined;
   readonly limit?: number | undefined;
 }
 
-/** The same questions across a project, where the ticket is not the path. */
-export function apiNativeActions(
-  ports: ApiPorts,
-  partition: PartitionIdentity,
-  page: NativeActionsPage = {},
-): Promise<ApiResult<ProjectNativeActionsResponse>> {
-  return apiGet(
-    ports,
-    apiPath(apiSegments(partition, "native-actions"), {
-      cursor: page.cursor,
-      limit: page.limit,
-    }),
-    (value) => projectNativeActionsResponseSchema.parse(value),
-  );
-}
+/** Every ticket a person is needed for, one entry each, a page at a time. */
+export const apiInbox = apiProjectEndpoint(
+  nativeHttpEndpoints.inbox,
+  (partition, page: InboxPage) => ({
+    parameters: partition,
+    query: { cursor: page.cursor, limit: page.limit },
+  }),
+);
 
 export const apiOperationalStatus = apiProjectEndpoint(
   nativeHttpEndpoints.operationalStatus,
@@ -1125,12 +1116,6 @@ export const apiHostedRuns = apiProjectEndpoint(
 /** Which of the project's doors the reader may press. */
 export const apiProjectAbilities = apiProjectEndpoint(
   nativeHttpEndpoints.abilities,
-  (partition) => ({ parameters: partition }),
-);
-
-/** The lead's decisions held for approval; a reader who may not dispatch is answered as absent. */
-export const apiSelectorProposals = apiProjectEndpoint(
-  nativeHttpEndpoints.selectorProposals,
   (partition) => ({ parameters: partition }),
 );
 

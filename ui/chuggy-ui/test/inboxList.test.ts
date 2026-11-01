@@ -1,229 +1,221 @@
 /**
- * Which tickets the inbox holds, what it asks the wire for, and what the shell
- * counts.
+ * The inbox as this console holds it: the page it asks the wire for, what its
+ * pages make, which `Ticket` frames read it again, and what the shell counts.
  *
- * The membership case walks every phase the wire names, because the inbox is
- * the section's own definition and a phase that changed section without
- * changing the inbox is exactly what would go unnoticed.
- *
- * The badge counts the union of both reads, so every count here goes through
- * the union with no open actions in it: what these cases pin is the rule the
- * badge applies, and `inboxUnion.test.ts` is where the join itself is held.
+ * The badge is the server's count of the whole inbox, so a page that holds
+ * fewer entries than the inbox does is never counted as itself.
  */
 
 import { expect, test } from "vitest";
 
-import { nativeHttpPageItemsMax } from "../../../src/contract/http.ts";
+import {
+  inboxPhases,
+  nativeHttpPageItemsMax,
+} from "../../../src/contract/http.ts";
 import { phaseRoster } from "../../../src/contract/rosters.ts";
+import { executionSummarySchema } from "../../../src/contract/responses.ts";
 import type {
-  ProjectResponse,
-  TicketResponse,
+  InboxResponse,
+  ProjectTicket,
 } from "../../../src/contract/responses.ts";
 import {
-  inboxActionsPage,
   inboxCountLabel,
+  inboxEntryPhased,
   inboxPage,
-  inboxPhases,
+  inboxPagesMax,
+  inboxRowsAfterPage,
+  inboxRowsAppend,
+  inboxRowsEmpty,
+  inboxRowsExecutionFold,
+  inboxRowsRead,
+  inboxRowsRereads,
 } from "../app/core/inboxList.ts";
-import { inboxUnion } from "../app/core/inboxUnion.ts";
-import {
-  projectTicketPagesMax,
-  projectTicketRowsAppend,
-  projectTicketRowsEmpty,
-  projectTicketRowsFold,
-} from "../app/core/projectTicketPages.ts";
-import type { ProjectTicketRows } from "../app/core/projectTicketPages.ts";
-import { actionsFor } from "../app/core/ticketActions.ts";
+import type { InboxRows } from "../app/core/inboxList.ts";
+import type { ApiFailure } from "../app/core/apiRequest.ts";
+import { inboxBody, inboxEntry } from "./inboxFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 
-const partition = { tenant: "acme", project: "atlas" };
-
-/** The badge over a project with no open native action, which is the phase
- * page's own count. */
-function phaseCountLabel(
-  rows: ProjectTicketRows | undefined,
-): string | undefined {
-  return inboxCountLabel(inboxUnion(rows, undefined, undefined));
+function ticketAt(
+  ticket: number,
+  phase: ProjectTicket["phase"],
+): ProjectTicket {
+  return { ticket, phase, sequence: ticket, ...ticketInstants };
 }
 
-function page(
-  tickets: readonly TicketResponse[],
-  nextCursor?: string,
-): ProjectResponse {
-  return {
-    partition,
-    sequence: 12,
-    tickets: [...tickets],
-    ...(nextCursor === undefined ? {} : { nextCursor }),
-  };
-}
+const parked = inboxBody(
+  [inboxEntry(ticketAt(4, "Escalated")), inboxEntry(ticketAt(2, "Pending"))],
+  { count: 3, nextCursor: "after-two" },
+);
 
-const parked = page([
-  {
-    ticket: 4,
-    phase: "Escalated",
-    sequence: 9,
-    escalation: { kind: "WorkFailureEscalated", resumeAt: "ResumeWork" },
-    ...ticketInstants,
-  },
-  { ticket: 2, phase: "Escalated", sequence: 8, ...ticketInstants },
-]);
+const last = inboxBody([inboxEntry(ticketAt(1, "Escalated"))]);
 
-test("the inbox holds exactly the phases that are an open human task", () => {
-  expect([...inboxPhases]).toStrictEqual(["Escalated"]);
+const fault: ApiFailure = {
+  outcome: "Fault",
+  code: "InternalError",
+  status: 500,
+};
+
+test("the page asks for as much as the wire answers, from the cursor it is given", () => {
+  expect(inboxPage(undefined)).toStrictEqual({ limit: nativeHttpPageItemsMax });
+  expect(inboxPage("after-four")).toStrictEqual({
+    limit: nativeHttpPageItemsMax,
+    cursor: "after-four",
+  });
 });
 
-test("a frame for any other phase takes its row out of the inbox", () => {
-  const held = projectTicketRowsAppend(projectTicketRowsEmpty, parked);
-  for (const phase of phaseRoster) {
-    const folded = projectTicketRowsFold(
-      held,
-      "4",
-      { ticket: 4, phase, sequence: 11, ...ticketInstants },
-      inboxPhases,
-    );
-    const holds = folded?.tickets.some((ticket) => ticket.ticket === 4);
-    expect(holds).toBe(inboxPhases.includes(phase));
-  }
+test("the badge is the count the server says the inbox holds, and nothing where it holds none", () => {
+  const held = inboxRowsAppend(inboxRowsEmpty, parked);
+  expect(held.entries).toHaveLength(2);
+  expect(inboxCountLabel(held)).toBe("3");
+  expect(inboxCountLabel(inboxRowsAppend(held, last))).toBe("1");
+  expect(inboxCountLabel(inboxRowsEmpty)).toBeUndefined();
+  expect(inboxCountLabel(undefined)).toBeUndefined();
 });
 
-test("a row's answer is the mutation the wire carries for that ticket", () => {
-  expect(
-    actionsFor({
-      ticket: 4,
-      phase: "Escalated",
-      sequence: 9,
-      ...ticketInstants,
-    }).map((action) => action.mutation),
-  ).toStrictEqual([
-    { mutation: "ResumeTicket", ticket: 4 },
-    { mutation: "RevokeTicket", ticket: 4 },
+test("a page after the first is appended, a ticket already held kept where it is", () => {
+  const held = inboxRowsAppend(inboxRowsEmpty, parked);
+  const repeated = inboxRowsAppend(
+    held,
+    inboxBody([
+      inboxEntry({ ...ticketAt(2, "Pending"), sequence: 9 }),
+      inboxEntry(ticketAt(1, "Escalated")),
+    ]),
+  );
+  expect(repeated.entries.map((entry) => entry.ticket.ticket)).toStrictEqual([
+    4, 2, 1,
+  ]);
+  expect(repeated.entries[1]?.ticket.sequence).toBe(2);
+  expect([repeated.pagesRead, repeated.nextCursor]).toStrictEqual([
+    2,
+    undefined,
   ]);
 });
 
-test("the page asks for both phases, newest activity first", () => {
-  const asked = inboxPage(undefined);
-  expect(asked.order).toBe("RecentActivity");
-  expect(asked.phase).toStrictEqual(inboxPhases);
-  expect(asked.cursor).toBeUndefined();
-  expect(inboxPage("after-four").cursor).toBe("after-four");
-});
-
-/** The page size is the console's rather than the route's, because a default
- * this console does not state is a row count it cannot reason about. */
-test("the page states its own size and it is the largest the wire allows", () => {
-  expect(inboxPage(undefined).limit).toBe(nativeHttpPageItemsMax);
-  expect(inboxPage("after-four").limit).toBe(nativeHttpPageItemsMax);
-});
-
-/**
- * The second read's page, held to the same two things. The cursor is the half
- * with consequences: the walk resumes by handing it back through this function,
- * so a page that dropped it would re-read the first page to its budget, keep
- * `nextCursor` set, and leave an approval on page two unreachable while
- * reporting nothing wrong.
- */
-test("the open-actions page states its own size and carries its cursor", () => {
-  expect(inboxActionsPage(undefined).limit).toBe(nativeHttpPageItemsMax);
-  expect(inboxActionsPage(undefined).cursor).toBeUndefined();
-  expect(inboxActionsPage("after-eleven").limit).toBe(nativeHttpPageItemsMax);
-  expect(inboxActionsPage("after-eleven").cursor).toBe("after-eleven");
-});
-
-/** A ticket escalating into the inbox is read again for rather than folded,
- * so the count is the page's own until that read lands. */
-test("the count is the rows a page gave, and follows a frame that moves one", () => {
-  const held = projectTicketRowsAppend(projectTicketRowsEmpty, parked);
-  expect(phaseCountLabel(held)).toBe("2");
-  const resumed = projectTicketRowsFold(
-    held,
-    "4",
-    { ticket: 4, phase: "Work", sequence: 13, ...ticketInstants },
-    inboxPhases,
-  );
-  expect(phaseCountLabel(resumed)).toBe("1");
-  const arriving = projectTicketRowsFold(
-    resumed,
-    "9",
-    {
-      ticket: 9,
-      phase: "Escalated",
-      sequence: 14,
-      escalation: {
-        kind: "EvaluationFailureEscalated",
-        resumeAt: "ResumeRework",
-      },
-      ...ticketInstants,
-    },
-    inboxPhases,
-  );
-  expect(phaseCountLabel(arriving)).toBe("1");
-});
-
-test("folding one frame twice counts the same as folding it once", () => {
-  const held = projectTicketRowsAppend(projectTicketRowsEmpty, parked);
-  const arriving = {
-    ticket: 4,
-    phase: "Escalated" as const,
-    sequence: 14,
-    escalation: {
-      kind: "EvaluationFailureEscalated" as const,
-      resumeAt: "ResumeRework" as const,
-    },
-    ...ticketInstants,
-  };
-  const once = projectTicketRowsFold(held, "4", arriving, inboxPhases);
-  const twice = projectTicketRowsFold(once, "4", arriving, inboxPhases);
-  expect(twice?.tickets).toStrictEqual(once?.tickets);
-  expect(phaseCountLabel(twice)).toBe(phaseCountLabel(once));
-  expect(phaseCountLabel(twice)).toBe("2");
-});
-
-test("an empty inbox is counted as nothing rather than as a zero", () => {
-  expect(phaseCountLabel(projectTicketRowsEmpty)).toBeUndefined();
-  expect(phaseCountLabel(undefined)).toBeUndefined();
-});
-
-/**
- * The badge asks whether a further page is unread, not whether the reader may
- * ask for it: at the accumulation's own page cap the wire still has more, and a
- * bare number there is a number the badge knows is short.
- */
-test("a count with a further page unread says so, at the page cap too", () => {
-  const held = projectTicketRowsAppend(
-    projectTicketRowsEmpty,
-    page(
-      [{ ticket: 4, phase: "Escalated", sequence: 9, ...ticketInstants }],
-      "after-four",
-    ),
-  );
-  expect(phaseCountLabel(held)).toBe("1+");
-  let walked: ProjectTicketRows = projectTicketRowsEmpty;
-  for (let read = 0; read < projectTicketPagesMax; read += 1)
-    walked = projectTicketRowsAppend(
-      walked,
-      page(
-        [
-          {
-            ticket: read + 1,
-            phase: "Escalated",
-            sequence: 1,
-            ...ticketInstants,
-          },
-        ],
-        "again",
-      ),
-    );
-  expect(walked.next?.cursor).toBe("again");
-  expect(phaseCountLabel(walked)).toBe(`${String(projectTicketPagesMax)}+`);
+/** A "more" that fails keeps the rows and says why; one that answers clears it. */
+test("a further page the reader asked for that failed is said beside the rows", () => {
+  const held = inboxRowsAppend(inboxRowsEmpty, parked);
+  const failed = inboxRowsAfterPage(held, fault);
+  expect(failed.entries).toStrictEqual(held.entries);
+  expect(failed.failure).toBeDefined();
   expect(
-    phaseCountLabel(
-      projectTicketRowsAppend(
-        projectTicketRowsEmpty,
-        page([
-          { ticket: 4, phase: "Escalated", sequence: 9, ...ticketInstants },
-        ]),
-      ),
-    ),
-  ).toBe("1");
+    inboxRowsAfterPage(failed, { outcome: "Ok", value: last }).failure,
+  ).toBeUndefined();
+});
+
+/** Every page a read asked for, answering each from `pages` in turn. */
+function pagesServed(pages: readonly (InboxResponse | undefined)[]): {
+  readonly read: (
+    cursor: string | undefined,
+  ) => ReturnType<Parameters<typeof inboxRowsRead>[1]>;
+  readonly asked: (string | undefined)[];
+} {
+  const asked: (string | undefined)[] = [];
+  return {
+    asked,
+    read: (cursor) => {
+      const page = pages[asked.length];
+      asked.push(cursor);
+      return Promise.resolve(
+        page === undefined ? fault : { outcome: "Ok", value: page },
+      );
+    },
+  };
+}
+
+test("a first read is one page, and a reread is as many as the rows it replaces held", async () => {
+  const first = pagesServed([parked, last]);
+  const read = await inboxRowsRead(undefined, first.read);
+  expect(first.asked).toStrictEqual([undefined]);
+  expect(read.outcome).toBe("Ok");
+  const walked = inboxRowsAppend(inboxRowsAppend(inboxRowsEmpty, parked), last);
+  const again = pagesServed([parked, last]);
+  const reread = await inboxRowsRead(walked, again.read);
+  expect(again.asked).toStrictEqual([undefined, "after-two"]);
+  expect(reread).toStrictEqual({ outcome: "Ok", value: walked });
+});
+
+/** The failure is the read's answer, so the rows it would have replaced stay drawn. */
+test("a reread that fails on any page answers the failure", async () => {
+  const walked = inboxRowsAppend(inboxRowsAppend(inboxRowsEmpty, parked), last);
+  const failing = pagesServed([parked]);
+  expect((await inboxRowsRead(walked, failing.read)).outcome).toBe("Fault");
+});
+
+test("a reread never gathers past the page bound", async () => {
+  const endless = inboxBody([inboxEntry(ticketAt(1, "Escalated"))], {
+    count: 1,
+    nextCursor: "again",
+  });
+  const held: InboxRows = { ...inboxRowsEmpty, pagesRead: inboxPagesMax * 2 };
+  const served = pagesServed(
+    Array.from({ length: inboxPagesMax * 2 }, () => endless),
+  );
+  await inboxRowsRead(held, served.read);
+  expect(served.asked).toHaveLength(inboxPagesMax);
+});
+
+test("a Ticket frame rereads the inbox for a ticket it holds or a phase it holds, and for nothing else", () => {
+  const held = inboxRowsAppend(inboxRowsEmpty, parked);
+  for (const phase of phaseRoster) {
+    expect(
+      inboxRowsRereads(held, {
+        resource: "9",
+        representation: ticketAt(9, phase),
+      }),
+    ).toBe(inboxPhases.includes(phase));
+    expect(
+      inboxRowsRereads(held, {
+        resource: "2",
+        representation: ticketAt(2, phase),
+      }),
+    ).toBe(true);
+  }
+  expect(inboxRowsRereads(held, { resource: "2", representation: null })).toBe(
+    true,
+  );
+  expect(inboxRowsRereads(held, { resource: "9", representation: null })).toBe(
+    false,
+  );
+});
+
+test("an entry's phase answers are offered only where its phase is what holds it here", () => {
+  const escalated = inboxEntry(ticketAt(4, "Escalated"));
+  expect(inboxEntryPhased(escalated)).toBe(escalated.ticket);
+  expect(inboxEntryPhased(inboxEntry(ticketAt(11, "Finalization")))).toBe(
+    undefined,
+  );
+});
+
+const execution = executionSummarySchema.parse({
+  execution: "e2",
+  ticket: 2,
+  task: 3,
+  taskKind: "Work",
+  identity: { type: "WorkTask", value: { ticket: 2, cycle: 1 } },
+  cluster: "rig",
+  configurationRevision: "r1",
+  requirementIdentity: "requirement-a",
+  requirement: {
+    mode: "Container",
+    operatingSystem: "Linux",
+    architecture: "Amd64",
+    image: "chuggy/worker",
+  },
+  requirementDigest: "b".repeat(64),
+  requirementSource: "TicketDefault",
+  platformDefaultVersion: 1,
+  status: "Running",
+  retriesSpent: 0,
+  registeredAt: "2026-08-26T10:00:00.000Z",
+});
+
+test("an Execution frame becomes the latest of a ticket the inbox holds, and of no other", () => {
+  const held = inboxRowsAppend(inboxRowsEmpty, parked);
+  const folded = inboxRowsExecutionFold(held, execution);
+  expect(folded?.entries[1]?.ticket.latestExecution?.execution).toBe("e2");
+  expect(folded?.entries[0]).toStrictEqual(held.entries[0]);
+  expect(
+    inboxRowsExecutionFold(held, { ...execution, ticket: 9 }),
+  ).toStrictEqual(held);
+  expect(inboxRowsExecutionFold(held, null)).toStrictEqual(held);
 });

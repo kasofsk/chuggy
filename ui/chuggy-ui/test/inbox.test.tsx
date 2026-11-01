@@ -21,6 +21,7 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { ticketLatestExecutionSchema } from "../../../src/contract/responses.ts";
+import type { ProjectTicket } from "../../../src/contract/responses.ts";
 import { InboxScreen } from "../app/browser/Inbox.tsx";
 import {
   answer,
@@ -34,6 +35,7 @@ import {
 import type { ApiDouble } from "./screenHarness.tsx";
 import { frame } from "./streamDouble.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
+import { inboxAnswered, inboxEntry } from "./inboxFixture.ts";
 import { leadRefusals } from "./leadFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import {
@@ -77,7 +79,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const escalated = {
+const escalated: ProjectTicket = {
   ticket: 4,
   title: "Serve the reason",
   phase: "Escalated",
@@ -86,32 +88,43 @@ const escalated = {
   ...ticketInstants,
 };
 
-const working = {
+const working: ProjectTicket = {
   ticket: 4,
   phase: "Work",
   sequence: 11,
   ...ticketInstants,
 };
 
-/** One escalated ticket, nothing else open, and nothing that has run, or the
- * tickets a case names in its place. */
+/** The inbox holding one escalated ticket, nothing else open and nothing that
+ * has run, or the tickets a case names in its place. */
 function served(
   url: string,
-  tickets: readonly unknown[] = [escalated],
+  tickets: readonly ProjectTicket[] = [escalated],
 ): Response {
-  if (url.includes("/agentic-refusals"))
-    return answer({ refusals: [], more: false });
-  if (url.includes("/native-actions")) return answer({ actions: [] });
-  if (url.includes("/selector-proposals"))
-    return answer({ proposals: [], more: false });
-  return answer({ partition: atlas, sequence: 9, tickets });
+  return (
+    inboxAnswered(
+      url,
+      tickets.map((ticket) => inboxEntry(ticket)),
+    ) ?? answer({ partition: atlas, sequence: 9, tickets: [] })
+  );
 }
 
-/** The same project with a ticket the lead is refusing to dispatch, which no
- * phase the section holds and no open question would ever find. */
+/** A ticket the lead is refusing to dispatch, which keeps its phase. */
+const refused: ProjectTicket = {
+  ticket: 42,
+  phase: "Pending",
+  sequence: 8,
+  ...ticketInstants,
+};
+
+/** The same project with the refused ticket in the inbox beside the escalated one. */
 function servedWithRefusal(url: string): Response {
-  if (url.includes("/agentic-refusals")) return answer(leadRefusals(false));
-  return served(url);
+  return (
+    inboxAnswered(url, [
+      inboxEntry(escalated),
+      inboxEntry(refused, { refusals: leadRefusals(false).refusals }),
+    ]) ?? served(url)
+  );
 }
 
 /** The inbox over the routes a case names, the abilities read answering as
@@ -160,7 +173,11 @@ test("a row names the ticket it is about beside its number", async () => {
 });
 
 test("an answered row stays until a Ticket frame moves it out of the section", async () => {
-  const api = apiDouble({ operation: operationAt("Pending"), route: served });
+  let tickets = [escalated];
+  const api = apiDouble({
+    operation: operationAt("Pending"),
+    route: (url) => served(url, tickets),
+  });
   const server = drawInboxOver(api);
   await settled();
   expect(screen.getByRole("button", { name: "resume" })).toBeDefined();
@@ -175,6 +192,7 @@ test("an answered row stays until a Ticket frame moves it out of the section", a
   ).not.toBeNull();
   expect(screen.queryByText("Inbox is clear")).toBeNull();
 
+  tickets = [];
   await turned(() => {
     server.push(
       frame("Ticket", "7", {
@@ -184,6 +202,7 @@ test("an answered row stays until a Ticket frame moves it out of the section", a
       }),
     );
   });
+  await settled();
   expect(screen.queryByRole("button", { name: "resume" })).toBeNull();
   expect(screen.getByText("Inbox is clear")).toBeDefined();
 });
@@ -249,9 +268,8 @@ test("an answer's button still opens the sentence it sends", async () => {
 });
 
 /**
- * The inbox's fourth member on screen. A refused ticket keeps its phase and has
- * no open question behind it, so the row is drawn from the refusal alone and
- * the reason it names is what the reader came for.
+ * A refused ticket keeps its phase and has no open question behind it, so the
+ * reason the refusal names is what the reader came for.
  */
 test("a ticket the lead refused is a row of its own, marked and reasoned", async () => {
   drawInbox(servedWithRefusal);
@@ -304,7 +322,7 @@ const failedRun = {
   terminalAt: "2026-08-26T10:30:00.000Z",
 };
 
-/** The project above, its escalated ticket carrying `run` as its latest. */
+/** The inbox above, its escalated ticket carrying `run` as its latest. */
 function servedCarrying(run: unknown): (url: string) => Response {
   const carrying = {
     ...escalated,
@@ -353,9 +371,9 @@ test("opening the inbox issues no executions read", async () => {
 });
 
 /** The frame carries no latest execution, so the row it brings in is the one
- * the list's read answers, which does. */
+ * the inbox's read answers, which does. */
 test("a ticket escalating while the inbox is open draws how its last run ended", async () => {
-  let tickets: readonly unknown[] = [];
+  let tickets: readonly ProjectTicket[] = [];
   const api = apiDouble({
     operation: operationAt("Pending"),
     route: (url) => served(url, tickets),
@@ -437,3 +455,75 @@ test("a retired binding's refused import raises no notice", async () => {
   expect(await screen.findByText("Serve the reason")).toBeDefined();
   expect(importRefusedNotice()).toBeNull();
 });
+
+/** A frame of each kind that can move a ticket into or out of the inbox, and one that cannot. */
+const inboxFrames: readonly (readonly [string, string, number])[] = [
+  [
+    "an open action",
+    frame("NativeAction", "20", {
+      version: 1,
+      resource: "9",
+      representation: { actions: [] },
+    }),
+    1,
+  ],
+  [
+    "a refusal",
+    frame("AgenticRefusal", "20", {
+      version: 1,
+      resource: "9",
+      representation: null,
+    }),
+    1,
+  ],
+  [
+    "a ticket the inbox holds",
+    frame("Ticket", "20", {
+      version: 1,
+      resource: "4",
+      representation: working,
+    }),
+    1,
+  ],
+  [
+    "a ticket arriving in a phase the inbox holds",
+    frame("Ticket", "20", {
+      version: 1,
+      resource: "9",
+      representation: { ...escalated, ticket: 9 },
+    }),
+    1,
+  ],
+  [
+    "a ticket the inbox neither holds nor would",
+    frame("Ticket", "20", {
+      version: 1,
+      resource: "9",
+      representation: { ...working, ticket: 9 },
+    }),
+    0,
+  ],
+];
+
+test.each(inboxFrames)(
+  "a frame about %s reads the inbox again that many times, and nothing else",
+  async (_about, pushed, rereads) => {
+    const asked: string[] = [];
+    const api = apiDouble({
+      operation: operationAt("Pending"),
+      route: (url) => {
+        asked.push(url);
+        return served(url);
+      },
+    });
+    const server = drawInboxOver(api);
+    await settled();
+    asked.length = 0;
+    await turned(() => {
+      server.push(pushed);
+    });
+    await settled();
+    expect(asked.filter((url) => url.includes("/inbox"))).toHaveLength(rereads);
+    expect(asked.filter((url) => !url.includes("/inbox"))).toStrictEqual([]);
+  },
+);

@@ -394,23 +394,23 @@ async function executionRows(
                e.platform_default_version::text AS platform_default_version,
                e.cpu_millis,e.memory_mib,c.canonical,s.status,e.outcome,
                (SELECT d.selection::text FROM ticket_definition d
-                 WHERE d.tenant=e.tenant AND d.project=e.project
+                 WHERE d.tenant=${partition.tenant} AND d.project=${partition.project}
                    AND d.ticket=e.ticket) AS selection,
                (SELECT d.overrides::text FROM ticket_definition d
-                 WHERE d.tenant=e.tenant AND d.project=e.project
+                 WHERE d.tenant=${partition.tenant} AND d.project=${partition.project}
                    AND d.ticket=e.ticket) AS overrides,
                e.retries_spent::text AS retries_spent,
                (SELECT count(*) FROM execution_attempt a
-                 WHERE a.tenant=e.tenant AND a.project=e.project
+                 WHERE a.tenant=${partition.tenant} AND a.project=${partition.project}
                    AND a.execution=e.execution AND a.state='Lost'
                    AND EXISTS (SELECT 1 FROM execution_attempt b
-                                WHERE b.tenant=a.tenant AND b.project=a.project
+                                WHERE b.tenant=${partition.tenant} AND b.project=${partition.project}
                                   AND b.execution=a.execution
                                   AND b.attempt_number>a.attempt_number))::text
                  AS relaunches,
                to_char(e.registered_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS registered_at,to_char(e.terminal_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS terminal_at,
                (SELECT to_char(a.opened_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text FROM execution_attempt a
-                 WHERE a.tenant=e.tenant AND a.project=e.project
+                 WHERE a.tenant=${partition.tenant} AND a.project=${partition.project}
                    AND a.execution=e.execution
                  ORDER BY a.attempt_number LIMIT 1) AS started_at,
                to_char(live.started_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS run_started_at,
@@ -433,7 +433,7 @@ async function executionRows(
           LEFT JOIN LATERAL (SELECT r.started_at FROM execution_attempt a
               LEFT JOIN execution_run r ON r.tenant=a.tenant AND r.project=a.project
                AND r.execution=a.execution AND r.attempt=a.attempt
-             WHERE a.tenant=e.tenant AND a.project=e.project
+             WHERE a.tenant=${partition.tenant} AND a.project=${partition.project}
                AND a.execution=e.execution AND a.state IN ('Placing','Running')
              ORDER BY a.attempt_number DESC LIMIT 1) live ON true
           CROSS JOIN LATERAL (SELECT (CASE WHEN e.status='Launching' AND live.started_at IS NOT NULL THEN 'Running' ELSE e.status END)::text AS status) s

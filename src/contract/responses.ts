@@ -1642,6 +1642,31 @@ export type SelectorProposalsResponse = z.infer<
   typeof selectorProposalsResponseSchema
 >;
 
+/**
+ * One ticket the inbox holds: the row the tickets list answers for it, and
+ * what each of the other three reads says about it, any of them empty.
+ */
+export const inboxEntryResponseSchema = z.object({
+  ticket: projectTicketSchema,
+  actions: page(projectNativeActionResponseSchema),
+  refusals: z
+    .array(agenticRefusalResponseSchema)
+    .max(agenticRefusalsAnsweredMax),
+  proposals: z
+    .array(selectorProposalResponseSchema)
+    .max(selectorProposalDispatchesAnsweredMax),
+});
+export type InboxEntryResponse = z.infer<typeof inboxEntryResponseSchema>;
+
+/** One page of the inbox, last activity first; `count` is every ticket it holds, on every page. */
+export const inboxResponseSchema = z.object({
+  entries: page(inboxEntryResponseSchema),
+  count: countSchema,
+  more: z.boolean(),
+  nextCursor: cursorSchema.optional(),
+});
+export type InboxResponse = z.infer<typeof inboxResponseSchema>;
+
 export const selectorProposalReviewResponseSchema = z.object({
   decision: identitySchema,
   outcome: z.enum(selectorReviewOutcomes),

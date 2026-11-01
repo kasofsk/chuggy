@@ -2,26 +2,20 @@
  * The escalation inbox: every ticket that needs a human, newest activity first,
  * each answerable where it stands.
  *
- * Four reads make the list — the phase page, the project's open native
- * actions, the lead's standing refusals and its decisions held for approval —
- * and `inboxUnion` is where they become one row per ticket. The shell badge and
- * this panel both take those reads through `useInboxRows`, so the
- * count and the rows are one value: a read that refused becomes a notice beside
- * the rows the other one supplied rather than an empty panel under a badge that
- * still counts them. What a row ran is the latest execution the phase page
- * carries on its ticket, and a ticket the phase page did not carry is the
- * ticket page's own read under its key, which carries none. What a row offers is the core's
+ * The server answers the inbox whole, one entry per ticket, and the shell badge
+ * and this panel both take that one read through `useInboxRows`, so the count
+ * and the rows are one value. What a row ran is the latest execution its entry
+ * carries, whatever put the ticket here. What a row offers is the core's
  * decision and what happens after the click is `followOperation`'s, both shared
  * with the ticket page, because a second account of what the machine accepts
  * is a second account that drifts.
  *
  * ANSWERING NEVER TOUCHES THE ROWS. The follow reports its steps into the row it
- * came from and writes into neither list; the row leaves when a `Ticket` frame
- * says the ticket left the section, or when a `NativeAction` frame says its open
- * questions are answered, or when the held decisions read again no longer name
- * it. Those are the only accounts of where a ticket is that a reader can trust.
- * `ui/chuggy-ui/test/inbox.test.tsx`, `ui/chuggy-ui/test/inboxApproval.test.tsx`
- * and `ui/chuggy-ui/test/inboxProposals.test.tsx` hold that.
+ * came from and writes into no entry; the row leaves when the inbox, read again
+ * on a frame or a poll, no longer holds it. That is the only account of where a
+ * ticket is that a reader can trust. `ui/chuggy-ui/test/inbox.test.tsx`,
+ * `ui/chuggy-ui/test/inboxApproval.test.tsx` and
+ * `ui/chuggy-ui/test/inboxProposals.test.tsx` hold that.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -31,18 +25,11 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type {
-  AgenticRefusalsResponse,
-  ProjectTicket,
+  InboxEntryResponse,
   RunnerLoss,
   RunStepFailure,
-  TicketResponse,
 } from "../../../../src/contract/responses.ts";
-import {
-  apiAgenticRefusals,
-  apiNativeActions,
-  apiProject,
-  apiTicket,
-} from "../core/apiRoutes.ts";
+import { apiInbox } from "../core/apiRoutes.ts";
 import { base64urlFromBytes } from "../core/base64url.ts";
 import {
   escalationKindSentence,
@@ -57,7 +44,7 @@ import {
   runStepLabel,
 } from "../core/codeLabels.ts";
 import type { PanelState } from "../core/freshness.ts";
-import { inboxProposalsHeld } from "../core/inboxProposals.ts";
+import { inboxProposalsPolledMs } from "../core/inboxProposals.ts";
 import {
   inboxAnswerInFlight,
   inboxAnswersEmpty,
@@ -65,24 +52,15 @@ import {
 } from "../core/inboxAnswers.ts";
 import type { InboxAnswer, InboxAnswers } from "../core/inboxAnswers.ts";
 import {
-  inboxActionsPage,
+  inboxEntryPhased,
+  inboxList,
   inboxPage,
-  inboxPhases,
-  inboxRefusalsPage,
+  inboxRowsAfterPage,
+  inboxRowsHaveMore,
+  inboxRowsRead,
   inboxSection,
 } from "../core/inboxList.ts";
-import {
-  inboxUnion,
-  inboxUnionEmpty,
-  inboxUnionRefusals,
-  inboxUnionState,
-  inboxUnionTicketsUnheld,
-} from "../core/inboxUnion.ts";
-import type {
-  InboxEntry,
-  InboxRefusals,
-  InboxUnion,
-} from "../core/inboxUnion.ts";
+import type { InboxRows } from "../core/inboxList.ts";
 import { nativeActionsAnswers } from "../core/nativeActionAnswers.ts";
 import { projectAbilityRefused } from "../core/projectAbilities.ts";
 import {
@@ -90,29 +68,14 @@ import {
   operationIdBytesCount,
 } from "../core/operationFollow.ts";
 import type { OperationStep } from "../core/operationFollow.ts";
-import {
-  projectNativeActionRowsFold,
-  projectNativeActionRowsRead,
-} from "../core/projectNativeActionPages.ts";
-import type { ProjectNativeActionRows } from "../core/projectNativeActionPages.ts";
-import {
-  projectListFolded,
-  projectListReread,
-} from "../core/projectQueryKeys.ts";
 import { projectTableRow } from "../core/projectTableRows.ts";
 import type { ProjectTableRow } from "../core/projectTableRows.ts";
-import {
-  projectTicketRowsAfterPage,
-  projectTicketRowsFolded,
-  projectTicketRowsRead,
-} from "../core/projectTicketPages.ts";
-import type { ProjectTicketRows } from "../core/projectTicketPages.ts";
 import { agenticRefusalStanding } from "../core/leadTranscript.ts";
 import { actionsFor, ticketActionSentence } from "../core/ticketActions.ts";
 import type { TicketAction } from "../core/ticketActions.ts";
 import { ticketSectionTitles } from "../core/ticketSections.ts";
 import { agenticRefusalStandingTone } from "../core/tones.ts";
-import { useApiPorts, usePanelList, usePanelResources } from "./api.ts";
+import { useApiPorts, usePanelList } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
 import {
@@ -120,7 +83,6 @@ import {
   InboxProposalNotice,
   InboxProposalWhy,
   useInboxProposalAnswers,
-  useInboxProposals,
 } from "./InboxProposals.tsx";
 import type { InboxProposalAnswers } from "./InboxProposals.tsx";
 import { drawBytes } from "./ports.ts";
@@ -131,174 +93,70 @@ import {
   useTicketRevokeAsk,
 } from "./ticket/TicketRevoke.tsx";
 import {
-  cellAbsent,
   TicketActivityCell,
+  cellAbsent,
   TicketRowExecutionCell,
   TicketTitleCell,
 } from "./TicketCells.tsx";
 import { RepositoryImportRefusedNotice } from "./repositories/RepositoryImportRefused.tsx";
 import { Button } from "./ui/Button.tsx";
-import { Notice } from "./ui/Notice.tsx";
 import { useRunReason } from "./RunEvidence.tsx";
 import { Pill } from "./ui/Pill.tsx";
 import { Table } from "./ui/Table.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
 
-const inboxListName = "inbox";
-
 export interface InboxRowsHeld {
-  readonly union: InboxUnion;
-  readonly panel: PanelState<InboxUnion>;
-  readonly refusals: InboxRefusals;
-  readonly pageFailure: string | undefined;
-  readonly openPageFailure: string | undefined;
+  readonly panel: PanelState<InboxRows>;
+  readonly rows: InboxRows | undefined;
   readonly readMore: (() => void) | undefined;
   readonly reading: boolean;
 }
 
 /**
- * The project's open native actions, live. Registered from both the shell and
- * this screen under one key, which the fold admits because a frame carries the
- * whole truth about one ticket and folding it twice lands where folding it once
- * does.
+ * The inbox, read under its one key and polled for the held decisions no frame
+ * names. The badge and the panel take the same value through this, which is
+ * what makes the header's claim above true rather than merely intended.
  */
-function useInboxOpenActions(
-  partition: PartitionIdentity,
-): PanelState<ProjectNativeActionRows> {
-  return usePanelList(
-    projectListFolded<ProjectNativeActionRows>(
-      partition,
-      "NativeAction",
-      inboxListName,
-      (previous, change) =>
-        projectNativeActionRowsFold(
-          previous,
-          change.resource,
-          change.representation,
-        ),
-    ),
-    (at) =>
-      projectNativeActionRowsRead((cursor) =>
-        apiNativeActions(at, partition, inboxActionsPage(cursor)),
-      ),
-  );
-}
-
-/**
- * The project's standing agentic refusals, re-read rather than folded: the
- * `AgenticRefusal` frame carries one ticket's ledger, and this list is the
- * project's standing rows with each one's supersession decided against the
- * ticket's current authoring version, which the frame does not carry.
- */
-function useInboxRefusals(
-  partition: PartitionIdentity,
-): PanelState<AgenticRefusalsResponse> {
-  return usePanelList(
-    projectListReread<AgenticRefusalsResponse>(
-      partition,
-      "AgenticRefusal",
-      inboxListName,
-    ),
-    (at) => apiAgenticRefusals(at, partition, inboxRefusalsPage()),
-  );
-}
-
-/** The tickets a phase puts in front of a person, live under the same key. */
-function useInboxPhaseRows(partition: PartitionIdentity): {
-  readonly state: PanelState<ProjectTicketRows>;
-  readonly readMore: (() => void) | undefined;
-  readonly reading: boolean;
-} {
-  const list = projectTicketRowsFolded(partition, inboxListName, inboxPhases);
+export function useInboxRows(partition: PartitionIdentity): InboxRowsHeld {
+  const list = inboxList(partition);
   const key = list.key;
   const client = useQueryClient();
   const ports = useApiPorts();
   const [reading, setReading] = useState(false);
-  const state = usePanelList(list, (at) =>
-    projectTicketRowsRead(
-      client.getQueryData<ProjectTicketRows>(key),
-      (cursor) => apiProject(at, partition, inboxPage(cursor)),
-    ),
+  const panel = usePanelList(
+    list,
+    (at) =>
+      inboxRowsRead(client.getQueryData<InboxRows>(key), (cursor) =>
+        apiInbox(at, partition, inboxPage(cursor)),
+      ),
+    inboxProposalsPolledMs,
   );
-  const rows = state.state === "Ready" ? state.value : undefined;
-  const cursor = rows?.next?.cursor;
+  const rows = panel.state === "Ready" ? panel.value : undefined;
   const readMore = () => {
     setReading(true);
     void (async () => {
-      const answered = await apiProject(ports, partition, inboxPage(cursor));
-      client.setQueryData<ProjectTicketRows>(key, (previous) =>
+      const answered = await apiInbox(
+        ports,
+        partition,
+        inboxPage(rows?.nextCursor),
+      );
+      client.setQueryData<InboxRows>(key, (previous) =>
         previous === undefined
           ? previous
-          : projectTicketRowsAfterPage(previous, answered),
+          : inboxRowsAfterPage(previous, answered),
       );
       setReading(false);
     })();
   };
   return {
-    state,
-    readMore: cursor === undefined || reading ? undefined : readMore,
+    panel,
+    rows,
+    readMore:
+      rows === undefined || !inboxRowsHaveMore(rows) || reading
+        ? undefined
+        : readMore,
     reading,
   };
-}
-
-/**
- * All four reads, the union they make and the one state that draws it. The
- * badge and the panel take the same values through the same two functions,
- * which is what makes the header's claim above true rather than merely
- * intended.
- */
-export function useInboxRows(partition: PartitionIdentity): InboxRowsHeld {
-  const phase = useInboxPhaseRows(partition);
-  const open = useInboxOpenActions(partition);
-  const refused = useInboxRefusals(partition);
-  const proposals = useInboxProposals(partition);
-  const held = phase.state.state === "Ready" ? phase.state.value : undefined;
-  const openHeld = open.state === "Ready" ? open.value : undefined;
-  const refusedHeld = refused.state === "Ready" ? refused.value : undefined;
-  const proposed = inboxProposalsHeld(proposals);
-  const union =
-    held === undefined &&
-    openHeld === undefined &&
-    refusedHeld === undefined &&
-    proposed === undefined
-      ? inboxUnionEmpty
-      : inboxUnion(held, openHeld, refusedHeld, proposed);
-  const panel = inboxUnionState(union, phase.state, open, refused, proposals);
-  return {
-    union,
-    panel,
-    refusals: inboxUnionRefusals(panel, phase.state, open, refused, proposals),
-    pageFailure: held?.failure,
-    openPageFailure: openHeld?.failure,
-    readMore: phase.readMore,
-    reading: phase.reading,
-  };
-}
-
-/**
- * The tickets the rows name that the phase page did not carry, each read under
- * the ticket page's own key — which a `Ticket` frame writes, as it folds the
- * phase page — and held by number once it has answered. The panel alone reads
- * them; the badge counts rows and draws none.
- */
-function useInboxTicketsUnheld(
-  partition: PartitionIdentity,
-  union: InboxUnion,
-): ReadonlyMap<number, TicketResponse> {
-  const tickets = inboxUnionTicketsUnheld(union);
-  const states = usePanelResources(
-    partition,
-    "Ticket",
-    tickets.map(String),
-    (resource, ports) => apiTicket(ports, partition, Number(resource)),
-    "Streamed",
-  );
-  const read = new Map<number, TicketResponse>();
-  tickets.forEach((ticket, at) => {
-    const state = states[at];
-    if (state?.state === "Ready") read.set(ticket, state.value);
-  });
-  return read;
 }
 
 /** A follow that outlived its screen has nowhere to report, so it stops here. */
@@ -334,15 +192,16 @@ function inboxStepSentence(step: OperationStep): string {
 }
 
 /** An open action's admitted answers, and the phase's own where none is open. */
-function inboxEntryActions(entry: InboxEntry): readonly TicketAction[] {
+function inboxEntryActions(entry: InboxEntryResponse): readonly TicketAction[] {
   if (entry.actions.length > 0) return nativeActionsAnswers(entry.actions);
-  return entry.held === undefined ? [] : actionsFor(entry.held);
+  const phased = inboxEntryPhased(entry);
+  return phased === undefined ? [] : actionsFor(phased);
 }
 
 /** The answers a row offers, Revoke asking under them before it submits. */
 function InboxActions(props: {
   readonly partition: PartitionIdentity;
-  readonly entry: InboxEntry;
+  readonly entry: InboxEntryResponse;
   readonly answer: InboxAnswer | undefined;
   readonly onAnswer: (action: TicketAction) => void;
 }): ReactNode {
@@ -362,7 +221,7 @@ function InboxActions(props: {
           <Tooltip
             key={action.action}
             text={ticketActionSentence(action.action, {
-              kind: props.entry.held?.escalation?.kind,
+              kind: inboxEntryPhased(props.entry)?.escalation?.kind,
             })}
           >
             <span>
@@ -442,16 +301,16 @@ function InboxFailedWhy(props: {
   );
 }
 
-/** Why this ticket is here: its phase where the phase page reached it, and what
- * its open questions ask where it did not. */
+/** Why this ticket is here: its phase where that is what holds it, and what
+ * its open questions ask where it is not. */
 function InboxWhy(props: {
   readonly partition: PartitionIdentity;
-  readonly entry: InboxEntry;
-  readonly row: ProjectTableRow | undefined;
+  readonly entry: InboxEntryResponse;
+  readonly row: ProjectTableRow;
 }): ReactNode {
-  const held = props.entry.held;
+  const held = inboxEntryPhased(props.entry);
   const row = props.row;
-  if (held === undefined || row === undefined)
+  if (held === undefined)
     return (
       <div className="flex flex-wrap gap-2">
         {props.entry.actions.map((action) => (
@@ -493,7 +352,9 @@ function InboxWhy(props: {
 
 /** Whether the lead is declining to dispatch this ticket, and whether that
  * still binds. The reason is on hover, because a row is one line. */
-function InboxRefusal(props: { readonly entry: InboxEntry }): ReactNode {
+function InboxRefusal(props: {
+  readonly entry: InboxEntryResponse;
+}): ReactNode {
   const refusal = props.entry.refusals[0];
   if (refusal === undefined) return null;
   const standing = agenticRefusalStanding(refusal);
@@ -506,38 +367,35 @@ function InboxRefusal(props: { readonly entry: InboxEntry }): ReactNode {
   );
 }
 
-/** One row, drawn from the phase page's ticket or, where the page did not carry
- * it, from the ticket's own read. */
+/** One row, drawn from the row its entry carries whatever put it here. */
 function InboxRow(props: {
-  readonly entry: InboxEntry;
-  readonly read: ProjectTicket | undefined;
+  readonly entry: InboxEntryResponse;
   readonly partition: PartitionIdentity;
   readonly answer: InboxAnswer | undefined;
   readonly proposed: InboxProposalAnswers;
   readonly nowMs: number;
   readonly onAnswer: (action: TicketAction) => void;
 }): ReactNode {
-  const ticket = props.entry.held ?? props.read;
-  const row = ticket === undefined ? undefined : projectTableRow(ticket);
+  const row = projectTableRow(props.entry.ticket);
   return (
     <tr>
       <TicketTitleCell
         partition={props.partition}
-        ticket={props.entry.ticket}
-        title={row?.title}
+        ticket={row.ticket}
+        title={row.title}
       />
       <td>
         <InboxWhy partition={props.partition} entry={props.entry} row={row} />
         <InboxProposalWhy
-          ticket={props.entry.ticket}
+          ticket={row.ticket}
           proposals={props.entry.proposals}
         />
         <InboxRefusal entry={props.entry} />
       </td>
       <td>
-        {row === undefined ? cellAbsent : <TicketRowExecutionCell row={row} />}
+        <TicketRowExecutionCell row={row} />
       </td>
-      <TicketActivityCell activityAt={row?.activityAt} nowMs={props.nowMs} />
+      <TicketActivityCell activityAt={row.activityAt} nowMs={props.nowMs} />
       <td>
         <InboxActions
           partition={props.partition}
@@ -560,8 +418,7 @@ function InboxRow(props: {
 }
 
 function InboxTable(props: {
-  readonly entries: readonly InboxEntry[];
-  readonly read: ReadonlyMap<number, TicketResponse>;
+  readonly entries: readonly InboxEntryResponse[];
   readonly partition: PartitionIdentity;
   readonly answers: InboxAnswers;
   readonly proposed: InboxProposalAnswers;
@@ -583,15 +440,14 @@ function InboxTable(props: {
       <tbody>
         {props.entries.map((entry) => (
           <InboxRow
-            key={entry.ticket}
+            key={entry.ticket.ticket}
             entry={entry}
-            read={props.read.get(entry.ticket)}
             partition={props.partition}
-            answer={props.answers[String(entry.ticket)]}
+            answer={props.answers[String(entry.ticket.ticket)]}
             proposed={props.proposed}
             nowMs={props.nowMs}
             onAnswer={(action) => {
-              props.onAnswer(entry.ticket, action);
+              props.onAnswer(entry.ticket.ticket, action);
             }}
           />
         ))}
@@ -632,52 +488,13 @@ function useInboxAnswers(partition: PartitionIdentity): {
   return { answers, answer };
 }
 
-/**
- * What could not be read, said as itself beside the rows that could. A read
- * that refused while the other answered is a notice here rather than an empty
- * panel, so the half a person can still act on stays on screen.
- */
-function InboxNotices(props: { readonly held: InboxRowsHeld }): ReactNode {
-  const held = props.held;
-  return (
-    <>
-      {held.refusals.phase === undefined ? null : (
-        <p className="panel-failed">
-          the tickets a phase parks could not be read — {held.refusals.phase}
-        </p>
-      )}
-      {held.refusals.open === undefined ? null : (
-        <p className="panel-failed">
-          the tickets waiting on an answer from you could not be read —{" "}
-          {held.refusals.open}
-        </p>
-      )}
-      {held.refusals.standing === undefined ? null : (
-        <Notice
-          tone="parked"
-          inline
-          detail={`Refusals · ${held.refusals.standing}`}
-        />
-      )}
-      {held.refusals.proposals === undefined ? null : (
-        <Notice
-          tone="parked"
-          inline
-          detail={`Proposals · ${held.refusals.proposals}`}
-        />
-      )}
-      {held.openPageFailure === undefined ? null : (
-        <p className="panel-failed">
-          a further page of open questions could not be read —{" "}
-          {held.openPageFailure}
-        </p>
-      )}
-      {held.pageFailure === undefined ? null : (
-        <p className="panel-failed">
-          a further page could not be read — {held.pageFailure}
-        </p>
-      )}
-    </>
+/** A further page the reader asked for that could not be read, beside the rows that were. */
+function InboxPageFailure(props: {
+  readonly rows: InboxRows | undefined;
+}): ReactNode {
+  const failure = props.rows?.failure;
+  return failure === undefined ? null : (
+    <p className="panel-failed">a further page could not be read — {failure}</p>
   );
 }
 
@@ -688,7 +505,6 @@ export function InboxScreen(props: {
 }): ReactNode {
   const partition = props.partition;
   const inbox = useInboxRows(partition);
-  const read = useInboxTicketsUnheld(partition, inbox.union);
   const answering = useInboxAnswers(partition);
   const proposed = useInboxProposalAnswers(partition);
   const nowMs = useNowMs();
@@ -696,16 +512,15 @@ export function InboxScreen(props: {
     <>
       <ScreenTitle>Inbox</ScreenTitle>
       <RepositoryImportRefusedNotice partition={partition} />
-      <InboxNotices held={inbox} />
+      <InboxPageFailure rows={inbox.rows} />
       <InboxProposalNotice answers={proposed} />
       <DataPanel title={ticketSectionTitles[inboxSection]} state={inbox.panel}>
-        {(union) =>
-          union.entries.length === 0 ? (
+        {(rows) =>
+          rows.entries.length === 0 ? (
             <p className="panel-note">Inbox is clear</p>
           ) : (
             <InboxTable
-              entries={union.entries}
-              read={read}
+              entries={rows.entries}
               partition={partition}
               answers={answering.answers}
               proposed={proposed}

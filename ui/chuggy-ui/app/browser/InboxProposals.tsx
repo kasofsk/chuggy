@@ -3,10 +3,10 @@
  * with, Approve and Reject, and the line an answer leaves behind once its row
  * has gone.
  *
- * AN ANSWER NEVER REMOVES ITS ROW. It asks for the held decisions again, and
- * the row leaves because that read no longer names it, answering nothing more
- * until then — so a decision someone else answered first, or whose ticket
- * moved, reads as stale here, and its row leaves the same way.
+ * AN ANSWER NEVER REMOVES ITS ROW. It asks for the inbox again, and the row
+ * leaves because that read no longer names it, answering nothing more until
+ * then — so a decision someone else answered first, or whose ticket moved,
+ * reads as stale here, and its row leaves the same way.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -14,31 +14,22 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
-import type {
-  SelectorProposalResponse,
-  SelectorProposalsResponse,
-} from "../../../../src/contract/responses.ts";
+import type { SelectorProposalResponse } from "../../../../src/contract/responses.ts";
 import type { SelectorReviewOutcome } from "../../../../src/contract/rosters.ts";
-import {
-  apiReviewSelectorProposal,
-  apiSelectorProposals,
-} from "../core/apiRoutes.ts";
-import type { PanelState } from "../core/freshness.ts";
+import { apiReviewSelectorProposal } from "../core/apiRoutes.ts";
+import { inboxList } from "../core/inboxList.ts";
 import {
   inboxProposalAnswered,
   inboxProposalNoteClamped,
   inboxProposalOthers,
   inboxProposalReview,
-  inboxProposalsPolledMs,
   inboxProposalStepWord,
 } from "../core/inboxProposals.ts";
 import type {
   InboxProposalAnswer,
   InboxProposalStep,
 } from "../core/inboxProposals.ts";
-import { projectResourceKey } from "../core/projectQueryKeys.ts";
-import { useApiPorts, usePanelResourceAsked } from "./api.ts";
-import { useProjectAbilityRead } from "./projectAbilities.tsx";
+import { useApiPorts } from "./api.ts";
 import { Button } from "./ui/Button.tsx";
 import { Confirm } from "./ui/Confirm.tsx";
 import { Input } from "./ui/Input.tsx";
@@ -47,27 +38,8 @@ import type { NoticeTone } from "./ui/Notice.tsx";
 import { Pill } from "./ui/Pill.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
 
-/** A resource no frame names, so the poll, a partition's invalidation and an answer from this tab are what reach it. */
-export const inboxProposalsResource = "selector-proposals";
-
-/** The held decisions, never read for a reader the abilities read said may
- * not dispatch, who is refused them on every poll. */
-export function useInboxProposals(
-  partition: PartitionIdentity,
-): PanelState<SelectorProposalsResponse> {
-  const read = useProjectAbilityRead(partition, "dispatch");
-  return usePanelResourceAsked(
-    partition,
-    "Project",
-    inboxProposalsResource,
-    (ports) => apiSelectorProposals(ports, partition),
-    inboxProposalsPolledMs,
-    read === "Asked",
-  );
-}
-
 export interface InboxProposalAnswers {
-  /** The decisions answered since the held decisions were last read, which neither of their rows may send again. */
+  /** The decisions answered since the inbox was last read, which neither of their rows may send again. */
   readonly sending: ReadonlySet<string>;
   /** The answer settled last, which outlives the row it was given on. */
   readonly last: InboxProposalAnswer | undefined;
@@ -101,13 +73,7 @@ export function useInboxProposalAnswers(
         ),
       );
       setLast({ proposal, step });
-      await client.invalidateQueries({
-        queryKey: projectResourceKey(
-          partition,
-          "Project",
-          inboxProposalsResource,
-        ),
-      });
+      await client.invalidateQueries({ queryKey: inboxList(partition).key });
       setSending((was) => {
         const still = new Set(was);
         still.delete(proposal.decision);

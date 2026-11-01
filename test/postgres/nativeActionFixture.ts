@@ -76,6 +76,28 @@ async function seededFence(
   );
 }
 
+/** One journal entry at `sequence`, deciding an operation the real inbox accepted, for a row a case dates by it. */
+export async function seedJournalEntry(
+  harness: PostgresHarness,
+  partition: Partition,
+  label: string,
+  sequence: number,
+): Promise<void> {
+  const submission = postgresHarnessSubmission(partition, label);
+  await harness.inbox.accept(submission);
+  const epoch = await seededEpoch(harness);
+  const seeding = await harness.begin();
+  await seededFence(
+    seeding,
+    partition,
+    label,
+    sequence,
+    submission.operation,
+    epoch,
+  );
+  await seeding.commit();
+}
+
 /** Seeds one open action and answers the identity a case answers it at. */
 export async function seedOpenAction(
   harness: PostgresHarness,
