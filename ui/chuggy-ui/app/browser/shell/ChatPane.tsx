@@ -377,6 +377,7 @@ function ChatPaneFirst(props: {
     onStarted: props.onStarted,
   });
   const composer = sends.composer;
+  if (composer.back !== undefined && !typed) setTyped(true);
   const sent = useMemo(
     () => sends.sending.map(conversationExchangeSent),
     [sends.sending],
@@ -663,6 +664,10 @@ export function ChatPane(props: {
   return chatPaneStripped(props.chat) ? (
     <ChatPaneStrip placement={props.chat.placement} />
   ) : (
-    <ChatPaneOpen partition={props.partition} chat={props.chat} />
+    <ChatPaneOpen
+      key={partitionPath(props.partition)}
+      partition={props.partition}
+      chat={props.chat}
+    />
   );
 }
