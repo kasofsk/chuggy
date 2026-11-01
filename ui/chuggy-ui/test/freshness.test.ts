@@ -24,7 +24,7 @@ test("the label is whole units, and no data is said to be none", () => {
   expect(freshnessLabel(nowMs, nowMs - 90_000)).toBe("1m ago");
   expect(freshnessLabel(nowMs, nowMs - 3_600_000 * 5)).toBe("5h ago");
   expect(freshnessLabel(nowMs, nowMs - 3_600_000 * 30)).toBe("1d ago");
-  expect(freshnessLabel(nowMs, undefined)).toBe("never observed");
+  expect(freshnessLabel(nowMs, undefined)).toBe("Unknown");
 });
 
 test("a clock that ran backwards does not read as data from the future", () => {

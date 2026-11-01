@@ -268,7 +268,7 @@ function revisions(sent: readonly Sent[]): readonly unknown[] {
   return sent.filter((one) => one.method === "PUT").map((one) => one.body);
 }
 
-const heldNote = /was created and not released/u;
+const heldNote = /Draft 12 kept$/u;
 
 /**
  * The draft a refused release leaves held was written from the form as it

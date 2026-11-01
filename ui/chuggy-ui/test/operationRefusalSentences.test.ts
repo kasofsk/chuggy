@@ -9,87 +9,24 @@
 
 import { expect, test } from "vitest";
 
-import {
-  operationRefusalCodes,
-  type OperationRefusalCode,
-} from "../../../src/contract/rosters.ts";
+import { operationRefusalCodes } from "../../../src/contract/rosters.ts";
 import { operationRefusalLabel } from "../app/core/codeLabels.ts";
+import { operationRefusalSentence } from "../app/core/codeSentences.ts";
 import {
-  operationRefusalSentence,
-  type OperationRefusal,
-} from "../app/core/codeSentences.ts";
+  operationRefusalSamples,
+  type OperationRefusalSamples,
+} from "./operationRefusalFixture.ts";
 
-/** A refusal whose one payload is a ticket number. */
-function ticketRefused<
-  Code extends Extract<OperationRefusal, { readonly value: number }>["type"],
->(type: Code, ticket: number) {
-  return { type, value: ticket } as const;
-}
-
-const samples: {
-  readonly [Code in OperationRefusalCode]: Extract<
-    OperationRefusal,
-    { readonly type: Code }
-  >;
-} = {
-  TicketAlreadyExists: ticketRefused("TicketAlreadyExists", 41),
-  DependenciesNotFound: {
-    type: "DependenciesNotFound",
-    value: { ticket: 41, dependencies: [17, 23] },
-  },
-  DependenciesRevoked: {
-    type: "DependenciesRevoked",
-    value: { ticket: 41, dependencies: [17, 23] },
-  },
+const samples: OperationRefusalSamples = {
+  ...operationRefusalSamples(41, [17, 23]),
   DependencyCycle: {
     type: "DependencyCycle",
     value: { ticket: 41, dependencies: [17] },
-  },
-  SelfDependency: ticketRefused("SelfDependency", 41),
-  TicketNotFound: ticketRefused("TicketNotFound", 41),
-  TicketNotPending: ticketRefused("TicketNotPending", 41),
-  TicketIdentityMismatch: ticketRefused("TicketIdentityMismatch", 41),
-  TicketRevisionStale: {
-    type: "TicketRevisionStale",
-    value: { ticket: 41, expected: 2, current: 5 },
   },
   DependenciesIncomplete: {
     type: "DependenciesIncomplete",
     value: { ticket: 41, dependencies: [17, 23, 29] },
   },
-  TicketNotRevocable: ticketRefused("TicketNotRevocable", 41),
-  TicketNotResumable: ticketRefused("TicketNotResumable", 41),
-  TaskNotCurrent: {
-    type: "TaskNotCurrent",
-    value: {
-      ticket: 41,
-      task: { type: "WorkTask", value: { ticket: 41, cycle: 3 } },
-    },
-  },
-  FinalizationNotCurrent: {
-    type: "FinalizationNotCurrent",
-    value: { ticket: 41, workCycle: 3, generation: 2 },
-  },
-  AuthoringChanged: { type: "AuthoringChanged" },
-  ConfigurationInvalid: { type: "ConfigurationInvalid" },
-  TicketChanged: { type: "TicketChanged" },
-  SelectionChanged: { type: "SelectionChanged" },
-  ExecutionSourceUnreadable: { type: "ExecutionSourceUnreadable" },
-  ExecutionSourceDenied: { type: "ExecutionSourceDenied" },
-  BriefNamesNoRepository: { type: "BriefNamesNoRepository" },
-  BriefChecksUncommanded: { type: "BriefChecksUncommanded" },
-  ConfigurationFromAnotherRepository: {
-    type: "ConfigurationFromAnotherRepository",
-  },
-  SelectionUnknown: { type: "SelectionUnknown" },
-  SelectionUnsupported: { type: "SelectionUnsupported" },
-  ProgramExceedsPlan: { type: "ProgramExceedsPlan" },
-  ProgramSkipsBriefChecks: { type: "ProgramSkipsBriefChecks" },
-  OverridesUnsupported: { type: "OverridesUnsupported" },
-  OverridesUnknown: { type: "OverridesUnknown" },
-  TicketCapacityReached: { type: "TicketCapacityReached" },
-  FinalizationRequestClosed: { type: "FinalizationRequestClosed" },
-  OverridesMoveDefinition: { type: "OverridesMoveDefinition" },
 };
 
 const said = operationRefusalCodes.map((code) =>
@@ -120,34 +57,32 @@ test("a refusal over one ticket names that ticket", () => {
 
 test("a refusal over dependencies names the ticket and each dependency", () => {
   expect(operationRefusalSentence(samples.DependenciesIncomplete)).toBe(
-    "#41 waits on #17, #23 and #29, which are not done yet",
+    "#41 waits on #17, #23 and #29 · Not done yet",
   );
   expect(operationRefusalSentence(samples.DependenciesNotFound)).toBe(
-    "#41 depends on #17 and #23, which the project has no ticket for",
+    "#41 depends on missing #17 and #23",
   );
   expect(
     operationRefusalSentence({
       type: "DependenciesIncomplete",
       value: { ticket: 41, dependencies: [17] },
     }),
-  ).toBe("#41 waits on #17, which is not done yet");
+  ).toBe("#41 waits on #17 · Not done yet");
 });
 
 test("a dependency refused for what it is says what to depend on instead", () => {
   expect(operationRefusalSentence(samples.DependenciesRevoked)).toBe(
-    "#41 cannot come to depend on #17 and #23, which were revoked and will never be done; depend on a ticket that is still open",
+    "#41 depends on revoked #17 and #23 · Pick open ones",
   );
   expect(operationRefusalSentence(samples.DependencyCycle)).toBe(
-    "#41 cannot depend on #17, which already waits on it, so neither could ever start",
+    "#17 already waits on #41 · Cannot depend on it",
   );
   expect(
     operationRefusalSentence({
       type: "DependencyCycle",
       value: { ticket: 41, dependencies: [17, 23] },
     }),
-  ).toBe(
-    "#41 cannot depend on #17 and #23, which already wait on it, so none of them could ever start",
-  );
+  ).toBe("#17 and #23 already wait on #41 · Cannot depend on them");
 });
 
 test("a stale revision names the one written against and the one held", () => {
@@ -159,7 +94,7 @@ test("a stale revision names the one written against and the one held", () => {
 
 test("a task that is not current names the task it was for", () => {
   expect(operationRefusalSentence(samples.TaskNotCurrent)).toContain(
-    "the work of cycle 3 of #41",
+    "Report for cycle 3 work of #41",
   );
   const evaluation = operationRefusalSentence({
     type: "TaskNotCurrent",
@@ -177,27 +112,25 @@ test("a task that is not current names the task it was for", () => {
       },
     },
   });
-  expect(evaluation).toContain(
-    "evaluator 6 of stage 2, generation 4, in work cycle 3 of #41",
-  );
+  expect(evaluation).toContain("Report for cycle 3 stage 2 of #41");
 });
 
-test("a finalization that is not current names its work cycle and generation", () => {
+test("a finalization that is not current names its work cycle", () => {
   expect(operationRefusalSentence(samples.FinalizationNotCurrent)).toContain(
-    "work cycle 3, generation 2 of #41",
+    "Finalizing result for cycle 3 of #41",
   );
 });
 
 test("a release refused for its pairing names the brief, and one refused for its configuration does not", () => {
   const sentence = operationRefusalSentence(samples.ConfigurationInvalid);
-  expect(sentence).toContain("configuration");
-  expect(sentence).not.toContain("brief");
+  expect(sentence).toMatch(/configuration/iu);
+  expect(sentence).not.toMatch(/brief/iu);
   for (const code of [
     "BriefNamesNoRepository",
     "BriefChecksUncommanded",
     "ConfigurationFromAnotherRepository",
   ] as const)
-    expect(operationRefusalSentence(samples[code])).toContain("brief");
+    expect(operationRefusalSentence(samples[code])).toMatch(/brief/iu);
 });
 
 /** The two only an update reaches promise no edit the ticket page does not offer. */

@@ -112,9 +112,7 @@ export function Landing(): ReactNode {
   return (
     <ProjectlessFrame>
       <DataPanel title="projects" state={state}>
-        {(projects) => (
-          <p className="panel-note">opening {projects.length} project(s)…</p>
-        )}
+        {() => <p className="panel-note">Loading…</p>}
       </DataPanel>
     </ProjectlessFrame>
   );

@@ -135,7 +135,7 @@ function saysSomethingFor(
     `${what} answers ${code} and the console read it back verbatim: ${said}`,
   );
   assert.ok(
-    !said.includes("does not know"),
+    !said.includes("Unknown reason"),
     `${what} answers ${code} and no roster in the console holds it: ${said}`,
   );
   return code;

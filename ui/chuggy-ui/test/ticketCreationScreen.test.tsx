@@ -321,7 +321,7 @@ test("a submit that finds its ticket already made draws the way to it in the not
   }
   const told = screen.getByText(/already exists/u);
   expect(told.textContent).toBe(
-    "#12 already exists: an earlier release of this draft went through, and what has been changed here since is not in it — Ticket 12",
+    "#12 already exists · Changes since are not in it — Ticket 12",
   );
   expect(within(told).getByRole("link", { name: "Ticket 12" })).toBeTruthy();
 });

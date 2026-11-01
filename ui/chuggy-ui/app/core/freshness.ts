@@ -86,7 +86,7 @@ export function freshnessLabel(
   nowMs: number,
   observedAtMs: number | undefined,
 ): string {
-  if (observedAtMs === undefined) return "never observed";
+  if (observedAtMs === undefined) return "Unknown";
   return `${agoText(nowMs, observedAtMs)} ago`;
 }
 

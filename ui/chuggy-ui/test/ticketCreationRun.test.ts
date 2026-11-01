@@ -621,7 +621,7 @@ test("a release onto a revoked ticket says so, and what to depend on instead", a
     () => undefined,
   );
   expect(created.created === "Refused" && created.reason).toContain(
-    "#12 cannot come to depend on #7, which was revoked and will never be done; depend on a ticket that is still open",
+    "#12 depends on revoked #7 · Pick open ones",
   );
 });
 
@@ -747,8 +747,7 @@ test("a revision the door refuses is refused, and nothing is released", async ()
   );
   expect(updated).toStrictEqual({
     created: "Refused",
-    reason:
-      "the draft is closed to revision: only a pending ticket's draft can be revised",
+    reason: "Draft closed · Ticket no longer pending",
     held: undefined,
   });
   expect(held.calls).toStrictEqual([`PUT ${partitionBase}/drafts/12`]);
@@ -832,8 +831,7 @@ test("an update onto a ticket that waits on this one says it would never start",
   );
   expect(updated).toStrictEqual({
     created: "Refused",
-    reason:
-      "#12 cannot depend on #14, which already waits on it, so neither could ever start",
+    reason: "#14 already waits on #12 · Cannot depend on it",
     held: { draft: revisedDraft },
   });
 });
@@ -861,8 +859,7 @@ test("an update the machine refuses says which refusal, holding the revised draf
   );
   expect(updated).toStrictEqual({
     created: "Refused",
-    reason:
-      "this was written against revision 2 of #12, which is at revision 3 now",
+    reason: "#12 moved from revision 2 to revision 3",
     held: { draft: revisedDraft },
   });
 });

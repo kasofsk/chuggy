@@ -453,16 +453,13 @@ test("a following ticket held on its revision, or trimmed, says why in one line,
   const cases = [
     [
       { verdict: "Held", code: "SelectionUnknown" },
-      "Stays on this revision rather than the newest: the draft selects a workload, plan or finalizer the configuration's catalog does not hold",
+      "Not moved · Workload, plan or finalizer not in the catalog",
     ],
     [
       { verdict: "Held", code: "ConfigurationInvalid" },
-      "Stays on this revision rather than the newest: the configuration is not one the project will run, as written or as overridden",
+      "Not moved · Configuration or overrides cannot run",
     ],
-    [
-      { verdict: "Trimmed" },
-      "Stays on this revision rather than the newest: its program runs less than its plan, and was signed off against this one",
-    ],
+    [{ verdict: "Trimmed" }, "Not moved · Program skips part of its plan"],
     [{ verdict: "Current" }, undefined],
     [{ verdict: "Moves" }, undefined],
     [undefined, undefined],

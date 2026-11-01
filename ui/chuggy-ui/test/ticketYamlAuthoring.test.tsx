@@ -448,7 +448,7 @@ test("a configuration named in the YAML after a refused release is what the held
   const editor = await toYaml();
   type(editor, "configuration: development\nintent: ship it\n");
   await submitAsked();
-  await screen.findByText(/was created and not released/u);
+  await screen.findByText(/Draft 12 kept$/u);
   type(editor, "configuration: development-sonnet\nintent: ship it\n");
   await submitAsked();
   await waitFor(() => {
@@ -483,7 +483,7 @@ test("a YAML changed over a release that had gone through is told of its ticket,
   const editor = await toYaml();
   type(editor, "configuration: development\nintent: ship it\n");
   await submitAsked();
-  await screen.findByText(/whether it was released is not known/u);
+  await screen.findByText(/Draft 12 kept · Maybe released/u);
   ticketDoorDecides(door, door.releases[0], "Succeeded");
   const from = held.sent.length;
   const changed = "configuration: development\nintent: ship that\n";
@@ -491,7 +491,7 @@ test("a YAML changed over a release that had gone through is told of its ticket,
   await submitAsked();
   const told = await screen.findByText(/already exists/u);
   expect(told.textContent).toBe(
-    "#12 already exists: an earlier release of this draft went through, and what has been changed here since is not in it — Ticket 12",
+    "#12 already exists · Changes since are not in it — Ticket 12",
   );
   expect(
     held.sent.slice(from).map((one) => `${one.method} ${one.path}`),

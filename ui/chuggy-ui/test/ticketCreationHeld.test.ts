@@ -137,14 +137,11 @@ function creation(
   };
 }
 
-const unreleased =
-  "draft 12 was created and not released; submitting again goes back to that draft rather than creating another";
-const unknown =
-  "draft 12 was created, and whether it was released is not known; submitting again goes back to that draft rather than creating another";
-const invalid =
-  "the configuration is not one the project will run, as written or as overridden";
+const unreleased = "Draft 12 kept";
+const unknown = "Draft 12 kept · Maybe released";
+const invalid = "Configuration or overrides cannot run";
 const pending = "Still pending";
-const fencedOut = "the ticket's authoring changed after this was submitted";
+const fencedOut = "Draft changed since submit";
 
 const draftRead = "GET /drafts/12";
 const confirmed = "GET ?after=11&limit=1&minimumSequence=42";
@@ -181,7 +178,7 @@ test("a release the API faults keeps its code on hover and in no line", async ()
   if (ended.created !== "Refused") throw new Error(ended.created);
   expect(ended.unread).toBeUndefined();
   const refused = new TicketCreationRefused(ended.reason, ended);
-  expect(refused.message).toBe(`Server error — ${unknown}`);
+  expect(refused.message).toBe(`Server error · ${unknown}`);
   expect(consoleWriteRefusedDetail(refused)).toBe("InternalError");
 });
 
@@ -193,7 +190,7 @@ test("a release the actor refuses holds its draft, known unreleased, beside what
       "POST /operations op-1 at 3",
       "GET /operations/op-1",
     ],
-    said: `${invalid} — ${unreleased}`,
+    said: `${invalid} · ${unreleased}`,
     held: {
       version: 3,
       intent: "ship it",
@@ -315,7 +312,7 @@ test("a revision whose release is refused is the draft held next, and the same f
       "POST /operations op-2 at 4",
       "GET /operations/op-2",
     ],
-    said: `${invalid} — ${unreleased}`,
+    said: `${invalid} · ${unreleased}`,
     held: {
       version: 4,
       intent: "ship that",
@@ -353,7 +350,7 @@ test("a release nobody saw settle is held as one that may have gone through", as
       "POST /operations op-1 at 3",
       "GET /operations/op-1",
     ],
-    said: `${pending} — ${unknown}`,
+    said: `${pending} · ${unknown}`,
     held: exists.held,
   });
 });
@@ -398,7 +395,7 @@ function answerLost(): ReturnType<typeof creation> {
 
 const revisionLost: Submitted = {
   sent: [draftRead, "PUT /drafts/12 at 3 saying ship that"],
-  said: `the API refused this, and named a reason this console does not know (InternalError) — ${unreleased}`,
+  said: `Refused · Unknown reason (InternalError) · ${unreleased}`,
   held: { version: 3, intent: "ship it", operation: "op-1", unsettled: false },
 };
 
@@ -434,7 +431,7 @@ test("a held draft that cannot be read is written nothing, and is read again by 
   const refused = await form.submit();
   expect(await form.submit(changed)).toStrictEqual({
     sent: [draftRead],
-    said: `nothing was written to the draft — ${unreleased}`,
+    said: `Draft not written · ${unreleased}`,
     held: refused.held,
   });
   reads.failing = false;
@@ -459,7 +456,7 @@ test("a draft another writer revised between its read and its revision is said, 
   const refused = await form.submit();
   expect(await form.submit(changed)).toStrictEqual({
     sent: [draftRead, "PUT /drafts/12 at 3 saying ship that"],
-    said: `the draft was revised somewhere else while this was being written to it, so this was not written — ${unreleased}`,
+    said: `Draft changed elsewhere · Not written · ${unreleased}`,
     held: refused.held,
   });
   expect(await form.submit(changed)).toStrictEqual({
@@ -484,7 +481,7 @@ test("a draft its door closes between its read and its revision may have been re
   await form.submit();
   expect(await form.submit(changed)).toStrictEqual({
     sent: [draftRead, "PUT /drafts/12 at 3 saying ship that"],
-    said: `the draft is closed to revision: only a pending ticket's draft can be revised — ${unknown}`,
+    said: `Draft closed · Ticket no longer pending · ${unknown}`,
     held: { version: 3, intent: "ship it", operation: "op-1", unsettled: true },
   });
   expect(await form.submit(changed)).toStrictEqual(exists);
@@ -496,7 +493,7 @@ test("a held draft read as deleted is let go of, and the next submit creates ano
   form.door.state = "Deleted";
   expect(await form.submit(changed)).toStrictEqual({
     sent: [draftRead],
-    said: "draft 12 was deleted, so there is nothing of it left to release; submitting again creates another",
+    said: "Draft 12 deleted · Submit again for a new one",
     held: undefined,
   });
   expect((await form.submit(changed)).sent[0]).toBe("POST /drafts");
@@ -562,7 +559,7 @@ test("a release fenced out of a draft still unreleased holds it as no longer thi
       "GET /operations/op-1",
       draftRead,
     ],
-    said: `${fencedOut} — ${unreleased}`,
+    said: `${fencedOut} · ${unreleased}`,
     held: {
       version: 3,
       intent: undefined,
@@ -596,13 +593,13 @@ test("a release fenced out of a draft that cannot then be read is asked about ag
       "GET /operations/op-1",
       draftRead,
     ],
-    said: `${fencedOut} — ${unknown}`,
+    said: `${fencedOut} · ${unknown}`,
     held: { version: 3, intent: "ship it", operation: "op-1", unsettled: true },
   });
   reads.failing = false;
   expect(await form.submit()).toStrictEqual({
     sent: ["POST /operations op-1 at 3", "GET /operations/op-1", draftRead],
-    said: `${fencedOut} — ${unreleased}`,
+    said: `${fencedOut} · ${unreleased}`,
     held: {
       version: 3,
       intent: undefined,
@@ -624,7 +621,7 @@ test("a release fenced out of a draft since deleted says so, and holds nothing",
       "GET /operations/op-1",
       draftRead,
     ],
-    said: "draft 12 was deleted, so there is nothing of it left to release; submitting again creates another",
+    said: "Draft 12 deleted · Submit again for a new one",
     held: undefined,
   });
 });
@@ -677,7 +674,7 @@ const endings: readonly (readonly [
     "the operation is cancelled undecided",
     "Cancelled",
     () => undefined,
-    "the operation was cancelled before it was decided",
+    "Called off before a decision",
     false,
   ],
 ];
@@ -690,7 +687,7 @@ test.each(endings)(
       (method, path, answered) => answer(method, path) ?? answered(),
     );
     const ended = await form.submit();
-    expect(ended.said).toBe(`${reason} — ${unsettled ? unknown : unreleased}`);
+    expect(ended.said).toBe(`${reason} · ${unsettled ? unknown : unreleased}`);
     expect(ended.held).toStrictEqual({
       version: 3,
       intent: "ship it",
@@ -734,7 +731,7 @@ test.each(
     await form.submit();
     second.on = true;
     const ended = await form.submit(changed);
-    expect(ended.said).toBe(`${reason} — ${unsettled ? unknown : unreleased}`);
+    expect(ended.said).toBe(`${reason} · ${unsettled ? unknown : unreleased}`);
     expect(ended.held).toStrictEqual({
       version: 4,
       intent: "ship that",

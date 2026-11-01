@@ -629,7 +629,7 @@ export function ProjectTable(props: {
         searching={props.query.q !== undefined}
         readMore={tickets.readMore}
       />
-      {tickets.reading ? <p className="panel-note">reading…</p> : null}
+      {tickets.reading ? <p className="panel-note">Loading…</p> : null}
     </section>
   );
 }

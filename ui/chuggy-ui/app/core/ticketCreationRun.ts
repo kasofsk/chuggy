@@ -114,7 +114,7 @@ export function creationContextSentence(
     case "NoReadyConfiguration":
       return "No configuration";
     case "ReadyConfigurationUnknown":
-      return `the newest ${String(context.pagesRead)} pages of this project's revisions offer no ready configuration, so this console could not find one to shape a ticket with`;
+      return `No ready configuration in the newest ${String(context.pagesRead)} pages`;
   }
 }
 
@@ -215,45 +215,40 @@ export class TicketUpdateRefused extends ConsoleWriteRefused {
 }
 
 /** The conflict a creation route answers where the fence this body carries moved. */
-export const creationStaleSentence =
-  "the project moved while this form was open — it has been read again, so submitting now uses the current one";
+export const creationStaleSentence = "Project changed · Submit again";
 
 /** The same conflict where the project could not be read again after it, so the
  * form still stands on what it was opened over. */
-export const creationStaleUnreadSentence =
-  "the project moved while this form was open, and could not be read again";
+export const creationStaleUnreadSentence = "Project changed · Could not reload";
 
 /** The conflict it answers instead where the project takes no new ticket at any fence. */
 export const creationProjectNotActiveSentence =
-  "the project is not active, so it takes no new tickets";
+  "Project not active · No new tickets";
 
 /** The version fence of a held draft, which it is read for just before it is
  * written, so only a writer in between meets it. */
 export const creationDraftChangedSentence =
-  "the draft was revised somewhere else while this was being written to it, so this was not written";
+  "Draft changed elsewhere · Not written";
 
-/** Where a held draft stands as far as its form knows, and what every later
- * submit does with it whatever the form then says. */
+/** Where a held draft stands as far as its form knows, which every later
+ * submit goes back to whatever the form then says. */
 export function creationDraftHeldSentence(held: CreationDraftHeld): string {
-  const draft = `draft ${String(held.draft.ticket)}`;
-  const standing = held.unsettled
-    ? `${draft} was created, and whether it was released is not known`
-    : `${draft} was created and not released`;
-  return `${standing}; submitting again goes back to that draft rather than creating another`;
+  const draft = `Draft ${String(held.draft.ticket)}`;
+  return held.unsettled ? `${draft} kept · Maybe released` : `${draft} kept`;
 }
 
 /** What a submit did to a held draft it could not read, which it reads before
  * it writes. */
-export const creationDraftUnreadSentence = "nothing was written to the draft";
+export const creationDraftUnreadSentence = "Draft not written";
 
 /** A held draft read as deleted, which no later submit goes back to. */
 export function creationDraftDeletedSentence(ticket: number): string {
-  return `draft ${String(ticket)} was deleted, so there is nothing of it left to release; submitting again creates another`;
+  return `Draft ${String(ticket)} deleted · Submit again for a new one`;
 }
 
 /** What a submit says of a ticket it found already made of its draft. */
 export function creationTicketExistsSentence(ticket: number): string {
-  return `#${String(ticket)} already exists: an earlier release of this draft went through, and what has been changed here since is not in it`;
+  return `#${String(ticket)} already exists · Changes since are not in it`;
 }
 
 /** How many offers one read draws, each being a request of its own. */
@@ -439,7 +434,7 @@ function creationRefused(
 ): TicketCreationEnded {
   return {
     created: "Refused",
-    reason: `${reason} — ${creationDraftHeldSentence(held)}`,
+    reason: `${reason} · ${creationDraftHeldSentence(held)}`,
     held,
     ...failed,
   };
@@ -542,7 +537,7 @@ function releasedTicket<Held extends DraftHeld>(
   if (step.step !== "Settled")
     return {
       created: "Refused",
-      reason: "the release stopped before it settled",
+      reason: "Release did not finish",
       held,
     };
   if (step.state === "Succeeded")

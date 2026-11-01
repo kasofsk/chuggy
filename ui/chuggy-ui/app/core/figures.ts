@@ -28,7 +28,7 @@
  * clock, and always carries the full local date and clock on hover — a bare
  * clock face would not say which day. The ticket page reads every instant as
  * an ago in two units, so its spans and windows are built that way here and
- * nowhere else draws them. `Freshness` still answers "never observed" for a
+ * nowhere else draws them. `Freshness` still answers "Unknown" for a
  * panel with no reading at all, taking the rounding that reads an elapsed time
  * from here so it is done in one place.
  */
