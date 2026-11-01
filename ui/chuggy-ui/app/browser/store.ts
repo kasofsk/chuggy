@@ -1,6 +1,7 @@
 /**
  * The console's store: the browser-only state that must outlive what draws it,
- * one slice per cell, for the life of the tab and no longer.
+ * one slice per cell, for the life of the tab and no longer. What outlives the
+ * tab is the port's, and `chatPanes` reads and writes it there.
  *
  * WHAT NEVER ENTERS IT. A server's answer, which is TanStack Query's, and a
  * held draft's `DraftResponse` is not one: it is the console's own record of
@@ -29,6 +30,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { creationDraftsHeld } from "./creationDraftsHeld.ts";
 import { inboxProposalHeard } from "./inboxProposalHeard.ts";
 import { inquiryBoxes } from "./lead/inquiryBoxes.ts";
+import { chatPanes } from "./shell/chatPanes.ts";
 import { ticketAttempts } from "./ticketAttempts.ts";
 
 const consoleReducer = combineSlices(
@@ -36,6 +38,7 @@ const consoleReducer = combineSlices(
   inboxProposalHeard,
   ticketAttempts,
   creationDraftsHeld,
+  chatPanes,
 );
 
 export type ConsoleState = ReturnType<typeof consoleReducer>;

@@ -25,7 +25,6 @@ import type {
   ThreadTurnResponse,
 } from "../../../src/contract/responses.ts";
 import { ChatPane } from "../app/browser/shell/ChatPane.tsx";
-import { ChatPaneProvider } from "../app/browser/shell/chatPaneHeld.tsx";
 import { moving } from "./conversationMoving.ts";
 import {
   interruptionNote,
@@ -39,6 +38,7 @@ import type { StreamOpening, StreamServer } from "./streamDouble.ts";
 import { threadConversationMounted } from "./threadConversationMount.tsx";
 import type { ThreadConversationMounted } from "./threadConversationMount.tsx";
 import { threadPartition, threadStorePage } from "./threadFixture.ts";
+import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 
 export type StageEntry = ThreadTranscriptResponse["entries"][number];
 
@@ -241,6 +241,7 @@ export async function stagePaneMounted(): Promise<{
   const server = streamServer([stageProjectOpening], "token", [
     stageLiveOpening(),
   ]);
+  viewportAtEm(viewportDeskEm);
   const view = render(
     <ScreenHarness
       partition={threadPartition}
@@ -250,12 +251,10 @@ export async function stagePaneMounted(): Promise<{
       transport={server.ports.fetch}
     >
       <Routed>
-        <ChatPaneProvider twoColumn>
-          <ChatPane
-            partition={threadPartition}
-            chat={{ placement: "Right", presentation: "Docked" }}
-          />
-        </ChatPaneProvider>
+        <ChatPane
+          partition={threadPartition}
+          chat={{ placement: "Right", presentation: "Docked" }}
+        />
       </Routed>
     </ScreenHarness>,
   );

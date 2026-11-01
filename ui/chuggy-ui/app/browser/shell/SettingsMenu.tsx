@@ -34,7 +34,7 @@ import {
 import type { ThemeChoice } from "../theme.ts";
 import { buttonLookClassName } from "../ui/Button.tsx";
 import { MenuContent, menuItemClassName } from "../ui/Menu.tsx";
-import { useChatPane, useChatPaneYields } from "./chatPaneHeld.tsx";
+import { useChatPane, useChatPaneYields } from "./chatPaneHeld.ts";
 import { NavIcon } from "./navIcons.tsx";
 import { useState } from "react";
 

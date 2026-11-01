@@ -12,10 +12,11 @@ import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { KeyValuePort } from "../app/core/sessionHolder.ts";
-import { ChatPaneProvider } from "../app/browser/shell/chatPaneHeld.tsx";
 import { SettingsMenu } from "../app/browser/shell/SettingsMenu.tsx";
 import { SessionProvider } from "../app/browser/session.tsx";
+import { ConsoleStoreProvided } from "./consoleStoreProvided.tsx";
 import { holderDouble } from "./screenHarness.tsx";
+import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 import {
   themeChoiceApply,
   themeChoiceRead,
@@ -48,6 +49,7 @@ afterEach(() => {
   cleanup();
   localStorage.removeItem(themeStoreKey);
   document.documentElement.removeAttribute("data-theme");
+  vi.unstubAllGlobals();
 });
 
 test("a choice is stored under its own key, and System stores nothing", () => {
@@ -81,11 +83,12 @@ test("the attribute carries the choice, and System takes it off", () => {
  * second reading mounts the bar again, which is also what a reload does. */
 async function themeMenuOpened(): Promise<void> {
   cleanup();
+  viewportAtEm(viewportDeskEm);
   render(
     <SessionProvider holder={holderDouble()}>
-      <ChatPaneProvider twoColumn>
+      <ConsoleStoreProvided>
         <SettingsMenu partition={undefined} />
-      </ChatPaneProvider>
+      </ConsoleStoreProvided>
     </SessionProvider>,
   );
   fireEvent.keyDown(screen.getByRole("button", { name: "Settings" }), {

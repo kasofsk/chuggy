@@ -29,7 +29,7 @@ import { useInboxRows } from "../Inbox.tsx";
 import { useLead } from "../LeadPage.tsx";
 import { useProjectAbilities } from "../projectAbilities.tsx";
 import { Pill } from "../ui/Pill.tsx";
-import { useChatPaneYields } from "./chatPaneHeld.tsx";
+import { useChatPaneYields } from "./chatPaneHeld.ts";
 import { DetailsToggle } from "./DetailsPane.tsx";
 import { NavIcon } from "./navIcons.tsx";
 import { ProjectSwitcher } from "./ProjectSwitcher.tsx";

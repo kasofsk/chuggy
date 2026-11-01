@@ -1,30 +1,37 @@
 /**
  * The chat pane's state as the shell holds it: the viewport's default until
- * the reader moves the pane, where they put it from then on, and the thread
- * they picked for it whether or not the pane is drawn. Below two columns it
- * opens whole on every load, and nothing moved there is stored.
+ * the reader moves the pane, and where they put it from then on. Below two
+ * columns it opens whole on every load, and nothing moved there is stored.
  */
 
 import { act, cleanup, render, screen } from "@testing-library/react";
-import { afterEach, expect, test } from "vitest";
+import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import {
-  ChatPaneProvider,
   useChatPane,
   useChatPaneYields,
-} from "../app/browser/shell/chatPaneHeld.tsx";
+} from "../app/browser/shell/chatPaneHeld.ts";
+import { viewportTwoColumnEm } from "../app/browser/shell/viewport.ts";
 import {
   chatPaneDefaultAt,
   chatPaneStoreKey,
   chatPaneToggled,
 } from "../app/core/chatPane.ts";
 import type { ChatPaneState } from "../app/core/chatPane.ts";
+import { ConsoleStoreProvided } from "./consoleStoreProvided.tsx";
+import { viewportAtEm } from "./viewport.ts";
 
 afterEach(() => {
   cleanup();
   localStorage.removeItem(chatPaneStoreKey);
+  vi.unstubAllGlobals();
 });
+
+/** A viewport that divides, or one just too narrow to. */
+function viewportAt(twoColumn: boolean): void {
+  viewportAtEm(twoColumn ? viewportTwoColumnEm : viewportTwoColumnEm - 1);
+}
 
 function named(state: ChatPaneState): string {
   return `${state.placement} ${state.presentation}`;
@@ -45,10 +52,11 @@ function Held(): ReactNode {
 }
 
 function drawn(twoColumn: boolean): ReactNode {
+  viewportAt(twoColumn);
   return (
-    <ChatPaneProvider twoColumn={twoColumn}>
+    <ConsoleStoreProvided>
       <Held />
-    </ChatPaneProvider>
+    </ConsoleStoreProvided>
   );
 }
 
@@ -118,10 +126,11 @@ function Moved(): ReactNode {
 }
 
 function moving(twoColumn: boolean): ReactNode {
+  viewportAt(twoColumn);
   return (
-    <ChatPaneProvider twoColumn={twoColumn}>
+    <ConsoleStoreProvided>
       <Moved />
-    </ChatPaneProvider>
+    </ConsoleStoreProvided>
   );
 }
 
@@ -176,41 +185,4 @@ test("at two columns a screen pressed for puts a whole pane back beside the page
   pressed("Screen");
   expect(movedTo()).toBe("Left Docked");
   expect(localStorage.getItem(chatPaneStoreKey)).toBe(leftDocked);
-});
-
-const atlas = { tenant: "acme", project: "atlas" };
-
-function Pick(): ReactNode {
-  const { chosen, choose } = useChatPane();
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        choose({ partition: atlas, session: "picked" });
-      }}
-    >
-      {chosen?.session ?? "none"}
-    </button>
-  );
-}
-
-function picking(drawn: boolean): ReactNode {
-  return (
-    <ChatPaneProvider twoColumn>{drawn ? <Pick /> : null}</ChatPaneProvider>
-  );
-}
-
-/** A thread's own page draws no pane, so what the reader picked has to be
- * held by something that page does not take away. */
-test("a pick outlives the part that made it, and is there when that part is drawn again", () => {
-  const view = render(picking(true));
-  expect(shown()).toBe("none");
-  act(() => {
-    screen.getByRole("button").click();
-  });
-  expect(shown()).toBe("picked");
-  view.rerender(picking(false));
-  expect(screen.queryByRole("button")).toBeNull();
-  view.rerender(picking(true));
-  expect(shown()).toBe("picked");
 });

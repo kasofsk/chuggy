@@ -11,8 +11,13 @@
 import { expect, test } from "vitest";
 
 import {
-  chatPaneChosenIn,
   chatPaneDefaulted,
+  chatPaneDefaultHeld,
+  chatPaneOpened,
+  chatPaneOpenKeyHeld,
+  chatPanePicked,
+  chatPaneRecordOf,
+  chatPaneRecordWith,
   chatPaneContentDrawn,
   chatPaneDefault,
   chatPaneDefaultAt,
@@ -666,20 +671,38 @@ test("a thread's own page draws no pane however it was left, and every other pag
   }
 });
 
-/** The pick outlives the pane, and the frame outlives a change of project, so
- * a pick made in one project is not read as a thread of another. */
-test("a pick is held in the project it was made in and in no other", () => {
+/** Each project has a record of its own, and an open answered in one spends
+ * that project's key alone, keeping the thread held for a reader who picked
+ * none. */
+test("a record is a project's own, and an open answered picks its thread and spends the key", () => {
   const atlas = { tenant: "acme", project: "atlas" };
-  const chosen = { partition: atlas, session: "picked" };
-  expect(chatPaneChosenIn(chosen, atlas)).toBe("picked");
-  expect(chatPaneChosenIn(chosen, { ...atlas })).toBe("picked");
-  expect(chatPaneChosenIn(chosen, { ...atlas, project: "beta" })).toBe(
-    undefined,
+  const beta = { ...atlas, project: "beta" };
+  let records = chatPaneRecordWith({}, atlas, (record) =>
+    chatPaneOpenKeyHeld(chatPaneDefaultHeld(record, "held"), "key-a"),
   );
-  expect(chatPaneChosenIn(chosen, { ...atlas, tenant: "other" })).toBe(
-    undefined,
+  records = chatPaneRecordWith(records, beta, (record) =>
+    chatPanePicked(chatPaneOpenKeyHeld(record, "key-b"), "picked-b"),
   );
-  expect(chatPaneChosenIn(undefined, atlas)).toBe(undefined);
+  records = chatPaneRecordWith(records, atlas, (record) =>
+    chatPaneOpened(record, "opened"),
+  );
+  expect(chatPaneRecordOf(records, { ...atlas })).toStrictEqual({
+    picked: "opened",
+    defaulted: "held",
+    openKey: undefined,
+  });
+  expect(chatPaneRecordOf(records, beta)).toStrictEqual({
+    picked: "picked-b",
+    defaulted: undefined,
+    openKey: "key-b",
+  });
+  expect(
+    chatPaneRecordOf(records, { ...atlas, tenant: "other" }),
+  ).toStrictEqual({
+    picked: undefined,
+    defaulted: undefined,
+    openKey: undefined,
+  });
 });
 
 test("a listing that has not answered holds nothing", () => {
