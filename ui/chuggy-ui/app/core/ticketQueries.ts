@@ -159,6 +159,7 @@ export function ticketRowsQuery(
     rows: projectTicketRowsOf,
     readsPast: projectTicketPagesReadPast,
     pagesMax: projectTicketPagesMax,
+    rereadHeldAgain: false,
   });
 }
 
@@ -175,6 +176,7 @@ export function inboxQuery(partition: PartitionIdentity) {
       rows: inboxRowsOf,
       readsPast: () => false,
       pagesMax: inboxPagesMax,
+      rereadHeldAgain: true,
     },
     inboxProposalsPolledMs,
   );

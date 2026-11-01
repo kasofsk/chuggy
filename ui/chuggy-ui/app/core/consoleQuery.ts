@@ -98,6 +98,9 @@ export interface ConsolePaging<P, Param, R> {
   readonly readsPast: (pages: InfiniteData<P, Param>) => boolean;
   /** How many pages the list holds at the most, which bounds a press too. */
   readonly pagesMax: number;
+  /** Whether a reread failing behind pages already held is asked again on
+   * its own, as a panel's read is. */
+  readonly rereadHeldAgain: boolean;
 }
 
 /** A paged list entry's read, whose refresh the list itself carries. */

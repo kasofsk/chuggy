@@ -11,6 +11,7 @@ import { ApiOutcomeError, apiOrThrow } from "../app/core/apiRequest.ts";
 import type { ApiFailure } from "../app/core/apiRequest.ts";
 import { panelReason } from "../app/core/freshness.ts";
 import {
+  panelPagesFailedAgain,
   panelQueryDefaults,
   panelQueryFailedRefetched,
   panelQueryRetried,
@@ -70,4 +71,28 @@ test("a cache on the defaults asks a failing read again up to the bound and then
     .catch(() => undefined);
   expect(reads).toBe(panelQueryRetriesMax + 1);
   expect(client.getQueryState(["probe"])?.status).toBe("error");
+});
+
+test("a paged list's press is never asked again, nor a reread behind held pages unless the list says so", () => {
+  const pressed = { fetchMore: { direction: "forward" } };
+  for (const again of [false, true]) {
+    expect(
+      panelPagesFailedAgain(
+        { status: "error", data: { pages: [] }, fetchMeta: pressed },
+        again,
+      ),
+    ).toBe(false);
+    expect(
+      panelPagesFailedAgain(
+        { status: "error", data: undefined, fetchMeta: null },
+        again,
+      ),
+    ).toBe(true);
+    expect(
+      panelPagesFailedAgain(
+        { status: "error", data: { pages: [] }, fetchMeta: null },
+        again,
+      ),
+    ).toBe(again);
+  }
 });

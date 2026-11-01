@@ -39,6 +39,44 @@ export function panelQueryRetried(failures: number, error: unknown): boolean {
   }
 }
 
+/** What of a paged list's query says which of its reads failed. */
+interface PanelPagesStatus {
+  readonly status: string;
+  readonly data: unknown;
+  readonly fetchMeta: { readonly fetchMore?: unknown } | null;
+}
+
+/**
+ * Whether a paged list's read that failed may be asked again on its own. A
+ * reader's press never is, so its failure stands until the reader presses
+ * again; a reread behind pages already held only where the list says so; and
+ * a read holding no pages always is.
+ */
+export function panelPagesFailedAgain(
+  query: PanelPagesStatus | undefined,
+  rereadHeldAgain: boolean,
+): boolean {
+  if (query?.fetchMeta?.fetchMore !== undefined) return false;
+  return rereadHeldAgain || query?.data === undefined;
+}
+
+/** `panelQueryDefaults` for a paged list, whose query's state `held` answers. */
+export function panelPagesDefaults(
+  held: () => PanelPagesStatus | undefined,
+  rereadHeldAgain: boolean,
+) {
+  const refetched = (query: { readonly state: PanelPagesStatus }): boolean =>
+    panelQueryFailedRefetched(query) &&
+    panelPagesFailedAgain(query.state, rereadHeldAgain);
+  return {
+    refetchOnWindowFocus: refetched,
+    refetchOnReconnect: refetched,
+    retry: (failures: number, error: unknown): boolean =>
+      panelPagesFailedAgain(held(), rereadHeldAgain) &&
+      panelQueryRetried(failures, error),
+  } as const;
+}
+
 export const panelQueryDefaults = {
   refetchOnWindowFocus: panelQueryFailedRefetched,
   refetchOnReconnect: panelQueryFailedRefetched,

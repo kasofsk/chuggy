@@ -23,6 +23,7 @@ import {
   useQueryClient,
 } from "@tanstack/react-query";
 import type {
+  QueryClient,
   QueryKey,
   UseQueryResult,
   keepPreviousData,
@@ -48,6 +49,7 @@ import {
   panelStateFromQuery,
 } from "../core/freshness.ts";
 import type { PanelState } from "../core/freshness.ts";
+import { panelPagesDefaults } from "../core/panelQueryDefaults.ts";
 import { apiFetch, sleepMs } from "./ports.ts";
 import { useSessionHolder } from "./session.tsx";
 import {
@@ -196,13 +198,19 @@ export function usePanelState<T, S>(
 }
 
 /** A paged list's options under this tab's ports: each page its own read,
- * from where the pages before it say the next begins, and the rows drawn from
- * the pages through `select`. */
+ * from where the pages before it say the next begins, the rows drawn from the
+ * pages through `select`, and a failed read asked again only as
+ * `panelPagesDefaults` says. */
 export function panelPagesOptions<P, Param, R>(
   ports: ApiPorts,
+  client: QueryClient,
   query: ConsolePagesQuery<P, Param, R>,
 ) {
   return infiniteQueryOptions<P, Error, R, ProjectQueryKey, Param>({
+    ...panelPagesDefaults(
+      () => client.getQueryState(query.queryKey),
+      query.rereadHeldAgain,
+    ),
     queryKey: query.queryKey,
     /** The context's page parameter is a conditional type the library leaves
      * unresolved over a generic `Param`, which is what `initialPageParam` and
@@ -260,7 +268,7 @@ export function usePanelPages<P, Param, R>(
   const keyed = hashKey(query.queryKey);
   const pressing = useRef<string | undefined>(undefined);
   const answer = useInfiniteQuery({
-    ...panelPagesOptions(ports, query),
+    ...panelPagesOptions(ports, client, query),
     ...(query.placeholderData === undefined
       ? {}
       : { placeholderData: query.placeholderData }),
