@@ -38,7 +38,6 @@ import { elementScrollToStubbed } from "./scrolling.ts";
 import { ShellSlotHarness, styleless } from "./shellSlotHarness.tsx";
 import { frame } from "./streamDouble.ts";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
-import { inquiryBoxesHeld } from "../app/browser/lead/inquiryBoxes.ts";
 import {
   sessionStorePageBatchesMax,
   sessionTranscriptEntriesMax,
@@ -102,7 +101,6 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
-  inquiryBoxesHeld.discard();
   vi.useRealTimers();
   vi.unstubAllGlobals();
   drawnPartition = { ...leadPartition };

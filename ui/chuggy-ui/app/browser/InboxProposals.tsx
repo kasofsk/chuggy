@@ -26,11 +26,7 @@ import type {
 } from "../../../../src/contract/responses.ts";
 import type { SelectorReviewOutcome } from "../../../../src/contract/rosters.ts";
 import { apiReviewSelectorProposal } from "../core/apiRoutes.ts";
-import {
-  ConsoleWriteProgress,
-  consoleWriteKey,
-  consoleWriteWatchOf,
-} from "../core/consoleWrite.ts";
+import { consoleWriteKey, consoleWriteWatchOf } from "../core/consoleWrite.ts";
 import type {
   ConsoleWrite,
   ConsoleWriteRefused,
@@ -48,6 +44,14 @@ import type {
   InboxProposalStep,
 } from "../core/inboxProposals.ts";
 import { useConsoleWrite } from "./consoleWrite.tsx";
+import {
+  inboxProposalDrawnAt,
+  inboxProposalHeardAt,
+  inboxProposalLastAt,
+  inboxProposalLeftAt,
+} from "./inboxProposalHeard.ts";
+import { useConsoleDispatch, useConsoleSelector } from "./store.ts";
+import type { ConsoleDispatch } from "./store.ts";
 import { Button } from "./ui/Button.tsx";
 import { Confirm } from "./ui/Confirm.tsx";
 import { Input } from "./ui/Input.tsx";
@@ -61,30 +65,6 @@ interface InboxProposalPressed {
   readonly proposal: SelectorProposalResponse;
   readonly outcome: SelectorReviewOutcome;
   readonly note: string;
-}
-
-/** An answer to a review, and the project whose inbox it was given in. */
-interface InboxProposalHeard {
-  readonly partition: PartitionIdentity;
-  readonly answer: InboxProposalAnswer;
-}
-
-const inboxProposalHeards = new WeakMap<
-  QueryClient,
-  ConsoleWriteProgress<InboxProposalHeard>
->();
-
-/** Where a client's reviews report each answer as soon as the server gives
- * it, before the inbox has been read again, so an inbox drawn after the press
- * hears it too. */
-function inboxProposalHeardOf(
-  client: QueryClient,
-): ConsoleWriteProgress<InboxProposalHeard> {
-  const standing = inboxProposalHeards.get(client);
-  if (standing !== undefined) return standing;
-  const heard = new ConsoleWriteProgress<InboxProposalHeard>();
-  inboxProposalHeards.set(client, heard);
-  return heard;
 }
 
 /** The reviews of a project's decisions, or of one decision. */
@@ -108,12 +88,14 @@ function inboxProposalReviewReread(
 }
 
 /**
- * One decision answered whole. A refusal reads the inbox again before it is
- * told too, since a decision no longer held is a row that has to leave.
+ * One decision answered whole, its answer reported to the store as soon as the
+ * server gives it. A refusal reads the inbox again before it is told too, since
+ * a decision no longer held is a row that has to leave.
  */
 function inboxProposalReviewWrite(
   partition: PartitionIdentity,
   proposal: SelectorProposalResponse,
+  dispatch: ConsoleDispatch,
 ): ConsoleWrite<InboxProposalPressed, SelectorProposalReviewResponse> {
   return {
     mutationKey: inboxProposalReviewKey(partition, proposal.decision),
@@ -124,13 +106,15 @@ function inboxProposalReviewWrite(
         pressed.proposal.decision,
         inboxProposalReview(pressed.outcome, pressed.note),
       );
-      inboxProposalHeardOf(client).report({
-        partition,
-        answer: {
-          proposal: pressed.proposal,
-          step: inboxProposalAnswered(result),
-        },
-      });
+      dispatch(
+        inboxProposalHeardAt({
+          partition,
+          answer: {
+            proposal: pressed.proposal,
+            step: inboxProposalAnswered(result),
+          },
+        }),
+      );
       if (result.outcome !== "Ok")
         await inboxProposalReviewReread(client, partition);
       return result;
@@ -196,22 +180,19 @@ function useInboxProposalReviewsWatched(
 export function useInboxProposalAnswers(
   partition: PartitionIdentity,
 ): InboxProposalAnswers {
-  const client = useQueryClient();
-  const [last, setLast] = useState<InboxProposalAnswer | undefined>(undefined);
+  const dispatch = useConsoleDispatch();
+  const last = useConsoleSelector((state) =>
+    inboxProposalLastAt(state, partition),
+  );
   useInboxProposalReviewsWatched(partition, last);
   const { tenant, project } = partition;
   useEffect(() => {
-    const heard = inboxProposalHeardOf(client);
-    return heard.subscribe(() => {
-      const told = heard.step;
-      if (
-        told !== undefined &&
-        told.partition.tenant === tenant &&
-        told.partition.project === project
-      )
-        setLast(told.answer);
-    });
-  }, [client, tenant, project]);
+    const drawn = { tenant, project };
+    dispatch(inboxProposalDrawnAt(drawn));
+    return () => {
+      dispatch(inboxProposalLeftAt(drawn));
+    };
+  }, [dispatch, tenant, project]);
   return { partition, last };
 }
 
@@ -278,7 +259,12 @@ function InboxProposalAction(props: {
   readonly onRejecting: (rejecting: boolean) => void;
 }): ReactNode {
   const proposal = props.proposal;
-  const write = inboxProposalReviewWrite(props.answers.partition, proposal);
+  const dispatch = useConsoleDispatch();
+  const write = inboxProposalReviewWrite(
+    props.answers.partition,
+    proposal,
+    dispatch,
+  );
   const reviewing = useConsoleWrite(write, {
     drawn: (refused) => inboxProposalNoticeDraws(props.answers.last, refused),
   });

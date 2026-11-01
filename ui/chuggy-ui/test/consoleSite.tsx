@@ -143,6 +143,7 @@ import {
   creationPartition,
 } from "./ticketCreationFixture.ts";
 import { ticketDispatchViewOf, ticketPageTicket } from "./ticketPageFixture.ts";
+import { ConsoleStoreProvided } from "./consoleStoreProvided.tsx";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 import { executionPlacementBody } from "./workRunnerFixture.ts";
 
@@ -758,7 +759,9 @@ function ConsoleSignedIn(props: {
   const [router] = useState(() => consoleRouterOver(props.history));
   return (
     <QueryClientProvider client={props.client}>
-      <RouterProvider router={router} />
+      <ConsoleStoreProvided>
+        <RouterProvider router={router} />
+      </ConsoleStoreProvided>
     </QueryClientProvider>
   );
 }

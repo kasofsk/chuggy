@@ -11,8 +11,8 @@
  * WHAT A READER HAS TYPED AT THE INQUIRY BOX IS NOT HELD HERE. This page is
  * replaced outright by a click on any sibling screen, and the pair a box holds
  * is the token that makes a re-send a retry rather than a second question — so
- * it lives in `lead/inquiryBoxes.ts`, which no navigation reaches, and this
- * page only reads it.
+ * it lives in the console's store, which no navigation reaches, and the box
+ * reads it there.
  */
 
 import { useParams } from "@tanstack/react-router";
@@ -59,8 +59,7 @@ import { Conversation } from "./conversation/Conversation.tsx";
 import { DataPanel, PanelUnready } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
 import { LeadDecisions } from "./lead/LeadDecisions.tsx";
-import { LeadInquiries, useInquiryBoxes } from "./lead/LeadInquiries.tsx";
-import type { InquiryBoxesHeld } from "./lead/LeadInquiries.tsx";
+import { LeadInquiries } from "./lead/LeadInquiries.tsx";
 import { LeadRefusals } from "./lead/LeadRefusals.tsx";
 import { LeadNote, useLeadTranscript } from "./lead/LeadTranscript.tsx";
 import { SelectorStrip } from "./lead/SelectorStrip.tsx";
@@ -285,7 +284,6 @@ function LeadTurns(props: { readonly lead: LeadResponse }): ReactNode {
 function LeadDetails(props: {
   readonly partition: PartitionIdentity;
   readonly state: PanelState<LeadResponse>;
-  readonly inquiries: InquiryBoxesHeld;
   readonly nowMs: number;
 }): ReactNode {
   const lead = props.state.state === "Ready" ? props.state.value : undefined;
@@ -299,7 +297,6 @@ function LeadDetails(props: {
       <LeadInquiries
         partition={props.partition}
         head={lead?.agentReference}
-        held={props.inquiries}
         nowMs={props.nowMs}
       />
     </DetailsSlot>
@@ -312,7 +309,6 @@ function LeadBody(props: {
   readonly partition: PartitionIdentity;
   readonly state: PanelState<LeadResponse>;
   readonly runner: SessionRunnerShort | undefined;
-  readonly inquiries: InquiryBoxesHeld;
   readonly nowMs: number;
 }): ReactNode {
   const lead = props.state.state === "Ready" ? props.state.value : undefined;
@@ -340,7 +336,6 @@ function LeadBody(props: {
       <LeadDetails
         partition={props.partition}
         state={props.state}
-        inquiries={props.inquiries}
         nowMs={props.nowMs}
       />
       <LeadNote note={lead?.handoffNote} />
@@ -370,7 +365,6 @@ export function LeadPage(): ReactNode {
   const nowMs = useNowMs();
   const read = useLead(partition);
   const state = projectLeadPanelState(read);
-  const inquiries = useInquiryBoxes();
   const runner = useSessionRunnerShort(partition, "lead", "project");
   const absence = useLeadAbsenceLine(partition, read, nowMs);
   if (state.state === "Absent") {
@@ -403,7 +397,6 @@ export function LeadPage(): ReactNode {
       partition={partition}
       state={state}
       runner={runner}
-      inquiries={inquiries}
       nowMs={nowMs}
     />
   );

@@ -24,6 +24,8 @@ import type {
 } from "../../../src/contract/responses.ts";
 import { selectorProposalNotHeldCode } from "../../../src/contract/rosters.ts";
 import { InboxScreen } from "../app/browser/Inbox.tsx";
+import { consoleStore } from "../app/browser/store.ts";
+import type { ConsoleStore } from "../app/browser/store.ts";
 import {
   consoleQueryClient,
   consoleWriteWatchOf,
@@ -100,12 +102,14 @@ interface Reviewed {
  * reads into. */
 function inboxDrawn(
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
+  store?: ConsoleStore,
 ): QueryClient {
   render(
     <ScreenHarness
       partition={atlas}
       client={client}
       transport={openedStream().ports.fetch}
+      {...(store === undefined ? {} : { store })}
     >
       <InboxScreen partition={atlas} />
     </ScreenHarness>,
@@ -127,9 +131,12 @@ function drawProject(served: {
   readonly unanswered?: boolean;
   /** The review is answered, but never the read after it. */
   readonly rereadHeld?: boolean;
+  /** The review is answered once this has. */
+  readonly reviewHeld?: Promise<void>;
 }): {
   readonly reviewed: readonly Reviewed[];
   readonly client: QueryClient;
+  readonly store: ConsoleStore;
 } {
   const reviewed: Reviewed[] = [];
   let held = [...served.held];
@@ -170,14 +177,17 @@ function drawProject(served: {
   };
   vi.stubGlobal(
     "fetch",
-    abilitiesFetch(
-      abilitiesEvery,
-      ((url: string, init?: { method?: string; body?: string }) =>
-        respond(url, init) ?? unanswered()) as typeof fetch,
-    ),
+    abilitiesFetch(abilitiesEvery, ((
+      url: string,
+      init?: { method?: string; body?: string },
+    ) =>
+      init?.method === "POST" && served.reviewHeld !== undefined
+        ? served.reviewHeld.then(() => respond(url, init) ?? unanswered())
+        : (respond(url, init) ?? unanswered())) as typeof fetch),
   );
-  const client = inboxDrawn();
-  return { reviewed, client };
+  const store = consoleStore();
+  const client = inboxDrawn(undefined, store);
+  return { reviewed, client, store };
 }
 
 /** The row a ticket's number link sits in. */
@@ -311,6 +321,49 @@ test("an answer is still said once its review has been collected", async () => {
   });
   await settled();
   expect(said()).toBe("Proposal 7, 8 · Approved");
+});
+
+/** The answer is reported as the server gives it, so an inbox left while its
+ * review was out and drawn again before the answer says it. */
+test("an inbox drawn while a review is out says its answer", async () => {
+  let release: () => void = () => undefined;
+  const api = drawProject({
+    held: [both],
+    reviewHeld: new Promise<void>((resolve) => {
+      release = resolve;
+    }),
+  });
+  await settled();
+  await turned(() => {
+    within(row(7)).getByRole("button", { name: "approve" }).click();
+  });
+  await settled();
+  cleanup();
+  inboxDrawn(api.client, api.store);
+  await settled();
+  expect(said()).toBeUndefined();
+  await turned(release);
+  await settled();
+  expect(said()).toBe("Proposal 7, 8 · Approved");
+});
+
+/** The line is the drawn inbox's, so the tab's store keeping it is no reason
+ * for an inbox drawn again to say it. */
+test("an answer said by an inbox that has gone is not said by the next", async () => {
+  const api = drawProject({
+    held: [both, { decision: "dec-two", tickets: [9] }],
+  });
+  await settled();
+  await turned(() => {
+    within(row(7)).getByRole("button", { name: "approve" }).click();
+  });
+  await settled();
+  expect(said()).toBe("Proposal 7, 8 · Approved");
+  cleanup();
+  inboxDrawn(api.client, api.store);
+  await settled();
+  expect(row(9)).toBeDefined();
+  expect(said()).toBeUndefined();
 });
 
 test("a note is held to what the wire takes as it is typed", async () => {

@@ -1,7 +1,8 @@
 /**
- * Every project's inquiry box, held for the life of this tab.
+ * Every project's inquiry box, held in the console's store for the life of the
+ * tab.
  *
- * IT IS A MODULE'S AND NOT A SCREEN'S BECAUSE THE PAIR IS A DE-DUPLICATION
+ * IT IS THE STORE'S AND NOT A SCREEN'S BECAUSE THE PAIR IS A DE-DUPLICATION
  * TOKEN. The pair in an ask's body is the whole of what makes a re-send the
  * retry the door is idempotent on — this being the one write with no
  * idempotency key — so a token destroyed by a navigation does not do the one
@@ -16,49 +17,76 @@
  * about a fork the reader has forgotten; the session it can be reconciled
  * within is this one.
  *
- * NOTHING CLEARS IT BUT AN ACCEPTED SEND OR AN EXPLICIT DISCARD, so a case
- * discards it rather than relying on a fresh module per case, and a reader's
- * box is theirs until the door takes it.
+ * NOTHING CLEARS A BOX BUT AN ACCEPTED SEND, so a reader's box is theirs until
+ * the door takes it. What each action does to a box is `core/leadInquiries.ts`'s.
  */
 
+import { createSlice } from "@reduxjs/toolkit";
+import type { PayloadAction } from "@reduxjs/toolkit";
+
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
-import { inquiryBoxOf, inquiryBoxWith } from "../../core/leadInquiries.ts";
-import type { InquiryBox, InquiryBoxes } from "../../core/leadInquiries.ts";
+import {
+  inquiryBoxAnswered,
+  inquiryBoxOf,
+  inquiryBoxSent,
+  inquiryBoxTyped,
+  inquiryBoxWith,
+} from "../../core/leadInquiries.ts";
+import type {
+  InquiryAskAnswer,
+  InquiryBox,
+  InquiryBoxes,
+  InquiryDraw,
+} from "../../core/leadInquiries.ts";
 
-export interface InquiryBoxStore {
-  /** One value per change, so a reader of it may cache on identity. */
-  readonly boxes: () => InquiryBoxes;
-  readonly write: (
-    at: PartitionIdentity,
-    next: (box: InquiryBox) => InquiryBox,
-  ) => void;
-  readonly subscribe: (listener: () => void) => () => void;
-  /** Everything forgotten. Nothing in the console calls this; a case does. */
-  readonly discard: () => void;
+/** The boxes with one project's written, kept bounded as `inquiryBoxWith` keeps
+ * them. */
+function inquiryBoxesWritten(
+  boxes: InquiryBoxes,
+  partition: PartitionIdentity,
+  next: (box: InquiryBox) => InquiryBox,
+): InquiryBoxes {
+  return inquiryBoxWith(boxes, partition, next(inquiryBoxOf(boxes, partition)));
 }
 
-export function inquiryBoxStore(): InquiryBoxStore {
-  let boxes: InquiryBoxes = {};
-  const listeners = new Set<() => void>();
-  const told = () => {
-    for (const listener of [...listeners]) listener();
-  };
-  return {
-    boxes: () => boxes,
-    write: (at, next) => {
-      boxes = inquiryBoxWith(boxes, at, next(inquiryBoxOf(boxes, at)));
-      told();
-    },
-    subscribe: (listener) => {
-      listeners.add(listener);
-      return () => listeners.delete(listener);
-    },
-    discard: () => {
-      boxes = {};
-      told();
-    },
-  };
-}
+const inquiryBoxesEmpty: InquiryBoxes = {};
 
-/** The one this tab uses, named so a case can discard it between runs. */
-export const inquiryBoxesHeld = inquiryBoxStore();
+export const inquiryBoxes = createSlice({
+  name: "inquiryBoxes",
+  initialState: inquiryBoxesEmpty,
+  reducers: {
+    inquiryBoxTypedAt: (
+      boxes,
+      action: PayloadAction<{
+        readonly partition: PartitionIdentity;
+        readonly typed: string;
+      }>,
+    ) =>
+      inquiryBoxesWritten(boxes, action.payload.partition, (box) =>
+        inquiryBoxTyped(box, action.payload.typed),
+      ),
+    inquiryBoxSentAt: (boxes, action: PayloadAction<InquiryDraw>) =>
+      inquiryBoxesWritten(boxes, action.payload.partition, (box) =>
+        inquiryBoxSent(box, action.payload),
+      ),
+    inquiryBoxAnsweredAt: (
+      boxes,
+      action: PayloadAction<{
+        readonly draw: InquiryDraw;
+        readonly answer: InquiryAskAnswer;
+      }>,
+    ) =>
+      inquiryBoxesWritten(boxes, action.payload.draw.partition, (box) =>
+        inquiryBoxAnswered(box, action.payload.draw, action.payload.answer),
+      ),
+  },
+  selectors: {
+    inquiryBoxAt: (boxes, partition: PartitionIdentity) =>
+      inquiryBoxOf(boxes, partition),
+  },
+});
+
+export const { inquiryBoxTypedAt, inquiryBoxSentAt, inquiryBoxAnsweredAt } =
+  inquiryBoxes.actions;
+
+export const { inquiryBoxAt } = inquiryBoxes.selectors;

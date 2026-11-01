@@ -15,10 +15,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
-import {
-  LeadInquiries,
-  useInquiryBoxes,
-} from "../app/browser/lead/LeadInquiries.tsx";
+import { LeadInquiries } from "../app/browser/lead/LeadInquiries.tsx";
 import { leadInquiriesQuery } from "../app/core/sessionQueries.ts";
 import {
   answer,
@@ -28,7 +25,6 @@ import {
   turned,
 } from "./screenHarness.tsx";
 import { frame } from "./streamDouble.ts";
-import { inquiryBoxesHeld } from "../app/browser/lead/inquiryBoxes.ts";
 import {
   leadInquiry,
   leadPartition,
@@ -66,12 +62,11 @@ vi.mock("@tanstack/react-router", () => ({
 
 afterEach(() => {
   cleanup();
-  inquiryBoxesHeld.discard();
   vi.unstubAllGlobals();
 });
 
 /**
- * The panel under a caller that holds the boxes, which is what `LeadPage` is:
+ * The panel under a caller that gates the head, which is what `LeadPage` is:
  * the head is gated below this, so a switch that passes through an absent head
  * is the page's own navigation and not a shape only a case can make.
  */
@@ -79,12 +74,10 @@ function InquiryHolder(props: {
   readonly partition: PartitionIdentity;
   readonly head: string | undefined;
 }): ReactNode {
-  const held = useInquiryBoxes();
   return (
     <LeadInquiries
       partition={props.partition}
       head={props.head}
-      held={held}
       nowMs={Date.parse("2026-09-01T12:00:00Z")}
     />
   );
