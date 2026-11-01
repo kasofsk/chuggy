@@ -32,6 +32,10 @@ import {
   queryClientUnretried,
 } from "./screenHarness.tsx";
 import { nativeHttpMediaType } from "../../../src/contract/http.ts";
+import {
+  consoleQueryClient,
+  consoleWriteWatchOf,
+} from "../app/core/consoleWrite.ts";
 import { ticketAttemptKey } from "../app/core/ticketActions.ts";
 import type { TicketAttempt } from "../app/core/ticketActions.ts";
 import { ticketInstants } from "./ticketInstants.ts";
@@ -141,7 +145,7 @@ interface Served {
  */
 function served(scripted: {
   readonly submission: (operation: string) => Response | Promise<Response>;
-  readonly openActions: () => Response;
+  readonly openActions: () => Response | Promise<Response>;
   readonly cancellation?: (operation: string) => Response | Promise<Response>;
 }): Served {
   const urls: string[] = [];
@@ -500,6 +504,139 @@ test("a cancellation refused once its follow is confirming is still said", async
   await settled();
 
   expect(screen.getByText(/^Cancel refused · /)).toBeDefined();
+});
+
+/** The held Cancel refused where no follow's notes are drawn, which is the
+ * shell's toast and nothing on the page. */
+async function cancelRefusedUndrawn(
+  refusing: ReturnType<typeof held>,
+  client: QueryClient,
+): Promise<void> {
+  await turned(() => {
+    refusing.answer(answer({ error: { code: "OperationTerminal" } }, 409));
+  });
+  await settled();
+
+  expect(screen.queryByText(/^Cancel refused · /)).toBeNull();
+  expect(
+    consoleWriteWatchOf(client).unseen.map((unseen) => unseen.sentence),
+  ).toEqual([expect.stringMatching(/^Cancel refused · /)]);
+}
+
+test("a cancellation refused once its operation has finished is the shell's toast", async () => {
+  const refusing = held();
+  const rereading = held();
+  let reread = false;
+  waiting.mode = "step";
+  const api = served({
+    submission: (operation) => answer({ operation, state: "Pending" }, 202),
+    openActions: () => (reread ? rereading.answering : answer({ actions: [] })),
+    cancellation: () => refusing.answering,
+  });
+  const client = consoleQueryClient();
+  await following(api, client);
+
+  await turned(() => {
+    screen.getByRole("button", { name: "Cancel" }).click();
+  });
+  reread = true;
+  standing.state = "Answered";
+  await stepped();
+  expect(screen.getByText("Resume answered")).toBeDefined();
+
+  await cancelRefusedUndrawn(refusing, client);
+});
+
+test("a cancellation refused while its follow is drawn is no toast", async () => {
+  const client = consoleQueryClient();
+  await following(
+    accepting(() => answer({ error: { code: "OperationTerminal" } }, 409)),
+    client,
+  );
+
+  await turned(() => {
+    screen.getByRole("button", { name: "Cancel" }).click();
+  });
+  await settled();
+
+  expect(screen.getByText(/^Cancel refused · /)).toBeDefined();
+  expect(consoleWriteWatchOf(client).unseen).toEqual([]);
+});
+
+/** `api` with the ticket's own read answering `Absent` once `gone.absent` is
+ * set, which takes the status bar's actions and their notes off the page. */
+function ticketGoing(api: Served, gone: { absent: boolean }): Served {
+  return {
+    ...api,
+    fetch: ((url: string, init?: Sent) =>
+      gone.absent && /\/tickets\/\d+$/.test(url)
+        ? Promise.resolve(answer({ error: { code: "Absent" } }, 404))
+        : api.fetch(url, init)) as unknown as typeof fetch,
+  };
+}
+
+/** The ticket read again, answering `Absent`, so no follow's notes are drawn. */
+async function ticketGone(
+  client: QueryClient,
+  gone: { absent: boolean },
+): Promise<void> {
+  gone.absent = true;
+  await turned(() => {
+    void client.invalidateQueries();
+  });
+  await settled();
+  expect(button("Cancel")).toBeNull();
+}
+
+test("a cancellation refused once the ticket's read is not ready is the shell's toast", async () => {
+  const refusing = held();
+  const gone = { absent: false };
+  const client = consoleQueryClient();
+  await following(
+    ticketGoing(
+      accepting(() => refusing.answering),
+      gone,
+    ),
+    client,
+  );
+  await turned(() => {
+    screen.getByRole("button", { name: "Cancel" }).click();
+  });
+  await ticketGone(client, gone);
+
+  await cancelRefusedUndrawn(refusing, client);
+});
+
+test("a submission refused once the ticket's read is not ready is the shell's toast", async () => {
+  const submitting = held();
+  const gone = { absent: false };
+  const client = consoleQueryClient();
+  vi.stubGlobal(
+    "fetch",
+    ticketGoing(
+      served({
+        submission: () => submitting.answering,
+        openActions: () => answer({ actions: [] }),
+      }),
+      gone,
+    ).fetch,
+  );
+  mounted(client);
+  await settled();
+  await turned(() => {
+    screen.getByRole("button", { name: "Resume" }).click();
+  });
+  await ticketGone(client, gone);
+
+  await turned(() => {
+    submitting.answer(answer({ error: { code: "Fault" } }, 500));
+  });
+  await settled();
+
+  const [toast, ...more] = consoleWriteWatchOf(client).unseen;
+  expect(more).toEqual([]);
+  expect(toast).toBeDefined();
+  expect(screen.queryByText(toast?.sentence ?? "")).toBeNull();
 });
 
 test("an unmount with the submission in flight still holds its identity", async () => {

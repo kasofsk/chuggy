@@ -69,17 +69,30 @@ function PanelFoot(props: { readonly foot: ReactNode }): ReactNode {
   return <footer className="panel-foot">{props.foot}</footer>;
 }
 
+/** Whether a collapsible panel is open: where it opens first, unless its
+ * caller holds that and hears each change of it. */
+interface PanelOpen {
+  readonly open: boolean;
+  readonly onOpenChange?: (open: boolean) => void;
+}
+
 function PanelCollapsible(props: {
   readonly title: ReactNode;
   readonly meta: ReactNode;
   readonly level: 2 | 3 | undefined;
   readonly look: PanelLook;
-  readonly open: boolean;
+  readonly open: PanelOpen;
   readonly children: ReactNode;
 }): ReactNode {
   const Heading = props.level === 3 ? "h3" : "h2";
+  const open = props.open;
   return (
-    <Collapsible.Root className={props.look.root} defaultOpen={props.open}>
+    <Collapsible.Root
+      className={props.look.root}
+      {...(open.onOpenChange === undefined
+        ? { defaultOpen: open.open }
+        : { open: open.open, onOpenChange: open.onOpenChange })}
+    >
       <div className={props.look.head}>
         <Heading className="panel-title min-w-0 grow">
           <Collapsible.Trigger className="panel-trigger flex w-full min-w-0 items-center gap-2">
@@ -103,7 +116,7 @@ export function Panel(props: {
   readonly foot?: ReactNode;
   readonly variant?: PanelVariant;
   readonly level?: 2 | 3;
-  readonly collapsible?: { readonly open: boolean };
+  readonly collapsible?: PanelOpen;
   readonly children: ReactNode;
 }): ReactNode {
   const titleId = useId();
@@ -116,7 +129,7 @@ export function Panel(props: {
         meta={props.meta}
         level={props.level}
         look={look}
-        open={props.collapsible.open}
+        open={props.collapsible}
       >
         {props.children}
       </PanelCollapsible>

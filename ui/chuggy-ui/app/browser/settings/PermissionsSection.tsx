@@ -60,10 +60,16 @@ interface PermissionsRemovalState<Authority extends PermissionAuthority> {
   readonly cancel: () => void;
 }
 
+/** Its refusal is drawn in the row of `rows` it names, so nowhere while the
+ * list is unread or the row is gone. */
 function usePermissionsSectionRemoval<Authority extends PermissionAuthority>(
   removal: PermissionsRemoval<Authority>,
+  rows: readonly PermissionRow<Authority>[],
 ): PermissionsRemovalState<Authority> {
-  const removing = useConsoleWrite(removal.write, { drawn: true });
+  const removing = useConsoleWrite(removal.write, {
+    drawn: (_, sent) =>
+      rows.some((row) => row.authority === sent.row.authority),
+  });
   const [asking, setAsking] = useState<
     PermissionHolderPressed<Authority> | undefined
   >(undefined);
@@ -297,7 +303,8 @@ export function PermissionsSection<
   readonly addition: PermissionsAddition<Authority>;
 }): ReactNode {
   const read = props.read;
-  const removing = usePermissionsSectionRemoval(props.removal);
+  const rows = read.state === "Ready" ? props.rows(read.value) : [];
+  const removing = usePermissionsSectionRemoval(props.removal, rows);
   const line = permissionsLine(read, props.withheld);
   return (
     <section
@@ -307,7 +314,7 @@ export function PermissionsSection<
       {read.state === "Ready" ? (
         <PermissionsTable
           label={props.label}
-          rows={props.rows(read.value)}
+          rows={rows}
           removal={props.removal}
           removing={removing}
           addition={props.addition}

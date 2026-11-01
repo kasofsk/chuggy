@@ -3,8 +3,9 @@
  * that asked for it is no longer there to draw.
  *
  * Radix's toast, one viewport for every line, each with a Dismiss of its own
- * and announced as it arrives. A line closed by its timer or its Dismiss is
- * handed back through `onDismiss`, so what is drawn is the caller's alone.
+ * and announced as it arrives. A line is a refusal its reader already missed
+ * once, so no timer closes it; one the reader dismissed is handed back through
+ * `onDismiss`, so what is drawn is the caller's alone.
  */
 
 import { Toast as RadixToast } from "radix-ui";
@@ -29,6 +30,7 @@ export function Toasts(props: {
           key={toast.id}
           className="toast"
           type="foreground"
+          duration={Number.POSITIVE_INFINITY}
           onOpenChange={(open) => {
             if (!open) props.onDismiss(toast.id);
           }}

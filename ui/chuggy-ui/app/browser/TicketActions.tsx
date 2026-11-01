@@ -503,13 +503,11 @@ function useTicketActionAttempt(
 function useTicketActionWrite(
   partition: PartitionIdentity,
   ticket: number,
+  drawn: boolean,
 ): TicketActing {
   const client = useQueryClient();
   const writing = useConsoleWrite(ticketActionWrite(partition, ticket), {
-    drawn: true,
-  });
-  const cancelling = useConsoleWrite(ticketCancelWrite(partition, ticket), {
-    drawn: true,
+    drawn,
   });
   const attempt = useTicketActionAttempt(
     writing.variables,
@@ -517,6 +515,11 @@ function useTicketActionWrite(
   );
   const step = attempt?.step;
   const following = step !== undefined && !operationFinished(step);
+  const refusedOperation =
+    following && "operation" in step ? step.operation : undefined;
+  const cancelling = useConsoleWrite(ticketCancelWrite(partition, ticket), {
+    drawn: (_, operation) => drawn && operation === refusedOperation,
+  });
 
   useEffect(() => {
     const held = ticketAttemptRead(client, partition, ticket);
@@ -529,8 +532,6 @@ function useTicketActionWrite(
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the pick-up is this mount's, and a later render must not follow the same operation twice
   }, []);
 
-  const refusedOperation =
-    following && "operation" in step ? step.operation : undefined;
   const submitting: Submitting = {
     attempt,
     refused:
@@ -559,9 +560,12 @@ export interface TicketActing {
 function TicketActingHeld(props: {
   readonly partition: PartitionIdentity;
   readonly ticket: number;
+  readonly drawn: boolean;
   readonly children: (acting: TicketActing) => ReactNode;
 }): ReactNode {
-  return props.children(useTicketActionWrite(props.partition, props.ticket));
+  return props.children(
+    useTicketActionWrite(props.partition, props.ticket, props.drawn),
+  );
 }
 
 /**
@@ -575,6 +579,9 @@ function TicketActingHeld(props: {
 export function TicketActingScope(props: {
   readonly partition: PartitionIdentity;
   readonly ticket: number;
+  /** Whether the children draw `FollowNotes` where they stand now, which is
+   * where either write's refusal is said. */
+  readonly drawn: boolean;
   readonly children: (acting: TicketActing) => ReactNode;
 }): ReactNode {
   const { tenant, project } = props.partition;
@@ -583,6 +590,7 @@ export function TicketActingScope(props: {
       key={`${tenant}/${project}/${String(props.ticket)}`}
       partition={props.partition}
       ticket={props.ticket}
+      drawn={props.drawn}
     >
       {props.children}
     </TicketActingHeld>
@@ -760,7 +768,7 @@ export function TicketRowDispatchScope(props: {
   if (offered === undefined) return props.children(undefined, null);
   const effect = ticketActionEffect("Dispatch", { kind: "NoPoint" }).effect;
   return (
-    <TicketActingScope partition={props.partition} ticket={props.ticket}>
+    <TicketActingScope partition={props.partition} ticket={props.ticket} drawn>
       {(acting) =>
         props.children(
           {

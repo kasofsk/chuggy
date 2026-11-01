@@ -62,11 +62,14 @@ function repositoryUnbindWrite(
   };
 }
 
+/** `drawn` says whether the caller draws `UnbindAsked`, which is where a
+ * refusal is said. */
 export function useRepositoryUnbinding(
   partition: PartitionIdentity,
+  drawn: boolean,
 ): RepositoryUnbinding {
   const unbinding = useConsoleWrite(repositoryUnbindWrite(partition), {
-    drawn: true,
+    drawn,
   });
   const [asking, setAsking] = useState<string | undefined>(undefined);
   const asked = (repository: string | undefined): void => {

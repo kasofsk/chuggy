@@ -99,12 +99,14 @@ function ParkedOverridesNote(props: {
 }
 
 /** Where a card's save has got to, whether it is still going until the ticket
- * it changed has been read again, which withholds Resume as typing does, and
- * the press that starts one. */
+ * it changed has been read again, which withholds Resume as typing does, the
+ * press that starts one, and whether the panel its note is drawn in is open. */
 export interface ParkedOverridesSaving {
   readonly step: OperationStep | undefined;
   readonly busy: boolean;
   readonly save: (mutation: PublicMutation) => void;
+  readonly open: boolean;
+  readonly onOpenChange: (open: boolean) => void;
 }
 
 /** One press of Save: the change, the identity it drew, and where its follow
@@ -153,18 +155,24 @@ function parkedOverridesWrite(
 }
 
 /** One save at a time, followed to settlement whether or not the card that
- * pressed it is still drawn; its refusal is the card's where the card is. */
+ * pressed it is still drawn; its refusal is the card's where the card is and
+ * its panel has not been closed. A save out opens a panel nobody has opened or
+ * closed, which is how one taken up again is drawn. */
 export function useParkedOverridesSave(
   partition: PartitionIdentity,
   ticket: number,
   drawn: boolean,
 ): ParkedOverridesSaving {
+  const [asked, setAsked] = useState<boolean | undefined>(undefined);
   const writing = useConsoleWrite(parkedOverridesWrite(partition, ticket), {
-    drawn,
+    drawn: drawn && asked !== false,
   });
   const step = useConsoleWriteProgress(writing.variables?.progress);
+  const shown = step ?? (writing.isPending ? operationSubmitting() : undefined);
   return {
-    step: step ?? (writing.isPending ? operationSubmitting() : undefined),
+    step: shown,
+    open: asked ?? shown !== undefined,
+    onOpenChange: setAsked,
     busy: writing.isPending,
     save: (mutation) => {
       writing.mutate({
@@ -265,7 +273,10 @@ export function ParkedOverrides(props: {
   return (
     <Panel
       title="Overrides"
-      collapsible={{ open: props.saving.step !== undefined }}
+      collapsible={{
+        open: props.saving.open,
+        onOpenChange: props.saving.onOpenChange,
+      }}
     >
       <PanelUnready state={state} />
       {state.state === "Ready" ? (
