@@ -369,7 +369,7 @@ export interface ThreadSessionMint {
  * What a thread's first turn is seeded from, the project's two texts asked for
  * as themselves rather than as the whole resolved record so the composition
  * answering it cannot hand a thread the lead's prompt or its limits by
- * accident. The drafts and the refusals — migration 061's read and 059's — are
+ * accident. The drafts and the refusals — migration 061's read and 105's — are
  * filtered to the member the block is for, which is why an authority rather
  * than a principal is what they take.
  */
@@ -705,8 +705,8 @@ export async function threadMessageImages(
 
 /**
  * What a thread's first turn is seeded with: the project's North Star, its
- * standing rules, the member's own open drafts, and the standing refusals
- * against exactly those drafts. The refusals are asked for by ticket rather
+ * standing rules, the member's own open drafts, and the refusals that bind on
+ * exactly those drafts. The refusals are asked for by ticket rather
  * than read whole, because a refusal against work this member never authored is
  * not their business on their first turn.
  */

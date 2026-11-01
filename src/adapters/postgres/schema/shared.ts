@@ -206,6 +206,7 @@ export const agenticRefusalStandingReadFunction =
   "read_standing_agentic_refusals";
 export const agenticRefusalBindingReadFunction =
   "read_binding_agentic_refusals";
+export const agenticRefusalThreadReadFunction = "read_thread_agentic_refusals";
 export const selectorInteractionsReadFunction = "read_selector_interactions";
 export const selectorPlanningIntentReadFunction =
   "read_selector_planning_intent";

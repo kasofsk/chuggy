@@ -4,9 +4,9 @@
  * and what reaches the change log.
  *
  * EVERY CASE DRIVES THE DOOR ITS ROLE HOLDS. The write and the standing among a
- * ticket set run as the selector service; the ledger and the page of the
- * project's standing run as the API. A case that drove either as the migration
- * owner would pass over a grant that was never made.
+ * ticket set run as the selector service; the ledger, the page of the
+ * project's standing and a thread's seed run as the API. A case that drove
+ * either as the migration owner would pass over a grant that was never made.
  */
 
 import assert from "node:assert/strict";
@@ -20,6 +20,11 @@ import {
 } from "../../src/contract/http.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import { leadRefusalsPerDecisionMax } from "../../src/contract/sessionTools.ts";
+import { postgresThreadSeeding } from "../../src/adapters/postgres/thread.ts";
+import {
+  threadSeededDraftsMax,
+  threadSeededRefusalsMax,
+} from "../../src/interpreter/threadRead.ts";
 import { leadRigDecision, leadRigOpen, leadRigProject } from "./leadHarness.ts";
 import type { TicketId } from "../../src/domain/ids.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
@@ -433,6 +438,72 @@ test("the refusals that bind leave out what a ticket moved past, and those rows 
     ),
     binds.map((ticket) => [ticket, false]),
     "the one at its version, and neither the one lifted nor the one with no projection",
+  );
+});
+
+/**
+ * A thread's seed names its tickets to the door rather than filtering a page
+ * of the project's standing, so the rows below them that stand for good take
+ * none of its bound.
+ */
+test("a thread's seed answers the refusals that bind on its tickets, above the page standing fills", async () => {
+  const partition = await leadRigProject(rig, "thread-seed");
+  const below = ticketsCounted(agenticRefusalsAnsweredMax + 1);
+  const [binds, lifted, moved, unprojected] = ticketsCounted(
+    below.length + 4,
+  ).slice(below.length);
+  assert.ok(
+    binds !== undefined &&
+      lifted !== undefined &&
+      moved !== undefined &&
+      unprojected !== undefined,
+  );
+  await refusalsAmongRecorded(partition, "thread-seed", [
+    ...below,
+    binds,
+    lifted,
+    moved,
+    unprojected,
+  ]);
+  await rig.writes.record({
+    partition,
+    decision: await leadRigDecision(rig, partition, "thread-seed-lift", {
+      notificationCursor: below.length + 4,
+    }),
+    refusals: [],
+    lifts: [{ ticket: lifted }],
+  });
+  for (const ticket of [...below, binds, lifted, moved])
+    await rig.sessions.harness.query(
+      `INSERT INTO ticket_projection (tenant,project,ticket,phase,seq)
+       VALUES ($1,$2,$3,'Pending',$4)`,
+      [partition.tenant, partition.project, ticket, ticket === moved ? 2 : 1],
+    );
+  const seeding = postgresThreadSeeding(rig.apiPool);
+
+  assert.deepEqual(
+    await seeding.refusals(
+      partition,
+      [binds, lifted, moved, unprojected],
+      threadSeededRefusalsMax,
+    ),
+    [{ ticket: binds, reason: "no capacity" }],
+    "the one at its version, and none lifted, moved past or unprojected",
+  );
+  assert.deepEqual(
+    (await seeding.refusals(partition, below, threadSeededRefusalsMax)).map(
+      (refusal) => refusal.ticket,
+    ),
+    below.slice(0, threadSeededRefusalsMax),
+    "the port's bound is the count answered",
+  );
+  await assert.rejects(
+    seeding.refusals(
+      partition,
+      ticketsCounted(threadSeededDraftsMax + 1),
+      threadSeededRefusalsMax,
+    ),
+    /names at most/u,
   );
 });
 
