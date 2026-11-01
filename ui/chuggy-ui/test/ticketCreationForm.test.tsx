@@ -373,9 +373,7 @@ test("a follow that runs out of budget navigates nowhere either, and does not ca
   draw(held.ports, created);
   typeIntent("ship it");
   await submitted();
-  expect(note()).toBe(
-    `the operation is still pending after the attempt budget — ${draftUnknown}`,
-  );
+  expect(note()).toBe(`Still pending — ${draftUnknown}`);
   expect(created).toStrictEqual([]);
 });
 
@@ -573,9 +571,7 @@ test("an intent retyped after a refused release is read, revised into the held d
 async function neverLearned(held: ReturnType<typeof drawHeld>): Promise<void> {
   typeIntent("ship it");
   await submitted();
-  expect(note()).toBe(
-    `the operation is still pending after the attempt budget — ${draftUnknown}`,
-  );
+  expect(note()).toBe(`Still pending — ${draftUnknown}`);
   ticketDoorDecides(held.door, held.door.releases[0], "Succeeded");
   held.since();
 }

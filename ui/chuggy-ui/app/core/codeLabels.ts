@@ -46,6 +46,8 @@ import type {
   TicketEscalation,
 } from "../../../../src/contract/responses.ts";
 import type { ApiFailure } from "./apiRequest.ts";
+import { failureWords } from "./failureWords.ts";
+import type { FailureWords } from "./failureWords.ts";
 import {
   mutationDeferralCodes,
   mutationRefusalCodes,
@@ -53,7 +55,10 @@ import {
   type MutationRefusalCode,
 } from "./codeSentences.ts";
 import { creatorLabel } from "./labels.ts";
-import type { OperationStep } from "./operationFollow.ts";
+import type {
+  OperationAbandonCause,
+  OperationStep,
+} from "./operationFollow.ts";
 import type { ClosedSet } from "./ticketLedger.ts";
 import { stageLabel } from "./ticketLedger.ts";
 import type { TicketActionName } from "./ticketActions.ts";
@@ -880,9 +885,37 @@ export function operationFailureLabel(failure: ApiFailure): string {
   }
 }
 
+/**
+ * The word an abandoned follow is drawn as, and the detail a reader reporting
+ * it reads on hover. The switch is total over the cause, so a cause gained
+ * does not compile until it has a word.
+ */
+export function operationAbandonWords(
+  cause: OperationAbandonCause,
+): FailureWords {
+  switch (cause.type) {
+    case "Deferred":
+      return { word: "Busy" };
+    case "Pending":
+      return { word: "Still pending" };
+    case "Unaccepted":
+      return { word: "Not accepted" };
+    case "Behind":
+      return { word: "Still updating" };
+    case "OutOfOrder":
+    case "Overstepped":
+      return { word: "Status unknown" };
+    case "Failed":
+      return failureWords(cause.failure);
+    case "Thrown":
+      return { word: "Failed", detail: cause.reason };
+  }
+}
+
 /** How far a submission has got, and whether that is a state to stop on. */
 export interface StepLabel {
   readonly text: string;
+  readonly detail?: string;
   readonly settled: boolean;
   readonly wrong: boolean;
 }
@@ -925,7 +958,14 @@ export function operationStepLabel(
         wrong: step.state !== "Succeeded",
       };
     }
-    case "Abandoned":
-      return { text: step.reason, settled: true, wrong: true };
+    case "Abandoned": {
+      const { word, detail } = operationAbandonWords(step.cause);
+      return {
+        text: word,
+        ...(detail === undefined ? {} : { detail }),
+        settled: true,
+        wrong: true,
+      };
+    }
   }
 }

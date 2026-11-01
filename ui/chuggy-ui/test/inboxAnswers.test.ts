@@ -22,7 +22,7 @@ const settled: OperationStep = {
 
 const abandoned: OperationStep = {
   step: "Abandoned",
-  reason: "the follow took more steps than it is allowed to take",
+  cause: { type: "Overstepped" },
   refused: false,
 };
 
@@ -45,5 +45,5 @@ test("a follow the actor accepted or answered is no refusal, and every other end
   expect(inboxAnswerRefusal({ ...settled, state: "Answered" })).toBeUndefined();
   const cancelled: OperationStep = { ...settled, state: "Cancelled" };
   expect(inboxAnswerRefusal(cancelled)).toBe(inboxStepSentence(cancelled));
-  expect(inboxAnswerRefusal(abandoned)).toBe(abandoned.reason);
+  expect(inboxAnswerRefusal(abandoned)).toBe("Status unknown");
 });

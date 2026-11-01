@@ -51,6 +51,7 @@ import type {
 import type { z } from "zod";
 
 import type { ApiFailure } from "./apiRequest.ts";
+import { operationAbandonWords } from "./codeLabels.ts";
 import { operationStateSentence } from "./codeSentences.ts";
 import {
   configurationCatalogInitialization,
@@ -1369,7 +1370,7 @@ export function creationStepSentence(
         ? words.settled
         : operationStateSentence(step.state);
     case "Abandoned":
-      return step.reason;
+      return operationAbandonWords(step.cause).word;
   }
 }
 

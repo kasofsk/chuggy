@@ -53,6 +53,8 @@ import type { ConsoleWrite } from "../core/consoleWrite.ts";
 import type { PanelState } from "../core/freshness.ts";
 import {
   followOperation,
+  operationAbandonFailure,
+  operationAbandoned,
   operationAnswered,
   operationFinished,
   operationFollowing,
@@ -100,6 +102,7 @@ import {
 import { OfferedAction } from "./ui/OfferedAction.tsx";
 import { Button } from "./ui/Button.tsx";
 import { Notice } from "./ui/Notice.tsx";
+import { Tooltip } from "./ui/Tooltip.tsx";
 import { AddRunnerLink, useWorkRunner } from "./workRunner.tsx";
 
 interface Attempt {
@@ -113,7 +116,13 @@ function StepNote(props: {
 }): ReactNode {
   const drawn = operationStepLabel(props.step, props.action.action);
   const tone = drawn.wrong ? "danger" : drawn.settled ? "info" : "live";
-  return <Notice tone={tone} inline role="status" detail={drawn.text} />;
+  return (
+    <Notice tone={tone} inline role="status">
+      <Tooltip text={drawn.detail}>
+        <span>{drawn.text}</span>
+      </Tooltip>
+    </Notice>
+  );
 }
 
 /** What the cancellation answered: the attempt is over, or it is not and this
@@ -303,11 +312,7 @@ async function ticketActionFollowed(
       stopped,
     ]);
   } catch (thrown: unknown) {
-    report({
-      step: "Abandoned",
-      reason: `Failed · ${faultReason(thrown)}`,
-      refused: false,
-    });
+    report(operationAbandoned({ type: "Thrown", reason: faultReason(thrown) }));
     return undefined;
   }
 }
@@ -340,7 +345,11 @@ function ticketActionWrite(
       if (followed !== undefined)
         await followWrittenBack(client, partition, ticket, followed);
       const drawn = operationStepLabel(step, pressed.held.action.action);
-      if (drawn.wrong) throw new ConsoleWriteRefused(drawn.text);
+      if (drawn.wrong)
+        throw new ConsoleWriteRefused(
+          drawn.text,
+          operationAbandonFailure(step),
+        );
       return { outcome: "Ok", value: undefined };
     },
     refusal: operationFailureLabel,

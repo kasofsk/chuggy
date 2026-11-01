@@ -14,7 +14,13 @@
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import type { QueryClient } from "@tanstack/react-query";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import type { RenderResult } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
@@ -303,8 +309,12 @@ test("a follow that throws leaves the panel settled and says why", async () => {
   });
   await settled();
 
-  expect(screen.getByText("Failed · the clock stopped")).toBeDefined();
+  expect(document.body.textContent).not.toContain("the clock stopped");
   expect(button("Resume")?.hasAttribute("disabled")).toBe(false);
+  fireEvent.focus(screen.getByText("Failed"));
+  expect((await screen.findByRole("tooltip")).textContent).toBe(
+    "the clock stopped",
+  );
 });
 
 test("a panel remounted mid-follow draws the follow that kept running", async () => {
@@ -876,6 +886,22 @@ test("a refusal leaves the next press free to mean a new intent", async () => {
 
   expect(api.identities()).toHaveLength(2);
   expect(api.posts()).toBe(2);
+});
+
+test("a refused submission says one word, its code on hover and in no line", async () => {
+  vi.stubGlobal("fetch", refusing().fetch);
+  mounted(queryClientUnretried());
+  await settled();
+  await turned(() => {
+    screen.getByRole("button", { name: "Resume" }).click();
+  });
+  await settled();
+
+  expect(document.body.textContent).not.toContain("TicketVersionStale");
+  fireEvent.focus(screen.getByText("Refused"));
+  expect((await screen.findByRole("tooltip")).textContent).toBe(
+    "TicketVersionStale",
+  );
 });
 
 /** A submission the API faults on, which says nothing about whether it acted:

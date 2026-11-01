@@ -11,7 +11,11 @@ import { expect, test } from "vitest";
 
 import { nativeHttpBasePath } from "../../../src/contract/http.ts";
 import { creationStageOf } from "../app/core/ticketCreation.ts";
-import { createAndReleaseTicket } from "../app/core/ticketCreationRun.ts";
+import { consoleWriteRefusedDetail } from "../app/core/consoleWrite.ts";
+import {
+  createAndReleaseTicket,
+  TicketCreationRefused,
+} from "../app/core/ticketCreationRun.ts";
 import type {
   CreationDraftHeld,
   TicketCreationEnded,
@@ -139,7 +143,7 @@ const unknown =
   "draft 12 was created, and whether it was released is not known; submitting again goes back to that draft rather than creating another";
 const invalid =
   "the configuration is not one the project will run, as written or as overridden";
-const pending = "the operation is still pending after the attempt budget";
+const pending = "Still pending";
 const fencedOut = "the ticket's authoring changed after this was submitted";
 
 const draftRead = "GET /drafts/12";
@@ -158,6 +162,28 @@ const failed: Answer = {
   status: 500,
   body: { error: { code: "InternalError" } },
 };
+
+test("a release the API faults keeps its code on hover and in no line", async () => {
+  const api = answeringApi(
+    ticketDoorAnswers(
+      ticketDoor(),
+      () => "Pending",
+      (method, path, answered) =>
+        method === "POST" && path.endsWith("/operations") ? failed : answered(),
+    ),
+  );
+  const ended = await createAndReleaseTicket(
+    api.ports,
+    creationPartition,
+    { body: first, operation: "op-1", held: undefined },
+    () => undefined,
+  );
+  if (ended.created !== "Refused") throw new Error(ended.created);
+  expect(ended.unread).toBeUndefined();
+  const refused = new TicketCreationRefused(ended.reason, ended);
+  expect(refused.message).toBe(`Server error — ${unknown}`);
+  expect(consoleWriteRefusedDetail(refused)).toBe("InternalError");
+});
 
 test("a release the actor refuses holds its draft, known unreleased, beside what wrote it", async () => {
   const form = creation(ticketRefusedFirst);
@@ -607,8 +633,7 @@ const declined: Answer = {
   status: 409,
   body: { error: { code: "MutationNotAdmitted" } },
 };
-const notAdmitted =
-  "the project is not admitting this kind of mutation at the moment";
+const notAdmitted = "Refused";
 
 /** One release's ending, by what answers its submission and its polls. */
 const endings: readonly (readonly [
@@ -631,7 +656,7 @@ const endings: readonly (readonly [
     "Pending",
     (method, path) =>
       method === "POST" && path.endsWith("/operations") ? failed : undefined,
-    "the API refused this, and named a reason this console does not know (InternalError)",
+    "Server error",
     true,
   ],
   [

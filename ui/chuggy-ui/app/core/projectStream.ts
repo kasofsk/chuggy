@@ -103,15 +103,18 @@ export function projectStreamUnanswered(status: ProjectStreamStatus): boolean {
 
 export type ProjectStreamNotice =
   | { readonly notice: "Quiet" }
-  | {
-      readonly notice: "Reconnecting" | "NotLive";
-      readonly detail: string;
-    };
+  | { readonly notice: "Reconnecting" }
+  | { readonly notice: "NotLive"; readonly detail?: string };
 
-function projectStreamNoticeDetail(status: ProjectStreamStatus): string {
-  if (status.source === "degraded") return "Change log degraded";
-  if (status.cause === "Refused") return "The API refused this session";
-  return "Stream not open";
+/** Why the stream is not live, where a reader can act on or wait out why. */
+function projectStreamNotLive(
+  status: ProjectStreamStatus,
+): ProjectStreamNotice {
+  if (status.source === "degraded")
+    return { notice: "NotLive", detail: "Updates delayed" };
+  if (status.cause === "Refused")
+    return { notice: "NotLive", detail: "Refused" };
+  return { notice: "NotLive" };
 }
 
 /**
@@ -127,14 +130,12 @@ export function projectStreamNotice(
 ): ProjectStreamNotice {
   if (!lapsed || projectStreamCarrying(status)) return { notice: "Quiet" };
   if (projectStreamUnanswered(status)) return { notice: "Quiet" };
-  if (exhausted)
-    return { notice: "NotLive", detail: "Stream closed · fallback exhausted" };
+  if (exhausted) return { notice: "NotLive", detail: "Reload to catch up" };
   const reconnecting =
     status.connection === "Opening" || status.connection === "Waiting";
-  return {
-    notice: reconnecting ? "Reconnecting" : "NotLive",
-    detail: projectStreamNoticeDetail(status),
-  };
+  return reconnecting
+    ? { notice: "Reconnecting" }
+    : projectStreamNotLive(status);
 }
 
 export interface ProjectStreamHandlers {

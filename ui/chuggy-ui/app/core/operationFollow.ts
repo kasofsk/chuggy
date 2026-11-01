@@ -24,7 +24,6 @@ import type { z } from "zod";
 import { apiOperation, apiProject, apiSubmitOperation } from "./apiRoutes.ts";
 import type { ProjectPage } from "./apiRoutes.ts";
 import type { ApiFailure, ApiPorts, ApiResult } from "./apiRequest.ts";
-import { operationFailureSentence } from "./codeSentences.ts";
 import type { OperationRefusal } from "./codeSentences.ts";
 
 /** How much entropy an operation identity is drawn with. It is also the
@@ -39,6 +38,23 @@ export const operationPollIntervalMs = 1_000;
 export const operationStepsMax = operationAttemptsMax * 2 + 4;
 
 export type OperationSubmission = z.infer<typeof submissionSchema>;
+
+/**
+ * Why a follow stopped short of an answer: the wait that outlasted the budget,
+ * a step out of order, every step taken, or what an answer or a throw said.
+ */
+export type OperationAbandonCause =
+  | {
+      readonly type:
+        | "Deferred"
+        | "Pending"
+        | "Unaccepted"
+        | "Behind"
+        | "OutOfOrder"
+        | "Overstepped";
+    }
+  | { readonly type: "Failed"; readonly failure: ApiFailure }
+  | { readonly type: "Thrown"; readonly reason: string };
 
 export type OperationStep =
   | { readonly step: "Submitting"; readonly attempts: number }
@@ -67,7 +83,7 @@ export type OperationStep =
     }
   | {
       readonly step: "Abandoned";
-      readonly reason: string;
+      readonly cause: OperationAbandonCause;
       /**
        * The API refused the submission before acting on it, so the identity it
        * was drawn under names nothing and never will. It is the one abandonment
@@ -88,8 +104,8 @@ export type OperationEvent =
   | { readonly event: "Unaccepted" }
   | { readonly event: "Confirmed" }
   | { readonly event: "Behind" }
-  | { readonly event: "Faulted"; readonly reason: string }
-  | { readonly event: "Refused"; readonly reason: string };
+  | { readonly event: "Faulted"; readonly cause: OperationAbandonCause }
+  | { readonly event: "Refused"; readonly failure: ApiFailure };
 
 /** What the caller does next for this step, and nothing about how. */
 export type OperationRequest = "Submit" | "Poll" | "Confirm";
@@ -138,14 +154,25 @@ function operationAttempts(step: OperationStep): number {
   return operationFinished(step) ? 0 : step.attempts;
 }
 
-function operationAbandoned(reason: string): OperationStep {
-  return { step: "Abandoned", reason, refused: false };
+export function operationAbandoned(
+  cause: OperationAbandonCause,
+): OperationStep {
+  return { step: "Abandoned", cause, refused: false };
+}
+
+/** A follow abandoned because a step arrived that its state has no turn for. */
+function operationOutOfOrder(): OperationStep {
+  return operationAbandoned({ type: "OutOfOrder" });
 }
 
 /** The API declined the submission before acting, so the identity it was drawn
  * under names nothing and never will. */
-function operationRefused(reason: string): OperationStep {
-  return { step: "Abandoned", reason, refused: true };
+function operationRefused(failure: ApiFailure): OperationStep {
+  return {
+    step: "Abandoned",
+    cause: { type: "Failed", failure },
+    refused: true,
+  };
 }
 
 /**
@@ -170,6 +197,16 @@ function failureAnswered(failure: ApiFailure): boolean {
     case "Unreadable":
       return false;
   }
+}
+
+/** The outcome the API answered where an abandoned follow carries one, for a
+ * refusal that keeps its code on hover. */
+export function operationAbandonFailure(
+  step: OperationStep,
+): ApiFailure | undefined {
+  return step.step === "Abandoned" && step.cause.type === "Failed"
+    ? step.cause.failure
+    : undefined;
 }
 
 /**
@@ -208,7 +245,7 @@ function operationSettled(
 /** One more turn of the same wait, or the end of the budget that allowed it. */
 function operationSpent(
   step: OperationStep,
-  exhausted: string,
+  exhausted: OperationAbandonCause,
   next: (attempts: number) => OperationStep,
 ): OperationStep {
   const attempts = operationAttempts(step) + 1;
@@ -221,26 +258,19 @@ function operationDeferred(
   step: OperationStep,
   event: Extract<OperationEvent, { event: "Deferred" }>,
 ): OperationStep {
-  return operationSpent(
-    step,
-    "the API is still deferring this submission after the attempt budget",
-    (attempts) => ({
-      step: "Backlogged",
-      code: event.code,
-      retryAfterSeconds: event.retryAfterSeconds,
-      attempts,
-    }),
-  );
+  return operationSpent(step, { type: "Deferred" }, (attempts) => ({
+    step: "Backlogged",
+    code: event.code,
+    retryAfterSeconds: event.retryAfterSeconds,
+    attempts,
+  }));
 }
 
 function operationPolled(
   step: OperationStep,
   answered: OperationResponse,
 ): OperationStep {
-  if (step.step !== "Following")
-    return operationAbandoned(
-      "a poll arrived before the operation was accepted",
-    );
+  if (step.step !== "Following") return operationOutOfOrder();
   const operation = step.operation;
   if (answered.state === "Succeeded")
     return {
@@ -251,11 +281,11 @@ function operationPolled(
     };
   if (answered.state !== "Pending")
     return operationSettled(operation, answered);
-  return operationSpent(
-    step,
-    "the operation is still pending after the attempt budget",
-    (attempts) => ({ step: "Following", operation, attempts }),
-  );
+  return operationSpent(step, { type: "Pending" }, (attempts) => ({
+    step: "Following",
+    operation,
+    attempts,
+  }));
 }
 
 /**
@@ -267,40 +297,26 @@ function operationPolled(
  * missed comes back as the operation to follow rather than as a second attempt.
  */
 function operationUnaccepted(step: OperationStep): OperationStep {
-  if (step.step !== "Following")
-    return operationAbandoned(
-      "an operation was looked for before it was named",
-    );
-  return operationSpent(
-    step,
-    "the API never accepted this submission within the attempt budget",
-    (attempts) => ({ step: "Submitting", attempts }),
-  );
+  if (step.step !== "Following") return operationOutOfOrder();
+  return operationSpent(step, { type: "Unaccepted" }, (attempts) => ({
+    step: "Submitting",
+    attempts,
+  }));
 }
 
 function operationBehind(step: OperationStep): OperationStep {
-  if (step.step !== "Confirming")
-    return operationAbandoned(
-      "a projection answered before a decision was made",
-    );
+  if (step.step !== "Confirming") return operationOutOfOrder();
   const { operation, minimumSequence } = step;
-  return operationSpent(
-    step,
-    "the projection has not reached the decided sequence within the attempt budget",
-    (attempts) => ({
-      step: "Confirming",
-      operation,
-      minimumSequence,
-      attempts,
-    }),
-  );
+  return operationSpent(step, { type: "Behind" }, (attempts) => ({
+    step: "Confirming",
+    operation,
+    minimumSequence,
+    attempts,
+  }));
 }
 
 function operationConfirmed(step: OperationStep): OperationStep {
-  if (step.step !== "Confirming")
-    return operationAbandoned(
-      "a confirmation arrived before a decision was made",
-    );
+  if (step.step !== "Confirming") return operationOutOfOrder();
   return {
     step: "Settled",
     operation: step.operation,
@@ -331,9 +347,9 @@ export function operationAdvanced(
     case "Behind":
       return operationBehind(step);
     case "Faulted":
-      return operationAbandoned(event.reason);
+      return operationAbandoned(event.cause);
     case "Refused":
-      return operationRefused(event.reason);
+      return operationRefused(event.failure);
   }
 }
 
@@ -354,10 +370,9 @@ function operationEventOf<T>(
       code: result.code,
       retryAfterSeconds: result.retryAfterSeconds,
     };
-  return {
-    event: failureAnswered(result) ? "Refused" : "Faulted",
-    reason: operationFailureSentence(result),
-  };
+  return failureAnswered(result)
+    ? { event: "Refused", failure: result }
+    : { event: "Faulted", cause: { type: "Failed", failure: result } };
 }
 
 /** The route's `after` is exclusive and names a ticket, so the first has none. */
@@ -400,7 +415,7 @@ async function operationConfirmation(
     ? {
         event: {
           event: "Faulted",
-          reason: "the project no longer lists this ticket",
+          cause: { type: "Failed", failure: { outcome: "Absent" } },
         },
       }
     : { event, ticket: found };
@@ -461,7 +476,7 @@ async function operationTurn(
   return {
     event: {
       event: "Faulted",
-      reason: "the follow reached a step with no request",
+      cause: { type: "OutOfOrder" },
     },
   };
 }
@@ -513,18 +528,18 @@ export async function followOperation(
     try {
       await ports.sleepMs(operationWaitMs(step), signal);
     } catch (failure: unknown) {
-      const abandoned = operationAbandoned(
-        failure instanceof Error
-          ? failure.message
-          : "the wait between attempts did not finish",
-      );
+      const abandoned = operationAbandoned({
+        type: "Thrown",
+        reason:
+          failure instanceof Error
+            ? failure.message
+            : "the wait between attempts did not finish",
+      });
       onStep(abandoned);
       return { step: abandoned, ticket: confirmed };
     }
   }
-  const exhausted = operationAbandoned(
-    "the follow took more steps than it is allowed to take",
-  );
+  const exhausted = operationAbandoned({ type: "Overstepped" });
   onStep(exhausted);
   return { step: exhausted, ticket: confirmed };
 }

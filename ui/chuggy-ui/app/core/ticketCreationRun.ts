@@ -55,6 +55,7 @@ import {
 } from "./apiRoutes.ts";
 import type { ApiFailure, ApiPorts, ApiResult } from "./apiRequest.ts";
 import { ConsoleWriteRefused } from "./consoleWrite.ts";
+import { operationAbandonWords } from "./codeLabels.ts";
 import {
   draftRevisionFailureSentence,
   draftRevisionRefusalSentence,
@@ -62,7 +63,11 @@ import {
   operationRefusalSentence,
   operationStateSentence,
 } from "./codeSentences.ts";
-import { followOperation, operationFinished } from "./operationFollow.ts";
+import {
+  followOperation,
+  operationAbandonFailure,
+  operationFinished,
+} from "./operationFollow.ts";
 import type { OperationStep } from "./operationFollow.ts";
 import { projectListReread } from "./projectQueryKeys.ts";
 import type { ProjectList } from "./projectQueryKeys.ts";
@@ -153,6 +158,8 @@ export type TicketCreated<Held extends DraftHeld = DraftHeld> =
       readonly held: Held | undefined;
       /** The held draft's read, where its failing is why nothing was written. */
       readonly unread?: ApiFailure | undefined;
+      /** What the API answered the release, where it answered a failure. */
+      readonly released?: ApiFailure | undefined;
     };
 
 /**
@@ -181,22 +188,28 @@ export type TicketUpdateUnmade = Exclude<
 
 /** A creation's submit thrown as its refusal: the sentence its screen draws,
  * beside how it ended, which holds the draft the next submit goes back to,
- * and the held draft's failed read where that is why it ended. */
+ * and the failure that ended it, the held draft's read or its release. */
 export class TicketCreationRefused extends ConsoleWriteRefused {
   readonly ended: TicketCreationUnmade;
 
   constructor(sentence: string, ended: TicketCreationUnmade) {
-    super(sentence, ended.created === "Refused" ? ended.unread : undefined);
+    super(
+      sentence,
+      ended.created === "Refused"
+        ? (ended.unread ?? ended.released)
+        : undefined,
+    );
     this.ended = ended;
   }
 }
 
-/** An edit's submit thrown as its refusal, beside how it ended. */
+/** An edit's submit thrown as its refusal, beside how it ended and the
+ * failure its release was answered with. */
 export class TicketUpdateRefused extends ConsoleWriteRefused {
   readonly ended: TicketUpdateUnmade;
 
   constructor(sentence: string, ended: TicketUpdateUnmade) {
-    super(sentence);
+    super(sentence, ended.created === "Refused" ? ended.released : undefined);
     this.ended = ended;
   }
 }
@@ -422,13 +435,13 @@ function creationDraftHolds(
 function creationRefused(
   reason: string,
   held: CreationDraftHeld,
-  unread?: ApiFailure,
+  failed: { readonly unread?: ApiFailure; readonly released?: ApiFailure } = {},
 ): TicketCreationEnded {
   return {
     created: "Refused",
     reason: `${reason} — ${creationDraftHeldSentence(held)}`,
     held,
-    ...(unread === undefined ? {} : { unread }),
+    ...failed,
   };
 }
 
@@ -471,7 +484,7 @@ async function creationDraftRevised(
   const ticket = held.draft.ticket;
   const read = await apiDraft(ports, partition, ticket);
   if (read.outcome !== "Ok")
-    return creationRefused(creationDraftUnreadSentence, held, read);
+    return creationRefused(creationDraftUnreadSentence, held, { unread: read });
   const closed = creationDraftClosed(read.value, held);
   if (closed !== undefined) return closed;
   const revised = await apiReviseDraft(ports, partition, ticket, {
@@ -517,8 +530,15 @@ function releasedTicket<Held extends DraftHeld>(
   step: OperationStep,
   held: Held,
 ): TicketCreated<Held> {
-  if (step.step === "Abandoned")
-    return { created: "Refused", reason: step.reason, held };
+  if (step.step === "Abandoned") {
+    const released = operationAbandonFailure(step);
+    return {
+      created: "Refused",
+      reason: operationAbandonWords(step.cause).word,
+      held,
+      ...(released === undefined ? {} : { released }),
+    };
+  }
   if (step.step !== "Settled")
     return {
       created: "Refused",
@@ -650,10 +670,14 @@ export async function createAndReleaseTicket(
   if (released.created !== "Refused") return released;
   if (step.step === "Settled" && step.refusal?.type === "AuthoringChanged")
     return creationDraftFencedOut(ports, partition, released.reason, written);
-  return creationRefused(released.reason, {
-    ...written,
-    unsettled: creationReleaseUnsettled(step, seen.accepted, written),
-  });
+  return creationRefused(
+    released.reason,
+    {
+      ...written,
+      unsettled: creationReleaseUnsettled(step, seen.accepted, written),
+    },
+    released.released === undefined ? {} : { released: released.released },
+  );
 }
 
 export interface TicketUpdateRequest {

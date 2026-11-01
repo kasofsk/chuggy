@@ -1,6 +1,7 @@
 /**
  * The panel a read is drawn in: the chrome, when what it holds was observed,
- * and the three states a read is in when it is not ready.
+ * and the three states a read is in when it is not ready, under a title that
+ * already names what was not read.
  *
  * Absence and failure are drawn as themselves, in `ReadFailed`'s words — an
  * empty table that looks healthy is what this composition exists to make
@@ -67,24 +68,15 @@ export function ReadFailed(props: {
  */
 export function PanelUnready<T>(props: {
   readonly state: PanelState<T>;
-  readonly subject?: string | undefined;
 }): ReactNode {
   const state = props.state;
   switch (state.state) {
     case "Pending":
       return <Notice tone="info" inline detail="Loading…" />;
     case "Absent":
-      return (
-        <ReadFailed subject={props.subject} failure={{ outcome: "Absent" }} />
-      );
+      return <ReadFailed failure={{ outcome: "Absent" }} />;
     case "Failed":
-      return (
-        <ReadFailed
-          subject={props.subject}
-          failure={state.failure}
-          retry={state.retry}
-        />
-      );
+      return <ReadFailed failure={state.failure} retry={state.retry} />;
     case "Ready":
       return null;
   }
@@ -126,7 +118,7 @@ export function DataPanel<T>(props: {
         ) : undefined
       }
     >
-      <PanelUnready state={state} subject={props.title} />
+      <PanelUnready state={state} />
       {state.state === "Ready" ? props.children(state.value) : null}
     </Panel>
   );

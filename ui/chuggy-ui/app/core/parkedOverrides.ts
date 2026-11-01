@@ -25,7 +25,7 @@ import type {
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
 
-import { operationRefusalLabel } from "./codeLabels.ts";
+import { operationAbandonWords, operationRefusalLabel } from "./codeLabels.ts";
 import { configurationCatalogOf } from "./configurationCatalog.ts";
 import type { OperationStep } from "./operationFollow.ts";
 import { projectAbilityRefused } from "./projectAbilities.ts";
@@ -171,7 +171,8 @@ export function parkedOverridesChange(
 export function parkedOverridesRefusal(
   step: OperationStep,
 ): string | undefined {
-  if (step.step === "Abandoned") return `Not saved · ${step.reason}`;
+  if (step.step === "Abandoned")
+    return `Not saved · ${operationAbandonWords(step.cause).word}`;
   if (step.step !== "Settled") return "Not saved";
   if (step.refusal !== undefined)
     return `Not saved · ${operationRefusalLabel(step.refusal.type)}`;

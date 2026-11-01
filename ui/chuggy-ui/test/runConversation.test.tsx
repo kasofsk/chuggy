@@ -9,6 +9,7 @@ import {
   configurationReads,
   runAttempt,
   runConfigurationRef,
+  runDigest,
   runEvidenceOf,
   runPageDrawn,
   runSnapshot,
@@ -241,4 +242,25 @@ test("a long prompt is folded to its opening lines until the reader asks", async
   expect(
     screen.getByRole("button", { name: "Hide full prompt" }),
   ).toBeDefined();
+});
+
+test("a run's configuration that will not read says so under its title, and does not repeat it", async () => {
+  const drawn = await runPageDrawn(
+    atlas,
+    settledRun({
+      configuration: {
+        read: "Content",
+        digest: runDigest,
+        bytes: 400,
+        content: "not a snapshot",
+      },
+    }),
+  );
+  await pressed("Details");
+  await pressed("configuration");
+  expect(
+    [...drawn.container.querySelectorAll(".read-failed .notice")].map(
+      (line) => line.textContent,
+    ),
+  ).toStrictEqual(["Not read · Update needed"]);
 });

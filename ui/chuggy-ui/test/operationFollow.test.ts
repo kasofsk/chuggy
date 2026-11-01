@@ -285,16 +285,16 @@ test("an answer arriving out of order is abandoned, never mistaken for one", () 
   ).toBe("Abandoned");
 });
 
-test("a fault carries its own reason and asks for nothing further", () => {
+test("a fault carries its own cause and asks for nothing further", () => {
+  const cause = {
+    type: "Failed",
+    failure: { outcome: "Unreachable", reason: "connection reset" },
+  } as const;
   const step = operationAdvanced(operationSubmitting(), {
     event: "Faulted",
-    reason: "the API could not be reached",
+    cause,
   });
-  expect(step).toEqual({
-    step: "Abandoned",
-    reason: "the API could not be reached",
-    refused: false,
-  });
+  expect(step).toEqual({ step: "Abandoned", cause, refused: false });
   expect(operationRequest(step)).toBeUndefined();
   expect(operationAnswered(step)).toBe(false);
 });
@@ -303,13 +303,18 @@ test("a fault carries its own reason and asks for nothing further", () => {
  * screen holding the identity must tell apart: the API declining to make one,
  * and the console never learning whether it did. */
 test("only a refusal says the identity will never be an operation", () => {
+  const failure = {
+    outcome: "Conflict",
+    code: "StaleFence",
+    body: {},
+  } as const;
   const refused = operationAdvanced(operationSubmitting(), {
     event: "Refused",
-    reason: "the ticket has moved on",
+    failure,
   });
   expect(refused).toEqual({
     step: "Abandoned",
-    reason: "the ticket has moved on",
+    cause: { type: "Failed", failure },
     refused: true,
   });
   expect(operationAnswered(refused)).toBe(true);

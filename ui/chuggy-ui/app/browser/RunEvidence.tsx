@@ -205,10 +205,7 @@ function RunConfigurationBody(props: { readonly content: string }): ReactNode {
   const reading = runConfigurationRead(props.content);
   if (reading.reading === "Unreadable")
     return (
-      <ReadFailed
-        subject="configuration"
-        failure={{ outcome: "Unreadable", reason: reading.reason }}
-      />
+      <ReadFailed failure={{ outcome: "Unreadable", reason: reading.reason }} />
     );
   const snapshot = reading.snapshot;
   const head = runConfigurationHead(snapshot);
