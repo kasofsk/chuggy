@@ -28,6 +28,7 @@ import {
   consoleSiteEachCase,
 } from "./consoleSite.tsx";
 import type { ConsoleSite } from "./consoleSite.tsx";
+import { ticketPageTicket } from "./ticketPageFixture.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
 vi.mock("../app/browser/ports.ts", async (importOriginal) =>
@@ -132,3 +133,78 @@ test("a screen drawing the inbox reads it again every poll", async () => {
   await consoleAdvanced(inboxProposalsPolledMs);
   expect(consoleInboxReads(site.reads).inbox).toBe(2);
 });
+
+/** A frame of each kind that can move a ticket into or out of the inbox, and
+ * one that cannot, each pushed to the inbox screen with the top bar's badge
+ * drawing the same key beside the panel. */
+const consoleInboxFrames: readonly (readonly [
+  string,
+  string,
+  unknown,
+  number,
+])[] = [
+  [
+    "an open action",
+    "NativeAction",
+    { version: 1, resource: "42", representation: { actions: [] } },
+    1,
+  ],
+  [
+    "a refusal",
+    "AgenticRefusal",
+    { version: 1, resource: "42", representation: null },
+    1,
+  ],
+  [
+    "a ticket the inbox holds",
+    "Ticket",
+    {
+      version: 1,
+      resource: String(consoleInboxTicket),
+      representation: { ...ticketPageTicket, ticket: consoleInboxTicket },
+    },
+    1,
+  ],
+  [
+    "a ticket arriving in a phase the inbox holds",
+    "Ticket",
+    {
+      version: 1,
+      resource: String(ticketPageTicket.ticket),
+      representation: {
+        ...ticketPageTicket,
+        phase: "Escalated",
+        escalation: { kind: "WorkFailureEscalated", resumeAt: "ResumeWork" },
+      },
+    },
+    1,
+  ],
+  [
+    "a ticket the inbox neither holds nor would",
+    "Ticket",
+    {
+      version: 1,
+      resource: String(ticketPageTicket.ticket),
+      representation: { ...ticketPageTicket, sequence: 43 },
+    },
+    0,
+  ],
+];
+
+test.each(consoleInboxFrames)(
+  "a frame about %s reads the inbox again that many times under the shell",
+  async (_about, event, data, rereads) => {
+    consoleMounted(
+      consoleRouteAddress("/$tenant/$project/inbox"),
+      consoleSession(),
+      false,
+    );
+    await consoleAdvanced(consoleRouteWalkSettleMs);
+    expect(screen.getByText("Standing")).toBeDefined();
+    site.reads.length = 0;
+    site.emit(event, data);
+    await consoleAdvanced(consoleRouteWalkSettleMs);
+    expect(consoleInboxReads(site.reads).inbox).toBe(rereads);
+    if (rereads === 0) expect(site.reads).toStrictEqual([]);
+  },
+);

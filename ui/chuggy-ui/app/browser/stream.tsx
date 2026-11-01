@@ -17,7 +17,7 @@
  * changes draws only what reads the status.
  */
 
-import { useQueryClient } from "@tanstack/react-query";
+import { hashKey, useQueryClient } from "@tanstack/react-query";
 import type { Query, QueryClient } from "@tanstack/react-query";
 import {
   createContext,
@@ -171,6 +171,9 @@ export function applyResourceArrival(
   }
 }
 
+/** A frame reaches each list once, however many components draw it: every
+ * registration under one key reads the same entry, and a second reread would
+ * restart the first. */
 function applyCommand(
   client: QueryClient,
   folds: ReadonlySet<ProjectListRegistration>,
@@ -198,9 +201,14 @@ function applyCommand(
         resource: command.resource,
         representation: command.representation,
       };
-      for (const registered of folds)
-        if (registered.kind === command.kind)
-          applyListRefresh(client, registered, change);
+      const applied = new Set<string>();
+      for (const registered of folds) {
+        if (registered.kind !== command.kind) continue;
+        const keyed = hashKey(registered.key);
+        if (applied.has(keyed)) continue;
+        applied.add(keyed);
+        applyListRefresh(client, registered, change);
+      }
       return;
     }
     default:
