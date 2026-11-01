@@ -29,6 +29,7 @@ import type {
 } from "@tanstack/react-query";
 import {
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -247,7 +248,8 @@ export interface PanelPages<R> {
  * `usePanelState` for a paged list: its rows as a panel draws them, the press
  * that reads the next page, and why a page could not be read. A press that
  * fails is no reread failing, so the panel draws the rows as answered, and a
- * second press while one is out is the first.
+ * second press on a list while one is out is the first, which ends once
+ * another list is drawn.
  */
 export function usePanelPages<P, Param, R>(
   query: PanelPagesObserved<P, Param, R>,
@@ -255,12 +257,19 @@ export function usePanelPages<P, Param, R>(
   useProjectListRefresh(query.list);
   const ports = useApiPorts();
   const client = useQueryClient();
-  const pressing = useRef(false);
+  const keyed = hashKey(query.queryKey);
+  const pressing = useRef<string | undefined>(undefined);
   const answer = useInfiniteQuery({
     ...panelPagesOptions(ports, query),
     ...(query.placeholderData === undefined
       ? {}
       : { placeholderData: query.placeholderData }),
+  });
+  /** The key the observer reads, moved in the effect after the one that moves
+   * the observer, so a press's next page is asked of the list it began on. */
+  const observed = useRef(keyed);
+  useEffect(() => {
+    observed.current = keyed;
   });
   const more = answer.isFetchNextPageError;
   const state = usePanelAbsenceKept(
@@ -271,18 +280,20 @@ export function usePanelPages<P, Param, R>(
   const reason = panelFailureReason(answer.error);
   const kept = answer.isPlaceholderData;
   const readMore = (): void => {
-    if (pressing.current) return;
-    pressing.current = true;
+    if (pressing.current === keyed) return;
+    pressing.current = keyed;
     void consolePagesMore(
       query,
       client.getQueryData(query.queryKey)?.pages.length ?? 0,
       async () => {
+        if (observed.current !== keyed)
+          return { pages: undefined, failed: false };
         await answer.fetchNextPage({ cancelRefetch: false });
         const held = client.getQueryState(query.queryKey);
         return { pages: held?.data, failed: held?.status === "error" };
       },
     ).finally(() => {
-      pressing.current = false;
+      if (pressing.current === keyed) pressing.current = undefined;
     });
   };
   return {

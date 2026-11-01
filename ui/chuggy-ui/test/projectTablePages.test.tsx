@@ -22,6 +22,7 @@ import { useCallback, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
+import type { TicketPhase } from "../../../src/contract/rosters.ts";
 import { ProjectTable } from "../app/browser/ProjectTable.tsx";
 import { phaseLabel } from "../app/core/codeLabels.ts";
 import { ticketListAskDefault } from "../app/core/projectTableFilters.ts";
@@ -193,6 +194,47 @@ test("a reread arriving while Show more reads its page ends with both pages", as
   expect(titlesDrawn()).toStrictEqual(["Ticket 150", "Ticket 149"]);
 });
 
+/** The filter menu's `phase` chosen, as a reader does. */
+async function filterChosen(phase: TicketPhase): Promise<void> {
+  fireEvent.keyDown(screen.getByRole("button", { name: /^Filter/u }), {
+    key: "ArrowDown",
+  });
+  await screen.findByRole("menu");
+  fireEvent.click(
+    screen.getByRole("menuitemradio", { name: phaseLabel(phase) }),
+  );
+  await settled();
+}
+
+test("Show more joined to a reread reads no page of a list chosen before it ends", async () => {
+  let holding = false;
+  const first = heldAnswer();
+  const drawn = await drawnAt({}, (asked) => {
+    if (asked.getAll("phase").includes("Escalated"))
+      return asked.has("cursor")
+        ? served([held(11, "Escalated")], { nextCursor: "escalated-3" })
+        : served([held(12, "Escalated")], { nextCursor: "escalated-2" });
+    return holding && !asked.has("cursor")
+      ? first.answered.then(() => activePaged(asked))
+      : activePaged(asked);
+  });
+  holding = true;
+  await reread(drawn.client);
+  await press("Show more");
+  await filterChosen("Escalated");
+  holding = false;
+  first.release(served([]));
+  await settled();
+  expect(
+    drawn.asked
+      .filter((asked) => asked.getAll("phase").includes("Escalated"))
+      .map((asked) => asked.get("cursor")),
+  ).toStrictEqual([null]);
+  expect(titlesDrawn()).toStrictEqual(["Ticket 12"]);
+  await press("Show more");
+  expect(titlesDrawn()).toStrictEqual(["Ticket 12", "Ticket 11"]);
+});
+
 test("a reread reads again every page the list holds, and no more", async () => {
   const drawn = await drawnAt({}, activePaged);
   await press("Show more");
@@ -253,14 +295,7 @@ test("the filter this browser kept is drawn where the address names none, and wr
 
 test("choosing a filter writes it to the address beside the search, and keeps it in this browser", async () => {
   const drawn = await drawnAt({ sort: "Newest" }, phased);
-  fireEvent.keyDown(screen.getByRole("button", { name: /^Filter/u }), {
-    key: "ArrowDown",
-  });
-  await screen.findByRole("menu");
-  fireEvent.click(
-    screen.getByRole("menuitemradio", { name: phaseLabel("Escalated") }),
-  );
-  await settled();
+  await filterChosen("Escalated");
   expect(drawn.written).toStrictEqual([
     { sort: "Newest", filter: "Escalated" },
   ]);
