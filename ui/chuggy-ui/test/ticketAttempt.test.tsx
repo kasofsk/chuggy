@@ -506,6 +506,23 @@ test("a cancellation refused once its follow is confirming is still said", async
   expect(screen.getByText(/^Cancel refused · /)).toBeDefined();
 });
 
+/** The held Cancel refused where no follow's notes are drawn, which is the
+ * shell's toast and nothing on the page. */
+async function cancelRefusedUndrawn(
+  refusing: ReturnType<typeof held>,
+  client: QueryClient,
+): Promise<void> {
+  await turned(() => {
+    refusing.answer(answer({ error: { code: "OperationTerminal" } }, 409));
+  });
+  await settled();
+
+  expect(screen.queryByText(/^Cancel refused · /)).toBeNull();
+  expect(
+    consoleWriteWatchOf(client).unseen.map((unseen) => unseen.sentence),
+  ).toEqual([expect.stringMatching(/^Cancel refused · /)]);
+}
+
 test("a cancellation refused once its operation has finished is the shell's toast", async () => {
   const refusing = held();
   const rereading = held();
@@ -527,15 +544,7 @@ test("a cancellation refused once its operation has finished is the shell's toas
   await stepped();
   expect(screen.getByText("Resume answered")).toBeDefined();
 
-  await turned(() => {
-    refusing.answer(answer({ error: { code: "OperationTerminal" } }, 409));
-  });
-  await settled();
-
-  expect(screen.queryByText(/^Cancel refused · /)).toBeNull();
-  expect(
-    consoleWriteWatchOf(client).unseen.map((unseen) => unseen.sentence),
-  ).toEqual([expect.stringMatching(/^Cancel refused · /)]);
+  await cancelRefusedUndrawn(refusing, client);
 });
 
 test("a cancellation refused while its follow is drawn is no toast", async () => {
@@ -595,15 +604,7 @@ test("a cancellation refused once the ticket's read is not ready is the shell's 
   });
   await ticketGone(client, gone);
 
-  await turned(() => {
-    refusing.answer(answer({ error: { code: "OperationTerminal" } }, 409));
-  });
-  await settled();
-
-  expect(screen.queryByText(/^Cancel refused · /)).toBeNull();
-  expect(
-    consoleWriteWatchOf(client).unseen.map((unseen) => unseen.sentence),
-  ).toEqual([expect.stringMatching(/^Cancel refused · /)]);
+  await cancelRefusedUndrawn(refusing, client);
 });
 
 test("a submission refused once the ticket's read is not ready is the shell's toast", async () => {

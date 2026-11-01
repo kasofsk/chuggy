@@ -498,8 +498,7 @@ function useTicketActionAttempt(
  * is a narrower projection than the ticket's own read and a live frame may
  * already have written a later one, and the open actions are read again rather
  * than written because what the follow learned is that the question was
- * answered and not what is open now. `drawn` says whether the caller draws
- * `FollowNotes`, which is where either write's refusal is said.
+ * answered and not what is open now.
  */
 function useTicketActionWrite(
   partition: PartitionIdentity,
@@ -580,7 +579,8 @@ function TicketActingHeld(props: {
 export function TicketActingScope(props: {
   readonly partition: PartitionIdentity;
   readonly ticket: number;
-  /** Whether the children draw `FollowNotes` where they stand now. */
+  /** Whether the children draw `FollowNotes` where they stand now, which is
+   * where either write's refusal is said. */
   readonly drawn: boolean;
   readonly children: (acting: TicketActing) => ReactNode;
 }): ReactNode {
