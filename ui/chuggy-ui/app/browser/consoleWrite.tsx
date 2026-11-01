@@ -117,6 +117,9 @@ export function useConsoleWrite<V, T>(
     onSuccess: async (value, variables) => {
       await write.landed?.(client, value, variables);
     },
+    onError: (error, variables) => {
+      write.refused?.(error, variables);
+    },
   });
   const takenUp = useConsoleWriteTakenUp(write, own.isIdle);
   const reset = (): void => {

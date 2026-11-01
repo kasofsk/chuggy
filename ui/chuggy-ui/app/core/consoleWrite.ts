@@ -57,9 +57,10 @@ export function consoleWriteKey(
 }
 
 /**
- * One write: its key, the request, the sentence its refusal is drawn as, and
- * what it changed. The write is not over until `landed` has answered, so a
- * button stays busy until the reads it changed have been read again.
+ * One write: its key, the request, the sentence its refusal is drawn as, what
+ * it changed, and what a refusal leaves behind. The write is not over until
+ * `landed` has answered, so a button stays busy until the reads it changed have
+ * been read again; both run whether or not the screen that pressed is mounted.
  */
 export interface ConsoleWrite<V, T> {
   readonly mutationKey: MutationKey;
@@ -74,6 +75,7 @@ export interface ConsoleWrite<V, T> {
     value: T,
     variables: V,
   ) => Promise<unknown>;
+  readonly refused?: (error: ConsoleWriteRefused, variables: V) => void;
 }
 
 export const consoleMutationDefaults = { retry: 0 } as const;

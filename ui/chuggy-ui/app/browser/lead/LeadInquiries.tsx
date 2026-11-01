@@ -37,8 +37,7 @@
  * left.
  */
 
-import { useMutationState, useQueryClient } from "@tanstack/react-query";
-import type { MutationKey, MutationStatus } from "@tanstack/react-query";
+import { useIsMutating, useQueryClient } from "@tanstack/react-query";
 import { useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 
@@ -52,10 +51,7 @@ import type {
 import { apiAskLead } from "../../core/apiRoutes.ts";
 import { base64urlFromBytes } from "../../core/base64url.ts";
 import { consoleWriteKey } from "../../core/consoleWrite.ts";
-import type {
-  ConsoleWrite,
-  ConsoleWriteRefused,
-} from "../../core/consoleWrite.ts";
+import type { ConsoleWrite } from "../../core/consoleWrite.ts";
 import {
   costFigure,
   durationFigure,
@@ -76,10 +72,7 @@ import {
   inquiryQuestion,
   inquiryQuestionFault,
 } from "../../core/leadInquiries.ts";
-import type {
-  InquiryAskRefusal,
-  InquiryDraw,
-} from "../../core/leadInquiries.ts";
+import type { InquiryAsk, InquiryDraw } from "../../core/leadInquiries.ts";
 import { inquiryBoxesHeld } from "./inquiryBoxes.ts";
 import type { InquiryBoxStore } from "./inquiryBoxes.ts";
 import { projectAbilityRefused } from "../../core/projectAbilities.ts";
@@ -123,7 +116,12 @@ export function useInquiryBoxes(): InquiryBoxesHeld {
   return inquiryBoxesHeld;
 }
 
-/** One project's asks, keyed by the project the box is. */
+/**
+ * One project's asks, keyed by the project the box is. What a press was
+ * answered is written into the box, which outlives the write: a settled write is
+ * collected once nothing observes it, and a reader who comes back to a project
+ * finds what its last press said for as long as the box is kept.
+ */
 function leadAskWrite(
   partition: PartitionIdentity,
   held: InquiryBoxesHeld,
@@ -137,60 +135,47 @@ function leadAskWrite(
     write: (ports, draw) =>
       apiAskLead(ports, draw.partition, inquiryAsking(draw)),
     refusal: (failure) => inquiryAskRefusalSentence(inquiryAskRefused(failure)),
-    landed: (client, _accepted, draw) => {
-      held.write(draw.partition, (box) => inquiryBoxAnswered(box, draw));
+    landed: (client, accepted, draw) => {
+      held.write(draw.partition, (box) =>
+        inquiryBoxAnswered(box, draw, {
+          ask: "Asked",
+          session: accepted.session,
+        }),
+      );
       return client.invalidateQueries({
         queryKey: leadInquiriesQuery(draw.partition).queryKey,
         exact: true,
       });
     },
+    refused: (error, draw) => {
+      held.write(draw.partition, (box) =>
+        inquiryBoxAnswered(
+          box,
+          draw,
+          error.failure === undefined
+            ? { ask: "Failed", reason: error.message }
+            : inquiryAskRefused(error.failure),
+        ),
+      );
+    },
   };
-}
-
-/** The last ask a project's box made, from whichever mount made it. */
-interface LeadAskLast {
-  readonly status: MutationStatus;
-  readonly error: ConsoleWriteRefused | null;
-}
-
-/** The latest ask under the box's key, answered or not, so a reader who comes
- * back to a project finds what its last press said. */
-function useLeadAskLast(key: MutationKey): LeadAskLast | undefined {
-  return useMutationState({
-    filters: { mutationKey: key, exact: true },
-    select: (mutation): LeadAskLast => ({
-      status: mutation.state.status,
-      error: mutation.state.error as ConsoleWriteRefused | null,
-    }),
-  }).at(-1);
-}
-
-/** Why the last ask was refused, where it was. */
-function leadAskRefusal(
-  last: LeadAskLast | undefined,
-): InquiryAskRefusal | undefined {
-  const error = last?.error ?? null;
-  if (error === null) return undefined;
-  return error.failure === undefined
-    ? { ask: "Failed", reason: error.message }
-    : inquiryAskRefused(error.failure);
 }
 
 /** What the last ask did, in the one line the box says it in. */
 function LeadAskNotice(props: {
   readonly partition: PartitionIdentity;
-  readonly last: LeadAskLast | undefined;
+  readonly ask: InquiryAsk;
+  readonly pending: boolean;
 }): ReactNode {
-  const status = props.last?.status;
-  if (status === "pending")
-    return <Notice tone="info" inline detail="Asking" />;
-  if (status === "success") return <Notice tone="live" inline detail="Asked" />;
-  const sentence = props.last?.error?.message ?? "";
-  const refusal = leadAskRefusal(props.last);
-  if (refusal === undefined) return null;
-  switch (refusal.ask) {
+  if (props.pending) return <Notice tone="info" inline detail="Asking" />;
+  const ask = props.ask;
+  switch (ask.ask) {
+    case "Idle":
+      return null;
+    case "Asked":
+      return <Notice tone="live" inline detail="Asked" />;
     case "Refused":
-      return <Notice tone="parked" inline detail={sentence} />;
+      return <Notice tone="parked" inline detail={ask.word} />;
     case "NoRunner":
       return (
         <SessionRunnerNotice
@@ -200,7 +185,9 @@ function LeadAskNotice(props: {
         />
       );
     case "Failed":
-      return <Notice tone="danger" inline detail={sentence} />;
+      return (
+        <Notice tone="danger" inline detail={inquiryAskRefusalSentence(ask)} />
+      );
   }
 }
 
@@ -208,10 +195,11 @@ function LeadAskNotice(props: {
  * press was refused, which says why in its own word. */
 function LeadAskRunner(props: {
   readonly partition: PartitionIdentity;
-  readonly last: LeadAskLast | undefined;
+  readonly ask: InquiryAsk;
+  readonly pending: boolean;
 }): ReactNode {
   const runner = useSessionRunnerShort(props.partition, "lead", "inquiry");
-  const refused = leadAskRefusal(props.last)?.ask;
+  const refused = props.pending ? undefined : props.ask.ask;
   return runner === undefined ||
     refused === "Refused" ||
     refused === "NoRunner" ? null : (
@@ -245,12 +233,12 @@ function LeadAsk(props: {
   const partition = props.partition;
   const write = leadAskWrite(partition, props.held);
   const asking = useConsoleWrite(write);
-  const last = useLeadAskLast(write.mutationKey);
+  const pending =
+    useIsMutating({ mutationKey: write.mutationKey, exact: true }) > 0;
   const box = inquiryBoxOf(props.held.boxes(), partition);
   const question = inquiryQuestion(box.typed);
   const fault = inquiryQuestionFault(question);
   const shown = box.typed === "" ? undefined : fault;
-  const pending = last?.status === "pending";
   const submit = () => {
     if (client.isMutating({ mutationKey: write.mutationKey, exact: true }) > 0)
       return;
@@ -262,8 +250,8 @@ function LeadAsk(props: {
   };
   return (
     <div className="grid min-w-0 gap-2 pb-3">
-      <LeadAskNotice partition={partition} last={last} />
-      <LeadAskRunner partition={partition} last={last} />
+      <LeadAskNotice partition={partition} ask={box.ask} pending={pending} />
+      <LeadAskRunner partition={partition} ask={box.ask} pending={pending} />
       <Fields>
         <Field name="Question">
           <textarea

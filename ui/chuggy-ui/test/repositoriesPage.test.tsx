@@ -2011,6 +2011,40 @@ test("a refused retry draws its refusal and stales nothing", async () => {
   expect(raised).toStrictEqual([]);
 });
 
+/** A retry out says nothing new until it answers, so the row keeps what the
+ * last one answered rather than falling back to the bare word. */
+test("a retry pressed again after a refusal keeps that refusal on the row while it is out", async () => {
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const conflict = (): Response =>
+    answer({ error: { code: "Busy", message: "busy" } }, 409);
+  let presses = 0;
+  await drawPage({
+    bound: unconfigured,
+    posted: () => {
+      presses += 1;
+      return presses === 1 ? conflict() : gate.then(conflict);
+    },
+  });
+  await retryFirst();
+  expect(bindingRowsText()[0]).toBe("kasofsk/chuggyConflictRetry");
+  await retryFirst();
+  expect(
+    bindingRowsText()[0],
+    "a retry out drew the bare word in place of the last refusal",
+  ).toBe("kasofsk/chuggyConflictRetry");
+  expect(
+    within(sectionOf("Repositories"))
+      .getByRole("button", { name: "Retry" })
+      .hasAttribute("disabled"),
+  ).toBe(true);
+  await turned(release);
+  await settled();
+  expect(bindingRowsText()[0]).toBe("kasofsk/chuggyConflictRetry");
+});
+
 /** A retired binding leaves the listing, so the one refusal that finds it retired reads the listing again. */
 test("a retry that meets the binding retired stales the bindings the page drew", async () => {
   await drawPage({

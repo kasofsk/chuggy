@@ -21,6 +21,7 @@ import { expect, test } from "vitest";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import {
   inquiryBoxAnswered,
+  inquiryBoxesMax,
   inquiryBoxEmpty,
   inquiryBoxName,
   inquiryBoxOf,
@@ -30,7 +31,12 @@ import {
   inquiryDraw,
   inquiryQuestion,
 } from "../app/core/leadInquiries.ts";
-import type { InquiryBoxes, InquiryDraw } from "../app/core/leadInquiries.ts";
+import type {
+  InquiryAsk,
+  InquiryAskAnswer,
+  InquiryBoxes,
+  InquiryDraw,
+} from "../app/core/leadInquiries.ts";
 
 const walkSeedBase = 20260902;
 const walkRuns = 200;
@@ -60,9 +66,11 @@ const walkPartitions: readonly [PartitionIdentity, PartitionIdentity] = [
 
 const walkQuestions = ["why", "why not", "  why  ", ""] as const;
 
-/** Whether the door took the pair: an ask accepted, then a refusal and a
- * failure, neither of which the box hears. */
-const walkAnswers: readonly boolean[] = [true, false, false];
+const walkAnswers: readonly InquiryAskAnswer[] = [
+  { ask: "Asked", session: "inq-taken" },
+  { ask: "Refused", word: "In flight" },
+  { ask: "Failed", reason: "the API could not be reached" },
+];
 
 type WalkStep =
   | { readonly step: "Typed"; readonly at: 0 | 1; readonly typed: string }
@@ -178,20 +186,19 @@ function walkStep(held: WalkHeld, step: WalkStep): WalkHeld {
   const answer = walkAnswers[step.answer];
   if (outstanding === undefined || answer === undefined) return held;
   held.outstanding.delete(name);
-  if (answer)
+  if (answer.ask === "Asked")
     held.sends.push({
       at: step.at,
       question: outstanding.question,
       drawn: outstanding.drawn,
       taken: true,
     });
-  if (!answer) return held;
   return {
     ...held,
     boxes: inquiryBoxWith(
       held.boxes,
       partition,
-      inquiryBoxAnswered(box, outstanding),
+      inquiryBoxAnswered(box, outstanding, answer),
     ),
   };
 }
@@ -307,4 +314,33 @@ test("a box a reader has emptied leaves the record", () => {
   );
   expect(Object.keys(cleared).length).toBe(0);
   expect(inquiryBoxOf(cleared, at)).toBe(inquiryBoxEmpty);
+});
+
+function boxAt(at: number): PartitionIdentity {
+  return { tenant: "acme", project: `p${String(at)}` };
+}
+
+/**
+ * THE RECORD IS BOUNDED, AND A PAIR IS WHAT IT WILL NOT DROP TO STAY SO. Past
+ * the cap the oldest box holding nothing goes; a box still holding a pair its
+ * door has not taken is kept, because keeping one until then is the whole of
+ * what this record is for — and the box it is kept by holds NOTHING ELSE, a
+ * reader who pressed and then cleared the textarea being exactly the one whose
+ * pair a bound counting only text would evict.
+ */
+test("the record is bounded, and never by dropping a pair", () => {
+  const said: InquiryAsk = { ask: "Refused", word: "In flight" };
+  let boxes: InquiryBoxes = inquiryBoxWith({}, boxAt(0), {
+    typed: "",
+    ask: said,
+    held: { drawn: "kept", question: "why", partition: boxAt(0) },
+  });
+  for (let at = 1; at <= inquiryBoxesMax; at += 1)
+    boxes = inquiryBoxWith(boxes, boxAt(at), { ...inquiryBoxEmpty, ask: said });
+  expect(Object.keys(boxes).length).toBe(inquiryBoxesMax);
+  expect(
+    inquiryBoxOf(boxes, boxAt(0)).held?.drawn,
+    "the record was bounded by dropping a pair a door had not taken",
+  ).toBe("kept");
+  expect(inquiryBoxOf(boxes, boxAt(1))).toBe(inquiryBoxEmpty);
 });

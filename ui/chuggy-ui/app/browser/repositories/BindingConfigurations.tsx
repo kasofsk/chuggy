@@ -3,10 +3,12 @@
  * step asked for again.
  *
  * Why the step last deferred is not stored, so the row says only that it did
- * until a retry answers with a reason. A retry the route answers, or one that
- * meets the binding retired, redraws the listing.
+ * until a retry answers with a reason, which it keeps while the next is out. A
+ * retry the route answers, or one that meets the binding retired, redraws the
+ * listing.
  */
 
+import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
@@ -24,7 +26,7 @@ import { useProjectAbilities } from "../projectAbilities.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Pill } from "../ui/Pill.tsx";
 
-/** What the row draws before a retry has answered. */
+/** What the row draws before any retry has answered. */
 const bindingConfigurationsDeferred: RepositoryStepStatus = {
   status: "Deferred",
   retry: true,
@@ -69,12 +71,19 @@ function useBindingConfigurationsRetry(
   const retrying = useConsoleWrite(
     bindingConfigurationsRetryWrite(partition, repository),
   );
-  const status =
-    retrying.error === null
-      ? (retrying.data ?? bindingConfigurationsDeferred)
+  const answered: RepositoryStepStatus | undefined = retrying.isPending
+    ? undefined
+    : retrying.error === null
+      ? retrying.data
       : { status: retrying.error.message, retry: true };
+  const [last, setLast] = useState(bindingConfigurationsDeferred);
+  if (
+    answered !== undefined &&
+    (answered.status !== last.status || answered.retry !== last.retry)
+  )
+    setLast(answered);
   return {
-    status,
+    status: answered ?? last,
     busy: retrying.isPending,
     retry: () => {
       retrying.mutate(undefined);

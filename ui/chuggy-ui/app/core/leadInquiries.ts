@@ -29,13 +29,14 @@
  * A BOX BELONGS TO A PROJECT, AND THERE IS ONE PER PROJECT RATHER THAN ONE
  * SHARED. A panel is reconciled rather than replaced when only the route's
  * params move, so whatever it holds outlives the project it was held for — and
- * both things a box holds are about one project's door: the question typed at
- * it, and the pair a send is outstanding under. Held as one value keyed by the
- * project, neither can be read as another project's, and a project's pair
- * survives a reader visiting another and coming back — which is what a single
- * slot per box could not do however carefully it was scoped. Whether a press
- * is out and what the last one answered are the project's own write, kept
- * under a key that names the project.
+ * every one of the three things a box holds is about one project's door: the
+ * question typed at it, the pair a send is outstanding under, and what the last
+ * press answered. Held as one value keyed by the project, none of them can be
+ * read as another project's, no answer can land on a page it was not asked
+ * from, and a project's pair survives a reader visiting another and coming back
+ * — which is what a single slot per box could not do however carefully it was
+ * scoped. Whether a press is out is the project's own write, kept under a key
+ * that names the project.
  */
 
 import type { z } from "zod";
@@ -187,6 +188,14 @@ export type InquiryAskRefusal =
   | { readonly ask: "NoRunner" }
   | { readonly ask: "Failed"; readonly reason: string };
 
+/** What a press was answered, which the box keeps until the next press. */
+export type InquiryAskAnswer =
+  { readonly ask: "Asked"; readonly session: string } | InquiryAskRefusal;
+
+/** What the last ask was answered, in the one line the box says it in, where
+ * one has been. A press still out is the write's to say, not the box's. */
+export type InquiryAsk = { readonly ask: "Idle" } | InquiryAskAnswer;
+
 /** A refusal for no runner of the asker's own is its own arm, since the box
  * says where one is added. */
 function inquiryRefused(code: string): InquiryAskRefusal {
@@ -233,19 +242,33 @@ export function inquiryAskRefusalSentence(refusal: InquiryAskRefusal): string {
 }
 
 /**
- * Everything one project's box holds: what has been typed at it, and the pair a
- * send it has not had accepted went out under.
+ * Everything one project's box holds: what has been typed at it, the pair a
+ * send it has not had accepted went out under, and what its last press
+ * answered.
  */
 export interface InquiryBox {
   readonly typed: string;
+  readonly ask: InquiryAsk;
   readonly held: InquiryDraw | undefined;
 }
 
-export const inquiryBoxEmpty: InquiryBox = { typed: "", held: undefined };
+export const inquiryBoxEmpty: InquiryBox = {
+  typed: "",
+  ask: { ask: "Idle" },
+  held: undefined,
+};
 
-/** A box per project, which is the panel's whole memory of what has been typed
+/** A box per project, which is the panel's whole memory of what has been asked
  * at it. A project nobody has typed at has an empty box rather than no box. */
 export type InquiryBoxes = Readonly<Record<string, InquiryBox>>;
+
+/**
+ * How many projects' boxes are kept at once. A reader bounces between a handful
+ * of projects and this holds far more than that, so the bound is house rule 9's
+ * — a record with no limit at all is unbounded in the length of a session —
+ * rather than a limit a reader is meant to feel.
+ */
+export const inquiryBoxesMax = 32;
 
 /** Whether a box is worth a place in the record, which is whether it holds
  * anything a reader would miss: what they typed, or a pair a door has not
@@ -270,9 +293,13 @@ export function inquiryBoxOf(
   return boxes[inquiryBoxName(partition)] ?? inquiryBoxEmpty;
 }
 
-/** A box written, and a box holding nothing a reader would miss dropped rather
- * than filed, so the record grows only by what a reader typed or a door has not
- * taken. */
+/**
+ * A box written, with the record kept bounded: a box holding nothing a reader
+ * would miss is dropped rather than filed, and past the cap the oldest box
+ * holding nothing is evicted. A BOX HOLDING A PAIR IS NEVER EVICTED — keeping
+ * one until its door takes it is the whole of what this record is for — so a
+ * reader with more outstanding sends than the cap keeps them all.
+ */
 export function inquiryBoxWith(
   boxes: InquiryBoxes,
   partition: PartitionIdentity,
@@ -280,8 +307,13 @@ export function inquiryBoxWith(
 ): InquiryBoxes {
   const name = inquiryBoxName(partition);
   const written: Record<string, InquiryBox> = { ...boxes };
-  if (inquiryBoxHolds(box)) written[name] = box;
+  if (inquiryBoxHolds(box) || box.ask.ask !== "Idle") written[name] = box;
   else delete written[name];
+  if (Object.keys(written).length <= inquiryBoxesMax) return written;
+  const spare = Object.keys(written).find(
+    (held) => held !== name && !inquiryBoxHolds(written[held] ?? box),
+  );
+  if (spare !== undefined) delete written[spare];
   return written;
 }
 
@@ -291,22 +323,25 @@ export function inquiryBoxTyped(box: InquiryBox, typed: string): InquiryBox {
   return { ...box, typed };
 }
 
-/** A press going out: the box holds the pair it went out under. */
+/** A press going out: the box holds the pair it went out under, and the last
+ * press's answer is no longer what it says. */
 export function inquiryBoxSent(box: InquiryBox, draw: InquiryDraw): InquiryBox {
-  return { ...box, held: draw };
+  return { ...box, ask: { ask: "Idle" }, held: draw };
 }
 
 /**
- * A press the door took: the pair is spent, and so is the question it asked —
- * unless the reader has since typed a different one, theirs not being the
- * question that was answered and taking it away being this box editing their
- * next one. A refusal leaves the box as it is, a send that did not land being
- * one to re-send under the pair it went out under.
+ * A press answered: a pair the door took is spent, and so is the question it
+ * asked — unless the reader has since typed a different one, theirs not being
+ * the question that was answered and taking it away being this box editing
+ * their next one. Every other answer leaves both the question and the pair, a
+ * send that did not land being one to re-send under the pair it went out under.
  */
 export function inquiryBoxAnswered(
   box: InquiryBox,
   sent: InquiryDraw,
+  answer: InquiryAskAnswer,
 ): InquiryBox {
+  if (answer.ask !== "Asked") return { ...box, ask: answer };
   const moved = inquiryQuestion(box.typed) !== sent.question;
-  return { typed: moved ? box.typed : "", held: undefined };
+  return { typed: moved ? box.typed : "", ask: answer, held: undefined };
 }
