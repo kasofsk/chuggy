@@ -522,6 +522,15 @@ export function ticketServiceProcessRoot(
   );
   const git = gitPromotion({ ...config.source, credentials });
   const bindings = postgresProjectRepositoryBinding(pool);
+  const ancestry = gitCommitAncestry({
+    scratchDirectory: config.source.scratchDirectory,
+    identity: config.source.identity,
+    environment: config.source.environment,
+    credentials,
+    ...(config.source.credentialUsername === undefined
+      ? {}
+      : { credentialUsername: config.source.credentialUsername }),
+  });
   const service: TicketServiceRuntimeService = {
     domain: config.domain,
     rework: checkedReworkCap(config.rework),
@@ -534,6 +543,7 @@ export function ticketServiceProcessRoot(
       bindings,
       git,
       postgresExecutionSourceHistory(pool),
+      ancestry,
     ),
     ticketBriefs: postgresTicketBrief(pool),
     projectArtifacts: artifactStore({ root: config.artifacts.root }),
@@ -541,15 +551,7 @@ export function ticketServiceProcessRoot(
       results: postgresDependencyResults(pool),
       landings: postgresTicketLandings(pool),
       bindings,
-      ancestry: gitCommitAncestry({
-        scratchDirectory: config.source.scratchDirectory,
-        identity: config.source.identity,
-        environment: config.source.environment,
-        credentials,
-        ...(config.source.credentialUsername === undefined
-          ? {}
-          : { credentialUsername: config.source.credentialUsername }),
-      }),
+      ancestry,
     }),
     ...(config.ticket === undefined ? {} : { ticketConfig: config.ticket }),
   };

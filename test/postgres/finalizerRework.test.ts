@@ -32,6 +32,7 @@ import {
   artifactProjectDirectory,
 } from "../../src/adapters/artifacts/artifactKey.ts";
 import { finalizerRowValue } from "../../src/adapters/postgres/finalizerRows.ts";
+import { finalizationFunction } from "../../src/adapters/postgres/schema.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import type {
   Ticket,
@@ -55,11 +56,16 @@ import { executionSourceObservation } from "../../src/interpreter/executionSourc
 import { postgresHarnessObservedCommit } from "./harness.ts";
 import { digestFold } from "../../src/interpreter/resultManifest.ts";
 import {
+  finalizerClaim,
+  finalizerCommit,
   finalizerDrain,
   finalizerExpireClaim,
   finalizerGitVerb,
+  finalizerIdentity,
   finalizerMovingPort,
   finalizerPassOnce,
+  finalizerPrepare,
+  finalizerProject,
   finalizerRemoteCommit,
   finalizerRemotePort,
   finalizerRigOpen,
@@ -393,6 +399,59 @@ test("a concluded merge conflict returns the ticket to work with a bundle naming
   );
 });
 
+/**
+ * A rework sent back for a queue's failed checks, recorded and submitted as the
+ * finalizer does, is told to bring in the base its proposal failed on, so its
+ * change starts there and every later spawn of the ticket reads that base back.
+ * Catches the evidence read dropping the base, and the history reading another
+ * attempt's.
+ */
+test("a queue's failed checks name the base the rework's change starts at", async () => {
+  const label = "rework-queue-base";
+  const project = await finalizerProject(rig, label);
+  await finalizerClaim(rig, project, finalizerIdentity(`owner-${label}`));
+  const proposalBase = "9".repeat(40);
+  const target = finalizerCommit();
+  const attempt = await finalizerPrepare(rig, project, label, {
+    target,
+    outcome: "Failed",
+    failureKind: "QueueChecksFailed",
+    proposalBase: { ref: "refs/heads/main", commit: proposalBase },
+  });
+  const submitted = (await rig.as(
+    `SELECT result FROM ${finalizationFunction}($1,$2,$3,$4,'FinalizationNeedsWork','QueueChecksFailed',$5,$6,$7,'finalizer-subject')`,
+    [
+      project.partition.tenant,
+      project.partition.project,
+      project.request,
+      attempt,
+      project.requestGeneration,
+      project.epoch,
+      finalizerIdentity("operation"),
+    ],
+  )) as readonly { result: string }[];
+  assert.equal(submitted[0]?.result, "Submitted");
+  const drained = await finalizerDrain(
+    rig.harness,
+    project.partition,
+    project.memory,
+  );
+  assert.deepEqual(drained.decided, ["Committed"]);
+  const bundle = await reworkBundleOf(project);
+  assert.equal(reworkReference(bundle, "TargetCommit")?.reference_id, target);
+  assert.deepEqual(reworkReference(bundle, "ChangeBase"), {
+    reference_kind: "ChangeBase",
+    reference_id: proposalBase,
+    reference_digest: null,
+  });
+  assert.equal(
+    await postgresExecutionSourceHistory(
+      rig.harness.writerPool,
+    ).failedLandingBase(project.partition, project.ticket),
+    proposalBase,
+  );
+});
+
 test("the bundle's digest is over exactly the references it stored", async () => {
   const { project, bundle } = await reworked("rework-digest");
   const references: readonly InputBundleReference[] = bundle.references.map(
@@ -498,6 +557,11 @@ test("a rework runs at the accepted source with no observation", async () => {
       },
     },
     postgresExecutionSourceHistory(rig.harness.pool),
+    {
+      ancestry: () => {
+        throw new Error("a rework after a merge's conflict asks no ancestry");
+      },
+    },
   ).spawnSource({
     partition: project.partition,
     ticket: project.ticket,

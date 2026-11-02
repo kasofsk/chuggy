@@ -863,6 +863,8 @@ export interface FinalizerAttempt {
     readonly artifact: string;
     readonly digest: string;
   };
+  /** The base a failed attempt's proposal failed on, as its ref and commit were read. */
+  readonly proposalBase?: { readonly ref: string; readonly commit: string };
 }
 
 /** Writes one bundle as the finalizer, which is what an attempt has to pin one of. */
@@ -908,8 +910,9 @@ export async function finalizerPrepare(
         input_bundle_digest, target_ref,
         target_commit, strategy, configuration_revision, configuration_digest,
         approval_required, outcome, candidate_commit, failure_kind, attempt_digest,
-        conflict_manifest, conflict_manifest_digest)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'refs/heads/main',$9,'Merge',$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
+        conflict_manifest, conflict_manifest_digest, proposal_base_ref,
+        proposal_base_commit)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'refs/heads/main',$9,'Merge',$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
     [
       project.partition.tenant,
       project.partition.project,
@@ -929,6 +932,8 @@ export async function finalizerPrepare(
       finalizerDigest(),
       attempt.conflictManifest?.artifact ?? null,
       attempt.conflictManifest?.digest ?? null,
+      attempt.proposalBase?.ref ?? null,
+      attempt.proposalBase?.commit ?? null,
     ],
   );
   return identity;
