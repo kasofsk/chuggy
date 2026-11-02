@@ -16,7 +16,7 @@
  * branch — which the finalizer's first promotion creates where the brief lands
  * its work there.
  *
- * AND NOTHING BUT THE DISPATCH ASKS THE REMOTE. Every later spawn reads the row
+ * AND NOTHING BUT THE DISPATCH OBSERVES A REF. Every later spawn reads the row
  * the dispatch or an accepted work result wrote, so a rework runs at the commit
  * that was judged rather than at whatever the branch holds by then.
  *
@@ -27,6 +27,13 @@
  * That is the dispatch's commit, or the target's where a failed landing started
  * the change again. A commit two results claim, or a walk past its bound, names
  * no base, which a check reads as reason to run everything.
+ *
+ * EXCEPT WHERE THE LATEST FAILED LANDING NAMED THE BASE ITS PROPOSAL FAILED ON.
+ * Its rework is told to bring that base in, so a commit holding it holds the
+ * base's own commits too, and a change read from the walked-back base would
+ * claim them. That base is the change's base wherever the spawn's commit is
+ * answered to descend from it — two immutable commits, so the answer cannot go
+ * stale — and the walked-back one stays where the answer is no or unknown.
  */
 
 import {
@@ -36,6 +43,7 @@ import {
   type GitRefName,
   type RepositoryId,
 } from "./finalizer.ts";
+import type { CommitAncestryPort } from "./commitAncestry.ts";
 import type { Partition } from "./projectStore.ts";
 import type { ProjectRepositoryBindingRead } from "./repositoryConfiguration.ts";
 import { digestFold, type ResultManifestId } from "./resultManifest.ts";
@@ -81,6 +89,15 @@ export interface ExecutionSourceHistoryPort {
     commit: GitObjectId,
     limit: number,
   ): Promise<readonly GitObjectId[]>;
+  /**
+   * The commit of the base the ticket's latest failed landing — the attempt
+   * its latest rework was sent back for — named its proposal as failing on:
+   * none where it named none, or the ticket was never sent back.
+   */
+  failedLandingBase(
+    partition: Partition,
+    ticket: number,
+  ): Promise<GitObjectId | undefined>;
 }
 
 /** The most work results a change's base is walked back through before it is called unknown. */
@@ -109,10 +126,43 @@ async function executionChangeBase(
   return undefined;
 }
 
+/**
+ * The base the ticket's latest failed landing named, where the spawn's commit
+ * is answered to descend from it, and otherwise the walked-back one.
+ */
+async function executionSourceChangeBase(
+  bindings: ProjectRepositoryBindingRead,
+  ancestry: CommitAncestryPort,
+  history: ExecutionSourceHistoryPort,
+  request: { readonly partition: Partition; readonly ticket: number },
+  row: { readonly repository: RepositoryId; readonly commit: GitObjectId },
+): Promise<GitObjectId | undefined> {
+  const walked = await executionChangeBase(
+    history,
+    request.partition,
+    request.ticket,
+    row.commit,
+  );
+  const landed = await history.failedLandingBase(
+    request.partition,
+    request.ticket,
+  );
+  if (landed === undefined || landed === walked) return walked;
+  const repository = await bindings.binding(request.partition, row.repository);
+  if (repository === undefined) return walked;
+  const answer = await ancestry.ancestry({
+    repository,
+    candidate: landed,
+    tip: row.commit,
+  });
+  return answer === "Ancestor" ? landed : walked;
+}
+
 export function executionSourceObservation(
   bindings: ProjectRepositoryBindingRead,
   git: Pick<GitPromotionPort, "observeTarget">,
   history: ExecutionSourceHistoryPort,
+  ancestry: CommitAncestryPort,
 ): ExecutionSourceObservationPort {
   return {
     observe: async (request) => {
@@ -153,11 +203,12 @@ export function executionSourceObservation(
         request.kind === "Evaluation"
           ? await history.workSource(request.partition, request.ticket)
           : undefined;
-      const changeBase = await executionChangeBase(
+      const changeBase = await executionSourceChangeBase(
+        bindings,
+        ancestry,
         history,
-        request.partition,
-        request.ticket,
-        row.commit,
+        request,
+        { repository: row.repository, commit: row.commit },
       );
       return {
         repository: row.repository,

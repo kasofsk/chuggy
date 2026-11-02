@@ -830,6 +830,12 @@ function pinnedSources(sourced: number[]): ExecutionSourceObservationPort {
       },
       workResultBases: (_partition, _ticket, commit) =>
         Promise.resolve(commit === workCommit ? [startedCommit] : []),
+      failedLandingBase: () => Promise.resolve(undefined),
+    },
+    {
+      ancestry: () => {
+        throw new Error("a spawn after no failed landing asks no ancestry");
+      },
     },
   );
 }

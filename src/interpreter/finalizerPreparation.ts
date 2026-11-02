@@ -684,6 +684,8 @@ export interface FinalizationEvidence {
   readonly attempt: FinalizationAttemptId;
   readonly attemptDigest: string;
   readonly targetCommit: GitObjectId;
+  /** The commit of the base the attempt's proposal failed on, where it recorded one. */
+  readonly proposalBase?: GitObjectId;
   readonly conflictManifest?: ProjectArtifactId;
   readonly conflictManifestDigest?: string;
   readonly preparation: readonly InputBundleReference[];

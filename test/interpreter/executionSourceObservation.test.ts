@@ -10,6 +10,11 @@ import type {
   TicketSourceRow,
 } from "../../src/interpreter/executionSourceObservation.ts";
 import { unsourcedTicketReference } from "../../src/interpreter/executionSource.ts";
+import type {
+  CommitAncestry,
+  CommitAncestryQuestion,
+  CommitAncestryPort,
+} from "../../src/interpreter/commitAncestry.ts";
 import {
   asGitObjectId,
   asGitRefName,
@@ -43,6 +48,16 @@ const noHistory: ExecutionSourceHistoryPort = {
   workResultBases: () => {
     throw new Error("an observation reads no history");
   },
+  failedLandingBase: () => {
+    throw new Error("an observation reads no history");
+  },
+};
+
+/** An ancestry port nothing in a case asks. */
+const noAncestry: CommitAncestryPort = {
+  ancestry: () => {
+    throw new Error("nothing here asks about ancestry");
+  },
 };
 
 /** An observation over the project's default binding, recording what was asked about. */
@@ -71,6 +86,7 @@ function observingBinding(
       },
     },
     noHistory,
+    noAncestry,
   );
 }
 
@@ -93,6 +109,7 @@ function observingUncalled(): {
       },
     },
     noHistory,
+    noAncestry,
   );
   return { subject, bindingReads: () => bindingReads };
 }
@@ -188,6 +205,7 @@ function observingWithout(
       },
     },
     noHistory,
+    noAncestry,
   );
 }
 
@@ -264,6 +282,7 @@ function observingBound(
       },
     },
     noHistory,
+    noAncestry,
   );
 }
 
@@ -309,17 +328,29 @@ const acceptedOnce = producing(new Map([[acceptedCommit, [dispatchedCommit]]]));
 
 /**
  * A spawn whose history answers the ticket's own source, its latest work
- * manifests and `bases`, recording each commit the walk asked about.
+ * manifests and `bases`, recording each commit the walk asked about, and
+ * naming no failed landing's base unless `landed` names one.
  */
 function spawningFrom(
   row: TicketSourceRow | undefined,
   bases: WorkResultBases = acceptedOnce,
   asked: string[] = [],
+  landed?: {
+    readonly base: GitObjectId;
+    readonly answer: CommitAncestry;
+    readonly questions: CommitAncestryQuestion[];
+  },
 ): ReturnType<typeof executionSourceObservation> {
   return executionSourceObservation(
     {
-      binding: () => {
-        throw new Error("a spawn must not read the project binding");
+      binding: (asking, repository) => {
+        if (landed === undefined)
+          throw new Error("a spawn must not read the project binding");
+        return Promise.resolve({
+          partition: asking,
+          repository: repository ?? asRepositoryId("project-default"),
+          recoveryEpoch: asRecoveryEpoch("epoch"),
+        });
       },
     },
     {
@@ -336,7 +367,19 @@ function spawningFrom(
         asked.push(commit);
         return Promise.resolve(bases(commit).slice(0, limit));
       },
+      failedLandingBase: (_partition, ticket) => {
+        assert.equal(ticket, 1, "the landing read left the ticket");
+        return Promise.resolve(landed?.base);
+      },
     },
+    landed === undefined
+      ? noAncestry
+      : {
+          ancestry: (question) => {
+            landed.questions.push(question);
+            return Promise.resolve(landed.answer);
+          },
+        },
   );
 }
 
@@ -470,5 +513,71 @@ test("a reference no row carries answers the same nothing", async () => {
       kind: "Evaluation",
     }),
     undefined,
+  );
+});
+
+/** The base a failed landing's proposal failed on, which the rework brought in. */
+const landedBase = asGitObjectId("9".repeat(40));
+
+/** A spawn of the accepted source after a failed landing naming `landedBase`, with ancestry answering `answer`. */
+async function landedChangeBase(
+  kind: "Work" | "Evaluation",
+  answer: CommitAncestry,
+): Promise<{
+  changeBase: string | undefined;
+  questions: readonly CommitAncestryQuestion[];
+}> {
+  const questions: CommitAncestryQuestion[] = [];
+  const sourced = await spawningFrom(
+    { repository: asRepositoryId("work-repository"), commit: acceptedCommit },
+    acceptedOnce,
+    [],
+    { base: landedBase, answer, questions },
+  ).spawnSource({ partition, ticket: 1, source: acceptedReference, kind });
+  return { changeBase: sourced?.changeBase, questions };
+}
+
+/**
+ * A rework that brought in the base its proposal failed on holds that base's
+ * commits. Catches the walked-back base kept, under which a check or a reviewer
+ * reads the base's own commits as the ticket's change.
+ */
+test("an evaluation of a commit holding the failed landing's base starts its change there", async () => {
+  const { changeBase, questions } = await landedChangeBase(
+    "Evaluation",
+    "Ancestor",
+  );
+  assert.equal(changeBase, landedBase);
+  assert.deepEqual(
+    questions.map((question) => [
+      question.repository.repository,
+      question.candidate,
+      question.tip,
+    ]),
+    [["work-repository", landedBase, acceptedCommit]],
+  );
+});
+
+/** Catches a work cycle after an evaluation's NeedsWork falling back to the walked-back base. */
+test("a later work cycle at a commit holding the failed landing's base starts its change there", async () => {
+  assert.equal(
+    (await landedChangeBase("Work", "Ancestor")).changeBase,
+    landedBase,
+  );
+});
+
+/** Catches the landing's base taken on its word, where the commit run at does not hold it. */
+test("a commit not holding the failed landing's base keeps the walked-back base", async () => {
+  assert.equal(
+    (await landedChangeBase("Evaluation", "NotAncestor")).changeBase,
+    dispatchedCommit,
+  );
+});
+
+/** Catches an unanswered question read as a yes. */
+test("a commit whose ancestry is unknown keeps the walked-back base", async () => {
+  assert.equal(
+    (await landedChangeBase("Evaluation", "Unknown")).changeBase,
+    dispatchedCommit,
   );
 });

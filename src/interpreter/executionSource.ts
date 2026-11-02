@@ -25,9 +25,11 @@ export interface ExecutionSourceObservation {
     Partial<Pick<ObservedTarget, "ref">>;
   readonly manifests: readonly ResultManifestId[];
   /**
-   * The commit the ticket's change started from, where it is known: the
-   * target's own commit, walked back through every work result of the ticket
-   * that produced it to the first commit none of them did.
+   * The commit the ticket's change started from, where it is known: the base
+   * the ticket's latest failed landing named where the target's commit
+   * descends from it, and otherwise the target's own commit, walked back
+   * through every work result of the ticket that produced it to the first
+   * commit none of them did.
    */
   readonly changeBase?: GitObjectId;
 }

@@ -1011,6 +1011,11 @@ export function postgresHarnessWriter(
             },
           },
           postgresExecutionSourceHistory(harness.writerPool),
+          {
+            ancestry: () => {
+              throw new Error("postgres harness: a spawn asks no ancestry");
+            },
+          },
         ).spawnSource(request),
     },
     ticketBriefs: postgresTicketBrief(harness.writerPool),
