@@ -1862,7 +1862,7 @@ test("a reading after a refused enqueue enqueues again where the forge's rules a
         mergeBounds,
       ),
       { next: "Enqueue" },
-      reading.evidence.mergeability,
+      String(reading.evidence.mergeability),
     );
   assert.deepEqual(
     changeProposalMergeNext(
