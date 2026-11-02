@@ -13,6 +13,7 @@ import {
   ticketLandingsAnsweredMax,
 } from "../../src/contract/http.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
+import { asProposalQueueWord } from "../../src/interpreter/changeProposal.ts";
 import {
   asFinalizationAttemptId,
   asGitObjectId,
@@ -107,13 +108,34 @@ test("a live landing is awaiting its approval, else held at its recorded hold, e
   }
 });
 
-test("a concluded landing is what its event says, and answers no hold its columns still carry", () => {
+test("a concluded landing is what its event says, and answers no hold its columns still carry but the one an escalation escalated from", () => {
   const fulfilled = (fields: Partial<TicketLandingRecord>) =>
     ticketLandingState(recorded({ request: "Fulfilled", hold, ...fields }));
   assert.deepEqual(fulfilled({ concluded: "NeedsWork" }), { state: "Failed" });
   assert.deepEqual(fulfilled({ concluded: "Unavailable" }), {
     state: "Unavailable",
+    hold,
   });
+  const removed = {
+    kind: "ProposalDequeued" as const,
+    passes: 10,
+    since: asPublicInstant("2026-11-02T22:21:18.000000Z"),
+    removal: {
+      reason: asProposalQueueWord("manual"),
+      actor: asProposalQueueWord("gdoteof"),
+    },
+  };
+  assert.deepEqual(fulfilled({ concluded: "Unavailable", hold: removed }), {
+    state: "Unavailable",
+    hold: removed,
+  });
+  assert.deepEqual(
+    ticketLandingState(
+      recorded({ request: "Fulfilled", concluded: "Unavailable" }),
+    ),
+    { state: "Unavailable" },
+    "an escalation with no hold recorded answers none",
+  );
   assert.deepEqual(
     fulfilled({
       concluded: "Succeeded",
