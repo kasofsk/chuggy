@@ -583,9 +583,10 @@ test("a spawn bundle whose source knows no change base names none", () => {
 });
 
 /**
- * A rework after a failed landing is checked out at the target's commit and
- * holds none of the change, so the change starts there again. Catches the
- * landing's rework naming no base, or the base its failed change started from.
+ * A rework after a failed landing that named no proposal base is checked out
+ * at the target's commit and holds none of the change, so the change starts
+ * there again. Catches the landing's rework naming no base, or the base its
+ * failed change started from.
  */
 test("a failed landing's rework bundle names the target's commit as where its change starts", () => {
   const targetCommit = asGitObjectId("a".repeat(40));
@@ -604,6 +605,40 @@ test("a failed landing's rework bundle names the target's commit as where its ch
   assert.deepEqual(
     references.filter((reference) => reference.kind === "ChangeBase"),
     [{ kind: "ChangeBase", reference: targetCommit }],
+  );
+});
+
+/**
+ * A rework sent back for a queue's failed checks, or a conflict, against the
+ * base its proposal failed on is told to bring that base in, so its change
+ * starts there. Catches the target's commit named, under which the base's own
+ * commits read as the ticket's change, and the target's commit lost.
+ */
+test("a failed landing's rework bundle names the base its proposal failed on as where its change starts", () => {
+  const targetCommit = asGitObjectId("a".repeat(40));
+  const proposalBase = asGitObjectId("9".repeat(40));
+  const references = inputBundleReferencesOf(
+    { configurationRevision: "revision", configurationDigest: "d".repeat(64) },
+    {
+      bundle: "bundle",
+      evidence: {
+        attempt: asFinalizationAttemptId("attempt"),
+        attemptDigest: "e".repeat(64),
+        targetCommit,
+        proposalBase,
+        preparation: [{ kind: "Repository", reference: "repository" }],
+      },
+    },
+  );
+  assert.deepEqual(
+    references.filter(
+      (reference) =>
+        reference.kind === "ChangeBase" || reference.kind === "TargetCommit",
+    ),
+    [
+      { kind: "TargetCommit", reference: targetCommit },
+      { kind: "ChangeBase", reference: proposalBase },
+    ],
   );
 });
 

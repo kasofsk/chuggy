@@ -316,6 +316,7 @@ async function releaseDraftSource(
 interface FinalizationAttemptRow {
   readonly attempt_digest: string;
   readonly target_commit: string;
+  readonly proposal_base_commit: string | null;
   readonly conflict_manifest: string | null;
   readonly conflict_manifest_digest: string | null;
   readonly input_bundle: string;
@@ -329,7 +330,8 @@ async function finalizationAttemptOf(
   attempted: string,
 ): Promise<FinalizationAttemptRow> {
   const found = await pool.query<FinalizationAttemptRow>(
-    sql`SELECT a.attempt_digest, a.target_commit, a.conflict_manifest,
+    sql`SELECT a.attempt_digest, a.target_commit, a.proposal_base_commit,
+            a.conflict_manifest,
             a.conflict_manifest_digest, a.input_bundle
        FROM finalization_attempt a
       WHERE a.tenant=${partition.tenant} AND a.project=${partition.project}
@@ -371,6 +373,9 @@ async function finalizationEvidenceOf(
     attempt: asFinalizationAttemptId(attempted),
     attemptDigest: attempt.attempt_digest,
     targetCommit: asGitObjectId(attempt.target_commit),
+    ...(attempt.proposal_base_commit === null
+      ? {}
+      : { proposalBase: asGitObjectId(attempt.proposal_base_commit) }),
     ...(attempt.conflict_manifest === null
       ? {}
       : { conflictManifest: asProjectArtifactId(attempt.conflict_manifest) }),

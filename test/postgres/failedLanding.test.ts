@@ -11,6 +11,7 @@ import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 
 import { postgresFailedLanding } from "../../src/adapters/postgres/evaluationReports.ts";
+import { postgresExecutionSourceHistory } from "../../src/adapters/postgres/executionSourceHistory.ts";
 import { executionSchedulerDefaults } from "../../src/interpreter/executionScheduler.ts";
 import {
   schedulerClaimFor,
@@ -334,4 +335,62 @@ test("the scheduler role reads why the attempt a rework pins failed, and against
       proposalBase: { ref: baseRef, commit: baseCommit },
     },
   });
+});
+
+/**
+ * The ticket service's read of the base its latest rework was sent back to
+ * bring in. Catches an earlier landing's base read over a later one's, and a
+ * base kept once a later landing named none.
+ */
+test("the ticket service reads the base the latest failed landing named, and none where it named none", async () => {
+  const project = await landingProject("failed-landing-base");
+  const sourced = await landingSettled(project, "Pass", "base");
+  const history = postgresExecutionSourceHistory(rig.harness.writerPool);
+  const ticket = project.ticket;
+  assert.equal(
+    await history.failedLandingBase(project.partition, ticket),
+    undefined,
+    "a ticket never sent back names no base",
+  );
+
+  const finalization = await landingFinalization(project);
+  const queuedBase = "e".repeat(40);
+  const queued = await landingAttempt(project, finalization, {
+    kind: "QueueChecksFailed",
+    baseRef: "refs/heads/trunk",
+    baseCommit: queuedBase,
+    groupCommit: "f".repeat(40),
+  });
+  await landingRework(project, 2, landingReferences(sourced, false, queued));
+  assert.equal(
+    await history.failedLandingBase(project.partition, ticket),
+    queuedBase,
+  );
+
+  const conflictedBase = "a".repeat(40);
+  const conflicted = await landingAttempt(project, finalization, {
+    kind: "MergeConflict",
+    baseRef: "refs/heads/trunk",
+    baseCommit: conflictedBase,
+  });
+  await landingRework(
+    project,
+    3,
+    landingReferences(sourced, false, conflicted),
+  );
+  assert.equal(
+    await history.failedLandingBase(project.partition, ticket),
+    conflictedBase,
+    "the latest landing's base wins",
+  );
+
+  const unbased = await landingAttempt(project, finalization, {
+    kind: "MergeConflict",
+  });
+  await landingRework(project, 4, landingReferences(sourced, false, unbased));
+  assert.equal(
+    await history.failedLandingBase(project.partition, ticket),
+    undefined,
+    "a latest landing naming no base names none",
+  );
 });

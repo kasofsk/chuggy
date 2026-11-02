@@ -304,7 +304,12 @@ function nativeActions(
   ];
 }
 
-/** What a failed finalization's evidence pins: the identities it named, and the target's commit as where the change starts again. */
+/**
+ * What a failed finalization's evidence pins: the identities it named, and
+ * where the change starts again — the base the proposal failed on where the
+ * attempt recorded one, since the rework is told to bring it in, and the
+ * target's commit otherwise.
+ */
 function inputBundleEvidenceReferences(
   evidence: NonNullable<ExecutionRequestBundle["evidence"]>,
 ): readonly InputBundleReference[] {
@@ -316,7 +321,10 @@ function inputBundleEvidenceReferences(
       digest: evidence.attemptDigest,
     },
     { kind: "TargetCommit", reference: evidence.targetCommit },
-    { kind: "ChangeBase", reference: evidence.targetCommit },
+    {
+      kind: "ChangeBase",
+      reference: evidence.proposalBase ?? evidence.targetCommit,
+    },
     ...(evidence.conflictManifest === undefined
       ? []
       : [
@@ -355,9 +363,8 @@ function inputBundleDependencyReferences(
  * The references one spawn's bundle pins, in the order a holder reads them and
  * with no reference declared twice. A failed finalization contributes the exact
  * immutable identities its evidence named, so a worker forms its reconciliation
- * objective from the bundle rather than from whatever a ref holds now, and the
- * target's commit as where the change starts again, since its rework is checked
- * out there and holds none of the change.
+ * objective from the bundle rather than from whatever a ref holds now, and
+ * where the change starts again, since its rework holds none of the change.
  */
 export function inputBundleReferencesOf(
   configuration: ConfigurationPin,

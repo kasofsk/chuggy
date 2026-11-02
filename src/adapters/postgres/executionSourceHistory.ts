@@ -74,7 +74,34 @@ export function postgresExecutionSourceHistory(
     },
     workResultBases: (partition, ticket, commit, limit) =>
       workResultBases(pool, partition, ticket, commit, limit),
+    failedLandingBase: (partition, ticket) =>
+      failedLandingBase(pool, partition, ticket),
   };
+}
+
+/** The proposal base the attempt the ticket's latest rework pins recorded, as the port names it. */
+async function failedLandingBase(
+  pool: pg.Pool,
+  partition: Partition,
+  ticket: number,
+): Promise<GitObjectId | undefined> {
+  const found = await pool.query<{ base: string | null }>(
+    sql`SELECT f.proposal_base_commit AS base
+          FROM execution_request q
+          JOIN input_bundle_reference a
+            ON a.tenant=q.tenant AND a.project=q.project
+           AND a.bundle=q.input_bundle
+           AND a.reference_kind='FinalizationAttempt'
+          JOIN finalization_attempt f
+            ON f.tenant=a.tenant AND f.project=a.project
+           AND f.attempt=a.reference_id
+         WHERE q.tenant=${partition.tenant} AND q.project=${partition.project}
+           AND q.ticket=${ticket} AND q.kind='SpawnWork'
+         ORDER BY q.authorizing_seq DESC, q.effect_position DESC
+         LIMIT 1`,
+  );
+  const base = found.rows[0]?.base;
+  return base === undefined || base === null ? undefined : asGitObjectId(base);
 }
 
 /** The distinct bases of the ticket's work results that produced `commit`, as the port names them. */

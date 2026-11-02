@@ -801,10 +801,12 @@ export function projectWriterSpawnSourceRef(state: TicketState): number {
 
 /**
  * What a decision that is not a dispatch spawns against: the source the ticket
- * already carries, read out of this partition's own rows. NOTHING HERE ASKS A
- * REMOTE — a rework runs at the commit its work was judged at, and an
+ * already carries, read out of this partition's own rows. NOTHING HERE READS A
+ * REF — a rework runs at the commit its work was judged at, and an
  * evaluation at the commit the result it judges was produced at, both of which
- * are facts already written down.
+ * are facts already written down, and its change base may also rest on an
+ * ancestry answer, which may fetch history from the remote, about whether that
+ * commit descends from a failed landing's base.
  */
 async function projectWriterSpawnSources(
   writer: ProjectTicketWriter,
