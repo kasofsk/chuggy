@@ -44,6 +44,16 @@
  * that repository and base for its transaction and asks the first half again
  * under it, so two finalizers cannot both start one.
  *
+ * A MERGE QUEUE IS FOLLOWED IN COLUMNS OF ITS OWN. `merge_queue_unread` is a
+ * refusal or an enqueue no standing read has seen since, `merge_queue_refused`
+ * that the last enqueue was refused, `merge_queue_entered` that the pinned head
+ * was seen entering the queue, `merge_queue_standing` the last standing read,
+ * and `merge_queue_requeued_after_ms` the removal a second enqueue answered. A
+ * standing read that finds the base requiring a queue releases a merge in
+ * flight as declined, which is what leaves the merges it spends untouched, and
+ * clears the reading a wait kept, so a reading kept beside a standing is
+ * always the newer of the two.
+ *
  * AN ADOPTED HEAD IS WRITTEN BESIDE THE ONE ASKED FOR, never over it, and only
  * where the reading the row keeps found the proposal at that head.
  *
@@ -97,6 +107,7 @@ import {
   allChangeProposalMergeabilities,
   allChangeProposalMergeAnswers,
   allChangeProposalMergeReconciliationsStored,
+  allChangeProposalQueueRemovalKinds,
   allChangeProposalReconciliationsStored,
   allChangeProposalStatuses,
   allChangeProposalUnmergeableSettled,
@@ -106,6 +117,8 @@ import {
   asProposalMarker,
   asProposalMergeState,
   asProposalNumber,
+  asProposalQueueInstant,
+  asProposalQueueWord,
   asProposalRemoteIdentity,
   proposalEvidenceCharsMax,
   type ChangeProposalContradiction,
@@ -118,14 +131,18 @@ import {
   type ChangeProposalMergeReconciliationAnswer,
   type ChangeProposalMergeReconciliationStored,
   type ChangeProposalMerging,
+  type ChangeProposalQueueing,
+  type ChangeProposalQueueStanding,
   type ChangeProposalReconciliationAnswer,
   type ChangeProposalReconciliationStored,
   type ChangeProposalRequest,
   type ChangeProposalUpdating,
   type OpenedChangeProposalPublication,
+  type ProposalQueueInstant,
 } from "../../interpreter/changeProposal.ts";
 import type {
   ChangeProposalAsked,
+  ChangeProposalEnqueueWrite,
   ChangeProposalUpdateWrite,
   ChangeProposalMergeResult,
   ChangeProposalRecord,
@@ -179,6 +196,11 @@ interface ChangeProposalRow {
   readonly merge_update_declines: string;
   readonly merge_update_unread: boolean;
   readonly update_turn: boolean;
+  readonly merge_queue_standing: unknown;
+  readonly merge_queue_unread: boolean;
+  readonly merge_queue_refused: boolean;
+  readonly merge_queue_entered: boolean;
+  readonly merge_queue_requeued_after_ms: string | null;
 }
 
 /** The columns one answer writes, whichever arm it came back on. */
@@ -597,6 +619,91 @@ function changeProposalUpdatingOf(
   };
 }
 
+/** A standing read, in the shape this code writes it. */
+const changeProposalStoredStandingSchema = z.object({
+  enabled: z.boolean(),
+  open: z.boolean(),
+  queued: z.boolean(),
+  head: z.string(),
+  entry: z.string().optional(),
+  enqueuedAtMs: z.number().optional(),
+  removal: z
+    .object({
+      atMs: z.number(),
+      kind: z.string(),
+      reason: z.string(),
+      actor: z.string().optional(),
+    })
+    .optional(),
+});
+
+/** Brands one stored standing read back into the shape the pure step decides over. */
+function changeProposalStandingOf(
+  stored: unknown,
+): ChangeProposalQueueStanding {
+  const parsed = changeProposalStoredStandingSchema.safeParse(stored);
+  if (!parsed.success) {
+    throw new Error(
+      "finalizer row: a standing read is not one this code wrote",
+    );
+  }
+  const { removal, entry, enqueuedAtMs, ...value } = parsed.data;
+  return {
+    enabled: value.enabled,
+    open: value.open,
+    queued: value.queued,
+    head: asGitObjectId(value.head),
+    ...(entry === undefined ? {} : { entry: asProposalQueueWord(entry) }),
+    ...(enqueuedAtMs === undefined
+      ? {}
+      : { enqueuedAtMs: asProposalQueueInstant(enqueuedAtMs) }),
+    ...(removal === undefined
+      ? {}
+      : {
+          removal: {
+            atMs: asProposalQueueInstant(removal.atMs),
+            kind: finalizerRowValue(
+              allChangeProposalQueueRemovalKinds,
+              removal.kind,
+              "change proposal queue removal",
+            ),
+            reason: asProposalQueueWord(removal.reason),
+            ...(removal.actor === undefined
+              ? {}
+              : { actor: asProposalQueueWord(removal.actor) }),
+          },
+        }),
+  };
+}
+
+/** How following the row through its base's merge queue stands, every standing read aged as a wait is. */
+function changeProposalQueueingOf(
+  row: ChangeProposalRow,
+): ChangeProposalQueueing {
+  const standing =
+    row.merge_queue_standing === null
+      ? undefined
+      : changeProposalStandingOf(row.merge_queue_standing);
+  return {
+    unread: row.merge_queue_unread,
+    refused: row.merge_queue_refused,
+    entered: row.merge_queue_entered,
+    ...(standing === undefined
+      ? {}
+      : { standing, heardAgeSecs: changeProposalMergeHeardAgeOf(row) }),
+    ...(row.merge_queue_requeued_after_ms === null
+      ? {}
+      : {
+          requeuedAfterMs: asProposalQueueInstant(
+            projectRowCounter(
+              row.merge_queue_requeued_after_ms,
+              "change proposal requeued after",
+            ),
+          ),
+        }),
+  };
+}
+
 /**
  * Everything the pure step reads of one stored proposal, absent until one is
  * attempted. The state is read from the counters, which is the whole reason the
@@ -628,6 +735,9 @@ export async function finalizerChangeProposalRead(
             merge_updates::text AS merge_updates,
             merge_update_declines::text AS merge_update_declines,
             merge_update_unread,
+            merge_queue_standing, merge_queue_unread, merge_queue_refused,
+            merge_queue_entered,
+            merge_queue_requeued_after_ms::text AS merge_queue_requeued_after_ms,
             NOT EXISTS (
               SELECT 1 FROM finalization_change_proposal s
                 JOIN finalization_request f
@@ -660,6 +770,7 @@ export async function finalizerChangeProposalRead(
       ? {}
       : { adopted: asGitObjectId(row.merge_head) }),
     updating: changeProposalUpdatingOf(row),
+    queueing: changeProposalQueueingOf(row),
   };
 }
 
@@ -1115,9 +1226,9 @@ function changeProposalMergeReadingColumns(
 /**
  * Records what one reading of the merge read, over the merge it was taken
  * about, and counts it only against a merge in flight. A reading is taken about
- * a merge nobody heard back from and about one waiting on the forge, so a row
- * released with nothing to wait on or settled by anything but a moved head
- * takes none.
+ * a merge nobody heard back from, about one waiting on the forge and about one
+ * followed through a merge queue, so a row released with nothing to wait on or
+ * settled by anything but a moved head takes none.
  */
 async function finalizerChangeProposalMergeRead(
   client: pg.PoolClient,
@@ -1144,7 +1255,8 @@ async function finalizerChangeProposalMergeRead(
               AND merge_attempts = merge_refusals + merge_declines + 1)
              OR (merge IS NULL
                  AND merge_attempts = merge_refusals + merge_declines
-                 AND merge_reading IS NOT NULL)
+                 AND (merge_reading IS NOT NULL
+                      OR merge_queue_standing IS NOT NULL))
              OR merge = 'HeadMoved')`,
   );
   return recorded.rowCount === 1 ? { wrote: "Row" } : { wrote: "Nothing" };
@@ -1265,6 +1377,124 @@ export async function finalizerChangeProposalAdopt(
         AND ((merge IS NULL
               AND merge_attempts = merge_refusals + merge_declines)
              OR merge = 'HeadMoved')`,
+  );
+  return wrote.rowCount === 1 ? { wrote: "Row" } : { wrote: "Nothing" };
+}
+
+/** Records that the merge in flight was refused for a reason a standing read decides, so one is taken next. */
+export async function finalizerChangeProposalQueueUnread(
+  client: pg.PoolClient,
+  claim: FinalizationClaim,
+): Promise<ChangeProposalWritten> {
+  if (!(await finalizerChangeProposalClaimStands(client, claim)))
+    return { wrote: "Nothing" };
+  const wrote = await client.query(
+    sql`UPDATE finalization_change_proposal
+        SET merge_queue_unread = true
+      WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
+        AND request = ${claim.request}
+        AND merge IS NULL
+        AND merge_attempts = merge_refusals + merge_declines + 1`,
+  );
+  return wrote.rowCount === 1 ? { wrote: "Row" } : { wrote: "Nothing" };
+}
+
+/**
+ * Records one standing read as the moment the forge was last heard. Where the
+ * base requires a queue, a merge in flight is released unspent and the reading
+ * a wait kept goes with it; and the pinned head is entered once a read finds
+ * it queued.
+ */
+export async function finalizerChangeProposalQueueRecord(
+  client: pg.PoolClient,
+  claim: FinalizationClaim,
+  standing: ChangeProposalQueueStanding,
+): Promise<ChangeProposalWritten> {
+  const document = JSON.stringify(standing);
+  if (textCodePointsCount(document) > proposalEvidenceCharsMax)
+    return { wrote: "Nothing" };
+  if (!(await finalizerChangeProposalClaimStands(client, claim)))
+    return { wrote: "Nothing" };
+  const wrote = await client.query(
+    sql`UPDATE finalization_change_proposal
+        SET merge_queue_standing = ${document}::jsonb,
+            merge_queue_unread = false,
+            merge_queue_entered = merge_queue_entered
+              OR (${standing.queued}
+                  AND ${standing.head} = coalesce(merge_head, head_commit)),
+            merge_declines = merge_declines
+              + CASE WHEN ${standing.enabled}
+                      AND merge_attempts = merge_refusals + merge_declines + 1
+                     THEN 1 ELSE 0 END,
+            merge_reading = CASE WHEN ${standing.enabled} THEN NULL
+                                 ELSE merge_reading END,
+            merge_reading_contradiction =
+              CASE WHEN ${standing.enabled} THEN NULL
+                   ELSE merge_reading_contradiction END,
+            merge_reading_evidence = CASE WHEN ${standing.enabled} THEN NULL
+                                          ELSE merge_reading_evidence END,
+            merge_heard_at = now()
+      WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
+        AND request = ${claim.request}
+        AND merge IS NULL`,
+  );
+  return wrote.rowCount === 1 ? { wrote: "Row" } : { wrote: "Nothing" };
+}
+
+/**
+ * Records that an enqueue is about to be asked, so a crash before its answer
+ * leaves a standing read due rather than a second enqueue. Only a row with
+ * nothing in flight, a standing read to act on and nothing unread takes one.
+ */
+export async function finalizerChangeProposalEnqueueMark(
+  client: pg.PoolClient,
+  claim: FinalizationClaim,
+  requeuedAfterMs: ProposalQueueInstant | undefined,
+): Promise<ChangeProposalWritten> {
+  if (!(await finalizerChangeProposalClaimStands(client, claim)))
+    return { wrote: "Nothing" };
+  const wrote = await client.query(
+    sql`UPDATE finalization_change_proposal
+        SET merge_queue_unread = true,
+            merge_queue_requeued_after_ms =
+              coalesce(${requeuedAfterMs ?? null}::bigint,
+                       merge_queue_requeued_after_ms)
+      WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
+        AND request = ${claim.request}
+        AND merge IS NULL
+        AND merge_attempts = merge_refusals + merge_declines
+        AND merge_queue_standing IS NOT NULL
+        AND NOT merge_queue_unread`,
+  );
+  return wrote.rowCount === 1 ? { wrote: "Row" } : { wrote: "Nothing" };
+}
+
+/**
+ * Records what the enqueue asked came to: one the queue took enters the pinned
+ * head, one refused waits on the standing read after it, and one the forge
+ * would not take is released with no read due, so the next pass asks again.
+ */
+export async function finalizerChangeProposalEnqueueRecord(
+  client: pg.PoolClient,
+  claim: FinalizationClaim,
+  write: ChangeProposalEnqueueWrite,
+): Promise<ChangeProposalWritten> {
+  if (!(await finalizerChangeProposalClaimStands(client, claim)))
+    return { wrote: "Nothing" };
+  const declined = write === "Declined";
+  const wrote = await client.query(
+    sql`UPDATE finalization_change_proposal
+        SET merge_queue_entered = merge_queue_entered OR ${write === "Queued"},
+            merge_queue_refused = CASE WHEN ${declined}
+                                       THEN merge_queue_refused
+                                       ELSE ${write === "Refused"} END,
+            merge_queue_unread = ${!declined},
+            merge_heard_at = CASE WHEN ${declined}
+                                  THEN merge_heard_at ELSE now() END
+      WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
+        AND request = ${claim.request}
+        AND merge IS NULL
+        AND merge_queue_unread`,
   );
   return wrote.rowCount === 1 ? { wrote: "Row" } : { wrote: "Nothing" };
 }

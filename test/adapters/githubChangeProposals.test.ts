@@ -25,8 +25,15 @@ import {
   type GithubChangeProposalsHosts,
 } from "../../src/adapters/forge/githubChangeProposals.ts";
 import {
+  allChangeProposalDequeues,
+  allChangeProposalEnqueues,
   allChangeProposalMerges,
   allChangeProposalUpdates,
+  asProposalQueueInstant,
+  asProposalQueueWord,
+  type ChangeProposalDequeued,
+  type ChangeProposalEnqueued,
+  type ChangeProposalQueueRead,
 } from "../../src/interpreter/changeProposal.ts";
 import {
   asChangeProposalRequestIdentity,
@@ -898,6 +905,17 @@ test("a merge is one request, addressed by number and conditional on the head", 
 test("every way this forge answers a merge is its own value", async () => {
   const cases: readonly [Response | Error, ChangeProposalMerged][] = [
     [fixtureRefusal(405), { merged: "NotMergeable", reason: "Unknown" }],
+    [
+      fixtureAnswer(405, {
+        message:
+          "Repository rule violations found\n\nChanges must be made through the merge queue\n\n",
+      }),
+      { merged: "NotMergeable", reason: "Unknown" },
+    ],
+    [
+      fixtureAnswer(405, { message: "Pull Request is in the merge queue." }),
+      { merged: "NotMergeable", reason: "Unknown" },
+    ],
     [fixtureRefusal(409), { merged: "HeadMoved" }],
     [fixtureRefusal(403), { merged: "Denied" }],
     [fixtureRefusal(404), { merged: "Denied" }],
@@ -1219,4 +1237,513 @@ test("only a merged proposal carries the commit a merge left", async () => {
       "a merged proposal whose commit no row holds is found and unusable",
     );
   }
+});
+
+/** The merge commit a queue's group was built as, and the base it was built on. */
+const fixtureGroupCommit = "9".repeat(40);
+
+/** One pull request's standing in its base's merge queue as GraphQL answers it, narrowed to what a case is about. */
+function fixtureQueuePull(
+  overrides: Readonly<Record<string, unknown>> = {},
+  events: readonly Readonly<Record<string, unknown>>[] = [],
+): Readonly<Record<string, unknown>> {
+  return {
+    data: {
+      repository: {
+        pullRequest: {
+          state: "OPEN",
+          isMergeQueueEnabled: true,
+          isInMergeQueue: false,
+          headRefOid: fixtureHeadCommit,
+          mergeQueueEntry: null,
+          timelineItems: { nodes: events },
+          ...overrides,
+        },
+      },
+    },
+  };
+}
+
+/** The pull request added to its base's queue at the moment named. */
+function fixtureQueueAdded(createdAt: string): Record<string, unknown> {
+  return { __typename: "AddedToMergeQueueEvent", createdAt };
+}
+
+/** The pull request removed from its base's queue at the moment named, for the reason and by the login named. */
+function fixtureQueueRemoved(
+  createdAt: string,
+  reason: string,
+  login = "chuggy-portal",
+): Record<string, unknown> {
+  return {
+    __typename: "RemovedFromMergeQueueEvent",
+    createdAt,
+    reason,
+    actor: { login },
+    beforeCommit:
+      reason === "merge_conflict" ? null : { oid: fixtureGroupCommit },
+  };
+}
+
+/** A refusal GraphQL answers in a success, as GitHub words one of the type named. */
+function fixtureGraphqlRefusal(
+  field: string,
+  type: string,
+  message: string,
+): Response {
+  return fixtureAnswer(200, {
+    data: { [field]: null },
+    errors: [
+      {
+        type,
+        path: [field],
+        ...(type === "FORBIDDEN"
+          ? {
+              extensions: { saml_failure: false, ip_allow_list_failure: false },
+            }
+          : {}),
+        message,
+      },
+    ],
+  });
+}
+
+test("a standing read is one GraphQL request, addressed by owner, name and number", async () => {
+  const recorder = fixtureForge([fixtureAnswer(200, fixtureQueuePull())]);
+  const read = await fixtureAdapter(recorder).readQueue(fixtureMergeRequest());
+  assert.deepEqual(read, {
+    read: "Standing",
+    standing: {
+      enabled: true,
+      open: true,
+      queued: false,
+      head: fixtureHeadCommit,
+    },
+  });
+  assert.equal(recorder.calls.length, 1);
+  const call = recorder.calls[0];
+  assert.equal(call?.url, "https://api.github.com/graphql");
+  assert.equal(call?.method, "POST");
+  assert.equal(call?.redirect, "error");
+  const sent = JSON.parse(call?.body ?? "") as {
+    query: string;
+    variables: unknown;
+  };
+  assert.deepEqual(sent.variables, {
+    owner: "kasofsk",
+    name: "chuggy",
+    number: fixtureNumber,
+  });
+  for (const field of [
+    "isMergeQueueEnabled",
+    "isInMergeQueue",
+    "headRefOid",
+    "mergeQueueEntry",
+    "ADDED_TO_MERGE_QUEUE_EVENT",
+    "REMOVED_FROM_MERGE_QUEUE_EVENT",
+  ])
+    assert.ok(sent.query.includes(field), field);
+  assert.equal(call?.headers["authorization"], `Bearer ${fixtureSecret}`);
+  assert.equal(JSON.stringify(read).includes(fixtureSecret), false);
+});
+
+/** What a standing read answers on a base before and after it requires a queue, and with the proposal in it and merged out of it. */
+const fixtureQueueStandings: readonly (readonly [
+  Readonly<Record<string, unknown>>,
+  ChangeProposalQueueRead,
+])[] = [
+  [
+    fixtureQueuePull({ isMergeQueueEnabled: false }),
+    {
+      read: "Standing",
+      standing: {
+        enabled: false,
+        open: true,
+        queued: false,
+        head: fixtureHeadCommit,
+      },
+    },
+  ],
+  ...(["QUEUED", "AWAITING_CHECKS", "UNMERGEABLE"] as const).map(
+    (state) =>
+      [
+        fixtureQueuePull(
+          {
+            isInMergeQueue: true,
+            mergeQueueEntry: { state },
+          },
+          [fixtureQueueAdded("2026-11-02T10:00:00Z")],
+        ),
+        {
+          read: "Standing",
+          standing: {
+            enabled: true,
+            open: true,
+            queued: true,
+            head: fixtureHeadCommit,
+            entry: asProposalQueueWord(state),
+            enqueuedAtMs: asProposalQueueInstant(
+              Date.parse("2026-11-02T10:00:00Z"),
+            ),
+          },
+        },
+      ] as const,
+  ),
+  [
+    fixtureQueuePull({ state: "MERGED" }, [
+      fixtureQueueAdded("2026-11-02T10:00:00Z"),
+      fixtureQueueRemoved("2026-11-02T10:04:00Z", "merged"),
+    ]),
+    {
+      read: "Standing",
+      standing: {
+        enabled: true,
+        open: false,
+        queued: false,
+        head: fixtureHeadCommit,
+        enqueuedAtMs: asProposalQueueInstant(
+          Date.parse("2026-11-02T10:00:00Z"),
+        ),
+        removal: {
+          atMs: asProposalQueueInstant(Date.parse("2026-11-02T10:04:00Z")),
+          kind: "Merged",
+          reason: asProposalQueueWord("merged"),
+          actor: asProposalQueueWord("chuggy-portal"),
+        },
+      },
+    },
+  ],
+];
+
+test("a standing read tells a queue branch apart, and where the proposal stands in it", async () => {
+  for (const [answer, expected] of fixtureQueueStandings) {
+    const recorder = fixtureForge([fixtureAnswer(200, answer)]);
+    assert.deepEqual(
+      await fixtureAdapter(recorder).readQueue(fixtureMergeRequest()),
+      expected,
+    );
+  }
+});
+
+test("every removal reason the queue names is routed by its kind, and one it never named before is a dequeue", async () => {
+  const cases = [
+    ["merged", "Merged"],
+    ["failed_checks", "ChecksFailed"],
+    ["checks_timed_out", "ChecksTimedOut"],
+    ["merge_conflict", "Conflict"],
+    ["manual", "Dequeued"],
+    ["a_reason_nobody_has_seen", "Dequeued"],
+    ["constructor", "Dequeued"],
+  ] as const;
+  for (const [reason, kind] of cases) {
+    const recorder = fixtureForge([
+      fixtureAnswer(
+        200,
+        fixtureQueuePull({}, [
+          fixtureQueueRemoved("2026-11-02T10:05:30Z", reason, "a-person"),
+          fixtureQueueAdded("2026-11-02T10:00:00Z"),
+        ]),
+      ),
+    ]);
+    const read = await fixtureAdapter(recorder).readQueue(
+      fixtureMergeRequest(),
+    );
+    assert.equal(read.read, "Standing", reason);
+    if (read.read !== "Standing") continue;
+    assert.deepEqual(
+      read.standing.removal,
+      {
+        atMs: asProposalQueueInstant(Date.parse("2026-11-02T10:05:30Z")),
+        kind,
+        reason: asProposalQueueWord(reason),
+        actor: asProposalQueueWord("a-person"),
+      },
+      reason,
+    );
+    assert.equal(
+      read.standing.enqueuedAtMs,
+      asProposalQueueInstant(Date.parse("2026-11-02T10:00:00Z")),
+      "each kind of event is read as its newest, whatever order the forge lists them in",
+    );
+  }
+});
+
+test("a removal naming no actor is still a removal, and one no row could hold is no reading", async () => {
+  const anonymous = fixtureForge([
+    fixtureAnswer(
+      200,
+      fixtureQueuePull({}, [
+        {
+          __typename: "RemovedFromMergeQueueEvent",
+          createdAt: "2026-11-02T10:05:30Z",
+          reason: "checks_timed_out",
+          actor: null,
+        },
+      ]),
+    ),
+  ]);
+  const read = await fixtureAdapter(anonymous).readQueue(fixtureMergeRequest());
+  assert.deepEqual(read.read === "Standing" ? read.standing.removal : read, {
+    atMs: asProposalQueueInstant(Date.parse("2026-11-02T10:05:30Z")),
+    kind: "ChecksTimedOut",
+    reason: asProposalQueueWord("checks_timed_out"),
+  });
+  for (const event of [
+    fixtureQueueRemoved("not a moment", "manual"),
+    fixtureQueueRemoved("2026-11-02T10:05:30Z", "manual", "x".repeat(65)),
+    fixtureQueueRemoved("2026-11-02T10:05:30Z", "manual\u0000"),
+  ]) {
+    const recorder = fixtureForge([
+      fixtureAnswer(200, fixtureQueuePull({}, [event])),
+    ]);
+    assert.deepEqual(
+      await fixtureAdapter(recorder).readQueue(fixtureMergeRequest()),
+      { read: "Unavailable" },
+    );
+  }
+});
+
+test("a refusal a standing read is answered in a success is never a reading", async () => {
+  const cases: readonly [Response | Error, ChangeProposalQueueRead][] = [
+    [
+      fixtureGraphqlRefusal(
+        "repository",
+        "FORBIDDEN",
+        "Resource not accessible by integration",
+      ),
+      { read: "Denied" },
+    ],
+    [
+      fixtureGraphqlRefusal(
+        "repository",
+        "NOT_FOUND",
+        "Could not resolve to a Repository with the name 'kasofsk/chuggy'.",
+      ),
+      { read: "Denied" },
+    ],
+    [
+      fixtureGraphqlRefusal(
+        "repository",
+        "RATE_LIMITED",
+        "API rate limit exceeded",
+      ),
+      { read: "Unavailable" },
+    ],
+    [
+      fixtureGraphqlRefusal("repository", "UNPROCESSABLE", "Something"),
+      { read: "Unavailable" },
+    ],
+    [
+      fixtureAnswer(200, { data: { repository: { pullRequest: null } } }),
+      { read: "Unavailable" },
+    ],
+    [fixtureAnswer(200, { data: null }), { read: "Unavailable" }],
+    [
+      fixtureAnswer(200, fixtureQueuePull({ headRefOid: "short" })),
+      { read: "Unavailable" },
+    ],
+    [fixtureRefusal(403), { read: "Denied" }],
+    [fixtureRefusal(502), { read: "Unavailable" }],
+    [new Error("the forge stopped"), { read: "Unavailable" }],
+  ];
+  for (const [answer, expected] of cases) {
+    const recorder = fixtureForge([answer]);
+    assert.deepEqual(
+      await fixtureAdapter(recorder).readQueue(fixtureMergeRequest()),
+      expected,
+      JSON.stringify(expected),
+    );
+    assert.equal(recorder.calls.length, 1);
+  }
+});
+
+test("an enqueue is one GraphQL request, conditional on the pinned head", async () => {
+  const recorder = fixtureForge([
+    fixtureAnswer(200, {
+      data: {
+        enqueuePullRequest: {
+          mergeQueueEntry: { state: "QUEUED", position: 1, headCommit: null },
+        },
+      },
+    }),
+  ]);
+  assert.deepEqual(
+    await fixtureAdapter(recorder).enqueue(fixtureMergeRequest()),
+    { enqueued: "Queued" },
+  );
+  assert.equal(recorder.calls.length, 1);
+  const call = recorder.calls[0];
+  assert.equal(call?.url, "https://api.github.com/graphql");
+  assert.equal(call?.method, "POST");
+  const sent = JSON.parse(call?.body ?? "") as {
+    query: string;
+    variables: unknown;
+  };
+  assert.ok(sent.query.includes("enqueuePullRequest"));
+  assert.ok(sent.query.includes("expectedHeadOid"));
+  assert.deepEqual(sent.variables, {
+    id: fixtureRemote,
+    head: fixtureHeadCommit,
+  });
+});
+
+/** Every answer an enqueue was given live, and the ways of not answering beside them. */
+const fixtureEnqueueAnswers: readonly [
+  Response | Error,
+  ChangeProposalEnqueued,
+][] = [
+  [
+    fixtureAnswer(200, {
+      data: {
+        enqueuePullRequest: {
+          mergeQueueEntry: { state: "QUEUED", position: 1 },
+        },
+      },
+    }),
+    { enqueued: "Queued" },
+  ],
+  [
+    fixtureGraphqlRefusal(
+      "enqueuePullRequest",
+      "UNPROCESSABLE",
+      'Pull request Required status check "check" is in progress.',
+    ),
+    { enqueued: "Refused" },
+  ],
+  [
+    fixtureGraphqlRefusal(
+      "enqueuePullRequest",
+      "UNPROCESSABLE",
+      "Failed to add PR #1: expected head oid does not match the current head oid",
+    ),
+    { enqueued: "Refused" },
+  ],
+  [
+    fixtureGraphqlRefusal(
+      "enqueuePullRequest",
+      "UNPROCESSABLE",
+      "Pull request is already in the queue",
+    ),
+    { enqueued: "Refused" },
+  ],
+  [
+    fixtureGraphqlRefusal(
+      "enqueuePullRequest",
+      "FORBIDDEN",
+      "Resource not accessible by integration",
+    ),
+    { enqueued: "Denied" },
+  ],
+  [
+    fixtureGraphqlRefusal(
+      "enqueuePullRequest",
+      "RATE_LIMITED",
+      "API rate limit exceeded",
+    ),
+    { enqueued: "Unavailable" },
+  ],
+  [
+    fixtureGraphqlRefusal(
+      "enqueuePullRequest",
+      "SOMETHING_NEW",
+      "Something new",
+    ),
+    { enqueued: "Ambiguous" },
+  ],
+  [
+    fixtureAnswer(200, { data: { enqueuePullRequest: null } }),
+    { enqueued: "Ambiguous" },
+  ],
+  [fixtureRefusal(403), { enqueued: "Denied" }],
+  [fixtureRefusal(429), { enqueued: "Unavailable" }],
+  [fixtureRefusal(502), { enqueued: "Ambiguous" }],
+  [new Error("the forge stopped"), { enqueued: "Ambiguous" }],
+];
+
+test("every way this forge answers an enqueue is its own value, its message never read", async () => {
+  const answered = new Set<string>();
+  for (const [answer, expected] of fixtureEnqueueAnswers) {
+    const recorder = fixtureForge([answer]);
+    const enqueued = await fixtureAdapter(recorder).enqueue(
+      fixtureMergeRequest(),
+    );
+    assert.deepEqual(enqueued, expected, JSON.stringify(expected));
+    assert.equal(recorder.calls.length, 1);
+    answered.add(enqueued.enqueued);
+  }
+  assert.deepEqual([...answered].sort(), [...allChangeProposalEnqueues].sort());
+});
+
+test("every way this forge answers a dequeue is its own value", async () => {
+  const field = "dequeuePullRequest";
+  const cases: readonly [Response | Error, ChangeProposalDequeued][] = [
+    [
+      fixtureAnswer(200, {
+        data: {
+          [field]: {
+            mergeQueueEntry: { state: "AWAITING_CHECKS", position: 1 },
+          },
+        },
+      }),
+      { dequeued: "Dequeued" },
+    ],
+    [
+      fixtureGraphqlRefusal(
+        field,
+        "UNPROCESSABLE",
+        'Failed to remove PR #2 "probe: manual-b"',
+      ),
+      { dequeued: "Refused" },
+    ],
+    [
+      fixtureGraphqlRefusal(
+        field,
+        "FORBIDDEN",
+        "Resource not accessible by integration",
+      ),
+      { dequeued: "Denied" },
+    ],
+    [fixtureRefusal(429), { dequeued: "Unavailable" }],
+    [new Error("the forge stopped"), { dequeued: "Ambiguous" }],
+  ];
+  const answered = new Set<string>();
+  for (const [answer, expected] of cases) {
+    const recorder = fixtureForge([answer]);
+    const dequeued = await fixtureAdapter(recorder).dequeue(
+      fixtureMergeRequest(),
+    );
+    assert.deepEqual(dequeued, expected, JSON.stringify(expected));
+    assert.equal(recorder.calls.length, 1);
+    answered.add(dequeued.dequeued);
+  }
+  assert.deepEqual([...answered].sort(), [...allChangeProposalDequeues].sort());
+  const recorder = fixtureForge([
+    fixtureAnswer(200, { data: { [field]: null } }),
+  ]);
+  await fixtureAdapter(recorder).dequeue(fixtureMergeRequest());
+  const sent = JSON.parse(recorder.calls[0]?.body ?? "") as {
+    variables: unknown;
+  };
+  assert.deepEqual(sent.variables, { id: fixtureRemote });
+});
+
+test("a queue act this forge could never be asked is answered without a request", async () => {
+  const recorder = fixtureForge([]);
+  const elsewhere = fixtureMergeRequest({
+    repository: asRepositoryId("https://gitlab.invalid/kasofsk/chuggy"),
+  });
+  const adapter = fixtureAdapter(recorder);
+  assert.deepEqual(await adapter.readQueue(elsewhere), { read: "Denied" });
+  assert.deepEqual(await adapter.enqueue(elsewhere), { enqueued: "Denied" });
+  assert.deepEqual(await adapter.dequeue(elsewhere), { dequeued: "Denied" });
+  const unavailable = fixtureAdapter(recorder, "Unavailable");
+  const asked = fixtureMergeRequest();
+  assert.deepEqual(await unavailable.readQueue(asked), { read: "Unavailable" });
+  assert.deepEqual(await unavailable.enqueue(asked), {
+    enqueued: "Unavailable",
+  });
+  assert.deepEqual(await unavailable.dequeue(asked), {
+    dequeued: "Unavailable",
+  });
+  assert.equal(recorder.calls.length, 0);
 });

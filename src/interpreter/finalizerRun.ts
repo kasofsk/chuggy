@@ -199,7 +199,8 @@
  * Once the count reaches `holdPassesMax` the pass reports
  * `FinalizationResultUnavailable` at that kind, the machine escalates on it and
  * the operator's resume runs the operation again against a request that counts
- * from nothing.
+ * from nothing — after asking its base's merge queue to give up a proposal that
+ * may stand queued there, since a queued proposal merges with nobody asking.
  */
 
 import {
@@ -216,10 +217,12 @@ import {
   proposalMarkerOf,
   reconcileChangeProposal,
   reconcileChangeProposalMerge,
+  changeProposalQueueingNone,
   changeProposalUpdatingNone,
   type ChangeProposalAdoptionGathered,
   type ChangeProposalForges,
   type ChangeProposalMergeGathered,
+  type ChangeProposalMergeRequest,
   type ChangeProposalMerging,
   type ChangeProposalRequest,
   type ForgeBinding,
@@ -227,13 +230,17 @@ import {
 import {
   finalizationProposalBody,
   finalizationProposalCreationRecording,
+  finalizationProposalDequeue,
+  finalizationProposalEnqueueRecording,
   finalizationProposalMergedStanding,
   finalizationProposalMergeReadingRecording,
   finalizationProposalMergeRecording,
   finalizationProposalNext,
+  finalizationProposalQueueRecording,
   finalizationProposalReadingRecording,
   finalizationProposalTitle,
   finalizationProposalUpdateRecording,
+  type FinalizationProposalBounds,
   type FinalizationProposalDecision,
   type FinalizationProposalGathered,
   type FinalizationProposalMergeRecording,
@@ -1387,26 +1394,38 @@ async function finalizerStoredProposal(
   const merge: ChangeProposalMergeGathered = {
     head,
     updating: stored.updating,
+    queueing: stored.queueing,
     ...(adoption === undefined ? {} : { adoption }),
   };
   return {
     gathered: "Request",
-    request: changeProposalRequest({
-      binding,
-      partition,
-      repository: repository.repository,
-      request: asked.request,
-      headRef: asked.head.ref,
-      headCommit: asked.head.commit,
-      baseRef: asked.base.ref,
-      baseCommit: asked.base.commit,
-      title: asked.title,
-      body: asked.body,
-    }),
+    request: finalizerStoredRequest(binding, partition, repository, stored),
     publication: stored.publication,
     merging: stored.merging,
     merge,
   };
+}
+
+/** The request one stored row asked the forge for, as every later pass rebuilds it. */
+function finalizerStoredRequest(
+  binding: ForgeBinding,
+  partition: Partition,
+  repository: RepositoryBinding,
+  stored: StoredChangeProposal,
+): ChangeProposalRequest {
+  const { asked } = stored;
+  return changeProposalRequest({
+    binding,
+    partition,
+    repository: repository.repository,
+    request: asked.request,
+    headRef: asked.head.ref,
+    headCommit: asked.head.commit,
+    baseRef: asked.base.ref,
+    baseCommit: asked.base.commit,
+    title: asked.title,
+    body: asked.body,
+  });
 }
 
 /**
@@ -1509,7 +1528,11 @@ async function finalizerOpeningProposal(
     request,
     publication: { publication: "Unopened" },
     merging: { merging: "Unasked" },
-    merge: { head: pinned.candidate, updating: changeProposalUpdatingNone },
+    merge: {
+      head: pinned.candidate,
+      updating: changeProposalUpdatingNone,
+      queueing: changeProposalQueueingNone,
+    },
     ...(adoption === undefined ? {} : { adoption }),
   };
 }
@@ -1776,6 +1799,12 @@ async function finalizerRecordProposalMerge(
     finalizerHold(service, tally, recording.hold);
     return;
   }
+  if (recording.record === "Refusal") {
+    const wrote = await service.store.markChangeProposalQueueUnread(view.claim);
+    if (wrote.wrote !== "Row")
+      finalizerHold(service, tally, "ProposalUnrecorded");
+    return;
+  }
   if (recording.record === "Decline") {
     await finalizerReleaseProposalMergeAttempt(
       service,
@@ -1889,6 +1918,91 @@ async function finalizerUpdateProposal(
     finalizerHold(service, tally, "ProposalUnrecorded");
   else if (recording.record === "Declined")
     finalizerHold(service, tally, recording.hold);
+}
+
+/** Reads where the proposal stands in its base's merge queue, which is what decides every act about it there. */
+async function finalizerReadQueue(
+  service: FinalizerService,
+  view: FinalizationView,
+  merge: ChangeProposalMergeRequest,
+  tally: FinalizerTally,
+): Promise<void> {
+  const port = service.forges.selector.select(merge.binding.forge);
+  if (port === undefined) {
+    finalizerHold(service, tally, "ProposalDenied");
+    return;
+  }
+  tally.proposals += 1;
+  const recording = finalizationProposalQueueRecording(
+    await port.readQueue(merge),
+  );
+  if (recording.record === "Nothing") {
+    finalizerHold(service, tally, recording.hold);
+    return;
+  }
+  const wrote = await service.store.recordChangeProposalQueue(
+    view.claim,
+    recording.standing,
+  );
+  if (wrote.wrote !== "Row")
+    finalizerHold(service, tally, "ProposalUnrecorded");
+}
+
+/**
+ * Asks the base's merge queue to take the proposal at the pinned head, over a
+ * mark committed before it is asked, so a crash between the two leaves a
+ * standing read due rather than a second enqueue.
+ */
+async function finalizerEnqueue(
+  service: FinalizerService,
+  view: FinalizationView,
+  decision: Extract<FinalizationProposalDecision, { decide: "Enqueue" }>,
+  tally: FinalizerTally,
+): Promise<void> {
+  const port = service.forges.selector.select(decision.merge.binding.forge);
+  if (port === undefined) {
+    finalizerHold(service, tally, "ProposalDenied");
+    return;
+  }
+  const marked = await service.store.markChangeProposalEnqueue(
+    view.claim,
+    decision.requeuedAfterMs,
+  );
+  if (marked.wrote !== "Row") {
+    finalizerHold(service, tally, "ProposalUnattempted");
+    return;
+  }
+  tally.proposals += 1;
+  const recording = finalizationProposalEnqueueRecording(
+    await port.enqueue(decision.merge),
+  );
+  const wrote = await service.store.recordChangeProposalEnqueue(
+    view.claim,
+    recording.record,
+  );
+  if (wrote.wrote !== "Row")
+    finalizerHold(service, tally, "ProposalUnrecorded");
+  else if (recording.record === "Declined")
+    finalizerHold(service, tally, recording.hold);
+}
+
+/**
+ * Asks the base's merge queue to give the proposal up, best effort, and
+ * writes down the standing read after it rather than the request's own answer.
+ * A forge that cannot be reached leaves a queued proposal to merge as anybody's
+ * merge would, which a later reading of it accepts.
+ */
+async function finalizerDequeue(
+  service: FinalizerService,
+  claim: FinalizationClaim,
+  merge: ChangeProposalMergeRequest,
+): Promise<void> {
+  const port = service.forges.selector.select(merge.binding.forge);
+  if (port === undefined) return;
+  await port.dequeue(merge);
+  const read = await port.readQueue(merge);
+  if (read.read === "Standing")
+    await service.store.recordChangeProposalQueue(claim, read.standing);
 }
 
 /** Pins the head git proved adoptable as the one this proposal is merged at. */
@@ -2028,6 +2142,12 @@ async function finalizerProposalDecided(
     case "UpdateProposal":
       await finalizerUpdateProposal(service, view, decision, tally);
       return;
+    case "ReadQueue":
+      await finalizerReadQueue(service, view, decision.merge, tally);
+      return;
+    case "Enqueue":
+      await finalizerEnqueue(service, view, decision, tally);
+      return;
     case "AdoptProposalHead":
       await finalizerAdoptProposalHead(service, view, decision.head, tally);
       return;
@@ -2039,17 +2159,24 @@ async function finalizerProposalDecided(
       await finalizerMergeConflicted(service, view, tally);
       return;
     case "Abort":
-      if (!finalizerPreparationPriced(service, tally)) return;
-      await finalizerAbort(
-        service,
-        view,
-        finalizerCandidateOf(view).target,
-        tally,
-      );
+      await finalizerProposalAborted(service, view, decision, tally);
       return;
     default:
       return assertNever(decision);
   }
+}
+
+/** Aborts the finalization a closing project will admit no merge for, its base's queue asked to give the proposal up first. */
+async function finalizerProposalAborted(
+  service: FinalizerService,
+  view: FinalizationView,
+  decision: Extract<FinalizationProposalDecision, { decide: "Abort" }>,
+  tally: FinalizerTally,
+): Promise<void> {
+  if (!finalizerPreparationPriced(service, tally)) return;
+  if (decision.dequeue !== undefined)
+    await finalizerDequeue(service, view.claim, decision.dequeue);
+  await finalizerAbort(service, view, finalizerCandidateOf(view).target, tally);
 }
 
 /** Advances one promoted candidate's own change proposal by at most one act. */
@@ -2058,23 +2185,75 @@ async function finalizerProposal(
   view: FinalizationView,
   tally: FinalizerTally,
 ): Promise<void> {
-  const config = checkedFinalizerConfig(service.config);
   const decision = finalizationProposalNext(
     { mode: view.finalizationMode, lifecycle: view.lifecycle },
     await finalizerGatherProposal(service, view),
-    {
-      publication: {
-        creationsMax: config.proposalCreationsMax,
-        reconciliationsMax: config.proposalReconciliationsMax,
-      },
-      merging: {
-        mergesMax: config.proposalMergesMax,
-        readingsMax: config.proposalMergeReadingsMax,
-        updatesMax: config.proposalUpdatesMax,
-      },
-    },
+    finalizerProposalBounds(service),
   );
   await finalizerProposalDecided(service, view, decision, tally);
+}
+
+/** The ceilings one proposal is continued under, read off the configuration every pass re-checks. */
+function finalizerProposalBounds(
+  service: FinalizerService,
+): FinalizationProposalBounds {
+  const config = checkedFinalizerConfig(service.config);
+  return {
+    publication: {
+      creationsMax: config.proposalCreationsMax,
+      reconciliationsMax: config.proposalReconciliationsMax,
+    },
+    merging: {
+      mergesMax: config.proposalMergesMax,
+      readingsMax: config.proposalMergeReadingsMax,
+      updatesMax: config.proposalUpdatesMax,
+    },
+  };
+}
+
+/**
+ * Asks the base's merge queue to give up the proposal of a finalization about
+ * to escalate, wherever its stored row says it may be queued there. Escalation
+ * is revocable and a queued proposal merges with nobody asking, so it is given
+ * up before the result is offered; nothing about it is proved here, and no git
+ * is asked about any head.
+ */
+async function finalizerDequeueEscalated(
+  service: FinalizerService,
+  view: FinalizationView,
+): Promise<void> {
+  const { attempt, repository } = view;
+  if (
+    view.finalizationMode !== "PullRequestMerge" ||
+    attempt?.candidate === undefined ||
+    repository === undefined
+  )
+    return;
+  const binding = service.forges.bindingOf(repository.repository);
+  const stored = await service.store.changeProposal(view.claim);
+  if (binding === undefined || stored === undefined) return;
+  const dequeue = finalizationProposalDequeue(
+    { mode: view.finalizationMode, lifecycle: view.lifecycle },
+    {
+      gathered: "Request",
+      request: finalizerStoredRequest(
+        binding,
+        view.claim.partition,
+        repository,
+        stored,
+      ),
+      publication: stored.publication,
+      merging: stored.merging,
+      merge: {
+        head: stored.adopted ?? stored.asked.head.commit,
+        updating: stored.updating,
+        queueing: stored.queueing,
+      },
+    },
+    finalizerProposalBounds(service),
+  );
+  if (dequeue !== undefined)
+    await finalizerDequeue(service, view.claim, dequeue);
 }
 
 /** Offers one result to the one authenticated door, counting what it answered. */
@@ -2137,6 +2316,7 @@ function finalizerUnavailableKind(
 async function finalizerRecordHold(
   service: FinalizerService,
   claim: FinalizationClaim,
+  view: FinalizationView | undefined,
   tally: FinalizerTally,
 ): Promise<void> {
   const reason = tally.heldReason;
@@ -2153,6 +2333,7 @@ async function finalizerRecordHold(
     held.passes < config.holdPassesMax
   )
     return;
+  if (view !== undefined) await finalizerDequeueEscalated(service, view);
   await finalizerSubmit(
     service,
     { claim, conclusion: { outcome: "FinalizationResultUnavailable", kind } },
@@ -2180,7 +2361,12 @@ async function finalizerAdvance(
     finalizerHold(service, tally, gathered.hold);
   else await finalizerAdvanceDecided(service, gathered.view, tally);
   if (tally.conclusions === spent)
-    await finalizerRecordHold(service, claim, tally);
+    await finalizerRecordHold(
+      service,
+      claim,
+      gathered.gathered === "Held" ? undefined : gathered.view,
+      tally,
+    );
   const held = tally.conclusions === spent ? tally.heldReason : undefined;
   recordFinalizer(service.metrics, (metrics) => {
     metrics.advanced(claim.request, held);

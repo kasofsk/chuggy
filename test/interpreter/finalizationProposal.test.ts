@@ -14,6 +14,7 @@ import { test } from "node:test";
 import { briefIntentCharsMax } from "../../src/contract/brief.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import { textCodePointsCount } from "../../src/contract/http.ts";
+import { finalizationUnavailableKinds } from "../../src/contract/rosters.ts";
 import {
   allClosingLifecycles,
   allFinalizationHoldKinds,
@@ -26,9 +27,12 @@ import {
   asForgeBindingId,
   asForgeCredentialReference,
   asProposalNumber,
+  asProposalQueueInstant,
+  asProposalQueueWord,
   asProposalRemoteIdentity,
   changeProposalMergeRequest,
   changeProposalRequest,
+  changeProposalQueueingNone,
   changeProposalUpdatingNone,
   proposalBodyCharsMax,
   proposalMarkerOf,
@@ -39,15 +43,20 @@ import {
   type ChangeProposalMergeReconciliationStored,
   type ChangeProposalMerging,
   type ChangeProposalPublication,
+  type ChangeProposalQueueing,
+  type ChangeProposalQueueStanding,
   type ChangeProposalRead,
   type ChangeProposalReconciliationStored,
 } from "../../src/interpreter/changeProposal.ts";
 import {
   finalizationProposalBody,
   finalizationProposalCreationRecording,
+  finalizationProposalDequeue,
+  finalizationProposalEnqueueRecording,
   finalizationProposalMergeReadingRecording,
   finalizationProposalMergeRecording,
   finalizationProposalNext,
+  finalizationProposalQueueRecording,
   finalizationProposalReadingRecording,
   finalizationProposalTitle,
   finalizationProposalUpdateRecording,
@@ -137,6 +146,7 @@ function gathered(
 const pinned: ChangeProposalMergeGathered = {
   head: request.head.commit,
   updating: changeProposalUpdatingNone,
+  queueing: changeProposalQueueingNone,
 };
 
 /** One create in flight, with however many readings a case has already taken. */
@@ -729,16 +739,16 @@ test("an answer about this deployment is never recorded as one about the merge",
       merged: "NotMergeable",
       reason: "Unknown",
     }),
-    { record: "Unanswered" },
-    "a refusal naming no reason settles nothing and is read back",
+    { record: "Refusal" },
+    "a refusal naming no reason settles nothing, and its base's merge queue is read first",
   );
   assert.deepEqual(
     finalizationProposalMergeRecording({
       merged: "NotMergeable",
       reason: "Blocked",
     }),
-    { record: "Unanswered" },
-    "a refusal naming the forge's own rules is read back, since they may lift",
+    { record: "Refusal" },
+    "a refusal naming the forge's own rules settles nothing either, since they may lift",
   );
   assert.deepEqual(
     finalizationProposalMergeRecording({ merged: "Merged", mergeCommit }),
@@ -857,10 +867,7 @@ test("a head adopted is pinned first and merged at after", () => {
       proved(
         waitingOn(0, { ...at, mergeability: "Mergeable" }),
         {},
-        {
-          head: updated,
-          updating: changeProposalUpdatingNone,
-        },
+        { ...pinned, head: updated },
       ),
       bounds,
     ),
@@ -1040,5 +1047,244 @@ test("an adopted proposal is merged as one this request opened", () => {
         headCommit: request.head.commit,
       }),
     },
+  );
+});
+
+/** A standing read on a base requiring a merge queue, at the pinned head, as a case names it. */
+function queueStanding(
+  overrides: Partial<ChangeProposalQueueStanding> = {},
+): ChangeProposalQueueStanding {
+  return {
+    enabled: true,
+    open: true,
+    queued: false,
+    head: request.head.commit,
+    ...overrides,
+  };
+}
+
+/** A proved proposal its merge queue released the merge of, the standing read and the rest as a case names them. */
+function provedInQueue(
+  read: ChangeProposalQueueStanding,
+  overrides: Partial<ChangeProposalQueueing> = {},
+): FinalizationProposalGathered {
+  return proved(
+    { merging: "Idle", merges: 0 },
+    {},
+    {
+      ...pinned,
+      queueing: {
+        unread: false,
+        refused: false,
+        entered: true,
+        standing: read,
+        heardAgeSecs: 0,
+        ...overrides,
+      },
+    },
+  );
+}
+
+/** A removal of the pinned head by the queue, newer than its last enqueue. */
+function queueRemoval(
+  kind: "ChecksFailed" | "ChecksTimedOut" | "Dequeued",
+  reason: string,
+): ChangeProposalQueueStanding {
+  return queueStanding({
+    enqueuedAtMs: asProposalQueueInstant(Date.parse("2026-11-02T10:00:00Z")),
+    removal: {
+      atMs: asProposalQueueInstant(Date.parse("2026-11-02T10:05:30Z")),
+      kind,
+      reason: asProposalQueueWord(reason),
+      actor: asProposalQueueWord("someone"),
+    },
+  });
+}
+
+test("a merge queue's acts are addressed to the proved proposal at the pinned head", () => {
+  assert.deepEqual(
+    finalizationProposalNext(
+      merging,
+      provedInQueue(queueStanding(), { unread: true }),
+      bounds,
+    ),
+    { decide: "ReadQueue", request, merge: mergeRequest },
+  );
+  assert.deepEqual(
+    finalizationProposalNext(merging, provedInQueue(queueStanding()), bounds),
+    { decide: "Enqueue", request, merge: mergeRequest },
+  );
+  assert.deepEqual(
+    finalizationProposalNext(
+      merging,
+      provedInQueue(queueRemoval("ChecksFailed", "failed_checks")),
+      bounds,
+    ),
+    {
+      decide: "Enqueue",
+      request,
+      merge: mergeRequest,
+      requeuedAfterMs: asProposalQueueInstant(
+        Date.parse("2026-11-02T10:05:30Z"),
+      ),
+    },
+  );
+});
+
+test("a queued proposal waits off the escalation roster, and the removals only a person answers hold on it", () => {
+  assert.deepEqual(
+    finalizationProposalNext(
+      merging,
+      provedInQueue(queueStanding({ queued: true })),
+      bounds,
+    ),
+    { decide: "Hold", hold: "ProposalQueued" },
+  );
+  const escalated: readonly string[] = finalizationUnavailableKinds;
+  assert.ok(
+    !escalated.includes("ProposalQueued"),
+    "a long queue is not a stuck one",
+  );
+  for (const [read, hold] of [
+    [queueRemoval("Dequeued", "manual"), "ProposalDequeued"],
+    [queueRemoval("Dequeued", "a_reason_nobody_has_seen"), "ProposalDequeued"],
+  ] as const) {
+    assert.deepEqual(
+      finalizationProposalNext(merging, provedInQueue(read), bounds),
+      { decide: "Hold", hold },
+    );
+    assert.ok(finalizationUnavailableKinds.some((kind) => kind === hold));
+  }
+  for (const [kind, reason, hold] of [
+    ["ChecksFailed", "failed_checks", "ProposalQueueChecksFailed"],
+    ["ChecksTimedOut", "checks_timed_out", "ProposalQueueTimedOut"],
+  ] as const) {
+    assert.deepEqual(
+      finalizationProposalNext(
+        merging,
+        provedInQueue(
+          queueStanding({
+            ...queueRemoval(kind, reason),
+            enqueuedAtMs: asProposalQueueInstant(
+              Date.parse("2026-11-02T10:01:00Z"),
+            ),
+          }),
+          {
+            requeuedAfterMs: asProposalQueueInstant(
+              Date.parse("2026-11-02T09:59:00Z"),
+            ),
+          },
+        ),
+        bounds,
+      ),
+      { decide: "Hold", hold },
+    );
+    assert.ok(finalizationUnavailableKinds.some((held) => held === hold));
+  }
+});
+
+test("a removal for a conflict sends the ticket back to work, as a conflicted merge does", () => {
+  assert.deepEqual(
+    finalizationProposalNext(
+      merging,
+      provedInQueue(
+        queueStanding({
+          enqueuedAtMs: asProposalQueueInstant(
+            Date.parse("2026-11-02T10:00:00Z"),
+          ),
+          removal: {
+            atMs: asProposalQueueInstant(Date.parse("2026-11-02T10:05:30Z")),
+            kind: "Conflict",
+            reason: asProposalQueueWord("merge_conflict"),
+          },
+        }),
+      ),
+      bounds,
+    ),
+    { decide: "RecordMergeConflict" },
+  );
+});
+
+test("a closing project gives up a queued proposal before it aborts, and enqueues nothing", () => {
+  for (const lifecycle of allClosingLifecycles) {
+    const closing = { mode: "PullRequestMerge", lifecycle } as const;
+    assert.deepEqual(
+      finalizationProposalNext(
+        closing,
+        provedInQueue(queueStanding({ queued: true })),
+        bounds,
+      ),
+      { decide: "Abort", dequeue: mergeRequest },
+      lifecycle,
+    );
+    assert.deepEqual(
+      finalizationProposalNext(closing, provedInQueue(queueStanding()), bounds),
+      { decide: "Abort" },
+      lifecycle,
+    );
+  }
+});
+
+test("an escalation gives up only a proposal that may stand queued", () => {
+  assert.deepEqual(
+    finalizationProposalDequeue(
+      merging,
+      provedInQueue(queueStanding({ queued: true })),
+      bounds,
+    ),
+    mergeRequest,
+  );
+  assert.deepEqual(
+    finalizationProposalDequeue(
+      merging,
+      provedInQueue(queueStanding(), { unread: true }),
+      bounds,
+    ),
+    mergeRequest,
+    "an enqueue nobody has read the standing after may have taken",
+  );
+  for (const read of [
+    queueStanding(),
+    queueStanding({ enabled: false, queued: true }),
+  ])
+    assert.equal(
+      finalizationProposalDequeue(merging, provedInQueue(read), bounds),
+      undefined,
+    );
+  assert.equal(
+    finalizationProposalDequeue(merging, { gathered: "Unbound" }, bounds),
+    undefined,
+  );
+});
+
+test("an enqueue's answer and a standing read are recorded as what they say of the proposal, never of the deployment", () => {
+  assert.deepEqual(
+    finalizationProposalEnqueueRecording({ enqueued: "Queued" }),
+    { record: "Queued" },
+  );
+  for (const enqueued of ["Refused", "Ambiguous"] as const)
+    assert.deepEqual(finalizationProposalEnqueueRecording({ enqueued }), {
+      record: "Refused",
+    });
+  assert.deepEqual(
+    finalizationProposalEnqueueRecording({ enqueued: "Denied" }),
+    { record: "Declined", hold: "ProposalDenied" },
+  );
+  assert.deepEqual(
+    finalizationProposalEnqueueRecording({ enqueued: "Unavailable" }),
+    { record: "Declined", hold: "ProposalUnavailable" },
+  );
+  const standing = queueStanding({ queued: true });
+  assert.deepEqual(
+    finalizationProposalQueueRecording({ read: "Standing", standing }),
+    { record: "Standing", standing },
+  );
+  assert.deepEqual(finalizationProposalQueueRecording({ read: "Denied" }), {
+    record: "Nothing",
+    hold: "ProposalDenied",
+  });
+  assert.deepEqual(
+    finalizationProposalQueueRecording({ read: "Unavailable" }),
+    { record: "Nothing", hold: "ProposalUnavailable" },
   );
 });

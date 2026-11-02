@@ -49,6 +49,7 @@ import {
   nativeHttpRoutes,
   projectArtifactUploadBytesMax,
   proposalMergeStateCharsMax,
+  proposalQueueWordCharsMax,
   runTranscriptBatchBytesMax,
   runTranscriptPageBatchesMax,
   ticketLandingConflictBytesMax,
@@ -149,15 +150,17 @@ const chuggyToolTicketLandingFieldsBytesMax = 1_280;
 
 /**
  * What one landing `read_ticket_landings`'s route answers may weigh: its
- * target's, head's and base's reference names and its merge state, each
- * escaping every character; its link, visible ASCII that JSON escapes to at
- * most two bytes a character; its conflict's paths, and the commas between
- * them, fewer than the lightest paths its bound holds; and the rest of it.
+ * target's, head's and base's reference names, its merge state and the reason
+ * and login of a removal from a merge queue, each escaping every character;
+ * its link, visible ASCII that JSON escapes to at most two bytes a character;
+ * its conflict's paths, and the commas between them, fewer than the lightest
+ * paths its bound holds; and the rest of it.
  */
 export const chuggyToolTicketLandingBytesMax =
   3 * jsonStringChars(ticketLandingRefCharsMax) +
   2 * (actionReportLinkCharsMax + 1) +
   jsonStringChars(proposalMergeStateCharsMax) +
+  2 * jsonStringChars(proposalQueueWordCharsMax) +
   ticketLandingConflictBytesMax +
   Math.floor(ticketLandingConflictBytesMax / jsonTextBytes("x")) +
   chuggyToolTicketLandingFieldsBytesMax;

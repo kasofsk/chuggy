@@ -103,6 +103,7 @@ import { migration102 } from "./102-configuration-following.ts";
 import { migration103 } from "./103-ticket-reads-estimate-one-row.ts";
 import { migration104 } from "./104-binding-agentic-refusals.ts";
 import { migration105 } from "./105-thread-agentic-refusals.ts";
+import { migration106 } from "./106-merge-queue.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -211,4 +212,5 @@ export const migrations: readonly Migration[] = [
   migration103,
   migration104,
   migration105,
+  migration106,
 ];

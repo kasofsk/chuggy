@@ -48,6 +48,14 @@
  * reopens waits again and one that stays closed escalates once the dwell is
  * spent.
  *
+ * A MERGE ITS BASE'S QUEUE MAKES IS FOLLOWED THERE, AND GIVEN UP ON THE WAY
+ * OUT. A proposal waiting its turn holds as `ProposalQueued`, off that list for
+ * as long as the queue takes, and the removals only a person can answer are
+ * holds on it. A finalization that aborts or escalates while its proposal may
+ * be queued asks the queue to give it up first, because a queued proposal
+ * merges with nobody asking; the standing read after that request is what is
+ * written down, never the request's own answer.
+ *
  * THE FINALIZER MERGES ONLY THE HEAD PINNED FOR IT, AND A MERGE ANYBODY MADE
  * LANDS. Its own merge is conditional on the promoted candidate or on a head
  * git proved is that candidate brought up to date with the base, so it never
@@ -91,6 +99,10 @@ import {
   type ChangeProposalMergingBounds,
   type ChangeProposalPublication,
   type ChangeProposalPublicationBounds,
+  type ChangeProposalEnqueued,
+  type ChangeProposalQueueing,
+  type ChangeProposalQueueRead,
+  type ChangeProposalQueueStanding,
   type ChangeProposalReconciled,
   type ChangeProposalReconciliationAnswer,
   type ChangeProposalRequest,
@@ -99,6 +111,7 @@ import {
   type ChangeProposalUpdating,
   type OpenedChangeProposalPublication,
   type ProposalMarker,
+  type ProposalQueueInstant,
 } from "./changeProposal.ts";
 import { allClosingLifecycles } from "./finalizer.ts";
 import type {
@@ -170,11 +183,22 @@ export type FinalizationProposalDecision =
       readonly request: ChangeProposalRequest;
       readonly merge: ChangeProposalMergeRequest;
     }
+  | {
+      readonly decide: "ReadQueue";
+      readonly request: ChangeProposalRequest;
+      readonly merge: ChangeProposalMergeRequest;
+    }
+  | {
+      readonly decide: "Enqueue";
+      readonly request: ChangeProposalRequest;
+      readonly merge: ChangeProposalMergeRequest;
+      readonly requeuedAfterMs?: ProposalQueueInstant;
+    }
   | { readonly decide: "AdoptProposalHead"; readonly head: GitObjectId }
   | { readonly decide: "RefuseMergeAttempt" }
   | { readonly decide: "WaitMergeAttempt"; readonly hold: FinalizationHoldKind }
   | { readonly decide: "RecordMergeConflict" }
-  | { readonly decide: "Abort" }
+  | { readonly decide: "Abort"; readonly dequeue?: ChangeProposalMergeRequest }
   | { readonly decide: "Conclude" }
   | { readonly decide: "Hold"; readonly hold: FinalizationHoldKind };
 
@@ -244,6 +268,14 @@ function finalizationProposalMergeHeld(
       return "ProposalAbsent";
     case "EvidenceUnstorable":
       return "ProposalEvidenceUnstorable";
+    case "Queued":
+      return "ProposalQueued";
+    case "QueueChecksFailed":
+      return "ProposalQueueChecksFailed";
+    case "QueueTimedOut":
+      return "ProposalQueueTimedOut";
+    case "Dequeued":
+      return "ProposalDequeued";
     default:
       return assertNever(reason);
   }
@@ -263,6 +295,25 @@ function finalizationProposalMerged(
   }
 }
 
+/** What an act about merging one proved proposal is asked under, and nothing where no number addresses it. */
+function finalizationProposalMergeAddress(
+  request: ChangeProposalRequest,
+  evidence: ChangeProposalEvidence,
+  head: GitObjectId,
+): ChangeProposalMergeRequest | undefined {
+  const proposal = changeProposalAddressed(evidence.identity);
+  return proposal === undefined
+    ? undefined
+    : changeProposalMergeRequest({
+        binding: request.binding,
+        partition: request.partition,
+        repository: request.repository,
+        proposal,
+        marker: request.marker,
+        headCommit: head,
+      });
+}
+
 /**
  * The one act a merge address authorizes, and a hold where the evidence names
  * a proposal no number addresses. Evidence stored before a landing could merge
@@ -273,28 +324,76 @@ function finalizationProposalAddressed(
   request: ChangeProposalRequest,
   evidence: ChangeProposalEvidence,
   head: GitObjectId,
-  decide: "MergeProposal" | "ReconcileMerge" | "UpdateProposal",
+  decide:
+    | "MergeProposal"
+    | "ReconcileMerge"
+    | "UpdateProposal"
+    | "ReadQueue"
+    | "Enqueue",
 ): FinalizationProposalDecision {
-  const proposal = changeProposalAddressed(evidence.identity);
-  if (proposal === undefined)
-    return { decide: "Hold", hold: "ProposalUnaddressed" };
-  const merge = changeProposalMergeRequest({
-    binding: request.binding,
-    partition: request.partition,
-    repository: request.repository,
-    proposal,
-    marker: request.marker,
-    headCommit: head,
-  });
-  return { decide, request, merge };
+  const merge = finalizationProposalMergeAddress(request, evidence, head);
+  return merge === undefined
+    ? { decide: "Hold", hold: "ProposalUnaddressed" }
+    : { decide, request, merge };
 }
+
+/** Whether a proposal may stand in its base's merge queue: its base requires one, and it was last read queued or enqueued since. */
+function finalizationProposalQueuedMaybe(
+  queueing: ChangeProposalQueueing,
+): boolean {
+  return (
+    queueing.standing?.enabled === true &&
+    (queueing.standing.queued || queueing.unread)
+  );
+}
+
+/** The abort a closing project authorizes, asking the queue to give the proposal up first wherever it may stand there. */
+function finalizationProposalAborted(
+  request: ChangeProposalRequest,
+  evidence: ChangeProposalEvidence,
+  merge: ChangeProposalMergeGathered,
+): FinalizationProposalDecision {
+  const dequeue = finalizationProposalQueuedMaybe(merge.queueing)
+    ? finalizationProposalMergeAddress(request, evidence, merge.head)
+    : undefined;
+  return dequeue === undefined
+    ? { decide: "Abort" }
+    : { decide: "Abort", dequeue };
+}
+
+/** The enqueue a merge's queue step named, carrying the removal a second enqueue answers. */
+function finalizationProposalEnqueue(
+  request: ChangeProposalRequest,
+  evidence: ChangeProposalEvidence,
+  head: GitObjectId,
+  requeuedAfterMs: ProposalQueueInstant | undefined,
+): FinalizationProposalDecision {
+  const decided = finalizationProposalAddressed(
+    request,
+    evidence,
+    head,
+    "Enqueue",
+  );
+  return decided.decide === "Enqueue" && requeuedAfterMs !== undefined
+    ? { ...decided, requeuedAfterMs }
+    : decided;
+}
+
+/** The steps about merging that are each one act addressed to the proved proposal, beside the decision each is. */
+const finalizationProposalAddressedActs = {
+  Merge: "MergeProposal",
+  Update: "UpdateProposal",
+  ReadByNumber: "ReconcileMerge",
+  ReadQueue: "ReadQueue",
+} as const;
 
 /**
  * What one proved proposal's merge authorizes. A proposal the create already
  * found merged is the success it asked for and reaches no forge again; a
  * project that will admit no further irreversible act aborts rather than
- * merges; and a merge already in flight is read back whatever the lifecycle
- * says, the forge being the only authority on whether it landed.
+ * merges, enqueues or waits in a queue that would merge it; and a merge
+ * already in flight is read back whatever the lifecycle says, the forge being
+ * the only authority on whether it landed.
  */
 function finalizationProposalMergeNext(
   finalization: FinalizationProposalStanding,
@@ -310,14 +409,6 @@ function finalizationProposalMergeNext(
   const closing = allClosingLifecycles.includes(finalization.lifecycle);
   switch (next.next) {
     case "Merge":
-      return closing
-        ? { decide: "Abort" }
-        : finalizationProposalAddressed(
-            request,
-            evidence,
-            merge.head,
-            "MergeProposal",
-          );
     case "Update":
       return closing
         ? { decide: "Abort" }
@@ -325,16 +416,26 @@ function finalizationProposalMergeNext(
             request,
             evidence,
             merge.head,
-            "UpdateProposal",
+            finalizationProposalAddressedActs[next.next],
+          );
+    case "Enqueue":
+      return closing
+        ? finalizationProposalAborted(request, evidence, merge)
+        : finalizationProposalEnqueue(
+            request,
+            evidence,
+            merge.head,
+            next.requeuedAfterMs,
           );
     case "Adopt":
       return { decide: "AdoptProposalHead", head: next.head };
     case "ReadByNumber":
+    case "ReadQueue":
       return finalizationProposalAddressed(
         request,
         evidence,
         merge.head,
-        "ReconcileMerge",
+        finalizationProposalAddressedActs[next.next],
       );
     case "RefuseAttempt":
       return { decide: "RefuseMergeAttempt" };
@@ -348,10 +449,9 @@ function finalizationProposalMergeNext(
     case "Refused":
       return { decide: "Hold", hold: "ProposalRefused" };
     case "Held":
-      return {
-        decide: "Hold",
-        hold: finalizationProposalMergeHeld(next.reason),
-      };
+      return closing && next.reason === "Queued"
+        ? finalizationProposalAborted(request, evidence, merge)
+        : { decide: "Hold", hold: finalizationProposalMergeHeld(next.reason) };
     default:
       return assertNever(next);
   }
@@ -505,6 +605,7 @@ export function finalizationProposalReadingRecording(
  */
 export type FinalizationProposalMergeRecording =
   | { readonly record: "Merge"; readonly merged: ChangeProposalMergeAnswer }
+  | { readonly record: "Refusal" }
   | {
       readonly record: "Reading";
       readonly reconciled: ChangeProposalMergeReconciliationAnswer;
@@ -520,7 +621,8 @@ export type FinalizationProposalMergeRecording =
  * merge has said nothing about it, so the attempt it declined is released and
  * the merge it stood for is unspent; one that refused for anything but a
  * conflict has said nothing a row settles on, its own rules being ones that may
- * lift, and is read back like an answer nobody heard at all.
+ * lift or its base's queue being the only way in, so the standing read that
+ * tells the two apart is due and the merge stays in flight until it is taken.
  */
 export function finalizationProposalMergeRecording(
   merged: ChangeProposalMerged,
@@ -535,7 +637,7 @@ export function finalizationProposalMergeRecording(
             record: "Merge",
             merged: { merged: "NotMergeable", reason: merged.reason },
           }
-        : { record: "Unanswered" };
+        : { record: "Refusal" };
     case "Unavailable":
       return { record: "Decline", hold: "ProposalUnavailable" };
     case "Denied":
@@ -609,6 +711,91 @@ export function finalizationProposalUpdateRecording(
     default:
       return assertNever(updated);
   }
+}
+
+/** What one standing read is written down as, a read that could not be made holding and recording nothing. */
+export type FinalizationProposalQueueRecording =
+  | {
+      readonly record: "Standing";
+      readonly standing: ChangeProposalQueueStanding;
+    }
+  | { readonly record: "Nothing"; readonly hold: FinalizationHoldKind };
+
+export function finalizationProposalQueueRecording(
+  read: ChangeProposalQueueRead,
+): FinalizationProposalQueueRecording {
+  switch (read.read) {
+    case "Standing":
+      return { record: "Standing", standing: read.standing };
+    case "Unavailable":
+      return { record: "Nothing", hold: "ProposalUnavailable" };
+    case "Denied":
+      return { record: "Nothing", hold: "ProposalDenied" };
+    default:
+      return assertNever(read);
+  }
+}
+
+/**
+ * What one enqueue's answer is written down as. One the queue took is the
+ * pinned head entering it; one refused, or answered with nothing a row settles
+ * on, waits on the forge's rules for as long as the standing read after it
+ * says so; and one the forge would not take is released, the deployment
+ * holding as for any other decline.
+ */
+export type FinalizationProposalEnqueueRecording =
+  | { readonly record: "Queued" | "Refused" }
+  | { readonly record: "Declined"; readonly hold: FinalizationHoldKind };
+
+/** The writes an answered enqueue makes against the row. */
+export type ChangeProposalEnqueueWrite = "Queued" | "Refused" | "Declined";
+
+export function finalizationProposalEnqueueRecording(
+  enqueued: ChangeProposalEnqueued,
+): FinalizationProposalEnqueueRecording {
+  switch (enqueued.enqueued) {
+    case "Queued":
+      return { record: "Queued" };
+    case "Refused":
+    case "Ambiguous":
+      return { record: "Refused" };
+    case "Unavailable":
+      return { record: "Declined", hold: "ProposalUnavailable" };
+    case "Denied":
+      return { record: "Declined", hold: "ProposalDenied" };
+    default:
+      return assertNever(enqueued);
+  }
+}
+
+/**
+ * What a finalization about to escalate asks its base's queue to give up: the
+ * proved proposal, wherever its merge may stand queued, and nothing where it
+ * cannot be queued or no number addresses it.
+ */
+export function finalizationProposalDequeue(
+  finalization: FinalizationProposalStanding,
+  gathered: FinalizationProposalGathered,
+  bounds: FinalizationProposalBounds,
+): ChangeProposalMergeRequest | undefined {
+  if (
+    gathered.gathered !== "Request" ||
+    !finalizationProposalQueuedMaybe(gathered.merge.queueing)
+  )
+    return undefined;
+  const next = changeProposalPublicationNext(
+    gathered.request,
+    gathered.publication,
+    bounds.publication,
+    finalizationProposalMergedStanding(finalization.mode),
+  );
+  return next.next === "Accepted"
+    ? finalizationProposalMergeAddress(
+        gathered.request,
+        next.evidence,
+        gathered.merge.head,
+      )
+    : undefined;
 }
 
 /** The longest prefix of a value that is at most `charsMax` and is still well formed. */
@@ -709,8 +896,9 @@ export interface ChangeProposalMergeResult {
 
 /**
  * One stored proposal whole: what it asked the forge for, what has come back,
- * the head adopted in place of the one it asked for where one has been, and how
- * updating it stands beside the other proposals on its base.
+ * the head adopted in place of the one it asked for where one has been, how
+ * updating it stands beside the other proposals on its base, and how following
+ * it through its base's merge queue stands.
  */
 export interface StoredChangeProposal {
   readonly asked: ChangeProposalAsked;
@@ -718,6 +906,7 @@ export interface StoredChangeProposal {
   readonly merging: ChangeProposalMerging;
   readonly adopted?: GitObjectId;
   readonly updating: ChangeProposalUpdating;
+  readonly queueing: ChangeProposalQueueing;
 }
 
 /**
@@ -808,5 +997,28 @@ export interface FinalizerProposalStore {
   adoptChangeProposalHead(
     claim: FinalizationClaim,
     head: GitObjectId,
+  ): Promise<ChangeProposalWritten>;
+
+  /** Records that the merge in flight was refused for a reason a standing read in its base's queue decides. */
+  markChangeProposalQueueUnread(
+    claim: FinalizationClaim,
+  ): Promise<ChangeProposalWritten>;
+
+  /** Records one standing read, which releases unspent a merge in flight wherever the base requires a queue. */
+  recordChangeProposalQueue(
+    claim: FinalizationClaim,
+    standing: ChangeProposalQueueStanding,
+  ): Promise<ChangeProposalWritten>;
+
+  /** Records that an enqueue is about to be asked, and the removal it answers where it is a second one. */
+  markChangeProposalEnqueue(
+    claim: FinalizationClaim,
+    requeuedAfterMs: ProposalQueueInstant | undefined,
+  ): Promise<ChangeProposalWritten>;
+
+  /** Records what the enqueue asked came to. */
+  recordChangeProposalEnqueue(
+    claim: FinalizationClaim,
+    write: ChangeProposalEnqueueWrite,
   ): Promise<ChangeProposalWritten>;
 }

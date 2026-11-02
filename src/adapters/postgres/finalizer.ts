@@ -105,11 +105,15 @@ import { projectRowCounter } from "./rows.ts";
 import {
   finalizerChangeProposalAttempt,
   finalizerChangeProposalDecline,
+  finalizerChangeProposalEnqueueMark,
+  finalizerChangeProposalEnqueueRecord,
   finalizerChangeProposalMergeAttempt,
   finalizerChangeProposalMergeDecline,
   finalizerChangeProposalMergeRecord,
   finalizerChangeProposalMergeRefuse,
   finalizerChangeProposalMergeWait,
+  finalizerChangeProposalQueueRecord,
+  finalizerChangeProposalQueueUnread,
   finalizerChangeProposalRead,
   finalizerChangeProposalRecord,
   finalizerChangeProposalRefuse,
@@ -835,6 +839,37 @@ function postgresFinalizerProposals(pool: pg.Pool): FinalizerProposalStore {
     adoptChangeProposalHead: (claim, head) =>
       postgresTransaction(pool, (client) =>
         finalizerChangeProposalAdopt(client, claim, head),
+      ),
+    ...postgresFinalizerProposalQueue(pool),
+  };
+}
+
+/** The moves following a change proposal through its base's merge queue owns. */
+function postgresFinalizerProposalQueue(
+  pool: pg.Pool,
+): Pick<
+  FinalizerProposalStore,
+  | "markChangeProposalQueueUnread"
+  | "recordChangeProposalQueue"
+  | "markChangeProposalEnqueue"
+  | "recordChangeProposalEnqueue"
+> {
+  return {
+    markChangeProposalQueueUnread: (claim) =>
+      postgresTransaction(pool, (client) =>
+        finalizerChangeProposalQueueUnread(client, claim),
+      ),
+    recordChangeProposalQueue: (claim, standing) =>
+      postgresTransaction(pool, (client) =>
+        finalizerChangeProposalQueueRecord(client, claim, standing),
+      ),
+    markChangeProposalEnqueue: (claim, requeuedAfterMs) =>
+      postgresTransaction(pool, (client) =>
+        finalizerChangeProposalEnqueueMark(client, claim, requeuedAfterMs),
+      ),
+    recordChangeProposalEnqueue: (claim, write) =>
+      postgresTransaction(pool, (client) =>
+        finalizerChangeProposalEnqueueRecord(client, claim, write),
       ),
   };
 }

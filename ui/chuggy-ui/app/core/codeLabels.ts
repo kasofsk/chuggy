@@ -167,6 +167,12 @@ export function finalizationUnavailableKindLabel(
       return "Push declined";
     case "PromotionWorkflowsRefused":
       return "Workflow files refused";
+    case "ProposalQueueChecksFailed":
+      return "Merge queue checks failed twice";
+    case "ProposalQueueTimedOut":
+      return "Merge queue checks timed out twice";
+    case "ProposalDequeued":
+      return "Removed from merge queue";
   }
 }
 
@@ -294,6 +300,8 @@ export function changeProposalMergeWaitLabel(
       return "Blocked";
     case "HeadMoved":
       return "Head moved";
+    case "Queued":
+      return "In merge queue";
   }
 }
 

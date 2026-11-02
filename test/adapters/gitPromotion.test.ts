@@ -719,7 +719,7 @@ test("a genuine conflict is the conflicting paths, the merge base, and no commit
   });
 });
 
-test("a clean promotion advances the ref, and repeating it moves nothing", async (t) => {
+test("a clean promotion advances the ref, and repeating it moves nothing and sends nothing a queued branch would refuse", async (t) => {
   const fixture = fixtureOpen(t);
   const binding = fixtureBinding(fixture.remote);
   const port = fixturePort(fixture);
@@ -746,6 +746,16 @@ test("a clean promotion advances the ref, and repeating it moves nothing", async
   assert.equal(
     fixtureGit(fixture.remote, "rev-parse", "refs/heads/main"),
     candidate,
+  );
+  const hook = join(fixture.remote, "hooks", "pre-receive");
+  writeFileSync(hook, "#!/bin/sh\nexit 1\n");
+  chmodSync(hook, 0o700);
+  assert.deepEqual(
+    await port.promoteCandidate({
+      ...promotion,
+      permit: asCommitPermitId("permit-2"),
+    }),
+    { promoted: "Advanced" },
   );
 });
 

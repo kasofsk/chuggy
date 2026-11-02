@@ -28,6 +28,7 @@ import {
   forgeAuthorizationAccountsAnsweredMax,
   forgeInstallationsAnsweredMax,
   proposalMergeStateCharsMax,
+  proposalQueueWordCharsMax,
   forgeRepositoriesAnsweredMax,
   projectRepositoriesAnsweredMax,
   repositoryConfigurationImportRefusalsKeptMax,
@@ -2533,9 +2534,10 @@ const ticketLandingFields = {
 
 /**
  * One finalization of a ticket, as what is recorded of it. A `Held` landing
- * carries the hold it was last recorded at, an `AwaitingMerge` one what its
- * merge waits on and when the forge was last heard about it, and only a
- * `Landed` one carries the commit it landed at.
+ * carries the hold it was last recorded at, with the forge's reason and the
+ * login it names where that hold escalates a removal from a merge queue; an
+ * `AwaitingMerge` one what its merge waits on and when the forge was last
+ * heard about it; and only a `Landed` one the commit it landed at.
  */
 export const ticketLandingSchema = z.discriminatedUnion("state", [
   z.strictObject({
@@ -2545,6 +2547,12 @@ export const ticketLandingSchema = z.discriminatedUnion("state", [
       kind: z.enum(finalizationUnavailableKinds),
       passes: ticketNumberSchema,
       since: instantSchema,
+      removal: z
+        .strictObject({
+          reason: z.string().min(1).max(proposalQueueWordCharsMax),
+          actor: z.string().min(1).max(proposalQueueWordCharsMax).optional(),
+        })
+        .optional(),
     }),
   }),
   z.strictObject({

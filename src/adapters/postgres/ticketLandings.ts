@@ -27,6 +27,7 @@ import {
   allChangeProposalStatuses,
   allChangeProposalUnmergeableSettled,
   asProposalMergeState,
+  asProposalQueueWord,
 } from "../../interpreter/changeProposal.ts";
 import {
   allFinalizationAttemptOutcomes,
@@ -38,10 +39,12 @@ import { asProjectArtifactId } from "../../interpreter/finalizerPreparation.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import { asPublicInstant } from "../../interpreter/publicResource.ts";
 import {
+  ticketLandingQueueRemovalHolds,
   type TicketLandingAttempt,
   type TicketLandingConclusion,
   type TicketLandingHold,
   type TicketLandingProposal,
+  type TicketLandingQueueRemoval,
   type TicketLandingRecord,
   type TicketLandingsStore,
   type TicketLandingWait,
@@ -85,6 +88,8 @@ interface TicketLandingRow {
   readonly head_commit: string | null;
   readonly merged_head: string | null;
   readonly proposal_status: string | null;
+  readonly queue_removal_reason: string | null;
+  readonly queue_removal_actor: string | null;
 }
 
 /** The event names a conclusion is journalled under, beside the conclusion each names. */
@@ -106,16 +111,37 @@ function ticketLandingConclusion(
   return concluded;
 }
 
+/** Who removed the pull request from its base's merge queue and why, where a hold escalates that removal. */
+function ticketLandingQueueRemoval(
+  row: TicketLandingRow,
+  kind: FinalizationUnavailableKind,
+): TicketLandingQueueRemoval | undefined {
+  if (
+    !ticketLandingQueueRemovalHolds.includes(kind) ||
+    row.queue_removal_reason === null
+  )
+    return undefined;
+  return {
+    reason: asProposalQueueWord(row.queue_removal_reason),
+    ...(row.queue_removal_actor === null
+      ? {}
+      : { actor: asProposalQueueWord(row.queue_removal_actor) }),
+  };
+}
+
 function ticketLandingHold(
   row: TicketLandingRow,
 ): TicketLandingHold | undefined {
   if (row.hold_kind === null) return undefined;
   const kinds: readonly FinalizationUnavailableKind[] =
     finalizationUnavailableKinds;
+  const kind = finalizerRowValue(kinds, row.hold_kind, "hold kind");
+  const removal = ticketLandingQueueRemoval(row, kind);
   return {
-    kind: finalizerRowValue(kinds, row.hold_kind, "hold kind"),
+    kind,
     passes: finalizerRowPresent(row.hold_passes, "hold passes"),
     since: asPublicInstant(finalizerRowPresent(row.held_since, "held since")),
+    ...(removal === undefined ? {} : { removal }),
   };
 }
 
@@ -303,7 +329,8 @@ async function ticketLandingsRead(
                l.mergeability,l.merge_commit,l.landed_commit,l.merge_state,
                l.merge_wait,
                to_char(l.merge_heard_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS merge_heard_at,
-               l.head_commit,l.merged_head,l.proposal_status
+               l.head_commit,l.merged_head,l.proposal_status,
+               l.queue_removal_reason,l.queue_removal_actor
           FROM ticket_projection t
           LEFT JOIN LATERAL read_ticket_landings(t.tenant,t.project,t.ticket,${count}::integer) l
             ON true
