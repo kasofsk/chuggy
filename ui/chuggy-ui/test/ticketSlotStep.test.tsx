@@ -53,6 +53,7 @@ function drawParked(
       escalation,
       ...ticketInstants,
     },
+    landings: [],
     ledger: undefined,
     stageCount: 1,
     open: [],

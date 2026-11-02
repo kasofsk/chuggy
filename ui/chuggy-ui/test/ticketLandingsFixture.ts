@@ -8,6 +8,7 @@ import type {
   TicketLandingResponse,
   TicketLandingsResponse,
 } from "../../../src/contract/responses.ts";
+import type { FinalizationUnavailableKind } from "../../../src/contract/rosters.ts";
 import type { ExecutionShape } from "./ticketLedgerFixture.ts";
 import { evalIdentity, workIdentity } from "./ticketLedgerFixture.ts";
 
@@ -181,6 +182,31 @@ export function landingHeld(
     attempts: 2,
     state: "Held",
     hold: { kind: "TargetUnreadable", passes: 3, since },
+  };
+}
+
+/**
+ * A landing of `cycle` escalated from a hold at `kind` since `since`, and the
+ * removal from its base's merge queue that hold names, where it names one.
+ */
+export function landingEscalated(
+  cycle: number,
+  since: string,
+  kind: FinalizationUnavailableKind,
+  removal?: { readonly reason: string; readonly actor?: string },
+): TicketLandingResponse {
+  return {
+    cycle,
+    generation: 1,
+    attempts: 1,
+    state: "Unavailable",
+    hold: {
+      kind,
+      passes: 10,
+      since,
+      ...(removal === undefined ? {} : { removal }),
+    },
+    attempt: landingAttempt,
   };
 }
 

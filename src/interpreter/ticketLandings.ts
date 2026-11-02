@@ -24,7 +24,9 @@
  * hold recorded beside it. A wait is answered under a recorded hold, because a
  * pass that found the proposal open clears the record and so one that stands
  * is newer than the last reading. A concluded landing answers neither, whatever
- * its columns still carry.
+ * its columns still carry, except that an escalated one answers the hold it
+ * escalated from, which is the last one recorded, since only a recorded hold's
+ * dwell escalates.
  *
  * A CONFLICT IS READ FROM ITS MANIFEST, which is a project artifact and not a
  * row. A manifest not found and a store that cannot be reached both leave the
@@ -92,9 +94,19 @@ export interface TicketLandingHold {
   readonly removal?: TicketLandingQueueRemoval;
 }
 
-/** The holds a removal from a merge queue is escalated at, which are the ones that carry it. */
+/**
+ * The holds a removal from a merge queue is escalated at, which are the ones
+ * that carry it: merges exhausted among them, which a spent rework of a
+ * failed-check removal holds at, and which carries none where the proposal's
+ * standing records none.
+ */
 export const ticketLandingQueueRemovalHolds: readonly FinalizationUnavailableKind[] =
-  ["ProposalQueueChecksFailed", "ProposalQueueTimedOut", "ProposalDequeued"];
+  [
+    "ProposalQueueChecksFailed",
+    "ProposalQueueTimedOut",
+    "ProposalDequeued",
+    "ProposalMergesExhausted",
+  ];
 
 /** One request's newest attempt, as its row holds it. */
 export interface TicketLandingAttempt {
@@ -168,12 +180,13 @@ export interface TicketLandingsStore {
 /** Where one landing stands, with the hold, the wait or the commit its state carries. */
 export type TicketLandingStanding =
   | { readonly state: "Held"; readonly hold: TicketLandingHold }
+  | { readonly state: "Unavailable"; readonly hold?: TicketLandingHold }
   | { readonly state: "AwaitingMerge"; readonly wait: TicketLandingWait }
   | { readonly state: "Landed"; readonly landedCommit: GitObjectId }
   | {
       readonly state: Exclude<
         TicketLandingState,
-        "Held" | "AwaitingMerge" | "Landed"
+        "Held" | "Unavailable" | "AwaitingMerge" | "Landed"
       >;
     };
 
@@ -227,7 +240,9 @@ function ticketLandingConcluded(
     case "NeedsWork":
       return { state: "Failed" };
     case "Unavailable":
-      return { state: "Unavailable" };
+      return record.hold === undefined
+        ? { state: "Unavailable" }
+        : { state: "Unavailable", hold: record.hold };
     case "Succeeded":
       return ticketLandingSucceeded(record);
     case undefined:

@@ -10,6 +10,7 @@ import type {
   NativeActionResponse,
   TicketResponse,
 } from "../../../src/contract/responses.ts";
+import { ticketLandingOf } from "../app/core/ticketLandings.ts";
 import { ticketLedger } from "../app/core/ticketLedger.ts";
 import type { TicketAction } from "../app/core/ticketActions.ts";
 import { offersAnswered } from "../app/core/ticketOffers.ts";
@@ -30,6 +31,7 @@ import {
   workIdentity,
 } from "./ticketLedgerFixture.ts";
 import type { ExecutionShape } from "./ticketLedgerFixture.ts";
+import { landingEscalated, landingHeld } from "./ticketLandingsFixture.ts";
 
 const facts = ticketLedger(ledgerPage([]), []);
 
@@ -46,6 +48,7 @@ function ticket(over: Partial<TicketResponse> = {}): TicketResponse {
 function reads(over: Partial<SituationReads> = {}): SituationReads {
   return {
     ticket: ticket(),
+    landings: [],
     ledger: facts,
     stageCount: 1,
     open: [],
@@ -531,4 +534,90 @@ test("a card that asks takes the actions that answer it, and the bar keeps the r
   expect(offersAnswered(offers, true)).toEqual([resume]);
   expect(offersAnswered(offers, false)).toEqual([]);
   expect(offersAnswered({ offers: "Unread" }, true)).toEqual([]);
+});
+
+const escalatedSince = "2026-11-02T22:21:18Z";
+
+/** The slot of a ticket parked at the finalization wall at `evidence`, over `landings`. */
+function parkedOver(
+  evidence:
+    | "ProposalDequeued"
+    | "ProposalQueueTimedOut"
+    | "ProposalMergesExhausted"
+    | "ProposalQueueChecksFailed",
+  landings: SituationReads["landings"],
+) {
+  return ticketSlot(
+    reads({
+      ticket: ticket({
+        phase: "Escalated",
+        escalation: {
+          kind: "FinalizationUnavailableEscalated",
+          evidence,
+          resumeAt: "ResumeFinalization",
+        },
+      }),
+      landings,
+    }),
+  );
+}
+
+/** The landings of a ticket whose newest escalated from `kind`, naming `removal` where given. */
+function escalatedFrom(
+  kind: Parameters<typeof landingEscalated>[2],
+  removal?: { readonly reason: string; readonly actor?: string },
+): SituationReads["landings"] {
+  return [ticketLandingOf(landingEscalated(5, escalatedSince, kind, removal))];
+}
+
+test("an escalation over a merge queue removal names the forge's reason and who removed the pull request", () => {
+  expect(
+    parkedOver(
+      "ProposalDequeued",
+      escalatedFrom("ProposalDequeued", { reason: "manual", actor: "gdoteof" }),
+    ),
+  ).toStrictEqual({
+    slot: "NeedsYou",
+    detail: "Removed from merge queue",
+    step: undefined,
+    more: "Queue removal: manual by gdoteof",
+    reason: undefined,
+  });
+  expect(
+    parkedOver(
+      "ProposalQueueTimedOut",
+      escalatedFrom("ProposalQueueTimedOut", { reason: "checks_timed_out" }),
+    ),
+  ).toMatchObject({ more: "Queue removal: checks_timed_out" });
+  for (const evidence of [
+    "ProposalMergesExhausted",
+    "ProposalQueueChecksFailed",
+  ] as const)
+    expect(
+      parkedOver(
+        evidence,
+        escalatedFrom(evidence, {
+          reason: "failed_checks",
+          actor: "github-merge-queue",
+        }),
+      ),
+    ).toMatchObject({
+      more: "Queue removal: failed_checks by github-merge-queue",
+    });
+});
+
+test("an escalation over a hold that names no removal, or whose newest landing is not the escalated one, reads as the escalation alone", () => {
+  for (const landings of [
+    [],
+    escalatedFrom("ProposalMergesExhausted"),
+    escalatedFrom("ProposalDequeued", { reason: "manual", actor: "gdoteof" }),
+    [ticketLandingOf(landingHeld(5, escalatedSince))],
+  ])
+    expect(parkedOver("ProposalMergesExhausted", landings)).toStrictEqual({
+      slot: "NeedsYou",
+      detail: "Proposal merges exhausted",
+      step: undefined,
+      more: undefined,
+      reason: undefined,
+    });
 });

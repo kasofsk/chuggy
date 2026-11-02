@@ -2532,10 +2532,23 @@ const ticketLandingFields = {
   proposal: ticketLandingProposalSchema.optional(),
 };
 
+/** A hold a landing was recorded at, with the forge's reason and the login it names where it escalates a removal from a merge queue. */
+const ticketLandingHoldSchema = z.strictObject({
+  kind: z.enum(finalizationUnavailableKinds),
+  passes: ticketNumberSchema,
+  since: instantSchema,
+  removal: z
+    .strictObject({
+      reason: z.string().min(1).max(proposalQueueWordCharsMax),
+      actor: z.string().min(1).max(proposalQueueWordCharsMax).optional(),
+    })
+    .optional(),
+});
+
 /**
  * One finalization of a ticket, as what is recorded of it. A `Held` landing
- * carries the hold it was last recorded at, with the forge's reason and the
- * login it names where that hold escalates a removal from a merge queue; an
+ * carries the hold it was last recorded at, and an `Unavailable` one the hold
+ * it escalated from where one is recorded; an
  * `AwaitingMerge` one what its merge waits on and when the forge was last
  * heard about it; and only a `Landed` one the commit it landed at.
  */
@@ -2543,17 +2556,12 @@ export const ticketLandingSchema = z.discriminatedUnion("state", [
   z.strictObject({
     ...ticketLandingFields,
     state: z.literal("Held"),
-    hold: z.strictObject({
-      kind: z.enum(finalizationUnavailableKinds),
-      passes: ticketNumberSchema,
-      since: instantSchema,
-      removal: z
-        .strictObject({
-          reason: z.string().min(1).max(proposalQueueWordCharsMax),
-          actor: z.string().min(1).max(proposalQueueWordCharsMax).optional(),
-        })
-        .optional(),
-    }),
+    hold: ticketLandingHoldSchema,
+  }),
+  z.strictObject({
+    ...ticketLandingFields,
+    state: z.literal("Unavailable"),
+    hold: ticketLandingHoldSchema.optional(),
   }),
   z.strictObject({
     ...ticketLandingFields,
@@ -2572,7 +2580,7 @@ export const ticketLandingSchema = z.discriminatedUnion("state", [
     ...ticketLandingFields,
     state: z
       .enum(ticketLandingStates)
-      .exclude(["Held", "AwaitingMerge", "Landed"]),
+      .exclude(["Held", "Unavailable", "AwaitingMerge", "Landed"]),
   }),
 ]);
 export type TicketLandingResponse = z.infer<typeof ticketLandingSchema>;
