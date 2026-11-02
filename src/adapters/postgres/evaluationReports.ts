@@ -126,15 +126,6 @@ interface FailedLandingRow {
   readonly queue_group_commit: string | null;
 }
 
-/**
- * Reads the failed landing this work task's own bundle pins: the target it was
- * prepared against, the commit of the one source a pinned result manifest
- * recorded, whether a conflict manifest was pinned beside them, and what the
- * pinned attempt recorded of why it failed. A bundle that pins no
- * `FinalizationAttempt` answers no row, a manifest with no source still answers
- * one, without the change's commit, and an attempt the row does not find
- * answers one with nothing of why.
- */
 /** What a row says of why its attempt failed, and nothing where it names a kind this code does not know. */
 function failedLandingWhyOf(
   row: FailedLandingRow,
@@ -159,6 +150,15 @@ function failedLandingWhyOf(
   };
 }
 
+/**
+ * Reads the failed landing this work task's own bundle pins: the target it was
+ * prepared against, the commit of the one source a pinned result manifest
+ * recorded, whether a conflict manifest was pinned beside them, and what the
+ * pinned attempt recorded of why it failed. A bundle that pins no
+ * `FinalizationAttempt` answers no row, a manifest with no source still answers
+ * one, without the change's commit, and an attempt the row does not find
+ * answers one with nothing of why.
+ */
 export function postgresFailedLanding(pool: pg.Pool): FailedLandingPort {
   return {
     landing: async (partition, execution): Promise<FailedLandingRead> => {
