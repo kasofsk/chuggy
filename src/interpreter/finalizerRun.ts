@@ -159,7 +159,10 @@
  * spend the create they were taken about, after which another one is what
  * `proposalCreationsMax` authorizes. Every act is bounded by the pass as well: one
  * proposal act per claimed request, and no more of them in a pass than
- * `proposalsPerPassMax`.
+ * `proposalsPerPassMax`. Escalating or aborting a request whose proposal may be
+ * queued adds one dequeue and the read after it beyond that act, counted with
+ * the proposals but never refused by their ceiling, because a dequeue skipped
+ * leaves a queued proposal to merge under a ticket nobody is finalizing.
  *
  * THE PROPOSAL'S BASE IS A THIRD OBSERVATION AND IS NEVER CREATED. The branch
  * the work happened on and the one the promotion lands are both read above; the
@@ -1996,10 +1999,13 @@ async function finalizerDequeue(
   service: FinalizerService,
   claim: FinalizationClaim,
   merge: ChangeProposalMergeRequest,
+  tally: FinalizerTally,
 ): Promise<void> {
   const port = service.forges.selector.select(merge.binding.forge);
   if (port === undefined) return;
+  tally.proposals += 1;
   await port.dequeue(merge);
+  tally.proposals += 1;
   const read = await port.readQueue(merge);
   if (read.read === "Standing")
     await service.store.recordChangeProposalQueue(claim, read.standing);
@@ -2175,7 +2181,7 @@ async function finalizerProposalAborted(
 ): Promise<void> {
   if (!finalizerPreparationPriced(service, tally)) return;
   if (decision.dequeue !== undefined)
-    await finalizerDequeue(service, view.claim, decision.dequeue);
+    await finalizerDequeue(service, view.claim, decision.dequeue, tally);
   await finalizerAbort(service, view, finalizerCandidateOf(view).target, tally);
 }
 
@@ -2221,6 +2227,7 @@ function finalizerProposalBounds(
 async function finalizerDequeueEscalated(
   service: FinalizerService,
   view: FinalizationView,
+  tally: FinalizerTally,
 ): Promise<void> {
   const { attempt, repository } = view;
   if (
@@ -2253,7 +2260,7 @@ async function finalizerDequeueEscalated(
     finalizerProposalBounds(service),
   );
   if (dequeue !== undefined)
-    await finalizerDequeue(service, view.claim, dequeue);
+    await finalizerDequeue(service, view.claim, dequeue, tally);
 }
 
 /** Offers one result to the one authenticated door, counting what it answered. */
@@ -2333,7 +2340,7 @@ async function finalizerRecordHold(
     held.passes < config.holdPassesMax
   )
     return;
-  if (view !== undefined) await finalizerDequeueEscalated(service, view);
+  if (view !== undefined) await finalizerDequeueEscalated(service, view, tally);
   await finalizerSubmit(
     service,
     { claim, conclusion: { outcome: "FinalizationResultUnavailable", kind } },

@@ -168,9 +168,9 @@ export function finalizationUnavailableKindLabel(
     case "PromotionWorkflowsRefused":
       return "Workflow files refused";
     case "ProposalQueueChecksFailed":
-      return "Merge queue checks failed twice";
+      return "Merge queue checks failed again";
     case "ProposalQueueTimedOut":
-      return "Merge queue checks timed out twice";
+      return "Merge queue checks timed out again";
     case "ProposalDequeued":
       return "Removed from merge queue";
   }

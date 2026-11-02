@@ -1417,6 +1417,16 @@ function serviceOf(
 }
 
 /** One pass over the fixtures a case installed. */
+/** Every request the forge's merge queue and merge have been sent so far. */
+function queueRequests(forge: ForgeRecorder): number {
+  return (
+    forge.merges.length +
+    forge.queueReads.length +
+    forge.enqueues.length +
+    forge.dequeues.length
+  );
+}
+
 function passOver(service: FinalizerService): ReturnType<typeof finalizerPass> {
   return finalizerPass(service, asFinalizerOwnerId("owner-run"), epoch);
 }
@@ -4465,12 +4475,18 @@ test("a finalization escalating while its proposal is queued asks the queue to g
   rereadDue(store);
   await passOver(service);
   assert.equal(forge.dequeues.length, 0);
-  await passOver(service);
+  const asked = queueRequests(forge);
+  const escalated = await passOver(service);
 
   assert.deepEqual(store.concluded, [
     { outcome: "FinalizationResultUnavailable", kind: "ProposalUnavailable" },
   ]);
   assert.equal(forge.dequeues.length, 1);
+  assert.equal(
+    escalated.proposals,
+    queueRequests(forge) - asked,
+    "the dequeue and the read after it are counted with the pass's proposals",
+  );
   assert.equal(
     forge.dequeues[0]?.proposal.remote,
     forge.enqueues[0]?.proposal.remote,
@@ -4484,9 +4500,12 @@ test("a project closing while its proposal is queued gives it up, reads where it
   if (view === undefined) throw new Error("the case holds one view");
   views[0] = { ...view, lifecycle: "Deleting" };
   forge.queueStanding = { enabled: true };
-  await passOver(service);
+  const asked = queueRequests(forge);
+  const aborted = await passOver(service);
 
   assert.equal(forge.dequeues.length, 1);
+  assert.equal(aborted.proposals, queueRequests(forge) - asked);
+  assert.equal(aborted.proposals, 2, "an abort's dequeue and read are counted");
   assert.equal(
     store.queueStanding?.queued,
     false,
