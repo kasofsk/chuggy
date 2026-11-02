@@ -52,11 +52,13 @@
  * evidence — re-read the ref, confirm the ancestry — and never an outcome, so a
  * hold ends when reconciliation concludes and no earlier.
  *
- * THE FAILURE KINDS ARE `MergeConflict` AND `PreparationFailed`. An integration
- * answered by a conflict is the first and a preparation that produced no
- * candidate is the second; both reduce to the one priced `FinalizationNeedsWork`
- * the model already has, and no hold is either of them: a hold spends nothing
- * and refunds nothing, so a finalizer's own re-preparations stay invisible to
+ * THE FAILURE KINDS ARE `MergeConflict`, `PreparationFailed` AND
+ * `QueueChecksFailed`. An integration answered by a conflict is the first, a
+ * preparation that produced no candidate is the second, and a merge queue
+ * whose required checks failed twice on the change merged onto its base is the
+ * third; all three reduce to the one priced `FinalizationNeedsWork` the model
+ * already has, and no hold is any of them: a hold spends nothing and refunds
+ * nothing, so a finalizer's own re-preparations stay invisible to
  * `TicketGraph`.
  *
  * A CLOSING PROJECT ABORTS BEFORE THE PERMIT AND RECONCILES AFTER IT. A
@@ -309,15 +311,19 @@ export const allFinalizationAttemptOutcomes: readonly FinalizationAttemptOutcome
   ["Prepared", "Failed", "Landed"];
 
 /**
- * An integration answered by a conflict and a preparation that produced no
- * candidate, both of which reduce to the one priced `FinalizationNeedsWork`.
+ * An integration answered by a conflict, a preparation that produced no
+ * candidate, and a merge queue's required checks failing twice on the change
+ * merged onto its base, each of which reduces to the one priced
+ * `FinalizationNeedsWork`.
  */
-export type FinalizationFailureKind = "MergeConflict" | "PreparationFailed";
+export type FinalizationFailureKind =
+  "MergeConflict" | "PreparationFailed" | "QueueChecksFailed";
 
 /** Every failure kind, so a suite and a database CHECK iterate rather than restate. */
 export const allFinalizationFailureKinds: readonly FinalizationFailureKind[] = [
   "MergeConflict",
   "PreparationFailed",
+  "QueueChecksFailed",
 ];
 
 /** Whether a permit is still the authority for the one irreversible act, or has been spent. */
@@ -665,6 +671,7 @@ export type FinalizationHoldKind =
   | "PromotionDeclined"
   | "PromotionWorkflowsRefused"
   | "ProposalQueued"
+  /** Reached by no pass, a queue's failed checks being sent back to work; holds and results already recorded at it are still read. */
   | "ProposalQueueChecksFailed"
   | "ProposalQueueTimedOut"
   | "ProposalDequeued";
@@ -1267,6 +1274,8 @@ export interface FinalizerConfig {
   readonly proposalMergesMax: number;
   readonly proposalMergeReadingsMax: number;
   readonly proposalUpdatesMax: number;
+  /** How many times one ticket is sent back to work for its merge queue's checks failing before it holds instead. */
+  readonly proposalQueueReworksMax: number;
 }
 
 /** The values a deployment starts from when it names none. */
@@ -1285,6 +1294,7 @@ export const finalizerDefaults: FinalizerConfig = {
   proposalMergesMax: 3,
   proposalMergeReadingsMax: 3,
   proposalUpdatesMax: 3,
+  proposalQueueReworksMax: 2,
 };
 
 /**

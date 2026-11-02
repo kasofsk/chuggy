@@ -60,6 +60,7 @@ import {
   finalizationProposalReadingRecording,
   finalizationProposalTitle,
   finalizationProposalUpdateRecording,
+  finalizationQueueRework,
   type FinalizationProposalDecision,
   type FinalizationProposalGathered,
   type FinalizationProposalStanding,
@@ -536,7 +537,7 @@ test("what the merge answered is what the finalization does next", () => {
         merging: "Answered",
         merge: { merged: "NotMergeable", reason: "Conflict" },
       },
-      { decide: "RecordMergeConflict" },
+      { decide: "RecordMergeConflict", base: request.base.ref },
     ],
     [
       unheard(1, 1, {
@@ -550,7 +551,7 @@ test("what the merge answered is what the finalization does next", () => {
         reconciled: "Unmerged",
         evidence: evidence({ mergeability: "Conflicting" }),
       }),
-      { decide: "RecordMergeConflict" },
+      { decide: "RecordMergeConflict", base: request.base.ref },
     ],
     [
       unheard(1, 1, {
@@ -1155,32 +1156,86 @@ test("a queued proposal waits off the escalation roster, and the removals only a
     );
     assert.ok(finalizationUnavailableKinds.some((kind) => kind === hold));
   }
-  for (const [kind, reason, hold] of [
-    ["ChecksFailed", "failed_checks", "ProposalQueueChecksFailed"],
-    ["ChecksTimedOut", "checks_timed_out", "ProposalQueueTimedOut"],
-  ] as const) {
-    assert.deepEqual(
-      finalizationProposalNext(
-        merging,
-        provedInQueue(
-          queueStanding({
-            ...queueRemoval(kind, reason),
-            enqueuedAtMs: asProposalQueueInstant(
-              Date.parse("2026-11-02T10:01:00Z"),
-            ),
-          }),
-          {
-            requeuedAfterMs: asProposalQueueInstant(
-              Date.parse("2026-11-02T09:59:00Z"),
-            ),
-          },
-        ),
-        bounds,
+  const hold = "ProposalQueueTimedOut";
+  assert.deepEqual(
+    finalizationProposalNext(
+      merging,
+      requeuedRemoval(queueRemoval("ChecksTimedOut", "checks_timed_out")),
+      bounds,
+    ),
+    { decide: "Hold", hold },
+  );
+  assert.ok(finalizationUnavailableKinds.some((held) => held === hold));
+});
+
+/** A removal the second enqueue of the pinned head answered. */
+function requeuedRemoval(
+  read: ChangeProposalQueueStanding,
+): FinalizationProposalGathered {
+  return provedInQueue(
+    queueStanding({
+      ...read,
+      enqueuedAtMs: asProposalQueueInstant(Date.parse("2026-11-02T10:01:00Z")),
+    }),
+    {
+      requeuedAfterMs: asProposalQueueInstant(
+        Date.parse("2026-11-02T09:59:00Z"),
       ),
-      { decide: "Hold", hold },
-    );
-    assert.ok(finalizationUnavailableKinds.some((held) => held === hold));
-  }
+    },
+  );
+}
+
+test("a second removal for failed checks is recorded against the proposal's base, with the commit the queue built", () => {
+  const removed = queueRemoval("ChecksFailed", "failed_checks");
+  assert.ok(removed.removal !== undefined);
+  assert.deepEqual(
+    finalizationProposalNext(merging, requeuedRemoval(removed), bounds),
+    { decide: "RecordQueueChecksFailed", base: request.base.ref },
+  );
+  const groupCommit = asGitObjectId("9".repeat(40));
+  assert.deepEqual(
+    finalizationProposalNext(
+      merging,
+      requeuedRemoval({
+        ...removed,
+        removal: { ...removed.removal, groupCommit },
+      }),
+      bounds,
+    ),
+    { decide: "RecordQueueChecksFailed", base: request.base.ref, groupCommit },
+  );
+});
+
+test("a ticket sent back for its queue's checks as often as its bound allows holds as merges spent, and an unread base holds", () => {
+  const base = {
+    ref: request.base.ref,
+    commit: asGitObjectId("8".repeat(40)),
+  };
+  assert.deepEqual(finalizationQueueRework(0, 2, base), {
+    rework: "Record",
+    base,
+  });
+  assert.deepEqual(finalizationQueueRework(1, 2, base), {
+    rework: "Record",
+    base,
+  });
+  for (const read of [base, undefined])
+    assert.deepEqual(finalizationQueueRework(2, 2, read), {
+      rework: "Hold",
+      hold: "ProposalMergesExhausted",
+    });
+  assert.deepEqual(finalizationQueueRework(1, 2, undefined), {
+    rework: "Hold",
+    hold: "ProposalBaseUnreadable",
+  });
+  assert.ok(
+    finalizationUnavailableKinds.some(
+      (kind) => kind === "ProposalMergesExhausted",
+    ),
+    "the hold past the bound escalates",
+  );
+  assert.throws(() => finalizationQueueRework(-1, 2, base), RangeError);
+  assert.throws(() => finalizationQueueRework(0, 0, base), RangeError);
 });
 
 test("a removal for a conflict sends the ticket back to work, as a conflicted merge does", () => {
@@ -1201,7 +1256,7 @@ test("a removal for a conflict sends the ticket back to work, as a conflicted me
       ),
       bounds,
     ),
-    { decide: "RecordMergeConflict" },
+    { decide: "RecordMergeConflict", base: request.base.ref },
   );
 });
 

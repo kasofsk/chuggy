@@ -66,8 +66,9 @@
  * followed there: while it is queued it waits, and once it is removed the
  * forge's reason routes it. A merge concludes as any merge does; a conflict
  * is the conflict a refused merge settles to; a failed or timed-out check puts
- * the same head on the queue once more and holds at the second removal; and
- * anything else, a person among it, holds. A refused enqueue waits on the
+ * the same head on the queue once more, and at the second removal a failed
+ * check is the change's own to fix while a timed-out one holds; and anything
+ * else, a person among it, holds. A refused enqueue waits on the
  * forge's rules as a blocked merge does, and no branch on a queue is ever
  * brought up to date from here.
  *
@@ -1066,12 +1067,17 @@ export type ChangeProposalQueueRemovalKind =
 export const allChangeProposalQueueRemovalKinds: readonly ChangeProposalQueueRemovalKind[] =
   ["Merged", "ChecksFailed", "ChecksTimedOut", "Conflict", "Dequeued"];
 
-/** The newest removal a merge queue records of one proposal, with the forge's own reason and whoever made it. */
+/**
+ * The newest removal a merge queue records of one proposal, with the forge's
+ * own reason, whoever made it, and the commit the queue built for the entry
+ * where the forge names one.
+ */
 export interface ChangeProposalQueueRemoval {
   readonly atMs: ProposalQueueInstant;
   readonly kind: ChangeProposalQueueRemovalKind;
   readonly reason: ProposalQueueWord;
   readonly actor?: ProposalQueueWord;
+  readonly groupCommit?: GitObjectId;
 }
 
 /**
@@ -1247,6 +1253,10 @@ export type ChangeProposalMergingNext =
   | { readonly next: "Wait"; readonly reason: "Blocked" | "Closed" }
   | { readonly next: "Concluded"; readonly merge: ChangeProposalMergeConcluded }
   | {
+      readonly next: "ChecksFailed";
+      readonly removal: ChangeProposalQueueRemoval;
+    }
+  | {
       readonly next: "Refused";
       readonly contradiction: ChangeProposalContradiction;
       readonly evidence: ChangeProposalEvidence;
@@ -1262,7 +1272,6 @@ export type ChangeProposalMergingNext =
         | "ProposalAbsent"
         | "EvidenceUnstorable"
         | "Queued"
-        | "QueueChecksFailed"
         | "QueueTimedOut"
         | "Dequeued";
     };
@@ -1621,9 +1630,10 @@ function proposalMergeQueueRemoval(
 /**
  * What one removal of the pinned head authorizes, and nothing where it is the
  * removal a second enqueue already answered and that enqueue has not taken. A
- * failed or timed-out check puts the same head on the queue once more, so the
- * removal after that one holds; and a head anybody else dequeued is never put
- * back over them.
+ * failed or timed-out check puts the same head on the queue once more; the
+ * removal after that one is a failure of the change itself where a check
+ * failed, and holds where one never concluded; and a head anybody else
+ * dequeued is never put back over them.
  */
 function proposalMergeQueueRemovedNext(
   queueing: ChangeProposalQueueing,
@@ -1639,13 +1649,9 @@ function proposalMergeQueueRemovedNext(
       if (queueing.requeuedAfterMs === undefined)
         return { next: "Enqueue", requeuedAfterMs: removal.atMs };
       if (queueing.requeuedAfterMs === removal.atMs) return undefined;
-      return {
-        next: "Held",
-        reason:
-          removal.kind === "ChecksFailed"
-            ? "QueueChecksFailed"
-            : "QueueTimedOut",
-      };
+      return removal.kind === "ChecksFailed"
+        ? { next: "ChecksFailed", removal }
+        : { next: "Held", reason: "QueueTimedOut" };
     case "Dequeued":
       return { next: "Held", reason: "Dequeued" };
     default:

@@ -494,6 +494,9 @@ export interface FinalizerIdentityFactory {
 /**
  * One preparation offered to the durable authority. It is written once, and the
  * schema has no update path at all, so a second preparation is another identity.
+ * A failure a pull request's forge reported keeps the base that proposal was
+ * refused onto as it was read then, which the target — the proposal's head —
+ * cannot say, and a merge queue's failed checks the commit the queue built.
  */
 export interface AttemptRecord {
   readonly claim: FinalizationClaim;
@@ -509,6 +512,8 @@ export interface AttemptRecord {
   readonly failureKind?: FinalizationFailureKind;
   readonly conflictManifest?: ProjectArtifactId;
   readonly conflictDigest?: string;
+  readonly proposalBase?: Pick<ObservedTarget, "ref" | "commit">;
+  readonly groupCommit?: GitObjectId;
   readonly attemptDigest: string;
 }
 
@@ -619,8 +624,10 @@ export function canonicalChangeProposalRequest(
 
 /**
  * The exact bytes one attempt's digest is taken over, binding it to the request
- * it answers. The base ref an unheld target was read from is a last part only
- * where there is one, so every attempt without one keeps the bytes it had.
+ * it answers. The base ref an unheld target was read from, a proposal's base
+ * and a queue's group commit are last parts only where there is one, the two
+ * later ones each behind its own label, so every attempt without them keeps the
+ * bytes it had.
  */
 export function canonicalFinalizationAttempt(
   record: Omit<AttemptRecord, "attemptDigest">,
@@ -648,6 +655,12 @@ export function canonicalFinalizationAttempt(
     record.conflictManifest ?? "",
     record.conflictDigest ?? "",
     ...(record.target.baseRef === undefined ? [] : [record.target.baseRef]),
+    ...(record.proposalBase === undefined
+      ? []
+      : ["proposalBase", record.proposalBase.ref, record.proposalBase.commit]),
+    ...(record.groupCommit === undefined
+      ? []
+      : ["groupCommit", record.groupCommit]),
   ]);
 }
 

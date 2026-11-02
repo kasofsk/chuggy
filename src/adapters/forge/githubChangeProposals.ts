@@ -1023,7 +1023,7 @@ const githubQueueStandingQuery = `query($owner: String!, $name: String!, $number
         nodes {
           __typename
           ... on AddedToMergeQueueEvent { createdAt }
-          ... on RemovedFromMergeQueueEvent { createdAt reason actor { login } }
+          ... on RemovedFromMergeQueueEvent { createdAt reason actor { login } beforeCommit { oid } }
         }
       }
     }
@@ -1122,6 +1122,7 @@ const githubQueueEventSchema = z
     createdAt: z.string(),
     reason: z.string().nullable().optional(),
     actor: z.object({ login: z.string() }).nullable().optional(),
+    beforeCommit: z.object({ oid: z.string() }).nullable().optional(),
   })
   .nullable();
 
@@ -1172,11 +1173,18 @@ function githubChangeProposalsInstantOf(
   );
 }
 
-/** One removal as this tree words it, and nothing where a field of it is past what a row holds. */
+/**
+ * One removal as this tree words it, the commit the queue built for the entry
+ * among it where the forge names one, and nothing where a field of it is past
+ * what a row holds.
+ */
 function githubChangeProposalsRemovalOf(
   event: GithubQueueEvent,
 ): ChangeProposalQueueRemoval | undefined {
   const atMs = githubChangeProposalsInstantOf(event.createdAt);
+  const built = event.beforeCommit?.oid;
+  const groupCommit =
+    built === undefined ? undefined : githubChangeProposalsCommitOf(built);
   const said = event.reason ?? undefined;
   const reason =
     said === undefined
@@ -1190,7 +1198,8 @@ function githubChangeProposalsRemovalOf(
   if (
     atMs === undefined ||
     reason === undefined ||
-    (login !== undefined && actor === undefined)
+    (login !== undefined && actor === undefined) ||
+    (built !== undefined && groupCommit === undefined)
   )
     return undefined;
   return {
@@ -1198,6 +1207,7 @@ function githubChangeProposalsRemovalOf(
     kind: githubQueueRemovalKinds.get(said ?? "") ?? "Dequeued",
     reason,
     ...(actor === undefined ? {} : { actor }),
+    ...(groupCommit === undefined ? {} : { groupCommit }),
   };
 }
 

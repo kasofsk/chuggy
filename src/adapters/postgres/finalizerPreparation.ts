@@ -321,7 +321,9 @@ export async function finalizerPreparationRecord(
         input_bundle_digest, target_ref,
         target_commit, target_base_ref, strategy, configuration_revision,
         configuration_digest, approval_required, outcome, candidate_commit,
-        failure_kind, conflict_manifest, conflict_manifest_digest, attempt_digest)
+        failure_kind, conflict_manifest, conflict_manifest_digest,
+        proposal_base_ref, proposal_base_commit, queue_group_commit,
+        attempt_digest)
      VALUES (${claim.partition.tenant},${claim.partition.project},${record.attempt},
              ${claim.request},${claim.ticket},${record.repository},
              ${record.bundle.bundle},${record.bundle.digest},${record.target.ref},
@@ -330,6 +332,9 @@ export async function finalizerPreparationRecord(
              ${record.approvalRequired},${record.outcome},
              ${record.candidate ?? null},${record.failureKind ?? null},
              ${record.conflictManifest ?? null},${record.conflictDigest ?? null},
+             ${record.proposalBase?.ref ?? null},
+             ${record.proposalBase?.commit ?? null},
+             ${record.groupCommit ?? null},
              ${record.attemptDigest})`,
   );
   return { recorded: "Attempt" };

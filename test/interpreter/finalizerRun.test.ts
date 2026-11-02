@@ -313,6 +313,8 @@ interface FinalizerRecorder
   /** The proposal an earlier request of the ticket proved on the head and base asked about, and every place it was asked about. */
   ticketProposal?: ChangeProposalIdentity;
   readonly ticketPlaces: Pick<ChangeProposalRequest, "head" | "base">[];
+  /** The queue check failures earlier requests of the ticket recorded, beside the ones this store's own attempts record. */
+  earlierQueueChecksFailures?: number;
   /** Whether this store can hold the evidence an answer carries at all. */
   unstorable?: boolean;
   /** Whether every result is refused, which is what the pass sees of a crash before one lands. */
@@ -494,13 +496,22 @@ function recordingProposalAdoptions(
   store: () => FinalizerRecorder,
 ): Pick<
   FinalizerProposalStore,
-  "ticketChangeProposal" | "adoptChangeProposal"
+  "ticketChangeProposal" | "ticketQueueChecksFailures" | "adoptChangeProposal"
 > {
   return {
     ticketChangeProposal: (_claim, place) => {
       const own = store();
       own.ticketPlaces.push(place);
       return Promise.resolve(own.ticketProposal);
+    },
+    ticketQueueChecksFailures: () => {
+      const own = store();
+      return Promise.resolve(
+        (own.earlierQueueChecksFailures ?? 0) +
+          own.attempts.filter(
+            (attempt) => attempt.failureKind === "QueueChecksFailed",
+          ).length,
+      );
     },
     adoptChangeProposal: (record, evidence) => {
       const own = store();
@@ -3052,6 +3063,13 @@ test("a merge the forge refused for a conflict fails this finalization as a prep
     undefined,
     "the forge named no paths, and an empty manifest is evidence of nothing",
   );
+  const base = store.askedProposal?.base.ref;
+  assert.ok(base !== undefined);
+  assert.deepEqual(
+    recorded?.proposalBase,
+    { ref: base, commit: asGitObjectId(commitOf("a")) },
+    "the base the merge was refused onto, as read when the conflict was routed",
+  );
 
   const settling = recordingStore([
     {
@@ -4486,6 +4504,108 @@ test("a person's dequeue escalates with the hold the console reads, and nothing 
     "a proposal the last read found out of the queue is not asked to leave it",
   );
   assert.equal(store.queueStanding?.removal?.actor, "a-person");
+});
+
+/**
+ * Drives a queued proposal through its first removal for failed checks, the
+ * enqueue of the same head once more, and the second removal, whose read is
+ * the last thing the pass that follows decides over.
+ */
+async function queueChecksFailedTwice(
+  store: FinalizerRecorder,
+  forge: ForgeRecorder,
+  service: FinalizerService,
+  groupCommit?: GitObjectId,
+): Promise<void> {
+  await queuedWaiting(service, forge);
+  forge.queueStanding = {
+    enabled: true,
+    enqueuedAtMs: asProposalQueueInstant(Date.parse("2026-11-02T10:00:00Z")),
+    removal: {
+      atMs: asProposalQueueInstant(Date.parse("2026-11-02T10:05:30Z")),
+      kind: "ChecksFailed",
+      reason: asProposalQueueWord("failed_checks"),
+    },
+  };
+  rereadDue(store);
+  await passOver(service);
+  await passOver(service);
+  assert.equal(forge.enqueues.length, 2, "the first removal enqueues again");
+  forge.queueStanding = {
+    enabled: true,
+    enqueuedAtMs: asProposalQueueInstant(Date.parse("2026-11-02T10:06:00Z")),
+    removal: {
+      atMs: asProposalQueueInstant(Date.parse("2026-11-02T10:12:00Z")),
+      kind: "ChecksFailed",
+      reason: asProposalQueueWord("failed_checks"),
+      ...(groupCommit === undefined ? {} : { groupCommit }),
+    },
+  };
+  rereadDue(store);
+  await passOver(service);
+}
+
+test("a second removal for failed checks sends the change back to work against its base as read, naming the commit the queue built", async () => {
+  const { store, forge, service } = queueCase();
+  const groupCommit = asGitObjectId(commitOf("9"));
+  await queueChecksFailedTwice(store, forge, service, groupCommit);
+  const failed = await passOver(service);
+
+  assert.equal(failed.preparations, 1);
+  assert.equal(store.attempts.length, 1);
+  const recorded = store.attempts[0];
+  assert.equal(recorded?.outcome, "Failed");
+  assert.equal(recorded?.failureKind, "QueueChecksFailed");
+  const base = store.askedProposal?.base.ref;
+  assert.ok(base !== undefined);
+  assert.deepEqual(recorded?.proposalBase, {
+    ref: base,
+    commit: asGitObjectId(commitOf("a")),
+  });
+  assert.equal(recorded?.groupCommit, groupCommit);
+  assert.equal(forge.enqueues.length, 2, "a second removal enqueues nothing");
+
+  const settling = recordingStore([
+    {
+      ...promotableView("request-one"),
+      attempt: attemptFailedOf("request-one", "QueueChecksFailed"),
+      attemptsMade: 2,
+    },
+  ]);
+  await passOver(serviceOf(settling, recordingGit()));
+  assert.deepEqual(settling.concluded, [
+    { outcome: "FinalizationNeedsWork", kind: "QueueChecksFailed" },
+  ]);
+});
+
+test("a ticket sent back for its queue's checks as often as its bound allows holds as merges spent, and escalates", async () => {
+  const { store, forge, service, emitted } = queueCase({
+    holdPassesMax: 2,
+    proposalQueueReworksMax: 2,
+  });
+  store.earlierQueueChecksFailures = 2;
+  await queueChecksFailedTwice(store, forge, service);
+  await passOver(service);
+
+  assert.deepEqual(store.attempts, [], "past the bound nothing is reworked");
+  assert.equal(emitted.at(-1), "ProposalMergesExhausted");
+  await passOver(service);
+  assert.deepEqual(store.concluded, [
+    {
+      outcome: "FinalizationResultUnavailable",
+      kind: "ProposalMergesExhausted",
+    },
+  ]);
+});
+
+test("a ticket sent back for its queue's checks fewer times than its bound is sent back again", async () => {
+  const { store, forge, service } = queueCase({ proposalQueueReworksMax: 2 });
+  store.earlierQueueChecksFailures = 1;
+  await queueChecksFailedTwice(store, forge, service);
+  await passOver(service);
+
+  assert.equal(store.attempts[0]?.failureKind, "QueueChecksFailed");
+  assert.equal(store.attempts[0]?.groupCommit, undefined);
 });
 
 test("a finalization escalating while its proposal is queued asks the queue to give it up before it is escalated", async () => {

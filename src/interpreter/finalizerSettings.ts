@@ -170,6 +170,8 @@ const proposalMergesVariable = "CHUG_FINALIZER_PROPOSAL_MERGES_MAX";
 const proposalUpdatesVariable = "CHUG_FINALIZER_PROPOSAL_UPDATES_MAX";
 const proposalMergeReadingsVariable =
   "CHUG_FINALIZER_PROPOSAL_MERGE_READINGS_MAX";
+const proposalQueueReworksVariable =
+  "CHUG_FINALIZER_PROPOSAL_QUEUE_REWORKS_MAX";
 
 /** The one shape a deployment may not leave to a default. */
 function finalizerSettingsRequired(
@@ -501,6 +503,7 @@ function finalizerSettingsProposals(
   | "proposalMergesMax"
   | "proposalMergeReadingsMax"
   | "proposalUpdatesMax"
+  | "proposalQueueReworksMax"
 > {
   return {
     proposalsPerPassMax: finalizerSettingsBoundOr(
@@ -532,6 +535,11 @@ function finalizerSettingsProposals(
       environment,
       proposalUpdatesVariable,
       finalizerDefaults.proposalUpdatesMax,
+    ),
+    proposalQueueReworksMax: finalizerSettingsBoundOr(
+      environment,
+      proposalQueueReworksVariable,
+      finalizerDefaults.proposalQueueReworksMax,
     ),
   };
 }

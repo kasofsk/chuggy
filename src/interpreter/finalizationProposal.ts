@@ -51,10 +51,14 @@
  * A MERGE ITS BASE'S QUEUE MAKES IS FOLLOWED THERE, AND GIVEN UP ON THE WAY
  * OUT. A proposal waiting its turn holds as `ProposalQueued`, off that list for
  * as long as the queue takes, and the removals only a person can answer are
- * holds on it. A finalization that aborts or escalates while its proposal may
- * be queued asks the queue to give it up first, because a queued proposal
- * merges with nobody asking; the standing read after that request is what is
- * written down, never the request's own answer.
+ * holds on it. A second removal for failed checks is the change's own failure,
+ * sent back to work against the base the queue merged it onto as that base is
+ * read then, until the ticket has been sent back for it as often as its bound
+ * allows, after which it holds as merges spent. A finalization that aborts or
+ * escalates while its proposal may be queued asks the queue to give it up
+ * first, because a queued proposal merges with nobody asking; the standing
+ * read after that request is what is written down, never the request's own
+ * answer.
  *
  * THE FINALIZER MERGES ONLY THE HEAD PINNED FOR IT, AND A MERGE ANYBODY MADE
  * LANDS. Its own merge is conditional on the promoted candidate or on a head
@@ -118,6 +122,8 @@ import type {
   CommitPermitId,
   FinalizationClaim,
   GitObjectId,
+  GitRefName,
+  ObservedTarget,
 } from "./finalizer.ts";
 import type { FinalizationHoldKind } from "./finalizer.ts";
 import type { Lifecycle } from "./projectStore.ts";
@@ -197,7 +203,12 @@ export type FinalizationProposalDecision =
   | { readonly decide: "AdoptProposalHead"; readonly head: GitObjectId }
   | { readonly decide: "RefuseMergeAttempt" }
   | { readonly decide: "WaitMergeAttempt"; readonly hold: FinalizationHoldKind }
-  | { readonly decide: "RecordMergeConflict" }
+  | { readonly decide: "RecordMergeConflict"; readonly base: GitRefName }
+  | {
+      readonly decide: "RecordQueueChecksFailed";
+      readonly base: GitRefName;
+      readonly groupCommit?: GitObjectId;
+    }
   | { readonly decide: "Abort"; readonly dequeue?: ChangeProposalMergeRequest }
   | { readonly decide: "Conclude" }
   | { readonly decide: "Hold"; readonly hold: FinalizationHoldKind };
@@ -212,6 +223,34 @@ export interface FinalizationProposalStanding {
 export interface FinalizationProposalBounds {
   readonly publication: ChangeProposalPublicationBounds;
   readonly merging: ChangeProposalMergingBounds;
+}
+
+/** What a merge queue's second failed-check removal comes to: the failure recorded against the base as read, or a hold. */
+export type FinalizationQueueRework =
+  | { readonly rework: "Record"; readonly base: ObservedTarget }
+  | { readonly rework: "Hold"; readonly hold: FinalizationHoldKind };
+
+/**
+ * Decides that removal once the ticket's earlier failures of it and its base
+ * are read. A ticket already sent back for it `reworksMax` times holds as
+ * merges spent, whatever the base reads, and a base that could not be read
+ * holds until it can, since a rework told nothing of it could only land the
+ * same tree again.
+ */
+export function finalizationQueueRework(
+  failures: number,
+  reworksMax: number,
+  base: ObservedTarget | undefined,
+): FinalizationQueueRework {
+  if (!Number.isSafeInteger(failures) || failures < 0)
+    throw new RangeError("queue rework: failures are not a count");
+  if (!Number.isSafeInteger(reworksMax) || reworksMax < 1)
+    throw new RangeError("queue rework: the bound must be positive");
+  if (failures >= reworksMax)
+    return { rework: "Hold", hold: "ProposalMergesExhausted" };
+  return base === undefined
+    ? { rework: "Hold", hold: "ProposalBaseUnreadable" }
+    : { rework: "Record", base };
 }
 
 /**
@@ -270,8 +309,6 @@ function finalizationProposalMergeHeld(
       return "ProposalEvidenceUnstorable";
     case "Queued":
       return "ProposalQueued";
-    case "QueueChecksFailed":
-      return "ProposalQueueChecksFailed";
     case "QueueTimedOut":
       return "ProposalQueueTimedOut";
     case "Dequeued":
@@ -281,15 +318,16 @@ function finalizationProposalMergeHeld(
   }
 }
 
-/** What one concluded merge leaves the finalization to do. */
+/** What one concluded merge leaves the finalization to do, a conflict recorded against the base it was refused onto. */
 function finalizationProposalMerged(
+  request: ChangeProposalRequest,
   merge: ChangeProposalMergeConcluded,
 ): FinalizationProposalDecision {
   switch (merge.merged) {
     case "Merged":
       return { decide: "Conclude" };
     case "NotMergeable":
-      return { decide: "RecordMergeConflict" };
+      return { decide: "RecordMergeConflict", base: request.base.ref };
     default:
       return assertNever(merge);
   }
@@ -445,7 +483,15 @@ function finalizationProposalMergeNext(
         hold: finalizationProposalMergeHeld(next.reason),
       };
     case "Concluded":
-      return finalizationProposalMerged(next.merge);
+      return finalizationProposalMerged(request, next.merge);
+    case "ChecksFailed":
+      return {
+        decide: "RecordQueueChecksFailed",
+        base: request.base.ref,
+        ...(next.removal.groupCommit === undefined
+          ? {}
+          : { groupCommit: next.removal.groupCommit }),
+      };
     case "Refused":
       return { decide: "Hold", hold: "ProposalRefused" };
     case "Held":
@@ -930,6 +976,13 @@ export interface FinalizerProposalStore {
     claim: FinalizationClaim,
     place: Pick<ChangeProposalRequest, "head" | "base">,
   ): Promise<ChangeProposalIdentity | undefined>;
+
+  /**
+   * How many attempts of any request of the same ticket recorded its merge
+   * queue's checks failing, which is how often the ticket has been sent back
+   * to work for it.
+   */
+  ticketQueueChecksFailures(claim: FinalizationClaim): Promise<number>;
 
   /** Starts the row as the adoption of a proposal read open, refused where the row already stands. */
   adoptChangeProposal(

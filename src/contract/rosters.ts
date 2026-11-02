@@ -542,6 +542,7 @@ export const finalizationAttemptOutcomes = [
 export const finalizationFailureKinds = [
   "MergeConflict",
   "PreparationFailed",
+  "QueueChecksFailed",
 ] as const;
 
 /** What a stored change proposal says its create came to, restating `allChangeProposalCreationsStored`. */

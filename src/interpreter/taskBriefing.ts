@@ -779,14 +779,17 @@ function briefingRuntimeFault(
   ]);
 }
 
-/** What a failed landing's commits have to be to render, which is printable lines. */
+/** What a failed landing's commits and base have to be to render, which is printable lines. */
 function briefingFailedLandingFault(
   landing: FailedLanding | undefined,
 ): BriefingFault | undefined {
   if (landing === undefined) return undefined;
+  const base = landing.proposalBase;
   return briefingListsFault([
     [[landing.targetCommit], 1],
     [landing.changeCommit === undefined ? [] : [landing.changeCommit], 1],
+    [base === undefined ? [] : [base.ref, base.commit], 2],
+    [landing.groupCommit === undefined ? [] : [landing.groupCommit], 1],
   ]);
 }
 

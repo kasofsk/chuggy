@@ -1978,11 +1978,10 @@ test("a removal for a conflict with an entry ahead is the conflict a refused mer
   );
 });
 
-test("a failed or timed-out check enqueues the same head once more, and the removal after that holds", () => {
-  for (const [kind, reason, held] of [
-    ["ChecksFailed", "failed_checks", "QueueChecksFailed"],
-    ["ChecksTimedOut", "checks_timed_out", "QueueTimedOut"],
-  ] as const) {
+test("a failed or timed-out check enqueues the same head once more, and the removal after that is the change's failure or a hold", () => {
+  for (const kind of ["ChecksFailed", "ChecksTimedOut"] as const) {
+    const reason =
+      kind === "ChecksFailed" ? "failed_checks" : "checks_timed_out";
     assert.deepEqual(
       changeProposalMergeNext(
         request,
@@ -1993,17 +1992,19 @@ test("a failed or timed-out check enqueues the same head once more, and the remo
       { next: "Enqueue", requeuedAfterMs: removedAt },
       kind,
     );
+    const again = removedBy(kind, reason, removedAgainAt);
+    const removal = again.removal;
+    assert.ok(removal !== undefined);
     assert.deepEqual(
       changeProposalMergeNext(
         request,
         queuedIdle,
-        queueing(removedBy(kind, reason, removedAgainAt), {
-          entered: true,
-          requeuedAfterMs: removedAt,
-        }),
+        queueing(again, { entered: true, requeuedAfterMs: removedAt }),
         mergeBounds,
       ),
-      { next: "Held", reason: held },
+      kind === "ChecksFailed"
+        ? { next: "ChecksFailed", removal }
+        : { next: "Held", reason: "QueueTimedOut" },
       kind,
     );
     assert.deepEqual(
@@ -2021,6 +2022,25 @@ test("a failed or timed-out check enqueues the same head once more, and the remo
       "the removal a second enqueue answered is that enqueue still waiting to be taken",
     );
   }
+});
+
+test("the second failed-check removal carries the commit the queue built, where the forge named one", () => {
+  const groupCommit = asGitObjectId("9".repeat(40));
+  const again = removedBy("ChecksFailed", "failed_checks", removedAgainAt);
+  assert.ok(again.removal !== undefined);
+  const removal = { ...again.removal, groupCommit };
+  assert.deepEqual(
+    changeProposalMergeNext(
+      request,
+      queuedIdle,
+      queueing(
+        { ...again, removal },
+        { entered: true, requeuedAfterMs: removedAt },
+      ),
+      mergeBounds,
+    ),
+    { next: "ChecksFailed", removal },
+  );
 });
 
 test("a dequeue by anybody, and a reason the queue never named before, hold and never enqueue over them", () => {

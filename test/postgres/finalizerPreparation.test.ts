@@ -2647,6 +2647,112 @@ test("an attempt a retired holder offers is refused, and its bundle is refused w
   assert.deepEqual(bundles, [{ bundle: first.bundle.bundle }]);
 });
 
+/** One failed attempt offered straight to the durable authority, carrying the failure a case names. */
+function attemptFailedRecordOf(
+  claim: FinalizationClaim,
+  project: FinalizerProject,
+  label: string,
+  failure: Pick<AttemptRecord, "failureKind" | "proposalBase" | "groupCommit">,
+): AttemptRecord {
+  const { candidate, ...unprepared } = attemptRecordOf(claim, project, label);
+  assert.ok(candidate !== undefined, "the record offered is a prepared one");
+  return { ...unprepared, outcome: "Failed", ...failure };
+}
+
+/** A proposal's base as a failure the forge reported reads it, and the commit a queue built. */
+const queueProposalBase = {
+  ref: asGitRefName("refs/heads/trunk"),
+  commit: asGitObjectId(finalizerCommit()),
+};
+const queueGroupCommit = asGitObjectId(finalizerCommit());
+
+test("a queue's failed checks are recorded with the base read and the commit the queue built, and counted for the ticket", async () => {
+  const { project } = await finalizerSubject(rig, "queuechecks", [
+    { path: "one.txt", content: "one\n" },
+  ]);
+  const claim = await finalizerClaim(rig, project, "owner-queuechecks");
+  const store = postgresFinalizer(rig.pool);
+  assert.equal(await store.ticketQueueChecksFailures(claim), 0);
+  for (const [label, failure] of [
+    [
+      "queuechecks-one",
+      {
+        failureKind: "QueueChecksFailed",
+        proposalBase: queueProposalBase,
+        groupCommit: queueGroupCommit,
+      },
+    ],
+    [
+      "queuechecks-conflict",
+      { failureKind: "MergeConflict", proposalBase: queueProposalBase },
+    ],
+  ] as const)
+    assert.deepEqual(
+      await store.recordAttempt(
+        attemptFailedRecordOf(claim, project, label, failure),
+      ),
+      { recorded: "Attempt" },
+    );
+  assert.deepEqual(
+    await rig.as(
+      `SELECT failure_kind, proposal_base_ref, proposal_base_commit, queue_group_commit
+         FROM finalization_attempt WHERE tenant=$1 AND project=$2
+        ORDER BY failure_kind DESC`,
+      [project.partition.tenant, project.partition.project],
+    ),
+    [
+      {
+        failure_kind: "QueueChecksFailed",
+        proposal_base_ref: queueProposalBase.ref,
+        proposal_base_commit: queueProposalBase.commit,
+        queue_group_commit: queueGroupCommit,
+      },
+      {
+        failure_kind: "MergeConflict",
+        proposal_base_ref: queueProposalBase.ref,
+        proposal_base_commit: queueProposalBase.commit,
+        queue_group_commit: null,
+      },
+    ],
+  );
+  assert.equal(
+    await store.ticketQueueChecksFailures(claim),
+    1,
+    "only the queue's failed checks are counted",
+  );
+});
+
+test("a failure keeps a base only where a forge reported it, and a queue's failed checks never without one", async () => {
+  const { project } = await finalizerSubject(rig, "queuebase", [
+    { path: "one.txt", content: "one\n" },
+  ]);
+  const claim = await finalizerClaim(rig, project, "owner-queuebase");
+  const store = postgresFinalizer(rig.pool);
+  for (const [label, failure] of [
+    ["queuebase-unbased", { failureKind: "QueueChecksFailed" }],
+    [
+      "queuebase-grouped-conflict",
+      {
+        failureKind: "MergeConflict",
+        proposalBase: queueProposalBase,
+        groupCommit: queueGroupCommit,
+      },
+    ],
+    [
+      "queuebase-preparation",
+      { failureKind: "PreparationFailed", proposalBase: queueProposalBase },
+    ],
+  ] as const)
+    await assert.rejects(
+      store.recordAttempt(
+        attemptFailedRecordOf(claim, project, label, failure),
+      ),
+      /finalization_attempt_proposal_base_is_whole/u,
+      label,
+    );
+  assert.deepEqual(await attemptsOf(project), []);
+});
+
 test("a takeover leaves an old-epoch executor unable to write an attempt", async () => {
   const { project } = await finalizerSubject(rig, "superseded", [
     { path: "one.txt", content: "one\n" },

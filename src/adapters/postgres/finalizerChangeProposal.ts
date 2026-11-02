@@ -633,6 +633,7 @@ const changeProposalStoredStandingSchema = z.object({
       kind: z.string(),
       reason: z.string(),
       actor: z.string().optional(),
+      groupCommit: z.string().optional(),
     })
     .optional(),
 });
@@ -671,6 +672,9 @@ function changeProposalStandingOf(
             ...(removal.actor === undefined
               ? {}
               : { actor: asProposalQueueWord(removal.actor) }),
+            ...(removal.groupCommit === undefined
+              ? {}
+              : { groupCommit: asGitObjectId(removal.groupCommit) }),
           },
         }),
   };
@@ -845,6 +849,24 @@ export async function finalizerChangeProposalTicket(
       ? {}
       : { number: asProposalNumber(identity.number) }),
   };
+}
+
+/** Counts the attempts of the ticket's requests that recorded a merge queue's checks failing. */
+export async function finalizerChangeProposalQueueChecksFailures(
+  client: pg.PoolClient,
+  claim: FinalizationClaim,
+): Promise<number> {
+  const found = await client.query<{ failures: string }>(
+    sql`SELECT count(*) AS failures
+         FROM finalization_attempt a
+        WHERE a.tenant = ${claim.partition.tenant} AND a.project = ${claim.partition.project}
+          AND a.ticket = ${claim.ticket}
+          AND a.failure_kind = 'QueueChecksFailed'`,
+  );
+  return projectRowCounter(
+    found.rows[0]?.failures ?? "0",
+    "ticket queue checks failures",
+  );
 }
 
 /**

@@ -1,7 +1,9 @@
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
+import { allFinalizationFailureKinds } from "../../interpreter/finalizer.ts";
 import {
+  type FailedLanding,
   type FailedLandingPort,
   type FailedLandingRead,
   priorEvaluationReportsMax,
@@ -118,15 +120,45 @@ interface FailedLandingRow {
   readonly target_commit: string;
   readonly change_commit: string | null;
   readonly conflicted: boolean;
+  readonly failure_kind: string | null;
+  readonly proposal_base_ref: string | null;
+  readonly proposal_base_commit: string | null;
+  readonly queue_group_commit: string | null;
 }
 
 /**
  * Reads the failed landing this work task's own bundle pins: the target it was
  * prepared against, the commit of the one source a pinned result manifest
- * recorded, and whether a conflict manifest was pinned beside them. A bundle
- * that pins no `FinalizationAttempt` answers no row, and a manifest with no
- * source still answers one, without the change's commit.
+ * recorded, whether a conflict manifest was pinned beside them, and what the
+ * pinned attempt recorded of why it failed. A bundle that pins no
+ * `FinalizationAttempt` answers no row, a manifest with no source still answers
+ * one, without the change's commit, and an attempt the row does not find
+ * answers one with nothing of why.
  */
+/** What a row says of why its attempt failed, and nothing where it names a kind this code does not know. */
+function failedLandingWhyOf(
+  row: FailedLandingRow,
+): Pick<FailedLanding, "failure" | "proposalBase" | "groupCommit"> | undefined {
+  const failure = allFinalizationFailureKinds.find(
+    (kind) => kind === row.failure_kind,
+  );
+  if (row.failure_kind !== null && failure === undefined) return undefined;
+  return {
+    ...(failure === undefined ? {} : { failure }),
+    ...(row.proposal_base_ref === null || row.proposal_base_commit === null
+      ? {}
+      : {
+          proposalBase: {
+            ref: row.proposal_base_ref,
+            commit: row.proposal_base_commit,
+          },
+        }),
+    ...(row.queue_group_commit === null
+      ? {}
+      : { groupCommit: row.queue_group_commit }),
+  };
+}
+
 export function postgresFailedLanding(pool: pg.Pool): FailedLandingPort {
   return {
     landing: async (partition, execution): Promise<FailedLandingRead> => {
@@ -148,7 +180,9 @@ export function postgresFailedLanding(pool: pg.Pool): FailedLandingPort {
                                FROM input_bundle_reference c
                               WHERE c.tenant=q.tenant AND c.project=q.project
                                 AND c.bundle=q.input_bundle
-                                AND c.reference_kind='ConflictManifest') AS conflicted
+                                AND c.reference_kind='ConflictManifest') AS conflicted,
+                     f.failure_kind, f.proposal_base_ref, f.proposal_base_commit,
+                     f.queue_group_commit
                 FROM execution e
                 JOIN execution_request q
                   ON q.tenant=e.tenant AND q.project=e.project
@@ -160,6 +194,9 @@ export function postgresFailedLanding(pool: pg.Pool): FailedLandingPort {
                 JOIN input_bundle_reference t
                   ON t.tenant=q.tenant AND t.project=q.project
                  AND t.bundle=q.input_bundle AND t.reference_kind='TargetCommit'
+                LEFT JOIN finalization_attempt f
+                  ON f.tenant=a.tenant AND f.project=a.project
+                 AND f.attempt=a.reference_id
                WHERE e.tenant=${partition.tenant} AND e.project=${partition.project}
                  AND e.execution=${execution}
                ORDER BY t.ordinal
@@ -169,8 +206,10 @@ export function postgresFailedLanding(pool: pg.Pool): FailedLandingPort {
         return { read: "Unavailable" };
       }
       const row = found.rows[0];
-      return row === undefined
-        ? { read: "Landing" }
+      if (row === undefined) return { read: "Landing" };
+      const why = failedLandingWhyOf(row);
+      return why === undefined
+        ? { read: "Unavailable" }
         : {
             read: "Landing",
             landing: {
@@ -179,6 +218,7 @@ export function postgresFailedLanding(pool: pg.Pool): FailedLandingPort {
                 ? {}
                 : { changeCommit: row.change_commit }),
               conflicted: row.conflicted,
+              ...why,
             },
           };
     },

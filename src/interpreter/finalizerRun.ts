@@ -243,6 +243,7 @@ import {
   finalizationProposalReadingRecording,
   finalizationProposalTitle,
   finalizationProposalUpdateRecording,
+  finalizationQueueRework,
   type FinalizationProposalBounds,
   type FinalizationProposalDecision,
   type FinalizationProposalGathered,
@@ -2050,14 +2051,17 @@ function finalizerPreparationPriced(
 }
 
 /**
- * Records the conflict the forge refused the merge for as this finalization's
- * own failure, which the pass after it concludes exactly as it concludes the
- * conflict a preparation reached. No manifest is written beside it: the forge
- * named no paths, and an empty one would be evidence of nothing.
+ * Records a failure the proposal's forge reported as this finalization's own,
+ * against the proposal's base as it is read now, which the pass after it
+ * concludes exactly as it concludes a conflict a preparation reached. The
+ * target the attempt pins is the proposal's head, so the base is the only word
+ * a rework gets of what the change was refused onto.
  */
-async function finalizerMergeConflicted(
+async function finalizerProposalFailed(
   service: FinalizerService,
   view: FinalizationView,
+  base: Pick<ObservedTarget, "ref" | "commit">,
+  failure: Pick<AttemptRecord, "failureKind" | "groupCommit">,
   tally: FinalizerTally,
 ): Promise<void> {
   if (!finalizerPreparationPriced(service, tally)) return;
@@ -2069,10 +2073,97 @@ async function finalizerMergeConflicted(
     finalizerAttemptOf(service, {
       ...finalizerAttemptBase(gathered.subject, target),
       outcome: "Failed",
-      failureKind: "MergeConflict",
+      ...failure,
+      proposalBase: { ref: base.ref, commit: base.commit },
     }),
     tally,
   );
+}
+
+/**
+ * Records the conflict the forge refused the merge for. No manifest is written
+ * beside it: the forge named no paths, and an empty one would be evidence of
+ * nothing. A base that cannot be read holds until it can.
+ */
+async function finalizerMergeConflicted(
+  service: FinalizerService,
+  view: FinalizationView,
+  decision: Extract<
+    FinalizationProposalDecision,
+    { decide: "RecordMergeConflict" }
+  >,
+  tally: FinalizerTally,
+): Promise<void> {
+  const { repository } = finalizerCandidateOf(view);
+  const base = await finalizerProposalBase(service, repository, decision.base);
+  if (base === undefined) {
+    finalizerHold(service, tally, "ProposalBaseUnreadable");
+    return;
+  }
+  await finalizerProposalFailed(
+    service,
+    view,
+    base,
+    { failureKind: "MergeConflict" },
+    tally,
+  );
+}
+
+/**
+ * Sends the change back to work for the merge queue's checks failing twice,
+ * against the base as it is read now and naming the commit the queue built,
+ * unless the ticket has already been sent back for it as often as its bound
+ * allows.
+ */
+async function finalizerQueueChecksFailed(
+  service: FinalizerService,
+  view: FinalizationView,
+  decision: Extract<
+    FinalizationProposalDecision,
+    { decide: "RecordQueueChecksFailed" }
+  >,
+  tally: FinalizerTally,
+): Promise<void> {
+  const config = checkedFinalizerConfig(service.config);
+  const { repository } = finalizerCandidateOf(view);
+  const failures = await service.store.ticketQueueChecksFailures(view.claim);
+  const base = await finalizerProposalBase(service, repository, decision.base);
+  const rework = finalizationQueueRework(
+    failures,
+    config.proposalQueueReworksMax,
+    base,
+  );
+  if (rework.rework === "Hold") {
+    finalizerHold(service, tally, rework.hold);
+    return;
+  }
+  await finalizerProposalFailed(
+    service,
+    view,
+    rework.base,
+    {
+      failureKind: "QueueChecksFailed",
+      ...(decision.groupCommit === undefined
+        ? {}
+        : { groupCommit: decision.groupCommit }),
+    },
+    tally,
+  );
+}
+
+/** Records the failure of its own the proposal step named. */
+function finalizerProposalFailureRecorded(
+  service: FinalizerService,
+  view: FinalizationView,
+  decision: Extract<
+    FinalizationProposalDecision,
+    { decide: "RecordMergeConflict" | "RecordQueueChecksFailed" }
+  >,
+  tally: FinalizerTally,
+): Promise<void> {
+  return decision.decide === "RecordMergeConflict"
+    ? finalizerMergeConflicted(service, view, decision, tally)
+    : finalizerQueueChecksFailed(service, view, decision, tally);
 }
 
 /** Releases the merge attempt as the proposal step decided, a wait keeping its reading and holding at what it waits on. */
@@ -2162,7 +2253,8 @@ async function finalizerProposalDecided(
       await finalizerProposalMergeReleased(service, view, decision, tally);
       return;
     case "RecordMergeConflict":
-      await finalizerMergeConflicted(service, view, tally);
+    case "RecordQueueChecksFailed":
+      await finalizerProposalFailureRecorded(service, view, decision, tally);
       return;
     case "Abort":
       await finalizerProposalAborted(service, view, decision, tally);

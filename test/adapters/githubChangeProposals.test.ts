@@ -1409,6 +1409,7 @@ const fixtureQueueStandings: readonly (readonly [
           kind: "Merged",
           reason: asProposalQueueWord("merged"),
           actor: asProposalQueueWord("chuggy-portal"),
+          groupCommit: asGitObjectId(fixtureGroupCommit),
         },
       },
     },
@@ -1457,6 +1458,9 @@ test("every removal reason the queue names is routed by its kind, and one it nev
         kind,
         reason: asProposalQueueWord(reason),
         actor: asProposalQueueWord("a-person"),
+        ...(reason === "merge_conflict"
+          ? {}
+          : { groupCommit: asGitObjectId(fixtureGroupCommit) }),
       },
       reason,
     );
@@ -1492,6 +1496,10 @@ test("a removal naming no actor is still a removal, and one no row could hold is
     fixtureQueueRemoved("not a moment", "manual"),
     fixtureQueueRemoved("2026-11-02T10:05:30Z", "manual", "x".repeat(65)),
     fixtureQueueRemoved("2026-11-02T10:05:30Z", "manual\u0000"),
+    {
+      ...fixtureQueueRemoved("2026-11-02T10:05:30Z", "failed_checks"),
+      beforeCommit: { oid: "not a commit" },
+    },
   ]) {
     const recorder = fixtureForge([
       fixtureAnswer(200, fixtureQueuePull({}, [event])),
