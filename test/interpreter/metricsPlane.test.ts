@@ -7,8 +7,12 @@ import type { MetricsFamily } from "../../src/interpreter/metricsFamily.ts";
 import {
   metricsPlane,
   metricsPlaneDurationBoundsSecs,
+  metricsPlaneEscalationBoundsSecs,
   metricsPlaneFamilies,
   metricsPlaneOwner,
+  metricsPlaneTicketCostBoundsUsd,
+  metricsPlaneTicketReworkBounds,
+  metricsPlaneTicketTimeBoundsSecs,
   type MetricsPlaneBounds,
   type MetricsPlaneRead,
   type MetricsPlaneRows,
@@ -36,6 +40,12 @@ const empty: MetricsPlaneRows = {
   models: [],
   turns: [],
   tickets: [],
+  ticketEvents: [],
+  leadTimes: [],
+  runTimes: [],
+  reworks: [],
+  costs: [],
+  escalations: [],
 };
 
 function family(
@@ -286,7 +296,16 @@ test("each counter and histogram series began at the earliest row it sums, and t
       leadTurn("Answered", "model-large", 7),
       leadTurn("Answered", "model-large", 3),
     ],
-    tickets: [{ tenant: "acme", project: "web", phase: "Work", tickets: 2 }],
+    tickets: [
+      {
+        tenant: "acme",
+        project: "web",
+        owner: "alice-id",
+        phase: "Escalated",
+        escalation: "WorkFailureEscalated",
+        tickets: 2,
+      },
+    ],
   });
   for (const name of [
     "chuggy_run_turns_total",
@@ -310,7 +329,16 @@ test("each counter and histogram series began at the earliest row it sums, and t
       name,
     );
   assert.deepEqual(family(families, "chuggy_tickets").samples, [
-    { labels: { tenant: "acme", project: "web", phase: "Work" }, value: 2 },
+    {
+      labels: {
+        tenant: "acme",
+        project: "web",
+        owner: "alice-id",
+        phase: "Escalated",
+        escalation: "WorkFailureEscalated",
+      },
+      value: 2,
+    },
   ]);
 });
 
@@ -340,7 +368,14 @@ test("a read's refusal is the scrape's, and a page past its series is refused ra
   const tickets: MetricsPlaneRows = {
     ...empty,
     tickets: ["Pending", "Work", "Evaluation", "Done", "Revoked"].map(
-      (phase) => ({ tenant: "acme", project: "web", phase, tickets: 1 }),
+      (phase) => ({
+        tenant: "acme",
+        project: "web",
+        owner: "",
+        phase,
+        escalation: "NoEscalation" as const,
+        tickets: 1,
+      }),
     ),
   };
   assert.deepEqual(
@@ -384,4 +419,176 @@ test("a series' time it began is one more series against the cap", async () => {
       why: "the page would carry 6 series, past the cap of 5",
     },
   );
+});
+
+/** A bucket vector over `bounds` with `count` at `index` and nothing elsewhere. */
+function boundedAt(
+  bounds: readonly number[],
+  index: number,
+  count: number,
+): readonly number[] {
+  return [...bounds, Infinity].map((_, at) => (at === index ? count : 0));
+}
+
+const owned = { tenant: "acme", project: "web", owner: "alice-id" };
+
+/** The ticket histograms of one owner's rows: a lead time, two reworks rows, a cost and an escalation. */
+const ticketFamilies = () =>
+  metricsPlaneFamilies({
+    ...empty,
+    leadTimes: [
+      {
+        ...owned,
+        buckets: boundedAt(metricsPlaneTicketTimeBoundsSecs, 2, 1),
+        sum: 3_600_500,
+        createdSecs: 5,
+      },
+    ],
+    reworks: [
+      {
+        ...owned,
+        buckets: boundedAt(metricsPlaneTicketReworkBounds, 0, 2),
+        sum: 0,
+        createdSecs: 9,
+      },
+      {
+        ...owned,
+        buckets: boundedAt(metricsPlaneTicketReworkBounds, 3, 1),
+        sum: 3,
+        createdSecs: 4,
+      },
+    ],
+    costs: [
+      {
+        ...owned,
+        end: "Revoked",
+        buckets: boundedAt(metricsPlaneTicketCostBoundsUsd, 1, 1),
+        sum: 750_001,
+        createdSecs: 7,
+      },
+    ],
+    escalations: [
+      {
+        ...owned,
+        event: "TicketWorkProcessFailed",
+        by: "ExecutionScheduler",
+        buckets: boundedAt(metricsPlaneEscalationBoundsSecs, 0, 1),
+        sum: 1_250,
+        createdSecs: 8,
+      },
+    ],
+  });
+
+/** The samples of the ticket histogram `name`. */
+function ticketHistogram(name: string) {
+  const found = family(ticketFamilies(), name);
+  assert.equal(found.type, "histogram", name);
+  return found.type === "histogram" ? found.samples : undefined;
+}
+
+test("a ticket's times are seconds and its reworks counts, each bucketed by its own bounds", () => {
+  assert.deepEqual(ticketHistogram("chuggy_ticket_lead_time_seconds"), [
+    {
+      labels: owned,
+      bucketCounts: boundedAt(metricsPlaneTicketTimeBoundsSecs, 2, 1),
+      sum: 3_600.5,
+      createdSecs: 5,
+    },
+  ]);
+  assert.deepEqual(ticketHistogram("chuggy_ticket_reworks"), [
+    {
+      labels: owned,
+      bucketCounts: boundedAt(metricsPlaneTicketReworkBounds, 0, 2).map(
+        (count, index) => count + (index === 3 ? 1 : 0),
+      ),
+      sum: 3,
+      createdSecs: 4,
+    },
+  ]);
+  assert.deepEqual(ticketHistogram("chuggy_ticket_run_time_seconds"), []);
+});
+
+test("a ticket's cost is dollars and an escalation's duration seconds, each bucketed by its own bounds", () => {
+  assert.deepEqual(ticketHistogram("chuggy_ticket_cost_usd"), [
+    {
+      labels: { ...owned, end: "Revoked" },
+      bucketCounts: boundedAt(metricsPlaneTicketCostBoundsUsd, 1, 1),
+      sum: 0.750001,
+      createdSecs: 7,
+    },
+  ]);
+  assert.deepEqual(
+    ticketHistogram("chuggy_ticket_escalation_duration_seconds"),
+    [
+      {
+        labels: {
+          ...owned,
+          event: "TicketWorkProcessFailed",
+          by: "ExecutionScheduler",
+        },
+        bucketCounts: boundedAt(metricsPlaneEscalationBoundsSecs, 0, 1),
+        sum: 1.25,
+        createdSecs: 8,
+      },
+    ],
+  );
+});
+
+test("a ticket histogram's row bucketed by another family's bounds is refused", () => {
+  assert.throws(
+    () =>
+      metricsPlaneFamilies({
+        ...empty,
+        reworks: [
+          {
+            ...owned,
+            buckets: boundedAt(metricsPlaneTicketTimeBoundsSecs, 0, 1),
+            sum: 0,
+            createdSecs: 1,
+          },
+        ],
+      }),
+    RangeError,
+  );
+});
+
+test("every journal entry is counted by its event and the stage its report names", () => {
+  const events = family(
+    metricsPlaneFamilies({
+      ...empty,
+      ticketEvents: [
+        {
+          ...owned,
+          event: "TicketCreated",
+          stage: "",
+          entries: 2,
+          createdSecs: 3,
+        },
+        {
+          ...owned,
+          event: "TicketEvaluationReworkStarted",
+          stage: "checks",
+          entries: 1,
+          createdSecs: 6,
+        },
+      ],
+    }),
+    "chuggy_ticket_events_total",
+  );
+  assert.deepEqual(events.type === "histogram" ? [] : events.samples, [
+    {
+      labels: { ...owned, event: "TicketCreated", stage: "" },
+      value: 2,
+      createdSecs: 3,
+    },
+    {
+      labels: {
+        ...owned,
+        event: "TicketEvaluationReworkStarted",
+        stage: "checks",
+      },
+      value: 1,
+      createdSecs: 6,
+    },
+  ]);
 });

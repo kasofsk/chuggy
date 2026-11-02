@@ -258,7 +258,10 @@ test("the metrics plane's role reads the columns its scrape names and nothing el
     "SELECT tenant,project,revision,canonical FROM configuration_revision",
     "SELECT tenant,project,session,state,model,tokens,cost_micros,duration_ms,ended_at FROM session_turn",
     "SELECT tenant,project,session,kind,principal,scope FROM agent_session",
-    "SELECT tenant,project,phase FROM ticket_projection",
+    "SELECT tenant,project,ticket,phase,escalation FROM ticket_projection",
+    "SELECT tenant,project,seq,entry,committed_at,cause_kind,cause_id,configuration_revision FROM journal_entry",
+    "SELECT tenant,project,ticket,authoring_version,authority_kind,authority_subject FROM draft_revision",
+    "SELECT tenant,project,operation,authority_kind FROM operation",
   ])
     assert.equal(
       await harness.attemptAs(metricsPlaneRole, statement),
@@ -281,6 +284,11 @@ test("the metrics plane's role reads the columns its scrape names and nothing el
     ],
     ["SELECT * FROM project", "project"],
     ["SELECT * FROM journal_entry", "journal_entry"],
+    ["SELECT owner FROM journal_entry", "journal_entry"],
+    ["SELECT authoring FROM draft_revision", "draft_revision"],
+    ["SELECT authority_subject FROM operation", "operation"],
+    ["SELECT command FROM operation", "operation"],
+    ["SELECT escalation_evidence FROM ticket_projection", "ticket_projection"],
     ["UPDATE ticket_projection SET phase=phase", "ticket_projection"],
   ] as const)
     assert.match(
