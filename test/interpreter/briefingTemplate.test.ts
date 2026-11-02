@@ -47,12 +47,23 @@ import {
 import { allChangeProposalStatuses } from "../../src/interpreter/changeProposal.ts";
 
 /** Every shape a failed landing is told in, its commits fixed so only the wording moves the digest. */
-const failedLandings: readonly FailedLanding[] = [true, false].flatMap(
-  (conflicted) => [
+const failedLandings: readonly FailedLanding[] = [
+  ...[true, false].flatMap((conflicted) => [
     { targetCommit: "1".repeat(40), changeCommit: "2".repeat(40), conflicted },
     { targetCommit: "1".repeat(40), conflicted },
-  ],
-);
+  ]),
+  ...[
+    { failure: "MergeConflict" as const },
+    { failure: "QueueChecksFailed" as const },
+    { failure: "QueueChecksFailed" as const, groupCommit: "4".repeat(40) },
+  ].map((why) => ({
+    targetCommit: "1".repeat(40),
+    changeCommit: "2".repeat(40),
+    conflicted: false,
+    proposalBase: { ref: "refs/heads/base", commit: "3".repeat(40) },
+    ...why,
+  })),
+];
 
 /** A pull request in every shape a dependency's is told in, its fields fixed so only the wording moves the digest. */
 const dependencyProposals: readonly DependencyProposal[] = [
@@ -203,7 +214,7 @@ function templateDigest(): string {
 test("the template version moves with the wording it names", () => {
   assert.deepEqual(
     [briefingTemplateVersion, templateDigest()],
-    [13, "81fe24239cce303b384b6432ff80581993637e213ccd7c83ad160cb3724ba5d3"],
+    [14, "b5a75f8b05448e3b5cec7efcfd639a0598d91cf83348cb8ca54a95244efa1eba"],
     "the template wording changed: move briefingTemplateVersion and repin this digest",
   );
 });

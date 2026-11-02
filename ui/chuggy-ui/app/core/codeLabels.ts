@@ -230,6 +230,8 @@ export function finalizationFailureKindLabel(
       return "Merge conflict";
     case "PreparationFailed":
       return "Preparation failed";
+    case "QueueChecksFailed":
+      return "Merge queue checks failed";
   }
 }
 

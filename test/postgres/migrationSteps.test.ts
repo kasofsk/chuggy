@@ -74,6 +74,7 @@ import {
 import { configurationCanonicalCharsMax } from "../../src/contract/http.ts";
 import { migration081 } from "../../src/adapters/postgres/schema/migrations/081-promotion-declined.ts";
 import { migration106 } from "../../src/adapters/postgres/schema/migrations/106-merge-queue.ts";
+import { migration107 } from "../../src/adapters/postgres/schema/migrations/107-queue-checks-failed.ts";
 import { migration082 } from "../../src/adapters/postgres/schema/migrations/082-decline-kept-unread.ts";
 import { migration083 } from "../../src/adapters/postgres/schema/migrations/083-attempt-base-ref.ts";
 import { migration084 } from "../../src/adapters/postgres/schema/migrations/084-thread-dispatch.ts";
@@ -173,6 +174,7 @@ import {
   migrationDatabaseAt,
   migrationHasFunction,
   releasedSeeded,
+  renamedAttemptFailed,
   renamedAttemptPrepared,
   renamedFinalization,
   seedLandinglessBinding,
@@ -4010,5 +4012,91 @@ test("106 keeps every hold that stood, admits the three a queue removal escalate
         finalizer: false,
       },
     ]);
+  });
+});
+
+/** Inserts a failed attempt beside the one the harness left, under the failure columns named, as 107 would see a finalizer write one. */
+function failedAttempt107(
+  attempt: string,
+  failure: string,
+  base: boolean,
+  group: boolean,
+): string {
+  const columns = base ? ",proposal_base_ref,proposal_base_commit" : "";
+  const values = base ? ",'refs/heads/trunk',repeat('e',40)" : "";
+  return `INSERT INTO finalization_attempt
+    (tenant,project,attempt,request,ticket,repository,input_bundle,input_bundle_digest,
+     target_ref,target_commit,strategy,configuration_revision,configuration_digest,
+     attempt_digest,approval_required,outcome,failure_kind${columns}${group ? ",queue_group_commit" : ""})
+  SELECT tenant,project,'${attempt}',request,ticket,repository,input_bundle,input_bundle_digest,
+         target_ref,target_commit,strategy,configuration_revision,configuration_digest,
+         attempt_digest,false,'Failed','${failure}'${values}${group ? ",repeat('f',40)" : ""}
+    FROM finalization_attempt WHERE attempt='attempt-5'`;
+}
+
+test("107 keeps every attempt that stood, admits a queue's failed checks only with the base it was read against, and lets the scheduler read why", async () => {
+  await migrationDatabase("queue_checks_failed", async (subject) => {
+    await installationBefore(subject, migration107.version);
+    await subject.query(`${deletionPartition}
+      ${renamedFinalization(renamedAttemptFailed)}`);
+    await assert.rejects(
+      subject.query(
+        failedAttempt107("attempt-queue", "QueueChecksFailed", false, false),
+      ),
+      /finalization_attempt_failure_kind_is_known/u,
+    );
+    assert.ok((await postgresMigrate(subject)).includes(migration107.version));
+    assert.deepEqual(
+      (
+        await subject.query(
+          `SELECT failure_kind, proposal_base_ref, proposal_base_commit,
+                  queue_group_commit FROM finalization_attempt`,
+        )
+      ).rows,
+      [
+        {
+          failure_kind: "PreparationFailed",
+          proposal_base_ref: null,
+          proposal_base_commit: null,
+          queue_group_commit: null,
+        },
+      ],
+    );
+    for (const [failure, base, group] of [
+      ["QueueChecksFailed", false, false],
+      ["MergeConflict", true, true],
+      ["PreparationFailed", true, false],
+    ] as const)
+      await assert.rejects(
+        subject.query(
+          failedAttempt107("attempt-refused", failure, base, group),
+        ),
+        /finalization_attempt_proposal_base_is_whole/u,
+        failure,
+      );
+    await subject.query(
+      failedAttempt107("attempt-queue", "QueueChecksFailed", true, true),
+    );
+    await subject.query(
+      failedAttempt107("attempt-conflict", "MergeConflict", true, false),
+    );
+    for (const [column, granted] of [
+      ["failure_kind", true],
+      ["proposal_base_ref", true],
+      ["proposal_base_commit", true],
+      ["queue_group_commit", true],
+      ["candidate_commit", false],
+      ["attempt_digest", false],
+    ] as const)
+      assert.equal(
+        (
+          await subject.query<{ held: boolean }>(
+            "SELECT has_column_privilege($1,'public.finalization_attempt',$2,'SELECT') AS held",
+            [schedulerRole, column],
+          )
+        ).rows[0]?.held,
+        granted,
+        column,
+      );
   });
 });

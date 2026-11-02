@@ -48,6 +48,7 @@
 import { textCodePointsCount } from "../contract/http.ts";
 import { briefingLineCharsMax } from "../contract/workerTask.ts";
 import type { ChangeProposalStatus } from "./changeProposal.ts";
+import type { FinalizationFailureKind } from "./finalizer.ts";
 import type {
   DependencyChange,
   DependencyDelivery,
@@ -126,7 +127,7 @@ export const briefingTemplateSections: readonly BriefingSectionId[] = [
 ];
 
 /** The wording revision every rendered briefing records, moved by any edit to the text below. */
-export const briefingTemplateVersion = 13;
+export const briefingTemplateVersion = 14;
 
 /** The heading one section renders under, which varies by role and by carrier. */
 export function briefingHeading(
@@ -207,38 +208,90 @@ export const briefingReworkPreface: readonly string[] = [
 /**
  * What a work task following a failed landing is told of it: the commit of the
  * target its workspace is at, the commit the passed change ends at where its
- * source was recorded, and whether the landing pinned a conflict manifest,
- * which is the only failure whose reason reaches a worker.
+ * source was recorded, whether the landing pinned a conflict manifest, and what
+ * the attempt it pinned recorded of why — the kind, and for a failure a pull
+ * request's forge reported, the base that proposal was refused onto as it was
+ * read then and the commit its merge queue built.
  */
 export interface FailedLanding {
   readonly targetCommit: string;
   readonly changeCommit?: string;
   readonly conflicted: boolean;
+  readonly failure?: FinalizationFailureKind;
+  readonly proposalBase?: { readonly ref: string; readonly commit: string };
+  readonly groupCommit?: string;
 }
+
+/**
+ * The identity a command that commits names for itself alone, which the pod
+ * does not have while an agent runs.
+ */
+const briefingWorkerGit =
+  "git -c user.name=worker -c user.email=worker@invalid";
 
 /**
  * The one command that carries a whole change into the workspace without
  * committing it. A squash merge takes every commit between the target and the
  * change, and leaves the commit to the worker; it still asks for an identity,
- * which the pod does not have while an agent runs, so the command names one
- * for itself alone.
+ * so the command names one.
  */
 export function briefingFailedLandingCommand(changeCommit: string): string {
-  return `git -c user.name=worker -c user.email=worker@invalid merge --squash ${changeCommit}`;
+  return `${briefingWorkerGit} merge --squash ${changeCommit}`;
 }
 
-/** What a work task following a failed landing is told, the conflict lines only where a manifest says there was one. */
+/** The command that brings a pull request's base into the workspace as one merge commit. */
+export function briefingFailedLandingBaseCommand(baseCommit: string): string {
+  return `${briefingWorkerGit} merge --no-edit ${baseCommit}`;
+}
+
+/** Why the change failed to land, as far as anything that reached this task says. */
+function briefingFailedLandingReason(
+  landing: FailedLanding,
+): readonly string[] {
+  if (
+    landing.failure === "QueueChecksFailed" &&
+    landing.proposalBase !== undefined
+  )
+    return [
+      "Its pull request was put on its base's merge queue, which ran the required checks on that change merged onto the base. They failed, and failed again when it was queued once more.",
+      landing.groupCommit === undefined
+        ? "The commit the queue built to run them on is not recorded."
+        : `The queue ran them on commit ${landing.groupCommit}, which it built.`,
+      "Which check failed is not carried to this task.",
+    ];
+  if (landing.conflicted)
+    return ["It failed to land on a merge conflict with the target."];
+  if (landing.failure === "MergeConflict" && landing.proposalBase !== undefined)
+    return [
+      "Its pull request could not be merged on a conflict with its base.",
+    ];
+  return ["Why it failed to land is not carried to this task."];
+}
+
+/** What a failure its pull request's forge reported adds: the base, the proposal kept open, and bringing that base in first. */
+function briefingFailedLandingBaseLines(
+  base: NonNullable<FailedLanding["proposalBase"]>,
+): readonly string[] {
+  return [
+    `The pull request's base is ${base.ref}, which was at commit ${base.commit} when that was read.`,
+    "The pull request stays open, and the change this task makes is adopted onto it.",
+    `Bring that base in first: run \`${briefingFailedLandingBaseCommand(base.commit)}\`, after \`git fetch origin ${base.ref}\` should this clone not hold that commit.`,
+    `Where it stops on a conflict, resolve it and run \`${briefingWorkerGit} commit --no-edit\` before going on.`,
+  ];
+}
+
+/** What a work task following a failed landing is told, the conflict lines only where a manifest says there was one or a base is merged in first. */
 export function briefingFailedLandingLines(
   landing: FailedLanding,
 ): readonly string[] {
-  const reason = landing.conflicted
-    ? "It failed to land on a merge conflict with the target."
-    : "Why it failed to land is not carried to this task.";
   const workspace = `This workspace is checked out at the target's commit ${landing.targetCommit}, and does not hold that change.`;
   const opening = [
     "The change this ticket already made passed its evaluation and could not be landed on the target.",
-    reason,
+    ...briefingFailedLandingReason(landing),
     workspace,
+    ...(landing.proposalBase === undefined
+      ? []
+      : briefingFailedLandingBaseLines(landing.proposalBase)),
   ];
   const change = landing.changeCommit;
   if (change === undefined) {
@@ -248,12 +301,15 @@ export function briefingFailedLandingLines(
     ...opening,
     `That change ends at commit ${change}, which this clone already holds; it is everything between the target and that commit, and can be more than one commit.`,
     `Bring that change into this workspace rather than writing it again: run \`${briefingFailedLandingCommand(change)}\`, which takes every commit of it and commits nothing.`,
-    ...(landing.conflicted
+    ...(landing.conflicted || landing.proposalBase !== undefined
       ? [
           "Resolve every conflict it marks, and leave no conflict marker in the tree: whatever the tree holds when you finish is committed.",
         ]
       : []),
-    "Change nothing but what landing on this base forces, and that can include files git merged without a mark, such as a migration whose number the target has since used.",
+    landing.failure === "QueueChecksFailed" &&
+    landing.proposalBase !== undefined
+      ? "Then run the checks on that tree and reproduce the failure there before changing anything to fix it. A failure that does not reproduce may have come from a change queued ahead of this one that never landed; say so in your report."
+      : "Change nothing but what landing on this base forces, and that can include files git merged without a mark, such as a migration whose number the target has since used.",
   ];
 }
 

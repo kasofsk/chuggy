@@ -134,16 +134,17 @@ async function landingRead(project: SchedulerProject) {
   );
 }
 
-/** The references a failed landing's rework pins, the result manifest and the conflict manifest as named. */
+/** The references a failed landing's rework pins, the result manifest, the attempt and the conflict manifest as named. */
 function landingReferences(
   manifest: string,
   conflict: boolean,
+  attempt = `attempt-${randomUUID()}`,
 ): readonly (readonly [string, string])[] {
   return [
     ["ConfigurationRevision", "revision"],
     ["Repository", "repository"],
     ["ResultManifest", manifest],
-    ["FinalizationAttempt", `attempt-${randomUUID()}`],
+    ["FinalizationAttempt", attempt],
     ["TargetCommit", targetCommit],
     ...(conflict
       ? [["ConflictManifest", `conflict-${randomUUID()}`] as const]
@@ -208,5 +209,129 @@ test("a failed landing whose result manifest recorded no source still answers, w
   assert.deepEqual(await landingRead(project), {
     read: "Landing",
     landing: { targetCommit, conflicted: true },
+  });
+});
+
+/** The finalization request the project's ticket is landed under, and the repository it binds for it. */
+interface LandingFinalization {
+  readonly request: string;
+  readonly repository: string;
+}
+
+/** Opens one finalization request on the project's ticket, beside the request its first spawn was made under. */
+async function landingFinalization(
+  project: SchedulerProject,
+): Promise<LandingFinalization> {
+  const request = `finalization-${randomUUID()}`;
+  const repository = `repository-${randomUUID()}`;
+  const { tenant, project: projectId } = project.partition;
+  await rig.harness.query(
+    `INSERT INTO project_repository (tenant,project,repository,recovery_epoch)
+     VALUES ($1,$2,$3,$4)`,
+    [tenant, projectId, repository, project.epoch],
+  );
+  await rig.harness.query(
+    `INSERT INTO finalization_request
+       (tenant,project,request,authorizing_seq,effect_position,ticket,ticket_version,
+        request_generation,state,claim_owner,claim_generation,claim_expires_at,
+        recovery_epoch,kind,work_cycle,finalization_generation)
+     SELECT tenant,project,$4,authorizing_seq,effect_position+1000,ticket,ticket_version,
+            1,'Open','owner',1,now(),$5,'RunFinalizer',1,1
+       FROM execution_request WHERE tenant=$1 AND project=$2 AND request=$3`,
+    [tenant, projectId, project.request, request, project.epoch],
+  );
+  return { request, repository };
+}
+
+/**
+ * A failed attempt as the finalizer records one under that request, over the
+ * configuration and bundle the first spawn pinned, with the failure columns a
+ * case names, and its identity.
+ */
+async function landingAttempt(
+  project: SchedulerProject,
+  finalization: LandingFinalization,
+  failure: {
+    readonly kind: string;
+    readonly baseRef?: string;
+    readonly baseCommit?: string;
+    readonly groupCommit?: string;
+  },
+): Promise<string> {
+  const attempt = `attempt-${randomUUID()}`;
+  const { tenant, project: projectId } = project.partition;
+  await rig.harness.query(
+    `INSERT INTO finalization_attempt
+       (tenant,project,attempt,request,ticket,repository,input_bundle,input_bundle_digest,
+        target_ref,target_commit,strategy,configuration_revision,configuration_digest,
+        attempt_digest,approval_required,outcome,failure_kind,proposal_base_ref,
+        proposal_base_commit,queue_group_commit)
+     SELECT tenant,project,$4,$5,ticket,$6,input_bundle,input_bundle_digest,
+            'refs/heads/head',$7,'Merge',configuration_revision,configuration_digest,
+            repeat('d',64),false,'Failed',$8,$9,$10,$11
+       FROM execution_request WHERE tenant=$1 AND project=$2 AND request=$3`,
+    [
+      tenant,
+      projectId,
+      project.request,
+      attempt,
+      finalization.request,
+      finalization.repository,
+      targetCommit,
+      failure.kind,
+      failure.baseRef ?? null,
+      failure.baseCommit ?? null,
+      failure.groupCommit ?? null,
+    ],
+  );
+  return attempt;
+}
+
+test("the scheduler role reads why the attempt a rework pins failed, and against which base", async () => {
+  const project = await landingProject("failed-landing-why");
+  const sourced = await landingSettled(project, "Pass", "why");
+  const baseRef = "refs/heads/trunk";
+  const baseCommit = "e".repeat(40);
+  const groupCommit = "f".repeat(40);
+
+  const finalization = await landingFinalization(project);
+  const queued = await landingAttempt(project, finalization, {
+    kind: "QueueChecksFailed",
+    baseRef,
+    baseCommit,
+    groupCommit,
+  });
+  await landingRework(project, 2, landingReferences(sourced, false, queued));
+  assert.deepEqual(await landingRead(project), {
+    read: "Landing",
+    landing: {
+      targetCommit,
+      changeCommit: schedulerHarnessCommit,
+      conflicted: false,
+      failure: "QueueChecksFailed",
+      proposalBase: { ref: baseRef, commit: baseCommit },
+      groupCommit,
+    },
+  });
+
+  const conflicted = await landingAttempt(project, finalization, {
+    kind: "MergeConflict",
+    baseRef,
+    baseCommit,
+  });
+  await landingRework(
+    project,
+    3,
+    landingReferences(sourced, false, conflicted),
+  );
+  assert.deepEqual(await landingRead(project), {
+    read: "Landing",
+    landing: {
+      targetCommit,
+      changeCommit: schedulerHarnessCommit,
+      conflicted: false,
+      failure: "MergeConflict",
+      proposalBase: { ref: baseRef, commit: baseCommit },
+    },
   });
 });
