@@ -1487,6 +1487,38 @@ async function proposalMergeQueueStood(label: string) {
   return { ...proved, standing };
 }
 
+test("a standing read finding no queue leaves a wait the queue kept with nothing spent idle, to be merged as before", async () => {
+  const { claim, store, evidence, standing } = await proposalMergeQueueStood(
+    "proposalmergequeuedropped",
+  );
+  const closed = {
+    reconciled: "Contradictory",
+    contradiction: "Closed",
+    evidence: { ...evidence, status: "Closed" },
+  } as const;
+  await store.recordChangeProposalMerge({
+    claim,
+    result: { records: "Reading", reconciled: closed },
+  });
+  assert.deepEqual((await store.changeProposal(claim))?.merging, {
+    merging: "Waiting",
+    merges: 0,
+    reading: closed,
+    heardAgeSecs: 0,
+  });
+  assert.deepEqual(
+    await store.recordChangeProposalQueue(claim, {
+      ...standing,
+      enabled: false,
+    }),
+    { wrote: "Row" },
+  );
+  assert.deepEqual((await store.changeProposal(claim))?.merging, {
+    merging: "Idle",
+    merges: 0,
+  });
+});
+
 test("an enqueue is marked before it is asked, and its answer enters the head, refuses it or releases it", async () => {
   const { claim, store, standing } = await proposalMergeQueueStood(
     "proposalmergeenqueued",

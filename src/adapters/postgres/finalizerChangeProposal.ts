@@ -1401,9 +1401,10 @@ export async function finalizerChangeProposalQueueUnread(
 
 /**
  * Records one standing read as the moment the forge was last heard. Where the
- * base requires a queue, a merge in flight is released unspent and the reading
- * a wait kept goes with it; and the pinned head is entered once a read finds
- * it queued.
+ * base requires a queue, a merge in flight is released unspent; a reading is
+ * kept only for a merge still in flight on a base requiring none, so a wait
+ * the queue left with nothing in flight derives idle; and the pinned head is
+ * entered once a read finds it queued.
  */
 export async function finalizerChangeProposalQueueRecord(
   client: pg.PoolClient,
@@ -1426,13 +1427,18 @@ export async function finalizerChangeProposalQueueRecord(
               + CASE WHEN ${standing.enabled}
                       AND merge_attempts = merge_refusals + merge_declines + 1
                      THEN 1 ELSE 0 END,
-            merge_reading = CASE WHEN ${standing.enabled} THEN NULL
-                                 ELSE merge_reading END,
+            merge_reading =
+              CASE WHEN NOT ${standing.enabled}
+                      AND merge_attempts = merge_refusals + merge_declines + 1
+                   THEN merge_reading END,
             merge_reading_contradiction =
-              CASE WHEN ${standing.enabled} THEN NULL
-                   ELSE merge_reading_contradiction END,
-            merge_reading_evidence = CASE WHEN ${standing.enabled} THEN NULL
-                                          ELSE merge_reading_evidence END,
+              CASE WHEN NOT ${standing.enabled}
+                      AND merge_attempts = merge_refusals + merge_declines + 1
+                   THEN merge_reading_contradiction END,
+            merge_reading_evidence =
+              CASE WHEN NOT ${standing.enabled}
+                      AND merge_attempts = merge_refusals + merge_declines + 1
+                   THEN merge_reading_evidence END,
             merge_heard_at = now()
       WHERE tenant = ${claim.partition.tenant} AND project = ${claim.partition.project}
         AND request = ${claim.request}
