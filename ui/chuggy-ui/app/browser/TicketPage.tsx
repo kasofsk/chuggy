@@ -210,6 +210,7 @@ function standingOf(
     offers: ticketOffers(props.reads.openState, ticket, dispatch),
     slot: ticketSlot({
       ticket,
+      landings: ticketLandingsHeld(props.reads.landingsState),
       ledger: props.facts.ledger,
       stageCount: props.facts.stageCount,
       open: readValue(props.reads.openState)?.actions,

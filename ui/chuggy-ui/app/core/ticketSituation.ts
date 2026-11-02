@@ -26,6 +26,8 @@ import type { EscalationStep } from "./codeLabels.ts";
 import { settledFigure, sinceFigure } from "./figures.ts";
 import type { Figure } from "./figures.ts";
 import { runSpanOf } from "./runTotals.ts";
+import { ticketLandingEscalatedRemoval } from "./ticketLandings.ts";
+import type { TicketLanding } from "./ticketLandings.ts";
 import type { Cycle, Ledger as LedgerFacts, RanStage } from "./ticketLedger.ts";
 import {
   cycleLabel,
@@ -63,10 +65,11 @@ export type TicketSlot =
   | { readonly slot: "Nothing" };
 
 /** Everything the slot is chosen from; `open` is absent while its read is,
- * and `setupOverridable` is whether the card offers this reader the ticket's
- * setup lines to change. */
+ * `landings` are none while theirs is, and `setupOverridable` is whether the
+ * card offers this reader the ticket's setup lines to change. */
 export interface SituationReads {
   readonly ticket: TicketResponse;
+  readonly landings: readonly TicketLanding[];
   readonly ledger: LedgerFacts | undefined;
   readonly stageCount: number;
   readonly open: readonly NativeActionResponse[] | undefined;
@@ -158,6 +161,10 @@ function needsYou(reads: SituationReads): TicketSlot | undefined {
           ? ((failed === undefined
               ? undefined
               : runStepLine(failed, reads.setupOverridable)) ??
+            ticketLandingEscalatedRemoval(
+              reads.landings,
+              escalation.evidence,
+            ) ??
             escalationEvidenceLine(escalation.evidence) ??
             escalationDetailLine(escalation.kind, {
               lastSet:

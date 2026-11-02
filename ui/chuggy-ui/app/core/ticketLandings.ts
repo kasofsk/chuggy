@@ -22,8 +22,14 @@
  * its last answer stands across a read that failed.
  */
 
-import type { TicketLandingsResponse } from "../../../../src/contract/responses.ts";
-import type { TicketLandingState } from "../../../../src/contract/rosters.ts";
+import type {
+  TicketEscalation,
+  TicketLandingsResponse,
+} from "../../../../src/contract/responses.ts";
+import type {
+  FinalizationUnavailableKind,
+  TicketLandingState,
+} from "../../../../src/contract/rosters.ts";
 import {
   changeProposalCreationLabel,
   changeProposalMergeabilityLabel,
@@ -95,10 +101,16 @@ export interface TicketLandingDetail {
   readonly checkedAt: string | undefined;
 }
 
-/** The hold a landing waits on, and since when. */
+/**
+ * The hold a landing waits on or escalated from, and since when, with the
+ * forge's reason and who removed its pull request where it escalates a removal
+ * from a merge queue.
+ */
 export interface TicketLandingHold {
+  readonly kind: FinalizationUnavailableKind;
   readonly label: string;
   readonly since: string;
+  readonly removal: string | undefined;
 }
 
 /**
@@ -206,21 +218,46 @@ function ticketLandingProposal(
   };
 }
 
-/**
- * What a hold is labelled, a pull request the forge last read as closed being
- * called that, and one a merge queue removed naming the forge's reason and who
- * removed it.
- */
-function ticketLandingHoldLabel(read: TicketLandingRead): string | undefined {
-  if (read.state !== "Held") return undefined;
-  if (read.hold.kind === "ProposalAbsent" && read.proposal?.status === "Closed")
-    return changeProposalStatusLabel(read.proposal.status);
-  const label = finalizationUnavailableKindLabel(read.hold.kind);
-  const removal = read.hold.removal;
-  if (removal === undefined) return label;
+type TicketLandingHoldRead = NonNullable<
+  Extract<TicketLandingRead, { state: "Held" | "Unavailable" }>["hold"]
+>;
+
+/** The forge's reason for a removal from a merge queue, and who removed the pull request where it names them. */
+function ticketLandingRemovalText(
+  removal: NonNullable<TicketLandingHoldRead["removal"]>,
+): string {
   return removal.actor === undefined
-    ? `${label}: ${removal.reason}`
-    : `${label}: ${removal.reason} by ${removal.actor}`;
+    ? removal.reason
+    : `${removal.reason} by ${removal.actor}`;
+}
+
+/**
+ * The hold a landing is held at or escalated from: labelled as its kind, a
+ * pull request the forge last read as closed being called that, and one a
+ * merge queue removed naming the forge's reason and who removed it.
+ */
+function ticketLandingHoldOf(
+  read: TicketLandingRead,
+): TicketLandingHold | undefined {
+  const hold =
+    read.state === "Held" || read.state === "Unavailable"
+      ? read.hold
+      : undefined;
+  if (hold === undefined) return undefined;
+  const removal =
+    hold.removal === undefined
+      ? undefined
+      : ticketLandingRemovalText(hold.removal);
+  const label =
+    hold.kind === "ProposalAbsent" && read.proposal?.status === "Closed"
+      ? changeProposalStatusLabel(read.proposal.status)
+      : finalizationUnavailableKindLabel(hold.kind);
+  return {
+    kind: hold.kind,
+    label: removal === undefined ? label : `${label}: ${removal}`,
+    since: hold.since,
+    removal,
+  };
 }
 
 function ticketLandingDetail(read: TicketLandingRead): TicketLandingDetail {
@@ -256,10 +293,7 @@ export function ticketLandingOf(read: TicketLandingRead): TicketLanding {
         ? undefined
         : finalizationFailureKindLabel(failureKind),
     conflictCount: read.conflict?.paths.length ?? 0,
-    hold:
-      read.state === "Held"
-        ? { label: ticketLandingHoldLabel(read) ?? "", since: read.hold.since }
-        : undefined,
+    hold: ticketLandingHoldOf(read),
     wait:
       read.state === "AwaitingMerge"
         ? {
@@ -406,6 +440,12 @@ export function ticketLandingFragment(
         ...ticketLandingLandedAt(landing),
       };
     case "Unavailable":
+      return {
+        text: landing.hold?.label,
+        link: undefined,
+        commit: undefined,
+        caveat: undefined,
+      };
     case "Invalidated":
       return {
         text: undefined,
@@ -432,6 +472,22 @@ export function ticketLandingSummary(landing: TicketLanding): string {
   return landing.state === "Landed"
     ? landing.word
     : `Landing ${landing.word.toLowerCase()}`;
+}
+
+/**
+ * Who removed the pull request from its base's merge queue and why, for an
+ * escalation at the hold the newest landing escalated from where that hold
+ * names a removal.
+ */
+export function ticketLandingEscalatedRemoval(
+  landings: readonly TicketLanding[],
+  evidence: TicketEscalation["evidence"],
+): string | undefined {
+  const newest = landings.at(-1);
+  const hold = newest?.state === "Unavailable" ? newest.hold : undefined;
+  return hold?.removal === undefined || hold.kind !== evidence
+    ? undefined
+    : `Queue removal: ${hold.removal}`;
 }
 
 /** The landings joined to the cycles the ledger holds, and those it does not. */

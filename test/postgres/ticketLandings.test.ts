@@ -35,7 +35,10 @@ import {
   ticketLandingConflictBytesMax,
   ticketLandingsAnsweredMax,
 } from "../../src/contract/http.ts";
-import type { BriefFinalizationMode } from "../../src/contract/rosters.ts";
+import type {
+  BriefFinalizationMode,
+  FinalizationUnavailableKind,
+} from "../../src/contract/rosters.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import { workTaskIdentity } from "../../src/domain/task.ts";
 import {
@@ -850,7 +853,7 @@ test("a merge answered as a moved head waits on whoever moved it, and a merge in
   );
 });
 
-test("a concluded landing whose hold columns are still set answers how it concluded and no hold, and one that escalated answers Unavailable", async () => {
+test("a concluded landing whose hold columns are still set answers how it concluded and no hold, and one that escalated answers Unavailable and the hold it escalated from", async () => {
   const landed = await finalizing("held-then-landed", "Push");
   const landedClaim = await finalizerClaim(
     rig,
@@ -887,10 +890,11 @@ test("a concluded landing whose hold columns are still set answers how it conclu
     undefined,
     claim,
   );
-  assert.deepEqual(await landingsOf(escalated), {
-    landings: [{ state: "Unavailable", cycle: 1, generation: 1, attempts: 0 }],
-    truncated: false,
-  });
+  const [unavailable] = (await landingsOf(escalated))?.landings ?? [];
+  assert.equal(unavailable?.state, "Unavailable");
+  assert.equal(unavailable.hold?.kind, "RepositoryUnbound");
+  assert.equal(unavailable.hold.passes, 1);
+  assert.equal("removal" in unavailable.hold, false);
 });
 
 test("a landing waiting on an approval answers AwaitingApproval, and one whose approval was declined or whose permit was granted does not", async () => {
@@ -1220,5 +1224,120 @@ test("a hold escalating a removal from the merge queue answers the forge's reaso
         : { reason: removal.reason, actor: "a-person" },
       label,
     );
+  }
+});
+
+/**
+ * A project whose pull request its base's merge queue removed as `removal`
+ * says, recorded as the finalizer records it, held at `kind`, and escalated
+ * where `escalate` says so.
+ */
+async function queueRemovedHeld(
+  label: string,
+  kind: FinalizationUnavailableKind,
+  removal: Readonly<Record<string, unknown>> | undefined,
+  escalate: boolean,
+): Promise<FinalizerProject> {
+  const project = await finalizing(label, "PullRequestMerge");
+  const promoted = await promotion(project, label);
+  await proposalOver(
+    project,
+    promoted,
+    createdAs(forgeSaid("Open", { url: pullRequest })),
+    queueStoodAs({
+      head: promoted.candidate,
+      enqueuedAtMs: 1,
+      ...(removal === undefined ? {} : { removal: { atMs: 2, ...removal } }),
+    }),
+  );
+  const claim = await finalizerClaim(rig, project, finalizerIdentity("owner"));
+  await postgresFinalizer(rig.pool).recordHold({ claim, kind });
+  if (escalate)
+    await concluded(
+      project,
+      { outcome: "FinalizationResultUnavailable", kind },
+      undefined,
+      claim,
+    );
+  return project;
+}
+
+test("an escalated hold answers Unavailable with the hold it escalated from, and the removal where that hold escalates one", async () => {
+  for (const [label, kind, removal, answered] of [
+    [
+      "escalated-dequeued",
+      "ProposalDequeued",
+      { kind: "Dequeued", reason: "manual", actor: "gdoteof" },
+      { reason: "manual", actor: "gdoteof" },
+    ],
+    [
+      "escalated-timed-out",
+      "ProposalQueueTimedOut",
+      { kind: "ChecksTimedOut", reason: "checks_timed_out" },
+      { reason: "checks_timed_out" },
+    ],
+    [
+      "escalated-unreachable",
+      "ProposalUnavailable",
+      { kind: "Dequeued", reason: "manual", actor: "gdoteof" },
+      undefined,
+    ],
+  ] as const) {
+    const project = await queueRemovedHeld(label, kind, removal, true);
+    const [landing] = (await landingsOf(project))?.landings ?? [];
+    assert.equal(landing?.state, "Unavailable", label);
+    assert.equal(landing.hold?.kind, kind, label);
+    assert.deepEqual(landing.hold.removal, answered, label);
+  }
+});
+
+test("merges exhausted answers the failed-check removal its proposal's standing records, and none where it records none", async () => {
+  for (const [label, removal, answered] of [
+    [
+      "exhausted-failed-checks",
+      {
+        kind: "ChecksFailed",
+        reason: "failed_checks",
+        actor: "github-merge-queue",
+      },
+      { reason: "failed_checks", actor: "github-merge-queue" },
+    ],
+    ["exhausted-updates", undefined, undefined],
+  ] as const) {
+    for (const escalate of [false, true]) {
+      const project = await queueRemovedHeld(
+        `${label}-${String(escalate)}`,
+        "ProposalMergesExhausted",
+        removal,
+        escalate,
+      );
+      const [landing] = (await landingsOf(project))?.landings ?? [];
+      assert.equal(landing?.state, escalate ? "Unavailable" : "Held", label);
+      assert.equal(landing.hold?.kind, "ProposalMergesExhausted", label);
+      assert.deepEqual(landing.hold.removal, answered, label);
+    }
+  }
+});
+
+test("a stored hold at failed merge-queue checks, which no pass reaches now, still answers its removal", async () => {
+  const removal = {
+    kind: "ChecksFailed",
+    reason: "failed_checks",
+    actor: "github-merge-queue",
+  };
+  for (const escalate of [false, true]) {
+    const project = await queueRemovedHeld(
+      `stored-checks-failed-${String(escalate)}`,
+      "ProposalQueueChecksFailed",
+      removal,
+      escalate,
+    );
+    const [landing] = (await landingsOf(project))?.landings ?? [];
+    assert.equal(landing?.state, escalate ? "Unavailable" : "Held");
+    assert.equal(landing.hold?.kind, "ProposalQueueChecksFailed");
+    assert.deepEqual(landing.hold.removal, {
+      reason: "failed_checks",
+      actor: "github-merge-queue",
+    });
   }
 });

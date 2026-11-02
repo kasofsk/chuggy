@@ -351,7 +351,7 @@ function landingCarrying(
       mergeReason: codes["mergeReason"] ?? "Conflict",
       mergeability: codes["mergeability"] ?? "Conflicting",
     },
-    ...(state === "Held"
+    ...(state === "Held" || state === "Unavailable"
       ? {
           state,
           hold: {
@@ -404,7 +404,8 @@ test("every code a landing can carry is a member of a contract roster", () => {
           parsed(landingCarrying(state, { [field]: code })),
           `${state} ${field} ${code}`,
         );
-      if (field === "hold" && state !== "Held") continue;
+      if (field === "hold" && state !== "Held" && state !== "Unavailable")
+        continue;
       if (field === "wait" && state !== "AwaitingMerge") continue;
       assert.equal(
         parsed(landingCarrying(state, { [field]: "Unrostered" })),
@@ -414,6 +415,25 @@ test("every code a landing can carry is a member of a contract roster", () => {
     }
   }
   assert.equal(parsed(landingCarrying("Unrostered" as never, {})), false);
+});
+
+test("an unavailable landing carries the hold it escalated from where one is recorded, removal included, and a running one carries none", () => {
+  const parsed = (landing: unknown) =>
+    ticketLandingsResponseSchema.safeParse({
+      landings: [landing],
+      truncated: false,
+    }).success;
+  const landing = { cycle: 1, generation: 1, attempts: 0 };
+  const hold = {
+    kind: "ProposalDequeued",
+    passes: 10,
+    since: "2026-11-02T22:21:18.000000Z",
+    removal: { reason: "manual", actor: "gdoteof" },
+  };
+  assert.ok(parsed({ ...landing, state: "Unavailable" }));
+  assert.ok(parsed({ ...landing, state: "Unavailable", hold }));
+  assert.equal(parsed({ ...landing, state: "Running", hold }), false);
+  assert.equal(parsed({ ...landing, state: "Held" }), false);
 });
 
 test("the briefing carriers are the interpreter's", () => {

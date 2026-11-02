@@ -12,6 +12,7 @@ import { freshnessStaleAfterMs } from "../app/core/freshness.ts";
 import {
   ticketLandingCurrent,
   ticketLandingFragment,
+  ticketLandingFragmentSays,
   ticketLandingLink,
   ticketLandingOf,
   ticketLandingOpened,
@@ -26,6 +27,7 @@ import {
   landingCandidateCommit,
   landingClosed,
   landingConflicted,
+  landingEscalated,
   landingHeld,
   landingLanded,
   landingLandedCommit,
@@ -56,6 +58,64 @@ test("a held landing says how long it has been held and on what", () => {
   expect(landing.word).toBe("Held");
   expect(ticketLandingFragment(landing, nowMs).text).toBe(
     "Held 12m · Target unreadable",
+  );
+});
+
+test("an escalated landing names the hold it escalated from, with who removed its pull request from the merge queue and why where that hold says", () => {
+  const since = "2026-10-07T14:48:00Z";
+  const said = (read: Parameters<typeof ticketLandingOf>[0]) =>
+    ticketLandingFragment(ticketLandingOf(read), nowMs);
+  expect(
+    said(
+      landingEscalated(2, since, "ProposalDequeued", {
+        reason: "manual",
+        actor: "gdoteof",
+      }),
+    ),
+  ).toEqual({
+    text: "Removed from merge queue: manual by gdoteof",
+    link: undefined,
+    commit: undefined,
+    caveat: undefined,
+  });
+  expect(
+    said(
+      landingEscalated(2, since, "ProposalQueueTimedOut", {
+        reason: "checks_timed_out",
+      }),
+    ).text,
+  ).toBe("Merge queue checks timed out again: checks_timed_out");
+  expect(
+    said(
+      landingEscalated(2, since, "ProposalMergesExhausted", {
+        reason: "failed_checks",
+        actor: "github-merge-queue",
+      }),
+    ).text,
+  ).toBe("Proposal merges exhausted: failed_checks by github-merge-queue");
+  expect(said(landingEscalated(2, since, "ProposalMergesExhausted")).text).toBe(
+    "Proposal merges exhausted",
+  );
+  expect(
+    said(
+      landingEscalated(2, since, "ProposalQueueChecksFailed", {
+        reason: "failed_checks",
+        actor: "github-merge-queue",
+      }),
+    ).text,
+  ).toBe(
+    "Merge queue checks failed again: failed_checks by github-merge-queue",
+  );
+  const bare = ticketLandingOf({
+    cycle: 2,
+    generation: 1,
+    attempts: 1,
+    state: "Unavailable",
+  });
+  expect(bare.word).toBe("Escalated");
+  expect(bare.hold).toBeUndefined();
+  expect(ticketLandingFragmentSays(ticketLandingFragment(bare, nowMs))).toBe(
+    false,
   );
 });
 
