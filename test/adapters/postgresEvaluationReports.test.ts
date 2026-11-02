@@ -127,7 +127,15 @@ test("a failed landing read the database refuses is unavailable rather than a th
 
 test("a failed landing's row is its commits, the change's absent where no source was recorded", async () => {
   const rows = [
-    { target_commit: "1".repeat(40), change_commit: null, conflicted: false },
+    {
+      target_commit: "1".repeat(40),
+      change_commit: null,
+      conflicted: false,
+      failure_kind: null,
+      proposal_base_ref: null,
+      proposal_base_commit: null,
+      queue_group_commit: null,
+    },
   ];
   const pool = {
     query: () => Promise.resolve({ rows }),
@@ -141,5 +149,57 @@ test("a failed landing's row is its commits, the change's absent where no source
       read: "Landing",
       landing: { targetCommit: "1".repeat(40), conflicted: false },
     },
+  );
+});
+
+/** A pool answering one failed-landing row whose attempt recorded the failure columns named. */
+function failedLandingPool(
+  why: Readonly<Record<string, string | null>>,
+): pg.Pool {
+  const rows = [
+    {
+      target_commit: "1".repeat(40),
+      change_commit: "2".repeat(40),
+      conflicted: false,
+      failure_kind: null,
+      proposal_base_ref: null,
+      proposal_base_commit: null,
+      queue_group_commit: null,
+      ...why,
+    },
+  ];
+  return { query: () => Promise.resolve({ rows }) } as unknown as pg.Pool;
+}
+
+test("a failed landing's row says why its attempt failed, and against which base", async () => {
+  assert.deepEqual(
+    await postgresFailedLanding(
+      failedLandingPool({
+        failure_kind: "QueueChecksFailed",
+        proposal_base_ref: "refs/heads/trunk",
+        proposal_base_commit: "3".repeat(40),
+        queue_group_commit: "4".repeat(40),
+      }),
+    ).landing(partition, asExecutionId("rework")),
+    {
+      read: "Landing",
+      landing: {
+        targetCommit: "1".repeat(40),
+        changeCommit: "2".repeat(40),
+        conflicted: false,
+        failure: "QueueChecksFailed",
+        proposalBase: { ref: "refs/heads/trunk", commit: "3".repeat(40) },
+        groupCommit: "4".repeat(40),
+      },
+    },
+  );
+});
+
+test("a failed landing's row naming a kind this code never wrote is unavailable rather than a throw", async () => {
+  assert.deepEqual(
+    await postgresFailedLanding(
+      failedLandingPool({ failure_kind: "SomethingNew" }),
+    ).landing(partition, asExecutionId("rework")),
+    { read: "Unavailable" },
   );
 });

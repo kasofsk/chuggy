@@ -2081,9 +2081,9 @@ async function finalizerProposalFailed(
 }
 
 /**
- * Records the conflict the forge refused the merge for. No manifest is written
- * beside it: the forge named no paths, and an empty one would be evidence of
- * nothing. A base that cannot be read holds until it can.
+ * Records the conflict the forge refused the merge for, holding until the base
+ * can be read. No manifest is written beside it: the forge named no paths, and
+ * an empty one would be evidence of nothing.
  */
 async function finalizerMergeConflicted(
   service: FinalizerService,

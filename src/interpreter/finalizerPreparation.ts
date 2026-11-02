@@ -494,9 +494,6 @@ export interface FinalizerIdentityFactory {
 /**
  * One preparation offered to the durable authority. It is written once, and the
  * schema has no update path at all, so a second preparation is another identity.
- * A failure a pull request's forge reported keeps the base that proposal was
- * refused onto as it was read then, which the target — the proposal's head —
- * cannot say, and a merge queue's failed checks the commit the queue built.
  */
 export interface AttemptRecord {
   readonly claim: FinalizationClaim;
@@ -512,7 +509,9 @@ export interface AttemptRecord {
   readonly failureKind?: FinalizationFailureKind;
   readonly conflictManifest?: ProjectArtifactId;
   readonly conflictDigest?: string;
+  /** The base a failure a pull request's forge reported was refused onto, as read then, which the target — the proposal's head — cannot say. */
   readonly proposalBase?: Pick<ObservedTarget, "ref" | "commit">;
+  /** The commit a merge queue built and whose checks failed. */
   readonly groupCommit?: GitObjectId;
   readonly attemptDigest: string;
 }
