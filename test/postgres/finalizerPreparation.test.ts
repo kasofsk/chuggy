@@ -36,6 +36,8 @@ import {
   asForgeCredentialReference,
   asProposalDisplayUrl,
   asProposalMergeState,
+  asProposalQueueInstant,
+  asProposalQueueWord,
   asProposalNumber,
   asProposalRemoteIdentity,
   changeProposalRequest,
@@ -444,6 +446,15 @@ function proposalPort(): ProposalPort {
     },
     updateBranch: () => {
       throw new Error("the pass asked this forge to update a proposal");
+    },
+    readQueue: () => {
+      throw new Error("the pass read a proposal's merge queue");
+    },
+    enqueue: () => {
+      throw new Error("the pass asked this forge to queue a proposal");
+    },
+    dequeue: () => {
+      throw new Error("the pass asked this forge to dequeue a proposal");
     },
   };
   return own;
@@ -1415,6 +1426,151 @@ test("a merge the forge's own rules refused keeps the reading it waits on, spend
     (await store.changeProposal(claim))?.merging,
     { merging: "Unanswered", merges: 2, readings: 1, reading: undefined },
     "the next merge clears the reading, which was about the last",
+  );
+});
+
+test("a refusal a standing read finds a merge queue behind is released unspent, and the read is kept in columns of its own", async () => {
+  const { claim, store, evidence } = await proposalMergeProved(
+    "proposalmergequeued",
+  );
+  await store.markChangeProposalMergeAttempt(claim);
+  assert.deepEqual(await store.markChangeProposalEnqueue(claim, undefined), {
+    wrote: "Nothing",
+  });
+  assert.deepEqual(await store.markChangeProposalQueueUnread(claim), {
+    wrote: "Row",
+  });
+  assert.deepEqual((await store.changeProposal(claim))?.queueing, {
+    unread: true,
+    refused: false,
+    entered: false,
+  });
+  const standing = {
+    enabled: true,
+    open: true,
+    queued: false,
+    head: evidence.head.commit,
+  };
+  assert.deepEqual(await store.recordChangeProposalQueue(claim, standing), {
+    wrote: "Row",
+  });
+  const read = await store.changeProposal(claim);
+  assert.deepEqual(
+    read?.merging,
+    { merging: "Idle", merges: 0 },
+    "the refusal the queue explains spends no merge",
+  );
+  assert.deepEqual(read.queueing, {
+    unread: false,
+    refused: false,
+    entered: false,
+    standing,
+    heardAgeSecs: 0,
+  });
+});
+
+/** A proved proposal whose merge was refused, released unspent by a standing read that found its base requiring a queue. */
+async function proposalMergeQueueStood(label: string) {
+  const proved = await proposalMergeProved(label);
+  const { claim, store, evidence } = proved;
+  await store.markChangeProposalMergeAttempt(claim);
+  await store.markChangeProposalQueueUnread(claim);
+  const standing = {
+    enabled: true,
+    open: true,
+    queued: false,
+    head: evidence.head.commit,
+  };
+  assert.deepEqual(await store.recordChangeProposalQueue(claim, standing), {
+    wrote: "Row",
+  });
+  return { ...proved, standing };
+}
+
+test("a standing read finding no queue leaves a wait the queue kept with nothing spent idle, to be merged as before", async () => {
+  const { claim, store, evidence, standing } = await proposalMergeQueueStood(
+    "proposalmergequeuedropped",
+  );
+  const closed = {
+    reconciled: "Contradictory",
+    contradiction: "Closed",
+    evidence: { ...evidence, status: "Closed" },
+  } as const;
+  await store.recordChangeProposalMerge({
+    claim,
+    result: { records: "Reading", reconciled: closed },
+  });
+  assert.deepEqual((await store.changeProposal(claim))?.merging, {
+    merging: "Waiting",
+    merges: 0,
+    reading: closed,
+    heardAgeSecs: 0,
+  });
+  assert.deepEqual(
+    await store.recordChangeProposalQueue(claim, {
+      ...standing,
+      enabled: false,
+    }),
+    { wrote: "Row" },
+  );
+  assert.deepEqual((await store.changeProposal(claim))?.merging, {
+    merging: "Idle",
+    merges: 0,
+  });
+});
+
+test("an enqueue is marked before it is asked, and its answer enters the head, refuses it or releases it", async () => {
+  const { claim, store, standing } = await proposalMergeQueueStood(
+    "proposalmergeenqueued",
+  );
+  const removedAtMs = asProposalQueueInstant(
+    Date.parse("2026-11-02T10:05:30Z"),
+  );
+  assert.deepEqual(await store.markChangeProposalEnqueue(claim, removedAtMs), {
+    wrote: "Row",
+  });
+  assert.deepEqual(
+    await store.markChangeProposalEnqueue(claim, undefined),
+    { wrote: "Nothing" },
+    "an enqueue no standing read has seen authorizes no second",
+  );
+  assert.deepEqual(await store.recordChangeProposalEnqueue(claim, "Queued"), {
+    wrote: "Row",
+  });
+  const queued = {
+    ...standing,
+    queued: true,
+    entry: asProposalQueueWord("AWAITING_CHECKS"),
+    enqueuedAtMs: asProposalQueueInstant(Date.parse("2026-11-02T10:06:00Z")),
+    removal: {
+      atMs: removedAtMs,
+      kind: "ChecksFailed",
+      reason: asProposalQueueWord("failed_checks"),
+      actor: asProposalQueueWord("chuggy-portal"),
+    },
+  } as const;
+  await store.recordChangeProposalQueue(claim, queued);
+  assert.deepEqual((await store.changeProposal(claim))?.queueing, {
+    unread: false,
+    refused: false,
+    entered: true,
+    standing: queued,
+    heardAgeSecs: 0,
+    requeuedAfterMs: removedAtMs,
+  });
+
+  await store.markChangeProposalEnqueue(claim, undefined);
+  await store.recordChangeProposalEnqueue(claim, "Refused");
+  assert.deepEqual(await store.recordChangeProposalEnqueue(claim, "Declined"), {
+    wrote: "Row",
+  });
+  const declined = (await store.changeProposal(claim))?.queueing;
+  assert.equal(declined?.unread, false, "a decline leaves no read due");
+  assert.equal(declined?.refused, true, "and keeps the refusal it followed");
+  assert.equal(
+    declined?.requeuedAfterMs,
+    removedAtMs,
+    "an enqueue naming no removal keeps the one recorded",
   );
 });
 

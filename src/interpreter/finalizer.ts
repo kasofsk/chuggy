@@ -663,7 +663,11 @@ export type FinalizationHoldKind =
   | "ProposalMergesExhausted"
   | "ProposalUnaddressed"
   | "PromotionDeclined"
-  | "PromotionWorkflowsRefused";
+  | "PromotionWorkflowsRefused"
+  | "ProposalQueued"
+  | "ProposalQueueChecksFailed"
+  | "ProposalQueueTimedOut"
+  | "ProposalDequeued";
 
 /** Every hold kind, so a suite iterates over them rather than restating them. */
 export const allFinalizationHoldKinds: readonly FinalizationHoldKind[] = [
@@ -687,6 +691,10 @@ export const allFinalizationHoldKinds: readonly FinalizationHoldKind[] = [
   "ProposalUnaddressed",
   "PromotionDeclined",
   "PromotionWorkflowsRefused",
+  "ProposalQueued",
+  "ProposalQueueChecksFailed",
+  "ProposalQueueTimedOut",
+  "ProposalDequeued",
 ];
 
 /**

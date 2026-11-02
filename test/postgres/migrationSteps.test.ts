@@ -73,6 +73,7 @@ import {
 } from "../../src/adapters/postgres/schema/migrations/103-ticket-reads-estimate-one-row.ts";
 import { configurationCanonicalCharsMax } from "../../src/contract/http.ts";
 import { migration081 } from "../../src/adapters/postgres/schema/migrations/081-promotion-declined.ts";
+import { migration106 } from "../../src/adapters/postgres/schema/migrations/106-merge-queue.ts";
 import { migration082 } from "../../src/adapters/postgres/schema/migrations/082-decline-kept-unread.ts";
 import { migration083 } from "../../src/adapters/postgres/schema/migrations/083-attempt-base-ref.ts";
 import { migration084 } from "../../src/adapters/postgres/schema/migrations/084-thread-dispatch.ts";
@@ -3954,4 +3955,60 @@ test("103 plans the three functions a ticket read joins per ticket at one row ea
       );
     },
   );
+});
+
+/** Who may run the landings door 106 recreates, and who owns it. */
+async function landingsDoor106(subject: pg.Pool): Promise<unknown> {
+  const door = "public.read_ticket_landings(text,text,bigint,integer)";
+  return (
+    await subject.query(
+      `SELECT pg_get_userbyid(p.proowner) AS owner,
+              has_function_privilege($2,$1,'EXECUTE') AS api,
+              has_function_privilege($3,$1,'EXECUTE') AS ticket_service,
+              has_function_privilege($4,$1,'EXECUTE') AS scheduler,
+              has_function_privilege($5,$1,'EXECUTE') AS finalizer
+         FROM pg_proc p WHERE p.oid=$1::regprocedure`,
+      [door, apiRole, ticketServiceRole, schedulerRole, finalizerRole],
+    )
+  ).rows;
+}
+
+test("106 keeps every hold that stood, admits the three a queue removal escalates at and not the wait, and gives the landings door back to everyone it was given to", async () => {
+  await migrationDatabase("merge_queue", async (subject) => {
+    await installationBefore(subject, migration106.version);
+    await subject.query(`${deletionPartition}
+      ${renamedFinalization(renamedAttemptPrepared)};
+      UPDATE finalization_request
+         SET hold_kind='PromotionWorkflowsRefused',hold_passes=1,held_since=now()`);
+    const before = await landingsDoor106(subject);
+    assert.ok((await postgresMigrate(subject)).includes(migration106.version));
+    assert.deepEqual(
+      (await subject.query("SELECT hold_kind FROM finalization_request")).rows,
+      [{ hold_kind: "PromotionWorkflowsRefused" }],
+    );
+    for (const kind of [
+      "ProposalQueueChecksFailed",
+      "ProposalQueueTimedOut",
+      "ProposalDequeued",
+    ])
+      await subject.query("UPDATE finalization_request SET hold_kind=$1", [
+        kind,
+      ]);
+    await assert.rejects(
+      subject.query(
+        "UPDATE finalization_request SET hold_kind='ProposalQueued'",
+      ),
+      /finalization_request_hold_kind_is_known/u,
+    );
+    assert.deepEqual(await landingsDoor106(subject), before);
+    assert.deepEqual(before, [
+      {
+        owner: boundaryOwnerRole,
+        api: true,
+        ticket_service: true,
+        scheduler: true,
+        finalizer: false,
+      },
+    ]);
+  });
 });

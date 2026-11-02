@@ -1144,3 +1144,81 @@ test("the API is still denied the finalizer's rows, and the door's owner reads o
     written: false,
   });
 });
+
+/** A merge its base's queue released unspent, followed there as the standing read `said` found it. */
+const queueStoodAs = (said: Readonly<Record<string, unknown>>, more = "") =>
+  [
+    `merge_attempts=1, merge_declines=1, merge_queue_standing=$4::jsonb,
+     merge_heard_at=now()${more}`,
+    JSON.stringify({ enabled: true, open: true, queued: false, ...said }),
+  ] as const;
+
+test("a landing whose pull request stands in its base's merge queue answers AwaitingMerge on the queue, and one the queue refused on the forge's rules", async () => {
+  for (const [label, standing, more, reason] of [
+    ["queue-waits", { queued: true }, "", "Queued"],
+    ["queue-refused", {}, ", merge_queue_refused=true", "Blocked"],
+  ] as const) {
+    const project = await finalizing(label, "PullRequestMerge");
+    const promoted = await promotion(project, label);
+    await proposalOver(
+      project,
+      promoted,
+      createdAs(forgeSaid("Open", { url: pullRequest })),
+      queueStoodAs({ ...standing, head: promoted.candidate }, more),
+    );
+    const [landing] = (await landingsOf(project))?.landings ?? [];
+    assert.equal(landing?.state, "AwaitingMerge", label);
+    assert.deepEqual(landing.wait, {
+      reason,
+      checkedAt: await mergeHeardAt(project),
+    });
+  }
+});
+
+test("a hold escalating a removal from the merge queue answers the forge's reason and who removed it, and no other hold does", async () => {
+  for (const [label, kind, removal] of [
+    [
+      "queue-dequeued",
+      "ProposalDequeued",
+      { reason: "manual", actor: "a-person" },
+    ],
+    [
+      "queue-timed-out",
+      "ProposalQueueTimedOut",
+      { reason: "checks_timed_out" },
+    ],
+    ["queue-unreachable", "ProposalUnavailable", undefined],
+  ] as const) {
+    const project = await finalizing(label, "PullRequestMerge");
+    const promoted = await promotion(project, label);
+    await proposalOver(
+      project,
+      promoted,
+      createdAs(forgeSaid("Open", { url: pullRequest })),
+      queueStoodAs({
+        head: promoted.candidate,
+        enqueuedAtMs: 1,
+        removal: {
+          atMs: 2,
+          kind: "Dequeued",
+          reason: "manual",
+          actor: "a-person",
+          ...removal,
+        },
+      }),
+    );
+    await postgresFinalizer(rig.pool).recordHold({
+      claim: await finalizerClaim(rig, project, finalizerIdentity("owner")),
+      kind,
+    });
+    const [landing] = (await landingsOf(project))?.landings ?? [];
+    assert.equal(landing?.state, "Held", label);
+    assert.deepEqual(
+      landing.hold.removal,
+      removal === undefined
+        ? undefined
+        : { reason: removal.reason, actor: "a-person" },
+      label,
+    );
+  }
+});

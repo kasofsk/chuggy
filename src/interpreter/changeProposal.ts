@@ -59,6 +59,18 @@
  * of this request's own is opened instead. Closing it to open another would
  * lose the review and discussion it carries.
  *
+ * A MERGE A BASE'S QUEUE MUST MAKE IS ASKED OF THE QUEUE. A refusal that is
+ * not a conflict is followed by one reading of the proposal's standing in its
+ * base's merge queue. A base that requires the queue releases the merge it
+ * refused unspent, and the pinned head is put on the queue instead and
+ * followed there: while it is queued it waits, and once it is removed the
+ * forge's reason routes it. A merge concludes as any merge does; a conflict
+ * is the conflict a refused merge settles to; a failed or timed-out check puts
+ * the same head on the queue once more and holds at the second removal; and
+ * anything else, a person among it, holds. A refused enqueue waits on the
+ * forge's rules as a blocked merge does, and no branch on a queue is ever
+ * brought up to date from here.
+ *
  * A HEAD THAT IS THE PINNED HEAD BROUGHT UP TO DATE IS ADOPTED. A read head
  * other than the pinned one is pinned in its place, and merged at, only where
  * git proves it a merge whose first parent is the pinned head, whose second is
@@ -70,6 +82,7 @@
 import { assertNever } from "../domain/assertNever.ts";
 import {
   proposalMergeStateCharsMax,
+  proposalQueueWordCharsMax,
   textCodePointsCount,
 } from "../contract/http.ts";
 import { asBoundedText } from "./boundedText.ts";
@@ -93,6 +106,8 @@ declare const changeProposalRequestIdentityBrand: unique symbol;
 declare const forgeCredentialReferenceBrand: unique symbol;
 declare const proposalNumberBrand: unique symbol;
 declare const proposalMergeStateBrand: unique symbol;
+declare const proposalQueueWordBrand: unique symbol;
+declare const proposalQueueInstantBrand: unique symbol;
 
 export type ForgeBindingId = string & {
   readonly [forgeBindingIdBrand]: true;
@@ -121,6 +136,15 @@ export type ProposalNumber = number & {
 /** The forge's own word for whether a proposal can merge, carried as it said it so a person reads what the forge said. */
 export type ProposalMergeState = string & {
   readonly [proposalMergeStateBrand]: true;
+};
+
+/** One word a forge's merge queue answered in, carried as it said it: why it removed a proposal, or who did. */
+export type ProposalQueueWord = string & {
+  readonly [proposalQueueWordBrand]: true;
+};
+/** The moment a forge's merge queue says one of its events happened, in milliseconds since the epoch. */
+export type ProposalQueueInstant = number & {
+  readonly [proposalQueueInstantBrand]: true;
 };
 
 export const proposalTitleCharsMax = 256;
@@ -189,6 +213,23 @@ export function asProposalMergeState(value: string): ProposalMergeState {
     "proposal merge state",
     proposalMergeStateCharsMax,
   ) as ProposalMergeState;
+}
+
+export function asProposalQueueWord(value: string): ProposalQueueWord {
+  return asBoundedText(
+    value,
+    "proposal queue word",
+    proposalQueueWordCharsMax,
+  ) as ProposalQueueWord;
+}
+
+/** Refuses a moment that is no count of milliseconds since the epoch, which no two events could then be ordered by. */
+export function asProposalQueueInstant(value: number): ProposalQueueInstant {
+  if (!Number.isSafeInteger(value) || value < 0)
+    throw new RangeError(
+      "proposal queue instant: not a moment since the epoch",
+    );
+  return value as ProposalQueueInstant;
 }
 
 export function asChangeProposalRequestIdentity(
@@ -509,6 +550,11 @@ export interface ChangeProposalPort {
   updateBranch(
     request: ChangeProposalMergeRequest,
   ): Promise<ChangeProposalUpdated>;
+  readQueue(
+    request: ChangeProposalMergeRequest,
+  ): Promise<ChangeProposalQueueRead>;
+  enqueue(request: ChangeProposalMergeRequest): Promise<ChangeProposalEnqueued>;
+  dequeue(request: ChangeProposalMergeRequest): Promise<ChangeProposalDequeued>;
 }
 
 /** The composition boundary selects one adapter by the configured forge binding. */
@@ -1007,13 +1053,87 @@ export type ChangeProposalUpdated =
 export const allChangeProposalUpdates: readonly ChangeProposalUpdated["updated"][] =
   ["Accepted", "Refused", "Denied", "Unavailable", "Ambiguous"];
 
-/** What a merge waiting on the forge waits on: its own rules, or a head somebody else moved. */
-export type ChangeProposalMergeWait = "Blocked" | "HeadMoved";
+/**
+ * Why a forge's merge queue removed a proposal, in this tree's words: it
+ * merged it, a required check failed or never concluded on the group it was
+ * built into, it conflicted with an entry ahead of it, or it was dequeued for
+ * anything else, a person among it.
+ */
+export type ChangeProposalQueueRemovalKind =
+  "Merged" | "ChecksFailed" | "ChecksTimedOut" | "Conflict" | "Dequeued";
+
+/** Every removal kind, so a suite iterates rather than restates. */
+export const allChangeProposalQueueRemovalKinds: readonly ChangeProposalQueueRemovalKind[] =
+  ["Merged", "ChecksFailed", "ChecksTimedOut", "Conflict", "Dequeued"];
+
+/** The newest removal a merge queue records of one proposal, with the forge's own reason and whoever made it. */
+export interface ChangeProposalQueueRemoval {
+  readonly atMs: ProposalQueueInstant;
+  readonly kind: ChangeProposalQueueRemovalKind;
+  readonly reason: ProposalQueueWord;
+  readonly actor?: ProposalQueueWord;
+}
+
+/**
+ * What one proposal is to its base's merge queue: whether the base requires
+ * one, whether the proposal is open and queued, the head it stands at, its
+ * entry's state where it has one, and the newest time it was added to the
+ * queue and removed from it.
+ */
+export interface ChangeProposalQueueStanding {
+  readonly enabled: boolean;
+  readonly open: boolean;
+  readonly queued: boolean;
+  readonly head: GitObjectId;
+  readonly entry?: ProposalQueueWord;
+  readonly enqueuedAtMs?: ProposalQueueInstant;
+  readonly removal?: ChangeProposalQueueRemoval;
+}
+
+export type ChangeProposalQueueRead =
+  | {
+      readonly read: "Standing";
+      readonly standing: ChangeProposalQueueStanding;
+    }
+  | { readonly read: "Unavailable" }
+  | { readonly read: "Denied" };
+
+/**
+ * What asking a merge queue to take a proposal at the pinned head came to.
+ * `Refused` is the forge declining for a reason of the proposal's own, which
+ * the standing read after it decides.
+ */
+export type ChangeProposalEnqueued =
+  | { readonly enqueued: "Queued" }
+  | { readonly enqueued: "Refused" }
+  | { readonly enqueued: "Denied" }
+  | { readonly enqueued: "Unavailable" }
+  | { readonly enqueued: "Ambiguous" };
+
+/** Every arm an enqueue answers with, so a suite iterates rather than restates. */
+export const allChangeProposalEnqueues: readonly ChangeProposalEnqueued["enqueued"][] =
+  ["Queued", "Refused", "Denied", "Unavailable", "Ambiguous"];
+
+/** What asking a merge queue to give a proposal up came to, which a standing read rather than this answer settles. */
+export type ChangeProposalDequeued =
+  | { readonly dequeued: "Dequeued" }
+  | { readonly dequeued: "Refused" }
+  | { readonly dequeued: "Denied" }
+  | { readonly dequeued: "Unavailable" }
+  | { readonly dequeued: "Ambiguous" };
+
+/** Every arm a dequeue answers with, so a suite iterates rather than restates. */
+export const allChangeProposalDequeues: readonly ChangeProposalDequeued["dequeued"][] =
+  ["Dequeued", "Refused", "Denied", "Unavailable", "Ambiguous"];
+
+/** What a merge waiting on the forge waits on: its own rules, a head somebody else moved, or its base's merge queue. */
+export type ChangeProposalMergeWait = "Blocked" | "HeadMoved" | "Queued";
 
 /** Every wait, so a suite and a read iterate rather than restate. */
 export const allChangeProposalMergeWaits: readonly ChangeProposalMergeWait[] = [
   "Blocked",
   "HeadMoved",
+  "Queued",
 ];
 
 /**
@@ -1075,13 +1195,38 @@ export const changeProposalUpdatingNone: ChangeProposalUpdating = {
 };
 
 /**
+ * What following one proposal through its base's merge queue has come to: a
+ * refused merge or an enqueue no standing read has seen since, whether the
+ * last enqueue was refused, whether the pinned head has been seen entering the
+ * queue, the last standing read and how many seconds before this pass it was
+ * taken, and the removal a second enqueue answered, once one has.
+ */
+export interface ChangeProposalQueueing {
+  readonly unread: boolean;
+  readonly refused: boolean;
+  readonly entered: boolean;
+  readonly standing?: ChangeProposalQueueStanding;
+  readonly heardAgeSecs?: number;
+  readonly requeuedAfterMs?: ProposalQueueInstant;
+}
+
+/** Nothing asked of a merge queue yet, which is where every proposal starts. */
+export const changeProposalQueueingNone: ChangeProposalQueueing = {
+  unread: false,
+  refused: false,
+  entered: false,
+};
+
+/**
  * What a merge is decided over beside its row: the head pinned for it, which a
- * merge is conditional on and an update expects; how updating it stands; and,
- * where the last reading found another head, what git proved of that head.
+ * merge is conditional on and an update and an enqueue expect; how updating it
+ * and following it through a merge queue stand; and, where the last reading
+ * found another head, what git proved of that head.
  */
 export interface ChangeProposalMergeGathered {
   readonly head: GitObjectId;
   readonly updating: ChangeProposalUpdating;
+  readonly queueing: ChangeProposalQueueing;
   readonly adoption?: {
     readonly head: GitObjectId;
     readonly adoption: HeadAdoption;
@@ -1093,6 +1238,11 @@ export type ChangeProposalMergingNext =
   | { readonly next: "Update" }
   | { readonly next: "Adopt"; readonly head: GitObjectId }
   | { readonly next: "ReadByNumber" }
+  | { readonly next: "ReadQueue" }
+  | {
+      readonly next: "Enqueue";
+      readonly requeuedAfterMs?: ProposalQueueInstant;
+    }
   | { readonly next: "RefuseAttempt" }
   | { readonly next: "Wait"; readonly reason: "Blocked" | "Closed" }
   | { readonly next: "Concluded"; readonly merge: ChangeProposalMergeConcluded }
@@ -1110,7 +1260,11 @@ export type ChangeProposalMergingNext =
         | "HeadMoved"
         | "Closed"
         | "ProposalAbsent"
-        | "EvidenceUnstorable";
+        | "EvidenceUnstorable"
+        | "Queued"
+        | "QueueChecksFailed"
+        | "QueueTimedOut"
+        | "Dequeued";
     };
 
 /** What a merge is offered under, before this boundary has checked it addresses one proposal. */
@@ -1437,6 +1591,172 @@ function proposalMergeMovedNext(
   );
 }
 
+/** A standing read on the cadence the forge is asked again at, and the hold a pass waits at until then. */
+function proposalMergeQueueRereadOr(
+  heardAgeSecs: number,
+  reason: "Blocked" | "HeadMoved" | "Queued",
+): ChangeProposalMergingNext {
+  return proposalMergeRereadDue(heardAgeSecs)
+    ? { next: "ReadQueue" }
+    : { next: "Held", reason };
+}
+
+/**
+ * The removal a standing read routes: the newest, and only where the pinned
+ * head has been seen entering the queue and nobody has added it again since,
+ * so a removal of a head an earlier request queued is no answer about this one.
+ */
+function proposalMergeQueueRemoval(
+  queueing: ChangeProposalQueueing,
+  standing: ChangeProposalQueueStanding,
+): ChangeProposalQueueRemoval | undefined {
+  const removal = standing.removal;
+  if (!queueing.entered || removal === undefined) return undefined;
+  const enqueued = standing.enqueuedAtMs;
+  return enqueued === undefined || removal.atMs > enqueued
+    ? removal
+    : undefined;
+}
+
+/**
+ * What one removal of the pinned head authorizes, and nothing where it is the
+ * removal a second enqueue already answered and that enqueue has not taken. A
+ * failed or timed-out check puts the same head on the queue once more, so the
+ * removal after that one holds; and a head anybody else dequeued is never put
+ * back over them.
+ */
+function proposalMergeQueueRemovedNext(
+  queueing: ChangeProposalQueueing,
+  removal: ChangeProposalQueueRemoval,
+): ChangeProposalMergingNext | undefined {
+  switch (removal.kind) {
+    case "Merged":
+      return { next: "ReadByNumber" };
+    case "Conflict":
+      return proposalMergeConflicted;
+    case "ChecksFailed":
+    case "ChecksTimedOut":
+      if (queueing.requeuedAfterMs === undefined)
+        return { next: "Enqueue", requeuedAfterMs: removal.atMs };
+      if (queueing.requeuedAfterMs === removal.atMs) return undefined;
+      return {
+        next: "Held",
+        reason:
+          removal.kind === "ChecksFailed"
+            ? "QueueChecksFailed"
+            : "QueueTimedOut",
+      };
+    case "Dequeued":
+      return { next: "Held", reason: "Dequeued" };
+    default:
+      return assertNever(removal.kind);
+  }
+}
+
+/**
+ * What a standing read taken since anything else was heard authorizes. A
+ * proposal no longer open is read by its number, which is what concludes a
+ * merge; a queued one waits, whoever queued it; one at another head waits on
+ * whoever moved it; a removal is routed; and otherwise the pinned head is put
+ * on the queue, at once unless the last enqueue was refused, in which case it
+ * is read by its number on the cadence a blocked merge is read again at.
+ */
+function proposalMergeQueueStandingNext(
+  gathered: ChangeProposalMergeGathered,
+  standing: ChangeProposalQueueStanding,
+  heardAgeSecs: number,
+): ChangeProposalMergingNext {
+  const queueing = gathered.queueing;
+  if (!standing.open) return { next: "ReadByNumber" };
+  if (standing.queued)
+    return proposalMergeQueueRereadOr(heardAgeSecs, "Queued");
+  if (standing.head !== gathered.head)
+    return proposalMergeQueueRereadOr(heardAgeSecs, "HeadMoved");
+  const removal = proposalMergeQueueRemoval(queueing, standing);
+  const removed =
+    removal === undefined
+      ? undefined
+      : proposalMergeQueueRemovedNext(queueing, removal);
+  if (removed !== undefined) return removed;
+  return queueing.refused
+    ? proposalMergeRereadOr(heardAgeSecs, "Blocked")
+    : { next: "Enqueue" };
+}
+
+/**
+ * What a reading of an open proposal taken after the standing read authorizes.
+ * A conflict at the pinned head settles the merge; where the last enqueue was
+ * refused and the standing found the pinned head open and not queued, the
+ * reading is that enqueue's reread, so the head is enqueued again unless the
+ * forge's own rules still refuse it, which is read again on the cadence; and
+ * otherwise the standing is read again.
+ */
+function proposalMergeQueueOpenNext(
+  gathered: ChangeProposalMergeGathered,
+  standing: ChangeProposalQueueStanding,
+  read: Extract<ProposalMergeRead, { readonly read: "Open" }>,
+  heardAgeSecs: number,
+): ChangeProposalMergingNext {
+  if (read.head !== gathered.head)
+    return proposalMergeQueueRereadOr(heardAgeSecs, "Blocked");
+  if (read.mergeability === "Conflicting") return proposalMergeConflicted;
+  if (
+    !gathered.queueing.refused ||
+    !standing.open ||
+    standing.queued ||
+    standing.head !== gathered.head
+  )
+    return proposalMergeQueueRereadOr(heardAgeSecs, "Blocked");
+  return read.mergeability === "Blocked"
+    ? proposalMergeRereadOr(heardAgeSecs, "Blocked")
+    : { next: "Enqueue" };
+}
+
+/**
+ * What following a merge through its base's queue authorizes, and nothing
+ * where the merge is no queue's. A refusal or an enqueue nobody has read the
+ * standing after is read first; a base the last standing read found requiring
+ * no queue, and a merge asked since it was read, are merged as any other; and
+ * a reading taken by number since the standing settles the merge where it
+ * found it merged, waits as a closed one does where it found it closed, and is
+ * routed as an open one where it found it open.
+ */
+function proposalMergeQueueNext(
+  request: ChangeProposalRequest,
+  merging: ChangeProposalMerging,
+  gathered: ChangeProposalMergeGathered,
+): ChangeProposalMergingNext | undefined {
+  const queueing = gathered.queueing;
+  if (
+    merging.merging !== "Idle" &&
+    merging.merging !== "Unanswered" &&
+    merging.merging !== "Waiting"
+  )
+    return undefined;
+  if (queueing.unread) return { next: "ReadQueue" };
+  const standing = queueing.standing;
+  if (standing?.enabled !== true || merging.merging === "Unanswered")
+    return undefined;
+  const heardAgeSecs = queueing.heardAgeSecs;
+  if (heardAgeSecs === undefined)
+    throw new RangeError("proposal merging: a standing read was never heard");
+  if (merging.merging === "Idle")
+    return proposalMergeQueueStandingNext(gathered, standing, heardAgeSecs);
+  const read = proposalMergeRead(request, merging.reading);
+  switch (read.read) {
+    case "Settled":
+      return read.next;
+    case "Open":
+      return proposalMergeQueueOpenNext(gathered, standing, read, heardAgeSecs);
+    case "Closed":
+      return proposalMergeRereadOr(heardAgeSecs, "Closed");
+    case "Unsettled":
+      return proposalMergeRereadOr(heardAgeSecs, "Blocked");
+    default:
+      return assertNever(read);
+  }
+}
+
 /**
  * Continues one merging from the state its row is in. A merge whose outcome is
  * unknown can only be read back; only a state with nothing in flight authorizes
@@ -1450,6 +1770,8 @@ export function changeProposalMergeNext(
 ): ChangeProposalMergingNext {
   proposalMergingBoundsAsserted(bounds);
   proposalMergeGatheredAsserted(gathered);
+  const queued = proposalMergeQueueNext(request, merging, gathered);
+  if (queued !== undefined) return queued;
   switch (merging.merging) {
     case "Unasked":
       return { next: "Merge" };

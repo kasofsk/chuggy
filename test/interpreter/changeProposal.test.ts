@@ -12,11 +12,14 @@ import {
   asProposalMarker,
   asProposalMergeState,
   asProposalNumber,
+  asProposalQueueInstant,
+  asProposalQueueWord,
   asProposalRemoteIdentity,
   changeProposalAdoptionNext,
   changeProposalMergeNext,
   changeProposalMergeRequest,
   changeProposalPublicationNext,
+  changeProposalQueueingNone,
   changeProposalUpdatingNone,
   changeProposalRequest,
   proposalBodyCharsMax,
@@ -35,6 +38,9 @@ import {
   type ChangeProposalMerging,
   type ChangeProposalPort,
   type ChangeProposalPublication,
+  type ChangeProposalQueueing,
+  type ChangeProposalQueueRemovalKind,
+  type ChangeProposalQueueStanding,
   type ChangeProposalReconciliationStored,
   type ProposalNumber,
 } from "../../src/interpreter/changeProposal.ts";
@@ -537,6 +543,18 @@ test("the same contract selects adapters with unrelated provider vocabularies", 
         calls.push(`${vocabulary}:update-branch`);
         return Promise.resolve({ updated: "Accepted" });
       },
+      readQueue: () => {
+        calls.push(`${vocabulary}:read-queue`);
+        return Promise.resolve({ read: "Unavailable" });
+      },
+      enqueue: () => {
+        calls.push(`${vocabulary}:enqueue`);
+        return Promise.resolve({ enqueued: "Queued" });
+      },
+      dequeue: () => {
+        calls.push(`${vocabulary}:dequeue`);
+        return Promise.resolve({ dequeued: "Dequeued" });
+      },
     };
   }
   const adapters = new Map([
@@ -778,6 +796,7 @@ const mergeBounds = { mergesMax: 2, readingsMax: 2, updatesMax: 2 };
 const pinned: ChangeProposalMergeGathered = {
   head: request.head.commit,
   updating: changeProposalUpdatingNone,
+  queueing: changeProposalQueueingNone,
 };
 
 /** A reading that found the proposal open and the forge ready to merge it. */
@@ -1438,7 +1457,7 @@ test("a head git proved the pinned one brought up to date is adopted and then me
     changeProposalMergeNext(
       request,
       waiting(1, 0, updatedReading({ mergeability: "Mergeable" })),
-      { head: updatedHead, updating: changeProposalUpdatingNone },
+      { ...pinned, head: updatedHead },
       mergeBounds,
     ),
     { next: "Merge" },
@@ -1454,7 +1473,7 @@ test("a head git proved the pinned one brought up to date is adopted and then me
           mergeability: "Behind",
         }),
       }),
-      { head: updatedHead, updating: changeProposalUpdatingNone },
+      { ...pinned, head: updatedHead },
       mergeBounds,
     ),
     { next: "Update" },
@@ -1660,5 +1679,420 @@ test("an adopted proposal is judged by where it stands and never by the words it
     ),
     { next: "Refused", contradiction: "MarkerMismatch", evidence: adopted },
     "a create's answer is still held to this request's marker",
+  );
+});
+
+/** When the pinned head was last added to its base's merge queue, and when it was removed after that, twice. */
+const enqueuedAtMs = asProposalQueueInstant(Date.parse("2026-11-02T10:00:00Z"));
+const removedAt = asProposalQueueInstant(Date.parse("2026-11-02T10:05:30Z"));
+const removedAgainAt = asProposalQueueInstant(
+  Date.parse("2026-11-02T10:12:00Z"),
+);
+
+/** A standing read on a base requiring a merge queue, the proposal open at the pinned head and not queued. */
+function standing(
+  overrides: Partial<ChangeProposalQueueStanding> = {},
+): ChangeProposalQueueStanding {
+  return {
+    enabled: true,
+    open: true,
+    queued: false,
+    head: request.head.commit,
+    ...overrides,
+  };
+}
+
+/** A standing read finding the pinned head removed from the queue, for the reason and by the login a case names. */
+function removedBy(
+  kind: ChangeProposalQueueRemovalKind,
+  reason: string,
+  atMs = removedAt,
+): ChangeProposalQueueStanding {
+  return standing({
+    enqueuedAtMs,
+    removal: {
+      atMs,
+      kind,
+      reason: asProposalQueueWord(reason),
+      actor: asProposalQueueWord("chuggy-portal"),
+    },
+  });
+}
+
+/** The pinned head, followed through its base's merge queue as far as a case names, the standing read just taken. */
+function queueing(
+  read: ChangeProposalQueueStanding | undefined,
+  overrides: Partial<ChangeProposalQueueing> = {},
+): ChangeProposalMergeGathered {
+  return {
+    ...pinned,
+    queueing: {
+      ...changeProposalQueueingNone,
+      ...(read === undefined ? {} : { standing: read, heardAgeSecs: 0 }),
+      ...overrides,
+    },
+  };
+}
+
+/** A merge the queue released unspent, which is where every standing read on a queue branch leaves the row. */
+const queuedIdle: ChangeProposalMerging = { merging: "Idle", merges: 0 };
+
+test("a refusal no standing read has seen is read in its base's merge queue before anything else", () => {
+  for (const merging of [unheard(1, 0), queuedIdle, waiting(0, 0)])
+    assert.deepEqual(
+      changeProposalMergeNext(
+        request,
+        merging,
+        queueing(undefined, { unread: true }),
+        mergeBounds,
+      ),
+      { next: "ReadQueue" },
+      merging.merging,
+    );
+});
+
+test("a base the standing read found requiring no queue is merged as it always was", () => {
+  const unqueued = queueing(standing({ enabled: false }));
+  assert.deepEqual(
+    changeProposalMergeNext(request, unheard(1, 0), unqueued, mergeBounds),
+    { next: "ReadByNumber" },
+  );
+  assert.deepEqual(
+    changeProposalMergeNext(
+      request,
+      { merging: "Idle", merges: 1 },
+      unqueued,
+      mergeBounds,
+    ),
+    { next: "Merge" },
+  );
+});
+
+test("a base requiring a queue is enqueued at the pinned head, and spends no merge however many were refused", () => {
+  for (const merges of [0, mergeBounds.mergesMax])
+    assert.deepEqual(
+      changeProposalMergeNext(
+        request,
+        { merging: "Idle", merges },
+        queueing(standing()),
+        mergeBounds,
+      ),
+      { next: "Enqueue" },
+      String(merges),
+    );
+});
+
+test("a branch on a queue is never brought up to date, whatever a reading by number says of it", () => {
+  for (const heardAgeSecs of [0, proposalMergeRereadSecs])
+    assert.notEqual(
+      changeProposalMergeNext(
+        request,
+        waiting(0, heardAgeSecs, behindReading),
+        queueing(standing(), { heardAgeSecs }),
+        mergeBounds,
+      ).next,
+      "Update",
+    );
+  assert.deepEqual(
+    changeProposalMergeNext(
+      request,
+      waiting(0, proposalMergeRereadSecs, behindReading),
+      queueing(standing(), { heardAgeSecs: proposalMergeRereadSecs }),
+      mergeBounds,
+    ),
+    { next: "ReadQueue" },
+  );
+});
+
+test("a refused enqueue waits as a blocked merge does, and is read by number once the cadence has passed", () => {
+  assert.deepEqual(
+    changeProposalMergeNext(
+      request,
+      queuedIdle,
+      queueing(standing(), { refused: true }),
+      mergeBounds,
+    ),
+    { next: "Held", reason: "Blocked" },
+  );
+  assert.deepEqual(
+    changeProposalMergeNext(
+      request,
+      queuedIdle,
+      queueing(standing(), {
+        refused: true,
+        heardAgeSecs: proposalMergeRereadSecs,
+      }),
+      mergeBounds,
+    ),
+    { next: "ReadByNumber" },
+  );
+});
+
+test("a reading after a refused enqueue that finds the proposal conflicting settles the merge to the conflict", () => {
+  const conflicting = {
+    reconciled: "Unmerged",
+    evidence: evidence({
+      mergeability: "Conflicting",
+      mergeState: asProposalMergeState("dirty"),
+    }),
+  } as const;
+  for (const refused of [true, false])
+    assert.deepEqual(
+      changeProposalMergeNext(
+        request,
+        waiting(0, 0, conflicting),
+        queueing(standing(), { refused }),
+        mergeBounds,
+      ),
+      {
+        next: "Concluded",
+        merge: { merged: "NotMergeable", reason: "Conflict" },
+      },
+      String(refused),
+    );
+});
+
+test("a reading after a refused enqueue enqueues again where the forge's rules allow it, and is read again where they still refuse it", () => {
+  for (const reading of [mergeableReading, behindReading])
+    assert.deepEqual(
+      changeProposalMergeNext(
+        request,
+        waiting(0, 0, reading),
+        queueing(standing(), { refused: true }),
+        mergeBounds,
+      ),
+      { next: "Enqueue" },
+      String(reading.evidence.mergeability),
+    );
+  assert.deepEqual(
+    changeProposalMergeNext(
+      request,
+      waiting(0, 0),
+      queueing(standing(), { refused: true }),
+      mergeBounds,
+    ),
+    { next: "Held", reason: "Blocked" },
+  );
+  assert.deepEqual(
+    changeProposalMergeNext(
+      request,
+      waiting(0, proposalMergeRereadSecs),
+      queueing(standing(), {
+        refused: true,
+        heardAgeSecs: proposalMergeRereadSecs,
+      }),
+      mergeBounds,
+    ),
+    { next: "ReadByNumber" },
+  );
+});
+
+test("a reading of an open proposal no refused enqueue stands behind reads the standing again", () => {
+  for (const [read, refused] of [
+    [standing(), false],
+    [standing({ queued: true }), true],
+    [standing({ open: false }), true],
+  ] as const)
+    assert.deepEqual(
+      changeProposalMergeNext(
+        request,
+        waiting(0, proposalMergeRereadSecs, mergeableReading),
+        queueing(read, { refused, heardAgeSecs: proposalMergeRereadSecs }),
+        mergeBounds,
+      ),
+      { next: "ReadQueue" },
+      JSON.stringify({ read, refused }),
+    );
+});
+
+test("after a refused enqueue the standing decides: queued waits in the queue, and another head waits on whoever moved it", () => {
+  const moved = asGitObjectId("e".repeat(40));
+  for (const [read, reason] of [
+    [standing({ queued: true }), "Queued"],
+    [standing({ queued: true, head: moved }), "Queued"],
+    [standing({ head: moved }), "HeadMoved"],
+  ] as const) {
+    assert.deepEqual(
+      changeProposalMergeNext(
+        request,
+        queuedIdle,
+        queueing(read, { refused: true }),
+        mergeBounds,
+      ),
+      { next: "Held", reason },
+    );
+    assert.deepEqual(
+      changeProposalMergeNext(
+        request,
+        queuedIdle,
+        queueing(read, {
+          refused: true,
+          heardAgeSecs: proposalMergeRereadSecs,
+        }),
+        mergeBounds,
+      ),
+      { next: "ReadQueue" },
+      reason,
+    );
+  }
+});
+
+test("a removal the queue merged, and a proposal no longer open, are read by number, which concludes a merge", () => {
+  for (const read of [removedBy("Merged", "merged"), standing({ open: false })])
+    assert.deepEqual(
+      changeProposalMergeNext(
+        request,
+        queuedIdle,
+        queueing(read, { entered: true }),
+        mergeBounds,
+      ),
+      { next: "ReadByNumber" },
+    );
+  const mergeCommit = asGitObjectId("d".repeat(40));
+  assert.deepEqual(
+    changeProposalMergeNext(
+      request,
+      waiting(0, 0, {
+        reconciled: "Accepted",
+        evidence: evidence({ status: "Merged", mergeCommit }),
+      }),
+      queueing(removedBy("Merged", "merged"), { entered: true }),
+      mergeBounds,
+    ),
+    { next: "Concluded", merge: { merged: "Merged", mergeCommit } },
+  );
+});
+
+test("a removal for a conflict with an entry ahead is the conflict a refused merge settles to", () => {
+  assert.deepEqual(
+    changeProposalMergeNext(
+      request,
+      queuedIdle,
+      queueing(removedBy("Conflict", "merge_conflict"), { entered: true }),
+      mergeBounds,
+    ),
+    {
+      next: "Concluded",
+      merge: { merged: "NotMergeable", reason: "Conflict" },
+    },
+  );
+});
+
+test("a failed or timed-out check enqueues the same head once more, and the removal after that holds", () => {
+  for (const [kind, reason, held] of [
+    ["ChecksFailed", "failed_checks", "QueueChecksFailed"],
+    ["ChecksTimedOut", "checks_timed_out", "QueueTimedOut"],
+  ] as const) {
+    assert.deepEqual(
+      changeProposalMergeNext(
+        request,
+        queuedIdle,
+        queueing(removedBy(kind, reason), { entered: true }),
+        mergeBounds,
+      ),
+      { next: "Enqueue", requeuedAfterMs: removedAt },
+      kind,
+    );
+    assert.deepEqual(
+      changeProposalMergeNext(
+        request,
+        queuedIdle,
+        queueing(removedBy(kind, reason, removedAgainAt), {
+          entered: true,
+          requeuedAfterMs: removedAt,
+        }),
+        mergeBounds,
+      ),
+      { next: "Held", reason: held },
+      kind,
+    );
+    assert.deepEqual(
+      changeProposalMergeNext(
+        request,
+        queuedIdle,
+        queueing(removedBy(kind, reason), {
+          entered: true,
+          refused: true,
+          requeuedAfterMs: removedAt,
+        }),
+        mergeBounds,
+      ),
+      { next: "Held", reason: "Blocked" },
+      "the removal a second enqueue answered is that enqueue still waiting to be taken",
+    );
+  }
+});
+
+test("a dequeue by anybody, and a reason the queue never named before, hold and never enqueue over them", () => {
+  for (const reason of ["manual", "a_reason_nobody_has_seen"])
+    for (const requeuedAfterMs of [undefined, removedAt])
+      assert.deepEqual(
+        changeProposalMergeNext(
+          request,
+          queuedIdle,
+          queueing(removedBy("Dequeued", reason, removedAgainAt), {
+            entered: true,
+            ...(requeuedAfterMs === undefined ? {} : { requeuedAfterMs }),
+          }),
+          mergeBounds,
+        ),
+        { next: "Held", reason: "Dequeued" },
+        reason,
+      );
+});
+
+test("only a removal newer than the last enqueue of a head seen entering the queue is routed", () => {
+  const older = standing({
+    enqueuedAtMs: removedAgainAt,
+    removal: {
+      atMs: removedAt,
+      kind: "Dequeued",
+      reason: asProposalQueueWord("manual"),
+    },
+  });
+  assert.deepEqual(
+    changeProposalMergeNext(
+      request,
+      queuedIdle,
+      queueing(older, { entered: true }),
+      mergeBounds,
+    ),
+    { next: "Enqueue" },
+    "a removal the queue added the head back after is past",
+  );
+  assert.deepEqual(
+    changeProposalMergeNext(
+      request,
+      queuedIdle,
+      queueing(removedBy("Dequeued", "manual")),
+      mergeBounds,
+    ),
+    { next: "Enqueue" },
+    "a removal of a head an earlier request queued says nothing of this one",
+  );
+});
+
+test("a reading by number finding the proposal still open goes back to the queue on the cadence", () => {
+  const open = { reconciled: "Unmerged", evidence: evidence() } as const;
+  assert.deepEqual(
+    changeProposalMergeNext(
+      request,
+      waiting(0, 0, open),
+      queueing(removedBy("Merged", "merged"), { entered: true }),
+      mergeBounds,
+    ),
+    { next: "Held", reason: "Blocked" },
+  );
+  assert.deepEqual(
+    changeProposalMergeNext(
+      request,
+      waiting(0, proposalMergeRereadSecs, open),
+      queueing(removedBy("Merged", "merged"), {
+        entered: true,
+        heardAgeSecs: proposalMergeRereadSecs,
+      }),
+      mergeBounds,
+    ),
+    { next: "ReadQueue" },
   );
 });

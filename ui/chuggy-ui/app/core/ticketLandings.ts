@@ -208,14 +208,19 @@ function ticketLandingProposal(
 
 /**
  * What a hold is labelled, a pull request the forge last read as closed being
- * called that.
+ * called that, and one a merge queue removed naming the forge's reason and who
+ * removed it.
  */
 function ticketLandingHoldLabel(read: TicketLandingRead): string | undefined {
   if (read.state !== "Held") return undefined;
-  return read.hold.kind === "ProposalAbsent" &&
-    read.proposal?.status === "Closed"
-    ? changeProposalStatusLabel(read.proposal.status)
-    : finalizationUnavailableKindLabel(read.hold.kind);
+  if (read.hold.kind === "ProposalAbsent" && read.proposal?.status === "Closed")
+    return changeProposalStatusLabel(read.proposal.status);
+  const label = finalizationUnavailableKindLabel(read.hold.kind);
+  const removal = read.hold.removal;
+  if (removal === undefined) return label;
+  return removal.actor === undefined
+    ? `${label}: ${removal.reason}`
+    : `${label}: ${removal.reason} by ${removal.actor}`;
 }
 
 function ticketLandingDetail(read: TicketLandingRead): TicketLandingDetail {

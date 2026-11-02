@@ -253,6 +253,9 @@ export const runOutcomeLabelCharsMax = 64;
 /** The longest word a forge names where a pull request's merge stands with. */
 export const proposalMergeStateCharsMax = 64;
 
+/** The longest word a forge's merge queue answers in: a removal's reason, or the login that removed it. */
+export const proposalQueueWordCharsMax = 64;
+
 /** The longest model identity a usage row names. */
 export const runModelCharsMax = 128;
 

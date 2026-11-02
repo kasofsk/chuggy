@@ -26,6 +26,8 @@ import {
   asProposalMarker,
   asProposalMergeState,
   asProposalNumber,
+  asProposalQueueInstant,
+  asProposalQueueWord,
   asProposalRemoteIdentity,
   proposalMergeRereadSecs,
   type ChangeProposalCreated,
@@ -43,7 +45,11 @@ import {
   type ChangeProposalReconciliationStored,
   type ChangeProposalRequest,
   type ChangeProposalUpdated,
+  type ChangeProposalEnqueued,
+  type ChangeProposalQueueRead,
+  type ChangeProposalQueueStanding,
   type OpenedChangeProposalPublication,
+  type ProposalQueueInstant,
 } from "../../src/interpreter/changeProposal.ts";
 import type {
   ChangeProposalAsked,
@@ -298,6 +304,12 @@ interface FinalizerRecorder
   proposalUpdateUnread: boolean;
   /** Whether it is this proposal's turn among those behind on its base, which a case sets to stand for its siblings. */
   proposalUpdateTurn: boolean;
+  /** How following the row through its base's merge queue stands, which is the whole of what its queue columns keep. */
+  queueUnread: boolean;
+  queueRefused: boolean;
+  queueEntered: boolean;
+  queueStanding?: ChangeProposalQueueStanding;
+  queueRequeuedAfter?: ProposalQueueInstant | undefined;
   /** The proposal an earlier request of the ticket proved on the head and base asked about, and every place it was asked about. */
   ticketProposal?: ChangeProposalIdentity;
   readonly ticketPlaces: Pick<ChangeProposalRequest, "head" | "base">[];
@@ -401,6 +413,75 @@ function recordingProposals(
     ...recordingProposalMerges(store),
     ...recordingProposalUpdates(store),
     ...recordingProposalAdoptions(store),
+    ...recordingProposalQueue(store),
+  };
+}
+
+/**
+ * The merge queue half of that row: a refused merge in flight makes a standing
+ * read due, a standing read finding the base requiring a queue releases that
+ * merge unspent, every standing read clears a reading kept with nothing in
+ * flight, an enqueue is marked before it is asked, and its answer enters the
+ * head, refuses it or releases it.
+ */
+function recordingProposalQueue(
+  store: () => FinalizerRecorder,
+): Pick<
+  FinalizerProposalStore,
+  | "markChangeProposalQueueUnread"
+  | "recordChangeProposalQueue"
+  | "markChangeProposalEnqueue"
+  | "recordChangeProposalEnqueue"
+> {
+  return {
+    markChangeProposalQueueUnread: () => {
+      const own = store();
+      if (!proposalMergeReleasable(own))
+        return Promise.resolve({ wrote: "Nothing" });
+      own.queueUnread = true;
+      return Promise.resolve({ wrote: "Row" });
+    },
+    recordChangeProposalQueue: (_claim, standing) => {
+      const own = store();
+      if (own.proposalMerge !== undefined)
+        return Promise.resolve({ wrote: "Nothing" });
+      const inFlight = proposalMergeReleasable(own);
+      if (standing.enabled && inFlight) own.proposalMergeDeclines += 1;
+      if (standing.enabled || !inFlight) own.proposalMergeReading = undefined;
+      own.queueEntered ||=
+        standing.queued &&
+        standing.head ===
+          (own.proposalMergeHead ?? own.askedProposal?.head.commit);
+      own.queueStanding = standing;
+      own.queueUnread = false;
+      own.proposalMergeHeardAgeSecs = 0;
+      return Promise.resolve({ wrote: "Row" });
+    },
+    markChangeProposalEnqueue: (_claim, requeuedAfterMs) => {
+      const own = store();
+      if (
+        own.proposalMerge !== undefined ||
+        own.proposalMergeAttempts !== proposalMergeReleasesOf(own) ||
+        own.queueStanding === undefined ||
+        own.queueUnread
+      )
+        return Promise.resolve({ wrote: "Nothing" });
+      own.queueUnread = true;
+      own.queueRequeuedAfter = requeuedAfterMs ?? own.queueRequeuedAfter;
+      return Promise.resolve({ wrote: "Row" });
+    },
+    recordChangeProposalEnqueue: (_claim, write) => {
+      const own = store();
+      if (own.proposalMerge !== undefined || !own.queueUnread)
+        return Promise.resolve({ wrote: "Nothing" });
+      own.queueEntered ||= write === "Queued";
+      if (write !== "Declined") {
+        own.queueRefused = write === "Refused";
+        own.proposalMergeHeardAgeSecs = 0;
+      }
+      own.queueUnread = write !== "Declined";
+      return Promise.resolve({ wrote: "Row" });
+    },
   };
 }
 
@@ -457,6 +538,20 @@ function recordedProposalOf(
           updates: own.proposalUpdates - own.proposalUpdateDeclines,
           unread: own.proposalUpdateUnread,
           turn: own.proposalUpdateTurn,
+        },
+        queueing: {
+          unread: own.queueUnread,
+          refused: own.queueRefused,
+          entered: own.queueEntered,
+          ...(own.queueStanding === undefined
+            ? {}
+            : {
+                standing: own.queueStanding,
+                heardAgeSecs: own.proposalMergeHeardAgeSecs,
+              }),
+          ...(own.queueRequeuedAfter === undefined
+            ? {}
+            : { requeuedAfterMs: own.queueRequeuedAfter }),
         },
       };
 }
@@ -520,7 +615,7 @@ function recordingProposalMerges(
       const admitted =
         record.result.records === "Merge"
           ? inFlight
-          : inFlight || proposalMergeAwaited(own);
+          : inFlight || proposalMergeAwaited(own) || proposalQueueFollowed(own);
       if (own.dropResults === true || !admitted)
         return Promise.resolve({ wrote: "Nothing" });
       if (record.result.records === "Merge")
@@ -604,6 +699,15 @@ function proposalMergeAwaited(own: FinalizerRecorder): boolean {
     own.proposalMergeAttempts > 0 &&
     own.proposalMergeAttempts === proposalMergeReleasesOf(own) &&
     own.proposalMergeReading !== undefined
+  );
+}
+
+/** Whether the row's merge is followed through its base's merge queue, nothing in flight beside it. */
+function proposalQueueFollowed(own: FinalizerRecorder): boolean {
+  return (
+    own.proposalMerge === undefined &&
+    own.proposalMergeAttempts === proposalMergeReleasesOf(own) &&
+    own.queueStanding !== undefined
   );
 }
 
@@ -751,8 +855,14 @@ function recordingProposalCounters(): Pick<
   | "proposalUpdateDeclines"
   | "proposalUpdateUnread"
   | "proposalUpdateTurn"
+  | "queueUnread"
+  | "queueRefused"
+  | "queueEntered"
 > {
   return {
+    queueUnread: false,
+    queueRefused: false,
+    queueEntered: false,
     proposalAttempts: 0,
     proposalRefusals: 0,
     proposalDeclines: 0,
@@ -1103,6 +1213,13 @@ interface ForgeRecorder extends ChangeProposalPort {
   numberEvidence: Partial<ChangeProposalEvidence>;
   /** A proposal a reading by number finds whole, which is how a case stands in one no create of its own opened. */
   numberFound?: ChangeProposalEvidence;
+  readonly queueReads: ChangeProposalMergeRequest[];
+  readonly enqueues: ChangeProposalMergeRequest[];
+  readonly dequeues: ChangeProposalMergeRequest[];
+  /** What a standing read answers, and what it finds over the proposed head on a base that requires no queue. */
+  queueRead: ChangeProposalQueueRead["read"];
+  queueStanding: Partial<ChangeProposalQueueStanding>;
+  enqueued: ChangeProposalEnqueued;
 }
 
 /** The evidence the forge answers a request with, which is that request's own fields. */
@@ -1129,6 +1246,71 @@ function forgeEvidence(
 }
 
 /**
+ * The half of that forge about the proposal's branch: its update, which reads
+ * whether the store counted it first, and its base's merge queue, which
+ * requires none until a case says otherwise.
+ */
+function recordingForgeBranch(
+  forge: () => ForgeRecorder,
+  store: FinalizerRecorder,
+): Pick<
+  ForgeRecorder,
+  | "updateBranch"
+  | "readQueue"
+  | "enqueue"
+  | "dequeue"
+  | "queueReads"
+  | "enqueues"
+  | "dequeues"
+  | "queueRead"
+  | "queueStanding"
+  | "enqueued"
+> {
+  return {
+    queueReads: [],
+    enqueues: [],
+    dequeues: [],
+    queueRead: "Standing",
+    queueStanding: {},
+    enqueued: { enqueued: "Queued" },
+    updateBranch: (request) => {
+      const own = forge();
+      own.updates.push(request);
+      own.updatedBeforeUpdate.push(store.proposalUpdateUnread);
+      return Promise.resolve(own.updated);
+    },
+    readQueue: (request) => {
+      const own = forge();
+      own.queueReads.push(request);
+      return Promise.resolve(
+        own.queueRead === "Standing"
+          ? {
+              read: own.queueRead,
+              standing: {
+                enabled: false,
+                open: true,
+                queued: false,
+                head: request.headCommit,
+                ...own.queueStanding,
+              },
+            }
+          : { read: own.queueRead },
+      );
+    },
+    enqueue: (request) => {
+      const own = forge();
+      own.enqueues.push(request);
+      return Promise.resolve(own.enqueued);
+    },
+    dequeue: (request) => {
+      const own = forge();
+      own.dequeues.push(request);
+      return Promise.resolve({ dequeued: "Dequeued" });
+    },
+  };
+}
+
+/**
  * A forge that records what it was asked for, and reads the store as it is
  * called: the row saying a create may have happened must already be there when
  * `create` runs, and this is what sees whether it was.
@@ -1150,6 +1332,7 @@ function recordingForge(store: FinalizerRecorder): ForgeRecorder {
     merged: { merged: "Merged", mergeCommit: asGitObjectId(commitOf("e")) },
     numberRead: "Found",
     numberEvidence: {},
+    ...recordingForgeBranch(() => own, store),
     create: (request) => {
       own.creates.push(request);
       own.openedBeforeCreate.push(store.opened.length > 0);
@@ -1195,11 +1378,6 @@ function recordingForge(store: FinalizerRecorder): ForgeRecorder {
       own.mergedBeforeMerge.push(store.proposalMergeAttempts > 0);
       return Promise.resolve(own.merged);
     },
-    updateBranch: (request) => {
-      own.updates.push(request);
-      own.updatedBeforeUpdate.push(store.proposalUpdateUnread);
-      return Promise.resolve(own.updated);
-    },
   };
   return own;
 }
@@ -1239,6 +1417,16 @@ function serviceOf(
 }
 
 /** One pass over the fixtures a case installed. */
+/** Every request the forge's merge queue and merge have been sent so far. */
+function queueRequests(forge: ForgeRecorder): number {
+  return (
+    forge.merges.length +
+    forge.queueReads.length +
+    forge.enqueues.length +
+    forge.dequeues.length
+  );
+}
+
 function passOver(service: FinalizerService): ReturnType<typeof finalizerPass> {
   return finalizerPass(service, asFinalizerOwnerId("owner-run"), epoch);
 }
@@ -2312,12 +2500,16 @@ function blockedCase(bounds: Partial<typeof finalizerDefaults> = {}): {
   return { store, forge, git, service, emitted };
 }
 
-/** Drives a blocked case from nothing to the merge waiting on the forge: the create, the merge, its reading, and the wait. */
+/**
+ * Drives a blocked case from nothing to the merge waiting on the forge: the
+ * create, the merge, the standing read finding no queue, its reading, and the
+ * wait.
+ */
 async function blockedWaiting(
   service: FinalizerService,
   store: FinalizerRecorder,
 ): Promise<void> {
-  for (let pass = 0; pass < 4; pass += 1) await passOver(service);
+  for (let pass = 0; pass < 5; pass += 1) await passOver(service);
   assert.equal(
     proposalMergingOf(store).merging,
     "Waiting",
@@ -4133,4 +4325,211 @@ test("a request that moves behind a held one records no kind of its own", async 
   assert.equal(report.preparations, 1);
   assert.deepEqual(store.holds, ["RepositoryUnbound", undefined]);
   assert.deepEqual(store.submitted, [], "neither request is the dwell");
+});
+
+/**
+ * A merging case on a base that requires a merge queue, whose forge refuses a
+ * merge there as GitHub does, over the views a case may move the lifecycle of.
+ */
+function queueCase(bounds: Partial<typeof finalizerDefaults> = {}): {
+  readonly views: FinalizationView[];
+  readonly store: FinalizerRecorder;
+  readonly forge: ForgeRecorder;
+  readonly service: FinalizerService;
+  readonly emitted: FinalizerHoldReason[];
+} {
+  const emitted: FinalizerHoldReason[] = [];
+  const views = [proposedView("request-one", "PullRequestMerge")];
+  const store = recordingStore(views);
+  const forge = recordingForge(store);
+  forge.created = "Created";
+  forge.merged = { merged: "NotMergeable", reason: "Unknown" };
+  forge.queueStanding = { enabled: true };
+  const service = {
+    ...mergingService(store, forge, bounds),
+    metrics: finalizerTelemetry({
+      ...silentFinalizerMetrics,
+      holding: (reason) => emitted.push(reason),
+    }),
+  };
+  return { views, store, forge, service, emitted };
+}
+
+/**
+ * Drives a queue case from nothing to its proposal queued: the create, the
+ * refused merge, the standing read finding a queue, the enqueue, and the
+ * standing read finding the proposal in it.
+ */
+async function queuedWaiting(
+  service: FinalizerService,
+  forge: ForgeRecorder,
+): Promise<void> {
+  for (let pass = 0; pass < 4; pass += 1) await passOver(service);
+  forge.queueStanding = { enabled: true, queued: true };
+  await passOver(service);
+}
+
+test("a merge its base's queue must make is enqueued at the pinned head, waits there, and lands on the queue's merge with no merge spent", async () => {
+  const { store, forge, service, emitted } = queueCase();
+  await queuedWaiting(service, forge);
+
+  assert.equal(forge.merges.length, 1);
+  assert.equal(forge.queueReads.length, 2);
+  assert.deepEqual(
+    forge.enqueues.map((enqueue) => enqueue.headCommit),
+    [asGitObjectId(commitOf("c"))],
+  );
+  assert.equal(
+    store.proposalMergeAttempts - store.proposalMergeDeclines,
+    0,
+    "the refusal the queue explained spent no merge",
+  );
+  assert.equal(store.queueEntered, true);
+
+  const held = await passOver(service);
+  assert.equal(held.proposals, 0);
+  assert.equal(emitted.at(-1), "ProposalQueued");
+  assert.ok(
+    store.holds.every((kind) => kind === undefined),
+    "a queued proposal is recorded at no hold a resume could clear",
+  );
+
+  forge.queueStanding = {
+    enabled: true,
+    open: false,
+    enqueuedAtMs: asProposalQueueInstant(Date.parse("2026-11-02T10:00:00Z")),
+    removal: {
+      atMs: asProposalQueueInstant(Date.parse("2026-11-02T10:04:00Z")),
+      kind: "Merged",
+      reason: asProposalQueueWord("merged"),
+    },
+  };
+  forge.numberEvidence = {
+    status: "Merged",
+    mergeCommit: asGitObjectId(commitOf("e")),
+  };
+  rereadDue(store);
+  await passOver(service);
+  await passOver(service);
+  const proved = await passOver(service);
+
+  assert.equal(proved.conclusions, 1);
+  assert.deepEqual(store.concluded, [{ outcome: "FinalizationSucceeded" }]);
+  assert.equal(forge.merges.length, 1, "nothing was merged but by the queue");
+  assert.equal(forge.updates.length, 0, "a queued branch is never updated");
+});
+
+test("an enqueue refused while the proposal's own check runs waits as a blocked merge does, and is read and asked again on the cadence", async () => {
+  const { store, forge, service, emitted } = queueCase();
+  forge.enqueued = { enqueued: "Refused" };
+  for (let pass = 0; pass < 6; pass += 1) await passOver(service);
+
+  assert.equal(forge.enqueues.length, 1);
+  assert.equal(emitted.at(-1), "ProposalMergeBlocked");
+  await passOver(service);
+  assert.equal(forge.enqueues.length, 1, "no enqueue inside the cadence");
+
+  forge.enqueued = { enqueued: "Queued" };
+  forge.numberEvidence = { mergeability: "Mergeable" };
+  const numbered = forge.numbered.length;
+  rereadDue(store);
+  await passOver(service);
+  assert.equal(forge.numbered.length, numbered + 1, "the reread is by number");
+  assert.equal(forge.enqueues.length, 1);
+  await passOver(service);
+  assert.equal(forge.enqueues.length, 2);
+  assert.equal(
+    store.proposalMergeAttempts - store.proposalMergeDeclines,
+    0,
+    "neither the refused merge nor the refused enqueue spent a merge",
+  );
+});
+
+test("an enqueue refused for a proposal that conflicts with its base is read by number and fails as a conflict", async () => {
+  const { store, forge, service } = queueCase();
+  forge.enqueued = { enqueued: "Refused" };
+  for (let pass = 0; pass < 6; pass += 1) await passOver(service);
+  assert.equal(forge.enqueues.length, 1);
+
+  forge.numberEvidence = { mergeability: "Conflicting" };
+  rereadDue(store);
+  for (let pass = 0; pass < 3; pass += 1) await passOver(service);
+
+  assert.equal(forge.enqueues.length, 1, "a conflict is never enqueued again");
+  assert.equal(store.attempts[0]?.failureKind, "MergeConflict");
+  assert.equal(forge.merges.length, 1);
+});
+
+test("a person's dequeue escalates with the hold the console reads, and nothing is put back on the queue over them", async () => {
+  const { store, forge, service } = queueCase({ holdPassesMax: 2 });
+  await queuedWaiting(service, forge);
+  forge.queueStanding = {
+    enabled: true,
+    enqueuedAtMs: asProposalQueueInstant(Date.parse("2026-11-02T10:00:00Z")),
+    removal: {
+      atMs: asProposalQueueInstant(Date.parse("2026-11-02T10:05:30Z")),
+      kind: "Dequeued",
+      reason: asProposalQueueWord("manual"),
+      actor: asProposalQueueWord("a-person"),
+    },
+  };
+  rereadDue(store);
+  for (let pass = 0; pass < 3; pass += 1) await passOver(service);
+
+  assert.deepEqual(store.concluded, [
+    { outcome: "FinalizationResultUnavailable", kind: "ProposalDequeued" },
+  ]);
+  assert.equal(forge.enqueues.length, 1);
+  assert.equal(
+    forge.dequeues.length,
+    0,
+    "a proposal the last read found out of the queue is not asked to leave it",
+  );
+  assert.equal(store.queueStanding?.removal?.actor, "a-person");
+});
+
+test("a finalization escalating while its proposal is queued asks the queue to give it up before it is escalated", async () => {
+  const { store, forge, service } = queueCase({ holdPassesMax: 2 });
+  await queuedWaiting(service, forge);
+  forge.queueRead = "Unavailable";
+  rereadDue(store);
+  await passOver(service);
+  assert.equal(forge.dequeues.length, 0);
+  const asked = queueRequests(forge);
+  const escalated = await passOver(service);
+
+  assert.deepEqual(store.concluded, [
+    { outcome: "FinalizationResultUnavailable", kind: "ProposalUnavailable" },
+  ]);
+  assert.equal(forge.dequeues.length, 1);
+  assert.equal(
+    escalated.proposals,
+    queueRequests(forge) - asked,
+    "the dequeue and the read after it are counted with the pass's proposals",
+  );
+  assert.equal(
+    forge.dequeues[0]?.proposal.remote,
+    forge.enqueues[0]?.proposal.remote,
+  );
+});
+
+test("a project closing while its proposal is queued gives it up, reads where it stands, and aborts", async () => {
+  const { views, store, forge, service } = queueCase();
+  await queuedWaiting(service, forge);
+  const [view] = views;
+  if (view === undefined) throw new Error("the case holds one view");
+  views[0] = { ...view, lifecycle: "Deleting" };
+  forge.queueStanding = { enabled: true };
+  const asked = queueRequests(forge);
+  const aborted = await passOver(service);
+
+  assert.equal(forge.dequeues.length, 1);
+  assert.equal(aborted.proposals, queueRequests(forge) - asked);
+  assert.equal(aborted.proposals, 2, "an abort's dequeue and read are counted");
+  assert.equal(
+    store.queueStanding?.queued,
+    false,
+    "the read after it is what is written",
+  );
+  assert.equal(store.attempts.at(-1)?.outcome, "Failed");
 });

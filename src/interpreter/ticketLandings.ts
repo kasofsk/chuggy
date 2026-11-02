@@ -56,6 +56,7 @@ import type {
   ChangeProposalStatus,
   ChangeProposalUnmergeableSettled,
   ProposalMergeState,
+  ProposalQueueWord,
 } from "./changeProposal.ts";
 import type {
   ConflictSummary,
@@ -77,12 +78,23 @@ import type { PublicInstant } from "./publicResource.ts";
 /** How a concluded request's journal event says it concluded. */
 export type TicketLandingConclusion = "Succeeded" | "NeedsWork" | "Unavailable";
 
-/** The hold a request was last recorded at. */
+/** Who removed a request's pull request from its base's merge queue, and the forge's own reason for it. */
+export interface TicketLandingQueueRemoval {
+  readonly reason: ProposalQueueWord;
+  readonly actor?: ProposalQueueWord;
+}
+
+/** The hold a request was last recorded at, and the removal it escalates where it is a queue's. */
 export interface TicketLandingHold {
   readonly kind: FinalizationUnavailableKind;
   readonly passes: number;
   readonly since: PublicInstant;
+  readonly removal?: TicketLandingQueueRemoval;
 }
+
+/** The holds a removal from a merge queue is escalated at, which are the ones that carry it. */
+export const ticketLandingQueueRemovalHolds: readonly FinalizationUnavailableKind[] =
+  ["ProposalQueueChecksFailed", "ProposalQueueTimedOut", "ProposalDequeued"];
 
 /** One request's newest attempt, as its row holds it. */
 export interface TicketLandingAttempt {

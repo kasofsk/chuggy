@@ -67,15 +67,17 @@ export type BlockedReason = (typeof blockedReasons)[number];
  * reading one all name the same kinds, and `test/contract/rosters.test.ts`
  * holds it against the interpreter's `allFinalizationHoldKinds` as
  * `test/postgres/migration.test.ts` holds it against the column that mirrors
- * it. The five left out stay holds, each for its own reason:
+ * it. The six left out stay holds, each for its own reason:
  * `ApprovalDeclined` is a human's answer, which a resume would put to the same
  * human again; `ProposalRefused` is that answer or a pin the rows contradict,
  * and neither is reachability; `ContradictoryEvidence` is durable rows
- * disagreeing, which is a defect for telemetry and not a desk item; and
+ * disagreeing, which is a defect for telemetry and not a desk item;
  * `ProposalMergeBlocked` and `ProposalHeadMoved` are merges waiting on the
  * forge, read again until somebody merges or closes the proposal, and a wait
  * cannot be told apart from one no reviewer has reached yet, so neither may
- * park a ticket that is merely waiting on a human there.
+ * park a ticket that is merely waiting on a human there; and `ProposalQueued`
+ * is a merge waiting its turn in its base's merge queue, which a long queue
+ * makes long without making it stuck.
  */
 export const finalizationUnavailableKinds = [
   "RepositoryUnbound",
@@ -93,6 +95,9 @@ export const finalizationUnavailableKinds = [
   "ProposalMergesExhausted",
   "PromotionDeclined",
   "PromotionWorkflowsRefused",
+  "ProposalQueueChecksFailed",
+  "ProposalQueueTimedOut",
+  "ProposalDequeued",
 ] as const;
 export type FinalizationUnavailableKind =
   (typeof finalizationUnavailableKinds)[number];
@@ -567,7 +572,11 @@ export const changeProposalStatuses = [
 ] as const;
 
 /** What a merge waiting on the forge waits on, restating `allChangeProposalMergeWaits`. */
-export const changeProposalMergeWaits = ["Blocked", "HeadMoved"] as const;
+export const changeProposalMergeWaits = [
+  "Blocked",
+  "HeadMoved",
+  "Queued",
+] as const;
 
 /** What a forge last said of merging a proposal, restating `allChangeProposalMergeabilities`. */
 export const changeProposalMergeabilities = [

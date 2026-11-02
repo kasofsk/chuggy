@@ -2,8 +2,17 @@
  * The adapter behind `ChangeProposalPort` for GitHub: the one request that asks
  * for a pull request, the one that reads back the proposal carrying a request's
  * marker, the one that reads a proposal by its number, the one that asks for
- * that proposal to be merged, and the one that asks for its branch to be
- * brought up to date with its base.
+ * that proposal to be merged, the one that asks for its branch to be brought up
+ * to date with its base, and the three that read where it stands in its base's
+ * merge queue, put it on that queue and take it off.
+ *
+ * THE MERGE QUEUE IS ASKED THROUGH GRAPHQL, WHICH REFUSES IN A SUCCESS. Only
+ * GraphQL says whether a base requires the queue and where a proposal stands
+ * in it, and it answers every refusal with a success carrying `errors`, so an
+ * answer is read only where it carries none. A refusal is told apart by the
+ * type the forge gives it and never by its message: a type naming the caller
+ * is a denial, one naming the proposal is a refusal the next standing read
+ * decides, and anything else is unsettled.
  *
  * AN UPDATE IS ANSWERED BEFORE IT IS MADE. This forge accepts one and merges
  * the base into the head in its own time, so its acceptance says nothing of
@@ -98,10 +107,19 @@ import {
   type ChangeProposalUpdated,
   asProposalMergeState,
   asProposalNumber,
+  asProposalQueueInstant,
+  asProposalQueueWord,
   asProposalRemoteIdentity,
   proposalBodyCharsMax,
   proposalTitleCharsMax,
   type ChangeProposalCreated,
+  type ChangeProposalDequeued,
+  type ChangeProposalEnqueued,
+  type ChangeProposalQueueRead,
+  type ChangeProposalQueueRemoval,
+  type ChangeProposalQueueRemovalKind,
+  type ChangeProposalQueueStanding,
+  type ProposalQueueInstant,
   type ChangeProposalCredentialRequest,
   type ChangeProposalEvidence,
   type ChangeProposalMerged,
@@ -988,6 +1006,358 @@ async function githubChangeProposalsUpdate(
   }
 }
 
+/**
+ * The newest queue events one standing read asks for. The newest removal is
+ * among them wherever no enqueue is newer than it, which is the only removal
+ * a standing read routes.
+ */
+const githubQueueEventsPerRead = 2;
+
+/** The standing of one proposal in its base's merge queue, and its newest queue events. */
+const githubQueueStandingQuery = `query($owner: String!, $name: String!, $number: Int!) {
+  repository(owner: $owner, name: $name) {
+    pullRequest(number: $number) {
+      state isMergeQueueEnabled isInMergeQueue headRefOid
+      mergeQueueEntry { state }
+      timelineItems(last: ${String(githubQueueEventsPerRead)}, itemTypes: [ADDED_TO_MERGE_QUEUE_EVENT, REMOVED_FROM_MERGE_QUEUE_EVENT]) {
+        nodes {
+          __typename
+          ... on AddedToMergeQueueEvent { createdAt }
+          ... on RemovedFromMergeQueueEvent { createdAt reason actor { login } }
+        }
+      }
+    }
+  }
+}`;
+
+/** Puts one proposal on its base's merge queue, conditional on the head it is pinned at. */
+const githubEnqueueMutation = `mutation($id: ID!, $head: GitObjectID!) {
+  enqueuePullRequest(input: {pullRequestId: $id, expectedHeadOid: $head}) {
+    mergeQueueEntry { state }
+  }
+}`;
+
+/** Takes one proposal off its base's merge queue. */
+const githubDequeueMutation = `mutation($id: ID!) {
+  dequeuePullRequest(input: {id: $id}) { mergeQueueEntry { state } }
+}`;
+
+/** The state this forge names an open pull request by. */
+const githubOpenPullRequestState = "OPEN";
+
+/** The typename a removal from the queue is answered under. */
+const githubQueueRemovedType = "RemovedFromMergeQueueEvent";
+
+/** The removal reasons this forge names, each beside the kind it is; every other reason is a dequeue. */
+const githubQueueRemovalKinds: ReadonlyMap<
+  string,
+  ChangeProposalQueueRemovalKind
+> = new Map([
+  ["merged", "Merged"],
+  ["failed_checks", "ChecksFailed"],
+  ["checks_timed_out", "ChecksTimedOut"],
+  ["merge_conflict", "Conflict"],
+]);
+
+/** The refusal types that name the caller rather than the proposal, and the one that names the proposal. */
+const githubGraphqlDeniedTypes: readonly string[] = ["FORBIDDEN", "NOT_FOUND"];
+const githubGraphqlRefusedType = "UNPROCESSABLE";
+const githubGraphqlBusyType = "RATE_LIMITED";
+
+/** What every GraphQL answer carries: data, or the errors that refused it. */
+const githubGraphqlAnswerSchema = z.object({
+  data: z.unknown().optional(),
+  errors: z.array(z.object({ type: z.string().optional() })).optional(),
+});
+
+/** What one GraphQL request came to, a refusal read off the types its errors name. */
+type GithubGraphqlAnswer =
+  | { readonly answer: "Data"; readonly data: unknown }
+  | { readonly answer: "Refused" }
+  | Exclude<GithubAnswer, { readonly answer: "Read" }>;
+
+/** What a refusal's error types name: the caller, the forge's allowance, the proposal, or nothing this tree reads. */
+function githubChangeProposalsGraphqlRefusalOf(
+  types: readonly (string | undefined)[],
+): GithubGraphqlAnswer {
+  if (
+    types.some(
+      (type) => type !== undefined && githubGraphqlDeniedTypes.includes(type),
+    )
+  )
+    return { answer: "Denied" };
+  if (types.includes(githubGraphqlBusyType)) return { answer: "Busy" };
+  return types.length > 0 &&
+    types.every((type) => type === githubGraphqlRefusedType)
+    ? { answer: "Refused" }
+    : { answer: "Unsettled", status: undefined };
+}
+
+/** Makes the one bounded GraphQL request this act is, a success carrying errors being the refusal it is. */
+async function githubChangeProposalsGraphql(
+  own: GithubChangeProposalsState,
+  credential: ForgeCredential,
+  query: string,
+  variables: Readonly<Record<string, string | number>>,
+): Promise<GithubGraphqlAnswer> {
+  const answer = await githubChangeProposalsSend(
+    own,
+    new URL("/graphql", `https://${own.apiHost}`),
+    credential,
+    { method: "POST", body: JSON.stringify({ query, variables }) },
+  );
+  if (answer.answer !== "Read") return answer;
+  const parsed = githubGraphqlAnswerSchema.safeParse(answer.body);
+  if (!parsed.success) return { answer: "Unsettled", status: undefined };
+  const errors = parsed.data.errors ?? [];
+  return errors.length === 0
+    ? { answer: "Data", data: parsed.data.data }
+    : githubChangeProposalsGraphqlRefusalOf(errors.map((error) => error.type));
+}
+
+/** The fields of a queue event this tree reads, either kind. */
+const githubQueueEventSchema = z
+  .object({
+    __typename: z.string(),
+    createdAt: z.string(),
+    reason: z.string().nullable().optional(),
+    actor: z.object({ login: z.string() }).nullable().optional(),
+  })
+  .nullable();
+
+type GithubQueueEvent = NonNullable<z.infer<typeof githubQueueEventSchema>>;
+
+/** The fields of a standing read this tree reads. */
+const githubQueueStandingSchema = z.object({
+  repository: z
+    .object({
+      pullRequest: z
+        .object({
+          state: z.string(),
+          isMergeQueueEnabled: z.boolean(),
+          isInMergeQueue: z.boolean(),
+          headRefOid: z.string(),
+          mergeQueueEntry: z.object({ state: z.string() }).nullable(),
+          timelineItems: z.object({ nodes: z.array(githubQueueEventSchema) }),
+        })
+        .nullable(),
+    })
+    .nullable(),
+});
+
+/** The newest of one kind of queue event, and nothing where the read carries none. */
+function githubChangeProposalsNewestEvent(
+  events: readonly GithubQueueEvent[],
+  removed: boolean,
+): GithubQueueEvent | undefined {
+  let newest: GithubQueueEvent | undefined;
+  for (const event of events) {
+    if ((event.__typename === githubQueueRemovedType) !== removed) continue;
+    if (
+      newest === undefined ||
+      Date.parse(event.createdAt) > Date.parse(newest.createdAt)
+    )
+      newest = event;
+  }
+  return newest;
+}
+
+/** The moment a queue event names, and nothing where no calendar reads it. */
+function githubChangeProposalsInstantOf(
+  createdAt: string,
+): ProposalQueueInstant | undefined {
+  return githubChangeProposalsBranded(
+    Date.parse(createdAt),
+    asProposalQueueInstant,
+  );
+}
+
+/** One removal as this tree words it, and nothing where a field of it is past what a row holds. */
+function githubChangeProposalsRemovalOf(
+  event: GithubQueueEvent,
+): ChangeProposalQueueRemoval | undefined {
+  const atMs = githubChangeProposalsInstantOf(event.createdAt);
+  const said = event.reason ?? undefined;
+  const reason =
+    said === undefined
+      ? undefined
+      : githubChangeProposalsBranded(said, asProposalQueueWord);
+  const login = event.actor?.login;
+  const actor =
+    login === undefined
+      ? undefined
+      : githubChangeProposalsBranded(login, asProposalQueueWord);
+  if (
+    atMs === undefined ||
+    reason === undefined ||
+    (login !== undefined && actor === undefined)
+  )
+    return undefined;
+  return {
+    atMs,
+    kind: githubQueueRemovalKinds.get(said ?? "") ?? "Dequeued",
+    reason,
+    ...(actor === undefined ? {} : { actor }),
+  };
+}
+
+/** What one standing read says, and nothing where any field of it is past what a row holds. */
+function githubChangeProposalsStandingOf(
+  data: unknown,
+): ChangeProposalQueueStanding | undefined {
+  const parsed = githubQueueStandingSchema.safeParse(data);
+  const pull = parsed.success ? parsed.data.repository?.pullRequest : undefined;
+  if (pull === undefined || pull === null) return undefined;
+  const events = pull.timelineItems.nodes.filter((event) => event !== null);
+  const added = githubChangeProposalsNewestEvent(events, false);
+  const removed = githubChangeProposalsNewestEvent(events, true);
+  const head = githubChangeProposalsCommitOf(pull.headRefOid);
+  const entryState = pull.mergeQueueEntry?.state;
+  const entry =
+    entryState === undefined
+      ? undefined
+      : githubChangeProposalsBranded(entryState, asProposalQueueWord);
+  const enqueuedAtMs =
+    added === undefined
+      ? undefined
+      : githubChangeProposalsInstantOf(added.createdAt);
+  const removal =
+    removed === undefined ? undefined : githubChangeProposalsRemovalOf(removed);
+  if (
+    head === undefined ||
+    (entryState !== undefined && entry === undefined) ||
+    (added !== undefined && enqueuedAtMs === undefined) ||
+    (removed !== undefined && removal === undefined)
+  )
+    return undefined;
+  return {
+    enabled: pull.isMergeQueueEnabled,
+    open: pull.state === githubOpenPullRequestState,
+    queued: pull.isInMergeQueue,
+    head,
+    ...(entry === undefined ? {} : { entry }),
+    ...(enqueuedAtMs === undefined ? {} : { enqueuedAtMs }),
+    ...(removal === undefined ? {} : { removal }),
+  };
+}
+
+/** Reads where the one proposal a number addresses stands in its base's merge queue. */
+async function githubChangeProposalsReadQueue(
+  own: GithubChangeProposalsState,
+  request: ChangeProposalMergeRequest,
+): Promise<ChangeProposalQueueRead> {
+  const address = githubChangeProposalsNumberedAddress(own, request);
+  if (address === undefined) return { read: "Denied" };
+  const authorized = await githubChangeProposalsCredentialOf(own, request);
+  if (authorized.authorized === "Refused") return { read: authorized.refusal };
+  const answer = await githubChangeProposalsGraphql(
+    own,
+    authorized.credential,
+    githubQueueStandingQuery,
+    {
+      owner: address.owner,
+      name: address.name,
+      number: request.proposal.number,
+    },
+  );
+  if (answer.answer === "Denied") return { read: "Denied" };
+  if (answer.answer !== "Data") return { read: "Unavailable" };
+  const standing = githubChangeProposalsStandingOf(answer.data);
+  return standing === undefined
+    ? { read: "Unavailable" }
+    : { read: "Standing", standing };
+}
+
+/** The data a queue mutation answers, its entry present where the forge acted. */
+function githubChangeProposalsQueueEntryOf(
+  data: unknown,
+  field: "enqueuePullRequest" | "dequeuePullRequest",
+): boolean {
+  const parsed = z
+    .object({
+      [field]: z
+        .object({ mergeQueueEntry: z.object({ state: z.string() }).nullable() })
+        .nullable(),
+    })
+    .safeParse(data);
+  const entry = parsed.success ? parsed.data[field]?.mergeQueueEntry : null;
+  return entry !== null && entry !== undefined;
+}
+
+/** Puts one proposal on its base's merge queue at the head the caller pinned, so a push nobody here knows of refuses it. */
+async function githubChangeProposalsEnqueue(
+  own: GithubChangeProposalsState,
+  request: ChangeProposalMergeRequest,
+): Promise<ChangeProposalEnqueued> {
+  const address = githubChangeProposalsNumberedAddress(own, request);
+  if (address === undefined) return { enqueued: "Denied" };
+  const authorized = await githubChangeProposalsCredentialOf(own, request);
+  if (authorized.authorized === "Refused")
+    return { enqueued: authorized.refusal };
+  const answer = await githubChangeProposalsGraphql(
+    own,
+    authorized.credential,
+    githubEnqueueMutation,
+    { id: request.proposal.remote, head: request.headCommit },
+  );
+  switch (answer.answer) {
+    case "Data":
+      return githubChangeProposalsQueueEntryOf(
+        answer.data,
+        "enqueuePullRequest",
+      )
+        ? { enqueued: "Queued" }
+        : { enqueued: "Ambiguous" };
+    case "Refused":
+      return { enqueued: "Refused" };
+    case "Denied":
+      return { enqueued: "Denied" };
+    case "Busy":
+      return { enqueued: "Unavailable" };
+    case "Unsettled":
+      return { enqueued: "Ambiguous" };
+    default:
+      return assertNever(answer);
+  }
+}
+
+/** Takes one proposal off its base's merge queue, which the standing read after it rather than this answer settles. */
+async function githubChangeProposalsDequeue(
+  own: GithubChangeProposalsState,
+  request: ChangeProposalMergeRequest,
+): Promise<ChangeProposalDequeued> {
+  const address = githubChangeProposalsNumberedAddress(own, request);
+  if (address === undefined) return { dequeued: "Denied" };
+  const authorized = await githubChangeProposalsCredentialOf(own, request);
+  if (authorized.authorized === "Refused")
+    return { dequeued: authorized.refusal };
+  const answer = await githubChangeProposalsGraphql(
+    own,
+    authorized.credential,
+    githubDequeueMutation,
+    { id: request.proposal.remote },
+  );
+  switch (answer.answer) {
+    case "Data":
+      return githubChangeProposalsQueueEntryOf(
+        answer.data,
+        "dequeuePullRequest",
+      )
+        ? { dequeued: "Dequeued" }
+        : { dequeued: "Ambiguous" };
+    case "Refused":
+      return { dequeued: "Refused" };
+    case "Denied":
+      return { dequeued: "Denied" };
+    case "Busy":
+      return { dequeued: "Unavailable" };
+    case "Unsettled":
+      return { dequeued: "Ambiguous" };
+    default:
+      return assertNever(answer);
+  }
+}
+
 /** The adapter over its options, refusing at construction what it could never serve. */
 export function githubChangeProposals(
   options: GithubChangeProposalsOptions,
@@ -1019,5 +1389,8 @@ export function githubChangeProposals(
     readByNumber: (request) => githubChangeProposalsReadNumbered(own, request),
     merge: (request) => githubChangeProposalsMerge(own, request),
     updateBranch: (request) => githubChangeProposalsUpdate(own, request),
+    readQueue: (request) => githubChangeProposalsReadQueue(own, request),
+    enqueue: (request) => githubChangeProposalsEnqueue(own, request),
+    dequeue: (request) => githubChangeProposalsDequeue(own, request),
   };
 }
