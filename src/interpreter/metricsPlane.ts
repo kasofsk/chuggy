@@ -1,6 +1,7 @@
 /**
- * What every run cost and how long it took, as the metric families a scrape is
- * answered with, totalled from the rows already stored.
+ * What every run cost and how long it took, and what happened to every ticket,
+ * as the metric families a scrape is answered with, totalled from the rows
+ * already stored.
  *
  * NOTHING IS KEPT BETWEEN SCRAPES. Each one reads the rows afresh, so a counter
  * is a total over the rows that exist: it only rises while rows only accrue,
@@ -36,12 +37,51 @@ import {
   type MetricsLabels,
   type MetricsValueSample,
 } from "./metricsFamily.ts";
+import {
+  escalationTags,
+  type TicketEvent,
+} from "../domain/generated/modelTypes.ts";
 import { oidcPrincipalSubject } from "./principal.ts";
 
 /** The bounds, in seconds, an attempt's and a session turn's duration is counted under. */
 export const metricsPlaneDurationBoundsSecs: readonly number[] = [
   30, 60, 120, 300, 600, 900, 1200, 1800, 2700, 3600, 5400, 7200,
 ];
+
+/** The bounds, in seconds, a landed ticket's lead and run times are counted under. */
+export const metricsPlaneTicketTimeBoundsSecs: readonly number[] = [
+  900, 1800, 3600, 7200, 14400, 28800, 86400, 172800, 345600, 604800, 1209600,
+];
+
+/** The bounds a landed ticket's reworks are counted under, the first of which counts the tickets landed without one. */
+export const metricsPlaneTicketReworkBounds: readonly number[] = [
+  0, 1, 2, 3, 4, 5, 7, 10,
+];
+
+/** The bounds, in US dollars, an ended ticket's cost is counted under. */
+export const metricsPlaneTicketCostBoundsUsd: readonly number[] = [
+  0.5, 1, 2, 5, 10, 20, 50, 100, 200,
+];
+
+/** The bounds, in seconds, an ended escalation's duration is counted under. */
+export const metricsPlaneEscalationBoundsSecs: readonly number[] = [
+  60, 300, 900, 1800, 3600, 7200, 14400, 28800, 86400, 172800, 604800,
+];
+
+/** The events that leave a ticket escalated, each the arm of `evolve` that parks it on a wall. */
+export const metricsPlaneEscalatingEvents = [
+  "TicketWorkProcessFailed",
+  "TicketWorkExecutionUnavailable",
+  "TicketEvaluationFailureEscalated",
+  "TicketEvaluationBlocked",
+  "TicketFinalizationUnavailable",
+] as const satisfies readonly TicketEvent["type"][];
+
+/** What a ticket's stored escalation may be: one of the model's, or none. */
+export const metricsPlaneTicketEscalations = [
+  "NoEscalation",
+  ...escalationTags,
+] as const;
 
 /** The project every member's own session is counted under: it begins `@`, which no project may, and is no member's partition. */
 export const metricsPlaneMemberProject = "@member";
@@ -103,11 +143,42 @@ export interface MetricsPlaneTurnRow {
   readonly createdSecs: number;
 }
 
-export interface MetricsPlaneTicketRow {
+/** Where a ticket is and whose it is, the owner the member who first wrote its draft, as its label already. */
+export interface MetricsPlaneTicketOwner {
   readonly tenant: string;
   readonly project: string;
+  readonly owner: string;
+}
+
+export interface MetricsPlaneTicketRow extends MetricsPlaneTicketOwner {
   readonly phase: string;
+  readonly escalation: (typeof metricsPlaneTicketEscalations)[number];
   readonly tickets: number;
+}
+
+/** Journal entries of one event and stage, and when the first was committed. */
+export interface MetricsPlaneTicketEventRow extends MetricsPlaneTicketOwner {
+  readonly event: TicketEvent["type"];
+  readonly stage: string;
+  readonly entries: number;
+  readonly createdSecs: number;
+}
+
+/** Tickets observed under one label set: how many fell in each bucket of the family's bounds and the one past them, their sum in whole units, and when the first was. */
+export interface MetricsPlaneTicketObservedRow extends MetricsPlaneTicketOwner {
+  readonly buckets: readonly number[];
+  readonly sum: number;
+  readonly createdSecs: number;
+}
+
+export interface MetricsPlaneTicketCostRow extends MetricsPlaneTicketObservedRow {
+  readonly end: "Done" | "Revoked";
+}
+
+/** Ended escalations of one escalating event, by the authority kind of the operation that ended them, or empty where none did. */
+export interface MetricsPlaneEscalationRow extends MetricsPlaneTicketObservedRow {
+  readonly event: (typeof metricsPlaneEscalatingEvents)[number];
+  readonly by: string;
 }
 
 export interface MetricsPlaneRows {
@@ -116,6 +187,12 @@ export interface MetricsPlaneRows {
   readonly models: readonly MetricsPlaneModelRow[];
   readonly turns: readonly MetricsPlaneTurnRow[];
   readonly tickets: readonly MetricsPlaneTicketRow[];
+  readonly ticketEvents: readonly MetricsPlaneTicketEventRow[];
+  readonly leadTimes: readonly MetricsPlaneTicketObservedRow[];
+  readonly runTimes: readonly MetricsPlaneTicketObservedRow[];
+  readonly reworks: readonly MetricsPlaneTicketObservedRow[];
+  readonly costs: readonly MetricsPlaneTicketCostRow[];
+  readonly escalations: readonly MetricsPlaneEscalationRow[];
 }
 
 export type MetricsPlaneRead =
@@ -189,27 +266,30 @@ function metricsPlaneValues(
   }));
 }
 
-/** Bucket counts, one per bound and one past them, then the duration sum last. */
+/** Bucket counts, one per bound of `bounds` and one past them, then the sum last. */
 function metricsPlaneBucketed(
+  bounds: readonly number[],
   buckets: readonly number[],
   sum: number,
 ): readonly number[] {
-  if (buckets.length !== metricsPlaneDurationBoundsSecs.length + 1)
+  if (buckets.length !== bounds.length + 1)
     throw new RangeError(
       `metrics plane: ${String(buckets.length)} buckets are not one per bound and one past them`,
     );
   return [...buckets, sum];
 }
 
-/** Bucketed sums as histogram samples, the duration sum read in milliseconds and served in seconds. */
+/** Bucketed sums as histogram samples over `bounds`, the sum read in whole units and served divided by `scale`. */
 function metricsPlaneHistogram(
   sums: readonly MetricsPlaneSum[],
+  bounds: readonly number[],
+  scale: number,
 ): readonly MetricsHistogramSample[] {
-  const buckets = metricsPlaneDurationBoundsSecs.length + 1;
+  const buckets = bounds.length + 1;
   return sums.map(({ labels, values, createdSecs }) => ({
     labels,
     bucketCounts: values.slice(0, buckets),
-    sum: (values[buckets] ?? 0) / 1_000,
+    sum: (values[buckets] ?? 0) / scale,
     createdSecs,
   }));
 }
@@ -247,7 +327,12 @@ function metricsPlaneAttemptFamilies(
   const durations = metricsPlaneSummed(
     rows,
     (row) => metricsPlaneTaskLabels(row.task),
-    (row) => metricsPlaneBucketed(row.buckets, row.durationMs),
+    (row) =>
+      metricsPlaneBucketed(
+        metricsPlaneDurationBoundsSecs,
+        row.buckets,
+        row.durationMs,
+      ),
   );
   return [
     {
@@ -261,7 +346,11 @@ function metricsPlaneAttemptFamilies(
       name: "chuggy_attempt_duration_seconds",
       help: "How long each ended execution attempt ran, from a runner's claim where one claimed it, else its opening, to its ending.",
       bounds: metricsPlaneDurationBoundsSecs,
-      samples: metricsPlaneHistogram(durations),
+      samples: metricsPlaneHistogram(
+        durations,
+        metricsPlaneDurationBoundsSecs,
+        1_000,
+      ),
     },
   ];
 }
@@ -388,7 +477,12 @@ function metricsPlaneTurnFamilies(
       row.buckets === undefined ? [] : [{ ...row, buckets: row.buckets }],
     ),
     session,
-    (row) => metricsPlaneBucketed(row.buckets, row.durationMs),
+    (row) =>
+      metricsPlaneBucketed(
+        metricsPlaneDurationBoundsSecs,
+        row.buckets,
+        row.durationMs,
+      ),
   );
   return [
     {
@@ -414,9 +508,19 @@ function metricsPlaneTurnFamilies(
       name: "chuggy_session_turn_duration_seconds",
       help: "How long each measured session turn took.",
       bounds: metricsPlaneDurationBoundsSecs,
-      samples: metricsPlaneHistogram(durations),
+      samples: metricsPlaneHistogram(
+        durations,
+        metricsPlaneDurationBoundsSecs,
+        1_000,
+      ),
     },
   ];
+}
+
+function metricsPlaneTicketOwnerLabels(
+  row: MetricsPlaneTicketOwner,
+): MetricsLabels {
+  return { tenant: row.tenant, project: row.project, owner: row.owner };
 }
 
 function metricsPlaneTicketFamily(
@@ -425,12 +529,103 @@ function metricsPlaneTicketFamily(
   return {
     type: "gauge",
     name: "chuggy_tickets",
-    help: "The project's tickets in each phase.",
+    help: "The project's tickets in each phase and escalation, by whose they are.",
     samples: rows.map((row) => ({
-      labels: { tenant: row.tenant, project: row.project, phase: row.phase },
+      labels: {
+        ...metricsPlaneTicketOwnerLabels(row),
+        phase: row.phase,
+        escalation: row.escalation,
+      },
       value: row.tickets,
     })),
   };
+}
+
+/** One ticket histogram over `bounds`, its observations summed per label set and their sum divided by `scale`. */
+function metricsPlaneTicketHistogram<Row extends MetricsPlaneTicketObservedRow>(
+  name: string,
+  help: string,
+  rows: readonly Row[],
+  labelled: (row: Row) => MetricsLabels,
+  bounds: readonly number[],
+  scale: number,
+): MetricsFamily {
+  const sums = metricsPlaneSummed(rows, labelled, (row) =>
+    metricsPlaneBucketed(bounds, row.buckets, row.sum),
+  );
+  return {
+    type: "histogram",
+    name,
+    help,
+    bounds,
+    samples: metricsPlaneHistogram(sums, bounds, scale),
+  };
+}
+
+function metricsPlaneTicketHistoryFamilies(
+  rows: MetricsPlaneRows,
+): readonly MetricsFamily[] {
+  const events = metricsPlaneSummed(
+    rows.ticketEvents,
+    (row) => ({
+      ...metricsPlaneTicketOwnerLabels(row),
+      event: row.event,
+      stage: row.stage,
+    }),
+    (row) => [row.entries],
+  );
+  return [
+    {
+      type: "counter",
+      name: "chuggy_ticket_events_total",
+      help: "Ticket journal entries, by event and the evaluation stage a report names.",
+      samples: metricsPlaneValues(events, 0),
+    },
+    metricsPlaneTicketHistogram(
+      "chuggy_ticket_lead_time_seconds",
+      "How long each landed ticket took from its release to landing.",
+      rows.leadTimes,
+      metricsPlaneTicketOwnerLabels,
+      metricsPlaneTicketTimeBoundsSecs,
+      1_000,
+    ),
+    metricsPlaneTicketHistogram(
+      "chuggy_ticket_run_time_seconds",
+      "How long each landed ticket took from its first dispatch to landing.",
+      rows.runTimes,
+      metricsPlaneTicketOwnerLabels,
+      metricsPlaneTicketTimeBoundsSecs,
+      1_000,
+    ),
+    metricsPlaneTicketHistogram(
+      "chuggy_ticket_reworks",
+      "How many times each landed ticket was sent back to work by a result.",
+      rows.reworks,
+      metricsPlaneTicketOwnerLabels,
+      metricsPlaneTicketReworkBounds,
+      1,
+    ),
+    metricsPlaneTicketHistogram(
+      "chuggy_ticket_cost_usd",
+      "What the runs of each ended ticket's executions cost, in US dollars, once its end has settled.",
+      rows.costs,
+      (row) => ({ ...metricsPlaneTicketOwnerLabels(row), end: row.end }),
+      metricsPlaneTicketCostBoundsUsd,
+      1_000_000,
+    ),
+    metricsPlaneTicketHistogram(
+      "chuggy_ticket_escalation_duration_seconds",
+      "How long each ended escalation held its ticket, by the event that escalated it and the authority that ended it.",
+      rows.escalations,
+      (row) => ({
+        ...metricsPlaneTicketOwnerLabels(row),
+        event: row.event,
+        by: row.by,
+      }),
+      metricsPlaneEscalationBoundsSecs,
+      1_000,
+    ),
+  ];
 }
 
 /** Every family a page carries, from rows read once. */
@@ -443,6 +638,7 @@ export function metricsPlaneFamilies(
     ...metricsPlaneModelFamilies(rows.models),
     ...metricsPlaneTurnFamilies(rows.turns),
     metricsPlaneTicketFamily(rows.tickets),
+    ...metricsPlaneTicketHistoryFamilies(rows),
   ];
 }
 

@@ -717,7 +717,7 @@ test("each session turn series began when its first turn ended, and the tickets 
     `chuggy_session_turn_tokens_created{${lead},model="model-large"} ${minuteSecs(1)}`,
     `chuggy_session_turn_cost_usd_created{${thread},model="model-small"} ${minuteSecs(1)}`,
     `chuggy_session_turn_duration_seconds_created{${thread}} ${minuteSecs(1)}`,
-    `chuggy_tickets{tenant="metrics-one",project="web",phase="Work"} 2`,
+    `chuggy_tickets{tenant="metrics-one",project="web",owner="",phase="Work",escalation="NoEscalation"} 2`,
   ])
     assert.ok(samples.includes(expected), expected);
   assert.ok(!samples.some((line) => line.startsWith("chuggy_tickets_created")));
@@ -792,12 +792,12 @@ test("members' own turns that no label tells apart are one series under the cap,
   );
 });
 
-test("each project's tickets are a gauge per phase", async () => {
+test("each project's tickets are a gauge per phase and escalation, under no owner where no member wrote their drafts", async () => {
   const samples = metricsSamples((await metricsPage(plane)).body);
   for (const expected of [
-    `chuggy_tickets{tenant="metrics-one",project="web",phase="Work"} 2`,
-    `chuggy_tickets{tenant="metrics-one",project="web",phase="Done"} 1`,
-    `chuggy_tickets{tenant="metrics-two",project="api",phase="Pending"} 1`,
+    `chuggy_tickets{tenant="metrics-one",project="web",owner="",phase="Work",escalation="NoEscalation"} 2`,
+    `chuggy_tickets{tenant="metrics-one",project="web",owner="",phase="Done",escalation="NoEscalation"} 1`,
+    `chuggy_tickets{tenant="metrics-two",project="api",owner="",phase="Pending",escalation="NoEscalation"} 1`,
   ])
     assert.ok(samples.includes(expected), expected);
 });
