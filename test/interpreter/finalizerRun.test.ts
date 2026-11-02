@@ -4419,7 +4419,7 @@ test("a merge its base's queue must make is enqueued at the pinned head, waits t
   assert.equal(forge.updates.length, 0, "a queued branch is never updated");
 });
 
-test("an enqueue refused while the proposal's own check runs waits as a blocked merge does, and is asked again on the cadence", async () => {
+test("an enqueue refused while the proposal's own check runs waits as a blocked merge does, and is read and asked again on the cadence", async () => {
   const { store, forge, service, emitted } = queueCase();
   forge.enqueued = { enqueued: "Refused" };
   for (let pass = 0; pass < 6; pass += 1) await passOver(service);
@@ -4430,7 +4430,12 @@ test("an enqueue refused while the proposal's own check runs waits as a blocked 
   assert.equal(forge.enqueues.length, 1, "no enqueue inside the cadence");
 
   forge.enqueued = { enqueued: "Queued" };
+  forge.numberEvidence = { mergeability: "Mergeable" };
+  const numbered = forge.numbered.length;
   rereadDue(store);
+  await passOver(service);
+  assert.equal(forge.numbered.length, numbered + 1, "the reread is by number");
+  assert.equal(forge.enqueues.length, 1);
   await passOver(service);
   assert.equal(forge.enqueues.length, 2);
   assert.equal(
@@ -4438,6 +4443,21 @@ test("an enqueue refused while the proposal's own check runs waits as a blocked 
     0,
     "neither the refused merge nor the refused enqueue spent a merge",
   );
+});
+
+test("an enqueue refused for a proposal that conflicts with its base is read by number and fails as a conflict", async () => {
+  const { store, forge, service } = queueCase();
+  forge.enqueued = { enqueued: "Refused" };
+  for (let pass = 0; pass < 6; pass += 1) await passOver(service);
+  assert.equal(forge.enqueues.length, 1);
+
+  forge.numberEvidence = { mergeability: "Conflicting" };
+  rereadDue(store);
+  for (let pass = 0; pass < 3; pass += 1) await passOver(service);
+
+  assert.equal(forge.enqueues.length, 1, "a conflict is never enqueued again");
+  assert.equal(store.attempts[0]?.failureKind, "MergeConflict");
+  assert.equal(forge.merges.length, 1);
 });
 
 test("a person's dequeue escalates with the hold the console reads, and nothing is put back on the queue over them", async () => {

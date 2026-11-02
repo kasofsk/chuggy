@@ -1658,8 +1658,8 @@ function proposalMergeQueueRemovedNext(
  * proposal no longer open is read by its number, which is what concludes a
  * merge; a queued one waits, whoever queued it; one at another head waits on
  * whoever moved it; a removal is routed; and otherwise the pinned head is put
- * on the queue, at once unless the last enqueue was refused, in which case on
- * the cadence a blocked merge is read again at.
+ * on the queue, at once unless the last enqueue was refused, in which case it
+ * is read by its number on the cadence a blocked merge is read again at.
  */
 function proposalMergeQueueStandingNext(
   gathered: ChangeProposalMergeGathered,
@@ -1678,9 +1678,38 @@ function proposalMergeQueueStandingNext(
       ? undefined
       : proposalMergeQueueRemovedNext(queueing, removal);
   if (removed !== undefined) return removed;
-  return !queueing.refused || proposalMergeRereadDue(heardAgeSecs)
-    ? { next: "Enqueue" }
-    : { next: "Held", reason: "Blocked" };
+  return queueing.refused
+    ? proposalMergeRereadOr(heardAgeSecs, "Blocked")
+    : { next: "Enqueue" };
+}
+
+/**
+ * What a reading of an open proposal taken after the standing read authorizes.
+ * A conflict at the pinned head settles the merge; where the last enqueue was
+ * refused and the standing found the pinned head open and not queued, the
+ * reading is that enqueue's reread, so the head is enqueued again unless the
+ * forge's own rules still refuse it, which is read again on the cadence; and
+ * otherwise the standing is read again.
+ */
+function proposalMergeQueueOpenNext(
+  gathered: ChangeProposalMergeGathered,
+  standing: ChangeProposalQueueStanding,
+  read: Extract<ProposalMergeRead, { readonly read: "Open" }>,
+  heardAgeSecs: number,
+): ChangeProposalMergingNext {
+  if (read.head !== gathered.head)
+    return proposalMergeQueueRereadOr(heardAgeSecs, "Blocked");
+  if (read.mergeability === "Conflicting") return proposalMergeConflicted;
+  if (
+    !gathered.queueing.refused ||
+    !standing.open ||
+    standing.queued ||
+    standing.head !== gathered.head
+  )
+    return proposalMergeQueueRereadOr(heardAgeSecs, "Blocked");
+  return read.mergeability === "Blocked"
+    ? proposalMergeRereadOr(heardAgeSecs, "Blocked")
+    : { next: "Enqueue" };
 }
 
 /**
@@ -1690,7 +1719,7 @@ function proposalMergeQueueStandingNext(
  * no queue, and a merge asked since it was read, are merged as any other; and
  * a reading taken by number since the standing settles the merge where it
  * found it merged, waits as a closed one does where it found it closed, and is
- * read again in the queue where it found it open.
+ * routed as an open one where it found it open.
  */
 function proposalMergeQueueNext(
   request: ChangeProposalRequest,
@@ -1718,7 +1747,7 @@ function proposalMergeQueueNext(
     case "Settled":
       return read.next;
     case "Open":
-      return proposalMergeQueueRereadOr(heardAgeSecs, "Blocked");
+      return proposalMergeQueueOpenNext(gathered, standing, read, heardAgeSecs);
     case "Closed":
       return proposalMergeRereadOr(heardAgeSecs, "Closed");
     case "Unsettled":

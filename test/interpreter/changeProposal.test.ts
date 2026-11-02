@@ -1804,7 +1804,7 @@ test("a branch on a queue is never brought up to date, whatever a reading by num
   );
 });
 
-test("a refused enqueue waits as a blocked merge does, and is asked again once the cadence has passed", () => {
+test("a refused enqueue waits as a blocked merge does, and is read by number once the cadence has passed", () => {
   assert.deepEqual(
     changeProposalMergeNext(
       request,
@@ -1824,8 +1824,85 @@ test("a refused enqueue waits as a blocked merge does, and is asked again once t
       }),
       mergeBounds,
     ),
-    { next: "Enqueue" },
+    { next: "ReadByNumber" },
   );
+});
+
+test("a reading after a refused enqueue that finds the proposal conflicting settles the merge to the conflict", () => {
+  const conflicting = {
+    reconciled: "Unmerged",
+    evidence: evidence({
+      mergeability: "Conflicting",
+      mergeState: asProposalMergeState("dirty"),
+    }),
+  } as const;
+  for (const refused of [true, false])
+    assert.deepEqual(
+      changeProposalMergeNext(
+        request,
+        waiting(0, 0, conflicting),
+        queueing(standing(), { refused }),
+        mergeBounds,
+      ),
+      {
+        next: "Concluded",
+        merge: { merged: "NotMergeable", reason: "Conflict" },
+      },
+      String(refused),
+    );
+});
+
+test("a reading after a refused enqueue enqueues again where the forge's rules allow it, and is read again where they still refuse it", () => {
+  for (const reading of [mergeableReading, behindReading])
+    assert.deepEqual(
+      changeProposalMergeNext(
+        request,
+        waiting(0, 0, reading),
+        queueing(standing(), { refused: true }),
+        mergeBounds,
+      ),
+      { next: "Enqueue" },
+      reading.evidence.mergeability,
+    );
+  assert.deepEqual(
+    changeProposalMergeNext(
+      request,
+      waiting(0, 0),
+      queueing(standing(), { refused: true }),
+      mergeBounds,
+    ),
+    { next: "Held", reason: "Blocked" },
+  );
+  assert.deepEqual(
+    changeProposalMergeNext(
+      request,
+      waiting(0, proposalMergeRereadSecs),
+      queueing(standing(), {
+        refused: true,
+        heardAgeSecs: proposalMergeRereadSecs,
+      }),
+      mergeBounds,
+    ),
+    { next: "ReadByNumber" },
+  );
+});
+
+test("a reading of an open proposal no refused enqueue stands behind reads the standing again", () => {
+  for (const [read, refused] of [
+    [standing(), false],
+    [standing({ queued: true }), true],
+    [standing({ open: false }), true],
+  ] as const)
+    assert.deepEqual(
+      changeProposalMergeNext(
+        request,
+        waiting(0, proposalMergeRereadSecs, mergeableReading),
+        queueing(read, { refused, heardAgeSecs: proposalMergeRereadSecs }),
+        mergeBounds,
+      ),
+      { next: "ReadQueue" },
+      JSON.stringify({ read, refused }),
+    );
 });
 
 test("after a refused enqueue the standing decides: queued waits in the queue, and another head waits on whoever moved it", () => {
