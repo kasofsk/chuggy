@@ -804,7 +804,9 @@ export function projectWriterSpawnSourceRef(state: TicketState): number {
  * already carries, read out of this partition's own rows. NOTHING HERE READS A
  * REF — a rework runs at the commit its work was judged at, and an
  * evaluation at the commit the result it judges was produced at, both of which
- * are facts already written down.
+ * are facts already written down. Its change base may also rest on whether
+ * that commit descends from a failed landing's base, an ancestry answer about
+ * two immutable commits that may fetch their history from the remote.
  */
 async function projectWriterSpawnSources(
   writer: ProjectTicketWriter,

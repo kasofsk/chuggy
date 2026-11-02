@@ -329,7 +329,8 @@ const acceptedOnce = producing(new Map([[acceptedCommit, [dispatchedCommit]]]));
 /**
  * A spawn whose history answers the ticket's own source, its latest work
  * manifests and `bases`, recording each commit the walk asked about, and
- * naming no failed landing's base unless `landed` names one.
+ * naming no failed landing's base unless `landed` names one, whose ancestry
+ * question rejects where its answer is an error.
  */
 function spawningFrom(
   row: TicketSourceRow | undefined,
@@ -337,7 +338,7 @@ function spawningFrom(
   asked: string[] = [],
   landed?: {
     readonly base: GitObjectId;
-    readonly answer: CommitAncestry;
+    readonly answer: CommitAncestry | Error;
     readonly questions: CommitAncestryQuestion[];
   },
 ): ReturnType<typeof executionSourceObservation> {
@@ -377,7 +378,9 @@ function spawningFrom(
       : {
           ancestry: (question) => {
             landed.questions.push(question);
-            return Promise.resolve(landed.answer);
+            return landed.answer instanceof Error
+              ? Promise.reject(landed.answer)
+              : Promise.resolve(landed.answer);
           },
         },
   );
@@ -519,10 +522,10 @@ test("a reference no row carries answers the same nothing", async () => {
 /** The base a failed landing's proposal failed on, which the rework brought in. */
 const landedBase = asGitObjectId("9".repeat(40));
 
-/** A spawn of the accepted source after a failed landing naming `landedBase`, with ancestry answering `answer`. */
+/** A spawn of the accepted source after a failed landing naming `landedBase`, with ancestry answering `answer`, or rejecting with it. */
 async function landedChangeBase(
   kind: "Work" | "Evaluation",
-  answer: CommitAncestry,
+  answer: CommitAncestry | Error,
 ): Promise<{
   changeBase: string | undefined;
   questions: readonly CommitAncestryQuestion[];
@@ -578,6 +581,19 @@ test("a commit not holding the failed landing's base keeps the walked-back base"
 test("a commit whose ancestry is unknown keeps the walked-back base", async () => {
   assert.equal(
     (await landedChangeBase("Evaluation", "Unknown")).changeBase,
+    dispatchedCommit,
+  );
+});
+
+/** Catches an ancestry port that cannot work failing the spawn rather than keeping the walked-back base. */
+test("a commit whose ancestry question rejects keeps the walked-back base", async () => {
+  assert.equal(
+    (
+      await landedChangeBase(
+        "Evaluation",
+        new Error("the credential source raised"),
+      )
+    ).changeBase,
     dispatchedCommit,
   );
 });

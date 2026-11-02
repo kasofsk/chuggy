@@ -43,7 +43,7 @@ import {
   type GitRefName,
   type RepositoryId,
 } from "./finalizer.ts";
-import type { CommitAncestryPort } from "./commitAncestry.ts";
+import type { CommitAncestry, CommitAncestryPort } from "./commitAncestry.ts";
 import type { Partition } from "./projectStore.ts";
 import type { ProjectRepositoryBindingRead } from "./repositoryConfiguration.ts";
 import { digestFold, type ResultManifestId } from "./resultManifest.ts";
@@ -128,7 +128,8 @@ async function executionChangeBase(
 
 /**
  * The base the ticket's latest failed landing named, where the spawn's commit
- * is answered to descend from it, and otherwise the walked-back one.
+ * is answered to descend from it, and otherwise the walked-back one. A port
+ * that cannot work at all answers nothing, as an unknown does.
  */
 async function executionSourceChangeBase(
   bindings: ProjectRepositoryBindingRead,
@@ -150,11 +151,9 @@ async function executionSourceChangeBase(
   if (landed === undefined || landed === walked) return walked;
   const repository = await bindings.binding(request.partition, row.repository);
   if (repository === undefined) return walked;
-  const answer = await ancestry.ancestry({
-    repository,
-    candidate: landed,
-    tip: row.commit,
-  });
+  const answer = await ancestry
+    .ancestry({ repository, candidate: landed, tip: row.commit })
+    .catch((): CommitAncestry => "Unknown");
   return answer === "Ancestor" ? landed : walked;
 }
 
