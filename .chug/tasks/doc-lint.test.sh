@@ -5,8 +5,7 @@
 # cases sit beside them as the controls.
 #
 # $WORK is a real git checkout: doc-lint.sh resolves the repo root and works
-# from there, so rule 3, which matches on the repo-relative path, can only be
-# exercised by a harness that gives it a repo.
+# from there, and whole-tree mode lints what git tracks.
 #
 # Run:  .chug/tasks/doc-lint.test.sh   (exits 0 if all cases pass)
 set -eu
@@ -29,28 +28,26 @@ run() { # <repo-relative arg>... — run from $WORK so the repo root is $WORK
 	set -e
 }
 
-mkdir -p "$WORK/docs/design" "$WORK/docs/reference"
-# Named to satisfy rule 3 itself: a fixture that violates a rule under test
-# would make the whole-tree case pass for the wrong reason.
-printf '# Sibling\n\nContent.\n' > "$WORK/docs/design/000-sibling.md"
+mkdir -p "$WORK/docs/guide" "$WORK/docs/reference"
+printf '# Sibling\n\nContent.\n' > "$WORK/docs/guide/sibling.md"
 
 # --- Controls: the clean paths ----------------------------------------------
 
-cat > "$WORK/docs/design/001-good.md" <<'EOF'
-# Good design
+cat > "$WORK/docs/guide/good.md" <<'EOF'
+# Good doc
 
-See [the sibling](000-sibling.md) for context.
+See [the sibling](sibling.md) for context.
 
 ```sh
 echo "fenced hashes are ignored: #notaheading"
 ```
 EOF
-run docs/design/001-good.md
+run docs/guide/good.md
 check "clean doc passes" 0 "$RC" "0 error(s)"
 
 # The fence body above contains a line a naive heading check would flag, so
 # this is its own case rather than something hiding behind the one before it.
-run docs/design/001-good.md
+run docs/guide/good.md
 check "fenced content is not linted" 0 "$RC" "0 error(s)"
 
 printf '# Trailing   \n\nBody.\n' > "$WORK/docs/reference/trailing.md"
@@ -63,7 +60,7 @@ check "a non-markdown argument is skipped" 0 "$RC" "nothing to lint"
 
 # A doc can be selected and not be there. The tally has to count what was read,
 # or a run that linted nothing reports the same line as one that linted a file.
-run docs/design/001-good.md docs/design/002-deleted.md
+run docs/guide/good.md docs/guide/deleted.md
 check "the tally counts the docs that were read" 0 "$RC" "across 1 file(s)"
 
 # --- Rule 1: well-formedness -------------------------------------------------
@@ -91,27 +88,6 @@ printf '# Anchor\n\n[up](#anchor-only)\n' > "$WORK/docs/reference/anchor.md"
 run docs/reference/anchor.md
 check "anchor-only link is skipped" 0 "$RC" "0 error(s)"
 
-# --- Rule 3: design filenames ------------------------------------------------
-
-printf '# Bad\n\nBody.\n' > "$WORK/docs/design/no-leading-digits.md"
-run docs/design/no-leading-digits.md
-check "design filename without a seq fails" 1 "$RC" "{seq}-{slug}.md"
-
-# THE LOCALE CASE: under a collating locale an `a-z` range also spans
-# uppercase, and this rule would quietly stop rejecting it.
-printf '# Bad\n\nBody.\n' > "$WORK/docs/design/002-Uppercase.md"
-run docs/design/002-Uppercase.md
-check "design filename with an uppercase slug fails" 1 "$RC" "{seq}-{slug}.md"
-
-mkdir -p "$WORK/docs/design/nested"
-printf '# Nested\n\nBody.\n' > "$WORK/docs/design/nested/Anything.md"
-run docs/design/nested/Anything.md
-check "a nested subdirectory is not a design doc" 0 "$RC" "0 error(s)"
-
-# The control that keeps the two cases above from passing for the wrong reason.
-run docs/design/001-good.md
-check "well-named design doc passes rule 3" 0 "$RC" "0 error(s)"
-
 # --- Whole-tree mode ---------------------------------------------------------
 
 git -C "$WORK" add -A
@@ -122,10 +98,10 @@ check "whole-tree mode lints every tracked doc" 1 "$RC" "unclosed code fence"
 
 OUT="$WORK/.out"
 set +e
-(cd "$WORK" && "$SUT" --emit-links docs/design/001-good.md) >"$OUT" 2>&1
+(cd "$WORK" && "$SUT" --emit-links docs/guide/good.md) >"$OUT" 2>&1
 RC=$?
 set -e
-check "--emit-links normalizes to a repo-relative path" 0 "$RC" "docs/design/000-sibling.md"
+check "--emit-links normalizes to a repo-relative path" 0 "$RC" "docs/guide/sibling.md"
 
 set +e
 (cd "$WORK" && "$SUT" --emit-links docs/reference/broken.md) >"$OUT" 2>&1

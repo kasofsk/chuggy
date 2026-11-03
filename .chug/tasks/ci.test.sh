@@ -694,7 +694,7 @@ refute "another workspace's manifest selects the console" 0 "$RC" "check-console
 # A GATE THAT READS THE TREE AS TEXT RUNS ON ANY CHANGE, and the static checks
 # on any change but a page's: a sheet outside the console is a kind none of
 # their old lists of suffixes held.
-text_gates="doc-lint check-figures check-paths check-shell-quoting check-console-sheets check-gates check-comments check-knowledge check-vendored"
+text_gates="doc-lint check-figures check-paths check-shell-quoting check-console-sheets check-gates check-comments check-vendored"
 stub_repo 0
 mkdir -p "$R/notes"
 commit_all baseline

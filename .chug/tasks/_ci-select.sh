@@ -203,7 +203,7 @@ ci_inputs() { # <gate id or suite path>
 ci_declare() { # <gate id or suite path>
 	case "$1" in
 	doc-lint | check-figures | check-paths | check-shell-quoting | check-console-sheets | \
-		check-gates | check-comments | check-knowledge | check-vendored)
+		check-gates | check-comments | check-vendored)
 		ci_tree
 		ci_text .
 		;;

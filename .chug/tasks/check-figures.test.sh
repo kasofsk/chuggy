@@ -121,18 +121,16 @@ git -C "$R" add -A
 run_in "$R"
 check "a model line that is not a comment is not read" 0 "$RC" "0 finding(s)"
 
-# A design doc may carry a measurement, dated and reproducible, so the
-# directory is left alone. Naming one scans it anyway, which is what keeps the
-# exemption from being a place to hide a figure.
+# The corpus is what git tracks; a file named on the command line is scanned
+# whether or not it is tracked.
 fresh_repo "$R"
-mkdir -p "$R/docs/design"
 printf '%s\n' '#!/bin/sh' 'exit 0' > "$R/gate.sh"
-printf '%s\n' 'Measured at fifty seconds, 2026-08-08.' > "$R/docs/design/001-x.md"
 git -C "$R" add -A
+printf '%s\n' 'Measured at fifty seconds, 2026-08-08.' > "$R/notes.md"
 run_in "$R"
-check "a design doc is out of the default corpus" 0 "$RC" "0 finding(s)"
-run_in "$R" docs/design/001-x.md
-check "naming a file scans it wherever it lives" 1 "$RC" "fifty — a spelled quantity"
+check "an untracked file is out of the default corpus" 0 "$RC" "0 finding(s)"
+run_in "$R" notes.md
+check "naming a file scans it though it is untracked" 1 "$RC" "fifty — a spelled quantity"
 
 # A path with a space in it is scanned like any other. The corpus is split on
 # newlines for exactly this reason.

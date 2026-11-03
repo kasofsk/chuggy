@@ -474,7 +474,6 @@ run_selected_gate check-duplication "check-duplication" ./.chug/tasks/check-dupl
 run_selected_gate check-console-sheets "check-console-sheets" ./.chug/tasks/check-console-sheets.sh
 run_selected_gate check-gates "check-gates" ./.chug/tasks/check-gates.sh
 run_selected_gate check-comments "check-comments" ./.chug/tasks/check-comments.sh
-run_selected_gate check-knowledge "check-knowledge" ./.chug/tasks/check-knowledge.sh
 run_selected_gate check-roster "check-roster" ./.chug/tasks/check-roster.sh
 run_selected_gate check-vendored "check-vendored" ./.chug/tasks/check-vendored.sh
 
