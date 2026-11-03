@@ -54,6 +54,7 @@ function reads(over: Partial<SituationReads> = {}): SituationReads {
     open: [],
     executions: [],
     setupOverridable: false,
+    nowMs: 0,
     ...over,
   };
 }
@@ -144,6 +145,35 @@ test("a ticket parked with nowhere to run says so, and leads to Runners", () => 
     more: "Work cancelled",
     reason: undefined,
   });
+});
+
+/** A job a usage limit stopped is resumed by the scheduler once the pauses
+ * holding it end, and the card says when in the reader's own zone. */
+test("a ticket the scheduler resumes once its usage pauses end says so under its wall, with when where a pause still holds it", () => {
+  const nowMs = new Date(2026, 9, 3, 9, 0).getTime();
+  const until = new Date(2026, 9, 3, 14, 5).toISOString();
+  const parked = (usageResume: { readonly until?: string }) =>
+    ticketSlot(
+      reads({
+        nowMs,
+        ticket: ticket({
+          phase: "Escalated",
+          escalation: {
+            kind: "WorkFailureEscalated",
+            resumeAt: "ResumeWork",
+            usageResume,
+          },
+        }),
+      }),
+    );
+  expect(parked({ until })).toStrictEqual({
+    slot: "NeedsYou",
+    detail: "Work failed",
+    step: undefined,
+    more: "Resumes automatically · 14:05",
+    reason: undefined,
+  });
+  expect(parked({})).toMatchObject({ more: "Resumes automatically" });
 });
 
 /**

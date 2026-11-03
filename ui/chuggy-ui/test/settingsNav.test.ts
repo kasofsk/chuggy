@@ -39,7 +39,11 @@ test("in a project the project's pages lead, then the workspace's, each group un
   });
   expect(drawn(groups)).toStrictEqual([
     ["Project", "atlas", ["Lead", "Placement", "Permissions"]],
-    ["Workspace", "acme", ["People", "Accounts", "Permissions", "My runners"]],
+    [
+      "Workspace",
+      "acme",
+      ["People", "Accounts", "Permissions", "My runners", "Usage"],
+    ],
   ]);
 });
 
@@ -50,7 +54,11 @@ test("outside a project the workspace's pages are the whole navigation", () => {
     site: siteNone,
   });
   expect(drawn(groups)).toStrictEqual([
-    ["Workspace", "acme", ["People", "Accounts", "Permissions", "My runners"]],
+    [
+      "Workspace",
+      "acme",
+      ["People", "Accounts", "Permissions", "My runners", "Usage"],
+    ],
   ]);
 });
 

@@ -157,6 +157,7 @@ to start without the required ones.
 | `CHUG_API_SELECTOR_FEEDBACK_MAX` | | how much review feedback one operational context carries |
 | `CHUG_SCHEDULER_PROJECT_BACKLOG_MAX` | | how much of a project's backlog it carries |
 | `CHUG_SCHEDULER_INSTALLATION_BACKLOG_MAX` | | how much of the installation's it carries |
+| `CHUG_SCHEDULER_PASS_BOUNDS` | | the scheduler's own pass bounds, of which `attemptRetriesMax` and `attemptRateLimitsMax` are read, so that an escalation the API says the scheduler resumes once its usage pauses end is one the scheduler does; set it to what the scheduler is given |
 
 **The app id and the key file are named together or not at all.** A deployment
 naming neither mints nothing: every repository credential is read from

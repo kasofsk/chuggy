@@ -246,6 +246,14 @@ export type RunEndedEvidence = (typeof runEndedEvidences)[number];
 export const runUsageWindows = ["five_hour", "seven_day"] as const;
 export type RunUsageWindow = (typeof runUsageWindows)[number];
 
+/** The agents a person lends their own account for, each paused on that account alone. */
+export const accountAgents = ["Claude", "Codex"] as const;
+export type AccountAgent = (typeof accountAgents)[number];
+
+/** What holds an account's agent paused: a window's reading at or over its threshold, or the limit a provider stopped it at. */
+export const agentPauseReasons = [...runUsageWindows, "limit"] as const;
+export type AgentPauseReason = (typeof agentPauseReasons)[number];
+
 /** What a cost figure is: the agent runtime's published list price, never a bill. */
 export const runCostBases = ["List"] as const;
 export type RunCostBasis = (typeof runCostBases)[number];

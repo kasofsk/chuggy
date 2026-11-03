@@ -590,7 +590,9 @@ its open ones before it inserts. A link is not a ticket, and the wipe keeps it.
 usage: how much of the window was used, when it reopens, when it was observed,
 and the attempt whose run reported it. Owned by the boundary owner, which is
 what `record_worker_run_usage` runs as; the worker plane writes it through that
-door alone, and no runtime role reads it. Its key and identity are
+door alone. The API reads one person's rows through `agent_account_standing`,
+and the metrics plane reads the key of every row and nothing else. Its key and
+identity are
 `(principal, agent, usage_window)`, the principal being the account an attempt
 spent as `execution_attempt_agent_account` derives it from the attempt's own
 claim and the agent the one its invocation names, so a window appears once per
@@ -608,7 +610,9 @@ latest of each window is the row itself.
 account at: the window and the instant it reopens where the run named them,
 when the plane received it, and the attempt it stopped. Owned by the boundary
 owner, which is what `record_worker_run_limit` runs as; the worker plane writes
-it through that door alone, and no runtime role reads it. Its key and identity
+it through that door alone. The API reads one person's row through
+`agent_account_standing`, and the metrics plane reads the key of every row and
+nothing else. Its key and identity
 are `(principal, agent)`, derived as `agent_account_usage`'s are, and it departs
 from #180's composite project key for the same reason. It points at the attempt
 it stopped. It is changed by that door alone, in the transaction that withdraws
@@ -618,19 +622,23 @@ attempt's ending or not at all.
 
 `agent_account_setting` — what a person set of how an agent account of theirs
 pauses: the threshold of each window, as a whole percentage, and whether their
-threads and inquiries and the lead of a pool they registered pause with it. No
-role writes it yet, and no runtime role reads it: `agent_account_settings`
-answers it with the defaults where it holds no row, and `agent_account_pause`,
-which the pool plane may call and `ticket_rate_limit_resumable` asks for the
-scheduler, reads it through that. Its key and identity are
-`(principal, agent)`, and it departs from #180's composite project key as
-`agent_account_usage` does. It points at nothing. Nothing changes it yet. It
-has no unfinished work: a pause is derived from it at each claim and each
-scheduler pass, so a changed row is the answer at the next.
+threads and inquiries and the lead of a pool they registered pause with it. The
+API writes one person's row whole through `write_agent_account_setting`, and no
+runtime role reads it: `agent_account_settings` answers it with the defaults
+where it holds no row, and `agent_account_pause`, which the pool plane, the API
+and the metrics plane may call and `ticket_rate_limit_resumable` asks for the
+scheduler, reads it through that, as `agent_account_standing` does for the API.
+Its key and identity are `(principal, agent)`, and it departs from #180's
+composite project key as `agent_account_usage` does. It points at nothing. It
+is changed by that door alone. It has no unfinished work: a pause is derived
+from it at each claim, each scheduler pass and each read, so a changed row is
+the answer at the next.
 
 `agent_account_press` — a person's latest press to try an agent account again
-after a provider refused it, and when the claim it let through spent it. No
-role writes a press yet; the pool plane reads whether one is spent and spends
+after a provider refused it, and when the claim it let through spent it. The API
+records one person's press through `press_agent_account`, which writes it only
+while a limit is among the reasons the agent is paused and moves an earlier one
+to now; the pool plane reads whether one is spent and spends
 it, in the statement of the claim it lets through, by an update conditional on
 its being unspent, so two claims cannot spend one. Its key and identity are
 `(principal, agent)`, as `agent_account_setting`'s are. It points at nothing. A

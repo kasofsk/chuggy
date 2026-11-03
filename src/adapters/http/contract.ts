@@ -26,9 +26,15 @@ import {
   textCodePointsCount,
 } from "../../contract/http.ts";
 import type { ReleaseAuthoringBody } from "../../contract/authoring.ts";
-import type { SelectorReviewOutcome } from "../../contract/rosters.ts";
+import {
+  accountAgents,
+  type AccountAgent,
+  type SelectorReviewOutcome,
+} from "../../contract/rosters.ts";
+import type { AgentAccountSettings } from "../../interpreter/agentAccount.ts";
 import type { TicketBriefBody } from "../../contract/brief.ts";
 import {
+  agentAccountSettingsSchema,
   draftCreationSchema,
   draftRevisionSchema,
   executionPlacementSchema,
@@ -704,6 +710,16 @@ export function parseThreadMessage(body: unknown): {
     message: value.message,
     ...(value.images === undefined ? {} : { images: value.images }),
   };
+}
+
+/** The agent a route names of the caller's own account, or none where it names one no account lends. */
+export function parseAccountAgent(value: string): AccountAgent | undefined {
+  return accountAgents.find((agent) => agent === value);
+}
+
+/** One agent's settings as the caller writes them whole. */
+export function parseAgentAccountSettings(body: unknown): AgentAccountSettings {
+  return agentAccountSettingsSchema.parse(body);
 }
 
 /** How many threads one member may hold open, as an administrator writes it whole. */

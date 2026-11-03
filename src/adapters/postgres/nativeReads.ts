@@ -34,6 +34,7 @@ import {
   type TicketPhaseFilter,
   type TicketResource,
   ticketSearchNumber,
+  type TicketUsageResumeResource,
 } from "../../interpreter/nativeWeb.ts";
 import {
   allNativeActionKinds,
@@ -52,7 +53,10 @@ import {
   type OperationState,
 } from "../../interpreter/operationInbox.ts";
 import { memberAuthorityKind } from "../../interpreter/projectAccess.ts";
-import { attemptEvidenceLabel } from "../../interpreter/executionScheduler.ts";
+import {
+  attemptEvidenceLabel,
+  executionSchedulerDefaults,
+} from "../../interpreter/executionScheduler.ts";
 import { asPrincipal } from "../../interpreter/principal.ts";
 import { runStepEvidences } from "../../interpreter/runEvidence.ts";
 import {
@@ -84,6 +88,25 @@ import {
   storedOverridesOf,
   storedSelectionOf,
 } from "./ticketBrief.ts";
+
+/**
+ * The scheduler's bounds an escalation's usage resume is read under: how many
+ * times a task may be lost, and stopped by a limit, at its place before the
+ * scheduler leaves it to a person.
+ */
+export interface TicketUsageResumeBounds {
+  readonly lossesMax: number;
+  readonly rateLimitsMax: number;
+}
+
+/** The bounds of a scheduler naming none of its own. */
+export const ticketUsageResumeBoundsDefault: TicketUsageResumeBounds = {
+  lossesMax: executionSchedulerDefaults.attemptRetriesMax,
+  rateLimitsMax: executionSchedulerDefaults.attemptRateLimitsMax,
+};
+
+/** Each escalated ticket's usage resume, by ticket, where one is read. */
+type TicketUsageResumes = ReadonlyMap<string, TicketUsageResumeResource>;
 
 interface PublicOperationRow {
   readonly operation: string;
@@ -267,11 +290,12 @@ function projectResource(
   head: string,
   page: ProjectTicketPage,
   order: ProjectReadQuery["order"],
+  resumes: TicketUsageResumes,
 ): ProjectResource {
   return {
     partition,
     sequence: projectRowCounter(head, "project projection watermark"),
-    tickets: page.rows.map(ticketResource),
+    tickets: page.rows.map((row) => ticketResource(row, resumes)),
     ...(page.next === undefined
       ? {}
       : projectResourceNext(page.next, order ?? "Identity")),
@@ -490,7 +514,50 @@ function projectionRunStepFailure(
   };
 }
 
-function ticketResource(row: TicketProjectionRow): TicketResource {
+function ticketUsageResumeTicket(ticket: string | null): string {
+  if (ticket === null)
+    throw new Error("native read: a usage resume names no ticket");
+  return ticket;
+}
+
+/**
+ * What `ticket_usage_resume` reads of each of `rows` under the scheduler's
+ * `bounds`, by ticket: the instant the latest pause holding its escalation
+ * ends, or none where none holds any longer, and nothing for a ticket the
+ * scheduler does not resume so.
+ */
+async function ticketUsageResumes(
+  client: pg.Pool | pg.PoolClient,
+  partition: Partition,
+  rows: readonly TicketProjectionRow[],
+  bounds: TicketUsageResumeBounds,
+): Promise<TicketUsageResumes> {
+  if (rows.length === 0) return new Map();
+  const tickets = rows.map((row) => row.ticket);
+  const found = await client.query<{
+    ticket: string | null;
+    paused_until: string | null;
+  }>(
+    sql`SELECT t.ticket::text AS ticket,
+               to_char(x.paused_until AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS paused_until
+          FROM unnest(${tickets}::bigint[]) AS t(ticket)
+         CROSS JOIN LATERAL ticket_usage_resume(${partition.tenant},${partition.project},
+               t.ticket,${bounds.lossesMax},${bounds.rateLimitsMax}) x`,
+  );
+  return new Map(
+    found.rows.map((row) => [
+      ticketUsageResumeTicket(row.ticket),
+      row.paused_until === null
+        ? {}
+        : { until: nativeReadInstant(row.paused_until) },
+    ]),
+  );
+}
+
+function ticketResource(
+  row: TicketProjectionRow,
+  resumes: TicketUsageResumes,
+): TicketResource {
   const kind = projectionEscalation(row.escalation);
   return {
     ticket: asTicketId(projectRowCounter(row.ticket, "ticket identity")),
@@ -515,6 +582,7 @@ function ticketResource(row: TicketProjectionRow): TicketResource {
             {
               lost: projectionRunnerLoss(row.lost),
               failed: projectionRunStepFailure(row.failed),
+              usageResume: resumes.get(row.ticket),
             },
           ),
         }),
@@ -598,6 +666,7 @@ async function readProject(
   pool: pg.Pool,
   partition: Partition,
   query: ProjectReadQuery,
+  bounds: TicketUsageResumeBounds,
 ): Promise<ProjectRead> {
   const client = await pool.connect();
   try {
@@ -619,10 +688,22 @@ async function readProject(
       return { result: "Behind", observedSequence: head };
     }
     const page = await readProjectTickets(client, partition, query);
+    const resumes = await ticketUsageResumes(
+      client,
+      partition,
+      page.rows,
+      bounds,
+    );
     await client.query("COMMIT");
     return {
       result: "Found",
-      project: projectResource(partition, standing.head, page, query.order),
+      project: projectResource(
+        partition,
+        standing.head,
+        page,
+        query.order,
+        resumes,
+      ),
     };
   } catch (cause) {
     await client.query("ROLLBACK").catch(() => undefined);
@@ -1032,6 +1113,7 @@ async function readTicket(
   pool: pg.Pool,
   partition: Partition,
   ticket: TicketId,
+  bounds: TicketUsageResumeBounds,
 ): Promise<TicketResource | undefined> {
   const row = await readTicketRow(pool, partition, ticket);
   if (row === undefined) return undefined;
@@ -1057,7 +1139,10 @@ async function readTicket(
         });
   const runTotals = await postgresTicketRunTotals(pool, partition, ticket);
   return {
-    ...ticketResource(row),
+    ...ticketResource(
+      row,
+      await ticketUsageResumes(pool, partition, [row], bounds),
+    ),
     ...(brief === undefined ? {} : { brief }),
     ...(row.configuration_revision === null
       ? {}
@@ -1078,6 +1163,7 @@ async function readTicket(
 /** The three resource reads, each answering one route from the projection. */
 function nativeReadsResources(
   pool: pg.Pool,
+  bounds: TicketUsageResumeBounds,
 ): Pick<NativeReadStore, "operation" | "project" | "ticket"> {
   return {
     operation: async (partition, operation) => {
@@ -1094,8 +1180,8 @@ function nativeReadsResources(
       const row = found.rows[0];
       return row === undefined ? undefined : publicOperation(row);
     },
-    project: (partition, query) => readProject(pool, partition, query),
-    ticket: (partition, ticket) => readTicket(pool, partition, ticket),
+    project: (partition, query) => readProject(pool, partition, query, bounds),
+    ticket: (partition, ticket) => readTicket(pool, partition, ticket, bounds),
   };
 }
 
@@ -1227,6 +1313,7 @@ async function readInboxPage(
   client: pg.PoolClient,
   partition: Partition,
   query: InboxReadQuery,
+  bounds: TicketUsageResumeBounds,
 ): Promise<InboxReadPage> {
   const { count, positions } = await readInboxPositions(
     client,
@@ -1241,6 +1328,7 @@ async function readInboxPage(
     tickets,
   });
   const byTicket = new Map(rows.map((row) => [row.ticket, row]));
+  const resumes = await ticketUsageResumes(client, partition, rows, bounds);
   const next = positions.length > query.limit ? page.at(-1) : undefined;
   return {
     count,
@@ -1248,7 +1336,7 @@ async function readInboxPage(
       const row = byTicket.get(position.ticket);
       if (row === undefined)
         throw new Error("inbox read: a ticket's position has no row");
-      return ticketResource(row);
+      return ticketResource(row, resumes);
     }),
     actions: await readInboxActions(client, partition, tickets),
     ...(next === undefined
@@ -1263,13 +1351,16 @@ async function readInboxPage(
 }
 
 /** The inbox, read in one transaction so its count, rows and actions are one moment's. */
-export function postgresInboxReads(pool: pg.Pool): InboxReadStore {
+export function postgresInboxReads(
+  pool: pg.Pool,
+  bounds: TicketUsageResumeBounds = ticketUsageResumeBoundsDefault,
+): InboxReadStore {
   return {
     inbox: async (partition, query) => {
       const client = await pool.connect();
       try {
         await client.query("BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY");
-        const page = await readInboxPage(client, partition, query);
+        const page = await readInboxPage(client, partition, query, bounds);
         await client.query("COMMIT");
         return page;
       } catch (cause) {
@@ -1283,6 +1374,12 @@ export function postgresInboxReads(pool: pg.Pool): InboxReadStore {
 }
 
 /** Reads only API-safe columns through a pool carrying the API credential. */
-export function postgresNativeReads(pool: pg.Pool): NativeReadStore {
-  return { ...nativeReadsResources(pool), ...nativeReadsActions(pool) };
+export function postgresNativeReads(
+  pool: pg.Pool,
+  bounds: TicketUsageResumeBounds = ticketUsageResumeBoundsDefault,
+): NativeReadStore {
+  return {
+    ...nativeReadsResources(pool, bounds),
+    ...nativeReadsActions(pool),
+  };
 }

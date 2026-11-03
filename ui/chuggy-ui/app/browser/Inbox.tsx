@@ -41,6 +41,7 @@ import {
   runnerLossDetail,
   runnerLossLine,
   runStepLabel,
+  usageResumeLine,
 } from "../core/codeLabels.ts";
 import type { PanelState } from "../core/freshness.ts";
 import {
@@ -278,6 +279,7 @@ function InboxWhy(props: {
   readonly partition: PartitionIdentity;
   readonly entry: InboxEntryResponse;
   readonly row: ProjectTableRow;
+  readonly nowMs: number;
 }): ReactNode {
   const held = inboxEntryPhased(props.entry);
   const row = props.row;
@@ -310,10 +312,13 @@ function InboxWhy(props: {
       />
     );
   const kind = held.escalation?.kind;
+  const resume = held.escalation?.usageResume;
+  const said = [
+    ...(kind === undefined ? [] : [escalationKindSentence(kind)]),
+    ...(resume === undefined ? [] : [usageResumeLine(resume, props.nowMs)]),
+  ];
   return (
-    <Tooltip
-      text={kind === undefined ? undefined : escalationKindSentence(kind)}
-    >
+    <Tooltip text={said.length === 0 ? undefined : said.join(" · ")}>
       <span>
         <Pill tone="parked">{row.badge ?? phaseLabel(row.phase)}</Pill>
       </span>
@@ -436,7 +441,12 @@ function InboxRow(props: {
         title={row.title}
       />
       <td>
-        <InboxWhy partition={props.partition} entry={props.entry} row={row} />
+        <InboxWhy
+          partition={props.partition}
+          entry={props.entry}
+          row={row}
+          nowMs={props.nowMs}
+        />
         <InboxProposalWhy
           ticket={row.ticket}
           proposals={props.entry.proposals}

@@ -159,6 +159,7 @@ function scopedApp(
     recorded(reached, "threadLimits"),
     memberChatRecorded(reached, granted),
     recorded(reached, "inbox"),
+    recorded(reached, "agentAccounts"),
   );
 }
 

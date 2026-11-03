@@ -30,6 +30,7 @@ import { SiteWorkspacesPage } from "./SiteWorkspacesPage.tsx";
 import { TenantAccountsPage } from "./TenantAccountsPage.tsx";
 import { TenantPeoplePage } from "./TenantPeoplePage.tsx";
 import { TenantPermissionsPage } from "./TenantPermissionsPage.tsx";
+import { UsageSettingsPage } from "./UsageSettingsPage.tsx";
 
 function projectPageRoutes<TParent extends AnyRoute>(parent: TParent) {
   const getParentRoute = (): TParent => parent;
@@ -70,6 +71,11 @@ function workspacePageRoutes<TParent extends AnyRoute>(parent: TParent) {
       getParentRoute,
       path: "/runner",
       component: MyRunnerPage,
+    }),
+    createRoute({
+      getParentRoute,
+      path: "/usage",
+      component: UsageSettingsPage,
     }),
   ] as const;
 }

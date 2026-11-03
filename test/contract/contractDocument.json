@@ -67,6 +67,7 @@
   "ownerFallback": "a project names no fallback until an administrator writes one, and while it names none no personal runner takes its work; an execution routed to runners whose ticket a member wrote may then be taken by any of that member's personal runners where they serve the project; under Strict no pool takes it while they have any, and under Preferred a pool takes it while none of theirs has polled lately; an execution keeps the fallback it was registered under, and the read says whether the caller may change it",
   "workerPoolRegistration": "an administrator mints a single-use token for one project; redeeming it registers the pool and answers once with the file a runner keeps, its secret included; a reader of the project reads each pool's newest poll and whether it is live",
   "personalRunnerRegistration": "a member the tenant permits to register a personal runner mints a single-use token for the tenant; redeeming it adds one more runner of that member's there, each held to its own bound on the work it takes, refused while they hold 16, and answers once with a file of kind Personal naming the tenant and the member and no project; a member's runners serve one list of projects, and serve none until their owner adds one they may read; a runner is taken off by its owner, by its id or with all of theirs, and every runner of a member by an administrator of the tenant, and the list goes with the last of them; a member reads whether the tenant permits them, and each of their runners' newest poll and whether it is live",
+  "agentAccounts": "a caller reads and sets their own agent accounts alone, the logins their runners spend, and no route names another principal: for each agent, the share of each window a reading at or over pauses it at, a whole percentage held at its default until they write their own, whether their threads and inquiries and the lead of a pool they registered pause with it, each window's newest reading and when it was read, the newest limit a provider stopped it at, and the pause these come to now, which lasts until the latest reason holding it ends; a paused agent's work is taken by none of their runners and pools; a press tries the agent once past a limit, letting one claim through it and no threshold, and is refused NotHardPaused where no limit holds the agent",
   "chatHostRegistration": "a member the tenant permits to register a personal runner mints, under the same permit and bound, a single-use token for their chat host in the tenant; redeeming it at the same route a runner's token is redeemed at registers the member's one chat host there, replacing any other and ending every session the replaced one held, and answers once with a file of kind ChatHost naming the tenant and the member and no project or capabilities; a chat host serves its member's threads and inquiries in every project of the tenant they may read, and needs no list; its owner reads its newest poll and whether it is live, and takes it off, which ends every session it held",
   "actionReports": "a reporter this deployment names reports what one declared action did at one commit, to the action's own address and proving itself by its own scheme rather than a bearer of this server's; a report repeating the commit and outcome of the action's newest is answered Repeated and records nothing, a verified request its scheme reads no outcome in is answered Ignored and records nothing, and a request that proves nothing is not found",
   "actionReach": "for each action a ticket's repository declares, whether what was reported of the action holds the commit the ticket landed at: Reached where its newest success does, Failed where its newest report is a failure that does, RolledBack where only a success beneath its newest, reported since the ticket landed, does, NotYet where none does, and Unknown where this server could not find out inside the time one read is given, which it answers rather than wait and a later read may answer otherwise; a mark read from a report shows it; a ticket that has landed nowhere, which one whose proposal a person is left to merge is, answers no repository, commit or actions; it is read as the ticket is and derived each time it is asked",
@@ -139,6 +140,9 @@
     "personalRunnerProject": "/api/v1/tenants/:tenant/personal-runner/projects/:project",
     "personalRunnerRunner": "/api/v1/tenants/:tenant/personal-runner/runners/:runner",
     "personalRunnerMember": "/api/v1/tenants/:tenant/personal-runners/:subject",
+    "agentAccounts": "/api/v1/agent-accounts",
+    "agentAccountSettings": "/api/v1/agent-accounts/:agent/settings",
+    "agentAccountPresses": "/api/v1/agent-accounts/:agent/presses",
     "chatHostRegistrationTokens": "/api/v1/tenants/:tenant/chat-host-registration-tokens",
     "chatHost": "/api/v1/tenants/:tenant/chat-host",
     "chatAbilities": "/api/v1/tenants/:tenant/chat/abilities",
@@ -2822,6 +2826,35 @@
         }
       },
       "required": ["threadsMax"],
+      "additionalProperties": false
+    },
+    "agentAccountSettings": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "fiveHourPercent": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "sevenDayPercent": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "pausesThreads": {
+          "type": "boolean"
+        },
+        "pausesLead": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "fiveHourPercent",
+        "sevenDayPercent",
+        "pausesThreads",
+        "pausesLead"
+      ],
       "additionalProperties": false
     },
     "threadMessage": {

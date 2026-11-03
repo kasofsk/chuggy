@@ -11,7 +11,8 @@
  *
  * A run of the reader's own that their runner may take, and has not begun,
  * says where it waits: on their runner, or on it coming back online where no
- * other runner may take it. Only such a run reads the reader's runner.
+ * other runner may take it, or on their own account's agent where a pause
+ * holds it. Only such a run reads the reader's runner.
  */
 
 import { Link } from "@tanstack/react-router";
@@ -23,7 +24,11 @@ import type { ExecutionSummary } from "../../../../../src/contract/responses.ts"
 import { executionQuery } from "../../core/executionQueries.ts";
 import { conversationArgumentLine } from "../../core/conversation.ts";
 import { sinceFigure } from "../../core/figures.ts";
-import { runnerWait, runnerWaitWord } from "../../core/myRunner.ts";
+import {
+  runnerWait,
+  runnerWaitPause,
+  runnerWaitWord,
+} from "../../core/myRunner.ts";
 import {
   runNowAttempt,
   runNowAttemptLive,
@@ -37,6 +42,7 @@ import type { RunNow, RunNowAttempt, RunNowCall } from "../../core/runNow.ts";
 import { settingsRoutes } from "../../core/settingsNav.ts";
 import type { RunningNow } from "../../core/ticketSituation.ts";
 import { usePanelState } from "../api.ts";
+import { AgentPause } from "../AgentPause.tsx";
 import { PanelUnready } from "../DataPanel.tsx";
 import { usePersonalRunner } from "../personalRunner.ts";
 import { RunConversation, useRunTranscript } from "../RunTranscript.tsx";
@@ -236,10 +242,13 @@ function TicketNowRun(props: {
   );
 }
 
-/** A run of the reader's held for their own runners, with where they are managed. */
+/** A run of the reader's held for their own runners, with where they are
+ * managed; or, where their own account has its agent paused, the pause and
+ * where it is set. */
 function TicketNowRunnerWait(props: {
   readonly partition: PartitionIdentity;
   readonly execution: ExecutionSummary;
+  readonly nowMs: number;
 }): ReactNode {
   const runner = usePersonalRunner(props.partition.tenant);
   const wait = runnerWait(
@@ -248,6 +257,16 @@ function TicketNowRunnerWait(props: {
     props.partition.project,
   );
   if (wait === undefined) return null;
+  const paused = runnerWaitPause(props.execution, wait);
+  if (paused !== undefined)
+    return (
+      <AgentPause pause={paused} nowMs={props.nowMs}>
+        {" · "}
+        <Link to={settingsRoutes.project.usage} params={props.partition}>
+          Usage
+        </Link>
+      </AgentPause>
+    );
   return (
     <Notice tone="parked" inline detail={runnerWaitWord(wait)}>
       <span className="text-ink-3">
@@ -297,7 +316,11 @@ export function TicketNow(props: {
         nowMs={props.nowMs}
       />
       {summary.mine === true && summary.ownerFallback !== undefined ? (
-        <TicketNowRunnerWait partition={partition} execution={summary} />
+        <TicketNowRunnerWait
+          partition={partition}
+          execution={summary}
+          nowMs={props.nowMs}
+        />
       ) : null}
       {state.state === "Absent" || state.state === "Failed" ? (
         <PanelUnready state={state} />

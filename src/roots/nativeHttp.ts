@@ -153,6 +153,9 @@ import { randomBytes, createHash, randomUUID } from "node:crypto";
 import type pg from "pg";
 import { hydraWorkerPoolClients } from "../adapters/hydra/oauthClients.ts";
 import { postgresChatHostRegistry } from "../adapters/postgres/chatHost.ts";
+import { postgresAgentAccounts } from "../adapters/postgres/agentAccount.ts";
+import type { TicketUsageResumeBounds } from "../adapters/postgres/nativeReads.ts";
+import { schedulerPassBounds } from "./schedulerConfig.ts";
 import {
   postgresPersonalRunnerRegistrationTokens,
   postgresPersonalRunnerRegistry,
@@ -301,6 +304,12 @@ const actionReportersVariable = "CHUG_API_ACTION_REPORTERS";
  */
 const projectArtifactUploadBytesMaxVariable =
   "CHUG_API_PROJECT_ARTIFACT_UPLOAD_BYTES_MAX";
+
+/**
+ * The scheduler's own pass bounds, read here under the scheduler's name for
+ * the bounds it resumes an escalation under.
+ */
+const schedulerPassBoundsVariable = "CHUG_SCHEDULER_PASS_BOUNDS";
 
 /** One pool address, refused at start where a runner would refuse it in the pool file. */
 function poolEndpointSetting(variable: string): string {
@@ -1468,6 +1477,51 @@ export function nativeThreadPorts(
   };
 }
 
+/** The project reads and doors this process serves, over the API pool and the ports composed beside them. */
+function nativeComposedWeb(
+  pools: NativePools,
+  keying: IdempotencyKeying,
+  access: ProjectAccess,
+  artifacts: ReturnType<typeof artifactStore>,
+  ports: {
+    readonly repositories: NativeForge["repositories"];
+    readonly leads: NativeLeadPorts;
+    readonly threads: NativeThreadPorts;
+    readonly usageResume: TicketUsageResumeBounds;
+  },
+) {
+  return composeNativeWeb(
+    pools.pool,
+    keying,
+    access,
+    postgresExecutionBacklogGuard(pools.pool),
+    undefined,
+    undefined,
+    undefined,
+    artifacts,
+    selectorContextSource(pools.pool, pools.selectorReviewPool),
+    ports.repositories,
+    ports.leads,
+    ports.threads,
+    ports.usageResume,
+  );
+}
+
+/**
+ * The bounds the scheduler resumes an escalation under, read from the
+ * scheduler's own variable, so an escalation this server says the scheduler
+ * resumes is one it does.
+ */
+function nativeUsageResumeBounds(): TicketUsageResumeBounds {
+  const bounds = schedulerPassBounds({
+    [schedulerPassBoundsVariable]: process.env[schedulerPassBoundsVariable],
+  });
+  return {
+    lossesMax: bounds.attemptRetriesMax,
+    rateLimitsMax: bounds.attemptRateLimitsMax,
+  };
+}
+
 /** Listens where the environment names, the loopback on the default port where it names nowhere. */
 function nativeListening(
   app: ReturnType<typeof createNativeHttpApp>,
@@ -1495,20 +1549,13 @@ async function main(): Promise<void> {
   const { artifacts, uploadBytesMax } = nativeArtifacts();
   const forge = await nativeForge(pools, access);
   const threads = nativeThreadPorts(pools, artifacts);
-  const web = composeNativeWeb(
-    pool,
-    keying,
-    access,
-    postgresExecutionBacklogGuard(pool),
-    undefined,
-    undefined,
-    undefined,
-    artifacts,
-    selectorContextSource(pool, selectorReviewPool),
-    forge.repositories,
-    nativeLeadPorts(pools, artifacts, authenticationConfig.issuer),
+  const usageResume = nativeUsageResumeBounds();
+  const web = nativeComposedWeb(pools, keying, access, artifacts, {
+    repositories: forge.repositories,
+    leads: nativeLeadPorts(pools, artifacts, authenticationConfig.issuer),
     threads,
-  );
+    usageResume,
+  });
   const hub = nativeStreamHub(pool, web);
   const threadLive = nativeThreadLiveHub();
   const app = createNativeHttpApp(
@@ -1543,7 +1590,8 @@ async function main(): Promise<void> {
     composeProjectOwnerFallback(pool, access),
     composeThreadLimits(pool, access, authenticationConfig.issuer),
     composeMemberChat(pool, access, threads),
-    composeProjectInbox(pool, selectorReviewPool, access),
+    composeProjectInbox(pool, selectorReviewPool, access, usageResume),
+    postgresAgentAccounts(pool),
   );
   nativeStopping(app, pools, [hub, threadLive]);
   await nativeListening(app);

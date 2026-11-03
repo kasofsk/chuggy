@@ -10,6 +10,7 @@ import { partitionPath } from "../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import { nativeHttpRoutes } from "../../../../src/contract/http.ts";
 import {
+  agentAccountsResponseSchema,
   agenticRefusalsResponseSchema,
   chatHostResponseSchema,
   configurationResponseSchema,
@@ -53,6 +54,7 @@ import {
   workerPoolTokenResponseSchema,
 } from "../../../../src/contract/responses.ts";
 import type {
+  AgentAccountsResponse,
   AgenticRefusalsResponse,
   ChatHostResponse,
   ConfigurationResponse,
@@ -94,6 +96,7 @@ import type {
   WorkerPoolTokenResponse,
 } from "../../../../src/contract/responses.ts";
 import type {
+  agentAccountSettingsSchema,
   draftCreationSchema,
   draftRevisionSchema,
   executionPlacementSchema,
@@ -113,6 +116,7 @@ import type {
   submissionSchema,
   threadMessageSchema,
 } from "../../../../src/contract/requests.ts";
+import type { AccountAgent } from "../../../../src/contract/rosters.ts";
 import type { z } from "zod";
 
 import { apiRead } from "./apiRequest.ts";
@@ -688,6 +692,48 @@ export function apiDeregisterMemberRunner(
         tenant,
         subject,
       }),
+    },
+    () => undefined,
+  );
+}
+
+/** Every agent of the reader's own account, the same in every workspace. */
+export function apiAgentAccounts(
+  ports: ApiPorts,
+): Promise<ApiResult<AgentAccountsResponse>> {
+  return apiGet(ports, nativeHttpRoutes.agentAccounts, (value) =>
+    agentAccountsResponseSchema.parse(value),
+  );
+}
+
+/** How the reader's own account pauses one agent, written whole. */
+export function apiWriteAgentAccountSettings(
+  ports: ApiPorts,
+  agent: AccountAgent,
+  written: z.infer<typeof agentAccountSettingsSchema>,
+): Promise<ApiResult<undefined>> {
+  return apiRead(
+    ports,
+    {
+      method: "PUT",
+      path: apiFilled(nativeHttpRoutes.agentAccountSettings, { agent }),
+      body: written,
+    },
+    () => undefined,
+  );
+}
+
+/** One claim let through the limit holding the reader's own agent; refused
+ * `NotHardPaused` where no limit holds it. */
+export function apiPressAgentAccount(
+  ports: ApiPorts,
+  agent: AccountAgent,
+): Promise<ApiResult<undefined>> {
+  return apiRead(
+    ports,
+    {
+      method: "POST",
+      path: apiFilled(nativeHttpRoutes.agentAccountPresses, { agent }),
     },
     () => undefined,
   );

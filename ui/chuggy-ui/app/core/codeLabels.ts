@@ -53,6 +53,7 @@ import {
   type MutationDeferralCode,
   type MutationRefusalCode,
 } from "./codeSentences.ts";
+import { instantFigure } from "./figures.ts";
 import { creatorLabel } from "./labels.ts";
 import type {
   OperationAbandonCause,
@@ -361,6 +362,21 @@ function countNoun(count: number, one: string, many: string): string {
 export function runnerLossLine(lost: RunnerLoss): string {
   const resumed = lost.resumed === 0 ? "none" : String(lost.resumed);
   return `${countNoun(lost.losses, "loss", "losses")} · ${resumed} resumed automatically`;
+}
+
+/** That the scheduler resumes the escalation by itself, and when the latest
+ * pause holding it ends where one still does, in the reader's own zone. */
+export function usageResumeLine(
+  usageResume: NonNullable<TicketEscalation["usageResume"]>,
+  nowMs: number,
+): string {
+  const until =
+    usageResume.until === undefined
+      ? undefined
+      : instantFigure(usageResume.until, nowMs);
+  return until?.kind === "Instant"
+    ? `Resumes automatically · ${until.text}`
+    : "Resumes automatically";
 }
 
 /** The step a run stopped at. */

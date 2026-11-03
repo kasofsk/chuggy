@@ -45,6 +45,7 @@ import {
   accessTenantPeopleSchema,
 } from "../../../src/contract/accessPlane.ts";
 import {
+  agentAccountsResponseSchema,
   agenticRefusalsResponseSchema,
   chatAbilitiesResponseSchema,
   chatHostResponseSchema,
@@ -450,6 +451,22 @@ const consoleReads: readonly ConsoleRead[] = [
         },
       ],
       projects: [],
+    }),
+  },
+  {
+    path: consoleReadAt("/api/v1/agent-accounts"),
+    schema: agentAccountsResponseSchema,
+    body: () => ({
+      accounts: (["Claude", "Codex"] as const).map((agent) => ({
+        agent,
+        settings: {
+          fiveHourPercent: 90,
+          sevenDayPercent: 90,
+          pausesThreads: false,
+          pausesLead: false,
+        },
+        readings: [],
+      })),
     }),
   },
   {

@@ -69,6 +69,7 @@ import {
   runStepLine,
   ticketActionEffect,
   ticketLandingStateLabel,
+  usageResumeLine,
 } from "../app/core/codeLabels.ts";
 import { mutationRefusalCodes } from "../app/core/codeSentences.ts";
 import type { TicketActionName } from "../app/core/ticketActions.ts";
@@ -683,4 +684,24 @@ test.each(gitEvidences)(
 test("no two git evidences are drawn with the same label", () => {
   const drawn = gitEvidences.map((evidence) => gitEvidenceLabel(evidence));
   expect(new Set(drawn).size).toBe(drawn.length);
+});
+
+/** The clock face is the reader's own, so the instants are built in it. */
+test("an escalation the scheduler resumes once its usage pauses end says so, and when where a pause still holds it", () => {
+  const nowMs = new Date(2026, 9, 3, 9, 0).getTime();
+  const until = new Date(2026, 9, 3, 14, 5).toISOString();
+  const lines = [
+    usageResumeLine({ until }, nowMs),
+    usageResumeLine({}, nowMs),
+    usageResumeLine({ until: "not an instant" }, nowMs),
+  ];
+  expect(lines).toStrictEqual([
+    "Resumes automatically · 14:05",
+    "Resumes automatically",
+    "Resumes automatically",
+  ]);
+  for (const said of lines) {
+    expect(said.length).toBeLessThanOrEqual(copyBudgetChars);
+    expect(said).not.toMatch(/[.;]/u);
+  }
 });

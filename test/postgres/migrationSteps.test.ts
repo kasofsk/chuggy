@@ -78,6 +78,7 @@ import { migration107 } from "../../src/adapters/postgres/schema/migrations/107-
 import { migration109 } from "../../src/adapters/postgres/schema/migrations/109-agent-account-usage.ts";
 import { migration110 } from "../../src/adapters/postgres/schema/migrations/110-agent-account-pause.ts";
 import { migration111 } from "../../src/adapters/postgres/schema/migrations/111-rate-limit-resume.ts";
+import { migration112 } from "../../src/adapters/postgres/schema/migrations/112-agent-account-reads.ts";
 import { migration082 } from "../../src/adapters/postgres/schema/migrations/082-decline-kept-unread.ts";
 import { migration083 } from "../../src/adapters/postgres/schema/migrations/083-attempt-base-ref.ts";
 import { migration084 } from "../../src/adapters/postgres/schema/migrations/084-thread-dispatch.ts";
@@ -4347,6 +4348,67 @@ test("111 gives the scheduler the rate-limited tickets and their door, and the r
           ...owned,
           definer: false,
           scheduler: false,
+        },
+      ]);
+    },
+  );
+});
+
+test("112 gives the API its doors to a person's own account and an escalation's usage resume, and the metrics plane the rule and each account's key", async () => {
+  await migrationDatabaseAt(
+    migration112.version - 1,
+    "agent_account_reads",
+    async (subject) => {
+      assert.ok(
+        (await postgresMigrate(subject)).includes(migration112.version),
+      );
+      const functions = await subject.query(
+        `SELECT p.proname AS name, pg_get_userbyid(p.proowner) AS owner,
+                p.prosecdef AS definer, p.prorows::int AS rows,
+                has_function_privilege($1,p.oid,'EXECUTE') AS api,
+                has_function_privilege($2,p.oid,'EXECUTE') AS metrics,
+                has_function_privilege('public',p.oid,'EXECUTE') AS public
+           FROM pg_proc p
+          WHERE p.proname IN ('agent_account_standing','write_agent_account_setting',
+                              'press_agent_account','ticket_usage_resume',
+                              'agent_account_pause')
+          ORDER BY p.proname`,
+        [apiRole, metricsPlaneRole],
+      );
+      const door = {
+        owner: boundaryOwnerRole,
+        definer: true,
+        rows: 0,
+        api: true,
+        metrics: false,
+        public: false,
+      };
+      assert.deepEqual(functions.rows, [
+        { name: "agent_account_pause", ...door, rows: 1000, metrics: true },
+        { name: "agent_account_standing", ...door, rows: 1000 },
+        { name: "press_agent_account", ...door },
+        { name: "ticket_usage_resume", ...door, rows: 1 },
+        { name: "write_agent_account_setting", ...door },
+      ]);
+      const columns = await subject.query(
+        `SELECT has_column_privilege($1,'public.execution_attempt','agent','SELECT') AS api_agent,
+                has_column_privilege($2,'public.agent_account_usage','principal','SELECT') AS metrics_usage_key,
+                has_column_privilege($2,'public.agent_account_usage','utilization','SELECT') AS metrics_utilization,
+                has_column_privilege($2,'public.agent_account_limit','agent','SELECT') AS metrics_limit_key,
+                has_table_privilege($1,'public.agent_account_setting','SELECT') AS api_settings,
+                has_table_privilege($3,'public.agent_account_setting','INSERT') AS owner_writes_settings,
+                has_table_privilege($3,'public.agent_account_press','UPDATE') AS owner_presses`,
+        [apiRole, metricsPlaneRole, boundaryOwnerRole],
+      );
+      assert.deepEqual(columns.rows, [
+        {
+          api_agent: true,
+          metrics_usage_key: true,
+          metrics_utilization: false,
+          metrics_limit_key: true,
+          api_settings: false,
+          owner_writes_settings: true,
+          owner_presses: true,
         },
       ]);
     },

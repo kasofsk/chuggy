@@ -19,6 +19,7 @@ import {
   apiTenantPeople,
 } from "./accessRoutes.ts";
 import {
+  apiAgentAccounts,
   apiChatAbilities,
   apiChatHost,
   apiChatThread,
@@ -55,6 +56,16 @@ export function callerTenantsQuery() {
 export function callerSiteAbilitiesQuery() {
   return consoleCallerQuery("access-site-abilities", (ports) =>
     apiSiteAbilities(ports),
+  );
+}
+
+/** The reader's own agent accounts, polled at the pace a session's standing
+ * is, since no frame says a pause began or ended. */
+export function agentAccountsQuery() {
+  return consoleCallerQuery(
+    "agent-accounts",
+    (ports) => apiAgentAccounts(ports),
+    sessionPlacementPolledMs,
   );
 }
 

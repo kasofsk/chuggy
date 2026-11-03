@@ -334,6 +334,11 @@ export interface RunStepFailureResource {
   readonly error?: { readonly bytes: number };
 }
 
+/** An escalation the scheduler resumes by itself once its usage pauses end, and when the latest ends where one still holds. */
+export interface TicketUsageResumeResource {
+  readonly until?: PublicInstant;
+}
+
 /**
  * Where a parked ticket stands, as its own read and a project's page both carry
  * it: the wall, what the fabric said about that wall, and where a resume
@@ -348,6 +353,8 @@ export interface TicketEscalationResource {
   readonly lost?: RunnerLossResource;
   /** Present where the wall is a task whose run stopped at a failed step. */
   readonly failed?: RunStepFailureResource;
+  /** Present where the scheduler resumes it by itself once its usage pauses end. */
+  readonly usageResume?: TicketUsageResumeResource;
 }
 
 /**
@@ -377,6 +384,7 @@ export function ticketEscalationResource(
   waiting: {
     readonly lost?: RunnerLossResource | undefined;
     readonly failed?: RunStepFailureResource | undefined;
+    readonly usageResume?: TicketUsageResumeResource | undefined;
   } = {},
 ): TicketEscalationResource {
   const resumeAt = ticketEscalationResumeAt(kind);
@@ -386,6 +394,9 @@ export function ticketEscalationResource(
     resumeAt,
     ...(waiting.lost === undefined ? {} : { lost: waiting.lost }),
     ...(waiting.failed === undefined ? {} : { failed: waiting.failed }),
+    ...(waiting.usageResume === undefined
+      ? {}
+      : { usageResume: waiting.usageResume }),
   };
 }
 

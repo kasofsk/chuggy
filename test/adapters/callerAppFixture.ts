@@ -5,6 +5,7 @@
 
 import { createNativeHttpApp } from "../../src/adapters/http/server.ts";
 import { asInstallationId } from "../../src/domain/ids.ts";
+import type { AgentAccountService } from "../../src/interpreter/agentAccount.ts";
 import type { MemberChat } from "../../src/interpreter/memberChat.ts";
 import type { PersonalRunnerService } from "../../src/interpreter/personalRunnerRegistration.ts";
 import type { Principal } from "../../src/interpreter/principal.ts";
@@ -20,6 +21,7 @@ export interface CallerAppServices {
   readonly personalRunners?: PersonalRunnerService;
   readonly ownerFallback?: ProjectOwnerFallbackAdministration;
   readonly chat?: MemberChat;
+  readonly agentAccounts?: AgentAccountService;
 }
 
 /** The app serving `services`, where `Bearer valid` authenticates `caller` and any other bearer nobody. */
@@ -62,5 +64,7 @@ export function callerApp(caller: Principal, services: CallerAppServices) {
     services.ownerFallback,
     undefined,
     services.chat,
+    undefined,
+    services.agentAccounts,
   );
 }

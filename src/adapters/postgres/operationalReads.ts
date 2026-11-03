@@ -1,6 +1,8 @@
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
+import { agentPauseReasons } from "../../contract/rosters.ts";
+import type { AgentAccountPause } from "../../interpreter/agentAccount.ts";
 import { asTaskId, asTicketId, type TicketId } from "../../domain/ids.ts";
 import type { TaskIdentity } from "../../domain/generated/modelTypes.ts";
 import {
@@ -458,34 +460,81 @@ async function executionPage(
   const summaries = rows.slice(0, query.limit).map(executionSummary);
   const next = rows.length > query.limit ? summaries.at(-1) : undefined;
   return {
-    executions: await executionPageAnswered(pool, partition, summaries),
+    executions: await executionPageAnswered(pool, partition, reader, summaries),
     ...(next === undefined
       ? {}
       : { nextAfter: { ticket: next.ticket, task: next.task } }),
   };
 }
 
-/** A page's summaries with their workers labelled and their runs totalled. */
+interface ExecutionPausedRow {
+  readonly execution: string;
+  readonly paused_until: string | null;
+  readonly reasons: string[] | null;
+  readonly admitted_by_press: boolean | null;
+}
+
+/**
+ * The pause the reader's own account holds on the agent each of `executions`
+ * the reader owns waits to spend, by execution, for those whose attempt waits
+ * unclaimed and whose agent is paused. Another's execution reads none.
+ */
+async function executionsPaused(
+  pool: pg.Pool,
+  partition: Partition,
+  reader: Principal,
+  executions: readonly string[],
+): Promise<ReadonlyMap<string, AgentAccountPause>> {
+  if (executions.length === 0) return new Map();
+  const found = await pool.query<ExecutionPausedRow>(
+    sql`SELECT a.execution,
+               to_char(h.paused_until AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS paused_until,
+               h.reasons,h.admitted_by_press
+          FROM execution e
+          JOIN execution_attempt a
+            ON a.tenant=e.tenant AND a.project=e.project AND a.execution=e.execution
+         CROSS JOIN LATERAL agent_account_pause(e.owner,a.agent) h
+         WHERE e.tenant=${partition.tenant} AND e.project=${partition.project}
+           AND e.execution=ANY(${[...executions]}::text[]) AND e.owner=${reader}
+           AND a.state='Placing' AND a.claimed_at IS NULL
+           AND h.paused_until IS NOT NULL`,
+  );
+  return new Map(
+    found.rows.map((row) => [
+      row.execution,
+      {
+        until: projectRowInstant(row.paused_until, "pause end"),
+        reasons: (row.reasons ?? []).map((reason) =>
+          known(reason, agentPauseReasons, "pause reason"),
+        ),
+        pressed: row.admitted_by_press === true,
+      },
+    ]),
+  );
+}
+
+/** A page's summaries with their workers labelled, their runs totalled, and the reader's own pause on those waiting. */
 async function executionPageAnswered(
   pool: pg.Pool,
   partition: Partition,
+  reader: Principal,
   summaries: readonly ExecutionSummary[],
 ): Promise<readonly ExecutionSummary[]> {
+  const executions = summaries.map((summary) => summary.execution);
   const workers = await postgresWorkerCatalog(
     pool,
     executionSummaryImages(summaries),
   );
-  const totals = await postgresExecutionRunTotals(
-    pool,
-    partition,
-    summaries.map((summary) => summary.execution),
-  );
-  return summaries.map((summary) =>
-    executionSummaryTotalled(
+  const totals = await postgresExecutionRunTotals(pool, partition, executions);
+  const paused = await executionsPaused(pool, partition, reader, executions);
+  return summaries.map((summary) => {
+    const answered = executionSummaryTotalled(
       executionSummaryLabelled(summary, workers),
       totals,
-    ),
-  );
+    );
+    const pause = paused.get(summary.execution);
+    return pause === undefined ? answered : { ...answered, paused: pause };
+  });
 }
 
 /**
@@ -532,7 +581,7 @@ async function latestExecutionPage(
         );
   const summaries = rows.map(executionSummary).toReversed();
   return {
-    executions: await executionPageAnswered(pool, partition, summaries),
+    executions: await executionPageAnswered(pool, partition, reader, summaries),
     ...(next === undefined ? {} : { nextAfter: next.ticket }),
   };
 }
@@ -711,9 +760,10 @@ async function resultResource(
 async function executionSummaryResource(
   pool: pg.Pool,
   partition: Partition,
+  reader: Principal,
   row: ExecutionViewRow,
 ): Promise<ExecutionSummary> {
-  const [summary] = await executionPageAnswered(pool, partition, [
+  const [summary] = await executionPageAnswered(pool, partition, reader, [
     executionSummary(row),
   ]);
   if (summary === undefined)
@@ -742,7 +792,7 @@ async function executionResource(
   if (row.result_manifest !== null && result === undefined)
     throw new Error("operational read: execution result is absent");
   return {
-    ...(await executionSummaryResource(pool, partition, row)),
+    ...(await executionSummaryResource(pool, partition, reader, row)),
     attempts: await attempts(pool, partition, execution),
     ...(result === undefined ? {} : { result }),
   } satisfies ExecutionResource;
@@ -797,7 +847,7 @@ export function postgresOperationalReads(pool: pg.Pool): OperationalReadStore {
       const row = await oneExecution(pool, partition, execution, reader);
       return row === undefined
         ? undefined
-        : executionSummaryResource(pool, partition, row);
+        : executionSummaryResource(pool, partition, reader, row);
     },
   };
 }

@@ -216,6 +216,7 @@ function standingOf(
       open: readValue(props.reads.openState)?.actions,
       executions: readValue(props.reads.pageState)?.executions ?? [],
       setupOverridable,
+      nowMs: props.nowMs,
     }),
     fence: parkedOverridesFence(
       ticket,

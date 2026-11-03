@@ -881,6 +881,21 @@ function schedulerAccess(
   });
 }
 
+/**
+ * The scheduler's pass bounds as a deployment names them, which the API reads
+ * under the same variable so that what it says the scheduler will do is what
+ * the scheduler does.
+ */
+export function schedulerPassBounds(
+  environment: SchedulerEnvironment,
+): ExecutionSchedulerConfig {
+  return schedulerBounds(
+    environment,
+    "PASS_BOUNDS",
+    executionSchedulerDefaults,
+  );
+}
+
 /** The whole scheduler command configuration, parsed out of one environment record. */
 export function schedulerCommandConfig(
   environment: SchedulerEnvironment,
@@ -916,11 +931,7 @@ export function schedulerCommandConfig(
           executionCapacityDefaults.cluster,
       ),
     },
-    scheduler: schedulerBounds(
-      environment,
-      "PASS_BOUNDS",
-      executionSchedulerDefaults,
-    ),
+    scheduler: schedulerPassBounds(environment),
     ticketService: schedulerBounds(
       environment,
       "TICKET_SERVICE_BOUNDS",
