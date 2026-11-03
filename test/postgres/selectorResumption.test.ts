@@ -88,6 +88,7 @@ async function leadProject(label: string) {
   const session = await sessionRigSession(rig.sessions, partition, label, {
     kind: "Lead",
     systemPrompt: leadSystemPrompt({ basePrompt: settings.basePrompt }),
+    autoCompactWindow: settings.limits.autoCompactWindow,
   });
   return { partition, session };
 }

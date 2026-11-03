@@ -17,6 +17,8 @@ import {
   forgeAuthorizationVerifierCharsMax,
   forgeAuthorizationVerifierCharsMin,
   inquiryQuestionCharsMax,
+  leadAutoCompactWindowTokensMax,
+  leadAutoCompactWindowTokensMin,
   leadDispatchesMax,
   selectorAllowlistNameCharsMax,
   selectorAllowlistNamesMax,
@@ -329,6 +331,10 @@ export const selectorProjectOverridesSchema = z.strictObject({
         .optional(),
       inputBytesPerDecision: selectorLimitSchema.optional(),
       candidatePagesPerDecision: selectorLimitSchema.optional(),
+      autoCompactWindow: selectorLimitSchema
+        .min(leadAutoCompactWindowTokensMin)
+        .max(leadAutoCompactWindowTokensMax)
+        .optional(),
     })
     .optional(),
   operationalContextMaxAgeMs: selectorLimitSchema.optional(),

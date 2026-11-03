@@ -302,6 +302,7 @@ const leadSelectorSettingsLimits = {
   dispatchesPerDecision: 3,
   inputBytesPerDecision: 1_048_576,
   candidatePagesPerDecision: 4,
+  autoCompactWindow: 200_000,
   concurrentDecisions: 2,
   selectionsPerMinute: 6,
 };

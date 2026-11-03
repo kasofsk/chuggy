@@ -15,7 +15,10 @@ import { after, before, test } from "node:test";
 import { leadSessionMint } from "../../src/adapters/crypto/leadSessionMint.ts";
 import { postgresSelectorState } from "../../src/adapters/postgres/selector.ts";
 import { postgresSessionRouteReads } from "../../src/adapters/postgres/sessionPlacement.ts";
-import { leadTurnTokensMax } from "../../src/contract/http.ts";
+import {
+  leadAutoCompactWindowTokensDefault,
+  leadTurnTokensMax,
+} from "../../src/contract/http.ts";
 import type { SessionId } from "../../src/interpreter/agentSession.ts";
 import { threadStandingRulesDefault } from "../../src/contract/threadSeeding.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
@@ -73,6 +76,7 @@ function settingsFor(
     dispatchesPerDecision,
     inputBytesPerDecision: 1_048_576,
     candidatePagesPerDecision: 1,
+    autoCompactWindow: leadAutoCompactWindowTokensDefault,
     concurrentDecisions: 4,
     selectionsPerMinute: 600,
   };
@@ -142,6 +146,7 @@ async function leadProject(label: string) {
     systemPrompt: leadSystemPrompt({
       basePrompt: "choose a dispatchable ticket",
     }),
+    autoCompactWindow: leadAutoCompactWindowTokensDefault,
   });
   return { partition, session };
 }

@@ -16,7 +16,11 @@
  * replay of a historical revision rather than a second verb.
  */
 
-import { textCodePointsCount } from "../contract/http.ts";
+import {
+  leadAutoCompactWindowTokensMax,
+  leadAutoCompactWindowTokensMin,
+  textCodePointsCount,
+} from "../contract/http.ts";
 import { assertNever } from "../domain/assertNever.ts";
 import type { Principal, ProjectAccess } from "./nativeWeb.ts";
 import type { Authority } from "./operationInbox.ts";
@@ -187,6 +191,18 @@ function checkedLimit(value: number | undefined, what: string): void {
     throw new RangeError(`${what} must be a positive safe integer`);
 }
 
+/** Refuses a compaction window the lead's runtime would not take. */
+export function checkedAutoCompactWindow(value: number | undefined): void {
+  if (value === undefined) return;
+  if (
+    value < leadAutoCompactWindowTokensMin ||
+    value > leadAutoCompactWindowTokensMax
+  )
+    throw new RangeError(
+      `autoCompactWindow must be between ${String(leadAutoCompactWindowTokensMin)} and ${String(leadAutoCompactWindowTokensMax)} tokens`,
+    );
+}
+
 /** Refuses an override no column would hold, before the row is offered one. */
 export function checkedSelectorProjectOverrides(
   overrides: SelectorProjectOverrides,
@@ -203,6 +219,7 @@ export function checkedSelectorProjectOverrides(
     overrides.operationalContextMaxAgeMs,
     "selector operationalContextMaxAgeMs",
   );
+  checkedAutoCompactWindow(limits.autoCompactWindow);
   if (
     limits.candidatePagesPerDecision !== undefined &&
     limits.candidatePagesPerDecision !== 1

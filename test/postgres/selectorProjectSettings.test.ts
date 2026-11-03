@@ -33,6 +33,11 @@ import {
   asTenantId,
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
+import {
+  leadAutoCompactWindowTokensDefault,
+  leadAutoCompactWindowTokensMax,
+  leadAutoCompactWindowTokensMin,
+} from "../../src/contract/http.ts";
 import { selectorProjectOverridesSchema } from "../../src/contract/requests.ts";
 import { threadStandingRulesDefault } from "../../src/contract/threadSeeding.ts";
 import {
@@ -1029,8 +1034,13 @@ test("every limit the override door accepts is a column that reads back", async 
     const installation = await postgresSelectorRuntimeControl(pool).settings();
     let revision = 0;
     for (const limit of accepted) {
-      /** The one limit whose only legal value is one until multi-page tools land. */
-      const value = limit === "candidatePagesPerDecision" ? 1 : 7;
+      /** One limit's only legal value is one until multi-page tools land, and the window has a floor. */
+      const value =
+        limit === "candidatePagesPerDecision"
+          ? 1
+          : limit === "autoCompactWindow"
+            ? leadAutoCompactWindowTokensMin
+            : 7;
       const written = writtenSettings(
         await store.write(
           partition,
@@ -1125,7 +1135,7 @@ test("a project's dispatch budget is a column, and a budget of none is not one",
     harness.query(
       `SELECT revision::text FROM update_selector_project_settings(
          $1,$2,$3,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,$4,
-         NULL,NULL,NULL,'User','selector-admin')`,
+         NULL,NULL,NULL,NULL,'User','selector-admin')`,
       [partition.tenant, partition.project, revision, dispatches],
     );
   try {
@@ -1175,7 +1185,7 @@ test("a project's dispatch budget stops at the ceiling its decisions are parsed 
     harness.query(
       `SELECT revision::text FROM update_selector_project_settings(
          $1,$2,$3,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,$4,
-         NULL,NULL,NULL,'User','selector-admin')`,
+         NULL,NULL,NULL,NULL,'User','selector-admin')`,
       [partition.tenant, partition.project, revision, dispatches],
     );
   await assert.rejects(
@@ -1183,4 +1193,83 @@ test("a project's dispatch budget stops at the ceiling its decisions are parsed 
     /selector_project_dispatches_are_bounded/,
   );
   assert.deepEqual(await write(0, leadDispatchesMax), [{ revision: "1" }]);
+});
+
+/**
+ * The installation's window is a key of its controls, and no controls row
+ * written so far states one, so it reads as the default until an
+ * administrator writes it.
+ */
+test("an installation whose controls state no compaction window reads the default", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "selector-window-default",
+  );
+  const pool = postgresHarnessRolePool(apiRole);
+  try {
+    const { settings } =
+      await postgresSelectorProjectSettings(pool).read(partition);
+    assert.equal(
+      settings.effective.installationLimits.autoCompactWindow,
+      leadAutoCompactWindowTokensDefault,
+    );
+    assert.equal(
+      settings.effective.limits.autoCompactWindow,
+      leadAutoCompactWindowTokensDefault,
+    );
+  } finally {
+    await pool.end();
+  }
+});
+
+/**
+ * A project's window is a column like the dispatch budget, bounded by the
+ * column as the runtime's own setting is, so a value the door would refuse is
+ * refused by the row too, and it is retained in the history.
+ */
+test("a project's compaction window is a column bounded as the runtime's setting is", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "selector-window-column",
+  );
+  const pool = postgresHarnessRolePool(apiRole);
+  const store = postgresSelectorProjectSettings(pool);
+  const write = (revision: number, window: number) =>
+    harness.query(
+      `SELECT revision::text FROM update_selector_project_settings(
+         $1,$2,$3,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
+         NULL,NULL,$4,NULL,'User','selector-admin')`,
+      [partition.tenant, partition.project, revision, window],
+    );
+  try {
+    for (const window of [
+      leadAutoCompactWindowTokensMin - 1,
+      leadAutoCompactWindowTokensMax + 1,
+    ])
+      await assert.rejects(
+        () => write(0, window),
+        /selector_project_auto_compact_window_is_bounded/,
+        String(window),
+      );
+    assert.deepEqual(await write(0, leadAutoCompactWindowTokensMax), [
+      { revision: "1" },
+    ]);
+    const held = (await store.read(partition)).settings;
+    assert.equal(
+      held.overrides.limits?.autoCompactWindow,
+      leadAutoCompactWindowTokensMax,
+    );
+    assert.equal(
+      held.effective.limits.autoCompactWindow,
+      leadAutoCompactWindowTokensMax,
+    );
+    assert.deepEqual(
+      (await store.history(partition, undefined, 10)).map(
+        (revision) => revision.overrides.limits?.autoCompactWindow,
+      ),
+      [leadAutoCompactWindowTokensMax],
+    );
+  } finally {
+    await pool.end();
+  }
 });

@@ -53,6 +53,8 @@ export interface SessionPlaneIdentity {
   readonly agentReference?: string;
   /** What the session was told it is, absent for a session opened without objectives. */
   readonly systemPrompt?: string;
+  /** The context, in tokens, a lead's runtime compacts at, absent for every other session. */
+  readonly autoCompactWindow?: number;
   /**
    * The transcript this attempt forks from, which is the parent's runtime
    * reference and is present only for an inquiry. It is the parent's and never

@@ -280,6 +280,16 @@ export const selectorHandoffNoteBytesMax = 65_536;
  */
 export const leadDispatchesMax = 8;
 
+/**
+ * The context, in tokens, at which a lead's runtime compacts its conversation:
+ * the installation's where it states none, and between the bounds below where
+ * a project sets its own. The bounds are the ones Claude Code's own
+ * `autoCompactWindow` setting takes.
+ */
+export const leadAutoCompactWindowTokensDefault = 200_000;
+export const leadAutoCompactWindowTokensMin = 100_000;
+export const leadAutoCompactWindowTokensMax = 1_000_000;
+
 /** How many tickets one decision may refuse, and how many it may lift. */
 export const leadRefusalsPerDecisionMax = 16;
 

@@ -1215,6 +1215,10 @@ const sessionPlaneCases: Readonly<
     ...sessionPlaneStrangers,
     { name: "a session none of whose optional facts exist yet" },
     {
+      name: "a lead told the window it compacts at",
+      service: sessionAuthority({ ...liveSession, autoCompactWindow: 300_000 }),
+    },
+    {
       name: "a session bound, told what it is, and forking",
       service: sessionAuthority({
         ...liveSession,

@@ -128,6 +128,8 @@ export interface SessionRigOpening {
   readonly parent?: SessionId;
   readonly capabilities?: readonly SessionCapability[];
   readonly systemPrompt?: string;
+  /** The window a lead holds, written as `open_project_lead` writes it: the administrative door takes none. */
+  readonly autoCompactWindow?: number;
 }
 
 /** Opens one session, refusing anything but the arm the case expected. */
@@ -152,6 +154,11 @@ export async function sessionRigSession(
   });
   if (opened !== "Opened")
     throw new Error(`session rig: opening ${label} answered ${opened}`);
+  if (opening.autoCompactWindow !== undefined)
+    await rig.harness.query(
+      `UPDATE agent_session SET auto_compact_window=$2 WHERE session=$1`,
+      [session, opening.autoCompactWindow],
+    );
   return session;
 }
 

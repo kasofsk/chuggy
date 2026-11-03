@@ -338,15 +338,18 @@ interface LeadPolicyPorts {
 
 /**
  * Whether an open lead is replaced before this decision: its newest decision
- * turn spent more than the bound, or it holds a system prompt other than the
- * one composed for this decision. A turn that measured nothing says nothing.
+ * turn spent more than the bound, or it holds a system prompt or a compaction
+ * window other than the one this decision runs under. A turn that measured
+ * nothing says nothing.
  */
 export function leadStandingReplaced(
   standing: LeadSessionStanding,
   systemPrompt: string,
+  autoCompactWindow: number,
 ): boolean {
   return (
     standing.systemPrompt !== systemPrompt ||
+    standing.autoCompactWindow !== autoCompactWindow ||
     (standing.decisionTurnTokens !== undefined &&
       standing.decisionTurnTokens > leadTurnTokensMax)
   );
@@ -379,9 +382,11 @@ async function leadStanding(
   partition: Partition,
 ): Promise<LeadSessionStanding> {
   const systemPrompt = leadTurnInstructions(request);
+  const { autoCompactWindow } = request.constraints.limits;
   const held = await ports.mailbox.lead(partition);
   if (held !== undefined && held.state === "Open") {
-    if (!leadStandingReplaced(held, systemPrompt)) return held;
+    if (!leadStandingReplaced(held, systemPrompt, autoCompactWindow))
+      return held;
     const closed = await ports.mailbox.closeLead(partition, held.session);
     if (!leadClosedReplaces(closed)) return held;
   }
@@ -391,6 +396,7 @@ async function leadStanding(
     principal: ports.config.principal,
     credentialSlot: ports.config.credentialSlot,
     systemPrompt,
+    autoCompactWindow,
   });
   const opened = await ports.mailbox.lead(partition);
   if (opened === undefined || opened.state !== "Open")

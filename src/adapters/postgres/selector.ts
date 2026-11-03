@@ -47,12 +47,14 @@ import type {
   SelectorProjectSettingsStore,
   SelectorProjectSettingsWriteOutcome,
 } from "../../interpreter/selectorProjectSettings.ts";
+import { checkedAutoCompactWindow } from "../../interpreter/selectorProjectSettings.ts";
 import { selectorAutomaticReadinessErrorCode } from "./schema.ts";
 import {
   asProjectId,
   asTenantId,
   type Partition,
 } from "../../interpreter/projectStore.ts";
+import { leadAutoCompactWindowTokensDefault } from "../../contract/http.ts";
 import { notificationSchema } from "../../contract/responses.ts";
 import {
   selectorDeliveryStates,
@@ -428,6 +430,11 @@ const selectorPolicyControlsSchema: z.ZodType<SelectorPolicyControls> = z
           .default(dispatchesPerDecisionUnstated),
         inputBytesPerDecision: z.number().int().safe(),
         candidatePagesPerDecision: z.number().int().safe(),
+        autoCompactWindow: z
+          .number()
+          .int()
+          .safe()
+          .default(leadAutoCompactWindowTokensDefault),
         concurrentDecisions: z.number().int().safe(),
         selectionsPerMinute: z.number().int().safe(),
       })
@@ -812,6 +819,7 @@ function checkedPolicyControls(
     throw new RangeError(
       "candidatePagesPerDecision must be one until multi-page policy tools land",
     );
+  checkedAutoCompactWindow(controls.limits.autoCompactWindow);
   return controls;
 }
 
@@ -877,6 +885,7 @@ interface SelectorProjectOverrideRow {
   readonly dispatches_per_decision: string | null;
   readonly input_bytes_per_decision: string | null;
   readonly candidate_pages_per_decision: string | null;
+  readonly auto_compact_window: string | null;
   readonly operational_context_max_age_ms: string | null;
 }
 
@@ -959,6 +968,7 @@ function selectorProjectOverridesOf(
     ["dispatchesPerDecision", row.dispatches_per_decision],
     ["inputBytesPerDecision", row.input_bytes_per_decision],
     ["candidatePagesPerDecision", row.candidate_pages_per_decision],
+    ["autoCompactWindow", row.auto_compact_window],
   ] as const;
   for (const [name, value] of counters) {
     const counter = selectorOverrideCounter(value, `selector ${name}`);
@@ -1045,6 +1055,7 @@ async function readProjectSettings(
          overrides.dispatches_per_decision::text,
          overrides.input_bytes_per_decision::text,
          overrides.candidate_pages_per_decision::text,
+         overrides.auto_compact_window::text,
          overrides.operational_context_max_age_ms::text,
          installation.revision::text AS installation_revision,
          installation.mode AS installation_mode,
@@ -1084,6 +1095,7 @@ async function readStandingProjectSettings(
          overrides.dispatches_per_decision::text,
          overrides.input_bytes_per_decision::text,
          overrides.candidate_pages_per_decision::text,
+         overrides.auto_compact_window::text,
          overrides.operational_context_max_age_ms::text,
          installation.revision::text AS installation_revision,
          installation.mode AS installation_mode,
@@ -1175,6 +1187,7 @@ async function writeProjectSettings(
            milliseconds_per_decision::text,tool_calls_per_decision::text,
            dispatches_per_decision::text,
            input_bytes_per_decision::text,candidate_pages_per_decision::text,
+           auto_compact_window::text,
            operational_context_max_age_ms::text,installation_revision::text,
            installation_mode,installation_dispatch_mode,installation_base_prompt,
            installation_controls
@@ -1191,6 +1204,7 @@ async function writeProjectSettings(
            ${limits.dispatchesPerDecision ?? null},
            ${limits.inputBytesPerDecision ?? null},
            ${limits.candidatePagesPerDecision ?? null},
+           ${limits.autoCompactWindow ?? null},
            ${overrides.operationalContextMaxAgeMs ?? null},
            ${administrator.kind},${administrator.subject})`,
     );
@@ -1235,6 +1249,7 @@ async function projectSettingsHistory(
          history.dispatches_per_decision::text,
          history.input_bytes_per_decision::text,
          history.candidate_pages_per_decision::text,
+         history.auto_compact_window::text,
          history.operational_context_max_age_ms::text,
          history.administrator_kind,history.administrator_subject,
          history.recorded_at
