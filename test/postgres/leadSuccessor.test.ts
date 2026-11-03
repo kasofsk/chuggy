@@ -220,7 +220,7 @@ test("two open leads are refused by the index and not by the body alone", async 
   );
 });
 
-test("the provisioning door no longer conflicts on a lead that is closed", async () => {
+test("the provisioning door opens a lead beside a closed one, and refuses one beside an open one", async () => {
   const { partition } = await projectWithAClosedLead("provision");
   const replacement = await sessionRigSession(
     rig.sessions,

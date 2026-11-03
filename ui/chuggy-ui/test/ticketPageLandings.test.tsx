@@ -223,7 +223,7 @@ test("a ticket with no landings, and one whose read never answered, draws its cy
   expect(none.join(" ")).not.toContain("Landing");
 });
 
-test("ticket 68: the second cycle's landing failed on a conflict, and the third says it follows it", async () => {
+test("a cycle whose landing failed on a conflict draws it failed, and the next cycle says it follows it", async () => {
   const container = await drawn(conflicted68);
   expect(summaryOf(groupOf(container, 2))).toBe(
     "Work passed · Stage 2 of 2 passed · Landing failed",
