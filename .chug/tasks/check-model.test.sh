@@ -138,9 +138,9 @@ check "a refuted invariant is a finding" 1 "$RC" "violated an invariant"
 check "a refuted invariant prints its seed" 1 "$RC" "0x1c6f70db7e06ad9b"
 
 # A PASS THAT CAN BE RECORDED IS ONE SWEEP THAT REPRODUCES IT. With a key,
-# both randomized runs are seeded from its leading hex digits, and the stage
-# says so; without one, neither is seeded. A key that is no key seeds nothing
-# and runs nothing.
+# both randomized runs and every suite are seeded from its leading hex digits,
+# and the stage says so; without one, nothing is. A key that is no key seeds
+# nothing and runs nothing.
 key=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 model_repo 0.33.1
 STUB_LOG="$WORK/quint.log"
@@ -155,11 +155,21 @@ check "a key names the seed it gives the runs" 0 "$RC" "seeded 0x0123456789abcde
 seeded="$(grep '^run ' "$STUB_LOG" | grep -c -- ' --seed=0x0123456789abcdef ' || true)"
 printf 'seeded runs %s\n' "$seeded" >> "$OUT"
 check "a key seeds both randomized runs" 0 "$RC" "seeded runs 2"
+# Each suite carries the gate's sample bound beside the seed, because under a
+# seed quint's own default is a single sample, which would try one draw of
+# each run and no other.
+suites="$(grep -c '^test ' "$STUB_LOG" || true)"
+seeded="$(grep '^test ' "$STUB_LOG" | grep -c -- '^test --seed=0x0123456789abcdef --max-samples=200 ' || true)"
+printf 'seeded suites %s of %s\n' "$seeded" "$suites" >> "$OUT"
+check "a key seeds every suite and bounds its samples" 0 "$RC" "seeded suites 14 of 14"
 : > "$STUB_LOG"
 run_in_repo
 seeded="$(grep -c -- '--seed' "$STUB_LOG" || true)"
 printf 'seeded calls %s\n' "$seeded" >> "$OUT"
 check "without a key no run is seeded" 0 "$RC" "seeded calls 0"
+bounded="$(grep -c -- '^test --max-samples=200 ' "$STUB_LOG" || true)"
+printf 'bounded suites %s\n' "$bounded" >> "$OUT"
+check "without a key every suite still bounds its samples" 0 "$RC" "bounded suites 14"
 : > "$STUB_LOG"
 OUT="$WORK/.out"
 set +e
@@ -196,6 +206,37 @@ STUB_RC_typecheck=1
 STUB_OUT_typecheck="error: typechecking failed"
 run_in_repo
 check "a typecheck that reported an error is a finding" 1 "$RC" "does not typecheck"
+
+# A FILE A LATER STAGE TAKES IS TYPECHECKED BY THAT STAGE, and only there: the
+# typecheck pass leaves it out, so the stage's own refusal to read it is the
+# finding, and a could-not-run in its place would let a model that does not
+# typecheck end on 2.
+model_repo 0.33.1
+STUB_LOG="$WORK/quint.log"
+export STUB_LOG
+: > "$STUB_LOG"
+run_in_repo
+for f in model/domain.qnt model/mc/mc_chuggy.qnt model/tests/chuggy_test.qnt; do
+	printf '%s typechecked %s, staged %s\n' "$f" \
+		"$(grep -c -x -- "typecheck $f" "$STUB_LOG" || true)" \
+		"$(grep -E -c -- "^(test|run) (.* )?$f( |\$)" "$STUB_LOG" || true)" >> "$OUT"
+done
+unset STUB_LOG
+check "a file no stage takes is typechecked" 0 "$RC" "model/domain.qnt typechecked 1, staged 0"
+check "a suite's file is typechecked by the suite alone" 0 "$RC" "model/tests/chuggy_test.qnt typechecked 0, staged 1"
+check "an instance's file is typechecked by its run alone" 0 "$RC" "model/mc/mc_chuggy.qnt typechecked 0, staged 1"
+
+model_repo 0.33.1
+STUB_RC_test=1
+STUB_OUT_test="error: typechecking failed"
+run_in_repo
+check "a suite whose file does not typecheck is a finding" 1 "$RC" "model/tests/chuggy_test.qnt does not typecheck"
+
+model_repo 0.33.1
+STUB_RC_run=1
+STUB_OUT_run="error: parsing failed"
+run_in_repo
+check "an instance whose file does not parse is a finding" 1 "$RC" "ticket instance does not typecheck"
 
 # THE VERSION PIN. A different release can change what typechecks, so a
 # mismatch is a refusal to judge rather than a pass on the wrong tool.

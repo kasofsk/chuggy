@@ -1,7 +1,7 @@
 #!/bin/sh
 # The model gate. Typechecks every Quint module, runs the unit suite, the
-# vendored package's own suite, the deterministic witness modules, the
-# refinement suites, and the randomized invariant runs over each instance.
+# vendored package's own suite, the witness modules, the refinement suites,
+# and the randomized invariant runs over each instance.
 #
 # Quint is pinned in package.json, and the local binary wins over anything on
 # PATH: a verdict that depends on which version happens to be installed is not
@@ -10,10 +10,16 @@
 # THE RANDOMIZED RUNS ARE SEEDED FROM THE KEY WHEN A PASS CAN BE RECORDED.
 # `track-record run` hands the gate the key a pass is recorded under as
 # TRACK_RECORD_KEY, and its leading hex digits, as many as quint's simulator
-# takes for a seed, seed both runs: a pass on record is the one sweep that
-# reproduces it, and a model that differs, or anything else
+# takes for a seed, seed both runs and every suite: a pass on record is the one
+# sweep that reproduces it, and a model that differs, or anything else
 # `.chug/tasks/_ci-select.sh` keys this gate on, sweeps afresh. Without a key
-# the runs are unseeded and sweep afresh every time.
+# nothing is seeded and every sweep is afresh.
+#
+# A SUITE SAMPLES A RUN THAT DRAWS AT MOST `samples` TIMES, each sample
+# redrawing every choice the run makes. The only draws are the witness
+# drivers' `oneOf` over the domain's `dispatchSources` and `acceptedSources`,
+# and the bound is set from how many of those one run makes. It is passed
+# under a seed too, where quint's own default is a single sample.
 #
 # Exits 0 clean, 1 on a finding, 2 when it could not run. Two is not a pass.
 set -eu
@@ -65,6 +71,7 @@ if [ -n "${TRACK_RECORD_KEY:-}" ]; then
 	fi
 	seed="0x$(printf '%.16s' "$TRACK_RECORD_KEY")"
 fi
+samples=200
 
 failed=0
 errored=0
@@ -77,7 +84,7 @@ tests=0
 # and the output is printed either way: a failure that said nothing is exactly
 # what left that crash undiagnosable.
 verdict() { # <label> <status> <output> <marker> <finding-message>
-	if printf '%s\n' "$3" | grep -q "$4"; then
+	if printf '%s\n' "$3" | grep -Eq "$4"; then
 		echo "ERROR $5"
 		failed=$((failed + 1))
 	else
@@ -87,6 +94,35 @@ verdict() { # <label> <status> <output> <marker> <finding-message>
 	printf '%s\n' "$3" | sed 's/^/    /'
 }
 
+# A FILE A LATER STAGE TAKES IS TYPECHECKED THERE. `quint test` and `quint run`
+# parse and typecheck their file and everything it imports exactly as
+# `quint typecheck` does, before anything runs, and end on the same line when
+# that fails; so those files are not typechecked on their own as well, and a
+# stage ending on that line is a finding rather than a could-not-run.
+unread='^error: (parsing|typechecking) failed$'
+staged_verdict() { # <label> <status> <output> <marker> <finding-message>
+	if printf '%s\n' "$3" | grep -Eq "$unread"; then
+		verdict "$1" "$2" "$3" "$unread" "$1 does not typecheck"
+	else
+		verdict "$@"
+	fi
+}
+unit_suites='model/tests/chuggy_test.qnt
+model/tests/capacity_test.qnt
+model/tests/runner_test.qnt
+model/tests/execution_requirement_test.qnt'
+package_suite=model/ticket-domain/ticket_tests.qnt
+witness_suite=model/tests/chuggy_witness_test.qnt
+refinement_suite=model/tests/chuggy_refinement_test.qnt
+ticket_instance=model/mc/mc_chuggy.qnt
+runner_instance=model/mc/mc_runner.qnt
+staged="$unit_suites
+$package_suite
+$witness_suite
+$refinement_suite
+$ticket_instance
+$runner_instance"
+
 # Quint selects only run names ending in `Test`, and exits 0 when that selects
 # NOTHING: a suite whose runs were renamed passes exactly as loudly as one that
 # ran. So a call is judged on the count it reports as well as on its status,
@@ -94,7 +130,7 @@ verdict() { # <label> <status> <output> <marker> <finding-message>
 run_suite() { # <label> <quint test args...>
 	label="$1"
 	shift
-	if out="$("$QUINT" test "$@" 2>&1)"; then
+	if out="$("$QUINT" test ${seed:+"--seed=$seed"} --max-samples="$samples" "$@" 2>&1)"; then
 		rc=0
 	else
 		rc=$?
@@ -102,7 +138,7 @@ run_suite() { # <label> <quint test args...>
 	if [ "$rc" -ne 0 ]; then
 		# A suite that ran and failed counts its failures; one that never got
 		# that far prints no such line.
-		verdict "$label" "$rc" "$out" '^ *[0-9][0-9]* failed' "$label failed"
+		staged_verdict "$label" "$rc" "$out" '^ *[0-9][0-9]* failed' "$label failed"
 		return 0
 	fi
 	passing="$(printf '%s\n' "$out" | sed -n 's/^ *\([0-9][0-9]*\) passing.*$/\1/p')"
@@ -118,6 +154,9 @@ echo "--- typecheck"
 IFS='
 '
 for m in $modules; do
+	if printf '%s\n' "$staged" | grep -Fqx -- "$m"; then
+		continue
+	fi
 	if out="$("$QUINT" typecheck "$m" 2>&1)"; then
 		continue
 	else
@@ -128,16 +167,15 @@ done
 unset IFS
 
 echo "--- unit suite"
-run_suite "model/tests/chuggy_test.qnt" model/tests/chuggy_test.qnt
-run_suite "model/tests/capacity_test.qnt" model/tests/capacity_test.qnt
-run_suite "model/tests/runner_test.qnt" model/tests/runner_test.qnt
-run_suite "model/tests/execution_requirement_test.qnt" model/tests/execution_requirement_test.qnt
+for u in $unit_suites; do
+	run_suite "$u" "$u"
+done
 
 # The package's text is vendored rather than written here, so its own suite is
 # what says a quint release still reads it the way the package does. A failing
 # case is a finding like any other: the text is this tree's model now.
 echo "--- package suite"
-run_suite "model/ticket-domain/ticket_tests.qnt" model/ticket-domain/ticket_tests.qnt
+run_suite "$package_suite" "$package_suite"
 
 # The witness modules prove each named shape reachable and assert every
 # invariant after every step.
@@ -147,14 +185,13 @@ run_suite "model/ticket-domain/ticket_tests.qnt" model/ticket-domain/ticket_test
 echo "--- witnesses"
 for w in resume rework stage sparse gate dependency; do
 	run_suite "witness $w" --match 'Witness$' \
-		--main="chuggy_witness_${w}_test" \
-		model/tests/chuggy_witness_test.qnt
+		--main="chuggy_witness_${w}_test" "$witness_suite"
 done
 
 echo "--- refinement"
 for r in unit witness hazard; do
 	run_suite "refinement $r" --main="chuggy_refinement_${r}_test" \
-		model/tests/chuggy_refinement_test.qnt
+		"$refinement_suite"
 done
 
 if [ -n "$seed" ]; then
@@ -162,22 +199,22 @@ if [ -n "$seed" ]; then
 else
 	echo "--- invariants (randomized)"
 fi
-if out="$("$QUINT" run model/mc/mc_chuggy.qnt --main=mc_chuggy ${seed:+"--seed=$seed"} \
+if out="$("$QUINT" run "$ticket_instance" --main=mc_chuggy ${seed:+"--seed=$seed"} \
 		--invariant=allInvariants --max-samples=2000 --max-steps=40 2>&1)"; then
 	:
 else
 	rc=$?
 	# A refuted invariant announces itself and carries the seed to reproduce it.
-	verdict "ticket instance" "$rc" "$out" '\[violation\]' \
+	staged_verdict "ticket instance" "$rc" "$out" '\[violation\]' \
 		"the ticket instance violated an invariant"
 fi
 
-if out="$("$QUINT" run model/mc/mc_runner.qnt --main=mc_registered_runner ${seed:+"--seed=$seed"} \
+if out="$("$QUINT" run "$runner_instance" --main=mc_registered_runner ${seed:+"--seed=$seed"} \
 		--invariant=allInvariants --max-samples=2000 --max-steps=30 2>&1)"; then
 	:
 else
 	rc=$?
-	verdict "registered runner instance" "$rc" "$out" '\[violation\]' \
+	staged_verdict "registered runner instance" "$rc" "$out" '\[violation\]' \
 		"registered runner instance violated an invariant"
 fi
 
