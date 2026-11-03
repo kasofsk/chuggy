@@ -61,7 +61,7 @@ function RunnerRoster(props: {
   const nowMs = useNowMs();
   if (props.listed.pools.length === 0)
     return (
-      <div className="grid justify-items-start gap-3 pt-3">
+      <div className="grid justify-items-start gap-3">
         <EmptyState label="No runner registered" />
         {props.action}
       </div>
