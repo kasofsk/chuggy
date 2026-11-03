@@ -621,11 +621,12 @@ pauses: the threshold of each window, as a whole percentage, and whether their
 threads and inquiries and the lead of a pool they registered pause with it. No
 role writes it yet, and no runtime role reads it: `agent_account_settings`
 answers it with the defaults where it holds no row, and `agent_account_pause`,
-which the pool plane may call, reads it through that. Its key and identity are
+which the pool plane may call and `ticket_rate_limit_resumable` asks for the
+scheduler, reads it through that. Its key and identity are
 `(principal, agent)`, and it departs from #180's composite project key as
 `agent_account_usage` does. It points at nothing. Nothing changes it yet. It
-has no unfinished work: a pause is derived from it at each claim, so a changed
-row is the answer at the next.
+has no unfinished work: a pause is derived from it at each claim and each
+scheduler pass, so a changed row is the answer at the next.
 
 `agent_account_press` — a person's latest press to try an agent account again
 after a provider refused it, and when the claim it let through spent it. No

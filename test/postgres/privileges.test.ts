@@ -24,12 +24,15 @@ import {
   repositoryLandingReadFunction,
   repositoryLandingWriteFunction,
   repositoryRetirementWriteFunction,
+  rateLimitedTicketsFunction,
+  rateLimitResumeFunction,
   runnerLossResumeFunction,
   runnerLostTicketsFunction,
   schedulerRole,
   selectorReviewRole,
   selectorServiceRole,
   ticketUpdatedDependenciesFunction,
+  ticketRateLimitResumableFunction,
   ticketRunnerLossFunction,
   ticketRunStepFailureFunction,
   ticketServiceRole,
@@ -1027,6 +1030,27 @@ test("only the scheduler finds and resumes a job lost on its runner, and only th
   assert.deepEqual(
     await changeLogExecutors(
       `${runnerLossResumeFunction}(text,text,bigint,bigint,text,text,bigint,bigint)`,
+    ),
+    [schedulerRole],
+  );
+});
+
+test("only the scheduler finds and resumes a job a usage limit stopped on its runner, and no runtime role asks the rule itself", async () => {
+  assert.deepEqual(
+    await changeLogExecutors(
+      `${ticketRateLimitResumableFunction}(text,text,bigint,bigint,bigint)`,
+    ),
+    [],
+  );
+  assert.deepEqual(
+    await changeLogExecutors(
+      `${rateLimitedTicketsFunction}(bigint,bigint,integer)`,
+    ),
+    [schedulerRole],
+  );
+  assert.deepEqual(
+    await changeLogExecutors(
+      `${rateLimitResumeFunction}(text,text,bigint,bigint,bigint,text,text,bigint,bigint)`,
     ),
     [schedulerRole],
   );
