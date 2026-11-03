@@ -44,10 +44,6 @@
     padding-bottom: var(--space-3);
   }
 
-  .panel-body-ruled {
-    padding-top: var(--space-4);
-  }
-
   .panel-foot {
     display: flex;
     align-items: center;
@@ -69,6 +65,11 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: var(--space-3);
+  }
+
+  /* After `.panel-body`, whose shorthand would otherwise take the top back. */
+  .panel-body-ruled {
+    padding-top: var(--space-4);
   }
 
   /* A button carries the browser's own box until something takes it off, and
