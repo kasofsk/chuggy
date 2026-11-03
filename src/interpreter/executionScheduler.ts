@@ -834,10 +834,35 @@ export interface RunnerLossResume {
 }
 
 /**
- * What answering it found: the answer is the resume a person would send at the
- * escalation's desk, so the writer still decides it and refuses it where the
- * desk closed first. `NotResumable` is a desk that closed, or one no longer a
- * runner loss under the bound, before the answer reached it.
+ * A ticket whose open escalation waits only on tasks a usage limit stopped on
+ * the runners that claimed them, or lost there, at least one of them the
+ * first and each free to run again, and that the scheduler has not answered.
+ */
+export interface RateLimitedTicket {
+  readonly partition: Partition;
+  readonly ticket: TicketId;
+}
+
+/**
+ * What answering one such escalation is asked for: the ticket, the losses and
+ * the rate-limited tasks at which a person is left to answer it, and the
+ * mailbox's bounds.
+ */
+export interface RateLimitResume {
+  readonly ticket: RateLimitedTicket;
+  readonly lossesMax: number;
+  readonly rateLimitsMax: number;
+  readonly mailbox: Pick<
+    TicketServiceConfig,
+    "ordinarySoftLimit" | "mailboxHardLimit"
+  >;
+}
+
+/**
+ * What answering either kind found: the answer is the resume a person would
+ * send at the escalation's desk, so the writer still decides it and refuses it
+ * where the desk closed first. `NotResumable` is a desk that closed, or one no
+ * longer resumable under its rule and bounds, before the answer reached it.
  */
 export type RunnerLossResumed =
   | { readonly resumed: "Submitted"; readonly operation: OperationId }
@@ -1056,6 +1081,22 @@ export interface ExecutionSchedulerStore {
 
   /** Answers one such ticket's escalation with a resume, once, where it is still one. */
   resumeRunnerLoss(resume: RunnerLossResume): Promise<RunnerLossResumed>;
+
+  /**
+   * At most `ticketsMax` tickets of active projects whose escalation waits
+   * only on tasks a usage limit stopped on their runners, or lost there, at
+   * least one the first: each loss under `lossesMax` where it stands, each
+   * such task one of fewer than `rateLimitsMax` where it stands, and the
+   * account it spent no longer paused.
+   */
+  rateLimitedTickets(
+    lossesMax: number,
+    rateLimitsMax: number,
+    ticketsMax: number,
+  ): Promise<readonly RateLimitedTicket[]>;
+
+  /** Answers one such ticket's escalation with a resume, once, where it is still one. */
+  resumeRateLimit(resume: RateLimitResume): Promise<RunnerLossResumed>;
 }
 
 /** The execution profile a backend enforces, resolved by policy and never weakened by authored content. */
@@ -1206,6 +1247,7 @@ export interface ExecutionSchedulerConfig extends Pick<DomainConfig, "nTasks"> {
   readonly requestsPerPassMax: number;
   readonly attemptLeaseSecs: number;
   readonly attemptRetriesMax: number;
+  readonly attemptRateLimitsMax: number;
   readonly attemptsPerPassMax: number;
   readonly placementBackoffSecs: number;
   readonly admissionsPerPassMax: number;
@@ -1223,6 +1265,7 @@ export const executionSchedulerDefaults: ExecutionSchedulerConfig = {
   requestsPerPassMax: 32,
   attemptLeaseSecs: 300,
   attemptRetriesMax: 3,
+  attemptRateLimitsMax: 3,
   attemptsPerPassMax: 256,
   placementBackoffSecs: 15,
   admissionsPerPassMax: 32,

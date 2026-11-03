@@ -138,6 +138,8 @@ import { postgresOwnershipEpoch } from "./ownership.ts";
 import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter } from "./rows.ts";
 import {
+  schedulerRateLimitedTickets,
+  schedulerResumeRateLimit,
   schedulerResumeRunnerLoss,
   schedulerRunnerLostTickets,
 } from "./schedulerResume.ts";
@@ -1513,6 +1515,7 @@ export function postgresExecutionScheduler(
     execution: (partition, execution) =>
       schedulerExecution(pool, partition, execution),
     resumeRunnerLoss: (resume) => schedulerResumeRunnerLoss(pool, resume),
+    resumeRateLimit: (resume) => schedulerResumeRateLimit(pool, resume),
     ...postgresExecutionSchedulerSweeps(pool),
   };
 }
@@ -1533,6 +1536,7 @@ function postgresExecutionSchedulerSweeps(
   | "unlaunched"
   | "fenceOldEpochAttempts"
   | "runnerLostTickets"
+  | "rateLimitedTickets"
 > {
   let waitingAfter: WaitingAttempt | undefined;
   return {
@@ -1582,5 +1586,7 @@ function postgresExecutionSchedulerSweeps(
       ),
     runnerLostTickets: (lossesMax, ticketsMax) =>
       schedulerRunnerLostTickets(pool, lossesMax, ticketsMax),
+    rateLimitedTickets: (lossesMax, rateLimitsMax, ticketsMax) =>
+      schedulerRateLimitedTickets(pool, lossesMax, rateLimitsMax, ticketsMax),
   };
 }

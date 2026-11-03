@@ -1090,6 +1090,7 @@ function processExecutionFakes(observed: boolean): string {
       attemptEnded: async (_attempt, loss, evidence) => { ended.push(loss + ':' + evidence); return true; },
       blockExecution: async () => ({ blocked: 'Blocked', operation: 'operation-one' }),
       runnerLostTickets: async () => [],
+      rateLimitedTickets: async () => [],
     };
     const configuration = ${JSON.stringify(configuration)};
   `;

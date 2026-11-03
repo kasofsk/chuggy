@@ -16,16 +16,10 @@ import { after, test } from "node:test";
 import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
 import { postgresPersonalRunnerRegistry } from "../../src/adapters/postgres/personalRunner.ts";
 import {
-  apiRole,
-  poolPlaneRole,
-  workerPlaneRole,
-} from "../../src/adapters/postgres/schema.ts";
-import {
   postgresWorkerArtifactReservations,
   postgresWorkerRunEnded,
 } from "../../src/adapters/postgres/workerPlane.ts";
 import {
-  postgresWorkerPoolAssignments,
   postgresWorkerPoolRegistry,
   postgresWorkerPoolRoster,
 } from "../../src/adapters/postgres/workerPool.ts";
@@ -51,15 +45,8 @@ import {
   asPrincipal,
   type Principal,
 } from "../../src/interpreter/principal.ts";
-import type { ProjectMemory } from "../../src/interpreter/projectWriter.ts";
 import type { WorkerPoolIdentity } from "../../src/interpreter/workerPool.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
-import {
-  postgresHarnessDrain,
-  postgresHarnessResume,
-  postgresHarnessRolePool,
-} from "./harness.ts";
-import { memoryProjectAccess } from "./projectAccessMemory.ts";
 import {
   schedulerClaimFor,
   schedulerInCluster,
@@ -67,74 +54,36 @@ import {
   schedulerOwner,
   schedulerPlacedAttempt,
   schedulerProject,
-  schedulerReport,
-  schedulerRigOpen,
   schedulerRuntime,
-  type SchedulerProject,
 } from "./schedulerHarness.ts";
 import {
-  poolRoutedExecution,
-  poolRoutedService,
-  poolRoutes,
-} from "./schedulerPoolsHarness.ts";
+  schedulerResumeAdmitted,
+  schedulerResumeInvoked,
+  schedulerResumeRigOpen,
+  schedulerResumeSteps,
+  type SchedulerResumeRouted,
+} from "./schedulerResumeHarness.ts";
 
-const rig = await schedulerRigOpen();
-const apiPool = postgresHarnessRolePool(apiRole);
-const planePool = postgresHarnessRolePool(poolPlaneRole);
-const workerPool = postgresHarnessRolePool(workerPlaneRole);
+const resume = await schedulerResumeRigOpen();
+const { rig, apiPool, workerPool, access, service, assignments } = resume;
+const {
+  standing,
+  schedulerAnswers,
+  drained,
+  routedTicket,
+  reported,
+  resumedByScheduler,
+  resumedByPerson,
+} = schedulerResumeSteps(resume);
 
-after(async () => {
-  await Promise.all([apiPool.end(), planePool.end(), workerPool.end()]);
-  await rig.close();
-});
+after(() => resume.close());
 
-const access = memoryProjectAccess();
-const service = poolRoutedService(rig, access);
-const assignments = postgresWorkerPoolAssignments(planePool);
 const reads = postgresNativeReads(apiPool);
 
 /** The name every pool a case registers goes by. */
 const poolName = "runner-a";
 
-/** One ticket whose jobs run on its project's pools, and the writer's memory of it so far. */
-interface Routed {
-  readonly project: SchedulerProject;
-  memory: ProjectMemory;
-}
-
-/** Where a ticket stands, as its projection says. */
-async function standing(routed: Routed) {
-  const { partition, ticket } = routed.project;
-  const [row] = await rig.harness.query(
-    `SELECT phase, escalation FROM ticket_projection
-      WHERE tenant=$1 AND project=$2 AND ticket=$3`,
-    [partition.tenant, partition.project, ticket],
-  );
-  return row;
-}
-
-/** How many escalations the scheduler has answered in this ticket's project. */
-async function schedulerAnswers(routed: Routed): Promise<number> {
-  const { partition } = routed.project;
-  const [row] = (await rig.harness.query(
-    `SELECT count(*)::int AS answers FROM operation
-      WHERE tenant=$1 AND project=$2 AND authority_kind='ExecutionScheduler'
-        AND command_tag='ResolveNativeAction'`,
-    [partition.tenant, partition.project],
-  )) as readonly { answers: number }[];
-  return row?.answers ?? 0;
-}
-
-/** Decides everything the ticket's project has waiting. */
-async function drained(routed: Routed): Promise<void> {
-  const drain = await postgresHarnessDrain(
-    rig.harness,
-    routed.project.partition,
-    routed.memory,
-  );
-  assert.ok(drain.decided.every((decided) => decided === "Committed"));
-  routed.memory = drain.memory;
-}
+type Routed = SchedulerResumeRouted;
 
 /** Registers a pool in the ticket's project and grants it `Execute`, answering the identity it claims under. */
 async function poolOf(routed: Routed): Promise<WorkerPoolIdentity> {
@@ -159,60 +108,16 @@ async function poolOf(routed: Routed): Promise<WorkerPoolIdentity> {
   return registered;
 }
 
-/** A fresh ticket whose work is registered on the pool route and admitted. */
-async function routedTicket(
-  label: string,
-): Promise<{ routed: Routed; execution: ExecutionId }> {
-  const { project, execution } = await poolRoutedExecution(rig, label);
-  return { routed: { project, memory: project.memory }, execution };
-}
-
 /** Registers the ticket's newest spawn on the pool route and admits its one task. */
 async function newestAdmitted(routed: Routed): Promise<ExecutionId> {
-  const { partition, ticket, cluster } = routed.project;
-  const [row] = (await rig.harness.query(
-    `SELECT request FROM execution_request
-      WHERE tenant=$1 AND project=$2 AND ticket=$3 AND state='Open'
-      ORDER BY authorizing_seq DESC, effect_position DESC LIMIT 1`,
-    [partition.tenant, partition.project, ticket],
-  )) as readonly { request: string }[];
-  assert.ok(row !== undefined);
-  await rig.store.registerSpawn(
-    await schedulerClaimFor(
-      rig,
-      partition,
-      row.request,
-      schedulerOwner("runner-loss"),
-    ),
-    1,
-    poolRoutes,
-  );
-  const admitted = await rig.store.admit(cluster);
-  assert.ok(admitted.admitted === "Admitted");
-  return admitted.execution;
+  const [execution] = await schedulerResumeAdmitted(resume, routed);
+  assert.ok(execution !== undefined);
+  return execution;
 }
 
 /** Opens and invokes the execution's attempt, as a pass would for a pool. */
-async function invokedAttempt(
-  routed: Routed,
-  execution: ExecutionId,
-): Promise<PhysicalAttempt> {
-  const opened = await rig.store.openAttempt({
-    partition: routed.project.partition,
-    execution,
-    epoch: routed.project.epoch,
-    leaseSecs: service.config.attemptLeaseSecs,
-    retriesMax: service.config.attemptRetriesMax,
-    placementBackoffSecs: service.config.placementBackoffSecs,
-    runtime: schedulerRuntime,
-  });
-  assert.ok(opened.opened === "Opened");
-  assert.equal(
-    await rig.store.attemptInvoked(opened.attempt, schedulerInvocation),
-    true,
-  );
-  return opened.attempt;
-}
+const invokedAttempt = (routed: Routed, execution: ExecutionId) =>
+  schedulerResumeInvoked(resume, routed, execution, schedulerInvocation);
 
 /** Has the pool claim the execution's attempt, answering the attempt and the bearer it was claimed under. */
 async function claimed(
@@ -287,38 +192,6 @@ async function leaseLapsedOnRunner(
     [partition.tenant, partition.project, execution],
   );
   await concluded(routed);
-}
-
-/** The worker's verdict on the attempt, through the store's terminal transaction, and the writer's decision on it. */
-async function reported(
-  routed: Routed,
-  attempt: PhysicalAttempt,
-  verdict: "Pass" | "Fail",
-): Promise<void> {
-  assert.equal(
-    (await rig.store.terminalize(schedulerReport(attempt, verdict)))
-      .terminalized,
-    "Terminalized",
-  );
-  await drained(routed);
-}
-
-/** How many answers a scheduler pass's resumes submitted in this ticket's project, once the writer has decided them. */
-async function resumedByScheduler(routed: Routed): Promise<number> {
-  const before = await schedulerAnswers(routed);
-  await executionSchedulerResume(service);
-  await drained(routed);
-  return (await schedulerAnswers(routed)) - before;
-}
-
-/** A member answers the ticket's open escalation with a resume, and the writer decides it. */
-async function resumedByPerson(routed: Routed, label: string): Promise<void> {
-  const { partition, ticket } = routed.project;
-  assert.equal(
-    await postgresHarnessResume(rig.harness, partition, ticket, label),
-    "Accepted",
-  );
-  await drained(routed);
 }
 
 /** What the scheduler's own door answers for the ticket, past whatever a pass would have chosen. */

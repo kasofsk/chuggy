@@ -282,6 +282,12 @@ export const ticketRunnerLossFunction = "ticket_runner_loss";
 export const runnerLostTicketsFunction = "runner_lost_tickets";
 /** The scheduler's door for answering one such escalation as a person would. */
 export const runnerLossResumeFunction = "submit_runner_loss_resume";
+/** Whether a ticket's escalation waits only on tasks a usage limit stopped or lost on their runners, each of them free to run again. */
+export const ticketRateLimitResumableFunction = "ticket_rate_limit_resumable";
+/** The escalated tickets the scheduler may resume once a usage limit that stopped them no longer pauses their accounts. */
+export const rateLimitedTicketsFunction = "rate_limited_tickets";
+/** The scheduler's door for answering one such escalation as a person would. */
+export const rateLimitResumeFunction = "submit_rate_limit_resume";
 /** The Pending tickets the importer may move onto a repository head's revision. */
 export const configurationFollowingCandidatesFunction =
   "configuration_following_candidates";

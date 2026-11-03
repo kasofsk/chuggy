@@ -108,6 +108,7 @@ import { migration107 } from "./107-queue-checks-failed.ts";
 import { migration108 } from "./108-metrics-plane-ticket-history.ts";
 import { migration109 } from "./109-agent-account-usage.ts";
 import { migration110 } from "./110-agent-account-pause.ts";
+import { migration111 } from "./111-rate-limit-resume.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -221,4 +222,5 @@ export const migrations: readonly Migration[] = [
   migration108,
   migration109,
   migration110,
+  migration111,
 ];

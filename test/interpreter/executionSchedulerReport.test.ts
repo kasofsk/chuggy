@@ -123,6 +123,8 @@ function recordingStore(
     fenceOldEpochAttempts: unreached,
     runnerLostTickets: unreached,
     resumeRunnerLoss: unreached,
+    rateLimitedTickets: unreached,
+    resumeRateLimit: unreached,
   };
 }
 

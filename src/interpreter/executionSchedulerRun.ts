@@ -129,6 +129,17 @@
  * What counts as lost, and where in a ticket the count is kept, are
  * `src/adapters/postgres/schema/migrations/061-runner-loss.ts`'s.
  *
+ * A JOB A USAGE LIMIT STOPPED ON ITS RUNNER IS RESUMED THERE TOO, once the
+ * account it spent is no longer paused. Its run spent no retry, but the
+ * execution opens no other attempt, so the ticket escalates as for a loss. The
+ * pass answers an escalation whose every task was stopped so or lost on its
+ * runner, at least one stopped so, while each was stopped so at its place
+ * fewer times than `attemptRateLimitsMax`, so a job stopped every time still
+ * reaches a person; until then the escalated ticket holds no slot. The rule is
+ * `src/adapters/postgres/schema/migrations/111-rate-limit-resume.ts`'s, and it
+ * runs after the runner losses' because an escalation of losses alone is
+ * theirs.
+ *
  * A WORKLOAD THAT MET A FAULT ITS WORKER CANNOT REPORT IS ENDED ON IT. A job
  * whose image could not be pulled, started or passed through the runtime's
  * check never claims anything, so waiting out its lease spends the ticket's
@@ -1402,7 +1413,8 @@ export async function executionSchedulerLaunch(
 
 /**
  * Answers a bounded batch of escalations whose tasks were lost on the runners
- * that claimed them with a resume, counting the answers this pass submitted.
+ * that claimed them with a resume, then a bounded batch of those a usage limit
+ * stopped there, counting the answers this pass submitted.
  */
 export async function executionSchedulerResume(
   service: ExecutionSchedulerService,
@@ -1421,6 +1433,20 @@ export async function executionSchedulerResume(
     const outcome = await service.store.resumeRunnerLoss({
       ticket,
       lossesMax: config.attemptRetriesMax,
+      mailbox: service.ticketService,
+    });
+    if (outcome.resumed === "Submitted") resumed += 1;
+  }
+  const limited = await service.store.rateLimitedTickets(
+    config.attemptRetriesMax,
+    config.attemptRateLimitsMax,
+    config.resumesPerPassMax,
+  );
+  for (const ticket of limited) {
+    const outcome = await service.store.resumeRateLimit({
+      ticket,
+      lossesMax: config.attemptRetriesMax,
+      rateLimitsMax: config.attemptRateLimitsMax,
       mailbox: service.ticketService,
     });
     if (outcome.resumed === "Submitted") resumed += 1;
