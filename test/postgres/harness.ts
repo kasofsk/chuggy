@@ -481,10 +481,11 @@ export async function postgresHarnessRowLock(
 
 /**
  * Resolves once that many backends are waiting on a lock, which is how a case
- * knows the calls it did not await have reached the row a blockade holds. It
+ * knows the calls it did not await have reached the lock a holder holds. It
  * asks on a pool connection rather than on the one holding the lock, because a
  * transaction caches its statistics snapshot and would answer with whatever it
- * saw the first time it asked.
+ * saw the first time it asked, and on one that sees every backend's wait state,
+ * as the harness's own does and a deployment role's does not.
  */
 export async function postgresHarnessStalled(
   blockade: pg.Pool,
@@ -503,7 +504,7 @@ export async function postgresHarnessStalled(
     await delay(postgresHarnessStallAskMs);
   }
   throw new Error(
-    `postgres harness: fewer than ${String(backends)} backends stalled behind the row lock, so a case is asserting against a race it never set up`,
+    `postgres harness: fewer than ${String(backends)} backends stalled behind a lock, so a case is asserting against a race it never set up`,
   );
 }
 

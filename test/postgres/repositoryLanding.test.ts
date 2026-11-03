@@ -7,7 +7,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
-import { setTimeout as delay } from "node:timers/promises";
 import type pg from "pg";
 
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
@@ -27,6 +26,7 @@ import {
   postgresHarnessOpen,
   postgresHarnessPartition,
   postgresHarnessRolePool,
+  postgresHarnessStalled,
   postgresHarnessUrl,
   type PostgresHarness,
 } from "./harness.ts";
@@ -44,9 +44,6 @@ after(async () => {
 
 /** A write leaving the pipeline definitions where a fresh binding has them. */
 const unchanged = { expected: false, wanted: false };
-
-/** Long enough for a second writer to reach the door and be held at the lock the first took. */
-const contenderWaitMs = 500;
 
 /** A pool whose every query runs on the one client a case is holding a transaction open on. */
 function clientPool(client: pg.PoolClient): pg.Pool {
@@ -441,7 +438,7 @@ test("a second writer decides against the landing the first left, not the one it
         settled = true;
         return outcome;
       });
-    await delay(contenderWaitMs);
+    await postgresHarnessStalled(harness.pool, 1);
     assert.equal(settled, false);
     await holder.query("COMMIT");
     assert.equal((await waiting).outcome, "LandingMoved");
