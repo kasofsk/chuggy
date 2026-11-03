@@ -148,7 +148,7 @@ function fixturePort(
   fixture: Fixture,
   resolved: CredentialResolved | RepositoryCredentialPort = fixtureCredential,
   environment: GitEnvironment = process.env,
-  remoteTimeoutSecsMax?: number,
+  remoteTimeoutMsMax?: number,
   reader: FixtureReader = {},
 ) {
   return gitRepositoryConfiguration({
@@ -157,7 +157,7 @@ function fixturePort(
     environment,
     credentials:
       "resolved" in resolved ? fixtureCredentials(resolved) : resolved,
-    ...(remoteTimeoutSecsMax === undefined ? {} : { remoteTimeoutSecsMax }),
+    ...(remoteTimeoutMsMax === undefined ? {} : { remoteTimeoutMsMax }),
     ...reader,
   });
 }
@@ -167,7 +167,7 @@ function fixtureStoodIn(
   fixture: Fixture,
   verb: string,
   fault: GitStandInFault,
-  remoteTimeoutSecsMax?: number,
+  remoteTimeoutMsMax?: number,
 ) {
   const standIn = join(fixture.directory, "stand-in");
   const path = gitStandInOpen(standIn, [verb]);
@@ -176,7 +176,7 @@ function fixtureStoodIn(
     fixture,
     undefined,
     { ...process.env, PATH: path },
-    remoteTimeoutSecsMax,
+    remoteTimeoutMsMax,
   );
 }
 
@@ -549,7 +549,7 @@ test("an ls-remote that outlived its bound says it timed out, on the head and on
   const fixture = fixtureOpen(t);
   fixtureWrite(fixture, `${repositoryConfigurationRoot}work.json`, "one\n");
   const commit = asGitObjectId(fixtureCommit(fixture, "one"));
-  const port = fixtureStoodIn(fixture, "ls-remote", "Stalled", 1);
+  const port = fixtureStoodIn(fixture, "ls-remote", "Stalled", 50);
   const repository = fixtureBinding(fixture.remote);
   const evidence = { git: "ls-remote", stopped: "Timeout" };
 
@@ -835,23 +835,59 @@ test("a retry's pause counts against its reader's retries, in the room it needs 
   assert.equal(calls(), 3);
 });
 
-test("a retry runs under what its reader's retries have left, not under the read's own bound", async (t) => {
+test("a retry runs under the milliseconds its reader's retries have left, not under the read's own bound", async (t) => {
   const fixture = fixtureOpen(t);
   fixtureDeclared(fixture);
+  const elapsedMsMax = 1_900;
   const { port, calls } = fixtureTold(
     fixture,
     "ls-remote",
     ["Said", "Stalled"],
     {
-      remoteRetry: { pauseMs: 1, elapsedMsMax: 1_500 },
+      remoteRetry: { pauseMs: 1, elapsedMsMax },
     },
   );
 
+  const begunMs = performance.now();
   assert.deepEqual(await port.defaultBranch(fixtureBinding(fixture.remote)), {
     read: "Unavailable",
     evidence: { git: "ls-remote", stopped: "Timeout" },
   });
+  const tookMs = performance.now() - begunMs;
+  assert.ok(
+    tookMs >= elapsedMsMax - 100,
+    `the retry was stopped after ${String(tookMs)}ms, short of what the retries had left`,
+  );
   assert.equal(calls(), 2);
+});
+
+test("a timeout that is no positive count of its unit, or is named in both units, is refused at construction", (t) => {
+  const fixture = fixtureOpen(t);
+  const composed =
+    (timeouts: Partial<GitRepositoryConfigurationOptions>) => () =>
+      gitRepositoryConfiguration({
+        scratchDirectory: fixtureScratch(fixture),
+        identity: { name: "chug", email: "chug@example.test" },
+        environment: process.env,
+        credentials: fixtureCredentials(fixtureCredential),
+        ...timeouts,
+      });
+  for (const bound of [0, 1.5]) {
+    for (const named of [
+      "localTimeoutSecsMax",
+      "localTimeoutMsMax",
+      "remoteTimeoutSecsMax",
+      "remoteTimeoutMsMax",
+    ] as const) {
+      assert.throws(composed({ [named]: bound }), RangeError, named);
+    }
+  }
+  for (const both of [
+    { localTimeoutSecsMax: 1, localTimeoutMsMax: 1_000 },
+    { remoteTimeoutSecsMax: 1, remoteTimeoutMsMax: 1_000 },
+  ]) {
+    assert.throws(composed(both), RangeError);
+  }
 });
 
 test("a retry bound that is not a count of milliseconds is refused at construction", (t) => {
@@ -1408,7 +1444,7 @@ test("a read begun while as many reads of its repository as may be are in flight
   const fixture = fixtureOpen(t);
   fixtureWrite(fixture, `${repositoryConfigurationRoot}work.json`, "work\n");
   const commit = asGitObjectId(fixtureCommit(fixture, "work"));
-  const port = fixtureStoodIn(fixture, "ls-remote", "Stalled", 1);
+  const port = fixtureStoodIn(fixture, "ls-remote", "Stalled", 500);
   const answered: number[] = [];
 
   const answers = await Promise.all(
@@ -1448,8 +1484,8 @@ test("probes of one repository begun together that stall each stop at their own 
   const fixture = fixtureOpen(t);
   fixtureWrite(fixture, `${repositoryConfigurationRoot}work.json`, "work\n");
   const commit = asGitObjectId(fixtureCommit(fixture, "work"));
-  const boundSecs = 1;
-  const port = fixtureStoodIn(fixture, "ls-remote", "Stalled", boundSecs);
+  const boundMs = 500;
+  const port = fixtureStoodIn(fixture, "ls-remote", "Stalled", boundMs);
   const begunMs = performance.now();
 
   const answers = await Promise.all(
@@ -1462,7 +1498,7 @@ test("probes of one repository begun together that stall each stop at their own 
         });
         return {
           answer: fixtureAnswer(read),
-          secs: (performance.now() - begunMs) / 1000,
+          tookMs: performance.now() - begunMs,
         };
       },
     ),
@@ -1473,10 +1509,10 @@ test("probes of one repository begun together that stall each stop at their own 
       "Unavailable",
     ),
   );
-  const slowestSecs = Math.max(...answers.map(({ secs }) => secs));
+  const slowestMs = Math.max(...answers.map(({ tookMs }) => tookMs));
   assert.ok(
-    slowestSecs < 2 * boundSecs,
-    `the slowest probe answered after ${String(slowestSecs)}s, past one bound of its own`,
+    slowestMs < 2 * boundMs,
+    `the slowest probe answered after ${String(slowestMs)}ms, past one bound of its own`,
   );
 });
 

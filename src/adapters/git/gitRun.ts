@@ -51,7 +51,7 @@ const gitVersionMin: { readonly major: number; readonly minor: number } = {
 const gitOutputBytesMax = 4 * 1024 * 1024;
 
 /** The bound on the two synchronous calls this adapter makes, neither of which reaches a remote. */
-const gitRunSetupTimeoutSecsMax = 30;
+const gitRunSetupTimeoutMsMax = 30_000;
 
 /** How long the output of a call is waited for once the process that produced it is gone. */
 const gitRunDrainSecs = 1;
@@ -117,7 +117,7 @@ export type GitRan =
 export interface GitCall {
   readonly directory: string;
   readonly argv: readonly string[];
-  readonly timeoutSecsMax: number;
+  readonly timeoutMsMax: number;
   readonly environment: GitEnvironment;
   readonly outputBytesMax?: number;
   readonly input?: Uint8Array | string;
@@ -182,6 +182,30 @@ function gitRunExited(
   };
 }
 
+/**
+ * One timeout as the milliseconds a call is bounded by, from whichever unit a
+ * composition named it in, whole seconds or milliseconds, and else from its
+ * default's seconds. One named both ways, or as no positive count of its unit,
+ * is refused.
+ */
+export function gitTimeoutMs(
+  secs: number | undefined,
+  ms: number | undefined,
+  defaultSecs: number,
+): number {
+  if (secs !== undefined && ms !== undefined) {
+    throw new RangeError(
+      "git: a timeout is named in seconds and in milliseconds",
+    );
+  }
+  const [count, unitMs] =
+    ms === undefined ? [secs ?? defaultSecs, 1000] : [ms, 1];
+  if (!Number.isSafeInteger(count) || count <= 0) {
+    throw new RangeError("git: a timeout is not a positive count of its unit");
+  }
+  return count * unitMs;
+}
+
 /** Runs one bounded git call, resolving a non-zero exit and rejecting only a git that could not start. */
 export function gitRun(call: GitCall): Promise<GitRan> {
   const argv = ["-C", call.directory, ...call.argv];
@@ -205,7 +229,7 @@ export function gitRun(call: GitCall): Promise<GitRan> {
     };
     const deadline = setTimeout(() => {
       settle({ ran: "Stopped", stopped: "Timeout" });
-    }, call.timeoutSecsMax * 1000);
+    }, call.timeoutMsMax);
     const ceiling = (): void => {
       settle({ ran: "Stopped", stopped: "OutputCeiling" });
     };
@@ -289,12 +313,12 @@ export function gitVersionAdmits(version: string): boolean {
 export function gitRunSetup(
   argv: readonly string[],
   environment: GitEnvironment,
-  timeoutSecsMax: number = gitRunSetupTimeoutSecsMax,
+  timeoutMsMax: number = gitRunSetupTimeoutMsMax,
 ): string {
   return execFileSync("git", [...argv], {
     encoding: "utf8",
     env: environment,
-    timeout: timeoutSecsMax * 1000,
+    timeout: timeoutMsMax,
     killSignal: "SIGKILL",
   });
 }

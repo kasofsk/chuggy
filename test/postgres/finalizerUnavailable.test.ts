@@ -534,7 +534,7 @@ function undecideByPreReceive(origin: string): void {
 }
 
 /** The bound a case abandons its push at, well inside the hook that outlasts it. */
-const undecidedPushSecs = 1;
+const undecidedPushMs = 50;
 
 /**
  * A push nobody heard the fate of, onto a branch the remote did not hold at
@@ -557,7 +557,7 @@ test("an undecided push onto a branch nobody created is prepared again until its
       project,
       port(
         finalizerRemotePort(rig, {
-          promotionTimeoutSecsMax: undecidedPushSecs,
+          promotionTimeoutMsMax: undecidedPushMs,
         }),
       ),
       label,
@@ -676,7 +676,7 @@ async function heldBranchSubject(
 /** A port under which somebody deletes the held branch just before each push, which the hook then outlasts. */
 function deletedBeforePush(origin: string): GitPromotionPort {
   return finalizerRacingPort(
-    finalizerRemotePort(rig, { promotionTimeoutSecsMax: undecidedPushSecs }),
+    finalizerRemotePort(rig, { promotionTimeoutMsMax: undecidedPushMs }),
     () => {
       finalizerGitVerb(origin, "update-ref", "-d", heldBranch);
       undecideByPreReceive(origin);

@@ -7,7 +7,9 @@
  * slowed transfer here is a real fetch left part-way and not a stand-in for
  * one. It runs inside the fetch that asked, so every pack the remote built is
  * a line the suite can count and the credential that fetch was given is there
- * to be read.
+ * to be read. What it holds back it holds until the suite releases it, so a
+ * case reads what a fetch in flight left before that fetch goes on, and a case
+ * that never releases it waits on the adapter's own bounds.
  *
  * THE ADAPTER'S OWN CALLS ARE COUNTED AND FAULTED AT ITS GIT. Where a test says
  * how many reads were made, or has one of them die or outlast its bound, a
@@ -60,6 +62,7 @@ import {
   gitStandInFaulted,
   gitStandInLines,
   gitStandInOpen,
+  gitStandInReleased,
   type GitStandInFault,
 } from "./gitStandIn.ts";
 
@@ -70,20 +73,27 @@ export const fixtureSecret = "fixture-secret-a1b2c3";
 type FixtureServing = "Whole" | "Stalled" | "Slowed";
 
 /**
- * What the remote runs in place of building a pack directly. It takes how it is
- * to serve, writes that it has begun, lets the pack's opening through and then
- * stalls or pauses, which leaves the fetch that asked part-way through its
- * transfer.
+ * What the remote runs in place of building a pack directly: it takes how it is
+ * to serve, writes that it has begun and lets the pack's opening through,
+ * holding the rest so that the fetch that asked is part-way through its
+ * transfer. Once released, or long after where it never is, it sends a slowed
+ * pack's rest and cuts a stalled one.
  */
 const fixtureServeText = [
   "#!/bin/sh",
   'here=$(dirname "$0")',
-  'read serving secs < "$here/serving"',
+  "held() {",
+  "  deadline=$(($(date +%s) + 20))",
+  '  while [ ! -e "$here/released" ] && [ -d "$here" ] && [ "$(date +%s)" -lt "$deadline" ]; do',
+  "    sleep 0.01",
+  "  done",
+  "}",
+  'read serving < "$here/serving"',
   'echo served >> "$here/served"',
   '"$here/scratch/credential-helper" get > "$here/credential"',
   'case "$serving" in',
-  'Stalled) "$@" | { dd bs=1 count=600 2>/dev/null; sleep 60; } ;;',
-  'Slowed) "$@" | { dd bs=1 count=600 2>/dev/null; sleep "$secs"; cat; } ;;',
+  'Stalled) "$@" | { dd bs=1 count=600 2>/dev/null; held; } ;;',
+  'Slowed) "$@" | { dd bs=1 count=600 2>/dev/null; held; cat; } ;;',
   '*) exec "$@" ;;',
   "esac",
   "",
@@ -210,16 +220,16 @@ export function fixtureOpen(t: TestContext): Fixture {
   };
 }
 
-/** Has the remote hand its packs over one way from here on, a slowed one pausing for the seconds given. */
-export function fixtureServe(
-  fixture: Fixture,
-  serving: FixtureServing,
-  slowedSecs = 2,
-): void {
-  writeFileSync(
-    join(fixture.directory, "serving"),
-    `${serving} ${String(slowedSecs)}\n`,
-  );
+/** Has the remote hand its packs over one way from here on. */
+export function fixtureServe(fixture: Fixture, serving: FixtureServing): void {
+  writeFileSync(join(fixture.directory, "serving"), `${serving}\n`);
+}
+
+/** Ends what the fixture holds, now and from here on: a slowed pack is sent whole, a stalled one is cut, and a late call of the recording git reaches git. */
+export function fixtureReleased(fixture: Fixture): void {
+  writeFileSync(join(fixture.directory, "released"), "");
+  const recording = join(fixture.directory, "recording");
+  if (existsSync(recording)) gitStandInReleased(recording);
 }
 
 /** Has the calls of one verb go through the recording git one way from here on. */
@@ -266,6 +276,23 @@ export function fixtureScratchRepository(
   repository: string = fixture.remote,
 ): string {
   return join(fixture.scratch, scratchDigestOf(repository));
+}
+
+/** A wait far longer than an ask's own reads of a scratch and the start of a fetch take, which a case lets pass where what it holds is what those did or did not do. */
+export const fixtureSettledMs = 500;
+
+/** A clock that stands still until a test moves it on, which is the one way a wait passes here. */
+export function fixtureClock(): {
+  readonly monotonicNowMs: () => number;
+  readonly pass: (ms: number) => void;
+} {
+  let nowMs = 0;
+  return {
+    monotonicNowMs: () => nowMs,
+    pass: (ms) => {
+      nowMs += ms;
+    },
+  };
 }
 
 /** Waits for something a fetch in flight brings about, failing where it never comes. */

@@ -22,7 +22,7 @@ import {
 import { gitRun, gitVersionAdmits, type GitEnvironment } from "./gitRun.ts";
 
 /** The bound the one call this asks for an answer on is made under. */
-const gitAvailableTimeoutSecsMax = 30;
+const gitAvailableTimeoutMsMax = 30_000;
 
 /** Requires a git that writes merge trees on the path this environment names. */
 export function gitAvailablePrecondition(
@@ -35,7 +35,7 @@ export function gitAvailablePrecondition(
       const ran = await gitRun({
         directory: ".",
         argv: ["--version"],
-        timeoutSecsMax: gitAvailableTimeoutSecsMax,
+        timeoutMsMax: gitAvailableTimeoutMsMax,
         environment,
       });
       if (ran.ran !== "Exited")

@@ -409,7 +409,7 @@ async function candidateAdoptableHead(
     repository,
     credential,
     question.head,
-    scratch.options.remoteTimeoutSecsMax,
+    scratch.options.remoteTimeoutMsMax,
   );
   return scratchHasCommit(scratch, repository, question.head);
 }

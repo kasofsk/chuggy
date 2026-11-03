@@ -28,6 +28,7 @@ import { test, type TestContext } from "node:test";
 import {
   gitPromotion,
   gitPromotionDefaults,
+  type GitPromotionOptions,
 } from "../../src/adapters/git/gitPromotion.ts";
 import {
   gitCredentialArguments,
@@ -1205,7 +1206,7 @@ test("the credential reaches git through the environment and never an argument",
   const ran = await gitRun({
     directory: fixture.seed,
     argv,
-    timeoutSecsMax: gitPromotionDefaults.localTimeoutSecsMax,
+    timeoutMsMax: gitPromotionDefaults.localTimeoutSecsMax * 1000,
     environment: gitRunEnvironment(
       process.env,
       gitPromotionDefaults.credentialUsername,
@@ -1229,7 +1230,7 @@ test("a call outruns neither its timeout nor its output ceiling", async (t) => {
   const stopped = await gitRun({
     directory: fixture.seed,
     argv: [...gitCredentialArguments(slow), "credential", "fill"],
-    timeoutSecsMax: 1,
+    timeoutMsMax: 50,
     environment: gitRunEnvironment(process.env, "chuggy"),
     input: "protocol=https\nhost=example.test\n\n",
   });
@@ -1237,7 +1238,7 @@ test("a call outruns neither its timeout nor its output ceiling", async (t) => {
   const flooded = await gitRun({
     directory: fixture.seed,
     argv: ["cat-file", "--batch-all-objects", "--batch-check"],
-    timeoutSecsMax: gitPromotionDefaults.localTimeoutSecsMax,
+    timeoutMsMax: gitPromotionDefaults.localTimeoutSecsMax * 1000,
     environment: gitRunEnvironment(process.env, "chuggy"),
     outputBytesMax: 1,
   });
@@ -1250,7 +1251,7 @@ test("a call is answered on git's own exit and never on what outlived it", async
   const ran = await gitRun({
     directory: fixture.seed,
     argv: ["-c", "alias.linger=!sh -c 'sleep 5 &'", "linger"],
-    timeoutSecsMax: gitPromotionDefaults.localTimeoutSecsMax,
+    timeoutMsMax: gitPromotionDefaults.localTimeoutSecsMax * 1000,
     environment: gitRunEnvironment(process.env, "chuggy"),
   });
   assert.deepEqual(ran, { ran: "Exited", code: 0, stdout: "", stderr: "" });
@@ -1265,7 +1266,7 @@ test("a git something else killed is stopped, and is not the deadline", async (t
   const ran = await gitRun({
     directory: fixture.seed,
     argv: ["-c", "alias.doom=!kill -KILL $PPID", "doom"],
-    timeoutSecsMax: gitPromotionDefaults.localTimeoutSecsMax,
+    timeoutMsMax: gitPromotionDefaults.localTimeoutSecsMax * 1000,
     environment: gitRunEnvironment(process.env, "chuggy"),
   });
   assert.deepEqual(ran, { ran: "Stopped", stopped: "Killed" });
@@ -1277,7 +1278,7 @@ test("a synchronous call is killed at its bound rather than left to hang", () =>
       gitRunSetup(
         ["-c", "alias.linger=!sleep 5", "linger"],
         gitRunEnvironment(process.env, "chuggy"),
-        1,
+        50,
       ),
     (failure: unknown) => (failure as { signal?: string }).signal === "SIGKILL",
   );
@@ -1294,7 +1295,7 @@ test("an ambient variable neither points a call elsewhere nor configures it", as
   const ran = await gitRun({
     directory: fixture.seed,
     argv: ["rev-parse", "--absolute-git-dir"],
-    timeoutSecsMax: gitPromotionDefaults.localTimeoutSecsMax,
+    timeoutMsMax: gitPromotionDefaults.localTimeoutSecsMax * 1000,
     environment,
   });
   if (ran.ran !== "Exited") {
@@ -1304,6 +1305,37 @@ test("an ambient variable neither points a call elsewhere nor configures it", as
     ran.stdout.trim(),
     fixtureGit(fixture.seed, "rev-parse", "--absolute-git-dir"),
   );
+});
+
+test("a timeout that is no positive count of its unit, or is named in both units, is refused at construction", (t) => {
+  const fixture = fixtureOpen(t);
+  const composed = (timeouts: Partial<GitPromotionOptions>) => () =>
+    gitPromotion({
+      scratchDirectory: join(fixture.directory, "scratch"),
+      identity: { name: "chug", email: "chug@example.test" },
+      environment: process.env,
+      credentials: fixtureCredentials(fixtureGranted),
+      ...timeouts,
+    });
+  for (const bound of [0, 1.5]) {
+    for (const named of [
+      "localTimeoutSecsMax",
+      "localTimeoutMsMax",
+      "remoteTimeoutSecsMax",
+      "remoteTimeoutMsMax",
+      "promotionTimeoutSecsMax",
+      "promotionTimeoutMsMax",
+    ] as const) {
+      assert.throws(composed({ [named]: bound }), RangeError, named);
+    }
+  }
+  for (const both of [
+    { localTimeoutSecsMax: 1, localTimeoutMsMax: 1_000 },
+    { remoteTimeoutSecsMax: 1, remoteTimeoutMsMax: 1_000 },
+    { promotionTimeoutSecsMax: 1, promotionTimeoutMsMax: 1_000 },
+  ]) {
+    assert.throws(composed(both), RangeError);
+  }
 });
 
 test("a git too old to write merge trees is refused by the floor", () => {
