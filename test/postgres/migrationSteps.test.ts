@@ -77,6 +77,7 @@ import { migration106 } from "../../src/adapters/postgres/schema/migrations/106-
 import { migration107 } from "../../src/adapters/postgres/schema/migrations/107-queue-checks-failed.ts";
 import { migration109 } from "../../src/adapters/postgres/schema/migrations/109-agent-account-usage.ts";
 import { migration110 } from "../../src/adapters/postgres/schema/migrations/110-agent-account-pause.ts";
+import { migration111 } from "../../src/adapters/postgres/schema/migrations/111-rate-limit-resume.ts";
 import { migration082 } from "../../src/adapters/postgres/schema/migrations/082-decline-kept-unread.ts";
 import { migration083 } from "../../src/adapters/postgres/schema/migrations/083-attempt-base-ref.ts";
 import { migration084 } from "../../src/adapters/postgres/schema/migrations/084-thread-dispatch.ts";
@@ -4309,6 +4310,45 @@ test("110 gives the pool plane the rule and the press it spends, and keeps the s
           { name: "pool_sessions_awaiting_claim", ...owned },
         ],
       });
+    },
+  );
+});
+
+test("111 gives the scheduler the rate-limited tickets and their door, and the rule to its owner alone", async () => {
+  await migrationDatabaseAt(
+    migration111.version - 1,
+    "rate_limit_resume",
+    async (subject) => {
+      assert.ok(
+        (await postgresMigrate(subject)).includes(migration111.version),
+      );
+      const functions = await subject.query(
+        `SELECT p.proname AS name, pg_get_userbyid(p.proowner) AS owner,
+                p.prosecdef AS definer,
+                has_function_privilege($1,p.oid,'EXECUTE') AS scheduler,
+                has_function_privilege('public',p.oid,'EXECUTE') AS public
+           FROM pg_proc p
+          WHERE p.proname IN ('ticket_rate_limit_resumable',
+                              'rate_limited_tickets','submit_rate_limit_resume')
+          ORDER BY p.proname`,
+        [schedulerRole],
+      );
+      const owned = {
+        owner: boundaryOwnerRole,
+        definer: true,
+        scheduler: true,
+        public: false,
+      };
+      assert.deepEqual(functions.rows, [
+        { name: "rate_limited_tickets", ...owned },
+        { name: "submit_rate_limit_resume", ...owned },
+        {
+          name: "ticket_rate_limit_resumable",
+          ...owned,
+          definer: false,
+          scheduler: false,
+        },
+      ]);
     },
   );
 });

@@ -271,6 +271,8 @@ function recordingStore(calls: string[]): ExecutionSchedulerStore {
         operation: asOperationId("resume"),
       });
     },
+    rateLimitedTickets: () => Promise.resolve([]),
+    resumeRateLimit: () => Promise.resolve({ resumed: "NotResumable" }),
   };
 }
 
@@ -758,6 +760,10 @@ test("a pass fences the older epoch before it moves anything else", async () => 
       calls.push("lost");
       return Promise.resolve([]);
     },
+    rateLimitedTickets: () => {
+      calls.push("rate-limited");
+      return Promise.resolve([]);
+    },
   };
   assert.deepEqual(
     await executionSchedulerPass({ ...service, store }, owner, epoch, cluster),
@@ -783,6 +789,7 @@ test("a pass fences the older epoch before it moves anything else", async () => 
     "reaped",
     "unlaunched",
     "lost",
+    "rate-limited",
   ]);
 });
 
@@ -816,6 +823,13 @@ function passService(calls: string[]): ExecutionSchedulerService {
     },
     runnerLostTickets: () =>
       Promise.resolve([{ partition, ticket: execution.ticket }]),
+    rateLimitedTickets: () =>
+      Promise.resolve([{ partition, ticket: asTicketId(2) }]),
+    resumeRateLimit: () =>
+      Promise.resolve({
+        resumed: "Submitted",
+        operation: asOperationId("resume-rate-limit"),
+      }),
   };
   return { ...service, store };
 }
@@ -831,7 +845,7 @@ test("a pass reports the count each of its steps moved", async () => {
       admitted: 1,
       observed: 0,
       placed: 1,
-      resumed: 1,
+      resumed: 2,
       notices: [],
     },
   );
@@ -881,6 +895,63 @@ test("a lost ticket is resumed under the retry budget and the mailbox's bounds, 
     "resume:2:5",
     "resume:3:5",
     "resume:4:5",
+  ]);
+});
+
+test("a rate-limited ticket is resumed after the lost ones, under both bounds and the mailbox's, and only an answer the mailbox took counts", async () => {
+  const asked: string[] = [];
+  const answers: readonly RunnerLossResumed[] = [
+    { resumed: "Submitted", operation: asOperationId("resume-one") },
+    { resumed: "Submitted", operation: asOperationId("resume-two") },
+    { resumed: "NotResumable" },
+    { resumed: "NotAdmitted" },
+  ];
+  const service = serviceWith([], runnable, placedOk);
+  const config = {
+    ...executionSchedulerDefaults,
+    attemptRetriesMax: 5,
+    attemptRateLimitsMax: 4,
+    resumesPerPassMax: 7,
+  };
+  const store: ExecutionSchedulerStore = {
+    ...service.store,
+    runnerLostTickets: (lossesMax, ticketsMax) => {
+      asked.push(`lost:${String(lossesMax)}:${String(ticketsMax)}`);
+      return Promise.resolve([{ partition, ticket: asTicketId(1) }]);
+    },
+    resumeRunnerLoss: (resume) => {
+      asked.push(`resume-lost:${String(resume.ticket.ticket)}`);
+      return Promise.resolve(answers[0] ?? { resumed: "NotResumable" });
+    },
+    rateLimitedTickets: (lossesMax, rateLimitsMax, ticketsMax) => {
+      asked.push(
+        `rate-limited:${String(lossesMax)}:${String(rateLimitsMax)}:${String(ticketsMax)}`,
+      );
+      return Promise.resolve(
+        [2, 3, 4].map((ticket) => ({ partition, ticket: asTicketId(ticket) })),
+      );
+    },
+    resumeRateLimit: (resume) => {
+      asked.push(
+        `resume-rate-limited:${String(resume.ticket.ticket)}:${String(resume.lossesMax)}:${String(resume.rateLimitsMax)}`,
+      );
+      assert.deepEqual(resume.mailbox, ticketServiceDefaults);
+      const answer = answers[resume.ticket.ticket - 1];
+      assert.ok(answer !== undefined);
+      return Promise.resolve(answer);
+    },
+  };
+  assert.equal(
+    await executionSchedulerResume({ ...service, store, config }),
+    2,
+  );
+  assert.deepEqual(asked, [
+    "lost:5:7",
+    "resume-lost:1",
+    "rate-limited:5:4:7",
+    "resume-rate-limited:2:5:4",
+    "resume-rate-limited:3:5:4",
+    "resume-rate-limited:4:5:4",
   ]);
 });
 

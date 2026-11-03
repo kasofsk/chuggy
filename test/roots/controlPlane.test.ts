@@ -145,6 +145,7 @@ const successfulProcessProgram = `
         attemptCleanupCompleted: async () => true,
         unlaunched: async () => [],
         runnerLostTickets: async () => [],
+        rateLimitedTickets: async () => [],
       },
       config: scheduler.executionSchedulerDefaults,
       ticketService: tickets.ticketServiceDefaults,
