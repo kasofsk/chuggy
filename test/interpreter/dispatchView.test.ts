@@ -4,8 +4,11 @@ import { test } from "node:test";
 import { createTicketCommand } from "../../src/actor/command.ts";
 import { actorInit, journalStep } from "../../src/actor/state.ts";
 import {
+  type DispatchCandidate,
   decodeDispatchProgram,
   deriveDispatchCandidates,
+  dispatchCandidatesByConfiguration,
+  dispatchCandidatesJoined,
   dispatchViewDigest,
   encodeDispatchProgram,
 } from "../../src/interpreter/dispatchView.ts";
@@ -157,5 +160,57 @@ test("dispatch JSON codecs accept every stored model variant", () => {
       { key: 1, evaluators: [{ key: 1 }] },
       { key: 2, evaluators: [{ key: 2 }] },
     ],
+  );
+});
+
+/**
+ * Candidates sharing a configuration carry it once and join back whole, and a
+ * set that cannot have come from one view — one configuration under two
+ * canonicals, a configuration named and not carried, or carried and not
+ * named — is refused rather than joined into something else.
+ */
+test("candidates carry each configuration once and join back whole", () => {
+  const candidate = (
+    ticket: number,
+    configuration: string,
+  ): DispatchCandidate => ({
+    ticket: id(ticket),
+    ticketVersion: 1,
+    dependencies: [],
+    program: [{ key: 1, evaluators: [{ key: 1 }] }],
+    configurationRevision: `revision-${configuration}`,
+    configurationDigest: configuration.repeat(64),
+    configurationCanonical: `{"worker":"${configuration}"}`,
+  });
+  const candidates = [candidate(1, "a"), candidate(2, "a"), candidate(3, "b")];
+  const separated = dispatchCandidatesByConfiguration(candidates);
+  assert.equal(separated.configurations.length, 2);
+  assert.ok(
+    separated.candidates.every((named) => !("configurationCanonical" in named)),
+  );
+  assert.deepEqual(dispatchCandidatesJoined(separated), candidates);
+  assert.throws(
+    () =>
+      dispatchCandidatesByConfiguration([
+        ...candidates,
+        { ...candidate(4, "a"), configurationCanonical: "{}" },
+      ]),
+    /disagree on its canonical/,
+  );
+  assert.throws(
+    () =>
+      dispatchCandidatesJoined({
+        ...separated,
+        configurations: separated.configurations.slice(1),
+      }),
+    /not carried/,
+  );
+  assert.throws(
+    () =>
+      dispatchCandidatesJoined({
+        ...separated,
+        candidates: separated.candidates.slice(0, 2),
+      }),
+    /no candidate names/,
   );
 });

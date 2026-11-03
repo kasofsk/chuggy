@@ -32,6 +32,11 @@ import {
   type ProjectNotification,
 } from "./notifications.ts";
 import type { DispatchViewPage, DispatchViewQuery } from "./dispatchView.ts";
+import {
+  dispatchCandidatesByConfiguration,
+  dispatchCandidatesJoined,
+  type DispatchCandidatesByConfiguration,
+} from "./dispatchView.ts";
 
 export type JsonValue =
   | null
@@ -1382,7 +1387,8 @@ async function settledSelectorPolicy(
  * Everything the policy is given, weighed against `leadInputBytesMax` before any
  * of it is sent. A project's North Star is inside that budget rather than beside
  * it, so a long one narrows the view its own project can carry and does not
- * quietly widen what one decision costs.
+ * quietly widen what one decision costs, and its candidates are weighed as an
+ * observation stores them, each configuration they name counted once.
  */
 function persistablePolicyObservation(
   observation: SelectorObservation,
@@ -1399,7 +1405,7 @@ function persistablePolicyObservation(
         token: observation.token,
         instructions: settings.basePrompt,
         northStar: settings.northStar ?? null,
-        candidates: observation.candidates,
+        ...dispatchCandidatesByConfiguration(observation.candidates),
         refusals: observation.refusals,
         changes: observation.changes,
         context: {
@@ -1409,8 +1415,7 @@ function persistablePolicyObservation(
       },
       "selector interaction input",
       leadInputBytesMax(settings),
-    ) as unknown as {
-      readonly candidates: readonly DispatchCandidate[];
+    ) as unknown as DispatchCandidatesByConfiguration & {
       readonly refusals: readonly SelectorStandingRefusal[];
       readonly changes: readonly ProjectNotification[];
       readonly context: SelectorInteraction["context"];
@@ -1418,7 +1423,7 @@ function persistablePolicyObservation(
     };
     return {
       token: persistedInput.token,
-      candidates: persistedInput.candidates,
+      candidates: dispatchCandidatesJoined(persistedInput),
       refusals: persistedInput.refusals,
       notificationCursor: observation.notificationCursor,
       changes: persistedInput.changes,
@@ -2197,16 +2202,20 @@ type BoundedCandidatePage =
       readonly notificationCursor: number;
     };
 
-/** What candidates weigh as JSON, which writes no member that is undefined. */
-function boundedCandidatePageBytes(candidates: readonly unknown[]): number {
-  return new TextEncoder().encode(JSON.stringify(candidates)).length;
+/** What candidates weigh as JSON, each configuration they name counted once. */
+function boundedCandidatePageBytes(
+  candidates: readonly DispatchCandidate[],
+): number {
+  return new TextEncoder().encode(
+    JSON.stringify(dispatchCandidatesByConfiguration(candidates)),
+  ).length;
 }
 
 /**
- * The longest page of candidates within `bytesMax`, halving until one fits.
- * A lone candidate is measured as a lead's turn holds it, without its
- * canonical, so a configuration at its longest is still one a turn can show;
- * the page stored keeps the canonical either way.
+ * The longest page of candidates within `bytesMax` as it is stored, each
+ * configuration once, halving until one fits. A lone candidate is measured as
+ * a lead's turn holds it, without its configuration, so a configuration at its
+ * longest is still one a turn can show; the page stored keeps it either way.
  */
 async function boundedCandidatePage(
   source: Pick<SelectorObservationSource, "dispatchView">,
@@ -2222,8 +2231,9 @@ async function boundedCandidatePage(
     if (limit === 1) {
       const candidate = page.candidates[0];
       if (candidate === undefined) return page;
-      const turned = { ...candidate, configurationCanonical: undefined };
-      if (boundedCandidatePageBytes([turned]) <= bytesMax) return page;
+      const turned = dispatchCandidatesByConfiguration([candidate]).candidates;
+      if (new TextEncoder().encode(JSON.stringify(turned)).length <= bytesMax)
+        return page;
       return {
         result: "Oversized",
         token: page.token,
