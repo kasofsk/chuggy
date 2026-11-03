@@ -30,6 +30,102 @@ export interface DispatchCandidate {
   readonly configurationVersion?: ConfigurationVersion;
 }
 
+/** A candidate naming its configuration by revision and digest rather than carrying it. */
+export type DispatchCandidateNamed = Omit<
+  DispatchCandidate,
+  "configurationCanonical"
+>;
+
+export interface DispatchConfiguration {
+  readonly revision: string;
+  readonly digest: string;
+  readonly canonical: string;
+}
+
+/**
+ * Candidates with each configuration they name carried once, however many of
+ * them name it: what an observation is weighed and stored as, since one
+ * project's ready tickets are mostly on a few configurations.
+ */
+export interface DispatchCandidatesByConfiguration {
+  readonly candidates: readonly DispatchCandidateNamed[];
+  readonly configurations: readonly DispatchConfiguration[];
+}
+
+function dispatchConfigurationKey(revision: string, digest: string): string {
+  return JSON.stringify([revision, digest]);
+}
+
+export function dispatchCandidatesByConfiguration(
+  candidates: readonly DispatchCandidate[],
+): DispatchCandidatesByConfiguration {
+  const configurations = new Map<string, DispatchConfiguration>();
+  const named = candidates.map((candidate): DispatchCandidateNamed => {
+    const key = dispatchConfigurationKey(
+      candidate.configurationRevision,
+      candidate.configurationDigest,
+    );
+    const known = configurations.get(key);
+    if (known === undefined)
+      configurations.set(key, {
+        revision: candidate.configurationRevision,
+        digest: candidate.configurationDigest,
+        canonical: candidate.configurationCanonical,
+      });
+    else if (known.canonical !== candidate.configurationCanonical)
+      throw new TypeError(
+        "candidates naming one configuration disagree on its canonical",
+      );
+    return {
+      ticket: candidate.ticket,
+      ticketVersion: candidate.ticketVersion,
+      dependencies: candidate.dependencies,
+      program: candidate.program,
+      configurationRevision: candidate.configurationRevision,
+      configurationDigest: candidate.configurationDigest,
+      ...(candidate.configurationVersion === undefined
+        ? {}
+        : { configurationVersion: candidate.configurationVersion }),
+    };
+  });
+  return { candidates: named, configurations: [...configurations.values()] };
+}
+
+/**
+ * The candidates back whole and frozen, refusing a configuration named and not
+ * carried or carried and not named.
+ */
+export function dispatchCandidatesJoined(
+  separated: DispatchCandidatesByConfiguration,
+): readonly DispatchCandidate[] {
+  const configurations = new Map(
+    separated.configurations.map((configuration) => [
+      dispatchConfigurationKey(configuration.revision, configuration.digest),
+      configuration,
+    ]),
+  );
+  if (configurations.size !== separated.configurations.length)
+    throw new TypeError("a configuration is carried twice");
+  const named = new Set<string>();
+  const joined = separated.candidates.map((candidate): DispatchCandidate => {
+    const key = dispatchConfigurationKey(
+      candidate.configurationRevision,
+      candidate.configurationDigest,
+    );
+    const configuration = configurations.get(key);
+    if (configuration === undefined)
+      throw new TypeError("a candidate names a configuration not carried");
+    named.add(key);
+    return Object.freeze({
+      ...candidate,
+      configurationCanonical: configuration.canonical,
+    });
+  });
+  if (named.size !== configurations.size)
+    throw new TypeError("a configuration is carried that no candidate names");
+  return Object.freeze(joined);
+}
+
 export interface DispatchContractPin {
   readonly configurationRevision: string;
   readonly configurationDigest: string;

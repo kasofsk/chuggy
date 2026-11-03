@@ -636,6 +636,148 @@ test("a candidate whose configuration is at its longest is observed, not too lar
   assert.deepEqual(observation?.candidates, [candidate]);
 });
 
+/** A source paging the candidates given as the view would, recording the limit of each page asked for. */
+function pagedCandidateSource(
+  candidates: readonly DispatchCandidate[],
+  limits: number[] = [],
+) {
+  return {
+    ...promptObservationSource(),
+    dispatchView: (_scope: unknown, query: DispatchViewQuery) => {
+      limits.push(query.limit);
+      const page = candidates.slice(0, query.limit);
+      const last = page.at(-1);
+      return Promise.resolve({
+        ...candidateDispatchPage(partition, "c".repeat(64)),
+        candidates: page,
+        ...(page.length < candidates.length && last !== undefined
+          ? { nextAfter: last.ticket }
+          : {}),
+      });
+    },
+  };
+}
+
+/** A hundred ready tickets on one configuration at its longest, every character three bytes. */
+const hundredOnOneConfiguration: readonly DispatchCandidate[] = Array.from(
+  { length: 100 },
+  (_, index) => ({
+    ...viewCandidate,
+    ticket: asTicketId(index + 1),
+    ticketVersion: 1,
+    configurationCanonical: "€".repeat(configurationCanonicalCharsMax),
+  }),
+);
+
+/**
+ * A page is weighed as it is stored, each configuration once: a hundred
+ * candidates on one configuration at its longest are one page under the
+ * default budget, where weighing the canonical per candidate halved them to six.
+ */
+test("a hundred candidates on one configuration at its longest are one page", async () => {
+  const limits: number[] = [];
+  const observation = await observeSelectorProject(
+    {
+      partition,
+      notificationCursor: 0,
+      revision: 0,
+      attention: "Monitoring",
+      handoffNote: {},
+      candidateScan: { state: "Unstarted" },
+    },
+    pagedCandidateSource(hundredOnOneConfiguration, limits),
+    refusalWrites(),
+    noneHeld,
+    movedPage,
+    selectorNotificationPageLimit,
+    Math.floor(leadInputBytesMax(resolved()) / 2),
+  );
+  assert.deepEqual(limits, [100]);
+  assert.deepEqual(observation?.candidates, hundredOnOneConfiguration);
+  assert.equal(observation?.nextCandidateScan.state, "Exhausted");
+});
+
+test("a decision dispatching the hundredth of them is accepted and delivered with that configuration", async () => {
+  const { recorded, interaction } = await cycleDispatching(
+    [100],
+    {},
+    hundredOnOneConfiguration,
+  );
+  const dispatch = recorded?.dispatches[0];
+  assert.equal(dispatch?.ticket, asTicketId(100));
+  assert.equal(recorded?.dispatches.length, 1);
+  assert.deepEqual(
+    interaction?.observedView.find(
+      (candidate) => candidate.ticket === asTicketId(100),
+    ),
+    hundredOnOneConfiguration[99],
+    "the decision is recorded against the configuration the view pinned",
+  );
+  let submitted: SelectorDelivery | undefined;
+  const delivered = await deliverSelectorProposal(
+    stateStore(() => undefined),
+    {
+      submit: (delivery) => {
+        submitted = delivery;
+        return Promise.resolve({ accepted: "Accepted" });
+      },
+    },
+    {
+      decision: "cycle-decision",
+      ticket: dispatch.ticket,
+      partition,
+      operation: dispatch.operation,
+      command: dispatch.command,
+      attempts: 0,
+    },
+  );
+  assert.equal(delivered.result, "Delivered");
+  assert.equal(submitted?.command.ticket, asTicketId(100));
+  assert.equal(submitted.command.expectedTicketVersion, 1);
+});
+
+/**
+ * Configurations counted once still count: eight candidates on four
+ * configurations outweigh the budget and halve, and the first four, on two of
+ * them, fit — which weighing each candidate's canonical would have halved again.
+ */
+test("a page on several distinct configurations still halves when they outweigh the budget", async () => {
+  const candidates = Array.from({ length: 8 }, (_, index) => {
+    const configuration = "abcd"[Math.floor(index / 2)] ?? "a";
+    return {
+      ...viewCandidate,
+      ticket: asTicketId(index + 1),
+      configurationRevision: `revision-${configuration}`,
+      configurationDigest: configuration.repeat(64),
+      configurationCanonical: configuration.repeat(1_000),
+    };
+  });
+  const limits: number[] = [];
+  const observation = await observeSelectorProject(
+    {
+      partition,
+      notificationCursor: 0,
+      revision: 0,
+      attention: "Monitoring",
+      handoffNote: {},
+      candidateScan: { state: "Unstarted" },
+    },
+    pagedCandidateSource(candidates, limits),
+    refusalWrites(),
+    noneHeld,
+    movedPage,
+    8,
+    3_500,
+  );
+  assert.deepEqual(limits, [8, 4]);
+  assert.deepEqual(observation?.candidates, candidates.slice(0, 4));
+  assert.deepEqual(observation?.nextCandidateScan, {
+    state: "Continue",
+    token: observation?.token,
+    after: asTicketId(4),
+  });
+});
+
 /** One observation of a page holding the one candidate, against the ledger given. */
 function observeAgainstRefusals(
   refusals: AgenticRefusalWrite,

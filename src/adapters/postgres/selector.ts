@@ -65,7 +65,10 @@ import { projectRowCounter } from "./rows.ts";
 import { sessionRowText } from "./sessionRows.ts";
 import {
   decodeDispatchProgram,
+  dispatchCandidatesByConfiguration,
+  dispatchCandidatesJoined,
   type DispatchCandidate,
+  type DispatchConfiguration,
 } from "../../interpreter/dispatchView.ts";
 import { asConfigurationVersion } from "../../interpreter/repositoryConfigurationIdentity.ts";
 import { asTicketId } from "../../domain/ids.ts";
@@ -261,7 +264,11 @@ export function parseSelectorInteractionContext(
   return selectorContextSchema.parse(value);
 }
 
-/** One candidate as an observation stores it, its configuration label kept where the read attached one. */
+/**
+ * One candidate as an observation stores it, its configuration label kept where
+ * the read attached one. A row written before configurations were carried once
+ * holds each candidate's canonical inline.
+ */
 const observedCandidateSchema = z
   .object({
     ticket: z.number().int().safe().positive().transform(asTicketId),
@@ -270,19 +277,61 @@ const observedCandidateSchema = z
     program: z.array(z.unknown()).transform(decodeDispatchProgram),
     configurationRevision: z.string(),
     configurationDigest: z.string(),
-    configurationCanonical: z.string(),
+    configurationCanonical: z.string().optional(),
     configurationVersion: z
       .object({ name: z.string(), number: z.number().int().safe().positive() })
       .optional(),
   })
-  .transform(({ configurationVersion, ...candidate }): DispatchCandidate =>
-    configurationVersion === undefined
-      ? candidate
-      : {
-          ...candidate,
-          configurationVersion: asConfigurationVersion(configurationVersion),
-        },
+  .transform(
+    ({ configurationVersion, configurationCanonical, ...candidate }) =>
+      configurationVersion === undefined
+        ? { candidate, configurationCanonical }
+        : {
+            candidate: {
+              ...candidate,
+              configurationVersion:
+                asConfigurationVersion(configurationVersion),
+            },
+            configurationCanonical,
+          },
   );
+
+const observedConfigurationSchema = z
+  .strictObject({
+    revision: z.string(),
+    digest: z.string(),
+    canonical: z.string(),
+  })
+  .readonly();
+
+/**
+ * The candidates whole from either stored shape: each carrying its canonical,
+ * or each naming one of the configurations carried beside them. A row mixing
+ * the two is not intact.
+ */
+function observedCandidates(
+  candidates: readonly z.infer<typeof observedCandidateSchema>[],
+  configurations: readonly DispatchConfiguration[] | undefined,
+): readonly DispatchCandidate[] {
+  if (configurations !== undefined) {
+    if (
+      candidates.some((stored) => stored.configurationCanonical !== undefined)
+    )
+      throw new TypeError("a candidate carries a canonical it also names");
+    return dispatchCandidatesJoined({
+      candidates: candidates.map((stored) => stored.candidate),
+      configurations,
+    });
+  }
+  return candidates.map((stored) => {
+    if (stored.configurationCanonical === undefined)
+      throw new TypeError("a candidate carries no configuration");
+    return {
+      ...stored.candidate,
+      configurationCanonical: stored.configurationCanonical,
+    };
+  });
+}
 
 const observedRefusalSchema = z
   .object({
@@ -312,6 +361,7 @@ const selectorObservationSchema = z
   .object({
     token: dispatchViewTokenSchema,
     candidates: z.array(observedCandidateSchema).readonly(),
+    configurations: z.array(observedConfigurationSchema).readonly().optional(),
     refusals: z.array(observedRefusalSchema).readonly(),
     notificationCursor: z.number().int().safe().nonnegative(),
     changes: z.array(notificationSchema).readonly(),
@@ -321,12 +371,27 @@ const selectorObservationSchema = z
     resourceLimit: z.literal("CandidateTooLarge").optional(),
   })
   .transform(
-    ({ resourceLimit, changes, ...observation }): SelectorObservation => ({
+    ({
+      resourceLimit,
+      changes,
+      candidates,
+      configurations,
+      ...observation
+    }): SelectorObservation => ({
       ...observation,
+      candidates: observedCandidates(candidates, configurations),
       changes: changes.map(retainedChange),
       ...(resourceLimit === undefined ? {} : { resourceLimit }),
     }),
   );
+
+/** An observation as `runningAttempt` stores it, each configuration its candidates name carried once. */
+function storedObservationText(observation: SelectorObservation): string {
+  return encode({
+    ...observation,
+    ...dispatchCandidatesByConfiguration(observation.candidates),
+  });
+}
 
 /** A stored observation, or nothing where it does not read back as one. */
 function storedSelectorObservation(
@@ -409,7 +474,7 @@ async function runningAttempt(
     throw new RangeError(
       "selector project revision must be a non-negative safe integer",
     );
-  const encoded = encode(observation);
+  const encoded = storedObservationText(observation);
   const digest = createHash("sha256").update(encoded).digest("hex");
   await postgresTransaction(pool, async (client) => {
     const inserted = await client.query(
