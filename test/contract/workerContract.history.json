@@ -156,7 +156,12 @@
   },
   {
     "release": "1.31.0",
-    "wire": "54b02f2731e31f1ae818fc641d170f2fcc6031e2354cf1a1cc40ffa393c672eb",
-    "files": "bfd67efb3cebb90c929abf0d6f935c35f1b21b3e18d71224b598e4502b256cea"
+    "wire": "106ddf70bc125e28cedede5f5d12a8f5afb1ae22981de0bf081407625ff05054",
+    "files": "630f6da4cfcf0b6aa70b62f85a297237906109940e42e98c08ea0e0f2db7ea2e"
+  },
+  {
+    "release": "1.32.0",
+    "wire": "1ef73a64c2f85ce12ed7d02eba4b01edbd7914716f12387d94c74e8bff802c12",
+    "files": "98d0efa279d4e4ac07a08936112a13856135f8b69dc97bba25d1faa740cbc813"
   }
 ]
