@@ -1,13 +1,12 @@
 /**
  * The two reads a session's transcript is drawn from, over the API's own pool.
  *
- * THEY ARE KEYED ON THE SESSION AND NOT ON A KIND. Migration 062 retired 059's
- * lead-only pair for these, because a thread's transcript is the same walk over
- * a different session: two definers differing in one predicate is where a fix
- * lands in only one of them, and two adapters over them would be the same
- * mistake one layer up. So the lead's route and a thread's both pass the
- * session they resolved, and this module is the only place either read is
- * written.
+ * THEY ARE KEYED ON THE SESSION AND NOT ON A KIND, because a thread's
+ * transcript is the same walk over a different session: two definers differing
+ * in one predicate is where a fix lands in only one of them, and two adapters
+ * over them would be the same mistake one layer up. So the lead's route and a
+ * thread's both pass the session they resolved, and this module is the only
+ * place either read is written.
  */
 
 import { sql } from "@ts-safeql/sql-tag";

@@ -159,15 +159,14 @@ test("terminal attempts authenticate only as non-live report authority", () => {
 
 test("result submission follows the scheduler completion lock order", () => {
   const boundary = workerResultDefinition();
-  assert.notEqual(boundary, undefined);
-  const request = boundary?.indexOf("FROM execution_request q") ?? -1;
-  const execution = boundary?.indexOf("FOR UPDATE OF e") ?? -1;
-  const project = boundary?.indexOf("FROM project") ?? -1;
-  const attempt = boundary?.indexOf("UPDATE execution_attempt") ?? -1;
+  const request = boundary.search(/FROM execution_request q[^;]*FOR UPDATE;/u);
+  const execution = boundary.indexOf("FOR UPDATE OF e");
+  const project = boundary.indexOf("FROM project");
+  const attempt = boundary.indexOf("UPDATE execution_attempt");
   assert.ok(request >= 0 && request < execution);
   assert.ok(execution < project);
   assert.ok(project < attempt);
-  assert.doesNotMatch(boundary ?? "", /FOR UPDATE OF q,e,a/u);
+  assert.doesNotMatch(boundary, /FOR UPDATE OF q,e,a/u);
 });
 
 test("losing a report passes only the capability digest, generation and closed evidence", async () => {
