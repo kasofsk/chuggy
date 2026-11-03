@@ -22,6 +22,8 @@ import {
 } from "../../src/contract/workerContract.ts";
 import {
   runEndedEvidences,
+  runUsageInstantSecsMax,
+  runUsageWindows,
   workerCredentialAbsentSchema,
   workerHeldCredentialsMax,
   workerPlaneRoutes,
@@ -1041,6 +1043,18 @@ const workerRunTokensHeaviest = {
   tokensCacheRead: Number.MAX_SAFE_INTEGER,
 };
 
+/** The window whose name is longest, which is the heaviest a limit names. */
+const workerRunWindowLongest = runUsageWindows.reduce((longest, window) =>
+  window.length > longest.length ? window : longest,
+);
+
+/** A reading whose figures each print as long as any may. */
+const workerRunReadingHeaviest = {
+  utilization: 0.0000012345678901234567,
+  resetsAt: runUsageInstantSecsMax,
+  observedAt: runUsageInstantSecsMax,
+};
+
 /** A page of turns or of model usages, as full as a page may be. */
 function workerRunPageHeaviest(item: object): readonly object[] {
   return Array.from({ length: nativeHttpPageItemsMax }, () => item);
@@ -1104,6 +1118,9 @@ const workerPlaneHeaviest: Readonly<
       permissionDenials: Number.MAX_SAFE_INTEGER,
       resultSubtype: planeTextHeaviest(runOutcomeLabelCharsMax),
       stopReason: planeTextHeaviest(runOutcomeLabelCharsMax),
+      usage: Object.fromEntries(
+        runUsageWindows.map((window) => [window, workerRunReadingHeaviest]),
+      ),
     }),
     status: 204,
   },
@@ -1113,6 +1130,10 @@ const workerPlaneHeaviest: Readonly<
       evidence: runEndedEvidences.reduce((longest, evidence) =>
         evidence.length > longest.length ? evidence : longest,
       ),
+      limit: {
+        window: workerRunWindowLongest,
+        resetsAt: runUsageInstantSecsMax,
+      },
     }),
     status: 204,
   },
@@ -1260,6 +1281,46 @@ test("a run's totals and its ending are taken as the contract names them", async
   await app.close();
 });
 
+test("a run's usage reaches the boundary beside its totals and never inside them, and its limit beside its ending under any label", async () => {
+  const offered: unknown[] = [];
+  const app = runEvidencePlane({
+    totals: {
+      record: (input) => {
+        offered.push([input.totals, input.usage]);
+        return Promise.resolve("AlreadyStored");
+      },
+    },
+    endings: {
+      end: (input) => {
+        offered.push([input.evidence, input.limit]);
+        return Promise.resolve(true);
+      },
+    },
+  });
+  const usage = {
+    five_hour: { utilization: 1.2, resetsAt: 1_800_000_000, observedAt: 1 },
+    seven_day: { utilization: 0, resetsAt: 1, observedAt: 1 },
+  };
+  const limit = { window: "seven_day", resetsAt: 1_800_000_000 } as const;
+  for (const [url, payload] of [
+    ["/v1/run/totals", { ...runTotalsBody, usage }],
+    ["/v1/run/ended", { evidence: "RunRateLimited", limit }],
+    ["/v1/run/ended", { evidence: "RunFailed", limit: {} }],
+  ] as const)
+    assert.equal(
+      (await app.inject({ method: "POST", url, headers: held, payload }))
+        .statusCode,
+      204,
+      JSON.stringify(payload),
+    );
+  assert.deepEqual(offered, [
+    [runTotalsBody, usage],
+    ["RunRateLimited", limit],
+    ["RunFailed", {}],
+  ]);
+  await app.close();
+});
+
 test("a run's ending is taken under every label a run may end itself under", async () => {
   const offered: unknown[] = [];
   const app = runFigurePlane(offered);
@@ -1303,6 +1364,16 @@ test("a totals or ending body the contract does not name reaches no boundary", a
     ],
     ["/v1/run/ended", { evidence: "LeaseExpired" }],
     ["/v1/run/ended", { evidence: "RunFailed", extra: 1 }],
+    [
+      "/v1/run/totals",
+      {
+        ...runTotalsBody,
+        usage: {
+          seven_day_opus: { utilization: 0, resetsAt: 1, observedAt: 1 },
+        },
+      },
+    ],
+    ["/v1/run/ended", { evidence: "RunRateLimited", limit: { resetsAt: 0.5 } }],
   ] as const) {
     const refused = await app.inject({
       method: "POST",

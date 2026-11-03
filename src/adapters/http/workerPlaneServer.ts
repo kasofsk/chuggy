@@ -94,6 +94,7 @@ import {
   runTranscriptBatchPath,
   type RunEvidenceStored,
   type RunTotals,
+  type RunUsage,
   type WorkerRunConfigurationPort,
   type WorkerRunEndedPort,
   type WorkerRunTotalPort,
@@ -271,7 +272,9 @@ export function workerPlaneServed(uploadBytesMax: number) {
         planeJsonObjectBytesMax(
           runOutcomeLabelCharsMax,
           runOutcomeLabelCharsMax,
-        ) + workerRunPageBytesMax,
+        ) +
+        planeJsonObjectBytesMax() +
+        workerRunPageBytesMax,
     },
     runEnded: {
       caller: "LiveAttempt",
@@ -536,15 +539,19 @@ export interface WorkerPlaneServerService {
   readonly uploadBytesMax: number;
 }
 
-/** The offered totals as the durable port takes them, an absent label omitted. */
-function workerRunTotals(
-  offered: z.infer<typeof workerRunTotalsSchema>,
-): RunTotals {
-  const { resultSubtype, stopReason, ...rest } = offered;
+/** The offered totals as the durable port takes them, an absent label omitted, and the account usage offered beside them, which a reader of totals is never answered with. */
+function workerRunTotals(offered: z.infer<typeof workerRunTotalsSchema>): {
+  readonly totals: RunTotals;
+  readonly usage?: RunUsage;
+} {
+  const { resultSubtype, stopReason, usage, ...rest } = offered;
   return {
-    ...rest,
-    ...(resultSubtype === undefined ? {} : { resultSubtype }),
-    ...(stopReason === undefined ? {} : { stopReason }),
+    totals: {
+      ...rest,
+      ...(resultSubtype === undefined ? {} : { resultSubtype }),
+      ...(stopReason === undefined ? {} : { stopReason }),
+    },
+    ...(usage === undefined ? {} : { usage }),
   };
 }
 
@@ -956,7 +963,7 @@ function workerRunFigureRoutes(
     const stored = await service.runEvidence.totals.record({
       secret: writer.secret,
       generation: writer.authority.generation,
-      totals: workerRunTotals(offered.data),
+      ...workerRunTotals(offered.data),
     });
     return stored === "Stored" || stored === "AlreadyStored"
       ? reply.code(204).send()
@@ -970,7 +977,7 @@ function workerRunFigureRoutes(
     return (await service.runEvidence.endings.end({
       secret: writer.secret,
       generation: writer.authority.generation,
-      evidence: offered.data.evidence,
+      ...offered.data,
     }))
       ? reply.code(204).send()
       : reply.code(409).send({ action: "stop" });
