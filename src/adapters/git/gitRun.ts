@@ -51,7 +51,7 @@ const gitVersionMin: { readonly major: number; readonly minor: number } = {
 const gitOutputBytesMax = 4 * 1024 * 1024;
 
 /** The bound on the two synchronous calls this adapter makes, neither of which reaches a remote. */
-const gitRunSetupTimeoutSecsMax = 30;
+const gitRunSetupTimeoutMsMax = 30_000;
 
 /** How long the output of a call is waited for once the process that produced it is gone. */
 const gitRunDrainSecs = 1;
@@ -117,7 +117,7 @@ export type GitRan =
 export interface GitCall {
   readonly directory: string;
   readonly argv: readonly string[];
-  readonly timeoutSecsMax: number;
+  readonly timeoutMsMax: number;
   readonly environment: GitEnvironment;
   readonly outputBytesMax?: number;
   readonly input?: Uint8Array | string;
@@ -205,7 +205,7 @@ export function gitRun(call: GitCall): Promise<GitRan> {
     };
     const deadline = setTimeout(() => {
       settle({ ran: "Stopped", stopped: "Timeout" });
-    }, call.timeoutSecsMax * 1000);
+    }, call.timeoutMsMax);
     const ceiling = (): void => {
       settle({ ran: "Stopped", stopped: "OutputCeiling" });
     };
@@ -289,12 +289,12 @@ export function gitVersionAdmits(version: string): boolean {
 export function gitRunSetup(
   argv: readonly string[],
   environment: GitEnvironment,
-  timeoutSecsMax: number = gitRunSetupTimeoutSecsMax,
+  timeoutMsMax: number = gitRunSetupTimeoutMsMax,
 ): string {
   return execFileSync("git", [...argv], {
     encoding: "utf8",
     env: environment,
-    timeout: timeoutSecsMax * 1000,
+    timeout: timeoutMsMax,
     killSignal: "SIGKILL",
   });
 }

@@ -77,9 +77,9 @@ export interface GitScratchOptions {
   readonly identity: GitCommitIdentity;
   readonly environment: GitEnvironment;
   readonly credentialUsername: string;
-  readonly localTimeoutSecsMax: number;
-  readonly remoteTimeoutSecsMax: number;
-  readonly promotionTimeoutSecsMax: number;
+  readonly localTimeoutMsMax: number;
+  readonly remoteTimeoutMsMax: number;
+  readonly promotionTimeoutMsMax: number;
 }
 
 /** One opened scratch: its options, the helper git asks for a credential through, and what it has initialised. */
@@ -93,7 +93,7 @@ export interface GitScratch {
 export interface GitScratchCall {
   readonly repository: RepositoryId;
   readonly argv: readonly string[];
-  readonly timeoutSecsMax: number;
+  readonly timeoutMsMax: number;
   readonly credential?: RepositoryCredential;
   readonly indexFile?: string;
   readonly input?: Uint8Array | string;
@@ -176,16 +176,42 @@ export function scratchDigestOf(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
+/**
+ * One timeout as the milliseconds a call is bounded by, from whichever unit a
+ * composition named it in, whole seconds or milliseconds, and else from its
+ * default's seconds. One named both ways, or as no positive count of its unit,
+ * is refused.
+ */
+export function scratchTimeoutMs(
+  secs: number | undefined,
+  ms: number | undefined,
+  defaultSecs: number,
+): number {
+  if (secs !== undefined && ms !== undefined) {
+    throw new RangeError(
+      "git scratch: a timeout is named in seconds and in milliseconds",
+    );
+  }
+  const [count, unitMs] =
+    ms === undefined ? [secs ?? defaultSecs, 1000] : [ms, 1];
+  if (!Number.isSafeInteger(count) || count <= 0) {
+    throw new RangeError(
+      "git scratch: a timeout is not a positive count of its unit",
+    );
+  }
+  return count * unitMs;
+}
+
 /** Opens the scratch, refusing at construction what no later call could work around. */
 export function scratchOpen(options: GitScratchOptions): GitScratch {
-  for (const secs of [
-    options.localTimeoutSecsMax,
-    options.remoteTimeoutSecsMax,
-    options.promotionTimeoutSecsMax,
+  for (const ms of [
+    options.localTimeoutMsMax,
+    options.remoteTimeoutMsMax,
+    options.promotionTimeoutMsMax,
   ]) {
-    if (!Number.isSafeInteger(secs) || secs <= 0) {
+    if (!Number.isSafeInteger(ms) || ms <= 0) {
       throw new RangeError(
-        "git scratch: a timeout is not a positive count of seconds",
+        "git scratch: a timeout is not a positive count of milliseconds",
       );
     }
   }
@@ -241,7 +267,7 @@ export function scratchRun(
   return gitRun({
     directory,
     argv: [...prefix, ...call.argv],
-    timeoutSecsMax: call.timeoutSecsMax,
+    timeoutMsMax: call.timeoutMsMax,
     environment,
     ...(call.outputBytesMax === undefined
       ? {}
@@ -290,7 +316,7 @@ export function scratchObserveHeadCall(
   return {
     repository,
     ...(credential === undefined ? {} : { credential }),
-    timeoutSecsMax: scratch.options.remoteTimeoutSecsMax,
+    timeoutMsMax: scratch.options.remoteTimeoutMsMax,
     argv: [
       "ls-remote",
       "--symref",
@@ -361,7 +387,7 @@ export async function scratchReadRef(
   const ran = await scratchRun(scratch, {
     repository,
     credential,
-    timeoutSecsMax: scratch.options.remoteTimeoutSecsMax,
+    timeoutMsMax: scratch.options.remoteTimeoutMsMax,
     argv: [
       "ls-remote",
       "--exit-code",
@@ -386,7 +412,7 @@ export async function scratchFetchRef(
   const ran = await scratchRun(scratch, {
     repository,
     credential,
-    timeoutSecsMax: scratch.options.remoteTimeoutSecsMax,
+    timeoutMsMax: scratch.options.remoteTimeoutMsMax,
     argv: [
       "fetch",
       "--quiet",
@@ -420,13 +446,13 @@ export async function scratchFetchHistory(
   repository: RepositoryId,
   credential: RepositoryCredential | undefined,
   commit: GitObjectId,
-  timeoutSecsMax: number,
+  timeoutMsMax: number,
 ): Promise<void> {
   try {
     await scratchRun(scratch, {
       repository,
       ...(credential === undefined ? {} : { credential }),
-      timeoutSecsMax,
+      timeoutMsMax,
       argv: [
         "fetch",
         "--quiet",
@@ -468,7 +494,7 @@ async function scratchFind(
   try {
     ran = await scratchRun(scratch, {
       repository,
-      timeoutSecsMax: scratch.options.localTimeoutSecsMax,
+      timeoutMsMax: scratch.options.localTimeoutMsMax,
       argv: [
         "--no-replace-objects",
         "-c",
@@ -570,7 +596,7 @@ export async function scratchHasCommit(
 ): Promise<boolean> {
   const ran = await scratchRun(scratch, {
     repository,
-    timeoutSecsMax: scratch.options.localTimeoutSecsMax,
+    timeoutMsMax: scratch.options.localTimeoutMsMax,
     argv: ["cat-file", "-e", `${commit}^{commit}`],
   });
   return ran.ran === "Exited" && ran.code === 0;
@@ -594,7 +620,7 @@ export async function scratchCommitShape(
 ): Promise<ScratchCommitShape | undefined> {
   const ran = await scratchRun(scratch, {
     repository,
-    timeoutSecsMax: scratch.options.localTimeoutSecsMax,
+    timeoutMsMax: scratch.options.localTimeoutMsMax,
     argv: [
       "--no-replace-objects",
       "show",
@@ -628,7 +654,7 @@ export async function scratchIsAncestor(
 ): Promise<boolean | undefined> {
   const ran = await scratchRun(scratch, {
     repository,
-    timeoutSecsMax: scratch.options.localTimeoutSecsMax,
+    timeoutMsMax: scratch.options.localTimeoutMsMax,
     argv: ["merge-base", "--is-ancestor", candidate, tip],
   });
   if (ran.ran === "Stopped") return undefined;
@@ -646,7 +672,7 @@ export async function scratchMergeBase(
 ): Promise<GitObjectId | undefined> {
   const ran = await scratchRun(scratch, {
     repository,
-    timeoutSecsMax: scratch.options.localTimeoutSecsMax,
+    timeoutMsMax: scratch.options.localTimeoutMsMax,
     argv: ["merge-base", left, right],
   });
   if (ran.ran === "Stopped" || ran.code !== 0) return undefined;
@@ -662,7 +688,7 @@ export async function scratchWriteBlob(
   return scratchWrittenObjectOf(
     await scratchRun(scratch, {
       repository,
-      timeoutSecsMax: scratch.options.localTimeoutSecsMax,
+      timeoutMsMax: scratch.options.localTimeoutMsMax,
       argv: ["hash-object", "-w", "--stdin"],
       input: content,
     }),
@@ -683,7 +709,7 @@ async function scratchWriteTreeHolds(
   if (entries.length === 0) return true;
   const ran = await scratchRun(scratch, {
     repository,
-    timeoutSecsMax: scratch.options.localTimeoutSecsMax,
+    timeoutMsMax: scratch.options.localTimeoutMsMax,
     indexFile,
     argv: [
       "ls-files",
@@ -713,18 +739,18 @@ export async function scratchWriteTree(
 ): Promise<GitObjectId | undefined> {
   const directory = scratchRepositoryDirectory(scratch, repository);
   const indexFile = join(directory, `chuggy-index-${randomUUID()}`);
-  const timeoutSecsMax = scratch.options.localTimeoutSecsMax;
+  const timeoutMsMax = scratch.options.localTimeoutMsMax;
   try {
     const read = await scratchRun(scratch, {
       repository,
-      timeoutSecsMax,
+      timeoutMsMax,
       indexFile,
       argv: ["read-tree", base],
     });
     if (read.ran === "Stopped" || read.code !== 0) return undefined;
     const added = await scratchRun(scratch, {
       repository,
-      timeoutSecsMax,
+      timeoutMsMax,
       indexFile,
       argv: ["update-index", "-z", "--index-info"],
       input: entries
@@ -740,7 +766,7 @@ export async function scratchWriteTree(
     return scratchWrittenObjectOf(
       await scratchRun(scratch, {
         repository,
-        timeoutSecsMax,
+        timeoutMsMax,
         indexFile,
         argv: ["write-tree"],
       }),
@@ -762,7 +788,7 @@ export async function scratchCommitTree(
   return scratchWrittenObjectOf(
     await scratchRun(scratch, {
       repository,
-      timeoutSecsMax: scratch.options.localTimeoutSecsMax,
+      timeoutMsMax: scratch.options.localTimeoutMsMax,
       argv: [
         "-c",
         `user.name=${name}`,
@@ -786,7 +812,7 @@ export async function scratchKeepCommit(
 ): Promise<boolean> {
   const ran = await scratchRun(scratch, {
     repository,
-    timeoutSecsMax: scratch.options.localTimeoutSecsMax,
+    timeoutMsMax: scratch.options.localTimeoutMsMax,
     argv: ["update-ref", `refs/chuggy/candidate/${commit}`, commit],
   });
   return ran.ran === "Exited" && ran.code === 0;
@@ -815,7 +841,7 @@ export async function scratchMergeTree(
 ): Promise<ScratchMerged> {
   const ran = await scratchRun(scratch, {
     repository,
-    timeoutSecsMax: scratch.options.localTimeoutSecsMax,
+    timeoutMsMax: scratch.options.localTimeoutMsMax,
     argv: ["merge-tree", "--write-tree", "-z", "--name-only", into, from],
   });
   if (ran.ran === "Stopped") return { merged: "Failed" };
@@ -865,7 +891,7 @@ export async function scratchPush(
   const ran = await scratchRun(scratch, {
     repository,
     credential,
-    timeoutSecsMax: scratch.options.promotionTimeoutSecsMax,
+    timeoutMsMax: scratch.options.promotionTimeoutMsMax,
     argv: [
       "push",
       "--porcelain",

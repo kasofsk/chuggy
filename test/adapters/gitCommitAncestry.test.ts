@@ -40,6 +40,7 @@ import {
 import {
   type Fixture,
   fixtureAnswers,
+  fixtureClock,
   fixtureCommit,
   fixtureCredentials,
   fixtureFaulted,
@@ -52,11 +53,13 @@ import {
   fixtureReads,
   fixtureRecorded,
   fixtureRecordedCount,
+  fixtureReleased,
   fixtureScratchRepository,
   fixtureSecret,
   fixtureServe,
   fixtureServed,
   fixtureServing,
+  fixtureSettledMs,
   fixtureTwin,
   fixtureUntil,
 } from "./gitCommitAncestryFixture.ts";
@@ -177,20 +180,6 @@ function fixtureCounted(first?: Promise<CredentialResolved>): {
       },
     },
     asked: () => asked,
-  };
-}
-
-/** A clock that stands still until a test moves it on, which is the one way a wait passes here. */
-function fixtureClock(): {
-  readonly monotonicNowMs: () => number;
-  readonly pass: (ms: number) => void;
-} {
-  let nowMs = 0;
-  return {
-    monotonicNowMs: () => nowMs,
-    pass: (ms) => {
-      nowMs += ms;
-    },
   };
 }
 
@@ -533,7 +522,7 @@ test("a lookup of the candidate stopped at its bound decides nothing, and the ne
   const fixture = fixtureOpen(t);
   const port = fixturePort(fixture, {
     environment: fixtureRecorded(fixture),
-    localTimeoutSecsMax: 1,
+    localTimeoutMsMax: 500,
   });
   const question = fixtureQuestion(fixture, fixture.candidate);
   assert.equal(await port.ancestry(question), "Ancestor");
@@ -671,7 +660,7 @@ test("a fetch stopped part-way writes no ref for its tip, and an ask once its wa
   const fixture = fixtureOpen(t);
   const clock = fixtureClock();
   const port = fixturePort(fixture, {
-    remoteTimeoutSecsMax: 2,
+    remoteTimeoutMsMax: 500,
     monotonicNowMs: clock.monotonicNowMs,
   });
   fixtureServe(fixture, "Stalled");
@@ -679,6 +668,7 @@ test("a fetch stopped part-way writes no ref for its tip, and an ask once its wa
     await port.ancestry(fixtureQuestion(fixture, fixture.candidate)),
     "Unknown",
   );
+  assert.equal(fixtureServed(fixture), 1);
   assert.equal(
     fixtureGit(fixtureScratchRepository(fixture), "for-each-ref"),
     "",
@@ -703,6 +693,7 @@ test("a second asker during a slowed fetch waits on it without reading the scrat
     "",
   );
   const second = port.ancestry(fixtureQuestion(fixture, fixture.candidate));
+  fixtureReleased(fixture);
 
   assert.deepEqual(await Promise.all([first, second]), [
     "Ancestor",
@@ -740,7 +731,7 @@ test("askers at once of a tip that cannot be fetched share the one attempt at it
     credentials: {
       credential: async () => {
         resolutions += 1;
-        await sleep(500);
+        await sleep(fixtureSettledMs);
         return { resolved: "Denied" };
       },
     },
@@ -789,6 +780,7 @@ test("a tip asked for while as many fetches as may run already are is unknown un
   await fixtureServing(fixture, 1);
 
   assert.equal(await port.ancestry(twin), "Unknown");
+  fixtureReleased(fixture);
   assert.equal(await first, "Ancestor");
   fixtureServe(fixture, "Whole");
   assert.equal(await port.ancestry(twin), "Ancestor");
@@ -813,6 +805,7 @@ test("a tip already held is answered while as many fetches as may run already ar
     fixtureGit(fixtureScratchRepository(fixture, twin), "for-each-ref"),
     "",
   );
+  fixtureReleased(fixture);
   assert.equal(await slowed, "Ancestor");
 });
 
@@ -827,8 +820,9 @@ test("a second tip of a repository waits for the fetch of the first before its o
   const second = port.ancestry(
     fixtureQuestion(fixture, fixture.candidate, newer),
   );
-  await sleep(500);
+  await sleep(fixtureSettledMs);
   assert.equal(fixtureServed(fixture), 1);
+  fixtureReleased(fixture);
 
   assert.deepEqual(await Promise.all([first, second]), [
     "Ancestor",
@@ -853,6 +847,7 @@ test("a tip already held is answered while another tip of its repository is bein
     "NotAncestor",
   );
   assert.ok(!fixtureHistoryHeld(fixture, newer));
+  fixtureReleased(fixture);
   assert.equal(await slowed, "Ancestor");
 });
 
@@ -918,8 +913,7 @@ test("a fetch that fails with no asker left waiting on it begins its tip's wait 
   const clock = fixtureClock();
   const counted = fixtureCounted();
   const port = fixturePort(fixture, {
-    answerTimeoutSecsMax: 2,
-    remoteTimeoutSecsMax: 3,
+    answerTimeoutMsMax: 500,
     fetchesInFlightMax: 1,
     monotonicNowMs: clock.monotonicNowMs,
     credentials: counted.credentials,
@@ -936,6 +930,7 @@ test("a fetch that fails with no asker left waiting on it begins its tip's wait 
   await fixtureServing(fixture, 1);
   fixtureServe(fixture, "Whole");
   assert.equal(await stalled, "Unknown");
+  fixtureReleased(fixture);
   await fixtureTurnGivenBack(port, twin);
 
   assert.equal(await port.ancestry(question), "Unknown");
@@ -960,7 +955,7 @@ for (const [failing, first] of [
     const clock = fixtureClock();
     const counted = fixtureCounted(first);
     const port = fixturePort(fixture, {
-      remoteTimeoutSecsMax: 2,
+      remoteTimeoutMsMax: 500,
       monotonicNowMs: clock.monotonicNowMs,
       credentials: counted.credentials,
     });
@@ -1006,7 +1001,7 @@ test("an asker waiting behind a fetch that fails for another tip goes on to a fe
     credentials: {
       credential: async () => {
         asked += 1;
-        if (asked === 1) await sleep(500);
+        if (asked === 1) await sleep(fixtureSettledMs);
         return { resolved: "Denied" };
       },
     },
@@ -1035,6 +1030,7 @@ test("an ask inside its tip's wait is answered at once while another tip of its 
 
   assert.equal(await port.ancestry(unserved), "Unknown");
   assert.ok(!fixtureHistoryHeld(fixture, fixture.tip));
+  fixtureReleased(fixture);
   assert.equal(await slowed, "Ancestor");
 });
 
@@ -1147,25 +1143,34 @@ test("the waits kept are as many as may be, and the one begun before the others 
 test("a bound or a wait of the adapter's own that is no positive integer is refused", (t) => {
   const fixture = fixtureOpen(t);
   for (const bound of [0, -1, 1.5, Number.NaN]) {
-    assert.throws(
-      () => fixturePort(fixture, { fetchesInFlightMax: bound }),
-      RangeError,
-    );
-    assert.throws(
-      () => fixturePort(fixture, { answerTimeoutSecsMax: bound }),
-      RangeError,
-    );
-    assert.throws(
-      () => fixturePort(fixture, { fetchWaitersMax: bound }),
-      RangeError,
-    );
-    assert.throws(
-      () => fixturePort(fixture, { refetchWaitSecs: bound }),
-      RangeError,
-    );
-    assert.throws(
-      () => fixturePort(fixture, { refetchWaitsMax: bound }),
-      RangeError,
-    );
+    for (const named of [
+      "fetchesInFlightMax",
+      "localTimeoutSecsMax",
+      "localTimeoutMsMax",
+      "remoteTimeoutSecsMax",
+      "remoteTimeoutMsMax",
+      "answerTimeoutSecsMax",
+      "answerTimeoutMsMax",
+      "fetchWaitersMax",
+      "refetchWaitSecs",
+      "refetchWaitsMax",
+    ] as const) {
+      assert.throws(
+        () => fixturePort(fixture, { [named]: bound }),
+        RangeError,
+        named,
+      );
+    }
+  }
+});
+
+test("a timeout named both in whole seconds and in milliseconds is refused", (t) => {
+  const fixture = fixtureOpen(t);
+  for (const both of [
+    { localTimeoutSecsMax: 1, localTimeoutMsMax: 1_000 },
+    { remoteTimeoutSecsMax: 1, remoteTimeoutMsMax: 1_000 },
+    { answerTimeoutSecsMax: 1, answerTimeoutMsMax: 1_000 },
+  ]) {
+    assert.throws(() => fixturePort(fixture, both), RangeError);
   }
 });

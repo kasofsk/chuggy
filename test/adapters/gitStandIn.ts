@@ -3,9 +3,10 @@
  * alone. It writes the verb of every call it is told to watch as a line, and the
  * calls of the one verb a suite faults die, fail, say something and fail with
  * git's own code or another, say the credential they were given and fail, or
- * reach git late, a late one writing `ended` once it has ended. A suite naming
- * several faults has each call take the next of them, the last standing for
- * every call after it.
+ * reach git late, a late one writing `ended` once it has ended. A late call
+ * reaches git once the suite releases it, or after a pause of its own where
+ * the suite never does. A suite naming several faults has each call take the
+ * next of them, the last standing for every call after it.
  *
  * WHAT A FAILED CALL SAYS IS A MARKER, written to git's own error stream, so a
  * suite can assert nothing git wrote reaches what the adapter answers.
@@ -17,7 +18,7 @@ import { join } from "node:path";
 
 import { gitCredentialSecretVariable } from "../../src/adapters/git/gitRun.ts";
 
-/** How one verb's calls go through the stand-in: as git has them, ended by a signal, failed with git's own code before git ran, failed after writing the marker with git's own code or another, failed after writing the credential, or begun only after a pause. */
+/** How one verb's calls go through the stand-in: as git has them, ended by a signal, failed with git's own code before git ran, failed after writing the marker with git's own code or another, failed after writing the credential, or begun only once released or a pause has passed. */
 export type GitStandInFault =
   "Whole" | "Killed" | "Failed" | "Said" | "Refused" | "Echoed" | "Stalled";
 
@@ -44,7 +45,12 @@ function gitStandInText(git: string, verbs: readonly string[]): string {
     `    Said) echo '${gitStandInMarker}' >&2; exit 128 ;;`,
     `    Refused) echo '${gitStandInMarker}' >&2; exit 1 ;;`,
     `    Echoed) echo "${gitStandInEchoed} $${gitCredentialSecretVariable}" >&2; exit 128 ;;`,
-    `    Stalled) sleep 3; '${git}' "$@"; code=$?; echo ended >> "$here/calls"; exit $code ;;`,
+    "    Stalled)",
+    "      deadline=$(($(date +%s) + 3))",
+    '      while [ ! -e "$here/released" ] && [ -d "$here" ] && [ "$(date +%s)" -lt "$deadline" ]; do',
+    "        sleep 0.01",
+    "      done",
+    `      '${git}' "$@"; code=$?; echo ended >> "$here/calls"; exit $code ;;`,
     "    esac",
     "    break ;;",
     "  esac",
@@ -61,6 +67,11 @@ export function gitStandInFaulted(
   ...faults: readonly [GitStandInFault, ...GitStandInFault[]]
 ): void {
   writeFileSync(join(directory, "faulted"), `${verb} ${faults.join(" ")}\n`);
+}
+
+/** Lets every late call of the stand-in, held now or made from here on, reach git at once. */
+export function gitStandInReleased(directory: string): void {
+  writeFileSync(join(directory, "released"), "");
 }
 
 /** Writes the stand-in into a directory of its own, watching the verbs named and faulting none of them, and answers the `PATH` that puts it first. */

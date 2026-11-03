@@ -308,7 +308,7 @@ export function finalizerRemoteOpen(
 
 /** What a case changes about the real git adapter: the bound its pushes stop at, and a scratch of its own where it stands for a restarted finalizer. */
 export interface FinalizerRemotePortOptions {
-  readonly promotionTimeoutSecsMax?: number;
+  readonly promotionTimeoutMsMax?: number;
   readonly scratch?: string;
 }
 
@@ -316,7 +316,7 @@ export interface FinalizerRemotePortOptions {
 export function finalizerRemotePort(
   rig: FinalizerRig,
   {
-    promotionTimeoutSecsMax,
+    promotionTimeoutMsMax,
     scratch = "adapter",
   }: FinalizerRemotePortOptions = {},
 ): GitPromotionPort {
@@ -324,9 +324,7 @@ export function finalizerRemotePort(
     scratchDirectory: join(rig.gitRoot, scratch),
     identity: { name: "chug", email: "chug@example.test" },
     environment: process.env,
-    ...(promotionTimeoutSecsMax === undefined
-      ? {}
-      : { promotionTimeoutSecsMax }),
+    ...(promotionTimeoutMsMax === undefined ? {} : { promotionTimeoutMsMax }),
     credentials: {
       credential: () =>
         Promise.resolve({

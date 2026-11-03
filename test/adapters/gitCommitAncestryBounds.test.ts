@@ -8,8 +8,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { setTimeout as sleep } from "node:timers/promises";
 
+import { gitCommitAncestryDefaults } from "../../src/adapters/git/gitCommitAncestry.ts";
 import {
   type FixtureVerb,
+  fixtureClock,
   fixtureFaulted,
   fixtureHistoryHeld,
   fixtureNewer,
@@ -20,9 +22,11 @@ import {
   fixtureRecorded,
   fixtureRecordedCount,
   fixtureRecordedLines,
+  fixtureReleased,
   fixtureServe,
   fixtureServed,
   fixtureServing,
+  fixtureSettledMs,
   fixtureTwin,
   fixtureUntil,
 } from "./gitCommitAncestryFixture.ts";
@@ -37,13 +41,14 @@ const fixtureAskReads: Readonly<
 
 test("an asker is answered unknown at its own bound, and the fetch it began goes on to hold the tip", async (t) => {
   const fixture = fixtureOpen(t);
-  const port = fixturePort(fixture, { answerTimeoutSecsMax: 2 });
-  fixtureServe(fixture, "Slowed", 3);
+  const port = fixturePort(fixture, { answerTimeoutMsMax: 500 });
+  fixtureServe(fixture, "Slowed");
   assert.equal(
     await port.ancestry(fixtureQuestion(fixture, fixture.candidate)),
     "Unknown",
   );
   assert.ok(!fixtureHistoryHeld(fixture, fixture.tip));
+  fixtureReleased(fixture);
 
   await fixtureUntil("the tip's history", () =>
     fixtureHistoryHeld(fixture, fixture.tip),
@@ -60,7 +65,7 @@ for (const [verb, asked, answer] of fixtureReads) {
     const fixture = fixtureOpen(t);
     const environment = fixtureRecorded(fixture);
     const patient = fixturePort(fixture, { environment });
-    const port = fixturePort(fixture, { environment, answerTimeoutSecsMax: 1 });
+    const port = fixturePort(fixture, { environment, answerTimeoutMsMax: 500 });
     const question = fixtureQuestion(fixture, fixture[asked]);
     const reads = fixtureAskReads[asked];
     assert.equal(await patient.ancestry(question), answer);
@@ -68,6 +73,7 @@ for (const [verb, asked, answer] of fixtureReads) {
     fixtureFaulted(fixture, verb, "Stalled");
     assert.equal(await port.ancestry(question), "Unknown");
     fixtureFaulted(fixture, verb, "Whole");
+    fixtureReleased(fixture);
     await fixtureUntil(
       "the read's end",
       () => fixtureRecordedCount(fixture, "ended") === 1,
@@ -85,13 +91,14 @@ for (const [verb, asked, answer] of fixtureReads) {
 test("askers whose bound has passed read nothing once the fetch they waited on lands", async (t) => {
   const fixture = fixtureOpen(t);
   const environment = fixtureRecorded(fixture);
-  const port = fixturePort(fixture, { environment, answerTimeoutSecsMax: 1 });
+  const port = fixturePort(fixture, { environment, answerTimeoutMsMax: 500 });
   const question = fixtureQuestion(fixture, fixture.candidate);
   fixtureServe(fixture, "Slowed");
   assert.deepEqual(
     await Promise.all(Array.from({ length: 5 }, () => port.ancestry(question))),
     Array.from({ length: 5 }, () => "Unknown"),
   );
+  fixtureReleased(fixture);
   await fixtureUntil("the tip's history", () =>
     fixtureHistoryHeld(fixture, fixture.tip),
   );
@@ -111,23 +118,27 @@ test("a fetch takes as many waiters as may wait on one, and an asker past them i
   fixtureServe(fixture, "Slowed");
   const waiting = [port.ancestry(question), port.ancestry(question)];
   await fixtureServing(fixture, 1);
-
-  assert.equal(await port.ancestry(question), "Unknown");
+  const past = port.ancestry(question);
   assert.ok(!fixtureHistoryHeld(fixture, fixture.tip));
+  fixtureReleased(fixture);
+
+  assert.equal(await past, "Unknown");
   assert.deepEqual(await Promise.all(waiting), ["Ancestor", "Ancestor"]);
 });
 
 test("an asker whose bound has passed leaves its place among a fetch's waiters to another", async (t) => {
   const fixture = fixtureOpen(t);
   const port = fixturePort(fixture, {
-    answerTimeoutSecsMax: 4,
+    answerTimeoutMsMax: 1_000,
     fetchWaitersMax: 1,
   });
   const question = fixtureQuestion(fixture, fixture.candidate);
-  fixtureServe(fixture, "Slowed", 5);
+  fixtureServe(fixture, "Slowed");
   assert.equal(await port.ancestry(question), "Unknown");
+  const waiting = port.ancestry(question);
+  fixtureReleased(fixture);
 
-  assert.equal(await port.ancestry(question), "Ancestor");
+  assert.equal(await waiting, "Ancestor");
   assert.equal(fixtureServed(fixture), 1);
 });
 
@@ -147,7 +158,7 @@ test("an ask that has been answered leaves no timer of its own running", async (
 
 test("an asker whose bound passed while another tip was being fetched begins no fetch of its own", async (t) => {
   const fixture = fixtureOpen(t);
-  const port = fixturePort(fixture, { answerTimeoutSecsMax: 1 });
+  const port = fixturePort(fixture, { answerTimeoutMsMax: 500 });
   const newer = fixtureNewer(fixture);
   fixtureServe(fixture, "Slowed");
   const first = port.ancestry(fixtureQuestion(fixture, fixture.candidate));
@@ -157,11 +168,12 @@ test("an asker whose bound passed while another tip was being fetched begins no 
     fixtureQuestion(fixture, fixture.candidate, newer),
   );
   assert.deepEqual(await Promise.all([first, second]), ["Unknown", "Unknown"]);
+  fixtureReleased(fixture);
 
   await fixtureUntil("the tip's history", () =>
     fixtureHistoryHeld(fixture, fixture.tip),
   );
-  await sleep(500);
+  await sleep(fixtureSettledMs);
   assert.equal(fixtureServed(fixture), 1);
 });
 
@@ -169,7 +181,7 @@ test("a credential source that never answers gives its repository's turn back on
   const fixture = fixtureOpen(t);
   const twin = fixtureTwin(fixture);
   const port = fixturePort(fixture, {
-    remoteTimeoutSecsMax: 1,
+    remoteTimeoutMsMax: 500,
     answerTimeoutSecsMax: 3,
     fetchesInFlightMax: 1,
     credentials: {
@@ -194,20 +206,29 @@ test("a credential source that never answers gives its repository's turn back on
 
 test("the wait for a credential comes out of the time the transfer is given", async (t) => {
   const fixture = fixtureOpen(t);
+  const clock = fixtureClock();
+  const transferMs = 500;
   const port = fixturePort(fixture, {
-    remoteTimeoutSecsMax: 4,
+    monotonicNowMs: clock.monotonicNowMs,
     credentials: {
-      credential: async () => {
-        await sleep(2000);
-        return { resolved: "Denied" };
+      credential: () => {
+        clock.pass(
+          gitCommitAncestryDefaults.remoteTimeoutSecsMax * 1000 - transferMs,
+        );
+        return Promise.resolve({ resolved: "Denied" });
       },
     },
   });
-  fixtureServe(fixture, "Slowed", 3);
-  assert.equal(
-    await port.ancestry(fixtureQuestion(fixture, fixture.candidate)),
-    "Unknown",
-  );
+  const question = fixtureQuestion(fixture, fixture.candidate);
+  fixtureServe(fixture, "Slowed");
+  assert.equal(await port.ancestry(question), "Unknown");
   assert.equal(fixtureServed(fixture), 1);
   assert.ok(!fixtureHistoryHeld(fixture, fixture.tip));
+  fixtureReleased(fixture);
+
+  assert.equal(
+    await port.ancestry(question),
+    "Unknown",
+    "the transfer the release would have let through had been stopped",
+  );
 });

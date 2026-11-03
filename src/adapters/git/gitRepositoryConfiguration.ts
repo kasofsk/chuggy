@@ -110,12 +110,14 @@ import {
   scratchOpen,
   scratchRemoteArguments,
   scratchRun,
+  scratchTimeoutMs,
   type GitCommitIdentity,
   type GitScratch,
   type GitScratchCall,
 } from "./gitScratch.ts";
 import { gitRunSaid, type GitEnvironment, type GitRan } from "./gitRun.ts";
 
+/** What the reader is composed over, each timeout named in whole seconds or in milliseconds and else its default. */
 export interface GitRepositoryConfigurationOptions {
   readonly scratchDirectory: string;
   readonly identity: GitCommitIdentity;
@@ -123,7 +125,9 @@ export interface GitRepositoryConfigurationOptions {
   readonly credentials: RepositoryCredentialPort;
   readonly credentialUsername?: string;
   readonly localTimeoutSecsMax?: number;
+  readonly localTimeoutMsMax?: number;
   readonly remoteTimeoutSecsMax?: number;
+  readonly remoteTimeoutMsMax?: number;
   /** Who is told of each remote read git exited with a failure on; a reader naming nobody tells nobody. */
   readonly remoteFailed?: (
     failed: GitRepositoryConfigurationRemoteFailed,
@@ -290,7 +294,7 @@ const gitRepositoryConfigurationHousekeeping = [
 const gitRepositoryConfigurationRetriedCode = 128;
 
 /** The shortest bound a retried call is run under, below which no retry is made. */
-const gitRepositoryConfigurationRetryTimeoutSecsMin = 1;
+const gitRepositoryConfigurationRetryTimeoutMsMin = 1_000;
 
 /** A credential that resolved to none, as evidence: which way, and the mint's cause where it gave one. */
 function gitRepositoryConfigurationCredentialEvidence(
@@ -374,17 +378,14 @@ function gitRepositoryConfigurationRemoteTold(
 }
 
 /** The bound a retry of one call runs under, the smaller of the call's own and what the reader's retries have left once its pause is taken, or none where that is below the shortest a retry runs under. */
-function gitRepositoryConfigurationRetryTimeoutSecs(
+function gitRepositoryConfigurationRetryTimeoutMs(
   retries: GitRepositoryConfigurationRetries,
   call: GitScratchCall,
 ): number | undefined {
   const leftMs = retries.elapsedMsMax - retries.elapsedMs - retries.pauseMs;
-  const timeoutSecsMax = Math.min(
-    call.timeoutSecsMax,
-    Math.floor(leftMs / 1000),
-  );
-  return timeoutSecsMax >= gitRepositoryConfigurationRetryTimeoutSecsMin
-    ? timeoutSecsMax
+  const timeoutMsMax = Math.min(call.timeoutMsMax, leftMs);
+  return timeoutMsMax >= gitRepositoryConfigurationRetryTimeoutMsMin
+    ? timeoutMsMax
     : undefined;
 }
 
@@ -393,12 +394,12 @@ async function gitRepositoryConfigurationRetried(
   own: GitRepositoryConfigurationState,
   retries: GitRepositoryConfigurationRetries,
   read: GitRepositoryConfigurationRemoteRead,
-  timeoutSecsMax: number,
+  timeoutMsMax: number,
 ): Promise<GitRan> {
   const startedMs = retries.monotonicNowMs();
   try {
     await gitRepositoryConfigurationPause(retries.pauseMs);
-    const ran = await scratchRun(own.scratch, { ...read.call, timeoutSecsMax });
+    const ran = await scratchRun(own.scratch, { ...read.call, timeoutMsMax });
     if (gitRepositoryConfigurationRemoteFailedRan(read, ran))
       gitRepositoryConfigurationRemoteTold(own, read, ran, false);
     return ran;
@@ -415,19 +416,19 @@ async function gitRepositoryConfigurationRemote(
   const ran = await scratchRun(own.scratch, read.call);
   if (!gitRepositoryConfigurationRemoteFailedRan(read, ran)) return ran;
   const retries = own.retries;
-  const timeoutSecsMax =
+  const timeoutMsMax =
     retries !== undefined && ran.code === gitRepositoryConfigurationRetriedCode
-      ? gitRepositoryConfigurationRetryTimeoutSecs(retries, read.call)
+      ? gitRepositoryConfigurationRetryTimeoutMs(retries, read.call)
       : undefined;
   gitRepositoryConfigurationRemoteTold(
     own,
     read,
     ran,
-    timeoutSecsMax !== undefined,
+    timeoutMsMax !== undefined,
   );
-  return retries === undefined || timeoutSecsMax === undefined
+  return retries === undefined || timeoutMsMax === undefined
     ? ran
-    : gitRepositoryConfigurationRetried(own, retries, read, timeoutSecsMax);
+    : gitRepositoryConfigurationRetried(own, retries, read, timeoutMsMax);
 }
 
 /**
@@ -486,7 +487,7 @@ async function gitRepositoryConfigurationProbe(
       ...(authorization.authorized === "Credential"
         ? { credential: authorization.credential }
         : {}),
-      timeoutSecsMax: own.scratch.options.remoteTimeoutSecsMax,
+      timeoutMsMax: own.scratch.options.remoteTimeoutMsMax,
       argv: ["ls-remote", ...scratchRemoteArguments(repository)],
     },
   });
@@ -514,7 +515,7 @@ async function gitRepositoryConfigurationFetch(
     call: {
       repository,
       ...(credential === undefined ? {} : { credential }),
-      timeoutSecsMax: own.scratch.options.remoteTimeoutSecsMax,
+      timeoutMsMax: own.scratch.options.remoteTimeoutMsMax,
       argv: [
         ...gitRepositoryConfigurationFetchArguments(repository),
         "fetch",
@@ -560,7 +561,7 @@ async function gitRepositoryConfigurationTree(
 ): Promise<GitRepositoryConfigurationTreeRead | "Refused"> {
   const ran = await scratchRun(own.scratch, {
     repository: request.repository.repository,
-    timeoutSecsMax: own.scratch.options.localTimeoutSecsMax,
+    timeoutMsMax: own.scratch.options.localTimeoutMsMax,
     argv: ["ls-tree", "-r", "-z", request.commit, "--", root],
     outputBytesMax: gitRepositoryConfigurationTreeOutputBytesMax,
   });
@@ -588,7 +589,7 @@ async function gitRepositoryConfigurationBlob(
       ...(commit.credential === undefined
         ? {}
         : { credential: commit.credential }),
-      timeoutSecsMax: own.scratch.options.localTimeoutSecsMax,
+      timeoutMsMax: own.scratch.options.localTimeoutMsMax,
       argv: [
         ...gitRepositoryConfigurationFetchArguments(repository),
         "cat-file",
@@ -778,7 +779,7 @@ async function gitRepositoryConfigurationListing(
 ): Promise<RepositoryDeclarationListing> {
   const ran = await scratchRun(own.scratch, {
     repository: request.repository.repository,
-    timeoutSecsMax: own.scratch.options.localTimeoutSecsMax,
+    timeoutMsMax: own.scratch.options.localTimeoutMsMax,
     argv: ["ls-tree", "-z", request.commit, "--", repositoryDeclarationRoot],
     outputBytesMax: gitRepositoryConfigurationTreeOutputBytesMax,
   });
@@ -802,7 +803,7 @@ async function gitRepositoryConfigurationReferencedEntry(
 ): Promise<GitRepositoryConfigurationEntry | "Absent" | "Refused"> {
   const ran = await scratchRun(own.scratch, {
     repository: request.repository.repository,
-    timeoutSecsMax: own.scratch.options.localTimeoutSecsMax,
+    timeoutMsMax: own.scratch.options.localTimeoutMsMax,
     argv: ["ls-tree", "-z", request.commit, "--", path],
     outputBytesMax: gitRepositoryConfigurationTreeOutputBytesMax,
   });
@@ -1042,6 +1043,11 @@ export function gitRepositoryConfiguration(
 ): RepositoryConfigurationSnapshotPort &
   RepositoryActionSnapshotPort &
   RepositoryDefaultBranchPort {
+  const remoteTimeoutMsMax = scratchTimeoutMs(
+    options.remoteTimeoutSecsMax,
+    options.remoteTimeoutMsMax,
+    gitRepositoryConfigurationDefaults.remoteTimeoutSecsMax,
+  );
   const own: GitRepositoryConfigurationState = {
     scratch: scratchOpen({
       directory: join(
@@ -1053,15 +1059,13 @@ export function gitRepositoryConfiguration(
       credentialUsername:
         options.credentialUsername ??
         gitRepositoryConfigurationDefaults.credentialUsername,
-      localTimeoutSecsMax:
-        options.localTimeoutSecsMax ??
+      localTimeoutMsMax: scratchTimeoutMs(
+        options.localTimeoutSecsMax,
+        options.localTimeoutMsMax,
         gitRepositoryConfigurationDefaults.localTimeoutSecsMax,
-      remoteTimeoutSecsMax:
-        options.remoteTimeoutSecsMax ??
-        gitRepositoryConfigurationDefaults.remoteTimeoutSecsMax,
-      promotionTimeoutSecsMax:
-        options.remoteTimeoutSecsMax ??
-        gitRepositoryConfigurationDefaults.remoteTimeoutSecsMax,
+      ),
+      remoteTimeoutMsMax,
+      promotionTimeoutMsMax: remoteTimeoutMsMax,
     }),
     credentials: options.credentials,
     turns: new Map(),

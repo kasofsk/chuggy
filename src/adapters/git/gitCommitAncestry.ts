@@ -96,13 +96,14 @@ import {
   scratchNamesCommit,
   scratchOpen,
   scratchReaches,
+  scratchTimeoutMs,
   scratchWalksHistory,
   type GitCommitIdentity,
   type GitScratch,
   type ScratchFound,
 } from "./gitScratch.ts";
 
-/** What the adapter is composed over, each bound, the wait and the clock optional because each has a default. */
+/** What the adapter is composed over, each bound, the wait and the clock optional because each has a default, and each timeout named in whole seconds or in milliseconds. */
 export interface GitCommitAncestryOptions {
   readonly scratchDirectory: string;
   readonly identity: GitCommitIdentity;
@@ -110,8 +111,11 @@ export interface GitCommitAncestryOptions {
   readonly credentials: RepositoryCredentialPort;
   readonly credentialUsername?: string;
   readonly localTimeoutSecsMax?: number;
+  readonly localTimeoutMsMax?: number;
   readonly remoteTimeoutSecsMax?: number;
+  readonly remoteTimeoutMsMax?: number;
   readonly answerTimeoutSecsMax?: number;
+  readonly answerTimeoutMsMax?: number;
   readonly fetchesInFlightMax?: number;
   readonly fetchWaitersMax?: number;
   readonly refetchWaitSecs?: number;
@@ -165,7 +169,7 @@ interface GitCommitAncestryState {
   readonly refetchWaits: Map<string, number>;
   readonly fetchesInFlightMax: number;
   readonly fetchWaitersMax: number;
-  readonly answerTimeoutSecsMax: number;
+  readonly answerTimeoutMsMax: number;
   readonly refetchWaitSecs: number;
   readonly refetchWaitsMax: number;
   readonly monotonicNowMs: () => number;
@@ -173,13 +177,13 @@ interface GitCommitAncestryState {
 
 /** Runs one wait under a bound of its own, which the wait is handed so that it can give way to it. The bound's timer is gone once the wait has ended. */
 async function gitCommitAncestryBounded<Value>(
-  timeoutSecsMax: number,
+  timeoutMsMax: number,
   waits: (bound: GitCommitAncestryBound) => Promise<Value>,
 ): Promise<Value> {
   const bound = Promise.withResolvers<undefined>();
   const timer = setTimeout(() => {
     bound.resolve(undefined);
-  }, timeoutSecsMax * 1000);
+  }, timeoutMsMax);
   try {
     return await waits(bound.promise);
   } finally {
@@ -192,7 +196,7 @@ async function gitCommitAncestryFetchWith(
   own: GitCommitAncestryState,
   question: CommitAncestryQuestion,
   credential: RepositoryCredential | undefined,
-  timeoutSecsMax: number,
+  timeoutMsMax: number,
 ): Promise<boolean> {
   const repository = question.repository.repository;
   await scratchFetchHistory(
@@ -200,7 +204,7 @@ async function gitCommitAncestryFetchWith(
     repository,
     credential,
     question.tip,
-    timeoutSecsMax,
+    timeoutMsMax,
   );
   const held = await scratchHoldsHistory(own.scratch, repository, question.tip);
   return held === "Yes";
@@ -215,28 +219,27 @@ async function gitCommitAncestryFetch(
   own: GitCommitAncestryState,
   question: CommitAncestryQuestion,
 ): Promise<boolean> {
-  const timeoutSecsMax = own.scratch.options.remoteTimeoutSecsMax;
+  const timeoutMsMax = own.scratch.options.remoteTimeoutMsMax;
   const beganMs = own.monotonicNowMs();
-  const resolved = await gitCommitAncestryBounded(timeoutSecsMax, (bound) =>
+  const resolved = await gitCommitAncestryBounded(timeoutMsMax, (bound) =>
     Promise.race([own.credentials.credential(question.repository), bound]),
   );
   if (resolved === undefined) return false;
-  const transferTimeoutSecsMax =
-    timeoutSecsMax - (own.monotonicNowMs() - beganMs) / 1000;
+  const transferTimeoutMsMax = timeoutMsMax - (own.monotonicNowMs() - beganMs);
   switch (resolved.resolved) {
     case "Credential":
       return gitCommitAncestryFetchWith(
         own,
         question,
         resolved.credential,
-        transferTimeoutSecsMax,
+        transferTimeoutMsMax,
       );
     case "Denied":
       return gitCommitAncestryFetchWith(
         own,
         question,
         undefined,
-        transferTimeoutSecsMax,
+        transferTimeoutMsMax,
       );
     case "Unavailable":
       return false;
@@ -433,8 +436,22 @@ export function gitCommitAncestry(
   options: GitCommitAncestryOptions,
 ): CommitAncestryPort {
   const resolved = { ...gitCommitAncestryDefaults, ...options };
+  const localTimeoutMsMax = scratchTimeoutMs(
+    options.localTimeoutSecsMax,
+    options.localTimeoutMsMax,
+    gitCommitAncestryDefaults.localTimeoutSecsMax,
+  );
+  const remoteTimeoutMsMax = scratchTimeoutMs(
+    options.remoteTimeoutSecsMax,
+    options.remoteTimeoutMsMax,
+    gitCommitAncestryDefaults.remoteTimeoutSecsMax,
+  );
+  const answerTimeoutMsMax = scratchTimeoutMs(
+    options.answerTimeoutSecsMax,
+    options.answerTimeoutMsMax,
+    gitCommitAncestryDefaults.answerTimeoutSecsMax,
+  );
   for (const bound of [
-    resolved.answerTimeoutSecsMax,
     resolved.fetchesInFlightMax,
     resolved.fetchWaitersMax,
     resolved.refetchWaitSecs,
@@ -452,23 +469,23 @@ export function gitCommitAncestry(
       identity: resolved.identity,
       environment: resolved.environment,
       credentialUsername: resolved.credentialUsername,
-      localTimeoutSecsMax: resolved.localTimeoutSecsMax,
-      remoteTimeoutSecsMax: resolved.remoteTimeoutSecsMax,
-      promotionTimeoutSecsMax: resolved.remoteTimeoutSecsMax,
+      localTimeoutMsMax,
+      remoteTimeoutMsMax,
+      promotionTimeoutMsMax: remoteTimeoutMsMax,
     }),
     credentials: resolved.credentials,
     flights: new Map(),
     refetchWaits: new Map(),
     fetchesInFlightMax: resolved.fetchesInFlightMax,
     fetchWaitersMax: resolved.fetchWaitersMax,
-    answerTimeoutSecsMax: resolved.answerTimeoutSecsMax,
+    answerTimeoutMsMax,
     refetchWaitSecs: resolved.refetchWaitSecs,
     refetchWaitsMax: resolved.refetchWaitsMax,
     monotonicNowMs: resolved.monotonicNowMs,
   };
   return {
     ancestry: (question) =>
-      gitCommitAncestryBounded(own.answerTimeoutSecsMax, (asker) =>
+      gitCommitAncestryBounded(own.answerTimeoutMsMax, (asker) =>
         gitCommitAncestryAnswer(own, question, asker),
       ),
   };

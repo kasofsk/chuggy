@@ -83,13 +83,14 @@ import {
   scratchReaches,
   scratchReadRef,
   scratchOpen,
+  scratchTimeoutMs,
   scratchWalksHistory,
   type GitCommitIdentity,
   type GitScratch,
 } from "./gitScratch.ts";
 import type { GitEnvironment } from "./gitRun.ts";
 
-/** Everything the adapter is composed with, the credential port among them because nothing here reads an environment. */
+/** Everything the adapter is composed with, the credential port among them because nothing here reads an environment, and each timeout named in whole seconds or in milliseconds. */
 export interface GitPromotionOptions {
   readonly scratchDirectory: string;
   readonly identity: GitCommitIdentity;
@@ -97,8 +98,11 @@ export interface GitPromotionOptions {
   readonly credentials: RepositoryCredentialPort;
   readonly credentialUsername?: string;
   readonly localTimeoutSecsMax?: number;
+  readonly localTimeoutMsMax?: number;
   readonly remoteTimeoutSecsMax?: number;
+  readonly remoteTimeoutMsMax?: number;
   readonly promotionTimeoutSecsMax?: number;
+  readonly promotionTimeoutMsMax?: number;
 }
 
 /** The bounds and the user a deployment gets when it names none. */
@@ -471,14 +475,21 @@ export function gitPromotion(options: GitPromotionOptions): GitPromotionPort {
       environment: options.environment,
       credentialUsername:
         options.credentialUsername ?? gitPromotionDefaults.credentialUsername,
-      localTimeoutSecsMax:
-        options.localTimeoutSecsMax ?? gitPromotionDefaults.localTimeoutSecsMax,
-      remoteTimeoutSecsMax:
-        options.remoteTimeoutSecsMax ??
+      localTimeoutMsMax: scratchTimeoutMs(
+        options.localTimeoutSecsMax,
+        options.localTimeoutMsMax,
+        gitPromotionDefaults.localTimeoutSecsMax,
+      ),
+      remoteTimeoutMsMax: scratchTimeoutMs(
+        options.remoteTimeoutSecsMax,
+        options.remoteTimeoutMsMax,
         gitPromotionDefaults.remoteTimeoutSecsMax,
-      promotionTimeoutSecsMax:
-        options.promotionTimeoutSecsMax ??
+      ),
+      promotionTimeoutMsMax: scratchTimeoutMs(
+        options.promotionTimeoutSecsMax,
+        options.promotionTimeoutMsMax,
         gitPromotionDefaults.promotionTimeoutSecsMax,
+      ),
     }),
     credentials: options.credentials,
   };
