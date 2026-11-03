@@ -656,6 +656,63 @@ test("the plane serving pools ends an attempt only by releasing it, and moves no
   assert.deepEqual(granted, { releases: true, moves_status: false });
 });
 
+/** Every column the plane serving pools is granted, by relation and privilege. */
+const poolPlaneColumns = [
+  ["agent_account_press", "SELECT", "agent,principal,spent_at"],
+  ["agent_account_press", "UPDATE", "spent_at"],
+  [
+    "chat_host",
+    "SELECT",
+    "owner,principal,runner_package,runner_version,tenant",
+  ],
+  ["chat_host", "UPDATE", "last_polled_at,runner_package,runner_version"],
+  [
+    "execution",
+    "SELECT",
+    "cpu_millis,execution,memory_mib,owner,owner_fallback,placement,project,requirement_value,status,tenant",
+  ],
+  ["execution", "UPDATE", "placement_backoff_from"],
+  [
+    "execution_attempt",
+    "SELECT",
+    "agent,assignment,attempt,execution,generation,invoked,lease_expires_at,lease_owner,opened_at,personal,pool,pool_principal,pool_refusal,project,recovery_epoch,runtime,state,tenant",
+  ],
+  [
+    "execution_attempt",
+    "UPDATE",
+    "assignment,capability_secret_digest,claimed_at,lease_expires_at,lease_owner,personal,pool,pool_principal,pool_refusal,pool_refusal_fault",
+  ],
+  [
+    "personal_runner",
+    "SELECT",
+    "capabilities,executions_polled_at,memory_ceiling_mib,owner,principal,runner_package,runner_version,tenant",
+  ],
+  [
+    "personal_runner",
+    "UPDATE",
+    "capabilities,executions_polled_at,last_polled_at,memory_ceiling_mib,runner_package,runner_version",
+  ],
+  ["personal_runner_project", "SELECT", "owner,project,tenant"],
+  ["project", "SELECT", "lifecycle,project,tenant"],
+  ["recovery_epoch", "SELECT", "epoch,established_at,ordinal"],
+  ["schema_migration", "SELECT", "applied_at,name,version"],
+  [
+    "session_launch",
+    "SELECT",
+    "authority,backoff_secs,bounds,deadline_secs,idle_secs_max,image,mirrors,model,published_at,singleton",
+  ],
+  [
+    "worker_pool",
+    "SELECT",
+    "capabilities,class,memory_ceiling_mib,pool,principal,project,registered_by,runner_package,runner_version,tenant",
+  ],
+  [
+    "worker_pool",
+    "UPDATE",
+    "capabilities,executions_polled_at,last_polled_at,memory_ceiling_mib,runner_package,runner_version",
+  ],
+];
+
 /**
  * A claim hands out the image its execution's requirement pinned, which the
  * plane reads to do it; this is every other column the plane may touch, so an
@@ -663,7 +720,8 @@ test("the plane serving pools ends an attempt only by releasing it, and moves no
  * client are none of them. A session's launch is read whole, and a pool's
  * liveness and the runner, capabilities and memory ceiling its poll named are
  * all of its row the plane writes, as a chat host's liveness and runner are of
- * its.
+ * its, while a pool's registrant is the account its claims spend and a press
+ * is read and spent by the claim it lets through.
  */
 test("the plane serving pools reads and writes these columns and no others", async () => {
   assert.deepEqual(
@@ -675,59 +733,7 @@ test("the plane serving pools reads and writes these columns and no others", asy
         GROUP BY table_name, privilege_type ORDER BY table_name, privilege_type`,
       [poolPlaneRole],
     ),
-    [
-      [
-        "chat_host",
-        "SELECT",
-        "owner,principal,runner_package,runner_version,tenant",
-      ],
-      ["chat_host", "UPDATE", "last_polled_at,runner_package,runner_version"],
-      [
-        "execution",
-        "SELECT",
-        "cpu_millis,execution,memory_mib,owner,owner_fallback,placement,project,requirement_value,status,tenant",
-      ],
-      ["execution", "UPDATE", "placement_backoff_from"],
-      [
-        "execution_attempt",
-        "SELECT",
-        "agent,assignment,attempt,execution,generation,invoked,lease_expires_at,lease_owner,opened_at,personal,pool,pool_principal,pool_refusal,project,recovery_epoch,runtime,state,tenant",
-      ],
-      [
-        "execution_attempt",
-        "UPDATE",
-        "assignment,capability_secret_digest,claimed_at,lease_expires_at,lease_owner,personal,pool,pool_principal,pool_refusal,pool_refusal_fault",
-      ],
-      [
-        "personal_runner",
-        "SELECT",
-        "capabilities,executions_polled_at,memory_ceiling_mib,owner,principal,runner_package,runner_version,tenant",
-      ],
-      [
-        "personal_runner",
-        "UPDATE",
-        "capabilities,executions_polled_at,last_polled_at,memory_ceiling_mib,runner_package,runner_version",
-      ],
-      ["personal_runner_project", "SELECT", "owner,project,tenant"],
-      ["project", "SELECT", "lifecycle,project,tenant"],
-      ["recovery_epoch", "SELECT", "epoch,established_at,ordinal"],
-      ["schema_migration", "SELECT", "applied_at,name,version"],
-      [
-        "session_launch",
-        "SELECT",
-        "authority,backoff_secs,bounds,deadline_secs,idle_secs_max,image,mirrors,model,published_at,singleton",
-      ],
-      [
-        "worker_pool",
-        "SELECT",
-        "capabilities,class,memory_ceiling_mib,pool,principal,project,runner_package,runner_version,tenant",
-      ],
-      [
-        "worker_pool",
-        "UPDATE",
-        "capabilities,executions_polled_at,last_polled_at,memory_ceiling_mib,runner_package,runner_version",
-      ],
-    ].map(([table_name, privilege_type, columns]) => ({
+    poolPlaneColumns.map(([table_name, privilege_type, columns]) => ({
       table_name,
       privilege_type,
       columns,

@@ -45,6 +45,18 @@
  * A PERSONAL RUNNER'S CLAIM IS THE SAME GUARD FOR ITS CLASS, in
  * `./personalExecutions.ts`.
  *
+ * A CLAIM PASSES OVER AN ATTEMPT WHOSE AGENT ITS ACCOUNT HAS PAUSED, the
+ * account being the member who registered the pool, and asks
+ * `agent_account_pause` whether it has: that function is the rule, and nothing
+ * here restates it. A press that lets one claim through is spent by that
+ * claim's own statement, conditionally on its row, so of two claims of one
+ * account the second waits on it and finds it spent. The pause is not a term
+ * of `workerPoolCanAssign`: the model states no fairness, so a runner declining
+ * an assignment it enables is a stutter, as a claim declining work larger than
+ * its room is. The owner's fallback is unchanged, so a pool still defers to a
+ * paused owner's live runner, and the owner's work waits for the owner's
+ * account.
+ *
  * THE HELD COUNT IS THE DATABASE'S AND NOT THE POOL'S. It counts every attempt
  * under the pool's name that is still placing or running, so a pool that leaves
  * work out of its report claims no more for it. Claims by one pool are
@@ -441,6 +453,18 @@ export function postgresWorkerPoolRoster(pool: pg.Pool): WorkerPoolRoster {
   };
 }
 
+/** Serializes a pool's claims, in a statement of its own so the claim's snapshot is taken after it. */
+async function workerPoolClaimLocked(
+  client: pg.PoolClient,
+  identity: WorkerPoolIdentity,
+): Promise<void> {
+  const { partition } = identity;
+  await client.query<{ locked: string | null }>(
+    sql`SELECT pg_advisory_xact_lock(hashtextextended(
+          'worker-pool-claim:' || ${partition.tenant} || '/' || ${partition.project} || '/' || ${identity.pool}, 0))::text AS locked`,
+  );
+}
+
 /**
  * One opened-but-unplaced attempt whose invocation is recorded, taken for this
  * pool where `workerPoolCanAssign` would take it and no larger than the room
@@ -461,32 +485,19 @@ async function workerPoolClaimed(
 ): Promise<WorkerPoolClaimed | undefined> {
   const { partition } = identity;
   const room = terms.memoryRoomMib ?? null;
-  await client.query<{ locked: string | null }>(
-    sql`SELECT pg_advisory_xact_lock(hashtextextended(
-          'worker-pool-claim:' || ${partition.tenant} || '/' || ${partition.project} || '/' || ${identity.pool}, 0))::text AS locked`,
-  );
+  await workerPoolClaimLocked(client, identity);
   const found = await client.query<{
     requirement: unknown;
     runtime: string | null;
     cpu_millis: number | null;
     memory_mib: number | null;
   }>(
-    sql`UPDATE execution_attempt a SET
-        pool=${identity.pool},pool_principal=${identity.principal},
-        assignment=${assignment},pool_refusal=NULL,
-        capability_secret_digest=${workerPoolDigest(bearer)},
-        lease_owner=${identity.pool},
-        lease_expires_at=now()+make_interval(secs=>${terms.leaseSecs}::double precision),
-        claimed_at=now()
-      FROM execution e
-      WHERE e.tenant=a.tenant AND e.project=a.project AND e.execution=a.execution
-        AND (a.tenant,a.project,a.execution,a.attempt) IN (
-        SELECT q.tenant,q.project,q.execution,q.attempt
+    sql`WITH chosen AS (
+        SELECT q.tenant,q.project,q.execution,q.attempt,q.agent,w.registered_by AS account,held.admitted_by_press
         FROM execution_attempt q
-        JOIN execution x
-          ON x.tenant=q.tenant AND x.project=q.project AND x.execution=q.execution
-        JOIN worker_pool w
-          ON w.tenant=q.tenant AND w.project=q.project
+        JOIN execution x ON x.tenant=q.tenant AND x.project=q.project AND x.execution=q.execution
+        JOIN worker_pool w ON w.tenant=q.tenant AND w.project=q.project
+        CROSS JOIN LATERAL agent_account_pause(w.registered_by,q.agent) held
         WHERE q.tenant=${partition.tenant} AND q.project=${partition.project}
           AND w.pool=${identity.pool} AND w.principal=${identity.principal}
           AND q.state='Placing' AND q.pool IS NULL AND q.invoked
@@ -514,8 +525,21 @@ async function workerPoolClaimed(
                    OR r.executions_polled_at>now()-make_interval(secs=>${sessionRunnerPolledSecsMax}::double precision)))
           AND EXISTS(SELECT 1 FROM project p
             WHERE p.tenant=q.tenant AND p.project=q.project AND p.lifecycle='Active')
+          AND (held.paused_until IS NULL OR held.admitted_by_press)
         ORDER BY q.opened_at,q.attempt
-        LIMIT 1 FOR UPDATE OF q, x SKIP LOCKED)
+        LIMIT 1 FOR UPDATE OF q, x SKIP LOCKED),
+      spent AS (UPDATE agent_account_press p SET spent_at=now() FROM chosen c
+        WHERE c.admitted_by_press AND p.principal=c.account AND p.agent=c.agent
+          AND p.spent_at IS NULL RETURNING p.principal)
+      UPDATE execution_attempt a SET
+        pool=${identity.pool},pool_principal=${identity.principal},
+        assignment=${assignment},pool_refusal=NULL,
+        capability_secret_digest=${workerPoolDigest(bearer)},lease_owner=${identity.pool},
+        lease_expires_at=now()+make_interval(secs=>${terms.leaseSecs}::double precision),claimed_at=now()
+      FROM execution e, chosen c
+      WHERE e.tenant=a.tenant AND e.project=a.project AND e.execution=a.execution
+        AND (a.tenant,a.project,a.execution,a.attempt)=(c.tenant,c.project,c.execution,c.attempt)
+        AND (NOT c.admitted_by_press OR EXISTS(SELECT 1 FROM spent))
       RETURNING e.requirement_value AS requirement, a.runtime, e.cpu_millis, e.memory_mib`,
   );
   const row = found.rows[0];
@@ -544,6 +568,7 @@ async function workerPoolWaiting(
           ON x.tenant=q.tenant AND x.project=q.project AND x.execution=q.execution
         JOIN worker_pool w
           ON w.tenant=q.tenant AND w.project=q.project
+        CROSS JOIN LATERAL agent_account_pause(w.registered_by,q.agent) held
         WHERE q.tenant=${partition.tenant} AND q.project=${partition.project}
           AND w.pool=${identity.pool} AND w.principal=${identity.principal}
           AND q.state='Placing' AND q.pool IS NULL AND q.invoked
@@ -571,6 +596,7 @@ async function workerPoolWaiting(
                    OR r.executions_polled_at>now()-make_interval(secs=>${sessionRunnerPolledSecsMax}::double precision)))
           AND EXISTS(SELECT 1 FROM project p
             WHERE p.tenant=q.tenant AND p.project=q.project AND p.lifecycle='Active')
+          AND (held.paused_until IS NULL OR held.admitted_by_press)
       ) AS waiting`,
   );
   return found.rows[0]?.waiting === true;

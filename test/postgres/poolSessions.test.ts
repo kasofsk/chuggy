@@ -108,6 +108,7 @@ import {
   inertSessionPlane,
   inertWorkerPlane,
 } from "../adapters/workerPlaneFixtures.ts";
+import { agentAccountHarnessCommitted } from "./agentAccountHarness.ts";
 import {
   postgresHarnessNewEpoch,
   postgresHarnessProject,
@@ -1823,6 +1824,99 @@ test("a chat host's declared idle bound is recorded on its claim capped at the s
     ["Running", null],
     ["Running", null],
   ]);
+});
+
+/** A limit on `member`'s Claude whose reset is ahead, under the session options named. */
+function claudePaused(
+  member: Principal,
+  options: { readonly pausesLead: boolean; readonly pausesThreads: boolean },
+): Promise<void> {
+  return agentAccountHarnessCommitted(rig.harness, member, "Claude", {
+    limit: { observedSecs: -60, resetsSecs: 3600 },
+    setting: { fiveHourPercent: 80, sevenDayPercent: 90, ...options },
+  });
+}
+
+test("a pool claims no lead turn while its registrant's Claude is paused and the lead pauses, and withdraws it once its dwell runs", async () => {
+  const { partition, member, pool } = await routedProject("pool-paused-lead");
+  const { session, turn } = await waiting(
+    partition,
+    "paused-lead",
+    "Lead",
+    member,
+  );
+  const candidate = (await candidatesRead([pool]))(session);
+  await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
+    limit: { observedSecs: -60, resetsSecs: 3600 },
+  });
+  assert.deepEqual(
+    await awaitingOf(pool),
+    new Set(),
+    "the lead pauses by default",
+  );
+  assert.equal(
+    await openedFor(pool, candidate),
+    "NotClaimable",
+    "the lock that opens it reads the pause again",
+  );
+  assert.deepEqual(
+    await awaitingOf(await runner(partition, undefined)),
+    new Set([session]),
+    "a pool no member registered spends no account",
+  );
+  await claudePaused(member, { pausesLead: false, pausesThreads: true });
+  assert.deepEqual(await awaitingOf(pool), new Set([session]));
+  await claudePaused(member, { pausesLead: true, pausesThreads: false });
+  await sessionRigQueuedFor(rig, turn, 2 * sessionPoolTurnDwellSecs);
+  await withdrawn();
+  assert.deepEqual(await turnStanding(partition, session, turn), [
+    "Abandoned",
+    "TurnWithdrawn",
+    "0",
+  ]);
+});
+
+test("a chat host claims its owner's threads and inquiries while their Claude is paused, and none once threads pause", async () => {
+  const partition = await sessionRigProject(rig, "host-paused");
+  await sessionRigRouted(rig, partition, "Pool", "Pool");
+  const member = principal("member-host-paused");
+  const host = await chatHost(partition, member);
+  const thread = await waiting(partition, "paused-thread", "Thread", member);
+  const lead = await waiting(partition, "paused-host-lead", "Lead", member);
+  const inquiry = await waiting(
+    partition,
+    "paused-inquiry",
+    "Inquiry",
+    member,
+    lead.session,
+  );
+  const read = await candidatesRead([host]);
+  await claudePaused(member, { pausesLead: true, pausesThreads: false });
+  assert.deepEqual(
+    await awaitingOf(host),
+    new Set([thread.session, inquiry.session]),
+    "threads do not pause by default",
+  );
+  await claudePaused(member, { pausesLead: false, pausesThreads: true });
+  assert.deepEqual(await awaitingOf(host), new Set());
+  for (const session of [thread.session, inquiry.session])
+    assert.equal(await openedFor(host, read(session)), "NotClaimable");
+  await agentAccountHarnessCommitted(rig.harness, member, "Codex", {
+    limit: { observedSecs: -60, resetsSecs: 3600 },
+  });
+  await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
+    setting: {
+      fiveHourPercent: 80,
+      sevenDayPercent: 90,
+      pausesLead: true,
+      pausesThreads: true,
+    },
+  });
+  assert.deepEqual(
+    await awaitingOf(host),
+    new Set([thread.session, inquiry.session]),
+    "a session spends Claude, so Codex paused holds none back",
+  );
 });
 
 test("an attempt a pool claimed under an epoch since restored away is no longer held, renewed or pulled for", async () => {

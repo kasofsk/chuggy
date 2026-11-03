@@ -76,6 +76,7 @@ import { migration081 } from "../../src/adapters/postgres/schema/migrations/081-
 import { migration106 } from "../../src/adapters/postgres/schema/migrations/106-merge-queue.ts";
 import { migration107 } from "../../src/adapters/postgres/schema/migrations/107-queue-checks-failed.ts";
 import { migration109 } from "../../src/adapters/postgres/schema/migrations/109-agent-account-usage.ts";
+import { migration110 } from "../../src/adapters/postgres/schema/migrations/110-agent-account-pause.ts";
 import { migration082 } from "../../src/adapters/postgres/schema/migrations/082-decline-kept-unread.ts";
 import { migration083 } from "../../src/adapters/postgres/schema/migrations/083-attempt-base-ref.ts";
 import { migration084 } from "../../src/adapters/postgres/schema/migrations/084-thread-dispatch.ts";
@@ -4239,6 +4240,73 @@ test("109 names the agent every attempt that stood spends, lets a finished one s
           },
           { name: "record_worker_run_limit", ...door, plane: true },
           { name: "record_worker_run_usage", ...door, plane: true },
+        ],
+      });
+    },
+  );
+});
+
+/** Who owns and may call each function 110 makes or replaces, and what the pool plane may reach of the press and a pool's registrant. */
+async function privilegesOf110(subject: pg.Pool) {
+  const relations = await subject.query(
+    `SELECT has_column_privilege($1,'public.worker_pool','registered_by','SELECT') AS pool_reads_registrant,
+            has_column_privilege($1,'public.agent_account_press','spent_at','UPDATE') AS pool_spends_press,
+            has_column_privilege($1,'public.agent_account_press','pressed_at','UPDATE') AS pool_presses,
+            has_table_privilege($1,'public.agent_account_setting','SELECT') AS pool_reads_settings`,
+    [poolPlaneRole],
+  );
+  const functions = await subject.query(
+    `SELECT p.proname AS name, pg_get_userbyid(p.proowner) AS owner,
+            p.prosecdef AS definer,
+            has_function_privilege($1,p.oid,'EXECUTE') AS pool
+       FROM pg_proc p
+      WHERE p.proname IN ('agent_account_pause','agent_account_settings',
+                          'agent_account_session_paused',
+                          'pool_sessions_awaiting_claim','open_pool_session_attempt',
+                          'chat_host_sessions_awaiting_claim',
+                          'open_chat_host_session_attempt')
+      ORDER BY p.proname`,
+    [poolPlaneRole],
+  );
+  return { relations: relations.rows, functions: functions.rows };
+}
+
+test("110 gives the pool plane the rule and the press it spends, and keeps the session claims it replaces callable by it", async () => {
+  await migrationDatabaseAt(
+    migration110.version - 1,
+    "agent_account_pause",
+    async (subject) => {
+      assert.ok(
+        (await postgresMigrate(subject)).includes(migration110.version),
+      );
+      const owned = { owner: boundaryOwnerRole, definer: true, pool: true };
+      assert.deepEqual(await privilegesOf110(subject), {
+        relations: [
+          {
+            pool_reads_registrant: true,
+            pool_spends_press: true,
+            pool_presses: false,
+            pool_reads_settings: false,
+          },
+        ],
+        functions: [
+          { name: "agent_account_pause", ...owned },
+          {
+            name: "agent_account_session_paused",
+            ...owned,
+            definer: false,
+            pool: false,
+          },
+          {
+            name: "agent_account_settings",
+            ...owned,
+            definer: false,
+            pool: false,
+          },
+          { name: "chat_host_sessions_awaiting_claim", ...owned },
+          { name: "open_chat_host_session_attempt", ...owned },
+          { name: "open_pool_session_attempt", ...owned },
+          { name: "pool_sessions_awaiting_claim", ...owned },
         ],
       });
     },
