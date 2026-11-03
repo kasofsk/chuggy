@@ -46,7 +46,7 @@ function gitStandInText(git: string, verbs: readonly string[]): string {
     `    Refused) echo '${gitStandInMarker}' >&2; exit 1 ;;`,
     `    Echoed) echo "${gitStandInEchoed} $${gitCredentialSecretVariable}" >&2; exit 128 ;;`,
     "    Stalled)",
-    "      deadline=$(($(date +%s) + 3))",
+    "      deadline=$(($(date +%s) + 4))",
     '      while [ ! -e "$here/released" ] && [ -d "$here" ] && [ "$(date +%s)" -lt "$deadline" ]; do',
     "        sleep 0.01",
     "      done",

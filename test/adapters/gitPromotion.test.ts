@@ -28,6 +28,7 @@ import { test, type TestContext } from "node:test";
 import {
   gitPromotion,
   gitPromotionDefaults,
+  type GitPromotionOptions,
 } from "../../src/adapters/git/gitPromotion.ts";
 import {
   gitCredentialArguments,
@@ -1304,6 +1305,37 @@ test("an ambient variable neither points a call elsewhere nor configures it", as
     ran.stdout.trim(),
     fixtureGit(fixture.seed, "rev-parse", "--absolute-git-dir"),
   );
+});
+
+test("a timeout that is no positive count of its unit, or is named in both units, is refused at construction", (t) => {
+  const fixture = fixtureOpen(t);
+  const composed = (timeouts: Partial<GitPromotionOptions>) => () =>
+    gitPromotion({
+      scratchDirectory: join(fixture.directory, "scratch"),
+      identity: { name: "chug", email: "chug@example.test" },
+      environment: process.env,
+      credentials: fixtureCredentials(fixtureGranted),
+      ...timeouts,
+    });
+  for (const bound of [0, 1.5]) {
+    for (const named of [
+      "localTimeoutSecsMax",
+      "localTimeoutMsMax",
+      "remoteTimeoutSecsMax",
+      "remoteTimeoutMsMax",
+      "promotionTimeoutSecsMax",
+      "promotionTimeoutMsMax",
+    ] as const) {
+      assert.throws(composed({ [named]: bound }), RangeError, named);
+    }
+  }
+  for (const both of [
+    { localTimeoutSecsMax: 1, localTimeoutMsMax: 1_000 },
+    { remoteTimeoutSecsMax: 1, remoteTimeoutMsMax: 1_000 },
+    { promotionTimeoutSecsMax: 1, promotionTimeoutMsMax: 1_000 },
+  ]) {
+    assert.throws(composed(both), RangeError);
+  }
 });
 
 test("a git too old to write merge trees is refused by the floor", () => {

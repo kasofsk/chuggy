@@ -182,6 +182,30 @@ function gitRunExited(
   };
 }
 
+/**
+ * One timeout as the milliseconds a call is bounded by, from whichever unit a
+ * composition named it in, whole seconds or milliseconds, and else from its
+ * default's seconds. One named both ways, or as no positive count of its unit,
+ * is refused.
+ */
+export function gitTimeoutMs(
+  secs: number | undefined,
+  ms: number | undefined,
+  defaultSecs: number,
+): number {
+  if (secs !== undefined && ms !== undefined) {
+    throw new RangeError(
+      "git: a timeout is named in seconds and in milliseconds",
+    );
+  }
+  const [count, unitMs] =
+    ms === undefined ? [secs ?? defaultSecs, 1000] : [ms, 1];
+  if (!Number.isSafeInteger(count) || count <= 0) {
+    throw new RangeError("git: a timeout is not a positive count of its unit");
+  }
+  return count * unitMs;
+}
+
 /** Runs one bounded git call, resolving a non-zero exit and rejecting only a git that could not start. */
 export function gitRun(call: GitCall): Promise<GitRan> {
   const argv = ["-C", call.directory, ...call.argv];

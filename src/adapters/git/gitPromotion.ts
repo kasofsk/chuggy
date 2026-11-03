@@ -83,12 +83,11 @@ import {
   scratchReaches,
   scratchReadRef,
   scratchOpen,
-  scratchTimeoutMs,
   scratchWalksHistory,
   type GitCommitIdentity,
   type GitScratch,
 } from "./gitScratch.ts";
-import type { GitEnvironment } from "./gitRun.ts";
+import { gitTimeoutMs, type GitEnvironment } from "./gitRun.ts";
 
 /** Everything the adapter is composed with, the credential port among them because nothing here reads an environment, and each timeout named in whole seconds or in milliseconds. */
 export interface GitPromotionOptions {
@@ -475,17 +474,17 @@ export function gitPromotion(options: GitPromotionOptions): GitPromotionPort {
       environment: options.environment,
       credentialUsername:
         options.credentialUsername ?? gitPromotionDefaults.credentialUsername,
-      localTimeoutMsMax: scratchTimeoutMs(
+      localTimeoutMsMax: gitTimeoutMs(
         options.localTimeoutSecsMax,
         options.localTimeoutMsMax,
         gitPromotionDefaults.localTimeoutSecsMax,
       ),
-      remoteTimeoutMsMax: scratchTimeoutMs(
+      remoteTimeoutMsMax: gitTimeoutMs(
         options.remoteTimeoutSecsMax,
         options.remoteTimeoutMsMax,
         gitPromotionDefaults.remoteTimeoutSecsMax,
       ),
-      promotionTimeoutMsMax: scratchTimeoutMs(
+      promotionTimeoutMsMax: gitTimeoutMs(
         options.promotionTimeoutSecsMax,
         options.promotionTimeoutMsMax,
         gitPromotionDefaults.promotionTimeoutSecsMax,

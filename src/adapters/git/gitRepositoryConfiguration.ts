@@ -110,12 +110,16 @@ import {
   scratchOpen,
   scratchRemoteArguments,
   scratchRun,
-  scratchTimeoutMs,
   type GitCommitIdentity,
   type GitScratch,
   type GitScratchCall,
 } from "./gitScratch.ts";
-import { gitRunSaid, type GitEnvironment, type GitRan } from "./gitRun.ts";
+import {
+  gitRunSaid,
+  gitTimeoutMs,
+  type GitEnvironment,
+  type GitRan,
+} from "./gitRun.ts";
 
 /** What the reader is composed over, each timeout named in whole seconds or in milliseconds and else its default. */
 export interface GitRepositoryConfigurationOptions {
@@ -1043,7 +1047,7 @@ export function gitRepositoryConfiguration(
 ): RepositoryConfigurationSnapshotPort &
   RepositoryActionSnapshotPort &
   RepositoryDefaultBranchPort {
-  const remoteTimeoutMsMax = scratchTimeoutMs(
+  const remoteTimeoutMsMax = gitTimeoutMs(
     options.remoteTimeoutSecsMax,
     options.remoteTimeoutMsMax,
     gitRepositoryConfigurationDefaults.remoteTimeoutSecsMax,
@@ -1059,7 +1063,7 @@ export function gitRepositoryConfiguration(
       credentialUsername:
         options.credentialUsername ??
         gitRepositoryConfigurationDefaults.credentialUsername,
-      localTimeoutMsMax: scratchTimeoutMs(
+      localTimeoutMsMax: gitTimeoutMs(
         options.localTimeoutSecsMax,
         options.localTimeoutMsMax,
         gitRepositoryConfigurationDefaults.localTimeoutSecsMax,

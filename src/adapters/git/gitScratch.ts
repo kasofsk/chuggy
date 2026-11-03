@@ -176,32 +176,6 @@ export function scratchDigestOf(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
 }
 
-/**
- * One timeout as the milliseconds a call is bounded by, from whichever unit a
- * composition named it in, whole seconds or milliseconds, and else from its
- * default's seconds. One named both ways, or as no positive count of its unit,
- * is refused.
- */
-export function scratchTimeoutMs(
-  secs: number | undefined,
-  ms: number | undefined,
-  defaultSecs: number,
-): number {
-  if (secs !== undefined && ms !== undefined) {
-    throw new RangeError(
-      "git scratch: a timeout is named in seconds and in milliseconds",
-    );
-  }
-  const [count, unitMs] =
-    ms === undefined ? [secs ?? defaultSecs, 1000] : [ms, 1];
-  if (!Number.isSafeInteger(count) || count <= 0) {
-    throw new RangeError(
-      "git scratch: a timeout is not a positive count of its unit",
-    );
-  }
-  return count * unitMs;
-}
-
 /** Opens the scratch, refusing at construction what no later call could work around. */
 export function scratchOpen(options: GitScratchOptions): GitScratch {
   for (const ms of [

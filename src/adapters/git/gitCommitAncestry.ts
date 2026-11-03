@@ -89,14 +89,13 @@ import type {
   RepositoryCredentialPort,
   RepositoryId,
 } from "../../interpreter/finalizer.ts";
-import type { GitEnvironment } from "./gitRun.ts";
+import { gitTimeoutMs, type GitEnvironment } from "./gitRun.ts";
 import {
   scratchFetchHistory,
   scratchHoldsHistory,
   scratchNamesCommit,
   scratchOpen,
   scratchReaches,
-  scratchTimeoutMs,
   scratchWalksHistory,
   type GitCommitIdentity,
   type GitScratch,
@@ -436,17 +435,17 @@ export function gitCommitAncestry(
   options: GitCommitAncestryOptions,
 ): CommitAncestryPort {
   const resolved = { ...gitCommitAncestryDefaults, ...options };
-  const localTimeoutMsMax = scratchTimeoutMs(
+  const localTimeoutMsMax = gitTimeoutMs(
     options.localTimeoutSecsMax,
     options.localTimeoutMsMax,
     gitCommitAncestryDefaults.localTimeoutSecsMax,
   );
-  const remoteTimeoutMsMax = scratchTimeoutMs(
+  const remoteTimeoutMsMax = gitTimeoutMs(
     options.remoteTimeoutSecsMax,
     options.remoteTimeoutMsMax,
     gitCommitAncestryDefaults.remoteTimeoutSecsMax,
   );
-  const answerTimeoutMsMax = scratchTimeoutMs(
+  const answerTimeoutMsMax = gitTimeoutMs(
     options.answerTimeoutSecsMax,
     options.answerTimeoutMsMax,
     gitCommitAncestryDefaults.answerTimeoutSecsMax,

@@ -835,23 +835,59 @@ test("a retry's pause counts against its reader's retries, in the room it needs 
   assert.equal(calls(), 3);
 });
 
-test("a retry runs under what its reader's retries have left, not under the read's own bound", async (t) => {
+test("a retry runs under the milliseconds its reader's retries have left, not under the read's own bound", async (t) => {
   const fixture = fixtureOpen(t);
   fixtureDeclared(fixture);
+  const elapsedMsMax = 1_900;
   const { port, calls } = fixtureTold(
     fixture,
     "ls-remote",
     ["Said", "Stalled"],
     {
-      remoteRetry: { pauseMs: 1, elapsedMsMax: 1_100 },
+      remoteRetry: { pauseMs: 1, elapsedMsMax },
     },
   );
 
+  const begunMs = performance.now();
   assert.deepEqual(await port.defaultBranch(fixtureBinding(fixture.remote)), {
     read: "Unavailable",
     evidence: { git: "ls-remote", stopped: "Timeout" },
   });
+  const tookMs = performance.now() - begunMs;
+  assert.ok(
+    tookMs >= elapsedMsMax - 100,
+    `the retry was stopped after ${String(tookMs)}ms, short of what the retries had left`,
+  );
   assert.equal(calls(), 2);
+});
+
+test("a timeout that is no positive count of its unit, or is named in both units, is refused at construction", (t) => {
+  const fixture = fixtureOpen(t);
+  const composed =
+    (timeouts: Partial<GitRepositoryConfigurationOptions>) => () =>
+      gitRepositoryConfiguration({
+        scratchDirectory: fixtureScratch(fixture),
+        identity: { name: "chug", email: "chug@example.test" },
+        environment: process.env,
+        credentials: fixtureCredentials(fixtureCredential),
+        ...timeouts,
+      });
+  for (const bound of [0, 1.5]) {
+    for (const named of [
+      "localTimeoutSecsMax",
+      "localTimeoutMsMax",
+      "remoteTimeoutSecsMax",
+      "remoteTimeoutMsMax",
+    ] as const) {
+      assert.throws(composed({ [named]: bound }), RangeError, named);
+    }
+  }
+  for (const both of [
+    { localTimeoutSecsMax: 1, localTimeoutMsMax: 1_000 },
+    { remoteTimeoutSecsMax: 1, remoteTimeoutMsMax: 1_000 },
+  ]) {
+    assert.throws(composed(both), RangeError);
+  }
 });
 
 test("a retry bound that is not a count of milliseconds is refused at construction", (t) => {
