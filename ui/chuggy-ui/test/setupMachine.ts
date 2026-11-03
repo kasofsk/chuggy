@@ -21,6 +21,8 @@ import type {
   FetchJsonInit,
   FetchJsonResponse,
 } from "../app/core/sessionHolder.ts";
+import { setupPacing } from "../app/core/setupPacing.ts";
+import type { SetupPacing } from "../app/core/setupPacing.ts";
 import { SetupMachineError } from "../app/core/setupPorts.ts";
 import type {
   SetupAnswered,
@@ -116,8 +118,9 @@ export interface SetupMachine {
   /** Every request of the site's API, as its method and address, and each address that was asked while the lock was held. */
   readonly sent: string[];
   readonly locked: string[];
-  /** Each command the program ran to read what it printed. */
+  /** Each command the program ran to read what it printed, and the wait each was given. */
   readonly ran: (readonly string[])[];
+  readonly ranWaitMs: number[];
   /** The arguments of each run the program started for itself, and of each command it launched. */
   readonly detached: (readonly string[])[];
   readonly launched: (readonly string[])[];
@@ -129,6 +132,10 @@ export interface SetupMachine {
   readonly live: () => string | undefined;
   /** Ends every access token handed out so far, as their time running out does, and leaves the renewal token good. */
   readonly lapse: () => void;
+  /** How every command run here is paced. */
+  pacing: SetupPacing;
+  /** How far the clock moves each time the machine is asked whether a process runs, as a look that takes time does. */
+  aliveAskMs: number;
   /** Runs one command to its report, waiting out every wait it makes. */
   readonly command: (argv: readonly string[]) => Promise<SetupReport>;
   /** The machine as a process of its own meets it, for what is asked of the ports and not of a command. */
@@ -406,6 +413,11 @@ function lockOf(machine: SetupMachine): SetupPorts["lock"] {
   };
 }
 
+function aliveAsked(machine: SetupMachine, asked: number): boolean {
+  machine.nowMs += machine.aliveAskMs;
+  return asked <= 0 || machine.alive.has(asked);
+}
+
 function portsOf(inner: Inner, pid: number): SetupPorts {
   const { machine, issuer } = inner;
   return {
@@ -434,7 +446,7 @@ function portsOf(inner: Inner, pid: number): SetupPorts {
     },
     process: {
       pid,
-      alive: (asked) => asked <= 0 || machine.alive.has(asked),
+      alive: (asked) => aliveAsked(machine, asked),
       detach: (argv) => {
         machine.detached.push(argv);
         if (machine.spawning === "Unstarted") return undefined;
@@ -449,8 +461,9 @@ function portsOf(inner: Inner, pid: number): SetupPorts {
           await machine.opened(command.at(-1) ?? "");
         return machine.opener;
       },
-      read: (command) => {
+      read: (command, waitMs) => {
         machine.ran.push(command);
+        machine.ranWaitMs.push(waitMs);
         return Promise.resolve(
           command[0] === "npm" ? machine.box.prefix : machine.remote,
         );
@@ -484,7 +497,11 @@ function started(
   inner.pids += 1;
   const pid = inner.pids;
   inner.machine.alive.add(pid);
-  const report = setupRun(portsOf(inner, pid), argv).finally(() => {
+  const report = setupRun(
+    portsOf(inner, pid),
+    argv,
+    inner.machine.pacing,
+  ).finally(() => {
     inner.machine.alive.delete(pid);
   });
   return { pid, report };
@@ -502,6 +519,13 @@ async function settled<T>(inner: Inner, work: Promise<T>): Promise<T> {
       throw new Error("the command waits on nothing that will ever happen");
   if (!done) throw new Error("the command outlived every bound it has");
   return work;
+}
+
+async function advanced(inner: Inner, ms: number): Promise<void> {
+  const untilMs = inner.machine.nowMs + ms;
+  for (let step = 0; step < machineStepsMax; step += 1)
+    if (!(await fired(inner, untilMs))) break;
+  inner.machine.nowMs = untilMs;
 }
 
 function authorized(issuer: Issuer, address: string, allowed: boolean): string {
@@ -580,6 +604,7 @@ export function setupMachine(): SetupMachine {
     sent: [],
     locked: [],
     ran: [],
+    ranWaitMs: [],
     detached: [],
     launched: [],
     alive: new Set(),
@@ -589,14 +614,11 @@ export function setupMachine(): SetupMachine {
     lapse: () => {
       issuer.access.clear();
     },
+    pacing: setupPacing,
+    aliveAskMs: 0,
     command: (argv) => settled(inner, started(inner, argv).report),
     ports: () => portsOf(inner, inner.pids),
-    advance: async (ms) => {
-      const untilMs = machine.nowMs + ms;
-      for (let step = 0; step < machineStepsMax; step += 1)
-        if (!(await fired(inner, untilMs))) break;
-      machine.nowMs = untilMs;
-    },
+    advance: (ms) => advanced(inner, ms),
     listening: () => [...inner.listeners.keys()][0],
     browse: (address, method) => browsed(inner, address, method),
     authorized: (address, allowed) => authorized(issuer, address, allowed),
@@ -630,6 +652,7 @@ export async function machineSignedIn(
     machine.sent,
     machine.locked,
     machine.ran,
+    machine.ranWaitMs,
     machine.reserved,
     machine.swept,
   ])

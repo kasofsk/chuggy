@@ -219,19 +219,19 @@ export type SetupSignInBegun =
   | { readonly begun: "Reported"; readonly report: SetupReport };
 
 /**
- * Waits for a listener just started to leave its note: where it listens, or
- * why it could not. Whether it is running is asked before the note is read, so
- * the last thing a listener wrote is read after it has gone.
+ * Waits for a listener just started to leave its note, looking every `pollMs`
+ * until the start bound has passed on the clock: where it listens, or why it
+ * could not. Whether it is running is asked before the note is read, so the
+ * last thing a listener wrote is read after it has gone.
  */
 async function setupSignInStarted(
   ports: SetupPorts,
   site: string,
   pid: number,
+  pollMs: number,
 ): Promise<SetupSignInBegun> {
-  const polls = Math.ceil(
-    (setupSignInStartSecsMax * 1_000) / setupSignInPollMs,
-  );
-  for (let poll = 0; poll < polls; poll += 1) {
+  const endsAtMs = ports.nowMs() + setupSignInStartSecsMax * 1_000;
+  for (;;) {
     const alive = ports.process.alive(pid);
     const note = setupSignInNoteRead(ports.files);
     if (note?.note === "Ended") {
@@ -245,10 +245,10 @@ async function setupSignInStarted(
         pid: note.pid,
         started: true,
       };
-    if (!alive) break;
-    await ports.sleepMs(setupSignInPollMs);
+    if (!alive || ports.nowMs() >= endsAtMs)
+      return { begun: "Reported", report: setupUnstarted };
+    await ports.sleepMs(pollMs);
   }
-  return { begun: "Reported", report: setupUnstarted };
 }
 
 /**
@@ -258,6 +258,7 @@ async function setupSignInStarted(
 export async function setupSignInBegun(
   ports: SetupPorts,
   site: string,
+  pollMs: number,
 ): Promise<SetupSignInBegun> {
   const found = setupSignInFound(
     setupSignInNoteRead(ports.files),
@@ -284,7 +285,7 @@ export async function setupSignInBegun(
     setupListenArguments(site, setupListenSecsDefault),
   );
   if (pid === undefined) return { begun: "Reported", report: setupUnstarted };
-  return setupSignInStarted(ports, site, pid);
+  return setupSignInStarted(ports, site, pid, pollMs);
 }
 
 /**
@@ -319,31 +320,33 @@ async function setupSignInHeard(
   return setupEndedReport(site, ended);
 }
 
-/** Waits on a page for at most `waitSecs`, reading the note its listener leaves when it ends. */
+/** Waits on a page until `waitSecs` have passed on the clock, looking every `pollMs` for the note its listener leaves when it ends. */
 async function setupSignInWaited(
   ports: SetupPorts,
   site: string,
   waiting: Extract<SetupSignInBegun, { readonly begun: "Waiting" }>,
   opened: SetupSignInOpened,
   waitSecs: number,
+  pollMs: number,
 ): Promise<SetupReport> {
-  const polls = Math.ceil((waitSecs * 1_000) / setupSignInPollMs);
-  for (let poll = 0; poll <= polls; poll += 1) {
+  const endsAtMs = ports.nowMs() + waitSecs * 1_000;
+  for (;;) {
     const alive = ports.process.alive(waiting.pid);
     const note = setupSignInNoteRead(ports.files);
     if (note?.note === "Ended")
       return setupSignInHeard(ports, site, waiting.pid, note.ended);
     if (note?.pid !== waiting.pid || !alive)
       return setupSignInHeard(ports, site, waiting.pid, "Expired");
-    if (poll < polls) await ports.sleepMs(setupSignInPollMs);
+    if (ports.nowMs() >= endsAtMs)
+      return {
+        report: "SignInWaiting",
+        site,
+        port: waiting.port,
+        opened,
+        waitedSecs: waitSecs,
+      };
+    await ports.sleepMs(pollMs);
   }
-  return {
-    report: "SignInWaiting",
-    site,
-    port: waiting.port,
-    opened,
-    waitedSecs: waitSecs,
-  };
 }
 
 /**
@@ -356,11 +359,19 @@ export async function setupSignInAwaited(
   site: string,
   waiting: Extract<SetupSignInBegun, { readonly begun: "Waiting" }>,
   waitSecs: number,
+  pollMs: number,
 ): Promise<SetupReport> {
   if (!waiting.started)
-    return setupSignInWaited(ports, site, waiting, "Attached", waitSecs);
+    return setupSignInWaited(
+      ports,
+      site,
+      waiting,
+      "Attached",
+      waitSecs,
+      pollMs,
+    );
   if (await setupSignInOpened(ports, waiting.port))
-    return setupSignInWaited(ports, site, waiting, "Opened", waitSecs);
+    return setupSignInWaited(ports, site, waiting, "Opened", waitSecs, pollMs);
   return {
     report: "SignInWaiting",
     site,

@@ -10,6 +10,7 @@ import {
   existsSync,
   mkdirSync,
   readFileSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -25,7 +26,14 @@ import {
   setupSiteTwo,
 } from "../../ui/chuggy-ui/test/setupSite.ts";
 
-import { ended, eventually, gone } from "./program.ts";
+import {
+  ended,
+  eventually,
+  gone,
+  paced,
+  runMsMax,
+  waitMsMax,
+} from "./program.ts";
 import type { Home, Ran } from "./program.ts";
 import { read, ruled, said, signed } from "./checklistSigned.ts";
 
@@ -81,8 +89,14 @@ test("the folder's remote proposes the one project it is added to and says so, p
   assert.ok(!machine.written.join("\n").includes("deploy"));
 });
 
-/** Longer than the harness lets any run last, so a run that waited the git out is one the harness ends as a failure. */
-const sleepSecs = 600;
+/** The wait the cases that outlast it give git, shorter than the program's own. */
+const remoteWaitMs = 1_000;
+
+/** Past the wait these cases give git and short of the program's own, so a run not given the shorter wait reads it in time. */
+const lateMs = (remoteWaitMs + setupRemoteWaitMs) / 2;
+
+/** Past the longest the case looks for the git to be gone and short of the longest a run may last, so a git the run let go of is still running when the case stops looking, and a run that waited it out ends past the case's bound rather than at the harness's deadline. */
+const stayMs = (waitMsMax + runMsMax) / 2;
 
 /** Whether a process can still run something, which one that ended and that nothing has collected cannot. */
 function running(pid: number): boolean {
@@ -99,20 +113,26 @@ function gitAnswering(machine: Home, name: string, body: string): string {
   return `${directory}:${machine.bin}`;
 }
 
-/** A script's last line that writes nothing and stays for `secs`, as the program this suite runs under and so by no name a run would have to find. */
-function staying(secs: number): string {
-  return `exec '${process.execPath}' -e 'setTimeout(() => undefined, ${String(secs * 1_000)})'`;
+/** A script's last line that writes nothing and stays for `ms`, as the program this suite runs under and so by no name a run would have to find. */
+function staying(ms: number): string {
+  return `exec '${process.execPath}' -e 'setTimeout(() => undefined, ${String(ms)})'`;
 }
 
 test("a git that fails, answers too late or answers with more than an address is given up on and read as no remote", async () => {
   const session = await signed();
   const answer = `printf '%s' ${setupSiteRepositoryAddress}`;
-  const lateMs = setupRemoteWaitMs + 3_000;
   const node = `exec '${process.execPath}' -e`;
   const late = `${node} 'setTimeout(() => process.stdout.write(process.argv[1]), ${String(lateMs)})' ${setupSiteRepositoryAddress}`;
-  const proposed = async (name: string, body: string): Promise<number> => {
+  const proposed = async (
+    name: string,
+    body: string,
+    environment: Readonly<Record<string, string>> = {},
+  ): Promise<number> => {
     const path = gitAnswering(session.machine, name, body);
-    const done = await read(session, setupSiteTwo(), [], { PATH: path });
+    const done = await read(session, setupSiteTwo(), [], {
+      ...environment,
+      PATH: path,
+    });
     return said(done, "found").length;
   };
   assert.equal(await proposed("prompt", answer), 1);
@@ -124,7 +144,7 @@ test("a git that fails, answers too late or answers with more than an address is
     ),
     0,
   );
-  assert.equal(await proposed("late", late), 0);
+  assert.equal(await proposed("late", late, paced({ remoteWaitMs })), 0);
 });
 
 test("a git still running when its wait runs out is ended by the run, which ends then and not when the git would have", async () => {
@@ -134,13 +154,18 @@ test("a git still running when its wait runs out is ended by the run, which ends
   const path = gitAnswering(
     machine,
     "sleeping",
-    `echo $$ > '${noted}'\n${staying(sleepSecs)}`,
+    `echo $$ > '${noted}'\n${staying(stayMs)}`,
   );
   const started = Date.now();
   try {
-    const done = await read(session, setupSiteTwo(), [], { PATH: path });
+    const done = await read(session, setupSiteTwo(), [], {
+      ...paced({ remoteWaitMs }),
+      PATH: path,
+    });
     assert.deepEqual(said(done, "found"), []);
-    assert.ok(Date.now() - started >= setupRemoteWaitMs, done.stdout);
+    assert.ok(Date.now() - started >= remoteWaitMs, done.stdout);
+    const gitStartedMs = statSync(noted).mtimeMs;
+    assert.ok(Date.now() - gitStartedMs < setupRemoteWaitMs, done.stdout);
     const pid = Number(readFileSync(noted, "utf8"));
     await eventually(() => (running(pid) ? undefined : true));
   } finally {

@@ -25,6 +25,7 @@ import {
   runnerTokenLifetimeSecs,
 } from "../app/core/runners.ts";
 import { setupAnswersAsked } from "../app/core/setupArguments.ts";
+import { setupPacing } from "../app/core/setupPacing.ts";
 import type { SetupChildEnded } from "../app/core/setupPorts.ts";
 import { setupReportExit, setupReportLines } from "../app/core/setupReport.ts";
 import {
@@ -1714,6 +1715,16 @@ test("the site is asked until it sees the runner live and no longer than the wai
   const late = await ran(machine);
   expect(late.lines.slice(-3)).toEqual([found.running, live, next]);
   expect(polls(machine)).toBe(3);
+});
+
+test("a run paced quicker asks the site as often as its pacing says, for the same wait", async () => {
+  const machine = await fresh();
+  machine.box.polls = false;
+  machine.pacing = { ...setupPacing, livePollMs: 1_000 };
+  const before = machine.nowMs;
+  expect((await ran(machine, [...runner, "--wait-secs", "7"])).exit).toBe(1);
+  expect(polls(machine)).toBe(8);
+  expect(machine.nowMs - before).toBe(7_000);
 });
 
 test("a service that stops while the site is waited on is what the run says when the wait runs out, having asked the service manager once more, and not that it is running", async () => {

@@ -10,6 +10,7 @@
 
 import { expect, test } from "vitest";
 
+import { setupPacing } from "../app/core/setupPacing.ts";
 import { setupFiles, SetupMachineError } from "../app/core/setupPorts.ts";
 import {
   setupOpenerCommand,
@@ -142,6 +143,37 @@ test("a person slower than one wait finishes in the same page, and the next sign
   expect(await attached).toEqual(ended("SignedIn"));
   expect(machine.detached).toHaveLength(1);
   expect(machine.launched).toHaveLength(1);
+});
+
+test("a sign-in paced quicker looks for its page as often as its pacing says, and waits on it in whole looks past the same wait", async () => {
+  const machine = setupMachine();
+  const pollMs = 70;
+  machine.pacing = { ...setupPacing, signInPollMs: pollMs };
+  const began = machine.nowMs;
+  expect(await machine.command(signIn)).toMatchObject({
+    report: "SignInWaiting",
+    waitedSecs: 2,
+  });
+  expect(machine.nowMs - began).toBe(
+    pollMs + Math.ceil(2_000 / pollMs) * pollMs,
+  );
+});
+
+test("a page nobody finishes is waited on until the wait asked has passed on the clock, however long a look at it takes", async () => {
+  const machine = setupMachine();
+  machine.aliveAskMs = 50;
+  let openedAtMs = 0;
+  machine.opened = () => {
+    openedAtMs = machine.nowMs;
+    return Promise.resolve();
+  };
+  expect(await machine.command(signIn)).toMatchObject({
+    report: "SignInWaiting",
+    waitedSecs: 2,
+  });
+  const waitedMs = machine.nowMs - openedAtMs;
+  expect(waitedMs).toBeGreaterThanOrEqual(2_000);
+  expect(waitedMs).toBeLessThan(2_000 + setupSignInPollMs + machine.aliveAskMs);
 });
 
 test("a sign-in that is still waiting says so again, as one it did not open", async () => {
@@ -713,6 +745,21 @@ test("a listener that is running and never says where it listens is waited on fo
   const began = machine.nowMs;
   expect(await machine.command(signIn)).toEqual(unstarted);
   expect(machine.nowMs - began).toBe(setupSignInStartSecsMax * 1_000);
+});
+
+test("a listener that never says where it listens is waited on until the start bound has passed on the clock, however often it is looked for and however long a look takes", async () => {
+  const machine = setupMachine();
+  const pollMs = 70;
+  machine.pacing = { ...setupPacing, signInPollMs: pollMs };
+  machine.aliveAskMs = 30;
+  machine.spawning = "Mute";
+  const began = machine.nowMs;
+  expect(await machine.command(signIn)).toEqual(unstarted);
+  const waitedMs = machine.nowMs - began;
+  expect(waitedMs).toBeGreaterThanOrEqual(setupSignInStartSecsMax * 1_000);
+  expect(waitedMs).toBeLessThan(
+    setupSignInStartSecsMax * 1_000 + pollMs + machine.aliveAskMs,
+  );
 });
 
 test("a listener that cannot be started is a failure at once, and nothing is opened", async () => {

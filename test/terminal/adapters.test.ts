@@ -46,6 +46,9 @@ const staysMs = 30_000;
 const waitMs = 20_000;
 const bytesMax = 4_096;
 
+/** How long a case gives what a command left behind to let go of its output, shorter than the program gives it. */
+const drainMs = 250;
+
 /** More than a pipe and a reader that stopped reading hold between them, so a child that prints it ends only where it is read on. */
 const floodBytes = bytesMax * 4_096;
 
@@ -252,7 +255,7 @@ test("a command that ends leaving something behind that holds its output open is
   const left = (): number => Number(readFileSync(noted, "utf8"));
   const began = Date.now();
   try {
-    const said = await run(
+    const said = await processesOf("unused", drainMs).run(
       leaving(noted, 'left.unref(); process.stdout.write("done");'),
       waitMs,
       bytesMax,
