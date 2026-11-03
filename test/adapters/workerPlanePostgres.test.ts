@@ -86,6 +86,8 @@ test("the worker role can execute its boundaries and read forge installations", 
     "record_worker_run_transcript_batch",
     "record_worker_run_turns",
     "record_worker_run_total",
+    "record_worker_run_usage",
+    "record_worker_run_limit",
     "read_worker_task",
     "read_session_task",
   ])

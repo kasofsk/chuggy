@@ -242,6 +242,10 @@ export const runEndedEvidences = [
 ] as const;
 export type RunEndedEvidence = (typeof runEndedEvidences)[number];
 
+/** The windows a provider limits an agent account's usage in, as the agent runtime names them. */
+export const runUsageWindows = ["five_hour", "seven_day"] as const;
+export type RunUsageWindow = (typeof runUsageWindows)[number];
+
 /** What a cost figure is: the agent runtime's published list price, never a bill. */
 export const runCostBases = ["List"] as const;
 export type RunCostBasis = (typeof runCostBases)[number];

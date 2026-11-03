@@ -325,6 +325,13 @@ type WorkerPlaneRequest =
       readonly sent?: WorkerContractRange;
     };
 
+/** One window's reading, as a run whose release names usage sends it. */
+const usageReading = {
+  utilization: 0.8,
+  resetsAt: 1_800_000_000,
+  observedAt: 1_799_990_000,
+};
+
 const workerPlaneRequests: Readonly<
   Record<WorkerPlaneRouteName, WorkerPlaneRequest>
 > = {
@@ -355,9 +362,20 @@ const workerPlaneRequests: Readonly<
         resultSubtype: "success",
         stopReason: "end_turn",
       },
+      { ...runTotalsBody, usage: { five_hour: usageReading } },
+      { ...runTotalsBody, usage: { seven_day: usageReading } },
     ],
   },
-  runEnded: { schema: "workerRunEndedSchema", bodies: [] },
+  runEnded: {
+    schema: "workerRunEndedSchema",
+    bodies: [
+      {
+        evidence: "RunRateLimited",
+        limit: { window: "five_hour", resetsAt: usageReading.resetsAt },
+      },
+      { evidence: "RunRateLimited", limit: {} },
+    ],
+  },
   credential: {
     schema: "workerCredentialSchema",
     bodies: [{}, { repository: credentialRepository }],

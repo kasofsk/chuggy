@@ -438,22 +438,39 @@ export function postgresWorkerRunTurns(pool: pg.Pool): WorkerRunTurnsPort {
   };
 }
 
+/**
+ * A run's totals, and in the same transaction the account usage they arrived
+ * with wherever the totals are stored or already were, so a repeated post
+ * offers its readings again and the boundary keeps whichever was observed
+ * later.
+ */
 export function postgresWorkerRunTotal(pool: pg.Pool): WorkerRunTotalPort {
   return {
-    record: async (input) => {
-      const totals = input.totals;
-      const stored = await pool.query<{ stored: string | null }>(
-        sql`SELECT record_worker_run_total(
-          ${workerSecretDigest(input.secret)},${input.generation},${totals.turns},
-          ${totals.durationMs},${totals.durationApiMs},${totals.tokensInput},
-          ${totals.tokensOutput},${totals.tokensCacheCreation},
-          ${totals.tokensCacheRead},${totals.costUsdMicros},${totals.costBasis},
-          ${totals.permissionDenials},${totals.resultSubtype ?? null},
-          ${totals.stopReason ?? null},
-          ${JSON.stringify(totals.models)}::jsonb)::text AS stored`,
-      );
-      return workerRunStored(stored.rows[0]?.stored, "a run total");
-    },
+    record: (input) =>
+      postgresTransaction(pool, async (client) => {
+        const digest = workerSecretDigest(input.secret);
+        const totals = input.totals;
+        const found = await client.query<{ stored: string | null }>(
+          sql`SELECT record_worker_run_total(
+            ${digest},${input.generation},${totals.turns},
+            ${totals.durationMs},${totals.durationApiMs},${totals.tokensInput},
+            ${totals.tokensOutput},${totals.tokensCacheCreation},
+            ${totals.tokensCacheRead},${totals.costUsdMicros},${totals.costBasis},
+            ${totals.permissionDenials},${totals.resultSubtype ?? null},
+            ${totals.stopReason ?? null},
+            ${JSON.stringify(totals.models)}::jsonb)::text AS stored`,
+        );
+        const stored = workerRunStored(found.rows[0]?.stored, "a run total");
+        if (
+          input.usage !== undefined &&
+          (stored === "Stored" || stored === "AlreadyStored")
+        )
+          await client.query<{ recorded: string | null }>(
+            sql`SELECT record_worker_run_usage(${digest},${input.generation},
+              ${JSON.stringify(input.usage)}::jsonb)::text AS recorded`,
+          );
+        return stored;
+      }),
   };
 }
 
@@ -470,13 +487,10 @@ export function postgresWorkerRunEnded(pool: pg.Pool): WorkerRunEndedPort {
   return {
     end: async (input) => {
       const digest = workerSecretDigest(input.secret);
-      if (runEndedLoss(input.evidence) === "Withdrawn") {
-        const withdrawn = await pool.query<{ withdrawn: boolean | null }>(
-          sql`SELECT withdraw_worker_attempt(${digest},
-            ${input.generation},${input.evidence})::boolean AS withdrawn`,
+      if (runEndedLoss(input.evidence) === "Withdrawn")
+        return postgresTransaction(pool, (client) =>
+          postgresWorkerRunEndedWithdrawn(client, digest, input),
         );
-        return withdrawn.rows[0]?.withdrawn === true;
-      }
       const ended = await pool.query<{ ended: boolean | null }>(
         sql`SELECT lose_worker_attempt(${digest},
           ${input.generation},${input.evidence})::boolean AS ended`,
@@ -484,6 +498,29 @@ export function postgresWorkerRunEnded(pool: pg.Pool): WorkerRunEndedPort {
       return ended.rows[0]?.ended === true;
     },
   };
+}
+
+/**
+ * Withdrawing an attempt its run ended under a label that spends no retry, and
+ * where that label is `RunRateLimited`, keeping that the provider refused the
+ * account in the same transaction, with the limit where the run named one.
+ */
+async function postgresWorkerRunEndedWithdrawn(
+  client: pg.PoolClient,
+  digest: string,
+  input: Parameters<WorkerRunEndedPort["end"]>[0],
+): Promise<boolean> {
+  const found = await client.query<{ withdrawn: boolean | null }>(
+    sql`SELECT withdraw_worker_attempt(${digest},
+      ${input.generation},${input.evidence})::boolean AS withdrawn`,
+  );
+  const withdrawn = found.rows[0]?.withdrawn === true;
+  if (withdrawn && input.evidence === "RunRateLimited")
+    await client.query<{ recorded: string | null }>(
+      sql`SELECT record_worker_run_limit(${digest},${input.generation},
+        ${input.limit?.window ?? null},${input.limit?.resetsAt ?? null})::text AS recorded`,
+    );
+  return withdrawn;
 }
 
 interface WorkerResultRow {

@@ -75,6 +75,7 @@ import { configurationCanonicalCharsMax } from "../../src/contract/http.ts";
 import { migration081 } from "../../src/adapters/postgres/schema/migrations/081-promotion-declined.ts";
 import { migration106 } from "../../src/adapters/postgres/schema/migrations/106-merge-queue.ts";
 import { migration107 } from "../../src/adapters/postgres/schema/migrations/107-queue-checks-failed.ts";
+import { migration109 } from "../../src/adapters/postgres/schema/migrations/109-agent-account-usage.ts";
 import { migration082 } from "../../src/adapters/postgres/schema/migrations/082-decline-kept-unread.ts";
 import { migration083 } from "../../src/adapters/postgres/schema/migrations/083-attempt-base-ref.ts";
 import { migration084 } from "../../src/adapters/postgres/schema/migrations/084-thread-dispatch.ts";
@@ -4099,4 +4100,147 @@ test("107 keeps every attempt that stood, admits a queue's failed checks only wi
         column,
       );
   });
+});
+
+/** The worker configuration each case attempt of 109 was invoked with, and the agent it spends. */
+const invocations109: readonly (readonly [string, unknown, string | null])[] = [
+  [
+    "attempt-1",
+    {
+      worker: {
+        mode: {
+          type: "SingleAgent",
+          agent: "Codex",
+          arguments: [],
+          model: "model",
+        },
+        setup: [],
+        files: [],
+      },
+    },
+    "Codex",
+  ],
+  ["attempt-2", { worker: { arguments: [], setup: [], files: [] } }, "Claude"],
+  [
+    "attempt-3",
+    {
+      worker: {
+        mode: { type: "Commands", commands: ["just check"] },
+        setup: [],
+        files: [],
+      },
+    },
+    null,
+  ],
+];
+
+/** Four live attempts as 108 holds them, three invoked as `invocations109` says and one not yet, the first then lost. */
+async function attemptsSeeded109(subject: pg.Pool): Promise<void> {
+  await subject.query(
+    `${deletionPartition}
+     ${deletionJournalRow(1, journalledRevocation)};
+     UPDATE project SET ingress_next=2 WHERE tenant='tenant-5' AND project='project-5';
+     INSERT INTO configuration_revision
+       (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
+     VALUES('tenant-5','project-5','revision-5','{}','digest-5','Agent','subject-5');
+     INSERT INTO input_bundle(tenant,project,bundle,digest)
+     VALUES('tenant-5','project-5','bundle-5',repeat('b',64));
+     ${[1, 2, 3, 4]
+       .map((ordinal) =>
+         identityExecution(
+           ordinal,
+           "SpawnWork",
+           "kind,cycle",
+           "'Work',3",
+           null,
+           "repeat('d',64)",
+           ordinal,
+         ),
+       )
+       .join(";")}`,
+  );
+  for (const [attempt, invocation] of invocations109)
+    await subject.query(
+      "UPDATE execution_attempt SET invocation=$2::jsonb WHERE attempt=$1",
+      [attempt, JSON.stringify(invocation)],
+    );
+  await subject.query(
+    `UPDATE execution_attempt SET state='Lost',evidence='LeaseExpired',ended_at=now()
+      WHERE attempt='attempt-1'`,
+  );
+}
+
+/** Who may read the agent and the two relations 109 makes, and who owns and may call each of its functions. */
+async function privilegesOf109(subject: pg.Pool) {
+  const relations = await subject.query(
+    `SELECT has_column_privilege($1,'public.execution_attempt','agent','SELECT') AS pool_reads,
+            has_table_privilege($2,'public.agent_account_usage','SELECT') AS plane_reads_usage,
+            has_table_privilege($2,'public.agent_account_limit','SELECT') AS plane_reads_limit`,
+    [poolPlaneRole, workerPlaneRole],
+  );
+  const functions = await subject.query(
+    `SELECT p.proname AS name, pg_get_userbyid(p.proowner) AS owner,
+            p.prosecdef AS definer,
+            has_function_privilege($1,p.oid,'EXECUTE') AS plane,
+            has_function_privilege($2,p.oid,'EXECUTE') AS pool
+       FROM pg_proc p
+      WHERE p.proname IN ('execution_attempt_agent_account',
+                          'record_worker_run_usage','record_worker_run_limit')
+      ORDER BY p.proname`,
+    [workerPlaneRole, poolPlaneRole],
+  );
+  return { relations: relations.rows, functions: functions.rows };
+}
+
+test("109 names the agent every attempt that stood spends, lets a finished one still complete its cleanup, and gives the plane its two doors", async () => {
+  await migrationDatabaseAt(
+    migration109.version - 1,
+    "agent_account_usage",
+    async (subject) => {
+      await attemptsSeeded109(subject);
+      assert.ok(
+        (await postgresMigrate(subject)).includes(migration109.version),
+      );
+      assert.deepEqual(
+        (
+          await subject.query(
+            "SELECT attempt,agent FROM execution_attempt ORDER BY attempt",
+          )
+        ).rows,
+        [
+          ...invocations109.map(([attempt, , agent]) => ({ attempt, agent })),
+          { attempt: "attempt-4", agent: null },
+        ],
+      );
+      await subject.query(
+        "UPDATE execution_attempt SET cleanup_completed_at=now() WHERE attempt='attempt-1'",
+      );
+      await assert.rejects(
+        subject.query(
+          "UPDATE execution_attempt SET workload='moved' WHERE attempt='attempt-1'",
+        ),
+        /a finished attempt is written once/u,
+      );
+      const door = { owner: boundaryOwnerRole, definer: true, pool: false };
+      assert.deepEqual(await privilegesOf109(subject), {
+        relations: [
+          {
+            pool_reads: true,
+            plane_reads_usage: false,
+            plane_reads_limit: false,
+          },
+        ],
+        functions: [
+          {
+            name: "execution_attempt_agent_account",
+            ...door,
+            definer: false,
+            plane: false,
+          },
+          { name: "record_worker_run_limit", ...door, plane: true },
+          { name: "record_worker_run_usage", ...door, plane: true },
+        ],
+      });
+    },
+  );
 });
