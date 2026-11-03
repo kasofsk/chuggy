@@ -268,12 +268,12 @@ test("a repository this project does not bind is not this project's to retire", 
 });
 
 /**
- * The trigger 090 narrowed to one column now stands at two, retirement being a
- * column an administrator owns like the landing, with a door each way: the
- * retirement door sets it and a re-bind clears it. Every other column is still
- * nobody's, and the row is still nobody's to delete.
+ * Retirement is a column `project_repository_is_immutable` lets an update move,
+ * one an administrator owns like the landing, with a door each way: the
+ * retirement door sets it and a re-bind clears it. A column the trigger does not
+ * name is still nobody's, and the row is still nobody's to delete.
  */
-test("a retirement is the second column an update may move, and nothing else is", async () => {
+test("a retirement is a column an update may move both ways, and the binding itself is not", async () => {
   const partition = await fixtureProject("retire-trigger");
   const repository = await bindAt(partition, "retire-trigger");
   const where = [partition.tenant, partition.project, repository];

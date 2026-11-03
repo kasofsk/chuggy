@@ -1,6 +1,6 @@
 /**
- * What migration 063 adds, driven against a real PostgreSQL by the role each
- * door is granted to.
+ * The lead inquiry, driven against a real PostgreSQL by the role each door is
+ * granted to.
  *
  * EVERY CASE HERE IS ABOUT A CONTROL AND NOT ABOUT A SHAPE. A grant, a revoke,
  * a check, a trigger and a predicate are each a claim about what the server
@@ -361,8 +361,8 @@ test("the four refusals each answer their own condition and write nothing", asyn
  * The bound counts the asker's own OPEN INQUIRIES and nothing else they hold. A
  * member's thread is a session with their principal on it, so a count that did
  * not name the kind would spend their quota on a conversation; and an inquiry
- * that has been answered is closed by 063's own trigger, so a member who read
- * their answers may ask again.
+ * that has been answered is closed by `inquiry_closes_with_its_turn`, so a
+ * member who read their answers may ask again.
  */
 test("the bound counts open inquiries and neither a thread nor a settled one", async () => {
   const { partition, member } = await inquirySubject("counted");
@@ -564,12 +564,11 @@ test("the fork's row is the asker's, the lead's parent and a roster of reads", a
 });
 
 /**
- * The objectives column is generated from `sessionPromptCeilings`, and an
- * inquiry's ceiling is the widest of them — so a fork of a lead whose prompt is
- * at the lead's own ceiling has to fit the column 063 replaced. This is what
- * makes the replacement red-provable rather than decorative.
+ * Every kind of session's objectives share one column, bounded by the widest of
+ * `sessionPromptCeilings`, and an inquiry's ceiling is that widest — so a fork
+ * of a lead whose prompt is at the lead's own ceiling has to fit it.
  */
-test("a fork of a lead at its own ceiling fits the column 063 widened", async () => {
+test("a fork of a lead at its own ceiling fits the column every kind shares", async () => {
   const partition = await inquiryRigProject(rig, "ceiling");
   const member = inquiryRigMember(rig, partition, "ceiling");
   const widest = "o".repeat(sessionSystemPromptCharsMax);
@@ -625,8 +624,8 @@ test("a fork is told the reference it forks from, and a lead is told none", asyn
  * A fork that has ALREADY BOUND a reference is still told the parent's. The
  * case above reads the fork before one exists, so a `fork_from` that preferred
  * the session's own would pass it — and an attempt following a lost one would
- * resume a store 063's own trigger keeps empty, answering the member with no
- * context at all.
+ * resume a store `inquiry_writes_no_store_batch` keeps empty, answering the
+ * member with no context at all.
  */
 test("a fork that has run is still told its parent's reference and never its own", async () => {
   const { partition, lead, member } = await inquirySubject("fork-again");
@@ -1173,7 +1172,7 @@ test("the turn an inquiry takes carries the standing rule the fork is bound by",
 });
 
 /**
- * A session identity is UNIQUE WITHIN ITS PROJECT by 058's primary key and
+ * A session identity is UNIQUE WITHIN ITS PROJECT by `agent_session_pkey` and
  * GLOBALLY by `agent_session_identity_is_never_reused`, so a session id another
  * principal already minted RAISES rather than being answered: the `AlreadyOpen`
  * pre-check matches the principal, so it does not swallow the collision, and
@@ -1273,7 +1272,7 @@ const otherRoles = [
   configurationImporterRole,
 ] as const;
 
-/** Every door 063 declares, beside the arguments it is called with and its role. */
+/** Every door an inquiry passes through, beside its arguments and its role. */
 const doors: readonly (readonly [string, string, string])[] = [
   [leadInquiryOpenFunction, "'t','p','k','s','u','','InCluster'", apiRole],
   [leadInquiriesReadFunction, "'t','p',1", apiRole],
@@ -1283,7 +1282,7 @@ const doors: readonly (readonly [string, string, string])[] = [
   [sessionStreamListFunction, "'',1,1", workerPlaneRole],
 ];
 
-test("each door 063 declares is reachable by one role and revoked from the rest", async () => {
+test("each door an inquiry passes through is reachable by one role and revoked from the rest", async () => {
   for (const [name, arguments_, granted] of doors) {
     const call = `SELECT * FROM ${name}(${arguments_})`;
     assert.equal(
@@ -1308,9 +1307,10 @@ test("each door 063 declares is reachable by one role and revoked from the rest"
  * than by the boundary owner runs as whoever migrated, and the grants below it
  * describe a separation the server is not making. It has no failing input on a
  * server where the applier already owns everything, which is why it is asked of
- * the catalog — the same way `:1059` asks it of the two trigger functions.
+ * the catalog — the same way the case below asks it of the two trigger
+ * functions.
  */
-test("each door 063 declares runs as the identity that owns the boundary", async () => {
+test("each door an inquiry passes through runs as the identity that owns the boundary", async () => {
   const owners = await rig.sessions.harness.query(
     `SELECT p.proname AS door,pg_get_userbyid(p.proowner) AS owner
        FROM pg_proc p WHERE p.proname = ANY($1::text[])
@@ -1322,7 +1322,7 @@ test("each door 063 declares runs as the identity that owns the boundary", async
     [...doors]
       .map(([door]) => ({ door, owner: boundaryOwnerRole }))
       .sort((one, other) => one.door.localeCompare(other.door)),
-    "a door 063 declares runs as somebody other than the boundary's own identity",
+    "a door an inquiry passes through runs as somebody other than the boundary's own identity",
   );
 });
 

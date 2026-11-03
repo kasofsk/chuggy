@@ -1,6 +1,6 @@
 /**
- * What migrations 062 and 075 add, driven against a real PostgreSQL by the
- * role each door is granted to.
+ * A member's thread, driven against a real PostgreSQL by the role each door is
+ * granted to.
  *
  * EVERY CASE HERE IS ABOUT A CONTROL AND NOT ABOUT A SHAPE. A grant, a revoke,
  * a check, a trigger and a filter are each a claim about what the server
@@ -793,8 +793,8 @@ test("neither view door admits a session that is not this project's thread", asy
 
 /**
  * A rail re-reads its listing on a `Session` frame, and neither door moves the
- * state 075's trigger watches — so without a frame of their own a rename and a
- * hide would be invisible until something else moved.
+ * state `agent_session_move_appends_a_change` watches — so without a frame of
+ * their own a rename and a hide would be invisible until something else moved.
  */
 test("naming and hiding each raise the Session frame a listing re-reads on", async () => {
   const partition = await project("view-frame");
@@ -989,9 +989,9 @@ test("the two view doors are the API's alone", async () => {
 });
 
 /**
- * 075's close door is held beside the door it PERFORMs: a grant on the narrow
- * door that had widened into one on `close_agent_session` would let the API
- * end the project's lead, which is the thing the narrowing is for.
+ * The thread's close door is held beside the door it PERFORMs: a grant on the
+ * narrow door that had widened into one on `close_agent_session` would let the
+ * API end the project's lead, which is the thing the narrowing is for.
  */
 test("the close door is the API's, and the door it performs is no runtime role's", async () => {
   const partition = await project("close-grants");
@@ -1047,12 +1047,6 @@ test("a closed thread does not block a new one", async () => {
   );
 });
 
-/**
- * Why 062 does NOT replace the prompt check 061 generated. A thread's widest
- * objectives are shorter than a lead's, so the column already holds them; the
- * dominance is asserted here rather than assumed, because a thread prompt that
- * outgrew the column would refuse every open on the project that caused it.
- */
 /**
  * Two opens racing for a member's last place. The member's advisory lock is
  * what serialises the count against the insert, so the loser waits for the
@@ -2357,7 +2351,7 @@ test("a member's thread limit is read and written by the API's role alone", asyn
   );
 });
 
-test("each door 062 declares is the role's it was granted to and no other's", async () => {
+test("each door a thread passes through is the role's it was granted to and no other's", async () => {
   const partition = await project("grants");
   const member = threadRigMember(rig, partition, "grants");
   await threadRigThread(rig, partition, member);

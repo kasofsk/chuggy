@@ -1,7 +1,7 @@
 /**
- * What every thread case needs of a real PostgreSQL: the lead rig 059's suites
- * already stand on, the two thread stores over the roles 062 grants, and a
- * member the project admits for a thread to act under.
+ * What every thread case needs of a real PostgreSQL: the lead rig the lead
+ * suites already stand on, the two thread stores over the roles their doors
+ * are granted to, and a member the project admits for a thread to act under.
  *
  * EACH DOOR STANDS ON THE ROLE IT IS GRANTED TO. The five API-side doors run as
  * `chuggy_api` and the three wake-side ones as `chuggy_selector_service`,
@@ -63,7 +63,7 @@ import { leadRigOpen, leadRigProject, type LeadRig } from "./leadHarness.ts";
 import { postgresHarnessKeying } from "./harness.ts";
 import type { SessionStoreDouble } from "./storeDouble.ts";
 
-/** One opened subject: the lead rig, and the three stores 062 answers. */
+/** One opened subject: the lead rig, and the thread stores. */
 export interface ThreadRig extends LeadRig {
   readonly threads: ThreadStore;
   readonly minting: ThreadSessionMint;

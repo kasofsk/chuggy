@@ -378,10 +378,10 @@ test("the finalizer's write surface is exactly the columns its moves need", asyn
 });
 
 /**
- * `forge_installation` is here from 088 and is not part of a view: the
- * finalizer mints the credential it pushes and proposes with, and a mint reads
- * the claim the repository's owner was recorded under. It is SELECT and no
- * more, which the claim-door cases beside `forgeInstallation.test.ts` hold.
+ * `forge_installation` is here and is not part of a view: the finalizer mints
+ * the credential it pushes and proposes with, and a mint reads the claim the
+ * repository's owner was recorded under. It is SELECT and no more, which the
+ * claim-door cases beside `forgeInstallation.test.ts` hold.
  */
 test("the finalizer's read surface is exactly the relations its view is gathered from", async () => {
   const read = (await harness.query(

@@ -17,9 +17,9 @@
  *
  * WHERE A MAILBOX STARTS IS THIS SUITE'S TOO, because the cursor and the
  * session row are two facts only a real candidate read distinguishes: the
- * cursor says how far the pass has read, and 067's `opened_after_sequence` says
- * what the thread was opened after. The case that separates them runs its pass
- * over a window holding a change from each side of the opening.
+ * cursor says how far the pass has read, and the row's `opened_after_sequence`
+ * says what the thread was opened after. The case that separates them runs its
+ * pass over a window holding a change from each side of the opening.
  */
 
 import assert from "node:assert/strict";
@@ -452,7 +452,7 @@ test("no role may move the log position a thread was opened after", async () => 
       .filter(({ reconfigures }) => reconfigures)
       .map(({ rolname }) => rolname),
     [boundaryOwnerRole],
-    "the sweep disagrees with 062's own grant on the column beside it, so an empty roster would have read as a clean negative space",
+    "the sweep disagrees with the boundary owner's own grant on the column beside it, so an empty roster would have read as a clean negative space",
   );
 });
 

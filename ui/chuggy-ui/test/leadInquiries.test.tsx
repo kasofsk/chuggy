@@ -793,7 +793,7 @@ test("a press in flight reports itself busy", async () => {
 const elsewhere = { tenant: "acme", project: "beta" };
 
 /**
- * A DOOR THAT HAS ALREADY SEEN A SESSION NAME REFUSES IT, which is what 058's
+ * A DOOR THAT HAS ALREADY SEEN A SESSION NAME REFUSES IT, which is what the
  * installation-wide uniqueness on `session` makes true of every project's door
  * at once. Answered here so a case can tell a pair carried across a project
  * from one drawn for the project it is sent to.

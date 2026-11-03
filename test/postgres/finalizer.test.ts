@@ -545,12 +545,10 @@ test("two tickets of one project each finalize in the repository their brief nam
 
 /**
  * A project no operation has ever bound a repository to, with a ticket released
- * in it — the shape migration 82's backfill leaves a brief in where its own
- * project binds nothing, written by hand because the release door refuses that
- * shape today. The journal entry is fabricated rather than replayed, as
- * `nativeActionFixture.ts` already does for a desk task's own fence, and
- * `brief: false` stores no released brief at all, for the shape a ticket
- * released before migration 42 created `draft_brief` still carries.
+ * in it, written by hand because the release door refuses that shape today. The
+ * journal entry is fabricated rather than replayed, as `nativeActionFixture.ts`
+ * already does for a desk task's own fence, and `brief: false` stores no
+ * released brief at all, which `ticket_definition.brief` admits.
  */
 async function finalizerUnboundTicket(
   label: string,

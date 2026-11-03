@@ -498,12 +498,13 @@ test("a bind for a different repository under the same operation waits for the f
 });
 
 /**
- * The listing 089 added, which is the read a project's own members are answered
- * from and which is a door rather than a grant, so the cases assert that the
- * relation behind it still refuses the same role. THE ORDER IS THE ELECTION:
- * `read_project_repository_binding` picks the oldest binding when a caller
- * names no repository, so a listing in another order would put a different
- * repository at the head than the one every such caller works against.
+ * The per-project listing, which is the read a project's own members are
+ * answered from and which is a door rather than a grant, so the cases assert
+ * that the relation behind it still refuses the same role. THE ORDER IS THE
+ * ELECTION: `read_project_repository_binding` picks the oldest binding when a
+ * caller names no repository, so a listing in another order would put a
+ * different repository at the head than the one every such caller works
+ * against.
  */
 test("the listing answers one project's bindings, oldest first", async () => {
   const standing = await fixtureStanding("binding-listing");
@@ -638,7 +639,7 @@ test("the API reads a project's bindings through the door and not the relation",
 });
 
 /**
- * 088's listing, which the importer runs over. It crosses partitions because
+ * The estate listing, which the importer runs over. It crosses partitions because
  * the importer's job is every partition's declarations: a run told to import
  * one project's would need the list it is asking for before it could ask.
  */
@@ -687,8 +688,8 @@ test("the estate listing is bounded by what the caller asks for", async () => {
 /**
  * The door's own ceiling, which a caller may narrow and may not widen. The
  * bindings are dated past every other case's so that a listing this case fills
- * is still the oldest prefix for the cases that read one; the trigger 040
- * installed lets nobody take them out again.
+ * is still the oldest prefix for the cases that read one;
+ * `project_repository_is_immutable` lets nobody take them out again.
  */
 test("a caller asking the estate listing for more than the bound gets the bound", async () => {
   const standing = await fixtureStanding("binding-estate-ceiling");

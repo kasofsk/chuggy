@@ -1,7 +1,7 @@
 /**
  * The thread routes over a real database, through the ports the ROOT
- * composes: the API's own role, 062's definers, and the HTTP boundary above
- * them.
+ * composes: the API's own role, the thread definers, and the HTTP boundary
+ * above them.
  *
  * WHAT A DOUBLE CANNOT ANSWER. `test/adapters/httpThreads.test.ts` settles the
  * transport against a fake boundary and `test/postgres/threadDurable.test.ts`
