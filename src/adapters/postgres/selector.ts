@@ -228,43 +228,23 @@ function retainedChange(
 }
 
 /**
- * A retained policy input under exactly one spelling of the note. Two strict
- * alternatives are what say a row carrying neither, or both, is a row that is
- * not intact — which is the whole of what this parser is relied on to say.
+ * A retained policy input. It is strict, so a row missing the note or carrying
+ * a member this does not name is a row that is not intact.
  */
-const selectorContextSchema = z.union([
-  z
-    .strictObject({
-      operationalContext: selectorOperationalContextSchema,
-      handoffNote: jsonValueSchema,
-      changes: z.array(notificationSchema).readonly().optional(),
-    })
-    .readonly()
-    .transform((value): SelectorInteraction["context"] => ({
-      operationalContext: value.operationalContext,
-      handoffNote: value.handoffNote,
-      ...(value.changes === undefined
-        ? {}
-        : { changes: value.changes.map(retainedChange) }),
-    })),
-  z
-    .strictObject({
-      operationalContext: selectorOperationalContextSchema,
-      workingMemory: jsonValueSchema,
-    })
-    .readonly()
-    .transform((value): SelectorInteraction["context"] => ({
-      operationalContext: value.operationalContext,
-      handoffNote: value.workingMemory,
-    })),
-]);
-
-/** Parses current and retained historical selector policy inputs. */
-export function parseSelectorInteractionContext(
-  value: unknown,
-): SelectorInteraction["context"] {
-  return selectorContextSchema.parse(value);
-}
+const selectorContextSchema = z
+  .strictObject({
+    operationalContext: selectorOperationalContextSchema,
+    handoffNote: jsonValueSchema,
+    changes: z.array(notificationSchema).readonly().optional(),
+  })
+  .readonly()
+  .transform((value): SelectorInteraction["context"] => ({
+    operationalContext: value.operationalContext,
+    handoffNote: value.handoffNote,
+    ...(value.changes === undefined
+      ? {}
+      : { changes: value.changes.map(retainedChange) }),
+  }));
 
 /**
  * One candidate as an observation stores it, its configuration label kept where

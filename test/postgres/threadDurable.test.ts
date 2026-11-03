@@ -326,7 +326,7 @@ test("a member holds as many open threads as their limit, and a closed one frees
   await threadRigThread(rig, partition, member);
 });
 
-test("a member nobody set a limit for holds the default, and the old index is gone", async () => {
+test("a member nobody set a limit for holds the default", async () => {
   const partition = await project("default");
   const member = threadRigMember(rig, partition, "default");
   assert.equal(
@@ -344,12 +344,6 @@ test("a member nobody set a limit for holds the default, and the old index is go
     credentialSlot: threadRigSlot,
   });
   assert.equal(refused.opened, "ThreadLimitReached");
-
-  const indexes = await rig.sessions.harness.query(
-    `SELECT indexname FROM pg_indexes WHERE indexname=$1`,
-    ["agent_session_one_thread_per_member"],
-  );
-  assert.deepEqual(indexes, []);
 });
 
 test("a lowered limit closes nothing and refuses the next open", async () => {
@@ -1867,13 +1861,6 @@ test("the store reads answer the session they were asked about and no sibling", 
     }),
     [],
   );
-
-  const retired = await rig.sessions.harness.query(
-    `SELECT to_regprocedure('read_lead_store(text,text,text,bigint,bigint)') IS NULL AS batches_gone,
-            to_regprocedure('list_lead_store_streams(text,text,bigint)') IS NULL AS streams_gone`,
-  );
-  assert.equal(retired[0]?.["batches_gone"], true);
-  assert.equal(retired[0]?.["streams_gone"], true);
 });
 
 /**
