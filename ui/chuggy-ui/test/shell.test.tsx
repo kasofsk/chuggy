@@ -14,15 +14,13 @@ import {
   act,
   cleanup,
   fireEvent,
-  render,
   screen,
   within,
 } from "@testing-library/react";
-import { afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
+import { expect, test, vi } from "vitest";
 import type { ComponentProps, ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
-import { Shell } from "../app/browser/Shell.tsx";
 import { conversationWaitWordAfterMs } from "../app/browser/conversation/ConversationLines.tsx";
 import { DetailsSlot, TopBarSlot } from "../app/browser/shell/slots.tsx";
 import shellSheet from "../app/browser/shell/shell.css?raw";
@@ -31,33 +29,12 @@ import {
   viewportNarrowEm,
   viewportTwoColumnEm,
 } from "../app/browser/shell/viewport.ts";
-import {
-  chatPanePanels,
-  chatPanePlacements,
-  chatPaneShareText,
-  chatPaneSizes,
-  chatPaneSizeStrip,
-  chatPaneStoreKey,
-  chatPaneTrailDrawn,
-  chatPaneTrailAxisEm,
-  chatPaneTrailHeld,
-  chatPaneTrailMoved,
-  chatPaneTrailOffered,
-  chatPaneTrailStarted,
-} from "../app/core/chatPane.ts";
-import type {
-  ChatPaneMove,
-  ChatPaneOrientation,
-  ChatPaneTrail,
-  ChatPaneTrailFrame,
-} from "../app/core/chatPane.ts";
+import { chatPaneSizes, chatPaneStoreKey } from "../app/core/chatPane.ts";
+import type { ChatPaneMove } from "../app/core/chatPane.ts";
 import {
   hostedRunsQuery,
   sessionPlacementQuery,
 } from "../app/core/projectQueries.ts";
-import { resizeObserverStubbed } from "./resizeObserver.ts";
-import { seededRandom } from "./seededRandom.ts";
-import { elementScrollToStubbed } from "./scrolling.ts";
 import { leadBody } from "./leadFixture.ts";
 import {
   abilitiesEvery,
@@ -75,21 +52,40 @@ import {
 } from "./threadFixture.ts";
 import { sheetConditioned, sheetDeclared, sheetRules } from "./sheet.ts";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
-import type { ViewportFrame } from "./viewport.ts";
 import {
   answer,
   apiDouble,
-  openedStream,
   operationAt,
-  ScreenHarness,
   settled,
   turned,
 } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
+import {
+  chatDrawn,
+  edgeDrawn,
+  edgePointer,
+  edgePulled,
+  edgeShare,
+  edgeText,
+  emOf,
+  frameDivided,
+  frameShortEm,
+  frameTallEm,
+  mounted,
+  navDrawn,
+  panePlaced,
+  pressed,
+  settingsOpened,
+  shareOf,
+  shellFrameEachCase,
+  shellRoute,
+  stripShare,
+  styleless,
+} from "./shellFrame.tsx";
+import { atlas } from "./shellRouter.tsx";
+import { walkHeightMostEm, walkReplayed, walkRouted } from "./shellWalk.tsx";
 import type * as ChatPaneModule from "../app/browser/shell/ChatPane.tsx";
 import type * as RouterModule from "@tanstack/react-router";
-
-const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
 let pageDrawn: () => ReactNode = () => null;
 
@@ -99,10 +95,11 @@ let paneDrawn: () => void = () => undefined;
 /** The route's parameters, which name a session only on a thread's own page. */
 let routeParams: PartitionIdentity & { readonly session?: string } = atlas;
 
-vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
-  ...(await importOriginal<typeof BrowserPorts>()),
-  sleepMs: () => Promise.resolve(),
-}));
+vi.mock("../app/browser/ports.ts", async (importOriginal) =>
+  (await import("./shellRouter.tsx")).portsDouble(
+    await importOriginal<typeof BrowserPorts>(),
+  ),
+);
 
 vi.mock("../app/browser/shell/ChatPane.tsx", async (importOriginal) => {
   const original = await importOriginal<typeof ChatPaneModule>();
@@ -115,170 +112,22 @@ vi.mock("../app/browser/shell/ChatPane.tsx", async (importOriginal) => {
   };
 });
 
-vi.mock("@tanstack/react-router", async (importOriginal) => ({
-  ...(await importOriginal<typeof RouterModule>()),
-  /** A menu item draws its link through `asChild`, so the double keeps the
-   * role, focus and handlers the item hands it, and only the route is
-   * dropped. */
-  Link: (
-    props: ComponentProps<"a"> & {
-      readonly to?: unknown;
-      readonly params?: unknown;
-      readonly activeOptions?: unknown;
-    },
-  ) => (
-    <a
-      {...Object.fromEntries(
-        Object.entries(props).filter(
-          ([key]) => !["to", "params", "activeOptions"].includes(key),
-        ),
-      )}
-      href="/"
-    />
+vi.mock("@tanstack/react-router", async (importOriginal) =>
+  (await import("./shellRouter.tsx")).routerDouble(
+    await importOriginal<typeof RouterModule>(),
+    { outlet: () => pageDrawn(), params: () => routeParams },
   ),
-  Outlet: () => pageDrawn(),
-  useNavigate: () => () => undefined,
-  useParams: () => routeParams,
-  /** Copy link asks the router for the address, which these cases do not read. */
-  useRouter: () => ({ buildLocation: () => ({ href: "/" }) }),
-  useRouterState: (options: {
-    readonly select: (state: {
-      readonly location: { readonly pathname: string };
-    }) => unknown;
-  }) => options.select({ location: { pathname: "/acme/atlas" } }),
-}));
+);
 // jscpd:ignore-end -- the case's own doubles resume here
 
-beforeAll(() => {
-  Element.prototype.scrollIntoView = () => undefined;
-  Element.prototype.hasPointerCapture = () => false;
-  Element.prototype.setPointerCapture = () => undefined;
-  Element.prototype.releasePointerCapture = () => undefined;
+walkRouted((params) => {
+  routeParams = params;
 });
-
-beforeEach(() => {
-  resizeObserverStubbed();
-  elementScrollToStubbed();
-});
-
-afterEach(() => {
-  cleanup();
+shellFrameEachCase(() => {
   pageDrawn = () => null;
   paneDrawn = () => undefined;
   routeParams = atlas;
-  localStorage.clear();
-  document.documentElement.style.fontSize = "";
-  vi.unstubAllGlobals();
-  vi.restoreAllMocks();
-  vi.useRealTimers();
 });
-
-function styleless(): void {
-  expect(document.querySelectorAll("style")).toHaveLength(0);
-}
-
-/** The project inventory for the switcher, an empty thread listing for the
- * chat pane, and the same body for everything else — a read that cannot parse
- * it draws its own unready state, which is not what these cases are about. */
-function shellRoute(url: string): Response {
-  if (url.includes("/threads")) return answer({ threads: [] });
-  return answer({ projects: [atlas] });
-}
-
-/** The frame mounted, and drawn again where a case has moved the route. */
-async function mounted(
-  em: number,
-  served?: typeof fetch,
-  client: QueryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  }),
-  frame: ViewportFrame = {},
-): Promise<{ readonly redrawn: () => Promise<void> }> {
-  const api = apiDouble({
-    operation: operationAt("Pending"),
-    route: shellRoute,
-  });
-  viewportAtEm(em, frame);
-  vi.stubGlobal("fetch", served ?? api.fetch);
-  const server = openedStream();
-  const drawn = (): ReactNode => (
-    <ScreenHarness
-      partition={atlas}
-      client={client}
-      transport={server.ports.fetch}
-    >
-      <Shell partition={atlas} />
-    </ScreenHarness>
-  );
-  const view = render(drawn());
-  await settled();
-  return {
-    redrawn: async () => {
-      view.rerender(drawn());
-      await settled();
-    },
-  };
-}
-
-function chatDrawn(): HTMLElement | null {
-  return screen.queryByRole("region", { name: "Chat" });
-}
-
-function navDrawn(): HTMLElement | null {
-  return screen.queryByRole("navigation", { name: "Console" });
-}
-
-/** How the body under the bar is divided: across or down, and its panels and
- * the edge between them in the order they are drawn. */
-function frameDivided(): string {
-  const group = document.querySelector("[data-group]");
-  if (!(group instanceof HTMLElement)) return "";
-  const parts = Array.from(group.children, (child) =>
-    child.getAttribute("role") === "separator" ? "|" : child.id,
-  );
-  const axis = group.style.flexDirection === "column" ? "down" : "across";
-  return `${axis} ${parts.join(" ")}`;
-}
-
-/** The edge between the pages and the pane, which is what the reader drags. */
-function edgeDrawn(): HTMLElement {
-  return screen.getByRole("separator");
-}
-
-/** What the edge says of the pane's share, which a screen reader reads in
- * place of the library's share of the panel before it. */
-function edgeText(): string | null {
-  return edgeDrawn().getAttribute("aria-valuetext");
-}
-
-/** The share of the body the panel before the edge takes, as the edge says. */
-function edgeShare(): number {
-  return Number(edgeDrawn().getAttribute("aria-valuenow"));
-}
-
-/** A size the pane states in `rem`, in the root `em` the frame is stated in. */
-function emOf(size: string): number {
-  expect(size).toMatch(/rem$/u);
-  return Number.parseFloat(size);
-}
-
-/** A size the pane states as a share. */
-function shareOf(size: string): number {
-  expect(size).toMatch(/%$/u);
-  return Number.parseFloat(size);
-}
-
-/** The share of the body a collapsed pane's strip takes beside the pages. */
-function stripShare(em: number): number {
-  return (emOf(chatPaneSizeStrip) / em) * 100;
-}
-
-async function pressed(name: string): Promise<void> {
-  await turned(() => {
-    screen.getByRole("button", { name }).click();
-  });
-  await settled();
-}
 
 async function tooltipNamed(name: string): Promise<void> {
   const button = screen.getByRole("button", { name });
@@ -462,45 +311,6 @@ test("a collapsed pane goes straight to full screen and back to its column", asy
   expect(edgeShare()).toBeCloseTo(75);
   styleless();
 });
-
-/** A pointer event this many pixels from where the edge was pressed, along
- * the axis the frame divides. */
-function edgePointer(
-  type: string,
-  byPx: number,
-  options: {
-    readonly at: DOMRect;
-    readonly vertical: boolean;
-    readonly buttons: number;
-  },
-): PointerEvent {
-  const { at } = options;
-  return new PointerEvent(type, {
-    bubbles: true,
-    button: 0,
-    buttons: options.buttons,
-    clientX: at.left + at.width / 2 + (options.vertical ? 0 : byPx),
-    clientY: at.top + at.height / 2 + (options.vertical ? byPx : 0),
-    pointerId: 1,
-    pointerType: "mouse",
-  });
-}
-
-/** The edge dragged by a pointer this many pixels: pressed where the edge is
- * drawn, moved, and let go. */
-async function edgePulled(byPx: number, vertical: boolean): Promise<void> {
-  const edge = edgeDrawn();
-  const along = { at: edge.getBoundingClientRect(), vertical };
-  const held = edgePointer("pointerdown", 0, { ...along, buttons: 1 });
-  const moved = edgePointer("pointermove", byPx, { ...along, buttons: 1 });
-  const released = edgePointer("pointerup", byPx, { ...along, buttons: 0 });
-  await turned(() => {
-    edge.dispatchEvent(held);
-    document.dispatchEvent(moved);
-    document.dispatchEvent(released);
-  });
-  await settled();
-}
 
 /** The edge across the frame dragged this far, in the root `em` the frame is
  * stated in. */
@@ -1145,11 +955,6 @@ test("a page outlives the pane moving to the other side of it and back", async (
   styleless();
 });
 
-/** The frame's height in these cases, which a pane under the pages divides,
- * and one a fifth as tall. */
-const frameTallEm = 50;
-const frameShortEm = frameTallEm / 5;
-
 /** The share of the frame's height the pages keep above a pane at its
  * default height. */
 function pagesOverDefaultShare(): number {
@@ -1311,239 +1116,6 @@ test("a viewport widened on a thread's own page lays the pane beside the pages o
   );
   styleless();
 });
-
-/** The frame a walk starts in: a desk's width, one too narrow to divide that
- * still keeps the bar, and a desk's height. */
-const walkFrame: ChatPaneTrailFrame = {
-  wideEm: viewportDeskEm,
-  narrowEm: viewportTwoColumnEm - 10,
-  heightEm: frameTallEm,
-};
-
-/** The shares a walk drags the pane to along each axis: open ones, one past
- * the most, and none, which is the strip; under the pages, one just over the
- * least. */
-const walkShares: Readonly<Record<ChatPaneOrientation, readonly number[]>> = {
-  horizontal: [30, 40, 50, 60, 70, 95, 0],
-  vertical: [35, 40, 55, 60, 70, 80, 96, 0],
-};
-
-/** How short and how tall a walk draws the frame: short enough that the strip
- * under the pages is over the pane's least, and taller than a desk. */
-const walkHeightLeastEm = 5;
-const walkHeightMostEm = 90;
-const walkHeightSteps = 48;
-
-/** The heights a walk draws the frame at, as many in each doubling and on
- * quarters of an `em`, so a frame a few strips tall is drawn as often as a
- * desk's. It leaves out a height at which the strip is as tall as a share the
- * walk drags the pane open to, since the library tells the strip by its size
- * alone and a reader never lands an edge on it to the pixel. */
-const walkHeightsEm: readonly number[] = [
-  ...new Set(
-    Array.from({ length: walkHeightSteps + 1 }, (_, step) => {
-      const ratio = walkHeightMostEm / walkHeightLeastEm;
-      const heightEm = walkHeightLeastEm * ratio ** (step / walkHeightSteps);
-      return Math.round(heightEm * 4) / 4;
-    }),
-  ),
-].filter((heightEm) =>
-  walkShares.vertical.every(
-    (share) => Math.abs(stripShare(heightEm) - share) > 0.001,
-  ),
-);
-
-type WalkMounted = Awaited<ReturnType<typeof mounted>>;
-
-/** The viewport a trail's frame is drawn in. */
-function walkViewport(trail: ChatPaneTrail): readonly [number, ViewportFrame] {
-  return [
-    chatPaneTrailAxisEm(trail, "horizontal"),
-    { heightEm: chatPaneTrailAxisEm(trail, "vertical") },
-  ];
-}
-
-function walkMounted(trail: ChatPaneTrail): Promise<WalkMounted> {
-  const [em, frame] = walkViewport(trail);
-  return mounted(em, undefined, undefined, frame);
-}
-
-function walkPicked<T>(among: readonly T[], random: () => number): T {
-  const picked = among[Math.floor(random() * among.length)];
-  if (picked === undefined) throw new Error("a walk picked among nothing");
-  return picked;
-}
-
-/** The move a walk makes next, among those the frame offers. */
-function walkMove(trail: ChatPaneTrail, random: () => number): ChatPaneMove {
-  const drawn = chatPaneTrailDrawn(trail);
-  const move = walkPicked(chatPaneTrailOffered(trail), random);
-  if (move === "Placed") {
-    const held = chatPaneTrailHeld(trail).placement;
-    const others = chatPanePlacements.filter((placement) => placement !== held);
-    return { move, placement: walkPicked(others, random) };
-  }
-  if (move === "Dragged") {
-    const shares = walkShares[drawn.orientation].filter(
-      (share) => share !== drawn.share,
-    );
-    return { move, share: walkPicked(shares, random) };
-  }
-  if (move === "Resized") {
-    const heights = walkHeightsEm.filter(
-      (heightEm) => heightEm !== trail.heightEm,
-    );
-    return { move, heightEm: walkPicked(heights, random) };
-  }
-  return { move };
-}
-
-/** The edge dragged until the pane takes this share of the frame along its
- * axis, from the share the trail says it takes now. */
-async function walkDragged(trail: ChatPaneTrail, share: number): Promise<void> {
-  const drawn = chatPaneTrailDrawn(trail);
-  const vertical = drawn.orientation === "vertical";
-  const axisEm = chatPaneTrailAxisEm(trail, drawn.orientation);
-  const toward = drawn.panels[0] === chatPanePanels.pages ? -1 : 1;
-  const by = ((share - (drawn.share ?? 0)) / 100) * axisEm * 16;
-  await edgePulled(by * toward, vertical);
-}
-
-/** A trip to a thread's own page and back. */
-async function walkVisited(frame: WalkMounted): Promise<void> {
-  routeParams = { ...atlas, session: threadMineSession };
-  await frame.redrawn();
-  routeParams = atlas;
-  await frame.redrawn();
-}
-
-/** The window resized to the frame a trail is drawn in. */
-async function walkResized(
-  trail: ChatPaneTrail,
-  frame: WalkMounted,
-): Promise<WalkMounted> {
-  viewportAtEm(...walkViewport(trail));
-  await frame.redrawn();
-  return frame;
-}
-
-/** The move made on the mounted frame, by the control a reader would use. */
-async function walkApplied(
-  move: ChatPaneMove,
-  trail: ChatPaneTrail,
-  frame: WalkMounted,
-): Promise<WalkMounted> {
-  switch (move.move) {
-    case "Placed":
-      await panePlaced(move.placement);
-      return frame;
-    case "Collapsed":
-      await pressed("Collapse");
-      return frame;
-    case "Expanded":
-      await pressed("Expand chat");
-      return frame;
-    case "Filled":
-      await pressed("Full screen");
-      return frame;
-    case "Restored":
-      await pressed("Exit full screen");
-      return frame;
-    case "Narrowed":
-    case "Widened":
-    case "Resized":
-      return walkResized(chatPaneTrailMoved(trail, move), frame);
-    case "Visited":
-      await walkVisited(frame);
-      return frame;
-    case "Reloaded":
-      cleanup();
-      return walkMounted(trail);
-    case "Dragged":
-      await walkDragged(trail, move.share);
-      return frame;
-  }
-}
-
-/** The frame as the trail says it is drawn: its panels and axis, the pane's
- * presentation and stored state, and the pane's share as the edge's value and
- * its text say it. */
-function walkChecked(trail: ChatPaneTrail, where: string): void {
-  const drawn = chatPaneTrailDrawn(trail);
-  const axis = drawn.orientation === "vertical" ? "down" : "across";
-  expect(frameDivided(), where).toBe(`${axis} ${drawn.panels.join(" | ")}`);
-  const strip = drawn.state.presentation === "Collapsed";
-  expect(chatDrawn() === null, where).toBe(strip);
-  expect(
-    screen.queryByRole("button", { name: "Expand chat" }) !== null,
-    where,
-  ).toBe(strip);
-  expect(localStorage.getItem(chatPaneStoreKey), where).toBe(
-    trail.hold.stored === undefined ? null : JSON.stringify(trail.hold.stored),
-  );
-  if (drawn.share === undefined) {
-    expect(screen.queryByRole("separator"), where).toBeNull();
-    return;
-  }
-  const before = edgeShare();
-  const seen = drawn.panels[0] === chatPanePanels.pages ? 100 - before : before;
-  expect(seen, where).toBeCloseTo(drawn.share, 2);
-  expect(edgeText(), where).toBe(chatPaneShareText(drawn.share));
-}
-
-/** The moves made one after another from a fresh frame, the frame checked
- * against the trail after each. */
-async function walkReplayed(
-  moves: readonly ChatPaneMove[],
-  where: string,
-): Promise<void> {
-  let trail = chatPaneTrailStarted(walkFrame);
-  let frame = await walkMounted(trail);
-  walkChecked(trail, `${where}, at the start`);
-  for (const [step, move] of moves.entries()) {
-    frame = await walkApplied(move, trail, frame);
-    trail = chatPaneTrailMoved(trail, move);
-    walkChecked(
-      trail,
-      `${where}, step ${String(step)}: ${JSON.stringify(move)}`,
-    );
-  }
-}
-
-/** How many walks are taken, how far each goes, and how long one may take. */
-const walkSeeds = [1, 2, 3, 4];
-const walkStepsMax = 300;
-const walkTimeoutMs = 120_000;
-
-/** The moves a seed draws, which are the whole of what its walk does, so a
- * walk that fails is taken again from its seed alone. */
-function walkDrawn(seed: number): readonly ChatPaneMove[] {
-  const random = seededRandom(seed);
-  let trail = chatPaneTrailStarted(walkFrame);
-  const moves: ChatPaneMove[] = [];
-  for (let step = 0; step < walkStepsMax; step += 1) {
-    const move = walkMove(trail, random);
-    moves.push(move);
-    trail = chatPaneTrailMoved(trail, move);
-  }
-  return moves;
-}
-
-/**
- * NAMED CASES PIN PATHS AND THIS PINS EVERY PATH BETWEEN THEM. The reader's
- * moves are drawn at random from those the frame offers, made by the controls
- * a reader uses, and after each one the frame is held to the trail: which
- * panels it draws, the pane's presentation and stored state, and its share as
- * the edge says it.
- */
-test.each(walkSeeds)(
-  "the frame is drawn as the trail says after every move of a walk, seed %i",
-  async (seed) => {
-    await walkReplayed(walkDrawn(seed), `seed ${String(seed)}`);
-    styleless();
-  },
-  walkTimeoutMs,
-);
 
 const draggedAcross: ChatPaneMove = { move: "Dragged", share: 46.875 };
 const shortened: ChatPaneMove = { move: "Resized", heightEm: frameShortEm };
@@ -1754,25 +1326,6 @@ test("the bar draws the screens and a gear, and the gear holds setup, the theme 
   ).toBeDefined();
   styleless();
 });
-
-/** The gear's menu, opened. */
-async function settingsOpened(): Promise<HTMLElement> {
-  await turned(() => {
-    fireEvent.keyDown(screen.getByRole("button", { name: "Settings" }), {
-      key: "ArrowDown",
-    });
-  });
-  return screen.findByRole("menu");
-}
-
-/** The pane placed from the gear. */
-async function panePlaced(placement: string): Promise<void> {
-  const menu = await settingsOpened();
-  await turned(() => {
-    within(menu).getByRole("menuitemradio", { name: placement }).click();
-  });
-  await settled();
-}
 
 /** The thread is the page at its own address, so however the reader left the
  * pane it is not drawn there, nor its strip. */

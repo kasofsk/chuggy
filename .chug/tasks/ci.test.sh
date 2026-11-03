@@ -634,12 +634,13 @@ lock_json() { # <quint> <grpc> <zod> <left-pad> [flags | hoisted]
 }
 
 # The console is a workspace the root lockfile pins, and npm reads every
-# workspace's manifest before it runs a script in one. Its format script takes
-# Prettier's settings and what Prettier leaves out from the root, and its
-# bundler takes the root's compiler settings for the contract it imports. The
-# replays run under the module type the nearest manifest above each file
-# declares and the schema library the lockfile pins, which the generated API
-# imports, and no other package: a lock that moves another leaves them out.
+# workspace's manifest before it runs a script in one. A format script, where
+# it declares one, takes Prettier's settings and what Prettier leaves out from
+# the root, and its bundler takes the root's compiler settings for the contract
+# it imports. The replays run under the module type the nearest manifest above
+# each file declares and the schema library the lockfile pins, which the
+# generated API imports, and no other package: a lock that moves another leaves
+# them out.
 stub_repo 0
 mkdir -p "$R/test/rig"
 lock_json 0.32.0 1.0.0 4.0.0 1.0.0 > "$R/package-lock.json"
