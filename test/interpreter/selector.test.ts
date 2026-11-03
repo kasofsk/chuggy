@@ -37,7 +37,7 @@ import {
   type SelectorPolicyRequest,
   type SelectorHeldTicket,
   type SelectorObservation,
-  type SelectorOperationalContextV2,
+  type SelectorOperationalContext,
   type SelectorStandingRefusal,
   type SelectorInteractionRecord,
   type SelectorProjectState,
@@ -1640,7 +1640,7 @@ function roomContext(
   accountActive: number,
   accountMaximum: number,
   queued = 0,
-): SelectorOperationalContextV2 {
+): SelectorOperationalContext {
   return {
     ...operationalContext,
     activeWork: { ...operationalContext.activeWork, queued },
@@ -1666,7 +1666,7 @@ test("a dispatch has room only under the account maximum and with nothing queued
 /** A project whose view holds one candidate, read under whatever context `context` answers. */
 function heldForRoomSource(
   log: ReturnType<typeof notificationLog>,
-  context: () => SelectorOperationalContextV2,
+  context: () => SelectorOperationalContext,
   page: () => DispatchViewPage = () =>
     candidateDispatchPage(partition, "b".repeat(64)),
 ) {
@@ -1823,7 +1823,7 @@ function recheckClock() {
 function attentionProject(
   clock: ReturnType<typeof recheckClock>,
   log: ReturnType<typeof notificationLog>,
-  context: () => SelectorOperationalContextV2 = () => roomContext(4, 4),
+  context: () => SelectorOperationalContext = () => roomContext(4, 4),
   page: () => DispatchViewPage = () =>
     candidateDispatchPage(partition, "b".repeat(64)),
   execute: () => SelectorPolicyExecution = () => waitingExecution(),

@@ -337,7 +337,7 @@ export interface SelectorObservationSource {
   operationalContext(partition: Partition): Promise<SelectorOperationalContext>;
 }
 
-export interface SelectorOperationalContextV2 {
+export interface SelectorOperationalContext {
   readonly version: 2;
   readonly observedAt: string;
   readonly observedAtEpochMs: number;
@@ -365,44 +365,9 @@ export interface SelectorOperationalContextV2 {
   };
 }
 
-/** Historical policy input retained exactly as written before context versioning. */
-export interface SelectorOperationalContextV1 {
-  readonly version: 1;
-  readonly observedAt: string;
-  readonly observedAtEpochMs: number;
-  readonly reviewFeedback: readonly SelectorReviewFeedback[];
-  readonly activeWork: readonly {
-    readonly ticket: DispatchCandidate["ticket"];
-    readonly queuedTasks: number;
-    readonly admittedTasks: number;
-    readonly runningAttempts: number;
-  }[];
-  readonly projectCapacity: {
-    readonly account: string;
-    readonly allocated: number;
-    readonly limit: number;
-    readonly available: number;
-  };
-  readonly clusterCapacity: {
-    readonly visibility: "AuthorizedAggregate";
-    readonly allocated: number;
-    readonly limit: number;
-    readonly available: number;
-    readonly pressure: "Normal" | "Constrained" | "Exhausted" | "Unknown";
-  };
-  readonly executionBacklog: {
-    readonly queued: number;
-    readonly ceiling: number;
-    readonly dispatchAllowed: boolean;
-  };
-}
-
-export type SelectorOperationalContext =
-  SelectorOperationalContextV1 | SelectorOperationalContextV2;
-
 /** Whether both scheduler-owned backlog constraints currently admit dispatch. */
 export function selectorBacklogsAdmitDispatch(
-  backlog: SelectorOperationalContextV2["backlog"],
+  backlog: SelectorOperationalContext["backlog"],
 ): boolean {
   return (
     backlog.project.queued < backlog.project.ceiling &&
@@ -1979,13 +1944,11 @@ export function selectorQuietCycle(
  * Whether a dispatch could do more than queue: the account under its maximum,
  * the account half of `executionMayAdmit`, and none of the project's
  * executions `Queued`, cluster slots aside because they are shared and come
- * back without this project moving. A version 1 context is only ever a
- * retained input holding neither count, so it reads as room.
+ * back without this project moving.
  */
 export function selectorDispatchHasRoom(
   context: SelectorOperationalContext,
 ): boolean {
-  if (context.version === 1) return true;
   return (
     context.capacity.accountActive < context.capacity.accountMaximum &&
     context.activeWork.queued === 0

@@ -4,35 +4,9 @@ import { test } from "node:test";
 
 import { selectorInteractionRecord } from "../../src/adapters/postgres/selector.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
+import { selectorOperationalContext } from "../interpreter/selectorFixture.ts";
 
 const partition = { tenant: asTenantId("tenant"), project: asProjectId("p") };
-
-const legacyOperationalContext = {
-  observedAt: "2026-08-20T12:00:00.000Z",
-  observedAtEpochMs: 1_777_000_000_000,
-  reviewFeedback: [],
-  activeWork: [
-    { ticket: 1, queuedTasks: 2, admittedTasks: 3, runningAttempts: 4 },
-  ],
-  projectCapacity: {
-    account: "account",
-    allocated: 2,
-    limit: 4,
-    available: 2,
-  },
-  clusterCapacity: {
-    visibility: "AuthorizedAggregate",
-    allocated: 3,
-    limit: 8,
-    available: 5,
-    pressure: "Constrained",
-  },
-  executionBacklog: {
-    queued: 6,
-    ceiling: 10,
-    dispatchAllowed: true,
-  },
-};
 
 /** One resource as the writer stores it: its manifest and its one chunk. */
 function storedResource(kind: string, value: unknown) {
@@ -81,26 +55,21 @@ function storedContextRead(context: unknown) {
   ).context;
 }
 
-test("a context written before versioning reads as version 1, its note beside it", () => {
-  assert.deepEqual(
-    storedContextRead({
-      operationalContext: legacyOperationalContext,
-      handoffNote: { note: "retained" },
-    }),
-    {
-      operationalContext: { ...legacyOperationalContext, version: 1 },
-      handoffNote: { note: "retained" },
-    },
-  );
+test("a stored context reads back as written, its note beside it", () => {
+  const written = {
+    operationalContext: selectorOperationalContext,
+    handoffNote: { note: "retained" },
+  };
+  assert.deepEqual(storedContextRead(written), written);
 });
 
 test("a context carrying no note, or a member it does not name, is not intact", () => {
   assert.throws(() =>
-    storedContextRead({ operationalContext: legacyOperationalContext }),
+    storedContextRead({ operationalContext: selectorOperationalContext }),
   );
   assert.throws(() =>
     storedContextRead({
-      operationalContext: legacyOperationalContext,
+      operationalContext: selectorOperationalContext,
       handoffNote: { note: "one" },
       unnamed: { note: "the other" },
     }),

@@ -49,6 +49,7 @@ import {
   type SelectorRuntimeSettings,
 } from "../../src/interpreter/selector.ts";
 import { selectorDefaults } from "../contract/representations.ts";
+import { selectorOperationalContext } from "../interpreter/selectorFixture.ts";
 import type { SelectorHistoryStore } from "../../src/interpreter/selectorHistory.ts";
 import type { SessionStoreRead } from "../../src/interpreter/sessionStore.ts";
 import { openExecutionBacklogGuard } from "../../src/interpreter/schedulerContext.ts";
@@ -154,27 +155,7 @@ const interaction: SelectorInteractionRecord = {
   instructions: "x".repeat(4_096),
   observedView: [],
   context: {
-    operationalContext: {
-      version: 1,
-      observedAt: "2026-09-02T00:00:00.000Z",
-      observedAtEpochMs: 0,
-      reviewFeedback: [],
-      activeWork: [],
-      projectCapacity: {
-        account: "acme",
-        allocated: 0,
-        limit: 1,
-        available: 1,
-      },
-      clusterCapacity: {
-        visibility: "AuthorizedAggregate",
-        allocated: 0,
-        limit: 1,
-        available: 1,
-        pressure: "Normal",
-      },
-      executionBacklog: { queued: 0, ceiling: 1, dispatchAllowed: true },
-    },
+    operationalContext: selectorOperationalContext,
     handoffNote: {},
   },
   toolActivity: [],

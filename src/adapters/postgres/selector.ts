@@ -92,39 +92,6 @@ const reviewFeedbackSchema = z
   .transform(({ feedback, ...value }) =>
     feedback === undefined ? value : { ...value, feedback },
   );
-const legacyOperationalContextSchema = z
-  .object({
-    observedAt: z.iso.datetime(),
-    observedAtEpochMs: z.number().int().safe().nonnegative(),
-    reviewFeedback: z.array(reviewFeedbackSchema),
-    activeWork: z.array(
-      z.object({
-        ticket: z.number().int().safe().positive().transform(asTicketId),
-        queuedTasks: z.number().int().safe().nonnegative(),
-        admittedTasks: z.number().int().safe().nonnegative(),
-        runningAttempts: z.number().int().safe().nonnegative(),
-      }),
-    ),
-    projectCapacity: z.object({
-      account: z.string(),
-      allocated: z.number().int().safe().nonnegative(),
-      limit: z.number().int().safe().nonnegative(),
-      available: z.number().int().safe().nonnegative(),
-    }),
-    clusterCapacity: z.object({
-      visibility: z.literal("AuthorizedAggregate"),
-      allocated: z.number().int().safe().nonnegative(),
-      limit: z.number().int().safe().nonnegative(),
-      available: z.number().int().safe().nonnegative(),
-      pressure: z.enum(["Normal", "Constrained", "Exhausted", "Unknown"]),
-    }),
-    executionBacklog: z.object({
-      queued: z.number().int().safe().nonnegative(),
-      ceiling: z.number().int().safe().nonnegative(),
-      dispatchAllowed: z.boolean(),
-    }),
-  })
-  .transform((value) => ({ ...value, version: 1 as const }));
 const dispatchViewTokenSchema = z
   .object({
     tenant: z.string().min(1).transform(asTenantId),
@@ -174,41 +141,38 @@ const dispatchCandidateNamedSchema = z.object({
 const dispatchCandidateSchema = dispatchCandidateNamedSchema
   .extend({ configurationCanonical: z.string() })
   .readonly();
-const selectorOperationalContextSchema = z.union([
-  legacyOperationalContextSchema,
-  z
-    .object({
-      version: z.literal(2),
-      observedAt: z.iso.datetime(),
-      observedAtEpochMs: z.number().int().safe().nonnegative(),
-      reviewFeedback: z.array(reviewFeedbackSchema).readonly(),
-      activeWork: z.object({
+const selectorOperationalContextSchema = z
+  .object({
+    version: z.literal(2),
+    observedAt: z.iso.datetime(),
+    observedAtEpochMs: z.number().int().safe().nonnegative(),
+    reviewFeedback: z.array(reviewFeedbackSchema).readonly(),
+    activeWork: z.object({
+      queued: z.number().int().safe().nonnegative(),
+      admitted: z.number().int().safe().nonnegative(),
+      launching: z.number().int().safe().nonnegative(),
+      running: z.number().int().safe().nonnegative(),
+    }),
+    capacity: z.object({
+      account: z.string(),
+      accountMaximum: z.number().int().safe().nonnegative(),
+      accountActive: z.number().int().safe().nonnegative(),
+      accountReservationDeficit: z.number().int().safe().nonnegative(),
+      clusterSlotsMax: z.number().int().safe().nonnegative(),
+      clusterActive: z.number().int().safe().nonnegative(),
+    }),
+    backlog: z.object({
+      project: z.object({
         queued: z.number().int().safe().nonnegative(),
-        admitted: z.number().int().safe().nonnegative(),
-        launching: z.number().int().safe().nonnegative(),
-        running: z.number().int().safe().nonnegative(),
+        ceiling: z.number().int().safe().positive(),
       }),
-      capacity: z.object({
-        account: z.string(),
-        accountMaximum: z.number().int().safe().nonnegative(),
-        accountActive: z.number().int().safe().nonnegative(),
-        accountReservationDeficit: z.number().int().safe().nonnegative(),
-        clusterSlotsMax: z.number().int().safe().nonnegative(),
-        clusterActive: z.number().int().safe().nonnegative(),
+      installation: z.object({
+        queued: z.number().int().safe().nonnegative(),
+        ceiling: z.number().int().safe().positive(),
       }),
-      backlog: z.object({
-        project: z.object({
-          queued: z.number().int().safe().nonnegative(),
-          ceiling: z.number().int().safe().positive(),
-        }),
-        installation: z.object({
-          queued: z.number().int().safe().nonnegative(),
-          ceiling: z.number().int().safe().positive(),
-        }),
-      }),
-    })
-    .readonly(),
-]);
+    }),
+  })
+  .readonly();
 
 /** One retained change row, its absent members absent rather than undefined. */
 function retainedChange(
