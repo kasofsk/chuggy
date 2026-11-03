@@ -5,10 +5,10 @@
  * own role.
  *
  * THE TEXT ASSERTIONS READ THE DEFINITION THE SCHEMA RUNS, not the migration
- * that introduced it. A boundary dropped and created again by a later migration
- * is a different body under the same name, so reading the introduction would
- * guard something no server holds; `currentDefinition` is what keeps these
- * pointed at the live one.
+ * that introduced it. A boundary a later migration replaces, or drops and
+ * creates again, is a different body under the same name, so reading the
+ * introduction would guard something no server holds; `currentOverloads` is
+ * what keeps these pointed at the live one.
  */
 
 import assert from "node:assert/strict";
@@ -32,18 +32,33 @@ import {
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 
 /**
+ * Each overload of a boundary the schema ends up running, keyed by its arity:
+ * the last creation of each in the chain, in either spelling, less any a later
+ * migration dropped, ordered by when each was last created.
+ */
+function currentOverloads(name: string): readonly string[] {
+  const touched = new RegExp(
+    `(CREATE (?:OR REPLACE )?|DROP )FUNCTION (?:IF EXISTS )?(?:public\\.)?${name}\\(([^)]*)\\)`,
+    "gu",
+  );
+  const live = new Map<number, string>();
+  for (const statement of migrations.flatMap(({ statements }) => statements))
+    for (const [, verb, parameters] of statement.matchAll(touched)) {
+      const arity =
+        parameters?.trim() === "" ? 0 : (parameters?.split(",").length ?? 0);
+      live.delete(arity);
+      if (verb !== "DROP ") live.set(arity, statement);
+    }
+  return [...live.values()];
+}
+
+/**
  * The definition the schema ends up running, which is the last creation of it
  * in the chain rather than the one that introduced it. A later migration that
- * only overloads a boundary is that boundary's current definition too, and the
- * fence it delegates to is read from the creation that carries it.
+ * only overloads a boundary is that boundary's current definition too.
  */
 function currentDefinition(name: string): string {
-  const created = migrations.flatMap((migration) =>
-    migration.statements.filter((statement) =>
-      statement.includes(`CREATE FUNCTION ${name}`),
-    ),
-  );
-  const latest = created.at(-1);
+  const latest = currentOverloads(name).at(-1);
   if (latest === undefined)
     throw new Error(
       `no migration creates ${name}, so there is nothing to read`,
@@ -51,17 +66,16 @@ function currentDefinition(name: string): string {
   return latest;
 }
 
+/** The live overload of the worker's result door that carries its body. */
 function workerResultDefinition(): string {
-  const found = migrations
-    .flatMap(({ statements }) => statements)
-    .find(
-      (statement) =>
-        statement.includes("CREATE FUNCTION submit_worker_result(") &&
-        statement.includes("FROM execution_request q"),
+  const carrying = currentOverloads("submit_worker_result").filter(
+    (statement) => statement.includes("FROM execution_request q"),
+  );
+  if (carrying.length !== 1)
+    throw new Error(
+      `${String(carrying.length)} live overloads of submit_worker_result carry its body`,
     );
-  if (found === undefined)
-    throw new Error("the worker result boundary is absent");
-  return found;
+  return carrying[0] ?? "";
 }
 
 test("the worker role can execute its boundaries and read forge installations", () => {
@@ -126,17 +140,14 @@ test("every worker boundary fences against the latest recovery epoch", () => {
     /SELECT epoch FROM recovery_epoch\s+ORDER BY ordinal DESC LIMIT 1/u;
   for (const name of ["read_worker_attempt", "lose_worker_attempt"])
     assert.match(currentDefinition(name), fence);
-  assert.match(
-    migrations
-      .flatMap(({ statements }) => statements)
-      .find(
-        (statement) =>
-          statement.includes("CREATE FUNCTION submit_worker_result(") &&
-          statement.includes("INTO submitted FROM submit_worker_result("),
-      ) ?? "",
-    /INTO submitted FROM submit_worker_result\(/u,
-  );
-  assert.match(workerResultDefinition() ?? "", fence);
+  for (const overload of currentOverloads("submit_worker_result"))
+    if (!fence.test(overload))
+      assert.match(
+        overload,
+        /FROM submit_worker_result\(/u,
+        "an overload without the fence delegates to the one carrying it",
+      );
+  assert.match(workerResultDefinition(), fence);
 });
 
 test("terminal attempts authenticate only as non-live report authority", () => {
