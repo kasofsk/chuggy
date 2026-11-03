@@ -1,5 +1,5 @@
 #!/bin/sh
-# Markdown lint over every tracked `*.md`. Three checks, POSIX sh and awk only,
+# Markdown lint over every tracked `*.md`. Two checks, POSIX sh and awk only,
 # so it runs anywhere the repo is checked out:
 #
 #   1. Well-formedness — headings need a space after the `#`, and code fences
@@ -7,16 +7,6 @@
 #   2. Intra-repo links resolve — every relative markdown link `](path)` points
 #      at something that exists. Anchors, `http(s)://` and `mailto:` targets are
 #      skipped. A dangling relative link is an ERROR.
-#   3. Design filenames — each `docs/design/*.md` is named `{seq}-{slug}.md`:
-#      leading digits, a hyphen, then a lowercase-kebab slug. Numbers are spent
-#      rather than reused, and this rule judges shape alone — which number is
-#      free is a question for the log. ERROR. The match anchors on the
-#      repo-relative path, so a path merely *ending* in `docs/design/*.md` is
-#      some other repo's file, and a nested subdirectory is out of scope. Its
-#      character classes are spelled out rather than written as `a-z` ranges:
-#      range membership in shell patterns follows the locale's collation order,
-#      so under en_US.UTF-8 `a-z` also spans the uppercase letters and the rule
-#      would quietly stop rejecting them. Same reason LC_ALL=C is pinned below.
 #
 # Whole-tree, not diff-aware: diff selection needs a base ref and a `git fetch`
 # to resolve it, and this repo's CI is local-only.
@@ -144,24 +134,6 @@ report_warn() { echo "warn  $1"; warnings=$((warnings + 1)); }
 IFS='
 '
 for f in $files; do
-	case "$f" in
-	docs/design/*/*) : ;; # a nested subdirectory is not a design doc
-	docs/design/*.md)
-		base="${f##*/}"
-		seq="${base%%-*}"
-		slug="${base#*-}"
-		slug="${slug%.md}"
-		name_ok=1
-		case "$seq" in
-		"" | *[!0123456789]*) name_ok=0 ;;
-		esac
-		case "$slug" in
-		*[!abcdefghijklmnopqrstuvwxyz0123456789-]*) name_ok=0 ;;
-		esac
-		[ "$name_ok" -eq 1 ] \
-			|| report_err "$f: design doc filename must be {seq}-{slug}.md, e.g. 001-nomad-fabric.md"
-		;;
-	esac
 	dir="$(dirname "$f")"
 	out="$(extract "$f")"
 	while IFS= read -r rec; do

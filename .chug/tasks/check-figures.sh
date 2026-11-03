@@ -51,12 +51,6 @@
 # tree exactly as a count in a gate header is, and being proved says nothing
 # about the prose wrapped round the proof.
 #
-# THERE IS NO ESCAPE. The one surface left alone is `docs/design/*.md`, because
-# a design doc argues a decision and has to be able to cite the measurement
-# that motivated it — dated, and with the command that reproduces it. A figure
-# there is answerable to a reviewer instead, which is a weaker control and is
-# the reason it covers one directory and no other.
-#
 # Usage:
 #   .chug/tasks/check-figures.sh [<file>...]
 #
@@ -72,12 +66,10 @@ fi
 cd "$root" || exit 2
 
 # The files to scan: the arguments if given, else the tracked prose corpus. A
-# named file is scanned wherever it lives, so the one directory the corpus
-# leaves out is reachable without an option to remember.
+# named file is scanned whether or not the corpus holds it.
 set -f
 if [ "$#" -eq 0 ]; then
-	corpus="$(git ls-files '*.md' '*.sh' '*.qnt' '.githooks/pre-commit' 'justfile' \
-		':!:docs/design/*' 2>/dev/null || true)"
+	corpus="$(git ls-files '*.md' '*.sh' '*.qnt' '.githooks/pre-commit' 'justfile' 2>/dev/null || true)"
 	if [ -z "$corpus" ]; then
 		echo "check-figures: LINTER ERROR — no prose files tracked; the glob matched nothing"
 		exit 2

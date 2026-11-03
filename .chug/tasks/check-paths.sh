@@ -35,19 +35,6 @@
 # home-relative path, a URL, an elision, and any token whose first segment
 # neither is nor ever was ours.
 #
-# THERE IS ONE EXEMPTION, IT COVERS ONE DIRECTORY, AND IT SUPPRESSES NOTHING:
-# `docs/design/*.md`, on a line carrying one of CLAUDE.md's claim markers —
-# `<!-- intent -->`, `<!-- runtime -->`, `<!-- absent -->`. The path is still
-# resolved and still reported; it prints as `intent` rather than `ERROR` and is
-# counted separately in the tally, so a design doc naming a directory nobody
-# ever built says so on every run. A design doc is the one place in this tree
-# that writes in the future tense, which is why `check-figures.sh` carves out
-# the same directory.
-#
-# What is still forbidden everywhere, this directory included, is an UNMARKED
-# claim — and naming a *specific* deleted file exactly, since neither skip
-# above applies to one.
-#
 # Usage:
 #   .chug/tasks/check-paths.sh [<file>...]
 #
@@ -122,7 +109,6 @@ function junk(t,   i, c) {
 }
 FNR == 1 {
 	comments_only = (FILENAME ~ /\.test\.sh$/)
-	design = (FILENAME ~ /(^|\/)docs\/design\/[^\/]+\.md$/)
 }
 {
 	# A line with no slash cannot carry a path, and most lines have none.
@@ -151,9 +137,7 @@ FNR == 1 {
 		}
 		if (index(t, "/") == 0) continue
 		if (junk(t)) continue
-		# The verdict still runs on a marked line; only its severity changes.
-		marked = (design && $0 ~ /<!-- *(intent|runtime|absent) *-->/)
-		print FILENAME ":" FNR ":" t ":" (marked ? "MARKED" : "PLAIN") ":" here
+		print FILENAME ":" FNR ":" t ":" here
 	}
 }
 ' "$@" > "$work/candidates"
@@ -188,8 +172,7 @@ FILENAME == tf {
 {
 	loc = $1 ":" $2
 	tok = $3
-	marked = ($4 == "MARKED")
-	here = $5
+	here = $4
 	first = tok
 	sub(/\/.*$/, "", first)
 	bare = tok
@@ -204,13 +187,12 @@ FILENAME == tf {
 		next
 	}
 	if (tok in path || bare in path || (bare "/") in dir) { print "OK"; next }
-	print (marked ? "INTENT" : "MISS") "\t" loc "\t" tok "\t" first
+	print "MISS\t" loc "\t" tok "\t" first
 }
 ' "$work/deleted" "$work/tracked" "$work/candidates" > "$work/verdicts"
 
 findings=0
 claims=0
-intents=0
 while IFS="$(printf '\t')" read -r kind loc tok seg; do
 	case "$kind" in
 	OK)
@@ -231,15 +213,9 @@ while IFS="$(printf '\t')" read -r kind loc tok seg; do
 		echo "ERROR $loc: $tok — under \`$seg\`, which this tree deleted"
 		findings=$((findings + 1))
 		;;
-	INTENT)
-		claims=$((claims + 1))
-		intents=$((intents + 1))
-		echo "intent $loc: $tok — designed, not built"
-		;;
 	esac
 done < "$work/verdicts"
 
-printf 'check-paths: %s finding(s)' "$findings"
-[ "$intents" -eq 0 ] || printf ', %s marked as intent' "$intents"
-printf ' across %s path claim(s) in %s file(s)\n' "$claims" "$(printf '%s' "$files" | grep -c .)"
+printf 'check-paths: %s finding(s) across %s path claim(s) in %s file(s)\n' \
+	"$findings" "$claims" "$(printf '%s' "$files" | grep -c .)"
 [ "$findings" -eq 0 ]
