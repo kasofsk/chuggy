@@ -97,6 +97,7 @@ const governedSelectorControls = {
     dispatchesPerDecision: 1,
     inputBytesPerDecision: 1_048_576,
     candidatePagesPerDecision: 1,
+    autoCompactWindow: 200_000,
     concurrentDecisions: 2,
     selectionsPerMinute: 30,
   },
@@ -2344,7 +2345,7 @@ const i5SliceDefiners: readonly (readonly [
   [selectorDeliveryFunction, "text,bigint,text,text", [selectorServiceRole]],
   [
     selectorProjectSettingsFunction,
-    "text,text,bigint,text,text,text,text,text,text,text,bigint,bigint,bigint,bigint,bigint,bigint,bigint,text,text",
+    "text,text,bigint,text,text,text,text,text,text,text,bigint,bigint,bigint,bigint,bigint,bigint,bigint,bigint,text,text",
     [apiRole, selectorControlRole],
   ],
   [

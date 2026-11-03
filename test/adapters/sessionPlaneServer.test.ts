@@ -193,6 +193,25 @@ test("a session pod is told what its own session is, and nothing it has not got"
     "what it is",
   );
   await told.close();
+
+  const compacting = sessionPlane({
+    authority: {
+      authenticate: () =>
+        Promise.resolve({ ...identity, autoCompactWindow: 300_000 }),
+    },
+  });
+  assert.equal(
+    (
+      await compacting.inject({
+        method: "GET",
+        url: "/v1/session",
+        headers: held,
+      })
+    ).json<{ autoCompactWindow: number }>().autoCompactWindow,
+    300_000,
+    "a lead is told the window it was opened under",
+  );
+  await compacting.close();
 });
 
 /** The plane over a thread holding `capabilities`, and the roster it names to a pod offering `release`. */

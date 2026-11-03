@@ -452,6 +452,7 @@ const selectorDefaults = {
     dispatchesPerDecision: 1,
     inputBytesPerDecision: 1_048_576,
     candidatePagesPerDecision: 1,
+    autoCompactWindow: 200_000,
     concurrentDecisions: 4,
     selectionsPerMinute: 60,
   },

@@ -16,6 +16,8 @@ import {
   countSchema,
   identitySchema,
   isBoundedText,
+  leadAutoCompactWindowTokensMax,
+  leadAutoCompactWindowTokensMin,
   nativeHttpPageItemsMax,
   sessionCapabilitiesMax,
   sessionIdentityCharsMax,
@@ -227,7 +229,11 @@ export const sessionEndedSchema = z.strictObject({
   phase: z.enum(sessionContainerEnds),
 });
 
-/** What a pod is told of its own session, each optional fact absent where the session has none. */
+/**
+ * What a pod is told of its own session, each optional fact absent where the
+ * session has none. `autoCompactWindow` is a lead's alone: the context, in
+ * tokens, at which its runtime compacts the conversation.
+ */
 export const sessionFactsAnswerSchema = z.object({
   tenant: identitySchema,
   project: identitySchema,
@@ -239,6 +245,12 @@ export const sessionFactsAnswerSchema = z.object({
   credentialSlot: sessionIdentitySchema,
   agentReference: sessionIdentitySchema.optional(),
   systemPrompt: z.string().min(1).max(agentSessionPromptCharsMax).optional(),
+  autoCompactWindow: z
+    .number()
+    .int()
+    .min(leadAutoCompactWindowTokensMin)
+    .max(leadAutoCompactWindowTokensMax)
+    .optional(),
   forkFrom: sessionIdentitySchema.optional(),
 });
 

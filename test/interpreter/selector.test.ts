@@ -87,7 +87,10 @@ import {
 } from "../../src/interpreter/selectorReview.ts";
 import { selectorRuntimeAdministration } from "../../src/interpreter/selectorAdmin.ts";
 import { selectorPlanning } from "../../src/interpreter/selectorPlanning.ts";
-import { selectorOperationalContext } from "./selectorFixture.ts";
+import {
+  selectorOperationalContext,
+  selectorRuntimeSettings,
+} from "./selectorFixture.ts";
 import { selectorPolicyHost } from "../../src/interpreter/selectorPolicyHost.ts";
 import {
   allLeadAdmissions,
@@ -154,29 +157,9 @@ test("selector backlog admission requires room under both ceilings", () => {
   );
 });
 
-const runtimeSettings: SelectorRuntimeSettings = {
-  revision: 1,
-  mode: "Running",
-  dispatchMode: "Automatic",
-  basePrompt: "prompt",
-  modelAllowlist: ["*"],
-  toolAllowlist: ["*"],
-  limits: {
-    tokensPerDecision: 8192,
-    millisecondsPerDecision: 120_000,
-    toolCallsPerDecision: 20,
-    dispatchesPerDecision: 1,
-    inputBytesPerDecision: 1_048_576,
-    candidatePagesPerDecision: 1,
-    concurrentDecisions: 4,
-    selectionsPerMinute: 60,
-  },
-  operationalContextMaxAgeMs: 30_000,
-};
-
 /** The installation defaults as one project resolves them, overriding nothing. */
 function resolved(
-  settings: SelectorRuntimeSettings = runtimeSettings,
+  settings: SelectorRuntimeSettings = selectorRuntimeSettings,
 ): ReturnType<typeof resolvedSelectorSettings> {
   return resolvedSelectorSettings(partition, settings, 0, {});
 }
@@ -960,7 +943,11 @@ test("a paused runtime creates no new observations but still drains durable work
       }),
     },
     settingsSource(() =>
-      Promise.resolve({ ...runtimeSettings, revision: 4, mode: "Paused" }),
+      Promise.resolve({
+        ...selectorRuntimeSettings,
+        revision: 4,
+        mode: "Paused",
+      }),
     ),
   );
   assert.deepEqual(result, {
@@ -1147,7 +1134,7 @@ function quietPass(
     },
     policy,
     perProjectIdentities(),
-    settingsSource(() => Promise.resolve(runtimeSettings)),
+    settingsSource(() => Promise.resolve(selectorRuntimeSettings)),
     { projectsMax: 1, deliveriesMax: 1, reconciliationsMax: 1 },
   );
 }
@@ -1213,7 +1200,7 @@ test("a pass whose view has not moved takes no permit, leaves no attempt and ask
       },
     },
     perProjectIdentities(),
-    settingsSource(() => Promise.resolve(runtimeSettings)),
+    settingsSource(() => Promise.resolve(selectorRuntimeSettings)),
     { projectsMax: 1, deliveriesMax: 1, reconciliationsMax: 1 },
   );
   assert.deepEqual(allocated, []);
@@ -2214,7 +2201,7 @@ function refusedDeliveryProject(alongside: readonly DispatchCandidate[]) {
       },
       project.policy,
       perProjectIdentities(),
-      settingsSource(() => Promise.resolve(runtimeSettings)),
+      settingsSource(() => Promise.resolve(selectorRuntimeSettings)),
       { projectsMax: 1, deliveriesMax: 1, reconciliationsMax: 1 },
     );
   return { project, pass, delivery: () => delivery };
@@ -2289,7 +2276,7 @@ test("inventory progress follows scanned projects when a permit is unavailable",
         selectorDecisionReference: "inventory-decision",
       }),
     },
-    settingsSource(() => Promise.resolve(runtimeSettings)),
+    settingsSource(() => Promise.resolve(selectorRuntimeSettings)),
     { projectsMax: 2, deliveriesMax: 1, reconciliationsMax: 1 },
   );
   assert.equal(result.observed, 1);
@@ -2323,13 +2310,13 @@ test("one project's pause skips that project and the sweep carries on", async ()
     {
       settings: () => {
         installationReads += 1;
-        return Promise.resolve(runtimeSettings);
+        return Promise.resolve(selectorRuntimeSettings);
       },
       projectSettings: (of) =>
         Promise.resolve(
           resolvedSelectorSettings(
             of,
-            runtimeSettings,
+            selectorRuntimeSettings,
             1,
             of.project === paused.project ? { mode: "Paused" } : {},
           ),
@@ -2382,7 +2369,7 @@ test("a project whose tenant grants the lead no hosted runs takes no permit and 
       },
     },
     perProjectIdentities(),
-    settingsSource(() => Promise.resolve(runtimeSettings)),
+    settingsSource(() => Promise.resolve(selectorRuntimeSettings)),
     { projectsMax: 2, deliveriesMax: 1, reconciliationsMax: 1 },
   );
   assert.deepEqual(asked, [unhosted, hosted]);
@@ -2441,7 +2428,7 @@ async function admissionPasses(
           leadAdmission: answer,
         },
         perProjectIdentities(),
-        settingsSource(() => Promise.resolve(runtimeSettings)),
+        settingsSource(() => Promise.resolve(selectorRuntimeSettings)),
         { projectsMax: 1, deliveriesMax: 1, reconciliationsMax: 1 },
       ),
     );
@@ -2600,7 +2587,7 @@ interface SweptSweep {
 async function sweptProjects(sweep: SweptSweep) {
   const projects = sweep.projects;
   const resolve = sweep.overrides ?? (() => ({}));
-  const installation = sweep.installation ?? runtimeSettings;
+  const installation = sweep.installation ?? selectorRuntimeSettings;
   const resolvedAgainst = sweep.resolvedAgainst ?? (() => installation);
   const projectRevision = sweep.projectRevision ?? (() => 1);
   const nextAfter = sweep.nextAfter;
@@ -2698,7 +2685,9 @@ function pausedOnReread(
   _of: typeof partition,
   read: number,
 ): SelectorRuntimeSettings {
-  return read > 1 ? { ...runtimeSettings, mode: "Paused" } : runtimeSettings;
+  return read > 1
+    ? { ...selectorRuntimeSettings, mode: "Paused" }
+    : selectorRuntimeSettings;
 }
 
 test("an installation pause mid-decision stops the sweep where it stood", async () => {
@@ -2736,7 +2725,7 @@ test("the cursor moves over the projects a sweep consumed and no further", async
       resolvedAgainst: (of, read) =>
         of.project === page[stopAt]?.project
           ? pausedOnReread(of, read)
-          : runtimeSettings,
+          : selectorRuntimeSettings,
     });
     assert.equal(swept.result.observed, stopAt, `stopped at ${String(stopAt)}`);
     assert.deepEqual(
@@ -2759,7 +2748,7 @@ test("a paused installation reads no inventory and moves no cursor", async () =>
   const swept = await sweptProjects({
     projects: page,
     nextAfter: beyond,
-    installation: { ...runtimeSettings, mode: "Paused" },
+    installation: { ...selectorRuntimeSettings, mode: "Paused" },
   });
   assert.equal(swept.inventoryReads, 0);
   assert.deepEqual(swept.saved, []);
@@ -2776,7 +2765,7 @@ test("an installation pause seen before a permit stops the sweep and moves nothi
   const swept = await sweptProjects({
     projects: page,
     nextAfter: beyond,
-    resolvedAgainst: () => ({ ...runtimeSettings, mode: "Paused" }),
+    resolvedAgainst: () => ({ ...selectorRuntimeSettings, mode: "Paused" }),
   });
   assert.equal(swept.inventoryReads, 1);
   assert.deepEqual(swept.terminated, []);
@@ -2825,14 +2814,14 @@ test("a pause observed after permit acquisition prevents a new decision", async 
       }),
     },
     {
-      settings: () => Promise.resolve(runtimeSettings),
+      settings: () => Promise.resolve(selectorRuntimeSettings),
       projectSettings: (of) => {
         settingsReads += 1;
         return Promise.resolve(
           resolvedSelectorSettings(
             of,
             {
-              ...runtimeSettings,
+              ...selectorRuntimeSettings,
               mode: settingsReads === 2 ? "Paused" : "Running",
             },
             0,
@@ -2886,7 +2875,7 @@ test("a stale persisted observation releases its permit without starting policy"
       currentTimeEpochMs: () =>
         Promise.resolve(
           operationalContext.observedAtEpochMs +
-            runtimeSettings.operationalContextMaxAgeMs +
+            selectorRuntimeSettings.operationalContextMaxAgeMs +
             1,
         ),
     },
@@ -2938,7 +2927,7 @@ test("unconfirmed attempt reconciliation yields to newer attempts", async () => 
         selectorDecisionReference: "unused",
       }),
     },
-    settingsSource(() => Promise.resolve(runtimeSettings)),
+    settingsSource(() => Promise.resolve(selectorRuntimeSettings)),
   );
   assert.equal(deferred, 1);
 });
@@ -2982,7 +2971,7 @@ test("one failed attempt inspection does not starve later quarantines", async ()
         selectorDecisionReference: "unused",
       }),
     },
-    settingsSource(() => Promise.resolve(runtimeSettings)),
+    settingsSource(() => Promise.resolve(selectorRuntimeSettings)),
   );
   assert.deepEqual(inspected, ["poisoned", "healthy"]);
   assert.deepEqual(rotated, ["poisoned"]);
@@ -2991,7 +2980,7 @@ test("one failed attempt inspection does not starve later quarantines", async ()
 
 test("a selector decision uses and records one hot-loaded prompt revision", async () => {
   const settings: SelectorRuntimeSettings = {
-    ...runtimeSettings,
+    ...selectorRuntimeSettings,
     revision: 7,
     basePrompt: "prioritize tickets that unblock dependants",
   };
@@ -3148,7 +3137,7 @@ test("unconfirmed capability cancellation quarantines its durable attempt", asyn
         selectorDecisionReference: "unsafe-decision",
       }),
     },
-    settingsSource(() => Promise.resolve(runtimeSettings)),
+    settingsSource(() => Promise.resolve(selectorRuntimeSettings)),
   );
   assert.equal(released, 0);
   assert.equal(quarantined, "unsafe-decision");
@@ -3182,7 +3171,7 @@ test("an unconfirmed permit release enters reconciliation", async () => {
         selectorDecisionReference: "release-decision",
       }),
     },
-    settingsSource(() => Promise.resolve(runtimeSettings)),
+    settingsSource(() => Promise.resolve(selectorRuntimeSettings)),
   );
   assert.equal(quarantined, "release-decision");
   assert.deepEqual(result.failures, [
@@ -3236,12 +3225,12 @@ test("settings and permit failures remain isolated to their projects", async () 
     policyHost(() => Promise.resolve(waitingExecution())),
     perProjectIdentities(),
     {
-      settings: () => Promise.resolve(runtimeSettings),
+      settings: () => Promise.resolve(selectorRuntimeSettings),
       projectSettings: (of) =>
         of.project === settingsBroken.project
           ? Promise.reject(new Error("settings unavailable"))
           : Promise.resolve(
-              resolvedSelectorSettings(of, runtimeSettings, 0, {}),
+              resolvedSelectorSettings(of, selectorRuntimeSettings, 0, {}),
             ),
     },
     { projectsMax: 3, deliveriesMax: 1, reconciliationsMax: 1 },
@@ -3285,14 +3274,14 @@ test("policy-host constraints and observations are immutable", async () => {
       selectorDecisionReference: "enforcement-decision",
     },
     resolved({
-      ...runtimeSettings,
+      ...selectorRuntimeSettings,
       modelAllowlist: ["model-1"],
       toolAllowlist: [],
     }),
   );
   assert.equal(mutationRejected, true);
   assert.equal(observationMutationRejected, true);
-  assert.deepEqual(runtimeSettings.modelAllowlist, ["*"]);
+  assert.deepEqual(selectorRuntimeSettings.modelAllowlist, ["*"]);
 });
 
 test("a rejected measured execution retains its available provenance", async () => {
@@ -3320,7 +3309,7 @@ test("a rejected measured execution retains its available provenance", async () 
       operation: asOperationId("rejected-operation"),
       selectorDecisionReference: "rejected-decision",
     },
-    resolved({ ...runtimeSettings, modelAllowlist: ["another-model"] }),
+    resolved({ ...selectorRuntimeSettings, modelAllowlist: ["another-model"] }),
   );
   assert.deepEqual(interaction?.result, {
     outcome: "Failed",
@@ -3528,7 +3517,7 @@ test("one project failure does not block later projects or durable delivery", as
     },
     policyHost(() => Promise.resolve(waitingExecution())),
     perProjectIdentities(),
-    settingsSource(() => Promise.resolve(runtimeSettings)),
+    settingsSource(() => Promise.resolve(selectorRuntimeSettings)),
     { projectsMax: 2, deliveriesMax: 1, reconciliationsMax: 1 },
   );
   assert.equal(result.observed, 1);
@@ -3578,12 +3567,13 @@ test("one reconciliation failure does not abandon the rest of its claim", async 
       }),
     },
     {
-      settings: () => Promise.resolve({ ...runtimeSettings, mode: "Paused" }),
+      settings: () =>
+        Promise.resolve({ ...selectorRuntimeSettings, mode: "Paused" }),
       projectSettings: (of) =>
         Promise.resolve(
           resolvedSelectorSettings(
             of,
-            { ...runtimeSettings, mode: "Paused" },
+            { ...selectorRuntimeSettings, mode: "Paused" },
             0,
             {},
           ),
@@ -3675,10 +3665,10 @@ test("selector configuration changes require platform administration", async () 
   let mutations = 0;
   const unchanged = Promise.resolve({
     updated: true,
-    settings: runtimeSettings,
+    settings: selectorRuntimeSettings,
   } as const);
   const store: SelectorRuntimeControlStore = {
-    settings: () => Promise.resolve(runtimeSettings),
+    settings: () => Promise.resolve(selectorRuntimeSettings),
     projectSettings: () => Promise.resolve(resolved()),
     pause: () => {
       mutations += 1;
@@ -3691,7 +3681,7 @@ test("selector configuration changes require platform administration", async () 
     history: () =>
       Promise.resolve([
         {
-          settings: runtimeSettings,
+          settings: selectorRuntimeSettings,
           administrator: {
             kind: asAuthorityKind("System"),
             subject: asAuthoritySubject("test"),
@@ -3724,11 +3714,17 @@ test("selector configuration changes require platform administration", async () 
     store,
   );
   await assert.rejects(
-    administration.pause(asPrincipal("member"), runtimeSettings.revision),
+    administration.pause(
+      asPrincipal("member"),
+      selectorRuntimeSettings.revision,
+    ),
     /forbidden/,
   );
   assert.equal(mutations, 0);
-  await administration.pause(asPrincipal("admin"), runtimeSettings.revision);
+  await administration.pause(
+    asPrincipal("admin"),
+    selectorRuntimeSettings.revision,
+  );
   assert.equal(mutations, 1);
 });
 
@@ -3788,7 +3784,7 @@ test("the selector policy host starts once and bounds cancellation evidence", as
     constraints: Object.freeze({
       models: Object.freeze(["model"]),
       tools: Object.freeze([]),
-      limits: Object.freeze(runtimeSettings.limits),
+      limits: Object.freeze(selectorRuntimeSettings.limits),
     }),
   };
   const first = host.start(request);
@@ -3824,8 +3820,8 @@ async function policyRefusing(
     { decisionDeadline: () => new Promise<never>(() => undefined) },
     exhaustedObservation(),
     resolved({
-      ...runtimeSettings,
-      limits: { ...runtimeSettings.limits, ...limits },
+      ...selectorRuntimeSettings,
+      limits: { ...selectorRuntimeSettings.limits, ...limits },
     }),
   );
 }
@@ -3926,7 +3922,7 @@ test("the base prompt's bound counts code points, matching the schema in front o
     policyHost(() => Promise.resolve(waitingExecution())),
     source,
     exhaustedObservation(),
-    resolved({ ...runtimeSettings, basePrompt: atBound }),
+    resolved({ ...selectorRuntimeSettings, basePrompt: atBound }),
   );
   assert.deepEqual(result, waitingExecution().result);
 
@@ -3936,7 +3932,7 @@ test("the base prompt's bound counts code points, matching the schema in front o
         policyHost(() => Promise.resolve(waitingExecution())),
         source,
         exhaustedObservation(),
-        resolved({ ...runtimeSettings, basePrompt: `${atBound}😀` }),
+        resolved({ ...selectorRuntimeSettings, basePrompt: `${atBound}😀` }),
       ),
     /selector input exceeds its byte budget/u,
   );
@@ -4009,7 +4005,7 @@ test("a project whose change log has not moved takes no turn and spends nothing"
         };
       },
     },
-    settingsSource(() => Promise.resolve(runtimeSettings)),
+    settingsSource(() => Promise.resolve(selectorRuntimeSettings)),
   );
   assert.deepEqual(permits, []);
   assert.equal(identities, 0);
@@ -4057,7 +4053,7 @@ test("a project that moved takes one turn, and the window is what the lead is sh
         selectorDecisionReference: "decision-moved",
       }),
     },
-    settingsSource(() => Promise.resolve(runtimeSettings)),
+    settingsSource(() => Promise.resolve(selectorRuntimeSettings)),
   );
   assert.deepEqual(permits, ["decision-moved"]);
   assert.equal(pages, 1);
@@ -4111,13 +4107,13 @@ test("a turn that spent more than its envelope allows is refused", async () => {
       Promise.resolve({
         ...waitingExecution(),
         accounting: {
-          tokens: runtimeSettings.limits.tokensPerDecision + 1,
+          tokens: selectorRuntimeSettings.limits.tokensPerDecision + 1,
           durationMs: 1_000,
         },
       }),
     ),
     perProjectIdentities(),
-    settingsSource(() => Promise.resolve(runtimeSettings)),
+    settingsSource(() => Promise.resolve(selectorRuntimeSettings)),
   );
   assert.deepEqual(recorded, {
     outcome: "Failed",
@@ -4165,7 +4161,7 @@ test("a decision's refusals are entered after the decision they name", async () 
       }),
     ),
     perProjectIdentities(),
-    settingsSource(() => Promise.resolve(runtimeSettings)),
+    settingsSource(() => Promise.resolve(selectorRuntimeSettings)),
   );
   assert.deepEqual(order, ["interaction", "refusals"]);
   assert.equal(entered?.decision, "decision-project");
@@ -4192,7 +4188,7 @@ test("a decision that neither refused nor lifted enters nothing", async () => {
     movedSource(6),
     policyHost(() => Promise.resolve(waitingExecution())),
     perProjectIdentities(),
-    settingsSource(() => Promise.resolve(runtimeSettings)),
+    settingsSource(() => Promise.resolve(selectorRuntimeSettings)),
   );
   assert.equal(entries, 0);
 });
@@ -4217,7 +4213,7 @@ test("a decision that only lifts still enters the lift", async () => {
       }),
     ),
     perProjectIdentities(),
-    settingsSource(() => Promise.resolve(runtimeSettings)),
+    settingsSource(() => Promise.resolve(selectorRuntimeSettings)),
   );
   assert.deepEqual(
     entered.map((input) => input.lifts.map((lift) => lift.ticket)),
@@ -4272,7 +4268,7 @@ test("a dispatching decision's refusals are entered after its proposal", async (
       }),
     ),
     perProjectIdentities(),
-    settingsSource(() => Promise.resolve(runtimeSettings)),
+    settingsSource(() => Promise.resolve(selectorRuntimeSettings)),
   );
   assert.deepEqual(
     order,
@@ -4314,7 +4310,7 @@ test("the trigger reads from the cursor the project's last turn stood on", async
       return Promise.resolve(waitingExecution());
     }),
     perProjectIdentities(),
-    settingsSource(() => Promise.resolve(runtimeSettings)),
+    settingsSource(() => Promise.resolve(selectorRuntimeSettings)),
   );
   assert.deepEqual(
     asked,
@@ -4402,8 +4398,8 @@ async function cycleDispatching(
       selectorDecisionReference: "cycle-decision",
     },
     resolved({
-      ...runtimeSettings,
-      limits: { ...runtimeSettings.limits, ...limits },
+      ...selectorRuntimeSettings,
+      limits: { ...selectorRuntimeSettings.limits, ...limits },
     }),
   );
   return { proposals, recorded, interaction };
@@ -4648,15 +4644,15 @@ test("each dispatch carries the version of the ticket it names", async () => {
 
 test("a project's dispatch budget resolves from its own row, or inherits", () => {
   assert.equal(
-    resolvedSelectorSettings(partition, runtimeSettings, 0, {
+    resolvedSelectorSettings(partition, selectorRuntimeSettings, 0, {
       limits: { dispatchesPerDecision: 5 },
     }).limits.dispatchesPerDecision,
     5,
   );
   assert.equal(
-    resolvedSelectorSettings(partition, runtimeSettings, 0, {}).limits
+    resolvedSelectorSettings(partition, selectorRuntimeSettings, 0, {}).limits
       .dispatchesPerDecision,
-    runtimeSettings.limits.dispatchesPerDecision,
+    selectorRuntimeSettings.limits.dispatchesPerDecision,
   );
 });
 
@@ -4887,9 +4883,9 @@ function sweep(input: {
     perProjectIdentities(),
     settingsSource(() =>
       Promise.resolve({
-        ...runtimeSettings,
+        ...selectorRuntimeSettings,
         limits: {
-          ...runtimeSettings.limits,
+          ...selectorRuntimeSettings.limits,
           dispatchesPerDecision: input.budget ?? leadDispatchesMax,
         },
       }),
@@ -5108,7 +5104,7 @@ test("one delivery failure names its own ticket and leaves the rest", async () =
     },
     policyHost(() => Promise.resolve(waitingExecution())),
     perProjectIdentities(),
-    settingsSource(() => Promise.resolve(runtimeSettings)),
+    settingsSource(() => Promise.resolve(selectorRuntimeSettings)),
   );
   assert.equal(result.delivered, 1);
   assert.deepEqual(result.failures, [
@@ -5246,7 +5242,7 @@ test("a sweep does not offer its lead a ticket a held decision dispatches", asyn
         selectorDecisionReference: "held-sweep-decision",
       }),
     },
-    settingsSource(() => Promise.resolve(runtimeSettings)),
+    settingsSource(() => Promise.resolve(selectorRuntimeSettings)),
   );
   assert.deepEqual(shown, [second]);
 });

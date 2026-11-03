@@ -49,6 +49,8 @@ export interface LeadSessionStanding {
   readonly agentReference?: string;
   /** What the lead was told when it was opened, absent where it was opened with nothing. */
   readonly systemPrompt?: string;
+  /** The context, in tokens, its runtime was told to compact at, absent where it was opened before it was told one. */
+  readonly autoCompactWindow?: number;
   /**
    * What the pod measured of the newest answered decision turn, absent where
    * there is none or it measured nothing. An inquiry's turns are not the lead's.
@@ -100,6 +102,7 @@ export interface LeadOpening {
   readonly principal: string;
   readonly credentialSlot: string;
   readonly systemPrompt: string;
+  readonly autoCompactWindow: number;
 }
 
 /** What opening found: a successor written, or the open lead that was already there. */

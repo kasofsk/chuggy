@@ -34,6 +34,7 @@ const readDrawn: SelectorSettingsDrawn = {
     dispatchesPerDecision: "",
     inputBytesPerDecision: "",
     candidatePagesPerDecision: "",
+    autoCompactWindow: "",
   },
 };
 
@@ -71,6 +72,7 @@ const settings: SelectorProjectSettingsResponse = {
       dispatchesPerDecision: 3,
       inputBytesPerDecision: 1_048_576,
       candidatePagesPerDecision: 4,
+      autoCompactWindow: 200_000,
       concurrentDecisions: 2,
       selectionsPerMinute: 6,
     },
@@ -81,6 +83,7 @@ const settings: SelectorProjectSettingsResponse = {
       dispatchesPerDecision: 3,
       inputBytesPerDecision: 1_048_576,
       candidatePagesPerDecision: 4,
+      autoCompactWindow: 200_000,
       concurrentDecisions: 2,
       selectionsPerMinute: 6,
     },

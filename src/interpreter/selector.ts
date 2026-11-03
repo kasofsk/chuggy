@@ -567,6 +567,8 @@ export interface SelectorRuntimeSettings {
     readonly dispatchesPerDecision: number;
     readonly inputBytesPerDecision: number;
     readonly candidatePagesPerDecision: number;
+    /** The context, in tokens, at which the lead's runtime compacts its conversation. */
+    readonly autoCompactWindow: number;
     readonly concurrentDecisions: number;
     readonly selectionsPerMinute: number;
   };
@@ -688,6 +690,8 @@ export function resolvedSelectorSettings(
       candidatePagesPerDecision:
         limits.candidatePagesPerDecision ??
         defaults.limits.candidatePagesPerDecision,
+      autoCompactWindow:
+        limits.autoCompactWindow ?? defaults.limits.autoCompactWindow,
       concurrentDecisions: defaults.limits.concurrentDecisions,
       selectionsPerMinute: defaults.limits.selectionsPerMinute,
     },

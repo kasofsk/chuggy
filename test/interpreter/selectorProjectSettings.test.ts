@@ -9,6 +9,10 @@ import {
   asAuthorityKind,
   asAuthoritySubject,
 } from "../../src/interpreter/operationInbox.ts";
+import {
+  leadAutoCompactWindowTokensMax,
+  leadAutoCompactWindowTokensMin,
+} from "../../src/contract/http.ts";
 import { asPrincipal } from "../../src/interpreter/nativeWeb.ts";
 import type { ProjectAccess } from "../../src/interpreter/nativeWeb.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
@@ -57,6 +61,7 @@ const defaults: SelectorRuntimeSettings = {
     dispatchesPerDecision: 1,
     inputBytesPerDecision: 1_048_576,
     candidatePagesPerDecision: 1,
+    autoCompactWindow: 200_000,
     concurrentDecisions: 4,
     selectionsPerMinute: 60,
   },
@@ -365,6 +370,47 @@ test("the override door refuses a dispatch budget above the parse ceiling", () =
     }).success;
   assert.equal(admits(leadDispatchesMax), true);
   assert.equal(admits(leadDispatchesMax + 1), false);
+});
+
+/**
+ * The window is the runtime's own setting, so the door takes what the runtime
+ * takes: its bounds are admitted and kept, and one past either is refused by
+ * the wire and by the check behind it.
+ */
+test("a compaction window inside the runtime's bounds is kept, and one outside them is refused", () => {
+  const admits = (autoCompactWindow: number) =>
+    selectorProjectSettingsSchema.safeParse({
+      expectedRevision: 0,
+      overrides: { limits: { autoCompactWindow } },
+    }).success;
+  for (const window of [
+    leadAutoCompactWindowTokensMin,
+    leadAutoCompactWindowTokensMax,
+  ]) {
+    assert.equal(admits(window), true, String(window));
+    const overrides = checkedSelectorProjectOverrides({
+      limits: { autoCompactWindow: window },
+    });
+    assert.equal(
+      resolvedSelectorSettings(partition, defaults, 1, overrides).limits
+        .autoCompactWindow,
+      window,
+    );
+  }
+  for (const window of [
+    leadAutoCompactWindowTokensMin - 1,
+    leadAutoCompactWindowTokensMax + 1,
+  ]) {
+    assert.equal(admits(window), false, String(window));
+    assert.throws(
+      () =>
+        checkedSelectorProjectOverrides({
+          limits: { autoCompactWindow: window },
+        }),
+      RangeError,
+      String(window),
+    );
+  }
 });
 
 /**

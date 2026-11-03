@@ -1327,6 +1327,9 @@ function sessionFactsRoute(register: SessionRegistrar): void {
       ...(identity.systemPrompt === undefined
         ? {}
         : { systemPrompt: identity.systemPrompt }),
+      ...(identity.autoCompactWindow === undefined
+        ? {}
+        : { autoCompactWindow: identity.autoCompactWindow }),
       ...(identity.forkFrom === undefined
         ? {}
         : { forkFrom: identity.forkFrom }),

@@ -26,7 +26,11 @@ import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { LeadSettingsPage } from "../../app/browser/settings/LeadSettingsPage.tsx";
-import { leadDispatchesMax } from "../../../../src/contract/http.ts";
+import {
+  leadAutoCompactWindowTokensMax,
+  leadAutoCompactWindowTokensMin,
+  leadDispatchesMax,
+} from "../../../../src/contract/http.ts";
 import { selectorProjectOverridesSchema } from "../../../../src/contract/requests.ts";
 import { selectorSettingsLimitNames } from "../../app/core/selectorSettingsForm.ts";
 import {
@@ -68,6 +72,7 @@ const installationLimits = {
   dispatchesPerDecision: 3,
   inputBytesPerDecision: 1_048_576,
   candidatePagesPerDecision: 4,
+  autoCompactWindow: 400_000,
   concurrentDecisions: 2,
   selectionsPerMinute: 6,
 };
@@ -405,25 +410,30 @@ test("a limit's digits and unit read as two words", async () => {
   expect(limits).toContain("15 min");
   expect(limits).toContain("1 MiB");
   expect(limits).toContain("4 pages");
+  expect(limits).toContain("400,000 tokens");
 });
 
 /** EVERY ROW CARRIES ITS OWN STATE. A pill on the section would say the whole
- * of Limits is inherited when five of six rows are. */
+ * of Limits is inherited when every row but one is. */
 test("each limit row says for itself whether it is the installation's", async () => {
   await drawSettings({
     read: settingsBody(12, { limits: { dispatchesPerDecision: 3 } }),
   });
   const limits = sectionOf("Limits");
-  expect(within(limits).getAllByText("Default")).toHaveLength(5);
+  expect(within(limits).getAllByText("Default")).toHaveLength(
+    selectorSettingsLimitNames.length - 1,
+  );
   await turned(() => {
     edit("Limits");
   });
   expect(screen.getAllByRole("button", { name: "Reset" })).toHaveLength(1);
-  expect(within(sectionOf("Limits")).getAllByText("Default")).toHaveLength(5);
+  expect(within(sectionOf("Limits")).getAllByText("Default")).toHaveLength(
+    selectorSettingsLimitNames.length - 1,
+  );
 });
 
-/** The foot counts the rows a save will move, because a reader cannot see six
- * boxes and their read values at once. */
+/** The foot counts the rows a save will move, because a reader cannot see every
+ * box and its read value at once. */
 test("the foot counts the rows this draft would move", async () => {
   await drawSettings();
   await turned(() => {
@@ -445,7 +455,7 @@ test("the foot counts the rows this draft would move", async () => {
   expect(foot()?.textContent).toContain("2 changes");
 });
 
-/** A row this draft moved is marked, so a reader scanning six rows sees which
+/** A row this draft moved is marked, so a reader scanning the rows sees which
  * two the count is about. */
 test("a row this draft moved is marked and an untouched one is not", async () => {
   await drawSettings();
@@ -643,6 +653,41 @@ test("a dispatch budget past the wire's ceiling marks its own box", async () => 
     box("Dispatches").getAttribute("aria-invalid"),
     "the box refused the ceiling itself and not only what is past it",
   ).toBe("false");
+});
+
+/**
+ * THE WINDOW'S BOUNDS ARE THE WIRE'S, and the mark says which one a box crossed,
+ * read off the override schema's own refusal rather than a copy of either
+ * bound. Each bound itself is admitted.
+ */
+test("a compaction window outside the runtime's bounds marks its own box with the bound it crossed", async () => {
+  await drawSettings();
+  await turned(() => {
+    edit("Limits");
+  });
+  const window = () => box("Compaction window");
+  const fault = () =>
+    document.getElementById(window().getAttribute("aria-describedby") ?? "")
+      ?.textContent;
+  for (const [typed, said] of [
+    [leadAutoCompactWindowTokensMin - 1, "At least 100,000"],
+    [leadAutoCompactWindowTokensMax + 1, "At most 1,000,000"],
+  ] as const) {
+    await turned(() => {
+      fireEvent.change(window(), { target: { value: String(typed) } });
+    });
+    expect(window().getAttribute("aria-invalid")).toBe("true");
+    expect(fault()).toBe(said);
+  }
+  for (const typed of [
+    leadAutoCompactWindowTokensMin,
+    leadAutoCompactWindowTokensMax,
+  ]) {
+    await turned(() => {
+      fireEvent.change(window(), { target: { value: String(typed) } });
+    });
+    expect(window().getAttribute("aria-invalid"), String(typed)).toBe("false");
+  }
 });
 
 /**

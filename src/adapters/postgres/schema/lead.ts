@@ -9,6 +9,6 @@ export const selectorSignatures: readonly (readonly [string, string])[] = [
 ];
 export const interactionsReadSignature = "text,text,bigint,bigint,boolean";
 export const systemPromptSetSignature = "text,text,text";
-export const leadOpenSignature = "text,text,text,text,text,text";
+export const leadOpenSignature = "text,text,text,text,text,text,bigint";
 export const sessionRouteSignature = "text,text,text";
 export const sessionRunnerStandingSignature = "text,text,text,bigint";

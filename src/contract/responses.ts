@@ -556,6 +556,7 @@ const selectorLimitsResponseSchema = z.object({
   dispatchesPerDecision: countSchema,
   inputBytesPerDecision: countSchema,
   candidatePagesPerDecision: countSchema,
+  autoCompactWindow: countSchema,
   concurrentDecisions: countSchema,
   selectionsPerMinute: countSchema,
 });

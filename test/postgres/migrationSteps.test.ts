@@ -79,6 +79,7 @@ import { migration109 } from "../../src/adapters/postgres/schema/migrations/109-
 import { migration110 } from "../../src/adapters/postgres/schema/migrations/110-agent-account-pause.ts";
 import { migration111 } from "../../src/adapters/postgres/schema/migrations/111-rate-limit-resume.ts";
 import { migration112 } from "../../src/adapters/postgres/schema/migrations/112-agent-account-reads.ts";
+import { migration113 } from "../../src/adapters/postgres/schema/migrations/113-lead-compact-window.ts";
 import { migration082 } from "../../src/adapters/postgres/schema/migrations/082-decline-kept-unread.ts";
 import { migration083 } from "../../src/adapters/postgres/schema/migrations/083-attempt-base-ref.ts";
 import { migration084 } from "../../src/adapters/postgres/schema/migrations/084-thread-dispatch.ts";
@@ -4410,6 +4411,58 @@ test("112 gives the API its doors to a person's own account and an escalation's 
           owner_writes_settings: true,
           owner_presses: true,
         },
+      ]);
+    },
+  );
+});
+
+test("113 keeps each door it re-created where it was granted, and bounds both windows it adds", async () => {
+  await migrationDatabaseAt(
+    migration113.version - 1,
+    "lead_compact_window",
+    async (subject) => {
+      assert.ok(
+        (await postgresMigrate(subject)).includes(migration113.version),
+      );
+      const functions = await subject.query(
+        `SELECT p.proname AS name, pg_get_userbyid(p.proowner) AS owner,
+                p.prosecdef AS definer,
+                has_function_privilege($1,p.oid,'EXECUTE') AS api,
+                has_function_privilege($2,p.oid,'EXECUTE') AS selector,
+                has_function_privilege($3,p.oid,'EXECUTE') AS worker,
+                has_function_privilege('public',p.oid,'EXECUTE') AS public,
+                pg_get_function_identity_arguments(p.oid) LIKE '%auto_compact_window%'
+                  OR pg_get_function_result(p.oid) LIKE '%auto_compact_window%' AS windowed
+           FROM pg_proc p
+          WHERE p.proname IN ('update_selector_project_settings','open_project_lead',
+                              'lead_session','read_session_attempt')
+          ORDER BY p.proname`,
+        [apiRole, selectorServiceRole, workerPlaneRole],
+      );
+      const door = {
+        owner: boundaryOwnerRole,
+        definer: true,
+        api: false,
+        selector: false,
+        worker: false,
+        public: false,
+        windowed: true,
+      };
+      assert.deepEqual(functions.rows, [
+        { name: "lead_session", ...door, selector: true },
+        { name: "open_project_lead", ...door, selector: true },
+        { name: "read_session_attempt", ...door, worker: true },
+        { name: "update_selector_project_settings", ...door, api: true },
+      ]);
+      const checks = await subject.query(
+        `SELECT conname AS name FROM pg_constraint
+          WHERE conname IN ('agent_session_auto_compact_window_is_a_leads',
+                            'selector_project_auto_compact_window_is_bounded')
+          ORDER BY conname`,
+      );
+      assert.deepEqual(checks.rows, [
+        { name: "agent_session_auto_compact_window_is_a_leads" },
+        { name: "selector_project_auto_compact_window_is_bounded" },
       ]);
     },
   );

@@ -137,11 +137,15 @@ const request: SelectorPolicyRequest = {
       dispatchesPerDecision: 1,
       inputBytesPerDecision: 1_048_576,
       candidatePagesPerDecision: 1,
+      autoCompactWindow: 200_000,
       concurrentDecisions: 4,
       selectionsPerMinute: 60,
     },
   },
 };
+
+/** The compaction window `request` resolves, which a lead opened for it holds. */
+const resolvedWindow = request.constraints.limits.autoCompactWindow;
 
 /** The system prompt `request` composes, which a lead opened for it holds. */
 const composedPrompt = leadSystemPrompt({
@@ -195,6 +199,8 @@ interface MailboxOptions {
   readonly openLeavesNothing?: boolean;
   /** The lead's stored system prompt, the composed one unless a case says otherwise; null is none. */
   readonly systemPrompt?: string | null;
+  /** The lead's stored compaction window, the resolved one unless a case says otherwise; null is none. */
+  readonly autoCompactWindow?: number | null;
   readonly decisionTurnTokens?: number;
   /** What the closing door answers, which closes the lead only where it is `Closed`. */
   readonly closed?: LeadClosed;
@@ -215,6 +221,10 @@ function mailboxStanding(
   if (options.absent === true) return undefined;
   const systemPrompt =
     options.systemPrompt === undefined ? composedPrompt : options.systemPrompt;
+  const autoCompactWindow =
+    options.autoCompactWindow === undefined
+      ? resolvedWindow
+      : options.autoCompactWindow;
   return {
     session: asSessionId("lead-session"),
     state: options.state ?? "Open",
@@ -222,6 +232,7 @@ function mailboxStanding(
       ? {}
       : { agentReference: options.agentReference }),
     ...(systemPrompt === null ? {} : { systemPrompt }),
+    ...(autoCompactWindow === null ? {} : { autoCompactWindow }),
     ...(options.decisionTurnTokens === undefined
       ? {}
       : { decisionTurnTokens: options.decisionTurnTokens }),
@@ -249,6 +260,7 @@ function mailboxDouble(options: MailboxOptions = {}): MailboxDouble {
             session: opening.session,
             state: "Open",
             systemPrompt: opening.systemPrompt,
+            autoCompactWindow: opening.autoCompactWindow,
           };
         return Promise.resolve({
           opened: "Opened" as const,
@@ -513,10 +525,28 @@ test("a lead already open is decided through rather than replaced", async () => 
   assert.deepEqual(double.openings, []);
 });
 
-test("a lead is replaced where it is spent or its prompt is not the composed one, and only there", () => {
-  const open = { session: asSessionId("lead-session"), state: "Open" } as const;
+test("a lead is replaced where it is spent or its prompt or window is not this decision's, and only there", () => {
+  const open = {
+    session: asSessionId("lead-session"),
+    state: "Open",
+    autoCompactWindow: resolvedWindow,
+  } as const;
   const cases: readonly (readonly [string, LeadSessionStanding, boolean])[] = [
     ["composed, unmeasured", { ...open, systemPrompt: composedPrompt }, false],
+    [
+      "another window",
+      {
+        ...open,
+        systemPrompt: composedPrompt,
+        autoCompactWindow: resolvedWindow + 1,
+      },
+      true,
+    ],
+    [
+      "no window",
+      { session: open.session, state: "Open", systemPrompt: composedPrompt },
+      true,
+    ],
     [
       "composed, at the bound",
       {
@@ -540,7 +570,7 @@ test("a lead is replaced where it is spent or its prompt is not the composed one
   ];
   for (const [label, standing, replaced] of cases)
     assert.equal(
-      leadStandingReplaced(standing, composedPrompt),
+      leadStandingReplaced(standing, composedPrompt, resolvedWindow),
       replaced,
       label,
     );
@@ -595,6 +625,34 @@ test("a lead holding another prompt, or none, is replaced by one holding the com
       [composedPrompt],
     );
   }
+});
+
+test("a lead holding another window, or none, is replaced by one holding the resolved window", async () => {
+  for (const autoCompactWindow of [resolvedWindow + 100_000, null]) {
+    const double = mailboxDouble({
+      agentReference: "agent-session-9",
+      autoCompactWindow,
+    });
+    await policyOf(double).execute(request, new AbortController().signal);
+    assert.deepEqual(
+      double.closings,
+      ["lead-session"],
+      String(autoCompactWindow),
+    );
+    assert.deepEqual(
+      double.openings.map((opening) => opening.autoCompactWindow),
+      [resolvedWindow],
+    );
+  }
+});
+
+test("a lead holding the resolved window takes the decision itself", async () => {
+  const double = mailboxDouble({
+    agentReference: "agent-session-9",
+    autoCompactWindow: resolvedWindow,
+  });
+  await policyOf(double).execute(request, new AbortController().signal);
+  assert.deepEqual([double.closings, double.openings], [[], []]);
 });
 
 test("a lead the door will not close takes the decision itself, under the prompt it holds", async () => {

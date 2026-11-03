@@ -26,6 +26,7 @@ import {
   selectorReviewRole,
   selectorServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
+import { leadOpenSignature } from "../../src/adapters/postgres/schema/lead.ts";
 import {
   leadCloseFunction,
   leadOpenFunction,
@@ -34,6 +35,7 @@ import {
   asSessionId,
   asSessionTurnId,
 } from "../../src/interpreter/agentSession.ts";
+import { leadStandingReplaced } from "../../src/interpreter/leadPolicyHost.ts";
 import { leadSessionCapabilities } from "../../src/interpreter/leadTools.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
@@ -76,6 +78,7 @@ const successorOpening = {
   principal: "principal-lead-successor",
   credentialSlot: "claude-code",
   systemPrompt: "the successor's objectives",
+  autoCompactWindow: 300_000,
 } as const;
 
 /**
@@ -330,7 +333,7 @@ test("the successor door is the selector service's own and no other role's", asy
             has_function_privilege(r.rolname,$1,'EXECUTE') AS permitted
        FROM pg_roles r WHERE r.rolname LIKE 'chuggy\\_%'
       ORDER BY r.rolname`,
-    [`${leadOpenFunction}(text,text,text,text,text,text)`],
+    [`${leadOpenFunction}(${leadOpenSignature})`],
   )) as readonly { rolname: string; permitted: boolean }[];
   assert.ok(
     roster.some(({ rolname }) => rolname === apiRole) &&
@@ -345,7 +348,7 @@ test("the successor door is the selector service's own and no other role's", asy
   assert.match(
     (await rig.sessions.harness.attemptAs(
       apiRole,
-      `SELECT ${leadOpenFunction}('t','p','s','principal','claude-code',NULL)`,
+      `SELECT ${leadOpenFunction}('t','p','s','principal','claude-code',NULL,NULL)`,
     )) ?? "the API executed the door",
     postgresHarnessDenial(leadOpenFunction),
     "and the refusal is the server's, not a privilege the case only asked about",
@@ -514,6 +517,102 @@ test("the lead read answers the stored prompt and the newest answered decision t
     (await rig.mailbox.lead(partition))?.decisionTurnTokens,
     900,
     "the newest answered decision turn, and not a failed one after it",
+  );
+});
+
+/** One decision turn offered to the project's lead, which is what an attempt opens to take. */
+async function offerTurn(partition: Partition, label: string): Promise<void> {
+  assert.equal(
+    (
+      await rig.mailbox.offer({
+        partition,
+        turn: asSessionTurnId(`turn-${label}-${Date.now()}`),
+        input: "{}",
+        route: "InCluster",
+      })
+    ).offered,
+    "Enqueued",
+  );
+}
+
+test("a successor holds the window it was opened under, and its pod is told it", async () => {
+  const { partition } = await projectWithAClosedLead("window");
+  const opened = await openSuccessor(partition, `lead-window-${Date.now()}`);
+  assert.equal(
+    (await rig.mailbox.lead(partition))?.autoCompactWindow,
+    successorOpening.autoCompactWindow,
+  );
+  await offerTurn(partition, "window");
+  const pod = await sessionRigAttempt(
+    rig.sessions,
+    partition,
+    opened.session,
+    "window",
+  );
+  const facts = await rig.sessions.plane.authenticate(pod.secret);
+  assert.deepEqual(
+    [facts?.systemPrompt, facts?.autoCompactWindow],
+    [successorOpening.systemPrompt, successorOpening.autoCompactWindow],
+  );
+});
+
+test("a lead opened before it held a window still serves its facts, and the selector reads it as holding none", async () => {
+  const partition = await leadRigProject(rig, "windowless");
+  const lead = await sessionRigSession(rig.sessions, partition, "windowless", {
+    kind: "Lead",
+    systemPrompt: "the windowless objectives",
+  });
+  const standing = await rig.mailbox.lead(partition);
+  assert.ok(standing !== undefined);
+  assert.equal(standing.autoCompactWindow, undefined);
+  assert.equal(
+    leadStandingReplaced(
+      standing,
+      "the windowless objectives",
+      successorOpening.autoCompactWindow,
+    ),
+    true,
+    "a lead holding no window is replaced at the next decision",
+  );
+  await offerTurn(partition, "windowless");
+  const pod = await sessionRigAttempt(
+    rig.sessions,
+    partition,
+    lead,
+    "windowless",
+  );
+  const facts = await rig.sessions.plane.authenticate(pod.secret);
+  assert.deepEqual(
+    [facts?.session, facts?.systemPrompt, facts?.autoCompactWindow],
+    [lead, "the windowless objectives", undefined],
+  );
+});
+
+test("a window outside the runtime's bounds, or on a session that is not a lead, is refused by the row", async () => {
+  const { partition } = await projectWithAClosedLead("window-bounds");
+  for (const autoCompactWindow of [99_999, 1_000_001])
+    await assert.rejects(
+      rig.mailbox.openLead({
+        partition,
+        session: asSessionId(`lead-window-bounds-${String(autoCompactWindow)}`),
+        ...successorOpening,
+        autoCompactWindow,
+      }),
+      /agent_session_auto_compact_window_is_a_leads/u,
+      String(autoCompactWindow),
+    );
+  const thread = await sessionRigSession(
+    rig.sessions,
+    partition,
+    "window-thread",
+    { kind: "Thread" },
+  );
+  await assert.rejects(
+    rig.sessions.harness.query(
+      `UPDATE agent_session SET auto_compact_window=200000 WHERE session=$1`,
+      [thread],
+    ),
+    /agent_session_auto_compact_window_is_a_leads/u,
   );
 });
 

@@ -391,6 +391,7 @@ function settings(project: SetupSiteProject): SelectorProjectSettingsResponse {
     dispatchesPerDecision: 1,
     inputBytesPerDecision: 1,
     candidatePagesPerDecision: 1,
+    autoCompactWindow: 200_000,
     concurrentDecisions: 1,
     selectionsPerMinute: 1,
   };

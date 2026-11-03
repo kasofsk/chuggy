@@ -21,7 +21,10 @@ import {
   leadSelectorPolicy,
   type LeadPolicyClock,
 } from "../../src/interpreter/leadPolicyHost.ts";
-import { leadTurnTokensMax } from "../../src/contract/http.ts";
+import {
+  leadAutoCompactWindowTokensDefault,
+  leadTurnTokensMax,
+} from "../../src/contract/http.ts";
 import {
   asSessionTurnId,
   type SessionId,
@@ -132,6 +135,7 @@ function requestFor(
         dispatchesPerDecision: 1,
         inputBytesPerDecision: 1_048_576,
         candidatePagesPerDecision: 1,
+        autoCompactWindow: leadAutoCompactWindowTokensDefault,
         concurrentDecisions: 4,
         selectionsPerMinute: 600,
       },
@@ -215,6 +219,7 @@ test("a session with no agent reference is seeded from the record", async () => 
   const session = await sessionRigSession(rig.sessions, partition, "seeded", {
     kind: "Lead",
     systemPrompt: composedPrompt,
+    autoCompactWindow: leadAutoCompactWindowTokensDefault,
   });
   const first = await seedingDecision(partition, "seeded-old", 100);
   const second = await seedingDecision(partition, "seeded-new", 200);
@@ -275,6 +280,7 @@ test("a session that has bound a runtime session is not seeded again", async () 
   const session = await sessionRigSession(rig.sessions, partition, "bound", {
     kind: "Lead",
     systemPrompt: composedPrompt,
+    autoCompactWindow: leadAutoCompactWindowTokensDefault,
   });
   const first = `selector-decision-bound-first-${String(Date.now())}`;
   const seeding = seedingPolicy().execute(
@@ -310,7 +316,11 @@ test("a successor the runtime opens is seeded, and records a transcript of its o
     rig.sessions,
     partition,
     "successor",
-    { kind: "Lead", systemPrompt: composedPrompt },
+    {
+      kind: "Lead",
+      systemPrompt: composedPrompt,
+      autoCompactWindow: leadAutoCompactWindowTokensDefault,
+    },
   );
   const first = `selector-decision-successor-first-${String(Date.now())}`;
   const ran = seedingPolicy().execute(
@@ -451,6 +461,7 @@ async function leadThatDecided(
   const lead = await sessionRigSession(rig.sessions, partition, label, {
     kind: "Lead",
     systemPrompt: composedPrompt,
+    autoCompactWindow: leadAutoCompactWindowTokensDefault,
   });
   const deciding = seedingPolicy().execute(
     requestFor(partition, `selector-decision-${label}-first-${Date.now()}`),
@@ -555,6 +566,49 @@ test("a lead told another prompt, or none, is replaced by one holding the compos
       state: "Open",
       system_prompt: composedPrompt,
     });
+  }
+});
+
+test("a lead holding another window, or none, is replaced by one holding the resolved window", async () => {
+  for (const [label, autoCompactWindow] of [
+    ["rewindowed", leadAutoCompactWindowTokensDefault * 2],
+    ["windowless", undefined],
+  ] as const) {
+    const partition = await leadRigProject(rig, label);
+    const lead = await sessionRigSession(rig.sessions, partition, label, {
+      kind: "Lead",
+      systemPrompt: composedPrompt,
+      ...(autoCompactWindow === undefined ? {} : { autoCompactWindow }),
+    });
+    const decision = `selector-decision-${label}-${String(Date.now())}`;
+    const deciding = seedingPolicy().execute(
+      requestFor(partition, decision),
+      new AbortController().signal,
+    );
+    const successor = await leadRigSuccessor(rig, partition, lead);
+    await leadRigPod(rig, partition, successor, label, () => aDecision);
+    await deciding;
+    assert.deepEqual(
+      await rig.sessions.harness.query(
+        `SELECT session,state,auto_compact_window::text AS window
+           FROM agent_session WHERE session IN ($1,$2) ORDER BY state`,
+        [lead, successor],
+      ),
+      [
+        {
+          session: lead,
+          state: "Closed",
+          window:
+            autoCompactWindow === undefined ? null : String(autoCompactWindow),
+        },
+        {
+          session: successor,
+          state: "Open",
+          window: String(leadAutoCompactWindowTokensDefault),
+        },
+      ],
+      label,
+    );
   }
 });
 

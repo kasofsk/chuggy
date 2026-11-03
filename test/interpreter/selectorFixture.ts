@@ -1,3 +1,5 @@
+import type { SelectorRuntimeSettings } from "../../src/interpreter/selector.ts";
+
 /**
  * The operational context every selector suite observes. It is one fixture
  * rather than one copy per suite, because the shape is the contract and a copy
@@ -23,3 +25,25 @@ export const selectorOperationalContext = {
     installation: { queued: 0, ceiling: 1_000 },
   },
 } as const;
+
+/** The installation settings the selector suites run a project under where a case sets none. */
+export const selectorRuntimeSettings: SelectorRuntimeSettings = {
+  revision: 1,
+  mode: "Running",
+  dispatchMode: "Automatic",
+  basePrompt: "prompt",
+  modelAllowlist: ["*"],
+  toolAllowlist: ["*"],
+  limits: {
+    tokensPerDecision: 8192,
+    millisecondsPerDecision: 120_000,
+    toolCallsPerDecision: 20,
+    dispatchesPerDecision: 1,
+    inputBytesPerDecision: 1_048_576,
+    candidatePagesPerDecision: 1,
+    autoCompactWindow: 200_000,
+    concurrentDecisions: 4,
+    selectionsPerMinute: 60,
+  },
+  operationalContextMaxAgeMs: 30_000,
+};

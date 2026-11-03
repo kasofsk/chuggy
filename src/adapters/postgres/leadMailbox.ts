@@ -75,6 +75,7 @@ interface LeadSessionRow {
   readonly state: string | null;
   readonly agent_reference: string | null;
   readonly system_prompt: string | null;
+  readonly auto_compact_window: string | null;
   readonly tokens: string | null;
 }
 
@@ -126,6 +127,14 @@ function leadSessionOf(row: LeadSessionRow): LeadSessionStanding {
       ? {}
       : { agentReference: row.agent_reference }),
     ...(row.system_prompt === null ? {} : { systemPrompt: row.system_prompt }),
+    ...(row.auto_compact_window === null
+      ? {}
+      : {
+          autoCompactWindow: projectRowCounter(
+            row.auto_compact_window,
+            "lead auto-compact window",
+          ),
+        }),
     ...(row.tokens === null
       ? {}
       : {
@@ -168,7 +177,8 @@ async function leadOpen(
     sql`SELECT opened,session FROM open_project_lead(
           ${opening.partition.tenant},${opening.partition.project},
           ${opening.session},${opening.principal},
-          ${opening.credentialSlot},${opening.systemPrompt})`,
+          ${opening.credentialSlot},${opening.systemPrompt},
+          ${opening.autoCompactWindow})`,
   );
   const row = opened.rows[0];
   return {
@@ -183,6 +193,7 @@ export function postgresLeadMailbox(pool: pg.Pool): LeadMailbox {
     lead: async (partition) => {
       const found = await pool.query<LeadSessionRow>(
         sql`SELECT session,state,agent_reference,system_prompt,
+                   auto_compact_window::text AS auto_compact_window,
                    tokens::text AS tokens
               FROM lead_session(${partition.tenant},${partition.project})`,
       );

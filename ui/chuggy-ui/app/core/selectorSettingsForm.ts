@@ -38,6 +38,7 @@ import type { ApiFailure } from "./apiRequest.ts";
 import {
   bytesSetFigure,
   countFigure,
+  groupedDigits,
   instantFigure,
   spanSetFigure,
 } from "./figures.ts";
@@ -59,6 +60,7 @@ export const selectorSettingsLimitNames = [
   "dispatchesPerDecision",
   "inputBytesPerDecision",
   "candidatePagesPerDecision",
+  "autoCompactWindow",
 ] as const;
 
 export type SelectorSettingsLimitName =
@@ -116,6 +118,7 @@ function selectorSettingsLimitDraft(
     dispatchesPerDecision: named("dispatchesPerDecision"),
     inputBytesPerDecision: named("inputBytesPerDecision"),
     candidatePagesPerDecision: named("candidatePagesPerDecision"),
+    autoCompactWindow: named("autoCompactWindow"),
   };
 }
 
@@ -170,6 +173,7 @@ function selectorSettingsLimitsRebased(
     dispatchesPerDecision: rebased("dispatchesPerDecision"),
     inputBytesPerDecision: rebased("inputBytesPerDecision"),
     candidatePagesPerDecision: rebased("candidatePagesPerDecision"),
+    autoCompactWindow: rebased("autoCompactWindow"),
   };
 }
 
@@ -234,6 +238,16 @@ export interface SelectorSettingsWrite {
 /** The word a refused field is marked with, said once so every field says it. */
 export const selectorSettingsFaultWord = "Invalid";
 
+/** What a refused field is marked with: the bound it crossed where the wire's
+ * schema names one it includes, and the fault word otherwise. */
+function selectorSettingsFaultText(issue: z.core.$ZodIssue): string {
+  if (issue.code === "too_small" && issue.inclusive === true)
+    return `At least ${groupedDigits(Number(issue.minimum))}`;
+  if (issue.code === "too_big" && issue.inclusive === true)
+    return `At most ${groupedDigits(Number(issue.maximum))}`;
+  return selectorSettingsFaultWord;
+}
+
 /**
  * The override set the draft stands for, read by the wire's own schema. A field
  * the schema refuses is named by its own path, so the box that is wrong is the
@@ -258,7 +272,7 @@ export function selectorSettingsWrite(
   if (read.success) return { overrides: read.data, faults: {} };
   const faults: Record<string, string> = {};
   for (const issue of read.error.issues)
-    faults[issue.path.join(".")] = selectorSettingsFaultWord;
+    faults[issue.path.join(".")] = selectorSettingsFaultText(issue);
   return { overrides: undefined, faults };
 }
 
@@ -279,6 +293,8 @@ export function selectorSettingsLimitLabel(
       return "Input";
     case "candidatePagesPerDecision":
       return "Candidate pages";
+    case "autoCompactWindow":
+      return "Compaction window";
   }
 }
 
@@ -304,6 +320,8 @@ export function selectorSettingsLimitFigure(
       return bytesSetFigure(value);
     case "candidatePagesPerDecision":
       return countFigure(value, "pages");
+    case "autoCompactWindow":
+      return countFigure(value, "tokens");
   }
 }
 
@@ -325,6 +343,8 @@ export function selectorSettingsLimitUnitWord(
       return "bytes";
     case "candidatePagesPerDecision":
       return "pages";
+    case "autoCompactWindow":
+      return "tokens";
   }
 }
 
@@ -375,7 +395,11 @@ export function selectorSettingsSection(
           "The lead's system prompt. An edit replaces the lead at its next decision.",
       };
     case "limits":
-      return { title: "Limits", about: "What one decision may spend." };
+      return {
+        title: "Limits",
+        about:
+          "What one decision may spend, and how much context the lead holds before it compacts.",
+      };
   }
 }
 

@@ -139,6 +139,7 @@ test("the effective budget is the smaller of the settings and the mailbox", () =
       dispatchesPerDecision: 1,
       inputBytesPerDecision: leadObservationBytesMax * 2,
       candidatePagesPerDecision: 1,
+      autoCompactWindow: 200_000,
       concurrentDecisions: 1,
       selectionsPerMinute: 1,
     },

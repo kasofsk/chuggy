@@ -110,6 +110,7 @@ interface SessionAuthorityRow extends SessionIdentityRow {
   readonly credential_slot: string | null;
   readonly agent_reference: string | null;
   readonly system_prompt: string | null;
+  readonly auto_compact_window: string | null;
   readonly fork_from: string | null;
   readonly live: boolean | null;
 }
@@ -157,6 +158,14 @@ function sessionAuthorityOf(row: SessionAuthorityRow): SessionPlaneIdentity {
       ? {}
       : { agentReference: row.agent_reference }),
     ...(row.system_prompt === null ? {} : { systemPrompt: row.system_prompt }),
+    ...(row.auto_compact_window === null
+      ? {}
+      : {
+          autoCompactWindow: projectRowCounter(
+            row.auto_compact_window,
+            "session auto-compact window",
+          ),
+        }),
     ...(row.fork_from === null ? {} : { forkFrom: row.fork_from }),
     live: row.live === true,
   };
@@ -220,7 +229,8 @@ async function sessionPlaneAuthenticate(
   const found = await pool.query<SessionAuthorityRow>(
     sql`SELECT tenant,project,session,attempt,generation::text AS generation,
                kind,principal,capabilities,credential_slot,agent_reference,
-               system_prompt,fork_from,live
+               system_prompt,auto_compact_window::text AS auto_compact_window,
+               fork_from,live
           FROM read_session_attempt(${sessionSecretDigest(secret)})`,
   );
   const row = found.rows[0];

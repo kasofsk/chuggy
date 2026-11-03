@@ -35,7 +35,10 @@ import {
   type SelectorRuntimeSource,
 } from "../../src/interpreter/selectorRuntime.ts";
 import type { AgenticRefusalWrite } from "../../src/interpreter/agenticRefusal.ts";
-import { selectorOperationalContext } from "./selectorFixture.ts";
+import {
+  selectorOperationalContext,
+  selectorRuntimeSettings,
+} from "./selectorFixture.ts";
 
 const partition = {
   tenant: asTenantId("tenant"),
@@ -82,26 +85,6 @@ const begunOn: SelectorProjectState = {
   attention: "Monitoring",
   handoffNote: { watching: 35 },
   candidateScan: { state: "Unstarted" },
-};
-
-const runtimeSettings: SelectorRuntimeSettings = {
-  revision: 1,
-  mode: "Running",
-  dispatchMode: "Automatic",
-  basePrompt: "prompt",
-  modelAllowlist: ["*"],
-  toolAllowlist: ["*"],
-  limits: {
-    tokensPerDecision: 8192,
-    millisecondsPerDecision: 120_000,
-    toolCallsPerDecision: 20,
-    dispatchesPerDecision: 1,
-    inputBytesPerDecision: 1_048_576,
-    candidatePagesPerDecision: 1,
-    concurrentDecisions: 4,
-    selectionsPerMinute: 60,
-  },
-  operationalContextMaxAgeMs: 30_000,
 };
 
 const decision = "selector-decision-first-process";
@@ -415,7 +398,7 @@ function quantum(rig: Rig, options: RigOptions): Promise<SelectorRunResult> {
     {
       settings: () =>
         Promise.resolve({
-          ...runtimeSettings,
+          ...selectorRuntimeSettings,
           mode: options.installationMode ?? "Running",
         }),
       projectSettings: (of) =>
@@ -423,7 +406,7 @@ function quantum(rig: Rig, options: RigOptions): Promise<SelectorRunResult> {
           resolvedSelectorSettings(
             of,
             {
-              ...runtimeSettings,
+              ...selectorRuntimeSettings,
               mode: options.installationMode ?? "Running",
             },
             0,
@@ -799,9 +782,11 @@ test("a decision whose reference names no operation is void rather than dispatch
     rigPolicy(rig, options),
     { ...rigIdentities(rig), resumed: () => undefined },
     {
-      settings: () => Promise.resolve(runtimeSettings),
+      settings: () => Promise.resolve(selectorRuntimeSettings),
       projectSettings: (of) =>
-        Promise.resolve(resolvedSelectorSettings(of, runtimeSettings, 0, {})),
+        Promise.resolve(
+          resolvedSelectorSettings(of, selectorRuntimeSettings, 0, {}),
+        ),
     },
   );
   assert.deepEqual(result.failures, []);
@@ -827,9 +812,11 @@ test("a resumption that cannot read what is unfinished observes nothing", async 
     rigPolicy(rig, {}),
     rigIdentities(rig),
     {
-      settings: () => Promise.resolve(runtimeSettings),
+      settings: () => Promise.resolve(selectorRuntimeSettings),
       projectSettings: (of) =>
-        Promise.resolve(resolvedSelectorSettings(of, runtimeSettings, 0, {})),
+        Promise.resolve(
+          resolvedSelectorSettings(of, selectorRuntimeSettings, 0, {}),
+        ),
     },
   );
   assert.deepEqual(result.failures, [{ phase: "Resumption" }]);
