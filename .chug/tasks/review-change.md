@@ -99,7 +99,18 @@ a preset reads exactly like a rule that is working.
     its message, so a finding names what is missing for the next commit's
     message to carry, and never asks for a rewrite.
 13. **New behaviour lands with a test at the lowest tier that can express it**,
-    and every fix lands with a regression test.
+    and every fix lands with a regression test that states the property the
+    fix restored, not the incident: its name says what holds. A test that
+    something removed is still absent earns its place only where the thing
+    could plausibly come back and no other assertion would notice, as a
+    widened grant or a restored phrase can. A test of a migration's step, over
+    old rows or from an intermediate version, is evidence for the change that
+    adds that migration; once the migration is live, a change that would edit
+    the test deletes it. A test a change adds or edits waits for an event on a
+    signal (a file, a row, a lock wait, a promise, an injected clock), never
+    on a duration it hopes is long enough: beside the interval it polls at and
+    the bound past which it fails, the one duration it may wait out is a named
+    window in which something must not happen.
 14. **Contract-first.** A change to the core names the contract it changes. If
     it cannot be expressed that way then the contract does not exist yet, and
     writing it is the first commit of the work.
