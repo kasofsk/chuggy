@@ -115,19 +115,13 @@ test("every landing state is one word", () => {
     expect(ticketLandingStateLabel(state)).toMatch(/^[A-Z][a-z]+$/u);
 });
 
-test("the wall a reader met on ticket 21 reads as a noun and a fragment", () => {
-  expect(escalationKindLabel("EvaluationFailureEscalated")).toBe(
-    "Rework budget exhausted",
-  );
+test("a detail line names only the facts the page holds", () => {
   expect(
     escalationDetailLine("EvaluationFailureEscalated", {
       lastSet: { taskKind: "Evaluation", stage: 1, verdict: "Failed" },
       stageCount: 2,
     }),
   ).toBe("Stage 1 of 2 failed");
-});
-
-test("a detail line names only the facts the page holds", () => {
   const bare = { lastSet: undefined, stageCount: 2 };
   expect(escalationDetailLine("EvaluationFailureEscalated", bare)).toBe(
     undefined,

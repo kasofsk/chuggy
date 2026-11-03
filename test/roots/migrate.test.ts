@@ -70,20 +70,6 @@ test("a statement bound that is not a positive count is refused by name", async 
   }
 });
 
-test("the retired adoption option is refused", async () => {
-  assert.deepEqual(
-    await migrateMainExit({
-      CHUG_MIGRATE_DATABASE_URL: "postgres://host/chuggy",
-      CHUG_MIGRATE_ADOPT_INSTALLATION_ID: "not-an-installation-id",
-    }),
-    {
-      code: 1,
-      report:
-        "CHUG_MIGRATE_ADOPT_INSTALLATION_ID is no longer supported; the baseline requires a fresh database",
-    },
-  );
-});
-
 test("the command opens one connection and plans against its own contract", async () => {
   const found = JSON.parse(
     await migrateEvaluated(`

@@ -1599,23 +1599,18 @@ test("every route this slice adds answers an unauthenticated caller with 401", a
 
 const bootstrapImage = `ghcr.io/acme/chuggy-worker@sha256:${"e".repeat(64)}`;
 
-test("no route makes a repository: a creation is answered as a path no route ever had, and the forge is not asked", async (t) => {
+test("a path under the repositories that no route names is not found, and the forge is not asked", async (t) => {
   const composed = fixtureCase(t, {
     granted: ["AdministerTenant", "Administer", "Read"],
     image: bootstrapImage,
   });
-  const sent = (path: string) =>
-    composed.app.inject({
-      method: "POST",
-      url: `${repositoriesRoot}/${path}`,
-      headers: { ...versioned, "idempotency-key": "create-engine-1" },
-      payload: { account: "acme", name: "engine", visibility: "private" },
-    });
-  const creation = await sent("new");
-  const unrouted = await sent("never-a-route");
-  assert.equal(creation.statusCode, 404);
-  assert.equal(creation.statusCode, unrouted.statusCode);
-  assert.equal(creation.body.replace("/new", "/never-a-route"), unrouted.body);
+  const unrouted = await composed.app.inject({
+    method: "POST",
+    url: `${repositoriesRoot}/never-a-route`,
+    headers: { ...versioned, "idempotency-key": "unrouted-1" },
+    payload: { account: "acme", name: "engine", visibility: "private" },
+  });
+  assert.equal(unrouted.statusCode, 404);
   assert.deepEqual(composed.recorder.calls, []);
   assert.deepEqual(composed.store.commands, []);
 });

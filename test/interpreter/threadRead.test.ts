@@ -3,8 +3,8 @@
  * for, what it answers when it is refused, what it puts in a mailbox and what
  * it closes.
  *
- * MIGRATION 062 IS NOT WRITTEN YET, so the store below is a double and every
- * claim here is about the boundary rather than about a definer. What that can
+ * THE STORE BELOW IS A DOUBLE, so every claim here is about the boundary
+ * rather than about a definer. What that can
  * still settle is the whole of the authorization story — the door is the
  * caller's own, a read is every member's, and neither takes a roster, an owner
  * or a `mine` from anything a caller sent.

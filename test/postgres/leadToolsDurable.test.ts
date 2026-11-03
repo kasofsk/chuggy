@@ -1,6 +1,6 @@
 /**
- * What migration 061 adds, driven against a real PostgreSQL by the role each
- * door is granted to.
+ * The lead's tools, driven against a real PostgreSQL by the role each door is
+ * granted to.
  *
  * EVERY CASE HERE IS ABOUT A CONTROL AND NOT ABOUT A SHAPE. A column bound, a
  * grant, a revoke and a filter are each a claim about what the server refuses,
@@ -490,14 +490,10 @@ test("the pod is answered the objectives its session was opened with", async () 
 });
 
 /**
- * The two reads 061 opens or widens, beside every role that holds one. The
- * binding read was already the API's (021), the ticket service's (031) and the
- * configuration importer's (029), 061 adds the scheduler, 082 takes the
- * finalizer's (040) back with its caller and 086 adds the worker plane, which
- * holds a session to its project's own bindings before minting for the
- * repository the session named, and 033 adds the pool plane, whose claim of a
- * session records the repository its pod reads — so the case names them all
- * rather than asserting a door has one holder it never had.
+ * The reads a lead's tools reach, beside every role that holds one — the pool
+ * plane among them, whose claim of a session records the repository its pod
+ * reads — so the case names them all rather than asserting a door has one
+ * holder it never had.
  */
 const leadToolDoors: readonly {
   readonly door: string;

@@ -1434,7 +1434,7 @@ export async function nativeDatabasesReady(
 /**
  * The lead's read side over the API pool and the artifact volume, taking both
  * pools and choosing for the reason `nativeAuthentication` does: only the API
- * role holds `EXECUTE` on 059's doors, and choosing here is what lets a case
+ * role holds `EXECUTE` on the read doors, and choosing here is what lets a case
  * observe which pool was reached. The site's selector is named under `issuer`
  * where this deployment names one, so a read can say it may not read a project.
  */

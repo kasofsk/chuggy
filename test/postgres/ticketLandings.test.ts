@@ -314,7 +314,7 @@ const needsWork: FinalizationConclusion = {
 };
 const succeeded: FinalizationConclusion = { outcome: "FinalizationSucceeded" };
 
-/** Where 038's door says the ticket landed, as the API reads it. */
+/** Where `read_ticket_landed_commit` says the ticket landed, as the API reads it. */
 async function ticketLandedAt(
   project: FinalizerProject,
 ): Promise<string | undefined> {
@@ -458,7 +458,7 @@ test("a landing whose pull request the forge would not merge for a conflict answ
   });
 });
 
-test("a landing merged through its pull request answers Landed, the link and the commit 038 finds, wherever the row keeps that commit", async () => {
+test("a landing merged through its pull request answers Landed, the link and the commit the landed-commit door finds, wherever the row keeps that commit", async () => {
   const merge = finalizerCommit();
   const read = await finalizing("merge-read", "PullRequestMerge");
   const readPromoted = await promotion(read, "merge-read");

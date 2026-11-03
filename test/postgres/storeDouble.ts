@@ -9,10 +9,10 @@
  * through here. A lead's transcript and a thread's read one store through one
  * walk, so they read it through one double as well.
  *
- * THE KEY CARRIES THE SESSION, because 062 retired the `kind='Lead'` reads for
- * session-keyed ones and a double that dropped it would answer any session's
- * bytes for one address — so a case saying a thread walks its OWN store would
- * stay green while the walk addressed another's.
+ * THE KEY CARRIES THE SESSION, because the store reads are keyed by session and
+ * a double that dropped it would answer any session's bytes for one address —
+ * so a case saying a thread walks its OWN store would stay green while the walk
+ * addressed another's.
  */
 
 import type {

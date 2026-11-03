@@ -5,8 +5,8 @@
  *
  * THE DOORS ARE DRIVEN ON THE ROLES THEY ARE GRANTED TO. Opening a successor is
  * the selector service's and the page read is the API's, because a case run as
- * the migration owner is green over any grant at all — which is the whole thing
- * 066's `GRANT` is.
+ * the migration owner is green over any grant at all — which is the whole of
+ * what a `GRANT` is.
  *
  * A CLOSED LEAD IS SET UP BY CLOSING ONE. Every case here starts from the
  * position release 18 measured: a lead that ran and was closed, with its turns
@@ -220,7 +220,7 @@ test("two open leads are refused by the index and not by the body alone", async 
   );
 });
 
-test("the provisioning door no longer conflicts on a lead that is closed", async () => {
+test("the provisioning door opens a lead beside a closed one, and refuses one beside an open one", async () => {
   const { partition } = await projectWithAClosedLead("provision");
   const replacement = await sessionRigSession(
     rig.sessions,

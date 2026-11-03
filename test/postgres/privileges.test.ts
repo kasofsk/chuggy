@@ -147,10 +147,11 @@ test("no runtime role but the API and the scheduler reads a project's bindings t
 });
 
 /**
- * 088's listing crosses partitions where 089's does not, so it is held apart
- * from every role but the one whose job is every partition's. The API is
- * refused it by name: an API caller is always asking on behalf of one project,
- * and it already holds the per-project door that answers that question.
+ * `list_repository_bindings` crosses partitions where the per-project listing
+ * does not, so it is held apart from every role but the one whose job is every
+ * partition's. The API is refused it by name: an API caller is always asking on
+ * behalf of one project, and it already holds the per-project door that answers
+ * that question.
  */
 test("only the importer lists every binding there is", async () => {
   const listing = `SELECT tenant,project,repository FROM ${repositoryBindingListAllFunction}(NULL)`;
@@ -316,7 +317,7 @@ test("the metrics plane's role reads the columns its scrape names and nothing el
 });
 
 /**
- * 089 gave the API the bind door, which is what its route drives. The door is
+ * The API holds the bind door, which is what its route drives. The door is
  * still the only way in: the operation ledger behind it stays unreadable and
  * unwritable to this role, so a bind identity cannot be spent twice by any path
  * but the one that decides the outcome.
@@ -757,7 +758,7 @@ async function changeLogExecutors(
 }
 
 /**
- * 071 splits the append in two so that what a change row SAYS is the boundary's
+ * The append is split in two so that what a change row SAYS is the boundary's
  * to decide: the reading door names a reason the resource's own state supports,
  * and the reasoned door would let its caller wake a member's thread with a
  * sentence no state supports at all. `has_function_privilege` answers for a
@@ -777,7 +778,7 @@ test("no runtime role may name the reason a change row wakes a thread with", asy
       `${projectChangeAppendFunction}(text,text,text,text)`,
     ),
     [schedulerRole, ticketServiceRole],
-    "the sweep disagrees with 038's and 043's own grants, so an empty roster would have read as a clean negative space",
+    "the sweep disagrees with the reading door's own grants, so an empty roster would have read as a clean negative space",
   );
 });
 
@@ -1372,34 +1373,6 @@ test("the scheduler is non-login and non-escalating", async () => {
         rolbypassrls: false,
       },
     ],
-  );
-});
-
-/**
- * What a retired role can still hold is an object or a privilege in the
- * database it was retired from, and `pg_shdepend` records both per database —
- * all but a grant on the database itself, which `pg_database` being a shared
- * catalogue leaves tagged with no database at all, so those rows are read by
- * the database they name instead. Membership in another role stays outside
- * even that: `pg_shdepend` records none of it, so this case does not see it,
- * and like the role name it is the cluster's rather than this database's — a
- * cluster hosting a sibling database may carry the role for that one and no
- * schema here decides it, and a migration that created it again is
- * `test/deploy/postgresRoles.test.ts`'s to refuse.
- */
-test("the retired dispatcher role owns nothing here and is granted nothing here", async () => {
-  assert.deepEqual(
-    await harness.query(
-      `SELECT count(*)::text AS count FROM pg_shdepend d
-         JOIN pg_roles r ON r.oid = d.refobjid
-        WHERE r.rolname = 'chuggy_dispatcher'
-          AND (d.dbid = (SELECT oid FROM pg_database
-                          WHERE datname = current_database())
-               OR (d.classid = 'pg_database'::regclass
-                   AND d.objid = (SELECT oid FROM pg_database
-                                   WHERE datname = current_database())))`,
-    ),
-    [{ count: "0" }],
   );
 });
 

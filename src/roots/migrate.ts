@@ -49,7 +49,6 @@ export type MigrateEnvironment = Readonly<Record<string, string | undefined>>;
 
 const databaseUrlVariable = "CHUG_MIGRATE_DATABASE_URL";
 const statementTimeoutVariable = "CHUG_MIGRATE_STATEMENT_TIMEOUT_MS";
-const adoptingInstallationIdVariable = "CHUG_MIGRATE_ADOPT_INSTALLATION_ID";
 
 /**
  * How long one migration statement may run before the server ends it. A schema
@@ -105,10 +104,6 @@ function migrateSettingsBoundOr(
 export function migrateSettingsOf(
   environment: MigrateEnvironment,
 ): MigrateSettings {
-  if (environment[adoptingInstallationIdVariable])
-    throw new Error(
-      "CHUG_MIGRATE_ADOPT_INSTALLATION_ID is no longer supported; the baseline requires a fresh database",
-    );
   return {
     databaseUrl: migrateSettingsRequired(environment, databaseUrlVariable),
     limits: {

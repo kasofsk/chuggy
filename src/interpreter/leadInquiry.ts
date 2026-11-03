@@ -86,7 +86,7 @@ export type LeadInquiryOpened =
     };
 
 /**
- * The durable inquiry authority migration 063 answers. `open` TAKES NO ROSTER,
+ * The durable inquiry authority its doors answer. `open` TAKES NO ROSTER,
  * NO ACCOUNT AND NO CREDENTIAL SLOT, and those omissions are the control: the
  * definer writes `inquiryCapabilities` itself and copies the lead's own
  * placement, so an API talked into opening an inquiry can neither widen one nor

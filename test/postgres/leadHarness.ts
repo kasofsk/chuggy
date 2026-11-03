@@ -1,7 +1,7 @@
 /**
- * What every lead case needs of a real PostgreSQL: the session rig 058's
- * suites already stand on, the two further role pools 059's doors are granted
- * to, and a recorded decision for a refusal to hang off.
+ * What every lead case needs of a real PostgreSQL: the session rig the session
+ * suites already stand on, the two further role pools the lead doors are
+ * granted to, and a recorded decision for a refusal to hang off.
  *
  * EACH DOOR STANDS ON THE ROLE IT IS GRANTED TO. The selector's mailbox and
  * write door run as `chuggy_selector_service` and the reads as `chuggy_api`,

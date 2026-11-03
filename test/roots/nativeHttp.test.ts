@@ -19,8 +19,8 @@
  * that answered both pools alike could not see the difference.
  *
  * THE LEAD'S READ SIDE IS HELD TO THE SAME POOL FOR THE SAME REASON. Only the
- * API role holds `EXECUTE` on 059's definer functions, so a lead port wired to
- * the review pool answers all five lead routes 500 on a healthy deployment —
+ * API role holds `EXECUTE` on the lead definer functions, so a lead port wired
+ * to the review pool answers all five lead routes 500 on a healthy deployment —
  * which no other gate can see, because nothing may import a root.
  */
 
@@ -183,7 +183,7 @@ test("the lead's reads stand on the API pool and never the review pool", async (
   assert.deepEqual(
     asked.selectorReviewPool,
     [],
-    "no lead read may reach the pool with no grant on 059's doors",
+    "no lead read may reach the pool with no grant on the lead doors",
   );
   assert.equal(
     asked.pool.length,
@@ -315,7 +315,7 @@ async function threadPortsComposed(
   }
 }
 
-test("the thread bundle the root composes reaches 062's own reads", async () => {
+test("the thread bundle the root composes reaches the thread reads", async () => {
   const ran = await threadPortsComposed("claude-code");
   assert.equal(ran.code, 0, ran.out);
   const composed = JSON.parse(ran.out) as ThreadPortsComposed;
@@ -331,7 +331,7 @@ test("the thread bundle the root composes reaches 062's own reads", async () => 
   assert.deepEqual(
     composed.asked.selectorReviewPool,
     [],
-    "no thread read may reach the pool with no grant on 062's doors",
+    "no thread read may reach the pool with no grant on the thread doors",
   );
   assert.equal(composed.slot, "claude-code");
   assert.ok(composed.minted.startsWith("thread-"));
@@ -390,7 +390,7 @@ const inquiryComposedProgram = `
  * impossible to reintroduce: the composition is driven rather than described,
  * and each door names its own definer.
  */
-test("the composition the root builds reaches 063's own doors, over the API pool", async () => {
+test("the composition the root builds reaches the inquiry doors, over the API pool", async () => {
   const ran = await execute(
     process.execPath,
     [

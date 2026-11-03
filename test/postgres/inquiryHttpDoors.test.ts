@@ -1,7 +1,7 @@
 /**
  * The three inquiry routes over a real database, through the ports the ROOT
- * composes: the API's own role, 063's definers, and the HTTP boundary above
- * them.
+ * composes: the API's own role, the inquiry definers, and the HTTP boundary
+ * above them.
  *
  * WHAT A DOUBLE CANNOT ANSWER. `test/adapters/httpLeadInquiries.test.ts`
  * settles the transport against a fake boundary and

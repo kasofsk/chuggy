@@ -1,7 +1,7 @@
 /**
- * What every inquiry case needs of a real PostgreSQL: the thread rig 062's
- * suites already stand on, the API-side inquiry store 063 grants, and a lead
- * that has actually run — a runtime reference bound, one settled turn, and the
+ * What every inquiry case needs of a real PostgreSQL: the thread rig the thread
+ * suites already stand on, the API-side inquiry store, and a lead that has
+ * actually run — a runtime reference bound, one settled turn, and the
  * batches that turn flushed.
  *
  * A LEAD THAT HAS NOT RUN IS THE DEGENERATE CASE AND NOT THE FIXTURE. Every
@@ -44,7 +44,7 @@ import {
   type SessionRigAttempt,
 } from "./sessionHarness.ts";
 
-/** One opened subject: the thread rig, and the store 063 answers the API with. */
+/** One opened subject: the thread rig, and the store the API's inquiries are answered by. */
 export interface InquiryRig extends ThreadRig {
   readonly inquiries: LeadInquiryStore;
 }

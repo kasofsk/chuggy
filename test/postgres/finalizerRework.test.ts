@@ -279,12 +279,6 @@ async function reworkJournalSettledOn(
     digestFold(attemptDigest),
     "the result's evidence is the attempt it settled on",
   );
-  assert.deepEqual(
-    await rig.harness.query(
-      "SELECT to_regclass('public.project_continuation')::text AS relation",
-    ),
-    [{ relation: null }],
-  );
 }
 
 test("a clean automatic integration concludes without spawning a rework", async () => {

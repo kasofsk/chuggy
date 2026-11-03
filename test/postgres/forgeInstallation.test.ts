@@ -347,8 +347,8 @@ test("the API reads the claimed installations and writes none directly", async (
 });
 
 /**
- * 088 gave the three control-plane services that now mint their own repository
- * credentials the read they mint from. It is SELECT and no more: none of them
+ * The control-plane services that mint their own repository credentials hold
+ * the read they mint from. It is SELECT and no more: none of them
  * may claim an installation or move one, so the door onto a claim stays the
  * API's alone and a service that mints cannot decide which account it mints
  * under.

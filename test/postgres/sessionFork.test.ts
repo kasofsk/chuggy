@@ -321,9 +321,10 @@ test("a fork's page is drawn inside its own project", async () => {
 });
 
 /**
- * The succession 066 allows: a project holds one OPEN lead and every closed one
- * before it, so a fork's parent has to be resolved by the column that declares
- * it and never by the kind, which stopped being a key there.
+ * The succession `agent_session_one_lead_per_project` allows: a project holds
+ * one OPEN lead and every closed one before it, so a fork's parent has to be
+ * resolved by the column that declares it and never by the kind, which is not a
+ * key.
  */
 test("a fork of the standing lead reads nothing a retired lead wrote", async () => {
   const rig = await sessionRigOpen();

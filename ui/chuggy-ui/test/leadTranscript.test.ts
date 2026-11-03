@@ -660,11 +660,11 @@ test("the oldest entries leave at the cap, and the pane counts them going", () =
 });
 
 /**
- * A CHANGE FRAME IS A POINTER AND NEVER A BODY. Migration 059 writes the
- * `Session` resource as the JSON of the session and the turn or batch that
- * moved, so what a reader takes from it is which session to re-read — and a
- * page watching one session must not re-read on another's, because a project
- * holds a session per thread beside its lead.
+ * A CHANGE FRAME IS A POINTER AND NEVER A BODY. The `Session` resource is the
+ * JSON of the session and the turn or batch that moved, so what a reader takes
+ * from it is which session to re-read — and a page watching one session must
+ * not re-read on another's, because a project holds a session per thread beside
+ * its lead.
  */
 test("a Session frame names the session that moved, and only that", () => {
   expect(

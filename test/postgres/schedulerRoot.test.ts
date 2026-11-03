@@ -286,7 +286,7 @@ test("the scheduler root reads the binding its session pass places on", async ()
   assert.equal(
     read.refused,
     undefined,
-    "slice 3's migration 061 has not granted the scheduler this read",
+    "the scheduler has not been granted this read",
   );
   assert.equal(read.binding?.repository, repository);
 });

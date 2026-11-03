@@ -1,6 +1,6 @@
 /**
- * The five lead-side routes over a real database: the API's own role, the
- * definer functions 059 declares, and the HTTP boundary above them.
+ * The five lead-side routes over a real database: the API's own role, the lead
+ * definer functions, and the HTTP boundary above them.
  *
  * WHAT A DOUBLE CANNOT ANSWER. `test/adapters/httpLeadReads.test.ts` proves the
  * assembly against a fake port; what it cannot prove is that the port's contract

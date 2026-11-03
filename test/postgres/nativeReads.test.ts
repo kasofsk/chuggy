@@ -693,9 +693,9 @@ test("a stored answer the kind cannot ask for stops both reads", async () => {
     },
   );
   /**
-   * Migration 013's trigger is what makes an escalation offering `Approve`
-   * unwritable, so planting one means standing it down for the insert. The
-   * read's own raise is what this case is about.
+   * `native_action_resolution_pairs_with_its_kind` is what makes an escalation
+   * offering `Approve` unwritable, so planting one means standing it down for
+   * the insert. The read's own raise is what this case is about.
    */
   await subject.harness.query(
     "ALTER TABLE native_action_resolution DISABLE TRIGGER USER",
