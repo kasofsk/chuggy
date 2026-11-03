@@ -557,3 +557,26 @@ test("work lost on its runner alone is resumed by the runner-loss door, never th
   assert.deepEqual(await resumedAtDoor(routed), { resumed: "NotResumable" });
   assert.equal(await steps.resumedByScheduler(routed), 1);
 });
+
+test("work a usage limit stopped in a project that is not Active is never said to resume, and is not resumed", async () => {
+  const { routed, execution } = await steps.routedTicket("limit-suspended");
+  const runner = await runnerOf(routed);
+  const { bearer } = await claimed(routed, execution, runner);
+  await rateLimited(routed, bearer);
+  const { partition } = routed.project;
+  await rig.harness.query(
+    `UPDATE project SET lifecycle='Suspended' WHERE tenant=$1 AND project=$2`,
+    [partition.tenant, partition.project],
+  );
+  assert.equal(await usageResumeRead(routed), undefined);
+  await limitReset(runner);
+  assert.equal(await usageResumeRead(routed), undefined);
+  assert.equal(await steps.resumedByScheduler(routed), 0);
+  await rig.harness.query(
+    `UPDATE project SET lifecycle='Active', lifecycle_generation=lifecycle_generation+1
+      WHERE tenant=$1 AND project=$2`,
+    [partition.tenant, partition.project],
+  );
+  assert.deepEqual(await usageResumeRead(routed), {});
+  assert.equal(await steps.resumedByScheduler(routed), 1);
+});

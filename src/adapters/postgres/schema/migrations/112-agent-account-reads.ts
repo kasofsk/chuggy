@@ -12,8 +12,9 @@
  * moves it to now.
  *
  * AN ESCALATION THE SCHEDULER WILL RESUME ONCE ITS PAUSES END IS READ AS 111
- * READS ONE, with the pause left out of what it asks: every task it waits on
- * lost under 061's bound or stopped by a limit under 111's, and one stopped so.
+ * READS ONE, with the pause left out of what it asks: in an Active project,
+ * every task it waits on lost under 061's bound or stopped by a limit under
+ * 111's, and one stopped so.
  * `ticket_usage_resume` answers when the latest pause still holding one of
  * those tasks ends, an hour after its end for a task that spent no account,
  * and nothing where none holds any longer. A place's count is built by 111's
@@ -201,8 +202,10 @@ export const migration112: Migration = {
          FROM held h
         WHERE EXISTS (
                 SELECT 1 FROM ticket_projection t
+                  JOIN project p ON p.tenant = t.tenant AND p.project = t.project
                  WHERE t.tenant = in_tenant AND t.project = in_project
                    AND t.ticket = in_ticket
+                   AND p.lifecycle = 'Active'
                    AND t.escalation IN ('WorkFailureEscalated', 'EvaluationBlockedEscalated'))
        HAVING bool_or(h.limited)
           AND bool_and((h.lost AND h.losses < in_losses_max)
