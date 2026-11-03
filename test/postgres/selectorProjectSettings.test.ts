@@ -53,6 +53,7 @@ import {
   postgresHarnessProject,
   postgresHarnessRolePool,
   postgresHarnessSelectorContext,
+  postgresHarnessStalled,
   type PostgresHarness,
 } from "./harness.ts";
 
@@ -816,13 +817,7 @@ test("a fence lost to an uncommitted write is still answered as a fence", async 
       { dispatchMode: "Automatic" },
       administrator,
     );
-    assert.equal(
-      await Promise.race([
-        raced.then(() => "answered"),
-        delay(500).then(() => "waiting"),
-      ]),
-      "waiting",
-    );
+    await postgresHarnessStalled(harness.pool, 1);
     await holder.query("COMMIT");
     assert.deepEqual(await raced, { written: "FenceMoved" });
   } finally {

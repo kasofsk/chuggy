@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
-import { setTimeout } from "node:timers/promises";
 import type pg from "pg";
 
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
@@ -30,6 +29,7 @@ import {
   postgresHarnessEpoch,
   postgresHarnessOpen,
   postgresHarnessProject,
+  postgresHarnessStalled,
   postgresHarnessUrl,
   type PostgresHarness,
 } from "./harness.ts";
@@ -37,9 +37,6 @@ import {
 /** UTC ISO 8601, the form a binding answers its instants in. */
 const repositoryBindingInstantForm =
   /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z$/u;
-
-/** Long enough for the contender to reach the door and be held at it. */
-const contenderWaitMs = 500;
 
 let harness: PostgresHarness;
 let pool: pg.Pool;
@@ -428,10 +425,7 @@ test("a repository one project is binding is not bound by another", async () => 
     const contender = postgresRepositoryBinding(pool).bind(
       fixtureCommand(reaching, contested),
     );
-    assert.equal(
-      await Promise.race([contender, setTimeout(contenderWaitMs, "Waiting")]),
-      "Waiting",
-    );
+    await postgresHarnessStalled(pool, 1);
     await holder.query("COMMIT");
     assert.equal(await contender, "RepositoryBoundElsewhere");
   } finally {
@@ -460,10 +454,7 @@ test("a replay of the same operation waits for the first rather than racing it",
       fixtureArguments(command),
     );
     const contender = postgresRepositoryBinding(pool).bind(command);
-    assert.equal(
-      await Promise.race([contender, setTimeout(contenderWaitMs, "Waiting")]),
-      "Waiting",
-    );
+    await postgresHarnessStalled(pool, 1);
     await holder.query("COMMIT");
     assert.equal(held.rows[0]?.outcome, "Bound");
     assert.equal(await contender, "AlreadyBound");
@@ -494,10 +485,7 @@ test("a bind for a different repository under the same operation waits for the f
       fixtureArguments(holderCommand),
     );
     const contender = postgresRepositoryBinding(pool).bind(contenderCommand);
-    assert.equal(
-      await Promise.race([contender, setTimeout(contenderWaitMs, "Waiting")]),
-      "Waiting",
-    );
+    await postgresHarnessStalled(pool, 1);
     await holder.query("COMMIT");
     assert.equal(held.rows[0]?.outcome, "Bound");
     assert.equal(await contender, "OperationConflict");
