@@ -159,7 +159,9 @@ export async function walkDragged(
 /** Where a walk's route is set, which is the file's own double of the router. */
 let routeSet: (
   params: PartitionIdentity & { readonly session?: string },
-) => void = () => undefined;
+) => void = () => {
+  throw new Error("a walk's file registers its router with walkRouted");
+};
 
 export function walkRouted(set: typeof routeSet): void {
   routeSet = set;
@@ -266,7 +268,7 @@ export async function walkReplayed(
   }
 }
 
-/** How many walks are taken, how far each goes, and how long one may take. */
+/** How far a walk goes, and how long one may take. */
 export const walkStepsMax = 300;
 export const walkTimeoutMs = 120_000;
 
