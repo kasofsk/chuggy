@@ -271,6 +271,20 @@ export function countFigure(count: number, unit: string): Figure {
   return { kind: "Quantity", text: groupedDigits(count), unit };
 }
 
+/** Percent in a whole share. */
+const percentPerWhole = 100;
+
+/** Significant digits a share is read to, below which a product's digits are
+ * the float's own noise. */
+const shareDigits = 12;
+
+/** A share of a whole in whole percent, rounded down so a share short of a
+ * percent never reads as reaching it. */
+export function shareFigure(share: number): Figure {
+  const percent = Number((share * percentPerWhole).toPrecision(shareDigits));
+  return countFigure(Math.floor(percent), "%");
+}
+
 const msPerMinute = msPerSecond * secondsPerMinute;
 
 const msPerHour = msPerMinute * minutesPerHour;

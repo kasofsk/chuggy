@@ -85,10 +85,13 @@ import {
   workerRunnerVersionSchema,
 } from "./workerPool.ts";
 import {
+  agentAccountSettingsSchema,
   repositoryLandingSchema,
   selectorProjectOverridesSchema,
 } from "./requests.ts";
 import {
+  accountAgents,
+  agentPauseReasons,
   architectures,
   artifactRoles,
   attemptEvidences,
@@ -134,6 +137,7 @@ import {
   resumePoints,
   runCostBases,
   runStepEvidences,
+  runUsageWindows,
   schedulerFreshnesses,
   selectorAttentions,
   selectorDeliveryStates,
@@ -254,6 +258,21 @@ export const executionRunSchema = z.object({
 });
 export type ExecutionRun = z.infer<typeof executionRunSchema>;
 
+/**
+ * Until when an account's agent is paused and each reason holding it, which is
+ * what `agent_account_pause` answers at the read; `pressed` is whether a press
+ * of the account's owner still lets one claim through the limit.
+ */
+export const agentPauseSchema = z.strictObject({
+  until: instantSchema,
+  reasons: z
+    .array(z.enum(agentPauseReasons))
+    .min(1)
+    .max(agentPauseReasons.length),
+  pressed: z.boolean(),
+});
+export type AgentPause = z.infer<typeof agentPauseSchema>;
+
 /** A runner a job ran on: one of the project's pools by its name, or a member's own runner by the member it is. */
 export const runnerSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("Pool"), pool: identitySchema }),
@@ -315,6 +334,12 @@ export const ticketEscalationSchema = z.object({
   lost: runnerLossSchema.optional(),
   /** Present where the wall is a task whose run stopped at a failed step. */
   failed: runStepFailureSchema.optional(),
+  /**
+   * Present where the scheduler resumes the escalation by itself once the
+   * usage pauses holding its rate-limited tasks end: `until` the latest of
+   * them, absent where none holds any longer.
+   */
+  usageResume: z.strictObject({ until: instantSchema.optional() }).optional(),
 });
 export type TicketEscalation = z.infer<typeof ticketEscalationSchema>;
 
@@ -750,6 +775,12 @@ export const executionSummarySchema = z.object({
    * is.
    */
   mine: z.boolean().optional(),
+  /**
+   * The pause the reader's own account holds on the agent this execution's
+   * waiting attempt spends, present only on the reader's own execution while
+   * it waits unclaimed and that agent is paused.
+   */
+  paused: agentPauseSchema.optional(),
 });
 export type ExecutionSummary = z.infer<typeof executionSummarySchema>;
 
@@ -2433,6 +2464,41 @@ export const personalRunnerResponseSchema = z.strictObject({
 export type PersonalRunnerResponse = z.infer<
   typeof personalRunnerResponseSchema
 >;
+
+/** One window's newest reading: how much of it was used, the whole window being one, when it reopens and when it was read. */
+const agentAccountReadingSchema = z.strictObject({
+  window: z.enum(runUsageWindows),
+  utilization: z.number().nonnegative(),
+  resetsAt: instantSchema,
+  observedAt: instantSchema,
+});
+
+/**
+ * One agent of the caller's own account: their settings, each window's newest
+ * reading, the newest limit a provider stopped it at with the window and the
+ * reopening where the run named them, and the pause they come to, absent
+ * where none holds.
+ */
+const agentAccountSchema = z.strictObject({
+  agent: z.enum(accountAgents),
+  settings: agentAccountSettingsSchema,
+  readings: z.array(agentAccountReadingSchema).max(runUsageWindows.length),
+  limit: z
+    .strictObject({
+      window: z.enum(runUsageWindows).optional(),
+      resetsAt: instantSchema.optional(),
+      observedAt: instantSchema,
+    })
+    .optional(),
+  pause: agentPauseSchema.optional(),
+});
+export type AgentAccount = z.infer<typeof agentAccountSchema>;
+
+/** Every agent of the caller's own account, in roster order. */
+export const agentAccountsResponseSchema = z.strictObject({
+  accounts: z.array(agentAccountSchema).length(accountAgents.length),
+});
+export type AgentAccountsResponse = z.infer<typeof agentAccountsResponseSchema>;
 
 /**
  * What redeeming a chat host's token answers, once: a runner's file with no

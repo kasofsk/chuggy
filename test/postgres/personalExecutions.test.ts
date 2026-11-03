@@ -36,7 +36,12 @@ import {
   asProjectId,
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
+import type { WorkTaskInvocation } from "../../src/interpreter/executionScheduler.ts";
 import type { PersonalRunnerIdentity } from "../../src/interpreter/workerPool.ts";
+import {
+  agentAccountHarnessCommitted,
+  agentAccountHarnessPressed,
+} from "./agentAccountHarness.ts";
 import { postgresHarnessRolePool } from "./harness.ts";
 import {
   schedulerClaimFor,
@@ -179,8 +184,11 @@ async function ownedProject(
   return project;
 }
 
-/** The next execution admitted and opened as an invoked attempt routed to runners. */
-async function opened(project: SchedulerProject): Promise<string> {
+/** The next execution admitted and opened as an attempt invoked as `invocation`, routed to runners. */
+async function opened(
+  project: SchedulerProject,
+  invocation: WorkTaskInvocation = schedulerInvocation,
+): Promise<string> {
   const admitted = await rig.store.admit(project.cluster);
   if (admitted.admitted !== "Admitted")
     throw new Error("personal executions suite: nothing was admitted");
@@ -199,7 +207,7 @@ async function opened(project: SchedulerProject): Promise<string> {
   });
   if (attempt.opened !== "Opened")
     throw new Error("personal executions suite: no attempt was opened");
-  if (!(await rig.store.attemptInvoked(attempt.attempt, schedulerInvocation)))
+  if (!(await rig.store.attemptInvoked(attempt.attempt, invocation)))
     throw new Error("personal executions suite: no invocation was recorded");
   return attempt.attempt.attempt;
 }
@@ -294,6 +302,64 @@ test("the API reads an execution's fallback only where its owner's runner may ta
   );
   assert.equal(stranger?.ownerFallback, "Strict");
   assert.equal(stranger?.mine, false, "another reader does not own it");
+});
+
+test("the API reads its owner's pause on the agent a waiting execution spends, to its owner alone and only while it waits", async () => {
+  const member = principal("member");
+  const stranger = principal("stranger");
+  const project = await ownedProject("owned-paused", member, "Strict", 1);
+  await opened(project, {
+    ...schedulerInvocation,
+    worker: {
+      mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
+      setup: [],
+      files: [],
+    },
+  });
+  const reads = postgresOperationalReads(apiPool);
+  const listed = async (reader: Principal) =>
+    (await reads.executions(project.partition, { limit: 10 }, reader))
+      .executions[0];
+  assert.equal((await listed(member))?.paused, undefined, "nothing pauses it");
+  const limit = { limit: { observedSecs: -60, resetsSecs: 3_600 } };
+  await agentAccountHarnessCommitted(rig.harness, stranger, "Claude", limit);
+  assert.equal(
+    (await listed(member))?.paused,
+    undefined,
+    "another person's pause is not the owner's",
+  );
+  await agentAccountHarnessCommitted(rig.harness, member, "Codex", limit);
+  assert.equal(
+    (await listed(member))?.paused,
+    undefined,
+    "the other agent of the owner's account does not hold it",
+  );
+  await agentAccountHarnessCommitted(rig.harness, member, "Claude", limit);
+  const paused = (await listed(member))?.paused;
+  assert.deepEqual(paused?.reasons, ["limit"]);
+  assert.equal(paused.pressed, false);
+  assert.equal(
+    Math.round((Date.parse(paused.until) - Date.now()) / 60_000),
+    60,
+  );
+  const execution = (await listed(member))?.execution;
+  assert.ok(execution !== undefined);
+  for (const reader of [stranger, principal("reader")])
+    assert.equal(
+      (await reads.execution(project.partition, execution, reader))?.paused,
+      undefined,
+      "no reader but its owner is told the owner's pause",
+    );
+  const runner = await runnerOf(project.partition, member);
+  assert.equal(await claimed(runner, [project.partition]), undefined);
+  await agentAccountHarnessPressed(rig.harness, member, "Claude");
+  assert.equal((await listed(member))?.paused?.pressed, true);
+  assert.notEqual(await claimed(runner, [project.partition]), undefined);
+  assert.equal(
+    (await listed(member))?.paused,
+    undefined,
+    "a claimed attempt waits on nothing",
+  );
 });
 
 test("an execution whose ticket was first drafted under another kind of authority is owned by nobody", async () => {

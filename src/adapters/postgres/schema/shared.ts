@@ -156,6 +156,12 @@ export const agentAccountPauseFunction = "agent_account_pause";
 export const agentAccountSettingsFunction = "agent_account_settings";
 /** Whether an account's pause holds back a session of one kind, as its owner's session options say. */
 export const agentAccountSessionPausedFunction = "agent_account_session_paused";
+/** Each agent of one person's account: their settings, each window's newest reading, the newest limit and the pause they come to. */
+export const agentAccountStandingFunction = "agent_account_standing";
+/** One person's settings for one agent of their account, written whole. */
+export const agentAccountSettingWriteFunction = "write_agent_account_setting";
+/** One person's press to try an agent of their account again, recorded only while a limit holds it paused. */
+export const agentAccountPressFunction = "press_agent_account";
 export const runEvidenceImmutableFunction =
   "execution_run_evidence_is_immutable";
 export const runConfigurationImmutableFunction =
@@ -288,6 +294,8 @@ export const ticketRateLimitResumableFunction = "ticket_rate_limit_resumable";
 export const rateLimitedTicketsFunction = "rate_limited_tickets";
 /** The scheduler's door for answering one such escalation as a person would. */
 export const rateLimitResumeFunction = "submit_rate_limit_resume";
+/** When the latest usage pause ends that holds an escalation the scheduler will resume by itself once none does. */
+export const ticketUsageResumeFunction = "ticket_usage_resume";
 /** The Pending tickets the importer may move onto a repository head's revision. */
 export const configurationFollowingCandidatesFunction =
   "configuration_following_candidates";

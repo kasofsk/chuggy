@@ -63,7 +63,7 @@ function samePlace(other: string, task: string): string {
 }
 
 /** How many tasks at `task`'s place up to it match `counted`, back to the newest before it matching `stops`. */
-function placeCount(
+export function placeCount(
   task: string,
   counted: (other: string) => string,
   stops: (other: string) => string,

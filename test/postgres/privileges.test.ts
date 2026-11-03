@@ -3,6 +3,10 @@ import { after, before, test } from "node:test";
 import {
   acceptanceFunction,
   accessPlaneRole,
+  agentAccountPauseFunction,
+  agentAccountPressFunction,
+  agentAccountSettingWriteFunction,
+  agentAccountStandingFunction,
   accountIdentityFunction,
   apiRole,
   boundaryOwnerRole,
@@ -33,6 +37,7 @@ import {
   selectorServiceRole,
   ticketUpdatedDependenciesFunction,
   ticketRateLimitResumableFunction,
+  ticketUsageResumeFunction,
   ticketRunnerLossFunction,
   ticketRunStepFailureFunction,
   ticketServiceRole,
@@ -267,6 +272,9 @@ test("the metrics plane's role reads the columns its scrape names and nothing el
     "SELECT tenant,project,seq,entry,committed_at,cause_kind,cause_id,configuration_revision FROM journal_entry",
     "SELECT tenant,project,ticket,authoring_version,authority_kind,authority_subject FROM draft_revision",
     "SELECT tenant,project,operation,authority_kind FROM operation",
+    "SELECT principal,agent FROM agent_account_usage",
+    "SELECT principal,agent FROM agent_account_limit",
+    "SELECT reasons FROM agent_account_pause('principal','Claude')",
   ])
     assert.equal(
       await harness.attemptAs(metricsPlaneRole, statement),
@@ -295,6 +303,10 @@ test("the metrics plane's role reads the columns its scrape names and nothing el
     ["SELECT command FROM operation", "operation"],
     ["SELECT escalation_evidence FROM ticket_projection", "ticket_projection"],
     ["UPDATE ticket_projection SET phase=phase", "ticket_projection"],
+    ["SELECT utilization FROM agent_account_usage", "agent_account_usage"],
+    ["SELECT attempt FROM agent_account_limit", "agent_account_limit"],
+    ["SELECT * FROM agent_account_setting", "agent_account_setting"],
+    ["SELECT * FROM agent_account_press", "agent_account_press"],
   ] as const)
     assert.match(
       (await harness.attemptAs(metricsPlaneRole, statement)) ?? "",
@@ -1054,6 +1066,35 @@ test("only the scheduler finds and resumes a job a usage limit stopped on its ru
     ),
     [schedulerRole],
   );
+});
+
+test("only the API reads, sets and presses a person's own agent account and reads an escalation's usage resume, through doors alone", async () => {
+  for (const signature of [
+    `${agentAccountStandingFunction}(text)`,
+    `${agentAccountSettingWriteFunction}(text,text,smallint,smallint,boolean,boolean)`,
+    `${agentAccountPressFunction}(text,text)`,
+    `${ticketUsageResumeFunction}(text,text,bigint,bigint,bigint)`,
+  ])
+    assert.deepEqual(await changeLogExecutors(signature), [apiRole], signature);
+  assert.deepEqual(
+    await changeLogExecutors(`${agentAccountPauseFunction}(text,text)`),
+    [apiRole],
+    "the API asks the rule of a waiting attempt's agent",
+  );
+  for (const [statement, relation] of [
+    ["SELECT * FROM agent_account_usage", "agent_account_usage"],
+    ["SELECT * FROM agent_account_limit", "agent_account_limit"],
+    ["SELECT * FROM agent_account_setting", "agent_account_setting"],
+    [
+      "INSERT INTO agent_account_press(principal,agent,pressed_at) VALUES('p','Claude',now())",
+      "agent_account_press",
+    ],
+  ] as const)
+    assert.match(
+      (await harness.attemptAs(apiRole, statement)) ?? "",
+      postgresHarnessDenial(relation),
+      statement,
+    );
 });
 
 test("only the importer reads the tickets following a head and moves one, and it still accepts and revises nothing itself", async () => {

@@ -1,7 +1,7 @@
 /**
- * What every run cost and how long it took, and what happened to every ticket,
- * as the metric families a scrape is answered with, totalled from the rows
- * already stored.
+ * What every run cost and how long it took, what happened to every ticket, and
+ * whose agents are paused now, as the metric families a scrape is answered
+ * with, totalled from the rows already stored.
  *
  * NOTHING IS KEPT BETWEEN SCRAPES. Each one reads the rows afresh, so a counter
  * is a total over the rows that exist: it only rises while rows only accrue,
@@ -181,6 +181,17 @@ export interface MetricsPlaneEscalationRow extends MetricsPlaneTicketObservedRow
   readonly by: string;
 }
 
+/** What paused an account's agent: a reading at its threshold, or a limit a provider stopped it at. */
+export const metricsPlaneAgentPauseTriggers = ["soft", "hard"] as const;
+
+/** Whether one account's agent is paused by one trigger, one where it is and nothing where not, the owner its label already. */
+export interface MetricsPlaneAgentPausedRow {
+  readonly owner: string;
+  readonly agent: string;
+  readonly trigger: (typeof metricsPlaneAgentPauseTriggers)[number];
+  readonly paused: number;
+}
+
 export interface MetricsPlaneRows {
   readonly attempts: readonly MetricsPlaneAttemptRow[];
   readonly runs: readonly MetricsPlaneRunRow[];
@@ -193,6 +204,7 @@ export interface MetricsPlaneRows {
   readonly reworks: readonly MetricsPlaneTicketObservedRow[];
   readonly costs: readonly MetricsPlaneTicketCostRow[];
   readonly escalations: readonly MetricsPlaneEscalationRow[];
+  readonly agentPauses: readonly MetricsPlaneAgentPausedRow[];
 }
 
 export type MetricsPlaneRead =
@@ -628,6 +640,33 @@ function metricsPlaneTicketHistoryFamilies(
   ];
 }
 
+/** How many accounts each owner has paused per agent and trigger, rows an owner label cannot tell apart summed. */
+function metricsPlaneAgentPausedFamily(
+  rows: readonly MetricsPlaneAgentPausedRow[],
+): MetricsFamily {
+  const paused = new Map<
+    string,
+    { readonly labels: MetricsLabels; value: number }
+  >();
+  for (const row of rows) {
+    const labels = {
+      owner: row.owner,
+      agent: row.agent,
+      trigger: row.trigger,
+    };
+    const key = JSON.stringify(labels);
+    const sample = paused.get(key);
+    if (sample === undefined) paused.set(key, { labels, value: row.paused });
+    else sample.value += row.paused;
+  }
+  return {
+    type: "gauge",
+    name: "chuggy_agent_paused",
+    help: "Accounts whose agent is paused now, by owner, agent, and whether a reading at its threshold or a provider's limit paused it.",
+    samples: [...paused.values()],
+  };
+}
+
 /** Every family a page carries, from rows read once. */
 export function metricsPlaneFamilies(
   rows: MetricsPlaneRows,
@@ -639,6 +678,7 @@ export function metricsPlaneFamilies(
     ...metricsPlaneTurnFamilies(rows.turns),
     metricsPlaneTicketFamily(rows.tickets),
     ...metricsPlaneTicketHistoryFamilies(rows),
+    metricsPlaneAgentPausedFamily(rows.agentPauses),
   ];
 }
 

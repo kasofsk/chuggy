@@ -59,6 +59,7 @@ function drawParked(
     open: [],
     executions: [],
     setupOverridable,
+    nowMs: 0,
   });
   render(
     <TicketSlot

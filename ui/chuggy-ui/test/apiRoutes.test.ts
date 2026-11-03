@@ -13,6 +13,7 @@ import {
   nativeHttpMediaType,
 } from "../../../src/contract/http.ts";
 import {
+  apiAgentAccounts,
   apiAgenticRefusals,
   apiAskLead,
   apiBindProjectRepository,
@@ -44,6 +45,7 @@ import {
   apiOpenThread,
   apiOwnerFallback,
   apiPersonalRunnerPermit,
+  apiPressAgentAccount,
   apiPersonalRunnerServes,
   apiProject,
   apiProjectAbilities,
@@ -61,6 +63,7 @@ import {
   apiTicketActionReach,
   apiTicketDispatchView,
   apiTicketNativeActions,
+  apiWriteAgentAccountSettings,
   apiWriteOwnerFallback,
   apiWriteProjectRepositoryLanding,
   apiWriteSelectorSettings,
@@ -768,6 +771,46 @@ test("a member's runners and a project's fallback are each asked at their own ad
     `DELETE ${tenantPath}/personal-runner/projects/at%20las`,
     `DELETE ${tenantPath}/personal-runner/runners/chuggy%2Fpersonal-1`,
     `DELETE ${tenantPath}/personal-runners/sub%2Fject`,
+  ]);
+});
+
+/** The reader's agent accounts hang from no tenant and no principal: every
+ * one of them is the caller's own. */
+test("the reader's agent accounts are read, set and pressed at their own addresses, each agent one segment", async () => {
+  const held = recordingRequests((url) =>
+    url.endsWith("/agent-accounts")
+      ? {
+          accounts: (["Claude", "Codex"] as const).map((agent) => ({
+            agent,
+            settings: {
+              fiveHourPercent: 80,
+              sevenDayPercent: 90,
+              pausesThreads: false,
+              pausesLead: false,
+            },
+            readings: [],
+          })),
+        }
+      : {},
+  );
+  const read = await apiAgentAccounts(held.ports);
+  await apiWriteAgentAccountSettings(held.ports, "Codex", {
+    fiveHourPercent: 70,
+    sevenDayPercent: 95,
+    pausesThreads: true,
+    pausesLead: false,
+  });
+  await apiPressAgentAccount(held.ports, "Claude");
+  expect(read.outcome).toBe("Ok");
+  expect(
+    held.requests.map(
+      (request) =>
+        `${request.init.method} ${request.url} ${String(request.init.body)}`,
+    ),
+  ).toStrictEqual([
+    `GET ${nativeHttpBasePath}/agent-accounts undefined`,
+    `PUT ${nativeHttpBasePath}/agent-accounts/Codex/settings {"fiveHourPercent":70,"sevenDayPercent":95,"pausesThreads":true,"pausesLead":false}`,
+    `POST ${nativeHttpBasePath}/agent-accounts/Claude/presses undefined`,
   ]);
 });
 

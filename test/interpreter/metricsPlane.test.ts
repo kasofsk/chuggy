@@ -46,6 +46,7 @@ const empty: MetricsPlaneRows = {
   reworks: [],
   costs: [],
   escalations: [],
+  agentPauses: [],
 };
 
 function family(
@@ -591,4 +592,35 @@ test("every journal entry is counted by its event and the stage its report names
       createdSecs: 6,
     },
   ]);
+});
+
+test("the paused gauge counts each owner's paused accounts per agent and trigger, at no time, and names no account not paused as paused", () => {
+  const families = metricsPlaneFamilies({
+    ...empty,
+    agentPauses: [
+      { owner: "alice-id", agent: "Claude", trigger: "soft", paused: 1 },
+      { owner: "alice-id", agent: "Claude", trigger: "hard", paused: 0 },
+      { owner: "", agent: "Codex", trigger: "hard", paused: 1 },
+      { owner: "", agent: "Codex", trigger: "hard", paused: 1 },
+      { owner: "", agent: "Codex", trigger: "soft", paused: 0 },
+    ],
+  });
+  const paused = family(families, "chuggy_agent_paused");
+  assert.equal(paused.type, "gauge");
+  assert.deepEqual(paused.samples, [
+    {
+      labels: { owner: "alice-id", agent: "Claude", trigger: "soft" },
+      value: 1,
+    },
+    {
+      labels: { owner: "alice-id", agent: "Claude", trigger: "hard" },
+      value: 0,
+    },
+    { labels: { owner: "", agent: "Codex", trigger: "hard" }, value: 2 },
+    { labels: { owner: "", agent: "Codex", trigger: "soft" }, value: 0 },
+  ]);
+  assert.deepEqual(
+    family(metricsPlaneFamilies(empty), "chuggy_agent_paused").samples,
+    [],
+  );
 });

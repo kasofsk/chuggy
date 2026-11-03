@@ -19,6 +19,7 @@ import {
   ticketSearchCharsMax,
 } from "./http.ts";
 import {
+  agentAccountSettingsSchema,
   draftCreationSchema,
   draftRevisionSchema,
   executionPlacementSchema,
@@ -95,6 +96,9 @@ function nativeHttpContractDocumentSchemas(): unknown {
       nativeHttpEndpoints.openThread.body,
     ),
     threadLimit: nativeHttpContractDocumentInput(threadLimitSchema),
+    agentAccountSettings: nativeHttpContractDocumentInput(
+      agentAccountSettingsSchema,
+    ),
     threadMessage: nativeHttpContractDocumentInput(
       nativeHttpEndpoints.sendThreadMessage.body,
     ),
@@ -136,6 +140,8 @@ const runnerNotes = {
   workerPoolRegistration:
     "an administrator mints a single-use token for one project; redeeming it registers the pool and answers once with the file a runner keeps, its secret included; a reader of the project reads each pool's newest poll and whether it is live",
   personalRunnerRegistration: `a member the tenant permits to register a personal runner mints a single-use token for the tenant; redeeming it adds one more runner of that member's there, each held to its own bound on the work it takes, refused while they hold ${String(personalRunnersMax)}, and answers once with a file of kind Personal naming the tenant and the member and no project; a member's runners serve one list of projects, and serve none until their owner adds one they may read; a runner is taken off by its owner, by its id or with all of theirs, and every runner of a member by an administrator of the tenant, and the list goes with the last of them; a member reads whether the tenant permits them, and each of their runners' newest poll and whether it is live`,
+  agentAccounts:
+    "a caller reads and sets their own agent accounts alone, the logins their runners spend, and no route names another principal: for each agent, the share of each window a reading at or over pauses it at, a whole percentage held at its default until they write their own, whether their threads and inquiries and the lead of a pool they registered pause with it, each window's newest reading and when it was read, the newest limit a provider stopped it at, and the pause these come to now, which lasts until the latest reason holding it ends; a paused agent's work is taken by none of their runners and pools; a press tries the agent once past a limit, letting one claim through it and no threshold, and is refused NotHardPaused where no limit holds the agent",
   chatHostRegistration:
     "a member the tenant permits to register a personal runner mints, under the same permit and bound, a single-use token for their chat host in the tenant; redeeming it at the same route a runner's token is redeemed at registers the member's one chat host there, replacing any other and ending every session the replaced one held, and answers once with a file of kind ChatHost naming the tenant and the member and no project or capabilities; a chat host serves its member's threads and inquiries in every project of the tenant they may read, and needs no list; its owner reads its newest poll and whether it is live, and takes it off, which ends every session it held",
 };

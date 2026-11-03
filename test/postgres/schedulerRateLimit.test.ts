@@ -15,6 +15,7 @@ import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, test } from "node:test";
 
+import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
 import { postgresWorkerRunEnded } from "../../src/adapters/postgres/workerPlane.ts";
 import {
   postgresWorkerPoolRegistry,
@@ -209,6 +210,31 @@ async function limitReset(runner: Runner): Promise<void> {
   );
 }
 
+/**
+ * What the ticket's read says of the scheduler resuming its escalation once its
+ * usage pauses end, read as the API under the scheduler's own bounds: absent
+ * where it will not, and how many seconds from now the latest pause ends where
+ * one still holds, rounded to the minute.
+ */
+async function usageResumeRead(
+  routed: Routed,
+): Promise<{ readonly untilMins?: number } | undefined> {
+  const { partition, ticket } = routed.project;
+  const read = await postgresNativeReads(resume.apiPool, {
+    lossesMax: service.config.attemptRetriesMax,
+    rateLimitsMax,
+  }).ticket(partition, asTicketId(ticket));
+  const usageResume = read?.escalation?.usageResume;
+  if (usageResume === undefined) return undefined;
+  return usageResume.until === undefined
+    ? {}
+    : {
+        untilMins: Math.round(
+          (Date.parse(usageResume.until) - Date.now()) / 60_000,
+        ),
+      };
+}
+
 /** What the rate-limit door answers for the ticket, past whatever a pass would have chosen. */
 function resumedAtDoor(routed: Routed) {
   const { partition, ticket } = routed.project;
@@ -253,11 +279,14 @@ test("work a usage limit stopped is resumed once its account's limit resets, and
   const { bearer } = await claimed(routed, execution, runner);
   await rateLimited(routed, bearer);
   assert.deepEqual(await steps.standing(routed), workEscalated);
+  assert.deepEqual(await usageResumeRead(routed), { untilMins: 60 });
   assert.equal(await steps.resumedByScheduler(routed), 0);
   assert.deepEqual(await resumedAtDoor(routed), { resumed: "NotResumable" });
   assert.deepEqual(await steps.standing(routed), workEscalated);
   await limitReset(runner);
+  assert.deepEqual(await usageResumeRead(routed), {});
   assert.equal(await steps.resumedByScheduler(routed), 1);
+  assert.equal(await usageResumeRead(routed), undefined);
   assert.equal((await steps.standing(routed))?.["phase"], "Work");
   const again = await claimed(routed, await newestOne(routed), runner);
   await steps.reported(routed, again.attempt, "Pass");
@@ -300,6 +329,7 @@ test("a threshold raised over the reading that pauses the account makes the tick
   await agentAccountHarnessCommitted(rig.harness, runner.account, "Claude", {
     readings: [reading],
   });
+  assert.deepEqual(await usageResumeRead(routed), { untilMins: 60 });
   assert.equal(await steps.resumedByScheduler(routed), 0);
   await agentAccountHarnessCommitted(rig.harness, runner.account, "Claude", {
     readings: [reading],
@@ -322,6 +352,7 @@ test("a try-again press makes the ticket resumable at the next pass, and lets it
   await rateLimited(routed, bearer);
   assert.equal(await steps.resumedByScheduler(routed), 0);
   await agentAccountHarnessPressed(rig.harness, runner.account, "Claude");
+  assert.deepEqual(await usageResumeRead(routed), {});
   assert.equal(await steps.resumedByScheduler(routed), 1);
   assert.equal((await steps.standing(routed))?.["phase"], "Work");
   await claimed(routed, await newestOne(routed), runner);
@@ -333,8 +364,10 @@ test("a run that spent no account waits an hour from its end, as an unknown rese
   const { bearer } = await claimed(routed, execution, runner);
   await ended(routed, bearer, "RunRateLimited");
   assert.deepEqual(await steps.standing(routed), workEscalated);
+  assert.deepEqual(await usageResumeRead(routed), { untilMins: 60 });
   assert.equal(await steps.resumedByScheduler(routed), 0);
   await endedEarlier(routed, 3_540);
+  assert.deepEqual(await usageResumeRead(routed), { untilMins: 1 });
   assert.equal(await steps.resumedByScheduler(routed), 0);
   await endedEarlier(routed, 120);
   assert.equal(await steps.resumedByScheduler(routed), 1);
@@ -355,6 +388,7 @@ test("the third task a usage limit stops at one place stays with a person", asyn
   await rateLimited(routed, bearer, -1);
   assert.equal(await steps.resumedByScheduler(routed), 0);
   assert.deepEqual(await steps.standing(routed), workEscalated);
+  assert.equal(await usageResumeRead(routed), undefined);
   assert.deepEqual(await resumedAtDoor(routed), { resumed: "NotResumable" });
   await steps.resumedByPerson(routed, "limit-bound-member");
   const after = await claimed(routed, await newestOne(routed), runner);
@@ -477,6 +511,7 @@ test("an escalation waiting on one task lost on its runner and one a usage limit
   );
   assert.deepEqual(refused.decided, ["Refused"]);
   assert.deepEqual(await steps.standing(routed), evaluationEscalated);
+  assert.deepEqual(await usageResumeRead(routed), { untilMins: 60 });
   const { partition, ticket } = routed.project;
   const escalated = { partition, ticket: asTicketId(ticket) };
   assert.deepEqual(
@@ -508,6 +543,7 @@ test("work whose run failed or that a person must answer is never resumed as rat
   const { attempt } = await claimed(routed, execution, runner);
   await steps.reported(routed, attempt, "Fail");
   assert.deepEqual(await steps.standing(routed), workEscalated);
+  assert.equal(await usageResumeRead(routed), undefined);
   assert.deepEqual(await resumedAtDoor(routed), { resumed: "NotResumable" });
   assert.equal(await steps.resumedByScheduler(routed), 0);
 });
@@ -517,6 +553,30 @@ test("work lost on its runner alone is resumed by the runner-loss door, never th
   const runner = await runnerOf(routed);
   const { bearer } = await claimed(routed, execution, runner);
   await lostOnRunner(routed, bearer);
+  assert.equal(await usageResumeRead(routed), undefined);
   assert.deepEqual(await resumedAtDoor(routed), { resumed: "NotResumable" });
+  assert.equal(await steps.resumedByScheduler(routed), 1);
+});
+
+test("work a usage limit stopped in a project that is not Active is never said to resume, and is not resumed", async () => {
+  const { routed, execution } = await steps.routedTicket("limit-suspended");
+  const runner = await runnerOf(routed);
+  const { bearer } = await claimed(routed, execution, runner);
+  await rateLimited(routed, bearer);
+  const { partition } = routed.project;
+  await rig.harness.query(
+    `UPDATE project SET lifecycle='Suspended' WHERE tenant=$1 AND project=$2`,
+    [partition.tenant, partition.project],
+  );
+  assert.equal(await usageResumeRead(routed), undefined);
+  await limitReset(runner);
+  assert.equal(await usageResumeRead(routed), undefined);
+  assert.equal(await steps.resumedByScheduler(routed), 0);
+  await rig.harness.query(
+    `UPDATE project SET lifecycle='Active', lifecycle_generation=lifecycle_generation+1
+      WHERE tenant=$1 AND project=$2`,
+    [partition.tenant, partition.project],
+  );
+  assert.deepEqual(await usageResumeRead(routed), {});
   assert.equal(await steps.resumedByScheduler(routed), 1);
 });

@@ -239,6 +239,21 @@ export const threadLimitSchema = z.strictObject({
   threadsMax: z.number().int().min(1).max(threadsOpenMax),
 });
 
+/** A share of a usage window as a whole percentage, the whole window being a hundred. */
+const agentAccountPercentSchema = z.number().int().min(1).max(100);
+
+/**
+ * How a person's own account pauses one agent, written whole: the share of
+ * each window a reading pauses it at, and whether their threads and inquiries
+ * and the lead of a pool they registered pause with it.
+ */
+export const agentAccountSettingsSchema = z.strictObject({
+  fiveHourPercent: agentAccountPercentSchema,
+  sevenDayPercent: agentAccountPercentSchema,
+  pausesThreads: z.boolean(),
+  pausesLead: z.boolean(),
+});
+
 /**
  * One binding retired. It carries the repository and nothing else: retirement
  * is one-way and names its own row, so there is no value for a second writer

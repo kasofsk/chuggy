@@ -21,6 +21,7 @@ import {
   revokedDependencyLine,
   runnerLossLine,
   runStepLine,
+  usageResumeLine,
 } from "./codeLabels.ts";
 import type { EscalationStep } from "./codeLabels.ts";
 import { settledFigure, sinceFigure } from "./figures.ts";
@@ -65,8 +66,9 @@ export type TicketSlot =
   | { readonly slot: "Nothing" };
 
 /** Everything the slot is chosen from; `open` is absent while its read is,
- * `landings` are none while theirs is, and `setupOverridable` is whether the
- * card offers this reader the ticket's setup lines to change. */
+ * `landings` are none while theirs is, `setupOverridable` is whether the card
+ * offers this reader the ticket's setup lines to change, and `nowMs` is the
+ * clock an instant the card names is read against. */
 export interface SituationReads {
   readonly ticket: TicketResponse;
   readonly landings: readonly TicketLanding[];
@@ -75,6 +77,7 @@ export interface SituationReads {
   readonly open: readonly NativeActionResponse[] | undefined;
   readonly executions: readonly ExecutionSummary[];
   readonly setupOverridable: boolean;
+  readonly nowMs: number;
 }
 
 /** A blocked ticket is parked whatever its phase says, because it waits on a
@@ -136,6 +139,31 @@ export function resumedFrom(facts: LedgerFacts): string | undefined {
   return `Resumed at stage ${String(stage)} · ${cycleLabel(cycle.ordinal).toLowerCase()}`;
 }
 
+/** The line under a parked ticket's wall: the scheduler's own resume where it
+ * will make one, the runner's losses where a job was lost, and otherwise the
+ * wall's own line. */
+function needsYouMore(
+  reads: SituationReads,
+  escalation: NonNullable<TicketResponse["escalation"]>,
+): string | undefined {
+  if (escalation.usageResume !== undefined)
+    return usageResumeLine(escalation.usageResume, reads.nowMs);
+  if (escalation.lost !== undefined) return runnerLossLine(escalation.lost);
+  const failed = escalation.failed;
+  return (
+    (failed === undefined
+      ? undefined
+      : runStepLine(failed, reads.setupOverridable)) ??
+    ticketLandingEscalatedRemoval(reads.landings, escalation.evidence) ??
+    escalationEvidenceLine(escalation.evidence) ??
+    escalationDetailLine(escalation.kind, {
+      lastSet:
+        reads.ledger === undefined ? undefined : ledgerLastSet(reads.ledger),
+      stageCount: reads.stageCount,
+    })
+  );
+}
+
 function needsYou(reads: SituationReads): TicketSlot | undefined {
   const ticket = reads.ticket;
   const blocked = revokedDependencyLine(ticket.revokedDependencies);
@@ -149,31 +177,12 @@ function needsYou(reads: SituationReads): TicketSlot | undefined {
     };
   const escalation = ticket.escalation;
   if (escalation !== undefined) {
-    const lost = escalation.lost;
-    const failed = escalation.failed;
-    const said = lost ?? failed;
+    const said = escalation.lost ?? escalation.failed;
     return {
       slot: "NeedsYou",
       detail: escalationDetail(escalation),
       step: escalationStep(escalation),
-      more:
-        lost === undefined
-          ? ((failed === undefined
-              ? undefined
-              : runStepLine(failed, reads.setupOverridable)) ??
-            ticketLandingEscalatedRemoval(
-              reads.landings,
-              escalation.evidence,
-            ) ??
-            escalationEvidenceLine(escalation.evidence) ??
-            escalationDetailLine(escalation.kind, {
-              lastSet:
-                reads.ledger === undefined
-                  ? undefined
-                  : ledgerLastSet(reads.ledger),
-              stageCount: reads.stageCount,
-            }))
-          : runnerLossLine(lost),
+      more: needsYouMore(reads, escalation),
       reason:
         said?.error === undefined
           ? undefined

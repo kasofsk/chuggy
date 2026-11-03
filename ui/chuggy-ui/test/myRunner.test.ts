@@ -23,6 +23,7 @@ import {
   ownerFallbackLabel,
   ownerFallbackValue,
   runnerWait,
+  runnerWaitPause,
   runnerWaitWord,
 } from "../app/core/myRunner.ts";
 import {
@@ -207,6 +208,30 @@ test.each([
     expect(runnerWait(execution, held, project)).toBeUndefined();
   },
 );
+
+/** The server sends a pause only on the reader's own execution, and the
+ * console says it only where the run waits on the reader's own runners. */
+test("a run of the reader's waiting on their runners says the pause their account holds, and one waiting on nothing of theirs says none", () => {
+  const pause = {
+    until: "2026-10-01T05:00:00Z",
+    reasons: ["five_hour" as const],
+    pressed: false,
+  };
+  const paused = { ...waiting, paused: pause };
+  expect(
+    runnerWaitPause(paused, runnerWait(paused, runner, "atlas")),
+  ).toStrictEqual(pause);
+  expect(
+    runnerWaitPause(waiting, runnerWait(waiting, runner, "atlas")),
+  ).toBeUndefined();
+  const elsewhere = { ...paused, mine: false };
+  expect(
+    runnerWaitPause(elsewhere, runnerWait(elsewhere, runner, "atlas")),
+  ).toBeUndefined();
+  expect(
+    runnerWaitPause(paused, runnerWait(paused, runner, "borealis")),
+  ).toBeUndefined();
+});
 
 test("taking a member's runners off says whether there were any it could take", () => {
   expect(memberRunnerRemoved({ outcome: "Ok", value: undefined })).toBe(

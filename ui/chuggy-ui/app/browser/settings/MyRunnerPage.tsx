@@ -3,7 +3,8 @@
  * what it declared and runs and whether it is polling, and taking it off; the
  * projects every one of them takes work in; the command that registers one
  * more, where the workspace lets them and they hold fewer than a member may;
- * and their chat host.
+ * their chat host; and each agent of their own account a pause holds, which
+ * none of their runners takes work for until it ends.
  *
  * A PROJECT IS OFFERED ONLY WHERE THE READER READS IT. The list it is chosen
  * from is the reader's own inventory narrowed to this workspace, which is the
@@ -16,6 +17,7 @@
  * list's reads, whatever they answer, until the reader is done with them.
  */
 
+import { Link, useParams } from "@tanstack/react-router";
 import { useQueryClient } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
 import { useState } from "react";
@@ -26,6 +28,7 @@ import type {
   PersonalRunnerResponse,
   WorkerPoolTokenResponse,
 } from "../../../../../src/contract/responses.ts";
+import { agentAccountsPaused } from "../../core/agentAccounts.ts";
 import type { ApiFailure, ApiResult } from "../../core/apiRequest.ts";
 import {
   apiDeregisterPersonalRunner,
@@ -54,11 +57,14 @@ import {
   runnerTokenLifetimeSecs,
 } from "../../core/runners.ts";
 import type { RunnerAsk } from "../../core/runners.ts";
+import { settingsRoutes } from "../../core/settingsNav.ts";
 import {
   personalRunnerPermitQuery,
   projectsInventoryQuery,
 } from "../../core/tenantQueries.ts";
 import { runnerStandingTone } from "../../core/tones.ts";
+import { AgentPause } from "../AgentPause.tsx";
+import { useAgentAccounts } from "../agentAccounts.ts";
 import { usePanelState } from "../api.ts";
 import { ConsoleWriteRefusedWords, useConsoleWrite } from "../consoleWrite.tsx";
 import type { ConsoleWriting } from "../consoleWrite.tsx";
@@ -552,6 +558,47 @@ function MyRunners(props: {
   );
 }
 
+/** Where the reader's agent accounts are set, in the frame the page is drawn in. */
+function MyRunnerUsageLink(props: { readonly tenant: string }): ReactNode {
+  const project = useParams({ strict: false }).project;
+  return project === undefined ? (
+    <Link to={settingsRoutes.workspace.usage} params={{ tenant: props.tenant }}>
+      Usage
+    </Link>
+  ) : (
+    <Link
+      to={settingsRoutes.project.usage}
+      params={{ tenant: props.tenant, project }}
+    >
+      Usage
+    </Link>
+  );
+}
+
+/** Each agent of the reader's own account a pause holds, and nothing where none does. */
+function MyRunnerPauses(props: { readonly tenant: string }): ReactNode {
+  const accounts = useAgentAccounts();
+  const nowMs = useNowMs();
+  if (accounts.state !== "Ready") return null;
+  const paused = agentAccountsPaused(accounts.value);
+  if (paused.length === 0) return null;
+  return (
+    <div className="grid gap-1" aria-label="Paused agents" role="group">
+      {paused.map((account) => (
+        <AgentPause
+          key={account.agent}
+          pause={account.pause}
+          nowMs={nowMs}
+          named={account.agent}
+        >
+          {" · "}
+          <MyRunnerUsageLink tenant={props.tenant} />
+        </AgentPause>
+      ))}
+    </div>
+  );
+}
+
 export function MyRunnerPage(): ReactNode {
   const tenant = useSettingsTenant();
   const permit = usePanelState(personalRunnerPermitQuery(tenant));
@@ -561,6 +608,7 @@ export function MyRunnerPage(): ReactNode {
   return (
     <SettingsPage title="My runners">
       <SettingsListing>
+        <MyRunnerPauses tenant={tenant} />
         <MyRunners
           tenant={tenant}
           runner={runner}

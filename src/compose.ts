@@ -49,6 +49,7 @@ import { postgresLeadInquiries } from "./adapters/postgres/leadInquiry.ts";
 import {
   postgresInboxReads,
   postgresNativeReads,
+  type TicketUsageResumeBounds,
 } from "./adapters/postgres/nativeReads.ts";
 import { projectInbox, type ProjectInbox } from "./interpreter/projectInbox.ts";
 import {
@@ -393,9 +394,10 @@ export function composeProjectInbox(
   apiPool: pg.Pool,
   selectorReviewPool: pg.Pool,
   access: ProjectAccess,
+  usageResume?: TicketUsageResumeBounds,
 ): ProjectInbox {
   return projectInbox(access, {
-    store: postgresInboxReads(apiPool),
+    store: postgresInboxReads(apiPool, usageResume),
     operationalReads: postgresOperationalReads(apiPool),
     refusals: postgresAgenticRefusalBinding(apiPool),
     proposals: composeSelectorProposalReviews(selectorReviewPool, access),
@@ -899,12 +901,13 @@ export function composeNativeWeb(
     RepositoryDefaultBranchPort,
   leads?: NativeLeadPorts,
   threads?: NativeThreadPorts,
+  usageResume?: TicketUsageResumeBounds,
 ): NativeWeb {
   const inbox = postgresOperationInbox(apiPool, keying, config, metrics);
   const authoring = postgresAuthoring(apiPool);
   return nativeWeb(
     access,
-    postgresNativeReads(apiPool),
+    postgresNativeReads(apiPool, usageResume),
     inbox,
     authoring,
     postgresNotifications(apiPool),

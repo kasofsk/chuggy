@@ -57,11 +57,13 @@ import {
   metricsPlaneDurationBoundsSecs,
   metricsPlaneEscalatingEvents,
   metricsPlaneEscalationBoundsSecs,
+  metricsPlaneAgentPauseTriggers,
   metricsPlaneMemberProject,
   metricsPlaneTicketCostBoundsUsd,
   metricsPlaneTicketEscalations,
   metricsPlaneTicketReworkBounds,
   metricsPlaneTicketTimeBoundsSecs,
+  type MetricsPlaneAgentPausedRow,
   type MetricsPlaneBounds,
   type MetricsPlaneAttemptRow,
   type MetricsPlaneModelRow,
@@ -390,10 +392,22 @@ interface MetricsPlaneEscalatedRow {
   readonly escalations: string | null;
 }
 
+/** What the seventh statement reads: whether each account's agent is paused by each trigger. */
+interface MetricsPlaneAgentPauseRow {
+  readonly pauses: string | null;
+}
+
+const metricsPlaneAgentPauseSchema = z.object({
+  principal: z.string(),
+  agent: z.string(),
+  trigger: z.enum(metricsPlaneAgentPauseTriggers),
+  paused: z.boolean(),
+});
+
 /** The ticket families of a page, which the journal and the tickets where they stand are read for. */
 type MetricsPlaneTicketed = Omit<
   MetricsPlaneRows,
-  "attempts" | "runs" | "models" | "turns"
+  "attempts" | "runs" | "models" | "turns" | "agentPauses"
 >;
 
 /** Each task shape's labels, and each principal's owner, as the later statements join them back in. */
@@ -885,6 +899,46 @@ function metricsPlaneEndingFamily<Schema extends z.ZodType>(
   return rows.length > seriesMax ? undefined : rows;
 }
 
+/**
+ * Whether each account's agent is paused by each trigger, as `agent_account_pause`
+ * answers it at the snapshot's own time: soft where a window's reading holds it,
+ * hard where a limit does. An account is one a reading or a limit names.
+ */
+async function metricsPlaneAgentPauseQuery(
+  client: pg.PoolClient,
+  seriesMax: number,
+): Promise<MetricsPlaneAgentPauseRow | undefined> {
+  const found = await client.query<MetricsPlaneAgentPauseRow>(
+    sql`SELECT json_agg(f)::text AS pauses FROM (
+          SELECT k.principal,k.agent,t.trigger,
+                 CASE t.trigger WHEN 'soft' THEN h.reasons && ARRAY['five_hour','seven_day']
+                                ELSE 'limit'=ANY(h.reasons) END AS paused
+            FROM (SELECT u.principal,u.agent FROM agent_account_usage u
+                  UNION SELECT l.principal,l.agent FROM agent_account_limit l) k
+           CROSS JOIN (VALUES ('soft'),('hard')) t(trigger)
+           CROSS JOIN LATERAL agent_account_pause(k.principal,k.agent) h
+           ORDER BY k.principal,k.agent,t.trigger
+           LIMIT ${seriesMax + 1}) f`,
+  );
+  return found.rows[0];
+}
+
+/** Each account's pauses labelled by its owner, or none where they are more than `seriesMax`. */
+function metricsPlaneAgentPauses(
+  read: MetricsPlaneAgentPauseRow,
+  owner: (principal: string) => string,
+  seriesMax: number,
+): readonly MetricsPlaneAgentPausedRow[] | undefined {
+  const rows = metricsPlaneParsed(read.pauses, metricsPlaneAgentPauseSchema);
+  if (rows.length > seriesMax) return undefined;
+  return rows.map((row) => ({
+    owner: owner(row.principal),
+    agent: row.agent,
+    trigger: row.trigger,
+    paused: row.paused ? 1 : 0,
+  }));
+}
+
 /** The ticket families' series as the interpreter reads them, or none where one has more than `seriesMax`. */
 function metricsPlaneTicketRows(
   tickets: MetricsPlaneTicketRow,
@@ -961,6 +1015,7 @@ function metricsPlaneRows(
   executions: MetricsPlaneExecutionRow,
   sessions: MetricsPlaneSessionRow,
   ticketed: MetricsPlaneTicketed,
+  agentPauses: readonly MetricsPlaneAgentPausedRow[],
   seriesMax: number,
 ): MetricsPlaneRows | undefined {
   const rows = {
@@ -991,7 +1046,7 @@ function metricsPlaneRows(
     models === undefined ||
     turns === undefined
     ? undefined
-    : { attempts, runs, models, turns, ...ticketed };
+    : { attempts, runs, models, turns, ...ticketed, agentPauses };
 }
 
 /** Bounds the statements still to run in this transaction to what is left before `deadlineMs`. */
@@ -1077,12 +1132,29 @@ async function metricsPlaneScrapeRead(
     deadlineMs,
   );
   if (ticketed.read === "Late") return late;
-  if (executions === undefined || sessions === undefined)
+  if (!(await metricsPlaneRemaining(client, deadlineMs))) return late;
+  const paused = await metricsPlaneAgentPauseQuery(client, bounds.seriesMax);
+  if (
+    executions === undefined ||
+    sessions === undefined ||
+    paused === undefined
+  )
     throw new Error("metrics plane: the read returned no row");
+  const agentPauses = metricsPlaneAgentPauses(
+    paused,
+    bounds.owner,
+    bounds.seriesMax,
+  );
   const rows =
-    ticketed.rows === undefined
+    ticketed.rows === undefined || agentPauses === undefined
       ? undefined
-      : metricsPlaneRows(executions, sessions, ticketed.rows, bounds.seriesMax);
+      : metricsPlaneRows(
+          executions,
+          sessions,
+          ticketed.rows,
+          agentPauses,
+          bounds.seriesMax,
+        );
   return rows === undefined
     ? {
         read: "Refused",

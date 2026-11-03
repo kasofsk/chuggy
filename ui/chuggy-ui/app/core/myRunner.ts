@@ -2,7 +2,8 @@
  * What a member's own runners are drawn as, derived: the words for a project's
  * fallback, how a runner is told from another, whether one more may be
  * registered, the projects they may be given, whether a run of the reader's is
- * waiting on them, and what taking a member's runners off came to.
+ * waiting on them and on a pause of their own account, and what taking a
+ * member's runners off came to.
  *
  * WHETHER A RUN IS THE READER'S IS THE SERVER'S ANSWER. Nothing here decodes a
  * token, so a run says it is theirs by `mine`, and one whose read predates the
@@ -12,6 +13,7 @@
 import { personalRunnersMax } from "../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type {
+  AgentPause,
   ExecutionSummary,
   PersonalRunnerResponse,
 } from "../../../../src/contract/responses.ts";
@@ -139,6 +141,15 @@ export function runnerWait(
     return undefined;
   if (runner.runners.some((each) => each.executionsLive)) return "Waiting";
   return execution.ownerFallback === "Strict" ? "Offline" : undefined;
+}
+
+/** The pause the reader's own account holds on a run of theirs, said only
+ * where the run waits on their own runners. */
+export function runnerWaitPause(
+  execution: ExecutionSummary,
+  wait: RunnerWait | undefined,
+): AgentPause | undefined {
+  return wait === undefined ? undefined : execution.paused;
 }
 
 /**

@@ -187,6 +187,11 @@ import type { ProjectOwnerFallbackView } from "../../interpreter/projectOwnerFal
 import type { ThreadLimitView } from "../../interpreter/threadLimit.ts";
 import type { SessionPlacementView } from "../../interpreter/sessionPlacement.ts";
 import type {
+  AgentAccountPressed,
+  AgentAccountView,
+} from "../../interpreter/agentAccount.ts";
+import type {
+  AgentAccountsResponse,
   ChatHostCredentialsResponse,
   ChatHostResponse,
   ExecutionPlacementResponse,
@@ -1385,6 +1390,50 @@ export function ownerFallbackBody(
     ...(view.fallback === undefined ? {} : { fallback: view.fallback }),
     administers: view.administers,
   };
+}
+
+/** Every agent of the caller's own account. */
+export function agentAccountsResponse(
+  accounts: readonly AgentAccountView[],
+): NativeHttpResponse {
+  return response(200, {
+    accounts: accounts.map((account) => ({
+      agent: account.agent,
+      settings: { ...account.settings },
+      readings: account.readings.map((reading) => ({ ...reading })),
+      ...(account.limit === undefined ? {} : { limit: { ...account.limit } }),
+      ...(account.pause === undefined
+        ? {}
+        : {
+            pause: { ...account.pause, reasons: [...account.pause.reasons] },
+          }),
+    })),
+  } satisfies AgentAccountsResponse);
+}
+
+/** A press recorded, or refused because no limit holds the agent paused. */
+export function agentAccountPressedResponse(
+  result: AgentAccountPressed,
+): NativeHttpResponse {
+  switch (result) {
+    case "Pressed":
+      return noContent();
+    case "NotHardPaused":
+      return response(
+        409,
+        nativeHttpError(
+          "NotHardPaused",
+          "No limit holds this agent of the account paused.",
+        ),
+      );
+    default:
+      return assertNever(result);
+  }
+}
+
+/** One agent's settings written whole. */
+export function agentAccountWrittenResponse(): NativeHttpResponse {
+  return noContent();
 }
 
 /** An allowlist addition: made, or a runner or a readable active project that is not there, or the allowlist at its bound. */

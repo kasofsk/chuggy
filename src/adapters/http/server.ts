@@ -80,6 +80,7 @@ import {
 import { nativeHttpContractDocument } from "../../contract/document.ts";
 import {
   selectorHistoryOrders,
+  type AccountAgent,
   type SelectorHistoryOrder,
 } from "../../contract/rosters.ts";
 import {
@@ -116,6 +117,8 @@ import {
   parseExecutionPlacement,
   parseProjectOwnerFallback,
   parseThreadLimit,
+  parseAccountAgent,
+  parseAgentAccountSettings,
   parseSessionPlacement,
   parseProjectRepositoryRetirement,
   parseProjectRepositoryConfigure,
@@ -220,6 +223,9 @@ import {
   workerPoolTokenResponse,
   workerPoolsResponse,
   personalRunnerAllowedResponse,
+  agentAccountPressedResponse,
+  agentAccountsResponse,
+  agentAccountWrittenResponse,
   personalRunnerDeregisteredResponse,
   personalRunnerDisallowedResponse,
   personalRunnerPermitResponse,
@@ -245,6 +251,7 @@ import type { TicketActionReaches } from "../../interpreter/ticketActionReach.ts
 import type { TicketLandingReads } from "../../interpreter/ticketLandings.ts";
 import type { WorkerPoolRegistrationService } from "../../interpreter/workerPoolRegistrationToken.ts";
 import type { PersonalRunnerService } from "../../interpreter/personalRunnerRegistration.ts";
+import type { AgentAccountService } from "../../interpreter/agentAccount.ts";
 import type { ExecutionPlacementAdministration } from "../../interpreter/executionPlacement.ts";
 import type { PlacementAdministration } from "../../interpreter/placementRoute.ts";
 import type { ProjectOwnerFallbackAdministration } from "../../interpreter/projectOwnerFallback.ts";
@@ -1524,6 +1531,55 @@ function registerChatHost(
         ),
       ),
     );
+  });
+}
+
+/** The agent a route names of the caller's own account, or none where no account lends it. */
+function accountAgentOf(request: FastifyRequest): AccountAgent | undefined {
+  return parseAccountAgent(textField(record(request.params), "agent"));
+}
+
+/**
+ * The caller's own agent accounts: read whole, one agent's settings written
+ * whole, and a press of one agent. Each is handed the request's own principal,
+ * and no route names another, so no caller reaches anyone else's.
+ */
+function registerAgentAccounts(
+  app: FastifyInstance,
+  accounts: AgentAccountService,
+): void {
+  app.get(nativeHttpRoutes.agentAccounts, async (request, reply) => {
+    nativeHttpSend(
+      reply,
+      agentAccountsResponse(await accounts.accounts(principalOf(request))),
+    );
+  });
+  app.put(
+    nativeHttpRoutes.agentAccountSettings,
+    { preValidation: requireVersionedJson },
+    async (request, reply) => {
+      const agent = accountAgentOf(request);
+      const settings = parseAgentAccountSettings(request.body);
+      if (agent === undefined) {
+        nativeHttpSend(reply, notFound());
+        return;
+      }
+      await accounts.write(principalOf(request), agent, settings);
+      nativeHttpSend(reply, agentAccountWrittenResponse());
+    },
+  );
+  registerBodylessRoutes(app, (scope) => {
+    scope.post(nativeHttpRoutes.agentAccountPresses, async (request, reply) => {
+      const agent = accountAgentOf(request);
+      nativeHttpSend(
+        reply,
+        agent === undefined
+          ? notFound()
+          : agentAccountPressedResponse(
+              await accounts.press(principalOf(request), agent),
+            ),
+      );
+    });
   });
 }
 
@@ -2942,6 +2998,13 @@ function registerOnboarding(
   registerProjectRepositoryConfigurations(app, onboarding);
 }
 
+/** Every failure a route throws, answered as the wire's error. */
+function registerFailures(app: FastifyInstance): void {
+  app.setErrorHandler((failure, _request, reply) => {
+    nativeHttpSend(reply, failureResponse(failure));
+  });
+}
+
 export function createNativeHttpApp(
   web: InitialNativeWeb,
   authentication: PrincipalAuthentication,
@@ -2966,6 +3029,7 @@ export function createNativeHttpApp(
   threadLimits?: ThreadLimitAdministration,
   chat?: MemberChat,
   inbox?: ProjectInbox,
+  agentAccounts?: AgentAccountService,
 ): FastifyInstance {
   const app = nativeHttpServer(limits);
   const partitionRoot = "/api/v1/tenants/:tenant/projects/:project";
@@ -3007,8 +3071,7 @@ export function createNativeHttpApp(
   if (actionReports !== undefined) registerActionReports(app, actionReports);
   if (actionReach !== undefined) registerActionReach(app, actionReach);
   if (landings !== undefined) registerTicketLandings(app, landings);
-  app.setErrorHandler((failure, _request, reply) => {
-    nativeHttpSend(reply, failureResponse(failure));
-  });
+  if (agentAccounts !== undefined) registerAgentAccounts(app, agentAccounts);
+  registerFailures(app);
   return app;
 }

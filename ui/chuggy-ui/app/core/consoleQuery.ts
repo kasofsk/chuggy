@@ -151,12 +151,14 @@ export function consoleTenantQuery<T>(
 }
 
 /** The reader's own resource, outside every tenant and so every refresh path:
- * read when a screen drawing it mounts. */
+ * read when a screen drawing it mounts, and every `polledMs` where a caller
+ * names one. */
 export function consoleCallerQuery<T>(
   resource: string,
   read: ConsoleRead<T>,
+  polledMs?: number,
 ): ConsoleResourceQuery<T> {
-  return consoleResourceQueryOf(callerResourceKey(resource), read, undefined);
+  return consoleResourceQueryOf(callerResourceKey(resource), read, polledMs);
 }
 
 /**

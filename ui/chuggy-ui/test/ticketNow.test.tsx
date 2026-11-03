@@ -253,6 +253,59 @@ test("the reader's own run says nothing of a runner they do not have", async () 
   expect(nowCard().textContent).not.toContain("Waiting on your runner");
 });
 
+const pausedUntil = "2026-08-27T14:05:00Z";
+
+/** The reader's own run waiting on their live runner, whose account the server
+ * says has the run's agent paused, or another member's run carrying the same. */
+function pausedRun(mine: boolean): RunPageServed {
+  const starting = runSummary({
+    status: "Launching",
+    outcome: undefined,
+    runTotals: undefined,
+    carrier: "Agent",
+    mine,
+    ownerFallback: "Strict",
+    paused: { until: pausedUntil, reasons: ["five_hour"], pressed: false },
+  });
+  const [offline] = ownRunner.runners;
+  return {
+    ticket: runningTicket,
+    executions: [starting],
+    execution: { ...starting, attempts: [] },
+    transcripts: [],
+    personalRunner: {
+      ...ownRunner,
+      runners: [{ ...offline, live: true, executionsLive: true }],
+    },
+  };
+}
+
+test("the reader's own waiting run whose agent their account has paused says so, why, until when, and where it is set", async () => {
+  await runPageDrawn(atlas, pausedRun(true));
+  const card = nowCard();
+  expect(card.textContent).toContain("Paused · Five-hour window · until ");
+  expect(card.textContent).not.toContain("Waiting on your runners");
+  expect(within(card).getByRole("link", { name: "Usage" })).toBeTruthy();
+});
+
+test("another member's waiting run says nothing of a pause", async () => {
+  await runPageDrawn(atlas, pausedRun(false));
+  const card = nowCard();
+  expect(card.textContent).not.toContain("Paused");
+  expect(within(card).queryByRole("link", { name: "Usage" })).toBeNull();
+});
+
+test("the reader's own run waiting on no runner of theirs keeps its line and says nothing of a pause", async () => {
+  const served = pausedRun(true);
+  await runPageDrawn(atlas, {
+    ...served,
+    personalRunner: { ...ownRunner, projects: ["borealis"] },
+  });
+  const card = nowCard();
+  expect(card.textContent).not.toContain("Paused");
+  expect(card.textContent).not.toContain("Waiting on your runner");
+});
+
 function stillRunning(batch: number): string {
   return JSON.stringify({
     type: "tool_progress",

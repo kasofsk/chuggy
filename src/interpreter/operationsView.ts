@@ -1,3 +1,4 @@
+import type { AgentAccountPause } from "./agentAccount.ts";
 import type { TaskId, TicketId } from "../domain/ids.ts";
 import type { TaskIdentity } from "../domain/generated/modelTypes.ts";
 import type {
@@ -177,6 +178,12 @@ export interface ExecutionSummary {
   readonly ownerFallback?: WorkerPoolOwnerFallback;
   /** Whether the reader is the member who owns it. */
   readonly mine: boolean;
+  /**
+   * The pause the reader's own account holds on the agent its waiting attempt
+   * spends, present only on the reader's own execution while that attempt is
+   * unclaimed and the agent paused.
+   */
+  readonly paused?: AgentAccountPause;
 }
 
 /**
