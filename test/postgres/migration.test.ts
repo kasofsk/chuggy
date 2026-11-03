@@ -6168,6 +6168,8 @@ function wipeTruncated(script: string): readonly string[] {
 const wipeKept = [
   "action_observation",
   "admitted_worker",
+  "agent_account_press",
+  "agent_account_setting",
   "capacity_account",
   "chat_host",
   "configuration_revision",

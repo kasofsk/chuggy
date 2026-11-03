@@ -23,7 +23,9 @@
  *
  * A POOL CLAIMS ITS PROJECT'S LEAD AND A CHAT HOST ITS OWNER'S THREADS AND
  * INQUIRIES; A PERSONAL RUNNER CLAIMS AND HOLDS NO SESSION, so nothing here is
- * asked of one.
+ * asked of one. A session whose account has paused its agent is not read as
+ * waiting, where that account's options say its kind pauses, and the
+ * durable side reads the pause again under the lock that opens it.
  *
  * A CHAT HOST'S OWNER MUST STILL READ THE PROJECT. Its candidates span every
  * project of its tenant, and the authority answers whether its owner may still

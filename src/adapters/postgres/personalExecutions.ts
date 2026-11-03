@@ -17,7 +17,9 @@
  * when its poll was admitted, and its owner's `Read` of each project before
  * the claim, which names only the projects that answered. The claim takes no
  * execution larger than the room the terms name, which chooses among what
- * that allows as the order does rather than being a term of it.
+ * that allows as the order does rather than being a term of it. Its account
+ * is its owner, and it passes over an attempt whose agent that account has
+ * paused as a pool's claim does.
  *
  * WHAT IT HOLDS IS WHAT ITS REGISTRATION CLAIMED, IN A PROJECT IT STILL SERVES.
  * Every call after the claim requires the attempt's principal to be the
@@ -64,23 +66,15 @@ export async function personalExecutionClaimed(
     memory_mib: number | null;
     project: string;
   }>(
-    sql`UPDATE execution_attempt a SET
-        pool=${identity.owner},pool_principal=${identity.principal},
-        personal=true,assignment=${claim.assignment},pool_refusal=NULL,
-        capability_secret_digest=${claim.digest},
-        lease_owner=${identity.owner},
-        lease_expires_at=now()+make_interval(secs=>${terms.leaseSecs}::double precision),
-        claimed_at=now()
-      FROM execution e
-      WHERE e.tenant=a.tenant AND e.project=a.project AND e.execution=a.execution
-        AND (a.tenant,a.project,a.execution,a.attempt) IN (
-        SELECT q.tenant,q.project,q.execution,q.attempt
+    sql`WITH chosen AS (
+        SELECT q.tenant,q.project,q.execution,q.attempt,q.agent,held.admitted_by_press
         FROM execution_attempt q
         JOIN execution x
           ON x.tenant=q.tenant AND x.project=q.project AND x.execution=q.execution
         JOIN personal_runner r ON r.tenant=q.tenant
         JOIN personal_runner_project l
           ON l.tenant=r.tenant AND l.owner=r.owner AND l.project=q.project
+        CROSS JOIN LATERAL agent_account_pause(r.owner,q.agent) held
         WHERE q.tenant=${identity.tenant} AND r.owner=${identity.owner}
           AND r.principal=${identity.principal}
           AND q.project=ANY(${[...claim.projects] as string[]}::text[])
@@ -99,8 +93,23 @@ export async function personalExecutionClaimed(
                   AND h.state IN ('Placing','Running')) < ${terms.heldMax}::bigint
           AND EXISTS(SELECT 1 FROM project p
             WHERE p.tenant=q.tenant AND p.project=q.project AND p.lifecycle='Active')
+          AND (held.paused_until IS NULL OR held.admitted_by_press)
         ORDER BY q.opened_at,q.attempt
-        LIMIT 1 FOR UPDATE OF q, x SKIP LOCKED)
+        LIMIT 1 FOR UPDATE OF q, x SKIP LOCKED),
+      spent AS (UPDATE agent_account_press p SET spent_at=now() FROM chosen c
+        WHERE c.admitted_by_press AND p.principal=${identity.owner} AND p.agent=c.agent
+          AND p.spent_at IS NULL RETURNING p.principal)
+      UPDATE execution_attempt a SET
+        pool=${identity.owner},pool_principal=${identity.principal},
+        personal=true,assignment=${claim.assignment},pool_refusal=NULL,
+        capability_secret_digest=${claim.digest},
+        lease_owner=${identity.owner},
+        lease_expires_at=now()+make_interval(secs=>${terms.leaseSecs}::double precision),
+        claimed_at=now()
+      FROM execution e, chosen c
+      WHERE e.tenant=a.tenant AND e.project=a.project AND e.execution=a.execution
+        AND (a.tenant,a.project,a.execution,a.attempt)=(c.tenant,c.project,c.execution,c.attempt)
+        AND (NOT c.admitted_by_press OR EXISTS(SELECT 1 FROM spent))
       RETURNING e.requirement_value AS requirement, a.runtime, e.cpu_millis, e.memory_mib, a.project`,
   );
   const row = found.rows[0];
@@ -132,6 +141,7 @@ export async function personalExecutionWaiting(
         JOIN personal_runner r ON r.tenant=q.tenant
         JOIN personal_runner_project l
           ON l.tenant=r.tenant AND l.owner=r.owner AND l.project=q.project
+        CROSS JOIN LATERAL agent_account_pause(r.owner,q.agent) held
         WHERE q.tenant=${identity.tenant} AND r.owner=${identity.owner}
           AND r.principal=${identity.principal}
           AND q.project=ANY(${[...projects] as string[]}::text[])
@@ -150,6 +160,7 @@ export async function personalExecutionWaiting(
                   AND h.state IN ('Placing','Running')) < ${terms.heldMax}::bigint
           AND EXISTS(SELECT 1 FROM project p
             WHERE p.tenant=q.tenant AND p.project=q.project AND p.lifecycle='Active')
+          AND (held.paused_until IS NULL OR held.admitted_by_press)
       ) AS waiting`,
   );
   return found.rows[0]?.waiting === true;

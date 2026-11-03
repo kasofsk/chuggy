@@ -34,8 +34,9 @@
  *
  * BESIDE THE TABLE is what no row of it states: a pool reporting less than it
  * holds, two claims of one pool made at once, a claim and a registration of
- * its pool made at once, and the image a claim hands out reaching the pod a
- * site places.
+ * its pool made at once, the image a claim hands out reaching the pod a site
+ * places, and a claim passing over a job whose account has paused its agent,
+ * which the model leaves to be chosen outside it.
  */
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -61,6 +62,7 @@ import {
 } from "../../src/adapters/postgres/workerPool.ts";
 import { postgresWorkerPoolSessions } from "../../src/adapters/postgres/workerPoolSessions.ts";
 import type { ExecutionRequirement } from "../../src/interpreter/executionRequirement.ts";
+import type { WorkTaskInvocation } from "../../src/interpreter/executionScheduler.ts";
 import {
   asPrincipal,
   type Principal,
@@ -100,6 +102,11 @@ import {
   type RunnerCase,
 } from "../interpreter/runnerCases.ts";
 import { projectAccessSiteRefused } from "../interpreter/projectAccessFixture.ts";
+import {
+  agentAccountHarnessCommitted,
+  agentAccountHarnessPressed,
+  type AgentAccountHarnessState,
+} from "./agentAccountHarness.ts";
 import {
   postgresHarnessAdvisoryWaiting,
   postgresHarnessConfiguration,
@@ -376,12 +383,12 @@ interface Owned {
 
 const unowned: Owned = { owner: null, fallback: null };
 
-/** The next execution admitted and opened as an attempt, invoked unless `invoked` is false, marked for a pool unless `inCluster`, and owned as `owned` says. */
+/** The next execution admitted and opened as an attempt, invoked with `invocation` unless that is null, marked for a pool unless `inCluster`, and owned as `owned` says. */
 async function opened(
   project: SchedulerProject,
   inCluster = false,
   owned: Owned = unowned,
-  invoked = true,
+  invocation: WorkTaskInvocation | null = schedulerInvocation,
 ): Promise<{ execution: string; attempt: string }> {
   const admitted = await rig.store.admit(project.cluster);
   if (admitted.admitted !== "Admitted")
@@ -410,8 +417,8 @@ async function opened(
   if (attempt.opened !== "Opened")
     throw new Error("worker pool claim suite: no attempt was opened");
   if (
-    invoked &&
-    !(await rig.store.attemptInvoked(attempt.attempt, schedulerInvocation))
+    invocation !== null &&
+    !(await rig.store.attemptInvoked(attempt.attempt, invocation))
   )
     throw new Error("worker pool claim suite: no invocation was recorded");
   return { execution: admitted.execution, attempt: attempt.attempt.attempt };
@@ -1374,7 +1381,7 @@ test("a pool's claim and its probe take nothing of an attempt withdrawn unclaime
   assert.equal(await takes(withdrawing), false, "withdrawn unclaimed");
   const uninvoked = await releasedUnder(`${label}-uninvoked`, pinned, 1);
   const waiting = await pollingPool(uninvoked, `${label}-u`, pinned);
-  await opened(uninvoked, false, unowned, false);
+  await opened(uninvoked, false, unowned, null);
   assert.equal(await takes(waiting), false, "not yet invoked");
   const beside = await releasedUnder(`${label}-beside`, pinned, 1);
   const deferring = await pollingPool(beside, `${label}-b`, pinned);
@@ -1478,7 +1485,7 @@ const runnerTakesNothing: readonly (readonly [
     "uninvoked",
     pinned,
     async (planted) => {
-      await opened(planted.project, false, planted.owned, false);
+      await opened(planted.project, false, planted.owned, null);
       return runnerAsked(planted);
     },
   ],
@@ -1612,4 +1619,291 @@ test("a capability requirement names no image, and its pod runs the pool's own",
   });
   assert.equal("image" in assignment, false);
   assert.equal(await podImage(assignment), site.image);
+});
+
+/** An invocation whose worker spends each agent, or none where it runs commands. */
+const spending = {
+  Claude: {
+    ...schedulerInvocation,
+    worker: {
+      mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
+      setup: [],
+      files: [],
+    },
+  },
+  Codex: {
+    ...schedulerInvocation,
+    worker: {
+      mode: {
+        type: "SingleAgent",
+        agent: "Codex",
+        arguments: [],
+        model: "model",
+      },
+      setup: [],
+      files: [],
+    },
+  },
+  Commands: {
+    ...schedulerInvocation,
+    worker: {
+      mode: { type: "Commands", commands: ["just check"] },
+      setup: [],
+      files: [],
+    },
+  },
+} as const satisfies Record<string, WorkTaskInvocation>;
+
+/** A limit whose reset is ahead, which pauses an agent until a reading after it or a press. */
+const limited: AgentAccountHarnessState = {
+  limit: { observedSecs: -60, resetsSecs: 3600 },
+};
+
+/** A pool `registrant` registered in this project, declaring everything `pinned` asks. */
+async function registrantsPool(
+  project: SchedulerProject,
+  label: string,
+  registrant: Principal,
+): Promise<DedicatedPoolIdentity> {
+  const identity: DedicatedPoolIdentity = {
+    kind: "Dedicated",
+    partition: project.partition,
+    pool: label,
+    principal: asPrincipal(`https://issuer.invalid#${label}-${randomUUID()}`),
+  };
+  assert.equal(
+    await registry.register({
+      partition: project.partition,
+      pool: label,
+      capabilities: declaringAll(pinned),
+      class: "Dedicated",
+      clientId: `chuggy-pool-${randomUUID()}`,
+      principal: identity.principal,
+      registeredBy: registrant,
+    }),
+    true,
+  );
+  return identity;
+}
+
+/** `owner`'s live runner for `project` alone, declaring everything `pinned` asks. */
+async function ownedRunner(
+  project: SchedulerProject,
+  label: string,
+  owner: Principal,
+): Promise<PersonalPlaneIdentity> {
+  const runner: PersonalPlaneIdentity = {
+    kind: "Personal",
+    tenant: project.partition.tenant,
+    owner,
+    principal: asPrincipal(`https://issuer.invalid#${label}-${randomUUID()}`),
+  };
+  await plantedRunnerRows(runner, declaringAll(pinned), 0, [
+    project.partition.project,
+  ]);
+  return runner;
+}
+
+/** The agent of the attempt `assignment` bound, or none where it bound nothing. */
+async function agentClaimed(
+  assignment: string,
+): Promise<string | null | undefined> {
+  const [row] = (await rig.harness.query(
+    `SELECT agent FROM execution_attempt WHERE assignment=$1`,
+    [assignment],
+  )) as readonly { agent: string | null }[];
+  return row?.agent;
+}
+
+/** What each of `claims` claims in turn, as the agent of what it bound, the probe asked before each and held to its answer. */
+async function claimedInTurn(
+  identity: PlantedIdentity,
+  home: Partition,
+  claims: number,
+): Promise<readonly (string | null | undefined)[]> {
+  const agents: (string | null | undefined)[] = [];
+  for (let claim = 0; claim < claims; claim++) {
+    const assignment = `paused-${randomUUID()}`;
+    await takes(identity, home, assignment);
+    agents.push(await agentClaimed(assignment));
+  }
+  return agents;
+}
+
+/** A project with an attempt spending each of Claude, Codex and commands, oldest first, owned by `owner` for their runner where one is named. */
+async function spendingEach(
+  label: string,
+  owner?: Principal,
+): Promise<SchedulerProject> {
+  const project = await releasedUnder(label, pinned, 3);
+  const owned: Owned =
+    owner === undefined ? unowned : { owner, fallback: "Strict" };
+  for (const invocation of [spending.Claude, spending.Codex, spending.Commands])
+    await opened(project, false, owned, invocation);
+  return project;
+}
+
+for (const by of ["a registered pool", "a personal runner"] as const)
+  test(`${by} passes over a job of its account's paused agent and takes the other agent's and a command's, the probe answering each claim`, async () => {
+    const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
+    const label = `claim-paused-${by === "a registered pool" ? "pool" : "runner"}`;
+    const project = await spendingEach(
+      label,
+      by === "a personal runner" ? member : undefined,
+    );
+    const claimant =
+      by === "a registered pool"
+        ? await registrantsPool(project, label, member)
+        : await ownedRunner(project, label, member);
+    await agentAccountHarnessCommitted(rig.harness, member, "Claude", limited);
+    assert.deepEqual(
+      await claimedInTurn(claimant, project.partition, 3),
+      ["Codex", null, undefined],
+      "Codex, then the command, then nothing",
+    );
+    await agentAccountHarnessCommitted(rig.harness, member, "Claude", {});
+    assert.deepEqual(
+      await claimedInTurn(claimant, project.partition, 1),
+      ["Claude"],
+      "the pause lifted, its job is taken at the next claim",
+    );
+  });
+
+test("a pool no member registered spends no account, so nothing pauses its claims", async () => {
+  const project = await releasedUnder("claim-paused-unregistered", pinned, 1);
+  const pool = await pollingPool(project, "unregistered", pinned);
+  await opened(project, false, unowned, spending.Claude);
+  assert.equal(await takes(pool), true);
+});
+
+test("a press lets exactly one claim of the agent through its limit, and a second press one more", async () => {
+  const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
+  const project = await releasedUnder("claim-pressed", pinned, 3);
+  for (let attempt = 0; attempt < 3; attempt++)
+    await opened(project, false, unowned, spending.Claude);
+  const pool = await registrantsPool(project, "pressed", member);
+  await agentAccountHarnessCommitted(rig.harness, member, "Claude", limited);
+  assert.deepEqual(await claimedInTurn(pool, project.partition, 1), [
+    undefined,
+  ]);
+  await agentAccountHarnessPressed(rig.harness, member, "Claude");
+  assert.deepEqual(await claimedInTurn(pool, project.partition, 2), [
+    "Claude",
+    undefined,
+  ]);
+  await agentAccountHarnessPressed(rig.harness, member, "Claude");
+  assert.deepEqual(await claimedInTurn(pool, project.partition, 2), [
+    "Claude",
+    undefined,
+  ]);
+});
+
+test("a press lets no claim through a threshold its account is over", async () => {
+  const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
+  const project = await releasedUnder("claim-pressed-soft", pinned, 1);
+  await opened(project, false, unowned, spending.Claude);
+  const pool = await registrantsPool(project, "pressed-soft", member);
+  await agentAccountHarnessCommitted(rig.harness, member, "Claude", {
+    readings: [
+      {
+        window: "five_hour",
+        utilization: 0.95,
+        resetsSecs: 3600,
+        observedSecs: -120,
+      },
+    ],
+    ...limited,
+  });
+  await agentAccountHarnessPressed(rig.harness, member, "Claude");
+  assert.equal(await takes(pool, project.partition), false);
+});
+
+/**
+ * Two claims of one account made at once, each on a lock of its own, with one
+ * press between them: the first is held open at its commit having spent the
+ * press, so the second has read the press unspent and waits on its row, then
+ * finds it spent and takes nothing.
+ */
+async function pressRaced(
+  first: { identity: PlantedIdentity; home: Partition },
+  second: { identity: PlantedIdentity; home: Partition },
+): Promise<readonly boolean[]> {
+  let reach = (): void => undefined;
+  const reached = new Promise<void>((resolve) => (reach = resolve));
+  let open = (): void => undefined;
+  const gate = new Promise<void>((resolve) => (open = resolve));
+  const held = postgresWorkerPoolAssignments(
+    postgresHarnessHeldAtCommit(planePool, reach, gate),
+  );
+  const terms = { leaseSecs, heldMax: 1, memoryMibDefault };
+  const claimOf = (
+    through: typeof assignments,
+    { identity, home }: { identity: PlantedIdentity; home: Partition },
+  ) =>
+    identity.kind === "Dedicated"
+      ? through.claim(identity, terms, randomUUID(), randomUUID(), [])
+      : through.claimPersonal(identity, terms, randomUUID(), randomUUID(), [
+          home.project,
+        ]);
+  const firstClaim = claimOf(held, first);
+  await reached;
+  let settled = false;
+  const secondClaim = claimOf(assignments, second).finally(
+    () => (settled = true),
+  );
+  while (!settled) {
+    const [row] = (await rig.harness.query(
+      `SELECT count(*)::int AS waiting FROM pg_stat_activity
+        WHERE datname=current_database() AND wait_event_type='Lock'`,
+    )) as readonly { waiting: number }[];
+    if ((row?.waiting ?? 0) > 0) break;
+    await delay(10);
+  }
+  assert.equal(settled, false, "the second claim waited on the press");
+  open();
+  return (await Promise.all([firstClaim, secondClaim])).map(
+    (taken) => taken !== undefined,
+  );
+}
+
+test("of two pools one member registered claiming at once, one press lets one through", async () => {
+  const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
+  const racing = [];
+  for (const side of ["one", "two"]) {
+    const project = await releasedUnder(`claim-press-race-${side}`, pinned, 1);
+    await opened(project, false, unowned, spending.Claude);
+    racing.push({
+      identity: await registrantsPool(project, `press-race-${side}`, member),
+      home: project.partition,
+    });
+  }
+  await agentAccountHarnessCommitted(rig.harness, member, "Claude", limited);
+  await agentAccountHarnessPressed(rig.harness, member, "Claude");
+  const [one, two] = racing;
+  if (one === undefined || two === undefined) throw new Error("no race");
+  assert.deepEqual(await pressRaced(one, two), [true, false]);
+});
+
+test("of a member's runner and a pool they registered claiming at once, one press lets one through", async () => {
+  const member = asPrincipal(`https://issuer.invalid#member-${randomUUID()}`);
+  const owned = await releasedUnder("claim-press-race-runner", pinned, 1);
+  await opened(
+    owned,
+    false,
+    { owner: member, fallback: "Strict" },
+    spending.Claude,
+  );
+  const runner = await ownedRunner(owned, "press-race-runner", member);
+  const pooled = await releasedUnder("claim-press-race-pool", pinned, 1);
+  await opened(pooled, false, unowned, spending.Claude);
+  const pool = await registrantsPool(pooled, "press-race-pool", member);
+  await agentAccountHarnessCommitted(rig.harness, member, "Claude", limited);
+  await agentAccountHarnessPressed(rig.harness, member, "Claude");
+  assert.deepEqual(
+    await pressRaced(
+      { identity: runner, home: owned.partition },
+      { identity: pool, home: pooled.partition },
+    ),
+    [true, false],
+  );
 });

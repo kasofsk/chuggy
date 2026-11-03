@@ -615,3 +615,23 @@ it stopped. It is changed by that door alone, in the transaction that withdraws
 that attempt `RunRateLimited`, and a limit replaces the one kept unless that one
 was received later. It has no unfinished work: the limit is kept with its
 attempt's ending or not at all.
+
+`agent_account_setting` — what a person set of how an agent account of theirs
+pauses: the threshold of each window, as a whole percentage, and whether their
+threads and inquiries and the lead of a pool they registered pause with it. No
+role writes it yet, and no runtime role reads it: `agent_account_settings`
+answers it with the defaults where it holds no row, and `agent_account_pause`,
+which the pool plane may call, reads it through that. Its key and identity are
+`(principal, agent)`, and it departs from #180's composite project key as
+`agent_account_usage` does. It points at nothing. Nothing changes it yet. It
+has no unfinished work: a pause is derived from it at each claim, so a changed
+row is the answer at the next.
+
+`agent_account_press` — a person's latest press to try an agent account again
+after a provider refused it, and when the claim it let through spent it. No
+role writes a press yet; the pool plane reads whether one is spent and spends
+it, in the statement of the claim it lets through, by an update conditional on
+its being unspent, so two claims cannot spend one. Its key and identity are
+`(principal, agent)`, as `agent_account_setting`'s are. It points at nothing. A
+press lets a claim through only a limit received before it. It has no
+unfinished work: a press is spent or it is not.

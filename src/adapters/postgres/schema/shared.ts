@@ -150,6 +150,12 @@ export const workerRunTotalFunction = "record_worker_run_total";
 export const agentAccountFunction = "execution_attempt_agent_account";
 export const workerRunUsageFunction = "record_worker_run_usage";
 export const workerRunLimitFunction = "record_worker_run_limit";
+/** Whether an account's agent is paused, until when and why, from its readings, its limit, its settings and its presses at the database's own time. */
+export const agentAccountPauseFunction = "agent_account_pause";
+/** A person's thresholds and session options for one agent account, their defaults where they wrote none. */
+export const agentAccountSettingsFunction = "agent_account_settings";
+/** Whether an account's pause holds back a session of one kind, as its owner's session options say. */
+export const agentAccountSessionPausedFunction = "agent_account_session_paused";
 export const runEvidenceImmutableFunction =
   "execution_run_evidence_is_immutable";
 export const runConfigurationImmutableFunction =
