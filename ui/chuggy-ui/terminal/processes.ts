@@ -148,12 +148,13 @@ function kept(said: Said, bytesMax: number): () => string {
 }
 
 /** How long what a child left running may hold its output open once the child itself has ended. */
-const drainMs = 2_000;
+const drainMsDefault = 2_000;
 
 function run(
   command: readonly string[],
   waitMs: number,
   bytesMax: number,
+  drainMs: number,
 ): Promise<SetupChildEnded> {
   return new Promise<SetupChildEnded>((resolve) => {
     const child = started(command, {
@@ -193,8 +194,11 @@ function run(
   });
 }
 
-/** `script` is this program's own file, run again under the Node and the flags this run was started with. */
-export function processesOf(script: string): SetupProcessPort {
+/** `script` is this program's own file, run again under the Node and the flags this run was started with, and `drainMs` how long what a command left running may hold its output once the command has ended. */
+export function processesOf(
+  script: string,
+  drainMs = drainMsDefault,
+): SetupProcessPort {
   return {
     pid: process.pid,
     alive,
@@ -209,6 +213,6 @@ export function processesOf(script: string): SetupProcessPort {
     },
     launch,
     read,
-    run,
+    run: (command, waitMs, bytesMax) => run(command, waitMs, bytesMax, drainMs),
   };
 }

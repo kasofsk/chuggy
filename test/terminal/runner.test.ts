@@ -33,6 +33,7 @@ import { test } from "node:test";
 
 import { runnerPackageOffered } from "../../ui/chuggy-ui/app/core/runners.ts";
 import { setupSiteChatAdded } from "../../ui/chuggy-ui/test/setupSite.ts";
+import { pacingVariable } from "../../ui/chuggy-ui/terminal/ports.ts";
 
 import { machineLoginSecret } from "./machine.ts";
 import { program, shellWords, userSaid } from "./program.ts";
@@ -576,6 +577,7 @@ test("where the person keeps their configuration in a directory of their own cho
 /** The names a run's environment holds: what a home sets, the user this suite has it take itself for, and what a shell adds of its own. */
 const environmentNames = [
   userSaid,
+  pacingVariable,
   "BROWSER",
   "GIT_CEILING_DIRECTORIES",
   "HOME",

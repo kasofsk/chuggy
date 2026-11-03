@@ -4,8 +4,8 @@
  *
  * The Node check is imported first and for its effect, so nothing below it is
  * evaluated on a Node too old to run it. Everything decided is decided in
- * `ui/chuggy-ui/app/core/`; this composes the machine's ports, runs once and
- * prints the report.
+ * `ui/chuggy-ui/app/core/`; this composes the machine's ports and the pacing
+ * its environment names, runs once and prints the report.
  */
 
 import { script } from "./nodeGate.ts";
@@ -13,11 +13,11 @@ import { script } from "./nodeGate.ts";
 import { setupAnswersAsked } from "../app/core/setupArguments.ts";
 import { setupReportExit, setupReportLines } from "../app/core/setupReport.ts";
 import { setupRun } from "../app/core/setupRun.ts";
-import { portsOf } from "./ports.ts";
+import { pacingOf, portsOf } from "./ports.ts";
 
 const argv = process.argv.slice(2);
 
-void setupRun(portsOf(script), argv).then((report) => {
+void setupRun(portsOf(script), argv, pacingOf()).then((report) => {
   const lines = setupReportLines(report, script, setupAnswersAsked(argv));
   process.stdout.write(`${lines.join("\n")}\n`);
   process.exitCode = setupReportExit(report);

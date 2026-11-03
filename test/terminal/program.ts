@@ -21,6 +21,11 @@
  * case may say the machine is another kind than the one the suite runs on,
  * and the user another than the one the suite runs as.
  *
+ * Every run looks again for what it waits on sooner than a person's does,
+ * and each of its waits still ends on the clock once its bound has passed. A
+ * case may also give git less time to name the folder's remote, and a git
+ * that answers after that is no remote to that run.
+ *
  * Nothing here waits without a bound and nothing outlives its suite. A
  * process still running at its deadline, or one that wrote more than any
  * report is, is killed and is its case's failure. Every process started under
@@ -52,6 +57,9 @@ import type { Readable } from "node:stream";
 import { after } from "node:test";
 import { setTimeout as slept } from "node:timers/promises";
 
+import type { SetupPacing } from "../../ui/chuggy-ui/app/core/setupPacing.ts";
+import { pacingVariable } from "../../ui/chuggy-ui/terminal/ports.ts";
+
 import { standIn } from "./standIn.ts";
 import type { StandIn } from "./standIn.ts";
 
@@ -60,10 +68,12 @@ export const program = resolve(
 );
 
 const pollMs = 50;
-const waitMsMax = 20_000;
+
+/** The longest `eventually` looks for what it waits on. */
+export const waitMsMax = 20_000;
 
 /** Past the longest any case has a process run, so what it ends is a hang. */
-const runMsMax = 60_000;
+export const runMsMax = 60_000;
 
 /** Past anything a report or a racer says. */
 const outputBytesMax = 65_536;
@@ -72,6 +82,16 @@ const requestMsMax = 15_000;
 
 /** What a process that could not write its number down exits with, having run nothing. */
 const unregisteredExit = 70;
+
+/** How every run here is paced, where its case adds nothing. */
+const pacing: Partial<SetupPacing> = { signInPollMs: 25, livePollMs: 100 };
+
+/** The environment that paces a run as every run here is and as `quicker` adds. */
+export function paced(
+  quicker: Partial<SetupPacing>,
+): Readonly<Record<string, string>> {
+  return { [pacingVariable]: JSON.stringify({ ...pacing, ...quicker }) };
+}
 
 export interface Finished {
   readonly code: number | null;
@@ -345,6 +365,7 @@ function home(): Home {
         NODE_OPTIONS: [process.env["NODE_OPTIONS"] ?? "", preload]
           .join(" ")
           .trim(),
+        ...paced({}),
         ...environment,
       };
       const done = await ran(argv, surroundings, folder);

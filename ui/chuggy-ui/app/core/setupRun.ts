@@ -19,6 +19,7 @@ import type {
   SetupCommand,
 } from "./setupArguments.ts";
 import { setupNext, setupRunnerDue } from "./setupNext.ts";
+import type { SetupPacing } from "./setupPacing.ts";
 import { SetupMachineError, setupPlatforms } from "./setupPorts.ts";
 import type { SetupPorts } from "./setupPorts.ts";
 import { readSetup, setupReadPorts } from "./setupReads.ts";
@@ -185,6 +186,7 @@ async function setupChecklist(
   ports: SetupPorts,
   signed: Extract<SetupSigned, { readonly signed: "In" }>,
   answers: SetupAnswers,
+  pacing: SetupPacing,
 ): Promise<SetupReport> {
   const site = signed.opened.site;
   const reads = await readSetup(
@@ -192,7 +194,7 @@ async function setupChecklist(
     {
       site,
       answers,
-      remote: await setupRemoteRead(ports.process),
+      remote: await setupRemoteRead(ports.process, pacing.remoteWaitMs),
       workspaces: signed.workspaces,
     },
   );
@@ -245,12 +247,13 @@ function setupEntered(
 async function setupStatus(
   ports: SetupPorts,
   asked: Extract<SetupAsked, { readonly asked: "Status" }>,
+  pacing: SetupPacing,
 ): Promise<SetupReport> {
   const held = await setupEntered(ports, asked.site, "Status");
   if (held === undefined) return setupBusy(ports, "Status", asked.site);
   return held.signed === "Out"
     ? held.report
-    : setupChecklist(ports, held, asked.answers);
+    : setupChecklist(ports, held, asked.answers, pacing);
 }
 
 /**
@@ -286,8 +289,14 @@ async function setupRunnerEntry(
 function setupRunnerRun(
   ports: SetupPorts,
   asked: SetupRunnerAsked,
+  pacing: SetupPacing,
 ): Promise<SetupReport> {
-  return setupRunner(ports, asked, () => setupRunnerEntry(ports, asked));
+  return setupRunner(
+    ports,
+    asked,
+    () => setupRunnerEntry(ports, asked),
+    pacing.livePollMs,
+  );
 }
 
 type SetupSignInStep =
@@ -304,6 +313,7 @@ type SetupSignInStep =
 async function setupSignInStep(
   ports: SetupPorts,
   given: string | undefined,
+  pacing: SetupPacing,
 ): Promise<SetupSignInStep> {
   const begun = await setupBegun(ports, given, "SignIn");
   if (begun.begun === "Reported")
@@ -319,7 +329,7 @@ async function setupSignInStep(
   }
   if (signed.report.report !== "SignedOut")
     return { step: "Reported", report: signed.report };
-  const page = await setupSignInBegun(ports, site);
+  const page = await setupSignInBegun(ports, site, pacing.signInPollMs);
   return page.begun === "Reported"
     ? { step: "Reported", report: page.report }
     : { step: "Waiting", site, waiting: page };
@@ -329,11 +339,20 @@ async function setupSignIn(
   ports: SetupPorts,
   given: string | undefined,
   waitSecs: number,
+  pacing: SetupPacing,
 ): Promise<SetupReport> {
-  const step = await setupLocked(ports, () => setupSignInStep(ports, given));
+  const step = await setupLocked(ports, () =>
+    setupSignInStep(ports, given, pacing),
+  );
   if (step === undefined) return setupBusy(ports, "SignIn", given);
   if (step.step === "Reported") return step.report;
-  return setupSignInAwaited(ports, step.site, step.waiting, waitSecs);
+  return setupSignInAwaited(
+    ports,
+    step.site,
+    step.waiting,
+    waitSecs,
+    pacing.signInPollMs,
+  );
 }
 
 /** What a port threw, as a member of a closed set: the machine's own word for what it would not do, or only that something unexpected happened. */
@@ -360,6 +379,7 @@ function setupFaulted(
 export async function setupRun(
   ports: SetupPorts,
   argv: readonly string[],
+  pacing: SetupPacing,
 ): Promise<SetupReport> {
   const platform = ports.surroundings.platform;
   if (!setupPlatforms.some((served) => served === platform))
@@ -370,11 +390,11 @@ export async function setupRun(
   try {
     switch (asked.asked) {
       case "Status":
-        return await setupStatus(ports, asked);
+        return await setupStatus(ports, asked, pacing);
       case "SignIn":
-        return await setupSignIn(ports, asked.site, asked.waitSecs);
+        return await setupSignIn(ports, asked.site, asked.waitSecs, pacing);
       case "Runner":
-        return await setupRunnerRun(ports, asked);
+        return await setupRunnerRun(ports, asked, pacing);
       case "Listen":
         return await setupListened(ports, asked.site, asked.lifeSecs);
     }

@@ -14,6 +14,8 @@ import { setTimeout as slept } from "node:timers/promises";
 
 import type { ApiFetchInit } from "../app/core/apiRequest.ts";
 import type { FetchJsonPort } from "../app/core/sessionHolder.ts";
+import { setupPacingRead } from "../app/core/setupPacing.ts";
+import type { SetupPacing } from "../app/core/setupPacing.ts";
 import {
   SetupMachineError,
   setupDirectoryName,
@@ -77,6 +79,14 @@ const nowhere: Pick<SetupPorts, "files" | "lock"> = {
 function keptIn(home: string): Pick<SetupPorts, "files" | "lock"> {
   const directory = join(home, setupDirectoryName);
   return { files: filesIn(directory), lock: lockIn(directory) };
+}
+
+/** The variable a suite that runs this program names a quicker pacing in. */
+export const pacingVariable = "CHUG_SETUP_PACING";
+
+/** The pacing this run's environment names, which is the program's own wherever it names none. */
+export function pacingOf(): SetupPacing {
+  return setupPacingRead(process.env[pacingVariable]);
 }
 
 /** `script` is the file this program was run from, which a sign-in runs again. */

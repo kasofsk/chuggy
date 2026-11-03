@@ -163,6 +163,7 @@ interface Run {
   readonly ports: SetupPorts;
   readonly partition: PartitionIdentity;
   readonly waitSecs: number;
+  readonly livePollMs: number;
   readonly places: SetupRunnerPlaces;
   readonly notes: SetupRunnerNote[];
   /** What the redactor is told of: every bearer this run held and every registration token it minted. */
@@ -748,7 +749,7 @@ async function setupWaited<Seen extends object, Unseen>(
         (await setupInactive(run, unit, run.waitSecs)) ??
         halt(unseen(looked.unseen))
       );
-    await run.ports.sleepMs(setupLivePollMs);
+    await run.ports.sleepMs(run.livePollMs);
   }
 }
 
@@ -1038,6 +1039,7 @@ export async function setupRunner(
   ports: SetupPorts,
   asked: SetupRunnerAsked,
   enter: () => Promise<SetupRunnerEntered>,
+  livePollMs: number,
 ): Promise<SetupReport> {
   const { workspace, project } = asked;
   const said = (
@@ -1060,6 +1062,7 @@ export async function setupRunner(
     ports,
     partition: { tenant: workspace, project },
     waitSecs: asked.waitSecs,
+    livePollMs,
     places: setupRunnerPlaces(ports.surroundings),
     notes: [],
     secrets: [entered.session.bearer],

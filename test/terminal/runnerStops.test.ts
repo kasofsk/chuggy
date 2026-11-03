@@ -300,11 +300,11 @@ test("where keeping services running after a logout wants a password, none is ta
 test("a runner that is started and that the site does not see live within the wait is a failure that says how long was waited, having asked the service manager once more whether it still runs, and the run after it is seen ends on the checklist", async () => {
   const on = await stood();
   on.machine.tell({ polls: false });
-  const waited = await ran(on, [...runner, "--wait-secs", "2"]);
+  const waited = await ran(on, [...runner, "--wait-secs", "1"]);
   assert.equal(waited.code, 1, waited.stdout);
   assert.ok(
     waited.lines.includes(
-      "found: the runner's service is running, and after 2 s the site still sees no runner of acme/widgets live",
+      "found: the runner's service is running, and after 1 s the site still sees no runner of acme/widgets live",
     ),
     waited.stdout,
   );

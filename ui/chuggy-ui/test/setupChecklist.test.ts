@@ -13,8 +13,12 @@ import { expect, test } from "vitest";
 
 import { projectInventoryPagesMax } from "../app/core/apiRoutes.ts";
 import { setupAnswersAsked } from "../app/core/setupArguments.ts";
+import { setupPacing } from "../app/core/setupPacing.ts";
 import { setupFiles } from "../app/core/setupPorts.ts";
-import { setupRemoteCommand } from "../app/core/setupRemote.ts";
+import {
+  setupRemoteCommand,
+  setupRemoteWaitMs,
+} from "../app/core/setupRemote.ts";
 import { setupReportExit, setupReportLines } from "../app/core/setupReport.ts";
 import {
   machineScript,
@@ -326,6 +330,15 @@ test("git is asked for the remote only by a bare run that is signed in: not by o
   expect(machine.ran).toEqual([]);
   await machine.command([]);
   expect(machine.ran).toEqual([setupRemoteCommand]);
+  expect(machine.ranWaitMs).toEqual([setupRemoteWaitMs]);
+});
+
+test("git is given the wait for the remote that the run's pacing says", async () => {
+  const machine = await machineSignedIn();
+  machine.pacing = { ...setupPacing, remoteWaitMs: 700 };
+  await machine.command([]);
+  expect(machine.ran).toEqual([setupRemoteCommand]);
+  expect(machine.ranWaitMs).toEqual([700]);
 });
 
 test("a name the site gave that would start a line of its own is printed inside its line, in the step, the tell and the command", async () => {

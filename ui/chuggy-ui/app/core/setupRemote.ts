@@ -80,13 +80,14 @@ export function setupRepositoryOwner(address: string): string | undefined {
   return name === undefined || more.length > 0 ? undefined : owner;
 }
 
-/** What this folder's `origin` names, asked of git once and for a bounded time. */
+/** What this folder's `origin` names, asked of git once and for at most `waitMs`. */
 export async function setupRemoteRead(
   process: SetupProcessPort,
+  waitMs = setupRemoteWaitMs,
 ): Promise<SetupRemote | undefined> {
   const printed = await process.read(
     setupRemoteCommand,
-    setupRemoteWaitMs,
+    waitMs,
     setupRemoteBytesMax,
   );
   return printed === undefined ? undefined : setupRepositoryRead(printed);
