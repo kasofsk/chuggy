@@ -1,8 +1,8 @@
 /**
- * What the migration suites open a database with and seed one from: a database
- * at a version of the schema, cloned from a template migrated there once per
- * process and dropped as the process ends, and the rows and fixtures the cases
- * of more than one migration are written against.
+ * What the suites that open a database of their own open it with and seed one
+ * from: an empty database, or one cloned from a template the whole declared
+ * chain is migrated into once per process and dropped as the process ends, and
+ * the rows and fixtures more than one of those suites is written against.
  */
 
 import assert from "node:assert/strict";
@@ -11,17 +11,14 @@ import { after } from "node:test";
 import {
   apiRole,
   boundaryOwnerRole,
-  migrations,
+  draftCreateFunction,
 } from "../../src/adapters/postgres/schema.ts";
+import { encodeDraftAuthoring } from "../../src/interpreter/authoring.ts";
+import { plainAuthoring } from "../actor/harness.ts";
 import {
   postgresMigrate,
-  postgresMigrateCompatible,
   postgresPool,
 } from "../../src/adapters/postgres/pool.ts";
-import {
-  postgresRuntimeSchema,
-  runtimeSchemaContract,
-} from "../../src/adapters/postgres/runtimeSchema.ts";
 import { postgresHarnessUrl } from "./harness.ts";
 import type pg from "pg";
 
@@ -54,77 +51,49 @@ export async function migrationDatabase(
   }
 }
 
-/** The state a database a test opens on was migrated to: the whole schema, or through one version. */
-type MigrationStart = "Migrated" | number;
+/** The template the whole chain is migrated into, once, when a suite first opens a migrated database. */
+let migratedTemplate: Promise<string> | undefined;
 
-/** Each start's template database, built once by migrating an empty one there. */
-const migrationTemplates = new Map<MigrationStart, Promise<string>>();
-
-function migrationTemplate(start: MigrationStart): Promise<string> {
-  const held = migrationTemplates.get(start);
-  if (held !== undefined) return held;
-  const template = (async () => {
+function migratedTemplateBuilt(): Promise<string> {
+  migratedTemplate ??= (async () => {
     const database = `chuggy_template_${randomUUID().replaceAll("-", "")}`;
     const admin = postgresPool(postgresHarnessUrl());
     await admin.query(`CREATE DATABASE ${database}`);
     await admin.end();
     const subject = postgresPool(databaseUrl(database));
     try {
-      if (start === "Migrated") await postgresMigrate(subject);
-      else await installationAt(subject, start);
+      await postgresMigrate(subject);
     } finally {
       await subject.end();
     }
     return database;
   })();
-  migrationTemplates.set(start, template);
-  return template;
+  return migratedTemplate;
 }
 
 after(async () => {
+  if (migratedTemplate === undefined) return;
   const admin = postgresPool(postgresHarnessUrl());
   try {
-    for (const template of migrationTemplates.values())
-      await admin.query(
-        `DROP DATABASE IF EXISTS ${await template} WITH (FORCE)`,
-      );
+    await admin.query(
+      `DROP DATABASE IF EXISTS ${await migratedTemplate} WITH (FORCE)`,
+    );
   } finally {
     await admin.end();
   }
 });
 
-/** A database opened on `start`, cloned from its template rather than migrated again. */
-export async function migrationDatabaseAt(
-  start: MigrationStart,
+/** A database opened on the installed schema, cloned from the template rather than migrated again. */
+export async function migratedDatabase(
   label: string,
   body: (subject: pg.Pool, url: string) => Promise<void>,
 ): Promise<void> {
-  const template = await migrationTemplate(start);
-  await migrationDatabase(label, body, template);
-}
-
-export async function migrationHasFunction(
-  subject: pg.Pool,
-  signature: string,
-): Promise<boolean> {
-  const found = await subject.query<{ present: boolean }>(
-    `SELECT to_regprocedure($1) IS NOT NULL AS present`,
-    [signature],
-  );
-  return found.rows[0]?.present === true;
-}
-
-/** A tenant's row where the schema has the relation, so a seed stands on either side of 026. */
-export function tenantSeed(tenant: string): string {
-  return `DO $seed$ BEGIN
-    IF to_regclass('public.tenant') IS NOT NULL THEN
-      INSERT INTO tenant(tenant) VALUES('${tenant}') ON CONFLICT DO NOTHING;
-    END IF; END $seed$;`;
+  await migrationDatabase(label, body, await migratedTemplateBuilt());
 }
 
 export async function seedLandinglessBinding(subject: pg.Pool): Promise<void> {
   await subject.query(`INSERT INTO recovery_epoch(epoch) VALUES('epoch-90')`);
-  await subject.query(tenantSeed("tenant-90"));
+  await subject.query(`INSERT INTO tenant(tenant) VALUES('tenant-90')`);
   await subject.query(
     `INSERT INTO project(tenant,project,lifecycle,head,ingress_next)
      VALUES('tenant-90','project-90','Active',0,1)`,
@@ -133,6 +102,40 @@ export async function seedLandinglessBinding(subject: pg.Pool): Promise<void> {
     `INSERT INTO project_repository(tenant,project,repository,recovery_epoch)
      VALUES('tenant-90','project-90','bound-90','epoch-90')`,
   );
+}
+
+/** A project whose one repository lands by pull request, and a configuration revision to draft against. */
+export async function seedProposingBinding(subject: pg.Pool): Promise<void> {
+  await subject.query(`INSERT INTO recovery_epoch(epoch) VALUES('epoch-91')`);
+  await subject.query(`INSERT INTO tenant(tenant) VALUES('tenant-91')`);
+  await subject.query(
+    `INSERT INTO project(tenant,project,lifecycle,head,ingress_next,ticket_next)
+     VALUES('tenant-91','project-91','Active',0,1,1)`,
+  );
+  await subject.query(
+    `INSERT INTO project_repository(tenant,project,repository,recovery_epoch,landing_mode)
+     VALUES('tenant-91','project-91','bound-91','epoch-91','PullRequest')`,
+  );
+  await subject.query(
+    `INSERT INTO configuration_revision
+       (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
+     VALUES('tenant-91','project-91','revision-91','{}','digest-91','User','author')`,
+  );
+}
+
+/** A draft created through the door against `seedProposingBinding`'s repository, on `branch`. */
+export async function createdProposingDraft(
+  subject: pg.Pool,
+  branch: string | null,
+) {
+  return (
+    await subject.query<{ result: string; ticket: string | null }>(
+      `SELECT result,ticket::text AS ticket FROM ${draftCreateFunction}(
+         'tenant-91','project-91','revision-91','digest-91',0,$1,
+         NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],$2,NULL,NULL,'bound-91',NULL,NULL,'User','author',NULL)`,
+      [encodeDraftAuthoring(plainAuthoring), branch],
+    )
+  ).rows;
 }
 
 export async function assertDoorsStandOwned(
@@ -164,44 +167,9 @@ export async function assertDoorsStandOwned(
   }
 }
 
-/** Brings the subject to the schema a named migration left, and no further. */
-export async function installationAt(
-  subject: pg.Pool,
-  migration: number,
-  what = `the schema migration ${String(migration)} left`,
-): Promise<void> {
-  const through = migrations
-    .filter(({ version }) => version <= migration)
-    .map(({ version, name }) => ({ version, name }));
-  const held = runtimeSchemaContract(through);
-  assert.equal(
-    (
-      await postgresMigrateCompatible(subject, {
-        current: held,
-        retainedPrevious: held,
-      })
-    ).migrated,
-    "Applied",
-    what,
-  );
-  assert.deepEqual(
-    await postgresRuntimeSchema(subject).applied(new AbortController().signal),
-    through,
-    what,
-  );
-}
-
-/** Brings the subject to the schema the migration under test is about to change. */
-export async function installationBefore(
-  subject: pg.Pool,
-  migration: number,
-): Promise<void> {
-  await installationAt(subject, migration - 1);
-}
-
 /** What every seeded row hangs from: a project and an epoch. */
 export const deletionPartition = `
-  ${tenantSeed("tenant-5")}
+  INSERT INTO tenant(tenant) VALUES('tenant-5');
   INSERT INTO project(tenant,project,lifecycle) VALUES('tenant-5','project-5','Active');
   INSERT INTO recovery_epoch(epoch) VALUES('epoch-5');`;
 
@@ -357,7 +325,7 @@ export const releasedTask = {
 };
 
 /** The release the door reads back the definition it reports, as the writer journals one. */
-export const releasedEntry = JSON.stringify({
+const releasedEntry = JSON.stringify({
   seq: 1,
   event: ticketCreated(releasedWhole),
 });
@@ -385,23 +353,12 @@ export function commandsRefusal(type: string, value: unknown): string {
   return JSON.stringify({ type, value });
 }
 
-/** The refusals 085 admits, which every constraint before it refused. */
-export const commandsRefusals085: readonly (readonly [string, unknown])[] = [
-  ["DependenciesRevoked", { ticket: 1, dependencies: [2] }],
-  ["DependencyCycle", { ticket: 1, dependencies: [2, 3] }],
-];
-
-/** The refusal 085 retires, which every constraint before it admitted. */
-export const commandsRetired085: readonly [string, unknown] = [
-  "TicketDependenciesChanged",
-  1,
-];
-
 /** One payload each machine refusal is admitted with. */
 export const commandsRefusals: readonly (readonly [string, unknown])[] = [
   ["TicketAlreadyExists", 1],
   ["DependenciesNotFound", { ticket: 1, dependencies: [2, 3] }],
-  ...commandsRefusals085,
+  ["DependenciesRevoked", { ticket: 1, dependencies: [2] }],
+  ["DependencyCycle", { ticket: 1, dependencies: [2, 3] }],
   ["SelfDependency", 1],
   ["TicketNotFound", 1],
   ["TicketNotPending", 1],
@@ -412,17 +369,6 @@ export const commandsRefusals: readonly (readonly [string, unknown])[] = [
   ["TicketNotResumable", 1],
   ["TaskNotCurrent", { ticket: 1, task: releasedTask }],
   ["FinalizationNotCurrent", { ticket: 1, workCycle: 2, generation: 1 }],
-];
-
-/** The payloads every constraint before 085 admitted. */
-export const commandsRefusalsBefore085: readonly (readonly [
-  string,
-  unknown,
-])[] = [
-  ...commandsRefusals.filter(([code]) =>
-    commandsRefusals085.every(([admitted]) => admitted !== code),
-  ),
-  commandsRetired085,
 ];
 
 /** The boundary's own refusals, which carry none. */

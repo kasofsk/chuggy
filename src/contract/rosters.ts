@@ -66,8 +66,8 @@ export type BlockedReason = (typeof blockedReasons)[number];
  * the finalizer recording a hold, the door admitting a result and the desk
  * reading one all name the same kinds, and `test/contract/rosters.test.ts`
  * holds it against the interpreter's `allFinalizationHoldKinds` as
- * `test/postgres/migration.test.ts` holds it against the column that mirrors
- * it. The six left out stay holds, each for its own reason:
+ * `test/postgres/finalizationHold.test.ts` holds it against the column that
+ * mirrors it. The six left out stay holds, each for its own reason:
  * `ApprovalDeclined` is a human's answer, which a resume would put to the same
  * human again; `ProposalRefused` is that answer or a pin the rows contradict,
  * and neither is reachability; `ContradictoryEvidence` is durable rows

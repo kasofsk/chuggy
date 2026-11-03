@@ -11,10 +11,11 @@
 # THE SERVER IS ACQUIRED BY `.chug/tasks/_postgres.sh`, which this gate
 # sources. The gate migrates one template database, clones it once per suite,
 # and removes every clone and the template before returning. Ordinary suites
-# therefore exercise the current schema without replaying migrations;
+# therefore exercise the current schema without replaying migrations. A suite
+# that opens a migrated database per case clones it from a template
+# `test/postgres/migrationHarness.ts` migrates once per process, and
 # `migration.test.ts` exercises fresh installation, ledger compatibility and
-# migration atomicity, and `migrationSteps.test.ts` the later migrations, each
-# from the version before it.
+# migration atomicity.
 #
 # WORKERS RUN CONCURRENTLY AND EACH WORKER RUNS ITS SUITES SERIALLY, each suite
 # against a clone of its own that is dropped as the suite ends. A suite reading

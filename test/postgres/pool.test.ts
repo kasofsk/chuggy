@@ -21,6 +21,7 @@ import {
   ticketRunStepFailureFunction,
   ticketRunnerLossFunction,
   ticketUpdatedDependenciesFunction,
+  ticketUsageResumeFunction,
 } from "../../src/adapters/postgres/schema/shared.ts";
 import { postgresHarnessUrl } from "./harness.ts";
 
@@ -83,6 +84,7 @@ test("the functions a ticket read joins per ticket are planned at one row each",
     ticketRunStepFailureFunction,
     ticketRunnerLossFunction,
     ticketUpdatedDependenciesFunction,
+    ticketUsageResumeFunction,
   ];
   const declared = await admin.query<{ name: string; rows: number }>(
     `SELECT proname AS name, prorows::int AS rows FROM pg_proc
