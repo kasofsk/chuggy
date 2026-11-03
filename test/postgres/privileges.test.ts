@@ -36,7 +36,9 @@ import {
   workerPlaneRole,
   workerRunBindingFunction,
   workerRunConfigurationFunction,
+  workerRunLimitFunction,
   workerRunTotalFunction,
+  workerRunUsageFunction,
   workerRunTranscriptFunction,
   workerRunTurnsFunction,
 } from "../../src/adapters/postgres/schema.ts";
@@ -1123,7 +1125,7 @@ const schedulerWritePrivileges = [
     table_name: "execution_attempt",
     privilege_type: "INSERT",
     columns:
-      "assignment,attempt,attempt_number,capability,capability_secret_digest,claimed_at,cleanup_completed_at,ended_at,evidence,execution,generation,invocation,invoked,lease_expires_at,lease_owner,manifest,opened_at,personal,pool,pool_principal,pool_refusal,pool_refusal_fault,project,recovery_epoch,runtime,state,tenant,workload",
+      "agent,assignment,attempt,attempt_number,capability,capability_secret_digest,claimed_at,cleanup_completed_at,ended_at,evidence,execution,generation,invocation,invoked,lease_expires_at,lease_owner,manifest,opened_at,personal,pool,pool_principal,pool_refusal,pool_refusal_fault,project,recovery_epoch,runtime,state,tenant,workload",
   },
   {
     table_name: "execution_attempt",
@@ -1347,6 +1349,8 @@ test("run evidence is written through its boundary and read by the API alone", a
     `${workerRunTranscriptFunction}('digest',1,1,'path','digest',1,1)`,
     `${workerRunTurnsFunction}('digest',1,'[]'::jsonb)`,
     `${workerRunTotalFunction}('digest',1,1,1,1,1,1,1,1,1,'List',1,NULL,NULL,'[]'::jsonb)`,
+    `${workerRunUsageFunction}('digest',1,'{}'::jsonb)`,
+    `${workerRunLimitFunction}('digest',1,NULL,NULL)`,
   ]) {
     assert.equal(
       await harness.attemptAs(workerPlaneRole, `SELECT ${named}`),

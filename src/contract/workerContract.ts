@@ -43,6 +43,12 @@ export const workerContractRunnerReport: WorkerContractVersion = {
   minor: 28,
 };
 
+/** The first version whose job plane takes a run's account usage beside its totals and the limit that stopped it beside its end: a runner sends either only to a plane whose answers name this version or a later one. */
+export const workerContractRunUsage: WorkerContractVersion = {
+  major: 1,
+  minor: 32,
+};
+
 /** A release as the header carries it: major, minor and patch, each written without a leading zero. */
 const workerContractReleasePattern =
   /^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})$/u;

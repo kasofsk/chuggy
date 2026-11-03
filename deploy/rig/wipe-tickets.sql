@@ -52,6 +52,8 @@
 BEGIN;
 
 TRUNCATE TABLE
+  public.agent_account_limit,
+  public.agent_account_usage,
   public.agent_session,
   public.commit_permit,
   public.decision_input,

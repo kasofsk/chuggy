@@ -26,10 +26,15 @@ import {
   workerContractRelease,
   workerContractRunDiskLow,
 } from "../../src/contract/workerContract.ts";
-import { runEndedEvidences } from "../../src/contract/workerPlane.ts";
+import {
+  runEndedEvidences,
+  workerRunEndedSchema,
+  workerRunTotalsSchema,
+} from "../../src/contract/workerPlane.ts";
 import {
   contractVersionAccepted,
   workerContractAccepted,
+  workerContractRunUsages,
 } from "../../src/interpreter/workerPlane.ts";
 import {
   workerContractAlias,
@@ -38,6 +43,7 @@ import {
   workerContractInstalled,
   workerContractPlanes,
   workerContractReleaseExport,
+  workerContractReleaseSchema,
   workerContractReleasesBelow,
   workerContractReplayed,
   type WorkerContractPlane,
@@ -162,4 +168,32 @@ test("a run ends `RunDiskLow` from the version a runner holds a plane's release 
       contractVersionAccepted(from, release),
       release,
     );
+});
+
+test("a run sends its account's usage and its limit from the version a runner holds a plane's release to, and no release below it takes either", async () => {
+  const carried = (schema: z.ZodType, field: string) =>
+    schema instanceof z.ZodObject && Object.hasOwn(schema.shape, field);
+  assert.ok(carried(workerRunTotalsSchema, "usage"));
+  assert.ok(carried(workerRunEndedSchema, "limit"));
+  assert.ok(
+    contractVersionAccepted(workerContractRunUsages, workerContractRelease),
+  );
+  for (const release of workerContractReplayed("job"))
+    for (const [name, field] of [
+      ["workerRunTotalsSchema", "usage"],
+      ["workerRunEndedSchema", "limit"],
+    ] as const)
+      assert.equal(
+        carried(
+          await workerContractReleaseExport(
+            release,
+            "workerPlane",
+            name,
+            workerContractReleaseSchema,
+          ),
+          field,
+        ),
+        contractVersionAccepted(workerContractRunUsages, release),
+        `${release} ${name}`,
+      );
 });

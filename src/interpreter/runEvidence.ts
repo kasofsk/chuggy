@@ -31,7 +31,7 @@ import {
 } from "./resultManifest.ts";
 import type { AttemptId, ExecutionId } from "./schedulerIdentity.ts";
 import { runTranscriptBatchesMax, runTurnSeriesMax } from "../contract/http.ts";
-import type { RunCostBasis } from "../contract/rosters.ts";
+import type { RunCostBasis, RunUsageWindow } from "../contract/rosters.ts";
 
 /** Where a run's configuration snapshot is stored, which no worker chooses. */
 export function runConfigurationPath(): ArtifactPath {
@@ -79,6 +79,24 @@ export interface RunTotals extends RunTokens {
   readonly permissionDenials: number;
   readonly resultSubtype?: string;
   readonly stopReason?: string;
+}
+
+/** How much of one window an agent account had used, where one is the whole window, when the window reopens and when the runtime read it, each instant in Unix seconds. */
+export interface RunUsageReading {
+  readonly utilization: number;
+  readonly resetsAt: number;
+  readonly observedAt: number;
+}
+
+/** The latest reading of each window a run saw its account's usage in. */
+export type RunUsage = Readonly<
+  Partial<Record<RunUsageWindow, RunUsageReading>>
+>;
+
+/** The limit a provider stopped a run at, each part where the provider said it: which window, and when it reopens in Unix seconds. */
+export interface RunLimit {
+  readonly window?: RunUsageWindow;
+  readonly resetsAt?: number;
 }
 
 /** One assistant turn's usage, as the worker offers it before the server dates it. */
@@ -164,19 +182,28 @@ export interface WorkerRunTurnsPort {
   ): Promise<RunTurnsRecorded>;
 }
 
+/** A run's totals, and the usage of the account it spent, which is kept with totals that were stored or already were. */
 export interface WorkerRunTotalPort {
   record(
-    input: RunEvidenceWrite & { readonly totals: RunTotals },
+    input: RunEvidenceWrite & {
+      readonly totals: RunTotals;
+      readonly usage?: RunUsage;
+    },
   ): Promise<RunEvidenceStored>;
 }
 
 /**
- * Narrowing a live attempt to the label its own run knows it ended under. The
- * lease sweep ends it either way, so a refusal here costs promptness alone.
+ * Narrowing a live attempt to the label its own run knows it ended under, and
+ * under `RunRateLimited` alone keeping that a provider refused its account,
+ * with the limit where the run names one. The lease sweep ends it either way,
+ * so a refusal here costs promptness alone.
  */
 export interface WorkerRunEndedPort {
   end(
-    input: RunEvidenceWrite & { readonly evidence: RunEndedEvidence },
+    input: RunEvidenceWrite & {
+      readonly evidence: RunEndedEvidence;
+      readonly limit?: RunLimit;
+    },
   ): Promise<boolean>;
 }
 

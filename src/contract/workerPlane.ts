@@ -27,7 +27,12 @@ import {
   type WorkerPlaneAnswers,
 } from "./planeAnswers.ts";
 import { runModelUsageSchema, runTotalsSchema } from "./responses.ts";
-import { artifactRoles, forgeApps, runEndedEvidences } from "./rosters.ts";
+import {
+  artifactRoles,
+  forgeApps,
+  runEndedEvidences,
+  runUsageWindows,
+} from "./rosters.ts";
 import {
   artifactFailures,
   resultManifestRejections,
@@ -87,7 +92,7 @@ export {
   runTurnSeriesMax,
   workerPlaneUploadBytesMax,
 } from "./http.ts";
-export { runEndedEvidences } from "./rosters.ts";
+export { runEndedEvidences, runUsageWindows } from "./rosters.ts";
 export type { WorkerPlaneAnswer } from "./planeAnswers.ts";
 
 /** One turn as a worker offers it; the server is what dates the stored row. */
@@ -107,16 +112,55 @@ export const workerRunTurnsSchema = z.strictObject({
     .max(nativeHttpPageItemsMax),
 });
 
-/** A run's totals as a worker offers them, the same figures a reader is answered with. */
+/**
+ * The most of its window a reading may say an account has used, where the
+ * whole window is one: a provider can report an account past its window, so
+ * the ceiling sits well above it.
+ */
+export const runUsageUtilizationMax = 100;
+
+/** The last Unix second a reading or a limit may name, which is the last a date can. */
+export const runUsageInstantSecsMax = 8_640_000_000_000;
+
+/** An instant the agent runtime names, in whole Unix seconds. */
+const runUsageInstantSchema = z
+  .number()
+  .int()
+  .positive()
+  .max(runUsageInstantSecsMax);
+
+/** How much of one window the account had used, when the window reopens, and when the runtime read it. */
+const runUsageReadingSchema = z.strictObject({
+  utilization: z.number().nonnegative().max(runUsageUtilizationMax),
+  resetsAt: runUsageInstantSchema,
+  observedAt: runUsageInstantSchema,
+});
+
+/** The account's latest reading of each window the runtime saw one of, keyed by the window so each appears at most once. */
+export const workerRunUsageSchema = z.strictObject({
+  five_hour: runUsageReadingSchema.exactOptional(),
+  seven_day: runUsageReadingSchema.exactOptional(),
+});
+
+/** A run's totals as a worker offers them, the same figures a reader is answered with, and the usage of the account it spent. */
 export const workerRunTotalsSchema = z.strictObject({
   ...runTotalsSchema.shape,
   models: z
     .array(z.strictObject(runModelUsageSchema.shape))
     .max(nativeHttpPageItemsMax),
+  usage: workerRunUsageSchema.exactOptional(),
 });
 
+/** The limit a provider stopped a run at: which window, and when it reopens, each where the provider said. */
+export const workerRunLimitSchema = z.strictObject({
+  window: z.enum(runUsageWindows).exactOptional(),
+  resetsAt: runUsageInstantSchema.exactOptional(),
+});
+
+/** The label a run ended itself under, and the limit that stopped it, which is kept only beside `RunRateLimited`. */
 export const workerRunEndedSchema = z.strictObject({
   evidence: z.enum(runEndedEvidences),
+  limit: workerRunLimitSchema.exactOptional(),
 });
 
 /** A refusal the pod stops on. */

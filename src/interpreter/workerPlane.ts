@@ -1,6 +1,7 @@
 import {
   workerContractMemoryRoom,
   workerContractRelease,
+  workerContractRunUsage,
   workerContractUnnamed,
   workerContractVersionOf,
   workerContractVersionText,
@@ -89,6 +90,12 @@ export const workerContractChatHost: WorkerContractRange = {
 /** The versions in which a chat host runs its member's own sessions, which name `MemberRead`, a capability a host of an earlier one refuses its whole answer over. */
 export const workerContractUnscopedChat: WorkerContractRange = {
   min: { major: 1, minor: 29 },
+  max: workerContractAccepted.max,
+};
+
+/** The versions in which a run's totals may carry its account's usage and its end the limit that stopped it, fields a plane of an earlier one refuses the whole body over. */
+export const workerContractRunUsages: WorkerContractRange = {
+  min: workerContractRunUsage,
   max: workerContractAccepted.max,
 };
 
