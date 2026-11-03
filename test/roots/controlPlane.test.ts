@@ -3,6 +3,8 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { test } from "node:test";
 
+import { programUntil } from "./harness.ts";
+
 const execute = promisify(execFile);
 
 test("a process database role must match its responsibility", async () => {
@@ -152,9 +154,10 @@ const successfulProcessProgram = `
       finalizer: finalizer.finalizerDefaults,
       metrics: scheduler.silentSchedulerTelemetry,
     };
+    let ticketPasses = 0;
     const ticketService = {
       domain: {},
-      discovery: { ready: async () => [] },
+      discovery: { ready: async () => { ticketPasses += 1; return []; } },
       decisions: {},
       projects: {},
       owner: 'owner',
@@ -177,12 +180,13 @@ const successfulProcessProgram = `
       policy: {},
       config: sessions.sessionSchedulerDefaults,
     };
+    let finalizerPasses = 0;
     const finalizerService = {
       store: {
         reclaimStaleEpoch: async () => 0,
         reclaimLapsed: async () => 0,
         heldPermits: async () => [],
-        claimRequests: async () => [],
+        claimRequests: async () => { finalizerPasses += 1; return []; },
       },
       config: finalizer.finalizerDefaults,
       metrics: finalizerTelemetry.silentFinalizerTelemetry,
@@ -200,7 +204,10 @@ const successfulProcessProgram = `
     ];
     const outcomes = [];
     for (const runtime of runtimes) outcomes.push(await runtime.start());
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    ${programUntil(
+      "[wakePasses, sessionPasses, ticketPasses, finalizerPasses].every((passes) => passes > 0)",
+      "a loop never reached its ports",
+    )}
     const health = runtimes.map((runtime) => runtime.health());
     for (const runtime of runtimes) await runtime.stop();
     process.stdout.write(JSON.stringify({
@@ -335,6 +342,7 @@ test("the ticket-service loop sweeps the fleet by cursor and wraps at its end", 
 const containedFaultProgram = `
     ${ticketServiceFleetPreamble}
     const partition = { tenant: 'acme', project: 'web' };
+    let loads = 0;
     const service = {
       domain: {},
       discovery: { ...idleWriter, ready: async () => [{ partition, generation: 1 }] },
@@ -342,7 +350,7 @@ const containedFaultProgram = `
       projects: {
         acquire: async () => ({ acquired: 'Granted', lease: { partition } }),
         release: async () => undefined,
-        load: async () => { throw new Error('journal is illegal to replay'); },
+        load: async () => { loads += 1; throw new Error('journal is illegal to replay'); },
       },
       owner: 'owner',
       monotonicNow: () => 0,
@@ -354,7 +362,8 @@ const containedFaultProgram = `
       config,
     );
     await runtime.start();
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    /** A second load is a pass the loop took after the first one's fault. */
+    ${programUntil("loads >= 2 || !runtime.health().live", "the loop lived and took no pass after the fault")}
     const health = runtime.health();
     await runtime.stop();
     process.stdout.write(JSON.stringify(health));
@@ -376,12 +385,13 @@ const truncatedWakeProgram = `
       principal: 'oidc:' + session,
       session,
     });
+    let advanced = 0;
     const wakes = {
       store: {
         cursor: async () => 0,
         candidates: async () => [candidate('one'), candidate('two')],
         wake: async () => ({ woken: 'Woken', ordinal: 1 }),
-        advance: async (sequence) => sequence,
+        advance: async (sequence) => { advanced += 1; return sequence; },
       },
       access: {
         authorize: async (principal) => projectAccess.memberAuthority(principal),
@@ -397,7 +407,8 @@ const truncatedWakeProgram = `
       config,
     );
     await runtime.start();
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    /** Moving past the change is the tick's last call, and what follows it settles before a timer fires. */
+    ${programUntil("advanced > 0", "the pass never moved past the change")}
     const health = runtime.health();
     await runtime.stop();
     process.stdout.write(JSON.stringify(health));

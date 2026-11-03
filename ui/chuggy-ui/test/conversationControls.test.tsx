@@ -207,12 +207,9 @@ function scrolling(container: HTMLElement): {
   };
 }
 
-/** Long enough for the frame the column asks for on mount, and for what it
- * hears of its own content changing. */
-async function frame(): Promise<void> {
-  await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 30));
-  });
+/** Once the column has answered what it hears of its own content changing, which reaches it in a microtask. */
+async function heard(): Promise<void> {
+  await act(() => Promise.resolve());
 }
 
 const first = exchangeOf({});
@@ -236,22 +233,20 @@ describe("the way back to the foot of the column", () => {
   test("appears when they scroll away, and what is written then leaves them where they are", async () => {
     const view = render(<Conversation exchanges={[first]} pane />);
     const column = scrolling(view.container);
-    await frame();
     act(column.away);
     const sentBefore = column.sent.length;
     expect(back()).not.toBe(null);
     column.grown(1200);
     view.rerender(<Conversation exchanges={[first, second]} pane />);
-    await frame();
+    await heard();
     expect(column.sent.length).toBe(sentBefore);
     expect(back()).not.toBe(null);
     styleless();
   });
 
-  test("stands on a band of its own under the column, over no line of it", async () => {
+  test("stands on a band of its own under the column, over no line of it", () => {
     const view = render(<Conversation exchanges={[first]} pane />);
     const column = scrolling(view.container);
-    await frame();
     act(column.away);
     const scroller = view.container.querySelector(".overflow-y-auto");
     const band = back()?.parentElement;
@@ -264,11 +259,10 @@ describe("the way back to the foot of the column", () => {
   test("returns them there when pressed, goes, and holds them there as more is written", async () => {
     const view = render(<Conversation exchanges={[first]} pane />);
     const column = scrolling(view.container);
-    await frame();
     act(column.away);
     column.grown(1200);
     view.rerender(<Conversation exchanges={[first, second]} pane />);
-    await frame();
+    await heard();
     const sentBefore = column.sent.length;
     const control = back();
     if (control === null) throw new Error("no way back is offered");
@@ -279,7 +273,7 @@ describe("the way back to the foot of the column", () => {
     expect(back()).toBe(null);
     column.grown(1500);
     view.rerender(<Conversation exchanges={[first, second, third]} pane />);
-    await frame();
+    await heard();
     expect(column.sent.at(-1)).toBe(1500);
     expect(back()).toBe(null);
   });

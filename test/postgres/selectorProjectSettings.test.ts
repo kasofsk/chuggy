@@ -872,6 +872,36 @@ test("a ready policy host changes what a write may set and not what a fence says
   }
 });
 
+/** How long a case gives a write that must not wait on a lock to answer, and how often it asks whether the write is waiting on one. */
+const unblockedWaitMsMax = 10_000;
+const unblockedAskMs = 25;
+
+/** Whether a write answered, or was found waiting on a lock the backend `holder` holds, whichever came first; neither by the bound is a failure of its own. */
+async function answeredOrBlocked(
+  write: Promise<unknown>,
+  holder: number,
+): Promise<"answered" | "waiting"> {
+  let answered = false;
+  void write.then(
+    () => (answered = true),
+    () => (answered = true),
+  );
+  const deadline = Date.now() + unblockedWaitMsMax;
+  while (Date.now() < deadline) {
+    if (answered) return "answered";
+    const [found] = await harness.query(
+      `SELECT count(*)::int AS blocked FROM pg_stat_activity
+        WHERE $1 = ANY(pg_blocking_pids(pid))`,
+      [holder],
+    );
+    if (Number(found?.["blocked"]) > 0) return "waiting";
+    await delay(unblockedAskMs);
+  }
+  throw new Error(
+    "the write neither answered nor was seen waiting on the holder's lock",
+  );
+}
+
 test("two projects whose identities spell the same thing do not share a lock", async () => {
   const tenant = postgresHarnessPartition("selector-lock-key").tenant;
   const left = { tenant: asTenantId(`${tenant}/a`), project: asProjectId("b") };
@@ -892,19 +922,15 @@ test("two projects whose identities spell the same thing do not share a lock", a
       ).revision,
       1,
     );
+    const [held] = (await holder.query("SELECT pg_backend_pid() AS pid"))
+      .rows as { pid: number }[];
     const other = postgresSelectorProjectSettings(pool).write(
       right,
       0,
       { northStar: "Not the same project." },
       administrator,
     );
-    assert.equal(
-      await Promise.race([
-        other.then(() => "answered"),
-        delay(500).then(() => "waiting"),
-      ]),
-      "answered",
-    );
+    assert.equal(await answeredOrBlocked(other, held?.pid ?? 0), "answered");
     assert.equal(writtenSettings(await other).revision, 1);
   } finally {
     await holder.query("ROLLBACK").catch(() => undefined);

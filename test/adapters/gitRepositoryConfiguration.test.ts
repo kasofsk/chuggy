@@ -1229,6 +1229,13 @@ test("from a remote honouring the filter, each file arrives as its directory or 
 });
 
 /**
+ * How long the remote holds each pack it serves where a case asks it to, which
+ * is the window in which another read of the same repository must neither
+ * fetch nor resolve the credential its turn fetches under.
+ */
+const fixturePackHeldSecs = 1;
+
+/**
  * What the remote runs in place of building a pack directly: it writes the
  * secret the fetch that asked was given, read through the adapter's own
  * helper text, pauses as long as it is told, and then builds the pack.
@@ -1345,7 +1352,7 @@ test("reads of one repository begun together each answer their own commit, wheth
   const port = fixturePort(
     fixture,
     fixtureCredential,
-    fixtureServing(fixture, 1),
+    fixtureServing(fixture, fixturePackHeldSecs),
   );
   const together = async (...commits: GitObjectId[]) =>
     (
@@ -1367,13 +1374,16 @@ test("reads of one repository begun together each answer their own commit, wheth
   );
 });
 
-/** The environment of a port whose scratch is housekept at every pack past its first, by gc on every git, each housekeeping writing that it began and then taking a while before it does anything. */
+/** How long each housekeeping holds before it does anything, which is the window in which the read that set it off must not answer. */
+const fixtureHousekeepingHeldSecs = 1;
+
+/** The environment of a port whose scratch is housekept at every pack past its first, by gc on every git, each housekeeping writing that it began and then holding before it does anything. */
 function fixtureHousekeeping(fixture: Fixture): GitEnvironment {
   const hooks = join(fixture.directory, "hooks");
   mkdirSync(hooks);
   writeFileSync(
     join(hooks, "pre-auto-gc"),
-    `#!/bin/sh\necho begun >> "${join(fixture.directory, "housekept")}"\nsleep 1\n`,
+    `#!/bin/sh\necho begun >> "${join(fixture.directory, "housekept")}"\nsleep ${String(fixtureHousekeepingHeldSecs)}\n`,
     { mode: 0o755 },
   );
   writeFileSync(
@@ -1521,7 +1531,7 @@ test("a read fetches under a credential resolved once its turn has come, after t
   fixtureFiltering(fixture);
   fixtureWrite(fixture, `${repositoryConfigurationRoot}work.json`, "work\n");
   const commit = asGitObjectId(fixtureCommit(fixture, "work"));
-  const environment = fixtureServing(fixture, 1);
+  const environment = fixtureServing(fixture, fixturePackHeldSecs);
   let minted = 0;
   const port = fixturePort(
     fixture,

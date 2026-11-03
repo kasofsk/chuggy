@@ -15,7 +15,7 @@ import { execFile } from "node:child_process";
 import type net from "node:net";
 import { after, test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
-import { promisify } from "node:util";
+import { isDeepStrictEqual, promisify } from "node:util";
 
 import { threadLiveFramed } from "../../src/adapters/http/eventStream.ts";
 import {
@@ -59,6 +59,7 @@ import {
   payloads,
   reaches,
   readOut,
+  requestsClosedCounted,
   unreading,
   type Held,
 } from "./heldStream.ts";
@@ -102,7 +103,7 @@ interface Served {
 
   /** What the hub noted, by name, in the order it noted it. */
   readonly noted: string[];
-  hear(event: SessionLiveEvent, of?: SessionId): void;
+  hear(event: SessionLiveEvent, of?: SessionId, tenant?: string): void;
 
   /** Makes every later thread read answer that the thread is not the caller's to read. */
   refuses(): void;
@@ -112,6 +113,12 @@ interface Served {
 
   /** How many listeners each connection the server still holds has for its peer saying it will send no more. */
   endListeners(): number[];
+
+  /** What each connection the server still holds has been written, and how much of that the kernel has yet to take. */
+  writes(): { readonly bytes: number; readonly untaken: number }[];
+
+  /** How many requests the server has heard close, which a route hears in the same turn. */
+  requestsClosed(): number;
 
   /** Closes the hub and leaves the server serving, which is the first thing a stopping root does. */
   stops(): Promise<void>;
@@ -227,6 +234,7 @@ async function served(serving: Serving = {}): Promise<Served> {
   );
   const sockets: net.Socket[] = [];
   app.server.on("connection", (socket) => sockets.push(socket));
+  const requestsClosed = requestsClosedCounted(app.server);
   await app.listen({ host: "127.0.0.1", port: 0 });
   const address = app.server.address();
   assert.ok(address !== null && typeof address !== "string");
@@ -234,8 +242,13 @@ async function served(serving: Serving = {}): Promise<Served> {
     port: address.port,
     asked,
     noted,
-    hear: (event, of = session) =>
-      watcher?.heard({ partition, session: of, turn, event }),
+    hear: (event, of = session, tenant = "tenant") =>
+      watcher?.heard({
+        partition: partitionOf("project", tenant),
+        session: of,
+        turn,
+        event,
+      }),
     refuses: () => {
       options.found = false;
     },
@@ -250,6 +263,14 @@ async function served(serving: Serving = {}): Promise<Served> {
       sockets
         .filter((socket) => !socket.destroyed)
         .map((socket) => socket.listenerCount("end")),
+    writes: () =>
+      sockets
+        .filter((socket) => !socket.destroyed)
+        .map((socket) => ({
+          bytes: socket.bytesWritten,
+          untaken: socket.writableLength,
+        })),
+    requestsClosed,
     stops: () => hub.close(),
     close: async () => {
       await hub.close();
@@ -379,6 +400,25 @@ test("a live event arrives as a frame the contract reads, and no frame carries a
   ]);
 });
 
+function liveOf(event: SessionLiveEvent): ThreadLiveStreamEvent {
+  return { event: "live", data: { version: threadLiveVersion, turn, event } };
+}
+
+/** The block a case has a reader hear last, told apart from every other reader's by its message. */
+function lastFor(reader: string): SessionLiveEvent {
+  return { live: "Block", message: reader, index: 0, kind: "Text" };
+}
+
+/** Whether the reader has carried the block heard last for it. */
+function carriedLast(found: Held, reader: string): Promise<boolean> {
+  return reaches(() =>
+    frames(found).some((frame) =>
+      isDeepStrictEqual(frame, liveOf(lastFor(reader))),
+    ),
+  );
+}
+
+/** A stream carries what it is sent in order, so the block each reader hears last arriving is all it was sent before having arrived. */
 test("a reader hears the thread its path names, under the tenant its path names", async () => {
   const other = asSessionId("thread-2");
   const rig = await rigOf();
@@ -389,12 +429,23 @@ test("a reader hears the thread its path names, under the tenant its path names"
   assert.ok(await carried(elsewhere, 1));
   rig.hear(begun, other);
   rig.hear(begun);
-  assert.ok(await carried(mine, 2));
-  assert.ok(await carried(theirs, 2));
-  await delay(100);
-  assert.equal(frames(mine).length, 2);
-  assert.equal(frames(theirs).length, 2);
-  assert.deepEqual(frames(elsewhere), [nothing]);
+  rig.hear(lastFor("mine"));
+  rig.hear(lastFor("theirs"), other);
+  rig.hear(lastFor("elsewhere"), session, "other-tenant");
+  assert.ok(await carriedLast(mine, "mine"));
+  assert.ok(await carriedLast(theirs, "theirs"));
+  assert.ok(await carriedLast(elsewhere, "elsewhere"));
+  assert.deepEqual(frames(mine), [
+    nothing,
+    liveOf(begun),
+    liveOf(lastFor("mine")),
+  ]);
+  assert.deepEqual(frames(theirs), [
+    nothing,
+    liveOf(begun),
+    liveOf(lastFor("theirs")),
+  ]);
+  assert.deepEqual(frames(elsewhere), [nothing, liveOf(lastFor("elsewhere"))]);
 });
 
 test("a thread live stream takes none of the slots an ordinary request queues for, and is beaten while it is quiet", async () => {
@@ -498,8 +549,12 @@ test("a reader past what the readers behind may hold unwritten between them is c
 
 const other = asSessionId("thread-2");
 
-/** How long a case gives the kernel to take what a reader that is not reading was written. */
-const takenWithinMs = 200;
+/** Whether a connection has had all of `bytes` taken by the kernel, which is where a reader that is not reading holds what it was written. */
+function takenWhole(rig: Served, bytes: number): boolean {
+  return rig
+    .writes()
+    .some((written) => written.untaken === 0 && written.bytes >= bytes);
+}
 
 test("a stream a stopping hub ends while its reader holds bytes unwritten leaves the server no socket for it", async () => {
   const rig = await rigOf({
@@ -508,8 +563,10 @@ test("a stream a stopping hub ends while its reader holds bytes unwritten leaves
   filled(rig);
   const reader = unreading(rig.port, pathOf(), authorized);
   try {
-    assert.ok(await reaches(() => rig.asked.length === 1));
-    await delay(takenWithinMs);
+    assert.ok(
+      await reaches(() => rig.writes().some(({ untaken }) => untaken > 0)),
+      "the kernel took everything the reader was written",
+    );
     assert.equal(await rig.connections(), 1);
     await rig.stops();
     assert.ok(await holdsNoSocket(rig));
@@ -558,8 +615,10 @@ test("a reader that says it will send no more, having read nothing, is reset and
   const heldBytes = fourHeld(rig);
   const reader = unreading(rig.port, pathOf(), authorized);
   try {
-    assert.ok(await reaches(() => rig.asked.length === 1));
-    await delay(takenWithinMs);
+    assert.ok(
+      await reaches(() => takenWhole(rig, heldBytes)),
+      "the kernel never took what the reader was written",
+    );
     reader.end();
     assert.ok(await holdsNoSocket(rig));
     assert.ok((await readOut(reader)) < heldBytes);
@@ -590,10 +649,13 @@ test("a reader that is cut can read no more than had already reached it: what wa
       slowClientWaitMs: 60_000,
     },
   });
-  fourHeld(rig);
+  const heldBytes = fourHeld(rig);
   const reader = unreading(rig.port, pathOf(), authorized);
   try {
-    await delay(takenWithinMs);
+    assert.ok(
+      await reaches(() => takenWhole(rig, heldBytes)),
+      "the kernel never took what the reader was written",
+    );
     const keeping = await stream(rig, pathOf(other));
     rig.hear(begun, other);
     rig.hear(text(0, written), other);
@@ -688,18 +750,21 @@ test("a reader that goes away gives its place back", async () => {
   assert.ok(await opensWithin(rig), "the place was never given back");
 });
 
-test("a reader that goes away while its thread is being read takes no place", async () => {
+test("a reader that goes away while its thread is being read takes no place", async (t) => {
   let release: () => void = () => undefined;
   const reading = new Promise<void>((resolve) => {
     release = resolve;
   });
+  t.after(release);
   const rig = await rigOf({ limits: { connectionsMax: 1 }, reading });
   const abandoned = abandoning(rig.port, pathOf(), authorized);
   assert.ok(await reaches(() => rig.asked.length === 1));
   abandoned.destroy();
-  await delay(100);
+  assert.ok(
+    await reaches(() => rig.requestsClosed() === 1),
+    "the server never heard the reader go",
+  );
   release();
-  await delay(100);
   const next = await stream(rig);
   assert.equal(next.status, 200);
   assert.ok(await carried(next, 1));

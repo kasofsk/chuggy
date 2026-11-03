@@ -203,6 +203,10 @@ const throughMoments: readonly Partial<ConversationExchange>[] = [
   { work: carriedOn, answer: "So it waits.", activity: { activity: "Whole" } },
 ];
 
+/** How long each moment of a turn drawn through is held, the window in which a
+ * second thing must not start moving beside the one that is. */
+const momentHeldMs = 40;
+
 describe("a turn drawn through", () => {
   test("never has two things moving at once, at any moment", async () => {
     const view = render(
@@ -223,7 +227,7 @@ describe("a turn drawn through", () => {
       await waitFor(() => {
         expect(moving(view.container)).toHaveLength(1);
       });
-      await new Promise((resolve) => setTimeout(resolve, 40));
+      await new Promise((resolve) => setTimeout(resolve, momentHeldMs));
     }
     await waitFor(() => {
       expect(moving(view.container)).toEqual(["mark"]);

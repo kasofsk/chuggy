@@ -264,6 +264,10 @@ function answered(double: SyntaxDouble): void {
   });
 }
 
+/** How long a block with nothing to have it read is watched, the window in
+ * which it must not be coloured. */
+const uncolouredHeldMs = 20;
+
 describe("a block of code drawn", () => {
   const fenced = "Wait:\n\n```ts\nconst wait = 250;\nreturn wait;\n```";
 
@@ -313,7 +317,7 @@ describe("a block of code drawn", () => {
 
   test("with nothing to have it read is its characters, and stays them", async () => {
     const view = render(<MarkdownReport text={fenced} bare />);
-    await new Promise((resolve) => setTimeout(resolve, 20));
+    await new Promise((resolve) => setTimeout(resolve, uncolouredHeldMs));
     const [code] = blocks(view.container);
     expect(code?.textContent).toBe("const wait = 250;\nreturn wait;");
     expect(code?.childElementCount).toBe(0);

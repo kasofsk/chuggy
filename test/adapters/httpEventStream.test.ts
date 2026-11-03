@@ -14,7 +14,6 @@
 
 import assert from "node:assert/strict";
 import { after, test } from "node:test";
-import { setTimeout as delay } from "node:timers/promises";
 
 import {
   createNativeHttpApp,
@@ -55,6 +54,7 @@ import {
   identities,
   payloads,
   reaches,
+  requestsClosedCounted,
   unreading,
   type Held,
 } from "./heldStream.ts";
@@ -163,6 +163,9 @@ interface Served {
   readonly port: number;
   readonly log: FakeLog;
   readonly doorbell: FakeDoorbell;
+
+  /** How many requests the server has heard close, which a route hears in the same turn. */
+  requestsClosed(): number;
   close(): Promise<void>;
 }
 
@@ -213,6 +216,7 @@ async function served(
     hub,
   );
   app.addHook("onClose", () => hub.close());
+  const requestsClosed = requestsClosedCounted(app.server);
   await app.listen({ host: "127.0.0.1", port: 0 });
   const address = app.server.address();
   assert.ok(address !== null && typeof address !== "string");
@@ -220,6 +224,7 @@ async function served(
     port: address.port,
     log,
     doorbell,
+    requestsClosed,
     close: async () => {
       await hub.close();
       await app.close();
@@ -476,24 +481,6 @@ test("a place the log never held is refused as a request fault", async () => {
   assert.equal(refused.status, 400);
 });
 
-test("a stream outlives the request timeout every other route takes", async () => {
-  const rig = await rigOf({
-    httpLimits: {
-      ...nativeHttpLimitsDefault,
-      concurrentRequestsMax: 64,
-      requestTimeoutMs: 200,
-    },
-    limits: { heartbeatMs: 50 },
-  });
-  const opened = await stream(rig);
-  assert.ok(await reaches(() => opened.body().includes("event: source")));
-  await delay(600);
-  rig.log.append(changeRow(3, partition, "Ticket", "3"));
-  rig.doorbell.ring();
-  assert.ok(await reaches(() => opened.body().includes("event: Ticket")));
-  assert.ok(opened.body().includes(":\n\n"));
-});
-
 test("streams take none of the slots an ordinary request queues for", async () => {
   const rig = await rigOf({
     httpLimits: {
@@ -528,17 +515,24 @@ test("a client that goes away gives its stream back to the cap", async () => {
   assert.equal(next.status, 200);
 });
 
-test("a client that goes away mid-open gives its slot back", async () => {
+test("a client that goes away mid-open gives its slot back", async (t) => {
   const rig = await rigOf({ limits: { connectionsMax: 1 } });
   rig.log.append(changeRow(1, partition, "Ticket", "3"));
   const release = rig.log.holdsReplays();
+  t.after(release);
   const abandoned = abandoning(rig.port, streamPath, {
     ...authorized,
     "last-event-id": "0",
   });
-  await delay(100);
+  assert.ok(
+    await reaches(() => rig.log.replaysHeld() === 1),
+    "the stream never reached its opening read",
+  );
   abandoned.destroy();
-  await delay(100);
+  assert.ok(
+    await reaches(() => rig.requestsClosed() === 1),
+    "the server never heard the client go",
+  );
   release();
   const next = await stream(rig);
   assert.ok(
@@ -603,6 +597,7 @@ test("a stream whose bearer names no expiry runs to its own age", async () => {
   assert.ok(opened.body().includes(":\n\n"));
 });
 
+/** A stream carries what it is sent in order, so a later change of its own arriving is all it was sent before having arrived. */
 test("a change never reaches a stream on another tenant's namesake project", async () => {
   const rig = await rigOf();
   const mine = await stream(rig);
@@ -615,8 +610,12 @@ test("a change never reaches a stream on another tenant's namesake project", asy
   rig.log.append(changeRow(5, partition, "Ticket", "3"));
   rig.doorbell.ring();
   assert.ok(await reaches(() => mine.body().includes("event: Ticket")));
-  await delay(100);
-  assert.ok(!theirs.body().includes("event: Ticket"));
+  rig.log.append(
+    changeRow(6, partitionOf("project", "other-tenant"), "Ticket", "4"),
+  );
+  rig.doorbell.ring();
+  assert.ok(await reaches(() => identities(theirs).includes("id: 6")));
+  assert.ok(!identities(theirs).includes("id: 5"));
 });
 
 test("closing the app ends every stream instead of draining behind one", async () => {

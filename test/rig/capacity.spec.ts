@@ -34,9 +34,9 @@ import {
   streamConnectionsMax,
 } from "./rig.ts";
 
-/** How many streams are held, and how long they are given to answer before counting. */
+/** How many streams are held, and how long they are given to answer before the drill counts them. */
 const streamsHeld = 70;
-const settleMs = 15_000;
+const answerWaitMsMax = 15_000;
 
 drill(
   "streams past the ordinary capacity leave reads and the console working",
@@ -51,7 +51,7 @@ drill(
     const watcher = await context.newPage();
     await openTicket(watcher, draft);
 
-    const streams = await holdStreams(bearer, streamsHeld, settleMs);
+    const streams = await holdStreams(bearer, streamsHeld, answerWaitMsMax);
     try {
       drill.info().annotations.push({
         type: "streams",

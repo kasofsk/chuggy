@@ -530,25 +530,34 @@ export const streamOpeningFrame = "event: ready";
 
 /**
  * As many event streams as asked for, each one its own connection, counted by
- * the opening frame each answered with. A refusal has a body too, so bytes
- * alone would count a stream the API never opened.
+ * the opening frame each answered with once all have, or once
+ * `answerWaitMsMax` has passed. A refusal has a body too, so bytes alone would
+ * count a stream the API never opened.
  */
 export async function holdStreams(
   bearer: string,
   count: number,
-  settleMs: number,
+  answerWaitMsMax: number,
 ): Promise<HeldStreams> {
   const held: ChildProcess[] = [];
   const answered = new Set<number>();
+  const all = Promise.withResolvers<undefined>();
   for (let opened = 0; opened < count; opened += 1) {
     const child = streamProcess(bearer);
     const at = opened;
     child.stdout?.on("data", (chunk: Buffer) => {
-      if (chunk.toString("utf8").includes(streamOpeningFrame)) answered.add(at);
+      if (!chunk.toString("utf8").includes(streamOpeningFrame)) return;
+      answered.add(at);
+      if (answered.size === count) all.resolve(undefined);
     });
     held.push(child);
   }
-  await new Promise((resolve) => setTimeout(resolve, settleMs));
+  if (count === 0) all.resolve(undefined);
+  const bound = setTimeout(() => {
+    all.resolve(undefined);
+  }, answerWaitMsMax);
+  await all.promise;
+  clearTimeout(bound);
   return {
     connected: answered.size,
     close: () => {

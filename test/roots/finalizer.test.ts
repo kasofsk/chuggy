@@ -266,13 +266,35 @@ const orderlyStopProgram = `
   await root.finalizerRun(runtime);
 `;
 
+/** How long the over-running program waits for its drain to be reported before it exits as never drained. */
+const drainReportedWaitMsMax = 10_000;
+
+/** What the over-running program exits with when its drain is never reported. */
+const drainNeverReported = 3;
+
 /**
- * A quantum that ignores its abort until well past the drain, driven by the
- * real runtime, which is the only way the late settlement is reached at all.
+ * A quantum that ignores its abort until the drain has expired and been
+ * reported, driven by the real runtime, which is the only way the late
+ * settlement is reached at all.
  */
 const overRunningQuantumProgram = `
   const root = await import('./src/roots/finalizer.ts');
   const { serviceRuntime } = await import('./src/interpreter/serviceRuntime.ts');
+  const tell = process.stderr.write.bind(process.stderr);
+  let drained;
+  const reported = new Promise((resolve) => { drained = resolve; });
+  const bound = setTimeout(() => {
+    tell('the drain was never reported\\n');
+    process.exit(${String(drainNeverReported)});
+  }, ${String(drainReportedWaitMsMax)});
+  process.stderr.write = (chunk, ...rest) => {
+    const told = tell(chunk, ...rest);
+    if (String(chunk).includes('the shutdown drain expired')) {
+      clearTimeout(bound);
+      drained();
+    }
+    return told;
+  };
   const pacing = {
     wait: (milliseconds, signal) => new Promise((resolve) => {
       const timeout = setTimeout(resolve, milliseconds);
@@ -280,7 +302,7 @@ const overRunningQuantumProgram = `
     }),
   };
   const runtime = serviceRuntime(
-    { run: () => new Promise((resolve) => setTimeout(resolve, 600)) },
+    { run: () => reported },
     pacing,
     [],
     { idleIntervalMilliseconds: 10, shutdownDrainMilliseconds: 100 },
@@ -327,7 +349,7 @@ test("a signalled run settles live and leaves no failure and a zero status", asy
 
 test("a drain the quantum outlasts is reported once, not again when it returns", async () => {
   const ran = await finalizerProgramSignalled(overRunningQuantumProgram);
-  assert.equal(ran.code, 1);
+  assert.equal(ran.code, 1, ran.stderr);
   assert.deepEqual(ran.stderr.trimEnd().split("\n"), [
     "finalizer: starting",
     "finalizer: ready",
