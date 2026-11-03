@@ -161,16 +161,16 @@ const selectorDeliveryRecordsSchema: z.ZodType<
     })),
   );
 
-const dispatchCandidateSchema = z
-  .object({
-    ticket: z.number().int().safe().positive().transform(asTicketId),
-    ticketVersion: z.number().int().safe().positive(),
-    dependencies: z.array(z.number().int().safe().positive()).readonly(),
-    program: z.array(z.unknown()).transform(decodeDispatchProgram),
-    configurationRevision: z.string(),
-    configurationDigest: z.string(),
-    configurationCanonical: z.string(),
-  })
+const dispatchCandidateNamedSchema = z.object({
+  ticket: z.number().int().safe().positive().transform(asTicketId),
+  ticketVersion: z.number().int().safe().positive(),
+  dependencies: z.array(z.number().int().safe().positive()).readonly(),
+  program: z.array(z.unknown()).transform(decodeDispatchProgram),
+  configurationRevision: z.string(),
+  configurationDigest: z.string(),
+});
+const dispatchCandidateSchema = dispatchCandidateNamedSchema
+  .extend({ configurationCanonical: z.string() })
   .readonly();
 const selectorOperationalContextSchema = z.union([
   legacyOperationalContextSchema,
@@ -744,7 +744,8 @@ async function readInteractionChunks(
   const found = await pool.query<{ ordinal: string; content: string }>(
     sql`SELECT ordinal::text,content
        FROM selector_interaction_resource
-       WHERE selector_decision=${decision} AND kind=${resourceKind} ORDER BY ordinal`,
+       WHERE selector_decision=${decision} AND kind=${resourceKind}
+       ORDER BY selector_interaction_resource.ordinal`,
   );
   if (
     found.rows.some(
@@ -1804,7 +1805,10 @@ async function writeInventoryCursor(
 
 function selectorInteractionStorage(interaction: SelectorInteraction) {
   const resources = [
-    interactionResource("ObservedView", interaction.observedView),
+    interactionResource(
+      "ObservedView",
+      dispatchCandidatesByConfiguration(interaction.observedView),
+    ),
     interactionResource("Context", interaction.context),
     interactionResource("ToolActivity", interaction.toolActivity),
   ] as const;
@@ -2105,6 +2109,21 @@ export interface SelectorInteractionChunks {
 }
 
 /**
+ * An interaction's observed view in either stored shape: each candidate
+ * carrying its canonical, or each naming one of the configurations carried
+ * once beside them.
+ */
+const selectorInteractionObservedViewSchema = z.union([
+  z.array(dispatchCandidateSchema).readonly(),
+  z
+    .strictObject({
+      candidates: z.array(dispatchCandidateNamedSchema).readonly(),
+      configurations: z.array(observedConfigurationSchema).readonly(),
+    })
+    .transform(dispatchCandidatesJoined),
+]);
+
+/**
  * One decision as the log records it, built from the row and the chunks a
  * reader already holds. The selector's own pool selects those chunks per
  * resource; the API's definer function answers them beside the row, and both
@@ -2124,7 +2143,7 @@ export function selectorInteractionRecord(
     observedView: selectorInteractionResource(
       row.observed_view,
       chunks.observedView,
-      z.array(dispatchCandidateSchema).readonly(),
+      selectorInteractionObservedViewSchema,
     ),
     ...(row.observed_token === null
       ? {}

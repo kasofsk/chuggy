@@ -62,6 +62,7 @@ import type {
 import type { LeadPolicyClock } from "../../src/interpreter/leadPolicyHost.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
+import type { DispatchCandidate } from "../../src/interpreter/dispatchView.ts";
 import { postgresHarnessProject, postgresHarnessRolePool } from "./harness.ts";
 import { postgresHarnessSelectorContext } from "./harness.ts";
 import { sessionRigOpen, type SessionRig } from "./sessionHarness.ts";
@@ -135,6 +136,7 @@ export interface LeadRigDecision {
   readonly handoffNote?: JsonValue;
   readonly toolActivity?: readonly JsonValue[];
   readonly planningIntent?: JsonValue;
+  readonly observedView?: readonly DispatchCandidate[];
 }
 
 /**
@@ -155,7 +157,7 @@ export async function leadRigDecision(
       partition,
       instructionsVersion: "1.0",
       instructions: "choose a dispatchable ticket",
-      observedView: [],
+      observedView: varying.observedView ?? [],
       context: {
         operationalContext: postgresHarnessSelectorContext,
         handoffNote: varying.handoffNote ?? {},

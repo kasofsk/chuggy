@@ -10,7 +10,7 @@
  */
 
 import assert from "node:assert/strict";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 
 import { leadSessionMint } from "../../src/adapters/crypto/leadSessionMint.ts";
@@ -23,7 +23,10 @@ import { postgresSessionRouteReads } from "../../src/adapters/postgres/sessionPl
 import { composeSelectorRuntime } from "../../src/compose.ts";
 import { configurationCanonicalCharsMax } from "../../src/contract/http.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
-import type { DispatchViewPage } from "../../src/interpreter/dispatchView.ts";
+import type {
+  DispatchCandidate,
+  DispatchViewPage,
+} from "../../src/interpreter/dispatchView.ts";
 import {
   leadSelectorPolicy,
   type LeadPolicyClock,
@@ -50,6 +53,7 @@ import {
 } from "./harness.ts";
 import {
   leadRigClock,
+  leadRigDecision,
   leadRigObservation,
   leadRigHostedAccess,
   leadRigOpen,
@@ -333,20 +337,25 @@ async function storedObservationOf(attempt: string) {
   return String(found[0]?.["observation"]);
 }
 
+/** A hundred candidates on one configuration at its longest. */
+function hundredOnOneConfiguration(): readonly DispatchCandidate[] {
+  return Array.from({ length: 100 }, (_, index) => ({
+    ticket: asTicketId(index + 1),
+    ticketVersion: 1,
+    dependencies: [],
+    program: [{ key: 1, evaluators: [{ key: 1 }] }],
+    configurationRevision: "revision",
+    configurationDigest: "d".repeat(64),
+    configurationCanonical: "€".repeat(configurationCanonicalCharsMax),
+  }));
+}
+
 test("a hundred candidates on one configuration at its longest are stored within the column and read back whole", async () => {
   const partition = await leadRigProject(rig, "hundred-observed");
   const observed = observationOf(partition);
   const observation: SelectorObservation = {
     ...observed,
-    candidates: Array.from({ length: 100 }, (_, index) => ({
-      ticket: asTicketId(index + 1),
-      ticketVersion: 1,
-      dependencies: [],
-      program: [{ key: 1, evaluators: [{ key: 1 }] }],
-      configurationRevision: "revision",
-      configurationDigest: "d".repeat(64),
-      configurationCanonical: "€".repeat(configurationCanonicalCharsMax),
-    })),
+    candidates: hundredOnOneConfiguration(),
   };
   const { store, attempt } = await runningOver(
     partition,
@@ -394,6 +403,94 @@ test("an observation stored with each candidate's canonical inline still reads b
     "a row carrying a canonical both inline and once is not intact",
   );
   await store.terminateAttempt(attempt, "test cleanup");
+});
+
+/** The ObservedView resource one decision stored, as its rows hold it. */
+async function observedViewResourceOf(decision: string) {
+  return rig.sessions.harness.query(
+    `SELECT byte_length::text AS bytes,content FROM selector_interaction_resource
+      WHERE selector_decision=$1 AND kind='ObservedView' ORDER BY ordinal`,
+    [decision],
+  );
+}
+
+/** The one decision of a project reads back with the view given, through the selector's reader and the API's. */
+async function assertObservedViewReads(
+  partition: Partition,
+  candidates: readonly DispatchCandidate[],
+): Promise<void> {
+  const store = postgresSelectorState(rig.selectorPool);
+  const [recorded] = await store.history(partition, undefined, 1);
+  assert.deepEqual(recorded?.observedView, candidates);
+  const [read] = await rig.apiLead.history(partition, {
+    limit: 1,
+    order: "oldest",
+  });
+  assert.deepEqual(read?.observedView, candidates);
+}
+
+test("a decision's observed view carries one configuration once however many candidates name it", async () => {
+  const partition = await leadRigProject(rig, "hundred-viewed");
+  const candidates = hundredOnOneConfiguration();
+  const decision = await leadRigDecision(rig, partition, "hundred-viewed", {
+    observedView: candidates,
+  });
+  const canonicalBytes = Buffer.byteLength(
+    candidates[0]?.configurationCanonical ?? "",
+  );
+  const [resource] = await observedViewResourceOf(decision);
+  assert.ok(
+    Number(resource?.["bytes"]) < 2 * canonicalBytes,
+    "the canonical is stored once, not once per candidate",
+  );
+  await assertObservedViewReads(partition, candidates);
+});
+
+test("a decision's observed view stored with each candidate's canonical inline still reads back", async () => {
+  const partition = await leadRigProject(rig, "inline-viewed");
+  const candidates = hundredOnOneConfiguration().slice(0, 2);
+  const decision = await leadRigDecision(rig, partition, "inline-viewed", {
+    observedView: candidates,
+  });
+  const inline = Buffer.from(JSON.stringify(candidates), "utf8");
+  const chunkBytes = 45_000;
+  const chunks = Array.from(
+    { length: Math.ceil(inline.length / chunkBytes) },
+    (_, index) =>
+      inline
+        .subarray(index * chunkBytes, (index + 1) * chunkBytes)
+        .toString("base64"),
+  );
+  const manifest = {
+    kind: "ObservedView",
+    digest: createHash("sha256").update(inline).digest("hex"),
+    bytes: inline.length,
+    chunks: chunks.length,
+  };
+  await rig.sessions.harness.query(
+    `DELETE FROM selector_interaction_resource
+      WHERE selector_decision=$1 AND kind='ObservedView'`,
+    [decision],
+  );
+  for (const [ordinal, content] of chunks.entries())
+    await rig.sessions.harness.query(
+      `INSERT INTO selector_interaction_resource
+         (selector_decision,kind,ordinal,digest,byte_length,chunk_count,content)
+       VALUES ($1,'ObservedView',$2,$3,$4,$5,$6)`,
+      [
+        decision,
+        ordinal,
+        manifest.digest,
+        manifest.bytes,
+        manifest.chunks,
+        content,
+      ],
+    );
+  await rig.sessions.harness.query(
+    `UPDATE selector_interaction SET observed_view=$2 WHERE selector_decision=$1`,
+    [decision, JSON.stringify(manifest)],
+  );
+  await assertObservedViewReads(partition, candidates);
 });
 
 function interactionOf(
