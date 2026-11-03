@@ -94,7 +94,7 @@ set -- $files
 unset IFS
 set +f
 
-# Candidate tokens as `<file>:<line>:<token>`. Purely lexical — every verdict
+# Candidate tokens as `<file>:<line>:<token>:<here>`. Purely lexical — every verdict
 # below is git's. The filters are index tests rather than regexes so no awk has
 # to agree with another about escaping inside a character class.
 awk '

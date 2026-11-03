@@ -34,7 +34,7 @@ printf '# Sibling\n\nContent.\n' > "$WORK/docs/guide/sibling.md"
 # --- Controls: the clean paths ----------------------------------------------
 
 cat > "$WORK/docs/guide/good.md" <<'EOF'
-# Good design
+# Good doc
 
 See [the sibling](sibling.md) for context.
 
