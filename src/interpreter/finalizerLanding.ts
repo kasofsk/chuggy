@@ -11,7 +11,7 @@ import {
   type GitRefName,
   type RepositoryBinding,
 } from "./finalizer.ts";
-import { briefFinalizationTarget, type DraftBrief } from "./ticketBrief.ts";
+import { briefLandsOn, type DraftBrief } from "./ticketBrief.ts";
 
 /**
  * The branches one brief names: where the work happened, and where the
@@ -39,9 +39,7 @@ export function finalizerBranchesOf(
   if (brief === undefined) return {};
   const proposing = briefFinalizationProposes(brief.finalization?.mode);
   if (proposing && brief.branch === undefined) return undefined;
-  const target = proposing
-    ? brief.branch
-    : (briefFinalizationTarget(brief.finalization) ?? brief.branch);
+  const target = briefLandsOn(brief);
   return {
     brief,
     ...(brief.branch === undefined ? {} : { work: brief.branch }),

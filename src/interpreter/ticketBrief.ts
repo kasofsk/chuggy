@@ -85,6 +85,7 @@ import {
 import { textCodePointsCount } from "../contract/http.ts";
 import {
   briefFinalizationModes,
+  briefFinalizationProposes,
   briefLandings,
   type BriefFinalizationMode,
   type BriefLanding,
@@ -159,6 +160,20 @@ export function briefFinalizationTarget(
   return finalization === undefined || finalization.mode === "None"
     ? undefined
     : finalization.target;
+}
+
+/**
+ * The reference a brief's landing advances: a proposal always lands on the
+ * work's own branch, and a push on the reference its finalization names or, where
+ * it names none, on that branch. Absent where the brief names neither, which is
+ * the repository's default.
+ */
+export function briefLandsOn(
+  brief: Pick<DraftBrief, "finalization" | "branch">,
+): GitRefName | undefined {
+  return briefFinalizationProposes(brief.finalization?.mode)
+    ? brief.branch
+    : (briefFinalizationTarget(brief.finalization) ?? brief.branch);
 }
 
 /** One ticket's brief, as everything but the wire holds it. */

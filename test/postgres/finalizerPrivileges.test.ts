@@ -34,13 +34,8 @@ after(async () => {
 /** The door 007 added, and the only way the three hold columns on a request are written. */
 const holdFunction = "record_finalization_hold";
 
-/** The four relations a forged conclusion would have to be written into. */
-const mailbox = [
-  "operation",
-  "decision_input",
-  "journal_entry",
-  "ticket_projection",
-] as const;
+/** The three relations a forged conclusion would have to be written into, and which the finalizer cannot even read. */
+const mailbox = ["operation", "decision_input", "journal_entry"] as const;
 
 /** Every relation a finalizer migration took from the roles that came before it. */
 const added = [
@@ -87,6 +82,29 @@ test("the finalizer holds no privilege at all on the relations a conclusion live
         statement,
       );
     }
+  }
+});
+
+test("the finalizer reads the phase of a ticket and writes nothing of its projection", async () => {
+  assert.equal(
+    await harness.attemptAs(
+      finalizerRole,
+      "SELECT tenant, project, ticket, phase FROM ticket_projection LIMIT 1",
+    ),
+    undefined,
+  );
+  for (const statement of [
+    "SELECT escalation FROM ticket_projection LIMIT 1",
+    "SELECT * FROM ticket_projection LIMIT 1",
+    "INSERT INTO ticket_projection DEFAULT VALUES",
+    "UPDATE ticket_projection SET phase = phase",
+    "DELETE FROM ticket_projection",
+  ]) {
+    assert.match(
+      (await harness.attemptAs(finalizerRole, statement)) ?? "",
+      postgresHarnessDenial("ticket_projection"),
+      statement,
+    );
   }
 });
 
@@ -414,6 +432,7 @@ test("the finalizer's read surface is exactly the relations its view is gathered
       "recovery_epoch",
       "schema_migration",
       "ticket_definition",
+      "ticket_projection",
     ],
   );
 });

@@ -1474,6 +1474,8 @@ export interface FinalizerStore {
   /**
    * Takes a bounded lease on at most `requestsMax` unclaimed or lapsed requests
    * in `authorizing_seq` order, refusing every claim under a superseded epoch.
+   * A Serialized ticket's request is left open unless the ticket holds its
+   * reference (`./serializedHolder.ts`).
    */
   claimRequests(
     owner: FinalizerOwnerId,

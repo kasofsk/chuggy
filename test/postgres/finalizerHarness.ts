@@ -828,6 +828,23 @@ export async function finalizerBriefLandsNothing(
   );
 }
 
+/** The landing policy this project's ticket was released with, and the repository its brief names. */
+export async function finalizerBriefLanding(
+  rig: FinalizerRig,
+  partition: Partition,
+  ticket: number,
+  landing: "Direct" | "Serialized",
+  repository: string,
+): Promise<void> {
+  await finalizerReleasedBrief(rig, partition, ticket, (brief) =>
+    briefWith(
+      briefWith(brief, "landing", landing === "Direct" ? null : landing),
+      "repository",
+      repository,
+    ),
+  );
+}
+
 /** Hexadecimal no other call has produced, at least as long as the widest identity a case needs. */
 function finalizerHex(): string {
   return `${randomUUID()}${randomUUID()}`.replaceAll("-", "");
@@ -861,6 +878,8 @@ export interface FinalizerAttempt {
     readonly artifact: string;
     readonly digest: string;
   };
+  /** The accepted commit a `RecheckRequired` failure re-reports, and no other failure keeps one. */
+  readonly recheckCommit?: string;
   /** The base a failed attempt's proposal failed on, as its ref and commit were read. */
   readonly proposalBase?: { readonly ref: string; readonly commit: string };
 }
@@ -909,8 +928,8 @@ export async function finalizerPrepare(
         target_commit, strategy, configuration_revision, configuration_digest,
         approval_required, outcome, candidate_commit, failure_kind, attempt_digest,
         conflict_manifest, conflict_manifest_digest, proposal_base_ref,
-        proposal_base_commit)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'refs/heads/main',$9,'Merge',$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+        proposal_base_commit, recheck_commit)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'refs/heads/main',$9,'Merge',$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
     [
       project.partition.tenant,
       project.partition.project,
@@ -932,6 +951,7 @@ export async function finalizerPrepare(
       attempt.conflictManifest?.digest ?? null,
       attempt.proposalBase?.ref ?? null,
       attempt.proposalBase?.commit ?? null,
+      attempt.recheckCommit ?? null,
     ],
   );
   return identity;
