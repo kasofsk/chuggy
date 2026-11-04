@@ -12,11 +12,13 @@ export type WorkCause =
       readonly type: "EvaluationRework";
       readonly value: readonly EvaluationReworkEntry[];
     }
-  | { readonly type: "FinalizationRework"; readonly value: number };
+  | { readonly type: "FinalizationRework"; readonly value: number }
+  | { readonly type: "StackInvalidated"; readonly value: number };
 export const workCauseTags = [
   "InitialWork",
   "EvaluationRework",
   "FinalizationRework",
+  "StackInvalidated",
 ] as const;
 
 export type ReleasedContent = number;
@@ -314,6 +316,18 @@ export type EvaluationReworkFact = {
   readonly evidence: readonly EvaluationReworkEntry[];
 };
 
+export type EvaluationInvalidatedFact = {
+  readonly ticket: number;
+  readonly workCycle: number;
+  readonly evidence: number;
+};
+
+export type EvaluationFailureInvalidatedFact = {
+  readonly ticket: number;
+  readonly report: TaskTerminalReport;
+  readonly evidence: number;
+};
+
 export type WorkResultAcceptedEvent = {
   readonly ticket: number;
   readonly result: ValidatedTaskResult;
@@ -379,6 +393,14 @@ export type TicketEvent =
       readonly value: EvaluationReworkFact;
     }
   | {
+      readonly type: "TicketEvaluationInvalidated";
+      readonly value: EvaluationInvalidatedFact;
+    }
+  | {
+      readonly type: "TicketEvaluationFailureInvalidated";
+      readonly value: EvaluationFailureInvalidatedFact;
+    }
+  | {
       readonly type: "TicketEvaluationBlocked";
       readonly value: TaskTerminalFact;
     }
@@ -409,6 +431,8 @@ export const ticketEventTags = [
   "TicketEvaluationPassed",
   "TicketEvaluationReworkStarted",
   "TicketEvaluationFailureEscalated",
+  "TicketEvaluationInvalidated",
+  "TicketEvaluationFailureInvalidated",
   "TicketEvaluationBlocked",
   "TicketFinalizationSucceeded",
   "TicketFinalizationNeedsWork",
@@ -446,6 +470,12 @@ export type SuccessfulTicketDecision = {
   readonly obligations: readonly Obligation[];
 };
 
+export type InvalidateEvaluationRequest = {
+  readonly ticket: number;
+  readonly workCycle: number;
+  readonly evidence: number;
+};
+
 export type TicketCommand =
   | { readonly type: "CreateTicket"; readonly value: ReleasedTicket }
   | {
@@ -462,6 +492,10 @@ export type TicketCommand =
     }
   | { readonly type: "RevokeTicket"; readonly value: number }
   | { readonly type: "ResumeTicket"; readonly value: number }
+  | {
+      readonly type: "InvalidateEvaluation";
+      readonly value: InvalidateEvaluationRequest;
+    }
   | { readonly type: "ReportTaskTerminal"; readonly value: TaskTerminalReport }
   | {
       readonly type: "ReportFinalizationResult";
@@ -473,6 +507,7 @@ export const ticketCommandTags = [
   "DispatchTicket",
   "RevokeTicket",
   "ResumeTicket",
+  "InvalidateEvaluation",
   "ReportTaskTerminal",
   "ReportFinalizationResult",
 ] as const;
@@ -491,6 +526,11 @@ export type CurrentFinalizationRefusal = {
   readonly ticket: number;
   readonly workCycle: number;
   readonly generation: number;
+};
+
+export type CurrentEvaluationRefusal = {
+  readonly ticket: number;
+  readonly workCycle: number;
 };
 
 export type StaleRevision = {
@@ -525,6 +565,10 @@ export type TicketRefusal =
   | {
       readonly type: "FinalizationNotCurrent";
       readonly value: CurrentFinalizationRefusal;
+    }
+  | {
+      readonly type: "EvaluationNotCurrent";
+      readonly value: CurrentEvaluationRefusal;
     };
 export const ticketRefusalTags = [
   "TicketAlreadyExists",
@@ -541,6 +585,7 @@ export const ticketRefusalTags = [
   "TicketNotResumable",
   "TaskNotCurrent",
   "FinalizationNotCurrent",
+  "EvaluationNotCurrent",
 ] as const;
 
 export type TicketDecision =
@@ -560,10 +605,13 @@ export const lastDecisionTags = ["NoDecision", "Decided", "Refused"] as const;
 export type Entry = { readonly seq: number; readonly event: TicketEvent };
 
 export type EvaluationFailureDisposition =
-  "ReworkEvaluationFailure" | "EscalateEvaluationFailure";
+  | "ReworkEvaluationFailure"
+  | "EscalateEvaluationFailure"
+  | { readonly type: "InvalidateEvaluationFailure"; readonly value: number };
 export const evaluationFailureDispositionTags = [
   "ReworkEvaluationFailure",
   "EscalateEvaluationFailure",
+  "InvalidateEvaluationFailure",
 ] as const;
 
 export type Resume =

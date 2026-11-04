@@ -26,6 +26,8 @@
 
 import type {
   EvaluationInstance,
+  EvaluationFailureInvalidatedFact,
+  EvaluationInvalidatedFact,
   EvaluationReworkEntry,
   Ticket,
   TicketEvent,
@@ -42,6 +44,8 @@ import {
   finalizationCurrent,
   finalizationReworkInput,
   initialWorkInput,
+  invalidatableEvaluation,
+  invalidatedWorkInput,
   nextCycleNumber,
   reportAdmissible,
   resumedFinalization,
@@ -70,6 +74,8 @@ export function eventTicket(event: TicketEvent): TicketId {
     case "TicketEvaluationPassed":
     case "TicketEvaluationReworkStarted":
     case "TicketEvaluationFailureEscalated":
+    case "TicketEvaluationInvalidated":
+    case "TicketEvaluationFailureInvalidated":
     case "TicketEvaluationBlocked":
     case "TicketFinalizationSucceeded":
     case "TicketFinalizationNeedsWork":
@@ -140,6 +146,10 @@ export function evolve(graph: TicketGraph, event: TicketEvent): TicketGraph {
     case "TicketEvaluationFailureEscalated":
     case "TicketEvaluationBlocked":
       return evolveJudgement(graph, event);
+    case "TicketEvaluationFailureInvalidated":
+      return evolveFailureInvalidation(graph, event.value);
+    case "TicketEvaluationInvalidated":
+      return evolveInvalidation(graph, event.value);
     case "TicketFinalizationSucceeded":
     case "TicketFinalizationNeedsWork":
     case "TicketFinalizationUnavailable":
@@ -419,6 +429,44 @@ function evolveJudgement(
           })
         : graph;
   }
+}
+
+/** A failed evaluation taken back into work: the report concludes the running instance, and the next cycle starts over the source it judged. */
+function evolveFailureInvalidation(
+  graph: TicketGraph,
+  fact: EvaluationFailureInvalidatedFact,
+): TicketGraph {
+  const ticket = ticketAt(graph, asTicketId(fact.ticket));
+  const state = ticket.state;
+  if (typeof state === "string" || state.type !== "Evaluation") return graph;
+  const current = state.value;
+  if (!reportAdmissible(current, fact.report)) return graph;
+  return applyEvaluationReport(current, fact.report).state.type ===
+    "EvaluationFailed"
+    ? enterWorkCycle(
+        graph,
+        ticket,
+        invalidatedWorkInput(ticket.definition, fact.evidence),
+        current.input.acceptedSourceRef,
+      )
+    : graph;
+}
+
+/** An abandoned evaluation: the next cycle, over the source it was judging, once the ticket still holds that cycle's evaluation. */
+function evolveInvalidation(
+  graph: TicketGraph,
+  fact: EvaluationInvalidatedFact,
+): TicketGraph {
+  const ticket = ticketAt(graph, asTicketId(fact.ticket));
+  const evaluation = invalidatableEvaluation(ticket.state);
+  return evaluation !== null && evaluation.workCycle === fact.workCycle
+    ? enterWorkCycle(
+        graph,
+        ticket,
+        invalidatedWorkInput(ticket.definition, fact.evidence),
+        evaluation.input.acceptedSourceRef,
+      )
+    : graph;
 }
 
 /** The three finalization arms, each moving only the attempt the ticket is on. */

@@ -46,6 +46,8 @@ import type {
   TaskTerminalReport,
   TaskTerminalFact,
   EvaluationReworkFact,
+  EvaluationInvalidatedFact,
+  EvaluationFailureInvalidatedFact,
   WorkResultAcceptedEvent,
   WorkFailureEvent,
   FinalizationFact,
@@ -56,10 +58,12 @@ import type {
   TaskCancellation,
   Obligation,
   SuccessfulTicketDecision,
+  InvalidateEvaluationRequest,
   TicketCommand,
   RefusedDependencies,
   CurrentTaskRefusal,
   CurrentFinalizationRefusal,
+  CurrentEvaluationRefusal,
   StaleRevision,
   TicketRefusal,
   TicketDecision,
@@ -143,6 +147,12 @@ export const workCauseSchema: z.ZodType<WorkCause> = z.union([
       value: z.number().int().safe(),
     })
     .readonly(),
+  z
+    .object({
+      type: z.literal("StackInvalidated"),
+      value: z.number().int().safe(),
+    })
+    .readonly(),
 ]);
 const workCauseSchemaWire: z.ZodType<WorkCause> = z.union([
   z.literal("InitialWork"),
@@ -155,6 +165,12 @@ const workCauseSchemaWire: z.ZodType<WorkCause> = z.union([
   z
     .object({
       type: z.literal("FinalizationRework"),
+      value: z.number().int().safe(),
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("StackInvalidated"),
       value: z.number().int().safe(),
     })
     .readonly(),
@@ -1225,6 +1241,60 @@ export function decodeEvaluationReworkFact(
   return evaluationReworkFactSchemaWire.parse(value);
 }
 
+export const evaluationInvalidatedFactSchema: z.ZodType<EvaluationInvalidatedFact> =
+  z
+    .object({
+      ticket: z.number().int().safe(),
+      workCycle: z.number().int().safe(),
+      evidence: z.number().int().safe(),
+    })
+    .readonly();
+const evaluationInvalidatedFactSchemaWire: z.ZodType<EvaluationInvalidatedFact> =
+  z
+    .object({
+      ticket: z.number().int().safe(),
+      workCycle: z.number().int().safe(),
+      evidence: z.number().int().safe(),
+    })
+    .readonly();
+export function encodeEvaluationInvalidatedFact(
+  value: EvaluationInvalidatedFact,
+): ModelJson {
+  return encodeJson(value);
+}
+export function decodeEvaluationInvalidatedFact(
+  value: unknown,
+): EvaluationInvalidatedFact {
+  return evaluationInvalidatedFactSchemaWire.parse(value);
+}
+
+export const evaluationFailureInvalidatedFactSchema: z.ZodType<EvaluationFailureInvalidatedFact> =
+  z
+    .object({
+      ticket: z.number().int().safe(),
+      report: taskTerminalReportSchema,
+      evidence: z.number().int().safe(),
+    })
+    .readonly();
+const evaluationFailureInvalidatedFactSchemaWire: z.ZodType<EvaluationFailureInvalidatedFact> =
+  z
+    .object({
+      ticket: z.number().int().safe(),
+      report: taskTerminalReportSchemaWire,
+      evidence: z.number().int().safe(),
+    })
+    .readonly();
+export function encodeEvaluationFailureInvalidatedFact(
+  value: EvaluationFailureInvalidatedFact,
+): ModelJson {
+  return encodeJson(value);
+}
+export function decodeEvaluationFailureInvalidatedFact(
+  value: unknown,
+): EvaluationFailureInvalidatedFact {
+  return evaluationFailureInvalidatedFactSchemaWire.parse(value);
+}
+
 export const workResultAcceptedEventSchema: z.ZodType<WorkResultAcceptedEvent> =
   z
     .object({
@@ -1402,6 +1472,18 @@ export const ticketEventSchema: z.ZodType<TicketEvent> = z.union([
     .readonly(),
   z
     .object({
+      type: z.literal("TicketEvaluationInvalidated"),
+      value: evaluationInvalidatedFactSchema,
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("TicketEvaluationFailureInvalidated"),
+      value: evaluationFailureInvalidatedFactSchema,
+    })
+    .readonly(),
+  z
+    .object({
       type: z.literal("TicketEvaluationBlocked"),
       value: taskTerminalFactSchema,
     })
@@ -1510,6 +1592,18 @@ const ticketEventSchemaWire: z.ZodType<TicketEvent> = z.union([
     .object({
       type: z.literal("TicketEvaluationFailureEscalated"),
       value: evaluationReworkFactSchemaWire,
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("TicketEvaluationInvalidated"),
+      value: evaluationInvalidatedFactSchemaWire,
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("TicketEvaluationFailureInvalidated"),
+      value: evaluationFailureInvalidatedFactSchemaWire,
     })
     .readonly(),
   z
@@ -1668,6 +1762,33 @@ export function decodeSuccessfulTicketDecision(
   return successfulTicketDecisionSchemaWire.parse(value);
 }
 
+export const invalidateEvaluationRequestSchema: z.ZodType<InvalidateEvaluationRequest> =
+  z
+    .object({
+      ticket: z.number().int().safe(),
+      workCycle: z.number().int().safe(),
+      evidence: z.number().int().safe(),
+    })
+    .readonly();
+const invalidateEvaluationRequestSchemaWire: z.ZodType<InvalidateEvaluationRequest> =
+  z
+    .object({
+      ticket: z.number().int().safe(),
+      workCycle: z.number().int().safe(),
+      evidence: z.number().int().safe(),
+    })
+    .readonly();
+export function encodeInvalidateEvaluationRequest(
+  value: InvalidateEvaluationRequest,
+): ModelJson {
+  return encodeJson(value);
+}
+export function decodeInvalidateEvaluationRequest(
+  value: unknown,
+): InvalidateEvaluationRequest {
+  return invalidateEvaluationRequestSchemaWire.parse(value);
+}
+
 export const ticketCommandSchema: z.ZodType<TicketCommand> = z.union([
   z
     .object({ type: z.literal("CreateTicket"), value: releasedTicketSchema })
@@ -1700,6 +1821,12 @@ export const ticketCommandSchema: z.ZodType<TicketCommand> = z.union([
     .readonly(),
   z
     .object({ type: z.literal("ResumeTicket"), value: z.number().int().safe() })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("InvalidateEvaluation"),
+      value: invalidateEvaluationRequestSchema,
+    })
     .readonly(),
   z
     .object({
@@ -1749,6 +1876,12 @@ const ticketCommandSchemaWire: z.ZodType<TicketCommand> = z.union([
     .readonly(),
   z
     .object({ type: z.literal("ResumeTicket"), value: z.number().int().safe() })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("InvalidateEvaluation"),
+      value: invalidateEvaluationRequestSchemaWire,
+    })
     .readonly(),
   z
     .object({
@@ -1832,6 +1965,31 @@ export function decodeCurrentFinalizationRefusal(
   value: unknown,
 ): CurrentFinalizationRefusal {
   return currentFinalizationRefusalSchemaWire.parse(value);
+}
+
+export const currentEvaluationRefusalSchema: z.ZodType<CurrentEvaluationRefusal> =
+  z
+    .object({
+      ticket: z.number().int().safe(),
+      workCycle: z.number().int().safe(),
+    })
+    .readonly();
+const currentEvaluationRefusalSchemaWire: z.ZodType<CurrentEvaluationRefusal> =
+  z
+    .object({
+      ticket: z.number().int().safe(),
+      workCycle: z.number().int().safe(),
+    })
+    .readonly();
+export function encodeCurrentEvaluationRefusal(
+  value: CurrentEvaluationRefusal,
+): ModelJson {
+  return encodeJson(value);
+}
+export function decodeCurrentEvaluationRefusal(
+  value: unknown,
+): CurrentEvaluationRefusal {
+  return currentEvaluationRefusalSchemaWire.parse(value);
 }
 
 export const staleRevisionSchema: z.ZodType<StaleRevision> = z
@@ -1940,6 +2098,12 @@ export const ticketRefusalSchema: z.ZodType<TicketRefusal> = z.union([
       value: currentFinalizationRefusalSchema,
     })
     .readonly(),
+  z
+    .object({
+      type: z.literal("EvaluationNotCurrent"),
+      value: currentEvaluationRefusalSchema,
+    })
+    .readonly(),
 ]);
 const ticketRefusalSchemaWire: z.ZodType<TicketRefusal> = z.union([
   z
@@ -2024,6 +2188,12 @@ const ticketRefusalSchemaWire: z.ZodType<TicketRefusal> = z.union([
     .object({
       type: z.literal("FinalizationNotCurrent"),
       value: currentFinalizationRefusalSchemaWire,
+    })
+    .readonly(),
+  z
+    .object({
+      type: z.literal("EvaluationNotCurrent"),
+      value: currentEvaluationRefusalSchemaWire,
     })
     .readonly(),
 ]);
@@ -2114,11 +2284,23 @@ export const evaluationFailureDispositionSchema: z.ZodType<EvaluationFailureDisp
   z.union([
     z.literal("ReworkEvaluationFailure"),
     z.literal("EscalateEvaluationFailure"),
+    z
+      .object({
+        type: z.literal("InvalidateEvaluationFailure"),
+        value: z.number().int().safe(),
+      })
+      .readonly(),
   ]);
 const evaluationFailureDispositionSchemaWire: z.ZodType<EvaluationFailureDisposition> =
   z.union([
     z.literal("ReworkEvaluationFailure"),
     z.literal("EscalateEvaluationFailure"),
+    z
+      .object({
+        type: z.literal("InvalidateEvaluationFailure"),
+        value: z.number().int().safe(),
+      })
+      .readonly(),
   ]);
 export function encodeEvaluationFailureDisposition(
   value: EvaluationFailureDisposition,

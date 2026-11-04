@@ -115,6 +115,12 @@ test("a task that is not current names the task it was for", () => {
   expect(evaluation).toContain("Report for cycle 3 stage 2 of #41");
 });
 
+test("an evaluation that is not current names its work cycle", () => {
+  expect(operationRefusalSentence(samples.EvaluationNotCurrent)).toContain(
+    "Evaluation of cycle 3 of #41",
+  );
+});
+
 test("a finalization that is not current names its work cycle", () => {
   expect(operationRefusalSentence(samples.FinalizationNotCurrent)).toContain(
     "Finalizing result for cycle 3 of #41",

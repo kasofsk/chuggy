@@ -312,6 +312,7 @@ export const operationTicketRefusalCodes = [
   "TicketNotResumable",
   "TaskNotCurrent",
   "FinalizationNotCurrent",
+  "EvaluationNotCurrent",
 ] as const;
 export type OperationTicketRefusalCode =
   (typeof operationTicketRefusalCodes)[number];

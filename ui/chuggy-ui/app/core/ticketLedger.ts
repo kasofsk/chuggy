@@ -14,7 +14,7 @@
  * the page.
  *
  * AN EVALUATOR DRAWS A ROW AT EVERY GENERATION IT HAS REACHED. `resumeBlocked`
- * in `model/ticket-domain/evaluation/evaluation.qnt` re-asks only the
+ * in the ticket package's `evaluation.qnt` re-asks only the
  * evaluators a stage blocked, bumping their generation while every evaluator
  * it did not re-ask keeps its `Produced` row; so two evaluators of one stage
  * can sit at different generations at once, and an evaluator a stage resumed

@@ -1,6 +1,6 @@
 /**
  * The evaluation protocol, one function per definition in
- * `model/ticket-domain/evaluation/evaluation.qnt`.
+ * the package's `ticket-domain/evaluation/evaluation.qnt`.
  *
  * THAT FILE IS A COPY OF THE PACKAGE'S, and this is its mirror: the ticket
  * does not restate any of it, and every decider that advances an instance

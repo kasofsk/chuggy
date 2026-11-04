@@ -154,6 +154,8 @@ export function workCauseEquals(left: WorkCause, right: WorkCause): boolean {
       );
     case "FinalizationRework":
       return right.type === "FinalizationRework" && left.value === right.value;
+    case "StackInvalidated":
+      return right.type === "StackInvalidated" && left.value === right.value;
   }
 }
 

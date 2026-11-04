@@ -170,7 +170,9 @@ export function eventPayloadTicketAgrees(event: TicketEvent): boolean {
     case "TicketEvaluationBlocked":
     case "TicketEvaluationReworkStarted":
     case "TicketEvaluationFailureEscalated":
+    case "TicketEvaluationFailureInvalidated":
       return reportTicket(event.value.report) === eventTicket(event);
+    case "TicketEvaluationInvalidated":
     case "TicketCreated":
     case "TicketDispatched":
     case "TicketRevoked":

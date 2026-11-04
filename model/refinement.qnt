@@ -244,9 +244,9 @@
 ///     chuggy_domain, this layer's here (they read journal/applied/
 ///     worldEffects/orphans, declared here).
 module chuggy_refinement {
-  import task_contract.* from "./task-contract/task"
-  import evaluation_protocol.* from "./ticket-domain/evaluation/evaluation"
-  import ticket_domain.* from "./ticket-domain/ticket"
+  import task_contract.* from "../node_modules/@kasofsk/chug-ticket-domain/model/task-contract/task"
+  import evaluation_protocol.* from "../node_modules/@kasofsk/chug-ticket-domain/model/ticket-domain/evaluation/evaluation"
+  import ticket_domain.* from "../node_modules/@kasofsk/chug-ticket-domain/model/ticket-domain/ticket"
   import chuggy_ticket.* from "./ticket"
 
   /// The embedded domain machine — the actor's in-memory state IS this

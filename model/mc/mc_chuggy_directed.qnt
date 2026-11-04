@@ -45,8 +45,8 @@
 /// so every golden reproduces from what is written beside it.
 
 module mc_chuggy_directed {
-  import evaluation_protocol.* from "../ticket-domain/evaluation/evaluation"
-  import ticket_domain.* from "../ticket-domain/ticket"
+  import evaluation_protocol.* from "../../node_modules/@kasofsk/chug-ticket-domain/model/ticket-domain/evaluation/evaluation"
+  import ticket_domain.* from "../../node_modules/@kasofsk/chug-ticket-domain/model/ticket-domain/ticket"
   import chuggy_ticket.* from "../ticket"
   import chuggy_domain(
     N_TICKETS = 3,

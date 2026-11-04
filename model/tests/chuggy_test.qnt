@@ -3,9 +3,9 @@
 /// revoke, evaluator walls and their resume, the finalization protocol, the
 /// events a state no longer owes, and the ledger folded beside each ticket.
 module chuggy_test {
-  import task_contract.* from "../task-contract/task"
-  import evaluation_protocol.* from "../ticket-domain/evaluation/evaluation"
-  import ticket_domain.* from "../ticket-domain/ticket"
+  import task_contract.* from "../../node_modules/@kasofsk/chug-ticket-domain/model/task-contract/task"
+  import evaluation_protocol.* from "../../node_modules/@kasofsk/chug-ticket-domain/model/ticket-domain/evaluation/evaluation"
+  import ticket_domain.* from "../../node_modules/@kasofsk/chug-ticket-domain/model/ticket-domain/ticket"
   import chuggy_ticket.* from "../ticket"
 
   // The reference instance. Plans up to 2 stages, so the

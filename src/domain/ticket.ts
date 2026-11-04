@@ -1,6 +1,6 @@
 /**
  * What a ticket does with its own record, and the ledger chuggy keeps beside
- * it: the package's `model/ticket-domain/ticket.qnt`, and chuggy's
+ * it: the package's `ticket-domain/ticket.qnt`, and chuggy's
  * `model/ticket.qnt` beside it.
  *
  * The record is the package's four fields and nothing else. What it forgets
@@ -192,6 +192,32 @@ export function finalizationReworkInput(
     cause: { type: "FinalizationRework", value: evidence },
     retryEvidence: [],
   };
+}
+
+/** The input a cycle runs with after its evaluation was abandoned without a verdict. */
+export function invalidatedWorkInput(
+  definition: ReleasedTicket,
+  evidence: number,
+): WorkInput {
+  return {
+    released: definition.content,
+    cause: { type: "StackInvalidated", value: evidence },
+    retryEvidence: [],
+  };
+}
+
+/** The evaluation an invalidation may abandon: the running one, or the one a blocked wall holds. */
+export function invalidatableEvaluation(
+  state: TicketState,
+): EvaluationInstance | null {
+  if (typeof state === "string") return null;
+  if (state.type === "Evaluation") return state.value;
+  if (
+    state.type === "Escalated" &&
+    state.value.type === "EvaluationBlockedEscalated"
+  )
+    return state.value.value;
+  return null;
 }
 
 /**

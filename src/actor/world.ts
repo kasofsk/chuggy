@@ -27,6 +27,8 @@ export function isSpawnFor(event: TicketEvent, ticket: TicketId): boolean {
     case "TicketDispatched":
     case "TicketWorkResumed":
     case "TicketEvaluationReworkStarted":
+    case "TicketEvaluationInvalidated":
+    case "TicketEvaluationFailureInvalidated":
     case "TicketFinalizationNeedsWork":
       return true;
     case "TicketCreated":

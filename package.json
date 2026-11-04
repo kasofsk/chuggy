@@ -74,6 +74,7 @@
     "start:selector": "node --experimental-strip-types src/roots/selector.ts"
   },
   "dependencies": {
+    "@kasofsk/chug-ticket-domain": "github:kasofsk/chug-ticket-domain#v0.7.0",
     "@ts-safeql/sql-tag": "^0.2.2",
     "fastify": "^5.12.1",
     "jose": "^6.2.10",

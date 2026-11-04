@@ -45,9 +45,7 @@ import {
 import { reportChoices } from "../../src/domain/deciders.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import {
-  evaluationFailureDispositionTags,
   type TicketGraph,
-  type EvaluationFailureDisposition,
   type FinalizationResult,
   type StageDefinition,
   type TaskIdentity,
@@ -71,13 +69,20 @@ import {
 } from "../itf/vocabulary.ts";
 import { pickFrom, subsetFrom, type Random } from "./random.ts";
 
+/** The dispositions the model's own draw offers; an invalidation is a command's, never a policy's pick. */
+const drawnDispositions = [
+  "ReworkEvaluationFailure",
+  "EscalateEvaluationFailure",
+] as const;
+type DrawnDisposition = (typeof drawnDispositions)[number];
+
 /** One step's draws, in the domain's own vocabulary; absent means the action does not make that draw. */
 export interface Drawn {
   readonly ticket?: TicketId;
   readonly dependencies?: readonly TicketId[];
   readonly stages?: readonly StageDefinition[];
   readonly source?: number;
-  readonly onFailure?: EvaluationFailureDisposition;
+  readonly onFailure?: DrawnDisposition;
   readonly task?: TaskIdentity;
   readonly report?: TaskTerminalReport;
   readonly result?: FinalizationResult;
@@ -240,7 +245,7 @@ const taskDone: WalkAction = {
       ticket,
       task,
       report: pickFrom(random, reportChoices(ticketAt(graph, ticket), task)),
-      onFailure: pickFrom(random, evaluationFailureDispositionTags),
+      onFailure: pickFrom(random, drawnDispositions),
     };
   },
   permitsIn: (_config, graph, _ledgers, drawn) => {
@@ -254,7 +259,7 @@ const taskDone: WalkAction = {
       outstandingTasksIn(graph, drawn.ticket).some((live) =>
         taskIdentityEquals(live, task),
       ) &&
-      evaluationFailureDispositionTags.includes(drawn.onFailure)
+      drawnDispositions.includes(drawn.onFailure)
     );
   },
 };

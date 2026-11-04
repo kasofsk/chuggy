@@ -369,6 +369,7 @@ export const commandsRefusals: readonly (readonly [string, unknown])[] = [
   ["TicketNotResumable", 1],
   ["TaskNotCurrent", { ticket: 1, task: releasedTask }],
   ["FinalizationNotCurrent", { ticket: 1, workCycle: 2, generation: 1 }],
+  ["EvaluationNotCurrent", { ticket: 1, workCycle: 2 }],
 ];
 
 /** The boundary's own refusals, which carry none. */

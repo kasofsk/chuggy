@@ -22,6 +22,7 @@ import type {
   EvaluationFailureDisposition,
   EvaluationInstance,
   FinalizationResultReport,
+  InvalidateEvaluationRequest,
   Obligation,
   ReleasedTicket,
   TaskIdentity,
@@ -50,6 +51,7 @@ import {
   finalizationResultValid,
   finalize,
   incompleteDependencies,
+  invalidatableEvaluation,
   nextCycleNumber,
   producedResult,
   releasedTicketValid,
@@ -173,6 +175,12 @@ export function commandValid(command: TicketCommand): boolean {
       );
     case "DispatchTicket":
       return command.value.ticket > 0 && command.value.source > 0;
+    case "InvalidateEvaluation":
+      return (
+        command.value.ticket > 0 &&
+        command.value.workCycle > 0 &&
+        command.value.evidence > 0
+      );
     case "ReportTaskTerminal":
       return reportValid(command.value);
     case "ReportFinalizationResult":
@@ -201,6 +209,7 @@ export function commandBounded(
     case "DispatchTicket":
     case "RevokeTicket":
     case "ResumeTicket":
+    case "InvalidateEvaluation":
     case "ReportTaskTerminal":
     case "ReportFinalizationResult":
       return true;
@@ -413,6 +422,44 @@ export function decideResume(
 }
 
 /**
+ * An abandoned evaluation: the one the ticket is judging, or the one a blocked
+ * wall holds, is dropped without a verdict and the ticket returns to Work from
+ * the source it was judging. Refused `EvaluationNotCurrent` for any other
+ * state, or for a cycle the ticket's evaluation is not.
+ */
+export function decideInvalidateEvaluation(
+  graph: TicketGraph,
+  request: InvalidateEvaluationRequest,
+): TicketDecision {
+  if (!graph.tickets.has(request.ticket))
+    return refused({ type: "TicketNotFound", value: request.ticket });
+  const ticket = ticketAt(graph, asTicketId(request.ticket));
+  const evaluation = invalidatableEvaluation(ticket.state);
+  if (evaluation === null || evaluation.workCycle !== request.workCycle)
+    return refused({
+      type: "EvaluationNotCurrent",
+      value: { ticket: request.ticket, workCycle: request.workCycle },
+    });
+  const state = ticket.state;
+  return decided(
+    {
+      type: "TicketEvaluationInvalidated",
+      value: {
+        ticket: request.ticket,
+        workCycle: request.workCycle,
+        evidence: request.evidence,
+      },
+    },
+    [
+      ...(typeof state !== "string" && state.type === "Evaluation"
+        ? cancelLiveTasks(ticket)
+        : []),
+      executeWork(ticket, nextCycleNumber(ticket)),
+    ],
+  );
+}
+
+/**
  * A work completion: a produced result is ACCEPTED, opening the instance that
  * judges it and owing its first stage's evaluators, and a task that died or
  * that infrastructure could not run parks the ticket at its own wall.
@@ -513,7 +560,16 @@ function decideEvaluationTerminal(
     case "EvaluationFailed": {
       const entries = reworkEntries(updated, state.value);
       const rework = { ticket: id, report, evidence: entries };
-      return failurePolicy(updated) === "ReworkEvaluationFailure"
+      const disposition = failurePolicy(updated);
+      if (typeof disposition !== "string")
+        return decided(
+          {
+            type: "TicketEvaluationFailureInvalidated",
+            value: { ticket: id, report, evidence: disposition.value },
+          },
+          [executeWork(ticket, nextCycleNumber(ticket))],
+        );
+      return disposition === "ReworkEvaluationFailure"
         ? decided({ type: "TicketEvaluationReworkStarted", value: rework }, [
             executeWork(ticket, nextCycleNumber(ticket)),
           ])
@@ -649,6 +705,8 @@ export function decide(
       return decideRevoke(graph, command.value);
     case "ResumeTicket":
       return decideResume(graph, command.value);
+    case "InvalidateEvaluation":
+      return decideInvalidateEvaluation(graph, command.value);
     case "ReportTaskTerminal":
       return decideTaskTerminal(graph, command.value, failurePolicy);
     case "ReportFinalizationResult":

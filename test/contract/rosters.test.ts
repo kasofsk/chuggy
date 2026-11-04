@@ -677,6 +677,7 @@ test("the refusal code roster is exhaustive over its union", () => {
     TicketNotRevocable: true,
     TicketNotResumable: true,
     TaskNotCurrent: true,
+    EvaluationNotCurrent: true,
     FinalizationNotCurrent: true,
     AuthoringChanged: true,
     ConfigurationInvalid: true,

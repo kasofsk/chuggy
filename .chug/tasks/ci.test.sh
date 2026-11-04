@@ -449,26 +449,6 @@ set -e
 refute "an action's document selects the suites that read it" 0 "$RC" "check-source unit: SKIPPED"
 check "an action's document skips the database" 0 "$RC" "check-postgres: SKIPPED"
 
-# The vendored package is the model's text and the corpus the harness replays,
-# so a change to it reaches the replay gates and the pin, not only Quint.
-stub_repo 0
-mkdir -p "$R/model/ticket-domain/evaluation"
-printf 'module before {}\n' > "$R/model/ticket-domain/evaluation/evaluation.qnt"
-git -C "$R" add -A
-git -C "$R" commit -qm baseline
-printf 'module after {}\n' > "$R/model/ticket-domain/evaluation/evaluation.qnt"
-git -C "$R" add -A
-git -C "$R" commit -qm vendored
-OUT="$WORK/.out"
-set +e
-(cd "$R" && CHUG_CI_BASE=HEAD^ CHUG_CI_SHELL_SUITES=0 \
-	./.chug/tasks/ci.sh) >"$OUT" 2>&1
-RC=$?
-set -e
-check "a vendored change selects the pin" 0 "$RC" "stub check-vendored"
-check "a vendored change selects conformance" 0 "$RC" "stub check-conformance"
-check "a vendored change selects the random replay" 0 "$RC" "stub check-random"
-
 # A PATH THAT WENT AWAY IS A PATH THAT CHANGED: a deletion selects what read
 # the file, whether committed, staged or only left in the tree, a rename
 # selects by the name it left as well as the one it took, and a name git
@@ -695,7 +675,7 @@ refute "another workspace's manifest selects the console" 0 "$RC" "check-console
 # A GATE THAT READS THE TREE AS TEXT RUNS ON ANY CHANGE, and the static checks
 # on any change but a page's: a sheet outside the console is a kind none of
 # their old lists of suffixes held.
-text_gates="doc-lint check-figures check-paths check-shell-quoting check-console-sheets check-gates check-comments check-vendored"
+text_gates="doc-lint check-figures check-paths check-shell-quoting check-console-sheets check-gates check-comments"
 stub_repo 0
 mkdir -p "$R/notes"
 commit_all baseline
@@ -1527,7 +1507,7 @@ refute "TRACK_RECORD_FRESH=1 reaches every gate" 0 "$RC" "FRESH=unset"
 
 # A gate the selection library does not name is keyed on the whole tree.
 stub_repo 0
-awk '{ print } /^run_selected_gate check-vendored / {
+awk '{ print } /^run_selected_gate check-comments / {
 	print "run_selected_gate undeclared \"undeclared\" ./.chug/tasks/undeclared.sh" }' \
 	"$R/.chug/tasks/ci.sh" > "$WORK/.undeclared"
 cat "$WORK/.undeclared" > "$R/.chug/tasks/ci.sh"

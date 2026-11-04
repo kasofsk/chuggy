@@ -1526,6 +1526,12 @@ const commandsRefused: readonly (readonly [
     commandsCarried,
   ],
   [
+    "an evaluation not current about no ticket",
+    "EvaluationNotCurrent",
+    commandsRefusal("EvaluationNotCurrent", { workCycle: 2 }),
+    commandsCarried,
+  ],
+  [
     "a finalization not current at no generation",
     "FinalizationNotCurrent",
     commandsRefusal("FinalizationNotCurrent", { ticket: 1, workCycle: 2 }),

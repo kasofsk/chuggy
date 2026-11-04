@@ -139,7 +139,7 @@ if [ -n "\$evaluator" ]; then
 	rc="\${STUB_RC_evaluator-0}"
 	out="\${STUB_OUT_evaluator-  1 passing (1ms)}"
 fi
-if [ "\$last" = model/ticket-domain/ticket_tests.qnt ] && [ -n "\${STUB_PKG_RC-}" ]; then
+if [ "\$last" = node_modules/@kasofsk/chug-ticket-domain/model/ticket-domain/ticket_tests.qnt ] && [ -n "\${STUB_PKG_RC-}" ]; then
 	rc="\$STUB_PKG_RC"; out="\$STUB_PKG_OUT"
 fi
 if [ -n "\${FORCE_COLOR-}" ]; then out="\$(printf '\\033[32m')\$out"; fi
@@ -201,7 +201,7 @@ run_in_repo
 check "a suite that ran and failed is a finding" 1 "$RC" "failure(s)"
 check "a failing suite prints what it said" 1 "$RC" "worth reading"
 
-# THE PACKAGE'S SUITE IS THIS TREE'S. Its text is vendored into the model, so a
+# THE PACKAGE'S SUITE IS THIS TREE'S. It is the ticket package's, installed beside the model, so a
 # case of it failing under the pinned quint is a finding here, not a stage that
 # could not run.
 model_repo 0.33.1

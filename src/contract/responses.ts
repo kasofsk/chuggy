@@ -1016,6 +1016,10 @@ const ticketRefusalValueSchemas = {
     ticket: ticketNumberSchema,
     task: taskIdentitySchema,
   }),
+  EvaluationNotCurrent: z.strictObject({
+    ticket: ticketNumberSchema,
+    workCycle: ticketNumberSchema,
+  }),
   FinalizationNotCurrent: z.strictObject({
     ticket: ticketNumberSchema,
     workCycle: ticketNumberSchema,
@@ -1063,6 +1067,7 @@ const operationRefusedResponseSchema = z.discriminatedUnion("code", [
   operationTicketRefusedSchema("TicketNotRevocable"),
   operationTicketRefusedSchema("TicketNotResumable"),
   operationTicketRefusedSchema("TaskNotCurrent"),
+  operationTicketRefusedSchema("EvaluationNotCurrent"),
   operationTicketRefusedSchema("FinalizationNotCurrent"),
   z.strictObject({
     ...operationRefusedSchema,

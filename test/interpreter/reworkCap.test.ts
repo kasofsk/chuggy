@@ -25,7 +25,10 @@ import { genesisLedgers, ledgerAt } from "../../src/domain/ledger.ts";
 import { finalizationOf } from "../../src/domain/ticket.ts";
 import { workTaskIdentity } from "../../src/domain/task.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
-import type { TicketGraph } from "../../src/domain/generated/modelTypes.ts";
+import type {
+  EvaluationFailureDisposition,
+  TicketGraph,
+} from "../../src/domain/generated/modelTypes.ts";
 import type { TaskIdentity } from "../../src/domain/generated/modelTypes.ts";
 import {
   checkedReworkCap,
@@ -62,7 +65,7 @@ function owed(graph: TicketGraph): TaskIdentity {
 function dispositionsUnder(
   cyclesMax: number,
   finalizationFailures = 0,
-): readonly string[] {
+): readonly EvaluationFailureDisposition[] {
   let held: Replayed = { graph: genesis, ledgers: genesisLedgers };
   const step = (command: TicketCommand, policy = plainPolicy) => {
     held = replayStep(
@@ -100,7 +103,7 @@ function dispositionsUnder(
       ),
     );
   }
-  const picked: string[] = [];
+  const picked: EvaluationFailureDisposition[] = [];
   for (let round = 0; round <= cyclesMax + 1; round++) {
     const disposition = evaluated("EvaluatorFail");
     picked.push(disposition);

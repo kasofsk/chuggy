@@ -1,6 +1,6 @@
 #!/bin/sh
 # The model gate. Typechecks every Quint module, runs the unit suite, the
-# vendored package's own suite, the witness modules, the refinement suites,
+# ticket package's own suite, the witness modules, the refinement suites,
 # and the randomized invariant runs over each instance.
 #
 # Quint is pinned in package.json, and the local binary wins over anything on
@@ -120,7 +120,7 @@ unit_suites='model/tests/chuggy_test.qnt
 model/tests/capacity_test.qnt
 model/tests/runner_test.qnt
 model/tests/execution_requirement_test.qnt'
-package_suite=model/ticket-domain/ticket_tests.qnt
+package_suite=node_modules/@kasofsk/chug-ticket-domain/model/ticket-domain/ticket_tests.qnt
 witness_suite=model/tests/chuggy_witness_test.qnt
 refinement_suite=model/tests/chuggy_refinement_test.qnt
 ticket_instance=model/mc/mc_chuggy.qnt
@@ -314,7 +314,7 @@ stages() {
 		run_suite "$u" "$u"
 	done
 
-	# The package's text is vendored rather than written here, so its own
+	# The package's text is installed rather than written here, so its own
 	# suite is what says a quint release still reads it the way the package
 	# does. A failing case is a finding like any other: the text is this
 	# tree's model now.

@@ -49,6 +49,7 @@ export function workInputValid(input: WorkInput): boolean {
         cause.value.every((entry) => entry.evaluator > 0 && entry.resultRef > 0)
       );
     case "FinalizationRework":
+    case "StackInvalidated":
       return cause.value > 0;
   }
 }

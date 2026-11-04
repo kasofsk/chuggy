@@ -792,6 +792,8 @@ export function operationRefusalLabel(code: OperationRefusalCode): string {
       return "Nothing to resume";
     case "TaskNotCurrent":
       return "Task not current";
+    case "EvaluationNotCurrent":
+      return "Evaluation not current";
     case "FinalizationNotCurrent":
       return "Finalization not current";
     case "AuthoringChanged":

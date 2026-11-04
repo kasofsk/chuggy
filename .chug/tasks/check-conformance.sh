@@ -8,7 +8,7 @@
 # is wrong. Reproduction is exact equality on the whole state rather than a spot
 # check, because a spot check is how a dropped field survives.
 #
-# The ticket package's own traces, vendored beside the model, replay here too
+# The ticket package's own traces, shipped beside its model, replay here too
 # (`test/conformance/package.test.ts`), under the package's invariants alone:
 # their keys are the package's fixtures and lie outside this instance's bounds.
 #

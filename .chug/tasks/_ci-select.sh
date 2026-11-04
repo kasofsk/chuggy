@@ -203,7 +203,7 @@ ci_inputs() { # <gate id or suite path>
 ci_declare() { # <gate id or suite path>
 	case "$1" in
 	doc-lint | check-figures | check-paths | check-shell-quoting | check-console-sheets | \
-		check-gates | check-comments | check-vendored)
+		check-gates | check-comments)
 		ci_tree
 		ci_text .
 		;;
@@ -246,14 +246,14 @@ ci_declare() { # <gate id or suite path>
 			model .chug/tasks/check-conformance.sh
 		ci_node_looks src
 		ci_manifests
-		ci_packages zod
+		ci_packages zod @kasofsk/chug-ticket-domain
 		;;
 	check-random)
 		ci_code src/domain src/generated test/random test/conformance test/domain test/itf \
 			model .chug/tasks/check-random.sh
 		ci_node_looks src
 		ci_manifests
-		ci_packages zod
+		ci_packages zod @kasofsk/chug-ticket-domain
 		;;
 	check-postgres)
 		ci_code src test deploy/rig/wipe-tickets.sql package.json .chug/tasks/_postgres.sh \
@@ -277,14 +277,14 @@ ci_declare() { # <gate id or suite path>
 		;;
 	check-model)
 		ci_code ':(glob)model/**/*.qnt' .chug/tasks/check-model.sh
-		ci_packages @informalsystems/quint
+		ci_packages @informalsystems/quint @kasofsk/chug-ticket-domain
 		;;
 	check-model-api)
 		ci_code ':(glob)model/**/*.qnt' scripts/generate-model-api.ts src/generated \
 			src/domain/generated .chug/tasks/check-model-api.sh
 		ci_node_looks scripts
 		ci_manifests
-		ci_packages @informalsystems/quint prettier
+		ci_packages @informalsystems/quint prettier @kasofsk/chug-ticket-domain
 		;;
 	.chug/tasks/ci.test.sh)
 		ci_code "$1" .chug/tasks/ci.sh .chug/tasks/_ci-select.sh .chug/tasks/_ignored-inputs.sh \

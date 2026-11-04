@@ -73,9 +73,9 @@
 /// This header describes the machine; it does not narrate how the machine
 /// came to be.
 module chuggy_domain {
-  import task_contract.* from "./task-contract/task"
-  import evaluation_protocol.* from "./ticket-domain/evaluation/evaluation"
-  import ticket_domain.* from "./ticket-domain/ticket"
+  import task_contract.* from "../node_modules/@kasofsk/chug-ticket-domain/model/task-contract/task"
+  import evaluation_protocol.* from "../node_modules/@kasofsk/chug-ticket-domain/model/ticket-domain/evaluation/evaluation"
+  import ticket_domain.* from "../node_modules/@kasofsk/chug-ticket-domain/model/ticket-domain/ticket"
   import chuggy_ticket.* from "./ticket"
 
   /// Maximum number of released tickets. Ticket identities come from the
@@ -345,6 +345,8 @@ module chuggy_domain {
     | TicketEvaluationPassed(progress) => progress.ticket
     | TicketEvaluationReworkStarted(rework) => rework.ticket
     | TicketEvaluationFailureEscalated(rework) => rework.ticket
+    | TicketEvaluationInvalidated(invalidated) => invalidated.ticket
+    | TicketEvaluationFailureInvalidated(invalidated) => invalidated.ticket
     | TicketEvaluationBlocked(progress) => progress.ticket
     | TicketFinalizationSucceeded(result) => result.ticket
     | TicketFinalizationNeedsWork(result) => result.ticket
@@ -368,6 +370,9 @@ module chuggy_domain {
     | TicketEvaluationPassed(_) => "TicketEvaluationPassed"
     | TicketEvaluationReworkStarted(_) => "TicketEvaluationReworkStarted"
     | TicketEvaluationFailureEscalated(_) => "TicketEvaluationFailureEscalated"
+    | TicketEvaluationInvalidated(_) => "TicketEvaluationInvalidated"
+    | TicketEvaluationFailureInvalidated(_) =>
+      "TicketEvaluationFailureInvalidated"
     | TicketEvaluationBlocked(_) => "TicketEvaluationBlocked"
     | TicketFinalizationSucceeded(_) => "TicketFinalizationSucceeded"
     | TicketFinalizationNeedsWork(_) => "TicketFinalizationNeedsWork"
@@ -390,6 +395,7 @@ module chuggy_domain {
     | TicketNotResumable(_) => "TicketNotResumable"
     | TaskNotCurrent(_) => "TaskNotCurrent"
     | FinalizationNotCurrent(_) => "FinalizationNotCurrent"
+    | EvaluationNotCurrent(_) => "EvaluationNotCurrent"
   }
 
   // ==========================================================================
