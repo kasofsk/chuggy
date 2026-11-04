@@ -52,11 +52,12 @@
  * evidence — re-read the ref, confirm the ancestry — and never an outcome, so a
  * hold ends when reconciliation concludes and no earlier.
  *
- * THE FAILURE KINDS ARE `MergeConflict`, `PreparationFailed` AND
- * `QueueChecksFailed`. An integration answered by a conflict is the first, a
- * preparation that produced no candidate is the second, and a merge queue
- * whose required checks failed twice on the change merged onto its base is the
- * third; all three reduce to the one priced `FinalizationNeedsWork` the model
+ * THE FAILURE KINDS ARE `MergeConflict`, `PreparationFailed`,
+ * `QueueChecksFailed` AND `RecheckRequired`. An integration answered by a
+ * conflict is the first, a preparation that produced no candidate is the
+ * second, a merge queue whose required checks failed twice on the change
+ * merged onto its base is the third, and a serialized landing whose target
+ * moved past what was evaluated is the fourth; all four reduce to the one priced `FinalizationNeedsWork` the model
  * already has, and no hold is any of them: a hold spends nothing and refunds
  * nothing, so a finalizer's own re-preparations stay invisible to
  * `TicketGraph`.
@@ -312,18 +313,23 @@ export const allFinalizationAttemptOutcomes: readonly FinalizationAttemptOutcome
 
 /**
  * An integration answered by a conflict, a preparation that produced no
- * candidate, and a merge queue's required checks failing twice on the change
- * merged onto its base, each of which reduces to the one priced
+ * candidate, a merge queue's required checks failing twice on the change
+ * merged onto its base, and a target that moved past the commit a serialized
+ * landing evaluated, each of which reduces to the one priced
  * `FinalizationNeedsWork`.
  */
 export type FinalizationFailureKind =
-  "MergeConflict" | "PreparationFailed" | "QueueChecksFailed";
+  | "MergeConflict"
+  | "PreparationFailed"
+  | "QueueChecksFailed"
+  | "RecheckRequired";
 
 /** Every failure kind, so a suite and a database CHECK iterate rather than restate. */
 export const allFinalizationFailureKinds: readonly FinalizationFailureKind[] = [
   "MergeConflict",
   "PreparationFailed",
   "QueueChecksFailed",
+  "RecheckRequired",
 ];
 
 /** Whether a permit is still the authority for the one irreversible act, or has been spent. */
@@ -357,7 +363,8 @@ export type InputBundleReferenceKind =
   | "ChangeBase"
   | "DependencyResult"
   | "DependencyAncestor"
-  | "DependencyNotAncestor";
+  | "DependencyNotAncestor"
+  | "Recheck";
 
 /** Every reference kind, so a suite and a database CHECK iterate rather than restate. */
 export const allInputBundleReferenceKinds: readonly InputBundleReferenceKind[] =
@@ -373,6 +380,7 @@ export const allInputBundleReferenceKinds: readonly InputBundleReferenceKind[] =
     "DependencyResult",
     "DependencyAncestor",
     "DependencyNotAncestor",
+    "Recheck",
   ];
 
 /** The most references one bundle holds, so a bundle cannot grow into a payload. */
@@ -674,7 +682,8 @@ export type FinalizationHoldKind =
   /** Reached by no pass, a queue's failed checks being sent back to work; holds and results already recorded at it are still read. */
   | "ProposalQueueChecksFailed"
   | "ProposalQueueTimedOut"
-  | "ProposalDequeued";
+  | "ProposalDequeued"
+  | "RecheckReworksExhausted";
 
 /** Every hold kind, so a suite iterates over them rather than restating them. */
 export const allFinalizationHoldKinds: readonly FinalizationHoldKind[] = [
@@ -702,6 +711,7 @@ export const allFinalizationHoldKinds: readonly FinalizationHoldKind[] = [
   "ProposalQueueChecksFailed",
   "ProposalQueueTimedOut",
   "ProposalDequeued",
+  "RecheckReworksExhausted",
 ];
 
 /**
@@ -1276,6 +1286,8 @@ export interface FinalizerConfig {
   readonly proposalUpdatesMax: number;
   /** How many times one ticket is sent back to work for its merge queue's checks failing before it holds instead. */
   readonly proposalQueueReworksMax: number;
+  /** How many times one ticket is sent back to work to re-check a target that moved before it holds instead. */
+  readonly recheckReworksMax: number;
 }
 
 /** The values a deployment starts from when it names none. */
@@ -1295,6 +1307,7 @@ export const finalizerDefaults: FinalizerConfig = {
   proposalMergeReadingsMax: 3,
   proposalUpdatesMax: 3,
   proposalQueueReworksMax: 2,
+  recheckReworksMax: 2,
 };
 
 /**
@@ -1320,6 +1333,31 @@ export function checkedFinalizerConfig(
     }
   }
   return config;
+}
+
+/** What a target that moved past the evaluated commit comes to: a send-back to re-check, or a hold. */
+export type FinalizationRecheckRework =
+  | { readonly rework: "Record" }
+  | {
+      readonly rework: "Hold";
+      readonly hold: Extract<FinalizationHoldKind, "RecheckReworksExhausted">;
+    };
+
+/**
+ * Decides that send-back once the ticket's earlier ones are counted. A ticket
+ * already sent back `reworksMax` times holds instead.
+ */
+export function finalizationRecheckRework(
+  failures: number,
+  reworksMax: number,
+): FinalizationRecheckRework {
+  if (!Number.isSafeInteger(failures) || failures < 0)
+    throw new RangeError("recheck rework: failures are not a count");
+  if (!Number.isSafeInteger(reworksMax) || reworksMax < 1)
+    throw new RangeError("recheck rework: the bound must be positive");
+  return failures >= reworksMax
+    ? { rework: "Hold", hold: "RecheckReworksExhausted" }
+    : { rework: "Record" };
 }
 
 /** One permit asked for, naming the claim that fences it and the attempt it would authorize. */
@@ -1443,6 +1481,13 @@ export interface FinalizerStore {
     requestsMax: number,
     leaseSecs: number,
   ): Promise<readonly FinalizationClaim[]>;
+
+  /**
+   * How many attempts of any request of the same ticket recorded a target that
+   * moved past what was evaluated, which is how often the ticket has been sent
+   * back to re-check.
+   */
+  ticketRecheckFailures(claim: FinalizationClaim): Promise<number>;
 
   /** Extends a claim still held at its own generation under the current epoch. */
   extendClaim(claim: FinalizationClaim, leaseSecs: number): Promise<boolean>;

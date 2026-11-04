@@ -174,6 +174,8 @@ export function finalizationUnavailableKindLabel(
       return "Merge queue checks timed out again";
     case "ProposalDequeued":
       return "Removed from merge queue";
+    case "RecheckReworksExhausted":
+      return "Re-checks exhausted";
   }
 }
 
@@ -233,6 +235,8 @@ export function finalizationFailureKindLabel(
       return "Preparation failed";
     case "QueueChecksFailed":
       return "Merge queue checks failed";
+    case "RecheckRequired":
+      return "Target moved, re-check required";
   }
 }
 

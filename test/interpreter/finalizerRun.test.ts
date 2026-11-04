@@ -915,6 +915,20 @@ function recordingHolds(
   };
 }
 
+/** The count of re-check failures, which is the attempts this store has recorded for them. */
+function recordingRechecks(
+  store: () => FinalizerRecorder,
+): Pick<FinalizerStore, "ticketRecheckFailures"> {
+  return {
+    ticketRecheckFailures: () =>
+      Promise.resolve(
+        store().attempts.filter(
+          (attempt) => attempt.failureKind === "RecheckRequired",
+        ).length,
+      ),
+  };
+}
+
 /** A store that answers from the views a case hands it and records every move. */
 function recordingStore(
   views: readonly FinalizationView[],
@@ -924,6 +938,7 @@ function recordingStore(
     ...recordingLedgers(),
     ...recordingProposalCounters(),
     ...recordingProposals(() => own),
+    ...recordingRechecks(() => own),
     gathering: {
       work: [passedWork],
       artifacts: [handoffOf("one.txt", "one")],

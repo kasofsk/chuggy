@@ -778,6 +778,24 @@ function postgresFinalizerPreparation(
   };
 }
 
+/** Counts the attempts of the ticket's requests that recorded a target moved past what was evaluated. */
+async function finalizerRecheckFailures(
+  client: pg.PoolClient,
+  claim: FinalizationClaim,
+): Promise<number> {
+  const found = await client.query<{ failures: string }>(
+    sql`SELECT count(*) AS failures
+         FROM finalization_attempt a
+        WHERE a.tenant = ${claim.partition.tenant} AND a.project = ${claim.partition.project}
+          AND a.ticket = ${claim.ticket}
+          AND a.failure_kind = 'RecheckRequired'`,
+  );
+  return projectRowCounter(
+    found.rows[0]?.failures ?? "0",
+    "ticket recheck failures",
+  );
+}
+
 /** The moves a change proposal owns, over the same pool the rest of the authority runs on. */
 function postgresFinalizerProposals(pool: pg.Pool): FinalizerProposalStore {
   return {
@@ -889,6 +907,10 @@ export function postgresFinalizer(
     claimRequests: (owner, epoch, requestsMax, leaseSecs) =>
       postgresTransaction(pool, (client) =>
         finalizerClaimRequests(client, owner, epoch, requestsMax, leaseSecs),
+      ),
+    ticketRecheckFailures: (claim) =>
+      postgresTransaction(pool, (client) =>
+        finalizerRecheckFailures(client, claim),
       ),
     extendClaim: (claim, leaseSecs) =>
       postgresTransaction(pool, (client) =>

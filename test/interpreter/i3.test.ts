@@ -41,7 +41,10 @@ import {
   asRepositoryId,
 } from "../../src/interpreter/finalizer.ts";
 import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
-import { asProjectArtifactId } from "../../src/interpreter/finalizerPreparation.ts";
+import {
+  asProjectArtifactId,
+  type FinalizationEvidence,
+} from "../../src/interpreter/finalizerPreparation.ts";
 import {
   asAuthorityKind,
   asAuthoritySubject,
@@ -598,6 +601,7 @@ test("a failed landing's rework bundle names the target's commit as where its ch
         attempt: asFinalizationAttemptId("attempt"),
         attemptDigest: "e".repeat(64),
         targetCommit,
+        failureKind: "PreparationFailed",
         preparation: [{ kind: "Repository", reference: "repository" }],
       },
     },
@@ -626,6 +630,7 @@ test("a failed landing's rework bundle names the base its proposal failed on as 
         attemptDigest: "e".repeat(64),
         targetCommit,
         proposalBase,
+        failureKind: "MergeConflict",
         preparation: [{ kind: "Repository", reference: "repository" }],
       },
     },
@@ -640,6 +645,41 @@ test("a failed landing's rework bundle names the base its proposal failed on as 
       { kind: "ChangeBase", reference: proposalBase },
     ],
   );
+});
+
+/**
+ * A rework sent back for a target that moved is told which accepted commit to
+ * report again. Catches the reference carried by a conflict send-back, lost
+ * from a re-check, or named where the attempt recorded no commit.
+ */
+test("only a re-check send-back pins the accepted commit to re-report", () => {
+  const accepted = asGitObjectId("7".repeat(40));
+  const recheckReferences = (
+    failureKind: FinalizationEvidence["failureKind"],
+    recheckCommit?: typeof accepted,
+  ) =>
+    inputBundleReferencesOf(
+      {
+        configurationRevision: "revision",
+        configurationDigest: "d".repeat(64),
+      },
+      {
+        bundle: "bundle",
+        evidence: {
+          attempt: asFinalizationAttemptId("attempt"),
+          attemptDigest: "e".repeat(64),
+          targetCommit: asGitObjectId("a".repeat(40)),
+          failureKind,
+          ...(recheckCommit === undefined ? {} : { recheckCommit }),
+          preparation: [{ kind: "Repository", reference: "repository" }],
+        },
+      },
+    ).filter((reference) => reference.kind === "Recheck");
+  assert.deepEqual(recheckReferences("RecheckRequired", accepted), [
+    { kind: "Recheck", reference: accepted },
+  ]);
+  assert.deepEqual(recheckReferences("MergeConflict", accepted), []);
+  assert.deepEqual(recheckReferences("RecheckRequired"), []);
 });
 
 test("a spawn bundle pins one reference per image the brief named, with the digest the store answered", () => {

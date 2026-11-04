@@ -98,6 +98,7 @@ export const finalizationUnavailableKinds = [
   "ProposalQueueChecksFailed",
   "ProposalQueueTimedOut",
   "ProposalDequeued",
+  "RecheckReworksExhausted",
 ] as const;
 export type FinalizationUnavailableKind =
   (typeof finalizationUnavailableKinds)[number];
@@ -564,6 +565,7 @@ export const finalizationFailureKinds = [
   "MergeConflict",
   "PreparationFailed",
   "QueueChecksFailed",
+  "RecheckRequired",
 ] as const;
 
 /** What a stored change proposal says its create came to, restating `allChangeProposalCreationsStored`. */

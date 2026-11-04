@@ -513,6 +513,8 @@ export interface AttemptRecord {
   readonly proposalBase?: Pick<ObservedTarget, "ref" | "commit">;
   /** The commit a merge queue built and whose checks failed. */
   readonly groupCommit?: GitObjectId;
+  /** The accepted commit a `RecheckRequired` failure sends back to be re-reported on the moved target. */
+  readonly recheckCommit?: GitObjectId;
   readonly attemptDigest: string;
 }
 
@@ -660,6 +662,9 @@ export function canonicalFinalizationAttempt(
     ...(record.groupCommit === undefined
       ? []
       : ["groupCommit", record.groupCommit]),
+    ...(record.recheckCommit === undefined
+      ? []
+      : ["recheckCommit", record.recheckCommit]),
   ]);
 }
 
@@ -686,6 +691,10 @@ export interface FinalizationEvidence {
   readonly targetCommit: GitObjectId;
   /** The commit of the base the attempt's proposal failed on, where it recorded one. */
   readonly proposalBase?: GitObjectId;
+  /** Which failure this was, so a rework can tell a re-check from a conflict by what the attempt recorded. */
+  readonly failureKind: FinalizationFailureKind;
+  /** The accepted commit to re-report, present exactly for a `RecheckRequired` failure. */
+  readonly recheckCommit?: GitObjectId;
   readonly conflictManifest?: ProjectArtifactId;
   readonly conflictManifestDigest?: string;
   readonly preparation: readonly InputBundleReference[];

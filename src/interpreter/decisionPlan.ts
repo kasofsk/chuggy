@@ -325,6 +325,10 @@ function inputBundleEvidenceReferences(
       kind: "ChangeBase",
       reference: evidence.proposalBase ?? evidence.targetCommit,
     },
+    ...(evidence.failureKind === "RecheckRequired" &&
+    evidence.recheckCommit !== undefined
+      ? [{ kind: "Recheck" as const, reference: evidence.recheckCommit }]
+      : []),
     ...(evidence.conflictManifest === undefined
       ? []
       : [
