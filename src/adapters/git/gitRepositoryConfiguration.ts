@@ -35,10 +35,10 @@
  * a read fetches only once the read of that repository before it has ended. The
  * wait is for the whole of that read and not its fetch alone, because the
  * housekeeping any fetch can set off, a blob's included, can rewrite the
- * shallow file under the same lock; that housekeeping is kept inside the call
- * that set it off rather than left running past it. The probe of the remote
- * takes no lock and is asked before the wait, so an outage stops each read at
- * its own bound. The credential the commit and its blobs are fetched under is
+ * shallow file under the same lock; `gitRun` keeps that housekeeping inside
+ * the call that set it off rather than leaving it running past it. The probe of
+ * the remote takes no lock and is asked before the wait, so an outage stops
+ * each read at its own bound. The credential the commit and its blobs are fetched under is
  * resolved once the read's turn has come, because one resolved before a long
  * wait can have expired by its end. A read begun while as many of its
  * repository's reads as may be are in flight is a commit not held yet at once,
@@ -286,14 +286,6 @@ const gitRepositoryConfigurationRemoteName = "configuration-source";
 /** What a fetch leaves out of the commit, each blob being fetched only as it is read. */
 const gitRepositoryConfigurationFilter = "blob:none";
 
-/** What keeps the housekeeping a fetch sets off inside the call that set it off, said both ways because a newer git asks one setting first and an older knows only the other. */
-const gitRepositoryConfigurationHousekeeping = [
-  "-c",
-  "gc.autoDetach=false",
-  "-c",
-  "maintenance.autoDetach=false",
-] as const;
-
 /** The code git exits with when it dies on a fatal error, which is the one code a remote read is tried again after. */
 const gitRepositoryConfigurationRetriedCode = 128;
 
@@ -438,16 +430,14 @@ async function gitRepositoryConfigurationRemote(
 /**
  * The repository as the promisor remote of one call that fetches, configured
  * on the call and so already registered when a fetch would write it into the
- * scratch, and the housekeeping the fetch sets off kept inside the call. The
- * address is a configuration value, which a repository beginning with a dash
- * cannot turn into an option.
+ * scratch. The address is a configuration value, which a repository beginning
+ * with a dash cannot turn into an option.
  */
 function gitRepositoryConfigurationFetchArguments(
   repository: RepositoryId,
 ): readonly string[] {
   const remote = `remote.${gitRepositoryConfigurationRemoteName}`;
   return [
-    ...gitRepositoryConfigurationHousekeeping,
     "-c",
     `${remote}.url=${repository}`,
     "-c",

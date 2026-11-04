@@ -20,7 +20,14 @@
 
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
@@ -68,6 +75,7 @@ import {
   gitDeclineByProcReceive,
   gitDeclineWorkflowsReason,
 } from "./gitDeclineFixtures.ts";
+import { gitFixtureRepository } from "./gitFixtureRepository.ts";
 
 /** The secret the fixture's credential port hands out, which must never reach an argument. */
 const fixtureSecret = "fixture-secret-a1b2c3";
@@ -113,8 +121,8 @@ function fixtureOpen(t: TestContext): Fixture {
   });
   const remote = join(directory, "origin.git");
   const seed = join(directory, "seed");
-  execFileSync("git", ["init", "-q", "--bare", "-b", "main", remote]);
-  execFileSync("git", ["init", "-q", "-b", "main", seed]);
+  gitFixtureRepository(remote, "--bare");
+  gitFixtureRepository(seed);
   fixtureGit(seed, "config", "user.name", "fixture");
   fixtureGit(seed, "config", "user.email", "fixture@example.test");
   const fixture = { directory, remote, seed };
@@ -1258,6 +1266,43 @@ test("a call is answered on git's own exit and never on what outlived it", async
   assert.ok(
     Date.now() - started < 4_000,
     "the answer waited on a grandchild holding the pipes",
+  );
+});
+
+/** How long the housekeeping a call sets off holds before it packs, which is the window in which that call must not answer. */
+const fixtureHousekeepingHeldSecs = 1;
+
+test("a call answers once the housekeeping it set off has ended, and leaves none running after it", async (t) => {
+  const fixture = fixtureOpen(t);
+  fixtureGit(fixture.seed, "repack", "-q");
+  fixtureCommit(fixture, "packed.txt", "packed\n", "packed");
+  fixtureGit(fixture.seed, "repack", "-q");
+  const hooks = join(fixture.directory, "hooks");
+  const housekept = join(fixture.directory, "housekept");
+  mkdirSync(hooks);
+  writeFileSync(
+    join(hooks, "pre-auto-gc"),
+    `#!/bin/sh\necho begun >> "${housekept}"\nsleep ${String(fixtureHousekeepingHeldSecs)}\n`,
+    { mode: 0o755 },
+  );
+  const ran = await gitRun({
+    directory: fixture.seed,
+    argv: [
+      ...["-c", "maintenance.auto=true", "-c", "maintenance.strategy=gc"],
+      ...["-c", "gc.auto=6700", "-c", "gc.autoPackLimit=1"],
+      ...["-c", `core.hooksPath=${hooks}`, "-c", "commit.gpgsign=false"],
+      ...["commit", "--allow-empty", "-qm", "housekept"],
+    ],
+    timeoutMsMax: gitPromotionDefaults.localTimeoutSecsMax * 1000,
+    environment: gitRunEnvironment(process.env, "chuggy"),
+  });
+
+  assert.equal(ran.ran === "Exited" && ran.code, 0);
+  assert.ok(existsSync(housekept), "the call set housekeeping off");
+  assert.match(
+    fixtureGit(fixture.seed, "count-objects", "-v"),
+    /^packs: 1$/mu,
+    "the housekeeping had packed the repository whole when the call answered",
   );
 });
 

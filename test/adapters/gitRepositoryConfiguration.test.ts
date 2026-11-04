@@ -59,6 +59,7 @@ import {
   gitStandInOpen,
   type GitStandInFault,
 } from "./gitStandIn.ts";
+import { gitFixtureRepository } from "./gitFixtureRepository.ts";
 
 interface Fixture {
   readonly directory: string;
@@ -80,8 +81,8 @@ function fixtureOpen(t: TestContext): Fixture {
   });
   const remote = join(directory, "origin.git");
   const seed = join(directory, "seed");
-  execFileSync("git", ["init", "-q", "--bare", "-b", "main", remote]);
-  execFileSync("git", ["init", "-q", "-b", "main", seed]);
+  gitFixtureRepository(remote, "--bare");
+  gitFixtureRepository(seed);
   fixtureGit(seed, "config", "user.name", "fixture");
   fixtureGit(seed, "config", "user.email", "fixture@example.test");
   return { directory, remote, seed };

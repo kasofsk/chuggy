@@ -58,6 +58,7 @@ import {
   asTenantId,
 } from "../../src/interpreter/projectStore.ts";
 
+import { gitFixtureRepository } from "./gitFixtureRepository.ts";
 import {
   gitStandInFaulted,
   gitStandInLines,
@@ -179,8 +180,8 @@ function fixtureRepositories(
   });
   const remote = join(directory, "origin.git");
   const seed = join(directory, "seed");
-  execFileSync("git", ["init", "-q", "--bare", "-b", "main", remote]);
-  execFileSync("git", ["init", "-q", "-b", "main", seed]);
+  gitFixtureRepository(remote, "--bare");
+  gitFixtureRepository(seed);
   fixtureGit(seed, "config", "user.name", "fixture");
   fixtureGit(seed, "config", "user.email", "fixture@example.test");
   return { directory, remote, seed };

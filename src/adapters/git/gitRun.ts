@@ -19,7 +19,9 @@
  * the output pipes — an askpass helper, an `ssh` — holds them open after git is
  * gone and would otherwise hold the answer with them. The child leads its own
  * process group so that stopping it stops what it started, and it is asked to
- * stop before it is killed outright.
+ * stop before it is killed outright. The housekeeping a call sets off runs
+ * inside it rather than detached, because a detached one leaves that group and
+ * outlives the call, and ends as a child no process collects.
  *
  * A CREDENTIAL TRAVELS IN THE CHILD'S ENVIRONMENT AND NOWHERE ELSE. An argument
  * is in the process list of every user on the host, so the credential is never
@@ -58,6 +60,14 @@ const gitRunDrainSecs = 1;
 
 /** How long a stopped call's process group is given to end on its own before it is killed outright. */
 const gitRunKillGraceSecs = 5;
+
+/** What keeps the housekeeping a call sets off inside the call, said both ways because a newer git asks one setting first and an older knows only the other. */
+const gitRunHousekeepingAttached: readonly string[] = [
+  "-c",
+  "gc.autoDetach=false",
+  "-c",
+  "maintenance.autoDetach=false",
+];
 
 /** The variables an ambient environment would otherwise point a call at another repository, another index or another object store with, or have it read history through a commit-graph the call itself set aside. */
 const gitRunAmbientOverrides: readonly string[] = [
@@ -208,7 +218,12 @@ export function gitTimeoutMs(
 
 /** Runs one bounded git call, resolving a non-zero exit and rejecting only a git that could not start. */
 export function gitRun(call: GitCall): Promise<GitRan> {
-  const argv = ["-C", call.directory, ...call.argv];
+  const argv = [
+    "-C",
+    call.directory,
+    ...gitRunHousekeepingAttached,
+    ...call.argv,
+  ];
   return new Promise((resolve, reject) => {
     const child = spawn("git", argv, {
       env: call.environment,
