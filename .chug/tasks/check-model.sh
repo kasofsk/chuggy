@@ -21,6 +21,15 @@
 # and the bound is set from how many of those one run makes. It is passed
 # under a seed too, where quint's own default is a single sample.
 #
+# AN INTERRUPT, A TERM OR A HANGUP STOPS THE GATE, which exits 2 once the
+# calls it started have ended: it stops each but a call that may be fetching
+# quint's evaluator, which it lets finish. A signal to the gate's whole process
+# group, a Ctrl-C or a terminal hanging up, reaches quint as well, and one that
+# lands during that fetch into an empty QUINT_HOME kills the download partway. Quint takes the partial archive it leaves for a whole
+# one on every later call, so the evaluator never runs again until that
+# archive, the `.tar.gz` in the evaluator's directory under QUINT_HOME
+# (`~/.quint` unless set), is deleted.
+#
 # Exits 0 clean, 1 on a finding, 2 when it could not run. Two is not a pass.
 set -eu
 export LC_ALL=C
@@ -123,6 +132,146 @@ $refinement_suite
 $ticket_instance
 $runner_instance"
 
+# EVERY CALL RUNS BESIDE THE OTHERS AND IS JUDGED IN THE ORDER WRITTEN. The
+# stages below are walked twice: the first walk queues each quint call,
+# `jobs` workers run the queue, and the second walk judges every call in
+# turn, so neither what the gate prints nor how it exits hangs on which call
+# ended first. A call no worker saw to its end is a could-not-run.
+jobs=4
+if ! work="$(mktemp -d)"; then
+	echo "check-model: LINTER ERROR — no temporary directory to hold the calls' output"
+	exit 2
+fi
+trap 'rm -rf "$work"' EXIT
+walk=queue
+calls=0
+fetching=""
+
+# Prints the pid of every process whose parent is one of <pid...>.
+children() { # <pid...>
+	ps -A -o pid= -o ppid= | awk -v parents=" $* " 'index(parents, " " $2 " ") { print $1 }'
+}
+
+# On an interrupt, a TERM or a hangup the gate sends TERM to every process ps
+# lists as its child, so each worker stops the call it is running, and exits 2
+# once they have all ended. The call that may be fetching quint's evaluator is
+# left to finish rather than stopped, since a download killed partway leaves
+# an archive quint takes for whole.
+stop() {
+	trap '' INT TERM HUP
+	if [ -n "$fetching" ]; then
+		echo "check-model: LINTER ERROR — interrupted while quint may be fetching its evaluator; waiting for that call to end"
+	else
+		echo "check-model: LINTER ERROR — interrupted before the calls completed"
+		kill -TERM $(children "$$") 2>/dev/null || :
+	fi
+	wait
+	exit 2
+}
+trap stop INT TERM HUP
+
+# Queues a call in the first walk and answers 1; in the second, sets `rc` and
+# `out` from what the call left.
+quint_call() { # <quint args...>
+	calls=$((calls + 1))
+	if [ "$walk" = queue ]; then
+		printf '%s\n' "$@" > "$work/$calls.args"
+		return 1
+	fi
+	if [ ! -s "$work/$calls.rc" ]; then
+		echo "check-model: LINTER ERROR — quint $* never finished"
+		errored=$((errored + 1))
+		return 1
+	fi
+	rc="$(cat "$work/$calls.rc")"
+	out="$(cat "$work/$calls.out")"
+	return 0
+}
+
+# Prints each of <pid...> that ps lists as running, a zombie counting as gone.
+running() { # <pid...>
+	ps -A -o pid= -o stat= | awk -v pids=" $* " 'index(pids, " " $1 " ") && $2 !~ /^Z/ { print $1 }'
+}
+
+# Stops <pid> and the processes under it a generation at a time, each
+# generation stopped before its children are listed so none can start another
+# unseen, then kills them all, collects <pid>, and looks again until none of
+# them is running. Quint runs its evaluator as a process of its own, which
+# would run on if only quint were killed. The walk goes down `generations` at
+# most and leaves anything deeper running, and the looking stops after
+# `looks`.
+generations=8
+looks=100
+kill_tree() { # <pid>
+	stopped=""
+	generation="$1"
+	walked=0
+	while [ -n "$generation" ] && [ "$walked" -lt "$generations" ]; do
+		kill -STOP $generation 2>/dev/null || :
+		stopped="$stopped $generation"
+		generation="$(children $generation)"
+		walked=$((walked + 1))
+	done
+	kill -KILL $stopped 2>/dev/null || :
+	wait "$1" 2>/dev/null || :
+	looked=0
+	while [ -n "$(running $stopped)" ] && [ "$looked" -lt "$looks" ]; do
+		sleep 0.05
+		looked=$((looked + 1))
+	done
+}
+
+# A worker runs one call in <first> to <last> in every `jobs`, starting at
+# <first>, so no call is claimed and none is run twice. Before each call it
+# asks ps for its own parent. A parent other than the gate means the gate died
+# without stopping it, even if nothing has collected the gate yet, and the
+# worker removes the gate's temporary directory and runs nothing more. No
+# answer from ps, and the worker runs nothing more and removes nothing. On
+# TERM it kills the call it last started, if that is still a child of its
+# own, and everything under it.
+worker() { # <first> <last>
+	self=""
+	trap 'set +u; [ "$(ps -o ppid= -p "$!" 2>/dev/null | tr -d " ")" != "$self" ] || kill_tree "$!"; exit 2' TERM
+	self="$(exec sh -c 'echo "$PPID"')"
+	i="$1"
+	last="$2"
+	while [ "$i" -le "$last" ]; do
+		parent="$(ps -o ppid= -p "$self" 2>/dev/null | tr -d ' ')"
+		if [ "$parent" != "$$" ]; then
+			if [ -n "$parent" ]; then
+				rm -rf "$work"
+			fi
+			return 0
+		fi
+		set --
+		while IFS= read -r arg; do
+			set -- "$@" "$arg"
+		done < "$work/$i.args"
+		"$QUINT" "$@" > "$work/$i.out" 2>&1 &
+		if wait "$!"; then
+			status=0
+		else
+			status=$?
+		fi
+		{ echo "$status" > "$work/$i.rc"; } 2>/dev/null || :
+		i=$((i + jobs))
+	done
+}
+
+# Runs calls <first> to <last> on up to `jobs` workers and waits for them.
+pool() { # <first> <last>
+	k="$1"
+	while [ "$k" -le "$2" ] && [ "$k" -lt $(($1 + jobs)) ]; do
+		worker "$k" "$2" &
+		k=$((k + 1))
+	done
+	wait
+}
+
+say() {
+	[ "$walk" = queue ] || echo "$@"
+}
+
 # Quint selects only run names ending in `Test`, and exits 0 when that selects
 # NOTHING: a suite whose runs were renamed passes exactly as loudly as one that
 # ran. So a call is judged on the count it reports as well as on its status,
@@ -130,11 +279,7 @@ $runner_instance"
 run_suite() { # <label> <quint test args...>
 	label="$1"
 	shift
-	if out="$("$QUINT" test ${seed:+"--seed=$seed"} --max-samples="$samples" "$@" 2>&1)"; then
-		rc=0
-	else
-		rc=$?
-	fi
+	quint_call test ${seed:+"--seed=$seed"} --max-samples="$samples" "$@" || return 0
 	if [ "$rc" -ne 0 ]; then
 		# A suite that ran and failed counts its failures; one that never got
 		# that far prints no such line.
@@ -150,73 +295,98 @@ run_suite() { # <label> <quint test args...>
 	tests=$((tests + passing))
 }
 
-echo "--- typecheck"
-IFS='
+stages() {
+	say "--- typecheck"
+	IFS='
 '
-for m in $modules; do
-	if printf '%s\n' "$staged" | grep -Fqx -- "$m"; then
-		continue
-	fi
-	if out="$("$QUINT" typecheck "$m" 2>&1)"; then
-		continue
+	for m in $modules; do
+		if printf '%s\n' "$staged" | grep -Fqx -- "$m"; then
+			continue
+		fi
+		quint_call typecheck "$m" || continue
+		[ "$rc" -ne 0 ] || continue
+		verdict "$m" "$rc" "$out" '^error' "$m: does not typecheck"
+	done
+	unset IFS
+
+	say "--- unit suite"
+	for u in $unit_suites; do
+		run_suite "$u" "$u"
+	done
+
+	# The package's text is vendored rather than written here, so its own
+	# suite is what says a quint release still reads it the way the package
+	# does. A failing case is a finding like any other: the text is this
+	# tree's model now.
+	say "--- package suite"
+	run_suite "$package_suite" "$package_suite"
+
+	# The witness modules prove each named shape reachable and assert every
+	# invariant after every step.
+	#
+	# They name their runs for what they are, so the selection is named here
+	# too: quint's default takes `Test` and would take none of them.
+	say "--- witnesses"
+	for w in resume rework stage sparse gate dependency; do
+		run_suite "witness $w" --match 'Witness$' \
+			--main="chuggy_witness_${w}_test" "$witness_suite"
+	done
+
+	say "--- refinement"
+	for r in unit witness hazard; do
+		run_suite "refinement $r" --main="chuggy_refinement_${r}_test" \
+			"$refinement_suite"
+	done
+
+	if [ -n "$seed" ]; then
+		say "--- invariants (randomized, seeded $seed from TRACK_RECORD_KEY)"
 	else
-		rc=$?
+		say "--- invariants (randomized)"
 	fi
-	verdict "$m" "$rc" "$out" '^error' "$m: does not typecheck"
-done
-unset IFS
-
-echo "--- unit suite"
-for u in $unit_suites; do
-	run_suite "$u" "$u"
-done
-
-# The package's text is vendored rather than written here, so its own suite is
-# what says a quint release still reads it the way the package does. A failing
-# case is a finding like any other: the text is this tree's model now.
-echo "--- package suite"
-run_suite "$package_suite" "$package_suite"
-
-# The witness modules prove each named shape reachable and assert every
-# invariant after every step.
-#
-# They name their runs for what they are, so the selection is named here too:
-# quint's default takes `Test` and would take none of them.
-echo "--- witnesses"
-for w in resume rework stage sparse gate dependency; do
-	run_suite "witness $w" --match 'Witness$' \
-		--main="chuggy_witness_${w}_test" "$witness_suite"
-done
-
-echo "--- refinement"
-for r in unit witness hazard; do
-	run_suite "refinement $r" --main="chuggy_refinement_${r}_test" \
-		"$refinement_suite"
-done
-
-if [ -n "$seed" ]; then
-	echo "--- invariants (randomized, seeded $seed from TRACK_RECORD_KEY)"
-else
-	echo "--- invariants (randomized)"
-fi
-if out="$("$QUINT" run "$ticket_instance" --main=mc_chuggy ${seed:+"--seed=$seed"} \
-		--invariant=allInvariants --max-samples=2000 --max-steps=40 2>&1)"; then
-	:
-else
-	rc=$?
 	# A refuted invariant announces itself and carries the seed to reproduce it.
-	staged_verdict "ticket instance" "$rc" "$out" '\[violation\]' \
-		"the ticket instance violated an invariant"
-fi
+	if quint_call run "$ticket_instance" --main=mc_chuggy ${seed:+"--seed=$seed"} \
+		--invariant=allInvariants --max-samples=2000 --max-steps=40 &&
+		[ "$rc" -ne 0 ]; then
+		staged_verdict "ticket instance" "$rc" "$out" '\[violation\]' \
+			"the ticket instance violated an invariant"
+	fi
+	if quint_call run "$runner_instance" --main=mc_registered_runner ${seed:+"--seed=$seed"} \
+		--invariant=allInvariants --max-samples=2000 --max-steps=30 &&
+		[ "$rc" -ne 0 ]; then
+		staged_verdict "registered runner instance" "$rc" "$out" '\[violation\]' \
+			"registered runner instance violated an invariant"
+	fi
+}
 
-if out="$("$QUINT" run "$runner_instance" --main=mc_registered_runner ${seed:+"--seed=$seed"} \
-		--invariant=allInvariants --max-samples=2000 --max-steps=30 2>&1)"; then
-	:
-else
-	rc=$?
-	staged_verdict "registered runner instance" "$rc" "$out" '\[violation\]' \
-		"registered runner instance violated an invariant"
-fi
+# QUINT FETCHES ITS EVALUATOR THE FIRST TIME A CALL NEEDS IT, and nothing stops
+# two calls fetching it at once and spoiling each other's download. So before
+# any other call starts, one has the evaluator run a module of one run that
+# holds, alone, and the gate's own stop leaves that call to finish. A gate
+# whose evaluator does not run can judge no suite.
+evaluator_runs() {
+	quint_call test "$work/evaluator.qnt" || return 0
+	if [ "$rc" -ne 0 ] || ! printf '%s\n' "$out" | grep -q '^ *1 passing'; then
+		echo "check-model: LINTER ERROR — quint's evaluator did not run (exit $rc), so no suite can"
+		printf '%s\n' "$out" | sed 's/^/    /'
+		errored=$((errored + 1))
+	fi
+}
+printf 'module evaluator {\n  run evaluatorTest = true\n}\n' > "$work/evaluator.qnt"
+evaluator_runs
+fetching=1
+pool 1 1
+fetching=""
+walk=judge
+calls=0
+evaluator_runs
+[ "$errored" -eq 0 ] || exit 2
+
+walk=queue
+stages
+pool 2 "$calls"
+walk=judge
+calls=1
+stages
 
 echo "check-model: $failed failure(s), $tests test(s) run"
 if [ "$errored" -ne 0 ]; then
