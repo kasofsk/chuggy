@@ -22,15 +22,18 @@ import {
   briefLinkScheme,
   briefTitleCharsMax,
 } from "../../src/contract/brief.ts";
+import { briefContentDigest } from "../../src/interpreter/ticketDefinition.ts";
 import {
   asBriefBranch,
   asBriefCheckLine,
   asBriefIntent,
+  asBriefLanding,
   asBriefLinkUrl,
   asBriefFinalization,
   asBriefTitle,
   asDraftBrief,
   briefIntentLines,
+  briefLandingOf,
 } from "../../src/interpreter/ticketBrief.ts";
 
 test("an intent is stored under one newline, and a briefing prints the lines of it that say anything", () => {
@@ -430,4 +433,33 @@ test("a brief proposing into the default branch brands its head and no base", ()
       "a proposal into the default branch has no head where the brief names no branch",
     );
   }
+});
+
+test("a brief lands Direct unless it says Serialized, and a Direct one is stored as one that never said", () => {
+  const brief = { intent: "Do it.", links: [] };
+  assert.equal(briefLandingOf(asDraftBrief(brief)), "Direct");
+  assert.equal(
+    briefLandingOf(asDraftBrief({ ...brief, landing: "Serialized" })),
+    "Serialized",
+  );
+  const direct = asDraftBrief({ ...brief, landing: "Direct" });
+  assert.equal("landing" in direct, false);
+  assert.equal(
+    briefContentDigest(direct),
+    briefContentDigest(asDraftBrief(brief)),
+  );
+  assert.notEqual(
+    briefContentDigest(asDraftBrief({ ...brief, landing: "Serialized" })),
+    briefContentDigest(direct),
+  );
+});
+
+test("a landing is one of the two this tree orders by, and Stacked is not yet", () => {
+  assert.equal(asBriefLanding("Direct"), undefined);
+  assert.equal(asBriefLanding("Serialized"), "Serialized");
+  assert.throws(() => asBriefLanding("Stacked"), RangeError);
+  assert.throws(
+    () => asDraftBrief({ intent: "Do it.", links: [], landing: "Stacked" }),
+    RangeError,
+  );
 });

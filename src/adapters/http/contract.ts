@@ -371,6 +371,7 @@ function releaseBrief(value: TicketBriefBody): DraftBrief {
     ...(value.finalization === undefined
       ? {}
       : { finalization: releaseBriefFinalization(value.finalization) }),
+    ...(value.landing === undefined ? {} : { landing: value.landing }),
   });
 }
 

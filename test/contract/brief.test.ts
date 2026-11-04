@@ -31,7 +31,10 @@ import {
   briefTitleSchema,
 } from "../../src/contract/brief.ts";
 import { draftCreationSchema } from "../../src/contract/requests.ts";
-import { briefFinalizationModes } from "../../src/contract/rosters.ts";
+import {
+  briefFinalizationModes,
+  briefLandings,
+} from "../../src/contract/rosters.ts";
 import { proposalBodyCharsMax } from "../../src/interpreter/changeProposal.ts";
 import {
   asRepositoryId,
@@ -498,5 +501,21 @@ test("a draft creation names a brief beside its authoring and not inside it", ()
     }).success,
     false,
     "an intent inside the authoring event is refused",
+  );
+});
+
+test("a brief names how it is ordered against the others on its reference, and Stacked is not yet a way", () => {
+  for (const landing of briefLandings) {
+    const written = briefSchema.parse({ intent: "Do it.", links: [], landing });
+    assert.equal(briefResponseSchema.parse(written).landing, landing);
+  }
+  assert.equal(
+    briefSchema.parse({ intent: "Do it.", links: [] }).landing,
+    undefined,
+  );
+  assert.equal(
+    briefSchema.safeParse({ intent: "Do it.", links: [], landing: "Stacked" })
+      .success,
+    false,
   );
 });

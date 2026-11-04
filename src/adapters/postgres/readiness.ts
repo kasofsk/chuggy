@@ -168,6 +168,7 @@ interface ReleaseDraftRow {
   readonly branch: string | null;
   readonly finalization_mode: string | null;
   readonly finalization_target: string | null;
+  readonly landing_policy: string | null;
   readonly repository: string | null;
   readonly links: string[] | null;
   readonly images: string[] | null;
@@ -192,7 +193,7 @@ async function releaseDraftRow(
     sql`SELECT r.authoring,r.overrides::text AS overrides,r.selection::text AS selection,
            c.digest,c.canonical,
            p.repository AS provenance_repository,
-           b.title,b.intent,b.branch,b.finalization_mode,b.finalization_target,b.repository,
+           b.title,b.intent,b.branch,b.finalization_mode,b.finalization_target,b.landing_policy,b.repository,
            (SELECT array_agg(l.url ORDER BY l.ordinal) FROM draft_brief_link l
              WHERE l.tenant=r.tenant AND l.project=r.project AND l.ticket=r.ticket) AS links,
            (SELECT array_agg(i.artifact ORDER BY i.ordinal) FROM draft_brief_image i

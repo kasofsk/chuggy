@@ -1119,7 +1119,7 @@ test("only the importer reads the tickets following a head and moves one, and it
   );
   assert.deepEqual(
     await changeLogExecutors(
-      "revise_draft(text,text,bigint,bigint,text,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text)",
+      "revise_draft(text,text,bigint,bigint,text,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text,text)",
     ),
     [apiRole],
   );

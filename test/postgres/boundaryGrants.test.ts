@@ -291,8 +291,8 @@ test("the landing doors migrate without exposing the relation they read", async 
 test("the draft doors are owned and granted to their callers", async () => {
   await migratedDatabase("i91grants", async (subject) => {
     await assertDoorsStandOwned(subject, [
-      `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text,text)`,
-      `${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text)`,
+      `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text,text,text)`,
+      `${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text,text)`,
     ]);
   });
 });
@@ -305,8 +305,8 @@ test("repository doors preserve their ownership and restricted grants", async ()
       `${repositoryLandingReadFunction}(text,text,text)`,
       `${repositoryLandingWriteFunction}(text,text,text,text,text,boolean,boolean)`,
       `${repositoryBindingWriteFunction}(text,text,text,text,text,text,text)`,
-      `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text,text)`,
-      `${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text)`,
+      `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text,text,text)`,
+      `${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text,text)`,
     ]);
     for (const privilege of ["SELECT", "UPDATE", "DELETE"])
       assert.equal(
