@@ -255,6 +255,7 @@ import {
 } from "./finalizationProposal.ts";
 import {
   checkedFinalizerConfig,
+  finalizationRecheckRework,
   finalizationNext,
   promotionDeclineOf,
   type AncestryProved,
@@ -320,6 +321,7 @@ import {
 } from "./finalizerLanding.ts";
 import {
   briefFinalizationTarget,
+  briefLandingOf,
   type TicketBriefPort,
 } from "./ticketBrief.ts";
 
@@ -1153,6 +1155,98 @@ async function finalizerIntegratePrepared(
   );
 }
 
+/** Whether the ticket's brief lands it serialized, which a brief naming nothing does not. */
+async function finalizerSerialized(
+  service: FinalizerService,
+  subject: FinalizerPreparation,
+): Promise<boolean> {
+  const { claim } = subject.view;
+  const brief = await service.ticketBriefs.brief(claim.partition, claim.ticket);
+  return briefLandingOf(brief) === "Serialized";
+}
+
+/**
+ * Records the send-back a serialized landing gets when the target moved past
+ * the commit it evaluated, naming that commit for the work cycle to re-report,
+ * unless the ticket has already been sent back as often as its bound allows.
+ * Nothing is merged, so the commit that lands is the commit that was evaluated.
+ */
+async function finalizerRecheckRequired(
+  service: FinalizerService,
+  subject: FinalizerPreparation,
+  target: ObservedTarget,
+  accepted: GitObjectId,
+  tally: FinalizerTally,
+): Promise<void> {
+  const config = checkedFinalizerConfig(service.config);
+  const rework = finalizationRecheckRework(
+    await service.store.ticketRecheckFailures(subject.view.claim),
+    config.recheckReworksMax,
+  );
+  if (rework.rework === "Hold") {
+    finalizerHold(service, tally, rework.hold);
+    return;
+  }
+  await finalizerRecordAttempt(
+    service,
+    finalizerAttemptOf(service, {
+      ...finalizerAttemptBase(subject, target),
+      outcome: "Failed",
+      failureKind: "RecheckRequired",
+      recheckCommit: accepted,
+    }),
+    tally,
+  );
+}
+
+/**
+ * Prepares a serialized landing: the accepted commit lands as it is when it
+ * holds the target's tip, so its fast-forward is the tree that was evaluated,
+ * and otherwise goes back to be re-checked. It is never merged here.
+ */
+async function finalizerContainedPrepared(
+  service: FinalizerService,
+  subject: FinalizerPreparation,
+  accepted: GitObjectId,
+  tally: FinalizerTally,
+): Promise<void> {
+  const target = finalizerIntegrationTarget(
+    subject,
+    await service.git.observeTarget(subject.repository),
+  );
+  if (target === undefined) {
+    finalizerHold(service, tally, "TargetUnobserved");
+    return;
+  }
+  if (!(await finalizerUnlanded(service, subject, target, accepted, tally)))
+    return;
+  const contained = await service.git.proveTargetContained({
+    repository: subject.repository,
+    target,
+    candidate: accepted,
+  });
+  switch (contained) {
+    case "Contained":
+      await finalizerIntegrated(
+        service,
+        subject,
+        target,
+        accepted,
+        { integrated: "Candidate", candidate: accepted },
+        tally,
+      );
+      return;
+    case "Uncontained":
+      await finalizerRecheckRequired(service, subject, target, accepted, tally);
+      return;
+    case "Unread":
+      finalizerHold(service, tally, "IntegrationUnanswered");
+      return;
+    default:
+      return assertNever(contained);
+  }
+}
+
 /** Verifies and integrates the immutable source commit a worker published. */
 async function finalizerBuildSource(
   service: FinalizerService,
@@ -1172,12 +1266,11 @@ async function finalizerBuildSource(
   });
   switch (prepared.prepared) {
     case "Candidate":
-      await finalizerIntegratePrepared(
-        service,
-        subject,
-        prepared.candidate,
-        tally,
-      );
+      await (
+        (await finalizerSerialized(service, subject))
+          ? finalizerContainedPrepared
+          : finalizerIntegratePrepared
+      )(service, subject, prepared.candidate, tally);
       return;
     case "Undescended":
       await finalizerPreparationFailed(service, subject, subject.target, tally);

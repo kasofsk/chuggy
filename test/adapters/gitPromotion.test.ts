@@ -634,6 +634,29 @@ test("a target whose merge with the candidate is its own tree holds it, and one 
   );
 });
 
+test("a candidate holds the target's tip only while the target has not moved past what it was built over", async (t) => {
+  const fixture = fixtureOpen(t);
+  const binding = fixtureBinding(fixture.remote);
+  const port = fixturePort(fixture);
+  const target = await fixtureTarget(port, binding);
+  const candidate = await fixturePrepare(port, binding, target, [
+    ["new.txt", "new\n"],
+  ]);
+  assert.equal(
+    await port.proveTargetContained({ repository: binding, target, candidate }),
+    "Contained",
+  );
+  fixtureCommit(fixture, "other.txt", "other\n", "other");
+  assert.equal(
+    await port.proveTargetContained({
+      repository: binding,
+      target: await fixtureTarget(port, binding),
+      candidate,
+    }),
+    "Uncontained",
+  );
+});
+
 test("a target the candidate already contains integrates to the candidate itself", async (t) => {
   const fixture = fixtureOpen(t);
   const binding = fixtureBinding(fixture.remote);

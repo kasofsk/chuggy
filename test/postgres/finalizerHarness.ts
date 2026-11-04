@@ -108,6 +108,7 @@ import {
   type FinalizationClaim,
   type GitPromotionPort,
   type ObservedTarget,
+  type TargetContained,
   type TargetObserved,
 } from "../../src/interpreter/finalizer.ts";
 import {
@@ -1056,6 +1057,7 @@ export interface FinalizerGitFake extends GitPromotionPort {
   preparation?: CandidatePrepared;
   integration?: CandidateIntegrated;
   held: CandidateHeld;
+  contained: TargetContained;
   beforePromotion?: (promotion: CandidatePromotion) => Promise<void>;
 }
 
@@ -1067,6 +1069,7 @@ export function finalizerGit(target: ObservedTarget): FinalizerGitFake {
     promotion: { promoted: "Advanced" },
     ancestry: { proved: "Ancestor", observed: target.commit },
     held: "Unheld",
+    contained: "Contained",
     observeTarget: () => {
       fake.acts.push("observe");
       return Promise.resolve(fake.target);
@@ -1088,6 +1091,10 @@ export function finalizerGit(target: ObservedTarget): FinalizerGitFake {
     proveCandidateHeld: () => {
       fake.acts.push("held");
       return Promise.resolve(fake.held);
+    },
+    proveTargetContained: () => {
+      fake.acts.push("contained");
+      return Promise.resolve(fake.contained);
     },
     integrateCandidate: () => {
       fake.acts.push("integrate");

@@ -56,6 +56,7 @@ import {
   type HeadAdoptionQuestion,
   type ObservedTarget,
   type RepositoryCredential,
+  type TargetContained,
 } from "../../interpreter/finalizer.ts";
 import {
   scratchCommitShape,
@@ -370,6 +371,27 @@ export async function candidateHeld(
   if (reached === undefined) return "Unread";
   if (reached) return "Held";
   return candidateHeldMerged(scratch, question);
+}
+
+/** Whether the target's tip is in the candidate's history, which is the only way a candidate lands with no merge. */
+export async function candidateContains(
+  scratch: GitScratch,
+  credential: RepositoryCredential,
+  question: CandidateHeldQuestion,
+): Promise<TargetContained> {
+  const repository = question.repository.repository;
+  if (!(await scratchHasCommit(scratch, repository, question.candidate)))
+    return "Unread";
+  if (!(await candidateHasTarget(scratch, credential, question)))
+    return "Unread";
+  const reached = await scratchIsAncestor(
+    scratch,
+    repository,
+    question.target.commit,
+    question.candidate,
+  );
+  if (reached === undefined) return "Unread";
+  return reached ? "Contained" : "Uncontained";
 }
 
 /** The commit the base stands at with its objects in the scratch, and nothing where either could not be read. */

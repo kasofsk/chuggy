@@ -1176,6 +1176,15 @@ export interface CandidateHeldQuestion {
 export type CandidateHeld = "Held" | "Unheld" | "Unread";
 
 /**
+ * What git proved of a candidate and the target it would land on. `Contained`
+ * is a target tip that is the candidate or in its history, so the candidate
+ * lands by advancing the target; `Uncontained` is any other, the tip having
+ * moved past what the candidate was built on; and `Unread` is a remote or a
+ * scratch that could not answer.
+ */
+export type TargetContained = "Contained" | "Uncontained" | "Unread";
+
+/**
  * One head a proposal was read at that is not the head pinned for it, and the
  * two branches it stands between. Adopting it is asking whether it is the
  * pinned head brought up to date with the base and nothing more.
@@ -1217,6 +1226,11 @@ export interface GitPromotionPort {
 
   /** Reads whether the target a ticket lands on already holds its candidate, so landing it would change nothing. */
   proveCandidateHeld(question: CandidateHeldQuestion): Promise<CandidateHeld>;
+
+  /** Reads whether the observed target's tip is in the candidate's history, so landing the candidate merges nothing. */
+  proveTargetContained(
+    question: CandidateHeldQuestion,
+  ): Promise<TargetContained>;
 
   /** Integrates one candidate against one observed target, deterministically. */
   integrateCandidate(
