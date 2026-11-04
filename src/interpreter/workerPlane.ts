@@ -2,6 +2,7 @@ import {
   workerContractMemoryRoom,
   workerContractRelease,
   workerContractRunUsage,
+  workerContractTargetRef,
   workerContractUnnamed,
   workerContractVersionOf,
   workerContractVersionText,
@@ -96,6 +97,12 @@ export const workerContractUnscopedChat: WorkerContractRange = {
 /** The versions in which a run's totals may carry its account's usage and its end the limit that stopped it, fields a plane of an earlier one refuses the whole body over. */
 export const workerContractRunUsages: WorkerContractRange = {
   min: workerContractRunUsage,
+  max: workerContractAccepted.max,
+};
+
+/** The versions in which a work task may name the ref its finalization lands on, a field a pod of an earlier one refuses its whole answer over. */
+export const workerContractTargetRefs: WorkerContractRange = {
+  min: workerContractTargetRef,
   max: workerContractAccepted.max,
 };
 

@@ -601,6 +601,7 @@ export interface SchedulerProcessRootConfig {
     | "readOnlyRepositories"
     | "dependencyDeliveries"
     | "ticketBriefs"
+    | "bindings"
     | "workerPools"
     | "access"
   >;
@@ -646,6 +647,7 @@ export function schedulerProcessRootService(
       briefs: postgresTicketBrief(pool),
     }),
     ticketBriefs: postgresTicketBrief(pool),
+    bindings: postgresProjectRepositoryBinding(pool),
     workerPools: postgresWorkerPoolRoster(pool),
   };
 }

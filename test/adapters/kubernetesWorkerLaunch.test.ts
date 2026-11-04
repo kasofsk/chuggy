@@ -71,7 +71,10 @@ import {
   type AttemptPlacement,
 } from "../../src/interpreter/executionScheduler.ts";
 import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
-import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
+import {
+  asGitRefName,
+  asRepositoryId,
+} from "../../src/interpreter/finalizer.ts";
 import { asProjectId, asTenantId } from "../../src/interpreter/projectStore.ts";
 import type { PolicyAuthorityGrant } from "../../src/interpreter/taskAuthority.ts";
 import {
@@ -843,12 +846,16 @@ test("every worker configuration reaches a document the contract names in full",
     { mode: { type: "Commands", commands: ["just check"] }, ...preparation },
   ];
   for (const worker of workers)
-    for (const stage of [undefined, 1]) {
+    for (const [stage, targetRef] of [
+      [undefined, undefined],
+      [1, asGitRefName("refs/heads/main")],
+    ] as const) {
       const document = JSON.parse(
         JSON.stringify(
           kubernetesWorkerTask(config, {
             ...placement,
             ...(stage === undefined ? {} : { stage }),
+            ...(targetRef === undefined ? {} : { targetRef }),
             invocation: {
               ...placement.invocation,
               ...(worker === undefined ? {} : { worker }),
@@ -862,6 +869,10 @@ test("every worker configuration reaches a document the contract names in full",
       );
       assert.equal(Object.hasOwn(document, "worker"), worker !== undefined);
       assert.equal(Object.hasOwn(document, "stage"), stage !== undefined);
+      assert.equal(
+        (document as { readonly targetRef?: string }).targetRef,
+        targetRef,
+      );
     }
 });
 

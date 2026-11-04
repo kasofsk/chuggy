@@ -31,10 +31,12 @@ import {
   workerRunEndedSchema,
   workerRunTotalsSchema,
 } from "../../src/contract/workerPlane.ts";
+import { workTaskDocumentSchema } from "../../src/contract/workerTask.ts";
 import {
   contractVersionAccepted,
   workerContractAccepted,
   workerContractRunUsages,
+  workerContractTargetRefs,
 } from "../../src/interpreter/workerPlane.ts";
 import {
   workerContractAlias,
@@ -196,4 +198,25 @@ test("a run sends its account's usage and its limit from the version a runner ho
         contractVersionAccepted(workerContractRunUsages, release),
         `${release} ${name}`,
       );
+});
+
+test("a work task names the ref its finalization lands on from the version a plane answers it to, and no release below it carries that field", async () => {
+  assert.ok(Object.hasOwn(workTaskDocumentSchema.shape, "targetRef"));
+  assert.ok(
+    contractVersionAccepted(workerContractTargetRefs, workerContractRelease),
+  );
+  for (const release of workerContractReplayed("job")) {
+    const document = await workerContractReleaseExport(
+      release,
+      "workerTask",
+      "workTaskDocumentSchema",
+      workerContractReleaseSchema,
+    );
+    assert.equal(
+      document instanceof z.ZodObject &&
+        Object.hasOwn(document.shape, "targetRef"),
+      contractVersionAccepted(workerContractTargetRefs, release),
+      release,
+    );
+  }
 });

@@ -38,6 +38,7 @@ export const schedulerRootService: Omit<
   | "readOnlyRepositories"
   | "dependencyDeliveries"
   | "ticketBriefs"
+  | "bindings"
   | "workerPools"
   | "access"
 > = {

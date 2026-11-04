@@ -99,6 +99,8 @@ export const workTaskDocumentSchema = z.object({
   }),
   authority: policyAuthorityGrantSchema,
   worker: workerConfigurationSchema.exactOptional(),
+  /** The ref the ticket's finalization lands on, absent where it lands on none its brief or binding names. */
+  targetRef: z.string().min(1).exactOptional(),
   workerPlane: z.object({
     url: z.string(),
     capabilityFile: z.string(),

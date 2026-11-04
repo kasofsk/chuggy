@@ -4,6 +4,7 @@
  * worker plane's own role, and no other role reads it.
  */
 
+import { workerContractRelease } from "../../src/contract/workerContract.ts";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { after, test } from "node:test";
@@ -69,6 +70,7 @@ import {
 } from "../adapters/workerPlaneFixtures.ts";
 import { goldenConfig } from "../adapters/workerPodDocumentFixture.ts";
 import {
+  postgresHarnessBrief,
   postgresHarnessConfiguration,
   postgresHarnessDrain,
   postgresHarnessNewEpoch,
@@ -209,8 +211,9 @@ async function storedInvocation(attempt: FencedAttempt): Promise<unknown> {
   return rows[0]?.invocation;
 }
 
-/** The task a bearer is answered with, as the pod reads it. */
-const fetchedTask = (bearer: string) => taskFetched(plane, bearer);
+/** The task a bearer is answered with, as a pod of this release reads it. */
+const fetchedTask = (bearer: string) =>
+  taskFetched(plane, bearer, workerContractRelease);
 
 /** The pod document a placement is launched with, less the plane, as the fetch answers it. */
 function pushedTask(placement: AttemptPlacement): unknown {
@@ -310,11 +313,13 @@ test("a worker fetches the task its pod is launched with, less the plane", async
   assert.deepEqual(fetched.body, pushed);
   const document = kubernetesWorkerTask(goldenConfig, placement);
   assert.ok(document.worker !== undefined);
+  assert.equal(document.targetRef, postgresHarnessBrief.branch);
   assert.deepEqual(await storedInvocation(placement), {
     profile: document.profile,
     briefing: document.briefing,
     authority: document.authority,
     worker: document.worker,
+    targetRef: document.targetRef,
   });
 });
 
@@ -643,6 +648,27 @@ test("an invocation is written once", async () => {
   };
   assert.equal(await rig.store.attemptInvoked(attempt, second), false);
   assert.deepEqual(await storedInvocation(attempt), schedulerInvocation);
+});
+
+test("an invocation naming the ref its finalization lands on is recorded with it, and fetched with it by a release that reads one", async () => {
+  const attempt = await openedAttempt("task-target-ref");
+  const invocation: WorkTaskInvocation = {
+    ...schedulerInvocation,
+    targetRef: "refs/heads/release",
+  };
+  assert.equal(await rig.store.attemptInvoked(attempt, invocation), true);
+  assert.deepEqual(await storedInvocation(attempt), invocation);
+  const named = [];
+  for (const release of [workerContractRelease, "1.33.0", undefined]) {
+    const fetched = await taskFetched(
+      plane,
+      attempt.capability.secret,
+      release,
+    );
+    assert.equal(fetched.status, 200);
+    named.push((fetched.body as { readonly targetRef?: string }).targetRef);
+  }
+  assert.deepEqual(named, ["refs/heads/release", undefined, undefined]);
 });
 
 test("an invocation offered under a stale generation writes nothing", async () => {

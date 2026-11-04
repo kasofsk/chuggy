@@ -129,6 +129,7 @@ import {
   workerContractLiveStops,
   workerContractProjectReads,
   workerContractRunnerSessions,
+  workerContractTargetRefs,
   workerContractTicketDispatch,
   workerContractUnscopedChat,
   type WorkerArtifactReservationPort,
@@ -660,16 +661,23 @@ async function workerAttemptTaskCaller(
   return task?.live === true ? { task, secret } : undefined;
 }
 
-/** An attempt bearer's task, or nothing where the attempt is not live, or why a live one has none. */
+/** An attempt bearer's task, or nothing where the attempt is not live, or why a live one has none, naming its target ref only to a release that reads one. */
 async function workerTaskOf(
   service: WorkerPlaneServerService,
   secret: AttemptCapabilitySecret,
+  release: string | undefined,
 ): Promise<WorkTaskAnswer | "TaskNotRecorded" | undefined> {
   const found = await service.tasks.work(secret);
   if (found === undefined || !found.live) return undefined;
-  return found.invocation === undefined
-    ? "TaskNotRecorded"
-    : { kind: "Work", ...workTask(found.identity, found.invocation) };
+  if (found.invocation === undefined) return "TaskNotRecorded";
+  const { targetRef, ...unnamed } = found.invocation;
+  const named =
+    targetRef !== undefined &&
+    contractVersionAccepted(workerContractTargetRefs, release);
+  return {
+    kind: "Work",
+    ...workTask(found.identity, named ? found.invocation : unnamed),
+  };
 }
 
 /** A session's task, read only once the session authority has found it live, and naming its launch only to a release in which a runner launches it. */
@@ -703,7 +711,11 @@ function workerTaskRoute(
   register("task", async (request, reply, caller) => {
     const found =
       caller.bearer === "Attempt"
-        ? await workerTaskOf(service, caller.secret)
+        ? await workerTaskOf(
+            service,
+            caller.secret,
+            workerContractOffered(request),
+          )
         : await sessionTaskOf(
             service,
             caller.secret,

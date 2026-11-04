@@ -49,6 +49,12 @@ export const workerContractRunUsage: WorkerContractVersion = {
   minor: 32,
 };
 
+/** The first version whose job plane may answer a work task naming the ref its finalization lands on: a plane names it only to an attempt whose request names this version or a later one. */
+export const workerContractTargetRef: WorkerContractVersion = {
+  major: 1,
+  minor: 34,
+};
+
 /** A release as the header carries it: major, minor and patch, each written without a leading zero. */
 const workerContractReleasePattern =
   /^(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})\.(0|[1-9][0-9]{0,8})$/u;

@@ -53,6 +53,7 @@ import {
 } from "../../src/adapters/postgres/evaluationReports.ts";
 import { postgresPinnedConfigurations } from "../../src/adapters/postgres/pinnedConfigurations.ts";
 import { postgresReadOnlyRepositories } from "../../src/adapters/postgres/repositoryBinding.ts";
+import { postgresProjectRepositoryBinding } from "../../src/adapters/postgres/repositoryConfiguration.ts";
 import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
 import { postgresTicketLandings } from "../../src/adapters/postgres/ticketLandings.ts";
 import { dependencyDeliveriesRead } from "../../src/interpreter/dependencyDelivery.ts";
@@ -122,6 +123,7 @@ export function schedulerBriefingReads(
   | "readOnlyRepositories"
   | "dependencyDeliveries"
   | "ticketBriefs"
+  | "bindings"
 > {
   return {
     configurations: postgresPinnedConfigurations(pool),
@@ -135,6 +137,7 @@ export function schedulerBriefingReads(
       briefs: postgresTicketBrief(pool),
     }),
     ticketBriefs: postgresTicketBrief(pool),
+    bindings: postgresProjectRepositoryBinding(pool),
   };
 }
 

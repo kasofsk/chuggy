@@ -441,6 +441,14 @@ const workTaskRosterCases: readonly WorkerPlaneCase[] = [
       invocation: { ...liveInvocation, worker },
     }),
   })),
+  {
+    name: "a work task naming the ref its finalization lands on",
+    named: true,
+    service: workerPlaneTask({
+      ...liveTask,
+      invocation: { ...liveInvocation, targetRef: "refs/heads/main" },
+    }),
+  },
 ];
 
 /** The callers every route refuses before its own ports are reached. */
