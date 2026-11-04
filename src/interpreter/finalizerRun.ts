@@ -314,8 +314,12 @@ import {
 import type { ResultManifestId } from "./resultManifest.ts";
 import type { Partition, RecoveryEpoch } from "./projectStore.ts";
 import {
+  finalizerLandingOf,
+  type FinalizerBranches,
+  type FinalizerLanding,
+} from "./finalizerLanding.ts";
+import {
   briefFinalizationTarget,
-  type DraftBrief,
   type TicketBriefPort,
 } from "./ticketBrief.ts";
 
@@ -545,42 +549,6 @@ async function finalizerReadHolds(
 }
 
 /**
- * The branches one brief names: where the work happened, and where the
- * promotion lands it. The brief itself is kept, because the mode it names is
- * what the pure pass reads of it.
- */
-interface FinalizerBranches {
-  readonly work?: GitRefName;
-  readonly target?: GitRefName;
-  readonly brief?: DraftBrief;
-}
-
-/**
- * What the ticket's brief says about each: a push lands on the reference its
- * finalization names or on the work's own branch where it names none, and a
- * pull request always lands on the work's branch — that branch being the head a
- * proposal is opened from and its finalization's reference the base. A
- * proposing brief naming no branch of its own is answered by neither, because
- * such a brief is refused where briefs are written and the binding's default is
- * not a stand-in for the head a proposal opens from.
- */
-function finalizerBranchesOf(
-  brief: DraftBrief | undefined,
-): FinalizerBranches | undefined {
-  if (brief === undefined) return {};
-  const proposing = briefFinalizationProposes(brief.finalization?.mode);
-  if (proposing && brief.branch === undefined) return undefined;
-  const target = proposing
-    ? brief.branch
-    : (briefFinalizationTarget(brief.finalization) ?? brief.branch);
-  return {
-    brief,
-    ...(brief.branch === undefined ? {} : { work: brief.branch }),
-    ...(target === undefined ? {} : { target }),
-  };
-}
-
-/**
  * What the branch the work happened on holds, which is the tree a candidate is
  * built over — the binding's own default for a brief naming no branch of its
  * own, that being what such work was observed against. The target's observation
@@ -642,29 +610,41 @@ async function finalizerGather(
   const durable = await service.store.durableView(claim);
   if (durable === undefined) return undefined;
   const brief = await service.ticketBriefs.brief(claim.partition, claim.ticket);
-  if (brief?.finalization?.mode === "None")
-    return {
-      gathered: "View",
-      view: { ...durable, finalizationMode: "None" },
-    };
-  if (durable.repository === undefined)
-    return { gathered: "View", view: durable };
-  const branches = finalizerBranchesOf(brief);
-  if (branches === undefined)
-    return { gathered: "Held", hold: "ProposalUnbranched" };
-  const base = await finalizerGatherProposalBase(
-    service,
-    durable.repository,
+  const landing = finalizerLandingOf(brief, durable.repository);
+  switch (landing.landing) {
+    case "None":
+      return {
+        gathered: "View",
+        view: { ...durable, finalizationMode: "None" },
+      };
+    case "Unbound":
+      return { gathered: "View", view: durable };
+    case "Unbranched":
+      return { gathered: "Held", hold: "ProposalUnbranched" };
+    case "Lands":
+      return finalizerGatherLanding(service, durable, landing);
+  }
+}
+
+/** What a gathering reads of the remote for a ticket that lands somewhere. */
+async function finalizerGatherLanding(
+  service: FinalizerService,
+  durable: FinalizationView,
+  {
     branches,
-  );
+    binding,
+    repository,
+  }: Extract<FinalizerLanding, { landing: "Lands" }>,
+): Promise<FinalizerGathered> {
+  const base = await finalizerGatherProposalBase(service, binding, branches);
   const observed = await repositoryTargetObserved(
     service.git,
-    durable.repository,
+    binding,
     branches.target,
   );
   const view: FinalizationView = {
     ...durable,
-    repository: repositoryBindingNarrowed(durable.repository, branches.target),
+    repository,
     ...(branches.target === undefined ? {} : { targetBranch: branches.target }),
     ...(branches.brief?.finalization === undefined
       ? {}
@@ -674,7 +654,7 @@ async function finalizerGather(
   if (observed.observed !== "Target") return { gathered: "View", view };
   const work = await finalizerGatherWorkBranch(
     service,
-    durable.repository,
+    binding,
     branches,
     observed.target,
   );

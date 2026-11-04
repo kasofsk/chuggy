@@ -12,6 +12,7 @@ import type {
   WorkerPlaneServerService,
   WorkerRunEvidencePorts,
 } from "../../src/adapters/http/workerPlaneServer.ts";
+import { workerContractHeader } from "../../src/contract/workerContract.ts";
 import type { SessionPlaneAuthority } from "../../src/interpreter/sessionPlane.ts";
 import type { WorkerTaskPort } from "../../src/interpreter/workerPlane.ts";
 
@@ -114,15 +115,19 @@ export function inertSessionPlane(
   };
 }
 
-/** What a bearer is answered at the task route, as a pod reads it. */
+/** What a bearer is answered at the task route, as a pod naming `release`, or naming none, reads it. */
 export async function taskFetched(
   plane: Pick<FastifyInstance, "inject">,
   bearer: string,
+  release?: string,
 ): Promise<{ readonly status: number; readonly body: unknown }> {
   const response = await plane.inject({
     method: "GET",
     url: "/v1/task",
-    headers: { authorization: `Bearer ${bearer}` },
+    headers: {
+      authorization: `Bearer ${bearer}`,
+      ...(release === undefined ? {} : { [workerContractHeader]: release }),
+    },
   });
   return {
     status: response.statusCode,

@@ -65,7 +65,9 @@ import { reporterSecretBytes } from "../../src/adapters/reporters/secretFile.ts"
 import type { ReportIngested } from "../../src/interpreter/executionSchedulerReport.ts";
 import { asResultManifestId } from "../../src/interpreter/resultManifest.ts";
 import {
+  contractVersionAccepted,
   workerContractAccepted,
+  workerContractTargetRefs,
   type SessionTaskRead,
   type WorkerTaskRead,
 } from "../../src/interpreter/workerPlane.ts";
@@ -323,62 +325,85 @@ test("a bearer written in the session language is never offered to the attempt a
   await app.close();
 });
 
-test("a task is answered only to a live attempt, and only once the scheduler recorded it", async () => {
-  const identity: WorkTaskIdentity = {
-    partition: authority.partition,
-    execution: authority.execution,
-    attempt: authority.attempt,
-    generation: authority.generation,
-    ticket: asTicketId(1),
-    task: asTaskId(1),
-    taskKind: "Work",
-    sourceRequest: "1:0:ExecuteTask",
-    inputBundle: authority.inputBundle,
-    inputBundleDigest: authority.inputBundleDigest,
-    configurationRevision: "revision",
-    configurationDigest: "configuration-digest",
-    requirementIdentity: "requirement",
-    requirementDigest: "requirement-digest",
-  };
-  const invocation: WorkTaskInvocation = {
-    profile: { profile: "standard", runtimeVersion: "1" },
-    briefing: { templateVersion: 1, purpose: "Work", text: "Do the work." },
-    authority: {
-      tools: [],
-      credentials: [],
-      network: false,
-      filesystem: "WriteWorkspace",
-      mayCompleteTask: false,
-    },
-  };
-  const found: Readonly<Record<string, WorkerTaskRead>> = {
-    ended: { live: false, identity, invocation },
-    unrecorded: { live: true, identity },
-    held: { live: true, identity, invocation },
-  };
-  const app = createWorkerPlaneApp({
-    ...projectArtifactsService,
-    ...heartbeatService,
-    ...runEvidenceService,
-    authority: { authenticate: () => Promise.resolve(authority) },
-    tasks: { ...inertTasks, work: (secret) => Promise.resolve(found[secret]) },
-    reservations: { reserve: () => Promise.resolve({ reserved: "Reserved" }) },
-    artifacts: { store: () => Promise.resolve({ stored: "Stored" }) },
-    reports: { report: () => Promise.resolve({ ingested: "Fenced" }) },
-    ready: () => Promise.resolve(true),
-    uploadBytesMax: 64,
-  });
-  const answered = async (bearer: string) => {
+/** The work attempt an attempt bearer's task read answers for. */
+const workTaskIdentity: WorkTaskIdentity = {
+  partition: authority.partition,
+  execution: authority.execution,
+  attempt: authority.attempt,
+  generation: authority.generation,
+  ticket: asTicketId(1),
+  task: asTaskId(1),
+  taskKind: "Work",
+  sourceRequest: "1:0:ExecuteTask",
+  inputBundle: authority.inputBundle,
+  inputBundleDigest: authority.inputBundleDigest,
+  configurationRevision: "revision",
+  configurationDigest: "configuration-digest",
+  requirementIdentity: "requirement",
+  requirementDigest: "requirement-digest",
+};
+
+const workTaskInvoked: WorkTaskInvocation = {
+  profile: { profile: "standard", runtimeVersion: "1" },
+  briefing: { templateVersion: 1, purpose: "Work", text: "Do the work." },
+  authority: {
+    tools: [],
+    credentials: [],
+    network: false,
+    filesystem: "WriteWorkspace",
+    mayCompleteTask: false,
+  },
+};
+
+/** What `GET /v1/task` answers each bearer `found` names, the request naming `release` where it is given. */
+function workTaskAnswered(
+  found: Readonly<Record<string, WorkerTaskRead>>,
+): (
+  bearer: string,
+  release?: string,
+) => Promise<{ readonly status: number; readonly body: unknown }> {
+  return async (bearer, release) => {
+    const app = createWorkerPlaneApp({
+      ...projectArtifactsService,
+      ...heartbeatService,
+      ...runEvidenceService,
+      authority: { authenticate: () => Promise.resolve(authority) },
+      tasks: {
+        ...inertTasks,
+        work: (secret) => Promise.resolve(found[secret]),
+      },
+      reservations: {
+        reserve: () => Promise.resolve({ reserved: "Reserved" }),
+      },
+      artifacts: { store: () => Promise.resolve({ stored: "Stored" }) },
+      reports: { report: () => Promise.resolve({ ingested: "Fenced" }) },
+      ready: () => Promise.resolve(true),
+      uploadBytesMax: 64,
+    });
     const response = await app.inject({
       method: "GET",
       url: "/v1/task",
-      headers: { authorization: `Bearer ${bearer}` },
+      headers: {
+        authorization: `Bearer ${bearer}`,
+        ...(release === undefined ? {} : { [workerContractHeader]: release }),
+      },
     });
+    await app.close();
     return {
       status: response.statusCode,
       body: JSON.parse(response.body) as unknown,
     };
   };
+}
+
+test("a task is answered only to a live attempt, and only once the scheduler recorded it", async () => {
+  const identity = workTaskIdentity;
+  const invocation = workTaskInvoked;
+  const answered = workTaskAnswered({
+    ended: { live: false, identity, invocation },
+    unrecorded: { live: true, identity },
+    held: { live: true, identity, invocation },
+  });
   assert.deepEqual(await answered("ended"), {
     status: 401,
     body: { action: "stop" },
@@ -391,7 +416,39 @@ test("a task is answered only to a live attempt, and only once the scheduler rec
     status: 200,
     body: { kind: "Work", ...workTask(identity, invocation) },
   });
-  await app.close();
+});
+
+test("a task names the ref its finalization lands on only to a release that reads one, and every release reads one that names none", async () => {
+  const identity = workTaskIdentity;
+  const invocation = { ...workTaskInvoked, targetRef: "refs/heads/release" };
+  const answered = workTaskAnswered({
+    named: { live: true, identity, invocation },
+    unnamed: { live: true, identity, invocation: workTaskInvoked },
+  });
+  const naming = { kind: "Work", ...workTask(identity, invocation) };
+  const unnaming = { kind: "Work", ...workTask(identity, workTaskInvoked) };
+  assert.equal(Object.hasOwn(unnaming, "targetRef"), false);
+  for (const release of [
+    undefined,
+    "1.0.0",
+    "1.33.0",
+    "1.34.0",
+    workerContractRelease,
+  ]) {
+    const reads = contractVersionAccepted(workerContractTargetRefs, release);
+    assert.deepEqual(
+      await answered("named", release),
+      { status: 200, body: reads ? naming : unnaming },
+      release ?? "unnamed",
+    );
+    assert.deepEqual(
+      await answered("unnamed", release),
+      { status: 200, body: unnaming },
+      release ?? "unnamed",
+    );
+  }
+  assert.ok(contractVersionAccepted(workerContractTargetRefs, "1.34.0"));
+  assert.ok(!contractVersionAccepted(workerContractTargetRefs, "1.33.0"));
 });
 
 /** The session attempt a session bearer's task read answers for. */

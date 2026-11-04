@@ -169,6 +169,18 @@ for (const release of workerContractReplayed("job"))
       assert.ok(document.safeParse(task).success);
   });
 
+test("a task names the ref its finalization lands on, or none, and never an empty one", () => {
+  for (const pod of workPods()) {
+    const document = carried(pod, workerTaskVariable);
+    const named = { ...document, targetRef: "refs/heads/main" };
+    assert.deepEqual(workTaskDocumentSchema.strict().parse(named), named);
+    assert.deepEqual(workTaskDocumentSchema.strict().parse(document), document);
+    assert.ok(
+      !workTaskDocumentSchema.safeParse({ ...document, targetRef: "" }).success,
+    );
+  }
+});
+
 /** `document` less the fields `keys` names. */
 function without(document: object, keys: readonly string[]): object {
   return Object.fromEntries(

@@ -363,6 +363,7 @@ function serviceWith(
       deliveries: () => Promise.resolve({ read: "Deliveries", deliveries: [] }),
     },
     ticketBriefs: { brief: () => Promise.resolve(brief) },
+    bindings: { binding: () => Promise.resolve(undefined) },
     practices: blessedPracticeCatalog,
     workerRuntime,
     poolMemoryMib: workerPoolMemoryMibDefault,
@@ -1875,6 +1876,126 @@ test("a practice no catalog blesses blocks the ticket rather than briefing witho
     "ended:Withdrawn:PolicyDenied: UnknownPractice",
     "blocked:TicketConfigIncompatible",
   ]);
+});
+
+/** The repository a landing brief names, and the binding a service answers for it alone. */
+const landingRepository = asRepositoryId("https://example.test/landing.git");
+
+/** A service briefing `brief`, recording each invocation and placement, whose binding read answers the landing repository alone. */
+function landingService(
+  brief: DraftBrief,
+  placements: AttemptPlacement[],
+  recorded: WorkTaskInvocation[],
+): ExecutionSchedulerService {
+  const service = placingService(
+    [],
+    placements,
+    { read: "Configuration", configuration },
+    { read: "Facts", facts: noFacts },
+    brief,
+  );
+  return {
+    ...service,
+    store: {
+      ...service.store,
+      attemptInvoked: (_invoked, invocation) => {
+        recorded.push(invocation);
+        return Promise.resolve(true);
+      },
+    },
+    bindings: {
+      binding: (bound, repository) =>
+        Promise.resolve(
+          repository === landingRepository
+            ? { partition: bound, repository, recoveryEpoch: epoch }
+            : undefined,
+        ),
+    },
+  };
+}
+
+/** The ref a launched attempt's invocation recorded and its placement carried, each of which must name the same one. */
+async function landingTargetRef(
+  service: ExecutionSchedulerService,
+  placements: AttemptPlacement[],
+  recorded: readonly WorkTaskInvocation[],
+): Promise<string | undefined> {
+  assert.equal(await executionSchedulerLaunch(service, epoch), 1);
+  const [placed] = placements;
+  const [invoked] = recorded;
+  assert.ok(placed !== undefined && invoked !== undefined);
+  assert.equal(
+    Object.hasOwn(invoked, "targetRef"),
+    placed.targetRef !== undefined,
+  );
+  assert.equal(invoked.targetRef, placed.targetRef);
+  return placed.targetRef;
+}
+
+const landingBrief = asDraftBrief({
+  intent: "Fix the importer.",
+  links: [],
+  repository: landingRepository,
+  branch: "refs/heads/rt/ticket-brief",
+  finalization: { mode: "Push", target: "refs/heads/release" },
+});
+
+test("a launched work task is told the ref its finalization lands on, as its invocation records it", async () => {
+  const placements: AttemptPlacement[] = [];
+  const recorded: WorkTaskInvocation[] = [];
+  assert.equal(
+    await landingTargetRef(
+      landingService(landingBrief, placements, recorded),
+      placements,
+      recorded,
+    ),
+    "refs/heads/release",
+  );
+});
+
+test("a rework after a failed landing is told the ref its finalization lands on, not where its source was observed", async () => {
+  const placements: AttemptPlacement[] = [];
+  const recorded: WorkTaskInvocation[] = [];
+  const service = landingService(landingBrief, placements, recorded);
+  const rework: ExecutionSchedulerService = {
+    ...service,
+    failedLanding: {
+      landing: () =>
+        Promise.resolve({
+          read: "Landing" as const,
+          landing: {
+            targetCommit: "1".repeat(40),
+            changeCommit: "2".repeat(40),
+            conflicted: true,
+          },
+        }),
+    },
+  };
+  assert.equal(
+    await landingTargetRef(rework, placements, recorded),
+    "refs/heads/release",
+  );
+});
+
+test("a work task whose ticket names no repository, or one no binding answers for, is told no ref", async () => {
+  for (const brief of [
+    asDraftBrief({ intent: "Fix the importer.", links: [] }),
+    {
+      ...landingBrief,
+      repository: asRepositoryId("https://example.test/other.git"),
+    },
+  ]) {
+    const placements: AttemptPlacement[] = [];
+    const recorded: WorkTaskInvocation[] = [];
+    assert.equal(
+      await landingTargetRef(
+        landingService(brief, placements, recorded),
+        placements,
+        recorded,
+      ),
+      undefined,
+    );
+  }
 });
 
 const ticketBrief = asDraftBrief({

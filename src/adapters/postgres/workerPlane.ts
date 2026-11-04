@@ -189,7 +189,13 @@ interface WorkerTaskRow {
 
 /** A recorded invocation, which the scheduler wrote in the shape of the pod document it came from. */
 const workerTaskInvocationSchema = workTaskDocumentSchema
-  .pick({ profile: true, briefing: true, authority: true, worker: true })
+  .pick({
+    profile: true,
+    briefing: true,
+    authority: true,
+    worker: true,
+    targetRef: true,
+  })
   .strict();
 
 async function workerTask(

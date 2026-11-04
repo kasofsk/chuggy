@@ -18,6 +18,7 @@ import type {
   SessionPlacement,
   SessionTaskInvocation,
 } from "./sessionScheduler.ts";
+import type { GitRefName } from "./finalizer.ts";
 import { taskAuthorityGrant } from "./taskAuthority.ts";
 import type { TaskInvocation } from "./taskBriefing.ts";
 
@@ -48,6 +49,7 @@ export type WorkTask = Omit<WorkTaskDocument, "workerPlane">;
 export function workTaskInvocation(launch: {
   readonly profile: ExecutionProfile;
   readonly invocation: TaskInvocation;
+  readonly targetRef?: GitRefName;
 }): WorkTaskInvocation {
   const { briefing, authority, worker } = launch.invocation;
   return {
@@ -62,6 +64,7 @@ export function workTaskInvocation(launch: {
     },
     authority: taskAuthorityGrant(authority),
     ...(worker === undefined ? {} : { worker }),
+    ...(launch.targetRef === undefined ? {} : { targetRef: launch.targetRef }),
   };
 }
 
@@ -91,6 +94,9 @@ export function workTask(
     briefing: invocation.briefing,
     authority: invocation.authority,
     ...(invocation.worker === undefined ? {} : { worker: invocation.worker }),
+    ...(invocation.targetRef === undefined
+      ? {}
+      : { targetRef: invocation.targetRef }),
   };
 }
 

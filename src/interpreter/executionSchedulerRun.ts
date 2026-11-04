@@ -190,7 +190,8 @@ import {
   type WaitingAttempt,
 } from "./executionScheduler.ts";
 import type { WorkerImageFault } from "../contract/workerEnvironment.ts";
-import type { FinalizerConfig, RepositoryId } from "./finalizer.ts";
+import type { FinalizerConfig, GitRefName, RepositoryId } from "./finalizer.ts";
+import { finalizerLandingRef } from "./finalizerLanding.ts";
 import { runEndedLoss } from "./runEvidence.ts";
 import type { RecoveryEpoch } from "./projectStore.ts";
 import type { TicketServiceConfig } from "./ticketService.ts";
@@ -214,7 +215,8 @@ import {
   type TaskPurpose,
 } from "./taskBriefing.ts";
 import type { PolicyAuthorityGrant } from "./taskAuthority.ts";
-import type { TicketBriefPort } from "./ticketBrief.ts";
+import type { DraftBrief, TicketBriefPort } from "./ticketBrief.ts";
+import type { ProjectRepositoryBindingRead } from "./repositoryConfiguration.ts";
 import type {
   DependencyDeliveriesPort,
   DependencyDelivery,
@@ -250,6 +252,8 @@ export interface ExecutionSchedulerService {
   readonly priorEvaluationReports: PriorEvaluationReportsPort;
   readonly failedLanding: FailedLandingPort;
   readonly ticketBriefs: TicketBriefPort;
+  /** The binding a ticket's brief names, which is what its finalization lands through. */
+  readonly bindings: ProjectRepositoryBindingRead;
   readonly practices: PracticeCatalog;
   /** The image chuggy's runtime is copied from, which every attempt a pass opens keeps. */
   readonly workerRuntime: string;
@@ -782,11 +786,26 @@ async function schedulerRework(
   };
 }
 
-/** What a placement needs before it may be asked for: the profile, and the composed invocation. */
+/** What a placement needs before it may be asked for: the profile, the composed invocation, and where the ticket lands. */
 interface TaskLaunch {
   readonly profile: ExecutionProfile;
   readonly image?: string;
   readonly invocation: TaskInvocation;
+  readonly targetRef?: GitRefName;
+}
+
+/** The ref the ticket's finalization lands on, resolved from its brief and the binding it names as the finalizer resolves it. */
+async function schedulerTargetRef(
+  service: ExecutionSchedulerService,
+  execution: LogicalExecution,
+  brief: DraftBrief | undefined,
+): Promise<GitRefName | undefined> {
+  if (brief?.repository === undefined) return undefined;
+  const binding = await service.bindings.binding(
+    execution.partition,
+    brief.repository,
+  );
+  return finalizerLandingRef(brief, binding);
 }
 
 /** Selects the authored evaluation role after its pinned configuration has been read. */
@@ -845,12 +864,15 @@ async function schedulerPrepared(
     grant: policy.grant,
   });
   switch (composed.composed) {
-    case "Composed":
+    case "Composed": {
+      const targetRef = await schedulerTargetRef(service, execution, brief);
       return {
         profile: policy.profile,
         ...(policy.image === undefined ? {} : { image: policy.image }),
         invocation: composed.invocation,
+        ...(targetRef === undefined ? {} : { targetRef }),
       };
+    }
     case "Blocked":
       recordScheduler(service.metrics, (metrics) => {
         metrics.briefing(composed.fault);
@@ -910,6 +932,7 @@ async function schedulerPlace(
     profile: launch.profile,
     ...(launch.image === undefined ? {} : { image: launch.image }),
     invocation: launch.invocation,
+    ...(launch.targetRef === undefined ? {} : { targetRef: launch.targetRef }),
     capability: attempt.capability,
   });
   recordScheduler(service.metrics, (metrics) => {

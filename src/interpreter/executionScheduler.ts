@@ -100,7 +100,7 @@ import type { Config as DomainConfig } from "../domain/config.ts";
 import type { TaskId, TicketId } from "../domain/ids.ts";
 import type { TaskPurpose } from "./briefingTemplate.ts";
 import { checkedFinalizerConfig } from "./finalizer.ts";
-import type { FinalizerConfig } from "./finalizer.ts";
+import type { FinalizerConfig, GitRefName } from "./finalizer.ts";
 import type { OperationId } from "./operationInbox.ts";
 import type { Principal } from "./principal.ts";
 import type { WorkerPoolOwnerFallback } from "./projectOwnerFallback.ts";
@@ -1108,7 +1108,7 @@ export interface ExecutionProfile {
 /** What one attempt is invoked with, as its worker is handed it. */
 export type WorkTaskInvocation = Pick<
   WorkTaskDocument,
-  "profile" | "briefing" | "authority" | "worker"
+  "profile" | "briefing" | "authority" | "worker" | "targetRef"
 >;
 
 /**
@@ -1135,6 +1135,8 @@ export interface AttemptPlacement extends FencedAttempt {
   readonly profile: ExecutionProfile;
   readonly image?: string;
   readonly invocation: TaskInvocation;
+  /** The ref the ticket's finalization lands on, where its brief or binding names one. */
+  readonly targetRef?: GitRefName;
   readonly capability: AttemptCapability;
 }
 
