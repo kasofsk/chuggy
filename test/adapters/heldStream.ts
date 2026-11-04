@@ -21,6 +21,17 @@ export interface Held {
   close(): void;
 }
 
+/** A count of the requests `server` has heard close, which a route hears in the same turn. */
+export function requestsClosedCounted(server: http.Server): () => number {
+  let closed = 0;
+  server.on("request", (request: http.IncomingMessage) => {
+    request.once("close", () => {
+      closed += 1;
+    });
+  });
+  return () => closed;
+}
+
 export function held(
   port: number,
   path: string,

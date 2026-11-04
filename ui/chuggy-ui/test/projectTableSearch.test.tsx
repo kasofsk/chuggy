@@ -10,11 +10,11 @@
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import { QueryClient } from "@tanstack/react-query";
 import {
-  act,
   cleanup,
   fireEvent,
   render,
   screen,
+  waitFor,
   within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
@@ -23,10 +23,7 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { ProjectTable } from "../app/browser/ProjectTable.tsx";
-import {
-  ticketListSearchWaitMs,
-  type TicketListQuery,
-} from "../app/core/ticketListView.ts";
+import type { TicketListQuery } from "../app/core/ticketListView.ts";
 import {
   answer,
   heldAnswer,
@@ -158,16 +155,23 @@ function titlesDrawn(): readonly (string | null)[] {
     .map((row) => row.querySelector("h3")?.textContent ?? null);
 }
 
-/** Typing, and the wait the list gives it before asking the server. */
-async function typedAndWaited(typed: string): Promise<void> {
+/** How long a case gives typing to ask the server before it fails, well past the wait the list gives it first. */
+const typedAskedWaitMsMax = 5_000;
+
+/** Typing, and the wait the list gives it, which ends in asking the server. */
+async function typedAndAsked(
+  drawn: { readonly asked: readonly URLSearchParams[] },
+  typed: string,
+): Promise<void> {
+  const before = drawn.asked.length;
   fireEvent.change(screen.getByLabelText("Search tickets"), {
     target: { value: typed },
   });
-  await act(
-    () =>
-      new Promise((resolve) =>
-        setTimeout(resolve, ticketListSearchWaitMs + 50),
-      ),
+  await waitFor(
+    () => {
+      expect(drawn.asked.length).toBeGreaterThan(before);
+    },
+    { timeout: typedAskedWaitMsMax },
   );
 }
 
@@ -188,7 +192,7 @@ test("a search for a ticket past the first page finds it, counts from the server
   );
   expect(titlesDrawn()).toHaveLength(100);
   expect(titlesDrawn()).not.toContain("Ticket 121");
-  await typedAndWaited("#121");
+  await typedAndAsked(drawn, "#121");
   expect(drawn.written).toStrictEqual([{ q: "#121" }]);
   expect(titlesDrawn()).toHaveLength(100);
   searched.release(served([]));
@@ -362,7 +366,7 @@ test("leaving a search that matched nothing keeps the list's controls drawn unti
       : served([]);
   });
   expect(screen.getByRole("status").textContent).toBe("0 matching tickets");
-  await typedAndWaited("");
+  await typedAndAsked(drawn, "");
   expect(drawn.written).toStrictEqual([{}]);
   expect(screen.queryByText("No tickets")).toBeNull();
   expect(screen.getByLabelText("Search tickets")).toBeDefined();

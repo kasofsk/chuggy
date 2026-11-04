@@ -48,6 +48,7 @@ import {
   workerImageCharsMax,
   workerVersionCharsMax,
 } from "../../src/interpreter/workerCatalog.ts";
+import { programUntil } from "./harness.ts";
 
 const execute = promisify(execFile);
 
@@ -1172,7 +1173,9 @@ const deliveriesNone =
  * One scheduler process against fakes for the two authorities it does not own:
  * a pool that answers the schema query, and a cluster that answers the probe
  * and the create. Both halves of the process are driven, because both are one
- * tick of one pacing loop.
+ * tick of one pacing loop, and its health is read once a started tick has
+ * placed its session, which is the tick's last write and settles before a
+ * timer fires.
  */
 function processProgram(
   reachable: boolean,
@@ -1236,7 +1239,7 @@ function processProgram(
       { idleIntervalMilliseconds: 1000, shutdownDrainMilliseconds: 1000 },
     );
     const started = await runtime.start();
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    ${programUntil("started.started !== 'Started' || sessionPlaced.length > 0", "the first tick never placed its session")}
     const health = runtime.health();
     const stopped = await runtime.stop();
     process.stdout.write(JSON.stringify({
@@ -1474,17 +1477,37 @@ interface CommandRan {
   readonly stderr: string;
 }
 
+/** A command's run, and whether it was killed outright for never reaching the point a case signals it at. */
+interface CommandSignalledRan extends CommandRan {
+  readonly unsignalled: boolean;
+}
+
+/** How long a command is given to reach the point a case signals it at, past which it is killed outright. */
+const signalledWaitMsMax = 10_000;
+
+/** Runs the command, signalling it once `signalled` settles, if a case gives one. */
 async function schedulerCommand(
   named: Readonly<Record<string, string>>,
-  signalAfterMilliseconds?: number,
-): Promise<CommandRan> {
+  signalled?: Promise<unknown>,
+): Promise<CommandSignalledRan> {
   const child = execFile(
     process.execPath,
     ["--experimental-strip-types", "src/roots/scheduler.ts"],
     { cwd: process.cwd(), env: { ...process.env, ...named } },
   );
-  if (signalAfterMilliseconds !== undefined) {
-    setTimeout(() => child.kill("SIGTERM"), signalAfterMilliseconds).unref();
+  let unsignalled = false;
+  if (signalled !== undefined) {
+    const bound = setTimeout(() => {
+      unsignalled = true;
+      child.kill("SIGKILL");
+    }, signalledWaitMsMax);
+    child.on("close", () => {
+      clearTimeout(bound);
+    });
+    void signalled.then(() => {
+      clearTimeout(bound);
+      child.kill("SIGTERM");
+    });
   }
   let stderr = "";
   child.stderr?.on("data", (chunk: Buffer) => {
@@ -1493,7 +1516,7 @@ async function schedulerCommand(
   const code = await new Promise<number | null>((resolve) => {
     child.on("close", resolve);
   });
-  return { code, stderr };
+  return { code, stderr, unsignalled };
 }
 
 test("a database that is not there is a named could-not-run and exit two", async () => {
@@ -1505,9 +1528,14 @@ test("a database that is not there is a named could-not-run and exit two", async
   );
 });
 
+/** The command is signalled once it is connecting to a database that never answers, which it does only after it has taken its signals. */
 test("a signalled command stops within the drain it was given", async () => {
   const sockets: Socket[] = [];
-  const hanging = createServer((socket) => sockets.push(socket));
+  const connecting = Promise.withResolvers<undefined>();
+  const hanging = createServer((socket) => {
+    sockets.push(socket);
+    connecting.resolve(undefined);
+  });
   await new Promise<void>((resolve) => {
     hanging.listen(0, "127.0.0.1", resolve);
   });
@@ -1524,7 +1552,12 @@ test("a signalled command stops within the drain it was given", async () => {
         }),
         CHUG_SCHEDULER_SHUTDOWN_DRAIN_MS: "200",
       },
-      1_500,
+      connecting.promise,
+    );
+    assert.equal(
+      ran.unsignalled,
+      false,
+      "the command was never signalled: it never connected to the database that does not answer",
     );
     assert.equal(ran.code, 1);
     assert.match(ran.stderr, /shutdown drain expired/u);

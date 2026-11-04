@@ -126,6 +126,8 @@ export interface FakeLog {
   sweepBelow(sequence: number): void;
   /** Holds every later replay read until the returned release is called. */
   holdsReplays(): () => void;
+  /** How many replay reads are waiting on that hold, which is how a case knows a stream has reached its opening read. */
+  replaysHeld(): number;
   /** Holds every later read of the head, answering the head it was asked at, until the release. */
   holdsLatest(): () => void;
   /** Makes every later replay read reject, which is a read that failed rather than a gap. */
@@ -137,8 +139,10 @@ export interface FakeLog {
 function fakeLogHold(): {
   readonly hold: () => () => void;
   readonly wait: () => Promise<void>;
+  readonly waiting: () => number;
 } {
   let held = Promise.resolve();
+  let waiting = 0;
   return {
     hold: () => {
       let release = (): void => undefined;
@@ -147,7 +151,15 @@ function fakeLogHold(): {
       });
       return release;
     },
-    wait: () => held,
+    wait: async () => {
+      waiting += 1;
+      try {
+        await held;
+      } finally {
+        waiting -= 1;
+      }
+    },
+    waiting: () => waiting,
   };
 }
 
@@ -179,6 +191,7 @@ export function fakeLog(seed: readonly ProjectChangeRow[] = []): FakeLog {
       rows = rows.filter((row) => row.sequence >= sequence);
     },
     holdsReplays: replays.hold,
+    replaysHeld: replays.waiting,
     holdsLatest: heads.hold,
     failsReplays: () => {
       replaysFail = true;

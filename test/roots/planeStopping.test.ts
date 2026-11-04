@@ -1,7 +1,9 @@
 /**
  * A plane's stopping, wired to an app that holds one request and, for a plane
  * that has one, a pool that records being ended, and signalled while that
- * request is in flight.
+ * request is in flight. The request is answered only once the plane has
+ * stopped accepting and swept its connections, so the signal always lands
+ * while it is held and a sweep always passes over its busy connection.
  *
  * THE CALLER KEEPS ITS CONNECTION, as a worker does, and never closes it: a
  * plane that waited for its callers to hang up would not exit, and the program
@@ -16,9 +18,11 @@ import { signalledCommandRun } from "./harness.ts";
 /** What the program's exit code is when the plane never ended. */
 const neverEnded = 3;
 
-/** How long the request is held, which is how long after the signal it is still in flight. */
-const heldMs = 300;
 const giveUpMs = 10_000;
+
+/** How often the held request asks whether the plane has stopped and swept, and how long it waits for a sweep before it answers that none came. */
+const sweptAskMs = 5;
+const sweptWaitMsMax = 5_000;
 
 /** The program, its plane holding a pool that records being ended only where `pooled` says so. */
 const program = (pooled: boolean): string => `
@@ -27,10 +31,21 @@ const program = (pooled: boolean): string => `
   const http = await import('node:http');
   const seen = [];
   const app = fastify();
+  /** A sweep is a close of connections once the server has stopped listening; its own close of the idle ones comes while it still is. */
+  let swept = 0;
+  for (const closing of ['closeIdleConnections', 'closeAllConnections']) {
+    const closes = app.server[closing].bind(app.server);
+    app.server[closing] = () => {
+      if (!app.server.listening) swept += 1;
+      closes();
+    };
+  }
   app.get('/held', async () => {
     process.stdout.write('held\\n');
-    await new Promise((resolve) => setTimeout(resolve, ${String(heldMs)}));
-    seen.push('answered');
+    const deadline = Date.now() + ${String(sweptWaitMsMax)};
+    while ((app.server.listening || swept === 0) && Date.now() < deadline)
+      await new Promise((resolve) => setTimeout(resolve, ${String(sweptAskMs)}));
+    seen.push(swept === 0 ? 'no sweep came' : 'answered');
     return {};
   });
   planeStopping(
