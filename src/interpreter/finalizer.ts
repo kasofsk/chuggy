@@ -364,7 +364,8 @@ export type InputBundleReferenceKind =
   | "DependencyResult"
   | "DependencyAncestor"
   | "DependencyNotAncestor"
-  | "Recheck";
+  | "Recheck"
+  | "ExpectedTree";
 
 /** Every reference kind, so a suite and a database CHECK iterate rather than restate. */
 export const allInputBundleReferenceKinds: readonly InputBundleReferenceKind[] =
@@ -381,6 +382,7 @@ export const allInputBundleReferenceKinds: readonly InputBundleReferenceKind[] =
     "DependencyAncestor",
     "DependencyNotAncestor",
     "Recheck",
+    "ExpectedTree",
   ];
 
 /** The most references one bundle holds, so a bundle cannot grow into a payload. */

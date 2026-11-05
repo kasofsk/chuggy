@@ -1,4 +1,5 @@
 import {
+  workerContractEvaluatedTree,
   workerContractMemoryRoom,
   workerContractRelease,
   workerContractRunUsage,
@@ -103,6 +104,12 @@ export const workerContractRunUsages: WorkerContractRange = {
 /** The versions in which a work task may name the ref its finalization lands on, a field a pod of an earlier one refuses its whole answer over. */
 export const workerContractTargetRefs: WorkerContractRange = {
   min: workerContractTargetRef,
+  max: workerContractAccepted.max,
+};
+
+/** The versions in which a result manifest may name the tree an evaluation checked out, a field a plane of an earlier one refuses the whole manifest over. */
+export const workerContractEvaluatedTrees: WorkerContractRange = {
+  min: workerContractEvaluatedTree,
   max: workerContractAccepted.max,
 };
 

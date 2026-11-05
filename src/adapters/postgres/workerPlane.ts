@@ -602,7 +602,7 @@ async function workerTerminalizeReport(
         ${report.manifest.schemaVersion},${report.manifest.digest},${report.manifest.verdict},
         ${JSON.stringify(artifacts)}::jsonb,
         ${report.manifest.source === undefined ? null : JSON.stringify(report.manifest.source)}::jsonb,
-        ${operation})`,
+        ${operation},${report.manifest.evaluatedTree ?? null})`,
     );
     const row = result.rows[0];
     if (row === undefined)
@@ -612,6 +612,7 @@ async function workerTerminalizeReport(
     const terminalized = workerTerminalized(row);
     if (
       report.manifest.report !== undefined &&
+      row.outcome !== "Blocked" &&
       (terminalized.terminalized === "Terminalized" ||
         terminalized.terminalized === "AlreadyTerminal")
     ) {

@@ -72,6 +72,7 @@ export const resultManifestRejections = [
   "SourceMalformed",
   "SourceOnFailedVerdict",
   "SourceAndHandoffs",
+  "EvaluatedTreeMalformed",
   "ArtifactBytesNotCounted",
   "ArtifactTooLarge",
   "ManifestTooLarge",
@@ -114,13 +115,21 @@ const resultManifestSourceSchema = z.strictObject({
   base: z.string(),
 });
 
-/** The result manifest a worker reports, at the version it writes; `source` is left out or null where there is none. */
+/**
+ * The result manifest a worker reports, at the version it writes; `source` is
+ * left out or null where there is none, and `evaluatedTree`, the git tree the
+ * evaluator's checkout held, is left out where it did not evaluate one.
+ */
 export const resultManifestDocumentSchema = z.strictObject({
   version: z.literal(resultManifestSchemaVersion),
   verdict: z.enum(resultVerdicts),
   report: z.string().min(1).max(resultReportCharsMax),
   handoffs: z.array(resultManifestArtifactSchema).max(manifestHandoffsMax),
   source: resultManifestSourceSchema.nullable().optional(),
+  evaluatedTree: z
+    .string()
+    .regex(/^([0-9a-f]{40}|[0-9a-f]{64})$/u)
+    .optional(),
   diagnostics: z
     .array(resultManifestArtifactSchema)
     .max(manifestDiagnosticsMax),

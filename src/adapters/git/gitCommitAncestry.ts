@@ -84,6 +84,10 @@ import type {
   CommitAncestryQuestion,
 } from "../../interpreter/commitAncestry.ts";
 import type {
+  CommitTreePort,
+  CommitTreeQuestion,
+} from "../../interpreter/commitTree.ts";
+import type {
   GitObjectId,
   RepositoryCredential,
   RepositoryCredentialPort,
@@ -92,6 +96,7 @@ import type {
 import { gitTimeoutMs, type GitEnvironment } from "./gitRun.ts";
 import {
   scratchFetchHistory,
+  scratchCommitShape,
   scratchHoldsHistory,
   scratchNamesCommit,
   scratchOpen,
@@ -427,13 +432,44 @@ async function gitCommitAncestryAnswer(
 }
 
 /**
+ * The tree a commit records, read once the commit's whole history is held as an
+ * ancestry answer needs it, and nothing where it did not come to be held while
+ * the asker waited or the scratch could not read the commit.
+ */
+async function gitCommitAncestryTree(
+  own: GitCommitAncestryState,
+  question: CommitTreeQuestion,
+  asker: GitCommitAncestryBound,
+): Promise<GitObjectId | undefined> {
+  const held = await gitCommitAncestryHeld(
+    own,
+    {
+      repository: question.repository,
+      candidate: question.commit,
+      tip: question.commit,
+    },
+    asker,
+  );
+  if (!held) return undefined;
+  const shape = await Promise.race([
+    scratchCommitShape(
+      own.scratch,
+      question.repository.repository,
+      question.commit,
+    ),
+    asker.then((): undefined => undefined),
+  ]);
+  return shape?.tree;
+}
+
+/**
  * Composes the adapter over a scratch of its own opening. An ask rejects only
  * where the credential source itself raises; whatever else it could not find
  * out, a git that could not be run included, is `Unknown`.
  */
 export function gitCommitAncestry(
   options: GitCommitAncestryOptions,
-): CommitAncestryPort {
+): CommitAncestryPort & CommitTreePort {
   const resolved = { ...gitCommitAncestryDefaults, ...options };
   const localTimeoutMsMax = gitTimeoutMs(
     options.localTimeoutSecsMax,
@@ -486,6 +522,10 @@ export function gitCommitAncestry(
     ancestry: (question) =>
       gitCommitAncestryBounded(own.answerTimeoutMsMax, (asker) =>
         gitCommitAncestryAnswer(own, question, asker),
+      ),
+    tree: (question) =>
+      gitCommitAncestryBounded(own.answerTimeoutMsMax, (asker) =>
+        gitCommitAncestryTree(own, question, asker),
       ),
   };
 }

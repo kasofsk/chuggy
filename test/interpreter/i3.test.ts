@@ -566,6 +566,35 @@ test("a spawn bundle pins its exact source and prior result manifests", () => {
   ]);
 });
 
+/**
+ * An evaluation's bundle pins the tree its report is held to, and no bundle
+ * pins one it was not given. Catches the tree dropped between the observation
+ * and the references, and a tree named for a spawn that observed none.
+ */
+test("a spawn bundle pins the tree its source expects, and only that", () => {
+  const configuration = {
+    configurationRevision: "revision",
+    configurationDigest: "d".repeat(64),
+  };
+  const source = {
+    repository: asRepositoryId("repository"),
+    targetCommit: asGitObjectId("a".repeat(40)),
+    manifests: [],
+  };
+  const kinds = (expectedTree?: string) =>
+    inputBundleReferencesOf(configuration, {
+      bundle: "bundle",
+      source: {
+        ...source,
+        ...(expectedTree === undefined ? {} : { expectedTree }),
+      },
+    }).filter((reference) => reference.kind === "ExpectedTree");
+  assert.deepEqual(kinds("e".repeat(40)), [
+    { kind: "ExpectedTree", reference: "e".repeat(40) },
+  ]);
+  assert.deepEqual(kinds(), []);
+});
+
 /** Catches a base named where nothing knew one, which a check would narrow to. */
 test("a spawn bundle whose source knows no change base names none", () => {
   const references = inputBundleReferencesOf(

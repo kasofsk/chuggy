@@ -53,6 +53,7 @@ export const blockedReasons = [
   "RuntimeVersionUnsupported",
   "RequiredCapabilityUnavailable",
   "RequiredMemoryUnavailable",
+  "EvaluatedTreeNotExpected",
 ] as const;
 export type BlockedReason = (typeof blockedReasons)[number];
 

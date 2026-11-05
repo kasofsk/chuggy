@@ -69,7 +69,9 @@ function currentDefinition(name: string): string {
 /** The live overload of the worker's result door that carries its body. */
 function workerResultDefinition(): string {
   const carrying = currentOverloads("submit_worker_result").filter(
-    (statement) => statement.includes("FROM execution_request q"),
+    (statement) =>
+      statement.includes("FROM execution_request q") &&
+      !statement.includes("in_evaluated_tree"),
   );
   if (carrying.length !== 1)
     throw new Error(

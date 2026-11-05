@@ -753,7 +753,8 @@ export type BlockedReason =
   | "ExecutionProfileUnavailable"
   | "RuntimeVersionUnsupported"
   | "RequiredCapabilityUnavailable"
-  | "RequiredMemoryUnavailable";
+  | "RequiredMemoryUnavailable"
+  | "EvaluatedTreeNotExpected";
 
 /** Every blocking reason, in the order `execution_blocked_reason_is_known` declares them. */
 export const allBlockedReasons: readonly BlockedReason[] = [
@@ -763,6 +764,7 @@ export const allBlockedReasons: readonly BlockedReason[] = [
   "RuntimeVersionUnsupported",
   "RequiredCapabilityUnavailable",
   "RequiredMemoryUnavailable",
+  "EvaluatedTreeNotExpected",
 ];
 
 /**

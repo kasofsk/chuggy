@@ -174,6 +174,9 @@ function executionRequestBundle(
             ...(source.changeBase === undefined
               ? {}
               : { changeBase: source.changeBase }),
+            ...(source.expectedTree === undefined
+              ? {}
+              : { expectedTree: source.expectedTree }),
           },
         }),
     ...(images === undefined || images.length === 0 ? {} : { images }),
@@ -401,6 +404,14 @@ export function inputBundleReferencesOf(
             kind: "ResultManifest" as const,
             reference: manifest,
           })),
+          ...(source.expectedTree === undefined
+            ? []
+            : [
+                {
+                  kind: "ExpectedTree" as const,
+                  reference: source.expectedTree,
+                },
+              ]),
         ]),
     ...(evidence === undefined ? [] : inputBundleEvidenceReferences(evidence)),
     ...(dependencies === undefined

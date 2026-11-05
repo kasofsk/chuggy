@@ -31,10 +31,12 @@ import {
   workerRunEndedSchema,
   workerRunTotalsSchema,
 } from "../../src/contract/workerPlane.ts";
+import { resultManifestDocumentSchema } from "../../src/contract/workerDocuments.ts";
 import { workTaskDocumentSchema } from "../../src/contract/workerTask.ts";
 import {
   contractVersionAccepted,
   workerContractAccepted,
+  workerContractEvaluatedTrees,
   workerContractRunUsages,
   workerContractTargetRefs,
 } from "../../src/interpreter/workerPlane.ts";
@@ -219,4 +221,30 @@ test("a work task names the ref its finalization lands on from the version a pla
       release,
     );
   }
+});
+
+test("a manifest names the tree an evaluation checked out from the version a runner holds a plane's release to, and no release below it takes the key", async () => {
+  const carried = (schema: z.ZodType) =>
+    schema instanceof z.ZodObject &&
+    Object.hasOwn(schema.shape, "evaluatedTree");
+  assert.ok(carried(resultManifestDocumentSchema));
+  assert.ok(
+    contractVersionAccepted(
+      workerContractEvaluatedTrees,
+      workerContractRelease,
+    ),
+  );
+  for (const release of workerContractReplayed("job"))
+    assert.equal(
+      carried(
+        await workerContractReleaseExport(
+          release,
+          "workerDocuments",
+          "resultManifestDocumentSchema",
+          workerContractReleaseSchema,
+        ),
+      ),
+      contractVersionAccepted(workerContractEvaluatedTrees, release),
+      release,
+    );
 });

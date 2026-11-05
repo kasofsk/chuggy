@@ -243,6 +243,50 @@ test("the source handoff is covered by the canonical manifest digest", () => {
   assert.notEqual(first.digest, second.digest);
 });
 
+/** The harness's passing report naming the tree it evaluated, spelled as given. */
+function treeReport(evaluatedTree: unknown, version = 3): string {
+  return JSON.stringify({
+    ...JSON.parse(workerReport("Pass")),
+    version,
+    evaluatedTree,
+  });
+}
+
+test("a version-three report names the tree it evaluated, in either object width", () => {
+  for (const tree of ["a".repeat(40), "b".repeat(64)])
+    assert.equal(accepted(treeReport(tree)).evaluatedTree, tree);
+  assert.equal(accepted(workerReport("Pass")).evaluatedTree, undefined);
+});
+
+test("a tree that is no git object id, or is null, is refused as malformed", () => {
+  for (const tree of [
+    "",
+    "a".repeat(39),
+    "A".repeat(40),
+    "a".repeat(41),
+    null,
+    1,
+  ])
+    assert.equal(rejection(treeReport(tree)), "EvaluatedTreeMalformed");
+});
+
+test("the evaluated tree is a key of version three alone", () => {
+  assert.equal(rejection(treeReport("a".repeat(40), 2)), "UnexpectedField");
+});
+
+test("the evaluated tree is covered by the digest, and a report naming none digests as it did before the key existed", () => {
+  const none = accepted(workerReport("Pass"));
+  const named = accepted(treeReport("a".repeat(40)));
+  const other = accepted(treeReport("b".repeat(40)));
+  assert.notEqual(none.digest, named.digest);
+  assert.notEqual(named.digest, other.digest);
+  assert.equal(canonicalResultManifest(none).includes("evaluatedTree"), false);
+  assert.equal(
+    canonicalResultManifest(named),
+    `${canonicalResultManifest(none)}13:evaluatedTree40:${"a".repeat(40)}`,
+  );
+});
+
 test("the schema version is read before any row is", () => {
   assert.equal(
     rejection(

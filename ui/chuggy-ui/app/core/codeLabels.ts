@@ -99,6 +99,8 @@ export function blockedReasonLabel(reason: BlockedReason): string {
       return "Nowhere to run this work";
     case "RequiredMemoryUnavailable":
       return "Too large for every runner";
+    case "EvaluatedTreeNotExpected":
+      return "Evaluated a different tree than the work produced";
   }
 }
 
