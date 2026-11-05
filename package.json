@@ -39,6 +39,7 @@
     "@chuggy/worker-contract-1.9.0": "https://github.com/kasofsk/chuggy/releases/download/worker-contract-v1.9.0/chuggy-worker-contract-1.9.0.tgz",
     "@eslint/js": "^10.0.1",
     "@informalsystems/quint": "0.33.1",
+    "@kasofsk/chug-ticket-domain": "github:kasofsk/chug-ticket-domain#v0.7.0",
     "@ts-safeql/eslint-plugin": "^5.4.1",
     "@types/node": "^26.2.0",
     "@types/pg": "^8.23.1",
@@ -75,7 +76,6 @@
     "start:selector": "node --experimental-strip-types src/roots/selector.ts"
   },
   "dependencies": {
-    "@kasofsk/chug-ticket-domain": "github:kasofsk/chug-ticket-domain#v0.7.0",
     "@ts-safeql/sql-tag": "^0.2.2",
     "fastify": "^5.12.1",
     "jose": "^6.2.10",
