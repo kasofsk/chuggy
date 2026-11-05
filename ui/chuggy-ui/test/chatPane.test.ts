@@ -107,20 +107,24 @@ test("a stored value this console cannot parse is read as nothing chosen", () =>
   ).toBeUndefined();
 });
 
-test("a pane nobody moved is docked where the viewport divides and over the whole body where it does not", () => {
+test("a pane nobody moved is docked where the viewport divides and the strip under the pages where it does not", () => {
   expect(chatPaneDefaultAt(true)).toStrictEqual(chatPaneDefault);
   const narrow = chatPaneDefaultAt(false);
-  expect(narrow).toStrictEqual(chatPaneFilled(chatPaneDefault));
+  expect(narrow).toStrictEqual({
+    placement: "Bottom",
+    presentation: "Collapsed",
+  });
   expect(chatPaneNarrowed(narrow, false)).toStrictEqual(narrow);
-  expect(chatPaneNarrowed(chatPaneRestored(narrow), false)).toStrictEqual(
-    narrow,
+  expect(chatPaneNarrowed(chatPaneToggled(narrow), false)).toStrictEqual(
+    bottomFull,
   );
 });
 
-/** Docked under the pages the pane takes a share of every page, so a phone
- * opens it over the whole body whatever a desk stored. */
-test("below two columns the pane opens over the whole body whatever is stored, and at two columns what is stored wins", () => {
-  for (const presentation of ["Docked", "Full"] as const) {
+/** Docked under the pages the pane takes a share of every page, and over the
+ * whole body it hides the page, so a phone opens it as the strip whatever a
+ * desk stored. */
+test("below two columns the pane opens as the strip whatever is stored, and at two columns what is stored wins", () => {
+  for (const presentation of chatPanePresentations) {
     const stored = { placement: "Left", presentation } as const;
     const hold = chatPaneHoldRead(
       storeDouble({ [chatPaneStoreKey]: JSON.stringify(stored) }),
@@ -134,7 +138,7 @@ test("below two columns the pane opens over the whole body whatever is stored, a
   expect(chatPaneHoldState(unstored, true)).toStrictEqual(chatPaneDefault);
 });
 
-test("below two columns a collapse and an expand are held for the page and never stored, so a reload opens it whole", () => {
+test("below two columns an expand and a collapse are held for the page and never stored, so a reload opens it as the strip", () => {
   const stored = JSON.stringify(chatPaneDefault);
   const held: Record<string, string> = { [chatPaneStoreKey]: stored };
   const store = storeDouble(held);
@@ -146,17 +150,17 @@ test("below two columns a collapse and an expand are held for the page and never
       chatPaneToggled(chatPaneHoldState(hold, false)),
       false,
     );
-  const collapsed = toggled(opened);
-  expect(chatPaneHoldState(collapsed, false).presentation).toBe("Collapsed");
-  expect(chatPaneHoldState(toggled(collapsed), false)).toStrictEqual(
+  const expanded = toggled(opened);
+  expect(chatPaneHoldState(expanded, false)).toStrictEqual(bottomFull);
+  expect(chatPaneHoldState(toggled(expanded), false)).toStrictEqual(
     chatPaneDefaultAt(false),
   );
   expect(held[chatPaneStoreKey]).toBe(stored);
-  expect(chatPaneHoldState(collapsed, true)).toStrictEqual(chatPaneDefault);
+  expect(chatPaneHoldState(expanded, true)).toStrictEqual(chatPaneDefault);
   expect(chatPaneHoldState(chatPaneHoldRead(store), false)).toStrictEqual(
     chatPaneDefaultAt(false),
   );
-  const docked = chatPaneHoldWritten(store, collapsed, chatPaneDefault, false);
+  const docked = chatPaneHoldWritten(store, opened, chatPaneDefault, false);
   expect(chatPaneHoldState(docked, false).presentation).toBe("Full");
   expect(held[chatPaneStoreKey]).toBe(stored);
   const left = chatPaneRepositioned(chatPaneDefault, "Left");
@@ -528,13 +532,13 @@ test("under the pages the pane keeps the share it was laid at as the frame's hei
 
 /** A reader who never chose is drawn the default the width decides, and a
  * drag that moves no presentation is not a choice. */
-test("narrowed before the reader chose, the pane is over the whole body, and docked again widened", () => {
+test("narrowed before the reader chose, the pane is the strip under the pages, and docked again widened", () => {
   const narrowed = trailWalked(draggedHalf, { move: "Narrowed" });
   expect(narrowed.hold.stored).toBeUndefined();
   expect(chatPaneTrailDrawn(narrowed).state).toStrictEqual(
-    chatPaneFilled(chatPaneDefault),
+    chatPaneDefaultAt(false),
   );
-  expect(chatPaneTrailDrawn(narrowed).share).toBeUndefined();
+  expect(chatPaneTrailDrawn(narrowed).share).toBe(5);
   const widened = chatPaneTrailMoved(narrowed, { move: "Widened" });
   expect(chatPaneTrailDrawn(widened).state).toStrictEqual(chatPaneDefault);
   expect(chatPaneTrailDrawn(widened).share).toBe(50);
@@ -570,26 +574,27 @@ test("below two columns a trail offers no placement or full screen and draws no 
   const narrowed: ChatPaneMove = { move: "Narrowed" };
   const docked = trailWalked(draggedHalf, collapsed, expanded, narrowed);
   expect(docked.hold.stored?.presentation).toBe("Docked");
-  expect(chatPaneTrailDrawn(docked).state.presentation).toBe("Full");
-  expect(chatPaneTrailOffered(docked)).toStrictEqual([...always, "Collapsed"]);
-  const strip = chatPaneTrailMoved(docked, collapsed);
-  expect(chatPaneTrailOffered(strip)).toStrictEqual([
+  expect(chatPaneTrailDrawn(docked).state.presentation).toBe("Collapsed");
+  expect(chatPaneTrailOffered(docked)).toStrictEqual([
     ...always,
     "Expanded",
     "Dragged",
   ]);
+  const full = chatPaneTrailMoved(docked, expanded);
+  expect(chatPaneTrailOffered(full)).toStrictEqual([...always, "Collapsed"]);
+  const strip = chatPaneTrailMoved(full, collapsed);
   for (const back of [
     expanded,
-    { move: "Reloaded" },
     { move: "Dragged", share: 50 },
   ] satisfies readonly ChatPaneMove[]) {
     const drawn = chatPaneTrailDrawn(chatPaneTrailMoved(strip, back));
     expect(drawn.state.presentation, back.move).toBe("Full");
     expect(drawn.share, back.move).toBeUndefined();
   }
-  expect(chatPaneTrailMoved(strip, expanded).hold.stored).toBe(
-    docked.hold.stored,
-  );
+  expect(
+    chatPaneTrailDrawn(chatPaneTrailMoved(full, { move: "Reloaded" })).state,
+  ).toStrictEqual(chatPaneDefaultAt(false));
+  expect(full.hold.stored).toBe(docked.hold.stored);
   const widened = chatPaneTrailMoved(strip, { move: "Widened" });
   expect(chatPaneTrailDrawn(widened).state).toStrictEqual(chatPaneDefault);
 });

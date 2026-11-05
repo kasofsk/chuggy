@@ -1,7 +1,8 @@
 /**
  * The chat pane's state as the shell holds it: the viewport's default until
  * the reader moves the pane, and where they put it from then on. Below two
- * columns it opens whole on every load, and nothing moved there is stored.
+ * columns it opens as the strip on every load, and nothing moved there is
+ * stored.
  */
 
 import { act, cleanup, render, screen } from "@testing-library/react";
@@ -65,7 +66,7 @@ function shown(): string {
 }
 
 test("a pane nobody has moved follows the viewport across a change of width", () => {
-  expect(named(chatPaneDefaultAt(false))).toBe("Right Full");
+  expect(named(chatPaneDefaultAt(false))).toBe("Bottom Collapsed");
   expect(named(chatPaneDefaultAt(true))).toBe("Right Docked");
   const view = render(drawn(false));
   expect(shown()).toBe(named(chatPaneDefaultAt(false)));
@@ -75,7 +76,7 @@ test("a pane nobody has moved follows the viewport across a change of width", ()
   expect(shown()).toBe(named(chatPaneDefaultAt(false)));
 });
 
-test("a pane the reader moved at two columns stays where they put it there, and opens whole below them", () => {
+test("a pane the reader moved at two columns stays where they put it there, and opens as the strip below them", () => {
   const view = render(drawn(true));
   act(() => {
     screen.getByRole("button").click();
@@ -91,8 +92,8 @@ function stored(state: ChatPaneState): void {
   localStorage.setItem(chatPaneStoreKey, JSON.stringify(state));
 }
 
-test("below two columns a stored docked or full pane opens whole, and at two columns what is stored wins", () => {
-  for (const presentation of ["Docked", "Full"] as const) {
+test("below two columns a stored pane opens as the strip whatever it is, and at two columns what is stored wins", () => {
+  for (const presentation of ["Docked", "Collapsed", "Full"] as const) {
     stored({ placement: "Left", presentation });
     const view = render(drawn(false));
     expect(shown(), presentation).toBe(named(chatPaneDefaultAt(false)));
@@ -149,20 +150,20 @@ const leftDocked = JSON.stringify({
   presentation: "Docked",
 });
 
-test("below two columns a collapse and an expand come back whole, and store nothing", () => {
+test("below two columns an expand fills the body and a collapse comes back to the strip, and store nothing", () => {
   localStorage.setItem(chatPaneStoreKey, leftDocked);
   render(moving(false));
   pressed("Toggle");
-  expect(movedTo()).toBe("Right Collapsed");
+  expect(movedTo()).toBe("Bottom Full");
   pressed("Toggle");
   expect(movedTo()).toBe(named(chatPaneDefaultAt(false)));
   expect(localStorage.getItem(chatPaneStoreKey)).toBe(leftDocked);
 });
 
-test("below two columns a reload after a collapse opens whole", () => {
+test("below two columns a reload after an expand opens as the strip", () => {
   render(moving(false));
   pressed("Toggle");
-  expect(movedTo()).toBe("Right Collapsed");
+  expect(movedTo()).toBe("Bottom Full");
   cleanup();
   render(moving(false));
   expect(movedTo()).toBe(named(chatPaneDefaultAt(false)));
@@ -172,10 +173,12 @@ test("below two columns a reload after a collapse opens whole", () => {
 test("below two columns a screen pressed for while the pane is whole leaves the strip, and stores nothing", () => {
   localStorage.setItem(chatPaneStoreKey, leftDocked);
   render(moving(false));
+  pressed("Toggle");
+  expect(movedTo()).toBe("Bottom Full");
   pressed("Screen");
-  expect(movedTo()).toBe("Right Collapsed");
+  expect(movedTo()).toBe("Bottom Collapsed");
   pressed("Screen");
-  expect(movedTo()).toBe("Right Collapsed");
+  expect(movedTo()).toBe("Bottom Collapsed");
   expect(localStorage.getItem(chatPaneStoreKey)).toBe(leftDocked);
 });
 

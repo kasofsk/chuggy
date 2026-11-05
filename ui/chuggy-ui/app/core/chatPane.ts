@@ -14,11 +14,11 @@
  * rather than held only in a component, and so is the share the reader dragged
  * the column to. A reader who has chosen nothing is drawn docked. Where the
  * viewport does not divide, the pane is the whole body or the strip and never
- * docked, since docked there it takes a share of every page; it opens whole on
- * every load, and what a reader moves it to there is held for the page's life
- * and never stored. The presentation stays the one record of whether the pane
- * is collapsed: a drag across the collapse threshold moves it, as the pane's
- * own control does.
+ * docked, since docked there it takes a share of every page; it opens as the
+ * strip on every load, and what a reader moves it to there is held for the
+ * page's life and never stored. The presentation stays the one record of
+ * whether the pane is collapsed: a drag across the collapse threshold moves
+ * it, as the pane's own control does.
  *
  * THE TRAIL IS THE PANE AFTER A READER'S MOVES, a model the frame is held to:
  * which panels it draws and the pane's share of them, stated as the rules the
@@ -79,12 +79,12 @@ const chatPaneSchema = z.object({
 });
 
 const chatPaneDefaultNarrow: ChatPaneState = {
-  placement: chatPaneDefault.placement,
-  presentation: "Full",
+  placement: "Bottom",
+  presentation: "Collapsed",
 };
 
 /** Where a pane is drawn from on a load until the reader moves it, which is
- * the whole body on a viewport too narrow to divide. */
+ * the strip under the pages on a viewport too narrow to divide. */
 export function chatPaneDefaultAt(twoColumn: boolean): ChatPaneState {
   return twoColumn ? chatPaneDefault : chatPaneDefaultNarrow;
 }
