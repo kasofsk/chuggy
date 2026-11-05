@@ -24,9 +24,10 @@
 /// ticket leaves the state by that report — including when the report is that
 /// no result was reachable, which parks it at the desk.
 ///
-/// THE EVALUATION-FAILURE POLICY. A failing stage has two ways on and this
-/// machine chooses neither of them: it CONSULTS an `EvaluationFailurePolicy`
+/// THE EVALUATION-FAILURE POLICY. A failing stage has three ways on and this
+/// machine chooses none of them: it CONSULTS an `EvaluationFailurePolicy`
 /// (ticket.qnt) handed to the decision. Rework re-enters Work as a new cycle;
+/// Invalidate does too, with the evaluation dropped rather than judged;
 /// Escalate parks the ticket on the desk, where the operator's resume
 /// re-enters Work the same way. Here the policy answers a nondet draw of
 /// `taskDone` — the completion that concludes a failing stage is where it is
@@ -95,12 +96,13 @@ module chuggy_domain {
   /// numeric dependency edges. Production ids are opaque and unbounded.
   pure val ticketIdUniverse: Set[int] = 1.to(N_TICKETS * 2)
 
-  /// What an evaluation failure may do. Both edges are always available: the
+  /// What an evaluation failure may do. Every edge is always available: the
   /// machine holds no policy over the choice (ticket.qnt
-  /// EvaluationFailureDisposition), so every completion may take either, and
-  /// any implementation policy is a restriction of this draw.
+  /// EvaluationFailureDisposition), so every completion may take any of them,
+  /// and any implementation policy is a restriction of this draw.
   pure val dispositionChoices: Set[EvaluationFailureDisposition] =
-    Set(ReworkEvaluationFailure, EscalateEvaluationFailure)
+    Set(ReworkEvaluationFailure, EscalateEvaluationFailure,
+      InvalidateEvaluationFailure(anInvalidationEvidence))
 
   /// The disposition a command that concludes no stage is taken under.
   /// `decide` never asks it, so which one it is decides nothing.
@@ -142,6 +144,11 @@ module chuggy_domain {
   pure val aFinalizationEvidence: int = 15
   pure val finalizationEvidences: Set[int] =
     Set(aFinalizationEvidence, aFinalizationEvidence + 1)
+
+  /// THE EVIDENCE an evaluation is invalidated on, at model scope: an
+  /// observation made outside the machine, in a band of its own beside the
+  /// finalizer's.
+  pure val anInvalidationEvidence: int = 17
 
   /// WHAT A FINALIZER MAY REPORT: any of the three results, at any evidence
   /// it may return. Queueing, preparation, approval, permits and
@@ -581,6 +588,18 @@ module chuggy_domain {
   pure def retryablesIn(c: TicketGraph): Set[int] =
     c.tickets.keys().filter(j => retryableIn(c, j))
 
+  /// Tickets holding an evaluation that may be dropped unjudged: one running,
+  /// or one an evaluator wall stopped.
+  pure def invalidatablesIn(c: TicketGraph): Set[int] =
+    c.tickets.keys().filter(j => match c.tickets.get(j).state {
+      | Evaluation(_) => true
+      | Escalated(escalation) => match escalation {
+          | EvaluationBlockedEscalated(_) => true
+          | _ => false
+        }
+      | _ => false
+    })
+
   /// The derived waiting room (standing rule 3), as a pure predicate over a
   /// TicketGraph so tests can pin it: a Pending ticket with any dependency
   /// not yet Done. Its Ready half is the package's isReady.
@@ -632,6 +651,11 @@ module chuggy_domain {
     ReportFinalizationResult({ ticket: j, workCycle: cycle, generation: gen,
       result: FinalizationSucceeded(aFinalizationEvidence) })
 
+  /// An invalidation of ticket j's evaluation of work cycle `cycle`.
+  pure def invalidationOf(j: int, cycle: int): TicketCommand =
+    InvalidateEvaluation({ ticket: j, workCycle: cycle,
+      evidence: anInvalidationEvidence })
+
   /// An id the instance can name that is not j: the universe holds 1 and 2
   /// whenever it holds a ticket at all (init's N_TICKETS >= 1).
   pure def otherIdOf(j: int): int = if (j == 1) 2 else 1
@@ -674,7 +698,9 @@ module chuggy_domain {
   /// updateProbesIn names, and a dispatch, a revoke and a resume; a failure
   /// for every task a ticket has ever been owed, and for the first work task
   /// of an id not released; and a finalizer's result for the attempt a
-  /// ticket is on, the generation before it and the cycle before it. Every
+  /// ticket is on, the generation before it and the cycle before it; and an
+  /// invalidation of the cycle a ticket is on and of the cycle before it, and
+  /// of the first cycle of an id not released. Every
   /// one is a command the machine takes (commandTaken), so which of them
   /// `decide` refuses is the ticket's state and nothing else.
   pure def commandProbesIn(
@@ -705,7 +731,13 @@ module chuggy_domain {
             else Set())
       }).flatten()
       .union(absent.map(j => finalizationReportOf(j, 1, 1)))
-    perId.union(reports).union(finalizations)
+    val invalidations = live.map(j => {
+        val cycle = c.tickets.get(j).workCyclesStarted
+        if (cycle > 1) Set(invalidationOf(j, cycle), invalidationOf(j, cycle - 1))
+        else Set(invalidationOf(j, 1))
+      }).flatten()
+      .union(absent.map(j => invalidationOf(j, 1)))
+    perId.union(reports).union(finalizations).union(invalidations)
 
   /// The probes `decide` refuses in this graph. No refusal asks the policy,
   /// so any one will do.
@@ -828,6 +860,8 @@ module chuggy_domain {
   val doneTickets: Set[int] = doneIn(graph)
   /// Parked tickets the operator may Retry (retryableIn).
   val retryableEscalated: Set[int] = retryablesIn(graph)
+  /// Tickets whose evaluation may be dropped (invalidatablesIn).
+  val invalidatableTickets: Set[int] = invalidatablesIn(graph)
   /// Commands `decide` refuses here (refusedCommandsIn).
   val refusedCommands: Set[TicketCommand] = refusedCommandsIn(graph, ledgers)
 
@@ -975,6 +1009,15 @@ module chuggy_domain {
     take(ResumeTicket(j), unaskedDisposition)
   }
 
+  /// Whatever the evaluation was judging no longer holds, so the evaluation
+  /// of the cycle the ticket is on is dropped without a verdict.
+  action invalidateEvaluation = all {
+    invalidatableTickets.size() > 0,
+    nondet j = invalidatableTickets.oneOf()
+    take(invalidationOf(j, tickets.get(j).workCyclesStarted),
+      unaskedDisposition)
+  }
+
   /// THE ENVIRONMENT OUT OF TURN: a command `decide` refuses, drawn from the
   /// probes (commandProbesIn). The machine answers it and moves nothing, so
   /// the step records the refusal and the tickets stand.
@@ -1004,6 +1047,7 @@ module chuggy_domain {
     taskDone,
     finalizationResult,
     resumeTicket,
+    invalidateEvaluation,
     refuse,
     settle
   }

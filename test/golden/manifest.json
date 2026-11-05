@@ -41,7 +41,7 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "lastEvent != \"TicketEvaluationBlocked\"",
-      "steps": 17,
+      "steps": 30,
       "quintVersion": "0.33.1",
       "purpose": "The same infrastructure refusal against an evaluation set, which is its own wall: the judgement is intact and unmade, so this is the only park whose resume re-enters evaluation. Its pair is work-execution-unavailable, the same refusal one phase earlier."
     },
@@ -69,7 +69,7 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "not(lastEvent == \"TicketEvaluationProgressed\" and lastObligations.length() > 0)",
-      "steps": 16,
+      "steps": 22,
       "quintVersion": "0.33.1",
       "purpose": "The stage advance: a stage passes, the next one's evaluators are owed, and the ticket stays in Evaluation. It is the only progress that owes tasks."
     },
@@ -83,7 +83,7 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "lastEvent != \"TicketFinalizationNeedsWork\"",
-      "steps": 16,
+      "steps": 5,
       "quintVersion": "0.33.1",
       "purpose": "A finalizer reports failure and the ticket re-enters work. There is no wall on this edge: the finalizer that keeps failing keeps buying cycles."
     },
@@ -97,7 +97,7 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "lastEvent != \"TicketWorkProcessFailed\"",
-      "steps": 15,
+      "steps": 9,
       "quintVersion": "0.33.1",
       "purpose": "The work wall: the work task fails and the cycle escalates, parking the ticket at ResumeWork with an open desk task."
     },
@@ -111,7 +111,7 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "lastEvent != \"TicketEvaluationReworkStarted\"",
-      "steps": 15,
+      "steps": 11,
       "quintVersion": "0.33.1",
       "purpose": "The Rework disposition on a failing evaluation: the stage retires and the ticket re-enters Work with a fresh work task. Its pair is evaluation-failure-escalated, which is the same failure taken the other way."
     },
@@ -181,7 +181,7 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "not(lastEvent == \"TicketRevoked\" and lastObligations.length() > 0)",
-      "steps": 14,
+      "steps": 7,
       "quintVersion": "0.33.1",
       "purpose": "A revoke of a ticket with tasks running: the event owes a CancelTask for each live task, which no other event does. The walk revokes only tickets with nothing running."
     },
@@ -195,7 +195,7 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "lastRefusal != \"TaskNotCurrent\"",
-      "steps": 27,
+      "steps": 21,
       "quintVersion": "0.33.1",
       "purpose": "A task report nothing owes any more is answered, not taken: the refusal names the ticket and the task, and the tickets stand."
     },
@@ -209,7 +209,7 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "lastRefusal != \"DependenciesIncomplete\"",
-      "steps": 12,
+      "steps": 11,
       "quintVersion": "0.33.1",
       "purpose": "A dispatch of a ticket waiting on a dependency that is not Done is refused, naming every such dependency."
     },
@@ -223,7 +223,7 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "not(lastEvent == \"TicketDispatched\" and tickets.get(lastEventTicket).revision > 1)",
-      "steps": 11,
+      "steps": 6,
       "quintVersion": "0.33.1",
       "purpose": "An update while Pending, then the dispatch that runs it: the work the dispatch owes is the definition the update landed, not the one the release pinned, and the update itself owes nothing."
     },
@@ -251,7 +251,7 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "not(lastEvent == \"TicketUpdated\" and tickets.get(lastEventTicket).definition.dependencies != prevTickets.get(lastEventTicket).definition.dependencies)",
-      "steps": 6,
+      "steps": 8,
       "quintVersion": "0.33.1",
       "purpose": "An update that changes a Pending ticket's dependencies lands as its next revision: the ticket waits on what the new revision names."
     },
@@ -265,7 +265,7 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "lastRefusal != \"DependencyCycle\"",
-      "steps": 5,
+      "steps": 14,
       "quintVersion": "0.33.1",
       "purpose": "An update that adds a dependency already waiting on the ticket is refused, naming every such dependency: it would close a cycle."
     },
@@ -279,7 +279,7 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "lastRefusal != \"DependenciesRevoked\"",
-      "steps": 11,
+      "steps": 18,
       "quintVersion": "0.33.1",
       "purpose": "A create or update that adds a revoked dependency is refused, naming every such dependency: a revoked ticket never becomes Done."
     },
@@ -293,7 +293,7 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "lastRefusal != \"TicketAlreadyExists\"",
-      "steps": 26,
+      "steps": 20,
       "quintVersion": "0.33.1",
       "purpose": "A release of a ticket id the graph already holds is refused: an id names one ticket for good."
     },
@@ -307,7 +307,7 @@
       "maxSamples": 60000,
       "maxSteps": 32,
       "invariant": "lastRefusal != \"TicketIdentityMismatch\"",
-      "steps": 14,
+      "steps": 5,
       "quintVersion": "0.33.1",
       "purpose": "An update whose definition names another ticket is refused before its revision is read."
     },

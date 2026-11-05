@@ -106,12 +106,218 @@
         "command": {
           "tag": "Some",
           "value": {
-            "tag": "DispatchTicket",
+            "tag": "CreateTicket",
             "value": {
-              "source": {
-                "#bigint": "9"
+              "content": {
+                "#bigint": "41"
+              },
+              "dependencies": {
+                "#set": [
+                  {
+                    "#bigint": "1"
+                  },
+                  {
+                    "#bigint": "3"
+                  },
+                  {
+                    "#bigint": "4"
+                  },
+                  {
+                    "#bigint": "5"
+                  },
+                  {
+                    "#bigint": "6"
+                  }
+                ]
+              },
+              "evaluationPlan": {
+                "stages": [
+                  {
+                    "evaluators": [
+                      {
+                        "key": {
+                          "#bigint": "1"
+                        },
+                        "task": {
+                          "executionRequirements": {
+                            "#bigint": "3"
+                          },
+                          "inputs": {
+                            "#bigint": "2"
+                          },
+                          "resultContract": {
+                            "#bigint": "4"
+                          },
+                          "workload": {
+                            "#bigint": "1"
+                          }
+                        }
+                      },
+                      {
+                        "key": {
+                          "#bigint": "2"
+                        },
+                        "task": {
+                          "executionRequirements": {
+                            "#bigint": "7"
+                          },
+                          "inputs": {
+                            "#bigint": "6"
+                          },
+                          "resultContract": {
+                            "#bigint": "8"
+                          },
+                          "workload": {
+                            "#bigint": "5"
+                          }
+                        }
+                      }
+                    ],
+                    "key": {
+                      "#bigint": "1"
+                    }
+                  }
+                ]
+              },
+              "finalizationConfiguration": {
+                "#bigint": "46"
+              },
+              "id": {
+                "#bigint": "2"
+              },
+              "workConfiguration": {
+                "executionRequirements": {
+                  "#bigint": "44"
+                },
+                "inputs": {
+                  "#bigint": "43"
+                },
+                "resultContract": {
+                  "#bigint": "45"
+                },
+                "workload": {
+                  "#bigint": "42"
+                }
+              }
+            }
+          }
+        },
+        "dependencies_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "j": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "onFailure": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "report": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "source": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "stages": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "task": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        }
+      },
+      "mc_chuggy::chuggy_domain::lastStep": {
+        "tag": "Refused",
+        "value": {
+          "tag": "DependenciesNotFound",
+          "value": {
+            "dependencies": {
+              "#set": [
+                {
+                  "#bigint": "1"
+                },
+                {
+                  "#bigint": "3"
+                },
+                {
+                  "#bigint": "4"
+                },
+                {
+                  "#bigint": "5"
+                },
+                {
+                  "#bigint": "6"
+                }
+              ]
+            },
+            "ticket": {
+              "#bigint": "2"
+            }
+          }
+        }
+      },
+      "mc_chuggy::chuggy_domain::ledgers": {
+        "#map": []
+      },
+      "mc_chuggy::chuggy_domain::prevLedgers": {
+        "#map": []
+      },
+      "mc_chuggy::chuggy_domain::prevTickets": {
+        "#map": []
+      },
+      "mc_chuggy::chuggy_domain::tickets": {
+        "#map": []
+      }
+    },
+    {
+      "#meta": {
+        "index": 2
+      },
+      "mbt::actionTaken": "refuse",
+      "mbt::nondetPicks": {
+        "command": {
+          "tag": "Some",
+          "value": {
+            "tag": "ReportFinalizationResult",
+            "value": {
+              "generation": {
+                "#bigint": "1"
+              },
+              "result": {
+                "tag": "FinalizationSucceeded",
+                "value": {
+                  "#bigint": "15"
+                }
               },
               "ticket": {
+                "#bigint": "6"
+              },
+              "workCycle": {
                 "#bigint": "1"
               }
             }
@@ -171,7 +377,7 @@
         "value": {
           "tag": "TicketNotFound",
           "value": {
-            "#bigint": "1"
+            "#bigint": "6"
           }
         }
       },
@@ -186,322 +392,6 @@
       },
       "mc_chuggy::chuggy_domain::tickets": {
         "#map": []
-      }
-    },
-    {
-      "#meta": {
-        "index": 2
-      },
-      "mbt::actionTaken": "releaseTicket",
-      "mbt::nondetPicks": {
-        "command": {
-          "tag": "None",
-          "value": {
-            "#tup": []
-          }
-        },
-        "dependencies_": {
-          "tag": "Some",
-          "value": {
-            "#set": []
-          }
-        },
-        "j": {
-          "tag": "Some",
-          "value": {
-            "#bigint": "3"
-          }
-        },
-        "onFailure": {
-          "tag": "None",
-          "value": {
-            "#tup": []
-          }
-        },
-        "report": {
-          "tag": "None",
-          "value": {
-            "#tup": []
-          }
-        },
-        "result": {
-          "tag": "None",
-          "value": {
-            "#tup": []
-          }
-        },
-        "source": {
-          "tag": "None",
-          "value": {
-            "#tup": []
-          }
-        },
-        "stages": {
-          "tag": "Some",
-          "value": [
-            {
-              "evaluators": [
-                {
-                  "key": {
-                    "#bigint": "1"
-                  },
-                  "task": {
-                    "executionRequirements": {
-                      "#bigint": "3"
-                    },
-                    "inputs": {
-                      "#bigint": "2"
-                    },
-                    "resultContract": {
-                      "#bigint": "4"
-                    },
-                    "workload": {
-                      "#bigint": "1"
-                    }
-                  }
-                },
-                {
-                  "key": {
-                    "#bigint": "2"
-                  },
-                  "task": {
-                    "executionRequirements": {
-                      "#bigint": "7"
-                    },
-                    "inputs": {
-                      "#bigint": "6"
-                    },
-                    "resultContract": {
-                      "#bigint": "8"
-                    },
-                    "workload": {
-                      "#bigint": "5"
-                    }
-                  }
-                }
-              ],
-              "key": {
-                "#bigint": "1"
-              }
-            }
-          ]
-        },
-        "task": {
-          "tag": "None",
-          "value": {
-            "#tup": []
-          }
-        }
-      },
-      "mc_chuggy::chuggy_domain::lastStep": {
-        "tag": "Decided",
-        "value": {
-          "event": {
-            "tag": "TicketCreated",
-            "value": {
-              "content": {
-                "#bigint": "61"
-              },
-              "dependencies": {
-                "#set": []
-              },
-              "evaluationPlan": {
-                "stages": [
-                  {
-                    "evaluators": [
-                      {
-                        "key": {
-                          "#bigint": "1"
-                        },
-                        "task": {
-                          "executionRequirements": {
-                            "#bigint": "3"
-                          },
-                          "inputs": {
-                            "#bigint": "2"
-                          },
-                          "resultContract": {
-                            "#bigint": "4"
-                          },
-                          "workload": {
-                            "#bigint": "1"
-                          }
-                        }
-                      },
-                      {
-                        "key": {
-                          "#bigint": "2"
-                        },
-                        "task": {
-                          "executionRequirements": {
-                            "#bigint": "7"
-                          },
-                          "inputs": {
-                            "#bigint": "6"
-                          },
-                          "resultContract": {
-                            "#bigint": "8"
-                          },
-                          "workload": {
-                            "#bigint": "5"
-                          }
-                        }
-                      }
-                    ],
-                    "key": {
-                      "#bigint": "1"
-                    }
-                  }
-                ]
-              },
-              "finalizationConfiguration": {
-                "#bigint": "66"
-              },
-              "id": {
-                "#bigint": "3"
-              },
-              "workConfiguration": {
-                "executionRequirements": {
-                  "#bigint": "64"
-                },
-                "inputs": {
-                  "#bigint": "63"
-                },
-                "resultContract": {
-                  "#bigint": "65"
-                },
-                "workload": {
-                  "#bigint": "62"
-                }
-              }
-            }
-          },
-          "obligations": []
-        }
-      },
-      "mc_chuggy::chuggy_domain::ledgers": {
-        "#map": [
-          [
-            {
-              "#bigint": "3"
-            },
-            {
-              "closedEvaluations": [],
-              "completions": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
-              }
-            }
-          ]
-        ]
-      },
-      "mc_chuggy::chuggy_domain::prevLedgers": {
-        "#map": []
-      },
-      "mc_chuggy::chuggy_domain::prevTickets": {
-        "#map": []
-      },
-      "mc_chuggy::chuggy_domain::tickets": {
-        "#map": [
-          [
-            {
-              "#bigint": "3"
-            },
-            {
-              "definition": {
-                "content": {
-                  "#bigint": "61"
-                },
-                "dependencies": {
-                  "#set": []
-                },
-                "evaluationPlan": {
-                  "stages": [
-                    {
-                      "evaluators": [
-                        {
-                          "key": {
-                            "#bigint": "1"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "3"
-                            },
-                            "inputs": {
-                              "#bigint": "2"
-                            },
-                            "resultContract": {
-                              "#bigint": "4"
-                            },
-                            "workload": {
-                              "#bigint": "1"
-                            }
-                          }
-                        },
-                        {
-                          "key": {
-                            "#bigint": "2"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "7"
-                            },
-                            "inputs": {
-                              "#bigint": "6"
-                            },
-                            "resultContract": {
-                              "#bigint": "8"
-                            },
-                            "workload": {
-                              "#bigint": "5"
-                            }
-                          }
-                        }
-                      ],
-                      "key": {
-                        "#bigint": "1"
-                      }
-                    }
-                  ]
-                },
-                "finalizationConfiguration": {
-                  "#bigint": "66"
-                },
-                "id": {
-                  "#bigint": "3"
-                },
-                "workConfiguration": {
-                  "executionRequirements": {
-                    "#bigint": "64"
-                  },
-                  "inputs": {
-                    "#bigint": "63"
-                  },
-                  "resultContract": {
-                    "#bigint": "65"
-                  },
-                  "workload": {
-                    "#bigint": "62"
-                  }
-                }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "state": {
-                "tag": "Pending",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "workCyclesStarted": {
-                "#bigint": "0"
-              }
-            }
-          ]
-        ]
       }
     },
     {
@@ -525,7 +415,7 @@
         "j": {
           "tag": "Some",
           "value": {
-            "#bigint": "1"
+            "#bigint": "4"
           }
         },
         "onFailure": {
@@ -642,7 +532,7 @@
             "tag": "TicketCreated",
             "value": {
               "content": {
-                "#bigint": "21"
+                "#bigint": "81"
               },
               "dependencies": {
                 "#set": []
@@ -723,23 +613,23 @@
                 ]
               },
               "finalizationConfiguration": {
-                "#bigint": "26"
+                "#bigint": "86"
               },
               "id": {
-                "#bigint": "1"
+                "#bigint": "4"
               },
               "workConfiguration": {
                 "executionRequirements": {
-                  "#bigint": "24"
+                  "#bigint": "84"
                 },
                 "inputs": {
-                  "#bigint": "23"
+                  "#bigint": "83"
                 },
                 "resultContract": {
-                  "#bigint": "25"
+                  "#bigint": "85"
                 },
                 "workload": {
-                  "#bigint": "22"
+                  "#bigint": "82"
                 }
               }
             }
@@ -751,21 +641,7 @@
         "#map": [
           [
             {
-              "#bigint": "1"
-            },
-            {
-              "closedEvaluations": [],
-              "completions": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
-              }
-            }
-          ],
-          [
-            {
-              "#bigint": "3"
+              "#bigint": "4"
             },
             {
               "closedEvaluations": [],
@@ -780,133 +656,21 @@
         ]
       },
       "mc_chuggy::chuggy_domain::prevLedgers": {
-        "#map": [
-          [
-            {
-              "#bigint": "3"
-            },
-            {
-              "closedEvaluations": [],
-              "completions": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
-              }
-            }
-          ]
-        ]
+        "#map": []
       },
       "mc_chuggy::chuggy_domain::prevTickets": {
-        "#map": [
-          [
-            {
-              "#bigint": "3"
-            },
-            {
-              "definition": {
-                "content": {
-                  "#bigint": "61"
-                },
-                "dependencies": {
-                  "#set": []
-                },
-                "evaluationPlan": {
-                  "stages": [
-                    {
-                      "evaluators": [
-                        {
-                          "key": {
-                            "#bigint": "1"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "3"
-                            },
-                            "inputs": {
-                              "#bigint": "2"
-                            },
-                            "resultContract": {
-                              "#bigint": "4"
-                            },
-                            "workload": {
-                              "#bigint": "1"
-                            }
-                          }
-                        },
-                        {
-                          "key": {
-                            "#bigint": "2"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "7"
-                            },
-                            "inputs": {
-                              "#bigint": "6"
-                            },
-                            "resultContract": {
-                              "#bigint": "8"
-                            },
-                            "workload": {
-                              "#bigint": "5"
-                            }
-                          }
-                        }
-                      ],
-                      "key": {
-                        "#bigint": "1"
-                      }
-                    }
-                  ]
-                },
-                "finalizationConfiguration": {
-                  "#bigint": "66"
-                },
-                "id": {
-                  "#bigint": "3"
-                },
-                "workConfiguration": {
-                  "executionRequirements": {
-                    "#bigint": "64"
-                  },
-                  "inputs": {
-                    "#bigint": "63"
-                  },
-                  "resultContract": {
-                    "#bigint": "65"
-                  },
-                  "workload": {
-                    "#bigint": "62"
-                  }
-                }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "state": {
-                "tag": "Pending",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "workCyclesStarted": {
-                "#bigint": "0"
-              }
-            }
-          ]
-        ]
+        "#map": []
       },
       "mc_chuggy::chuggy_domain::tickets": {
         "#map": [
           [
             {
-              "#bigint": "1"
+              "#bigint": "4"
             },
             {
               "definition": {
                 "content": {
-                  "#bigint": "21"
+                  "#bigint": "81"
                 },
                 "dependencies": {
                   "#set": []
@@ -987,119 +751,23 @@
                   ]
                 },
                 "finalizationConfiguration": {
-                  "#bigint": "26"
+                  "#bigint": "86"
                 },
                 "id": {
-                  "#bigint": "1"
+                  "#bigint": "4"
                 },
                 "workConfiguration": {
                   "executionRequirements": {
-                    "#bigint": "24"
+                    "#bigint": "84"
                   },
                   "inputs": {
-                    "#bigint": "23"
+                    "#bigint": "83"
                   },
                   "resultContract": {
-                    "#bigint": "25"
+                    "#bigint": "85"
                   },
                   "workload": {
-                    "#bigint": "22"
-                  }
-                }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "state": {
-                "tag": "Pending",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "workCyclesStarted": {
-                "#bigint": "0"
-              }
-            }
-          ],
-          [
-            {
-              "#bigint": "3"
-            },
-            {
-              "definition": {
-                "content": {
-                  "#bigint": "61"
-                },
-                "dependencies": {
-                  "#set": []
-                },
-                "evaluationPlan": {
-                  "stages": [
-                    {
-                      "evaluators": [
-                        {
-                          "key": {
-                            "#bigint": "1"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "3"
-                            },
-                            "inputs": {
-                              "#bigint": "2"
-                            },
-                            "resultContract": {
-                              "#bigint": "4"
-                            },
-                            "workload": {
-                              "#bigint": "1"
-                            }
-                          }
-                        },
-                        {
-                          "key": {
-                            "#bigint": "2"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "7"
-                            },
-                            "inputs": {
-                              "#bigint": "6"
-                            },
-                            "resultContract": {
-                              "#bigint": "8"
-                            },
-                            "workload": {
-                              "#bigint": "5"
-                            }
-                          }
-                        }
-                      ],
-                      "key": {
-                        "#bigint": "1"
-                      }
-                    }
-                  ]
-                },
-                "finalizationConfiguration": {
-                  "#bigint": "66"
-                },
-                "id": {
-                  "#bigint": "3"
-                },
-                "workConfiguration": {
-                  "executionRequirements": {
-                    "#bigint": "64"
-                  },
-                  "inputs": {
-                    "#bigint": "63"
-                  },
-                  "resultContract": {
-                    "#bigint": "65"
-                  },
-                  "workload": {
-                    "#bigint": "62"
+                    "#bigint": "82"
                   }
                 }
               },
@@ -1135,11 +803,7 @@
         "dependencies_": {
           "tag": "Some",
           "value": {
-            "#set": [
-              {
-                "#bigint": "1"
-              }
-            ]
+            "#set": []
           }
         },
         "j": {
@@ -1179,25 +843,6 @@
               "evaluators": [
                 {
                   "key": {
-                    "#bigint": "1"
-                  },
-                  "task": {
-                    "executionRequirements": {
-                      "#bigint": "3"
-                    },
-                    "inputs": {
-                      "#bigint": "2"
-                    },
-                    "resultContract": {
-                      "#bigint": "4"
-                    },
-                    "workload": {
-                      "#bigint": "1"
-                    }
-                  }
-                },
-                {
-                  "key": {
                     "#bigint": "2"
                   },
                   "task": {
@@ -1240,25 +885,6 @@
                       "#bigint": "1"
                     }
                   }
-                },
-                {
-                  "key": {
-                    "#bigint": "2"
-                  },
-                  "task": {
-                    "executionRequirements": {
-                      "#bigint": "7"
-                    },
-                    "inputs": {
-                      "#bigint": "6"
-                    },
-                    "resultContract": {
-                      "#bigint": "8"
-                    },
-                    "workload": {
-                      "#bigint": "5"
-                    }
-                  }
                 }
               ],
               "key": {
@@ -1284,35 +910,12 @@
                 "#bigint": "41"
               },
               "dependencies": {
-                "#set": [
-                  {
-                    "#bigint": "1"
-                  }
-                ]
+                "#set": []
               },
               "evaluationPlan": {
                 "stages": [
                   {
                     "evaluators": [
-                      {
-                        "key": {
-                          "#bigint": "1"
-                        },
-                        "task": {
-                          "executionRequirements": {
-                            "#bigint": "3"
-                          },
-                          "inputs": {
-                            "#bigint": "2"
-                          },
-                          "resultContract": {
-                            "#bigint": "4"
-                          },
-                          "workload": {
-                            "#bigint": "1"
-                          }
-                        }
-                      },
                       {
                         "key": {
                           "#bigint": "2"
@@ -1355,25 +958,6 @@
                           },
                           "workload": {
                             "#bigint": "1"
-                          }
-                        }
-                      },
-                      {
-                        "key": {
-                          "#bigint": "2"
-                        },
-                        "task": {
-                          "executionRequirements": {
-                            "#bigint": "7"
-                          },
-                          "inputs": {
-                            "#bigint": "6"
-                          },
-                          "resultContract": {
-                            "#bigint": "8"
-                          },
-                          "workload": {
-                            "#bigint": "5"
                           }
                         }
                       }
@@ -1413,20 +997,6 @@
         "#map": [
           [
             {
-              "#bigint": "1"
-            },
-            {
-              "closedEvaluations": [],
-              "completions": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
-              }
-            }
-          ],
-          [
-            {
               "#bigint": "2"
             },
             {
@@ -1441,7 +1011,7 @@
           ],
           [
             {
-              "#bigint": "3"
+              "#bigint": "4"
             },
             {
               "closedEvaluations": [],
@@ -1459,21 +1029,7 @@
         "#map": [
           [
             {
-              "#bigint": "1"
-            },
-            {
-              "closedEvaluations": [],
-              "completions": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
-              }
-            }
-          ],
-          [
-            {
-              "#bigint": "3"
+              "#bigint": "4"
             },
             {
               "closedEvaluations": [],
@@ -1491,12 +1047,12 @@
         "#map": [
           [
             {
-              "#bigint": "1"
+              "#bigint": "4"
             },
             {
               "definition": {
                 "content": {
-                  "#bigint": "21"
+                  "#bigint": "81"
                 },
                 "dependencies": {
                   "#set": []
@@ -1577,119 +1133,23 @@
                   ]
                 },
                 "finalizationConfiguration": {
-                  "#bigint": "26"
+                  "#bigint": "86"
                 },
                 "id": {
-                  "#bigint": "1"
+                  "#bigint": "4"
                 },
                 "workConfiguration": {
                   "executionRequirements": {
-                    "#bigint": "24"
+                    "#bigint": "84"
                   },
                   "inputs": {
-                    "#bigint": "23"
+                    "#bigint": "83"
                   },
                   "resultContract": {
-                    "#bigint": "25"
+                    "#bigint": "85"
                   },
                   "workload": {
-                    "#bigint": "22"
-                  }
-                }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "state": {
-                "tag": "Pending",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "workCyclesStarted": {
-                "#bigint": "0"
-              }
-            }
-          ],
-          [
-            {
-              "#bigint": "3"
-            },
-            {
-              "definition": {
-                "content": {
-                  "#bigint": "61"
-                },
-                "dependencies": {
-                  "#set": []
-                },
-                "evaluationPlan": {
-                  "stages": [
-                    {
-                      "evaluators": [
-                        {
-                          "key": {
-                            "#bigint": "1"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "3"
-                            },
-                            "inputs": {
-                              "#bigint": "2"
-                            },
-                            "resultContract": {
-                              "#bigint": "4"
-                            },
-                            "workload": {
-                              "#bigint": "1"
-                            }
-                          }
-                        },
-                        {
-                          "key": {
-                            "#bigint": "2"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "7"
-                            },
-                            "inputs": {
-                              "#bigint": "6"
-                            },
-                            "resultContract": {
-                              "#bigint": "8"
-                            },
-                            "workload": {
-                              "#bigint": "5"
-                            }
-                          }
-                        }
-                      ],
-                      "key": {
-                        "#bigint": "1"
-                      }
-                    }
-                  ]
-                },
-                "finalizationConfiguration": {
-                  "#bigint": "66"
-                },
-                "id": {
-                  "#bigint": "3"
-                },
-                "workConfiguration": {
-                  "executionRequirements": {
-                    "#bigint": "64"
-                  },
-                  "inputs": {
-                    "#bigint": "63"
-                  },
-                  "resultContract": {
-                    "#bigint": "65"
-                  },
-                  "workload": {
-                    "#bigint": "62"
+                    "#bigint": "82"
                   }
                 }
               },
@@ -1713,12 +1173,12 @@
         "#map": [
           [
             {
-              "#bigint": "1"
+              "#bigint": "2"
             },
             {
               "definition": {
                 "content": {
-                  "#bigint": "21"
+                  "#bigint": "41"
                 },
                 "dependencies": {
                   "#set": []
@@ -1729,25 +1189,6 @@
                       "evaluators": [
                         {
                           "key": {
-                            "#bigint": "1"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "3"
-                            },
-                            "inputs": {
-                              "#bigint": "2"
-                            },
-                            "resultContract": {
-                              "#bigint": "4"
-                            },
-                            "workload": {
-                              "#bigint": "1"
-                            }
-                          }
-                        },
-                        {
-                          "key": {
                             "#bigint": "2"
                           },
                           "task": {
@@ -1788,151 +1229,6 @@
                             },
                             "workload": {
                               "#bigint": "1"
-                            }
-                          }
-                        }
-                      ],
-                      "key": {
-                        "#bigint": "2"
-                      }
-                    }
-                  ]
-                },
-                "finalizationConfiguration": {
-                  "#bigint": "26"
-                },
-                "id": {
-                  "#bigint": "1"
-                },
-                "workConfiguration": {
-                  "executionRequirements": {
-                    "#bigint": "24"
-                  },
-                  "inputs": {
-                    "#bigint": "23"
-                  },
-                  "resultContract": {
-                    "#bigint": "25"
-                  },
-                  "workload": {
-                    "#bigint": "22"
-                  }
-                }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "state": {
-                "tag": "Pending",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "workCyclesStarted": {
-                "#bigint": "0"
-              }
-            }
-          ],
-          [
-            {
-              "#bigint": "2"
-            },
-            {
-              "definition": {
-                "content": {
-                  "#bigint": "41"
-                },
-                "dependencies": {
-                  "#set": [
-                    {
-                      "#bigint": "1"
-                    }
-                  ]
-                },
-                "evaluationPlan": {
-                  "stages": [
-                    {
-                      "evaluators": [
-                        {
-                          "key": {
-                            "#bigint": "1"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "3"
-                            },
-                            "inputs": {
-                              "#bigint": "2"
-                            },
-                            "resultContract": {
-                              "#bigint": "4"
-                            },
-                            "workload": {
-                              "#bigint": "1"
-                            }
-                          }
-                        },
-                        {
-                          "key": {
-                            "#bigint": "2"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "7"
-                            },
-                            "inputs": {
-                              "#bigint": "6"
-                            },
-                            "resultContract": {
-                              "#bigint": "8"
-                            },
-                            "workload": {
-                              "#bigint": "5"
-                            }
-                          }
-                        }
-                      ],
-                      "key": {
-                        "#bigint": "1"
-                      }
-                    },
-                    {
-                      "evaluators": [
-                        {
-                          "key": {
-                            "#bigint": "1"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "3"
-                            },
-                            "inputs": {
-                              "#bigint": "2"
-                            },
-                            "resultContract": {
-                              "#bigint": "4"
-                            },
-                            "workload": {
-                              "#bigint": "1"
-                            }
-                          }
-                        },
-                        {
-                          "key": {
-                            "#bigint": "2"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "7"
-                            },
-                            "inputs": {
-                              "#bigint": "6"
-                            },
-                            "resultContract": {
-                              "#bigint": "8"
-                            },
-                            "workload": {
-                              "#bigint": "5"
                             }
                           }
                         }
@@ -1980,12 +1276,12 @@
           ],
           [
             {
-              "#bigint": "3"
+              "#bigint": "4"
             },
             {
               "definition": {
                 "content": {
-                  "#bigint": "61"
+                  "#bigint": "81"
                 },
                 "dependencies": {
                   "#set": []
@@ -2036,27 +1332,53 @@
                       "key": {
                         "#bigint": "1"
                       }
+                    },
+                    {
+                      "evaluators": [
+                        {
+                          "key": {
+                            "#bigint": "1"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "3"
+                            },
+                            "inputs": {
+                              "#bigint": "2"
+                            },
+                            "resultContract": {
+                              "#bigint": "4"
+                            },
+                            "workload": {
+                              "#bigint": "1"
+                            }
+                          }
+                        }
+                      ],
+                      "key": {
+                        "#bigint": "2"
+                      }
                     }
                   ]
                 },
                 "finalizationConfiguration": {
-                  "#bigint": "66"
+                  "#bigint": "86"
                 },
                 "id": {
-                  "#bigint": "3"
+                  "#bigint": "4"
                 },
                 "workConfiguration": {
                   "executionRequirements": {
-                    "#bigint": "64"
+                    "#bigint": "84"
                   },
                   "inputs": {
-                    "#bigint": "63"
+                    "#bigint": "83"
                   },
                   "resultContract": {
-                    "#bigint": "65"
+                    "#bigint": "85"
                   },
                   "workload": {
-                    "#bigint": "62"
+                    "#bigint": "82"
                   }
                 }
               },
@@ -2092,12 +1414,648 @@
         "dependencies_": {
           "tag": "Some",
           "value": {
+            "#set": []
+          }
+        },
+        "j": {
+          "tag": "Some",
+          "value": {
+            "#bigint": "4"
+          }
+        },
+        "onFailure": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "report": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "source": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "stages": {
+          "tag": "Some",
+          "value": [
+            {
+              "evaluators": [
+                {
+                  "key": {
+                    "#bigint": "2"
+                  },
+                  "task": {
+                    "executionRequirements": {
+                      "#bigint": "7"
+                    },
+                    "inputs": {
+                      "#bigint": "6"
+                    },
+                    "resultContract": {
+                      "#bigint": "8"
+                    },
+                    "workload": {
+                      "#bigint": "5"
+                    }
+                  }
+                }
+              ],
+              "key": {
+                "#bigint": "1"
+              }
+            }
+          ]
+        },
+        "task": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        }
+      },
+      "mc_chuggy::chuggy_domain::lastStep": {
+        "tag": "Decided",
+        "value": {
+          "event": {
+            "tag": "TicketUpdated",
+            "value": {
+              "definition": {
+                "content": {
+                  "#bigint": "1081"
+                },
+                "dependencies": {
+                  "#set": []
+                },
+                "evaluationPlan": {
+                  "stages": [
+                    {
+                      "evaluators": [
+                        {
+                          "key": {
+                            "#bigint": "2"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "7"
+                            },
+                            "inputs": {
+                              "#bigint": "6"
+                            },
+                            "resultContract": {
+                              "#bigint": "8"
+                            },
+                            "workload": {
+                              "#bigint": "5"
+                            }
+                          }
+                        }
+                      ],
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ]
+                },
+                "finalizationConfiguration": {
+                  "#bigint": "1086"
+                },
+                "id": {
+                  "#bigint": "4"
+                },
+                "workConfiguration": {
+                  "executionRequirements": {
+                    "#bigint": "1084"
+                  },
+                  "inputs": {
+                    "#bigint": "1083"
+                  },
+                  "resultContract": {
+                    "#bigint": "1085"
+                  },
+                  "workload": {
+                    "#bigint": "1082"
+                  }
+                }
+              },
+              "revision": {
+                "#bigint": "2"
+              },
+              "ticket": {
+                "#bigint": "4"
+              }
+            }
+          },
+          "obligations": []
+        }
+      },
+      "mc_chuggy::chuggy_domain::ledgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "2"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "4"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "mc_chuggy::chuggy_domain::prevLedgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "2"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "4"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "mc_chuggy::chuggy_domain::prevTickets": {
+        "#map": [
+          [
+            {
+              "#bigint": "2"
+            },
+            {
+              "definition": {
+                "content": {
+                  "#bigint": "41"
+                },
+                "dependencies": {
+                  "#set": []
+                },
+                "evaluationPlan": {
+                  "stages": [
+                    {
+                      "evaluators": [
+                        {
+                          "key": {
+                            "#bigint": "2"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "7"
+                            },
+                            "inputs": {
+                              "#bigint": "6"
+                            },
+                            "resultContract": {
+                              "#bigint": "8"
+                            },
+                            "workload": {
+                              "#bigint": "5"
+                            }
+                          }
+                        }
+                      ],
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "evaluators": [
+                        {
+                          "key": {
+                            "#bigint": "1"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "3"
+                            },
+                            "inputs": {
+                              "#bigint": "2"
+                            },
+                            "resultContract": {
+                              "#bigint": "4"
+                            },
+                            "workload": {
+                              "#bigint": "1"
+                            }
+                          }
+                        }
+                      ],
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ]
+                },
+                "finalizationConfiguration": {
+                  "#bigint": "46"
+                },
+                "id": {
+                  "#bigint": "2"
+                },
+                "workConfiguration": {
+                  "executionRequirements": {
+                    "#bigint": "44"
+                  },
+                  "inputs": {
+                    "#bigint": "43"
+                  },
+                  "resultContract": {
+                    "#bigint": "45"
+                  },
+                  "workload": {
+                    "#bigint": "42"
+                  }
+                }
+              },
+              "revision": {
+                "#bigint": "1"
+              },
+              "state": {
+                "tag": "Pending",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "workCyclesStarted": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "4"
+            },
+            {
+              "definition": {
+                "content": {
+                  "#bigint": "81"
+                },
+                "dependencies": {
+                  "#set": []
+                },
+                "evaluationPlan": {
+                  "stages": [
+                    {
+                      "evaluators": [
+                        {
+                          "key": {
+                            "#bigint": "1"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "3"
+                            },
+                            "inputs": {
+                              "#bigint": "2"
+                            },
+                            "resultContract": {
+                              "#bigint": "4"
+                            },
+                            "workload": {
+                              "#bigint": "1"
+                            }
+                          }
+                        },
+                        {
+                          "key": {
+                            "#bigint": "2"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "7"
+                            },
+                            "inputs": {
+                              "#bigint": "6"
+                            },
+                            "resultContract": {
+                              "#bigint": "8"
+                            },
+                            "workload": {
+                              "#bigint": "5"
+                            }
+                          }
+                        }
+                      ],
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "evaluators": [
+                        {
+                          "key": {
+                            "#bigint": "1"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "3"
+                            },
+                            "inputs": {
+                              "#bigint": "2"
+                            },
+                            "resultContract": {
+                              "#bigint": "4"
+                            },
+                            "workload": {
+                              "#bigint": "1"
+                            }
+                          }
+                        }
+                      ],
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ]
+                },
+                "finalizationConfiguration": {
+                  "#bigint": "86"
+                },
+                "id": {
+                  "#bigint": "4"
+                },
+                "workConfiguration": {
+                  "executionRequirements": {
+                    "#bigint": "84"
+                  },
+                  "inputs": {
+                    "#bigint": "83"
+                  },
+                  "resultContract": {
+                    "#bigint": "85"
+                  },
+                  "workload": {
+                    "#bigint": "82"
+                  }
+                }
+              },
+              "revision": {
+                "#bigint": "1"
+              },
+              "state": {
+                "tag": "Pending",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "workCyclesStarted": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "mc_chuggy::chuggy_domain::tickets": {
+        "#map": [
+          [
+            {
+              "#bigint": "2"
+            },
+            {
+              "definition": {
+                "content": {
+                  "#bigint": "41"
+                },
+                "dependencies": {
+                  "#set": []
+                },
+                "evaluationPlan": {
+                  "stages": [
+                    {
+                      "evaluators": [
+                        {
+                          "key": {
+                            "#bigint": "2"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "7"
+                            },
+                            "inputs": {
+                              "#bigint": "6"
+                            },
+                            "resultContract": {
+                              "#bigint": "8"
+                            },
+                            "workload": {
+                              "#bigint": "5"
+                            }
+                          }
+                        }
+                      ],
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "evaluators": [
+                        {
+                          "key": {
+                            "#bigint": "1"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "3"
+                            },
+                            "inputs": {
+                              "#bigint": "2"
+                            },
+                            "resultContract": {
+                              "#bigint": "4"
+                            },
+                            "workload": {
+                              "#bigint": "1"
+                            }
+                          }
+                        }
+                      ],
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ]
+                },
+                "finalizationConfiguration": {
+                  "#bigint": "46"
+                },
+                "id": {
+                  "#bigint": "2"
+                },
+                "workConfiguration": {
+                  "executionRequirements": {
+                    "#bigint": "44"
+                  },
+                  "inputs": {
+                    "#bigint": "43"
+                  },
+                  "resultContract": {
+                    "#bigint": "45"
+                  },
+                  "workload": {
+                    "#bigint": "42"
+                  }
+                }
+              },
+              "revision": {
+                "#bigint": "1"
+              },
+              "state": {
+                "tag": "Pending",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "workCyclesStarted": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "4"
+            },
+            {
+              "definition": {
+                "content": {
+                  "#bigint": "1081"
+                },
+                "dependencies": {
+                  "#set": []
+                },
+                "evaluationPlan": {
+                  "stages": [
+                    {
+                      "evaluators": [
+                        {
+                          "key": {
+                            "#bigint": "2"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "7"
+                            },
+                            "inputs": {
+                              "#bigint": "6"
+                            },
+                            "resultContract": {
+                              "#bigint": "8"
+                            },
+                            "workload": {
+                              "#bigint": "5"
+                            }
+                          }
+                        }
+                      ],
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ]
+                },
+                "finalizationConfiguration": {
+                  "#bigint": "1086"
+                },
+                "id": {
+                  "#bigint": "4"
+                },
+                "workConfiguration": {
+                  "executionRequirements": {
+                    "#bigint": "1084"
+                  },
+                  "inputs": {
+                    "#bigint": "1083"
+                  },
+                  "resultContract": {
+                    "#bigint": "1085"
+                  },
+                  "workload": {
+                    "#bigint": "1082"
+                  }
+                }
+              },
+              "revision": {
+                "#bigint": "2"
+              },
+              "state": {
+                "tag": "Pending",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "workCyclesStarted": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 6
+      },
+      "mbt::actionTaken": "releaseTicket",
+      "mbt::nondetPicks": {
+        "command": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "dependencies_": {
+          "tag": "Some",
+          "value": {
             "#set": [
               {
                 "#bigint": "2"
-              },
-              {
-                "#bigint": "3"
               }
             ]
           }
@@ -2105,7 +2063,7 @@
         "j": {
           "tag": "Some",
           "value": {
-            "#bigint": "1"
+            "#bigint": "5"
           }
         },
         "onFailure": {
@@ -2163,25 +2121,6 @@
             },
             {
               "evaluators": [
-                {
-                  "key": {
-                    "#bigint": "1"
-                  },
-                  "task": {
-                    "executionRequirements": {
-                      "#bigint": "3"
-                    },
-                    "inputs": {
-                      "#bigint": "2"
-                    },
-                    "resultContract": {
-                      "#bigint": "4"
-                    },
-                    "workload": {
-                      "#bigint": "1"
-                    }
-                  }
-                },
                 {
                   "key": {
                     "#bigint": "2"
@@ -2216,39 +2155,104 @@
         }
       },
       "mc_chuggy::chuggy_domain::lastStep": {
-        "tag": "Refused",
+        "tag": "Decided",
         "value": {
-          "tag": "DependencyCycle",
-          "value": {
-            "dependencies": {
-              "#set": [
-                {
-                  "#bigint": "2"
+          "event": {
+            "tag": "TicketCreated",
+            "value": {
+              "content": {
+                "#bigint": "101"
+              },
+              "dependencies": {
+                "#set": [
+                  {
+                    "#bigint": "2"
+                  }
+                ]
+              },
+              "evaluationPlan": {
+                "stages": [
+                  {
+                    "evaluators": [
+                      {
+                        "key": {
+                          "#bigint": "2"
+                        },
+                        "task": {
+                          "executionRequirements": {
+                            "#bigint": "7"
+                          },
+                          "inputs": {
+                            "#bigint": "6"
+                          },
+                          "resultContract": {
+                            "#bigint": "8"
+                          },
+                          "workload": {
+                            "#bigint": "5"
+                          }
+                        }
+                      }
+                    ],
+                    "key": {
+                      "#bigint": "1"
+                    }
+                  },
+                  {
+                    "evaluators": [
+                      {
+                        "key": {
+                          "#bigint": "2"
+                        },
+                        "task": {
+                          "executionRequirements": {
+                            "#bigint": "7"
+                          },
+                          "inputs": {
+                            "#bigint": "6"
+                          },
+                          "resultContract": {
+                            "#bigint": "8"
+                          },
+                          "workload": {
+                            "#bigint": "5"
+                          }
+                        }
+                      }
+                    ],
+                    "key": {
+                      "#bigint": "2"
+                    }
+                  }
+                ]
+              },
+              "finalizationConfiguration": {
+                "#bigint": "106"
+              },
+              "id": {
+                "#bigint": "5"
+              },
+              "workConfiguration": {
+                "executionRequirements": {
+                  "#bigint": "104"
+                },
+                "inputs": {
+                  "#bigint": "103"
+                },
+                "resultContract": {
+                  "#bigint": "105"
+                },
+                "workload": {
+                  "#bigint": "102"
                 }
-              ]
-            },
-            "ticket": {
-              "#bigint": "1"
+              }
             }
-          }
+          },
+          "obligations": []
         }
       },
       "mc_chuggy::chuggy_domain::ledgers": {
         "#map": [
-          [
-            {
-              "#bigint": "1"
-            },
-            {
-              "closedEvaluations": [],
-              "completions": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
-              }
-            }
-          ],
           [
             {
               "#bigint": "2"
@@ -2265,7 +2269,21 @@
           ],
           [
             {
-              "#bigint": "3"
+              "#bigint": "4"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "5"
             },
             {
               "closedEvaluations": [],
@@ -2283,20 +2301,6 @@
         "#map": [
           [
             {
-              "#bigint": "1"
-            },
-            {
-              "closedEvaluations": [],
-              "completions": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
-              }
-            }
-          ],
-          [
-            {
               "#bigint": "2"
             },
             {
@@ -2311,7 +2315,7 @@
           ],
           [
             {
-              "#bigint": "3"
+              "#bigint": "4"
             },
             {
               "closedEvaluations": [],
@@ -2329,12 +2333,12 @@
         "#map": [
           [
             {
-              "#bigint": "1"
+              "#bigint": "2"
             },
             {
               "definition": {
                 "content": {
-                  "#bigint": "21"
+                  "#bigint": "41"
                 },
                 "dependencies": {
                   "#set": []
@@ -2345,25 +2349,6 @@
                       "evaluators": [
                         {
                           "key": {
-                            "#bigint": "1"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "3"
-                            },
-                            "inputs": {
-                              "#bigint": "2"
-                            },
-                            "resultContract": {
-                              "#bigint": "4"
-                            },
-                            "workload": {
-                              "#bigint": "1"
-                            }
-                          }
-                        },
-                        {
-                          "key": {
                             "#bigint": "2"
                           },
                           "task": {
@@ -2404,151 +2389,6 @@
                             },
                             "workload": {
                               "#bigint": "1"
-                            }
-                          }
-                        }
-                      ],
-                      "key": {
-                        "#bigint": "2"
-                      }
-                    }
-                  ]
-                },
-                "finalizationConfiguration": {
-                  "#bigint": "26"
-                },
-                "id": {
-                  "#bigint": "1"
-                },
-                "workConfiguration": {
-                  "executionRequirements": {
-                    "#bigint": "24"
-                  },
-                  "inputs": {
-                    "#bigint": "23"
-                  },
-                  "resultContract": {
-                    "#bigint": "25"
-                  },
-                  "workload": {
-                    "#bigint": "22"
-                  }
-                }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "state": {
-                "tag": "Pending",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "workCyclesStarted": {
-                "#bigint": "0"
-              }
-            }
-          ],
-          [
-            {
-              "#bigint": "2"
-            },
-            {
-              "definition": {
-                "content": {
-                  "#bigint": "41"
-                },
-                "dependencies": {
-                  "#set": [
-                    {
-                      "#bigint": "1"
-                    }
-                  ]
-                },
-                "evaluationPlan": {
-                  "stages": [
-                    {
-                      "evaluators": [
-                        {
-                          "key": {
-                            "#bigint": "1"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "3"
-                            },
-                            "inputs": {
-                              "#bigint": "2"
-                            },
-                            "resultContract": {
-                              "#bigint": "4"
-                            },
-                            "workload": {
-                              "#bigint": "1"
-                            }
-                          }
-                        },
-                        {
-                          "key": {
-                            "#bigint": "2"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "7"
-                            },
-                            "inputs": {
-                              "#bigint": "6"
-                            },
-                            "resultContract": {
-                              "#bigint": "8"
-                            },
-                            "workload": {
-                              "#bigint": "5"
-                            }
-                          }
-                        }
-                      ],
-                      "key": {
-                        "#bigint": "1"
-                      }
-                    },
-                    {
-                      "evaluators": [
-                        {
-                          "key": {
-                            "#bigint": "1"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "3"
-                            },
-                            "inputs": {
-                              "#bigint": "2"
-                            },
-                            "resultContract": {
-                              "#bigint": "4"
-                            },
-                            "workload": {
-                              "#bigint": "1"
-                            }
-                          }
-                        },
-                        {
-                          "key": {
-                            "#bigint": "2"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "7"
-                            },
-                            "inputs": {
-                              "#bigint": "6"
-                            },
-                            "resultContract": {
-                              "#bigint": "8"
-                            },
-                            "workload": {
-                              "#bigint": "5"
                             }
                           }
                         }
@@ -2596,12 +2436,12 @@
           ],
           [
             {
-              "#bigint": "3"
+              "#bigint": "4"
             },
             {
               "definition": {
                 "content": {
-                  "#bigint": "61"
+                  "#bigint": "1081"
                 },
                 "dependencies": {
                   "#set": []
@@ -2610,25 +2450,6 @@
                   "stages": [
                     {
                       "evaluators": [
-                        {
-                          "key": {
-                            "#bigint": "1"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "3"
-                            },
-                            "inputs": {
-                              "#bigint": "2"
-                            },
-                            "resultContract": {
-                              "#bigint": "4"
-                            },
-                            "workload": {
-                              "#bigint": "1"
-                            }
-                          }
-                        },
                         {
                           "key": {
                             "#bigint": "2"
@@ -2656,23 +2477,793 @@
                   ]
                 },
                 "finalizationConfiguration": {
-                  "#bigint": "66"
+                  "#bigint": "1086"
                 },
                 "id": {
-                  "#bigint": "3"
+                  "#bigint": "4"
                 },
                 "workConfiguration": {
                   "executionRequirements": {
-                    "#bigint": "64"
+                    "#bigint": "1084"
                   },
                   "inputs": {
-                    "#bigint": "63"
+                    "#bigint": "1083"
                   },
                   "resultContract": {
-                    "#bigint": "65"
+                    "#bigint": "1085"
                   },
                   "workload": {
-                    "#bigint": "62"
+                    "#bigint": "1082"
+                  }
+                }
+              },
+              "revision": {
+                "#bigint": "2"
+              },
+              "state": {
+                "tag": "Pending",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "workCyclesStarted": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "mc_chuggy::chuggy_domain::tickets": {
+        "#map": [
+          [
+            {
+              "#bigint": "2"
+            },
+            {
+              "definition": {
+                "content": {
+                  "#bigint": "41"
+                },
+                "dependencies": {
+                  "#set": []
+                },
+                "evaluationPlan": {
+                  "stages": [
+                    {
+                      "evaluators": [
+                        {
+                          "key": {
+                            "#bigint": "2"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "7"
+                            },
+                            "inputs": {
+                              "#bigint": "6"
+                            },
+                            "resultContract": {
+                              "#bigint": "8"
+                            },
+                            "workload": {
+                              "#bigint": "5"
+                            }
+                          }
+                        }
+                      ],
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "evaluators": [
+                        {
+                          "key": {
+                            "#bigint": "1"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "3"
+                            },
+                            "inputs": {
+                              "#bigint": "2"
+                            },
+                            "resultContract": {
+                              "#bigint": "4"
+                            },
+                            "workload": {
+                              "#bigint": "1"
+                            }
+                          }
+                        }
+                      ],
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ]
+                },
+                "finalizationConfiguration": {
+                  "#bigint": "46"
+                },
+                "id": {
+                  "#bigint": "2"
+                },
+                "workConfiguration": {
+                  "executionRequirements": {
+                    "#bigint": "44"
+                  },
+                  "inputs": {
+                    "#bigint": "43"
+                  },
+                  "resultContract": {
+                    "#bigint": "45"
+                  },
+                  "workload": {
+                    "#bigint": "42"
+                  }
+                }
+              },
+              "revision": {
+                "#bigint": "1"
+              },
+              "state": {
+                "tag": "Pending",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "workCyclesStarted": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "4"
+            },
+            {
+              "definition": {
+                "content": {
+                  "#bigint": "1081"
+                },
+                "dependencies": {
+                  "#set": []
+                },
+                "evaluationPlan": {
+                  "stages": [
+                    {
+                      "evaluators": [
+                        {
+                          "key": {
+                            "#bigint": "2"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "7"
+                            },
+                            "inputs": {
+                              "#bigint": "6"
+                            },
+                            "resultContract": {
+                              "#bigint": "8"
+                            },
+                            "workload": {
+                              "#bigint": "5"
+                            }
+                          }
+                        }
+                      ],
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ]
+                },
+                "finalizationConfiguration": {
+                  "#bigint": "1086"
+                },
+                "id": {
+                  "#bigint": "4"
+                },
+                "workConfiguration": {
+                  "executionRequirements": {
+                    "#bigint": "1084"
+                  },
+                  "inputs": {
+                    "#bigint": "1083"
+                  },
+                  "resultContract": {
+                    "#bigint": "1085"
+                  },
+                  "workload": {
+                    "#bigint": "1082"
+                  }
+                }
+              },
+              "revision": {
+                "#bigint": "2"
+              },
+              "state": {
+                "tag": "Pending",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "workCyclesStarted": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "5"
+            },
+            {
+              "definition": {
+                "content": {
+                  "#bigint": "101"
+                },
+                "dependencies": {
+                  "#set": [
+                    {
+                      "#bigint": "2"
+                    }
+                  ]
+                },
+                "evaluationPlan": {
+                  "stages": [
+                    {
+                      "evaluators": [
+                        {
+                          "key": {
+                            "#bigint": "2"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "7"
+                            },
+                            "inputs": {
+                              "#bigint": "6"
+                            },
+                            "resultContract": {
+                              "#bigint": "8"
+                            },
+                            "workload": {
+                              "#bigint": "5"
+                            }
+                          }
+                        }
+                      ],
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "evaluators": [
+                        {
+                          "key": {
+                            "#bigint": "2"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "7"
+                            },
+                            "inputs": {
+                              "#bigint": "6"
+                            },
+                            "resultContract": {
+                              "#bigint": "8"
+                            },
+                            "workload": {
+                              "#bigint": "5"
+                            }
+                          }
+                        }
+                      ],
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ]
+                },
+                "finalizationConfiguration": {
+                  "#bigint": "106"
+                },
+                "id": {
+                  "#bigint": "5"
+                },
+                "workConfiguration": {
+                  "executionRequirements": {
+                    "#bigint": "104"
+                  },
+                  "inputs": {
+                    "#bigint": "103"
+                  },
+                  "resultContract": {
+                    "#bigint": "105"
+                  },
+                  "workload": {
+                    "#bigint": "102"
+                  }
+                }
+              },
+              "revision": {
+                "#bigint": "1"
+              },
+              "state": {
+                "tag": "Pending",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "workCyclesStarted": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      }
+    },
+    {
+      "#meta": {
+        "index": 7
+      },
+      "mbt::actionTaken": "refuse",
+      "mbt::nondetPicks": {
+        "command": {
+          "tag": "Some",
+          "value": {
+            "tag": "ReportFinalizationResult",
+            "value": {
+              "generation": {
+                "#bigint": "1"
+              },
+              "result": {
+                "tag": "FinalizationSucceeded",
+                "value": {
+                  "#bigint": "15"
+                }
+              },
+              "ticket": {
+                "#bigint": "2"
+              },
+              "workCycle": {
+                "#bigint": "1"
+              }
+            }
+          }
+        },
+        "dependencies_": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "j": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "onFailure": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "report": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "result": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "source": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "stages": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        },
+        "task": {
+          "tag": "None",
+          "value": {
+            "#tup": []
+          }
+        }
+      },
+      "mc_chuggy::chuggy_domain::lastStep": {
+        "tag": "Refused",
+        "value": {
+          "tag": "FinalizationNotCurrent",
+          "value": {
+            "generation": {
+              "#bigint": "1"
+            },
+            "ticket": {
+              "#bigint": "2"
+            },
+            "workCycle": {
+              "#bigint": "1"
+            }
+          }
+        }
+      },
+      "mc_chuggy::chuggy_domain::ledgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "2"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "4"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "5"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "mc_chuggy::chuggy_domain::prevLedgers": {
+        "#map": [
+          [
+            {
+              "#bigint": "2"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "4"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "5"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ]
+        ]
+      },
+      "mc_chuggy::chuggy_domain::prevTickets": {
+        "#map": [
+          [
+            {
+              "#bigint": "2"
+            },
+            {
+              "definition": {
+                "content": {
+                  "#bigint": "41"
+                },
+                "dependencies": {
+                  "#set": []
+                },
+                "evaluationPlan": {
+                  "stages": [
+                    {
+                      "evaluators": [
+                        {
+                          "key": {
+                            "#bigint": "2"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "7"
+                            },
+                            "inputs": {
+                              "#bigint": "6"
+                            },
+                            "resultContract": {
+                              "#bigint": "8"
+                            },
+                            "workload": {
+                              "#bigint": "5"
+                            }
+                          }
+                        }
+                      ],
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "evaluators": [
+                        {
+                          "key": {
+                            "#bigint": "1"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "3"
+                            },
+                            "inputs": {
+                              "#bigint": "2"
+                            },
+                            "resultContract": {
+                              "#bigint": "4"
+                            },
+                            "workload": {
+                              "#bigint": "1"
+                            }
+                          }
+                        }
+                      ],
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ]
+                },
+                "finalizationConfiguration": {
+                  "#bigint": "46"
+                },
+                "id": {
+                  "#bigint": "2"
+                },
+                "workConfiguration": {
+                  "executionRequirements": {
+                    "#bigint": "44"
+                  },
+                  "inputs": {
+                    "#bigint": "43"
+                  },
+                  "resultContract": {
+                    "#bigint": "45"
+                  },
+                  "workload": {
+                    "#bigint": "42"
+                  }
+                }
+              },
+              "revision": {
+                "#bigint": "1"
+              },
+              "state": {
+                "tag": "Pending",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "workCyclesStarted": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "4"
+            },
+            {
+              "definition": {
+                "content": {
+                  "#bigint": "1081"
+                },
+                "dependencies": {
+                  "#set": []
+                },
+                "evaluationPlan": {
+                  "stages": [
+                    {
+                      "evaluators": [
+                        {
+                          "key": {
+                            "#bigint": "2"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "7"
+                            },
+                            "inputs": {
+                              "#bigint": "6"
+                            },
+                            "resultContract": {
+                              "#bigint": "8"
+                            },
+                            "workload": {
+                              "#bigint": "5"
+                            }
+                          }
+                        }
+                      ],
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    }
+                  ]
+                },
+                "finalizationConfiguration": {
+                  "#bigint": "1086"
+                },
+                "id": {
+                  "#bigint": "4"
+                },
+                "workConfiguration": {
+                  "executionRequirements": {
+                    "#bigint": "1084"
+                  },
+                  "inputs": {
+                    "#bigint": "1083"
+                  },
+                  "resultContract": {
+                    "#bigint": "1085"
+                  },
+                  "workload": {
+                    "#bigint": "1082"
+                  }
+                }
+              },
+              "revision": {
+                "#bigint": "2"
+              },
+              "state": {
+                "tag": "Pending",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "workCyclesStarted": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "5"
+            },
+            {
+              "definition": {
+                "content": {
+                  "#bigint": "101"
+                },
+                "dependencies": {
+                  "#set": [
+                    {
+                      "#bigint": "2"
+                    }
+                  ]
+                },
+                "evaluationPlan": {
+                  "stages": [
+                    {
+                      "evaluators": [
+                        {
+                          "key": {
+                            "#bigint": "2"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "7"
+                            },
+                            "inputs": {
+                              "#bigint": "6"
+                            },
+                            "resultContract": {
+                              "#bigint": "8"
+                            },
+                            "workload": {
+                              "#bigint": "5"
+                            }
+                          }
+                        }
+                      ],
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "evaluators": [
+                        {
+                          "key": {
+                            "#bigint": "2"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "7"
+                            },
+                            "inputs": {
+                              "#bigint": "6"
+                            },
+                            "resultContract": {
+                              "#bigint": "8"
+                            },
+                            "workload": {
+                              "#bigint": "5"
+                            }
+                          }
+                        }
+                      ],
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ]
+                },
+                "finalizationConfiguration": {
+                  "#bigint": "106"
+                },
+                "id": {
+                  "#bigint": "5"
+                },
+                "workConfiguration": {
+                  "executionRequirements": {
+                    "#bigint": "104"
+                  },
+                  "inputs": {
+                    "#bigint": "103"
+                  },
+                  "resultContract": {
+                    "#bigint": "105"
+                  },
+                  "workload": {
+                    "#bigint": "102"
                   }
                 }
               },
@@ -2696,12 +3287,12 @@
         "#map": [
           [
             {
-              "#bigint": "1"
+              "#bigint": "2"
             },
             {
               "definition": {
                 "content": {
-                  "#bigint": "21"
+                  "#bigint": "41"
                 },
                 "dependencies": {
                   "#set": []
@@ -2712,25 +3303,6 @@
                       "evaluators": [
                         {
                           "key": {
-                            "#bigint": "1"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "3"
-                            },
-                            "inputs": {
-                              "#bigint": "2"
-                            },
-                            "resultContract": {
-                              "#bigint": "4"
-                            },
-                            "workload": {
-                              "#bigint": "1"
-                            }
-                          }
-                        },
-                        {
-                          "key": {
                             "#bigint": "2"
                           },
                           "task": {
@@ -2771,151 +3343,6 @@
                             },
                             "workload": {
                               "#bigint": "1"
-                            }
-                          }
-                        }
-                      ],
-                      "key": {
-                        "#bigint": "2"
-                      }
-                    }
-                  ]
-                },
-                "finalizationConfiguration": {
-                  "#bigint": "26"
-                },
-                "id": {
-                  "#bigint": "1"
-                },
-                "workConfiguration": {
-                  "executionRequirements": {
-                    "#bigint": "24"
-                  },
-                  "inputs": {
-                    "#bigint": "23"
-                  },
-                  "resultContract": {
-                    "#bigint": "25"
-                  },
-                  "workload": {
-                    "#bigint": "22"
-                  }
-                }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "state": {
-                "tag": "Pending",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "workCyclesStarted": {
-                "#bigint": "0"
-              }
-            }
-          ],
-          [
-            {
-              "#bigint": "2"
-            },
-            {
-              "definition": {
-                "content": {
-                  "#bigint": "41"
-                },
-                "dependencies": {
-                  "#set": [
-                    {
-                      "#bigint": "1"
-                    }
-                  ]
-                },
-                "evaluationPlan": {
-                  "stages": [
-                    {
-                      "evaluators": [
-                        {
-                          "key": {
-                            "#bigint": "1"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "3"
-                            },
-                            "inputs": {
-                              "#bigint": "2"
-                            },
-                            "resultContract": {
-                              "#bigint": "4"
-                            },
-                            "workload": {
-                              "#bigint": "1"
-                            }
-                          }
-                        },
-                        {
-                          "key": {
-                            "#bigint": "2"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "7"
-                            },
-                            "inputs": {
-                              "#bigint": "6"
-                            },
-                            "resultContract": {
-                              "#bigint": "8"
-                            },
-                            "workload": {
-                              "#bigint": "5"
-                            }
-                          }
-                        }
-                      ],
-                      "key": {
-                        "#bigint": "1"
-                      }
-                    },
-                    {
-                      "evaluators": [
-                        {
-                          "key": {
-                            "#bigint": "1"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "3"
-                            },
-                            "inputs": {
-                              "#bigint": "2"
-                            },
-                            "resultContract": {
-                              "#bigint": "4"
-                            },
-                            "workload": {
-                              "#bigint": "1"
-                            }
-                          }
-                        },
-                        {
-                          "key": {
-                            "#bigint": "2"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "7"
-                            },
-                            "inputs": {
-                              "#bigint": "6"
-                            },
-                            "resultContract": {
-                              "#bigint": "8"
-                            },
-                            "workload": {
-                              "#bigint": "5"
                             }
                           }
                         }
@@ -2963,12 +3390,12 @@
           ],
           [
             {
-              "#bigint": "3"
+              "#bigint": "4"
             },
             {
               "definition": {
                 "content": {
-                  "#bigint": "61"
+                  "#bigint": "1081"
                 },
                 "dependencies": {
                   "#set": []
@@ -2977,25 +3404,6 @@
                   "stages": [
                     {
                       "evaluators": [
-                        {
-                          "key": {
-                            "#bigint": "1"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "3"
-                            },
-                            "inputs": {
-                              "#bigint": "2"
-                            },
-                            "resultContract": {
-                              "#bigint": "4"
-                            },
-                            "workload": {
-                              "#bigint": "1"
-                            }
-                          }
-                        },
                         {
                           "key": {
                             "#bigint": "2"
@@ -3023,23 +3431,130 @@
                   ]
                 },
                 "finalizationConfiguration": {
-                  "#bigint": "66"
+                  "#bigint": "1086"
                 },
                 "id": {
-                  "#bigint": "3"
+                  "#bigint": "4"
                 },
                 "workConfiguration": {
                   "executionRequirements": {
-                    "#bigint": "64"
+                    "#bigint": "1084"
                   },
                   "inputs": {
-                    "#bigint": "63"
+                    "#bigint": "1083"
                   },
                   "resultContract": {
-                    "#bigint": "65"
+                    "#bigint": "1085"
                   },
                   "workload": {
-                    "#bigint": "62"
+                    "#bigint": "1082"
+                  }
+                }
+              },
+              "revision": {
+                "#bigint": "2"
+              },
+              "state": {
+                "tag": "Pending",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "workCyclesStarted": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "5"
+            },
+            {
+              "definition": {
+                "content": {
+                  "#bigint": "101"
+                },
+                "dependencies": {
+                  "#set": [
+                    {
+                      "#bigint": "2"
+                    }
+                  ]
+                },
+                "evaluationPlan": {
+                  "stages": [
+                    {
+                      "evaluators": [
+                        {
+                          "key": {
+                            "#bigint": "2"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "7"
+                            },
+                            "inputs": {
+                              "#bigint": "6"
+                            },
+                            "resultContract": {
+                              "#bigint": "8"
+                            },
+                            "workload": {
+                              "#bigint": "5"
+                            }
+                          }
+                        }
+                      ],
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "evaluators": [
+                        {
+                          "key": {
+                            "#bigint": "2"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "7"
+                            },
+                            "inputs": {
+                              "#bigint": "6"
+                            },
+                            "resultContract": {
+                              "#bigint": "8"
+                            },
+                            "workload": {
+                              "#bigint": "5"
+                            }
+                          }
+                        }
+                      ],
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ]
+                },
+                "finalizationConfiguration": {
+                  "#bigint": "106"
+                },
+                "id": {
+                  "#bigint": "5"
+                },
+                "workConfiguration": {
+                  "executionRequirements": {
+                    "#bigint": "104"
+                  },
+                  "inputs": {
+                    "#bigint": "103"
+                  },
+                  "resultContract": {
+                    "#bigint": "105"
+                  },
+                  "workload": {
+                    "#bigint": "102"
                   }
                 }
               },
@@ -3062,7 +3577,7 @@
     },
     {
       "#meta": {
-        "index": 6
+        "index": 8
       },
       "mbt::actionTaken": "updateDefinition",
       "mbt::nondetPicks": {
@@ -3075,13 +3590,17 @@
         "dependencies_": {
           "tag": "Some",
           "value": {
-            "#set": []
+            "#set": [
+              {
+                "#bigint": "4"
+              }
+            ]
           }
         },
         "j": {
           "tag": "Some",
           "value": {
-            "#bigint": "2"
+            "#bigint": "5"
           }
         },
         "onFailure": {
@@ -3131,6 +3650,25 @@
                       "#bigint": "1"
                     }
                   }
+                },
+                {
+                  "key": {
+                    "#bigint": "2"
+                  },
+                  "task": {
+                    "executionRequirements": {
+                      "#bigint": "7"
+                    },
+                    "inputs": {
+                      "#bigint": "6"
+                    },
+                    "resultContract": {
+                      "#bigint": "8"
+                    },
+                    "workload": {
+                      "#bigint": "5"
+                    }
+                  }
                 }
               ],
               "key": {
@@ -3155,6 +3693,25 @@
                     },
                     "workload": {
                       "#bigint": "1"
+                    }
+                  }
+                },
+                {
+                  "key": {
+                    "#bigint": "2"
+                  },
+                  "task": {
+                    "executionRequirements": {
+                      "#bigint": "7"
+                    },
+                    "inputs": {
+                      "#bigint": "6"
+                    },
+                    "resultContract": {
+                      "#bigint": "8"
+                    },
+                    "workload": {
+                      "#bigint": "5"
                     }
                   }
                 }
@@ -3180,10 +3737,14 @@
             "value": {
               "definition": {
                 "content": {
-                  "#bigint": "1041"
+                  "#bigint": "1101"
                 },
                 "dependencies": {
-                  "#set": []
+                  "#set": [
+                    {
+                      "#bigint": "4"
+                    }
+                  ]
                 },
                 "evaluationPlan": {
                   "stages": [
@@ -3205,6 +3766,25 @@
                             },
                             "workload": {
                               "#bigint": "1"
+                            }
+                          }
+                        },
+                        {
+                          "key": {
+                            "#bigint": "2"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "7"
+                            },
+                            "inputs": {
+                              "#bigint": "6"
+                            },
+                            "resultContract": {
+                              "#bigint": "8"
+                            },
+                            "workload": {
+                              "#bigint": "5"
                             }
                           }
                         }
@@ -3233,6 +3813,25 @@
                               "#bigint": "1"
                             }
                           }
+                        },
+                        {
+                          "key": {
+                            "#bigint": "2"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "7"
+                            },
+                            "inputs": {
+                              "#bigint": "6"
+                            },
+                            "resultContract": {
+                              "#bigint": "8"
+                            },
+                            "workload": {
+                              "#bigint": "5"
+                            }
+                          }
                         }
                       ],
                       "key": {
@@ -3242,23 +3841,23 @@
                   ]
                 },
                 "finalizationConfiguration": {
-                  "#bigint": "1046"
+                  "#bigint": "1106"
                 },
                 "id": {
-                  "#bigint": "2"
+                  "#bigint": "5"
                 },
                 "workConfiguration": {
                   "executionRequirements": {
-                    "#bigint": "1044"
+                    "#bigint": "1104"
                   },
                   "inputs": {
-                    "#bigint": "1043"
+                    "#bigint": "1103"
                   },
                   "resultContract": {
-                    "#bigint": "1045"
+                    "#bigint": "1105"
                   },
                   "workload": {
-                    "#bigint": "1042"
+                    "#bigint": "1102"
                   }
                 }
               },
@@ -3266,7 +3865,7 @@
                 "#bigint": "2"
               },
               "ticket": {
-                "#bigint": "2"
+                "#bigint": "5"
               }
             }
           },
@@ -3275,20 +3874,6 @@
       },
       "mc_chuggy::chuggy_domain::ledgers": {
         "#map": [
-          [
-            {
-              "#bigint": "1"
-            },
-            {
-              "closedEvaluations": [],
-              "completions": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
-              }
-            }
-          ],
           [
             {
               "#bigint": "2"
@@ -3305,7 +3890,21 @@
           ],
           [
             {
-              "#bigint": "3"
+              "#bigint": "4"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "5"
             },
             {
               "closedEvaluations": [],
@@ -3323,20 +3922,6 @@
         "#map": [
           [
             {
-              "#bigint": "1"
-            },
-            {
-              "closedEvaluations": [],
-              "completions": {
-                "#bigint": "0"
-              },
-              "spawned": {
-                "#bigint": "0"
-              }
-            }
-          ],
-          [
-            {
               "#bigint": "2"
             },
             {
@@ -3351,7 +3936,21 @@
           ],
           [
             {
-              "#bigint": "3"
+              "#bigint": "4"
+            },
+            {
+              "closedEvaluations": [],
+              "completions": {
+                "#bigint": "0"
+              },
+              "spawned": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "5"
             },
             {
               "closedEvaluations": [],
@@ -3369,12 +3968,12 @@
         "#map": [
           [
             {
-              "#bigint": "1"
+              "#bigint": "2"
             },
             {
               "definition": {
                 "content": {
-                  "#bigint": "21"
+                  "#bigint": "41"
                 },
                 "dependencies": {
                   "#set": []
@@ -3385,25 +3984,6 @@
                       "evaluators": [
                         {
                           "key": {
-                            "#bigint": "1"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "3"
-                            },
-                            "inputs": {
-                              "#bigint": "2"
-                            },
-                            "resultContract": {
-                              "#bigint": "4"
-                            },
-                            "workload": {
-                              "#bigint": "1"
-                            }
-                          }
-                        },
-                        {
-                          "key": {
                             "#bigint": "2"
                           },
                           "task": {
@@ -3444,151 +4024,6 @@
                             },
                             "workload": {
                               "#bigint": "1"
-                            }
-                          }
-                        }
-                      ],
-                      "key": {
-                        "#bigint": "2"
-                      }
-                    }
-                  ]
-                },
-                "finalizationConfiguration": {
-                  "#bigint": "26"
-                },
-                "id": {
-                  "#bigint": "1"
-                },
-                "workConfiguration": {
-                  "executionRequirements": {
-                    "#bigint": "24"
-                  },
-                  "inputs": {
-                    "#bigint": "23"
-                  },
-                  "resultContract": {
-                    "#bigint": "25"
-                  },
-                  "workload": {
-                    "#bigint": "22"
-                  }
-                }
-              },
-              "revision": {
-                "#bigint": "1"
-              },
-              "state": {
-                "tag": "Pending",
-                "value": {
-                  "#tup": []
-                }
-              },
-              "workCyclesStarted": {
-                "#bigint": "0"
-              }
-            }
-          ],
-          [
-            {
-              "#bigint": "2"
-            },
-            {
-              "definition": {
-                "content": {
-                  "#bigint": "41"
-                },
-                "dependencies": {
-                  "#set": [
-                    {
-                      "#bigint": "1"
-                    }
-                  ]
-                },
-                "evaluationPlan": {
-                  "stages": [
-                    {
-                      "evaluators": [
-                        {
-                          "key": {
-                            "#bigint": "1"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "3"
-                            },
-                            "inputs": {
-                              "#bigint": "2"
-                            },
-                            "resultContract": {
-                              "#bigint": "4"
-                            },
-                            "workload": {
-                              "#bigint": "1"
-                            }
-                          }
-                        },
-                        {
-                          "key": {
-                            "#bigint": "2"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "7"
-                            },
-                            "inputs": {
-                              "#bigint": "6"
-                            },
-                            "resultContract": {
-                              "#bigint": "8"
-                            },
-                            "workload": {
-                              "#bigint": "5"
-                            }
-                          }
-                        }
-                      ],
-                      "key": {
-                        "#bigint": "1"
-                      }
-                    },
-                    {
-                      "evaluators": [
-                        {
-                          "key": {
-                            "#bigint": "1"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "3"
-                            },
-                            "inputs": {
-                              "#bigint": "2"
-                            },
-                            "resultContract": {
-                              "#bigint": "4"
-                            },
-                            "workload": {
-                              "#bigint": "1"
-                            }
-                          }
-                        },
-                        {
-                          "key": {
-                            "#bigint": "2"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "7"
-                            },
-                            "inputs": {
-                              "#bigint": "6"
-                            },
-                            "resultContract": {
-                              "#bigint": "8"
-                            },
-                            "workload": {
-                              "#bigint": "5"
                             }
                           }
                         }
@@ -3636,12 +4071,12 @@
           ],
           [
             {
-              "#bigint": "3"
+              "#bigint": "4"
             },
             {
               "definition": {
                 "content": {
-                  "#bigint": "61"
+                  "#bigint": "1081"
                 },
                 "dependencies": {
                   "#set": []
@@ -3650,25 +4085,6 @@
                   "stages": [
                     {
                       "evaluators": [
-                        {
-                          "key": {
-                            "#bigint": "1"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "3"
-                            },
-                            "inputs": {
-                              "#bigint": "2"
-                            },
-                            "resultContract": {
-                              "#bigint": "4"
-                            },
-                            "workload": {
-                              "#bigint": "1"
-                            }
-                          }
-                        },
                         {
                           "key": {
                             "#bigint": "2"
@@ -3696,23 +4112,130 @@
                   ]
                 },
                 "finalizationConfiguration": {
-                  "#bigint": "66"
+                  "#bigint": "1086"
                 },
                 "id": {
-                  "#bigint": "3"
+                  "#bigint": "4"
                 },
                 "workConfiguration": {
                   "executionRequirements": {
-                    "#bigint": "64"
+                    "#bigint": "1084"
                   },
                   "inputs": {
-                    "#bigint": "63"
+                    "#bigint": "1083"
                   },
                   "resultContract": {
-                    "#bigint": "65"
+                    "#bigint": "1085"
                   },
                   "workload": {
-                    "#bigint": "62"
+                    "#bigint": "1082"
+                  }
+                }
+              },
+              "revision": {
+                "#bigint": "2"
+              },
+              "state": {
+                "tag": "Pending",
+                "value": {
+                  "#tup": []
+                }
+              },
+              "workCyclesStarted": {
+                "#bigint": "0"
+              }
+            }
+          ],
+          [
+            {
+              "#bigint": "5"
+            },
+            {
+              "definition": {
+                "content": {
+                  "#bigint": "101"
+                },
+                "dependencies": {
+                  "#set": [
+                    {
+                      "#bigint": "2"
+                    }
+                  ]
+                },
+                "evaluationPlan": {
+                  "stages": [
+                    {
+                      "evaluators": [
+                        {
+                          "key": {
+                            "#bigint": "2"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "7"
+                            },
+                            "inputs": {
+                              "#bigint": "6"
+                            },
+                            "resultContract": {
+                              "#bigint": "8"
+                            },
+                            "workload": {
+                              "#bigint": "5"
+                            }
+                          }
+                        }
+                      ],
+                      "key": {
+                        "#bigint": "1"
+                      }
+                    },
+                    {
+                      "evaluators": [
+                        {
+                          "key": {
+                            "#bigint": "2"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "7"
+                            },
+                            "inputs": {
+                              "#bigint": "6"
+                            },
+                            "resultContract": {
+                              "#bigint": "8"
+                            },
+                            "workload": {
+                              "#bigint": "5"
+                            }
+                          }
+                        }
+                      ],
+                      "key": {
+                        "#bigint": "2"
+                      }
+                    }
+                  ]
+                },
+                "finalizationConfiguration": {
+                  "#bigint": "106"
+                },
+                "id": {
+                  "#bigint": "5"
+                },
+                "workConfiguration": {
+                  "executionRequirements": {
+                    "#bigint": "104"
+                  },
+                  "inputs": {
+                    "#bigint": "103"
+                  },
+                  "resultContract": {
+                    "#bigint": "105"
+                  },
+                  "workload": {
+                    "#bigint": "102"
                   }
                 }
               },
@@ -3736,12 +4259,12 @@
         "#map": [
           [
             {
-              "#bigint": "1"
+              "#bigint": "2"
             },
             {
               "definition": {
                 "content": {
-                  "#bigint": "21"
+                  "#bigint": "41"
                 },
                 "dependencies": {
                   "#set": []
@@ -3750,25 +4273,6 @@
                   "stages": [
                     {
                       "evaluators": [
-                        {
-                          "key": {
-                            "#bigint": "1"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "3"
-                            },
-                            "inputs": {
-                              "#bigint": "2"
-                            },
-                            "resultContract": {
-                              "#bigint": "4"
-                            },
-                            "workload": {
-                              "#bigint": "1"
-                            }
-                          }
-                        },
                         {
                           "key": {
                             "#bigint": "2"
@@ -3822,23 +4326,23 @@
                   ]
                 },
                 "finalizationConfiguration": {
-                  "#bigint": "26"
+                  "#bigint": "46"
                 },
                 "id": {
-                  "#bigint": "1"
+                  "#bigint": "2"
                 },
                 "workConfiguration": {
                   "executionRequirements": {
-                    "#bigint": "24"
+                    "#bigint": "44"
                   },
                   "inputs": {
-                    "#bigint": "23"
+                    "#bigint": "43"
                   },
                   "resultContract": {
-                    "#bigint": "25"
+                    "#bigint": "45"
                   },
                   "workload": {
-                    "#bigint": "22"
+                    "#bigint": "42"
                   }
                 }
               },
@@ -3858,12 +4362,12 @@
           ],
           [
             {
-              "#bigint": "2"
+              "#bigint": "4"
             },
             {
               "definition": {
                 "content": {
-                  "#bigint": "1041"
+                  "#bigint": "1081"
                 },
                 "dependencies": {
                   "#set": []
@@ -3874,20 +4378,20 @@
                       "evaluators": [
                         {
                           "key": {
-                            "#bigint": "1"
+                            "#bigint": "2"
                           },
                           "task": {
                             "executionRequirements": {
-                              "#bigint": "3"
+                              "#bigint": "7"
                             },
                             "inputs": {
-                              "#bigint": "2"
+                              "#bigint": "6"
                             },
                             "resultContract": {
-                              "#bigint": "4"
+                              "#bigint": "8"
                             },
                             "workload": {
-                              "#bigint": "1"
+                              "#bigint": "5"
                             }
                           }
                         }
@@ -3895,53 +4399,27 @@
                       "key": {
                         "#bigint": "1"
                       }
-                    },
-                    {
-                      "evaluators": [
-                        {
-                          "key": {
-                            "#bigint": "1"
-                          },
-                          "task": {
-                            "executionRequirements": {
-                              "#bigint": "3"
-                            },
-                            "inputs": {
-                              "#bigint": "2"
-                            },
-                            "resultContract": {
-                              "#bigint": "4"
-                            },
-                            "workload": {
-                              "#bigint": "1"
-                            }
-                          }
-                        }
-                      ],
-                      "key": {
-                        "#bigint": "2"
-                      }
                     }
                   ]
                 },
                 "finalizationConfiguration": {
-                  "#bigint": "1046"
+                  "#bigint": "1086"
                 },
                 "id": {
-                  "#bigint": "2"
+                  "#bigint": "4"
                 },
                 "workConfiguration": {
                   "executionRequirements": {
-                    "#bigint": "1044"
+                    "#bigint": "1084"
                   },
                   "inputs": {
-                    "#bigint": "1043"
+                    "#bigint": "1083"
                   },
                   "resultContract": {
-                    "#bigint": "1045"
+                    "#bigint": "1085"
                   },
                   "workload": {
-                    "#bigint": "1042"
+                    "#bigint": "1082"
                   }
                 }
               },
@@ -3961,15 +4439,19 @@
           ],
           [
             {
-              "#bigint": "3"
+              "#bigint": "5"
             },
             {
               "definition": {
                 "content": {
-                  "#bigint": "61"
+                  "#bigint": "1101"
                 },
                 "dependencies": {
-                  "#set": []
+                  "#set": [
+                    {
+                      "#bigint": "4"
+                    }
+                  ]
                 },
                 "evaluationPlan": {
                   "stages": [
@@ -4017,32 +4499,77 @@
                       "key": {
                         "#bigint": "1"
                       }
+                    },
+                    {
+                      "evaluators": [
+                        {
+                          "key": {
+                            "#bigint": "1"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "3"
+                            },
+                            "inputs": {
+                              "#bigint": "2"
+                            },
+                            "resultContract": {
+                              "#bigint": "4"
+                            },
+                            "workload": {
+                              "#bigint": "1"
+                            }
+                          }
+                        },
+                        {
+                          "key": {
+                            "#bigint": "2"
+                          },
+                          "task": {
+                            "executionRequirements": {
+                              "#bigint": "7"
+                            },
+                            "inputs": {
+                              "#bigint": "6"
+                            },
+                            "resultContract": {
+                              "#bigint": "8"
+                            },
+                            "workload": {
+                              "#bigint": "5"
+                            }
+                          }
+                        }
+                      ],
+                      "key": {
+                        "#bigint": "2"
+                      }
                     }
                   ]
                 },
                 "finalizationConfiguration": {
-                  "#bigint": "66"
+                  "#bigint": "1106"
                 },
                 "id": {
-                  "#bigint": "3"
+                  "#bigint": "5"
                 },
                 "workConfiguration": {
                   "executionRequirements": {
-                    "#bigint": "64"
+                    "#bigint": "1104"
                   },
                   "inputs": {
-                    "#bigint": "63"
+                    "#bigint": "1103"
                   },
                   "resultContract": {
-                    "#bigint": "65"
+                    "#bigint": "1105"
                   },
                   "workload": {
-                    "#bigint": "62"
+                    "#bigint": "1102"
                   }
                 }
               },
               "revision": {
-                "#bigint": "1"
+                "#bigint": "2"
               },
               "state": {
                 "tag": "Pending",

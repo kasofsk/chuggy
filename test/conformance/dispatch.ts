@@ -34,7 +34,7 @@ import type {
   TicketGraph,
 } from "../../src/domain/generated/modelTypes.ts";
 import { releasedTicketOf } from "../../src/domain/config.ts";
-import { updateOf } from "../../src/domain/enablement.ts";
+import { invalidationOf, updateOf } from "../../src/domain/enablement.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import { attemptGeneration } from "../../src/domain/ticket.ts";
 import {
@@ -60,6 +60,7 @@ export const replayActions: readonly string[] = [
   "taskDone",
   "finalizationResult",
   "resumeTicket",
+  "invalidateEvaluation",
   "refuse",
   "settle",
 ];
@@ -150,6 +151,19 @@ function finalizationCommand(
   };
 }
 
+/** A command no stage concludes on, taken under the disposition `decide` never asks. */
+function unasked(command: TicketCommand): Sent {
+  return { command, onFailure: unaskedDisposition };
+}
+
+/** The invalidation of the cycle the ticket is on, which the model reads off the state. */
+function invalidationCommand(
+  pre: TicketGraph,
+  ticket: TicketId,
+): TicketCommand {
+  return invalidationOf(ticket, ticketAt(pre, ticket).workCyclesStarted);
+}
+
 /**
  * The command a recorded step sent, rebuilt from its draws the way the
  * model's action builds it; the stutter sends none.
@@ -162,11 +176,6 @@ function commandOf(
   const need = (value: ItfValue | undefined, name: string): ItfValue =>
     drawn(value, name, action);
   const j = (): TicketId => decodeTicketId(need(picks.ticket, "j"));
-  const unasked = (command: TicketCommand): Sent => ({
-    command,
-    onFailure: unaskedDisposition,
-  });
-
   switch (action) {
     case "releaseTicket":
       return unasked({
@@ -213,6 +222,8 @@ function commandOf(
       );
     case "resumeTicket":
       return unasked({ type: "ResumeTicket", value: j() });
+    case "invalidateEvaluation":
+      return unasked(invalidationCommand(pre, j()));
     case "refuse":
     case "refuseUpdate":
       return unasked(

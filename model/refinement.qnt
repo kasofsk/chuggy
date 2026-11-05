@@ -571,6 +571,13 @@ module chuggy_refinement {
     journalStep(ResumeTicket(j), unaskedDisposition)
   }
 
+  action actorInvalidateEvaluation = all {
+    invalidatableTickets.size() > 0,
+    nondet j = invalidatableTickets.oneOf()
+    journalStep(invalidationOf(j, graph.tickets.get(j).workCyclesStarted),
+      unaskedDisposition)
+  }
+
   /// The environment out of turn (domain.qnt refuse): answered, journaled
   /// nowhere.
   action actorRefuse = all {
@@ -618,7 +625,7 @@ module chuggy_refinement {
   action rstep = any {
     actorReleaseTicket, actorUpdateTicket, actorRevoke, actorDispatch,
     actorTaskDone, actorFinalizationResult,
-    actorResumeTicket, actorRefuse,
+    actorResumeTicket, actorInvalidateEvaluation, actorRefuse,
     emitNext, crashRecover
   }
 

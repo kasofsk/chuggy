@@ -24,6 +24,7 @@ import assert from "node:assert/strict";
 import {
   createTicketCommand,
   dispatchTicketCommand,
+  invalidateEvaluationCommand,
   reportFinalizationResultCommand,
   reportTaskTerminalCommand,
   resumeTicketCommand,
@@ -52,6 +53,7 @@ import {
   commandTaken,
   decide,
   decideFinalizationResult,
+  decideInvalidateEvaluation,
   decideResume,
   decideRevoke,
   decideTaskTerminal,
@@ -60,6 +62,7 @@ import {
   aDispatchSource,
   aFinalizationEvidence,
   anAcceptedSource,
+  anInvalidationEvidence,
 } from "../../src/domain/config.ts";
 import { artifactOf, emptyLedger } from "../../src/domain/ticket.ts";
 import { evaluationTaskOf, workTaskIdentity } from "../../src/domain/task.ts";
@@ -424,6 +427,7 @@ const toStranded: readonly TicketCommand[] = [
 
 const pending = graphAfter(toPending);
 const working = graphAfter(toWorking);
+const evaluating = graphAfter(toEvaluating);
 const finalizing = graphAfter(toFinalizing);
 const done = graphAfter(toDone);
 const escalated = graphAfter(toEscalated);
@@ -653,6 +657,36 @@ const answers: readonly Answer[] = [
     command: resumeTicketCommand(id(1)),
     answer: "TicketNotResumable",
   },
+  {
+    check: "InvalidateEvaluation/commandValid/workCycle",
+    at: evaluating,
+    command: invalidateEvaluationCommand(id(1), 0, anInvalidationEvidence),
+    answer: "NotTaken",
+  },
+  {
+    check: "InvalidateEvaluation/commandValid/evidence",
+    at: evaluating,
+    command: invalidateEvaluationCommand(id(1), 1, 0),
+    answer: "NotTaken",
+  },
+  {
+    check: "InvalidateEvaluation/found",
+    at: evaluating,
+    command: invalidateEvaluationCommand(id(2), 1, anInvalidationEvidence),
+    answer: "TicketNotFound",
+  },
+  {
+    check: "InvalidateEvaluation/phase",
+    at: working,
+    command: invalidateEvaluationCommand(id(1), 1, anInvalidationEvidence),
+    answer: "EvaluationNotCurrent",
+  },
+  {
+    check: "InvalidateEvaluation/cycle",
+    at: evaluating,
+    command: invalidateEvaluationCommand(id(1), 2, anInvalidationEvidence),
+    answer: "EvaluationNotCurrent",
+  },
 ];
 
 /**
@@ -759,6 +793,17 @@ const drives: readonly Drive[] = [
       workCycle: 1,
       generation: 1,
       result: { type: "FinalizationNeedsWork", value: aFinalizationEvidence },
+    }),
+  },
+  {
+    arm: "InvalidateEvaluation",
+    before: toEvaluating,
+    command: invalidateEvaluationCommand(id(1), 1, anInvalidationEvidence),
+    at: evaluating,
+    decided: decideInvalidateEvaluation(evaluating, {
+      ticket: 1,
+      workCycle: 1,
+      evidence: anInvalidationEvidence,
     }),
   },
 ];

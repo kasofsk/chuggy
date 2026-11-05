@@ -31,6 +31,7 @@ import {
 import {
   dependableIn,
   finalizingIn,
+  invalidatablesIn,
   outstandingTasksIn,
   completableIn,
   quietIn,
@@ -42,9 +43,13 @@ import {
   revisablesIn,
   revocablesIn,
 } from "../../src/domain/enablement.ts";
-import { reportChoices } from "../../src/domain/deciders.ts";
+import {
+  dispositionChoices,
+  reportChoices,
+} from "../../src/domain/deciders.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import {
+  type EvaluationFailureDisposition,
   type TicketGraph,
   type FinalizationResult,
   type StageDefinition,
@@ -61,20 +66,13 @@ import {
   encodeDependencies,
   encodeFinalizationResult,
   encodeInt,
-  encodeNullaryTag,
   encodePlanStages,
+  encodeSumValue,
   encodeTaskIdentity,
   encodeTaskTerminalReport,
   encodeTicketCommand,
 } from "../itf/vocabulary.ts";
 import { pickFrom, subsetFrom, type Random } from "./random.ts";
-
-/** The dispositions the model's own draw offers; an invalidation is a command's, never a policy's pick. */
-const drawnDispositions = [
-  "ReworkEvaluationFailure",
-  "EscalateEvaluationFailure",
-] as const;
-type DrawnDisposition = (typeof drawnDispositions)[number];
 
 /** One step's draws, in the domain's own vocabulary; absent means the action does not make that draw. */
 export interface Drawn {
@@ -82,7 +80,7 @@ export interface Drawn {
   readonly dependencies?: readonly TicketId[];
   readonly stages?: readonly StageDefinition[];
   readonly source?: number;
-  readonly onFailure?: DrawnDisposition;
+  readonly onFailure?: EvaluationFailureDisposition;
   readonly task?: TaskIdentity;
   readonly report?: TaskTerminalReport;
   readonly result?: FinalizationResult;
@@ -245,21 +243,23 @@ const taskDone: WalkAction = {
       ticket,
       task,
       report: pickFrom(random, reportChoices(ticketAt(graph, ticket), task)),
-      onFailure: pickFrom(random, drawnDispositions),
+      onFailure: pickFrom(random, dispositionChoices),
     };
   },
   permitsIn: (_config, graph, _ledgers, drawn) => {
-    const task = drawn.task;
+    const { task, onFailure } = drawn;
     return (
       drawn.ticket !== undefined &&
       task !== undefined &&
       drawn.report !== undefined &&
-      drawn.onFailure !== undefined &&
+      onFailure !== undefined &&
       completableIn(graph).includes(drawn.ticket) &&
       outstandingTasksIn(graph, drawn.ticket).some((live) =>
         taskIdentityEquals(live, task),
       ) &&
-      drawnDispositions.includes(drawn.onFailure)
+      dispositionChoices.some((drawable) =>
+        isDeepStrictEqual(drawable, onFailure),
+      )
     );
   },
 };
@@ -320,6 +320,9 @@ export const walkActions: readonly WalkAction[] = [
   taskDone,
   finalizationResult,
   overTicketSet("resumeTicket", (_config, graph) => retryablesIn(graph)),
+  overTicketSet("invalidateEvaluation", (_config, graph) =>
+    invalidatablesIn(graph),
+  ),
   refuse,
   settle,
 ];
@@ -348,7 +351,9 @@ export function drawnWire(drawn: Drawn): Readonly<Record<string, unknown>> {
       encodeDependencies(new Set(ids)),
     ),
     j: opt(drawn.ticket, encodeInt),
-    onFailure: opt(drawn.onFailure, encodeNullaryTag),
+    onFailure: opt(drawn.onFailure, (disposition) =>
+      encodeSumValue(disposition, encodeInt),
+    ),
     report: opt(drawn.report, encodeTaskTerminalReport),
     result: opt(drawn.result, encodeFinalizationResult),
     source: opt(drawn.source, encodeInt),

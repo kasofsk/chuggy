@@ -64,6 +64,7 @@ import {
 } from "./ticket.ts";
 import {
   acceptedSources,
+  anInvalidationEvidence,
   releasedTicketBounded,
   type Config,
 } from "./config.ts";
@@ -84,10 +85,11 @@ export type EvaluationFailurePolicy = (
   instance: EvaluationInstance,
 ) => EvaluationFailureDisposition;
 
-/** Both ways a failing evaluation can be taken; any implementation policy is a restriction of this draw. */
+/** Every way a failing evaluation can be taken; any implementation policy is a restriction of this draw. */
 export const dispositionChoices: readonly EvaluationFailureDisposition[] = [
   "ReworkEvaluationFailure",
   "EscalateEvaluationFailure",
+  { type: "InvalidateEvaluationFailure", value: anInvalidationEvidence },
 ];
 
 /** The policy that takes one edge whatever failed. */
