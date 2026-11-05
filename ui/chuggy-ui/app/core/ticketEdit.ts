@@ -169,6 +169,7 @@ export function editFormFrom(
     repository,
     landingMode:
       finalization?.mode ?? creationLandingDefault(repositories, repository),
+    landingPolicy: brief?.landing ?? "Direct",
     overrides: overridesHeldOf(draft.overrides),
     selection: draft.selection ?? {},
     workloads: draft.overrides?.workloads ?? {},

@@ -29,7 +29,11 @@ import type {
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
 import { configurationQuery } from "../core/configurationQueries.ts";
-import { briefLandingLine, landingLabel } from "../core/codeLabels.ts";
+import {
+  briefLandingLine,
+  landingLabel,
+  landingPolicyLabel,
+} from "../core/codeLabels.ts";
 import { ticketFollowingSentence } from "../core/codeSentences.ts";
 import type {
   ConfigurationBrief,
@@ -97,8 +101,7 @@ function Brief(props: {
   readonly partition: PartitionIdentity;
   readonly brief: TicketBriefBody;
 }): ReactNode {
-  const { intent, links, images, checks, repository, branch, finalization } =
-    props.brief;
+  const { intent, links, images, checks, repository, branch } = props.brief;
   return (
     <>
       <Field name="intent">
@@ -148,9 +151,22 @@ function Brief(props: {
       </Field>
       <Field name="repository">{repository ?? "none"}</Field>
       <Field name="branch">{branch ?? "none"}</Field>
+      <BriefLanding brief={props.brief} />
+    </>
+  );
+}
+
+/** Where the work lands, and the policy ordering it only where that is not the default. */
+function BriefLanding(props: { readonly brief: TicketBriefBody }): ReactNode {
+  const { finalization, landing } = props.brief;
+  return (
+    <>
       {finalization === undefined ? null : (
         <Field name="landing">{briefLandingLine(finalization)}</Field>
       )}
+      {landing === "Serialized" ? (
+        <Field name="landing policy">{landingPolicyLabel(landing)}</Field>
+      ) : null}
     </>
   );
 }

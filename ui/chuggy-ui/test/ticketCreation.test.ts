@@ -87,6 +87,17 @@ function faultReasons(form: TicketCreationForm): readonly string[] {
     : [];
 }
 
+test("a serialized form sends its landing policy and a direct one sends none", () => {
+  const sent = (form: TicketCreationForm): unknown => {
+    const assembled = creationBodyFrom(creationOffers, form, noBindings);
+    return assembled.assembled === "Body" ? assembled.body.brief : undefined;
+  };
+  expect(sent(creationForm({ landingPolicy: "Serialized" }))).toMatchObject({
+    landing: "Serialized",
+  });
+  expect(sent(creationForm())).not.toHaveProperty("landing");
+});
+
 test("the configuration is the newest ready revision, and none is drawable", () => {
   const listed = [
     creationSummary("r4", "Incomplete"),

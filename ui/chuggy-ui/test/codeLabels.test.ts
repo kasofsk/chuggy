@@ -13,6 +13,7 @@ import { expect, test } from "vitest";
 import {
   blockedReasons,
   briefFinalizationModes,
+  briefLandings,
   changeProposalCreations,
   changeProposalMergeabilities,
   changeProposalStatuses,
@@ -52,6 +53,8 @@ import {
   gitEvidenceLabel,
   landingEffect,
   landingLabel,
+  landingPolicyEffect,
+  landingPolicyLabel,
   leadAbsenceLabel,
   resumeActionEffect,
   wallExitLine,
@@ -616,6 +619,20 @@ test("a landing is named as a noun and explained as what it does", () => {
     "Opens a pull request into the target branch and merges it",
     "Lands nothing",
   ]);
+});
+
+test("a landing policy is named as a noun and explained as what it does", () => {
+  expect(briefLandings.map(landingPolicyLabel)).toStrictEqual([
+    "Direct",
+    "Serialized",
+  ]);
+  for (const text of [
+    ...briefLandings.map(landingPolicyLabel),
+    ...briefLandings.map(landingPolicyEffect),
+  ]) {
+    expect(text.length).toBeLessThanOrEqual(copyBudgetChars);
+    expect(text).not.toMatch(/[.:;]/u);
+  }
 });
 
 test("an approval reads as one noun", () => {

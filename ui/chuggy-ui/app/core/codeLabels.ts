@@ -27,6 +27,7 @@ import {
   type finalizationFailureKinds,
   type BlockedReason,
   type BriefFinalizationMode,
+  type BriefLanding,
   type EscalationKind,
   type FinalizationUnavailableKind,
   type GitEvidenceLabel,
@@ -591,6 +592,26 @@ export function landingEffect(mode: BriefFinalizationMode): string {
       return "Opens a pull request into the target branch and merges it";
     case "None":
       return "Lands nothing";
+  }
+}
+
+/** How a ticket's landing is ordered against the others on its reference, in the word the choice is made by. */
+export function landingPolicyLabel(policy: BriefLanding): string {
+  switch (policy) {
+    case "Direct":
+      return "Direct";
+    case "Serialized":
+      return "Serialized";
+  }
+}
+
+/** What choosing that policy does to the landing. */
+export function landingPolicyEffect(policy: BriefLanding): string {
+  switch (policy) {
+    case "Direct":
+      return "Lands as soon as it is accepted";
+    case "Serialized":
+      return "Lands alone on its reference, evaluated on what it lands";
   }
 }
 

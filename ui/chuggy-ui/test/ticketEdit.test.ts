@@ -81,6 +81,7 @@ test("a draft reads back as the form that would revise it to itself", () => {
     targetBranchName: "main",
     repository,
     landingMode: "PullRequest",
+    landingPolicy: "Direct",
     overrides: {},
     selection: {},
     workloads: {},
@@ -105,6 +106,24 @@ test("a draft with no brief prefills nothing a person writes", () => {
   expect(form.intent).toBe("");
   expect(form.branchName).toBe("");
   expect(form.landingMode).toBe("Push");
+});
+
+test("a serialized draft reads back as serialized and revises to itself", () => {
+  const brief = { ...released.brief, intent: "ship the thing", links: [] };
+  const serialized: DraftResponse = {
+    ...released,
+    brief: { ...brief, landing: "Serialized" },
+  };
+  const form = editFormFrom(serialized, [creationBinding(repository)], "r3");
+  expect(form.landingPolicy).toBe("Serialized");
+  const again = creationBodyFrom(
+    [creationOffer(undefined, { commandedCheckStage: 1 })],
+    form,
+    [creationBinding(repository)],
+  );
+  expect(again.assembled === "Body" && again.body.brief).toStrictEqual(
+    serialized.brief,
+  );
 });
 
 test("the revision is written against the draft version it was read at", () => {

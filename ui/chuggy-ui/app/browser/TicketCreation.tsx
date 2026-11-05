@@ -27,7 +27,10 @@ import type {
   DraftResponse,
   ProjectRepositoryResponse,
 } from "../../../../src/contract/responses.ts";
-import { briefFinalizationModes } from "../../../../src/contract/rosters.ts";
+import {
+  briefFinalizationModes,
+  briefLandings,
+} from "../../../../src/contract/rosters.ts";
 import type { ApiFailure, ApiPorts } from "../core/apiRequest.ts";
 import { base64urlFromBytes } from "../core/base64url.ts";
 import { readFailedLine } from "../core/failureWords.ts";
@@ -38,7 +41,12 @@ import type {
   ConsoleWriteRefused,
 } from "../core/consoleWrite.ts";
 import type { ProjectQueryKey } from "../core/projectQueryKeys.ts";
-import { landingEffect, landingLabel } from "../core/codeLabels.ts";
+import {
+  landingEffect,
+  landingLabel,
+  landingPolicyEffect,
+  landingPolicyLabel,
+} from "../core/codeLabels.ts";
 import { repositoryLabel } from "../core/projectRepositories.ts";
 import { configurationsPartialLabel } from "../core/repositoryConfigurations.ts";
 import {
@@ -542,6 +550,32 @@ function Landing(props: FormEdit): ReactNode {
   );
 }
 
+const landingPolicyOptions = briefLandings.map((policy) => ({
+  value: policy,
+  text: landingPolicyLabel(policy),
+  description: landingPolicyEffect(policy),
+}));
+
+/** How this ticket's landing is ordered against the others on its reference. */
+function LandingPolicy(props: FormEdit): ReactNode {
+  const { form, onChange } = props;
+  return (
+    <div className="creation-row">
+      <span>Landing policy</span>
+      <RadioGroup
+        label="Landing policy"
+        value={form.landingPolicy}
+        options={landingPolicyOptions}
+        onChoose={(value) => {
+          const chosen = briefLandings.find((policy) => policy === value);
+          if (chosen !== undefined)
+            onChange({ ...form, landingPolicy: chosen });
+        }}
+      />
+    </div>
+  );
+}
+
 /** What a failed update left in the draft, which only one that got as far as
  * the draft has anything to say about. A creation's reason says where its own
  * draft stands, that being more than one thing. */
@@ -682,6 +716,8 @@ export function CreationFields(props: CreationFieldsProps): ReactNode {
           <Fault field="target" faults={faults} />
         </>
       )}
+      <LandingPolicy form={form} onChange={onChange} />
+      <Fault field="landingPolicy" faults={faults} />
       {drawn === undefined ? null : (
         <TicketCreationAdvanced
           form={form}
