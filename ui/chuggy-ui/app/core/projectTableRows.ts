@@ -1,20 +1,15 @@
 /**
- * One row of the project table: a ticket, and what its latest execution says
- * it is running, which the tickets list carries on the ticket itself.
+ * One row of the project table: a ticket, and how its latest execution
+ * stands, which the tickets list carries on the ticket itself.
  *
  * THE FIRST COLUMN IS THE TICKET'S TITLE, which the wire carries on the ticket
  * itself: the title its brief names, or the first line of its intent where the
  * brief names none. Nothing here derives it.
  */
 
-import type {
-  ProjectTicket,
-  TicketLatestExecution,
-} from "../../../../src/contract/responses.ts";
+import type { ProjectTicket } from "../../../../src/contract/responses.ts";
 import type { TicketPhase } from "../../../../src/contract/rosters.ts";
 
-import { capabilitiesShortened, workerLabel } from "./labels.ts";
-import type { Label } from "./labels.ts";
 import { setVerdict } from "./ticketLedger.ts";
 import type { SetVerdict } from "./ticketLedger.ts";
 import { ticketBadgeLabel } from "./ticketSections.ts";
@@ -37,26 +32,9 @@ export interface ProjectTableRow {
   /** The latest execution as the ticket's ledger judges it, a set of one, so
    * the row draws it in the word and hue the ticket page does. */
   readonly executionVerdict: SetVerdict | undefined;
-  readonly runsOn: Label | undefined;
   readonly activityAt: string;
   readonly openDependencies: readonly UpNextOpenDependency[];
   readonly revokedDependencies: readonly number[];
-}
-
-/** What the task was placed on, named where the catalog names it: a container
- * is its worker or the image the catalog holds no worker for, a capability task
- * is what it asked its runner for. */
-export function projectTableRunsOn(execution: TicketLatestExecution): Label {
-  const requirement = execution.requirement;
-  switch (requirement.mode) {
-    case "Container":
-      return workerLabel(execution.worker, requirement.image);
-    case "Capability":
-      return {
-        text: capabilitiesShortened(requirement.capabilities),
-        title: requirement.capabilities.join(", "),
-      };
-  }
 }
 
 /** The later of two instants a row's activity might carry, compared as
@@ -88,7 +66,6 @@ export function projectTableRow(ticket: ProjectTicket): ProjectTableRow {
     badge: ticketBadgeLabel(ticket.phase, ticket.escalation),
     executionVerdict:
       execution === undefined ? undefined : setVerdict([execution]),
-    runsOn: execution === undefined ? undefined : projectTableRunsOn(execution),
     activityAt: laterActivityAt(
       ticket.changedAt,
       execution?.terminalAt ?? execution?.registeredAt,

@@ -48,8 +48,13 @@ vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
 
 vi.mock("@tanstack/react-router", () => ({
   createLink: (component: unknown) => component,
-  Link: (props: { readonly children?: ReactNode }) => (
-    <a href="/">{props.children}</a>
+  Link: (props: {
+    readonly children?: ReactNode;
+    readonly "aria-label"?: string;
+  }) => (
+    <a href="/" aria-label={props["aria-label"]}>
+      {props.children}
+    </a>
   ),
   Outlet: () => <InboxScreen partition={atlas} />,
   useNavigate: () => () => undefined,
@@ -105,12 +110,14 @@ function serving(inbox: () => readonly InboxEntryResponse[] | undefined) {
   };
 }
 
-/** The count the rail's inbox entry carries after its label, and nothing where
- * the inbox is clear. */
+/** The count the bar's inbox badge carries, and nothing where the inbox is
+ * clear. */
 function badge(): string | undefined {
-  const entry = screen.queryByRole("link", { name: /Inbox/u });
-  const count = entry?.textContent?.replace("Inbox", "") ?? "";
-  return count === "" ? undefined : count;
+  const entry = screen.queryByRole("link", { name: /^Inbox/u });
+  const count = entry?.textContent ?? "";
+  if (count === "") return undefined;
+  expect(entry?.getAttribute("aria-label")).toBe(`Inbox, ${count} unread`);
+  return count;
 }
 
 function openActions(actions: readonly unknown[]): string {

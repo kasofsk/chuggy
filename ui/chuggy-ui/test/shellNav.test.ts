@@ -2,9 +2,9 @@
  * The bar's entries, derived: every screen the project holds, each with the
  * route the router registered for it.
  *
- * The counts and the standing are what the reads supply, and an entry answers
- * for neither when they have not: a bar that drew a zero would be saying
- * something the console has not been told.
+ * The standing is what a read supplies, and an entry answers for none when it
+ * has not: a bar that drew one would be saying something the console has not
+ * been told.
  */
 
 import { expect, test } from "vitest";
@@ -28,7 +28,6 @@ test("every entry names a route of the partition and carries its params", () => 
   }
   expect(entries.map((entry) => entry.id)).toStrictEqual([
     "overview",
-    "inbox",
     "lead",
     "catalog",
     "settings",
@@ -37,16 +36,13 @@ test("every entry names a route of the partition and carries its params", () => 
   ]);
 });
 
-test("the inbox count and the lead's standing are drawn only where a read supplied them", () => {
+test("the lead's standing is drawn only where a read supplied it", () => {
   const silent = shellNav({ partition: atlas });
-  expect(silent.find((entry) => entry.id === "inbox")?.count).toBeUndefined();
   expect(silent.find((entry) => entry.id === "lead")?.standing).toBeUndefined();
   const told = shellNav({
     partition: atlas,
-    inboxCount: "3",
     leadStanding: { word: "Working", tone: "live" },
   });
-  expect(told.find((entry) => entry.id === "inbox")?.count).toBe("3");
   expect(told.find((entry) => entry.id === "lead")?.standing).toStrictEqual({
     word: "Working",
     tone: "live",
@@ -61,7 +57,7 @@ function currentAt(pathname: string): readonly string[] {
 
 test("each screen is current on its own address alone", () => {
   expect(currentAt("/acme/atlas")).toStrictEqual(["overview"]);
-  expect(currentAt("/acme/atlas/inbox")).toStrictEqual(["inbox"]);
+  expect(currentAt("/acme/atlas/inbox")).toStrictEqual([]);
   expect(currentAt("/acme/atlas/lead")).toStrictEqual(["lead"]);
   expect(currentAt("/acme/atlas/catalog")).toStrictEqual(["catalog"]);
   expect(currentAt("/acme/atlas/settings")).toStrictEqual(["settings"]);

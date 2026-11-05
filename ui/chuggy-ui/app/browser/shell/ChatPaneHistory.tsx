@@ -453,7 +453,7 @@ export function ChatPaneTitle(props: {
       className={
         shown
           ? "text-ink-2 font-strong min-w-0 flex-1 truncate pl-3 text-sm"
-          : "sr-only"
+          : "visually-hidden"
       }
     >
       {threadLabel(props.thread)}

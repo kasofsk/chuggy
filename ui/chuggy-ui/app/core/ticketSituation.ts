@@ -1,6 +1,6 @@
 /**
- * What the ticket page's status bar and the slot under it say: the tone the bar
- * is tinted in, its one dim line, and which one card the slot holds.
+ * What the ticket page's status bar and the slot under it say: the bar's one
+ * dim line, and which one card the slot holds.
  *
  * NEEDS YOU COMES BEFORE NOW. A finalizing ticket can be running and waiting on
  * an approval at once, and the card that can answer the question is the one a
@@ -37,8 +37,6 @@ import {
   stageLabel,
 } from "./ticketLedger.ts";
 import { phaseIsRunning } from "./ticketPageFacts.ts";
-import { phaseTone } from "./tones.ts";
-import type { Tone } from "./tones.ts";
 
 /** The run the Now card is about, and the two labels it is headed by. */
 export interface RunningNow {
@@ -78,14 +76,6 @@ export interface SituationReads {
   readonly executions: readonly ExecutionSummary[];
   readonly setupOverridable: boolean;
   readonly nowMs: number;
-}
-
-/** A blocked ticket is parked whatever its phase says, because it waits on a
- * person as an escalated one does. */
-export function ticketStatusTone(ticket: TicketResponse): Tone {
-  return ticket.revokedDependencies.length > 0
-    ? "parked"
-    : phaseTone(ticket.phase);
 }
 
 /**

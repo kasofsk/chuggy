@@ -1,6 +1,6 @@
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import { QueryClient } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -29,6 +29,7 @@ import {
   ticketPageCandidate,
   ticketPageRoutes,
 } from "./ticketPageFixture.ts";
+import { dispatchChipName } from "./ticketDispatchPressed.ts";
 import { workRunnerOver, workRunnerUnreadable } from "./workRunnerReads.ts";
 import type { WorkRunnerReads } from "./workRunnerReads.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
@@ -59,6 +60,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+const dispatchChip = dispatchChipName(11);
+
 test("a dispatchable ticket submits the version from the strict view", async () => {
   const api = apiDouble({
     operation: {
@@ -87,9 +90,16 @@ test("a dispatchable ticket submits the version from the strict view", async () 
   await settled();
 
   await turned(() => {
-    screen.getByRole("button", { name: "Dispatch" }).click();
+    screen.getByRole("button", { name: dispatchChip }).click();
+  });
+  expect(api.submitted()).toBeUndefined();
+  await turned(() => {
+    within(screen.getByRole("dialog", { name: `${dispatchChip}?` }))
+      .getByRole("button", { name: "Dispatch" })
+      .click();
   });
 
+  expect(screen.queryByRole("dialog")).toBeNull();
   expect(api.submitted()).toMatchObject({
     mutation: {
       mutation: "ManualDispatch",
@@ -134,7 +144,7 @@ async function drawnWithLead(
  * ticket runs, and the page says so where the press is. */
 test("Dispatch in a project with no lead says tickets are dispatched by hand", async () => {
   await drawnWithLead({ lead: "None" });
-  expect(screen.getByRole("button", { name: "Dispatch" })).toBeDefined();
+  expect(screen.getByRole("button", { name: dispatchChip })).toBeDefined();
   expect(screen.getByText("No lead · Dispatched by hand")).toBeDefined();
 });
 
@@ -143,7 +153,7 @@ test("Dispatch in a project with no lead says tickets are dispatched by hand", a
  * was refused, runs it only on a press. */
 test("Dispatch says it is by hand only where the read says no lead will open", async () => {
   await drawnWithLead({ lead: "None", absence: { reason: "NotNeeded" } });
-  expect(screen.getByRole("button", { name: "Dispatch" })).toBeDefined();
+  expect(screen.getByRole("button", { name: dispatchChip })).toBeDefined();
   expect(screen.queryByText("No lead · Dispatched by hand")).toBeNull();
   cleanup();
   await drawnWithLead({ lead: "None", absence: { reason: "Paused" } });
@@ -158,18 +168,18 @@ test("Dispatch says it is by hand only where the read says no lead will open", a
 
 test("Dispatch in a project with a lead says nothing of the hand", async () => {
   await drawnWithLead(leadBody(1, 1));
-  expect(screen.getByRole("button", { name: "Dispatch" })).toBeDefined();
+  expect(screen.getByRole("button", { name: dispatchChip })).toBeDefined();
   expect(screen.queryByText("No lead · Dispatched by hand")).toBeNull();
 });
 
 test("a ticket offered no Dispatch says nothing of the hand, lead or none", async () => {
   await drawnWithLead({ lead: "None" }, false);
-  expect(screen.queryByRole("button", { name: "Dispatch" })).toBeNull();
+  expect(screen.queryByRole("button", { name: dispatchChip })).toBeNull();
   expect(screen.queryByText("No lead · Dispatched by hand")).toBeNull();
 });
 
 function dispatchOffered(): boolean {
-  return screen.queryByRole("button", { name: "Dispatch" }) !== null;
+  return screen.queryByRole("button", { name: dispatchChip }) !== null;
 }
 
 test("a reader who may not dispatch is offered no Dispatch and is told nothing of the hand", async () => {

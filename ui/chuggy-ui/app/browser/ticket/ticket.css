@@ -1,6 +1,7 @@
-/* The ticket page: the status bar tinted by where the ticket stands, the card
-   under it, and the rows that open onto the detail. The tint is a data
-   attribute, so a tone with no wash of its own stays the plain panel. */
+/* The ticket page: the status bar, the card under it, the configuration
+   tinted by the phase each part of it runs in, and the rows that open onto
+   the detail. The tint is a data attribute, so a part with none stays the
+   plain panel. */
 
 @layer page {
   .ticket-instructions {
@@ -649,12 +650,6 @@
     gap: var(--space-2);
   }
 
-  .ticket-config-doc {
-    margin: 0;
-    line-height: var(--leading-prose);
-    color: var(--ink-1);
-  }
-
   /* A command is one token as often as not, and breaks where it must rather
      than widen the column it stands in. */
   .ticket-config-command {
@@ -670,30 +665,10 @@
     color: var(--ink-1);
   }
 
-  .ticket-config-evaluations {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-    padding-top: var(--space-4);
-    border-top: var(--hairline) solid var(--edge);
-  }
-
   .ticket-config-evaluation-grid {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: var(--space-4);
-  }
-
-  .ticket-config-evaluation-row {
-    display: grid;
-    gap: var(--space-1);
-    min-width: 0;
-  }
-
-  .ticket-config-evaluation-label {
-    color: var(--ink-3);
-    font-size: var(--text-sm);
-    white-space: nowrap;
   }
 
   .ticket-config-evaluation-body {

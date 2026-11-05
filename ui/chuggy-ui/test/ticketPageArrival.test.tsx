@@ -27,6 +27,10 @@ import {
 import { frame } from "./streamDouble.ts";
 import { ticketDispatchViewOf } from "./ticketPageFixture.ts";
 import {
+  dispatchChipName,
+  dispatchConfirmed,
+} from "./ticketDispatchPressed.ts";
+import {
   ledgerPage,
   ticket21Parked,
   ticket21Program,
@@ -222,7 +226,9 @@ test("an action's confirmed row leaves the ledger grouped and the brief drawn", 
 test("the page asks the dispatch view for the page that would hold its own ticket", async () => {
   drawn(pendingRead, dispatchedRow, candidateView);
   await settled();
-  expect(screen.getByRole("button", { name: "Dispatch" })).toBeDefined();
+  expect(
+    screen.getByRole("button", { name: dispatchChipName(21) }),
+  ).toBeDefined();
 });
 
 test("a dispatch's confirmed row leaves the ledger grouped and the brief drawn", async () => {
@@ -231,9 +237,7 @@ test("a dispatch's confirmed row leaves the ledger grouped and the brief drawn",
   const held = briefDrawn();
   expect(cyclesDrawn()).toBe(3);
 
-  await turned(() => {
-    screen.getByRole("button", { name: "Dispatch" }).click();
-  });
+  await dispatchConfirmed(21);
   await settled();
 
   expect(screen.getAllByText("Working").length).toBeGreaterThan(0);
