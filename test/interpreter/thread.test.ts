@@ -80,6 +80,7 @@ test("the default roster is capabilities the tree knows, and holds neither of th
   assert.ok(!held.includes("RepositoryWrite"));
   assert.ok(held.includes("DraftOriginate"));
   assert.ok(held.includes("TicketDispatch"));
+  assert.ok(held.includes("ThreadOffer"));
 });
 
 /**

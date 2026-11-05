@@ -228,6 +228,12 @@ export const allSessionCapabilities = [
    * reads.
    */
   "MemberRead",
+  /**
+   * What a thread offers its member rather than doing: a page to look at, or
+   * an action to confirm or decline. Its tools write nothing and reach no
+   * route, so what is offered is done by the member or not at all.
+   */
+  "ThreadOffer",
 ] as const;
 export type SessionCapability = (typeof allSessionCapabilities)[number];
 
@@ -240,6 +246,8 @@ export const allSessionTurnInputKinds = [
   "UserMessage",
   "Wake",
   "Inquiry",
+  /** A member's confirmation or decline of an action their thread offered them. */
+  "OfferReply",
 ] as const;
 export type SessionTurnInputKind = (typeof allSessionTurnInputKinds)[number];
 

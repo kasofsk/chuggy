@@ -62,8 +62,9 @@ import type { Partition } from "./projectStore.ts";
 /**
  * The roster a thread is opened with when nothing has configured one, generous
  * because a thread exists to find out what is going on — reading the tree,
- * running what it takes to read it, and authoring the drafts its owner asks
- * for. It is generous against the pod alone, for the reason the header gives.
+ * running what it takes to read it, authoring the drafts its owner asks for,
+ * and offering its owner a page to look at or an action to confirm. It is
+ * generous against the pod alone, for the reason the header gives.
  */
 export const threadCapabilitiesDefault = [
   "RepositoryRead",
@@ -72,6 +73,7 @@ export const threadCapabilitiesDefault = [
   "DraftAuthor",
   "DraftOriginate",
   "TicketDispatch",
+  "ThreadOffer",
 ] as const satisfies readonly SessionCapability[];
 
 /**

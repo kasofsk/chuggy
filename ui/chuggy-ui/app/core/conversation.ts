@@ -348,7 +348,8 @@ export interface ConversationTurn {
 }
 
 /** What opened an exchange. `Document` is a wake whose pointer cannot be read,
- * which is drawn as its kind rather than as the raw document. */
+ * or a reply to an offer, each drawn as its kind rather than as the raw
+ * document. */
 export type ConversationAsk =
   | {
       readonly ask: "Message";
@@ -660,6 +661,8 @@ function conversationAskOf(
       return { ask: "Observation" };
     case "Inquiry":
       return { ask: "Inquiry" };
+    case "OfferReply":
+      return { ask: "Document", kind };
   }
 }
 

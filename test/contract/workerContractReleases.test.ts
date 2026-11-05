@@ -31,6 +31,10 @@ import {
   workerRunEndedSchema,
   workerRunTotalsSchema,
 } from "../../src/contract/workerPlane.ts";
+import {
+  sessionFactsAnswerSchema,
+  sessionTurnClaimedSchema,
+} from "../../src/contract/sessionPlane.ts";
 import { resultManifestDocumentSchema } from "../../src/contract/workerDocuments.ts";
 import { workTaskDocumentSchema } from "../../src/contract/workerTask.ts";
 import {
@@ -39,6 +43,7 @@ import {
   workerContractEvaluatedTrees,
   workerContractRunUsages,
   workerContractTargetRefs,
+  workerContractThreadOffer,
 } from "../../src/interpreter/workerPlane.ts";
 import {
   workerContractAlias,
@@ -247,4 +252,36 @@ test("a manifest names the tree an evaluation checked out from the version a run
       contractVersionAccepted(workerContractEvaluatedTrees, release),
       release,
     );
+});
+
+test("a session's facts name `ThreadOffer` and its mailbox hands over an `OfferReply` from the version a pod holds the plane to, and no release below it reads either", async () => {
+  const read = (schema: z.ZodType, field: string, value: unknown) =>
+    schema instanceof z.ZodObject &&
+    Object.hasOwn(schema.shape, field) &&
+    (schema.shape[field] as z.ZodType).safeParse(value).success;
+  const members = [
+    ["sessionFactsAnswerSchema", "capabilities", ["ThreadOffer"]],
+    ["sessionTurnClaimedSchema", "inputKind", "OfferReply"],
+  ] as const;
+  assert.ok(read(sessionFactsAnswerSchema, "capabilities", ["ThreadOffer"]));
+  assert.ok(read(sessionTurnClaimedSchema, "inputKind", "OfferReply"));
+  assert.ok(
+    contractVersionAccepted(workerContractThreadOffer, workerContractRelease),
+  );
+  for (const release of workerContractReplayed("session"))
+    for (const [name, field, value] of members)
+      assert.equal(
+        read(
+          await workerContractReleaseExport(
+            release,
+            "sessionPlane",
+            name,
+            workerContractReleaseSchema,
+          ),
+          field,
+          value,
+        ),
+        contractVersionAccepted(workerContractThreadOffer, release),
+        `${release} ${name}`,
+      );
 });

@@ -417,6 +417,15 @@ describe("the mailbox overlay", () => {
     );
     expect(exchanges[0]?.ask).toEqual({ ask: "Document", kind: "Wake" });
   });
+
+  test("a reply to an offer draws as its kind, never as the document it carries", () => {
+    const input = JSON.stringify({ reply: "Confirmed", ticket: 44 });
+    const exchanges = conversationExchanges(
+      [askOf("u1", input)],
+      [turnOf({ turn: "t1", inputKind: "OfferReply", input })],
+    );
+    expect(exchanges[0]?.ask).toEqual({ ask: "Document", kind: "OfferReply" });
+  });
 });
 
 describe("the mailbox overlay, on turns that asked the same thing", () => {

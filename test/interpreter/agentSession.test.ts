@@ -225,6 +225,7 @@ test("every roster holds its members in the order the schema iterates", () => {
     "TicketDispatch",
     "LeadDecision",
     "MemberRead",
+    "ThreadOffer",
   ]);
   assert.deepEqual(allSessionScopes, ["Project", "Member"]);
   assert.deepEqual(allSessionTurnInputKinds, [
@@ -232,6 +233,7 @@ test("every roster holds its members in the order the schema iterates", () => {
     "UserMessage",
     "Wake",
     "Inquiry",
+    "OfferReply",
   ]);
   assert.deepEqual(allSessionTurnStates, [
     "Queued",
