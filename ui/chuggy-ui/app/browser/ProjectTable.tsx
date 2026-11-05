@@ -99,6 +99,7 @@ import {
   TicketStateChip,
   TicketStateCount,
 } from "./ticket/TicketStateChip.tsx";
+import { useHeadroom } from "./useHeadroom.ts";
 import "./ProjectTable.css";
 
 interface TicketRowsHeld {
@@ -479,8 +480,15 @@ function TicketListControls(props: {
   readonly filter: TicketFilter;
   readonly onFilter: (filter: TicketFilter) => void;
 }): ReactNode {
+  const bar = useRef<HTMLDivElement>(null);
+  const hidden = useHeadroom(bar);
   return (
-    <div className="ticket-list-controls">
+    <div
+      className="ticket-list-controls"
+      ref={bar}
+      data-hidden={hidden || undefined}
+      inert={hidden}
+    >
       <TicketListCounts rows={props.rows} />
       <div className="ticket-list-selects">
         <TicketListSearch search={props.search} onSearch={props.onSearch} />

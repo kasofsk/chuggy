@@ -23,6 +23,27 @@
     flex-wrap: wrap;
     align-items: center;
     gap: var(--space-2);
+    position: sticky;
+    top: calc(-1 * var(--space-2));
+    z-index: 1;
+    margin-top: calc(-1 * var(--space-2));
+    padding-block: var(--space-4) var(--space-2);
+    background: var(--surface-0);
+    transition:
+      transform var(--duration-2) var(--ease-out),
+      opacity var(--duration-2) var(--ease-out);
+  }
+
+  .ticket-list-controls[data-hidden] {
+    opacity: 0;
+    transform: translateY(-100%);
+    pointer-events: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ticket-list-controls {
+      transition: none;
+    }
   }
 
   .ticket-state-count-label {
@@ -426,6 +447,11 @@
   @container (max-width: 40em) {
     .ticket-list {
       margin-inline: calc(-1 * var(--space-4));
+    }
+
+    .ticket-list-controls {
+      margin-inline: calc(-1 * var(--space-4));
+      padding: var(--space-4) var(--space-4) var(--space-3);
     }
 
     .ticket-list-row {
