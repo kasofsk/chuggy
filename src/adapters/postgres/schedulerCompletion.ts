@@ -596,15 +596,16 @@ async function schedulerTerminalStanding(
 }
 
 /**
- * Whether the task's bundle pinned the tree it must be evaluated at and the
- * report names another or none. A task whose bundle pinned none is held to
- * nothing.
+ * Whether the task's bundle pinned the tree it must be evaluated at and a
+ * report held to it names another or none. A task whose bundle pinned none,
+ * and a report held to no tree, are held to nothing.
  */
 async function schedulerTreeNotExpected(
   client: pg.PoolClient,
   execution: LogicalExecution,
   report: AttemptReport,
 ): Promise<boolean> {
+  if (report.treeHeld === false) return false;
   const pinned = await client.query<{ reference_id: string }>(
     sql`SELECT b.reference_id
           FROM execution e

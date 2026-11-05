@@ -126,6 +126,7 @@ import {
 import {
   contractVersionAccepted,
   workerContractAccepted,
+  workerContractEvaluatedTrees,
   workerContractLiveStops,
   workerContractProjectReads,
   workerContractRunnerSessions,
@@ -1031,6 +1032,10 @@ function workerReportRoute(
       generation: authority.generation,
       manifest: authority.manifest,
       text: request.body,
+      treeHeld: contractVersionAccepted(
+        workerContractEvaluatedTrees,
+        workerContractOffered(request),
+      ),
     });
     switch (ingested.ingested) {
       case "Terminalized":

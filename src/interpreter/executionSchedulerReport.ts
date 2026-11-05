@@ -71,12 +71,14 @@ export interface ExecutionReportService {
 
 /**
  * One worker's report: the fenced identity its credential was issued under, the
- * manifest identity the scheduler minted for it, and the text it sent. Only the
- * text is the worker's to compose.
+ * manifest identity the scheduler minted for it, the text it sent, and whether
+ * it is held to a pinned tree, as `AttemptReport` says. Only the text is the
+ * worker's to compose.
  */
 export interface AttemptSubmission extends FencedAttempt {
   readonly manifest: ResultManifestId;
   readonly text: string;
+  readonly treeHeld?: boolean;
 }
 
 /**
@@ -201,6 +203,9 @@ export async function executionSchedulerIngest(
   const settled = await service.store.terminalize({
     ...submissionAttempt(submission),
     manifest: confirmed,
+    ...(submission.treeHeld === undefined
+      ? {}
+      : { treeHeld: submission.treeHeld }),
   });
   recordScheduler(service.metrics, (metrics) => {
     metrics.terminalization(settled.terminalized);

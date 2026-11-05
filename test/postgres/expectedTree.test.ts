@@ -3,7 +3,8 @@
  * a report naming that tree, through either door a report arrives at. Any other
  * report is the runner not having run the work: the execution is blocked with
  * the reason that says so, and the manifest it sent is retained nowhere. A task
- * whose bundle pinned no tree is settled as it always was.
+ * whose bundle pinned no tree, and a report from a release that cannot name
+ * one, are settled as they always were.
  */
 
 import assert from "node:assert/strict";
@@ -180,6 +181,24 @@ for (const [door, settle] of doors) {
       outcome: "Blocked",
       blocked_reason: "EvaluatedTreeNotExpected",
       retained: 0,
+    });
+  });
+
+  test(`${door} holds a report whose release names no tree to none, settling it as before`, async () => {
+    const attempt = await placed("tree-unheld", expected);
+    const { settled } = await settle(attempt, {
+      ...reporting(attempt, undefined),
+      treeHeld: false,
+    });
+    assert.equal(
+      settled.terminalized === "Terminalized" && settled.outcome,
+      "Passed",
+    );
+    assert.deepEqual(await settledAs(attempt), {
+      status: "Terminal",
+      outcome: "Passed",
+      blocked_reason: null,
+      retained: 1,
     });
   });
 
