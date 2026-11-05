@@ -44,6 +44,8 @@ import {
   settled,
 } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
+import listSheet from "../app/browser/ProjectTable.css?raw";
+import { sheetDeclared, sheetNarrowCondition, sheetRules } from "./sheet.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import {
   abilitiesEvery,
@@ -256,15 +258,56 @@ test("a row's state, execution, runs-on and activity annotations are all on the 
   expect(card.contains(screen.getByText("3h ago"))).toBe(true);
 });
 
+/** The creator as each layout draws it: in the meta where wide, at the start
+ * of the foot where narrow. */
+const creatorPlaces = [".ticket-list-creator", ".ticket-list-foot-creator"];
+
+/** The text each place a row draws its creator holds. */
+function creatorsDrawn(card: Element | null): readonly (string | null)[] {
+  return creatorPlaces.map(
+    (place) => card?.querySelector(`${place} .identity`)?.textContent ?? null,
+  );
+}
+
 test("a row names the member who filed it by subject where no email is read, the whole principal on hover, and a row with none names nobody", async () => {
   await drawTableWith([ticket, escalated], [execution]);
-  const filed = screen.getByText("alice");
-  expect(screen.getByText(title).closest("li")?.contains(filed)).toBe(true);
+  const card = screen.getByText(title).closest("li");
+  expect(creatorsDrawn(card)).toEqual(["alice", "alice"]);
+  const [filed] = within(card as HTMLElement).getAllByText("alice");
+  if (filed === undefined) throw new Error("no creator on the row");
   fireEvent.focus(filed);
   expect((await screen.findByRole("tooltip")).textContent).toBe(creator);
   const unfiled = screen.getByText("Escalated ticket").closest("li");
   expect(unfiled?.querySelector(".identity")).toBeNull();
 });
+
+const wideCondition = "(min-width: 53em)";
+const narrowCondition = "(max-width: 53em)";
+
+/** Which of a row's creator places the sheet shows under the conditions. */
+function creatorPlacesShown(conditions: readonly string[]): readonly string[] {
+  const rules = sheetRules(listSheet, conditions);
+  return creatorPlaces.filter((place) => {
+    const drawn = document.createElement("span");
+    drawn.className = place.slice(1);
+    return sheetDeclared(rules, drawn, "display") !== "none";
+  });
+}
+
+test.each([
+  ["wide", [wideCondition], [".ticket-list-creator"]],
+  ["narrow", [narrowCondition], [".ticket-list-foot-creator"]],
+  [
+    "on a phone",
+    [narrowCondition, sheetNarrowCondition],
+    [".ticket-list-foot-creator"],
+  ],
+] as const)(
+  "%s, the sheet shows a row's creator in exactly one place",
+  (_width, conditions, shown) => {
+    expect(creatorPlacesShown(conditions)).toEqual(shown);
+  },
+);
 
 test("a row names its repository by owner and name, the whole address on hover, and a row with none names no repository", async () => {
   await drawTableWith([ticket, escalated], [execution]);
@@ -304,8 +347,11 @@ test("a row names its creator by the email the project's people hold for them", 
             )
           : served(url, init)) as typeof fetch,
   );
-  const filed = await screen.findByText("alice@example.com");
-  expect(screen.getByText(title).closest("li")?.contains(filed)).toBe(true);
+  await screen.findAllByText("alice@example.com");
+  expect(creatorsDrawn(screen.getByText(title).closest("li"))).toEqual([
+    "alice@example.com",
+    "alice@example.com",
+  ]);
 });
 
 test("a row draws its state as a chip in its phase's tone", async () => {

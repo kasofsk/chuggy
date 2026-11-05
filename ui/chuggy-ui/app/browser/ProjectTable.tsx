@@ -272,6 +272,21 @@ function TicketListDependencies(props: {
   );
 }
 
+/** Who filed the row, drawn in the meta where the list is wide and in the
+ * foot where it is narrow; the sheet shows one of the two. */
+function TicketListCreator(props: {
+  readonly row: ProjectTableRow;
+  readonly creatorEmails: ReadonlyMap<string, string>;
+  readonly className: string;
+}): ReactNode {
+  if (props.row.creator === undefined) return null;
+  return (
+    <span className={props.className}>
+      <Identity label={creatorLabel(props.row.creator, props.creatorEmails)} />
+    </span>
+  );
+}
+
 function TicketListRow(props: {
   readonly row: ProjectTableRow;
   readonly partition: PartitionIdentity;
@@ -306,18 +321,21 @@ function TicketListRow(props: {
               </span>
               <TicketListExecution row={row} />
               <TicketListRepository row={row} />
-              {row.creator === undefined ? null : (
-                <span className="ticket-list-creator">
-                  <Identity
-                    label={creatorLabel(row.creator, props.creatorEmails)}
-                  />
-                </span>
-              )}
+              <TicketListCreator
+                row={row}
+                creatorEmails={props.creatorEmails}
+                className="ticket-list-creator"
+              />
             </span>
             <TicketListDependencies row={row} />
           </div>
         </div>
         <div className="ticket-list-foot">
+          <TicketListCreator
+            row={row}
+            creatorEmails={props.creatorEmails}
+            className="ticket-list-foot-creator"
+          />
           {ticketListStandingOf(row) === "Ready" ? (
             <TicketRowDispatchScope
               partition={props.partition}
