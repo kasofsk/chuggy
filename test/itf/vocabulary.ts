@@ -139,11 +139,6 @@ export function encodeInt(value: number): ItfValue {
   return BigInt(value);
 }
 
-/** A nullary variant, which is how ITF writes a sum arm carrying nothing. */
-export function encodeNullaryTag(tag: string): ItfValue {
-  return encodeNullary(tag);
-}
-
 /**
  * A draw as ITF records one: present under Some, absent under None. It answers
  * the serialized shape rather than the decoded one, because an option only
