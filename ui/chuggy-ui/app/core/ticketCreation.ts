@@ -35,6 +35,7 @@ import { draftCreationSchema } from "../../../../src/contract/requests.ts";
 import {
   briefFinalizationProposes,
   type BriefFinalizationMode,
+  type BriefLanding,
 } from "../../../../src/contract/rosters.ts";
 import type { PublicMutation } from "../../../../src/contract/requests.ts";
 import {
@@ -109,6 +110,8 @@ export interface TicketCreationForm extends CreationAuthoring {
   /** How this ticket lands, seeded from the repository's default and the
    * reader's from the moment they move it. */
   readonly landingMode: BriefFinalizationMode;
+  /** How that landing is ordered against the others on its reference. */
+  readonly landingPolicy: BriefLanding;
   /** What this ticket replaces of its configuration, drawn only once a
    * configuration is chosen and kept when another is; sent only under a
    * configuration that is no catalog. */
@@ -133,6 +136,7 @@ export type CreationField =
   | "branch"
   | "target"
   | "landing"
+  | "landingPolicy"
   | "repository"
   | "authoring"
   | "overrides"
@@ -546,6 +550,7 @@ export function creationFormFrom(
     checks: [],
     branchName: "",
     repository,
+    landingPolicy: "Direct",
     ...creationLandingSeed(offers, repositories, {
       configuration,
       selection: {},
@@ -890,6 +895,8 @@ export function creationFaultSentence(field: CreationField): string {
       return `a branch is named here without its ${briefBranchPrefix} prefix, and the whole reference is at most ${String(briefBranchCharsMax)} characters`;
     case "landing":
       return "this landing is not one the API will accept";
+    case "landingPolicy":
+      return "this landing policy is not one the API will accept";
     case "repository":
       return "this project binds a repository, so a ticket in it names which one";
     case "authoring":
@@ -919,6 +926,7 @@ function creationFieldOf(
   if (path[1] === "checks") return "checks";
   if (path[1] === "images") return "images";
   if (path[1] === "repository") return "repository";
+  if (path[1] === "landing") return "landingPolicy";
   if (path[1] === "finalization")
     return path[2] === "target" ? "target" : "landing";
   return path[1] === undefined ? undefined : "links";
@@ -1102,6 +1110,7 @@ function creationBriefOf(
     ...(checks.length === 0 ? {} : { checks }),
     ...(branches.branch.named === "Ref" ? { branch: branches.branch.ref } : {}),
     ...creationFinalizationOf(form, branches),
+    ...(form.landingPolicy === "Direct" ? {} : { landing: form.landingPolicy }),
   };
 }
 

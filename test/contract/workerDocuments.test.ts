@@ -310,6 +310,25 @@ const manifestBuiltSource: readonly Built[] = [
   ],
 ];
 
+/** Examples of the evaluated tree, which is a git object id in either width and is left out where none was evaluated. */
+const manifestBuiltTree: readonly Built[] = [
+  ["a tree", manifestWith({ evaluatedTree: "a".repeat(40) }), true],
+  ["a wide tree", manifestWith({ evaluatedTree: "a".repeat(64) }), true],
+  ["a tree one short", manifestWith({ evaluatedTree: "a".repeat(39) }), false],
+  [
+    "a tree of a width between",
+    manifestWith({ evaluatedTree: "a".repeat(41) }),
+    false,
+  ],
+  [
+    "an upper-case tree",
+    manifestWith({ evaluatedTree: "A".repeat(40) }),
+    false,
+  ],
+  ["a null tree", manifestWith({ evaluatedTree: null }), false],
+  ["a tree naming a number", manifestWith({ evaluatedTree: 1 }), false],
+];
+
 /** Examples of one artifact row, at and past each bound the schema states for it. */
 const manifestBuiltArtifacts: readonly Built[] = [
   ...builtAtBound("a path", contract.artifactPathCharsMax, (chars) =>
@@ -353,6 +372,7 @@ const manifestBuiltArtifacts: readonly Built[] = [
 const manifestBuilt: readonly Built[] = [
   ...manifestBuiltEnvelope,
   ...manifestBuiltSource,
+  ...manifestBuiltTree,
   ...manifestBuiltArtifacts,
 ];
 

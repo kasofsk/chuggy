@@ -200,6 +200,12 @@ export const finalizationEvidences: readonly number[] = [
 ];
 
 /**
+ * The evidence an evaluation is invalidated on, at model scope: an observation
+ * made outside the machine, in a band of its own beside the finalizer's.
+ */
+export const anInvalidationEvidence = 17;
+
+/**
  * What a finalizer may report: any of the three results, at any evidence it
  * may return. The machine draws the result, never the cause.
  */

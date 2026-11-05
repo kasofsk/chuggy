@@ -121,6 +121,7 @@ import type {
 import {
   contractVersionAccepted,
   workerContractAccepted,
+  workerContractEvaluatedTrees,
   workerContractProjectReads,
   type WorkerContractRange,
   type SessionTaskRead,
@@ -242,6 +243,8 @@ interface WorkerPlaneCase {
   readonly release?: string;
   readonly named?: true;
   readonly status?: number;
+  /** The versions of pod that can provoke this case; a release outside it is not driven with it. */
+  readonly sent?: WorkerContractRange;
 }
 
 const served = workerContractAccepted.max;
@@ -949,6 +952,10 @@ const workerPlaneCases: Readonly<
       .flat()
       .map((ingested) => ({
         name: `a report ingested as ${JSON.stringify(ingested)}`,
+        ...(ingested.ingested === "Malformed" &&
+        ingested.code === "EvaluatedTreeMalformed"
+          ? { sent: workerContractEvaluatedTrees }
+          : {}),
         service: { reports: { report: () => Promise.resolve(ingested) } },
       })),
   ],
@@ -1626,6 +1633,11 @@ function workerPlaneReplayed<Name extends string>(
         `${older.release} calls ${called}, which this plane does not name`,
       );
       for (const driven of plane.cases[name]) {
+        if (
+          driven.sent !== undefined &&
+          !contractVersionAccepted(driven.sent, older.release)
+        )
+          continue;
         const answered = await workerPlaneDriven(
           plane,
           name,

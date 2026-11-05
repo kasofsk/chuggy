@@ -170,6 +170,10 @@ export const ticketRefusals: Readonly<
       task: { type: "WorkTask", value: { ticket: 3, cycle: 1 } },
     },
   },
+  EvaluationNotCurrent: {
+    type: "EvaluationNotCurrent",
+    value: { ticket: 3, workCycle: 2 },
+  },
   FinalizationNotCurrent: {
     type: "FinalizationNotCurrent",
     value: { ticket: 3, workCycle: 2, generation: 1 },

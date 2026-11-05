@@ -69,6 +69,7 @@ import {
   finalizerRemoteCommit,
   finalizerRemotePort,
   finalizerRigOpen,
+  finalizerSerializedSubject,
   finalizerSubject,
   type FinalizerProject,
   type FinalizerRemote,
@@ -568,4 +569,83 @@ test("a rework runs at the accepted source with no observation", async () => {
     manifests: [],
     changeBase: postgresHarnessObservedCommit,
   });
+});
+
+test("a serialized ticket whose target did not move lands its accepted commit itself", async () => {
+  const { project, remote, worked } = await finalizerSerializedSubject(
+    rig,
+    "serial-held",
+  );
+  const port = finalizerRemotePort(rig);
+
+  assert.equal(
+    (await finalizerPassOnce(rig, project, port, "serial-held")).preparations,
+    1,
+  );
+  for (const round of ["promote", "conclude"]) {
+    await finalizerExpireClaim(rig, project);
+    await finalizerPassOnce(rig, project, port, `serial-held-${round}`);
+  }
+
+  assert.equal(
+    finalizerGitVerb(remote.origin, "rev-parse", "refs/heads/main"),
+    worked,
+    "the tip is the commit that was evaluated, with no merge between",
+  );
+});
+
+test("a serialized ticket whose target moved is sent back to re-check, naming its accepted commit", async () => {
+  const { project, remote, worked } = await finalizerSerializedSubject(
+    rig,
+    "serial-moved",
+  );
+  finalizerRemoteCommit(remote, "other.txt", "other\n", "other");
+  const port = finalizerRemotePort(rig);
+
+  assert.equal(
+    (await finalizerPassOnce(rig, project, port, "serial-moved")).preparations,
+    1,
+  );
+  const attempts = (await rig.harness.query(
+    `SELECT outcome, failure_kind, recheck_commit, candidate_commit
+       FROM finalization_attempt WHERE tenant=$1 AND project=$2`,
+    [project.partition.tenant, project.partition.project],
+  )) as readonly {
+    outcome: string;
+    failure_kind: string | null;
+    recheck_commit: string | null;
+    candidate_commit: string | null;
+  }[];
+  assert.deepEqual(attempts, [
+    {
+      outcome: "Failed",
+      failure_kind: "RecheckRequired",
+      recheck_commit: worked,
+      candidate_commit: null,
+    },
+  ]);
+
+  await finalizerExpireClaim(rig, project);
+  const concluded = await finalizerPassOnce(
+    rig,
+    project,
+    port,
+    "serial-moved-conclude",
+  );
+  assert.equal(concluded.conclusions, 1);
+  const drained = await finalizerDrain(
+    rig.harness,
+    project.partition,
+    project.memory,
+  );
+  assert.deepEqual(drained.decided, ["Committed"]);
+  assert.equal(
+    reworkReference(await reworkBundleOf(project), "Recheck")?.reference_id,
+    worked,
+  );
+  assert.notEqual(
+    finalizerGitVerb(remote.origin, "rev-parse", "refs/heads/main"),
+    worked,
+    "nothing landed",
+  );
 });

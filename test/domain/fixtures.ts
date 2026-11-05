@@ -58,6 +58,7 @@ import {
   taskRefOf,
 } from "../../src/domain/ticket.ts";
 import { taskOwner, workTaskIdentity } from "../../src/domain/task.ts";
+import { ticketAt } from "../../src/domain/ticketGraph.ts";
 
 /** The evaluator an obligation names, which is what a fixture answers by. */
 function evaluatorOf(task: TaskIdentity): number {
@@ -212,6 +213,18 @@ export function acceptedOf(decision: TicketDecision): SuccessfulTicketDecision {
 
 /** A ticket id, so a fixture reads the way the model's numbering does. */
 export const id = (value: number): TicketId => asTicketId(value);
+
+/** The one task single-width ticket 1 owes, which is what a completion names. */
+export function owedTaskOf(graph: TicketGraph): TaskIdentity {
+  const ticket = ticketAt(graph, id(1));
+  const state = ticket.state;
+  if (typeof state === "string" || state.type !== "Evaluation")
+    return workTaskIdentity(1, ticket.workCyclesStarted);
+  const [obligation] = currentTaskObligations(state.value);
+  if (obligation === undefined)
+    throw new Error("fixtures: the ticket owes no task");
+  return obligation.task;
+}
 
 /** A release's dependency draw, in the shape the release carries it: the model's set. */
 export const depsOf = (...values: number[]): ReadonlySet<TicketId> =>

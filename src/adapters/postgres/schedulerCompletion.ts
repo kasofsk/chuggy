@@ -595,6 +595,33 @@ async function schedulerTerminalStanding(
     : { standing: "NotAdmitted" };
 }
 
+/**
+ * Whether the task's bundle pinned the tree it must be evaluated at and a
+ * report held to it names another or none. A task whose bundle pinned none,
+ * and a report held to no tree, are held to nothing.
+ */
+async function schedulerTreeNotExpected(
+  client: pg.PoolClient,
+  execution: LogicalExecution,
+  report: AttemptReport,
+): Promise<boolean> {
+  if (report.treeHeld === false) return false;
+  const pinned = await client.query<{ reference_id: string }>(
+    sql`SELECT b.reference_id
+          FROM execution e
+          JOIN execution_request q
+            ON q.tenant=e.tenant AND q.project=e.project AND q.request=e.source_request
+          JOIN input_bundle_reference b
+            ON b.tenant=q.tenant AND b.project=q.project AND b.bundle=q.input_bundle
+               AND b.reference_kind='ExpectedTree'
+         WHERE e.tenant=${execution.partition.tenant}
+           AND e.project=${execution.partition.project}
+           AND e.execution=${execution.execution}`,
+  );
+  const expected = pinned.rows[0]?.reference_id;
+  return expected !== undefined && expected !== report.manifest.evaluatedTree;
+}
+
 /** Settles one logical task from a verified report, or says which absorption applied instead. */
 export async function schedulerTerminalize(
   client: pg.PoolClient,
@@ -631,6 +658,13 @@ export async function schedulerTerminalize(
   }
   if (!(await schedulerReporterReported(client, report))) {
     return { terminalized: "Fenced" };
+  }
+  if (await schedulerTreeNotExpected(client, standing.execution, report)) {
+    return schedulerBlockOpen(
+      client,
+      standing.execution,
+      "EvaluatedTreeNotExpected",
+    );
   }
   return schedulerSettle(client, standing.execution, report.manifest);
 }

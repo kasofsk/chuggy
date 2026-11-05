@@ -159,6 +159,30 @@ test("the lines a brief appends survive the wire's own parse into the panel", ()
   ).toEqual(["npm run lint", "npm test"]);
 });
 
+test("a serialized brief names its landing policy and a direct one draws none", () => {
+  render(
+    <TicketBrief
+      partition={briefPartition}
+      state={released({
+        intent: "an intent",
+        links: [],
+        landing: "Serialized",
+      })}
+    />,
+  );
+  expect(
+    screen.getByText("landing policy").nextElementSibling?.textContent,
+  ).toBe("Serialized");
+  cleanup();
+  render(
+    <TicketBrief
+      partition={briefPartition}
+      state={released({ intent: "an intent", links: [] })}
+    />,
+  );
+  expect(screen.queryByText("landing policy")).toBeNull();
+});
+
 test("a brief appending no check lines says so rather than drawing an empty list", () => {
   render(
     <TicketBrief

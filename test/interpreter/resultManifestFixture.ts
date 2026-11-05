@@ -215,6 +215,10 @@ export function manifestBodiesRefused(): readonly string[] {
     sourceReport("Pass", { ...source, commit: "not-an-object" }),
     sourceReport("Fail", source),
     sourceReport("Pass", source, [row("out/a")]),
+    JSON.stringify({
+      ...JSON.parse(workerReport("Pass")),
+      evaluatedTree: "not-a-tree",
+    }),
     report("Pass", [...handoffs, row("out/extra")]),
     report(
       "Pass",

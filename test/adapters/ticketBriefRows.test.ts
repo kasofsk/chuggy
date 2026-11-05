@@ -19,6 +19,7 @@ import { test } from "node:test";
 
 import {
   draftBriefFinalizationOf,
+  draftBriefOf,
   draftReleaseBriefOf,
 } from "../../src/adapters/postgres/ticketBrief.ts";
 import { briefFinalizationModes } from "../../src/contract/rosters.ts";
@@ -131,4 +132,25 @@ test("a ticket that lands nothing still has a brief for release to read", () => 
     }),
     { checks: [], finalization: { mode: "Push" } },
   );
+});
+
+test("a row's landing reads back, absent where it is Direct", () => {
+  const row = {
+    title: null,
+    intent: "Do the one thing.",
+    branch: null,
+    repository: null,
+    links: null,
+    images: null,
+    checks: null,
+    finalization_mode: "Push",
+    finalization_target: null,
+  };
+  assert.equal(
+    draftBriefOf({ ...row, landing_policy: "Serialized" })?.landing,
+    "Serialized",
+  );
+  for (const landing_policy of ["Direct", null])
+    assert.equal(draftBriefOf({ ...row, landing_policy })?.landing, undefined);
+  assert.throws(() => draftBriefOf({ ...row, landing_policy: "Stacked" }));
 });

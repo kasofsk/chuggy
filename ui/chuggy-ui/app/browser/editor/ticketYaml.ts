@@ -54,9 +54,15 @@ import type {
   ProjectRepositoryResponse,
 } from "../../../../../src/contract/responses.ts";
 import { briefImagesMax } from "../../../../../src/contract/brief.ts";
-import { briefFinalizationModes } from "../../../../../src/contract/rosters.ts";
-import type { BriefFinalizationMode } from "../../../../../src/contract/rosters.ts";
-import { landingEffect } from "../../core/codeLabels.ts";
+import {
+  briefFinalizationModes,
+  briefLandings,
+} from "../../../../../src/contract/rosters.ts";
+import type {
+  BriefFinalizationMode,
+  BriefLanding,
+} from "../../../../../src/contract/rosters.ts";
+import { landingEffect, landingPolicyEffect } from "../../core/codeLabels.ts";
 import { repositoryLabel } from "../../core/projectRepositories.ts";
 import { configurationFollowings } from "../../../../../src/contract/configurationDocument.ts";
 import type { ConfigurationSelection } from "../../../../../src/contract/configurationSelection.ts";
@@ -197,6 +203,7 @@ function ticketYamlKeys(
     ...(ticketYamlRepositoryOffered(context) ? ["repository"] : []),
     "landing",
     ...(landing === "None" ? [] : ["target"]),
+    "landingPolicy",
     ...(drawn === undefined
       ? []
       : [
@@ -263,6 +270,8 @@ export function ticketYamlOf(
     repository: form.repository,
     landing: form.landingMode,
     target: form.targetBranchName,
+    landingPolicy:
+      form.landingPolicy === "Direct" ? undefined : form.landingPolicy,
     dependencies: [...form.dependencies],
     program: form.program.map((stage) => ({
       evaluators: stage.evaluators.length,
@@ -366,6 +375,19 @@ function ticketYamlLandingOf(
   return mode === undefined
     ? ticketYamlRefused(`land as one of ${briefFinalizationModes.join(", ")}`)
     : ticketYamlTook(mode);
+}
+
+function ticketYamlLandingPolicyOf(
+  node: unknown,
+): TicketYamlTook<BriefLanding> {
+  const text = ticketYamlTextOf(node);
+  if (text.took === "Problem") return text;
+  const policy = briefLandings.find((held) => held === text.value);
+  return policy === undefined
+    ? ticketYamlRefused(
+        `order the landing as one of ${briefLandings.join(", ")}`,
+      )
+    : ticketYamlTook(policy);
 }
 
 /** The configuration a text names: one of the offers, or none yet. */
@@ -723,6 +745,11 @@ function ticketYamlKeyApplied(
         ...form,
         landingMode,
       }));
+    case "landingPolicy":
+      return into(ticketYamlLandingPolicyOf(value), (landingPolicy) => ({
+        ...form,
+        landingPolicy,
+      }));
     case "checks":
     case "dependencies":
     case "program":
@@ -747,6 +774,7 @@ function ticketYamlEmpty(base: TicketCreationForm): TicketCreationForm {
     branchName: "",
     targetBranchName: "",
     repository: "",
+    landingPolicy: "Direct",
     overrides: {},
     selection: {},
     workloads: {},
@@ -929,6 +957,7 @@ function ticketYamlKeyOf(field: CreationField): string | undefined {
     case "images":
     case "checks":
     case "landing":
+    case "landingPolicy":
     case "repository":
     case "target":
     case "branch":
@@ -1051,6 +1080,13 @@ function ticketYamlDescribed(
       })),
     },
     target: { hint: creationTargetBranchHint(form.landingMode), values: [] },
+    landingPolicy: {
+      hint: "how the landing is ordered against the others on its reference; left out is Direct",
+      values: briefLandings.map((policy) => ({
+        label: policy,
+        detail: landingPolicyEffect(policy),
+      })),
+    },
     ...ticketYamlConfiguredDescribed(drawn),
   };
 }

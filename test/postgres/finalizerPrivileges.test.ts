@@ -15,6 +15,7 @@ import {
   finalizerRole,
   schedulerRole,
   selectorServiceRole,
+  ticketEvaluationReworkedSinceFunction,
   ticketServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
 import {
@@ -34,13 +35,8 @@ after(async () => {
 /** The door 007 added, and the only way the three hold columns on a request are written. */
 const holdFunction = "record_finalization_hold";
 
-/** The four relations a forged conclusion would have to be written into. */
-const mailbox = [
-  "operation",
-  "decision_input",
-  "journal_entry",
-  "ticket_projection",
-] as const;
+/** The three relations a forged conclusion would have to be written into, and which the finalizer cannot even read. */
+const mailbox = ["operation", "decision_input", "journal_entry"] as const;
 
 /** Every relation a finalizer migration took from the roles that came before it. */
 const added = [
@@ -87,6 +83,29 @@ test("the finalizer holds no privilege at all on the relations a conclusion live
         statement,
       );
     }
+  }
+});
+
+test("the finalizer reads the phase of a ticket and writes nothing of its projection", async () => {
+  assert.equal(
+    await harness.attemptAs(
+      finalizerRole,
+      "SELECT tenant, project, ticket, phase FROM ticket_projection LIMIT 1",
+    ),
+    undefined,
+  );
+  for (const statement of [
+    "SELECT escalation FROM ticket_projection LIMIT 1",
+    "SELECT * FROM ticket_projection LIMIT 1",
+    "INSERT INTO ticket_projection DEFAULT VALUES",
+    "UPDATE ticket_projection SET phase = phase",
+    "DELETE FROM ticket_projection",
+  ]) {
+    assert.match(
+      (await harness.attemptAs(finalizerRole, statement)) ?? "",
+      postgresHarnessDenial("ticket_projection"),
+      statement,
+    );
   }
 });
 
@@ -318,7 +337,7 @@ const writeSurface = [
     table_name: "finalization_attempt",
     privilege_type: "INSERT",
     columns:
-      "approval_required,attempt,attempt_digest,candidate_commit,configuration_digest,configuration_revision,conflict_manifest,conflict_manifest_digest,failure_kind,input_bundle,input_bundle_digest,outcome,prepared_at,project,proposal_base_commit,proposal_base_ref,queue_group_commit,repository,request,strategy,target_base_ref,target_commit,target_ref,tenant,ticket",
+      "approval_required,attempt,attempt_digest,candidate_commit,configuration_digest,configuration_revision,conflict_manifest,conflict_manifest_digest,failure_kind,input_bundle,input_bundle_digest,outcome,prepared_at,project,proposal_base_commit,proposal_base_ref,queue_group_commit,recheck_commit,repository,request,strategy,target_base_ref,target_commit,target_ref,tenant,ticket",
   },
   {
     table_name: "finalization_change_proposal",
@@ -414,11 +433,12 @@ test("the finalizer's read surface is exactly the relations its view is gathered
       "recovery_epoch",
       "schema_migration",
       "ticket_definition",
+      "ticket_projection",
     ],
   );
 });
 
-test("the finalizer's three doors are its own and no prior role may open them", async () => {
+test("the finalizer's four doors are its own and no prior role may open them", async () => {
   const doors = [
     [
       `SELECT * FROM ${finalizationFunction}('t','p','r','a','FinalizationNeedsWork','MergeConflict',1,'e','o','s')`,
@@ -431,6 +451,10 @@ test("the finalizer's three doors are its own and no prior role may open them", 
     [
       `SELECT * FROM ${holdFunction}('t','p','r','RepositoryUnbound','o',1,1,'e')`,
       holdFunction,
+    ],
+    [
+      `SELECT * FROM ${ticketEvaluationReworkedSinceFunction}('t','p',1,0)`,
+      ticketEvaluationReworkedSinceFunction,
     ],
   ] as readonly (readonly [string, string])[];
   for (const [door, name] of doors) {
@@ -445,14 +469,21 @@ test("the finalizer's three doors are its own and no prior role may open them", 
   }
 });
 
-test("all three doors are security definer, boundary-owned and search-path pinned", async () => {
+test("all four doors are security definer, boundary-owned and search-path pinned", async () => {
   assert.deepEqual(
     await harness.query(
       `SELECT p.proname, p.prosecdef, r.rolname AS owner,
               array_to_string(p.proconfig, ',') AS settings
          FROM pg_proc p JOIN pg_roles r ON r.oid = p.proowner
         WHERE p.proname = ANY($1) ORDER BY p.proname`,
-      [[finalizationFunction, approvalRequestFunction, holdFunction]],
+      [
+        [
+          finalizationFunction,
+          approvalRequestFunction,
+          holdFunction,
+          ticketEvaluationReworkedSinceFunction,
+        ],
+      ],
     ),
     [
       {
@@ -469,6 +500,12 @@ test("all three doors are security definer, boundary-owned and search-path pinne
       },
       {
         proname: finalizationFunction,
+        prosecdef: true,
+        owner: "chuggy_boundary_owner",
+        settings: "search_path=pg_catalog, public, pg_temp",
+      },
+      {
+        proname: ticketEvaluationReworkedSinceFunction,
         prosecdef: true,
         owner: "chuggy_boundary_owner",
         settings: "search_path=pg_catalog, public, pg_temp",

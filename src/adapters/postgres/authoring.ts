@@ -33,7 +33,10 @@ import {
   asRepositoryId,
   type RepositoryId,
 } from "../../interpreter/finalizer.ts";
-import { briefFinalizationTarget } from "../../interpreter/ticketBrief.ts";
+import {
+  briefFinalizationTarget,
+  briefLandingOf,
+} from "../../interpreter/ticketBrief.ts";
 import {
   draftBriefOf,
   storedOverridesOf,
@@ -76,6 +79,7 @@ interface DraftBriefColumns {
   readonly repository: string | null;
   readonly finalization_mode: string | null;
   readonly finalization_target: string | null;
+  readonly landing_policy: string | null;
   readonly links: string[] | null;
   readonly images: string[] | null;
   readonly checks: string[] | null;
@@ -228,7 +232,7 @@ async function readDraft(
               d.configuration_revision,r.authoring,r.overrides::text AS overrides,
               r.selection::text AS selection,
               b.title,b.intent,b.branch,b.repository,
-              b.finalization_mode,b.finalization_target,
+              b.finalization_mode,b.finalization_target,b.landing_policy,
               v.name AS version_name,v.number::text AS version_number,
               (SELECT array_agg(k.url ORDER BY k.ordinal) FROM draft_brief_link k
                 WHERE k.tenant=d.tenant AND k.project=d.project AND k.ticket=d.ticket) AS links,
@@ -368,7 +372,7 @@ async function readDrafts(
     sql`SELECT ticket::text AS ticket,
                authoring_version::text AS authoring_version,
                state,configuration_revision,authoring,title,intent,branch,
-               repository,finalization_mode,finalization_target,links,images,checks,
+               repository,finalization_mode,finalization_target,landing_policy,links,images,checks,
                overrides,selection,version_name,version_number::text AS version_number
           FROM read_project_drafts(
                  ${partition.tenant},${partition.project},
@@ -659,7 +663,7 @@ async function createDraft(
     result: string | null;
     ticket: string | null;
   }>(
-    sql`SELECT result,ticket FROM create_draft(${input.partition.tenant},${input.partition.project},${input.configurationRevision},${input.configurationDigest},${input.expectedProjectSequence},${encodeDraftAuthoring(input.authoring)},${input.brief.title ?? null},${input.brief.intent},${[...input.brief.links]},${[...input.brief.images]},${[...input.brief.checks]},${input.brief.branch ?? null},${input.brief.finalization?.mode ?? null},${briefFinalizationTarget(input.brief.finalization) ?? null},${input.brief.repository ?? null},${storedOverridesText(input.overrides)},${storedSelectionText(input.selection)},${input.authority.kind},${input.authority.subject},${input.originSession ?? null})`,
+    sql`SELECT result,ticket FROM create_draft(${input.partition.tenant},${input.partition.project},${input.configurationRevision},${input.configurationDigest},${input.expectedProjectSequence},${encodeDraftAuthoring(input.authoring)},${input.brief.title ?? null},${input.brief.intent},${[...input.brief.links]},${[...input.brief.images]},${[...input.brief.checks]},${input.brief.branch ?? null},${input.brief.finalization?.mode ?? null},${briefFinalizationTarget(input.brief.finalization) ?? null},${input.brief.repository ?? null},${storedOverridesText(input.overrides)},${storedSelectionText(input.selection)},${input.authority.kind},${input.authority.subject},${input.originSession ?? null},${briefLandingOf(input.brief)})`,
   );
   const row = found.rows[0];
   if (row?.result === "ConfigurationNotFound")
@@ -712,7 +716,7 @@ async function reviseDraft(
     authoring_version: string | null;
     state: string | null;
   }>(
-    sql`SELECT * FROM revise_draft(${input.partition.tenant},${input.partition.project},${input.ticket},${input.expectedVersion},${input.configurationRevision},${encodeDraftAuthoring(input.authoring)},${input.brief.title ?? null},${input.brief.intent},${[...input.brief.links]},${[...input.brief.images]},${[...input.brief.checks]},${input.brief.branch ?? null},${input.brief.finalization?.mode ?? null},${briefFinalizationTarget(input.brief.finalization) ?? null},${input.brief.repository ?? null},${storedOverridesText(input.overrides)},${storedSelectionText(input.selection)},${input.authority.kind},${input.authority.subject})`,
+    sql`SELECT * FROM revise_draft(${input.partition.tenant},${input.partition.project},${input.ticket},${input.expectedVersion},${input.configurationRevision},${encodeDraftAuthoring(input.authoring)},${input.brief.title ?? null},${input.brief.intent},${[...input.brief.links]},${[...input.brief.images]},${[...input.brief.checks]},${input.brief.branch ?? null},${input.brief.finalization?.mode ?? null},${briefFinalizationTarget(input.brief.finalization) ?? null},${input.brief.repository ?? null},${storedOverridesText(input.overrides)},${storedSelectionText(input.selection)},${input.authority.kind},${input.authority.subject},${briefLandingOf(input.brief)})`,
   );
   const row = found.rows[0];
   if (row === undefined || row.result === "NotFound")

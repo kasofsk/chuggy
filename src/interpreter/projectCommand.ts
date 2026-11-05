@@ -33,6 +33,10 @@
  * through the ingress parser, which is what makes the exclusion a shape rather
  * than a check that could be skipped.
  *
+ * `InvalidateEvaluation` IS KEPT OUT AS A VERDICT-FREE ABANDONMENT. It drops an
+ * evaluation without judging it, which a principal holding `Mutate` has no
+ * ground to do, and no envelope in this layer carries one.
+ *
  * `UpdateTicket` IS KEPT OUT FOR `CreateTicket`'S REASON. Its definition is
  * what a release resolves from the draft and the configuration revision the
  * draft pins, which no principal authors; the `UpdateTicket` envelope names
@@ -61,7 +65,8 @@ export type OperationTicketCommand = Exclude<
       | "UpdateTicket"
       | "ReportFinalizationResult"
       | "ReportTaskTerminal"
-      | "DispatchTicket";
+      | "DispatchTicket"
+      | "InvalidateEvaluation";
   }
 >;
 
@@ -143,6 +148,7 @@ export function asOperationTicketCommand(
     command.type === "UpdateTicket" ||
     command.type === "ReportFinalizationResult" ||
     command.type === "DispatchTicket" ||
+    command.type === "InvalidateEvaluation" ||
     isCompletionTicketCommand(command)
   ) {
     throw new RangeError("command is not a public ticket command");

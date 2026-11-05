@@ -32,6 +32,13 @@ export interface ExecutionSourceObservation {
    * commit none of them did.
    */
   readonly changeBase?: GitObjectId;
+  /**
+   * The tree an evaluation of the target's commit must be run against, where
+   * the commit's tree could be read: none for any other spawn, and none for an
+   * evaluation whose commit's tree could not be read, which is then accepted as
+   * one that names no tree.
+   */
+  readonly expectedTree?: GitObjectId;
 }
 
 /**

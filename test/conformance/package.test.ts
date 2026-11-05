@@ -2,7 +2,7 @@
  * Every step of every trace the ticket package ships, replayed through this
  * implementation's own `evolve` and `decide` under the package's invariants.
  *
- * The traces are the package's `ticket_tests.qnt` run, vendored beside the
+ * The traces are the package's `ticket_tests.qnt` run, shipped beside the
  * model it runs (model/AGENTS.md), so they are the specification's output for
  * the part of it chuggy imports. They sit outside chuggy's machine: their
  * stage and evaluator keys are the package's fixtures and break this
@@ -65,6 +65,9 @@ const TRACES = join(
   import.meta.dirname,
   "..",
   "..",
+  "node_modules",
+  "@kasofsk",
+  "chug-ticket-domain",
   "model",
   "ticket-domain",
   "traces",
@@ -72,6 +75,10 @@ const TRACES = join(
 
 const rework = alwaysPolicy("ReworkEvaluationFailure");
 const escalate = alwaysPolicy("EscalateEvaluationFailure");
+const invalidate = alwaysPolicy({
+  type: "InvalidateEvaluationFailure",
+  value: 1601,
+});
 
 /** The package's `noDecision`: what a trace's first state records. */
 const NO_DECISION: TicketDecision = {
@@ -162,6 +169,20 @@ function failure(
       type: "TerminalFailureReport",
       value: { ticket: 1, failure: { task: obligation.task, evidence }, kind },
     },
+  };
+}
+
+function invalidation(prior: TicketGraph, evidence: number): TicketCommand {
+  const state = prior.tickets.get(1)?.state;
+  if (
+    state === undefined ||
+    typeof state === "string" ||
+    state.type !== "Evaluation"
+  )
+    throw new Error("invalidation: ticket 1 is not in Evaluation");
+  return {
+    type: "InvalidateEvaluation",
+    value: { ticket: 1, workCycle: state.value.workCycle, evidence },
   };
 }
 
@@ -268,6 +289,10 @@ function simulated(action: string, prior: TicketGraph): TicketCommand {
       return verdict(prior, 503, "EvaluatorFail");
     case "unavailableEvaluatorOne":
       return failure(prior, 504, false, "ExecutionUnavailableFailure");
+    case "invalidateOne":
+      return invalidation(prior, 510);
+    case "invalidateFailedEvaluatorOne":
+      return verdict(prior, 511, "EvaluatorFail");
     case "completeFinalizationOne":
       return finalization(prior, { type: "FinalizationSucceeded", value: 505 });
     case "reworkFinalizationOne":
@@ -346,7 +371,10 @@ function commandOf(event: TicketEvent): TicketCommand {
         },
       };
     }
+    case "TicketEvaluationInvalidated":
+      return { type: "InvalidateEvaluation", value: event.value };
     case "TicketEvaluationFailureEscalated":
+    case "TicketEvaluationFailureInvalidated":
     case "TicketEvaluationProgressed":
     case "TicketEvaluationPassed":
     case "TicketEvaluationBlocked":
@@ -359,8 +387,13 @@ function commandOf(event: TicketEvent): TicketCommand {
   }
 }
 
-/** The policy a scenario's event names: an escalation is the one edge rework is not. */
+/** The policy a scenario's event names: an escalation or an invalidation is an edge rework is not. */
 function policyOf(event: TicketEvent): EvaluationFailurePolicy {
+  if (event.type === "TicketEvaluationFailureInvalidated")
+    return alwaysPolicy({
+      type: "InvalidateEvaluationFailure",
+      value: event.value.evidence,
+    });
   return event.type === "TicketEvaluationFailureEscalated" ? escalate : rework;
 }
 
@@ -427,7 +460,10 @@ for (const file of files) {
       if (trace.kind === "simulation") {
         const action = stateValue(state, "mbt::actionTaken");
         if (typeof action !== "string") throw new Error(`${where}: no action`);
-        rebuilt = [simulated(action, prior), rework];
+        rebuilt = [
+          simulated(action, prior),
+          action === "invalidateFailedEvaluatorOne" ? invalidate : rework,
+        ];
       } else if (decision.type === "TicketDecided") {
         rebuilt = [
           commandOf(decision.value.event),
@@ -463,6 +499,6 @@ for (const file of files) {
  */
 test("every step replays, and every step that names a command is decided", () => {
   assert.equal(tally.steps, tally.rebuilt + tally.evolveOnly.length);
-  assert.equal(tally.rebuilt, 319);
-  assert.equal(tally.evolveOnly.length, 31, tally.evolveOnly.join("\n"));
+  assert.equal(tally.rebuilt, 437);
+  assert.equal(tally.evolveOnly.length, 58, tally.evolveOnly.join("\n"));
 });

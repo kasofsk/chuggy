@@ -198,6 +198,8 @@ export interface ExecutionRequestBundle {
     readonly targetCommit: string;
     readonly manifests: readonly string[];
     readonly changeBase?: string;
+    /** The git tree an evaluation must be run against, which the terminal report is held to. */
+    readonly expectedTree?: string;
   };
   /** The brief's own images, read at the same gather the source observes and carried regardless of it. */
   readonly images?: readonly BriefImageReference[];

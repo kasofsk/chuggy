@@ -402,3 +402,35 @@ test("the draft's released version is one it has, and only a released draft has 
       );
   });
 });
+
+test("a draft lands Direct unless it is written Serialized, and the column refuses any other", async () => {
+  await migratedDatabase("i115landing", async (subject) => {
+    await seedProposingBinding(subject);
+    const landings = async () =>
+      (
+        await subject.query<{ landing_policy: string }>(
+          "SELECT landing_policy FROM draft_brief",
+        )
+      ).rows;
+    assert.deepEqual(await createdUnboundDraft(subject), [
+      { result: "Created" },
+    ]);
+    assert.deepEqual(await landings(), [{ landing_policy: "Direct" }]);
+    const revise = async (landing: string) =>
+      (
+        await subject.query<{ result: string }>(
+          `SELECT result FROM ${draftReviseFunction}(
+             'tenant-91','project-91',1,1,'revision-91',$1,
+             NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],NULL,
+             NULL,NULL,NULL,NULL,NULL,'User','author',$2)`,
+          [encodeDraftAuthoring(plainAuthoring), landing],
+        )
+      ).rows;
+    assert.deepEqual(await revise("Serialized"), [{ result: "Revised" }]);
+    assert.deepEqual(await landings(), [{ landing_policy: "Serialized" }]);
+    await assert.rejects(
+      subject.query(`UPDATE draft_brief SET landing_policy='Stacked'`),
+      /draft_brief_landing_policy_is_known/u,
+    );
+  });
+});

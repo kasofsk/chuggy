@@ -141,6 +141,8 @@ function operationRefusalTicketSentence(
       return `${operationRefusalTicket(refused.value)} has nothing to resume`;
     case "TaskNotCurrent":
       return `Report for ${operationRefusalTask(refused.value.task)} of ${operationRefusalTicket(refused.value.ticket)} · Not current`;
+    case "EvaluationNotCurrent":
+      return `Evaluation of cycle ${String(refused.value.workCycle)} of ${operationRefusalTicket(refused.value.ticket)} · Not current`;
     case "FinalizationNotCurrent":
       return `Finalizing result for cycle ${String(refused.value.workCycle)} of ${operationRefusalTicket(refused.value.ticket)} · Not current`;
   }

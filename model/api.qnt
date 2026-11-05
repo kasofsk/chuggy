@@ -6,9 +6,9 @@
 /// generator fails closed when an alias reaches a Quint construct it cannot
 /// represent faithfully in TypeScript and Zod.
 module chuggy_api {
-  import task_contract.* from "./task-contract/task"
-  import evaluation_protocol.* from "./ticket-domain/evaluation/evaluation"
-  import ticket_domain.* from "./ticket-domain/ticket"
+  import task_contract.* from "../node_modules/@kasofsk/chug-ticket-domain/model/task-contract/task"
+  import evaluation_protocol.* from "../node_modules/@kasofsk/chug-ticket-domain/model/ticket-domain/evaluation/evaluation"
+  import ticket_domain.* from "../node_modules/@kasofsk/chug-ticket-domain/model/ticket-domain/ticket"
   import chuggy_ticket.* from "./ticket"
   import chuggy_refinement.* from "./refinement"
   import chuggy_identity.* from "./identity"
@@ -60,6 +60,8 @@ module chuggy_api {
   type ApiFinalizationOperation = FinalizationOperation
   type ApiTaskTerminalFact = TaskTerminalFact
   type ApiEvaluationReworkFact = EvaluationReworkFact
+  type ApiEvaluationInvalidatedFact = EvaluationInvalidatedFact
+  type ApiEvaluationFailureInvalidatedFact = EvaluationFailureInvalidatedFact
   type ApiWorkResultAcceptedEvent = WorkResultAcceptedEvent
   type ApiWorkFailureEvent = WorkFailureEvent
   type ApiFinalizationFact = FinalizationFact
@@ -74,6 +76,8 @@ module chuggy_api {
   type ApiRefusedDependencies = RefusedDependencies
   type ApiCurrentTaskRefusal = CurrentTaskRefusal
   type ApiCurrentFinalizationRefusal = CurrentFinalizationRefusal
+  type ApiCurrentEvaluationRefusal = CurrentEvaluationRefusal
+  type ApiInvalidateEvaluationRequest = InvalidateEvaluationRequest
   type ApiStaleRevision = StaleRevision
   type ApiTicketRefusal = TicketRefusal
   type ApiTicketDecision = TicketDecision

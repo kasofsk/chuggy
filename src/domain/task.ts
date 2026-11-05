@@ -65,7 +65,7 @@ export function taskOwner(identity: TaskIdentity): number {
 
 /**
  * The contract's own claim about an identity (`taskIdentityValid` in
- * `model/task-contract/task.qnt`): every counter it carries is positive.
+ * the package's `task-contract/task.qnt`): every counter it carries is positive.
  */
 export function taskIdentityValid(identity: TaskIdentity): boolean {
   if (identity.type === "WorkTask")

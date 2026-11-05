@@ -48,6 +48,7 @@ import { asTicketId } from "../../src/domain/ids.ts";
 import { genesisLedgers } from "../../src/domain/ledger.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import { decodeEntry } from "../../src/generated/model-api.ts";
+import { invalidationEntries } from "./invalidationJournal.ts";
 import {
   deriveDispatchCandidates,
   type DispatchCandidate,
@@ -200,6 +201,10 @@ const journals: readonly Journal[] = [
     stored: storedAtCurrentSemantics(journalOf(row)),
   })),
   drivenJournal(),
+  {
+    name: "evaluation-abandoned-twice",
+    stored: storedAtCurrentSemantics(invalidationEntries()),
+  },
   ...[3, 5, 8].flatMap((nTickets) =>
     Array.from({ length: 12 }, (_, at) =>
       walkJournal({ nTickets, nTasks: 2, maxStages: 2 }, at + 1),

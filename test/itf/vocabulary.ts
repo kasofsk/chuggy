@@ -139,11 +139,6 @@ export function encodeInt(value: number): ItfValue {
   return BigInt(value);
 }
 
-/** A nullary variant, which is how ITF writes a sum arm carrying nothing. */
-export function encodeNullaryTag(tag: string): ItfValue {
-  return encodeNullary(tag);
-}
-
 /**
  * A draw as ITF records one: present under Some, absent under None. It answers
  * the serialized shape rather than the decoded one, because an option only
@@ -326,6 +321,15 @@ export function encodeTicketCommand(command: TicketCommand): ItfValue {
         command.type,
         encodeTaskTerminalReport(command.value),
       );
+    case "InvalidateEvaluation":
+      return encodeVariant(
+        command.type,
+        encodeRecord([
+          ["ticket", encodeInt(command.value.ticket)],
+          ["workCycle", encodeInt(command.value.workCycle)],
+          ["evidence", encodeInt(command.value.evidence)],
+        ]),
+      );
     case "ReportFinalizationResult":
       return encodeVariant(
         command.type,
@@ -376,6 +380,14 @@ export function encodeTicketRefusal(refusal: TicketRefusal): ItfValue {
         encodeRecord([
           ["ticket", encodeInt(refusal.value.ticket)],
           ["task", encodeTaskIdentity(refusal.value.task)],
+        ]),
+      );
+    case "EvaluationNotCurrent":
+      return encodeVariant(
+        refusal.type,
+        encodeRecord([
+          ["ticket", encodeInt(refusal.value.ticket)],
+          ["workCycle", encodeInt(refusal.value.workCycle)],
         ]),
       );
     case "FinalizationNotCurrent":
@@ -726,6 +738,24 @@ export function encodeTicketEvent(event: TicketEvent): ItfValue {
     case "TicketEvaluationReworkStarted":
     case "TicketEvaluationFailureEscalated":
       return encodeVariant(event.type, encodeEvaluationReworkFact(event.value));
+    case "TicketEvaluationInvalidated":
+      return encodeVariant(
+        event.type,
+        encodeRecord([
+          ["ticket", encodeInt(event.value.ticket)],
+          ["workCycle", encodeInt(event.value.workCycle)],
+          ["evidence", encodeInt(event.value.evidence)],
+        ]),
+      );
+    case "TicketEvaluationFailureInvalidated":
+      return encodeVariant(
+        event.type,
+        encodeRecord([
+          ["ticket", encodeInt(event.value.ticket)],
+          ["report", encodeTaskTerminalReport(event.value.report)],
+          ["evidence", encodeInt(event.value.evidence)],
+        ]),
+      );
     case "TicketFinalizationSucceeded":
     case "TicketFinalizationNeedsWork":
     case "TicketFinalizationUnavailable":

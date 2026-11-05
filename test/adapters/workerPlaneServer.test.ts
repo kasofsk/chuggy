@@ -238,6 +238,42 @@ test("one live bearer scopes input, upload and report to its attempt", async () 
   await app.close();
 });
 
+test("a report is held to a pinned tree only from a release whose manifest can name one", async () => {
+  const held: unknown[] = [];
+  const app = createWorkerPlaneApp({
+    ...projectArtifactsService,
+    ...heartbeatService,
+    ...taskService,
+    ...runEvidenceService,
+    authority: { authenticate: () => Promise.resolve(authority) },
+    reservations: { reserve: () => Promise.resolve({ reserved: "Reserved" }) },
+    artifacts: { store: () => Promise.resolve({ stored: "Stored" }) },
+    reports: {
+      report: (_secret, submission) => {
+        held.push(submission.treeHeld);
+        return Promise.resolve({ ingested: "Fenced" });
+      },
+    },
+    ready: () => Promise.resolve(true),
+    uploadBytesMax: 64,
+  });
+  for (const release of [undefined, "1.34.0", workerContractRelease]) {
+    const report = await app.inject({
+      method: "POST",
+      url: "/v1/report",
+      headers: {
+        authorization: "Bearer held",
+        "content-type": "text/plain",
+        ...(release === undefined ? {} : { [workerContractHeader]: release }),
+      },
+      payload: "{}",
+    });
+    assert.equal(report.statusCode, 409);
+  }
+  assert.deepEqual(held, [false, false, true]);
+  await app.close();
+});
+
 test("an unknown or oversized bearer reaches no attempt act", async () => {
   let acts = 0;
   const app = createWorkerPlaneApp({

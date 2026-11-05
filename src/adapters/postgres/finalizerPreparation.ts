@@ -323,7 +323,7 @@ export async function finalizerPreparationRecord(
         configuration_digest, approval_required, outcome, candidate_commit,
         failure_kind, conflict_manifest, conflict_manifest_digest,
         proposal_base_ref, proposal_base_commit, queue_group_commit,
-        attempt_digest)
+        recheck_commit, attempt_digest)
      VALUES (${claim.partition.tenant},${claim.partition.project},${record.attempt},
              ${claim.request},${claim.ticket},${record.repository},
              ${record.bundle.bundle},${record.bundle.digest},${record.target.ref},
@@ -335,6 +335,7 @@ export async function finalizerPreparationRecord(
              ${record.proposalBase?.ref ?? null},
              ${record.proposalBase?.commit ?? null},
              ${record.groupCommit ?? null},
+             ${record.recheckCommit ?? null},
              ${record.attemptDigest})`,
   );
   return { recorded: "Attempt" };

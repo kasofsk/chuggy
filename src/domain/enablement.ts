@@ -15,6 +15,7 @@
 import {
   aDispatchSource,
   aFinalizationEvidence,
+  anInvalidationEvidence,
   defaultPlan,
   releasedTicketOf,
   revisedTicketOf,
@@ -38,6 +39,7 @@ import {
   dependenciesComplete,
   hasOpenHumanTask,
   instanceTasks,
+  invalidatableEvaluation,
   isReady,
   ledgerInstances,
   liveTasks,
@@ -192,6 +194,13 @@ export function retryablesIn(graph: TicketGraph): readonly TicketId[] {
   return ticketIds(graph).filter((j) => retryableIn(graph, j));
 }
 
+/** Tickets holding an evaluation that may be dropped unjudged: one running, or one an evaluator wall stopped. */
+export function invalidatablesIn(graph: TicketGraph): readonly TicketId[] {
+  return ticketIds(graph).filter(
+    (j) => invalidatableEvaluation(ticketAt(graph, j).state) !== null,
+  );
+}
+
 /** The derived waiting room's other half: Pending behind a dependency not yet Done. */
 export function isBlockedIn(graph: TicketGraph, id: TicketId): boolean {
   return isPending(ticketAt(graph, id).state) && !depsDoneIn(graph, id);
@@ -289,6 +298,14 @@ export function finalizationReportOf(
   };
 }
 
+/** An invalidation of ticket `id`'s evaluation of `workCycle`. */
+export function invalidationOf(id: number, workCycle: number): TicketCommand {
+  return {
+    type: "InvalidateEvaluation",
+    value: { ticket: id, workCycle, evidence: anInvalidationEvidence },
+  };
+}
+
 /** An id the instance can name that is not `id`: the universe holds 1 and 2 whenever it holds a ticket. */
 export function otherIdOf(id: number): number {
   return id === 1 ? 2 : 1;
@@ -359,8 +376,9 @@ export function updateProbesIn(
  * tombstone, the updates `updateProbesIn` names, and a dispatch, a revoke and a
  * resume; a failure for every task a ticket has ever been owed, and for the
  * first work task of an id not released; and a finalizer's result for the
- * attempt a ticket is on, the generation before it and the cycle before it.
- * Every one is well-formed, so which of them `decide` refuses is the ticket's
+ * attempt a ticket is on, the generation before it and the cycle before it; and
+ * an invalidation of the cycle a ticket is on and of the cycle before it, and
+ * of the first cycle of an id not released. Every one is well-formed, so which of them `decide` refuses is the ticket's
  * state and nothing else.
  */
 export function commandProbesIn(
@@ -414,7 +432,16 @@ export function commandProbesIn(
     }),
     ...absent.map((j) => finalizationReportOf(j, 1, 1)),
   ];
-  return [...perId, ...reports, ...finalizations];
+  const invalidations = [
+    ...live.flatMap((j) => {
+      const cycle = ticketAt(graph, j).workCyclesStarted;
+      return cycle > 1
+        ? [invalidationOf(j, cycle), invalidationOf(j, cycle - 1)]
+        : [invalidationOf(j, 1)];
+    }),
+    ...absent.map((j) => invalidationOf(j, 1)),
+  ];
+  return [...perId, ...reports, ...finalizations, ...invalidations];
 }
 
 /** The probes `decide` refuses in this graph. No refusal asks the policy, so any one will do. */

@@ -3676,9 +3676,9 @@
         "onFailure": {
           "tag": "Some",
           "value": {
-            "tag": "ReworkEvaluationFailure",
+            "tag": "InvalidateEvaluationFailure",
             "value": {
-              "#tup": []
+              "#bigint": "17"
             }
           }
         },

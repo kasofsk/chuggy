@@ -60,6 +60,18 @@ export function dispatchTicketCommand(
   return { type: "DispatchTicket", value: { ticket, source } };
 }
 
+/** The abandonment of the evaluation `workCycle` of a ticket, with the evidence of why. */
+export function invalidateEvaluationCommand(
+  ticket: TicketId,
+  workCycle: number,
+  evidence: number,
+): TicketCommand {
+  return {
+    type: "InvalidateEvaluation",
+    value: { ticket, workCycle, evidence },
+  };
+}
+
 /** What a task came back with; the failure policy is the decide step's own argument. */
 export function reportTaskTerminalCommand(
   report: TaskTerminalReport,
@@ -92,6 +104,7 @@ export function commandSubject(command: TicketCommand): TicketId {
     case "UpdateTicket":
     case "DispatchTicket":
     case "ReportFinalizationResult":
+    case "InvalidateEvaluation":
       return asTicketId(command.value.ticket);
     case "ReportTaskTerminal":
       return asTicketId(command.value.value.ticket);

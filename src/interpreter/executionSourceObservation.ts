@@ -44,6 +44,7 @@ import {
   type RepositoryId,
 } from "./finalizer.ts";
 import type { CommitAncestry, CommitAncestryPort } from "./commitAncestry.ts";
+import type { CommitTreePort } from "./commitTree.ts";
 import type { Partition } from "./projectStore.ts";
 import type { ProjectRepositoryBindingRead } from "./repositoryConfiguration.ts";
 import { digestFold, type ResultManifestId } from "./resultManifest.ts";
@@ -157,39 +158,62 @@ async function executionSourceChangeBase(
   return answer === "Ancestor" ? landed : walked;
 }
 
+/**
+ * The tree an evaluation of `commit` must be run against, or nothing where the
+ * binding is gone or the port could not read it. A port that cannot work at all
+ * answers nothing, as an unknown does.
+ */
+async function executionExpectedTree(
+  bindings: ProjectRepositoryBindingRead,
+  trees: Partial<CommitTreePort>,
+  request: { readonly partition: Partition; readonly kind: string },
+  row: { readonly repository: RepositoryId; readonly commit: GitObjectId },
+): Promise<GitObjectId | undefined> {
+  if (request.kind !== "Evaluation" || trees.tree === undefined)
+    return undefined;
+  const repository = await bindings.binding(request.partition, row.repository);
+  if (repository === undefined) return undefined;
+  return trees
+    .tree({ repository, commit: row.commit })
+    .catch((): undefined => undefined);
+}
+
+async function executionSourceObserved(
+  bindings: ProjectRepositoryBindingRead,
+  git: Pick<GitPromotionPort, "observeTarget">,
+  request: Parameters<ExecutionSourceObservationPort["observe"]>[0],
+): ReturnType<ExecutionSourceObservationPort["observe"]> {
+  if (request.repository === undefined)
+    return {
+      observed: "Source",
+      source: { reference: unsourcedTicketReference },
+    };
+  const bound = await bindings.binding(request.partition, request.repository);
+  if (bound === undefined)
+    return { observed: "Unreadable", evidence: "RefUnreadable" };
+  const observed = await repositoryTargetObserved(git, bound, request.ref);
+  if (observed.observed !== "Target") return observed;
+  return {
+    observed: "Source",
+    source: {
+      reference: digestFold(observed.target.commit),
+      repository: bound.repository,
+      commit: observed.target.commit,
+      ...(observed.target.ref === undefined
+        ? {}
+        : { ref: observed.target.ref }),
+    },
+  };
+}
+
 export function executionSourceObservation(
   bindings: ProjectRepositoryBindingRead,
   git: Pick<GitPromotionPort, "observeTarget">,
   history: ExecutionSourceHistoryPort,
-  ancestry: CommitAncestryPort,
+  ancestry: CommitAncestryPort & Partial<CommitTreePort>,
 ): ExecutionSourceObservationPort {
   return {
-    observe: async (request) => {
-      if (request.repository === undefined)
-        return {
-          observed: "Source",
-          source: { reference: unsourcedTicketReference },
-        };
-      const bound = await bindings.binding(
-        request.partition,
-        request.repository,
-      );
-      if (bound === undefined)
-        return { observed: "Unreadable", evidence: "RefUnreadable" };
-      const observed = await repositoryTargetObserved(git, bound, request.ref);
-      if (observed.observed !== "Target") return observed;
-      return {
-        observed: "Source",
-        source: {
-          reference: digestFold(observed.target.commit),
-          repository: bound.repository,
-          commit: observed.target.commit,
-          ...(observed.target.ref === undefined
-            ? {}
-            : { ref: observed.target.ref }),
-        },
-      };
-    },
+    observe: (request) => executionSourceObserved(bindings, git, request),
     spawnSource: async (request) => {
       const row = await history.ticketSource(
         request.partition,
@@ -202,12 +226,19 @@ export function executionSourceObservation(
         request.kind === "Evaluation"
           ? await history.workSource(request.partition, request.ticket)
           : undefined;
+      const at = { repository: row.repository, commit: row.commit };
       const changeBase = await executionSourceChangeBase(
         bindings,
         ancestry,
         history,
         request,
-        { repository: row.repository, commit: row.commit },
+        at,
+      );
+      const expectedTree = await executionExpectedTree(
+        bindings,
+        ancestry,
+        request,
+        at,
       );
       return {
         repository: row.repository,
@@ -217,6 +248,7 @@ export function executionSourceObservation(
         },
         manifests: work?.manifests ?? [],
         ...(changeBase === undefined ? {} : { changeBase }),
+        ...(expectedTree === undefined ? {} : { expectedTree }),
       } satisfies ExecutionSourceObservation;
     },
   };

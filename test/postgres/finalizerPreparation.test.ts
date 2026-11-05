@@ -2652,7 +2652,10 @@ function attemptFailedRecordOf(
   claim: FinalizationClaim,
   project: FinalizerProject,
   label: string,
-  failure: Pick<AttemptRecord, "failureKind" | "proposalBase" | "groupCommit">,
+  failure: Pick<
+    AttemptRecord,
+    "failureKind" | "proposalBase" | "groupCommit" | "recheckCommit"
+  >,
 ): AttemptRecord {
   const { candidate, ...unprepared } = attemptRecordOf(claim, project, label);
   assert.ok(candidate !== undefined, "the record offered is a prepared one");
@@ -2751,6 +2754,60 @@ test("a failure keeps a base only where a forge reported it, and a queue's faile
       label,
     );
   assert.deepEqual(await attemptsOf(project), []);
+});
+
+test("a re-check failure keeps the accepted commit to re-report, is counted for the ticket, and no other failure keeps one", async () => {
+  const { project } = await finalizerSubject(rig, "recheck", [
+    { path: "one.txt", content: "one\n" },
+  ]);
+  const claim = await finalizerClaim(rig, project, "owner-recheck");
+  const store = postgresFinalizer(rig.pool);
+  assert.equal(await store.ticketRecheckFailures(claim), 0);
+  const accepted = asGitObjectId(finalizerCommit());
+  assert.deepEqual(
+    await store.recordAttempt(
+      attemptFailedRecordOf(claim, project, "recheck-one", {
+        failureKind: "RecheckRequired",
+        recheckCommit: accepted,
+      }),
+    ),
+    { recorded: "Attempt" },
+  );
+  assert.deepEqual(
+    await store.recordAttempt(
+      attemptFailedRecordOf(claim, project, "recheck-conflict", {
+        failureKind: "MergeConflict",
+      }),
+    ),
+    { recorded: "Attempt" },
+  );
+  assert.deepEqual(
+    await rig.as(
+      `SELECT recheck_commit FROM finalization_attempt
+        WHERE tenant=$1 AND project=$2 AND failure_kind='RecheckRequired'`,
+      [project.partition.tenant, project.partition.project],
+    ),
+    [{ recheck_commit: accepted }],
+  );
+  assert.equal(
+    await store.ticketRecheckFailures(claim),
+    1,
+    "only the re-checks are counted",
+  );
+  for (const [label, failure] of [
+    ["recheck-unnamed", { failureKind: "RecheckRequired" }],
+    [
+      "recheck-conflict-named",
+      { failureKind: "MergeConflict", recheckCommit: accepted },
+    ],
+  ] as const)
+    await assert.rejects(
+      store.recordAttempt(
+        attemptFailedRecordOf(claim, project, label, failure),
+      ),
+      /finalization_attempt_recheck_commit_is_whole/u,
+      label,
+    );
 });
 
 test("a takeover leaves an old-epoch executor unable to write an attempt", async () => {

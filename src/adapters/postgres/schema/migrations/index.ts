@@ -111,6 +111,12 @@ import { migration110 } from "./110-agent-account-pause.ts";
 import { migration111 } from "./111-rate-limit-resume.ts";
 import { migration112 } from "./112-agent-account-reads.ts";
 import { migration113 } from "./113-lead-compact-window.ts";
+import { migration114 } from "./114-evaluation-not-current.ts";
+import { migration115 } from "./115-ticket-landing.ts";
+import { migration116 } from "./116-recheck-required.ts";
+import { migration117 } from "./117-serialized-holder.ts";
+import { migration118 } from "./118-expected-tree.ts";
+import { migration119 } from "./119-recheck-reworked.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -227,4 +233,10 @@ export const migrations: readonly Migration[] = [
   migration111,
   migration112,
   migration113,
+  migration114,
+  migration115,
+  migration116,
+  migration117,
+  migration118,
+  migration119,
 ];

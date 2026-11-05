@@ -45,6 +45,10 @@ export function operationRefusalSamples(
         task: { type: "WorkTask", value: { ticket, cycle: 3 } },
       },
     },
+    EvaluationNotCurrent: {
+      type: "EvaluationNotCurrent",
+      value: { ticket, workCycle: 3 },
+    },
     FinalizationNotCurrent: {
       type: "FinalizationNotCurrent",
       value: { ticket, workCycle: 3, generation: 2 },

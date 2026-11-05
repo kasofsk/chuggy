@@ -107,6 +107,29 @@ test("a landing the roster does not carry names the ones it does", () => {
   ]);
 });
 
+test("a landing policy is written only where it is Serialized, and reads back", () => {
+  const direct = ticketYamlOf(creationForm(), context);
+  expect(direct).not.toContain("landingPolicy");
+  expect(readForm(direct).form?.landingPolicy).toBe("Direct");
+  const form = creationForm({ landingPolicy: "Serialized" });
+  const text = ticketYamlOf(form, context);
+  expect(text).toContain("landingPolicy: Serialized\n");
+  expect(text).not.toMatch(/[{[]/u);
+  const read = readForm(text);
+  expect(read.problems).toStrictEqual([]);
+  expect(read.form).toStrictEqual(form);
+  expect(
+    readForm("intent: y\nlandingPolicy: Direct\n").form?.landingPolicy,
+  ).toBe("Direct");
+});
+
+test("a landing policy the roster does not carry names the ones it does", () => {
+  const read = readForm("intent: y\nlandingPolicy: Stacked\n");
+  expect(read.problems.map((problem) => problem.message)).toStrictEqual([
+    "order the landing as one of Direct, Serialized",
+  ]);
+});
+
 test("a stage is written by its evaluator count and keyed by position", () => {
   const read = readForm(
     "intent: y\nprogram:\n  - evaluators: 2\n  - evaluators: 1\n",
@@ -394,6 +417,7 @@ test("the vocabulary offers the configurations by name, and a program only under
     "branch",
     "landing",
     "target",
+    "landingPolicy",
   ]);
   expect(unchosen[0]?.values).toStrictEqual([
     { label: "development", detail: "n-development" },

@@ -29,6 +29,7 @@ import {
   asDraftBrief,
   asBriefCheckLine,
   asBriefFinalization,
+  asBriefLanding,
   asBriefIntent,
   asBriefLinkUrl,
   asBriefTitle,
@@ -45,11 +46,17 @@ export interface DraftBriefFinalizationRow {
   readonly finalization_target: string | null;
 }
 
+/** The column a brief's landing is read from, wherever a query selected it. */
+export interface DraftBriefLandingRow {
+  readonly landing_policy: string | null;
+}
+
 /**
  * The columns any brief-bearing read selects, joined from the brief's own
  * relation and from the two ordinal ones beside it.
  */
-export interface DraftBriefRow extends DraftBriefFinalizationRow {
+export interface DraftBriefRow
+  extends DraftBriefFinalizationRow, DraftBriefLandingRow {
   readonly title: string | null;
   readonly intent: string | null;
   readonly branch: string | null;
@@ -76,6 +83,17 @@ export function draftBriefFinalizationOf(
       ? {}
       : { target: row.finalization_target }),
   });
+}
+
+/** The landing a row states, absent where it is `Direct` or the row joined no brief. */
+function draftBriefLandingOf(
+  row: DraftBriefLandingRow,
+): Pick<DraftBrief, "landing"> {
+  const landing =
+    row.landing_policy === null
+      ? undefined
+      : asBriefLanding(row.landing_policy);
+  return landing === undefined ? {} : { landing };
 }
 
 /**
@@ -120,6 +138,7 @@ export function draftBriefOf(row: DraftBriefRow): DraftBrief | undefined {
       ? {}
       : { repository: asRepositoryId(row.repository) }),
     ...(finalization === undefined ? {} : { finalization }),
+    ...draftBriefLandingOf(row),
   };
 }
 

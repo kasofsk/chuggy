@@ -585,6 +585,91 @@ test("a commit whose ancestry is unknown keeps the walked-back base", async () =
   );
 });
 
+/** The tree the accepted commit records. */
+const acceptedTree = asGitObjectId("e".repeat(40));
+
+/** A spawn of the accepted source over a tree port answering `answer`, rejecting where it is an error, and the commits it was asked the tree of. */
+async function treedSpawn(
+  kind: "Work" | "Evaluation",
+  answer: GitObjectId | undefined | Error,
+  bound = true,
+): Promise<{
+  expectedTree: string | undefined;
+  asked: readonly string[];
+}> {
+  const asked: string[] = [];
+  const sourced = await executionSourceObservation(
+    {
+      binding: (asking, repository) =>
+        Promise.resolve(
+          bound
+            ? {
+                partition: asking,
+                repository: repository ?? asRepositoryId("project-default"),
+                recoveryEpoch: asRecoveryEpoch("epoch"),
+              }
+            : undefined,
+        ),
+    },
+    {
+      observeTarget: () => {
+        throw new Error("mutable Git must not be observed");
+      },
+    },
+    {
+      workSource: () =>
+        Promise.resolve({ manifests: [asResultManifestId("manifest-one")] }),
+      ticketSource: () =>
+        Promise.resolve({
+          repository: asRepositoryId("work-repository"),
+          commit: acceptedCommit,
+        }),
+      workResultBases: (_partition, _ticket, commit) =>
+        Promise.resolve(acceptedOnce(commit)),
+      failedLandingBase: () => Promise.resolve(undefined),
+    },
+    {
+      ...noAncestry,
+      tree: (question) => {
+        asked.push(question.commit);
+        return answer instanceof Error
+          ? Promise.reject(answer)
+          : Promise.resolve(answer);
+      },
+    },
+  ).spawnSource({ partition, ticket: 1, source: acceptedReference, kind });
+  return { expectedTree: sourced?.expectedTree, asked };
+}
+
+/** Catches an evaluation spawned without the tree its work's accepted commit records. */
+test("an evaluation is bound to the tree of the commit it judges", async () => {
+  assert.deepEqual(await treedSpawn("Evaluation", acceptedTree), {
+    expectedTree: acceptedTree,
+    asked: [acceptedCommit],
+  });
+});
+
+/** Catches a work cycle bound to a tree, which would refuse the work it is to produce. */
+test("a work cycle is bound to no tree and asks for none", async () => {
+  assert.deepEqual(await treedSpawn("Work", acceptedTree), {
+    expectedTree: undefined,
+    asked: [],
+  });
+});
+
+/** Catches a tree nobody could read refusing every verdict of an evaluation that could not be bound. */
+test("an evaluation whose commit's tree cannot be read, or whose binding is gone, is bound to none", async () => {
+  for (const unreadable of [undefined, new Error("the scratch is full")])
+    assert.equal(
+      (await treedSpawn("Evaluation", unreadable)).expectedTree,
+      undefined,
+    );
+  assert.deepEqual(await treedSpawn("Evaluation", acceptedTree, false), {
+    expectedTree: undefined,
+    asked: [],
+  });
+});
+
 /** Catches an ancestry port that cannot work failing the spawn rather than keeping the walked-back base. */
 test("a commit whose ancestry question rejects keeps the walked-back base", async () => {
   assert.equal(

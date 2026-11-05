@@ -87,6 +87,7 @@ import {
   storedSelectionOf,
 } from "./ticketBrief.ts";
 import {
+  allFinalizationFailureKinds,
   allInputBundleReferenceKinds,
   asFinalizationAttemptId,
   asGitObjectId,
@@ -97,7 +98,7 @@ import {
   asProjectArtifactId,
   type FinalizationEvidence,
 } from "../../interpreter/finalizerPreparation.ts";
-import { finalizerRowValue } from "./finalizerRows.ts";
+import { finalizerRowPresent, finalizerRowValue } from "./finalizerRows.ts";
 import { digestFold } from "../../interpreter/resultManifest.ts";
 import { asTicketId } from "../../domain/ids.ts";
 import {
@@ -168,6 +169,7 @@ interface ReleaseDraftRow {
   readonly branch: string | null;
   readonly finalization_mode: string | null;
   readonly finalization_target: string | null;
+  readonly landing_policy: string | null;
   readonly repository: string | null;
   readonly links: string[] | null;
   readonly images: string[] | null;
@@ -192,7 +194,7 @@ async function releaseDraftRow(
     sql`SELECT r.authoring,r.overrides::text AS overrides,r.selection::text AS selection,
            c.digest,c.canonical,
            p.repository AS provenance_repository,
-           b.title,b.intent,b.branch,b.finalization_mode,b.finalization_target,b.repository,
+           b.title,b.intent,b.branch,b.finalization_mode,b.finalization_target,b.landing_policy,b.repository,
            (SELECT array_agg(l.url ORDER BY l.ordinal) FROM draft_brief_link l
              WHERE l.tenant=r.tenant AND l.project=r.project AND l.ticket=r.ticket) AS links,
            (SELECT array_agg(i.artifact ORDER BY i.ordinal) FROM draft_brief_image i
@@ -317,6 +319,8 @@ interface FinalizationAttemptRow {
   readonly attempt_digest: string;
   readonly target_commit: string;
   readonly proposal_base_commit: string | null;
+  readonly failure_kind: string | null;
+  readonly recheck_commit: string | null;
   readonly conflict_manifest: string | null;
   readonly conflict_manifest_digest: string | null;
   readonly input_bundle: string;
@@ -331,7 +335,7 @@ async function finalizationAttemptOf(
 ): Promise<FinalizationAttemptRow> {
   const found = await pool.query<FinalizationAttemptRow>(
     sql`SELECT a.attempt_digest, a.target_commit, a.proposal_base_commit,
-            a.conflict_manifest,
+            a.failure_kind, a.recheck_commit, a.conflict_manifest,
             a.conflict_manifest_digest, a.input_bundle
        FROM finalization_attempt a
       WHERE a.tenant=${partition.tenant} AND a.project=${partition.project}
@@ -376,6 +380,14 @@ async function finalizationEvidenceOf(
     ...(attempt.proposal_base_commit === null
       ? {}
       : { proposalBase: asGitObjectId(attempt.proposal_base_commit) }),
+    failureKind: finalizerRowValue(
+      allFinalizationFailureKinds,
+      finalizerRowPresent(attempt.failure_kind, "attempt failure kind"),
+      "attempt failure kind",
+    ),
+    ...(attempt.recheck_commit === null
+      ? {}
+      : { recheckCommit: asGitObjectId(attempt.recheck_commit) }),
     ...(attempt.conflict_manifest === null
       ? {}
       : { conflictManifest: asProjectArtifactId(attempt.conflict_manifest) }),

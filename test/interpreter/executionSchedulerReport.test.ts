@@ -389,3 +389,24 @@ test("the report the terminal transaction is given carries the manifest that was
   );
   assert.notEqual(handed, "");
 });
+
+test("the report the terminal transaction is given is held to a tree as its submission was", async () => {
+  const held: (boolean | undefined)[] = [];
+  const service: ExecutionReportService = {
+    ...serviceWith([], passed),
+    store: {
+      ...recordingStore([], passed),
+      terminalize: (submitted) => {
+        held.push(submitted.treeHeld);
+        return Promise.resolve(passed);
+      },
+    },
+  };
+  for (const treeHeld of [undefined, false, true]) {
+    await executionSchedulerIngest(service, {
+      ...submissionOf(report("Pass")),
+      ...(treeHeld === undefined ? {} : { treeHeld }),
+    });
+  }
+  assert.deepEqual(held, [undefined, false, true]);
+});

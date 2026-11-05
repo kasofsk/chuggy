@@ -85,7 +85,10 @@ import {
 import { textCodePointsCount } from "../contract/http.ts";
 import {
   briefFinalizationModes,
+  briefFinalizationProposes,
+  briefLandings,
   type BriefFinalizationMode,
+  type BriefLanding,
 } from "../contract/rosters.ts";
 import {
   asRepositoryId,
@@ -159,6 +162,20 @@ export function briefFinalizationTarget(
     : finalization.target;
 }
 
+/**
+ * The reference a brief's landing advances: a proposal always lands on the
+ * work's own branch, and a push on the reference its finalization names or, where
+ * it names none, on that branch. Absent where the brief names neither, which is
+ * the repository's default.
+ */
+export function briefLandsOn(
+  brief: Pick<DraftBrief, "finalization" | "branch">,
+): GitRefName | undefined {
+  return briefFinalizationProposes(brief.finalization?.mode)
+    ? brief.branch
+    : (briefFinalizationTarget(brief.finalization) ?? brief.branch);
+}
+
 /** One ticket's brief, as everything but the wire holds it. */
 export interface DraftBrief {
   readonly title?: BriefTitle;
@@ -169,6 +186,15 @@ export interface DraftBrief {
   readonly repository?: RepositoryId;
   readonly branch?: GitRefName;
   readonly finalization?: BriefFinalization;
+  /** Absent where the brief lands `Direct`, so a brief that never named one is digested as it was. */
+  readonly landing?: Exclude<BriefLanding, "Direct">;
+}
+
+/** How a brief orders its landing against the others on its reference. */
+export function briefLandingOf(
+  brief: Pick<DraftBrief, "landing"> | undefined,
+): BriefLanding {
+  return brief?.landing ?? "Direct";
 }
 
 /**
@@ -314,6 +340,18 @@ export function asBriefFinalization(value: {
   return { mode, ...(target === undefined ? {} : { target }) };
 }
 
+/** Brands a landing, which is held absent where it is `Direct`. */
+export function asBriefLanding(
+  value: string,
+): Exclude<BriefLanding, "Direct"> | undefined {
+  const landing = briefLandings.find((known) => known === value);
+  if (landing === undefined)
+    throw new RangeError(
+      "ticket landing: the value is not one this tree orders landings by",
+    );
+  return landing === "Direct" ? undefined : landing;
+}
+
 /**
  * Brands one whole brief, which is the only way an unchecked one becomes a
  * stored one. The pairing of the branch and the finalization is the wire's own
@@ -329,6 +367,7 @@ export function asDraftBrief(value: {
   readonly repository?: string;
   readonly branch?: string;
   readonly finalization?: { readonly mode: string; readonly target?: string };
+  readonly landing?: string;
 }): DraftBrief {
   if (value.links.length > briefLinksMax)
     throw new RangeError("ticket brief: more links than one brief carries");
@@ -338,6 +377,8 @@ export function asDraftBrief(value: {
   const checks = value.checks ?? [];
   if (checks.length > briefChecksMax)
     throw new RangeError("ticket brief: more checks than one brief appends");
+  const landing =
+    value.landing === undefined ? undefined : asBriefLanding(value.landing);
   const brief: DraftBrief = {
     ...(value.title === undefined ? {} : { title: asBriefTitle(value.title) }),
     intent: asBriefIntent(value.intent),
@@ -353,6 +394,7 @@ export function asDraftBrief(value: {
     ...(value.finalization === undefined
       ? {}
       : { finalization: asBriefFinalization(value.finalization) }),
+    ...(landing === undefined ? {} : { landing }),
   };
   if (!briefLandingIsWhole(brief))
     throw new RangeError(

@@ -31,6 +31,7 @@ import {
 import {
   dependableIn,
   finalizingIn,
+  invalidatablesIn,
   outstandingTasksIn,
   completableIn,
   quietIn,
@@ -42,12 +43,14 @@ import {
   revisablesIn,
   revocablesIn,
 } from "../../src/domain/enablement.ts";
-import { reportChoices } from "../../src/domain/deciders.ts";
+import {
+  dispositionChoices,
+  reportChoices,
+} from "../../src/domain/deciders.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
 import {
-  evaluationFailureDispositionTags,
-  type TicketGraph,
   type EvaluationFailureDisposition,
+  type TicketGraph,
   type FinalizationResult,
   type StageDefinition,
   type TaskIdentity,
@@ -63,8 +66,8 @@ import {
   encodeDependencies,
   encodeFinalizationResult,
   encodeInt,
-  encodeNullaryTag,
   encodePlanStages,
+  encodeSumValue,
   encodeTaskIdentity,
   encodeTaskTerminalReport,
   encodeTicketCommand,
@@ -240,21 +243,23 @@ const taskDone: WalkAction = {
       ticket,
       task,
       report: pickFrom(random, reportChoices(ticketAt(graph, ticket), task)),
-      onFailure: pickFrom(random, evaluationFailureDispositionTags),
+      onFailure: pickFrom(random, dispositionChoices),
     };
   },
   permitsIn: (_config, graph, _ledgers, drawn) => {
-    const task = drawn.task;
+    const { task, onFailure } = drawn;
     return (
       drawn.ticket !== undefined &&
       task !== undefined &&
       drawn.report !== undefined &&
-      drawn.onFailure !== undefined &&
+      onFailure !== undefined &&
       completableIn(graph).includes(drawn.ticket) &&
       outstandingTasksIn(graph, drawn.ticket).some((live) =>
         taskIdentityEquals(live, task),
       ) &&
-      evaluationFailureDispositionTags.includes(drawn.onFailure)
+      dispositionChoices.some((drawable) =>
+        isDeepStrictEqual(drawable, onFailure),
+      )
     );
   },
 };
@@ -315,6 +320,9 @@ export const walkActions: readonly WalkAction[] = [
   taskDone,
   finalizationResult,
   overTicketSet("resumeTicket", (_config, graph) => retryablesIn(graph)),
+  overTicketSet("invalidateEvaluation", (_config, graph) =>
+    invalidatablesIn(graph),
+  ),
   refuse,
   settle,
 ];
@@ -343,7 +351,9 @@ export function drawnWire(drawn: Drawn): Readonly<Record<string, unknown>> {
       encodeDependencies(new Set(ids)),
     ),
     j: opt(drawn.ticket, encodeInt),
-    onFailure: opt(drawn.onFailure, encodeNullaryTag),
+    onFailure: opt(drawn.onFailure, (disposition) =>
+      encodeSumValue(disposition, encodeInt),
+    ),
     report: opt(drawn.report, encodeTaskTerminalReport),
     result: opt(drawn.result, encodeFinalizationResult),
     source: opt(drawn.source, encodeInt),

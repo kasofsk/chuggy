@@ -26,6 +26,7 @@ import {
   dispatchTicketCommand,
   reportFinalizationResultCommand,
   reportTaskTerminalCommand,
+  invalidateEvaluationCommand,
   resumeTicketCommand,
   revokeTicketCommand,
   updateTicketCommand,
@@ -87,6 +88,7 @@ const oneOfEach: Readonly<Record<TicketCommand["type"], TicketCommand>> = {
     value: 1,
   }),
   ResumeTicket: resumeTicketCommand(id(1)),
+  InvalidateEvaluation: invalidateEvaluationCommand(id(1), 1, 1),
 };
 
 const judge = evaluationTaskOf(1, 1, 1, 1, 1);
@@ -145,6 +147,14 @@ const eventOfEach: Readonly<Record<TicketEvent["type"], TicketEvent>> = {
   TicketEvaluationFailureEscalated: {
     type: "TicketEvaluationFailureEscalated",
     value: reworked,
+  },
+  TicketEvaluationInvalidated: {
+    type: "TicketEvaluationInvalidated",
+    value: { ticket: 1, workCycle: 1, evidence: 1 },
+  },
+  TicketEvaluationFailureInvalidated: {
+    type: "TicketEvaluationFailureInvalidated",
+    value: { ticket: 1, report: judged.report, evidence: 1 },
   },
   TicketEvaluationBlocked: {
     type: "TicketEvaluationBlocked",

@@ -32,6 +32,7 @@ import {
   asRepositoryId,
   checkedFinalizerConfig,
   finalizationNext,
+  finalizationRecheckRework,
   finalizerDefaults,
   finalizerIdentityCharsMax,
   gitObjectIdPattern,
@@ -1251,5 +1252,27 @@ test("a view whose durable rows contradict each other is refused rather than dec
   assert.throws(
     () => finalizationNext(finalizerDefaults, viewWith({ attemptsMade: -1 })),
     /is not a count/u,
+  );
+});
+
+test("a ticket sent back to re-check as often as its bound allows holds, and one under it is sent back again", () => {
+  assert.deepEqual(finalizationRecheckRework(0, 2), { rework: "Record" });
+  assert.deepEqual(finalizationRecheckRework(1, 2), { rework: "Record" });
+  for (const failures of [2, 5])
+    assert.deepEqual(finalizationRecheckRework(failures, 2), {
+      rework: "Hold",
+      hold: "RecheckReworksExhausted",
+    });
+  assert.equal(finalizerDefaults.recheckReworksMax, 2);
+});
+
+test("a re-check rework refuses a count or a bound it cannot read", () => {
+  assert.throws(() => finalizationRecheckRework(-1, 2), /not a count/u);
+  assert.throws(() => finalizationRecheckRework(0.5, 2), /not a count/u);
+  assert.throws(() => finalizationRecheckRework(0, 0), /must be positive/u);
+  assert.throws(
+    () =>
+      checkedFinalizerConfig({ ...finalizerDefaults, recheckReworksMax: 0 }),
+    /recheckReworksMax must be a positive safe integer/u,
   );
 });

@@ -291,8 +291,8 @@ test("the landing doors migrate without exposing the relation they read", async 
 test("the draft doors are owned and granted to their callers", async () => {
   await migratedDatabase("i91grants", async (subject) => {
     await assertDoorsStandOwned(subject, [
-      `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text,text)`,
-      `${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text)`,
+      `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text,text,text)`,
+      `${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text,text)`,
     ]);
   });
 });
@@ -305,8 +305,8 @@ test("repository doors preserve their ownership and restricted grants", async ()
       `${repositoryLandingReadFunction}(text,text,text)`,
       `${repositoryLandingWriteFunction}(text,text,text,text,text,boolean,boolean)`,
       `${repositoryBindingWriteFunction}(text,text,text,text,text,text,text)`,
-      `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text,text)`,
-      `${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text)`,
+      `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text,text,text)`,
+      `${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text,text)`,
     ]);
     for (const privilege of ["SELECT", "UPDATE", "DELETE"])
       assert.equal(
@@ -481,8 +481,8 @@ const releasedSourceColumns = [
   "ref",
 ];
 
-/** The columns the door that builds an obligation reads a release back out of. */
-const releasedEntryColumns = ["tenant", "project", "entry"];
+/** The columns the door that builds an obligation reads a release back out of, and the position the finalizer's rework door bounds its read by. */
+const releasedEntryColumns = ["tenant", "project", "entry", "seq"];
 
 test("the two relations a release fills are open to the roles that write and read them and no others", async () => {
   await migratedDatabase("released_grants", async (subject) => {

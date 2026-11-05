@@ -209,6 +209,8 @@ export interface ResultManifest {
   readonly report?: string;
   readonly handoffs: readonly ArtifactRow[];
   readonly source?: SourceHandoff;
+  /** The git tree the evaluator's checkout held, which the digest covers where it is present. */
+  readonly evaluatedTree?: GitObjectId;
   readonly diagnostics: readonly ArtifactRow[];
   readonly digest: ArtifactDigest;
 }
@@ -260,6 +262,7 @@ export type ManifestRejection =
   | "SourceMalformed"
   | "SourceOnFailedVerdict"
   | "SourceAndHandoffs"
+  | "EvaluatedTreeMalformed"
   | "ArtifactBytesNotCounted"
   | "ArtifactTooLarge"
   | "ManifestTooLarge"
@@ -282,6 +285,7 @@ export const allManifestRejections: readonly ManifestRejection[] = [
   "SourceMalformed",
   "SourceOnFailedVerdict",
   "SourceAndHandoffs",
+  "EvaluatedTreeMalformed",
   "ArtifactBytesNotCounted",
   "ArtifactTooLarge",
   "ManifestTooLarge",
@@ -440,6 +444,9 @@ export function canonicalResultManifest(
       : source === undefined
         ? ["0"]
         : ["1", source.repository, source.ref, source.commit, source.base]),
+    ...(manifest.evaluatedTree === undefined
+      ? []
+      : ["evaluatedTree", manifest.evaluatedTree]),
   ]) as CanonicalManifest;
 }
 
@@ -588,7 +595,12 @@ function manifestEnvelope(
   const required = manifestCarriesReport(version)
     ? ["version", "verdict", "report", "handoffs", "diagnostics"]
     : ["version", "verdict", "handoffs", "diagnostics"];
-  const optional = version === 1 ? [] : ["source"];
+  const optional =
+    version === 1
+      ? []
+      : version === 2
+        ? ["source"]
+        : ["source", "evaluatedTree"];
   const refusal = manifestEnvelopeKeysRejection(record, required, optional);
   if (refusal !== undefined) return manifestRejected(refusal);
   if (record["verdict"] !== "Pass" && record["verdict"] !== "Fail")
@@ -650,6 +662,21 @@ function manifestSource(
   }
 }
 
+/** The tree an evaluator reports having checked out, or the refusal a value that is no tree id earns. */
+function manifestEvaluatedTree(
+  record: Record<string, unknown>,
+): GitObjectId | undefined | ManifestAccepted {
+  if (!("evaluatedTree" in record)) return undefined;
+  const declared = record["evaluatedTree"];
+  if (typeof declared !== "string")
+    return manifestRejected("EvaluatedTreeMalformed");
+  try {
+    return asGitObjectId(declared);
+  } catch {
+    return manifestRejected("EvaluatedTreeMalformed");
+  }
+}
+
 /** The two lists a report declares, sorted, or the refusal reading them earns. */
 function manifestLists(record: Record<string, unknown>):
   | {
@@ -699,6 +726,9 @@ export function acceptResultManifest(
   if ("accepted" in lists) return lists;
   const source = manifestSource(envelope.value);
   if (source !== undefined && "accepted" in source) return source;
+  const evaluatedTree = manifestEvaluatedTree(envelope.value);
+  if (evaluatedTree !== undefined && typeof evaluatedTree !== "string")
+    return evaluatedTree;
   const report = manifestReport(envelope.value);
   if (report !== undefined && typeof report !== "string") return report;
   if (source !== undefined && envelope.value["verdict"] === "Fail")
@@ -714,6 +744,7 @@ export function acceptResultManifest(
     ...(typeof report === "string" ? { report } : {}),
     handoffs: lists.handoffs,
     ...(source === undefined ? {} : { source }),
+    ...(evaluatedTree === undefined ? {} : { evaluatedTree }),
     diagnostics: lists.diagnostics,
     digest: "" as ArtifactDigest,
   };

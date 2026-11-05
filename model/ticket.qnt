@@ -18,9 +18,9 @@
 /// Sum-type constructors share one namespace per module, which is what the
 /// prefixed names below are avoiding.
 module chuggy_ticket {
-  import task_contract.* from "./task-contract/task"
-  import evaluation_protocol.* from "./ticket-domain/evaluation/evaluation"
-  import ticket_domain.* from "./ticket-domain/ticket"
+  import task_contract.* from "../node_modules/@kasofsk/chug-ticket-domain/model/task-contract/task"
+  import evaluation_protocol.* from "../node_modules/@kasofsk/chug-ticket-domain/model/ticket-domain/evaluation/evaluation"
+  import ticket_domain.* from "../node_modules/@kasofsk/chug-ticket-domain/model/ticket-domain/ticket"
 
   // === The desk and the projection ========================================
 

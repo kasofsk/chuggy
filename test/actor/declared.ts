@@ -1,7 +1,7 @@
 /**
  * The rosters the actor is held to, read out of the model at run time:
  * `model/refinement.qnt`'s two obligation bundles, and the `TicketCommand`
- * constructor vocabulary the vendored `model/ticket-domain/ticket.qnt`
+ * constructor vocabulary the package's `ticket-domain/ticket.qnt`
  * declares.
  *
  * It is `test/domain/declared.ts`'s mechanism pointed at the refinement
@@ -57,13 +57,21 @@ export function declaredRefinementObligations(root: string): readonly string[] {
  */
 export function declaredCommandConstructors(root: string): readonly string[] {
   const source = readFileSync(
-    join(root, "model", "ticket-domain", "ticket.qnt"),
+    join(
+      root,
+      "node_modules",
+      "@kasofsk",
+      "chug-ticket-domain",
+      "model",
+      "ticket-domain",
+      "ticket.qnt",
+    ),
     "utf8",
   );
   const start = source.indexOf("\n  type TicketCommand =");
   if (start < 0) {
     throw new Error(
-      "declared: model/ticket-domain/ticket.qnt declares no TicketCommand type",
+      "declared: the package's ticket-domain/ticket.qnt declares no TicketCommand type",
     );
   }
   const end = source.indexOf("\n\n", start);
@@ -76,7 +84,7 @@ export function declaredCommandConstructors(root: string): readonly string[] {
   }
   if (tags.length === 0) {
     throw new Error(
-      "declared: model/ticket-domain/ticket.qnt's TicketCommand holds no constructor this reader recognizes",
+      "declared: the package's ticket-domain/ticket.qnt TicketCommand holds no constructor this reader recognizes",
     );
   }
   return tags;

@@ -16,6 +16,7 @@ import { test } from "node:test";
 import { asTicketId } from "../../src/domain/ids.ts";
 import type {
   BriefFinalizationMode,
+  BriefLanding,
   FinalizationUnavailableKind,
 } from "../../src/contract/rosters.ts";
 import { asCanonicalConfiguration } from "../../src/interpreter/authoring.ts";
@@ -102,6 +103,7 @@ import {
   type Reconciled,
   type ReconciliationRecord,
   type RepositoryBinding,
+  type TargetContained,
   type TargetObserved,
 } from "../../src/interpreter/finalizer.ts";
 import {
@@ -915,6 +917,20 @@ function recordingHolds(
   };
 }
 
+/** The count of re-check failures, which is the attempts this store has recorded for them. */
+function recordingRechecks(
+  store: () => FinalizerRecorder,
+): Pick<FinalizerStore, "ticketRecheckFailures"> {
+  return {
+    ticketRecheckFailures: () =>
+      Promise.resolve(
+        store().attempts.filter(
+          (attempt) => attempt.failureKind === "RecheckRequired",
+        ).length,
+      ),
+  };
+}
+
 /** A store that answers from the views a case hands it and records every move. */
 function recordingStore(
   views: readonly FinalizationView[],
@@ -924,6 +940,7 @@ function recordingStore(
     ...recordingLedgers(),
     ...recordingProposalCounters(),
     ...recordingProposals(() => own),
+    ...recordingRechecks(() => own),
     gathering: {
       work: [passedWork],
       artifacts: [handoffOf("one.txt", "one")],
@@ -992,6 +1009,7 @@ interface GitRecorder extends GitPromotionPort {
   readonly integrations: CandidateIntegration[];
   readonly adoptions: HeadAdoptionQuestion[];
   readonly heldQuestions: CandidateHeldQuestion[];
+  readonly containedQuestions: CandidateHeldQuestion[];
   promoted: CandidatePromoted;
   proved: AncestryProved;
   observed: TargetObserved;
@@ -1001,6 +1019,25 @@ interface GitRecorder extends GitPromotionPort {
   integrated: CandidateIntegrated;
   adoptable: HeadAdoption;
   held: CandidateHeld;
+  contained: TargetContained;
+}
+
+/** The half of that remote that answers whether the target's tip is in a candidate's history, containing it until a case says otherwise. */
+function recordingContainment(
+  git: () => GitRecorder,
+): Pick<
+  GitRecorder,
+  "containedQuestions" | "contained" | "proveTargetContained"
+> {
+  return {
+    containedQuestions: [],
+    contained: "Contained",
+    proveTargetContained: (question) => {
+      const own = git();
+      own.containedQuestions.push(question);
+      return Promise.resolve(own.contained);
+    },
+  };
 }
 
 /**
@@ -1018,6 +1055,7 @@ function recordingGit(): GitRecorder {
     integrations: [],
     adoptions: [],
     heldQuestions: [],
+    ...recordingContainment(() => own),
     adoptable: "Adoptable",
     held: "Unheld",
     promoted: { promoted: "Advanced" },
@@ -1163,16 +1201,18 @@ function briefsOf(
   branch?: string,
   target?: string,
   mode: BriefFinalizationMode = "Push",
+  ordering: BriefLanding = "Direct",
 ): TicketBriefPort {
   const landing = target !== undefined || mode !== "Push";
   const brief: DraftBrief | undefined =
-    branch === undefined && !landing
+    branch === undefined && !landing && ordering === "Direct"
       ? undefined
       : {
           intent: asBriefIntent("carry the ticket's own branch"),
           links: [],
           images: [],
           checks: [],
+          ...(ordering === "Direct" ? {} : { landing: ordering }),
           ...(branch === undefined ? {} : { branch: asBriefBranch(branch) }),
           ...(landing
             ? {
@@ -3971,6 +4011,147 @@ test("a candidate holding a real change is still integrated, and an unanswered q
   assert.equal(held.holds, 1);
   assert.deepEqual(unread.attempts, [], "an unanswered question is no answer");
   assert.deepEqual(unanswering.integrations, []);
+});
+
+/** The service a case drives for a ticket whose brief lands it as the given policy. */
+function landingService(
+  store: FinalizerRecorder,
+  git: GitPromotionPort,
+  landing: BriefLanding,
+  bounds: Partial<typeof finalizerDefaults> = {},
+): FinalizerService {
+  return {
+    ...serviceOf(store, git, bounds),
+    ticketBriefs: briefsOf(undefined, undefined, "Push", landing),
+  };
+}
+
+test("a serialized landing whose accepted commit holds the target's tip lands that commit as it is, merging nothing", async () => {
+  const store = sourcedStore();
+  const git = recordingGit();
+  git.contained = "Contained";
+
+  await passOver(landingService(store, git, "Serialized"));
+
+  assert.deepEqual(git.containedQuestions, [
+    {
+      repository: binding,
+      target: attemptOf("any").target,
+      candidate: commitOf("c"),
+    },
+  ]);
+  assert.deepEqual(git.integrations, [], "nothing is merged");
+  assert.equal(store.attempts.length, 1);
+  assert.equal(store.attempts[0]?.outcome, "Prepared");
+  assert.equal(store.attempts[0]?.candidate, commitOf("c"));
+  assert.equal(store.attempts[0]?.failureKind, undefined);
+});
+
+test("a serialized landing whose target moved past the accepted commit is sent back to re-check it, naming that commit", async () => {
+  const store = sourcedStore();
+  const git = recordingGit();
+  git.contained = "Uncontained";
+
+  const report = await passOver(landingService(store, git, "Serialized"));
+
+  assert.equal(report.holds, 0);
+  assert.deepEqual(git.integrations, [], "no merge candidate is built");
+  assert.deepEqual(git.promotions, []);
+  assert.equal(store.attempts.length, 1);
+  const recorded = store.attempts[0];
+  assert.equal(recorded?.outcome, "Failed");
+  assert.equal(recorded?.failureKind, "RecheckRequired");
+  assert.equal(recorded?.recheckCommit, commitOf("c"));
+  assert.equal(recorded?.candidate, undefined);
+  assert.deepEqual(recorded?.target, attemptOf("any").target);
+
+  const settling = recordingStore([
+    {
+      ...preparableView("request-one"),
+      attempt: attemptFailedOf("request-one", "RecheckRequired"),
+      attemptsMade: 1,
+    },
+  ]);
+  await passOver(landingService(settling, git, "Serialized"));
+  assert.deepEqual(settling.concluded, [
+    { outcome: "FinalizationNeedsWork", kind: "RecheckRequired" },
+  ]);
+  assert.deepEqual(git.promotions, []);
+});
+
+test("a serialized landing already sent back as often as its bound allows holds, and records nothing", async () => {
+  const store = sourcedStore();
+  const git = recordingGit();
+  git.contained = "Uncontained";
+  const service = landingService(store, git, "Serialized", {
+    recheckReworksMax: 1,
+    holdPassesMax: 2,
+  });
+
+  await passOver(service);
+  assert.equal(store.attempts.length, 1);
+  const held = await passOver(service);
+
+  assert.equal(held.holds, 1);
+  assert.equal(store.attempts.length, 1, "past the bound nothing is reworked");
+  assert.deepEqual(store.concluded, []);
+  await passOver(service);
+  assert.deepEqual(store.concluded, [
+    {
+      outcome: "FinalizationResultUnavailable",
+      kind: "RecheckReworksExhausted",
+    },
+  ]);
+});
+
+test("a serialized landing the target already holds is recorded landed, before any containment is asked", async () => {
+  const store = sourcedStore();
+  const git = recordingGit();
+  git.held = "Held";
+  git.contained = "Uncontained";
+
+  await passOver(landingService(store, git, "Serialized"));
+
+  assert.deepEqual(git.containedQuestions, []);
+  assert.equal(store.attempts[0]?.outcome, "Landed");
+});
+
+test("a serialized landing whose containment could not be read holds and records nothing", async () => {
+  const store = sourcedStore();
+  const git = recordingGit();
+  git.contained = "Unread";
+
+  const report = await passOver(landingService(store, git, "Serialized"));
+
+  assert.equal(report.holds, 1);
+  assert.deepEqual(store.attempts, []);
+  assert.deepEqual(git.integrations, []);
+});
+
+test("a direct landing over a moved target still merges, and never asks for containment", async () => {
+  const store = sourcedStore();
+  const git = recordingGit();
+  git.contained = "Uncontained";
+
+  await passOver(landingService(store, git, "Direct"));
+
+  assert.deepEqual(git.containedQuestions, []);
+  assert.equal(git.integrations.length, 1);
+  assert.equal(store.attempts[0]?.outcome, "Prepared");
+});
+
+test("a serialized landing with a conflicting merge records MergeConflict as a direct one does, where the preparation finds one", async () => {
+  const store = recordingStore([preparableView("request-one")]);
+  const git = recordingGit();
+  git.integrated = {
+    integrated: "Conflicted",
+    conflict: { paths: ["one.txt"], truncated: false },
+  };
+
+  await passOver(landingService(store, git, "Serialized"));
+
+  assert.equal(git.integrations.length, 1, "an artifacts handoff is merged");
+  assert.equal(store.attempts[0]?.failureKind, "MergeConflict");
 });
 
 test("a branch the remote does not hold yet holds nothing, and is not asked", async () => {

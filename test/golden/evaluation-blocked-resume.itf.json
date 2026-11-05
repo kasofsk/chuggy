@@ -2770,9 +2770,9 @@
         "onFailure": {
           "tag": "Some",
           "value": {
-            "tag": "EscalateEvaluationFailure",
+            "tag": "InvalidateEvaluationFailure",
             "value": {
-              "#tup": []
+              "#bigint": "17"
             }
           }
         },
@@ -4933,7 +4933,7 @@
         "onFailure": {
           "tag": "Some",
           "value": {
-            "tag": "EscalateEvaluationFailure",
+            "tag": "ReworkEvaluationFailure",
             "value": {
               "#tup": []
             }
@@ -7174,9 +7174,9 @@
         "onFailure": {
           "tag": "Some",
           "value": {
-            "tag": "EscalateEvaluationFailure",
+            "tag": "InvalidateEvaluationFailure",
             "value": {
-              "#tup": []
+              "#bigint": "17"
             }
           }
         },
@@ -8396,7 +8396,7 @@
         "onFailure": {
           "tag": "Some",
           "value": {
-            "tag": "EscalateEvaluationFailure",
+            "tag": "ReworkEvaluationFailure",
             "value": {
               "#tup": []
             }
@@ -9740,7 +9740,7 @@
         "onFailure": {
           "tag": "Some",
           "value": {
-            "tag": "ReworkEvaluationFailure",
+            "tag": "EscalateEvaluationFailure",
             "value": {
               "#tup": []
             }
@@ -13567,7 +13567,7 @@
         "onFailure": {
           "tag": "Some",
           "value": {
-            "tag": "EscalateEvaluationFailure",
+            "tag": "ReworkEvaluationFailure",
             "value": {
               "#tup": []
             }
@@ -16106,7 +16106,7 @@
         "onFailure": {
           "tag": "Some",
           "value": {
-            "tag": "ReworkEvaluationFailure",
+            "tag": "EscalateEvaluationFailure",
             "value": {
               "#tup": []
             }
@@ -18762,9 +18762,9 @@
         "onFailure": {
           "tag": "Some",
           "value": {
-            "tag": "ReworkEvaluationFailure",
+            "tag": "InvalidateEvaluationFailure",
             "value": {
-              "#tup": []
+              "#bigint": "17"
             }
           }
         },
@@ -24150,9 +24150,9 @@
         "onFailure": {
           "tag": "Some",
           "value": {
-            "tag": "EscalateEvaluationFailure",
+            "tag": "InvalidateEvaluationFailure",
             "value": {
-              "#tup": []
+              "#bigint": "17"
             }
           }
         },
@@ -34905,9 +34905,9 @@
         "onFailure": {
           "tag": "Some",
           "value": {
-            "tag": "ReworkEvaluationFailure",
+            "tag": "InvalidateEvaluationFailure",
             "value": {
-              "#tup": []
+              "#bigint": "17"
             }
           }
         },
@@ -36799,9 +36799,9 @@
         "onFailure": {
           "tag": "Some",
           "value": {
-            "tag": "ReworkEvaluationFailure",
+            "tag": "InvalidateEvaluationFailure",
             "value": {
-              "#tup": []
+              "#bigint": "17"
             }
           }
         },
@@ -38708,7 +38708,7 @@
         "onFailure": {
           "tag": "Some",
           "value": {
-            "tag": "ReworkEvaluationFailure",
+            "tag": "EscalateEvaluationFailure",
             "value": {
               "#tup": []
             }
@@ -42530,7 +42530,7 @@
         "onFailure": {
           "tag": "Some",
           "value": {
-            "tag": "ReworkEvaluationFailure",
+            "tag": "EscalateEvaluationFailure",
             "value": {
               "#tup": []
             }
@@ -51716,9 +51716,9 @@
         "onFailure": {
           "tag": "Some",
           "value": {
-            "tag": "ReworkEvaluationFailure",
+            "tag": "InvalidateEvaluationFailure",
             "value": {
-              "#tup": []
+              "#bigint": "17"
             }
           }
         },
@@ -57294,7 +57294,7 @@
         "onFailure": {
           "tag": "Some",
           "value": {
-            "tag": "EscalateEvaluationFailure",
+            "tag": "ReworkEvaluationFailure",
             "value": {
               "#tup": []
             }
@@ -65367,7 +65367,7 @@
         "onFailure": {
           "tag": "Some",
           "value": {
-            "tag": "EscalateEvaluationFailure",
+            "tag": "ReworkEvaluationFailure",
             "value": {
               "#tup": []
             }
@@ -69476,9 +69476,9 @@
         "onFailure": {
           "tag": "Some",
           "value": {
-            "tag": "ReworkEvaluationFailure",
+            "tag": "InvalidateEvaluationFailure",
             "value": {
-              "#tup": []
+              "#bigint": "17"
             }
           }
         },
@@ -69570,18 +69570,11 @@
         "tag": "Decided",
         "value": {
           "event": {
-            "tag": "TicketEvaluationReworkStarted",
+            "tag": "TicketEvaluationFailureInvalidated",
             "value": {
-              "evidence": [
-                {
-                  "evaluator": {
-                    "#bigint": "1"
-                  },
-                  "resultRef": {
-                    "#bigint": "1"
-                  }
-                }
-              ],
+              "evidence": {
+                "#bigint": "17"
+              },
               "report": {
                 "tag": "TerminalFailureReport",
                 "value": {
@@ -70018,9 +70011,10 @@
                     ]
                   },
                   "state": {
-                    "tag": "EvaluationFailed",
-                    "value": [
-                      {
+                    "tag": "Running",
+                    "value": {
+                      "completedStages": [],
+                      "stage": {
                         "evaluators": {
                           "#map": [
                             [
@@ -70042,9 +70036,9 @@
                                 "#bigint": "2"
                               },
                               {
-                                "tag": "EvaluatorExecutionUnavailable",
+                                "tag": "Awaiting",
                                 "value": {
-                                  "#bigint": "2"
+                                  "#tup": []
                                 }
                               }
                             ]
@@ -70057,7 +70051,7 @@
                           "#bigint": "0"
                         }
                       }
-                    ]
+                    }
                   },
                   "workCycle": {
                     "#bigint": "2"
@@ -71495,17 +71489,10 @@
                 "value": {
                   "input": {
                     "cause": {
-                      "tag": "EvaluationRework",
-                      "value": [
-                        {
-                          "evaluator": {
-                            "#bigint": "1"
-                          },
-                          "resultRef": {
-                            "#bigint": "1"
-                          }
-                        }
-                      ]
+                      "tag": "StackInvalidated",
+                      "value": {
+                        "#bigint": "17"
+                      }
                     },
                     "released": {
                       "#bigint": "61"
@@ -71623,7 +71610,7 @@
         "onFailure": {
           "tag": "Some",
           "value": {
-            "tag": "EscalateEvaluationFailure",
+            "tag": "ReworkEvaluationFailure",
             "value": {
               "#tup": []
             }
@@ -72208,9 +72195,10 @@
                     ]
                   },
                   "state": {
-                    "tag": "EvaluationFailed",
-                    "value": [
-                      {
+                    "tag": "Running",
+                    "value": {
+                      "completedStages": [],
+                      "stage": {
                         "evaluators": {
                           "#map": [
                             [
@@ -72232,9 +72220,9 @@
                                 "#bigint": "2"
                               },
                               {
-                                "tag": "EvaluatorExecutionUnavailable",
+                                "tag": "Awaiting",
                                 "value": {
-                                  "#bigint": "2"
+                                  "#tup": []
                                 }
                               }
                             ]
@@ -72247,7 +72235,7 @@
                           "#bigint": "0"
                         }
                       }
-                    ]
+                    }
                   },
                   "workCycle": {
                     "#bigint": "2"
@@ -72860,9 +72848,10 @@
                     ]
                   },
                   "state": {
-                    "tag": "EvaluationFailed",
-                    "value": [
-                      {
+                    "tag": "Running",
+                    "value": {
+                      "completedStages": [],
+                      "stage": {
                         "evaluators": {
                           "#map": [
                             [
@@ -72884,9 +72873,9 @@
                                 "#bigint": "2"
                               },
                               {
-                                "tag": "EvaluatorExecutionUnavailable",
+                                "tag": "Awaiting",
                                 "value": {
-                                  "#bigint": "2"
+                                  "#tup": []
                                 }
                               }
                             ]
@@ -72899,7 +72888,7 @@
                           "#bigint": "0"
                         }
                       }
-                    ]
+                    }
                   },
                   "workCycle": {
                     "#bigint": "2"
@@ -73382,17 +73371,10 @@
                 "value": {
                   "input": {
                     "cause": {
-                      "tag": "EvaluationRework",
-                      "value": [
-                        {
-                          "evaluator": {
-                            "#bigint": "1"
-                          },
-                          "resultRef": {
-                            "#bigint": "1"
-                          }
-                        }
-                      ]
+                      "tag": "StackInvalidated",
+                      "value": {
+                        "#bigint": "17"
+                      }
                     },
                     "released": {
                       "#bigint": "61"
@@ -73943,7 +73925,7 @@
         "onFailure": {
           "tag": "Some",
           "value": {
-            "tag": "ReworkEvaluationFailure",
+            "tag": "EscalateEvaluationFailure",
             "value": {
               "#tup": []
             }
@@ -74393,9 +74375,10 @@
                     ]
                   },
                   "state": {
-                    "tag": "EvaluationFailed",
-                    "value": [
-                      {
+                    "tag": "Running",
+                    "value": {
+                      "completedStages": [],
+                      "stage": {
                         "evaluators": {
                           "#map": [
                             [
@@ -74417,9 +74400,9 @@
                                 "#bigint": "2"
                               },
                               {
-                                "tag": "EvaluatorExecutionUnavailable",
+                                "tag": "Awaiting",
                                 "value": {
-                                  "#bigint": "2"
+                                  "#tup": []
                                 }
                               }
                             ]
@@ -74432,7 +74415,7 @@
                           "#bigint": "0"
                         }
                       }
-                    ]
+                    }
                   },
                   "workCycle": {
                     "#bigint": "2"
@@ -75045,9 +75028,10 @@
                     ]
                   },
                   "state": {
-                    "tag": "EvaluationFailed",
-                    "value": [
-                      {
+                    "tag": "Running",
+                    "value": {
+                      "completedStages": [],
+                      "stage": {
                         "evaluators": {
                           "#map": [
                             [
@@ -75069,9 +75053,9 @@
                                 "#bigint": "2"
                               },
                               {
-                                "tag": "EvaluatorExecutionUnavailable",
+                                "tag": "Awaiting",
                                 "value": {
-                                  "#bigint": "2"
+                                  "#tup": []
                                 }
                               }
                             ]
@@ -75084,7 +75068,7 @@
                           "#bigint": "0"
                         }
                       }
-                    ]
+                    }
                   },
                   "workCycle": {
                     "#bigint": "2"
@@ -76680,9 +76664,10 @@
                     ]
                   },
                   "state": {
-                    "tag": "EvaluationFailed",
-                    "value": [
-                      {
+                    "tag": "Running",
+                    "value": {
+                      "completedStages": [],
+                      "stage": {
                         "evaluators": {
                           "#map": [
                             [
@@ -76704,9 +76689,9 @@
                                 "#bigint": "2"
                               },
                               {
-                                "tag": "EvaluatorExecutionUnavailable",
+                                "tag": "Awaiting",
                                 "value": {
-                                  "#bigint": "2"
+                                  "#tup": []
                                 }
                               }
                             ]
@@ -76719,7 +76704,7 @@
                           "#bigint": "0"
                         }
                       }
-                    ]
+                    }
                   },
                   "workCycle": {
                     "#bigint": "2"
@@ -77332,9 +77317,10 @@
                     ]
                   },
                   "state": {
-                    "tag": "EvaluationFailed",
-                    "value": [
-                      {
+                    "tag": "Running",
+                    "value": {
+                      "completedStages": [],
+                      "stage": {
                         "evaluators": {
                           "#map": [
                             [
@@ -77356,9 +77342,9 @@
                                 "#bigint": "2"
                               },
                               {
-                                "tag": "EvaluatorExecutionUnavailable",
+                                "tag": "Awaiting",
                                 "value": {
-                                  "#bigint": "2"
+                                  "#tup": []
                                 }
                               }
                             ]
@@ -77371,7 +77357,7 @@
                           "#bigint": "0"
                         }
                       }
-                    ]
+                    }
                   },
                   "workCycle": {
                     "#bigint": "2"
@@ -78536,9 +78522,9 @@
         "onFailure": {
           "tag": "Some",
           "value": {
-            "tag": "ReworkEvaluationFailure",
+            "tag": "InvalidateEvaluationFailure",
             "value": {
-              "#tup": []
+              "#bigint": "17"
             }
           }
         },
@@ -79067,9 +79053,10 @@
                     ]
                   },
                   "state": {
-                    "tag": "EvaluationFailed",
-                    "value": [
-                      {
+                    "tag": "Running",
+                    "value": {
+                      "completedStages": [],
+                      "stage": {
                         "evaluators": {
                           "#map": [
                             [
@@ -79091,9 +79078,9 @@
                                 "#bigint": "2"
                               },
                               {
-                                "tag": "EvaluatorExecutionUnavailable",
+                                "tag": "Awaiting",
                                 "value": {
-                                  "#bigint": "2"
+                                  "#tup": []
                                 }
                               }
                             ]
@@ -79106,7 +79093,7 @@
                           "#bigint": "0"
                         }
                       }
-                    ]
+                    }
                   },
                   "workCycle": {
                     "#bigint": "2"
@@ -79719,9 +79706,10 @@
                     ]
                   },
                   "state": {
-                    "tag": "EvaluationFailed",
-                    "value": [
-                      {
+                    "tag": "Running",
+                    "value": {
+                      "completedStages": [],
+                      "stage": {
                         "evaluators": {
                           "#map": [
                             [
@@ -79743,9 +79731,9 @@
                                 "#bigint": "2"
                               },
                               {
-                                "tag": "EvaluatorExecutionUnavailable",
+                                "tag": "Awaiting",
                                 "value": {
-                                  "#bigint": "2"
+                                  "#tup": []
                                 }
                               }
                             ]
@@ -79758,7 +79746,7 @@
                           "#bigint": "0"
                         }
                       }
-                    ]
+                    }
                   },
                   "workCycle": {
                     "#bigint": "2"
@@ -80920,7 +80908,7 @@
         "onFailure": {
           "tag": "Some",
           "value": {
-            "tag": "EscalateEvaluationFailure",
+            "tag": "ReworkEvaluationFailure",
             "value": {
               "#tup": []
             }
@@ -81413,9 +81401,10 @@
                     ]
                   },
                   "state": {
-                    "tag": "EvaluationFailed",
-                    "value": [
-                      {
+                    "tag": "Running",
+                    "value": {
+                      "completedStages": [],
+                      "stage": {
                         "evaluators": {
                           "#map": [
                             [
@@ -81437,9 +81426,9 @@
                                 "#bigint": "2"
                               },
                               {
-                                "tag": "EvaluatorExecutionUnavailable",
+                                "tag": "Awaiting",
                                 "value": {
-                                  "#bigint": "2"
+                                  "#tup": []
                                 }
                               }
                             ]
@@ -81452,7 +81441,7 @@
                           "#bigint": "0"
                         }
                       }
-                    ]
+                    }
                   },
                   "workCycle": {
                     "#bigint": "2"
@@ -82065,9 +82054,10 @@
                     ]
                   },
                   "state": {
-                    "tag": "EvaluationFailed",
-                    "value": [
-                      {
+                    "tag": "Running",
+                    "value": {
+                      "completedStages": [],
+                      "stage": {
                         "evaluators": {
                           "#map": [
                             [
@@ -82089,9 +82079,9 @@
                                 "#bigint": "2"
                               },
                               {
-                                "tag": "EvaluatorExecutionUnavailable",
+                                "tag": "Awaiting",
                                 "value": {
-                                  "#bigint": "2"
+                                  "#tup": []
                                 }
                               }
                             ]
@@ -82104,7 +82094,7 @@
                           "#bigint": "0"
                         }
                       }
-                    ]
+                    }
                   },
                   "workCycle": {
                     "#bigint": "2"
@@ -83272,7 +83262,7 @@
         "onFailure": {
           "tag": "Some",
           "value": {
-            "tag": "EscalateEvaluationFailure",
+            "tag": "ReworkEvaluationFailure",
             "value": {
               "#tup": []
             }
@@ -83722,9 +83712,10 @@
                     ]
                   },
                   "state": {
-                    "tag": "EvaluationFailed",
-                    "value": [
-                      {
+                    "tag": "Running",
+                    "value": {
+                      "completedStages": [],
+                      "stage": {
                         "evaluators": {
                           "#map": [
                             [
@@ -83746,9 +83737,9 @@
                                 "#bigint": "2"
                               },
                               {
-                                "tag": "EvaluatorExecutionUnavailable",
+                                "tag": "Awaiting",
                                 "value": {
-                                  "#bigint": "2"
+                                  "#tup": []
                                 }
                               }
                             ]
@@ -83761,7 +83752,7 @@
                           "#bigint": "0"
                         }
                       }
-                    ]
+                    }
                   },
                   "workCycle": {
                     "#bigint": "2"
@@ -84374,9 +84365,10 @@
                     ]
                   },
                   "state": {
-                    "tag": "EvaluationFailed",
-                    "value": [
-                      {
+                    "tag": "Running",
+                    "value": {
+                      "completedStages": [],
+                      "stage": {
                         "evaluators": {
                           "#map": [
                             [
@@ -84398,9 +84390,9 @@
                                 "#bigint": "2"
                               },
                               {
-                                "tag": "EvaluatorExecutionUnavailable",
+                                "tag": "Awaiting",
                                 "value": {
-                                  "#bigint": "2"
+                                  "#tup": []
                                 }
                               }
                             ]
@@ -84413,7 +84405,7 @@
                           "#bigint": "0"
                         }
                       }
-                    ]
+                    }
                   },
                   "workCycle": {
                     "#bigint": "2"
@@ -86028,9 +86020,10 @@
                     ]
                   },
                   "state": {
-                    "tag": "EvaluationFailed",
-                    "value": [
-                      {
+                    "tag": "Running",
+                    "value": {
+                      "completedStages": [],
+                      "stage": {
                         "evaluators": {
                           "#map": [
                             [
@@ -86052,9 +86045,9 @@
                                 "#bigint": "2"
                               },
                               {
-                                "tag": "EvaluatorExecutionUnavailable",
+                                "tag": "Awaiting",
                                 "value": {
-                                  "#bigint": "2"
+                                  "#tup": []
                                 }
                               }
                             ]
@@ -86067,7 +86060,7 @@
                           "#bigint": "0"
                         }
                       }
-                    ]
+                    }
                   },
                   "workCycle": {
                     "#bigint": "2"
@@ -86680,9 +86673,10 @@
                     ]
                   },
                   "state": {
-                    "tag": "EvaluationFailed",
-                    "value": [
-                      {
+                    "tag": "Running",
+                    "value": {
+                      "completedStages": [],
+                      "stage": {
                         "evaluators": {
                           "#map": [
                             [
@@ -86704,9 +86698,9 @@
                                 "#bigint": "2"
                               },
                               {
-                                "tag": "EvaluatorExecutionUnavailable",
+                                "tag": "Awaiting",
                                 "value": {
-                                  "#bigint": "2"
+                                  "#tup": []
                                 }
                               }
                             ]
@@ -86719,7 +86713,7 @@
                           "#bigint": "0"
                         }
                       }
-                    ]
+                    }
                   },
                   "workCycle": {
                     "#bigint": "2"
@@ -88440,9 +88434,10 @@
                     ]
                   },
                   "state": {
-                    "tag": "EvaluationFailed",
-                    "value": [
-                      {
+                    "tag": "Running",
+                    "value": {
+                      "completedStages": [],
+                      "stage": {
                         "evaluators": {
                           "#map": [
                             [
@@ -88464,9 +88459,9 @@
                                 "#bigint": "2"
                               },
                               {
-                                "tag": "EvaluatorExecutionUnavailable",
+                                "tag": "Awaiting",
                                 "value": {
-                                  "#bigint": "2"
+                                  "#tup": []
                                 }
                               }
                             ]
@@ -88479,7 +88474,7 @@
                           "#bigint": "0"
                         }
                       }
-                    ]
+                    }
                   },
                   "workCycle": {
                     "#bigint": "2"
@@ -89092,9 +89087,10 @@
                     ]
                   },
                   "state": {
-                    "tag": "EvaluationFailed",
-                    "value": [
-                      {
+                    "tag": "Running",
+                    "value": {
+                      "completedStages": [],
+                      "stage": {
                         "evaluators": {
                           "#map": [
                             [
@@ -89116,9 +89112,9 @@
                                 "#bigint": "2"
                               },
                               {
-                                "tag": "EvaluatorExecutionUnavailable",
+                                "tag": "Awaiting",
                                 "value": {
-                                  "#bigint": "2"
+                                  "#tup": []
                                 }
                               }
                             ]
@@ -89131,7 +89127,7 @@
                           "#bigint": "0"
                         }
                       }
-                    ]
+                    }
                   },
                   "workCycle": {
                     "#bigint": "2"
@@ -91009,9 +91005,10 @@
                     ]
                   },
                   "state": {
-                    "tag": "EvaluationFailed",
-                    "value": [
-                      {
+                    "tag": "Running",
+                    "value": {
+                      "completedStages": [],
+                      "stage": {
                         "evaluators": {
                           "#map": [
                             [
@@ -91033,9 +91030,9 @@
                                 "#bigint": "2"
                               },
                               {
-                                "tag": "EvaluatorExecutionUnavailable",
+                                "tag": "Awaiting",
                                 "value": {
-                                  "#bigint": "2"
+                                  "#tup": []
                                 }
                               }
                             ]
@@ -91048,7 +91045,7 @@
                           "#bigint": "0"
                         }
                       }
-                    ]
+                    }
                   },
                   "workCycle": {
                     "#bigint": "2"
@@ -91661,9 +91658,10 @@
                     ]
                   },
                   "state": {
-                    "tag": "EvaluationFailed",
-                    "value": [
-                      {
+                    "tag": "Running",
+                    "value": {
+                      "completedStages": [],
+                      "stage": {
                         "evaluators": {
                           "#map": [
                             [
@@ -91685,9 +91683,9 @@
                                 "#bigint": "2"
                               },
                               {
-                                "tag": "EvaluatorExecutionUnavailable",
+                                "tag": "Awaiting",
                                 "value": {
-                                  "#bigint": "2"
+                                  "#tup": []
                                 }
                               }
                             ]
@@ -91700,7 +91698,7 @@
                           "#bigint": "0"
                         }
                       }
-                    ]
+                    }
                   },
                   "workCycle": {
                     "#bigint": "2"
@@ -93435,9 +93433,10 @@
                     ]
                   },
                   "state": {
-                    "tag": "EvaluationFailed",
-                    "value": [
-                      {
+                    "tag": "Running",
+                    "value": {
+                      "completedStages": [],
+                      "stage": {
                         "evaluators": {
                           "#map": [
                             [
@@ -93459,9 +93458,9 @@
                                 "#bigint": "2"
                               },
                               {
-                                "tag": "EvaluatorExecutionUnavailable",
+                                "tag": "Awaiting",
                                 "value": {
-                                  "#bigint": "2"
+                                  "#tup": []
                                 }
                               }
                             ]
@@ -93474,7 +93473,7 @@
                           "#bigint": "0"
                         }
                       }
-                    ]
+                    }
                   },
                   "workCycle": {
                     "#bigint": "2"
@@ -94164,9 +94163,10 @@
                     ]
                   },
                   "state": {
-                    "tag": "EvaluationFailed",
-                    "value": [
-                      {
+                    "tag": "Running",
+                    "value": {
+                      "completedStages": [],
+                      "stage": {
                         "evaluators": {
                           "#map": [
                             [
@@ -94188,9 +94188,9 @@
                                 "#bigint": "2"
                               },
                               {
-                                "tag": "EvaluatorExecutionUnavailable",
+                                "tag": "Awaiting",
                                 "value": {
-                                  "#bigint": "2"
+                                  "#tup": []
                                 }
                               }
                             ]
@@ -94203,7 +94203,7 @@
                           "#bigint": "0"
                         }
                       }
-                    ]
+                    }
                   },
                   "workCycle": {
                     "#bigint": "2"

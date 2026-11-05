@@ -111,6 +111,7 @@ test("every pass and pace bound a deployment names reaches the parsed configurat
     CHUG_FINALIZER_PROPOSAL_MERGE_READINGS_MAX: "13",
     CHUG_FINALIZER_PROPOSAL_UPDATES_MAX: "14",
     CHUG_FINALIZER_PROPOSAL_QUEUE_REWORKS_MAX: "15",
+    CHUG_FINALIZER_RECHECK_REWORKS_MAX: "16",
   });
   assert.deepEqual(settings.runtime, {
     idleIntervalMilliseconds: 250,
@@ -132,6 +133,7 @@ test("every pass and pace bound a deployment names reaches the parsed configurat
     proposalMergeReadingsMax: 13,
     proposalUpdatesMax: 14,
     proposalQueueReworksMax: 15,
+    recheckReworksMax: 16,
   });
 });
 

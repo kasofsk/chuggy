@@ -15,7 +15,7 @@
 import { z } from "zod";
 
 import { identitySchema, repositoryIdentityCharsMax } from "./http.ts";
-import { briefFinalizationProposes } from "./rosters.ts";
+import { briefFinalizationProposes, briefLandings } from "./rosters.ts";
 
 /**
  * The longest line a briefing renders, which bounds each thing a brief states
@@ -147,6 +147,9 @@ export const briefFinalizationSchema = z.discriminatedUnion("mode", [
   z.strictObject(briefFinalizationShapes.None),
 ]);
 
+/** How the brief's landing is ordered against the others on its reference, `Direct` where it names none. */
+export const briefLandingSchema = z.enum(briefLandings);
+
 /**
  * Whether one brief's branch and its finalization stand together. A proposal is
  * opened from the branch the work happened on, so a brief that proposes names a
@@ -189,6 +192,7 @@ export const briefSchema = z
     repository: briefRepositorySchema.optional(),
     branch: briefBranchSchema.optional(),
     finalization: briefFinalizationSchema.optional(),
+    landing: briefLandingSchema.optional(),
   })
   .refine(briefLandingIsWhole, {
     error:

@@ -93,6 +93,14 @@ import type { FinalizerProposalStore } from "../../interpreter/finalizationPropo
 import type { FinalizerPreparationStore } from "../../interpreter/finalizerPreparation.ts";
 import { nativeActionResolutions } from "../../interpreter/projectCommand.ts";
 import {
+  serializedQueues,
+  serializedWaiting,
+  type SerializedCandidate,
+} from "../../interpreter/serializedHolder.ts";
+import { briefLandingOf, briefLandsOn } from "../../interpreter/ticketBrief.ts";
+import { phaseRoster } from "../../contract/rosters.ts";
+import { releasedBriefOf } from "./ticketBrief.ts";
+import {
   allLifecycles,
   asProjectId,
   asRecoveryEpoch,
@@ -294,7 +302,81 @@ function finalizerRowClaim(
   };
 }
 
-/** Takes a bounded lease on the oldest requests nobody holds, drawing nothing under a superseded epoch. */
+/** One Serialized ticket on the path to its landing, as the queue reads it. */
+interface SerializedRow {
+  readonly tenant: string;
+  readonly project: string;
+  readonly ticket: string;
+  readonly phase: string;
+  readonly brief: string | null;
+  readonly entry: string | null;
+  readonly rechecking: boolean | null;
+}
+
+/**
+ * Every Serialized ticket between a send-back to re-check and its landing,
+ * across partitions. The filter on the stored brief only keeps Direct tickets,
+ * which are most, out of the read; whether a ticket queues is
+ * `serializedQueues`' to say.
+ */
+async function finalizerSerializedCandidates(
+  client: pg.PoolClient,
+): Promise<readonly SerializedCandidate[]> {
+  const found = await client.query<SerializedRow>(
+    sql`SELECT d.tenant, d.project, d.ticket::text AS ticket, p.phase,
+               d.brief::text AS brief,
+               (SELECT min(f.authorizing_seq)::text FROM finalization_request f
+                 WHERE f.tenant = d.tenant AND f.project = d.project
+                   AND f.ticket = d.ticket AND f.kind = 'RunFinalizer'
+                   AND f.state IN ('Open', 'Registered')) AS entry,
+               (SELECT x.failure_kind = 'RecheckRequired'
+                       AND NOT ticket_evaluation_reworked_since(
+                             x.tenant, x.project, x.ticket, r.authorizing_seq)
+                  FROM finalization_attempt x
+                  JOIN finalization_request r
+                    ON r.tenant = x.tenant AND r.project = x.project
+                   AND r.request = x.request
+                 WHERE x.tenant = d.tenant AND x.project = d.project
+                   AND x.ticket = d.ticket AND x.outcome = 'Failed'
+                 ORDER BY x.prepared_at DESC, x.attempt DESC LIMIT 1) AS rechecking
+          FROM ticket_definition d
+          JOIN ticket_projection p
+            ON p.tenant = d.tenant AND p.project = d.project AND p.ticket = d.ticket
+         WHERE d.brief->>'landing' = 'Serialized'
+           AND p.phase IN ('Work', 'Evaluation', 'Finalization')`,
+  );
+  return found.rows.map((row) => {
+    const brief = releasedBriefOf(row.brief);
+    return {
+      partition: {
+        tenant: asTenantId(row.tenant),
+        project: asProjectId(row.project),
+      },
+      ticket: asTicketId(
+        projectRowCounter(
+          finalizerRowPresent(row.ticket, "serialized ticket"),
+          "serialized ticket",
+        ),
+      ),
+      phase: finalizerRowValue(phaseRoster, row.phase, "ticket phase"),
+      landing: briefLandingOf(brief),
+      repository: brief?.repository,
+      target: brief === undefined ? undefined : briefLandsOn(brief),
+      entry:
+        row.entry === null
+          ? undefined
+          : projectRowCounter(row.entry, "serialized entry"),
+      rechecking: row.rechecking === true,
+    };
+  });
+}
+
+/**
+ * Takes a bounded lease on the oldest requests nobody holds, drawing nothing
+ * under a superseded epoch and no finalization of a Serialized ticket that is
+ * waiting on the holder of its reference, so a waiting request stays open and
+ * costs neither a lease nor a hold pass.
+ */
 async function finalizerClaimRequests(
   client: pg.PoolClient,
   owner: FinalizerOwnerId,
@@ -305,6 +387,12 @@ async function finalizerClaimRequests(
   finalizerBounded(requestsMax, "requestsMax");
   finalizerBounded(leaseSecs, "leaseSecs");
   if ((await postgresOwnershipEpoch(client)) !== epoch) return [];
+  const waiting = serializedWaiting(
+    serializedQueues(await finalizerSerializedCandidates(client)),
+  );
+  const waitingTenants = waiting.map((entry) => entry.partition.tenant);
+  const waitingProjects = waiting.map((entry) => entry.partition.project);
+  const waitingTickets = waiting.map((entry) => entry.ticket);
   const claimed = await client.query<ClaimRow>(
     sql`UPDATE finalization_request r
         SET state = 'Registered', claim_owner = ${owner},
@@ -315,6 +403,10 @@ async function finalizerClaimRequests(
               SELECT q.tenant, q.project, q.request FROM finalization_request q
                WHERE q.state = 'Open'
                  AND (q.claim_owner IS NULL OR q.claim_expires_at <= now())
+                 AND NOT (q.kind = 'RunFinalizer' AND EXISTS (
+                   SELECT FROM unnest(${waitingTenants}::text[], ${waitingProjects}::text[],
+                                      ${waitingTickets}::bigint[]) AS w(tenant, project, ticket)
+                    WHERE w.tenant = q.tenant AND w.project = q.project AND w.ticket = q.ticket))
                ORDER BY q.authorizing_seq, q.request
                LIMIT ${requestsMax} FOR UPDATE SKIP LOCKED)
       RETURNING r.tenant, r.project, r.request, r.ticket::text AS ticket,
@@ -778,6 +870,24 @@ function postgresFinalizerPreparation(
   };
 }
 
+/** Counts the attempts of the ticket's requests that recorded a target moved past what was evaluated. */
+async function finalizerRecheckFailures(
+  client: pg.PoolClient,
+  claim: FinalizationClaim,
+): Promise<number> {
+  const found = await client.query<{ failures: string }>(
+    sql`SELECT count(*) AS failures
+         FROM finalization_attempt a
+        WHERE a.tenant = ${claim.partition.tenant} AND a.project = ${claim.partition.project}
+          AND a.ticket = ${claim.ticket}
+          AND a.failure_kind = 'RecheckRequired'`,
+  );
+  return projectRowCounter(
+    found.rows[0]?.failures ?? "0",
+    "ticket recheck failures",
+  );
+}
+
 /** The moves a change proposal owns, over the same pool the rest of the authority runs on. */
 function postgresFinalizerProposals(pool: pg.Pool): FinalizerProposalStore {
   return {
@@ -889,6 +999,10 @@ export function postgresFinalizer(
     claimRequests: (owner, epoch, requestsMax, leaseSecs) =>
       postgresTransaction(pool, (client) =>
         finalizerClaimRequests(client, owner, epoch, requestsMax, leaseSecs),
+      ),
+    ticketRecheckFailures: (claim) =>
+      postgresTransaction(pool, (client) =>
+        finalizerRecheckFailures(client, claim),
       ),
     extendClaim: (claim, leaseSecs) =>
       postgresTransaction(pool, (client) =>

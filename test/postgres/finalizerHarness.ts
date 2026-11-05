@@ -108,6 +108,7 @@ import {
   type FinalizationClaim,
   type GitPromotionPort,
   type ObservedTarget,
+  type TargetContained,
   type TargetObserved,
 } from "../../src/interpreter/finalizer.ts";
 import {
@@ -828,6 +829,23 @@ export async function finalizerBriefLandsNothing(
   );
 }
 
+/** The landing policy this project's ticket was released with, and the repository its brief names. */
+export async function finalizerBriefLanding(
+  rig: FinalizerRig,
+  partition: Partition,
+  ticket: number,
+  landing: "Direct" | "Serialized",
+  repository: string,
+): Promise<void> {
+  await finalizerReleasedBrief(rig, partition, ticket, (brief) =>
+    briefWith(
+      briefWith(brief, "landing", landing === "Direct" ? null : landing),
+      "repository",
+      repository,
+    ),
+  );
+}
+
 /** Hexadecimal no other call has produced, at least as long as the widest identity a case needs. */
 function finalizerHex(): string {
   return `${randomUUID()}${randomUUID()}`.replaceAll("-", "");
@@ -861,6 +879,8 @@ export interface FinalizerAttempt {
     readonly artifact: string;
     readonly digest: string;
   };
+  /** The accepted commit a `RecheckRequired` failure re-reports, and no other failure keeps one. */
+  readonly recheckCommit?: string;
   /** The base a failed attempt's proposal failed on, as its ref and commit were read. */
   readonly proposalBase?: { readonly ref: string; readonly commit: string };
 }
@@ -909,8 +929,8 @@ export async function finalizerPrepare(
         target_commit, strategy, configuration_revision, configuration_digest,
         approval_required, outcome, candidate_commit, failure_kind, attempt_digest,
         conflict_manifest, conflict_manifest_digest, proposal_base_ref,
-        proposal_base_commit)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'refs/heads/main',$9,'Merge',$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)`,
+        proposal_base_commit, recheck_commit)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'refs/heads/main',$9,'Merge',$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21)`,
     [
       project.partition.tenant,
       project.partition.project,
@@ -932,6 +952,7 @@ export async function finalizerPrepare(
       attempt.conflictManifest?.digest ?? null,
       attempt.proposalBase?.ref ?? null,
       attempt.proposalBase?.commit ?? null,
+      attempt.recheckCommit ?? null,
     ],
   );
   return identity;
@@ -1036,6 +1057,7 @@ export interface FinalizerGitFake extends GitPromotionPort {
   preparation?: CandidatePrepared;
   integration?: CandidateIntegrated;
   held: CandidateHeld;
+  contained: TargetContained;
   beforePromotion?: (promotion: CandidatePromotion) => Promise<void>;
 }
 
@@ -1047,6 +1069,7 @@ export function finalizerGit(target: ObservedTarget): FinalizerGitFake {
     promotion: { promoted: "Advanced" },
     ancestry: { proved: "Ancestor", observed: target.commit },
     held: "Unheld",
+    contained: "Contained",
     observeTarget: () => {
       fake.acts.push("observe");
       return Promise.resolve(fake.target);
@@ -1068,6 +1091,10 @@ export function finalizerGit(target: ObservedTarget): FinalizerGitFake {
     proveCandidateHeld: () => {
       fake.acts.push("held");
       return Promise.resolve(fake.held);
+    },
+    proveTargetContained: () => {
+      fake.acts.push("contained");
+      return Promise.resolve(fake.contained);
     },
     integrateCandidate: () => {
       fake.acts.push("integrate");
@@ -1413,6 +1440,30 @@ export async function finalizerDeclareSource(
       base,
     ],
   );
+}
+
+/** A Serialized ticket whose worker published one commit off the default branch, which has not moved since. */
+export async function finalizerSerializedSubject(
+  rig: FinalizerRig,
+  label: string,
+): Promise<{
+  project: FinalizerProject;
+  remote: FinalizerRemote;
+  worked: string;
+}> {
+  const { project, remote, work } = await finalizerSubject(rig, label, []);
+  const base = finalizerGitVerb(remote.origin, "rev-parse", "refs/heads/main");
+  const ref = `refs/heads/chuggy/tickets/${String(project.ticket)}/attempts/one`;
+  const worked = finalizerRemoteAttempt(remote, "worker.txt", "worker\n", ref);
+  await finalizerDeclareSource(rig, project, work, ref, worked, base);
+  await finalizerBriefLanding(
+    rig,
+    project.partition,
+    project.ticket,
+    "Serialized",
+    project.repository,
+  );
+  return { project, remote, worked };
 }
 
 /** How many entries one project's journal holds, which every refusal must leave alone. */

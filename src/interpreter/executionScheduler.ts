@@ -703,9 +703,15 @@ export type AttemptOpened =
   | { readonly opened: "AssignmentEnded" }
   | { readonly opened: "StepFailed" };
 
-/** What the scheduler reports of one attempt, which the terminal transaction reduces. */
+/**
+ * What the scheduler reports of one attempt, which the terminal transaction
+ * reduces. `treeHeld` is false where the reporter speaks a release whose
+ * manifest cannot name the tree it evaluated, which holds the report to no
+ * tree; absent, the report is held to the tree its bundle pinned.
+ */
 export interface AttemptReport extends FencedAttempt {
   readonly manifest: ResultManifest;
+  readonly treeHeld?: boolean;
 }
 
 /**
@@ -753,7 +759,8 @@ export type BlockedReason =
   | "ExecutionProfileUnavailable"
   | "RuntimeVersionUnsupported"
   | "RequiredCapabilityUnavailable"
-  | "RequiredMemoryUnavailable";
+  | "RequiredMemoryUnavailable"
+  | "EvaluatedTreeNotExpected";
 
 /** Every blocking reason, in the order `execution_blocked_reason_is_known` declares them. */
 export const allBlockedReasons: readonly BlockedReason[] = [
@@ -763,6 +770,7 @@ export const allBlockedReasons: readonly BlockedReason[] = [
   "RuntimeVersionUnsupported",
   "RequiredCapabilityUnavailable",
   "RequiredMemoryUnavailable",
+  "EvaluatedTreeNotExpected",
 ];
 
 /**

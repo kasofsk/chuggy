@@ -27,6 +27,7 @@ import {
   type finalizationFailureKinds,
   type BlockedReason,
   type BriefFinalizationMode,
+  type BriefLanding,
   type EscalationKind,
   type FinalizationUnavailableKind,
   type GitEvidenceLabel,
@@ -99,6 +100,8 @@ export function blockedReasonLabel(reason: BlockedReason): string {
       return "Nowhere to run this work";
     case "RequiredMemoryUnavailable":
       return "Too large for every runner";
+    case "EvaluatedTreeNotExpected":
+      return "Evaluated a different tree than the work produced";
   }
 }
 
@@ -174,6 +177,8 @@ export function finalizationUnavailableKindLabel(
       return "Merge queue checks timed out again";
     case "ProposalDequeued":
       return "Removed from merge queue";
+    case "RecheckReworksExhausted":
+      return "Re-checks exhausted";
   }
 }
 
@@ -233,6 +238,8 @@ export function finalizationFailureKindLabel(
       return "Preparation failed";
     case "QueueChecksFailed":
       return "Merge queue checks failed";
+    case "RecheckRequired":
+      return "Target moved, re-check required";
   }
 }
 
@@ -588,6 +595,26 @@ export function landingEffect(mode: BriefFinalizationMode): string {
   }
 }
 
+/** How a ticket's landing is ordered against the others on its reference, in the word the choice is made by. */
+export function landingPolicyLabel(policy: BriefLanding): string {
+  switch (policy) {
+    case "Direct":
+      return "Direct";
+    case "Serialized":
+      return "Serialized";
+  }
+}
+
+/** What choosing that policy does to the landing. */
+export function landingPolicyEffect(policy: BriefLanding): string {
+  switch (policy) {
+    case "Direct":
+      return "Lands as soon as it is accepted";
+    case "Serialized":
+      return "Lands alone on its reference, evaluated on what it lands";
+  }
+}
+
 /** A mode that reaches a reference at all, which `None` never does. */
 type LandingWithTarget = Exclude<BriefFinalizationMode, "None">;
 
@@ -792,6 +819,8 @@ export function operationRefusalLabel(code: OperationRefusalCode): string {
       return "Nothing to resume";
     case "TaskNotCurrent":
       return "Task not current";
+    case "EvaluationNotCurrent":
+      return "Evaluation not current";
     case "FinalizationNotCurrent":
       return "Finalization not current";
     case "AuthoringChanged":

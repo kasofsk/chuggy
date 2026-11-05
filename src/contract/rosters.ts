@@ -53,6 +53,7 @@ export const blockedReasons = [
   "RuntimeVersionUnsupported",
   "RequiredCapabilityUnavailable",
   "RequiredMemoryUnavailable",
+  "EvaluatedTreeNotExpected",
 ] as const;
 export type BlockedReason = (typeof blockedReasons)[number];
 
@@ -98,6 +99,7 @@ export const finalizationUnavailableKinds = [
   "ProposalQueueChecksFailed",
   "ProposalQueueTimedOut",
   "ProposalDequeued",
+  "RecheckReworksExhausted",
 ] as const;
 export type FinalizationUnavailableKind =
   (typeof finalizationUnavailableKinds)[number];
@@ -312,6 +314,7 @@ export const operationTicketRefusalCodes = [
   "TicketNotResumable",
   "TaskNotCurrent",
   "FinalizationNotCurrent",
+  "EvaluationNotCurrent",
 ] as const;
 export type OperationTicketRefusalCode =
   (typeof operationTicketRefusalCodes)[number];
@@ -529,6 +532,14 @@ export const briefFinalizationModes = [
 ] as const;
 export type BriefFinalizationMode = (typeof briefFinalizationModes)[number];
 
+/**
+ * How one ticket's landing is ordered against the others on its reference:
+ * `Direct` lands as the finalization's mode says, and `Serialized` lands one
+ * ticket at a time on a reference, each having been evaluated on what it lands.
+ */
+export const briefLandings = ["Direct", "Serialized"] as const;
+export type BriefLanding = (typeof briefLandings)[number];
+
 /** Where one landing of a ticket stands; `src/interpreter/ticketLandings.ts` states what each is read from. */
 export const ticketLandingStates = [
   "Running",
@@ -555,6 +566,7 @@ export const finalizationFailureKinds = [
   "MergeConflict",
   "PreparationFailed",
   "QueueChecksFailed",
+  "RecheckRequired",
 ] as const;
 
 /** What a stored change proposal says its create came to, restating `allChangeProposalCreationsStored`. */

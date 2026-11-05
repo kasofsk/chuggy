@@ -595,15 +595,26 @@ async function workerTerminalizeReport(
     })),
   ];
   const operation = `completion-${randomUUID()}`;
+  const source =
+    report.manifest.source === undefined
+      ? null
+      : JSON.stringify(report.manifest.source);
   return postgresTransaction(pool, async (client) => {
-    const result = await client.query<WorkerResultRow>(
-      sql`SELECT terminalized,outcome,operation,incident FROM submit_worker_result(
-        ${secretDigest},${report.generation},${report.manifest.manifest},
-        ${report.manifest.schemaVersion},${report.manifest.digest},${report.manifest.verdict},
-        ${JSON.stringify(artifacts)}::jsonb,
-        ${report.manifest.source === undefined ? null : JSON.stringify(report.manifest.source)}::jsonb,
-        ${operation})`,
-    );
+    const result =
+      report.treeHeld === false
+        ? await client.query<WorkerResultRow>(
+            sql`SELECT terminalized,outcome,operation,incident FROM submit_worker_result(
+              ${secretDigest},${report.generation},${report.manifest.manifest},
+              ${report.manifest.schemaVersion},${report.manifest.digest},${report.manifest.verdict},
+              ${JSON.stringify(artifacts)}::jsonb,${source}::jsonb,${operation})`,
+          )
+        : await client.query<WorkerResultRow>(
+            sql`SELECT terminalized,outcome,operation,incident FROM submit_worker_result(
+              ${secretDigest},${report.generation},${report.manifest.manifest},
+              ${report.manifest.schemaVersion},${report.manifest.digest},${report.manifest.verdict},
+              ${JSON.stringify(artifacts)}::jsonb,${source}::jsonb,
+              ${operation},${report.manifest.evaluatedTree ?? null})`,
+          );
     const row = result.rows[0];
     if (row === undefined)
       throw new Error(
@@ -612,6 +623,7 @@ async function workerTerminalizeReport(
     const terminalized = workerTerminalized(row);
     if (
       report.manifest.report !== undefined &&
+      row.outcome !== "Blocked" &&
       (terminalized.terminalized === "Terminalized" ||
         terminalized.terminalized === "AlreadyTerminal")
     ) {

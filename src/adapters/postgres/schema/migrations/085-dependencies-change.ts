@@ -15,7 +15,7 @@ import {
 } from "../shared.ts";
 
 /** The machine's refusals whose payload is the ticket alone. */
-const ticketRefusals = [
+export const ticketRefusals = [
   "TicketAlreadyExists",
   "SelfDependency",
   "TicketNotFound",
@@ -26,7 +26,7 @@ const ticketRefusals = [
 ];
 
 /** The machine's refusals whose payload is the ticket and the dependencies refused. */
-const dependencyRefusals = [
+export const dependencyRefusals = [
   "DependenciesNotFound",
   "DependenciesRevoked",
   "DependencyCycle",
@@ -34,7 +34,7 @@ const dependencyRefusals = [
 ];
 
 /** Every refusal the machine decides, each stored with its payload. */
-const domainRefusals = [
+export const domainRefusals = [
   ...ticketRefusals,
   ...dependencyRefusals,
   "TicketRevisionStale",
@@ -43,7 +43,7 @@ const domainRefusals = [
 ];
 
 /** The boundary's own refusals, which 080 admitted. */
-const boundaryRefusals = [
+export const boundaryRefusals = [
   "AuthoringChanged",
   "ConfigurationInvalid",
   "TicketChanged",
@@ -66,11 +66,11 @@ const boundaryRefusals = [
 
 const reviseDraftSignature = `public.revise_draft(in_tenant text, in_project text, in_ticket bigint, in_expected bigint, in_configuration text, in_authoring text, in_title text, in_intent text, in_links text[], in_images text[], in_checks text[], in_branch text, in_finalization_mode text, in_finalization_target text, in_repository text, in_overrides text, in_selection text, in_kind text, in_subject text)`;
 
-function textList(values: readonly string[]): string {
+export function textList(values: readonly string[]): string {
   return values.map((value) => `'${value}'`).join(", ");
 }
 
-function textArray(values: readonly string[]): string {
+export function textArray(values: readonly string[]): string {
   return `ARRAY[${values.map((value) => `'${value}'::text`).join(", ")}]`;
 }
 

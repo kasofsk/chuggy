@@ -34,6 +34,8 @@
 ///   refuse      — gateLoopStep draws nothing out of turn; updateStep draws
 ///                 the update's refusals only (refuseUpdate), which is a
 ///                 subset of what `refuse` draws.
+///   invalidateEvaluation — sends an evaluation back to Work, which is the
+///                 chain restarting rather than advancing.
 /// Everything else stays, INCLUDING release and resumeTicket: dropping release would
 /// stop the fleet ever filling, and resumeTicket is how a parked ticket rejoins the
 /// chain, so both are part of the shape being aimed at rather than noise.
@@ -45,8 +47,8 @@
 /// so every golden reproduces from what is written beside it.
 
 module mc_chuggy_directed {
-  import evaluation_protocol.* from "../ticket-domain/evaluation/evaluation"
-  import ticket_domain.* from "../ticket-domain/ticket"
+  import evaluation_protocol.* from "../../node_modules/@kasofsk/chug-ticket-domain/model/ticket-domain/evaluation/evaluation"
+  import ticket_domain.* from "../../node_modules/@kasofsk/chug-ticket-domain/model/ticket-domain/ticket"
   import chuggy_ticket.* from "../ticket"
   import chuggy_domain(
     N_TICKETS = 3,

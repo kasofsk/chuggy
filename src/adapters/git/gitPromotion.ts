@@ -65,10 +65,12 @@ import type {
   RepositoryCredential,
   RepositoryCredentialPort,
   RepositoryId,
+  TargetContained,
   TargetObserved,
 } from "../../interpreter/finalizer.ts";
 import {
   candidateAdoptable,
+  candidateContains,
   candidateHeld,
   candidateIntegrate,
   candidatePrepare,
@@ -455,6 +457,16 @@ async function gitPromotionHeld(
   return candidateHeld(own.scratch, authorized.credential, question);
 }
 
+/** Reads whether the target's tip is in the candidate's history, a credential refused being no answer. */
+async function gitPromotionContained(
+  own: GitPromotionState,
+  question: CandidateHeldQuestion,
+): Promise<TargetContained> {
+  const authorized = await gitPromotionCredentialOf(own, question.repository);
+  if (authorized.authorized === "Refused") return "Unread";
+  return candidateContains(own.scratch, authorized.credential, question);
+}
+
 /** Reads whether a proposal's head is its pinned head brought up to date with its base, a credential refused being no answer. */
 async function gitPromotionAdoptable(
   own: GitPromotionState,
@@ -497,6 +509,7 @@ export function gitPromotion(options: GitPromotionOptions): GitPromotionPort {
     prepareCandidate: (preparation) => gitPromotionPrepare(own, preparation),
     prepareSource: (preparation) => gitPromotionPrepareSource(own, preparation),
     proveCandidateHeld: (question) => gitPromotionHeld(own, question),
+    proveTargetContained: (question) => gitPromotionContained(own, question),
     integrateCandidate: (integration) =>
       gitPromotionIntegrate(own, integration),
     promoteCandidate: (promotion) => gitPromotionPromote(own, promotion),
