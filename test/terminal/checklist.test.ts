@@ -21,6 +21,7 @@ import { setupSteps } from "../../ui/chuggy-ui/app/core/setupReport.ts";
 import {
   saidFailures,
   saidFated,
+  saidFates,
   saidLandingSite,
   saidMember,
   saidMemberSite,
@@ -258,28 +259,31 @@ test("a member who administers nothing, and a viewer of one project, are each sh
   }
 });
 
-test("each read failing, refused, unreadable or answered as to a stranger leaves its own step not read and no other said differently, is a failure unless it was refused, and forgets nothing", async () => {
-  const session = await signed();
-  for (const [fated, fate] of saidFailures) {
-    const world = saidLandingSite();
-    world.fates.set(fated, fate);
-    const done = await read(session, world);
-    assert.deepEqual(steps(done), saidFated(fated, fate), `${fated} ${fate}`);
-    assert.equal(done.code, fate === "Refused" ? 0 : 1, `${fated} ${fate}`);
-    assert.equal(done.lines.at(-1), "next: stop");
-    if (fate === "Garbled")
-      assert.deepEqual(said(done, "rule"), [
-        `Run curl -fsS ${session.installation.site}/chuggy-setup.mjs -o ${program} && node ${program} only if the person asks to fetch chuggy setup again.`,
-      ]);
-    else assert.deepEqual(await ruled(done), [], `${fated} ${fate}`);
-  }
-  const healthy = await read(session, saidLandingSite());
-  assert.equal(healthy.code, 0, healthy.stdout);
-  assert.deepEqual(
-    session.installation.grants.filter((grant) => !grant.endsWith(" granted")),
-    [],
-  );
-});
+for (const fate of Object.keys(saidFates) as (keyof typeof saidFates)[])
+  test(`each read ${saidFates[fate]} leaves its own step not read and no other said differently, is a failure unless it was refused, and forgets nothing`, async () => {
+    const session = await signed();
+    for (const [fated] of saidFailures.filter(([, its]) => its === fate)) {
+      const world = saidLandingSite();
+      world.fates.set(fated, fate);
+      const done = await read(session, world);
+      assert.deepEqual(steps(done), saidFated(fated, fate), fated);
+      assert.equal(done.code, fate === "Refused" ? 0 : 1, fated);
+      assert.equal(done.lines.at(-1), "next: stop");
+      if (fate === "Garbled")
+        assert.deepEqual(said(done, "rule"), [
+          `Run curl -fsS ${session.installation.site}/chuggy-setup.mjs -o ${program} && node ${program} only if the person asks to fetch chuggy setup again.`,
+        ]);
+      else assert.deepEqual(await ruled(done), [], fated);
+    }
+    const healthy = await read(session, saidLandingSite());
+    assert.equal(healthy.code, 0, healthy.stdout);
+    assert.deepEqual(
+      session.installation.grants.filter(
+        (grant) => !grant.endsWith(" granted"),
+      ),
+      [],
+    );
+  });
 
 const cuts: readonly (readonly [
   SetupSiteRead,
