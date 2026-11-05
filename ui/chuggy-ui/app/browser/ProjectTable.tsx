@@ -25,7 +25,7 @@
 
 import { keepPreviousData, useQueryClient } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -65,14 +65,12 @@ import {
   ticketListSorts,
   ticketListSortTitles,
   ticketListStandingOf,
+  type TicketListStanding,
 } from "../core/ticketListView.ts";
 import type {
   TicketListQuery,
   TicketListSort,
-  TicketListStanding,
 } from "../core/ticketListView.ts";
-import { phaseTone } from "../core/tones.ts";
-import type { Tone } from "../core/tones.ts";
 import { panelReadRestarted, useApiPorts, usePanelState } from "./api.ts";
 import { useCreatorEmails } from "./creatorEmails.ts";
 import { PanelUnready, ReadFailed } from "./DataPanel.tsx";
@@ -84,19 +82,23 @@ import { TicketRowDispatchScope } from "./TicketActions.tsx";
 import type { TicketRowDispatch } from "./TicketActions.tsx";
 import {
   TicketActivity,
-  TicketRowExecutionCell,
   TicketTitleNumber,
   TicketTitleWords,
 } from "./TicketCells.tsx";
 import { RepositoryImportRefusedNotice } from "./repositories/RepositoryImportRefused.tsx";
-import { Button, ButtonLink } from "./ui/Button.tsx";
+import { Button, ButtonLink, buttonLookClassName } from "./ui/Button.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { Identity } from "./ui/Identity.tsx";
 import { Input } from "./ui/Input.tsx";
 import { Picker } from "./ui/Picker.tsx";
-import { TicketReference } from "./ui/TicketReference.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
 
+import {
+  TicketDependencyChip,
+  dependencyStandingOf,
+  TicketStateChip,
+  TicketStateCount,
+} from "./ticket/TicketStateChip.tsx";
 import "./ProjectTable.css";
 
 interface TicketRowsHeld {
@@ -162,18 +164,6 @@ function ticketListFilterOf(word: unknown): TicketFilter {
   return ticketFilterOf(word) ?? ticketFilterAll;
 }
 
-/** What a row's chip says and the tone it is drawn in. */
-function ticketListStandingTone(standing: TicketListStanding): Tone {
-  if (standing === "Ready") return "pass";
-  return standing === "Blocked" ? "queued" : phaseTone(standing);
-}
-
-function ticketListStandingWord(standing: TicketListStanding): string {
-  return standing === "Ready" || standing === "Blocked"
-    ? standing
-    : phaseLabel(standing);
-}
-
 /** The row's state: a chip as wide on every row, so the column lines up, with
  * what holds it there on hover. */
 function TicketListState(props: {
@@ -182,58 +172,19 @@ function TicketListState(props: {
 }): ReactNode {
   const row = props.row;
   const standing = ticketListStandingOf(row);
-  const dispatch = props.dispatch;
-  if (dispatch !== undefined)
-    return (
-      <Tooltip text={dispatch.effect}>
-        <button
-          type="button"
-          className="ticket-list-state"
-          data-tone={ticketListStandingTone(standing)}
-          data-standing={standing}
-          aria-label={`Dispatch ticket #${String(row.ticket)}`}
-          aria-busy={dispatch.busy || undefined}
-          disabled={dispatch.busy}
-          onClick={dispatch.press}
-        >
-          {ticketListStandingWord(standing)}
-        </button>
-      </Tooltip>
-    );
   const unfinished =
     row.openDependencies.length + row.revokedDependencies.length;
-  const hint =
-    standing === "Blocked"
-      ? `Blocked · ${String(unfinished)} unfinished ${unfinished === 1 ? "dependency" : "dependencies"}`
-      : row.badge;
   return (
-    <Tooltip text={hint}>
-      <span
-        className="ticket-list-state"
-        data-tone={ticketListStandingTone(standing)}
-        data-standing={standing}
-      >
-        {ticketListStandingWord(standing)}
-      </span>
-    </Tooltip>
-  );
-}
-
-/** What the row is running and where, where its ticket carries an execution. */
-function TicketListExecution(props: {
-  readonly row: ProjectTableRow;
-}): ReactNode {
-  const row = props.row;
-  if (row.executionVerdict === undefined) return null;
-  return (
-    <span className="ticket-list-execution">
-      <TicketRowExecutionCell row={row} />
-      {row.runsOn === undefined ? null : (
-        <Tooltip text={row.runsOn.title}>
-          <span className="ticket-list-runs-on">{row.runsOn.text}</span>
-        </Tooltip>
-      )}
-    </span>
+    <TicketStateChip
+      ticket={row.ticket}
+      standing={standing}
+      hint={
+        standing === "Blocked"
+          ? `Blocked · ${String(unfinished)} unfinished ${unfinished === 1 ? "dependency" : "dependencies"}`
+          : row.badge
+      }
+      dispatch={props.dispatch}
+    />
   );
 }
 
@@ -254,10 +205,15 @@ function TicketListRepository(props: {
 
 function TicketListDependencies(props: {
   readonly row: ProjectTableRow;
+  readonly standings: ReadonlyMap<number, TicketListStanding>;
 }): ReactNode {
   const waits = [
-    ...props.row.openDependencies.map((dependency) => dependency.ticket),
-    ...props.row.revokedDependencies,
+    ...props.row.openDependencies.map(
+      (dependency) => [dependency.ticket, dependency.phase] as const,
+    ),
+    ...props.row.revokedDependencies.map(
+      (ticket) => [ticket, "Revoked"] as const,
+    ),
   ];
   if (waits.length === 0) return null;
   return (
@@ -265,8 +221,12 @@ function TicketListDependencies(props: {
       <Tooltip text="Waits on">
         <span className="ticket-list-waits">{ticketListDependencyGlyph}</span>
       </Tooltip>
-      {waits.map((ticket) => (
-        <TicketReference key={ticket} ticket={ticket} />
+      {waits.map(([ticket, phase]) => (
+        <TicketDependencyChip
+          key={ticket}
+          ticket={ticket}
+          standing={dependencyStandingOf(phase, props.standings.get(ticket))}
+        />
       ))}
     </span>
   );
@@ -289,6 +249,7 @@ function TicketListCreator(props: {
 
 function TicketListRow(props: {
   readonly row: ProjectTableRow;
+  readonly standings: ReadonlyMap<number, TicketListStanding>;
   readonly partition: PartitionIdentity;
   readonly nowMs: number;
   readonly creatorEmails: ReadonlyMap<string, string>;
@@ -319,7 +280,6 @@ function TicketListRow(props: {
                   nowMs={props.nowMs}
                 />
               </span>
-              <TicketListExecution row={row} />
               <TicketListRepository row={row} />
               <TicketListCreator
                 row={row}
@@ -327,7 +287,7 @@ function TicketListRow(props: {
                 className="ticket-list-creator"
               />
             </span>
-            <TicketListDependencies row={row} />
+            <TicketListDependencies row={row} standings={props.standings} />
           </div>
         </div>
         <div className="ticket-list-foot">
@@ -396,7 +356,122 @@ const ticketListDependencyGlyph = (
   </TicketListGlyph>
 );
 
+/** The standings that are not yet an end, in the order the counts read. */
+const ticketListCounted = [
+  "Ready",
+  "Blocked",
+  "Work",
+  "Evaluation",
+  "Finalization",
+  "Escalated",
+] as const satisfies readonly TicketListStanding[];
+
+/** How many of the rows held stand in each state that is not an end. */
+function TicketListCounts(props: {
+  readonly rows: readonly ProjectTableRow[];
+}): ReactNode {
+  const counts = new Map<TicketListStanding, number>();
+  for (const row of props.rows) {
+    const standing = ticketListStandingOf(row);
+    counts.set(standing, (counts.get(standing) ?? 0) + 1);
+  }
+  return (
+    <ul className="ticket-list-counts" aria-label="Tickets by state">
+      {ticketListCounted
+        .flatMap((standing) => {
+          const count = counts.get(standing);
+          return count === undefined ? [] : [{ standing, count }];
+        })
+        .map(({ standing, count }) => (
+          <li key={standing}>
+            <TicketStateCount standing={standing} count={count} />
+          </li>
+        ))}
+    </ul>
+  );
+}
+
+/** How long the box takes to close, which the room it holds in the row outlasts. */
+const ticketListSearchCloseMs = 260;
+
+/** The search, which is a button until it is asked for or holds a search, and
+ * then the button opened out to the box. */
+function TicketListSearch(props: {
+  readonly search: string;
+  readonly onSearch: (search: string) => void;
+}): ReactNode {
+  const [asked, setAsked] = useState(false);
+  const field = useRef<HTMLSpanElement>(null);
+  const [laidOut, setLaidOut] = useState(false);
+  const closing = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const open = asked;
+  useEffect(() => {
+    if (asked) field.current?.querySelector("input")?.focus();
+  }, [asked]);
+  useEffect(
+    () => () => {
+      clearTimeout(closing.current);
+    },
+    [],
+  );
+  const show = (): void => {
+    clearTimeout(closing.current);
+    setAsked(true);
+    setLaidOut(true);
+  };
+  const close = (): void => {
+    setAsked(false);
+    clearTimeout(closing.current);
+    closing.current = setTimeout(() => {
+      setLaidOut(false);
+    }, ticketListSearchCloseMs);
+  };
+  return (
+    <span
+      className="ticket-list-search"
+      data-open={open || laidOut || undefined}
+      data-expanded={open || undefined}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") close();
+      }}
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) close();
+      }}
+    >
+      <button
+        type="button"
+        className={`${buttonLookClassName({ size: "sm" })} ticket-list-search-toggle`}
+        aria-label="Search tickets"
+        aria-expanded={open}
+        title="Search tickets"
+        data-active={props.search === "" ? undefined : ""}
+        onClick={() => {
+          if (open) close();
+          else show();
+        }}
+      >
+        {ticketListSearchGlyph}
+      </button>
+      <span className="ticket-list-search-field" ref={field} inert={!open}>
+        <Input
+          label="Search tickets"
+          placeholder="Search titles or #number…"
+          value={props.search}
+          onChange={props.onSearch}
+        />
+      </span>
+    </span>
+  );
+}
+
+const ticketListSearchGlyph = (
+  <TicketListGlyph>
+    <path d="M7 12A5 5 0 1 0 7 2a5 5 0 0 0 0 10zM10.8 10.8l3 3" />
+  </TicketListGlyph>
+);
+
 function TicketListControls(props: {
+  readonly rows: readonly ProjectTableRow[];
   readonly search: string;
   readonly onSearch: (search: string) => void;
   readonly sort: TicketListSort;
@@ -406,17 +481,12 @@ function TicketListControls(props: {
 }): ReactNode {
   return (
     <div className="ticket-list-controls">
-      <span className="ticket-list-search">
-        <Input
-          label="Search tickets"
-          placeholder="Search titles or #number…"
-          value={props.search}
-          onChange={props.onSearch}
-        />
-      </span>
+      <TicketListCounts rows={props.rows} />
       <div className="ticket-list-selects">
+        <TicketListSearch search={props.search} onSearch={props.onSearch} />
         <Picker
           label="Sort"
+          iconOnly
           glyph={ticketListSortGlyph}
           value={props.sort}
           options={ticketListSorts.map((sort) => ({
@@ -430,6 +500,7 @@ function TicketListControls(props: {
         />
         <Picker
           label="Filter"
+          iconOnly
           glyph={ticketListFilterGlyph}
           value={props.filter}
           options={[
@@ -481,6 +552,9 @@ function TicketListRows(props: {
     state.value.tickets.map(projectTableRow),
     props.sort,
   );
+  const standings = new Map(
+    shown.map((row) => [row.ticket, ticketListStandingOf(row)] as const),
+  );
   const status = ticketListStatus(state.value, props.searching);
   return (
     <>
@@ -495,6 +569,7 @@ function TicketListRows(props: {
             <TicketListRow
               key={row.ticket}
               row={row}
+              standings={standings}
               partition={props.partition}
               nowMs={props.nowMs}
               creatorEmails={creatorEmails}
@@ -627,6 +702,11 @@ export function ProjectTable(props: {
       <ProjectTableTitle />
       <RepositoryImportRefusedNotice partition={partition} />
       <TicketListControls
+        rows={
+          tickets.state.state === "Ready"
+            ? tickets.state.value.tickets.map(projectTableRow)
+            : []
+        }
         search={typed}
         onSearch={setTyped}
         sort={sort}

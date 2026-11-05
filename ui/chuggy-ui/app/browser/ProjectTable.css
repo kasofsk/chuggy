@@ -17,6 +17,8 @@
   }
 
   .ticket-list-controls {
+    --control-height: calc(var(--space-6) + var(--space-1));
+    min-width: 0;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -25,15 +27,102 @@
     border-bottom: var(--hairline) solid var(--edge);
   }
 
-  .ticket-list-search {
-    display: flex;
-    width: min(var(--width-aside), 100%);
-    min-width: 0;
+  .ticket-state-count-label {
+    display: none;
   }
 
-  .ticket-list-search > .input {
+  .ticket-list-counts {
+    display: flex;
+    flex: 1 1 0;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+    min-width: 0;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .ticket-list-state.ticket-state-count {
+    margin-inline-start: 0;
+    gap: var(--space-2);
+    box-sizing: border-box;
+    width: var(--control-height);
+    height: var(--control-height);
+    padding: 0;
+    border-radius: var(--radius-circle);
+    font-size: var(--text-sm);
+  }
+
+  .ticket-list-search {
+    display: flex;
+    flex: none;
+    align-items: center;
+    max-width: 100%;
+    min-width: 0;
+    overflow: hidden;
+    background: var(--surface-1);
+    border: var(--hairline) solid var(--edge-control);
+    border-radius: var(--radius-3);
+  }
+
+  .ticket-list-search:has(:focus-visible) {
+    box-shadow: var(--ring-focus);
+  }
+
+  .ticket-list-search > .ticket-list-search-toggle {
+    flex: none;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .ticket-list-search > .ticket-list-search-toggle:focus-visible {
+    outline: none;
+  }
+
+  .ticket-list-search > .ticket-list-search-toggle[data-active] {
+    color: var(--tone-live);
+  }
+
+  .ticket-list-search-field {
+    display: flex;
+    width: 0;
+    min-width: 0;
+    overflow: hidden;
+    transition: width var(--duration-2) var(--ease-out);
+  }
+
+  .ticket-list-search[data-expanded] .ticket-list-search-field {
+    width: var(--width-aside);
+  }
+
+  .ticket-list-search-field > .input {
     flex: 1;
     min-width: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+  }
+
+  .ticket-list-search-field .input-box:focus-visible {
+    outline: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ticket-list-search-field {
+      transition: none;
+    }
+  }
+
+  .ticket-list-selects > * {
+    flex: none;
+    box-sizing: border-box;
+    height: var(--control-height);
+  }
+
+  .ticket-list-search > .ticket-list-search-toggle {
+    height: 100%;
   }
 
   .ticket-list-selects {
@@ -61,17 +150,12 @@
   .ticket-list-row {
     display: grid;
     grid-template-rows: minmax(0, 1fr) auto;
-    gap: var(--space-3);
-    min-height: calc(var(--space-7) * 3.5);
-    padding: var(--space-4) var(--space-5);
+    gap: var(--space-1);
+    min-height: 0;
+    padding: var(--space-3);
     background: var(--surface-1);
     border: var(--hairline) solid var(--edge);
     border-bottom: 0;
-  }
-
-  .ticket-list-item:first-child .ticket-list-row {
-    border-start-start-radius: var(--radius-3);
-    border-start-end-radius: var(--radius-3);
   }
 
   .ticket-list-item:last-child .ticket-list-row {
@@ -82,7 +166,8 @@
 
   .ticket-list-head {
     display: grid;
-    grid-template-rows: minmax(0, 1fr) auto;
+    grid-template-rows: auto auto;
+    align-content: center;
     align-items: center;
     gap: var(--space-2);
     min-width: 0;
@@ -236,6 +321,14 @@
     color: var(--tone-pass);
   }
 
+  .ticket-list-state.ticket-dependency {
+    width: auto;
+    height: auto;
+    margin-inline-start: 0;
+    padding: var(--space-1) var(--space-3);
+    font-size: var(--text-sm);
+  }
+
   button.ticket-list-state {
     font-family: inherit;
     cursor: pointer;
@@ -316,7 +409,7 @@
       grid-template-columns: minmax(0, 1fr) auto;
       grid-template-rows: minmax(0, 1fr);
       gap: var(--space-5);
-      min-height: calc(var(--space-7) * 2.25);
+      min-height: 0;
     }
 
     .ticket-list-title {
@@ -348,17 +441,39 @@
       gap: var(--space-2);
     }
 
-    .ticket-list-search,
-    .ticket-list-selects {
-      width: 100%;
-      margin-inline-start: 0;
+    .ticket-list-controls:has([data-open]) .ticket-list-counts {
+      display: none;
     }
 
-    .ticket-list-selects > * {
+    .ticket-list-counts {
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+
+    .ticket-list-counts > li {
+      flex: none;
+    }
+
+    .ticket-list-selects:has([data-open]) {
+      width: 100%;
+    }
+
+    .ticket-list-selects > [data-open] {
       flex: 1;
     }
 
-    .ticket-list-search .input-box {
+    /* Important, because a picker's trigger states its display in a utility
+       that would otherwise win over this layer. */
+    .ticket-list-selects:has([data-open]) > :not([data-open]) {
+      display: none !important;
+    }
+
+    .ticket-list-search[data-expanded] .ticket-list-search-field {
+      width: 100cqi;
+    }
+
+    .ticket-list-search-field .input-box {
       font-size: var(--text-unzoomed);
     }
   }

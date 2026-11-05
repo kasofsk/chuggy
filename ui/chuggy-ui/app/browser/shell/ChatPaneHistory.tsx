@@ -23,6 +23,7 @@ import { memberChatRoutes } from "../../core/memberChat.ts";
 import type { MemberChatProjectThread } from "../../core/memberChat.ts";
 import { navRoutes } from "../../core/shellNav.ts";
 import type { ThreadHome } from "../../core/threadHome.ts";
+import { useChatPane } from "./chatPaneHeld.ts";
 import { threadLabel, threadsByStanding } from "../../core/threads.ts";
 import { threadStandingTone } from "../../core/tones.ts";
 import { ConsoleWriteRefusedWords } from "../consoleWrite.tsx";
@@ -175,22 +176,21 @@ function ChatPaneHistoryElsewhereGroup(props: {
 }
 
 export function ChatPaneHistory(props: {
-  readonly threads: readonly ThreadEntryResponse[];
+  /** Undefined while the listing is still being read. */
+  readonly threads: readonly ThreadEntryResponse[] | undefined;
   readonly session: string | undefined;
   readonly onChoose: (session: string) => void;
   /** The reader's threads that projects keep, each read on its project's own
    * page and offered here as the way there. */
   readonly elsewhere?: readonly MemberChatProjectThread[];
 }): ReactNode {
-  const rows = chatPaneHistoryRows(props.threads);
+  const rows = chatPaneHistoryRows(props.threads ?? []);
   const elsewhere = props.elsewhere ?? [];
   const nowMs = useNowMs();
-  if (
+  const empty =
     rows.mine.length === 0 &&
     rows.others.length === 0 &&
-    elsewhere.length === 0
-  )
-    return null;
+    elsewhere.length === 0;
   const drawn = (thread: ThreadEntryResponse): ReactNode => (
     <ChatPaneHistoryRow key={thread.session} thread={thread} nowMs={nowMs} />
   );
@@ -205,6 +205,11 @@ export function ChatPaneHistory(props: {
       </Tooltip>
       <DropdownMenu.Portal>
         <MenuContent sideOffset={4} align="end">
+          {empty ? (
+            <p className="text-ink-3 px-2 py-1 text-xs">
+              {props.threads === undefined ? "Loading…" : "No threads yet"}
+            </p>
+          ) : null}
           <DropdownMenu.RadioGroup
             value={props.session ?? ""}
             onValueChange={props.onChoose}
@@ -288,12 +293,7 @@ function ChatPaneThreadTitle(props: {
   readonly thread: ChatPaneThreadNamed;
   readonly at: ChatPaneThreadActionsAt;
 }): ReactNode {
-  if (props.at === "Pane")
-    return (
-      <h2 className="text-ink-2 font-strong min-w-0 truncate pr-1 text-sm">
-        {threadLabel(props.thread)}
-      </h2>
-    );
+  if (props.at === "Pane") return null;
   return (
     <>
       <h1 className="text-ink-1 font-strong min-w-0 truncate text-md">
@@ -439,6 +439,48 @@ function ChatPaneThreadMenu(props: {
   );
 }
 
+/** The thread's title at the start of the header's row where the viewport
+ * divides into columns; elsewhere it is kept for a reader who does not see it,
+ * since the pane's header is icons alone. */
+export function ChatPaneTitle(props: {
+  readonly thread: ChatPaneThreadNamed | undefined;
+}): ReactNode {
+  const held = useChatPane();
+  if (props.thread === undefined) return null;
+  const shown = held.twoColumn;
+  return (
+    <h2
+      className={
+        shown
+          ? "text-ink-2 font-strong min-w-0 flex-1 truncate pl-3 text-sm"
+          : "sr-only"
+      }
+    >
+      {threadLabel(props.thread)}
+    </h2>
+  );
+}
+
+/** The menu where the pane holds no thread, so the control stays in place. */
+export function ChatPaneThreadActionsIdle(): ReactNode {
+  return (
+    <DropdownMenu.Root modal={false}>
+      <Tooltip text={chatPaneThreadMenuLabel}>
+        <DropdownMenu.Trigger
+          className={`${buttonLookClassName({ size: "icon", variant: "quiet" })} shrink-0`}
+        >
+          <ChatPaneIcon glyph="more" label={chatPaneThreadMenuLabel} />
+        </DropdownMenu.Trigger>
+      </Tooltip>
+      <DropdownMenu.Portal>
+        <MenuContent sideOffset={4} align="start">
+          <p className="text-ink-3 px-2 py-1 text-xs">No active thread</p>
+        </MenuContent>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
+  );
+}
+
 /**
  * The thread the pane or its page holds, at the start of the header's one row:
  * its title, and beside it the menu of what is done to it. While a rename is
@@ -457,7 +499,7 @@ export function ChatPaneThreadActions(props: {
   return (
     <>
       <div
-        className={`flex min-w-0 flex-1 items-center ${props.at === "Pane" ? "pl-3" : ""}`}
+        className={`flex min-w-0 items-center ${props.at === "Pane" ? "" : "flex-1"}`}
       >
         {actions.renaming ? (
           <ThreadEntryRename

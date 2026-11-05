@@ -191,7 +191,6 @@ test("a reader who may dispatch and not mutate is offered Dispatch alone", async
   );
   expect(dispatchOffered()).toBe(true);
   expect(screen.queryByText("Edit")).toBeNull();
-  expect(screen.queryByText("Duplicate")).toBeNull();
 });
 
 test.each(abilitiesUnrefusing)(
@@ -241,7 +240,6 @@ test("a ticket whose project has no runner for its work draws the way to one in 
       : line.compareDocumentPosition(revoke) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   expect(screen.getByText("Edit")).toBeDefined();
-  expect(screen.getByText("Duplicate")).toBeDefined();
 });
 
 /** A read the API refuses, answered afresh for each request. */

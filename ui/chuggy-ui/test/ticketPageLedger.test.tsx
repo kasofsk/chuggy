@@ -294,17 +294,6 @@ function statusBar(container: HTMLElement): HTMLElement {
   return bar;
 }
 
-/** Opens one of the rows under the ledger, which the page draws closed. */
-async function sectionOpened(label: string): Promise<void> {
-  const trigger = screen.getByRole("button", {
-    name: new RegExp(`^${label}`, "u"),
-  });
-  await turned(() => {
-    trigger.click();
-  });
-  await settled();
-}
-
 test("the parked ticket names its wall, its phase and what the whole of it cost", async () => {
   const { container } = await drawTicket({
     shapes: ticket21Parked,
@@ -321,13 +310,12 @@ test("the parked ticket names its wall, its phase and what the whole of it cost"
   );
 });
 
-test("the page is one column: no aside, no intent line and no sequence", async () => {
+test("the page is one column: no aside and no sequence", async () => {
   const { container } = await drawTicket({
     shapes: ticket21Parked,
     ticket: parkedTicket,
   });
   expect(container.querySelector("aside")).toBeNull();
-  expect(screen.queryByText("Give the console a footer")).toBeNull();
   expect(statusBar(container).textContent).not.toContain("167");
   expect(screen.queryByText("Sequence")).toBeNull();
 });
@@ -461,129 +449,7 @@ test("the resume states what it re-runs", async () => {
   ).not.toBeNull();
 });
 
-test("every section of the page has an anchor pointing at it", async () => {
-  const { container } = await drawTicket(
-    { shapes: ticket21Parked, ticket: parkedTicket },
-    { shell: true },
-  );
-  fireEvent.click(
-    screen.getByRole("button", { name: "Details", pressed: false }),
-  );
-  const anchors = [...container.querySelectorAll("nav.sections a")].map(
-    (link) => link.getAttribute("href"),
-  );
-  expect(anchors).toEqual(["#cycles", "#brief", "#usage", "#provenance"]);
-  const drawn = [...container.querySelectorAll("section[id]")].map(
-    (section) => `#${section.id}`,
-  );
-  expect(drawn).toEqual(anchors);
-  expect(screen.getByText("3 · 7 runs")).toBeDefined();
-});
-
-test("the rows under the ledger are closed, and following an anchor opens its row", async () => {
-  const { container } = await drawTicket(
-    { shapes: ticket21Parked, ticket: parkedTicket },
-    { shell: true },
-  );
-  expect(screen.queryByText("Dependencies")).toBeNull();
-  fireEvent.click(
-    screen.getByRole("button", { name: "Details", pressed: false }),
-  );
-  const anchor = container.querySelector('nav.sections a[href="#provenance"]');
-  if (!(anchor instanceof HTMLElement)) throw new Error("no provenance anchor");
-  await turned(() => {
-    anchor.click();
-  });
-  await settled();
-  expect(screen.getByText("Dependencies")).toBeDefined();
-  expect(
-    screen
-      .getByRole("button", { name: /^Provenance/u })
-      .getAttribute("aria-expanded"),
-  ).toBe("true");
-  expect(
-    screen
-      .getByRole("button", { name: /^Brief/u })
-      .getAttribute("aria-expanded"),
-  ).toBe("false");
-});
-
-/** Follows the Provenance anchor in the details pane, opened first. */
-async function provenanceFollowed(container: HTMLElement): Promise<void> {
-  fireEvent.click(
-    screen.getByRole("button", { name: "Details", pressed: false }),
-  );
-  const anchor = container.querySelector('nav.sections a[href="#provenance"]');
-  if (!(anchor instanceof HTMLElement)) throw new Error("no provenance anchor");
-  await turned(() => {
-    anchor.click();
-  });
-  await settled();
-}
-
-test("an anchor followed where the details share the page's place closes them first", async () => {
-  const { container } = await drawTicket(
-    { shapes: ticket21Parked, ticket: parkedTicket },
-    { shell: true },
-  );
-  await provenanceFollowed(container);
-  expect(
-    screen.queryByRole("button", { name: "Details", pressed: true }),
-  ).toBeNull();
-  expect(
-    screen
-      .getByRole("button", { name: /^Provenance/u })
-      .getAttribute("aria-expanded"),
-  ).toBe("true");
-});
-
-test("an anchor followed where the column holds the details beside the page leaves them open", async () => {
-  const { container } = await drawTicket(
-    { shapes: ticket21Parked, ticket: parkedTicket },
-    { shell: true, beside: true },
-  );
-  await provenanceFollowed(container);
-  expect(
-    screen.queryByRole("button", { name: "Details", pressed: true }),
-  ).not.toBeNull();
-  expect(
-    screen
-      .getByRole("button", { name: /^Provenance/u })
-      .getAttribute("aria-expanded"),
-  ).toBe("true");
-});
-
-test("each closed row says what it holds on the right", async () => {
-  await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
-  expect(screen.getByRole("button", { name: /^Brief/u }).textContent).toContain(
-    "Intent only",
-  );
-  expect(screen.getByRole("button", { name: /^Usage/u }).textContent).toContain(
-    "$2.74",
-  );
-  expect(
-    screen.getByRole("button", { name: /^Provenance/u }).textContent,
-  ).toContain("Revision 1");
-});
-
-test("the Brief row counts what the brief holds beside its intent", async () => {
-  await drawTicket({
-    shapes: ticket21Parked,
-    ticket: {
-      ...parkedTicket,
-      brief: {
-        intent: "Give the console a footer",
-        links: ["https://example.test/one"],
-        checks: ["npm run lint", "npm test"],
-      },
-    },
-  });
-  expect(screen.getByRole("button", { name: /^Brief/u }).textContent).toContain(
-    "1 link · 2 checks",
-  );
-});
-
-/** The provenance summary's Repository cell: its value, and the address it
+/** The status row's Repository cell: its value, and the address it
  * keeps for hover. */
 function repositoryCell(): { text: string; title: string | null } {
   const value = screen.getByText("Repository").nextElementSibling;
@@ -593,7 +459,7 @@ function repositoryCell(): { text: string; title: string | null } {
   };
 }
 
-test("the provenance summary names the repository by its label, the address on hover", async () => {
+test("the status row names the repository by its label, the address on hover", async () => {
   await drawTicket({
     shapes: ticket21Parked,
     ticket: {
@@ -605,54 +471,79 @@ test("the provenance summary names the repository by its label, the address on h
       },
     },
   });
-  await sectionOpened("Provenance");
   expect(repositoryCell()).toEqual({
     text: "acme/atlas",
     title: "https://example.test/acme/atlas.git",
   });
 });
 
-test("a brief naming no repository leaves the summary's Repository cell absent", async () => {
+test("a brief naming no repository leaves the status row's Repository cell absent", async () => {
   await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
-  await sectionOpened("Provenance");
   expect(repositoryCell()).toEqual({ text: "—", title: null });
 });
 
-test("the shell's top bar draws the ticket's own number and phase", async () => {
-  await drawTicket(
-    { shapes: ticket21Parked, ticket: parkedTicket },
-    { shell: true },
-  );
-  const top = screen.getByRole("heading", { name: "Ticket" }).parentElement;
-  expect(top?.textContent).toContain("21");
-  expect(top?.textContent).toContain("Escalated");
-});
-
-test("the shell's top bar is headed by the ticket's own title where it has one", async () => {
-  await drawTicket(
-    {
-      shapes: ticket21Parked,
-      ticket: { ...parkedTicket, title: "Serve the reason" },
-    },
-    { shell: true },
-  );
+test("the ticket is headed by its own title where it has one", async () => {
+  await drawTicket({
+    shapes: ticket21Parked,
+    ticket: { ...parkedTicket, title: "Serve the reason" },
+  });
   expect(
-    screen.getByRole("heading", { name: "Serve the reason" }),
+    screen.getByRole("heading", { level: 1, name: "Serve the reason" }),
   ).toBeDefined();
 });
 
-test("the top bar's breadcrumb returns to the project's overview", async () => {
+test("the page fills no second header row in the shell's top bar", async () => {
   await drawTicket(
     { shapes: ticket21Parked, ticket: parkedTicket },
     { shell: true },
   );
-  const crumb = screen.getByText("Overview");
-  expect(crumb.tagName).toBe("A");
+  expect(screen.queryByText("Overview")).toBeNull();
+  expect(screen.getByRole("heading", { level: 1 }).closest("header")).not.toBe(
+    null,
+  );
+});
+
+test("the title is the page's one h1, and it holds the title alone", async () => {
+  await drawTicket({
+    shapes: ticket21Parked,
+    ticket: { ...parkedTicket, title: "Serve the reason" },
+  });
+  const heading = screen.getByRole("heading", { level: 1 });
+  expect(heading.textContent).toBe("Serve the reason");
+  expect(heading.closest("header")?.textContent).toBe("Serve the reason");
+});
+
+test("the brief's intent is drawn once, as markdown, under Instructions", async () => {
+  await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
+  const section = screen
+    .getByRole("heading", { level: 2, name: "Instructions" })
+    .closest("section");
+  expect(section?.textContent).toContain("Give the console a footer");
+  expect(screen.getAllByText("Give the console a footer")).toHaveLength(1);
+});
+
+test("every part of the page is drawn without being opened, in order", async () => {
+  await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
+  const names = screen
+    .getAllByRole("heading", { level: 2 })
+    .map((heading) => heading.textContent ?? "");
+  const order = [
+    "Instructions",
+    "Configuration",
+    "Revision history",
+    "Activity",
+  ];
+  const at = order.map((name) =>
+    names.findIndex((held) => held.startsWith(name)),
+  );
+  expect(at.every((index) => index >= 0)).toBe(true);
+  expect(at).toEqual([...at].sort((x, y) => x - y));
+  expect(screen.queryByRole("button", { name: /^Provenance/u })).toBeNull();
+  expect(screen.queryByText("On this page")).toBeNull();
 });
 
 test("the canonical JSON is closed until asked for, and its trigger controls it", async () => {
   await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
-  await sectionOpened("Provenance");
   const trigger = screen.getByRole("button", { name: "Canonical JSON" });
   expect(trigger.getAttribute("aria-expanded")).toBe("false");
   expect(screen.queryByText("{}")).toBeNull();
@@ -673,7 +564,6 @@ test("the usage row names the basis and breaks the spend down twice", async () =
     shapes: ticket21Parked,
     ticket: parkedTicket,
   });
-  await sectionOpened("Usage");
   const usage = container.querySelector("#usage");
   expect(usage?.querySelector(".fig-basis")?.textContent).toBe("list");
   expect(usage?.textContent).toContain("$2.74");
@@ -1009,7 +899,6 @@ test("a cancelled run is counted but is not counted as running", async () => {
     shapes: cancelled,
     ticket: parkedTicket,
   });
-  await sectionOpened("Usage");
   const usage = container.querySelector("#usage")?.textContent ?? "";
   expect(usage).toContain("Runs7");
   expect(usage).not.toContain("running");
@@ -1034,7 +923,6 @@ test("the usage panel counts the runs, and says which are still going", async ()
     shapes: ticket21Parked,
     ticket: parkedTicket,
   });
-  await sectionOpened("Usage");
   expect(container.querySelector("#usage")?.textContent).toContain("Runs7");
   cleanup();
   vi.unstubAllGlobals();
@@ -1043,7 +931,6 @@ test("the usage panel counts the runs, and says which are still going", async ()
     shapes: ticket21Resumed,
     ticket: resumedTicket,
   });
-  await sectionOpened("Usage");
   expect(resumed.container.querySelector("#usage")?.textContent).toContain(
     "Runs8 · 1 running · 1 unmeasured",
   );
@@ -1054,7 +941,6 @@ test("the by-stage table is work first and then the program's own order", async 
     shapes: ticket21Parked,
     ticket: parkedTicket,
   });
-  await sectionOpened("Usage");
   const table = screen.getByRole("table", { name: "Usage by stage" });
   expect(
     [...table.querySelectorAll("tbody th")].map((cell) => cell.textContent),
@@ -1152,7 +1038,6 @@ test("a relaunched, short stage row in a superseded cycle still fits the copy bu
 test("nothing the ticket page draws is a runtime style element", async () => {
   await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
   expect(document.querySelectorAll("style").length).toBe(0);
-  await sectionOpened("Provenance");
   fireEvent.click(screen.getByRole("button", { name: "Canonical JSON" }));
   expect(document.querySelectorAll("style").length).toBe(0);
 });
@@ -1183,7 +1068,6 @@ test("the provenance names the live revision and a draft revised past it", async
     ticket: pendingTicket,
     versions: { authoringVersion: 3, releasedAuthoringVersion: 2 },
   });
-  await sectionOpened("Provenance");
   expect(screen.getByText("Live").nextElementSibling?.textContent).toBe(
     "Revision 2",
   );
@@ -1199,7 +1083,6 @@ test("the provenance says a draft at its release holds nothing unreleased", asyn
     ticket: pendingTicket,
     versions: { authoringVersion: 2, releasedAuthoringVersion: 2 },
   });
-  await sectionOpened("Provenance");
   expect(
     screen.getAllByText("Draft").at(-1)?.nextElementSibling?.textContent,
   ).toBe("Nothing unreleased");
@@ -1218,12 +1101,10 @@ test("a ticket whose draft is ahead draws the brief and configuration it was rel
       configurationRevision: "r2",
     },
   });
-  await sectionOpened("Brief");
-  await sectionOpened("Provenance");
   expect(screen.getAllByText("Give the console a footer").length).toBe(1);
   expect(screen.queryByText("A rewrite nobody has released")).toBeNull();
   expect(
-    screen.getByText("released under").nextElementSibling?.textContent,
+    screen.getByText("Released under").nextElementSibling?.textContent,
   ).toBe("r1");
   expect(screen.queryByText("r2")).toBeNull();
   expect(
@@ -1266,8 +1147,6 @@ test("a finished ticket's page never says Terminal", async () => {
     ticket: { ...resumedTicket, phase: "Done" },
   });
   await cyclesOpened(container);
-  await sectionOpened("Usage");
-  await sectionOpened("Provenance");
   expect(container.textContent).toContain("Passed");
   expect(container.textContent).not.toContain("Terminal");
 });

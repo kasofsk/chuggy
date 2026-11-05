@@ -151,18 +151,32 @@ async function drawTicket(
   await settled();
 }
 
-async function sectionOpened(name: string): Promise<void> {
+/** The page with every task opened and its prompt shown, which the page
+ * draws folded. */
+async function drawExpanded(
+  ...args: Parameters<typeof drawTicket>
+): Promise<void> {
+  await drawTicket(...args);
   await turned(() => {
-    screen.getByRole("button", { name: new RegExp(`^${name}`, "u") }).click();
+    for (const label of document.querySelectorAll(".ticket-config-task-label"))
+      label.closest("button")?.click();
+  });
+  await turned(() => {
+    for (const button of screen.queryAllByRole("button", {
+      name: "View prompt",
+    }))
+      button.click();
   });
   await settled();
 }
 
-test("the Brief and Provenance rows draw no second heading of their own", async () => {
-  await drawTicket();
-  await sectionOpened("Brief");
-  await sectionOpened("Provenance");
-  expect(screen.getAllByRole("heading", { name: /Brief/iu })).toHaveLength(1);
+test("the configuration is broken out into Work, Evaluation and Finalization", async () => {
+  await drawExpanded();
+  const headings = screen
+    .getAllByRole("heading", { level: 3 })
+    .map((heading) => heading.textContent);
+  expect(headings).toContain("Work");
+  expect(headings).toContain("Evaluation");
   expect(
     screen.queryAllByRole("heading", { name: /^Provenance$/iu }),
   ).toHaveLength(0);
@@ -173,26 +187,27 @@ test("the Brief and Provenance rows draw no second heading of their own", async 
   ).toBeDefined();
 });
 
-test("the Brief names the member who filed the ticket, the whole subject on hover", async () => {
+test("the status row names the member who filed the ticket, the whole subject on hover", async () => {
   const creator = "23:https://issuer.example/alice";
-  await drawTicket(canonical, undefined, creator);
-  await sectionOpened("Brief");
-  const filed = screen.getByText("filed by").closest("div");
+  await drawExpanded(canonical, undefined, creator);
+  const filed = screen.getAllByText("Filed by")[0]?.closest("div");
   expect(filed).not.toBeNull();
   expect(within(filed as HTMLElement).getByText("alice")).toBeDefined();
   expect(screen.queryByText(creator)).toBeNull();
 });
 
 test("a ticket the wire names no creator for draws no filed-by field at all", async () => {
-  await drawTicket();
-  await sectionOpened("Brief");
-  expect(screen.getByText("released under")).toBeDefined();
-  expect(screen.queryByText("filed by")).toBeNull();
+  await drawExpanded();
+  expect(screen.getByText("Released under")).toBeDefined();
+  expect(
+    screen
+      .getAllByText("Filed by")
+      .map((name) => name.nextElementSibling?.textContent),
+  ).toEqual(["—", "—"]);
 });
 
 test("the settings grid reads the model off its own flag and the tools off the allow-list", async () => {
-  await drawTicket();
-  await sectionOpened("Provenance");
+  await drawExpanded();
   expect(screen.getByText("Sonnet")).toBeDefined();
   expect(screen.getByText("--model=sonnet")).toBeDefined();
   expect(screen.getByText("Claude Code")).toBeDefined();
@@ -225,8 +240,7 @@ function instructions(): HTMLElement {
 }
 
 test("the Instructions draw the shared brief and the work's own words, and no Review where stages brief the review", async () => {
-  await drawTicket();
-  await sectionOpened("Provenance");
+  await drawExpanded();
   expect(
     within(instructions()).getByText(
       /Develop Chuggy itself in the same repository-native/u,
@@ -245,8 +259,7 @@ test("a configuration with no stages draws a Review tab, Work first", async () =
       ([key]) => key !== "evaluations",
     ),
   );
-  await drawTicket(JSON.stringify(unstaged));
-  await sectionOpened("Provenance");
+  await drawExpanded(JSON.stringify(unstaged));
   expect(within(instructions()).queryByText(reviewText)).toBeNull();
   await turned(() => {
     /** Radix selects a tab on `mousedown`, not `click`, and jsdom's own
@@ -261,8 +274,7 @@ test("a configuration with no stages draws a Review tab, Work first", async () =
 });
 
 test("the evaluation list draws one row per stage, its checks or its instructions and practices", async () => {
-  await drawTicket();
-  await sectionOpened("Provenance");
+  await drawExpanded();
   expect(screen.getByText("Stage 1 · Check")).toBeDefined();
   expect(screen.getByText(".chug/tasks/ci.sh")).toBeDefined();
   const stage2 = screen
@@ -276,8 +288,7 @@ test("the evaluation list draws one row per stage, its checks or its instruction
 /** A check is one token as often as not, and the column it stands in is as
  * narrow as the reader leaves the pages. */
 test("a stage's check breaks inside the column rather than widening it", async () => {
-  await drawTicket();
-  await sectionOpened("Provenance");
+  await drawExpanded();
   const check = screen.getByText(".chug/tasks/ci.sh");
   const rules = sheetRules(ticketSheet, []);
   expect(check.classList.contains("ticket-config-command")).toBe(true);
@@ -286,19 +297,14 @@ test("a stage's check breaks inside the column rather than widening it", async (
   expect(sheetDeclared(rules, check, "max-width")).toBe("100%");
 });
 
-/** The stages' order and their stop are the configuration's semantics, so a version 1 configuration and a catalog plan say them alike. */
-const evaluationOrder = "Stages run in order · a failed stage ends evaluation";
-
-test("a version 1 configuration's evaluation says its stages run in order and a failed one ends it", async () => {
-  await drawTicket();
-  await sectionOpened("Provenance");
-  expect(screen.getAllByText(evaluationOrder).length).toBe(1);
+test("a version 1 configuration's evaluation draws no hint about stage order", async () => {
+  await drawExpanded();
+  expect(screen.queryByText(/Stages run in order/u)).toBeNull();
   expect(screen.queryByText("Evaluators run side by side")).toBeNull();
 });
 
 test("the panel keeps the digest and the full revision on a caption line", async () => {
-  await drawTicket();
-  await sectionOpened("Provenance");
+  await drawExpanded();
   expect(screen.getByText("revision").nextElementSibling?.textContent).toBe(
     revision,
   );
@@ -310,8 +316,7 @@ test("the panel keeps the digest and the full revision on a caption line", async
 const caption = "As configured · Exact prompt in the run's conversation";
 
 test("a ticket with no overrides is drawn as its pinned configuration, marking nothing", async () => {
-  await drawTicket();
-  await sectionOpened("Provenance");
+  await drawExpanded();
   expect(within(instructions()).getByText(caption)).toBeDefined();
   expect(screen.queryByText("Overridden")).toBeNull();
   expect(screen.queryByText("Also overridden")).toBeNull();
@@ -335,7 +340,7 @@ test("a model the ticket overrode is drawn in the model's place, marked overridd
       readonly worker: { readonly mode: { readonly arguments: string[] } };
     }
   ).worker.mode;
-  await drawTicket(canonical, {
+  await drawExpanded(canonical, {
     worker: {
       mode: {
         type: "SingleAgent",
@@ -346,7 +351,6 @@ test("a model the ticket overrode is drawn in the model's place, marked overridd
       },
     },
   });
-  await sectionOpened("Provenance");
   expect(within(cell("Model")).getByText("Opus")).toBeDefined();
   expect(within(cell("Model")).getByText("--model=opus")).toBeDefined();
   expect(within(cell("Model")).getByText("Overridden")).toBeDefined();
@@ -362,10 +366,9 @@ test("a model the ticket overrode is drawn in the model's place, marked overridd
 });
 
 test("an override the panel has no place for is listed under it by name, with its value", async () => {
-  await drawTicket(canonical, {
+  await drawExpanded(canonical, {
     worker: { files: [{ path: "notes.md", content: "remember this" }] },
   });
-  await sectionOpened("Provenance");
   expect(screen.getByText("Also overridden")).toBeDefined();
   const listed = screen.getByText("worker.files").closest("div");
   expect(listed?.textContent).toContain("remember this");
@@ -373,10 +376,9 @@ test("an override the panel has no place for is listed under it by name, with it
 });
 
 test("instructions the ticket overrode are drawn as the override, and the caption no longer says as configured", async () => {
-  await drawTicket(canonical, {
+  await drawExpanded(canonical, {
     work: { instructions: ["Do it the overridden way."] },
   });
-  await sectionOpened("Provenance");
   expect(
     within(instructions()).getByText("Do it the overridden way."),
   ).toBeDefined();
@@ -394,11 +396,10 @@ test("instructions the ticket overrode are drawn as the override, and the captio
 });
 
 test("a catalog draws what the ticket selected of it: its work's prompt, its plan's stages and its finalizer", async () => {
-  await drawTicket(creationCatalogCanonical, undefined, undefined, {
+  await drawExpanded(creationCatalogCanonical, undefined, undefined, {
     evaluation: "gated",
     finalization: "approved",
   });
-  await sectionOpened("Provenance");
   expect(screen.getByText("build")).toBeDefined();
   expect(screen.getByText("prompts/build.md")).toBeDefined();
   expect(screen.getByText("Build it.")).toBeDefined();
@@ -439,8 +440,7 @@ test("a catalog ticket draws the revision it runs on: its own choice, else its c
     [creationCatalogCanonical, undefined, "Pinned", "Default"],
   ] as const;
   for (const [served, selection, value, meta] of cases) {
-    await drawTicket(served, undefined, undefined, selection);
-    await sectionOpened("Provenance");
+    await drawExpanded(served, undefined, undefined, selection);
     const cell = screen.getByText("Version").closest(".ticket-config-cell");
     if (!(cell instanceof HTMLElement)) throw new Error("no Version cell");
     expect(within(cell).getByText(value)).toBeDefined();
@@ -468,14 +468,13 @@ test("a following ticket held on its revision, or trimmed, says why in one line,
     [undefined, undefined],
   ] as const;
   for (const [following, line] of cases) {
-    await drawTicket(
+    await drawExpanded(
       catalogFollowing("Latest"),
       undefined,
       undefined,
       undefined,
       following,
     );
-    await sectionOpened("Provenance");
     const drawn = document.querySelectorAll(".ticket-config-following");
     expect([...drawn].map((element) => element.textContent)).toEqual(
       line === undefined ? [] : [line],
@@ -485,13 +484,12 @@ test("a following ticket held on its revision, or trimmed, says why in one line,
 });
 
 /** A catalog stage of several evaluators is drawn as a list of them, so the row says they do not run one after another. */
-test("a catalog plan says its stages run in order, and that a stage's several evaluators run side by side", async () => {
-  await drawTicket(creationCatalogCanonical, undefined, undefined, {
+test("a catalog plan draws its stages in order, and says a stage's several evaluators run side by side", async () => {
+  await drawExpanded(creationCatalogCanonical, undefined, undefined, {
     evaluation: "gated",
     finalization: "approved",
   });
-  await sectionOpened("Provenance");
-  expect(screen.getAllByText(evaluationOrder).length).toBe(1);
+  expect(screen.queryByText(/Stages run in order/u)).toBeNull();
   const rowOf = (label: string) => {
     const row = screen
       .getByText(label)
@@ -508,16 +506,33 @@ test("a catalog plan says its stages run in order, and that a stage's several ev
 });
 
 test("a catalog ticket is drawn under its workload overrides, the workload and its fields marked", async () => {
-  await drawTicket(
+  await drawExpanded(
     creationCatalogCanonical,
     { workloads: { build: { prompt: { text: "Build it twice." } } } },
     undefined,
     undefined,
   );
-  await sectionOpened("Provenance");
   expect(screen.getByText("Build it twice.")).toBeDefined();
   expect(screen.queryByText("Build it.")).toBeNull();
   expect(screen.getAllByText("Overridden").length).toBeGreaterThan(0);
   expect(screen.getByText("prompt")).toBeDefined();
   expect(screen.getByText("Pinned ·")).toBeDefined();
+});
+
+test("the tasks are folded until asked for, and each opens onto a YAML view of its definition", async () => {
+  await drawTicket();
+  expect(screen.queryByRole("button", { name: "YAML" })).toBeNull();
+  await turned(() => {
+    document
+      .querySelector(".ticket-config-task-label")
+      ?.closest("button")
+      ?.click();
+  });
+  const toggles = screen.getAllByRole("button", { name: "YAML" });
+  expect(toggles.length).toBeGreaterThan(0);
+  expect(toggles[0]?.getAttribute("aria-expanded")).toBe("false");
+  await turned(() => {
+    toggles[0]?.click();
+  });
+  expect(toggles[0]?.getAttribute("aria-expanded")).toBe("true");
 });

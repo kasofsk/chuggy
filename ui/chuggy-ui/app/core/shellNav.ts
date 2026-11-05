@@ -10,7 +10,6 @@
  */
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
-import { projectAbilityRefused } from "./projectAbilities.ts";
 import type { ProjectAbilities } from "./projectAbilities.ts";
 import type { Tone } from "./tones.ts";
 
@@ -74,12 +73,6 @@ export function shellNav(input: ShellNavInput): readonly NavEntry[] {
     tenant: input.partition.tenant,
     project: input.partition.project,
   };
-  const ticketNew: NavEntry = {
-    id: "ticket-new",
-    label: "New ticket",
-    to: navRoutes.ticketNew,
-    params,
-  };
   return [
     { id: "overview", label: "Tickets", to: navRoutes.overview, params },
     {
@@ -97,7 +90,6 @@ export function shellNav(input: ShellNavInput): readonly NavEntry[] {
       standing: input.leadStanding,
     },
     { id: "catalog", label: "Catalog", to: navRoutes.catalog, params },
-    ...(projectAbilityRefused(input.abilities, "mutate") ? [] : [ticketNew]),
   ];
 }
 

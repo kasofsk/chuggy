@@ -1,8 +1,7 @@
 /**
- * Where this ticket came from: the brief, a summary of the live revision and
- * the draft beside it, and the configuration the live revision runs under — its
- * settings, the brief and instructions each role is briefed with, and its
- * declared evaluation stages.
+ * Where this ticket came from: the brief's images, a summary of the live revision and
+ * the draft beside it, and the configuration the live revision runs under,
+ * broken out into its work, its evaluation and its finalization.
  *
  * What a ticket runs under is the configuration it pinned with its overrides
  * applied. A field it overrode is drawn as the override and marked so, in the
@@ -11,16 +10,17 @@
  * changes.
  *
  * A configuration is named where the wire names it and drawn as its revision
- * where it is not. The summary's dependencies are the live revision's, which
- * a Pending ticket's draft may have been revised past.
+ * where it is not.
  */
 
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { Tabs } from "radix-ui";
+import { stringify } from "yaml";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { TicketBriefBody } from "../../../../src/contract/brief.ts";
+import type { BriefFinalizationMode } from "../../../../src/contract/rosters.ts";
 import type { ConfigurationFollowing } from "../../../../src/contract/configurationDocument.ts";
 import { configurationFollowingOf } from "../../../../src/contract/configurationSelection.ts";
 import type {
@@ -29,11 +29,7 @@ import type {
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
 import { configurationQuery } from "../core/configurationQueries.ts";
-import {
-  briefLandingLine,
-  landingLabel,
-  landingPolicyLabel,
-} from "../core/codeLabels.ts";
+import { briefLandingLine } from "../core/codeLabels.ts";
 import { ticketFollowingSentence } from "../core/codeSentences.ts";
 import type {
   ConfigurationBrief,
@@ -49,6 +45,7 @@ import {
   configurationCatalogWorkload,
 } from "../core/configurationCatalog.ts";
 import type {
+  CatalogFinalizer,
   CatalogPlanStage,
   CatalogWorkload,
   CatalogSelected,
@@ -59,173 +56,46 @@ import { agoFigure } from "../core/figures.ts";
 import { overrideFieldOf, overriddenViewOf } from "../core/ticketOverrides.ts";
 import type { OverrideField } from "../core/ticketOverrides.ts";
 import type { PanelState } from "../core/freshness.ts";
-import { repositoryLabel } from "../core/projectRepositories.ts";
-import {
-  configurationLabel,
-  creatorLabel,
-  digestShortened,
-} from "../core/labels.ts";
+import { configurationLabel, digestShortened } from "../core/labels.ts";
 import { draftReleaseOf, draftUnreleasedLabel } from "../core/ticketEdit.ts";
 import { usePanelState } from "./api.ts";
-import { useCreatorEmails } from "./creatorEmails.ts";
+import { TicketFiledBy } from "./ticket/TicketMeta.tsx";
 import { DataSection, PanelUnready } from "./DataPanel.tsx";
 import { Disclosure } from "./ui/Disclosure.tsx";
 import { Figure } from "./ui/Figure.tsx";
 import { Freshness } from "./Freshness.tsx";
-import { Identity } from "./ui/Identity.tsx";
 import { Panel } from "./ui/Panel.tsx";
+import { MarkdownReport } from "./ui/MarkdownReport.tsx";
 import { ProjectImage } from "./ProjectImage.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
 
 import "./ticket/ticket.css";
 
-function Field(props: {
-  readonly name: string;
-  readonly children: ReactNode;
-}): ReactNode {
-  return (
-    <div className="legacy-field">
-      <dt>{props.name}</dt>
-      <dd>{props.children}</dd>
-    </div>
-  );
-}
-
 /**
- * What a person asked for, its images drawn as images, each from the project's
- * own read of it. A ticket released before the brief was on the wire carries
- * none and says so rather than drawing empty fields, and one released before a
- * landing was recorded draws no landing at all.
+ * The images a person attached to the brief, each drawn from the project's own
+ * read of it. The brief's other fields are the status row's and the
+ * instructions' to draw.
  */
-function Brief(props: {
-  readonly partition: PartitionIdentity;
-  readonly brief: TicketBriefBody;
-}): ReactNode {
-  const { intent, links, images, checks, repository, branch } = props.brief;
-  return (
-    <>
-      <Field name="intent">
-        <p className="whitespace-pre-wrap">{intent}</p>
-      </Field>
-      <Field name="links">
-        {links.length === 0 ? (
-          "none"
-        ) : (
-          <ul>
-            {links.map((link) => (
-              <li key={link}>
-                <a href={link} rel="noopener noreferrer" target="_blank">
-                  {link}
-                </a>
-              </li>
-            ))}
-          </ul>
-        )}
-      </Field>
-      {images === undefined || images.length === 0 ? null : (
-        <Field name="images">
-          <ul className="flex flex-wrap gap-2">
-            {images.map((artifact, at) => (
-              <li key={artifact}>
-                <ProjectImage
-                  partition={props.partition}
-                  artifact={artifact}
-                  alt={`Brief image ${String(at + 1)}`}
-                  className="rounded-2 border-edge block max-h-(--height-clip) max-w-full border"
-                />
-              </li>
-            ))}
-          </ul>
-        </Field>
-      )}
-      <Field name="checks">
-        {checks === undefined || checks.length === 0 ? (
-          "none"
-        ) : (
-          <ul>
-            {checks.map((check) => (
-              <li key={check}>{check}</li>
-            ))}
-          </ul>
-        )}
-      </Field>
-      <Field name="repository">{repository ?? "none"}</Field>
-      <Field name="branch">{branch ?? "none"}</Field>
-      <BriefLanding brief={props.brief} />
-    </>
-  );
-}
-
-/** Where the work lands, and the policy ordering it only where that is not the default. */
-function BriefLanding(props: { readonly brief: TicketBriefBody }): ReactNode {
-  const { finalization, landing } = props.brief;
-  return (
-    <>
-      {finalization === undefined ? null : (
-        <Field name="landing">{briefLandingLine(finalization)}</Field>
-      )}
-      {landing === "Serialized" ? (
-        <Field name="landing policy">{landingPolicyLabel(landing)}</Field>
-      ) : null}
-    </>
-  );
-}
-
-/** The configuration the ticket's last release or update pinned, as a label
- * that keeps the revision on hover. */
-function ReleasedUnder(props: { readonly ticket: TicketResponse }): ReactNode {
-  const revision = props.ticket.configurationRevision;
-  if (revision === undefined) return null;
-  const released = configurationLabel(
-    revision,
-    props.ticket.configurationVersion,
-  );
-  return (
-    <Field name="released under">
-      <Tooltip text={released.title}>
-        <span>{released.text}</span>
-      </Tooltip>
-    </Field>
-  );
-}
-
-/** The member who filed the ticket, drawn only where the wire names one. */
-function FiledBy(props: {
-  readonly partition: PartitionIdentity;
-  readonly ticket: TicketResponse;
-}): ReactNode {
-  const emails = useCreatorEmails(props.partition);
-  const creator = props.ticket.creator;
-  if (creator === undefined) return null;
-  return (
-    <Field name="filed by">
-      <Identity label={creatorLabel(creator, emails)} />
-    </Field>
-  );
-}
-
-export function TicketBrief(props: {
+export function TicketBriefImages(props: {
   readonly partition: PartitionIdentity;
   readonly state: PanelState<TicketResponse>;
 }): ReactNode {
+  const images =
+    props.state.state === "Ready" ? props.state.value.brief?.images : undefined;
+  if (images === undefined || images.length === 0) return null;
   return (
-    <DataSection state={props.state}>
-      {(ticket) => (
-        <dl className="legacy-fields">
-          {ticket.brief === undefined ? (
-            <Field name="brief">
-              <span className="panel-absent">
-                this ticket was released before a brief was kept for one
-              </span>
-            </Field>
-          ) : (
-            <Brief partition={props.partition} brief={ticket.brief} />
-          )}
-          <FiledBy partition={props.partition} ticket={ticket} />
-          <ReleasedUnder ticket={ticket} />
-        </dl>
-      )}
-    </DataSection>
+    <ul className="flex flex-wrap gap-2">
+      {images.map((artifact, at) => (
+        <li key={artifact}>
+          <ProjectImage
+            partition={props.partition}
+            artifact={artifact}
+            alt={`Brief image ${String(at + 1)}`}
+            className="rounded-2 border-edge block max-h-(--height-clip) max-w-full border"
+          />
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -275,19 +145,20 @@ function OverriddenMark(): ReactNode {
 /** The fields a ticket overrode, which the panel marks where it draws them. */
 type ConfigurationOverridden = ReadonlySet<OverrideField>;
 
-/** The live revision and when it released, the draft beside it, its
- * dependencies, the repository the work happens in, and where the finished
- * work lands. */
-function ProvenanceSummary(props: {
+/** The live revision and when it released, the draft beside it, who filed
+ * the ticket and the configuration its last release pinned. */
+function RevisionSummary(props: {
+  readonly partition: PartitionIdentity;
   readonly draft: DraftResponse;
   readonly ticket: TicketResponse | undefined;
   readonly nowMs: number;
 }): ReactNode {
   const ticket = props.ticket;
-  const dependencies = ticket?.dependencies;
-  const finalization = ticket?.brief?.finalization;
-  const branch = ticket?.brief?.branch;
-  const repository = ticket?.brief?.repository;
+  const revision = ticket?.configurationRevision;
+  const released =
+    revision === undefined
+      ? undefined
+      : configurationLabel(revision, ticket?.configurationVersion);
   return (
     <div className="ticket-provenance-summary">
       <SummaryCell
@@ -311,35 +182,134 @@ function ProvenanceSummary(props: {
         value={draftUnreleasedLabel(draftReleaseOf(props.draft))}
       />
       <SummaryCell
-        name="Dependencies"
+        name="Filed by"
         value={
-          dependencies === undefined
-            ? absentMark
-            : dependencies.length === 0
-              ? "None"
-              : dependencies.join(", ")
-        }
-      />
-      <SummaryCell
-        name="Repository"
-        value={
-          repository === undefined ? (
+          ticket?.creator === undefined ? (
             absentMark
           ) : (
-            <span title={repository}>{repositoryLabel(repository)}</span>
+            <TicketFiledBy
+              partition={props.partition}
+              creator={ticket.creator}
+            />
           )
         }
       />
       <SummaryCell
-        name="Lands"
+        name="Released under"
         value={
-          finalization === undefined
-            ? absentMark
-            : landingLabel(finalization.mode)
+          released === undefined ? (
+            absentMark
+          ) : (
+            <Tooltip text={released.title}>
+              <span>{released.text}</span>
+            </Tooltip>
+          )
         }
-        meta={branch === undefined ? undefined : <code>{branch}</code>}
       />
     </div>
+  );
+}
+
+/** A definition as the YAML it is written in, or its JSON where YAML cannot
+ * say it. */
+function definitionYaml(definition: unknown): string {
+  try {
+    return stringify(definition);
+  } catch {
+    return JSON.stringify(definition, null, 2);
+  }
+}
+
+/**
+ * One task definition — the work, an evaluation stage — folded to a line that
+ * names its major details, opened onto the rest of them, then its prompt
+ * behind a control of its own, then the definition as YAML with every option
+ * it carries.
+ */
+function ConfigurationTask(props: {
+  readonly title: string;
+  /** What the folded line says beside the title. */
+  readonly summary: ReactNode;
+  readonly definition: unknown;
+  /** The prompt, left folded until asked for; absent where there is none. */
+  readonly prompt?: ReactNode;
+  readonly children: ReactNode;
+}): ReactNode {
+  const [open, setOpen] = useState(false);
+  const [promptOpen, setPromptOpen] = useState(false);
+  const [yamlOpen, setYamlOpen] = useState(false);
+  return (
+    <div className="ticket-config-task">
+      <Disclosure
+        open={open}
+        onOpenChange={setOpen}
+        chevron
+        look={{ variant: "quiet", size: "sm" }}
+        label={
+          <span className="ticket-config-task-label">
+            <strong>{props.title}</strong>
+            <span className="ticket-config-task-line">{props.summary}</span>
+          </span>
+        }
+      >
+        <div className="ticket-config-task-body">
+          {props.children}
+          {props.prompt === undefined ? null : (
+            <Disclosure
+              open={promptOpen}
+              onOpenChange={setPromptOpen}
+              label={promptOpen ? "Hide prompt" : "View prompt"}
+              look={{ variant: "quiet", size: "sm" }}
+            >
+              <div className="ticket-config-instructions">{props.prompt}</div>
+            </Disclosure>
+          )}
+          <Disclosure
+            open={yamlOpen}
+            onOpenChange={setYamlOpen}
+            label="YAML"
+            look={{ variant: "quiet", size: "sm" }}
+          >
+            <pre className="ticket-config-canonical">
+              {definitionYaml(props.definition)}
+            </pre>
+          </Disclosure>
+        </div>
+      </Disclosure>
+    </div>
+  );
+}
+
+/** The folded line's parts joined, the mark of an override after them. */
+function taskSummary(
+  parts: readonly ReactNode[],
+  overridden: boolean,
+): ReactNode {
+  const shown = parts.filter(
+    (part) => part !== undefined && part !== null && part !== "",
+  );
+  return (
+    <>
+      {shown.map((part, at) => (
+        <span key={at}>
+          {at === 0 ? null : " · "}
+          {part}
+        </span>
+      ))}
+      {overridden ? <OverriddenMark /> : null}
+    </>
+  );
+}
+
+/** The first command and how many more follow it, as a folded line says them. */
+function commandsSummary(commands: readonly string[]): ReactNode {
+  const first = commands[0];
+  if (first === undefined) return undefined;
+  return (
+    <>
+      <code>{first}</code>
+      {commands.length > 1 ? ` +${String(commands.length - 1)}` : null}
+    </>
   );
 }
 
@@ -371,11 +341,7 @@ function ConfigurationText(props: {
           {props.overridden === true ? <OverriddenMark /> : null}
         </h3>
       )}
-      {props.lines.map((line, index) => (
-        <p key={`${String(index)}:${line}`} className="ticket-config-doc">
-          {line}
-        </p>
-      ))}
+      <MarkdownReport text={props.lines.join("\n\n")} bare />
     </div>
   );
 }
@@ -531,12 +497,23 @@ function ConfigurationEvaluationRow(props: {
   readonly evaluation: ConfigurationEvaluation;
 }): ReactNode {
   const evaluation = props.evaluation;
-  const label = `Stage ${String(props.index + 1)}${
-    evaluation.purpose === undefined ? "" : ` · ${evaluation.purpose}`
-  }`;
   return (
-    <div className="ticket-config-evaluation-row">
-      <span className="ticket-config-evaluation-label">{label}</span>
+    <ConfigurationTask
+      title={`Stage ${String(props.index + 1)}`}
+      summary={taskSummary(
+        [
+          evaluation.checks === undefined ? "Review" : "Commands",
+          commandsSummary(evaluation.checks ?? []),
+        ],
+        false,
+      )}
+      definition={evaluation}
+      prompt={
+        evaluation.instructions === undefined ? undefined : (
+          <ConfigurationText lines={evaluation.instructions} />
+        )
+      }
+    >
       <div className="ticket-config-evaluation-body">
         {evaluation.checks === undefined ? null : (
           <div className="ticket-config-evaluation-runs">
@@ -548,28 +525,49 @@ function ConfigurationEvaluationRow(props: {
             ))}
           </div>
         )}
-        {evaluation.instructions === undefined ? null : (
-          <ConfigurationText lines={evaluation.instructions} />
-        )}
         {evaluation.practices === undefined ||
         evaluation.practices.length === 0 ? null : (
           <ConfigurationChips items={evaluation.practices.map(practiceLabel)} />
         )}
       </div>
-    </div>
+    </ConfigurationTask>
   );
 }
 
-/** The evaluation's heading, and how its stages run, which a version 1 configuration and a catalog plan share. */
-function EvaluationHead(): ReactNode {
+/** One of the three things a configuration decides — work, evaluation,
+ * finalization — under a heading of its own. */
+function ConfigurationSubsection(props: {
+  readonly title: "Work" | "Evaluation" | "Finalization";
+  readonly caption?: string;
+  readonly children: ReactNode;
+}): ReactNode {
   return (
-    <div className="ticket-config-heading-bar">
-      <span className="panel-title">Evaluation</span>
-      <span className="ticket-config-heading-caption">
-        Stages run in order · a failed stage ends evaluation
-      </span>
-    </div>
+    <section
+      className="ticket-config-sub"
+      data-stage={props.title.toLowerCase()}
+    >
+      <div className="ticket-config-heading-bar">
+        <h3 className="panel-title">{props.title}</h3>
+        {props.caption === undefined ? null : (
+          <span className="ticket-config-heading-caption">{props.caption}</span>
+        )}
+      </div>
+      {props.children}
+    </section>
   );
+}
+
+/** The landing a ticket's brief names. */
+type ConfigurationLanding = {
+  readonly mode: BriefFinalizationMode;
+  readonly target?: string | undefined;
+};
+
+/** The landing a ticket takes, as the one line its brief or its finalizer says it. */
+function FinalizationLanding(props: {
+  readonly landing: ConfigurationLanding;
+}): ReactNode {
+  return <SummaryCell name="Method" value={briefLandingLine(props.landing)} />;
 }
 
 function ConfigurationEvaluations(props: {
@@ -577,8 +575,7 @@ function ConfigurationEvaluations(props: {
 }): ReactNode {
   if (props.evaluations.length === 0) return null;
   return (
-    <div className="ticket-config-evaluations">
-      <EvaluationHead />
+    <ConfigurationSubsection title="Evaluation">
       <div className="ticket-config-evaluation-grid">
         {props.evaluations.map((evaluation, index) => (
           <ConfigurationEvaluationRow
@@ -588,7 +585,7 @@ function ConfigurationEvaluations(props: {
           />
         ))}
       </div>
-    </div>
+    </ConfigurationSubsection>
   );
 }
 
@@ -773,7 +770,8 @@ function ConfigurationOverridesUnplaced(props: {
   );
 }
 
-/** One workload of a catalog: the lines it runs, or its prompt under the file it was read from. */
+/** One workload of a catalog beyond its prompt: what it carries, and the lines
+ * it runs. */
 function CatalogWorkloadBody(props: {
   readonly name: string;
   readonly workload: CatalogWorkload | undefined;
@@ -790,27 +788,75 @@ function CatalogWorkloadBody(props: {
         {props.overridden.join(", ")}
       </span>
     );
-  if (workload.runner === "Commands")
-    return (
-      <div className="ticket-config-evaluation-runs">
-        {mark}
-        <span className="ticket-config-evaluation-runs-label">Runs</span>
-        {workload.commands.map((line) => (
-          <code key={line} className="ticket-config-command">
-            {line}
-          </code>
-        ))}
-      </div>
-    );
+  const facts: readonly (readonly [string, ReactNode])[] = [
+    ["Runner", workload.runner],
+    ["Agent", workload.agent],
+    ["Model", workload.model],
+    ["Effort", workload.effort],
+    ["Access", workload.access],
+    [
+      "Prompt file",
+      workload.promptPath === undefined ? undefined : (
+        <code>{workload.promptPath}</code>
+      ),
+    ],
+    [
+      "Arguments",
+      workload.agentArguments.length === 0 ? undefined : (
+        <code>{workload.agentArguments.join(" ")}</code>
+      ),
+    ],
+  ];
   return (
     <>
       {mark}
-      <ConfigurationText
-        heading={workload.promptPath ?? "Prompt"}
-        lines={workload.prompt === undefined ? [] : workload.prompt.split("\n")}
-      />
+      <div className="ticket-config-settings">
+        {facts.map(([name, value]) =>
+          value === undefined ? null : (
+            <SummaryCell key={name} name={name} value={value} />
+          ),
+        )}
+      </div>
+      {workload.runner === "Commands" ? (
+        <div className="ticket-config-evaluation-runs">
+          <span className="ticket-config-evaluation-runs-label">Runs</span>
+          {workload.commands.map((line) => (
+            <code key={line} className="ticket-config-command">
+              {line}
+            </code>
+          ))}
+        </div>
+      ) : null}
     </>
   );
+}
+
+/** A workload's prompt, under the file it was read from. */
+function catalogPromptOf(workload: CatalogWorkload | undefined): ReactNode {
+  if (workload?.prompt === undefined) return undefined;
+  return (
+    <ConfigurationText
+      heading={workload.promptPath ?? "Prompt"}
+      lines={[workload.prompt]}
+    />
+  );
+}
+
+/** What a workload says of itself on a folded line. */
+function catalogWorkloadSummary(
+  workload: CatalogWorkload | undefined,
+): readonly ReactNode[] {
+  if (workload === undefined) return [];
+  return [
+    workload.runner,
+    workload.runner === "Commands" ? undefined : workload.agent,
+    workload.model,
+    workload.effort,
+    workload.promptPath === undefined ? undefined : (
+      <code>{workload.promptPath}</code>
+    ),
+    commandsSummary(workload.commands),
+  ];
 }
 
 /** The fields a ticket overrode of one workload, none where it overrode none. */
@@ -837,6 +883,33 @@ function catalogChosenMeta(
 /** A catalog ticket's workload overrides, by the name of the workload each replaces. */
 type CatalogOverrides = NonNullable<TicketResponse["overrides"]>["workloads"];
 
+/** A stage's folded line: each evaluator by name with what it is. */
+function catalogStageSummary(
+  evaluators: readonly {
+    readonly name: string;
+    readonly workload: CatalogWorkload | undefined;
+  }[],
+  overrides: CatalogOverrides,
+): ReactNode {
+  return taskSummary(
+    evaluators.map(({ name, workload }) => (
+      <span key={name}>
+        {name}
+        {workload === undefined ? null : (
+          <>
+            {" ("}
+            {taskSummary(catalogWorkloadSummary(workload), false)}
+            {")"}
+          </>
+        )}
+      </span>
+    )),
+    evaluators.some(
+      ({ name }) => catalogOverriddenOf(overrides, name) !== undefined,
+    ),
+  );
+}
+
 function CatalogStageRow(props: {
   readonly catalog: ConfigurationCatalog;
   readonly overrides: CatalogOverrides;
@@ -844,36 +917,48 @@ function CatalogStageRow(props: {
   readonly stage: CatalogPlanStage;
 }): ReactNode {
   const { catalog, stage } = props;
+  const evaluators = stage.evaluators.map((name) => ({
+    name,
+    workload: configurationCatalogWorkload(catalog, name),
+  }));
   return (
-    <div className="ticket-config-evaluation-row">
-      <span className="ticket-config-evaluation-label">
-        {`Stage ${String(props.index + 1)} · ${stage.name}`}
-      </span>
+    <ConfigurationTask
+      title={`Stage ${String(props.index + 1)} · ${stage.name}`}
+      summary={catalogStageSummary(evaluators, props.overrides)}
+      definition={Object.fromEntries(
+        evaluators.map(({ name, workload }) => [name, workload?.definition]),
+      )}
+      prompt={
+        evaluators.some(({ workload }) => workload?.prompt !== undefined) ? (
+          <>
+            {evaluators.map(({ name, workload }) => (
+              <div key={name}>
+                <span className="eyebrow">{name}</span>
+                {catalogPromptOf(workload)}
+              </div>
+            ))}
+          </>
+        ) : undefined
+      }
+    >
       <div className="ticket-config-evaluation-body">
         {stage.evaluators.length > 1 ? (
           <span className="text-ink-3 text-sm">
             Evaluators run side by side
           </span>
         ) : null}
-        {stage.evaluators.map((name, position) => {
-          const workload = configurationCatalogWorkload(catalog, name);
-          return (
-            <div key={position}>
-              <span className="eyebrow">
-                {[name, workload?.purpose, workload?.model]
-                  .filter((part) => part !== undefined)
-                  .join(" · ")}
-              </span>
-              <CatalogWorkloadBody
-                name={name}
-                workload={workload}
-                overridden={catalogOverriddenOf(props.overrides, name)}
-              />
-            </div>
-          );
-        })}
+        {evaluators.map(({ name, workload }) => (
+          <div key={name}>
+            <span className="eyebrow">{name}</span>
+            <CatalogWorkloadBody
+              name={name}
+              workload={workload}
+              overridden={catalogOverriddenOf(props.overrides, name)}
+            />
+          </div>
+        ))}
       </div>
-    </div>
+    </ConfigurationTask>
   );
 }
 
@@ -913,22 +998,84 @@ function CatalogSummary(props: {
         value={selected.evaluation}
         meta={catalogChosenMeta(selected.evaluation, defaults.evaluation)}
       />
-      <SummaryCell
-        name="Finalizer"
-        value={selected.finalization ?? absentMark}
-        meta={
-          finalizer === undefined
-            ? undefined
-            : finalizer.approvalRequired
-              ? "Approved first"
-              : "Lands unapproved"
-        }
-      />
+      {selected.finalization === undefined ? null : (
+        <SummaryCell
+          name="Finalizer"
+          value={selected.finalization}
+          meta={
+            finalizer === undefined
+              ? undefined
+              : finalizer.approvalRequired
+                ? "Approved first"
+                : "No approval needed"
+          }
+        />
+      )}
       <SummaryCell
         name="Version"
         value={props.following}
         meta={selected.configuration === undefined ? "Default" : "Selected"}
       />
+    </div>
+  );
+}
+
+/** The finalizer a catalog ticket lands through: whether a person approves
+ * first, and the landing it takes where the brief names none. */
+function CatalogFinalizerBody(props: {
+  readonly name: string | undefined;
+  readonly defaulted: string | undefined;
+  readonly finalizer: CatalogFinalizer | undefined;
+  /** The landing the ticket's brief names, which is what lands the work where
+   * the catalog names no finalizer. */
+  readonly landing: ConfigurationLanding | undefined;
+}): ReactNode {
+  const { finalizer } = props;
+  const landing = props.landing ?? finalizer?.landing;
+  return (
+    <div className="ticket-config-settings">
+      {landing === undefined ? (
+        <SummaryCell name="Method" value={absentMark} />
+      ) : (
+        <FinalizationLanding landing={landing} />
+      )}
+      {props.name === undefined ? null : finalizer === undefined ? (
+        <SummaryCell name="Finalizer" value={`No finalizer ${props.name}`} />
+      ) : (
+        <SummaryCell
+          name="Finalizer"
+          value={finalizer.name}
+          meta={[
+            catalogChosenMeta(props.name, props.defaulted),
+            finalizer.approvalRequired
+              ? "Approved first"
+              : "No approval needed",
+          ]
+            .filter((part) => part !== undefined)
+            .join(" · ")}
+        />
+      )}
+    </div>
+  );
+}
+
+/** The stages of the evaluation plan a ticket runs, one under another. */
+function CatalogStages(props: {
+  readonly catalog: ConfigurationCatalog;
+  readonly overrides: CatalogOverrides;
+  readonly evaluation: string;
+}): ReactNode {
+  return (
+    <div className="ticket-config-evaluation-grid">
+      {(props.catalog.plans.get(props.evaluation) ?? []).map((stage, index) => (
+        <CatalogStageRow
+          key={index}
+          catalog={props.catalog}
+          overrides={props.overrides}
+          index={index}
+          stage={stage}
+        />
+      ))}
     </div>
   );
 }
@@ -943,10 +1090,14 @@ function CatalogBody(props: {
   readonly catalog: ConfigurationCatalog;
   readonly overrides: CatalogOverrides;
   readonly selection: TicketResponse["selection"];
+  readonly landing: ConfigurationLanding | undefined;
 }): ReactNode {
   const { catalog, configuration, overrides } = props;
   const selected = configurationCatalogSelected(catalog, props.selection);
   const work = configurationCatalogWorkload(catalog, selected.work);
+  const finalizer = catalog.finalizers.find(
+    (held) => held.name === selected.finalization,
+  );
   return (
     <div className="ticket-config">
       <CatalogSummary
@@ -956,29 +1107,38 @@ function CatalogBody(props: {
         following={configurationFollowingOf(props.selection, catalog.defaults)}
         work={work}
       />
-      <div className="ticket-config-instructions">
-        <CatalogWorkloadBody
-          name={selected.work}
-          workload={work}
-          overridden={catalogOverriddenOf(overrides, selected.work)}
-        />
-      </div>
-      <div className="ticket-config-evaluations">
-        <EvaluationHead />
-        <div className="ticket-config-evaluation-grid">
-          {(catalog.plans.get(selected.evaluation) ?? []).map(
-            (stage, index) => (
-              <CatalogStageRow
-                key={index}
-                catalog={catalog}
-                overrides={overrides}
-                index={index}
-                stage={stage}
-              />
-            ),
+      <ConfigurationSubsection title="Work">
+        <ConfigurationTask
+          title={selected.work}
+          summary={taskSummary(
+            catalogWorkloadSummary(work),
+            catalogOverriddenOf(overrides, selected.work) !== undefined,
           )}
-        </div>
-      </div>
+          definition={work?.definition}
+          prompt={catalogPromptOf(work)}
+        >
+          <CatalogWorkloadBody
+            name={selected.work}
+            workload={work}
+            overridden={catalogOverriddenOf(overrides, selected.work)}
+          />
+        </ConfigurationTask>
+      </ConfigurationSubsection>
+      <ConfigurationSubsection title="Evaluation">
+        <CatalogStages
+          catalog={catalog}
+          overrides={overrides}
+          evaluation={selected.evaluation}
+        />
+      </ConfigurationSubsection>
+      <ConfigurationSubsection title="Finalization">
+        <CatalogFinalizerBody
+          name={selected.finalization}
+          defaulted={catalog.defaults.finalization}
+          finalizer={finalizer}
+          landing={props.landing}
+        />
+      </ConfigurationSubsection>
       <ConfigurationFoot
         revision={configuration.revision}
         digest={configuration.digest}
@@ -989,11 +1149,75 @@ function CatalogBody(props: {
   );
 }
 
+/** A version 1 configuration's work: its settings and commands, and the
+ * instructions it briefs the run with as the prompt. */
+function LegacyWorkTask(props: {
+  readonly view: ConfigurationView;
+  readonly overridden: ConfigurationOverridden;
+}): ReactNode {
+  const { view, overridden } = props;
+  return (
+    <ConfigurationTask
+      title="Work"
+      summary={taskSummary(
+        [
+          view.work.commands === undefined ? "Agent" : "Commands",
+          view.work.commands === undefined ? view.settings.agent : undefined,
+          view.settings.model.label,
+          commandsSummary(view.work.commands ?? []),
+        ],
+        ["worker.mode", "worker.setup", "work.instructions"].some((field) =>
+          overridden.has(field as OverrideField),
+        ),
+      )}
+      definition={{
+        settings: view.settings,
+        brief: view.brief,
+        work: view.work,
+        review: view.review,
+      }}
+      prompt={
+        view.work.instructions === undefined &&
+        view.review === undefined ? undefined : (
+          <ConfigurationInstructions
+            brief={view.brief}
+            work={view.work}
+            review={view.review}
+            overridden={overridden}
+          />
+        )
+      }
+    >
+      <ConfigurationSettingsGrid
+        settings={view.settings}
+        overridden={overridden}
+      />
+      {view.work.commands === undefined ? null : (
+        <div className="ticket-config-evaluation-runs">
+          <span className="ticket-config-evaluation-runs-label">Runs</span>
+          {view.work.commands.map((line) => (
+            <code key={line} className="ticket-config-command">
+              {line}
+            </code>
+          ))}
+        </div>
+      )}
+    </ConfigurationTask>
+  );
+}
+
 /** A configuration as a ticket runs it, or as it stands where nothing overrides or selects from it. */
 export function ConfigurationBody(props: {
   readonly configuration: ConfigurationResponse;
   readonly overrides: TicketResponse["overrides"];
   readonly selection: TicketResponse["selection"];
+  /** The landing a version 1 ticket's brief names, which its configuration has no place for. */
+  readonly landing?:
+    | {
+        readonly mode: BriefFinalizationMode;
+        readonly target?: string | undefined;
+      }
+    | undefined;
 }): ReactNode {
   const configuration = props.configuration;
   const catalog = configurationCatalogOf(
@@ -1009,6 +1233,7 @@ export function ConfigurationBody(props: {
         catalog={catalog}
         overrides={props.overrides?.workloads}
         selection={props.selection}
+        landing={props.landing}
       />
     );
   const { view, overridden: fields } = overriddenViewOf(
@@ -1018,17 +1243,17 @@ export function ConfigurationBody(props: {
   const overridden = new Set(fields);
   return (
     <div className="ticket-config">
-      <ConfigurationSettingsGrid
-        settings={view.settings}
-        overridden={overridden}
-      />
-      <ConfigurationInstructions
-        brief={view.brief}
-        work={view.work}
-        review={view.review}
-        overridden={overridden}
-      />
+      <ConfigurationSubsection title="Work">
+        <LegacyWorkTask view={view} overridden={overridden} />
+      </ConfigurationSubsection>
       <ConfigurationEvaluations evaluations={view.evaluations} />
+      {props.landing === undefined ? null : (
+        <ConfigurationSubsection title="Finalization">
+          <div className="ticket-config-settings">
+            <FinalizationLanding landing={props.landing} />
+          </div>
+        </ConfigurationSubsection>
+      )}
       <ConfigurationOverridesUnplaced
         fields={fields.filter(
           (field) => !configurationPanelPlaces(view, field),
@@ -1054,6 +1279,7 @@ function ConfigurationPanel(props: {
   readonly overrides: TicketResponse["overrides"];
   readonly selection: TicketResponse["selection"];
   readonly following: TicketResponse["following"];
+  readonly landing: TicketBriefBody["finalization"];
 }): ReactNode {
   const stays = ticketFollowingSentence(props.following);
   const state = usePanelState(
@@ -1086,41 +1312,52 @@ function ConfigurationPanel(props: {
           configuration={state.value}
           overrides={props.overrides}
           selection={props.selection}
+          landing={props.landing}
         />
       ) : null}
     </Panel>
   );
 }
 
-export function TicketProvenance(props: {
+/** The revisions the ticket has had: the live one, the draft beside it, who
+ * filed it and what it was released under. */
+export function TicketRevisions(props: {
   readonly partition: PartitionIdentity;
   readonly state: PanelState<DraftResponse>;
   /** The ticket, absent until it is read. */
   readonly ticket: TicketResponse | undefined;
   readonly nowMs: number;
 }): ReactNode {
-  const released = props.ticket?.configurationRevision;
   return (
-    <>
-      <DataSection state={props.state}>
-        {(draft) => (
-          <ProvenanceSummary
-            draft={draft}
-            ticket={props.ticket}
-            nowMs={props.nowMs}
-          />
-        )}
-      </DataSection>
-      {released === undefined ? null : (
-        <ConfigurationPanel
+    <DataSection state={props.state}>
+      {(draft) => (
+        <RevisionSummary
           partition={props.partition}
-          revision={released}
-          version={props.ticket?.configurationVersion}
-          overrides={props.ticket?.overrides}
-          selection={props.ticket?.selection}
-          following={props.ticket?.following}
+          draft={draft}
+          ticket={props.ticket}
+          nowMs={props.nowMs}
         />
       )}
-    </>
+    </DataSection>
+  );
+}
+
+/** The configuration the live revision pins, drawn once the ticket is read. */
+export function TicketConfiguration(props: {
+  readonly partition: PartitionIdentity;
+  readonly ticket: TicketResponse | undefined;
+}): ReactNode {
+  const ticket = props.ticket;
+  if (ticket?.configurationRevision === undefined) return null;
+  return (
+    <ConfigurationPanel
+      partition={props.partition}
+      revision={ticket.configurationRevision}
+      version={ticket.configurationVersion}
+      overrides={ticket.overrides}
+      selection={ticket.selection}
+      following={ticket.following}
+      landing={ticket.brief?.finalization}
+    />
   );
 }

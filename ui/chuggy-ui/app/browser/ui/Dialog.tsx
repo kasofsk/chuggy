@@ -61,7 +61,8 @@ function DialogFoot(props: {
 
 export function Dialog(props: {
   readonly title: string;
-  readonly trigger: ReactNode;
+  /** The button that opens it; absent where the caller opens it from elsewhere. */
+  readonly trigger?: ReactNode;
   readonly triggerVariant?: ButtonVariant;
   readonly triggerSize?: ButtonSize;
   readonly triggerDisabled?: boolean;
@@ -91,16 +92,18 @@ export function Dialog(props: {
         if (open || !busy) props.onOpenChange(open);
       }}
     >
-      <RadixDialog.Trigger
-        disabled={props.triggerDisabled ?? false}
-        aria-label={props.triggerNamed}
-        className={buttonLookClassName({
-          variant: props.triggerVariant,
-          size: props.triggerSize ?? "sm",
-        })}
-      >
-        {props.trigger}
-      </RadixDialog.Trigger>
+      {props.trigger === undefined ? null : (
+        <RadixDialog.Trigger
+          disabled={props.triggerDisabled ?? false}
+          aria-label={props.triggerNamed}
+          className={buttonLookClassName({
+            variant: props.triggerVariant,
+            size: props.triggerSize ?? "sm",
+          })}
+        >
+          {props.trigger}
+        </RadixDialog.Trigger>
+      )}
       <RadixDialog.Portal>
         <div aria-hidden="true" className="fixed inset-0 z-10 bg-scrim" />
         <div className="pointer-events-none fixed inset-x-4 inset-y-6 z-20">

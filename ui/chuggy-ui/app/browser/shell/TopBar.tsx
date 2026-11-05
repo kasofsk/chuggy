@@ -15,13 +15,16 @@
 
 import { Link, useRouterState } from "@tanstack/react-router";
 import { Separator } from "radix-ui";
+import { Fragment } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { inboxCountLabel } from "../../core/inboxList.ts";
 import { projectAbilityRefused } from "../../core/projectAbilities.ts";
 import { projectLeadFound } from "../../core/projectLead.ts";
-import { navEntryCurrent, shellNav } from "../../core/shellNav.ts";
+import type { ShellCrumb } from "../../core/shellCrumbs.ts";
+import { shellCrumbs } from "../../core/shellCrumbs.ts";
+import { navEntryCurrent, navRoutes, shellNav } from "../../core/shellNav.ts";
 import type { NavEntry } from "../../core/shellNav.ts";
 import { sessionStateTone } from "../../core/tones.ts";
 import type { Tone } from "../../core/tones.ts";
@@ -107,9 +110,11 @@ function TopBarNav(props: {
   return (
     <nav aria-label="Console" className="min-w-0">
       <ul className="topbar-nav">
-        {entries.map((entry) => (
-          <TopBarNavEntry key={entry.id} entry={entry} />
-        ))}
+        {entries
+          .filter((entry) => entry.id !== "inbox")
+          .map((entry) => (
+            <TopBarNavEntry key={entry.id} entry={entry} />
+          ))}
         {projectAbilityRefused(abilities, "mutate") ? (
           <li className="px-3">
             <Pill tone="neutral">View only</Pill>
@@ -120,10 +125,46 @@ function TopBarNav(props: {
   );
 }
 
+/** The inbox beside the gear, with a badge for what waits in it. */
+function TopBarInbox(props: {
+  readonly partition: PartitionIdentity;
+}): ReactNode {
+  const yields = useChatPaneYields();
+  const count = inboxCountLabel(useInboxRows(props.partition).rows);
+  const current = useRouterState({
+    select: (router) =>
+      router.location.pathname.startsWith(
+        `/${encodeURIComponent(props.partition.tenant)}/${encodeURIComponent(props.partition.project)}/inbox`,
+      ),
+  });
+  return (
+    <Link
+      to={navRoutes.inbox}
+      params={props.partition}
+      onClick={yields}
+      aria-current={current ? "page" : undefined}
+      aria-label={count === undefined ? "Inbox" : `Inbox, ${count} unread`}
+      className="topbar-inbox"
+    >
+      <NavIcon id="inbox" />
+      {count === undefined ? null : (
+        <span aria-hidden="true" className="topbar-inbox-badge">
+          {count}
+        </span>
+      )}
+    </Link>
+  );
+}
+
+/** The toggle for a page's details, where a page filled them. */
+function TopBarDetails(): ReactNode {
+  return useShellSlotsFilled().details ? <DetailsToggle /> : null;
+}
+
 function TopBarPage(): ReactNode {
   const filled = useShellSlotsFilled();
   const holdTopBar = useShellSlotHolder("topBar");
-  if (!filled.topBar && !filled.details) return null;
+  if (!filled.topBar) return null;
   return (
     <>
       <Separator.Root decorative className="h-px bg-edge" />
@@ -132,10 +173,53 @@ function TopBarPage(): ReactNode {
           ref={holdTopBar}
           className="flex min-w-0 flex-1 items-center gap-3"
         />
-        {filled.details ? <DetailsToggle /> : null}
       </div>
     </>
   );
+}
+
+/** The trail's crumbs, each level that has a page linking to it and the last
+ * one named. */
+function TopBarTrail(props: {
+  readonly crumbs: readonly ShellCrumb[];
+}): ReactNode {
+  const { crumbs } = props;
+  return (
+    <nav aria-label="Breadcrumb" className="topbar-crumbs">
+      {crumbs.map((crumb, at) => {
+        const last = at === crumbs.length - 1;
+        return (
+          <Fragment key={at}>
+            {at === 0 ? null : <span aria-hidden="true">/</span>}
+            {crumb.link === undefined || last ? (
+              <span
+                className="topbar-crumb"
+                {...(last ? { "aria-current": "page" as const } : {})}
+              >
+                {crumb.label}
+              </span>
+            ) : (
+              <Link
+                to={crumb.link.to}
+                params={crumb.link.params}
+                className="topbar-crumb"
+              >
+                {crumb.label}
+              </Link>
+            )}
+          </Fragment>
+        );
+      })}
+    </nav>
+  );
+}
+
+/** Where the reader is in a project, workspace to item. */
+function TopBarCrumbs(props: {
+  readonly partition: PartitionIdentity;
+}): ReactNode {
+  const pathname = useRouterState({ select: (r) => r.location.pathname });
+  return <TopBarTrail crumbs={shellCrumbs(props.partition, pathname)} />;
 }
 
 export function TopBar(props: {
@@ -148,13 +232,28 @@ export function TopBar(props: {
     <div className="grid">
       <header className="topbar">
         <div className="topbar-main">
-          <div className="topbar-project">
-            <ProjectSwitcher
-              partition={partition}
-              {...(props.chat === undefined ? {} : { chat: props.chat })}
+          {partition !== undefined ? (
+            <TopBarCrumbs partition={partition} />
+          ) : (
+            <TopBarTrail
+              crumbs={
+                props.chat === undefined
+                  ? []
+                  : [{ label: props.chat }, { label: "chat" }]
+              }
             />
-          </div>
-          <div className="flex shrink-0 items-center justify-end">
+          )}
+          <div className="flex shrink-0 items-center justify-end gap-2">
+            {partition === undefined ? null : <TopBarDetails />}
+            <div className="topbar-project">
+              <ProjectSwitcher
+                partition={partition}
+                {...(props.chat === undefined ? {} : { chat: props.chat })}
+              />
+            </div>
+            {partition === undefined ? null : (
+              <TopBarInbox partition={partition} />
+            )}
             <SettingsMenu partition={partition} />
           </div>
         </div>

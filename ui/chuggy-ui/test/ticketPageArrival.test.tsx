@@ -174,19 +174,16 @@ function cyclesDrawn(): number {
   return document.querySelectorAll(".ledger-group").length;
 }
 
-/** Opens the Brief row, which the page draws closed, and counts the brief. */
-async function briefOpened(): Promise<number> {
-  await turned(() => {
-    screen.getByRole("button", { name: /^Brief/u }).click();
-  });
+/** Counts the brief's intent as the page draws it. */
+function briefDrawn(): number {
   return screen.getAllByText(intent).length;
 }
 
 test("a frame carrying the project's row leaves the ledger grouped and the brief drawn", async () => {
   const server = drawn();
   await settled();
-  const briefDrawn = await briefOpened();
-  expect(briefDrawn).toBeGreaterThan(0);
+  const held = briefDrawn();
+  expect(held).toBeGreaterThan(0);
   expect(cyclesDrawn()).toBe(3);
 
   await turned(() => {
@@ -203,13 +200,13 @@ test("a frame carrying the project's row leaves the ledger grouped and the brief
   expect(screen.getAllByText("Evaluating").length).toBeGreaterThan(0);
   expect(screen.queryByText("Ungrouped · program not loaded")).toBeNull();
   expect(cyclesDrawn()).toBe(3);
-  expect(screen.getAllByText(intent)).toHaveLength(briefDrawn);
+  expect(screen.getAllByText(intent)).toHaveLength(held);
 });
 
 test("an action's confirmed row leaves the ledger grouped and the brief drawn", async () => {
   drawn();
   await settled();
-  const briefDrawn = await briefOpened();
+  const held = briefDrawn();
 
   await turned(() => {
     screen.getByRole("button", { name: "Resume" }).click();
@@ -219,7 +216,7 @@ test("an action's confirmed row leaves the ledger grouped and the brief drawn", 
   expect(screen.getAllByText("Evaluating").length).toBeGreaterThan(0);
   expect(screen.queryByText("Ungrouped · program not loaded")).toBeNull();
   expect(cyclesDrawn()).toBe(3);
-  expect(screen.getAllByText(intent)).toHaveLength(briefDrawn);
+  expect(screen.getAllByText(intent)).toHaveLength(held);
 });
 
 test("the page asks the dispatch view for the page that would hold its own ticket", async () => {
@@ -231,7 +228,7 @@ test("the page asks the dispatch view for the page that would hold its own ticke
 test("a dispatch's confirmed row leaves the ledger grouped and the brief drawn", async () => {
   drawn(pendingRead, dispatchedRow, candidateView);
   await settled();
-  const briefDrawn = await briefOpened();
+  const held = briefDrawn();
   expect(cyclesDrawn()).toBe(3);
 
   await turned(() => {
@@ -242,7 +239,7 @@ test("a dispatch's confirmed row leaves the ledger grouped and the brief drawn",
   expect(screen.getAllByText("Working").length).toBeGreaterThan(0);
   expect(screen.queryByText("Ungrouped · program not loaded")).toBeNull();
   expect(cyclesDrawn()).toBe(3);
-  expect(screen.getAllByText(intent)).toHaveLength(briefDrawn);
+  expect(screen.getAllByText(intent)).toHaveLength(held);
 });
 
 test("a ticket returned to while the stream holds its position is not read again, and draws what a frame wrote while it was left", async () => {

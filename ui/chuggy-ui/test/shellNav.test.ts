@@ -16,7 +16,6 @@ import {
   shellNav,
   shellSetupNav,
 } from "../app/core/shellNav.ts";
-import { abilitiesEvery, abilitiesNone } from "./projectAbilitiesFixture.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -32,7 +31,6 @@ test("every entry names a route of the partition and carries its params", () => 
     "inbox",
     "lead",
     "catalog",
-    "ticket-new",
     "settings",
     "repositories",
     "runners",
@@ -55,24 +53,6 @@ test("the inbox count and the lead's standing are drawn only where a read suppli
   });
 });
 
-function entryIds(abilities: Parameters<typeof shellNav>[0]["abilities"]) {
-  return shellNav({ partition: atlas, abilities }).map((entry) => entry.id);
-}
-
-test("New ticket is left out only for a reader the abilities read said may not mutate", () => {
-  expect(entryIds({ ...abilitiesEvery, mutate: false })).toStrictEqual([
-    "overview",
-    "inbox",
-    "lead",
-    "catalog",
-  ]);
-  expect(entryIds(abilitiesEvery).at(-1)).toBe("ticket-new");
-  expect(entryIds({ ...abilitiesNone, mutate: true }).at(-1)).toBe(
-    "ticket-new",
-  );
-  expect(entryIds(undefined).at(-1)).toBe("ticket-new");
-});
-
 function currentAt(pathname: string): readonly string[] {
   return [...shellNav({ partition: atlas }), ...shellSetupNav(atlas)]
     .filter((entry) => navEntryCurrent(entry, pathname))
@@ -92,10 +72,10 @@ test("each screen is current on its own address alone", () => {
   ]);
 });
 
-test("a ticket's page and its edit belong to Tickets, and a new one to New ticket", () => {
+test("a ticket's page and its edit belong to Tickets, and a new one to none", () => {
   expect(currentAt("/acme/atlas/tickets/7")).toStrictEqual(["overview"]);
   expect(currentAt("/acme/atlas/tickets/7/edit")).toStrictEqual(["overview"]);
-  expect(currentAt("/acme/atlas/tickets/new")).toStrictEqual(["ticket-new"]);
+  expect(currentAt("/acme/atlas/tickets/new")).toStrictEqual([]);
   expect(currentAt("/acme/atlas/tickets/")).toStrictEqual([]);
 });
 

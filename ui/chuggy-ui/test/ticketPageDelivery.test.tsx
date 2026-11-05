@@ -150,33 +150,24 @@ async function drawn(
   return view.container;
 }
 
-/** The ids of the rows under the ledger, in the order the page draws them. */
+/** Which of the page's conditional parts are drawn: Delivery, once the read has
+ * something to say. */
 function rowsDrawn(container: HTMLElement): readonly string[] {
-  return [...container.querySelectorAll("section.ticket-section")].map(
-    (row) => row.id,
-  );
+  return container.querySelector("#ticket-delivery") === null
+    ? []
+    : ["delivery"];
 }
 
 function deliveryRow(container: HTMLElement): HTMLElement {
-  const row = container.querySelector<HTMLElement>("section#delivery");
-  if (row === null) throw new Error("no Delivery row drawn");
+  const row = container.querySelector("#ticket-delivery")?.closest("section");
+  if (row === null || row === undefined) throw new Error("no Delivery drawn");
   return row;
 }
 
-/** The Delivery row once pressed open, which the page draws closed. */
+/** The Delivery section, which the page always draws open. */
 async function deliveryOpened(container: HTMLElement): Promise<HTMLElement> {
-  const row = deliveryRow(container);
-  await turned(() => {
-    within(row).getByRole("button").click();
-  });
   await settled();
-  return row;
-}
-
-/** What the details pane's anchor to the row reads as, where it has one. */
-function anchorSaid(container: HTMLElement): string | null | undefined {
-  return container.querySelector('nav.sections a[href="#delivery"]')
-    ?.textContent;
+  return deliveryRow(container);
 }
 
 function linesDrawn(row: HTMLElement): readonly HTMLElement[] {
@@ -194,40 +185,27 @@ function lineSaid(line: HTMLElement): readonly (string | null | undefined)[] {
   ];
 }
 
-test("a ticket that has landed nowhere draws no Delivery row and no anchor to one", async () => {
+test("a ticket that has landed nowhere draws no Delivery", async () => {
   const container = await drawn(() =>
     answer({ repository: null, commit: null, actions: [] }),
   );
-  expect(rowsDrawn(container)).toEqual(["brief", "usage", "provenance"]);
+  expect(rowsDrawn(container)).toEqual([]);
   expect(screen.queryByText("Delivery")).toBeNull();
-  expect(
-    container.querySelector('nav.sections a[href="#delivery"]'),
-  ).toBeNull();
 });
 
 test("a landed ticket whose repository declares nothing draws no Delivery row", async () => {
   const container = await drawn(() => answer(deliveryLandedWith([])));
-  expect(rowsDrawn(container)).toEqual(["brief", "usage", "provenance"]);
+  expect(rowsDrawn(container)).toEqual([]);
   expect(screen.queryByText("Delivery")).toBeNull();
 });
 
-test("a landed ticket draws Delivery after Provenance, closed, its lines counted by mark", async () => {
+test("a landed ticket draws Delivery under Activity, its lines drawn", async () => {
   const container = await drawn(() => answer(deliveryEveryMark));
-  expect(rowsDrawn(container)).toEqual([
-    "brief",
-    "usage",
-    "provenance",
-    "delivery",
-  ]);
+  expect(rowsDrawn(container)).toEqual(["delivery"]);
   expect(reachAsked).toEqual([
     `${nativeHttpBasePath}/tenants/acme/projects/atlas/tickets/11/action-reach`,
   ]);
-  const trigger = within(deliveryRow(container)).getByRole("button");
-  expect(trigger.getAttribute("aria-expanded")).toBe("false");
-  expect(trigger.textContent).toBe(
-    "Delivery1 Failed · 1 Rolled back · 1 Unknown · 1 Waiting · 1 Reached",
-  );
-  expect(linesDrawn(deliveryRow(container))).toEqual([]);
+  expect(linesDrawn(deliveryRow(container))).toHaveLength(5);
 });
 
 test("the row opened is one line an action in the read's order: its name, its word in its tone, its report's commit", async () => {
@@ -318,15 +296,7 @@ test("a read that fails is drawn as a failed read in this row, and the page arou
   const container = await drawn(() =>
     answer({ error: { code: "InternalError" } }, 500),
   );
-  expect(rowsDrawn(container)).toEqual([
-    "brief",
-    "usage",
-    "provenance",
-    "delivery",
-  ]);
-  expect(within(deliveryRow(container)).getByRole("button").textContent).toBe(
-    "DeliveryNot read",
-  );
+  expect(rowsDrawn(container)).toEqual(["delivery"]);
   expect(readFailedLines()).toEqual([]);
   const row = await deliveryOpened(container);
   expect(readFailedLines(row)).toStrictEqual(["Not read · Server error"]);
@@ -357,7 +327,7 @@ test("a read still out draws no row and holds nothing else of the page back, and
         answering = resolve;
       }),
   );
-  expect(rowsDrawn(container)).toEqual(["brief", "usage", "provenance"]);
+  expect(rowsDrawn(container)).toEqual([]);
   expect(container.querySelector(".ticket-status")?.textContent).toContain(
     "Done",
   );
@@ -366,30 +336,7 @@ test("a read still out draws no row and holds nothing else of the page back, and
     answering(answer(deliveryLandedWith([deliveryFailedBare])));
   });
   await settled();
-  expect(within(deliveryRow(container)).getByRole("button").textContent).toBe(
-    "Delivery1 Failed",
-  );
-});
-
-test("the details pane points at Delivery while its row is drawn, and following it opens the row", async () => {
-  const container = await drawn(() => answer(deliveryEveryMark));
-  const anchors = [...container.querySelectorAll("nav.sections a")];
-  expect(anchors.map((anchor) => anchor.getAttribute("href"))).toEqual([
-    "#cycles",
-    "#brief",
-    "#usage",
-    "#provenance",
-    "#delivery",
-  ]);
-  const anchor = anchors.at(-1) as HTMLElement;
-  expect(anchor.textContent).toBe(
-    "Delivery1 Failed · 1 Rolled back · 1 Unknown · 1 Waiting · 1 Reached",
-  );
-  await turned(() => {
-    anchor.click();
-  });
-  await settled();
-  expect(linesDrawn(deliveryRow(container))).toHaveLength(5);
+  expect(linesDrawn(deliveryRow(container))).toHaveLength(1);
 });
 
 test("a re-read the page makes for another reason asks again whatever the row last said, and clears an Unknown", async () => {
@@ -397,8 +344,9 @@ test("a re-read the page makes for another reason asks again whatever the row la
   const container = await drawn(() =>
     answer(deliveryLandedWith([deliveryAction("rig", "Rig", reach)])),
   );
-  const trigger = within(deliveryRow(container)).getByRole("button");
-  expect(trigger.textContent).toBe("Delivery1 Unknown");
+  const reachSaid = (): string | null | undefined =>
+    deliveryRow(container).querySelector(".pill")?.textContent;
+  expect(reachSaid()).toBe("Unknown");
   reach = "Reached";
   await turned(() => {
     stream.push(
@@ -411,7 +359,7 @@ test("a re-read the page makes for another reason asks again whatever the row la
   });
   await settled();
   expect(reachAsked).toHaveLength(2);
-  expect(trigger.textContent).toBe("Delivery1 Reached");
+  expect(reachSaid()).toBe("Reached");
 });
 
 /** What the read answers of a landed ticket whose one action has reached it. */
@@ -429,23 +377,21 @@ test("another ticket's page on the same client starts unread, asks its own route
           answering = resolve;
         }),
   );
-  const said = (): string | null =>
-    within(deliveryRow(container)).getByRole("button").textContent;
-  expect(said()).toBe("Delivery1 Reached");
+  const said = (): string | null | undefined =>
+    deliveryRow(container).querySelector(".pill")?.textContent;
+  expect(said()).toBe("Reached");
 
   await addressedAt(12);
-  expect(rowsDrawn(container)).toEqual(["brief", "usage", "provenance"]);
-  expect(anchorSaid(container)).toBeUndefined();
+  expect(rowsDrawn(container)).toEqual([]);
   expect(reachAsked).toEqual([route(11), route(12)]);
   await turned(() => {
     answering(answer(deliveryLandedWith([deliveryFailedBare])));
   });
   await settled();
-  expect(said()).toBe("Delivery1 Failed");
-  expect(anchorSaid(container)).toBe("Delivery1 Failed");
+  expect(said()).toBe("Failed");
 
   await addressedAt(11);
-  expect(said()).toBe("Delivery1 Reached");
+  expect(said()).toBe("Reached");
 });
 
 /** The read alone, asked by nothing but its own clock. */
@@ -538,31 +484,26 @@ test("the row keeps what it showed while a poll is out, and after one that faile
   expect(held.lines()).toEqual(["Rig Reached"]);
 });
 
-test("an answer kept while every later read fails is said to be stale on the closed row and the anchor, its lines kept, until a read answers", async () => {
+test("an answer kept while every later read fails is said to be stale, its lines kept, until a read answers", async () => {
   vi.useFakeTimers({ shouldAdvanceTime: true });
   let next: () => Response = reachedOnce;
   const container = await drawn(() => next());
-  const trigger = within(deliveryRow(container)).getByRole("button");
-  expect(trigger.textContent).toBe("Delivery1 Reached");
-  expect(anchorSaid(container)).toBe("Delivery1 Reached");
+  const lines = (): readonly (readonly (string | null | undefined)[])[] =>
+    linesDrawn(deliveryRow(container)).map(lineSaid);
+  expect(lines()).toEqual([["Rig", "Reached", "pill pill-pass", "43a251a"]]);
 
   next = () => answer({ error: { code: "InternalError" } }, 500);
   await clockMoved(ticketDeliveryPolledMs);
   await settled();
   expect(reachAsked).toHaveLength(2);
-  expect(trigger.textContent).toBe("Delivery1 Reached");
-  expect(anchorSaid(container)).toBe("Delivery1 Reached");
+  expect(lines()).toEqual([["Rig", "Reached", "pill pill-pass", "43a251a"]]);
 
   for (let poll = 1; poll < 20; poll += 1)
     await clockMoved(ticketDeliveryPolledMs);
   await settled();
   expect(reachAsked).toHaveLength(21);
-  expect(trigger.textContent).toBe("DeliveryStale · 1 Reached");
-  expect(anchorSaid(container)).toBe("DeliveryStale · 1 Reached");
   const row = await deliveryOpened(container);
-  expect(linesDrawn(row).map(lineSaid)).toEqual([
-    ["Rig", "Reached", "pill pill-pass", "43a251a"],
-  ]);
+  expect(lines()).toEqual([["Rig", "Reached", "pill pill-pass", "43a251a"]]);
   expect(row.querySelector(".freshness")?.className).toBe(
     "freshness freshness-stale",
   );
@@ -570,8 +511,8 @@ test("an answer kept while every later read fails is said to be stale on the clo
   next = () => answer(deliveryLandedWith([deliveryFailedBare]));
   await clockMoved(ticketDeliveryPolledMs);
   await settled();
-  expect(trigger.textContent).toBe("Delivery1 Failed");
-  expect(anchorSaid(container)).toBe("Delivery1 Failed");
+  expect(linesDrawn(deliveryRow(container))).toHaveLength(1);
+  expect(lines()[0]?.[1]).toBe("Failed");
 });
 
 test("a page whose every read answers in one request, each as slowly as one request can, never says its answer is stale", async () => {
@@ -587,15 +528,16 @@ test("a page whose every read answers in one request, each as slowly as one requ
   );
   await clockMoved(slowestMs);
   await settled();
-  const trigger = within(deliveryRow(container)).getByRole("button");
   const said = new Set<string | null | undefined>();
   const pollsWatched = 4;
   const watchedMs = pollsWatched * (ticketDeliveryPolledMs + slowestMs);
   for (let passedMs = 0; passedMs < watchedMs; passedMs += 1_000) {
     await clockMoved(1_000);
-    said.add(trigger.textContent).add(anchorSaid(container));
+    said.add(deliveryRow(container).querySelector(".freshness")?.className);
   }
   await settled();
   expect(reachAsked).toHaveLength(1 + pollsWatched);
-  expect([...said]).toEqual(["Delivery1 Reached"]);
+  expect([...said].some((held) => held?.includes("stale") === true)).toBe(
+    false,
+  );
 });
