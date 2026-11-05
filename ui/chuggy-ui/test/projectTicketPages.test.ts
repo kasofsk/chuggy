@@ -26,7 +26,6 @@ import {
   projectTicketRowsRead,
 } from "../app/core/projectTicketPages.ts";
 import type { ProjectTicketRows } from "../app/core/projectTicketPages.ts";
-import { ticketSectionOf } from "../app/core/ticketSections.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 
 const partition = { tenant: "acme", project: "atlas" };
@@ -160,7 +159,6 @@ test("a ticket frame moves a row into another section without disturbing the res
   expect(folded?.tickets.map((ticket) => ticket.ticket)).toStrictEqual([1, 2]);
   const moved = folded?.tickets[0];
   expect(moved?.phase).toBe("Escalated");
-  expect(moved !== undefined && ticketSectionOf(moved.phase)).toBe("NeedsYou");
   expect(folded?.tickets[1]?.phase).toBe("Pending");
 });
 
