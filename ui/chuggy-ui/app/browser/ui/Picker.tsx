@@ -91,7 +91,9 @@ export function Picker(props: {
           <span className="visually-hidden">{props.label}</span> {props.glyph}
           <span
             className={
-              props.iconOnly === true ? "visually-hidden" : "min-w-0 truncate"
+              props.iconOnly === true
+                ? "visually-hidden"
+                : "picker-text min-w-0 truncate"
             }
           >
             {chosen?.text ?? props.placeholder ?? props.value}

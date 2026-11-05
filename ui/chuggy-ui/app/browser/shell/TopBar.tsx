@@ -243,7 +243,7 @@ export function TopBar(props: {
               }
             />
           )}
-          <div className="flex shrink-0 items-center justify-end gap-2">
+          <div className="topbar-actions flex shrink-0 items-center justify-end">
             {partition === undefined ? null : <TopBarDetails />}
             <div className="topbar-project">
               <ProjectSwitcher

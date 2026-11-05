@@ -23,8 +23,6 @@
     flex-wrap: wrap;
     align-items: center;
     gap: var(--space-2);
-    padding-bottom: var(--space-3);
-    border-bottom: var(--hairline) solid var(--edge);
   }
 
   .ticket-state-count-label {
@@ -156,6 +154,10 @@
     background: var(--surface-1);
     border: var(--hairline) solid var(--edge);
     border-bottom: 0;
+  }
+
+  .ticket-list-item:first-child .ticket-list-row {
+    border-top: 0;
   }
 
   .ticket-list-item:last-child .ticket-list-row {

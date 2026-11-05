@@ -156,10 +156,14 @@
     flex-direction: column;
     gap: var(--space-1);
     min-width: 0;
-    padding: var(--space-2) var(--space-4);
+    padding: var(--space-2) var(--topbar-inline);
+    --topbar-inline: var(--space-4);
   }
 
   .topbar-main {
+    margin: calc(-1 * var(--space-2)) calc(-1 * var(--topbar-inline)) 0;
+    padding: var(--space-2) var(--topbar-inline);
+    background: var(--surface-1);
     display: flex;
     align-items: center;
     justify-content: space-between;
@@ -170,6 +174,26 @@
   .topbar-project {
     display: flex;
     min-width: 0;
+  }
+
+  .topbar-actions {
+    gap: var(--space-2);
+  }
+
+  .topbar-actions .btn,
+  .topbar-actions .topbar-inbox {
+    padding: var(--space-2);
+    border-color: transparent;
+    border-radius: var(--radius-2);
+    background: transparent;
+    color: var(--ink-3);
+  }
+
+  .topbar-actions .btn:hover,
+  .topbar-actions .topbar-inbox:hover,
+  .topbar-actions .btn[aria-expanded="true"] {
+    background: var(--surface-2);
+    color: var(--ink-1);
   }
 
   .topbar-crumbs {
@@ -200,8 +224,6 @@
   .topbar-crumb[aria-current="page"] {
     flex-shrink: 0;
     max-width: 50%;
-    color: var(--ink-1);
-    font-weight: var(--weight-strong);
   }
 
   .topbar-inbox {
@@ -283,7 +305,19 @@
 
   @media (max-width: 40em) {
     .topbar {
-      padding-inline: var(--space-3);
+      --topbar-inline: var(--space-3);
+    }
+
+    .topbar-project .picker-text {
+      display: none;
+    }
+
+    .topbar-crumbs {
+      font-size: var(--text-sm);
+    }
+
+    .topbar-actions {
+      gap: 0;
     }
 
     .topbar-nav {
