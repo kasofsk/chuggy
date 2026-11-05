@@ -17,17 +17,21 @@
   }
 
   .ticket-list-controls {
-    --control-height: calc(var(--space-6) + var(--space-1));
+    --control-height: calc(var(--space-5) + var(--space-1));
     min-width: 0;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--space-2);
     position: sticky;
-    top: calc(-1 * var(--space-2));
+    top: 0;
     z-index: 1;
-    margin-top: calc(-1 * var(--space-2));
-    padding-block: var(--space-4) var(--space-2);
+    margin-top: calc(-1 * var(--space-4));
+    margin-bottom: calc(var(--space-2) - var(--space-3));
+    box-sizing: border-box;
+    min-block-size: calc(var(--height-icon) + var(--space-2) + var(--hairline));
+    padding-block: var(--space-2) var(--space-1);
+    border-bottom: var(--hairline) solid var(--edge);
     background: var(--surface-0);
     transition:
       transform var(--duration-2) var(--ease-out),
@@ -46,10 +50,6 @@
     }
   }
 
-  .ticket-state-count-label {
-    display: none;
-  }
-
   .ticket-list-counts {
     display: flex;
     flex: 1 1 0;
@@ -66,11 +66,10 @@
     margin-inline-start: 0;
     gap: var(--space-2);
     box-sizing: border-box;
-    width: var(--control-height);
+    width: auto;
     height: var(--control-height);
-    padding: 0;
-    border-radius: var(--radius-circle);
-    font-size: var(--text-sm);
+    padding: 0 var(--space-2);
+    font-size: var(--text-xs);
   }
 
   .ticket-list-search {
@@ -82,7 +81,7 @@
     overflow: hidden;
     background: var(--surface-1);
     border: var(--hairline) solid var(--edge-control);
-    border-radius: var(--radius-3);
+    border-radius: calc(var(--control-height) / 2);
   }
 
   .ticket-list-search:has(:focus-visible) {
@@ -138,6 +137,22 @@
     flex: none;
     box-sizing: border-box;
     height: var(--control-height);
+  }
+
+  .ticket-list-selects > button,
+  .ticket-list-search > .ticket-list-search-toggle {
+    justify-content: center;
+    width: var(--control-height);
+    min-width: var(--control-height);
+    padding: 0;
+    border-radius: var(--radius-circle);
+  }
+
+  .ticket-list-selects > button svg,
+  .ticket-list-search-toggle svg {
+    flex: none;
+    width: 1rem;
+    height: 1rem;
   }
 
   .ticket-list-search > .ticket-list-search-toggle {
@@ -449,9 +464,19 @@
       margin-inline: calc(-1 * var(--space-4));
     }
 
+    .ticket-list-state.ticket-state-count {
+      width: var(--control-height);
+      padding: 0;
+      border-radius: var(--radius-circle);
+    }
+
+    .ticket-state-count-label {
+      display: none;
+    }
+
     .ticket-list-controls {
       margin-inline: calc(-1 * var(--space-4));
-      padding: var(--space-4) var(--space-4) var(--space-3);
+      padding: var(--space-3) var(--space-4) var(--space-2);
     }
 
     .ticket-list-row {
