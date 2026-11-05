@@ -1149,6 +1149,10 @@
                   "additionalProperties": false
                 }
               ]
+            },
+            "landing": {
+              "type": "string",
+              "enum": ["Direct", "Serialized"]
             }
           },
           "required": ["intent", "links"],
@@ -1900,6 +1904,10 @@
                   "additionalProperties": false
                 }
               ]
+            },
+            "landing": {
+              "type": "string",
+              "enum": ["Direct", "Serialized"]
             }
           },
           "required": ["intent", "links"],
