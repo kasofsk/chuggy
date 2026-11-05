@@ -481,8 +481,8 @@ const releasedSourceColumns = [
   "ref",
 ];
 
-/** The columns the door that builds an obligation reads a release back out of. */
-const releasedEntryColumns = ["tenant", "project", "entry"];
+/** The columns the door that builds an obligation reads a release back out of, and the position the finalizer's rework door bounds its read by. */
+const releasedEntryColumns = ["tenant", "project", "entry", "seq"];
 
 test("the two relations a release fills are open to the roles that write and read them and no others", async () => {
   await migratedDatabase("released_grants", async (subject) => {

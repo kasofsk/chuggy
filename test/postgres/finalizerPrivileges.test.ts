@@ -15,6 +15,7 @@ import {
   finalizerRole,
   schedulerRole,
   selectorServiceRole,
+  ticketEvaluationReworkedSinceFunction,
   ticketServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
 import {
@@ -437,7 +438,7 @@ test("the finalizer's read surface is exactly the relations its view is gathered
   );
 });
 
-test("the finalizer's three doors are its own and no prior role may open them", async () => {
+test("the finalizer's four doors are its own and no prior role may open them", async () => {
   const doors = [
     [
       `SELECT * FROM ${finalizationFunction}('t','p','r','a','FinalizationNeedsWork','MergeConflict',1,'e','o','s')`,
@@ -450,6 +451,10 @@ test("the finalizer's three doors are its own and no prior role may open them", 
     [
       `SELECT * FROM ${holdFunction}('t','p','r','RepositoryUnbound','o',1,1,'e')`,
       holdFunction,
+    ],
+    [
+      `SELECT * FROM ${ticketEvaluationReworkedSinceFunction}('t','p',1,0)`,
+      ticketEvaluationReworkedSinceFunction,
     ],
   ] as readonly (readonly [string, string])[];
   for (const [door, name] of doors) {
@@ -464,14 +469,21 @@ test("the finalizer's three doors are its own and no prior role may open them", 
   }
 });
 
-test("all three doors are security definer, boundary-owned and search-path pinned", async () => {
+test("all four doors are security definer, boundary-owned and search-path pinned", async () => {
   assert.deepEqual(
     await harness.query(
       `SELECT p.proname, p.prosecdef, r.rolname AS owner,
               array_to_string(p.proconfig, ',') AS settings
          FROM pg_proc p JOIN pg_roles r ON r.oid = p.proowner
         WHERE p.proname = ANY($1) ORDER BY p.proname`,
-      [[finalizationFunction, approvalRequestFunction, holdFunction]],
+      [
+        [
+          finalizationFunction,
+          approvalRequestFunction,
+          holdFunction,
+          ticketEvaluationReworkedSinceFunction,
+        ],
+      ],
     ),
     [
       {
@@ -488,6 +500,12 @@ test("all three doors are security definer, boundary-owned and search-path pinne
       },
       {
         proname: finalizationFunction,
+        prosecdef: true,
+        owner: "chuggy_boundary_owner",
+        settings: "search_path=pg_catalog, public, pg_temp",
+      },
+      {
+        proname: ticketEvaluationReworkedSinceFunction,
         prosecdef: true,
         owner: "chuggy_boundary_owner",
         settings: "search_path=pg_catalog, public, pg_temp",
