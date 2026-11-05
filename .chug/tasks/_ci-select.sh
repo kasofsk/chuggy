@@ -71,9 +71,9 @@
 # sources and the tests whole.
 #
 # A GATE THAT READS NAMED PACKAGES FOLLOWS THEM, NOT THE PACKAGE FILES. Quint
-# is all `check-model` takes from them, so the lock moving selects it only
-# where the closure `.chug/tasks/_installed-inputs.sh` prints for quint moved
-# between the base and the tree, and a lock that cannot be read at either end
+# and the ticket package are all `check-model` takes from them, so the lock
+# moving selects it only where the closure `.chug/tasks/_installed-inputs.sh`
+# prints for them moved between the base and the tree, and a lock that cannot be read at either end
 # selects. A gate that reads the whole install is selected by any change to
 # the lock.
 

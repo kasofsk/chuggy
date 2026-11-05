@@ -592,6 +592,8 @@ check "the directed model selects the random replay" 0 "$RC" "stub check-random"
 # what any package gets: `flags` drops the flag npm derives from who asked for
 # each, and `hoisted` installs the copy quint's dependency gets under it, a
 # copy nothing here asks for taking its place at the root.
+# The commit the ticket package resolves to, a git dependency as the tree's is.
+lock_ticket=1
 lock_json() { # <quint> <grpc> <zod> <left-pad> [flags | hoisted]
 	lock_dev=', "dev": true'
 	lock_long=node_modules/long
@@ -600,7 +602,8 @@ lock_json() { # <quint> <grpc> <zod> <left-pad> [flags | hoisted]
 	hoisted) lock_long=node_modules/@grpc/grpc-js/node_modules/long ;;
 	esac
 	printf '{\n  "lockfileVersion": 3,\n  "packages": {\n'
-	printf '    "": { "devDependencies": { "@informalsystems/quint": "%s", "zod": "%s", "prettier": "3.0.0", "left-pad": "%s" } },\n' "$1" "$3" "$4"
+	printf '    "": { "devDependencies": { "@informalsystems/quint": "%s", "zod": "%s", "prettier": "3.0.0", "left-pad": "%s", "@kasofsk/chug-ticket-domain": "github:kasofsk/chug-ticket-domain" } },\n' "$1" "$3" "$4"
+	printf '    "node_modules/@kasofsk/chug-ticket-domain": { "version": "0.7.0", "resolved": "git+ssh://git@github.com/kasofsk/chug-ticket-domain.git#%s"%s },\n' "$lock_ticket" "$lock_dev"
 	printf '    "node_modules/@informalsystems/quint": { "version": "%s", "integrity": "sha512-quint-%s"%s, "dependencies": { "@grpc/grpc-js": "^%s" } },\n' "$1" "$1" "$lock_dev" "$2"
 	printf '    "node_modules/@grpc/grpc-js": { "version": "%s", "integrity": "sha512-grpc-%s"%s, "dependencies": { "long": "^5" } },\n' "$2" "$2" "$lock_dev"
 	printf '    "%s": { "version": "5.0.0", "integrity": "sha512-long-5"%s },\n' "$lock_long" "$lock_dev"
@@ -618,9 +621,9 @@ lock_json() { # <quint> <grpc> <zod> <left-pad> [flags | hoisted]
 # it declares one, takes Prettier's settings and what Prettier leaves out from
 # the root, and its bundler takes the root's compiler settings for the contract
 # it imports. The replays run under the module type the nearest manifest above
-# each file declares and the schema library the lockfile pins, which the
-# generated API imports, and no other package: a lock that moves another leaves
-# them out.
+# each file declares, the schema library the lockfile pins, which the
+# generated API imports, and the ticket package whose traces they replay, and no
+# other package: a lock that moves another leaves them out.
 stub_repo 0
 mkdir -p "$R/test/rig"
 lock_json 0.32.0 1.0.0 4.0.0 1.0.0 > "$R/package-lock.json"
@@ -640,6 +643,12 @@ commit_all schema
 run_last_commit
 check "a lockfile that moves the schema library selects the replay" 0 "$RC" "stub check-conformance"
 check "a lockfile that moves the schema library selects the random replay" 0 "$RC" "stub check-random"
+lock_ticket=2
+lock_json 0.32.0 1.0.0 4.0.1 1.0.1 > "$R/package-lock.json"
+commit_all ticket-package
+run_last_commit
+check "a lockfile that moves the ticket package selects the replay" 0 "$RC" "stub check-conformance"
+check "a lockfile that moves the ticket package selects the random replay" 0 "$RC" "stub check-random"
 printf '{ "private": true }\n' > "$R/package.json"
 commit_all manifest
 run_last_commit
@@ -913,9 +922,9 @@ run_last_commit
 refute "a setting committed at the root selects the console" 0 "$RC" "check-console: SKIPPED"
 check "a setting the console's tools read is no input of the model's gate" 0 "$RC" "check-model: SKIPPED"
 
-# THE MODEL'S GATE FOLLOWS QUINT: a lock that moves no package in quint's
-# closure leaves it out, and one that moves quint or a package quint depends on
-# brings it in, read past any colour or diff program git is configured with. A
+# THE MODEL'S GATE FOLLOWS QUINT AND THE TICKET PACKAGE: a lock that moves no
+# package in their closure leaves it out, and one that moves either or a package
+# quint depends on brings it in, read past any colour or diff program git is configured with. A
 # lock that cannot be read at either end, or compared at all, brings it in
 # too. The manifest is not one of its inputs.
 stub_repo 0
@@ -967,6 +976,11 @@ run_last_commit
 check "a lock that leaves quint alone is read the same way there" 0 "$RC" "check-model: SKIPPED"
 git -C "$R" config --unset diff.external
 git -C "$R" config --unset color.ui
+lock_ticket=3
+lock_json 0.33.0 1.1.0 4.0.0 1.0.2 > "$R/package-lock.json"
+commit_all ticket-package
+run_last_commit
+refute "a lock that moves the ticket package selects Quint" 0 "$RC" "check-model: SKIPPED"
 printf 'not a lock\n' > "$R/package-lock.json"
 commit_all unreadable
 run_last_commit
@@ -1366,10 +1380,11 @@ for gate in \
 	check "$id is keyed on the whole tree and what else its verdict reads" 0 "$RC" "run|--name|$id|$shape"
 	case "$shape" in "$common--|"*) ;; *) keyed=$((keyed + 1)) ;; esac
 done
-# The model's gate holds its model, its script and quint's installed closure,
-# and the ignored files among them, and nothing else of the tree.
-check "check-model is keyed on the model, its script and quint alone" 0 "$RC" \
-	"run|--name|check-model|--tool|$record_tool_node|--tool|$record_tool_installed '@informalsystems/quint'|--tool|$record_tool_ignored ':(glob)model/**/*.qnt' '.chug/tasks/check-model.sh'|--inputs|:(glob)model/**/*.qnt|--inputs|.chug/tasks/check-model.sh|--salt|$salt|--|./.chug/tasks/check-model.sh|"
+# The model's gate holds its model, its script and the installed closure of
+# quint and the ticket package, and the ignored files among them, and nothing
+# else of the tree.
+check "check-model is keyed on the model, its script, quint and the ticket package alone" 0 "$RC" \
+	"run|--name|check-model|--tool|$record_tool_node|--tool|$record_tool_installed '@informalsystems/quint' '@kasofsk/chug-ticket-domain'|--tool|$record_tool_ignored ':(glob)model/**/*.qnt' '.chug/tasks/check-model.sh'|--inputs|:(glob)model/**/*.qnt|--inputs|.chug/tasks/check-model.sh|--salt|$salt|--|./.chug/tasks/check-model.sh|"
 # Every other narrowed gate passes its inputs and scopes its ignored files to
 # them; a gate that runs the root's toolchain broadly holds the whole install
 # record, and one that runs named packages holds their closure.
@@ -1461,13 +1476,13 @@ pin_scope() { # <gate or suite> <what it holds of the install, or ""> <pathspec>
 		"run|--name|$pin_id|--tool|$record_tool_node|$pin_held--tool|$record_tool_ignored$pin_specs|$pin_places$pin_inputs--salt|$salt|"
 	OUT="$WORK/.log"
 }
-pin_scope check-model-api "$record_tool_installed '@informalsystems/quint' 'prettier'" \
+pin_scope check-model-api "$record_tool_installed '@informalsystems/quint' 'prettier' '@kasofsk/chug-ticket-domain'" \
 	':(glob)model/**/*.qnt' scripts/generate-model-api.ts src/generated src/domain/generated \
 	.chug/tasks/check-model-api.sh ':(glob)**/package.json' -- scripts/node_modules scripts/package.json
-pin_scope check-conformance "$record_tool_installed 'zod'" src/domain src/generated test/conformance \
+pin_scope check-conformance "$record_tool_installed 'zod' '@kasofsk/chug-ticket-domain'" src/domain src/generated test/conformance \
 	test/domain test/itf test/golden model .chug/tasks/check-conformance.sh ':(glob)**/package.json' \
 	-- src/node_modules src/package.json
-pin_scope check-random "$record_tool_installed 'zod'" src/domain src/generated test/random \
+pin_scope check-random "$record_tool_installed 'zod' '@kasofsk/chug-ticket-domain'" src/domain src/generated test/random \
 	test/conformance test/domain test/itf model .chug/tasks/check-random.sh ':(glob)**/package.json' \
 	-- src/node_modules src/package.json
 pin_scope check-console "$record_tool_install" ui src/contract test/fixtures/configurations \
@@ -1584,20 +1599,20 @@ pin_scope .chug/tasks/check-duplication.test.sh "$record_tool_install" \
 	.jscpd.json package.json
 pin_scope .chug/tasks/check-comments.test.sh "$record_tool_install" .chug/tasks/check-comments.test.sh \
 	.chug/tasks/check-comments.sh .chug/tasks/_suite.sh package.json
-pin_scope .chug/tasks/check-conformance.test.sh "$record_tool_installed 'zod'" \
+pin_scope .chug/tasks/check-conformance.test.sh "$record_tool_installed 'zod' '@kasofsk/chug-ticket-domain'" \
 	.chug/tasks/check-conformance.test.sh .chug/tasks/_suite.sh src/domain src/generated \
 	test/conformance test/domain test/itf test/golden model .chug/tasks/check-conformance.sh \
 	':(glob)**/package.json' -- src/node_modules src/package.json
-pin_scope .chug/tasks/check-model-api.test.sh "$record_tool_installed '@informalsystems/quint' 'prettier'" \
+pin_scope .chug/tasks/check-model-api.test.sh "$record_tool_installed '@informalsystems/quint' 'prettier' '@kasofsk/chug-ticket-domain'" \
 	.chug/tasks/check-model-api.test.sh .chug/tasks/_suite.sh ':(glob)model/**/*.qnt' \
 	scripts/generate-model-api.ts src/generated src/domain/generated .chug/tasks/check-model-api.sh \
 	':(glob)**/package.json' -- scripts/node_modules scripts/package.json
 pin_scope .chug/tasks/check-shell-quoting.test.sh "$record_tool_install"
-pin_scope .chug/tasks/check-random.test.sh "$record_tool_installed 'zod'" \
+pin_scope .chug/tasks/check-random.test.sh "$record_tool_installed 'zod' '@kasofsk/chug-ticket-domain'" \
 	.chug/tasks/check-random.test.sh .chug/tasks/_suite.sh src test .chug/tasks/check-conformance.sh \
 	src/domain src/generated test/random test/conformance test/domain test/itf model \
 	.chug/tasks/check-random.sh ':(glob)**/package.json' -- src/node_modules src/package.json
-pin_scope .chug/tasks/emit-goldens.test.sh "$record_tool_installed 'prettier' '@informalsystems/quint'" \
+pin_scope .chug/tasks/emit-goldens.test.sh "$record_tool_installed 'prettier' '@informalsystems/quint' '@kasofsk/chug-ticket-domain'" \
 	.chug/tasks/emit-goldens.test.sh .chug/tasks/emit-goldens.sh .chug/tasks/_suite.sh .gitignore \
 	.prettierignore ':(glob)model/**/*.qnt' .chug/tasks/check-model.sh
 pin_scope .chug/tasks/check-keto.test.sh "" .chug/tasks/check-keto.test.sh .chug/tasks/check-keto.sh \
