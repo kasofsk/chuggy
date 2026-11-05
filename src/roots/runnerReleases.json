@@ -5,8 +5,8 @@
     "integrity": "sha512-pHTnumVlEI7RVHGTIu9wubDB/4QW5sJe06SR59CNOBbPhcJ1CloLfpxkCGsr0YNZ57DcCYkki8ou1Ai/ZUCnWw=="
   },
   "chuggy-linux": {
-    "version": "0.45.0",
-    "url": "https://github.com/kasofsk/chuggy-linux/releases/download/v0.45.0/chuggy-linux-0.45.0.tgz",
-    "integrity": "sha512-kdtMEofQ+0Be090gdU06Edo3/jyOR5dj0QFLmCGecfl5+pvqN51USetZB5MudRWYSEmM9YgxE3L9bpTFhwtZBA=="
+    "version": "0.46.0",
+    "url": "https://github.com/kasofsk/chuggy-linux/releases/download/v0.46.0/chuggy-linux-0.46.0.tgz",
+    "integrity": "sha512-nmgikmsvG/Rr0BU6zH/jz0LXdhLgECA3pLE4ghigmhSDVnP1qmfqpQ7NBcjviepKz6gZH90RIWVZ1Ywp3aZEkQ=="
   }
 }
