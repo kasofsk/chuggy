@@ -10,7 +10,6 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { after, test } from "node:test";
 
-import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import { workerPlaneRole } from "../../src/adapters/postgres/schema.ts";
 import { postgresWorkerReportStore } from "../../src/adapters/postgres/workerPlane.ts";
 import type { AttemptReport } from "../../src/interpreter/executionScheduler.ts";
@@ -18,7 +17,7 @@ import {
   acceptResultManifest,
   type CanonicalManifest,
 } from "../../src/interpreter/resultManifest.ts";
-import { postgresHarnessUrl } from "./harness.ts";
+import { postgresHarnessRolePool } from "./harness.ts";
 import {
   schedulerClaimFor,
   schedulerDeclaredSource,
@@ -30,9 +29,7 @@ import {
 } from "./schedulerHarness.ts";
 
 const rig = await schedulerRigOpen();
-const workerUrl = new URL(postgresHarnessUrl());
-workerUrl.searchParams.set("options", `-c role=${workerPlaneRole}`);
-const workerPool = postgresPool(workerUrl.toString());
+const workerPool = postgresHarnessRolePool(workerPlaneRole);
 
 after(async () => {
   await workerPool.end();

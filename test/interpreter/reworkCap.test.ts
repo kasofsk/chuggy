@@ -20,16 +20,10 @@ import {
 } from "../../src/actor/command.ts";
 import { genesis, replayStep, type Replayed } from "../../src/actor/journal.ts";
 import { alwaysPolicy, decide } from "../../src/domain/deciders.ts";
-import { currentTaskObligations } from "../../src/domain/evaluation.ts";
 import { genesisLedgers, ledgerAt } from "../../src/domain/ledger.ts";
 import { finalizationOf } from "../../src/domain/ticket.ts";
-import { workTaskIdentity } from "../../src/domain/task.ts";
 import { ticketAt } from "../../src/domain/ticketGraph.ts";
-import type {
-  EvaluationFailureDisposition,
-  TicketGraph,
-} from "../../src/domain/generated/modelTypes.ts";
-import type { TaskIdentity } from "../../src/domain/generated/modelTypes.ts";
+import type { EvaluationFailureDisposition } from "../../src/domain/generated/modelTypes.ts";
 import {
   checkedReworkCap,
   reworkDisposition,
@@ -40,20 +34,9 @@ import {
   acceptedOf,
   id,
   judgedReport,
+  owedTaskOf,
   producedReport,
 } from "../domain/fixtures.ts";
-
-/** The one task a single-width ticket owes, which is what a completion names. */
-function owed(graph: TicketGraph): TaskIdentity {
-  const ticket = ticketAt(graph, id(1));
-  const state = ticket.state;
-  if (typeof state === "string" || state.type !== "Evaluation")
-    return workTaskIdentity(1, ticket.workCyclesStarted);
-  const [obligation] = currentTaskObligations(state.value);
-  if (obligation === undefined)
-    throw new Error("rework cap case: the ticket owes no task");
-  return obligation.task;
-}
 
 /**
  * The dispositions the cap picks, one per failing evaluation, until it parks
@@ -74,9 +57,9 @@ function dispositionsUnder(
     );
   };
   const evaluated = (verdict: "EvaluatorPass" | "EvaluatorFail") => {
-    const work = owed(held.graph);
+    const work = owedTaskOf(held.graph);
     step(reportTaskTerminalCommand(producedReport(work)));
-    const judge = owed(held.graph);
+    const judge = owedTaskOf(held.graph);
     const disposition = reworkDisposition(
       ticketAt(held.graph, id(1)),
       ledgerAt(held.ledgers, 1),

@@ -10,65 +10,17 @@
  */
 
 import type { Migration } from "../shared.ts";
-
-/** The machine's refusals whose payload is the ticket alone. */
-const ticketRefusals = [
-  "TicketAlreadyExists",
-  "SelfDependency",
-  "TicketNotFound",
-  "TicketNotPending",
-  "TicketIdentityMismatch",
-  "TicketNotRevocable",
-  "TicketNotResumable",
-];
-
-/** The machine's refusals whose payload is the ticket and the dependencies refused. */
-const dependencyRefusals = [
-  "DependenciesNotFound",
-  "DependenciesRevoked",
-  "DependencyCycle",
-  "DependenciesIncomplete",
-];
+import {
+  boundaryRefusals,
+  dependencyRefusals,
+  domainRefusals as domainRefusalsAt085,
+  textArray,
+  textList,
+  ticketRefusals,
+} from "./085-dependencies-change.ts";
 
 /** Every refusal the machine decides, each stored with its payload. */
-const domainRefusals = [
-  ...ticketRefusals,
-  ...dependencyRefusals,
-  "TicketRevisionStale",
-  "TaskNotCurrent",
-  "FinalizationNotCurrent",
-  "EvaluationNotCurrent",
-];
-
-/** The boundary's own refusals, which 085 admitted. */
-const boundaryRefusals = [
-  "AuthoringChanged",
-  "ConfigurationInvalid",
-  "TicketChanged",
-  "SelectionChanged",
-  "ExecutionSourceUnreadable",
-  "ExecutionSourceDenied",
-  "BriefNamesNoRepository",
-  "BriefChecksUncommanded",
-  "ConfigurationFromAnotherRepository",
-  "SelectionUnknown",
-  "SelectionUnsupported",
-  "ProgramExceedsPlan",
-  "ProgramSkipsBriefChecks",
-  "OverridesUnsupported",
-  "OverridesUnknown",
-  "TicketCapacityReached",
-  "FinalizationRequestClosed",
-  "OverridesMoveDefinition",
-];
-
-function textList(values: readonly string[]): string {
-  return values.map((value) => `'${value}'`).join(", ");
-}
-
-function textArray(values: readonly string[]): string {
-  return `ARRAY[${values.map((value) => `'${value}'::text`).join(", ")}]`;
-}
+const domainRefusals = [...domainRefusalsAt085, "EvaluationNotCurrent"];
 
 /** The predicate `decision_input_refusal_is_its_outcome` holds a stored refusal to, by its code. */
 const refusalValidator = `CREATE OR REPLACE FUNCTION public.decision_refusal_is_valid(code text, refusal text) RETURNS boolean

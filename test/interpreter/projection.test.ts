@@ -42,8 +42,6 @@ import type {
   Ticket,
 } from "../../src/domain/generated/modelTypes.ts";
 import { evaluationTaskOf, workTaskIdentity } from "../../src/domain/task.ts";
-import type { TaskIdentity } from "../../src/domain/generated/modelTypes.ts";
-import { currentTaskObligations } from "../../src/domain/evaluation.ts";
 import { phaseOf } from "../../src/domain/phase.ts";
 import { resumeOf } from "../../src/domain/ticket.ts";
 import {
@@ -63,6 +61,7 @@ import {
   acceptedOf,
   id,
   judgedReport,
+  owedTaskOf,
   producedReport,
 } from "../domain/fixtures.ts";
 
@@ -213,18 +212,6 @@ test("a release is a change although it leaves no phase", () => {
   );
 });
 
-/** The one task a single-width ticket owes, which is what a completion names. */
-function owedTask(graph: TicketGraph): TaskIdentity {
-  const ticket = ticketAt(graph, id(1));
-  const state = ticket.state;
-  if (typeof state === "string" || state.type !== "Evaluation")
-    return workTaskIdentity(1, ticket.workCyclesStarted);
-  const [obligation] = currentTaskObligations(state.value);
-  if (obligation === undefined)
-    throw new Error("projection case: the ticket owes no task");
-  return obligation.task;
-}
-
 /**
  * A ticket reworked once, walled by the next evaluation failure and resumed off
  * that wall: the states whose escalation the projection exists to carry, and
@@ -243,9 +230,9 @@ function walledHistory(): readonly (readonly [
   step(createTicketCommand(plainDefinitionOf(1)));
   step(dispatchTicketCommand(id(1), aDispatchSource));
   for (const cycle of [0, 1]) {
-    const work = owedTask(graph);
+    const work = owedTaskOf(graph);
     step(reportTaskTerminalCommand(producedReport(work)));
-    const judge = owedTask(graph);
+    const judge = owedTaskOf(graph);
     step(
       reportTaskTerminalCommand(judgedReport(judge, "EvaluatorFail")),
       alwaysPolicy(
