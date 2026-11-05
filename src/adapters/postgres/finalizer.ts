@@ -329,7 +329,13 @@ async function finalizerSerializedCandidates(
                  WHERE f.tenant = d.tenant AND f.project = d.project
                    AND f.ticket = d.ticket AND f.kind = 'RunFinalizer'
                    AND f.state IN ('Open', 'Registered')) AS entry,
-               (SELECT x.failure_kind = 'RecheckRequired' FROM finalization_attempt x
+               (SELECT x.failure_kind = 'RecheckRequired'
+                       AND NOT ticket_evaluation_reworked_since(
+                             x.tenant, x.project, x.ticket, r.authorizing_seq)
+                  FROM finalization_attempt x
+                  JOIN finalization_request r
+                    ON r.tenant = x.tenant AND r.project = x.project
+                   AND r.request = x.request
                  WHERE x.tenant = d.tenant AND x.project = d.project
                    AND x.ticket = d.ticket AND x.outcome = 'Failed'
                  ORDER BY x.prepared_at DESC, x.attempt DESC LIMIT 1) AS rechecking

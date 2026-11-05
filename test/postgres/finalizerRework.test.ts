@@ -56,10 +56,8 @@ import { executionSourceObservation } from "../../src/interpreter/executionSourc
 import { postgresHarnessObservedCommit } from "./harness.ts";
 import { digestFold } from "../../src/interpreter/resultManifest.ts";
 import {
-  finalizerBriefLanding,
   finalizerClaim,
   finalizerCommit,
-  finalizerDeclareSource,
   finalizerDrain,
   finalizerExpireClaim,
   finalizerGitVerb,
@@ -68,10 +66,10 @@ import {
   finalizerPassOnce,
   finalizerPrepare,
   finalizerProject,
-  finalizerRemoteAttempt,
   finalizerRemoteCommit,
   finalizerRemotePort,
   finalizerRigOpen,
+  finalizerSerializedSubject,
   finalizerSubject,
   type FinalizerProject,
   type FinalizerRemote,
@@ -573,29 +571,11 @@ test("a rework runs at the accepted source with no observation", async () => {
   });
 });
 
-/** A serialized ticket whose worker published one commit off the default branch, which has not moved since. */
-async function serializedSubject(label: string): Promise<{
-  project: FinalizerProject;
-  remote: FinalizerRemote;
-  worked: string;
-}> {
-  const { project, remote, work } = await finalizerSubject(rig, label, []);
-  const base = finalizerGitVerb(remote.origin, "rev-parse", "refs/heads/main");
-  const ref = `refs/heads/chuggy/tickets/${String(project.ticket)}/attempts/one`;
-  const worked = finalizerRemoteAttempt(remote, "worker.txt", "worker\n", ref);
-  await finalizerDeclareSource(rig, project, work, ref, worked, base);
-  await finalizerBriefLanding(
-    rig,
-    project.partition,
-    project.ticket,
-    "Serialized",
-    project.repository,
-  );
-  return { project, remote, worked };
-}
-
 test("a serialized ticket whose target did not move lands its accepted commit itself", async () => {
-  const { project, remote, worked } = await serializedSubject("serial-held");
+  const { project, remote, worked } = await finalizerSerializedSubject(
+    rig,
+    "serial-held",
+  );
   const port = finalizerRemotePort(rig);
 
   assert.equal(
@@ -615,7 +595,10 @@ test("a serialized ticket whose target did not move lands its accepted commit it
 });
 
 test("a serialized ticket whose target moved is sent back to re-check, naming its accepted commit", async () => {
-  const { project, remote, worked } = await serializedSubject("serial-moved");
+  const { project, remote, worked } = await finalizerSerializedSubject(
+    rig,
+    "serial-moved",
+  );
   finalizerRemoteCommit(remote, "other.txt", "other\n", "other");
   const port = finalizerRemotePort(rig);
 

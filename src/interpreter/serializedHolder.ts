@@ -6,12 +6,13 @@
  *
  * A TICKET HOLDS ONLY WHILE IT IS ON THE WORK, EVALUATION, FINALIZATION PATH AND
  * HAS A REASON TO. The reason is a finalization request still pending, or its
- * latest failed finalization attempt having been `RecheckRequired`, which is the
- * re-check cycle in flight between a send-back and the request that follows
- * evaluation. A landing, a merge conflict send-back, an evaluation failure
- * returning the ticket to rework, a revoke, an escalation, a blocked evaluator
- * and an `Unavailable` finalization each leave the path or drop both reasons,
- * and so release with no code of their own.
+ * latest failed finalization attempt having been `RecheckRequired` with no
+ * evaluation sending it back to work since, which is the re-check cycle in
+ * flight between a send-back and the request that follows evaluation. A
+ * landing, a merge conflict send-back, an evaluation failure returning the
+ * ticket to rework, a revoke, an escalation, a blocked evaluator and an
+ * `Unavailable` finalization each leave the path or drop both reasons, and so
+ * release with no code of their own.
  *
  * THE HOLDER OF A REFERENCE IS THE TICKET WHOSE RE-CHECK IS IN FLIGHT, ELSE THE
  * FIRST PENDING FINALIZATION BY WHERE IT ENTERED. A re-check goes first because
@@ -45,7 +46,7 @@ export interface SerializedCandidate {
   readonly target: string | undefined;
   /** The journal position its finalization request was authorized at, absent where none is pending. */
   readonly entry: number | undefined;
-  /** Whether its latest failed finalization attempt was `RecheckRequired`. */
+  /** Whether its latest failed finalization attempt was `RecheckRequired` and no evaluation has sent it back to work since. */
   readonly rechecking: boolean;
 }
 

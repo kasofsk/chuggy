@@ -1442,6 +1442,30 @@ export async function finalizerDeclareSource(
   );
 }
 
+/** A Serialized ticket whose worker published one commit off the default branch, which has not moved since. */
+export async function finalizerSerializedSubject(
+  rig: FinalizerRig,
+  label: string,
+): Promise<{
+  project: FinalizerProject;
+  remote: FinalizerRemote;
+  worked: string;
+}> {
+  const { project, remote, work } = await finalizerSubject(rig, label, []);
+  const base = finalizerGitVerb(remote.origin, "rev-parse", "refs/heads/main");
+  const ref = `refs/heads/chuggy/tickets/${String(project.ticket)}/attempts/one`;
+  const worked = finalizerRemoteAttempt(remote, "worker.txt", "worker\n", ref);
+  await finalizerDeclareSource(rig, project, work, ref, worked, base);
+  await finalizerBriefLanding(
+    rig,
+    project.partition,
+    project.ticket,
+    "Serialized",
+    project.repository,
+  );
+  return { project, remote, worked };
+}
+
 /** How many entries one project's journal holds, which every refusal must leave alone. */
 export async function finalizerEntries(
   rig: FinalizerRig,

@@ -305,6 +305,9 @@ export const ticketRunStepFailureFunction = "ticket_run_step_failure";
 /** The dependencies a ticket's last update named. */
 export const ticketUpdatedDependenciesFunction = "ticket_updated_dependencies";
 export const approvalRequestFunction = "request_finalization_approval";
+/** Whether an evaluation sent a ticket back to work after a journal position. */
+export const ticketEvaluationReworkedSinceFunction =
+  "ticket_evaluation_reworked_since";
 export const activeWorkFunction = "project_active_work";
 export const backlogFunction = "execution_backlog";
 export const statusMoveFunction = "execution_status_move_is_legal";

@@ -13,6 +13,7 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
 import { postgresFinalizer } from "../../src/adapters/postgres/finalizer.ts";
+import { workTaskIdentity } from "../../src/domain/task.ts";
 import {
   asFinalizerOwnerId,
   type FinalizationClaim,
@@ -20,14 +21,23 @@ import {
 } from "../../src/interpreter/finalizer.ts";
 import { asRecoveryEpoch } from "../../src/interpreter/projectStore.ts";
 import {
+  finalizerAccept,
   finalizerBriefFinalizationTarget,
   finalizerBriefLanding,
   finalizerCommit,
+  finalizerDrain,
+  finalizerEvaluation,
+  finalizerExpireClaim,
   finalizerIdentity,
+  finalizerPassOnce,
   finalizerPrepare,
   finalizerProject,
+  finalizerRemoteCommit,
+  finalizerRemotePort,
   finalizerRigOpen,
+  finalizerSerializedSubject,
   finalizerStoreReleasedBrief,
+  finalizerTaskDone,
   type FinalizerProject,
   type FinalizerRig,
 } from "./finalizerHarness.ts";
@@ -156,9 +166,24 @@ async function untouched(project: FinalizerProject): Promise<boolean> {
   );
 }
 
-/** A project whose real ticket is Serialized, entering first. */
-async function serialized(label: string): Promise<FinalizerProject> {
-  const project = await finalizerProject(rig, label);
+/** The phase the projection holds one ticket of `project`'s partition in. */
+async function phaseOf(
+  project: FinalizerProject,
+  ticket: number,
+): Promise<unknown> {
+  const [row] = await rig.harness.query(
+    `SELECT phase FROM ticket_projection WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+    [project.partition.tenant, project.partition.project, ticket],
+  );
+  return row?.["phase"];
+}
+
+/** A project whose real ticket is Serialized, entering first, after `reworks` evaluation reworks. */
+async function serialized(
+  label: string,
+  reworks = 0,
+): Promise<FinalizerProject> {
+  const project = await finalizerProject(rig, label, undefined, reworks);
   await finalizerBriefLanding(
     rig,
     project.partition,
@@ -302,4 +327,96 @@ test("a re-check cycle that leaves the path releases the reference", async () =>
       phase,
     );
   }
+});
+
+test("a re-check whose evaluation fails releases the reference", async () => {
+  const { project, remote } = await finalizerSerializedSubject(
+    rig,
+    "recheck-fails",
+  );
+  finalizerRemoteCommit(remote, "other.txt", "other\n", "other");
+  const port = finalizerRemotePort(rig);
+  await finalizerPassOnce(rig, project, port, "recheck-fails");
+  await finalizerExpireClaim(rig, project);
+  await finalizerPassOnce(rig, project, port, "recheck-fails-conclude");
+  const sent = await finalizerDrain(
+    rig.harness,
+    project.partition,
+    project.memory,
+  );
+  assert.deepEqual(sent.decided, ["Committed"]);
+  const waiting = await sibling(project, "recheck-fails-waiting", {
+    landing: "Serialized",
+    phase: "Finalization",
+    pending: true,
+  });
+  assert.equal(
+    includes(await drawn([waiting], "recheck-fails-held"), waiting),
+    false,
+    "the re-check cycle holds the reference",
+  );
+
+  let memory = sent.memory;
+  for (const [label, task, verdict] of [
+    ["recheck-fails-work", workTaskIdentity(1, 2), "Pass"],
+    ["recheck-fails-evaluation", finalizerEvaluation(2), "Fail"],
+  ] as const) {
+    assert.equal(
+      await finalizerAccept(
+        rig.harness,
+        project.partition,
+        label,
+        finalizerTaskDone(memory.graph, task, verdict),
+      ),
+      "Accepted",
+    );
+    const drained = await finalizerDrain(
+      rig.harness,
+      project.partition,
+      memory,
+    );
+    assert.ok(
+      drained.decided.every((each) => each === "Committed"),
+      label,
+    );
+    memory = drained.memory;
+  }
+  assert.equal(
+    await phaseOf(project, project.ticket),
+    "Work",
+    "the failed evaluation sent the re-check back to rework, still on the path",
+  );
+  assert.equal(
+    includes(await drawn([waiting], "recheck-fails-released"), waiting),
+    true,
+    "the rework released the reference",
+  );
+});
+
+test("a rework before the re-check's request does not end the re-check", async () => {
+  const first = await serialized("recheck-earlier-rework", 1);
+  const waiting = await sibling(first, "recheck-earlier-waiting", {
+    landing: "Serialized",
+    phase: "Finalization",
+    pending: true,
+  });
+  await finalizerPrepare(rig, first, "recheck-earlier", {
+    outcome: "Failed",
+    failureKind: "RecheckRequired",
+    recheckCommit: finalizerCommit(),
+  });
+  await rig.harness.query(
+    `UPDATE finalization_request SET state='Fulfilled'
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    [first.partition.tenant, first.partition.project, first.request],
+  );
+  await rig.harness.query(
+    `UPDATE ticket_projection SET phase='Work' WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+    [first.partition.tenant, first.partition.project, first.ticket],
+  );
+  assert.equal(
+    includes(await drawn([waiting], "recheck-earlier"), waiting),
+    false,
+  );
+  assert.equal(await untouched(waiting), true);
 });
