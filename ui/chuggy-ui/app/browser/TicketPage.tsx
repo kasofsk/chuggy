@@ -1,8 +1,8 @@
 /**
- * One ticket: where it stands and what may be done to it, the run going now or
- * the question it waits on, what has run for it, and — a click away — its
- * brief, what it has cost, where it came from and what became of it once it
- * landed.
+ * One ticket, top to bottom: its title, where it stands with what it is and
+ * what may be done to it, the run going now or the question it waits on, what
+ * has run for it, its instructions, the configuration it runs under, its
+ * revisions and its activity, all of it always drawn.
  *
  * The brief, the configuration and the program the ledger groups by are the
  * ticket's own, which is what it runs, and not the draft's, which a Pending
@@ -65,9 +65,7 @@ import type { TicketSlot as Slot } from "../core/ticketSituation.ts";
 import { usePanelState } from "./api.ts";
 import { FreshnessInstants, useNowMs } from "./Freshness.tsx";
 import { useLead } from "./LeadPage.tsx";
-import { currentAnchor } from "./ports.ts";
 import { useProjectAbilities } from "./projectAbilities.tsx";
-import { DetailsSlot, TopBarSlot } from "./shell/slots.tsx";
 import {
   TicketActingScope,
   TicketAnswerActions,
@@ -75,7 +73,6 @@ import {
 } from "./TicketActions.tsx";
 import type { TicketActing } from "./TicketActions.tsx";
 import { useTicketDelivery } from "./ticket/TicketDelivery.tsx";
-import { TicketTopBar } from "./ticket/TicketHead.tsx";
 import {
   LandingFragment,
   useTicketLandings,
@@ -84,19 +81,18 @@ import {
   TicketLedgerPanel,
   useTicketExecutions,
 } from "./ticket/TicketLedger.tsx";
-import {
-  TicketPageDetails,
-  TicketSections,
-  ticketSections,
-  ticketSectionsOpened,
-} from "./ticket/TicketSections.tsx";
+import { TicketActivity } from "./ticket/TicketActivity.tsx";
+import { TicketInstructions } from "./ticket/TicketInstructions.tsx";
+import { TicketConfiguration, TicketRevisions } from "./TicketProvenance.tsx";
 import {
   ParkedOverrides,
   useParkedOverridesSave,
 } from "./ticket/ParkedOverrides.tsx";
 import { TicketSlot } from "./ticket/TicketSlot.tsx";
+import { TicketIntro } from "./ticket/TicketIntro.tsx";
 import { TicketStatus } from "./ticket/TicketStatus.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
+import { Panel } from "./ui/Panel.tsx";
 import { useWorkRunner } from "./workRunner.tsx";
 
 /** Everything the page has read, so each part is handed facts and not a query. */
@@ -113,38 +109,6 @@ export interface TicketReads {
 
 function readValue<T>(state: PanelState<T>): T | undefined {
   return state.state === "Ready" ? state.value : undefined;
-}
-
-/** Where the page's own head belongs while the shell has taken it: the top bar
- * and the details pane fill only once the ticket has been read. */
-function TicketPortals(props: {
-  readonly partition: PartitionIdentity;
-  readonly ticket: TicketResponse | undefined;
-  readonly facts: TicketPageFacts;
-  readonly delivery: TicketDeliveryState;
-  readonly nowMs: number;
-  readonly onChoose: (id: string) => void;
-}): ReactNode {
-  const ticket = props.ticket;
-  if (ticket === undefined) return null;
-  return (
-    <>
-      <TopBarSlot>
-        <TicketTopBar partition={props.partition} ticket={ticket} />
-      </TopBarSlot>
-      <DetailsSlot>
-        <TicketPageDetails
-          sections={ticketSections(
-            ticket,
-            props.facts,
-            props.delivery,
-            props.nowMs,
-          )}
-          onChoose={props.onChoose}
-        />
-      </DetailsSlot>
-    </>
-  );
 }
 
 interface StandingProps {
@@ -295,18 +259,19 @@ function TicketStanding(
   return (
     <>
       <TicketStatus
+        partition={props.partition}
         state={props.reads.ticketState}
         page={readValue(props.reads.pageState)}
         resumed={
           asking || ledger === undefined ? undefined : resumedFrom(ledger)
         }
         landing={statusLanding(props)}
-        truncated={props.facts.truncated}
         nowMs={props.nowMs}
         actions={
           <TicketBarActions
             partition={props.partition}
             ticket={props.ticket}
+            ticketRead={readValue(props.reads.ticketState)}
             acting={props.acting}
             offers={offers}
             openState={props.reads.openState}
@@ -352,23 +317,10 @@ function TicketBody(props: {
   const ticket = readValue(props.reads.ticketState);
   const page = readValue(props.reads.pageState);
   const facts = ticketPageFacts(ticket, page);
-  const [open, setOpen] = useState<readonly string[]>(() =>
-    ticketSectionsOpened([], currentAnchor()),
-  );
-  const choose = (id: string): void => {
-    setOpen((held) => ticketSectionsOpened(held, id));
-  };
   return (
     <FreshnessInstants>
-      <TicketPortals
-        partition={props.partition}
-        ticket={ticket}
-        facts={facts}
-        delivery={props.reads.deliveryState}
-        nowMs={props.nowMs}
-        onChoose={choose}
-      />
       <div data-fills-width className="grid min-w-0 gap-4">
+        {ticket === undefined ? null : <TicketIntro ticket={ticket} />}
         <TicketActingScope
           partition={props.partition}
           ticket={props.ticket}
@@ -394,15 +346,24 @@ function TicketBody(props: {
             nowMs={props.nowMs}
           />
         </section>
-        <TicketSections
+        <TicketInstructions
           partition={props.partition}
-          ticketState={props.reads.ticketState}
-          draftState={props.reads.draftState}
-          delivery={props.reads.deliveryState}
+          state={props.reads.ticketState}
+        />
+        <TicketConfiguration partition={props.partition} ticket={ticket} />
+        <Panel title="Revision history" level={2}>
+          <TicketRevisions
+            partition={props.partition}
+            state={props.reads.draftState}
+            ticket={ticket}
+            nowMs={props.nowMs}
+          />
+        </Panel>
+        <TicketActivity
+          ticket={ticket}
           page={page}
-          open={open}
-          onOpenChange={setOpen}
-          nowMs={props.nowMs}
+          truncated={facts.truncated}
+          delivery={props.reads.deliveryState}
         />
       </div>
     </FreshnessInstants>

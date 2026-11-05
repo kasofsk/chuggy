@@ -258,8 +258,9 @@ test("a run's configuration that will not read says so under its title, and does
   );
   await pressed("Details");
   await pressed("configuration");
+  const ledger = drawn.container.querySelector("#cycles");
   expect(
-    [...drawn.container.querySelectorAll(".read-failed .notice")].map(
+    [...(ledger?.querySelectorAll(".read-failed .notice") ?? [])].map(
       (line) => line.textContent,
     ),
   ).toStrictEqual(["Not read · Unreadable"]);

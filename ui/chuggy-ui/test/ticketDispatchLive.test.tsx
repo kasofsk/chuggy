@@ -35,6 +35,7 @@ import {
   ticketPageDependency,
   ticketPageRoutes,
 } from "./ticketPageFixture.ts";
+import { dispatchChipName } from "./ticketDispatchPressed.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 
@@ -136,7 +137,9 @@ test("a dependency's frame makes this ticket's dispatch availability be read aga
   let dispatchable = false;
   const server = drawn(() => dispatchable);
   await settled();
-  expect(screen.queryByRole("button", { name: "Dispatch" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: dispatchChipName(11) }),
+  ).toBeNull();
 
   dispatchable = true;
   await turned(() => {
@@ -144,7 +147,9 @@ test("a dependency's frame makes this ticket's dispatch availability be read aga
   });
   await settled();
 
-  expect(screen.getByRole("button", { name: "Dispatch" })).toBeDefined();
+  expect(
+    screen.getByRole("button", { name: dispatchChipName(11) }),
+  ).toBeDefined();
 });
 
 /** A frame of a kind the dispatch entry does not follow, which is what says the
@@ -173,7 +178,9 @@ test("a configuration frame leaves the dispatch entry where it was read", async 
   });
   await settled();
 
-  expect(screen.queryByRole("button", { name: "Dispatch" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: dispatchChipName(11) }),
+  ).toBeNull();
 });
 
 /**
@@ -188,7 +195,9 @@ test("a frame arriving while a read is in flight is still read for", async () =>
   let dispatchable = false;
   const server = drawn(() => dispatchable, 2);
   await settled();
-  expect(screen.queryByRole("button", { name: "Dispatch" })).toBeNull();
+  expect(
+    screen.queryByRole("button", { name: dispatchChipName(11) }),
+  ).toBeNull();
 
   await turned(() => {
     server.push(unrelatedTicketFrame());
@@ -199,7 +208,9 @@ test("a frame arriving while a read is in flight is still read for", async () =>
   });
   await settled();
 
-  expect(screen.getByRole("button", { name: "Dispatch" })).toBeDefined();
+  expect(
+    screen.getByRole("button", { name: dispatchChipName(11) }),
+  ).toBeDefined();
 });
 
 /**
@@ -220,5 +231,7 @@ test("a burst of frames leaves the dispatch entry correct once it stops", async 
     });
   await settled();
 
-  expect(screen.getByRole("button", { name: "Dispatch" })).toBeDefined();
+  expect(
+    screen.getByRole("button", { name: dispatchChipName(11) }),
+  ).toBeDefined();
 });

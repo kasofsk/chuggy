@@ -1,18 +1,6 @@
 /**
- * Which section of the project table a phase puts a ticket in, and what a
- * parked row's badge says.
- *
- * The sections are the reader's questions in order: what needs a human, what is
- * moving, what is next, what finished, what stopped. `NeedsYou` is the model's
- * own `hasOpenHumanTask`, which is Escalated alone (`model/ticket.qnt`), and
- * `Revoked` sits in `Stopped` rather than beside Done because a reader
- * scanning for what went wrong is looking for it there.
- *
- * `UpNext` IS EVERY PENDING TICKET, NEAREST TO DISPATCHABLE FIRST, AND NOT THE
- * UNBLOCKED FRONTIER. Each Pending ticket's open dependencies order the
- * section (`upNextOrder.ts`), so the frontier rises to its top, but they do not
- * decide membership: a blocked ticket is still what follows the work it waits
- * on, and the rows are a window that cannot say what is unblocked outside it.
+ * The section titles the inbox draws its list under, and what a parked row's
+ * badge says.
  */
 
 import type {
@@ -38,23 +26,6 @@ export const ticketSectionTitles: Readonly<Record<TicketSection, string>> = {
   Done: "Done",
   Stopped: "Failed or revoked",
 };
-
-export function ticketSectionOf(phase: TicketPhase): TicketSection {
-  switch (phase) {
-    case "Escalated":
-      return "NeedsYou";
-    case "Work":
-    case "Evaluation":
-    case "Finalization":
-      return "InProgress";
-    case "Pending":
-      return "UpNext";
-    case "Done":
-      return "Done";
-    case "Revoked":
-      return "Stopped";
-  }
-}
 
 export function escalationBadgeLabel(kind: EscalationKind): string {
   switch (kind) {

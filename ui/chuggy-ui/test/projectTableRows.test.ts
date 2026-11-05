@@ -10,10 +10,7 @@ import type {
   ExecutionSummary,
   TicketResponse,
 } from "../../../src/contract/responses.ts";
-import {
-  projectTableRow,
-  projectTableRunsOn,
-} from "../app/core/projectTableRows.ts";
+import { projectTableRow } from "../app/core/projectTableRows.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 
 /** The row of a ticket carrying `execution` as the list would, or none. */
@@ -76,26 +73,10 @@ const tickets: readonly TicketResponse[] = [
   { ticket: 3, phase: "Pending", sequence: 3, ...ticketInstants },
 ];
 
-test("a running ticket's row carries its verdict and what it runs on", () => {
+test("a running ticket's row carries its verdict", () => {
   const row = rowOf(working, container);
   expect(row.executionVerdict).toBe("Running");
-  expect(row.runsOn).toEqual({
-    text: "worker:1",
-    title: "registry/worker:1",
-  });
   expect(row.activityAt).toBe(ticketInstants.changedAt);
-});
-
-test("a row names the worker the wire named", () => {
-  const row = rowOf(working, {
-    ...container,
-    configurationVersion: { name: "work", number: 12 },
-    worker: { name: "chuggy-worker", version: "3" },
-  });
-  expect(row.runsOn).toEqual({
-    text: "chuggy-worker 3",
-    title: "registry/worker:1",
-  });
 });
 
 test("a row's title is the ticket's own, and absent where the wire names none", () => {
@@ -125,7 +106,6 @@ test("a ticket running nothing states no execution rather than a blank one", () 
     undefined,
   );
   expect(row.executionVerdict).toBeUndefined();
-  expect(row.runsOn).toBeUndefined();
   expect(row.activityAt).toBe(ticketInstants.changedAt);
 });
 
@@ -189,38 +169,4 @@ test("a row carrying its ticket's latest execution draws it, and one carrying no
     "Failed",
     undefined,
   ]);
-  expect(rows.map((row) => row.runsOn === undefined)).toStrictEqual([
-    true,
-    false,
-    true,
-  ]);
-});
-
-test("what a task runs on is its worker, capability or driver, by the mode it names", () => {
-  expect(projectTableRunsOn(container)).toEqual({
-    text: "worker:1",
-    title: "registry/worker:1",
-  });
-  expect(
-    projectTableRunsOn({
-      ...container,
-      requirement: {
-        mode: "Capability",
-        operatingSystem: "Linux",
-        architecture: "Amd64",
-        capabilities: ["Agent:Claude"],
-      },
-    }),
-  ).toEqual({ text: "Claude", title: "Agent:Claude" });
-  expect(
-    projectTableRunsOn({
-      ...container,
-      requirement: {
-        mode: "Capability",
-        operatingSystem: "MacOS",
-        architecture: "Arm64",
-        capabilities: ["Tool:Xcode"],
-      },
-    }),
-  ).toEqual({ text: "Xcode", title: "Tool:Xcode" });
 });

@@ -27,12 +27,13 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import type { MutationKey, QueryClient } from "@tanstack/react-query";
-import { useEffect } from "react";
+import { Fragment, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type {
   TicketNativeActionsResponse,
+  TicketResponse,
   DispatchViewResponse,
 } from "../../../../src/contract/responses.ts";
 import { apiCancelOperation } from "../core/apiRoutes.ts";
@@ -92,12 +93,9 @@ import {
 } from "./ticketAttempts.ts";
 import type { TicketAttemptPress } from "./ticketAttempts.ts";
 import { PanelUnready, ReadFailed } from "./DataPanel.tsx";
-import { TicketDuplicateOffer } from "./ticket/TicketDuplicateOffer.tsx";
 import { TicketEditOffer } from "./ticket/TicketEditOffer.tsx";
-import {
-  TicketRevokeConfirm,
-  useTicketRevokeAsk,
-} from "./ticket/TicketRevoke.tsx";
+import { TicketActionConfirm } from "./ticket/TicketActionConfirm.tsx";
+import { TicketStateAction } from "./ticket/TicketStateAction.tsx";
 import { OfferedAction } from "./ui/OfferedAction.tsx";
 import { Button } from "./ui/Button.tsx";
 import { Notice } from "./ui/Notice.tsx";
@@ -410,7 +408,7 @@ function ActionButtons(props: {
   readonly resume: ResumeOffer;
   readonly onChoose: (action: TicketAction) => void;
 }): ReactNode {
-  const revoke = useTicketRevokeAsk(props.attempt);
+  const [revoking, setRevoking] = useState(false);
   return props.actions.map((action) => {
     const effect = ticketActionEffect(action.action, props.resume, props.exits);
     const asks = action.action === "Revoke";
@@ -429,11 +427,25 @@ function ActionButtons(props: {
         offered={effect.offered}
         busy={props.busy}
         danger={asks}
-        {...(asks ? { expanded: revoke.open } : {})}
-        onChoose={asks ? revoke.toggle : chosen}
+        onChoose={
+          asks
+            ? () => {
+                setRevoking(true);
+              }
+            : chosen
+        }
       >
-        {asks && revoke.open ? (
-          <TicketRevokeConfirm ask={revoke} onRevoke={chosen} />
+        {asks ? (
+          <TicketActionConfirm
+            title="Revoke this ticket?"
+            confirm="Revoke ticket"
+            danger
+            open={revoking}
+            onOpenChange={setRevoking}
+            onConfirm={chosen}
+          >
+            Ends this ticket and parks its dependents. Can't be undone.
+          </TicketActionConfirm>
         ) : null}
       </OfferedAction>
     );
@@ -619,6 +631,8 @@ function FollowNotes(props: { readonly submitting: Submitting }): ReactNode {
 export interface TicketActionsProps {
   readonly partition: PartitionIdentity;
   readonly ticket: number;
+  /** The ticket as read, whose state the bar's first chip draws. */
+  readonly ticketRead: TicketResponse | undefined;
   readonly acting: TicketActing;
   readonly offers: TicketOffers;
   readonly openState: PanelState<TicketNativeActionsResponse>;
@@ -645,11 +659,65 @@ function NoRunnerLine(props: {
   );
 }
 
-/** Every action but the ones a card answers, the edit screen, the duplicate
- * whatever the phase, and the follow of whichever was pressed, wherever it was
- * pressed. */
+/** Where an action stands in the bar: Dispatch first, then Edit, then whatever
+ * else is offered, and Revoke last. */
+const barOrder = ["Dispatch", "Edit", "Other", "Revoke"] as const;
+
+function barPlace(action: TicketActionName): (typeof barOrder)[number] {
+  if (action === "Dispatch" || action === "Revoke") return action;
+  return "Other";
+}
+
+/** The ticket's state chip, which is the button for the dispatch on offer. */
+function DispatchChip(
+  props: TicketActionsProps & { readonly barActions: readonly TicketAction[] },
+): ReactNode {
+  const dispatch = props.barActions.find(
+    (action) => action.action === "Dispatch",
+  );
+  if (props.ticketRead === undefined) return null;
+  const effect =
+    dispatch === undefined
+      ? undefined
+      : ticketActionEffect(
+          dispatch.action,
+          props.resume,
+          props.offers.offers === "Unread"
+            ? []
+            : props.offers.actions.map((offered) => offered.action),
+        );
+  return (
+    <TicketStateAction
+      ticket={props.ticketRead}
+      dispatch={
+        dispatch === undefined ||
+        effect === undefined ||
+        !effect.offered ||
+        effect.refusedBecause !== undefined
+          ? undefined
+          : {
+              effect: effect.effect,
+              busy: props.acting.busy,
+              send: () => {
+                props.acting.submitting.submit(dispatch);
+              },
+            }
+      }
+    />
+  );
+}
+
+/** Every action but the ones a card answers, the edit screen, and the follow
+ * of whichever was pressed, wherever it was pressed. */
 export function TicketBarActions(props: TicketActionsProps): ReactNode {
   const offers = props.offers;
+  const barActions =
+    offers.offers === "Unread"
+      ? []
+      : offers.actions.filter(
+          (action) =>
+            !props.answered.some((answer) => answer.action === action.action),
+        );
   return (
     <>
       {props.noRunner ? <NoRunnerLine partition={props.partition} /> : null}
@@ -657,28 +725,33 @@ export function TicketBarActions(props: TicketActionsProps): ReactNode {
         <PanelUnready state={props.openState} />
       ) : (
         <>
-          <ActionButtons
-            actions={offers.actions.filter(
-              (action) =>
-                !props.answered.some(
-                  (answer) => answer.action === action.action,
-                ),
-            )}
-            exits={offers.actions.map((offered) => offered.action)}
-            attempt={props.acting.submitting.attempt}
-            busy={props.acting.busy}
-            resume={props.resume}
-            onChoose={props.acting.submitting.submit}
-          />
-          {offers.editable ? (
-            <TicketEditOffer
-              partition={props.partition}
-              ticket={props.ticket}
-            />
-          ) : null}
+          {barOrder.map((place) => (
+            <Fragment key={place}>
+              {place === "Edit" ? (
+                offers.editable ? (
+                  <TicketEditOffer
+                    partition={props.partition}
+                    ticket={props.ticket}
+                  />
+                ) : null
+              ) : place === "Dispatch" ? (
+                <DispatchChip {...props} barActions={barActions} />
+              ) : (
+                <ActionButtons
+                  actions={barActions.filter(
+                    (action) => barPlace(action.action) === place,
+                  )}
+                  exits={offers.actions.map((offered) => offered.action)}
+                  attempt={props.acting.submitting.attempt}
+                  busy={props.acting.busy}
+                  resume={props.resume}
+                  onChoose={props.acting.submitting.submit}
+                />
+              )}
+            </Fragment>
+          ))}
         </>
       )}
-      <TicketDuplicateOffer partition={props.partition} ticket={props.ticket} />
       {props.dispatchState.state === "Failed" ? (
         <ReadFailed subject="Dispatch" failure={props.dispatchState.failure} />
       ) : null}

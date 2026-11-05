@@ -1,5 +1,5 @@
 /**
- * The favicon's own locomotive, inlined at the card's scale and animated as a
+ * A pixel locomotive, inlined at the card's scale and animated as a
  * sprite, so the console's first paint says a read is in flight rather than
  * only saying so in words.
  *
@@ -22,15 +22,14 @@
  *
  * The drawing is a copy of `public/favicon.svg`'s `rect`s rather than a
  * shared import: an SVG file is not import-able as markup without a bundler
- * plugin this console does not otherwise need. The favicon is this sprite's
- * first frame — the engine at rest — and if this drawing ever changes, both
- * copies change together in the same commit.
+ * plugin this console does not otherwise need. That file holds this sprite's
+ * first frame — the engine at rest.
  *
  * `LocomotiveEngine` is the sprite alone, kept apart from the ground so the
  * card reads as one thing that holds its place and one that passes under it.
  * It is this card's alone: the strip above a waiting composer draws
  * chuggernaut's train instead, which crosses the strip rather than standing on
- * a ground, and so shares no drawing with the favicon.
+ * a ground, and so shares no drawing with this engine.
  */
 
 import type { ReactNode } from "react";

@@ -1,6 +1,6 @@
 /**
- * Where each phase lands and what each parked reason says, against the wire's
- * own rosters rather than against a list written here.
+ * What each parked reason says, against the wire's own rosters rather than
+ * against a list written here.
  *
  * The expectations are a total record over the roster, so a member the contract
  * gains fails to compile rather than going untested.
@@ -8,42 +8,12 @@
 
 import { expect, test } from "vitest";
 
-import { inboxPhases } from "../../../src/contract/http.ts";
-import { escalationKinds, phaseRoster } from "../../../src/contract/rosters.ts";
-import type {
-  EscalationKind,
-  TicketPhase,
-} from "../../../src/contract/rosters.ts";
+import { escalationKinds } from "../../../src/contract/rosters.ts";
+import type { EscalationKind } from "../../../src/contract/rosters.ts";
 import {
   escalationBadgeLabel,
   ticketBadgeLabel,
-  ticketSectionOf,
 } from "../app/core/ticketSections.ts";
-import type { TicketSection } from "../app/core/ticketSections.ts";
-
-const sectionOfPhase: Readonly<Record<TicketPhase, TicketSection>> = {
-  Pending: "UpNext",
-  Work: "InProgress",
-  Evaluation: "InProgress",
-  Finalization: "InProgress",
-  Done: "Done",
-  Escalated: "NeedsYou",
-  Revoked: "Stopped",
-};
-
-test.each(phaseRoster)(
-  "a %s ticket lands in the section named for it",
-  (phase) => {
-    expect(ticketSectionOf(phase)).toBe(sectionOfPhase[phase]);
-  },
-);
-
-/** The server decides the inbox by the contract's phases, so the section that draws it is held to the same list. */
-test("the Needs you section holds exactly the phases the inbox is read by", () => {
-  expect(
-    phaseRoster.filter((phase) => ticketSectionOf(phase) === "NeedsYou"),
-  ).toStrictEqual(inboxPhases);
-});
 
 const badgeOfKind: Readonly<Record<EscalationKind, string>> = {
   WorkFailureEscalated: "work failed",

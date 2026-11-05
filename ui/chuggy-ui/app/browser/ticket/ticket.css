@@ -1,8 +1,145 @@
-/* The ticket page: the status bar tinted by where the ticket stands, the card
-   under it, and the rows that open onto the detail. The tint is a data
-   attribute, so a tone with no wash of its own stays the plain panel. */
+/* The ticket page: the status bar, the card under it, the configuration
+   tinted by the phase each part of it runs in, and the rows that open onto
+   the detail. The tint is a data attribute, so a part with none stays the
+   plain panel. */
 
 @layer page {
+  .ticket-instructions {
+    display: grid;
+    justify-items: start;
+    gap: var(--space-3);
+  }
+
+  .ticket-instructions > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .ticket-instructions-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-2) var(--space-3);
+    width: 100%;
+  }
+
+  .ticket-instructions-title {
+    font-size: var(--text-xl);
+    font-weight: var(--weight-strong);
+    color: var(--ink-1);
+  }
+
+  .ticket-instructions-body {
+    position: relative;
+    display: flow-root;
+    width: 100%;
+    overflow: hidden;
+    max-height: 11em;
+    transition: max-height var(--duration-2) var(--ease-out);
+  }
+
+  .ticket-instructions-body[data-open="true"] {
+    max-height: none;
+    overflow: visible;
+  }
+
+  .ticket-instructions-body.sliding {
+    overflow: hidden;
+  }
+
+  .ticket-instructions-body[data-faded="true"]::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0;
+    height: 3em;
+    background: linear-gradient(transparent, var(--surface-0));
+    pointer-events: none;
+  }
+
+  .ticket-status-meta {
+    flex-basis: 100%;
+    padding-top: var(--space-3);
+    border-top: var(--hairline) solid var(--edge);
+  }
+
+  .ticket-status-meta .fields {
+    display: flex;
+    flex-wrap: wrap;
+    column-gap: var(--space-6);
+    row-gap: var(--space-2);
+  }
+
+  .ticket-status-meta .field {
+    display: grid;
+  }
+
+  .ticket-status-meta dt {
+    font: var(--weight-medium) var(--text-xs) / 1 var(--font-mono);
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+  }
+
+  .ticket-status-meta dd {
+    color: var(--ink-1);
+  }
+
+  .ticket-config-task {
+    border: var(--hairline) solid var(--edge);
+    border-radius: var(--radius-2);
+    padding: var(--space-2) var(--space-3);
+  }
+
+  .ticket-config-task-label {
+    display: inline-flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-3);
+    text-align: left;
+  }
+
+  .ticket-config-task-line {
+    color: var(--ink-3);
+  }
+
+  .ticket-config-task-body {
+    display: grid;
+    gap: var(--space-3);
+    padding-top: var(--space-3);
+  }
+
+  .ticket-config-sub {
+    --stage-tone: var(--ink-3);
+    --stage-wash: var(--surface-1);
+    display: grid;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    background: var(--stage-wash);
+    border: var(--hairline) solid
+      color-mix(in srgb, var(--stage-tone) 30%, var(--edge));
+    border-inline-start: calc(3 * var(--hairline)) solid var(--stage-tone);
+    border-radius: var(--radius-3);
+  }
+
+  .ticket-config-sub[data-stage="work"] {
+    --stage-tone: var(--tone-live);
+    --stage-wash: var(--wash-live);
+  }
+
+  .ticket-config-sub[data-stage="evaluation"] {
+    --stage-tone: var(--tone-evaluation);
+    --stage-wash: var(--wash-evaluation);
+  }
+
+  .ticket-config-sub[data-stage="finalization"] {
+    --stage-tone: var(--tone-finalization);
+    --stage-wash: var(--wash-finalization);
+  }
+
+  .ticket-config-sub > .ticket-config-heading-bar .panel-title {
+    color: var(--stage-tone);
+  }
+
   .ticket-status {
     display: flex;
     flex-wrap: wrap;
@@ -15,47 +152,13 @@
     border-radius: var(--radius-3);
   }
 
-  .ticket-status[data-tone="live"] {
-    background: var(--wash-live);
-    border-color: color-mix(in srgb, var(--tone-live) 30%, var(--edge));
-  }
-
-  .ticket-status[data-tone="evaluation"] {
-    background: var(--wash-evaluation);
-    border-color: color-mix(in srgb, var(--tone-evaluation) 30%, var(--edge));
-  }
-
-  .ticket-status[data-tone="finalization"] {
-    background: var(--wash-finalization);
-    border-color: color-mix(in srgb, var(--tone-finalization) 30%, var(--edge));
-  }
-
-  .ticket-status[data-tone="parked"] {
-    background: var(--wash-parked);
-    border-color: color-mix(in srgb, var(--tone-parked) 30%, var(--edge));
-  }
-
-  .ticket-status[data-tone="pass"] {
-    background: var(--wash-pass);
-    border-color: color-mix(in srgb, var(--tone-pass) 30%, var(--edge));
-  }
-
-  .ticket-status[data-tone="fail"] {
-    background: var(--wash-fail);
-    border-color: color-mix(in srgb, var(--tone-fail) 30%, var(--edge));
-  }
-
-  .ticket-status-standing {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-2);
-    min-width: 0;
-  }
-
   .ticket-status-line,
   .ticket-status-line .fig {
     color: var(--ink-3);
+  }
+
+  .ticket-status-figures {
+    margin-inline-start: auto;
   }
 
   .ticket-status-figures .fields {
@@ -78,13 +181,27 @@
     color: var(--ink-1);
   }
 
+  .ticket-status-actions [class*="btn-"] {
+    box-sizing: border-box;
+    height: calc(var(--space-6) + var(--space-2));
+  }
+
+  .ticket-status-actions .btn-danger:not(:hover, :focus-visible, :disabled) {
+    border-color: color-mix(in srgb, var(--tone-fail) 60%, transparent);
+  }
+
+  .ticket-dependencies {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+  }
+
   .ticket-status-actions {
     display: flex;
     flex-wrap: wrap;
-    align-items: flex-start;
-    justify-content: flex-end;
+    align-items: center;
+    justify-content: flex-start;
     gap: var(--space-4);
-    margin-left: auto;
   }
 
   .ticket-status-actions .act,
@@ -99,11 +216,18 @@
     text-align: right;
   }
 
+  /* The lines under a button stay as the button's description and are not
+   * drawn. */
   .ticket-status-actions .act-effect,
   .ticket-status-actions .act-more,
-  .ticket-card-actions .act-effect {
-    font-size: var(--text-sm);
-    color: var(--ink-3);
+  .ticket-card-actions .act-effect,
+  .ticket-card-actions .act-more {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 
   .ticket-card {
@@ -145,47 +269,6 @@
     flex-wrap: wrap;
     align-items: center;
     gap: var(--space-3);
-  }
-
-  .ticket-section + .ticket-section {
-    border-top: var(--hairline) solid var(--edge);
-  }
-
-  .ticket-section-trigger {
-    appearance: none;
-    font-weight: var(--weight-regular);
-    display: flex;
-    align-items: center;
-    gap: var(--space-3);
-    width: 100%;
-    padding: var(--space-3) var(--space-4);
-    background: transparent;
-    border: 0;
-    color: var(--ink-1);
-    font-family: inherit;
-    font-size: var(--text-md);
-    text-align: left;
-    cursor: pointer;
-  }
-
-  .ticket-section-summary,
-  .ticket-section-summary .fig,
-  .ticket-section-chevron {
-    color: var(--ink-3);
-  }
-
-  .ticket-section-chevron {
-    transition: rotate var(--duration-2) var(--ease-out);
-  }
-
-  .ticket-section-trigger[data-state="open"] > .ticket-section-chevron {
-    rotate: 90deg;
-  }
-
-  .ticket-section-body {
-    display: grid;
-    gap: var(--space-3);
-    padding: 0 var(--space-4) var(--space-4);
   }
 
   .ticket-now-head,
@@ -567,12 +650,6 @@
     gap: var(--space-2);
   }
 
-  .ticket-config-doc {
-    margin: 0;
-    line-height: var(--leading-prose);
-    color: var(--ink-1);
-  }
-
   /* A command is one token as often as not, and breaks where it must rather
      than widen the column it stands in. */
   .ticket-config-command {
@@ -588,29 +665,10 @@
     color: var(--ink-1);
   }
 
-  .ticket-config-evaluations {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-    padding-top: var(--space-4);
-    border-top: var(--hairline) solid var(--edge);
-  }
-
   .ticket-config-evaluation-grid {
     display: grid;
-    grid-template-columns: max-content minmax(0, 1fr);
-    gap: var(--space-3) var(--space-5);
-    align-items: baseline;
-  }
-
-  .ticket-config-evaluation-row {
-    display: contents;
-  }
-
-  .ticket-config-evaluation-label {
-    color: var(--ink-3);
-    font-size: var(--text-sm);
-    white-space: nowrap;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-4);
   }
 
   .ticket-config-evaluation-body {

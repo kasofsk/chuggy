@@ -13,7 +13,6 @@ import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { phaseRoster } from "../../../src/contract/rosters.ts";
 import type { TicketPhase } from "../../../src/contract/rosters.ts";
 import { TicketPage } from "../app/browser/TicketPage.tsx";
-import { ticketDuplicateEffect } from "../app/core/codeLabels.ts";
 import {
   answer,
   apiDouble,
@@ -121,27 +120,9 @@ async function bar(
   return { api, bar: drawn };
 }
 
-function duplicateOf(drawn: HTMLElement): HTMLElement {
-  return within(drawn).getByRole("link", { name: "Duplicate" });
-}
-
-test.each(phaseRoster)(
-  "a %s ticket offers Duplicate, to a new ticket from this one",
-  async (phase) => {
-    const { api, bar: drawn } = await bar(phase);
-    const link = duplicateOf(drawn);
-    expect(link.dataset["to"]).toBe("/$tenant/$project/tickets/new");
-    expect(JSON.parse(link.dataset["search"] ?? "null")).toStrictEqual({
-      from: 11,
-    });
-    expect(within(drawn).getByText(ticketDuplicateEffect)).toBeTruthy();
-    expect(api.submissions()).toBe(0);
-  },
-);
-
-test("Duplicate is offered where the open actions could not be read", async () => {
-  const { bar: drawn } = await bar("Escalated", false);
-  expect(duplicateOf(drawn)).toBeTruthy();
+test.each(phaseRoster)("a %s ticket offers no Duplicate", async (phase) => {
+  const { bar: drawn } = await bar(phase);
+  expect(within(drawn).queryByRole("link", { name: "Duplicate" })).toBeNull();
 });
 
 /** Which of what a Pending ticket's page and an Escalated one's offer a
@@ -155,34 +136,28 @@ async function offeredTo(
   await bar("Pending", true, over);
   const pending = {
     edit: named("link", "Edit"),
-    duplicate: named("link", "Duplicate"),
   };
   cleanup();
   await bar("Escalated", true, over);
   return {
     ...pending,
     revoke: named("button", "Revoke"),
-    duplicateParked: named("link", "Duplicate"),
   };
 }
 
-test("a reader who may not mutate is offered no Edit, Duplicate or Revoke", async () => {
+test("a reader who may not mutate is offered no Edit or Revoke", async () => {
   expect(await offeredTo({ ...abilitiesEvery, mutate: false })).toStrictEqual({
     edit: false,
-    duplicate: false,
     revoke: false,
-    duplicateParked: false,
   });
 });
 
 test.each(abilitiesUnrefusing)(
-  "a reader the abilities read %s is offered Edit, Duplicate and Revoke",
+  "a reader the abilities read %s is offered Edit and Revoke",
   async (_said, abilities) => {
     expect(await offeredTo(abilities)).toStrictEqual({
       edit: true,
-      duplicate: true,
       revoke: true,
-      duplicateParked: true,
     });
   },
 );

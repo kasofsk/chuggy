@@ -378,7 +378,8 @@ test("an unread action list offers nothing the phase alone would allow", async (
 
   expect(button("Resume")).toBeNull();
   expect(button("Revoke")).toBeNull();
-  expect(readFailedLines()).toStrictEqual(["Not read · Server error"]);
+  const bar = screen.getByRole("region", { name: "Status" });
+  expect(readFailedLines(bar)).toStrictEqual(["Not read · Server error"]);
 });
 
 /** An API that accepts the submission and leaves the operation pending, which

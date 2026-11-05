@@ -10,8 +10,6 @@
  */
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
-import { projectAbilityRefused } from "./projectAbilities.ts";
-import type { ProjectAbilities } from "./projectAbilities.ts";
 import type { Tone } from "./tones.ts";
 
 export const navRoutes = {
@@ -41,13 +39,13 @@ export interface NavStanding {
   readonly tone: Tone;
 }
 
-/** Every entry the bar and its gear draw, so each is drawn with its own glyph. */
+/** Every entry the bar and its gear draw, and the inbox beside the gear, so
+ * each is drawn with its own glyph. */
 export type NavEntryId =
   | "overview"
   | "inbox"
   | "lead"
   | "catalog"
-  | "ticket-new"
   | "settings"
   | "repositories"
   | "runners";
@@ -58,15 +56,11 @@ export interface NavEntry {
   readonly to: NavRoute;
   readonly params: NavParams;
   readonly standing?: NavStanding | undefined;
-  readonly count?: string | undefined;
 }
 
 export interface ShellNavInput {
   readonly partition: PartitionIdentity;
   readonly leadStanding?: NavStanding | undefined;
-  readonly inboxCount?: string | undefined;
-  /** What the abilities read answered, on which New ticket depends. */
-  readonly abilities?: ProjectAbilities;
 }
 
 export function shellNav(input: ShellNavInput): readonly NavEntry[] {
@@ -74,21 +68,8 @@ export function shellNav(input: ShellNavInput): readonly NavEntry[] {
     tenant: input.partition.tenant,
     project: input.partition.project,
   };
-  const ticketNew: NavEntry = {
-    id: "ticket-new",
-    label: "New ticket",
-    to: navRoutes.ticketNew,
-    params,
-  };
   return [
     { id: "overview", label: "Tickets", to: navRoutes.overview, params },
-    {
-      id: "inbox",
-      label: "Inbox",
-      to: navRoutes.inbox,
-      params,
-      count: input.inboxCount,
-    },
     {
       id: "lead",
       label: "Lead",
@@ -97,7 +78,6 @@ export function shellNav(input: ShellNavInput): readonly NavEntry[] {
       standing: input.leadStanding,
     },
     { id: "catalog", label: "Catalog", to: navRoutes.catalog, params },
-    ...(projectAbilityRefused(input.abilities, "mutate") ? [] : [ticketNew]),
   ];
 }
 
@@ -139,8 +119,8 @@ const ticketNewSegment = "new";
  * Whether a page is the one an entry stands for: its own address and whatever
  * lies beneath it. Tickets is the exception, because the overview is the
  * parent of every other address and would read as selected on all of them; it
- * is current on the overview and on a ticket's page and edit, and `tickets/new`
- * is New ticket's.
+ * is current on the overview and on a ticket's page and edit, and not on
+ * `tickets/new`.
  */
 export function navEntryCurrent(entry: NavEntry, pathname: string): boolean {
   const path = navEntryPath(entry);

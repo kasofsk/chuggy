@@ -30,6 +30,9 @@ import { Figure } from "../ui/Figure.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
 import { Table } from "../ui/Table.tsx";
 
+/** What the page holds is not what the ticket has, where the route said so. */
+const shortPageNote = "on this page";
+
 /** One row of the by-stage table: what the program ran, and what it cost. */
 export interface StageSpendRow {
   readonly label: string;
@@ -81,6 +84,7 @@ export function stageSpendRows(
 function UsageTotals(props: {
   readonly totals: RunTotals;
   readonly page: ExecutionsResponse | undefined;
+  readonly truncated: boolean;
 }): ReactNode {
   const totals = props.totals;
   return (
@@ -102,6 +106,9 @@ function UsageTotals(props: {
       </Field>
       <Field name="Runs">
         <span className="num">{runsLabel(props.page)}</span>
+        {props.truncated ? (
+          <span className="fig-dim"> {shortPageNote}</span>
+        ) : null}
       </Field>
       <Field name="Denials">
         <span className="num">{totals.permissionDenials}</span>
@@ -224,6 +231,9 @@ function UsageByStage(props: { readonly page: ExecutionsResponse }): ReactNode {
 export function TicketUsage(props: {
   readonly totals: RunTotals | undefined;
   readonly page: ExecutionsResponse | undefined;
+  /** Whether the page is short of the ticket's executions, which the run
+   * count is then this page's of. */
+  readonly truncated: boolean;
 }): ReactNode {
   return (
     <div className="grid gap-4">
@@ -231,7 +241,11 @@ export function TicketUsage(props: {
         <EmptyState label="No run figures yet" />
       ) : (
         <>
-          <UsageTotals totals={props.totals} page={props.page} />
+          <UsageTotals
+            totals={props.totals}
+            page={props.page}
+            truncated={props.truncated}
+          />
           <UsageByModel totals={props.totals} />
         </>
       )}

@@ -11,7 +11,6 @@ import {
   openedStream,
   ScreenHarness,
   settled,
-  turned,
   queryClientUnretried,
 } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
@@ -156,13 +155,6 @@ async function drawTicket(named: Named): Promise<void> {
       <TicketPage />
     </ScreenHarness>,
   );
-  await settled();
-  for (const row of [/^Brief/u, /^Provenance/u]) {
-    const trigger = screen.getByRole("button", { name: row });
-    await turned(() => {
-      trigger.click();
-    });
-  }
   await settled();
 }
 

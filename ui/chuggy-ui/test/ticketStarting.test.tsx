@@ -155,11 +155,9 @@ function launchServed(step: LaunchStep): RunPageServed {
 }
 
 test.each(launchSteps)(
-  "a $route run $step reads $word in its row, its cycle, its count and the Now card",
+  "a $route run $step reads $word in its row, its cycle and the Now card",
   async (step) => {
     const drawn = await runPageDrawn(atlas, launchServed(step));
-    const bar = drawn.container.querySelector(".ticket-status");
-    expect(bar?.textContent).toContain(`1 · 1 ${step.word.toLowerCase()} ·`);
     const row = drawn.container.querySelector(".ledger-row");
     expect(row?.querySelector(".ledger-pill")?.textContent).toBe(step.word);
     expect(
