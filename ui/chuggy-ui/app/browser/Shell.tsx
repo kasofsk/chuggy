@@ -12,7 +12,7 @@
  * conversation does not. It takes the body three ways and no fourth — a column
  * beside the pages, the whole body, or the strip its own control expands — and
  * a viewport too narrow to divide stacks the column or the strip under the
- * pages instead, starting over the whole body until the reader leaves it. A
+ * pages instead, starting as the strip until the reader expands it. A
  * thread's own page is drawn with no pane at all, since the thread is the page
  * there.
  *

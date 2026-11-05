@@ -179,62 +179,60 @@ test("the bar spans the frame rather than sharing the row with the pane", async 
 });
 
 /** A docked pane under the pages takes a share of every page's height, so a
- * narrow viewport draws the chat over the body under the bar or as the strip,
- * and never stores either. */
-test("under that width it starts over the whole body with no full-screen control, and collapsing leaves the strip under the pages", async () => {
+ * narrow viewport draws the chat as the strip under the pages or over the body
+ * under the bar, and never stores either. */
+test("under that width it starts as the strip under the pages, and expanding it takes the whole body with no full-screen control", async () => {
   await mounted(viewportTwoColumnEm - 1);
-  expect(chatDrawn()).not.toBeNull();
+  expect(chatDrawn()).toBeNull();
   expect(navDrawn()).not.toBeNull();
-  expect(frameDivided()).toBe("across chat-right");
+  expect(frameDivided()).toBe("down pages | chat-bottom");
+  expect(edgeDrawn().getAttribute("aria-orientation")).toBe("horizontal");
+  styleless();
+  await pressed("Expand chat");
+  expect(chatDrawn()).not.toBeNull();
+  expect(frameDivided()).toBe("down chat-bottom");
   expect(document.querySelector("[data-chat]")?.getAttribute("data-chat")).toBe(
     "full",
   );
   expect(screen.queryByRole("button", { name: "Full screen" })).toBeNull();
   expect(screen.queryByRole("button", { name: "Exit full screen" })).toBeNull();
-  styleless();
   await pressed("Collapse");
-  expect(chatDrawn()).toBeNull();
   expect(frameDivided()).toBe("down pages | chat-bottom");
-  expect(edgeDrawn().getAttribute("aria-orientation")).toBe("horizontal");
-  await pressed("Expand chat");
-  expect(frameDivided()).toBe("across chat-right");
   expect(localStorage.getItem(chatPaneStoreKey)).toBeNull();
   styleless();
 });
 
 /** What a desk stored is kept for the desk: a narrow viewport opens the pane
- * whole however it was left, writes nothing over it, and a desk draws it as
- * stored again. */
-test("under that width a pane stored docked or full opens over the whole body, and widened is drawn as stored", async () => {
-  for (const presentation of ["Docked", "Full"]) {
+ * as the strip however it was left, writes nothing over it, and a desk draws
+ * it as stored again. */
+test("under that width a stored pane opens as the strip whatever it is, and widened is drawn as stored", async () => {
+  for (const presentation of ["Docked", "Collapsed", "Full"]) {
     const stored = JSON.stringify({ placement: "Left", presentation });
     localStorage.setItem(chatPaneStoreKey, stored);
     const frame = await mounted(viewportTwoColumnEm - 1);
-    expect(frameDivided(), presentation).toBe("across chat-right");
-    await pressed("Collapse");
+    expect(frameDivided(), presentation).toBe("down pages | chat-bottom");
     await pressed("Expand chat");
+    await pressed("Collapse");
     expect(localStorage.getItem(chatPaneStoreKey), presentation).toBe(stored);
     viewportAtEm(viewportDeskEm);
     await frame.redrawn();
     expect(frameDivided(), presentation).toBe(
-      presentation === "Docked"
-        ? "across chat-left | pages"
-        : "across chat-left",
+      presentation === "Full" ? "across chat-left" : "across chat-left | pages",
     );
     cleanup();
   }
   styleless();
 });
 
-/** The strip under the pages is put away for the page's life only, so a
- * reload opens the pane whole again. */
-test("under that width a reload after a collapse opens the pane over the whole body", async () => {
+/** The pane over the whole body is expanded for the page's life only, so a
+ * reload opens it as the strip again. */
+test("under that width a reload after an expand opens the pane as the strip", async () => {
   await mounted(viewportTwoColumnEm - 1);
-  await pressed("Collapse");
-  expect(frameDivided()).toBe("down pages | chat-bottom");
+  await pressed("Expand chat");
+  expect(frameDivided()).toBe("down chat-bottom");
   cleanup();
   await mounted(viewportTwoColumnEm - 1);
-  expect(frameDivided()).toBe("across chat-right");
+  expect(frameDivided()).toBe("down pages | chat-bottom");
   expect(localStorage.getItem(chatPaneStoreKey)).toBeNull();
   styleless();
 });
@@ -243,7 +241,6 @@ test("under that width a reload after a collapse opens the pane over the whole b
  * under the pages whatever placement the reader stored. */
 test("under that width the strip draws a vertical glyph, and is named Chat", async () => {
   await mounted(viewportTwoColumnEm - 1);
-  await pressed("Collapse");
   const glyph = Array.from(
     screen
       .getByRole("button", { name: "Expand chat" })
@@ -357,7 +354,6 @@ test("the edge is a hairline in the edge's colour, and the stronger one while ho
 
 test("the edge under the pages is a hairline across the frame", async () => {
   await mounted(viewportTwoColumnEm - 1);
-  await pressed("Collapse");
   const edge = edgeDrawn();
   expect(edge.getAttribute("aria-orientation")).toBe("horizontal");
   expect(sheetDeclared(sheetRules(shellSheet, []), edge, "height")).toBe(
@@ -411,7 +407,8 @@ test("beside the pages a panel under the pane's least draws none of it, and over
       expect(sheetDeclared(rules, part, "visibility")).toBe("");
   viewportAtEm(viewportTwoColumnEm - 1, {});
   await frame.redrawn();
-  expect(frameDivided()).toBe("across chat-right");
+  await pressed("Expand chat");
+  expect(frameDivided()).toBe("down chat-bottom");
   expect(paneUnderLeast()).toEqual([
     ["", ""],
     ["", ""],
@@ -846,13 +843,18 @@ function paneDocked(): void {
   );
 }
 
-/** On a phone the chat starts over the whole body, and the bar stays over
- * it, so every screen is still one press away. */
-test("on a phone a full screen keeps the banner and the bar, and pressing a screen draws it", async () => {
+/** On a phone the chat starts as the strip under the page, and expanded over
+ * the whole body the bar stays over it, so every screen is still one press
+ * away. */
+test("on a phone the pane opens as the strip under the page, expanded keeps the banner and the bar, and pressing a screen draws it", async () => {
   pageDrawn = () => <p>the screen</p>;
   paneDocked();
   await mounted(viewportNarrowEm - 1);
-  expect(frameDivided()).toBe("across chat-right");
+  expect(frameDivided()).toBe("down pages | chat-bottom");
+  expect(chatDrawn()).toBeNull();
+  expect(screen.getByText("the screen")).toBeDefined();
+  await pressed("Expand chat");
+  expect(frameDivided()).toBe("down chat-bottom");
   expect(chatDrawn()).not.toBeNull();
   expect(navDrawn()).not.toBeNull();
   expect(screen.queryByRole("button", { name: "Settings" })).not.toBeNull();
@@ -1077,7 +1079,6 @@ test("a page outlives the viewport narrowing past the two-column width", async (
   const frame = await mounted(viewportTwoColumnEm - 1, undefined, undefined, {
     heightEm: frameTallEm,
   });
-  await pressed("Collapse");
   viewportAtEm(viewportDeskEm, { heightEm: frameTallEm });
   await frame.redrawn();
   expect(frameDivided()).toBe("across pages | chat-right");
@@ -1101,7 +1102,6 @@ test("a viewport widened on a thread's own page lays the pane beside the pages o
   const frame = await mounted(viewportTwoColumnEm - 1, undefined, undefined, {
     heightEm: frameTallEm,
   });
-  await pressed("Collapse");
   expect(frameDivided()).toBe("down pages | chat-bottom");
   routeParams = { ...atlas, session: threadMineSession };
   await frame.redrawn();
@@ -1200,14 +1200,8 @@ test.each([
     ],
   ],
   [
-    "narrowed on a short frame, collapsed to the strip under the pages, the frame heightened, and expanded",
-    [
-      shortened,
-      { move: "Narrowed" },
-      { move: "Collapsed" },
-      heightened,
-      { move: "Expanded" },
-    ],
+    "narrowed on a short frame into the strip under the pages, the frame heightened, and expanded",
+    [shortened, { move: "Narrowed" }, heightened, { move: "Expanded" }],
   ],
   [
     "placed under the pages, the frame shortened, placed right and back, and collapsed and expanded",
@@ -1283,12 +1277,12 @@ test.each([
     ],
   ],
   [
-    "dragged, narrowed past the two-column width, collapsed, expanded, and widened",
+    "dragged, narrowed past the two-column width into the strip, expanded, collapsed, and widened",
     [
       draggedAcross,
       { move: "Narrowed" },
-      { move: "Collapsed" },
       { move: "Expanded" },
+      { move: "Collapsed" },
       { move: "Widened" },
     ],
   ],

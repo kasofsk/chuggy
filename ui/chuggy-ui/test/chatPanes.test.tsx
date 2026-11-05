@@ -50,15 +50,15 @@ test("a move at two columns is stored, and a new store reads it back", () => {
 test("a move below two columns is held and stores nothing, and a new store holds none of it", () => {
   const store = consoleStoreBare();
   store.dispatch(
-    chatPaneMoved({ placement: "Right", presentation: "Collapsed" }, false),
+    chatPaneMoved({ placement: "Right", presentation: "Full" }, false),
   );
   expect(
     chatPaneHoldState(chatPaneHoldOf(store.getState()), false),
-  ).toStrictEqual({ placement: "Right", presentation: "Collapsed" });
+  ).toStrictEqual({ placement: "Right", presentation: "Full" });
   expect(localStorage.getItem(chatPaneStoreKey)).toBeNull();
   const reloaded = chatPaneHoldOf(consoleStoreBare().getState());
   expect(reloaded.stored).toBeUndefined();
-  expect(chatPaneHoldState(reloaded, false).presentation).toBe("Full");
+  expect(chatPaneHoldState(reloaded, false).presentation).toBe("Collapsed");
 });
 
 test("New's key stands until an open answers in its project, and only there", () => {
