@@ -9,6 +9,7 @@ import { nativeHttpPageItemsMax } from "../../../src/contract/http.ts";
 import {
   ticketFilterAll,
   ticketFilterList,
+  ticketFilterOf,
   ticketFilterPage,
   ticketFilterPhases,
   ticketFilterProjectEmpty,
@@ -25,6 +26,7 @@ import { ticketInstants } from "./ticketInstants.ts";
 
 const partition = { tenant: "acme", project: "atlas" };
 
+/** A filter for each read the wire is asked: every ticket, or one phase. */
 const filters: readonly TicketFilter[] = [ticketFilterAll, ...phaseRoster];
 
 function filtered(filter: TicketFilter): TicketListAsk {
@@ -75,6 +77,33 @@ test("a phase filter asks the wire for that phase and no other", () => {
     expect(ticketFilterPage(filtered(phase), first).phase).toStrictEqual([
       phase,
     ]);
+  }
+});
+
+test("a word names All, a phase or a pending standing, and nothing else", () => {
+  for (const filter of [...filters, "Ready", "Blocked"])
+    expect(ticketFilterOf(filter)).toBe(filter);
+  for (const word of ["ready", "NeedsYou", undefined, 3])
+    expect(ticketFilterOf(word)).toBeUndefined();
+});
+
+/** Ready and Blocked are standings of Pending, which is all the wire can
+ * name, so either reads what Pending reads, under Pending's entry. */
+test("a pending standing's filter asks the wire for Pending, under Pending's entry", () => {
+  for (const standing of ["Ready", "Blocked"] as const) {
+    expect(ticketFilterPhases(standing)).toStrictEqual(["Pending"]);
+    for (const order of ["RecentActivity", "Oldest"] as const) {
+      const ask = { filter: standing, order, search: undefined };
+      const pending = { ...ask, filter: "Pending" as const };
+      expect(ticketFilterList(partition, ask).key).toStrictEqual(
+        ticketFilterList(partition, pending).key,
+      );
+      expect(ticketFilterReadsCount(ask)).toBe(ticketFilterReadsCount(pending));
+      expect(ticketFilterPage(ask, first)).toStrictEqual(
+        ticketFilterPage(pending, first),
+      );
+    }
+    expect(ticketFilterProjectEmpty(filtered(standing), ended)).toBe(false);
   }
 });
 
