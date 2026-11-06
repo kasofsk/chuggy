@@ -644,3 +644,27 @@ its being unspent, so two claims cannot spend one. Its key and identity are
 `(principal, agent)`, as `agent_account_setting`'s are. It points at nothing. A
 press lets a claim through only a limit received before it. It has no
 unfinished work: a press is spent or it is not.
+
+`epic` — a project's epic as it stands: its number, its revision and its
+content. Owned by the boundary owner, the only role granted on it, and no door
+writes it yet. Its composite key is `(tenant, project, number)` and it points
+at `project`; numbers run from 1 without a gap because a creation takes the
+project row's lock and allocates `max(number) + 1`, so no counter is kept. It
+is changed by saving a revision, in the transaction that appends that
+revision's `epic_change`. It has no unfinished work: a save is committed or it
+was rolled back.
+
+`epic_ticket` — the members of an epic, as it stands. Owned by the boundary
+owner. Its identity is `(tenant, project, epic, ticket)` and it points at
+`epic`; it points at no ticket, because a ticket lives in the journal and the
+decision that saves an epic has already refused a member the project did not
+hold. It is replaced whole with the epic's revision, and
+`epic_ticket_by_ticket` serves the read of a ticket's epics. It has no
+unfinished work.
+
+`epic_change` — every revision an epic has had, with the whole content it
+saved, which is what history is read from. Owned by the boundary owner, granted
+INSERT and SELECT, and `epic_change_is_immutable` refuses every change and
+delete. Its identity is `(tenant, project, epic, revision)` and it points at
+`project`. Its newest row per epic is the content `epic` holds, which is why a
+save writes both in one transaction. It has no unfinished work.
