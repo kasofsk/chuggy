@@ -55,13 +55,15 @@ function drawParked(
     },
     landings: [],
     ledger: undefined,
-    stageCount: 1,
+    names: undefined,
     open: [],
     executions: [],
     setupOverridable,
     nowMs: 0,
   });
-  render(<TicketSlot partition={leadPartition} slot={slot} nowMs={0} />);
+  render(
+    <TicketSlot partition={leadPartition} ticket={11} slot={slot} nowMs={0} />,
+  );
   return screen.getByRole("status", { name: "Needs you" });
 }
 
@@ -71,10 +73,11 @@ test("a ticket parked with nowhere to run says so, with the way to Runners after
     evidence: "RequiredCapabilityUnavailable",
     resumeAt: "ResumeWork",
   });
-  const line = within(card).getByText(/^Nowhere to run this work/u);
-  expect(line.textContent).toBe("Nowhere to run this work · Runners");
+  const head = card.querySelector<HTMLElement>(".ticket-card-head");
+  if (head === null) throw new Error("no card head drawn");
+  expect(head.textContent).toBe("Nowhere to run this workRunners");
   expect(
-    within(line).getByRole("link", { name: "Runners" }).getAttribute("href"),
+    within(head).getByRole("link", { name: "Runners" }).getAttribute("href"),
   ).toBe(`/${leadPartition.tenant}/${leadPartition.project}/runners`);
   expect(within(card).queryByRole("button")).toBeNull();
 });

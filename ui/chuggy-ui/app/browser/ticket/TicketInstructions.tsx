@@ -1,7 +1,8 @@
 /**
  * What the ticket asks for: the brief's intent as markdown, folded to its
- * first lines with a fade and opened by a toggle that is drawn only where the
- * text runs longer; under it the brief's images.
+ * first lines with a fade and opened by a toggle under it that is drawn only
+ * where the text runs longer; under that the brief's images. Whatever the
+ * caller hands as its aside sits at the right of the heading.
  *
  * Opening and closing slide the height unless the reader asks for reduced
  * motion, which the stylesheet turns into a zero duration.
@@ -80,10 +81,11 @@ function useSlid(
   }, [bodyRef, fromRef, open]);
 }
 
-/** The title row and the intent folded under it, the toggle at the row's end. */
+/** The title row and the intent folded under it, the toggle under that. */
 function InstructionsIntent(props: {
   readonly text: string | undefined;
   readonly measure: InstructionsMeasure;
+  readonly aside: ReactNode;
 }): ReactNode {
   const { text, measure } = props;
   const body = useRef<HTMLDivElement>(null);
@@ -113,20 +115,7 @@ function InstructionsIntent(props: {
         >
           Instructions
         </h2>
-        {long || open ? (
-          <Button
-            variant="quiet"
-            size="sm"
-            expanded={open}
-            aria-controls="ticket-instructions-body"
-            onClick={() => {
-              from.current = body.current?.getBoundingClientRect().height;
-              setOpen(!open);
-            }}
-          >
-            {open ? "Show less" : "Show more"}
-          </Button>
-        ) : null}
+        {props.aside}
       </div>
       {text === undefined ? null : (
         <div
@@ -139,6 +128,19 @@ function InstructionsIntent(props: {
           <MarkdownReport text={text} bare />
         </div>
       )}
+      {long || open ? (
+        <Button
+          size="sm"
+          expanded={open}
+          aria-controls="ticket-instructions-body"
+          onClick={() => {
+            from.current = body.current?.getBoundingClientRect().height;
+            setOpen(!open);
+          }}
+        >
+          {open ? "Show less" : "Show all"}
+        </Button>
+      ) : null}
     </>
   );
 }
@@ -148,6 +150,8 @@ export function TicketInstructions(props: {
   readonly state: PanelState<TicketResponse>;
   /** How the folded text is told to overflow; the layout's own unless a test supplies one. */
   readonly measure?: InstructionsMeasure;
+  /** What sits at the right of the heading. */
+  readonly aside?: ReactNode;
 }): ReactNode {
   const ticket = props.state.state === "Ready" ? props.state.value : undefined;
   const intent = ticket?.brief?.intent;
@@ -161,6 +165,7 @@ export function TicketInstructions(props: {
         key={intent}
         text={intent === undefined || intent === "" ? undefined : intent}
         measure={props.measure ?? measured}
+        aside={props.aside}
       />
       <TicketBriefImages partition={props.partition} state={props.state} />
     </section>

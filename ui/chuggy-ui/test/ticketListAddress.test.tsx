@@ -17,6 +17,8 @@ import {
   consoleSiteEachCase,
 } from "./consoleSite.tsx";
 import type { ConsoleSite } from "./consoleSite.tsx";
+import { abilitiesEvery } from "./projectAbilitiesFixture.ts";
+import { creatorLabel } from "../app/core/labels.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
 vi.mock("../app/browser/ports.ts", async (importOriginal) =>
@@ -129,5 +131,73 @@ test("a link naming a pending standing draws it in the picker and its count pres
   expect(filterDrawn()).toContain("Blocked");
   expect(countPressed(/^Blocked/u)).toBe("true");
   expect(new Set(phasesRead(site.reads))).toStrictEqual(new Set(["Pending"]));
+  consoleSiteClean(site);
+});
+
+/** The creators the reads of the project's tickets named. */
+function namedCreators(reads: readonly string[]): ReadonlySet<string> {
+  return new Set(
+    reads
+      .map((read) => new URL(read, "http://console.test"))
+      .filter((read) =>
+        read.pathname.endsWith(`/projects/${consolePartition.project}`),
+      )
+      .flatMap((read) => read.searchParams.getAll("creator")),
+  );
+}
+
+function creatorDrawn(): string | null {
+  return screen.getByRole("button", { name: /^Creator/u }).textContent;
+}
+
+async function creatorChosen(name: string): Promise<void> {
+  fireEvent.keyDown(screen.getByRole("button", { name: /^Creator/u }), {
+    key: "ArrowDown",
+  });
+  await consoleAdvanced(ticketListAddressSettleMs);
+  fireEvent.click(screen.getByRole("menuitemradio", { name }));
+  await consoleAdvanced(ticketListAddressSettleMs);
+}
+
+/** The reader's principal names no issuer, so a person's is their subject. */
+test("a link naming a creator draws the list under them, by their email", async () => {
+  consoleMounted(`${projectAddress}?creator=s-ada`, consoleSession(), false);
+  await consoleAdvanced(ticketListAddressSettleMs);
+  expect(creatorDrawn()).toContain("ada@example.com");
+  expect(namedCreators(site.reads)).toStrictEqual(new Set(["s-ada"]));
+  consoleSiteClean(site);
+});
+
+test("a creator chosen is written to the address beside the filter, and Anyone takes it away", async () => {
+  const history = createMemoryHistory({
+    initialEntries: [`${projectAddress}?filter=Done`],
+  });
+  consoleMounted(
+    `${projectAddress}?filter=Done`,
+    consoleSession(),
+    false,
+    history,
+  );
+  await consoleAdvanced(ticketListAddressSettleMs);
+  expect(creatorDrawn()).toContain("Anyone");
+  const chosenAt = site.reads.length;
+  await creatorChosen("Me");
+  const address = new URLSearchParams(history.location.search);
+  expect(address.get("creator")).toBe(abilitiesEvery.principal);
+  expect(address.get("filter")).toBe("Done");
+  expect(creatorDrawn()).toContain("Me");
+  expect(namedCreators(site.reads.slice(chosenAt))).toStrictEqual(
+    new Set([abilitiesEvery.principal]),
+  );
+  await creatorChosen(creatorLabel("s-bob").text);
+  expect(new URLSearchParams(history.location.search).get("creator")).toBe(
+    "s-bob",
+  );
+  const clearedAt = site.reads.length;
+  await creatorChosen("Anyone");
+  expect(history.location.search).toBe("?filter=Done");
+  expect(creatorDrawn()).toContain("Anyone");
+  expect(site.reads.length).toBeGreaterThan(clearedAt);
+  expect(namedCreators(site.reads.slice(clearedAt))).toStrictEqual(new Set());
   consoleSiteClean(site);
 });

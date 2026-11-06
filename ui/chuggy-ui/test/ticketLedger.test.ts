@@ -605,10 +605,11 @@ test("a stage the page holds no set for is missing rather than skipped", () => {
   ]);
 });
 
-test("a stage is labelled from one, and past the program without a total", () => {
-  expect(stageLabel(1, 2)).toBe("Stage 1 of 2");
-  expect(stageLabel(2, 2)).toBe("Stage 2 of 2");
-  expect(stageLabel(3, 2)).toBe("Stage 3");
+test("a stage is named as its plan writes it, and by its number where the plan names none", () => {
+  expect(stageLabel(1, ["checks", "review"])).toBe("checks");
+  expect(stageLabel(2, ["checks", "review"])).toBe("review");
+  expect(stageLabel(3, ["checks", "review"])).toBe("Stage 3");
+  expect(stageLabel(2, undefined)).toBe("Stage 2");
 });
 
 test("a cycle is labelled by its own ordinal", () => {

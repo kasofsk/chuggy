@@ -21,9 +21,7 @@ import {
   instantFigure,
   instantFigureAtMs,
   instantText,
-  settledFigure,
   sinceFigure,
-  spanFigure,
   spanSetFigure,
   spendFigures,
   tokenCountText,
@@ -181,34 +179,6 @@ test("an ago figure carries the relative reading and the full date and clock for
   expect(figure.full).toBe("2026-08-24 12:00");
 });
 
-test("a closed span says when it started and how long it ran, an open one only when", () => {
-  const from = "2026-08-27T10:19:00Z";
-  const nowMs = Date.parse("2026-08-27T11:07:00Z");
-  const closed = spanFigure({ from, to: "2026-08-27T10:49:00Z" }, nowMs);
-  expect(closed.kind).toBe("Span");
-  if (closed.kind !== "Span") throw new Error("not a span");
-  expect(closed.parts).toEqual(["started 48m ago", "ran 30m"]);
-  expect(closed.open).toBe(false);
-  const open = spanFigure({ from, to: undefined }, nowMs);
-  if (open.kind !== "Span") throw new Error("not a span");
-  expect(open.parts).toEqual(["started 48m ago"]);
-  expect(open.open).toBe(true);
-});
-
-test("a span hovers its absolute ends, to the second", () => {
-  const from = new Date(2026, 7, 27, 10, 19, 5);
-  const to = new Date(2026, 7, 27, 10, 49, 0);
-  const closed = spanFigure(
-    { from: from.toISOString(), to: to.toISOString() },
-    to.getTime(),
-  );
-  if (closed.kind !== "Span") throw new Error("not a span");
-  expect(closed.title).toBe("2026-08-27 10:19:05 → 2026-08-27 10:49:00");
-  const open = spanFigure({ from: from.toISOString(), to: undefined }, 0);
-  if (open.kind !== "Span") throw new Error("not a span");
-  expect(open.title).toBe("2026-08-27 10:19:05");
-});
-
 test("an ago on the ticket page is two units, names what happened and hovers the second", () => {
   const at = new Date(2026, 7, 27, 10, 19, 5);
   const figure = sinceFigure(
@@ -225,31 +195,7 @@ test("an ago on the ticket page is two units, names what happened and hovers the
   expect(sinceFigure("not an instant", 0).kind).toBe("Absent");
 });
 
-test("a settled window is read from when it last moved, and how long it ran where it ran", () => {
-  const nowMs = Date.parse("2026-08-27T11:07:00Z");
-  const changedAt = "2026-08-27T10:44:00Z";
-  const ran = settledFigure(
-    changedAt,
-    { from: "2026-08-27T10:07:00Z", to: undefined },
-    nowMs,
-  );
-  if (ran.kind !== "Span") throw new Error("not a span");
-  expect(ran.parts).toEqual(["23m ago", "ran 37m"]);
-  expect(ran.open).toBe(false);
-  const never = settledFigure(
-    changedAt,
-    { from: undefined, to: undefined },
-    nowMs,
-  );
-  if (never.kind !== "Span") throw new Error("not a span");
-  expect(never.parts).toEqual(["23m ago"]);
-});
-
-test("a span with no readable start, and a spend with no totals, are absences", () => {
-  expect(spanFigure({ from: undefined, to: undefined }, 0).kind).toBe("Absent");
-  expect(spanFigure({ from: "not an instant", to: undefined }, 0).kind).toBe(
-    "Absent",
-  );
+test("a spend with no totals is an absence", () => {
   const absent = spendFigures(undefined, undefined);
   expect(absent.cost.kind).toBe("Absent");
   expect(absent.tokens.kind).toBe("Absent");

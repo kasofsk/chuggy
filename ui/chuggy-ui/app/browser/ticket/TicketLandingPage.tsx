@@ -7,13 +7,17 @@
 import type { ReactNode } from "react";
 
 import { sinceFigure } from "../../core/figures.ts";
+import { branchName } from "../../core/labels.ts";
 import { cycleLabel } from "../../core/ticketLedger.ts";
 import { ticketLandingLinkLabel } from "../../core/ticketLandings.ts";
 import type {
   TicketLanding,
   TicketLandingsState,
 } from "../../core/ticketLandings.ts";
-import { ticketRunsLandingCycle } from "../../core/ticketRuns.ts";
+import {
+  ticketRunLandingMarked,
+  ticketRunsLandingCycle,
+} from "../../core/ticketRuns.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
 import { Field, Fields } from "../ui/Fields.tsx";
@@ -23,7 +27,8 @@ import { Pill } from "../ui/Pill.tsx";
 import { useTicketPageHeld } from "./TicketPageHeld.tsx";
 import type { TicketPageHeld } from "./TicketPageHeld.tsx";
 import { LandingBlock } from "./TicketLandings.tsx";
-import { TicketRunMarkDrawn, useTicketRuns } from "./TicketRuns.tsx";
+import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
+import { useTicketRuns } from "./TicketRuns.tsx";
 import { TicketRunsFrame } from "./TicketRunPage.tsx";
 
 import "./ticket.css";
@@ -34,10 +39,11 @@ function TicketLandingHead(props: {
 }): ReactNode {
   const { landing } = props;
   const prepared = landing.detail.preparedAt;
+  const marked = ticketRunLandingMarked(landing);
   return (
     <div className="ticket-run-head">
       <div className="ticket-run-heading">
-        <TicketRunMarkDrawn mark="Merge" tone="finalization" />
+        <TicketRunMarkDrawn mark={marked.mark} tone={marked.tone} />
         <h2>Landing</h2>
         <span className="ticket-run-cycle">{cycleLabel(landing.cycle)}</span>
         <Pill tone={landing.tone}>{landing.word}</Pill>
@@ -78,10 +84,10 @@ function TicketLandingFields(props: {
       {proposal === undefined ? null : (
         <>
           <Field name="From">
-            <code>{proposal.head}</code>
+            <code title={proposal.head}>{branchName(proposal.head)}</code>
           </Field>
           <Field name="Into">
-            <code>{proposal.base}</code>
+            <code title={proposal.base}>{branchName(proposal.base)}</code>
           </Field>
         </>
       )}

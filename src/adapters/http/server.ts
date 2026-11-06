@@ -30,10 +30,11 @@ import {
   type ExecutionStatus,
 } from "../../interpreter/executionScheduler.ts";
 import type { ForgeInstallationId } from "../../interpreter/forgeInstallation.ts";
-import type {
-  Principal,
-  ProjectReadQuery,
-  TicketNumberOrder,
+import {
+  asPrincipal,
+  type Principal,
+  type ProjectReadQuery,
+  type TicketNumberOrder,
 } from "../../interpreter/nativeWeb.ts";
 import {
   executionSelectionRefused,
@@ -717,6 +718,7 @@ function projectReadQueryOf(
   const query = fieldsOnly(value, [
     "active",
     "after",
+    "creator",
     "cursor",
     "epic",
     "limit",
@@ -753,6 +755,9 @@ function projectReadQueryOf(
     ...(query["epic"] === undefined
       ? {}
       : { epic: integerField(query, "epic") }),
+    ...(query["creator"] === undefined
+      ? {}
+      : { creator: asPrincipal(textField(query, "creator")) }),
     ...(query["active"] !== undefined && activeField(query["active"])
       ? { active: true }
       : {}),

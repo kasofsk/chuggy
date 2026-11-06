@@ -14,6 +14,7 @@ import { runNowElapsedFigure } from "../../core/runNow.ts";
 import type { TicketHeaderFragment } from "../../core/ticketHeader.ts";
 import type { TicketListStanding } from "../../core/ticketListView.ts";
 import { Figure } from "../ui/Figure.tsx";
+import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
 import { TicketStateLabel } from "./TicketStateLabel.tsx";
 
 import "./ticket.css";
@@ -58,6 +59,7 @@ function TicketHeaderFragmentDrawn(props: {
     case "Landed":
       return (
         <span className="ticket-header-fragment">
+          <TicketRunMarkDrawn mark="Merge" tone="finalization" />
           {fragment.words}
           {fragment.link === undefined ? null : (
             <>

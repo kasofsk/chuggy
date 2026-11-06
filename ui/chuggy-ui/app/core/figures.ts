@@ -408,13 +408,6 @@ function sinceText(
   return happened === undefined ? ago : `${happened} ${ago}`;
 }
 
-function spanTitle(startMs: number, endMs: number | undefined): string {
-  const start = instantExactText(new Date(startMs));
-  return endMs === undefined
-    ? start
-    : `${start} → ${instantExactText(new Date(endMs))}`;
-}
-
 /** How long ago in two units, the ticket page's reading of an instant, with
  * what happened then named in front where the caller says. */
 export function sinceFigure(
@@ -428,46 +421,6 @@ export function sinceFigure(
     kind: "Ago",
     text: sinceText(nowMs, atMs, happened),
     full: instantExactText(new Date(atMs)),
-  };
-}
-
-/** A cycle's window: when it started and, once it has ended, how long it ran. */
-export function spanFigure(span: RunSpan, nowMs: number): Figure {
-  const startMs = parsedMs(span.from);
-  if (startMs === undefined)
-    return { kind: "Absent", why: "No run figures yet" };
-  const endMs = parsedMs(span.to);
-  const started = sinceText(nowMs, startMs, "started");
-  return {
-    kind: "Span",
-    parts:
-      endMs === undefined
-        ? [started]
-        : [started, `ran ${durationText(endMs - startMs)}`],
-    open: endMs === undefined,
-    title: spanTitle(startMs, endMs),
-  };
-}
-
-/** A window read from the instant it last moved, and how long it ran where it
- * ran at all, for a ticket the machine is not working on. */
-export function settledFigure(
-  changedAt: string,
-  ran: RunSpan,
-  nowMs: number,
-): Figure {
-  const atMs = parsedMs(changedAt);
-  if (atMs === undefined) return { kind: "Absent", why: "No instant" };
-  const fromMs = parsedMs(ran.from);
-  const toMs = parsedMs(ran.to) ?? atMs;
-  return {
-    kind: "Span",
-    parts: [
-      sinceText(nowMs, atMs, undefined),
-      ...(fromMs === undefined ? [] : [`ran ${durationText(toMs - fromMs)}`]),
-    ],
-    open: false,
-    title: instantExactText(new Date(atMs)),
   };
 }
 

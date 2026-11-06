@@ -11,13 +11,17 @@
  * finished. Pending rows are ordered nearest to dispatchable first by
  * `upNextOrdered`, so the ready ones lead them.
  *
- * THE SEARCH AND THE ORDER BY NUMBER ARE THE SERVER'S. They are asked of the
- * read, so what they draw is the project's rather than the rows one page held.
+ * THE SEARCH, THE CREATOR AND THE ORDER BY NUMBER ARE THE SERVER'S. They are
+ * asked of the read, so what they draw is the project's rather than the rows one page held.
  * The State and Activity sorts order the rows read and state nothing about the
  * project: they read the active list, which holds every active row.
  */
 
-import { ticketSearchCharsMax } from "../../../../src/contract/http.ts";
+import {
+  isBoundedText,
+  nativeHttpPathSegmentCharsMax,
+  ticketSearchCharsMax,
+} from "../../../../src/contract/http.ts";
 import type { TicketPhase } from "../../../../src/contract/rosters.ts";
 
 import {
@@ -26,6 +30,7 @@ import {
   ticketFilterStandingOf,
 } from "./projectTableFilters.ts";
 import type { TicketFilter, TicketListOrder } from "./projectTableFilters.ts";
+import { creatorSubject } from "./labels.ts";
 import type { ProjectTableRow } from "./projectTableRows.ts";
 import { upNextOrdered } from "./upNextOrder.ts";
 
@@ -72,9 +77,11 @@ export interface TicketListQuery {
   readonly q?: string;
   readonly sort?: TicketListSort;
   readonly filter?: TicketFilter;
+  /** The principal whose tickets alone the list holds. */
+  readonly creator?: string;
 }
 
-/** The address with its search, its sort or its filter replaced; State, being
+/** The address with its search, its sort, its filter or its creator replaced; State, being
  * the sort an address naming none is drawn in, is written as none. A filter is
  * written whatever it is, All included, because an address naming none is
  * drawn in the one this browser kept. */
@@ -83,39 +90,73 @@ export function ticketListQueryWith(
   change:
     | { readonly q: string | undefined }
     | { readonly sort: TicketListSort }
-    | { readonly filter: TicketFilter },
+    | { readonly filter: TicketFilter }
+    | { readonly creator: string | undefined },
 ): TicketListQuery {
   const q = "q" in change ? change.q : query.q;
   const sort = "sort" in change ? change.sort : query.sort;
   const filter = "filter" in change ? change.filter : query.filter;
+  const creator = "creator" in change ? change.creator : query.creator;
   return {
     ...(q === undefined ? {} : { q }),
     ...(sort === undefined || sort === "State" ? {} : { sort }),
     ...(filter === undefined ? {} : { filter }),
+    ...(creator === undefined ? {} : { creator }),
   };
 }
 
-/** The view an address names. The router parses each value as JSON, so a
- * search written by hand as `?q=121`, `?q=true` or `?q=null` arrives as
- * something other than text, and is read back as the text it was. */
-export function ticketListQueryOf(
-  search: Readonly<Record<string, unknown>>,
-): TicketListQuery {
-  const typed = search["q"];
-  const q =
-    typeof typed === "string" ||
+/** What the router parsed a value written by hand to, as the text it was. */
+function ticketListQueryText(typed: unknown): string | undefined {
+  return typeof typed === "string" ||
     typeof typed === "number" ||
     typeof typed === "boolean" ||
     typed === null
-      ? ticketListSearchOf(String(typed))
-      : undefined;
+    ? String(typed)
+    : undefined;
+}
+
+/** The view an address names, a creator the server would refuse being none.
+ * The router parses each value as JSON, so a search or a creator written by
+ * hand as `?q=121`, `?q=true` or `?q=null` is read back as the text it was. */
+export function ticketListQueryOf(
+  search: Readonly<Record<string, unknown>>,
+): TicketListQuery {
+  const typed = ticketListQueryText(search["q"]);
+  const q = typed === undefined ? undefined : ticketListSearchOf(typed);
   const sort = ticketListSorts.find((each) => each === search["sort"]);
   const filter = ticketFilterOf(search["filter"]);
+  const creator = ticketListQueryText(search["creator"]);
   return {
     ...(q === undefined ? {} : { q }),
     ...(sort === undefined ? {} : { sort }),
     ...(filter === undefined ? {} : { filter }),
+    ...(creator === undefined ||
+    !isBoundedText(creator, nativeHttpPathSegmentCharsMax)
+      ? {}
+      : { creator }),
   };
+}
+
+/**
+ * Whom the Creator picker offers besides Anyone and the reader, who is offered
+ * as Me: each of the project's people, whose principal is their subject under
+ * the reader's own issuer, the roster being the site issuer's as the reader
+ * is; and the creator the address names, where the roster holds no one by it.
+ */
+export function ticketListCreatorsOffered(
+  reader: string | undefined,
+  subjects: readonly string[],
+  chosen: string | undefined,
+): readonly string[] {
+  const issuer =
+    reader === undefined
+      ? undefined
+      : reader.slice(0, reader.length - creatorSubject(reader).length);
+  const people =
+    issuer === undefined ? [] : subjects.map((subject) => issuer + subject);
+  return [
+    ...new Set([...people, ...(chosen === undefined ? [] : [chosen])]),
+  ].filter((principal) => principal !== reader);
 }
 
 /** What a row's chip says: its phase, a Pending one read as Ready or Blocked. */

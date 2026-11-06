@@ -827,7 +827,7 @@ export const projectResponseSchema = z.object({
   tickets: page(projectTicketSchema),
   nextAfter: ticketNumberSchema.optional(),
   nextCursor: cursorSchema.optional(),
-  /** How many tickets a search matched across the project, its phases and activity included; only a read naming `q` carries it. */
+  /** How many tickets a search or creator matched across the project, its phases and activity included; only a read naming `q` or `creator` carries it. */
   matched: countSchema.optional(),
 });
 export type ProjectResponse = z.infer<typeof projectResponseSchema>;

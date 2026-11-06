@@ -54,11 +54,16 @@ test.each([
   },
 );
 
-test("the status bar is the plain panel whatever the ticket's phase", () => {
-  const status = document.createElement("section");
-  status.className = "ticket-status";
-  status.dataset["tone"] = phaseTone("Work");
-  expect(sheetDeclared(sheetRules(ticketSheet, []), status, "background")).toBe(
-    "var(--surface-1)",
-  );
-});
+test.each(["live", "evaluation", "finalization", "parked"] as const)(
+  "a steps column's top edge takes the %s tone it is given, and the plain edge where it is given none",
+  (tone) => {
+    const column = document.createElement("div");
+    column.className = "ticket-steps-column";
+    const rules = sheetRules(ticketSheet, []);
+    expect(sheetDeclared(rules, column, "--steps-edge")).toBe("var(--edge)");
+    column.dataset["edge"] = tone;
+    expect(sheetDeclared(rules, column, "--steps-edge")).toBe(
+      `var(--tone-${tone})`,
+    );
+  },
+);

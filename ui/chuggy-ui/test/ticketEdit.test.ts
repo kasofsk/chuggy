@@ -18,7 +18,6 @@ import {
 } from "../app/core/ticketCreation.ts";
 import {
   draftReleaseOf,
-  draftUnreleasedLabel,
   editFormFrom,
   editFormOf,
   editOfferListed,
@@ -481,16 +480,6 @@ test("a draft revised past its release says it holds unreleased changes", () => 
 test("a draft naming no released version is not read as current", () => {
   const release = draftReleaseOf(unbriefed);
   expect(release).toStrictEqual({ release: "Unrecorded" });
-});
-
-test("the short label counts what the sentence spells out", () => {
-  expect(draftUnreleasedLabel(draftReleaseOf(released))).toBe(
-    "Nothing unreleased",
-  );
-  expect(
-    draftUnreleasedLabel(draftReleaseOf({ ...released, authoringVersion: 7 })),
-  ).toBe("2 unreleased");
-  expect(draftUnreleasedLabel(draftReleaseOf(unbriefed))).toBe("Not recorded");
 });
 
 /** A reader who may not override revises the draft's overrides only as they stand. */
