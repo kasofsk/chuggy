@@ -331,3 +331,6 @@ export function roleStatement(role: string): string {
 }
 /** The door an epic is created and revised through. */
 export const epicSaveFunction = "save_epic";
+
+/** The door a draft is created into an epic through. */
+export const draftInEpicFunction = "create_draft_in_epic";

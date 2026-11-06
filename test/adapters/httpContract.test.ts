@@ -674,3 +674,18 @@ test("an overrides change names the escalation it was typed against and the whol
   ])
     assert.throws(() => parseSubmission("operation", "Key", broken));
 });
+
+test("a draft creation names the epic it joins as a positive number, or none", () => {
+  const base = {
+    configurationRevision: "revision",
+    configurationDigest: "a".repeat(64),
+    expectedProjectSequence: 7,
+    authoring,
+    brief,
+  };
+
+  assert.equal(parseDraftCreation({ ...base, epic: 3 }).epic, 3);
+  assert.equal("epic" in parseDraftCreation(base), false);
+  for (const epic of [0, -1, 1.5, "3"])
+    assert.throws(() => parseDraftCreation({ ...base, epic }), String(epic));
+});

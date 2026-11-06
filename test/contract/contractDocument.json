@@ -1724,6 +1724,11 @@
             }
           },
           "additionalProperties": false
+        },
+        "epic": {
+          "type": "integer",
+          "exclusiveMinimum": 0,
+          "maximum": 9007199254740991
         }
       },
       "required": [

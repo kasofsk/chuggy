@@ -651,8 +651,8 @@ only role that may write it; the API role is granted SELECT and EXECUTE on that
 door. Its composite key is `(tenant, project, number)` and it points
 at `project`; numbers run from 1 without a gap because a creation takes the
 project row's lock and allocates `max(number) + 1`, so no counter is kept. It
-is changed by `save_epic` alone, in the transaction that appends that
-revision's `epic_change`. It has no unfinished work: a save is committed or it
+is changed by `save_epic` and `create_draft_in_epic` alone, in the
+transaction that appends that revision's `epic_change`. It has no unfinished work: a save is committed or it
 was rolled back.
 
 `epic_ticket` — the members of an epic, as it stands. Owned by the boundary

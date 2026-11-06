@@ -9,6 +9,11 @@ import {
   postgresRepositoryConfigurationsHeld,
 } from "../../src/adapters/postgres/authoring.ts";
 import { postgresDomainConfigurationPrecondition } from "../../src/adapters/postgres/domainConfiguration.ts";
+import { postgresEpics } from "../../src/adapters/postgres/epics.ts";
+import {
+  epicContentBytesMax,
+  type EpicContent,
+} from "../../src/domain/epics.ts";
 import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import { postgresProjectRepositoryRetirement } from "../../src/adapters/postgres/repositoryBinding.ts";
@@ -3609,4 +3614,129 @@ test("a ticket past Pending keeps the overrides it was released under", async ()
     [{ outcome_code: "TicketNotPending" }],
   );
   assert.deepEqual(await releasedMaterial(fixture), material);
+});
+
+/** An epic of the project, saved as the epics door saves it. */
+async function epicOf(
+  partition: Partition,
+  content: Partial<EpicContent> = {},
+): Promise<number> {
+  const saved = await postgresEpics(pool).save(
+    partition,
+    {
+      kind: "Create",
+      content: {
+        title: "the footer",
+        description: "",
+        visibility: "Active",
+        tickets: [],
+        ...content,
+      },
+    },
+    authority,
+  );
+  if (saved.kind !== "Saved") throw new Error("the epic fixture was refused");
+  return saved.epic;
+}
+
+/** A draft created on the fixture's revision at the head it holds now, into the epic given. */
+async function draftInEpic(
+  fixture: Awaited<ReturnType<typeof draftFixture>>,
+  epic: number,
+  head?: number,
+) {
+  const initialized = await fixture.store.initializeDraft(
+    fixture.partition,
+    fixture.revision,
+    100,
+  );
+  if (initialized === undefined || initialized === "PolicyUnavailable")
+    throw new Error("draft fixture was not initialized");
+  return fixture.store.createDraft({
+    partition: fixture.partition,
+    authority,
+    configurationRevision: fixture.revision,
+    configurationDigest: initialized.configuration.digest,
+    expectedProjectSequence: head ?? initialized.projectSequence,
+    authoring: plainAuthoring,
+    brief: { ...postgresHarnessBrief, repository: fixture.repository },
+    epic,
+  });
+}
+
+/** What an epic and its project hold, to compare before and after a refusal. */
+async function epicStanding(partition: Partition, epic: number) {
+  return harness.query(
+    `SELECT e.revision::int AS revision,
+            ARRAY(SELECT m.ticket::int FROM epic_ticket m WHERE m.tenant=e.tenant AND m.project=e.project AND m.epic=e.number ORDER BY m.ticket) AS members,
+            (SELECT count(*)::int FROM epic_change c WHERE c.tenant=e.tenant AND c.project=e.project AND c.epic=e.number) AS changes,
+            (SELECT count(*)::int FROM draft d WHERE d.tenant=e.tenant AND d.project=e.project) AS drafts,
+            (SELECT p.ticket_next::int FROM project p WHERE p.tenant=e.tenant AND p.project=e.project) AS next
+       FROM epic e WHERE e.tenant=$1 AND e.project=$2 AND e.number=$3`,
+    [partition.tenant, partition.project, epic],
+  );
+}
+
+test("a draft created into an epic joins it in the same transaction, and the epic takes the next revision", async () => {
+  const fixture = await draftFixture();
+  const epic = await epicOf(fixture.partition);
+  const [before] = await epicStanding(fixture.partition, epic);
+
+  const created = await draftInEpic(fixture, epic);
+
+  if (created.created !== "Created") throw new Error(created.created);
+  assert.deepEqual(await epicStanding(fixture.partition, epic), [
+    {
+      revision: 2,
+      members: [created.draft.ticket],
+      changes: 2,
+      drafts: Number(before?.["drafts"]) + 1,
+      next: Number(before?.["next"]) + 1,
+    },
+  ]);
+});
+
+test("an epic that is missing, archived or too large refuses the draft and writes nothing", async () => {
+  const fixture = await draftFixture();
+  const archived = await epicOf(fixture.partition, { visibility: "Archived" });
+  const overhead = JSON.stringify({
+    description: "",
+    tickets: [],
+    title: "the footer",
+    visibility: "Active",
+  }).length;
+  const full = await epicOf(fixture.partition, {
+    description: "x".repeat(epicContentBytesMax - overhead),
+  });
+  const archivedBefore = await epicStanding(fixture.partition, archived);
+  const fullBefore = await epicStanding(fixture.partition, full);
+
+  assert.deepEqual(await draftInEpic(fixture, 99), {
+    created: "EpicUnavailable",
+    reason: "MissingEpic",
+  });
+  assert.deepEqual(await draftInEpic(fixture, archived), {
+    created: "EpicUnavailable",
+    reason: "ArchivedEpic",
+  });
+  assert.deepEqual(await draftInEpic(fixture, full), {
+    created: "EpicUnavailable",
+    reason: "LargeContent",
+  });
+  assert.deepEqual(
+    await epicStanding(fixture.partition, archived),
+    archivedBefore,
+  );
+  assert.deepEqual(await epicStanding(fixture.partition, full), fullBefore);
+});
+
+test("a draft the door refuses for its own reason joins nothing", async () => {
+  const fixture = await draftFixture();
+  const epic = await epicOf(fixture.partition);
+  const before = await epicStanding(fixture.partition, epic);
+
+  const created = await draftInEpic(fixture, epic, 9999);
+
+  assert.equal(created.created, "Stale");
+  assert.deepEqual(await epicStanding(fixture.partition, epic), before);
 });

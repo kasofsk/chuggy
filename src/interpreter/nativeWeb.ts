@@ -899,6 +899,8 @@ export interface NativeWeb extends NativeEpics {
       readonly brief: DraftBrief;
       readonly overrides?: ConfigurationOverrides;
       readonly selection?: ConfigurationSelection;
+      /** The epic the draft joins, which must be Active. */
+      readonly epic?: number;
       /** The session whose bearer carried the request, which the draft keeps as the thread its events wake. */
       readonly originSession?: SessionId;
     },

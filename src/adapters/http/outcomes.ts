@@ -2250,6 +2250,11 @@ function draftCreated(value: NativeDraftCreated): NativeHttpResponse {
       return retry(503, value.retryAfterSeconds, "ArtifactUnavailable");
     case "LandingUnbranched":
       return response(422, draftLandingUnbranched);
+    case "EpicUnavailable":
+      return response(
+        value.reason === "MissingEpic" ? 404 : 409,
+        nativeHttpError(value.reason, epicRefusalMessage[value.reason]),
+      );
     case "Stale":
       return response(409, {
         ...nativeHttpError(

@@ -119,6 +119,7 @@ import { migration118 } from "./118-expected-tree.ts";
 import { migration119 } from "./119-recheck-reworked.ts";
 import { migration120 } from "./120-epics.ts";
 import { migration121 } from "./121-epic-save.ts";
+import { migration122 } from "./122-draft-in-epic.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -243,4 +244,5 @@ export const migrations: readonly Migration[] = [
   migration119,
   migration120,
   migration121,
+  migration122,
 ];

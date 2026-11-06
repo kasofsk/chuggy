@@ -336,6 +336,7 @@ export interface ParsedDraftCreation {
   readonly brief: DraftBrief;
   readonly overrides?: ConfigurationOverrides;
   readonly selection?: ConfigurationSelection;
+  readonly epic?: number;
 }
 
 export interface ParsedDraftRevision {
@@ -430,6 +431,7 @@ export function parseDraftCreation(body: unknown): ParsedDraftCreation {
     brief: releaseBrief(value.brief),
     ...(value.overrides === undefined ? {} : { overrides: value.overrides }),
     ...(value.selection === undefined ? {} : { selection: value.selection }),
+    ...(value.epic === undefined ? {} : { epic: value.epic }),
   };
 }
 
