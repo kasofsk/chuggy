@@ -1,8 +1,8 @@
 /**
  * Everything the ticket page derives from the reads it already holds: the
- * ledger and what a resume would do.
+ * ledger, the plan it runs and what a resume would do.
  *
- * It is a plain function of the two reads rather than a hook, so the whole of
+ * It is a plain function of the reads rather than a hook, so the whole of
  * what the page decides is reachable from a suite with no renderer, and a part
  * of the page is handed facts instead of a query. Every field is absent while
  * the read it needs is, so a half-read page draws what it has rather than a
@@ -27,6 +27,8 @@ import type { ResumeOffer } from "./codeLabels.ts";
 import type { ResumePoint } from "../../../../src/contract/rosters.ts";
 import { executionStarting, ticketLedger } from "./ticketLedger.ts";
 import type { Ledger as LedgerFacts, TicketProgram } from "./ticketLedger.ts";
+import { ticketPlanOf } from "./ticketPlan.ts";
+import type { TicketPlan } from "./ticketPlan.ts";
 
 /**
  * How many executions this page holds, and what is true of them that a count
@@ -70,7 +72,7 @@ export function phaseIsRunning(phase: TicketResponse["phase"]): boolean {
 
 export interface TicketPageFacts {
   readonly program: TicketProgram | undefined;
-  readonly stageCount: number;
+  readonly plan: TicketPlan;
   readonly ledger: LedgerFacts | undefined;
   readonly resume: ResumeOffer;
   readonly truncated: boolean;
@@ -80,16 +82,19 @@ function resumeOfferOf(point: ResumePoint | undefined): ResumeOffer {
   return point === undefined ? { kind: "NoPoint" } : { kind: "Offered", point };
 }
 
+/** The page's facts from its reads; `canonical` is the configuration the
+ * ticket runs under, absent while it is read. */
 export function ticketPageFacts(
   ticket: TicketResponse | undefined,
   page: ExecutionsResponse | undefined,
+  canonical: string | undefined,
 ): TicketPageFacts {
   const program = ticket?.program;
-  const stageCount = program?.length ?? 0;
+  const plan = ticketPlanOf(canonical, ticket);
   const truncated = page?.nextCursor !== undefined;
   const resume = resumeOfferOf(ticket?.escalation?.resumeAt);
   if (program === undefined || page === undefined)
-    return { program, stageCount, ledger: undefined, resume, truncated };
+    return { program, plan, ledger: undefined, resume, truncated };
   const ledger = ticketLedger(page, program);
-  return { program, stageCount, ledger, resume, truncated };
+  return { program, plan, ledger, resume, truncated };
 }

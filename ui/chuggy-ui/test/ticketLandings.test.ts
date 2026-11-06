@@ -1,8 +1,7 @@
 /**
  * What the page derives from a ticket's landings, without a browser: the
  * fragment each state carries, the link a pull request is offered under, the
- * join to the ledger's cycles, the cycle a failed landing opened, and the
- * landing the status bar names.
+ * join to the ledger's cycles, and the cycle a failed landing opened.
  */
 
 import { expect, test } from "vitest";
@@ -10,7 +9,6 @@ import { expect, test } from "vitest";
 import { apiTimeoutMsDefault } from "../app/core/apiRequest.ts";
 import { freshnessStaleAfterMs } from "../app/core/freshness.ts";
 import {
-  ticketLandingCurrent,
   ticketLandingFragment,
   ticketLandingFragmentSays,
   ticketLandingLink,
@@ -132,7 +130,6 @@ test("a landing whose merge waits on the forge says on what, what the forge said
   });
   expect(landing.detail.proposal?.mergeState).toBe("behind");
   expect(landing.detail.checkedAt).toBe("2026-10-07T14:57:00Z");
-  expect(ticketLandingCurrent([landing])).toBe(landing);
 });
 
 test("a required check that failed reads as the forge's own word, which the fragment does not say twice", () => {
@@ -260,17 +257,6 @@ test("landings join the cycles the ledger holds in the read's order, and the res
   expect(joined.byCycle.has(1)).toBe(false);
   expect(joined.unheld.map((landing) => landing.cycle)).toEqual([4]);
   expect(ticketLandingsJoined(landings, []).unheld).toHaveLength(3);
-});
-
-test("the status bar names the newest landing only while it is live", () => {
-  const running = ticketLandingOf(landingRunning(3));
-  expect(
-    ticketLandingCurrent([ticketLandingOf(landingConflicted(2)), running]),
-  ).toBe(running);
-  expect(
-    ticketLandingCurrent([running, ticketLandingOf(landingConflicted(3))]),
-  ).toBeUndefined();
-  expect(ticketLandingCurrent([])).toBeUndefined();
 });
 
 test("a read that never answered holds no landings, and one that did holds them all", () => {

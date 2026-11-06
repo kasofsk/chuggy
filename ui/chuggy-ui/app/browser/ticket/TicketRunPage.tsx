@@ -54,11 +54,8 @@ import {
 } from "./TicketPageHeld.tsx";
 import type { TicketPageHeld } from "./TicketPageHeld.tsx";
 import { RunResultOpenedBody, useRunResultOpened } from "./TicketResult.tsx";
-import {
-  TicketRunMarkDrawn,
-  TicketRunsRail,
-  useTicketRuns,
-} from "./TicketRuns.tsx";
+import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
+import { TicketRunsRail, useTicketRuns } from "./TicketRuns.tsx";
 import type { TicketRunsRailCurrent } from "./TicketRuns.tsx";
 
 import "./ticket.css";

@@ -1,7 +1,6 @@
 /**
  * What a ticket's page draws of its landings: one row a landing under the
- * cycle it belongs to, a fragment on that cycle's header, and one on the
- * status bar while the ticket is finalizing.
+ * cycle it belongs to, and a fragment on that cycle's header.
  *
  * THE RESPONSE'S FIELDS ARE READ HERE AND NOWHERE ELSE. Every part of the page
  * is handed `TicketLanding`s, so a field the read renames or drops is one
@@ -388,7 +387,7 @@ function ticketLandingLandedAt(
       };
 }
 
-/** The one short fragment a landing's row and the status bar carry. */
+/** The one short fragment a landing's row carries. */
 export function ticketLandingFragment(
   landing: TicketLanding,
   nowMs: number,
@@ -533,14 +532,11 @@ function ticketLandingLive(state: TicketLandingState): boolean {
   }
 }
 
-/** The landing the status bar names while the ticket is finalizing: the newest, while it is still live. */
-export function ticketLandingCurrent(
-  landings: readonly TicketLanding[],
-): TicketLanding | undefined {
-  const newest = landings.at(-1);
-  return newest !== undefined && ticketLandingLive(newest.state)
-    ? newest
-    : undefined;
+/** A pull request as a short label: `PR #<n>` where a forge's `…/pull/<n>`
+ * address names its number, and its host otherwise. */
+export function ticketLandingPullLabel(link: TicketDeliveryLink): string {
+  const numbered = /\/pull\/(\d+)\/?$/u.exec(new URL(link.href).pathname);
+  return numbered === null ? link.host : `PR #${numbered[1] ?? ""}`;
 }
 
 /** A pull request's address as a forge names it, `owner/repository#number`,

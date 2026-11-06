@@ -16,7 +16,6 @@ import type {
   ExecutionResponse,
   ExecutionsResponse,
 } from "../../../../../src/contract/responses.ts";
-import { configurationQuery } from "../../core/configurationQueries.ts";
 import {
   executionQuery,
   ticketExecutionsQuery,
@@ -31,13 +30,15 @@ import {
 } from "../../core/ticketLandings.ts";
 import { cycleLabel, ticketLedger } from "../../core/ticketLedger.ts";
 import {
+  ticketRunLandingMarked,
   ticketRunMarkOf,
-  ticketRunsNamesOf,
   ticketRunsOf,
   ticketRunsRowName,
 } from "../../core/ticketRuns.ts";
 import type {
-  TicketRunMark,
+  TicketRunGap,
+  TicketRunLanding,
+  TicketRunMarked,
   TicketRunsCycle,
   TicketRunsRow,
 } from "../../core/ticketRuns.ts";
@@ -51,6 +52,7 @@ import { EmptyState } from "../ui/EmptyState.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Pill } from "../ui/Pill.tsx";
+import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
 import { readValue } from "./TicketPageHeld.tsx";
 import type { TicketPageHeld } from "./TicketPageHeld.tsx";
 
@@ -67,66 +69,11 @@ export function useTicketExecutions(
   return usePanelState(ticketExecutionsQuery(partition, ticket));
 }
 
-function TicketRunMarkPaths(props: {
-  readonly mark: TicketRunMark;
-}): ReactNode {
-  switch (props.mark) {
-    case "Check":
-      return <path d="M5.3 8.2 L7.2 10 L10.8 6.2" />;
-    case "Cross":
-      return <path d="M5.9 5.9 L10.1 10.1 M10.1 5.9 L5.9 10.1" />;
-    case "Spin":
-      return <path d="M8 2 A6 6 0 0 1 14 8" />;
-    case "Alert":
-      return <path d="M8 4.8 V8.6 M8 11 V11.2" />;
-    case "Slash":
-      return <path d="M3.8 12.2 L12.2 3.8" />;
-    case "Open":
-    case "Merge":
-      return null;
-  }
-}
-
-/** A run's status as a mark, its word left to the row or the pill beside it. */
-export function TicketRunMarkDrawn(props: {
-  readonly mark: TicketRunMark;
-  readonly tone: Tone;
-}): ReactNode {
-  const ring = props.mark !== "Merge";
-  return (
-    <svg
-      viewBox="0 0 16 16"
-      aria-hidden="true"
-      className="ticket-run-mark"
-      data-tone={props.tone}
-      data-mark={props.mark}
-    >
-      {props.mark === "Merge" ? (
-        <>
-          <circle cx="5" cy="3.5" r="1.6" />
-          <circle cx="5" cy="12.5" r="1.6" />
-          <circle cx="11.5" cy="8" r="1.6" />
-          <path d="M5 5.1 V10.9 M5 5.1 C5 7.5 7.5 8 9.9 8" />
-        </>
-      ) : null}
-      {ring ? (
-        <circle
-          cx="8"
-          cy="8"
-          r="6"
-          className={props.mark === "Spin" ? "ticket-run-track" : undefined}
-        />
-      ) : null}
-      <TicketRunMarkPaths mark={props.mark} />
-    </svg>
-  );
-}
-
-/** A row's mark and tone: a run by its verdict, a landing by its state. */
-export function ticketRunsRowMark(row: TicketRunsRow): {
-  readonly mark: TicketRunMark;
-  readonly tone: Tone;
-} {
+/** A row's mark and tone: a run by its verdict, a landing by its state, and
+ * none for the landing of a ticket that lands nothing. */
+export function ticketRunsRowMark(
+  row: TicketRunsRow,
+): TicketRunMarked | { readonly mark: undefined; readonly tone: Tone } {
   switch (row.kind) {
     case "Run":
       return {
@@ -136,9 +83,10 @@ export function ticketRunsRowMark(row: TicketRunsRow): {
     case "Gap":
       return { mark: "Open", tone: "retired" };
     case "Landing":
+      if (!row.lands) return { mark: undefined, tone: "retired" };
       return row.landing === undefined
         ? { mark: "Open", tone: "retired" }
-        : { mark: "Merge", tone: "finalization" };
+        : ticketRunLandingMarked(row.landing);
   }
 }
 
@@ -154,12 +102,6 @@ export interface TicketRunsHeld {
 export function useTicketRuns(
   held: TicketPageHeld,
 ): TicketRunsHeld | undefined {
-  const ticket = readValue(held.reads.ticketState);
-  const revision = ticket?.configurationRevision ?? "";
-  const configuration = usePanelState({
-    ...configurationQuery(held.partition, revision),
-    enabled: revision !== "",
-  });
   const page = readValue(held.reads.pageState);
   if (page === undefined) return undefined;
   const program = held.facts.program ?? [];
@@ -171,13 +113,7 @@ export function useTicketRuns(
         ticketLandingsHeld(held.reads.landingsState),
         ledger.cycles.map((cycle) => cycle.ordinal),
       ),
-      {
-        names: ticketRunsNamesOf(
-          readValue(configuration)?.canonical,
-          ticket?.selection,
-        ),
-        stageCount: program.length,
-      },
+      { names: held.facts.plan.names, lands: held.facts.plan.lands },
     ),
     truncated: ledger.truncated ? ledger.spend.executions : undefined,
   };
@@ -211,8 +147,8 @@ export function TicketRunLineOf(props: {
   return runRefusalOf(read)?.line ?? runResultLineOf(read)?.line;
 }
 
-/** The row's line, read under the key the run page reads its execution by. */
-function TicketRunLine(props: {
+/** A run's line, read under the key the run page reads its execution by. */
+export function TicketRunLine(props: {
   readonly partition: PartitionIdentity;
   readonly execution: string;
 }): ReactNode {
@@ -223,6 +159,13 @@ function TicketRunLine(props: {
   return read === undefined ? null : (
     <TicketRunLineOf partition={props.partition} read={read} />
   );
+}
+
+/** What a row that is not a run says: why it has none, or its landing's state. */
+function ticketRunsRowWords(row: TicketRunGap | TicketRunLanding): string {
+  if (row.kind === "Gap") return row.words;
+  if (!row.lands) return "None";
+  return row.landing?.word ?? "Not reached";
 }
 
 type TicketRunsParams = PartitionIdentity & { readonly ticket: string };
@@ -248,7 +191,7 @@ function TicketRunsRowLink(props: {
         {props.children}
       </Link>
     );
-  if (row.kind === "Landing")
+  if (row.kind === "Landing" && row.lands)
     return (
       <Link
         to="/$tenant/$project/tickets/$ticket/landing"
@@ -287,10 +230,8 @@ function TicketRunsRowDrawn(props: {
               partition={params}
               execution={row.execution.execution}
             />
-          ) : row.kind === "Gap" ? (
-            row.words
           ) : (
-            (row.landing?.word ?? "Not reached")
+            ticketRunsRowWords(row)
           )}
         </span>
         <span className="ticket-runs-time">
@@ -301,7 +242,7 @@ function TicketRunsRowDrawn(props: {
         <span className="ticket-runs-cost">
           {spend === undefined ? null : <Figure figure={spend.cost} />}
         </span>
-        {row.kind === "Gap" ? (
+        {row.kind === "Gap" || (row.kind === "Landing" && !row.lands) ? (
           <span />
         ) : (
           <Chevron className="ticket-runs-chevron" />

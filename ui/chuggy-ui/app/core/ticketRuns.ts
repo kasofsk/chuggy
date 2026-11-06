@@ -14,17 +14,15 @@
  *
  * A STAGE IS NAMED BY THE PLAN its catalog selects, and by its number where the
  * configuration is no catalog or is not read yet.
+ *
+ * A TICKET THAT LANDS NOTHING HAS NO LANDING TO REACH, so its Landing row says
+ * so rather than waiting on one.
  */
 
-import type { ConfigurationSelection } from "../../../../src/contract/configurationSelection.ts";
 import type {
   ExecutionResponse,
   ExecutionSummary,
 } from "../../../../src/contract/responses.ts";
-import {
-  configurationCatalogOf,
-  configurationCatalogSelected,
-} from "./configurationCatalog.ts";
 import { durationFigure, tokenCountText } from "./figures.ts";
 import type { Figure } from "./figures.ts";
 import { digestShortened } from "./labels.ts";
@@ -40,8 +38,10 @@ import type {
   EvaluatorRow,
   Ledger,
   SetVerdict,
+  StageNames,
   StageRow,
 } from "./ticketLedger.ts";
+import type { Tone } from "./tones.ts";
 
 /** One run: its task's number, which is its address, and how it stands. */
 export interface TicketRunStep {
@@ -63,10 +63,12 @@ export interface TicketRunGap {
   readonly words: string;
 }
 
-/** The cycle's landing, or that it has none yet. */
+/** The cycle's landing, or that it has none yet; `lands` is false for a
+ * ticket whose finalization lands nothing, which never has one. */
 export interface TicketRunLanding {
   readonly kind: "Landing";
   readonly landing: TicketLanding | undefined;
+  readonly lands: boolean;
 }
 
 export type TicketRunsRow = TicketRunStep | TicketRunGap | TicketRunLanding;
@@ -81,36 +83,11 @@ export interface TicketRunsCycle {
   readonly rows: readonly TicketRunsRow[];
 }
 
-/** The step names a ticket's plan gives its stages, in stage order. */
-export type TicketRunsNames = readonly string[] | undefined;
-
-/** The stage names the catalog's selected plan gives, and none where the
- * configuration is no catalog. */
-export function ticketRunsNamesOf(
-  canonical: string | undefined,
-  selection: ConfigurationSelection | undefined,
-): TicketRunsNames {
-  if (canonical === undefined) return undefined;
-  const catalog = configurationCatalogOf(canonical);
-  if (catalog === undefined) return undefined;
-  const plan = catalog.plans.get(
-    configurationCatalogSelected(catalog, selection).evaluation,
-  );
-  return plan?.map((stage) => stage.name);
-}
-
-/** A stage's own name, or its number where the plan's names are not held. */
-export function ticketRunsStageName(
-  stage: number,
-  stageCount: number,
-  names: TicketRunsNames,
-): string {
-  return names?.[stage - 1] ?? stageLabel(stage, stageCount);
-}
-
-interface TicketRunsNaming {
-  readonly names: TicketRunsNames;
-  readonly stageCount: number;
+/** What the runs are read against: the names the plan gives its stages, and
+ * whether the ticket's finalization lands anything. */
+export interface TicketRunsPlan {
+  readonly names: StageNames;
+  readonly lands: boolean;
 }
 
 function ticketRunsStep(
@@ -152,9 +129,9 @@ function ticketRunsEvaluatorSteps(
 
 function ticketRunsStageRows(
   row: StageRow,
-  naming: TicketRunsNaming,
+  names: StageNames,
 ): readonly TicketRunsRow[] {
-  const name = ticketRunsStageName(row.stage, naming.stageCount, naming.names);
+  const name = stageLabel(row.stage, names);
   switch (row.kind) {
     case "Ran":
       return ticketRunsEvaluatorSteps(name, row.evaluators);
@@ -167,22 +144,20 @@ function ticketRunsStageRows(
 }
 
 /** The step a cycle stopped at: its stage as the plan names it, or work. */
-function ticketRunsCycleStep(cycle: Cycle, naming: TicketRunsNaming): string {
+function ticketRunsCycleStep(cycle: Cycle, names: StageNames): string {
   const last = cycleLastSet(cycle);
-  return last?.stage === undefined
-    ? "work"
-    : ticketRunsStageName(last.stage, naming.stageCount, naming.names);
+  return last?.stage === undefined ? "work" : stageLabel(last.stage, names);
 }
 
 /** What a cycle came to: where it stopped, who sent it back, or its landing. */
 export function ticketRunsCycleOutcome(
   cycle: Cycle,
-  naming: TicketRunsNaming,
+  names: StageNames,
   landing: TicketLanding | undefined,
 ): string {
   const last = cycleLastSet(cycle);
   if (last === undefined) return "Work not on this page";
-  const step = ticketRunsCycleStep(cycle, naming);
+  const step = ticketRunsCycleStep(cycle, names);
   switch (last.verdict) {
     case "Starting":
     case "Running":
@@ -202,7 +177,7 @@ export function ticketRunsCycleOutcome(
 
 function ticketRunsCycleOf(
   cycle: Cycle,
-  naming: TicketRunsNaming,
+  plan: TicketRunsPlan,
   landings: TicketLandingsJoined,
 ): TicketRunsCycle {
   const landing = landings.byCycle.get(cycle.ordinal)?.at(-1);
@@ -210,11 +185,11 @@ function ticketRunsCycleOf(
     ticketRunsStep(execution, "Work", false),
   );
   const stages = cycle.stages.flatMap((row) =>
-    ticketRunsStageRows(row, naming),
+    ticketRunsStageRows(row, plan.names),
   );
   const landed: readonly TicketRunsRow[] =
     landing !== undefined || cycle.standing === "Current"
-      ? [{ kind: "Landing", landing }]
+      ? [{ kind: "Landing", landing, lands: plan.lands }]
       : [];
   const runs = [...work, ...stages].filter(
     (row): row is TicketRunStep => row.kind === "Run",
@@ -222,7 +197,7 @@ function ticketRunsCycleOf(
   return {
     ordinal: cycle.ordinal,
     standing: cycle.standing,
-    outcome: ticketRunsCycleOutcome(cycle, naming, landing),
+    outcome: ticketRunsCycleOutcome(cycle, plan.names, landing),
     span: runSpanRanOf(runs.map((row) => row.execution)),
     spend: cycle.spend,
     rows: [...work, ...stages, ...landed],
@@ -233,11 +208,11 @@ function ticketRunsCycleOf(
 export function ticketRunsOf(
   ledger: Ledger,
   landings: TicketLandingsJoined,
-  naming: TicketRunsNaming,
+  plan: TicketRunsPlan,
 ): readonly TicketRunsCycle[] {
   return [...ledger.cycles]
     .reverse()
-    .map((cycle) => ticketRunsCycleOf(cycle, naming, landings));
+    .map((cycle) => ticketRunsCycleOf(cycle, plan, landings));
 }
 
 /** The run a task's number names, and none where the page holds no such run. */
@@ -411,6 +386,34 @@ export function ticketRunMarkOf(verdict: SetVerdict): TicketRunMark {
       return "Alert";
     case "Cancelled":
       return "Slash";
+  }
+}
+
+/** A mark and the tone it is drawn in. */
+export interface TicketRunMarked {
+  readonly mark: TicketRunMark;
+  readonly tone: Tone;
+}
+
+/** A landing's mark: the merge mark while it merged or is under way, and its
+ * failure, its escalation or its invalidation otherwise. */
+export function ticketRunLandingMarked(
+  landing: TicketLanding,
+): TicketRunMarked {
+  switch (landing.state) {
+    case "Failed":
+      return { mark: "Cross", tone: "fail" };
+    case "Unavailable":
+      return { mark: "Alert", tone: "parked" };
+    case "Invalidated":
+      return { mark: "Slash", tone: "retired" };
+    case "Running":
+    case "Held":
+    case "AwaitingApproval":
+    case "AwaitingMerge":
+    case "Proposed":
+    case "Landed":
+      return { mark: "Merge", tone: "finalization" };
   }
 }
 

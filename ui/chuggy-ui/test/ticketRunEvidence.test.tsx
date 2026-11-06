@@ -251,14 +251,14 @@ test("a result with no report says the run has no summary", async () => {
 /** The server's sum is over every attempt of every execution, including the
  * ones past the page this screen holds; a client sum would be quietly short. */
 test("the ticket's total is the figure the ticket read answered with", async () => {
-  const rendered = await runPageDrawn(atlas, {
+  await runPageDrawn(atlas, {
     ticket,
     executions: [runSummary(), runSummary({ execution: "e2", task: 2 })],
     execution: { ...runSummary(), attempts: [runAttempt("a1")] },
     transcripts: [runTranscriptPage([1, 2], true)],
   });
   expect(
-    rendered.container.querySelector(".ticket-status")?.textContent,
+    screen.getByRole("complementary", { name: "Properties" }).textContent,
   ).toContain("$9.99");
   expect(
     screen.getByRole("table", { name: "Usage by stage" }).textContent,

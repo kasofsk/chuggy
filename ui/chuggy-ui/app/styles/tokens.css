@@ -221,6 +221,7 @@
     --col-spent: 11rem; /* ledger: the row's cost and tokens */
     --col-field-label: 10rem; /* a form row's label, beside its field */
     --width-runs-rail: 13rem; /* a run page's list of the ticket's runs */
+    --width-ticket-sidebar: 15rem; /* a ticket's properties, beside its overview */
     --col-run-name: 7rem; /* runs: the step's name */
     --col-run-time: 5.5rem; /* runs: how long the run took */
     --col-run-cost: 4.5rem; /* runs: what the run cost */

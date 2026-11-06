@@ -620,7 +620,7 @@ test("a cancellation refused while its follow is drawn is no toast", async () =>
 });
 
 /** `api` with the ticket's own read answering `Absent` once `gone.absent` is
- * set, which takes the status bar's actions and their notes off the page. */
+ * set, which takes the header's actions and their notes off the page. */
 function ticketGoing(api: Served, gone: { absent: boolean }): Served {
   return {
     ...api,

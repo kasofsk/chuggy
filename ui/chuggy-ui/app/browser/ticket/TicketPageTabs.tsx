@@ -6,51 +6,13 @@
 
 import type { ReactNode } from "react";
 
-import { TicketConfiguration, TicketRevisions } from "../TicketProvenance.tsx";
+import { TicketConfiguration } from "../TicketProvenance.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
-import { Panel } from "../ui/Panel.tsx";
 import { TicketActivity } from "./TicketActivity.tsx";
-import { TicketInstructions } from "./TicketInstructions.tsx";
 import { TicketRunsList } from "./TicketRuns.tsx";
-import { TicketSlot } from "./TicketSlot.tsx";
-import { TicketStatus } from "./TicketStatus.tsx";
 import { readValue, useTicketPageHeld } from "./TicketPageHeld.tsx";
 
-/** The status bar, the card under it, the instructions and the revisions. */
-export function TicketOverviewTab(): ReactNode {
-  const held = useTicketPageHeld();
-  const ticket = readValue(held.reads.ticketState);
-  return (
-    <>
-      <TicketStatus
-        partition={held.partition}
-        state={held.reads.ticketState}
-        page={readValue(held.reads.pageState)}
-        resumed={held.resumed}
-        landing={held.landing}
-        nowMs={held.nowMs}
-      />
-      <TicketSlot
-        partition={held.partition}
-        slot={held.slot}
-        nowMs={held.nowMs}
-        overrides={held.overrides}
-      />
-      <TicketInstructions
-        partition={held.partition}
-        state={held.reads.ticketState}
-      />
-      <Panel title="Revision history" level={2}>
-        <TicketRevisions
-          partition={held.partition}
-          state={held.reads.draftState}
-          ticket={ticket}
-          nowMs={held.nowMs}
-        />
-      </Panel>
-    </>
-  );
-}
+export { TicketOverviewTab } from "./TicketOverview.tsx";
 
 export function TicketRunsTab(): ReactNode {
   return <TicketRunsList held={useTicketPageHeld()} />;

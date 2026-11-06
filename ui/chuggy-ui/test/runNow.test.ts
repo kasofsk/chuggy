@@ -16,8 +16,6 @@ import type {
 } from "../../../src/contract/responses.ts";
 import {
   runNowAttempt,
-  runNowCountsLine,
-  runNowEarlierNotesMax,
   runNowElapsedFigure,
   runNowOf,
   runNowStartedAt,
@@ -76,19 +74,10 @@ function reading(
   return runTranscriptRead(runTranscriptMerged(runTranscriptHeldEmpty, page));
 }
 
-test("the newest note leads, and the ones before it follow newest first and capped", () => {
-  const notes = ["one", "two", "three", "four", "five", "six", "seven"];
+test("the newest note leads", () => {
+  const notes = ["one", "two", "three"];
   const now = runNowOf(reading(notes.map((note) => [said(note)])), true);
-  expect(now.note).toEqual({ text: "seven", at: recordedAt(7) });
-  expect(now.earlier.map((note) => note.text)).toEqual([
-    "six",
-    "five",
-    "four",
-    "three",
-  ]);
-  expect(now.earlier).toHaveLength(runNowEarlierNotesMax);
-  expect(now.earlier[0]?.at).toBe(recordedAt(6));
-  expect(now.notes).toBe(notes.length);
+  expect(now.note).toEqual({ text: "three", at: recordedAt(3) });
 });
 
 test("a note is one line, whatever whitespace the agent wrote it with", () => {
@@ -107,7 +96,6 @@ test("what the member side said is not a note", () => {
     true,
   );
   expect(now.note?.text).toBe("mine");
-  expect(now.notes).toBe(1);
 });
 
 test("the call in flight is the newest no result has answered", () => {
@@ -132,16 +120,6 @@ test("a run no longer live has no call in flight", () => {
   expect(runNowOf(reading([[called("t1", "Read")]]), false).call).toBe(
     undefined,
   );
-});
-
-/** A pane holding the tail of a long run cannot count the notes it never
- * read, and a figure short by the head of the run would read as the whole. */
-test("notes are counted only where the pane holds the whole run", () => {
-  expect(runNowOf(reading([[said("late")]], 5), true).notes).toBeUndefined();
-  expect(runNowCountsLine(31, 14)).toBe("31 turns · 14 notes");
-  expect(runNowCountsLine(1, 1)).toBe("1 turn · 1 note");
-  expect(runNowCountsLine(31, undefined)).toBe("31 turns");
-  expect(runNowCountsLine(undefined, undefined)).toBeUndefined();
 });
 
 function attempt(number: number, state: RunNowAttempt["state"]): RunNowAttempt {

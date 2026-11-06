@@ -118,14 +118,25 @@ test("every landing state is one word", () => {
     expect(ticketLandingStateLabel(state)).toMatch(/^[A-Z][a-z]+$/u);
 });
 
-test("a detail line names only the facts the page holds", () => {
+test("a detail line names only the facts the page holds, a stage by its plan's name", () => {
+  const lastSet = {
+    taskKind: "Evaluation",
+    stage: 1,
+    verdict: "Failed",
+  } as const;
   expect(
     escalationDetailLine("EvaluationFailureEscalated", {
-      lastSet: { taskKind: "Evaluation", stage: 1, verdict: "Failed" },
-      stageCount: 2,
+      lastSet,
+      names: ["checks", "review"],
     }),
-  ).toBe("Stage 1 of 2 failed");
-  const bare = { lastSet: undefined, stageCount: 2 };
+  ).toBe("checks failed");
+  expect(
+    escalationDetailLine("EvaluationFailureEscalated", {
+      lastSet,
+      names: undefined,
+    }),
+  ).toBe("Stage 1 failed");
+  const bare = { lastSet: undefined, names: undefined };
   expect(escalationDetailLine("EvaluationFailureEscalated", bare)).toBe(
     undefined,
   );
@@ -142,7 +153,7 @@ test("a detail line names only the facts the page holds", () => {
  * interrupted, with no fact from the page.
  */
 test("a cancelled work execution's line names the phase its own kind interrupted", () => {
-  const bare = { lastSet: undefined, stageCount: 2 };
+  const bare = { lastSet: undefined, names: undefined };
   expect(escalationDetailLine("WorkExecutionUnavailableEscalated", bare)).toBe(
     "Work cancelled",
   );
@@ -154,7 +165,7 @@ test("a cancelled work execution's line names the phase its own kind interrupted
  * names what a resume does, never a cancellation that did not happen.
  */
 test("an evaluation block's line names what a resume does, not a cancellation", () => {
-  const bare = { lastSet: undefined, stageCount: 2 };
+  const bare = { lastSet: undefined, names: undefined };
   expect(escalationDetailLine("EvaluationBlockedEscalated", bare)).toBe(
     "Resume asks it again",
   );

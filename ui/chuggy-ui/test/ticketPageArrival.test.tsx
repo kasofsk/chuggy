@@ -174,11 +174,11 @@ function ticketReads(): number {
   return requested.filter((url) => url.endsWith("/tickets/21")).length;
 }
 
-/** The cycles drawn, each counted only where its stages are named against
- * the program the ticket's own read carries. */
+/** The cycles drawn, each counted only where it draws every stage of the
+ * program the ticket's own read carries, the ones it never reached included. */
 function cyclesDrawn(): number {
   return [...document.querySelectorAll(".ticket-runs-cycle")].filter((cycle) =>
-    cycle.textContent.includes("Stage 1 of 2"),
+    cycle.textContent.includes("Stage 2"),
   ).length;
 }
 

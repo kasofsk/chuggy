@@ -12,6 +12,7 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { sinceFigure } from "../../core/figures.ts";
+import { branchName } from "../../core/labels.ts";
 import { runCountLabel } from "../../core/runTotals.ts";
 import { cycleLabel } from "../../core/ticketLedger.ts";
 import { ticketLandingsQuery } from "../../core/ticketQueries.ts";
@@ -49,7 +50,7 @@ export function useTicketLandings(
  * A landing's fragment: its text, its pull request under the host it names,
  * the commit it landed at, and what a reader must not miss about that commit.
  */
-export function LandingFragment(props: {
+function LandingFragment(props: {
   readonly fragment: TicketLandingFragment;
 }): ReactNode {
   const fragment = props.fragment;
@@ -83,8 +84,8 @@ function LandingProposalFields(props: {
 }): ReactNode {
   const proposal = props.proposal;
   const labelled: readonly (readonly [string, string | undefined])[] = [
-    ["Head", proposal.head],
-    ["Base", proposal.base],
+    ["Head", branchName(proposal.head)],
+    ["Base", branchName(proposal.base)],
     ["Creation", proposal.creation],
     ["Status", proposal.status],
     ["Merge", proposal.merge],
@@ -150,7 +151,7 @@ function LandingDetail(props: {
     <Fields>
       {detail.targetRef === undefined ? null : (
         <Field name="Target">
-          {detail.targetRef}{" "}
+          {branchName(detail.targetRef)}{" "}
           {detail.targetCommit === undefined ? null : (
             <Identity label={detail.targetCommit} />
           )}

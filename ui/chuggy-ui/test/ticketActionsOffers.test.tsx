@@ -118,7 +118,7 @@ async function bar(
   actionsRead = true,
   over: (served: typeof fetch) => typeof fetch = (served) => served,
   write?: CopyWrite,
-): Promise<{ readonly api: ApiDouble; readonly bar: HTMLElement }> {
+): Promise<{ readonly api: ApiDouble; readonly header: HTMLElement }> {
   const api = apiDouble({
     operation: operationAt("Pending"),
     route: routed(phase, actionsRead),
@@ -140,9 +140,9 @@ async function bar(
     </ScreenHarness>,
   );
   await settled();
-  const drawn = container.querySelector<HTMLElement>(".ticket-status");
-  if (drawn === null) throw new Error("no status bar drawn");
-  return { api, bar: drawn };
+  const drawn = container.querySelector<HTMLElement>("header.ticket-header");
+  if (drawn === null) throw new Error("no ticket header drawn");
+  return { api, header: drawn };
 }
 
 /** The Duplicate a ticket's header offers, and whether it leads or is in
