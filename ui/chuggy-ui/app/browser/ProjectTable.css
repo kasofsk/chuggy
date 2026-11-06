@@ -151,8 +151,8 @@
   .ticket-list-selects > button svg,
   .ticket-list-search-toggle svg {
     flex: none;
-    width: 1rem;
-    height: 1rem;
+    width: var(--space-4);
+    height: var(--space-4);
   }
 
   .ticket-list-search > .ticket-list-search-toggle {
