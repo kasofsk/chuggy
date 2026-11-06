@@ -1,13 +1,17 @@
 /**
  * A ticket's state as one label: its word, its tone and its mark, never a
  * button. The page's size heads the ticket; the small one sits in a bar or a
- * row, and what the label is given follows its word.
+ * row, its word as wide as the widest any state says, and what the label is
+ * given follows its word.
  */
 
 import type { ReactNode } from "react";
 
 import type { TicketStateLabelMark } from "../../core/ticketHeader.ts";
-import { ticketStateLabelOf } from "../../core/ticketHeader.ts";
+import {
+  ticketStateLabelOf,
+  ticketStateWords,
+} from "../../core/ticketHeader.ts";
 import type { TicketListStanding } from "../../core/ticketListView.ts";
 
 import "./ticket.css";
@@ -85,7 +89,14 @@ export function TicketStateLabel(props: {
       >
         <TicketStateMarkPaths mark={label.mark} />
       </svg>
-      <span className="ticket-state-word">{label.word}</span>
+      <span
+        className="ticket-state-word"
+        data-words={
+          props.size === "small" ? ticketStateWords.join("\n") : undefined
+        }
+      >
+        {label.word}
+      </span>
       {props.children}
     </span>
   );

@@ -96,11 +96,15 @@ export function TicketDependencyChip(props: {
 }
 
 /** A state's label holding how many tickets stand in it, as the button that
- * filters the list to it; pressed while it is the filter. */
+ * filters the list to it; pressed while it is the filter, dimmed while another
+ * filter is, and its number as wide as the widest count beside it. */
 export function TicketStateCount(props: {
   readonly standing: TicketListStanding;
   readonly count: number;
   readonly pressed: boolean;
+  readonly dimmed?: boolean | undefined;
+  /** The widest count drawn beside this one. */
+  readonly countWidest?: number | undefined;
   readonly onPress: () => void;
 }): ReactNode {
   return (
@@ -108,12 +112,22 @@ export function TicketStateCount(props: {
       type="button"
       className="ticket-state-count"
       data-standing={props.standing}
+      data-dimmed={props.dimmed === true || undefined}
       title={standingWord(props.standing)}
       aria-pressed={props.pressed}
       onClick={props.onPress}
     >
       <TicketStateLabel standing={props.standing} size="small">
-        <b className="num">{props.count}</b>
+        <b
+          className="num"
+          data-widest={
+            props.countWidest === undefined
+              ? undefined
+              : String(props.countWidest)
+          }
+        >
+          {props.count}
+        </b>
       </TicketStateLabel>
     </button>
   );

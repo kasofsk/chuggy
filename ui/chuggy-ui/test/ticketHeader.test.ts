@@ -14,6 +14,8 @@ import {
   ticketHeaderActionsOf,
   ticketHeaderFragment,
   ticketStateLabelOf,
+  ticketStateStandings,
+  ticketStateWords,
 } from "../app/core/ticketHeader.ts";
 import type { TicketHeaderFragmentReads } from "../app/core/ticketHeader.ts";
 import { ticketLandingOf } from "../app/core/ticketLandings.ts";
@@ -275,4 +277,23 @@ test("an unread offer leads with nothing and offers no edit", () => {
     editable: false,
     duplicate: "Menu",
   });
+});
+
+test("the words a small label is sized by are every standing's word, each once", () => {
+  expect(ticketStateStandings).toHaveLength(new Set(ticketStateStandings).size);
+  expect(new Set(ticketStateStandings)).toStrictEqual(
+    new Set([
+      "Ready",
+      "Blocked",
+      "Work",
+      "Evaluation",
+      "Finalization",
+      "Escalated",
+      "Done",
+      "Revoked",
+    ]),
+  );
+  expect(ticketStateWords).toStrictEqual(
+    ticketStateStandings.map((standing) => ticketStateLabelOf(standing).word),
+  );
 });

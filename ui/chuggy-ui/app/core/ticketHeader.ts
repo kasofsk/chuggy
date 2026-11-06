@@ -7,10 +7,12 @@
  * no fragment rather than a guess.
  */
 
+import { phaseRoster } from "../../../../src/contract/rosters.ts";
 import type { TicketPhase } from "../../../../src/contract/rosters.ts";
 import type { TicketResponse } from "../../../../src/contract/responses.ts";
 import { escalationDetail, phaseLabel } from "./codeLabels.ts";
 import { branchName } from "./labels.ts";
+import { ticketFilterStandings } from "./projectTableFilters.ts";
 import { runNowStartedAt } from "./runNow.ts";
 import type { TicketAction, TicketActionName } from "./ticketActions.ts";
 import { ticketLandingPullLabel } from "./ticketLandings.ts";
@@ -87,6 +89,18 @@ function ticketStateFilled(
     mark,
   };
 }
+
+/** Every standing a state label is drawn for, Pending as the two it reads as. */
+export const ticketStateStandings: readonly TicketListStanding[] =
+  phaseRoster.flatMap((phase) =>
+    phase === "Pending" ? ticketFilterStandings : [phase],
+  );
+
+/** Every word a state label says, which a small label's word is as wide as
+ * the widest of. */
+export const ticketStateWords: readonly string[] = ticketStateStandings.map(
+  (standing) => ticketStateLabelOf(standing).word,
+);
 
 /** A pull request as the header links it: by its number where its address
  * names one, else by its host. */

@@ -13,6 +13,7 @@ import {
   ticketSearchCharsMax,
 } from "../../../src/contract/http.ts";
 import {
+  ticketListCountDimmed,
   ticketListCountTapped,
   ticketListCreatorsOffered,
   ticketListFiltered,
@@ -182,6 +183,19 @@ test("a state's count tapped filters to that state, and tapped as the filter goe
     expect(ticketListCountTapped(standing, standing)).toBe("All");
   }
   expect(ticketListCountTapped("Ready", "Blocked")).toBe("Blocked");
+});
+
+test("a state's count is dimmed exactly while a filter is set that draws none of its tickets", () => {
+  for (const standing of ["Ready", "Blocked", "Work", "Escalated"] as const) {
+    expect(ticketListCountDimmed("All", standing), standing).toBe(false);
+    expect(ticketListCountDimmed(standing, standing), standing).toBe(false);
+    expect(ticketListCountDimmed("Done", standing), standing).toBe(true);
+  }
+  expect(ticketListCountDimmed("Ready", "Blocked")).toBe(true);
+  expect(ticketListCountDimmed("Work", "Escalated")).toBe(true);
+  expect(ticketListCountDimmed("Pending", "Ready")).toBe(false);
+  expect(ticketListCountDimmed("Pending", "Blocked")).toBe(false);
+  expect(ticketListCountDimmed("Pending", "Work")).toBe(true);
 });
 
 test("the address holds a creator as the text it was written as, and drops one the server would refuse", () => {

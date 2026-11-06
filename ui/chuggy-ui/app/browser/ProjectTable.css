@@ -65,7 +65,8 @@
   }
 
   /* A count is its state's label holding the number, as tall as the controls
-     beside it, ringed in its tone while it is the filter. */
+     beside it and its number as wide as the widest count's, ringed in its tone
+     while it is the filter and faded while another is, until it is hovered. */
   button.ticket-state-count {
     display: inline-flex;
     padding: 0;
@@ -77,7 +78,32 @@
 
   button.ticket-state-count > .ticket-state {
     height: var(--control-height);
-    transition: border-color var(--duration-1) var(--ease-out);
+    transition:
+      border-color var(--duration-1) var(--ease-out),
+      opacity var(--duration-1) var(--ease-out);
+  }
+
+  button.ticket-state-count > .ticket-state > .num {
+    margin-inline-start: auto;
+    text-align: end;
+  }
+
+  button.ticket-state-count .num[data-widest]::before {
+    content: attr(data-widest);
+    content: attr(data-widest) / "";
+    display: block;
+    height: 0;
+    overflow: hidden;
+    visibility: hidden;
+  }
+
+  button.ticket-state-count[data-dimmed] > .ticket-state {
+    opacity: 0.55;
+  }
+
+  button.ticket-state-count[data-dimmed]:is(:hover, :focus-visible)
+    > .ticket-state {
+    opacity: 1;
   }
 
   button.ticket-state-count:hover > .ticket-state {
@@ -495,6 +521,11 @@
       justify-content: center;
       width: var(--control-height);
       padding: 0;
+    }
+
+    button.ticket-state-count > .ticket-state > .num {
+      margin-inline-start: 0;
+      text-align: center;
     }
 
     .ticket-state-count .ticket-state-mark,
