@@ -182,15 +182,27 @@ test("a row's policy reads back as its git merge's, and Direct where it names no
       policy: "Direct",
     });
   assert.throws(() => draftBriefOf({ ...row, landing_policy: "Stacked" }));
-  assert.throws(
-    () =>
-      draftBriefOf({
-        ...row,
-        finalization_mode: "PullRequest",
-        landing_policy: "Serialized",
-      }),
-    /nothing orders it/u,
-    "a pull request ordered Serialized has no kind to read into",
+});
+
+test("a stored policy no kind carries is read out of the row, which still reads", () => {
+  const row = {
+    title: null,
+    intent: "Do the one thing.",
+    branch: "refs/heads/rt/work",
+    repository: null,
+    links: null,
+    images: null,
+    checks: null,
+    finalization_target: null,
+    landing_policy: "Serialized",
+  };
+  assert.deepEqual(
+    draftBriefOf({ ...row, finalization_mode: "PullRequest" })?.finalization,
+    { kind: "PullRequest" },
+  );
+  assert.deepEqual(
+    draftBriefOf({ ...row, finalization_mode: "None" })?.finalization,
+    { kind: "None" },
   );
 });
 

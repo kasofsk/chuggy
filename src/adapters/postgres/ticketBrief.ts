@@ -27,9 +27,9 @@ import { asProjectArtifactId } from "../../interpreter/finalizerPreparation.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import {
   asBriefBranch,
-  asDraftBrief,
   asBriefCheckLine,
-  asBriefFinalizationByMode,
+  asStoredBriefFinalizationByMode,
+  asStoredDraftBrief,
   asBriefIntent,
   asBriefLinkUrl,
   asBriefTitle,
@@ -76,7 +76,7 @@ export function draftBriefFinalizationOf(
   row: DraftBriefFinalizationRow,
 ): BriefFinalization | undefined {
   if (row.finalization_mode === null) return undefined;
-  return asBriefFinalizationByMode(
+  return asStoredBriefFinalizationByMode(
     {
       mode: row.finalization_mode,
       ...(row.finalization_target === null
@@ -150,7 +150,9 @@ export function draftBriefOf(row: DraftBriefRow): DraftBrief | undefined {
 export function releasedBriefOf(stored: string | null): DraftBrief | undefined {
   return stored === null
     ? undefined
-    : asDraftBrief(JSON.parse(stored) as Parameters<typeof asDraftBrief>[0]);
+    : asStoredDraftBrief(
+        JSON.parse(stored) as Parameters<typeof asStoredDraftBrief>[0],
+      ).brief;
 }
 
 /** The overrides one column stored, or none where it stored none. */

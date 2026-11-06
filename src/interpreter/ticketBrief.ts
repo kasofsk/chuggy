@@ -539,6 +539,68 @@ export function asDraftBrief(value: {
 }
 
 /**
+ * A policy stored beside a finalization that is not a git merge, or beside
+ * none. Every writer before the kinds stored the policy with no check of the
+ * mode, so such a row exists, and a kind orders only a git merge: a stored row
+ * reads without it, and only the wire refuses the pairing.
+ */
+function storedPolicyUnkinded(
+  finalization: Parameters<typeof asDraftBrief>[0]["finalization"],
+  landing: string | undefined,
+): boolean {
+  if (landing === undefined) return false;
+  if (finalization === undefined) return true;
+  return (
+    !("kind" in finalization) &&
+    !briefGitMergeModes.some((mode) => mode === finalization.mode)
+  );
+}
+
+/** A finalization a draft row stores by its mode, its policy beside it, read forward as {@link storedPolicyUnkinded} reads one. */
+export function asStoredBriefFinalizationByMode(
+  value: { readonly mode: string; readonly target?: string | undefined },
+  landing: string | undefined,
+): BriefFinalization | undefined {
+  return asBriefFinalizationByMode(
+    value,
+    storedPolicyUnkinded(value, landing) ? undefined : landing,
+  );
+}
+
+/** A brief a release stored, read forward, and the shape it was stored and digested as. */
+export interface StoredDraftBrief {
+  readonly brief: DraftBrief;
+  readonly stored: DraftBriefByMode;
+}
+
+/**
+ * Brands a brief a release stored. A policy no kind carries is read out of the
+ * brief and kept in its stored shape, so the brief digests to what its release
+ * stored.
+ */
+export function asStoredDraftBrief(
+  value: Parameters<typeof asDraftBrief>[0],
+): StoredDraftBrief {
+  if (
+    value.landing === undefined ||
+    !storedPolicyUnkinded(value.finalization, value.landing)
+  ) {
+    const brief = asDraftBrief(value);
+    return { brief, stored: draftBriefByMode(brief) };
+  }
+  const { landing, ...rest } = value;
+  const brief = asDraftBrief(rest);
+  const policy = asBriefGitMergePolicy(landing);
+  return {
+    brief,
+    stored: {
+      ...draftBriefByMode(brief),
+      ...(policy === "Direct" ? {} : { landing: policy }),
+    },
+  };
+}
+
+/**
  * The brief a ticket was last released or updated with, behind a typed port,
  * absent for a ticket released without one. It is never the draft's own brief,
  * which a Pending ticket's author may have revised since.

@@ -605,3 +605,58 @@ test("a brief is stored and digested by its mode, so one released before kinds r
     );
   }
 });
+
+/**
+ * Every writer before the kinds stored a policy with no check of the mode, so
+ * a released brief can pair one with a finalization no kind orders. The wire
+ * refuses that pairing; a stored one reads as the bare kind, held to the
+ * digest of what was stored.
+ */
+test("a released brief ordering what no kind orders reads without the policy, to its own digest", () => {
+  for (const [stored, finalization] of [
+    [
+      {
+        intent: "Do it.",
+        links: [],
+        images: [],
+        checks: [],
+        branch: "refs/heads/rt/work",
+        finalization: { mode: "PullRequest" },
+        landing: "Serialized",
+      },
+      { kind: "PullRequest" },
+    ],
+    [
+      {
+        intent: "Do it.",
+        links: [],
+        images: [],
+        checks: [],
+        finalization: { mode: "None" },
+        landing: "Serialized",
+      },
+      { kind: "None" },
+    ],
+    [
+      {
+        intent: "Do it.",
+        links: [],
+        images: [],
+        checks: [],
+        landing: "Serialized",
+      },
+      undefined,
+    ],
+  ] as const) {
+    const digest = materialDigest({ ...stored, images: undefined });
+    const brief = releasedTicketBrief(stored, digest);
+    assert.deepEqual(brief?.finalization, finalization);
+    assert.equal(brief !== undefined && "landing" in brief, false);
+    assert.equal(briefGitMergePolicyOf(brief), "Direct");
+    assert.throws(
+      () => releasedTicketBrief(stored, briefContentDigest(brief)),
+      /not the one the released content names/u,
+      "the digest is the stored brief's, not the one read forward",
+    );
+  }
+});
