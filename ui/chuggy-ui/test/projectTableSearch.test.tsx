@@ -164,7 +164,7 @@ async function typedAndAsked(
   typed: string,
 ): Promise<void> {
   const before = drawn.asked.length;
-  fireEvent.change(screen.getByLabelText("Search tickets"), {
+  fireEvent.change(screen.getByRole("textbox", { name: "Search tickets" }), {
     target: { value: typed },
   });
   await waitFor(
@@ -219,15 +219,33 @@ test("a search the address holds is the one read and typed after a reload", asyn
       ? served([held(121, "Done")], { matched: 1 })
       : served(firstHundred),
   );
-  expect(screen.getByLabelText<HTMLInputElement>("Search tickets").value).toBe(
-    "#121",
-  );
+  expect(
+    screen.getByRole<HTMLInputElement>("textbox", { name: "Search tickets" })
+      .value,
+  ).toBe("#121");
   expect(drawn.asked.length).toBeGreaterThan(0);
   expect(new Set(drawn.asked.map((asked) => asked.get("q")))).toStrictEqual(
     new Set(["#121"]),
   );
   expect(titlesDrawn()).toStrictEqual(["Ticket 121"]);
   expect(drawn.written).toStrictEqual([]);
+});
+
+test("the search is a button that opens out to a focused box and closes on Escape, marked while it is closed over a search", async () => {
+  await drawnAt({ q: "#121" }, () => served([held(121, "Done")]));
+  const toggle = screen.getByRole("button", { name: "Search tickets" });
+  const box = screen.getByRole("textbox", { name: "Search tickets" });
+  const field = box.closest(".ticket-list-search-field");
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  expect(toggle.hasAttribute("data-active")).toBe(true);
+  expect(field?.hasAttribute("inert")).toBe(true);
+  await press("Search tickets");
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  expect(field?.hasAttribute("inert")).toBe(false);
+  expect(document.activeElement).toBe(box);
+  fireEvent.keyDown(box, { key: "Escape" });
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  expect(field?.hasAttribute("inert")).toBe(true);
 });
 
 test("oldest first starts at the project's oldest ticket, whatever the active list held", async () => {
@@ -369,7 +387,7 @@ test("leaving a search that matched nothing keeps the list's controls drawn unti
   await typedAndAsked(drawn, "");
   expect(drawn.written).toStrictEqual([{}]);
   expect(screen.queryByText("No tickets")).toBeNull();
-  expect(screen.getByLabelText("Search tickets")).toBeDefined();
+  expect(screen.getByRole("textbox", { name: "Search tickets" })).toBeDefined();
   active.release(served([]));
   await settled();
   expect(titlesDrawn()).toStrictEqual(["Ticket 150"]);

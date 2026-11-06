@@ -82,9 +82,6 @@ export function TopBarNavEntry(props: { readonly entry: NavEntry }): ReactNode {
           </>
         )}
         <span className="topbar-entry-label">{entry.label}</span>
-        {entry.count === undefined ? null : (
-          <span className="text-xs text-ink-3 tabular-nums">{entry.count}</span>
-        )}
       </Link>
     </li>
   );
@@ -96,7 +93,6 @@ function TopBarNav(props: {
   const read = useLead(props.partition);
   const lead =
     read.state === "Ready" ? projectLeadFound(read.value) : undefined;
-  const inbox = useInboxRows(props.partition);
   const abilities = useProjectAbilities(props.partition);
   const entries = shellNav({
     partition: props.partition,
@@ -104,17 +100,13 @@ function TopBarNav(props: {
       lead === undefined
         ? undefined
         : { word: lead.state, tone: sessionStateTone(lead.state) },
-    inboxCount: inboxCountLabel(inbox.rows),
-    abilities,
   });
   return (
     <nav aria-label="Console" className="min-w-0">
       <ul className="topbar-nav">
-        {entries
-          .filter((entry) => entry.id !== "inbox")
-          .map((entry) => (
-            <TopBarNavEntry key={entry.id} entry={entry} />
-          ))}
+        {entries.map((entry) => (
+          <TopBarNavEntry key={entry.id} entry={entry} />
+        ))}
         {projectAbilityRefused(abilities, "mutate") ? (
           <li className="px-3">
             <Pill tone="neutral">View only</Pill>

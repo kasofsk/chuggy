@@ -2933,13 +2933,12 @@ const heldOwn = threadEntry({
   title: "held",
 });
 
-/** What the frame offers a reader to change: the bar's way to a new ticket,
- * the pane's New, what a held thread's menu offers to do to it, and the box. */
+/** What the frame offers a reader to change: the pane's New, what a held
+ * thread's menu offers to do to it, and the box. */
 async function offeredToChange(): Promise<Record<string, boolean>> {
   const named = (role: string, name: string): boolean =>
     screen.queryByRole(role, { name }) !== null;
   const offered = {
-    newTicket: named("link", "New ticket"),
     new: named("button", "New"),
     box: named("textbox", "Message"),
   };
@@ -2966,7 +2965,6 @@ test("a reader who may not mutate is told View only once in the bar and once whe
     abilitiesFetch({ ...abilitiesEvery, mutate: false }, threadServed([])),
   );
   expect(await offeredToChange()).toStrictEqual({
-    newTicket: false,
     new: false,
     rename: false,
     close: false,
@@ -2988,7 +2986,6 @@ test("a reader who may not mutate keeps a held thread's title and transcript, wi
   );
   expect(screen.getByRole("heading", { name: "held" })).toBeDefined();
   expect(await offeredToChange()).toStrictEqual({
-    newTicket: false,
     new: false,
     rename: false,
     close: false,
@@ -3008,7 +3005,6 @@ test.each(abilitiesUnrefusing)(
       abilitiesFetch(abilities, threadServed([heldOwn])),
     );
     expect(await offeredToChange()).toStrictEqual({
-      newTicket: true,
       new: true,
       rename: true,
       close: true,

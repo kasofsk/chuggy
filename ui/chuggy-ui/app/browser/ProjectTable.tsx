@@ -395,8 +395,8 @@ function TicketListCounts(props: {
 /** How long the box takes to close, which the room it holds in the row outlasts. */
 const ticketListSearchCloseMs = 260;
 
-/** The search, which is a button until it is asked for or holds a search, and
- * then the button opened out to the box. */
+/** The search, which is a button until it is asked for and then the button
+ * opened out to the box; closed over a search it holds, the button is marked. */
 function TicketListSearch(props: {
   readonly search: string;
   readonly onSearch: (search: string) => void;

@@ -294,17 +294,22 @@ function statusBar(container: HTMLElement): HTMLElement {
   return bar;
 }
 
+/** The Activity panel, which is where the page says what has run. */
+function activity(): HTMLElement {
+  return screen.getByRole("region", { name: "Activity" });
+}
+
 test("the parked ticket names its wall, its phase and what the whole of it cost", async () => {
   const { container } = await drawTicket({
     shapes: ticket21Parked,
     ticket: parkedTicket,
   });
   const bar = statusBar(container);
-  expect(bar.getAttribute("data-tone")).toBe("parked");
   expect(bar.textContent).toContain("Escalated");
   expect(bar.textContent).toContain("$2.74");
   expect(bar.textContent).toContain("198k tok");
-  expect(bar.textContent).toContain("Runs7");
+  expect(bar.textContent).not.toContain("Runs");
+  expect(activity().textContent).toContain("Runs7");
   expect(screen.getAllByText("Rework budget exhausted").length).toBeGreaterThan(
     0,
   );
@@ -560,15 +565,15 @@ test("the canonical JSON is closed until asked for, and its trigger controls it"
 });
 
 test("the usage row names the basis and breaks the spend down twice", async () => {
-  const { container } = await drawTicket({
+  await drawTicket({
     shapes: ticket21Parked,
     ticket: parkedTicket,
   });
-  const usage = container.querySelector("#usage");
-  expect(usage?.querySelector(".fig-basis")?.textContent).toBe("list");
-  expect(usage?.textContent).toContain("$2.74");
-  expect(usage?.textContent).toContain("1h 06m");
-  expect(usage?.textContent).toContain("claude-opus-4");
+  const usage = activity();
+  expect(usage.querySelector(".fig-basis")?.textContent).toBe("list");
+  expect(usage.textContent).toContain("$2.74");
+  expect(usage.textContent).toContain("1h 06m");
+  expect(usage.textContent).toContain("claude-opus-4");
   expect(screen.getByRole("table", { name: "Usage by stage" })).toBeDefined();
   expect(screen.getByRole("rowheader", { name: "Stage 1" })).toBeDefined();
   expect(screen.getByRole("rowheader", { name: "Work" })).toBeDefined();
@@ -615,7 +620,6 @@ test("a resumed ticket says it was resumed", async () => {
     ticket: resumedTicket,
   });
   const bar = statusBar(container);
-  expect(bar.getAttribute("data-tone")).toBe("evaluation");
   expect(bar.textContent).toContain("Evaluating");
   expect(bar.textContent).toContain("Resumed at stage 1 · cycle 3");
 });
@@ -757,18 +761,17 @@ test("a resume the wire stamped is offered before the draft arrives", async () =
 });
 
 /**
- * Truncation is the executions read's own fact and does not wait on the draft,
- * which is what the head's own header claims of it.
+ * Truncation is the executions read's own fact and does not wait on the draft.
  */
-test("a short page marks the head's own counts, draft or no draft", async () => {
+test("a short page marks the run count, draft or no draft", async () => {
   for (const withDraft of [true, false]) {
-    const { container } = await drawTicket({
+    await drawTicket({
       shapes: ticket21Parked.slice(0, 4),
       ticket: parkedTicket,
       cursor: "more",
       withDraft,
     });
-    expect(statusBar(container).textContent).toContain("on this page");
+    expect(activity().textContent).toContain("on this page");
     cleanup();
     vi.unstubAllGlobals();
     viewportAtEm(viewportDeskEm);
@@ -895,11 +898,11 @@ test("a cancelled run is counted but is not counted as running", async () => {
     expect(outcome).toBe("Failed");
     return { ...running, status: "Cancelled" };
   });
-  const { container } = await drawTicket({
+  await drawTicket({
     shapes: cancelled,
     ticket: parkedTicket,
   });
-  const usage = container.querySelector("#usage")?.textContent ?? "";
+  const usage = activity().textContent;
   expect(usage).toContain("Runs7");
   expect(usage).not.toContain("running");
 });
@@ -919,33 +922,32 @@ test("every action the page draws describes itself by an id that resolves", asyn
 });
 
 test("the usage panel counts the runs, and says which are still going", async () => {
-  const { container } = await drawTicket({
+  await drawTicket({
     shapes: ticket21Parked,
     ticket: parkedTicket,
   });
-  expect(container.querySelector("#usage")?.textContent).toContain("Runs7");
+  expect(activity().textContent).toContain("Runs7");
   cleanup();
   vi.unstubAllGlobals();
   viewportAtEm(viewportDeskEm);
-  const resumed = await drawTicket({
+  await drawTicket({
     shapes: ticket21Resumed,
     ticket: resumedTicket,
   });
-  expect(resumed.container.querySelector("#usage")?.textContent).toContain(
-    "Runs8 · 1 running · 1 unmeasured",
-  );
+  expect(activity().textContent).toContain("Runs8 · 1 running · 1 unmeasured");
 });
 
 test("the by-stage table is work first and then the program's own order", async () => {
-  const { container } = await drawTicket({
+  await drawTicket({
     shapes: ticket21Parked,
     ticket: parkedTicket,
   });
-  const table = screen.getByRole("table", { name: "Usage by stage" });
+  const table = within(activity()).getByRole("table", {
+    name: "Usage by stage",
+  });
   expect(
     [...table.querySelectorAll("tbody th")].map((cell) => cell.textContent),
   ).toEqual(["Work", "Stage 1", "Stage 2"]);
-  expect(container.querySelector("#usage")).not.toBeNull();
 });
 
 /** A stage authored three evaluators wide, two of them on the page and both

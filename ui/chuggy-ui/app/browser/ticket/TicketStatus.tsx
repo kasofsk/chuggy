@@ -1,10 +1,10 @@
 /**
- * The ticket's status bar: where it stands and since when, what it has run and
- * cost, what may be done to it, and under that what the ticket is, tinted by the tone of where it stands.
+ * The ticket's status bar: where it stands and since when, what it has cost,
+ * what may be done to it, and under that what the ticket is.
  *
  * The cost and the token count are the ticket read's own roll-up rather than a
  * sum over the executions this page holds, because a page that is short would
- * understate them; the run count is this page's, and says so where it is short.
+ * understate them.
  */
 
 import type { ReactNode } from "react";

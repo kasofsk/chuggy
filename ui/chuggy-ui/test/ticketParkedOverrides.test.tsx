@@ -325,11 +325,16 @@ test("a member changes the model, saves, resumes, and the page draws the new mod
   });
   expect(screen.queryByRole("status", { name: "Needs you" })).toBeNull();
 
+  const work = document.querySelector('.ticket-config-sub[data-stage="work"]');
+  if (!(work instanceof HTMLElement)) throw new Error("no Work drawn");
+  expect(work.querySelector(".ticket-config-task-line")?.textContent).toContain(
+    "Overridden",
+  );
   await turned(() => {
-    screen.getByRole("button", { name: /^Provenance/u }).click();
+    within(work).getByRole("button", { name: /^Work/u }).click();
   });
   await settled();
-  const model = screen.getByText("--model=opus");
+  const model = within(work).getByText("--model=opus");
   expect(model.closest("div")?.textContent).toContain("Overridden");
 });
 

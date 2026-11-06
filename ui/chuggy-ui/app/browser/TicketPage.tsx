@@ -362,6 +362,7 @@ function TicketBody(props: {
         <TicketActivity
           ticket={ticket}
           page={page}
+          truncated={facts.truncated}
           delivery={props.reads.deliveryState}
         />
       </div>

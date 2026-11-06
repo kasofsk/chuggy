@@ -53,6 +53,32 @@ function PickerActions(props: {
   );
 }
 
+/** The trigger, its text hidden where the glyph alone is drawn. */
+function PickerTrigger(props: {
+  readonly label: string;
+  readonly glyph: ReactNode;
+  readonly iconOnly: boolean;
+  readonly text: string;
+  readonly hint: string | undefined;
+}): ReactNode {
+  return (
+    <Tooltip text={props.hint}>
+      <DropdownMenu.Trigger
+        className={`${buttonLookClassName({ size: "sm" })} min-w-0 max-w-full`}
+      >
+        <span className="visually-hidden">{props.label}</span> {props.glyph}
+        <span
+          className={
+            props.iconOnly ? "visually-hidden" : "picker-text min-w-0 truncate"
+          }
+        >
+          {props.text}
+        </span>
+      </DropdownMenu.Trigger>
+    </Tooltip>
+  );
+}
+
 export function Picker(props: {
   readonly label: string;
   /** A mark drawn before the trigger's text, saying what the choice is about. */
@@ -78,28 +104,17 @@ export function Picker(props: {
   );
   return (
     <DropdownMenu.Root modal={false}>
-      <Tooltip
-        text={
+      <PickerTrigger
+        label={props.label}
+        glyph={props.glyph}
+        iconOnly={props.iconOnly === true}
+        text={chosen?.text ?? props.placeholder ?? props.value}
+        hint={
           props.iconOnly === true
             ? (props.hint ?? `${props.label} · ${chosen?.text ?? props.value}`)
             : props.hint
         }
-      >
-        <DropdownMenu.Trigger
-          className={`${buttonLookClassName({ size: "sm" })} min-w-0 max-w-full`}
-        >
-          <span className="visually-hidden">{props.label}</span> {props.glyph}
-          <span
-            className={
-              props.iconOnly === true
-                ? "visually-hidden"
-                : "picker-text min-w-0 truncate"
-            }
-          >
-            {chosen?.text ?? props.placeholder ?? props.value}
-          </span>
-        </DropdownMenu.Trigger>
-      </Tooltip>
+      />
       <DropdownMenu.Portal>
         <MenuContent
           sideOffset={props.sideOffset ?? 4}

@@ -226,13 +226,9 @@ test("the ticket's total is the figure the ticket read answered with", async () 
   expect(
     rendered.container.querySelector(".ticket-status")?.textContent,
   ).toContain("$9.99");
-  const usage = screen.getByRole("button", { name: /^Usage/u });
-  await turned(() => {
-    usage.click();
-  });
-  expect(rendered.container.querySelector("#usage")?.textContent).toContain(
-    "$0.30",
-  );
+  expect(
+    screen.getByRole("table", { name: "Usage by stage" }).textContent,
+  ).toContain("$0.30");
 });
 
 /** A report the worker wrote as markdown must draw as markdown, and the

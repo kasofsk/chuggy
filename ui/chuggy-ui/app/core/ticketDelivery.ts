@@ -20,18 +20,13 @@
  * The detail is carried for a failure alone.
  *
  * THE READ IS ASKED AGAIN ON A CLOCK, because no frame says a report arrived.
- *
- * A KEPT ANSWER THAT HAS GONE STALE IS SAID TO BE. The read's last answer
- * stands across a read that failed, so its lines are kept; once the console's
- * own rule calls that answer stale, a closed row says so before its counts.
+ * Its last answer stands across a read that failed, so its lines are kept.
  */
 
 import type { TicketActionReachResponse } from "../../../../src/contract/actionReach.ts";
-import { freshnessIsStale } from "./freshness.ts";
 import type { PanelState } from "./freshness.ts";
 import { commitLabel } from "./labels.ts";
 import type { Label } from "./labels.ts";
-import { actionReachArm } from "./tones.ts";
 import type { ActionReach } from "./tones.ts";
 
 type TicketDeliveryAction = TicketActionReachResponse["actions"][number];
@@ -115,50 +110,4 @@ export function ticketDeliveryDrawn(state: TicketDeliveryState): boolean {
     case "Ready":
       return state.value.length > 0;
   }
-}
-
-/** What a closed row says of a read that did not answer. */
-const ticketDeliveryUnread = "Not read";
-
-/** The marks in the order a reader needs them: what went wrong, what cannot be said, what is still to come, what is done. */
-const ticketDeliveryConcern: Readonly<Record<ActionReach, number>> = {
-  Failed: 0,
-  RolledBack: 1,
-  Unknown: 2,
-  NotYet: 3,
-  Reached: 4,
-};
-
-/** What a closed row says before the counts of an answer that has gone stale. */
-const ticketDeliveryStale = "Stale";
-
-/** How many lines stand at each mark, as one counted word a mark. */
-function ticketDeliveryCounts(
-  lines: readonly TicketDeliveryLine[],
-): readonly string[] {
-  const counted = new Map<ActionReach, number>();
-  for (const line of lines)
-    counted.set(line.reach, (counted.get(line.reach) ?? 0) + 1);
-  return [...counted]
-    .sort(
-      ([left], [right]) =>
-        ticketDeliveryConcern[left] - ticketDeliveryConcern[right],
-    )
-    .map(([reach, count]) => `${String(count)} ${actionReachArm(reach).word}`);
-}
-
-/** What the closed row says on the right at `nowMs`, and nothing where no row
- * is drawn. */
-export function ticketDeliverySummary(
-  state: TicketDeliveryState,
-  nowMs: number,
-): string | undefined {
-  if (!ticketDeliveryDrawn(state)) return undefined;
-  if (state.state !== "Ready") return ticketDeliveryUnread;
-  return [
-    ...(freshnessIsStale(nowMs, state.observedAtMs)
-      ? [ticketDeliveryStale]
-      : []),
-    ...ticketDeliveryCounts(state.value),
-  ].join(" · ");
 }

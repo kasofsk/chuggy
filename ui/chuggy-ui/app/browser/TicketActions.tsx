@@ -707,9 +707,8 @@ function DispatchChip(
   );
 }
 
-/** Every action but the ones a card answers, the edit screen, the duplicate
- * whatever the phase, and the follow of whichever was pressed, wherever it was
- * pressed. */
+/** Every action but the ones a card answers, the edit screen, and the follow
+ * of whichever was pressed, wherever it was pressed. */
 export function TicketBarActions(props: TicketActionsProps): ReactNode {
   const offers = props.offers;
   const barActions =

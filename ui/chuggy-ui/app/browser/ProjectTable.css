@@ -274,13 +274,6 @@
     text-overflow: ellipsis;
   }
 
-  .ticket-list-execution {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-1);
-  }
-
-  .ticket-list-runs-on,
   .ticket-list-repository {
     display: inline-block;
     max-width: var(--col-spent);
@@ -432,8 +425,7 @@
   }
 
   @container (max-width: 53em) {
-    .ticket-list-creator,
-    .ticket-list-runs-on {
+    .ticket-list-creator {
       display: none;
     }
 

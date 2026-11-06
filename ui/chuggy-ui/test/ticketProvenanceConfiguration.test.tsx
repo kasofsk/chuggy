@@ -1,7 +1,6 @@
 /**
- * The Configuration panel over a real, non-empty canonical document, and the
- * one structural rule the Brief and Provenance rows must keep: the accordion
- * row is the only heading either draws, never a second one repeating it.
+ * The Configuration panel over a real, non-empty canonical document, broken
+ * out into the work, the evaluation and the finalization it decides.
  *
  * The canonical body is read from the version 1 `chuggy-development-sonnet.json`
  * this repository declared before its catalogs, so the settings grid, the
@@ -27,6 +26,7 @@ import type { ConfigurationSelection } from "../../../src/contract/configuration
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import type { TicketFollowing } from "../../../src/contract/responses.ts";
 import { TicketPage } from "../app/browser/TicketPage.tsx";
+import { briefLandingLine } from "../app/core/codeLabels.ts";
 import {
   answer,
   apiDouble,
@@ -97,6 +97,7 @@ async function drawTicket(
   creator?: string,
   selection?: ConfigurationSelection,
   following?: TicketFollowing,
+  brief?: unknown,
 ): Promise<void> {
   const api = apiDouble({
     operation: { operation: "op-one", state: "Pending" },
@@ -133,6 +134,7 @@ async function drawTicket(
         ...(creator === undefined ? {} : { creator }),
         ...(selection === undefined ? {} : { selection }),
         ...(following === undefined ? {} : { following }),
+        ...(brief === undefined ? {} : { brief }),
       });
     },
   });
@@ -273,25 +275,63 @@ test("a configuration with no stages draws a Review tab, Work first", async () =
   expect(within(instructions()).queryByText(workText)).toBeNull();
 });
 
-test("the evaluation list draws one row per stage, its checks or its instructions and practices", async () => {
+/** The part of the configuration drawn for one phase. */
+function configurationSection(
+  stage: "work" | "evaluation" | "finalization",
+): HTMLElement {
+  const section = document.querySelector(
+    `.ticket-config-sub[data-stage="${stage}"]`,
+  );
+  if (!(section instanceof HTMLElement)) throw new Error(`no ${stage} drawn`);
+  return section;
+}
+
+/** Each task the Evaluation section draws, by the title on its folded line. */
+function stageTasks(): ReadonlyMap<string, HTMLElement> {
+  const section = document.querySelector(
+    '.ticket-config-sub[data-stage="evaluation"]',
+  );
+  return new Map(
+    [
+      ...(section?.querySelectorAll<HTMLElement>(".ticket-config-task") ?? []),
+    ].map(
+      (task) =>
+        [task.querySelector("strong")?.textContent ?? "", task] as const,
+    ),
+  );
+}
+
+function stageTask(title: string): HTMLElement {
+  const task = stageTasks().get(title);
+  if (task === undefined) throw new Error(`no ${title} task`);
+  return task;
+}
+
+test("the evaluation list draws one task per stage, its checks or its instructions and practices", async () => {
   await drawExpanded();
-  expect(screen.getByText("Stage 1 · Check")).toBeDefined();
-  expect(screen.getByText(".chug/tasks/ci.sh")).toBeDefined();
-  const stage2 = screen
-    .getByText("Stage 2 · Review")
-    .closest(".ticket-config-evaluation-row");
-  if (!(stage2 instanceof HTMLElement)) throw new Error("no stage 2 row");
-  expect(within(stage2).getByText("Changed call paths")).toBeDefined();
-  expect(within(stage2).getByText("Acceptance criteria")).toBeDefined();
+  expect([...stageTasks().keys()]).toStrictEqual(["Stage 1", "Stage 2"]);
+  const check = stageTask("Stage 1");
+  expect(check.querySelector(".ticket-config-task-line")?.textContent).toBe(
+    "Commands · .chug/tasks/ci.sh",
+  );
+  expect(check.querySelector(".ticket-config-command")?.textContent).toBe(
+    ".chug/tasks/ci.sh",
+  );
+  const review = stageTask("Stage 2");
+  expect(review.querySelector(".ticket-config-task-line")?.textContent).toBe(
+    "Review",
+  );
+  expect(within(review).getByText("Changed call paths")).toBeDefined();
+  expect(within(review).getByText(/Acceptance criteria/u)).toBeDefined();
 });
 
 /** A check is one token as often as not, and the column it stands in is as
  * narrow as the reader leaves the pages. */
 test("a stage's check breaks inside the column rather than widening it", async () => {
   await drawExpanded();
-  const check = screen.getByText(".chug/tasks/ci.sh");
+  const check = stageTask("Stage 1").querySelector(".ticket-config-command");
+  if (check === null) throw new Error("no check drawn");
   const rules = sheetRules(ticketSheet, []);
-  expect(check.classList.contains("ticket-config-command")).toBe(true);
   expect(sheetDeclared(rules, check, "overflow-wrap")).toBe("anywhere");
   expect(sheetDeclared(rules, check, "min-width")).toBe("0px");
   expect(sheetDeclared(rules, check, "max-width")).toBe("100%");
@@ -400,14 +440,24 @@ test("a catalog draws what the ticket selected of it: its work's prompt, its pla
     evaluation: "gated",
     finalization: "approved",
   });
-  expect(screen.getByText("build")).toBeDefined();
-  expect(screen.getByText("prompts/build.md")).toBeDefined();
-  expect(screen.getByText("Build it.")).toBeDefined();
-  expect(screen.getByText("gated")).toBeDefined();
-  expect(screen.getByText("Stage 2 · gates")).toBeDefined();
-  expect(screen.getByText("npm test")).toBeDefined();
-  expect(screen.getByText("approved")).toBeDefined();
-  expect(screen.getByText("Approved first")).toBeDefined();
+  expect(within(cell("Work")).getByText("build")).toBeDefined();
+  expect(within(cell("Evaluation")).getByText("gated")).toBeDefined();
+  const work = configurationSection("work");
+  expect(work.querySelector(".ticket-config-task strong")?.textContent).toBe(
+    "build",
+  );
+  expect(within(work).getAllByText("prompts/build.md").length).toBeGreaterThan(
+    0,
+  );
+  expect(within(work).getByText(/^Build it\./u)).toBeDefined();
+  expect(
+    within(stageTask("Stage 2 · gates")).getAllByText("npm test").length,
+  ).toBeGreaterThan(0);
+  const finalization = configurationSection("finalization");
+  expect(
+    within(finalization).getByText("Finalizer").nextElementSibling?.textContent,
+  ).toBe("approved");
+  expect(within(finalization).getByText(/Approved first/u)).toBeDefined();
   expect(screen.queryByText("Do it fast.")).toBeNull();
 });
 
@@ -490,18 +540,19 @@ test("a catalog plan draws its stages in order, and says a stage's several evalu
     finalization: "approved",
   });
   expect(screen.queryByText(/Stages run in order/u)).toBeNull();
-  const rowOf = (label: string) => {
-    const row = screen
-      .getByText(label)
-      .closest(".ticket-config-evaluation-row");
-    if (!(row instanceof HTMLElement)) throw new Error(`no ${label} row`);
-    return row;
-  };
+  expect([...stageTasks().keys()]).toStrictEqual([
+    "Stage 1 · review",
+    "Stage 2 · gates",
+  ]);
   expect(
-    within(rowOf("Stage 1 · review")).getByText("Evaluators run side by side"),
+    within(stageTask("Stage 1 · review")).getByText(
+      "Evaluators run side by side",
+    ),
   ).toBeDefined();
   expect(
-    within(rowOf("Stage 2 · gates")).queryByText("Evaluators run side by side"),
+    within(stageTask("Stage 2 · gates")).queryByText(
+      "Evaluators run side by side",
+    ),
   ).toBeNull();
 });
 
@@ -535,4 +586,76 @@ test("the tasks are folded until asked for, and each opens onto a YAML view of i
     toggles[0]?.click();
   });
   expect(toggles[0]?.getAttribute("aria-expanded")).toBe("true");
+});
+
+/** A brief that names how its work lands, and nothing else of note. */
+const briefLanding = {
+  intent: "ship it",
+  links: [],
+  branch: "refs/heads/feature",
+  finalization: { mode: "PullRequest", target: "refs/heads/release" },
+} as const;
+
+/** The cells Finalization draws, by the name over each. */
+function finalizationCells(): ReadonlyMap<string, string> {
+  return new Map(
+    [
+      ...configurationSection("finalization").querySelectorAll(
+        ".ticket-config-cell",
+      ),
+    ].map(
+      (cell) =>
+        [
+          cell.querySelector(".eyebrow")?.textContent ?? "",
+          cell.querySelector(".ticket-config-value")?.textContent ?? "",
+        ] as const,
+    ),
+  );
+}
+
+test("a version 1 ticket's Finalization is the method its brief names, and is not drawn where the brief names none", async () => {
+  await drawTicket(
+    canonical,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    briefLanding,
+  );
+  expect(finalizationCells()).toStrictEqual(
+    new Map([["Method", briefLandingLine(briefLanding.finalization)]]),
+  );
+  cleanup();
+  await drawTicket();
+  expect(
+    document.querySelector('.ticket-config-sub[data-stage="finalization"]'),
+  ).toBeNull();
+});
+
+test("a catalog ticket's Finalization is the brief's method before its finalizer's, beside the finalizer it lands through", async () => {
+  await drawTicket(
+    creationCatalogCanonical,
+    undefined,
+    undefined,
+    { finalization: "approved" },
+    undefined,
+    briefLanding,
+  );
+  expect(finalizationCells()).toStrictEqual(
+    new Map([
+      ["Method", briefLandingLine(briefLanding.finalization)],
+      ["Finalizer", "approved"],
+    ]),
+  );
+});
+
+test("a catalog with no finalizer for the ticket draws no Finalizer, and says no method was named", async () => {
+  const unfinalized = JSON.parse(creationCatalogCanonical) as {
+    finalizers?: unknown;
+    readonly defaults: { finalization?: unknown };
+  };
+  delete unfinalized.finalizers;
+  delete unfinalized.defaults.finalization;
+  await drawTicket(JSON.stringify(unfinalized));
+  expect(finalizationCells()).toStrictEqual(new Map([["Method", "—"]]));
 });
