@@ -2,7 +2,8 @@
  * A draft never released at its ticket's address: the ticket page in Draft
  * state, read from the draft. Release sends the form's own release and the
  * page then draws the ticket it made; Delete asks before it deletes and then
- * goes to the ticket list; and a ticket that was released draws its own page.
+ * goes to the ticket list; a ticket that was released draws its own page; and
+ * the page at another ticket's address never draws the draft it drew here.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -35,6 +36,8 @@ import {
 const atlas: PartitionIdentity = { tenant: "vteng", project: "chuggy" };
 
 const navigated = vi.hoisted(() => ({ to: [] as unknown[] }));
+/** The ticket the page's address names. */
+const addressed = vi.hoisted(() => ({ ticket: "335" }));
 
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
@@ -51,7 +54,7 @@ vi.mock("@tanstack/react-router", () => ({
       {props.children}
     </a>
   ),
-  useParams: () => ({ ...atlas, ticket: "335" }),
+  useParams: () => ({ ...atlas, ticket: addressed.ticket }),
   useNavigate: () => (to: unknown) => {
     navigated.to.push(to);
     return Promise.resolve();
@@ -62,6 +65,7 @@ vi.mock("@tanstack/react-router", () => ({
 beforeEach(() => {
   viewportAtEm(viewportDeskEm);
   navigated.to.length = 0;
+  addressed.ticket = "335";
 });
 
 afterEach(() => {
@@ -112,6 +116,8 @@ interface Served {
   readonly submitted: () => unknown;
   /** A frame of the project's stream, writing the draft read as it says. */
   readonly drafted: (draft: DraftResponse) => void;
+  /** The page drawn again, at whatever address the case now names. */
+  readonly redrawn: () => void;
 }
 
 /** What a case holds back: the ticket read once the draft is released, or the
@@ -119,6 +125,8 @@ interface Served {
 interface Holding {
   readonly ticket?: Promise<Response>;
   readonly deletion?: Promise<Response>;
+  /** Ticket 336's own read: its draft is read released. */
+  readonly other?: Promise<Response>;
 }
 
 /** The page over ticket 335: a draft until something is submitted, the
@@ -144,6 +152,10 @@ function drawn(
       if (url.includes("/native-actions")) return answer({ actions: [] });
       if (url.includes("/executions")) return answer({ executions: [] });
       if (url.includes("/configurations/")) return answer({}, 404);
+      if (url.endsWith("/drafts/336"))
+        return answer({ ...releasedDraft, ticket: 336 });
+      if (url.endsWith("/tickets/336"))
+        return holding.other ?? answer({ ...releasedTicket, ticket: 336 });
       if (start === "Refused" && /\/(drafts|tickets)\/335$/u.test(url))
         return answer({ error: { code: "NotFound" } }, 404);
       if (url.includes("/drafts/"))
@@ -169,16 +181,20 @@ function drawn(
     }
     return api.fetch(url, init);
   });
-  render(
+  const page = (): ReactNode => (
     <ScreenHarness
       partition={atlas}
       client={client}
       transport={openedStream().ports.fetch}
     >
       <TicketPageEveryTab />
-    </ScreenHarness>,
+    </ScreenHarness>
   );
+  const { rerender } = render(page());
   return {
+    redrawn: () => {
+      rerender(page());
+    },
     deletes,
     submitted: api.submitted,
     drafted: (draft) => {
@@ -334,6 +350,32 @@ test("a draft deleted by nobody on this page draws the page's not-found", async 
 
   expect(document.querySelector('[data-standing="Draft"]')).toBeNull();
   expect(screen.getByText(/^Not found/u)).toBeDefined();
+});
+
+test("a page for one ticket never draws the draft it drew for another", async () => {
+  const otherRead = heldAnswer();
+  const served = drawn("Draft", { other: otherRead.answered });
+  await settled();
+  expect(standing()).toBe("Draft");
+
+  addressed.ticket = "336";
+  await turned(() => {
+    served.redrawn();
+  });
+  await settled();
+
+  expect(document.querySelector('[data-standing="Draft"]')).toBeNull();
+  expect(screen.queryByText("Not released")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Release" })).toBeNull();
+  expect(screen.queryByText(intent)).toBeNull();
+
+  otherRead.release(answer({ ...releasedTicket, ticket: 336 }));
+  await settled();
+
+  expect(standing()).toBe("Ready");
+  expect(
+    within(ticketHeader()).getByRole("heading", { level: 1 }).textContent,
+  ).toBe("worker: lock contract 1.36.0 #336");
 });
 
 test("a released ticket's page is its own, whatever its draft holds", async () => {

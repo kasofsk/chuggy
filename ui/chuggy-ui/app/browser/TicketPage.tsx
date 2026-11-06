@@ -373,14 +373,28 @@ function useTicketPageDraft(
   return { unreleased: ticketPageDraftOf(drawn, deletion), deletion };
 }
 
-/** The layout every tab is drawn in, handed the tab its address names. */
+/** The layout every tab is drawn in, handed the tab its address names, and
+ * drawn afresh for each ticket it names, so that nothing it holds of one
+ * ticket is drawn at another's address. */
 export function TicketPage(props: { readonly children: ReactNode }): ReactNode {
   const params = useParams({ from: "/$tenant/$project/tickets/$ticket" });
-  const partition: PartitionIdentity = {
-    tenant: params.tenant,
-    project: params.project,
-  };
-  const ticket = Number(params.ticket);
+  return (
+    <TicketPageOf
+      key={`${params.tenant}/${params.project}/${params.ticket}`}
+      partition={{ tenant: params.tenant, project: params.project }}
+      ticket={Number(params.ticket)}
+    >
+      {props.children}
+    </TicketPageOf>
+  );
+}
+
+function TicketPageOf(props: {
+  readonly partition: PartitionIdentity;
+  readonly ticket: number;
+  readonly children: ReactNode;
+}): ReactNode {
+  const { partition, ticket } = props;
   const nowMs = useNowMs();
   const ticketState = usePanelState(ticketQuery(partition, ticket, "Streamed"));
   const draftState = usePanelState(draftQuery(partition, ticket, "Streamed"));
