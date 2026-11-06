@@ -14,6 +14,11 @@
  * a message the door refused forgets them, since what it refused may have been
  * one of them.
  *
+ * A PRESS NAMES THE PAGE THE READER MADE IT ON. Pressing again names the page
+ * of that press, and a turn the mailbox already took keeps the page it was
+ * first sent from, because the door answers a turn it holds by its identity
+ * alone.
+ *
  * A SENT MESSAGE ARRIVES THE WAY EVERY OTHER TURN DOES: a project's frame
  * stales the thread read, so nothing here reads it again, and the record draws
  * the message until that read lists its turn. No frame names a member's own
@@ -67,6 +72,7 @@ import {
   threadBacklogMax,
 } from "../../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
+import type { ConsolePage } from "../../../../../src/contract/consolePage.ts";
 import type { ThreadEntryResponse } from "../../../../../src/contract/responses.ts";
 import type { ApiPorts } from "../../core/apiRequest.ts";
 import { apiUploadProjectArtifact } from "../../core/apiRoutes.ts";
@@ -353,12 +359,14 @@ async function threadSendAnswered(
   sent: {
     readonly session: string;
     readonly images: readonly string[];
+    readonly page: ConsolePage | undefined;
   } & ThreadSending,
 ): Promise<ThreadSend> {
   const answered = await threadMessageSent(extra.ports, home, sent.session, {
     turn: sent.turn,
     message: sent.text,
     ...(sent.images.length === 0 ? {} : { images: [...sent.images] }),
+    ...(sent.page === undefined ? {} : { page: sent.page }),
   });
   if (answered.send !== "Unhosted") return answered;
   return threadDoorUnhosted(extra.client, home);
@@ -411,6 +419,8 @@ export interface ThreadSendPress {
   readonly session: string | undefined;
   readonly text: string;
   readonly attached: readonly ConversationAttachment[];
+  /** The console page the press was made on, absent where it names none. */
+  readonly page?: ConsolePage | undefined;
   /** Whether the box that pressed is still drawn, absent where none did. */
   readonly drawn?: () => boolean;
 }
@@ -520,7 +530,7 @@ function threadSendRun(
       said(session);
       return undefined;
     }
-    const to = { session, images, ...sent };
+    const to = { session, images, page: press.page, ...sent };
     const answered = await threadSendAnswered(extra, home, to);
     if (answered.send === "Refused")
       for (const attachment of attached) carried.uploaded.delete(attachment);

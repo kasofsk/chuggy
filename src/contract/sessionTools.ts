@@ -17,7 +17,9 @@
  * tool writes nothing at all: it accumulates in the pod and becomes the turn's
  * answer, which the selector runtime still reads and acts on under its own
  * fence, so the runtime remains the single writer of a lead's dispatch and of
- * the refusal ledger.
+ * the refusal ledger. An offer tool writes nothing and reaches no route
+ * either: its call stands in the thread's transcript like any other, and what
+ * it offers is done by the member, as the member, or not at all.
  *
  * A ROSTER IS NOT A CONTROL, AND SAYING SO IS THE POINT. A roster is enforced
  * by the agent runtime inside the pod, and the pod is the thing being
@@ -93,6 +95,17 @@ export {
   briefTitleCharsMax,
 } from "./brief.ts";
 export { configurationSelectionSchema } from "./configurationSelection.ts";
+
+/** What `navigate` names as its argument: a page in the vocabulary the console names its own pages in. */
+export { consolePageSchema, type ConsolePage } from "./consolePage.ts";
+
+/** What `offer_release` and `offer_revoke` name as their arguments, which the console reads off the transcript to draw each offer. */
+export {
+  threadOfferReleaseSchema,
+  threadOfferRevokeSchema,
+  type ThreadOfferRelease,
+  type ThreadOfferRevoke,
+} from "./threadOffers.ts";
 
 /** What `fetch_image` checks its route's answer by: the media types a project's image is admitted under, and the encoding its bytes are answered in. */
 export { imageMediaTypes, projectArtifactEncoding } from "./http.ts";
@@ -298,12 +311,22 @@ const chuggyToolRoster = {
     "set_planning_intent",
   ],
   MemberRead: [...chuggyToolMemberReads, "read_docs"],
+  /**
+   * What a thread offers its member rather than doing, which no lead roster
+   * carries: `navigate` names a console page, `offer_release` one draft at the
+   * exact authoring version to release, and `offer_revoke` one ticket at its
+   * version. None writes or reaches a route, so the direct tools in
+   * `DraftOriginate` and `TicketDispatch` stay what a thread does on its
+   * member's word.
+   */
+  ThreadOffer: ["navigate", "offer_release", "offer_revoke"],
 } as const satisfies Readonly<Record<SessionCapability, readonly string[]>>;
 
 /**
  * Every tool the chuggy server offers, in the order a roster is read in: what a
- * session may see of the project, what it may author, what it may decide, and
- * what a member's own session reads of them, each named once.
+ * session may see of the project, what it may author, what it may decide, what
+ * a member's own session reads of them, and what a thread may offer its
+ * member, each named once.
  */
 export const allChuggyTools = [
   ...chuggyToolRoster.ProjectRead,
@@ -312,6 +335,7 @@ export const allChuggyTools = [
   ...chuggyToolRoster.TicketDispatch,
   ...chuggyToolRoster.LeadDecision,
   ...chuggyToolMemberReads,
+  ...chuggyToolRoster.ThreadOffer,
 ] as const;
 export type ChuggyTool = (typeof allChuggyTools)[number];
 
@@ -351,6 +375,7 @@ export const builtInToolCapabilities: Readonly<
   TicketDispatch: [],
   LeadDecision: [],
   MemberRead: [],
+  ThreadOffer: [],
 };
 
 /**

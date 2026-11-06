@@ -33,6 +33,7 @@ import type { ConversationExchange } from "../app/core/conversation.ts";
 import type { TicketResponse } from "../../../src/contract/responses.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { elementScrollToStubbed } from "./scrolling.ts";
+import { composerTyped } from "./composerTyped.ts";
 
 function ticketOf(ticket: number, title: string): TicketResponse {
   return {
@@ -81,19 +82,6 @@ beforeEach(() => {
 });
 afterEach(cleanup);
 
-/** Typing, with the caret left where a member's would be: the trigger reads
- * back from the caret, so a box whose selection stayed at zero opens nothing. */
-async function typed(text: string): Promise<HTMLTextAreaElement> {
-  const box = screen.getByRole<HTMLTextAreaElement>("textbox");
-  fireEvent.change(box, { target: { value: text } });
-  box.setSelectionRange(text.length, text.length);
-  fireEvent.select(box);
-  await waitFor(() => {
-    expect(box.value).toBe(text);
-  });
-  return box;
-}
-
 /** The tickets the list is offering, which the popover draws as the options of
  * a combobox over the box the member is typing in. */
 function mentioned(): readonly string[] {
@@ -108,7 +96,7 @@ test("an address with no list offered opens nothing at all", async () => {
       empty="No conversation"
     />,
   );
-  await typed("@");
+  await composerTyped("@");
   expect(mentioned()).toHaveLength(0);
 });
 
@@ -120,11 +108,11 @@ test("an address offers every ticket, and typing the kind still offers them", as
       empty="No conversation"
     />,
   );
-  await typed("@");
+  await composerTyped("@");
   await waitFor(() => {
     expect(mentioned().length).toBe(2);
   });
-  await typed("@ticket");
+  await composerTyped("@ticket");
   await waitFor(() => {
     expect(mentioned().length).toBe(2);
   });
@@ -140,13 +128,13 @@ test("a query runs over the space after the kind, by number and by title", async
       empty="No conversation"
     />,
   );
-  await typed("@ticket 15");
+  await composerTyped("@ticket 15");
   await waitFor(() => {
     expect(mentioned().join(" ")).toContain("#15");
   });
   expect(mentioned().join(" ")).not.toContain("#16");
 
-  await typed("@ticket ship the console");
+  await composerTyped("@ticket ship the console");
   await waitFor(() => {
     expect(mentioned().join(" ")).toContain("#16");
   });
@@ -161,7 +149,7 @@ test("picking a ticket writes the form the agent is asked for", async () => {
       empty="No conversation"
     />,
   );
-  const box = await typed("see @ticket 15");
+  const box = await composerTyped("see @ticket 15");
   await waitFor(() => {
     expect(mentioned().join(" ")).toContain("#15");
   });

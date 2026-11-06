@@ -60,6 +60,7 @@ import {
   asSessionTurnId,
   type SessionBearerSecret,
   type SessionCapability,
+  type SessionTurnInputKind,
   type SessionStoreStream,
   type SessionTurnId,
 } from "../../interpreter/agentSession.ts";
@@ -131,6 +132,7 @@ import {
   workerContractProjectReads,
   workerContractRunnerSessions,
   workerContractTargetRefs,
+  workerContractThreadOffer,
   workerContractTicketDispatch,
   workerContractUnscopedChat,
   type WorkerArtifactReservationPort,
@@ -1312,8 +1314,8 @@ function sessionSettled(
 
 /**
  * The capabilities a session's facts name to the pod asking: all of them, or
- * none of `TicketDispatch` and `MemberRead` to a pod whose release predates
- * the one, which holds no tool it admits.
+ * none of `TicketDispatch`, `MemberRead` and `ThreadOffer` to a pod whose
+ * release predates the one, which holds no tool it admits.
  */
 function sessionFactsCapabilities(
   request: FastifyRequest,
@@ -1325,8 +1327,28 @@ function sessionFactsCapabilities(
       (capability !== "TicketDispatch" ||
         contractVersionAccepted(workerContractTicketDispatch, offered)) &&
       (capability !== "MemberRead" ||
-        contractVersionAccepted(workerContractUnscopedChat, offered)),
+        contractVersionAccepted(workerContractUnscopedChat, offered)) &&
+      (capability !== "ThreadOffer" ||
+        contractVersionAccepted(workerContractThreadOffer, offered)),
   );
+}
+
+/**
+ * The kind a turn is handed to the pod asking as: its own, or an `OfferReply`
+ * as the `UserMessage` a pod whose release predates it has for a turn its
+ * member put in the mailbox.
+ */
+function sessionTurnKindTold(
+  request: FastifyRequest,
+  kind: SessionTurnInputKind,
+): SessionTurnInputKind {
+  return kind === "OfferReply" &&
+    !contractVersionAccepted(
+      workerContractThreadOffer,
+      workerContractOffered(request),
+    )
+    ? "UserMessage"
+    : kind;
 }
 
 function sessionFactsRoute(register: SessionRegistrar): void {
@@ -1435,13 +1457,20 @@ function sessionTurnRoute(
   sessions: SessionPlaneService,
 ): void {
   const waited = sessionWaits(sessions);
-  register("turn", async (_request, reply, caller) => {
+  register("turn", async (request, reply, caller) => {
     const claimed = await waited(async () => {
       const turn = await sessions.turns.claim({
         secret: caller.secret,
         generation: caller.identity.generation,
       });
-      return turn === undefined ? undefined : { answer: turn };
+      return turn === undefined
+        ? undefined
+        : {
+            answer: {
+              ...turn,
+              inputKind: sessionTurnKindTold(request, turn.inputKind),
+            },
+          };
     });
     return claimed === undefined
       ? reply.code(204).send()

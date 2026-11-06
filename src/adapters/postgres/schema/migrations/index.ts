@@ -117,6 +117,8 @@ import { migration116 } from "./116-recheck-required.ts";
 import { migration117 } from "./117-serialized-holder.ts";
 import { migration118 } from "./118-expected-tree.ts";
 import { migration119 } from "./119-recheck-reworked.ts";
+import { migration120 } from "./120-thread-offers.ts";
+import { migration121 } from "./121-thread-offer-replies.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -239,4 +241,6 @@ export const migrations: readonly Migration[] = [
   migration117,
   migration118,
   migration119,
+  migration120,
+  migration121,
 ];

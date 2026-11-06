@@ -161,6 +161,8 @@ export type ProjectCommand =
       readonly version: 1;
       readonly command: "Decide";
       readonly ticketCommand: OperationTicketCommand;
+      /** The ticket revision a revocation's author read, which the writer refuses once it has moved; only a revocation carries one. */
+      readonly expectedRevision?: number;
     }
   | {
       readonly version: 1;

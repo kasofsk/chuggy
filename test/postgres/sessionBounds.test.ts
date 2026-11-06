@@ -23,6 +23,7 @@ import {
 } from "../../src/contract/http.ts";
 import { allSessionCapabilities } from "../../src/interpreter/agentSession.ts";
 import { allSessionTurnFailures } from "../../src/interpreter/agentSession.ts";
+import { allSessionTurnInputKinds } from "../../src/interpreter/agentSession.ts";
 import { allSessionAttemptEvidences } from "../../src/interpreter/sessionScheduler.ts";
 import { allProjectChangeKinds } from "../../src/interpreter/projectChange.ts";
 import { migratedDatabase } from "./migrationHarness.ts";
@@ -75,6 +76,11 @@ test("the installed session constraints match the runtime", async () => {
     assert.deepEqual(
       await members("session_turn", "session_turn_failure_is_known"),
       [...allSessionTurnFailures],
+      "the installed roster matches the runtime",
+    );
+    assert.deepEqual(
+      await members("session_turn", "session_turn_kind_is_known"),
+      [...allSessionTurnInputKinds],
       "the installed roster matches the runtime",
     );
     assert.deepEqual(

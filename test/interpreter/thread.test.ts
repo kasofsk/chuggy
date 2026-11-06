@@ -15,6 +15,7 @@ import test from "node:test";
 import {
   nativeHttpPageItemsMax,
   nativeHttpPathSegmentCharsMax,
+  repositoryIdentityCharsMax,
   selectorSettingsTextCharsMax,
   sessionTurnInputCharsMax,
   threadMessageCharsMax,
@@ -30,7 +31,10 @@ import {
   parseThreadWake,
   threadCapabilitiesDefault,
   threadConfigurationStanding,
+  memberThreadSystemPrompt,
   threadImagesSection,
+  threadNavigateStanding,
+  threadOfferStanding,
   threadPurposeStanding,
   threadStoppedStanding,
   threadSeedingText,
@@ -48,6 +52,9 @@ import {
   resolvedThreadStandingRules,
   threadImagesHeading,
   threadImagesRead,
+  threadPageHeading,
+  threadPageRead,
+  threadPageSection,
   threadStandingRulesDefault,
   threadTurnBoundaryHeading,
 } from "../../src/contract/threadSeeding.ts";
@@ -76,6 +83,7 @@ test("the default roster is capabilities the tree knows, and holds neither of th
   assert.ok(!held.includes("RepositoryWrite"));
   assert.ok(held.includes("DraftOriginate"));
   assert.ok(held.includes("TicketDispatch"));
+  assert.ok(held.includes("ThreadOffer"));
 });
 
 /**
@@ -376,6 +384,39 @@ test("the objectives tell a thread to say nothing of a turn its owner stopped", 
 });
 
 /**
+ * A thread holding `ThreadOffer` is told what each of its tools does and when
+ * to call it, and what an `OfferReply` turn is and that it is to be acted on.
+ * A member's own chat holds none of them and is told none of it.
+ */
+test("the objectives tell a thread what navigate does and when, and to act on an OfferReply", () => {
+  const prompt = threadSystemPrompt({
+    partition,
+    owner: "geoff",
+    standingRules: threadStandingRulesDefault,
+  });
+
+  assert.match(
+    threadNavigateStanding,
+    /`navigate` moves your owner's console/u,
+  );
+  assert.match(threadNavigateStanding, /call it when/u);
+  assert.match(threadNavigateStanding, /still on the page they wrote from/u);
+  assert.match(threadOfferStanding, /`offer_release` and `offer_revoke`/u);
+  assert.match(threadOfferStanding, /An `OfferReply` turn is their answer/u);
+  assert.match(threadOfferStanding, /act on it as their word/u);
+  assert.ok(prompt.includes(threadNavigateStanding));
+  assert.ok(prompt.includes(threadOfferStanding));
+  assert.ok(
+    prompt.indexOf(threadPurposeStanding) <
+      prompt.indexOf(threadNavigateStanding),
+    "the purpose stands before what is said of the offers",
+  );
+  const member = memberThreadSystemPrompt({ tenant: "acme", owner: "geoff" });
+  assert.ok(!member.includes(threadNavigateStanding));
+  assert.ok(!member.includes(threadOfferStanding));
+});
+
+/**
  * An account of what was filed is owed by a turn that was asked for a change
  * and by no other, so an answer to a question ends as an answer. A question
  * that shows its owner wants the thing changed is the one that ends on an
@@ -624,6 +665,109 @@ test("an input that cannot fit the images section once everything sheddable is s
   );
 });
 
+/** The widest page a turn can name: a repository at its identity's bound. */
+const widestPage = {
+  page: "Repository",
+  repository: "r".repeat(repositoryIdentityCharsMax),
+} as const;
+
+test("the page section names the page, then each thing on it, a line each", () => {
+  assert.equal(
+    threadPageSection({ page: "TicketEdit", ticket: 41 }),
+    `${threadPageHeading}\n\n- page: TicketEdit\n- ticket: 41`,
+  );
+  assert.equal(
+    threadPageSection({ page: "TicketNew", draft: 7 }),
+    `${threadPageHeading}\n\n- page: TicketNew\n- draft: 7`,
+  );
+  assert.equal(
+    threadPageSection({ page: "TicketNew", from: undefined }),
+    `${threadPageHeading}\n\n- page: TicketNew`,
+  );
+  assert.equal(
+    threadPageSection({ page: "Tickets" }),
+    `${threadPageHeading}\n\n- page: Tickets`,
+  );
+});
+
+test("the page line comes first however the page was built", () => {
+  assert.equal(
+    threadPageSection({ ticket: 41, page: "Ticket" }),
+    `${threadPageHeading}\n\n- page: Ticket\n- ticket: 41`,
+  );
+  assert.equal(
+    threadPageSection({ section: "WorkspaceRunners", page: "Settings" }),
+    `${threadPageHeading}\n\n- page: Settings\n- section: WorkspaceRunners`,
+  );
+});
+
+test("a later turn sent from a page opens with the page section and the boundary", () => {
+  const page = { page: "Ticket", ticket: 41 } as const;
+
+  assert.equal(
+    threadTurnInput("what is blocking it?", undefined, undefined, page),
+    `${threadPageSection(page)}\n\n${threadTurnBoundaryHeading}\n\nwhat is blocking it?`,
+  );
+});
+
+/**
+ * The page goes in front of the images section, because a reader takes the
+ * images as the last section before the boundary.
+ */
+test("a first turn sent from a page carries the seeding block, the page, the images, then the boundary", () => {
+  const page = { page: "Ticket", ticket: 41 } as const;
+  const images = seededImages(1);
+  const seeding = {
+    standingRules: projectStandingRules,
+    drafts: [],
+    refusals: [],
+  };
+
+  const input = threadTurnInput("what is blocking it?", seeding, images, page);
+  const block = input.slice(
+    0,
+    input.lastIndexOf(`\n\n${threadTurnBoundaryHeading}`),
+  );
+
+  assert.equal(
+    input,
+    `${threadSeedingText(seeding)}\n\n${threadPageSection(page)}\n\n${threadImagesSection(images)}\n\n${threadTurnBoundaryHeading}\n\nwhat is blocking it?`,
+  );
+  const read = threadImagesRead(block);
+  assert.deepEqual(read, {
+    before: `${threadSeedingText(seeding)}\n\n${threadPageSection(page)}`,
+    artifacts: images.map((image) => image.artifact),
+  });
+  assert.deepEqual(threadPageRead(read.before), {
+    before: threadSeedingText(seeding),
+    page,
+  });
+});
+
+test("the page section is never shed, and one that cannot fit is refused", () => {
+  const input = threadTurnInput(
+    "x".repeat(threadMessageCharsMax),
+    {
+      northStar: "ship the console",
+      standingRules: projectStandingRules,
+      drafts: seededDrafts(nativeHttpPageItemsMax),
+      refusals: seededRefusals(32),
+    },
+    undefined,
+    widestPage,
+  );
+
+  assert.ok(input.includes(threadPageSection(widestPage)));
+  assert.throws(() =>
+    threadTurnInput(
+      "x".repeat(threadTurnInputCharsMax),
+      undefined,
+      undefined,
+      widestPage,
+    ),
+  );
+});
+
 test("a first turn puts the seeding block in front of the message", () => {
   const input = threadTurnInput("what is blocking 42?", {
     northStar: "ship the console",
@@ -734,15 +878,21 @@ test("both settings texts at the bound the route accepts still compose", () => {
   const northStar = "n".repeat(selectorSettingsTextCharsMax);
   const standingRules = "s".repeat(selectorSettingsTextCharsMax);
 
-  const input = threadTurnInput("x".repeat(threadMessageCharsMax), {
-    northStar,
-    standingRules,
-    drafts: seededDrafts(nativeHttpPageItemsMax),
-    refusals: seededRefusals(32),
-  });
+  const input = threadTurnInput(
+    "x".repeat(threadMessageCharsMax),
+    {
+      northStar,
+      standingRules,
+      drafts: seededDrafts(nativeHttpPageItemsMax),
+      refusals: seededRefusals(32),
+    },
+    undefined,
+    widestPage,
+  );
 
   assert.ok(input.includes(northStar));
   assert.ok(input.includes(standingRules));
+  assert.ok(input.includes(threadPageSection(widestPage)));
   assert.ok(input.length <= threadTurnInputCharsMax);
   assert.ok(
     input.length <= sessionTurnInputCharsMax,
@@ -757,7 +907,7 @@ test("what the seeding weighs beyond its two texts is inside the named ceiling",
     standingRules: "",
     drafts: [{ ticket: 1, summary: "" }],
     refusals: [{ ticket: 1, reason: "" }],
-  })}\n\n${threadTurnBoundaryHeading}\n\n`;
+  })}\n\n${threadPageSection(widestPage)}\n\n${threadTurnBoundaryHeading}\n\n`;
 
   assert.ok(headings.includes("open drafts"));
   assert.ok(headings.includes("Standing against"));

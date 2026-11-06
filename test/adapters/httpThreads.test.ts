@@ -12,6 +12,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
+import type { ConsolePage } from "../../src/contract/consolePage.ts";
 import type { HttpErrorEnvelope } from "../../src/contract/http.ts";
 import {
   hostedRunsNotGrantedCode,
@@ -137,18 +138,22 @@ interface ThreadCase {
   readonly opening?: ThreadOpening;
 }
 
-/** The call a send is logged under, the images it named appended where it named any. */
+/** The call a send is logged under, the images it named and the page it was
+ * sent from appended where it named them. */
 function sendCall(input: {
   readonly session: string;
   readonly turn: string;
   readonly message: string;
   readonly images?: readonly string[];
+  readonly page?: ConsolePage;
 }): string {
   const named =
     input.images === undefined || input.images.length === 0
       ? ""
       : `:images=${input.images.join(",")}`;
-  return `send:${input.session}:${input.turn}:${input.message}${named}`;
+  const from =
+    input.page === undefined ? "" : `:page=${JSON.stringify(input.page)}`;
+  return `send:${input.session}:${input.turn}:${input.message}${named}${from}`;
 }
 
 function threadWeb(held: ThreadCase): NativeThreadWeb {
@@ -218,6 +223,27 @@ function threadWeb(held: ThreadCase): NativeThreadWeb {
       );
     },
     ...threadWebMemberView(held),
+    replyThreadOffer: threadWebOfferReply(held),
+  };
+}
+
+/** The door a reply to an offer goes through, answering what a case set the
+ * message door to where a reply's door could answer it too. */
+function threadWebOfferReply(
+  held: ThreadCase,
+): NativeThreadWeb["replyThreadOffer"] {
+  return (_principal, _partition, input) => {
+    held.calls.push(
+      `reply:${input.session}:${input.turn}:${JSON.stringify(input.reply)}`,
+    );
+    return Promise.resolve(
+      held.sent === undefined ||
+        held.sent.result === "TooLarge" ||
+        held.sent.result === "ImageUnknown" ||
+        held.sent.result === "ImagesUnavailable"
+        ? { result: "Sent", turn: input.turn, ordinal: 13 }
+        : held.sent,
+    );
   };
 }
 
@@ -842,6 +868,7 @@ test("every write door takes the versioned media type and nothing else", async (
   for (const url of [
     root,
     `${root}/${mine}/messages`,
+    `${root}/${mine}/offer-replies`,
     `${root}/${mine}/turns/${turn.turn}/stop`,
     `${root}/${mine}/close`,
     `${root}/${mine}/rename`,
@@ -904,6 +931,95 @@ test("a message names the images it carries, and the door is handed each one", a
   ]);
 });
 
+test("a message names the page it was sent from, and the door is handed it", async () => {
+  const held: ThreadCase = { calls: [] };
+  await using app = appOf(held);
+
+  const accepted = await app.inject({
+    method: "POST",
+    url: `${root}/${mine}/messages`,
+    headers: versioned,
+    payload: {
+      turn: "thread-turn-2",
+      message: "what is blocking it?",
+      page: { page: "TicketEdit", ticket: 41 },
+    },
+  });
+
+  assert.equal(accepted.statusCode, 202);
+  assert.deepEqual(held.calls, [
+    `send:${mine}:thread-turn-2:what is blocking it?:page={"page":"TicketEdit","ticket":41}`,
+  ]);
+});
+
+test("a reply to an offer names the turn it minted, and the door is handed the reply", async () => {
+  const held: ThreadCase = { calls: [] };
+  await using app = appOf(held);
+  const reply = {
+    call: "toolu_01",
+    decision: "Confirmed",
+    outcome: "Succeeded",
+  };
+
+  const accepted = await app.inject({
+    method: "POST",
+    url: `${root}/${mine}/offer-replies`,
+    headers: versioned,
+    payload: { turn: "thread-turn-3", reply },
+  });
+
+  assert.equal(accepted.statusCode, 202);
+  assert.deepEqual(threadMessageAcceptedSchema.parse(accepted.json()), {
+    turn: "thread-turn-3",
+    ordinal: 13,
+  });
+  assert.deepEqual(held.calls, [
+    `reply:${mine}:thread-turn-3:${JSON.stringify(reply)}`,
+  ]);
+});
+
+test("a reply body outside the schema is refused at the door, and its refusals are the message door's", async () => {
+  const held: ThreadCase = {
+    calls: [],
+    sent: { result: "Closed" },
+  };
+  await using app = appOf(held);
+
+  for (const payload of [
+    { turn: "thread-turn-3" },
+    { turn: "thread-turn-3", reply: { call: "toolu_01", decision: "Maybe" } },
+    {
+      turn: "thread-turn-3",
+      reply: { call: "toolu_01", decision: "Declined" },
+      page: { page: "Inbox" },
+    },
+  ])
+    assert.equal(
+      (
+        await app.inject({
+          method: "POST",
+          url: `${root}/${mine}/offer-replies`,
+          headers: versioned,
+          payload,
+        })
+      ).statusCode,
+      400,
+      JSON.stringify(payload),
+    );
+  assert.deepEqual(held.calls, []);
+  const closed = await app.inject({
+    method: "POST",
+    url: `${root}/${mine}/offer-replies`,
+    headers: versioned,
+    payload: {
+      turn: "thread-turn-3",
+      reply: { call: "toolu_01", decision: "Declined" },
+    },
+  });
+  assert.equal(closed.statusCode, 409);
+  assert.equal(closed.json<HttpErrorEnvelope>().error.code, "ThreadClosed");
+});
+
 test("a message body outside the schema is refused at the door", async () => {
   const held: ThreadCase = { calls: [] };
   await using app = appOf(held);
@@ -923,6 +1039,8 @@ test("a message body outside the schema is refused at the door", async () => {
       ),
     },
     { turn: "thread-turn-2", message: "hi", images: [""] },
+    { turn: "thread-turn-2", message: "hi", page: { page: "Thread" } },
+    { turn: "thread-turn-2", message: "hi", page: { page: "Ticket" } },
   ])
     assert.equal(
       (
@@ -1070,6 +1188,7 @@ test("every thread route needs a bearer", async () => {
   for (const url of [
     root,
     `${root}/${mine}/messages`,
+    `${root}/${mine}/offer-replies`,
     `${root}/${mine}/turns/${turn.turn}/stop`,
     `${root}/${mine}/close`,
     `${root}/${mine}/rename`,
@@ -1105,6 +1224,7 @@ test("every thread route the contract declares is one this server serves", async
     ["GET", nativeHttpRoutes.thread],
     ["GET", nativeHttpRoutes.threadTranscript],
     ["POST", nativeHttpRoutes.threadMessages],
+    ["POST", nativeHttpRoutes.threadOfferReplies],
     ["POST", nativeHttpRoutes.threadTurnStop],
     ["POST", nativeHttpRoutes.threadClose],
     ["POST", nativeHttpRoutes.threadRename],

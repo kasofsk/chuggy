@@ -27,11 +27,7 @@ import {
 import { panelQueryState, usePanelQueryOptions, usePanelState } from "./api.ts";
 import { PanelUnready } from "./DataPanel.tsx";
 import { ticketConfigurationStored } from "./editor/authoringGuards.tsx";
-import {
-  CreationForm,
-  CreationScreen,
-  TicketCreation,
-} from "./TicketCreation.tsx";
+import { CreationForm, CreationScreen } from "./TicketCreation.tsx";
 import type { CreationScreenReady } from "./TicketCreation.tsx";
 
 interface DuplicateProps extends CreationScreenReady {
@@ -128,20 +124,5 @@ function DuplicateHeading(props: { readonly from: number }): ReactNode {
         ticket {props.from}
       </Link>
     </>
-  );
-}
-
-/**
- * A new ticket, or one started from the ticket the address names. Each is
- * keyed by where it starts, because a change of search alone keeps a route's
- * component and the form it holds.
- */
-export function TicketCreationFrom(props: {
-  readonly from: number | undefined;
-}): ReactNode {
-  return props.from === undefined ? (
-    <TicketCreation key="new" />
-  ) : (
-    <TicketDuplicate key={props.from} from={props.from} />
   );
 }

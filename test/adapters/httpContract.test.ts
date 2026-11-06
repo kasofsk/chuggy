@@ -135,6 +135,7 @@ const routesInOrder = [
   "/api/v1/tenants/:tenant/projects/:project/threads/:session/hide",
   "/api/v1/tenants/:tenant/projects/:project/threads/:session/live",
   "/api/v1/tenants/:tenant/projects/:project/threads/:session/turns/:turn/stop",
+  "/api/v1/tenants/:tenant/projects/:project/threads/:session/offer-replies",
 ];
 
 test("the versioned route and media contracts move together", () => {
@@ -393,6 +394,29 @@ test("a purpose-specific mutation becomes its one application command", () => {
         ticketCommand: { type: "RevokeTicket", value: 7 },
       },
     },
+  );
+});
+
+test("a revocation carries the revision its author read where it names one", () => {
+  assert.deepEqual(
+    parseSubmission("operation", "Key", {
+      mutation: "RevokeTicket",
+      ticket: 7,
+      expectedRevision: 2,
+    }).command,
+    {
+      version: 1,
+      command: "Decide",
+      ticketCommand: { type: "RevokeTicket", value: 7 },
+      expectedRevision: 2,
+    },
+  );
+  assert.throws(() =>
+    parseSubmission("operation", "Key", {
+      mutation: "RevokeTicket",
+      ticket: 7,
+      expectedRevision: 0,
+    }),
   );
 });
 

@@ -124,6 +124,7 @@ describe("the word a turn's kind is drawn as", () => {
       expect(threadTurnKindWord(kind).length).toBeGreaterThan(0);
     expect(threadTurnKindWord("UserMessage")).toBe("Message");
     expect(threadTurnKindWord("Wake")).toBe("Wake");
+    expect(threadTurnKindWord("OfferReply")).toBe("Offer reply");
   });
 });
 

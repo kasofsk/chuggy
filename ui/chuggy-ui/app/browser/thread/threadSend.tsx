@@ -13,6 +13,10 @@
  * refusal's note among it, as any thread's box does.
  *
  * A REFUSAL IS SAID IN ONE LINE: what was not done, with no code of the API's.
+ *
+ * A PROJECT THREAD'S PRESS SAVES THE DRAFT A FORM HOLDS EDITS OF FIRST, and
+ * sends nothing, keeping what was typed, where that save is refused: the
+ * form says why, where it says its own refusals.
  */
 
 import { useCallback, useEffect, useMemo, useRef } from "react";
@@ -24,6 +28,7 @@ import {
   threadMessageImagesMax,
 } from "../../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
+import type { ConsolePage } from "../../../../../src/contract/consolePage.ts";
 import { memberChatDoor } from "../../core/memberChat.ts";
 import { hostedRunsQuery } from "../../core/projectQueries.ts";
 import { chatHostQuery } from "../../core/tenantQueries.ts";
@@ -55,6 +60,7 @@ import {
   useSessionPlacement,
   useSessionPlacementReads,
 } from "../sessionPlacement.tsx";
+import { useDraftSavedBeforeSend } from "../editor/draftSaveBeforeSend.tsx";
 import { useChatHost } from "../settings/MyChatHost.tsx";
 import { useConsoleDispatch, useConsoleSelector } from "../store.ts";
 import { Notice } from "../ui/Notice.tsx";
@@ -184,6 +190,9 @@ interface ThreadSendMade {
 /** What one project thread's composer is made from. */
 export interface ThreadSendInput extends ThreadSendMade {
   readonly partition: PartitionIdentity;
+  /** The console page the reader is on, which a press names as the one it
+   * was sent from. */
+  readonly page?: ConsolePage | undefined;
 }
 
 /** What one thread of the reader's own chat hands its composer. */
@@ -204,11 +213,12 @@ export function useThreadSend(input: ThreadSendInput): ThreadSendHeld {
     input,
     threadHomeOf(input.partition),
     useThreadDoor(input.partition),
+    input.page,
   );
 }
 
 /** The composer of one thread of the reader's own chat, whose door is their
- * chat host and whose messages carry no images. */
+ * chat host and whose messages carry no images and no console page. */
 export function useMemberThreadSend(
   input: MemberThreadSendInput,
 ): ThreadSendHeld {
@@ -216,6 +226,7 @@ export function useMemberThreadSend(
     input,
     { scope: "Member", tenant: input.tenant },
     useMemberThreadDoor(input.tenant),
+    undefined,
   );
 }
 
@@ -280,6 +291,7 @@ function useThreadSendAt(
   input: ThreadSendMade,
   home: ThreadHome,
   door: ThreadDoor,
+  page: ConsolePage | undefined,
 ): ThreadSendHeld {
   const dispatch = useConsoleDispatch();
   const name = threadSendRecordName(home, input.session);
@@ -288,11 +300,8 @@ function useThreadSendAt(
   const listed = input.listed ?? threadSendNothingListed;
   const sending = threadSendingWithout(record.sending, listed);
   const closed = threadKeptClosed(record, input.takes);
-  useThreadSendLetGo(name, {
-    unlisted: sending !== record.sending,
-    listed,
-    closed,
-  });
+  const unlisted = sending !== record.sending;
+  useThreadSendLetGo(name, { unlisted, listed, closed });
   const stopping = useMemo(() => new Set(record.stopping), [record.stopping]);
   const send = threadSendShown(
     record.send,
@@ -300,6 +309,7 @@ function useThreadSendAt(
   );
   const standing = threadSendStanding(send, input.takes, door);
   const idled = () => dispatch(threadSendIdledAt({ name }));
+  const savedBeforeSend = useDraftSavedBeforeSend();
   const back = closed ? undefined : threadSendBack(name, record.kept, dispatch);
   const { onStarted } = input;
   const composer: ConversationComposerProps = {
@@ -308,12 +318,15 @@ function useThreadSendAt(
     charsMax: threadMessageCharsMax,
     ...(home.scope === "Project" ? { attaches: threadSendAttaches } : {}),
     onSend: async (text, attached): Promise<ConversationSent> => {
+      const saved = home.scope === "Project" ? savedBeforeSend() : true;
+      if (saved !== true && !(await saved)) return "Kept";
       const ended = await dispatch(
         threadSendPressed({
           home,
           session: input.session,
           text,
           attached,
+          page,
           drawn,
         }),
       );

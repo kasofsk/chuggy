@@ -22,6 +22,13 @@
  * left, and the details ask that column rather than the viewport whether they
  * fit beside a page.
  *
+ * The pane is told which page it is drawn with, so a message names the page
+ * its reader is looking at: the one beside it, or below two columns, where an
+ * open pane is the whole body, the one under it. A pane given the whole of a
+ * frame that divides is told none. A form a page draws over a server draft
+ * saves its edits through the shell before the pane sends, and a page the
+ * reader's thread names is one the pane moves the pages to.
+ *
  * The banner is not decoration — it is the only place a reader learns that what
  * the screens below are showing is no longer arriving live. The toasts are the
  * only place a refusal is drawn whose screen the reader has left.
@@ -46,6 +53,7 @@ import type {
   PanelImperativeHandle,
 } from "react-resizable-panels";
 
+import type { ConsolePage } from "../../../../src/contract/consolePage.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import {
   chatPaneDragged,
@@ -58,6 +66,7 @@ import {
   chatPaneNarrowed,
   chatPaneOnPage,
   chatPaneOrientation,
+  chatPanePageBeside,
   chatPanePanels,
   chatPaneShareText,
   chatPaneSizes,
@@ -81,7 +90,9 @@ import {
   syntaxWorkerOpened,
 } from "./ports.ts";
 import { consoleOutdatedOf } from "./consoleOutdated.ts";
+import { useConsolePageNow } from "./consolePageNow.ts";
 import { ConsoleWriteToasts } from "./consoleWrite.tsx";
+import { DraftSaveHeld } from "./editor/draftSaveBeforeSend.tsx";
 import { ChatPane } from "./shell/ChatPane.tsx";
 import { useChatPane } from "./shell/chatPaneHeld.ts";
 import { DetailsPane } from "./shell/DetailsPane.tsx";
@@ -249,6 +260,7 @@ const ShellBodyChat = memo(function ShellBodyChat(props: {
   readonly id: string;
   readonly partition: PartitionIdentity;
   readonly chat: ChatPaneState;
+  readonly page: ConsolePage | undefined;
   readonly sizes: ChatPaneSizes;
   readonly panelRef: RefObject<PanelImperativeHandle | null>;
 }): ReactNode {
@@ -266,7 +278,11 @@ const ShellBodyChat = memo(function ShellBodyChat(props: {
       )}
       className="@container grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)]"
     >
-      <ChatPane partition={props.partition} chat={props.chat} />
+      <ChatPane
+        partition={props.partition}
+        chat={props.chat}
+        page={props.page}
+      />
     </Panel>
   );
 });
@@ -277,6 +293,7 @@ const ShellBodyChat = memo(function ShellBodyChat(props: {
 function shellBodyDrawn(props: {
   readonly partition: PartitionIdentity;
   readonly chat: ChatPaneState | undefined;
+  readonly page: ConsolePage | undefined;
   readonly sizes: ChatPaneSizes;
   readonly panelIds: readonly string[];
   readonly chatPanel: RefObject<PanelImperativeHandle | null>;
@@ -302,6 +319,7 @@ function shellBodyDrawn(props: {
         id={id}
         partition={props.partition}
         chat={props.chat}
+        page={props.page}
         sizes={props.sizes}
         panelRef={props.chatPanel}
       />
@@ -377,6 +395,7 @@ function useShellBodyFollowed(along: {
 function ShellBody(props: {
   readonly partition: PartitionIdentity;
   readonly chat: ChatPaneState | undefined;
+  readonly page: ConsolePage | undefined;
 }): ReactNode {
   const held = useChatPane();
   const group = useGroupRef();
@@ -428,6 +447,7 @@ function ShellBody(props: {
       {shellBodyDrawn({
         partition: props.partition,
         chat: props.chat,
+        page: props.page,
         sizes,
         panelIds,
         chatPanel,
@@ -445,10 +465,19 @@ function ShellDrawn(props: {
     chatPaneNarrowed(useChatPane().state, props.twoColumn),
     useParams({ strict: false }),
   );
+  const page = useConsolePageNow();
   return (
     <ShellFrame>
       <ShellHeader partition={props.partition} />
-      <ShellBody partition={props.partition} chat={chat} />
+      <ShellBody
+        partition={props.partition}
+        chat={chat}
+        page={
+          chat === undefined
+            ? undefined
+            : chatPanePageBeside(chat, props.twoColumn, page)
+        }
+      />
     </ShellFrame>
   );
 }
@@ -462,7 +491,9 @@ export function Shell(props: {
       <CopyProvider write={clipboardWritten}>
         <MarkdownProvider clock={elapsedMs} syntax={syntaxWorkerOpened}>
           <TicketReferenceWiring partition={props.partition}>
-            <ShellDrawn partition={props.partition} twoColumn={twoColumn} />
+            <DraftSaveHeld>
+              <ShellDrawn partition={props.partition} twoColumn={twoColumn} />
+            </DraftSaveHeld>
             <ConsoleWriteToasts />
           </TicketReferenceWiring>
         </MarkdownProvider>

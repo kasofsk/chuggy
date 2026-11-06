@@ -25,6 +25,7 @@ import type {
   TicketCreationForm,
 } from "../app/core/ticketCreation.ts";
 import type { TicketCreationRequest } from "../app/core/ticketCreationRun.ts";
+import { answer } from "./screenHarness.tsx";
 
 export const creationDigest = "a".repeat(64);
 
@@ -330,4 +331,33 @@ export function creationGatedOffer(
       undefined,
     ),
   };
+}
+
+/**
+ * What an edit of a Pending ticket reads past its configurations: the bound
+ * repository, the ticket's draft and the ticket as a case holds them, and the
+ * project page an update is confirmed in, at the ticket's next revision.
+ */
+export function editReadAnswered(
+  url: string,
+  held: {
+    readonly repository: string;
+    readonly draft: unknown;
+    readonly ticket: { readonly sequence: number };
+  },
+): Response {
+  const { draft, ticket } = held;
+  if (url.endsWith("/repositories?reach=false"))
+    return answer({
+      repositories: [
+        creationListed(creationBinding(held.repository), "Imported"),
+      ],
+    });
+  if (url.includes("/drafts/")) return answer(draft);
+  if (url.includes("/tickets/")) return answer(ticket);
+  return answer({
+    partition: creationPartition,
+    sequence: 43,
+    tickets: [{ ...ticket, sequence: 43, revision: 3 }],
+  });
 }

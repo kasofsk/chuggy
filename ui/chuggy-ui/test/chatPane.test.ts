@@ -37,6 +37,7 @@ import {
   chatPaneNarrowed,
   chatPaneOnPage,
   chatPaneOrientation,
+  chatPanePageBeside,
   chatPanePanels,
   chatPanePlacements,
   chatPanePresentations,
@@ -239,6 +240,28 @@ test("a pane that filled the frame is restored beside the pages", () => {
   const restored = chatPaneRestored(chatPaneFilled(chatPaneDefault));
   expect(chatPaneContentDrawn(restored)).toBe(true);
   expect(chatPaneStripped(restored)).toBe(false);
+});
+
+test("a message is sent from the page drawn beside the pane, and from none while the pane fills a frame that divides", () => {
+  const page = { page: "Ticket", ticket: 41 } as const;
+  expect(chatPanePageBeside(chatPaneDefault, true, page)).toBe(page);
+  expect(chatPanePageBeside(chatPaneToggled(chatPaneDefault), true, page)).toBe(
+    page,
+  );
+  expect(
+    chatPanePageBeside(chatPaneFilled(chatPaneDefault), true, page),
+  ).toBeUndefined();
+});
+
+test("below two columns a pane over the whole body is sent from the page under it", () => {
+  const page = { page: "Ticket", ticket: 41 } as const;
+  expect(chatPanePageBeside(chatPaneDefaultAt(false), false, page)).toBe(page);
+  expect(chatPanePageBeside(chatPaneFilled(chatPaneDefault), false, page)).toBe(
+    page,
+  );
+  expect(
+    chatPanePageBeside(chatPaneNarrowed(chatPaneDefault, false), false, page),
+  ).toBe(page);
 });
 
 test("a placement is kept through every other move", () => {

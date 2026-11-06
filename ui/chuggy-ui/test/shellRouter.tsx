@@ -53,8 +53,19 @@ export function routerDouble(
     useRouter: () => ({ buildLocation: () => ({ href: "/" }) }),
     useRouterState: (options: {
       readonly select: (state: {
-        readonly location: { readonly pathname: string };
+        readonly location: {
+          readonly pathname: string;
+          readonly search: object;
+        };
+        readonly matches: readonly {
+          readonly routeId: string;
+          readonly params: object;
+        }[];
       }) => unknown;
-    }) => options.select({ location: { pathname: "/acme/atlas" } }),
+    }) =>
+      options.select({
+        location: { pathname: "/acme/atlas", search: {} },
+        matches: [{ routeId: "/$tenant/$project/", params: atlas }],
+      }),
   };
 }

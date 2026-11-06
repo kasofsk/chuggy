@@ -63,6 +63,10 @@ import {
   threadTurnsAnsweredMax,
   threadsAnsweredMax,
 } from "../contract/http.ts";
+import { consolePageSchema } from "../contract/consolePage.ts";
+import type { ConsolePage } from "../contract/consolePage.ts";
+import { threadOfferReplySchema } from "../contract/threadOffers.ts";
+import type { ThreadOfferReply } from "../contract/threadOffers.ts";
 import type { PlacementRoute } from "../contract/rosters.ts";
 import { resolvedThreadStandingRules } from "../contract/threadSeeding.ts";
 import type {
@@ -324,6 +328,18 @@ export interface ThreadStore {
     readonly route: PlacementRoute;
   }): Promise<ThreadMessageEnqueued>;
   /**
+   * The member's reply to an offer their thread made them, refused as a
+   * message is and enqueued as an `OfferReply` turn rather than a message.
+   */
+  enqueueOfferReply(input: {
+    readonly partition: Partition;
+    readonly principal: Principal;
+    readonly session: SessionId;
+    readonly turn: SessionTurnId;
+    readonly input: string;
+    readonly route: PlacementRoute;
+  }): Promise<ThreadMessageEnqueued>;
+  /**
    * Ends one waiting or claimed turn of an open thread of the principal's, and
    * tells the thread's readers its stream ended. It takes the principal
    * because the definer is what holds a stop to the caller's own thread, in
@@ -485,6 +501,16 @@ export type ThreadMessageSent =
     };
 
 /**
+ * What a mailbox door answers once its durable half has: a message's every arm
+ * but those about its text and its images, which is the whole of what the
+ * door a member replies to an offer through answers.
+ */
+export type ThreadOfferReplied = Exclude<
+  ThreadMessageSent,
+  { readonly result: "TooLarge" | "ImageUnknown" | "ImagesUnavailable" }
+>;
+
+/**
  * What the stop door answered. A thread or a turn the project does not hold is
  * `NotFound`, and `NotYourThread` and `Closed` are the message door's own
  * refusals, read before the turn is looked at.
@@ -508,7 +534,7 @@ export function threadTurnStopping(
 export function threadMessageSent(
   enqueued: ThreadMessageEnqueued,
   turn: SessionTurnId,
-): ThreadMessageSent {
+): ThreadOfferReplied {
   switch (enqueued.enqueued) {
     case "NoThread":
       return { result: "NotFound" };
@@ -664,6 +690,26 @@ export function checkedThreadMessageImages(
       `a thread message names at most ${String(threadMessageImagesMax)} images`,
     );
   return images;
+}
+
+/** The page a message was sent from, as the door accepts it: none, or one the
+ * contract's vocabulary names, for `checkedThreadMessage`'s own reason. */
+export function checkedThreadMessagePage(
+  page: ConsolePage | undefined,
+): ConsolePage | undefined {
+  if (page !== undefined && !consolePageSchema.safeParse(page).success)
+    throw new RangeError("a thread message names a page the console does not");
+  return page;
+}
+
+/** An offer reply as the door accepts it: one the contract reads, for
+ * `checkedThreadMessage`'s own reason. */
+export function checkedThreadOfferReply(
+  reply: ThreadOfferReply,
+): ThreadOfferReply {
+  if (!threadOfferReplySchema.safeParse(reply).success)
+    throw new RangeError("an offer reply is not one the contract reads");
+  return reply;
 }
 
 /** What checking a message's named images against this project's own artifacts came to. */

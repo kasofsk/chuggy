@@ -117,6 +117,7 @@ const documentRouteNames = [
   "threadLimit",
   "threadLive",
   "threadMessages",
+  "threadOfferReplies",
   "threadRename",
   "threadTranscript",
   "threadTurnStop",
@@ -140,6 +141,7 @@ test("the golden names every request schema", () => {
   assert.deepEqual(Object.keys(document.schemas).sort(), [
     "actionReport",
     "agentAccountSettings",
+    "chatThreadMessage",
     "draftCreation",
     "draftRevision",
     "executionPlacement",
@@ -161,6 +163,7 @@ test("the golden names every request schema", () => {
     "threadHide",
     "threadLimit",
     "threadMessage",
+    "threadOfferReply",
     "threadOpen",
     "threadRename",
     "workerPoolRedemption",

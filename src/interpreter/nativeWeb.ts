@@ -31,6 +31,11 @@ export type { AuthorizedResult } from "./authorizedProject.ts";
 import type { Principal } from "./principal.ts";
 import type { ReleaseAuthoringProgram } from "../contract/authoring.ts";
 import type { ConfigurationOverrides } from "../contract/configurationOverrides.ts";
+import type { ConsolePage } from "../contract/consolePage.ts";
+import {
+  threadOfferReplyText,
+  type ThreadOfferReply,
+} from "../contract/threadOffers.ts";
 import type { EscalationKind, ResumePoint } from "../contract/rosters.ts";
 import { assertNever } from "../domain/assertNever.ts";
 import { phaseTags, type Phase } from "../domain/phase.ts";
@@ -217,6 +222,8 @@ import {
   checkedThreadMailboxQuery,
   checkedThreadMessage,
   checkedThreadMessageImages,
+  checkedThreadMessagePage,
+  checkedThreadOfferReply,
   checkedThreadsLimit,
   threadEntry,
   threadMessageImages,
@@ -230,6 +237,7 @@ import {
   type ThreadMailboxQuery,
   type ThreadMessageImagesChecked,
   type ThreadMessageSent,
+  type ThreadOfferReplied,
   type ThreadOpenKey,
   type ThreadOpening,
   type ThreadRead,
@@ -972,8 +980,18 @@ export interface NativeWeb {
       readonly turn: SessionTurnId;
       readonly message: string;
       readonly images?: readonly string[];
+      readonly page?: ConsolePage;
     },
   ): Promise<ThreadMessageSent>;
+  replyThreadOffer(
+    principal: Principal,
+    partition: Partition,
+    input: {
+      readonly session: SessionId;
+      readonly turn: SessionTurnId;
+      readonly reply: ThreadOfferReply;
+    },
+  ): Promise<ThreadOfferReplied>;
   stopThreadTurn(
     principal: Principal,
     partition: Partition,
@@ -2032,8 +2050,8 @@ function composedSessionRoutes(routes?: SessionRouteReads): SessionRouteReads {
 
 /**
  * What the member's turn carries: the seeding block on a first turn and no
- * later turn's, the images section on any turn that named one, and the
- * message itself — or the ceiling the three would not fit under. The overflow
+ * later turn's, the page and the images sections on any turn that named them,
+ * and the message itself — or the ceiling they would not fit under. The overflow
  * is a refusal rather than a raise because it is the project's texts or the
  * images that are too long and not the member's request: a bare
  * `InvalidRequest` would tell them their message was malformed, which is the
@@ -2046,12 +2064,13 @@ async function nativeThreadTurnInput(
   seeded: boolean,
   message: string,
   images: readonly ThreadSeededImage[] | undefined,
+  page: ConsolePage | undefined,
 ): Promise<string | { readonly charsMax: number }> {
   const seeding = seeded
     ? await threadSeeding(ports.seeding, partition, authority)
     : undefined;
   try {
-    return threadTurnInput(message, seeding, images);
+    return threadTurnInput(message, seeding, images, page);
   } catch (failure) {
     if (failure instanceof RangeError)
       return { charsMax: threadTurnInputCharsMax };
@@ -2214,6 +2233,7 @@ function nativeSendThreadMessageMethod(
     const ports = composedThreadPorts(threads);
     const message = checkedThreadMessage(input.message);
     const named = checkedThreadMessageImages(input.images ?? []);
+    const page = checkedThreadMessagePage(input.page);
     const mine = await ports.threads.standing({
       partition,
       session: input.session,
@@ -2243,6 +2263,7 @@ function nativeSendThreadMessageMethod(
       mine.thread.agentReference === undefined,
       message,
       checked.images.length === 0 ? undefined : checked.images,
+      page,
     );
     if (typeof turnInput !== "string")
       return { result: "TooLarge", charsMax: turnInput.charsMax };
@@ -2253,6 +2274,46 @@ function nativeSendThreadMessageMethod(
         session: input.session,
         turn: input.turn,
         input: turnInput,
+        route: spend.route,
+      }),
+      input.turn,
+    );
+  };
+}
+
+/**
+ * The door a member answers an offer of their thread's through, held to what
+ * the message door holds a send to: `Mutate`, the route and what it needs of
+ * the member asked now, and the caller's own open thread. What it enqueues is
+ * the reply's document, which carries no seeding, page or image, and the
+ * operation the member confirmed is theirs to have run already, so the door
+ * writes nothing but the turn.
+ */
+function nativeReplyThreadOfferMethod(
+  access: ProjectAccess,
+  threads?: NativeThreadPorts,
+  routes?: SessionRouteReads,
+): NativeWeb["replyThreadOffer"] {
+  return async (principal, partition, input) => {
+    if ((await access.authorize(principal, partition, "Mutate")) === undefined)
+      return { result: "NotFound" };
+    const spend = await sessionSpendRoute(
+      access,
+      composedSessionRoutes(routes),
+      principal,
+      partition,
+      "Thread",
+    );
+    if (spend.spend !== "Admitted") return { result: spend.spend };
+    const ports = composedThreadPorts(threads);
+    const reply = checkedThreadOfferReply(input.reply);
+    return threadMessageSent(
+      await ports.threads.enqueueOfferReply({
+        partition,
+        principal,
+        session: input.session,
+        turn: input.turn,
+        input: threadOfferReplyText(reply),
         route: spend.route,
       }),
       input.turn,
@@ -2627,6 +2688,7 @@ export function nativeThreadMethods(
   | "threadTranscript"
   | "openThread"
   | "sendThreadMessage"
+  | "replyThreadOffer"
   | "stopThreadTurn"
   | "closeThread"
   | "renameThread"
@@ -2642,6 +2704,7 @@ export function nativeThreadMethods(
       routes,
       projectArtifacts,
     ),
+    replyThreadOffer: nativeReplyThreadOfferMethod(access, threads, routes),
     stopThreadTurn: nativeStopThreadTurnMethod(access, threads),
     closeThread: nativeCloseThreadMethod(access, threads),
   };

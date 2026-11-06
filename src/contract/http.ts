@@ -385,9 +385,9 @@ export const threadMessageImagesMax = 4;
 
 /**
  * What a thread's seeding block weighs beyond the two settings texts inside it:
- * the headings, and the boundary over the member's message. It is a ceiling
- * rather than a measurement, and the interpreter's suite is what holds the
- * composed block under it.
+ * the headings, the page the member sent from, and the boundary over the
+ * member's message. It is a ceiling rather than a measurement, and the
+ * interpreter's suite is what holds the composed block under it.
  */
 export const threadSeedingFixedCharsMax = 4_096;
 
@@ -614,6 +614,7 @@ export const nativeHttpRoutes = {
   threadHide: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session/hide`,
   threadLive: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session/live`,
   threadTurnStop: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session/turns/:turn/stop`,
+  threadOfferReplies: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session/offer-replies`,
 } as const;
 
 export type NativeHttpRoute = keyof typeof nativeHttpRoutes;

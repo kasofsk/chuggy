@@ -85,6 +85,9 @@ test("the roster names every tool the plan gives it, in roster order", () => {
     "read_my_thread",
     "list_my_runners",
     "read_chat_host",
+    "navigate",
+    "offer_release",
+    "offer_revoke",
   ]);
 });
 
@@ -171,6 +174,11 @@ test("each capability admits the tools the roster gives it and no other", () => 
     "set_handoff_note",
     "set_planning_intent",
   ]);
+  assert.deepEqual(chuggyToolCapabilities.ThreadOffer, [
+    "navigate",
+    "offer_release",
+    "offer_revoke",
+  ]);
 });
 
 test("each capability admits the runtime's own tools the roster gives it and no other", () => {
@@ -184,6 +192,7 @@ test("each capability admits the runtime's own tools the roster gives it and no 
     TicketDispatch: [],
     LeadDecision: [],
     MemberRead: [],
+    ThreadOffer: [],
   });
 });
 

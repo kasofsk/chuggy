@@ -43,12 +43,14 @@ import {
   threadSeedingCharsMax,
   threadWakeCharsMax,
 } from "../contract/http.ts";
+import type { ConsolePage } from "../contract/consolePage.ts";
 import {
   resolvedThreadStandingRules,
   threadDraftsHeading,
   threadImageLine,
   threadImagesHeading,
   threadNorthStarHeading,
+  threadPageSection,
   threadRefusalsHeading,
   threadStandingSection,
   threadTurnBoundaryHeading,
@@ -60,8 +62,9 @@ import type { Partition } from "./projectStore.ts";
 /**
  * The roster a thread is opened with when nothing has configured one, generous
  * because a thread exists to find out what is going on — reading the tree,
- * running what it takes to read it, and authoring the drafts its owner asks
- * for. It is generous against the pod alone, for the reason the header gives.
+ * running what it takes to read it, authoring the drafts its owner asks for,
+ * and offering its owner a page to look at or an action to confirm. It is
+ * generous against the pod alone, for the reason the header gives.
  */
 export const threadCapabilitiesDefault = [
   "RepositoryRead",
@@ -70,6 +73,7 @@ export const threadCapabilitiesDefault = [
   "DraftAuthor",
   "DraftOriginate",
   "TicketDispatch",
+  "ThreadOffer",
 ] as const satisfies readonly SessionCapability[];
 
 /**
@@ -233,6 +237,22 @@ export const threadConfigurationStanding =
 export const threadStoppedStanding =
   "Your owner can stop a turn part way, and the step that was running is then recorded as declined. A stopped turn is over: say nothing of it, or of what it left undone, unless your owner asks, and answer the message in front of you.";
 
+/**
+ * What a thread is told of moving its owner's console. The console follows a
+ * `navigate` only while its owner is still on the page their message was sent
+ * from and the call is in the newest turn, so the paragraph says when to call
+ * it as well as what it does.
+ */
+export const threadNavigateStanding =
+  "`navigate` moves your owner's console to one page: call it when your answer is about a page they are not on, such as a ticket you name or a draft you filed for them to look over, as the last thing a turn does. The console follows it only while your owner is still on the page they wrote from, so it is an offer of a page and never the only place your answer is.";
+
+/**
+ * What a thread is told of offering rather than doing, and of the turn its
+ * owner's answer to an offer arrives as.
+ */
+export const threadOfferStanding =
+  "`offer_release` and `offer_revoke` put one release or one revocation in front of your owner as a card they confirm or decline, at the authoring version or the revision you name: offer instead of doing where your owner asked to see it first or has not yet said yes. An `OfferReply` turn is their answer to one of your offers, naming the call, whether they confirmed or declined, and what the action came to: act on it as their word, say what became of it, and never do a declined action some other way.";
+
 /** What a thread is told about itself, beside the project's own North Star and
  * standing rules. */
 function threadObjectives(
@@ -257,6 +277,11 @@ ${threadConfigurationStanding}`,
     `# When a turn was stopped
 
 ${threadStoppedStanding}`,
+    `# What you put in front of your owner
+
+${threadNavigateStanding}
+
+${threadOfferStanding}`,
     `# How to name a ticket
 
 ${ticketReferenceInstruction}`,
@@ -432,28 +457,32 @@ export const threadTurnInputCharsMax =
   threadMessageCharsMax + threadSeedingCharsMax;
 
 /**
- * The whole of one turn's input: the seeding block where the turn has one,
- * the images section where the message names any, the boundary the console
- * splits on, then the member's message, with the drafts shed oldest-first and
- * then the refusals until the two fit together. The North Star, the standing
- * rules and the images section are never shed, because they are what the turn
- * is bound by, and an input that will not fit without shedding one of them is
- * refused instead.
+ * The whole of one turn's input: the seeding block where the turn has one, the
+ * page section where the member sent it from a page, the images section where
+ * the message names any, the boundary the console splits on, then the
+ * member's message, with the drafts shed oldest-first and then the refusals
+ * until the two fit together. The North Star, the standing rules, the page and
+ * the images section are never shed, because they are what the turn is bound
+ * by, and an input that will not fit without shedding one of them is refused
+ * instead.
  */
 export function threadTurnInput(
   message: string,
   seeding?: ThreadSeeding,
   images?: readonly ThreadSeededImage[],
+  page?: ConsolePage,
 ): string {
-  const imagesSection =
-    images === undefined || images.length === 0
-      ? undefined
-      : threadImagesSection(images);
+  const sections = [
+    ...(page === undefined ? [] : [threadPageSection(page)]),
+    ...(images === undefined || images.length === 0
+      ? []
+      : [threadImagesSection(images)]),
+  ];
   if (seeding === undefined) {
     const input =
-      imagesSection === undefined
+      sections.length === 0
         ? message
-        : `${imagesSection}\n\n${threadTurnBoundaryHeading}\n\n${message}`;
+        : [...sections, threadTurnBoundaryHeading, message].join("\n\n");
     if (textCodePointsCount(input) > threadTurnInputCharsMax)
       throw new RangeError(
         `a thread turn's input must be at most ${String(threadTurnInputCharsMax)} characters`,
@@ -465,7 +494,7 @@ export function threadTurnInput(
   for (;;) {
     const block = [
       threadSeedingText({ ...seeding, drafts, refusals }),
-      ...(imagesSection === undefined ? [] : [imagesSection]),
+      ...sections,
     ].join("\n\n");
     const input = `${block}\n\n${threadTurnBoundaryHeading}\n\n${message}`;
     if (textCodePointsCount(input) <= threadTurnInputCharsMax) return input;

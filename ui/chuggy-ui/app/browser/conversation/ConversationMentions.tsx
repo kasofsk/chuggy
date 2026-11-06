@@ -26,6 +26,10 @@ import {
   conversationMentionQuery,
 } from "../../core/conversationMention.ts";
 import type { ConversationMentionItem } from "../../core/conversationMention.ts";
+import {
+  ConversationTriggerItems,
+  conversationTriggerListClass,
+} from "./ConversationTriggerItems.tsx";
 
 import "./conversation.css";
 
@@ -51,28 +55,12 @@ export function ConversationMentions(props: {
       char={conversationMentionChar}
       matcher={conversationMentionMatch}
       adapter={adapter}
-      className="conversation-mentions bg-surface-1 border-edge rounded-2 flex flex-col overflow-y-auto border"
+      className={conversationTriggerListClass}
     >
       <ComposerPrimitive.Unstable_TriggerPopover.Directive
         formatter={conversationMentionFormatter}
       />
-      <ComposerPrimitive.Unstable_TriggerPopoverItems>
-        {(found) =>
-          found.map((item, index) => (
-            <ComposerPrimitive.Unstable_TriggerPopoverItem
-              key={item.id}
-              item={item}
-              index={index}
-              className="conversation-mention flex min-w-0 items-baseline gap-2 border-0 px-3 py-2 text-left"
-            >
-              <span className="num text-ink-1">{item.label}</span>
-              <span className="text-ink-3 min-w-0 flex-1 truncate text-sm">
-                {item.description}
-              </span>
-            </ComposerPrimitive.Unstable_TriggerPopoverItem>
-          ))
-        }
-      </ComposerPrimitive.Unstable_TriggerPopoverItems>
+      <ConversationTriggerItems />
     </ComposerPrimitive.Unstable_TriggerPopover>
   );
 }

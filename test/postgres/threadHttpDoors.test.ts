@@ -27,6 +27,7 @@ import {
   threadsOpenMax,
 } from "../../src/contract/http.ts";
 import type { HttpErrorEnvelope } from "../../src/contract/http.ts";
+import { threadOfferReplyRead } from "../../src/contract/threadOffers.ts";
 import {
   threadEntryResponseSchema,
   threadLimitResponseSchema,
@@ -107,6 +108,52 @@ async function readableMember(
     "the principal the app authenticates as is the authority it is audited to",
   );
   return { partition, member };
+}
+
+/**
+ * The first turn a thread's door at `route` is posted, under a turn this
+ * mints, answered accepted as its first ordinal, and the thread as its read
+ * then answers it.
+ */
+async function firstTurnPosted(
+  app: ReturnType<typeof threadApp>,
+  thread: string,
+  route: "messages" | "offer-replies",
+  payloadOf: (turn: string) => object,
+) {
+  const turn = `thread-turn-${randomUUID()}`;
+  const sent = await app.inject({
+    method: "POST",
+    url: `${thread}/${route}`,
+    headers: versioned,
+    payload: payloadOf(turn),
+  });
+  assert.equal(sent.statusCode, 202, sent.body);
+  assert.deepEqual(threadMessageAcceptedSchema.parse(sent.json()), {
+    turn,
+    ordinal: 1,
+  });
+  const read = await app.inject({ url: thread, headers: authorized });
+  assert.equal(read.statusCode, 200, read.body);
+  return { turn, body: threadResponseSchema.parse(read.json()) };
+}
+
+/** Another member's thread in the project, opened through the definer, by its session. */
+async function theirThread(
+  partition: Partition,
+  label: string,
+): Promise<string> {
+  const other = threadRigMember(rig, partition, label);
+  const theirs = await rig.threads.open({
+    partition,
+    principal: other.principal,
+    session: rig.minting.session(),
+    key: threadRigKey(),
+    systemPrompt: "theirs",
+    credentialSlot: threadRigSlot,
+  });
+  assert.ok(theirs.opened === "Opened");
+  return theirs.thread.session;
 }
 
 /** Opens a thread of the caller's through the door under a key, refusing anything but the entry. */
@@ -272,25 +319,12 @@ test("a message reaches my own mailbox, and the thread read answers the turn", a
   await using app = threadApp(member.principal);
   const opened = await openedThread(app, partition);
 
-  const turn = `thread-turn-${randomUUID()}`;
-  const sent = await app.inject({
-    method: "POST",
-    url: `${pathOf(partition)}/${opened.session}/messages`,
-    headers: versioned,
-    payload: { turn, message: "have a look at the footer" },
-  });
-  assert.equal(sent.statusCode, 202, sent.body);
-  assert.deepEqual(threadMessageAcceptedSchema.parse(sent.json()), {
-    turn,
-    ordinal: 1,
-  });
-
-  const read = await app.inject({
-    url: `${pathOf(partition)}/${opened.session}`,
-    headers: authorized,
-  });
-  assert.equal(read.statusCode, 200, read.body);
-  const body = threadResponseSchema.parse(read.json());
+  const { turn, body } = await firstTurnPosted(
+    app,
+    `${pathOf(partition)}/${opened.session}`,
+    "messages",
+    (minted) => ({ turn: minted, message: "have a look at the footer" }),
+  );
   assert.equal(body.session, opened.session);
   assert.equal(body.turns.length, 1);
   assert.equal(body.turns[0]?.turn, turn);
@@ -362,22 +396,13 @@ test("the transcript route walks the thread's own store", async () => {
  */
 test("the door refuses another member's mailbox and an ownerless one", async () => {
   const { partition, member } = await readableMember("refused");
-  const other = threadRigMember(rig, partition, "http-refused-other");
-  const theirs = await rig.threads.open({
-    partition,
-    principal: other.principal,
-    session: rig.minting.session(),
-    key: threadRigKey(),
-    systemPrompt: "theirs",
-    credentialSlot: threadRigSlot,
-  });
-  assert.ok(theirs.opened === "Opened");
+  const theirs = await theirThread(partition, "http-refused-other");
   await using app = threadApp(member.principal);
   const mine = await openedThread(app, partition);
 
   const elsewhere = await app.inject({
     method: "POST",
-    url: `${pathOf(partition)}/${theirs.thread.session}/messages`,
+    url: `${pathOf(partition)}/${theirs}/messages`,
     headers: versioned,
     payload: { turn: `thread-turn-${randomUUID()}`, message: "not mine" },
   });
@@ -392,6 +417,37 @@ test("the door refuses another member's mailbox and an ownerless one", async () 
     payload: { turn: `thread-turn-${randomUUID()}`, message: "still here?" },
   });
   assert.equal(orphaned.statusCode, 404, orphaned.body);
+});
+
+test("a reply to an offer reaches my own mailbox as an OfferReply turn, and another member's refuses it", async () => {
+  const { partition, member } = await readableMember("offer-reply");
+  const theirs = await theirThread(partition, "http-offer-reply-other");
+  await using app = threadApp(member.principal);
+  const opened = await openedThread(app, partition);
+  const reply = {
+    call: "toolu_01",
+    decision: "Confirmed",
+    outcome: "Succeeded",
+  } as const;
+
+  const { turn, body } = await firstTurnPosted(
+    app,
+    `${pathOf(partition)}/${opened.session}`,
+    "offer-replies",
+    (minted) => ({ turn: minted, reply }),
+  );
+  assert.equal(body.turns[0]?.turn, turn);
+  assert.equal(body.turns[0]?.inputKind, "OfferReply");
+  assert.deepEqual(threadOfferReplyRead(body.turns[0]?.input ?? ""), reply);
+
+  const elsewhere = await app.inject({
+    method: "POST",
+    url: `${pathOf(partition)}/${theirs}/offer-replies`,
+    headers: versioned,
+    payload: { turn: `thread-turn-${randomUUID()}`, reply },
+  });
+  assert.equal(elsewhere.statusCode, 403, elsewhere.body);
+  assert.equal(elsewhere.json<HttpErrorEnvelope>().error.code, "NotYourThread");
 });
 
 /** Sends one message through the door and answers the turn it minted. */

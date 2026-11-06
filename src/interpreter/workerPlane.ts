@@ -113,6 +113,12 @@ export const workerContractEvaluatedTrees: WorkerContractRange = {
   max: workerContractAccepted.max,
 };
 
+/** The versions in which a session's facts may name `ThreadOffer` and its mailbox hand over an `OfferReply`, members a pod of an earlier one refuses its whole answer over. */
+export const workerContractThreadOffer: WorkerContractRange = {
+  min: { major: 1, minor: 36 },
+  max: workerContractAccepted.max,
+};
+
 /** The version this plane was built with, read off its release. */
 function workerContractServed(): WorkerContractVersion {
   const served = workerContractVersionOf(workerContractRelease);

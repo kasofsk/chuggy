@@ -119,9 +119,28 @@ export function ticketYamlImagesKept(
   ticketYamlKept(ticketYamlImagesStoreKey(key), JSON.stringify(images));
 }
 
+/** Where the draft version a kept YAML was typed over is kept: beside it. */
+function ticketYamlVersionStoreKey(key: string): string {
+  return `${key}.version`;
+}
+
+/** The draft version a kept YAML was typed over, absent where none was kept
+ * beside it or what is there is no version. */
+export function ticketYamlVersionStored(key: string): number | undefined {
+  const stored = ticketYamlStored(ticketYamlVersionStoreKey(key));
+  if (stored === undefined || !/^[0-9]+$/u.test(stored)) return undefined;
+  const version = Number(stored);
+  return Number.isSafeInteger(version) ? version : undefined;
+}
+
+export function ticketYamlVersionKept(key: string, version: number): void {
+  ticketYamlKept(ticketYamlVersionStoreKey(key), String(version));
+}
+
 export function ticketYamlForgotten(key: string): void {
   persistentStore.remove(key);
   persistentStore.remove(ticketYamlImagesStoreKey(key));
+  persistentStore.remove(ticketYamlVersionStoreKey(key));
 }
 
 /** Where the configuration a reader last chose for a new ticket is kept: per
