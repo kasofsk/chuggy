@@ -13,7 +13,6 @@ import type { ReactNode } from "react";
 
 import { nativeHttpBasePath } from "../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
-import { TicketPage } from "../app/browser/TicketPage.tsx";
 import { SessionProvider } from "../app/browser/session.tsx";
 import { useTicketDelivery } from "../app/browser/ticket/TicketDelivery.tsx";
 import { apiTimeoutMsDefault } from "../app/core/apiRequest.ts";
@@ -46,6 +45,7 @@ import { frame } from "./streamDouble.ts";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { readFailedLines } from "./readFailedLines.ts";
+import { TicketPageEveryTab, ticketHeader } from "./ticketPageEveryTab.tsx";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -137,7 +137,7 @@ async function drawn(
   const transport = stream.ports.fetch;
   const page = (): ReactNode => (
     <ScreenHarness partition={atlas} client={client} transport={transport}>
-      <TicketPage />
+      <TicketPageEveryTab />
     </ScreenHarness>
   );
   const view = render(page());
@@ -303,9 +303,7 @@ test("a read that fails is drawn as a failed read in this row, and the page arou
   expect(
     readFailedLines().filter((line) => line === "Not read · Server error"),
   ).toHaveLength(1);
-  expect(container.querySelector(".ticket-status")?.textContent).toContain(
-    "Done",
-  );
+  expect(ticketHeader().textContent).toContain("Done");
 });
 
 test("an answer that is not the read's is a failed read too, and draws no line of it", async () => {
@@ -329,9 +327,7 @@ test("a read still out draws no row and holds nothing else of the page back, and
       }),
   );
   expect(rowsDrawn(container)).toEqual([]);
-  expect(container.querySelector(".ticket-status")?.textContent).toContain(
-    "Done",
-  );
+  expect(ticketHeader().textContent).toContain("Done");
   expect(screen.queryByText(/Loading/u)).toBeNull();
   await turned(() => {
     answering(answer(deliveryLandedWith([deliveryFailedBare])));

@@ -19,7 +19,6 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
-import { TicketPage } from "../app/browser/TicketPage.tsx";
 import {
   apiDouble,
   openedStream,
@@ -35,9 +34,10 @@ import {
   ticketPageDependency,
   ticketPageRoutes,
 } from "./ticketPageFixture.ts";
-import { dispatchChipName } from "./ticketDispatchPressed.ts";
+import { dispatchButtonName } from "./ticketDispatchPressed.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
+import { TicketPageEveryTab } from "./ticketPageEveryTab.tsx";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -102,7 +102,7 @@ function drawn(
       }
       transport={server.ports.fetch}
     >
-      <TicketPage />
+      <TicketPageEveryTab />
     </ScreenHarness>,
   );
   return server;
@@ -137,9 +137,7 @@ test("a dependency's frame makes this ticket's dispatch availability be read aga
   let dispatchable = false;
   const server = drawn(() => dispatchable);
   await settled();
-  expect(
-    screen.queryByRole("button", { name: dispatchChipName(11) }),
-  ).toBeNull();
+  expect(screen.queryByRole("button", { name: dispatchButtonName })).toBeNull();
 
   dispatchable = true;
   await turned(() => {
@@ -148,7 +146,7 @@ test("a dependency's frame makes this ticket's dispatch availability be read aga
   await settled();
 
   expect(
-    screen.getByRole("button", { name: dispatchChipName(11) }),
+    screen.getByRole("button", { name: dispatchButtonName }),
   ).toBeDefined();
 });
 
@@ -178,9 +176,7 @@ test("a configuration frame leaves the dispatch entry where it was read", async 
   });
   await settled();
 
-  expect(
-    screen.queryByRole("button", { name: dispatchChipName(11) }),
-  ).toBeNull();
+  expect(screen.queryByRole("button", { name: dispatchButtonName })).toBeNull();
 });
 
 /**
@@ -195,9 +191,7 @@ test("a frame arriving while a read is in flight is still read for", async () =>
   let dispatchable = false;
   const server = drawn(() => dispatchable, 2);
   await settled();
-  expect(
-    screen.queryByRole("button", { name: dispatchChipName(11) }),
-  ).toBeNull();
+  expect(screen.queryByRole("button", { name: dispatchButtonName })).toBeNull();
 
   await turned(() => {
     server.push(unrelatedTicketFrame());
@@ -209,7 +203,7 @@ test("a frame arriving while a read is in flight is still read for", async () =>
   await settled();
 
   expect(
-    screen.getByRole("button", { name: dispatchChipName(11) }),
+    screen.getByRole("button", { name: dispatchButtonName }),
   ).toBeDefined();
 });
 
@@ -232,6 +226,6 @@ test("a burst of frames leaves the dispatch entry correct once it stops", async 
   await settled();
 
   expect(
-    screen.getByRole("button", { name: dispatchChipName(11) }),
+    screen.getByRole("button", { name: dispatchButtonName }),
   ).toBeDefined();
 });

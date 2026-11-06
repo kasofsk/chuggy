@@ -5,7 +5,6 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
-import { TicketPage } from "../app/browser/TicketPage.tsx";
 import {
   answer,
   apiDouble,
@@ -29,11 +28,15 @@ import {
   ticketPageCandidate,
   ticketPageRoutes,
 } from "./ticketPageFixture.ts";
-import { dispatchChipName } from "./ticketDispatchPressed.ts";
+import {
+  dispatchAskTitle,
+  dispatchButtonName,
+} from "./ticketDispatchPressed.ts";
 import { workRunnerOver, workRunnerUnreadable } from "./workRunnerReads.ts";
 import type { WorkRunnerReads } from "./workRunnerReads.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
+import { TicketPageEveryTab, ticketHeader } from "./ticketPageEveryTab.tsx";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -60,8 +63,6 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const dispatchChip = dispatchChipName(11);
-
 test("a dispatchable ticket submits the version from the strict view", async () => {
   const api = apiDouble({
     operation: {
@@ -84,17 +85,21 @@ test("a dispatchable ticket submits the version from the strict view", async () 
       }
       transport={server.ports.fetch}
     >
-      <TicketPage />
+      <TicketPageEveryTab />
     </ScreenHarness>,
   );
   await settled();
 
+  const dispatch = within(ticketHeader()).getByRole("button", {
+    name: dispatchButtonName,
+  });
+  expect(dispatch.classList.contains("btn-primary")).toBe(true);
   await turned(() => {
-    screen.getByRole("button", { name: dispatchChip }).click();
+    dispatch.click();
   });
   expect(api.submitted()).toBeUndefined();
   await turned(() => {
-    within(screen.getByRole("dialog", { name: `${dispatchChip}?` }))
+    within(screen.getByRole("dialog", { name: dispatchAskTitle(11) }))
       .getByRole("button", { name: "Dispatch" })
       .click();
   });
@@ -134,7 +139,7 @@ async function drawnWithLead(
       }
       transport={server.ports.fetch}
     >
-      <TicketPage />
+      <TicketPageEveryTab />
     </ScreenHarness>,
   );
   await settled();
@@ -144,7 +149,9 @@ async function drawnWithLead(
  * ticket runs, and the page says so where the press is. */
 test("Dispatch in a project with no lead says tickets are dispatched by hand", async () => {
   await drawnWithLead({ lead: "None" });
-  expect(screen.getByRole("button", { name: dispatchChip })).toBeDefined();
+  expect(
+    screen.getByRole("button", { name: dispatchButtonName }),
+  ).toBeDefined();
   expect(screen.getByText("No lead · Dispatched by hand")).toBeDefined();
 });
 
@@ -153,7 +160,9 @@ test("Dispatch in a project with no lead says tickets are dispatched by hand", a
  * was refused, runs it only on a press. */
 test("Dispatch says it is by hand only where the read says no lead will open", async () => {
   await drawnWithLead({ lead: "None", absence: { reason: "NotNeeded" } });
-  expect(screen.getByRole("button", { name: dispatchChip })).toBeDefined();
+  expect(
+    screen.getByRole("button", { name: dispatchButtonName }),
+  ).toBeDefined();
   expect(screen.queryByText("No lead · Dispatched by hand")).toBeNull();
   cleanup();
   await drawnWithLead({ lead: "None", absence: { reason: "Paused" } });
@@ -168,18 +177,20 @@ test("Dispatch says it is by hand only where the read says no lead will open", a
 
 test("Dispatch in a project with a lead says nothing of the hand", async () => {
   await drawnWithLead(leadBody(1, 1));
-  expect(screen.getByRole("button", { name: dispatchChip })).toBeDefined();
+  expect(
+    screen.getByRole("button", { name: dispatchButtonName }),
+  ).toBeDefined();
   expect(screen.queryByText("No lead · Dispatched by hand")).toBeNull();
 });
 
 test("a ticket offered no Dispatch says nothing of the hand, lead or none", async () => {
   await drawnWithLead({ lead: "None" }, false);
-  expect(screen.queryByRole("button", { name: dispatchChip })).toBeNull();
+  expect(screen.queryByRole("button", { name: dispatchButtonName })).toBeNull();
   expect(screen.queryByText("No lead · Dispatched by hand")).toBeNull();
 });
 
 function dispatchOffered(): boolean {
-  return screen.queryByRole("button", { name: dispatchChip }) !== null;
+  return screen.queryByRole("button", { name: dispatchButtonName }) !== null;
 }
 
 test("a reader who may not dispatch is offered no Dispatch and is told nothing of the hand", async () => {
@@ -234,7 +245,7 @@ async function drawnWithRunner(
   );
 }
 
-/** A press there would escalate the ticket, so the bar draws the way to a
+/** A press there would escalate the ticket, so the header draws the way to a
  * runner where the press would be, and says nothing of a hand that has
  * nothing to press. */
 test("a ticket whose project has no runner for its work draws the way to one in Dispatch's place", async () => {
@@ -243,12 +254,7 @@ test("a ticket whose project has no runner for its work draws the way to one in 
   const line = noRunnerLine();
   expect(line?.textContent).toBe("No runner · Add runner");
   expect(screen.queryByText(byHand)).toBeNull();
-  const revoke = screen.getByRole("button", { name: "Revoke" });
-  expect(
-    line === null
-      ? 0
-      : line.compareDocumentPosition(revoke) & Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  expect(line !== null && ticketHeader().contains(line)).toBe(true);
   expect(screen.getByText("Edit")).toBeDefined();
 });
 
