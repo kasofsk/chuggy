@@ -30,6 +30,22 @@ import { useChatAbilities } from "../thread/threadRead.ts";
 import { Notice } from "../ui/Notice.tsx";
 import { Picker } from "../ui/Picker.tsx";
 
+/** A folder, which is what a project is on a bar too narrow for its name. */
+const projectGlyph = (
+  <svg
+    aria-hidden="true"
+    className="size-4 shrink-0"
+    viewBox="0 0 16 16"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="1.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h2.8l1.4 1.5h4.8A1.5 1.5 0 0 1 14 6v5.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5z" />
+  </svg>
+);
+
 export const projectSwitcherCreateText = "New project";
 
 /** The value the picker names a workspace's own chat by, which no project's
@@ -68,6 +84,15 @@ function ProjectSwitcherAt(props: {
   );
 }
 
+/** The project's whole name, which is what the trigger says where it is a folder. */
+function projectSwitcherHint(
+  partition: PartitionIdentity | undefined,
+): string | undefined {
+  return partition === undefined
+    ? undefined
+    : `${partition.tenant} / ${partition.project}`;
+}
+
 function ProjectSwitcherPicker(props: {
   readonly partition: PartitionIdentity | undefined;
   readonly chat?: string;
@@ -92,6 +117,8 @@ function ProjectSwitcherPicker(props: {
   return (
     <Picker
       label="Project"
+      glyph={projectGlyph}
+      hint={projectSwitcherHint(props.partition)}
       value={
         props.partition !== undefined
           ? `${props.partition.tenant}/${props.partition.project}`

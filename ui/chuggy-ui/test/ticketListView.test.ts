@@ -33,7 +33,6 @@ function row(
     sequence: 1,
     badge: undefined,
     executionVerdict: undefined,
-    runsOn: undefined,
     activityAt: "2026-08-27T11:00:00Z",
     openDependencies: [],
     revokedDependencies: [],

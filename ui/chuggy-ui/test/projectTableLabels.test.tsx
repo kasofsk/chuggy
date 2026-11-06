@@ -2,11 +2,9 @@
  * The ticket list as drawn: the properties of the markup that
  * `ticketListView.ts` and `projectTableRows.ts` cannot say.
  *
- * The one annotation that clips is runs on, whose digest reference is not the
- * ticket's own words: the whole value is on hover and the sheet clips it, and
- * neither shows up in the row's own value. The title is clamped by the sheet
- * and drawn whole in the markup. The last activity reading carries the
- * absolute instant on hover, which is a fact about `Figure`'s tooltip.
+ * The title is clamped by the sheet and drawn whole in the markup. The last
+ * activity reading carries the absolute instant on hover, which is a fact
+ * about `Figure`'s tooltip.
  *
  * The order the list draws and the filter a kept word reads as are here too:
  * the selection is proved in the core, and only a drawn list proves the screen
@@ -31,11 +29,6 @@ import {
   ticketLatestExecutionSchema,
 } from "../../../src/contract/responses.ts";
 import { ProjectTable } from "../app/browser/ProjectTable.tsx";
-import {
-  cellAbsent,
-  TicketRowExecutionCell,
-} from "../app/browser/TicketCells.tsx";
-import type { ProjectTableRow } from "../app/core/projectTableRows.ts";
 import {
   answer,
   apiDouble,
@@ -218,6 +211,12 @@ async function drawTable(): Promise<void> {
   return drawTableWith([ticket], [execution]);
 }
 
+/** The list of rows, apart from the counts above it, which name the same
+ * states. */
+function rowsDrawn(): HTMLElement {
+  return screen.getByRole("list", { name: "Tickets" });
+}
+
 test("the title is on the card whole and unclipped, links, and leads the ticket number", async () => {
   await drawTable();
   const titleAnchor = screen.getByText(title);
@@ -243,7 +242,7 @@ test("the title heads its row in the list's title, which the sheet clamps", asyn
   expect(drawn?.textContent).toBe(title);
 });
 
-test("a row's state, execution, runs-on and activity annotations are all on the one row its title heads", async () => {
+test("a row's state and activity annotations are on the one row its title heads, and no execution is", async () => {
   await drawTable();
   expect(document.querySelectorAll("table").length).toBe(0);
   expect(document.querySelectorAll("th").length).toBe(0);
@@ -252,10 +251,10 @@ test("a row's state, execution, runs-on and activity annotations are all on the 
   const card = titleAnchor.closest("li");
   if (card === null) throw new Error("no card around the title");
 
-  expect(card.contains(screen.getByText("Working"))).toBe(true);
-  expect(card.contains(screen.getByText("Running"))).toBe(true);
-  expect(card.contains(screen.getByText("chuggy-worker v3"))).toBe(true);
-  expect(card.contains(screen.getByText("3h ago"))).toBe(true);
+  expect(within(card).getByText("Working")).toBeDefined();
+  expect(within(card).getByText("3h ago")).toBeDefined();
+  expect(within(card).queryByText("Running")).toBeNull();
+  expect(within(card).queryByText("chuggy-worker v3")).toBeNull();
 });
 
 /** The creator as each layout draws it: in the meta where wide, at the start
@@ -356,76 +355,27 @@ test("a row names its creator by the email the project's people hold for them", 
 
 test("a row draws its state as a chip in its phase's tone", async () => {
   await drawTable();
-  const chip = screen.getByText("Working");
+  const chip = within(rowsDrawn()).getByText("Working");
   expect(chip.className).toBe("ticket-list-state");
   expect(chip.dataset["tone"]).toBe("live");
 });
 
 test("an escalated row answers its kind on the phase chip's hover", async () => {
   await drawTableWith([escalated], []);
-  const trigger = screen.getByText("Escalated").closest('[tabindex="0"]');
+  const trigger = within(rowsDrawn())
+    .getByText("Escalated")
+    .closest('[tabindex="0"]');
   if (trigger === null) throw new Error("no tooltip trigger around Escalated");
   fireEvent.focus(trigger);
   expect((await screen.findByRole("tooltip")).textContent).toBe("work failed");
 });
 
-test("a row with nothing joined draws no chip for its execution", () => {
-  const row: ProjectTableRow = {
-    ticket: 9,
-    title: undefined,
-    repository: undefined,
-    creator: undefined,
-    phase: "Work",
-    sequence: 1,
-    badge: undefined,
-    executionVerdict: undefined,
-    runsOn: undefined,
-    activityAt: "2026-08-26T00:00:00Z",
-    openDependencies: [],
-    revokedDependencies: [],
-  };
-  render(<TicketRowExecutionCell row={row} />);
-  expect(screen.getByText(cellAbsent)).toBeDefined();
-  expect(screen.queryByText("not read")).toBeNull();
-  expect(document.querySelector(".pill")).toBeNull();
-});
-
-test("a row with nothing joined has no execution slot, and no sentence names a page budget", async () => {
-  await drawTableWith([ticket, escalated], [execution]);
-  const unjoined = screen.getByText("Escalated ticket").closest("li");
-  expect(unjoined?.querySelector(".ticket-list-execution")).toBeNull();
-  expect(
-    screen
-      .getByText(title)
-      .closest("li")
-      ?.querySelector(".ticket-list-execution"),
-  ).not.toBeNull();
-  expect(document.body.textContent).not.toContain("not read");
-  expect(document.body.textContent).not.toContain("page budget");
-});
-
-test("opening the list issues no executions read", async () => {
+test("opening the list issues no executions read, and no sentence names a page budget", async () => {
   await drawTableWith([ticket, escalated], [execution]);
   expect(screen.getByText("Escalated ticket")).toBeDefined();
-  expect(screen.getByText("Running")).toBeDefined();
   expect(executionsAsked).toStrictEqual([]);
-});
-
-/** Ticket 1 of a project whose executions span far more pages than a walk
- * of the executions route ever read: its row carries its own. */
-test("a ticket older than every page of executions draws its execution", async () => {
-  await drawTableWith(
-    [{ ...ticket, ticket: 1 }],
-    [
-      {
-        ...execution,
-        ticket: 1,
-        identity: { type: "WorkTask", value: { ticket: 1, cycle: 1 } },
-      },
-    ],
-  );
-  expect(screen.getByText("Running")).toBeDefined();
-  expect(executionsAsked).toStrictEqual([]);
+  expect(document.body.textContent).not.toContain("not read");
+  expect(document.body.textContent).not.toContain("page budget");
 });
 
 test("the last activity column draws the relative reading and answers the absolute on hover", async () => {
@@ -437,20 +387,12 @@ test("the last activity column draws the relative reading and answers the absolu
   );
 });
 
-test("the runs-on cell keeps the image reference, and keeps clipping it", async () => {
-  await drawTable();
-  const cell = screen.getByText("chuggy-worker v3");
-  expect(cell.className).toBe("ticket-list-runs-on");
-  fireEvent.focus(cell);
-  expect((await screen.findByRole("tooltip")).textContent).toBe(image);
-});
-
 /** The served policy refuses `style-src` but `'self'`, so nothing this table
  * draws — a tooltip open included — may append a runtime style element. */
 test("nothing the project table draws is a runtime style element", async () => {
   await drawTable();
   expect(document.querySelectorAll("style").length).toBe(0);
-  fireEvent.focus(screen.getByText("chuggy-worker v3"));
+  fireEvent.focus(screen.getByText("acme/widgets"));
   await screen.findByRole("tooltip");
   expect(document.querySelectorAll("style").length).toBe(0);
 });
@@ -477,7 +419,7 @@ function titlesDrawn(): readonly (string | null)[] {
 test("the rows are one list under one set of controls, with no section", async () => {
   await drawTableWith([ticket, escalated], [execution]);
   expect(screen.queryAllByRole("heading", { level: 2 })).toEqual([]);
-  expect(screen.getByLabelText("Search tickets")).toBeDefined();
+  expect(screen.getByRole("button", { name: "Search tickets" })).toBeDefined();
   expect(titlesDrawn()).toEqual(["Escalated ticket", title]);
 });
 
@@ -500,22 +442,6 @@ const finished = {
   sequence: 5,
   ...ticketInstants,
 };
-
-const passed = {
-  ...execution,
-  execution: "e3",
-  ticket: 13,
-  identity: { type: "WorkTask", value: { ticket: 13, cycle: 1 } },
-  status: "Terminal",
-  outcome: "Passed",
-  terminalAt: "2026-08-26T11:00:00.000Z",
-};
-
-test("a finished row says how its run ended, and never Terminal", async () => {
-  await drawTableWith([finished], [passed]);
-  expect(screen.getByText("Passed").className).toContain("pill-pass");
-  expect(document.body.textContent).not.toContain("Terminal");
-});
 
 function newTicketOffers(): number {
   return screen.queryAllByText("New ticket").length;
@@ -579,8 +505,70 @@ test("pending rows are drawn nearest to dispatchable first, ready ones as Ready"
     "Pending 21",
   ]);
   expect(
-    screen.getAllByText(/^(Ready|Blocked)$/u).map((chip) => chip.textContent),
+    within(rowsDrawn())
+      .getAllByText(/^(Ready|Blocked)$/u)
+      .map((chip) => chip.textContent),
   ).toEqual(["Ready", "Blocked", "Blocked", "Blocked"]);
+});
+
+test("the counts above the list name each unfinished state the rows stand in, in order, and no finished one", async () => {
+  await drawTableWith(
+    [
+      finished,
+      escalated,
+      ticket,
+      pending(23, [{ ticket: 11, phase: "Work" }]),
+      pending(24, []),
+      pending(25, []),
+    ],
+    [execution],
+  );
+  const counts = screen.getByRole("list", { name: "Tickets by state" });
+  expect(
+    within(counts)
+      .getAllByRole("listitem")
+      .map((item) => item.textContent),
+  ).toEqual(["Blocked1", "Ready2", "Working1", "Escalated1"]);
+});
+
+/** Each dependency chip of the row that waits on it, by the number it shows. */
+function dependencyChips(waiting: string): ReadonlyMap<string, string> {
+  const row = screen.getByText(waiting).closest("li");
+  return new Map(
+    [...(row?.querySelectorAll<HTMLElement>(".ticket-dependency") ?? [])].map(
+      (chip) => [chip.textContent, chip.dataset["standing"] ?? ""] as const,
+    ),
+  );
+}
+
+test("a pending dependency reads Ready or Blocked from the rows the list holds, and Blocked where it holds none", async () => {
+  await drawTableWith(
+    [
+      ticket,
+      pending(23, [{ ticket: 11, phase: "Work" }]),
+      pending(24, []),
+      pending(
+        26,
+        [
+          { ticket: 23, phase: "Pending" },
+          { ticket: 24, phase: "Pending" },
+          { ticket: 99, phase: "Pending" },
+          { ticket: 11, phase: "Work" },
+        ],
+        [12],
+      ),
+    ],
+    [execution],
+  );
+  expect(dependencyChips("Pending 26")).toStrictEqual(
+    new Map([
+      ["#23", "Blocked"],
+      ["#24", "Ready"],
+      ["#99", "Blocked"],
+      ["#11", "Work"],
+      ["#12", "Revoked"],
+    ]),
+  );
 });
 
 /** The state sort leads with what needs a person and ends with what stopped,
@@ -622,7 +610,7 @@ test("a reader who may not dispatch sees a ready row's chip, not a button", asyn
     [],
     abilitiesOver({ ...abilitiesEvery, dispatch: false }),
   );
-  expect(screen.getByText("Ready").tagName).toBe("SPAN");
+  expect(within(rowsDrawn()).getByText("Ready").tagName).toBe("SPAN");
   expect(screen.queryByRole("button", { name: /^Dispatch/u })).toBeNull();
 });
 

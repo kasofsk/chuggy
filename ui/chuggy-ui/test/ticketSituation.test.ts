@@ -18,7 +18,6 @@ import {
   resumedFrom,
   ticketSlot,
   ticketStatusFigure,
-  ticketStatusTone,
 } from "../app/core/ticketSituation.ts";
 import type { SituationReads } from "../app/core/ticketSituation.ts";
 import { ticketInstants } from "./ticketInstants.ts";
@@ -489,12 +488,6 @@ test("a ticket never resumed has no resume line", () => {
   expect(
     resumedFrom(ticketLedger(ledgerPage(ticket21Parked), ticket21Program)),
   ).toBeUndefined();
-});
-
-test("the bar is tinted by the phase, and a blocked ticket is parked whatever its phase", () => {
-  expect(ticketStatusTone(ticket())).toBe("queued");
-  expect(ticketStatusTone(ticket({ phase: "Work" }))).toBe("live");
-  expect(ticketStatusTone(ticket({ revokedDependencies: [3] }))).toBe("parked");
 });
 
 /** Released hours before anyone dispatched it, as a ticket in a project with

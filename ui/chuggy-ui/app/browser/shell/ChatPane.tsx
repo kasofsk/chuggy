@@ -77,7 +77,12 @@ import {
   ChatPaneIcon,
   ChatPaneIconButton,
 } from "./chatPaneIcons.tsx";
-import { ChatPaneHistory, ChatPaneThreadActions } from "./ChatPaneHistory.tsx";
+import {
+  ChatPaneTitle,
+  ChatPaneHistory,
+  ChatPaneThreadActions,
+  ChatPaneThreadActionsIdle,
+} from "./ChatPaneHistory.tsx";
 
 /** The listing the pane reads, which lists no lead session and so is not read
  * again on the frames of one. */
@@ -496,7 +501,7 @@ function ChatPaneHeld(props: {
   readonly thread: ThreadEntryResponse | undefined;
   readonly viewOnly: boolean;
 }): ReactNode {
-  if (props.thread === undefined) return <span className="flex-1" />;
+  if (props.thread === undefined) return <ChatPaneThreadActionsIdle />;
   return (
     <ChatPaneThreadActions
       home={threadHomeOf(props.partition)}
@@ -542,27 +547,28 @@ function ChatPaneOpen(props: ChatPaneOpenProps): ReactNode {
       aria-label="Chat"
       className={`chat-open bg-surface-1 relative grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden ${props.chat.presentation === "Full" ? "chat-reading" : ""}`}
     >
-      <header className="border-edge flex min-w-0 flex-wrap items-center border-b px-1 py-1">
-        <ChatPaneHeld
-          partition={props.partition}
-          thread={held}
-          viewOnly={viewOnly}
-        />
-        {viewOnly ? null : (
-          <ChatPaneStartControl
-            partition={props.partition}
-            starting={starting}
-            header={chatPaneHeaderDoor(door.door, drawn, held, door.refusal)}
-          />
-        )}
-        {threads === undefined ? null : (
+      <header className="border-edge flex min-w-0 items-center border-b px-1 py-1">
+        <ChatPaneTitle thread={held} />
+        <div className="ml-auto flex chat-icons min-w-0 flex-wrap items-center">
+          {viewOnly ? null : (
+            <ChatPaneStartControl
+              partition={props.partition}
+              starting={starting}
+              header={chatPaneHeaderDoor(door.door, drawn, held, door.refusal)}
+            />
+          )}
           <ChatPaneHistory
             threads={threads}
             session={holding}
             onChoose={pane.chose}
           />
-        )}
-        <ChatPaneControls placement={props.chat.placement} />
+          <ChatPaneHeld
+            partition={props.partition}
+            thread={held}
+            viewOnly={viewOnly}
+          />
+          <ChatPaneControls placement={props.chat.placement} />
+        </div>
       </header>
       <div className="bg-surface-0 grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)]">
         <ChatPaneBody

@@ -1,35 +1,28 @@
 /**
- * The ticket's status bar: where it stands and since when, what it has run and
- * cost, and what may be done to it, tinted by the tone of where it stands.
+ * The ticket's status bar: where it stands and since when, what it has cost,
+ * what may be done to it, and under that what the ticket is.
  *
  * The cost and the token count are the ticket read's own roll-up rather than a
  * sum over the executions this page holds, because a page that is short would
- * understate them; the run count is this page's, and says so where it is short.
+ * understate them.
  */
 
 import type { ReactNode } from "react";
 
+import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type {
   ExecutionsResponse,
   TicketResponse,
 } from "../../../../../src/contract/responses.ts";
-import { phaseLabel } from "../../core/codeLabels.ts";
 import { costFigure, tokensFigure } from "../../core/figures.ts";
 import type { PanelState } from "../../core/freshness.ts";
-import { runsLabel } from "../../core/ticketPageFacts.ts";
-import {
-  ticketStatusFigure,
-  ticketStatusTone,
-} from "../../core/ticketSituation.ts";
+import { ticketStatusFigure } from "../../core/ticketSituation.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { Field, Fields } from "../ui/Fields.tsx";
 import { Figure } from "../ui/Figure.tsx";
-import { standingDotFill } from "./TicketHead.tsx";
+import { TicketMeta } from "./TicketMeta.tsx";
 
 import "./ticket.css";
-
-/** What the page holds is not what the ticket has, where the route said so. */
-export const shortPageNote = "on this page";
 
 /** What follows the figure: a fragment of its own, after a separator. */
 function StatusFollowing(props: { readonly children: ReactNode }): ReactNode {
@@ -43,57 +36,34 @@ function StatusFollowing(props: { readonly children: ReactNode }): ReactNode {
   );
 }
 
-function StatusStanding(props: {
+function StatusFigures(props: {
   readonly ticket: TicketResponse;
   readonly page: ExecutionsResponse | undefined;
   readonly resumed: string | undefined;
   readonly landing: ReactNode;
   readonly nowMs: number;
 }): ReactNode {
-  const ticket = props.ticket;
-  return (
-    <div className="ticket-status-standing">
-      <i
-        aria-hidden="true"
-        className={`size-2 shrink-0 rounded-circle block ${standingDotFill(ticketStatusTone(ticket))}`}
-      />
-      <strong className="text-lg font-strong text-ink-1">
-        {phaseLabel(ticket.phase)}
-      </strong>
-      <span className="ticket-status-line">
-        <Figure
-          figure={ticketStatusFigure(
-            ticket,
-            props.page?.executions ?? [],
-            props.nowMs,
-          )}
-        />
-        {props.resumed === undefined ? null : (
-          <StatusFollowing>{props.resumed}</StatusFollowing>
-        )}
-        {props.landing === null ? null : (
-          <StatusFollowing>{props.landing}</StatusFollowing>
-        )}
-      </span>
-    </div>
-  );
-}
-
-function StatusFigures(props: {
-  readonly ticket: TicketResponse;
-  readonly page: ExecutionsResponse | undefined;
-  readonly truncated: boolean;
-}): ReactNode {
   const totals = props.ticket.runTotals;
   const absent = { kind: "Absent", why: "No run figures yet" } as const;
   return (
     <div className="ticket-status-figures">
       <Fields>
-        <Field name="Runs">
-          <span className="num">{runsLabel(props.page)}</span>
-          {props.truncated ? (
-            <span className="fig-dim"> {shortPageNote}</span>
-          ) : null}
+        <Field name="Last activity">
+          <span className="ticket-status-line">
+            <Figure
+              figure={ticketStatusFigure(
+                props.ticket,
+                props.page?.executions ?? [],
+                props.nowMs,
+              )}
+            />
+            {props.resumed === undefined ? null : (
+              <StatusFollowing>{props.resumed}</StatusFollowing>
+            )}
+            {props.landing === null ? null : (
+              <StatusFollowing>{props.landing}</StatusFollowing>
+            )}
+          </span>
         </Field>
         <Field name="Cost">
           <Figure
@@ -115,12 +85,12 @@ function StatusFigures(props: {
 }
 
 export function TicketStatus(props: {
+  readonly partition: PartitionIdentity;
   readonly state: PanelState<TicketResponse>;
   readonly page: ExecutionsResponse | undefined;
   readonly resumed: string | undefined;
   /** The current landing's fragment while the ticket is finalizing, or null. */
   readonly landing: ReactNode;
-  readonly truncated: boolean;
   readonly nowMs: number;
   readonly actions: ReactNode;
 }): ReactNode {
@@ -132,24 +102,20 @@ export function TicketStatus(props: {
       </section>
     );
   return (
-    <section
-      className="ticket-status"
-      data-tone={ticketStatusTone(state.value)}
-      aria-label="Status"
-    >
-      <StatusStanding
+    <section className="ticket-status" aria-label="Status">
+      <div className="ticket-status-actions">{props.actions}</div>
+      <StatusFigures
         ticket={state.value}
         page={props.page}
         resumed={props.resumed}
         landing={props.landing}
         nowMs={props.nowMs}
       />
-      <StatusFigures
+      <TicketMeta
+        partition={props.partition}
         ticket={state.value}
-        page={props.page}
-        truncated={props.truncated}
+        nowMs={props.nowMs}
       />
-      <div className="ticket-status-actions">{props.actions}</div>
     </section>
   );
 }

@@ -118,7 +118,7 @@ async function mounted(
 }
 
 function asked(): HTMLElement | null {
-  return screen.queryByRole("group", { name: "Revoke this ticket?" });
+  return screen.queryByRole("dialog", { name: "Revoke this ticket?" });
 }
 
 async function revokePressed(bar: HTMLElement): Promise<HTMLElement> {
@@ -138,11 +138,7 @@ test("one press of Revoke sends nothing and asks what it ends", async () => {
   expect(group.textContent).toContain(
     "Ends this ticket and parks its dependents. Can't be undone.",
   );
-  expect(
-    within(bar)
-      .getByRole("button", { name: "Revoke" })
-      .getAttribute("aria-expanded"),
-  ).toBe("true");
+  expect(bar.contains(group)).toBe(false);
 });
 
 test("Cancel sends nothing and gives the actions back as they were", async () => {
@@ -156,7 +152,6 @@ test("Cancel sends nothing and gives the actions back as they were", async () =>
   expect(asked()).toBeNull();
   expect(api.submissions()).toBe(0);
   const revoke = within(bar).getByRole("button", { name: "Revoke" });
-  expect(revoke.getAttribute("aria-expanded")).toBe("false");
   expect(revoke.hasAttribute("disabled")).toBe(false);
   expect(
     within(card)
@@ -165,7 +160,7 @@ test("Cancel sends nothing and gives the actions back as they were", async () =>
   ).toBe(false);
 });
 
-test("Revoke ticket sends one revoke, and the ask stays busy while it is in flight", async () => {
+test("Revoke ticket sends one revoke and closes the ask, and the bar's Revoke is busy while it is in flight", async () => {
   const { api, bar } = await mounted();
   const group = await revokePressed(bar);
 
@@ -178,13 +173,9 @@ test("Revoke ticket sends one revoke, and the ask stays busy while it is in flig
   expect(api.submitted()).toMatchObject({
     mutation: { mutation: "RevokeTicket", ticket: 11 },
   });
-  const busy = asked();
-  if (busy === null)
-    throw new Error("the ask closed while its revoke was sent");
-  const confirm = within(busy).getByRole("button", { name: "Revoke ticket" });
-  expect(confirm.getAttribute("aria-busy")).toBe("true");
-  expect(confirm.hasAttribute("disabled")).toBe(true);
-  expect(within(busy).queryByRole("button", { name: "Cancel" })).toBeNull();
+  expect(asked()).toBeNull();
+  const revoke = within(bar).getByRole("button", { name: "Revoke" });
+  expect(revoke.hasAttribute("disabled")).toBe(true);
 });
 
 test("every other action still sends on one press", async () => {
@@ -201,16 +192,23 @@ test("every other action still sends on one press", async () => {
   expect(asked()).toBeNull();
 });
 
-test("a submission from another button closes an ask left open", async () => {
+test("an ask left for another button closes, and that button sends its own action alone", async () => {
   const { api, bar, card } = await mounted();
   await revokePressed(bar);
 
+  const resume = within(card).getByRole("button", { name: "Resume" });
   await turned(() => {
-    within(card).getByRole("button", { name: "Resume" }).click();
+    resume.focus();
+  });
+  expect(asked()).toBeNull();
+  await turned(() => {
+    resume.click();
   });
 
   expect(api.submissions()).toBe(1);
-  expect(asked()).toBeNull();
+  expect(api.submitted()).toMatchObject({
+    mutation: { mutation: "ResumeTicket", ticket: 11 },
+  });
 });
 
 test("a revoke the actor refuses closes the ask and says so where any refusal is said", async () => {

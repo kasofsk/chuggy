@@ -40,6 +40,13 @@ const catalogWorkloadSchema = z.looseObject({
     .catch(undefined),
   worker: z.looseObject({ mode: z.unknown() }).optional().catch(undefined),
   commands: z.array(z.string()).optional().catch(undefined),
+  access: optionalString(),
+});
+
+const catalogModeSchema = z.looseObject({
+  agent: optionalString(),
+  effort: optionalString(),
+  arguments: z.array(z.string()).optional().catch(undefined),
 });
 
 const catalogStageSchema = z.looseObject({
@@ -87,6 +94,16 @@ export interface CatalogWorkload {
   readonly prompt: string | undefined;
   readonly promptPath: string | undefined;
   readonly commands: readonly string[];
+  /** The agent that runs it, as the mode names it. */
+  readonly agent: string | undefined;
+  /** Its reasoning effort, where the mode names one. */
+  readonly effort: string | undefined;
+  /** The arguments its agent is started with. */
+  readonly agentArguments: readonly string[];
+  /** The access it declares, where the catalog writes one. */
+  readonly access: string | undefined;
+  /** The workload exactly as the catalog writes it, for a view of it as a document. */
+  readonly definition: unknown;
 }
 
 export interface CatalogPlanStage {
@@ -122,6 +139,7 @@ function configurationCatalogEntry(
 ): CatalogWorkload {
   const workload = catalogWorkloadSchema.safeParse(value).data;
   const agent = workload?.runner === "Agent";
+  const mode = catalogModeSchema.safeParse(workload?.worker?.mode).data;
   return {
     name,
     runner: workload?.runner,
@@ -132,6 +150,11 @@ function configurationCatalogEntry(
     prompt: workload?.prompt?.text,
     promptPath: workload?.prompt?.path,
     commands: workload?.commands ?? [],
+    agent: mode?.agent,
+    effort: mode?.effort,
+    agentArguments: mode?.arguments ?? [],
+    access: workload?.access,
+    definition: value,
   };
 }
 

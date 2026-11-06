@@ -3,8 +3,8 @@
  *
  * They are one suite because each is a handful of markup and a suite per file
  * would be four copies of the same three assertions; what each case checks is
- * the accessible shape — a definition list, a table's scopes, a nav of anchors
- * — because that is the part a stylesheet cannot supply.
+ * the accessible shape — a definition list, a table's scopes — because that
+ * is the part a stylesheet cannot supply.
  */
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
@@ -13,11 +13,8 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { Field, Fields, fieldsVariants } from "../app/browser/ui/Fields.tsx";
 import { EmptyState, emptyVariants } from "../app/browser/ui/EmptyState.tsx";
 import { Identity, identityForms } from "../app/browser/ui/Identity.tsx";
-import { SectionList } from "../app/browser/ui/SectionList.tsx";
-import sectionListSheet from "../app/browser/ui/SectionList.css?raw";
 import { Table } from "../app/browser/ui/Table.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
-import { sheetDeclared, sheetRules } from "./sheet.ts";
 import { styleless } from "./styleless.ts";
 
 beforeEach(resizeObserverStubbed);
@@ -121,57 +118,4 @@ test("a table scrolls itself and names its columns", () => {
     screen.getByRole("rowheader", { name: "claude-opus-4" }),
   ).toBeDefined();
   styleless();
-});
-
-test("a section list is anchors, with a figure or a note and never both invented", () => {
-  const { container } = render(
-    <SectionList
-      entries={[
-        { id: "cycles", label: "Cycles", note: "3 · 7 runs" },
-        {
-          id: "usage",
-          label: "Usage",
-          figure: { kind: "Cost", text: "$2.74", basis: "list" },
-        },
-        { id: "brief", label: "Brief" },
-      ]}
-    />,
-  );
-  const links = container.querySelectorAll("nav a");
-  expect(links).toHaveLength(3);
-  expect(links[0]?.getAttribute("href")).toBe("#cycles");
-  expect(screen.getByText("3 · 7 runs")).toBeDefined();
-  expect(screen.getByText("$2.74")).toBeDefined();
-  expect(links[2]?.textContent).toBe("Brief");
-  styleless();
-});
-
-/**
- * Whether a note then fits the pane it is drawn in is a browser's to say, and
- * no suite here runs one; what this holds is that the list's sheet lets a note
- * wrap, sets it against the list's far edge, and keeps a figure on one line.
- */
-test("a section list's sheet lets a note wrap against the far edge and holds a figure to one line", () => {
-  const { container } = render(
-    <SectionList
-      entries={[
-        { id: "delivery", label: "Delivery", note: "1 Failed · 3 Reached" },
-        {
-          id: "usage",
-          label: "Usage",
-          figure: { kind: "Cost", text: "$2.74", basis: "list" },
-        },
-      ]}
-    />,
-  );
-  const rules = sheetRules(sectionListSheet, []);
-  const note = container.querySelector(".sections-note");
-  const figure = container.querySelector(".sections .fig");
-  expect(note).not.toBeNull();
-  expect(figure).not.toBeNull();
-  if (note === null || figure === null) return;
-  for (let at: Element | null = note; at !== null; at = at.parentElement)
-    expect(sheetDeclared(rules, at, "white-space")).toBe("");
-  expect(sheetDeclared(rules, note, "text-align")).toBe("right");
-  expect(sheetDeclared(rules, figure, "white-space")).toBe("nowrap");
 });

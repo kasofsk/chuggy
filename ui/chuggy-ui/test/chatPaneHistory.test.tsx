@@ -187,11 +187,28 @@ test("each row names its standing and how long ago it moved", async () => {
   ).toBeDefined();
 });
 
-test("a listing with nothing to offer draws no control", () => {
+test("a listing still being read draws the control, loading in its menu", async () => {
+  render(
+    <ChatPaneHistory
+      threads={undefined}
+      session={undefined}
+      onChoose={vi.fn()}
+    />,
+  );
+  fireEvent.keyDown(screen.getByRole("button", { name: "History" }), {
+    key: "Enter",
+  });
+  expect(await screen.findByText("Loading…")).toBeDefined();
+});
+
+test("a listing with nothing to offer says so in its menu", async () => {
   render(
     <ChatPaneHistory threads={[]} session={undefined} onChoose={vi.fn()} />,
   );
-  expect(screen.queryByRole("button", { name: "History" })).toBeNull();
+  fireEvent.keyDown(screen.getByRole("button", { name: "History" }), {
+    key: "Enter",
+  });
+  expect(await screen.findByText("No threads yet")).toBeDefined();
 });
 
 /** The trigger's hidden name is also the tooltip a pointer or a keyboard focus

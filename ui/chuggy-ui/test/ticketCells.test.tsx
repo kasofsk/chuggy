@@ -26,7 +26,6 @@ function row(
     sequence: 1,
     badge: "work failed",
     executionVerdict,
-    runsOn: undefined,
     activityAt: "2026-08-26T00:00:00Z",
     openDependencies: [],
     revokedDependencies: [],

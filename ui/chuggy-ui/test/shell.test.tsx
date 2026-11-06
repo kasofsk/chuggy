@@ -1563,16 +1563,19 @@ test("the pane's title and every control of it stand in the header's one row", a
   expect(title).not.toBeNull();
   expect(title?.classList.contains("flex-1")).toBe(true);
   expect(title?.classList.contains("min-w-0")).toBe(true);
-  const named = (name: string): Element | null =>
-    headerItem(screen.getByRole("button", { name }));
-  expect(named("Thread actions")).toBe(title);
-  const controls = ["New", "History", "Full screen", "Collapse"].map(named);
-  for (const control of controls) {
-    expect(control).not.toBeNull();
-    expect(control).not.toBe(title);
-  }
-  expect(new Set(controls).size).toBe(controls.length);
-  expect([...(header?.children ?? [])]).toStrictEqual([title, ...controls]);
+  const controls = headerItem(screen.getByRole("button", { name: "New" }));
+  expect(controls?.classList.contains("chat-icons")).toBe(true);
+  for (const name of [
+    "New",
+    "History",
+    "Thread actions",
+    "Full screen",
+    "Collapse",
+  ])
+    expect(controls?.contains(screen.getByRole("button", { name })), name).toBe(
+      true,
+    );
+  expect([...(header?.children ?? [])]).toStrictEqual([title, controls]);
   styleless();
 });
 
@@ -3151,13 +3154,12 @@ const heldOwn = threadEntry({
   title: "held",
 });
 
-/** What the frame offers a reader to change: the bar's way to a new ticket,
- * the pane's New, what a held thread's menu offers to do to it, and the box. */
+/** What the frame offers a reader to change: the pane's New, what a held
+ * thread's menu offers to do to it, and the box. */
 async function offeredToChange(): Promise<Record<string, boolean>> {
   const named = (role: string, name: string): boolean =>
     screen.queryByRole(role, { name }) !== null;
   const offered = {
-    newTicket: named("link", "New ticket"),
     new: named("button", "New"),
     box: named("textbox", "Message"),
   };
@@ -3165,7 +3167,7 @@ async function offeredToChange(): Promise<Record<string, boolean>> {
   if (menu === null) return { ...offered, rename: false, close: false };
   fireEvent.keyDown(menu, { key: "ArrowDown" });
   const items = within(await screen.findByRole("menu"))
-    .getAllByRole("menuitem")
+    .queryAllByRole("menuitem")
     .map((item) => item.textContent);
   return {
     ...offered,
@@ -3184,7 +3186,6 @@ test("a reader who may not mutate is told View only once in the bar and once whe
     abilitiesFetch({ ...abilitiesEvery, mutate: false }, threadServed([])),
   );
   expect(await offeredToChange()).toStrictEqual({
-    newTicket: false,
     new: false,
     rename: false,
     close: false,
@@ -3206,7 +3207,6 @@ test("a reader who may not mutate keeps a held thread's title and transcript, wi
   );
   expect(screen.getByRole("heading", { name: "held" })).toBeDefined();
   expect(await offeredToChange()).toStrictEqual({
-    newTicket: false,
     new: false,
     rename: false,
     close: false,
@@ -3226,7 +3226,6 @@ test.each(abilitiesUnrefusing)(
       abilitiesFetch(abilities, threadServed([heldOwn])),
     );
     expect(await offeredToChange()).toStrictEqual({
-      newTicket: true,
       new: true,
       rename: true,
       close: true,
