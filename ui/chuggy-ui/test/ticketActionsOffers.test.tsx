@@ -6,7 +6,14 @@
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
-import { cleanup, render, screen, within } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  within,
+} from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode, Ref } from "react";
 
@@ -25,6 +32,8 @@ import {
 import type { ApiDouble } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { ticketHeaderMenuLabel } from "../app/browser/ticket/TicketHeaderMenu.tsx";
+import { CopyProvider } from "../app/browser/ui/copyHeld.tsx";
+import type { CopyWrite } from "../app/browser/ui/copyHeld.tsx";
 import {
   abilitiesEvery,
   abilitiesOver,
@@ -102,11 +111,13 @@ function routed(
 }
 
 /** The page of a ticket in `phase`, the abilities read answering as its other
- * reads do unless the case hands a `fetch` of its own over them. */
+ * reads do unless the case hands a `fetch` of its own over them, and copying
+ * through `write` where the case hands one. */
 async function bar(
   phase: TicketPhase,
   actionsRead = true,
   over: (served: typeof fetch) => typeof fetch = (served) => served,
+  write?: CopyWrite,
 ): Promise<{ readonly api: ApiDouble; readonly bar: HTMLElement }> {
   const api = apiDouble({
     operation: operationAt("Pending"),
@@ -119,7 +130,13 @@ async function bar(
       client={queryClientUnretried()}
       transport={openedStream().ports.fetch}
     >
-      <TicketPageEveryTab />
+      {write === undefined ? (
+        <TicketPageEveryTab />
+      ) : (
+        <CopyProvider write={write}>
+          <TicketPageEveryTab />
+        </CopyProvider>
+      )}
     </ScreenHarness>,
   );
   await settled();
@@ -211,3 +228,32 @@ test.each(abilitiesUnrefusing)(
     });
   },
 );
+
+test("Copy link writes the ticket page's whole address, and says it did", async () => {
+  const write = vi.fn<CopyWrite>(() => Promise.resolve(true));
+  await bar("Escalated", true, undefined, write);
+  const menu = await ticketHeaderMenuOpened();
+  await act(async () => {
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Copy link" }));
+    await Promise.resolve();
+  });
+  expect(write).toHaveBeenCalledWith(
+    `${location.origin}/acme/atlas/tickets/11`,
+  );
+  expect(screen.getByRole("menu")).toBe(menu);
+  expect(within(menu).getByRole("menuitem", { name: "Copied" })).toBeDefined();
+  expect(within(ticketHeader()).getByRole("status").textContent).toBe("Copied");
+});
+
+test("a write the browser refused claims nothing", async () => {
+  const write = vi.fn<CopyWrite>(() => Promise.resolve(false));
+  await bar("Escalated", true, undefined, write);
+  const menu = await ticketHeaderMenuOpened();
+  await act(async () => {
+    fireEvent.click(within(menu).getByRole("menuitem", { name: "Copy link" }));
+    await Promise.resolve();
+  });
+  expect(write).toHaveBeenCalledTimes(1);
+  expect(within(menu).queryByRole("menuitem", { name: "Copied" })).toBeNull();
+  expect(within(ticketHeader()).getByRole("status").textContent).toBe("");
+});
