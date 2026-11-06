@@ -2,8 +2,9 @@
  * An offer drawn as a card: Confirm runs the member's own operation at the
  * version offered and then replies, Decline replies and runs nothing, a card
  * whose subject moved past the version offered has no Confirm, a card the
- * mailbox holds a reply for is drawn settled and reads nothing, and a reply
- * the mailbox refused can be sent again.
+ * mailbox holds a reply for is drawn settled and reads nothing, a card whose
+ * reply could be in a mailbox page the read does not hold offers nothing, and
+ * a reply the mailbox refused can be sent again.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -17,6 +18,8 @@ import {
   ThreadOfferCard,
   useThreadOfferDrawn,
 } from "../app/browser/thread/ThreadOfferCard.tsx";
+import type { ConversationExchange } from "../app/core/conversation.ts";
+import { threadOfferUnreadSentence } from "../app/core/threadOffers.ts";
 import type { ThreadOfferCall } from "../app/core/threadOffers.ts";
 import {
   answer,
@@ -105,7 +108,9 @@ function served(
 async function drawn(
   offer: ThreadOfferCall,
   api: ReturnType<typeof served>,
-  reply?: Parameters<typeof ThreadOfferCard>[0]["reply"],
+  answer: Parameters<typeof ThreadOfferCard>[0]["answer"] = {
+    answer: "Unreplied",
+  },
 ): Promise<void> {
   vi.stubGlobal("fetch", api.fetch);
   render(
@@ -118,8 +123,45 @@ async function drawn(
         partition={atlas}
         session="thread-geoff"
         offer={offer}
-        reply={reply}
+        answer={answer}
       />
+    </ScreenHarness>,
+  );
+  await settled();
+}
+
+const offerStep = {
+  step: "ToolCall",
+  id: "toolu_release",
+  name: "mcp__chuggy__offer_release",
+  input: { ticket: 12, authoringVersion: 3 },
+} as const;
+
+/** The exchange that made `offerStep`, as the mailbox turn `turn`. */
+function exchangeIn(turn: string | undefined): ConversationExchange {
+  return {
+    id: `exchange-${turn ?? "unturned"}`,
+    ...(turn === undefined ? {} : { turn }),
+    work: [offerStep],
+    standing: { standing: "Answered" },
+    before: [],
+  };
+}
+
+/** The card the reader's own thread draws for `offerStep` in `exchange`. */
+async function drawnIn(
+  thread: Parameters<typeof useThreadOfferDrawn>[1],
+  exchange: ConversationExchange,
+): Promise<void> {
+  const mine = renderHook(() => useThreadOfferDrawn(atlas, thread));
+  const drawnOffer: ReactNode = mine.result.current?.(offerStep, exchange);
+  render(
+    <ScreenHarness
+      partition={atlas}
+      client={queryClientUnretried()}
+      transport={openedStream().ports.fetch}
+    >
+      {drawnOffer}
     </ScreenHarness>,
   );
   await settled();
@@ -264,10 +306,13 @@ test("a card whose draft or ticket moved past the version offered is superseded,
 test("a card the mailbox holds a reply for is drawn settled, and reads and sends nothing", async () => {
   const api = served();
   await drawn(release, api, {
-    call: "toolu_release",
-    decision: "Confirmed",
-    outcome: "Refused",
-    refusal: "AuthoringChanged",
+    answer: "Replied",
+    reply: {
+      call: "toolu_release",
+      decision: "Confirmed",
+      outcome: "Refused",
+      refusal: "AuthoringChanged",
+    },
   });
 
   expect(screen.getByText("Not released · AuthoringChanged")).toBeDefined();
@@ -292,20 +337,20 @@ test("the reader's own thread draws a card for each offer, settled by the reply 
   const thread = threadBody({
     turns: [threadTurn({ turn: "thread-turn-1" }), replied],
   });
-  const step = {
-    step: "ToolCall",
-    id: "toolu_release",
-    name: "mcp__chuggy__offer_release",
-    input: { ticket: 12, authoringVersion: 3 },
-  } as const;
   const others = renderHook(() =>
     useThreadOfferDrawn(atlas, { ...thread, mine: false }),
   );
   expect(others.result.current).toBeUndefined();
   const mine = renderHook(() => useThreadOfferDrawn(atlas, thread));
-  const drawnOffer: ReactNode = mine.result.current?.(step);
+  const drawnOffer: ReactNode = mine.result.current?.(
+    offerStep,
+    exchangeIn("thread-turn-1"),
+  );
   expect(
-    mine.result.current?.({ step: "Thinking", text: "weighing it" }),
+    mine.result.current?.(
+      { step: "Thinking", text: "weighing it" },
+      exchangeIn("thread-turn-1"),
+    ),
   ).toBeNull();
   render(
     <ScreenHarness
@@ -319,4 +364,39 @@ test("the reader's own thread draws a card for each offer, settled by the reply 
   await settled();
   expect(screen.getByText("Declined")).toBeDefined();
   expect(screen.queryByRole("button")).toBeNull();
+});
+
+test("an offer whose reply could be in a mailbox page the read does not hold offers no Confirm, however its subject stands", async () => {
+  vi.stubGlobal("fetch", served().fetch);
+  const tail = Array.from({ length: 32 }, (_, at) =>
+    threadTurn({ turn: `thread-turn-${String(at + 40)}`, ordinal: at + 40 }),
+  );
+  await drawnIn(
+    threadBody({ turns: tail, nextBefore: 40 }),
+    exchangeIn("thread-turn-3"),
+  );
+  expect(screen.getByText(threadOfferUnreadSentence)).toBeDefined();
+  expect(screen.queryByRole("button")).toBeNull();
+  cleanup();
+
+  await drawnIn(
+    threadBody({ turns: tail, nextBefore: 40 }),
+    exchangeIn(undefined),
+  );
+  expect(screen.getByText(threadOfferUnreadSentence)).toBeDefined();
+  expect(screen.queryByRole("button")).toBeNull();
+  cleanup();
+
+  await drawnIn(
+    threadBody({ turns: tail, nextBefore: 40 }),
+    exchangeIn("thread-turn-41"),
+  );
+  expect(screen.getByRole("button", { name: "Confirm" })).toBeDefined();
+  cleanup();
+
+  await drawnIn(
+    threadBody({ turns: tail.slice(-2) }),
+    exchangeIn("thread-turn-3"),
+  );
+  expect(screen.getByRole("button", { name: "Confirm" })).toBeDefined();
 });

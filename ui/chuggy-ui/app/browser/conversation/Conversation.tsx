@@ -662,9 +662,12 @@ export interface ConversationProps {
   /** How the page draws an image a message named, by its identity. A page
    * that hands none draws no image of a message. */
   readonly image?: (artifact: string) => ReactNode;
-  /** How the page draws what a step of an exchange's work offers its reader.
-   * A page that hands none draws no offer. */
-  readonly offer?: (step: ConversationWorkStep) => ReactNode;
+  /** How the page draws what a step of an exchange's work offers its reader,
+   * given the exchange that holds it. A page that hands none draws no offer. */
+  readonly offer?: (
+    step: ConversationWorkStep,
+    exchange: ConversationExchange,
+  ) => ReactNode;
 }
 
 /** The foot of the column: the composer, with what the surface holds of its

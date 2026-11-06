@@ -10,7 +10,9 @@
  * THE REPLY IS THE CARD'S RECORD. A member's answer goes into the mailbox as
  * an `OfferReply` turn naming the call, so a card with one is settled on every
  * page and in every tab that reads that mailbox, and nothing this browser
- * keeps is asked.
+ * keeps is asked. A read holds only the mailbox's newest turns, and a reply
+ * is a later turn than the offer's, so a card whose own turn is not among
+ * them cannot be told unanswered and offers nothing.
  *
  * A REPLY IS KEPT UNTIL THE MAILBOX TAKES IT. A confirmation's operation
  * settles before its reply is sent, and once it has the card's subject no
@@ -124,6 +126,32 @@ export function threadOfferReplies(
       replies.set(reply.call, reply);
   }
   return replies;
+}
+
+/** What a mailbox page says of one offer's reply: the reply it holds, none
+ * where every turn after the offer's is on the page, and `Unread` where the
+ * reply could be in an older page this one does not hold. */
+export type ThreadOfferAnswer =
+  | { readonly answer: "Replied"; readonly reply: ThreadOfferReply }
+  | { readonly answer: "Unreplied" }
+  | { readonly answer: "Unread" };
+
+/** The answer a mailbox page gives one offer, made in the turn `turn` where
+ * the page names the exchange's turn. */
+export function threadOfferAnswerOf(
+  page: {
+    readonly turns: readonly { readonly turn: string }[];
+    readonly nextBefore?: number | undefined;
+  },
+  replies: ReadonlyMap<string, ThreadOfferReply>,
+  offered: { readonly call: string; readonly turn?: string | undefined },
+): ThreadOfferAnswer {
+  const reply = replies.get(offered.call);
+  if (reply !== undefined) return { answer: "Replied", reply };
+  if (page.nextBefore === undefined) return { answer: "Unreplied" };
+  return page.turns.some((turn) => turn.turn === offered.turn)
+    ? { answer: "Unreplied" }
+    : { answer: "Unread" };
 }
 
 /**
@@ -267,6 +295,9 @@ export function threadOfferSettledSentence(
 
 export const threadOfferSupersededSentence =
   "Superseded · It changed since this was offered";
+
+export const threadOfferUnreadSentence =
+  "Not open here · Its reply would be older than the turns this page reads";
 
 /** Whether two pages are the same page. */
 function threadNavigatePagesAgree(a: ConsolePage, b: ConsolePage): boolean {

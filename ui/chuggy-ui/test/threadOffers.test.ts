@@ -23,6 +23,7 @@ import {
   threadNavigateAppliedWith,
   threadNavigateDue,
   threadNavigateOf,
+  threadOfferAnswerOf,
   threadOfferConfirmed,
   threadOfferOf,
   threadOfferReleaseMutation,
@@ -137,6 +138,33 @@ describe("reading the calls", () => {
       },
     ]);
     expect([...replies]).toStrictEqual([["toolu_offer_release", declined]]);
+  });
+});
+
+describe("whether a page answers an offer", () => {
+  test("an offer is unreplied only where every turn after its own is on the page", () => {
+    const declined = { call: "toolu_a", decision: "Declined" } as const;
+    const replies = new Map([["toolu_a", declined]]);
+    const tail = {
+      turns: [{ turn: "t-40" }, { turn: "t-41" }],
+      nextBefore: 40,
+    };
+    expect(
+      threadOfferAnswerOf(tail, replies, { call: "toolu_a", turn: "t-3" }),
+    ).toStrictEqual({ answer: "Replied", reply: declined });
+    expect(
+      threadOfferAnswerOf(tail, replies, { call: "toolu_b", turn: "t-41" }),
+    ).toStrictEqual({ answer: "Unreplied" });
+    for (const turn of ["t-3", undefined])
+      expect(
+        threadOfferAnswerOf(tail, replies, { call: "toolu_b", turn }),
+      ).toStrictEqual({ answer: "Unread" });
+    expect(
+      threadOfferAnswerOf({ turns: tail.turns }, replies, {
+        call: "toolu_b",
+        turn: "t-3",
+      }),
+    ).toStrictEqual({ answer: "Unreplied" });
   });
 });
 

@@ -73,7 +73,6 @@ import type {
   ConversationAsk,
   ConversationDoing,
   ConversationExchange,
-  ConversationPart,
   ConversationWorkStep,
 } from "../../core/conversation.ts";
 import { consolePageLabel } from "../../core/consolePage.ts";
@@ -113,7 +112,8 @@ export const ConversationImage = createContext<
  * no API, so what an offer does is the page's. Nothing is drawn of a step it
  * answers `null` for. */
 export const ConversationOffer = createContext<
-  ((step: ConversationWorkStep) => ReactNode) | undefined
+  | ((step: ConversationWorkStep, exchange: ConversationExchange) => ReactNode)
+  | undefined
 >(undefined);
 
 /** The exchange that holds the one thing on the surface that moves, where
@@ -393,7 +393,7 @@ function conversationTextPlace(
  * work the record comes to hold between two texts moves neither.
  */
 function conversationPartsDrawn(
-  parts: readonly ConversationPart[],
+  exchange: ConversationExchange,
   doing: ConversationDoing,
   shown: {
     readonly open: boolean;
@@ -401,9 +401,15 @@ function conversationPartsDrawn(
     readonly mine: boolean;
     /** Whether the exchange's turn was stopped. */
     readonly stopped: boolean;
-    readonly offer: ((step: ConversationWorkStep) => ReactNode) | undefined;
+    readonly offer:
+      | ((
+          step: ConversationWorkStep,
+          exchange: ConversationExchange,
+        ) => ReactNode)
+      | undefined;
   },
 ): readonly ReactNode[] {
+  const parts = conversationExchangeParts(exchange);
   const drawn: ReactNode[] = [];
   let texts = 0;
   parts.forEach((part, at) => {
@@ -421,7 +427,7 @@ function conversationPartsDrawn(
       const { offer } = shown;
       if (offer !== undefined)
         for (const step of part.steps) {
-          const offered = offer(step);
+          const offered = offer(step, exchange);
           if (offered !== null && offered !== undefined)
             drawn.push(
               <Fragment
@@ -486,7 +492,7 @@ function ConversationAnswerBody(props: {
   const mine = indicated.named === conversationExchangeNamed(exchange);
   return (
     <>
-      {conversationPartsDrawn(conversationExchangeParts(exchange), doing, {
+      {conversationPartsDrawn(exchange, doing, {
         open,
         mine,
         stopped: standing.standing === "Stopped",

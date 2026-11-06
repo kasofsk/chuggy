@@ -7,7 +7,9 @@
  * or the revocation as the reader, at the version offered, and follows it to
  * settlement; Decline submits nothing. Either way the reply goes into the
  * thread's mailbox as an `OfferReply` turn naming the call, and that turn is
- * what draws the card settled from then on, on this page and every other.
+ * what draws the card settled from then on, on this page and every other. A
+ * card whose reply could be older than the mailbox page the read holds is
+ * drawn with neither.
  *
  * A CARD WHOSE SUBJECT MOVED IS NOT CONFIRMED. The draft or the ticket is read
  * as the project's stream keeps it, and one past the version offered, or no
@@ -37,7 +39,10 @@ import { base64urlFromBytes } from "../../core/base64url.ts";
 import { operationFailureSentence } from "../../core/codeSentences.ts";
 import type { ApiPorts } from "../../core/apiRequest.ts";
 import { consoleWriteKey } from "../../core/consoleWrite.ts";
-import type { ConversationWorkStep } from "../../core/conversation.ts";
+import type {
+  ConversationExchange,
+  ConversationWorkStep,
+} from "../../core/conversation.ts";
 import type { ConsoleWrite } from "../../core/consoleWrite.ts";
 import {
   followOperation,
@@ -45,6 +50,7 @@ import {
 } from "../../core/operationFollow.ts";
 import { draftQuery, ticketQuery } from "../../core/ticketQueries.ts";
 import {
+  threadOfferAnswerOf,
   threadOfferConfirmed,
   threadOfferOf,
   threadOfferReplies,
@@ -55,11 +61,13 @@ import {
   threadOfferSentence,
   threadOfferSettledSentence,
   threadOfferSupersededSentence,
+  threadOfferUnreadSentence,
   threadOfferUnsentKept,
   threadOfferUnsentLetGo,
   threadOfferUnsentOf,
 } from "../../core/threadOffers.ts";
 import type {
+  ThreadOfferAnswer,
   ThreadOfferCall,
   ThreadOfferStanding,
 } from "../../core/threadOffers.ts";
@@ -320,21 +328,24 @@ function ThreadOfferUnanswered(props: {
   );
 }
 
-/** One offer's card: settled by the reply the mailbox holds for it, and
+/** One offer's card: settled by the reply the mailbox holds for it, open to
+ * nothing where its reply could be in a page the read does not hold, and
  * otherwise drawn against its subject as the project keeps it. */
 export function ThreadOfferCard(props: {
   readonly partition: PartitionIdentity;
   readonly session: string;
   readonly offer: ThreadOfferCall;
-  readonly reply: ThreadOfferReply | undefined;
+  readonly answer: ThreadOfferAnswer;
 }): ReactNode {
-  const { offer, reply } = props;
+  const { offer, answer } = props;
   return (
     <ThreadOfferShell offer={offer}>
-      {reply !== undefined ? (
+      {answer.answer === "Replied" ? (
         <p className="text-ink-3 text-sm">
-          {threadOfferSettledSentence(offer, reply)}
+          {threadOfferSettledSentence(offer, answer.reply)}
         </p>
+      ) : answer.answer === "Unread" ? (
+        <p className="text-ink-3 text-sm">{threadOfferUnreadSentence}</p>
       ) : (
         <ThreadOfferUnanswered
           partition={props.partition}
@@ -347,27 +358,32 @@ export function ThreadOfferCard(props: {
 }
 
 /** How the reader's own project thread draws what its steps offer: a card for
- * each offer, settled by the reply its mailbox page holds. Another member's
+ * each offer, answered as its mailbox page answers it. Another member's
  * thread draws none, the offer being theirs to answer. */
 export function useThreadOfferDrawn(
   partition: PartitionIdentity,
   thread: ThreadResponse,
-): ((step: ConversationWorkStep) => ReactNode) | undefined {
-  const { mine, session, turns } = thread;
+):
+  | ((step: ConversationWorkStep, exchange: ConversationExchange) => ReactNode)
+  | undefined {
+  const { mine, session, turns, nextBefore } = thread;
   const replies = useMemo(() => threadOfferReplies(turns), [turns]);
   const drawn = useCallback(
-    (step: ConversationWorkStep): ReactNode => {
+    (step: ConversationWorkStep, exchange: ConversationExchange): ReactNode => {
       const offer = threadOfferOf(step);
       return offer === undefined ? null : (
         <ThreadOfferCard
           partition={partition}
           session={session}
           offer={offer}
-          reply={replies.get(offer.call)}
+          answer={threadOfferAnswerOf({ turns, nextBefore }, replies, {
+            call: offer.call,
+            turn: exchange.turn,
+          })}
         />
       );
     },
-    [partition, session, replies],
+    [partition, session, turns, nextBefore, replies],
   );
   return mine ? drawn : undefined;
 }
