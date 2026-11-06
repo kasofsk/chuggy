@@ -547,6 +547,55 @@ test("a fence the API refuses returns the reader to the form, unreleased", async
   expect(held.calls).toStrictEqual([`POST ${partitionBase}/drafts`]);
 });
 
+test("an epic that cannot take the ticket is a refusal naming the epic, not a fence to submit again over", async () => {
+  const intoEpic = {
+    ...releaseSubmission,
+    body: { ...creationBody, epic: 7 },
+  };
+  for (const [answer, reason] of [
+    [
+      { status: 409, body: { error: { code: "ArchivedEpic" } } },
+      "The epic is archived, so it takes no new ticket.",
+    ],
+    [
+      { status: 409, body: { error: { code: "ManyTickets" } } },
+      "The epic is full, so it takes no new ticket.",
+    ],
+    [
+      { status: 404, body: { error: { code: "MissingEpic" } } },
+      "The epic no longer exists, so the ticket was not made.",
+    ],
+  ] as const) {
+    const held = answering(() => answer);
+    const created = await createAndReleaseTicket(
+      held.ports,
+      creationPartition,
+      intoEpic,
+      () => undefined,
+    );
+    expect(created).toStrictEqual({
+      created: "Refused",
+      reason,
+      held: undefined,
+    });
+    expect(held.calls).toStrictEqual([`POST ${partitionBase}/drafts`]);
+  }
+  const stale = answering(() => ({
+    status: 409,
+    body: { error: { code: "DraftInitializationStale" } },
+  }));
+  expect(
+    (
+      await createAndReleaseTicket(
+        stale.ports,
+        creationPartition,
+        intoEpic,
+        () => undefined,
+      )
+    ).created,
+  ).toBe("Stale");
+});
+
 test("a project that is not active is a refusal, not a fence to submit again over", async () => {
   const held = answering(() => ({
     status: 409,

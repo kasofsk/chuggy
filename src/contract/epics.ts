@@ -10,10 +10,12 @@
 import { z } from "zod";
 
 import { fieldsOnly } from "./fields.ts";
+import { ticketSearchCharsMax } from "./http.ts";
 
 export const epicTitleCharsMax = 200;
 export const epicSummaryCharsMax = 600;
 export const epicContentBytesMax = 65_536;
+export const epicTicketsMax = 100;
 
 export const epicVisibilitySchema = z.enum(["Active", "Archived"]);
 export type EpicVisibility = z.infer<typeof epicVisibilitySchema>;
@@ -108,7 +110,7 @@ function epicQuery<Shape extends z.ZodRawShape>(shape: Shape) {
 }
 
 export const epicListQuerySchema = epicQuery({
-  search: z.string().optional(),
+  search: z.string().max(ticketSearchCharsMax).optional(),
   visibility: z.enum(epicListVisibilities).optional(),
   ticket: epicQueryInteger(1).optional(),
   sort: z.enum(epicListSorts).optional(),

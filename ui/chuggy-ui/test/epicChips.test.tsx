@@ -4,7 +4,7 @@
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -41,8 +41,9 @@ test("each epic is a link to its page and an archived one says so", () => {
       ]}
     />,
   );
+  const chips = screen.getByRole("group", { name: "Epics" });
   expect(
-    screen.getByRole("link", { name: "Billing" }).getAttribute("href"),
+    within(chips).getByRole("link", { name: "Billing" }).getAttribute("href"),
   ).toBe("/acme/atlas/epics/7");
   expect(screen.getByRole("link", { name: "Search (archived)" })).toBeTruthy();
 });

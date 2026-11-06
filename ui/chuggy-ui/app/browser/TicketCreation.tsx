@@ -831,6 +831,14 @@ function creationAttemptHeld(
     : undefined;
 }
 
+/** Whether the next submit creates its draft, which alone puts it into an
+ * epic: one that goes back to a held draft revises it. */
+function creationAttemptCreates(attempt: CreationAttempt): boolean {
+  return (
+    attempt.attempt !== "Held" && creationAttemptHeld(attempt) === undefined
+  );
+}
+
 /** What a refused creation hands on, read as its note reads it. */
 function creationRefusedHeld(
   refused: ConsoleWriteRefused,
@@ -1173,6 +1181,7 @@ export interface CreationFormDrawnProps extends CreationFormProps {
    * draft it follows stands. */
   readonly lead: ReactNode;
   readonly following?: AuthoringFollow;
+  readonly epicChoice?: boolean;
 }
 
 /** The form as drawn, fields or YAML, over what its caller holds. */
@@ -1218,7 +1227,7 @@ export function CreationFormDrawn(props: CreationFormDrawnProps): ReactNode {
               partition: props.partition,
               storeKey: props.storeKey,
             }}
-            epicChoice
+            epicChoice={props.epicChoice === true}
           />
         }
       />
@@ -1285,6 +1294,7 @@ export function CreationForm(props: CreationFormProps): ReactNode {
       busy={running.busy}
       onSubmit={running.submit}
       lead={<CreationDuplicateDropped duplicate={props.duplicate} />}
+      epicChoice={creationAttemptCreates(running.attempt)}
     />
   );
 }

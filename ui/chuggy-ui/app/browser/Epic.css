@@ -100,8 +100,8 @@
     fill: var(--wash-pass);
   }
 
-  .epic-graph-fail rect {
-    fill: var(--wash-fail);
+  .epic-graph-parked rect {
+    fill: var(--wash-parked);
   }
 
   .epic-graph-live rect {
@@ -114,10 +114,6 @@
 
   .epic-graph-finalization rect {
     fill: var(--wash-finalization);
-  }
-
-  .epic-graph-node[data-external] rect {
-    fill: var(--surface-0);
   }
 
   .epic-graph a:focus-visible .epic-graph-node rect {

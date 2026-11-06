@@ -5,7 +5,9 @@
  *
  * PARITY IS ASKED CASE BY CASE. Each case runs a sequence of writes through
  * `decideEpic` over an in-memory state and through the door over the
- * database, and the two outcomes must be equal at every step.
+ * database, and the two outcomes must be equal at every step. The domain is
+ * handed the content as the wire normalizes it and the door the content as
+ * written, so the door is held to that normalization too.
  */
 
 import assert from "node:assert/strict";
@@ -16,6 +18,7 @@ import {
   postgresEpics,
   epicsForTickets,
 } from "../../src/adapters/postgres/epics.ts";
+import { epicContentSchema } from "../../src/contract/epics.ts";
 import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
 import { apiRole } from "../../src/adapters/postgres/schema.ts";
 import {
@@ -23,6 +26,7 @@ import {
   decideEpic,
   epicContentBytesMax,
   epicSummaryCharsMax,
+  epicTicketsMax,
   epicTitleCharsMax,
   type EpicCommand,
   type EpicContent,
@@ -144,7 +148,7 @@ const revise = (
   content: content(patch),
 });
 
-/** Runs each command through the domain and the door and answers once they have agreed at every step. */
+/** Runs each command through the domain and the door and answers once they have agreed at every step. A draft the project holds counts as a ticket to both, and this harness files none. */
 async function agreed(
   at: Project,
   commands: readonly EpicCommand[],
@@ -154,11 +158,16 @@ async function agreed(
   let state: EpicState = new Map();
   const answers: string[] = [];
   for (const command of commands) {
-    // A draft the project holds counts as a ticket (127); this harness files none.
-    const decided = decideEpic(state, command, (ticket) => known.has(ticket));
+    const normalized = {
+      ...command,
+      content: epicContentSchema.parse(command.content),
+    };
+    const decided = decideEpic(state, normalized, (ticket) =>
+      known.has(ticket),
+    );
     const stored = await store.save(at.partition, command, actor);
     assert.deepEqual(stored, decided, JSON.stringify(command));
-    state = applyEpic(state, command, decided);
+    state = applyEpic(state, normalized, decided);
     answers.push(decided.kind === "Saved" ? "Saved" : decided.reason);
   }
   return answers;
@@ -194,6 +203,37 @@ test("the door agrees with the domain on every refusal and on saving", async () 
   assert.ok(answers.includes("LargeContent"));
   assert.ok(answers.includes("MissingEpic"));
   assert.ok(answers.includes("LongSummary"));
+});
+
+test("the door's member bound is the domain's, refused before an unknown member", async () => {
+  const at = await opened("epic-members", []);
+  const numbers = (count: number) =>
+    Array.from({ length: count }, (_, index) => 900_000 + index);
+  assert.deepEqual(
+    await agreed(at, [
+      create({ tickets: numbers(epicTicketsMax + 1) }),
+      create({ tickets: numbers(epicTicketsMax) }),
+    ]),
+    ["ManyTickets", "UnknownTickets"],
+  );
+});
+
+test("a title of whitespace alone is empty to the door as to the domain, whichever whitespace", async () => {
+  const at = await opened("epic-blank", []);
+  const blanks = Array.from({ length: 0x10000 }, (_, unit) =>
+    String.fromCharCode(unit),
+  ).filter((text) => text.trim() === "");
+  const answers = await agreed(
+    at,
+    blanks.flatMap((blank) => [
+      create({ title: blank, tickets: [] }),
+      create({ title: `${blank}x${blank}`, tickets: [] }),
+    ]),
+  );
+  assert.deepEqual(
+    answers,
+    blanks.flatMap(() => ["EmptyTitle", "Saved"]),
+  );
 });
 
 test("concurrent creates take distinct numbers with no gap", async () => {

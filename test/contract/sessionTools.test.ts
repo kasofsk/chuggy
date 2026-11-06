@@ -16,6 +16,7 @@ import {
   configurationCanonicalCharsMax,
   dispatchViewSchemaVersion,
   nativeHttpBodyBytesMax,
+  sessionTurnToolsMax,
 } from "../../src/contract/http.ts";
 import * as authoring from "../../src/contract/authoring.ts";
 import * as brief from "../../src/contract/brief.ts";
@@ -231,6 +232,11 @@ test("every capability admits a tool, the runtime's own or the chuggy server's",
         0,
       `${capability} admits nothing`,
     );
+});
+
+test("a turn's measurement may name every tool a session can be given", () => {
+  const builtIns = new Set(Object.values(builtInToolCapabilities).flat());
+  assert.ok(allChuggyTools.length + builtIns.size <= sessionTurnToolsMax);
 });
 
 test("the qualified names are the roster's own, prefixed, and never repeated", () => {

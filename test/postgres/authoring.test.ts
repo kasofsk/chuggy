@@ -12,6 +12,7 @@ import { postgresDomainConfigurationPrecondition } from "../../src/adapters/post
 import { postgresEpics } from "../../src/adapters/postgres/epics.ts";
 import {
   epicContentBytesMax,
+  epicTicketsMax,
   type EpicContent,
 } from "../../src/domain/epics.ts";
 import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
@@ -3728,6 +3729,50 @@ test("an epic that is missing, archived or too large refuses the draft and write
     archivedBefore,
   );
   assert.deepEqual(await epicStanding(fixture.partition, full), fullBefore);
+});
+
+test("an epic holding as many members as an epic may refuses the draft and writes nothing", async () => {
+  const fixture = await draftFixture();
+  const epic = await epicOf(fixture.partition);
+  await harness.query(
+    `INSERT INTO epic_ticket(tenant,project,epic,ticket)
+       SELECT $1,$2,$3,n FROM generate_series(900001,900000+$4::int) AS n`,
+    [fixture.partition.tenant, fixture.partition.project, epic, epicTicketsMax],
+  );
+  const before = await epicStanding(fixture.partition, epic);
+
+  assert.deepEqual(await draftInEpic(fixture, epic), {
+    created: "EpicUnavailable",
+    reason: "ManyTickets",
+  });
+  assert.deepEqual(await epicStanding(fixture.partition, epic), before);
+});
+
+test("a draft member is counted as not started and drawn with no phase until it is released", async () => {
+  const fixture = await draftFixture();
+  const epic = await epicOf(fixture.partition);
+  const created = await draftInEpic(fixture, epic);
+  if (created.created !== "Created") throw new Error(created.created);
+  const epics = postgresEpics(pool);
+
+  const view = await epics.view(fixture.partition, epic);
+
+  assert.equal(view?.status, "not_started");
+  assert.deepEqual(
+    [view?.progress.drafts, view?.progress.total, view?.progress.done],
+    [1, 1, 0],
+  );
+  assert.deepEqual(view?.tickets, [created.draft.ticket]);
+  assert.deepEqual(await epics.graph(fixture.partition, epic), {
+    nodes: [
+      {
+        ticket: created.draft.ticket,
+        title: postgresHarnessBrief.title,
+        member: true,
+      },
+    ],
+    edges: [],
+  });
 });
 
 test("a draft the door refuses for its own reason joins nothing", async () => {

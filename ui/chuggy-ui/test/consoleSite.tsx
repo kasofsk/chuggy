@@ -174,6 +174,7 @@ const consoleEpic = {
       Escalated: 0,
       Revoked: 0,
     },
+    drafts: 0,
     done: 0,
     total: 1,
   },

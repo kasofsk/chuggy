@@ -15,14 +15,24 @@ import {
   epicWriteRequestParse,
   epicContentBytesMax,
   epicSummaryCharsMax,
+  epicTicketsMax,
   epicTitleCharsMax,
+  epicVisibilitySchema,
 } from "../../src/contract/epics.ts";
+import { ticketSearchCharsMax } from "../../src/contract/http.ts";
+import { epicStatusRoster } from "../../src/contract/responses.ts";
 import * as domain from "../../src/domain/epics.ts";
 
 test("the wire's limits are the ones the domain decides by", () => {
   assert.equal(epicTitleCharsMax, domain.epicTitleCharsMax);
   assert.equal(epicSummaryCharsMax, domain.epicSummaryCharsMax);
+  assert.equal(epicTicketsMax, domain.epicTicketsMax);
   assert.equal(epicContentBytesMax, domain.epicContentBytesMax);
+});
+
+test("the wire's statuses and visibilities are the domain's, in its order", () => {
+  assert.deepEqual([...epicStatusRoster], [...domain.epicStatuses]);
+  assert.deepEqual(epicVisibilitySchema.options, [...domain.epicVisibilities]);
 });
 
 test("content sorts and dedupes its tickets and reads a blank summary as none", () => {
@@ -101,6 +111,11 @@ test("a Revise names an epic and the revision it read", () => {
 
 test("a list query defaults its limit and reads every filter", () => {
   assert.deepEqual(epicListQueryParse({}), { limit: epicPageLimitDefault });
+  assert.equal(
+    epicListQueryParse({ search: "x".repeat(ticketSearchCharsMax) }).search
+      ?.length,
+    ticketSearchCharsMax,
+  );
   assert.deepEqual(
     epicListQueryParse({
       search: "x",
@@ -132,6 +147,7 @@ test("a list query refuses what its grammar does not name", () => {
     { sort: "random" },
     { after: "x" },
     { unknown: "1" },
+    { search: "x".repeat(ticketSearchCharsMax + 1) },
   ]) {
     assert.throws(() => epicListQueryParse(query), JSON.stringify(query));
   }

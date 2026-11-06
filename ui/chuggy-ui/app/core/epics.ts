@@ -34,7 +34,8 @@ import type { ApiFailure } from "./apiRequest.ts";
 import { consolePartitionQuery } from "./consoleQuery.ts";
 import type { ConsoleWrite } from "./consoleWrite.ts";
 import { consoleWriteKey } from "./consoleWrite.ts";
-import type { Tone } from "./tones.ts";
+import { phaseLabel } from "./codeLabels.ts";
+import { epicStatusTone, type Tone } from "./tones.ts";
 
 export type EpicStatusWord = EpicSummaryResponse["status"];
 
@@ -110,16 +111,21 @@ export async function epicsInvalidated(
   });
 }
 
-/** The word and the hue each status is drawn in. */
-export const epicStatusLooks: Readonly<
-  Record<EpicStatusWord, { readonly word: string; readonly tone: Tone }>
-> = {
-  empty: { word: "Empty", tone: "retired" },
-  not_started: { word: "Not started", tone: "queued" },
-  in_progress: { word: "In progress", tone: "live" },
-  attention: { word: "Needs attention", tone: "fail" },
-  done: { word: "Done", tone: "pass" },
+const epicStatusWords: Readonly<Record<EpicStatusWord, string>> = {
+  empty: "Empty",
+  not_started: "Not started",
+  in_progress: "In progress",
+  attention: "Needs attention",
+  done: "Done",
 };
+
+/** The word and the hue a status is drawn in. */
+export function epicStatusLook(status: EpicStatusWord): {
+  readonly word: string;
+  readonly tone: Tone;
+} {
+  return { word: epicStatusWords[status], tone: epicStatusTone(status) };
+}
 
 /** What an epic's progress says, as `done of total`, or that it holds nothing. */
 export function epicProgressLine(
@@ -198,12 +204,14 @@ export function epicsAskOf(query: EpicsQuery): EpicsPage {
   };
 }
 
-/** One node of the graph as it is placed. */
+/** One node of the graph as it is placed, its phase absent for a draft. */
 export interface EpicGraphPlaced {
   readonly ticket: number;
   readonly title: string | undefined;
   readonly phase: EpicGraphResponse["nodes"][number]["phase"];
   readonly member: boolean;
+  /** What the node says, cut to fit its box. */
+  readonly label: string;
   readonly x: number;
   readonly y: number;
 }
@@ -223,43 +231,87 @@ export const epicGraphRowHeight = 48;
 export const epicGraphNodeWidth = 160;
 export const epicGraphNodeHeight = 32;
 
+/** The most code points a node's label holds before it is cut, which its box fits. */
+export const epicGraphLabelCharsMax = 22;
+
+/** Where a node stands in words: its phase, or a draft where it has none. */
+export function epicGraphStanding(node: {
+  readonly phase?: EpicGraphPlaced["phase"];
+}): string {
+  return node.phase === undefined ? "Draft" : phaseLabel(node.phase);
+}
+
+/** What a node says: its number and its title, or where it stands where it
+ * has none, cut with an ellipsis past what its box holds. */
+export function epicGraphLabel(
+  ticket: number,
+  title: string | undefined,
+  standing: string,
+): string {
+  const whole = [...`#${String(ticket)} ${title ?? standing}`];
+  return whole.length <= epicGraphLabelCharsMax
+    ? whole.join("")
+    : `${whole.slice(0, epicGraphLabelCharsMax - 1).join("")}…`;
+}
+
+/**
+ * The column of each node: one past the deepest of its dependencies, found by
+ * taking each node once its dependencies are placed, so every pass is bounded
+ * by the nodes and edges given. A node on a cycle is never freed that way and
+ * stands in the first column.
+ */
+function epicGraphLayoutColumns(
+  tickets: readonly number[],
+  edges: readonly { readonly from: number; readonly to: number }[],
+): ReadonlyMap<number, number> {
+  const waiting = new Map(tickets.map((ticket) => [ticket, 0]));
+  const outgoing = new Map<number, number[]>();
+  for (const edge of edges) {
+    waiting.set(edge.to, (waiting.get(edge.to) ?? 0) + 1);
+    outgoing.set(edge.from, [...(outgoing.get(edge.from) ?? []), edge.to]);
+  }
+  const column = new Map(tickets.map((ticket) => [ticket, 0]));
+  const freed = tickets.filter((ticket) => waiting.get(ticket) === 0);
+  for (let next = 0; next < freed.length; next += 1) {
+    const ticket = freed[next];
+    if (ticket === undefined) break;
+    const at = column.get(ticket) ?? 0;
+    for (const to of outgoing.get(ticket) ?? []) {
+      column.set(to, Math.max(column.get(to) ?? 0, at + 1));
+      const left = (waiting.get(to) ?? 0) - 1;
+      waiting.set(to, left);
+      if (left === 0) freed.push(to);
+    }
+  }
+  for (const ticket of tickets)
+    if ((waiting.get(ticket) ?? 0) > 0) column.set(ticket, 0);
+  return column;
+}
+
 /**
  * Each node in the column of its longest chain of dependencies, so every edge
  * runs left to right, and in a row of its own within the column, by ticket
- * number. An edge into a node the graph does not hold, or one that would close
- * a cycle, is left undrawn rather than looped on.
+ * number. An edge into a node the graph does not hold, or one on a cycle, is
+ * left undrawn rather than looped on.
  */
 export function epicGraphLayout(graph: EpicGraphResponse): EpicGraphLayout {
-  const held = new Set(graph.nodes.map((node) => node.ticket));
+  const tickets = [...new Set(graph.nodes.map((node) => node.ticket))].sort(
+    (left, right) => left - right,
+  );
+  const held = new Set(tickets);
   const edges = graph.edges.filter(
     (edge) => held.has(edge.from) && held.has(edge.to) && edge.from !== edge.to,
   );
-  const incoming = new Map<number, number[]>();
-  for (const edge of edges)
-    incoming.set(edge.to, [...(incoming.get(edge.to) ?? []), edge.from]);
-  const depth = new Map<number, number>();
-  const visiting = new Set<number>();
-  const depthOf = (ticket: number): number => {
-    const known = depth.get(ticket);
-    if (known !== undefined) return known;
-    if (visiting.has(ticket)) return 0;
-    visiting.add(ticket);
-    const found = Math.max(
-      -1,
-      ...(incoming.get(ticket) ?? []).map((from) => depthOf(from)),
-    );
-    visiting.delete(ticket);
-    depth.set(ticket, found + 1);
-    return found + 1;
-  };
+  const columns = epicGraphLayoutColumns(tickets, edges);
+  const columnOf = (ticket: number) => columns.get(ticket) ?? 0;
   const ordered = [...graph.nodes].sort(
     (left, right) =>
-      depthOf(left.ticket) - depthOf(right.ticket) ||
+      columnOf(left.ticket) - columnOf(right.ticket) ||
       left.ticket - right.ticket,
   );
   const rows = new Map<number, number>();
   const placed = ordered.map((node): EpicGraphPlaced => {
-    const column = depthOf(node.ticket);
+    const column = columnOf(node.ticket);
     const row = rows.get(column) ?? 0;
     rows.set(column, row + 1);
     return {
@@ -267,6 +319,7 @@ export function epicGraphLayout(graph: EpicGraphResponse): EpicGraphLayout {
       title: node.title,
       phase: node.phase,
       member: node.member,
+      label: epicGraphLabel(node.ticket, node.title, epicGraphStanding(node)),
       x: column * epicGraphColumnWidth,
       y: row * epicGraphRowHeight,
     };
@@ -376,6 +429,7 @@ const epicRefusalWords: Readonly<Record<string, string>> = {
   EmptyTitle: "The title is empty.",
   LongTitle: "The title is too long.",
   LongSummary: "The summary is too long.",
+  ManyTickets: "The epic holds too many tickets.",
   LargeContent: "The epic is too large.",
 };
 
@@ -409,7 +463,7 @@ export function epicDraftRefusal(failure: ApiFailure): string | undefined {
   if (failure.outcome !== "Conflict") return undefined;
   if (failure.code === "ArchivedEpic")
     return "The epic is archived, so it takes no new ticket.";
-  if (failure.code === "LargeContent")
+  if (failure.code === "ManyTickets" || failure.code === "LargeContent")
     return "The epic is full, so it takes no new ticket.";
   return undefined;
 }

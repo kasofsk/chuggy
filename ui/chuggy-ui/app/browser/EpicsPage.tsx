@@ -15,7 +15,7 @@ import { projectAbilityRefused } from "../core/projectAbilities.ts";
 import {
   epicProgressLine,
   epicSortChoices,
-  epicStatusLooks,
+  epicStatusLook,
   epicVisibilityChoices,
   epicsAskOf,
   epicsQuery,
@@ -40,7 +40,7 @@ import "./Epic.css";
 export function EpicStatusPill(props: {
   readonly status: EpicSummaryResponse["status"];
 }): ReactNode {
-  const look = epicStatusLooks[props.status];
+  const look = epicStatusLook(props.status);
   return <Pill tone={look.tone}>{look.word}</Pill>;
 }
 
@@ -146,14 +146,27 @@ function EpicRowsPage(props: {
   );
 }
 
-/** What is typed, and the address it is written into once it has stood. */
+function epicsTypedSearch(typed: string): string | undefined {
+  return typed.trim() === "" ? undefined : typed.trim();
+}
+
+/**
+ * What is typed, and the address it is written into once it has stood. A
+ * search the address moves to by any other way, a link or going back,
+ * replaces what is typed.
+ */
 function useEpicsTyped(
   query: EpicsQuery,
   onQuery: (query: EpicsQuery) => void,
 ): readonly [string, (typed: string) => void] {
   const [typed, setTyped] = useState(query.q ?? "");
+  const [addressed, setAddressed] = useState(query.q);
+  if (addressed !== query.q) {
+    setAddressed(query.q);
+    if (epicsTypedSearch(typed) !== query.q) setTyped(query.q ?? "");
+  }
   useEffect(() => {
-    const q = typed.trim() === "" ? undefined : typed.trim();
+    const q = epicsTypedSearch(typed);
     if (q === query.q) return undefined;
     const waiting = setTimeout(() => {
       onQuery(epicsQueryWith(query, { q }));

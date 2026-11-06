@@ -1,7 +1,7 @@
 /**
  * Which console page a reader is on, read off the route the router matched
- * last: the page the contract names for it, with the ticket, the repository or
- * the settings section its address carries, the words a message sent from
+ * last: the page the contract names for it, with the ticket, the repository,
+ * the epic or the settings section its address carries, the words a message sent from
  * it names it by, and the address it is at, which the console moves to where
  * the reader's thread names a page.
  *
@@ -56,6 +56,7 @@ const consolePagePlainPaths = {
   Catalog: "catalog",
   Repositories: "repositories",
   Runners: "runners",
+  Epics: "epics",
 } as const satisfies Readonly<Record<string, string>>;
 
 type ConsolePagePlain = keyof typeof consolePagePlainPaths;
@@ -103,6 +104,10 @@ const consolePageRoutes: ReadonlyMap<
     "/$tenant/$project/tickets/$ticket/edit",
     (match) => ({ page: "TicketEdit", ticket: consolePageTicketOf(match) }),
   ],
+  [
+    "/$tenant/$project/epics/$epic",
+    (match) => ({ page: "Epic", epic: Number(match.params["epic"]) }),
+  ],
   ["/$tenant/$project/settings", consolePageSettings()],
   ["/$tenant/$project/settings/", consolePageSettings()],
   ["/$tenant/$project/settings/workspace", consolePageSettings()],
@@ -125,7 +130,10 @@ function consolePagePathOf(page: ConsolePage): string {
     case "Catalog":
     case "Repositories":
     case "Runners":
+    case "Epics":
       return consolePagePlainPaths[page.page satisfies ConsolePagePlain];
+    case "Epic":
+      return `epics/${String(page.epic)}`;
     case "Repository":
       return `repositories/${encodeURIComponent(page.repository)}`;
     case "Ticket":
@@ -200,7 +208,10 @@ export function consolePageLabel(page: ConsolePage): string {
     case "Catalog":
     case "Repositories":
     case "Runners":
+    case "Epics":
       return page.page;
+    case "Epic":
+      return `Epic ${consolePageTicketWord(page.epic)}`;
     case "Ticket":
       return `Ticket ${consolePageTicketWord(page.ticket)}`;
     case "TicketEdit":

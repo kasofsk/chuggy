@@ -18,11 +18,15 @@ export const epicSummaryCharsMax = 600;
 /** The most bytes of UTF-8 an epic's canonical JSON content may weigh. */
 export const epicContentBytesMax = 65_536;
 
+/** The most members an epic holds. */
+export const epicTicketsMax = 100;
+
 export const epicVisibilities = ["Active", "Archived"] as const;
 export type EpicVisibility = (typeof epicVisibilities)[number];
 
 export interface EpicContent {
   readonly title: string;
+  /** Absent rather than blank. */
   readonly summary?: string;
   readonly description: string;
   readonly visibility: EpicVisibility;
@@ -56,6 +60,7 @@ export type EpicRefusal =
         | "EmptyTitle"
         | "LongTitle"
         | "LongSummary"
+        | "ManyTickets"
         | "LargeContent";
     }
   | {
@@ -109,6 +114,9 @@ function epicContentRefusal(
   if (epicCodePointsCount(content.summary ?? "") > epicSummaryCharsMax) {
     return { kind: "Refused", reason: "LongSummary" };
   }
+  if (content.tickets.length > epicTicketsMax) {
+    return { kind: "Refused", reason: "ManyTickets" };
+  }
   if (epicCanonicalBytes(content) > epicContentBytesMax) {
     return { kind: "Refused", reason: "LargeContent" };
   }
@@ -131,6 +139,21 @@ function epicArchivedMembersChange(
   );
 }
 
+function decideEpicAsserted(state: EpicState, content: EpicContent): void {
+  content.tickets.forEach((ticket, index) => {
+    if (!Number.isSafeInteger(ticket) || ticket < 1)
+      throw new Error(`decideEpic: ${String(ticket)} is not a ticket number`);
+    const before = content.tickets[index - 1];
+    if (before !== undefined && before >= ticket)
+      throw new Error("decideEpic: tickets are not ascending and distinct");
+  });
+  if (content.summary !== undefined && content.summary.trim() === "")
+    throw new Error("decideEpic: a blank summary is held as none");
+  for (let number = 1; number <= state.size; number += 1)
+    if (!state.has(number))
+      throw new Error(`decideEpic: epic ${String(number)} is missing`);
+}
+
 /**
  * Decides one write against the epics held. `isTicket` answers whether the
  * project held that ticket or holds it as a draft, gathered before the call.
@@ -140,6 +163,7 @@ export function decideEpic(
   command: EpicCommand,
   isTicket: (ticket: number) => boolean,
 ): EpicOutcome {
+  decideEpicAsserted(state, command.content);
   if (command.kind === "Create") {
     return (
       epicContentRefusal(command.content, isTicket) ?? {
@@ -185,8 +209,12 @@ export function applyEpic(
 
 export type EpicPhaseCounts = Readonly<Record<Phase, number>>;
 
+/** Where a member stands: its ticket's phase, or a draft not yet released. */
+export type EpicMemberState = Phase | "Draft";
+
 export interface EpicProgress {
   readonly byPhase: EpicPhaseCounts;
+  readonly drafts: number;
   readonly done: number;
   /** Every member but the Revoked. */
   readonly total: number;
@@ -201,29 +229,34 @@ export const epicStatuses = [
 ] as const;
 export type EpicStatus = (typeof epicStatuses)[number];
 
-/** The members counted by phase, Revoked left out of the total. */
-export function epicProgress(memberPhases: readonly Phase[]): EpicProgress {
+/** The members counted by phase and drafts apart, Revoked left out of the total. */
+export function epicProgress(
+  members: readonly EpicMemberState[],
+): EpicProgress {
   const counts = Object.fromEntries(phaseTags.map((phase) => [phase, 0])) as {
     -readonly [P in Phase]: number;
   };
-  for (const phase of memberPhases) {
-    counts[phase] += 1;
+  let drafts = 0;
+  for (const member of members) {
+    if (member === "Draft") drafts += 1;
+    else counts[member] += 1;
   }
   return {
     byPhase: counts,
+    drafts,
     done: counts.Done,
-    total: memberPhases.length - counts.Revoked,
+    total: members.length - counts.Revoked,
   };
 }
 
 /**
  * The first that holds: empty, done (every member Done or Revoked),
  * attention (a member is Escalated), not_started (every member not Revoked is
- * Pending), in_progress. A ticket never returns to Pending once it has run, so
- * Pending alone says no work has started.
+ * Pending or a draft), in_progress. A ticket never returns to Pending once it
+ * has run, so Pending alone says no work has started.
  */
 export function epicStatus(progress: EpicProgress): EpicStatus {
-  const { byPhase, done, total } = progress;
+  const { byPhase, drafts, done, total } = progress;
   if (total === 0) {
     return "empty";
   }
@@ -233,7 +266,7 @@ export function epicStatus(progress: EpicProgress): EpicStatus {
   if (byPhase.Escalated > 0) {
     return "attention";
   }
-  if (byPhase.Pending === total) {
+  if (byPhase.Pending + drafts === total) {
     return "not_started";
   }
   return "in_progress";

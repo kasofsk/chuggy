@@ -12,9 +12,11 @@ import {
   epicProgress,
   epicStatus,
   epicSummaryCharsMax,
+  epicTicketsMax,
   epicTitleCharsMax,
   type EpicCommand,
   type EpicContent,
+  type EpicMemberState,
   type EpicState,
 } from "../../src/domain/epics.ts";
 import type { Phase } from "../../src/domain/phase.ts";
@@ -155,6 +157,42 @@ test("content is refused at each bound and accepted on it", () => {
     kind: "Refused",
     reason: "LargeContent",
   });
+  const members = (count: number) =>
+    Array.from({ length: count }, (_, index) => index + 1);
+  assert.equal(create({ tickets: members(epicTicketsMax) }).kind, "Saved");
+  assert.deepEqual(create({ tickets: members(epicTicketsMax + 1) }), {
+    kind: "Refused",
+    reason: "ManyTickets",
+  });
+});
+
+test("a title of whitespace alone is empty, whichever whitespace it is", () => {
+  for (const blank of ["\t", "\n", "\u00a0", "\u3000", "\ufeff"])
+    assert.deepEqual(
+      decideEpic(
+        empty,
+        { kind: "Create", content: content({ title: blank }) },
+        everyTicket,
+      ),
+      { kind: "Refused", reason: "EmptyTitle" },
+    );
+});
+
+test("content the wire would never hand over is a fault, not a refusal", () => {
+  const decide =
+    (patch: Partial<EpicContent>, state: EpicState = empty) =>
+    () =>
+      decideEpic(
+        state,
+        { kind: "Create", content: content(patch) },
+        everyTicket,
+      );
+  assert.throws(decide({ tickets: [2, 1] }), /ascending/u);
+  assert.throws(decide({ tickets: [1, 1] }), /ascending/u);
+  assert.throws(decide({ tickets: [0] }), /not a ticket number/u);
+  assert.throws(decide({ summary: " " }), /blank summary/u);
+  const gapped: EpicState = new Map([[2, { revision: 1, content: content() }]]);
+  assert.throws(decide({}, gapped), /epic 1 is missing/u);
 });
 
 test("the byte bound weighs canonical JSON in UTF-8, not characters", () => {
@@ -221,9 +259,11 @@ test("a refused write leaves the state as it was", () => {
   );
 });
 
-function phases(counts: Partial<Record<Phase, number>>): Phase[] {
+function phases(
+  counts: Partial<Record<EpicMemberState, number>>,
+): EpicMemberState[] {
   return Object.entries(counts).flatMap(([phase, count]) =>
-    Array.from({ length: count }, () => phase as Phase),
+    Array.from({ length: count }, () => phase as EpicMemberState),
   );
 }
 
@@ -232,6 +272,7 @@ test("progress counts members by phase and leaves Revoked out of the total", () 
     phases({ Pending: 2, Work: 1, Done: 3, Revoked: 4 }),
   );
   assert.equal(progress.done, 3);
+  assert.equal(progress.drafts, 0);
   assert.equal(progress.total, 6);
   assert.deepEqual(progress.byPhase, {
     Pending: 2,
@@ -242,6 +283,19 @@ test("progress counts members by phase and leaves Revoked out of the total", () 
     Escalated: 0,
     Revoked: 4,
   });
+});
+
+test("a draft member counts in the total as one not yet started", () => {
+  const progress = epicProgress(phases({ Draft: 2, Pending: 1, Done: 1 }));
+  assert.equal(progress.drafts, 2);
+  assert.equal(progress.total, 4);
+  assert.equal(progress.byPhase.Pending, 1);
+  const status = (counts: Partial<Record<EpicMemberState, number>>) =>
+    epicStatus(epicProgress(phases(counts)));
+  assert.equal(status({ Draft: 3 }), "not_started");
+  assert.equal(status({ Draft: 1, Pending: 1, Revoked: 1 }), "not_started");
+  assert.equal(status({ Draft: 1, Done: 1 }), "in_progress");
+  assert.equal(status({ Draft: 1, Escalated: 1 }), "attention");
 });
 
 test("status is the first that holds, in order", () => {

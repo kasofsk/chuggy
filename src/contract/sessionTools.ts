@@ -304,10 +304,9 @@ const chuggyToolRoster = {
    * member asking is where the work came from; it revokes the ticket its owner
    * said to end; and it releases the revision of a Pending ticket's draft its
    * owner said to apply. None is in `DraftAuthor`, for the reason `DraftAuthor`
-   * exists, and `revoke_ticket` and `update_ticket` are here because a thread
-   * holds this capability and a lead does not. The epic writes are here for
-   * the same reason: the API authorizes them as the member's `Mutate`, which a
-   * lead has no word of.
+   * exists, and `revoke_ticket`, `update_ticket` and the epic writes, which
+   * the API authorizes as the member's `Mutate`, are here because a thread
+   * holds this capability and a lead does not.
    */
   DraftOriginate: [
     "create_draft",

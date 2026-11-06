@@ -892,7 +892,8 @@ export type DraftCreated =
   /** The epic the draft was to join cannot take it, and no draft was written. */
   | {
       readonly created: "EpicUnavailable";
-      readonly reason: "MissingEpic" | "ArchivedEpic" | "LargeContent";
+      readonly reason:
+        "MissingEpic" | "ArchivedEpic" | "ManyTickets" | "LargeContent";
     }
   /** The project head moved past the one the initialization answered, and is at this one now. */
   | { readonly created: "Stale"; readonly currentProjectSequence: number }

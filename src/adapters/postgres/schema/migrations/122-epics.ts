@@ -19,26 +19,60 @@
  * so no role but the boundary owner holds a grant yet.
  */
 
-import {
-  epicContentBytesMax,
-  epicSummaryCharsMax,
-  epicTitleCharsMax,
-} from "../../../../domain/epics.ts";
 import { boundaryOwnerRole, type Migration } from "../shared.ts";
+
+/** The longest title, in code points. */
+export const epicTitleCharsMaxAt122 = 200;
+
+/** The longest summary, in code points. */
+export const epicSummaryCharsMaxAt122 = 600;
+
+/** The most bytes of UTF-8 a revision's canonical JSON content may weigh. */
+export const epicContentBytesMaxAt122 = 65_536;
+
+/** The most members an epic holds. */
+export const epicTicketsMaxAt122 = 100;
+
+/** What `String.prototype.trim` strips: ECMAScript's white space and line terminators. */
+const epicBlankCharacters = [
+  "\\t",
+  "\\n",
+  "\\u000b",
+  "\\f",
+  "\\r",
+  " ",
+  "\\u00a0",
+  "\\u1680",
+  ...Array.from(
+    { length: 11 },
+    (_, offset) => `\\u${(0x2000 + offset).toString(16).padStart(4, "0")}`,
+  ),
+  "\\u2028",
+  "\\u2029",
+  "\\u202f",
+  "\\u205f",
+  "\\u3000",
+  "\\ufeff",
+].join("");
+
+/** Whether a text is blank as the domain's `trim()` reads one, a null being blank. */
+export function epicBlankSql(text: string): string {
+  return `btrim(coalesce(${text}, ''), E'${epicBlankCharacters}') = ''`;
+}
 
 /** The columns a revision's content is held in, on the current row and on each change alike. */
 function contentColumns(relation: string): string {
   return `title text NOT NULL
          CONSTRAINT ${relation}_title_is_bounded
-         CHECK (length(btrim(title)) >= 1
-                AND length(title) <= ${String(epicTitleCharsMax)}),
+         CHECK (NOT ${epicBlankSql("title")}
+                AND length(title) <= ${String(epicTitleCharsMaxAt122)}),
        summary text
          CONSTRAINT ${relation}_summary_is_bounded
-         CHECK (summary IS NULL OR (length(btrim(summary)) >= 1
-                AND length(summary) <= ${String(epicSummaryCharsMax)})),
+         CHECK (summary IS NULL OR (NOT ${epicBlankSql("summary")}
+                AND length(summary) <= ${String(epicSummaryCharsMaxAt122)})),
        description text NOT NULL
          CONSTRAINT ${relation}_description_is_bounded
-         CHECK (octet_length(description) <= ${String(epicContentBytesMax)}),
+         CHECK (octet_length(description) <= ${String(epicContentBytesMaxAt122)}),
        visibility text NOT NULL
          CONSTRAINT ${relation}_visibility_is_known
          CHECK (visibility IN ('Active','Archived'))`;

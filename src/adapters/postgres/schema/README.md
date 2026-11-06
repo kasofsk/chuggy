@@ -651,16 +651,18 @@ only role that may write it; the API role is granted SELECT and EXECUTE on that
 door. Its composite key is `(tenant, project, number)` and it points
 at `project`; numbers run from 1 without a gap because a creation takes the
 project row's lock and allocates `max(number) + 1`, so no counter is kept. It
-is changed by `save_epic` and `create_draft_in_epic` alone, in the
-transaction that appends that revision's `epic_change`. It has no unfinished work: a save is committed or it
+is changed by `save_epic`, `create_draft_in_epic` and `delete_draft` alone, in
+the transaction that appends that revision's `epic_change`. It has no unfinished work: a save is committed or it
 was rolled back.
 
 `epic_ticket` — the members of an epic, as it stands. Owned by the boundary
 owner and read by the API. Its identity is `(tenant, project, epic, ticket)` and it points at
 `epic`; it points at no ticket, because a ticket lives in the journal and the
 decision that saves an epic has already refused a member the project did not
-hold. It is replaced whole with the epic's revision, and
-`epic_ticket_by_ticket` serves the read of a ticket's epics. It has no
+hold. `save_epic` replaces it whole with the epic's revision,
+`create_draft_in_epic` adds the draft it creates and `delete_draft` removes the
+draft it deletes, and `epic_ticket_by_ticket` serves the read of a ticket's
+epics. It has no
 unfinished work.
 
 `epic_change` — every revision an epic has had, with the whole content it
