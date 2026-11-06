@@ -8,6 +8,7 @@
 import { expect, test } from "vitest";
 
 import { briefTitleCharsMax } from "../../../src/contract/brief.ts";
+import { textCodePointsCount } from "../../../src/contract/http.ts";
 import type {
   DraftResponse,
   TicketResponse,
@@ -88,6 +89,16 @@ test("a draft is called by its brief's title, else its intent's first line that 
     undefined,
     undefined,
   ]);
+});
+
+test("a draft's title is cut in code points, as the server bounds one, and never splits a character", () => {
+  const astral = `a${"😀".repeat(briefTitleCharsMax)}`;
+  const title = ticketDraftTitleOf({
+    ...creationDraft,
+    brief: { intent: astral, links: [] },
+  });
+  expect(title).toBe(`a${"😀".repeat(briefTitleCharsMax - 1)}`);
+  expect(textCodePointsCount(title ?? "")).toBe(briefTitleCharsMax);
 });
 
 test("a draft's plan is its own program, and it has run nothing", () => {

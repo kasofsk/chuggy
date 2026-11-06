@@ -160,10 +160,12 @@ export function ticketDraftPageFacts(
 
 /** What a draft is called, as a ticket's read names one: its brief's title,
  * or the first line of its intent that says anything, cut to the title's
- * bound; none where neither says anything. */
+ * bound in code points; none where neither says anything. */
 export function ticketDraftTitleOf(draft: DraftResponse): string | undefined {
   const brief = draft.brief;
   if (brief?.title !== undefined) return brief.title;
   const line = brief?.intent.split("\n").find((said) => said.trim() !== "");
-  return line?.slice(0, briefTitleCharsMax);
+  return line === undefined
+    ? undefined
+    : Array.from(line).slice(0, briefTitleCharsMax).join("");
 }
