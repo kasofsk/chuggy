@@ -357,10 +357,10 @@ const ticketListDependencyGlyph = (
   </TicketListGlyph>
 );
 
-/** The standings that are not yet an end, in the order the counts read. */
+/** The standings that are not yet an end, in the order the State sort draws the rows, reversed. */
 const ticketListCounted = [
-  "Ready",
   "Blocked",
+  "Ready",
   "Work",
   "Evaluation",
   "Finalization",

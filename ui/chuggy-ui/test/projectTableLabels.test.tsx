@@ -528,7 +528,7 @@ test("the counts above the list name each unfinished state the rows stand in, in
     within(counts)
       .getAllByRole("listitem")
       .map((item) => item.textContent),
-  ).toEqual(["Ready2", "Blocked1", "Working1", "Escalated1"]);
+  ).toEqual(["Blocked1", "Ready2", "Working1", "Escalated1"]);
 });
 
 /** Each dependency chip of the row that waits on it, by the number it shows. */
