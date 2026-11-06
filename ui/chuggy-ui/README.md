@@ -307,7 +307,7 @@ in the forge.
 
 ## The ticket page
 
-A header over four tabs, each at an address of its own. Runs is the machine's
+A header over its tabs, each at an address of its own. Runs is the machine's
 own structure: every `work-passed` opens a cycle with a new artifact, judged by
 a fresh run of the program against it, so the tab lists the cycles newest
 first, a row per step as the plan names it. A stage the program short-circuited
