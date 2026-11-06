@@ -39,11 +39,11 @@ import { projectAbilityRefused } from "../core/projectAbilities.ts";
 import { repositoryLabel } from "../core/projectRepositories.ts";
 import {
   ticketFilterAll,
+  ticketFilterIsStanding,
   ticketFilterOf,
   ticketFilterPage,
   ticketFilterProjectEmpty,
   ticketFilterReadsCount,
-  ticketFilterStandingOf,
   ticketFilterStandings,
 } from "../core/projectTableFilters.ts";
 import type {
@@ -422,7 +422,7 @@ const ticketListFilterChoices: readonly Exclude<
 function ticketListFilterText(
   filter: Exclude<TicketFilter, typeof ticketFilterAll>,
 ): string {
-  return ticketFilterStandingOf(filter) ?? phaseLabel(filter);
+  return ticketFilterIsStanding(filter) ? filter : phaseLabel(filter);
 }
 
 /** How long the box takes to close, which the room it holds in the row outlasts. */
@@ -581,7 +581,7 @@ function ticketListStatus(
   searching: boolean,
   shown: number,
 ): string | undefined {
-  if (searching && ticketFilterStandingOf(filter) !== undefined)
+  if (searching && ticketFilterIsStanding(filter))
     return ticketListStatusMatched(shown, projectTicketRowsHaveMore(rows));
   if (searching)
     return rows.matched === undefined

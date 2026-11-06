@@ -49,18 +49,25 @@ export function ticketFilterOf(word: unknown): TicketFilter | undefined {
   );
 }
 
+/** Whether a filter names a standing rather than a phase or All. */
+export function ticketFilterIsStanding(
+  filter: TicketFilter,
+): filter is TicketFilterStanding {
+  return ticketFilterStandings.some((standing) => standing === filter);
+}
+
 /** The standing a filter narrows the rows read to, where it names one. */
 export function ticketFilterStandingOf(
   filter: TicketFilter,
 ): TicketFilterStanding | undefined {
-  return ticketFilterStandings.find((standing) => standing === filter);
+  return ticketFilterIsStanding(filter) ? filter : undefined;
 }
 
 /** What the wire is asked under a filter, which for a standing is its phase. */
 export function ticketFilterRead(
   filter: TicketFilter,
 ): TicketPhase | typeof ticketFilterAll {
-  return ticketFilterStandingOf(filter) === undefined ? filter : "Pending";
+  return ticketFilterIsStanding(filter) ? "Pending" : filter;
 }
 
 /** Undefined rather than every phase, because a read that names them all is a
