@@ -44,6 +44,7 @@ import type {
 } from "../../../../src/contract/requests.ts";
 import type { z } from "zod";
 
+import { epicDraftRefusal } from "./epics.ts";
 import {
   apiCreateDraft,
   apiDraft,
@@ -402,6 +403,10 @@ async function creationDraftCreated(
   const answered = await apiCreateDraft(ports, partition, body);
   if (answered.outcome === "Ok")
     return { draft: answered.value, body, operation, unsettled: false };
+  const epicRefusal =
+    body.epic === undefined ? undefined : epicDraftRefusal(answered);
+  if (epicRefusal !== undefined)
+    return { created: "Refused", reason: epicRefusal, held: undefined };
   if (answered.outcome === "Conflict" && answered.code !== "ProjectNotActive")
     return { created: "Stale", reason: creationStaleSentence };
   return {

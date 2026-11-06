@@ -1,0 +1,177 @@
+/**
+ * The form an epic is made and revised through: its content as typed, the
+ * faults it has before it is sent, and the refusal the API answered.
+ *
+ * A revision is sent with the revision it was read at, so one made over
+ * another's is refused as stale and the form offers to read the epic again
+ * rather than send it a second time.
+ */
+
+import { useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
+import type { ReactNode } from "react";
+
+import type { PartitionIdentity } from "../../../../src/contract/http.ts";
+import {
+  epicFormEmpty,
+  epicFormFaults,
+  epicWrite,
+  epicWriteFrom,
+  epicsInvalidated,
+} from "../core/epics.ts";
+import type { EpicForm } from "../core/epics.ts";
+import { ConsoleWriteRefusedWords, useConsoleWrite } from "./consoleWrite.tsx";
+import { Button } from "./ui/Button.tsx";
+import { Input } from "./ui/Input.tsx";
+import { Notice } from "./ui/Notice.tsx";
+import { Picker } from "./ui/Picker.tsx";
+import { Textarea } from "./ui/Textarea.tsx";
+
+/** The epic a form revises, at the revision it was read at; none where it makes one. */
+export interface EpicHeld {
+  readonly epic: number;
+  readonly revision: number;
+  readonly form: EpicForm;
+}
+
+function EpicFormFaults(props: {
+  readonly faults: readonly string[];
+}): ReactNode {
+  if (props.faults.length === 0) return null;
+  return (
+    <ul className="grid gap-1 text-sm" aria-label="Faults">
+      {props.faults.map((fault) => (
+        <li key={fault}>
+          <Notice tone="danger" inline detail={fault} />
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export function EpicFormFields(props: {
+  readonly form: EpicForm;
+  readonly onChange: (form: EpicForm) => void;
+}): ReactNode {
+  const { form, onChange } = props;
+  return (
+    <div className="grid gap-3">
+      <Input
+        label="Title"
+        value={form.title}
+        onChange={(title) => {
+          onChange({ ...form, title });
+        }}
+      />
+      <Input
+        label="Summary"
+        value={form.summary}
+        onChange={(summary) => {
+          onChange({ ...form, summary });
+        }}
+      />
+      <Textarea
+        label="Description"
+        value={form.description}
+        onChange={(description) => {
+          onChange({ ...form, description });
+        }}
+      />
+      <Input
+        label="Tickets"
+        placeholder="Ticket numbers, such as 12, 14"
+        value={form.tickets}
+        onChange={(tickets) => {
+          onChange({ ...form, tickets });
+        }}
+      />
+      <div className="flex items-center gap-2 text-sm text-ink-2">
+        <span>Visibility</span>
+        <Picker
+          label="Visibility"
+          value={form.visibility}
+          options={[
+            { value: "Active", text: "Active" },
+            { value: "Archived", text: "Archived" },
+          ]}
+          onChoose={(visibility) => {
+            onChange({
+              ...form,
+              visibility: visibility === "Archived" ? "Archived" : "Active",
+            });
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+/** A revision a sibling's write has overtaken, which only reading the epic again can mend. */
+function stale(code: string | undefined): boolean {
+  return code === "StaleRevision";
+}
+
+export function EpicFormPanel(props: {
+  readonly partition: PartitionIdentity;
+  readonly held: EpicHeld | undefined;
+  readonly submit: string;
+  readonly onSaved: (saved: {
+    readonly epic: number;
+    readonly revision: number;
+  }) => void;
+}): ReactNode {
+  const { partition, held } = props;
+  const client = useQueryClient();
+  const [form, setForm] = useState(held?.form ?? epicFormEmpty);
+  const [seen, setSeen] = useState(held?.revision);
+  const writing = useConsoleWrite(epicWrite(partition), { drawn: true });
+  if (seen !== held?.revision) {
+    setSeen(held?.revision);
+    setForm(held?.form ?? epicFormEmpty);
+    writing.reset();
+  }
+  const faults = epicFormFaults(form);
+  const request = epicWriteFrom(
+    form,
+    held === undefined
+      ? undefined
+      : { epic: held.epic, revision: held.revision },
+  );
+  const failure = writing.error?.failure;
+  const refusedStale = failure?.outcome === "Conflict" && stale(failure.code);
+  return (
+    <form
+      className="grid gap-3"
+      onSubmit={(event) => {
+        event.preventDefault();
+        if (request === undefined || faults.length > 0) return;
+        writing.mutate(request, { onSuccess: props.onSaved });
+      }}
+    >
+      <EpicFormFields form={form} onChange={setForm} />
+      <EpicFormFaults faults={faults} />
+      {writing.error === null ? null : (
+        <p className="notice notice-danger notice-inline" role="alert">
+          <ConsoleWriteRefusedWords refused={writing.error} />
+        </p>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <Button type="submit" disabled={writing.isPending || faults.length > 0}>
+          {props.submit}
+        </Button>
+        {refusedStale ? (
+          <Button
+            variant="quiet"
+            onClick={() => {
+              void epicsInvalidated(client, partition);
+              writing.reset();
+              setSeen(undefined);
+            }}
+          >
+            Reload the epic
+          </Button>
+        ) : null}
+      </div>
+    </form>
+  );
+}

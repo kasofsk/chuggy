@@ -35,6 +35,8 @@ export interface ProjectTableRow {
   readonly activityAt: string;
   readonly openDependencies: readonly UpNextOpenDependency[];
   readonly revokedDependencies: readonly number[];
+  /** The epics the ticket belongs to, none where it belongs to none. */
+  readonly epics?: ProjectTicket["epics"] | undefined;
 }
 
 /** The later of two instants a row's activity might carry, compared as
@@ -72,5 +74,6 @@ export function projectTableRow(ticket: ProjectTicket): ProjectTableRow {
     ),
     openDependencies: ticket.openDependencies,
     revokedDependencies: ticket.revokedDependencies,
+    epics: ticket.epics,
   };
 }

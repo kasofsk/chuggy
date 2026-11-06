@@ -47,6 +47,7 @@ import {
   landingPolicyEffect,
   landingPolicyLabel,
 } from "../core/codeLabels.ts";
+import { epicPickerMax, epicsQuery } from "../core/epics.ts";
 import { repositoryLabel } from "../core/projectRepositories.ts";
 import { configurationsPartialLabel } from "../core/repositoryConfigurations.ts";
 import {
@@ -525,6 +526,47 @@ function Repository(props: FormDrawn): ReactNode {
   );
 }
 
+const epicNone = "none";
+
+/** The epic this ticket joins as it is made, chosen from the Active ones. The
+ * roster is read only once the field is drawn, and a roster that is not ready
+ * leaves the ticket in none rather than holding the form. */
+function EpicChoice(
+  props: FormEdit & { readonly partition: PartitionIdentity },
+) {
+  const { form, onChange, partition } = props;
+  const state = usePanelState(
+    epicsQuery(partition, {
+      visibility: "Active",
+      sort: "title",
+      limit: epicPickerMax,
+    }),
+  );
+  if (state.state !== "Ready") return null;
+  const epics = state.value.epics;
+  if (epics.length === 0 && form.epic === "") return null;
+  return (
+    <div className="creation-row">
+      <span>Epic</span>
+      <Picker
+        label="Epic"
+        value={form.epic === "" ? epicNone : form.epic}
+        placeholder="None"
+        options={[
+          { value: epicNone, text: "None" },
+          ...epics.map((epic) => ({
+            value: String(epic.number),
+            text: epic.title,
+          })),
+        ]}
+        onChoose={(epic) => {
+          onChange({ ...form, epic: epic === epicNone ? "" : epic });
+        }}
+      />
+    </div>
+  );
+}
+
 const landingOptions = briefFinalizationModes.map((mode) => ({
   value: mode,
   text: landingLabel(mode),
@@ -671,6 +713,10 @@ interface CreationFieldsProps extends FormEdit {
   /** The branch a screen that proposes one sends for a box left empty. */
   readonly branchProposed?: string | undefined;
   readonly api: CreationImagesApi;
+  /** Whether the form offers an epic to join, which only a creation does:
+   * a draft is put into an epic as it is made and moves with the epic's own
+   * write after. */
+  readonly epicChoice?: boolean;
   /** What the reader may draw: the overrides panel is drawn for one who may
    * not override only while the form holds some, which they can remove, and
    * a program for one who may not skip planned evaluations runs the whole
@@ -708,6 +754,13 @@ export function CreationFields(props: CreationFieldsProps): ReactNode {
       <Fault field="branch" faults={faults} />
       <Repository {...drawing} />
       <Fault field="repository" faults={faults} />
+      {props.epicChoice === true ? (
+        <EpicChoice
+          form={form}
+          onChange={onChange}
+          partition={props.api.partition}
+        />
+      ) : null}
       <Landing form={form} onChange={onChange} />
       <Fault field="landing" faults={faults} />
       {form.landingMode === "None" ? null : (
@@ -1133,6 +1186,7 @@ export function CreationForm(props: CreationFormProps): ReactNode {
             standing={standing}
             branchProposed={creationBranchProposed(held.form)}
             api={{ ports: props.ports, partition: props.partition, storeKey }}
+            epicChoice
           />
         }
       />

@@ -320,7 +320,9 @@ function TicketBody(props: {
   return (
     <FreshnessInstants>
       <div data-fills-width className="grid min-w-0 gap-4">
-        {ticket === undefined ? null : <TicketIntro ticket={ticket} />}
+        {ticket === undefined ? null : (
+          <TicketIntro ticket={ticket} partition={props.partition} />
+        )}
         <TicketActingScope
           partition={props.partition}
           ticket={props.ticket}
