@@ -10,8 +10,10 @@
 import type { TicketPhase } from "../../../../src/contract/rosters.ts";
 import type { TicketResponse } from "../../../../src/contract/responses.ts";
 import { escalationDetail, phaseLabel } from "./codeLabels.ts";
+import { branchName } from "./labels.ts";
 import { runNowStartedAt } from "./runNow.ts";
 import type { TicketAction, TicketActionName } from "./ticketActions.ts";
+import { ticketLandingPullLabel } from "./ticketLandings.ts";
 import type { TicketLanding } from "./ticketLandings.ts";
 import type { TicketListStanding } from "./ticketListView.ts";
 import type { TicketOffers } from "./ticketOffers.ts";
@@ -123,9 +125,19 @@ function ticketHeaderWords(words: string): TicketHeaderFragment {
   return { fragment: "Words", words };
 }
 
-/** How many dependencies a blocked ticket still waits on. */
-export function ticketUnfinishedLine(count: number): string {
-  return `${String(count)} unfinished ${count === 1 ? "dependency" : "dependencies"}`;
+function ticketDependencyCount(count: number, standing: string): string {
+  return `${String(count)} ${standing} ${count === 1 ? "dependency" : "dependencies"}`;
+}
+
+/** What a blocked ticket waits on: the dependencies still open, and those
+ * revoked, which nothing will ever finish. */
+export function ticketUnfinishedLine(open: number, revoked: number): string {
+  return [
+    ...(open > 0 || revoked === 0
+      ? [ticketDependencyCount(open, "unfinished")]
+      : []),
+    ...(revoked > 0 ? [ticketDependencyCount(revoked, "revoked")] : []),
+  ].join(" · ");
 }
 
 function ticketHeaderMoving(slot: TicketSlot): TicketHeaderFragment {
@@ -133,7 +145,7 @@ function ticketHeaderMoving(slot: TicketSlot): TicketHeaderFragment {
     case "Now":
       return {
         fragment: "Running",
-        step: slot.running.stage,
+        step: slot.running.step,
         since: runNowStartedAt(slot.running.execution, undefined),
       };
     case "NeedsYou":
@@ -143,16 +155,12 @@ function ticketHeaderMoving(slot: TicketSlot): TicketHeaderFragment {
   }
 }
 
-/** The pull request's number, read off a forge's `…/pull/<n>` address. */
 function ticketHeaderLinkOf(
   link: TicketLanding["link"],
 ): TicketHeaderLink | undefined {
-  if (link === undefined) return undefined;
-  const numbered = /\/pull\/(\d+)\/?$/u.exec(new URL(link.href).pathname);
-  return {
-    href: link.href,
-    label: numbered === null ? link.host : `PR #${numbered[1] ?? ""}`,
-  };
+  return link === undefined
+    ? undefined
+    : { href: link.href, label: ticketLandingPullLabel(link) };
 }
 
 /** What the newest landing came to: merged into its base, or proposed. */
@@ -162,9 +170,8 @@ function ticketHeaderLanded(
   const newest = landings.at(-1);
   if (newest?.state !== "Landed" && newest?.state !== "Proposed")
     return ticketHeaderNone;
-  const base =
-    newest.detail.proposal?.base ??
-    newest.detail.targetRef?.replace(/^refs\/heads\//u, "");
+  const target = newest.detail.proposal?.base ?? newest.detail.targetRef;
+  const base = target === undefined ? undefined : branchName(target);
   return {
     fragment: "Landed",
     words:
@@ -190,7 +197,8 @@ export function ticketHeaderFragment(
     case "Blocked":
       return ticketHeaderWords(
         ticketUnfinishedLine(
-          ticket.openDependencies.length + ticket.revokedDependencies.length,
+          ticket.openDependencies.length,
+          ticket.revokedDependencies.length,
         ),
       );
     case "Work":

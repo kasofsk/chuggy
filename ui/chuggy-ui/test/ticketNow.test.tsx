@@ -17,7 +17,6 @@ import {
   transcriptReads,
 } from "./runPageFixture.tsx";
 import type { RunPageServed } from "./runPageFixture.tsx";
-import { settled, turned } from "./screenHarness.tsx";
 import { elementScrollToStubbed } from "./scrolling.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
@@ -43,10 +42,10 @@ vi.mock("@tanstack/react-router", () => ({
 /**
  * The Now card over a ticket whose work is running.
  *
- * The card is read at a glance, so what it must not get wrong is which note is
- * newest, which call is still out, and that opening it shows the same run the
- * ledger would, prompt first — without reading the prompt for a reader who
- * never opens it.
+ * The card is read at a glance, so what it must not get wrong is which step
+ * is running in which cycle, and the one thing the run is doing now: the call
+ * still out, or else its newest note. Its transcript is the run page's, which
+ * the card links to and never reads the prompt for.
  */
 
 beforeEach(() => {
@@ -129,59 +128,51 @@ function nowCard(): HTMLElement {
   return screen.getByRole("region", { name: "Now" });
 }
 
-test("the card leads with the newest note, the call still out, and the notes before it", async () => {
+test("the card names the step running and its cycle, the call it waits on, and links to watch it", async () => {
   const drawn = await runPageDrawn(atlas, runningRun(transcribed));
   const card = nowCard();
-  expect(card.textContent).toContain("Work · run 1");
-  expect(card.querySelector(".ticket-now-line")?.textContent).toBe(
-    "Sixth note",
+  expect(card.querySelector(".ticket-card-title")?.textContent).toBe(
+    "Running Work",
   );
-  const call = card.querySelector(".ticket-now-call");
-  expect(call?.querySelector(".ticket-now-call-name")?.textContent).toBe(
-    "Read",
+  expect(card.querySelector(".ticket-card-where")?.textContent).toContain(
+    "Cycle 1 · ",
   );
-  expect(call?.textContent).toContain("app/footer.tsx");
-  const earlier = within(card).getByRole("list", { name: "Earlier notes" });
-  expect(
-    [...earlier.querySelectorAll(".ticket-now-note-text")].map(
-      (note) => note.textContent,
-    ),
-  ).toEqual(["Fifth note", "Fourth note", "Third note", "Second note"]);
-  expect(card.textContent).toContain("3 turns · 6 notes");
+  expect(card.querySelector(".ticket-card-line")?.textContent).toBe(
+    "Now: Read · app/footer.tsx",
+  );
+  expect(within(card).getByText("Watch").closest("a")).not.toBeNull();
+  expect(within(card).queryByRole("button")).toBeNull();
   expect(configurationReads(drawn.reads)).toBe(0);
 });
 
-test("opening the card draws the run's conversation prompt first, and reads the prompt then", async () => {
-  const drawn = await runPageDrawn(atlas, runningRun(transcribed));
-  await turned(() => {
-    within(nowCard()).getByRole("button", { name: "Show transcript" }).click();
-  });
-  await settled();
-  const conversation = within(nowCard()).getByRole("group", {
-    name: "Transcript",
-  });
-  const text = conversation.textContent ?? "";
-  expect(text.startsWith("Prompt")).toBe(true);
-  expect(conversation.querySelector("strong")?.textContent).toBe("Build");
-  expect(text.indexOf("Build the footer.")).toBeLessThan(
-    text.indexOf("First note"),
+test("a run with no call out says the newest thing it said", async () => {
+  await runPageDrawn(
+    atlas,
+    runningRun(runEvidenceOf(7, { configuration: runConfigurationRef }), {
+      transcripts: [
+        runTranscriptPage([1, 2, 3, 4, 5, 6, 7], false, (batch) =>
+          String(recorded[batch]),
+        ),
+      ],
+    }),
   );
-  expect(configurationReads(drawn.reads)).toBe(1);
-  expect(
-    within(nowCard()).getByRole("button", { name: "Hide transcript" }),
-  ).toBeDefined();
+  expect(nowCard().querySelector(".ticket-card-line")?.textContent).toBe(
+    "Now: Sixth note",
+  );
 });
 
-/** A command writes no transcript, so there is nothing to open and no note
- * to lead with — only that it is running. */
-test("a stage with no transcript says it is running and offers nothing to open", async () => {
+/** A command writes no transcript, so there is nothing it is doing to name
+ * — only that it is running. */
+test("a stage with no transcript says it is running, and reads none", async () => {
   const drawn = await runPageDrawn(
     atlas,
     runningRun(runEvidenceOf(0, { transcript: undefined })),
   );
   const card = nowCard();
-  expect(card.querySelector(".ticket-now-line")?.textContent).toBe("Running");
-  expect(within(card).queryByRole("button")).toBeNull();
+  expect(card.querySelector(".ticket-card-title")?.textContent).toBe(
+    "Running Work",
+  );
+  expect(card.querySelector(".ticket-card-line")).toBeNull();
   expect(transcriptReads(drawn.reads)).toEqual([]);
 });
 
@@ -344,44 +335,7 @@ test("a card opened while a long command runs reads back to what the run last sa
     "?after=16",
     "?after=8",
   ]);
-  const card = nowCard();
-  expect(card.querySelector(".ticket-now-line")?.textContent).toBe(
-    "Sixth note",
+  expect(nowCard().querySelector(".ticket-card-line")?.textContent).toBe(
+    "Now: Read · app/footer.tsx",
   );
-  expect(
-    card.querySelector(".ticket-now-call .ticket-now-call-name")?.textContent,
-  ).toBe("Read");
-});
-
-/** A long run opens on its newest batches, and a reader who wants the ones
- * under them asks for a page at a time from the top. */
-test("a long run opens on its newest batches and reads earlier ones on asking", async () => {
-  const page = (from: number): Record<string, unknown> =>
-    runTranscriptPage(
-      Array.from({ length: 8 }, (_, at) => from + at),
-      false,
-    );
-  const drawn = await runPageDrawn(
-    atlas,
-    runningRun(runEvidenceOf(30, { configuration: runConfigurationRef }), {
-      transcripts: [page(15), page(23), page(7)],
-    }),
-  );
-  expect(transcriptReads(drawn.reads)).toEqual(["?after=14", "?after=22"]);
-  await turned(() => {
-    within(nowCard()).getByRole("button", { name: "Show transcript" }).click();
-  });
-  await settled();
-  await turned(() => {
-    within(nowCard()).getByRole("button", { name: "Earlier" }).click();
-  });
-  await settled();
-  expect(transcriptReads(drawn.reads)).toEqual([
-    "?after=14",
-    "?after=22",
-    "?after=6",
-  ]);
-  expect(
-    within(nowCard()).getByRole("button", { name: "Earlier" }),
-  ).toBeDefined();
 });

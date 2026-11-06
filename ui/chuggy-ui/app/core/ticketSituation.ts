@@ -1,6 +1,5 @@
 /**
- * What the ticket page's status bar and the slot under it say: the bar's one
- * dim line, and which one card the slot holds.
+ * Which one card the ticket's Overview holds, and what it says.
  *
  * NEEDS YOU COMES BEFORE NOW. A finalizing ticket can be running and waiting on
  * an approval at once, and the card that can answer the question is the one a
@@ -24,25 +23,38 @@ import {
   usageResumeLine,
 } from "./codeLabels.ts";
 import type { EscalationStep } from "./codeLabels.ts";
-import { settledFigure, sinceFigure } from "./figures.ts";
-import type { Figure } from "./figures.ts";
-import { runSpanOf } from "./runTotals.ts";
 import { ticketLandingEscalatedRemoval } from "./ticketLandings.ts";
 import type { TicketLanding } from "./ticketLandings.ts";
-import type { Cycle, Ledger as LedgerFacts, RanStage } from "./ticketLedger.ts";
+import type {
+  Cycle,
+  Ledger as LedgerFacts,
+  RanStage,
+  StageNames,
+} from "./ticketLedger.ts";
 import {
   cycleLabel,
+  cycleLastSet,
   ledgerLastSet,
-  setVerdictSettled,
+  stageEvaluatorsCurrent,
   stageLabel,
 } from "./ticketLedger.ts";
 import { phaseIsRunning } from "./ticketPageFacts.ts";
+import { ticketRunsCycleOutcome } from "./ticketRuns.ts";
 
-/** The run the Now card is about, and the two labels it is headed by. */
+/** The run the Now card is about: the step it is, as the plan names it, and
+ * the cycle it runs in. */
 export interface RunningNow {
   readonly execution: ExecutionSummary;
-  readonly stage: string;
-  readonly run: string;
+  readonly step: string;
+  readonly cycle: number;
+}
+
+/** The run a parked ticket stopped at, by its task's number, which is its
+ * page, and the step it is where the plan names one. */
+export interface NeedsYouRun {
+  readonly task: number;
+  readonly execution: string;
+  readonly step: string | undefined;
 }
 
 /** The attempt whose worker's text says why a job was lost or its run stopped, read on its own route. */
@@ -55,6 +67,10 @@ export type TicketSlot =
   | {
       readonly slot: "NeedsYou";
       readonly detail: string;
+      /** Where it stopped: the step and the cycle. */
+      readonly where: string | undefined;
+      /** The run it stopped at. */
+      readonly run: NeedsYouRun | undefined;
       /** The page the way past it is on, drawn beside the detail. */
       readonly step: EscalationStep | undefined;
       readonly more: string | undefined;
@@ -71,62 +87,16 @@ export interface SituationReads {
   readonly ticket: TicketResponse;
   readonly landings: readonly TicketLanding[];
   readonly ledger: LedgerFacts | undefined;
-  readonly stageCount: number;
+  readonly names: StageNames;
   readonly open: readonly NativeActionResponse[] | undefined;
   readonly executions: readonly ExecutionSummary[];
   readonly setupOverridable: boolean;
   readonly nowMs: number;
 }
 
-/**
- * A running ticket from its first run, or from its release while this page
- * holds none of its runs; anything else from the instant it last moved, with
- * how long it ran from its first run where this page holds its runs. A release
- * is not a run: a ticket nobody dispatches can wait hours between the two.
- */
-export function ticketStatusFigure(
-  ticket: TicketResponse,
-  executions: readonly ExecutionSummary[],
-  nowMs: number,
-): Figure {
-  const span = runSpanOf(executions);
-  if (!phaseIsRunning(ticket.phase))
-    return settledFigure(ticket.changedAt, span, nowMs);
-  const started = span.from ?? ticket.releasedAt;
-  return started === undefined
-    ? sinceFigure(ticket.changedAt, nowMs)
-    : sinceFigure(started, nowMs, "started");
-}
-
 /** The cycle the ticket's artifact belongs to, which is the last one on the page. */
 function currentCycle(facts: LedgerFacts): Cycle | undefined {
   return facts.cycles.at(-1);
-}
-
-/**
- * The stage a resume re-asked now, not the first one a resume ever touched: a
- * cycle can hold more than one stage past its first generation at once, so
- * this takes the highest-numbered one that has not settled, and only falls
- * back to the highest-numbered one at all where none is.
- */
-function resumedStage(facts: LedgerFacts): number | undefined {
-  const cycle = currentCycle(facts);
-  const resumed = (cycle?.stages ?? []).filter(
-    (row): row is RanStage =>
-      row.kind === "Ran" &&
-      row.evaluators.some((evaluator) => evaluator.generation > 1),
-  );
-  const running = resumed.filter((row) => !setVerdictSettled(row.verdict));
-  return (running.length > 0 ? running : resumed).at(-1)?.stage;
-}
-
-/** A resume shows in the ledger as the stage it re-asked sitting past its
- * first generation. */
-export function resumedFrom(facts: LedgerFacts): string | undefined {
-  const cycle = currentCycle(facts);
-  const stage = resumedStage(facts);
-  if (cycle === undefined || stage === undefined) return undefined;
-  return `Resumed at stage ${String(stage)} · ${cycleLabel(cycle.ordinal).toLowerCase()}`;
 }
 
 /** The line under a parked ticket's wall: the scheduler's own resume where it
@@ -149,30 +119,103 @@ function needsYouMore(
     escalationDetailLine(escalation.kind, {
       lastSet:
         reads.ledger === undefined ? undefined : ledgerLastSet(reads.ledger),
-      stageCount: reads.stageCount,
+      names: reads.names,
     })
   );
+}
+
+/** A card that names only what is asked, with nowhere it stopped. */
+function needsYouAsked(detail: string): TicketSlot {
+  return {
+    slot: "NeedsYou",
+    detail,
+    where: undefined,
+    run: undefined,
+    step: undefined,
+    more: undefined,
+    reason: undefined,
+  };
+}
+
+/** A run as the step it is: work, or its stage where the plan names it. */
+function needsYouStep(
+  execution: ExecutionSummary,
+  names: StageNames,
+): string | undefined {
+  const identity = execution.identity;
+  return identity.type === "WorkTask"
+    ? "work"
+    : names?.[identity.value.stage - 1];
+}
+
+/** The run a cycle stopped at: the evaluator of its last stage that did not
+ * pass, or its work. */
+function needsYouStopped(cycle: Cycle): ExecutionSummary | undefined {
+  const stage = cycle.stages
+    .filter((row): row is RanStage => row.kind === "Ran")
+    .at(-1);
+  if (stage === undefined) return cycle.work?.executions.at(-1);
+  return stageEvaluatorsCurrent(stage).find(
+    (row) => row.set.verdict === "Failed" || row.set.verdict === "Blocked",
+  )?.set.executions[0];
+}
+
+/**
+ * Where a parked ticket stopped, from the current cycle: the step that failed
+ * or blocked and the cycle it did so in, and the run it stopped at, which is
+ * the one whose worker said why where the escalation names one.
+ */
+function needsYouWhere(
+  reads: SituationReads,
+  said: { readonly execution: string } | undefined,
+): {
+  readonly where: string | undefined;
+  readonly run: NeedsYouRun | undefined;
+} {
+  const cycle =
+    reads.ledger === undefined ? undefined : currentCycle(reads.ledger);
+  const last = cycle === undefined ? undefined : cycleLastSet(cycle);
+  const stopped = last?.verdict === "Failed" || last?.verdict === "Blocked";
+  const execution =
+    said === undefined
+      ? cycle === undefined || !stopped
+        ? undefined
+        : needsYouStopped(cycle)
+      : reads.executions.find((row) => row.execution === said.execution);
+  return {
+    where:
+      cycle === undefined || !stopped
+        ? undefined
+        : `${ticketRunsCycleOutcome(cycle, reads.names, undefined)} in ${cycleLabel(cycle.ordinal).toLowerCase()}`,
+    run:
+      execution === undefined
+        ? undefined
+        : {
+            task: execution.task,
+            execution: execution.execution,
+            step: needsYouStep(execution, reads.names),
+          },
+  };
 }
 
 function needsYou(reads: SituationReads): TicketSlot | undefined {
   const ticket = reads.ticket;
   const blocked = revokedDependencyLine(ticket.revokedDependencies);
-  if (blocked !== undefined)
-    return {
-      slot: "NeedsYou",
-      detail: blocked,
-      step: undefined,
-      more: undefined,
-      reason: undefined,
-    };
+  if (blocked !== undefined) return needsYouAsked(blocked);
   const escalation = ticket.escalation;
   if (escalation !== undefined) {
     const said = escalation.lost ?? escalation.failed;
+    const { where, run } = needsYouWhere(reads, said);
     return {
       slot: "NeedsYou",
       detail: escalationDetail(escalation),
+      where,
+      run,
       step: escalationStep(escalation),
-      more: needsYouMore(reads, escalation),
+      more:
+        where !== undefined && escalation.kind === "EvaluationFailureEscalated"
+          ? undefined
+          : needsYouMore(reads, escalation),
       reason:
         said?.error === undefined
           ? undefined
@@ -181,13 +224,7 @@ function needsYou(reads: SituationReads): TicketSlot | undefined {
   }
   const question = reads.open?.[0];
   if (question === undefined) return undefined;
-  return {
-    slot: "NeedsYou",
-    detail: nativeActionKindLabel(question.kind),
-    step: undefined,
-    more: undefined,
-    reason: undefined,
-  };
+  return needsYouAsked(nativeActionKindLabel(question.kind));
 }
 
 function cycleExecutions(cycle: Cycle): readonly ExecutionSummary[] {
@@ -205,8 +242,7 @@ function executionLive(row: ExecutionSummary): boolean {
   return row.status !== "Terminal" && row.status !== "Cancelled";
 }
 
-/** The current cycle's newest live run, numbered by where it stands among the
- * runs this page holds, which is the count the status bar draws. */
+/** The current cycle's newest live run, as the step it is. */
 function runningNow(reads: SituationReads): RunningNow | undefined {
   if (!phaseIsRunning(reads.ticket.phase) || reads.ledger === undefined)
     return undefined;
@@ -217,17 +253,14 @@ function runningNow(reads: SituationReads): RunningNow | undefined {
     .sort((left, right) => left.task - right.task)
     .at(-1);
   if (live === undefined) return undefined;
-  const ordinal = reads.executions.filter(
-    (row) => row.task <= live.task,
-  ).length;
   const identity = live.identity;
   return {
     execution: live,
-    stage:
+    step:
       identity.type === "WorkTask"
         ? "Work"
-        : stageLabel(identity.value.stage, reads.stageCount),
-    run: `run ${String(ordinal)}`,
+        : stageLabel(identity.value.stage, reads.names),
+    cycle: cycle.ordinal,
   };
 }
 

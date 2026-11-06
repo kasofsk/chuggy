@@ -1,7 +1,7 @@
 /**
  * What the ticket page's Now card says about the run going now: the attempt it
- * follows, the newest thing the agent said, the call it is waiting on, and the
- * notes before it, each dated by the batch it was recorded in.
+ * follows, the newest thing the agent said, and the call it is waiting on,
+ * each dated by the batch it was recorded in.
  *
  * It reads the items the transcript pane already parsed, so the card and the
  * conversation under it cannot disagree about what the run wrote.
@@ -19,13 +19,9 @@ import { conversationArgumentSummary } from "./conversation.ts";
 import { durationFigure } from "./figures.ts";
 import type { Figure } from "./figures.ts";
 import type { RunTranscriptReading } from "./runTranscript.ts";
-import { runCountLabel } from "./runTotals.ts";
 import { executionStarting } from "./ticketLedger.ts";
 
 export type RunNowAttempt = ExecutionResponse["attempts"][number];
-
-/** The most notes the card lists under the newest one. */
-export const runNowEarlierNotesMax = 4;
 
 /** One thing the agent said, as the one line the card draws it in. */
 export interface RunNowNote {
@@ -43,10 +39,6 @@ export interface RunNowCall {
 export interface RunNow {
   readonly note: RunNowNote | undefined;
   readonly call: RunNowCall | undefined;
-  /** Newest first. */
-  readonly earlier: readonly RunNowNote[];
-  /** Every note the run has written, where the held window is the whole run. */
-  readonly notes: number | undefined;
 }
 
 export function runNowAttemptLive(attempt: RunNowAttempt): boolean {
@@ -143,28 +135,8 @@ export function runNowOf(reading: RunTranscriptReading, live: boolean): RunNow {
     for (const block of entry.blocks)
       runNowBlock(walk, block, entry.role === "Assistant", entry.at);
   }
-  const newestFirst = [...walk.notes].reverse();
-  const whole = reading.batchesBefore === 0 && reading.stepsBefore === 0;
   return {
-    note: newestFirst[0],
+    note: walk.notes.at(-1),
     call: live ? [...walk.calls.values()].at(-1) : undefined,
-    earlier: newestFirst.slice(1, 1 + runNowEarlierNotesMax),
-    notes: whole ? walk.notes.length : undefined,
   };
-}
-
-function runNowCounted(count: number, noun: string): string {
-  return `${runCountLabel(count)} ${noun}${count === 1 ? "" : "s"}`;
-}
-
-/** The run's size under the card: its turns, and its notes where counted. */
-export function runNowCountsLine(
-  turns: number | undefined,
-  notes: number | undefined,
-): string | undefined {
-  const said = [
-    ...(turns === undefined ? [] : [runNowCounted(turns, "turn")]),
-    ...(notes === undefined ? [] : [runNowCounted(notes, "note")]),
-  ];
-  return said.length === 0 ? undefined : said.join(" · ");
 }

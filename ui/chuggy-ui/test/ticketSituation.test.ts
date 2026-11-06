@@ -1,7 +1,7 @@
 /**
- * What the ticket page's status bar and the slot under it are decided from:
- * which one card the slot holds, the resume line, and the bar's tone and its
- * dim line.
+ * Which one card the ticket's Overview holds, and what it says: the run going
+ * now as its step and cycle, or what a parked ticket waits on, where it
+ * stopped and the run it stopped at.
  */
 
 import { expect, test } from "vitest";
@@ -12,11 +12,7 @@ import type {
 } from "../../../src/contract/responses.ts";
 import { ticketLandingOf } from "../app/core/ticketLandings.ts";
 import { ticketLedger } from "../app/core/ticketLedger.ts";
-import {
-  resumedFrom,
-  ticketSlot,
-  ticketStatusFigure,
-} from "../app/core/ticketSituation.ts";
+import { ticketSlot } from "../app/core/ticketSituation.ts";
 import type { SituationReads } from "../app/core/ticketSituation.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import {
@@ -47,7 +43,7 @@ function reads(over: Partial<SituationReads> = {}): SituationReads {
     ticket: ticket(),
     landings: [],
     ledger: facts,
-    stageCount: 1,
+    names: undefined,
     open: [],
     executions: [],
     setupOverridable: false,
@@ -65,7 +61,7 @@ function over21(
   return reads({
     ticket: ticket({ ticket: 21, ...over }),
     ledger: ticketLedger(page, ticket21Program),
-    stageCount: ticket21Program.length,
+    names: ["checks", "review"],
     executions: page.executions,
   });
 }
@@ -83,6 +79,8 @@ test("a Pending ticket blocked by one revoked dependency needs you, and names it
   ).toEqual({
     slot: "NeedsYou",
     detail: "Blocked by revoked dependency 3",
+    where: undefined,
+    run: undefined,
     more: undefined,
   });
 });
@@ -103,21 +101,48 @@ test("a Pending ticket waiting on nothing, a Done one and a Revoked one leave th
     });
 });
 
-test("a parked ticket needs you, with its wall and the stage it failed", () => {
-  const slot = ticketSlot(
-    over21(ticket21Parked, {
-      phase: "Escalated",
-      escalation: {
-        kind: "EvaluationFailureEscalated",
-        resumeAt: "ResumeRework",
-      },
-    }),
-  );
-  expect(slot).toEqual({
+const reworkExhausted = {
+  phase: "Escalated",
+  escalation: { kind: "EvaluationFailureEscalated", resumeAt: "ResumeRework" },
+} as const;
+
+test("a parked ticket needs you: its wall, the step and cycle it stopped at by the plan's name, and the run that stopped it", () => {
+  expect(ticketSlot(over21(ticket21Parked, reworkExhausted))).toStrictEqual({
     slot: "NeedsYou",
     detail: "Rework budget exhausted",
-    more: "Stage 1 of 2 failed",
+    where: "Failed at checks in cycle 3",
+    run: { task: 7, execution: "execution-b8bdfdd4-7", step: "checks" },
+    step: undefined,
+    more: undefined,
+    reason: undefined,
   });
+});
+
+test("a parked ticket's stop is read from as much of its cycle as the page holds, and is none where it holds none", () => {
+  const slot = ticketSlot(
+    reads({
+      ticket: ticket(reworkExhausted),
+      ledger: ticketLedger(
+        ledgerPage([
+          {
+            execution: "execution-1",
+            task: 1,
+            identity: evalIdentity(1, 2, 1),
+            outcome: "Failed",
+          },
+        ]),
+        ticket21Program,
+      ),
+      names: ["checks", "review"],
+    }),
+  );
+  expect(slot).toMatchObject({
+    where: "Failed at review in cycle 1",
+    run: { task: 1, step: "review" },
+  });
+  expect(
+    ticketSlot(reads({ ticket: ticket(reworkExhausted), ledger: undefined })),
+  ).toMatchObject({ where: undefined, run: undefined });
 });
 
 /** The first ticket of a project with no runner parks here, before any run. */
@@ -138,6 +163,8 @@ test("a ticket parked with nowhere to run says so, and leads to Runners", () => 
   ).toStrictEqual({
     slot: "NeedsYou",
     detail: "Nowhere to run this work",
+    where: undefined,
+    run: undefined,
     step: "Runners",
     more: "Work cancelled",
     reason: undefined,
@@ -166,6 +193,8 @@ test("a ticket the scheduler resumes once its usage pauses end says so under its
   expect(parked({ until })).toStrictEqual({
     slot: "NeedsYou",
     detail: "Work failed",
+    where: undefined,
+    run: undefined,
     step: undefined,
     more: "Resumes automatically · 14:05",
     reason: undefined,
@@ -204,6 +233,8 @@ test("a job lost on its runner says where, how often, and the attempt its worker
   expect(parked(kept)).toStrictEqual({
     slot: "NeedsYou",
     detail: "Lost on runner-a",
+    where: undefined,
+    run: undefined,
     step: "Runners",
     more: "3 losses · 2 resumed automatically",
     reason: { execution: "execution-1", attempt: "attempt-3" },
@@ -254,6 +285,8 @@ test("a run stopped at a failed step names the step, and the attempt its worker 
   expect(parkedAtStep(setup)).toStrictEqual({
     slot: "NeedsYou",
     detail: "Setup failed",
+    where: undefined,
+    run: undefined,
     step: undefined,
     more: "Fix it under Overrides · Setup, then Resume",
     reason: { execution: "execution-1", attempt: "attempt-3" },
@@ -261,6 +294,8 @@ test("a run stopped at a failed step names the step, and the attempt its worker 
   expect(parkedAtStep(setup, false)).toStrictEqual({
     slot: "NeedsYou",
     detail: "Setup failed",
+    where: undefined,
+    run: undefined,
     step: undefined,
     more: "Failed work is not reworked",
     reason: { execution: "execution-1", attempt: "attempt-3" },
@@ -274,6 +309,8 @@ test("a run stopped at a failed step names the step, and the attempt its worker 
   ).toStrictEqual({
     slot: "NeedsYou",
     detail: "Push failed",
+    where: undefined,
+    run: undefined,
     step: undefined,
     more: "Failed work is not reworked",
     reason: undefined,
@@ -294,6 +331,8 @@ test("a run its runner stopped for low disk says that runner needs room, to any 
   ).toStrictEqual({
     slot: "NeedsYou",
     detail: "Disk low",
+    where: undefined,
+    run: undefined,
     step: undefined,
     more: "Free space on its runner, then Resume",
     reason: { execution: "execution-1", attempt: "attempt-3" },
@@ -328,6 +367,8 @@ test("a landing whose push was declined or would not read says what to change, a
   expect(parked("PromotionWorkflowsRefused")).toStrictEqual({
     slot: "NeedsYou",
     detail: "Workflow files refused",
+    where: undefined,
+    run: undefined,
     step: "Repositories",
     more: "Turn on Workflow files and the App's Workflows, then Resume",
     reason: undefined,
@@ -335,6 +376,8 @@ test("a landing whose push was declined or would not read says what to change, a
   expect(parked("PromotionDeclined")).toStrictEqual({
     slot: "NeedsYou",
     detail: "Push declined",
+    where: undefined,
+    run: undefined,
     step: undefined,
     more: "Check the branch's rules and hooks, then Resume",
     reason: undefined,
@@ -342,6 +385,8 @@ test("a landing whose push was declined or would not read says what to change, a
   expect(parked("ReconciliationUnreadable")).toStrictEqual({
     slot: "NeedsYou",
     detail: "Reconciliation unreadable",
+    where: undefined,
+    run: undefined,
     step: undefined,
     more: "Restore the branch or the App's access, then Resume",
     reason: undefined,
@@ -385,6 +430,8 @@ test("an open approval needs you even while the ticket is running", () => {
   expect(ticketSlot({ ...running, open: [approval] })).toEqual({
     slot: "NeedsYou",
     detail: "Awaiting approval",
+    where: undefined,
+    run: undefined,
     more: undefined,
   });
 });
@@ -394,8 +441,8 @@ test("a running ticket's slot is the current cycle's live run, numbered among th
   expect(slot.slot).toBe("Now");
   if (slot.slot !== "Now") throw new Error("not the Now card");
   expect(slot.running.execution.execution).toBe("execution-c40de507-8");
-  expect(slot.running.stage).toBe("Stage 1 of 2");
-  expect(slot.running.run).toBe("run 8");
+  expect(slot.running.step).toBe("checks");
+  expect(slot.running.cycle).toBe(3);
 });
 
 test("a running ticket with nothing live in its current cycle leaves the slot empty", () => {
@@ -408,133 +455,6 @@ test("a live run a phase no longer running left behind is not drawn as now", () 
   expect(ticketSlot(over21(ticket21Resumed, { phase: "Done" }))).toEqual({
     slot: "Nothing",
   });
-});
-
-/**
- * A two-stage page where each stage blocked at generation 1 and was re-asked;
- * each stage's second generation ends however the case says, the first's
- * passing where it says nothing.
- */
-function twoResumedStages(
-  lastRow: { readonly outcome: "Failed" } | { readonly status: "Running" },
-  firstRow: Partial<ExecutionShape> = { outcome: "Passed" },
-): ReturnType<typeof ticketLedger> {
-  return ticketLedger(
-    ledgerPage([
-      {
-        execution: "execution-aa-1",
-        task: 1,
-        identity: workIdentity(1),
-        outcome: "Passed",
-      },
-      {
-        execution: "execution-bb-2",
-        task: 2,
-        identity: evalIdentity(1, 1, 1),
-        outcome: "Blocked",
-      },
-      {
-        execution: "execution-cc-3",
-        task: 3,
-        identity: evalIdentity(1, 1, 2),
-        ...firstRow,
-      },
-      {
-        execution: "execution-dd-4",
-        task: 4,
-        identity: evalIdentity(1, 2, 1),
-        outcome: "Blocked",
-      },
-      {
-        execution: "execution-ee-5",
-        task: 5,
-        identity: evalIdentity(1, 2, 2),
-        ...lastRow,
-      },
-    ]),
-    [
-      { key: 1, evaluators: [{ key: 1 }] },
-      { key: 2, evaluators: [{ key: 1 }] },
-    ],
-  );
-}
-
-test("resumedFrom names the highest-numbered stage whose resume is still running", () => {
-  expect(resumedFrom(twoResumedStages({ status: "Running" }))).toBe(
-    "Resumed at stage 2 · cycle 1",
-  );
-});
-
-test("a resume still starting has not settled, so resumedFrom names its stage", () => {
-  expect(
-    resumedFrom(
-      twoResumedStages(
-        { outcome: "Failed" },
-        { status: "Queued", carrier: "Agent" },
-      ),
-    ),
-  ).toBe("Resumed at stage 1 · cycle 1");
-});
-
-test("with nothing running, resumedFrom names the highest-numbered stage a resume re-asked", () => {
-  expect(resumedFrom(twoResumedStages({ outcome: "Failed" }))).toBe(
-    "Resumed at stage 2 · cycle 1",
-  );
-});
-
-test("a ticket never resumed has no resume line", () => {
-  expect(
-    resumedFrom(ticketLedger(ledgerPage(ticket21Parked), ticket21Program)),
-  ).toBeUndefined();
-});
-
-/** Released hours before anyone dispatched it, as a ticket in a project with
- * no lead is. */
-test("a running ticket is dated from its first run, anything else from when it last moved", () => {
-  const nowMs = Date.parse("2026-08-26T00:10:34Z");
-  const running = ticketStatusFigure(
-    ticket({
-      phase: "Work",
-      releasedAt: "2026-08-25T18:00:00Z",
-      changedAt: "2026-08-26T00:05:00Z",
-    }),
-    ledgerPage(ticket21Parked).executions,
-    nowMs,
-  );
-  expect(running).toMatchObject({ kind: "Ago", text: "started 34s ago" });
-  const pending = ticketStatusFigure(
-    ticket({ changedAt: "2026-08-25T23:54:00Z" }),
-    [],
-    nowMs,
-  );
-  expect(pending).toMatchObject({ kind: "Span", parts: ["16m 34s ago"] });
-});
-
-test("a running ticket with no run yet is dated from its release", () => {
-  const waiting = ticketStatusFigure(
-    ticket({ phase: "Work", changedAt: "2026-08-26T00:05:00Z" }),
-    [],
-    Date.parse("2026-08-26T00:10:34Z"),
-  );
-  expect(waiting).toMatchObject({ kind: "Ago", text: "started 10m 34s ago" });
-});
-
-test("a settled ticket says how long it ran, from its first run to its last", () => {
-  const page = ledgerPage([
-    {
-      execution: "execution-aa-1",
-      task: 1,
-      identity: workIdentity(1),
-      outcome: "Passed",
-      terminalAt: "2026-08-26T00:37:00Z",
-    },
-  ]);
-  const parked = ticketStatusFigure(
-    ticket({ phase: "Escalated", changedAt: "2026-08-26T00:37:00Z" }),
-    page.executions,
-    Date.parse("2026-08-26T01:00:00Z"),
-  );
-  expect(parked).toMatchObject({ kind: "Span", parts: ["23m ago", "ran 27m"] });
 });
 
 const escalatedSince = "2026-11-02T22:21:18Z";
@@ -580,6 +500,8 @@ test("an escalation over a merge queue removal names the forge's reason and who 
   ).toStrictEqual({
     slot: "NeedsYou",
     detail: "Removed from merge queue",
+    where: undefined,
+    run: undefined,
     step: undefined,
     more: "Queue removal: manual by gdoteof",
     reason: undefined,
@@ -617,6 +539,8 @@ test("an escalation over a hold that names no removal, or whose newest landing i
     expect(parkedOver("ProposalMergesExhausted", landings)).toStrictEqual({
       slot: "NeedsYou",
       detail: "Proposal merges exhausted",
+      where: undefined,
+      run: undefined,
       step: undefined,
       more: undefined,
       reason: undefined,

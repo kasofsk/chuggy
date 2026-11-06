@@ -53,8 +53,8 @@ vi.mock("@tanstack/react-router", () => ({
 /**
  * The ticket page over what the read of its landings answers: a Landing row
  * under the cycle it belongs to on the Runs tab, the landing's own page with
- * every record the read holds, the status bar while it finalizes, and the
- * read asked again on a frame and on a clock.
+ * every record the read holds, the Overview's Landing step, and the read
+ * asked again on a frame and on a clock.
  */
 
 /**
@@ -84,6 +84,8 @@ interface Served {
   readonly phase?: string;
   readonly program?: boolean;
   readonly shapes?: readonly ExecutionShape[];
+  /** How the brief lands the work, its read's default where a case names none. */
+  readonly finalization?: { readonly mode: string };
 }
 
 function ticketBody(served: Served): Record<string, unknown> {
@@ -92,7 +94,13 @@ function ticketBody(served: Served): Record<string, unknown> {
     phase: served.phase ?? "Work",
     sequence: 9,
     ...ticketInstants,
-    brief: { intent: "Land the console", links: [] },
+    brief: {
+      intent: "Land the console",
+      links: [],
+      ...(served.finalization === undefined
+        ? {}
+        : { finalization: served.finalization }),
+    },
     ...(served.program === false ? {} : { program: ticket21Program }),
   };
 }
@@ -164,6 +172,28 @@ function landingSaid(group: HTMLElement): string | undefined {
         row.querySelector(".ticket-runs-name")?.textContent === "Landing",
     )
     ?.querySelector(".ticket-runs-line")?.textContent;
+}
+
+/** What the Overview's steps block says of the current cycle's landing. */
+function stepsLanding(container: HTMLElement): HTMLElement {
+  const box = container.querySelector<HTMLElement>(
+    '[aria-label="Finalization"] .ticket-steps-name',
+  )?.parentElement;
+  if (box === null || box === undefined)
+    throw new Error("no Landing box drawn");
+  return box;
+}
+
+/** The mark a cycle's Landing row on the Runs tab is drawn with, where it
+ * draws one. */
+function landingMarkOf(group: HTMLElement): string | null | undefined {
+  return [...group.querySelectorAll(".ticket-runs-rows > li")]
+    .find(
+      (row) =>
+        row.querySelector(".ticket-runs-name")?.textContent === "Landing",
+    )
+    ?.querySelector(".ticket-run-mark")
+    ?.getAttribute("data-mark");
 }
 
 /** The landing's own page over what the read answers. */
@@ -244,11 +274,17 @@ test("a cycle whose landing failed on a conflict draws it failed, and its page e
   const container = await drawn(conflicted68);
   expect(summaryOf(groupOf(container, 2))).toBe("Landing failed");
   expect(landingSaid(groupOf(container, 2))).toBe("Failed");
+  expect(landingMarkOf(groupOf(container, 2))).toBe("Cross");
   cleanup();
   const page = await landingPage(conflicted68);
   expect(page.querySelector(".ticket-run-heading")?.textContent).toBe(
     "LandingCycle 2Failed",
   );
+  expect(
+    page
+      .querySelector(".ticket-run-heading .ticket-run-mark")
+      ?.getAttribute("data-mark"),
+  ).toBe("Cross");
   const [row] = landingRows(page);
   if (row === undefined) throw new Error("no Landing row drawn");
   expect(rowSaid(row)).toEqual([
@@ -259,7 +295,8 @@ test("a cycle whose landing failed on a conflict draws it failed, and its page e
   expect(row.querySelector(".pill")?.className).toBe("pill pill-fail");
   const detail = await detailOpened(row);
   expect(detail.textContent).toContain(landingConflictPath);
-  expect(detail.textContent).toContain("refs/heads/main");
+  expect(detail.textContent).toContain("Targetmain");
+  expect(detail.textContent).not.toContain("refs/heads/");
   expect(detail.textContent).toContain("7c1e04a");
   expect(detail.textContent).toContain("b51d9f0");
   expect(detail.textContent).not.toContain("More not shown");
@@ -337,12 +374,12 @@ test("a pull request address that does not parse, or is not https, draws no link
   }
 });
 
-test("a held landing draws its age and hold on its record, and on the status bar while finalizing", async () => {
+test("a held landing draws its age and hold on its record, and on the steps block's Landing", async () => {
   const since = new Date(Date.now() - 12 * 60_000 - 5_000).toISOString();
   const held = () => answer(landingsRead([landingHeld(3, since)]));
   const container = await drawn(held, { phase: "Finalization" });
-  expect(container.querySelector(".ticket-status-line")?.textContent).toContain(
-    "Held 12m · Target unreadable",
+  expect(stepsLanding(container).textContent).toBe(
+    "LandingHeld 12m · Target unreadable",
   );
   cleanup();
   const [row] = landingRows(await landingPage(held, { phase: "Finalization" }));
@@ -354,13 +391,14 @@ test("a held landing draws its age and hold on its record, and on the status bar
   ]);
 });
 
-test("a landing whose merge waits on the forge says so on its record, its detail and the status bar", async () => {
+test("a landing whose merge waits on the forge says so on its record, its detail and the steps block's Landing", async () => {
   const checkedAt = new Date(Date.now() - 2 * 60_000 - 5_000).toISOString();
   const waiting = () =>
     answer(landingsRead([landingAwaitingMerge(3, checkedAt)]));
   const container = await drawn(waiting, { phase: "Finalization" });
-  const line = container.querySelector<HTMLElement>(".ticket-status-line");
-  expect(line?.textContent).toContain("Blocked · behind · checked 2m ago");
+  expect(stepsLanding(container).textContent).toContain(
+    "Blocked · behind · checked 2m ago",
+  );
   cleanup();
   const [row] = landingRows(
     await landingPage(waiting, { phase: "Finalization" }),
@@ -379,23 +417,28 @@ test("a landing whose merge waits on the forge says so on its record, its detail
   expect(detail.textContent).toContain("Checked");
 });
 
-test("a running landing's pull request is a link on the status bar while finalizing", async () => {
+test("a running landing's box marks it under way and leads to the landing's page", async () => {
   const container = await drawn(
     () => answer(landingsRead([landingConflicted(2), landingRunning(3)])),
     { phase: "Finalization" },
   );
-  const line = container.querySelector<HTMLElement>(".ticket-status-line");
-  if (line === null) throw new Error("no status line drawn");
-  expect(within(line).getByRole("link").getAttribute("href")).toBe(
-    landingPullRequest,
+  const box = stepsLanding(container);
+  expect(box.querySelector(".ticket-run-mark")?.getAttribute("data-mark")).toBe(
+    "Merge",
   );
+  expect(box.closest("a")).not.toBeNull();
 });
 
-test("a landing is not on the status bar while the ticket is not finalizing", async () => {
-  const container = await drawn(() =>
-    answer(landingsRead([landingRunning(3)])),
+test("a failed landing's box draws the failed mark and why, never the merge mark", async () => {
+  const container = await drawn(
+    () => answer(landingsRead([landingConflicted(3)])),
+    { phase: "Escalated" },
   );
-  expect(container.querySelector(".ticket-status-line a[href]")).toBeNull();
+  const box = stepsLanding(container);
+  expect(box.querySelector(".ticket-run-mark")?.getAttribute("data-tone")).toBe(
+    "fail",
+  );
+  expect(box.textContent).toBe("LandingMerge conflict");
 });
 
 test("two landings of one cycle draw two records in the read's order, the cycle naming the newer", async () => {
@@ -488,4 +531,56 @@ test("the clock asks the read again, and a read that fails keeps the last answer
   expect(landingsAsked).toHaveLength(2);
   expect(container.querySelectorAll(".ticket-runs-cycle")).toHaveLength(3);
   expect(summaryOf(groupOf(container, 2))).toBe("Landing failed");
+});
+
+test("a ticket that lands nothing reads None for its Landing on the Runs tab, the rail and the steps block, with no mark and no link", async () => {
+  const container = await drawn(
+    () => answer({ landings: [], truncated: false }),
+    { phase: "Done", finalization: { mode: "None" } },
+  );
+  const current = groupOf(container, 3);
+  expect(landingSaid(current)).toBe("None");
+  expect(landingMarkOf(current)).toBeNull();
+  const row = [...current.querySelectorAll(".ticket-runs-rows > li")].find(
+    (held) =>
+      held.querySelector(".ticket-runs-name")?.textContent === "Landing",
+  );
+  expect(row?.querySelector("a")).toBeNull();
+  const box = stepsLanding(container);
+  expect(box.textContent).toBe("LandingNone");
+  expect(box.querySelector("svg")).toBeNull();
+  expect(box.closest("a")).toBeNull();
+  cleanup();
+  const rail = within(
+    await landingPage(() => answer({ landings: [], truncated: false }), {
+      phase: "Done",
+      finalization: { mode: "None" },
+    }),
+  ).getByRole("navigation", { name: "Runs" });
+  const landing = within(rail).getByText("Landing");
+  expect(landing.closest("a")).toBeNull();
+  expect(landing.parentElement?.querySelector("svg")).toBeNull();
+});
+
+test("the landing's page names the branches it lands from and into, never their whole references", async () => {
+  const landed = landingLanded(3);
+  const page = await landingPage(() =>
+    answer(
+      landingsRead([
+        {
+          ...landed,
+          proposal:
+            landed.proposal === undefined
+              ? undefined
+              : {
+                  ...landed.proposal,
+                  headRef: "refs/heads/chug/ticket-68",
+                  baseRef: "refs/heads/main",
+                },
+        },
+      ]),
+    ),
+  );
+  expect(fieldOf(page, "From").textContent).toBe("chug/ticket-68");
+  expect(fieldOf(page, "Into").textContent).toBe("main");
 });

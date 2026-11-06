@@ -10,6 +10,7 @@
  * nothing.
  */
 
+import { briefBranchPrefix } from "../../../../src/contract/brief.ts";
 import type {
   ConfigurationResponse,
   ConfigurationSummary,
@@ -79,6 +80,14 @@ export function configurationCommitShort(
  * the hover. */
 export function commitLabel(commit: string): Label {
   return { text: commit.slice(0, commitCharsShort), title: commit };
+}
+
+/** A branch as a person names it, its reference without the namespace every
+ * branch shares; a reference outside that namespace is kept whole. */
+export function branchName(reference: string): string {
+  return reference.startsWith(briefBranchPrefix)
+    ? reference.slice(briefBranchPrefix.length)
+    : reference;
 }
 
 /**

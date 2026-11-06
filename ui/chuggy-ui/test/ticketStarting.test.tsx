@@ -158,7 +158,9 @@ test.each(launchSteps)(
   "a $route run $step reads $word on its row's mark, its cycle and the Now card",
   async (step) => {
     const drawn = await runPageDrawn(atlas, launchServed(step));
-    const mark = drawn.container.querySelector(".ticket-run-mark");
+    const mark = drawn.container.querySelector(
+      ".ticket-runs-rows .ticket-run-mark",
+    );
     expect(mark?.getAttribute("data-tone")).toBe(
       step.word === "Starting" ? "queued" : "live",
     );
@@ -166,6 +168,8 @@ test.each(launchSteps)(
       drawn.container.querySelector(".ticket-runs-outcome")?.textContent,
     ).toBe(`${step.word} work`);
     const now = screen.getByRole("region", { name: "Now" });
-    expect(now.querySelector(".ticket-now-line")?.textContent).toBe(step.word);
+    expect(now.querySelector(".ticket-card-title")?.textContent).toBe(
+      `${step.word} Work`,
+    );
   },
 );

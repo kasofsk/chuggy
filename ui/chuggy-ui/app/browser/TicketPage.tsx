@@ -7,9 +7,9 @@
  * tab switch reads nothing again. The brief, the configuration and the
  * program the ledger groups by are the ticket's own, which is what it runs,
  * and not the draft's, which a Pending ticket's author may have revised past
- * it; the draft is read for the provenance alone. One clock ticks the whole
- * page, so a running row, a cycle's open span and a panel's freshness all age
- * together.
+ * it; the draft is read for its unreleased edits alone. One clock ticks the
+ * whole page, so a running row, a cycle's open span and a panel's freshness
+ * all age together.
  */
 
 import { useParams } from "@tanstack/react-router";
@@ -19,12 +19,7 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { NativeActionResponse } from "../../../../src/contract/responses.ts";
 import { configurationQuery } from "../core/configurationQueries.ts";
-import {
-  ticketLandingCurrent,
-  ticketLandingFragment,
-  ticketLandingFragmentSays,
-  ticketLandingsHeld,
-} from "../core/ticketLandings.ts";
+import { ticketLandingsHeld } from "../core/ticketLandings.ts";
 import {
   parkedOverridesFence,
   parkedOverridesUnsaved,
@@ -52,7 +47,7 @@ import {
   ticketQuery,
 } from "../core/ticketQueries.ts";
 import type { TicketPageFacts } from "../core/ticketPageFacts.ts";
-import { resumedFrom, ticketSlot } from "../core/ticketSituation.ts";
+import { ticketSlot } from "../core/ticketSituation.ts";
 import type { TicketSlot as Slot } from "../core/ticketSituation.ts";
 import { usePanelState } from "./api.ts";
 import { FreshnessInstants, useNowMs } from "./Freshness.tsx";
@@ -69,10 +64,7 @@ import type {
 } from "./TicketActions.tsx";
 import { useTicketDelivery } from "./ticket/TicketDelivery.tsx";
 import { TicketHeader, TicketTabs } from "./ticket/TicketHeader.tsx";
-import {
-  LandingFragment,
-  useTicketLandings,
-} from "./ticket/TicketLandings.tsx";
+import { useTicketLandings } from "./ticket/TicketLandings.tsx";
 import { useTicketExecutions } from "./ticket/TicketRuns.tsx";
 import {
   ParkedOverrides,
@@ -96,9 +88,8 @@ interface StandingProps {
 }
 
 /** Whether the card offers this reader the setup lines of a ticket whose run
- * stopped at its setup, the configuration its overrides draw from read only
- * for such a ticket. */
-function useSetupOverridable(
+ * stopped at its setup. */
+function setupOverridable(
   props: StandingProps,
   abilities: ProjectAbilities,
 ): boolean {
@@ -107,19 +98,10 @@ function useSetupOverridable(
     ticket === undefined
       ? undefined
       : parkedOverridesFence(ticket, readValue(props.reads.openState)?.actions);
-  const revision = ticket?.configurationRevision ?? "";
-  const asked =
-    fence !== undefined &&
-    revision !== "" &&
-    ticket?.escalation?.failed?.evidence === "RunSetupFailed";
-  const read = usePanelState({
-    ...configurationQuery(props.partition, revision),
-    enabled: asked,
-  });
-  const state = asked ? read : ({ state: "Pending" } as const);
+  const asked = ticket?.escalation?.failed?.evidence === "RunSetupFailed";
   return parkedSetupOverridable(
     fence,
-    state.state === "Ready" ? state.value.canonical : undefined,
+    asked ? readValue(props.reads.configurationState)?.canonical : undefined,
     abilities,
   );
 }
@@ -152,7 +134,7 @@ function standingOf(
       ticket,
       landings: ticketLandingsHeld(props.reads.landingsState),
       ledger: props.facts.ledger,
-      stageCount: props.facts.stageCount,
+      names: props.facts.plan.names,
       open: readValue(props.reads.openState)?.actions,
       executions: readValue(props.reads.pageState)?.executions ?? [],
       setupOverridable,
@@ -201,34 +183,21 @@ function useParkedStanding(
   };
 }
 
-/** The current landing's fragment on the status bar while the ticket is
- * finalizing, and null otherwise. */
-function statusLanding(props: StandingProps): ReactNode {
-  if (readValue(props.reads.ticketState)?.phase !== "Finalization") return null;
-  const landing = ticketLandingCurrent(
-    ticketLandingsHeld(props.reads.landingsState),
-  );
-  if (landing === undefined) return null;
-  const fragment = ticketLandingFragment(landing, props.nowMs);
-  return ticketLandingFragmentSays(fragment) ? (
-    <LandingFragment fragment={fragment} />
-  ) : null;
-}
-
 /** What the header offers this reader, and the facts the tabs are handed. */
 function useTicketStanding(
   props: StandingProps & { readonly acting: TicketActing },
 ) {
   const abilities = useProjectAbilities(props.partition);
   const runner = useWorkRunner(props.partition, "Unknown");
-  const setupOverridable = useSetupOverridable(props, abilities);
-  const { slot, fence, ...standing } = standingOf(props, setupOverridable);
+  const { slot, fence, ...standing } = standingOf(
+    props,
+    setupOverridable(props, abilities),
+  );
   const { offers, noRunner } = ticketOffersStartable(
     ticketOffersAllowed(standing.offers, abilities),
     runner,
   );
   const parked = useParkedStanding(props, fence);
-  const ledger = props.facts.ledger;
   const actions: TicketHeaderActionsProps = {
     partition: props.partition,
     ticket: props.ticket,
@@ -249,11 +218,6 @@ function useTicketStanding(
   const held: TicketPageHeld = {
     ...props,
     slot,
-    resumed:
-      slot.slot === "NeedsYou" || ledger === undefined
-        ? undefined
-        : resumedFrom(ledger),
-    landing: statusLanding(props),
     overrides: parked.overrides,
   };
   return { actions, held };
@@ -324,6 +288,7 @@ function TicketBody(props: {
   const facts = ticketPageFacts(
     readValue(props.reads.ticketState),
     readValue(props.reads.pageState),
+    readValue(props.reads.configurationState)?.canonical,
   );
   return (
     <FreshnessInstants>
@@ -361,6 +326,11 @@ export function TicketPage(props: { readonly children: ReactNode }): ReactNode {
   const ticket = Number(params.ticket);
   const nowMs = useNowMs();
   const ticketState = usePanelState(ticketQuery(partition, ticket, "Streamed"));
+  const revision = readValue(ticketState)?.configurationRevision ?? "";
+  const configurationState = usePanelState({
+    ...configurationQuery(partition, revision),
+    enabled: revision !== "",
+  });
   const draftState = usePanelState(draftQuery(partition, ticket, "Streamed"));
   const openState = usePanelState(ticketNativeActionsQuery(partition, ticket));
   const dispatchState = usePanelState(ticketDispatchQuery(partition, ticket));
@@ -376,6 +346,7 @@ export function TicketPage(props: { readonly children: ReactNode }): ReactNode {
       ticket={ticket}
       reads={{
         ticketState,
+        configurationState,
         draftState,
         openState,
         dispatchState,
