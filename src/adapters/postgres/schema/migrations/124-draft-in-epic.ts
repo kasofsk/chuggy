@@ -10,15 +10,16 @@
  * serializes the epic against `save_epic`.
  *
  * THE EPIC IS REFUSED BEFORE THE DRAFT IS ASKED, in `save_epic`'s order and
- * under its names, `MissingEpic`, `ArchivedEpic` and `LargeContent` — the last
- * with the new member counted — and a refusal has written nothing. A fence
+ * under its names, `MissingEpic`, `ArchivedEpic`, `ManyTickets` and
+ * `LargeContent` — the last two with the new member counted — and a refusal
+ * has written nothing. A fence
  * `create_draft` refuses on is answered by `create_draft` itself, with the
  * epic untouched. The member is a draft that `ticket_projection` does not hold
  * until it is released, so a later `save_epic` that keeps it is refused as an
  * unknown ticket until then.
  */
 
-import { epicContentBytesMax } from "../../../../domain/epics.ts";
+import { epicContentBytesMaxAt122, epicTicketsMaxAt122 } from "./122-epics.ts";
 import {
   apiRole,
   boundaryOwnerRole,
@@ -68,12 +69,16 @@ export const migration124: Migration = {
          members := ARRAY(SELECT m.ticket FROM epic_ticket m
                            WHERE m.tenant=in_tenant AND m.project=in_project AND m.epic=in_epic
                            ORDER BY m.ticket) || minted;
+         IF cardinality(members) > ${String(epicTicketsMaxAt122)} THEN
+           RETURN QUERY SELECT 'ManyTickets', NULL::bigint;
+           RETURN;
+         END IF;
          IF octet_length('{"description":' || to_json(found_epic.description)::text
               || CASE WHEN found_epic.summary IS NULL THEN '' ELSE ',"summary":' || to_json(found_epic.summary)::text END
               || ',"tickets":[' || array_to_string(members, ',')
               || '],"title":' || to_json(found_epic.title)::text
               || ',"visibility":' || to_json(found_epic.visibility)::text || '}')
-            > ${String(epicContentBytesMax)} THEN
+            > ${String(epicContentBytesMaxAt122)} THEN
            RETURN QUERY SELECT 'LargeContent', NULL::bigint;
            RETURN;
          END IF;

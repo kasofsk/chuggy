@@ -15,6 +15,7 @@ import {
   configurationRequirementCapabilitiesMax,
 } from "./configurationDocument.ts";
 import { configurationSelectionSchema } from "./configurationSelection.ts";
+import { epicTicketsMax, epicVisibilitySchema } from "./epics.ts";
 import { z } from "zod";
 
 import {
@@ -41,6 +42,7 @@ import {
   inquiryQuestionCharsMax,
   instantSchema,
   leadTurnsAnsweredMax,
+  nativeHttpDraftDependenciesMax,
   nativeHttpPageItemsMax,
   partitionSchema,
   personalRunnerProjectsMax,
@@ -356,7 +358,7 @@ export const configurationVersionSchema = z.strictObject({
 export const ticketEpicSchema = z.strictObject({
   number: ticketNumberSchema,
   title: z.string(),
-  visibility: z.enum(["Active", "Archived"]),
+  visibility: epicVisibilitySchema,
 });
 
 /**
@@ -474,7 +476,7 @@ export const ticketResponseSchema = z.object({
    */
   following: ticketFollowingSchema.optional(),
   runTotals: runTotalsSchema.optional(),
-  /** Every epic the ticket belongs to, archived ones included, in epic order, and absent where it belongs to none. */
+  /** The epics the ticket belongs to, archived ones included, at most a page of the lowest-numbered, in epic order, and absent where it belongs to none. */
   epics: page(ticketEpicSchema).optional(),
 });
 export type TicketResponse = z.infer<typeof ticketResponseSchema>;
@@ -2299,13 +2301,14 @@ export const hostedRunsResponseSchema = z.strictObject({
 });
 export type HostedRunsResponse = z.infer<typeof hostedRunsResponseSchema>;
 
-/** The members of an epic counted by phase, Revoked left out of `total`. */
+/** The members of an epic counted by phase, a draft not yet released apart, Revoked left out of `total`. */
 export const epicProgressSchema = z.strictObject({
   byPhase: z.strictObject(
     Object.fromEntries(phaseRoster.map((phase) => [phase, countSchema])) as {
       readonly [Phase in (typeof phaseRoster)[number]]: typeof countSchema;
     },
   ),
+  drafts: countSchema,
   done: countSchema,
   total: countSchema,
 });
@@ -2324,10 +2327,10 @@ export const epicSummaryResponseSchema = z.strictObject({
   revision: ticketNumberSchema,
   title: z.string(),
   summary: z.string().optional(),
-  visibility: z.enum(["Active", "Archived"]),
+  visibility: epicVisibilitySchema,
   progress: epicProgressSchema,
   status: z.enum(epicStatusRoster),
-  /** Tickets outside the epic that a Pending member depends on and that are not Done, ascending. */
+  /** Tickets outside the epic that a Pending member depends on and that are not Done, at most a page of the lowest, ascending. */
   waitingOnOutside: page(ticketNumberSchema),
 });
 export type EpicSummaryResponse = z.infer<typeof epicSummaryResponseSchema>;
@@ -2341,7 +2344,7 @@ export type EpicListResponse = z.infer<typeof epicListResponseSchema>;
 
 export const epicViewResponseSchema = epicSummaryResponseSchema.extend({
   description: z.string(),
-  tickets: page(ticketNumberSchema),
+  tickets: z.array(ticketNumberSchema).max(epicTicketsMax),
 });
 export type EpicViewResponse = z.infer<typeof epicViewResponseSchema>;
 
@@ -2359,19 +2362,25 @@ export const epicHistoryResponseSchema = z.strictObject({
 });
 export type EpicHistoryResponse = z.infer<typeof epicHistoryResponseSchema>;
 
-/** The members of an epic and the tickets outside it that they depend on, with an edge from each dependency to the member. */
+/**
+ * The members of an epic and the tickets outside it that they depend on, with
+ * an edge from each dependency to the member. A member that is a draft not yet
+ * released has no phase and no edge.
+ */
 export const epicGraphResponseSchema = z.strictObject({
-  nodes: z.array(
-    z.strictObject({
-      ticket: ticketNumberSchema,
-      title: z.string().optional(),
-      phase: z.enum(phaseRoster),
-      member: z.boolean(),
-    }),
-  ),
-  edges: z.array(
-    z.strictObject({ from: ticketNumberSchema, to: ticketNumberSchema }),
-  ),
+  nodes: z
+    .array(
+      z.strictObject({
+        ticket: ticketNumberSchema,
+        title: z.string().optional(),
+        phase: z.enum(phaseRoster).optional(),
+        member: z.boolean(),
+      }),
+    )
+    .max(epicTicketsMax * (1 + nativeHttpDraftDependenciesMax)),
+  edges: z
+    .array(z.strictObject({ from: ticketNumberSchema, to: ticketNumberSchema }))
+    .max(epicTicketsMax * nativeHttpDraftDependenciesMax),
 });
 export type EpicGraphResponse = z.infer<typeof epicGraphResponseSchema>;
 

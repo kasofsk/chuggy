@@ -33,7 +33,7 @@ export interface EpicSummary extends EpicReference {
   readonly summary?: string;
   readonly progress: EpicProgress;
   readonly status: EpicStatus;
-  /** Tickets outside the epic a Pending member depends on that are not Done, ascending. */
+  /** Tickets outside the epic a Pending member depends on that are not Done, at most a page of the lowest, ascending. */
   readonly waitingOnOutside: readonly number[];
 }
 
@@ -63,7 +63,8 @@ export interface EpicHistoryPage {
 export interface EpicGraphNode {
   readonly ticket: number;
   readonly title?: string;
-  readonly phase: Phase;
+  /** Absent for a member that is a draft not yet released. */
+  readonly phase?: Phase;
   /** False for a ticket outside the epic that a member depends on. */
   readonly member: boolean;
 }

@@ -4,7 +4,9 @@
  *
  * A revision is sent with the revision it was read at, so one made over
  * another's is refused as stale and the form offers to read the epic again
- * rather than send it a second time.
+ * rather than send it a second time. What is typed stands on that revision
+ * until the form saves it or the reader asks for the epic again: a read of a
+ * later one in between leaves it as typed.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
@@ -123,19 +125,21 @@ export function EpicFormPanel(props: {
   const { partition, held } = props;
   const client = useQueryClient();
   const [form, setForm] = useState(held?.form ?? epicFormEmpty);
-  const [seen, setSeen] = useState(held?.revision);
+  const [opened, setOpened] = useState(held?.revision);
+  const [reloading, setReloading] = useState(false);
   const writing = useConsoleWrite(epicWrite(partition), { drawn: true });
-  if (seen !== held?.revision) {
-    setSeen(held?.revision);
+  if (reloading && held?.revision !== opened) {
+    setReloading(false);
+    setOpened(held?.revision);
     setForm(held?.form ?? epicFormEmpty);
     writing.reset();
   }
   const faults = epicFormFaults(form);
   const request = epicWriteFrom(
     form,
-    held === undefined
+    held === undefined || opened === undefined
       ? undefined
-      : { epic: held.epic, revision: held.revision },
+      : { epic: held.epic, revision: opened },
   );
   const failure = writing.error?.failure;
   const refusedStale = failure?.outcome === "Conflict" && stale(failure.code);
@@ -145,7 +149,12 @@ export function EpicFormPanel(props: {
       onSubmit={(event) => {
         event.preventDefault();
         if (request === undefined || faults.length > 0) return;
-        writing.mutate(request, { onSuccess: props.onSaved });
+        writing.mutate(request, {
+          onSuccess: (saved) => {
+            if (held !== undefined) setOpened(saved.revision);
+            props.onSaved(saved);
+          },
+        });
       }}
     >
       <EpicFormFields form={form} onChange={setForm} />
@@ -163,9 +172,8 @@ export function EpicFormPanel(props: {
           <Button
             variant="quiet"
             onClick={() => {
+              setReloading(true);
               void epicsInvalidated(client, partition);
-              writing.reset();
-              setSeen(undefined);
             }}
           >
             Reload the epic

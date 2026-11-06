@@ -16,10 +16,12 @@
  */
 
 import {
-  epicContentBytesMax,
-  epicSummaryCharsMax,
-  epicTitleCharsMax,
-} from "../../../../domain/epics.ts";
+  epicBlankSql,
+  epicContentBytesMaxAt122,
+  epicSummaryCharsMaxAt122,
+  epicTicketsMaxAt122,
+  epicTitleCharsMaxAt122,
+} from "./122-epics.ts";
 import {
   apiRole,
   boundaryOwnerRole,
@@ -58,7 +60,7 @@ export const migration123: Migration = {
              USING ERRCODE = 'foreign_key_violation';
          END IF;
          members := ARRAY(SELECT DISTINCT t FROM unnest(in_tickets) AS t ORDER BY t);
-         kept_summary := CASE WHEN btrim(coalesce(in_summary, '')) = '' THEN NULL ELSE in_summary END;
+         kept_summary := CASE WHEN ${epicBlankSql("in_summary")} THEN NULL ELSE in_summary END;
          IF in_kind = 'Revise' THEN
            SELECT * INTO found_epic FROM epic e WHERE ${held} AND e.number=in_epic;
            IF NOT FOUND THEN
@@ -77,16 +79,20 @@ export const migration123: Migration = {
              RETURN;
            END IF;
          END IF;
-         IF btrim(coalesce(in_title, '')) = '' THEN
+         IF ${epicBlankSql("in_title")} THEN
            RETURN QUERY SELECT 'EmptyTitle', NULL::bigint, NULL::bigint, NULL::bigint, NULL::bigint[];
            RETURN;
          END IF;
-         IF length(in_title) > ${String(epicTitleCharsMax)} THEN
+         IF length(in_title) > ${String(epicTitleCharsMaxAt122)} THEN
            RETURN QUERY SELECT 'LongTitle', NULL::bigint, NULL::bigint, NULL::bigint, NULL::bigint[];
            RETURN;
          END IF;
-         IF length(coalesce(kept_summary, '')) > ${String(epicSummaryCharsMax)} THEN
+         IF length(coalesce(kept_summary, '')) > ${String(epicSummaryCharsMaxAt122)} THEN
            RETURN QUERY SELECT 'LongSummary', NULL::bigint, NULL::bigint, NULL::bigint, NULL::bigint[];
+           RETURN;
+         END IF;
+         IF cardinality(members) > ${String(epicTicketsMaxAt122)} THEN
+           RETURN QUERY SELECT 'ManyTickets', NULL::bigint, NULL::bigint, NULL::bigint, NULL::bigint[];
            RETURN;
          END IF;
          IF octet_length('{"description":' || to_json(in_description)::text
@@ -94,7 +100,7 @@ export const migration123: Migration = {
               || ',"tickets":[' || array_to_string(members, ',')
               || '],"title":' || to_json(in_title)::text
               || ',"visibility":' || to_json(in_visibility)::text || '}')
-            > ${String(epicContentBytesMax)} THEN
+            > ${String(epicContentBytesMaxAt122)} THEN
            RETURN QUERY SELECT 'LargeContent', NULL::bigint, NULL::bigint, NULL::bigint, NULL::bigint[];
            RETURN;
          END IF;

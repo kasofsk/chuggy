@@ -5,16 +5,19 @@
 
 import { expect, test } from "vitest";
 
+import { epicListQueryParse } from "../../../src/contract/epics.ts";
+import { ticketSearchCharsMax } from "../../../src/contract/http.ts";
 import type { EpicGraphResponse } from "../../../src/contract/responses.ts";
 import {
   epicDraftRefusal,
   epicFormFaults,
   epicFormFrom,
   epicGraphColumnWidth,
+  epicGraphLabelCharsMax,
   epicGraphLayout,
   epicGraphRowHeight,
   epicProgressLine,
-  epicStatusLooks,
+  epicStatusLook,
   epicTicketsParsed,
   epicWriteFrom,
   epicWriteRefusal,
@@ -24,6 +27,7 @@ import {
 } from "../app/core/epics.ts";
 import type { EpicForm } from "../app/core/epics.ts";
 import { epicStatusRoster } from "../../../src/contract/responses.ts";
+import { phaseTone } from "../app/core/tones.ts";
 
 const form: EpicForm = {
   title: "Billing",
@@ -42,6 +46,18 @@ test("an address names only the choices that differ from the defaults", () => {
     epicsQueryOf({ q: 12, visibility: "Archived", sort: "title" }),
   ).toStrictEqual({ q: "12", visibility: "Archived", sort: "title" });
   expect(epicsQueryOf({ visibility: "Gone", sort: 3 })).toStrictEqual({});
+});
+
+test("a search past the server's bound is asked cut to it, as the list's query admits", () => {
+  for (const unit of ["x", "🜁"]) {
+    const asked = epicsAskOf(
+      epicsQueryOf({ q: unit.repeat(ticketSearchCharsMax + 5) }),
+    );
+    expect(asked.search).toBe(unit.repeat(ticketSearchCharsMax));
+    expect(epicListQueryParse({ search: asked.search }).search).toBe(
+      asked.search,
+    );
+  }
 });
 
 test("a part of the address is replaced and the rest is kept", () => {
@@ -70,7 +86,11 @@ test("the list asks for the defaults an address leaves out", () => {
 
 test("every status the wire speaks has a word and a tone", () => {
   for (const status of epicStatusRoster)
-    expect(epicStatusLooks[status].word).not.toBe("");
+    expect(epicStatusLook(status).word).not.toBe("");
+});
+
+test("an epic needing attention is drawn in the hue an Escalated ticket is", () => {
+  expect(epicStatusLook("attention").tone).toBe(phaseTone("Escalated"));
 });
 
 test("progress is said as what is done of what there is", () => {
@@ -83,8 +103,12 @@ test("progress is said as what is done of what there is", () => {
     Escalated: 0,
     Revoked: 0,
   };
-  expect(epicProgressLine({ byPhase, done: 0, total: 0 })).toBe("no tickets");
-  expect(epicProgressLine({ byPhase, done: 2, total: 5 })).toBe("2 of 5 done");
+  expect(epicProgressLine({ byPhase, drafts: 0, done: 0, total: 0 })).toBe(
+    "no tickets",
+  );
+  expect(epicProgressLine({ byPhase, drafts: 0, done: 2, total: 5 })).toBe(
+    "2 of 5 done",
+  );
 });
 
 const graph: EpicGraphResponse = {
@@ -145,6 +169,46 @@ test("a cycle is laid out without looping and draws no backward edge", () => {
   for (const edge of layout.edges) expect(edge.from.x).toBeLessThan(edge.to.x);
 });
 
+test("a cycle hanging off a chain leaves the chain's columns as they were", () => {
+  const layout = epicGraphLayout({
+    nodes: [1, 2, 3, 4, 5].map((ticket) => ({
+      ticket,
+      phase: "Pending" as const,
+      member: true,
+    })),
+    edges: [
+      { from: 1, to: 2 },
+      { from: 2, to: 3 },
+      { from: 4, to: 5 },
+      { from: 5, to: 4 },
+      { from: 3, to: 4 },
+    ],
+  });
+  const at = new Map(layout.nodes.map((node) => [node.ticket, node.x]));
+  expect([1, 2, 3].map((ticket) => at.get(ticket))).toStrictEqual([
+    0,
+    epicGraphColumnWidth,
+    2 * epicGraphColumnWidth,
+  ]);
+  for (const edge of layout.edges) expect(edge.from.x).toBeLessThan(edge.to.x);
+});
+
+test("a label past what its node holds is cut, and a draft says so where it has no title", () => {
+  const layout = epicGraphLayout({
+    nodes: [
+      { ticket: 3, title: "x".repeat(epicGraphLabelCharsMax), member: true },
+      { ticket: 4, member: true },
+      { ticket: 5, title: "Short", phase: "Work", member: true },
+    ],
+    edges: [],
+  });
+  const label = new Map(layout.nodes.map((node) => [node.ticket, node.label]));
+  expect([...(label.get(3) ?? "")]).toHaveLength(epicGraphLabelCharsMax);
+  expect(label.get(3)?.endsWith("…")).toBe(true);
+  expect(label.get(4)).toBe("#4 Draft");
+  expect(label.get(5)).toBe("#5 Short");
+});
+
 test("an empty graph has a height and no nodes", () => {
   const layout = epicGraphLayout({ nodes: [], edges: [] });
   expect(layout.nodes).toStrictEqual([]);
@@ -202,6 +266,7 @@ test("a form reads back as the epic it was made from", () => {
         Escalated: 0,
         Revoked: 0,
       },
+      drafts: 0,
       done: 0,
       total: 0,
     },
@@ -255,7 +320,9 @@ test("a draft refused for its epic is said so, and any other refusal is not the 
   expect(
     epicDraftRefusal({ outcome: "Conflict", code: "LargeContent", body: {} }),
   ).toContain("full");
-  expect(epicDraftRefusal({ outcome: "Absent" })).toContain("no longer exists");
+  expect(
+    epicDraftRefusal({ outcome: "Conflict", code: "MissingEpic", body: {} }),
+  ).toContain("no longer exists");
   expect(
     epicDraftRefusal({
       outcome: "Conflict",
@@ -263,4 +330,5 @@ test("a draft refused for its epic is said so, and any other refusal is not the 
       body: {},
     }),
   ).toBeUndefined();
+  expect(epicDraftRefusal({ outcome: "Absent" })).toBeUndefined();
 });

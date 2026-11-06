@@ -12,11 +12,13 @@ import type pg from "pg";
 
 import { briefTitleCharsMax } from "../../contract/brief.ts";
 import type { EpicHistoryQuery, EpicListQuery } from "../../contract/epics.ts";
+import { nativeHttpPageItemsMax } from "../../contract/http.ts";
 import {
   epicProgress,
   epicStatus,
   epicVisibilities,
   type EpicCommand,
+  type EpicMemberState,
   type EpicOutcome,
   type EpicVisibility,
 } from "../../domain/epics.ts";
@@ -83,6 +85,7 @@ const savedRefusals = [
   "EmptyTitle",
   "LongTitle",
   "LongSummary",
+  "ManyTickets",
   "LargeContent",
 ] as const;
 
@@ -140,7 +143,7 @@ async function epicSave(
 
 interface PhaseCountRow {
   readonly epic: string;
-  readonly phase: string;
+  readonly phase: string | null;
   readonly members: string;
 }
 
@@ -149,64 +152,74 @@ interface DependencyRow {
   readonly dependency: string | null;
 }
 
-/** The member phases of each epic named, counted by the database. */
-async function epicMemberPhases(
+/**
+ * Where the members of each epic named stand, counted by the database. A
+ * member the projection does not hold is a draft, the one other number a save
+ * admits and a deletion takes out.
+ */
+async function epicMemberStates(
   client: Queryable,
   partition: Partition,
   epics: readonly number[],
-): Promise<ReadonlyMap<number, readonly Phase[]>> {
+): Promise<ReadonlyMap<number, readonly EpicMemberState[]>> {
   const found = await client.query<PhaseCountRow>(
     sql`SELECT m.epic::text AS epic,p.phase,count(*)::text AS members
           FROM epic_ticket m
-          JOIN ticket_projection p
+          LEFT JOIN ticket_projection p
             ON p.tenant=m.tenant AND p.project=m.project AND p.ticket=m.ticket
          WHERE m.tenant=${partition.tenant} AND m.project=${partition.project}
            AND m.epic = ANY(${[...epics]}::bigint[])
          GROUP BY m.epic,p.phase`,
   );
-  const phases = new Map<number, Phase[]>();
+  const states = new Map<number, EpicMemberState[]>();
   for (const row of found.rows) {
-    const held = phases.get(Number(row.epic)) ?? [];
+    const held = states.get(Number(row.epic)) ?? [];
     const count = projectRowCounter(row.members, "epic members");
-    for (let each = 0; each < count; each += 1) held.push(epicPhase(row.phase));
-    phases.set(Number(row.epic), held);
+    const state = row.phase === null ? "Draft" : epicPhase(row.phase);
+    for (let each = 0; each < count; each += 1) held.push(state);
+    states.set(Number(row.epic), held);
   }
-  return phases;
+  return states;
 }
 
-/** The tickets outside each epic that a Pending member of it depends on and that are not Done. */
+/** The tickets outside each epic that a Pending member of it depends on and that are not Done, at most a page of the lowest. */
 async function epicWaiting(
   client: Queryable,
   partition: Partition,
   epics: readonly number[],
 ): Promise<ReadonlyMap<number, readonly number[]>> {
   const found = await client.query<DependencyRow>(
-    sql`SELECT DISTINCT m.epic::text AS epic,d.dep AS dependency
-          FROM epic_ticket m
-          JOIN ticket_projection t
-            ON t.tenant=m.tenant AND t.project=m.project AND t.ticket=m.ticket
-           AND t.phase='Pending'
-          LEFT JOIN LATERAL (
-            SELECT (CASE WHEN j.entry IS JSON OBJECT
-                         THEN j.entry::jsonb->'event'->'value'->'dependencies' END) AS deps
-              FROM journal_entry j
-             WHERE j.tenant=m.tenant AND j.project=m.project
-               AND (CASE WHEN j.entry IS JSON OBJECT
-                         THEN j.entry::jsonb->'event'->>'type' END) = 'TicketCreated'
-               AND (CASE WHEN j.entry IS JSON OBJECT
-                         THEN j.entry::jsonb->'event'->'value'->'id' END)=to_jsonb(m.ticket)
-             ORDER BY j.seq LIMIT 1) r ON true
-          LEFT JOIN LATERAL ticket_updated_dependencies(m.tenant,m.project,m.ticket) w ON true
-          CROSS JOIN LATERAL jsonb_array_elements_text(coalesce(w.deps,r.deps,'[]'::jsonb)) AS d(dep)
-         WHERE m.tenant=${partition.tenant} AND m.project=${partition.project}
-           AND m.epic = ANY(${[...epics]}::bigint[])
-           AND NOT EXISTS (SELECT 1 FROM epic_ticket o
-                            WHERE o.tenant=m.tenant AND o.project=m.project
-                              AND o.epic=m.epic AND o.ticket=d.dep::bigint)
-           AND NOT EXISTS (SELECT 1 FROM ticket_projection x
-                            WHERE x.tenant=m.tenant AND x.project=m.project
-                              AND x.ticket=d.dep::bigint AND x.phase='Done')
-         ORDER BY 1,2`,
+    sql`SELECT ranked.epic::text AS epic,ranked.dependency::text AS dependency
+          FROM (SELECT waiting.epic,waiting.dependency,
+                       row_number() OVER (PARTITION BY waiting.epic
+                                          ORDER BY waiting.dependency) AS place
+                  FROM (SELECT DISTINCT m.epic,d.dep::bigint AS dependency
+                  FROM epic_ticket m
+                  JOIN ticket_projection t
+                    ON t.tenant=m.tenant AND t.project=m.project AND t.ticket=m.ticket
+                   AND t.phase='Pending'
+                  LEFT JOIN LATERAL (
+                    SELECT (CASE WHEN j.entry IS JSON OBJECT
+                                 THEN j.entry::jsonb->'event'->'value'->'dependencies' END) AS deps
+                      FROM journal_entry j
+                     WHERE j.tenant=m.tenant AND j.project=m.project
+                       AND (CASE WHEN j.entry IS JSON OBJECT
+                                 THEN j.entry::jsonb->'event'->>'type' END) = 'TicketCreated'
+                       AND (CASE WHEN j.entry IS JSON OBJECT
+                                 THEN j.entry::jsonb->'event'->'value'->'id' END)=to_jsonb(m.ticket)
+                     ORDER BY j.seq LIMIT 1) r ON true
+                  LEFT JOIN LATERAL ticket_updated_dependencies(m.tenant,m.project,m.ticket) w ON true
+                  CROSS JOIN LATERAL jsonb_array_elements_text(coalesce(w.deps,r.deps,'[]'::jsonb)) AS d(dep)
+                 WHERE m.tenant=${partition.tenant} AND m.project=${partition.project}
+                   AND m.epic = ANY(${[...epics]}::bigint[])
+                   AND NOT EXISTS (SELECT 1 FROM epic_ticket o
+                                    WHERE o.tenant=m.tenant AND o.project=m.project
+                                      AND o.epic=m.epic AND o.ticket=d.dep::bigint)
+                   AND NOT EXISTS (SELECT 1 FROM ticket_projection x
+                                    WHERE x.tenant=m.tenant AND x.project=m.project
+                                      AND x.ticket=d.dep::bigint AND x.phase='Done')) waiting) ranked
+         WHERE ranked.place <= ${nativeHttpPageItemsMax}
+         ORDER BY ranked.epic,ranked.dependency`,
   );
   const waiting = new Map<number, number[]>();
   for (const row of found.rows) {
@@ -223,11 +236,11 @@ async function epicSummaries(
   rows: readonly EpicRow[],
 ): Promise<readonly EpicSummary[]> {
   const numbers = rows.map((row) => Number(row.number));
-  const phases = await epicMemberPhases(client, partition, numbers);
+  const states = await epicMemberStates(client, partition, numbers);
   const waiting = await epicWaiting(client, partition, numbers);
   return rows.map((row) => {
     const number = projectRowCounter(row.number, "epic number");
-    const progress = epicProgress(phases.get(number) ?? []);
+    const progress = epicProgress(states.get(number) ?? []);
     return {
       number,
       revision: projectRowCounter(row.revision, "epic revision"),
@@ -404,6 +417,11 @@ interface NodeRow {
   readonly title: string;
 }
 
+interface DraftNodeRow {
+  readonly ticket: string;
+  readonly title: string;
+}
+
 /** Every dependency of every member, whatever the member's phase. */
 async function epicEdges(
   client: Queryable,
@@ -432,6 +450,7 @@ async function epicEdges(
   return found.rows;
 }
 
+/** The tickets named that the projection holds. */
 async function epicNodes(
   client: Queryable,
   partition: Partition,
@@ -447,6 +466,29 @@ async function epicNodes(
          WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
            AND t.ticket = ANY(${[...tickets]}::bigint[])
          ORDER BY t.ticket`,
+  );
+  return found.rows;
+}
+
+/** The members named that the projection does not hold, which are drafts, by their briefs' titles. */
+async function epicDraftNodes(
+  client: Queryable,
+  partition: Partition,
+  members: readonly number[],
+): Promise<readonly DraftNodeRow[]> {
+  const found = await client.query<DraftNodeRow>(
+    sql`SELECT d.ticket::text AS ticket,
+               coalesce(b.title,left(substring(b.intent from
+                 '[^\\n]*[^[:space:]][^\\n]*'),${briefTitleCharsMax}::int),'') AS title
+          FROM draft d
+          LEFT JOIN draft_brief b
+            ON b.tenant=d.tenant AND b.project=d.project AND b.ticket=d.ticket
+         WHERE d.tenant=${partition.tenant} AND d.project=${partition.project}
+           AND d.ticket = ANY(${[...members]}::bigint[])
+           AND NOT EXISTS (SELECT 1 FROM ticket_projection t
+                            WHERE t.tenant=d.tenant AND t.project=d.project
+                              AND t.ticket=d.ticket)
+         ORDER BY d.ticket`,
   );
   return found.rows;
 }
@@ -476,7 +518,7 @@ async function epicGraph(
       to: projectRowCounter(row.member, "epic member"),
     }));
     const wanted = new Set([...inside, ...edges.map((edge) => edge.from)]);
-    const nodes = (await epicNodes(client, partition, [...wanted])).map(
+    const tickets = (await epicNodes(client, partition, [...wanted])).map(
       (row) => {
         const ticket = projectRowCounter(row.ticket, "epic node");
         return {
@@ -486,6 +528,16 @@ async function epicGraph(
           member: inside.has(ticket),
         };
       },
+    );
+    const drafts = (await epicDraftNodes(client, partition, [...inside])).map(
+      (row) => ({
+        ticket: projectRowCounter(row.ticket, "epic draft node"),
+        ...(row.title === "" ? {} : { title: row.title }),
+        member: true,
+      }),
+    );
+    const nodes = [...tickets, ...drafts].sort(
+      (left, right) => left.ticket - right.ticket,
     );
     return { nodes, edges };
   });
@@ -498,7 +550,7 @@ interface ReferenceRow {
   readonly visibility: string;
 }
 
-/** Each ticket's epics in epic order, archived ones included, in one query. */
+/** Each ticket's epics in epic order, archived ones included, at most a page of the lowest-numbered, in one query. */
 export async function epicsForTickets(
   client: Queryable,
   partition: Partition,
@@ -507,13 +559,16 @@ export async function epicsForTickets(
   const references = new Map<number, EpicReference[]>();
   if (tickets.length === 0) return references;
   const found = await client.query<ReferenceRow>(
-    sql`SELECT m.ticket::text AS ticket,e.number::text AS number,e.title,e.visibility
-          FROM epic_ticket m
-          JOIN epic e
-            ON e.tenant=m.tenant AND e.project=m.project AND e.number=m.epic
-         WHERE m.tenant=${partition.tenant} AND m.project=${partition.project}
-           AND m.ticket = ANY(${[...tickets]}::bigint[])
-         ORDER BY m.ticket,e.number`,
+    sql`SELECT r.ticket::text AS ticket,r.number::text AS number,r.title,r.visibility
+          FROM (SELECT m.ticket,e.number,e.title,e.visibility,
+                       row_number() OVER (PARTITION BY m.ticket ORDER BY e.number) AS place
+                  FROM epic_ticket m
+                  JOIN epic e
+                    ON e.tenant=m.tenant AND e.project=m.project AND e.number=m.epic
+                 WHERE m.tenant=${partition.tenant} AND m.project=${partition.project}
+                   AND m.ticket = ANY(${[...tickets]}::bigint[])) r
+         WHERE r.place <= ${nativeHttpPageItemsMax}
+         ORDER BY r.ticket,r.number`,
   );
   for (const row of found.rows) {
     const ticket = projectRowCounter(row.ticket, "epic member");

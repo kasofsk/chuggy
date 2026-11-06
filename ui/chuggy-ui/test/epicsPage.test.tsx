@@ -16,6 +16,8 @@ import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { EpicsPage } from "../app/browser/EpicsPage.tsx";
+import { epicsSearchWaitMs } from "../app/core/epics.ts";
+import type { EpicsQuery } from "../app/core/epics.ts";
 import { leadPartition } from "./leadFixture.ts";
 import {
   abilitiesEvery,
@@ -72,24 +74,14 @@ function summary(number: number, title: string, status = "in_progress") {
     revision: 1,
     title,
     visibility: "Active",
-    progress: { byPhase, done: 1, total: 2 },
+    progress: { byPhase, drafts: 0, done: 1, total: 2 },
     status,
     waitingOnOutside: [],
   };
 }
 
-async function drawn(
-  abilities: AbilitiesAnswer,
-  pages: Readonly<Record<string, unknown>>,
-): Promise<readonly string[]> {
-  const asked: string[] = [];
-  const served = ((url: string) => {
-    asked.push(url);
-    const after = /after=(\d+)/u.exec(url)?.[1] ?? "first";
-    return Promise.resolve(answer(pages[after] ?? { epics: [] }));
-  }) as unknown as typeof fetch;
-  vi.stubGlobal("fetch", abilitiesFetch(abilities, served));
-  render(
+function screenAt(query: EpicsQuery, onQuery: (query: EpicsQuery) => void) {
+  return (
     <ScreenHarness
       partition={leadPartition}
       client={
@@ -97,11 +89,36 @@ async function drawn(
       }
       transport={openedStream().ports.fetch}
     >
-      <EpicsPage query={{}} onQuery={() => undefined} />
-    </ScreenHarness>,
+      <EpicsPage query={query} onQuery={onQuery} />
+    </ScreenHarness>
   );
+}
+
+async function drawn(
+  abilities: AbilitiesAnswer,
+  pages: Readonly<Record<string, unknown>>,
+  query: EpicsQuery = {},
+  onQuery: (query: EpicsQuery) => void = () => undefined,
+): Promise<{
+  readonly asked: readonly string[];
+  readonly redrawn: (query: EpicsQuery) => Promise<void>;
+}> {
+  const asked: string[] = [];
+  const served = ((url: string) => {
+    asked.push(url);
+    const after = /after=(\d+)/u.exec(url)?.[1] ?? "first";
+    return Promise.resolve(answer(pages[after] ?? { epics: [] }));
+  }) as unknown as typeof fetch;
+  vi.stubGlobal("fetch", abilitiesFetch(abilities, served));
+  const { rerender } = render(screenAt(query, onQuery));
   await settled();
-  return asked;
+  return {
+    asked,
+    redrawn: async (next) => {
+      rerender(screenAt(next, onQuery));
+      await settled();
+    },
+  };
 }
 
 test("each epic is a row with its status, progress and a link to its page", async () => {
@@ -127,7 +144,7 @@ test("a project with no epic says so", async () => {
 });
 
 test("show more reads the page after the cursor and draws it under the first", async () => {
-  const asked = await drawn(abilitiesNone, {
+  const { asked } = await drawn(abilitiesNone, {
     first: { epics: [summary(7, "Billing")], nextAfter: 7 },
     "7": { epics: [summary(3, "Older")] },
   });
@@ -144,4 +161,24 @@ test("the new epic form is drawn for a reader who may write and not for one who 
   cleanup();
   await drawn(abilitiesNone, { first: { epics: [] } });
   expect(screen.queryByRole("button", { name: "New epic" })).toBeNull();
+});
+
+test("a search the address moves to by going back replaces what is typed, and is not written back", async () => {
+  const asked: EpicsQuery[] = [];
+  const { redrawn } = await drawn(
+    abilitiesNone,
+    { first: { epics: [] } },
+    { q: "billing" },
+    (query) => asked.push(query),
+  );
+  const box = screen.getByRole<HTMLInputElement>("textbox", {
+    name: "Search epics",
+  });
+  expect(box.value).toBe("billing");
+
+  await redrawn({});
+  await new Promise((resolve) => setTimeout(resolve, epicsSearchWaitMs));
+
+  expect(box.value).toBe("");
+  expect(asked).toStrictEqual([]);
 });

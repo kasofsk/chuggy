@@ -705,7 +705,7 @@ test("draft creation maps every closed result, a branchless landing among them",
     { value: { created: "LandingUnbranched" }, status: 422 },
     {
       value: { created: "EpicUnavailable", reason: "MissingEpic" },
-      status: 404,
+      status: 409,
     },
     {
       value: { created: "EpicUnavailable", reason: "ArchivedEpic" },

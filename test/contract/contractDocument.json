@@ -3057,6 +3057,33 @@
               "properties": {
                 "page": {
                   "type": "string",
+                  "const": "Epics"
+                }
+              },
+              "required": ["page"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "string",
+                  "const": "Epic"
+                },
+                "epic": {
+                  "type": "integer",
+                  "exclusiveMinimum": 0,
+                  "maximum": 9007199254740991
+                }
+              },
+              "required": ["page", "epic"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "page": {
+                  "type": "string",
                   "const": "Settings"
                 },
                 "section": {

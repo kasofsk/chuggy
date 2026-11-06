@@ -1,7 +1,7 @@
 /**
  * The ticket header as drawn: a label for every state that is never only a
- * colour, the bar that stands in for the header once it scrolls away, and the
- * Runs tab's count.
+ * colour, the bar that stands in for the header once it scrolls away, the
+ * epics under the title, and the Runs tab's count.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -132,6 +132,28 @@ test("a browser without the observer never shows the bar", () => {
   expect(screen.getByRole("heading", { level: 1 }).textContent).toBe(
     "Lock the contract #335",
   );
+});
+
+test("the epics the header is given are drawn in it, after the title", () => {
+  vi.stubGlobal("IntersectionObserver", undefined);
+  render(
+    <TicketHeader
+      ticket={335}
+      title="Lock the contract"
+      standing="Ready"
+      fragment={{ fragment: "None" }}
+      nowMs={0}
+      actions={null}
+      epics={<span>Billing</span>}
+      notes={null}
+    />,
+  );
+  const header = document.querySelector<HTMLElement>(".ticket-header");
+  const epics = within(header as HTMLElement).getByText("Billing");
+  expect(
+    screen.getByRole("heading", { level: 1 }).compareDocumentPosition(epics) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
 });
 
 test("Runs carries its count once the page holds a run, and the tabs are the same either way", () => {

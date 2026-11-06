@@ -2,7 +2,8 @@
  * An epic's members and the tickets outside it that they wait on, laid out by
  * `core/epics.ts` with each edge running from a dependency to the ticket that
  * depends on it. A member is drawn as a filled node and an outside ticket as
- * an outlined one, so which tickets the epic holds is not carried by hue.
+ * an outlined one, so which tickets the epic holds is not carried by hue. A
+ * label cut to fit its node is read whole in its link's name and its title.
  */
 
 import { Link } from "@tanstack/react-router";
@@ -10,11 +11,11 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { EpicGraphResponse } from "../../../../src/contract/responses.ts";
-import { phaseLabel } from "../core/codeLabels.ts";
 import {
   epicGraphLayout,
   epicGraphNodeHeight,
   epicGraphNodeWidth,
+  epicGraphStanding,
 } from "../core/epics.ts";
 import { phaseTone } from "../core/tones.ts";
 
@@ -49,10 +50,14 @@ export function EpicGraph(props: {
             key={node.ticket}
             to="/$tenant/$project/tickets/$ticket"
             params={{ ...props.partition, ticket: String(node.ticket) }}
-            aria-label={`Ticket ${String(node.ticket)}, ${phaseLabel(node.phase)}${node.member ? "" : ", outside the epic"}`}
+            aria-label={`Ticket ${String(node.ticket)}${node.title === undefined ? "" : ` ${node.title}`}, ${epicGraphStanding(node)}${node.member ? "" : ", outside the epic"}`}
           >
             <g
-              className={`epic-graph-node epic-graph-${phaseTone(node.phase)}`}
+              className={
+                node.phase === undefined
+                  ? "epic-graph-node"
+                  : `epic-graph-node epic-graph-${phaseTone(node.phase)}`
+              }
               data-member={node.member ? "" : undefined}
               data-external={node.member ? undefined : ""}
             >
@@ -63,8 +68,9 @@ export function EpicGraph(props: {
                 height={epicGraphNodeHeight}
                 rx="6"
               />
+              <title>{`#${String(node.ticket)} ${node.title ?? epicGraphStanding(node)}`}</title>
               <text x={node.x + 8} y={node.y + epicGraphNodeHeight / 2 + 4}>
-                {`#${String(node.ticket)} ${node.title ?? phaseLabel(node.phase)}`}
+                {node.label}
               </text>
             </g>
           </Link>

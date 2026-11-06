@@ -687,6 +687,7 @@ async function createDraft(
   if (
     row?.result === "MissingEpic" ||
     row?.result === "ArchivedEpic" ||
+    row?.result === "ManyTickets" ||
     row?.result === "LargeContent"
   )
     return { created: "EpicUnavailable", reason: row.result };

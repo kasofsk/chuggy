@@ -165,6 +165,7 @@ function EpicRevision(props: {
   return (
     <Panel title="Edit" collapsible={{ open: false }}>
       <EpicFormPanel
+        key={props.epic.number}
         partition={props.partition}
         held={{
           epic: props.epic.number,

@@ -2252,7 +2252,7 @@ function draftCreated(value: NativeDraftCreated): NativeHttpResponse {
       return response(422, draftLandingUnbranched);
     case "EpicUnavailable":
       return response(
-        value.reason === "MissingEpic" ? 404 : 409,
+        409,
         nativeHttpError(value.reason, epicRefusalMessage[value.reason]),
       );
     case "Stale":
@@ -2953,6 +2953,7 @@ const epicRefusalMessage: Readonly<Record<EpicRefusal["reason"], string>> = {
   EmptyTitle: "The title is empty.",
   LongTitle: "The title is longer than an epic's title may be.",
   LongSummary: "The summary is longer than an epic's summary may be.",
+  ManyTickets: "The epic names more tickets than an epic may hold.",
   LargeContent: "The epic is larger than an epic may be.",
   UnknownTickets: "The epic names tickets the project does not have.",
 };

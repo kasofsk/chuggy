@@ -63,7 +63,7 @@ test("a caller holding Read alone may press none of the doors", async () => {
   });
 });
 
-test("each kind a caller holds opens its own field and no other", async () => {
+test("each kind a caller holds opens its own field and no other, Mutate also opening the epic writes", async () => {
   for (const [field, kind] of asked) {
     const { web } = boundary(["Read", kind]);
 
@@ -74,7 +74,7 @@ test("each kind a caller holds opens its own field and no other", async () => {
         value: {
           ...none,
           [field]: true,
-          ...(field === "mutate" ? { writeEpic: true } : {}),
+          ...(kind === "Mutate" ? { writeEpic: true } : {}),
         },
       },
       kind,

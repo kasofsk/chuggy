@@ -19,7 +19,7 @@ export function EpicChips(props: {
 }): ReactNode {
   if (props.epics === undefined || props.epics.length === 0) return null;
   return (
-    <span className="epic-chips" aria-label="Epics">
+    <span className="epic-chips" role="group" aria-label="Epics">
       {props.epics.map((epic) => (
         <Link
           key={epic.number}

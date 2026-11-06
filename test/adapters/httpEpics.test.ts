@@ -45,6 +45,7 @@ const progress = {
     Escalated: 0,
     Revoked: 0,
   },
+  drafts: 0,
   done: 1,
   total: 2,
 };
