@@ -7,6 +7,14 @@
  */
 
 import {
+  epicHistoryQueryParse,
+  epicListQueryParse,
+  epicWriteRequestParse,
+  type EpicHistoryQuery,
+  type EpicListQuery,
+  type EpicWriteRequest,
+} from "../../contract/epics.ts";
+import {
   configurationSelectionSchema,
   type ConfigurationSelection,
 } from "../../contract/configurationSelection.ts";
@@ -781,4 +789,19 @@ export function parseLeadInquiry(body: unknown): {
     turn: asSessionTurnId(value.turn),
     question: value.question,
   };
+}
+
+/** A write's body: a create or a revision, whole. */
+export function parseEpicWrite(body: unknown): EpicWriteRequest {
+  return epicWriteRequestParse(body);
+}
+
+/** A list's filters, its sort and its page. */
+export function parseEpicList(query: unknown): EpicListQuery {
+  return epicListQueryParse(query);
+}
+
+/** A history's page. */
+export function parseEpicHistory(query: unknown): EpicHistoryQuery {
+  return epicHistoryQueryParse(query);
 }

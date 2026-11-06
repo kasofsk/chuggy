@@ -80,7 +80,11 @@ import { unreadableLeadReads } from "./leadReadFixtures.ts";
 import { twoBearerAuthentication } from "../../src/adapters/http/sessionBearer.ts";
 import { asSessionId } from "../../src/interpreter/agentSession.ts";
 import { sessionBearerPrefix } from "../../src/contract/sessionPlane.ts";
-import { unservedLeadInquiries, unservedThreads } from "./threadFixtures.ts";
+import {
+  unservedEpics,
+  unservedLeadInquiries,
+  unservedThreads,
+} from "./threadFixtures.ts";
 import type { WorkerPoolRegistrationService } from "../../src/interpreter/workerPoolRegistrationToken.ts";
 import type { ExecutionPlacementAdministration } from "../../src/interpreter/executionPlacement.ts";
 import {
@@ -375,6 +379,7 @@ function fakeWeb(calls: string[]): ServedNativeWeb {
   return {
     ...unreadableLeadReads(),
     ...unservedThreads,
+    ...unservedEpics,
     ...unservedLeadInquiries,
     ...fakeOperations(calls),
     ...fakeConfigurations(calls),

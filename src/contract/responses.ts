@@ -2299,6 +2299,97 @@ export const hostedRunsResponseSchema = z.strictObject({
 });
 export type HostedRunsResponse = z.infer<typeof hostedRunsResponseSchema>;
 
+/** The members of an epic counted by phase, Revoked left out of `total`. */
+export const epicProgressSchema = z.strictObject({
+  byPhase: z.strictObject(
+    Object.fromEntries(phaseRoster.map((phase) => [phase, countSchema])) as {
+      readonly [Phase in (typeof phaseRoster)[number]]: typeof countSchema;
+    },
+  ),
+  done: countSchema,
+  total: countSchema,
+});
+
+export const epicStatusRoster = [
+  "empty",
+  "done",
+  "attention",
+  "not_started",
+  "in_progress",
+] as const;
+
+/** An epic as a list carries it, with the figures derived from its members' phases. */
+export const epicSummaryResponseSchema = z.strictObject({
+  number: ticketNumberSchema,
+  revision: ticketNumberSchema,
+  title: z.string(),
+  summary: z.string().optional(),
+  visibility: z.enum(["Active", "Archived"]),
+  progress: epicProgressSchema,
+  status: z.enum(epicStatusRoster),
+  /** Tickets outside the epic that a Pending member depends on and that are not Done, ascending. */
+  waitingOnOutside: page(ticketNumberSchema),
+});
+export type EpicSummaryResponse = z.infer<typeof epicSummaryResponseSchema>;
+
+export const epicListResponseSchema = z.strictObject({
+  epics: page(epicSummaryResponseSchema),
+  /** The `after` the next page is asked with, absent at the last. */
+  nextAfter: ticketNumberSchema.optional(),
+});
+export type EpicListResponse = z.infer<typeof epicListResponseSchema>;
+
+export const epicViewResponseSchema = epicSummaryResponseSchema.extend({
+  description: z.string(),
+  tickets: page(ticketNumberSchema),
+});
+export type EpicViewResponse = z.infer<typeof epicViewResponseSchema>;
+
+export const epicHistoryResponseSchema = z.strictObject({
+  /** Newest first. */
+  revisions: page(
+    z.strictObject({
+      revision: ticketNumberSchema,
+      changedAt: instantSchema,
+      actor: z.strictObject({ kind: identitySchema, subject: identitySchema }),
+      title: z.string(),
+    }),
+  ),
+  nextAfter: ticketNumberSchema.optional(),
+});
+export type EpicHistoryResponse = z.infer<typeof epicHistoryResponseSchema>;
+
+/** The members of an epic and the tickets outside it that they depend on, with an edge from each dependency to the member. */
+export const epicGraphResponseSchema = z.strictObject({
+  nodes: z.array(
+    z.strictObject({
+      ticket: ticketNumberSchema,
+      title: z.string().optional(),
+      phase: z.enum(phaseRoster),
+      member: z.boolean(),
+    }),
+  ),
+  edges: z.array(
+    z.strictObject({ from: ticketNumberSchema, to: ticketNumberSchema }),
+  ),
+});
+export type EpicGraphResponse = z.infer<typeof epicGraphResponseSchema>;
+
+/** What a saved write answers: the epic and the revision it is now at. */
+export const epicWriteResponseSchema = z.strictObject({
+  epic: ticketNumberSchema,
+  revision: ticketNumberSchema,
+});
+export type EpicWriteResponse = z.infer<typeof epicWriteResponseSchema>;
+
+/** The error envelope a refused write answers with, carrying what the reason names. */
+export const epicRefusalResponseSchema = z.strictObject({
+  error: z.strictObject({ code: identitySchema, message: z.string() }),
+  current: ticketNumberSchema.optional(),
+  tickets: page(ticketNumberSchema).optional(),
+});
+export type EpicRefusalResponse = z.infer<typeof epicRefusalResponseSchema>;
+
 /** Which of a project's doors its reader may press, each by the kind that door asks. */
 export const projectAbilitiesResponseSchema = z.strictObject({
   /** The reader's own principal, encoded as a ticket's `creator` is. */

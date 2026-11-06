@@ -37,6 +37,8 @@ import {
   type LeadTurnRecord,
 } from "../../interpreter/leadRead.ts";
 import type { ProjectInboxPage } from "../../interpreter/projectInbox.ts";
+import type { EpicRefusal } from "../../domain/epics.ts";
+import type { EpicRead, EpicWritten } from "../../interpreter/epics.ts";
 import type { SelectorHistoryRead } from "../../interpreter/selectorHistory.ts";
 import type {
   SelectorProposalReviews,
@@ -2928,4 +2930,54 @@ export function askLeadResponse(
         },
       );
   }
+}
+
+/** What a read of an epic answers: the value as the wire carries it, or the absence of one the caller may see. */
+export function epicReadResponse<Value>(
+  result: EpicRead<Value>,
+): NativeHttpResponse {
+  return result.result === "NotFound"
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, result.value);
+}
+
+const epicRefusalMessage: Readonly<Record<EpicRefusal["reason"], string>> = {
+  MissingEpic: "The project has no such epic.",
+  StaleRevision: "The epic has been revised since the revision expected.",
+  ArchivedEpic: "An archived epic's tickets do not change.",
+  EmptyTitle: "The title is empty.",
+  LongTitle: "The title is longer than an epic's title may be.",
+  LongSummary: "The summary is longer than an epic's summary may be.",
+  LargeContent: "The epic is larger than an epic may be.",
+  UnknownTickets: "The epic names tickets the project does not have.",
+};
+
+/**
+ * A write: a refusal the domain gave is a `409` carrying its reason as the
+ * code and what it names beside it, except a missing epic, which is a `404`
+ * like any other absence; a caller who may read and not mutate meets `403`.
+ */
+export function epicWriteResponse(result: EpicWritten): NativeHttpResponse {
+  if (result.result === "NotFound")
+    return response(404, nativeHttpError("NotFound", "Resource not found."));
+  if (result.result === "Forbidden")
+    return response(
+      403,
+      nativeHttpError("Forbidden", "The caller may not write epics."),
+    );
+  const outcome = result.outcome;
+  if (outcome.kind === "Saved")
+    return response(200, { epic: outcome.epic, revision: outcome.revision });
+  if (outcome.reason === "MissingEpic")
+    return response(
+      404,
+      nativeHttpError(outcome.reason, epicRefusalMessage[outcome.reason]),
+    );
+  return response(409, {
+    ...nativeHttpError(outcome.reason, epicRefusalMessage[outcome.reason]),
+    ...(outcome.reason === "StaleRevision" ? { current: outcome.current } : {}),
+    ...(outcome.reason === "UnknownTickets"
+      ? { tickets: outcome.tickets }
+      : {}),
+  });
 }

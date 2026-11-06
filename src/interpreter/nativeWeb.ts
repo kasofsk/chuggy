@@ -28,6 +28,8 @@ import {
 } from "./overridesAccess.ts";
 export type { AuthorizedResult } from "./authorizedProject.ts";
 
+import { nativeEpicMethods, type NativeEpics } from "./epics.ts";
+import type { EpicStore } from "./epicStore.ts";
 import type { Principal } from "./principal.ts";
 import type { ReleaseAuthoringProgram } from "../contract/authoring.ts";
 import type { ConfigurationOverrides } from "../contract/configurationOverrides.ts";
@@ -733,7 +735,7 @@ export type NativeDraftRevised =
       readonly landing: DraftLanding;
     };
 
-export interface NativeWeb {
+export interface NativeWeb extends NativeEpics {
   submit(
     principal: Principal,
     submission: NativeSubmission,
@@ -2777,8 +2779,10 @@ export function nativeWeb(
   sessionRoutes?: SessionRouteReads,
   projectArtifacts?: ProjectArtifactPort,
   projectArtifactMinting?: ProjectArtifactMinting,
+  epics?: EpicStore,
 ): NativeWeb {
   return {
+    ...nativeEpicMethods(access, epics),
     ...nativeRunEvidenceMethods(access, runEvidenceReads, runEvidenceContents),
     ...nativeLeadReadMethods(access, leads),
     ...nativeThreadMethods(access, threads, sessionRoutes, projectArtifacts),

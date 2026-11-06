@@ -161,6 +161,10 @@
     "draftInitialization": "/api/v1/tenants/:tenant/projects/:project/draft-initializations/:revision",
     "draft": "/api/v1/tenants/:tenant/projects/:project/drafts/:ticket",
     "dispatchView": "/api/v1/tenants/:tenant/projects/:project/dispatch-view",
+    "epics": "/api/v1/tenants/:tenant/projects/:project/epics",
+    "epic": "/api/v1/tenants/:tenant/projects/:project/epics/:epic",
+    "epicHistory": "/api/v1/tenants/:tenant/projects/:project/epics/:epic/history",
+    "epicGraph": "/api/v1/tenants/:tenant/projects/:project/epics/:epic/graph",
     "threads": "/api/v1/tenants/:tenant/projects/:project/threads",
     "threadLimit": "/api/v1/tenants/:tenant/projects/:project/thread-limits/:subject",
     "thread": "/api/v1/tenants/:tenant/projects/:project/threads/:session",
@@ -2894,6 +2898,99 @@
       },
       "required": ["turn", "message"],
       "additionalProperties": false
+    },
+    "epicWrite": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "Create"
+            },
+            "content": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "visibility": {
+                  "type": "string",
+                  "enum": ["Active", "Archived"]
+                },
+                "tickets": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  }
+                }
+              },
+              "required": ["title", "description", "visibility", "tickets"],
+              "additionalProperties": false
+            }
+          },
+          "required": ["kind", "content"],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "const": "Revise"
+            },
+            "epic": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "expected": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "content": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string"
+                },
+                "summary": {
+                  "type": "string"
+                },
+                "description": {
+                  "type": "string"
+                },
+                "visibility": {
+                  "type": "string",
+                  "enum": ["Active", "Archived"]
+                },
+                "tickets": {
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740991
+                  }
+                }
+              },
+              "required": ["title", "description", "visibility", "tickets"],
+              "additionalProperties": false
+            }
+          },
+          "required": ["kind", "epic", "expected", "content"],
+          "additionalProperties": false
+        }
+      ]
     },
     "threadRename": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",

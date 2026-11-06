@@ -131,3 +131,13 @@ export function epicListQueryParse(query: unknown): EpicListQuery {
 export function epicHistoryQueryParse(query: unknown): EpicHistoryQuery {
   return epicHistoryQuerySchema.parse(query);
 }
+
+/** What a write's body carries beside the content: the kind, an epic number and a revision. */
+export const epicWriteEnvelopeBytesMax = 1_024;
+
+/**
+ * The most bytes a write's body may weigh: the content bound plus the
+ * envelope, a per-route bound over the vendor media type's global one.
+ */
+export const epicWriteBodyBytesMax =
+  epicContentBytesMax + epicWriteEnvelopeBytesMax;

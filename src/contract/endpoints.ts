@@ -1,5 +1,10 @@
 /** Shared conversation and run-evidence endpoints for the server, browser, and contract document. */
 import { ticketActionReachResponseSchema } from "./actionReach.ts";
+import {
+  epicHistoryQuerySchema,
+  epicListQuerySchema,
+  epicWriteRequestSchema,
+} from "./epics.ts";
 import { fieldsOnly, integerField, textField } from "./fields.ts";
 import { z } from "zod";
 import {
@@ -19,6 +24,11 @@ import {
 } from "./requests.ts";
 import {
   operationalStatusResponseSchema,
+  epicGraphResponseSchema,
+  epicHistoryResponseSchema,
+  epicListResponseSchema,
+  epicViewResponseSchema,
+  epicWriteResponseSchema,
   executionResponseSchema,
   hostedRunsResponseSchema,
   projectAbilitiesResponseSchema,
@@ -184,6 +194,34 @@ export const nativeHttpEndpoints = {
     path: nativeHttpRoutes.threadClose,
     body: emptyBody,
     response: threadEntryResponseSchema,
+  },
+  listEpics: {
+    method: "GET",
+    path: nativeHttpRoutes.epics,
+    query: epicListQuerySchema,
+    response: epicListResponseSchema,
+  },
+  writeEpic: {
+    method: "POST",
+    path: nativeHttpRoutes.epics,
+    body: epicWriteRequestSchema,
+    response: epicWriteResponseSchema,
+  },
+  viewEpic: {
+    method: "GET",
+    path: nativeHttpRoutes.epic,
+    response: epicViewResponseSchema,
+  },
+  epicHistory: {
+    method: "GET",
+    path: nativeHttpRoutes.epicHistory,
+    query: epicHistoryQuerySchema,
+    response: epicHistoryResponseSchema,
+  },
+  epicGraph: {
+    method: "GET",
+    path: nativeHttpRoutes.epicGraph,
+    response: epicGraphResponseSchema,
   },
   renameThread: {
     method: "POST",

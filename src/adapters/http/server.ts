@@ -83,6 +83,7 @@ import {
   type AccountAgent,
   type SelectorHistoryOrder,
 } from "../../contract/rosters.ts";
+import { epicWriteBodyBytesMax } from "../../contract/epics.ts";
 import {
   agenticRefusalsAnsweredMax,
   imageMediaTypes,
@@ -136,6 +137,9 @@ import {
   parseThreadMessage,
   parseThreadOpen,
   parseThreadRename,
+  parseEpicHistory,
+  parseEpicList,
+  parseEpicWrite,
   parsePersonalRunnerRedemption,
   parseWorkerPoolRedemption,
   parseRegistrationTokenRequest,
@@ -207,6 +211,8 @@ import {
   closeThreadResponse,
   hideThreadResponse,
   renameThreadResponse,
+  epicReadResponse,
+  epicWriteResponse,
   openThreadResponse,
   chatAbilitiesResponse,
   chatProjectsResponse,
@@ -346,6 +352,11 @@ type InitialNativeWeb = Pick<
   | "runTranscript"
   | "runConfiguration"
   | "runError"
+  | "epics"
+  | "epic"
+  | "epicHistory"
+  | "epicGraph"
+  | "writeEpic"
   | "threads"
   | "thread"
   | "threadTranscript"
@@ -2314,6 +2325,7 @@ function registerEndpoint<Value>(
     readonly method: "GET" | "POST";
     readonly path: string;
     readonly body?: z.ZodType;
+    readonly bodyLimit?: number;
   },
   read: (
     request: FastifyRequest,
@@ -2325,6 +2337,9 @@ function registerEndpoint<Value>(
   app.route({
     method: endpoint.method,
     url: endpoint.path,
+    ...(endpoint.bodyLimit === undefined
+      ? {}
+      : { bodyLimit: endpoint.bodyLimit }),
     ...(endpoint.body === undefined
       ? {}
       : { preValidation: requireVersionedJson }),
@@ -2377,6 +2392,53 @@ function registerTicketLandings(
 
 function registerEndpointSession(request: FastifyRequest): SessionId {
   return asSessionId(textField(record(request.params), "session"));
+}
+
+function registerEpicParam(request: FastifyRequest): number {
+  return integerField(record(request.params), "epic");
+}
+
+function registerEpics(app: FastifyInstance, web: InitialNativeWeb): void {
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.listEpics,
+    (request, principal, partition) =>
+      web.epics(principal, partition, parseEpicList(request.query)),
+    epicReadResponse,
+  );
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.viewEpic,
+    (request, principal, partition) =>
+      web.epic(principal, partition, registerEpicParam(request)),
+    epicReadResponse,
+  );
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.epicHistory,
+    (request, principal, partition) =>
+      web.epicHistory(
+        principal,
+        partition,
+        registerEpicParam(request),
+        parseEpicHistory(request.query),
+      ),
+    epicReadResponse,
+  );
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.epicGraph,
+    (request, principal, partition) =>
+      web.epicGraph(principal, partition, registerEpicParam(request)),
+    epicReadResponse,
+  );
+  registerEndpoint(
+    app,
+    { ...nativeHttpEndpoints.writeEpic, bodyLimit: epicWriteBodyBytesMax },
+    (request, principal, partition) =>
+      web.writeEpic(principal, partition, parseEpicWrite(request.body)),
+    epicWriteResponse,
+  );
 }
 
 function registerThreadReads(
@@ -2522,6 +2584,15 @@ function registerLeadInquiries(
       web.askLead(principal, partition, parseLeadInquiry(request.body)),
     (result, partition) => askLeadResponse(partition, result),
   );
+}
+
+/** The reads and writes a project keeps beside its tickets and threads. */
+function registerProjectViews(
+  app: FastifyInstance,
+  web: InitialNativeWeb,
+): void {
+  registerEpics(app, web);
+  registerDispatchView(app, web);
 }
 
 function registerDispatchView(
@@ -3069,7 +3140,7 @@ export function createNativeHttpApp(
   if (threadLimits !== undefined) registerThreadLimits(app, threadLimits);
   if (chat !== undefined) registerMemberChat(app, chat, threadLive);
   registerLeadInquiries(app, web);
-  registerDispatchView(app, web);
+  registerProjectViews(app, web);
   registerRunners(app, partitionRoot, workerPools, personalRunners);
   registerPlacements(app, placement, sessionPlacement, ownerFallback);
   if (actionReports !== undefined) registerActionReports(app, actionReports);
