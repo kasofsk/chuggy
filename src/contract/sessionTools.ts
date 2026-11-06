@@ -106,6 +106,14 @@ export {
 /** What `read_ticket_landings`'s route answers: at most this many landings, the newest. */
 export { ticketLandingsAnsweredMax } from "./http.ts";
 
+/** What the epic tools hold an argument to: the title and summary a revision carries, the most one revision weighs, and the most one page answers. */
+export {
+  epicContentBytesMax,
+  epicPageLimitMax,
+  epicSummaryCharsMax,
+  epicTitleCharsMax,
+} from "./epics.ts";
+
 /** The one MCP server every session is given, and the prefix its tool names carry. */
 export const chuggyToolServerName = "chuggy";
 export const chuggyToolPrefix = "mcp__chuggy__";
@@ -284,7 +292,9 @@ const chuggyToolRoster = {
    * said to end; and it releases the revision of a Pending ticket's draft its
    * owner said to apply. None is in `DraftAuthor`, for the reason `DraftAuthor`
    * exists, and `revoke_ticket` and `update_ticket` are here because a thread
-   * holds this capability and a lead does not.
+   * holds this capability and a lead does not. The epic writes are here for
+   * the same reason: the API authorizes them as the member's `Mutate`, which a
+   * lead has no word of.
    */
   DraftOriginate: [
     "create_draft",

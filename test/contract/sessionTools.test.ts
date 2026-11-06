@@ -20,6 +20,7 @@ import {
 import * as authoring from "../../src/contract/authoring.ts";
 import * as brief from "../../src/contract/brief.ts";
 import * as configurationSelection from "../../src/contract/configurationSelection.ts";
+import * as epics from "../../src/contract/epics.ts";
 import { sessionCapabilities } from "../../src/contract/rosters.ts";
 import {
   allChuggyTools,
@@ -333,6 +334,10 @@ test("the request shapes a drafting tool publishes, and their bounds, are the pa
     briefLineCharsMax: brief.briefLineCharsMax,
     configurationSelectionSchema:
       configurationSelection.configurationSelectionSchema,
+    epicTitleCharsMax: epics.epicTitleCharsMax,
+    epicSummaryCharsMax: epics.epicSummaryCharsMax,
+    epicContentBytesMax: epics.epicContentBytesMax,
+    epicPageLimitMax: epics.epicPageLimitMax,
   };
   for (const [name, value] of Object.entries(published))
     assert.equal(entry[name], value, name);
