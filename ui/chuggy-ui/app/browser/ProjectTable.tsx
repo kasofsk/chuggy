@@ -567,7 +567,8 @@ function TicketListControls(props: {
 }
 
 /** One line under the controls where the list needs one: how many tickets a
- * search matched across the project, or that the list draws none. */
+ * search matched across the project, or that the list draws none, of the
+ * tickets there are or, while pages remain, of those read so far. */
 function ticketListStatus(
   rows: ProjectTicketRows,
   searching: boolean,
@@ -577,7 +578,10 @@ function ticketListStatus(
     return rows.matched === undefined
       ? undefined
       : `${String(rows.matched)} matching ${rows.matched === 1 ? "ticket" : "tickets"}`;
-  return shown === 0 ? "No active or recently finished tickets." : undefined;
+  if (shown > 0) return undefined;
+  return rows.tickets.length > 0 && projectTicketRowsHaveMore(rows)
+    ? "None of the tickets read so far is in this state."
+    : "No active or recently finished tickets.";
 }
 
 /** The rows the list's read holds that its filter draws, in the order the sort

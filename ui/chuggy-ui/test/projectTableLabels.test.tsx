@@ -766,3 +766,28 @@ test("the Filter picker and the counts are one filter, each drawing what the oth
     "Escalated1",
   ]);
 });
+
+/** What the list's sheet gives a count for its shadow while a keyboard focuses
+ * it. Whether jsdom counts a focus as a keyboard's depends on what an earlier
+ * case pressed, so the focus is named by an attribute the sheet is read with. */
+function countFocusedShadow(count: Element): string {
+  const focused = "data-keyboard-focused";
+  const rules = sheetRules(
+    listSheet.replaceAll(":focus-visible", `[${focused}]`),
+    [],
+  );
+  const held = count.cloneNode() as Element;
+  held.setAttribute(focused, "");
+  return sheetDeclared(rules, held, "box-shadow");
+}
+
+test("a count a keyboard focuses is ringed, pressed or not", async () => {
+  await drawTableWith(countedTickets, [execution]);
+  const counts = screen.getByRole("list", { name: "Tickets by state" });
+  const working = (): Element =>
+    within(counts).getByRole("button", { name: /^Working/u });
+  expect(countFocusedShadow(working())).toBe("var(--ring-focus)");
+  await countTapped(/^Working/u);
+  expect(working().getAttribute("aria-pressed")).toBe("true");
+  expect(countFocusedShadow(working())).toContain("var(--ring-focus)");
+});

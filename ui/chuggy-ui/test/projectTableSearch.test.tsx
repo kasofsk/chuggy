@@ -534,3 +534,23 @@ test("a filter chosen is written to the address and kept by this browser", async
   expect(localStorage.getItem(ticketListFilterStored)).toBe("Done");
   expect(titlesDrawn()).toStrictEqual(["Ticket 120"]);
 });
+
+test("a standing none of whose rows the first page holds says so of the rows read, and Show more reads the page that holds one", async () => {
+  const blocked = { openDependencies: [{ ticket: 1, phase: "Work" }] };
+  const drawn = await drawnAt({ filter: "Ready" }, (asked) => {
+    if (asked.get("cursor") === "pending-2")
+      return served([held(130, "Pending")]);
+    return asked.get("active") === "true"
+      ? served([held(150, "Pending", blocked)], { nextCursor: "pending-2" })
+      : served([]);
+  });
+  expect(drawn.asked.length).toBeGreaterThan(0);
+  expect(titlesDrawn()).toStrictEqual([]);
+  expect(screen.getByRole("status").textContent).toBe(
+    "None of the tickets read so far is in this state.",
+  );
+  expect(showMores()).toBe(1);
+  await press("Show more");
+  expect(titlesDrawn()).toStrictEqual(["Ticket 130"]);
+  expect(screen.queryByRole("status")).toBeNull();
+});
