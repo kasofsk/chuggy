@@ -21,15 +21,20 @@ import type { TicketSlot } from "./ticketSituation.ts";
 import { phaseTone } from "./tones.ts";
 import type { Tone } from "./tones.ts";
 
-/** Filled is the tone as the ground under inverse ink; tinted is its wash. */
-export type TicketStateLabelForm = "Filled" | "Tinted";
+/** Filled is the tone as the ground under inverse ink; tinted is its wash;
+ * outlined is a dashed edge with no ground, for what is not yet a ticket. */
+export type TicketStateLabelForm = "Filled" | "Tinted" | "Outlined";
 
 /** The mark before the word, so that colour is never the only signal. */
 export type TicketStateLabelMark =
-  "Dot" | "Slash" | "Spin" | "Alert" | "Check" | "Cross";
+  "Dot" | "Slash" | "Spin" | "Alert" | "Check" | "Cross" | "Pencil";
+
+/** What the page's label names: a ticket's standing, or a draft never
+ * released. */
+export type TicketStateStanding = TicketListStanding | "Draft";
 
 export interface TicketStateLabel {
-  readonly standing: TicketListStanding;
+  readonly standing: TicketStateStanding;
   readonly word: string;
   readonly tone: Tone;
   readonly form: TicketStateLabelForm;
@@ -37,9 +42,17 @@ export interface TicketStateLabel {
 }
 
 export function ticketStateLabelOf(
-  standing: TicketListStanding,
+  standing: TicketStateStanding,
 ): TicketStateLabel {
   switch (standing) {
+    case "Draft":
+      return {
+        standing,
+        word: "Draft",
+        tone: "queued",
+        form: "Outlined",
+        mark: "Pencil",
+      };
     case "Ready":
       return {
         standing,

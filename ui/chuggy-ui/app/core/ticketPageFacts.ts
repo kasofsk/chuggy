@@ -17,9 +17,14 @@
  * one its last release or update ran from, and never the draft's: a Pending
  * ticket's draft may be revised without an update, and a ledger grouped by it
  * would draw stages that will never run.
+ *
+ * A DRAFT NEVER RELEASED IS DRAWN IN THE TICKET'S PLACE. There is no ticket to
+ * read, so its plan is the draft's own and nothing has run.
  */
 
+import { briefTitleCharsMax } from "../../../../src/contract/brief.ts";
 import type {
+  DraftResponse,
   ExecutionsResponse,
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
@@ -97,4 +102,44 @@ export function ticketPageFacts(
     return { program, plan, ledger: undefined, resume, truncated };
   const ledger = ticketLedger(page, program);
   return { program, plan, ledger, resume, truncated };
+}
+
+/** The draft the page draws in the ticket's place: one never released, while
+ * no ticket has been read. */
+export function ticketPageUnreleased(
+  ticket: TicketResponse | undefined,
+  draft: DraftResponse | undefined,
+): DraftResponse | undefined {
+  if (ticket !== undefined || draft === undefined) return undefined;
+  return draft.state === "Draft" && draft.releasedAuthoringVersion === undefined
+    ? draft
+    : undefined;
+}
+
+/** The facts of a draft drawn in the ticket's place: its plan, and no runs. */
+export function ticketDraftPageFacts(
+  draft: DraftResponse,
+  canonical: string | undefined,
+): TicketPageFacts {
+  return {
+    program: undefined,
+    plan: ticketPlanOf(canonical, {
+      selection: draft.selection,
+      brief: draft.brief,
+      program: draft.authoring.program,
+    }),
+    ledger: undefined,
+    resume: resumeOfferOf(undefined),
+    truncated: false,
+  };
+}
+
+/** What a draft is called, as a ticket's read names one: its brief's title,
+ * or the first line of its intent that says anything, cut to the title's
+ * bound; none where neither says anything. */
+export function ticketDraftTitleOf(draft: DraftResponse): string | undefined {
+  const brief = draft.brief;
+  if (brief?.title !== undefined) return brief.title;
+  const line = brief?.intent.split("\n").find((said) => said.trim() !== "");
+  return line?.slice(0, briefTitleCharsMax);
 }

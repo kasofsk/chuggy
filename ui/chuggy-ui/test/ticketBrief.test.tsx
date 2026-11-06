@@ -17,7 +17,6 @@ import {
   ticketResponseSchema,
   type TicketResponse,
 } from "../../../src/contract/responses.ts";
-import type { PanelState } from "../app/core/freshness.ts";
 import { TicketBriefImages } from "../app/browser/TicketProvenance.tsx";
 import { SessionProvider } from "../app/browser/session.tsx";
 import { answer, holderDouble } from "./screenHarness.tsx";
@@ -55,20 +54,16 @@ function render(node: ReactNode): ReturnType<typeof drawn> {
 
 const briefPartition = { tenant: "acme", project: "atlas" };
 
-/** Ticket 7 as its own read answers it, with the brief it was released with. */
-function released(brief?: TicketResponse["brief"]): PanelState<TicketResponse> {
-  return {
-    state: "Ready",
-    observedAtMs: 0,
-    value: ticketResponseSchema.parse({
-      ticket: 7,
-      phase: "Pending",
-      sequence: 1,
-      ...ticketInstants,
-      configurationRevision: "r1",
-      ...(brief === undefined ? {} : { brief }),
-    }),
-  };
+/** The brief ticket 7's own read answers, as it was released. */
+function released(brief?: TicketResponse["brief"]): TicketResponse["brief"] {
+  return ticketResponseSchema.parse({
+    ticket: 7,
+    phase: "Pending",
+    sequence: 1,
+    ...ticketInstants,
+    configurationRevision: "r1",
+    ...(brief === undefined ? {} : { brief }),
+  }).brief;
 }
 
 /** Each image is read through the project's own authenticated read and drawn
@@ -91,7 +86,7 @@ test("a brief's images are drawn as images, from the project's read of each", as
       >
         <TicketBriefImages
           partition={briefPartition}
-          state={released({
+          brief={released({
             intent: "an intent",
             links: [],
             images: ["artifact-1", "artifact-2"],
@@ -115,14 +110,14 @@ test("a brief's images are drawn as images, from the project's read of each", as
 
 test("a ticket with no brief, or a brief with no images, draws nothing", () => {
   const { container } = render(
-    <TicketBriefImages partition={briefPartition} state={released()} />,
+    <TicketBriefImages partition={briefPartition} brief={released()} />,
   );
   expect(container.textContent).toBe("");
   cleanup();
   const none = render(
     <TicketBriefImages
       partition={briefPartition}
-      state={released({ intent: "an intent", links: [] })}
+      brief={released({ intent: "an intent", links: [] })}
     />,
   );
   expect(none.container.querySelector("img, ul")).toBeNull();

@@ -52,6 +52,15 @@ test("every state is a word, a tone, a form and a mark, the moving ones filled a
   ]);
 });
 
+test("a draft never released is labelled Draft, outlined and marked with a pencil", () => {
+  const label = ticketStateLabelOf("Draft");
+  expect([label.word, label.form, label.mark]).toStrictEqual([
+    "Draft",
+    "Outlined",
+    "Pencil",
+  ]);
+});
+
 function ticket(over: Partial<TicketResponse> = {}): TicketResponse {
   return {
     ticket: 335,

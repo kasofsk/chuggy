@@ -81,6 +81,7 @@ import {
   overridesSame,
 } from "./ticketOverrides.ts";
 import type { CreationOverrides, OverrideField } from "./ticketOverrides.ts";
+import { draftReleaseAction } from "./ticketActions.ts";
 import type { WorkRunner } from "./workRunner.ts";
 
 /** The authoring half of the form, which is exactly what an initialization defaults. */
@@ -1269,12 +1270,7 @@ export function creationBodyFrom(
 
 /** The mutation that turns the draft just created into a ticket the machine runs. */
 export function creationReleaseMutation(draft: DraftResponse): PublicMutation {
-  return {
-    mutation: "ReleaseDraft",
-    ticket: draft.ticket,
-    authoringVersion: draft.authoringVersion,
-    configurationRevision: draft.configurationRevision,
-  };
+  return draftReleaseAction(draft).mutation;
 }
 
 /**

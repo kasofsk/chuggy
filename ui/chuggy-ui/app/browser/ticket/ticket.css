@@ -661,7 +661,7 @@
   }
 
   /* The state label: filled is the tone as the ground under inverse ink,
-     tinted its wash inside an edge of the tone. */
+     tinted its wash inside an edge of the tone, outlined a dashed edge. */
   .ticket-state {
     --state-tone: var(--ink-3);
     --state-fill: var(--fill-retired);
@@ -728,6 +728,12 @@
     background: var(--state-wash);
     border-color: color-mix(in srgb, var(--state-tone) 45%, transparent);
     color: var(--state-tone);
+  }
+
+  .ticket-state[data-form="outlined"] {
+    background: transparent;
+    border: var(--hairline) dashed var(--edge-control);
+    color: var(--ink-2);
   }
 
   .ticket-state-mark {
@@ -1107,6 +1113,7 @@
 
   .ticket-sidebar .field {
     display: grid;
+    min-width: 0;
     gap: var(--space-1);
     padding-block: var(--space-3);
     border-bottom: var(--hairline) solid var(--edge);
@@ -1120,9 +1127,17 @@
     font-size: var(--text-sm);
   }
 
+  /* A value wraps inside its cell, an unbroken one anywhere, so it never
+     draws over the cell beside it. */
   .ticket-sidebar dd {
+    min-width: 0;
     color: var(--ink-1);
     font-size: var(--text-md);
+    overflow-wrap: anywhere;
+  }
+
+  .ticket-sidebar dd .identity {
+    white-space: normal;
   }
 
   .ticket-sidebar-branch {

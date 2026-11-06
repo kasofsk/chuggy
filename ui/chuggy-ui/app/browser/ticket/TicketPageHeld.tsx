@@ -50,6 +50,8 @@ export interface TicketPageHeld {
   readonly slot: Slot;
   /** What the card offers of the ticket's overrides, where it offers any. */
   readonly overrides: ReactNode;
+  /** The draft drawn in the ticket's place, where it was never released. */
+  readonly draft: DraftResponse | undefined;
 }
 
 const TicketPageContext = createContext<TicketPageHeld | undefined>(undefined);
