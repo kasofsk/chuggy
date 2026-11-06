@@ -995,20 +995,6 @@ export function apiProjectArtifact(
   );
 }
 
-export interface RunTurnsPage {
-  readonly after?: number | undefined;
-  readonly limit?: number | undefined;
-}
-
-/** One run's per-turn series, ascending, resumed by the ordinal already held. */
-export const apiRunTurns = apiProjectEndpoint(
-  nativeHttpEndpoints.runTurns,
-  (partition, execution: string, attempt: string, page: RunTurnsPage = {}) => ({
-    parameters: { ...partition, execution, attempt },
-    query: { after: page.after, limit: page.limit },
-  }),
-);
-
 /** The batches above the one named, which is the highest a pane already holds. */
 export const apiRunTranscript = apiProjectEndpoint(
   nativeHttpEndpoints.runTranscript,

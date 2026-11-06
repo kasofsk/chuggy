@@ -36,62 +36,6 @@
   color: var(--tone-parked);
 }
 
-.placeholder {
-  color: var(--ink-3);
-}
-
-.configuration {
-  display: grid;
-  gap: var(--space-2);
-  padding: var(--space-2) var(--space-4);
-}
-
-.phase {
-  color: var(--ink-1);
-  font-weight: 700;
-}
-
-.phase-escalated {
-  color: var(--tone-parked);
-}
-
-.phase-revoked {
-  color: var(--tone-fail);
-}
-
-.ticket-reason {
-  grid-column: 1 / -1;
-  margin: 0;
-  color: var(--tone-parked);
-}
-
-/* Named apart from the `fields` primitive because an unlayered rule would beat
- * it. The values here are digests, paths and command lines, so the value
- * column is told it may be narrower than them and that they may break. */
-
-.legacy-fields {
-  display: grid;
-  grid-template-columns: max-content 1fr;
-  gap: 0 var(--space-4);
-  margin: 0;
-  padding: var(--space-2) var(--space-4);
-}
-
-.legacy-field {
-  display: contents;
-}
-
-.legacy-fields dt {
-  color: var(--ink-3);
-}
-
-.legacy-fields dd {
-  margin: 0;
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.canonical,
 .preview {
   max-height: 24rem;
   overflow: auto;
@@ -104,27 +48,6 @@
   word-break: break-word;
 }
 
-.execution {
-  border-top: 1px solid var(--edge);
-  padding-top: var(--space-2);
-}
-
-.execution-head {
-  display: grid;
-  grid-template-columns: 10rem 6rem 6rem 1fr;
-  gap: var(--space-4);
-  width: 100%;
-  text-align: left;
-  background: none;
-  border: none;
-  padding: 0;
-}
-
-.execution-status,
-.execution-outcome {
-  color: var(--ink-3);
-}
-
 .session-card {
   max-width: 34rem;
   margin: 12vh auto;
@@ -134,36 +57,4 @@
   background: var(--surface-1);
   display: grid;
   gap: var(--space-4);
-}
-
-/* Run evidence: the four panes an expanded run draws. */
-
-.turns {
-  border-collapse: collapse;
-  width: 100%;
-  font-variant-numeric: tabular-nums;
-}
-
-.turns th,
-.turns td {
-  text-align: left;
-  padding: 0.1rem var(--space-2);
-  border-bottom: 1px solid var(--edge);
-  font-weight: 400;
-}
-
-.turns th {
-  color: var(--ink-3);
-  font-size: var(--text-xs);
-}
-
-.configuration-file {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: var(--space-2);
-}
-
-.configuration-file .preview {
-  flex-basis: 100%;
 }

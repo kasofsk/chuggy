@@ -14,7 +14,7 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { usePanelState } from "../app/browser/api.ts";
-import { useTicketExecutions } from "../app/browser/ticket/TicketLedger.tsx";
+import { useTicketExecutions } from "../app/browser/ticket/TicketRuns.tsx";
 import { executionQuery } from "../app/core/executionQueries.ts";
 import { projectResourceKey } from "../app/core/projectQueryKeys.ts";
 import { streamReopenDelayMsMin } from "../app/core/streamConnection.ts";

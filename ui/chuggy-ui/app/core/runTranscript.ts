@@ -36,7 +36,6 @@ import {
   conversationMessageInterruption,
 } from "./conversation.ts";
 import type { ApiFailure } from "./apiRequest.ts";
-import { freshnessLabel, panelObservedAtMs } from "./freshness.ts";
 import { runCountLabel } from "./runTotals.ts";
 
 /** The batches a pane keeps while it follows a run, past which the oldest
@@ -250,16 +249,6 @@ export function runTranscriptFailed(
   failure: ApiFailure,
 ): RunTranscriptHeld {
   return { ...held, failure };
-}
-
-/** No more can arrive, or when the newest batch the server holds was recorded. */
-export function runTranscriptFreshnessSentence(
-  held: RunTranscriptHeld,
-  nowMs: number,
-): string {
-  if (held.complete) return "complete";
-  if (held.observedAt === undefined) return "not read yet";
-  return `as of ${freshnessLabel(nowMs, panelObservedAtMs(held, undefined))}`;
 }
 
 function elisionBytes(node: unknown, found: number[], depth: number): void {
@@ -529,4 +518,36 @@ export function runTranscriptEnded(
     : exchanges.map((exchange, place) =>
         place === at ? { ...exchange, standing } : exchange,
       );
+}
+
+/** How many steps a run's page draws before a reader asks for every one. */
+export const runTranscriptStepsFirst = 3;
+
+/** The exchanges with only their first steps kept, and how many were left out.
+ * An exchange's ask and answer are kept whole, so the final message stands. */
+export function runTranscriptStepsCut(
+  exchanges: readonly ConversationExchange[],
+  kept: number,
+): {
+  readonly exchanges: readonly ConversationExchange[];
+  readonly hidden: number;
+} {
+  let left = kept;
+  let hidden = 0;
+  const cut = exchanges.map((exchange) => {
+    const shown = exchange.work.slice(0, Math.max(left, 0));
+    left -= shown.length;
+    hidden += exchange.work.length - shown.length;
+    return shown.length === exchange.work.length
+      ? exchange
+      : { ...exchange, work: shown };
+  });
+  return { exchanges: cut, hidden };
+}
+
+/** A run's transcript as its batches wrote it, one line a record. */
+export function runTranscriptRawText(held: RunTranscriptHeld): string {
+  return held.batches
+    .flatMap((batch) => (batch.read === "Content" ? [batch.content] : []))
+    .join("\n");
 }

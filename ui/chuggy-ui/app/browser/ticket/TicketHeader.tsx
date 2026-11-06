@@ -125,7 +125,8 @@ export function TicketHeader(props: {
   );
 }
 
-/** One tab: a link to its own address, which the router marks current. */
+/** One tab: a link to its own address, which the router marks current, and
+ * which `within` marks current under it as well. */
 function TicketTab(props: {
   readonly to:
     | "/$tenant/$project/tickets/$ticket"
@@ -133,6 +134,7 @@ function TicketTab(props: {
     | "/$tenant/$project/tickets/$ticket/configuration"
     | "/$tenant/$project/tickets/$ticket/usage";
   readonly params: PartitionIdentity & { readonly ticket: string };
+  readonly within?: boolean;
   readonly children: ReactNode;
 }): ReactNode {
   return (
@@ -140,7 +142,8 @@ function TicketTab(props: {
       <Link
         to={props.to}
         params={props.params}
-        activeOptions={{ exact: true }}
+        activeOptions={{ exact: props.within !== true, includeSearch: false }}
+        aria-current={props.within === true ? "page" : undefined}
         className="ticket-tab"
       >
         {props.children}
@@ -156,6 +159,8 @@ export function TicketTabs(props: {
   readonly ticket: number;
   readonly runCount: number | undefined;
   readonly runCountCut: boolean;
+  /** Whether a page under the Runs tab is drawn, at an address of its own. */
+  readonly runsWithin: boolean;
 }): ReactNode {
   const params = { ...props.partition, ticket: String(props.ticket) };
   const runCount = props.runCount ?? 0;
@@ -165,7 +170,11 @@ export function TicketTabs(props: {
         <TicketTab to="/$tenant/$project/tickets/$ticket" params={params}>
           Overview
         </TicketTab>
-        <TicketTab to="/$tenant/$project/tickets/$ticket/runs" params={params}>
+        <TicketTab
+          to="/$tenant/$project/tickets/$ticket/runs"
+          params={params}
+          within={props.runsWithin}
+        >
           Runs
           {runCount === 0 ? null : (
             <span className="ticket-tab-count">

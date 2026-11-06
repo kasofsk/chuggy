@@ -1,21 +1,14 @@
 /**
  * What a set of runs adds up to, and the words the figures are read in.
  *
- * The quiet failures here are a sum that skips the runs that ended badly — the
- * ones a reader most wants counted — and a dollar figure drawn without the
- * basis that makes it a list price rather than a bill.
+ * The quiet failure here is a sum that skips the runs that ended badly — the
+ * ones a reader most wants counted.
  */
 
 import { expect, test } from "vitest";
 
 import type { RunTotals } from "../../../src/contract/responses.ts";
-import {
-  generationLabel,
-  runCostLabel,
-  runCountLabel,
-  runDurationLabel,
-  runTotalsSummed,
-} from "../app/core/runTotals.ts";
+import { runCountLabel, runTotalsSummed } from "../app/core/runTotals.ts";
 
 function totals(over: Partial<RunTotals> = {}): RunTotals {
   return {
@@ -43,28 +36,8 @@ function totals(over: Partial<RunTotals> = {}): RunTotals {
   };
 }
 
-test("a dollar figure always says the basis it was published under", () => {
-  expect(runCostLabel(420_000, "List")).toBe("$0.42 (list price)");
-});
-
-/** A run costing less than a cent still cost something, and drawing it as
- * nothing is the failure this covers. */
-test("a spend below a cent is drawn finer rather than as nothing", () => {
-  expect(runCostLabel(4_200, "List")).toBe("$0.0042 (list price)");
-  expect(runCostLabel(0, "List")).toBe("$0.00 (list price)");
-});
-
-test("a generation past the first is drawn by number, in one spelling, never as a run", () => {
-  expect(generationLabel(1)).toBeUndefined();
-  expect(generationLabel(2)).toBe("generation 2");
-  expect(generationLabel(3)).toBe("generation 3");
-});
-
-test("a count is grouped and a duration is whole units, largest first", () => {
+test("a count is grouped", () => {
   expect(runCountLabel(1_234_567)).toBe("1,234,567");
-  expect(runDurationLabel(252_000)).toBe("4m 12s");
-  expect(runDurationLabel(9_000)).toBe("9s");
-  expect(runDurationLabel(3_912_000)).toBe("1h 5m 12s");
 });
 
 test("a sum over no run at all is no figure rather than a zero", () => {

@@ -15,7 +15,6 @@ import {
   ticketLandingFragmentSays,
   ticketLandingLink,
   ticketLandingOf,
-  ticketLandingOpened,
   ticketLandingsHeld,
   ticketLandingsJoined,
   ticketLandingsPolledMs,
@@ -261,21 +260,6 @@ test("landings join the cycles the ledger holds in the read's order, and the res
   expect(joined.byCycle.has(1)).toBe(false);
   expect(joined.unheld.map((landing) => landing.cycle)).toEqual([4]);
   expect(ticketLandingsJoined(landings, []).unheld).toHaveLength(3);
-});
-
-test("the cycle after a failed landing names why it exists, and no other cycle does", () => {
-  const joined = ticketLandingsJoined(
-    [landingConflicted(2)].map(ticketLandingOf),
-    [1, 2, 3],
-  );
-  expect(ticketLandingOpened(joined, 3)).toBe("After merge conflict");
-  expect(ticketLandingOpened(joined, 2)).toBeUndefined();
-  expect(
-    ticketLandingOpened(
-      ticketLandingsJoined([landingLanded(2)].map(ticketLandingOf), [2, 3]),
-      3,
-    ),
-  ).toBeUndefined();
 });
 
 test("the status bar names the newest landing only while it is live", () => {

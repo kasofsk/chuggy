@@ -1,7 +1,7 @@
 /**
  * An execution's reads: the execution itself, which an `Execution` frame marks
- * to be read again, the parts under it that no frame names — a run's turns,
- * its configuration, its error, an output's body — which the partition's
+ * to be read again, the parts under it that no frame names — a run's
+ * configuration, its error, an output's body — which the partition's
  * refetch reaches, and a ticket's page of them, which a frame's row folds into.
  */
 
@@ -13,7 +13,6 @@ import {
   apiOutputContent,
   apiRunConfiguration,
   apiRunError,
-  apiRunTurns,
 } from "./apiRoutes.ts";
 import { consoleListQuery, consoleProjectQuery } from "./consoleQuery.ts";
 import type { ConsoleQueryKept } from "./consoleQuery.ts";
@@ -42,21 +41,6 @@ function executionAttemptResource(
   part: string,
 ): string {
   return `${execution}/attempts/${attempt}/${part}`;
-}
-
-/** One page of an attempt's turns, from the one after `after`. */
-export function runTurnsQuery(
-  partition: PartitionIdentity,
-  execution: string,
-  attempt: string,
-  after: number | undefined,
-) {
-  return consoleProjectQuery(
-    partition,
-    "Execution",
-    executionAttemptResource(execution, attempt, `turns/${String(after ?? 0)}`),
-    (ports) => apiRunTurns(ports, partition, execution, attempt, { after }),
-  );
 }
 
 export function runConfigurationQuery(
