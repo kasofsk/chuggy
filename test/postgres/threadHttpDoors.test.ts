@@ -394,6 +394,31 @@ test("the transcript route walks the thread's own store", async () => {
  * naming a thread that is not the caller's, and a message to a thread whose
  * owner has no membership left.
  */
+test("the door refuses another member's mailbox and an ownerless one", async () => {
+  const { partition, member } = await readableMember("refused");
+  const theirs = await theirThread(partition, "http-refused-other");
+  await using app = threadApp(member.principal);
+  const mine = await openedThread(app, partition);
+
+  const elsewhere = await app.inject({
+    method: "POST",
+    url: `${pathOf(partition)}/${theirs}/messages`,
+    headers: versioned,
+    payload: { turn: `thread-turn-${randomUUID()}`, message: "not mine" },
+  });
+  assert.equal(elsewhere.statusCode, 403, elsewhere.body);
+  assert.equal(elsewhere.json<HttpErrorEnvelope>().error.code, "NotYourThread");
+
+  threadRigRevoke(rig, partition, member);
+  const orphaned = await app.inject({
+    method: "POST",
+    url: `${pathOf(partition)}/${mine.session}/messages`,
+    headers: versioned,
+    payload: { turn: `thread-turn-${randomUUID()}`, message: "still here?" },
+  });
+  assert.equal(orphaned.statusCode, 404, orphaned.body);
+});
+
 test("a reply to an offer reaches my own mailbox as an OfferReply turn, and another member's refuses it", async () => {
   const { partition, member } = await readableMember("offer-reply");
   const theirs = await theirThread(partition, "http-offer-reply-other");
@@ -423,31 +448,6 @@ test("a reply to an offer reaches my own mailbox as an OfferReply turn, and anot
   });
   assert.equal(elsewhere.statusCode, 403, elsewhere.body);
   assert.equal(elsewhere.json<HttpErrorEnvelope>().error.code, "NotYourThread");
-});
-
-test("the door refuses another member's mailbox and an ownerless one", async () => {
-  const { partition, member } = await readableMember("refused");
-  const theirs = await theirThread(partition, "http-refused-other");
-  await using app = threadApp(member.principal);
-  const mine = await openedThread(app, partition);
-
-  const elsewhere = await app.inject({
-    method: "POST",
-    url: `${pathOf(partition)}/${theirs}/messages`,
-    headers: versioned,
-    payload: { turn: `thread-turn-${randomUUID()}`, message: "not mine" },
-  });
-  assert.equal(elsewhere.statusCode, 403, elsewhere.body);
-  assert.equal(elsewhere.json<HttpErrorEnvelope>().error.code, "NotYourThread");
-
-  threadRigRevoke(rig, partition, member);
-  const orphaned = await app.inject({
-    method: "POST",
-    url: `${pathOf(partition)}/${mine.session}/messages`,
-    headers: versioned,
-    payload: { turn: `thread-turn-${randomUUID()}`, message: "still here?" },
-  });
-  assert.equal(orphaned.statusCode, 404, orphaned.body);
 });
 
 /** Sends one message through the door and answers the turn it minted. */
