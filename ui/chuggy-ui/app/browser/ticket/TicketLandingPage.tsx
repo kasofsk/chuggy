@@ -8,12 +8,13 @@ import type { ReactNode } from "react";
 
 import { sinceFigure } from "../../core/figures.ts";
 import { cycleLabel } from "../../core/ticketLedger.ts";
-import {
-  ticketLandingLinkLabel,
-  ticketLandingsHeld,
+import { ticketLandingLinkLabel } from "../../core/ticketLandings.ts";
+import type {
+  TicketLanding,
+  TicketLandingsState,
 } from "../../core/ticketLandings.ts";
-import type { TicketLanding } from "../../core/ticketLandings.ts";
 import { ticketRunsLandingCycle } from "../../core/ticketRuns.ts";
+import { PanelUnready } from "../DataPanel.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
 import { Field, Fields } from "../ui/Fields.tsx";
 import { Figure } from "../ui/Figure.tsx";
@@ -101,9 +102,12 @@ function TicketLandingFields(props: {
 
 function TicketLandingOf(props: {
   readonly held: TicketPageHeld;
-  readonly landings: readonly TicketLanding[];
+  readonly state: TicketLandingsState;
 }): ReactNode {
-  const landing = props.landings.at(-1);
+  if (props.state.state !== "Ready")
+    return <PanelUnready state={props.state} />;
+  const landings = props.state.value;
+  const landing = landings.at(-1);
   if (landing === undefined) return <EmptyState label="No landing" />;
   return (
     <>
@@ -111,11 +115,7 @@ function TicketLandingOf(props: {
       <div className="ticket-run-body">
         <TicketLandingFields landing={landing} />
       </div>
-      <LandingBlock
-        landings={props.landings}
-        cycleNamed
-        nowMs={props.held.nowMs}
-      />
+      <LandingBlock landings={landings} cycleNamed nowMs={props.held.nowMs} />
     </>
   );
 }
@@ -133,10 +133,7 @@ export function TicketLandingTab(): ReactNode {
           runs === undefined ? undefined : ticketRunsLandingCycle(runs.cycles),
       }}
     >
-      <TicketLandingOf
-        held={held}
-        landings={ticketLandingsHeld(held.reads.landingsState)}
-      />
+      <TicketLandingOf held={held} state={held.reads.landingsState} />
     </TicketRunsFrame>
   );
 }

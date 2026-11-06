@@ -11,7 +11,6 @@
  * function-length cap is what keeps each of them readable.
  */
 
-import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { Figure as FigureValue, Spend } from "../../core/figures.ts";
@@ -54,19 +53,12 @@ export function LedgerGroup(props: {
   readonly summary: string;
   readonly rollup?: ReactNode | undefined;
   readonly open: boolean;
-  /** Mount the rows only once the group is first opened, for rows that read
-   * on mount. */
-  readonly lazy?: boolean;
   readonly children: ReactNode;
 }): ReactNode {
-  const [opened, setOpened] = useState(props.open || props.lazy !== true);
   return (
     <details
       className={`ledger-group ledger-group-${props.standing.toLowerCase()}`}
       open={props.open}
-      onToggle={(event) => {
-        if (event.currentTarget.open) setOpened(true);
-      }}
     >
       <summary>
         <span className="ledger-group-head">
@@ -80,7 +72,7 @@ export function LedgerGroup(props: {
           <span className="ledger-group-rollup">{props.rollup}</span>
         )}
       </summary>
-      {opened || props.open ? props.children : null}
+      {props.children}
     </details>
   );
 }
@@ -105,14 +97,9 @@ export function LedgerBlock(props: {
   );
 }
 
-function ledgerRowClassName(
-  ghost: boolean,
-  changed: boolean,
-  superseded: boolean,
-): string {
+function ledgerRowClassName(ghost: boolean, changed: boolean): string {
   const ghosted = ghost ? " ledger-row-ghost" : "";
-  const superseding = superseded ? " ledger-row-superseded" : "";
-  return `ledger-row${ghosted}${changed ? " ledger-row-changed" : ""}${superseding}`;
+  return `ledger-row${ghosted}${changed ? " ledger-row-changed" : ""}`;
 }
 
 export interface LedgerRowProps {
@@ -124,9 +111,6 @@ export interface LedgerRowProps {
   readonly note?: ReactNode | undefined;
   readonly ghost?: boolean;
   readonly changed?: boolean;
-  /** A generation an evaluator's own resume replaced, drawn dimmed beneath
-   * the one that stands now. */
-  readonly superseded?: boolean;
   /** Drawn in order, the last at the row's edge; the first open one fills the
    * detail area, so a caller keeps at most one open. */
   readonly expands?: readonly LedgerRowExpand[];
@@ -169,7 +153,6 @@ export function LedgerRow(props: LedgerRowProps): ReactNode {
       className={ledgerRowClassName(
         props.ghost === true,
         props.changed === true,
-        props.superseded === true,
       )}
     >
       <span className="ledger-label">{props.label}</span>

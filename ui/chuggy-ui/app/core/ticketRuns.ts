@@ -166,7 +166,7 @@ function ticketRunsStageRows(
   }
 }
 
-/** The step a cycle stopped at, lower-cased as it sits inside a phrase. */
+/** The step a cycle stopped at: its stage as the plan names it, or work. */
 function ticketRunsCycleStep(cycle: Cycle, naming: TicketRunsNaming): string {
   const last = cycleLastSet(cycle);
   return last?.stage === undefined

@@ -222,3 +222,30 @@ test("the landing's address draws under the Runs tab, and says when the ticket h
       .map((link) => link.getAttribute("href")),
   ).toStrictEqual([`${ticketPath}/landing`]);
 });
+
+/** The site's answers with its landings read answered by `landings`. */
+function landingsServed(landings: () => Promise<Response>): void {
+  const answered = site.apiFetch;
+  (site as { apiFetch: typeof site.apiFetch }).apiFetch = (url, init) =>
+    new URL(url, "http://console.test").pathname.endsWith("/landings")
+      ? landings()
+      : answered(url, init);
+}
+
+test("the landing's address says its read has not answered rather than that the ticket has no landing", async () => {
+  landingsServed(() => new Promise(() => undefined));
+  await mountedAt(`${ticketPath}/landing`);
+  expect(screen.getByText("Loading…")).toBeDefined();
+  expect(screen.queryByText("No landing")).toBeNull();
+});
+
+test("the landing's address says its read failed rather than that the ticket has no landing", async () => {
+  landingsServed(() =>
+    Promise.resolve(
+      answer({ error: { code: "NotFound", message: "Not found." } }, 404),
+    ),
+  );
+  await mountedAt(`${ticketPath}/landing`);
+  expect(document.querySelector(".read-failed")).not.toBeNull();
+  expect(screen.queryByText("No landing")).toBeNull();
+});
