@@ -12,12 +12,20 @@
  * page and in every tab that reads that mailbox, and nothing this browser
  * keeps is asked.
  *
+ * A REPLY IS KEPT UNTIL THE MAILBOX TAKES IT. A confirmation's operation
+ * settles before its reply is sent, and once it has the card's subject no
+ * longer stands open; so the reply is kept in this browser as soon as there
+ * is one, and let go only once the mailbox took it, and a card holding one
+ * offers to send it again whatever its subject now says.
+ *
  * A PAGE IS FOLLOWED ONCE, AND ONLY FROM WHERE IT WAS ASKED. A `navigate` in
  * the reader's own thread moves the console only while it is in the newest
  * exchange and the console still stands on the page the message it answers
  * was sent from; what this browser remembers is the calls it already followed,
  * so a reload or a second tab does not follow one again.
  */
+
+import { z } from "zod";
 
 import { consolePageSchema } from "../../../../src/contract/consolePage.ts";
 import type { ConsolePage } from "../../../../src/contract/consolePage.ts";
@@ -31,6 +39,7 @@ import { chuggyToolPrefix } from "../../../../src/contract/sessionTools.ts";
 import {
   threadOfferReleaseSchema,
   threadOfferReplyRead,
+  threadOfferReplySchema,
   threadOfferRevokeSchema,
 } from "../../../../src/contract/threadOffers.ts";
 import type { ThreadOfferReply } from "../../../../src/contract/threadOffers.ts";
@@ -173,10 +182,17 @@ export function threadOfferReleaseMutation(
   };
 }
 
+/** The member's own operation a confirmation runs: the revocation of the
+ * ticket offered, refused by the writer once it moved past the revision
+ * offered. */
 export function threadOfferRevokeMutation(
   offer: Extract<ThreadOfferCall, { readonly offer: "Revoke" }>,
 ): PublicMutation {
-  return { mutation: "RevokeTicket", ticket: offer.ticket };
+  return {
+    mutation: "RevokeTicket",
+    ticket: offer.ticket,
+    expectedRevision: offer.revision,
+  };
 }
 
 /** What a reply carries of a code: one in the contract's spelling, or none. */
@@ -327,4 +343,82 @@ export function threadNavigateAppliedWrite(
   applied: readonly string[],
 ): void {
   store.write(threadNavigateAppliedKey, JSON.stringify(applied));
+}
+
+/** A reply this browser has and the mailbox has not yet taken, by the thread
+ * it answers in. */
+export interface ThreadOfferUnsent {
+  readonly session: string;
+  readonly reply: ThreadOfferReply;
+}
+
+/** How many unsent replies this browser keeps, the oldest let go first. */
+export const threadOfferUnsentMax = 32;
+
+/** Where this browser keeps the replies the mailbox has not taken, shared by
+ * its tabs. */
+export const threadOfferUnsentKey = "chuggy.threadOfferUnsent";
+
+const threadOfferUnsentSchema = z.array(
+  z.strictObject({ session: z.string().min(1), reply: threadOfferReplySchema }),
+);
+
+/** The unsent replies this browser keeps, none where what is kept is not a
+ * list of them. */
+export function threadOfferUnsentRead(
+  store: KeyValuePort,
+): readonly ThreadOfferUnsent[] {
+  const kept = store.read(threadOfferUnsentKey);
+  if (kept === null) return [];
+  try {
+    const read = threadOfferUnsentSchema.safeParse(JSON.parse(kept));
+    return read.success ? read.data.slice(-threadOfferUnsentMax) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** The unsent reply this browser keeps for one call of one thread. */
+export function threadOfferUnsentOf(
+  store: KeyValuePort,
+  session: string,
+  call: string,
+): ThreadOfferReply | undefined {
+  return threadOfferUnsentRead(store).find(
+    (held) => held.session === session && held.reply.call === call,
+  )?.reply;
+}
+
+/** Keeps one reply as unsent, in place of any its call had. */
+export function threadOfferUnsentKept(
+  store: KeyValuePort,
+  session: string,
+  reply: ThreadOfferReply,
+): void {
+  const kept = [
+    ...threadOfferUnsentRead(store).filter(
+      (held) => held.session !== session || held.reply.call !== reply.call,
+    ),
+    { session, reply },
+  ];
+  store.write(
+    threadOfferUnsentKey,
+    JSON.stringify(kept.slice(-threadOfferUnsentMax)),
+  );
+}
+
+/** Lets go of one call's unsent reply, which the mailbox took. */
+export function threadOfferUnsentLetGo(
+  store: KeyValuePort,
+  session: string,
+  call: string,
+): void {
+  store.write(
+    threadOfferUnsentKey,
+    JSON.stringify(
+      threadOfferUnsentRead(store).filter(
+        (held) => held.session !== session || held.reply.call !== call,
+      ),
+    ),
+  );
 }

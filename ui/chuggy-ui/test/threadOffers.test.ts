@@ -1,8 +1,8 @@
 /**
  * What a member's thread puts in front of them, read off its conversation:
  * which calls are offers and pages, where a card stands against its subject,
- * what a confirmation's reply says it came to, and when the console follows a
- * `navigate`.
+ * what a confirmation's reply says it came to, how a reply the mailbox has
+ * not taken is kept, and when the console follows a `navigate`.
  */
 
 import { describe, expect, test } from "vitest";
@@ -31,7 +31,14 @@ import {
   threadOfferRevokeMutation,
   threadOfferRevokeStanding,
   threadOfferSettledSentence,
+  threadOfferUnsentKept,
+  threadOfferUnsentKey,
+  threadOfferUnsentLetGo,
+  threadOfferUnsentMax,
+  threadOfferUnsentOf,
+  threadOfferUnsentRead,
 } from "../app/core/threadOffers.ts";
+import type { KeyValuePort } from "../app/core/sessionHolder.ts";
 import { creationDraft } from "./ticketCreationFixture.ts";
 
 function call(
@@ -181,6 +188,7 @@ describe("where a card stands", () => {
     expect(threadOfferRevokeMutation(revoke)).toStrictEqual({
       mutation: "RevokeTicket",
       ticket: 11,
+      expectedRevision: revoke.revision,
     });
   });
 });
@@ -312,5 +320,60 @@ describe("following a navigate", () => {
       "b",
       "a",
     ]);
+  });
+});
+
+describe("a reply the mailbox has not taken", () => {
+  function store(): KeyValuePort {
+    const held = new Map<string, string>();
+    return {
+      read: (key) => held.get(key) ?? null,
+      write: (key, value) => {
+        held.set(key, value);
+      },
+      remove: (key) => {
+        held.delete(key);
+      },
+    };
+  }
+  const declined = { call: "toolu_a", decision: "Declined" } as const;
+  const confirmed = {
+    call: "toolu_a",
+    decision: "Confirmed",
+    outcome: "Succeeded",
+  } as const;
+
+  test("is kept by thread and call, in place of the one its call had, until it is let go", () => {
+    const kept = store();
+    threadOfferUnsentKept(kept, "thread-1", declined);
+    threadOfferUnsentKept(kept, "thread-1", confirmed);
+    threadOfferUnsentKept(kept, "thread-2", declined);
+    expect(threadOfferUnsentOf(kept, "thread-1", "toolu_a")).toStrictEqual(
+      confirmed,
+    );
+    expect(threadOfferUnsentRead(kept)).toHaveLength(2);
+    threadOfferUnsentLetGo(kept, "thread-1", "toolu_a");
+    expect(threadOfferUnsentOf(kept, "thread-1", "toolu_a")).toBeUndefined();
+    expect(threadOfferUnsentOf(kept, "thread-2", "toolu_a")).toStrictEqual(
+      declined,
+    );
+  });
+
+  test("is kept to a bound, the oldest let go first, and nothing is read from what is not a list of them", () => {
+    const kept = store();
+    for (let at = 0; at <= threadOfferUnsentMax; at += 1)
+      threadOfferUnsentKept(kept, "thread-1", {
+        ...declined,
+        call: `call-${String(at)}`,
+      });
+    expect(threadOfferUnsentRead(kept)).toHaveLength(threadOfferUnsentMax);
+    expect(threadOfferUnsentOf(kept, "thread-1", "call-0")).toBeUndefined();
+    for (const garbage of ["{", "[1]", '[{"session":"t","reply":{}}]'])
+      expect(
+        threadOfferUnsentRead({
+          ...kept,
+          read: (key) => (key === threadOfferUnsentKey ? garbage : null),
+        }),
+      ).toStrictEqual([]);
   });
 });

@@ -11,7 +11,13 @@
  *
  * A CARD WHOSE SUBJECT MOVED IS NOT CONFIRMED. The draft or the ticket is read
  * as the project's stream keeps it, and one past the version offered, or no
- * longer one the action applies to, is drawn without Confirm.
+ * longer one the action applies to, is drawn without Confirm. A revocation is
+ * also fenced to the revision offered, so a ticket that moves after the card
+ * was drawn is refused rather than revoked.
+ *
+ * A REPLY THE MAILBOX REFUSED IS SENT AGAIN, NOT LOST. The reply is kept in
+ * this browser until the mailbox takes it, and a card holding one draws it
+ * with Send reply whatever its subject now says.
  *
  * The press is a console write under the call's own key, so it outlives the
  * card and a card drawn again while it runs draws it running. The reply's
@@ -29,6 +35,7 @@ import type { ThreadOfferReply } from "../../../../../src/contract/threadOffers.
 import { apiReplyThreadOffer } from "../../core/apiRoutes.ts";
 import { base64urlFromBytes } from "../../core/base64url.ts";
 import { operationFailureSentence } from "../../core/codeSentences.ts";
+import type { ApiPorts } from "../../core/apiRequest.ts";
 import { consoleWriteKey } from "../../core/consoleWrite.ts";
 import type { ConversationWorkStep } from "../../core/conversation.ts";
 import type { ConsoleWrite } from "../../core/consoleWrite.ts";
@@ -48,6 +55,9 @@ import {
   threadOfferSentence,
   threadOfferSettledSentence,
   threadOfferSupersededSentence,
+  threadOfferUnsentKept,
+  threadOfferUnsentLetGo,
+  threadOfferUnsentOf,
 } from "../../core/threadOffers.ts";
 import type {
   ThreadOfferCall,
@@ -55,23 +65,56 @@ import type {
 } from "../../core/threadOffers.ts";
 import { usePanelState } from "../api.ts";
 import { useConsoleWrite } from "../consoleWrite.tsx";
+import type { ConsoleWriting } from "../consoleWrite.tsx";
 import { PanelUnready } from "../DataPanel.tsx";
-import { drawBytes } from "../ports.ts";
+import { drawBytes, persistentStore } from "../ports.ts";
 import { Button } from "../ui/Button.tsx";
 import { Notice } from "../ui/Notice.tsx";
 
-/** One press of a card: a decline, or a confirmation and what it submits. */
+/** One press of a card: a decline, a confirmation and what it submits, or a
+ * reply the mailbox did not take, sent again. */
 type ThreadOfferPressed =
   | { readonly decision: "Declined" }
   | {
       readonly decision: "Confirmed";
       readonly mutation: PublicMutation;
       readonly operation: string;
-    };
+    }
+  | { readonly decision: "Resent"; readonly reply: ThreadOfferReply };
+
+type ThreadOfferWriting = ConsoleWriting<ThreadOfferPressed, ThreadOfferReply>;
 
 /** The turn a call's reply goes into the mailbox as. */
 export function threadOfferReplyTurn(call: string): string {
   return `offer-reply-${call}`;
+}
+
+/** The reply one press makes. A confirmation is kept as unsettled before its
+ * operation is submitted, so a tab closed while following it leaves a reply
+ * behind to send. */
+async function threadOfferWriteReply(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  session: string,
+  offer: ThreadOfferCall,
+  pressed: ThreadOfferPressed,
+): Promise<ThreadOfferReply> {
+  if (pressed.decision === "Resent") return pressed.reply;
+  if (pressed.decision === "Declined")
+    return { call: offer.call, decision: "Declined" };
+  threadOfferUnsentKept(persistentStore, session, {
+    call: offer.call,
+    decision: "Confirmed",
+    outcome: "Unsettled",
+  });
+  const followed = await followOperation(
+    ports,
+    partition,
+    { operation: pressed.operation, mutation: pressed.mutation },
+    offer.ticket,
+    () => undefined,
+  );
+  return threadOfferConfirmed(offer.call, followed.step);
 }
 
 function threadOfferWrite(
@@ -88,29 +131,21 @@ function threadOfferWrite(
       offer.call,
     ),
     write: async (ports, pressed) => {
-      const reply: ThreadOfferReply =
-        pressed.decision === "Declined"
-          ? { call: offer.call, decision: "Declined" }
-          : threadOfferConfirmed(
-              offer.call,
-              (
-                await followOperation(
-                  ports,
-                  partition,
-                  {
-                    operation: pressed.operation,
-                    mutation: pressed.mutation,
-                  },
-                  offer.ticket,
-                  () => undefined,
-                )
-              ).step,
-            );
+      const reply = await threadOfferWriteReply(
+        ports,
+        partition,
+        session,
+        offer,
+        pressed,
+      );
+      threadOfferUnsentKept(persistentStore, session, reply);
       const sent = await apiReplyThreadOffer(ports, partition, session, {
         turn: threadOfferReplyTurn(offer.call),
         reply,
       });
-      return sent.outcome === "Ok" ? { outcome: "Ok", value: reply } : sent;
+      if (sent.outcome !== "Ok") return sent;
+      threadOfferUnsentLetGo(persistentStore, session, offer.call);
+      return { outcome: "Ok", value: reply };
     },
     refusal: operationFailureSentence,
   };
@@ -132,34 +167,59 @@ function ThreadOfferShell(props: {
   );
 }
 
+function ThreadOfferRefused(props: {
+  readonly writing: ThreadOfferWriting;
+}): ReactNode {
+  const { error } = props.writing;
+  return error === null ? null : (
+    <Notice tone="danger" inline detail={error.message} />
+  );
+}
+
+/** A reply the mailbox did not take, and the press that sends it again. */
+function ThreadOfferResend(props: {
+  readonly offer: ThreadOfferCall;
+  readonly reply: ThreadOfferReply;
+  readonly writing: ThreadOfferWriting;
+}): ReactNode {
+  const { offer, reply, writing } = props;
+  return (
+    <>
+      <p className="text-ink-3 text-sm">
+        {threadOfferSettledSentence(offer, reply)} · Reply not sent
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          size="sm"
+          variant="primary"
+          busy={writing.isPending}
+          disabled={writing.isPending}
+          onClick={() => {
+            writing.mutate({ decision: "Resent", reply });
+          }}
+        >
+          Send reply
+        </Button>
+      </div>
+      <ThreadOfferRefused writing={writing} />
+    </>
+  );
+}
+
 /** What a card offers once its subject is read: the presses where it is
  * open, and why there are none where it is not. */
 function ThreadOfferOpen(props: {
-  readonly partition: PartitionIdentity;
-  readonly session: string;
-  readonly offer: ThreadOfferCall;
+  readonly writing: ThreadOfferWriting;
   readonly standing: ThreadOfferStanding;
   readonly mutation: PublicMutation | undefined;
 }): ReactNode {
-  const { offer, standing } = props;
-  const writing = useConsoleWrite(
-    threadOfferWrite(props.partition, props.session, offer),
-    { drawn: true },
-  );
-  const reply = writing.isSuccess ? writing.data : undefined;
-  if (reply !== undefined)
-    return (
-      <p className="text-ink-3 text-sm" role="status">
-        {threadOfferSettledSentence(offer, reply)}
-      </p>
-    );
+  const { writing, standing, mutation } = props;
   if (standing.standing === "Superseded")
     return (
       <p className="text-ink-3 text-sm">{threadOfferSupersededSentence}</p>
     );
   if (standing.standing === "Closed")
     return <p className="text-ink-3 text-sm">{standing.why}</p>;
-  const { mutation } = props;
   return (
     <>
       <div className="flex flex-wrap gap-2">
@@ -189,24 +249,22 @@ function ThreadOfferOpen(props: {
           Decline
         </Button>
       </div>
-      {writing.error === null ? null : (
-        <Notice tone="danger" inline detail={writing.error.message} />
-      )}
+      <ThreadOfferRefused writing={writing} />
     </>
   );
 }
 
 function ThreadOfferRelease(props: {
   readonly partition: PartitionIdentity;
-  readonly session: string;
   readonly offer: Extract<ThreadOfferCall, { readonly offer: "Release" }>;
+  readonly writing: ThreadOfferWriting;
 }): ReactNode {
   const { partition, offer } = props;
   const state = usePanelState(draftQuery(partition, offer.ticket, "Streamed"));
   if (state.state !== "Ready") return <PanelUnready state={state} />;
   return (
     <ThreadOfferOpen
-      {...props}
+      writing={props.writing}
       standing={threadOfferReleaseStanding(offer, state.value)}
       mutation={threadOfferReleaseMutation(offer, state.value)}
     />
@@ -215,18 +273,50 @@ function ThreadOfferRelease(props: {
 
 function ThreadOfferRevoke(props: {
   readonly partition: PartitionIdentity;
-  readonly session: string;
   readonly offer: Extract<ThreadOfferCall, { readonly offer: "Revoke" }>;
+  readonly writing: ThreadOfferWriting;
 }): ReactNode {
   const { partition, offer } = props;
   const state = usePanelState(ticketQuery(partition, offer.ticket, "Streamed"));
   if (state.state !== "Ready") return <PanelUnready state={state} />;
   return (
     <ThreadOfferOpen
-      {...props}
+      writing={props.writing}
       standing={threadOfferRevokeStanding(offer, state.value)}
       mutation={threadOfferRevokeMutation(offer)}
     />
+  );
+}
+
+/**
+ * A card the mailbox holds no reply for: settled by the reply this tab just
+ * sent, offering to send again a reply this browser holds unsent, and
+ * otherwise drawn against its subject as the project keeps it.
+ */
+function ThreadOfferUnanswered(props: {
+  readonly partition: PartitionIdentity;
+  readonly session: string;
+  readonly offer: ThreadOfferCall;
+}): ReactNode {
+  const { partition, session, offer } = props;
+  const writing = useConsoleWrite(threadOfferWrite(partition, session, offer), {
+    drawn: true,
+  });
+  if (writing.isSuccess && writing.data !== undefined)
+    return (
+      <p className="text-ink-3 text-sm" role="status">
+        {threadOfferSettledSentence(offer, writing.data)}
+      </p>
+    );
+  const unsent = writing.isPending
+    ? undefined
+    : threadOfferUnsentOf(persistentStore, session, offer.call);
+  if (unsent !== undefined)
+    return <ThreadOfferResend offer={offer} reply={unsent} writing={writing} />;
+  return offer.offer === "Release" ? (
+    <ThreadOfferRelease partition={partition} offer={offer} writing={writing} />
+  ) : (
+    <ThreadOfferRevoke partition={partition} offer={offer} writing={writing} />
   );
 }
 
@@ -245,10 +335,12 @@ export function ThreadOfferCard(props: {
         <p className="text-ink-3 text-sm">
           {threadOfferSettledSentence(offer, reply)}
         </p>
-      ) : offer.offer === "Release" ? (
-        <ThreadOfferRelease {...props} offer={offer} />
       ) : (
-        <ThreadOfferRevoke {...props} offer={offer} />
+        <ThreadOfferUnanswered
+          partition={props.partition}
+          session={props.session}
+          offer={offer}
+        />
       )}
     </ThreadOfferShell>
   );

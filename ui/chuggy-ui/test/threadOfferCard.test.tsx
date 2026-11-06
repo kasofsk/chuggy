@@ -1,8 +1,9 @@
 /**
  * An offer drawn as a card: Confirm runs the member's own operation at the
  * version offered and then replies, Decline replies and runs nothing, a card
- * whose subject moved past the version offered has no Confirm, and a card the
- * mailbox holds a reply for is drawn settled and reads nothing.
+ * whose subject moved past the version offered has no Confirm, a card the
+ * mailbox holds a reply for is drawn settled and reads nothing, and a reply
+ * the mailbox refused can be sent again.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
@@ -42,6 +43,7 @@ vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  localStorage.clear();
 });
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
@@ -67,15 +69,22 @@ const pendingTicket = {
   ...ticketInstants,
 };
 
+/** The mailbox refusing a reply. */
+function replyRefused(): Response {
+  return answer({ error: { code: "ThreadNotOpen" } }, 409);
+}
+
 /** The API as a card meets it: the draft and the ticket as a case names
- * them, every submission accepted and settled done, and every reply taken. */
+ * them, every submission accepted and settled done, and every reply taken
+ * but those a case refuses first. */
 function served(
   draft: unknown = creationDraft,
   ticket: unknown = pendingTicket,
+  replies: (() => Response)[] = [],
 ) {
   return scriptedFetch((request: SentRequest) => {
     if (request.url.includes("/offer-replies"))
-      return answer({ turn: "t", ordinal: 4 }, 202);
+      return replies.shift()?.() ?? answer({ turn: "t", ordinal: 4 }, 202);
     if (request.method === "POST")
       return answer({ operation: "op-one", state: "Pending" }, 202);
     if (request.url.includes("/operations/"))
@@ -187,9 +196,55 @@ test("Confirm revokes the offered ticket at the revision offered", async () => {
   expect(posted(api, "/operations")).toStrictEqual([
     {
       operation: expect.any(String) as unknown,
-      mutation: { mutation: "RevokeTicket", ticket: 11 },
+      mutation: { mutation: "RevokeTicket", ticket: 11, expectedRevision: 1 },
     },
   ]);
+});
+
+test("a confirmed offer whose reply was refused can still send its reply, after its subject closed and after a reload", async () => {
+  const confirmed = {
+    turn: "offer-reply-toolu_release",
+    reply: {
+      call: "toolu_release",
+      decision: "Confirmed",
+      outcome: "Succeeded",
+    },
+  };
+  const first = served(creationDraft, pendingTicket, [replyRefused]);
+  await drawn(release, first);
+  await turned(() => {
+    screen.getByRole("button", { name: "Confirm" }).click();
+  });
+  await settled();
+  expect(screen.getByText("Released · Reply not sent")).toBeDefined();
+  expect(posted(first, "/offer-replies")).toStrictEqual([confirmed]);
+
+  cleanup();
+  const reloaded = served(
+    { ...creationDraft, state: "Released" },
+    pendingTicket,
+    [replyRefused],
+  );
+  await drawn(release, reloaded);
+  expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull();
+  await turned(() => {
+    screen.getByRole("button", { name: "Send reply" }).click();
+  });
+  await settled();
+  expect(screen.getByText("Released · Reply not sent")).toBeDefined();
+  await turned(() => {
+    screen.getByRole("button", { name: "Send reply" }).click();
+  });
+  await settled();
+
+  expect(posted(first, "/operations")).toHaveLength(1);
+  expect(posted(reloaded, "/operations")).toStrictEqual([]);
+  expect(posted(reloaded, "/offer-replies")).toStrictEqual([
+    confirmed,
+    confirmed,
+  ]);
+  expect(screen.getByRole("status").textContent).toBe("Released");
+  expect(screen.queryByRole("button")).toBeNull();
 });
 
 test("a card whose draft or ticket moved past the version offered is superseded, and offers no Confirm", async () => {
