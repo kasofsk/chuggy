@@ -1,6 +1,7 @@
 /**
  * A ticket's state as one label: its word, its tone and its mark, never a
- * button. The page's size heads the ticket; the small one sits in a bar.
+ * button. The page's size heads the ticket; the small one sits in a bar or a
+ * row, and what the label is given follows its word.
  */
 
 import type { ReactNode } from "react";
@@ -65,6 +66,7 @@ function TicketStateMarkPaths(props: {
 export function TicketStateLabel(props: {
   readonly standing: TicketListStanding;
   readonly size: TicketStateLabelSize;
+  readonly children?: ReactNode;
 }): ReactNode {
   const label = ticketStateLabelOf(props.standing);
   return (
@@ -83,7 +85,8 @@ export function TicketStateLabel(props: {
       >
         <TicketStateMarkPaths mark={label.mark} />
       </svg>
-      {label.word}
+      <span className="ticket-state-word">{label.word}</span>
+      {props.children}
     </span>
   );
 }

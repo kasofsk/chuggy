@@ -56,10 +56,12 @@ test("every state's label is its word after a mark, and only a moving state's ma
     cleanup();
   }
   render(<TicketStateLabel standing="Evaluation" size="small" />);
-  const small = screen.getByText("Evaluating");
-  expect(small.dataset["size"]).toBe("small");
-  expect(small.dataset["form"]).toBe("filled");
-  expect(small.dataset["tone"]).toBe("evaluation");
+  const small = screen
+    .getByText("Evaluating")
+    .closest<HTMLElement>(".ticket-state");
+  expect(small?.dataset["size"]).toBe("small");
+  expect(small?.dataset["form"]).toBe("filled");
+  expect(small?.dataset["tone"]).toBe("evaluation");
 });
 
 /** An observer the case reports through, as a browser reports a header
@@ -107,7 +109,9 @@ test("the bar holding the small label and the title shows once the header has sc
   });
   expect(bar?.hidden).toBe(false);
   expect(
-    within(bar as HTMLElement).getByText("Escalated").dataset["size"],
+    within(bar as HTMLElement)
+      .getByText("Escalated")
+      .closest<HTMLElement>(".ticket-state")?.dataset["size"],
   ).toBe("small");
   expect(
     within(bar as HTMLElement).getByText("Lock the contract"),

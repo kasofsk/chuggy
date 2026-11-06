@@ -1,5 +1,5 @@
 /* The ticket list: the controls, then the rows joined into one column with
-   the outer corners rounded, each row the same height so the state chips line
+   the outer corners rounded, each row the same height so the state labels line
    up down the right edge. The row reads as two lines — the title, then the
    number, the meta and what it waits on — over a foot of its state, which on
    a ready row is the button that dispatches it, and each count above the rows
@@ -64,23 +64,23 @@
     list-style: none;
   }
 
-  .ticket-list-state.ticket-state-count {
-    margin-inline-start: 0;
-    gap: var(--space-2);
-    box-sizing: border-box;
-    width: auto;
-    height: var(--control-height);
-    padding: 0 var(--space-2);
-    font-size: var(--text-xs);
+  /* A count is its state's label holding the number, as tall as the controls
+     beside it, ringed in its tone while it is the filter. */
+  button.ticket-state-count {
+    display: inline-flex;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-3);
+    background: transparent;
+    cursor: pointer;
   }
 
-  button.ticket-state-count {
-    font-family: inherit;
-    cursor: pointer;
+  button.ticket-state-count > .ticket-state {
+    height: var(--control-height);
     transition: border-color var(--duration-1) var(--ease-out);
   }
 
-  button.ticket-state-count:hover {
+  button.ticket-state-count:hover > .ticket-state {
     border-color: var(--edge-strong);
   }
 
@@ -89,15 +89,10 @@
     box-shadow: var(--ring-focus);
   }
 
-  button.ticket-state-count[aria-pressed="true"] {
-    border-color: currentColor;
-    box-shadow: inset 0 0 0 var(--hairline) currentColor;
-  }
-
-  button.ticket-state-count[aria-pressed="true"]:focus-visible {
+  button.ticket-state-count[aria-pressed="true"] > .ticket-state {
     box-shadow:
-      var(--ring-focus),
-      inset 0 0 0 var(--hairline) currentColor;
+      0 0 0 var(--hairline) var(--surface-0),
+      0 0 0 calc(3 * var(--hairline)) var(--state-tone);
   }
 
   .ticket-list-search {
@@ -353,23 +348,62 @@
     min-width: 0;
   }
 
-  /* The chip is as wide on every row whatever it says, and its tone is the
-     row's standing: an outline for what can start, a wash for what is moving,
-     parked or finished, and the inset for what waits or was stopped. */
+  /* The row's state label sits at the end of a slot as wide and as tall on
+     every row whatever it says, so the column lines up and the row keeps its
+     height; a ready row's slot is the button that dispatches it. */
+  .ticket-list-standing {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    justify-content: flex-end;
+    width: calc(12ch + var(--space-6));
+    height: calc(var(--space-6) + var(--space-2));
+    margin-inline-start: auto;
+    font-size: var(--text-md);
+  }
 
+  button.ticket-list-standing {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+  }
+
+  button.ticket-list-standing > .ticket-state {
+    box-shadow: 0 var(--hairline) var(--space-1) var(--wash-pass);
+    transition: box-shadow var(--duration-1) var(--ease-out);
+  }
+
+  button.ticket-list-standing:hover:not(:disabled) > .ticket-state {
+    box-shadow: 0 var(--space-1) var(--space-3) var(--wash-pass);
+  }
+
+  .ticket-list-standing:focus-visible {
+    box-shadow: none;
+  }
+
+  .ticket-list-standing:focus-visible > .ticket-state {
+    box-shadow: var(--ring-focus);
+  }
+
+  button.ticket-list-standing:disabled {
+    cursor: progress;
+    opacity: 0.6;
+  }
+
+  /* A dependency is its number in the colours of the state it stands in: an
+     outline for what can start, a wash for what is moving, parked or
+     finished, and the inset for what waits or was stopped. */
   .ticket-list-state {
     display: inline-flex;
     flex: none;
     align-items: center;
-    justify-content: center;
-    width: calc(12ch + var(--space-6));
-    height: calc(var(--space-6) + var(--space-2));
-    margin-inline-start: auto;
+    padding: var(--space-1) var(--space-3);
     border: var(--hairline) solid transparent;
     border-radius: var(--radius-3);
     background: var(--surface-2);
     color: var(--ink-2);
-    font-size: var(--text-md);
+    font-size: var(--text-sm);
     font-weight: var(--weight-strong);
     white-space: nowrap;
   }
@@ -378,38 +412,6 @@
     border-color: var(--tone-pass);
     background: var(--surface-1);
     color: var(--tone-pass);
-  }
-
-  .ticket-list-state.ticket-dependency {
-    width: auto;
-    height: auto;
-    margin-inline-start: 0;
-    padding: var(--space-1) var(--space-3);
-    font-size: var(--text-sm);
-  }
-
-  button.ticket-list-state:not(.ticket-state-count) {
-    font-family: inherit;
-    cursor: pointer;
-    box-shadow: 0 var(--hairline) var(--space-1) var(--wash-pass);
-    transition:
-      background var(--duration-1) var(--ease-out),
-      box-shadow var(--duration-1) var(--ease-out);
-  }
-
-  button.ticket-list-state:not(.ticket-state-count):hover:not(:disabled) {
-    background: var(--wash-pass);
-    box-shadow: 0 var(--space-1) var(--space-3) var(--wash-pass);
-  }
-
-  button.ticket-list-state:not(.ticket-state-count):focus-visible {
-    outline: none;
-    box-shadow: var(--ring-focus);
-  }
-
-  button.ticket-list-state:not(.ticket-state-count):disabled {
-    cursor: progress;
-    opacity: 0.6;
   }
 
   .ticket-list-state[data-standing="Done"] {
@@ -484,13 +486,19 @@
       margin-inline: calc(-1 * var(--space-4));
     }
 
-    .ticket-list-state.ticket-state-count {
-      width: var(--control-height);
-      padding: 0;
+    button.ticket-state-count,
+    button.ticket-state-count > .ticket-state {
       border-radius: var(--radius-circle);
     }
 
-    .ticket-state-count-label {
+    button.ticket-state-count > .ticket-state {
+      justify-content: center;
+      width: var(--control-height);
+      padding: 0;
+    }
+
+    .ticket-state-count .ticket-state-mark,
+    .ticket-state-count .ticket-state-word {
       display: none;
     }
 
