@@ -27,13 +27,24 @@ import type { RunReason } from "./runReason.ts";
 /** The built-in output an agent's worker writes its summary to. */
 export const runResultSummaryName = "work-summary";
 
-/** The row's line: the report's opening, unless the worker left a reason. */
+/** A report's opening as words, without the marks Markdown sets them in. */
+export function runResultLinePlain(line: string): string {
+  return line
+    .replace(/^(?:#{1,6}\s+|>\s*|[-*+]\s+)/u, "")
+    .replace(/(\*\*|__|`)/gu, "");
+}
+
+/** The row's line: the report's opening as words, unless the worker left a
+ * reason. */
 export function runResultLineOf(
   execution: ExecutionResponse,
 ): RunReason | undefined {
   if (runReasonAttempt(execution) !== undefined) return undefined;
   const report = execution.result?.report;
-  return report === undefined ? undefined : runReasonOf(report);
+  const reason = report === undefined ? undefined : runReasonOf(report);
+  return reason === undefined
+    ? undefined
+    : { ...reason, line: runResultLinePlain(reason.line) };
 }
 
 /** The expander a result opens, and the ordinal of the output it reads. */

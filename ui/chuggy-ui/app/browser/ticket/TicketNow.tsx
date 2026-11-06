@@ -4,9 +4,9 @@
  * transcript. A run with none, such as a command or one whose
  * worker has not started, is its stage, its status and how long it has gone.
  *
- * The execution is read under the key its ledger row reads it by, so a live
- * `Execution` frame lands in both and the card follows the same high-water
- * mark the row's transcript does. The run's prompt is read only once the
+ * The execution is read under the key its run's row and page read it by, so a
+ * live `Execution` frame lands in each and the card follows the same
+ * high-water mark the run page's transcript does. The run's prompt is read only once the
  * transcript is opened.
  *
  * A run of the reader's own that their runner may take, and has not begun,

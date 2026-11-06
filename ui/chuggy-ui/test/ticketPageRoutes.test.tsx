@@ -5,7 +5,7 @@
  * page without the tabs.
  */
 
-import { fireEvent, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
 import {
@@ -17,6 +17,8 @@ import {
   consoleSiteEachCase,
 } from "./consoleSite.tsx";
 import type { ConsoleSite } from "./consoleSite.tsx";
+import { runAttempt, runSummary } from "./runPageFixture.tsx";
+import { answer } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
 vi.mock("../app/browser/ports.ts", async (importOriginal) =>
@@ -58,7 +60,6 @@ async function mountedAt(path: string): Promise<void> {
 
 test.each([
   ["", "Overview", "Instructions"],
-  ["/runs", "Runs", "Cycles"],
   ["/usage", "Usage", "Activity"],
 ])(
   "the ticket's address%s draws the header, marks %s current, and draws %s",
@@ -116,4 +117,108 @@ test("the edit screen is its own page, without the header or the tabs", async ()
   await mountedAt(`${ticketPath}/edit`);
   expect(screen.queryByRole("navigation", { name: "Ticket" })).toBeNull();
   expect(document.querySelector("header.ticket-header")).toBeNull();
+});
+
+test("the Runs tab of a ticket nothing has run for says so", async () => {
+  await mountedAt(`${ticketPath}/runs`);
+  expect(tabCurrent()).toMatch(/^Runs/u);
+  expect(screen.getByText("Nothing has run")).toBeDefined();
+});
+
+/** The site's answers with the ticket's one run on them: its summary in the
+ * page and its own read, a work run that passed. */
+function runServed(): void {
+  const summary = runSummary({ ticket: Number(ticket), task: 1 });
+  const answered = site.apiFetch;
+  (site as { apiFetch: typeof site.apiFetch }).apiFetch = (url, init) => {
+    const path = new URL(url, "http://console.test").pathname;
+    if (path.endsWith("/executions/e1"))
+      return Promise.resolve(
+        answer({ ...summary, attempts: [runAttempt("a1")] }),
+      );
+    if (path.endsWith("/executions"))
+      return Promise.resolve(answer({ executions: [summary] }));
+    return answered(url, init);
+  };
+}
+
+/** The sub-tabs a run's page offers, by their words and their addresses. */
+function runViews(): readonly (readonly (string | null)[])[] {
+  return within(screen.getByRole("navigation", { name: "Run" }))
+    .getAllByRole("link")
+    .map((link) => [link.textContent, link.getAttribute("href")]);
+}
+
+function runViewCurrent(): string | null | undefined {
+  return within(screen.getByRole("navigation", { name: "Run" }))
+    .getAllByRole("link")
+    .find((link) => link.getAttribute("aria-current") === "page")?.textContent;
+}
+
+test("every row of the Runs tab is a link to its run's page, and the landing's to the landing", async () => {
+  runServed();
+  await mountedAt(`${ticketPath}/runs`);
+  const rows =
+    document.querySelectorAll<HTMLAnchorElement>("a.ticket-runs-row");
+  expect([...rows].map((row) => row.getAttribute("href"))).toStrictEqual([
+    `${ticketPath}/runs/1`,
+    `${ticketPath}/landing`,
+  ]);
+  expect(rows[1]?.textContent).toContain("Not reached");
+});
+
+test("a run's address draws its page under the Runs tab, the rail marking it, on Summary", async () => {
+  runServed();
+  await mountedAt(`${ticketPath}/runs/1`);
+  expect(tabCurrent()).toMatch(/^Runs/u);
+  expect(screen.getByRole("heading", { level: 2, name: "Work" })).toBeDefined();
+  const rail = screen.getByRole("navigation", { name: "Runs" });
+  expect(
+    within(rail)
+      .getAllByRole("link")
+      .filter((link) => link.getAttribute("aria-current") === "page")
+      .map((link) => link.getAttribute("href")),
+  ).toStrictEqual([`${ticketPath}/runs/1`]);
+  expect(runViews()).toStrictEqual([
+    ["Summary", `${ticketPath}/runs/1?view=Summary`],
+    ["Transcript", `${ticketPath}/runs/1?view=Transcript`],
+    ["Details", `${ticketPath}/runs/1?view=Details`],
+  ]);
+  expect(runViewCurrent()).toBe("Summary");
+  expect(
+    screen.getByRole("link", { name: "All runs" }).getAttribute("href"),
+  ).toBe(`${ticketPath}/runs`);
+});
+
+test("a run's sub-tab is its own address", async () => {
+  runServed();
+  await mountedAt(`${ticketPath}/runs/1?view=Details`);
+  expect(runViewCurrent()).toBe("Details");
+  expect(screen.getByText("Execution", { selector: "dt" })).toBeDefined();
+  consoleSiteClean(site);
+});
+
+test("a run's address naming no run the ticket holds draws an empty tab, not a failed page", async () => {
+  runServed();
+  for (const task of ["7", "seven"]) {
+    await mountedAt(`${ticketPath}/runs/${task}`);
+    expect(tabCurrent()).toMatch(/^Runs/u);
+    expect(screen.getByText("No such run")).toBeDefined();
+    expect(screen.queryByText("Page failed")).toBeNull();
+    cleanup();
+  }
+});
+
+test("the landing's address draws under the Runs tab, and says when the ticket has none yet", async () => {
+  runServed();
+  await mountedAt(`${ticketPath}/landing`);
+  expect(tabCurrent()).toMatch(/^Runs/u);
+  expect(screen.getByText("No landing")).toBeDefined();
+  const rail = screen.getByRole("navigation", { name: "Runs" });
+  expect(
+    within(rail)
+      .getAllByRole("link")
+      .filter((link) => link.getAttribute("aria-current") === "page")
+      .map((link) => link.getAttribute("href")),
+  ).toStrictEqual([`${ticketPath}/landing`]);
 });

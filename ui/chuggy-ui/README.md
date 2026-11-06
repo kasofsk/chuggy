@@ -43,8 +43,8 @@ builds with.
   defined in the same line through `light-dark()`, and the shell's control
   chooses between them by putting `data-theme` on the document element.
 - `ui/chuggy-ui/app/browser/ticket/` — the ticket page's own compositions and
-  its one `@layer page` sheet: the head, the situation column, the ledger, the
-  usage panel and the main body. `ticketPageFacts.ts` derives what the page
+  its one `@layer page` sheet: the header and its tabs, the runs and each
+  run's page, the usage panel and the overview. `ticketPageFacts.ts` derives what the page
   draws from the reads it already holds, so each part is handed facts rather
   than a query.
 - `ui/chuggy-ui/app/styles.css` — what the pages that have not moved to the
@@ -307,19 +307,17 @@ in the forge.
 
 ## The ticket page
 
-A ledger, not a dashboard. The cycles are the machine's own: every `work-passed`
-opens one with a new artifact, and each is judged by a fresh run of the program
-against that artifact, so the page groups by cycle and the current one is railed
-and open while the superseded ones are dimmed and closed. A stage the program
-short-circuited is a row saying so, which is what tells "not reached" from "not
-on this page".
+A header over four tabs, each at an address of its own. Runs is the machine's
+own structure: every `work-passed` opens a cycle with a new artifact, judged by
+a fresh run of the program against it, so the tab lists the cycles newest
+first, a row per step as the plan names it. A stage the program short-circuited
+is a row saying so, which is what tells "not reached" from "not on this page".
+Every run is a page at its task's number, with its Summary, Transcript and
+Details each at an address of their own, and so is the ticket's landing.
 
-Every row, cycle and ticket carries what it spent and how long it took, and
-every dollar carries the basis the wire gave it, so a list price is never read
-as a bill. The situation column holds exactly the notice — a phase, a wall or
-a blocked dependency — the actions and a list of anchors; the brief, the
-provenance and the configuration are in the main body under the ledger,
-reached by those anchors rather than by tabs.
+Every row, cycle and run carries what it spent and how long it ran, and every
+dollar carries the basis the wire gave it, so a list price is never read as a
+bill.
 
 `core/figures.ts` formats every measured number, `core/tones.ts` maps the wire's
 own words to the tones a pill draws, and `core/codeLabels.ts` turns a code into

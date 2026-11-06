@@ -16,7 +16,6 @@ import type { Cycle, StageRow, TaskSet } from "../app/core/ticketLedger.ts";
 import {
   cycleLabel,
   cycleLastSet,
-  relaunchesLabel,
   setVerdict,
   setVerdictSettled,
   stageLabel,
@@ -614,11 +613,6 @@ test("a stage is labelled from one, and past the program without a total", () =>
 
 test("a cycle is labelled by its own ordinal", () => {
   expect(cycleLabel(3)).toBe("Cycle 3");
-});
-
-test("a container the fabric relaunched is labelled, and one it did not is not", () => {
-  expect(relaunchesLabel(3)).toBe("Relaunched 3× by fabric");
-  expect(relaunchesLabel(0)).toBeUndefined();
 });
 
 test("a stage number in the millions draws rows, not that many rows", () => {

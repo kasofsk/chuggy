@@ -10,15 +10,12 @@
 
 import { expect, test } from "vitest";
 
-import type { ExecutionSummary } from "../../../src/contract/responses.ts";
 import {
   configurationCommitShort,
   configurationLabel,
   creatorEmailsOf,
   creatorLabel,
   digestShortened,
-  executionRequirementLabel,
-  executionSizeLabel,
   imageShortened,
   workerLabel,
 } from "../app/core/labels.ts";
@@ -101,83 +98,6 @@ test("a long digest is cut to a head and a tail, with the middle marked missing"
 
 test("a digest already short enough is kept whole", () => {
   expect(digestShortened("abcd")).toBe("abcd");
-});
-
-const containerExecution: ExecutionSummary = {
-  execution: "e1",
-  ticket: 1,
-  task: 1,
-  taskKind: "Work",
-  identity: { type: "WorkTask", value: { ticket: 1, cycle: 1 } },
-  cluster: "rig",
-  configurationRevision: revision,
-  requirementIdentity: "requirement-a",
-  requirement: {
-    mode: "Container",
-    operatingSystem: "Linux",
-    architecture: "Amd64",
-    image: digestImage,
-  },
-  requirementDigest: "b".repeat(64),
-  requirementSource: "TicketDefault",
-  platformDefaultVersion: 1,
-  status: "Running",
-  retriesSpent: 0,
-  registeredAt: "2026-08-26T10:00:00.000Z",
-};
-
-test("a container execution names its platform and its worker, and keeps the image", () => {
-  expect(
-    executionRequirementLabel({
-      ...containerExecution,
-      worker: { name: "chuggy-worker", version: "v3" },
-    }),
-  ).toEqual({
-    text: "Linux/Amd64 chuggy-worker v3",
-    title: digestImage,
-  });
-  expect(executionRequirementLabel(containerExecution)).toEqual({
-    text: "Linux/Amd64 worker@sha256:9949c442",
-    title: digestImage,
-  });
-});
-
-test("an execution whose task was released with a size names it, and one with none names none", () => {
-  expect(executionSizeLabel({ cpuMillis: 8_000, memoryMib: 16_384 })).toBe(
-    "8 CPUs, 16 GiB",
-  );
-  expect(executionSizeLabel({ cpuMillis: 1_000 })).toBe("1 CPU");
-  expect(executionSizeLabel({ memoryMib: 1_536 })).toBe("1536 MiB");
-  expect(executionSizeLabel({})).toBeUndefined();
-  expect(executionSizeLabel(undefined)).toBeUndefined();
-});
-
-test("a capability execution names its platform and what it asked its runner for", () => {
-  const drawn = executionRequirementLabel({
-    ...containerExecution,
-    requirement: {
-      mode: "Capability",
-      operatingSystem: "Linux",
-      architecture: "Amd64",
-      capabilities: ["Agent:Claude", "Agent:Codex"],
-    },
-  });
-  expect(drawn.text).toBe("Linux/Amd64 Claude, Codex");
-  expect(drawn.title).toBe("Agent:Claude, Agent:Codex");
-});
-
-test("a capability its project named for itself is drawn as written, namespace aside", () => {
-  const drawn = executionRequirementLabel({
-    ...containerExecution,
-    requirement: {
-      mode: "Capability",
-      operatingSystem: "MacOS",
-      architecture: "Arm64",
-      capabilities: ["Tool:Xcode", "gpu"],
-    },
-  });
-  expect(drawn.text).toBe("MacOS/Arm64 Xcode, gpu");
-  expect(drawn.title).toBe("Tool:Xcode, gpu");
 });
 
 test("a creator is drawn as the subject its issuer gave them, the whole authority kept for the hover", () => {

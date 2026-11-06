@@ -1,11 +1,11 @@
 /**
- * What a ledger row's result expander opens: the report, or the commands a
- * command stage ran.
+ * What a run page draws of its result: the report under Summary, or the
+ * commands a command stage ran under Output.
  *
- * Each reads its output only once it is mounted, which is when its expander is
- * opened, and under the key the details' preview reads the same output by. The
- * row holds that read without requesting it, so a stage's commands that are
- * refused or do not parse relabel its expander "Report" once the read answers.
+ * Each reads its output only once it is mounted, which is when its sub-tab is
+ * shown, and under the key the details' preview reads the same output by. The
+ * page holds that read without requesting it, so a stage's commands that are
+ * refused or do not parse take the Output sub-tab away once the read answers.
  * A work summary that is refused draws the result's report instead.
  */
 
@@ -46,9 +46,9 @@ function useRunResultOutput(
   return usePanelState(outputContentQuery(partition, execution, ordinal));
 }
 
-/** The row's result expander, as its listing chose it and as the read of a
- * stage's commands, where one was opened, has answered since — answered from
- * what a screen drawing that output already read, and never requested here. */
+/** A run's result as its listing chose it and as the read of a stage's
+ * commands, where one was shown, has answered since — answered from what a
+ * screen drawing that output already read, and never requested here. */
 export function useRunResultOpened(
   partition: PartitionIdentity,
   execution: string,
@@ -91,7 +91,7 @@ function RunResultSummary(props: {
     props.summary,
   );
   if (state.state === "Pending") return <PanelUnready state={state} />;
-  return <MarkdownReport text={runResultText(state) ?? props.report} />;
+  return <MarkdownReport text={runResultText(state) ?? props.report} bare />;
 }
 
 function RunResultCommand(props: {
@@ -155,7 +155,8 @@ function RunResultCommands(props: {
   );
 }
 
-/** The body of a row's result expander, as `runResultOpenedOf` chose it. */
+/** A run's result as `runResultOpenedOf` chose it: its report, or the
+ * commands a command stage ran. */
 export function RunResultOpenedBody(props: {
   readonly partition: PartitionIdentity;
   readonly execution: string;
@@ -163,7 +164,7 @@ export function RunResultOpenedBody(props: {
 }): ReactNode {
   const opened = props.opened;
   return (
-    <div className="grid gap-2 px-4 py-2">
+    <div className="grid gap-2">
       {opened.opened === "Commands" ? (
         <RunResultCommands
           partition={props.partition}
@@ -172,7 +173,7 @@ export function RunResultOpenedBody(props: {
           report={opened.report}
         />
       ) : opened.summary === undefined ? (
-        <MarkdownReport text={opened.report} />
+        <MarkdownReport text={opened.report} bare />
       ) : (
         <RunResultSummary
           partition={props.partition}

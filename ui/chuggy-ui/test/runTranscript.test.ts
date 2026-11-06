@@ -4,10 +4,8 @@
  *
  * The quiet failures are a pane that re-reads from the first batch every time
  * the high-water mark moves, a pane that opens a long run at its first batch
- * rather than where it is now, an earlier read the cap drops as it lands, a
- * pane that calls a run complete because it has caught up rather than because
- * the attempt ended, and a parser that throws on a line the agent runtime has
- * only just started writing.
+ * rather than where it is now, an earlier read the cap drops as it lands, and a
+ * parser that throws on a line the agent runtime has only just started writing.
  */
 
 import { expect, test } from "vitest";
@@ -27,7 +25,6 @@ import {
   runTranscriptAttempt,
   runTranscriptEarlierMerged,
   runTranscriptEnded,
-  runTranscriptFreshnessSentence,
   runTranscriptHeldEmpty,
   runTranscriptHighestBatch,
   runTranscriptMerged,
@@ -266,34 +263,6 @@ test("a pane at its ceiling offers no earlier read and says what it does not hol
     item: "Marker",
     marker: { marker: "Capped", sentence: "Earlier conversation not held" },
   });
-});
-
-/**
- * A live run that is momentarily caught up has not ended, and the age drawn is
- * the newest batch the server holds and not the instant this tab rendered:
- * decision 9 makes that sentence the whole substitute for a follow control, so
- * a clock reading its own `now` would always say the pane was current.
- */
-test("complete is what the read said, not whether the pane has caught up", () => {
-  const caught = runTranscriptMerged(runTranscriptHeldEmpty, page([1]));
-  const observedAtMs = Date.parse(caught.observedAt ?? "");
-  expect(runTranscriptFreshnessSentence(caught, observedAtMs + 90_000)).toBe(
-    "as of 1m ago",
-  );
-  expect(runTranscriptFreshnessSentence(caught, observedAtMs + 3_000)).toBe(
-    "as of 3s ago",
-  );
-  const ended = runTranscriptMerged(
-    runTranscriptHeldEmpty,
-    page([1], { complete: true }),
-  );
-  expect(runTranscriptFreshnessSentence(ended, 0)).toBe("complete");
-});
-
-test("a pane that has read nothing says so rather than dating a batch", () => {
-  expect(runTranscriptFreshnessSentence(runTranscriptHeldEmpty, 0)).toBe(
-    "not read yet",
-  );
 });
 
 /** The Now card dates each note by when it was recorded, which is the batch's
