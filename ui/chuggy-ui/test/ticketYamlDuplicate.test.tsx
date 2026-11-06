@@ -65,7 +65,7 @@ const original: DraftResponse = {
     intent: "ship the thing",
     links: [],
     images: ["artifact-9"],
-    finalization: { mode: "Push" },
+    finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
   },
 };
 

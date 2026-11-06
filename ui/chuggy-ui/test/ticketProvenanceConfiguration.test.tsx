@@ -614,8 +614,14 @@ const briefLanding = {
   intent: "ship it",
   links: [],
   branch: "refs/heads/feature",
-  finalization: { mode: "PullRequest", target: "refs/heads/release" },
+  finalization: { kind: "PullRequest", target: "refs/heads/release" },
 } as const;
+
+/** The method that brief's finalization is drawn as. */
+const briefLandingMethod = briefLandingLine({
+  mode: "PullRequest",
+  target: "refs/heads/release",
+});
 
 /** The cells Finalization draws, by the name over each. */
 function finalizationCells(): ReadonlyMap<string, string> {
@@ -644,7 +650,7 @@ test("a version 1 ticket's Finalization is the method its brief names, and is no
     briefLanding,
   );
   expect(finalizationCells()).toStrictEqual(
-    new Map([["Method", briefLandingLine(briefLanding.finalization)]]),
+    new Map([["Method", briefLandingMethod]]),
   );
   cleanup();
   await drawTicket();
@@ -664,7 +670,7 @@ test("a catalog ticket's Finalization is the brief's method before its finalizer
   );
   expect(finalizationCells()).toStrictEqual(
     new Map([
-      ["Method", briefLandingLine(briefLanding.finalization)],
+      ["Method", briefLandingMethod],
       ["Finalizer", "approved"],
     ]),
   );

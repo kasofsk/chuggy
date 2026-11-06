@@ -19,13 +19,11 @@
  * read, and a prompt file names nothing.
  */
 
-import {
-  configurationReferencePathSchema,
-  workloadConfigurationVersion,
-} from "../contract/configurationDocument.ts";
+import { configurationReferencePathSchema } from "../contract/configurationDocument.ts";
 import { textCodePointsCount } from "../contract/http.ts";
 import { assertNever } from "../domain/assertNever.ts";
 import { repositoryDeclarationFileCharsMax } from "./repositoryDeclaration.ts";
+import { declaredConfigurationIsCatalog } from "./workloadConfiguration.ts";
 
 /** The most distinct files one import reads by reference, across every configuration it declares. */
 export const repositoryConfigurationReferencesMax = 256;
@@ -126,12 +124,13 @@ function repositoryConfigurationWorkloads(
   });
 }
 
-/** A version 2 configuration's workloads map, and none for anything else. */
+/** A catalog's workloads map, and none for anything else. */
 function repositoryConfigurationCatalogWorkloads(
   configuration: unknown,
 ): Readonly<Record<string, unknown>> | undefined {
   const catalog = repositoryConfigurationRecord(configuration);
-  if (catalog?.["version"] !== workloadConfigurationVersion) return undefined;
+  if (catalog === undefined || !declaredConfigurationIsCatalog(catalog))
+    return undefined;
   return repositoryConfigurationRecord(catalog["workloads"]);
 }
 

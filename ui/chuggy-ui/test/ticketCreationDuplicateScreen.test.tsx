@@ -100,7 +100,7 @@ const brief = {
   checks: ["npm test"],
   repository: chuggy,
   branch: "refs/heads/topic/one",
-  finalization: { mode: "PullRequest" as const, target: "refs/heads/main" },
+  finalization: { kind: "PullRequest" as const, target: "refs/heads/main" },
 };
 
 /** Ticket 11, revoked, authored under development and depending on a revoked
@@ -257,7 +257,10 @@ test("a duplicate opens holding its original's draft, less a revoked dependency,
     configurationDigest: creationInitialization.fence.configurationDigest,
     expectedProjectSequence: creationInitialization.fence.projectSequence,
     authoring: { dependencies: [40], program: eleven.authoring.program },
-    brief,
+    brief: {
+      ...brief,
+      finalization: { mode: "PullRequest", target: "refs/heads/main" },
+    },
   });
   expect(left.to).toStrictEqual(["/$tenant/$project/tickets/$ticket"]);
 });

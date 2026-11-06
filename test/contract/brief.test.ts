@@ -16,6 +16,8 @@ import {
   briefBranchPrefix,
   briefCheckSchema,
   briefChecksMax,
+  briefFinalizationForward,
+  briefFinalizationModeSchema,
   briefFinalizationSchema,
   briefImagesMax,
   briefIntentCharsMax,
@@ -32,8 +34,10 @@ import {
 } from "../../src/contract/brief.ts";
 import { draftCreationSchema } from "../../src/contract/requests.ts";
 import {
+  briefFinalizationKinds,
   briefFinalizationModes,
-  briefLandings,
+  briefGitMergeModes,
+  briefGitMergePolicies,
 } from "../../src/contract/rosters.ts";
 import { proposalBodyCharsMax } from "../../src/interpreter/changeProposal.ts";
 import {
@@ -252,29 +256,45 @@ test("a brief names the images it carries, up to the bound, and reads them back"
   );
 });
 
+/** Every finalization a brief may name, one per kind, mode and policy. */
+const everyFinalization = [
+  ...briefGitMergeModes.flatMap((mode) =>
+    briefGitMergePolicies.map((policy) => ({
+      kind: "GitMerge" as const,
+      mode,
+      policy,
+    })),
+  ),
+  { kind: "PullRequest" as const },
+  { kind: "None" as const },
+];
+
 /**
  * A landing the writer may take is one the reader can spell, or a ticket
  * written under it is unreadable on every validating read, its project's
  * change log included.
  */
 test("every landing a brief may be written with is read back", () => {
-  for (const mode of briefFinalizationModes) {
+  for (const finalization of everyFinalization) {
     const written = briefSchema.parse({
       intent: "Do it.",
       links: [],
       branch: `${briefBranchPrefix}rt/work`,
-      finalization: { mode },
+      finalization,
     });
     assert.deepEqual(
       briefResponseSchema.parse(written).finalization,
-      { mode },
-      mode,
+      finalization,
+      JSON.stringify(finalization),
     );
   }
 });
 
-/** Both modes that open a proposal, which pair with a branch and a target the same way. */
-const proposingModes = ["PullRequest", "PullRequestMerge"] as const;
+/** Both finalizations that open a proposal, which pair with a branch and a target the same way. */
+const proposing = [
+  { kind: "PullRequest" },
+  { kind: "GitMerge", mode: "PullRequestMerge", policy: "Direct" },
+] as const;
 
 test("a brief lands where its work happened unless its finalization says otherwise", () => {
   const landing = (finalization: unknown) =>
@@ -284,13 +304,12 @@ test("a brief lands where its work happened unless its finalization says otherwi
       branch: `${briefBranchPrefix}rt/work`,
       finalization,
     });
-  assert.deepEqual(landing({ mode: "Push" }).data?.finalization, {
-    mode: "Push",
-  });
+  const push = { kind: "GitMerge", mode: "Push", policy: "Direct" } as const;
+  assert.deepEqual(landing(push).data?.finalization, push);
   assert.deepEqual(
-    landing({ mode: "Push", target: `${briefBranchPrefix}rt/landing` }).data
+    landing({ ...push, target: `${briefBranchPrefix}rt/landing` }).data
       ?.finalization,
-    { mode: "Push", target: "refs/heads/rt/landing" },
+    { ...push, target: "refs/heads/rt/landing" },
   );
   assert.equal(
     briefSchema.parse({ intent: "Do it.", links: [] }).finalization,
@@ -298,36 +317,59 @@ test("a brief lands where its work happened unless its finalization says otherwi
     "a brief naming no finalization carries none",
   );
   assert.deepEqual(
-    landing({ mode: "None" }).data?.finalization,
-    { mode: "None" },
+    landing({ kind: "None" }).data?.finalization,
+    { kind: "None" },
     "a brief may land nothing at all",
   );
-  for (const mode of proposingModes) {
+  for (const finalization of proposing) {
     assert.deepEqual(
       landing({
-        mode,
+        ...finalization,
         target: `${briefBranchPrefix}rt/landing`,
       }).data?.finalization,
-      { mode, target: "refs/heads/rt/landing" },
+      { ...finalization, target: "refs/heads/rt/landing" },
     );
     assert.deepEqual(
-      landing({ mode }).data?.finalization,
-      { mode },
+      landing(finalization).data?.finalization,
+      finalization,
       "a proposal naming no base is opened into the repository's default branch",
     );
   }
+});
+
+test("a finalization missing what its kind names, or naming what it does not, is refused", () => {
+  const landing = (finalization: unknown) =>
+    briefSchema.safeParse({
+      intent: "Do it.",
+      links: [],
+      branch: `${briefBranchPrefix}rt/work`,
+      finalization,
+    });
+  const push = { kind: "GitMerge", mode: "Push", policy: "Direct" } as const;
   for (const value of [
     {},
-    { mode: "Push", target: "rt/landing" },
-    ...proposingModes.map((mode) => ({ mode, target: "rt/landing" })),
+    { kind: "GitMerge", mode: "Push" },
+    { kind: "GitMerge", policy: "Direct" },
+    { kind: "GitMerge", mode: "PullRequest", policy: "Direct" },
+    { kind: "GitMerge", mode: "None", policy: "Direct" },
+    { ...push, target: "rt/landing" },
+    ...proposing.map((finalization) => ({
+      ...finalization,
+      target: "rt/landing",
+    })),
     {
-      mode: "Push",
+      ...push,
       target: `${briefBranchPrefix}${"a".repeat(briefBranchCharsMax)}`,
     },
-    { mode: "Push", unnamed: true },
-    { mode: "None", target: `${briefBranchPrefix}rt/landing` },
-    ...proposingModes.map((mode) => ({
-      mode,
+    { ...push, unnamed: true },
+    { kind: "None", target: `${briefBranchPrefix}rt/landing` },
+    { kind: "None", policy: "Direct" },
+    { kind: "PullRequest", policy: "Direct" },
+    { kind: "PullRequest", policy: "Serialized" },
+    { kind: "PullRequest", mode: "PullRequest" },
+    { kind: "Push" },
+    ...proposing.map((finalization) => ({
+      ...finalization,
       target: `${briefBranchPrefix}rt/x`,
       unnamed: true,
     })),
@@ -339,89 +381,179 @@ test("a brief lands where its work happened unless its finalization says otherwi
     );
 });
 
+test("a finalization written by its mode is read, and maps forward to its kind", () => {
+  const target = `${briefBranchPrefix}rt/landing`;
+  for (const [finalization, landing] of [
+    [{ mode: "Push" }, undefined],
+    [{ mode: "PullRequestMerge", target }, "Serialized"],
+    [{ mode: "PullRequest", target }, "Direct"],
+    [{ mode: "None" }, undefined],
+  ] as const)
+    assert.ok(
+      briefSchema.safeParse({
+        intent: "Do it.",
+        links: [],
+        branch: `${briefBranchPrefix}rt/work`,
+        finalization,
+        ...(landing === undefined ? {} : { landing }),
+      }).success,
+      JSON.stringify([finalization, landing]),
+    );
+  for (const mode of briefGitMergeModes) {
+    assert.deepEqual(briefFinalizationForward({ mode }, undefined), {
+      forward: "Mapped",
+      finalization: { kind: "GitMerge", mode, policy: "Direct" },
+    });
+    for (const policy of briefGitMergePolicies)
+      assert.deepEqual(briefFinalizationForward({ mode, target }, policy), {
+        forward: "Mapped",
+        finalization: { kind: "GitMerge", mode, target, policy },
+      });
+  }
+  for (const landing of [undefined, "Direct"] as const) {
+    assert.deepEqual(
+      briefFinalizationForward({ mode: "PullRequest", target }, landing),
+      { forward: "Mapped", finalization: { kind: "PullRequest", target } },
+    );
+    assert.deepEqual(briefFinalizationForward({ mode: "None" }, landing), {
+      forward: "Mapped",
+      finalization: { kind: "None" },
+    });
+    assert.deepEqual(briefFinalizationForward(undefined, landing), {
+      forward: "Mapped",
+    });
+  }
+});
+
+test("a finalization written by its mode that its kind cannot represent is refused by name", () => {
+  const refusal = (brief: Readonly<Record<string, unknown>>) =>
+    briefSchema
+      .safeParse({
+        intent: "Do it.",
+        links: [],
+        branch: `${briefBranchPrefix}rt/work`,
+        ...brief,
+      })
+      .error?.issues.map((issue) => issue.message);
+  assert.deepEqual(
+    refusal({ finalization: { mode: "PullRequest" }, landing: "Serialized" }),
+    [
+      "a pull request is merged by a person and nothing orders it, so it lands under no Serialized landing",
+    ],
+  );
+  assert.deepEqual(
+    refusal({ finalization: { mode: "None" }, landing: "Serialized" }),
+    [
+      "a landing of nothing has nothing to order, so it lands under no Serialized landing",
+    ],
+  );
+  assert.deepEqual(refusal({ landing: "Serialized" }), [
+    "a Serialized landing orders a finalization, so a brief naming one names the finalization it orders",
+  ]);
+  for (const landing of briefGitMergePolicies)
+    assert.deepEqual(
+      refusal({
+        finalization: { kind: "GitMerge", mode: "Push", policy: landing },
+        landing,
+      }),
+      [
+        "a finalization naming its kind names its own policy, so no landing is named beside it",
+      ],
+    );
+});
+
 test("a brief that proposes is opened from a branch of its own into another", () => {
-  for (const mode of proposingModes) {
-    const proposing = (branch?: string, target?: string) =>
+  for (const finalization of proposing) {
+    const proposingBrief = (branch?: string, target?: string) =>
       briefSchema.safeParse({
         intent: "Do it.",
         links: [],
         ...(branch === undefined ? {} : { branch }),
         finalization: {
-          mode,
+          ...finalization,
           ...(target === undefined ? {} : { target }),
         },
       });
     const landing = `${briefBranchPrefix}rt/landing`;
     assert.equal(
-      proposing(`${briefBranchPrefix}rt/work`, landing).success,
+      proposingBrief(`${briefBranchPrefix}rt/work`, landing).success,
       true,
     );
     assert.equal(
-      proposing(`${briefBranchPrefix}rt/work`).success,
+      proposingBrief(`${briefBranchPrefix}rt/work`).success,
       true,
       "a proposal naming no base still names the branch it opens from",
     );
     assert.equal(
-      proposing(undefined, landing).success,
+      proposingBrief(undefined, landing).success,
       false,
       "a proposal has no head where the brief names no branch",
     );
     assert.equal(
-      proposing().success,
+      proposingBrief().success,
       false,
       "a proposal into the default branch has no head either",
     );
     assert.equal(
-      proposing(landing, landing).success,
+      proposingBrief(landing, landing).success,
       false,
       "a proposal is never opened from its own base",
     );
   }
+  assert.equal(
+    briefSchema.safeParse({
+      intent: "Do it.",
+      links: [],
+      finalization: { mode: "PullRequest" },
+    }).success,
+    false,
+    "a proposal written by its mode is held to the same pairing",
+  );
 });
 
 /**
- * The read schema is the write schema extended, and the extension is what could
- * silently drop the pairing the write refuses under. So the same three shapes
- * are put to it directly: a brief is one thing in both directions or the reader
- * is served a landing the writer would never have taken.
+ * The read schema is the write schema's fields read loosely, and the loosening
+ * is what could silently drop the pairing the write refuses under. So the same
+ * three shapes are put to it directly: a brief is one thing in both directions
+ * or the reader is served a landing the writer would never have taken.
  */
 test("a brief read back is refused the pairings a written one is", () => {
   const reading = (brief: Readonly<Record<string, unknown>>) =>
     briefResponseSchema.safeParse({ intent: "Do it.", links: [], ...brief });
-  for (const mode of proposingModes) {
-    const proposing = {
-      mode,
+  for (const finalization of proposing) {
+    const targeted = {
+      ...finalization,
       target: `${briefBranchPrefix}rt/landing`,
     };
     assert.equal(
       reading({
         branch: `${briefBranchPrefix}rt/work`,
-        finalization: proposing,
+        finalization: targeted,
       }).success,
       true,
     );
     assert.equal(
       reading({
         branch: `${briefBranchPrefix}rt/work`,
-        finalization: { mode },
+        finalization,
       }).success,
       true,
       "a proposal read back names no base where it was written with none",
     );
     assert.equal(
-      reading({ finalization: proposing }).success,
+      reading({ finalization: targeted }).success,
       false,
       "a proposal has no head where the brief names no branch",
     );
     assert.equal(
-      reading({ finalization: { mode } }).success,
+      reading({ finalization }).success,
       false,
       "a proposal into the default branch has no head either",
     );
     assert.equal(
       reading({
         branch: `${briefBranchPrefix}rt/landing`,
-        finalization: proposing,
+        finalization: targeted,
       }).success,
       false,
       "a proposal is never opened from its own base",
@@ -429,9 +561,18 @@ test("a brief read back is refused the pairings a written one is", () => {
   }
 });
 
-test("the modes the roster names are exactly the variants the wire publishes", () => {
+test("the kinds, modes and policies the rosters name are exactly the variants the wire publishes", () => {
   assert.deepEqual(
-    briefFinalizationSchema.options.map((option) => option.shape.mode.value),
+    briefFinalizationSchema.options.map((option) => option.shape.kind.value),
+    [...briefFinalizationKinds],
+  );
+  const [gitMerge] = briefFinalizationSchema.options;
+  assert.deepEqual(gitMerge.shape.mode.options, [...briefGitMergeModes]);
+  assert.deepEqual(gitMerge.shape.policy.options, [...briefGitMergePolicies]);
+  assert.deepEqual(
+    briefFinalizationModeSchema.options.map(
+      (option) => option.shape.mode.value,
+    ),
     [...briefFinalizationModes],
   );
 });
@@ -504,18 +645,27 @@ test("a draft creation names a brief beside its authoring and not inside it", ()
   );
 });
 
-test("a brief names how it is ordered against the others on its reference, and Stacked is not yet a way", () => {
-  for (const landing of briefLandings) {
-    const written = briefSchema.parse({ intent: "Do it.", links: [], landing });
-    assert.equal(briefResponseSchema.parse(written).landing, landing);
+test("a git merge names how it is ordered against the others on its reference, and Stacked is not yet a way", () => {
+  for (const policy of briefGitMergePolicies) {
+    const finalization = { kind: "GitMerge", mode: "Push", policy } as const;
+    const written = briefSchema.parse({
+      intent: "Do it.",
+      links: [],
+      finalization,
+    });
+    assert.deepEqual(
+      briefResponseSchema.parse(written).finalization,
+      finalization,
+    );
   }
-  assert.equal(
-    briefSchema.parse({ intent: "Do it.", links: [] }).landing,
-    undefined,
-  );
-  assert.equal(
-    briefSchema.safeParse({ intent: "Do it.", links: [], landing: "Stacked" })
-      .success,
-    false,
-  );
+  for (const brief of [
+    {
+      finalization: { kind: "GitMerge", mode: "Push", policy: "Stacked" },
+    },
+    { finalization: { mode: "Push" }, landing: "Stacked" },
+  ])
+    assert.equal(
+      briefSchema.safeParse({ intent: "Do it.", links: [], ...brief }).success,
+      false,
+    );
 });

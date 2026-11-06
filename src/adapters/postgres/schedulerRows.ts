@@ -82,7 +82,7 @@ import {
   type RequirementSource,
 } from "../../interpreter/executionRequirement.ts";
 import type { TaskResources } from "../../interpreter/taskResources.ts";
-import { declaredConfigurationVersion } from "../../interpreter/authoring.ts";
+import { declaredConfigurationIsCatalog } from "../../interpreter/authoring.ts";
 import {
   catalogWorkloadTask,
   workloadTaskPositionOf,
@@ -255,15 +255,14 @@ function executionRowSettlement(row: ExecutionRow) {
  */
 function executionRowAgentCapability(row: ExecutionRow) {
   const configuration = JSON.parse(row.configuration_canonical) as unknown;
-  const capability =
-    declaredConfigurationVersion(configuration) === 2
-      ? executionRowWorkloadCapability(row, configuration)
-      : executionAgentCapability(
-          configurationWithOverrides(
-            configuration,
-            storedOverridesOf(row.configuration_overrides),
-          ),
-        );
+  const capability = declaredConfigurationIsCatalog(configuration)
+    ? executionRowWorkloadCapability(row, configuration)
+    : executionAgentCapability(
+        configurationWithOverrides(
+          configuration,
+          storedOverridesOf(row.configuration_overrides),
+        ),
+      );
   return capability === undefined ? {} : { agentCapability: capability };
 }
 

@@ -83,7 +83,7 @@ import type { Partition } from "./projectStore.ts";
 import type { ConfigurationSelection } from "../contract/configurationSelection.ts";
 import {
   catalogSelectedFinalizer,
-  declaredConfigurationVersion,
+  declaredConfigurationIsCatalog,
 } from "./workloadConfiguration.ts";
 import {
   candidateBytesMax,
@@ -272,7 +272,7 @@ export function handoffApprovalRequired(
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
     return undefined;
   }
-  if (declaredConfigurationVersion(parsed) === 2) {
+  if (declaredConfigurationIsCatalog(parsed)) {
     const selected = catalogSelectedFinalizer(parsed, selection);
     return selected === undefined
       ? undefined

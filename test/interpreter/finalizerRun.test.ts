@@ -16,7 +16,7 @@ import { test } from "node:test";
 import { asTicketId } from "../../src/domain/ids.ts";
 import type {
   BriefFinalizationMode,
-  BriefLanding,
+  BriefGitMergePolicy,
   FinalizationUnavailableKind,
 } from "../../src/contract/rosters.ts";
 import { asCanonicalConfiguration } from "../../src/interpreter/authoring.ts";
@@ -160,7 +160,7 @@ import {
 } from "../../src/interpreter/projectStore.ts";
 import {
   asBriefBranch,
-  asBriefFinalization,
+  asBriefFinalizationByMode,
   asBriefIntent,
   type DraftBrief,
   type TicketBriefPort,
@@ -1201,9 +1201,16 @@ function briefsOf(
   branch?: string,
   target?: string,
   mode: BriefFinalizationMode = "Push",
-  ordering: BriefLanding = "Direct",
+  ordering: BriefGitMergePolicy = "Direct",
 ): TicketBriefPort {
   const landing = target !== undefined || mode !== "Push";
+  const finalization =
+    landing || ordering !== "Direct"
+      ? asBriefFinalizationByMode(
+          { mode, ...(target === undefined ? {} : { target }) },
+          ordering,
+        )
+      : undefined;
   const brief: DraftBrief | undefined =
     branch === undefined && !landing && ordering === "Direct"
       ? undefined
@@ -1212,16 +1219,8 @@ function briefsOf(
           links: [],
           images: [],
           checks: [],
-          ...(ordering === "Direct" ? {} : { landing: ordering }),
           ...(branch === undefined ? {} : { branch: asBriefBranch(branch) }),
-          ...(landing
-            ? {
-                finalization: asBriefFinalization({
-                  mode,
-                  ...(target === undefined ? {} : { target }),
-                }),
-              }
-            : {}),
+          ...(finalization === undefined ? {} : { finalization }),
         };
   return { brief: () => Promise.resolve(brief) };
 }
@@ -4017,7 +4016,7 @@ test("a candidate holding a real change is still integrated, and an unanswered q
 function landingService(
   store: FinalizerRecorder,
   git: GitPromotionPort,
-  landing: BriefLanding,
+  landing: BriefGitMergePolicy,
   bounds: Partial<typeof finalizerDefaults> = {},
 ): FinalizerService {
   return {

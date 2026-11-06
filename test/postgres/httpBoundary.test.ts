@@ -742,7 +742,7 @@ test("real HTTP ingress answers each draft write's landing and who named it, the
   try {
     const created = await ingressLandingCreated(root, revision, brief);
     assert.deepEqual(created.landing, {
-      mode: "PullRequest",
+      kind: "PullRequest",
       source: "Repository",
     });
     const revise = async (expectedVersion: number, written: object) =>
@@ -760,11 +760,11 @@ test("real HTTP ingress answers each draft write's landing and who named it, the
       ).landing;
     assert.deepEqual(
       await revise(1, { ...brief, finalization: { mode: "Push" } }),
-      { mode: "Push", source: "Brief" },
+      { kind: "GitMerge", mode: "Push", policy: "Direct", source: "Brief" },
     );
     assert.deepEqual(
       await revise(2, brief),
-      { mode: "PullRequest", source: "Repository" },
+      { kind: "PullRequest", source: "Repository" },
       "a revision naming no landing takes the repository's again",
     );
     assert.deepEqual(
@@ -774,7 +774,7 @@ test("real HTTP ingress answers each draft write's landing and who named it, the
           links: [],
         })
       ).landing,
-      { mode: "Push", source: "Default" },
+      { kind: "GitMerge", mode: "Push", policy: "Direct", source: "Default" },
     );
   } finally {
     await app.close();

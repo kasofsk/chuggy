@@ -8,7 +8,7 @@ import type { TaskIdentity } from "../../domain/generated/modelTypes.ts";
 import {
   asConfigurationRevisionId,
   asCanonicalConfiguration,
-  declaredConfigurationVersion,
+  declaredConfigurationIsCatalog,
 } from "../../interpreter/authoring.ts";
 import {
   catalogWorkloadTask,
@@ -209,7 +209,7 @@ function executionSummaryCarrier(
   row: ExecutionViewRow,
 ): BriefingCarrier | undefined {
   const configuration = JSON.parse(row.canonical) as unknown;
-  if (declaredConfigurationVersion(configuration) === 2)
+  if (declaredConfigurationIsCatalog(configuration))
     return executionSummaryWorkloadCarrier(row, configuration);
   const parsed = authoredTaskConfigurationReadiness(configuration);
   if (parsed.readiness !== "Ready") return undefined;

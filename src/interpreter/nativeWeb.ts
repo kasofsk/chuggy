@@ -1279,23 +1279,19 @@ async function nativeDraftBriefLanded(
     input.partition,
     input.configurationRevision,
   );
-  const landing =
+  const finalization =
     configuration === undefined
       ? undefined
       : catalogSelectedFinalizer(
           JSON.parse(configuration.canonical),
           input.selection,
-        )?.finalizer?.landing;
-  return landing === undefined
+        )?.finalizer?.finalization;
+  return finalization === undefined
     ? { brief: input.brief }
     : {
         brief: {
           ...input.brief,
-          finalization: asBriefFinalization(
-            "target" in landing && landing.target !== undefined
-              ? { mode: landing.mode, target: landing.target }
-              : { mode: landing.mode },
-          ),
+          finalization: asBriefFinalization(finalization),
         },
         source: "Finalizer",
       };

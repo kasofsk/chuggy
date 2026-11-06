@@ -80,10 +80,7 @@ import { postgresFinalizer } from "../../src/adapters/postgres/finalizer.ts";
 import type { BriefFinalizationMode } from "../../src/contract/rosters.ts";
 import type { ChangeProposalForges } from "../../src/interpreter/changeProposal.ts";
 import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
-import {
-  briefContentDigest,
-  materialDigest,
-} from "../../src/interpreter/ticketDefinition.ts";
+import { materialDigest } from "../../src/interpreter/ticketDefinition.ts";
 import { gitPromotion } from "../../src/adapters/git/gitPromotion.ts";
 import {
   finalizerPass,
@@ -701,6 +698,19 @@ export async function finalizerProject(
 type StoredBrief = Readonly<Record<string, unknown>>;
 
 /**
+ * The digest a release stores for `brief`, taken over the stored JSON as
+ * `briefContentDigest` takes it over the brief the JSON reads back as, so a
+ * brief the reader refuses still has one.
+ */
+function storedBriefDigest(brief: StoredBrief): string {
+  const images = (brief["images"] as readonly unknown[] | undefined) ?? [];
+  return materialDigest({
+    ...brief,
+    images: images.length === 0 ? undefined : images,
+  });
+}
+
+/**
  * The material a release stores beside `brief`: the content digest the brief
  * is held to and the landing it froze, over `rest` for everything else.
  */
@@ -711,7 +721,7 @@ function finalizerReleasedMaterial(
   const finalization = brief["finalization"] as StoredBrief | undefined;
   const material = {
     ...rest,
-    content: { digest: briefContentDigest(brief) },
+    content: { digest: storedBriefDigest(brief) },
     finalization: {
       ...finalization,
       digest: materialDigest(finalization ?? {}),
@@ -839,7 +849,11 @@ export async function finalizerBriefLanding(
 ): Promise<void> {
   await finalizerReleasedBrief(rig, partition, ticket, (brief) =>
     briefWith(
-      briefWith(brief, "landing", landing === "Direct" ? null : landing),
+      briefWith(
+        briefWith(brief, "landing", landing === "Direct" ? null : landing),
+        "finalization",
+        brief["finalization"] ?? { mode: "Push" },
+      ),
       "repository",
       repository,
     ),

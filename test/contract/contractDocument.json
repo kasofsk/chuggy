@@ -51,7 +51,7 @@
     "mismatch": "a cursor resuming an unselected ticket is refused",
     "latest": "latest=true: each ticket's highest task, of any status, highest ticket first, under a cursor of its own that the other order refuses; it takes no ticket or state"
   },
-  "briefFinalization": "a PullRequest finalization requires the brief to name a branch, and a target that is not it where it names one; a proposal naming no target opens into the repository's default branch",
+  "briefFinalization": "a finalization is named by its kind: a GitMerge by its mode and its policy, a PullRequest, or None; one written by its mode, with a landing beside it, is read as the kind it maps to, and a PullRequest or None landing Serialized maps to none and is refused; a finalization that opens a proposal, a PullRequest or a GitMerge by PullRequestMerge, requires the brief to name a branch, and a target that is not it where it names one; a proposal naming no target opens into the repository's default branch",
   "selectorProjectSettings": "installation settings are defaults; an absent override inherits one, and a write replaces the whole set under the revision it was read at",
   "selectorProposals": "where a project's dispatch mode is ApprovalRequired each lead decision is held until a principal who may dispatch its tickets answers it whole: an approval dispatches each ticket it named that has not moved since, and a rejection ends it; the note given with either is in the lead's next observation, and answering a decision no longer held is a conflict",
   "inbox": "one entry for each ticket a person is needed for: one in Escalated, one with an open native action, one a refusal of the lead's stands on that the ticket has not moved past, and one a decision held for approval names, which a reader who may not dispatch is shown none of, nor counted; each entry is the row the tickets list answers, latestExecution included, with the ticket's open actions, those refusals and held decisions; last activity first as the tickets list orders it, resumed by the cursor a page answers, and count is every ticket the inbox holds, on every page",
@@ -1094,65 +1094,124 @@
               "pattern": "^refs\\/heads\\/.*"
             },
             "finalization": {
-              "oneOf": [
+              "anyOf": [
                 {
-                  "type": "object",
-                  "properties": {
-                    "mode": {
-                      "type": "string",
-                      "const": "Push"
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "GitMerge"
+                        },
+                        "mode": {
+                          "type": "string",
+                          "enum": ["Push", "PullRequestMerge"]
+                        },
+                        "target": {
+                          "type": "string",
+                          "maxLength": 256,
+                          "pattern": "^refs\\/heads\\/.*"
+                        },
+                        "policy": {
+                          "type": "string",
+                          "enum": ["Direct", "Serialized"]
+                        }
+                      },
+                      "required": ["kind", "mode", "policy"],
+                      "additionalProperties": false
                     },
-                    "target": {
-                      "type": "string",
-                      "maxLength": 256,
-                      "pattern": "^refs\\/heads\\/.*"
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "PullRequest"
+                        },
+                        "target": {
+                          "type": "string",
+                          "maxLength": 256,
+                          "pattern": "^refs\\/heads\\/.*"
+                        }
+                      },
+                      "required": ["kind"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "None"
+                        }
+                      },
+                      "required": ["kind"],
+                      "additionalProperties": false
                     }
-                  },
-                  "required": ["mode"],
-                  "additionalProperties": false
+                  ]
                 },
                 {
-                  "type": "object",
-                  "properties": {
-                    "mode": {
-                      "type": "string",
-                      "const": "PullRequest"
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "mode": {
+                          "type": "string",
+                          "const": "Push"
+                        },
+                        "target": {
+                          "type": "string",
+                          "maxLength": 256,
+                          "pattern": "^refs\\/heads\\/.*"
+                        }
+                      },
+                      "required": ["mode"],
+                      "additionalProperties": false
                     },
-                    "target": {
-                      "type": "string",
-                      "maxLength": 256,
-                      "pattern": "^refs\\/heads\\/.*"
-                    }
-                  },
-                  "required": ["mode"],
-                  "additionalProperties": false
-                },
-                {
-                  "type": "object",
-                  "properties": {
-                    "mode": {
-                      "type": "string",
-                      "const": "PullRequestMerge"
+                    {
+                      "type": "object",
+                      "properties": {
+                        "mode": {
+                          "type": "string",
+                          "const": "PullRequest"
+                        },
+                        "target": {
+                          "type": "string",
+                          "maxLength": 256,
+                          "pattern": "^refs\\/heads\\/.*"
+                        }
+                      },
+                      "required": ["mode"],
+                      "additionalProperties": false
                     },
-                    "target": {
-                      "type": "string",
-                      "maxLength": 256,
-                      "pattern": "^refs\\/heads\\/.*"
+                    {
+                      "type": "object",
+                      "properties": {
+                        "mode": {
+                          "type": "string",
+                          "const": "PullRequestMerge"
+                        },
+                        "target": {
+                          "type": "string",
+                          "maxLength": 256,
+                          "pattern": "^refs\\/heads\\/.*"
+                        }
+                      },
+                      "required": ["mode"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "mode": {
+                          "type": "string",
+                          "const": "None"
+                        }
+                      },
+                      "required": ["mode"],
+                      "additionalProperties": false
                     }
-                  },
-                  "required": ["mode"],
-                  "additionalProperties": false
-                },
-                {
-                  "type": "object",
-                  "properties": {
-                    "mode": {
-                      "type": "string",
-                      "const": "None"
-                    }
-                  },
-                  "required": ["mode"],
-                  "additionalProperties": false
+                  ]
                 }
               ]
             },
@@ -1849,65 +1908,124 @@
               "pattern": "^refs\\/heads\\/.*"
             },
             "finalization": {
-              "oneOf": [
+              "anyOf": [
                 {
-                  "type": "object",
-                  "properties": {
-                    "mode": {
-                      "type": "string",
-                      "const": "Push"
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "GitMerge"
+                        },
+                        "mode": {
+                          "type": "string",
+                          "enum": ["Push", "PullRequestMerge"]
+                        },
+                        "target": {
+                          "type": "string",
+                          "maxLength": 256,
+                          "pattern": "^refs\\/heads\\/.*"
+                        },
+                        "policy": {
+                          "type": "string",
+                          "enum": ["Direct", "Serialized"]
+                        }
+                      },
+                      "required": ["kind", "mode", "policy"],
+                      "additionalProperties": false
                     },
-                    "target": {
-                      "type": "string",
-                      "maxLength": 256,
-                      "pattern": "^refs\\/heads\\/.*"
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "PullRequest"
+                        },
+                        "target": {
+                          "type": "string",
+                          "maxLength": 256,
+                          "pattern": "^refs\\/heads\\/.*"
+                        }
+                      },
+                      "required": ["kind"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "const": "None"
+                        }
+                      },
+                      "required": ["kind"],
+                      "additionalProperties": false
                     }
-                  },
-                  "required": ["mode"],
-                  "additionalProperties": false
+                  ]
                 },
                 {
-                  "type": "object",
-                  "properties": {
-                    "mode": {
-                      "type": "string",
-                      "const": "PullRequest"
+                  "oneOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "mode": {
+                          "type": "string",
+                          "const": "Push"
+                        },
+                        "target": {
+                          "type": "string",
+                          "maxLength": 256,
+                          "pattern": "^refs\\/heads\\/.*"
+                        }
+                      },
+                      "required": ["mode"],
+                      "additionalProperties": false
                     },
-                    "target": {
-                      "type": "string",
-                      "maxLength": 256,
-                      "pattern": "^refs\\/heads\\/.*"
-                    }
-                  },
-                  "required": ["mode"],
-                  "additionalProperties": false
-                },
-                {
-                  "type": "object",
-                  "properties": {
-                    "mode": {
-                      "type": "string",
-                      "const": "PullRequestMerge"
+                    {
+                      "type": "object",
+                      "properties": {
+                        "mode": {
+                          "type": "string",
+                          "const": "PullRequest"
+                        },
+                        "target": {
+                          "type": "string",
+                          "maxLength": 256,
+                          "pattern": "^refs\\/heads\\/.*"
+                        }
+                      },
+                      "required": ["mode"],
+                      "additionalProperties": false
                     },
-                    "target": {
-                      "type": "string",
-                      "maxLength": 256,
-                      "pattern": "^refs\\/heads\\/.*"
+                    {
+                      "type": "object",
+                      "properties": {
+                        "mode": {
+                          "type": "string",
+                          "const": "PullRequestMerge"
+                        },
+                        "target": {
+                          "type": "string",
+                          "maxLength": 256,
+                          "pattern": "^refs\\/heads\\/.*"
+                        }
+                      },
+                      "required": ["mode"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "mode": {
+                          "type": "string",
+                          "const": "None"
+                        }
+                      },
+                      "required": ["mode"],
+                      "additionalProperties": false
                     }
-                  },
-                  "required": ["mode"],
-                  "additionalProperties": false
-                },
-                {
-                  "type": "object",
-                  "properties": {
-                    "mode": {
-                      "type": "string",
-                      "const": "None"
-                    }
-                  },
-                  "required": ["mode"],
-                  "additionalProperties": false
+                  ]
                 }
               ]
             },

@@ -21,6 +21,7 @@ import {
   configurationSelectionSchema,
   type ConfigurationSelection,
 } from "../../contract/configurationSelection.ts";
+import { briefFinalizationModeOf } from "../../contract/rosters.ts";
 import { asRepositoryId } from "../../interpreter/finalizer.ts";
 import { asProjectArtifactId } from "../../interpreter/finalizerPreparation.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
@@ -28,8 +29,7 @@ import {
   asBriefBranch,
   asDraftBrief,
   asBriefCheckLine,
-  asBriefFinalization,
-  asBriefLanding,
+  asBriefFinalizationByMode,
   asBriefIntent,
   asBriefLinkUrl,
   asBriefTitle,
@@ -40,14 +40,14 @@ import {
 } from "../../interpreter/ticketBrief.ts";
 import { releasedTicketBrief } from "../../interpreter/ticketDefinition.ts";
 
-/** The pair of columns a brief's finalization is read from, wherever a query selected them. */
+/**
+ * The columns a brief's finalization is read from, wherever a query selected
+ * them: its mode and target, and the policy beside them, which storage still
+ * holds by mode.
+ */
 export interface DraftBriefFinalizationRow {
   readonly finalization_mode: string | null;
   readonly finalization_target: string | null;
-}
-
-/** The column a brief's landing is read from, wherever a query selected it. */
-export interface DraftBriefLandingRow {
   readonly landing_policy: string | null;
 }
 
@@ -55,8 +55,7 @@ export interface DraftBriefLandingRow {
  * The columns any brief-bearing read selects, joined from the brief's own
  * relation and from the two ordinal ones beside it.
  */
-export interface DraftBriefRow
-  extends DraftBriefFinalizationRow, DraftBriefLandingRow {
+export interface DraftBriefRow extends DraftBriefFinalizationRow {
   readonly title: string | null;
   readonly intent: string | null;
   readonly branch: string | null;
@@ -67,33 +66,34 @@ export interface DraftBriefRow
 }
 
 /**
- * The finalization a row states. The door resolves a landing for every draft
- * and stores what it resolved, and the landing that lands nothing is one of
- * them, so a null mode is a row no writer in this tree can produce — read as
- * no finalization rather than defended against, because the reads below are
- * total over what the column admits.
+ * The finalization a row states, mapped forward from its mode and policy. The
+ * door resolves a landing for every draft and stores what it resolved, and the
+ * landing that lands nothing is one of them, so a null mode is a row no writer
+ * in this tree can produce — read as no finalization rather than defended
+ * against, because the reads below are total over what the column admits.
  */
 export function draftBriefFinalizationOf(
   row: DraftBriefFinalizationRow,
 ): BriefFinalization | undefined {
   if (row.finalization_mode === null) return undefined;
-  return asBriefFinalization({
-    mode: row.finalization_mode,
-    ...(row.finalization_target === null
-      ? {}
-      : { target: row.finalization_target }),
-  });
+  return asBriefFinalizationByMode(
+    {
+      mode: row.finalization_mode,
+      ...(row.finalization_target === null
+        ? {}
+        : { target: row.finalization_target }),
+    },
+    row.landing_policy ?? undefined,
+  );
 }
 
-/** The landing a row states, absent where it is `Direct` or the row joined no brief. */
-function draftBriefLandingOf(
-  row: DraftBriefLandingRow,
-): Pick<DraftBrief, "landing"> {
-  const landing =
-    row.landing_policy === null
-      ? undefined
-      : asBriefLanding(row.landing_policy);
-  return landing === undefined ? {} : { landing };
+/** The mode column a brief's finalization is stored under, null where it names none. */
+export function draftBriefFinalizationMode(
+  brief: Pick<DraftBrief, "finalization">,
+): string | null {
+  return brief.finalization === undefined
+    ? null
+    : briefFinalizationModeOf(brief.finalization);
 }
 
 /**
@@ -138,7 +138,6 @@ export function draftBriefOf(row: DraftBriefRow): DraftBrief | undefined {
       ? {}
       : { repository: asRepositoryId(row.repository) }),
     ...(finalization === undefined ? {} : { finalization }),
-    ...draftBriefLandingOf(row),
   };
 }
 
