@@ -235,53 +235,10 @@
     color: var(--ink-1);
   }
 
-  .ticket-status-actions [class*="btn-"] {
-    box-sizing: border-box;
-    height: calc(var(--space-6) + var(--space-2));
-  }
-
-  .ticket-status-actions .btn-danger:not(:hover, :focus-visible, :disabled) {
-    border-color: color-mix(in srgb, var(--tone-fail) 60%, transparent);
-  }
-
   .ticket-dependencies {
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-2);
-  }
-
-  .ticket-status-actions {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    justify-content: flex-start;
-    gap: var(--space-4);
-  }
-
-  .ticket-status-actions .act,
-  .ticket-card-actions .act {
-    padding: 0;
-    border: 0;
-    max-width: none;
-  }
-
-  .ticket-status-actions .act {
-    justify-items: end;
-    text-align: right;
-  }
-
-  /* The lines under a button stay as the button's description and are not
-   * drawn. */
-  .ticket-status-actions .act-effect,
-  .ticket-status-actions .act-more,
-  .ticket-card-actions .act-effect,
-  .ticket-card-actions .act-more {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip-path: inset(50%);
-    white-space: nowrap;
   }
 
   .ticket-card {
@@ -305,24 +262,6 @@
     font-family: var(--font-mono);
     font-size: var(--text-sm);
     color: var(--ink-2);
-  }
-
-  .ticket-card-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-4);
-    padding-top: var(--space-2);
-  }
-
-  .ticket-card-actions:empty {
-    display: none;
-  }
-
-  .ticket-card-actions .act {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: var(--space-3);
   }
 
   .ticket-now-head,
@@ -757,5 +696,607 @@
   .ticket-config-foot code {
     min-width: 0;
     overflow-wrap: anywhere;
+  }
+
+  /* The header: the title, the state label with its one fragment, the
+     actions, and the tabs under them. */
+  .ticket-header {
+    display: grid;
+    gap: var(--space-3);
+    min-width: 0;
+  }
+
+  .ticket-header-title {
+    min-width: 0;
+    font-size: var(--text-xl);
+    font-weight: var(--weight-strong);
+    line-height: var(--leading-tight);
+    color: var(--ink-1);
+    overflow-wrap: anywhere;
+  }
+
+  .ticket-header-number {
+    font-weight: var(--weight-regular);
+    color: var(--ink-3);
+  }
+
+  .ticket-header-standing {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-3);
+  }
+
+  .ticket-header-state {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
+    min-width: 0;
+  }
+
+  .ticket-header-fragment,
+  .ticket-header-fragment .fig {
+    color: var(--ink-2);
+  }
+
+  .ticket-header-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-2);
+    margin-inline-start: auto;
+  }
+
+  .ticket-header-actions .act {
+    padding: 0;
+    border: 0;
+    max-width: none;
+  }
+
+  /* The lines under a button stay as the button's description and are not
+   * drawn. */
+  .ticket-header-actions .act-effect,
+  .ticket-header-actions .act-more {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .ticket-header-actions [class*="btn-"] {
+    box-sizing: border-box;
+    height: var(--height-icon);
+  }
+
+  .ticket-header-notes {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
+  }
+
+  .ticket-header-notes:empty {
+    display: none;
+  }
+
+  .ticket-tabs {
+    min-width: 0;
+    overflow-x: auto;
+    border-bottom: var(--hairline) solid var(--edge);
+  }
+
+  .ticket-tabs ul {
+    display: flex;
+    gap: var(--space-1);
+  }
+
+  .ticket-tab {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-3);
+    color: var(--ink-3);
+    font-size: var(--text-md);
+    white-space: nowrap;
+    text-decoration: none;
+  }
+
+  .ticket-tab:hover {
+    color: var(--ink-1);
+  }
+
+  .ticket-tab[aria-current="page"] {
+    color: var(--ink-1);
+    font-weight: var(--weight-medium);
+  }
+
+  .ticket-tab[aria-current="page"]::after {
+    content: "";
+    position: absolute;
+    inset-inline: 0;
+    bottom: 0;
+    height: var(--rail);
+    background: var(--ink-1);
+  }
+
+  @media (max-width: 40em) {
+    .ticket-tab {
+      padding-inline: var(--space-2);
+    }
+  }
+
+  .ticket-tab-count {
+    padding: 0 var(--space-2);
+    border-radius: var(--radius-3);
+    background: var(--surface-2);
+    color: var(--ink-2);
+    font-size: var(--text-xs);
+    line-height: var(--leading-dense);
+  }
+
+  /* The bar that stands in for the header once it has scrolled away. It is
+     a child of the page itself, so it sticks for the page's whole length, and
+     takes no room in the page's flow: its own height and the gap after it
+     are given back. */
+  .ticket-sticky {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    height: 0;
+    margin-bottom: calc(-1 * var(--space-4));
+  }
+
+  .ticket-sticky-bar {
+    position: absolute;
+    inset-inline: calc(-1 * var(--space-4));
+    top: 0;
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: var(--space-2) var(--space-4);
+    background: var(--surface-0);
+    border-bottom: var(--hairline) solid var(--edge);
+  }
+
+  .ticket-sticky-bar[hidden] {
+    display: none;
+  }
+
+  .ticket-sticky-title {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: var(--weight-strong);
+    color: var(--ink-1);
+  }
+
+  /* The state label: filled is the tone as the ground under inverse ink,
+     tinted its wash inside an edge of the tone. */
+  .ticket-state {
+    --state-tone: var(--ink-3);
+    --state-fill: var(--fill-retired);
+    --state-wash: var(--surface-2);
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: var(--space-2);
+    box-sizing: border-box;
+    height: var(--height-state);
+    padding-inline: var(--space-3);
+    border: var(--hairline) solid transparent;
+    border-radius: var(--radius-3);
+    font-size: var(--text-md);
+    font-weight: var(--weight-strong);
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .ticket-state[data-size="small"] {
+    height: var(--height-state-small);
+    padding-inline: var(--space-2);
+    gap: var(--space-1);
+    font-size: var(--text-sm);
+  }
+
+  .ticket-state[data-tone="pass"] {
+    --state-tone: var(--tone-pass);
+    --state-fill: var(--fill-pass);
+    --state-wash: var(--wash-pass);
+  }
+
+  .ticket-state[data-tone="queued"] {
+    --state-tone: var(--tone-queued);
+    --state-wash: var(--wash-queued);
+  }
+
+  .ticket-state[data-tone="live"] {
+    --state-tone: var(--tone-live);
+    --state-fill: var(--fill-live);
+  }
+
+  .ticket-state[data-tone="evaluation"] {
+    --state-tone: var(--tone-evaluation);
+    --state-fill: var(--fill-evaluation);
+  }
+
+  .ticket-state[data-tone="finalization"] {
+    --state-tone: var(--tone-finalization);
+    --state-fill: var(--fill-finalization);
+  }
+
+  .ticket-state[data-tone="parked"] {
+    --state-tone: var(--tone-parked);
+    --state-fill: var(--fill-parked);
+  }
+
+  .ticket-state[data-form="filled"] {
+    background: var(--state-fill);
+    color: var(--ink-inverse);
+  }
+
+  .ticket-state[data-form="tinted"] {
+    background: var(--state-wash);
+    border-color: color-mix(in srgb, var(--state-tone) 45%, transparent);
+    color: var(--state-tone);
+  }
+
+  .ticket-state-mark {
+    flex: none;
+    width: 1em;
+    height: 1em;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .ticket-state-filled-path {
+    fill: currentColor;
+    stroke: none;
+  }
+
+  .ticket-state-track {
+    opacity: 0.35;
+  }
+
+  .ticket-state-mark[data-spins] {
+    animation: ticket-state-spin var(--duration-spin) linear infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ticket-state-mark[data-spins] {
+      animation: none;
+    }
+  }
+
+  @keyframes ticket-state-spin {
+    to {
+      transform: rotate(1turn);
+    }
+  }
+
+  /* The Runs tab, a run's page and the landing's: cycles of rows that are
+     links, a rail of the same runs beside one of them, and the run itself. */
+  .ticket-run-mark {
+    flex: none;
+    width: 1em;
+    height: 1em;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    color: var(--ink-3);
+  }
+
+  .ticket-run-mark[data-mark="Open"] circle {
+    stroke-dasharray: 2 2;
+  }
+
+  .ticket-run-mark[data-mark="Spin"] {
+    animation: ticket-state-spin var(--duration-spin) linear infinite;
+  }
+
+  .ticket-run-track {
+    opacity: 0.35;
+  }
+
+  .ticket-run-mark[data-tone="pass"] {
+    color: var(--tone-pass);
+  }
+
+  .ticket-run-mark[data-tone="fail"] {
+    color: var(--tone-fail);
+  }
+
+  .ticket-run-mark[data-tone="live"] {
+    color: var(--tone-live);
+  }
+
+  .ticket-run-mark[data-tone="queued"] {
+    color: var(--tone-queued);
+  }
+
+  .ticket-run-mark[data-tone="parked"] {
+    color: var(--tone-parked);
+  }
+
+  .ticket-run-mark[data-tone="finalization"] {
+    color: var(--tone-finalization);
+  }
+
+  .ticket-runs {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-4);
+  }
+
+  .ticket-runs-cycle {
+    min-width: 0;
+    background: var(--surface-1);
+    border: var(--hairline) solid var(--edge);
+    border-radius: var(--radius-2);
+  }
+
+  .ticket-runs-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-1) var(--space-3);
+    padding: var(--space-2) var(--space-4);
+  }
+
+  .ticket-runs-head h3 {
+    color: var(--ink-1);
+    font-size: var(--text-md);
+    font-weight: var(--weight-strong);
+  }
+
+  .ticket-runs-outcome {
+    color: var(--ink-3);
+    font-size: var(--text-md);
+  }
+
+  .ticket-runs-rollup {
+    margin-left: auto;
+    color: var(--ink-3);
+    font-size: var(--text-sm);
+  }
+
+  .ticket-runs-rows {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ticket-runs-row {
+    display: grid;
+    grid-template-columns:
+      auto var(--col-run-name) minmax(0, 1fr) var(--col-run-time)
+      var(--col-run-cost) auto;
+    gap: var(--space-3);
+    align-items: center;
+    padding: var(--space-2) var(--space-4);
+    border-top: var(--hairline) solid var(--edge);
+    color: var(--ink-2);
+    font-size: var(--text-md);
+    text-decoration: none;
+  }
+
+  a.ticket-runs-row:hover {
+    background: var(--surface-2);
+  }
+
+  .ticket-runs-name {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--ink-1);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ticket-runs-line {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  [data-superseded] .ticket-runs-row,
+  [data-superseded] .ticket-runs-name {
+    color: var(--ink-3);
+  }
+
+  .ticket-runs-time,
+  .ticket-runs-cost {
+    color: var(--ink-3);
+    font-size: var(--text-sm);
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .ticket-runs-chevron {
+    color: var(--ink-3);
+  }
+
+  @media (max-width: 40em) {
+    .ticket-runs-row {
+      grid-template-columns: auto minmax(0, 1fr) auto auto;
+      row-gap: 0;
+    }
+
+    .ticket-runs-line {
+      grid-column: 2 / -1;
+      grid-row: 2;
+      font-size: var(--text-sm);
+    }
+
+    .ticket-runs-cost {
+      display: none;
+    }
+  }
+
+  .ticket-run-frame {
+    display: grid;
+    grid-template-columns: var(--width-runs-rail) minmax(0, 1fr);
+    gap: var(--space-5);
+    align-items: start;
+  }
+
+  .ticket-run-main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-3);
+    min-width: 0;
+  }
+
+  .ticket-rail {
+    display: grid;
+    gap: var(--space-4);
+    min-width: 0;
+  }
+
+  .ticket-rail-head {
+    padding-inline: var(--space-2);
+    color: var(--ink-3);
+    font-size: var(--text-xs);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .ticket-rail-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-2);
+    border-left: var(--rail) solid transparent;
+    border-radius: var(--radius-2);
+    color: var(--ink-2);
+    font-size: var(--text-md);
+    text-decoration: none;
+  }
+
+  .ticket-rail-row:hover {
+    background: var(--surface-2);
+  }
+
+  .ticket-rail-row[aria-current="page"] {
+    border-left-color: var(--ink-1);
+    background: var(--surface-1);
+    color: var(--ink-1);
+  }
+
+  .ticket-rail-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ticket-rail-time {
+    color: var(--ink-3);
+    font-size: var(--text-xs);
+    white-space: nowrap;
+  }
+
+  .ticket-run-back {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    justify-self: start;
+    color: var(--ink-3);
+    font-size: var(--text-sm);
+    text-decoration: none;
+  }
+
+  .ticket-run-back-chevron {
+    transform: rotate(180deg);
+  }
+
+  .ticket-run-head {
+    display: grid;
+    gap: var(--space-1);
+  }
+
+  .ticket-run-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .ticket-run-heading h2 {
+    color: var(--ink-1);
+    font-size: var(--text-lg);
+    font-weight: var(--weight-strong);
+  }
+
+  .ticket-run-cycle {
+    color: var(--ink-3);
+    font-size: var(--text-md);
+  }
+
+  .ticket-run-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    color: var(--ink-3);
+    font-size: var(--text-sm);
+  }
+
+  .ticket-run-meta > * + *::before {
+    content: "· ";
+  }
+
+  .ticket-run-body {
+    min-width: 0;
+    padding: var(--space-4);
+    background: var(--surface-1);
+    border: var(--hairline) solid var(--edge);
+    border-radius: var(--radius-2);
+    overflow-wrap: anywhere;
+  }
+
+  .ticket-run-refusal {
+    color: var(--ink-2);
+    font-size: var(--text-sm);
+    white-space: pre-wrap;
+  }
+
+  @media (max-width: 60em) {
+    .ticket-run-frame {
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--space-3);
+    }
+
+    .ticket-rail {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-1) var(--space-3);
+    }
+
+    .ticket-rail-cycle {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--space-1);
+    }
+
+    .ticket-rail-cycle ul {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-1);
+    }
+
+    .ticket-rail-time {
+      display: none;
+    }
   }
 }

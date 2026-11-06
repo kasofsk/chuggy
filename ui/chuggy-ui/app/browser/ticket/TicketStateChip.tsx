@@ -1,7 +1,7 @@
 /**
- * A ticket's state as one chip, as wide wherever it is drawn: the ticket list's
- * row and the ticket page's action bar. Where a dispatch is offered the chip is
- * the button that asks for it.
+ * A ticket's state where the ticket list draws it: the row's state label, a
+ * dependency's number in its state's colours, and each state's count. Where a
+ * dispatch is offered the row's label is the button that asks for it.
  */
 
 import type { ReactNode } from "react";
@@ -12,10 +12,11 @@ import type { TicketListStanding } from "../../core/ticketListView.ts";
 import { phaseTone } from "../../core/tones.ts";
 import type { Tone } from "../../core/tones.ts";
 import { Tooltip } from "../ui/Tooltip.tsx";
+import { TicketStateLabel } from "./TicketStateLabel.tsx";
 
 import "../ProjectTable.css";
 
-/** What the chip is drawn as. */
+/** What a dependency's chip is drawn as. */
 function standingTone(standing: TicketListStanding): Tone {
   if (standing === "Ready") return "pass";
   return standing === "Blocked" ? "queued" : phaseTone(standing);
@@ -41,31 +42,27 @@ export function TicketStateChip(props: {
   readonly dispatch?: TicketStateDispatch | undefined;
 }): ReactNode {
   const { standing, dispatch } = props;
+  const label = <TicketStateLabel standing={standing} size="small" />;
   if (dispatch !== undefined)
     return (
       <Tooltip text={dispatch.effect}>
         <button
           type="button"
-          className="ticket-list-state"
-          data-tone={standingTone(standing)}
+          className="ticket-list-standing"
           data-standing={standing}
           aria-label={`Dispatch ticket #${String(props.ticket)}`}
           aria-busy={dispatch.busy || undefined}
           disabled={dispatch.busy}
           onClick={dispatch.press}
         >
-          {standingWord(standing)}
+          {label}
         </button>
       </Tooltip>
     );
   return (
     <Tooltip text={props.hint}>
-      <span
-        className="ticket-list-state"
-        data-tone={standingTone(standing)}
-        data-standing={standing}
-      >
-        {standingWord(standing)}
+      <span className="ticket-list-standing" data-standing={standing}>
+        {label}
       </span>
     </Tooltip>
   );
@@ -98,8 +95,8 @@ export function TicketDependencyChip(props: {
   );
 }
 
-/** A state and how many tickets stand in it, in that state's colours, as the
- * button that filters the list to it; pressed while it is the filter. */
+/** A state's label holding how many tickets stand in it, as the button that
+ * filters the list to it; pressed while it is the filter. */
 export function TicketStateCount(props: {
   readonly standing: TicketListStanding;
   readonly count: number;
@@ -109,17 +106,15 @@ export function TicketStateCount(props: {
   return (
     <button
       type="button"
-      className="ticket-list-state ticket-state-count"
-      data-tone={standingTone(props.standing)}
+      className="ticket-state-count"
       data-standing={props.standing}
       title={standingWord(props.standing)}
       aria-pressed={props.pressed}
       onClick={props.onPress}
     >
-      <span className="ticket-state-count-label">
-        {standingWord(props.standing)}
-      </span>
-      <b className="num">{props.count}</b>
+      <TicketStateLabel standing={props.standing} size="small">
+        <b className="num">{props.count}</b>
+      </TicketStateLabel>
     </button>
   );
 }

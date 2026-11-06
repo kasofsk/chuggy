@@ -77,6 +77,18 @@ const consolePageSettingsPaths: Readonly<
   SitePermissions: "settings/site/permissions",
 };
 
+/** The ticket page and each of its tabs, by where under the ticket each is:
+ * every one is the ticket's page. */
+const consolePageTicketTabs = [
+  "",
+  "/",
+  "/runs",
+  "/runs/$task",
+  "/landing",
+  "/configuration",
+  "/usage",
+] as const;
+
 /** The router's identity of a route under a project, by where it is. */
 function consolePageRouteId(path: string): string {
   return `/$tenant/$project/${path}`;
@@ -96,10 +108,16 @@ const consolePageRoutes: ReadonlyMap<
     (match) => ({ page: "Repository", repository: match.params["repository"] }),
   ],
   ["/$tenant/$project/tickets/new", consolePageTicketNew],
-  [
-    "/$tenant/$project/tickets/$ticket",
-    (match) => ({ page: "Ticket", ticket: consolePageTicketOf(match) }),
-  ],
+  ...consolePageTicketTabs.map(
+    (tab) =>
+      [
+        `/$tenant/$project/tickets/$ticket${tab}`,
+        (match: ConsolePageMatch) => ({
+          page: "Ticket",
+          ticket: consolePageTicketOf(match),
+        }),
+      ] as const,
+  ),
   [
     "/$tenant/$project/tickets/$ticket/edit",
     (match) => ({ page: "TicketEdit", ticket: consolePageTicketOf(match) }),

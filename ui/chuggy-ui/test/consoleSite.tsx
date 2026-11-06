@@ -188,6 +188,7 @@ export const consoleRouteParameters: Readonly<Record<string, string>> = {
   tenant: consolePartition.tenant,
   project: consolePartition.project,
   ticket: String(ticketPageTicket.ticket),
+  task: "1",
   session: threadMineSession,
   repository: encodeURIComponent(consoleRepository),
   epic: String(consoleEpic.number),

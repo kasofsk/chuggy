@@ -23,10 +23,9 @@ import {
 } from "@testing-library/react";
 import type { RenderResult } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
-import { TicketPage } from "../app/browser/TicketPage.tsx";
 import {
   answer,
   openedStream,
@@ -51,6 +50,11 @@ import type * as BrowserPorts from "../app/browser/ports.ts";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 import { readFailedLines } from "./readFailedLines.ts";
 import { consoleStoreBare } from "./consoleStoreBare.tsx";
+import {
+  TicketPageEveryTab,
+  ticketHeader,
+  ticketHeaderMenuOpened,
+} from "./ticketPageEveryTab.tsx";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -93,8 +97,13 @@ vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
 
 vi.mock("@tanstack/react-router", () => ({
   createLink: (component: unknown) => component,
-  Link: (props: { readonly children?: ReactNode }) => (
-    <a href="/">{props.children}</a>
+  Link: (props: {
+    readonly children?: ReactNode;
+    readonly ref?: Ref<HTMLAnchorElement>;
+  }) => (
+    <a href="/" ref={props.ref}>
+      {props.children}
+    </a>
   ),
   useParams: () => ({ ...atlas, ticket: viewing.ticket }),
 }));
@@ -263,7 +272,7 @@ function page(client: QueryClient): ReactNode {
       store={tabStoreOf(client)}
       transport={openedStream().ports.fetch}
     >
-      <TicketPage />
+      <TicketPageEveryTab />
     </ScreenHarness>
   );
 }
@@ -378,8 +387,9 @@ test("an unread action list offers nothing the phase alone would allow", async (
 
   expect(button("Resume")).toBeNull();
   expect(button("Revoke")).toBeNull();
-  const bar = screen.getByRole("region", { name: "Status" });
-  expect(readFailedLines(bar)).toStrictEqual(["Not read · Server error"]);
+  expect(readFailedLines(ticketHeader())).toStrictEqual([
+    "Not read · Server error",
+  ]);
 });
 
 /** An API that accepts the submission and leaves the operation pending, which
@@ -411,32 +421,31 @@ async function following(
   return view;
 }
 
-test("a resume pressed in the card is followed in the bar, which holds its own buttons too", async () => {
+test("a resume pressed in the header is followed there, its other actions held while it goes", async () => {
   const api = accepting();
   vi.stubGlobal("fetch", api.fetch);
-  const { container } = mounted(queryClientUnretried());
+  mounted(queryClientUnretried());
   await settled();
   const card = screen.getByRole("status", { name: "Needs you" });
-  const bar = container.querySelector<HTMLElement>(".ticket-status");
-  if (bar === null) throw new Error("no status bar drawn");
-  expect(within(bar).queryByRole("button", { name: "Resume" })).toBeNull();
+  const header = ticketHeader();
+  expect(within(card).queryByRole("button", { name: "Resume" })).toBeNull();
 
   await turned(() => {
-    within(card).getByRole("button", { name: "Resume" }).click();
+    within(header).getByRole("button", { name: "Resume" }).click();
   });
   await settled();
 
-  expect(within(bar).getByText("Waiting for actor…")).toBeDefined();
-  expect(within(bar).getByRole("button", { name: "Cancel" })).toBeDefined();
+  expect(within(header).getByText("Waiting for actor…")).toBeDefined();
+  expect(within(header).getByRole("button", { name: "Cancel" })).toBeDefined();
   expect(
-    within(bar)
-      .getByRole("button", { name: "Revoke" })
+    within(header)
+      .getByRole("button", { name: "Resume" })
       .hasAttribute("disabled"),
   ).toBe(true);
   expect(
-    within(card)
-      .getByRole("button", { name: "Resume" })
-      .hasAttribute("disabled"),
+    within(await ticketHeaderMenuOpened())
+      .getByRole("menuitem", { name: "Revoke…" })
+      .hasAttribute("data-disabled"),
   ).toBe(true);
   expect(api.posts()).toBe(1);
 });
@@ -860,8 +869,11 @@ test("a press naming another action still resolves the attempt that is held", as
   const api = losing();
   await unanswered(api, queryClientUnretried());
 
+  const revoke = within(await ticketHeaderMenuOpened()).getByRole("menuitem", {
+    name: "Revoke…",
+  });
   await turned(() => {
-    screen.getByRole("button", { name: "Revoke" }).click();
+    revoke.click();
   });
   await turned(() => {
     screen.getByRole("button", { name: "Revoke ticket" }).click();

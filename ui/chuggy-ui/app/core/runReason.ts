@@ -32,7 +32,7 @@ export interface RunReason {
  * settles for an execution whose last attempt never reported names that
  * attempt too.
  */
-export function runReasonLeft(attempt: ExecutionAttempt): boolean {
+function runReasonLeft(attempt: ExecutionAttempt): boolean {
   return (
     attempt.error !== undefined &&
     runSummaryOf(attempt, undefined).summary === "Ended"

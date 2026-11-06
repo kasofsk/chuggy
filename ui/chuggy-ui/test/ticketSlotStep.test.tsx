@@ -61,14 +61,7 @@ function drawParked(
     setupOverridable,
     nowMs: 0,
   });
-  render(
-    <TicketSlot
-      partition={leadPartition}
-      slot={slot}
-      actions={<button type="button">Resume</button>}
-      nowMs={0}
-    />,
-  );
+  render(<TicketSlot partition={leadPartition} slot={slot} nowMs={0} />);
   return screen.getByRole("status", { name: "Needs you" });
 }
 
@@ -83,7 +76,7 @@ test("a ticket parked with nowhere to run says so, with the way to Runners after
   expect(
     within(line).getByRole("link", { name: "Runners" }).getAttribute("href"),
   ).toBe(`/${leadPartition.tenant}/${leadPartition.project}/runners`);
-  expect(within(card).getByRole("button", { name: "Resume" })).toBeTruthy();
+  expect(within(card).queryByRole("button")).toBeNull();
 });
 
 test("a ticket parked at any other wall draws its line and no link", () => {

@@ -128,6 +128,25 @@ test("a page names the ticket its route reads from the same address", () => {
   ).toEqual({ page: "Ticket", ticket: 41 });
 });
 
+test("every tab of a ticket, a run and its landing are that ticket's page, so a thread's page context is the same on each", () => {
+  for (const tab of [
+    "/",
+    "/runs",
+    "/runs/$task",
+    "/landing",
+    "/configuration",
+    "/usage",
+  ])
+    expect(
+      consolePageOf(
+        matched(`/$tenant/$project/tickets/$ticket${tab}`, {
+          ticket: "41",
+          task: "6",
+        }),
+      ),
+    ).toEqual({ page: "Ticket", ticket: 41 });
+});
+
 test("an address the contract would refuse, or a route it does not know, is no page", () => {
   expect(
     consolePageOf(

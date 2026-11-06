@@ -4,7 +4,6 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
-import { TicketPage } from "../app/browser/TicketPage.tsx";
 import {
   answer,
   apiDouble,
@@ -17,6 +16,7 @@ import type * as BrowserPorts from "../app/browser/ports.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
+import { TicketPageEveryTab, TicketRunPageAt } from "./ticketPageEveryTab.tsx";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -93,26 +93,32 @@ interface Named {
   readonly worker?: { readonly name: string; readonly version: string };
 }
 
+/** The one execution, under whatever names the catalog gave it. */
+function executionNamed(named: Named): Record<string, unknown> {
+  return {
+    ...execution,
+    ...(named.version === undefined
+      ? {}
+      : { configurationVersion: named.version }),
+    ...(named.worker === undefined ? {} : { worker: named.worker }),
+  };
+}
+
 /** The whole ticket page, with the catalog's answers as a case chooses them. */
-async function drawTicket(named: Named): Promise<void> {
+async function drawTicket(
+  named: Named,
+  page: ReactNode = <TicketPageEveryTab />,
+): Promise<void> {
   const api = apiDouble({
     operation: { operation: "op-one", state: "Pending" },
     route: (url) => {
       if (url.includes("/dispatch-view"))
         return answer({ result: "Stale", reason: "TokenStale" });
       if (url.includes("/native-actions")) return answer({ actions: [] });
+      if (url.includes("/executions/"))
+        return answer({ ...executionNamed(named), attempts: [] });
       if (url.includes("/executions"))
-        return answer({
-          executions: [
-            {
-              ...execution,
-              ...(named.version === undefined
-                ? {}
-                : { configurationVersion: named.version }),
-              ...(named.worker === undefined ? {} : { worker: named.worker }),
-            },
-          ],
-        });
+        return answer({ executions: [executionNamed(named)] });
       if (url.includes("/configurations/"))
         return answer({
           partition: atlas,
@@ -152,7 +158,7 @@ async function drawTicket(named: Named): Promise<void> {
       client={queryClientUnretried()}
       transport={openedStream().ports.fetch}
     >
-      <TicketPage />
+      {page}
     </ScreenHarness>,
   );
   await settled();
@@ -187,9 +193,19 @@ test("the configuration panel keeps the revision its heading no longer shows", a
   );
 });
 
-test("an execution names its worker and keeps the image reference on hover", async () => {
-  await drawTicket(named);
-  const ranOn = drawn("Linux/Amd64 chuggy-worker v3");
+/** What a run's Details says against one name. */
+function detail(name: string): HTMLElement {
+  const value = screen.getByText(name, { selector: "dt" }).nextElementSibling;
+  if (!(value instanceof HTMLElement)) throw new Error(`no ${name} drawn`);
+  return value;
+}
+
+test("a run's details name its worker and keep the image reference on hover", async () => {
+  await drawTicket(named, <TicketRunPageAt task={1} view="Details" />);
+  expect(detail("Worker").textContent).toBe("chuggy-worker v3");
+  const ranOn = drawn(
+    "registry.chuggy.internal/chuggy/worker@sha256:9949c442…4d5e6f",
+  );
   fireEvent.focus(ranOn);
   expect((await screen.findByRole("tooltip")).textContent).toBe(image);
 });
@@ -197,7 +213,9 @@ test("an execution names its worker and keeps the image reference on hover", asy
 test("a page the catalog named nothing on draws the identities themselves", async () => {
   await drawTicket({});
   expect(screen.getAllByText(revision).length).toBeGreaterThan(0);
-  const ranOn = drawn("Linux/Amd64 worker@sha256:9949c442");
-  fireEvent.focus(ranOn);
+  cleanup();
+  await drawTicket({}, <TicketRunPageAt task={1} view="Details" />);
+  expect(detail("Worker").textContent).toBe("Unknown");
+  fireEvent.focus(detail("Image").querySelector("code") ?? detail("Image"));
   expect((await screen.findByRole("tooltip")).textContent).toBe(image);
 });

@@ -11,7 +11,6 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
-import { TicketPage } from "../app/browser/TicketPage.tsx";
 import {
   DetailsPane,
   DetailsToggle,
@@ -41,6 +40,7 @@ import type { TicketProgram } from "../app/core/ticketLedger.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
+import { TicketPageEveryTab, ticketHeader } from "./ticketPageEveryTab.tsx";
 
 const atlas: PartitionIdentity = { tenant: "vteng", project: "chuggy" };
 
@@ -126,7 +126,7 @@ function ShellAroundPage(): ReactNode {
       <TopBarTarget />
       <DetailsToggle />
       <DetailsPane>
-        <TicketPage />
+        <TicketPageEveryTab />
       </DetailsPane>
     </ShellSlots>
   );
@@ -229,7 +229,7 @@ async function drawTicket(
           <ShellAroundPage />
         </ViewportColumnAsideProvider>
       ) : (
-        <TicketPage />
+        <TicketPageEveryTab />
       )}
     </ScreenHarness>,
   );
@@ -257,34 +257,29 @@ const resumedTicket = {
 };
 
 function groups(container: HTMLElement): readonly HTMLElement[] {
-  return [...container.querySelectorAll<HTMLElement>(".ledger-group")];
+  return [...container.querySelectorAll<HTMLElement>(".ticket-runs-cycle")];
 }
 
-/** Opens every cycle, since a closed one draws no rows until it is opened. */
-async function cyclesOpened(container: HTMLElement): Promise<void> {
-  await turned(() => {
-    for (const group of groups(container)) {
-      (group as HTMLDetailsElement).open = true;
-      group.dispatchEvent(new Event("toggle"));
-    }
-  });
-  await settled();
+function rowItems(group: HTMLElement | undefined): readonly HTMLElement[] {
+  return [
+    ...(group?.querySelectorAll<HTMLElement>(".ticket-runs-rows > li") ?? []),
+  ];
 }
 
 /** Every row an evaluated stage drew, picked out from the work row that
  * always draws first in its cycle. */
 function stageRows(group: HTMLElement | undefined): readonly HTMLElement[] {
-  return [
-    ...(group?.querySelectorAll<HTMLElement>(".ledger-row") ?? []),
-  ].filter((row) =>
-    row.querySelector(".ledger-label")?.textContent?.startsWith("Stage"),
+  return rowItems(group).filter((row) =>
+    row.querySelector(".ticket-runs-name")?.textContent?.startsWith("Stage"),
   );
 }
 
 function rowsOf(group: HTMLElement): readonly string[] {
-  return [...group.querySelectorAll(".ledger-row")].map(
-    (row) => row.textContent ?? "",
-  );
+  return rowItems(group).map((row) => row.textContent);
+}
+
+function outcomeOf(group: HTMLElement | undefined): string | undefined {
+  return group?.querySelector(".ticket-runs-outcome")?.textContent;
 }
 
 /** The status bar, which is where the page says where the ticket stands. */
@@ -305,7 +300,7 @@ test("the parked ticket names its wall, its phase and what the whole of it cost"
     ticket: parkedTicket,
   });
   const bar = statusBar(container);
-  expect(bar.textContent).toContain("Escalated");
+  expect(ticketHeader().textContent).toContain("Escalated");
   expect(bar.textContent).toContain("$2.74");
   expect(bar.textContent).toContain("198k tok");
   expect(bar.textContent).not.toContain("Runs");
@@ -325,7 +320,7 @@ test("the page is one column: no aside and no sequence", async () => {
   expect(screen.queryByText("Sequence")).toBeNull();
 });
 
-test("the wall is a card that needs you: why, which stage failed, and the resume", async () => {
+test("the wall is a card that needs you: why and which stage failed, with the resume in the header", async () => {
   await drawTicket({
     shapes: ticket21Parked,
     ticket: parkedTicket,
@@ -333,11 +328,13 @@ test("the wall is a card that needs you: why, which stage failed, and the resume
   const card = screen.getByRole("status", { name: "Needs you" });
   expect(card.textContent).toContain("Rework budget exhausted");
   expect(card.textContent).toContain("Stage 1 of 2 failed");
-  expect(within(card).getByRole("button", { name: "Resume" })).toBeDefined();
-  expect(within(card).queryByRole("button", { name: "Revoke" })).toBeNull();
+  expect(within(card).queryByRole("button")).toBeNull();
+  expect(
+    within(ticketHeader()).getByRole("button", { name: "Resume" }),
+  ).toBeDefined();
 });
 
-test("the cycles are newest first, the current one open and the rest closed", async () => {
+test("the cycles are newest first, the current one marked", async () => {
   const { container } = await drawTicket({
     shapes: ticket21Parked,
     ticket: parkedTicket,
@@ -349,16 +346,12 @@ test("the cycles are newest first, the current one open and the rest closed", as
     "Cycle 2",
     "Cycle 1",
   ]);
-  expect(drawn.map((group) => (group as HTMLDetailsElement).open)).toEqual([
-    true,
-    false,
-    false,
-  ]);
-  expect(drawn[0]?.classList.contains("ledger-group-current")).toBe(true);
-  expect(drawn[1]?.classList.contains("ledger-group-superseded")).toBe(true);
+  expect(
+    drawn.map((group) => group.querySelector(".pill")?.textContent),
+  ).toEqual(["Current", undefined, undefined]);
 });
 
-test("the current cycle draws its work, its artifact, its stages and its rollup", async () => {
+test("the current cycle draws its work, its stages, where it stopped and its rollup", async () => {
   const { container } = await drawTicket({
     shapes: ticket21Parked,
     ticket: parkedTicket,
@@ -368,67 +361,28 @@ test("the current cycle draws its work, its artifact, its stages and its rollup"
   if (current === undefined) throw new Error("no current cycle");
   const rows = rowsOf(current);
   expect(rows[0]).toContain("Work");
-  expect(rows[0]).toContain("Passed");
-  expect(rows[0]).toContain("Current artifact");
   expect(rows[0]).toContain("9m 30s");
   expect(rows[1]).toContain("Stage 1 of 2");
-  expect(rows[1]).toContain("Failed");
-  expect(rows[1]).toContain("Relaunched 3× by fabric");
   expect(rows[1]).toContain("$0.35");
   expect(rows[2]).toContain("Stage 2 of 2");
-  expect(rows[2]).toContain("Skipped");
-  expect(current.querySelector(".ledger-group-rollup")?.textContent).toContain(
+  expect(rows[2]).toContain("Not reached");
+  expect(rows[3]).toContain("Landing");
+  expect(rows[3]).toContain("Not reached");
+  expect(outcomeOf(current)).toBe("Failed at Stage 1 of 2");
+  expect(current.querySelector(".ticket-runs-rollup")?.textContent).toContain(
     "$2.05",
   );
 });
 
-/** The one work row of a ticket whose one execution a case shapes. */
-async function workRowOf(shape: Partial<ExecutionShape>): Promise<string> {
-  const { container } = await drawTicket({
-    shapes: [
-      {
-        execution: "execution-dd-1",
-        task: 1,
-        identity: workIdentity(1),
-        outcome: "ProcessFailed",
-        ...shape,
-      },
-    ],
-    ticket: parkedTicket,
-  });
-  const current = groups(container)[0];
-  if (current === undefined) throw new Error("no current cycle");
-  return rowsOf(current)[0] ?? "";
-}
-
-/** A loss spends a retry whether or not the fabric opens another attempt, and
- * for work a runner claimed it never does, so the row counts the attempts
- * opened again and never the retries spent. */
-test("a run a runner lost once claims no relaunch, though it spent a retry", async () => {
-  const row = await workRowOf({ retriesSpent: 1, relaunches: 0 });
-  expect(row).toContain("Failed");
-  expect(row).not.toContain("Relaunched");
-});
-
-test("a run the fabric relaunched counts the attempts it opened again", async () => {
-  const row = await workRowOf({ retriesSpent: 3, relaunches: 2 });
-  expect(row).toContain("Relaunched 2× by fabric");
-});
-
-test("a superseded cycle says which cycle replaced its artifact", async () => {
+test("a superseded cycle says what sent it back", async () => {
   const { container } = await drawTicket({
     shapes: ticket21Parked,
     ticket: parkedTicket,
   });
-  await cyclesOpened(container);
-  const superseded = groups(container)[1];
-  expect(superseded).toBeDefined();
-  if (superseded === undefined) throw new Error("no superseded cycle");
-  expect(rowsOf(superseded)[0]).toContain("Superseded by cycle 3");
-  expect(superseded.textContent).toContain("Superseded");
+  expect(outcomeOf(groups(container)[1])).toBe("Sent back by Stage 2 of 2");
 });
 
-test("a page that does not start at cycle 1 names the cycle that superseded one", async () => {
+test("a page that does not start at cycle 1 draws the cycles it holds", async () => {
   const workedIn = (cycle: number): ExecutionShape => ({
     execution: `execution-aa-${String(cycle)}`,
     task: cycle,
@@ -439,11 +393,9 @@ test("a page that does not start at cycle 1 names the cycle that superseded one"
     shapes: [workedIn(2), workedIn(3)],
     ticket: parkedTicket,
   });
-  await cyclesOpened(container);
-  const superseded = groups(container)[1];
-  if (superseded === undefined) throw new Error("no superseded cycle");
-  expect(superseded.querySelector("h3")?.textContent).toBe("Cycle 2");
-  expect(rowsOf(superseded)[0]).toContain("Superseded by cycle 3");
+  expect(
+    groups(container).map((group) => group.querySelector("h3")?.textContent),
+  ).toEqual(["Cycle 3", "Cycle 2"]);
 });
 
 test("the resume states what it re-runs", async () => {
@@ -493,29 +445,33 @@ test("the ticket is headed by its own title where it has one", async () => {
     ticket: { ...parkedTicket, title: "Serve the reason" },
   });
   expect(
-    screen.getByRole("heading", { level: 1, name: "Serve the reason" }),
+    screen.getByRole("heading", { level: 1, name: "Serve the reason #21" }),
   ).toBeDefined();
 });
 
-test("the page fills no second header row in the shell's top bar", async () => {
+test("the page fills no second header row in the shell's top bar: its tabs are its own", async () => {
   await drawTicket(
     { shapes: ticket21Parked, ticket: parkedTicket },
     { shell: true },
   );
-  expect(screen.queryByText("Overview")).toBeNull();
+  expect(
+    screen.getByText("Overview").closest("nav")?.getAttribute("aria-label"),
+  ).toBe("Ticket");
   expect(screen.getByRole("heading", { level: 1 }).closest("header")).not.toBe(
     null,
   );
 });
 
-test("the title is the page's one h1, and it holds the title alone", async () => {
+test("the title is the page's one h1, and it holds the title and the number after it", async () => {
   await drawTicket({
     shapes: ticket21Parked,
     ticket: { ...parkedTicket, title: "Serve the reason" },
   });
   const heading = screen.getByRole("heading", { level: 1 });
-  expect(heading.textContent).toBe("Serve the reason");
-  expect(heading.closest("header")?.textContent).toBe("Serve the reason");
+  expect(heading.textContent).toBe("Serve the reason #21");
+  expect(heading.querySelector(".ticket-header-number")?.textContent).toBe(
+    "#21",
+  );
 });
 
 test("the brief's intent is drawn once, as markdown, under Instructions", async () => {
@@ -534,8 +490,8 @@ test("every part of the page is drawn without being opened, in order", async () 
     .map((heading) => heading.textContent ?? "");
   const order = [
     "Instructions",
-    "Configuration",
     "Revision history",
+    "Configuration",
     "Activity",
   ];
   const at = order.map((name) =>
@@ -597,21 +553,18 @@ test("after a resume the current cycle draws its resumed evaluator running, agai
     shapes: ticket21Resumed,
     ticket: resumedTicket,
   });
-  expect(statusBar(container).textContent).toContain("Evaluating");
+  expect(ticketHeader().textContent).toContain("Evaluating");
   expect(screen.queryByText("Rework budget exhausted")).toBeNull();
   const current = groups(container)[0];
   if (current === undefined) throw new Error("no current cycle");
-  const running = rowsOf(current).find((row) => row.includes("Running"));
-  expect(running).toBeDefined();
-  expect(running).toMatch(/started \S+( \S+)? ago/u);
-  expect(running).toContain("generation 2");
-  expect(current.querySelector(".fig-live")).not.toBeNull();
-  const blocked = rowsOf(current).find((row) => row.includes("Blocked"));
-  expect(blocked).toContain("Superseded");
-  const blockedRow = [...current.querySelectorAll(".ledger-row")].find(
-    (row) => row.textContent?.includes("Blocked") === true,
-  );
-  expect(blockedRow?.classList.contains("ledger-row-superseded")).toBe(true);
+  const marks = rowItems(current).map((row) => [
+    row.querySelector(".ticket-runs-name")?.textContent,
+    row.querySelector(".ticket-run-mark")?.getAttribute("data-mark"),
+    row.hasAttribute("data-superseded"),
+  ]);
+  expect(marks).toContainEqual(["Stage 1 of 2", "Spin", false]);
+  expect(marks).toContainEqual(["Stage 1 of 2", "Alert", true]);
+  expect(outcomeOf(current)).toBe("Running Stage 1 of 2");
 });
 
 test("a resumed ticket says it was resumed", async () => {
@@ -619,9 +572,10 @@ test("a resumed ticket says it was resumed", async () => {
     shapes: ticket21Resumed,
     ticket: resumedTicket,
   });
-  const bar = statusBar(container);
-  expect(bar.textContent).toContain("Evaluating");
-  expect(bar.textContent).toContain("Resumed at stage 1 · cycle 3");
+  expect(ticketHeader().textContent).toContain("Evaluating");
+  expect(statusBar(container).textContent).toContain(
+    "Resumed at stage 1 · cycle 3",
+  );
 });
 
 test("a running ticket's slot is the run going now, and nothing needs you", async () => {
@@ -640,7 +594,7 @@ test("a ticket that is neither running nor waiting on anyone draws no card", asy
   expect(screen.queryByRole("status", { name: "Needs you" })).toBeNull();
 });
 
-test("a short page says so, and no cycle on it claims to be whole", async () => {
+test("a short page says so", async () => {
   await drawTicket({
     shapes: ticket21Parked.slice(0, 4),
     ticket: parkedTicket,
@@ -650,8 +604,11 @@ test("a short page says so, and no cycle on it claims to be whole", async () => 
   expect(short.classList.contains("notice-inline")).toBe(true);
   expect(short.classList.contains("notice-parked")).toBe(true);
   expect(
-    screen.getAllByText("Cycle partly on this page").length,
-  ).toBeGreaterThan(0);
+    within(screen.getByRole("navigation", { name: "Ticket" })).getByRole(
+      "link",
+      { name: /^Runs/u },
+    ).textContent,
+  ).toBe("Runs4+");
 });
 
 test("without the draft the rows still group by the program the ticket was released with", async () => {
@@ -663,14 +620,28 @@ test("without the draft the rows still group by the program the ticket was relea
   expect(groups(container)).toHaveLength(3);
 });
 
-test("a ticket read carrying no program leaves the rows ungrouped and says why", async () => {
+test("a ticket read carrying no program still groups its runs by cycle, and numbers its stages", async () => {
   const { container } = await drawTicket({
     shapes: ticket21Parked,
     ticket: { ...parkedTicket, program: undefined },
   });
-  expect(screen.getByText("Ungrouped · program not loaded")).toBeDefined();
-  expect(groups(container)).toHaveLength(0);
-  expect(container.querySelectorAll(".ledger-row")).toHaveLength(7);
+  expect(groups(container)).toHaveLength(3);
+  expect(
+    groups(container).flatMap((group) =>
+      rowItems(group).map(
+        (row) => row.querySelector(".ticket-runs-name")?.textContent,
+      ),
+    ),
+  ).toEqual([
+    "Work",
+    "Stage 1",
+    "Landing",
+    "Work",
+    "Stage 1",
+    "Stage 2",
+    "Work",
+    "Stage 1",
+  ]);
 });
 
 test("nothing the page draws is a colour of its own, in either theme", async () => {
@@ -727,7 +698,6 @@ test("no string the page composes but the brief runs past the copy budget", asyn
     shapes: ticket21Parked,
     ticket: parkedTicket,
   });
-  await cyclesOpened(container);
   expect(drawnStringsOver(container)).toEqual([]);
 });
 
@@ -822,44 +792,40 @@ test("a running ticket says when it started, from its first run", async () => {
 
 /** A row reads its run to learn whether it has a conversation, so a cycle
  * the page draws closed reads its runs only once a reader opens it. */
-test("a closed cycle reads none of its runs until it is opened", async () => {
-  const { container } = await drawTicket({
+test("the Runs tab reads each run it lists once, for the line it says", async () => {
+  await drawTicket({
     shapes: ticket21Parked,
     ticket: parkedTicket,
   });
-  const runsRead = (): readonly string[] =>
-    [
-      ...new Set(
-        routed.flatMap(
-          (url) => /\/executions\/([^/?]+)$/u.exec(url)?.slice(1) ?? [],
-        ),
-      ),
-    ].sort();
-  expect(runsRead()).toEqual(["execution-b8bdfdd4-7", "execution-c004a1fa-6"]);
-  await cyclesOpened(container);
-  expect(runsRead()).toEqual(
+  const runsRead = routed.flatMap(
+    (url) => /\/executions\/([^/?]+)$/u.exec(url)?.slice(1) ?? [],
+  );
+  expect([...new Set(runsRead)].sort()).toEqual(
     ticket21Parked.map((shape) => shape.execution).sort(),
   );
 });
 
-/**
- * §5.2's waiting reading: a row whose first attempt the wire dates says how
- * much of its window was the queue, and one it does not reads as before.
- */
-test("a row separates its wait from its run where the wire dates the start", async () => {
+/** A run's time is how long it ran, from its first attempt's opening, so the
+ * queue before it is no part of it. */
+test("a row's time is its run's span from its start, the wait left out", async () => {
   const started: readonly ExecutionShape[] = ticket21Parked.map((shape) =>
     shape.task === 1 ? { ...shape, startedAt: "2026-08-26T00:11:00Z" } : shape,
   );
-  const { container } = await drawTicket({
-    shapes: started,
-    ticket: parkedTicket,
-  });
-  await cyclesOpened(container);
-  const rows = [...container.querySelectorAll(".ledger-row")].map(
-    (row) => row.querySelector(".ledger-when")?.textContent ?? "",
-  );
-  expect(rows.some((row) => row.includes("waited 1m·ran"))).toBe(true);
-  expect(rows.some((row) => row.includes("waited") === false)).toBe(true);
+  const times = async (
+    shapes: readonly ExecutionShape[],
+  ): Promise<string | undefined> => {
+    const { container } = await drawTicket({ shapes, ticket: parkedTicket });
+    const work = rowItems(groups(container).at(-1))[0];
+    const time = work?.querySelector(".ticket-runs-time")?.textContent;
+    cleanup();
+    vi.unstubAllGlobals();
+    viewportAtEm(viewportDeskEm);
+    return time;
+  };
+  const from = await times(ticket21Parked);
+  const ran = await times(started);
+  expect(from).not.toBe(ran);
+  expect(ran).toMatch(/^\d+m( \d{2}s)?$/u);
 });
 
 /**
@@ -998,27 +964,22 @@ async function drawFanout(): Promise<Drawn> {
  * bleed into another's, and the roster's own shortfall is said once, on the
  * last evaluator the page holds.
  */
-test("a sparse stage draws each evaluator as its own row, priced and timed apart", async () => {
+test("a sparse stage draws each evaluator as its own row, priced apart", async () => {
   const { container } = await drawFanout();
-  await cyclesOpened(container);
   const rows = stageRows(groups(container).at(-1));
   expect(rows).toHaveLength(2);
-  expect(rows[0]?.querySelector(".ledger-label")?.textContent).toBe(
+  expect(rows[0]?.querySelector(".ticket-runs-name")?.textContent).toBe(
     "Stage 1 of 1 · 1",
   );
-  expect(rows[1]?.querySelector(".ledger-label")?.textContent).toBe(
+  expect(rows[1]?.querySelector(".ticket-runs-name")?.textContent).toBe(
     "Stage 1 of 1 · 2",
   );
-  expect(rows[0]?.querySelector(".ledger-spent")?.textContent).toContain(
+  expect(rows[0]?.querySelector(".ticket-runs-cost")?.textContent).toContain(
     "$0.40",
   );
-  expect(rows[1]?.querySelector(".ledger-spent")?.textContent).toContain(
+  expect(rows[1]?.querySelector(".ticket-runs-cost")?.textContent).toContain(
     "$0.60",
   );
-  expect(rows[0]?.textContent).toContain("Relaunched 1× by fabric");
-  expect(rows[1]?.textContent).toContain("Relaunched 2× by fabric");
-  expect(rows[1]?.textContent).toContain("2 of 3 evaluators on this page");
-  expect(rows[0]?.textContent).not.toContain("evaluators on this page");
 });
 
 /**
@@ -1028,9 +989,8 @@ test("a sparse stage draws each evaluator as its own row, priced and timed apart
  */
 test("a relaunched, short stage row in a superseded cycle still fits the copy budget", async () => {
   const { container } = await drawFanout();
-  await cyclesOpened(container);
   const superseded = groups(container).at(-1);
-  expect(superseded?.classList.contains("ledger-group-superseded")).toBe(true);
+  expect(superseded?.querySelector(".pill")).toBeNull();
   const over = drawnStringsOver(container);
   expect(over).toEqual([]);
 });
@@ -1148,7 +1108,6 @@ test("a finished ticket's page never says Terminal", async () => {
     shapes: ticket21Parked,
     ticket: { ...resumedTicket, phase: "Done" },
   });
-  await cyclesOpened(container);
-  expect(container.textContent).toContain("Passed");
+  expect(container.textContent).toContain("Done");
   expect(container.textContent).not.toContain("Terminal");
 });

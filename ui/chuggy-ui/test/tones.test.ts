@@ -2,9 +2,7 @@
  * The tone every state of the machine is drawn in.
  *
  * Each map is walked over its whole roster, so a member the wire gains fails
- * here at run time as well as at the compiler, and the arms a stage row has
- * without a set are checked by name: a stage that was short-circuited and one
- * that has not started are different facts and are not allowed to draw alike.
+ * here at run time as well as at the compiler.
  */
 
 import { expect, test } from "vitest";
@@ -22,7 +20,6 @@ import {
   inviteLinkStateTone,
   pillTones,
   phaseTone,
-  stageArm,
   threadStandingTone,
   ticketLandingTone,
   verdictTone,
@@ -84,31 +81,6 @@ test("the machine's own meanings keep their own hues", () => {
   expect(verdictTone("Running")).toBe("live");
   expect(verdictTone("Blocked")).toBe("parked");
   expect(verdictTone("Cancelled")).toBe("retired");
-});
-
-test("each arm a stage has without evaluators is its own word and its own tone", () => {
-  expect(stageArm({ kind: "Skipped", stage: 1, after: 0 })).toEqual({
-    word: "Skipped",
-    tone: "retired",
-  });
-  expect(stageArm({ kind: "Queued", stage: 1, after: 0 })).toEqual({
-    word: "Queued",
-    tone: "queued",
-  });
-  expect(stageArm({ kind: "Missing", stage: 1 })).toEqual({
-    word: "Missing",
-    tone: "parked",
-  });
-  expect(
-    stageArm({
-      kind: "Ran",
-      stage: 0,
-      evaluators: [],
-      expected: 1,
-      verdict: "Failed",
-      span: { from: undefined, to: undefined },
-    }),
-  ).toEqual({ word: "Failed", tone: "fail" });
 });
 
 test("each standing the arm draws is its own word and its own tone", () => {

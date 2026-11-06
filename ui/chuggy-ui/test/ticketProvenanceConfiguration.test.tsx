@@ -26,6 +26,10 @@ import type { ConfigurationSelection } from "../../../src/contract/configuration
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import type { TicketFollowing } from "../../../src/contract/responses.ts";
 import { TicketPage } from "../app/browser/TicketPage.tsx";
+import {
+  TicketConfigurationTab,
+  TicketOverviewTab,
+} from "../app/browser/ticket/TicketPageTabs.tsx";
 import { briefLandingLine } from "../app/core/codeLabels.ts";
 import {
   answer,
@@ -98,6 +102,7 @@ async function drawTicket(
   selection?: ConfigurationSelection,
   following?: TicketFollowing,
   brief?: unknown,
+  tab: ReactNode = <TicketConfigurationTab />,
 ): Promise<void> {
   const api = apiDouble({
     operation: { operation: "op-one", state: "Pending" },
@@ -147,7 +152,7 @@ async function drawTicket(
       }
       transport={openedStream().ports.fetch}
     >
-      <TicketPage />
+      <TicketPage>{tab}</TicketPage>
     </ScreenHarness>,
   );
   await settled();
@@ -191,7 +196,15 @@ test("the configuration is broken out into Work, Evaluation and Finalization", a
 
 test("the status row names the member who filed the ticket, the whole subject on hover", async () => {
   const creator = "23:https://issuer.example/alice";
-  await drawExpanded(canonical, undefined, creator);
+  await drawExpanded(
+    canonical,
+    undefined,
+    creator,
+    undefined,
+    undefined,
+    undefined,
+    <TicketOverviewTab />,
+  );
   const filed = screen.getAllByText("Filed by")[0]?.closest("div");
   expect(filed).not.toBeNull();
   expect(within(filed as HTMLElement).getByText("alice")).toBeDefined();
@@ -199,7 +212,15 @@ test("the status row names the member who filed the ticket, the whole subject on
 });
 
 test("a ticket the wire names no creator for draws no filed-by field at all", async () => {
-  await drawExpanded();
+  await drawExpanded(
+    canonical,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    <TicketOverviewTab />,
+  );
   expect(screen.getByText("Released under")).toBeDefined();
   expect(
     screen

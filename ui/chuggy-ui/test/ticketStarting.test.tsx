@@ -155,14 +155,16 @@ function launchServed(step: LaunchStep): RunPageServed {
 }
 
 test.each(launchSteps)(
-  "a $route run $step reads $word in its row, its cycle and the Now card",
+  "a $route run $step reads $word on its row's mark, its cycle and the Now card",
   async (step) => {
     const drawn = await runPageDrawn(atlas, launchServed(step));
-    const row = drawn.container.querySelector(".ledger-row");
-    expect(row?.querySelector(".ledger-pill")?.textContent).toBe(step.word);
+    const mark = drawn.container.querySelector(".ticket-run-mark");
+    expect(mark?.getAttribute("data-tone")).toBe(
+      step.word === "Starting" ? "queued" : "live",
+    );
     expect(
-      drawn.container.querySelector(".ledger-group-summary")?.textContent,
-    ).toBe(`Work ${step.word.toLowerCase()}`);
+      drawn.container.querySelector(".ticket-runs-outcome")?.textContent,
+    ).toBe(`${step.word} work`);
     const now = screen.getByRole("region", { name: "Now" });
     expect(now.querySelector(".ticket-now-line")?.textContent).toBe(step.word);
   },

@@ -39,7 +39,7 @@ import {
   type RepositoryImportLine,
 } from "./repositoryImport.ts";
 import type { RunCommandEnd } from "./runResult.ts";
-import type { SetVerdict, StageRow } from "./ticketLedger.ts";
+import type { SetVerdict } from "./ticketLedger.ts";
 
 type EpicStatus = EpicSummaryResponse["status"];
 
@@ -139,29 +139,6 @@ export function ticketLandingTone(state: TicketLandingState): Tone {
       return "pass";
     case "Invalidated":
       return "retired";
-  }
-}
-
-/** One status word and its tone for a stage the program did not run. */
-export interface StageArm {
-  readonly word: string;
-  readonly tone: Tone;
-}
-
-/**
- * The three arms a stage row has without evaluators: short-circuited, not yet
- * started, or off the page this screen holds.
- */
-export function stageArm(row: StageRow): StageArm {
-  switch (row.kind) {
-    case "Ran":
-      return { word: row.verdict, tone: verdictTone(row.verdict) };
-    case "Skipped":
-      return { word: "Skipped", tone: "retired" };
-    case "Queued":
-      return { word: "Queued", tone: "queued" };
-    case "Missing":
-      return { word: "Missing", tone: "parked" };
   }
 }
 

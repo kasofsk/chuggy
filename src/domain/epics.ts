@@ -3,8 +3,11 @@
  * only: it never changes a ticket's readiness, dependencies, evaluation or
  * finalization, so nothing here reads or writes the ticket machine.
  *
- * `decideEpic` is the whole of the write rule. Progress and status are derived
- * from the members' phases at the moment they are asked and stored nowhere.
+ * `decideEpic` is the rule for a save, and `epicDraftDeleted` for the one
+ * other write: a deleted draft leaves every epic holding it, Archived ones
+ * included, since no save could keep a member that is no longer a ticket.
+ * Progress and status are derived from the members' phases at the moment they
+ * are asked and stored nowhere.
  */
 
 import { phaseTags, type Phase } from "./phase.ts";
@@ -205,6 +208,29 @@ export function applyEpic(
     revision: outcome.revision,
     content: command.content,
   });
+}
+
+/**
+ * The epics after `draft` is deleted: each holding it drops it and takes the
+ * next revision, whatever its visibility; the rest are unchanged.
+ */
+export function epicDraftDeleted(state: EpicState, draft: number): EpicState {
+  if (!Number.isSafeInteger(draft) || draft < 1)
+    throw new Error(
+      `epicDraftDeleted: ${String(draft)} is not a ticket number`,
+    );
+  const next = new Map(state);
+  for (const [number, epic] of state) {
+    if (!epic.content.tickets.includes(draft)) continue;
+    next.set(number, {
+      revision: epic.revision + 1,
+      content: {
+        ...epic.content,
+        tickets: epic.content.tickets.filter((ticket) => ticket !== draft),
+      },
+    });
+  }
+  return next;
 }
 
 export type EpicPhaseCounts = Readonly<Record<Phase, number>>;

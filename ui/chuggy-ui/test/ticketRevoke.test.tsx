@@ -1,16 +1,15 @@
 /**
- * Revoke on the ticket page, which ends the ticket for good: the press asks,
- * and only the ask's own button submits. Every other action is still one
+ * Revoke on the ticket page, which ends the ticket for good: it is in the
+ * header's menu, choosing it asks, and only the ask's own button submits. Every other action is still one
  * press, and a revoke the actor refuses reads as any refusal does.
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
-import { TicketPage } from "../app/browser/TicketPage.tsx";
 import {
   answer,
   apiDouble,
@@ -23,6 +22,7 @@ import {
 } from "./screenHarness.tsx";
 import type { ApiDouble } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
+import { ticketHeaderMenuLabel } from "../app/browser/ticket/TicketHeaderMenu.tsx";
 import {
   abilitiesEvery,
   abilitiesOver,
@@ -30,6 +30,11 @@ import {
 } from "./projectAbilitiesFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
+import {
+  TicketPageEveryTab,
+  ticketHeader,
+  ticketHeaderMenuOpened,
+} from "./ticketPageEveryTab.tsx";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -44,8 +49,13 @@ vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
 
 vi.mock("@tanstack/react-router", () => ({
   createLink: (component: unknown) => component,
-  Link: (props: { readonly children?: ReactNode }) => (
-    <a href="/">{props.children}</a>
+  Link: (props: {
+    readonly children?: ReactNode;
+    readonly ref?: Ref<HTMLAnchorElement>;
+  }) => (
+    <a href="/" ref={props.ref}>
+      {props.children}
+    </a>
   ),
   useParams: () => ({ ...atlas, ticket: "11" }),
 }));
@@ -61,8 +71,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-/** Parked with a resume the machine stamped, so Resume is drawn in the card
- * and Revoke in the bar. */
+/** Parked with a resume the machine stamped, so the header leads with Resume
+ * and holds Revoke in its menu. */
 const escalated = {
   ticket: 11,
   phase: "Escalated",
@@ -97,33 +107,43 @@ async function mounted(
   over: (served: typeof fetch) => typeof fetch = (served) => served,
 ): Promise<{
   readonly api: ApiDouble;
-  readonly bar: HTMLElement;
+  readonly header: HTMLElement;
   readonly card: HTMLElement;
 }> {
   const api = apiDouble({ operation, route: routed });
   vi.stubGlobal("fetch", over(api.fetch));
-  const { container } = render(
+  render(
     <ScreenHarness
       partition={atlas}
       client={queryClientUnretried()}
       transport={openedStream().ports.fetch}
     >
-      <TicketPage />
+      <TicketPageEveryTab />
     </ScreenHarness>,
   );
   await settled();
-  const bar = container.querySelector<HTMLElement>(".ticket-status");
-  if (bar === null) throw new Error("no status bar drawn");
-  return { api, bar, card: screen.getByRole("status", { name: "Needs you" }) };
+  return {
+    api,
+    header: ticketHeader(),
+    card: screen.getByRole("status", { name: "Needs you" }),
+  };
 }
 
 function asked(): HTMLElement | null {
   return screen.queryByRole("dialog", { name: "Revoke this ticket?" });
 }
 
-async function revokePressed(bar: HTMLElement): Promise<HTMLElement> {
+/** The menu's Revoke, opened onto. */
+async function revokeItem(): Promise<HTMLElement> {
+  return within(await ticketHeaderMenuOpened()).getByRole("menuitem", {
+    name: "Revoke…",
+  });
+}
+
+async function revokePressed(): Promise<HTMLElement> {
+  const item = await revokeItem();
   await turned(() => {
-    within(bar).getByRole("button", { name: "Revoke" }).click();
+    item.click();
   });
   const group = asked();
   if (group === null) throw new Error("Revoke opened no ask");
@@ -131,19 +151,19 @@ async function revokePressed(bar: HTMLElement): Promise<HTMLElement> {
 }
 
 test("one press of Revoke sends nothing and asks what it ends", async () => {
-  const { api, bar } = await mounted();
-  const group = await revokePressed(bar);
+  const { api, header } = await mounted();
+  const group = await revokePressed();
 
   expect(api.submissions()).toBe(0);
   expect(group.textContent).toContain(
     "Ends this ticket and parks its dependents. Can't be undone.",
   );
-  expect(bar.contains(group)).toBe(false);
+  expect(header.contains(group)).toBe(false);
 });
 
 test("Cancel sends nothing and gives the actions back as they were", async () => {
-  const { api, bar, card } = await mounted();
-  const group = await revokePressed(bar);
+  const { api, header } = await mounted();
+  const group = await revokePressed();
 
   await turned(() => {
     within(group).getByRole("button", { name: "Cancel" }).click();
@@ -151,18 +171,17 @@ test("Cancel sends nothing and gives the actions back as they were", async () =>
 
   expect(asked()).toBeNull();
   expect(api.submissions()).toBe(0);
-  const revoke = within(bar).getByRole("button", { name: "Revoke" });
-  expect(revoke.hasAttribute("disabled")).toBe(false);
+  expect((await revokeItem()).hasAttribute("data-disabled")).toBe(false);
   expect(
-    within(card)
+    within(header)
       .getByRole("button", { name: "Resume" })
       .hasAttribute("disabled"),
   ).toBe(false);
 });
 
-test("Revoke ticket sends one revoke and closes the ask, and the bar's Revoke is busy while it is in flight", async () => {
-  const { api, bar } = await mounted();
-  const group = await revokePressed(bar);
+test("Revoke ticket sends one revoke and closes the ask, and the menu's Revoke is busy while it is in flight", async () => {
+  const { api } = await mounted();
+  const group = await revokePressed();
 
   await turned(() => {
     within(group).getByRole("button", { name: "Revoke ticket" }).click();
@@ -174,15 +193,14 @@ test("Revoke ticket sends one revoke and closes the ask, and the bar's Revoke is
     mutation: { mutation: "RevokeTicket", ticket: 11 },
   });
   expect(asked()).toBeNull();
-  const revoke = within(bar).getByRole("button", { name: "Revoke" });
-  expect(revoke.hasAttribute("disabled")).toBe(true);
+  expect((await revokeItem()).hasAttribute("data-disabled")).toBe(true);
 });
 
 test("every other action still sends on one press", async () => {
-  const { api, card } = await mounted();
+  const { api, header } = await mounted();
 
   await turned(() => {
-    within(card).getByRole("button", { name: "Resume" }).click();
+    within(header).getByRole("button", { name: "Resume" }).click();
   });
 
   expect(api.submissions()).toBe(1);
@@ -193,10 +211,10 @@ test("every other action still sends on one press", async () => {
 });
 
 test("an ask left for another button closes, and that button sends its own action alone", async () => {
-  const { api, bar, card } = await mounted();
-  await revokePressed(bar);
+  const { api, header } = await mounted();
+  await revokePressed();
 
-  const resume = within(card).getByRole("button", { name: "Resume" });
+  const resume = within(header).getByRole("button", { name: "Resume" });
   await turned(() => {
     resume.focus();
   });
@@ -213,8 +231,8 @@ test("an ask left for another button closes, and that button sends its own actio
 
 test("a revoke the actor refuses closes the ask and says so where any refusal is said", async () => {
   waiting.held = false;
-  const { bar } = await mounted(refused);
-  const group = await revokePressed(bar);
+  const { header } = await mounted(refused);
+  const group = await revokePressed();
 
   await turned(() => {
     within(group).getByRole("button", { name: "Revoke ticket" }).click();
@@ -222,18 +240,19 @@ test("a revoke the actor refuses closes the ask and says so where any refusal is
   await settled();
 
   expect(asked()).toBeNull();
-  expect(within(bar).getByText(/^Revoke refused · /u)).toBeDefined();
-  expect(
-    within(bar)
-      .getByRole("button", { name: "Revoke" })
-      .hasAttribute("disabled"),
-  ).toBe(false);
+  expect(within(header).getByText(/^Revoke refused · /u)).toBeDefined();
+  expect((await revokeItem()).hasAttribute("data-disabled")).toBe(false);
 });
 
-function parkedAnswers(): readonly boolean[] {
-  return ["Resume", "Revoke"].map(
-    (name) => screen.queryByRole("button", { name }) !== null,
-  );
+async function parkedAnswers(): Promise<readonly boolean[]> {
+  const resume = screen.queryByRole("button", { name: "Resume" }) !== null;
+  const menu = screen.queryByRole("button", { name: ticketHeaderMenuLabel });
+  const revoke =
+    menu !== null &&
+    within(await ticketHeaderMenuOpened()).queryByRole("menuitem", {
+      name: "Revoke…",
+    }) !== null;
+  return [resume, revoke];
 }
 
 test("a reader who may not mutate reads why the ticket is parked and is offered neither Resume nor Revoke", async () => {
@@ -242,13 +261,13 @@ test("a reader who may not mutate reads why the ticket is parked and is offered 
     abilitiesOver({ ...abilitiesEvery, mutate: false }),
   );
   expect(card.textContent).not.toBe("");
-  expect(parkedAnswers()).toStrictEqual([false, false]);
+  expect(await parkedAnswers()).toStrictEqual([false, false]);
 });
 
 test.each(abilitiesUnrefusing)(
   "a reader the abilities read %s is offered Resume and Revoke",
   async (_said, abilities) => {
     await mounted(undefined, abilitiesOver(abilities));
-    expect(parkedAnswers()).toStrictEqual([true, true]);
+    expect(await parkedAnswers()).toStrictEqual([true, true]);
   },
 );

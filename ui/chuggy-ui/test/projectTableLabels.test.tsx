@@ -361,11 +361,27 @@ test("a row names its creator by the email the project's people hold for them", 
   ]);
 });
 
-test("a row draws its state as a chip in its phase's tone", async () => {
+test("a row draws its state as the small state label, in its phase's tone", async () => {
   await drawTable();
-  const chip = within(rowsDrawn()).getByText("Working");
-  expect(chip.className).toBe("ticket-list-state");
-  expect(chip.dataset["tone"]).toBe("live");
+  const label = within(rowsDrawn())
+    .getByText("Working")
+    .closest<HTMLElement>(".ticket-state");
+  expect(label?.parentElement?.className).toBe("ticket-list-standing");
+  expect(label?.dataset["size"]).toBe("small");
+  expect(label?.dataset["tone"]).toBe("live");
+});
+
+test("a ready row's label is tinted and a done row's filled, each with its own mark", async () => {
+  await drawTableWith([finished, pending(24, [])], []);
+  const labelOf = (word: string): HTMLElement | null =>
+    within(rowsDrawn()).getByText(word).closest<HTMLElement>(".ticket-state");
+  const ready = labelOf("Ready");
+  const done = labelOf("Done");
+  expect(ready?.dataset["form"]).toBe("tinted");
+  expect(done?.dataset["form"]).toBe("filled");
+  expect(ready?.querySelector("svg")?.innerHTML).not.toBe(
+    done?.querySelector("svg")?.innerHTML,
+  );
 });
 
 test("an escalated row answers its kind on the phase chip's hover", async () => {
@@ -609,7 +625,8 @@ test("a ready row's chip is the dispatch, and no row offers resume or revoke", a
     name: "Dispatch ticket #24",
   });
   expect(ready.textContent).toBe("Ready");
-  expect(ready.className).toBe("ticket-list-state");
+  expect(ready.className).toBe("ticket-list-standing");
+  expect(ready.firstElementChild?.className).toBe("ticket-state");
 });
 
 test("a reader who may not dispatch sees a ready row's chip, not a button", async () => {
@@ -618,7 +635,7 @@ test("a reader who may not dispatch sees a ready row's chip, not a button", asyn
     [],
     abilitiesOver({ ...abilitiesEvery, dispatch: false }),
   );
-  expect(within(rowsDrawn()).getByText("Ready").tagName).toBe("SPAN");
+  expect(within(rowsDrawn()).getByText("Ready").closest("button")).toBeNull();
   expect(screen.queryByRole("button", { name: /^Dispatch/u })).toBeNull();
 });
 
@@ -790,4 +807,20 @@ test("a count a keyboard focuses is ringed, pressed or not", async () => {
   await countTapped(/^Working/u);
   expect(working().getAttribute("aria-pressed")).toBe("true");
   expect(countFocusedShadow(working())).toContain("var(--ring-focus)");
+});
+
+test("on a phone a count shows only its number, its label's mark and word hidden", async () => {
+  await drawTableWith(countedTickets, [execution]);
+  const counts = screen.getByRole("list", { name: "Tickets by state" });
+  const working = within(counts).getByRole("button", { name: /^Working/u });
+  const rules = sheetRules(listSheet, [sheetNarrowCondition]);
+  const shown = (selector: string): boolean =>
+    sheetDeclared(
+      rules,
+      working.querySelector(selector) as Element,
+      "display",
+    ) !== "none";
+  expect(shown(".ticket-state-mark")).toBe(false);
+  expect(shown(".ticket-state-word")).toBe(false);
+  expect(shown(".num")).toBe(true);
 });

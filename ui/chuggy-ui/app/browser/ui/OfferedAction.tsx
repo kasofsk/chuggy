@@ -39,6 +39,8 @@ export interface OfferedActionProps {
   readonly refusedBecause?: string;
   readonly offered?: boolean;
   readonly danger?: boolean;
+  /** Whether it is the one action its place leads with. */
+  readonly primary?: boolean;
   readonly variant?: ActionForm;
   /** Whether the ask a press opens is open, where the press opens one. */
   readonly expanded?: boolean;
@@ -106,7 +108,13 @@ export function OfferedAction(props: OfferedActionProps): ReactNode {
     <div className={compact ? "act act-compact" : "act"}>
       <div className="act-head">
         <Button
-          variant={props.danger === true ? "danger" : "default"}
+          variant={
+            props.danger === true
+              ? "danger"
+              : props.primary === true
+                ? "primary"
+                : "default"
+          }
           size={compact ? "sm" : "md"}
           disabled={state !== "ready"}
           busy={state === "busy"}

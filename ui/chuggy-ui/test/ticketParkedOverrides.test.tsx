@@ -24,7 +24,6 @@ import type { ReactNode } from "react";
 
 import type { ConfigurationOverrides } from "../../../src/contract/configurationOverrides.ts";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
-import { TicketPage } from "../app/browser/TicketPage.tsx";
 import { consoleQueryClient } from "../app/core/consoleWrite.ts";
 import { consoleStoreBare } from "./consoleStoreBare.tsx";
 import type { ConsoleStore } from "../app/browser/store.ts";
@@ -48,6 +47,7 @@ import {
 import type { AbilitiesAnswer } from "./projectAbilitiesFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
+import { TicketPageEveryTab, ticketHeader } from "./ticketPageEveryTab.tsx";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -246,7 +246,7 @@ async function drawn(
       transport={openedStream().ports.fetch}
       {...(store === undefined ? {} : { store })}
     >
-      <TicketPage />
+      <TicketPageEveryTab />
     </ScreenHarness>,
   );
   await settled();
@@ -285,7 +285,9 @@ test("the card's overrides are closed until asked for, and draw only what a park
   expect(within(card).getByLabelText(/^Model/u)).toBeDefined();
   expect(within(card).getByText("Setup")).toBeDefined();
   expect(within(card).queryByText("Work instructions")).toBeNull();
-  expect(within(card).getByRole("button", { name: "Resume" })).toBeDefined();
+  expect(
+    within(ticketHeader()).getByRole("button", { name: "Resume" }),
+  ).toBeDefined();
 });
 
 test("a member changes the model, saves, resumes, and the page draws the new model as overridden", async () => {
@@ -293,7 +295,9 @@ test("a member changes the model, saves, resumes, and the page draws the new mod
   const card = await drawn();
   await overridesOpened(card);
   await modelTyped(card, "opus");
-  expect(within(card).queryByRole("button", { name: "Resume" })).toBeNull();
+  expect(
+    within(ticketHeader()).queryByRole("button", { name: "Resume" }),
+  ).toBeNull();
 
   await pressed(card, "Save overrides");
   expect(served.posted[0]).toEqual({
@@ -316,7 +320,7 @@ test("a member changes the model, saves, resumes, and the page draws the new mod
   });
   expect(card.textContent).toContain("Overrides saved");
 
-  await pressed(card, "Resume");
+  await pressed(ticketHeader(), "Resume");
   expect(served.posted[1]).toEqual({
     mutation: "ResolveNativeAction",
     action: "action-parked",
@@ -363,7 +367,9 @@ test("Save overrides stays busy until the ticket the change answered has been re
   expect(
     within(card).getByRole("button", { name: "Save overrides" }),
   ).toHaveProperty("disabled", true);
-  expect(within(card).queryByRole("button", { name: "Resume" })).toBeNull();
+  expect(
+    within(ticketHeader()).queryByRole("button", { name: "Resume" }),
+  ).toBeNull();
 
   expect(held).not.toBe("");
   holding = false;
@@ -372,7 +378,9 @@ test("Save overrides stays busy until the ticket the change answered has been re
     reread.release(answered);
   });
   await settled();
-  expect(within(card).getByRole("button", { name: "Resume" })).toBeDefined();
+  expect(
+    within(ticketHeader()).getByRole("button", { name: "Resume" }),
+  ).toBeDefined();
 });
 
 test("a refused change is drawn on the card, holding what was typed, and Resume stays withheld", async () => {
@@ -388,10 +396,14 @@ test("a refused change is drawn on the card, holding what was typed, and Resume 
   expect(within(card).getByLabelText<HTMLInputElement>(/^Model/u).value).toBe(
     "opus",
   );
-  expect(within(card).queryByRole("button", { name: "Resume" })).toBeNull();
+  expect(
+    within(ticketHeader()).queryByRole("button", { name: "Resume" }),
+  ).toBeNull();
 
   await pressed(card, "Discard");
-  expect(within(card).getByRole("button", { name: "Resume" })).toBeDefined();
+  expect(
+    within(ticketHeader()).getByRole("button", { name: "Resume" }),
+  ).toBeDefined();
 });
 
 /** The served double with the save's settlement held until `release`. */
@@ -463,7 +475,9 @@ test("a ticket parked at its finalization is offered no overrides, its resume st
   expect(
     within(card).queryByRole("button", { name: /^Overrides/u }),
   ).toBeNull();
-  expect(within(card).getByRole("button", { name: "Resume" })).toBeDefined();
+  expect(
+    within(ticketHeader()).getByRole("button", { name: "Resume" }),
+  ).toBeDefined();
 });
 
 test("a ticket whose configuration is a catalog is offered no overrides, a catalog taking none", async () => {
@@ -477,7 +491,9 @@ test("a ticket whose configuration is a catalog is offered no overrides, a catal
   expect(
     within(card).queryByRole("button", { name: /^Overrides/u }),
   ).toBeNull();
-  expect(within(card).getByRole("button", { name: "Resume" })).toBeDefined();
+  expect(
+    within(ticketHeader()).getByRole("button", { name: "Resume" }),
+  ).toBeDefined();
 });
 
 const setupFailed = {
