@@ -7,6 +7,10 @@
  * says nothing about itself gives the height back to the page rather than
  * spending it on a heading the project switcher already carries.
  *
+ * The project's row is drawn on its own and the rows under it apart, so the
+ * frame can give the chat pane their room: where the viewport does not divide,
+ * a pane over the whole body takes them too, and the project's row stays.
+ *
  * The frame's own controls and the project's setup pages sit behind the gear
  * beside the project. A screen outside every project draws the same bar without what
  * only a project has — its screens, its setup and its page row — so signing
@@ -214,6 +218,22 @@ function TopBarCrumbs(props: {
   return <TopBarTrail crumbs={shellCrumbs(props.partition, pathname)} />;
 }
 
+/** The rows of a project's bar under its first: its screens, then the page's
+ * own row where a page filled it. */
+export function TopBarRows(props: {
+  readonly partition: PartitionIdentity;
+}): ReactNode {
+  return (
+    <>
+      <div className="topbar-rows">
+        <TopBarNav partition={props.partition} />
+      </div>
+      <TopBarPage />
+    </>
+  );
+}
+
+/** The bar's first row: where the reader is, and the frame's controls. */
 export function TopBar(props: {
   readonly partition: PartitionIdentity | undefined;
   /** The tenant whose chat outside every project the page is, where it is. */
@@ -249,9 +269,7 @@ export function TopBar(props: {
             <SettingsMenu partition={partition} />
           </div>
         </div>
-        {partition === undefined ? null : <TopBarNav partition={partition} />}
       </header>
-      {partition === undefined ? null : <TopBarPage />}
     </div>
   );
 }

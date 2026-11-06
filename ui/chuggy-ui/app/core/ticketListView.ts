@@ -20,7 +20,11 @@
 import { ticketSearchCharsMax } from "../../../../src/contract/http.ts";
 import type { TicketPhase } from "../../../../src/contract/rosters.ts";
 
-import { ticketFilterOf } from "./projectTableFilters.ts";
+import {
+  ticketFilterAll,
+  ticketFilterOf,
+  ticketFilterStandingOf,
+} from "./projectTableFilters.ts";
 import type { TicketFilter, TicketListOrder } from "./projectTableFilters.ts";
 import type { ProjectTableRow } from "./projectTableRows.ts";
 import { upNextOrdered } from "./upNextOrder.ts";
@@ -129,6 +133,26 @@ export function ticketListStandingOf(
     row.revokedDependencies.length === 0
     ? "Ready"
     : "Blocked";
+}
+
+/** The rows a filter draws of those its read held: a standing's are the ones
+ * that stand in it, and any other filter's are every row read. */
+export function ticketListFiltered(
+  rows: readonly ProjectTableRow[],
+  filter: TicketFilter,
+): readonly ProjectTableRow[] {
+  const standing = ticketFilterStandingOf(filter);
+  if (standing === undefined) return rows;
+  return rows.filter((row) => ticketListStandingOf(row) === standing);
+}
+
+/** The filter a state's count leaves once tapped: that state, or every ticket
+ * where that state was already the filter. */
+export function ticketListCountTapped(
+  filter: TicketFilter,
+  standing: TicketListStanding,
+): TicketFilter {
+  return filter === standing ? ticketFilterAll : standing;
 }
 
 /** The phases in the order the State sort draws them. */

@@ -21,6 +21,7 @@ import {
   within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
@@ -29,6 +30,7 @@ import {
   ticketLatestExecutionSchema,
 } from "../../../src/contract/responses.ts";
 import { ProjectTable } from "../app/browser/ProjectTable.tsx";
+import type { TicketListQuery } from "../app/core/ticketListView.ts";
 import {
   answer,
   apiDouble,
@@ -163,6 +165,12 @@ function ticketsCarrying(
   });
 }
 
+/** The table under an address it writes, as the route holds it. */
+function ProjectTableAddressed(): ReactNode {
+  const [query, setQuery] = useState<TicketListQuery>({});
+  return <ProjectTable query={query} onQuery={setQuery} />;
+}
+
 /** The table drawn from whatever tickets and executions a case wants, the
  * abilities read answering as the tickets do unless the case hands a `fetch`
  * of its own over them. */
@@ -200,7 +208,7 @@ async function drawTableWith(
       }
       transport={openedStream().ports.fetch}
     >
-      <ProjectTable query={{}} onQuery={() => undefined} />
+      <ProjectTableAddressed />
     </ScreenHarness>,
   );
   await settled();
@@ -662,4 +670,124 @@ test("a project with no tickets still carries the notice of a refused import", a
   expect(screen.getByText(/^Import refused/u).textContent).toBe(
     "Import refused · acme/widgets",
   );
+});
+
+/** Each count above the list, by what it says, with whether it is pressed. */
+function countsDrawn(): readonly string[] {
+  const counts = screen.getByRole("list", { name: "Tickets by state" });
+  return within(counts)
+    .getAllByRole("button")
+    .map(
+      (count) =>
+        `${count.textContent ?? ""}${count.getAttribute("aria-pressed") === "true" ? " pressed" : ""}`,
+    );
+}
+
+async function countTapped(standing: RegExp): Promise<void> {
+  const counts = screen.getByRole("list", { name: "Tickets by state" });
+  fireEvent.click(within(counts).getByRole("button", { name: standing }));
+  await settled();
+}
+
+function filterDrawn(): string | null {
+  return screen.getByRole("button", { name: /^Filter/u }).textContent;
+}
+
+async function filterChosen(choice: string): Promise<void> {
+  fireEvent.keyDown(screen.getByRole("button", { name: /^Filter/u }), {
+    key: "ArrowDown",
+  });
+  await settled();
+  fireEvent.click(screen.getByRole("menuitemradio", { name: choice }));
+  await settled();
+}
+
+const countedTickets = [
+  ticket,
+  escalated,
+  pending(23, [{ ticket: 11, phase: "Work" }]),
+  pending(24, []),
+  pending(25, []),
+  pending(26, [], [9]),
+];
+
+test("a state's count filters the list to that state and is pressed, and tapped again draws every ticket", async () => {
+  await drawTableWith(countedTickets, [execution]);
+  expect(countsDrawn()).toEqual([
+    "Blocked2",
+    "Ready2",
+    "Working1",
+    "Escalated1",
+  ]);
+  await countTapped(/^Working/u);
+  expect(titlesDrawn()).toEqual([title]);
+  expect(countsDrawn()).toEqual(["Working1 pressed"]);
+  expect(filterDrawn()).toContain("Working");
+  await countTapped(/^Working/u);
+  expect(titlesDrawn()).toHaveLength(countedTickets.length);
+  expect(countsDrawn()).toEqual([
+    "Blocked2",
+    "Ready2",
+    "Working1",
+    "Escalated1",
+  ]);
+  expect(filterDrawn()).toContain("All states");
+  expect(localStorage.getItem("chug.ticket-list.filter")).toBe("All");
+});
+
+test("Ready and Blocked each filter the list to the pending tickets of their own standing", async () => {
+  await drawTableWith(countedTickets, [execution]);
+  await countTapped(/^Ready/u);
+  expect(titlesDrawn()).toEqual(["Pending 25", "Pending 24"]);
+  expect(countsDrawn()).toEqual(["Ready2 pressed"]);
+  expect(filterDrawn()).toContain("Ready");
+  await countTapped(/^Ready/u);
+  await countTapped(/^Blocked/u);
+  expect(titlesDrawn()).toEqual(["Pending 23", "Pending 26"]);
+  expect(countsDrawn()).toEqual(["Blocked2 pressed"]);
+  expect(filterDrawn()).toContain("Blocked");
+});
+
+test("the Filter picker and the counts are one filter, each drawing what the other chose", async () => {
+  await drawTableWith(countedTickets, [execution]);
+  await filterChosen("Blocked");
+  expect(countsDrawn()).toEqual(["Blocked2 pressed"]);
+  await filterChosen("Pending");
+  expect(countsDrawn()).toEqual(["Blocked2", "Ready2"]);
+  await countTapped(/^Ready/u);
+  expect(filterDrawn()).toContain("Ready");
+  await filterChosen("Escalated");
+  expect(countsDrawn()).toEqual(["Escalated1 pressed"]);
+  await filterChosen("All states");
+  expect(countsDrawn()).toEqual([
+    "Blocked2",
+    "Ready2",
+    "Working1",
+    "Escalated1",
+  ]);
+});
+
+/** What the list's sheet gives a count for its shadow while a keyboard focuses
+ * it. Whether jsdom counts a focus as a keyboard's depends on what an earlier
+ * case pressed, so the focus is named by an attribute the sheet is read with. */
+function countFocusedShadow(count: Element): string {
+  const focused = "data-keyboard-focused";
+  const rules = sheetRules(
+    listSheet.replaceAll(":focus-visible", `[${focused}]`),
+    [],
+  );
+  const held = count.cloneNode() as Element;
+  held.setAttribute(focused, "");
+  return sheetDeclared(rules, held, "box-shadow");
+}
+
+test("a count a keyboard focuses is ringed, pressed or not", async () => {
+  await drawTableWith(countedTickets, [execution]);
+  const counts = screen.getByRole("list", { name: "Tickets by state" });
+  const working = (): Element =>
+    within(counts).getByRole("button", { name: /^Working/u });
+  expect(countFocusedShadow(working())).toBe("var(--ring-focus)");
+  await countTapped(/^Working/u);
+  expect(working().getAttribute("aria-pressed")).toBe("true");
+  expect(countFocusedShadow(working())).toContain("var(--ring-focus)");
 });

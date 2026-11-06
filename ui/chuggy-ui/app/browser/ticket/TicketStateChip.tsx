@@ -98,22 +98,28 @@ export function TicketDependencyChip(props: {
   );
 }
 
-/** A state and how many tickets stand in it, in that state's colours. */
+/** A state and how many tickets stand in it, in that state's colours, as the
+ * button that filters the list to it; pressed while it is the filter. */
 export function TicketStateCount(props: {
   readonly standing: TicketListStanding;
   readonly count: number;
+  readonly pressed: boolean;
+  readonly onPress: () => void;
 }): ReactNode {
   return (
-    <span
+    <button
+      type="button"
       className="ticket-list-state ticket-state-count"
       data-tone={standingTone(props.standing)}
       data-standing={props.standing}
       title={standingWord(props.standing)}
+      aria-pressed={props.pressed}
+      onClick={props.onPress}
     >
       <span className="ticket-state-count-label">
         {standingWord(props.standing)}
       </span>
       <b className="num">{props.count}</b>
-    </span>
+    </button>
   );
 }

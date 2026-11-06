@@ -5,7 +5,9 @@
  * THE BAR SPANS THE FRAME. The nav reaches every screen and the banner speaks
  * for all of them, so the bar is not something the chat pane takes width from,
  * and a reader who filled the frame with the chat still has every screen one
- * press away.
+ * press away. Below two columns a pane over the whole body takes the nav's row
+ * and the page's under it too, the room a phone cannot spare, and the strip
+ * gives them back: the banner and the project's row stay over it.
  *
  * The chat pane is where the reader talks to the project, so it outlives every
  * navigation between the pages: they change beneath the bar and the
@@ -37,7 +39,7 @@
 import { Outlet, useParams } from "@tanstack/react-router";
 import { Separator } from "radix-ui";
 import { memo, useLayoutEffect, useMemo, useState } from "react";
-import type { ReactNode, RefObject } from "react";
+import type { AnimationEvent, ReactNode, RefObject } from "react";
 import {
   Group,
   Panel,
@@ -56,6 +58,7 @@ import type {
 import type { ConsolePage } from "../../../../src/contract/consolePage.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import {
+  chatPaneBarCovered,
   chatPaneDragged,
   chatPaneKept,
   chatPaneLayoutId,
@@ -68,14 +71,20 @@ import {
   chatPaneOrientation,
   chatPanePageBeside,
   chatPanePanels,
+  chatPaneRestOf,
   chatPaneShareText,
   chatPaneSizes,
   chatPaneSizeStrip,
+  chatPaneSlid,
+  chatPaneSlideDrawn,
+  chatPaneSlideLaid,
   chatPaneStripped,
 } from "../core/chatPane.ts";
 import type {
   ChatPaneLayout,
+  ChatPaneRest,
   ChatPaneSizes,
+  ChatPaneSlide,
   ChatPaneState,
 } from "../core/chatPane.ts";
 import {
@@ -98,10 +107,11 @@ import { useChatPane } from "./shell/chatPaneHeld.ts";
 import { DetailsPane } from "./shell/DetailsPane.tsx";
 import { TicketReferenceWiring } from "./ticket/TicketReferenceWiring.tsx";
 import { ShellSlots } from "./shell/slots.tsx";
-import { TopBar } from "./shell/TopBar.tsx";
+import { TopBar, TopBarRows } from "./shell/TopBar.tsx";
 import {
   useElementAtLeastEm,
   useViewportAtLeastEm,
+  useViewportMotion,
   viewportColumnAsideEm,
   ViewportColumnAsideProvider,
   viewportTwoColumnEm,
@@ -183,9 +193,9 @@ export function ShellFrame(props: { readonly children: ReactNode }): ReactNode {
   );
 }
 
-/** The banner and the bar under it, across the whole frame: the banner speaks
- * for every screen and the nav reaches every one of them, so neither is a
- * thing the chat pane takes width from, nor one a full screen covers. */
+/** The banner and the bar's first row, across the whole frame: the banner
+ * speaks for every screen and the row says where the reader is, so neither is
+ * a thing the chat pane takes width from, nor one a full screen covers. */
 function ShellHeader(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
@@ -196,7 +206,24 @@ function ShellHeader(props: {
         <VersionBanner />
       </div>
       <TopBar partition={props.partition} />
-      <Separator.Root decorative className="h-px bg-edge" />
+    </div>
+  );
+}
+
+/** The bar's rows under its first, which a pane over the whole body of a
+ * frame too narrow to divide takes. */
+function ShellBarRows(props: {
+  readonly partition: PartitionIdentity;
+  readonly covered: boolean;
+}): ReactNode {
+  return (
+    <div className="grid grid-cols-[minmax(0,1fr)]">
+      {props.covered ? null : (
+        <>
+          <TopBarRows partition={props.partition} />
+          <Separator.Root decorative className="h-px bg-edge" />
+        </>
+      )}
     </div>
   );
 }
@@ -260,6 +287,7 @@ const ShellBodyChat = memo(function ShellBodyChat(props: {
   readonly id: string;
   readonly partition: PartitionIdentity;
   readonly chat: ChatPaneState;
+  readonly stripped: boolean;
   readonly page: ConsolePage | undefined;
   readonly sizes: ChatPaneSizes;
   readonly panelRef: RefObject<PanelImperativeHandle | null>;
@@ -272,11 +300,8 @@ const ShellBodyChat = memo(function ShellBodyChat(props: {
       collapsedSize={chatPaneSizeStrip}
       defaultSize={props.sizes.chatDefault}
       minSize={props.sizes.chatMin}
-      groupResizeBehavior={chatPaneKept(
-        props.sizes,
-        chatPaneStripped(props.chat),
-      )}
-      className="@container grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)]"
+      groupResizeBehavior={chatPaneKept(props.sizes, props.stripped)}
+      className="chat-panel @container grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)]"
     >
       <ChatPane
         partition={props.partition}
@@ -287,12 +312,14 @@ const ShellBodyChat = memo(function ShellBodyChat(props: {
   );
 });
 
-/** The panels in the order drawn, with the edge between two of them. They are
- * keyed by what they are rather than by the names they are drawn under, so
- * the pane moving leaves every one of them mounted. */
+/** The panels in the order drawn, with the edge between two of them, keyed by
+ * what they are rather than by the names they are drawn under, so the pane
+ * moving leaves every one of them mounted. The pane draws what it is presented
+ * as, which a slide holds open over the strip it lays. */
 function shellBodyDrawn(props: {
   readonly partition: PartitionIdentity;
   readonly chat: ChatPaneState | undefined;
+  readonly pane: ChatPaneState | undefined;
   readonly page: ConsolePage | undefined;
   readonly sizes: ChatPaneSizes;
   readonly panelIds: readonly string[];
@@ -311,14 +338,17 @@ function shellBodyDrawn(props: {
             className="chat-separator"
           />,
         ]),
-    id === chatPanePanels.pages || props.chat === undefined ? (
+    id === chatPanePanels.pages ||
+    props.chat === undefined ||
+    props.pane === undefined ? (
       <ShellBodyPages key="pages" sizes={props.sizes} />
     ) : (
       <ShellBodyChat
         key="chat"
         id={id}
         partition={props.partition}
-        chat={props.chat}
+        chat={props.pane}
+        stripped={chatPaneStripped(props.chat)}
         page={props.page}
         sizes={props.sizes}
         panelRef={props.chatPanel}
@@ -390,11 +420,13 @@ function useShellBodyFollowed(along: {
  * and stores each set of panels' layout under their names. The stored
  * presentation decides whether the pane is the strip: a layout the reader made
  * by the edge moves it as the pane's own control does, the panel follows it,
- * and the edge says the pane's share as each layout is laid.
+ * and the edge says the pane's share as each layout is laid, the pane laid as
+ * `chat` and drawn as `pane`, which differ only while it slides.
  */
 function ShellBody(props: {
   readonly partition: PartitionIdentity;
   readonly chat: ChatPaneState | undefined;
+  readonly pane: ChatPaneState | undefined;
   readonly page: ConsolePage | undefined;
 }): ReactNode {
   const held = useChatPane();
@@ -447,6 +479,7 @@ function ShellBody(props: {
       {shellBodyDrawn({
         partition: props.partition,
         chat: props.chat,
+        pane: props.pane,
         page: props.page,
         sizes,
         panelIds,
@@ -457,6 +490,41 @@ function ShellBody(props: {
   );
 }
 
+/** The slide's names in the sheet, which end it as they end. */
+const shellSlideAnimations: ReadonlySet<string> = new Set([
+  "chat-slide-up",
+  "chat-slide-down",
+]);
+
+/**
+ * The slide the pane is in, as `chatPaneSlid` says from the pane last at rest,
+ * and what ends it, which is the sheet's animation ending. A pane held where
+ * no slide leads is at rest at once, as every pane is for a reader who takes
+ * no motion.
+ */
+function useShellSlide(
+  chat: ChatPaneState | undefined,
+  twoColumn: boolean,
+): {
+  readonly slide: ChatPaneSlide | undefined;
+  readonly ended: (event: AnimationEvent) => void;
+} {
+  const moving = useViewportMotion();
+  const held = chatPaneRestOf(chat, twoColumn);
+  const [rest, restAt] = useState<ChatPaneRest>(held);
+  const slide = moving ? chatPaneSlid(rest, held) : undefined;
+  const resting =
+    rest.presentation === held.presentation &&
+    rest.twoColumn === held.twoColumn;
+  if (slide === undefined && !resting) restAt(held);
+  return {
+    slide,
+    ended: (event) => {
+      if (shellSlideAnimations.has(event.animationName)) restAt(held);
+    },
+  };
+}
+
 function ShellDrawn(props: {
   readonly partition: PartitionIdentity;
   readonly twoColumn: boolean;
@@ -465,19 +533,34 @@ function ShellDrawn(props: {
     chatPaneNarrowed(useChatPane().state, props.twoColumn),
     useParams({ strict: false }),
   );
+  const { slide, ended } = useShellSlide(chat, props.twoColumn);
+  const laid = chat === undefined ? undefined : chatPaneSlideLaid(chat, slide);
   const page = useConsolePageNow();
   return (
     <ShellFrame>
       <ShellHeader partition={props.partition} />
-      <ShellBody
-        partition={props.partition}
-        chat={chat}
-        page={
-          chat === undefined
-            ? undefined
-            : chatPanePageBeside(chat, props.twoColumn, page)
-        }
-      />
+      <div
+        data-chat-slide={slide?.toLowerCase()}
+        onAnimationEnd={ended}
+        className="shell-under relative grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)]"
+      >
+        <ShellBarRows
+          partition={props.partition}
+          covered={chatPaneBarCovered(laid, props.twoColumn)}
+        />
+        <ShellBody
+          partition={props.partition}
+          chat={laid}
+          pane={
+            chat === undefined ? undefined : chatPaneSlideDrawn(chat, slide)
+          }
+          page={
+            chat === undefined
+              ? undefined
+              : chatPanePageBeside(chat, props.twoColumn, page)
+          }
+        />
+      </div>
     </ShellFrame>
   );
 }

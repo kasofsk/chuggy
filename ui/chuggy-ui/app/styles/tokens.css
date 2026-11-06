@@ -142,6 +142,7 @@
     --height-run-conversation: 70vh; /* a run's conversation, which scrolls itself */
     --height-touch: 44px; /* the least a finger is given to press */
     --height-icon: 2rem; /* a control that is only its glyph */
+    --height-chat-strip: 2.5rem; /* the chat pane collapsed to its strip */
 
     /* rings */
     --ring-focus: 0 0 0 2px var(--surface-1), 0 0 0 4px var(--focus);

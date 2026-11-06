@@ -4,7 +4,7 @@
  * to the list draws it again.
  */
 
-import { fireEvent, screen } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { expect, test, vi } from "vitest";
 
@@ -87,5 +87,47 @@ test("going back to the list draws the filter it was left under, whatever this b
   expect(
     phasesRead(site.reads.slice(backAt)).filter((phases) => phases !== "Done"),
   ).toStrictEqual([]);
+  consoleSiteClean(site);
+});
+
+function countPressed(standing: RegExp): string | null {
+  const counts = screen.getByRole("list", { name: "Tickets by state" });
+  return within(counts)
+    .getByRole("button", { name: standing })
+    .getAttribute("aria-pressed");
+}
+
+/** Ready and Blocked are what the wire cannot name, so the address names the
+ * standing and the read asks for its phase. The site holds no Pending ticket
+ * under a phase, and the count tapped stays drawn so it can be tapped away. */
+test("a count tapped is written to the address as the filter, and the read asks for the phase it stands in", async () => {
+  const history = createMemoryHistory({ initialEntries: [projectAddress] });
+  consoleMounted(projectAddress, consoleSession(), false, history);
+  await consoleAdvanced(ticketListAddressSettleMs);
+  expect(countPressed(/^Ready/u)).toBe("false");
+  const tappedAt = site.reads.length;
+  fireEvent.click(screen.getByRole("button", { name: /^Ready/u }));
+  await consoleAdvanced(ticketListAddressSettleMs);
+  expect(history.location.search).toBe("?filter=Ready");
+  expect(filterDrawn()).toContain("Ready");
+  expect(countPressed(/^Ready/u)).toBe("true");
+  expect(new Set(phasesRead(site.reads.slice(tappedAt)))).toStrictEqual(
+    new Set(["Pending"]),
+  );
+  expect(localStorage.getItem(ticketListFilterStored)).toBe("Ready");
+  fireEvent.click(screen.getByRole("button", { name: /^Ready/u }));
+  await consoleAdvanced(ticketListAddressSettleMs);
+  expect(history.location.search).toBe("?filter=All");
+  expect(filterDrawn()).toContain("All states");
+  expect(countPressed(/^Ready/u)).toBe("false");
+  consoleSiteClean(site);
+});
+
+test("a link naming a pending standing draws it in the picker and its count pressed", async () => {
+  consoleMounted(`${projectAddress}?filter=Blocked`, consoleSession(), false);
+  await consoleAdvanced(ticketListAddressSettleMs);
+  expect(filterDrawn()).toContain("Blocked");
+  expect(countPressed(/^Blocked/u)).toBe("true");
+  expect(new Set(phasesRead(site.reads))).toStrictEqual(new Set(["Pending"]));
   consoleSiteClean(site);
 });

@@ -1,13 +1,14 @@
 /**
- * Which of the console's widths the viewport is at, and whether the pages'
- * column has room for the details beside a page. Each of these changes what
- * the shell draws and not only how it looks — the rail is a nav beside the
- * page or a dialog over it, the details are an aside or the whole middle — so
- * the answer is read here rather than left to a sheet.
+ * Which of the console's widths the viewport is at, whether the pages' column
+ * has room for the details beside a page, and whether the reader takes motion.
+ * Each of these changes what the shell draws and not only how it looks — the
+ * rail is a nav beside the page or a dialog over it, the details are an aside
+ * or the whole middle, the chat pane slides or is simply there — so the answer
+ * is read here rather than left to a sheet.
  *
  * The details ask the column and not the viewport, since the reader drags the
- * chat pane's edge and the column is what is left. Both answers are in the
- * `em` the console's breakpoints are stated in, which is the root's.
+ * chat pane's edge and the column is what is left. Both widths are in the `em`
+ * the console's breakpoints are stated in, which is the root's.
  */
 
 import {
@@ -31,7 +32,16 @@ export const viewportAsideEm = 22;
 export const viewportColumnAsideEm = viewportNarrowEm + viewportAsideEm;
 
 export function useViewportAtLeastEm(em: number): boolean {
-  const query = `(min-width: ${String(em)}em)`;
+  return useViewportMatches(`(min-width: ${String(em)}em)`);
+}
+
+/** Whether the reader has asked for no less motion than the console makes,
+ * which the sheets ask with the same query. */
+export function useViewportMotion(): boolean {
+  return useViewportMatches("(prefers-reduced-motion: no-preference)");
+}
+
+function useViewportMatches(query: string): boolean {
   const subscribe = useCallback(
     (changed: () => void) => {
       const held = window.matchMedia(query);
