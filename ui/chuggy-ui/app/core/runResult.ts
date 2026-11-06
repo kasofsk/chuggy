@@ -1,14 +1,14 @@
 /**
- * What a ledger row says of its execution's result: the line drawn beneath it,
- * the one expander that opens the result whole, and the commands a command
- * stage ran as that expander lists them.
+ * What a run's result draws: the line on its row in the Runs tab, and what its
+ * page offers of the result whole, the report under Summary or the commands a
+ * command stage ran under Output.
  *
  * The line is the report's opening, cut as a worker's reason is cut, and gives
- * way to that reason where the newest attempt left one. The expander is chosen
- * by what carried the stage, an absent carrier read as an agent's, and by what
- * the read of a stage's commands answered once it was opened. Which artifact it
- * reads is decided here from the result's own listing, so a row that is only
- * drawn reads nothing.
+ * way to that reason where the newest attempt left one. Summary or Output is
+ * chosen by what carried the stage, an absent carrier read as an agent's, and
+ * by what the read of a stage's commands answered once it was shown. Which
+ * artifact either reads is decided here from the result's own listing, so a
+ * row that is only drawn reads nothing.
  */
 
 import {
@@ -47,7 +47,8 @@ export function runResultLineOf(
     : { ...reason, line: runResultLinePlain(reason.line) };
 }
 
-/** The expander a result opens, and the ordinal of the output it reads. */
+/** What a run's page offers of its result, and the ordinal of the output it
+ * reads. */
 export type RunResultOpened =
   | {
       readonly opened: "Report";
@@ -99,8 +100,8 @@ export function runResultOpenedOf(
   return { opened: "Report", report, summary };
 }
 
-/** The expander once the read of its commands answered: "Report" where the
- * read was refused or is not the document a command stage writes. */
+/** What a run's page offers once the read of its commands answered: "Report"
+ * where the read was refused or is not the document a command stage writes. */
 export function runResultOpenedSettled(
   opened: RunResultOpened,
   read: PanelState<OutputContentResponse> | undefined,
