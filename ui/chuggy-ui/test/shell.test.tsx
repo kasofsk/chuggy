@@ -357,6 +357,24 @@ test("the edge is a hairline in the edge's colour, and the stronger one while ho
   styleless();
 });
 
+/** The screens sit the bar's gap under its first row, as they did inside it:
+ * the bar's foot and the rows' rise between them come to that gap. */
+test("the screens sit the bar's gap under its first row", async () => {
+  await mounted(viewportDeskEm);
+  const rules = sheetRules(shellSheet, []);
+  const bar = document.querySelector(".topbar");
+  const rows = document.querySelector(".topbar-rows");
+  if (bar === null || rows === null) throw new Error("the bar is not drawn");
+  expect(sheetDeclared(rules, bar, "gap")).toBe("var(--space-1)");
+  expect(sheetDeclared(rules, bar, "padding")).toBe(
+    "var(--space-2) var(--topbar-inline)",
+  );
+  expect(sheetDeclared(rules, rows, "margin-top")).toBe(
+    "calc(-1 * var(--space-1))",
+  );
+  styleless();
+});
+
 test("the edge under the pages is a hairline across the frame", async () => {
   await mounted(viewportTwoColumnEm - 1);
   const edge = edgeDrawn();

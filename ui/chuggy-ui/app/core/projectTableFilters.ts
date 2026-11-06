@@ -103,11 +103,12 @@ function ticketListAskActive(ask: TicketListAsk): boolean {
 
 /**
  * One entry per read, order and search, since a shared entry would let one's
- * page walk answer another's; the filters reading one phase share its entry. The active list folds a frame in, within the
- * phases its filter admits, and reads again for a ticket it has not got; a list under a search or an order by number is read
- * again on a ticket's frame, because whether the ticket belongs to it, and
- * where, is the server's to say; every one folds an execution's frame into its
- * ticket's row.
+ * page walk answer another's; the filters reading one phase share its entry.
+ * The active list folds a frame in, within the phases its filter admits, and
+ * reads again for a ticket it has not got; a list under a search or an order
+ * by number is read again on a ticket's frame, because whether the ticket
+ * belongs to it, and where, is the server's to say; every one folds an
+ * execution's frame into its ticket's row.
  */
 export function ticketFilterList(
   partition: PartitionIdentity,

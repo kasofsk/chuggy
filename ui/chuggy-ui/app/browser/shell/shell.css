@@ -14,9 +14,10 @@
    before the pane becomes the strip, and the pane draws nothing in it.
 
    The bar is two rows at every width: the project and the gear, then the
-   screens, which a frame too narrow to divide gives to a pane it opens. A screen's entry is its glyph and its name, and the screen the
-   reader is on is marked three ways at once — its ink, a wash, and a bar along
-   the header's foot — so it reads from across the room. On a phone the entry
+   screens, which a frame too narrow to divide gives to a pane it opens. A
+   screen's entry is its glyph and its name, and the screen the reader is on is
+   marked three ways at once — its ink, a wash, and a bar along the header's
+   foot — so it reads from across the room. On a phone the entry
    is its glyph alone, its name kept for a reader who does not see it, and the
    entries spread across the row; the project's name gives way, cut short,
    before the gear does. */
@@ -190,8 +191,11 @@
     padding: var(--space-2) var(--topbar-inline);
   }
 
+  /* The screens sit as far under the first row as the bar's gap, which the
+   * bar's own foot would otherwise double. */
   .topbar-rows {
     min-width: 0;
+    margin-top: calc(-1 * var(--space-1));
     padding: 0 var(--topbar-inline) var(--space-2);
   }
 
