@@ -169,6 +169,8 @@ const listingFilterNotes = {
   },
   ticketListQuery: {
     search: `q: from 1 to ${String(ticketSearchCharsMax)} characters once trimmed; a ticket matches where its title holds them, ignoring case and with every character as itself, or where they are its number, whole, with or without a leading #; the answer carries matched, how many tickets the read selects across the project`,
+    creator:
+      "creator: one principal, encoded as a ticket's creator is; only the tickets that member filed, and the answer carries matched as a search's does",
     active: `active=true: the tickets neither Done nor Revoked, and those that became either within the last ${String(ticketActiveFinishedHours)} hours`,
     order:
       "omit order: by ticket, ascending, resumed by after; RecentActivity: last activity first; Newest and Oldest: by ticket, descending and ascending; each resumed by a cursor of its own that another order refuses",

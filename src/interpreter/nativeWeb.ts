@@ -28,7 +28,7 @@ import {
 } from "./overridesAccess.ts";
 export type { AuthorizedResult } from "./authorizedProject.ts";
 
-import type { Principal } from "./principal.ts";
+import { asPrincipal, type Principal } from "./principal.ts";
 import type { ReleaseAuthoringProgram } from "../contract/authoring.ts";
 import type { ConfigurationOverrides } from "../contract/configurationOverrides.ts";
 import type { ConsolePage } from "../contract/consolePage.ts";
@@ -537,7 +537,7 @@ export interface ProjectResource {
   readonly nextAfter?: TicketId;
   readonly nextRecentActivityAfter?: TicketActivityPosition;
   readonly nextNumberAfter?: TicketNumberPosition;
-  /** How many tickets the search matched across the project, where the read named one. */
+  /** How many tickets the search or creator matched across the project, where the read named either. */
   readonly matched?: number;
 }
 
@@ -566,6 +566,8 @@ export interface ProjectReadQuery {
   readonly phaseFilter?: TicketPhaseFilter;
   /** Trimmed text a ticket's title holds, ignoring case, or its number, with or without a leading `#`. */
   readonly search?: string;
+  /** Only the tickets this member filed, as a ticket's `creator` names them. */
+  readonly creator?: Principal;
   /** Only the tickets `ticketActiveFinishedHours` names active. */
   readonly active?: boolean;
 }
@@ -603,14 +605,7 @@ export function checkedProjectReadQuery(
     query.numberAfter.order !== query.order
   )
     throw new RangeError("ticket number cursor belongs to another order");
-  if (
-    query.search !== undefined &&
-    (query.search.trim() !== query.search ||
-      !isBoundedText(query.search, ticketSearchCharsMax))
-  )
-    throw new RangeError(
-      `ticket search must be from 1 to ${String(ticketSearchCharsMax)} characters, trimmed`,
-    );
+  checkedProjectReadQueryNarrowing(query);
   if (
     query.order !== "RecentActivity" &&
     query.recentActivityAfter !== undefined
@@ -650,6 +645,19 @@ export function checkedProjectReadQuery(
       throw new RangeError("ticket phase selection is invalid");
   }
   return query;
+}
+
+/** Refuses a search that is untrimmed or past its bound, and a creator no principal could be. */
+function checkedProjectReadQueryNarrowing(query: ProjectReadQuery): void {
+  if (
+    query.search !== undefined &&
+    (query.search.trim() !== query.search ||
+      !isBoundedText(query.search, ticketSearchCharsMax))
+  )
+    throw new RangeError(
+      `ticket search must be from 1 to ${String(ticketSearchCharsMax)} characters, trimmed`,
+    );
+  if (query.creator !== undefined) asPrincipal(query.creator);
 }
 
 /** The ticket a search names by number, where it is a whole number with or without a leading `#`. */

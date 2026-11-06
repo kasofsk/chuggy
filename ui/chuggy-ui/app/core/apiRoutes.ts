@@ -793,6 +793,7 @@ export async function apiProjectInventoryAll(
 export interface ProjectPage {
   readonly active?: true | undefined;
   readonly after?: number | undefined;
+  readonly creator?: string | undefined;
   readonly cursor?: string | undefined;
   readonly limit?: number | undefined;
   readonly minimumSequence?: number | undefined;
@@ -812,6 +813,7 @@ export function apiProject(
     apiPath(partitionPath(partition), {
       active: page.active === true ? "true" : undefined,
       after: page.after,
+      creator: page.creator,
       cursor: page.cursor,
       limit: page.limit,
       minimumSequence: page.minimumSequence,
