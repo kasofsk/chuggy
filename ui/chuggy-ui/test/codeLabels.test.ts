@@ -13,7 +13,7 @@ import { expect, test } from "vitest";
 import {
   blockedReasons,
   briefFinalizationModes,
-  briefLandings,
+  briefGitMergePolicies,
   changeProposalCreations,
   changeProposalMergeabilities,
   changeProposalStatuses,
@@ -622,13 +622,13 @@ test("a landing is named as a noun and explained as what it does", () => {
 });
 
 test("a landing policy is named as a noun and explained as what it does", () => {
-  expect(briefLandings.map(landingPolicyLabel)).toStrictEqual([
+  expect(briefGitMergePolicies.map(landingPolicyLabel)).toStrictEqual([
     "Direct",
     "Serialized",
   ]);
   for (const text of [
-    ...briefLandings.map(landingPolicyLabel),
-    ...briefLandings.map(landingPolicyEffect),
+    ...briefGitMergePolicies.map(landingPolicyLabel),
+    ...briefGitMergePolicies.map(landingPolicyEffect),
   ]) {
     expect(text.length).toBeLessThanOrEqual(copyBudgetChars);
     expect(text).not.toMatch(/[.:;]/u);

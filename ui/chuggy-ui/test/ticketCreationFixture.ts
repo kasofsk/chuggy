@@ -14,7 +14,11 @@ import type {
   ProjectRepositoryListedResponse,
   ProjectRepositoryResponse,
 } from "../../../src/contract/responses.ts";
-import type { BriefFinalizationMode } from "../../../src/contract/rosters.ts";
+import { briefFinalizationForward } from "../../../src/contract/brief.ts";
+import type {
+  BriefFinalizationMode,
+  BriefGitMergePolicy,
+} from "../../../src/contract/rosters.ts";
 import { configurationCatalogInitialization } from "../app/core/configurationCatalog.ts";
 import {
   creationConfigurationName,
@@ -360,4 +364,33 @@ export function editReadAnswered(
     sequence: 43,
     tickets: [{ ...ticket, sequence: 43, revision: 3 }],
   });
+}
+
+/**
+ * A draft revision's body as the server stores its brief: a finalization
+ * written by its mode, and the landing beside it, read forward to its kind.
+ */
+export function revisionServed(body: object): object {
+  const { brief } = body as {
+    readonly brief?: {
+      readonly finalization?: {
+        readonly mode: BriefFinalizationMode;
+        readonly target?: string;
+      };
+      readonly landing?: BriefGitMergePolicy;
+    };
+  };
+  if (brief === undefined) return body;
+  const { finalization, landing, ...rest } = brief;
+  const forward = briefFinalizationForward(finalization, landing);
+  if (forward.forward === "Refused") throw new Error(forward.reason);
+  return {
+    ...body,
+    brief: {
+      ...rest,
+      ...(forward.finalization === undefined
+        ? {}
+        : { finalization: forward.finalization }),
+    },
+  };
 }

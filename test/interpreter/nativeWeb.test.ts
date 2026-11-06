@@ -99,7 +99,7 @@ import {
   type ProjectArtifactMinting,
 } from "../../src/interpreter/projectArtifact.ts";
 import {
-  asBriefFinalization,
+  asBriefFinalizationByMode,
   asDraftBrief,
   type DraftBrief,
 } from "../../src/interpreter/ticketBrief.ts";
@@ -1591,20 +1591,18 @@ const catalogBuildWorkload = {
   },
 };
 
-test("a draft naming no landing takes the one its catalog's selected finalizer names, and one naming its own keeps it", async () => {
+/**
+ * A boundary whose drafts are written against a catalog of `version` whose
+ * default finalizer is `finalizer`, and the briefs its store was handed.
+ */
+function finalizerCatalogDrafts(version: number, finalizer: object) {
   const catalog = {
-    version: 2,
+    version,
     image: "worker:v2",
     workloads: { build: catalogBuildWorkload },
     plans: { standard: [{ name: "review", evaluators: ["build"] }] },
-    finalizers: {
-      proposed: { landing: { mode: "PullRequest", target: "refs/heads/main" } },
-    },
-    defaults: {
-      work: "build",
-      evaluation: "standard",
-      finalization: "proposed",
-    },
+    finalizers: { landed: finalizer },
+    defaults: { work: "build", evaluation: "standard", finalization: "landed" },
   };
   const stored: DraftBrief[] = [];
   const authoring = (calls: string[]): AuthoringStore => ({
@@ -1632,6 +1630,13 @@ test("a draft naming no landing takes the one its catalog's selected finalizer n
     undefined,
     authoring,
   );
+  return { web, stored };
+}
+
+test("a draft naming no landing takes the one its catalog's selected finalizer names, and one naming its own keeps it", async () => {
+  const { web, stored } = finalizerCatalogDrafts(2, {
+    landing: { mode: "PullRequest", target: "refs/heads/main" },
+  });
   await createDraftNaming(web, briefNamingImages([]));
   await createDraftNaming(
     web,
@@ -1643,7 +1648,25 @@ test("a draft naming no landing takes the one its catalog's selected finalizer n
   );
   assert.deepEqual(
     stored.map((brief) => brief.finalization),
-    [{ mode: "PullRequest", target: "refs/heads/main" }, { mode: "Push" }],
+    [
+      { kind: "PullRequest", target: "refs/heads/main" },
+      { kind: "GitMerge", mode: "Push", policy: "Direct" },
+    ],
+  );
+});
+
+test("a draft naming no landing takes the whole finalization a version 3 catalog's selected finalizer names", async () => {
+  const finalization = {
+    kind: "GitMerge",
+    mode: "PullRequestMerge",
+    target: "refs/heads/main",
+    policy: "Serialized",
+  } as const;
+  const { web, stored } = finalizerCatalogDrafts(3, { finalization });
+  await createDraftNaming(web, briefNamingImages([]));
+  assert.deepEqual(
+    stored.map((brief) => brief.finalization),
+    [finalization],
   );
 });
 
@@ -1681,22 +1704,24 @@ function landingStore(
   canonical: CanonicalConfiguration,
   repositoryMode: BriefFinalizationMode,
 ) {
-  const stored = (brief: DraftBrief): DraftResource => ({
-    partition,
-    ticket: asTicketId(1),
-    authoringVersion: 1,
-    state: "Draft",
-    configurationRevision: asConfigurationRevisionId("revision"),
-    authoring: noAuthoring,
-    brief: {
-      ...brief,
-      finalization:
-        brief.finalization ??
-        asBriefFinalization({
-          mode: brief.repository === undefined ? "Push" : repositoryMode,
-        }),
-    },
-  });
+  const stored = (brief: DraftBrief): DraftResource => {
+    const finalization =
+      brief.finalization ??
+      asBriefFinalizationByMode(
+        { mode: brief.repository === undefined ? "Push" : repositoryMode },
+        undefined,
+      );
+    assert.ok(finalization !== undefined);
+    return {
+      partition,
+      ticket: asTicketId(1),
+      authoringVersion: 1,
+      state: "Draft",
+      configurationRevision: asConfigurationRevisionId("revision"),
+      authoring: noAuthoring,
+      brief: { ...brief, finalization },
+    };
+  };
   return (calls: string[]): AuthoringStore => ({
     ...authoringStore(calls),
     configuration: () =>
@@ -1736,26 +1761,33 @@ const landingCases = [
   {
     canonical: readyConfiguration,
     brief: { repository: landingRepository, finalization: { mode: "None" } },
-    landing: { mode: "None", source: "Brief" },
+    landing: { kind: "None", source: "Brief" },
   },
   {
     canonical: catalogConfiguration,
     brief: { repository: landingRepository, branch: landingBranch },
     landing: {
+      kind: "GitMerge",
       mode: "PullRequestMerge",
       target: "refs/heads/main",
+      policy: "Direct",
       source: "Finalizer",
     },
   },
   {
     canonical: readyConfiguration,
     brief: { repository: landingRepository, branch: landingBranch },
-    landing: { mode: "PullRequest", source: "Repository" },
+    landing: { kind: "PullRequest", source: "Repository" },
   },
   {
     canonical: readyConfiguration,
     brief: {},
-    landing: { mode: "Push", source: "Default" },
+    landing: {
+      kind: "GitMerge",
+      mode: "Push",
+      policy: "Direct",
+      source: "Default",
+    },
   },
 ] as const;
 
@@ -1798,11 +1830,13 @@ test("a revised draft answers its landing the same way, the brief's own or the r
       : revised;
   };
   assert.deepEqual(await revise({ mode: "Push" }), {
+    kind: "GitMerge",
     mode: "Push",
+    policy: "Direct",
     source: "Brief",
   });
   assert.deepEqual(await revise(), {
-    mode: "PullRequest",
+    kind: "PullRequest",
     source: "Repository",
   });
 });

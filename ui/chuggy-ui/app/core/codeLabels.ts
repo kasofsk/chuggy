@@ -27,7 +27,7 @@ import {
   type finalizationFailureKinds,
   type BlockedReason,
   type BriefFinalizationMode,
-  type BriefLanding,
+  type BriefGitMergePolicy,
   type EscalationKind,
   type FinalizationUnavailableKind,
   type GitEvidenceLabel,
@@ -596,7 +596,7 @@ export function landingEffect(mode: BriefFinalizationMode): string {
 }
 
 /** How a ticket's landing is ordered against the others on its reference, in the word the choice is made by. */
-export function landingPolicyLabel(policy: BriefLanding): string {
+export function landingPolicyLabel(policy: BriefGitMergePolicy): string {
   switch (policy) {
     case "Direct":
       return "Direct";
@@ -606,7 +606,7 @@ export function landingPolicyLabel(policy: BriefLanding): string {
 }
 
 /** What choosing that policy does to the landing. */
-export function landingPolicyEffect(policy: BriefLanding): string {
+export function landingPolicyEffect(policy: BriefGitMergePolicy): string {
   switch (policy) {
     case "Direct":
       return "Lands as soon as it is accepted";

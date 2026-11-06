@@ -25,7 +25,7 @@ import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
 import { configurationWithOverrides } from "../../contract/configurationOverrides.ts";
-import { declaredConfigurationVersion } from "../../interpreter/authoring.ts";
+import { declaredConfigurationIsCatalog } from "../../interpreter/authoring.ts";
 import type {
   ConfigurationRead,
   PinnedConfigurationPort,
@@ -103,7 +103,7 @@ export function postgresPinnedConfigurations(
         return { read: "Incompatible", fault: "DigestMismatch" };
       let document: unknown;
       try {
-        if (declaredConfigurationVersion(JSON.parse(row.canonical)) === 2)
+        if (declaredConfigurationIsCatalog(JSON.parse(row.canonical)))
           return postgresPinnedWorkloadTask(
             JSON.parse(row.canonical),
             row,

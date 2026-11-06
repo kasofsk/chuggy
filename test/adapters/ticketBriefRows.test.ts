@@ -18,40 +18,53 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import {
+  draftBriefFinalizationMode,
   draftBriefFinalizationOf,
   draftBriefOf,
   draftReleaseBriefOf,
 } from "../../src/adapters/postgres/ticketBrief.ts";
-import { briefFinalizationModes } from "../../src/contract/rosters.ts";
+import {
+  briefFinalizationModeOf,
+  briefFinalizationModes,
+} from "../../src/contract/rosters.ts";
 
 test("a stored landing reads back as itself, target and all", () => {
   assert.deepEqual(
     draftBriefFinalizationOf({
       finalization_mode: "Push",
       finalization_target: null,
+      landing_policy: null,
     }),
-    { mode: "Push" },
+    { kind: "GitMerge", mode: "Push", policy: "Direct" },
   );
   assert.deepEqual(
     draftBriefFinalizationOf({
       finalization_mode: "Push",
       finalization_target: "refs/heads/release",
+      landing_policy: null,
     }),
-    { mode: "Push", target: "refs/heads/release" },
+    {
+      kind: "GitMerge",
+      mode: "Push",
+      target: "refs/heads/release",
+      policy: "Direct",
+    },
   );
   assert.deepEqual(
     draftBriefFinalizationOf({
       finalization_mode: "PullRequest",
       finalization_target: "refs/heads/main",
+      landing_policy: null,
     }),
-    { mode: "PullRequest", target: "refs/heads/main" },
+    { kind: "PullRequest", target: "refs/heads/main" },
   );
   assert.deepEqual(
     draftBriefFinalizationOf({
       finalization_mode: "None",
       finalization_target: null,
+      landing_policy: null,
     }),
-    { mode: "None" },
+    { kind: "None" },
   );
 });
 
@@ -60,6 +73,7 @@ test("a null mode is a row that states no landing at all", () => {
     draftBriefFinalizationOf({
       finalization_mode: null,
       finalization_target: null,
+      landing_policy: null,
     }),
     undefined,
   );
@@ -71,15 +85,19 @@ test("a mode this tree does not land under is refused rather than read", () => {
       draftBriefFinalizationOf({
         finalization_mode: "Merge",
         finalization_target: null,
+        landing_policy: null,
       }),
     /the mode is not one this tree lands under/u,
   );
   for (const mode of briefFinalizationModes)
     assert.equal(
-      draftBriefFinalizationOf({
-        finalization_mode: mode,
-        finalization_target: mode === "None" ? null : "refs/heads/main",
-      })?.mode,
+      briefFinalizationModeOf(
+        draftBriefFinalizationOf({
+          finalization_mode: mode,
+          finalization_target: mode === "None" ? null : "refs/heads/main",
+          landing_policy: null,
+        }) ?? { kind: "None" },
+      ),
       mode,
     );
   assert.throws(
@@ -87,6 +105,7 @@ test("a mode this tree does not land under is refused rather than read", () => {
       draftBriefFinalizationOf({
         finalization_mode: "None",
         finalization_target: "refs/heads/main",
+        landing_policy: null,
       }),
     /lands on no reference/u,
   );
@@ -103,6 +122,7 @@ test("a ticket that lands nothing still has a brief for release to read", () => 
       intent: "Do the one thing.",
       finalization_mode: null,
       finalization_target: null,
+      landing_policy: null,
       checks: ["npm test"],
       repository: "https://example.test/atlas.git",
     }),
@@ -116,6 +136,7 @@ test("a ticket that lands nothing still has a brief for release to read", () => 
       intent: null,
       finalization_mode: null,
       finalization_target: null,
+      landing_policy: null,
       checks: null,
       repository: null,
     }),
@@ -127,18 +148,22 @@ test("a ticket that lands nothing still has a brief for release to read", () => 
       intent: "Do the one thing.",
       finalization_mode: "Push",
       finalization_target: null,
+      landing_policy: null,
       checks: null,
       repository: null,
     }),
-    { checks: [], finalization: { mode: "Push" } },
+    {
+      checks: [],
+      finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
+    },
   );
 });
 
-test("a row's landing reads back, absent where it is Direct", () => {
+test("a row's policy reads back as its git merge's, and Direct where it names none", () => {
   const row = {
     title: null,
     intent: "Do the one thing.",
-    branch: null,
+    branch: "refs/heads/rt/work",
     repository: null,
     links: null,
     images: null,
@@ -146,11 +171,39 @@ test("a row's landing reads back, absent where it is Direct", () => {
     finalization_mode: "Push",
     finalization_target: null,
   };
-  assert.equal(
-    draftBriefOf({ ...row, landing_policy: "Serialized" })?.landing,
-    "Serialized",
+  assert.deepEqual(
+    draftBriefOf({ ...row, landing_policy: "Serialized" })?.finalization,
+    { kind: "GitMerge", mode: "Push", policy: "Serialized" },
   );
   for (const landing_policy of ["Direct", null])
-    assert.equal(draftBriefOf({ ...row, landing_policy })?.landing, undefined);
+    assert.deepEqual(draftBriefOf({ ...row, landing_policy })?.finalization, {
+      kind: "GitMerge",
+      mode: "Push",
+      policy: "Direct",
+    });
   assert.throws(() => draftBriefOf({ ...row, landing_policy: "Stacked" }));
+  assert.throws(
+    () =>
+      draftBriefOf({
+        ...row,
+        finalization_mode: "PullRequest",
+        landing_policy: "Serialized",
+      }),
+    /nothing orders it/u,
+    "a pull request ordered Serialized has no kind to read into",
+  );
+});
+
+test("a brief's finalization is stored under the mode it lands by", () => {
+  assert.equal(draftBriefFinalizationMode({}), null);
+  for (const [finalization, mode] of [
+    [{ kind: "GitMerge", mode: "Push", policy: "Serialized" }, "Push"],
+    [
+      { kind: "GitMerge", mode: "PullRequestMerge", policy: "Direct" },
+      "PullRequestMerge",
+    ],
+    [{ kind: "PullRequest" }, "PullRequest"],
+    [{ kind: "None" }, "None"],
+  ] as const)
+    assert.equal(draftBriefFinalizationMode({ finalization }), mode);
 });

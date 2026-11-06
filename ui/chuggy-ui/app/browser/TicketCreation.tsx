@@ -29,7 +29,7 @@ import type {
 } from "../../../../src/contract/responses.ts";
 import {
   briefFinalizationModes,
-  briefLandings,
+  briefGitMergePolicies,
 } from "../../../../src/contract/rosters.ts";
 import type { ApiFailure, ApiPorts } from "../core/apiRequest.ts";
 import { base64urlFromBytes } from "../core/base64url.ts";
@@ -552,7 +552,7 @@ function Landing(props: FormEdit): ReactNode {
   );
 }
 
-const landingPolicyOptions = briefLandings.map((policy) => ({
+const landingPolicyOptions = briefGitMergePolicies.map((policy) => ({
   value: policy,
   text: landingPolicyLabel(policy),
   description: landingPolicyEffect(policy),
@@ -569,7 +569,9 @@ function LandingPolicy(props: FormEdit): ReactNode {
         value={form.landingPolicy}
         options={landingPolicyOptions}
         onChoose={(value) => {
-          const chosen = briefLandings.find((policy) => policy === value);
+          const chosen = briefGitMergePolicies.find(
+            (policy) => policy === value,
+          );
           if (chosen !== undefined)
             onChange({ ...form, landingPolicy: chosen });
         }}

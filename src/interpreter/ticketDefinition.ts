@@ -56,7 +56,12 @@ import {
   type MaterializedExecutionRequirement,
 } from "./executionRequirement.ts";
 import { digestFold } from "./resultManifest.ts";
-import { asDraftBrief, type DraftBrief } from "./ticketBrief.ts";
+import {
+  asDraftBrief,
+  briefFinalizationByMode,
+  draftBriefByMode,
+  type DraftBrief,
+} from "./ticketBrief.ts";
 import type { StageBlock } from "./taskConfiguration.ts";
 import {
   asTaskResources,
@@ -131,16 +136,15 @@ export function materialDigest(value: unknown): string {
 
 /**
  * The digest a release stores for its brief, and a stored brief is held to. A
- * brief that names no image is digested without an image list, so one released
- * before a brief could name any still digests to what its release stored.
+ * brief that names no image is digested without an image list, and its
+ * finalization by its mode, so one released before a brief could name an image
+ * or a finalization's kind still digests to what its release stored.
  */
-export function briefContentDigest(
-  brief: { readonly images?: readonly unknown[] } | undefined,
-): string {
+export function briefContentDigest(brief: DraftBrief | undefined): string {
   if (brief === undefined) return materialDigest({});
-  const images = brief.images ?? [];
+  const images = brief.images;
   return materialDigest({
-    ...brief,
+    ...draftBriefByMode(brief),
     images: images.length === 0 ? undefined : images,
   });
 }
@@ -296,7 +300,10 @@ export function ticketDefinitionMaterial(input: {
   readonly ticket: TicketConfiguration;
   readonly brief?: DraftBrief;
 }): TicketDefinitionMaterial {
-  const finalization = input.brief?.finalization;
+  const finalization =
+    input.brief?.finalization === undefined
+      ? undefined
+      : briefFinalizationByMode(input.brief.finalization);
   const { ticket } = input;
   const keys: readonly ExecutionTaskKindKey[] = [
     "Work",

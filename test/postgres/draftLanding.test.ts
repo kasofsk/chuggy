@@ -13,6 +13,7 @@ import {
   ticketServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
 import { briefFinalizationDefault } from "../../src/interpreter/ticketBrief.ts";
+import { briefFinalizationModeOf } from "../../src/contract/rosters.ts";
 import type pg from "pg";
 import { encodeDraftAuthoring } from "../../src/interpreter/authoring.ts";
 import { plainAuthoring } from "../actor/harness.ts";
@@ -55,7 +56,11 @@ async function createdUnboundDraft(subject: pg.Pool) {
 }
 
 test("the draft door falls back to the landing this tree defaults to", async () => {
-  assert.equal(briefFinalizationDefault.mode, "Push");
+  assert.deepEqual(briefFinalizationDefault, {
+    kind: "GitMerge",
+    mode: "Push",
+    policy: "Direct",
+  });
   await migratedDatabase("i91fallback", async (subject) => {
     await seedProposingBinding(subject);
     assert.deepEqual(await createdUnboundDraft(subject), [
@@ -67,7 +72,11 @@ test("the draft door falls back to the landing this tree defaults to", async () 
           `SELECT finalization_mode FROM draft_brief`,
         )
       ).rows,
-      [{ finalization_mode: briefFinalizationDefault.mode }],
+      [
+        {
+          finalization_mode: briefFinalizationModeOf(briefFinalizationDefault),
+        },
+      ],
     );
   });
 });

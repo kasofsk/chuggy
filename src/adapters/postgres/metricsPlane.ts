@@ -82,7 +82,7 @@ import {
   authoredTaskConfigurationReadiness,
   briefingStageCarrier,
 } from "../../interpreter/taskBriefing.ts";
-import { declaredConfigurationVersion } from "../../interpreter/workloadConfiguration.ts";
+import { declaredConfigurationIsCatalog } from "../../interpreter/workloadConfiguration.ts";
 import {
   catalogNamedWorkloadTask,
   workloadTaskPositionOf,
@@ -486,7 +486,7 @@ function metricsPlaneTaskOf(
 ): Pick<MetricsPlaneTask, "runner" | "stage" | "workload"> {
   const numbered = { stage: shape.stage ?? "", workload: "" };
   if (configuration === undefined) return { ...numbered, runner: "" };
-  if (declaredConfigurationVersion(configuration) === 2)
+  if (declaredConfigurationIsCatalog(configuration))
     return (
       metricsPlaneCatalogTask(configuration, shape) ?? {
         ...numbered,

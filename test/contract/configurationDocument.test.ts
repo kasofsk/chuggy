@@ -328,6 +328,54 @@ test("every declaration this tree makes, and the bootstrap as a file, the import
   }
 });
 
+/** The bootstrap's catalog declared under `version`, its default finalizer `finalizer`. */
+function catalogFinalizing(version: number, finalizer: unknown): string {
+  const document = JSON.parse(bootstrapFile) as {
+    readonly configuration: { readonly defaults: object };
+  };
+  return JSON.stringify({
+    ...document,
+    configuration: {
+      ...document.configuration,
+      version,
+      finalizers: { landed: finalizer },
+      defaults: { ...document.configuration.defaults, finalization: "landed" },
+    },
+  });
+}
+
+test("a catalog's finalizer names a landing mode under version 2 and a whole finalization under version 3, and the import and the schema both say so", () => {
+  for (const content of [
+    catalogFinalizing(2, { landing: { mode: "PullRequest" } }),
+    catalogFinalizing(2, {}),
+    catalogFinalizing(3, {
+      finalization: { kind: "GitMerge", mode: "Push", policy: "Serialized" },
+    }),
+    catalogFinalizing(3, {
+      finalization: { kind: "PullRequest", target: "refs/heads/main" },
+      approvalRequired: true,
+    }),
+    catalogFinalizing(3, {}),
+  ]) {
+    assert.equal(imported(content), "Ready", content);
+    assert.ok(published(content), JSON.stringify(schemaTakes.errors));
+  }
+  for (const content of [
+    catalogFinalizing(2, {
+      finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
+    }),
+    catalogFinalizing(3, { landing: { mode: "Push" } }),
+    catalogFinalizing(3, { finalization: { mode: "Push" } }),
+    catalogFinalizing(3, {
+      finalization: { kind: "PullRequest", policy: "Serialized" },
+    }),
+    catalogFinalizing(4, {}),
+  ]) {
+    assert.notEqual(imported(content), "Ready", content);
+    assert.equal(published(content), false, content);
+  }
+});
+
 test("a file of each shape the format admits the import and the schema both take", () => {
   for (const shape of shapes) {
     const content = JSON.stringify(declared(shape));

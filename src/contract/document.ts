@@ -226,7 +226,7 @@ export function nativeHttpContractDocument(): unknown {
         "latest=true: each ticket's highest task, of any status, highest ticket first, under a cursor of its own that the other order refuses; it takes no ticket or state",
     },
     briefFinalization:
-      "a PullRequest finalization requires the brief to name a branch, and a target that is not it where it names one; a proposal naming no target opens into the repository's default branch",
+      "a finalization is named by its kind: a GitMerge by its mode and its policy, a PullRequest, or None; one written by its mode, with a landing beside it, is read as the kind it maps to, and a PullRequest or None landing Serialized maps to none and is refused; a finalization that opens a proposal, a PullRequest or a GitMerge by PullRequestMerge, requires the brief to name a branch, and a target that is not it where it names one; a proposal naming no target opens into the repository's default branch",
     selectorProjectSettings:
       "installation settings are defaults; an absent override inherits one, and a write replaces the whole set under the revision it was read at",
     selectorProposals:

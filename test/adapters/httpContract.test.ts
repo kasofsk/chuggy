@@ -208,7 +208,7 @@ test("authoring DTOs translate into existing application types", () => {
         images: [],
         checks: [],
         branch: "refs/heads/rt/ticket-brief",
-        finalization: { mode: "PullRequest", target: "refs/heads/main" },
+        finalization: { kind: "PullRequest", target: "refs/heads/main" },
       },
     },
   );
@@ -220,6 +220,45 @@ test("authoring DTOs translate into existing application types", () => {
       brief,
     }).expectedVersion,
     3,
+  );
+});
+
+test("a brief crosses the door by its kind, and one written by its mode is mapped forward with its landing", () => {
+  const created = (written: Readonly<Record<string, unknown>>) =>
+    parseDraftCreation({
+      configurationRevision: "revision",
+      configurationDigest: "a".repeat(64),
+      expectedProjectSequence: 7,
+      authoring,
+      brief: { ...brief, ...written },
+    }).brief.finalization;
+  const serialized = {
+    kind: "GitMerge",
+    mode: "PullRequestMerge",
+    target: "refs/heads/main",
+    policy: "Serialized",
+  } as const;
+  assert.deepEqual(created({ finalization: serialized }), serialized);
+  assert.deepEqual(
+    created({
+      finalization: { mode: "PullRequestMerge", target: "refs/heads/main" },
+      landing: "Serialized",
+    }),
+    serialized,
+  );
+  assert.deepEqual(created({ finalization: { mode: "Push" } }), {
+    kind: "GitMerge",
+    mode: "Push",
+    policy: "Direct",
+  });
+  assert.throws(
+    () => created({ landing: "Serialized" }),
+    /nothing orders it/u,
+    "a pull request ordered Serialized has no kind to cross as",
+  );
+  assert.throws(
+    () => created({ finalization: serialized, landing: "Serialized" }),
+    /names its own policy/u,
   );
 });
 

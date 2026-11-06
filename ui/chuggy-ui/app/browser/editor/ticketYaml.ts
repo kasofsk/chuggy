@@ -56,11 +56,11 @@ import type {
 import { briefImagesMax } from "../../../../../src/contract/brief.ts";
 import {
   briefFinalizationModes,
-  briefLandings,
+  briefGitMergePolicies,
 } from "../../../../../src/contract/rosters.ts";
 import type {
   BriefFinalizationMode,
-  BriefLanding,
+  BriefGitMergePolicy,
 } from "../../../../../src/contract/rosters.ts";
 import { landingEffect, landingPolicyEffect } from "../../core/codeLabels.ts";
 import { repositoryLabel } from "../../core/projectRepositories.ts";
@@ -379,13 +379,13 @@ function ticketYamlLandingOf(
 
 function ticketYamlLandingPolicyOf(
   node: unknown,
-): TicketYamlTook<BriefLanding> {
+): TicketYamlTook<BriefGitMergePolicy> {
   const text = ticketYamlTextOf(node);
   if (text.took === "Problem") return text;
-  const policy = briefLandings.find((held) => held === text.value);
+  const policy = briefGitMergePolicies.find((held) => held === text.value);
   return policy === undefined
     ? ticketYamlRefused(
-        `order the landing as one of ${briefLandings.join(", ")}`,
+        `order the landing as one of ${briefGitMergePolicies.join(", ")}`,
       )
     : ticketYamlTook(policy);
 }
@@ -1082,7 +1082,7 @@ function ticketYamlDescribed(
     target: { hint: creationTargetBranchHint(form.landingMode), values: [] },
     landingPolicy: {
       hint: "how the landing is ordered against the others on its reference; left out is Direct",
-      values: briefLandings.map((policy) => ({
+      values: briefGitMergePolicies.map((policy) => ({
         label: policy,
         detail: landingPolicyEffect(policy),
       })),

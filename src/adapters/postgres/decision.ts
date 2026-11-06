@@ -66,6 +66,7 @@ import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
 import { materialDigest } from "../../interpreter/ticketDefinition.ts";
+import { draftBriefByMode } from "../../interpreter/ticketBrief.ts";
 import { assertNever } from "../../domain/assertNever.ts";
 import type { TaskIdentity } from "../../domain/generated/modelTypes.ts";
 import { eventTicket } from "../../domain/evolve.ts";
@@ -562,7 +563,7 @@ async function decisionTicketDefinition(
   const brief =
     draftRelease.brief === undefined
       ? null
-      : JSON.stringify(draftRelease.brief);
+      : JSON.stringify(draftBriefByMode(draftRelease.brief));
   const overrides = storedOverridesText(draftRelease.overrides);
   const selection = storedSelectionText(draftRelease.selection);
   if (draftRelease.release === "Release") {

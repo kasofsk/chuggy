@@ -68,7 +68,7 @@ const draft: DraftResponse = {
     intent: "ship the thing",
     links: [],
     branch: "refs/heads/topic/one",
-    finalization: { mode: "Push" },
+    finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
   },
 };
 
