@@ -102,7 +102,7 @@ export const ticketLandingsNone = { landings: [], truncated: false };
  */
 export function apiDouble(served: {
   readonly operation: unknown;
-  readonly route: (url: string) => Response;
+  readonly route: (url: string) => Response | Promise<Response>;
   readonly reach?: (url: string) => Response | Promise<Response>;
   readonly landings?: (url: string) => Response | Promise<Response>;
 }): ApiDouble {

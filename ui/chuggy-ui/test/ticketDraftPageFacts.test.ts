@@ -1,8 +1,8 @@
 /**
  * Which draft the ticket page draws in a ticket's place, what it calls one,
  * and the plan it reads from one: a draft never released, while no ticket has
- * been read, named as a ticket's read names its ticket, running its own
- * program.
+ * been read and until one is once it leaves Draft, named as a ticket's read
+ * names its ticket, running its own program.
  */
 
 import { expect, test } from "vitest";
@@ -15,7 +15,7 @@ import type {
 import {
   ticketDraftPageFacts,
   ticketDraftTitleOf,
-  ticketPageUnreleased,
+  ticketPageDrawn,
 } from "../app/core/ticketPageFacts.ts";
 import { creationDraft } from "./ticketCreationFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
@@ -34,16 +34,39 @@ const ticket: TicketResponse = {
 };
 
 test("a draft never released is drawn in the ticket's place while no ticket is read", () => {
-  expect(ticketPageUnreleased(undefined, creationDraft)).toBe(creationDraft);
+  expect(ticketPageDrawn(undefined, creationDraft, undefined)).toStrictEqual({
+    drawn: "Draft",
+    draft: creationDraft,
+  });
 });
 
-test("a ticket read, a released draft, a deleted one and an unread one are never drawn as a draft", () => {
+test("a ticket read, and a released, deleted or unread draft the page never drew, draw the ticket", () => {
   expect([
-    ticketPageUnreleased(ticket, creationDraft),
-    ticketPageUnreleased(undefined, released),
-    ticketPageUnreleased(undefined, { ...creationDraft, state: "Deleted" }),
-    ticketPageUnreleased(undefined, undefined),
-  ]).toStrictEqual([undefined, undefined, undefined, undefined]);
+    ticketPageDrawn(ticket, creationDraft, creationDraft),
+    ticketPageDrawn(undefined, released, undefined),
+    ticketPageDrawn(
+      undefined,
+      { ...creationDraft, state: "Deleted" },
+      undefined,
+    ),
+    ticketPageDrawn(undefined, undefined, undefined),
+  ]).toStrictEqual(Array.from({ length: 4 }, () => ({ drawn: "Ticket" })));
+});
+
+test("a drawn draft that leaves Draft while no ticket is read stays drawn, saying how it left", () => {
+  expect([
+    ticketPageDrawn(undefined, released, creationDraft),
+    ticketPageDrawn(
+      undefined,
+      { ...creationDraft, state: "Deleted" },
+      creationDraft,
+    ),
+    ticketPageDrawn(undefined, undefined, creationDraft),
+  ]).toStrictEqual([
+    { drawn: "Departed", draft: creationDraft, left: "Released" },
+    { drawn: "Departed", draft: creationDraft, left: "Deleted" },
+    { drawn: "Departed", draft: creationDraft, left: "Deleted" },
+  ]);
 });
 
 test("a draft is called by its brief's title, else its intent's first line that says anything, cut to a title's bound", () => {

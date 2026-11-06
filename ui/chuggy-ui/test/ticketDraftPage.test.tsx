@@ -19,10 +19,12 @@ import {
   openedStream,
   ScreenHarness,
   settled,
+  heldAnswer,
   turned,
 } from "./screenHarness.tsx";
 import { ticketInstants } from "./ticketInstants.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
+import { draftQuery } from "../app/core/ticketQueries.ts";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 import {
   TicketPageEveryTab,
@@ -86,6 +88,13 @@ const drafted: DraftResponse = {
   },
 };
 
+/** The draft once released. */
+const releasedDraft: DraftResponse = {
+  ...drafted,
+  state: "Released",
+  releasedAuthoringVersion: drafted.authoringVersion,
+};
+
 /** The ticket its release makes, as its own read and the project's row say. */
 const releasedTicket = {
   ticket: 335,
@@ -101,12 +110,27 @@ const releasedTicket = {
 interface Served {
   readonly deletes: string[];
   readonly submitted: () => unknown;
+  /** A frame of the project's stream, writing the draft read as it says. */
+  readonly drafted: (draft: DraftResponse) => void;
+}
+
+/** What a case holds back: the ticket read once the draft is released, or the
+ * deletion's answer. */
+interface Holding {
+  readonly ticket?: Promise<Response>;
+  readonly deletion?: Promise<Response>;
 }
 
 /** The page over ticket 335: a draft until something is submitted, the
  * ticket it released after, unless a case starts it released. */
-function drawn(start: "Draft" | "Released" | "Refused" = "Draft"): Served {
+function drawn(
+  start: "Draft" | "Released" | "Refused" = "Draft",
+  holding: Holding = {},
+): Served {
   const deletes: string[] = [];
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   const api = apiDouble({
     operation: {
       operation: "op-one",
@@ -123,18 +147,10 @@ function drawn(start: "Draft" | "Released" | "Refused" = "Draft"): Served {
       if (start === "Refused" && /\/(drafts|tickets)\/335$/u.test(url))
         return answer({ error: { code: "NotFound" } }, 404);
       if (url.includes("/drafts/"))
-        return answer(
-          released
-            ? {
-                ...drafted,
-                state: "Released",
-                releasedAuthoringVersion: drafted.authoringVersion,
-              }
-            : drafted,
-        );
+        return answer(released ? releasedDraft : drafted);
       if (url.includes("/tickets/"))
         return released
-          ? answer(releasedTicket)
+          ? (holding.ticket ?? answer(releasedTicket))
           : answer({ error: { code: "NotFound" } }, 404);
       return answer({
         partition: atlas,
@@ -146,22 +162,29 @@ function drawn(start: "Draft" | "Released" | "Refused" = "Draft"): Served {
   vi.stubGlobal("fetch", (url: string, init?: { method?: string }) => {
     if (init?.method === "DELETE") {
       deletes.push(url);
-      return Promise.resolve(answer({ ...drafted, state: "Deleted" }));
+      return (
+        holding.deletion ??
+        Promise.resolve(answer({ ...drafted, state: "Deleted" }))
+      );
     }
     return api.fetch(url, init);
   });
   render(
     <ScreenHarness
       partition={atlas}
-      client={
-        new QueryClient({ defaultOptions: { queries: { retry: false } } })
-      }
+      client={client}
       transport={openedStream().ports.fetch}
     >
       <TicketPageEveryTab />
     </ScreenHarness>,
   );
-  return { deletes, submitted: api.submitted };
+  return {
+    deletes,
+    submitted: api.submitted,
+    drafted: (draft) => {
+      client.setQueryData(draftQuery(atlas, 335, "Streamed").queryKey, draft);
+    },
+  };
 }
 
 function standing(): string | null | undefined {
@@ -248,6 +271,69 @@ test("Delete asks first and sends nothing until its own button is pressed, then 
   expect(navigated.to).toStrictEqual([
     { to: "/$tenant/$project", params: atlas },
   ]);
+});
+
+test("a draft whose release is read before its ticket keeps its page until the ticket is read", async () => {
+  const ticketRead = heldAnswer();
+  const served = drawn("Draft", { ticket: ticketRead.answered });
+  await settled();
+
+  await turned(() => {
+    within(ticketHeader()).getByRole("button", { name: "Release" }).click();
+  });
+  served.drafted(releasedDraft);
+  await settled();
+
+  expect(standing()).toBe("Draft");
+  expect(screen.getByText("None run yet")).toBeDefined();
+  expect(screen.getByText(intent)).toBeDefined();
+
+  ticketRead.release(answer(releasedTicket));
+  await settled();
+
+  expect(standing()).toBe("Ready");
+});
+
+test("a draft whose deletion is read before the deletion answers keeps its page, and still goes to the ticket list", async () => {
+  const deletion = heldAnswer();
+  const served = drawn("Draft", { deletion: deletion.answered });
+  await settled();
+
+  const item = within(await ticketHeaderMenuOpened()).getByRole("menuitem", {
+    name: "Delete draft…",
+  });
+  await turned(() => {
+    item.click();
+  });
+  await turned(() => {
+    within(screen.getByRole("dialog", { name: "Delete this draft?" }))
+      .getByRole("button", { name: "Delete draft" })
+      .click();
+  });
+  served.drafted({ ...drafted, state: "Deleted" });
+  await settled();
+
+  expect(standing()).toBe("Draft");
+  expect(screen.getByText("None run yet")).toBeDefined();
+  expect(screen.getByText(intent)).toBeDefined();
+
+  deletion.release(answer({ ...drafted, state: "Deleted" }));
+  await settled();
+
+  expect(navigated.to).toStrictEqual([
+    { to: "/$tenant/$project", params: atlas },
+  ]);
+});
+
+test("a draft deleted by nobody on this page draws the page's not-found", async () => {
+  const served = drawn();
+  await settled();
+
+  served.drafted({ ...drafted, state: "Deleted" });
+  await settled();
+
+  expect(document.querySelector('[data-standing="Draft"]')).toBeNull();
+  expect(screen.getByText(/^Not found/u)).toBeDefined();
 });
 
 test("a released ticket's page is its own, whatever its draft holds", async () => {

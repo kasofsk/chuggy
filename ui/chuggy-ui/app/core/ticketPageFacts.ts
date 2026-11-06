@@ -19,7 +19,9 @@
  * would draw stages that will never run.
  *
  * A DRAFT NEVER RELEASED IS DRAWN IN THE TICKET'S PLACE. There is no ticket to
- * read, so its plan is the draft's own and nothing has run.
+ * read, so its plan is the draft's own and nothing has run. The draft and the
+ * ticket are separate reads that change apart, so a draft that leaves Draft
+ * stays drawn until the ticket is read.
  */
 
 import { briefTitleCharsMax } from "../../../../src/contract/brief.ts";
@@ -104,16 +106,38 @@ export function ticketPageFacts(
   return { program, plan, ledger, resume, truncated };
 }
 
-/** The draft the page draws in the ticket's place: one never released, while
- * no ticket has been read. */
-export function ticketPageUnreleased(
+/**
+ * What the page draws: the ticket, or a draft in its place.
+ *
+ * `Departed` is the draft the page drew last, which has since been released or
+ * deleted while no ticket is read: its release's ticket is still to be read,
+ * and its deletion is still to be answered or left, so the page keeps it
+ * drawn rather than drawing the not-found between the two reads.
+ */
+export type TicketPageDrawn =
+  | { readonly drawn: "Ticket" }
+  | { readonly drawn: "Draft"; readonly draft: DraftResponse }
+  | {
+      readonly drawn: "Departed";
+      readonly draft: DraftResponse;
+      readonly left: "Released" | "Deleted";
+    };
+
+/** What the page draws from its reads and `before`, the draft it drew last:
+ * a draft never released while no ticket is read, then that draft once it has
+ * left until a ticket is read, and the ticket otherwise. */
+export function ticketPageDrawn(
   ticket: TicketResponse | undefined,
   draft: DraftResponse | undefined,
-): DraftResponse | undefined {
-  if (ticket !== undefined || draft === undefined) return undefined;
-  return draft.state === "Draft" && draft.releasedAuthoringVersion === undefined
-    ? draft
-    : undefined;
+  before: DraftResponse | undefined,
+): TicketPageDrawn {
+  if (ticket !== undefined) return { drawn: "Ticket" };
+  if (draft?.state === "Draft" && draft.releasedAuthoringVersion === undefined)
+    return { drawn: "Draft", draft };
+  if (before === undefined) return { drawn: "Ticket" };
+  const left =
+    draft === undefined || draft.state === "Deleted" ? "Deleted" : "Released";
+  return { drawn: "Departed", draft: before, left };
 }
 
 /** The facts of a draft drawn in the ticket's place: its plan, and no runs. */

@@ -26,6 +26,7 @@ import {
   ticketDraftTitleOf,
 } from "../../core/ticketPageFacts.ts";
 import { useConsoleWrite } from "../consoleWrite.tsx";
+import type { ConsoleWriting } from "../consoleWrite.tsx";
 import { FreshnessInstants } from "../Freshness.tsx";
 import { useProjectAbilities } from "../projectAbilities.tsx";
 import { FollowNotes, TicketActingScope } from "../TicketActions.tsx";
@@ -43,6 +44,8 @@ const ticketDraftFragment = {
   words: "Not released",
 } as const;
 
+export type TicketDraftDeletion = ConsoleWriting<number, DraftResponse>;
+
 function draftDeleteWrite(
   partition: PartitionIdentity,
   ticket: number,
@@ -58,6 +61,17 @@ function draftDeleteWrite(
       apiDeleteDraft(ports, partition, ticket, version),
     refusal: draftDeletionFailureSentence,
   };
+}
+
+/** The draft's deletion, held by the page rather than by the body that
+ * presses it, so that what a press asks to be told is told while the page is
+ * drawn, whatever body it draws; its refusal is drawn while `drawn` holds. */
+export function useTicketDraftDeletion(
+  partition: PartitionIdentity,
+  ticket: number,
+  drawn: boolean,
+): TicketDraftDeletion {
+  return useConsoleWrite(draftDeleteWrite(partition, ticket), { drawn });
 }
 
 /** Release leading, Edit beside it, and the menu, for a reader who may write
@@ -117,14 +131,12 @@ function TicketDraftStanding(props: {
   readonly held: TicketPageHeld;
   readonly draft: DraftResponse;
   readonly acting: TicketActing;
+  readonly deletion: TicketDraftDeletion;
   readonly children: ReactNode;
 }): ReactNode {
   const { held, draft } = props;
   const navigate = useNavigate();
-  const deleting = useConsoleWrite(
-    draftDeleteWrite(held.partition, held.ticket),
-    { drawn: true },
-  );
+  const deleting = props.deletion;
   return (
     <>
       <TicketHeader
@@ -180,6 +192,7 @@ export function TicketDraftBody(props: {
   readonly ticket: number;
   readonly draft: DraftResponse;
   readonly reads: TicketReads;
+  readonly deletion: TicketDraftDeletion;
   readonly nowMs: number;
   readonly children: ReactNode;
 }): ReactNode {
@@ -209,6 +222,7 @@ export function TicketDraftBody(props: {
               held={held}
               draft={props.draft}
               acting={acting}
+              deletion={props.deletion}
             >
               {props.children}
             </TicketDraftStanding>

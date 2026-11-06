@@ -18,7 +18,11 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
-import type { NativeActionResponse } from "../../../../src/contract/responses.ts";
+import type {
+  DraftResponse,
+  NativeActionResponse,
+  TicketResponse,
+} from "../../../../src/contract/responses.ts";
 import { configurationQuery } from "../core/configurationQueries.ts";
 import { ticketLandingsHeld } from "../core/ticketLandings.ts";
 import {
@@ -40,17 +44,17 @@ import {
   ticketOffersStartable,
 } from "../core/ticketOffers.ts";
 import type { TicketOffers } from "../core/ticketOffers.ts";
-import {
-  ticketPageFacts,
-  ticketPageUnreleased,
-} from "../core/ticketPageFacts.ts";
+import { ticketPageDrawn, ticketPageFacts } from "../core/ticketPageFacts.ts";
 import {
   draftQuery,
   ticketDispatchQuery,
   ticketNativeActionsQuery,
   ticketQuery,
 } from "../core/ticketQueries.ts";
-import type { TicketPageFacts } from "../core/ticketPageFacts.ts";
+import type {
+  TicketPageDrawn,
+  TicketPageFacts,
+} from "../core/ticketPageFacts.ts";
 import { ticketSlot } from "../core/ticketSituation.ts";
 import type { TicketSlot as Slot } from "../core/ticketSituation.ts";
 import { usePanelState } from "./api.ts";
@@ -67,7 +71,11 @@ import type {
   TicketHeaderActionsProps,
 } from "./TicketActions.tsx";
 import { useTicketDelivery } from "./ticket/TicketDelivery.tsx";
-import { TicketDraftBody } from "./ticket/TicketDraft.tsx";
+import {
+  TicketDraftBody,
+  useTicketDraftDeletion,
+} from "./ticket/TicketDraft.tsx";
+import type { TicketDraftDeletion } from "./ticket/TicketDraft.tsx";
 import { TicketHeader, TicketTabs } from "./ticket/TicketHeader.tsx";
 import { useTicketLandings } from "./ticket/TicketLandings.tsx";
 import { useTicketExecutions } from "./ticket/TicketRuns.tsx";
@@ -322,6 +330,49 @@ function TicketBody(props: {
   );
 }
 
+/** The draft the page draws in the ticket's place: one drawn, or released
+ * while its ticket is still to be read, or deleted while this page's own
+ * deletion of it is pending or has landed and is leaving for the list. */
+function ticketPageDraftOf(
+  drawn: TicketPageDrawn,
+  deleting: TicketDraftDeletion,
+): DraftResponse | undefined {
+  switch (drawn.drawn) {
+    case "Ticket":
+      return undefined;
+    case "Draft":
+      return drawn.draft;
+    case "Departed":
+      return drawn.left === "Released" ||
+        deleting.isPending ||
+        deleting.isSuccess
+        ? drawn.draft
+        : undefined;
+  }
+}
+
+/** The draft drawn in the ticket's place, if any, remembering the one drawn
+ * last, and its deletion, held here so that it outlives the draft's body. */
+function useTicketPageDraft(
+  partition: PartitionIdentity,
+  ticket: number,
+  ticketRead: TicketResponse | undefined,
+  draftRead: DraftResponse | undefined,
+): {
+  readonly unreleased: DraftResponse | undefined;
+  readonly deletion: TicketDraftDeletion;
+} {
+  const [before, setBefore] = useState<DraftResponse | undefined>(undefined);
+  const drawn = ticketPageDrawn(ticketRead, draftRead, before);
+  if (drawn.drawn === "Draft" && drawn.draft !== before) setBefore(drawn.draft);
+  const deletion = useTicketDraftDeletion(
+    partition,
+    ticket,
+    drawn.drawn !== "Ticket",
+  );
+  return { unreleased: ticketPageDraftOf(drawn, deletion), deletion };
+}
+
 /** The layout every tab is drawn in, handed the tab its address names. */
 export function TicketPage(props: { readonly children: ReactNode }): ReactNode {
   const params = useParams({ from: "/$tenant/$project/tickets/$ticket" });
@@ -333,7 +384,9 @@ export function TicketPage(props: { readonly children: ReactNode }): ReactNode {
   const nowMs = useNowMs();
   const ticketState = usePanelState(ticketQuery(partition, ticket, "Streamed"));
   const draftState = usePanelState(draftQuery(partition, ticket, "Streamed"));
-  const unreleased = ticketPageUnreleased(
+  const { unreleased, deletion } = useTicketPageDraft(
+    partition,
+    ticket,
     readValue(ticketState),
     readValue(draftState),
   );
@@ -371,6 +424,7 @@ export function TicketPage(props: { readonly children: ReactNode }): ReactNode {
         ticket={ticket}
         draft={unreleased}
         reads={reads}
+        deletion={deletion}
         nowMs={nowMs}
       >
         {props.children}
