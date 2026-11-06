@@ -188,7 +188,7 @@ function EpicsControls(props: {
     <div className="flex flex-wrap items-center gap-2">
       <Input
         label="Search epics"
-        placeholder="Search titles or #number…"
+        placeholder="Search titles and summaries…"
         value={typed}
         onChange={setTyped}
       />

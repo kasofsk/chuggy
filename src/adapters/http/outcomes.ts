@@ -2252,7 +2252,7 @@ function draftCreated(value: NativeDraftCreated): NativeHttpResponse {
       return response(422, draftLandingUnbranched);
     case "EpicUnavailable":
       return response(
-        value.reason === "MissingEpic" ? 404 : 409,
+        409,
         nativeHttpError(value.reason, epicRefusalMessage[value.reason]),
       );
     case "Stale":

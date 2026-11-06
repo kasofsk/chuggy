@@ -16,6 +16,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { EpicsPage } from "../app/browser/EpicsPage.tsx";
+import { epicsSearchWaitMs } from "../app/core/epics.ts";
 import type { EpicsQuery } from "../app/core/epics.ts";
 import { leadPartition } from "./leadFixture.ts";
 import {
@@ -176,6 +177,7 @@ test("a search the address moves to by going back replaces what is typed, and is
   expect(box.value).toBe("billing");
 
   await redrawn({});
+  await new Promise((resolve) => setTimeout(resolve, epicsSearchWaitMs));
 
   expect(box.value).toBe("");
   expect(asked).toStrictEqual([]);

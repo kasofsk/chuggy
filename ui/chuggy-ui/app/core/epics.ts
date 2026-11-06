@@ -10,7 +10,10 @@
 
 import type { QueryClient } from "@tanstack/query-core";
 
-import type { PartitionIdentity } from "../../../../src/contract/http.ts";
+import {
+  ticketSearchCharsMax,
+  type PartitionIdentity,
+} from "../../../../src/contract/http.ts";
 import type {
   EpicGraphResponse,
   EpicListResponse,
@@ -162,14 +165,15 @@ export interface EpicsQuery {
 /** How long a search stands before it is asked of the API. */
 export const epicsSearchWaitMs = 250;
 
-/** The view an address names; a value it does not understand is none. */
+/** The view an address names, its search cut to the server's bound; a value
+ * it does not understand is none. */
 export function epicsQueryOf(
   search: Readonly<Record<string, unknown>>,
 ): EpicsQuery {
   const typed = search["q"];
   const q =
     typeof typed === "string" || typeof typed === "number"
-      ? String(typed).trim()
+      ? [...String(typed).trim()].slice(0, ticketSearchCharsMax).join("").trim()
       : "";
   const visibility = epicVisibilityChoices.find(
     (choice) => choice.value === search["visibility"],
@@ -458,9 +462,9 @@ function unknownTicketsOf(body: unknown): readonly number[] {
 
 /** The refusal a draft creation into an epic is drawn as, none where it is not that. */
 export function epicDraftRefusal(failure: ApiFailure): string | undefined {
-  if (failure.outcome === "Absent")
-    return "The epic no longer exists, so the ticket was not made.";
   if (failure.outcome !== "Conflict") return undefined;
+  if (failure.code === "MissingEpic")
+    return "The epic no longer exists, so the ticket was not made.";
   if (failure.code === "ArchivedEpic")
     return "The epic is archived, so it takes no new ticket.";
   if (failure.code === "ManyTickets" || failure.code === "LargeContent")

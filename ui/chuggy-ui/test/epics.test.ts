@@ -5,6 +5,8 @@
 
 import { expect, test } from "vitest";
 
+import { epicListQueryParse } from "../../../src/contract/epics.ts";
+import { ticketSearchCharsMax } from "../../../src/contract/http.ts";
 import type { EpicGraphResponse } from "../../../src/contract/responses.ts";
 import {
   epicDraftRefusal,
@@ -44,6 +46,18 @@ test("an address names only the choices that differ from the defaults", () => {
     epicsQueryOf({ q: 12, visibility: "Archived", sort: "title" }),
   ).toStrictEqual({ q: "12", visibility: "Archived", sort: "title" });
   expect(epicsQueryOf({ visibility: "Gone", sort: 3 })).toStrictEqual({});
+});
+
+test("a search past the server's bound is asked cut to it, as the list's query admits", () => {
+  for (const unit of ["x", "🜁"]) {
+    const asked = epicsAskOf(
+      epicsQueryOf({ q: unit.repeat(ticketSearchCharsMax + 5) }),
+    );
+    expect(asked.search).toBe(unit.repeat(ticketSearchCharsMax));
+    expect(epicListQueryParse({ search: asked.search }).search).toBe(
+      asked.search,
+    );
+  }
 });
 
 test("a part of the address is replaced and the rest is kept", () => {
@@ -306,7 +320,9 @@ test("a draft refused for its epic is said so, and any other refusal is not the 
   expect(
     epicDraftRefusal({ outcome: "Conflict", code: "LargeContent", body: {} }),
   ).toContain("full");
-  expect(epicDraftRefusal({ outcome: "Absent" })).toContain("no longer exists");
+  expect(
+    epicDraftRefusal({ outcome: "Conflict", code: "MissingEpic", body: {} }),
+  ).toContain("no longer exists");
   expect(
     epicDraftRefusal({
       outcome: "Conflict",
@@ -314,4 +330,5 @@ test("a draft refused for its epic is said so, and any other refusal is not the 
       body: {},
     }),
   ).toBeUndefined();
+  expect(epicDraftRefusal({ outcome: "Absent" })).toBeUndefined();
 });

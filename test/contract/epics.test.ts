@@ -109,12 +109,16 @@ test("a Revise names an epic and the revision it read", () => {
   assert.throws(() => epicWriteRequestParse({ kind: "Retire" }));
 });
 
-test("a list query defaults its limit and reads every filter", () => {
+test("a list query defaults its limit and reads every filter, a search bounded in characters as a ticket search is", () => {
   assert.deepEqual(epicListQueryParse({}), { limit: epicPageLimitDefault });
   assert.equal(
     epicListQueryParse({ search: "x".repeat(ticketSearchCharsMax) }).search
       ?.length,
     ticketSearchCharsMax,
+  );
+  assert.equal(
+    epicListQueryParse({ search: "🜁".repeat(ticketSearchCharsMax) }).search,
+    "🜁".repeat(ticketSearchCharsMax),
   );
   assert.deepEqual(
     epicListQueryParse({
@@ -148,6 +152,8 @@ test("a list query refuses what its grammar does not name", () => {
     { after: "x" },
     { unknown: "1" },
     { search: "x".repeat(ticketSearchCharsMax + 1) },
+    { search: "" },
+    { search: "x\u0000" },
   ]) {
     assert.throws(() => epicListQueryParse(query), JSON.stringify(query));
   }

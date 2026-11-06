@@ -26,6 +26,8 @@ import {
 } from "./screenHarness.tsx";
 import type { SentRequest } from "./screenHarness.tsx";
 
+const routed = vi.hoisted(() => ({ epic: "7" }));
+
 vi.mock("@tanstack/react-router", () => ({
   createLink: (component: unknown) => component,
   Link: (props: {
@@ -42,7 +44,7 @@ vi.mock("@tanstack/react-router", () => ({
       {props.children}
     </a>
   ),
-  useParams: () => ({ ...leadPartition, epic: "7" }),
+  useParams: () => ({ ...leadPartition, epic: routed.epic }),
   useNavigate: () => () => Promise.resolve(),
 }));
 // jscpd:ignore-end -- the case's own doubles resume here
@@ -51,6 +53,7 @@ afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
   viewServed = view;
+  routed.epic = "7";
 });
 
 const view = {
@@ -82,6 +85,15 @@ const view = {
 /** The view the API answers now, which a case may move as another's write would. */
 let viewServed: typeof view = view;
 
+/** Another epic at the same revision, whose content only its own form may send. */
+const otherServed = {
+  ...view,
+  number: 8,
+  title: "Search",
+  summary: "All of search",
+  tickets: [6],
+};
+
 const graph = {
   nodes: [
     { ticket: 2, title: "Schema", phase: "Work", member: false },
@@ -112,6 +124,7 @@ function served(
     if (request.method !== "GET") return written(request);
     if (request.url.endsWith("/graph")) return answer(graph);
     if (request.url.includes("/history")) return answer(history);
+    if (request.url.endsWith("/epics/8")) return answer(otherServed);
     return answer(viewServed);
   };
 }
@@ -231,4 +244,47 @@ test("a later read leaves what is typed on the revision it was read at, until th
   fireEvent.click(screen.getByRole("button", { name: "Reload the epic" }));
   await settled();
   expect(title()).toBe("Renamed");
+});
+
+test("the edit form holds the epic the page is on, after a move between two it has read", async () => {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  const scripted = scriptedFetch(
+    served(() => answer({ epic: 8, revision: 4 })),
+  );
+  vi.stubGlobal("fetch", abilitiesFetch(abilitiesEvery, scripted.fetch));
+  const page = () => (
+    <ScreenHarness
+      partition={leadPartition}
+      client={client}
+      transport={openedStream().ports.fetch}
+    >
+      <EpicPage />
+    </ScreenHarness>
+  );
+  routed.epic = "8";
+  const { rerender } = render(page());
+  await settled();
+  routed.epic = "7";
+  rerender(page());
+  await settled();
+  fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+  await settled();
+  routed.epic = "8";
+  rerender(page());
+  await settled();
+
+  expect(
+    screen.getByRole<HTMLInputElement>("textbox", { name: "Title" }).value,
+  ).toBe("Search");
+  fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
+  await settled();
+  expect(
+    scripted.sent.filter((request) => request.method !== "GET").at(-1)?.body,
+  ).toMatchObject({
+    epic: 8,
+    expected: 3,
+    content: { title: "Search", tickets: [6] },
+  });
 });
