@@ -42,6 +42,8 @@ import {
   projectCreationRoutePath,
 } from "../core/projectCreation.ts";
 import type { ProjectCreationQuery } from "../core/projectCreation.ts";
+import { ticketRunQueryOf } from "../core/ticketRuns.ts";
+import type { TicketRunQuery } from "../core/ticketRuns.ts";
 import { ticketCreationQueryOf } from "../core/ticketCreationQuery.ts";
 import type { TicketCreationQuery } from "../core/ticketCreationQuery.ts";
 import { ticketListQueryOf } from "../core/ticketListView.ts";
@@ -75,6 +77,8 @@ import { ThreadPage } from "./ThreadPage.tsx";
 import { TicketCreationFrom } from "./TicketCreationStart.tsx";
 import { TicketEdit } from "./TicketEdit.tsx";
 import { TicketPage } from "./TicketPage.tsx";
+import { TicketLandingTab } from "./ticket/TicketLandingPage.tsx";
+import { TicketRunTab } from "./ticket/TicketRunPage.tsx";
 import {
   TicketConfigurationTab,
   TicketOverviewTab,
@@ -353,6 +357,22 @@ const ticketRunsRoute = createRoute({
   component: TicketRunsTab,
 });
 
+/** One run of the ticket, at its task's number, with the sub-tab it shows in
+ * its query so a transcript can be linked. */
+const ticketRunRoute = createRoute({
+  getParentRoute: () => ticketRoute,
+  path: "/runs/$task",
+  component: TicketRunTab,
+  validateSearch: (search: Readonly<Record<string, unknown>>): TicketRunQuery =>
+    ticketRunQueryOf(search),
+});
+
+const ticketLandingRoute = createRoute({
+  getParentRoute: () => ticketRoute,
+  path: "/landing",
+  component: TicketLandingTab,
+});
+
 const ticketConfigurationRoute = createRoute({
   getParentRoute: () => ticketRoute,
   path: "/configuration",
@@ -394,6 +414,8 @@ const routeTree = rootRoute.addChildren([
     ticketRoute.addChildren([
       ticketOverviewRoute,
       ticketRunsRoute,
+      ticketRunRoute,
+      ticketLandingRoute,
       ticketConfigurationRoute,
       ticketUsageRoute,
     ]),

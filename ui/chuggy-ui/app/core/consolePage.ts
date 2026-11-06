@@ -82,6 +82,8 @@ const consolePageTicketTabs = [
   "",
   "/",
   "/runs",
+  "/runs/$task",
+  "/landing",
   "/configuration",
   "/usage",
 ] as const;

@@ -981,4 +981,322 @@
       transform: rotate(1turn);
     }
   }
+
+  /* The Runs tab, a run's page and the landing's: cycles of rows that are
+     links, a rail of the same runs beside one of them, and the run itself. */
+  .ticket-run-mark {
+    flex: none;
+    width: 1em;
+    height: 1em;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.6;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    color: var(--ink-3);
+  }
+
+  .ticket-run-mark[data-mark="Open"] circle {
+    stroke-dasharray: 2 2;
+  }
+
+  .ticket-run-mark[data-mark="Spin"] {
+    animation: ticket-state-spin var(--duration-spin) linear infinite;
+  }
+
+  .ticket-run-track {
+    opacity: 0.35;
+  }
+
+  .ticket-run-mark[data-tone="pass"] {
+    color: var(--tone-pass);
+  }
+
+  .ticket-run-mark[data-tone="fail"] {
+    color: var(--tone-fail);
+  }
+
+  .ticket-run-mark[data-tone="live"] {
+    color: var(--tone-live);
+  }
+
+  .ticket-run-mark[data-tone="queued"] {
+    color: var(--tone-queued);
+  }
+
+  .ticket-run-mark[data-tone="parked"] {
+    color: var(--tone-parked);
+  }
+
+  .ticket-run-mark[data-tone="finalization"] {
+    color: var(--tone-finalization);
+  }
+
+  .ticket-runs {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-4);
+  }
+
+  .ticket-runs-cycle {
+    min-width: 0;
+    background: var(--surface-1);
+    border: var(--hairline) solid var(--edge);
+    border-radius: var(--radius-2);
+  }
+
+  .ticket-runs-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-1) var(--space-3);
+    padding: var(--space-2) var(--space-4);
+  }
+
+  .ticket-runs-head h3 {
+    color: var(--ink-1);
+    font-size: var(--text-md);
+    font-weight: var(--weight-strong);
+  }
+
+  .ticket-runs-outcome {
+    color: var(--ink-3);
+    font-size: var(--text-md);
+  }
+
+  .ticket-runs-rollup {
+    margin-left: auto;
+    color: var(--ink-3);
+    font-size: var(--text-sm);
+  }
+
+  .ticket-runs-rows {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .ticket-runs-row {
+    display: grid;
+    grid-template-columns:
+      auto var(--col-run-name) minmax(0, 1fr) var(--col-run-time)
+      var(--col-run-cost) auto;
+    gap: var(--space-3);
+    align-items: center;
+    padding: var(--space-2) var(--space-4);
+    border-top: var(--hairline) solid var(--edge);
+    color: var(--ink-2);
+    font-size: var(--text-md);
+    text-decoration: none;
+  }
+
+  a.ticket-runs-row:hover {
+    background: var(--surface-2);
+  }
+
+  .ticket-runs-name {
+    min-width: 0;
+    overflow: hidden;
+    color: var(--ink-1);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ticket-runs-line {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  [data-superseded] .ticket-runs-row,
+  [data-superseded] .ticket-runs-name {
+    color: var(--ink-3);
+  }
+
+  .ticket-runs-time,
+  .ticket-runs-cost {
+    color: var(--ink-3);
+    font-size: var(--text-sm);
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .ticket-runs-chevron {
+    color: var(--ink-3);
+  }
+
+  @media (max-width: 40em) {
+    .ticket-runs-row {
+      grid-template-columns: auto minmax(0, 1fr) auto auto;
+      row-gap: 0;
+    }
+
+    .ticket-runs-line {
+      grid-column: 2 / -1;
+      grid-row: 2;
+      font-size: var(--text-sm);
+    }
+
+    .ticket-runs-cost {
+      display: none;
+    }
+  }
+
+  .ticket-run-frame {
+    display: grid;
+    grid-template-columns: var(--width-runs-rail) minmax(0, 1fr);
+    gap: var(--space-5);
+    align-items: start;
+  }
+
+  .ticket-run-main {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-3);
+    min-width: 0;
+  }
+
+  .ticket-rail {
+    display: grid;
+    gap: var(--space-4);
+    min-width: 0;
+  }
+
+  .ticket-rail-head {
+    padding-inline: var(--space-2);
+    color: var(--ink-3);
+    font-size: var(--text-xs);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .ticket-rail-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-2);
+    border-left: var(--rail) solid transparent;
+    border-radius: var(--radius-2);
+    color: var(--ink-2);
+    font-size: var(--text-md);
+    text-decoration: none;
+  }
+
+  .ticket-rail-row:hover {
+    background: var(--surface-2);
+  }
+
+  .ticket-rail-row[aria-current="page"] {
+    border-left-color: var(--ink-1);
+    background: var(--surface-1);
+    color: var(--ink-1);
+  }
+
+  .ticket-rail-name {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .ticket-rail-time {
+    color: var(--ink-3);
+    font-size: var(--text-xs);
+    white-space: nowrap;
+  }
+
+  .ticket-run-back {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    justify-self: start;
+    color: var(--ink-3);
+    font-size: var(--text-sm);
+    text-decoration: none;
+  }
+
+  .ticket-run-back-chevron {
+    transform: rotate(180deg);
+  }
+
+  .ticket-run-head {
+    display: grid;
+    gap: var(--space-1);
+  }
+
+  .ticket-run-heading {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .ticket-run-heading h2 {
+    color: var(--ink-1);
+    font-size: var(--text-lg);
+    font-weight: var(--weight-strong);
+  }
+
+  .ticket-run-cycle {
+    color: var(--ink-3);
+    font-size: var(--text-md);
+  }
+
+  .ticket-run-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+    color: var(--ink-3);
+    font-size: var(--text-sm);
+  }
+
+  .ticket-run-meta > * + *::before {
+    content: "· ";
+  }
+
+  .ticket-run-body {
+    min-width: 0;
+    padding: var(--space-4);
+    background: var(--surface-1);
+    border: var(--hairline) solid var(--edge);
+    border-radius: var(--radius-2);
+    overflow-wrap: anywhere;
+  }
+
+  .ticket-run-refusal {
+    color: var(--ink-2);
+    font-size: var(--text-sm);
+    white-space: pre-wrap;
+  }
+
+  @media (max-width: 60em) {
+    .ticket-run-frame {
+      grid-template-columns: minmax(0, 1fr);
+      gap: var(--space-3);
+    }
+
+    .ticket-rail {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-1) var(--space-3);
+    }
+
+    .ticket-rail-cycle {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--space-1);
+    }
+
+    .ticket-rail-cycle ul {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-1);
+    }
+
+    .ticket-rail-time {
+      display: none;
+    }
+  }
 }

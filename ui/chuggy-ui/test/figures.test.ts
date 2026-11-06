@@ -21,7 +21,6 @@ import {
   instantFigure,
   instantFigureAtMs,
   instantText,
-  ranFigure,
   settledFigure,
   sinceFigure,
   spanFigure,
@@ -29,7 +28,6 @@ import {
   spendFigures,
   tokenCountText,
   tokensFigure,
-  whenFigure,
 } from "../app/core/figures.ts";
 
 /** The drawn text of a figure, which every kind but an absence carries. */
@@ -209,69 +207,6 @@ test("a span hovers its absolute ends, to the second", () => {
   const open = spanFigure({ from: from.toISOString(), to: undefined }, 0);
   if (open.kind !== "Span") throw new Error("not a span");
   expect(open.title).toBe("2026-08-27 10:19:05");
-});
-
-test("a row's window is when it started, and once ended how long it ran", () => {
-  const nowMs = Date.parse("2026-08-27T11:07:00Z");
-  const ended = whenFigure(
-    {
-      registeredAt: "2026-08-27T10:31:00Z",
-      terminalAt: "2026-08-27T10:48:40Z",
-    },
-    nowMs,
-  );
-  if (ended.kind !== "Span") throw new Error("not a span");
-  expect(ended.parts).toEqual(["started 36m ago", "ran 17m 40s"]);
-  const running = whenFigure({ registeredAt: "2026-08-27T11:03:20Z" }, nowMs);
-  if (running.kind !== "Span") throw new Error("not a span");
-  expect(running.parts).toEqual(["started 3m 40s ago"]);
-  expect(running.open).toBe(true);
-});
-
-/**
- * §5.2's waiting reading: where the wire carries the first attempt's opening,
- * the queue is its own figure and the start is the run's, and where it does not
- * the row is timed from its registration as it was before the field existed.
- */
-test("a row separates the wait from the run where the wire carries the start", () => {
-  const nowMs = Date.parse("2026-08-27T11:07:00Z");
-  const ran = whenFigure(
-    {
-      registeredAt: "2026-08-27T10:31:00Z",
-      startedAt: "2026-08-27T10:31:12Z",
-      terminalAt: "2026-08-27T10:48:40Z",
-    },
-    nowMs,
-  );
-  if (ran.kind !== "Span") throw new Error("not a span");
-  expect(ran.parts).toEqual([
-    "started 35m 48s ago",
-    "waited 12s",
-    "ran 17m 28s",
-  ]);
-  const running = whenFigure(
-    {
-      registeredAt: "2026-08-27T11:03:20Z",
-      startedAt: "2026-08-27T11:03:32Z",
-    },
-    nowMs,
-  );
-  if (running.kind !== "Span") throw new Error("not a span");
-  expect(running.parts).toEqual(["started 3m 28s ago", "waited 12s"]);
-  expect(running.open).toBe(true);
-});
-
-test("a run's length is its two ends apart, and one not ended has none yet", () => {
-  expect(
-    ranFigure("2026-10-01 15:32:48.356468+00", "2026-10-01 15:35:36.366517+00"),
-  ).toEqual({ kind: "Duration", text: "2m 48s" });
-  expect(ranFigure("2026-10-01T15:32:48Z", undefined)).toEqual({
-    kind: "Absent",
-    why: "Not ended",
-  });
-  expect(ranFigure("not an instant", "2026-10-01T15:32:48Z").kind).toBe(
-    "Absent",
-  );
 });
 
 test("an ago on the ticket page is two units, names what happened and hovers the second", () => {

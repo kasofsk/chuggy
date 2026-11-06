@@ -1,8 +1,7 @@
 /**
  * What a ticket's page draws of its landings: one row a landing under the
- * cycle it belongs to, a fragment on that cycle's header, a fragment on the
- * Work row of the cycle a failed landing opened, and one on the status bar
- * while the ticket is finalizing.
+ * cycle it belongs to, a fragment on that cycle's header, and one on the
+ * status bar while the ticket is finalizing.
  *
  * THE RESPONSE'S FIELDS ARE READ HERE AND NOWHERE ELSE. Every part of the page
  * is handed `TicketLanding`s, so a field the read renames or drops is one
@@ -517,18 +516,6 @@ export function ticketLandingsJoined(
   return { byCycle, unheld };
 }
 
-/** Why a cycle exists, where the newest landing of the one before it failed. */
-export function ticketLandingOpened(
-  joined: TicketLandingsJoined,
-  cycle: number,
-): string | undefined {
-  const before = joined.byCycle.get(cycle - 1)?.at(-1);
-  if (before?.state !== "Failed") return undefined;
-  return before.failure === undefined
-    ? "After failed landing"
-    : `After ${before.failure.toLowerCase()}`;
-}
-
 /** Whether a landing in `state` is still live: running, held or waiting. */
 function ticketLandingLive(state: TicketLandingState): boolean {
   switch (state) {
@@ -554,4 +541,15 @@ export function ticketLandingCurrent(
   return newest !== undefined && ticketLandingLive(newest.state)
     ? newest
     : undefined;
+}
+
+/** A pull request's address as a forge names it, `owner/repository#number`,
+ * and its host where the address has no such shape. */
+export function ticketLandingLinkLabel(link: TicketDeliveryLink): string {
+  const named = /^\/([^/]+)\/([^/]+)\/pulls?\/([0-9]+)/u.exec(
+    new URL(link.href).pathname,
+  );
+  return named === null
+    ? link.host
+    : `${named[1] ?? ""}/${named[2] ?? ""}#${named[3] ?? ""}`;
 }

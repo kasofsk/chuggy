@@ -1,5 +1,5 @@
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
-import { cleanup, screen } from "@testing-library/react";
+import { cleanup, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -22,7 +22,9 @@ import {
   runResultReviewReport,
   runResultWorkSummary,
 } from "./runResultFixture.ts";
-import { settled, turned } from "./screenHarness.tsx";
+import { settled } from "./screenHarness.tsx";
+import { TicketRunPageAt } from "./ticketPageEveryTab.tsx";
+import type { TicketRunView } from "../app/core/ticketRuns.ts";
 import { elementScrollToStubbed } from "./scrolling.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
@@ -88,42 +90,56 @@ function artifactReads(drawn: RunPageDrawn): readonly string[] {
 }
 
 function rowLine(drawn: RunPageDrawn): Element | null {
-  return drawn.container.querySelector(".ledger-row .ledger-reason");
+  return drawn.container.querySelector(".ticket-runs-line");
 }
 
-/** Presses the row's expander named `name`, and answers what it opened. */
-async function opened(drawn: RunPageDrawn, name: string): Promise<Element> {
-  expect(artifactReads(drawn)).toEqual([]);
-  await turned(() => {
-    screen.getByRole("button", { name }).click();
-  });
+/** The run's own page, at the sub-tab a case names, once it has read what it
+ * reads. */
+async function runPage(
+  served: RunPageServed,
+  view?: TicketRunView,
+): Promise<RunPageDrawn> {
+  const drawn = await runPageDrawn(
+    atlas,
+    served,
+    <TicketRunPageAt task={1} {...(view === undefined ? {} : { view })} />,
+  );
   await settled();
-  const detail = drawn.container.querySelector(".ledger-detail");
-  if (detail === null) throw new Error(`${name} opened nothing`);
-  return detail;
+  return drawn;
+}
+
+/** The sub-tabs the run's page offers. */
+function views(): readonly (string | null)[] {
+  return within(screen.getByRole("navigation", { name: "Run" }))
+    .getAllByRole("link")
+    .map((link) => link.textContent);
+}
+
+function body(drawn: RunPageDrawn): Element {
+  const shown = drawn.container.querySelector(".ticket-run-body");
+  if (shown === null) throw new Error("no run drawn");
+  return shown;
 }
 
 const checkContent = runResultContent(
   JSON.stringify({ checks: runResultChecks }),
 );
 
-test("a failed review's row carries its report's opening, and its Report draws the whole", async () => {
-  const drawn = await runPageDrawn(
-    atlas,
-    failedRun(runResultFailed(runResultReviewReport), "Agent"),
+test("a failed review's row carries its report's opening, and its Summary draws the whole", async () => {
+  const served = failedRun(runResultFailed(runResultReviewReport), "Agent");
+  const listed = await runPageDrawn(atlas, served);
+  expect(Array.from(rowLine(listed)?.textContent ?? "")).toHaveLength(
+    runReasonCharsMax,
   );
-  const line = rowLine(drawn);
-  expect(Array.from(line?.textContent ?? "")).toHaveLength(runReasonCharsMax);
-  expect(line?.getAttribute("title")).toBe(runResultReviewReport);
-  expect(screen.queryByRole("button", { name: "Commands" })).toBeNull();
-  const detail = await opened(drawn, "Report");
-  expect(detail.textContent).toContain(runResultReviewReport);
+  cleanup();
+  const drawn = await runPage(served);
+  expect(views()).toEqual(["Summary", "Transcript", "Details"]);
+  expect(body(drawn).textContent).toContain(runResultReviewReport);
   expect(artifactReads(drawn)).toEqual([]);
 });
 
-test("a result listing a work summary draws it as markdown in Report, read only once opened", async () => {
-  const drawn = await runPageDrawn(
-    atlas,
+test("a result listing a work summary draws it as markdown under Summary", async () => {
+  const drawn = await runPage(
     failedRun(
       runResultFailed(runResultReviewReport, [runResultWorkSummary]),
       undefined,
@@ -135,29 +151,33 @@ test("a result listing a work summary draws it as markdown in Report, read only 
       },
     ),
   );
-  const detail = await opened(drawn, "Report");
+  const detail = body(drawn);
   expect(artifactReads(drawn)).toHaveLength(1);
   expect(detail.querySelectorAll("ul > li")).toHaveLength(2);
   expect(detail.querySelector("code")?.textContent).toBe("just check");
   expect(detail.textContent).not.toContain(runResultReviewReport);
 });
 
-test("a failed check's row carries its report's opening, and Commands lists every command with the failing one open", async () => {
-  const drawn = await runPageDrawn(
-    atlas,
-    failedRun(
-      runResultFailed(runResultCheckReport, [runResultCheckOutput]),
-      "Commands",
-      { artifactContent: checkContent },
-    ),
+test("a failed check's row carries its report's opening, and Output lists every command with the failing one open", async () => {
+  const served = failedRun(
+    runResultFailed(runResultCheckReport, [runResultCheckOutput]),
+    "Commands",
+    { artifactContent: checkContent },
   );
-  expect(rowLine(drawn)?.textContent).toBe(
+  const listed = await runPageDrawn(atlas, served);
+  expect(rowLine(listed)?.textContent).toBe(
     Array.from(runResultCheckReport)
       .slice(0, runReasonCharsMax - 1)
       .join("") + "…",
   );
-  expect(screen.queryByRole("button", { name: "Report" })).toBeNull();
-  const detail = await opened(drawn, "Commands");
+  expect(artifactReads(listed)).toEqual([]);
+  cleanup();
+  const summary = await runPage(served);
+  expect(views()).toEqual(["Summary", "Transcript", "Details", "Output"]);
+  expect(body(summary).textContent).toContain(runResultCheckReport);
+  expect(artifactReads(summary)).toEqual([]);
+  cleanup();
+  const detail = body(await runPage(served, "Output"));
   const rows = Array.from(detail.querySelectorAll("li[data-end]"));
   expect(rows.map((row) => row.getAttribute("data-end"))).toEqual([
     "Passed",
@@ -175,8 +195,7 @@ test("a failed check's row carries its report's opening, and Commands lists ever
 
 test("a check whose last command was cut says so and draws the report beneath it", async () => {
   const [first, last] = runResultChecks;
-  const drawn = await runPageDrawn(
-    atlas,
+  const drawn = await runPage(
     failedRun(
       runResultFailed(runResultCheckReport, [runResultCheckOutput]),
       "Commands",
@@ -186,59 +205,51 @@ test("a check whose last command was cut says so and draws the report beneath it
         ),
       },
     ),
+    "Output",
   );
-  const detail = await opened(drawn, "Commands");
-  const failing = detail.querySelector('li[data-end="Failed"]');
+  const failing = body(drawn).querySelector('li[data-end="Failed"]');
   const texts = Array.from(failing?.querySelectorAll("p") ?? []).map(
     (paragraph) => paragraph.textContent,
   );
   expect(texts).toEqual(["End cut", runResultCheckReport]);
 });
 
-test("a check whose commands are not listed, are refused or do not parse gets Report and no command", async () => {
+test("a check whose commands are not listed, are refused or do not parse offers no Output, and its Summary is its report", async () => {
   const listed = runResultFailed(runResultCheckReport, [runResultCheckOutput]);
-  const unlisted = await runPageDrawn(
-    atlas,
+  const unlisted = await runPage(
     failedRun(runResultFailed(runResultCheckReport), "Commands"),
+    "Output",
   );
-  const drawnUnlisted = await opened(unlisted, "Report");
-  expect(drawnUnlisted.textContent).toContain(runResultCheckReport);
+  expect(views()).not.toContain("Output");
+  expect(body(unlisted).textContent).toContain(runResultCheckReport);
   cleanup();
   for (const artifactContent of [
     undefined,
     runResultContent("check-comments ERROR"),
   ]) {
-    const drawn = await runPageDrawn(
-      atlas,
+    const drawn = await runPage(
       failedRun(
         listed,
         "Commands",
         artifactContent === undefined ? {} : { artifactContent },
       ),
+      "Output",
     );
-    const detail = await opened(drawn, "Commands");
-    expect(screen.queryByRole("button", { name: "Hide commands" })).toBeNull();
-    expect(detail.querySelector("li[data-end]")).toBeNull();
-    expect(detail.textContent).toContain(runResultCheckReport);
-    await turned(() => {
-      screen.getByRole("button", { name: "Hide report" }).click();
-    });
-    expect(screen.queryByRole("button", { name: "Commands" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Report" })).not.toBeNull();
+    expect(views()).not.toContain("Output");
+    expect(body(drawn).querySelector("li[data-end]")).toBeNull();
+    expect(body(drawn).textContent).toContain(runResultCheckReport);
     cleanup();
   }
 });
 
-test("a row with no carrier is read as an agent's, whatever its result lists", async () => {
-  await runPageDrawn(
-    atlas,
+test("a run with no carrier is read as an agent's, whatever its result lists", async () => {
+  await runPage(
     failedRun(
       runResultFailed(runResultCheckReport, [runResultCheckOutput]),
       undefined,
     ),
   );
-  expect(screen.getByRole("button", { name: "Report" })).not.toBeNull();
-  expect(screen.queryByRole("button", { name: "Commands" })).toBeNull();
+  expect(views()).not.toContain("Output");
 });
 
 test("a row whose worker left a reason draws that reason and no report line", async () => {
@@ -258,16 +269,15 @@ test("a row whose worker left a reason draws that reason and no report line", as
     },
     error: { read: "Content", content: reason },
   });
-  const lines = drawn.container.querySelectorAll(".ledger-reason");
-  expect(Array.from(lines, (line) => line.textContent)).toEqual([reason]);
+  expect(rowLine(drawn)?.textContent).toBe(reason);
+  expect(drawn.container.textContent).not.toContain(runResultCheckReport);
 });
 
-test("a result with no report draws no line and no Report", async () => {
-  const drawn = await runPageDrawn(
-    atlas,
-    failedRun(runResultFailed(undefined), "Agent"),
-  );
-  expect(rowLine(drawn)).toBeNull();
-  expect(screen.queryByRole("button", { name: "Report" })).toBeNull();
-  expect(screen.getByRole("button", { name: "Details" })).not.toBeNull();
+test("a result with no report draws no line, and its Summary says it has none", async () => {
+  const served = failedRun(runResultFailed(undefined), "Agent");
+  const listed = await runPageDrawn(atlas, served);
+  expect(rowLine(listed)?.textContent).toBe("");
+  cleanup();
+  const drawn = await runPage(served);
+  expect(body(drawn).textContent).toBe("No summary");
 });

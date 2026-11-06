@@ -4,7 +4,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
-import ledgerSheet from "../app/browser/ui/Ledger.css?raw";
+import ticketSheet from "../app/browser/ticket/ticket.css?raw";
 import {
   runAttempt,
   runDigest,
@@ -23,6 +23,8 @@ import { frame } from "./streamDouble.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
+import { TicketRunPageAt } from "./ticketPageEveryTab.tsx";
+import type { TicketRunView } from "../app/core/ticketRuns.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -51,15 +53,32 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-/** The page with the first row's details open, which is where the run's
- * evidence is drawn. */
-async function ticketPage(served: RunPageServed): Promise<RunPageDrawn> {
-  const drawn = await runPageDrawn(atlas, served);
-  await turned(() => {
-    screen.getAllByRole("button", { name: "Details" })[0]?.click();
-  });
-  await settled();
-  return drawn;
+/**
+ * One run's own page and the Runs tab that lists it: its transcript, read as
+ * the run writes it, what it said of itself under Summary, and its one line
+ * on its row.
+ */
+
+/** The run's own page, on the sub-tab a case names. */
+function runPage(
+  served: RunPageServed,
+  view?: TicketRunView,
+): Promise<RunPageDrawn> {
+  return runPageDrawn(
+    atlas,
+    served,
+    <TicketRunPageAt task={1} {...(view === undefined ? {} : { view })} />,
+  );
+}
+
+/** The run's own page under Summary, what it says of itself. */
+function summaryOf(drawn: RunPageDrawn): string {
+  return drawn.container.querySelector(".ticket-run-body")?.textContent ?? "";
+}
+
+/** The run's one line on its row of the Runs tab. */
+function rowLine(drawn: RunPageDrawn): Element | null {
+  return drawn.container.querySelector(".ticket-runs-line");
 }
 
 const ticket = {
@@ -70,20 +89,40 @@ const ticket = {
   ...ticketInstants,
 };
 
+/** A settled result naming the attempt a case reported under. */
+function resultOf(
+  attempt: string,
+  over: Record<string, unknown> = {},
+): Record<string, unknown> {
+  return {
+    manifest: "m1",
+    attempt,
+    schemaVersion: 3,
+    digest: runDigest,
+    verdict: "Pass",
+    recordedAt: "2026-08-27T00:01:00Z",
+    artifacts: [],
+    ...over,
+  };
+}
+
 /** The high-water mark rides the read a frame has the run's execution read
  * again by; a pane that re-read from the first batch would cost the transcript
  * twice over. */
 test("a rising high-water mark reads exactly the batches above what is held", async () => {
   let attempt = runAttempt("a1");
-  const rendered = await ticketPage({
-    ticket,
-    executions: [runSummary()],
-    execution: () => ({ ...runSummary(), attempts: [attempt] }),
-    transcripts: [
-      runTranscriptPage([1, 2], false),
-      runTranscriptPage([3, 4], false),
-    ],
-  });
+  const rendered = await runPage(
+    {
+      ticket,
+      executions: [runSummary()],
+      execution: () => ({ ...runSummary(), attempts: [attempt] }),
+      transcripts: [
+        runTranscriptPage([1, 2], false),
+        runTranscriptPage([3, 4], false),
+      ],
+    },
+    "Transcript",
+  );
   expect(transcriptReads(rendered.reads)).toEqual(["?after=0"]);
 
   attempt = runAttempt("a1", {
@@ -111,30 +150,25 @@ test("a rising high-water mark reads exactly the batches above what is held", as
   await settled();
 
   expect(transcriptReads(rendered.reads)).toEqual(["?after=0", "?after=2"]);
-  const transcriptPane = screen.getByRole("region", { name: "transcript" });
-  expect(transcriptPane.textContent).toContain("batch 4");
-  expect(transcriptPane.classList.contains("rounded-3")).toBe(true);
-  expect(transcriptPane.querySelector(".freshness")?.textContent).toMatch(
-    /^as of /,
-  );
+  expect(
+    screen.getByRole("group", { name: "Transcript" }).textContent,
+  ).toContain("batch 4");
 });
 
 /** Complete is the attempt no longer being live, not the pane having caught up,
  * and a pane that kept reading a sealed run would read forever. */
-test("a run whose attempt has ended draws complete and reads no further", async () => {
+test("a run whose attempt has ended reads no further", async () => {
   let attempt = runAttempt("a1");
-  const rendered = await ticketPage({
-    ticket,
-    executions: [runSummary()],
-    execution: () => ({ ...runSummary(), attempts: [attempt] }),
-    transcripts: [runTranscriptPage([1, 2], true)],
-  });
+  const rendered = await runPage(
+    {
+      ticket,
+      executions: [runSummary()],
+      execution: () => ({ ...runSummary(), attempts: [attempt] }),
+      transcripts: [runTranscriptPage([1, 2], true)],
+    },
+    "Transcript",
+  );
   expect(transcriptReads(rendered.reads)).toEqual(["?after=0"]);
-  expect(
-    screen
-      .getByRole("region", { name: "transcript" })
-      .querySelector(".freshness")?.textContent,
-  ).toBe("complete");
 
   attempt = runAttempt("a1", { endedAt: "2026-08-27T00:01:00Z" });
   await turned(() => {
@@ -151,10 +185,33 @@ test("a run whose attempt has ended draws complete and reads no further", async 
   expect(transcriptReads(rendered.reads)).toEqual(["?after=0"]);
 });
 
-/** The result belongs to the attempt it names, so a lost run must never be
- * drawn under another run's verdict. */
-test("a lost run says it ended without a result and draws no verdict", async () => {
-  const rendered = await ticketPage({
+test("a run's transcript says how many turns it took, and offers what it wrote as it was read", async () => {
+  const rendered = await runPage(
+    {
+      ticket,
+      executions: [runSummary()],
+      execution: { ...runSummary(), attempts: [runAttempt("a1")] },
+      transcripts: [runTranscriptPage([1, 2], true)],
+    },
+    "Transcript",
+  );
+  const body = rendered.container.querySelector(".ticket-run-body");
+  expect(body?.textContent).toContain("3 turns");
+  await turned(() => {
+    screen.getByRole("button", { name: "Raw JSON" }).click();
+  });
+  expect(body?.querySelector("pre")?.textContent).toBe(
+    [
+      '{"type":"assistant","message":{"content":[{"type":"text","text":"batch 1"}]}}',
+      '{"type":"assistant","message":{"content":[{"type":"text","text":"batch 2"}]}}',
+    ].join("\n"),
+  );
+});
+
+/** The result belongs to the attempt it names, so the run's summary is that
+ * result's report whatever attempt was lost before it. */
+test("a run relaunched after a loss draws the report its result recorded", async () => {
+  const rendered = await runPage({
     ticket,
     executions: [runSummary()],
     execution: {
@@ -168,58 +225,35 @@ test("a lost run says it ended without a result and draws no verdict", async () 
         }),
         runAttempt("a2", { number: 2 }),
       ],
-      result: {
-        manifest: "m1",
-        attempt: "a2",
-        schemaVersion: 3,
-        digest: runDigest,
-        verdict: "Pass",
-        recordedAt: "2026-08-27T00:01:00Z",
-        artifacts: [],
-        report: "the work passed",
-      },
+      result: resultOf("a2", { report: "the work passed" }),
     },
     transcripts: [runTranscriptPage([1, 2], true)],
   });
-  const lost = rendered.container.querySelector('[data-attempt="a1"]');
-  expect(lost?.textContent).toContain("No result · LeaseExpired");
-  expect(lost?.textContent).not.toContain("Pass");
-  const reported = rendered.container.querySelector('[data-attempt="a2"]');
-  expect(reported?.textContent).toContain("the work passed");
+  expect(summaryOf(rendered)).toBe("the work passed");
 });
 
 /** #363: a worker below the schema that carries a summary reports none, and a
  * blank pane says nothing about why. */
-test("a result older than the summary field draws the reason there is none", async () => {
-  const rendered = await ticketPage({
+test("a result with no report says the run has no summary", async () => {
+  const rendered = await runPage({
     ticket,
     executions: [runSummary()],
     execution: {
       ...runSummary(),
       attempts: [runAttempt("a1")],
-      result: {
-        manifest: "m1",
-        attempt: "a1",
-        schemaVersion: 2,
-        digest: runDigest,
-        verdict: "Pass",
-        recordedAt: "2026-08-27T00:01:00Z",
-        artifacts: [],
-      },
+      result: resultOf("a1", { schemaVersion: 2 }),
     },
     transcripts: [runTranscriptPage([1, 2], true)],
   });
-  expect(
-    rendered.container.querySelector('[data-attempt="a1"]')?.textContent,
-  ).toContain("No summary · older worker");
+  expect(summaryOf(rendered)).toBe("No summary");
 });
 
 /** The server's sum is over every attempt of every execution, including the
  * ones past the page this screen holds; a client sum would be quietly short. */
 test("the ticket's total is the figure the ticket read answered with", async () => {
-  const rendered = await ticketPage({
+  const rendered = await runPageDrawn(atlas, {
     ticket,
-    executions: [runSummary(), runSummary({ execution: "e2" })],
+    executions: [runSummary(), runSummary({ execution: "e2", task: 2 })],
     execution: { ...runSummary(), attempts: [runAttempt("a1")] },
     transcripts: [runTranscriptPage([1, 2], true)],
   });
@@ -234,50 +268,41 @@ test("the ticket's total is the figure the ticket read answered with", async () 
 /** A report the worker wrote as markdown must draw as markdown, and the
  * newline between two lines of the same paragraph must survive as a line
  * break rather than being folded into a run-on sentence. */
-test("a reported run draws its markdown and keeps its line breaks", async () => {
-  const rendered = await ticketPage({
+test("a reported run draws its markdown under Summary and keeps its line breaks", async () => {
+  const rendered = await runPage({
     ticket,
     executions: [runSummary()],
     execution: {
       ...runSummary(),
       attempts: [runAttempt("a1")],
-      result: {
-        manifest: "m1",
-        attempt: "a1",
-        schemaVersion: 3,
-        digest: runDigest,
-        verdict: "Pass",
-        recordedAt: "2026-08-27T00:01:00Z",
-        artifacts: [],
-        report: "**All good.**\nEvery check passed.",
-      },
+      result: resultOf("a1", { report: "**All good.**\nEvery check passed." }),
     },
     transcripts: [runTranscriptPage([1, 2], true)],
   });
-  const report = rendered.container.querySelector(".run-report");
+  const report = rendered.container.querySelector(
+    ".ticket-run-body .run-report",
+  );
   expect(report?.querySelector("strong")?.textContent).toBe("All good.");
   expect(report?.querySelector("br")).toBeTruthy();
   expect(report?.textContent).toBe("All good.Every check passed.");
 });
 
-/** An old worker wrote no evidence, and the pane it leaves is a stated absence
+/** An old worker wrote no evidence, and the page it leaves is a stated absence
  * rather than a blank one. */
 test("a run from a worker that wrote no evidence says so", async () => {
-  const rendered = await ticketPage({
-    ticket: { ticket: 11, phase: "Pending", sequence: 7, ...ticketInstants },
-    executions: [runSummary({ runTotals: undefined })],
-    execution: {
-      ...runSummary({ runTotals: undefined }),
-      attempts: [runAttempt("a1", { run: undefined })],
+  const rendered = await runPage(
+    {
+      ticket: { ticket: 11, phase: "Pending", sequence: 7, ...ticketInstants },
+      executions: [runSummary({ runTotals: undefined })],
+      execution: {
+        ...runSummary({ runTotals: undefined }),
+        attempts: [runAttempt("a1", { run: undefined })],
+      },
+      transcripts: [],
     },
-    transcripts: [],
-  });
-  expect(
-    rendered.container.querySelector('[data-attempt="a1"]')?.textContent,
-  ).toContain("Nothing recorded");
-  expect(
-    rendered.container.querySelector(".ticket-status")?.textContent,
-  ).toContain("—");
+    "Transcript",
+  );
+  expect(summaryOf(rendered)).toBe("No transcript");
   expect(transcriptReads(rendered.reads)).toEqual([]);
 });
 
@@ -320,9 +345,7 @@ function errorReads(reads: readonly string[]): readonly string[] {
 
 test("a run whose worker said why it ended shows the reason on its row", async () => {
   const rendered = await runPageDrawn(atlas, lostRun(killed));
-  const reason = rendered.container.querySelector(".ledger-row .ledger-reason");
-  expect(reason?.textContent).toBe(killed);
-  expect(reason?.getAttribute("title")).toBe(killed);
+  expect(rowLine(rendered)?.textContent).toBe(killed);
   expect(errorReads(rendered.reads)).toHaveLength(1);
 });
 
@@ -330,8 +353,7 @@ test("a run whose worker said why it ended shows the reason on its row", async (
  * draws those, and the worker's text is never asked for. */
 test("a run whose worker left no reason shows the settled result's line, and asks for none", async () => {
   const rendered = await runPageDrawn(atlas, lostRun(undefined));
-  const line = rendered.container.querySelector(".ledger-row .ledger-reason");
-  expect(line?.textContent).toBe(
+  expect(rowLine(rendered)?.textContent).toBe(
     "The attempt a pool claimed ended before it reported a result.",
   );
   expect(errorReads(rendered.reads)).toEqual([]);
@@ -341,9 +363,9 @@ test("a run whose worker left no reason shows the settled result's line, and ask
 test("a reason that reads as markup is drawn as text", async () => {
   const written = '<img src="x" onerror="alert(1)"><b>killed</b>';
   const rendered = await runPageDrawn(atlas, lostRun(written));
-  const reason = rendered.container.querySelector(".ledger-reason");
-  expect(reason?.textContent).toBe(written);
-  expect(reason?.querySelector("img, b")).toBeNull();
+  const line = rowLine(rendered);
+  expect(line?.textContent).toBe(written);
+  expect(line?.querySelector("img, b")).toBeNull();
 });
 
 /** A runner's placement failure, whose engine's own words start past the cut. */
@@ -351,14 +373,26 @@ const pullFailed =
   "Worker could not start: the runner could not pull ghcr.io/kasofsk/chuggy-worker:0.31.0 for this run. " +
   "The container engine answered: Error response from daemon: manifest for ghcr.io/kasofsk/chuggy-worker:0.31.0 not found: manifest unknown";
 
-/** A phone cannot hover, so the details are where a long reason is read. */
-test("a reason longer than a row's line is drawn whole in the run's details", async () => {
-  const rendered = await ticketPage(lostRun(pullFailed));
-  const line = rendered.container.querySelector(".ledger-row .ledger-reason");
-  expect(line?.textContent).not.toContain("manifest unknown");
-  expect(
-    rendered.container.querySelector('[data-attempt="a1"]')?.textContent,
-  ).toContain(pullFailed);
+/** A phone cannot hover, so the run's own page is where a long reason is read. */
+test("a reason longer than a row's line is drawn whole on the run's page", async () => {
+  const listed = await runPageDrawn(atlas, lostRun(pullFailed));
+  expect(rowLine(listed)?.textContent).not.toContain("manifest unknown");
+  cleanup();
+  const rendered = await runPage({
+    ...lostRun(pullFailed),
+    execution: {
+      ...runSummary({ outcome: "ProcessFailed" }),
+      attempts: [
+        runAttempt("a1", {
+          state: "Lost",
+          evidence: "RunFailed",
+          run: undefined,
+          error: { bytes: 70 },
+        }),
+      ],
+    },
+  });
+  expect(summaryOf(rendered)).toBe(pullFailed);
 });
 
 /** What a runner says of an assignment larger than its machine, as the worker core refuses one. */
@@ -390,18 +424,13 @@ const refusedRun: RunPageServed = (() => {
   };
 })();
 
-test("a run no runner could size names the size on its row and the runner's refusal beneath it, asking for no worker's text", async () => {
-  const rendered = await ticketPage(refusedRun);
-  const row = rendered.container.querySelector(".ledger-row");
-  expect(row?.querySelector(".ledger-note")?.textContent).toBe(
-    "8 CPUs, 16 GiB",
-  );
-  const reason = row?.querySelector(".ledger-reason");
-  expect(reason?.textContent).toBe(tooLarge);
-  expect(
-    rendered.container.querySelector('[data-attempt="a1"]')?.textContent,
-  ).toContain(tooLarge);
-  expect(errorReads(rendered.reads)).toEqual([]);
+test("a run no runner could size says the runner's refusal on its row and its page, asking for no worker's text", async () => {
+  const listed = await runPageDrawn(atlas, refusedRun);
+  expect(rowLine(listed)?.textContent).toBe(tooLarge);
+  cleanup();
+  const rendered = await runPage(refusedRun);
+  expect(summaryOf(rendered)).toBe(tooLarge);
+  expect(errorReads([...listed.reads, ...rendered.reads])).toEqual([]);
 });
 
 /** What a runner says of an image it cannot run in, which it leaves as the
@@ -431,21 +460,9 @@ const imageRefusedRun: RunPageServed = (() => {
   };
 })();
 
-test("a run refused in its worker's own words draws them once in its details", async () => {
-  const rendered = await ticketPage(imageRefusedRun);
-  expect(
-    rendered.container.querySelector(".ledger-row .ledger-reason")?.textContent,
-  ).toBe(imageFault);
-  const details =
-    rendered.container.querySelector('[data-attempt="a1"]')?.textContent ?? "";
-  expect(details.split(imageFault)).toHaveLength(2);
-});
-
-test("the runs table scrolls itself rather than widening the run's details", async () => {
-  await ticketPage(lostRun(pullFailed));
-  const table = screen.getByRole("table", { name: "Runs" });
-  expect(table.parentElement?.classList).toContain("overflow-x-auto");
-  expect(table.parentElement?.classList).toContain("max-w-full");
+test("a run refused in its worker's own words draws them once on its page", async () => {
+  const rendered = await runPage(imageRefusedRun);
+  expect(summaryOf(rendered).split(imageFault)).toHaveLength(2);
 });
 
 function styleRules(list: CSSRuleList): readonly CSSStyleRule[] {
@@ -458,35 +475,23 @@ function styleRules(list: CSSRuleList): readonly CSSStyleRule[] {
   );
 }
 
-/** Every value the ledger's sheet, at any width, gives one element for one property. */
-function ledgerDeclared(element: Element, property: string): readonly string[] {
+/** Every value the ticket page's sheet, at any width, gives one element for one property. */
+function ticketDeclared(element: Element, property: string): readonly string[] {
   const sheet = new CSSStyleSheet();
-  sheet.replaceSync(ledgerSheet);
+  sheet.replaceSync(ticketSheet);
   return styleRules(sheet.cssRules).flatMap((rule) => {
     const value = rule.style.getPropertyValue(property);
     return value !== "" && element.matches(rule.selectorText) ? [value] : [];
   });
 }
 
-/**
- * Whether the line then breaks before a phone's edge is a browser's to say,
- * and no suite here runs one; what this holds is that the ledger's sheet asks
- * for no single line, on the reason or anything it inherits from.
- */
-test("nothing in the ledger's sheet holds a row's reason to one line", async () => {
+/** The row is a glance and the run's page is where the whole is read, so a
+ * line is clipped rather than wrapped at every width. */
+test("a row's line is held to one line and clipped", async () => {
   const rendered = await runPageDrawn(atlas, lostRun(killed));
-  const reason = rendered.container.querySelector(".ledger-row .ledger-reason");
-  expect(reason).not.toBeNull();
-  for (let at = reason; at !== null; at = at.parentElement) {
-    for (const value of ledgerDeclared(at, "white-space"))
-      expect(["normal", "pre-wrap", "pre-line", "break-spaces"]).toContain(
-        value,
-      );
-    for (const property of ["text-wrap", "text-wrap-mode"])
-      expect(ledgerDeclared(at, property)).not.toContain("nowrap");
-  }
-  if (reason === null) return;
-  for (const property of ["text-overflow", "line-clamp", "-webkit-line-clamp"])
-    expect(ledgerDeclared(reason, property), property).toEqual([]);
-  expect(ledgerDeclared(reason, "overflow-wrap")).toContain("anywhere");
+  const line = rowLine(rendered);
+  if (line === null) throw new Error("no row line drawn");
+  expect(ticketDeclared(line, "white-space")).toEqual(["nowrap"]);
+  expect(ticketDeclared(line, "text-overflow")).toEqual(["ellipsis"]);
+  expect(ticketDeclared(line, "overflow")).toEqual(["hidden"]);
 });

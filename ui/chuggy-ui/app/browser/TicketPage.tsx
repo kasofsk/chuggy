@@ -73,13 +73,17 @@ import {
   LandingFragment,
   useTicketLandings,
 } from "./ticket/TicketLandings.tsx";
-import { useTicketExecutions } from "./ticket/TicketLedger.tsx";
+import { useTicketExecutions } from "./ticket/TicketRuns.tsx";
 import {
   ParkedOverrides,
   useParkedOverridesSave,
 } from "./ticket/ParkedOverrides.tsx";
-import { readValue, TicketPageHeldProvider } from "./ticket/TicketPageTabs.tsx";
-import type { TicketPageHeld, TicketReads } from "./ticket/TicketPageTabs.tsx";
+import {
+  readValue,
+  TicketPageHeldProvider,
+  TicketRunsWithinProvider,
+} from "./ticket/TicketPageHeld.tsx";
+import type { TicketPageHeld, TicketReads } from "./ticket/TicketPageHeld.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { useWorkRunner } from "./workRunner.tsx";
 
@@ -290,6 +294,7 @@ function TicketStanding(
   },
 ): ReactNode {
   const { actions, held } = useTicketStanding(props);
+  const [runsWithin, setRunsWithin] = useState(false);
   return (
     <>
       <TicketStandingHeader held={held} actions={actions} />
@@ -298,10 +303,13 @@ function TicketStanding(
         ticket={props.ticket}
         runCount={readValue(props.reads.pageState)?.executions.length}
         runCountCut={props.facts.truncated}
+        runsWithin={runsWithin}
       />
-      <TicketPageHeldProvider value={held}>
-        {props.children}
-      </TicketPageHeldProvider>
+      <TicketRunsWithinProvider value={setRunsWithin}>
+        <TicketPageHeldProvider value={held}>
+          {props.children}
+        </TicketPageHeldProvider>
+      </TicketRunsWithinProvider>
     </>
   );
 }

@@ -16,6 +16,9 @@ import {
   TicketUsageTab,
 } from "../app/browser/ticket/TicketPageTabs.tsx";
 import { ticketHeaderMenuLabel } from "../app/browser/ticket/TicketHeaderMenu.tsx";
+import { TicketLandingTab } from "../app/browser/ticket/TicketLandingPage.tsx";
+import { TicketRunAt } from "../app/browser/ticket/TicketRunPage.tsx";
+import type { TicketRunView } from "../app/core/ticketRuns.ts";
 import { turned } from "./screenHarness.tsx";
 
 export function TicketPageEveryTab(): ReactNode {
@@ -25,6 +28,27 @@ export function TicketPageEveryTab(): ReactNode {
       <TicketRunsTab />
       <TicketConfigurationTab />
       <TicketUsageTab />
+    </TicketPage>
+  );
+}
+
+/** The ticket page at one run's own page, on the sub-tab a case names. */
+export function TicketRunPageAt(props: {
+  readonly task: number;
+  readonly view?: TicketRunView;
+}): ReactNode {
+  return (
+    <TicketPage>
+      <TicketRunAt task={props.task} asked={props.view} />
+    </TicketPage>
+  );
+}
+
+/** The ticket page at its landing's own page. */
+export function TicketLandingPageAt(): ReactNode {
+  return (
+    <TicketPage>
+      <TicketLandingTab />
     </TicketPage>
   );
 }

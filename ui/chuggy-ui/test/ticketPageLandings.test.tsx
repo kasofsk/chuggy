@@ -34,7 +34,10 @@ import { ticketInstants } from "./ticketInstants.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { frame } from "./streamDouble.ts";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
-import { TicketPageEveryTab } from "./ticketPageEveryTab.tsx";
+import {
+  TicketLandingPageAt,
+  TicketPageEveryTab,
+} from "./ticketPageEveryTab.tsx";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -48,10 +51,10 @@ vi.mock("@tanstack/react-router", () => ({
 // jscpd:ignore-end -- the case's own doubles resume here
 
 /**
- * The ticket page over what the read of its landings answers: a row a landing
- * under the cycle it belongs to, the fragment on that cycle's header and on
- * the cycle a failed landing opened, the status bar while it finalizes, and
- * the read asked again on a frame and on a clock.
+ * The ticket page over what the read of its landings answers: a Landing row
+ * under the cycle it belongs to on the Runs tab, the landing's own page with
+ * every record the read holds, the status bar while it finalizes, and the
+ * read asked again on a frame and on a clock.
  */
 
 /**
@@ -103,6 +106,7 @@ let stream = openedStream();
 async function drawn(
   landings: Answering,
   served: Served = {},
+  page: ReactNode = <TicketPageEveryTab />,
 ): Promise<HTMLElement> {
   landingsAsked = [];
   const api = apiDouble({
@@ -130,7 +134,7 @@ async function drawn(
       }
       transport={stream.ports.fetch}
     >
-      <TicketPageEveryTab />
+      {page}
     </ScreenHarness>,
   );
   await settled();
@@ -139,7 +143,7 @@ async function drawn(
 
 function groupOf(container: HTMLElement, cycle: number): HTMLElement {
   const group = [
-    ...container.querySelectorAll<HTMLElement>(".ledger-group"),
+    ...container.querySelectorAll<HTMLElement>(".ticket-runs-cycle"),
   ].find(
     (held) =>
       held.querySelector("h3")?.textContent === `Cycle ${String(cycle)}`,
@@ -148,22 +152,23 @@ function groupOf(container: HTMLElement, cycle: number): HTMLElement {
   return group;
 }
 
-/** A cycle opened, since a superseded one is closed and mounts no rows. */
-async function groupOpened(
-  container: HTMLElement,
-  cycle: number,
-): Promise<HTMLElement> {
-  const group = groupOf(container, cycle);
-  await turned(() => {
-    (group as HTMLDetailsElement).open = true;
-    group.dispatchEvent(new Event("toggle"));
-  });
-  await settled();
-  return group;
+function summaryOf(group: HTMLElement): string | null | undefined {
+  return group.querySelector(".ticket-runs-outcome")?.textContent;
 }
 
-function summaryOf(group: HTMLElement): string | null | undefined {
-  return group.querySelector(".ledger-group-summary")?.textContent;
+/** What a cycle's Landing row on the Runs tab says, where it draws one. */
+function landingSaid(group: HTMLElement): string | undefined {
+  return [...group.querySelectorAll(".ticket-runs-rows > li")]
+    .find(
+      (row) =>
+        row.querySelector(".ticket-runs-name")?.textContent === "Landing",
+    )
+    ?.querySelector(".ticket-runs-line")?.textContent;
+}
+
+/** The landing's own page over what the read answers. */
+function landingPage(landings: Answering, served: Served = {}) {
+  return drawn(landings, served, <TicketLandingPageAt />);
 }
 
 /** The rows of every Landing block `scope` is or holds. */
@@ -189,11 +194,20 @@ function rowSaid(row: HTMLElement): readonly (string | null | undefined)[] {
   ];
 }
 
-/** Every cycle's header and every row the open ones draw, as text. */
+/** Every cycle's header and every row it draws, as text. */
 function cyclesSaid(container: HTMLElement): readonly string[] {
-  return [...container.querySelectorAll(".ledger-group")].map(
-    (group) => group.textContent ?? "",
+  return [...container.querySelectorAll(".ticket-runs-cycle")].map(
+    (group) => group.textContent,
   );
+}
+
+/** What the landing page's list says against one name. */
+function fieldOf(container: HTMLElement, name: string): HTMLElement {
+  const value = within(container).getByText(name, {
+    selector: "dt",
+  }).nextElementSibling;
+  if (!(value instanceof HTMLElement)) throw new Error(`no ${name} drawn`);
+  return value;
 }
 
 async function detailOpened(row: HTMLElement): Promise<HTMLElement> {
@@ -216,28 +230,29 @@ test("a ticket with no landings, and one whose read never answered, draws its cy
   cleanup();
   const unanswered = await drawn(() => new Promise<Response>(() => undefined));
   expect(cyclesSaid(unanswered)).toEqual(none);
-  expect(summaryOf(groupOf(unanswered, 2))).toBe(
-    "Work passed · Stage 2 of 2 passed",
+  expect(summaryOf(groupOf(unanswered, 2))).toBe("Passed");
+  expect(landingSaid(groupOf(unanswered, 3))).toBe("Not reached");
+  expect(landingSaid(groupOf(unanswered, 2))).toBeUndefined();
+  cleanup();
+  const page = await landingPage(() =>
+    answer({ landings: [], truncated: false }),
   );
-  expect(landingRows(unanswered)).toEqual([]);
-  expect(none.join(" ")).not.toContain("Landing");
+  expect(page.textContent).toContain("No landing");
 });
 
-test("a cycle whose landing failed on a conflict draws it failed, and the next cycle says it follows it", async () => {
+test("a cycle whose landing failed on a conflict draws it failed, and its page every record of it", async () => {
   const container = await drawn(conflicted68);
-  expect(summaryOf(groupOf(container, 2))).toBe(
-    "Work passed · Stage 2 of 2 passed · Landing failed",
+  expect(summaryOf(groupOf(container, 2))).toBe("Landing failed");
+  expect(landingSaid(groupOf(container, 2))).toBe("Failed");
+  cleanup();
+  const page = await landingPage(conflicted68);
+  expect(page.querySelector(".ticket-run-heading")?.textContent).toBe(
+    "LandingCycle 2Failed",
   );
-  const third = groupOf(container, 3);
-  const opened = third.querySelector(".ledger-note span.text-tone-fail");
-  expect(opened?.textContent?.trim()).toBe("After merge conflict");
-  expect(landingRows(third)).toEqual([]);
-
-  const second = await groupOpened(container, 2);
-  const [row] = landingRows(second);
+  const [row] = landingRows(page);
   if (row === undefined) throw new Error("no Landing row drawn");
   expect(rowSaid(row)).toEqual([
-    "Landing",
+    "Cycle 2",
     "Failed",
     "Merge conflict · 1 file",
   ]);
@@ -250,29 +265,33 @@ test("a cycle whose landing failed on a conflict draws it failed, and the next c
   expect(detail.textContent).not.toContain("More not shown");
 });
 
-test("a landed landing draws its pull request as a link under its host, and its commit short", async () => {
-  const container = await drawn(() => answer(landingsRead([landingLanded(3)])));
-  const [row] = landingRows(groupOf(container, 3));
-  if (row === undefined) throw new Error("no Landing row drawn");
-  expect(rowSaid(row).slice(0, 2)).toEqual(["Landing", "Landed"]);
-  const link = within(row).getByRole("link");
-  expect(link.textContent).toBe("forge.example.test");
+test("a landed landing draws its pull request as a link named as its forge names it, and its commits short", async () => {
+  const landed = () => answer(landingsRead([landingLanded(3)]));
+  const container = await drawn(landed);
+  expect(summaryOf(groupOf(container, 3))).toBe("Running work");
+  expect(landingSaid(groupOf(container, 3))).toBe("Landed");
+  cleanup();
+  const page = await landingPage(landed);
+  const link = within(fieldOf(page, "Pull request")).getByRole("link");
+  expect(link.textContent).toBe("acme/atlas#68");
   expect(link.getAttribute("href")).toBe(landingPullRequest);
   expect(link.getAttribute("rel")).toBe("noopener noreferrer");
-  expect(row.querySelector(".ledger-note .identity")?.textContent).toBe(
-    "e0f3a7c",
+  expect(fieldOf(page, "Pull request").textContent).toBe(
+    "acme/atlas#68 · Landed",
   );
-  expect(summaryOf(groupOf(container, 3))).toMatch(/ · Landed$/u);
+  expect(fieldOf(page, "Head").textContent).toBe("b51d9f0");
+  expect(fieldOf(page, "Merge commit").textContent).toBe("e0f3a7c");
+  expect(fieldOf(page, "Attempts").textContent).toBe("1");
 });
 
-test("a pull request a person merged at another head draws its merge commit and that the head was not evaluated on its row, and both heads in its detail", async () => {
-  const container = await drawn(() =>
+test("a pull request a person merged at another head draws its merge commit and that the head was not evaluated on its record, and both heads in its detail", async () => {
+  const page = await landingPage(() =>
     answer(landingsRead([landingMergedElsewhere(3)])),
   );
-  const [row] = landingRows(groupOf(container, 3));
+  const [row] = landingRows(page);
   if (row === undefined) throw new Error("no Landing row drawn");
   expect(rowSaid(row)).toEqual([
-    "Landing",
+    "Cycle 3",
     "Landed",
     "forge.example.testMergede0f3a7c·Unevaluated head",
   ]);
@@ -290,13 +309,13 @@ test("a pull request a person merged at another head draws its merge commit and 
 
 test("a landing held on its pull request being closed says closed, and offers the pull request", async () => {
   const since = new Date(Date.now() - 3 * 60_000 - 5_000).toISOString();
-  const container = await drawn(() =>
+  const page = await landingPage(() =>
     answer(landingsRead([landingClosed(3, since)])),
   );
-  const [row] = landingRows(groupOf(container, 3));
+  const [row] = landingRows(page);
   if (row === undefined) throw new Error("no Landing row drawn");
   expect(rowSaid(row)).toEqual([
-    "Landing",
+    "Cycle 3",
     "Held",
     "Held 3m · Closedforge.example.test",
   ]);
@@ -308,51 +327,53 @@ test("a landing held on its pull request being closed says closed, and offers th
 
 test("a pull request address that does not parse, or is not https, draws no link and leaves the cycles drawn", async () => {
   for (const url of ["not a url", "http://forge.example.test/pull/68"]) {
-    const container = await drawn(() =>
-      answer(landingsRead([landingLanded(3, url)])),
-    );
-    expect(container.querySelectorAll(".ledger-group")).toHaveLength(3);
-    expect(container.querySelector('.ledger a[href*="pull"]')).toBeNull();
+    const landed = () => answer(landingsRead([landingLanded(3, url)]));
+    const container = await drawn(landed);
+    expect(container.querySelectorAll(".ticket-runs-cycle")).toHaveLength(3);
+    cleanup();
+    const page = await landingPage(landed);
+    expect(page.querySelector('a[href*="pull"]')).toBeNull();
     cleanup();
   }
 });
 
-test("a held landing draws its age and hold on its row, and on the status bar while finalizing", async () => {
+test("a held landing draws its age and hold on its record, and on the status bar while finalizing", async () => {
   const since = new Date(Date.now() - 12 * 60_000 - 5_000).toISOString();
-  const container = await drawn(
-    () => answer(landingsRead([landingHeld(3, since)])),
-    { phase: "Finalization" },
-  );
-  const [row] = landingRows(groupOf(container, 3));
-  if (row === undefined) throw new Error("no Landing row drawn");
-  expect(rowSaid(row)).toEqual([
-    "Landing",
-    "Held",
-    "Held 12m · Target unreadable",
-  ]);
+  const held = () => answer(landingsRead([landingHeld(3, since)]));
+  const container = await drawn(held, { phase: "Finalization" });
   expect(container.querySelector(".ticket-status-line")?.textContent).toContain(
     "Held 12m · Target unreadable",
   );
-});
-
-test("a landing whose merge waits on the forge says so on its row, its detail and the status bar", async () => {
-  const checkedAt = new Date(Date.now() - 2 * 60_000 - 5_000).toISOString();
-  const container = await drawn(
-    () => answer(landingsRead([landingAwaitingMerge(3, checkedAt)])),
-    { phase: "Finalization" },
-  );
-  const [row] = landingRows(groupOf(container, 3));
+  cleanup();
+  const [row] = landingRows(await landingPage(held, { phase: "Finalization" }));
   if (row === undefined) throw new Error("no Landing row drawn");
   expect(rowSaid(row)).toEqual([
-    "Landing",
+    "Cycle 3",
+    "Held",
+    "Held 12m · Target unreadable",
+  ]);
+});
+
+test("a landing whose merge waits on the forge says so on its record, its detail and the status bar", async () => {
+  const checkedAt = new Date(Date.now() - 2 * 60_000 - 5_000).toISOString();
+  const waiting = () =>
+    answer(landingsRead([landingAwaitingMerge(3, checkedAt)]));
+  const container = await drawn(waiting, { phase: "Finalization" });
+  const line = container.querySelector<HTMLElement>(".ticket-status-line");
+  expect(line?.textContent).toContain("Blocked · behind · checked 2m ago");
+  cleanup();
+  const [row] = landingRows(
+    await landingPage(waiting, { phase: "Finalization" }),
+  );
+  if (row === undefined) throw new Error("no Landing row drawn");
+  expect(rowSaid(row)).toEqual([
+    "Cycle 3",
     "Waiting",
     "Blocked · behind · checked 2m agoforge.example.test",
   ]);
   expect(within(row).getByRole("link").getAttribute("href")).toBe(
     landingPullRequest,
   );
-  const line = container.querySelector<HTMLElement>(".ticket-status-line");
-  expect(line?.textContent).toContain("Blocked · behind · checked 2m ago");
   const detail = await detailOpened(row);
   expect(detail.textContent).toContain("Merge statebehind");
   expect(detail.textContent).toContain("Checked");
@@ -377,54 +398,52 @@ test("a landing is not on the status bar while the ticket is not finalizing", as
   expect(container.querySelector(".ticket-status-line a[href]")).toBeNull();
 });
 
-test("two landings of one cycle draw two rows in the read's order, the header naming the newer", async () => {
-  const container = await drawn(() =>
+test("two landings of one cycle draw two records in the read's order, the cycle naming the newer", async () => {
+  const twice = () =>
     answer(
       landingsRead([
         landingConflicted(3),
         { ...landingRunning(3), generation: 2 },
       ]),
-    ),
-  );
+    );
+  const container = await drawn(twice);
   const third = groupOf(container, 3);
-  expect(landingRows(third).map((row) => rowSaid(row)[1])).toEqual([
-    "Failed",
-    "Running",
-  ]);
-  expect(summaryOf(third)).toMatch(/ · Landing running$/u);
+  expect(summaryOf(third)).toBe("Running work");
+  expect(landingSaid(third)).toBe("Running");
+  cleanup();
+  expect(
+    landingRows(await landingPage(twice)).map((row) => rowSaid(row)[1]),
+  ).toEqual(["Failed", "Running"]);
 });
 
-test("a landing whose cycle the ledger does not hold is drawn after the cycles, naming its cycle", async () => {
-  const container = await drawn(() =>
-    answer(landingsRead([landingConflicted(2), landingRunning(4)])),
-  );
-  const ledger = container.querySelector<HTMLElement>(".ledger");
-  const last = ledger?.lastElementChild as HTMLElement;
-  expect(last.classList.contains("ledger-block")).toBe(true);
-  expect(landingRows(last).map((row) => rowSaid(row).slice(0, 2))).toEqual([
+test("a landing whose cycle the ledger does not hold is a record of the landing's page, naming its cycle", async () => {
+  const beyond = () =>
+    answer(landingsRead([landingConflicted(2), landingRunning(4)]));
+  const container = await drawn(beyond);
+  expect(container.querySelectorAll(".ticket-runs-cycle")).toHaveLength(3);
+  cleanup();
+  const page = await landingPage(beyond);
+  expect(landingRows(page).map((row) => rowSaid(row).slice(0, 2))).toEqual([
+    ["Cycle 2", "Failed"],
     ["Cycle 4", "Running"],
   ]);
-  expect(container.querySelectorAll(".ledger-group")).toHaveLength(3);
 });
 
-test("a ticket whose read carries no program draws every landing after its rows", async () => {
+test("a ticket whose read carries no program still draws its landing under its cycle", async () => {
   const container = await drawn(conflicted68, { program: false });
-  expect(container.querySelectorAll(".ledger-group")).toHaveLength(0);
-  expect(landingRows(container).map((row) => rowSaid(row).slice(0, 2))).toEqual(
-    [["Cycle 2", "Failed"]],
-  );
+  expect(landingSaid(groupOf(container, 2))).toBe("Failed");
 });
 
 test("a conflict list the read says was cut says so", async () => {
   const cut = landingConflicted(3);
-  const container = await drawn(() =>
+  const page = await landingPage(() =>
     answer(
       landingsRead([
         { ...cut, conflict: { paths: [landingConflictPath], truncated: true } },
       ]),
     ),
   );
-  const [row] = landingRows(groupOf(container, 3));
+  const [row] = landingRows(page);
   if (row === undefined) throw new Error("no Landing row drawn");
   expect((await detailOpened(row)).textContent).toContain("More not shown");
 });
@@ -451,7 +470,7 @@ test("a frame naming the ticket asks the read again, and one naming another does
   });
   await settled();
   expect(landingsAsked).toHaveLength(2);
-  expect(summaryOf(groupOf(container, 2))).toMatch(/Landing failed$/u);
+  expect(summaryOf(groupOf(container, 2))).toBe("Landing failed");
 });
 
 async function clockMoved(ms: number): Promise<void> {
@@ -467,6 +486,6 @@ test("the clock asks the read again, and a read that fails keeps the last answer
   await clockMoved(ticketLandingsPolledMs);
   await settled();
   expect(landingsAsked).toHaveLength(2);
-  expect(container.querySelectorAll(".ledger-group")).toHaveLength(3);
-  expect(summaryOf(groupOf(container, 2))).toMatch(/Landing failed$/u);
+  expect(container.querySelectorAll(".ticket-runs-cycle")).toHaveLength(3);
+  expect(summaryOf(groupOf(container, 2))).toBe("Landing failed");
 });

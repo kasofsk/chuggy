@@ -525,10 +525,3 @@ export function stageLabel(stage: number, stageCount: number): string {
 export function cycleLabel(ordinal: number): string {
   return `Cycle ${String(ordinal)}`;
 }
-
-/** The fabric's own relaunches of a container, which are below the cycle and are not rework. */
-export function relaunchesLabel(relaunches: number): string | undefined {
-  return relaunches < 1
-    ? undefined
-    : `Relaunched ${String(relaunches)}× by fabric`;
-}

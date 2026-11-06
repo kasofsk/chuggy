@@ -1,6 +1,6 @@
 /**
- * The ticket page over one execution and its run: the rows the ledger reads,
- * the execution its details read, the pages of its transcript, the
+ * The ticket page over one execution and its run: the rows the Runs tab reads,
+ * the execution its own page reads, the pages of its transcript, the
  * configuration snapshot its prompt is read from and the error its worker left.
  *
  * Shared by the suites about a run's evidence, its conversation and the Now
@@ -10,6 +10,7 @@
 
 import { QueryClient } from "@tanstack/react-query";
 import { render } from "@testing-library/react";
+import type { ReactNode } from "react";
 import { vi } from "vitest";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
@@ -240,6 +241,7 @@ function runPageRoute(
 export async function runPageDrawn(
   partition: PartitionIdentity,
   served: RunPageServed,
+  page: ReactNode = <TicketPageEveryTab />,
 ): Promise<RunPageDrawn> {
   const reads: string[] = [];
   const route = runPageRoute(partition, served);
@@ -260,7 +262,7 @@ export async function runPageDrawn(
       }
       transport={server.ports.fetch}
     >
-      <TicketPageEveryTab />
+      {page}
     </ScreenHarness>,
   );
   await settled();
