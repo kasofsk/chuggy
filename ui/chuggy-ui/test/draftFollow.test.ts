@@ -23,6 +23,9 @@ import {
   draftFollowStandingOf,
   draftFollowTaken,
   draftFollowTouched,
+  draftFollowEdited,
+  draftFollowNewest,
+  draftFollowSaveable,
 } from "../app/core/draftFollow.ts";
 import type { DraftFollowHeld } from "../app/core/draftFollow.ts";
 import type { CreationDraftHeld } from "../app/core/ticketCreationRun.ts";
@@ -286,4 +289,29 @@ test("each standing is said in a sentence of its own", () => {
   expect(draftFollowClosedSentence({ standing: "Deleted", ticket: 12 })).toBe(
     "Draft 12 was deleted, so there is nothing left here to release.",
   );
+});
+
+test("a form is edited where it says anything its base does not, whatever it was typed through", () => {
+  const base = { title: "Ship it", links: [] };
+  expect(draftFollowEdited(base, { ...base })).toBe(false);
+  expect(draftFollowEdited({ ...base, title: "Mine" }, base)).toBe(true);
+});
+
+test("the newer of an editor's own writes is the one it stands on, and either may be absent", () => {
+  const older = creationDraft;
+  const newer = { ...creationDraft, authoringVersion: 4 };
+  expect(draftFollowNewest(older, newer)).toBe(newer);
+  expect(draftFollowNewest(newer, older)).toBe(newer);
+  expect(draftFollowNewest(undefined, older)).toBe(older);
+  expect(draftFollowNewest(older, undefined)).toBe(older);
+  expect(draftFollowNewest(undefined, undefined)).toBeUndefined();
+});
+
+test("an editor saves only to a draft that has not closed under it", () => {
+  expect(draftFollowSaveable({ standing: "Current" })).toBe(true);
+  expect(
+    draftFollowSaveable({ standing: "Behind", current: creationDraft }),
+  ).toBe(true);
+  expect(draftFollowSaveable({ standing: "Released", ticket: 12 })).toBe(false);
+  expect(draftFollowSaveable({ standing: "Deleted", ticket: 12 })).toBe(false);
 });

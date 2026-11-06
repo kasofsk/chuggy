@@ -206,6 +206,7 @@ function ChatPaneThread(props: {
       named={props.named}
       page={props.page}
       clear={props.clear}
+      navigates
     />
   );
 }

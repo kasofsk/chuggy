@@ -7,13 +7,43 @@
 
 import { expect, test } from "vitest";
 
-import { consolePageSchema } from "../../../src/contract/consolePage.ts";
+import {
+  consolePageSchema,
+  consolePageSettingsSections,
+} from "../../../src/contract/consolePage.ts";
+import type { ConsolePage } from "../../../src/contract/consolePage.ts";
 import { consoleRouter } from "../app/browser/routes.tsx";
 import { chatPaneDefault, chatPaneOnPage } from "../app/core/chatPane.ts";
-import { consolePageLabel, consolePageOf } from "../app/core/consolePage.ts";
+import {
+  consolePageHref,
+  consolePageLabel,
+  consolePageOf,
+} from "../app/core/consolePage.ts";
 import { ticketCreationQueryOf } from "../app/core/ticketCreationQuery.ts";
 
 const partitionRouteId = "/$tenant/$project";
+
+/** One page of every variant the vocabulary has, the pages that name nothing
+ * on them first and each settings section among them. */
+const consolePagesEvery: readonly ConsolePage[] = [
+  { page: "Tickets" },
+  { page: "Inbox" },
+  { page: "Lead" },
+  { page: "Catalog" },
+  { page: "Repositories" },
+  { page: "Runners" },
+  { page: "Settings" },
+  { page: "Ticket", ticket: 41 },
+  { page: "TicketEdit", ticket: 41 },
+  { page: "TicketNew" },
+  { page: "TicketNew", from: 12 },
+  { page: "TicketNew", draft: 7 },
+  { page: "Repository", repository: "github.com/acme/atlas" },
+  ...consolePageSettingsSections.map((section): ConsolePage => ({
+    page: "Settings",
+    section,
+  })),
+];
 
 function matched(
   routeId: string,
@@ -138,39 +168,58 @@ test("every route the console hangs under a project and draws the pane on is a p
 });
 
 test("a page is named in the console's own words for it", () => {
-  expect(
-    [
-      { page: "Tickets" },
-      { page: "Ticket", ticket: 41 },
-      { page: "TicketEdit", ticket: 41 },
-      { page: "TicketNew" },
-      { page: "TicketNew", from: 12 },
-      { page: "TicketNew", draft: 7 },
-      { page: "Inbox" },
-      { page: "Lead" },
-      { page: "Catalog" },
-      { page: "Repositories" },
-      { page: "Repository", repository: "github.com/acme/atlas.git" },
-      { page: "Runners" },
-      { page: "Settings" },
-      { page: "Settings", section: "ProjectPlacement" },
-      { page: "Settings", section: "WorkspaceRunners" },
-    ].map((page) => consolePageLabel(consolePageSchema.parse(page))),
-  ).toEqual([
+  expect(consolePagesEvery.map(consolePageLabel)).toEqual([
     "Tickets",
+    "Inbox",
+    "Lead",
+    "Catalog",
+    "Repositories",
+    "Runners",
+    "Settings",
     "Ticket #41",
     "Edit ticket #41",
     "New ticket",
     "New ticket from #12",
     "New ticket · draft #7",
-    "Inbox",
-    "Lead",
-    "Catalog",
-    "Repositories",
     "Repository acme/atlas",
-    "Runners",
-    "Settings",
+    "Settings · Project · Lead",
     "Settings · Project · Placement",
+    "Settings · Project · Permissions",
+    "Settings · Workspace · People",
+    "Settings · Workspace · Accounts",
+    "Settings · Workspace · Permissions",
     "Settings · Workspace · My runners",
+    "Settings · Workspace · Usage",
+    "Settings · Site · Workspaces",
+    "Settings · Site · Permissions",
   ]);
+  expect(
+    consolePageLabel({
+      page: "Repository",
+      repository: "github.com/acme/atlas.git",
+    }),
+  ).toBe("Repository acme/atlas");
+});
+
+/** The address a thread's `navigate` moves the console to is the page it
+ * named, read back by the router the console runs. */
+test("every page's address is matched by the console's router as that page", () => {
+  for (const page of consolePagesEvery) {
+    const href = consolePageHref({ tenant: "acme", project: "at las" }, page);
+    const [path = "", query = ""] = href.split("?");
+    const search = consoleRouter.options.parseSearch(`?${query}`);
+    const leaf = consoleRouter.matchRoutes(path, search).at(-1);
+    expect(leaf?.params, href).toMatchObject({
+      tenant: "acme",
+      project: "at las",
+    });
+    expect(
+      consolePageOf(
+        leaf === undefined
+          ? undefined
+          : { routeId: leaf.routeId, params: leaf.params, search },
+      ),
+      href,
+    ).toEqual(page);
+  }
 });

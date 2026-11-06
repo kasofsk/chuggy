@@ -32,6 +32,10 @@ import type { Principal } from "./principal.ts";
 import type { ReleaseAuthoringProgram } from "../contract/authoring.ts";
 import type { ConfigurationOverrides } from "../contract/configurationOverrides.ts";
 import type { ConsolePage } from "../contract/consolePage.ts";
+import {
+  threadOfferReplyText,
+  type ThreadOfferReply,
+} from "../contract/threadOffers.ts";
 import type { EscalationKind, ResumePoint } from "../contract/rosters.ts";
 import { assertNever } from "../domain/assertNever.ts";
 import { phaseTags, type Phase } from "../domain/phase.ts";
@@ -219,6 +223,7 @@ import {
   checkedThreadMessage,
   checkedThreadMessageImages,
   checkedThreadMessagePage,
+  checkedThreadOfferReply,
   checkedThreadsLimit,
   threadEntry,
   threadMessageImages,
@@ -232,6 +237,7 @@ import {
   type ThreadMailboxQuery,
   type ThreadMessageImagesChecked,
   type ThreadMessageSent,
+  type ThreadOfferReplied,
   type ThreadOpenKey,
   type ThreadOpening,
   type ThreadRead,
@@ -977,6 +983,15 @@ export interface NativeWeb {
       readonly page?: ConsolePage;
     },
   ): Promise<ThreadMessageSent>;
+  replyThreadOffer(
+    principal: Principal,
+    partition: Partition,
+    input: {
+      readonly session: SessionId;
+      readonly turn: SessionTurnId;
+      readonly reply: ThreadOfferReply;
+    },
+  ): Promise<ThreadOfferReplied>;
   stopThreadTurn(
     principal: Principal,
     partition: Partition,
@@ -2267,6 +2282,46 @@ function nativeSendThreadMessageMethod(
 }
 
 /**
+ * The door a member answers an offer of their thread's through, held to what
+ * the message door holds a send to: `Mutate`, the route and what it needs of
+ * the member asked now, and the caller's own open thread. What it enqueues is
+ * the reply's document, which carries no seeding, page or image, and the
+ * operation the member confirmed is theirs to have run already, so the door
+ * writes nothing but the turn.
+ */
+function nativeReplyThreadOfferMethod(
+  access: ProjectAccess,
+  threads?: NativeThreadPorts,
+  routes?: SessionRouteReads,
+): NativeWeb["replyThreadOffer"] {
+  return async (principal, partition, input) => {
+    if ((await access.authorize(principal, partition, "Mutate")) === undefined)
+      return { result: "NotFound" };
+    const spend = await sessionSpendRoute(
+      access,
+      composedSessionRoutes(routes),
+      principal,
+      partition,
+      "Thread",
+    );
+    if (spend.spend !== "Admitted") return { result: spend.spend };
+    const ports = composedThreadPorts(threads);
+    const reply = checkedThreadOfferReply(input.reply);
+    return threadMessageSent(
+      await ports.threads.enqueueOfferReply({
+        partition,
+        principal,
+        session: input.session,
+        turn: input.turn,
+        input: threadOfferReplyText(reply),
+        route: spend.route,
+      }),
+      input.turn,
+    );
+  };
+}
+
+/**
  * The stop door, which is `Mutate` and asks for no route and no grant: a stop
  * spends nothing, so a member whose runner has gone or whose grant was taken
  * can still end the turn they started. Whose thread it is, whether it is open
@@ -2633,6 +2688,7 @@ export function nativeThreadMethods(
   | "threadTranscript"
   | "openThread"
   | "sendThreadMessage"
+  | "replyThreadOffer"
   | "stopThreadTurn"
   | "closeThread"
   | "renameThread"
@@ -2648,6 +2704,7 @@ export function nativeThreadMethods(
       routes,
       projectArtifacts,
     ),
+    replyThreadOffer: nativeReplyThreadOfferMethod(access, threads, routes),
     stopThreadTurn: nativeStopThreadTurnMethod(access, threads),
     closeThread: nativeCloseThreadMethod(access, threads),
   };

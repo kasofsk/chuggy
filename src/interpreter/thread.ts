@@ -237,6 +237,22 @@ export const threadConfigurationStanding =
 export const threadStoppedStanding =
   "Your owner can stop a turn part way, and the step that was running is then recorded as declined. A stopped turn is over: say nothing of it, or of what it left undone, unless your owner asks, and answer the message in front of you.";
 
+/**
+ * What a thread is told of moving its owner's console. The console follows a
+ * `navigate` only while its owner is still on the page their message was sent
+ * from and the call is in the newest turn, so the paragraph says when to call
+ * it as well as what it does.
+ */
+export const threadNavigateStanding =
+  "`navigate` moves your owner's console to one page: call it when your answer is about a page they are not on, such as a ticket you name or a draft you filed for them to look over, as the last thing a turn does. The console follows it only while your owner is still on the page they wrote from, so it is an offer of a page and never the only place your answer is.";
+
+/**
+ * What a thread is told of offering rather than doing, and of the turn its
+ * owner's answer to an offer arrives as.
+ */
+export const threadOfferStanding =
+  "`offer_release` and `offer_revoke` put one release or one revocation in front of your owner as a card they confirm or decline, at the authoring version or the revision you name: offer instead of doing where your owner asked to see it first or has not yet said yes. An `OfferReply` turn is their answer to one of your offers, naming the call, whether they confirmed or declined, and what the action came to: act on it as their word, say what became of it, and never do a declined action some other way.";
+
 /** What a thread is told about itself, beside the project's own North Star and
  * standing rules. */
 function threadObjectives(
@@ -261,6 +277,11 @@ ${threadConfigurationStanding}`,
     `# When a turn was stopped
 
 ${threadStoppedStanding}`,
+    `# What you put in front of your owner
+
+${threadNavigateStanding}
+
+${threadOfferStanding}`,
     `# How to name a ticket
 
 ${ticketReferenceInstruction}`,

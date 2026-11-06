@@ -25,14 +25,16 @@
  * The pane is told which page it is drawn with, so a message names the page
  * its reader is looking at: the one beside it, or below two columns, where an
  * open pane is the whole body, the one under it. A pane given the whole of a
- * frame that divides is told none.
+ * frame that divides is told none. A form a page draws over a server draft
+ * saves its edits through the shell before the pane sends, and a page the
+ * reader's thread names is one the pane moves the pages to.
  *
  * The banner is not decoration — it is the only place a reader learns that what
  * the screens below are showing is no longer arriving live. The toasts are the
  * only place a refusal is drawn whose screen the reader has left.
  */
 
-import { Outlet, useParams, useRouterState } from "@tanstack/react-router";
+import { Outlet, useParams } from "@tanstack/react-router";
 import { Separator } from "radix-ui";
 import { memo, useLayoutEffect, useMemo, useState } from "react";
 import type { ReactNode, RefObject } from "react";
@@ -53,7 +55,6 @@ import type {
 
 import type { ConsolePage } from "../../../../src/contract/consolePage.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
-import { consolePageOf } from "../core/consolePage.ts";
 import {
   chatPaneDragged,
   chatPaneKept,
@@ -89,7 +90,9 @@ import {
   syntaxWorkerOpened,
 } from "./ports.ts";
 import { consoleOutdatedOf } from "./consoleOutdated.ts";
+import { useConsolePageNow } from "./consolePageNow.ts";
 import { ConsoleWriteToasts } from "./consoleWrite.tsx";
+import { DraftSaveHeld } from "./editor/draftSaveBeforeSend.tsx";
 import { ChatPane } from "./shell/ChatPane.tsx";
 import { useChatPane } from "./shell/chatPaneHeld.ts";
 import { DetailsPane } from "./shell/DetailsPane.tsx";
@@ -454,23 +457,6 @@ function ShellBody(props: {
   );
 }
 
-/** The page the router matched last, as the contract names it. */
-function useShellPage(): ConsolePage | undefined {
-  return useRouterState({
-    select: (state) => {
-      const leaf = state.matches.at(-1);
-      return leaf === undefined
-        ? undefined
-        : consolePageOf({
-            routeId: leaf.routeId,
-            params: leaf.params,
-            search: state.location.search,
-          });
-    },
-    structuralSharing: true,
-  });
-}
-
 function ShellDrawn(props: {
   readonly partition: PartitionIdentity;
   readonly twoColumn: boolean;
@@ -479,7 +465,7 @@ function ShellDrawn(props: {
     chatPaneNarrowed(useChatPane().state, props.twoColumn),
     useParams({ strict: false }),
   );
-  const page = useShellPage();
+  const page = useConsolePageNow();
   return (
     <ShellFrame>
       <ShellHeader partition={props.partition} />
@@ -505,7 +491,9 @@ export function Shell(props: {
       <CopyProvider write={clipboardWritten}>
         <MarkdownProvider clock={elapsedMs} syntax={syntaxWorkerOpened}>
           <TicketReferenceWiring partition={props.partition}>
-            <ShellDrawn partition={props.partition} twoColumn={twoColumn} />
+            <DraftSaveHeld>
+              <ShellDrawn partition={props.partition} twoColumn={twoColumn} />
+            </DraftSaveHeld>
             <ConsoleWriteToasts />
           </TicketReferenceWiring>
         </MarkdownProvider>

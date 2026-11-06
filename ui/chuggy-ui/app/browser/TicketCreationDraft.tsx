@@ -9,15 +9,27 @@
  * submit goes back to, so a submit revises that draft and releases it. A
  * draft already released or deleted as the screen opens is said in place of
  * the form, there being nothing left of it to release. The YAML it keeps is
- * kept where an edit of the same draft keeps its own.
+ * kept where an edit of the same draft keeps its own. Edits the draft does
+ * not hold are saved to it before the reader's thread is sent a message.
  */
 
 import { useCallback, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
-import type { DraftResponse } from "../../../../src/contract/responses.ts";
-import { draftFollowClosedOf } from "../core/draftFollow.ts";
-import { creationRepositories } from "../core/ticketCreation.ts";
+import type {
+  DraftResponse,
+  ProjectRepositoryResponse,
+} from "../../../../src/contract/responses.ts";
+import {
+  draftFollowClosedOf,
+  draftFollowNewest,
+  draftFollowSaveable,
+} from "../core/draftFollow.ts";
+import {
+  creationBodyFrom,
+  creationFormProposed,
+  creationRepositories,
+} from "../core/ticketCreation.ts";
 import type {
   CreationFault,
   TicketCreationForm,
@@ -27,6 +39,7 @@ import {
   ticketDuplicateSeed,
 } from "../core/ticketDuplicate.ts";
 import type { TicketDuplicateSeed } from "../core/ticketDuplicate.ts";
+import { creationRevisionAt } from "../core/ticketCreationRun.ts";
 import { draftQuery } from "../core/ticketQueries.ts";
 import { usePanelState } from "./api.ts";
 import { PanelUnready } from "./DataPanel.tsx";
@@ -39,6 +52,15 @@ import {
   DraftFollowNotice,
   useDraftFollow,
 } from "./editor/DraftFollow.tsx";
+import {
+  draftSaveAttempt,
+  useDraftSaveOffered,
+} from "./editor/draftSaveBeforeSend.tsx";
+import type {
+  DraftSaveOffer,
+  DraftSaving,
+} from "./editor/draftSaveBeforeSend.tsx";
+import type { DraftFollowing } from "./editor/DraftFollow.tsx";
 import {
   CreationFormDrawn,
   CreationScreen,
@@ -78,6 +100,42 @@ function useDraftFormOf(
   );
 }
 
+/** The save the form offers its reader's thread while it holds edits: the
+ * whole of what it would revise the draft to, at the version it stands on. */
+function useCreationDraftSaving(
+  props: DraftFormProps,
+  repositories: readonly ProjectRepositoryResponse[],
+  follow: DraftFollowing<TicketCreationForm>,
+  held: Pick<DraftSaveOffer, "onFaults" | "onSaved"> & {
+    readonly busy: boolean;
+  },
+): DraftSaving {
+  const standing = props.standing ?? { mayOverride: true };
+  return useDraftSaveOffered({
+    ports: props.ports,
+    partition: props.partition,
+    ticket: props.current.ticket,
+    offered:
+      follow.edited && !held.busy && draftFollowSaveable(follow.standing),
+    assemble: () => {
+      const assembled = creationBodyFrom(
+        props.context.offers,
+        creationFormProposed(follow.form),
+        repositories,
+        standing,
+      );
+      return assembled.assembled === "Faults"
+        ? assembled
+        : {
+            assembled: "Body",
+            revision: creationRevisionAt(assembled.body, follow.version),
+          };
+    },
+    onFaults: held.onFaults,
+    onSaved: held.onSaved,
+  });
+}
+
 /** The form over the draft, following it as it is revised. */
 function CreationDraftForm(props: DraftFormProps): ReactNode {
   const [faults, setFaults] = useState<readonly CreationFault[]>([]);
@@ -95,12 +153,18 @@ function CreationDraftForm(props: DraftFormProps): ReactNode {
     (draft: DraftResponse): TicketCreationForm => seedOf(draft).form,
     [seedOf],
   );
+  const [saved, setSaved] = useState<DraftResponse>();
   const follow = useDraftFollow({
     current: props.current,
-    own: running.held?.draft,
+    own: draftFollowNewest(running.held?.draft, saved),
     busy: running.busy,
     formOf,
     storeKey,
+  });
+  const saving = useCreationDraftSaving(props, repositories, follow, {
+    busy: running.busy,
+    onFaults: setFaults,
+    onSaved: setSaved,
   });
   const dropped = ticketDuplicateDroppedSentence(seedOf(follow.base).dropped);
   const onto = { base: follow.base, version: follow.version };
@@ -119,9 +183,10 @@ function CreationDraftForm(props: DraftFormProps): ReactNode {
           follow.changed,
         ),
       }}
-      attempt={running.attempt}
+      attempt={draftSaveAttempt(saving.refusal, running.attempt)}
       busy={running.busy}
       onSubmit={(form) => {
+        saving.cleared();
         running.submit(form, onto);
       }}
       following={follow.authoring}

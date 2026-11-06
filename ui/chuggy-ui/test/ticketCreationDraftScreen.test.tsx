@@ -2,7 +2,8 @@
  * The new-ticket screen opened on a draft the project already holds: the form
  * seeded from it, a submit that revises and releases that same draft, and the
  * form and its YAML following the draft as frames revise it — redrawn while
- * untouched, and kept, with a choice, once typed into.
+ * untouched, and kept, with a choice, once typed into — and what was typed
+ * saved to the draft before the reader's thread is sent to.
  *
  * Revisions arrive as the project stream's own `Draft` frames, so what is
  * checked is the editor over the cache those frames write.
@@ -17,10 +18,8 @@ import type { ReactNode } from "react";
 import type { DraftResponse } from "../../../src/contract/responses.ts";
 import { ticketYamlStoreKey } from "../app/browser/editor/authoringGuards.tsx";
 import { TicketCreationFrom } from "../app/browser/TicketCreationStart.tsx";
-import {
-  draftFollowBehindSentence,
-  draftFollowClosedSentence,
-} from "../app/core/draftFollow.ts";
+import { DraftSaveHeld } from "../app/browser/editor/draftSaveBeforeSend.tsx";
+import { draftFollowClosedSentence } from "../app/core/draftFollow.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import {
   answer,
@@ -32,7 +31,6 @@ import {
   turned,
 } from "./screenHarness.tsx";
 import type { SentRequest } from "./screenHarness.tsx";
-import { frame } from "./streamDouble.ts";
 import type { StreamServer } from "./streamDouble.ts";
 import {
   creationBinding,
@@ -44,6 +42,14 @@ import {
 } from "./ticketCreationFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
+import {
+  FollowSendProbe,
+  followArrives,
+  followBehind,
+  followRetitled,
+  followSendsAsked,
+  followTitle,
+} from "./draftFollowScreen.tsx";
 
 const waiting = vi.hoisted(() => ({ held: true }));
 
@@ -176,6 +182,7 @@ interface Drawn {
 }
 
 async function drawDraft(draft: DraftResponse = twelve): Promise<Drawn> {
+  followSendsAsked.length = 0;
   const held = { draft };
   const scripted = scriptedFetch(routed(held));
   vi.stubGlobal("fetch", scripted.fetch);
@@ -188,35 +195,14 @@ async function drawDraft(draft: DraftResponse = twelve): Promise<Drawn> {
       }
       transport={server.ports.fetch}
     >
-      <TicketCreationFrom draft={12} />
+      <DraftSaveHeld>
+        <TicketCreationFrom draft={12} />
+        <FollowSendProbe />
+      </DraftSaveHeld>
     </ScreenHarness>,
   );
   await settled();
   return { sent: scripted.sent, server, held };
-}
-
-/** The agent's revision arriving as the stream's frame for it. */
-async function arrives(server: StreamServer, draft: DraftResponse) {
-  await turned(() => {
-    server.push(
-      frame("Draft", String(draft.authoringVersion), {
-        version: 1,
-        resource: "12",
-        representation: draft,
-      }),
-    );
-  });
-  await settled();
-}
-
-function title(): HTMLInputElement {
-  return screen.getByPlaceholderText<HTMLInputElement>(
-    "what this ticket is called",
-  );
-}
-
-function retitled(value: string): void {
-  fireEvent.change(title(), { target: { value } });
 }
 
 async function toYaml(): Promise<HTMLTextAreaElement> {
@@ -240,18 +226,14 @@ function submitButton(): HTMLButtonElement {
   });
 }
 
-function behind(): HTMLElement | null {
-  return screen.queryByText(draftFollowBehindSentence(12));
-}
-
 function writes(sent: readonly SentRequest[]): readonly SentRequest[] {
   return sent.filter((one) => one.method !== "GET");
 }
 
 test("a draft opens in the creation form, and its submit revises and releases that same draft", async () => {
   const { sent } = await drawDraft();
-  expect(title().value).toBe("Ship it");
-  retitled("Ship it now");
+  expect(followTitle().value).toBe("Ship it");
+  followRetitled("Ship it now");
   waiting.held = false;
   await press("Create ticket");
   const written = writes(sent);
@@ -272,46 +254,46 @@ test("a draft opens in the creation form, and its submit revises and releases th
 
 test("an untouched form is drawn again from each revision that arrives", async () => {
   const { server } = await drawDraft();
-  await arrives(server, revisedBy("Revised by the agent"));
-  expect(title().value).toBe("Revised by the agent");
-  expect(behind()).toBeNull();
+  await followArrives(server, revisedBy("Revised by the agent"));
+  expect(followTitle().value).toBe("Revised by the agent");
+  expect(followBehind()).toBeNull();
   expect(submitButton().disabled).toBe(false);
 });
 
 test("an untouched YAML view is written again from each revision that arrives", async () => {
   const { server } = await drawDraft();
   expect((await toYaml()).value).toContain("title: Ship it\n");
-  await arrives(server, revisedBy("Revised by the agent"));
+  await followArrives(server, revisedBy("Revised by the agent"));
   expect(yaml().value).toContain("title: Revised by the agent\n");
-  expect(behind()).toBeNull();
+  expect(followBehind()).toBeNull();
 });
 
 test("a touched form keeps what was typed, says the draft changed, and holds the submit back", async () => {
   const { server } = await drawDraft();
-  retitled("Mine");
-  await arrives(server, revisedBy("Revised by the agent"));
-  expect(title().value).toBe("Mine");
-  expect(behind()).not.toBeNull();
+  followRetitled("Mine");
+  await followArrives(server, revisedBy("Revised by the agent"));
+  expect(followTitle().value).toBe("Mine");
+  expect(followBehind()).not.toBeNull();
   expect(submitButton().disabled).toBe(true);
 });
 
 test("taking theirs drops what was typed for the revision", async () => {
   const { server } = await drawDraft();
-  retitled("Mine");
-  await arrives(server, revisedBy("Revised by the agent"));
+  followRetitled("Mine");
+  await followArrives(server, revisedBy("Revised by the agent"));
   await press("Take theirs");
-  expect(title().value).toBe("Revised by the agent");
-  expect(behind()).toBeNull();
+  expect(followTitle().value).toBe("Revised by the agent");
+  expect(followBehind()).toBeNull();
   expect(submitButton().disabled).toBe(false);
 });
 
 test("keeping one's own writes it over the revision rather than being refused behind it", async () => {
   const { sent, server } = await drawDraft();
-  retitled("Mine");
-  await arrives(server, revisedBy("Revised by the agent"));
+  followRetitled("Mine");
+  await followArrives(server, revisedBy("Revised by the agent"));
   await press("Keep mine");
-  expect(behind()).toBeNull();
-  expect(title().value).toBe("Mine");
+  expect(followBehind()).toBeNull();
+  expect(followTitle().value).toBe("Mine");
   waiting.held = false;
   await press("Create ticket");
   expect(writes(sent)[0]?.body).toMatchObject({
@@ -329,9 +311,9 @@ test("YAML typed over is kept under a revision, and taking theirs writes it agai
     fireEvent.change(editor, { target: { value: typed } });
   });
   expect(window.localStorage.getItem(`${storeKey}.version`)).toBe("3");
-  await arrives(server, revisedBy("Revised by the agent"));
+  await followArrives(server, revisedBy("Revised by the agent"));
   expect(yaml().value).toBe(typed);
-  expect(behind()).not.toBeNull();
+  expect(followBehind()).not.toBeNull();
   await press("Take theirs");
   expect(yaml().value).toContain("title: Revised by the agent\n");
   expect(yaml().value).toContain("ship the thing");
@@ -344,16 +326,16 @@ test("YAML this browser kept over an older revision opens behind the draft rathe
   window.localStorage.setItem(`${storeKey}.version`, "2");
   await drawDraft();
   expect(yaml().value).toBe("title: Kept from before\n");
-  expect(behind()).not.toBeNull();
+  expect(followBehind()).not.toBeNull();
   await press("Keep mine");
-  expect(behind()).toBeNull();
+  expect(followBehind()).toBeNull();
   expect(window.localStorage.getItem(`${storeKey}.version`)).toBe("3");
 });
 
 test("a draft released while the form is open says so, with the way to its ticket, and offers no submit", async () => {
   const { server } = await drawDraft();
-  retitled("Mine");
-  await arrives(
+  followRetitled("Mine");
+  await followArrives(
     server,
     revisedBy("Ship it", {
       authoringVersion: 3,
@@ -367,13 +349,13 @@ test("a draft released while the form is open says so, with the way to its ticke
     ),
   ).toBeTruthy();
   expect(screen.getByRole("link", { name: "Ticket 12" })).toBeTruthy();
-  expect(title().value).toBe("Mine");
+  expect(followTitle().value).toBe("Mine");
   expect(submitButton().disabled).toBe(true);
 });
 
 test("a draft deleted before a submit reads it is said as nothing here being released, and nothing is written", async () => {
   const { sent, held } = await drawDraft();
-  retitled("Mine");
+  followRetitled("Mine");
   held.draft = { ...held.draft, state: "Deleted" };
   waiting.held = false;
   await press("Create ticket");
@@ -387,7 +369,7 @@ test("a draft deleted before a submit reads it is said as nothing here being rel
 
 test("a draft deleted while the form is open says so, and offers no submit", async () => {
   const { server } = await drawDraft();
-  await arrives(server, revisedBy("Ship it", { state: "Deleted" }));
+  await followArrives(server, revisedBy("Ship it", { state: "Deleted" }));
   expect(
     screen.getByText(
       draftFollowClosedSentence({ standing: "Deleted", ticket: 12 }),
@@ -410,4 +392,39 @@ test("a draft already released as the screen opens is said in place of the form"
   expect(
     screen.queryByPlaceholderText("what this ticket is called"),
   ).toBeNull();
+});
+
+test("what was typed over a draft is saved to it at the version it stands on before a send, and nothing is released", async () => {
+  const { sent } = await drawDraft();
+  followRetitled("Ship it now");
+  await settled();
+  await press("probe send");
+  await settled();
+  expect(followSendsAsked).toStrictEqual([true]);
+  const written = writes(sent);
+  expect(written.map((one) => `${one.method} ${one.url}`)).toStrictEqual([
+    expect.stringMatching(/^PUT .*\/drafts\/12$/u),
+  ]);
+  expect(written[0]?.body).toMatchObject({
+    expectedVersion: 3,
+    brief: { title: "Ship it now", intent: "ship the thing" },
+  });
+  expect(followBehind()).toBeNull();
+});
+
+test("a form whose draft was released under it offers no save, and a send goes ahead writing nothing", async () => {
+  const { server, sent } = await drawDraft();
+  followRetitled("Mine");
+  await followArrives(
+    server,
+    revisedBy("Ship it", {
+      authoringVersion: 3,
+      state: "Released",
+      releasedAuthoringVersion: 3,
+    }),
+  );
+  await press("probe send");
+  await settled();
+  expect(followSendsAsked).toStrictEqual([true]);
+  expect(writes(sent)).toStrictEqual([]);
 });

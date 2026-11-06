@@ -109,7 +109,10 @@ import {
   conversationBoxRestored,
   conversationTurnStoppable,
 } from "../../core/conversation.ts";
-import type { ConversationExchange } from "../../core/conversation.ts";
+import type {
+  ConversationExchange,
+  ConversationWorkStep,
+} from "../../core/conversation.ts";
 import type { RunPrompt } from "../../core/runConfiguration.ts";
 import { ConversationComposer } from "./ConversationComposer.tsx";
 import type {
@@ -121,6 +124,7 @@ import {
   ConversationAnswerMessage,
   ConversationAskMessage,
   ConversationImage,
+  ConversationOffer,
   ConversationIndicated,
   ConversationLettingHeld,
   ConversationPaced,
@@ -604,6 +608,7 @@ function ConversationDrawn(props: {
   readonly named: string | undefined;
   readonly engine: boolean;
   readonly image: ConversationProps["image"];
+  readonly offer: ConversationProps["offer"];
   readonly children: ReactNode;
 }): ReactNode {
   const { named, engine } = props;
@@ -613,7 +618,11 @@ function ConversationDrawn(props: {
       <ConversationPaced.Provider value={props.paced}>
         <ConversationIndicated.Provider value={indicated}>
           <ConversationImage.Provider value={props.image}>
-            <ConversationLettingHeld>{props.children}</ConversationLettingHeld>
+            <ConversationOffer.Provider value={props.offer}>
+              <ConversationLettingHeld>
+                {props.children}
+              </ConversationLettingHeld>
+            </ConversationOffer.Provider>
           </ConversationImage.Provider>
         </ConversationIndicated.Provider>
       </ConversationPaced.Provider>
@@ -653,6 +662,9 @@ export interface ConversationProps {
   /** How the page draws an image a message named, by its identity. A page
    * that hands none draws no image of a message. */
   readonly image?: (artifact: string) => ReactNode;
+  /** How the page draws what a step of an exchange's work offers its reader.
+   * A page that hands none draws no offer. */
+  readonly offer?: (step: ConversationWorkStep) => ReactNode;
 }
 
 /** The foot of the column: the composer, with what the surface holds of its
@@ -741,6 +753,7 @@ export function Conversation(props: ConversationProps): ReactNode {
               named={conversationIndicatedNamed(activeExchanges, indicator)}
               engine={composed}
               image={props.image}
+              offer={props.offer}
             >
               <ConversationBody
                 reading={reading}

@@ -278,14 +278,11 @@ export function creationDraftDeletedSentence(held: CreationDraftHeld): string {
     : `${deleted} · Submit again for a new one`;
 }
 
-/** What a submit says of a ticket it found already made of its draft: one
- * this form created was released earlier, and one it follows was released
- * elsewhere. */
+/** What a submit says of a ticket it found already made of its draft,
+ * whether this form released it earlier or it was released elsewhere: what
+ * was typed after that release is not in it. */
 export function creationTicketExistsSentence(held: CreationDraftHeld): string {
-  const exists = `#${String(held.draft.ticket)} already exists`;
-  return held.origin === "Followed"
-    ? `${exists} · Changes here are not in it`
-    : `${exists} · Changes since are not in it`;
+  return `#${String(held.draft.ticket)} already exists · Changes since are not in it`;
 }
 
 /** How many offers one read draws, each being a request of its own. */
@@ -450,6 +447,43 @@ function creationRevisionOf(
     brief: body.brief,
     ...(body.overrides === undefined ? {} : { overrides: body.overrides }),
     ...(body.selection === undefined ? {} : { selection: body.selection }),
+  };
+}
+
+/** What a form following a draft revises it to, fenced at the version what
+ * is typed stands on. */
+export function creationRevisionAt(
+  body: CreationBody,
+  expectedVersion: number,
+): z.infer<typeof draftRevisionSchema> {
+  return { expectedVersion, ...creationRevisionOf(body) };
+}
+
+/** How saving a following form's edits to its draft ended: the revision it
+ * wrote, or why it wrote none. */
+export type DraftSaveEnded =
+  | { readonly saved: "Saved"; readonly draft: DraftResponse }
+  | { readonly saved: "Refused"; readonly reason: string };
+
+/**
+ * A following form's edits written to its draft and nothing more: no release,
+ * and a draft revised past the version the revision is fenced at refused
+ * rather than written over.
+ */
+export async function draftRevisionSaved(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  ticket: number,
+  revision: z.infer<typeof draftRevisionSchema>,
+): Promise<DraftSaveEnded> {
+  const revised = await apiReviseDraft(ports, partition, ticket, revision);
+  if (revised.outcome === "Ok") return { saved: "Saved", draft: revised.value };
+  return {
+    saved: "Refused",
+    reason:
+      revised.outcome === "Conflict" && revised.code === "DraftChanged"
+        ? creationDraftChangedSentence
+        : draftRevisionFailureSentence(revised),
   };
 }
 

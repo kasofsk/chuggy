@@ -1,7 +1,8 @@
 /**
  * The edit screen of a Pending ticket following its draft as frames revise
  * it: a form nobody touched drawn again, a touched one kept with a choice of
- * whose to keep, and a revision written over the draft revision it stands on.
+ * whose to keep, a revision written over the draft revision it stands on, and
+ * a touched one saved to its draft before the reader's thread is sent to.
  *
  * Revisions arrive as the project stream's own `Draft` frames, so what is
  * checked is the editor over the cache those frames write.
@@ -15,7 +16,8 @@ import type { ReactNode } from "react";
 
 import type { DraftResponse } from "../../../src/contract/responses.ts";
 import { TicketEdit } from "../app/browser/TicketEdit.tsx";
-import { draftFollowBehindSentence } from "../app/core/draftFollow.ts";
+import { DraftSaveHeld } from "../app/browser/editor/draftSaveBeforeSend.tsx";
+import { creationDraftChangedSentence } from "../app/core/ticketCreationRun.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import {
   answer,
@@ -27,18 +29,24 @@ import {
   turned,
 } from "./screenHarness.tsx";
 import type { SentRequest } from "./screenHarness.tsx";
-import { frame } from "./streamDouble.ts";
 import type { StreamServer } from "./streamDouble.ts";
 import {
-  creationBinding,
+  editReadAnswered,
   creationDeclared,
   creationDraft,
   creationInitialization,
-  creationListed,
   creationPartition,
 } from "./ticketCreationFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
+import {
+  FollowSendProbe,
+  followArrives,
+  followBehind,
+  followRetitled,
+  followSendsAsked,
+  followTitle,
+} from "./draftFollowScreen.tsx";
 
 const waiting = vi.hoisted(() => ({ held: true }));
 
@@ -118,9 +126,13 @@ function revisedBy(title: string): DraftResponse {
 
 /** The project's API over ticket 12, which a revision moves on and an update
  * settles as succeeded. */
-function routed(): (request: SentRequest) => Response {
+function routed(
+  revising: { readonly refused: boolean } = { refused: false },
+): (request: SentRequest) => Response {
   let draft = released;
   return ({ method, url, body }) => {
+    if (method === "PUT" && revising.refused)
+      return answer({ error: { code: "DraftChanged" } }, 409);
     if (method === "PUT") {
       draft = {
         ...draft,
@@ -152,17 +164,7 @@ function routed(): (request: SentRequest) => Response {
           creationDeclared("n-development", chuggy, "development"),
         ],
       });
-    if (url.endsWith("/repositories?reach=false"))
-      return answer({
-        repositories: [creationListed(creationBinding(chuggy), "Imported")],
-      });
-    if (url.includes("/drafts/")) return answer(draft);
-    if (url.includes("/tickets/")) return answer(ticket);
-    return answer({
-      partition: creationPartition,
-      sequence: 43,
-      tickets: [{ ...ticket, sequence: 43, revision: 3 }],
-    });
+    return editReadAnswered(url, { repository: chuggy, draft, ticket });
   };
 }
 
@@ -171,8 +173,11 @@ interface Drawn {
   readonly server: StreamServer;
 }
 
-async function drawEdit(): Promise<Drawn> {
-  const scripted = scriptedFetch(routed());
+async function drawEdit(
+  revising: { readonly refused: boolean } = { refused: false },
+): Promise<Drawn> {
+  followSendsAsked.length = 0;
+  const scripted = scriptedFetch(routed(revising));
   vi.stubGlobal("fetch", scripted.fetch);
   const server = openedStream();
   render(
@@ -183,39 +188,14 @@ async function drawEdit(): Promise<Drawn> {
       }
       transport={server.ports.fetch}
     >
-      <TicketEdit />
+      <DraftSaveHeld>
+        <TicketEdit />
+        <FollowSendProbe />
+      </DraftSaveHeld>
     </ScreenHarness>,
   );
   await settled();
   return { sent: scripted.sent, server };
-}
-
-/** The agent's revision arriving as the stream's frame for it. */
-async function arrives(server: StreamServer, draft: DraftResponse) {
-  await turned(() => {
-    server.push(
-      frame("Draft", String(draft.authoringVersion), {
-        version: 1,
-        resource: "12",
-        representation: draft,
-      }),
-    );
-  });
-  await settled();
-}
-
-function title(): HTMLInputElement {
-  return screen.getByPlaceholderText<HTMLInputElement>(
-    "what this ticket is called",
-  );
-}
-
-function retitled(value: string): void {
-  fireEvent.change(title(), { target: { value } });
-}
-
-function behind(): HTMLElement | null {
-  return screen.queryByText(draftFollowBehindSentence(12));
 }
 
 function submitButton(): HTMLButtonElement {
@@ -230,10 +210,10 @@ function revisedAt(sent: readonly SentRequest[]): unknown {
 
 test("an untouched edit is drawn again from each revision that arrives, and revises over the newest", async () => {
   const { sent, server } = await drawEdit();
-  expect(title().value).toBe("Ship it");
-  await arrives(server, revisedBy("Revised by the agent"));
-  expect(title().value).toBe("Revised by the agent");
-  expect(behind()).toBeNull();
+  expect(followTitle().value).toBe("Ship it");
+  await followArrives(server, revisedBy("Revised by the agent"));
+  expect(followTitle().value).toBe("Revised by the agent");
+  expect(followBehind()).toBeNull();
   waiting.held = false;
   await press("revise and release");
   expect(revisedAt(sent)).toMatchObject({
@@ -251,7 +231,7 @@ test("an untouched edit's YAML is written again from each revision that arrives"
     name: "Ticket YAML",
   });
   expect(editor.value).toContain("title: Ship it\n");
-  await arrives(server, revisedBy("Revised by the agent"));
+  await followArrives(server, revisedBy("Revised by the agent"));
   expect(
     screen.getByRole<HTMLTextAreaElement>("textbox", { name: "Ticket YAML" })
       .value,
@@ -260,28 +240,28 @@ test("an untouched edit's YAML is written again from each revision that arrives"
 
 test("a touched edit keeps what was typed, says the draft changed, and holds the submit back", async () => {
   const { server } = await drawEdit();
-  retitled("Mine");
-  await arrives(server, revisedBy("Revised by the agent"));
-  expect(title().value).toBe("Mine");
-  expect(behind()).not.toBeNull();
+  followRetitled("Mine");
+  await followArrives(server, revisedBy("Revised by the agent"));
+  expect(followTitle().value).toBe("Mine");
+  expect(followBehind()).not.toBeNull();
   expect(submitButton().disabled).toBe(true);
 });
 
 test("taking theirs in an edit drops what was typed for the revision", async () => {
   const { server } = await drawEdit();
-  retitled("Mine");
-  await arrives(server, revisedBy("Revised by the agent"));
+  followRetitled("Mine");
+  await followArrives(server, revisedBy("Revised by the agent"));
   await press("Take theirs");
-  expect(title().value).toBe("Revised by the agent");
-  expect(behind()).toBeNull();
+  expect(followTitle().value).toBe("Revised by the agent");
+  expect(followBehind()).toBeNull();
 });
 
 test("keeping one's own in an edit writes it over the revision it now stands on", async () => {
   const { sent, server } = await drawEdit();
-  retitled("Mine");
-  await arrives(server, revisedBy("Revised by the agent"));
+  followRetitled("Mine");
+  await followArrives(server, revisedBy("Revised by the agent"));
   await press("Keep mine");
-  expect(behind()).toBeNull();
+  expect(followBehind()).toBeNull();
   waiting.held = false;
   await press("revise and release");
   expect(revisedAt(sent)).toMatchObject({
@@ -289,4 +269,45 @@ test("keeping one's own in an edit writes it over the revision it now stands on"
     brief: { title: "Mine" },
   });
   expect(left.to).toStrictEqual(["/$tenant/$project/tickets/$ticket"]);
+});
+
+test("a touched edit is saved to its draft at the version it stands on before a send, and nothing is released", async () => {
+  const { sent } = await drawEdit();
+  followRetitled("Mine");
+  await settled();
+  await press("probe send");
+  await settled();
+  expect(followSendsAsked).toStrictEqual([true]);
+  expect(sent.filter((one) => one.method === "PUT")).toHaveLength(1);
+  expect(revisedAt(sent)).toMatchObject({
+    expectedVersion: 3,
+    brief: { title: "Mine" },
+  });
+  expect(sent.filter((one) => one.method === "POST")).toStrictEqual([]);
+  expect(followTitle().value).toBe("Mine");
+  await press("probe send");
+  await settled();
+  expect(followSendsAsked).toStrictEqual([true, true]);
+  expect(sent.filter((one) => one.method === "PUT")).toHaveLength(1);
+});
+
+test("an untouched edit saves nothing before a send", async () => {
+  const { sent } = await drawEdit();
+  await press("probe send");
+  await settled();
+  expect(followSendsAsked).toStrictEqual([true]);
+  expect(sent.filter((one) => one.method === "PUT")).toStrictEqual([]);
+});
+
+test("a save the draft refuses holds the send back, and the form says why where it says its own refusals", async () => {
+  const { sent } = await drawEdit({ refused: true });
+  followRetitled("Mine");
+  await settled();
+  await press("probe send");
+  await settled();
+  expect(followSendsAsked).toStrictEqual([false]);
+  expect(sent.filter((one) => one.method === "PUT")).toHaveLength(1);
+  expect(screen.getByText(creationDraftChangedSentence).className).toBe(
+    "panel-failed",
+  );
 });

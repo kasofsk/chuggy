@@ -98,6 +98,29 @@ export function draftFollowTouched<Form>(
   );
 }
 
+/** Whether what the form holds says anything its base does not, which is
+ * what a save of it would write. */
+export function draftFollowEdited<Form>(form: Form, initial: Form): boolean {
+  return !draftFollowAgrees(form, initial);
+}
+
+/** Whether an editor standing here may save what it holds to its draft:
+ * not one that closed under it, there being nothing left to write to. */
+export function draftFollowSaveable(standing: DraftFollowStanding): boolean {
+  return standing.standing === "Current" || standing.standing === "Behind";
+}
+
+/** The newer of two revisions of one draft, either of which may be absent:
+ * what an editor's own writes left it at. */
+export function draftFollowNewest(
+  a: DraftResponse | undefined,
+  b: DraftResponse | undefined,
+): DraftResponse | undefined {
+  if (a === undefined) return b;
+  if (b === undefined) return a;
+  return a.authoringVersion >= b.authoringVersion ? a : b;
+}
+
 /** A draft that is nothing left to release, read as a screen that would
  * release it opens. */
 export function draftFollowClosedOf(

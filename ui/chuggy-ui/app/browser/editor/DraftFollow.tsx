@@ -17,6 +17,7 @@ import {
   draftFollowBehindChoice,
   draftFollowBehindSentence,
   draftFollowClosedSentence,
+  draftFollowEdited,
   draftFollowed,
   draftFollowKept,
   draftFollowOpened,
@@ -45,6 +46,8 @@ export interface DraftFollowing<Form> {
   readonly version: number;
   readonly initial: Form;
   readonly form: Form;
+  /** Whether the form says anything its base does not. */
+  readonly edited: boolean;
   readonly changed: (form: Form) => void;
   readonly standing: DraftFollowStanding;
   readonly authoring: AuthoringFollow;
@@ -85,6 +88,7 @@ export function useDraftFollow<Form>(input: {
   const standing = draftFollowStandingOf(followed, observed, formOf);
   const { authored, base, version } = followed;
   const initial = useMemo(() => formOf(base), [formOf, base]);
+  const form = followed.edited ?? initial;
   useEffect(() => {
     if (authored) ticketYamlVersionKept(storeKey, version);
   }, [authored, version, storeKey]);
@@ -92,7 +96,8 @@ export function useDraftFollow<Form>(input: {
     base,
     version,
     initial,
-    form: followed.edited ?? initial,
+    form,
+    edited: draftFollowEdited(form, initial),
     changed: (form) => {
       setHeld((last) => ({ ...last, edited: form }));
     },

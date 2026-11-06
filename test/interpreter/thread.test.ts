@@ -31,7 +31,10 @@ import {
   parseThreadWake,
   threadCapabilitiesDefault,
   threadConfigurationStanding,
+  memberThreadSystemPrompt,
   threadImagesSection,
+  threadNavigateStanding,
+  threadOfferStanding,
   threadPurposeStanding,
   threadStoppedStanding,
   threadSeedingText,
@@ -378,6 +381,39 @@ test("the objectives tell a thread to say nothing of a turn its owner stopped", 
       prompt.indexOf(threadStandingRulesDefault),
     "what is said of a stop stands before the rules",
   );
+});
+
+/**
+ * A thread holding `ThreadOffer` is told what each of its tools does and when
+ * to call it, and what an `OfferReply` turn is and that it is to be acted on.
+ * A member's own chat holds none of them and is told none of it.
+ */
+test("the objectives tell a thread what navigate does and when, and to act on an OfferReply", () => {
+  const prompt = threadSystemPrompt({
+    partition,
+    owner: "geoff",
+    standingRules: threadStandingRulesDefault,
+  });
+
+  assert.match(
+    threadNavigateStanding,
+    /`navigate` moves your owner's console/u,
+  );
+  assert.match(threadNavigateStanding, /call it when/u);
+  assert.match(threadNavigateStanding, /still on the page they wrote from/u);
+  assert.match(threadOfferStanding, /`offer_release` and `offer_revoke`/u);
+  assert.match(threadOfferStanding, /An `OfferReply` turn is their answer/u);
+  assert.match(threadOfferStanding, /act on it as their word/u);
+  assert.ok(prompt.includes(threadNavigateStanding));
+  assert.ok(prompt.includes(threadOfferStanding));
+  assert.ok(
+    prompt.indexOf(threadPurposeStanding) <
+      prompt.indexOf(threadNavigateStanding),
+    "the purpose stands before what is said of the offers",
+  );
+  const member = memberThreadSystemPrompt({ tenant: "acme", owner: "geoff" });
+  assert.ok(!member.includes(threadNavigateStanding));
+  assert.ok(!member.includes(threadOfferStanding));
 });
 
 /**

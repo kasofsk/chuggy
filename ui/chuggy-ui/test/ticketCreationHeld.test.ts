@@ -894,7 +894,7 @@ test("a following form's endings say what became of the draft, not that this for
     "Draft 12 kept · Maybe released",
   );
   expect(creationTicketExistsSentence(held)).toBe(
-    "#12 already exists · Changes here are not in it",
+    "#12 already exists · Changes since are not in it",
   );
   expect(creationTicketExistsSentence(created)).toBe(
     "#12 already exists · Changes since are not in it",

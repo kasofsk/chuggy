@@ -111,6 +111,8 @@ import { useLeadTranscript } from "../lead/LeadTranscript.tsx";
 import type { LeadTranscriptWalk } from "../lead/LeadTranscript.tsx";
 import { useProjectAbilities, ViewOnlyNotice } from "../projectAbilities.tsx";
 import { useThreadImage } from "./threadImage.tsx";
+import { ThreadNavigateFollowed } from "./ThreadNavigate.tsx";
+import { useThreadOfferDrawn } from "./ThreadOfferCard.tsx";
 import { useThreadCommands } from "./threadCommands.tsx";
 import { useThreadLive } from "./threadLive.ts";
 import { useConversationMentions } from "./threadMentions.ts";
@@ -302,6 +304,9 @@ export function ThreadConversation(
     readonly page?: ConsolePage | undefined;
     /** Closes this thread and opens another, which `/clear` runs. */
     readonly clear?: ((session: string) => Promise<ThreadCleared>) | undefined;
+    /** Whether the console follows a page the thread names, which a surface
+     * drawn beside the pages it would move between asks for. */
+    readonly navigates?: boolean | undefined;
   },
 ): ReactNode {
   const sends = useThreadSend({
@@ -317,6 +322,7 @@ export function ThreadConversation(
     clear: props.clear,
   });
   const image = useThreadImage(props.partition);
+  const offer = useThreadOfferDrawn(props.partition, props.thread);
   const door = useThreadDoor(props.partition);
   const abilities = useProjectAbilities(props.partition);
   return (
@@ -329,6 +335,8 @@ export function ThreadConversation(
         threadFoot(abilities, { ...composer, mentions, commands })
       }
       image={image}
+      offer={offer}
+      navigates={props.navigates === true}
     />
   );
 }
@@ -364,6 +372,8 @@ function ThreadConversationAt(
       composer: ConversationComposerProps,
     ) => Pick<ConversationProps, "composer" | "unsendable">;
     readonly image?: (artifact: string) => ReactNode;
+    readonly offer?: ConversationProps["offer"];
+    readonly navigates?: boolean;
   },
 ): ReactNode {
   const { thread, home, sends, door } = props;
@@ -394,6 +404,13 @@ function ThreadConversationAt(
       data-fills-page
       className="min-h-0 min-w-0 flex-1"
     >
+      {props.navigates === true ? (
+        <ThreadNavigateFollowed
+          home={home}
+          thread={thread}
+          exchanges={exchanges}
+        />
+      ) : null}
       <Conversation
         exchanges={
           thread.mine && threadTurnsWait(door)
@@ -408,6 +425,7 @@ function ThreadConversationAt(
           : {})}
         reading={walked.reading && !read}
         {...(props.image === undefined ? {} : { image: props.image })}
+        {...(props.offer === undefined ? {} : { offer: props.offer })}
         paced
         pane
       />

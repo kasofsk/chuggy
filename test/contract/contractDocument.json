@@ -170,7 +170,8 @@
     "threadRename": "/api/v1/tenants/:tenant/projects/:project/threads/:session/rename",
     "threadHide": "/api/v1/tenants/:tenant/projects/:project/threads/:session/hide",
     "threadLive": "/api/v1/tenants/:tenant/projects/:project/threads/:session/live",
-    "threadTurnStop": "/api/v1/tenants/:tenant/projects/:project/threads/:session/turns/:turn/stop"
+    "threadTurnStop": "/api/v1/tenants/:tenant/projects/:project/threads/:session/turns/:turn/stop",
+    "threadOfferReplies": "/api/v1/tenants/:tenant/projects/:project/threads/:session/offer-replies"
   },
   "schemas": {
     "publicMutation": {
@@ -3067,6 +3068,60 @@
         }
       },
       "required": ["turn", "message"],
+      "additionalProperties": false
+    },
+    "threadOfferReply": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "turn": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reply": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "call": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]{1,128}$"
+                },
+                "decision": {
+                  "type": "string",
+                  "const": "Declined"
+                }
+              },
+              "required": ["call", "decision"],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "call": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9_-]{1,128}$"
+                },
+                "decision": {
+                  "type": "string",
+                  "const": "Confirmed"
+                },
+                "outcome": {
+                  "type": "string",
+                  "enum": ["Succeeded", "Refused", "Unsettled"]
+                },
+                "refusal": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z]{1,64}$"
+                }
+              },
+              "required": ["call", "decision", "outcome"],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": ["turn", "reply"],
       "additionalProperties": false
     },
     "chatThreadMessage": {

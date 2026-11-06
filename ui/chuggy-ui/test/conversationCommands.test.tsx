@@ -30,6 +30,7 @@ import { conversationCommandNames } from "../app/core/conversationCommand.ts";
 import type { ConversationCommandName } from "../app/core/conversationCommand.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { elementScrollToStubbed } from "./scrolling.ts";
+import { composerTyped } from "./composerTyped.ts";
 
 beforeEach(() => {
   resizeObserverStubbed();
@@ -74,25 +75,13 @@ function mounted(composed: Composed): void {
   render(<Conversation exchanges={[]} composer={composed.composer} />);
 }
 
-/** Typing, with the caret left where a member's would be. */
-async function typed(text: string): Promise<HTMLTextAreaElement> {
-  const box = screen.getByRole<HTMLTextAreaElement>("textbox");
-  fireEvent.change(box, { target: { value: text } });
-  box.setSelectionRange(text.length, text.length);
-  fireEvent.select(box);
-  await waitFor(() => {
-    expect(box.value).toBe(text);
-  });
-  return box;
-}
-
 function offered(): readonly string[] {
   return screen.queryAllByRole("option").map((item) => item.textContent ?? "");
 }
 
 test("a `/` at the start of the box offers every command", async () => {
   mounted(composerOf());
-  await typed("/");
+  await composerTyped("/");
   await waitFor(() => {
     expect(offered().map((item) => /^\/[a-z]+/u.exec(item)?.[0])).toStrictEqual(
       ["/status", "/usage", "/clear"],
@@ -102,14 +91,14 @@ test("a `/` at the start of the box offers every command", async () => {
 
 test("a `/` in the middle of a sentence offers nothing", async () => {
   mounted(composerOf());
-  await typed("see /");
+  await composerTyped("see /");
   expect(offered()).toHaveLength(0);
 });
 
 test("picking a command runs it, sends nothing, and empties the box", async () => {
   const composed = composerOf();
   mounted(composed);
-  const box = await typed("/us");
+  const box = await composerTyped("/us");
   await waitFor(() => {
     expect(offered()).toHaveLength(1);
   });
@@ -126,7 +115,7 @@ test("picking a command runs it, sends nothing, and empties the box", async () =
 test("Enter over a command the list is open on runs it", async () => {
   const composed = composerOf();
   mounted(composed);
-  const box = await typed("/status");
+  const box = await composerTyped("/status");
   await waitFor(() => {
     expect(offered()).toHaveLength(1);
   });
@@ -140,7 +129,7 @@ test("Enter over a command the list is open on runs it", async () => {
 test("Enter over a command the list is closed on runs it rather than sending it", async () => {
   const composed = composerOf();
   mounted(composed);
-  const box = await typed("/status ");
+  const box = await composerTyped("/status ");
   expect(offered()).toHaveLength(0);
   fireEvent.keyDown(box, { key: "Enter" });
   await waitFor(() => {
@@ -155,7 +144,7 @@ test("a command sent with an image held runs, and the image waits for the next m
     mediaTypes: ["image/png"],
   });
   mounted(composed);
-  const box = await typed("/status ");
+  const box = await composerTyped("/status ");
   fireEvent.paste(box, {
     clipboardData: {
       files: [
@@ -174,7 +163,7 @@ test("a command sent with an image held runs, and the image waits for the next m
   expect(composed.onSend).not.toHaveBeenCalled();
   expect(screen.queryAllByRole("img")).toHaveLength(1);
 
-  await typed("hi");
+  await composerTyped("hi");
   fireEvent.keyDown(box, { key: "Enter" });
   await waitFor(() => {
     expect(composed.onSend).toHaveBeenCalledTimes(1);
@@ -188,7 +177,7 @@ test("a command sent with an image held runs, and the image waits for the next m
 test("a `/` that is no command is sent as words", async () => {
   const composed = composerOf();
   mounted(composed);
-  const box = await typed("/etc/hosts is empty");
+  const box = await composerTyped("/etc/hosts is empty");
   fireEvent.keyDown(box, { key: "Enter" });
   await waitFor(() => {
     expect(composed.onSend).toHaveBeenCalledWith("/etc/hosts is empty", []);

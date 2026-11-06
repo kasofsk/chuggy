@@ -11,6 +11,7 @@ import {
 } from "./http.ts";
 import {
   threadMessageSchema,
+  threadOfferReplyRequestSchema,
   chatThreadMessageSchema,
   threadOpenSchema,
   threadRenameRequestSchema,
@@ -172,6 +173,12 @@ export const nativeHttpEndpoints = {
     method: "POST",
     path: nativeHttpRoutes.threadMessages,
     body: threadMessageSchema,
+    response: threadMessageAcceptedSchema,
+  },
+  replyThreadOffer: {
+    method: "POST",
+    path: nativeHttpRoutes.threadOfferReplies,
+    body: threadOfferReplyRequestSchema,
     response: threadMessageAcceptedSchema,
   },
   stopThreadTurn: {

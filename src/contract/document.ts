@@ -102,6 +102,9 @@ function nativeHttpContractDocumentSchemas(): unknown {
     threadMessage: nativeHttpContractDocumentInput(
       nativeHttpEndpoints.sendThreadMessage.body,
     ),
+    threadOfferReply: nativeHttpContractDocumentInput(
+      nativeHttpEndpoints.replyThreadOffer.body,
+    ),
     chatThreadMessage: nativeHttpContractDocumentInput(
       nativeHttpEndpoints.sendChatThreadMessage.body,
     ),

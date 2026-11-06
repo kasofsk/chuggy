@@ -134,6 +134,7 @@ import {
   parseLeadInquiry,
   parseThreadHide,
   parseThreadMessage,
+  parseThreadOfferReply,
   parseChatThreadMessage,
   parseThreadOpen,
   parseThreadRename,
@@ -352,6 +353,7 @@ type InitialNativeWeb = Pick<
   | "threadTranscript"
   | "openThread"
   | "sendThreadMessage"
+  | "replyThreadOffer"
   | "stopThreadTurn"
   | "closeThread"
   | "renameThread"
@@ -2427,6 +2429,24 @@ function registerThreadReads(
   );
 }
 
+/** The door a member answers an offer of their thread's through, answered as
+ * the message door answers. */
+function registerThreadOfferReplies(
+  app: FastifyInstance,
+  web: InitialNativeWeb,
+): void {
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.replyThreadOffer,
+    (request, principal, partition) =>
+      web.replyThreadOffer(principal, partition, {
+        session: registerEndpointSession(request),
+        ...parseThreadOfferReply(request.body),
+      }),
+    threadMessageResponse,
+  );
+}
+
 function registerThreadWrites(
   app: FastifyInstance,
   web: InitialNativeWeb,
@@ -2448,6 +2468,7 @@ function registerThreadWrites(
       }),
     threadMessageResponse,
   );
+  registerThreadOfferReplies(app, web);
   registerEndpoint(
     app,
     nativeHttpEndpoints.stopThreadTurn,

@@ -1,9 +1,9 @@
 /**
  * The reads of a project's sessions — its lead, its threads and a thread's
- * usage summed over its mailbox, the inquiries
- * put to it, the selector's decisions and the refusals it raised — each a list
- * a `Session` or `AgenticRefusal` frame stales, except the decisions, which no
- * frame names and the partition's refetch reaches.
+ * usage summed over its mailbox, the inquiries put to it, the selector's
+ * decisions and the refusals it raised — each a list a `Session` or
+ * `AgenticRefusal` frame stales, except the decisions, which no frame names
+ * and the partition's refetch reaches.
  */
 
 import { selectorHistoryLimitMax } from "../../../../src/contract/http.ts";

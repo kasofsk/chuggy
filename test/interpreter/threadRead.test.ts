@@ -21,6 +21,7 @@ import {
   threadTurnsAnsweredMax,
   threadsAnsweredMax,
 } from "../../src/contract/http.ts";
+import { threadOfferReplyText } from "../../src/contract/threadOffers.ts";
 import {
   asSessionId,
   asSessionTurnId,
@@ -158,6 +159,17 @@ function enqueueDouble(doubles: ThreadDoubles): ThreadStore["enqueueMessage"] {
   };
 }
 
+/** The offer reply door, recording the turn it took and the route it was stamped with. */
+function offerReplyDouble(
+  doubles: ThreadDoubles,
+): ThreadStore["enqueueOfferReply"] {
+  return (input) => {
+    doubles.calls.push(`offer-reply:${input.turn}:${input.input}`);
+    doubles.calls.push(`offer-reply-route:${input.route}`);
+    return Promise.resolve(doubles.enqueued);
+  };
+}
+
 /** The open door, recording what it was opened with and the key it was opened under. */
 function openDouble(doubles: ThreadDoubles): ThreadStore["open"] {
   return (input) => {
@@ -210,6 +222,7 @@ function threadStore(doubles: ThreadDoubles): ThreadStore {
       );
     },
     enqueueMessage: enqueueDouble(doubles),
+    enqueueOfferReply: offerReplyDouble(doubles),
     stopTurn: stopDouble(doubles),
     close: ({ session }) => {
       doubles.calls.push(`close:${session}`);
@@ -1142,6 +1155,96 @@ test("a page outside the vocabulary is refused for every other caller of the doo
     held.calls.filter((call) => call.startsWith("enqueue:")).length,
     0,
   );
+});
+
+test("a reply to an offer is enqueued through its own door as the reply's document, on the route it was admitted on", async () => {
+  const { web, held } = boundary();
+  const reply = {
+    call: "toolu_01",
+    decision: "Confirmed",
+    outcome: "Refused",
+    refusal: "AuthoringChanged",
+  } as const;
+
+  const sent = await web.replyThreadOffer(geoff, partition, {
+    session: mine,
+    turn: asSessionTurnId("thread-turn-2"),
+    reply,
+  });
+
+  assert.deepEqual(sent, {
+    result: "Sent",
+    turn: asSessionTurnId("thread-turn-2"),
+    ordinal: 7,
+  });
+  assert.ok(
+    held.calls.includes(
+      `offer-reply:thread-turn-2:${threadOfferReplyText(reply)}`,
+    ),
+  );
+  assert.ok(held.calls.includes("offer-reply-route:InCluster"));
+  assert.equal(
+    held.calls.filter((call) => call.startsWith("enqueue:")).length,
+    0,
+  );
+});
+
+test("a reply to an offer is a mutation that asks for the route a message does, and no door is reached without them", async () => {
+  const read = boundary({}, ["Read"]);
+  const unhosted = boundary({}, ["Read", "Mutate"]);
+  const input = {
+    session: mine,
+    turn: asSessionTurnId("thread-turn-2"),
+    reply: { call: "toolu_01", decision: "Declined" },
+  } as const;
+
+  assert.deepEqual(await read.web.replyThreadOffer(geoff, partition, input), {
+    result: "NotFound",
+  });
+  assert.deepEqual(read.held.calls, ["authorize:Mutate"]);
+  assert.deepEqual(
+    await unhosted.web.replyThreadOffer(geoff, partition, input),
+    { result: "HostedRunsNotGranted" },
+  );
+  for (const { held } of [read, unhosted])
+    assert.equal(
+      held.calls.find((call) => call.startsWith("offer-reply:")),
+      undefined,
+    );
+});
+
+test("a reply the contract does not read is refused for every caller of the door, and what the durable side refuses is answered as a message's refusal", async () => {
+  const { web, held } = boundary();
+
+  await assert.rejects(
+    web.replyThreadOffer(geoff, partition, {
+      session: mine,
+      turn: asSessionTurnId("thread-turn-2"),
+      reply: { call: "toolu 01", decision: "Declined" },
+    }),
+    RangeError,
+  );
+  assert.equal(
+    held.calls.find((call) => call.startsWith("offer-reply:")),
+    undefined,
+  );
+  for (const [enqueued, result] of [
+    ["NotYourThread", "NotYourThread"],
+    ["Closed", "Closed"],
+    ["NoThread", "NotFound"],
+  ] as const) {
+    const refused = boundary({ enqueued: { enqueued } });
+    assert.equal(
+      (
+        await refused.web.replyThreadOffer(geoff, partition, {
+          session: mine,
+          turn: asSessionTurnId("thread-turn-2"),
+          reply: { call: "toolu_01", decision: "Declined" },
+        })
+      ).result,
+      result,
+    );
+  }
 });
 
 /**

@@ -2056,9 +2056,12 @@ test("/clear while New's start is on its way closes and opens nothing", async ()
   styleless();
 });
 
-test("/clear in the box of a reader with no thread opens nothing, and sends nothing", async () => {
+/** The shell mounted over `served`, with the address of every post it is
+ * sent recorded. */
+async function mountedPostsRecorded(
+  served: typeof fetch,
+): Promise<readonly string[]> {
   const posts: string[] = [];
-  const served = threadServed([]);
   await mounted(viewportDeskEm, ((
     url: string,
     init?: { readonly method?: string },
@@ -2066,6 +2069,11 @@ test("/clear in the box of a reader with no thread opens nothing, and sends noth
     if (init?.method === "POST") posts.push(url);
     return served(url, init);
   }) as unknown as typeof fetch);
+  return posts;
+}
+
+test("/clear in the box of a reader with no thread opens nothing, and sends nothing", async () => {
+  const posts = await mountedPostsRecorded(threadServed([]));
   await commanded("/clear");
   expect(posts).toStrictEqual([]);
   expect(commandSaid()).toBe("/clear·No thread to clear");
@@ -2073,15 +2081,7 @@ test("/clear in the box of a reader with no thread opens nothing, and sends noth
 });
 
 test("/clear while the reader's thread answers closes nothing, and says why", async () => {
-  const posts: string[] = [];
-  const served = answeringThreadServed();
-  await mounted(viewportDeskEm, ((
-    url: string,
-    init?: { readonly method?: string },
-  ) => {
-    if (init?.method === "POST") posts.push(url);
-    return served(url, init);
-  }) as unknown as typeof fetch);
+  const posts = await mountedPostsRecorded(answeringThreadServed());
   await commanded("/clear");
   expect(posts).toStrictEqual([]);
   expect(commandSaid()).toBe("/clear·Thread is answering");

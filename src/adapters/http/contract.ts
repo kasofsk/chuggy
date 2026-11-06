@@ -14,6 +14,7 @@ import { z } from "zod";
 import { nativeHttpEndpoints } from "../../contract/endpoints.ts";
 import type { ConfigurationOverrides } from "../../contract/configurationOverrides.ts";
 import type { ConsolePage } from "../../contract/consolePage.ts";
+import type { ThreadOfferReply } from "../../contract/threadOffers.ts";
 
 import {
   resumeTicketCommand,
@@ -714,6 +715,16 @@ export function parseThreadMessage(body: unknown): {
     ...(value.images === undefined ? {} : { images: value.images }),
     ...(value.page === undefined ? {} : { page: value.page }),
   };
+}
+
+/** A member's reply to an offer of their thread's: the turn identity they
+ * minted, for the reason a message's is, and the reply. */
+export function parseThreadOfferReply(body: unknown): {
+  readonly turn: SessionTurnId;
+  readonly reply: ThreadOfferReply;
+} {
+  const value = nativeHttpEndpoints.replyThreadOffer.body.parse(body);
+  return { turn: asSessionTurnId(value.turn), reply: value.reply };
 }
 
 /**

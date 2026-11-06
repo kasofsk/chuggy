@@ -99,6 +99,14 @@ export { configurationSelectionSchema } from "./configurationSelection.ts";
 /** What `navigate` names as its argument: a page in the vocabulary the console names its own pages in. */
 export { consolePageSchema, type ConsolePage } from "./consolePage.ts";
 
+/** What `offer_release` and `offer_revoke` name as their arguments, which the console reads off the transcript to draw each offer. */
+export {
+  threadOfferReleaseSchema,
+  threadOfferRevokeSchema,
+  type ThreadOfferRelease,
+  type ThreadOfferRevoke,
+} from "./threadOffers.ts";
+
 /** What `fetch_image` checks its route's answer by: the media types a project's image is admitted under, and the encoding its bytes are answered in. */
 export { imageMediaTypes, projectArtifactEncoding } from "./http.ts";
 

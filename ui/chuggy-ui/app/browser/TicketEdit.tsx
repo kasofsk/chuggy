@@ -8,9 +8,11 @@
  * against the revision the ticket read carries, and the navigation back to the
  * ticket happens on a settled success alone. The form follows the draft as it
  * is revised elsewhere, and its revision is written over the draft revision it
- * stands on, so one that moved past it is refused rather than overwritten. A
- * ticket that has left Pending is not offered the form, because the update it
- * would send is refused.
+ * stands on, so one that moved past it is refused rather than overwritten.
+ * Edits the draft does not hold are saved to it, without a release, before
+ * the reader's thread is sent a message. A ticket that has left
+ * Pending is not offered the form, because the update it would send is
+ * refused.
  */
 
 import { useProjectAbilities } from "./projectAbilities.tsx";
@@ -37,6 +39,7 @@ import {
   creationContextQuery,
   draftInitializationQuery,
 } from "../core/configurationQueries.ts";
+import { draftFollowNewest, draftFollowSaveable } from "../core/draftFollow.ts";
 import { ticketRevisable } from "../core/ticketActions.ts";
 import {
   creationRepositories,
@@ -74,6 +77,14 @@ import {
   useAuthoringGuards,
 } from "./editor/authoringGuards.tsx";
 import { DraftFollowNotice, useDraftFollow } from "./editor/DraftFollow.tsx";
+import {
+  draftSaveAttempt,
+  useDraftSaveOffered,
+} from "./editor/draftSaveBeforeSend.tsx";
+import type {
+  DraftSaveOffer,
+  DraftSaving,
+} from "./editor/draftSaveBeforeSend.tsx";
 import type { DraftFollowing } from "./editor/DraftFollow.tsx";
 import { TicketAuthoring } from "./editor/TicketAuthoring.tsx";
 import { drawBytes } from "./ports.ts";
@@ -252,6 +263,7 @@ function useEditFollow(
   repositories: readonly ProjectRepositoryResponse[],
   running: EditSubmit,
   storeKey: string,
+  saved: DraftResponse | undefined,
 ): DraftFollowing<TicketCreationForm> {
   const attempt = running.attempt;
   const offers = props.offers;
@@ -261,11 +273,84 @@ function useEditFollow(
   );
   return useDraftFollow({
     current: props.subject.draft,
-    own: attempt.attempt === "Failed" ? attempt.held?.draft : undefined,
+    own: draftFollowNewest(
+      attempt.attempt === "Failed" ? attempt.held?.draft : undefined,
+      saved,
+    ),
     busy: running.busy,
     formOf,
     storeKey,
   });
+}
+
+/** The save the form offers its reader's thread while it holds edits: the
+ * revision its submit would write, at the version it stands on, and no
+ * update. */
+function useEditSaving(
+  props: EditFormProps,
+  repositories: readonly ProjectRepositoryResponse[],
+  follow: DraftFollowing<TicketCreationForm>,
+  held: Pick<DraftSaveOffer, "onFaults" | "onSaved"> & {
+    readonly busy: boolean;
+  },
+): DraftSaving {
+  const standing = props.standing ?? { mayOverride: true };
+  return useDraftSaveOffered({
+    ports: props.ports,
+    partition: props.partition,
+    ticket: props.subject.draft.ticket,
+    offered:
+      follow.edited && !held.busy && draftFollowSaveable(follow.standing),
+    assemble: () => {
+      const assembled = editRevisionFrom(
+        follow.base,
+        props.offers,
+        follow.form,
+        repositories,
+        standing,
+      );
+      return assembled.assembled === "Faults"
+        ? assembled
+        : {
+            assembled: "Body",
+            revision: { ...assembled.body, expectedVersion: follow.version },
+          };
+    },
+    onFaults: held.onFaults,
+    onSaved: held.onSaved,
+  });
+}
+
+/** The edit's form over its draft, and the save it offers, which moves what
+ * the form stands on as its own writes do. */
+function useEditFollowSaving(
+  props: EditFormProps,
+  repositories: readonly ProjectRepositoryResponse[],
+  held: { readonly running: EditSubmit; readonly storeKey: string },
+  onFaults: (faults: readonly CreationFault[]) => void,
+): {
+  readonly follow: DraftFollowing<TicketCreationForm>;
+  readonly saving: DraftSaving;
+  /** Submits the form over the revision it is drawn from, the last save's
+   * refusal said no more. */
+  readonly submit: (form: TicketCreationForm) => void;
+} {
+  const [saved, setSaved] = useState<DraftResponse>();
+  const { running, storeKey } = held;
+  const follow = useEditFollow(props, repositories, running, storeKey, saved);
+  const saving = useEditSaving(props, repositories, follow, {
+    busy: running.busy,
+    onFaults,
+    onSaved: setSaved,
+  });
+  return {
+    follow,
+    saving,
+    submit: (form) => {
+      saving.cleared();
+      running.submit(form, follow.base);
+    },
+  };
 }
 
 /**
@@ -293,8 +378,14 @@ export function EditForm(props: EditFormProps): ReactNode {
       props.onUpdated();
     },
   });
-  const follow = useEditFollow(props, repositories, running, storeKey);
+  const { follow, saving, submit } = useEditFollowSaving(
+    props,
+    repositories,
+    { running, storeKey },
+    setFaults,
+  );
   const base = follow.base;
+  const attempt = draftSaveAttempt(saving.refusal, running.attempt);
   return (
     <div className="creation">
       <DraftFollowNotice
@@ -315,9 +406,7 @@ export function EditForm(props: EditFormProps): ReactNode {
         storeKey={storeKey}
         submitLabel="revise and release"
         busy={running.busy}
-        onSubmit={(held) => {
-          running.submit(held, base);
-        }}
+        onSubmit={submit}
         onDirty={props.onDirty}
         following={follow.authoring}
         fields={
@@ -333,7 +422,7 @@ export function EditForm(props: EditFormProps): ReactNode {
           />
         }
       />
-      <AttemptNote attempt={running.attempt} motion="Update" />
+      <AttemptNote attempt={attempt} motion="Update" />
     </div>
   );
 }

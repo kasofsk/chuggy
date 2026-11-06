@@ -74,6 +74,7 @@ import type {
   ConversationDoing,
   ConversationExchange,
   ConversationPart,
+  ConversationWorkStep,
 } from "../../core/conversation.ts";
 import { consolePageLabel } from "../../core/consolePage.ts";
 import { threadTurnKindWord } from "../../core/threads.ts";
@@ -105,6 +106,14 @@ export const ConversationPaced = createContext(false);
  * page can read one: the surface reaches no API, so the read is the page's. */
 export const ConversationImage = createContext<
   ((artifact: string) => ReactNode) | undefined
+>(undefined);
+
+/** How the page draws what one step of the work offers its reader, drawn under
+ * the work that holds it, where the page can act on one: the surface reaches
+ * no API, so what an offer does is the page's. Nothing is drawn of a step it
+ * answers `null` for. */
+export const ConversationOffer = createContext<
+  ((step: ConversationWorkStep) => ReactNode) | undefined
 >(undefined);
 
 /** The exchange that holds the one thing on the surface that moves, where
@@ -392,6 +401,7 @@ function conversationPartsDrawn(
     readonly mine: boolean;
     /** Whether the exchange's turn was stopped. */
     readonly stopped: boolean;
+    readonly offer: ((step: ConversationWorkStep) => ReactNode) | undefined;
   },
 ): readonly ReactNode[] {
   const drawn: ReactNode[] = [];
@@ -408,6 +418,19 @@ function conversationPartsDrawn(
           open={shown.open}
         />,
       );
+      const { offer } = shown;
+      if (offer !== undefined)
+        for (const step of part.steps) {
+          const offered = offer(step);
+          if (offered !== null && offered !== undefined)
+            drawn.push(
+              <Fragment
+                key={`offer-${String(texts)}-${conversationStepKey(step)}`}
+              >
+                {offered}
+              </Fragment>,
+            );
+        }
       return;
     }
     drawn.push(
@@ -428,6 +451,11 @@ function conversationPartsDrawn(
     texts += 1;
   });
   return drawn;
+}
+
+/** What names one step among its work, a call by its own identity. */
+function conversationStepKey(step: ConversationWorkStep): string {
+  return step.step === "ToolCall" ? step.id : step.step;
 }
 
 /** The line the first of an answer will take, on every turn nothing is drawn
@@ -453,6 +481,7 @@ function ConversationAnswerBody(props: {
   const indicated = useContext(ConversationIndicated);
   const marked = useContext(ConversationMarked);
   const open = useContext(ConversationWorkOpen);
+  const offer = useContext(ConversationOffer);
   const doing = conversationExchangeDoing(exchange);
   const mine = indicated.named === conversationExchangeNamed(exchange);
   return (
@@ -461,6 +490,7 @@ function ConversationAnswerBody(props: {
         open,
         mine,
         stopped: standing.standing === "Stopped",
+        offer,
       })}
       {doing.doing === "Unbegun" && indicated.engine ? (
         <ConversationEngine mine={mine} />

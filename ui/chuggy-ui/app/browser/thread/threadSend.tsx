@@ -13,6 +13,10 @@
  * refusal's note among it, as any thread's box does.
  *
  * A REFUSAL IS SAID IN ONE LINE: what was not done, with no code of the API's.
+ *
+ * A PROJECT THREAD'S PRESS SAVES THE DRAFT A FORM HOLDS EDITS OF FIRST, and
+ * sends nothing, keeping what was typed, where that save is refused: the
+ * form says why, where it says its own refusals.
  */
 
 import { useCallback, useEffect, useMemo, useRef } from "react";
@@ -56,6 +60,7 @@ import {
   useSessionPlacement,
   useSessionPlacementReads,
 } from "../sessionPlacement.tsx";
+import { useDraftSavedBeforeSend } from "../editor/draftSaveBeforeSend.tsx";
 import { useChatHost } from "../settings/MyChatHost.tsx";
 import { useConsoleDispatch, useConsoleSelector } from "../store.ts";
 import { Notice } from "../ui/Notice.tsx";
@@ -295,11 +300,8 @@ function useThreadSendAt(
   const listed = input.listed ?? threadSendNothingListed;
   const sending = threadSendingWithout(record.sending, listed);
   const closed = threadKeptClosed(record, input.takes);
-  useThreadSendLetGo(name, {
-    unlisted: sending !== record.sending,
-    listed,
-    closed,
-  });
+  const unlisted = sending !== record.sending;
+  useThreadSendLetGo(name, { unlisted, listed, closed });
   const stopping = useMemo(() => new Set(record.stopping), [record.stopping]);
   const send = threadSendShown(
     record.send,
@@ -307,6 +309,7 @@ function useThreadSendAt(
   );
   const standing = threadSendStanding(send, input.takes, door);
   const idled = () => dispatch(threadSendIdledAt({ name }));
+  const savedBeforeSend = useDraftSavedBeforeSend();
   const back = closed ? undefined : threadSendBack(name, record.kept, dispatch);
   const { onStarted } = input;
   const composer: ConversationComposerProps = {
@@ -315,6 +318,8 @@ function useThreadSendAt(
     charsMax: threadMessageCharsMax,
     ...(home.scope === "Project" ? { attaches: threadSendAttaches } : {}),
     onSend: async (text, attached): Promise<ConversationSent> => {
+      const saved = home.scope === "Project" ? savedBeforeSend() : true;
+      if (saved !== true && !(await saved)) return "Kept";
       const ended = await dispatch(
         threadSendPressed({
           home,

@@ -116,6 +116,7 @@ import type {
   submissionSchema,
   threadMessageSchema,
   chatThreadMessageSchema,
+  threadOfferReplyRequestSchema,
 } from "../../../../src/contract/requests.ts";
 import type { AccountAgent } from "../../../../src/contract/rosters.ts";
 import type { z } from "zod";
@@ -1228,6 +1229,19 @@ export const apiSendThreadMessage = apiProjectEndpoint(
     session: string,
     message: z.infer<typeof threadMessageSchema>,
   ) => ({ parameters: { ...partition, session }, body: message }),
+);
+
+/**
+ * The caller's reply to an offer their thread made them, into the thread's
+ * mailbox. The turn identity is the body's for the reason a message's is.
+ */
+export const apiReplyThreadOffer = apiProjectEndpoint(
+  nativeHttpEndpoints.replyThreadOffer,
+  (
+    partition,
+    session: string,
+    reply: z.infer<typeof threadOfferReplyRequestSchema>,
+  ) => ({ parameters: { ...partition, session }, body: reply }),
 );
 
 /**

@@ -411,16 +411,19 @@ async function threadOpenUnscoped(
   return threadOpenAnswered(pool, streamsMax, input.partition, answered.rows);
 }
 
+/** What either mailbox door of a member's own thread is handed. */
+interface ThreadEnqueueInput {
+  readonly partition: Partition;
+  readonly principal: Principal;
+  readonly session: SessionId;
+  readonly turn: SessionTurnId;
+  readonly input: string;
+  readonly route: PlacementRoute;
+}
+
 async function threadEnqueue(
   pool: pg.Pool,
-  input: {
-    readonly partition: Partition;
-    readonly principal: Principal;
-    readonly session: SessionId;
-    readonly turn: SessionTurnId;
-    readonly input: string;
-    readonly route: PlacementRoute;
-  },
+  input: ThreadEnqueueInput,
 ): Promise<ThreadMessageEnqueued> {
   const answered = await pool.query<{
     enqueued: string | null;
@@ -435,6 +438,28 @@ async function threadEnqueue(
   const row = answered.rows[0];
   if (row === undefined)
     throw new Error("postgres thread: the message door returned no verdict");
+  return threadMessageEnqueued(row);
+}
+
+async function threadOfferReplyEnqueue(
+  pool: pg.Pool,
+  input: ThreadEnqueueInput,
+): Promise<ThreadMessageEnqueued> {
+  const answered = await pool.query<{
+    enqueued: string | null;
+    ordinal: string | null;
+  }>(
+    sql`SELECT enqueued,ordinal::text AS ordinal
+          FROM enqueue_thread_offer_reply(
+            ${input.partition.tenant},${input.partition.project},
+            ${input.principal},${input.session},
+            ${input.turn},${input.input},${input.route})`,
+  );
+  const row = answered.rows[0];
+  if (row === undefined)
+    throw new Error(
+      "postgres thread: the offer reply door returned no verdict",
+    );
   return threadMessageEnqueued(row);
 }
 
@@ -591,6 +616,7 @@ export function postgresThreads(
         bounds.streamsMax,
       ),
     enqueueMessage: (input) => threadEnqueue(pool, input),
+    enqueueOfferReply: (input) => threadOfferReplyEnqueue(pool, input),
     stopTurn: (input) => threadTurnStop(pool, input),
     close: (input) => threadClose(pool, bounds.streamsMax, input),
     rename: (input) => threadRename(pool, bounds.streamsMax, input),

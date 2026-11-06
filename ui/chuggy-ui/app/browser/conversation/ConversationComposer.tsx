@@ -348,7 +348,7 @@ function ConversationCommandSaid(props: {
       </div>
       <button
         type="button"
-        className="text-ink-3 border-0 bg-transparent px-1"
+        className="conversation-trigger text-ink-3 px-1"
         aria-label="Dismiss"
         onMouseDown={conversationCaretKept}
         onClick={commands.onDismiss}

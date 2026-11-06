@@ -27,7 +27,10 @@ import type {
   ConversationComposerProps,
   ConversationSent,
 } from "../app/browser/conversation/Conversation.tsx";
-import type { ConversationExchange } from "../app/core/conversation.ts";
+import type {
+  ConversationExchange,
+  ConversationWorkStep,
+} from "../app/core/conversation.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { elementScrollToStubbed } from "./scrolling.ts";
 
@@ -1098,5 +1101,36 @@ test("a note that is itself a paragraph nests in no paragraph, open or closed", 
   );
   expect(screen.getByText("Closed")).toBeDefined();
   expect(screen.getByText("Queued").closest("p p")).toBeNull();
+  styleless();
+});
+
+test("what a step offers is drawn under the work that holds it, and nothing where the page hands no way to draw one", () => {
+  const offered = exchangeOf({
+    answer: "Release it?",
+    work: [
+      ...answered.work,
+      {
+        step: "ToolCall",
+        id: "call-2",
+        name: "mcp__chuggy__offer_release",
+        input: { ticket: 12, authoringVersion: 3 },
+      },
+    ],
+  });
+  const offer = (step: ConversationWorkStep) =>
+    step.step === "ToolCall" && step.id === "call-2" ? (
+      <section aria-label="Offer">offered</section>
+    ) : null;
+  const { unmount } = render(
+    <Conversation
+      exchanges={[offered]}
+      offer={offer}
+      empty="No conversation"
+    />,
+  );
+  expect(screen.getAllByRole("region", { name: "Offer" })).toHaveLength(1);
+  unmount();
+  render(<Conversation exchanges={[offered]} empty="No conversation" />);
+  expect(screen.queryByRole("region", { name: "Offer" })).toBeNull();
   styleless();
 });
