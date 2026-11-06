@@ -689,14 +689,15 @@ test("a project with no tickets still carries the notice of a refused import", a
   );
 });
 
-/** Each count above the list, by what it says, with whether it is pressed. */
+/** Each count above the list, by what it says, with whether it is pressed
+ * or dimmed. */
 function countsDrawn(): readonly string[] {
   const counts = screen.getByRole("list", { name: "Tickets by state" });
   return within(counts)
     .getAllByRole("button")
     .map(
       (count) =>
-        `${count.textContent ?? ""}${count.getAttribute("aria-pressed") === "true" ? " pressed" : ""}`,
+        `${count.textContent ?? ""}${count.getAttribute("aria-pressed") === "true" ? " pressed" : ""}${count.hasAttribute("data-dimmed") ? " dimmed" : ""}`,
     );
 }
 
@@ -728,7 +729,7 @@ const countedTickets = [
   pending(26, [], [9]),
 ];
 
-test("a state's count filters the list to that state and is pressed, and tapped again draws every ticket", async () => {
+test("a state's count filters the list to that state and is pressed, every other count still drawn dimmed, and tapped again draws every ticket", async () => {
   await drawTableWith(countedTickets, [execution]);
   expect(countsDrawn()).toEqual([
     "Blocked2",
@@ -738,7 +739,12 @@ test("a state's count filters the list to that state and is pressed, and tapped 
   ]);
   await countTapped(/^Working/u);
   expect(titlesDrawn()).toEqual([title]);
-  expect(countsDrawn()).toEqual(["Working1 pressed"]);
+  expect(countsDrawn()).toEqual([
+    "Blocked2 dimmed",
+    "Ready2 dimmed",
+    "Working1 pressed",
+    "Escalated1 dimmed",
+  ]);
   expect(filterDrawn()).toContain("Working");
   await countTapped(/^Working/u);
   expect(titlesDrawn()).toHaveLength(countedTickets.length);
@@ -756,25 +762,64 @@ test("Ready and Blocked each filter the list to the pending tickets of their own
   await drawTableWith(countedTickets, [execution]);
   await countTapped(/^Ready/u);
   expect(titlesDrawn()).toEqual(["Pending 25", "Pending 24"]);
-  expect(countsDrawn()).toEqual(["Ready2 pressed"]);
+  expect(countsDrawn()).toEqual([
+    "Blocked2 dimmed",
+    "Ready2 pressed",
+    "Working1 dimmed",
+    "Escalated1 dimmed",
+  ]);
   expect(filterDrawn()).toContain("Ready");
   await countTapped(/^Ready/u);
   await countTapped(/^Blocked/u);
   expect(titlesDrawn()).toEqual(["Pending 23", "Pending 26"]);
-  expect(countsDrawn()).toEqual(["Blocked2 pressed"]);
+  expect(countsDrawn()).toEqual([
+    "Blocked2 pressed",
+    "Ready2 dimmed",
+    "Working1 dimmed",
+    "Escalated1 dimmed",
+  ]);
   expect(filterDrawn()).toContain("Blocked");
+});
+
+test("a dimmed count tapped moves the filter to its state, and the counts stay those of every ticket", async () => {
+  await drawTableWith(countedTickets, [execution]);
+  await countTapped(/^Working/u);
+  await countTapped(/^Escalated/u);
+  expect(titlesDrawn()).toEqual(["Escalated ticket"]);
+  expect(countsDrawn()).toEqual([
+    "Blocked2 dimmed",
+    "Ready2 dimmed",
+    "Working1 dimmed",
+    "Escalated1 pressed",
+  ]);
+  expect(filterDrawn()).toContain("Escalated");
 });
 
 test("the Filter picker and the counts are one filter, each drawing what the other chose", async () => {
   await drawTableWith(countedTickets, [execution]);
   await filterChosen("Blocked");
-  expect(countsDrawn()).toEqual(["Blocked2 pressed"]);
+  expect(countsDrawn()).toEqual([
+    "Blocked2 pressed",
+    "Ready2 dimmed",
+    "Working1 dimmed",
+    "Escalated1 dimmed",
+  ]);
   await filterChosen("Pending");
-  expect(countsDrawn()).toEqual(["Blocked2", "Ready2"]);
+  expect(countsDrawn()).toEqual([
+    "Blocked2",
+    "Ready2",
+    "Working1 dimmed",
+    "Escalated1 dimmed",
+  ]);
   await countTapped(/^Ready/u);
   expect(filterDrawn()).toContain("Ready");
   await filterChosen("Escalated");
-  expect(countsDrawn()).toEqual(["Escalated1 pressed"]);
+  expect(countsDrawn()).toEqual([
+    "Blocked2 dimmed",
+    "Ready2 dimmed",
+    "Working1 dimmed",
+    "Escalated1 pressed",
+  ]);
   await filterChosen("All states");
   expect(countsDrawn()).toEqual([
     "Blocked2",
@@ -797,6 +842,24 @@ function countFocusedShadow(count: Element): string {
   held.setAttribute(focused, "");
   return sheetDeclared(rules, held, "box-shadow");
 }
+
+test("a dimmed count is faded, and still a button that can be pressed", async () => {
+  await drawTableWith(countedTickets, [execution]);
+  await countTapped(/^Working/u);
+  const counts = screen.getByRole("list", { name: "Tickets by state" });
+  const rules = sheetRules(listSheet, []);
+  const faded = (count: HTMLElement): string =>
+    sheetDeclared(rules, count.firstElementChild as Element, "opacity");
+  const ready = within(counts).getByRole<HTMLButtonElement>("button", {
+    name: /^Ready/u,
+  });
+  const working = within(counts).getByRole<HTMLButtonElement>("button", {
+    name: /^Working/u,
+  });
+  expect(ready.disabled).toBe(false);
+  expect(Number(faded(ready))).toBeLessThan(1);
+  expect(faded(working)).toBe("");
+});
 
 test("a count a keyboard focuses is ringed, pressed or not", async () => {
   await drawTableWith(countedTickets, [execution]);

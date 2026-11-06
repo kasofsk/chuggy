@@ -26,6 +26,7 @@ import type { TicketPhase } from "../../../../src/contract/rosters.ts";
 
 import {
   ticketFilterAll,
+  ticketFilterIsStanding,
   ticketFilterOf,
   ticketFilterStandingOf,
 } from "./projectTableFilters.ts";
@@ -194,6 +195,16 @@ export function ticketListCountTapped(
   standing: TicketListStanding,
 ): TicketFilter {
   return filter === standing ? ticketFilterAll : standing;
+}
+
+/** Whether a state's count is drawn dimmed: a filter is set and the list it
+ * draws holds none of that state's tickets. */
+export function ticketListCountDimmed(
+  filter: TicketFilter,
+  standing: TicketListStanding,
+): boolean {
+  if (filter === ticketFilterAll || filter === standing) return false;
+  return !(filter === "Pending" && ticketFilterIsStanding(standing));
 }
 
 /** The phases in the order the State sort draws them. */

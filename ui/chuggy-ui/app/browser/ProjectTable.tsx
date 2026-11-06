@@ -10,7 +10,8 @@
  * on screen stand until the read under a new choice answers; the search, the
  * sort, the filter and the creator are the page's address, so a link holds
  * the view. Each state's
- * count above the rows chooses the filter as the picker does. A project
+ * count above the rows, read under every filter, chooses the filter as the
+ * picker does. A project
  * holding no ticket at all offers the first instead.
  *
  * A ROW OFFERS ONE ACTION, DISPATCH, AS ITS READY CHIP. A ready row reads the
@@ -60,6 +61,7 @@ import {
 import type { ProjectTicketRows } from "../core/projectTicketPages.ts";
 import { ticketRowsQuery } from "../core/ticketQueries.ts";
 import {
+  ticketListCountDimmed,
   ticketListCountTapped,
   ticketListCreatorsOffered,
   ticketListFiltered,
@@ -382,10 +384,11 @@ const ticketListCounted = [
   "Escalated",
 ] as const satisfies readonly TicketListStanding[];
 
-/** How many of the rows drawn stand in each state that is not an end, each
- * the button that filters the list to its state or, as the filter, back to
- * every ticket. The filter's own state is drawn when no row stands in it, so it
- * can always be tapped away. */
+/** How many of the rows read under every filter stand in each state that is
+ * not an end, each the button that filters the list to its state or, as the
+ * filter, back to every ticket; dimmed while a filter is set that draws none
+ * of its tickets. The filter's own state is drawn when no row stands in it, so
+ * it can always be tapped away. */
 function TicketListCounts(props: {
   readonly rows: readonly ProjectTableRow[];
   readonly filter: TicketFilter;
@@ -396,26 +399,28 @@ function TicketListCounts(props: {
     const standing = ticketListStandingOf(row);
     counts.set(standing, (counts.get(standing) ?? 0) + 1);
   }
+  const drawn = ticketListCounted.flatMap((standing) => {
+    const count =
+      counts.get(standing) ?? (standing === props.filter ? 0 : undefined);
+    return count === undefined ? [] : [{ standing, count }];
+  });
+  const countWidest = Math.max(0, ...drawn.map(({ count }) => count));
   return (
     <ul className="ticket-list-counts" aria-label="Tickets by state">
-      {ticketListCounted
-        .flatMap((standing) => {
-          const count =
-            counts.get(standing) ?? (standing === props.filter ? 0 : undefined);
-          return count === undefined ? [] : [{ standing, count }];
-        })
-        .map(({ standing, count }) => (
-          <li key={standing}>
-            <TicketStateCount
-              standing={standing}
-              count={count}
-              pressed={standing === props.filter}
-              onPress={() => {
-                props.onFilter(ticketListCountTapped(props.filter, standing));
-              }}
-            />
-          </li>
-        ))}
+      {drawn.map(({ standing, count }) => (
+        <li key={standing}>
+          <TicketStateCount
+            standing={standing}
+            count={count}
+            pressed={standing === props.filter}
+            dimmed={ticketListCountDimmed(props.filter, standing)}
+            countWidest={countWidest}
+            onPress={() => {
+              props.onFilter(ticketListCountTapped(props.filter, standing));
+            }}
+          />
+        </li>
+      ))}
     </ul>
   );
 }
@@ -817,6 +822,10 @@ export function ProjectTable(props: {
     creator: props.query.creator,
   };
   const tickets = useTicketRows(partition, ask);
+  const unfiltered = useTicketRows(partition, {
+    ...ask,
+    filter: ticketFilterAll,
+  });
   const nowMs = useNowMs();
   const authoring = !projectAbilityRefused(
     useProjectAbilities(partition),
@@ -836,11 +845,8 @@ export function ProjectTable(props: {
       <RepositoryImportRefusedNotice partition={partition} />
       <TicketListControls
         rows={
-          tickets.state.state === "Ready"
-            ? ticketListFiltered(
-                tickets.state.value.tickets.map(projectTableRow),
-                choices.filter,
-              )
+          unfiltered.state.state === "Ready"
+            ? unfiltered.state.value.tickets.map(projectTableRow)
             : []
         }
         search={typed}
