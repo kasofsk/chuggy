@@ -16,6 +16,7 @@ import type {
   TicketResource,
 } from "../../src/interpreter/nativeWeb.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
+import { asPrincipal } from "../../src/interpreter/principal.ts";
 import { id } from "../domain/fixtures.ts";
 import { encodeEntry } from "../../src/interpreter/wire.ts";
 import { plainDefinitionOf } from "../actor/harness.ts";
@@ -1255,5 +1256,119 @@ test("the active list holds a quiet Pending ticket and what finished within the 
     (await searchWalked(partition, { active: true, search: "gate" }, 100))
       .tickets,
     [1, 3, 121],
+  );
+});
+
+/**
+ * The searchable tickets, filed: `alice` drafted 1, 3 and 12 first and `bob` 2
+ * and 121, while 4 was first drafted under no member's authority though
+ * `alice` revised it, and 5 has no draft.
+ */
+async function seedFiled(label: string): Promise<Partition> {
+  const partition = await seedSearchable(label);
+  const keys = [partition.tenant, partition.project];
+  await subject.harness.query(
+    `INSERT INTO configuration_revision
+       (tenant,project,revision,canonical,digest,authority_kind,authority_subject)
+     VALUES ($1,$2,'filed-revision','{}','filed-digest','Test','harness')`,
+    keys,
+  );
+  for (const [ticket, revisions] of [
+    [1, [["Member", "alice"]]],
+    [3, [["Member", "alice"]]],
+    [12, [["Member", "alice"]]],
+    [2, [["Member", "bob"]]],
+    [121, [["Member", "bob"]]],
+    [
+      4,
+      [
+        ["Test", "alice"],
+        ["Member", "alice"],
+      ],
+    ],
+  ] as const) {
+    await subject.harness.query(
+      `INSERT INTO draft (tenant,project,ticket,authoring_version,state,configuration_revision)
+       VALUES ($1,$2,$3,$4,'Draft','filed-revision')`,
+      [...keys, ticket, revisions.length],
+    );
+    for (const [index, [kind, subjectName]] of revisions.entries())
+      await subject.harness.query(
+        `INSERT INTO draft_revision
+           (tenant,project,ticket,authoring_version,configuration_revision,
+            authoring,authority_kind,authority_subject)
+         VALUES ($1,$2,$3,$4,'filed-revision','{}',$5,$6)`,
+        [...keys, ticket, index + 1, kind, subjectName],
+      );
+  }
+  return partition;
+}
+
+test("a creator's list is the tickets that member filed, paged in every order with its count on every page", async () => {
+  const partition = await seedFiled("native-creator-orders");
+  const alice = asPrincipal("alice");
+  for (const [order, expected] of [
+    [undefined, [1, 3, 12]],
+    ["Identity", [1, 3, 12]],
+    ["Oldest", [1, 3, 12]],
+    ["Newest", [12, 3, 1]],
+    ["RecentActivity", [12, 3, 1]],
+  ] as const)
+    assert.deepEqual(
+      await searchWalked(
+        partition,
+        { creator: alice, ...(order === undefined ? {} : { order }) },
+        1,
+      ),
+      { tickets: expected, matched: [3, 3, 3] },
+      `the ${order ?? "default"} order`,
+    );
+});
+
+test("a creator composes with a phase filter and a search, and one who filed nothing lists nothing", async () => {
+  const partition = await seedFiled("native-creator-compose");
+  const alice = asPrincipal("alice");
+  assert.deepEqual(
+    await searchWalked(
+      partition,
+      {
+        creator: alice,
+        phaseFilter: { selection: "Selected", phases: ["Done"] },
+      },
+      100,
+    ),
+    { tickets: [3], matched: [1] },
+  );
+  assert.deepEqual(
+    await searchWalked(
+      partition,
+      { creator: alice, phaseFilter: { selection: "NonTerminal" } },
+      1,
+    ),
+    { tickets: [1, 12], matched: [2, 2] },
+  );
+  assert.deepEqual(
+    await searchWalked(
+      partition,
+      { creator: alice, search: "gate", order: "Newest" },
+      1,
+    ),
+    { tickets: [3, 1], matched: [2, 2] },
+  );
+  assert.deepEqual(
+    await searchWalked(
+      partition,
+      { creator: asPrincipal("bob"), search: "gate" },
+      100,
+    ),
+    { tickets: [121], matched: [1] },
+  );
+  assert.deepEqual(
+    await searchWalked(
+      partition,
+      { creator: asPrincipal("dave"), order: "RecentActivity" },
+      100,
+    ),
+    { tickets: [], matched: [0] },
   );
 });
