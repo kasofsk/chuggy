@@ -45,8 +45,30 @@ export type EpicStatusWord = EpicSummaryResponse["status"];
 /** How many epics a page of the list asks for. */
 export const epicsPageSize = 20;
 
-/** How many epics the creation form's picker reads. */
+/** How many epics a page of the creation form's picker reads. */
 export const epicPickerMax = 50;
+
+/** An epic the creation form's picker was chosen from. */
+export interface EpicPicked {
+  readonly number: number;
+  readonly title: string;
+}
+
+/** The picker's epics: the page shown, and the one chosen where the page does
+ * not hold it, so the trigger still names it once another page is shown. */
+export function epicPickerOptions(
+  epics: readonly EpicPicked[],
+  chosen: EpicPicked | undefined,
+): readonly { readonly value: string; readonly text: string }[] {
+  const shown =
+    chosen === undefined || epics.some((epic) => epic.number === chosen.number)
+      ? epics
+      : [chosen, ...epics];
+  return shown.map((epic) => ({
+    value: String(epic.number),
+    text: epic.title,
+  }));
+}
 
 const epicResourcePrefix = "epic";
 

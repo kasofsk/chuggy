@@ -16,6 +16,7 @@ import {
   epicGraphLabelCharsMax,
   epicGraphLayout,
   epicGraphRowHeight,
+  epicPickerOptions,
   epicProgressLine,
   epicStatusLook,
   epicTicketsParsed,
@@ -331,4 +332,19 @@ test("a draft refused for its epic is said so, and any other refusal is not the 
     }),
   ).toBeUndefined();
   expect(epicDraftRefusal({ outcome: "Absent" })).toBeUndefined();
+});
+
+test("the picker keeps the epic chosen on another page among its options, once", () => {
+  const billing = { number: 7, title: "Billing" };
+  const shipping = { number: 9, title: "Shipping" };
+  expect(epicPickerOptions([billing], shipping)).toEqual([
+    { value: "9", text: "Shipping" },
+    { value: "7", text: "Billing" },
+  ]);
+  expect(epicPickerOptions([billing], billing)).toEqual([
+    { value: "7", text: "Billing" },
+  ]);
+  expect(epicPickerOptions([billing], undefined)).toEqual([
+    { value: "7", text: "Billing" },
+  ]);
 });

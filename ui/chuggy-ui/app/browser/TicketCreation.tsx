@@ -47,7 +47,8 @@ import {
   landingPolicyEffect,
   landingPolicyLabel,
 } from "../core/codeLabels.ts";
-import { epicPickerMax, epicsQuery } from "../core/epics.ts";
+import { epicPickerMax, epicPickerOptions, epicsQuery } from "../core/epics.ts";
+import type { EpicPicked } from "../core/epics.ts";
 import { repositoryLabel } from "../core/projectRepositories.ts";
 import { configurationsPartialLabel } from "../core/repositoryConfigurations.ts";
 import {
@@ -530,23 +531,30 @@ function Repository(props: FormDrawn): ReactNode {
 
 const epicNone = "none";
 
-/** The epic this ticket joins as it is made, chosen from the Active ones. The
- * roster is read only once the field is drawn, and a roster that is not ready
- * leaves the ticket in none rather than holding the form. */
+/** The epic this ticket joins as it is made, chosen from the Active ones a
+ * page at a time, by title. The roster is read only once the field is drawn,
+ * and a first page that is not ready leaves the ticket in none rather than
+ * holding the form. */
 function EpicChoice(
   props: FormEdit & { readonly partition: PartitionIdentity },
 ) {
   const { form, onChange, partition } = props;
+  const [after, setAfter] = useState<number | undefined>(undefined);
+  const [picked, setPicked] = useState<EpicPicked | undefined>(undefined);
   const state = usePanelState(
     epicsQuery(partition, {
       visibility: "Active",
       sort: "title",
+      after,
       limit: epicPickerMax,
     }),
   );
-  if (state.state !== "Ready") return null;
-  const epics = state.value.epics;
-  if (epics.length === 0 && form.epic === "") return null;
+  const page = state.state === "Ready" ? state.value : undefined;
+  if (page === undefined && after === undefined) return null;
+  const epics = page?.epics ?? [];
+  if (epics.length === 0 && after === undefined && form.epic === "")
+    return null;
+  const nextAfter = page?.nextAfter;
   return (
     <div className="creation-row">
       <span>Epic</span>
@@ -556,14 +564,25 @@ function EpicChoice(
         placeholder="None"
         options={[
           { value: epicNone, text: "None" },
-          ...epics.map((epic) => ({
-            value: String(epic.number),
-            text: epic.title,
-          })),
+          ...epicPickerOptions(
+            epics,
+            picked !== undefined && String(picked.number) === form.epic
+              ? picked
+              : undefined,
+          ),
         ]}
         onChoose={(epic) => {
+          setPicked(epics.find((held) => String(held.number) === epic));
           onChange({ ...form, epic: epic === epicNone ? "" : epic });
         }}
+        actions={[
+          ...(nextAfter === undefined
+            ? []
+            : [{ text: "More epics", onSelect: () => setAfter(nextAfter) }]),
+          ...(after === undefined
+            ? []
+            : [{ text: "First epics", onSelect: () => setAfter(undefined) }]),
+        ]}
       />
     </div>
   );
