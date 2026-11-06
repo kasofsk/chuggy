@@ -26,6 +26,7 @@ export const projectAbilityKinds: Readonly<
   overrideTicketConfig: "OverrideTicketConfig",
   skipPlannedEvaluations: "SkipPlannedEvaluations",
   administer: "Administer",
+  writeEpic: "Mutate",
 };
 
 /**
@@ -51,6 +52,7 @@ export async function projectAbilities(
     overrideTicketConfig,
     skipPlannedEvaluations,
     administer,
+    writeEpic,
   ] = await Promise.all([
     held(projectAbilityKinds.mutate),
     held(projectAbilityKinds.dispatch),
@@ -58,6 +60,7 @@ export async function projectAbilities(
     held(projectAbilityKinds.overrideTicketConfig),
     held(projectAbilityKinds.skipPlannedEvaluations),
     held(projectAbilityKinds.administer),
+    held(projectAbilityKinds.writeEpic),
   ]);
   return {
     result: "Authorized",
@@ -69,6 +72,7 @@ export async function projectAbilities(
       overrideTicketConfig,
       skipPlannedEvaluations,
       administer,
+      writeEpic,
     },
   };
 }

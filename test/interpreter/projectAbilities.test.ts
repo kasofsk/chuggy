@@ -32,11 +32,12 @@ const none: ProjectAbilitiesResponse = {
   overrideTicketConfig: false,
   skipPlannedEvaluations: false,
   administer: false,
+  writeEpic: false,
 };
 
 /** Each field and the kind its door asks, written out rather than read from the interpreter's record. */
 const asked: readonly (readonly [
-  Exclude<keyof ProjectAbilitiesResponse, "principal">,
+  Exclude<keyof ProjectAbilitiesResponse, "principal" | "writeEpic">,
   ProjectAccessKind,
 ])[] = [
   ["mutate", "Mutate"],
@@ -68,7 +69,14 @@ test("each kind a caller holds opens its own field and no other", async () => {
 
     assert.deepEqual(
       await web.abilities(member, partition),
-      { result: "Authorized", value: { ...none, [field]: true } },
+      {
+        result: "Authorized",
+        value: {
+          ...none,
+          [field]: true,
+          ...(field === "mutate" ? { writeEpic: true } : {}),
+        },
+      },
       kind,
     );
   }

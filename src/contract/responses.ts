@@ -2400,6 +2400,8 @@ export const projectAbilitiesResponseSchema = z.strictObject({
   overrideTicketConfig: z.boolean(),
   skipPlannedEvaluations: z.boolean(),
   administer: z.boolean(),
+  /** Whether the reader may create and revise epics, which is the `Mutate` kind. */
+  writeEpic: z.boolean(),
 });
 export type ProjectAbilitiesResponse = z.infer<
   typeof projectAbilitiesResponseSchema
