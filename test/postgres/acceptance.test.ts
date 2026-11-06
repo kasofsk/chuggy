@@ -73,6 +73,46 @@ test("one key with a different typed command conflicts without allocating", asyn
   );
 });
 
+test("a fenced revocation is accepted as a revocation is, and stored with its fence", async () => {
+  const partition = await postgresHarnessProject(
+    harness.store,
+    "accept-fenced-revoke",
+  );
+  const submission = postgresHarnessSubmission(
+    partition,
+    "accept-fenced-revoke",
+  );
+  const accepted = await harness.inbox.accept({
+    ...submission,
+    command: {
+      version: 1,
+      command: "Decide",
+      ticketCommand: { type: "RevokeTicket", value: 1 },
+      expectedRevision: 2,
+    },
+  });
+  assert.equal(accepted.accepted, "Accepted");
+  assert.deepEqual(
+    await harness.query(
+      `SELECT o.command_tag, o.admission, i.base_priority,
+              o.command::jsonb->'expectedRevision' AS expected
+         FROM operation o JOIN decision_input i
+           ON i.tenant=o.tenant AND i.project=o.project
+          AND i.input_kind='Operation' AND i.input_id=o.operation
+        WHERE o.tenant=$1 AND o.project=$2`,
+      [partition.tenant, partition.project],
+    ),
+    [
+      {
+        command_tag: "RevokeTicket",
+        admission: "CorrectnessReducing",
+        base_priority: "Safety",
+        expected: 2,
+      },
+    ],
+  );
+});
+
 test("ordinary work receives pre-acceptance backpressure at the soft bound", async () => {
   const partition = await postgresHarnessProject(
     harness.store,

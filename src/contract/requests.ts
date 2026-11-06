@@ -58,9 +58,11 @@ import {
 const bodyIdentitySchema = z.string().min(1);
 
 export const publicMutationSchema = z.discriminatedUnion("mutation", [
+  /** A revocation, fenced to the ticket revision its author read where it names one. */
   z.strictObject({
     mutation: z.literal("RevokeTicket"),
     ticket: ticketNumberSchema,
+    expectedRevision: ticketNumberSchema.optional(),
   }),
   z.strictObject({
     mutation: z.literal("ResumeTicket"),

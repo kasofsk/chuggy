@@ -397,6 +397,29 @@ test("a purpose-specific mutation becomes its one application command", () => {
   );
 });
 
+test("a revocation carries the revision its author read where it names one", () => {
+  assert.deepEqual(
+    parseSubmission("operation", "Key", {
+      mutation: "RevokeTicket",
+      ticket: 7,
+      expectedRevision: 2,
+    }).command,
+    {
+      version: 1,
+      command: "Decide",
+      ticketCommand: { type: "RevokeTicket", value: 7 },
+      expectedRevision: 2,
+    },
+  );
+  assert.throws(() =>
+    parseSubmission("operation", "Key", {
+      mutation: "RevokeTicket",
+      ticket: 7,
+      expectedRevision: 0,
+    }),
+  );
+});
+
 test("an update names the draft revision it pins and the ticket revision its author read", () => {
   const update = {
     mutation: "UpdateTicket",

@@ -342,6 +342,29 @@ test("manual dispatch distinguishes a stale ticket from a disabled ticket", asyn
   });
 });
 
+test("a revocation fenced to a revision is taken at that revision and refused past it", async () => {
+  const memory = releasedMemory();
+  assert.equal(ticketAt(memory.graph, id(1)).revision, 1);
+  const ticketCommand = asOperationTicketCommand(revokeTicketCommand(id(1)));
+  const revocation = async (expectedRevision: number) => {
+    const input = operationInput({
+      version: 1,
+      command: "Decide",
+      ticketCommand,
+      expectedRevision,
+    });
+    const { offered } = await decidedWith(memory, {
+      ...input,
+      source: { ...input.source, ticketCommand },
+    });
+    return offered?.outcome.outcome === "Refused"
+      ? offered.outcome.refusal
+      : offered?.outcome.outcome;
+  };
+  assert.deepEqual(await revocation(2), { type: "TicketChanged" });
+  assert.equal(await revocation(1), "Journaled");
+});
+
 test("a dispatch over an undone dependency is refused naming it", async () => {
   let state = actorInit();
   for (const definition of [

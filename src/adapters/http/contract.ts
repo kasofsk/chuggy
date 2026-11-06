@@ -627,6 +627,9 @@ function publicMutationCommand(mutation: PublicMutation): ProjectCommand {
         ticketCommand: asOperationTicketCommand(
           revokeTicketCommand(asTicketId(mutation.ticket)),
         ),
+        ...(mutation.expectedRevision === undefined
+          ? {}
+          : { expectedRevision: mutation.expectedRevision }),
       };
     case "ResumeTicket":
       return {
