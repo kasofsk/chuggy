@@ -70,11 +70,14 @@ import {
   conversationExchangeParts,
 } from "../../core/conversation.ts";
 import type {
+  ConversationAsk,
   ConversationDoing,
   ConversationExchange,
-  ConversationPart,
+  ConversationWorkStep,
 } from "../../core/conversation.ts";
+import { consolePageLabel } from "../../core/consolePage.ts";
 import { threadTurnKindWord } from "../../core/threads.ts";
+import { Chip } from "../ui/Chip.tsx";
 import { TicketReference } from "../ui/TicketReference.tsx";
 import { MarkdownReport } from "../ui/MarkdownReport.tsx";
 import { Notice } from "../ui/Notice.tsx";
@@ -102,6 +105,15 @@ export const ConversationPaced = createContext(false);
  * page can read one: the surface reaches no API, so the read is the page's. */
 export const ConversationImage = createContext<
   ((artifact: string) => ReactNode) | undefined
+>(undefined);
+
+/** How the page draws what one step of the work offers its reader, drawn under
+ * the work that holds it, where the page can act on one: the surface reaches
+ * no API, so what an offer does is the page's. Nothing is drawn of a step it
+ * answers `null` for. */
+export const ConversationOffer = createContext<
+  | ((step: ConversationWorkStep, exchange: ConversationExchange) => ReactNode)
+  | undefined
 >(undefined);
 
 /** The exchange that holds the one thing on the surface that moves, where
@@ -268,26 +280,33 @@ const conversationReportComponents = { Text: ConversationReport };
 
 /** The member's own words, on the right, as they were typed — with the block
  * the server composed in front of a thread's first message folded away above
- * them, because they neither typed it nor asked to read it, and the images the
- * message named drawn over them, as the page reads each. */
+ * them, because they neither typed it nor asked to read it, the page the
+ * message was sent from named in a chip, and the images it named drawn over
+ * them, as the page reads each. */
 function ConversationBubble(props: {
-  readonly context: string | undefined;
-  readonly images: readonly string[] | undefined;
+  readonly message: Extract<ConversationAsk, { readonly ask: "Message" }>;
 }): ReactNode {
   const image = useContext(ConversationImage);
+  const { context, page, images } = props.message;
   return (
     <div className="flex flex-col items-end gap-2">
-      {props.context === undefined ? null : (
+      {context === undefined ? null : (
         <ConversationCard label="Context">
-          <MarkdownReport text={props.context} bare />
+          <MarkdownReport text={context} bare />
         </ConversationCard>
       )}
-      {props.images === undefined || image === undefined ? null : (
+      {page === undefined ? null : (
+        <Chip>
+          <span className="visually-hidden">Sent from </span>
+          {consolePageLabel(page)}
+        </Chip>
+      )}
+      {images === undefined || image === undefined ? null : (
         <ul
           aria-label="Images"
           className="flex max-w-[85%] flex-wrap justify-end gap-2"
         >
-          {props.images.map((artifact, at) => (
+          {images.map((artifact, at) => (
             <li key={at}>{image(artifact)}</li>
           ))}
         </ul>
@@ -327,7 +346,7 @@ function ConversationAskBody(props: {
   if (ask === undefined) return null;
   switch (ask.ask) {
     case "Message":
-      return <ConversationBubble context={ask.context} images={ask.images} />;
+      return <ConversationBubble message={ask} />;
     case "Wake":
       return <ConversationSystemLine words={`${ask.wake} · ${ask.resource}`} />;
     case "Document":
@@ -374,7 +393,7 @@ function conversationTextPlace(
  * work the record comes to hold between two texts moves neither.
  */
 function conversationPartsDrawn(
-  parts: readonly ConversationPart[],
+  exchange: ConversationExchange,
   doing: ConversationDoing,
   shown: {
     readonly open: boolean;
@@ -382,8 +401,15 @@ function conversationPartsDrawn(
     readonly mine: boolean;
     /** Whether the exchange's turn was stopped. */
     readonly stopped: boolean;
+    readonly offer:
+      | ((
+          step: ConversationWorkStep,
+          exchange: ConversationExchange,
+        ) => ReactNode)
+      | undefined;
   },
 ): readonly ReactNode[] {
+  const parts = conversationExchangeParts(exchange);
   const drawn: ReactNode[] = [];
   let texts = 0;
   parts.forEach((part, at) => {
@@ -398,6 +424,19 @@ function conversationPartsDrawn(
           open={shown.open}
         />,
       );
+      const { offer } = shown;
+      if (offer !== undefined)
+        for (const step of part.steps) {
+          const offered = offer(step, exchange);
+          if (offered !== null && offered !== undefined)
+            drawn.push(
+              <Fragment
+                key={`offer-${String(texts)}-${conversationStepKey(step)}`}
+              >
+                {offered}
+              </Fragment>,
+            );
+        }
       return;
     }
     drawn.push(
@@ -418,6 +457,11 @@ function conversationPartsDrawn(
     texts += 1;
   });
   return drawn;
+}
+
+/** What names one step among its work, a call by its own identity. */
+function conversationStepKey(step: ConversationWorkStep): string {
+  return step.step === "ToolCall" ? step.id : step.step;
 }
 
 /** The line the first of an answer will take, on every turn nothing is drawn
@@ -443,14 +487,16 @@ function ConversationAnswerBody(props: {
   const indicated = useContext(ConversationIndicated);
   const marked = useContext(ConversationMarked);
   const open = useContext(ConversationWorkOpen);
+  const offer = useContext(ConversationOffer);
   const doing = conversationExchangeDoing(exchange);
   const mine = indicated.named === conversationExchangeNamed(exchange);
   return (
     <>
-      {conversationPartsDrawn(conversationExchangeParts(exchange), doing, {
+      {conversationPartsDrawn(exchange, doing, {
         open,
         mine,
         stopped: standing.standing === "Stopped",
+        offer,
       })}
       {doing.doing === "Unbegun" && indicated.engine ? (
         <ConversationEngine mine={mine} />

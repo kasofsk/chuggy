@@ -10,6 +10,8 @@ import { expect, test } from "vitest";
 import type { ProjectTableRow } from "../app/core/projectTableRows.ts";
 import { ticketSearchCharsMax } from "../../../src/contract/http.ts";
 import {
+  ticketListCountTapped,
+  ticketListFiltered,
   ticketListQueryOf,
   ticketListQueryWith,
   ticketListSearchOf,
@@ -99,12 +101,14 @@ test("the address holds a search and a sort, and drops what names neither", () =
   expect(ticketListQueryOf({ q: ["gate"] })).toStrictEqual({});
 });
 
-test("the address holds a filter naming All or a phase, and drops one naming neither", () => {
+test("the address holds a filter naming All, a phase or a pending standing, and drops one naming none", () => {
   expect(ticketListQueryOf({ filter: "Escalated" })).toStrictEqual({
     filter: "Escalated",
   });
   expect(ticketListQueryOf({ filter: "All" })).toStrictEqual({ filter: "All" });
-  for (const filter of ["NeedsYou", "escalated", ["Done"], 3, null])
+  for (const filter of ["Ready", "Blocked"] as const)
+    expect(ticketListQueryOf({ filter })).toStrictEqual({ filter });
+  for (const filter of ["NeedsYou", "escalated", "ready", ["Done"], 3, null])
     expect(ticketListQueryOf({ filter })).toStrictEqual({});
 });
 
@@ -150,4 +154,28 @@ test("a filter written to the address keeps the search and the sort, and All is 
     q: "gate",
     filter: "Done",
   });
+});
+
+test("a standing's filter draws the pending rows that stand in it, and any other filter every row read", () => {
+  const rows = [
+    row(1, "Pending"),
+    row(2, "Pending", { revokedDependencies: [9] }),
+    row(3, "Pending", { openDependencies: [{ ticket: 8, phase: "Work" }] }),
+    row(4, "Work"),
+  ];
+  const drawn = (filter: Parameters<typeof ticketListFiltered>[1]) =>
+    ticketListFiltered(rows, filter).map((each) => each.ticket);
+  expect(drawn("Ready")).toStrictEqual([1]);
+  expect(drawn("Blocked")).toStrictEqual([2, 3]);
+  for (const filter of ["All", "Pending", "Work"] as const)
+    expect(drawn(filter), filter).toStrictEqual([1, 2, 3, 4]);
+});
+
+test("a state's count tapped filters to that state, and tapped as the filter goes back to every ticket", () => {
+  for (const standing of ["Ready", "Blocked", "Work", "Escalated"] as const) {
+    expect(ticketListCountTapped("All", standing)).toBe(standing);
+    expect(ticketListCountTapped("Pending", standing)).toBe(standing);
+    expect(ticketListCountTapped(standing, standing)).toBe("All");
+  }
+  expect(ticketListCountTapped("Ready", "Blocked")).toBe("Blocked");
 });

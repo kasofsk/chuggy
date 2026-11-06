@@ -234,6 +234,7 @@ export const sessionStoreStreamListFunction = "list_session_store_streams";
 export const sessionCapabilitiesSetFunction = "set_session_capabilities";
 export const threadOpenFunction = "open_member_thread";
 export const threadMessageEnqueueFunction = "enqueue_thread_message";
+export const threadOfferReplyEnqueueFunction = "enqueue_thread_offer_reply";
 export const threadCloseFunction = "close_member_thread";
 export const threadRenameFunction = "rename_member_thread";
 export const threadHideFunction = "hide_member_thread";

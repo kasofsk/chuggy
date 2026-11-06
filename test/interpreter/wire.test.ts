@@ -562,3 +562,37 @@ test("an overrides change is stored as it was offered and read back through the 
       JSON.stringify(broken),
     );
 });
+
+test("a revocation's revision fence is stored as it was offered, and no other command may carry one", () => {
+  const revocation: ProjectCommand = {
+    version: 1,
+    command: "Decide",
+    ticketCommand: asOperationTicketCommand(revokeTicketCommand(asTicketId(3))),
+    expectedRevision: 2,
+  };
+  const text = encodeProjectCommand(revocation);
+  assert.deepEqual(parseProjectCommand(text), {
+    parsed: "Ok",
+    value: revocation,
+  });
+  assert.deepEqual(parseStoredProjectCommand(text), {
+    parsed: "Ok",
+    value: revocation,
+  });
+  for (const broken of [
+    { ...revocation, expectedRevision: 0 },
+    { ...revocation, expectedRevision: "2" },
+    {
+      ...revocation,
+      ticketCommand: asOperationTicketCommand(
+        resumeTicketCommand(asTicketId(3)),
+      ),
+    },
+  ])
+    assert.equal(
+      parseProjectCommand(encodeProjectCommand(broken as ProjectCommand))
+        .parsed,
+      "Refused",
+      JSON.stringify(broken),
+    );
+});

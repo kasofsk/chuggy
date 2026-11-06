@@ -11,6 +11,11 @@
 import { expect, test } from "vitest";
 
 import {
+  chatPaneBarCovered,
+  chatPaneRestOf,
+  chatPaneSlid,
+  chatPaneSlideDrawn,
+  chatPaneSlideLaid,
   chatPaneDefaulted,
   chatPaneDefaultHeld,
   chatPaneOpened,
@@ -37,6 +42,7 @@ import {
   chatPaneNarrowed,
   chatPaneOnPage,
   chatPaneOrientation,
+  chatPanePageBeside,
   chatPanePanels,
   chatPanePlacements,
   chatPanePresentations,
@@ -239,6 +245,28 @@ test("a pane that filled the frame is restored beside the pages", () => {
   const restored = chatPaneRestored(chatPaneFilled(chatPaneDefault));
   expect(chatPaneContentDrawn(restored)).toBe(true);
   expect(chatPaneStripped(restored)).toBe(false);
+});
+
+test("a message is sent from the page drawn beside the pane, and from none while the pane fills a frame that divides", () => {
+  const page = { page: "Ticket", ticket: 41 } as const;
+  expect(chatPanePageBeside(chatPaneDefault, true, page)).toBe(page);
+  expect(chatPanePageBeside(chatPaneToggled(chatPaneDefault), true, page)).toBe(
+    page,
+  );
+  expect(
+    chatPanePageBeside(chatPaneFilled(chatPaneDefault), true, page),
+  ).toBeUndefined();
+});
+
+test("below two columns a pane over the whole body is sent from the page under it", () => {
+  const page = { page: "Ticket", ticket: 41 } as const;
+  expect(chatPanePageBeside(chatPaneDefaultAt(false), false, page)).toBe(page);
+  expect(chatPanePageBeside(chatPaneFilled(chatPaneDefault), false, page)).toBe(
+    page,
+  );
+  expect(
+    chatPanePageBeside(chatPaneNarrowed(chatPaneDefault, false), false, page),
+  ).toBe(page);
 });
 
 test("a placement is kept through every other move", () => {
@@ -902,4 +930,54 @@ test("the header says the reader's runner only beside a drawn thread that takes 
   expect(
     runnerSaid(door("InCluster", true, "Unregistered"), true, closed),
   ).toBeUndefined();
+});
+
+const narrowStrip = { placement: "Bottom", presentation: "Collapsed" } as const;
+const narrowFull = { placement: "Bottom", presentation: "Full" } as const;
+
+test("only an open pane below two columns takes the bar's rows, and the strip, a docked pane and two columns leave them", () => {
+  expect(chatPaneBarCovered(narrowFull, false)).toBe(true);
+  expect(chatPaneBarCovered(narrowStrip, false)).toBe(false);
+  expect(chatPaneBarCovered(undefined, false)).toBe(false);
+  for (const presentation of chatPanePresentations)
+    expect(
+      chatPaneBarCovered({ placement: "Right", presentation }, true),
+      presentation,
+    ).toBe(false);
+});
+
+test("below two columns the pane slides up from the strip and down into it, and nowhere else", () => {
+  const at = chatPaneRestOf;
+  expect(chatPaneSlid(at(narrowStrip, false), at(narrowFull, false))).toBe(
+    "Opening",
+  );
+  expect(chatPaneSlid(at(narrowFull, false), at(narrowStrip, false))).toBe(
+    "Closing",
+  );
+  for (const [rest, held] of [
+    [at(narrowStrip, false), at(narrowStrip, false)],
+    [at(narrowFull, false), at(narrowFull, false)],
+    [at(narrowStrip, true), at(narrowFull, true)],
+    [at(narrowFull, true), at(narrowStrip, true)],
+    [at(narrowStrip, true), at(narrowFull, false)],
+    [at(narrowFull, false), at(narrowStrip, true)],
+    [at(undefined, false), at(narrowFull, false)],
+    [at(narrowFull, false), at(undefined, false)],
+  ] as const)
+    expect(chatPaneSlid(rest, held)).toBeUndefined();
+});
+
+test("a sliding pane is laid as the strip under the pages and drawn open, and one at rest as it is", () => {
+  for (const slide of ["Opening", "Closing"] as const)
+    for (const state of [narrowStrip, narrowFull]) {
+      expect(chatPaneSlideLaid(state, slide)).toStrictEqual(narrowStrip);
+      expect(chatPaneSlideDrawn(state, slide)).toStrictEqual(narrowFull);
+      expect(chatPaneLayoutPanels(chatPaneSlideLaid(state, slide))).toEqual(
+        chatPaneLayoutPanels(narrowStrip),
+      );
+    }
+  for (const state of [narrowStrip, narrowFull]) {
+    expect(chatPaneSlideLaid(state, undefined)).toBe(state);
+    expect(chatPaneSlideDrawn(state, undefined)).toBe(state);
+  }
 });

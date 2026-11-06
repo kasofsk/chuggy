@@ -179,6 +179,8 @@ function portsOf(kept: readonly Kept[], calls: string[]): NativeThreadPorts {
         );
         return Promise.resolve({ enqueued: "Enqueued", ordinal: 1 });
       },
+      enqueueOfferReply: () =>
+        Promise.reject(new Error("a member's chat replies to no offer")),
       stopTurn: ({ partition, session }) => {
         calls.push(`stop:${partition.project}:${session}`);
         return Promise.resolve("Stopped");

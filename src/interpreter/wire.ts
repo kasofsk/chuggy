@@ -148,6 +148,9 @@ export function encodeProjectCommand(command: ProjectCommand): string {
       version: 1,
       command: "Decide",
       ticketCommand: encodeTicketCommand(command.ticketCommand),
+      ...(command.expectedRevision === undefined
+        ? {}
+        : { expectedRevision: command.expectedRevision }),
     });
   }
   return JSON.stringify(command);
@@ -206,7 +209,7 @@ function parsedDispatchCommand(
 }
 
 /** Whether a count field is a positive safe integer, which every counter an envelope names is. */
-function parsedDraftCommandCount(value: unknown): boolean {
+function parsedDraftCommandCount(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 1;
 }
 
@@ -251,10 +254,37 @@ function parsedOverridesChange(
   return {
     version: 1,
     command: "ChangeTicketOverrides",
-    ticket: asTicketId(ticket as number),
+    ticket: asTicketId(ticket),
     action,
-    authorizingSeq: authorizingSeq as number,
+    authorizingSeq,
     overrides: configurationOverridesSchema.parse(record["overrides"]),
+  };
+}
+
+/**
+ * A `Decide` envelope, whose revision fence only a revocation may carry: a
+ * fence on any other command is one the writer would not hold it to.
+ */
+function parsedDecideCommand(
+  record: Record<string, unknown>,
+): Parsed<ProjectCommand> {
+  const ticketCommand = asOperationTicketCommand(
+    decodeTicketCommand(record["ticketCommand"]),
+  );
+  const expectedRevision = record["expectedRevision"];
+  if (expectedRevision === undefined)
+    return {
+      parsed: "Ok",
+      value: { version: 1, command: "Decide", ticketCommand },
+    };
+  if (
+    ticketCommand.type !== "RevokeTicket" ||
+    !parsedDraftCommandCount(expectedRevision)
+  )
+    throw new TypeError("only a revocation names the revision it expects");
+  return {
+    parsed: "Ok",
+    value: { version: 1, command: "Decide", ticketCommand, expectedRevision },
   };
 }
 
@@ -277,18 +307,7 @@ export function parseProjectCommand(text: string): Parsed<ProjectCommand> {
     const record = raw as Record<string, unknown>;
     if (record["version"] !== 1)
       throw new TypeError("command version is not 1");
-    if (record["command"] === "Decide") {
-      return {
-        parsed: "Ok",
-        value: {
-          version: 1,
-          command: "Decide",
-          ticketCommand: asOperationTicketCommand(
-            decodeTicketCommand(record["ticketCommand"]),
-          ),
-        },
-      };
-    }
+    if (record["command"] === "Decide") return parsedDecideCommand(record);
     const dispatch = parsedDispatchCommand(record);
     if (dispatch !== undefined) return { parsed: "Ok", value: dispatch };
     if (parsedDraftCommand(record))

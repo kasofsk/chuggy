@@ -1,6 +1,6 @@
 /**
  * The door an epic is created and revised through, and the API's read of the
- * relations 120 made.
+ * relations 122 made.
  *
  * `save_epic` IS `decideEpic` IN SQL. It takes the project row's lock, which
  * serializes every save of a project, so the number a creation takes is
@@ -31,8 +31,8 @@ const signature = `public.${epicSaveFunction}(in_tenant text, in_project text, i
 
 const held = "e.tenant=in_tenant AND e.project=in_project";
 
-export const migration121: Migration = {
-  version: 121,
+export const migration123: Migration = {
+  version: 123,
   name: "an epic is saved through one door, and the API reads the relations",
   statements: [
     `CREATE FUNCTION ${signature}

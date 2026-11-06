@@ -35,8 +35,8 @@ const signature = `public.${draftInEpicFunction}(${parameters})`;
 const forwarded =
   "in_tenant, in_project, in_configuration, in_configuration_digest, in_expected_head, in_authoring, in_title, in_intent, in_links, in_images, in_checks, in_branch, in_finalization_mode, in_finalization_target, in_repository, in_overrides, in_selection, in_kind, in_subject, in_origin_session, in_landing";
 
-export const migration122: Migration = {
-  version: 122,
+export const migration124: Migration = {
+  version: 124,
   name: "a draft is created into an epic in the one transaction",
   statements: [
     `CREATE FUNCTION ${signature}

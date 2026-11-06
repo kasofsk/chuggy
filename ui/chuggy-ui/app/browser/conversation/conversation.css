@@ -149,7 +149,7 @@
   /* The list stands over the thread rather than inside the composer, because
    * the composer it opens from is the last thing on the pane and a list below
    * it would be off the bottom of the screen. */
-  .conversation-mentions {
+  .conversation-trigger-list {
     position: absolute;
     bottom: 100%;
     left: 0;
@@ -159,13 +159,13 @@
     max-height: 14em;
   }
 
-  .conversation-mention {
+  .conversation-trigger-item {
     background: transparent;
     cursor: pointer;
   }
 
-  .conversation-mention[data-highlighted],
-  .conversation-mention:hover {
+  .conversation-trigger-item[data-highlighted],
+  .conversation-trigger-item:hover {
     background: var(--surface-2);
   }
 

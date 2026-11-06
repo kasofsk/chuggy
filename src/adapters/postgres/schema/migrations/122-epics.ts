@@ -44,8 +44,8 @@ function contentColumns(relation: string): string {
          CHECK (visibility IN ('Active','Archived'))`;
 }
 
-export const migration120: Migration = {
-  version: 120,
+export const migration122: Migration = {
+  version: 122,
   name: "a project keeps epics, the groups of tickets it documents",
   statements: [
     `CREATE TABLE public.epic (

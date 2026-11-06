@@ -8,7 +8,8 @@
  * folded into the one entry the rows are read under. The filter, the search
  * and the order a sort reads in are asked of the wire, and the rows on screen
  * stand until the read under a new choice answers; the search, the sort and
- * the filter are the page's address, so a link holds the view. A project
+ * the filter are the page's address, so a link holds the view. Each state's
+ * count above the rows chooses the filter as the picker does. A project
  * holding no ticket at all offers the first instead.
  *
  * A ROW OFFERS ONE ACTION, DISPATCH, AS ITS READY CHIP. A ready row reads the
@@ -38,10 +39,12 @@ import { projectAbilityRefused } from "../core/projectAbilities.ts";
 import { repositoryLabel } from "../core/projectRepositories.ts";
 import {
   ticketFilterAll,
+  ticketFilterIsStanding,
   ticketFilterOf,
   ticketFilterPage,
   ticketFilterProjectEmpty,
   ticketFilterReadsCount,
+  ticketFilterStandings,
 } from "../core/projectTableFilters.ts";
 import type {
   TicketFilter,
@@ -56,6 +59,8 @@ import {
 import type { ProjectTicketRows } from "../core/projectTicketPages.ts";
 import { ticketRowsQuery } from "../core/ticketQueries.ts";
 import {
+  ticketListCountTapped,
+  ticketListFiltered,
   ticketListQueryWith,
   ticketListSearchOf,
   ticketListSearchWaitMs,
@@ -372,19 +377,24 @@ const ticketListDependencyGlyph = (
   </TicketListGlyph>
 );
 
-/** The standings that are not yet an end, in the order the counts read. */
+/** The standings that are not yet an end, in the order the State sort draws the rows, reversed. */
 const ticketListCounted = [
-  "Ready",
   "Blocked",
+  "Ready",
   "Work",
   "Evaluation",
   "Finalization",
   "Escalated",
 ] as const satisfies readonly TicketListStanding[];
 
-/** How many of the rows held stand in each state that is not an end. */
+/** How many of the rows drawn stand in each state that is not an end, each
+ * the button that filters the list to its state or, as the filter, back to
+ * every ticket. The filter's own state is drawn when no row stands in it, so it
+ * can always be tapped away. */
 function TicketListCounts(props: {
   readonly rows: readonly ProjectTableRow[];
+  readonly filter: TicketFilter;
+  readonly onFilter: (filter: TicketFilter) => void;
 }): ReactNode {
   const counts = new Map<TicketListStanding, number>();
   for (const row of props.rows) {
@@ -395,16 +405,39 @@ function TicketListCounts(props: {
     <ul className="ticket-list-counts" aria-label="Tickets by state">
       {ticketListCounted
         .flatMap((standing) => {
-          const count = counts.get(standing);
+          const count =
+            counts.get(standing) ?? (standing === props.filter ? 0 : undefined);
           return count === undefined ? [] : [{ standing, count }];
         })
         .map(({ standing, count }) => (
           <li key={standing}>
-            <TicketStateCount standing={standing} count={count} />
+            <TicketStateCount
+              standing={standing}
+              count={count}
+              pressed={standing === props.filter}
+              onPress={() => {
+                props.onFilter(ticketListCountTapped(props.filter, standing));
+              }}
+            />
           </li>
         ))}
     </ul>
   );
+}
+
+/** What the Filter picker offers past All: every phase, Pending followed by
+ * the standings it narrows to. */
+const ticketListFilterChoices: readonly Exclude<
+  TicketFilter,
+  typeof ticketFilterAll
+>[] = phaseRoster.flatMap((phase) =>
+  phase === "Pending" ? [phase, ...ticketFilterStandings] : [phase],
+);
+
+function ticketListFilterText(
+  filter: Exclude<TicketFilter, typeof ticketFilterAll>,
+): string {
+  return ticketFilterIsStanding(filter) ? filter : phaseLabel(filter);
 }
 
 /** How long the box takes to close, which the room it holds in the row outlasts. */
@@ -504,7 +537,11 @@ function TicketListControls(props: {
       data-hidden={hidden || undefined}
       inert={hidden}
     >
-      <TicketListCounts rows={props.rows} />
+      <TicketListCounts
+        rows={props.rows}
+        filter={props.filter}
+        onFilter={props.onFilter}
+      />
       <div className="ticket-list-selects">
         <TicketListSearch search={props.search} onSearch={props.onSearch} />
         <Picker
@@ -528,9 +565,9 @@ function TicketListControls(props: {
           value={props.filter}
           options={[
             { value: ticketFilterAll, text: "All states" },
-            ...phaseRoster.map((phase) => ({
-              value: phase,
-              text: phaseLabel(phase),
+            ...ticketListFilterChoices.map((filter) => ({
+              value: filter,
+              text: ticketListFilterText(filter),
             })),
           ]}
           onChoose={(chosen) => {
@@ -543,25 +580,40 @@ function TicketListControls(props: {
   );
 }
 
+/** How many tickets a search matched, and, where that is a count of the rows
+ * read while pages remain, that it is of those read so far. */
+function ticketListStatusMatched(matched: number, soFar: boolean): string {
+  return `${String(matched)} matching ${matched === 1 ? "ticket" : "tickets"}${soFar ? " so far" : ""}`;
+}
+
 /** One line under the controls where the list needs one: how many tickets a
- * search matched across the project, or that the list holds none. */
+ * search matched, across the project or, under a standing the server cannot
+ * count, among the rows drawn; or that the list draws none, of the tickets
+ * there are or, while pages remain, of those read so far. */
 function ticketListStatus(
   rows: ProjectTicketRows,
+  filter: TicketFilter,
   searching: boolean,
+  shown: number,
 ): string | undefined {
+  if (searching && ticketFilterIsStanding(filter))
+    return ticketListStatusMatched(shown, projectTicketRowsHaveMore(rows));
   if (searching)
     return rows.matched === undefined
       ? undefined
-      : `${String(rows.matched)} matching ${rows.matched === 1 ? "ticket" : "tickets"}`;
-  return rows.tickets.length === 0
-    ? "No active or recently finished tickets."
-    : undefined;
+      : ticketListStatusMatched(rows.matched, false);
+  if (shown > 0) return undefined;
+  return rows.tickets.length > 0 && projectTicketRowsHaveMore(rows)
+    ? "None of the tickets read so far is in this state."
+    : "No active or recently finished tickets.";
 }
 
-/** The rows the list's read holds, drawn in the order the sort asks for, or
- * the one line a read that is not ready is drawn as. */
+/** The rows the list's read holds that its filter draws, in the order the sort
+ * asks for, or the one line a read that is not ready is drawn as. A dependency
+ * reads its standing from every row held, drawn or not. */
 function TicketListRows(props: {
   readonly state: PanelState<ProjectTicketRows>;
+  readonly filter: TicketFilter;
   readonly partition: PartitionIdentity;
   readonly nowMs: number;
   readonly sort: TicketListSort;
@@ -571,14 +623,20 @@ function TicketListRows(props: {
   const creatorEmails = useCreatorEmails(props.partition);
   const state = props.state;
   if (state.state !== "Ready") return <PanelUnready state={state} />;
+  const rows = state.value.tickets.map(projectTableRow);
   const shown = ticketListShown(
-    state.value.tickets.map(projectTableRow),
+    ticketListFiltered(rows, props.filter),
     props.sort,
   );
   const standings = new Map(
-    shown.map((row) => [row.ticket, ticketListStandingOf(row)] as const),
+    rows.map((row) => [row.ticket, ticketListStandingOf(row)] as const),
   );
-  const status = ticketListStatus(state.value, props.searching);
+  const status = ticketListStatus(
+    state.value,
+    props.filter,
+    props.searching,
+    shown.length,
+  );
   return (
     <>
       {status === undefined ? null : (
@@ -727,7 +785,10 @@ export function ProjectTable(props: {
       <TicketListControls
         rows={
           tickets.state.state === "Ready"
-            ? tickets.state.value.tickets.map(projectTableRow)
+            ? ticketListFiltered(
+                tickets.state.value.tickets.map(projectTableRow),
+                choices.filter,
+              )
             : []
         }
         search={typed}
@@ -744,6 +805,7 @@ export function ProjectTable(props: {
       )}
       <TicketListRows
         state={tickets.state}
+        filter={choices.filter}
         partition={partition}
         nowMs={nowMs}
         sort={sort}

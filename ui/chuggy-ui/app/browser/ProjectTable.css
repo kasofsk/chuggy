@@ -2,8 +2,10 @@
    the outer corners rounded, each row the same height so the state chips line
    up down the right edge. The row reads as two lines — the title, then the
    number, the meta and what it waits on — over a foot of its state, which on
-   a ready row is the button that dispatches it; where the list is wide the
-   foot moves beside them and the title keeps to one line. Where it is narrow
+   a ready row is the button that dispatches it, and each count above the rows
+   is the button that filters them to its state, ringed while it is the
+   filter; where the list is wide the foot moves beside them and the title
+   keeps to one line. Where it is narrow
    the meta keeps its activity, what it is running and its repository, and the
    creator moves to the start of the foot, opposite the state; on a phone the
    rows run edge to edge with the controls stacked full width. */
@@ -17,17 +19,21 @@
   }
 
   .ticket-list-controls {
-    --control-height: calc(var(--space-6) + var(--space-1));
+    --control-height: calc(var(--space-5) + var(--space-1));
     min-width: 0;
     display: flex;
     flex-wrap: wrap;
     align-items: center;
     gap: var(--space-2);
     position: sticky;
-    top: calc(-1 * var(--space-2));
+    top: 0;
     z-index: 1;
-    margin-top: calc(-1 * var(--space-2));
-    padding-block: var(--space-4) var(--space-2);
+    margin-top: calc(-1 * var(--space-4));
+    margin-bottom: calc(var(--space-2) - var(--space-3));
+    box-sizing: border-box;
+    min-block-size: calc(var(--height-icon) + var(--space-2) + var(--hairline));
+    padding-block: var(--space-2) var(--space-1);
+    border-bottom: var(--hairline) solid var(--edge);
     background: var(--surface-0);
     transition:
       transform var(--duration-2) var(--ease-out),
@@ -46,10 +52,6 @@
     }
   }
 
-  .ticket-state-count-label {
-    display: none;
-  }
-
   .ticket-list-counts {
     display: flex;
     flex: 1 1 0;
@@ -66,11 +68,36 @@
     margin-inline-start: 0;
     gap: var(--space-2);
     box-sizing: border-box;
-    width: var(--control-height);
+    width: auto;
     height: var(--control-height);
-    padding: 0;
-    border-radius: var(--radius-circle);
-    font-size: var(--text-sm);
+    padding: 0 var(--space-2);
+    font-size: var(--text-xs);
+  }
+
+  button.ticket-state-count {
+    font-family: inherit;
+    cursor: pointer;
+    transition: border-color var(--duration-1) var(--ease-out);
+  }
+
+  button.ticket-state-count:hover {
+    border-color: var(--edge-strong);
+  }
+
+  button.ticket-state-count:focus-visible {
+    outline: none;
+    box-shadow: var(--ring-focus);
+  }
+
+  button.ticket-state-count[aria-pressed="true"] {
+    border-color: currentColor;
+    box-shadow: inset 0 0 0 var(--hairline) currentColor;
+  }
+
+  button.ticket-state-count[aria-pressed="true"]:focus-visible {
+    box-shadow:
+      var(--ring-focus),
+      inset 0 0 0 var(--hairline) currentColor;
   }
 
   .ticket-list-search {
@@ -82,7 +109,7 @@
     overflow: hidden;
     background: var(--surface-1);
     border: var(--hairline) solid var(--edge-control);
-    border-radius: var(--radius-3);
+    border-radius: calc(var(--control-height) / 2);
   }
 
   .ticket-list-search:has(:focus-visible) {
@@ -138,6 +165,22 @@
     flex: none;
     box-sizing: border-box;
     height: var(--control-height);
+  }
+
+  .ticket-list-selects > button,
+  .ticket-list-search > .ticket-list-search-toggle {
+    justify-content: center;
+    width: var(--control-height);
+    min-width: var(--control-height);
+    padding: 0;
+    border-radius: var(--radius-circle);
+  }
+
+  .ticket-list-selects > button svg,
+  .ticket-list-search-toggle svg {
+    flex: none;
+    width: var(--space-4);
+    height: var(--space-4);
   }
 
   .ticket-list-search > .ticket-list-search-toggle {
@@ -345,7 +388,7 @@
     font-size: var(--text-sm);
   }
 
-  button.ticket-list-state {
+  button.ticket-list-state:not(.ticket-state-count) {
     font-family: inherit;
     cursor: pointer;
     box-shadow: 0 var(--hairline) var(--space-1) var(--wash-pass);
@@ -354,17 +397,17 @@
       box-shadow var(--duration-1) var(--ease-out);
   }
 
-  button.ticket-list-state:hover:not(:disabled) {
+  button.ticket-list-state:not(.ticket-state-count):hover:not(:disabled) {
     background: var(--wash-pass);
     box-shadow: 0 var(--space-1) var(--space-3) var(--wash-pass);
   }
 
-  button.ticket-list-state:focus-visible {
+  button.ticket-list-state:not(.ticket-state-count):focus-visible {
     outline: none;
     box-shadow: var(--ring-focus);
   }
 
-  button.ticket-list-state:disabled {
+  button.ticket-list-state:not(.ticket-state-count):disabled {
     cursor: progress;
     opacity: 0.6;
   }
@@ -441,9 +484,19 @@
       margin-inline: calc(-1 * var(--space-4));
     }
 
+    .ticket-list-state.ticket-state-count {
+      width: var(--control-height);
+      padding: 0;
+      border-radius: var(--radius-circle);
+    }
+
+    .ticket-state-count-label {
+      display: none;
+    }
+
     .ticket-list-controls {
       margin-inline: calc(-1 * var(--space-4));
-      padding: var(--space-4) var(--space-4) var(--space-3);
+      padding: var(--space-3) var(--space-4) var(--space-2);
     }
 
     .ticket-list-row {

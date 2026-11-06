@@ -15,14 +15,13 @@
  * every frame the project sends.
  */
 
-import type { QueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 import { partitionPath } from "../../../../../src/contract/http.ts";
+import type { ConsolePage } from "../../../../../src/contract/consolePage.ts";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ThreadEntryResponse } from "../../../../../src/contract/responses.ts";
-import { apiOpenThread } from "../../core/apiRoutes.ts";
 import {
   chatPaneDefaulted,
   chatPaneFilled,
@@ -38,49 +37,36 @@ import {
   conversationExchangeSent,
   conversationExchangesStopped,
 } from "../../core/conversation.ts";
-import { consoleWriteKey } from "../../core/consoleWrite.ts";
-import type { ConsoleWrite } from "../../core/consoleWrite.ts";
-import { failureWords } from "../../core/failureWords.ts";
 import { projectAbilityRefused } from "../../core/projectAbilities.ts";
-import { sessionPlacementQuery } from "../../core/projectQueries.ts";
-import {
-  threadLimitWord,
-  threadOpenAtLimit,
-  threadTurnsEnded,
-  threadUnhosted,
-} from "../../core/threads.ts";
+import { threadTurnsEnded } from "../../core/threads.ts";
 import type { ThreadDoor, ThreadSend } from "../../core/threads.ts";
 import { threadsQuery } from "../../core/sessionQueries.ts";
-import { sessionRefusedNoRunner } from "../../core/sessionRunners.ts";
+import type { ThreadCleared } from "../../core/threadCommands.ts";
 import { threadHomeOf } from "../../core/threadHome.ts";
 import { usePanelState } from "../api.ts";
-import { ConsoleWriteRefusedWords, useConsoleWrite } from "../consoleWrite.tsx";
+import { ConsoleWriteRefusedWords } from "../consoleWrite.tsx";
 import { PanelUnready } from "../DataPanel.tsx";
 import { Conversation } from "../conversation/Conversation.tsx";
 import { useProjectAbilities, ViewOnlyNotice } from "../projectAbilities.tsx";
 import { ThreadConversation } from "../thread/ThreadConversation.tsx";
 import { SessionRunnerNotice } from "../sessionPlacement.tsx";
+import { useThreadCommands } from "../thread/threadCommands.tsx";
 import {
   ThreadUnhostedNotice,
   useThreadDoor,
   useThreadSend,
 } from "../thread/threadSend.tsx";
-import {
-  threadDoorGranted,
-  threadDoorOpened,
-  threadSendKeptListed,
-} from "../thread/threadSends.ts";
+import { threadSendKeptListed } from "../thread/threadSends.ts";
 import { useThread } from "../thread/threadRead.ts";
 import { Button } from "../ui/Button.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { useConsoleDispatch, useConsoleSelector } from "../store.ts";
-import type { ConsoleDispatch } from "../store.ts";
 import type { ChatPanePlacement } from "../../core/chatPane.ts";
 import { useChatPane } from "./chatPaneHeld.ts";
+import { useChatPaneStart } from "./chatPaneStart.ts";
+import type { ChatPaneStarting } from "./chatPaneStart.ts";
 import {
   chatPaneDefaultHeldAt,
-  chatPaneOpenedAt,
-  chatPaneOpenPressed,
   chatPanePickedAt,
   chatPaneReadAt,
   chatPaneRecordAt,
@@ -132,127 +118,31 @@ function ChatPaneStartDoor(props: {
   );
 }
 
-/** What an open from New answered that the pane acts on: the thread it
- * opened, or the door it met, counting the placement reads before a refusal
- * over the hosted grant. */
-type ChatPaneOpened =
-  | { readonly opened: "Opened"; readonly session: string }
-  | { readonly opened: "Unhosted"; readonly readsAt: number }
-  | { readonly opened: "NoRunner" };
-
-/** What an open changed of the door's reads: a refusal over the grant writes
- * it ungranted, either refusal reads the placement again, and an open on a
- * route read as hosted writes the grant given. */
-async function chatPaneOpenLanded(
-  client: QueryClient,
-  partition: PartitionIdentity,
-  opened: ChatPaneOpened,
-): Promise<void> {
-  const placement = sessionPlacementQuery(partition).queryKey;
-  switch (opened.opened) {
-    case "Opened":
-      threadDoorOpened(client, partition);
-      return;
-    case "Unhosted":
-      threadDoorGranted(client, partition, false);
-      await client.invalidateQueries({ queryKey: placement });
-      return;
-    case "NoRunner":
-      await client.invalidateQueries({ queryKey: placement });
-      return;
-  }
-}
-
-/** One open from New, under the key the project's record holds, its refusal
- * said as the header's row says it. The thread it opened is picked and the key
- * spent in the store, which outlives the pane, whether or not the pane is
- * still drawn. */
-function chatPaneOpenWrite(
-  partition: PartitionIdentity,
-  dispatch: ConsoleDispatch,
-): ConsoleWrite<string, ChatPaneOpened> {
-  return {
-    mutationKey: consoleWriteKey(
-      "thread-open",
-      partition.tenant,
-      partition.project,
-    ),
-    write: async (ports, key, client) => {
-      const answer = await apiOpenThread(ports, partition, key);
-      if (threadUnhosted(answer)) {
-        const placement = sessionPlacementQuery(partition).queryKey;
-        const readsAt = client.getQueryState(placement)?.dataUpdateCount ?? 0;
-        return { outcome: "Ok", value: { opened: "Unhosted", readsAt } };
-      }
-      if (sessionRefusedNoRunner(answer))
-        return { outcome: "Ok", value: { opened: "NoRunner" } };
-      if (answer.outcome !== "Ok") return answer;
-      return {
-        outcome: "Ok",
-        value: { opened: "Opened", session: answer.value.session },
-      };
-    },
-    refusal: (failure) =>
-      threadOpenAtLimit(failure)
-        ? `Refused · ${threadLimitWord}`
-        : failureWords(failure).word,
-    landed: (client, opened) => {
-      if (opened.opened === "Opened")
-        dispatch(chatPaneOpenedAt({ partition, session: opened.session }));
-      return chatPaneOpenLanded(client, partition, opened);
-    },
-  };
-}
-
 /**
- * The offer to start a thread beside those the reader holds, opened under a key
- * held until an open answers, so a press after one that failed reaches the
- * thread that one may have opened. It navigates nowhere: the open's `Session`
- * frame stales the listing this pane holds, and the pane answers the thread.
+ * The offer to start a thread beside those the reader holds. It navigates
+ * nowhere: the open's `Session` frame stales the listing this pane holds, and
+ * the pane answers the thread.
  */
 function ChatPaneStartControl(props: {
   readonly partition: PartitionIdentity;
-  readonly onOpened: (session: string) => void;
-  /** What the door met, newer than the reads of it. */
-  readonly onRefused: (refusal: ThreadSend) => void;
+  readonly starting: ChatPaneStarting;
   /** What the door would answer that nothing under the header says. */
   readonly header: ChatPaneHeaderDoor;
 }): ReactNode {
-  const dispatch = useConsoleDispatch();
-  const opening = useConsoleWrite(
-    chatPaneOpenWrite(props.partition, dispatch),
-    { drawn: true },
-  );
-  const answered = (opened: ChatPaneOpened): void => {
-    switch (opened.opened) {
-      case "Opened":
-        props.onOpened(opened.session);
-        return;
-      case "Unhosted":
-        props.onRefused({ send: "Unhosted", readsAt: opened.readsAt });
-        return;
-      case "NoRunner":
-        props.onRefused({ send: "Idle" });
-        return;
-    }
-  };
+  const { busy, refused, started } = props.starting;
   return (
     <>
       <ChatPaneIconButton
         glyph="new"
         label="New"
-        busy={opening.isPending}
-        disabled={opening.isPending}
-        onClick={() => {
-          opening.mutate(dispatch(chatPaneOpenPressed(props.partition)), {
-            onSuccess: answered,
-          });
-        }}
+        busy={busy}
+        disabled={busy}
+        onClick={started}
       />
-      {opening.error === null ? null : (
+      {refused === null ? null : (
         <ChatPaneHeaderRow>
           <Notice tone="danger" inline>
-            <ConsoleWriteRefusedWords refused={opening.error} />
+            <ConsoleWriteRefusedWords refused={refused} />
           </Notice>
         </ChatPaneHeaderRow>
       )}
@@ -299,12 +189,18 @@ function ChatPaneControls(props: {
   );
 }
 
+/** What `/clear` runs in a box of the pane: the pane's start, closing the
+ * thread the box sends to first, and nothing where the reader may start none. */
+type ChatPaneClear = ((session: string) => Promise<ThreadCleared>) | undefined;
+
 /** The thread the pane holds, keyed by its session so choosing another out of
  * the history mounts a read of its own rather than reusing this one's. */
 function ChatPaneThread(props: {
   readonly partition: PartitionIdentity;
   readonly session: string;
   readonly named: boolean;
+  readonly page: ConsolePage | undefined;
+  readonly clear: ChatPaneClear;
 }): ReactNode {
   const state = useThread(props.partition, props.session);
   if (state.state !== "Ready") return <PanelUnready state={state} />;
@@ -313,6 +209,9 @@ function ChatPaneThread(props: {
       partition={props.partition}
       thread={state.value}
       named={props.named}
+      page={props.page}
+      clear={props.clear}
+      navigates
     />
   );
 }
@@ -375,6 +274,8 @@ function ChatPaneFirst(props: {
   readonly opening: string | undefined;
   readonly onStarted: () => void;
   readonly onRead: () => void;
+  readonly page: ConsolePage | undefined;
+  readonly clear: ChatPaneClear;
 }): ReactNode {
   const [typed, setTyped] = useState(false);
   const sends = useThreadSend({
@@ -382,6 +283,13 @@ function ChatPaneFirst(props: {
     session: undefined,
     takes: true,
     onStarted: props.onStarted,
+    page: props.page,
+  });
+  const commands = useThreadCommands({
+    partition: props.partition,
+    thread: undefined,
+    sending: sends.sending.length,
+    clear: props.clear,
   });
   const composer = sends.composer;
   if (composer.back !== undefined && !typed) setTyped(true);
@@ -423,6 +331,7 @@ function ChatPaneFirst(props: {
             setTyped(text !== "");
             composer.onEdit?.(text);
           },
+          commands,
         }}
         pane
       />
@@ -480,6 +389,8 @@ function ChatPaneBody(props: {
   readonly opening: string | undefined;
   readonly onStarted: () => void;
   readonly onRead: () => void;
+  readonly page: ConsolePage | undefined;
+  readonly clear: ChatPaneClear;
 }): ReactNode {
   if (chatPaneThreadDrawn(props.session, props.starting))
     return (
@@ -488,6 +399,8 @@ function ChatPaneBody(props: {
         partition={props.partition}
         session={props.session}
         named={props.named}
+        page={props.page}
+        clear={props.clear}
       />
     );
   if (props.viewOnly)
@@ -504,6 +417,8 @@ function ChatPaneBody(props: {
       opening={props.opening}
       onStarted={props.onStarted}
       onRead={props.onRead}
+      page={props.page}
+      clear={props.clear}
     />
   );
 }
@@ -597,12 +512,15 @@ function ChatPaneHeld(props: {
   );
 }
 
-function ChatPaneOpen(props: {
+interface ChatPaneOpenProps {
   readonly partition: PartitionIdentity;
   /** Where the pane is drawn, and whether it has the whole frame and so sets
    * its conversation as a column to read. */
   readonly chat: ChatPaneState;
-}): ReactNode {
+  readonly page: ConsolePage | undefined;
+}
+
+function ChatPaneOpen(props: ChatPaneOpenProps): ReactNode {
   const pane = useChatPaneOpenHeld(props.partition);
   const door = useChatPaneDoor(props.partition);
   const { threads, holding } = pane;
@@ -612,6 +530,18 @@ function ChatPaneOpen(props: {
     useProjectAbilities(props.partition),
     "mutate",
   );
+  const starting = useChatPaneStart({
+    partition: props.partition,
+    drawn: !viewOnly,
+    onOpened: (session) => {
+      pane.chose(session);
+      door.met({ send: "Idle" });
+    },
+    onRefused: (refusal) => {
+      door.met(refusal);
+      pane.stayed();
+    },
+  });
   return (
     <section
       aria-label="Chat"
@@ -623,14 +553,7 @@ function ChatPaneOpen(props: {
           {viewOnly ? null : (
             <ChatPaneStartControl
               partition={props.partition}
-              onOpened={(session) => {
-                pane.chose(session);
-                door.met({ send: "Idle" });
-              }}
-              onRefused={(refusal) => {
-                door.met(refusal);
-                pane.stayed();
-              }}
+              starting={starting}
               header={chatPaneHeaderDoor(door.door, drawn, held, door.refusal)}
             />
           )}
@@ -660,6 +583,8 @@ function ChatPaneOpen(props: {
             door.met({ send: "Idle" });
           }}
           onRead={pane.read}
+          page={props.page}
+          clear={viewOnly ? undefined : starting.cleared}
         />
       </div>
     </section>
@@ -669,6 +594,9 @@ function ChatPaneOpen(props: {
 export function ChatPane(props: {
   readonly partition: PartitionIdentity;
   readonly chat: ChatPaneState;
+  /** The page the pane is drawn with, which a message is sent from; nothing
+   * where the pane has the whole of a frame that divides. */
+  readonly page?: ConsolePage | undefined;
 }): ReactNode {
   return chatPaneStripped(props.chat) ? (
     <ChatPaneStrip placement={props.chat.placement} />
@@ -677,6 +605,7 @@ export function ChatPane(props: {
       key={partitionPath(props.partition)}
       partition={props.partition}
       chat={props.chat}
+      page={props.page}
     />
   );
 }

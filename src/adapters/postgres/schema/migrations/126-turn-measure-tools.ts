@@ -16,8 +16,8 @@ const toolsMax = 80;
 /** The length of the names joined by commas, raised in proportion. */
 const joinedCharsMax = 10_320;
 
-export const migration124: Migration = {
-  version: 124,
+export const migration126: Migration = {
+  version: 126,
   name: "a turn's measurement may name more tools",
   statements: [
     `ALTER TABLE public.session_turn

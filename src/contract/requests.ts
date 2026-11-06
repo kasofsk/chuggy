@@ -36,6 +36,8 @@ import { authoringSchema } from "./authoring.ts";
 import { briefSchema } from "./brief.ts";
 import { configurationOverridesSchema } from "./configurationOverrides.ts";
 import { configurationSelectionSchema } from "./configurationSelection.ts";
+import { consolePageSchema } from "./consolePage.ts";
+import { threadOfferReplySchema } from "./threadOffers.ts";
 import {
   briefFinalizationModes,
   forgeCredentialPermissions,
@@ -56,9 +58,11 @@ import {
 const bodyIdentitySchema = z.string().min(1);
 
 export const publicMutationSchema = z.discriminatedUnion("mutation", [
+  /** A revocation, fenced to the ticket revision its author read where it names one. */
   z.strictObject({
     mutation: z.literal("RevokeTicket"),
     ticket: ticketNumberSchema,
+    expectedRevision: ticketNumberSchema.optional(),
   }),
   z.strictObject({
     mutation: z.literal("ResumeTicket"),
@@ -355,17 +359,36 @@ export const selectorProposalReviewSchema = z.strictObject({
 });
 
 /**
- * What a member puts in their own thread: a turn identity they mint themselves,
- * the text they typed, and the project-owned images it carries, each named by
- * the identity the upload route minted — a project's own, since no console
- * attaches one yet. The turn is the body's rather than a header's for the
- * reason `submissionSchema` gives — enqueuing is idempotent on it, so a
- * retried post answers the ordinal it already has instead of a second turn.
+ * What a member puts in their own chat thread: a turn identity they mint
+ * themselves, the text they typed, and the images it names by the identity the
+ * upload route minted, but no console page, a chat being sent from none. The
+ * turn is the body's rather than a header's for the reason `submissionSchema`
+ * gives — enqueuing is idempotent on it, so a retried post answers the ordinal
+ * it already has instead of a second turn.
  */
-export const threadMessageSchema = z.strictObject({
+export const chatThreadMessageSchema = z.strictObject({
   turn: bodyIdentitySchema,
   message: z.string().min(1).max(threadMessageCharsMax),
   images: z.array(bodyIdentitySchema).max(threadMessageImagesMax).optional(),
+});
+
+/**
+ * What a member puts in their own project thread: a chat message, whose
+ * images are the project's own, and the console page they sent it from, which
+ * a retried post answers with the page that turn was first sent from.
+ */
+export const threadMessageSchema = chatThreadMessageSchema.extend({
+  page: consolePageSchema.optional(),
+});
+
+/**
+ * What a member puts in their own project thread when they answer an offer it
+ * made them: a turn identity they mint, for the reason a message's is, and the
+ * reply.
+ */
+export const threadOfferReplyRequestSchema = z.strictObject({
+  turn: bodyIdentitySchema,
+  reply: threadOfferReplySchema,
 });
 
 /**

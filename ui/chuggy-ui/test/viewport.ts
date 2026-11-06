@@ -1,8 +1,10 @@
 /**
  * The width a case is reading at. The document a suite runs against answers no
- * media query at all, and the shell asks two of them — the rail is a drawer or
- * a column, the details are the middle or an aside — so a case that mounts the
- * shell states the width instead of inheriting one.
+ * media query at all, and the shell asks them — the rail is a drawer or a
+ * column, the details are the middle or an aside, the chat pane slides or does
+ * not — so a case that mounts the shell states the width instead of inheriting
+ * one, and a case about the pane's slide states whether the reader takes
+ * motion.
  *
  * It lays nothing out either, and the library dividing the frame measures its
  * panels to divide it. So a case that mounts the shell also states the frame:
@@ -30,13 +32,29 @@ const viewportHeightEmDefault = 50;
 export interface ViewportFrame {
   readonly columnEm?: number;
   readonly heightEm?: number;
+  /** Whether the reader takes motion, or has asked for less; a case stating
+   * neither answers no to both. */
+  readonly motion?: boolean;
+}
+
+/** What the viewport answers a query it is asked. */
+function viewportMatches(
+  query: string,
+  em: number,
+  frame: ViewportFrame | undefined,
+): boolean {
+  if (query.includes("prefers-reduced-motion: no-preference"))
+    return frame?.motion === true;
+  if (query.includes("prefers-reduced-motion: reduce"))
+    return frame?.motion === false;
+  const asked = viewportAsked.exec(query);
+  return asked !== null && em >= Number(asked[1]);
 }
 
 export function viewportAtEm(em: number, frame?: ViewportFrame): void {
   vi.stubGlobal("matchMedia", (query: string) => {
-    const asked = viewportAsked.exec(query);
     return {
-      matches: asked !== null && em >= Number(asked[1]),
+      matches: viewportMatches(query, em, frame),
       media: query,
       addEventListener: () => undefined,
       removeEventListener: () => undefined,

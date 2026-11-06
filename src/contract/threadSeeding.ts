@@ -1,8 +1,8 @@
 /**
- * The headings a thread's first turn is written under, the one a later turn
- * naming an image opens with instead and the lines under it, the boundary over
- * the member's own message, and the standing rules a project runs its threads by until it sets
- * its own.
+ * The headings a thread's first turn is written under, the ones a later turn
+ * naming a page or an image opens with instead and the lines under each, the
+ * boundary over the member's own message, and the standing rules a project
+ * runs its threads by until it sets its own.
  *
  * IT IS THE CONTRACT BECAUSE EVERY SIDE READS IT. The interpreter writes the
  * boundary between the block and the message, the console splits on it, and the
@@ -12,6 +12,8 @@
  * silently, on every thread's first turn.
  */
 
+import { consolePageSchema } from "./consolePage.ts";
+import type { ConsolePage } from "./consolePage.ts";
 import type { ChuggyTool } from "./sessionTools.ts";
 
 /**
@@ -44,11 +46,110 @@ export const threadStandingHeading = "# How you act on this project";
 export const threadTurnBoundaryHeading = "# What your owner says";
 
 /**
- * The heading a turn that names an image opens with, whether or not it is the
- * first: naming one is not seeding, so it carries no project text and sheds
- * nothing, but it sits in front of the same boundary a first turn's block does,
- * which is what lets a reader who has never heard of images still split one
- * off correctly.
+ * The heading a turn sent from a console page names that page under, whether
+ * or not it is the first: naming one is not seeding, so it carries no project
+ * text and sheds nothing, but it sits in front of the same boundary a first
+ * turn's block does, and in front of the images section where there is one.
+ */
+export const threadPageHeading = "# Current displayed page";
+
+/** What separates a field's name from its value on one line under
+ * `threadPageHeading`, which no field name contains. */
+const threadPageFieldSeparator = ": ";
+
+/** The fields a page section writes as numbers, and so reads back as them. */
+const threadPageNumberFields: ReadonlySet<string> = new Set([
+  "ticket",
+  "from",
+  "draft",
+]);
+
+/** What a page names beyond which page it is, field by field in the order a
+ * turn writes them, with a field it leaves out as undefined. */
+function threadPageFields(
+  page: ConsolePage,
+): readonly (readonly [string, string | number | undefined])[] {
+  switch (page.page) {
+    case "Tickets":
+    case "Inbox":
+    case "Lead":
+    case "Catalog":
+    case "Repositories":
+    case "Runners":
+      return [];
+    case "Ticket":
+    case "TicketEdit":
+      return [["ticket", page.ticket]];
+    case "TicketNew":
+      return "draft" in page ? [["draft", page.draft]] : [["from", page.from]];
+    case "Repository":
+      return [["repository", page.repository]];
+    case "Settings":
+      return [["section", page.section]];
+  }
+}
+
+/** The page section a turn sent from a console page carries: the page, then
+ * each thing on it the page names, a line each. */
+export function threadPageSection(page: ConsolePage): string {
+  const lines = [
+    ["page", page.page] as const,
+    ...threadPageFields(page),
+  ].flatMap(([field, value]) =>
+    value === undefined
+      ? []
+      : [`- ${field}${threadPageFieldSeparator}${String(value)}`],
+  );
+  return `${threadPageHeading}\n\n${lines.join("\n")}`;
+}
+
+/**
+ * A block with its page section read off: what stands before it, and the page
+ * it names. The section is the last thing a block holds once its images are
+ * read off, so a block with none, or with one naming a page the vocabulary
+ * does not, is answered whole and naming none.
+ */
+export function threadPageRead(block: string): {
+  readonly before: string;
+  readonly page?: ConsolePage;
+} {
+  const heading = `${threadPageHeading}\n\n`;
+  const opens = block.startsWith(heading)
+    ? 0
+    : block.lastIndexOf(`\n\n${heading}`);
+  if (opens < 0) return { before: block };
+  const lines = block
+    .slice(block.indexOf(heading, opens) + heading.length)
+    .split("\n");
+  const fields = lines.flatMap((line) => {
+    const at = line.indexOf(threadPageFieldSeparator);
+    if (!line.startsWith("- ") || at <= 2) return [];
+    const field = line.slice(2, at);
+    const value = line.slice(at + threadPageFieldSeparator.length);
+    return [
+      [
+        field,
+        threadPageNumberFields.has(field) && /^[0-9]+$/u.test(value)
+          ? Number(value)
+          : value,
+      ] as const,
+    ];
+  });
+  const page =
+    fields.length === lines.length
+      ? consolePageSchema.safeParse(Object.fromEntries(fields)).data
+      : undefined;
+  return page === undefined
+    ? { before: block }
+    : { before: block.slice(0, opens), page };
+}
+
+/**
+ * The heading a turn that names an image puts its images under, whether or not
+ * it is the first: naming one is not seeding, so it carries no project text and
+ * sheds nothing, but it sits in front of the same boundary a first turn's block
+ * does, which is what lets a reader who has never heard of images still split
+ * one off correctly.
  */
 export const threadImagesHeading = "# Images with this message";
 
@@ -109,15 +210,16 @@ export function threadStandingSection(standing: string): string {
 
 /**
  * Every heading a turn's input can open with: the seeding block's own four, on
- * a thread's first turn, and `threadImagesHeading`, on any turn that names an
- * image. A reader checks the whole list rather than the seeding block's own,
- * which is what lets it split a later turn's images section off correctly
- * without being told the turn carries one.
+ * a thread's first turn, and `threadPageHeading` and `threadImagesHeading`, on
+ * a later turn that names a page or an image. A reader checks the whole list
+ * rather than the seeding block's own, which is what lets it split a later
+ * turn's sections off correctly without being told the turn carries one.
  */
 export const threadSeedingHeadings = [
   threadNorthStarHeading,
   threadDraftsHeading,
   threadRefusalsHeading,
   threadStandingHeading,
+  threadPageHeading,
   threadImagesHeading,
 ] as const;

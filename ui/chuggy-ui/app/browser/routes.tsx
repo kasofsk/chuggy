@@ -44,10 +44,10 @@ import {
   projectCreationRoutePath,
 } from "../core/projectCreation.ts";
 import type { ProjectCreationQuery } from "../core/projectCreation.ts";
-import { ticketDuplicateQueryOf } from "../core/ticketDuplicate.ts";
+import { ticketCreationQueryOf } from "../core/ticketCreationQuery.ts";
+import type { TicketCreationQuery } from "../core/ticketCreationQuery.ts";
 import { ticketListQueryOf } from "../core/ticketListView.ts";
 import type { TicketListQuery } from "../core/ticketListView.ts";
-import type { TicketDuplicateQuery } from "../core/ticketDuplicate.ts";
 import { usePanelState } from "./api.ts";
 import { CatalogPage } from "./catalog/CatalogPage.tsx";
 import { DataPanel } from "./DataPanel.tsx";
@@ -76,7 +76,7 @@ import {
 import { Shell } from "./Shell.tsx";
 import { ProjectStreamProvider } from "./stream.tsx";
 import { ThreadPage } from "./ThreadPage.tsx";
-import { TicketCreationFrom } from "./TicketDuplicate.tsx";
+import { TicketCreationFrom } from "./TicketCreationStart.tsx";
 import { TicketEdit } from "./TicketEdit.tsx";
 import { TicketPage } from "./TicketPage.tsx";
 import { Button } from "./ui/Button.tsx";
@@ -337,7 +337,8 @@ const projectCreationRoute = createRoute({
 });
 
 function TicketCreationRoute(): ReactNode {
-  return <TicketCreationFrom from={ticketCreationRoute.useSearch().from} />;
+  const query = ticketCreationRoute.useSearch();
+  return <TicketCreationFrom from={query.from} draft={query.draft} />;
 }
 
 const ticketCreationRoute = createRoute({
@@ -346,7 +347,7 @@ const ticketCreationRoute = createRoute({
   component: TicketCreationRoute,
   validateSearch: (
     search: Readonly<Record<string, unknown>>,
-  ): TicketDuplicateQuery => ticketDuplicateQueryOf(search),
+  ): TicketCreationQuery => ticketCreationQueryOf(search),
 });
 
 const ticketRoute = createRoute({

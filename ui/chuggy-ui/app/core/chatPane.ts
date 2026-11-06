@@ -40,6 +40,7 @@
 
 import { z } from "zod";
 
+import type { ConsolePage } from "../../../../src/contract/consolePage.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { ThreadEntryResponse } from "../../../../src/contract/responses.ts";
 import type { KeyValuePort } from "./sessionHolder.ts";
@@ -130,6 +131,20 @@ export function chatPaneOnPage(
   return route.session === undefined ? state : undefined;
 }
 
+/**
+ * The page a message from the pane is sent from: the one the router matched,
+ * which the frame draws beside the pane, or below two columns, where an open
+ * pane is the whole body, draws under it once a press of the bar strips the
+ * pane. A pane given the whole of a frame that divides is sent from no page.
+ */
+export function chatPanePageBeside(
+  state: ChatPaneState,
+  twoColumn: boolean,
+  page: ConsolePage | undefined,
+): ConsolePage | undefined {
+  return twoColumn && !chatPaneContentDrawn(state) ? undefined : page;
+}
+
 /** Whether the pane is drawn as the strip it is expanded back from, which is
  * what a collapse leaves rather than nothing at all. */
 export function chatPaneStripped(state: ChatPaneState): boolean {
@@ -149,6 +164,75 @@ export function chatPaneNarrowed(
   return chatPaneStripped(state)
     ? { placement: "Bottom", presentation: "Collapsed" }
     : chatPaneFilled(state);
+}
+
+/** Whether the pane takes the rows of the bar under the project's own, its
+ * screens and the page's, as well as the body: only where the viewport does
+ * not divide and the pane laid there is the whole body. The strip gives the nav
+ * back a press away, and the project's row, whose inbox yields the pane too,
+ * stays. */
+export function chatPaneBarCovered(
+  laid: ChatPaneState | undefined,
+  twoColumn: boolean,
+): boolean {
+  return !twoColumn && laid !== undefined && !chatPaneContentDrawn(laid);
+}
+
+/**
+ * THE PANE SLIDES WHERE THE VIEWPORT DOES NOT DIVIDE, between the strip and
+ * the whole body, which are different panels — the strip beside the pages, the
+ * whole body the pane alone — so no share of one panel moves between them to
+ * glide as a docked pane's does. Instead the frame lays the strip beside
+ * the pages and the bar's rows for as long as the slide lasts, and the open
+ * pane is drawn over all of them, sliding up from the strip or down into it.
+ */
+export type ChatPaneSlide = "Opening" | "Closing";
+
+/** How the pane was presented when it was last at rest, and whether the
+ * viewport divided then. */
+export interface ChatPaneRest {
+  readonly presentation: ChatPanePresentation | undefined;
+  readonly twoColumn: boolean;
+}
+
+export function chatPaneRestOf(
+  state: ChatPaneState | undefined,
+  twoColumn: boolean,
+): ChatPaneRest {
+  return { presentation: state?.presentation, twoColumn };
+}
+
+/** The slide from the pane last at rest to the one held now, which is none
+ * but from the strip to the whole body or back, where the viewport divided
+ * neither then nor now. */
+export function chatPaneSlid(
+  rest: ChatPaneRest,
+  held: ChatPaneRest,
+): ChatPaneSlide | undefined {
+  if (rest.twoColumn || held.twoColumn) return undefined;
+  if (rest.presentation === "Collapsed" && held.presentation === "Full")
+    return "Opening";
+  if (rest.presentation === "Full" && held.presentation === "Collapsed")
+    return "Closing";
+  return undefined;
+}
+
+/** The pane the frame lays while it slides, which is the strip under the
+ * pages either way. */
+export function chatPaneSlideLaid(
+  state: ChatPaneState,
+  slide: ChatPaneSlide | undefined,
+): ChatPaneState {
+  if (slide === undefined) return state;
+  return chatPaneNarrowed({ ...state, presentation: "Collapsed" }, false);
+}
+
+/** The pane drawn over the frame while it slides, which is open either way. */
+export function chatPaneSlideDrawn(
+  state: ChatPaneState,
+  slide: ChatPaneSlide | undefined,
+): ChatPaneState {
+  return slide === undefined ? state : chatPaneFilled(state);
 }
 
 /** What the shell holds of the pane: what the reader stored, and where a
@@ -310,7 +394,7 @@ export function chatPaneKept(
 }
 
 /** The collapsed pane, which is a strip its own control expands rather than a
- * share of the frame. */
+ * share of the frame; `tokens.css` states it as `--height-chat-strip`. */
 export const chatPaneSizeStrip = "2.5rem";
 
 /**

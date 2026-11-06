@@ -177,6 +177,20 @@ export function editFormFrom(
   };
 }
 
+/** The same form, under the configuration the offers an edit is drawn over
+ * hold for the draft. */
+export function editFormOf(
+  draft: DraftResponse,
+  offers: readonly CreationOffer[],
+  repositories: readonly ProjectRepositoryResponse[],
+): TicketCreationForm {
+  return editFormFrom(
+    draft,
+    repositories,
+    editOffersFrom(draft, offers, undefined).configuration,
+  );
+}
+
 export type EditAssembly =
   | {
       readonly assembled: "Body";

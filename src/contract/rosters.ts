@@ -704,6 +704,7 @@ export const sessionCapabilities = [
   "TicketDispatch",
   "LeadDecision",
   "MemberRead",
+  "ThreadOffer",
 ] as const;
 export type SessionCapability = (typeof sessionCapabilities)[number];
 
@@ -863,6 +864,7 @@ export const sessionTurnInputKinds = [
   "UserMessage",
   "Wake",
   "Inquiry",
+  "OfferReply",
 ] as const;
 export type SessionTurnInputKind = (typeof sessionTurnInputKinds)[number];
 

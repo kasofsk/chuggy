@@ -197,6 +197,8 @@ export function threadTurnKindWord(kind: SessionTurnInputKind): string {
       return "Observation";
     case "Inquiry":
       return "Inquiry";
+    case "OfferReply":
+      return "Offer reply";
   }
 }
 

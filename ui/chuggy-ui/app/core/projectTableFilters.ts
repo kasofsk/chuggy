@@ -28,14 +28,46 @@ import type {
 
 export const ticketFilterAll = "All";
 
-/** Every ticket, or the tickets in one phase. */
-export type TicketFilter = TicketPhase | typeof ticketFilterAll;
+/** The standings of the Pending phase a filter can name. The wire names
+ * phases only, so a filter naming one reads Pending and the list narrows what
+ * it read to the rows that stand in it. */
+export const ticketFilterStandings = ["Ready", "Blocked"] as const;
+
+export type TicketFilterStanding = (typeof ticketFilterStandings)[number];
+
+/** Every ticket, the tickets in one phase, or the Pending tickets of one
+ * standing. */
+export type TicketFilter =
+  TicketPhase | TicketFilterStanding | typeof ticketFilterAll;
 
 /** The filter a word names, or undefined where it names none. */
 export function ticketFilterOf(word: unknown): TicketFilter | undefined {
-  return word === ticketFilterAll
-    ? ticketFilterAll
-    : phaseRoster.find((phase) => phase === word);
+  if (word === ticketFilterAll) return ticketFilterAll;
+  return (
+    ticketFilterStandings.find((standing) => standing === word) ??
+    phaseRoster.find((phase) => phase === word)
+  );
+}
+
+/** Whether a filter names a standing rather than a phase or All. */
+export function ticketFilterIsStanding(
+  filter: TicketFilter,
+): filter is TicketFilterStanding {
+  return ticketFilterStandings.some((standing) => standing === filter);
+}
+
+/** The standing a filter narrows the rows read to, where it names one. */
+export function ticketFilterStandingOf(
+  filter: TicketFilter,
+): TicketFilterStanding | undefined {
+  return ticketFilterIsStanding(filter) ? filter : undefined;
+}
+
+/** What the wire is asked under a filter, which for a standing is its phase. */
+export function ticketFilterRead(
+  filter: TicketFilter,
+): TicketPhase | typeof ticketFilterAll {
+  return ticketFilterIsStanding(filter) ? "Pending" : filter;
 }
 
 /** Undefined rather than every phase, because a read that names them all is a
@@ -43,7 +75,8 @@ export function ticketFilterOf(word: unknown): TicketFilter | undefined {
 export function ticketFilterPhases(
   filter: TicketFilter,
 ): readonly TicketPhase[] | undefined {
-  return filter === ticketFilterAll ? undefined : [filter];
+  const read = ticketFilterRead(filter);
+  return read === ticketFilterAll ? undefined : [read];
 }
 
 /** The order a list is read in: by last activity, or by ticket number from either end. */
@@ -69,18 +102,19 @@ function ticketListAskActive(ask: TicketListAsk): boolean {
 }
 
 /**
- * One entry per filter, order and search, since a shared entry would let one's
- * page walk answer another's. The active list folds a frame in, within the
- * phases its filter admits, and reads again for a ticket it has not got; a list under a search or an order by number is read
- * again on a ticket's frame, because whether the ticket belongs to it, and
- * where, is the server's to say; every one folds an execution's frame into its
- * ticket's row.
+ * One entry per read, order and search, since a shared entry would let one's
+ * page walk answer another's; the filters reading one phase share its entry.
+ * The active list folds a frame in, within the phases its filter admits, and
+ * reads again for a ticket it has not got; a list under a search or an order
+ * by number is read again on a ticket's frame, because whether the ticket
+ * belongs to it, and where, is the server's to say; every one folds an
+ * execution's frame into its ticket's row.
  */
 export function ticketFilterList(
   partition: PartitionIdentity,
   ask: TicketListAsk,
 ): ProjectList<ProjectTicketRows> {
-  const name = `table:${ask.filter}:${ask.order}:${ask.search ?? ""}`;
+  const name = `table:${ticketFilterRead(ask.filter)}:${ask.order}:${ask.search ?? ""}`;
   if (!ticketListAskActive(ask))
     return projectTicketRowsLive(
       projectListReread<ProjectTicketRows>(partition, "Ticket", name),
