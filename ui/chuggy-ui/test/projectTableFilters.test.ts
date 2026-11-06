@@ -180,3 +180,31 @@ test("only the unfiltered, unsearched list, holding nothing and with nothing lef
     }),
   ).toBe(false);
 });
+
+test("a creator's list is its own entry, read again on a frame, and asked of every read", () => {
+  const asks: TicketListAsk[] = [
+    undefined,
+    "8:https://idp/alice",
+    "bob",
+  ].flatMap((creator) =>
+    [undefined, "gate", "gate:bob"].map((search) => ({
+      ...ticketListAskDefault,
+      search,
+      creator,
+    })),
+  );
+  const keys = asks.map((ask) =>
+    JSON.stringify(ticketFilterList(partition, ask).key),
+  );
+  expect(new Set(keys).size).toBe(keys.length);
+  for (const filter of filters) {
+    const ask = { ...filtered(filter), creator: "bob" };
+    expect(ticketFilterList(partition, ask).refresh.refresh).toBe("Reread");
+    expect(ticketFilterReadsCount(ask)).toBe(1);
+    expect(ticketFilterPage(ask, first).creator).toBe("bob");
+    expect(
+      ticketFilterPage({ ...ask, search: "gate", order: "Oldest" }, first),
+    ).toMatchObject({ creator: "bob", q: "gate", order: "Oldest" });
+    expect(ticketFilterProjectEmpty(ask, ended)).toBe(false);
+  }
+});

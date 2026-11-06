@@ -714,7 +714,7 @@ async function readProject(
 }
 
 /**
- * A read naming no search, no activity and no order by number is the page it
+ * A read naming no search, no creator, no activity and no order by number is the page it
  * always was. Any other is picked as positions first and its rows read after,
  * in that order, by identity.
  */
@@ -725,6 +725,7 @@ async function readProjectTickets(
 ): Promise<ProjectTicketPage> {
   if (
     query.search === undefined &&
+    query.creator === undefined &&
     query.active !== true &&
     (query.order === undefined ||
       query.order === "Identity" ||
@@ -748,7 +749,8 @@ interface TicketPositionsRow {
 
 /**
  * The positions of one more than a page, in the order the read names, with
- * how many tickets its search, phases and activity select across the project.
+ * how many tickets its search, creator, phases and activity select across the
+ * project.
  * The count is over the selection before any cursor, so every page of one
  * walk answers the same count.
  */
@@ -773,8 +775,13 @@ async function readTicketPositions(
             FROM ticket_projection t
             LEFT JOIN ticket_definition b
               ON b.tenant=t.tenant AND b.project=t.project AND b.ticket=t.ticket
+            LEFT JOIN draft_revision m
+              ON m.tenant=t.tenant AND m.project=t.project AND m.ticket=t.ticket
+             AND m.authoring_version=1 AND m.authority_kind=${memberAuthorityKind}
            WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
              AND t.phase = ANY(${[...selectedPhases(query.phaseFilter)]}::text[])
+             AND (${query.creator ?? null}::text IS NULL
+               OR m.authority_subject = ${query.creator ?? null}::text)
              AND (${query.active === true}::boolean IS FALSE
                OR t.phase NOT IN ('Done','Revoked')
                OR (SELECT c.committed_at FROM journal_entry c
@@ -843,7 +850,10 @@ async function readTicketsByPosition(
       return row;
     }),
     next: positions.length > query.limit ? page.at(-1) : undefined,
-    matched: query.search === undefined ? undefined : matched,
+    matched:
+      query.search === undefined && query.creator === undefined
+        ? undefined
+        : matched,
   };
 }
 

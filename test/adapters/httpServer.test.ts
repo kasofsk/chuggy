@@ -4,6 +4,7 @@ import net from "node:net";
 import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 
+import { principalCharsMax } from "../../src/interpreter/principal.ts";
 import { configurationDocumentJsonSchema } from "../../src/contract/configurationDocument.ts";
 import type { HttpErrorEnvelope } from "../../src/contract/http.ts";
 import {
@@ -360,6 +361,7 @@ function fakeDrafts(
 function projectReadNewFields(query: ProjectReadQuery): string {
   return [
     ...(query.search === undefined ? [] : [`q=${query.search}`]),
+    ...(query.creator === undefined ? [] : [`creator=${query.creator}`]),
     ...(query.active === undefined ? [] : [`active=${String(query.active)}`]),
     ...(query.numberAfter === undefined
       ? []
@@ -1353,6 +1355,29 @@ test("a ticket search is trimmed and refused empty or past its bound", async () 
     "project:50:Identity::q=#121",
     `project:50:Identity::q=${"x".repeat(ticketSearchCharsMax)}`,
     "project:50:Newest::active=true",
+  ]);
+});
+
+test("a ticket list's creator is one bounded principal, taken as it is written", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const root = "/api/v1/tenants/tenant/projects/project/tickets";
+  const headers = { authorization: "Bearer valid" };
+  const status = async (query: string) =>
+    (await app.inject({ url: `${root}?${query}`, headers })).statusCode;
+  const widest = "p".repeat(principalCharsMax);
+  assert.equal(
+    await status(`creator=${encodeURIComponent("8:https://issuer@me")}`),
+    404,
+  );
+  assert.equal(await status(`creator=${widest}&q=x&phase=Done`), 404);
+  assert.equal(await status("creator="), 400);
+  assert.equal(await status(`creator=${widest}p`), 400);
+  assert.equal(await status("creator=%00"), 400);
+  assert.equal(await status("creator=a&creator=b"), 400);
+  assert.deepEqual(calls, [
+    "project:50:Identity::creator=8:https://issuer@me",
+    `project:50:Identity::q=x:creator=${widest}`,
   ]);
 });
 
