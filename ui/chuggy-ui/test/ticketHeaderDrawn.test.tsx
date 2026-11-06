@@ -131,9 +131,17 @@ test("a browser without the observer never shows the bar", () => {
 
 test("Runs carries its count once the page holds a run, and the tabs are the same either way", () => {
   const partition = { tenant: "acme", project: "atlas" };
-  const drawn = (runCount: number | undefined): readonly string[] => {
+  const drawn = (
+    runCount: number | undefined,
+    runCountCut = false,
+  ): readonly string[] => {
     render(
-      <TicketTabs partition={partition} ticket={335} runCount={runCount} />,
+      <TicketTabs
+        partition={partition}
+        ticket={335}
+        runCount={runCount}
+        runCountCut={runCountCut}
+      />,
     );
     const names = screen
       .getAllByRole("link")
@@ -156,6 +164,12 @@ test("Runs carries its count once the page holds a run, and the tabs are the sam
   expect(drawn(6)).toStrictEqual([
     "Overview",
     "Runs6",
+    "Configuration",
+    "Usage",
+  ]);
+  expect(drawn(50, true)).toStrictEqual([
+    "Overview",
+    "Runs50+",
     "Configuration",
     "Usage",
   ]);

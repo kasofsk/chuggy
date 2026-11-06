@@ -150,11 +150,12 @@ function TicketTab(props: {
 }
 
 /** The tabs, the same whatever the ticket's state; Runs carries how many runs
- * the page holds once it holds any. */
+ * the page holds once it holds any, with a + where the page is cut off. */
 export function TicketTabs(props: {
   readonly partition: PartitionIdentity;
   readonly ticket: number;
   readonly runCount: number | undefined;
+  readonly runCountCut: boolean;
 }): ReactNode {
   const params = { ...props.partition, ticket: String(props.ticket) };
   const runCount = props.runCount ?? 0;
@@ -167,7 +168,9 @@ export function TicketTabs(props: {
         <TicketTab to="/$tenant/$project/tickets/$ticket/runs" params={params}>
           Runs
           {runCount === 0 ? null : (
-            <span className="ticket-tab-count">{runCount}</span>
+            <span className="ticket-tab-count">
+              {props.runCountCut ? `${String(runCount)}+` : runCount}
+            </span>
           )}
         </TicketTab>
         <TicketTab

@@ -659,6 +659,12 @@ test("a short page says so, and no cycle on it claims to be whole", async () => 
   expect(
     screen.getAllByText("Cycle partly on this page").length,
   ).toBeGreaterThan(0);
+  expect(
+    within(screen.getByRole("navigation", { name: "Ticket" })).getByRole(
+      "link",
+      { name: /^Runs/u },
+    ).textContent,
+  ).toBe("Runs4+");
 });
 
 test("without the draft the rows still group by the program the ticket was released with", async () => {

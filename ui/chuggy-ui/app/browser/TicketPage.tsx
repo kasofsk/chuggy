@@ -297,6 +297,7 @@ function TicketStanding(
         partition={props.partition}
         ticket={props.ticket}
         runCount={readValue(props.reads.pageState)?.executions.length}
+        runCountCut={props.facts.truncated}
       />
       <TicketPageHeldProvider value={held}>
         {props.children}
