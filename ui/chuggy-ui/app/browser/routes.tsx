@@ -75,6 +75,12 @@ import { ThreadPage } from "./ThreadPage.tsx";
 import { TicketCreationFrom } from "./TicketCreationStart.tsx";
 import { TicketEdit } from "./TicketEdit.tsx";
 import { TicketPage } from "./TicketPage.tsx";
+import {
+  TicketConfigurationTab,
+  TicketOverviewTab,
+  TicketRunsTab,
+  TicketUsageTab,
+} from "./ticket/TicketPageTabs.tsx";
 import { Button } from "./ui/Button.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 
@@ -319,10 +325,44 @@ const ticketCreationRoute = createRoute({
   ): TicketCreationQuery => ticketCreationQueryOf(search),
 });
 
+function TicketRoute(): ReactNode {
+  return (
+    <TicketPage>
+      <Outlet />
+    </TicketPage>
+  );
+}
+
+/** One ticket: its header and tabs, over the tab its address names, so a tab
+ * can be linked and Back returns to the last one. */
 const ticketRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/tickets/$ticket",
-  component: TicketPage,
+  component: TicketRoute,
+});
+
+const ticketOverviewRoute = createRoute({
+  getParentRoute: () => ticketRoute,
+  path: "/",
+  component: TicketOverviewTab,
+});
+
+const ticketRunsRoute = createRoute({
+  getParentRoute: () => ticketRoute,
+  path: "/runs",
+  component: TicketRunsTab,
+});
+
+const ticketConfigurationRoute = createRoute({
+  getParentRoute: () => ticketRoute,
+  path: "/configuration",
+  component: TicketConfigurationTab,
+});
+
+const ticketUsageRoute = createRoute({
+  getParentRoute: () => ticketRoute,
+  path: "/usage",
+  component: TicketUsageTab,
 });
 
 const ticketEditRoute = createRoute({
@@ -351,7 +391,12 @@ const routeTree = rootRoute.addChildren([
     runnersRoute,
     threadRoute,
     ticketCreationRoute,
-    ticketRoute,
+    ticketRoute.addChildren([
+      ticketOverviewRoute,
+      ticketRunsRoute,
+      ticketConfigurationRoute,
+      ticketUsageRoute,
+    ]),
     ticketEditRoute,
   ]),
 ]);

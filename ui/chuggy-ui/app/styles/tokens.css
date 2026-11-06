@@ -91,6 +91,48 @@
       var(--surface-1)
     );
 
+    --wash-queued: color-mix(
+      in srgb,
+      var(--tone-queued) var(--wash),
+      var(--surface-1)
+    );
+
+    /* fills — a tone as the ground under inverse ink, mixed with the page in
+       the dark theme so its edge is not harsh */
+    --fill-dark: 78%;
+    --fill-pass: light-dark(
+      var(--tone-pass),
+      color-mix(in srgb, var(--tone-pass) var(--fill-dark), var(--surface-0))
+    );
+    --fill-live: light-dark(
+      var(--tone-live),
+      color-mix(in srgb, var(--tone-live) var(--fill-dark), var(--surface-0))
+    );
+    --fill-evaluation: light-dark(
+      var(--tone-evaluation),
+      color-mix(
+        in srgb,
+        var(--tone-evaluation) var(--fill-dark),
+        var(--surface-0)
+      )
+    );
+    --fill-finalization: light-dark(
+      var(--tone-finalization),
+      color-mix(
+        in srgb,
+        var(--tone-finalization) var(--fill-dark),
+        var(--surface-0)
+      )
+    );
+    --fill-parked: light-dark(
+      var(--tone-parked),
+      color-mix(in srgb, var(--tone-parked) var(--fill-dark), var(--surface-0))
+    );
+    --fill-retired: light-dark(
+      var(--tone-retired),
+      color-mix(in srgb, var(--tone-retired) var(--fill-dark), var(--surface-0))
+    );
+
     /* the page dimmed behind a drawer, which is the one colour that is not a
        level: it has to let the level under it through */
     --scrim: color-mix(in srgb, var(--surface-0) 70%, transparent);
@@ -143,6 +185,8 @@
     --height-touch: 44px; /* the least a finger is given to press */
     --height-icon: 2rem; /* a control that is only its glyph */
     --height-chat-strip: 2.5rem; /* the chat pane collapsed to its strip */
+    --height-state: 1.875rem; /* a ticket's state label on its page */
+    --height-state-small: 1.5rem; /* that label where a row or a bar holds it */
 
     /* rings */
     --ring-focus: 0 0 0 2px var(--surface-1), 0 0 0 4px var(--focus);
@@ -151,6 +195,7 @@
     --duration-1: 120ms; /* hover, focus, toggles */
     --duration-2: 240ms; /* a disclosure opening */
     --duration-pulse: 1200ms; /* the live mark */
+    --duration-spin: 1000ms; /* one turn of a moving state's mark */
     --duration-travel: 800ms; /* one tile of the locomotive's ground */
     --duration-waiting-travel: 12000ms; /* one crossing of the waiting strip */
     --duration-chug: 800ms; /* one full cycle of the locomotive's sprite */
@@ -190,6 +235,7 @@
       --duration-1: 0ms;
       --duration-2: 0ms;
       --duration-pulse: 0ms;
+      --duration-spin: 0ms;
       --duration-travel: 0ms;
       --duration-waiting-travel: 0ms;
       --duration-chug: 0ms;

@@ -11,7 +11,6 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
-import { TicketPage } from "../app/browser/TicketPage.tsx";
 import {
   DetailsPane,
   DetailsToggle,
@@ -41,6 +40,7 @@ import type { TicketProgram } from "../app/core/ticketLedger.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
+import { TicketPageEveryTab, ticketHeader } from "./ticketPageEveryTab.tsx";
 
 const atlas: PartitionIdentity = { tenant: "vteng", project: "chuggy" };
 
@@ -126,7 +126,7 @@ function ShellAroundPage(): ReactNode {
       <TopBarTarget />
       <DetailsToggle />
       <DetailsPane>
-        <TicketPage />
+        <TicketPageEveryTab />
       </DetailsPane>
     </ShellSlots>
   );
@@ -229,7 +229,7 @@ async function drawTicket(
           <ShellAroundPage />
         </ViewportColumnAsideProvider>
       ) : (
-        <TicketPage />
+        <TicketPageEveryTab />
       )}
     </ScreenHarness>,
   );
@@ -305,7 +305,7 @@ test("the parked ticket names its wall, its phase and what the whole of it cost"
     ticket: parkedTicket,
   });
   const bar = statusBar(container);
-  expect(bar.textContent).toContain("Escalated");
+  expect(ticketHeader().textContent).toContain("Escalated");
   expect(bar.textContent).toContain("$2.74");
   expect(bar.textContent).toContain("198k tok");
   expect(bar.textContent).not.toContain("Runs");
@@ -325,7 +325,7 @@ test("the page is one column: no aside and no sequence", async () => {
   expect(screen.queryByText("Sequence")).toBeNull();
 });
 
-test("the wall is a card that needs you: why, which stage failed, and the resume", async () => {
+test("the wall is a card that needs you: why and which stage failed, with the resume in the header", async () => {
   await drawTicket({
     shapes: ticket21Parked,
     ticket: parkedTicket,
@@ -333,8 +333,10 @@ test("the wall is a card that needs you: why, which stage failed, and the resume
   const card = screen.getByRole("status", { name: "Needs you" });
   expect(card.textContent).toContain("Rework budget exhausted");
   expect(card.textContent).toContain("Stage 1 of 2 failed");
-  expect(within(card).getByRole("button", { name: "Resume" })).toBeDefined();
-  expect(within(card).queryByRole("button", { name: "Revoke" })).toBeNull();
+  expect(within(card).queryByRole("button")).toBeNull();
+  expect(
+    within(ticketHeader()).getByRole("button", { name: "Resume" }),
+  ).toBeDefined();
 });
 
 test("the cycles are newest first, the current one open and the rest closed", async () => {
@@ -493,29 +495,33 @@ test("the ticket is headed by its own title where it has one", async () => {
     ticket: { ...parkedTicket, title: "Serve the reason" },
   });
   expect(
-    screen.getByRole("heading", { level: 1, name: "Serve the reason" }),
+    screen.getByRole("heading", { level: 1, name: "Serve the reason #21" }),
   ).toBeDefined();
 });
 
-test("the page fills no second header row in the shell's top bar", async () => {
+test("the page fills no second header row in the shell's top bar: its tabs are its own", async () => {
   await drawTicket(
     { shapes: ticket21Parked, ticket: parkedTicket },
     { shell: true },
   );
-  expect(screen.queryByText("Overview")).toBeNull();
+  expect(
+    screen.getByText("Overview").closest("nav")?.getAttribute("aria-label"),
+  ).toBe("Ticket");
   expect(screen.getByRole("heading", { level: 1 }).closest("header")).not.toBe(
     null,
   );
 });
 
-test("the title is the page's one h1, and it holds the title alone", async () => {
+test("the title is the page's one h1, and it holds the title and the number after it", async () => {
   await drawTicket({
     shapes: ticket21Parked,
     ticket: { ...parkedTicket, title: "Serve the reason" },
   });
   const heading = screen.getByRole("heading", { level: 1 });
-  expect(heading.textContent).toBe("Serve the reason");
-  expect(heading.closest("header")?.textContent).toBe("Serve the reason");
+  expect(heading.textContent).toBe("Serve the reason #21");
+  expect(heading.querySelector(".ticket-header-number")?.textContent).toBe(
+    "#21",
+  );
 });
 
 test("the brief's intent is drawn once, as markdown, under Instructions", async () => {
@@ -534,8 +540,8 @@ test("every part of the page is drawn without being opened, in order", async () 
     .map((heading) => heading.textContent ?? "");
   const order = [
     "Instructions",
-    "Configuration",
     "Revision history",
+    "Configuration",
     "Activity",
   ];
   const at = order.map((name) =>
@@ -597,7 +603,7 @@ test("after a resume the current cycle draws its resumed evaluator running, agai
     shapes: ticket21Resumed,
     ticket: resumedTicket,
   });
-  expect(statusBar(container).textContent).toContain("Evaluating");
+  expect(ticketHeader().textContent).toContain("Evaluating");
   expect(screen.queryByText("Rework budget exhausted")).toBeNull();
   const current = groups(container)[0];
   if (current === undefined) throw new Error("no current cycle");
@@ -619,9 +625,10 @@ test("a resumed ticket says it was resumed", async () => {
     shapes: ticket21Resumed,
     ticket: resumedTicket,
   });
-  const bar = statusBar(container);
-  expect(bar.textContent).toContain("Evaluating");
-  expect(bar.textContent).toContain("Resumed at stage 1 · cycle 3");
+  expect(ticketHeader().textContent).toContain("Evaluating");
+  expect(statusBar(container).textContent).toContain(
+    "Resumed at stage 1 · cycle 3",
+  );
 });
 
 test("a running ticket's slot is the run going now, and nothing needs you", async () => {
@@ -652,6 +659,12 @@ test("a short page says so, and no cycle on it claims to be whole", async () => 
   expect(
     screen.getAllByText("Cycle partly on this page").length,
   ).toBeGreaterThan(0);
+  expect(
+    within(screen.getByRole("navigation", { name: "Ticket" })).getByRole(
+      "link",
+      { name: /^Runs/u },
+    ).textContent,
+  ).toBe("Runs4+");
 });
 
 test("without the draft the rows still group by the program the ticket was released with", async () => {

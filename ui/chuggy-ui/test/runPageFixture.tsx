@@ -13,7 +13,6 @@ import { render } from "@testing-library/react";
 import { vi } from "vitest";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
-import { TicketPage } from "../app/browser/TicketPage.tsx";
 import {
   answer,
   apiDouble,
@@ -21,6 +20,7 @@ import {
   ScreenHarness,
   settled,
 } from "./screenHarness.tsx";
+import { TicketPageEveryTab } from "./ticketPageEveryTab.tsx";
 
 export const runDigest = "a".repeat(64);
 
@@ -260,7 +260,7 @@ export async function runPageDrawn(
       }
       transport={server.ports.fetch}
     >
-      <TicketPage />
+      <TicketPageEveryTab />
     </ScreenHarness>,
   );
   await settled();

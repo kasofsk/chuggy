@@ -14,7 +14,6 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
-import { TicketPage } from "../app/browser/TicketPage.tsx";
 import {
   answer,
   apiDouble,
@@ -27,7 +26,7 @@ import {
 import { frame } from "./streamDouble.ts";
 import { ticketDispatchViewOf } from "./ticketPageFixture.ts";
 import {
-  dispatchChipName,
+  dispatchButtonName,
   dispatchConfirmed,
 } from "./ticketDispatchPressed.ts";
 import {
@@ -38,6 +37,7 @@ import {
 import { ticketInstants } from "./ticketInstants.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
+import { TicketPageEveryTab } from "./ticketPageEveryTab.tsx";
 
 const atlas: PartitionIdentity = { tenant: "vteng", project: "chuggy" };
 
@@ -163,7 +163,7 @@ function drawn(
       transport={server.ports.fetch}
     >
       <visit.Visited>
-        <TicketPage />
+        <TicketPageEveryTab />
       </visit.Visited>
     </ScreenHarness>,
   );
@@ -227,7 +227,7 @@ test("the page asks the dispatch view for the page that would hold its own ticke
   drawn(pendingRead, dispatchedRow, candidateView);
   await settled();
   expect(
-    screen.getByRole("button", { name: dispatchChipName(21) }),
+    screen.getByRole("button", { name: dispatchButtonName }),
   ).toBeDefined();
 });
 

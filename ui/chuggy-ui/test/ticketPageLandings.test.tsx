@@ -5,7 +5,6 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
-import { TicketPage } from "../app/browser/TicketPage.tsx";
 import { ticketLandingsPolledMs } from "../app/core/ticketLandings.ts";
 import {
   answer,
@@ -35,6 +34,7 @@ import { ticketInstants } from "./ticketInstants.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { frame } from "./streamDouble.ts";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
+import { TicketPageEveryTab } from "./ticketPageEveryTab.tsx";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -130,7 +130,7 @@ async function drawn(
       }
       transport={stream.ports.fetch}
     >
-      <TicketPage />
+      <TicketPageEveryTab />
     </ScreenHarness>,
   );
   await settled();
