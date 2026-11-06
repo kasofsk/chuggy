@@ -11,8 +11,9 @@
  * `delete_draft` LEAVES THE EPICS A DELETED DRAFT WAS IN. Under the project
  * row's lock, as `save_epic` takes it, each epic holding the draft drops it,
  * takes the next revision and appends its `epic_change` under the deleter's
- * own authority, in the transaction that deletes the draft. A draft in no epic
- * is deleted as it was.
+ * own authority, in the transaction that deletes the draft. That is the rule
+ * `epicDraftDeleted` states, so an Archived epic drops it too. A draft in no
+ * epic is deleted as it was.
  */
 
 import {

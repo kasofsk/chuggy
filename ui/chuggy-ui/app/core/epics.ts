@@ -429,7 +429,8 @@ export function epicWriteFrom(
 const epicRefusalWords: Readonly<Record<string, string>> = {
   StaleRevision:
     "The epic was changed since you opened it. Reload it and make the change again.",
-  ArchivedEpic: "An archived epic's tickets do not change.",
+  ArchivedEpic:
+    "An epic kept archived keeps its tickets; unarchive it to change them.",
   EmptyTitle: "The title is empty.",
   LongTitle: "The title is too long.",
   LongSummary: "The summary is too long.",

@@ -8,6 +8,7 @@ import { test } from "node:test";
 import {
   applyEpic,
   decideEpic,
+  epicDraftDeleted,
   epicContentBytesMax,
   epicProgress,
   epicStatus,
@@ -257,6 +258,25 @@ test("a refused write leaves the state as it was", () => {
     applyEpic(state, command, decideEpic(state, command, everyTicket)),
     state,
   );
+});
+
+test("a deleted draft leaves every epic holding it, an Archived one included, each at its next revision", () => {
+  let state = save(empty, { kind: "Create", content: content() });
+  state = save(state, {
+    kind: "Create",
+    content: content({ visibility: "Archived", tickets: [2, 3] }),
+  });
+  state = save(state, { kind: "Create", content: content({ tickets: [3] }) });
+  const after = epicDraftDeleted(state, 2);
+  assert.deepEqual(after.get(1), {
+    revision: 2,
+    content: content({ tickets: [1] }),
+  });
+  assert.deepEqual(after.get(2), {
+    revision: 2,
+    content: content({ visibility: "Archived", tickets: [3] }),
+  });
+  assert.equal(after.get(3), state.get(3));
 });
 
 function phases(

@@ -2949,7 +2949,8 @@ export function epicReadResponse<Value>(
 const epicRefusalMessage: Readonly<Record<EpicRefusal["reason"], string>> = {
   MissingEpic: "The project has no such epic.",
   StaleRevision: "The epic has been revised since the revision expected.",
-  ArchivedEpic: "An archived epic's tickets do not change.",
+  ArchivedEpic:
+    "An epic kept archived keeps its tickets; unarchive it to change them.",
   EmptyTitle: "The title is empty.",
   LongTitle: "The title is longer than an epic's title may be.",
   LongSummary: "The summary is longer than an epic's summary may be.",

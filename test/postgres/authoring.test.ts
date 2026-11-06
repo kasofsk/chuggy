@@ -3941,6 +3941,54 @@ test("deleting a draft takes it out of its epics, each taking the next revision 
   );
 });
 
+test("deleting a draft takes it out of an Archived epic too, which stays Archived at the next revision", async () => {
+  const fixture = await draftFixture();
+  const { ticket } = fixture.draft;
+  const archived = await epicOf(fixture.partition, {
+    visibility: "Archived",
+    tickets: [ticket],
+  });
+
+  const deleted = await fixture.store.deleteDraft({
+    partition: fixture.partition,
+    authority,
+    ticket,
+    expectedVersion: 1,
+  });
+
+  assert.equal(deleted.deleted, "Deleted");
+  const [after] = await epicStanding(fixture.partition, archived);
+  assert.deepEqual(
+    [after?.["revision"], after?.["members"], after?.["changes"]],
+    [2, [], 2],
+  );
+  assert.deepEqual(
+    await harness.query(
+      `SELECT visibility FROM epic WHERE tenant=$1 AND project=$2 AND number=$3`,
+      [fixture.partition.tenant, fixture.partition.project, archived],
+    ),
+    [{ visibility: "Archived" }],
+  );
+  assert.deepEqual(
+    await postgresEpics(pool).save(
+      fixture.partition,
+      {
+        kind: "Revise",
+        epic: archived,
+        expected: 2,
+        content: {
+          title: "the footer",
+          description: "",
+          visibility: "Archived",
+          tickets: [],
+        },
+      },
+      authority,
+    ),
+    { kind: "Saved", epic: archived, revision: 3 },
+  );
+});
+
 test("deleting a draft that is in no epic leaves every epic as it was", async () => {
   const fixture = await draftFixture();
   const epic = await epicOf(fixture.partition);
