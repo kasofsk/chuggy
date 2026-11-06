@@ -372,6 +372,30 @@ function refusedPlan(memory: ProjectMemory, refusal: Refusal): ProjectPlan {
   };
 }
 
+/**
+ * A revocation fenced to the revision its author read, refused once the
+ * ticket has moved past it. A ticket the graph does not hold is `decide`'s to
+ * refuse, as an unfenced revocation of it is.
+ */
+function operationRevokeFence(
+  memory: ProjectMemory,
+  source: Extract<DecisionInput["source"], { kind: "Operation" }>,
+): BoundaryRefusalCode | undefined {
+  const command = source.command;
+  if (
+    command.command !== "Decide" ||
+    !("expectedRevision" in command) ||
+    command.expectedRevision === undefined
+  )
+    return undefined;
+  if (command.ticketCommand.type !== "RevokeTicket")
+    throw new Error("project writer: only a revocation names a revision");
+  const ticket = memory.graph.tickets.get(command.ticketCommand.value);
+  return ticket === undefined || ticket.revision === command.expectedRevision
+    ? undefined
+    : "TicketChanged";
+}
+
 function operationDispatchFence(
   memory: ProjectMemory,
   source: Extract<DecisionInput["source"], { kind: "Operation" }>,
@@ -606,7 +630,9 @@ function projectWriterPreflight(
       readonly decision: SuccessfulTicketDecision;
     }
   | { readonly dispatch: TicketId } {
-  const fence = operationDispatchFence(memory, item.source);
+  const fence =
+    operationDispatchFence(memory, item.source) ??
+    operationRevokeFence(memory, item.source);
   if (fence !== undefined) return refusedPlan(memory, boundaryRefusal(fence));
   const overridesChange = projectWriterOverridesChange(memory, item);
   if (overridesChange !== undefined) return overridesChange;

@@ -471,48 +471,12 @@ export function settledFigure(
   };
 }
 
-/** When a row began, ended, and — where the wire says so — first ran. */
-export interface RunWindow {
-  readonly registeredAt: string;
-  readonly startedAt?: string | undefined;
-  readonly terminalAt?: string | undefined;
-}
-
-/**
- * One row's window: when it started, how long it queued where the wire dates
- * its start, and how long it ran once it ended. A row the wire carries no start
- * for is timed from its registration, which is what it was before the field
- * existed.
- */
-export function whenFigure(window: RunWindow, nowMs: number): Figure {
-  const registeredMs = parsedMs(window.registeredAt);
-  if (registeredMs === undefined) return { kind: "Absent", why: "No instant" };
-  const startedMs = parsedMs(window.startedAt);
-  const fromMs = startedMs ?? registeredMs;
-  const endMs = parsedMs(window.terminalAt);
-  return {
-    kind: "Span",
-    parts: [
-      sinceText(nowMs, fromMs, "started"),
-      ...(startedMs === undefined
-        ? []
-        : [`waited ${durationText(startedMs - registeredMs)}`]),
-      ...(endMs === undefined ? [] : [`ran ${durationText(endMs - fromMs)}`]),
-    ],
-    open: endMs === undefined,
-    title: spanTitle(fromMs, endMs),
-  };
-}
-
-/** How long a window ran, for a column whose head already says so; one that
- * has not ended has no length yet. */
-export function ranFigure(from: string, to: string | undefined): Figure {
-  if (to === undefined) return { kind: "Absent", why: "Not ended" };
-  const fromMs = parsedMs(from);
-  const toMs = parsedMs(to);
-  if (fromMs === undefined || toMs === undefined)
-    return { kind: "Absent", why: "No instant" };
-  return durationFigure(toMs - fromMs);
+/** How long a span ran, from its start to its end or, while it is open, to
+ * now: a run's time, whatever carried it. */
+export function spanRanFigure(span: RunSpan, nowMs: number): Figure {
+  const fromMs = parsedMs(span.from);
+  if (fromMs === undefined) return { kind: "Absent", why: "Not started" };
+  return durationFigure((parsedMs(span.to) ?? nowMs) - fromMs);
 }
 
 /** The one absence a set of runs has: it is running, and nothing is counted yet. */

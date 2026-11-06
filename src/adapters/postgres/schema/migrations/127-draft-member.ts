@@ -32,8 +32,8 @@ const deleteSignature = `public.${draftDeleteFunction}(in_tenant text, in_projec
 
 const held = "e.tenant=in_tenant AND e.project=in_project";
 
-export const migration125: Migration = {
-  version: 125,
+export const migration127: Migration = {
+  version: 127,
   name: "a draft is an epic member, and deleting one leaves its epics",
   statements: [
     `CREATE OR REPLACE FUNCTION ${signature}

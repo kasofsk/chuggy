@@ -4,8 +4,7 @@
  * A stage's figure is summed here because the rows it groups are already in the
  * browser and already kept live; a ticket's is not, because the page this
  * screen holds may be short of the executions the ticket has and a sum over it
- * would be quietly wrong. Every dollar figure carries the basis the wire gave
- * it, so a list price is never read as a bill.
+ * would be quietly wrong.
  *
  * `runSpendOf` CARRIES NO BASIS IT DID NOT EARN: it reports the one basis every
  * measured run agreed on and reports disagreement as disagreement, which is the
@@ -27,40 +26,6 @@ import type {
 } from "../../../../src/contract/responses.ts";
 import type { RunCostBasis } from "../../../../src/contract/rosters.ts";
 
-/** Millionths of a dollar in a dollar, which is the unit a durable row holds. */
-const costUsdMicrosPerUsd = 1_000_000;
-
-/** The smallest amount cents can state, below which a spend would read as none. */
-const costUsdCent = 0.01;
-
-const costUsdDecimalsCents = 2;
-const costUsdDecimalsFine = 4;
-
-const durationMsPerSecond = 1_000;
-const durationSecondsPerMinute = 60;
-const durationMinutesPerHour = 60;
-
-/** What a cost figure is, never abbreviated away from the reader. */
-export function runCostBasisSentence(basis: RunCostBasis): string {
-  switch (basis) {
-    case "List":
-      return "list price";
-  }
-}
-
-/** Cents, or finer where cents alone would draw a spend as nothing spent. */
-export function runCostLabel(
-  costUsdMicros: number,
-  basis: RunCostBasis,
-): string {
-  const usd = costUsdMicros / costUsdMicrosPerUsd;
-  const decimals =
-    usd === 0 || usd >= costUsdCent
-      ? costUsdDecimalsCents
-      : costUsdDecimalsFine;
-  return `$${usd.toFixed(decimals)} (${runCostBasisSentence(basis)})`;
-}
-
 /** Grouped digits, because a token count is read at a glance and never summed
  * by eye. */
 export function runCountLabel(value: number): string {
@@ -70,18 +35,6 @@ export function runCountLabel(value: number): string {
 /** A count and its noun, the noun plural unless the count is one. */
 export function countedLabel(value: number, noun: string): string {
   return `${runCountLabel(value)} ${noun}${value === 1 ? "" : "s"}`;
-}
-
-/** Whole units, largest first, with the ones that would be zero left out. */
-export function runDurationLabel(durationMs: number): string {
-  const seconds = Math.max(Math.floor(durationMs / durationMsPerSecond), 0);
-  const minutes = Math.floor(seconds / durationSecondsPerMinute);
-  const hours = Math.floor(minutes / durationMinutesPerHour);
-  const parts: string[] = [];
-  if (hours > 0) parts.push(`${String(hours)}h`);
-  if (minutes > 0) parts.push(`${String(minutes % durationMinutesPerHour)}m`);
-  parts.push(`${String(seconds % durationSecondsPerMinute)}s`);
-  return parts.join(" ");
 }
 
 type RunModelUsage = RunTotals["models"][number];
@@ -218,7 +171,28 @@ function runInstantsOrdered(instants: readonly string[]): readonly string[] {
  * execution the wire has reported no end for has not ended.
  */
 export function runSpanOf(summaries: readonly ExecutionSummary[]): RunSpan {
-  const started = runInstantsOrdered(summaries.map((row) => row.registeredAt));
+  return runSpanFrom(summaries, (row) => row.registeredAt);
+}
+
+/**
+ * From the earliest start to the latest end, an execution starting when its
+ * first attempt opened, or at its registration where the wire dates no start.
+ */
+export function runSpanRanOf(summaries: readonly RunSpanned[]): RunSpan {
+  return runSpanFrom(summaries, (row) => row.startedAt ?? row.registeredAt);
+}
+
+/** What a span is read off an execution. */
+export type RunSpanned = Pick<
+  ExecutionSummary,
+  "registeredAt" | "startedAt" | "terminalAt"
+>;
+
+function runSpanFrom(
+  summaries: readonly RunSpanned[],
+  startOf: (row: RunSpanned) => string,
+): RunSpan {
+  const started = runInstantsOrdered(summaries.map(startOf));
   const ended = runInstantsOrdered(
     summaries.flatMap((row) =>
       row.terminalAt === undefined ? [] : [row.terminalAt],
@@ -233,10 +207,4 @@ export function identityCycle(identity: TaskIdentity): number {
   return identity.type === "WorkTask"
     ? identity.value.cycle
     : identity.value.workCycle;
-}
-
-/** The word a generation past the first draws as, never "run" — one spelling
- * for every generation past the first, the model's own word for it. */
-export function generationLabel(generation: number): string | undefined {
-  return generation <= 1 ? undefined : `generation ${String(generation)}`;
 }

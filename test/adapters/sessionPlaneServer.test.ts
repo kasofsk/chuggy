@@ -264,6 +264,57 @@ test("a member's own session's reads are named to a pod whose release reads them
   await app.close();
 });
 
+test("a thread's offers are named to a pod whose release reads them, and left out for one before it", async () => {
+  const { app, named } = sessionPlaneNamed([
+    "ProjectRead",
+    "TicketDispatch",
+    "ThreadOffer",
+  ]);
+  for (const release of ["1.36.0", workerContractRelease])
+    assert.deepEqual(await named(release), [
+      "ProjectRead",
+      "TicketDispatch",
+      "ThreadOffer",
+    ]);
+  assert.deepEqual(await named("1.35.0"), ["ProjectRead", "TicketDispatch"]);
+  for (const release of ["1.19.0", undefined])
+    assert.deepEqual(await named(release), ["ProjectRead"], String(release));
+  await app.close();
+});
+
+test("an offer's reply is handed to a pod whose release reads it as itself, and to one before it as its member's message", async () => {
+  const claimed = {
+    turn: asSessionTurnId("turn-9"),
+    ordinal: 9,
+    inputKind: "OfferReply" as const,
+    input: "released",
+  };
+  const app = sessionPlane({
+    turns: { claim: () => Promise.resolve(claimed) },
+  });
+  const handed = async (release: string | undefined) => {
+    const answered = await app.inject({
+      method: "GET",
+      url: "/v1/session/turn",
+      headers: {
+        ...held,
+        ...(release === undefined ? {} : { [workerContractHeader]: release }),
+      },
+    });
+    assert.equal(answered.statusCode, 200);
+    return answered.json<typeof claimed>();
+  };
+  for (const release of ["1.36.0", workerContractRelease])
+    assert.deepEqual(await handed(release), claimed, release);
+  for (const release of ["1.35.0", "1.34.0", "1.0.0", undefined])
+    assert.deepEqual(
+      await handed(release),
+      { ...claimed, inputKind: "UserMessage" },
+      String(release),
+    );
+  await app.close();
+});
+
 test("a session told what it forks from is told the reference the plane resolved", async () => {
   const forking = sessionPlane({
     authority: {

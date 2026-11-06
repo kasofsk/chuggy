@@ -104,6 +104,7 @@ import type {
   TicketCreationRequest,
   TicketCreationUnmade,
 } from "../core/ticketCreationRun.ts";
+import { draftFollowCreationHeld } from "../core/draftFollow.ts";
 import { ticketDuplicateDroppedSentence } from "../core/ticketDuplicate.ts";
 import type { TicketDuplicateSeed } from "../core/ticketDuplicate.ts";
 import { operationSubmitting } from "../core/operationFollow.ts";
@@ -128,6 +129,7 @@ import {
   useAuthoringGuards,
 } from "./editor/authoringGuards.tsx";
 import { TicketAuthoring } from "./editor/TicketAuthoring.tsx";
+import type { AuthoringFollow } from "./editor/TicketAuthoring.tsx";
 import { drawBytes } from "./ports.ts";
 import {
   useProjectAbilities,
@@ -857,7 +859,7 @@ function CreationAttemptNote(props: {
     return <AttemptNote attempt={attempt} motion={props.motion} />;
   return (
     <p className="panel-failed">
-      {creationTicketExistsSentence(attempt.ticket)} —{" "}
+      {creationTicketExistsSentence(attempt.held)} —{" "}
       {props.existing(attempt.ticket)}
     </p>
   );
@@ -902,7 +904,7 @@ function creationAttemptOf(
  * one its note leads with. */
 function creationUnmadeSentence(ended: TicketCreationUnmade): string {
   if (ended.created === "Exists")
-    return creationTicketExistsSentence(ended.ticket);
+    return creationTicketExistsSentence(ended.held);
   return ended.created === "Refused" && ended.unread !== undefined
     ? `${readFailedLine("Draft", ended.unread)} · ${ended.reason}`
     : ended.reason;
@@ -966,6 +968,22 @@ function creationWrite(
   };
 }
 
+/** The draft a creation following it writes over: the revision its form is
+ * drawn from, and the version what is typed stands on. */
+export interface CreationOnto {
+  readonly base: DraftResponse;
+  readonly version: number;
+}
+
+export interface CreationSubmit {
+  readonly attempt: CreationAttempt;
+  readonly busy: boolean;
+  /** The draft the last submit wrote and did not release, which the next one
+   * goes back to. */
+  readonly held: CreationDraftHeld | undefined;
+  readonly submit: (form: TicketCreationForm, onto?: CreationOnto) => void;
+}
+
 /** An operation identity nothing has been sent under. */
 function operationDrawn(): string {
   return base64urlFromBytes(drawBytes(operationIdBytesCount));
@@ -976,7 +994,7 @@ function operationDrawn(): string {
  * form's faults are set by the caller's own setter, so nothing but this hook
  * knows how far the attempt got.
  */
-function useCreationSubmit(props: {
+export function useCreationSubmit(props: {
   readonly ports: ApiPorts;
   readonly partition: PartitionIdentity;
   readonly queryKey: ProjectQueryKey;
@@ -988,11 +1006,7 @@ function useCreationSubmit(props: {
   readonly dispatches: boolean;
   readonly onFaults: (faults: readonly CreationFault[]) => void;
   readonly onCreated: (ticket: number) => void;
-}): {
-  readonly attempt: CreationAttempt;
-  readonly busy: boolean;
-  readonly submit: (form: TicketCreationForm) => void;
-} {
+}): CreationSubmit {
   const { dispatches, standing, offers, onFaults, repositories } = props;
   const dispatch = useConsoleDispatch();
   const writing = useConsoleWrite(
@@ -1011,18 +1025,23 @@ function useCreationSubmit(props: {
   );
   const attempt = creationAttemptOf(writing, step, held);
 
-  const submit = (form: TicketCreationForm): void => {
+  const submit = (form: TicketCreationForm, onto?: CreationOnto): void => {
     const assembled = creationBodyFrom(offers, form, repositories, standing);
     if (assembled.assembled === "Faults") {
       onFaults(assembled.faults);
       return;
     }
     onFaults([]);
+    const operation = operationDrawn();
     const request: TicketCreationRequest = {
       body: assembled.body,
-      operation: operationDrawn(),
-      held,
+      operation,
+      held:
+        onto === undefined
+          ? held
+          : draftFollowCreationHeld(held, onto, operation),
       dispatchOperation: dispatches ? operationDrawn() : undefined,
+      expectedVersion: onto?.version,
     };
     writing.mutate(
       { request, progress: new ConsoleWriteProgress<OperationStep>() },
@@ -1030,7 +1049,7 @@ function useCreationSubmit(props: {
     );
   };
 
-  return { attempt, busy: creationWriting(writing), submit };
+  return { attempt, busy: creationWriting(writing), held, submit };
 }
 
 /**
@@ -1045,11 +1064,7 @@ function useCreationHeld(
     readonly duplicate?: CreationDuplicate | undefined;
   },
   repositories: readonly ProjectRepositoryResponse[],
-): {
-  readonly initial: TicketCreationForm;
-  readonly form: TicketCreationForm;
-  readonly changed: (form: TicketCreationForm) => void;
-} {
+): CreationHeld {
   const [edited, setEdited] = useState<TicketCreationForm | undefined>(
     undefined,
   );
@@ -1062,12 +1077,32 @@ function useCreationHeld(
     [seeded, offers, repositories, preferred, partial],
   );
   const form = edited ?? initial;
-  const changed = (next: TicketCreationForm): void => {
+  return {
+    initial,
+    form,
+    changed: creationChoiceKept(partition, form, setEdited),
+  };
+}
+
+/** What a creation form holds, and how what is typed reaches it. */
+export interface CreationHeld {
+  readonly initial: TicketCreationForm;
+  readonly form: TicketCreationForm;
+  readonly changed: (form: TicketCreationForm) => void;
+}
+
+/** A change of the form that also keeps the configuration the reader chose,
+ * so the next new ticket here starts on it. */
+export function creationChoiceKept(
+  partition: PartitionIdentity,
+  form: TicketCreationForm,
+  changed: (form: TicketCreationForm) => void,
+): (form: TicketCreationForm) => void {
+  return (next) => {
     if (next.configuration !== "" && next.configuration !== form.configuration)
       ticketConfigurationKept(partition, next.configuration);
-    setEdited(next);
+    changed(next);
   };
-  return { initial, form, changed };
 }
 
 /** A new ticket started from another: which, and what its draft seeded. */
@@ -1108,7 +1143,7 @@ function creationAssembler(
   return (form) => creationBodyFrom(offers, form, repositories, standing);
 }
 
-interface CreationFormProps {
+export interface CreationFormProps {
   readonly ports: ApiPorts;
   readonly partition: PartitionIdentity;
   readonly queryKey: ProjectQueryKey;
@@ -1124,38 +1159,30 @@ interface CreationFormProps {
   readonly duplicate?: CreationDuplicate;
 }
 
-/**
- * The form itself, which reaches the network and the address bar through its
- * caller: the route component below owns the session and the router, and this
- * owns what one screenful of typing becomes, as fields or as YAML.
- */
-export function CreationForm(props: CreationFormProps): ReactNode {
-  const [faults, setFaults] = useState<readonly CreationFault[]>([]);
-  const { offers, partial, repositories: bound } = props.context;
-  const repositories = useMemo(() => creationRepositories(bound), [bound]);
-  const duplicate = props.duplicate;
-  const storeKey = creationStoreKey(props.partition, duplicate);
-  const onCreated = props.onCreated;
+/** What one creation form needs beyond its screen's props, from whichever
+ * hook holds it. */
+export interface CreationFormDrawnProps extends CreationFormProps {
+  readonly repositories: readonly ProjectRepositoryResponse[];
+  readonly storeKey: string;
+  readonly faults: readonly CreationFault[];
+  readonly held: CreationHeld;
+  readonly attempt: CreationAttempt;
+  readonly busy: boolean;
+  readonly onSubmit: (form: TicketCreationForm) => void;
+  /** What is drawn above the form: what its seed did not carry, or where the
+   * draft it follows stands. */
+  readonly lead: ReactNode;
+  readonly following?: AuthoringFollow;
+}
+
+/** The form as drawn, fields or YAML, over what its caller holds. */
+export function CreationFormDrawn(props: CreationFormDrawnProps): ReactNode {
+  const { held, repositories } = props;
+  const { offers, partial } = props.context;
   const standing = props.standing ?? { mayOverride: true };
-  const running = useCreationSubmit({
-    standing,
-    ports: props.ports,
-    partition: props.partition,
-    queryKey: props.queryKey,
-    storeKey,
-    offers,
-    repositories,
-    dispatches: props.start === "Starts",
-    onFaults: setFaults,
-    onCreated: (ticket) => {
-      ticketYamlForgotten(storeKey);
-      onCreated(ticket);
-    },
-  });
-  const held = useCreationHeld(props, repositories);
   return (
     <div className="creation">
-      <CreationDuplicateDropped duplicate={duplicate} />
+      {props.lead}
       <TicketAuthoring
         initial={held.initial}
         form={held.form}
@@ -1164,7 +1191,7 @@ export function CreationForm(props: CreationFormProps): ReactNode {
         repositories={repositories}
         assemble={creationAssembler(offers, repositories, standing)}
         proposed={creationFormProposed}
-        storeKey={storeKey}
+        storeKey={props.storeKey}
         submitLabel="Create ticket"
         submitEffect={creationSubmitEffect(props.start)}
         submitStep={
@@ -1172,30 +1199,93 @@ export function CreationForm(props: CreationFormProps): ReactNode {
             <AddRunnerLink partition={props.partition} />
           ) : undefined
         }
-        busy={running.busy}
-        onSubmit={running.submit}
+        busy={props.busy}
+        onSubmit={props.onSubmit}
         onDirty={props.onDirty}
+        following={props.following}
         fields={
           <CreationFields
             form={held.form}
             onChange={held.changed}
-            faults={faults}
+            faults={props.faults}
             offers={offers}
             partial={partial}
             repositories={repositories}
             standing={standing}
             branchProposed={creationBranchProposed(held.form)}
-            api={{ ports: props.ports, partition: props.partition, storeKey }}
+            api={{
+              ports: props.ports,
+              partition: props.partition,
+              storeKey: props.storeKey,
+            }}
             epicChoice
           />
         }
       />
       <CreationAttemptNote
-        attempt={running.attempt}
+        attempt={props.attempt}
         motion={creationSubmitMotion(props.start)}
         existing={props.existing}
       />
     </div>
+  );
+}
+
+/** The submit a creation form makes, which forgets the YAML it kept once it
+ * has made a ticket. */
+export function useCreationFormSubmit(
+  props: CreationFormProps,
+  repositories: readonly ProjectRepositoryResponse[],
+  storeKey: string,
+  onFaults: (faults: readonly CreationFault[]) => void,
+): CreationSubmit {
+  const onCreated = props.onCreated;
+  return useCreationSubmit({
+    standing: props.standing ?? { mayOverride: true },
+    ports: props.ports,
+    partition: props.partition,
+    queryKey: props.queryKey,
+    storeKey,
+    offers: props.context.offers,
+    repositories,
+    dispatches: props.start === "Starts",
+    onFaults,
+    onCreated: (ticket) => {
+      ticketYamlForgotten(storeKey);
+      onCreated(ticket);
+    },
+  });
+}
+
+/**
+ * The form itself, which reaches the network and the address bar through its
+ * caller: the route component below owns the session and the router, and this
+ * owns what one screenful of typing becomes, as fields or as YAML.
+ */
+export function CreationForm(props: CreationFormProps): ReactNode {
+  const [faults, setFaults] = useState<readonly CreationFault[]>([]);
+  const bound = props.context.repositories;
+  const repositories = useMemo(() => creationRepositories(bound), [bound]);
+  const storeKey = creationStoreKey(props.partition, props.duplicate);
+  const running = useCreationFormSubmit(
+    props,
+    repositories,
+    storeKey,
+    setFaults,
+  );
+  const held = useCreationHeld(props, repositories);
+  return (
+    <CreationFormDrawn
+      {...props}
+      repositories={repositories}
+      storeKey={storeKey}
+      faults={faults}
+      held={held}
+      attempt={running.attempt}
+      busy={running.busy}
+      onSubmit={running.submit}
+      lead={<CreationDuplicateDropped duplicate={props.duplicate} />}
+    />
   );
 }
 

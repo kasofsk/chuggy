@@ -44,10 +44,12 @@ import {
   projectCreationRoutePath,
 } from "../core/projectCreation.ts";
 import type { ProjectCreationQuery } from "../core/projectCreation.ts";
-import { ticketDuplicateQueryOf } from "../core/ticketDuplicate.ts";
+import { ticketRunQueryOf } from "../core/ticketRuns.ts";
+import type { TicketRunQuery } from "../core/ticketRuns.ts";
+import { ticketCreationQueryOf } from "../core/ticketCreationQuery.ts";
+import type { TicketCreationQuery } from "../core/ticketCreationQuery.ts";
 import { ticketListQueryOf } from "../core/ticketListView.ts";
 import type { TicketListQuery } from "../core/ticketListView.ts";
-import type { TicketDuplicateQuery } from "../core/ticketDuplicate.ts";
 import { usePanelState } from "./api.ts";
 import { CatalogPage } from "./catalog/CatalogPage.tsx";
 import { DataPanel } from "./DataPanel.tsx";
@@ -76,9 +78,17 @@ import {
 import { Shell } from "./Shell.tsx";
 import { ProjectStreamProvider } from "./stream.tsx";
 import { ThreadPage } from "./ThreadPage.tsx";
-import { TicketCreationFrom } from "./TicketDuplicate.tsx";
+import { TicketCreationFrom } from "./TicketCreationStart.tsx";
 import { TicketEdit } from "./TicketEdit.tsx";
 import { TicketPage } from "./TicketPage.tsx";
+import { TicketLandingTab } from "./ticket/TicketLandingPage.tsx";
+import { TicketRunTab } from "./ticket/TicketRunPage.tsx";
+import {
+  TicketConfigurationTab,
+  TicketOverviewTab,
+  TicketRunsTab,
+  TicketUsageTab,
+} from "./ticket/TicketPageTabs.tsx";
 import { Button } from "./ui/Button.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 
@@ -337,7 +347,8 @@ const projectCreationRoute = createRoute({
 });
 
 function TicketCreationRoute(): ReactNode {
-  return <TicketCreationFrom from={ticketCreationRoute.useSearch().from} />;
+  const query = ticketCreationRoute.useSearch();
+  return <TicketCreationFrom from={query.from} draft={query.draft} />;
 }
 
 const ticketCreationRoute = createRoute({
@@ -346,13 +357,63 @@ const ticketCreationRoute = createRoute({
   component: TicketCreationRoute,
   validateSearch: (
     search: Readonly<Record<string, unknown>>,
-  ): TicketDuplicateQuery => ticketDuplicateQueryOf(search),
+  ): TicketCreationQuery => ticketCreationQueryOf(search),
 });
 
+function TicketRoute(): ReactNode {
+  return (
+    <TicketPage>
+      <Outlet />
+    </TicketPage>
+  );
+}
+
+/** One ticket: its header and tabs, over the tab its address names, so a tab
+ * can be linked and Back returns to the last one. */
 const ticketRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/tickets/$ticket",
-  component: TicketPage,
+  component: TicketRoute,
+});
+
+const ticketOverviewRoute = createRoute({
+  getParentRoute: () => ticketRoute,
+  path: "/",
+  component: TicketOverviewTab,
+});
+
+const ticketRunsRoute = createRoute({
+  getParentRoute: () => ticketRoute,
+  path: "/runs",
+  component: TicketRunsTab,
+});
+
+/** One run of the ticket, at its task's number, with the sub-tab it shows in
+ * its query so a transcript can be linked. */
+const ticketRunRoute = createRoute({
+  getParentRoute: () => ticketRoute,
+  path: "/runs/$task",
+  component: TicketRunTab,
+  validateSearch: (search: Readonly<Record<string, unknown>>): TicketRunQuery =>
+    ticketRunQueryOf(search),
+});
+
+const ticketLandingRoute = createRoute({
+  getParentRoute: () => ticketRoute,
+  path: "/landing",
+  component: TicketLandingTab,
+});
+
+const ticketConfigurationRoute = createRoute({
+  getParentRoute: () => ticketRoute,
+  path: "/configuration",
+  component: TicketConfigurationTab,
+});
+
+const ticketUsageRoute = createRoute({
+  getParentRoute: () => ticketRoute,
+  path: "/usage",
+  component: TicketUsageTab,
 });
 
 const ticketEditRoute = createRoute({
@@ -383,7 +444,14 @@ const routeTree = rootRoute.addChildren([
     runnersRoute,
     threadRoute,
     ticketCreationRoute,
-    ticketRoute,
+    ticketRoute.addChildren([
+      ticketOverviewRoute,
+      ticketRunsRoute,
+      ticketRunRoute,
+      ticketLandingRoute,
+      ticketConfigurationRoute,
+      ticketUsageRoute,
+    ]),
     ticketEditRoute,
   ]),
 ]);

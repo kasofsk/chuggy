@@ -1,6 +1,6 @@
 /**
  * The ticket's status bar: where it stands and since when, what it has cost,
- * what may be done to it, and under that what the ticket is.
+ * and under that what the ticket is.
  *
  * The cost and the token count are the ticket read's own roll-up rather than a
  * sum over the executions this page holds, because a page that is short would
@@ -92,7 +92,6 @@ export function TicketStatus(props: {
   /** The current landing's fragment while the ticket is finalizing, or null. */
   readonly landing: ReactNode;
   readonly nowMs: number;
-  readonly actions: ReactNode;
 }): ReactNode {
   const state = props.state;
   if (state.state !== "Ready")
@@ -103,7 +102,6 @@ export function TicketStatus(props: {
     );
   return (
     <section className="ticket-status" aria-label="Status">
-      <div className="ticket-status-actions">{props.actions}</div>
       <StatusFigures
         ticket={state.value}
         page={props.page}

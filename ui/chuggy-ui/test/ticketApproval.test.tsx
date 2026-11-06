@@ -14,10 +14,9 @@
 import { QueryClient } from "@tanstack/react-query";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
-import { TicketPage } from "../app/browser/TicketPage.tsx";
 import {
   answer,
   apiDouble,
@@ -36,6 +35,11 @@ import {
 } from "./projectAbilitiesFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
+import {
+  TicketPageEveryTab,
+  ticketHeader,
+  ticketHeaderMenuOpened,
+} from "./ticketPageEveryTab.tsx";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -50,8 +54,13 @@ vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
 
 vi.mock("@tanstack/react-router", () => ({
   createLink: (component: unknown) => component,
-  Link: (props: { readonly children?: ReactNode }) => (
-    <a href="/">{props.children}</a>
+  Link: (props: {
+    readonly children?: ReactNode;
+    readonly ref?: Ref<HTMLAnchorElement>;
+  }) => (
+    <a href="/" ref={props.ref}>
+      {props.children}
+    </a>
   ),
   useParams: () => ({ ...atlas, ticket: "11" }),
 }));
@@ -116,7 +125,7 @@ function mounted(
       }
       transport={server.ports.fetch}
     >
-      <TicketPage />
+      <TicketPageEveryTab />
     </ScreenHarness>,
   );
   return { api, server };
@@ -127,8 +136,20 @@ test("an open approval is offered as approve and decline, and answered once", as
   await settled();
   const card = screen.getByRole("status", { name: "Needs you" });
   expect(card.textContent).toContain("Awaiting approval");
-  expect(within(card).getByRole("button", { name: "Approve" })).toBeDefined();
-  expect(within(card).getByRole("button", { name: "Decline" })).toBeDefined();
+  expect(within(card).queryByRole("button")).toBeNull();
+  const header = ticketHeader();
+  expect(within(header).getByRole("button", { name: "Approve" })).toBeDefined();
+  expect(within(header).getByRole("button", { name: "Decline" })).toBeDefined();
+  expect(
+    within(header)
+      .getByRole("button", { name: "Approve" })
+      .classList.contains("btn-primary"),
+  ).toBe(true);
+  expect(
+    within(header)
+      .getByRole("button", { name: "Decline" })
+      .classList.contains("btn-primary"),
+  ).toBe(false);
 
   await turned(() => {
     screen.getByRole("button", { name: "Approve" }).click();
@@ -166,7 +187,11 @@ test("a frame moves what the page offers without the page reading again", async 
   });
   await settled();
   expect(screen.queryByRole("button", { name: "Approve" })).toBeNull();
-  expect(screen.getByRole("button", { name: "Revoke" })).toBeDefined();
+  expect(
+    within(await ticketHeaderMenuOpened()).getByRole("menuitem", {
+      name: "Revoke…",
+    }),
+  ).toBeDefined();
   expect(held.api.submitted()).toBeUndefined();
 });
 

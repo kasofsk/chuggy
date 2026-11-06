@@ -116,6 +116,8 @@ import type {
   sessionPlacementSchema,
   submissionSchema,
   threadMessageSchema,
+  chatThreadMessageSchema,
+  threadOfferReplyRequestSchema,
 } from "../../../../src/contract/requests.ts";
 import type { AccountAgent } from "../../../../src/contract/rosters.ts";
 import type { z } from "zod";
@@ -994,20 +996,6 @@ export function apiProjectArtifact(
   );
 }
 
-export interface RunTurnsPage {
-  readonly after?: number | undefined;
-  readonly limit?: number | undefined;
-}
-
-/** One run's per-turn series, ascending, resumed by the ordinal already held. */
-export const apiRunTurns = apiProjectEndpoint(
-  nativeHttpEndpoints.runTurns,
-  (partition, execution: string, attempt: string, page: RunTurnsPage = {}) => ({
-    parameters: { ...partition, execution, attempt },
-    query: { after: page.after, limit: page.limit },
-  }),
-);
-
 /** The batches above the one named, which is the highest a pane already holds. */
 export const apiRunTranscript = apiProjectEndpoint(
   nativeHttpEndpoints.runTranscript,
@@ -1231,6 +1219,19 @@ export const apiSendThreadMessage = apiProjectEndpoint(
 );
 
 /**
+ * The caller's reply to an offer their thread made them, into the thread's
+ * mailbox. The turn identity is the body's for the reason a message's is.
+ */
+export const apiReplyThreadOffer = apiProjectEndpoint(
+  nativeHttpEndpoints.replyThreadOffer,
+  (
+    partition,
+    session: string,
+    reply: z.infer<typeof threadOfferReplyRequestSchema>,
+  ) => ({ parameters: { ...partition, session }, body: reply }),
+);
+
+/**
  * Closes one thread, whoever's it is: the door is the project's `Mutate` and
  * not the thread's owner. It is terminal and idempotent, so a second press is
  * answered the closed thread rather than refused; the body is an empty object
@@ -1319,7 +1320,11 @@ export const apiChatThreadTranscript = apiTenantEndpoint(
 
 export const apiSendChatThreadMessage = apiTenantEndpoint(
   nativeHttpEndpoints.sendChatThreadMessage,
-  (tenant, session: string, message: z.infer<typeof threadMessageSchema>) => ({
+  (
+    tenant,
+    session: string,
+    message: z.infer<typeof chatThreadMessageSchema>,
+  ) => ({
     parameters: { tenant, session },
     body: message,
   }),

@@ -7,6 +7,11 @@
  * waits until it does. A screen that finds YAML this browser kept for it opens
  * on that YAML, because the author was typing there when they left.
  *
+ * A screen following the server draft it is open on says which seeding of the
+ * form it draws, and the YAML is written again from the form on each new one;
+ * it is told when YAML of the author's comes and goes, and may hold the submit
+ * back while it says why above it.
+ *
  * Images are attached in the form alone, so the YAML may name only those the
  * screen first read, those the form held when the text was opened, and those
  * a text this browser kept was kept beside.
@@ -51,6 +56,14 @@ type Assembled =
   | { readonly assembled: "Body" }
   | { readonly assembled: "Faults"; readonly faults: readonly CreationFault[] };
 
+/** What a screen following its server draft hands the authoring. */
+export interface AuthoringFollow {
+  /** Which drawing of the form from a revision this is. */
+  readonly seeding: number;
+  readonly onAuthored: (authored: boolean) => void;
+  readonly withheld: boolean;
+}
+
 export interface TicketAuthoringProps {
   /** The form as the screen first read it, which a key the YAML leaves out
    * keeps its value from and a screen is dirty against. */
@@ -75,6 +88,7 @@ export interface TicketAuthoringProps {
   readonly busy: boolean;
   readonly onSubmit: (form: TicketCreationForm) => void;
   readonly onDirty?: ((dirty: boolean) => void) | undefined;
+  readonly following?: AuthoringFollow | undefined;
 }
 
 function YamlSide(props: TicketYamlAuthoringProps): ReactNode {
@@ -183,6 +197,8 @@ export function TicketAuthoring(props: TicketAuthoringProps): ReactNode {
     onDirty?.(dirty);
   }, [dirty, onDirty]);
   const context = useYamlContext(props);
+  const following = props.following;
+  const busy = props.busy || following?.withheld === true;
   const faultsOf = (held: TicketCreationForm): readonly CreationFault[] => {
     const assembled = assemble(held);
     return assembled.assembled === "Faults" ? assembled.faults : [];
@@ -194,23 +210,28 @@ export function TicketAuthoring(props: TicketAuthoringProps): ReactNode {
         stuck={stuck}
         onMode={(chosen) => {
           if (chosen === "Form" && stuck) return;
-          if (chosen === "Form") ticketYamlForgotten(storeKey);
+          if (chosen === "Form") {
+            ticketYamlForgotten(storeKey);
+            following?.onAuthored(false);
+          }
           setReadable(true);
           setMode(chosen);
         }}
       />
       {mode === "YAML" ? (
         <YamlSide
+          key={following?.seeding ?? 0}
           context={context}
           form={sent}
           onForm={props.onForm}
           onReadable={setReadable}
+          onAuthored={following?.onAuthored}
           faultsOf={faultsOf}
           storeKey={storeKey}
           submitLabel={props.submitLabel}
           submitEffect={props.submitEffect}
           submitStep={props.submitStep}
-          busy={props.busy}
+          busy={busy}
           onSubmit={props.onSubmit}
         />
       ) : (
@@ -220,7 +241,7 @@ export function TicketAuthoring(props: TicketAuthoringProps): ReactNode {
             label={props.submitLabel}
             effect={props.submitEffect}
             step={props.submitStep}
-            busy={props.busy}
+            busy={busy}
             onSubmit={() => {
               props.onSubmit(sent);
             }}

@@ -1,5 +1,5 @@
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
-import { cleanup, screen, within } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -9,7 +9,6 @@ import {
   configurationReads,
   runAttempt,
   runConfigurationRef,
-  runDigest,
   runEvidenceOf,
   runPageDrawn,
   runSnapshot,
@@ -19,6 +18,8 @@ import {
 } from "./runPageFixture.tsx";
 import type { RunPageServed } from "./runPageFixture.tsx";
 import { settled, turned } from "./screenHarness.tsx";
+import { TicketRunPageAt } from "./ticketPageEveryTab.tsx";
+import type { TicketRunView } from "../app/core/ticketRuns.ts";
 import { elementScrollToStubbed } from "./scrolling.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
@@ -42,12 +43,11 @@ vi.mock("@tanstack/react-router", () => ({
 // jscpd:ignore-end -- the case's own doubles resume here
 
 /**
- * A settled ticket's runs, read back from its ledger.
+ * A settled run's Transcript, on the run's own page.
  *
  * What these guard is that a run is drawn one way: the prompt it was handed
- * first, then what it did, whether the reader came by the row's own
- * Conversation button or through its details — and that a run which recorded
- * nothing to read offers nothing to press.
+ * first, then what it did, its first steps until a reader asks for every one —
+ * and that a run which recorded nothing to read says so.
  */
 
 beforeEach(() => {
@@ -100,6 +100,14 @@ async function pressed(name: string): Promise<void> {
   await settled();
 }
 
+/** The run's own page, on the sub-tab a case names. */
+function runPage(
+  served: RunPageServed,
+  view: TicketRunView = "Transcript",
+): ReturnType<typeof runPageDrawn> {
+  return runPageDrawn(atlas, served, <TicketRunPageAt task={1} view={view} />);
+}
+
 /** The prompt heads the drawing, in its own markdown, and the run's steps
  * follow it in the order they were recorded. */
 function promptFirst(conversation: HTMLElement): void {
@@ -113,39 +121,18 @@ function promptFirst(conversation: HTMLElement): void {
   expect([...said].sort((left, right) => left - right)).toEqual(said);
 }
 
-test("a settled run's details draw its prompt first, as its row's conversation does", async () => {
-  await runPageDrawn(atlas, settledRun());
-  await pressed("Details");
-  const transcript = screen.getByRole("region", { name: "transcript" });
-  const inDetails = within(transcript).getByRole("group", {
-    name: "Transcript",
-  });
-  promptFirst(inDetails);
-  const drawn = inDetails.textContent;
-
-  await pressed("Transcript");
-  expect(screen.queryByRole("region", { name: "transcript" })).toBeNull();
-  const opened = screen.getByRole("group", { name: "Transcript" });
-  promptFirst(opened);
-  expect(opened.textContent).toBe(drawn);
+test("a settled run's Transcript draws its prompt first, then what it did", async () => {
+  await runPage(settledRun());
+  promptFirst(screen.getByRole("group", { name: "Transcript" }));
 });
 
-test("a settled run's conversation opens in one press, and reads its prompt only then", async () => {
-  const drawn = await runPageDrawn(atlas, settledRun());
+test("a run's prompt is read only once its Transcript is shown", async () => {
+  const summary = await runPage(settledRun(), "Summary");
   expect(screen.queryByRole("group", { name: "Transcript" })).toBeNull();
-  expect(configurationReads(drawn.reads)).toBe(0);
-
-  await pressed("Transcript");
-  promptFirst(screen.getByRole("group", { name: "Transcript" }));
-  expect(configurationReads(drawn.reads)).toBe(1);
-  expect(
-    screen
-      .getByRole("button", { name: "Hide transcript" })
-      .getAttribute("aria-expanded"),
-  ).toBe("true");
-
-  await pressed("Hide transcript");
-  expect(screen.queryByRole("group", { name: "Transcript" })).toBeNull();
+  expect(configurationReads(summary.reads)).toBe(0);
+  cleanup();
+  const transcript = await runPage(settledRun());
+  expect(configurationReads(transcript.reads)).toBe(1);
 });
 
 /** The word under each exchange a conversation draws. */
@@ -160,10 +147,14 @@ function standingWords(conversation: HTMLElement): readonly string[] {
  * work has last recorded. */
 function calling(batch: number): string {
   if (batch === 1) return assistantLine("batch 1");
+  return toolCall("call-1");
+}
+
+function toolCall(id: string): string {
   return JSON.stringify({
     type: "assistant",
     message: {
-      content: [{ type: "tool_use", id: "call-1", name: "Read", input: {} }],
+      content: [{ type: "tool_use", id, name: "Read", input: {} }],
     },
   });
 }
@@ -177,14 +168,12 @@ test("a run in the middle of its work reads Open, and Answered once it has repor
       state,
       run: runEvidenceOf(2, { configuration: runConfigurationRef }),
     });
-    await runPageDrawn(
-      atlas,
+    await runPage(
       settledRun({
         execution: { ...runSummary(), attempts: [attempt] },
         transcripts: [runTranscriptPage([1, 2], true, calling)],
       }),
     );
-    await pressed("Transcript");
     const drawn = standingWords(
       screen.getByRole("group", { name: "Transcript" }),
     );
@@ -195,13 +184,14 @@ test("a run in the middle of its work reads Open, and Answered once it has repor
   expect(await words("Reported")).toEqual(["Answered"]);
 });
 
-/** A command stage records no transcript, and a button onto nothing would be
- * a press that opens an empty box. */
-test("a run that recorded no transcript offers no conversation", async () => {
+/** A command stage records no transcript, and an empty box would say nothing. */
+test("a run that recorded no transcript says so", async () => {
   for (const run of [runEvidenceOf(0, { transcript: undefined }), undefined]) {
-    await runPageDrawn(atlas, settledRun(attemptServed(run)));
-    expect(screen.getByRole("button", { name: "Details" })).toBeDefined();
-    expect(screen.queryByRole("button", { name: "Transcript" })).toBeNull();
+    const drawn = await runPage(settledRun(attemptServed(run)));
+    expect(screen.queryByRole("group", { name: "Transcript" })).toBeNull();
+    expect(drawn.container.querySelector(".ticket-run-body")?.textContent).toBe(
+      "No transcript",
+    );
     cleanup();
   }
 });
@@ -212,8 +202,7 @@ test("a run that kept no prompt says so where the prompt would be", async () => 
     { configuration: runSnapshot(prompt, { argvTruncated: truncated }) },
   ];
   for (const served of cases) {
-    await runPageDrawn(atlas, settledRun(served));
-    await pressed("Transcript");
+    await runPage(settledRun(served));
     const conversation = screen.getByRole("group", { name: "Transcript" });
     expect(conversation.textContent?.startsWith("Prompt not kept")).toBe(true);
     expect(conversation.textContent).not.toContain("Keep it to one line.");
@@ -228,11 +217,7 @@ test("a long prompt is folded to its opening lines until the reader asks", async
     { length: 12 },
     (_, at) => `Line ${String(at + 1)} of the brief.`,
   );
-  await runPageDrawn(
-    atlas,
-    settledRun({ configuration: runSnapshot(lines.join("\n\n")) }),
-  );
-  await pressed("Transcript");
+  await runPage(settledRun({ configuration: runSnapshot(lines.join("\n\n")) }));
   const conversation = screen.getByRole("group", { name: "Transcript" });
   expect(conversation.textContent).toContain("Line 1 of the brief.");
   expect(conversation.textContent).not.toContain("Line 12 of the brief.");
@@ -244,24 +229,30 @@ test("a long prompt is folded to its opening lines until the reader asks", async
   ).toBeDefined();
 });
 
-test("a run's configuration that will not read says so under its title, and does not repeat it", async () => {
-  const drawn = await runPageDrawn(
-    atlas,
-    settledRun({
-      configuration: {
-        read: "Content",
-        digest: runDigest,
-        bytes: 400,
-        content: "not a snapshot",
-      },
-    }),
+/** How many tool calls a conversation draws. */
+function callsDrawn(conversation: HTMLElement): number {
+  return Array.from(conversation.querySelectorAll("code")).filter(
+    (name) => name.textContent === "Read",
+  ).length;
+}
+
+/** A long run is many steps, and its page opens on the first of them and its
+ * final message rather than a wall of every one. */
+test("a long transcript draws its first steps and its final message until every turn is asked for", async () => {
+  const content = (batch: number): string =>
+    batch === 1
+      ? Array.from({ length: 6 }, (_, at) =>
+          toolCall(`call-${String(at)}`),
+        ).join("\n")
+      : assistantLine("all done");
+  await runPage(
+    settledRun({ transcripts: [runTranscriptPage([1, 2], true, content)] }),
   );
-  await pressed("Details");
-  await pressed("configuration");
-  const ledger = drawn.container.querySelector("#cycles");
-  expect(
-    [...(ledger?.querySelectorAll(".read-failed .notice") ?? [])].map(
-      (line) => line.textContent,
-    ),
-  ).toStrictEqual(["Not read · Unreadable"]);
+  const conversation = screen.getByRole("group", { name: "Transcript" });
+  expect(callsDrawn(conversation)).toBe(3);
+  expect(conversation.textContent).toContain("all done");
+
+  await pressed("Show every turn");
+  expect(callsDrawn(conversation)).toBe(6);
+  expect(screen.queryByRole("button", { name: "Show every turn" })).toBeNull();
 });

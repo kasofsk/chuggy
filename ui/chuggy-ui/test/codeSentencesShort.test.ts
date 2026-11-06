@@ -148,6 +148,7 @@ test("every refusal, deferral and failure a submission meets is one short line",
 
 const held = {
   draft: { ticket },
+  origin: "Created",
   body: undefined,
   operation: "op-1",
   unsettled: false,
@@ -165,8 +166,11 @@ test("every line a creation's submit says is one short line", () => {
     creationDraftHeldSentence(held),
     creationDraftHeldSentence({ ...held, unsettled: true }),
     creationDraftUnreadSentence,
-    creationDraftDeletedSentence(ticket),
-    creationTicketExistsSentence(ticket),
+    creationDraftHeldSentence({ ...held, origin: "Followed" }),
+    creationDraftDeletedSentence(held),
+    creationDraftDeletedSentence({ ...held, origin: "Followed" }),
+    creationTicketExistsSentence(held),
+    creationTicketExistsSentence({ ...held, origin: "Followed" }),
   ]);
 });
 

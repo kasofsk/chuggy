@@ -1,5 +1,5 @@
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
-import { cleanup, screen, within } from "@testing-library/react";
+import { cleanup, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -14,6 +14,7 @@ import {
 } from "./runPageFixture.tsx";
 import type { RunPageServed } from "./runPageFixture.tsx";
 import { settled, turned } from "./screenHarness.tsx";
+import { TicketRunPageAt } from "./ticketPageEveryTab.tsx";
 import { elementScrollToStubbed } from "./scrolling.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
@@ -97,24 +98,38 @@ function passed(
   };
 }
 
-/** The ticket page with its work row's details open. */
+/** The run's own page under Details. */
 async function details(served: RunPageServed): Promise<HTMLElement> {
-  await runPageDrawn(atlas, served);
-  await turned(() => {
-    screen.getAllByRole("button", { name: "Details" })[0]?.click();
-  });
-  await settled();
-  return screen.getByRole("region", { name: "Runs" });
+  const drawn = await runPageDrawn(
+    atlas,
+    served,
+    <TicketRunPageAt task={1} view="Details" />,
+  );
+  const body = drawn.container.querySelector<HTMLElement>(".ticket-run-body");
+  if (body === null) throw new Error("no run drawn");
+  return body;
 }
 
-test("a passed run's details draw no raw identity, no raw instant and no warning for its own result", async () => {
+/** What Details says against one name. */
+function field(drawn: HTMLElement, name: string): string | null | undefined {
+  return within(drawn).getByText(name, { selector: "dt" }).nextElementSibling
+    ?.textContent;
+}
+
+test("a run's details say where and on what it ran, with no raw identity and no raw instant", async () => {
   const drawn = await details(
     passed([runAttempt("a1", { openedAt, endedAt })], [agentResult]),
   );
-  expect(drawn.querySelector(".panel-absent")).toBeNull();
+  expect(field(drawn, "Runner")).toBe("Linux · Amd64 · container");
+  expect(field(drawn, "Image")).toBe("chuggy/worker");
+  expect(field(drawn, "Worker")).toBe("Unknown");
+  expect(field(drawn, "CPUs")).toBe("Default");
+  expect(field(drawn, "Turns")).toBe("3");
+  expect(field(drawn, "API time")).toBe("3m 20s");
+  expect(field(drawn, "Tokens")).toBe(
+    "10 in · 20 out · 30 cache write · 40 cache read",
+  );
   const text = drawn.textContent;
-  expect(text).toContain("Passed");
-  expect(text).toContain("Added the README lines.");
   expect(text).not.toContain(execution);
   expect(text).not.toContain(manifest);
   expect(text).not.toMatch(/\d{2}:\d{2}:\d{2}\.\d+/u);
@@ -122,32 +137,14 @@ test("a passed run's details draw no raw identity, no raw instant and no warning
   expect(text).not.toContain("agent-result");
 });
 
-test("the execution's identity is one press away, whole", async () => {
+test("the execution's identity is cut in the middle", async () => {
   const drawn = await details(
     passed([runAttempt("a1", { openedAt, endedAt })], [agentResult]),
   );
-  await turned(() => {
-    within(drawn).getByRole("button", { name: "Execution ID" }).click();
-  });
-  expect(
-    Array.from(drawn.querySelectorAll("code")).map((code) => code.textContent),
-  ).toContain(execution);
+  expect(field(drawn, "Execution")).toBe("execution-17…c82b-1");
 });
 
-/** Opened that many minutes before the case runs, so its ago reads in minutes. */
-function minutesAgo(minutes: number): string {
-  return new Date(Date.now() - minutes * 60_000).toISOString();
-}
-
-function cellTexts(row: HTMLElement): readonly string[] {
-  return within(row)
-    .getAllByRole("cell")
-    .map((cell) => cell.textContent);
-}
-
-test("an execution with two attempts draws two rows told apart by number, state, start and length", async () => {
-  const lostOpenedAt = minutesAgo(20);
-  const reportedOpenedAt = minutesAgo(10);
+test("a run its fabric opened again counts every attempt it took", async () => {
   const drawn = await details(
     passed(
       [
@@ -155,77 +152,28 @@ test("an execution with two attempts draws two rows told apart by number, state,
           number: 1,
           state: "Lost",
           evidence: "LeaseExpired",
-          openedAt: lostOpenedAt,
-          endedAt: new Date(Date.parse(lostOpenedAt) + 30_000).toISOString(),
         }),
-        runAttempt("a1", {
-          number: 2,
-          openedAt: reportedOpenedAt,
-          endedAt: new Date(
-            Date.parse(reportedOpenedAt) + 168_000,
-          ).toISOString(),
-        }),
+        runAttempt("a1", { number: 2, openedAt, endedAt }),
       ],
       [],
     ),
   );
-  const table = within(drawn).getByRole("table", { name: "Runs" });
-  const rows = within(table).getAllByRole("row").slice(1);
-  expect(rows).toHaveLength(2);
-  const [lost, reported] = rows.map((row) => ({
-    run: within(row).getByRole("rowheader").textContent,
-    cells: cellTexts(row),
-  }));
-  expect(lost?.run).toBe("1");
-  expect(reported?.run).toBe("2");
-  expect(lost?.cells[0]).toBe("Lost");
-  expect(reported?.cells[0]).toBe("Reported");
-  expect(lost?.cells[1]).toMatch(/^20m( \d{2}s)? ago$/u);
-  expect(reported?.cells[1]).toMatch(/^10m( \d{2}s)? ago$/u);
-  expect(lost?.cells[2]).toBe("30s");
-  expect(reported?.cells[2]).toBe("2m 48s");
+  expect(field(drawn, "Attempts")).toBe("2");
 });
 
-test("a placing run no runner has claimed reads as waiting, one a runner claimed does not, and a claimed run's length starts at its claim", async () => {
-  const waitingOpenedAt = minutesAgo(30);
-  const claimedOpenedAt = minutesAgo(20);
-  const endedOpenedAt = minutesAgo(10);
-  const endedClaimedAt = new Date(
-    Date.parse(endedOpenedAt) + 60_000,
-  ).toISOString();
-  const drawn = await details(
-    passed(
-      [
-        runAttempt("a0", {
-          number: 1,
-          state: "Placing",
-          openedAt: waitingOpenedAt,
-        }),
-        runAttempt("a1", {
-          number: 2,
-          state: "Placing",
-          openedAt: claimedOpenedAt,
-          claimedAt: minutesAgo(15),
-        }),
-        runAttempt("a2", {
-          number: 3,
-          openedAt: endedOpenedAt,
-          claimedAt: endedClaimedAt,
-          endedAt: new Date(Date.parse(endedClaimedAt) + 30_000).toISOString(),
-        }),
-      ],
-      [],
-    ),
-  );
-  const table = within(drawn).getByRole("table", { name: "Runs" });
-  const [waiting, claimed, ended] = within(table)
-    .getAllByRole("row")
-    .slice(1)
-    .map(cellTexts);
-  expect(waiting?.[0]).toBe("Waiting");
-  expect(claimed?.[0]).toBe("Placing");
-  expect(ended?.[0]).toBe("Reported");
-  expect(ended?.[2]).toBe("30s");
+test("a run waited from its registration to its first attempt's opening", async () => {
+  const drawn = await details({
+    ...passed([runAttempt("a1", { openedAt, endedAt })], []),
+    execution: {
+      ...runSummary({
+        execution,
+        registeredAt: "2026-08-27T00:00:00Z",
+        startedAt: "2026-08-27T00:01:30Z",
+      }),
+      attempts: [runAttempt("a1")],
+    },
+  });
+  expect(field(drawn, "Waited")).toBe("1m 30s");
 });
 
 /** A diagnostic a worker uploads that no task output declares. */

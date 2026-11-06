@@ -1114,3 +1114,14 @@ export function workerContractHistoryRefusal(
     return `the wire is no longer the one ${release} was published as: move the release, and add its entry`;
   return undefined;
 }
+
+/** Why `history` does not record `files` as `release`'s, or nothing where it does. */
+export function workerContractFilesRefusal(
+  history: readonly Pick<WorkerContractHistory[number], "release" | "files">[],
+  release: string,
+  files: string,
+): string | undefined {
+  const recorded = history.find((entry) => entry.release === release)?.files;
+  if (recorded === files) return undefined;
+  return `the history records ${String(recorded)} as ${release}'s files, and the pack's are ${files}: record the pack's`;
+}

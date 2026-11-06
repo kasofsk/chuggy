@@ -496,6 +496,35 @@ test("a session bearer reads its own project's held proposals and may not answer
   assert.deepEqual(reached, ["proposalReviews.pending"]);
 });
 
+test("a thread's own session bearer may write to its thread and may not reply to an offer in its member's name", async () => {
+  const reached: string[] = [];
+  await using app = scopedApp(reached, undefined, "Thread");
+  const replied = await app.inject({
+    method: "POST",
+    url: `${projectPath(own)}/threads/Thread/offer-replies`,
+    headers: {
+      authorization: `Bearer ${sessionToken}`,
+      "content-type": nativeHttpMediaType,
+    },
+    payload: {
+      turn: "turn-1",
+      reply: { call: "toolu_01", decision: "Confirmed", outcome: "Succeeded" },
+    },
+  });
+  assert.ok(scopeRefused(replied));
+  assert.deepEqual(reached, []);
+  await app.inject({
+    method: "POST",
+    url: `${projectPath(own)}/threads/Thread/messages`,
+    headers: {
+      authorization: `Bearer ${sessionToken}`,
+      "content-type": nativeHttpMediaType,
+    },
+    payload: { turn: "turn-1", message: "hello" },
+  });
+  assert.deepEqual(reached, ["web.sendThreadMessage"]);
+});
+
 /**
  * The interpreter's own submit behind the app, over a membership that reaches
  * `own` and nothing else and an inbox that keeps what it was offered, so what

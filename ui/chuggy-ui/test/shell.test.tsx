@@ -24,12 +24,17 @@ import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { conversationWaitWordAfterMs } from "../app/browser/conversation/ConversationLines.tsx";
 import { DetailsSlot, TopBarSlot } from "../app/browser/shell/slots.tsx";
 import shellSheet from "../app/browser/shell/shell.css?raw";
+import tokenSheet from "../app/styles/tokens.css?raw";
 import {
   viewportColumnAsideEm,
   viewportNarrowEm,
   viewportTwoColumnEm,
 } from "../app/browser/shell/viewport.ts";
-import { chatPaneSizes, chatPaneStoreKey } from "../app/core/chatPane.ts";
+import {
+  chatPaneSizes,
+  chatPaneSizeStrip,
+  chatPaneStoreKey,
+} from "../app/core/chatPane.ts";
 import type { ChatPaneMove } from "../app/core/chatPane.ts";
 import {
   hostedRunsQuery,
@@ -349,6 +354,24 @@ test("the edge is a hairline in the edge's colour, and the stronger one while ho
     edge.setAttribute("data-separator", state);
     expect(sheetDeclared(rules, edge, "background")).toBe("var(--edge-strong)");
   }
+  styleless();
+});
+
+/** The screens sit the bar's gap under its first row, as they did inside it:
+ * the bar's foot and the rows' rise between them come to that gap. */
+test("the screens sit the bar's gap under its first row", async () => {
+  await mounted(viewportDeskEm);
+  const rules = sheetRules(shellSheet, []);
+  const bar = document.querySelector(".topbar");
+  const rows = document.querySelector(".topbar-rows");
+  if (bar === null || rows === null) throw new Error("the bar is not drawn");
+  expect(sheetDeclared(rules, bar, "gap")).toBe("var(--space-1)");
+  expect(sheetDeclared(rules, bar, "padding")).toBe(
+    "var(--space-2) var(--topbar-inline)",
+  );
+  expect(sheetDeclared(rules, rows, "margin-top")).toBe(
+    "calc(-1 * var(--space-1))",
+  );
   styleless();
 });
 
@@ -844,9 +867,9 @@ function paneDocked(): void {
 }
 
 /** On a phone the chat starts as the strip under the page, and expanded over
- * the whole body the bar stays over it, so every screen is still one press
- * away. */
-test("on a phone the pane opens as the strip under the page, expanded keeps the banner and the bar, and pressing a screen draws it", async () => {
+ * the whole body the bar's first row stays over it, so the inbox is still one
+ * press away and the strip one more from every screen. */
+test("on a phone the pane opens as the strip under the page, expanded keeps the banner and the project's row, and pressing the inbox draws it", async () => {
   pageDrawn = () => <p>the screen</p>;
   paneDocked();
   await mounted(viewportNarrowEm - 1);
@@ -856,7 +879,7 @@ test("on a phone the pane opens as the strip under the page, expanded keeps the 
   await pressed("Expand chat");
   expect(frameDivided()).toBe("down chat-bottom");
   expect(chatDrawn()).not.toBeNull();
-  expect(navDrawn()).not.toBeNull();
+  expect(navDrawn()).toBeNull();
   expect(screen.queryByRole("button", { name: "Settings" })).not.toBeNull();
   expect(document.querySelector(".shell-banner")).not.toBeNull();
   expect(screen.queryByText("the screen")).toBeNull();
@@ -873,6 +896,151 @@ test("on a phone the pane opens as the strip under the page, expanded keeps the 
     JSON.stringify({ placement: "Right", presentation: "Docked" }),
   );
   styleless();
+});
+
+/** A phone cannot spare the nav's row and the page's over a pane given the
+ * whole body; the strip gives them back, and a frame that divides has the
+ * room for both whatever the pane does. */
+test("below two columns an open pane takes the nav's row and the page's, and the strip and two columns draw them", async () => {
+  pageDrawn = () => (
+    <TopBarSlot>
+      <span>ticket 44</span>
+    </TopBarSlot>
+  );
+  const frame = await mounted(viewportTwoColumnEm - 1);
+  expect(navDrawn()).not.toBeNull();
+  expect(screen.getByText("ticket 44")).toBeDefined();
+  await pressed("Expand chat");
+  expect(navDrawn()).toBeNull();
+  expect(screen.queryByText("ticket 44")).toBeNull();
+  expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toBeDefined();
+  expect(screen.getByRole("button", { name: "Settings" })).toBeDefined();
+  expect(chatDrawn()?.closest(".shell-under")).not.toBeNull();
+  await pressed("Collapse");
+  expect(navDrawn()).not.toBeNull();
+  expect(screen.getByText("ticket 44")).toBeDefined();
+  viewportAtEm(viewportDeskEm);
+  await frame.redrawn();
+  await pressed("Full screen");
+  expect(navDrawn()).not.toBeNull();
+  await pressed("Collapse");
+  expect(navDrawn()).not.toBeNull();
+  styleless();
+});
+
+/** The open pane's slide, as the element it is drawn over names it. */
+function slideDrawn(): string | null | undefined {
+  return document
+    .querySelector(".shell-under")
+    ?.getAttribute("data-chat-slide");
+}
+
+/** An animation of the pane's panel ending, as the sheet's does in a browser.
+ * The document has no `AnimationEvent`, so React listens for the end under its
+ * prefixed name. */
+async function slideEnded(animationName: string): Promise<void> {
+  const panel = chatDrawn()?.closest(".chat-panel");
+  if (panel === null || panel === undefined)
+    throw new Error("no pane's panel to end a slide on");
+  const ended = new Event("webkitAnimationEnd", { bubbles: true });
+  Object.defineProperty(ended, "animationName", { value: animationName });
+  await turned(() => {
+    panel.dispatchEvent(ended);
+  });
+  await settled();
+}
+
+/** Below two columns the strip and the open pane are different panels, so
+ * the frame lays the strip beside the page and the bar's rows while the open
+ * pane slides over them, and lays the end only once the slide has ended. */
+test("below two columns the pane slides up from the strip over the page and the nav, and back down into it", async () => {
+  pageDrawn = () => <input aria-label="Draft" />;
+  await mounted(viewportTwoColumnEm - 1, undefined, undefined, {
+    motion: true,
+  });
+  const draft = screen.getByRole("textbox", { name: "Draft" });
+  expect(slideDrawn()).toBeNull();
+  await pressed("Expand chat");
+  expect(slideDrawn()).toBe("opening");
+  expect(frameDivided()).toBe("down pages | chat-bottom");
+  expect(chatDrawn()).not.toBeNull();
+  expect(navDrawn()).not.toBeNull();
+  expect(screen.getByRole("textbox", { name: "Draft" })).toBe(draft);
+  await slideEnded("chat-history-held");
+  expect(slideDrawn()).toBe("opening");
+  await slideEnded("chat-slide-up");
+  expect(slideDrawn()).toBeNull();
+  expect(frameDivided()).toBe("down chat-bottom");
+  expect(navDrawn()).toBeNull();
+  await pressed("Collapse");
+  expect(slideDrawn()).toBe("closing");
+  expect(frameDivided()).toBe("down pages | chat-bottom");
+  expect(chatDrawn()).not.toBeNull();
+  expect(navDrawn()).not.toBeNull();
+  await slideEnded("chat-slide-down");
+  expect(slideDrawn()).toBeNull();
+  expect(chatDrawn()).toBeNull();
+  expect(screen.getByRole("button", { name: "Expand chat" })).toBeDefined();
+  styleless();
+});
+
+test("a reader who takes less motion gets the open pane and the strip at once, and two columns never slide", async () => {
+  const frame = await mounted(viewportTwoColumnEm - 1, undefined, undefined, {
+    motion: false,
+  });
+  await pressed("Expand chat");
+  expect(slideDrawn()).toBeNull();
+  expect(frameDivided()).toBe("down chat-bottom");
+  expect(navDrawn()).toBeNull();
+  await pressed("Collapse");
+  expect(slideDrawn()).toBeNull();
+  expect(chatDrawn()).toBeNull();
+  viewportAtEm(viewportDeskEm, { motion: true });
+  await frame.redrawn();
+  for (const press of ["Full screen", "Collapse", "Expand chat"]) {
+    await pressed(press);
+    expect(slideDrawn(), press).toBeNull();
+  }
+  styleless();
+});
+
+/** The sheet slides the pane only for a reader who takes motion, and from the
+ * strip's own height, which the pane states for the library dividing the
+ * frame and the tokens state for the sheets. */
+test("the sheet slides the pane from the strip's height, and only for a reader who takes motion", () => {
+  const under = document.createElement("div");
+  under.className = "shell-under";
+  under.setAttribute("data-chat-slide", "opening");
+  const panel = document.createElement("div");
+  panel.className = "chat-panel";
+  under.append(panel);
+  document.body.append(under);
+  expect(
+    sheetDeclared(
+      sheetRules(tokenSheet, []),
+      document.documentElement,
+      "--height-chat-strip",
+    ),
+  ).toBe(chatPaneSizeStrip);
+  expect(sheetDeclared(sheetRules(shellSheet, []), panel, "animation")).toBe(
+    "",
+  );
+  const moving = sheetRules(shellSheet, [
+    "(prefers-reduced-motion: no-preference)",
+  ]);
+  expect(sheetDeclared(moving, panel, "position")).toBe("absolute");
+  expect(sheetDeclared(moving, panel, "animation")).toContain("chat-slide-up");
+  expect(sheetDeclared(moving, panel, "animation")).toContain(
+    "var(--duration-2)",
+  );
+  expect(sheetDeclared(moving, panel, "animation")).toContain(
+    "var(--ease-out)",
+  );
+  under.setAttribute("data-chat-slide", "closing");
+  expect(sheetDeclared(moving, panel, "animation-name")).toBe(
+    "chat-slide-down",
+  );
+  under.remove();
 });
 
 /** A pane with the frame sets its conversation as a column to read, which the
@@ -1931,6 +2099,227 @@ test("New the hosted grant refuses closes nothing, and the refusal is drawn", as
   await pressed("New");
   expect(postsNamed(posts)).toStrictEqual(["open"]);
   expect(screen.getByText("Needs hosted runs")).toBeTruthy();
+  styleless();
+});
+
+/** A command typed into the pane's box and sent with Enter, and the turns that
+ * follow flushed. */
+async function commanded(text: string): Promise<void> {
+  const box = composerDrawn();
+  fireEvent.change(box, { target: { value: text } });
+  box.setSelectionRange(text.length, text.length);
+  fireEvent.select(box);
+  await settled();
+  await turned(() => {
+    fireEvent.keyDown(box, { key: "Enter" });
+  });
+  await settled();
+}
+
+/** What the last command said over the box. */
+function commandSaid(): string {
+  const said = within(conversationRegion())
+    .getAllByRole("status")
+    .find((line) => (line.textContent ?? "").startsWith("/"));
+  if (said === undefined) throw new Error("no command said anything");
+  return said.textContent ?? "";
+}
+
+/** The reader's own idle thread as `heldThreadServed` serves it, its close
+ * recorded among the posts and answered as `close` names. */
+function heldClosedServed(
+  posts: string[],
+  open: () => Promise<unknown>,
+  close: () => Promise<unknown>,
+): typeof fetch {
+  const served = heldThreadServed(posts, open);
+  return ((url: string, init?: { readonly method?: string }) => {
+    if (init?.method !== "POST" || !url.endsWith("/close"))
+      return served(url, init);
+    posts.push(url);
+    return close();
+  }) as unknown as typeof fetch;
+}
+
+/** A close the door answers with the reader's thread, closed. */
+function closeDone(): Promise<unknown> {
+  return Promise.resolve(
+    answer(
+      threadEntry({
+        session: openedSession,
+        owner: "geoff",
+        mine: true,
+        state: "Closed",
+      }),
+    ),
+  );
+}
+
+test("/clear closes the reader's thread and only then opens another, and sends nothing", async () => {
+  const posts: string[] = [];
+  const closing = heldBack();
+  await mounted(
+    viewportDeskEm,
+    heldClosedServed(posts, anotherOpened, () => closing.let.then(closeDone)),
+  );
+  await commanded("/clear");
+  expect(postsNamed(posts), "an open asked before the close answered").toEqual([
+    "close",
+  ]);
+  await turned(closing.go);
+  await settled();
+  expect(postsNamed(posts)).toStrictEqual(["close", "open"]);
+  expect(
+    posts.some((url) => url.endsWith("/messages")),
+    "/clear was sent to the agent",
+  ).toBe(false);
+  styleless();
+});
+
+test("/clear whose close is refused opens nothing, and says the refusal over the box", async () => {
+  const posts: string[] = [];
+  await mounted(
+    viewportDeskEm,
+    heldClosedServed(posts, anotherOpened, () =>
+      Promise.resolve(answer({ error: { code: "Conflict" } }, 409)),
+    ),
+  );
+  await commanded("/clear");
+  expect(postsNamed(posts)).toStrictEqual(["close"]);
+  expect(commandSaid()).toBe("/clear·Refused");
+  styleless();
+});
+
+/** The thread posts a server saw when `first` starts a thread whose open is
+ * held back and /clear follows it, before the open is let go and after; the
+ * /clear that follows says a start is on its way. */
+async function clearedWhileOpening(
+  first: () => Promise<void>,
+): Promise<readonly (readonly string[])[]> {
+  const posts: string[] = [];
+  const opening = heldBack();
+  await mounted(
+    viewportDeskEm,
+    heldClosedServed(posts, () => opening.let.then(anotherOpened), closeDone),
+  );
+  await first();
+  await commanded("/clear");
+  expect(commandSaid()).toBe("/clear·A thread is already starting");
+  const held = postsNamed(posts);
+  await turned(opening.go);
+  await settled();
+  return [held, postsNamed(posts)];
+}
+
+test("/clear while /clear's start is on its way closes and opens nothing more", async () => {
+  expect(await clearedWhileOpening(() => commanded("/clear"))).toStrictEqual([
+    ["close", "open"],
+    ["close", "open"],
+  ]);
+  styleless();
+});
+
+test("/clear while New's start is on its way closes and opens nothing", async () => {
+  expect(await clearedWhileOpening(() => pressed("New"))).toStrictEqual([
+    ["open"],
+    ["open"],
+  ]);
+  styleless();
+});
+
+/** The shell mounted over `served`, with the address of every post it is
+ * sent recorded. */
+async function mountedPostsRecorded(
+  served: typeof fetch,
+): Promise<readonly string[]> {
+  const posts: string[] = [];
+  await mounted(viewportDeskEm, ((
+    url: string,
+    init?: { readonly method?: string },
+  ) => {
+    if (init?.method === "POST") posts.push(url);
+    return served(url, init);
+  }) as unknown as typeof fetch);
+  return posts;
+}
+
+test("/clear in the box of a reader with no thread opens nothing, and sends nothing", async () => {
+  const posts = await mountedPostsRecorded(threadServed([]));
+  await commanded("/clear");
+  expect(posts).toStrictEqual([]);
+  expect(commandSaid()).toBe("/clear·No thread to clear");
+  styleless();
+});
+
+test("/clear while the reader's thread answers closes nothing, and says why", async () => {
+  const posts = await mountedPostsRecorded(answeringThreadServed());
+  await commanded("/clear");
+  expect(posts).toStrictEqual([]);
+  expect(commandSaid()).toBe("/clear·Thread is answering");
+  styleless();
+});
+
+/** The reader's held thread over two pages of its mailbox, each turn measured
+ * alike, with the placement read answering runners. */
+function pagedThreadServed(): typeof fetch {
+  const served = placedServed(
+    threadServed([
+      threadEntry({ session: openedSession, owner: "geoff", mine: true }),
+    ]),
+    { thread: "Pool" },
+  );
+  return ((url: string, init?: { readonly method?: string }) => {
+    if (
+      init?.method === "POST" ||
+      !url.includes(`/threads/${openedSession}`) ||
+      url.includes("/transcript")
+    )
+      return served(url, init);
+    const older = url.includes("before=1");
+    return Promise.resolve(
+      answer(
+        threadBody({
+          session: openedSession,
+          streamless: true,
+          turns: [
+            threadTurn({
+              turn: older ? "thread-turn-1" : "thread-turn-2",
+              ordinal: older ? 1 : 2,
+              model: older ? "claude-sonnet-4" : "claude-opus-4",
+              tokens: 1_000,
+              costMicros: 10_000,
+              durationMs: 2_000,
+            }),
+          ],
+          ...(older ? {} : { nextBefore: 1 }),
+        }),
+      ),
+    );
+  }) as unknown as typeof fetch;
+}
+
+test("/status says the thread's standing, where it runs and its model, and sends nothing", async () => {
+  const posts: string[] = [];
+  const served = pagedThreadServed();
+  await mounted(viewportDeskEm, ((
+    url: string,
+    init?: { readonly method?: string },
+  ) => {
+    if (init?.method === "POST") posts.push(url);
+    return served(url, init);
+  }) as unknown as typeof fetch);
+  await commanded("/status");
+  const said = commandSaid();
+  for (const word of ["Thread Open", "Runs on Runners", "Model claude-opus-4"])
+    expect(said).toContain(word);
+  expect(posts).toStrictEqual([]);
+  styleless();
+});
+
+test("/usage sums every page of the thread's turns", async () => {
+  await mounted(viewportDeskEm, pagedThreadServed());
+  await commanded("/usage");
+  expect(commandSaid()).toBe("/usage·2 turns·2.0k tok·$0.02·4s");
   styleless();
 });
 

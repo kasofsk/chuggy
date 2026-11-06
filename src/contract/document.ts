@@ -103,6 +103,12 @@ function nativeHttpContractDocumentSchemas(): unknown {
     threadMessage: nativeHttpContractDocumentInput(
       nativeHttpEndpoints.sendThreadMessage.body,
     ),
+    threadOfferReply: nativeHttpContractDocumentInput(
+      nativeHttpEndpoints.replyThreadOffer.body,
+    ),
+    chatThreadMessage: nativeHttpContractDocumentInput(
+      nativeHttpEndpoints.sendChatThreadMessage.body,
+    ),
     epicWrite: nativeHttpContractDocumentInput(epicWriteRequestSchema),
     threadRename: nativeHttpContractDocumentInput(
       nativeHttpEndpoints.renameThread.body,
@@ -110,6 +116,13 @@ function nativeHttpContractDocumentSchemas(): unknown {
     threadHide: nativeHttpContractDocumentInput(
       nativeHttpEndpoints.hideThread.body,
     ),
+    ...nativeHttpContractDocumentSchemasMachine(),
+  };
+}
+
+/** The request bodies a runner, a pool or a reporter sends rather than a member. */
+function nativeHttpContractDocumentSchemasMachine(): Record<string, unknown> {
+  return {
     workerPoolRegistrationToken: nativeHttpContractDocumentInput(
       registrationTokenRequestSchema,
     ),

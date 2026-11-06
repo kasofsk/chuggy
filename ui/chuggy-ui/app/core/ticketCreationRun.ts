@@ -29,7 +29,8 @@
  * form says the same. Where it says anything else the draft is read before it
  * is written: a release nobody saw settle may have made the ticket, and a
  * revision whose answer was lost may have moved the version, so what a form
- * holds of its draft is never what a write to it is fenced by.
+ * holds of its draft is never what a write to it is fenced by — unless the
+ * form follows that draft, and names the version what it says stands on.
  */
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -129,6 +130,9 @@ export interface DraftHeld {
  * asks about the one already made, where a fresh one would make a second.
  */
 export interface CreationDraftHeld extends DraftHeld {
+  /** Whether a submit of this form created the draft, or the form follows one
+   * written elsewhere, which its endings say nothing of this form doing. */
+  readonly origin: "Created" | "Followed";
   /** Absent once something else is known to have written the draft since. */
   readonly body: CreationBody | undefined;
   readonly operation: string;
@@ -168,6 +172,9 @@ export interface TicketCreationRequest {
   /** What the dispatch of the ticket this makes goes under, absent for a
    * reader who may not dispatch, whose submit sends none. */
   readonly dispatchOperation?: string | undefined;
+  /** The draft version the form stands on, where it follows its held draft;
+   * absent, the held draft is revised at whatever version it is read at. */
+  readonly expectedVersion?: number | undefined;
 }
 
 export type TicketCreated<Held extends DraftHeld = DraftHeld> =
@@ -255,21 +262,28 @@ export const creationDraftChangedSentence =
  * submit goes back to whatever the form then says. */
 export function creationDraftHeldSentence(held: CreationDraftHeld): string {
   const draft = `Draft ${String(held.draft.ticket)}`;
-  return `${draft} kept · ${held.unsettled ? "Maybe released" : "Not released"}`;
+  const kept = held.origin === "Followed" ? draft : `${draft} kept`;
+  return `${kept} · ${held.unsettled ? "Maybe released" : "Not released"}`;
 }
 
 /** What a submit did to a held draft it could not read, which it reads before
  * it writes. */
 export const creationDraftUnreadSentence = "Draft not written";
 
-/** A held draft read as deleted, which no later submit goes back to. */
-export function creationDraftDeletedSentence(ticket: number): string {
-  return `Draft ${String(ticket)} deleted · Submit again for a new one`;
+/** A held draft read as deleted: one this form created is let go of, and one
+ * it follows is still all it could release. */
+export function creationDraftDeletedSentence(held: CreationDraftHeld): string {
+  const deleted = `Draft ${String(held.draft.ticket)} deleted`;
+  return held.origin === "Followed"
+    ? `${deleted} · Nothing here will be released`
+    : `${deleted} · Submit again for a new one`;
 }
 
-/** What a submit says of a ticket it found already made of its draft. */
-export function creationTicketExistsSentence(ticket: number): string {
-  return `#${String(ticket)} already exists · Changes since are not in it`;
+/** What a submit says of a ticket it found already made of its draft,
+ * whether this form released it earlier or it was released elsewhere: what
+ * was typed after that release is not in it. */
+export function creationTicketExistsSentence(held: CreationDraftHeld): string {
+  return `#${String(held.draft.ticket)} already exists · Changes since are not in it`;
 }
 
 /** How many offers one read draws, each being a request of its own. */
@@ -402,7 +416,13 @@ async function creationDraftCreated(
   const { body, operation } = request;
   const answered = await apiCreateDraft(ports, partition, body);
   if (answered.outcome === "Ok")
-    return { draft: answered.value, body, operation, unsettled: false };
+    return {
+      draft: answered.value,
+      origin: "Created",
+      body,
+      operation,
+      unsettled: false,
+    };
   const epicRefusal =
     body.epic === undefined ? undefined : epicDraftRefusal(answered);
   if (epicRefusal !== undefined)
@@ -432,6 +452,43 @@ function creationRevisionOf(
     brief: body.brief,
     ...(body.overrides === undefined ? {} : { overrides: body.overrides }),
     ...(body.selection === undefined ? {} : { selection: body.selection }),
+  };
+}
+
+/** What a form following a draft revises it to, fenced at the version what
+ * is typed stands on. */
+export function creationRevisionAt(
+  body: CreationBody,
+  expectedVersion: number,
+): z.infer<typeof draftRevisionSchema> {
+  return { expectedVersion, ...creationRevisionOf(body) };
+}
+
+/** How saving a following form's edits to its draft ended: the revision it
+ * wrote, or why it wrote none. */
+export type DraftSaveEnded =
+  | { readonly saved: "Saved"; readonly draft: DraftResponse }
+  | { readonly saved: "Refused"; readonly reason: string };
+
+/**
+ * A following form's edits written to its draft and nothing more: no release,
+ * and a draft revised past the version the revision is fenced at refused
+ * rather than written over.
+ */
+export async function draftRevisionSaved(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  ticket: number,
+  revision: z.infer<typeof draftRevisionSchema>,
+): Promise<DraftSaveEnded> {
+  const revised = await apiReviseDraft(ports, partition, ticket, revision);
+  if (revised.outcome === "Ok") return { saved: "Saved", draft: revised.value };
+  return {
+    saved: "Refused",
+    reason:
+      revised.outcome === "Conflict" && revised.code === "DraftChanged"
+        ? creationDraftChangedSentence
+        : draftRevisionFailureSentence(revised),
   };
 }
 
@@ -478,17 +535,18 @@ function creationDraftClosed(
     case "Deleted":
       return {
         created: "Refused",
-        reason: creationDraftDeletedSentence(draft.ticket),
+        reason: creationDraftDeletedSentence(held),
         held: undefined,
       };
   }
 }
 
 /**
- * A held draft revised to what the form now says, at the version its door
- * has it at now and only while it is still a draft. A revision that does not
- * get through leaves what is held as it was, the next one reading the draft
- * again; a door that calls the draft closed has said it is one no longer.
+ * A held draft revised to what the form now says, at the version the form
+ * stands on or else the one its door has it at now, and only while it is
+ * still a draft. A revision that does not get through leaves what is held as
+ * it was, the next one reading the draft again; a door that calls the draft
+ * closed has said it is one no longer.
  */
 async function creationDraftRevised(
   ports: ApiPorts,
@@ -504,16 +562,11 @@ async function creationDraftRevised(
   const closed = creationDraftClosed(read.value, held);
   if (closed !== undefined) return closed;
   const revised = await apiReviseDraft(ports, partition, ticket, {
-    expectedVersion: read.value.authoringVersion,
+    expectedVersion: request.expectedVersion ?? read.value.authoringVersion,
     ...creationRevisionOf(body),
   });
   if (revised.outcome === "Ok")
-    return {
-      draft: revised.value,
-      body,
-      operation,
-      unsettled: held.unsettled,
-    };
+    return { ...held, draft: revised.value, body, operation };
   if (revised.outcome !== "Conflict")
     return creationRefused(draftRevisionFailureSentence(revised), held);
   return revised.code === "DraftChanged"

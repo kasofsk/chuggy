@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  workerContractFilesRefusal,
   workerContractHistory,
   workerContractHistoryRefusal,
   workerContractWire,
@@ -82,5 +83,23 @@ test("a patch that leaves the wire alone is a release like any other", () => {
       wire,
     ),
     undefined,
+  );
+});
+
+test("a pack whose files the history does not record as the release's is refused, naming both and the pack's to record", () => {
+  const earlier = "c".repeat(64);
+  const files = "d".repeat(64);
+  const history = [
+    { release: "1.0.0", files: earlier },
+    { release: "1.0.1", files },
+  ];
+  assert.equal(workerContractFilesRefusal(history, "1.0.1", files), undefined);
+  assert.equal(
+    workerContractFilesRefusal(history, "1.0.0", files),
+    `the history records ${earlier} as 1.0.0's files, and the pack's are ${files}: record the pack's`,
+  );
+  assert.match(
+    workerContractFilesRefusal(history, "1.1.0", files) ?? "",
+    /records undefined as 1\.1\.0's files/u,
   );
 });

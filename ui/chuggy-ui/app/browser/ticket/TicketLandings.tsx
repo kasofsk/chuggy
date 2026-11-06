@@ -1,9 +1,9 @@
 /**
  * A ticket's landings: the read, asked on a clock and again on every frame
- * naming the ticket, and the rows, fragments and detail the page draws of it.
+ * naming the ticket, and the records, fragments and detail the page draws of
+ * it.
  *
- * Each row opens its own detail by state it keeps itself, because a landing
- * has no execution for the ledger's shared opened row to name. A pull request
+ * Each record opens its own detail by state it keeps itself. A pull request
  * is an address a press opens outside the console, offered under its host.
  */
 

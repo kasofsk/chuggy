@@ -3,7 +3,7 @@
  * a live `Ticket` frame, and the project row an action's confirmation reads
  * back. Both land on a page that has already drawn the ticket's own read, and
  * what each case asserts is that the page keeps drawing what only that read
- * carries — the ledger grouped by the program, and the brief — while taking
+ * carries — the runs named by the program, and the brief — while taking
  * the phase the newer arrival names.
  */
 
@@ -14,7 +14,6 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
-import { TicketPage } from "../app/browser/TicketPage.tsx";
 import {
   answer,
   apiDouble,
@@ -27,7 +26,7 @@ import {
 import { frame } from "./streamDouble.ts";
 import { ticketDispatchViewOf } from "./ticketPageFixture.ts";
 import {
-  dispatchChipName,
+  dispatchButtonName,
   dispatchConfirmed,
 } from "./ticketDispatchPressed.ts";
 import {
@@ -38,6 +37,7 @@ import {
 import { ticketInstants } from "./ticketInstants.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
+import { TicketPageEveryTab } from "./ticketPageEveryTab.tsx";
 
 const atlas: PartitionIdentity = { tenant: "vteng", project: "chuggy" };
 
@@ -163,7 +163,7 @@ function drawn(
       transport={server.ports.fetch}
     >
       <visit.Visited>
-        <TicketPage />
+        <TicketPageEveryTab />
       </visit.Visited>
     </ScreenHarness>,
   );
@@ -174,8 +174,12 @@ function ticketReads(): number {
   return requested.filter((url) => url.endsWith("/tickets/21")).length;
 }
 
+/** The cycles drawn, each counted only where its stages are named against
+ * the program the ticket's own read carries. */
 function cyclesDrawn(): number {
-  return document.querySelectorAll(".ledger-group").length;
+  return [...document.querySelectorAll(".ticket-runs-cycle")].filter((cycle) =>
+    cycle.textContent.includes("Stage 1 of 2"),
+  ).length;
 }
 
 /** Counts the brief's intent as the page draws it. */
@@ -183,7 +187,7 @@ function briefDrawn(): number {
   return screen.getAllByText(intent).length;
 }
 
-test("a frame carrying the project's row leaves the ledger grouped and the brief drawn", async () => {
+test("a frame carrying the project's row leaves the runs named and the brief drawn", async () => {
   const server = drawn();
   await settled();
   const held = briefDrawn();
@@ -207,7 +211,7 @@ test("a frame carrying the project's row leaves the ledger grouped and the brief
   expect(screen.getAllByText(intent)).toHaveLength(held);
 });
 
-test("an action's confirmed row leaves the ledger grouped and the brief drawn", async () => {
+test("an action's confirmed row leaves the runs named and the brief drawn", async () => {
   drawn();
   await settled();
   const held = briefDrawn();
@@ -227,11 +231,11 @@ test("the page asks the dispatch view for the page that would hold its own ticke
   drawn(pendingRead, dispatchedRow, candidateView);
   await settled();
   expect(
-    screen.getByRole("button", { name: dispatchChipName(21) }),
+    screen.getByRole("button", { name: dispatchButtonName }),
   ).toBeDefined();
 });
 
-test("a dispatch's confirmed row leaves the ledger grouped and the brief drawn", async () => {
+test("a dispatch's confirmed row leaves the runs named and the brief drawn", async () => {
   drawn(pendingRead, dispatchedRow, candidateView);
   await settled();
   const held = briefDrawn();

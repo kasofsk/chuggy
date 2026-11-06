@@ -7,7 +7,11 @@ import { describe, expect, test } from "vitest";
 
 import {
   threadDraftsHeading,
+  threadImageLine,
+  threadImagesHeading,
   threadNorthStarHeading,
+  threadPageSection,
+  threadPageHeading,
   threadStandingRulesDefault,
   threadStandingHeading,
   threadStandingSection,
@@ -412,6 +416,15 @@ describe("the mailbox overlay", () => {
       [turnOf({ turn: "t1", inputKind: "Wake", input: "not a document" })],
     );
     expect(exchanges[0]?.ask).toEqual({ ask: "Document", kind: "Wake" });
+  });
+
+  test("a reply to an offer draws as its kind, never as the document it carries", () => {
+    const input = JSON.stringify({ reply: "Confirmed", ticket: 44 });
+    const exchanges = conversationExchanges(
+      [askOf("u1", input)],
+      [turnOf({ turn: "t1", inputKind: "OfferReply", input })],
+    );
+    expect(exchanges[0]?.ask).toEqual({ ask: "Document", kind: "OfferReply" });
   });
 });
 
@@ -2143,6 +2156,65 @@ describe("the seeding block a first turn carries", () => {
       ask: "Message",
       text: "what is left to do",
       context: seeded,
+    });
+  });
+});
+
+describe("the page a turn was sent from", () => {
+  const page = `${threadPageHeading}\n\n- page: Ticket\n- ticket: 41`;
+
+  test("is read off a later turn as its page, leaving it no context", () => {
+    const ask = conversationAskMessage(
+      `${page}\n\n${threadTurnBoundaryHeading}\n\nwhat is blocking it?`,
+    );
+
+    expect(ask).toEqual({
+      ask: "Message",
+      text: "what is blocking it?",
+      page: { page: "Ticket", ticket: 41 },
+    });
+  });
+
+  test("is read off a first turn, whose context is the seeding block alone", () => {
+    const seeded = `${threadNorthStarHeading}\n\nShip the console.`;
+
+    const ask = conversationAskMessage(
+      `${seeded}\n\n${threadPageSection({ page: "TicketNew", from: 12 })}\n\n${threadTurnBoundaryHeading}\n\nlike this one`,
+    );
+
+    expect(ask).toEqual({
+      ask: "Message",
+      text: "like this one",
+      context: seeded,
+      page: { page: "TicketNew", from: 12 },
+    });
+  });
+
+  test("naming a page the vocabulary does not is left in the context", () => {
+    const unknown = `${threadPageHeading}\n\n- page: Thread`;
+
+    const ask = conversationAskMessage(
+      `${unknown}\n\n${threadTurnBoundaryHeading}\n\nhello`,
+    );
+
+    expect(ask).toEqual({ ask: "Message", text: "hello", context: unknown });
+  });
+
+  test("stands before the images, which are still read off the block", () => {
+    const images = `${threadImagesHeading}\n\n${threadImageLine({
+      artifact: "image/png:token-1",
+      mediaType: "image/png",
+    })}`;
+
+    const ask = conversationAskMessage(
+      `${page}\n\n${images}\n\n${threadTurnBoundaryHeading}\n\nwhat is this?`,
+    );
+
+    expect(ask).toEqual({
+      ask: "Message",
+      text: "what is this?",
+      page: { page: "Ticket", ticket: 41 },
+      images: ["image/png:token-1"],
     });
   });
 });

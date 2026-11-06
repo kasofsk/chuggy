@@ -38,12 +38,11 @@ import {
 } from "./screenHarness.tsx";
 import type { SentRequest } from "./screenHarness.tsx";
 import {
-  creationBinding,
+  editReadAnswered,
   creationDeclared,
   creationDraft,
   creationGatedOffer,
   creationInitialization,
-  creationListed,
   creationPartition,
 } from "./ticketCreationFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
@@ -200,17 +199,7 @@ function routed(
     if (url.includes("/draft-initializations/"))
       return drawing.unread?.(url) ?? initialization(url);
     if (url.includes("/configurations")) return answer(listing);
-    if (url.endsWith("/repositories?reach=false"))
-      return answer({
-        repositories: [creationListed(creationBinding(chuggy), "Imported")],
-      });
-    if (url.includes("/drafts/")) return answer(draft);
-    if (url.includes("/tickets/")) return answer(ticket);
-    return answer({
-      partition: creationPartition,
-      sequence: 43,
-      tickets: [{ ...ticket, sequence: 43, revision: 3 }],
-    });
+    return editReadAnswered(url, { repository: chuggy, draft, ticket });
   };
 }
 

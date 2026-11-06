@@ -29,7 +29,7 @@ const readTools = [
 const readAfter = "mcp__chuggy__read_abilities";
 
 /** 089's allowlist with the epic reads in their roster place. */
-export function toolAllowlistAt123(): readonly string[] {
+export function toolAllowlistAt125(): readonly string[] {
   return readTools.reduce(
     (allowlist, tool, at) =>
       toolAllowlistNamed(allowlist, tool, readTools[at - 1] ?? readAfter),
@@ -37,19 +37,19 @@ export function toolAllowlistAt123(): readonly string[] {
   );
 }
 
-export const migration123: Migration = {
-  version: 123,
+export const migration125: Migration = {
+  version: 125,
   name: "a lead reads a project's epics",
   statements: [
     toolAllowlistWidened(
       "selector_runtime_settings",
       toolAllowlistAt089(),
-      toolAllowlistAt123(),
+      toolAllowlistAt125(),
     ),
     toolAllowlistWidened(
       "selector_runtime_settings_history",
       toolAllowlistAt089(),
-      toolAllowlistAt123(),
+      toolAllowlistAt125(),
     ),
   ],
 };

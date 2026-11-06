@@ -1,7 +1,7 @@
 /**
  * One run's transcript: the walk that reads its batches, and the run's
  * conversation drawn from them with the prompt it was handed first — the one
- * way a run is drawn, whether from its ledger row or from the ticket's Now card.
+ * way a run is drawn, whether on its own page or on the ticket's Now card.
  *
  * The walk opens on the newest batches, then fetches the batches above the
  * highest it holds when the high-water mark on the `Execution` frame the
@@ -25,18 +25,21 @@ import { apiRunTranscript } from "../core/apiRoutes.ts";
 import { runConfigurationQuery } from "../core/executionQueries.ts";
 import { conversationExchanges } from "../core/conversation.ts";
 import { runPromptOfPanel } from "../core/runConfiguration.ts";
+import { countedLabel } from "../core/runTotals.ts";
 import type { RunPrompt } from "../core/runConfiguration.ts";
 import {
   runTranscriptEarlierMerged,
   runTranscriptEnded,
   runTranscriptFailed,
-  runTranscriptFreshnessSentence,
   runTranscriptHeldEmpty,
   runTranscriptMerged,
   runTranscriptNextAfter,
   runTranscriptQuietAfter,
+  runTranscriptRawText,
   runTranscriptRead,
   runTranscriptReadsMax,
+  runTranscriptStepsCut,
+  runTranscriptStepsFirst,
 } from "../core/runTranscript.ts";
 import type {
   RunTranscriptHeld,
@@ -45,8 +48,8 @@ import type {
 import { useApiPorts, usePanelState } from "./api.ts";
 import { Conversation } from "./conversation/Conversation.tsx";
 import { ReadFailed } from "./DataPanel.tsx";
-import { useNowMs } from "./Freshness.tsx";
-import { Panel } from "./ui/Panel.tsx";
+import { Button } from "./ui/Button.tsx";
+import { Disclosure } from "./ui/Disclosure.tsx";
 
 type ExecutionAttempt = ExecutionResponse["attempts"][number];
 
@@ -150,35 +153,63 @@ export function useRunTranscript(props: {
   return { held, reading, readingEarlier, readEarlier };
 }
 
+/** Whether a run's page draws only its first steps, and how it asks for every one. */
+export interface RunConversationCut {
+  readonly every: boolean;
+  readonly onEvery: () => void;
+}
+
+function RunConversationEvery(props: {
+  readonly hidden: number;
+  readonly cut: RunConversationCut | undefined;
+}): ReactNode {
+  if (props.cut === undefined || props.hidden === 0) return null;
+  return (
+    <div className="flex justify-center">
+      <Button variant="quiet" size="sm" onClick={props.cut.onEvery}>
+        Show every turn
+      </Button>
+    </div>
+  );
+}
+
 function RunConversationDrawn(props: {
   readonly walk: RunTranscriptWalk;
   readonly attempt: ExecutionAttempt;
   readonly prompt: RunPrompt | undefined;
+  readonly cut?: RunConversationCut | undefined;
 }): ReactNode {
-  const { walk, prompt } = props;
+  const { walk, prompt, cut } = props;
   const state = props.attempt.state;
-  const exchanges = useMemo(
+  const ended = useMemo(
     () => runTranscriptEnded(conversationExchanges(walk.reading.items), state),
     [walk.reading, state],
   );
+  const { exchanges, hidden } =
+    cut === undefined || cut.every
+      ? { exchanges: ended, hidden: 0 }
+      : runTranscriptStepsCut(ended, runTranscriptStepsFirst);
   const earlier = walk.reading.earlier;
   return (
-    <Conversation
-      exchanges={exchanges}
-      empty="no transcript has been recorded yet"
-      workOpen
-      {...(prompt === undefined ? {} : { prompt })}
-      {...(earlier === undefined
-        ? {}
-        : {
-            earlier: {
-              busy: walk.readingEarlier,
-              onRead: () => {
-                walk.readEarlier(earlier.after);
+    <>
+      <Conversation
+        exchanges={exchanges}
+        empty="no transcript has been recorded yet"
+        workOpen
+        {...(prompt === undefined ? {} : { prompt })}
+        {...(earlier === undefined
+          ? {}
+          : {
+              earlier: {
+                busy: walk.readingEarlier,
+                onRead: () => {
+                  walk.readEarlier(earlier.after);
+                },
               },
-            },
-          })}
-    />
+            })}
+      />
+      <RunConversationEvery hidden={hidden} cut={cut} />
+    </>
   );
 }
 
@@ -189,6 +220,7 @@ function RunConversationPrompted(props: {
   readonly execution: string;
   readonly attempt: ExecutionAttempt;
   readonly walk: RunTranscriptWalk;
+  readonly cut?: RunConversationCut | undefined;
 }): ReactNode {
   const { partition, execution } = props;
   const attempt = props.attempt.attempt;
@@ -200,6 +232,7 @@ function RunConversationPrompted(props: {
       walk={props.walk}
       attempt={props.attempt}
       prompt={runPromptOfPanel(state)}
+      cut={props.cut}
     />
   );
 }
@@ -212,6 +245,7 @@ export function RunConversation(props: {
   readonly execution: string;
   readonly attempt: ExecutionAttempt;
   readonly walk: RunTranscriptWalk;
+  readonly cut?: RunConversationCut | undefined;
 }): ReactNode {
   const failure = props.walk.held.failure;
   return (
@@ -229,6 +263,7 @@ export function RunConversation(props: {
             walk={props.walk}
             attempt={props.attempt}
             prompt={{ prompt: "NotKept" }}
+            cut={props.cut}
           />
         ) : (
           <RunConversationPrompted {...props} />
@@ -254,40 +289,44 @@ function useRunTranscriptOf(props: RunTranscriptProps): RunTranscriptWalk {
   });
 }
 
-/** A run's conversation reading its own walk, which is what a ledger row opens
- * in one press. */
-export function RunConversationFollowed(props: RunTranscriptProps): ReactNode {
+/** A run's transcript as its own page draws it: how many turns it took, the
+ * records it wrote as they were read, and its first steps until a reader asks
+ * for every one. */
+export function RunTranscriptOfRun(
+  props: RunTranscriptProps & { readonly turns: number | undefined },
+): ReactNode {
   const walk = useRunTranscriptOf(props);
+  const [every, setEvery] = useState(false);
+  const [raw, setRaw] = useState(false);
   return (
-    <RunConversation
-      partition={props.partition}
-      execution={props.execution}
-      attempt={props.attempt}
-      walk={walk}
-    />
-  );
-}
-
-/** The run's transcript among its evidence: a panel saying how fresh it is,
- * round the run's conversation. */
-export function RunTranscript(props: RunTranscriptProps): ReactNode {
-  const walk = useRunTranscriptOf(props);
-  const now = useNowMs();
-  return (
-    <Panel
-      title="transcript"
-      meta={
-        <span className="freshness">
-          {runTranscriptFreshnessSentence(walk.held, now)}
+    <div className="grid min-w-0 gap-3">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <span className="text-ink-3 text-sm">
+          {props.turns === undefined ? null : countedLabel(props.turns, "turn")}
         </span>
-      }
-    >
+        <Disclosure
+          open={raw}
+          onOpenChange={setRaw}
+          label="Raw JSON"
+          look={{ variant: "quiet", size: "sm" }}
+        >
+          <pre className="preview basis-full">
+            {runTranscriptRawText(walk.held)}
+          </pre>
+        </Disclosure>
+      </div>
       <RunConversation
         partition={props.partition}
         execution={props.execution}
         attempt={props.attempt}
         walk={walk}
+        cut={{
+          every,
+          onEvery: () => {
+            setEvery(true);
+          },
+        }}
       />
-    </Panel>
+    </div>
   );
 }

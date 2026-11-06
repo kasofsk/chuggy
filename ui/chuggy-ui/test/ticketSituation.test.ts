@@ -1,7 +1,7 @@
 /**
  * What the ticket page's status bar and the slot under it are decided from:
- * which one card the slot holds, the resume line, the bar's tone and its dim
- * line, and which actions the card rather than the bar draws.
+ * which one card the slot holds, the resume line, and the bar's tone and its
+ * dim line.
  */
 
 import { expect, test } from "vitest";
@@ -12,8 +12,6 @@ import type {
 } from "../../../src/contract/responses.ts";
 import { ticketLandingOf } from "../app/core/ticketLandings.ts";
 import { ticketLedger } from "../app/core/ticketLedger.ts";
-import type { TicketAction } from "../app/core/ticketActions.ts";
-import { offersAnswered } from "../app/core/ticketOffers.ts";
 import {
   resumedFrom,
   ticketSlot,
@@ -537,26 +535,6 @@ test("a settled ticket says how long it ran, from its first run to its last", ()
     Date.parse("2026-08-26T01:00:00Z"),
   );
   expect(parked).toMatchObject({ kind: "Span", parts: ["23m ago", "ran 27m"] });
-});
-
-const resume: TicketAction = {
-  action: "Resume",
-  mutation: { mutation: "ResumeTicket", ticket: 21 },
-};
-const revoke: TicketAction = {
-  action: "Revoke",
-  mutation: { mutation: "RevokeTicket", ticket: 21 },
-};
-
-test("a card that asks takes the actions that answer it, and the bar keeps the rest", () => {
-  const offers = {
-    offers: "Actions",
-    actions: [resume, revoke],
-    editable: false,
-  } as const;
-  expect(offersAnswered(offers, true)).toEqual([resume]);
-  expect(offersAnswered(offers, false)).toEqual([]);
-  expect(offersAnswered({ offers: "Unread" }, true)).toEqual([]);
 });
 
 const escalatedSince = "2026-11-02T22:21:18Z";

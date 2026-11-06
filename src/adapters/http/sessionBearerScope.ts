@@ -20,7 +20,9 @@
  * why every personal runner write is refused, its allowlist among them, and why
  * a member's thread limit is read but never set, a session widening the cap on
  * sessions — and the answer to a lead's held proposal, because the hold is
- * there for a person to answer and the lead's session holds a bearer. Every
+ * there for a person to answer and the lead's session holds a bearer, as is a
+ * reply to a thread's offer, the member's word on what their thread offered
+ * them, which the thread's own session holds a bearer under. Every
  * write of a member's own chat is refused too, because its session reads and
  * its owner writes. A `Public` route is one the authentication hook passes
  * over, so no session bearer is read on it; what such a route is presented, it
@@ -155,6 +157,7 @@ export const sessionBearerRouteClasses = {
   threadTranscript: partitionRead,
   threadMessages: partitionWrite,
   threadTurnStop: partitionWrite,
+  threadOfferReplies: { POST: "Refused" },
   threadClose: partitionWrite,
   threadRename: partitionWrite,
   threadHide: partitionWrite,

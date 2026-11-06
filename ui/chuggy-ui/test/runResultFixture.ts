@@ -1,10 +1,10 @@
 /**
- * Results as a row reads them: a report, the outputs a result lists, and the
+ * Results as a run reads them: a report, the outputs a result lists, and the
  * document a command stage writes of the commands it ran.
  *
- * Shared by the suites about the row's line, its result expander and the
- * decision beneath both, because each reads the same results and differs only
- * in what it asks of them.
+ * Shared by the suites about the row's line, the page's Summary and Output and
+ * the decision beneath them, because each reads the same results and differs
+ * only in what it asks of them.
  */
 
 import { runDigest, runSettledLost } from "./runPageFixture.tsx";

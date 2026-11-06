@@ -226,3 +226,29 @@ test("a message to one's own thread is refused for want of a chat host as the op
   assert.equal(answered.statusCode, 403);
   assert.match(answered.body, /no chat host in the tenant/u);
 });
+
+test("a chat message naming a console page is refused before the door, a chat being sent from no page", async () => {
+  const calls: string[] = [];
+  await using app = appOver(
+    chatOf(calls, {
+      sendThreadMessage: (_principal, _tenant, input) => {
+        calls.push(`send:${String(input.turn)}`);
+        return Promise.resolve({ result: "NoRunner" });
+      },
+    }),
+  );
+  const said = { turn: "turn-1", message: "which projects may I see?" };
+  const paged = await app.inject(
+    write("/api/v1/tenants/acme/chat/threads/own-geoff/messages", {
+      ...said,
+      page: { page: "TicketEdit", ticket: 41 },
+    }),
+  );
+  assert.equal(paged.statusCode, 400);
+  assert.deepEqual(calls, []);
+  const unpaged = await app.inject(
+    write("/api/v1/tenants/acme/chat/threads/own-geoff/messages", said),
+  );
+  assert.equal(unpaged.statusCode, 403);
+  assert.deepEqual(calls, ["send:turn-1"]);
+});
