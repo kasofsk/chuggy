@@ -31,6 +31,7 @@ import {
   type PackedWorkerContract,
 } from "./pack-worker-contract.ts";
 import {
+  workerContractFilesRefusal,
   workerContractHistory,
   workerContractHistoryRefusal,
   workerContractWire,
@@ -97,12 +98,8 @@ export async function publishWorkerContract(
     return { published: "Refused", why: `${tag} is already released` };
   const commit = ports.commit();
   const packed = ports.pack(outDirectory);
-  const recorded = history.at(-1)?.files;
-  if (packed.files !== recorded)
-    return {
-      published: "Refused",
-      why: `the history records ${String(recorded)} as ${release}'s files, and the pack's are ${packed.files}: record the pack's`,
-    };
+  const unpacked = workerContractFilesRefusal(history, release, packed.files);
+  if (unpacked !== undefined) return { published: "Refused", why: unpacked };
   if (dryRun) return { published: "Packed", packed, commit, tag };
   ports.release(
     tag,

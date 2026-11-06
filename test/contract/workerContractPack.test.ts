@@ -26,6 +26,10 @@ import {
   workspaceManifest,
   workspaceManifestOf,
 } from "../../scripts/pack-worker-contract.ts";
+import {
+  workerContractFilesRefusal,
+  workerContractHistory,
+} from "../../scripts/worker-contract-wire.ts";
 import { workerContractRelease } from "../../src/contract/workerContract.ts";
 
 const root = fileURLToPath(new URL("../..", import.meta.url));
@@ -81,6 +85,17 @@ test("the printed digests are the tarball's own and its extracted files'", () =>
     join(consumer, "node_modules", manifest.name),
   );
   assert.equal(printed, `${sha256}  ${tarball}\nfiles ${files}\n`);
+});
+
+test("the history records the pack this tree makes as the release's files", () => {
+  assert.equal(
+    workerContractFilesRefusal(
+      workerContractHistory(),
+      workerContractRelease,
+      workerContractFilesDigest(join(consumer, "node_modules", manifest.name)),
+    ),
+    undefined,
+  );
 });
 
 test("the files digest moves with a file's bytes or its path, and refuses a link and a package that is not a directory", () => {
