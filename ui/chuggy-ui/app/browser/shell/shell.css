@@ -14,7 +14,7 @@
    before the pane becomes the strip, and the pane draws nothing in it.
 
    The bar is two rows at every width: the project and the gear, then the
-   screens. A screen's entry is its glyph and its name, and the screen the
+   screens, which a frame too narrow to divide gives to a pane it opens. A screen's entry is its glyph and its name, and the screen the
    reader is on is marked three ways at once — its ink, a wash, and a bar along
    the header's foot — so it reads from across the room. On a phone the entry
    is its glyph alone, its name kept for a reader who does not see it, and the
@@ -62,13 +62,39 @@
   }
 
   /* Expanding and collapsing glide; a drag, which sets the size each frame,
-   * does not. */
+   * does not. Where the frame does not divide, the open pane slides over the
+   * pages and the bar's rows instead, from the strip and back into it, which
+   * is the strip's height short of the frame under the project's row. */
   @media (prefers-reduced-motion: no-preference) {
     [data-group]:has(> .chat-separator):not(
         :has(> .chat-separator[data-separator="active"])
       )
       > [data-panel] {
       transition: flex-grow var(--duration-2) var(--ease-out);
+    }
+
+    .shell-under[data-chat-slide] .chat-panel {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      background: var(--surface-0);
+      animation: chat-slide-up var(--duration-2) var(--ease-out) both;
+    }
+
+    .shell-under[data-chat-slide="closing"] .chat-panel {
+      animation-name: chat-slide-down;
+    }
+  }
+
+  @keyframes chat-slide-up {
+    from {
+      translate: 0 calc(100% - var(--height-chat-strip));
+    }
+  }
+
+  @keyframes chat-slide-down {
+    to {
+      translate: 0 calc(100% - var(--height-chat-strip));
     }
   }
 
@@ -151,13 +177,22 @@
     }
   }
 
+  .topbar,
+  .topbar-rows {
+    --topbar-inline: var(--space-4);
+  }
+
   .topbar {
     display: flex;
     flex-direction: column;
     gap: var(--space-1);
     min-width: 0;
     padding: var(--space-2) var(--topbar-inline);
-    --topbar-inline: var(--space-4);
+  }
+
+  .topbar-rows {
+    min-width: 0;
+    padding: 0 var(--topbar-inline) var(--space-2);
   }
 
   .topbar-main {
@@ -304,7 +339,8 @@
   }
 
   @media (max-width: 40em) {
-    .topbar {
+    .topbar,
+    .topbar-rows {
       --topbar-inline: var(--space-3);
     }
 

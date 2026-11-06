@@ -2,7 +2,8 @@
    the outer corners rounded, each row the same height so the state chips line
    up down the right edge. The row reads as two lines — the title, then the
    number, the meta and what it waits on — over a foot of its state, which on
-   a ready row is the button that dispatches it; where the list is wide the
+   a ready row is the button that dispatches it, and each count above the rows
+   is the button that filters them to its state, ringed while it is the filter; where the list is wide the
    foot moves beside them and the title keeps to one line. Where it is narrow
    the meta keeps its activity, what it is running and its repository, and the
    creator moves to the start of the foot, opposite the state; on a phone the
@@ -70,6 +71,26 @@
     height: var(--control-height);
     padding: 0 var(--space-2);
     font-size: var(--text-xs);
+  }
+
+  button.ticket-state-count {
+    font-family: inherit;
+    cursor: pointer;
+    transition: border-color var(--duration-1) var(--ease-out);
+  }
+
+  button.ticket-state-count:hover {
+    border-color: var(--edge-strong);
+  }
+
+  button.ticket-state-count:focus-visible {
+    outline: none;
+    box-shadow: var(--ring-focus);
+  }
+
+  button.ticket-state-count[aria-pressed="true"] {
+    border-color: currentColor;
+    box-shadow: inset 0 0 0 var(--hairline) currentColor;
   }
 
   .ticket-list-search {
@@ -360,7 +381,7 @@
     font-size: var(--text-sm);
   }
 
-  button.ticket-list-state {
+  button.ticket-list-state:not(.ticket-state-count) {
     font-family: inherit;
     cursor: pointer;
     box-shadow: 0 var(--hairline) var(--space-1) var(--wash-pass);
@@ -369,17 +390,17 @@
       box-shadow var(--duration-1) var(--ease-out);
   }
 
-  button.ticket-list-state:hover:not(:disabled) {
+  button.ticket-list-state:not(.ticket-state-count):hover:not(:disabled) {
     background: var(--wash-pass);
     box-shadow: 0 var(--space-1) var(--space-3) var(--wash-pass);
   }
 
-  button.ticket-list-state:focus-visible {
+  button.ticket-list-state:not(.ticket-state-count):focus-visible {
     outline: none;
     box-shadow: var(--ring-focus);
   }
 
-  button.ticket-list-state:disabled {
+  button.ticket-list-state:not(.ticket-state-count):disabled {
     cursor: progress;
     opacity: 0.6;
   }
