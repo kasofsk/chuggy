@@ -183,5 +183,10 @@
     "release": "1.36.0",
     "wire": "30099337aa0d401dc5a5f0c627504926c488e45c0a71d9929234462e3ea7492e",
     "files": "aa66b91826c62e8dbd40353e46e86bc7cc4f3c0f15d011564d0e9a98479ca4ea"
+  },
+  {
+    "release": "1.37.0",
+    "wire": "937a63342894f50f7118383bfcc3468fe9ddb4dc72f63ccf73a011c0d867e2ca",
+    "files": "85f80e1edd5edd6e80ac5056223d751268abb8986a4a14d90ed308e2ba43f7c6"
   }
 ]
