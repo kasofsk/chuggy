@@ -189,7 +189,7 @@ export const sessionTurnResultCharsMax = 65_536;
 export const sessionTurnModelCharsMax = 256;
 
 /** The most tool names one turn's measurement reports, distinct and in no order. */
-export const sessionTurnToolsMax = 64;
+export const sessionTurnToolsMax = 80;
 
 /** The longest tool name one turn's measurement reports. */
 export const sessionTurnToolNameCharsMax = 128;
