@@ -43,6 +43,7 @@ import {
   ticketFilterPage,
   ticketFilterProjectEmpty,
   ticketFilterReadsCount,
+  ticketFilterStandingOf,
   ticketFilterStandings,
 } from "../core/projectTableFilters.ts";
 import type {
@@ -421,9 +422,7 @@ const ticketListFilterChoices: readonly Exclude<
 function ticketListFilterText(
   filter: Exclude<TicketFilter, typeof ticketFilterAll>,
 ): string {
-  return filter === "Ready" || filter === "Blocked"
-    ? filter
-    : phaseLabel(filter);
+  return ticketFilterStandingOf(filter) ?? phaseLabel(filter);
 }
 
 /** How long the box takes to close, which the room it holds in the row outlasts. */
@@ -566,18 +565,28 @@ function TicketListControls(props: {
   );
 }
 
+/** How many tickets a search matched, and, where that is a count of the rows
+ * read while pages remain, that it is of those read so far. */
+function ticketListStatusMatched(matched: number, soFar: boolean): string {
+  return `${String(matched)} matching ${matched === 1 ? "ticket" : "tickets"}${soFar ? " so far" : ""}`;
+}
+
 /** One line under the controls where the list needs one: how many tickets a
- * search matched across the project, or that the list draws none, of the
- * tickets there are or, while pages remain, of those read so far. */
+ * search matched, across the project or, under a standing the server cannot
+ * count, among the rows drawn; or that the list draws none, of the tickets
+ * there are or, while pages remain, of those read so far. */
 function ticketListStatus(
   rows: ProjectTicketRows,
+  filter: TicketFilter,
   searching: boolean,
   shown: number,
 ): string | undefined {
+  if (searching && ticketFilterStandingOf(filter) !== undefined)
+    return ticketListStatusMatched(shown, projectTicketRowsHaveMore(rows));
   if (searching)
     return rows.matched === undefined
       ? undefined
-      : `${String(rows.matched)} matching ${rows.matched === 1 ? "ticket" : "tickets"}`;
+      : ticketListStatusMatched(rows.matched, false);
   if (shown > 0) return undefined;
   return rows.tickets.length > 0 && projectTicketRowsHaveMore(rows)
     ? "None of the tickets read so far is in this state."
@@ -607,7 +616,12 @@ function TicketListRows(props: {
   const standings = new Map(
     rows.map((row) => [row.ticket, ticketListStandingOf(row)] as const),
   );
-  const status = ticketListStatus(state.value, props.searching, shown.length);
+  const status = ticketListStatus(
+    state.value,
+    props.filter,
+    props.searching,
+    shown.length,
+  );
   return (
     <>
       {status === undefined ? null : (

@@ -60,7 +60,7 @@ export function ticketFilterStandingOf(
 export function ticketFilterRead(
   filter: TicketFilter,
 ): TicketPhase | typeof ticketFilterAll {
-  return filter === "Ready" || filter === "Blocked" ? "Pending" : filter;
+  return ticketFilterStandingOf(filter) === undefined ? filter : "Pending";
 }
 
 /** Undefined rather than every phase, because a read that names them all is a

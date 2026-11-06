@@ -213,6 +213,38 @@ test("a search's count is the server's, not the rows a page holds", async () => 
   expect(screen.getByRole("status").textContent).toBe("230 matching tickets");
 });
 
+test("a search under a standing counts only the rows of that standing, of those read so far while pages remain", async () => {
+  const blocked = { openDependencies: [{ ticket: 1, phase: "Work" }] };
+  const drawn = await drawnAt({ filter: "Ready", q: "x" }, (asked) => {
+    if (asked.get("q") !== "x") return served([]);
+    return asked.get("cursor") === "x-2"
+      ? served([held(7, "Pending", blocked)], { matched: 3 })
+      : served([held(5, "Pending"), held(6, "Pending", blocked)], {
+          matched: 3,
+          nextCursor: "x-2",
+        });
+  });
+  expect(drawn.asked.at(-1)?.getAll("phase")).toStrictEqual(["Pending"]);
+  expect(titlesDrawn()).toStrictEqual(["Ticket 5"]);
+  expect(screen.getByRole("status").textContent).toBe(
+    "1 matching ticket so far",
+  );
+  await press("Show more");
+  expect(titlesDrawn()).toStrictEqual(["Ticket 5"]);
+  expect(screen.getByRole("status").textContent).toBe("1 matching ticket");
+});
+
+test("a search under a standing none of whose matches stands in it counts none", async () => {
+  const blocked = { openDependencies: [{ ticket: 1, phase: "Work" }] };
+  await drawnAt({ filter: "Ready", q: "x" }, (asked) =>
+    asked.get("q") === "x"
+      ? served([held(6, "Pending", blocked)], { matched: 1 })
+      : served([]),
+  );
+  expect(titlesDrawn()).toStrictEqual([]);
+  expect(screen.getByRole("status").textContent).toBe("0 matching tickets");
+});
+
 test("a search the address holds is the one read and typed after a reload", async () => {
   const drawn = await drawnAt({ q: "#121" }, (asked) =>
     asked.get("q") === "#121"
