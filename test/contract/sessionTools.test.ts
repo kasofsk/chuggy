@@ -64,6 +64,10 @@ test("the roster names every tool the plan gives it, in roster order", () => {
     "fetch_image",
     "read_docs",
     "read_abilities",
+    "list_epics",
+    "read_epic",
+    "read_epic_history",
+    "read_epic_graph",
     "initialize_draft",
     "file_dependent",
     "revise_draft",
@@ -72,6 +76,10 @@ test("the roster names every tool the plan gives it, in roster order", () => {
     "create_draft",
     "revoke_ticket",
     "update_ticket",
+    "create_epic",
+    "revise_epic",
+    "add_epic_tickets",
+    "remove_epic_tickets",
     "dispatch_ticket",
     "dispatch",
     "refuse",
@@ -149,6 +157,10 @@ test("each capability admits the tools the roster gives it and no other", () => 
     "fetch_image",
     "read_docs",
     "read_abilities",
+    "list_epics",
+    "read_epic",
+    "read_epic_history",
+    "read_epic_graph",
   ]);
   assert.deepEqual(chuggyToolCapabilities.DraftAuthor, [
     "initialize_draft",
@@ -161,6 +173,10 @@ test("each capability admits the tools the roster gives it and no other", () => 
     "create_draft",
     "revoke_ticket",
     "update_ticket",
+    "create_epic",
+    "revise_epic",
+    "add_epic_tickets",
+    "remove_epic_tickets",
   ]);
   assert.deepEqual(chuggyToolCapabilities.TicketDispatch, ["dispatch_ticket"]);
   assert.deepEqual(chuggyToolCapabilities.LeadDecision, [

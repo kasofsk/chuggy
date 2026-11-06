@@ -49,6 +49,10 @@ test("origination, revoking, updating and dispatching are admitted for a thread'
     "create_draft",
     "revoke_ticket",
     "update_ticket",
+    "create_epic",
+    "revise_epic",
+    "add_epic_tickets",
+    "remove_epic_tickets",
     "dispatch_ticket",
   ] as const;
 

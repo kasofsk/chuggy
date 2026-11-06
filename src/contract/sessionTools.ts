@@ -265,6 +265,10 @@ const chuggyToolRoster = {
     "fetch_image",
     "read_docs",
     "read_abilities",
+    "list_epics",
+    "read_epic",
+    "read_epic_history",
+    "read_epic_graph",
   ],
   DraftAuthor: [
     "initialize_draft",
@@ -282,7 +286,15 @@ const chuggyToolRoster = {
    * exists, and `revoke_ticket` and `update_ticket` are here because a thread
    * holds this capability and a lead does not.
    */
-  DraftOriginate: ["create_draft", "revoke_ticket", "update_ticket"],
+  DraftOriginate: [
+    "create_draft",
+    "revoke_ticket",
+    "update_ticket",
+    "create_epic",
+    "revise_epic",
+    "add_epic_tickets",
+    "remove_epic_tickets",
+  ],
   /**
    * Dispatching one released ticket on the member's own word, as the member's
    * `ManualDispatch`: the API authorizes it as that member's dispatch, so a
@@ -398,6 +410,10 @@ export const chuggyToolRoutes = {
    * learning a permit from a refusal.
    */
   abilities: nativeHttpRoutes.abilities,
+  epics: nativeHttpRoutes.epics,
+  epic: nativeHttpRoutes.epic,
+  epicHistory: nativeHttpRoutes.epicHistory,
+  epicGraph: nativeHttpRoutes.epicGraph,
   /**
    * What a member's own session reads, each at its tenant and none at a
    * project: `read_my_abilities` the tenant's questions, `list_projects` the
