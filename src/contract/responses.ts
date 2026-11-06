@@ -352,6 +352,13 @@ export const configurationVersionSchema = z.strictObject({
   number: ticketNumberSchema,
 });
 
+/** An epic as a ticket names it. */
+export const ticketEpicSchema = z.strictObject({
+  number: ticketNumberSchema,
+  title: z.string(),
+  visibility: z.enum(["Active", "Archived"]),
+});
+
 /**
  * Whether a Pending ticket following its configuration's newest revision
  * would move to the revision its repository's newest import declares under the
@@ -467,6 +474,8 @@ export const ticketResponseSchema = z.object({
    */
   following: ticketFollowingSchema.optional(),
   runTotals: runTotalsSchema.optional(),
+  /** Every epic the ticket belongs to, archived ones included, in epic order, and absent where it belongs to none. */
+  epics: page(ticketEpicSchema).optional(),
 });
 export type TicketResponse = z.infer<typeof ticketResponseSchema>;
 

@@ -345,6 +345,7 @@ test("a ticket read emits exactly the keys the contract names", () => {
     dependencies: [asTicketId(1), asTicketId(2)],
     following: { verdict: "Held", code: "SelectionUnknown" },
     runTotals,
+    epics: [{ number: 1, title: "Epic", visibility: "Active" }],
     ...ticketCarried,
   }).body as Record<string, unknown>;
   assert.deepEqual(

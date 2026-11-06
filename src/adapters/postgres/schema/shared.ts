@@ -329,3 +329,5 @@ export function roleStatement(role: string): string {
   $$
 `;
 }
+/** The door an epic is created and revised through. */
+export const epicSaveFunction = "save_epic";

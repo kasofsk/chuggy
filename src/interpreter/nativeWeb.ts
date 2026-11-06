@@ -33,6 +33,7 @@ import type { ReleaseAuthoringProgram } from "../contract/authoring.ts";
 import type { ConfigurationOverrides } from "../contract/configurationOverrides.ts";
 import type { EscalationKind, ResumePoint } from "../contract/rosters.ts";
 import { assertNever } from "../domain/assertNever.ts";
+import type { EpicVisibility } from "../domain/epics.ts";
 import { phaseTags, type Phase } from "../domain/phase.ts";
 import { asTicketId, type TicketId } from "../domain/ids.ts";
 import type {
@@ -414,6 +415,13 @@ export interface TicketDependencyResource {
  * when the entry releasing this ticket did — absent when no entry the reader can
  * parse says it released this ticket.
  */
+/** An epic as a ticket names it. */
+export interface TicketEpicResource {
+  readonly number: number;
+  readonly title: string;
+  readonly visibility: EpicVisibility;
+}
+
 export interface TicketResource {
   readonly ticket: TicketId;
   readonly title?: string;
@@ -462,6 +470,8 @@ export interface TicketResource {
   /** Where a Pending ticket that follows stands against the revision its repository's newest import declares under the same name. */
   readonly following?: TicketFollowing;
   readonly runTotals?: RunTotals;
+  /** Every epic the ticket belongs to, archived ones included, in epic order, and absent where it belongs to none. */
+  readonly epics?: readonly TicketEpicResource[];
   /** The execution `latestExecutions` answers for the ticket, where one has run; only the tickets list carries it. */
   readonly latestExecution?: TicketLatestExecution;
 }
@@ -560,6 +570,8 @@ export interface ProjectReadQuery {
   readonly search?: string;
   /** Only the tickets `ticketActiveFinishedHours` names active. */
   readonly active?: boolean;
+  /** Only the members of this epic. */
+  readonly epic?: number;
 }
 
 export type TicketPhaseFilter =

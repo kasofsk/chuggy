@@ -81,6 +81,7 @@ import {
   configurationVersionOf,
   type ConfigurationVersionRow,
 } from "./configurationVersion.ts";
+import { epicsForTickets } from "./epics.ts";
 import { projectRowCounter, projectRowInstant } from "./rows.ts";
 import { postgresTicketRunTotals } from "./runEvidence.ts";
 import {
@@ -272,6 +273,20 @@ function projectionPhase(value: string): Phase {
   return phase;
 }
 
+/** Each ticket's epics, by ticket number. */
+type TicketEpics = Awaited<ReturnType<typeof epicsForTickets>>;
+
+/** The ticket as listed, with the epics it belongs to. */
+function ticketResourceWithEpics(
+  row: TicketProjectionRow,
+  resumes: TicketUsageResumes,
+  epics: TicketEpics,
+): TicketResource {
+  const resource = ticketResource(row, resumes);
+  const held = epics.get(resource.ticket);
+  return held === undefined ? resource : { ...resource, epics: held };
+}
+
 /** A page's rows in the order it answers them, and the row the next page resumes after. */
 interface ProjectTicketPage {
   readonly rows: readonly TicketProjectionRow[];
@@ -291,11 +306,14 @@ function projectResource(
   page: ProjectTicketPage,
   order: ProjectReadQuery["order"],
   resumes: TicketUsageResumes,
+  epics: TicketEpics,
 ): ProjectResource {
   return {
     partition,
     sequence: projectRowCounter(head, "project projection watermark"),
-    tickets: page.rows.map((row) => ticketResource(row, resumes)),
+    tickets: page.rows.map((row) =>
+      ticketResourceWithEpics(row, resumes, epics),
+    ),
     ...(page.next === undefined
       ? {}
       : projectResourceNext(page.next, order ?? "Identity")),
@@ -694,6 +712,11 @@ async function readProject(
       page.rows,
       bounds,
     );
+    const epics = await epicsForTickets(
+      client,
+      partition,
+      page.rows.map((row) => projectRowCounter(row.ticket, "ticket identity")),
+    );
     await client.query("COMMIT");
     return {
       result: "Found",
@@ -703,6 +726,7 @@ async function readProject(
         page,
         query.order,
         resumes,
+        epics,
       ),
     };
   } catch (cause) {
@@ -725,6 +749,7 @@ async function readProjectTickets(
 ): Promise<ProjectTicketPage> {
   if (
     query.search === undefined &&
+    query.epic === undefined &&
     query.active !== true &&
     (query.order === undefined ||
       query.order === "Identity" ||
@@ -775,6 +800,10 @@ async function readTicketPositions(
               ON b.tenant=t.tenant AND b.project=t.project AND b.ticket=t.ticket
            WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
              AND t.phase = ANY(${[...selectedPhases(query.phaseFilter)]}::text[])
+             AND (${query.epic ?? null}::bigint IS NULL
+               OR EXISTS (SELECT 1 FROM epic_ticket m
+                           WHERE m.tenant=t.tenant AND m.project=t.project
+                             AND m.ticket=t.ticket AND m.epic=${query.epic ?? null}::bigint))
              AND (${query.active === true}::boolean IS FALSE
                OR t.phase NOT IN ('Done','Revoked')
                OR (SELECT c.committed_at FROM journal_entry c
@@ -1138,10 +1167,12 @@ async function readTicket(
           dependencies: authoring.deps,
         });
   const runTotals = await postgresTicketRunTotals(pool, partition, ticket);
+  const epics = await epicsForTickets(pool, partition, [ticket]);
   return {
-    ...ticketResource(
+    ...ticketResourceWithEpics(
       row,
       await ticketUsageResumes(pool, partition, [row], bounds),
+      epics,
     ),
     ...(brief === undefined ? {} : { brief }),
     ...(row.configuration_revision === null

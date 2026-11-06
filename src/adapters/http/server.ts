@@ -704,6 +704,7 @@ function projectReadQueryOf(
     "active",
     "after",
     "cursor",
+    "epic",
     "limit",
     "minimumSequence",
     "order",
@@ -735,6 +736,9 @@ function projectReadQueryOf(
       : { minimumSequence: integerField(query, "minimumSequence") }),
     ...phaseFilter(query["phase"]),
     ...(query["q"] === undefined ? {} : { search: searchField(query, "q") }),
+    ...(query["epic"] === undefined
+      ? {}
+      : { epic: integerField(query, "epic") }),
     ...(query["active"] !== undefined && activeField(query["active"])
       ? { active: true }
       : {}),
