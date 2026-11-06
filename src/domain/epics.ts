@@ -133,7 +133,7 @@ function epicArchivedMembersChange(
 
 /**
  * Decides one write against the epics held. `isTicket` answers whether the
- * project held that ticket, gathered before the call.
+ * project held that ticket or holds it as a draft, gathered before the call.
  */
 export function decideEpic(
   state: EpicState,

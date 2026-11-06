@@ -154,6 +154,7 @@ async function agreed(
   let state: EpicState = new Map();
   const answers: string[] = [];
   for (const command of commands) {
+    // A draft the project holds counts as a ticket (125); this harness files none.
     const decided = decideEpic(state, command, (ticket) => known.has(ticket));
     const stored = await store.save(at.partition, command, actor);
     assert.deepEqual(stored, decided, JSON.stringify(command));

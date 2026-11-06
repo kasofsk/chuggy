@@ -122,6 +122,7 @@ import { migration121 } from "./121-epic-save.ts";
 import { migration122 } from "./122-draft-in-epic.ts";
 import { migration123 } from "./123-lead-reads-epics.ts";
 import { migration124 } from "./124-turn-measure-tools.ts";
+import { migration125 } from "./125-draft-member.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -249,4 +250,5 @@ export const migrations: readonly Migration[] = [
   migration122,
   migration123,
   migration124,
+  migration125,
 ];

@@ -3740,3 +3740,176 @@ test("a draft the door refuses for its own reason joins nothing", async () => {
   assert.equal(created.created, "Stale");
   assert.deepEqual(await epicStanding(fixture.partition, epic), before);
 });
+
+/** The epic's saved content as `epicOf` gives it, with the members given, written over its revision `expected`. */
+function epicRevision(
+  partition: Partition,
+  epic: number,
+  expected: number,
+  tickets: number[],
+) {
+  return postgresEpics(pool).save(
+    partition,
+    {
+      kind: "Revise",
+      epic,
+      expected,
+      content: {
+        title: "the footer",
+        description: "",
+        visibility: "Active",
+        tickets,
+      },
+    },
+    authority,
+  );
+}
+
+test("an epic is revised while it holds a draft, and the draft's revision and release keep it a member", async () => {
+  const fixture = await draftFixture();
+  const epic = await epicOf(fixture.partition);
+  const created = await draftInEpic(fixture, epic);
+  if (created.created !== "Created") throw new Error(created.created);
+  const { ticket } = created.draft;
+
+  const kept = await epicRevision(fixture.partition, epic, 2, [ticket]);
+
+  assert.deepEqual(kept, { kind: "Saved", epic, revision: 3 });
+  const revised = await fixture.store.reviseDraft({
+    partition: fixture.partition,
+    authority,
+    ticket,
+    expectedVersion: created.draft.authoringVersion,
+    configurationRevision: fixture.revision,
+    authoring: plainAuthoring,
+    brief: { ...postgresHarnessBrief, repository: fixture.repository },
+  });
+  assert.equal(revised.revised, "Revised");
+  assert.deepEqual(
+    (await epicStanding(fixture.partition, epic))[0]?.["members"],
+    [ticket],
+  );
+  const unknown = await epicRevision(fixture.partition, epic, 3, [
+    ticket,
+    987_654,
+  ]);
+  assert.deepEqual(unknown, {
+    kind: "Refused",
+    reason: "UnknownTickets",
+    tickets: [987_654],
+  });
+});
+
+test("a draft released from an epic stays in it, and the epic is revised with it afterwards", async () => {
+  const fixture = await draftFixture();
+  const epic = await epicOf(fixture.partition);
+  assert.deepEqual(
+    await epicRevision(fixture.partition, epic, 1, [fixture.draft.ticket]),
+    {
+      kind: "Saved",
+      epic,
+      revision: 2,
+    },
+  );
+  const submission = releaseSubmission(fixture);
+  assert.equal((await harness.inbox.accept(submission)).accepted, "Accepted");
+  const input = await harness.discovery.next(fixture.partition);
+  assert.ok(input !== undefined);
+  const writer = postgresHarnessWriter(harness);
+  const lease = await postgresHarnessHeld(
+    harness.store,
+    fixture.partition,
+    "draft-in-epic-release",
+  );
+  const result = await projectWriterDecide(
+    writer,
+    await projectWriterLoad(writer, lease),
+    input,
+  );
+  assert.equal(result.decided.decided, "Committed");
+
+  assert.deepEqual(
+    (await epicStanding(fixture.partition, epic))[0]?.["members"],
+    [fixture.draft.ticket],
+  );
+  assert.deepEqual(
+    await epicRevision(fixture.partition, epic, 2, [fixture.draft.ticket]),
+    {
+      kind: "Saved",
+      epic,
+      revision: 3,
+    },
+  );
+});
+
+test("deleting a draft takes it out of its epics, each taking the next revision under the deleter's authority", async () => {
+  const fixture = await draftFixture();
+  const first = await epicOf(fixture.partition);
+  const second = await epicOf(fixture.partition);
+  const created = await draftInEpic(fixture, first);
+  if (created.created !== "Created") throw new Error(created.created);
+  const { ticket } = created.draft;
+  assert.equal(
+    (await epicRevision(fixture.partition, second, 1, [ticket])).kind,
+    "Saved",
+  );
+  const bystander = await epicOf(fixture.partition);
+
+  const deleted = await fixture.store.deleteDraft({
+    partition: fixture.partition,
+    authority,
+    ticket,
+    expectedVersion: created.draft.authoringVersion,
+  });
+
+  assert.equal(deleted.deleted, "Deleted");
+  const standing = (epic: number) => epicStanding(fixture.partition, epic);
+  assert.deepEqual(
+    [(await standing(first))[0], (await standing(second))[0]].map((one) => [
+      one?.["revision"],
+      one?.["members"],
+      one?.["changes"],
+    ]),
+    [
+      [3, [], 3],
+      [3, [], 3],
+    ],
+  );
+  assert.deepEqual((await standing(bystander))[0]?.["revision"], 1);
+  assert.deepEqual(
+    await harness.query(
+      `SELECT actor_kind,actor_subject,tickets::text AS tickets FROM epic_change
+        WHERE tenant=$1 AND project=$2 AND epic=$3 AND revision=3`,
+      [fixture.partition.tenant, fixture.partition.project, first],
+    ),
+    [
+      {
+        actor_kind: authority.kind,
+        actor_subject: authority.subject,
+        tickets: "{}",
+      },
+    ],
+  );
+  assert.equal(
+    (await epicRevision(fixture.partition, first, 3, [])).kind,
+    "Saved",
+  );
+});
+
+test("deleting a draft that is in no epic leaves every epic as it was", async () => {
+  const fixture = await draftFixture();
+  const epic = await epicOf(fixture.partition);
+  const before = await epicStanding(fixture.partition, epic);
+
+  const deleted = await fixture.store.deleteDraft({
+    partition: fixture.partition,
+    authority,
+    ticket: fixture.draft.ticket,
+    expectedVersion: 1,
+  });
+
+  assert.equal(deleted.deleted, "Deleted");
+  const after = await epicStanding(fixture.partition, epic);
+  assert.equal(after[0]?.["revision"], before[0]?.["revision"]);
+  assert.equal(after[0]?.["changes"], before[0]?.["changes"]);
+});
