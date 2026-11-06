@@ -19,7 +19,7 @@ import { nativeActionsAnswers } from "./nativeActionAnswers.ts";
 import { projectAbilityRefused } from "./projectAbilities.ts";
 import type { ProjectAbilities } from "./projectAbilities.ts";
 import { actionsFor, ticketRevisable } from "./ticketActions.ts";
-import type { TicketAction, TicketActionName } from "./ticketActions.ts";
+import type { TicketAction } from "./ticketActions.ts";
 import type { WorkRunner } from "./workRunner.ts";
 
 /** The buttons to draw and whether the edit screen is offered beside them, or
@@ -81,7 +81,7 @@ export function ticketOffersAllowed(
   };
 }
 
-/** The offers a ticket's bar draws, and whether a Dispatch among them gave way
+/** The offers a ticket's header draws, and whether a Dispatch among them gave way
  * to the line that says the project's work has no runner. */
 export interface TicketOffersStartable {
   readonly offers: TicketOffers;
@@ -109,31 +109,7 @@ export function ticketOffersStartable(
   };
 }
 
-/** Whether the action answers what the ticket is waiting on a person for, which
- * is where the page draws it: beside the question rather than with the rest. */
-export function ticketActionResolves(action: TicketActionName): boolean {
-  switch (action) {
-    case "Resume":
-    case "Approve":
-    case "Decline":
-      return true;
-    case "Dispatch":
-    case "Revoke":
-      return false;
-  }
-}
-
-/** The offered actions a card beside the bar draws: none where no card asks
- * anything, and otherwise the ones that answer what it asks. */
-export function offersAnswered(
-  offers: TicketOffers,
-  asking: boolean,
-): readonly TicketAction[] {
-  if (!asking || offers.offers === "Unread") return [];
-  return offers.actions.filter((action) => ticketActionResolves(action.action));
-}
-
-/** Whether the bar offers Dispatch in a project no lead dispatches or will open
+/** Whether the header offers Dispatch in a project no lead dispatches or will open
  * to, where a press is how the ticket comes to run at all. */
 export function offersDispatchByHand(
   offers: TicketOffers,

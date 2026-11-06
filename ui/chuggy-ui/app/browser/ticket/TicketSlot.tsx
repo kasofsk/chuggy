@@ -1,6 +1,6 @@
 /**
  * The one card under the status bar: the run going now, what the ticket is
- * waiting on a person for, or nothing.
+ * waiting on a person for, or nothing. What answers it is the header's.
  */
 
 import { Link } from "@tanstack/react-router";
@@ -68,7 +68,6 @@ function NeedsYou(props: {
   readonly more: string | undefined;
   readonly reason: ReasonAttempt | undefined;
   readonly overrides: ReactNode;
-  readonly actions: ReactNode;
 }): ReactNode {
   return (
     <section
@@ -88,7 +87,6 @@ function NeedsYou(props: {
         <NeedsYouReason partition={props.partition} reason={props.reason} />
       )}
       {props.overrides}
-      <div className="ticket-card-actions">{props.actions}</div>
     </section>
   );
 }
@@ -98,7 +96,6 @@ export function TicketSlot(props: {
   readonly slot: Slot;
   /** What the card offers of the ticket's overrides, where it offers any. */
   readonly overrides?: ReactNode;
-  readonly actions: ReactNode;
   readonly nowMs: number;
 }): ReactNode {
   const slot = props.slot;
@@ -112,7 +109,6 @@ export function TicketSlot(props: {
           more={slot.more}
           reason={slot.reason}
           overrides={props.overrides}
-          actions={props.actions}
         />
       );
     case "Now":

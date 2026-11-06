@@ -27,13 +27,13 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import type { MutationKey, QueryClient } from "@tanstack/react-query";
-import { Fragment, useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
+import type { TicketPhase } from "../../../../src/contract/rosters.ts";
 import type {
   TicketNativeActionsResponse,
-  TicketResponse,
   DispatchViewResponse,
 } from "../../../../src/contract/responses.ts";
 import { apiCancelOperation } from "../core/apiRoutes.ts";
@@ -65,6 +65,7 @@ import type {
 } from "../core/operationFollow.ts";
 import { sessionRunnerShortWord } from "../core/sessionRunners.ts";
 import { ticketArrival } from "../core/ticketArrival.ts";
+import { ticketHeaderActionsOf } from "../core/ticketHeader.ts";
 import {
   ticketDispatchQuery,
   ticketNativeActionsQuery,
@@ -95,9 +96,9 @@ import type { TicketAttemptPress } from "./ticketAttempts.ts";
 import { PanelUnready, ReadFailed } from "./DataPanel.tsx";
 import { TicketEditOffer } from "./ticket/TicketEditOffer.tsx";
 import { TicketActionConfirm } from "./ticket/TicketActionConfirm.tsx";
-import { TicketStateAction } from "./ticket/TicketStateAction.tsx";
+import { TicketHeaderMenu } from "./ticket/TicketHeaderMenu.tsx";
 import { OfferedAction } from "./ui/OfferedAction.tsx";
-import { Button } from "./ui/Button.tsx";
+import { Button, ButtonLink } from "./ui/Button.tsx";
 import { Notice } from "./ui/Notice.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
 import { AddRunnerLink, useWorkRunner } from "./workRunner.tsx";
@@ -396,22 +397,22 @@ function ticketCancelWrite(
   };
 }
 
-/** What the machine charges for and what it undoes, said before it is pressed,
- * with Revoke asking before it submits. A resume's effect names the exits it
- * leaves, which are every action offered and not only the ones drawn beside
- * it. */
+/** What the machine charges for, said before it is pressed, the first action
+ * drawn being the primary one and Dispatch asking before it submits. A
+ * resume's effect names the exits it leaves, which are every action offered
+ * and not only the ones drawn beside it. */
 function ActionButtons(props: {
+  readonly ticket: number;
   readonly actions: readonly TicketAction[];
   readonly exits: readonly TicketActionName[];
-  readonly attempt: Attempt | undefined;
   readonly busy: boolean;
   readonly resume: ResumeOffer;
   readonly onChoose: (action: TicketAction) => void;
 }): ReactNode {
-  const [revoking, setRevoking] = useState(false);
-  return props.actions.map((action) => {
+  const [asking, setAsking] = useState<TicketActionName | undefined>(undefined);
+  return props.actions.map((action, index) => {
     const effect = ticketActionEffect(action.action, props.resume, props.exits);
-    const asks = action.action === "Revoke";
+    const asks = action.action === "Dispatch";
     const chosen = (): void => {
       props.onChoose(action);
     };
@@ -426,25 +427,26 @@ function ActionButtons(props: {
           : { refusedBecause: effect.refusedBecause })}
         offered={effect.offered}
         busy={props.busy}
-        danger={asks}
+        primary={index === 0}
         onChoose={
           asks
             ? () => {
-                setRevoking(true);
+                setAsking(action.action);
               }
             : chosen
         }
       >
         {asks ? (
           <TicketActionConfirm
-            title="Revoke this ticket?"
-            confirm="Revoke ticket"
-            danger
-            open={revoking}
-            onOpenChange={setRevoking}
+            title={`Dispatch ticket #${String(props.ticket)}?`}
+            confirm="Dispatch"
+            open={asking === action.action}
+            onOpenChange={(open) => {
+              setAsking(open ? action.action : undefined);
+            }}
             onConfirm={chosen}
           >
-            Ends this ticket and parks its dependents. Can't be undone.
+            {effect.effect}
           </TicketActionConfirm>
         ) : null}
       </OfferedAction>
@@ -628,18 +630,20 @@ function FollowNotes(props: { readonly submitting: Submitting }): ReactNode {
   );
 }
 
-export interface TicketActionsProps {
+export interface TicketHeaderActionsProps {
   readonly partition: PartitionIdentity;
   readonly ticket: number;
-  /** The ticket as read, whose state the bar's first chip draws. */
-  readonly ticketRead: TicketResponse | undefined;
+  /** The ticket's phase as read, absent while the read is. */
+  readonly phase: TicketPhase | undefined;
   readonly acting: TicketActing;
   readonly offers: TicketOffers;
   readonly openState: PanelState<TicketNativeActionsResponse>;
   readonly dispatchState: PanelState<DispatchViewResponse>;
   readonly resume: ResumeOffer;
-  /** The actions a card beside the bar answers, which the bar leaves out. */
-  readonly answered: readonly TicketAction[];
+  /** Offered actions the page holds back for now. */
+  readonly withheld: readonly TicketActionName[];
+  /** Whether the reader may start a new ticket from this one. */
+  readonly duplicates: boolean;
   /** Whether Dispatch is offered in a project no lead dispatches or will open to. */
   readonly byHand: boolean;
   /** Whether a Dispatch gave way because the project's work has no runner. */
@@ -659,99 +663,84 @@ function NoRunnerLine(props: {
   );
 }
 
-/** Where an action stands in the bar: Dispatch first, then Edit, then whatever
- * else is offered, and Revoke last. */
-const barOrder = ["Dispatch", "Edit", "Other", "Revoke"] as const;
-
-function barPlace(action: TicketActionName): (typeof barOrder)[number] {
-  if (action === "Dispatch" || action === "Revoke") return action;
-  return "Other";
+function TicketDuplicateLink(props: {
+  readonly partition: PartitionIdentity;
+  readonly ticket: number;
+}): ReactNode {
+  return (
+    <ButtonLink
+      to="/$tenant/$project/tickets/new"
+      params={props.partition}
+      search={{ from: props.ticket }}
+      variant="primary"
+    >
+      Duplicate
+    </ButtonLink>
+  );
 }
 
-/** The ticket's state chip, which is the button for the dispatch on offer. */
-function DispatchChip(
-  props: TicketActionsProps & { readonly barActions: readonly TicketAction[] },
+function headerActionsOf(props: TicketHeaderActionsProps) {
+  return props.phase === undefined
+    ? undefined
+    : ticketHeaderActionsOf(
+        props.offers,
+        props.phase,
+        props.withheld,
+        props.duplicates,
+      );
+}
+
+/** The main actions, the edit screen beside them, and the menu holding the
+ * rest. */
+export function TicketHeaderActions(
+  props: TicketHeaderActionsProps,
 ): ReactNode {
-  const dispatch = props.barActions.find(
-    (action) => action.action === "Dispatch",
-  );
-  if (props.ticketRead === undefined) return null;
-  const effect =
-    dispatch === undefined
-      ? undefined
-      : ticketActionEffect(
-          dispatch.action,
-          props.resume,
-          props.offers.offers === "Unread"
-            ? []
-            : props.offers.actions.map((offered) => offered.action),
-        );
+  const laid = headerActionsOf(props);
+  if (laid === undefined) return null;
+  const exits =
+    props.offers.offers === "Actions"
+      ? props.offers.actions.map((offered) => offered.action)
+      : [];
   return (
-    <TicketStateAction
-      ticket={props.ticketRead}
-      dispatch={
-        dispatch === undefined ||
-        effect === undefined ||
-        !effect.offered ||
-        effect.refusedBecause !== undefined
-          ? undefined
-          : {
-              effect: effect.effect,
-              busy: props.acting.busy,
-              send: () => {
-                props.acting.submitting.submit(dispatch);
-              },
-            }
-      }
-    />
+    <div className="ticket-header-actions">
+      <ActionButtons
+        ticket={props.ticket}
+        actions={laid.main}
+        exits={exits}
+        busy={props.acting.busy}
+        resume={props.resume}
+        onChoose={props.acting.submitting.submit}
+      />
+      {laid.duplicate === "Main" ? (
+        <TicketDuplicateLink
+          partition={props.partition}
+          ticket={props.ticket}
+        />
+      ) : null}
+      {laid.editable ? (
+        <TicketEditOffer partition={props.partition} ticket={props.ticket} />
+      ) : null}
+      <TicketHeaderMenu
+        partition={props.partition}
+        ticket={props.ticket}
+        revoke={laid.revoke}
+        duplicate={laid.duplicate === "Menu"}
+        busy={props.acting.busy}
+        onChoose={props.acting.submitting.submit}
+      />
+    </div>
   );
 }
 
-/** Every action but the ones a card answers, the edit screen, and the follow
- * of whichever was pressed, wherever it was pressed. */
-export function TicketBarActions(props: TicketActionsProps): ReactNode {
-  const offers = props.offers;
-  const barActions =
-    offers.offers === "Unread"
-      ? []
-      : offers.actions.filter(
-          (action) =>
-            !props.answered.some((answer) => answer.action === action.action),
-        );
+/** What stands in the way of the actions, and the follow of whichever was
+ * pressed, wherever it was pressed. */
+export function TicketHeaderNotes(props: TicketHeaderActionsProps): ReactNode {
   return (
-    <>
+    <div className="ticket-header-notes">
       {props.noRunner ? <NoRunnerLine partition={props.partition} /> : null}
-      {offers.offers === "Unread" ? (
+      {props.offers.offers === "Unread" ? (
         <PanelUnready state={props.openState} />
-      ) : (
-        <>
-          {barOrder.map((place) => (
-            <Fragment key={place}>
-              {place === "Edit" ? (
-                offers.editable ? (
-                  <TicketEditOffer
-                    partition={props.partition}
-                    ticket={props.ticket}
-                  />
-                ) : null
-              ) : place === "Dispatch" ? (
-                <DispatchChip {...props} barActions={barActions} />
-              ) : (
-                <ActionButtons
-                  actions={barActions.filter(
-                    (action) => barPlace(action.action) === place,
-                  )}
-                  exits={offers.actions.map((offered) => offered.action)}
-                  attempt={props.acting.submitting.attempt}
-                  busy={props.acting.busy}
-                  resume={props.resume}
-                  onChoose={props.acting.submitting.submit}
-                />
-              )}
-            </Fragment>
-          ))}
-        </>
-      )}
+      ) : null}
       {props.dispatchState.state === "Failed" ? (
         <ReadFailed subject="Dispatch" failure={props.dispatchState.failure} />
       ) : null}
@@ -759,28 +748,7 @@ export function TicketBarActions(props: TicketActionsProps): ReactNode {
         <Notice tone="info" inline detail="No lead · Dispatched by hand" />
       ) : null}
       <FollowNotes submitting={props.acting.submitting} />
-    </>
-  );
-}
-
-/** The actions that answer what the ticket is waiting on, drawn in the card
- * that asks it and followed by the same submission as the bar's. */
-export function TicketAnswerActions(props: {
-  readonly acting: TicketActing;
-  readonly offers: TicketOffers;
-  readonly answered: readonly TicketAction[];
-  readonly resume: ResumeOffer;
-}): ReactNode {
-  if (props.offers.offers === "Unread") return null;
-  return (
-    <ActionButtons
-      actions={props.answered}
-      exits={props.offers.actions.map((offered) => offered.action)}
-      attempt={props.acting.submitting.attempt}
-      busy={props.acting.busy}
-      resume={props.resume}
-      onChoose={props.acting.submitting.submit}
-    />
+    </div>
   );
 }
 

@@ -1,14 +1,15 @@
 /**
- * One ticket, top to bottom: its title, where it stands with what it is and
- * what may be done to it, the run going now or the question it waits on, what
- * has run for it, its instructions, the configuration it runs under, its
- * revisions and its activity, all of it always drawn.
+ * One ticket, as a header over four tabs: its title, where it stands with the
+ * one fragment that says why and what may be done to it, and under the tabs
+ * its overview, its runs, the configuration it runs under and its usage.
  *
- * The brief, the configuration and the program the ledger groups by are the
- * ticket's own, which is what it runs, and not the draft's, which a Pending
- * ticket's author may have revised past it; the draft is read for the
- * provenance alone. One clock ticks the whole page, so a running row, a
- * cycle's open span and a panel's freshness all age together.
+ * Every read is made here, once, and handed to whichever tab is drawn, so a
+ * tab switch reads nothing again. The brief, the configuration and the
+ * program the ledger groups by are the ticket's own, which is what it runs,
+ * and not the draft's, which a Pending ticket's author may have revised past
+ * it; the draft is read for the provenance alone. One clock ticks the whole
+ * page, so a running row, a cycle's open span and a panel's freshness all age
+ * together.
  */
 
 import { useParams } from "@tanstack/react-router";
@@ -16,36 +17,27 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
-import type {
-  DraftResponse,
-  DispatchViewResponse,
-  ExecutionsResponse,
-  LeadReadResponse,
-  NativeActionResponse,
-  TicketNativeActionsResponse,
-  TicketResponse,
-} from "../../../../src/contract/responses.ts";
+import type { NativeActionResponse } from "../../../../src/contract/responses.ts";
 import { configurationQuery } from "../core/configurationQueries.ts";
-import type { PanelState } from "../core/freshness.ts";
-import type { TicketDeliveryState } from "../core/ticketDelivery.ts";
 import {
   ticketLandingCurrent,
   ticketLandingFragment,
   ticketLandingFragmentSays,
   ticketLandingsHeld,
 } from "../core/ticketLandings.ts";
-import type { TicketLandingsState } from "../core/ticketLandings.ts";
 import {
   parkedOverridesFence,
   parkedOverridesUnsaved,
   parkedSetupOverridable,
 } from "../core/parkedOverrides.ts";
 import type { ParkedOverridesTyped } from "../core/parkedOverrides.ts";
+import { projectAbilityRefused } from "../core/projectAbilities.ts";
 import type { ProjectAbilities } from "../core/projectAbilities.ts";
 import { projectLeadDispatches } from "../core/projectLead.ts";
 import { manualDispatchActionOf } from "../core/ticketActions.ts";
+import { ticketHeaderFragment } from "../core/ticketHeader.ts";
+import { ticketListStandingOf } from "../core/ticketListView.ts";
 import {
-  offersAnswered,
   offersDispatchByHand,
   ticketOffers,
   ticketOffersAllowed,
@@ -68,48 +60,28 @@ import { useLead } from "./LeadPage.tsx";
 import { useProjectAbilities } from "./projectAbilities.tsx";
 import {
   TicketActingScope,
-  TicketAnswerActions,
-  TicketBarActions,
+  TicketHeaderActions,
+  TicketHeaderNotes,
 } from "./TicketActions.tsx";
-import type { TicketActing } from "./TicketActions.tsx";
+import type {
+  TicketActing,
+  TicketHeaderActionsProps,
+} from "./TicketActions.tsx";
 import { useTicketDelivery } from "./ticket/TicketDelivery.tsx";
+import { TicketHeader, TicketTabs } from "./ticket/TicketHeader.tsx";
 import {
   LandingFragment,
   useTicketLandings,
 } from "./ticket/TicketLandings.tsx";
-import {
-  TicketLedgerPanel,
-  useTicketExecutions,
-} from "./ticket/TicketLedger.tsx";
-import { TicketActivity } from "./ticket/TicketActivity.tsx";
-import { TicketInstructions } from "./ticket/TicketInstructions.tsx";
-import { TicketConfiguration, TicketRevisions } from "./TicketProvenance.tsx";
+import { useTicketExecutions } from "./ticket/TicketLedger.tsx";
 import {
   ParkedOverrides,
   useParkedOverridesSave,
 } from "./ticket/ParkedOverrides.tsx";
-import { TicketSlot } from "./ticket/TicketSlot.tsx";
-import { TicketIntro } from "./ticket/TicketIntro.tsx";
-import { TicketStatus } from "./ticket/TicketStatus.tsx";
+import { readValue, TicketPageHeldProvider } from "./ticket/TicketPageTabs.tsx";
+import type { TicketPageHeld, TicketReads } from "./ticket/TicketPageTabs.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
-import { Panel } from "./ui/Panel.tsx";
 import { useWorkRunner } from "./workRunner.tsx";
-
-/** Everything the page has read, so each part is handed facts and not a query. */
-export interface TicketReads {
-  readonly ticketState: PanelState<TicketResponse>;
-  readonly draftState: PanelState<DraftResponse>;
-  readonly openState: PanelState<TicketNativeActionsResponse>;
-  readonly dispatchState: PanelState<DispatchViewResponse>;
-  readonly pageState: PanelState<ExecutionsResponse>;
-  readonly leadState: PanelState<LeadReadResponse>;
-  readonly deliveryState: TicketDeliveryState;
-  readonly landingsState: TicketLandingsState;
-}
-
-function readValue<T>(state: PanelState<T>): T | undefined {
-  return state.state === "Ready" ? state.value : undefined;
-}
 
 interface StandingProps {
   readonly partition: PartitionIdentity;
@@ -239,11 +211,10 @@ function statusLanding(props: StandingProps): ReactNode {
   ) : null;
 }
 
-/** The status bar and the card under it, which answer through one submission
- * wherever the button pressed is drawn. */
-function TicketStanding(
+/** What the header offers this reader, and the facts the tabs are handed. */
+function useTicketStanding(
   props: StandingProps & { readonly acting: TicketActing },
-): ReactNode {
+) {
   const abilities = useProjectAbilities(props.partition);
   const runner = useWorkRunner(props.partition, "Unknown");
   const setupOverridable = useSetupOverridable(props, abilities);
@@ -253,57 +224,84 @@ function TicketStanding(
     runner,
   );
   const parked = useParkedStanding(props, fence);
-  const asking = slot.slot === "NeedsYou";
-  const answered = offersAnswered(offers, asking);
   const ledger = props.facts.ledger;
+  const actions: TicketHeaderActionsProps = {
+    partition: props.partition,
+    ticket: props.ticket,
+    phase: readValue(props.reads.ticketState)?.phase,
+    acting: props.acting,
+    offers,
+    openState: props.reads.openState,
+    dispatchState: props.reads.dispatchState,
+    resume: props.facts.resume,
+    withheld: parked.withheld ? ["Resume"] : [],
+    duplicates: !projectAbilityRefused(abilities, "mutate"),
+    byHand: offersDispatchByHand(
+      offers,
+      projectLeadDispatches(props.reads.leadState),
+    ),
+    noRunner,
+  };
+  const held: TicketPageHeld = {
+    ...props,
+    slot,
+    resumed:
+      slot.slot === "NeedsYou" || ledger === undefined
+        ? undefined
+        : resumedFrom(ledger),
+    landing: statusLanding(props),
+    overrides: parked.overrides,
+  };
+  return { actions, held };
+}
+
+function TicketStandingHeader(props: {
+  readonly held: TicketPageHeld;
+  readonly actions: TicketHeaderActionsProps;
+}): ReactNode {
+  const { held } = props;
+  const ticket = readValue(held.reads.ticketState);
+  if (ticket === undefined) return null;
+  const standing = ticketListStandingOf(ticket);
+  return (
+    <TicketHeader
+      ticket={held.ticket}
+      title={ticket.title ?? "Ticket"}
+      standing={standing}
+      fragment={ticketHeaderFragment({
+        ticket,
+        standing,
+        leadDispatches: projectLeadDispatches(held.reads.leadState),
+        slot: held.slot,
+        landings: ticketLandingsHeld(held.reads.landingsState),
+      })}
+      nowMs={held.nowMs}
+      actions={<TicketHeaderActions {...props.actions} />}
+      notes={<TicketHeaderNotes {...props.actions} />}
+    />
+  );
+}
+
+/** The header, the tabs, and the tab the address names under them. */
+function TicketStanding(
+  props: StandingProps & {
+    readonly acting: TicketActing;
+    readonly children: ReactNode;
+  },
+): ReactNode {
+  const { actions, held } = useTicketStanding(props);
   return (
     <>
-      <TicketStatus
+      <TicketStandingHeader held={held} actions={actions} />
+      <TicketTabs
         partition={props.partition}
-        state={props.reads.ticketState}
-        page={readValue(props.reads.pageState)}
-        resumed={
-          asking || ledger === undefined ? undefined : resumedFrom(ledger)
-        }
-        landing={statusLanding(props)}
-        nowMs={props.nowMs}
-        actions={
-          <TicketBarActions
-            partition={props.partition}
-            ticket={props.ticket}
-            ticketRead={readValue(props.reads.ticketState)}
-            acting={props.acting}
-            offers={offers}
-            openState={props.reads.openState}
-            dispatchState={props.reads.dispatchState}
-            resume={props.facts.resume}
-            answered={answered}
-            noRunner={noRunner}
-            byHand={offersDispatchByHand(
-              offers,
-              projectLeadDispatches(props.reads.leadState),
-            )}
-          />
-        }
+        ticket={props.ticket}
+        runCount={readValue(props.reads.pageState)?.executions.length}
+        runCountCut={props.facts.truncated}
       />
-      <TicketSlot
-        partition={props.partition}
-        slot={slot}
-        nowMs={props.nowMs}
-        overrides={parked.overrides}
-        actions={
-          <TicketAnswerActions
-            acting={props.acting}
-            offers={offers}
-            answered={
-              parked.withheld
-                ? answered.filter((action) => action.action !== "Resume")
-                : answered
-            }
-            resume={props.facts.resume}
-          />
-        }
-      />
+      <TicketPageHeldProvider value={held}>
+        {props.children}
+      </TicketPageHeldProvider>
     </>
   );
 }
@@ -313,14 +311,15 @@ function TicketBody(props: {
   readonly ticket: number;
   readonly reads: TicketReads;
   readonly nowMs: number;
+  readonly children: ReactNode;
 }): ReactNode {
-  const ticket = readValue(props.reads.ticketState);
-  const page = readValue(props.reads.pageState);
-  const facts = ticketPageFacts(ticket, page);
+  const facts = ticketPageFacts(
+    readValue(props.reads.ticketState),
+    readValue(props.reads.pageState),
+  );
   return (
     <FreshnessInstants>
       <div data-fills-width className="grid min-w-0 gap-4">
-        {ticket === undefined ? null : <TicketIntro ticket={ticket} />}
         <TicketActingScope
           partition={props.partition}
           ticket={props.ticket}
@@ -334,43 +333,18 @@ function TicketBody(props: {
               facts={facts}
               nowMs={props.nowMs}
               acting={acting}
-            />
+            >
+              {props.children}
+            </TicketStanding>
           )}
         </TicketActingScope>
-        <section id="cycles" className="scroll-mt-4">
-          <TicketLedgerPanel
-            partition={props.partition}
-            page={props.reads.pageState}
-            program={facts.program}
-            landings={props.reads.landingsState}
-            nowMs={props.nowMs}
-          />
-        </section>
-        <TicketInstructions
-          partition={props.partition}
-          state={props.reads.ticketState}
-        />
-        <TicketConfiguration partition={props.partition} ticket={ticket} />
-        <Panel title="Revision history" level={2}>
-          <TicketRevisions
-            partition={props.partition}
-            state={props.reads.draftState}
-            ticket={ticket}
-            nowMs={props.nowMs}
-          />
-        </Panel>
-        <TicketActivity
-          ticket={ticket}
-          page={page}
-          truncated={facts.truncated}
-          delivery={props.reads.deliveryState}
-        />
       </div>
     </FreshnessInstants>
   );
 }
 
-export function TicketPage(): ReactNode {
+/** The layout every tab is drawn in, handed the tab its address names. */
+export function TicketPage(props: { readonly children: ReactNode }): ReactNode {
   const params = useParams({ from: "/$tenant/$project/tickets/$ticket" });
   const partition: PartitionIdentity = {
     tenant: params.tenant,
@@ -403,6 +377,8 @@ export function TicketPage(): ReactNode {
         landingsState,
       }}
       nowMs={nowMs}
-    />
+    >
+      {props.children}
+    </TicketBody>
   );
 }
