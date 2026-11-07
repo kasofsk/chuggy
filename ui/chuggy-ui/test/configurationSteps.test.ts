@@ -165,6 +165,85 @@ test("a changed model is named as the model, and its arguments are where it is m
   ).toMatchObject({ lines: ["--model=opus"], overridden: true });
 });
 
+test("a Codex model the ticket changed is named and marked, though its arguments are the same", () => {
+  const work = workRow(
+    steps(
+      {
+        workloads: {
+          quick: {
+            worker: {
+              mode: {
+                type: "SingleAgent",
+                agent: "Codex",
+                arguments: [],
+                model: "gpt-5",
+              },
+              setup: [],
+              files: [],
+            },
+          },
+        },
+      },
+      { work: "quick" },
+    ),
+  );
+  expect(work.overrides).toEqual(["Model"]);
+  expect(work.details.filter((detail) => detail.overridden)).toEqual([
+    { name: "Model", lines: [work.model], code: false, overridden: true },
+  ]);
+});
+
+test("an agent the ticket changed is named and marked beside the agent", () => {
+  const work = workRow(
+    steps({
+      workloads: {
+        build: {
+          worker: {
+            mode: {
+              type: "SingleAgent",
+              agent: "Codex",
+              arguments: [],
+              model: "gpt-5",
+            },
+            setup: [],
+            files: [],
+          },
+        },
+      },
+    }),
+  );
+  expect(work.overrides).toEqual(["Agent", "Model"]);
+  expect(
+    work.details.find((detail) => detail.name === "Agent"),
+  ).toMatchObject({ lines: ["Codex"], overridden: true });
+});
+
+test("a prompt or field the ticket writes back as the catalog holds it marks nothing", () => {
+  const [review] = rowsOf(
+    steps({
+      workloads: {
+        review: { prompt: { text: "Review it." }, purpose: "Review" },
+      },
+    }),
+    "Evaluation",
+  );
+  expect(review?.overrides).toEqual([]);
+  expect(review?.prompt.some((part) => part.overridden)).toBe(false);
+  expect(review?.details.some((detail) => detail.overridden)).toBe(false);
+});
+
+test("a version 1 override that writes the value already there marks nothing", () => {
+  const legacy = JSON.stringify({
+    version: 1,
+    worker: { mode: { agent: "Claude", arguments: [] }, setup: ["npm ci"] },
+  });
+  const work = workRow(
+    steps({ worker: { setup: ["npm ci"] } }, undefined, legacy),
+  );
+  expect(work.overrides).toEqual([]);
+  expect(work.details.some((detail) => detail.overridden)).toBe(false);
+});
+
 test("a prompt the ticket replaced is named in the column and marked over the prompt", () => {
   const work = workRow(
     steps({ workloads: { build: { prompt: { text: "Build it twice." } } } }),

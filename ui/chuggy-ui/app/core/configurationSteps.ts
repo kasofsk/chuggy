@@ -39,6 +39,7 @@ import type { ConfigurationView } from "./configurationView.ts";
 import {
   overrideDocumentOf,
   overrideFieldLabel,
+  overrideFieldOf,
   overriddenViewOf,
   overridesSame,
 } from "./ticketOverrides.ts";
@@ -280,6 +281,33 @@ interface CatalogHeld {
   readonly override: StepsRecord | undefined;
 }
 
+/** Whether the ticket's override of a field left it other than the pinned
+ * workload holds it. */
+function catalogFieldChanged(held: CatalogHeld, field: string): boolean {
+  return (
+    held.override?.[field] !== undefined &&
+    !overridesSame(held.effective[field], held.pinned[field])
+  );
+}
+
+/** The agent and the model it runs, each drawn as a detail of its own
+ * only where it differs from the pinned, since its cell already holds it. */
+function catalogModeDetailsOf(
+  held: CatalogHeld,
+): readonly ConfigurationStepDetail[] {
+  const effective = catalogMode(held.effective);
+  const pinned = catalogMode(held.pinned);
+  const model = configurationModelLabelOf(effective).label;
+  const changed = (name: string, line: unknown, was: unknown) =>
+    line === was
+      ? []
+      : [{ name, lines: stepsString(line), code: false, overridden: true }];
+  return [
+    ...changed("Agent", effective["agent"], pinned["agent"]),
+    ...changed("Model", model, configurationModelLabelOf(pinned).label),
+  ];
+}
+
 /** The details a catalog workload opens onto, each it overrode marked, and
  * an override no detail reads drawn as one of its own. */
 function catalogDetailsOf(
@@ -295,9 +323,10 @@ function catalogDetailsOf(
       ? []
       : [{ name: detail.name, lines, code: detail.code, overridden }];
   });
-  const unread = Object.entries(override ?? {}).flatMap(([field, value]) => {
+  const unread = Object.keys(override ?? {}).flatMap((field) => {
     const name = catalogFieldNames[field];
-    return name === undefined
+    const value = effective[field];
+    return name === undefined || !catalogFieldChanged(held, field)
       ? []
       : [
           {
@@ -308,7 +337,7 @@ function catalogDetailsOf(
           },
         ];
   });
-  return [...read, ...unread];
+  return [...catalogModeDetailsOf(held), ...read, ...unread];
 }
 
 /** What the Overrides column names of one catalog workload. */
@@ -316,9 +345,7 @@ function catalogOverridesOf(
   held: CatalogHeld,
   details: readonly ConfigurationStepDetail[],
 ): readonly string[] {
-  const modelChanged =
-    configurationModelLabelOf(catalogMode(held.effective)).label !==
-    configurationModelLabelOf(catalogMode(held.pinned)).label;
+  const modelChanged = details.some((detail) => detail.name === "Model");
   const words = details
     .filter((detail) => detail.overridden)
     .map((detail) => {
@@ -328,7 +355,12 @@ function catalogOverridesOf(
       if (detail.name === "Arguments" && modelChanged) return "Model";
       return word === undefined ? detail.name : word(held.effective);
     });
-  return held.override?.["prompt"] === undefined ? words : ["Prompt", ...words];
+  return [
+    ...new Set([
+      ...(catalogFieldChanged(held, "prompt") ? ["Prompt"] : []),
+      ...words,
+    ]),
+  ];
 }
 
 /** The pinned and the effective raw workloads, by name. */
@@ -399,7 +431,7 @@ function catalogRowOf(
             {
               heading: workload.promptPath,
               lines: [workload.prompt],
-              overridden: held.override?.["prompt"] !== undefined,
+              overridden: catalogFieldChanged(held, "prompt"),
             },
           ],
     definition: workload?.definition,
@@ -521,7 +553,15 @@ function legacyHeldOf(
         ? document
         : configurationWithOverrides(document, overrides),
     ),
-    overridden: new Set(overridden),
+    overridden: new Set(
+      overridden.filter(
+        (field) =>
+          !overridesSame(
+            overrideFieldOf(overrides, field),
+            overrideFieldOf(document, field),
+          ),
+      ),
+    ),
   };
 }
 
