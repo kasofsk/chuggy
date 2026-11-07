@@ -30,7 +30,7 @@ import {
   type Partition,
 } from "../../src/interpreter/projectStore.ts";
 import {
-  asRepositoryLanding,
+  asRepositoryFinalization,
   type ProjectRepositoryBound,
   type ProjectRepositoryLandingStore,
 } from "../../src/interpreter/repositoryBinding.ts";
@@ -115,7 +115,11 @@ function bindingOf(
   return {
     repository: bound,
     boundAt: "2026-10-01T00:00:00Z",
-    landing: asRepositoryLanding("Push"),
+    landing: asRepositoryFinalization({
+      kind: "GitMerge",
+      mode: "Push",
+      policy: "Direct",
+    }),
     pipelinesWritable: false,
     ...(retiredAt === undefined ? {} : { retiredAt }),
   };

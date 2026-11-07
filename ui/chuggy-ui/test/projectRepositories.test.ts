@@ -106,6 +106,11 @@ test("a row is marked bound by the address the binding names", () => {
         repository: "https://forge.test/kasofsk/chuggy",
         boundAt: "2026-09-11T00:00:00Z",
         landing: { mode: "Push" as const },
+        finalization: {
+          kind: "GitMerge",
+          mode: "Push",
+          policy: "Direct",
+        } as const,
         pipelinesWritable: false,
       },
     ],
@@ -121,6 +126,7 @@ test("a row whose binding is retired is not marked bound", () => {
     repository: "https://forge.test/kasofsk/chuggy",
     boundAt: "2026-09-11T00:00:00Z",
     landing: { mode: "Push" as const },
+    finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" } as const,
     pipelinesWritable: false,
   };
   const marked = (retiredAt: string | undefined): readonly boolean[] =>
@@ -848,6 +854,7 @@ const bound = {
   repository: "https://forge.test/kasofsk/chuggy",
   boundAt: "2026-09-11T00:00:00Z",
   landing: { mode: "Push" as const },
+  finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" } as const,
   pipelinesWritable: false,
 };
 

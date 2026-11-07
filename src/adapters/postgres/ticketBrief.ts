@@ -21,14 +21,13 @@ import {
   configurationSelectionSchema,
   type ConfigurationSelection,
 } from "../../contract/configurationSelection.ts";
-import { briefFinalizationModeOf } from "../../contract/rosters.ts";
 import { asRepositoryId } from "../../interpreter/finalizer.ts";
 import { asProjectArtifactId } from "../../interpreter/finalizerPreparation.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import {
   asBriefBranch,
   asBriefCheckLine,
-  asStoredBriefFinalizationByMode,
+  asBriefFinalization,
   asStoredDraftBrief,
   asBriefIntent,
   asBriefLinkUrl,
@@ -40,15 +39,12 @@ import {
 } from "../../interpreter/ticketBrief.ts";
 import { releasedTicketBrief } from "../../interpreter/ticketDefinition.ts";
 
-/**
- * The columns a brief's finalization is read from, wherever a query selected
- * them: its mode and target, and the policy beside them, which storage still
- * holds by mode.
- */
+/** The columns a brief's finalization is read from, wherever a query selected them. */
 export interface DraftBriefFinalizationRow {
+  readonly finalization_kind: string | null;
   readonly finalization_mode: string | null;
   readonly finalization_target: string | null;
-  readonly landing_policy: string | null;
+  readonly finalization_policy: string | null;
 }
 
 /**
@@ -66,34 +62,58 @@ export interface DraftBriefRow extends DraftBriefFinalizationRow {
 }
 
 /**
- * The finalization a row states, mapped forward from its mode and policy. The
- * door resolves a landing for every draft and stores what it resolved, and the
- * landing that lands nothing is one of them, so a null mode is a row no writer
- * in this tree can produce — read as no finalization rather than defended
- * against, because the reads below are total over what the column admits.
+ * The finalization a row states. A row that joined no brief names no kind, so
+ * it is read as no finalization; every brief row names one.
  */
 export function draftBriefFinalizationOf(
   row: DraftBriefFinalizationRow,
 ): BriefFinalization | undefined {
-  if (row.finalization_mode === null) return undefined;
-  return asStoredBriefFinalizationByMode(
-    {
-      mode: row.finalization_mode,
-      ...(row.finalization_target === null
-        ? {}
-        : { target: row.finalization_target }),
-    },
-    row.landing_policy ?? undefined,
-  );
+  if (row.finalization_kind === null) return undefined;
+  return asBriefFinalization({
+    kind: row.finalization_kind,
+    mode: row.finalization_mode ?? undefined,
+    target: row.finalization_target ?? undefined,
+    policy: row.finalization_policy ?? undefined,
+  });
 }
 
-/** The mode column a brief's finalization is stored under, null where it names none. */
-export function draftBriefFinalizationMode(
+/** The columns a brief's finalization is written to, each null where it names none. */
+export interface DraftBriefFinalizationColumns {
+  readonly kind: string | null;
+  readonly mode: string | null;
+  readonly target: string | null;
+  readonly policy: string | null;
+}
+
+export function draftBriefFinalizationColumns(
   brief: Pick<DraftBrief, "finalization">,
-): string | null {
-  return brief.finalization === undefined
-    ? null
-    : briefFinalizationModeOf(brief.finalization);
+): DraftBriefFinalizationColumns {
+  const finalization = brief.finalization;
+  if (finalization === undefined)
+    return { kind: null, mode: null, target: null, policy: null };
+  switch (finalization.kind) {
+    case "GitMerge":
+      return {
+        kind: finalization.kind,
+        mode: finalization.mode,
+        target: finalization.target ?? null,
+        policy: finalization.policy,
+      };
+    case "PullRequest":
+      return {
+        kind: finalization.kind,
+        mode: null,
+        target: finalization.target ?? null,
+        policy: null,
+      };
+    case "None":
+      return {
+        kind: finalization.kind,
+        mode: null,
+        target: null,
+        policy: null,
+      };
+  }
 }
 
 /**

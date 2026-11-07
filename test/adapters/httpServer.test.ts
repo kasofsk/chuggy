@@ -74,7 +74,7 @@ import { asProjectArtifactId } from "../../src/interpreter/finalizerPreparation.
 import { asArtifactDigest } from "../../src/interpreter/resultManifest.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 import {
-  asRepositoryLanding,
+  asRepositoryFinalization,
   type ProjectRepositoryLandingStore,
 } from "../../src/interpreter/repositoryBinding.ts";
 import { unreadableLeadReads } from "./leadReadFixtures.ts";
@@ -827,7 +827,11 @@ const realForgeCredentialsBindings: Pick<
     Promise.resolve({
       repository,
       boundAt: "2026-10-01T00:00:00Z",
-      landing: asRepositoryLanding("Push"),
+      landing: asRepositoryFinalization({
+        kind: "GitMerge",
+        mode: "Push",
+        policy: "Direct",
+      }),
       pipelinesWritable: false,
     }),
 };

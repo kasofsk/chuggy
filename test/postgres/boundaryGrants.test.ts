@@ -254,7 +254,7 @@ test("the landing doors migrate without exposing the relation they read", async 
   await migratedDatabase("i90grants", async (subject) => {
     for (const signature of [
       `${repositoryLandingReadFunction}(text,text,text)`,
-      `${repositoryLandingWriteFunction}(text,text,text,text,text,boolean,boolean)`,
+      `${repositoryLandingWriteFunction}(text,text,text,text,text,text,text,text,text,boolean,boolean)`,
     ])
       assert.equal(
         (
@@ -292,9 +292,9 @@ test("the landing doors migrate without exposing the relation they read", async 
 test("the draft doors are owned and granted to their callers", async () => {
   await migratedDatabase("i91grants", async (subject) => {
     await assertDoorsStandOwned(subject, [
-      `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text,text,text)`,
-      `${draftInEpicFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text,text,text,bigint)`,
-      `${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text,text)`,
+      `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text,text,text,text)`,
+      `${draftInEpicFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text,text,text,text,bigint)`,
+      `${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text,text,text)`,
     ]);
   });
 });
@@ -305,10 +305,10 @@ test("repository doors preserve their ownership and restricted grants", async ()
       `${repositoryRetirementWriteFunction}(text,text,text)`,
       `${repositoryBindingListFunction}(text,text,bigint)`,
       `${repositoryLandingReadFunction}(text,text,text)`,
-      `${repositoryLandingWriteFunction}(text,text,text,text,text,boolean,boolean)`,
+      `${repositoryLandingWriteFunction}(text,text,text,text,text,text,text,text,text,boolean,boolean)`,
       `${repositoryBindingWriteFunction}(text,text,text,text,text,text,text)`,
-      `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text,text,text)`,
-      `${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text,text)`,
+      `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text,text,text,text)`,
+      `${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text,text,text)`,
     ]);
     for (const privilege of ["SELECT", "UPDATE", "DELETE"])
       assert.equal(
@@ -323,7 +323,9 @@ test("repository doors preserve their ownership and restricted grants", async ()
       );
     for (const [role, column, held] of [
       [boundaryOwnerRole, "retired_at", true],
+      [boundaryOwnerRole, "landing_kind", true],
       [boundaryOwnerRole, "landing_mode", true],
+      [boundaryOwnerRole, "landing_policy", true],
       [boundaryOwnerRole, "bound_at", false],
       [apiRole, "retired_at", false],
       [apiRole, "landing_mode", false],
@@ -714,7 +716,7 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
     [],
   ),
   boundaryGrantsDoor(
-    `${repositoryLandingWriteFunction}(text,text,text,text,text,boolean,boolean)`,
+    `${repositoryLandingWriteFunction}(text,text,text,text,text,text,text,text,text,boolean,boolean)`,
     [apiRole],
     [],
   ),

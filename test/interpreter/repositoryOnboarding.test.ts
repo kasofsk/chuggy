@@ -90,7 +90,7 @@ import type {
   ProjectRepositoryLandingStore,
   RepositoryBindingCommand,
   RepositoryBindingOutcome,
-  RepositoryLanding,
+  RepositoryFinalization,
 } from "../../src/interpreter/repositoryBinding.ts";
 import {
   repositoryOnboarding,
@@ -227,7 +227,7 @@ interface FixturePorts {
   readonly held?: readonly ForgeInstallationClaimed[];
   readonly resolved?: CredentialResolved;
   readonly outcome?: RepositoryBindingOutcome;
-  readonly landing?: RepositoryLanding;
+  readonly landing?: RepositoryFinalization;
   readonly landingOutcome?: ProjectRepositoryLandingOutcome;
   readonly retirementOutcome?: ProjectRepositoryRetirementOutcome;
   readonly apps?: readonly ForgeApp[];
@@ -466,7 +466,11 @@ function fixtureBinding(given: FixturePorts): ProjectRepositoryBound {
   return {
     repository,
     boundAt: "2026-09-11T01:00:00Z",
-    landing: given.landing ?? { mode: "Push" },
+    landing: given.landing ?? {
+      kind: "GitMerge",
+      mode: "Push",
+      policy: "Direct",
+    },
     pipelinesWritable: false,
     ...(given.retiredAt === undefined ? {} : { retiredAt: given.retiredAt }),
   };
@@ -1375,7 +1379,7 @@ test("a binding is the project administrator's, under the epoch the service read
     {
       result: "Bound",
       repository,
-      landing: { mode: "Push" },
+      landing: { kind: "GitMerge", mode: "Push", policy: "Direct" },
       configurations: { result: "Deferred", reason: "NotConfigured" },
     },
   );
@@ -1458,7 +1462,7 @@ test("what a project binds is its readers' to read and nobody else's", async () 
         {
           repository,
           boundAt: "2026-09-11T01:00:00Z",
-          landing: { mode: "Push" },
+          landing: { kind: "GitMerge", mode: "Push", policy: "Direct" },
           pipelinesWritable: false,
           configured: false,
         },
@@ -1490,7 +1494,7 @@ test("a bind with no configuration step composed defers and says so", async () =
   assert.deepEqual(bound, {
     result: "Bound",
     repository,
-    landing: { mode: "Push" },
+    landing: { kind: "GitMerge", mode: "Push", policy: "Direct" },
     configurations: { result: "Deferred", reason: "NotConfigured" },
   });
 });
@@ -1506,7 +1510,7 @@ test("a bound repository is imported at its own head and not at a remembered one
   assert.deepEqual(bound, {
     result: "Bound",
     repository,
-    landing: { mode: "Push" },
+    landing: { kind: "GitMerge", mode: "Push", policy: "Direct" },
     configurations: { result: "Imported", count: 0 },
   });
   assert.deepEqual(wrote.heads, [
@@ -1527,7 +1531,7 @@ test("a repository declaring no configurations is authored the bootstrap", async
   assert.deepEqual(bound, {
     result: "Bound",
     repository,
-    landing: { mode: "Push" },
+    landing: { kind: "GitMerge", mode: "Push", policy: "Direct" },
     configurations: { result: "Bootstrapped", revision: bootstrapRevision },
   });
   assert.deepEqual(wrote.authored, [bootstrapRevision]);
@@ -1556,7 +1560,7 @@ test("a bind that authored the bootstrap says what under `.chug/` the head held 
   assert.deepEqual(bootstrapped.bound, {
     result: "Bound",
     repository,
-    landing: { mode: "Push" },
+    landing: { kind: "GitMerge", mode: "Push", policy: "Direct" },
     configurations: {
       result: "Bootstrapped",
       revision: bootstrapRevision,
@@ -1597,7 +1601,7 @@ test("a deployment naming no bootstrap image authors none and says which", async
   assert.deepEqual(bound, {
     result: "Bound",
     repository,
-    landing: { mode: "Push" },
+    landing: { kind: "GitMerge", mode: "Push", policy: "Direct" },
     configurations: { result: "Deferred", reason: "NoBootstrapImage" },
   });
   assert.deepEqual(wrote.authored, []);
@@ -1610,7 +1614,7 @@ test("a port that raises inside the step is a deferral and not a failed bind", a
   assert.deepEqual(bound, {
     result: "Bound",
     repository,
-    landing: { mode: "Push" },
+    landing: { kind: "GitMerge", mode: "Push", policy: "Direct" },
     configurations: { result: "Deferred", reason: "StepFailed" },
   });
   assert.equal(wrote.commands.length, 1);
@@ -1629,7 +1633,7 @@ test("a repository the project holds a different bootstrap for is told so and st
   assert.deepEqual(bound, {
     result: "Bound",
     repository,
-    landing: { mode: "Push" },
+    landing: { kind: "GitMerge", mode: "Push", policy: "Direct" },
     configurations: { result: "Deferred", reason: "BootstrapDiffers" },
   });
 });
@@ -1654,7 +1658,7 @@ test("the same bootstrap authored twice is the revision it already is", async ()
   assert.deepEqual(bound, {
     result: "Bound",
     repository,
-    landing: { mode: "Push" },
+    landing: { kind: "GitMerge", mode: "Push", policy: "Direct" },
     configurations: { result: "Bootstrapped", revision: bootstrapRevision },
   });
 });
@@ -1717,7 +1721,7 @@ test("every way the step can stop is its own deferral and never a refused bind",
       {
         result: "Bound",
         repository,
-        landing: { mode: "Push" },
+        landing: { kind: "GitMerge", mode: "Push", policy: "Direct" },
         configurations: { result: "Deferred", reason },
       },
       reason,
@@ -1786,7 +1790,7 @@ test("the bootstrap a bind authors names the schema under the deployment's publi
 });
 
 /** A landing neither fixture default is, so a value the service invented is visible. */
-const proposing: RepositoryLanding = { mode: "PullRequest" };
+const proposing: RepositoryFinalization = { kind: "PullRequest" };
 
 async function fixtureLanded(
   granted: readonly (ProjectAccessKind | TenantAccessKind)[],
@@ -1795,7 +1799,7 @@ async function fixtureLanded(
   const composed = fixtureService(granted, given);
   const written = await composed.service.setLanding(principal, partition, {
     repository,
-    expected: { mode: "Push" },
+    expected: { kind: "GitMerge", mode: "Push", policy: "Direct" },
     landing: proposing,
     pipelinesWritable: { expected: false, wanted: true },
   });
@@ -1809,7 +1813,7 @@ test("a binding's landing and pipeline definitions are written behind the permit
     {
       partition,
       repository,
-      expected: { mode: "Push" },
+      expected: { kind: "GitMerge", mode: "Push", policy: "Direct" },
       landing: proposing,
       pipelinesWritable: { expected: false, wanted: true },
     },
@@ -2183,7 +2187,7 @@ test("the listing answers what the project holds for each binding, and marks it 
     const binding = {
       repository,
       boundAt: "2026-09-11T01:00:00Z",
-      landing: { mode: "Push" },
+      landing: { kind: "GitMerge", mode: "Push", policy: "Direct" },
       pipelinesWritable: false,
     };
     assert.deepEqual(listed.result === "Repositories" && listed.repositories, [
@@ -2239,7 +2243,7 @@ function workerReachGiven(
 const listedBinding = {
   repository,
   boundAt: "2026-09-11T01:00:00Z",
-  landing: { mode: "Push" },
+  landing: { kind: "GitMerge", mode: "Push", policy: "Direct" },
   pipelinesWritable: false,
   configured: false,
 } as const;
@@ -2359,7 +2363,7 @@ test("a bind the worker App's installation does not select is still bound, with 
     {
       result: "Bound",
       repository,
-      landing: { mode: "Push" },
+      landing: { kind: "GitMerge", mode: "Push", policy: "Direct" },
       configurations: { result: "Deferred", reason: "NotConfigured" },
       workerReach: {
         reach: "Unselected",
@@ -2388,7 +2392,7 @@ test("a bind written without the forge's own suffix is the repository the instal
     {
       result: "Bound",
       repository: bare,
-      landing: { mode: "Push" },
+      landing: { kind: "GitMerge", mode: "Push", policy: "Direct" },
       configurations: { result: "Deferred", reason: "NotConfigured" },
     },
   );
@@ -2564,7 +2568,7 @@ test("a bind meeting its own bootstrap of an earlier text is told it differs, an
       {
         result: "Bound",
         repository: bound,
-        landing: { mode: "Push" },
+        landing: { kind: "GitMerge", mode: "Push", policy: "Direct" },
         configurations,
       },
       bound,
@@ -2639,7 +2643,7 @@ test("two bare repositories bound to one project each hold their own bootstrap, 
       {
         result: "Bound",
         repository: bound,
-        landing: { mode: "Push" },
+        landing: { kind: "GitMerge", mode: "Push", policy: "Direct" },
         configurations: own(bound),
       },
       bound,

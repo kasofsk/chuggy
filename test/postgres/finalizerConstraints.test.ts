@@ -597,8 +597,8 @@ test("a project binds multiple repositories while each repository keeps one live
   );
   const second = finalizerIdentity("repository-second");
   await rig.harness.query(
-    `INSERT INTO project_repository (tenant, project, repository, recovery_epoch, landing_mode)
-     VALUES ($1,$2,$3,$4,'Push')`,
+    `INSERT INTO project_repository (tenant, project, repository, recovery_epoch, landing_kind, landing_mode, landing_policy)
+     VALUES ($1,$2,$3,$4,'GitMerge','Push','Direct')`,
     keys(second, project.epoch),
   );
   assert.match(

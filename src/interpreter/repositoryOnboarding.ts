@@ -131,7 +131,7 @@ import type {
   ProjectRepositoryLandingStore,
   ProjectRepositoryLandingWrite,
   ProjectRepositoryRetirementStore,
-  RepositoryLanding,
+  RepositoryFinalization,
 } from "./repositoryBinding.ts";
 import {
   type ForgeRepositoryAddress,
@@ -292,7 +292,7 @@ export type ProjectRepositoryBindResult =
   | ({
       readonly result: "Bound";
       readonly repository: RepositoryId;
-      readonly landing: RepositoryLanding;
+      readonly landing: RepositoryFinalization;
       readonly configurations: ProjectRepositoryConfigurationsResult;
     } & ProjectRepositoryWorkerReachField)
   | { readonly result: "AlreadyBound"; readonly repository: RepositoryId }
@@ -919,7 +919,7 @@ async function boundRepositoryLanding(
   ports: RepositoryOnboardingPorts,
   partition: Partition,
   request: ProjectRepositoryBindRequest,
-): Promise<RepositoryLanding> {
+): Promise<RepositoryFinalization> {
   const bound = await ports.landing.landing(partition, request.repository);
   if (bound === undefined)
     throw new Error("repository onboarding: a bound repository has no binding");

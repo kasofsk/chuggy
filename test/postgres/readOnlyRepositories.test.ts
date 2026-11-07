@@ -45,8 +45,8 @@ async function readOnlyBound(
 ): Promise<void> {
   const { tenant, project: projectId } = project.partition;
   await rig.harness.query(
-    `INSERT INTO project_repository (tenant,project,repository,recovery_epoch,landing_mode,pipelines_writable)
-     VALUES ($1,$2,$3,$4,'Push',$5)`,
+    `INSERT INTO project_repository (tenant,project,repository,recovery_epoch,landing_kind,landing_mode,landing_policy,pipelines_writable)
+     VALUES ($1,$2,$3,$4,'GitMerge','Push','Direct',$5)`,
     [tenant, projectId, repository, project.epoch, pipelinesWritable],
   );
   if (retired)

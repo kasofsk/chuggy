@@ -83,10 +83,13 @@ import {
   programSkipsPlannedEvaluationsCode,
   selectorProposalNotHeldCode,
   threadLimitReachedCode,
+  briefFinalizationModeOf,
+  type BriefFinalizationMode,
   type ProjectArtifactUploadRefusalCode,
   type SelectorReviewOutcome,
   type ThreadMessageRefusalCode,
 } from "../../contract/rosters.ts";
+import type { RepositoryFinalization } from "../../interpreter/repositoryBinding.ts";
 import type {
   LeadInquiriesRead,
   LeadInquiryAsked,
@@ -1841,6 +1844,26 @@ export function projectCreationResponse(
 }
 
 /**
+ * One binding as the wire answers it: its landing default by its kind as
+ * `finalization`, and by its mode alone as `landing`, which a reader written
+ * before the kinds still reads.
+ */
+function projectRepositoryBody<
+  Bound extends { readonly landing: RepositoryFinalization },
+>(
+  bound: Bound,
+): Omit<Bound, "landing"> & {
+  readonly landing: { readonly mode: BriefFinalizationMode };
+  readonly finalization: RepositoryFinalization;
+} {
+  return {
+    ...bound,
+    landing: { mode: briefFinalizationModeOf(bound.landing) },
+    finalization: bound.landing,
+  };
+}
+
+/**
  * A binding. A repository no claimed installation grants is refused as the
  * request's own fault rather than as a missing resource, because the caller may
  * see the project and the repository both; an epoch that moved under the
@@ -1855,8 +1878,10 @@ export function projectRepositoryBindResponse(
       return response(
         201,
         {
-          repository: result.repository,
-          landing: result.landing,
+          ...projectRepositoryBody({
+            repository: result.repository,
+            landing: result.landing,
+          }),
           configurations: result.configurations,
           ...(result.workerReach === undefined
             ? {}
@@ -1908,7 +1933,9 @@ export function projectRepositoriesResponse(
   result: ProjectRepositoriesResult,
 ): NativeHttpResponse {
   return result.result === "Repositories"
-    ? response(200, { repositories: result.repositories })
+    ? response(200, {
+        repositories: result.repositories.map(projectRepositoryBody),
+      })
     : notFound();
 }
 
@@ -1923,14 +1950,16 @@ export function projectRepositoryLandingResponse(
 ): NativeHttpResponse {
   switch (result.result) {
     case "Written":
-      return response(200, { repository: result.repository });
+      return response(200, {
+        repository: projectRepositoryBody(result.repository),
+      });
     case "LandingMoved":
       return response(409, {
         ...nativeHttpError(
           "RepositoryLandingMoved",
           "The repository's settings are not the ones this write was made against.",
         ),
-        repository: result.repository,
+        repository: projectRepositoryBody(result.repository),
       });
     case "NotBound":
     case "NotFound":
@@ -1958,7 +1987,9 @@ export function projectRepositoryRetirementResponse(
 ): NativeHttpResponse {
   switch (result.result) {
     case "Retired":
-      return response(200, { repository: result.repository });
+      return response(200, {
+        repository: projectRepositoryBody(result.repository),
+      });
     case "NotBound":
     case "NotFound":
       return notFound();

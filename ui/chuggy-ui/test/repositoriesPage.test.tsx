@@ -197,6 +197,7 @@ const bindings = {
       repository: boundUrl,
       boundAt: "2026-09-11T00:00:00Z",
       landing: { mode: "Push" },
+      finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
       pipelinesWritable: false,
       configured: true,
     },
@@ -1156,6 +1157,7 @@ const accepted = (): Response =>
     {
       repository: freeUrl,
       landing: { mode: "Push" },
+      finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
       configurations: { result: "Imported", count: 2 },
     },
     201,
@@ -1762,6 +1764,7 @@ test("a new binding names the repository and draws what its own configurations c
         {
           repository: freeUrl,
           landing: { mode: "Push" },
+          finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
           configurations: { result: "Imported", count: 2 },
         },
         201,
@@ -1782,6 +1785,7 @@ test("a bind that bootstrapped draws Bound once and links a new ticket", async (
         {
           repository: freeUrl,
           landing: { mode: "Push" },
+          finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
           configurations: { result: "Bootstrapped", revision: "bootstrap" },
         },
         201,
@@ -1793,6 +1797,7 @@ test("a bind that bootstrapped draws Bound once and links a new ticket", async (
           repository: freeUrl,
           boundAt: "2026-10-01T00:00:00Z",
           landing: { mode: "Push" },
+          finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
           pipelinesWritable: false,
           configured: true,
         },
@@ -1821,6 +1826,7 @@ test("a bind whose step read entries of `.chug/` none of names them under its li
         {
           repository: freeUrl,
           landing: { mode: "Push" },
+          finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
           configurations: {
             result: "Bootstrapped",
             revision: "bootstrap",
@@ -1879,6 +1885,7 @@ test("a bind stales the bindings the page drew", async () => {
         {
           repository: freeUrl,
           landing: { mode: "Push" },
+          finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
           configurations: { result: "Imported", count: 2 },
         },
         201,
@@ -1919,6 +1926,7 @@ const unconfigured = {
       repository: freeUrl,
       boundAt: "2026-09-11T00:00:00Z",
       landing: { mode: "Push" },
+      finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
       pipelinesWritable: false,
       configured: true,
     },
@@ -1926,6 +1934,7 @@ const unconfigured = {
       repository: retiredUrl,
       boundAt: "2026-09-11T00:00:00Z",
       landing: { mode: "Push" },
+      finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
       pipelinesWritable: false,
       configured: false,
       retiredAt: "2026-09-14T00:00:00Z",
@@ -2277,6 +2286,7 @@ const bootstrapped = (): Response =>
     {
       repository: freeUrl,
       landing: { mode: "Push" },
+      finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
       configurations: { result: "Bootstrapped", revision: "bootstrap" },
     },
     201,
@@ -2352,6 +2362,7 @@ test("a bind that left no configuration offers no step, runner or none", async (
         {
           repository: freeUrl,
           landing: { mode: "Push" },
+          finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
           configurations: { result: "Deferred", reason: "StepFailed" },
         },
         201,
@@ -2460,6 +2471,7 @@ const liveAndRetired = {
       repository: retiredUrl,
       boundAt: "2026-09-11T00:00:00Z",
       landing: { mode: "Push" },
+      finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
       pipelinesWritable: false,
       configured: true,
       retiredAt,
@@ -2553,6 +2565,7 @@ test("a confirmed unbind retires that repository by address and takes its row of
           repository: boundUrl,
           boundAt: "2026-09-11T00:00:00Z",
           landing: { mode: "Push" },
+          finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
           pipelinesWritable: false,
           retiredAt,
         },
@@ -2710,6 +2723,7 @@ test("a bind keeps its row busy until the bindings it changed have been read aga
         {
           repository: freeUrl,
           landing: { mode: "Push" },
+          finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
           configurations: { result: "Imported", count: 2 },
         },
         201,

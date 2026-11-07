@@ -835,6 +835,7 @@ test("a landing is written by PUT at the bindings' own landing path", async () =
     repository: boundRepository,
     boundAt: "2026-08-26T00:00:00Z",
     landing: { mode: "PullRequest" },
+    finalization: { kind: "PullRequest" },
     pipelinesWritable: false,
   };
   const held = recordingRequests(() => ({ repository: row }));

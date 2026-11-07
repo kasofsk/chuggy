@@ -15,8 +15,11 @@ import {
   draftCreationSchema,
   draftRevisionSchema,
   projectRepositoryLandingSchema,
+  repositoryFinalizationOfLanding,
+  repositoryFinalizationSchema,
   repositoryLandingSchema,
 } from "../../src/contract/requests.ts";
+import { briefFinalizationModes } from "../../src/contract/rosters.ts";
 import { authoringWireBody } from "./representations.ts";
 
 test("a landing names a mode the wire publishes and nothing else", () => {
@@ -63,6 +66,65 @@ test("a landing write names the repository, and each setting as read and as want
       false,
       `a landing write is refused: ${JSON.stringify(value)}`,
     );
+});
+
+test("a landing default names a kind, a git merge's mode and policy beside it, and never a reference", () => {
+  for (const value of [
+    { kind: "GitMerge", mode: "Push", policy: "Serialized" },
+    { kind: "GitMerge", mode: "PullRequestMerge", policy: "Direct" },
+    { kind: "PullRequest" },
+    { kind: "None" },
+  ])
+    assert.deepEqual(repositoryFinalizationSchema.parse(value), value);
+  for (const value of [
+    { kind: "GitMerge", mode: "Push" },
+    { kind: "GitMerge", mode: "PullRequest", policy: "Direct" },
+    {
+      kind: "GitMerge",
+      mode: "Push",
+      policy: "Direct",
+      target: "refs/heads/main",
+    },
+    { kind: "PullRequest", policy: "Serialized" },
+    { kind: "PullRequest", target: "refs/heads/main" },
+    { kind: "None", mode: "Push" },
+  ])
+    assert.equal(
+      repositoryFinalizationSchema.safeParse(value).success,
+      false,
+      `a landing default is refused: ${JSON.stringify(value)}`,
+    );
+});
+
+test("a landing write names each landing by its kind or by its mode alone", () => {
+  const body = {
+    repository: "https://github.com/kasofsk/chuggy.git",
+    expected: { mode: "Push" },
+    landing: { kind: "GitMerge", mode: "Push", policy: "Serialized" },
+    pipelinesWritable: { expected: false, wanted: false },
+  };
+  assert.deepEqual(projectRepositoryLandingSchema.parse(body), body);
+  assert.equal(
+    projectRepositoryLandingSchema.safeParse({
+      ...body,
+      landing: { kind: "GitMerge", mode: "Push" },
+    }).success,
+    false,
+  );
+});
+
+test("a mode alone names the kind of its name, a git merge's ordered Direct", () => {
+  assert.deepEqual(
+    briefFinalizationModes.map((mode) =>
+      repositoryFinalizationOfLanding({ mode }),
+    ),
+    [
+      { kind: "GitMerge", mode: "Push", policy: "Direct" },
+      { kind: "PullRequest" },
+      { kind: "GitMerge", mode: "PullRequestMerge", policy: "Direct" },
+      { kind: "None" },
+    ],
+  );
 });
 
 /**

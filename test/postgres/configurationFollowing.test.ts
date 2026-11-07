@@ -50,7 +50,10 @@ import {
 } from "../../src/interpreter/projectWriter.ts";
 import { repositoryConfigurationImportReadiness } from "../../src/interpreter/repositoryConfiguration.ts";
 import { ticketServiceDefaults } from "../../src/interpreter/ticketService.ts";
-import { asDraftBrief } from "../../src/interpreter/ticketBrief.ts";
+import {
+  asDraftBrief,
+  type DraftBrief,
+} from "../../src/interpreter/ticketBrief.ts";
 import { plainAuthoring, refinementInstance } from "../actor/harness.ts";
 import {
   postgresHarnessBinding,
@@ -229,6 +232,7 @@ async function released(
   revision: ConfigurationRevisionId,
   selection?: ConfigurationSelection,
   authoring: ReleaseAuthoring = plainAuthoring,
+  brief: DraftBrief = postgresHarnessBriefIn(project.repository),
 ): Promise<TicketId> {
   const initialized = await harness.authoring.initializeDraft(
     project.partition,
@@ -244,7 +248,7 @@ async function released(
     configurationDigest: initialized.configuration.digest,
     expectedProjectSequence: initialized.projectSequence,
     authoring,
-    brief: postgresHarnessBriefIn(project.repository),
+    brief,
     ...(selection === undefined ? {} : { selection }),
   });
   if (created.created !== "Created")
@@ -461,6 +465,60 @@ test("a head changing only the selected finalizer moves the ticket", async () =>
   assert.equal(
     (await standing(project, ticket))?.["configuration_revision"],
     head,
+  );
+});
+
+test("a move keeps a released GitMerge's Serialized policy, and drops one a released pull request carries beside it", async () => {
+  const project = await followingProject("policy");
+  const held = await imported(project, commits.first, catalog());
+  const serialized = await released(project, held, undefined, plainAuthoring, {
+    ...postgresHarnessBriefIn(project.repository),
+    finalization: { kind: "GitMerge", mode: "Push", policy: "Serialized" },
+  });
+  const proposal = await released(project, held, undefined, plainAuthoring, {
+    ...postgresHarnessBriefIn(project.repository),
+    finalization: { kind: "PullRequest" },
+  });
+  await harness.query(
+    `UPDATE ticket_definition SET brief = brief || '{"landing":"Serialized"}'::jsonb
+      WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+    [project.partition.tenant, project.partition.project, proposal],
+  );
+  assert.deepEqual(
+    await harness.query(
+      `SELECT brief->>'landing' AS landing FROM ticket_definition
+        WHERE tenant=$1 AND project=$2 AND ticket = ANY($3) ORDER BY ticket`,
+      [
+        project.partition.tenant,
+        project.partition.project,
+        [serialized, proposal],
+      ],
+    ),
+    [{ landing: "Serialized" }, { landing: "Serialized" }],
+  );
+  const head = await imported(project, commits.second, reviewChanged);
+  assert.deepEqual(
+    (await swept(project, commits.second)).reported.map(
+      (reported) => reported.followed.followed,
+    ),
+    ["Moved", "Moved"],
+  );
+  assert.equal(await project.decideNext(), "Committed");
+  assert.equal(await project.decideNext(), "Committed");
+  for (const ticket of [serialized, proposal])
+    assert.equal(
+      (await standing(project, ticket))?.["configuration_revision"],
+      head,
+    );
+  assert.deepEqual(
+    (await harness.authoring.draft(project.partition, serialized))?.brief
+      ?.finalization,
+    { kind: "GitMerge", mode: "Push", policy: "Serialized" },
+  );
+  assert.deepEqual(
+    (await harness.authoring.draft(project.partition, proposal))?.brief
+      ?.finalization,
+    { kind: "PullRequest" },
   );
 });
 

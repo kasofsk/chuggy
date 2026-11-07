@@ -58,7 +58,7 @@ import {
 } from "../../src/interpreter/projectAccess.ts";
 import { asPrincipal } from "../../src/interpreter/principal.ts";
 import {
-  asRepositoryLanding,
+  asRepositoryFinalization,
   type ProjectRepositoryLandingStore,
 } from "../../src/interpreter/repositoryBinding.ts";
 import {
@@ -128,7 +128,11 @@ function fixtureBindings(
           ? {
               repository: bound,
               boundAt: "2026-10-01T00:00:00Z",
-              landing: asRepositoryLanding("Push"),
+              landing: asRepositoryFinalization({
+                kind: "GitMerge",
+                mode: "Push",
+                policy: "Direct",
+              }),
               pipelinesWritable: false,
               ...(retiredAt === undefined ? {} : { retiredAt }),
             }

@@ -55,6 +55,7 @@ import {
   projectRepositoryBindSchema,
   projectRepositoryConfigureSchema,
   projectRepositoryLandingSchema,
+  repositoryFinalizationOfLanding,
   projectRepositoryRetirementSchema,
   repositoryConfigurationImportSchema,
   selectorProjectSettingsSchema,
@@ -128,8 +129,9 @@ import {
   type DraftBrief,
 } from "../../interpreter/ticketBrief.ts";
 import {
-  asRepositoryLanding,
+  asRepositoryFinalization,
   type ProjectRepositoryLandingWrite,
+  type RepositoryFinalization,
 } from "../../interpreter/repositoryBinding.ts";
 
 /**
@@ -291,10 +293,19 @@ export function parseProjectRepositoryLanding(
   const parsed = projectRepositoryLandingSchema.parse(body);
   return {
     repository: asRepositoryId(parsed.repository),
-    expected: asRepositoryLanding(parsed.expected.mode),
-    landing: asRepositoryLanding(parsed.landing.mode),
+    expected: parseRepositoryFinalization(parsed.expected),
+    landing: parseRepositoryFinalization(parsed.landing),
     pipelinesWritable: parsed.pipelinesWritable,
   };
+}
+
+/** One repository's landing default as a write names it, by its kind or by its mode alone. */
+function parseRepositoryFinalization(
+  written: z.output<typeof projectRepositoryLandingSchema>["landing"],
+): RepositoryFinalization {
+  return asRepositoryFinalization(
+    "kind" in written ? written : repositoryFinalizationOfLanding(written),
+  );
 }
 
 /** One placement as the wire carries it, keyed by the task kind each route is for. */

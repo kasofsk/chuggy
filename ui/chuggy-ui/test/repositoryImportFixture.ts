@@ -30,6 +30,7 @@ export function repositoryImportRefusedBinding(
     repository,
     boundAt: "2026-09-11T00:00:00Z",
     landing: { mode: "Push" },
+    finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
     pipelinesWritable: false,
     configured: true,
     lastImport: repositoryImportRefused,

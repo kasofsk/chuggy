@@ -33,7 +33,7 @@ import type {
   ReadOnlyRepositoriesRead,
 } from "../../interpreter/taskBriefing.ts";
 import {
-  asRepositoryLanding,
+  asRepositoryFinalization,
   type ProjectRepositoryBindings,
   type ProjectRepositoryBound,
   type ProjectRepositoryLandingOutcome,
@@ -42,6 +42,7 @@ import {
   type ProjectRepositoryRetirementStore,
   type RepositoryBindingAdministration,
   type RepositoryBindingOutcome,
+  type RepositoryFinalization,
 } from "../../interpreter/repositoryBinding.ts";
 
 const allOutcomes: readonly RepositoryBindingOutcome[] = [
@@ -75,7 +76,9 @@ function repositoryBindingProjectAbsent(failure: unknown): boolean {
 interface ProjectRepositoryBoundRow {
   readonly repository: string | null;
   readonly bound_at: string | null;
+  readonly landing_kind: string | null;
   readonly landing_mode: string | null;
+  readonly landing_policy: string | null;
   readonly pipelines_writable: boolean | null;
   readonly retired_at: string | null;
 }
@@ -86,14 +89,18 @@ function projectRepositoryBoundOf(
   if (
     row.repository === null ||
     row.bound_at === null ||
-    row.landing_mode === null ||
+    row.landing_kind === null ||
     row.pipelines_writable === null
   )
     throw new Error("repository binding: a binding is half a row");
   return {
     repository: asRepositoryId(row.repository),
     boundAt: row.bound_at,
-    landing: asRepositoryLanding(row.landing_mode),
+    landing: asRepositoryFinalization({
+      kind: row.landing_kind,
+      mode: row.landing_mode ?? undefined,
+      policy: row.landing_policy ?? undefined,
+    }),
     pipelinesWritable: row.pipelines_writable,
     ...(row.retired_at === null ? {} : { retiredAt: row.retired_at }),
   };
@@ -114,7 +121,7 @@ export function postgresProjectRepositoryBindings(
       partition: Partition,
     ): Promise<readonly ProjectRepositoryBound[]> => {
       const found = await pool.query<ProjectRepositoryBoundRow>(
-        sql`SELECT repository,to_char(bound_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS bound_at,landing_mode,
+        sql`SELECT repository,to_char(bound_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS bound_at,landing_kind,landing_mode,landing_policy,
                    pipelines_writable,to_char(retired_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS retired_at
               FROM list_project_repository_bindings(
                 ${partition.tenant},${partition.project},
@@ -320,6 +327,20 @@ function postgresRepositoryLandingOutcome(
   return { outcome: row.outcome, binding: projectRepositoryBoundOf(row) };
 }
 
+/** The mode column a repository's finalization is stored under, null for a kind that names none. */
+function repositoryFinalizationMode(
+  finalization: RepositoryFinalization,
+): string | null {
+  return finalization.kind === "GitMerge" ? finalization.mode : null;
+}
+
+/** The policy column a repository's finalization is stored under, null for a kind that names none. */
+function repositoryFinalizationPolicy(
+  finalization: RepositoryFinalization,
+): string | null {
+  return finalization.kind === "GitMerge" ? finalization.policy : null;
+}
+
 /**
  * One binding's settings, read through a door the API, the worker plane and
  * the finalizer hold EXECUTE on and written through one only the API holds.
@@ -333,7 +354,7 @@ export function postgresProjectRepositoryLanding(
   return {
     landing: async (partition, repository) => {
       const found = await pool.query<ProjectRepositoryBoundRow>(
-        sql`SELECT repository,to_char(bound_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS bound_at,landing_mode,
+        sql`SELECT repository,to_char(bound_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS bound_at,landing_kind,landing_mode,landing_policy,
                    pipelines_writable,to_char(retired_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS retired_at
               FROM read_project_repository_landing(
                 ${partition.tenant},${partition.project},${repository})`,
@@ -345,12 +366,15 @@ export function postgresProjectRepositoryLanding(
       let found: pg.QueryResult<ProjectRepositoryWrittenRow>;
       try {
         found = await pool.query<ProjectRepositoryWrittenRow>(
-          sql`SELECT outcome,repository,to_char(bound_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS bound_at,landing_mode,
+          sql`SELECT outcome,repository,to_char(bound_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS bound_at,landing_kind,landing_mode,landing_policy,
                      pipelines_writable,to_char(retired_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS retired_at
                 FROM set_project_repository_landing(
                   ${command.partition.tenant},${command.partition.project},
-                  ${command.repository},${command.expected.mode},
-                  ${command.landing.mode},
+                  ${command.repository},
+                  ${command.expected.kind},${repositoryFinalizationMode(command.expected)},
+                  ${repositoryFinalizationPolicy(command.expected)},
+                  ${command.landing.kind},${repositoryFinalizationMode(command.landing)},
+                  ${repositoryFinalizationPolicy(command.landing)},
                   ${command.pipelinesWritable.expected},
                   ${command.pipelinesWritable.wanted})`,
         );
@@ -391,7 +415,7 @@ export function postgresProjectRepositoryRetirement(
       let found: pg.QueryResult<ProjectRepositoryWrittenRow>;
       try {
         found = await pool.query<ProjectRepositoryWrittenRow>(
-          sql`SELECT outcome,repository,to_char(bound_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS bound_at,landing_mode,
+          sql`SELECT outcome,repository,to_char(bound_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS bound_at,landing_kind,landing_mode,landing_policy,
                      pipelines_writable,to_char(retired_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS retired_at
                 FROM retire_project_repository(
                   ${command.partition.tenant},${command.partition.project},

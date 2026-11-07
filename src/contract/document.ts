@@ -243,7 +243,7 @@ export function nativeHttpContractDocument(): unknown {
     repositoryBinding:
       "binding a repository to a project creates no project: a project that does not exist is not found, and the repository must be one this deployment holds a credential for — on a host it mints for, that means an installation this tenant has claimed",
     repositoryLanding:
-      "a repository's landing default is the mode a ticket in it lands by unless its brief names one; it is written against the value the writer read, and a ticket whose landing is None names no reference to land on",
+      "a repository's landing default is the finalization a ticket in it lands by unless its brief or its finalizer names one: a GitMerge by its mode and its policy, a PullRequest, or None, and never a reference, which stays the brief's; a binding answers it as finalization and its mode alone as landing, a write names it either way, one named by its mode alone ordered Direct, and it is written whole against the value the writer read; a ticket whose landing is None names no reference to land on",
     repositoryRetirement:
       "a retired repository stays readable by name, stops being the one a session is placed against, the importer or the import route reads, a brief may name or the credential route mints for, and is free for any project to bind; this route only retires and repeating it changes nothing, and binding the repository again here reinstates it unless another project now holds it",
     repositoryConfigurations:

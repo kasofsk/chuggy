@@ -518,8 +518,8 @@ async function finalizerBindRepository(
 ): Promise<string> {
   const repository = named ?? `repository-${label}-${randomUUID()}`;
   await rig.harness.query(
-    `INSERT INTO project_repository (tenant, project, repository, recovery_epoch, landing_mode)
-     VALUES ($1,$2,$3,$4,'Push')`,
+    `INSERT INTO project_repository (tenant, project, repository, recovery_epoch, landing_kind, landing_mode, landing_policy)
+     VALUES ($1,$2,$3,$4,'GitMerge','Push','Direct')`,
     [
       partition.tenant,
       partition.project,

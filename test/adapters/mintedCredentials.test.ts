@@ -104,7 +104,7 @@ function fixtureBound(
   return {
     repository: fixtureRepository,
     boundAt: "2026-10-25T00:00:00Z",
-    landing: { mode: "Push" },
+    landing: { kind: "GitMerge", mode: "Push", policy: "Direct" },
     pipelinesWritable: true,
     ...standing,
   };

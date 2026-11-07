@@ -694,8 +694,8 @@ test("the estate listing is bounded by what the caller asks for", async () => {
 test("a caller asking the estate listing for more than the bound gets the bound", async () => {
   const standing = await fixtureStanding("binding-estate-ceiling");
   await harness.query(
-    `INSERT INTO project_repository (tenant,project,repository,recovery_epoch,bound_at,landing_mode)
-       SELECT $1,$2,$3||n,$4,now()+interval '100 years','Push'
+    `INSERT INTO project_repository (tenant,project,repository,recovery_epoch,bound_at,landing_kind,landing_mode,landing_policy)
+       SELECT $1,$2,$3||n,$4,now()+interval '100 years','GitMerge','Push','Direct'
          FROM generate_series(1,$5::int) AS n`,
     [
       standing.partition.tenant,

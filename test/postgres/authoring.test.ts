@@ -18,6 +18,7 @@ import {
 import { postgresNativeReads } from "../../src/adapters/postgres/nativeReads.ts";
 import { postgresPool } from "../../src/adapters/postgres/pool.ts";
 import { postgresProjectRepositoryRetirement } from "../../src/adapters/postgres/repositoryBinding.ts";
+import type { RepositoryFinalization } from "../../src/interpreter/repositoryBinding.ts";
 import { apiRole } from "../../src/adapters/postgres/schema.ts";
 import { postgresPinnedConfigurations } from "../../src/adapters/postgres/pinnedConfigurations.ts";
 import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
@@ -118,8 +119,8 @@ async function repositoryBinding(partition: Partition, label = "sole") {
     `repository-${label}-${partition.tenant}-${partition.project}`,
   );
   await harness.query(
-    `INSERT INTO project_repository (tenant,project,repository,recovery_epoch,landing_mode)
-       VALUES ($1,$2,$3,$4,'Push')`,
+    `INSERT INTO project_repository (tenant,project,repository,recovery_epoch,landing_kind,landing_mode,landing_policy)
+       VALUES ($1,$2,$3,$4,'GitMerge','Push','Direct')`,
     [partition.tenant, partition.project, repository, recoveryEpoch],
   );
   return {
@@ -2669,12 +2670,19 @@ test("the server refuses a title that reached it around the interpreter's rules"
 async function landingSetTo(
   partition: Partition,
   repository: RepositoryId,
-  mode: string,
+  landing: RepositoryFinalization,
 ): Promise<void> {
   await harness.query(
-    `UPDATE project_repository SET landing_mode=$4
+    `UPDATE project_repository SET landing_kind=$4,landing_mode=$5,landing_policy=$6
       WHERE tenant=$1 AND project=$2 AND repository=$3`,
-    [partition.tenant, partition.project, repository, mode],
+    [
+      partition.tenant,
+      partition.project,
+      repository,
+      landing.kind,
+      landing.kind === "GitMerge" ? landing.mode : null,
+      landing.kind === "GitMerge" ? landing.policy : null,
+    ],
   );
 }
 
@@ -2686,7 +2694,7 @@ test("a brief naming a landing keeps it over the one its repository is bound und
     { kind: "GitMerge", mode: "Push", policy: "Direct" },
     "the binding this project was made with lands where the work happened",
   );
-  await landingSetTo(partition, repository, "PullRequest");
+  await landingSetTo(partition, repository, { kind: "PullRequest" });
   const revised = await store.reviseDraft({
     partition,
     authority,
@@ -2715,7 +2723,7 @@ test("a brief naming no repository lands where the work happened", async () => {
     "authoring-landing-unbound",
   );
   const bound = await postgresHarnessBinding(harness, partition);
-  await landingSetTo(partition, bound, "PullRequest");
+  await landingSetTo(partition, bound, { kind: "PullRequest" });
   const store = postgresAuthoring(pool);
   const revision = asConfigurationRevisionId(`config-${randomUUID()}`);
   await store.createConfiguration({
@@ -2755,7 +2763,7 @@ function briefWithoutBranch(brief: DraftBrief): DraftBrief {
 async function proposingFixture(label: string) {
   const partition = await postgresHarnessProject(harness.store, label);
   const repository = await postgresHarnessBinding(harness, partition);
-  await landingSetTo(partition, repository, "PullRequest");
+  await landingSetTo(partition, repository, { kind: "PullRequest" });
   const store = postgresAuthoring(pool);
   const revision = asConfigurationRevisionId(`config-${randomUUID()}`);
   await store.createConfiguration({
@@ -2812,7 +2820,12 @@ test("a repository landing by proposal stores a brief that names no base", async
   });
   assert.deepEqual(
     await storedLanding(proposing.partition, created.draft.ticket),
-    { finalization_mode: "PullRequest", finalization_target: null },
+    {
+      finalization_kind: "PullRequest",
+      finalization_mode: null,
+      finalization_target: null,
+      finalization_policy: null,
+    },
     "the row holds the resolved mode and no reference at all",
   );
 });
@@ -2857,7 +2870,12 @@ test("a revision that leaves a proposing brief with no branch is refused too", a
   );
   assert.deepEqual(
     await storedLanding(proposing.partition, created.draft.ticket),
-    { finalization_mode: "PullRequest", finalization_target: null },
+    {
+      finalization_kind: "PullRequest",
+      finalization_mode: null,
+      finalization_target: null,
+      finalization_policy: null,
+    },
     "the brief the refusal left standing is the one that was already whole",
   );
 });
@@ -2890,7 +2908,10 @@ test("a brief proposing from the branch it opens into is refused by the check", 
  * one that lands nothing is a landing like the others: the door resolves it
  * from the brief or from the binding, and the row holds the mode it resolved.
  */
-async function landlessFixture(label: string, landing = "None") {
+async function landlessFixture(
+  label: string,
+  landing: RepositoryFinalization = { kind: "None" },
+) {
   const partition = await postgresHarnessProject(harness.store, label);
   const repository = await postgresHarnessBinding(harness, partition);
   await landingSetTo(partition, repository, landing);
@@ -2927,8 +2948,8 @@ async function landlessFixture(label: string, landing = "None") {
 async function storedLanding(partition: Partition, ticket: number) {
   return (
     await harness.query(
-      `SELECT finalization_mode,finalization_target FROM draft_brief
-        WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+      `SELECT finalization_kind,finalization_mode,finalization_target,finalization_policy
+         FROM draft_brief WHERE tenant=$1 AND project=$2 AND ticket=$3`,
       [partition.tenant, partition.project, ticket],
     )
   )[0];
@@ -2945,8 +2966,10 @@ test("a repository that lands nothing lands its drafts nowhere", async () => {
   assert.deepEqual(
     await storedLanding(landless.partition, created.draft.ticket),
     {
-      finalization_mode: "None",
+      finalization_kind: "None",
+      finalization_mode: null,
       finalization_target: null,
+      finalization_policy: null,
     },
   );
   assert.deepEqual(created.draft.brief?.finalization, { kind: "None" });
@@ -2987,10 +3010,9 @@ test("a ticket that lands nothing is revised with the brief it just read back", 
 });
 
 test("a brief that lands nothing keeps it over a repository that proposes", async () => {
-  const landless = await landlessFixture(
-    "authoring-landless-proposing",
-    "PullRequest",
-  );
+  const landless = await landlessFixture("authoring-landless-proposing", {
+    kind: "PullRequest",
+  });
   const created = await landless.create({
     ...postgresHarnessBrief,
     repository: landless.repository,
@@ -3001,8 +3023,10 @@ test("a brief that lands nothing keeps it over a repository that proposes", asyn
   assert.deepEqual(
     await storedLanding(landless.partition, created.draft.ticket),
     {
-      finalization_mode: "None",
+      finalization_kind: "None",
+      finalization_mode: null,
       finalization_target: null,
+      finalization_policy: null,
     },
   );
 });
@@ -3037,7 +3061,12 @@ test("a ticket that starts landing somewhere keeps the landing it names", async 
     throw new Error(`the landless draft was ${created.created}`);
   assert.deepEqual(
     await storedLanding(landless.partition, created.draft.ticket),
-    { finalization_mode: "None", finalization_target: null },
+    {
+      finalization_kind: "None",
+      finalization_mode: null,
+      finalization_target: null,
+      finalization_policy: null,
+    },
     "a brief that names no landing takes the one its repository is bound under",
   );
   const landing = await landless.store.reviseDraft({
@@ -3055,7 +3084,12 @@ test("a ticket that starts landing somewhere keeps the landing it names", async 
   assert.equal(landing.revised, "Revised");
   assert.deepEqual(
     await storedLanding(landless.partition, created.draft.ticket),
-    { finalization_mode: "Push", finalization_target: null },
+    {
+      finalization_kind: "GitMerge",
+      finalization_mode: "Push",
+      finalization_target: null,
+      finalization_policy: "Direct",
+    },
     "and the landing the revision names is kept over that one",
   );
   const dropped = await landless.store.reviseDraft({
@@ -3071,8 +3105,58 @@ test("a ticket that starts landing somewhere keeps the landing it names", async 
   assert.equal(dropped.revised, "Revised");
   assert.deepEqual(
     await storedLanding(landless.partition, created.draft.ticket),
-    { finalization_mode: "None", finalization_target: null },
+    {
+      finalization_kind: "None",
+      finalization_mode: null,
+      finalization_target: null,
+      finalization_policy: null,
+    },
     "until a revision naming none takes the binding's back",
+  );
+});
+
+test("a repository's whole default is stored for a brief naming none, its policy only beside the kind that has one", async () => {
+  const serialized = await landlessFixture("authoring-landing-serialized", {
+    kind: "GitMerge",
+    mode: "PullRequestMerge",
+    policy: "Serialized",
+  });
+  const unnamed = await serialized.create({
+    ...postgresHarnessBrief,
+    repository: serialized.repository,
+  });
+  if (unnamed.created !== "Created")
+    throw new Error(`the serialized draft was ${unnamed.created}`);
+  assert.deepEqual(unnamed.draft.brief?.finalization, {
+    kind: "GitMerge",
+    mode: "PullRequestMerge",
+    policy: "Serialized",
+  });
+  assert.deepEqual(
+    await storedLanding(serialized.partition, unnamed.draft.ticket),
+    {
+      finalization_kind: "GitMerge",
+      finalization_mode: "PullRequestMerge",
+      finalization_target: null,
+      finalization_policy: "Serialized",
+    },
+  );
+  const proposed = await serialized.create({
+    ...postgresHarnessBrief,
+    repository: serialized.repository,
+    finalization: { kind: "PullRequest" },
+  });
+  if (proposed.created !== "Created")
+    throw new Error(`the proposing draft was ${proposed.created}`);
+  assert.deepEqual(
+    await storedLanding(serialized.partition, proposed.draft.ticket),
+    {
+      finalization_kind: "PullRequest",
+      finalization_mode: null,
+      finalization_target: null,
+      finalization_policy: null,
+    },
+    "a kind the brief names takes none of the repository's policy",
   );
 });
 
