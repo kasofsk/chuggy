@@ -48,18 +48,22 @@ import {
   jsonTextBytes,
   leadObservedCandidateCharsMax,
   nativeHttpBodyBytesMax,
+  nativeHttpPageItemsMax,
   nativeHttpRoutes,
   projectArtifactUploadBytesMax,
   proposalMergeStateCharsMax,
   proposalQueueWordCharsMax,
   runTranscriptBatchBytesMax,
   runTranscriptPageBatchesMax,
+  textUtf8Bytes,
   ticketLandingConflictBytesMax,
   ticketLandingRefCharsMax,
   ticketLandingsAnsweredMax,
   workerPlaneUploadBytesMax,
 } from "./http.ts";
-import type { SessionCapability } from "./rosters.ts";
+import { epicContentBytesMax, epicTicketsMax } from "./epics.ts";
+import { epicStatusRoster } from "./responses.ts";
+import { phaseRoster, type SessionCapability } from "./rosters.ts";
 
 /** The public API's own values a tool builds its request with or bounds an argument by. */
 export {
@@ -119,11 +123,12 @@ export {
 /** What `read_ticket_landings`'s route answers: at most this many landings, the newest. */
 export { ticketLandingsAnsweredMax } from "./http.ts";
 
-/** What the epic tools hold an argument to: the title and summary a revision carries, the most one revision weighs, and the most one page answers. */
+/** What the epic tools hold an argument to: the title and summary a revision carries, the most one revision weighs and holds, and the most one page answers. */
 export {
   epicContentBytesMax,
   epicPageLimitMax,
   epicSummaryCharsMax,
+  epicTicketsMax,
   epicTitleCharsMax,
 } from "./epics.ts";
 
@@ -211,6 +216,46 @@ export const chuggyToolDispatchViewResponseBytesMax =
   leadObservedCandidateCharsMax +
   jsonStringChars(0) +
   configurationCanonicalCharsMax * chuggyToolCharBytesMax +
+  nativeHttpBodyBytesMax;
+
+/**
+ * What the epic view carries beside its content, at its heaviest: its number
+ * and revision, each phase's count and the drafts, done and total at the most
+ * members an epic holds, its longest status, and a full page of the tickets it
+ * waits on, each number the largest a ticket's may be.
+ */
+const chuggyToolEpicViewFieldsBytesMax = textUtf8Bytes(
+  JSON.stringify({
+    number: Number.MAX_SAFE_INTEGER,
+    revision: Number.MAX_SAFE_INTEGER,
+    progress: {
+      byPhase: Object.fromEntries(
+        phaseRoster.map((phase) => [phase, epicTicketsMax]),
+      ),
+      drafts: epicTicketsMax,
+      done: epicTicketsMax,
+      total: epicTicketsMax,
+    },
+    status: epicStatusRoster.reduce((longest, status) =>
+      status.length > longest.length ? status : longest,
+    ),
+    waitingOnOutside: Array.from(
+      { length: nativeHttpPageItemsMax },
+      () => Number.MAX_SAFE_INTEGER,
+    ),
+  }),
+);
+
+/**
+ * What the epic view's route may answer, which `add_epic_tickets` and
+ * `remove_epic_tickets` read whole before writing it back: its content at the
+ * most the content's canonical JSON may weigh, escaping included, since the
+ * view writes those fields as the canonical does; the fields beside it at their
+ * heaviest; and an ordinary answer's bound for the answer around them.
+ */
+export const chuggyToolEpicViewResponseBytesMax =
+  epicContentBytesMax +
+  chuggyToolEpicViewFieldsBytesMax +
   nativeHttpBodyBytesMax;
 
 /**
