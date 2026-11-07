@@ -111,6 +111,24 @@ test("a value the ticket changed is named once in the Overrides column and marke
   expect(single.overrides).toEqual(["1 CPU", "2048 MiB"]);
 });
 
+test("an override that drops a resource names it without a count", () => {
+  const catalog = JSON.parse(creationCatalogCanonical) as {
+    workloads: Record<string, Record<string, unknown>>;
+  };
+  catalog.workloads["build"] = {
+    ...catalog.workloads["build"],
+    resources: { cpus: 2, memoryMib: 4096 },
+  };
+  const work = workRow(
+    steps(
+      { workloads: { build: { resources: { memoryMib: 8192 } } } },
+      undefined,
+      JSON.stringify(catalog),
+    ),
+  );
+  expect(work.overrides).toEqual(["CPUs", "8192 MiB"]);
+});
+
 test("an override of one workload marks no other step", () => {
   const read = steps(
     { workloads: { gates: { commands: ["npm run gate"] } } },

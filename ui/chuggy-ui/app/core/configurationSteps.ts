@@ -221,8 +221,10 @@ const catalogDetailReads: readonly CatalogDetailRead[] = [
     field: "resources",
     code: false,
     read: catalogCpus,
-    word: (workload) =>
-      stepsCounted(Number(catalogResource(workload, "cpus")), "CPU"),
+    word: (workload) => {
+      const cpus = catalogResource(workload, "cpus");
+      return typeof cpus === "number" ? stepsCounted(cpus, "CPU") : "CPUs";
+    },
   },
   {
     name: "Memory",
