@@ -226,7 +226,7 @@ export function ConfigurationBody(props: {
             <Chip>{steps.following}</Chip>
           </>
         )}
-        <span className="grow" />
+        <span className="config-heading-gap" />
         {named?.catalog}
         <ConfigurationCanonical canonical={configuration.canonical} />
       </div>

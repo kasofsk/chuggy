@@ -389,6 +389,18 @@ test("narrow, the column names go and a row stacks what runs it under its step",
   expect(sheetDeclared(narrow, runs, "grid-column")).toBe("2 / -1");
 });
 
+test("narrow, the heading's Catalog link and Canonical JSON leave its name for a line of their own together", async () => {
+  await drawTicket();
+  const gap = document.querySelector(".config-heading > .config-heading-gap");
+  if (gap === null) throw new Error("no heading drawn");
+  expect(gap.nextElementSibling?.textContent).toBe("Catalog ↗");
+  const desk = sheetRules(ticketSheet, []);
+  const narrow = sheetRules(ticketSheet, [sheetNarrowCondition]);
+  expect(sheetDeclared(desk, gap, "flex-grow")).toBe("1");
+  expect(sheetDeclared(desk, gap, "flex-basis")).toBe("");
+  expect(sheetDeclared(narrow, gap, "flex-basis")).toBe("100%");
+});
+
 test("the foot keeps the digest and the full revision", async () => {
   await drawTicket();
   expect(screen.getByText("Digest").nextElementSibling?.textContent).toBe(
