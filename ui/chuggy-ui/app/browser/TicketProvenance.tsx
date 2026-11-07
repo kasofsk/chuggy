@@ -94,7 +94,7 @@ export function TicketBriefImages(props: {
 
 /** One cell of a summary grid: a small key above a value, and an optional
  * dim line under it for what the value alone does not say. */
-function SummaryCell(props: {
+export function SummaryCell(props: {
   readonly name: string;
   readonly value: ReactNode;
   readonly meta?: ReactNode;
@@ -241,7 +241,7 @@ function commandsSummary(commands: readonly string[]): ReactNode {
   );
 }
 
-function ConfigurationChips(props: {
+export function ConfigurationChips(props: {
   readonly items: readonly string[];
 }): ReactNode {
   return (
@@ -492,7 +492,7 @@ type ConfigurationLanding = {
 };
 
 /** The landing a ticket takes, as the one line its brief or its finalizer says it. */
-function FinalizationLanding(props: {
+export function FinalizationLanding(props: {
   readonly landing: ConfigurationLanding;
 }): ReactNode {
   return <SummaryCell name="Method" value={briefLandingLine(props.landing)} />;
@@ -596,7 +596,7 @@ function ConfigurationSettingsGrid(props: {
 
 /** The name and version chip a repository import carries, or the bare
  * revision an authored one has no label for. */
-function ConfigurationHeaderLabel(props: {
+export function ConfigurationHeaderLabel(props: {
   readonly revision: string;
   readonly version: TicketResponse["configurationVersion"];
 }): ReactNode {

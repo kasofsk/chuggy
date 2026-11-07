@@ -7,11 +7,12 @@
  * than a second tone mapping of its own, and a roster the wire grows reaches it
  * through `phaseTone` like everything else.
  *
- * IT DRAWS AND PERFORMS NOTHING. The number is in the reference itself; the
- * title, the phase and where following it goes are `ticketReferenceHeld`'s, so
- * this runs no read and holds no router. With nothing held it draws the number
- * alone — the degradation the agent's own objectives promise, and the reason a
- * report mounts in a suite with no provider around it.
+ * IT DRAWS AND PERFORMS NOTHING. The number is in the reference itself, and
+ * the title too where its caller read one; any other title, the phase and
+ * where following it goes are `ticketReferenceHeld`'s, so this runs no read and
+ * holds no router. With nothing held it draws the number alone, beside a title
+ * it was handed — the degradation the agent's own objectives promise, and the
+ * reason a report mounts in a suite with no provider around it.
  *
  * The anchor carries a real `href` so the ticket can be opened in a tab or
  * copied, and the press is taken back for the shell's own navigation, which is
@@ -47,10 +48,12 @@ function ticketReferenceTaken(event: MouseEvent): boolean {
 
 function TicketReferenceChip(props: {
   readonly ticket: number;
+  readonly title: string | undefined;
   readonly held: TicketReferenceHeld;
 }): ReactNode {
   const ticket = props.ticket;
   const facts = props.held.factsOf(ticket);
+  const title = props.title ?? facts?.title;
   const tone = facts === undefined ? "neutral" : phaseTone(facts.phase);
   return (
     <a
@@ -64,8 +67,8 @@ function TicketReferenceChip(props: {
     >
       <i className="pill-mark" aria-hidden="true" />
       <span className="num">{ticketReferenceWord(ticket)}</span>
-      {facts?.title === undefined ? null : (
-        <span className="ticket-reference-title">{facts.title}</span>
+      {title === undefined ? null : (
+        <span className="ticket-reference-title">{title}</span>
       )}
       {facts === undefined ? null : (
         <span className="visually-hidden">{phaseLabel(facts.phase)}</span>
@@ -74,9 +77,30 @@ function TicketReferenceChip(props: {
   );
 }
 
-export function TicketReference(props: { readonly ticket: number }): ReactNode {
+/** A ticket by its number, and by `title` where the caller read one, which
+ * stands in place of the title held. */
+export function TicketReference(props: {
+  readonly ticket: number;
+  readonly title?: string | undefined;
+}): ReactNode {
   const held = useTicketReferenceHeld();
-  if (held === undefined)
-    return <span className="num">{ticketReferenceWord(props.ticket)}</span>;
-  return <TicketReferenceChip ticket={props.ticket} held={held} />;
+  if (held === undefined) {
+    const word = (
+      <span className="num">{ticketReferenceWord(props.ticket)}</span>
+    );
+    return props.title === undefined ? (
+      word
+    ) : (
+      <span>
+        {word} {props.title}
+      </span>
+    );
+  }
+  return (
+    <TicketReferenceChip
+      ticket={props.ticket}
+      title={props.title}
+      held={held}
+    />
+  );
 }

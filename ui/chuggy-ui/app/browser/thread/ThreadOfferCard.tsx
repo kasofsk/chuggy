@@ -1,7 +1,7 @@
 /**
  * An offer the reader's own project thread made them, drawn as a card under
- * the call that made it: what it offers, and Confirm and Decline while it is
- * open.
+ * the call that made it: what it offers, the draft or the ticket it offers it
+ * of wherever the card read that, and Confirm and Decline while it is open.
  *
  * WHAT IS CONFIRMED IS THE READER'S OWN OPERATION. Confirm submits the release
  * or the revocation as the reader, at the version offered, and follows it to
@@ -78,6 +78,10 @@ import { PanelUnready } from "../DataPanel.tsx";
 import { drawBytes, persistentStore } from "../ports.ts";
 import { Button } from "../ui/Button.tsx";
 import { Notice } from "../ui/Notice.tsx";
+import {
+  ThreadOfferDraftSubject,
+  ThreadOfferTicketSubject,
+} from "./ThreadOfferSubject.tsx";
 
 /** One press of a card: a decline, a confirmation and what it submits, or a
  * reply the mailbox did not take, sent again. */
@@ -262,44 +266,61 @@ function ThreadOfferOpen(props: {
   );
 }
 
+/** A release card against its draft: the draft once read, and under it the
+ * reply this tab settled it with or else what the card offers. */
 function ThreadOfferRelease(props: {
   readonly partition: PartitionIdentity;
   readonly offer: Extract<ThreadOfferCall, { readonly offer: "Release" }>;
   readonly writing: ThreadOfferWriting;
+  readonly settled: ReactNode;
 }): ReactNode {
   const { partition, offer } = props;
   const state = usePanelState(draftQuery(partition, offer.ticket, "Streamed"));
-  if (state.state !== "Ready") return <PanelUnready state={state} />;
+  if (state.state !== "Ready")
+    return props.settled ?? <PanelUnready state={state} />;
   return (
-    <ThreadOfferOpen
-      writing={props.writing}
-      standing={threadOfferReleaseStanding(offer, state.value)}
-      mutation={threadOfferReleaseMutation(offer, state.value)}
-    />
+    <>
+      <ThreadOfferDraftSubject partition={partition} draft={state.value} />
+      {props.settled ?? (
+        <ThreadOfferOpen
+          writing={props.writing}
+          standing={threadOfferReleaseStanding(offer, state.value)}
+          mutation={threadOfferReleaseMutation(offer, state.value)}
+        />
+      )}
+    </>
   );
 }
 
+/** A revoke card against its ticket, drawn as a release card is. */
 function ThreadOfferRevoke(props: {
   readonly partition: PartitionIdentity;
   readonly offer: Extract<ThreadOfferCall, { readonly offer: "Revoke" }>;
   readonly writing: ThreadOfferWriting;
+  readonly settled: ReactNode;
 }): ReactNode {
   const { partition, offer } = props;
   const state = usePanelState(ticketQuery(partition, offer.ticket, "Streamed"));
-  if (state.state !== "Ready") return <PanelUnready state={state} />;
+  if (state.state !== "Ready")
+    return props.settled ?? <PanelUnready state={state} />;
   return (
-    <ThreadOfferOpen
-      writing={props.writing}
-      standing={threadOfferRevokeStanding(offer, state.value)}
-      mutation={threadOfferRevokeMutation(offer)}
-    />
+    <>
+      <ThreadOfferTicketSubject ticket={state.value} />
+      {props.settled ?? (
+        <ThreadOfferOpen
+          writing={props.writing}
+          standing={threadOfferRevokeStanding(offer, state.value)}
+          mutation={threadOfferRevokeMutation(offer)}
+        />
+      )}
+    </>
   );
 }
 
 /**
- * A card the mailbox holds no reply for: settled by the reply this tab just
- * sent, offering to send again a reply this browser holds unsent, and
- * otherwise drawn against its subject as the project keeps it.
+ * A card the mailbox holds no reply for: offering to send again a reply this
+ * browser holds unsent, and otherwise drawn against its subject as the
+ * project keeps it, settled by the reply this tab just sent where it sent one.
  */
 function ThreadOfferUnanswered(props: {
   readonly partition: PartitionIdentity;
@@ -310,21 +331,32 @@ function ThreadOfferUnanswered(props: {
   const writing = useConsoleWrite(threadOfferWrite(partition, session, offer), {
     drawn: true,
   });
-  if (writing.isSuccess && writing.data !== undefined)
-    return (
+  const settled =
+    writing.isSuccess && writing.data !== undefined ? (
       <p className="text-ink-3 text-sm" role="status">
         {threadOfferSettledSentence(offer, writing.data)}
       </p>
-    );
-  const unsent = writing.isPending
-    ? undefined
-    : threadOfferUnsentOf(persistentStore, session, offer.call);
+    ) : undefined;
+  const unsent =
+    writing.isPending || settled !== undefined
+      ? undefined
+      : threadOfferUnsentOf(persistentStore, session, offer.call);
   if (unsent !== undefined)
     return <ThreadOfferResend offer={offer} reply={unsent} writing={writing} />;
   return offer.offer === "Release" ? (
-    <ThreadOfferRelease partition={partition} offer={offer} writing={writing} />
+    <ThreadOfferRelease
+      partition={partition}
+      offer={offer}
+      writing={writing}
+      settled={settled}
+    />
   ) : (
-    <ThreadOfferRevoke partition={partition} offer={offer} writing={writing} />
+    <ThreadOfferRevoke
+      partition={partition}
+      offer={offer}
+      writing={writing}
+      settled={settled}
+    />
   );
 }
 

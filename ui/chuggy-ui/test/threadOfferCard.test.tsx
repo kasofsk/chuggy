@@ -1,6 +1,7 @@
 /**
- * An offer drawn as a card: Confirm runs the member's own operation at the
- * version offered and then replies, Decline replies and runs nothing, a card
+ * An offer drawn as a card: a card that read its draft or ticket draws it,
+ * Confirm runs the member's own operation at the version offered and then
+ * replies, Decline replies and runs nothing, a card
  * whose subject moved past the version offered has no Confirm, a card the
  * mailbox holds a reply for is drawn settled and reads nothing, a card whose
  * reply could be in a mailbox page the read does not hold offers nothing, and
@@ -32,7 +33,11 @@ import {
   turned,
 } from "./screenHarness.tsx";
 import type { SentRequest } from "./screenHarness.tsx";
-import { creationDraft } from "./ticketCreationFixture.ts";
+import {
+  creationCatalogCanonical,
+  creationDigest,
+  creationDraft,
+} from "./ticketCreationFixture.ts";
 import { threadBody, threadTurn } from "./threadFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
@@ -78,12 +83,14 @@ function replyRefused(): Response {
 }
 
 /** The API as a card meets it: the draft and the ticket as a case names
- * them, every submission accepted and settled done, and every reply taken
- * but those a case refuses first. */
+ * them, the draft's configuration the fixture's catalog, every submission
+ * accepted and settled done, and every reply taken but those a case refuses
+ * first. */
 function served(
   draft: unknown = creationDraft,
   ticket: unknown = pendingTicket,
   replies: (() => Response)[] = [],
+  canonical: string = creationCatalogCanonical,
 ) {
   return scriptedFetch((request: SentRequest) => {
     if (request.url.includes("/offer-replies"))
@@ -94,6 +101,13 @@ function served(
       return answer({
         ...(operationAt("Succeeded") as object),
         decidedSequence: 9,
+      });
+    if (request.url.includes("/configurations/r3"))
+      return answer({
+        partition: atlas,
+        revision: "r3",
+        canonical,
+        digest: creationDigest,
       });
     if (request.url.includes("/drafts/12")) return answer(draft);
     if (request.url.includes("/tickets/11")) return answer(ticket);
@@ -301,6 +315,85 @@ test("a card whose draft or ticket moved past the version offered is superseded,
     expect(screen.queryByRole("button", { name: "Confirm" })).toBeNull();
     cleanup();
   }
+});
+
+test("a release card draws the draft it offers: its title, its intent and the settings it runs under", async () => {
+  await drawn(
+    release,
+    served({
+      ...creationDraft,
+      configurationVersion: { name: "chuggy-development", number: 4 },
+      brief: {
+        title: "Fold the card",
+        intent: "Draw the intent folded.",
+        links: [],
+        branch: "refs/heads/fold-card",
+      },
+    }),
+  );
+
+  const card = screen.getByRole("region", { name: "Offer" });
+  expect(screen.getByRole("heading").textContent).toBe("#12 Fold the card");
+  expect(card.textContent).toContain("Release draft #12 at version 3");
+  expect(card.textContent).toContain("Draw the intent folded.");
+  expect(card.textContent).toContain("chuggy-development");
+  expect(card.textContent).toContain("refs/heads/fold-card");
+  expect(card.textContent).toContain("Workbuild");
+  expect(card.textContent).toContain("Planreview");
+  expect(card.textContent).toContain("ProgramWhole plan");
+  expect(screen.getByRole("button", { name: "Confirm" })).toBeDefined();
+});
+
+test("a release card whose brief names no landing draws the landing of the finalizer it selects", async () => {
+  const catalog = JSON.parse(creationCatalogCanonical) as {
+    finalizers: Record<string, object>;
+  };
+  catalog.finalizers["land"] = {
+    approvalRequired: false,
+    landing: { mode: "PullRequest", target: "main" },
+  };
+  await drawn(
+    release,
+    served(creationDraft, pendingTicket, [], JSON.stringify(catalog)),
+  );
+
+  expect(screen.getByRole("region", { name: "Offer" }).textContent).toContain(
+    "MethodPull request · into main",
+  );
+});
+
+test("a revoke card draws the ticket it offers: its title, its phase and its intent", async () => {
+  await drawn(
+    revoke,
+    served(creationDraft, {
+      ...pendingTicket,
+      title: "Retire the old card",
+      brief: { intent: "Nothing reads it now.", links: [] },
+    }),
+  );
+
+  const card = screen.getByRole("region", { name: "Offer" });
+  expect(screen.getByRole("heading").textContent).toBe(
+    "#11 Retire the old card",
+  );
+  expect(card.textContent).toContain("Pending");
+  expect(card.textContent).toContain("Nothing reads it now.");
+});
+
+test("a card whose draft moved still draws the draft it read", async () => {
+  await drawn(
+    release,
+    served({
+      ...creationDraft,
+      authoringVersion: 4,
+      brief: { title: "Fold the card", intent: "Moved on.", links: [] },
+    }),
+  );
+
+  expect(screen.getByRole("heading").textContent).toBe("#12 Fold the card");
+  expect(
+    screen.getByText("Superseded · It changed since this was offered"),
+  ).toBeDefined();
 });
 
 test("a card the mailbox holds a reply for is drawn settled, and reads and sends nothing", async () => {
