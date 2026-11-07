@@ -382,7 +382,8 @@ test("narrow, the heading's links take their own line, the column names go and a
   const title = document.querySelector(".config-heading-title");
   const columns = document.querySelector(".config-steps-columns");
   const runs = row("Work").querySelector(".config-step-runs");
-  if (columns === null || runs === null) throw new Error("no table drawn");
+  if (title === null || columns === null || runs === null)
+    throw new Error("no table drawn");
   const desk = sheetRules(ticketSheet, []);
   const narrow = sheetRules(ticketSheet, [sheetNarrowCondition]);
   expect(sheetDeclared(desk, columns, "display")).toBe("grid");
@@ -662,9 +663,7 @@ test("a catalog ticket's landing is the brief's before its finalizer's, with the
   expect(cell(landing(), "runs")).toBe(
     finalizationLine(briefFinalized.finalization),
   );
-  expect(details(landing())).toStrictEqual(
-    new Map([["Approval", "Required"]]),
-  );
+  expect(details(landing())).toStrictEqual(new Map([["Approval", "Required"]]));
 });
 
 /** A policy orders a git merge alone, so it is drawn beside a git merge's
