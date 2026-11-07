@@ -40,6 +40,7 @@ import {
   repositoryLabel,
   repositoryNextStep,
   repositoryOffersLine,
+  repositoryPage,
   repositoryRosterPolledMs,
   repositoryRosterRereadMs,
   repositoryRosterRereadsMax,
@@ -87,6 +88,26 @@ test("a repository is labelled by the account and the name it is under", () => {
     "kasofsk/chuggy",
   );
   expect(repositoryLabel("chuggy")).toBe("chuggy");
+});
+
+test("a repository's page is its https clone address less a trailing slash and a trailing .git", () => {
+  expect(repositoryPage("https://github.com/kasofsk/chuggy.git")).toBe(
+    "https://github.com/kasofsk/chuggy",
+  );
+  expect(repositoryPage("https://github.com/kasofsk/chuggy")).toBe(
+    "https://github.com/kasofsk/chuggy",
+  );
+  expect(repositoryPage("https://github.com/kasofsk/chuggy.git/")).toBe(
+    "https://github.com/kasofsk/chuggy",
+  );
+});
+
+test("a repository's page is nothing for an address that is not an https clone URL", () => {
+  expect(
+    repositoryPage("http://git.chuggy-git.svc.cluster.local./chuggy.git"),
+  ).toBeUndefined();
+  expect(repositoryPage("git@github.com:kasofsk/chuggy.git")).toBeUndefined();
+  expect(repositoryPage("not a url")).toBeUndefined();
 });
 
 test("a row is marked bound by the address the binding names", () => {

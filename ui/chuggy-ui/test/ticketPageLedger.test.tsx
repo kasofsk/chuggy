@@ -436,6 +436,44 @@ test("a brief naming no repository says so in the sidebar", async () => {
   expect(repositoryCell()).toEqual({ text: "None", title: null });
 });
 
+test("the sidebar's repository links to its page on the forge for an https clone URL", async () => {
+  await drawTicket({
+    shapes: ticket21Parked,
+    ticket: {
+      ...parkedTicket,
+      brief: {
+        intent: "Give the console a footer",
+        links: [],
+        repository: "https://github.com/kasofsk/chuggy.git",
+      },
+    },
+  });
+  const link = screen
+    .getByText("Repository")
+    .nextElementSibling?.querySelector("a");
+  expect(link?.getAttribute("href")).toBe("https://github.com/kasofsk/chuggy");
+  expect(link?.getAttribute("title")).toBe(
+    "https://github.com/kasofsk/chuggy.git",
+  );
+});
+
+test("the sidebar's repository stays text for an address with no page on a forge", async () => {
+  await drawTicket({
+    shapes: ticket21Parked,
+    ticket: {
+      ...parkedTicket,
+      brief: {
+        intent: "Give the console a footer",
+        links: [],
+        repository: "http://git.chuggy-git.svc.cluster.local./chuggy.git",
+      },
+    },
+  });
+  expect(
+    screen.getByText("Repository").nextElementSibling?.querySelector("a"),
+  ).toBeNull();
+});
+
 test("the ticket is headed by its own title where it has one", async () => {
   await drawTicket({
     shapes: ticket21Parked,
