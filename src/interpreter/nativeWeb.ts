@@ -186,6 +186,7 @@ import {
   type LeadAbsence,
   type LeadRead,
   type LeadReadStore,
+  type LeadRefused,
   type LeadTranscriptQuery,
   type LeadTranscriptRead,
   type SessionHeldWalk,
@@ -1946,6 +1947,24 @@ async function nativeLeadSessionAbsence(
   ports: NativeLeadPorts,
   partition: Partition,
 ): Promise<LeadAbsence> {
+  const standing = await nativeLeadRefusalStanding(access, ports, partition);
+  if (standing !== undefined) return standing;
+  if (!(await nativeLeadDispatchWaits(ports.candidates, partition)))
+    return leadNotNeeded;
+  return ports.selector === undefined
+    ? leadSelectorUnnamed
+    : leadAwaitingSelector;
+}
+
+/**
+ * The selector's pause or its want of a grant, which outrank a kept refusal,
+ * or else the refusal it keeps, or nothing where none of the three stands.
+ */
+async function nativeLeadRefusalStanding(
+  access: ProjectAccess,
+  ports: NativeLeadPorts,
+  partition: Partition,
+): Promise<LeadAbsence | undefined> {
   if ((await ports.settings.projectSettings(partition)).mode === "Paused")
     return leadPaused;
   if (
@@ -1953,13 +1972,19 @@ async function nativeLeadSessionAbsence(
     (await access.authorize(ports.selector, partition, "Read")) === undefined
   )
     return leadSelectorNotGranted;
-  const refused = await ports.leads.leadRefusal(partition);
-  if (refused !== undefined) return refused;
-  if (!(await nativeLeadDispatchWaits(ports.candidates, partition)))
-    return leadNotNeeded;
-  return ports.selector === undefined
-    ? leadSelectorUnnamed
-    : leadAwaitingSelector;
+  return ports.leads.leadRefusal(partition);
+}
+
+/** The refusal a lead holding a session is drawn with: the one kept, where nothing outranks it. */
+async function nativeLeadSessionRefusal(
+  access: ProjectAccess,
+  ports: NativeLeadPorts,
+  partition: Partition,
+): Promise<{ readonly refusal?: LeadRefused }> {
+  const standing = await nativeLeadRefusalStanding(access, ports, partition);
+  return standing !== undefined && "since" in standing
+    ? { refusal: standing }
+    : {};
 }
 
 /**
@@ -2006,6 +2031,7 @@ function nativeLeadSessionMethods(
           standing.session,
           sessionStoreStreamsAnswered,
         ),
+        ...(await nativeLeadSessionRefusal(access, ports, partition)),
       };
     },
     leadTranscript: async (principal, partition, query) => {

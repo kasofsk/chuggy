@@ -823,11 +823,13 @@ export type SessionRunnerStanding = (typeof sessionRunnerStandings)[number];
 /**
  * Why a selector cycle that needed a project's lead was refused one: on a
  * hosted route the tenant grants the lead's principal no hosted runs, and on a
- * runner route none of the project's runners is live.
+ * runner route none of the project's runners is live, or every live one's
+ * owner has their Claude account paused.
  */
 export const leadAdmissionRefusals = [
   "HostedRunsNotGranted",
   "RunnerOffline",
+  "UsagePaused",
 ] as const;
 export type LeadAdmissionRefusal = (typeof leadAdmissionRefusals)[number];
 

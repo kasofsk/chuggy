@@ -1,9 +1,8 @@
 /**
  * The reader's own agent accounts, which are theirs in every workspace: for
- * each agent, each window's newest reading and the share it pauses at, whether
- * their threads and the lead of their pools pause with it, edited behind one
- * Edit; and the pause holding it, with the press that tries it once past a
- * provider's limit.
+ * each agent, each window's newest reading and the share it pauses at, and
+ * whether their threads pause with it, edited behind one Edit; and the pause
+ * holding it, with the press that tries it once past a provider's limit.
  */
 
 import type { QueryClient } from "@tanstack/react-query";
@@ -212,9 +211,6 @@ function UsageSettingsRead(props: {
       <Field name={usageSettingsThreadsLabel}>
         {options(settings.pausesThreads)}
       </Field>
-      <Field name={usageSettingsLeadLabel}>
-        {options(settings.pausesLead)}
-      </Field>
     </Fields>
   );
 }
@@ -230,10 +226,8 @@ function usageSettingsPercentLabel(name: AgentAccountPercentName): string {
 
 const usageSettingsThreadsLabel = "Threads and inquiries";
 
-const usageSettingsLeadLabel = "Lead of your pools";
-
 /** Each window's threshold as typed, marked where the wire would refuse it,
- * and both options. */
+ * and the threads option. */
 function UsageSettingsEditing(props: {
   readonly draft: AgentAccountDraft;
   readonly onDraft: (draft: AgentAccountDraft) => void;
@@ -269,13 +263,6 @@ function UsageSettingsEditing(props: {
         checked={draft.pausesThreads}
         onChange={(pausesThreads) => {
           props.onDraft({ ...draft, pausesThreads });
-        }}
-      />
-      <Checkbox
-        label={`${usageSettingsLeadLabel} pauses with it`}
-        checked={draft.pausesLead}
-        onChange={(pausesLead) => {
-          props.onDraft({ ...draft, pausesLead });
         }}
       />
     </div>

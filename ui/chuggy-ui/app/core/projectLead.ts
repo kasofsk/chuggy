@@ -15,6 +15,7 @@
 
 import type {
   LeadReadResponse,
+  LeadRefusalResponse,
   LeadResponse,
 } from "../../../../src/contract/responses.ts";
 import type { SessionPlacementResponse } from "../../../../src/contract/responses.ts";
@@ -28,11 +29,32 @@ import type { PanelState } from "./freshness.ts";
 export const projectLeadSessionKind: SessionKind = "Lead";
 
 /**
- * How often a read that says there is no lead is read again. No frame says the
- * selector kept or forgot a refusal, or was paused, so this is what moves the
- * reason on screen; a read that names a lead is moved by its frames alone.
+ * How often a read that says there is no lead, or names a lead a refusal is
+ * kept for, is read again. No frame says the selector kept or forgot a
+ * refusal, or was paused, so this is what moves the reason on screen; any
+ * other read that names a lead is moved by its frames alone.
  */
 export const projectLeadAbsencePolledMs = 15_000;
+
+/** Whether a read is polled: one naming no lead, or a lead a refusal is kept for. */
+export function projectLeadPolled(read: LeadReadResponse): boolean {
+  return !("session" in read) || read.refusal !== undefined;
+}
+
+/**
+ * A kept refusal as one line: its label, and when a usage pause ends where the
+ * read names it, or else since when the refusal has stood.
+ */
+export function projectLeadRefusalLine(
+  refusal: LeadRefusalResponse,
+  nowMs: number,
+): string {
+  const label = leadAbsenceLabel(refusal.reason);
+  const now = new Date(nowMs);
+  return refusal.until === undefined
+    ? `${label} · since ${instantText(new Date(refusal.since), now)}`
+    : `${label} · until ${instantText(new Date(refusal.until), now)}`;
+}
 
 /** The lead a read answered, or nothing where it answered that there is none. */
 export function projectLeadFound(
@@ -78,12 +100,14 @@ export function projectLeadDispatches(
 }
 
 /**
- * The line under a page's `No lead`: why the read says there is none, with
- * since when where a refusal stands, or how its tickets run where the server
- * gives no reason. Nothing until a read has said there is no lead, and nothing
- * for `RunnerOffline` once `placement` says where the project's runners stand,
- * since the runner notice drawn beside the line says it where none is live, and
- * where one is, or the lead runs hosted, the next selector pass clears it.
+ * The line under a page's `No lead`: why the read says there is none, a
+ * refusal as `projectLeadRefusalLine` draws it, or how its tickets run where
+ * the server gives no reason. Nothing until a read has said there is no lead,
+ * and nothing for `RunnerOffline` once `placement` says where the project's
+ * runners stand, since the runner notice drawn beside the line says it where
+ * none is live, and where one is, or the lead runs hosted, the next selector
+ * pass answers again; a `UsagePaused` refusal, whose runners are live, is
+ * always drawn.
  */
 export function projectLeadAbsenceLine(
   state: PanelState<LeadReadResponse>,
@@ -95,8 +119,7 @@ export function projectLeadAbsenceLine(
   if (absence === undefined) return "Tickets are dispatched by hand";
   if (absence.reason === "RunnerOffline" && placement !== undefined)
     return undefined;
-  const label = leadAbsenceLabel(absence.reason);
   return "since" in absence
-    ? `${label} · since ${instantText(new Date(absence.since), new Date(nowMs))}`
-    : label;
+    ? projectLeadRefusalLine(absence, nowMs)
+    : leadAbsenceLabel(absence.reason);
 }

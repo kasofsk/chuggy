@@ -99,7 +99,6 @@ test("a reading exactly at a threshold the person set pauses, and one a hair und
     fiveHourPercent: 29,
     sevenDayPercent: 57,
     pausesThreads: false,
-    pausesLead: true,
   };
   assert.deepEqual(
     await pausedFor({ readings: [reading("five_hour", 0.29)], setting }),
@@ -249,7 +248,6 @@ test("a changed setting changes the answer, since nothing about a pause is store
         fiveHourPercent: 90,
         sevenDayPercent: 90,
         pausesThreads: false,
-        pausesLead: true,
       },
     }),
     unpaused,
@@ -275,6 +273,5 @@ test("the defaults are the person's settings while they wrote none", async () =>
     five_hour_percent: 80,
     seven_day_percent: 90,
     pauses_threads: false,
-    pauses_lead: true,
   });
 });

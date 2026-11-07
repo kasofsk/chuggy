@@ -1072,7 +1072,7 @@ test("only the scheduler finds and resumes a job a usage limit stopped on its ru
 test("only the API reads, sets and presses a person's own agent account and reads an escalation's usage resume, through doors alone", async () => {
   for (const signature of [
     `${agentAccountStandingFunction}(text)`,
-    `${agentAccountSettingWriteFunction}(text,text,smallint,smallint,boolean,boolean)`,
+    `${agentAccountSettingWriteFunction}(text,text,smallint,smallint,boolean)`,
     `${agentAccountPressFunction}(text,text)`,
     `${ticketUsageResumeFunction}(text,text,bigint,bigint,bigint)`,
   ])

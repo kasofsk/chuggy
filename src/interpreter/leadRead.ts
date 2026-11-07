@@ -143,12 +143,14 @@ export interface LeadReadStore extends SessionStoreRowsRead {
 
 /**
  * What the last selector cycle that needed a project's lead was refused
- * admission for, and since when that has been the answer. The selector keeps
- * one only until a cycle of the project is admitted or has nothing to decide.
+ * admission for, kept only until a cycle is admitted or has nothing to decide,
+ * and since when that has been the answer. `until` is when a `UsagePaused`
+ * refusal's pause ends as it stands at the read, absent where none holds now.
  */
 export interface LeadRefused {
   readonly reason: LeadAdmissionRefusal;
   readonly since: string;
+  readonly until?: string;
 }
 
 /** Why a project holds no lead: a reason no refusal dates, or the refusal the
@@ -179,6 +181,7 @@ export interface HandoffNotePreview {
   readonly truncated: boolean;
 }
 
+/** A lead that holds a session carries the refusal the selector keeps for it, where one stands. */
 export type LeadRead =
   | { readonly result: "NotFound" }
   | { readonly result: "None"; readonly absence: LeadAbsence }
@@ -186,6 +189,7 @@ export type LeadRead =
       readonly result: "Found";
       readonly lead: LeadStanding;
       readonly streams: readonly SessionStoreStreamRow[];
+      readonly refusal?: LeadRefused;
     };
 
 export interface LeadTranscriptQuery {

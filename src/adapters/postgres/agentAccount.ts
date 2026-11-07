@@ -26,7 +26,6 @@ interface AgentAccountRow {
   readonly five_hour_percent: number | null;
   readonly seven_day_percent: number | null;
   readonly pauses_threads: boolean | null;
-  readonly pauses_lead: boolean | null;
   readonly five_hour_utilization: number | null;
   readonly five_hour_resets_at: Date | null;
   readonly five_hour_observed_at: Date | null;
@@ -124,7 +123,6 @@ function agentAccountView(row: AgentAccountRow): AgentAccountView {
         "seven-day threshold",
       ),
       pausesThreads: agentAccountRequired(row.pauses_threads, "thread option"),
-      pausesLead: agentAccountRequired(row.pauses_lead, "lead option"),
     },
     readings: [
       ...agentAccountReading(
@@ -151,7 +149,7 @@ export function postgresAgentAccounts(pool: pg.Pool): AgentAccountService {
     accounts: async (principal) => {
       const found = await pool.query<AgentAccountRow>(
         sql`SELECT s.agent,s.five_hour_percent,s.seven_day_percent,
-                   s.pauses_threads,s.pauses_lead,
+                   s.pauses_threads,
                    s.five_hour_utilization,s.five_hour_resets_at,s.five_hour_observed_at,
                    s.seven_day_utilization,s.seven_day_resets_at,s.seven_day_observed_at,
                    s.limit_window,s.limit_resets_at,s.limit_observed_at,
@@ -167,7 +165,7 @@ export function postgresAgentAccounts(pool: pg.Pool): AgentAccountService {
       await pool.query<{ written: string | null }>(
         sql`SELECT write_agent_account_setting(${principal},${agent},
               ${settings.fiveHourPercent}::smallint,${settings.sevenDayPercent}::smallint,
-              ${settings.pausesThreads},${settings.pausesLead})::text AS written`,
+              ${settings.pausesThreads})::text AS written`,
       );
     },
     press: async (principal, agent: AccountAgent) => {

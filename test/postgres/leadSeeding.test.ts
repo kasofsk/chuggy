@@ -40,7 +40,7 @@ import type {
 } from "../../src/interpreter/selector.ts";
 import { postgresHarnessSelectorContext } from "./harness.ts";
 import { postgresSelectorState } from "../../src/adapters/postgres/selector.ts";
-import { postgresSessionRouteReads } from "../../src/adapters/postgres/sessionPlacement.ts";
+import { postgresLeadRouteReads } from "../../src/adapters/postgres/sessionPlacement.ts";
 import {
   leadRigOpen,
   leadRigPod,
@@ -83,7 +83,7 @@ function seedingPolicy(mailbox: LeadMailbox = rig.mailbox) {
     leadSessionMint(),
     clock,
     leadRigHostedAccess,
-    postgresSessionRouteReads(rig.selectorPool),
+    postgresLeadRouteReads(rig.selectorPool),
     {
       pollIntervalMs: 5,
       implementationRevision: "selector-build",

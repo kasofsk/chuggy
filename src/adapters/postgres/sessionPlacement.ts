@@ -1,7 +1,8 @@
 /**
  * PostgreSQL side of where a project's sessions run: the routing the scheduler
  * publishes at boot, the one resolution every reader asks, the runners a
- * session would run on, and the door the API writes a project's row through.
+ * session would run on, whether one could take the lead now, and the door the
+ * API writes a project's row through.
  */
 
 import { sql } from "@ts-safeql/sql-tag";
@@ -17,7 +18,9 @@ import type { Principal } from "../../interpreter/principal.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import type { RuntimePrecondition } from "../../interpreter/serviceRuntime.ts";
 import {
+  leadRunnerStandings,
   sessionRunnerPolledSecsMax,
+  type LeadRouteReads,
   type SessionPlacementStore,
   type SessionRouteReads,
   type SessionRouteResolved,
@@ -115,11 +118,30 @@ async function sessionRunners(
   };
 }
 
-/** Where a session of each kind runs and the runners it would run on, read under the API's or the selector's role. */
+/** Where a session of each kind runs and the runners it would run on, read under the API's role. */
 export function postgresSessionRouteReads(pool: pg.Pool): SessionRouteReads {
   return {
     route: (partition, kind) => sessionRoute(pool, partition, kind),
     runners: (partition, member) => sessionRunners(pool, partition, member),
+  };
+}
+
+/** Where a project's lead runs and whether a runner there could take it, read under the selector's role. */
+export function postgresLeadRouteReads(pool: pg.Pool): LeadRouteReads {
+  return {
+    route: (partition, kind) => sessionRoute(pool, partition, kind),
+    leadRunners: async (partition) => {
+      const found = await pool.query<{ standing: string | null }>(
+        sql`SELECT standing
+              FROM lead_runner_standing(${partition.tenant},${partition.project},
+                                        ${sessionRunnerPolledSecsMax})`,
+      );
+      return sessionRowMember(
+        leadRunnerStandings,
+        found.rows[0]?.standing ?? null,
+        "lead runner standing",
+      );
+    },
   };
 }
 

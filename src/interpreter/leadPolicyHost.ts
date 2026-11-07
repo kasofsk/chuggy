@@ -54,8 +54,8 @@
  * the hosted route is spent on the shared credential, so `leadAdmission` asks
  * the project's tenant about `config.principal`, the same field a successor is
  * opened under; on a runner route it asks instead whether one of the project's
- * runners is live. The runtime asks it before it takes a permit for the project,
- * and the offer asks it again and stamps the turn with the route it admitted.
+ * runners is live and its owner's account not paused. The runtime asks it
+ * before it takes a permit for the project, and the offer asks it again and stamps the turn with the route it admitted.
  */
 
 import {
@@ -104,7 +104,7 @@ import type { SelectorPolicy } from "./selectorPolicyHost.ts";
 import {
   leadAdmission,
   type LeadRouteAdmission,
-  type SessionRouteReads,
+  type LeadRouteReads,
 } from "./sessionPlacement.ts";
 
 /**
@@ -594,7 +594,7 @@ export function leadSelectorPolicy(
   sessions: LeadSessionMint,
   clock: LeadPolicyClock,
   access: ProjectAccess,
-  routes: SessionRouteReads,
+  routes: LeadRouteReads,
   config: LeadPolicyConfig,
 ): SelectorPolicy {
   const principal = asPrincipal(config.principal);

@@ -121,7 +121,6 @@ function agentAccounts(pause: unknown): unknown {
         fiveHourPercent: 90,
         sevenDayPercent: 90,
         pausesThreads: false,
-        pausesLead: false,
       },
       readings: [],
       ...(agent === "Codex" && pause !== undefined ? { pause } : {}),

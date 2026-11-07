@@ -27,6 +27,7 @@ import {
   forgeInstallationRecordFunction,
   leadOpenFunction,
   leadRefusalReadFunction,
+  leadRunnerStandingFunction,
   leadSessionFunction,
   metricsPlaneRole,
   poolPlaneRole,
@@ -667,7 +668,7 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
   ),
   boundaryGrantsDoor(
     `${sessionRunnerStandingFunction}(text,text,text,bigint)`,
-    [apiRole],
+    [apiRole, selectorServiceRole],
     [schedulerRole, workerPlaneRole, poolPlaneRole],
   ),
   boundaryGrantsDoor(
@@ -691,9 +692,14 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
     [selectorServiceRole, workerPlaneRole],
   ),
   boundaryGrantsDoor(
-    `${leadRefusalReadFunction}(text,text)`,
+    `${leadRefusalReadFunction}(text,text,bigint)`,
     [apiRole],
     [selectorServiceRole],
+  ),
+  boundaryGrantsDoor(
+    `${leadRunnerStandingFunction}(text,text,bigint)`,
+    [selectorServiceRole],
+    [apiRole, schedulerRole, workerPlaneRole, poolPlaneRole],
   ),
   boundaryGrantsDoor(
     `${repositoryBindingListFunction}(text,text,bigint)`,
@@ -795,7 +801,7 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
     [metricsPlaneRole],
   ),
   boundaryGrantsDoor(
-    `${agentAccountSettingWriteFunction}(text,text,smallint,smallint,boolean,boolean)`,
+    `${agentAccountSettingWriteFunction}(text,text,smallint,smallint,boolean)`,
     [apiRole],
     [metricsPlaneRole],
   ),

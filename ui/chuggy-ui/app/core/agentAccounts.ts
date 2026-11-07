@@ -105,7 +105,6 @@ export interface AgentAccountDraft {
   readonly fiveHourPercent: string;
   readonly sevenDayPercent: string;
   readonly pausesThreads: boolean;
-  readonly pausesLead: boolean;
 }
 
 export type AgentAccountPercentName = "fiveHourPercent" | "sevenDayPercent";
@@ -173,8 +172,7 @@ export function agentAccountDraftSame(
     read !== undefined &&
     read.fiveHourPercent === settings.fiveHourPercent &&
     read.sevenDayPercent === settings.sevenDayPercent &&
-    read.pausesThreads === settings.pausesThreads &&
-    read.pausesLead === settings.pausesLead
+    read.pausesThreads === settings.pausesThreads
   );
 }
 

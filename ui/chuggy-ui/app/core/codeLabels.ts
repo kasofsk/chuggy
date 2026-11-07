@@ -203,6 +203,8 @@ export function leadAbsenceLabel(
       return "Hosted runs not granted";
     case "RunnerOffline":
       return "No live runner";
+    case "UsagePaused":
+      return "Paused for usage";
   }
 }
 

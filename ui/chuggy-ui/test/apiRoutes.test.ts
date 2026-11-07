@@ -789,7 +789,6 @@ test("the reader's agent accounts are read, set and pressed at their own address
               fiveHourPercent: 80,
               sevenDayPercent: 90,
               pausesThreads: false,
-              pausesLead: false,
             },
             readings: [],
           })),
@@ -801,7 +800,6 @@ test("the reader's agent accounts are read, set and pressed at their own address
     fiveHourPercent: 70,
     sevenDayPercent: 95,
     pausesThreads: true,
-    pausesLead: false,
   });
   await apiPressAgentAccount(held.ports, "Claude");
   expect(read.outcome).toBe("Ok");
@@ -812,7 +810,7 @@ test("the reader's agent accounts are read, set and pressed at their own address
     ),
   ).toStrictEqual([
     `GET ${nativeHttpBasePath}/agent-accounts undefined`,
-    `PUT ${nativeHttpBasePath}/agent-accounts/Codex/settings {"fiveHourPercent":70,"sevenDayPercent":95,"pausesThreads":true,"pausesLead":false}`,
+    `PUT ${nativeHttpBasePath}/agent-accounts/Codex/settings {"fiveHourPercent":70,"sevenDayPercent":95,"pausesThreads":true}`,
     `POST ${nativeHttpBasePath}/agent-accounts/Claude/presses undefined`,
   ]);
 });

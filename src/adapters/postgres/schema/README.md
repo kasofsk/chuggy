@@ -334,11 +334,12 @@ selector ran. The selector service reads it and moves it forward through
 `selector_lead_refusal` — the admission refusal the last selector cycle that
 needed a project's lead was refused under, and since when. The selector
 service alone writes it, directly, and the API role reads it through
-`read_lead_refusal` alone, for a project holding no lead. Its key and identity
+`read_lead_refusal` alone, which answers a `UsagePaused` refusal with when the
+pause ends as `lead_runner_standing` reads it now. Its key and identity
 are `(tenant, project)` and it points at `project`. A refused cycle writes it,
 moving `refused_since` only where the refusal is another, and an admitted or
 quiet cycle deletes it, so a project with no row is one no refusal stands for;
-`selector_lead_refusal_is_known` holds the refusal to the roster as 055 wrote
+`selector_lead_refusal_is_known` holds the refusal to the roster as 130 wrote
 it. It has no unfinished work: it records what a cycle met and starts nothing.
 
 `session_attempt` — one physical run of a session, its lease, its bearer digest
@@ -622,8 +623,8 @@ attempt's ending or not at all.
 
 `agent_account_setting` — what a person set of how an agent account of theirs
 pauses: the threshold of each window, as a whole percentage, and whether their
-threads and inquiries and the lead of a pool they registered pause with it. The
-API writes one person's row whole through `write_agent_account_setting`, and no
+threads and inquiries pause with it; the lead of a pool they registered always
+does. The API writes one person's row whole through `write_agent_account_setting`, and no
 runtime role reads it: `agent_account_settings` answers it with the defaults
 where it holds no row, and `agent_account_pause`, which the pool plane, the API
 and the metrics plane may call and `ticket_rate_limit_resumable` asks for the

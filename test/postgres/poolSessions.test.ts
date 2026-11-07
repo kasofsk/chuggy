@@ -1826,10 +1826,10 @@ test("a chat host's declared idle bound is recorded on its claim capped at the s
   ]);
 });
 
-/** A limit on `member`'s Claude whose reset is ahead, under the session options named. */
+/** A limit on `member`'s Claude whose reset is ahead, under the threads option named. */
 function claudePaused(
   member: Principal,
-  options: { readonly pausesLead: boolean; readonly pausesThreads: boolean },
+  options: { readonly pausesThreads: boolean },
 ): Promise<void> {
   return agentAccountHarnessCommitted(rig.harness, member, "Claude", {
     limit: { observedSecs: -60, resetsSecs: 3600 },
@@ -1837,7 +1837,7 @@ function claudePaused(
   });
 }
 
-test("a pool claims no lead turn while its registrant's Claude is paused and the lead pauses, and withdraws it once its dwell runs", async () => {
+test("a pool claims no lead turn while its registrant's Claude is paused, whatever the threads option, and withdraws it once its dwell runs", async () => {
   const { partition, member, pool } = await routedProject("pool-paused-lead");
   const { session, turn } = await waiting(
     partition,
@@ -1864,9 +1864,12 @@ test("a pool claims no lead turn while its registrant's Claude is paused and the
     new Set([session]),
     "a pool no member registered spends no account",
   );
-  await claudePaused(member, { pausesLead: false, pausesThreads: true });
-  assert.deepEqual(await awaitingOf(pool), new Set([session]));
-  await claudePaused(member, { pausesLead: true, pausesThreads: false });
+  await claudePaused(member, { pausesThreads: true });
+  assert.deepEqual(
+    await awaitingOf(pool),
+    new Set(),
+    "the lead pauses whatever the threads option says",
+  );
   await sessionRigQueuedFor(rig, turn, 2 * sessionPoolTurnDwellSecs);
   await withdrawn();
   assert.deepEqual(await turnStanding(partition, session, turn), [
@@ -1891,13 +1894,13 @@ test("a chat host claims its owner's threads and inquiries while their Claude is
     lead.session,
   );
   const read = await candidatesRead([host]);
-  await claudePaused(member, { pausesLead: true, pausesThreads: false });
+  await claudePaused(member, { pausesThreads: false });
   assert.deepEqual(
     await awaitingOf(host),
     new Set([thread.session, inquiry.session]),
     "threads do not pause by default",
   );
-  await claudePaused(member, { pausesLead: false, pausesThreads: true });
+  await claudePaused(member, { pausesThreads: true });
   assert.deepEqual(await awaitingOf(host), new Set());
   for (const session of [thread.session, inquiry.session])
     assert.equal(await openedFor(host, read(session)), "NotClaimable");
@@ -1908,7 +1911,6 @@ test("a chat host claims its owner's threads and inquiries while their Claude is
     setting: {
       fiveHourPercent: 80,
       sevenDayPercent: 90,
-      pausesLead: true,
       pausesThreads: true,
     },
   });

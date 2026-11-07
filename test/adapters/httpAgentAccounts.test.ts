@@ -28,7 +28,6 @@ const defaults = {
   fiveHourPercent: 80,
   sevenDayPercent: 90,
   pausesThreads: false,
-  pausesLead: true,
 };
 
 const accounts: readonly AgentAccountView[] = [
@@ -127,7 +126,6 @@ test("the caller writes one agent's settings whole, within whole percentages fro
     fiveHourPercent: 1,
     sevenDayPercent: 100,
     pausesThreads: true,
-    pausesLead: false,
   };
   assert.equal((await put("Codex", edges)).statusCode, 204);
   for (const refused of [
@@ -135,8 +133,9 @@ test("the caller writes one agent's settings whole, within whole percentages fro
     { ...edges, sevenDayPercent: 101 },
     { ...edges, fiveHourPercent: 50.5 },
     { ...edges, sevenDayPercent: "90" },
-    { fiveHourPercent: 80, sevenDayPercent: 90, pausesThreads: false },
+    { fiveHourPercent: 80, sevenDayPercent: 90 },
     { ...edges, principal: "someone-else" },
+    { ...edges, pausesLead: false },
   ])
     assert.equal(
       (await put("Claude", refused)).statusCode,
