@@ -181,8 +181,10 @@ ARG ZOD_VERSION
 
 # The packages the core imports, installed as one tree, so that npm keeps a
 # single `zod` for the SDK, the contract and the core alike. The contract is the
-# release the core's lock names.
+# release the core's lock names. Here and below, npm's cache is a cache mount,
+# so the tarballs it fetches stay out of the image.
 RUN --mount=type=bind,from=core,source=/contract.tgz,target=/tmp/contract.tgz \
+    --mount=type=cache,target=/root/.npm \
   mkdir -p /tmp/runtime /opt/chuggy/bin /opt/chuggy/lib/chuggy \
   && cd /tmp/runtime \
   && npm install --no-save --no-package-lock --no-audit --no-fund \
@@ -195,7 +197,8 @@ RUN --mount=type=bind,from=core,source=/contract.tgz,target=/tmp/contract.tgz \
 
 # The platform package npm's `codex` names as its optional dependency, of which
 # this architecture's directory is kept whole but for its voice.
-RUN case "$TARGETARCH" in \
+RUN --mount=type=cache,target=/root/.npm \
+  case "$TARGETARCH" in \
        amd64) platform=linux-x64 triple=x86_64-unknown-linux-musl ;; \
        arm64) platform=linux-arm64 triple=aarch64-unknown-linux-musl ;; \
        *) echo "Codex has no build here for '$TARGETARCH'"; exit 1 ;; \
@@ -383,8 +386,8 @@ RUN copy="$(mktemp -d)" \
   && CHUG_WORKER_WORKSPACE="$workspace" /bin/sh "$copy/chuggy/check.sh" check \
   && rm -rf "$copy" "$workspace"
 
-# What every image a pod runs is built from: chuggy's runtime, and the tools the
-# trees it works on are checked with.
+# What the `worker` stage and the core suites build on: chuggy's runtime, and
+# the tools a tree is worked on with.
 #
 # THE IMAGE'S `claude` IS THE RUNTIME'S, linked onto PATH by name rather than by
 # putting the runtime's `bin/` there, which would shadow the image's own node.
@@ -453,6 +456,18 @@ USER 1000:1000
 WORKDIR /workspace
 ENTRYPOINT ["/opt/chuggy/bin/node", "/opt/chuggy/lib/chuggy/worker.mjs"]
 
+# The Playwright the tree's lock names, read in a stage of its own so that the
+# browser the `worker` stage installs for it is fetched again only when that
+# version moves, rather than whenever the lock does.
+FROM base AS playwright-version
+RUN --mount=type=bind,source=package-lock.json,target=/tmp/package-lock.json \
+  node -e ' \
+    const lock = require("/tmp/package-lock.json"); \
+    const version = lock.packages?.["node_modules/playwright-core"]?.version; \
+    if (typeof version !== "string") throw new Error("the lock names no playwright-core"); \
+    console.log(version); \
+  ' > /playwright-version
+
 # The image this tree's own tickets run on.
 FROM worker-base AS worker
 
@@ -479,6 +494,51 @@ RUN case "$TARGETARCH" in \
   && tar --extract --gzip --file /tmp/keto.tgz --directory /usr/local/bin keto \
   && rm /tmp/keto.tgz \
   && keto version
+
+# THE IMAGE SHIPS THE BROWSER THE TREE'S PLAYWRIGHT LAUNCHES, so that an agent
+# looks at a console change rendered without installing one: the headless
+# shell of the Chromium the lock's `playwright-core` names, and the libraries
+# it loads. The directory is the image's user's, so a ticket that moves
+# Playwright can install the build its lock then names beside it; any other
+# user, as a chat session's is, can launch it and write none of it. The build
+# fails unless the image's user and the first session user both render a page.
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
+COPY --from=playwright-version /playwright-version /tmp/playwright-version
+RUN --mount=type=cache,target=/root/.npm \
+  version="$(cat /tmp/playwright-version)" \
+  && rm /tmp/playwright-version \
+  && probe="$(mktemp -d)" \
+  && chmod 0755 "$probe" \
+  && npm install --prefix "$probe" --no-save --no-audit --no-fund \
+    "playwright-core@${version}" \
+  && "$probe/node_modules/.bin/playwright-core" install --with-deps --only-shell chromium \
+  && apt-get clean \
+  && rm -rf /var/lib/apt/lists/* \
+  && chown -R 1000:1000 "$PLAYWRIGHT_BROWSERS_PATH" \
+  && chmod -R go-w "$PLAYWRIGHT_BROWSERS_PATH" \
+  && first="$(/opt/chuggy/bin/node --input-type=module --eval ' \
+    import { chatSessionUidFirst } from "/opt/chuggy/lib/chuggy/chatSession.mjs"; \
+    console.log(chatSessionUidFirst); \
+  ')" \
+  && for uid in 1000 "$first"; do \
+       home="$(mktemp -d)" \
+       && chown "$uid:$uid" "$home" \
+       && setpriv --reuid "$uid" --regid "$uid" --clear-groups env HOME="$home" \
+         node --input-type=module --eval ' \
+           const { chromium } = await import(process.argv[1]); \
+           const browser = await chromium.launch(); \
+           const page = await browser.newPage(); \
+           await page.setContent("<p>rendered</p>"); \
+           await page.screenshot(); \
+           const text = await page.textContent("p"); \
+           await browser.close(); \
+           if (text !== "rendered") throw new Error(`the page read back ${text}`); \
+         ' "$probe/node_modules/playwright-core/index.mjs" \
+       && rm -rf "$home" \
+       && echo "chromium: renders as $uid" \
+       || exit 1; \
+     done \
+  && rm -rf "$probe"
 USER 1000:1000
 
 # THE IMAGE SHIPS TRACK RECORD'S CLIENT, which reuses a pass on record rather
@@ -522,7 +582,7 @@ RUN --mount=type=bind,source=.claude/settings.json,target=/tmp/practices.json \
 # developers have, and nothing else would run them on the one a pod has. They
 # sit inside the runtime's `lib/chuggy/` so that they resolve their packages by
 # the walk the pod's modules resolve theirs by. Like the roster stage below,
-# this is a stage and not an image, and each image binds its verdict.
+# this is a stage and not an image, and the image binds its verdict.
 FROM worker-base AS core-suites
 COPY --from=core --chown=1000:1000 /core /opt/chuggy/lib/chuggy/core-suites
 RUN cd /opt/chuggy/lib/chuggy/core-suites \
@@ -600,91 +660,6 @@ RUN --mount=type=tmpfs,target=/tmp/postgres-memory \
     ./.chug/tasks/ci.sh \
   && touch /workspace/roster-clean \
   || { tail -n 50 /tmp/postgres.log; exit 1; }'
-
-# The image any other tree runs on: the base and the toolchains a Python or Rust
-# tree builds with. Rust's belongs to the image's user, so an attempt can fill
-# cargo's registry and install the toolchain a `rust-toolchain.toml` names. Any
-# other user, as a chat session's is, runs the toolchain installed here and can
-# write none of it: the build holds every file of it to the image's user and
-# group and to no write for others, and runs it as the first session user.
-# Handed `RUSTUP_HOME` and not `CARGO_HOME`, such a user's cargo keeps its
-# registry in its own home. It cannot install the toolchain a
-# `rust-toolchain.toml` names, because `RUSTUP_HOME` is read-only to it.
-FROM worker-base AS generic
-USER 0:0
-ARG TARGETARCH
-ARG UV_VERSION=0.12.21
-ARG UV_SHA256_AMD64=23f02075b652bb1df64178cfae41b5caf160822e720e2663568f3f5d63bc52c0
-ARG UV_SHA256_ARM64=030b69227b40af8c1981b7301793dc66e71ed3c796ea8688209dd268bd91ec51
-ARG RUSTUP_VERSION=1.29.1
-ARG RUSTUP_SHA256_AMD64=dda7234360b7f578ca8b0ddcb80145646fa61a67c1720a5abc7051b35c9fcb71
-ARG RUSTUP_SHA256_ARM64=15f6e4ce9f583b929c996c91562bad6d4454f3281de858b02cdfdef615fac433
-ARG RUST_VERSION=1.98.1
-ENV RUSTUP_HOME=/usr/local/rustup \
-    CARGO_HOME=/usr/local/cargo \
-    PATH=/usr/local/cargo/bin:$PATH
-RUN apt-get update \
-  && apt-get install --yes --no-install-recommends \
-    libssl-dev pkg-config python3-pip python3-venv \
-  && apt-get clean \
-  && rm -rf /var/lib/apt/lists/*
-RUN case "$TARGETARCH" in \
-       amd64) triple=x86_64-unknown-linux-gnu sha256="$UV_SHA256_AMD64" ;; \
-       arm64) triple=aarch64-unknown-linux-gnu sha256="$UV_SHA256_ARM64" ;; \
-       *) echo "uv has no build here for '$TARGETARCH'"; exit 1 ;; \
-     esac \
-  && curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
-    "https://github.com/astral-sh/uv/releases/download/${UV_VERSION}/uv-${triple}.tar.gz" \
-    --output /tmp/uv.tgz \
-  && echo "${sha256}  /tmp/uv.tgz" | sha256sum --check --quiet - \
-  && tar --extract --gzip --file /tmp/uv.tgz --directory /usr/local/bin \
-    --strip-components 1 "uv-${triple}/uv" "uv-${triple}/uvx" \
-  && rm /tmp/uv.tgz \
-  && uv --version
-RUN case "$TARGETARCH" in \
-       amd64) triple=x86_64-unknown-linux-gnu sha256="$RUSTUP_SHA256_AMD64" ;; \
-       arm64) triple=aarch64-unknown-linux-gnu sha256="$RUSTUP_SHA256_ARM64" ;; \
-       *) echo "rustup has no build here for '$TARGETARCH'"; exit 1 ;; \
-     esac \
-  && curl --proto '=https' --tlsv1.2 --fail --silent --show-error --location \
-    "https://static.rust-lang.org/rustup/archive/${RUSTUP_VERSION}/${triple}/rustup-init" \
-    --output /tmp/rustup-init \
-  && echo "${sha256}  /tmp/rustup-init" | sha256sum --check --quiet - \
-  && chmod 0755 /tmp/rustup-init \
-  && /tmp/rustup-init -y --no-modify-path --profile minimal \
-    --default-toolchain "${RUST_VERSION}" --component clippy,rustfmt \
-  && rm /tmp/rustup-init \
-  && cargo --version \
-  && cargo clippy --version \
-  && cargo fmt --version \
-  && chown -R 1000:1000 "$RUSTUP_HOME" "$CARGO_HOME" \
-  && writable="$(find "$RUSTUP_HOME" "$CARGO_HOME" ! -type l \
-    \( -perm -0002 -o ! -user 1000 -o ! -group 1000 \))" \
-  && if [ -n "$writable" ]; then \
-       echo "the toolchain holds what a user other than the image's may write:"; \
-       echo "$writable"; \
-       exit 1; \
-     fi \
-  && first="$(/opt/chuggy/bin/node --input-type=module --eval ' \
-    import { chatSessionUidFirst } from "/opt/chuggy/lib/chuggy/chatSession.mjs"; \
-    console.log(chatSessionUidFirst); \
-  ')" \
-  && home="$(mktemp -d)" \
-  && chown "$first:$first" "$home" \
-  && setpriv --reuid "$first" --regid "$first" \
-    --clear-groups env -u CARGO_HOME HOME="$home" /bin/sh -c ' \
-      cargo --version && rustc --version && cargo clippy --version \
-      && if mkdir "$RUSTUP_HOME/toolchains/probe" 2>/dev/null \
-        || touch "$1/bin/cargo" 2>/dev/null; then \
-           echo "a session user can write the toolchain"; \
-           exit 1; \
-         fi' sh "$CARGO_HOME" \
-  && rm -rf "$home"
-# A login shell sets PATH afresh from `/etc/profile`, so cargo's is added there.
-RUN printf 'export PATH="%s/bin:$PATH"\n' "$CARGO_HOME" > /etc/profile.d/cargo.sh
-USER 1000:1000
-RUN --mount=type=bind,from=core-suites,source=/workspace/core-suites-clean,target=/tmp/core-suites-clean \
-  true
 
 # The default image is the worker stage and nothing the stages FROM it added.
 # The binds are what make the build refuse to finish without the core suites'

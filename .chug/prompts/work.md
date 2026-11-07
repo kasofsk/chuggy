@@ -13,6 +13,9 @@ that satisfies the ticket, and add focused regression coverage for what you
 changed. If the ticket cannot be satisfied as written, report that rather than
 satisfying something adjacent to it.
 
+To look at a console change rendered, use the Chromium the image ships: once
+`npm ci` has run, the tree's Playwright launches it with nothing to install.
+
 `.chug/tasks/ci.sh` runs the gates the change affects and no others. While you
 work, the test file or the single gate in hand is enough. Run `ci.sh` once the
 change is complete, in the foreground, with the Bash tool's longest timeout,

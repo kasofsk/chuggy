@@ -92,14 +92,11 @@ function dockerArgumentDefault(text: string, name: string): string | undefined {
   return declared[0]?.[1];
 }
 
-/** The environment a built target carries, the last stage by default, over every stage it is built from. */
-function imageEnvironment(text: string, target?: string): Map<string, string> {
+/** The environment the built image carries, over every stage it is built from. */
+function imageEnvironment(text: string): Map<string, string> {
   const stages = dockerStages(text);
   const chain: DockerStage[] = [];
-  let stage =
-    target === undefined
-      ? stages.at(-1)
-      : stages.find((named) => named.name === target);
+  let stage = stages.at(-1);
   while (stage !== undefined) {
     assert.ok(chain.length < stages.length, "the stages are built in a cycle");
     chain.unshift(stage);
@@ -121,20 +118,16 @@ test("the release the pin names is one the job and session planes accept", () =>
   );
 });
 
-/** Catches an image and the work launcher naming the workspace apart, since that launcher writes none. */
-test("each image names the workspace a work pod reads", () => {
-  const text = readFileSync(dockerfilePath, "utf8");
-  for (const target of [undefined, "generic"]) {
-    const image = target ?? "the default target";
-    const environment = imageEnvironment(text, target);
+/** Catches the image and the work launcher naming the workspace apart, since that launcher writes none. */
+test("the image names the workspace a work pod reads", () => {
+  const environment = imageEnvironment(readFileSync(dockerfilePath, "utf8"));
 
-    assert.ok(environment.size > 0, `${image} sets no environment at all`);
-    assert.match(
-      environment.get(workerWorkspaceVariable) ?? "",
-      /^\//u,
-      `${image} names no workspace`,
-    );
-  }
+  assert.ok(environment.size > 0, "the image sets no environment at all");
+  assert.match(
+    environment.get(workerWorkspaceVariable) ?? "",
+    /^\//u,
+    "the image names no workspace",
+  );
 });
 
 test("the glibc a configuration's image is told it needs is the runtime's own floor on each architecture", () => {
