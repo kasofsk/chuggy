@@ -436,7 +436,12 @@ test("both branch fields reach the wire, the target as the finalization", async 
     intent: "ship it",
     links: [],
     branch: "refs/heads/topic/one",
-    finalization: { mode: "Push", target: "refs/heads/release/next" },
+    finalization: {
+      kind: "GitMerge",
+      mode: "Push",
+      target: "refs/heads/release/next",
+      policy: "Direct",
+    },
   });
 });
 
@@ -960,18 +965,29 @@ test("two bindings ask, and a submission naming none sends nothing", () => {
   expect(drafts(held.sent).length).toBe(0);
 });
 
-function landing(): HTMLElement | null {
-  return screen.queryByRole("radiogroup", { name: "Landing" });
+function finalizationGroup(name = "Finalization"): HTMLElement | null {
+  return screen.queryByRole("radiogroup", { name });
 }
 
-/** What the group draws as chosen, read by name because the label sits beside
- * the control rather than inside it. */
-function landingChosen(): string | undefined {
-  return ["Push", "Pull request", "Pull request, then merge", "None"].find(
-    (name) =>
-      screen.getByRole("radio", { name }).getAttribute("aria-checked") ===
-      "true",
+/** What one group draws as chosen of the options it is named with, read by
+ * name because the label sits beside the control rather than inside it. */
+function chosenIn(
+  name: string,
+  options: readonly string[],
+): string | undefined {
+  const group = finalizationGroup(name);
+  if (group === null) return undefined;
+  return options.find(
+    (option) =>
+      within(group)
+        .getByRole("radio", { name: option })
+        .getAttribute("aria-checked") === "true",
   );
+}
+
+/** The kind the Finalization group draws as chosen. */
+function finalizationChosen(): string | undefined {
+  return chosenIn("Finalization", ["Git merge", "Pull request", "None"]);
 }
 
 async function chooseRepository(name: string): Promise<void> {
@@ -988,46 +1004,77 @@ async function chooseRepository(name: string): Promise<void> {
   });
 }
 
-test("a form landing on None still asks for a landing, and asks for no target", () => {
+test("a form finalized by None still asks for a finalization, and asks for no target, mode or policy", () => {
   const held = api({ state: "Succeeded" });
   draw(held.ports, [], creationInitialization, [
     creationBinding(chuggy, "None"),
   ]);
-  expect(landing()).toBeTruthy();
-  expect(landingChosen()).toBe("None");
+  expect(finalizationGroup()).toBeTruthy();
+  expect(finalizationChosen()).toBe("None");
   expect(screen.queryByPlaceholderText("the branch to land on")).toBeNull();
+  expect(finalizationGroup("Merge")).toBeNull();
+  expect(finalizationGroup("Policy")).toBeNull();
 });
 
-test("a managed form asks for its landing, preselected from the repository", () => {
+test("a managed form asks for its finalization, preselected from the repository, and a pull request is offered no policy", () => {
   const held = api({ state: "Succeeded" });
   draw(held.ports, [], creationInitialization, [
     creationBinding(chuggy, "PullRequest"),
   ]);
-  expect(landing()).toBeTruthy();
-  expect(landingChosen()).toBe("Pull request");
+  expect(finalizationGroup()).toBeTruthy();
+  expect(finalizationChosen()).toBe("Pull request");
+  expect(finalizationGroup("Merge")).toBeNull();
+  expect(finalizationGroup("Policy")).toBeNull();
+});
+
+/** A policy orders a git merge, so the form offers one only under that kind,
+ * and sends the one chosen inside the finalization it orders. */
+test("a git merge is offered its mode and its policy, and sends the policy chosen", async () => {
+  const held = api({ state: "Succeeded" });
+  draw(held.ports, [], creationInitialization, [
+    creationBinding(chuggy, "PullRequestMerge"),
+  ]);
+  expect(finalizationChosen()).toBe("Git merge");
+  expect(chosenIn("Merge", ["Push", "Pull request, then merge"])).toBe(
+    "Pull request, then merge",
+  );
+  expect(chosenIn("Policy", ["Direct", "Serialized"])).toBe("Direct");
+  fireEvent.click(screen.getByRole("radio", { name: "Push" }));
+  fireEvent.click(screen.getByRole("radio", { name: "Serialized" }));
+  typeIntent("ship it");
+  submit();
+  await waitFor(() => {
+    expect(drafts(held.sent).length).toBe(1);
+  });
+  expect(briefOf(held.sent)?.["finalization"]).toStrictEqual({
+    kind: "GitMerge",
+    mode: "Push",
+    policy: "Serialized",
+  });
 });
 
 /**
- * A LANDING THE READER CHOSE IS NOT RE-SEEDED. The second repository's default
- * takes an untouched field, because a reader who never looked at it wants the
- * repository's answer; a reader who moved it has already given their own.
+ * A FINALIZATION THE READER CHOSE IS NOT RE-SEEDED. The second repository's
+ * default takes an untouched field, because a reader who never looked at it
+ * wants the repository's answer; a reader who moved it has already given their
+ * own.
  */
-test("changing repositories re-seeds an untouched landing and leaves a touched one", async () => {
+test("changing repositories re-seeds an untouched finalization and leaves a touched one", async () => {
   const held = api({ state: "Succeeded" });
   draw(held.ports, [], creationInitialization, [
     creationBinding(chuggy, "Push"),
     creationBinding(scratch, "PullRequest"),
     creationBinding(fabric, "PullRequest"),
   ]);
-  expect(landingChosen()).toBe("Push");
+  expect(finalizationChosen()).toBe("Git merge");
   await chooseRepository("gdoteof/scratch");
-  expect(landingChosen()).toBe("Pull request");
-  fireEvent.click(screen.getByRole("radio", { name: "Push" }));
+  expect(finalizationChosen()).toBe("Pull request");
+  fireEvent.click(screen.getByRole("radio", { name: "Git merge" }));
   await chooseRepository("kasofsk/chuggy-fabric");
-  expect(landingChosen()).toBe("Push");
+  expect(finalizationChosen()).toBe("Git merge");
 });
 
-test("the landing reaches the wire, with the target only where one is typed", async () => {
+test("the finalization reaches the wire, with the target only where one is typed", async () => {
   const held = api({ state: "Succeeded" });
   draw(held.ports, [], creationInitialization, [
     creationBinding(chuggy, "Push"),
@@ -1037,7 +1084,11 @@ test("the landing reaches the wire, with the target only where one is typed", as
   await waitFor(() => {
     expect(drafts(held.sent).length).toBe(1);
   });
-  expect(briefOf(held.sent)?.["finalization"]).toStrictEqual({ mode: "Push" });
+  expect(briefOf(held.sent)?.["finalization"]).toStrictEqual({
+    kind: "GitMerge",
+    mode: "Push",
+    policy: "Direct",
+  });
 });
 
 test("a pull request without a branch is refused before the wire sees it", () => {
@@ -1125,10 +1176,10 @@ test("a title with no name in it proposes nothing, and the refusal stands", () =
 
 /** A push lands on the branch the work happened on or the default one, so an
  * empty box there is an answer and not a name still owed. */
-test("a landing that opens no pull request proposes no branch and sends none", async () => {
+test("a finalization that opens no pull request proposes no branch and sends none", async () => {
   const held = drawProposing();
   typeTitle("Fix the login page");
-  fireEvent.click(screen.getByRole("radio", { name: "Push" }));
+  fireEvent.click(screen.getByRole("radio", { name: "Git merge" }));
   expect(branchBox().placeholder).toBe(branchAsked);
   submit();
   await waitFor(() => {
@@ -1151,17 +1202,17 @@ test("a pull request without a target reaches the wire, into the default branch"
     expect(drafts(held.sent).length).toBe(1);
   });
   expect(briefOf(held.sent)?.["finalization"]).toStrictEqual({
-    mode: "PullRequest",
+    kind: "PullRequest",
   });
 });
 
 /**
- * The target is typed under a landing that draws it and the landing then
- * changed to None, which leaves a value in a box the form no longer draws.
+ * The target is typed under a finalization that draws it and the finalization
+ * then changed to None, which leaves a value in a box the form no longer draws.
  * The submission must still go out — a form stopped by a fault nobody can see
  * is a form nobody can fix.
  */
-test("changing the landing to None releases a ticket the target box would have refused", async () => {
+test("changing the finalization to None releases a ticket the target box would have refused", async () => {
   const held = api({ state: "Succeeded" });
   draw(held.ports, [], creationInitialization, [
     creationBinding(chuggy, "Push"),
@@ -1175,7 +1226,7 @@ test("changing the landing to None releases a ticket the target box would have r
   await waitFor(() => {
     expect(drafts(held.sent).length).toBe(1);
   });
-  expect(briefOf(held.sent)?.["finalization"]).toStrictEqual({ mode: "None" });
+  expect(briefOf(held.sent)?.["finalization"]).toStrictEqual({ kind: "None" });
 });
 
 /** What one repository's newest commit declares, in name order: the first

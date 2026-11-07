@@ -1,16 +1,16 @@
 /**
  * Whether the jobs this project runs may change this repository's GitHub
- * workflow files, written through the landing's own route and fenced the same
- * way: the landing goes with it as this page read it.
+ * workflow files, written through the finalization's own route and fenced the
+ * same way: the finalization goes with it as this page read it.
  */
 
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ProjectRepositoryResponse } from "../../../../../src/contract/responses.ts";
-import { repositoryLandingPipelinesChosen } from "../../core/repositoryLanding.ts";
+import { repositoryFinalizationPipelinesChosen } from "../../core/repositoryFinalization.ts";
 import { RadioGroup } from "../ui/RadioGroup.tsx";
-import { RepositorySettingSection } from "./RepositoryLandingSection.tsx";
+import { RepositorySettingSection } from "./RepositoryFinalizationSection.tsx";
 
 const workflowFilesOff = "Off";
 const workflowFilesOn = "On";
@@ -40,7 +40,7 @@ export function RepositoryWorkflowFilesSection(props: {
           options={workflowFilesOptions}
           onChoose={(value) => {
             held.setDraft(
-              repositoryLandingPipelinesChosen(
+              repositoryFinalizationPipelinesChosen(
                 held.draft,
                 value === workflowFilesOn,
               ),

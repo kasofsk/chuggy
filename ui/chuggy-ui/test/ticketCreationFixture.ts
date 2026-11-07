@@ -15,11 +15,8 @@ import type {
   ProjectRepositoryListedResponse,
   ProjectRepositoryResponse,
 } from "../../../src/contract/responses.ts";
-import { briefFinalizationForward } from "../../../src/contract/brief.ts";
-import type {
-  BriefFinalizationMode,
-  BriefGitMergePolicy,
-} from "../../../src/contract/rosters.ts";
+import type { BriefFinalizationMode } from "../../../src/contract/rosters.ts";
+import type { FinalizationChoice } from "../app/core/finalizationChoice.ts";
 import { configurationCatalogInitialization } from "../app/core/configurationCatalog.ts";
 import {
   creationConfigurationName,
@@ -158,8 +155,26 @@ export const creationBody: TicketCreationRequest["body"] = {
   brief: { intent: "ship it", links: [] },
 };
 
-/** One binding as the listing answers it, whose landing is what a form seeded
- * from it starts on. */
+/** Each finalization a form chooses, a git merge ordered `Direct`. */
+export const creationPush = {
+  kind: "GitMerge",
+  mode: "Push",
+  policy: "Direct",
+} as const satisfies FinalizationChoice;
+export const creationPullRequestMerge = {
+  kind: "GitMerge",
+  mode: "PullRequestMerge",
+  policy: "Direct",
+} as const satisfies FinalizationChoice;
+export const creationPullRequest = {
+  kind: "PullRequest",
+} as const satisfies FinalizationChoice;
+export const creationNone = {
+  kind: "None",
+} as const satisfies FinalizationChoice;
+
+/** One binding as the listing answers it, whose finalization is what a form
+ * seeded from it starts on. */
 export function creationBinding(
   repository: string,
   mode: BriefFinalizationMode = "Push",
@@ -246,7 +261,7 @@ export function creationForm(
 /** The YAML a browser kept while its project offered one configuration, and
  * so drew no key for it, as it stands once the project offers several. */
 export const creationYamlKeptUnasked =
-  'title: Ship it\nintent: |-\n  do it\nlinks: []\nbranch: ""\nlanding: Push\ntarget: ""\ndependencies: [ 7 ]\nprogram:\n  - evaluators: 2\n  - evaluators: 1\n';
+  "title: Ship it\nintent: |-\n  do it\nbranch:\nfinalization:\n  kind: GitMerge\n  mode: Push\n  target:\n  policy: Direct\ndependencies:\n  - 7\nprogram:\n  - evaluators: 2\n  - evaluators: 1\n";
 
 /** A catalog of several workloads, plans and finalizers, each prompt
  * inline as an import resolves it. */
@@ -366,33 +381,4 @@ export function editReadAnswered(
     sequence: 43,
     tickets: [{ ...ticket, sequence: 43, revision: 3 }],
   });
-}
-
-/**
- * A draft revision's body as the server stores its brief: a finalization
- * written by its mode, and the landing beside it, read forward to its kind.
- */
-export function revisionServed(body: object): object {
-  const { brief } = body as {
-    readonly brief?: {
-      readonly finalization?: {
-        readonly mode: BriefFinalizationMode;
-        readonly target?: string;
-      };
-      readonly landing?: BriefGitMergePolicy;
-    };
-  };
-  if (brief === undefined) return body;
-  const { finalization, landing, ...rest } = brief;
-  const forward = briefFinalizationForward(finalization, landing);
-  if (forward.forward === "Refused") throw new Error(forward.reason);
-  return {
-    ...body,
-    brief: {
-      ...rest,
-      ...(forward.finalization === undefined
-        ? {}
-        : { finalization: forward.finalization }),
-    },
-  };
 }

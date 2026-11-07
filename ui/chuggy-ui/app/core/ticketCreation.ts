@@ -19,6 +19,7 @@ import {
   briefBranchCharsMax,
   briefBranchPrefix,
   briefChecksMax,
+  briefFinalizationOpensProposal,
   briefImagesMax,
   briefIntentCharsMax,
   briefLandingIsWhole,
@@ -32,11 +33,6 @@ import type { ImageMediaType } from "../../../../src/contract/http.ts";
 import type { WorkloadOverride } from "../../../../src/contract/configurationOverrides.ts";
 import type { ConfigurationSelection } from "../../../../src/contract/configurationSelection.ts";
 import { draftCreationSchema } from "../../../../src/contract/requests.ts";
-import {
-  briefFinalizationProposes,
-  type BriefFinalizationMode,
-  type BriefGitMergePolicy,
-} from "../../../../src/contract/rosters.ts";
 import type { PublicMutation } from "../../../../src/contract/requests.ts";
 import {
   bootstrapConfigurationName,
@@ -53,6 +49,12 @@ import type { z } from "zod";
 
 import type { ApiFailure } from "./apiRequest.ts";
 import { operationAbandonWords } from "./codeLabels.ts";
+import {
+  finalizationChoiceKey,
+  finalizationChoiceOf,
+  finalizationTargetOf,
+  type FinalizationChoice,
+} from "./finalizationChoice.ts";
 import { operationStateSentence } from "./codeSentences.ts";
 import {
   configurationCatalogInitialization,
@@ -108,11 +110,9 @@ export interface TicketCreationForm extends CreationAuthoring {
   readonly targetBranchName: string;
   /** The bound repository the work happens in, empty where none is chosen. */
   readonly repository: string;
-  /** How this ticket lands, seeded from the repository's default and the
-   * reader's from the moment they move it. */
-  readonly landingMode: BriefFinalizationMode;
-  /** How that landing is ordered against the others on its reference. */
-  readonly landingPolicy: BriefGitMergePolicy;
+  /** How this ticket is finalized, but for its target, seeded from the
+   * repository's default and the reader's from the moment they move it. */
+  readonly finalization: FinalizationChoice;
   /** What this ticket replaces of its configuration, drawn only once a
    * configuration is chosen and kept when another is; sent only under a
    * configuration that is no catalog. */
@@ -138,8 +138,7 @@ export type CreationField =
   | "checks"
   | "branch"
   | "target"
-  | "landing"
-  | "landingPolicy"
+  | "finalization"
   | "repository"
   | "authoring"
   | "overrides"
@@ -514,18 +513,23 @@ export function creationRepositoryDefault(
   return sole?.repository ?? "";
 }
 
-/** How this console lands work where no binding says otherwise, which is a form
- * in a project that binds nothing and a repository the listing no longer holds. */
-const creationLandingUnbound: BriefFinalizationMode = "Push";
+/** How this console finalizes work where no binding says otherwise, which is a
+ * form in a project that binds nothing and a repository the listing no longer
+ * holds. */
+const creationFinalizationUnbound: FinalizationChoice = {
+  kind: "GitMerge",
+  mode: "Push",
+  policy: "Direct",
+};
 
-/** The landing the chosen repository defaults to, which is what an untouched
- * field shows and what a repository change re-seeds it with. */
-export function creationLandingDefault(
+/** The finalization the chosen repository defaults to, which is what an
+ * untouched field shows and what a repository change re-seeds it with. */
+export function creationFinalizationDefault(
   repositories: readonly ProjectRepositoryResponse[],
   repository: string,
-): BriefFinalizationMode {
+): FinalizationChoice {
   const bound = repositories.find((row) => row.repository === repository);
-  return bound?.landing.mode ?? creationLandingUnbound;
+  return bound?.finalization ?? creationFinalizationUnbound;
 }
 
 /** The authoring a form holds while no configuration has defaulted it. */
@@ -553,8 +557,7 @@ export function creationFormFrom(
     checks: [],
     branchName: "",
     repository,
-    landingPolicy: "Direct",
-    ...creationLandingSeed(offers, repositories, {
+    ...creationFinalizationSeed(offers, repositories, {
       configuration,
       selection: {},
       repository,
@@ -566,22 +569,22 @@ export function creationFormFrom(
   };
 }
 
-/** A form's landing as a reader sees it: its mode, and the text of its target box. */
-type CreationLanding = Pick<
+/** A form's finalization as a reader sees it: its choice, and the text of its target box. */
+type CreationFinalization = Pick<
   TicketCreationForm,
-  "landingMode" | "targetBranchName"
+  "finalization" | "targetBranchName"
 >;
 
 /**
- * The landing a form is seeded with: the one the finalizer its selection
+ * The finalization a form is seeded with: the one the finalizer its selection
  * lands with names, which the ticket takes where its brief names none, and
  * otherwise its repository's, with no target.
  */
-function creationLandingSeed(
+function creationFinalizationSeed(
   offers: readonly CreationOffer[],
   repositories: readonly ProjectRepositoryResponse[],
   form: Pick<TicketCreationForm, "configuration" | "selection" | "repository">,
-): CreationLanding {
+): CreationFinalization {
   const catalog = creationCatalogOf(
     creationOfferOf(offers, form.configuration),
   );
@@ -589,17 +592,17 @@ function creationLandingSeed(
     catalog === undefined
       ? undefined
       : configurationCatalogSelected(catalog, form.selection).finalization;
-  const landing = catalog?.finalizers.find(
+  const finalization = catalog?.finalizers.find(
     (each) => each.name === finalizer,
-  )?.landing;
-  if (landing === undefined)
+  )?.finalization;
+  if (finalization === undefined)
     return {
-      landingMode: creationLandingDefault(repositories, form.repository),
+      finalization: creationFinalizationDefault(repositories, form.repository),
       targetBranchName: "",
     };
-  const target = landing.target ?? "";
+  const target = finalizationTargetOf(finalization) ?? "";
   return {
-    landingMode: landing.mode,
+    finalization: finalizationChoiceOf(finalization),
     targetBranchName: target.startsWith(briefBranchPrefix)
       ? target.slice(briefBranchPrefix.length)
       : target,
@@ -607,33 +610,38 @@ function creationLandingSeed(
 }
 
 /**
- * A form with something its landing is seeded from changed: a landing the
- * reader has not moved from the seed takes the new one, and a moved one
- * stands, because the seed is a starting point and the choice is theirs.
+ * A form with something its finalization is seeded from changed: a
+ * finalization the reader has not moved from the seed takes the new one, and a
+ * moved one stands, because the seed is a starting point and the choice is
+ * theirs.
  */
-function creationLandingReseeded(
+function creationFinalizationReseeded(
   form: TicketCreationForm,
   changed: TicketCreationForm,
   offers: readonly CreationOffer[],
   repositories: readonly ProjectRepositoryResponse[],
 ): TicketCreationForm {
-  const seeded = creationLandingSeed(offers, repositories, form);
+  const seeded = creationFinalizationSeed(offers, repositories, form);
   const unmoved =
-    form.landingMode === seeded.landingMode &&
+    finalizationChoiceKey(form.finalization) ===
+      finalizationChoiceKey(seeded.finalization) &&
     form.targetBranchName === seeded.targetBranchName;
   return unmoved
-    ? { ...changed, ...creationLandingSeed(offers, repositories, changed) }
+    ? {
+        ...changed,
+        ...creationFinalizationSeed(offers, repositories, changed),
+      }
     : changed;
 }
 
-/** The form with another repository named, its landing reseeded where unmoved. */
+/** The form with another repository named, its finalization reseeded where unmoved. */
 export function creationRepositoryChosen(
   form: TicketCreationForm,
   repositories: readonly ProjectRepositoryResponse[],
   repository: string,
   offers: readonly CreationOffer[],
 ): TicketCreationForm {
-  return creationLandingReseeded(
+  return creationFinalizationReseeded(
     form,
     { ...form, repository },
     offers,
@@ -649,7 +657,7 @@ function creationProgramWidths(program: readonly CreationStage[]): string {
 
 /**
  * The form drawn under another configuration or selection. A program or a
- * landing the reader has not moved takes the new default and a moved one
+ * finalization the reader has not moved takes the new default and a moved one
  * stands, as under another repository; everything typed is kept.
  */
 function creationDrawnChosen(
@@ -667,7 +675,7 @@ function creationDrawnChosen(
   const unmoved =
     creationProgramWidths(form.program) ===
     creationProgramWidths(seeded.program);
-  return creationLandingReseeded(
+  return creationFinalizationReseeded(
     form,
     { ...form, ...drawn, program: unmoved ? chosen.program : form.program },
     offers,
@@ -758,12 +766,12 @@ export function creationBranchNameOf(title: string): string {
   return wordEnd > 0 ? cut.slice(0, wordEnd) : cut;
 }
 
-/** The branch a creation proposes: under a landing that opens a pull request,
- * for a box left empty, where the title has a name in it. */
+/** The branch a creation proposes: under a finalization that opens a pull
+ * request, for a box left empty, where the title has a name in it. */
 export function creationBranchProposed(
   form: TicketCreationForm,
 ): string | undefined {
-  if (!briefFinalizationProposes(form.landingMode)) return undefined;
+  if (!briefFinalizationOpensProposal(form.finalization)) return undefined;
   if (form.branchName !== "") return undefined;
   const name = creationBranchNameOf(form.title);
   return name === "" ? undefined : name;
@@ -781,22 +789,21 @@ export function creationFormProposed(
 /** What the branch key asks for and what naming it does, which the YAML editor explains the key with. */
 export const creationBranchHint = `the branch this work starts from, and lands on unless a target names another, created if it does not exist yet: a name, not a reference, which this console sends as ${briefBranchPrefix}<name>`;
 
-/** Where the work lands when the target box is left empty, which each landing answers for itself. */
-function creationTargetBranchUnnamed(mode: BriefFinalizationMode): string {
-  switch (mode) {
-    case "Push":
-      return "the branch the work happened on";
-    case "PullRequest":
-    case "PullRequestMerge":
-      return "the repository's default branch";
-    case "None":
-      return "nowhere; a landing that lands nothing names no reference";
-  }
+/** Where the work lands when the target box is left empty, which each
+ * finalization answers for itself. */
+function creationTargetBranchUnnamed(finalization: FinalizationChoice): string {
+  if (finalization.kind === "None")
+    return "nowhere; a finalization that lands nothing names no reference";
+  return briefFinalizationOpensProposal(finalization)
+    ? "the repository's default branch"
+    : "the branch the work happened on";
 }
 
 /** The same, for the key that names where the work ends up instead. */
-export function creationTargetBranchHint(mode: BriefFinalizationMode): string {
-  return `where the finished work lands, created if it does not exist yet: a name, not a reference, which this console sends as ${briefBranchPrefix}<name>, and ${creationTargetBranchUnnamed(mode)} where it is left empty`;
+export function creationTargetBranchHint(
+  finalization: FinalizationChoice,
+): string {
+  return `where the finished work lands, created if it does not exist yet: a name, not a reference, which this console sends as ${briefBranchPrefix}<name>, and ${creationTargetBranchUnnamed(finalization)} where it is left empty`;
 }
 
 /** The line under the form's branch box. */
@@ -805,17 +812,12 @@ export const creationBranchFieldHint =
 
 /** The line under the form's target box: what leaving it empty lands on. */
 export function creationTargetBranchFieldHint(
-  mode: BriefFinalizationMode,
+  finalization: FinalizationChoice,
 ): string {
-  switch (mode) {
-    case "Push":
-      return "Empty means the branch above";
-    case "PullRequest":
-    case "PullRequestMerge":
-      return "Empty means the repository's default branch";
-    case "None":
-      return "Lands nothing";
-  }
+  if (finalization.kind === "None") return "Lands nothing";
+  return briefFinalizationOpensProposal(finalization)
+    ? "Empty means the repository's default branch"
+    : "Empty means the branch above";
 }
 
 /** The one input either branch field refuses, said as the edit that fixes it. */
@@ -897,10 +899,8 @@ export function creationFaultSentence(field: CreationField): string {
     case "branch":
     case "target":
       return `a branch is named here without its ${briefBranchPrefix} prefix, and the whole reference is at most ${String(briefBranchCharsMax)} characters`;
-    case "landing":
-      return "this landing is not one the API will accept";
-    case "landingPolicy":
-      return "this landing policy is not one the API will accept";
+    case "finalization":
+      return "this finalization is not one the API will accept";
     case "repository":
       return "this project binds a repository, so a ticket in it names which one";
     case "authoring":
@@ -930,9 +930,8 @@ function creationFieldOf(
   if (path[1] === "checks") return "checks";
   if (path[1] === "images") return "images";
   if (path[1] === "repository") return "repository";
-  if (path[1] === "landing") return "landingPolicy";
   if (path[1] === "finalization")
-    return path[2] === "target" ? "target" : "landing";
+    return path[2] === "target" ? "target" : "finalization";
   return path[1] === undefined ? undefined : "links";
 }
 
@@ -976,19 +975,42 @@ function creationOverrideFaultsOf(
 }
 
 /**
+ * The paths one issue is about, a union refused as a whole being the issues of
+ * the option it came closest to matching, each under the union's own path, so
+ * a target too long for a finalization is the target's and not the
+ * finalization's. The recursion is bounded by the depth of the issue.
+ */
+function creationIssuePaths(
+  issue: z.core.$ZodIssue,
+  at: readonly PropertyKey[],
+): readonly (readonly PropertyKey[])[] {
+  const path = [...at, ...issue.path];
+  if (issue.code !== "invalid_union") return [path];
+  const closest = issue.errors.reduce<readonly z.core.$ZodIssue[] | undefined>(
+    (best, option) =>
+      best === undefined || option.length < best.length ? option : best,
+    undefined,
+  );
+  return closest === undefined || closest.length === 0
+    ? [path]
+    : closest.flatMap((option) => creationIssuePaths(option, path));
+}
+
+/**
  * The faults a field earns, with the ones this form stated itself first: a
  * field the form already has a sentence for is not given the field's general
  * one a second time, and an issue belonging to no field is left to the sentence
  * the form states beside the box that fixes it.
  */
 function creationFaultsOf(
-  issues: readonly { readonly path: readonly PropertyKey[] }[],
+  issues: readonly z.core.$ZodIssue[],
   stated: readonly CreationFault[],
 ): readonly CreationFault[] {
   const named = new Set(stated.map((fault) => fault.field));
   const fields = new Set(
     issues
-      .map((issue) => creationFieldOf(issue.path))
+      .flatMap((issue) => creationIssuePaths(issue, []))
+      .map((path) => creationFieldOf(path))
       .filter((field) => field !== undefined),
   );
   return [
@@ -1023,7 +1045,7 @@ function creationLandingFault(
   form: TicketCreationForm,
   branches: CreationBranches,
 ): CreationFault | undefined {
-  if (!briefFinalizationProposes(form.landingMode)) return undefined;
+  if (!briefFinalizationOpensProposal(form.finalization)) return undefined;
   if (branches.branch.named === "Prefixed") return undefined;
   if (branches.target.named === "Prefixed") return undefined;
   if (branches.branch.named !== "Ref")
@@ -1031,14 +1053,7 @@ function creationLandingFault(
   if (branches.target.named !== "Ref") return undefined;
   return briefLandingIsWhole({
     branch: branches.branch.ref,
-    finalization:
-      form.landingMode === "PullRequestMerge"
-        ? {
-            kind: "GitMerge",
-            mode: form.landingMode,
-            target: branches.target.ref,
-          }
-        : { kind: "PullRequest", target: branches.target.ref },
+    finalization: { ...form.finalization, target: branches.target.ref },
   })
     ? undefined
     : { field: "target", reason: creationLandingWholeSentence };
@@ -1047,7 +1062,7 @@ function creationLandingFault(
 /**
  * The faults this form decides for itself, the wire's parser deciding the rest.
  *
- * A FORM STATES NO FAULT IN A BOX IT DOES NOT DRAW: a ticket landing nothing
+ * A FORM STATES NO FAULT IN A BOX IT DOES NOT DRAW: a ticket finalized by `None`
  * is asked for no target and sends none, so a value left in the target box
  * from before that choice would stop a submission with no field on screen to
  * read the reason beside.
@@ -1065,7 +1080,7 @@ function creationStatedFaults(
     });
   if (branches.branch.named === "Prefixed")
     stated.push({ field: "branch", reason: creationBranchPrefixedSentence });
-  if (form.landingMode === "None") return stated;
+  if (form.finalization.kind === "None") return stated;
   if (branches.target.named === "Prefixed")
     stated.push({ field: "target", reason: creationBranchPrefixedSentence });
   const landing = creationLandingFault(form, branches);
@@ -1074,29 +1089,25 @@ function creationStatedFaults(
 }
 
 /**
- * How this brief lands, sent explicitly on every submission — even where the
- * mode is the repository's own default — so the ticket records the landing it
- * was released with. `None` names no reference at all; every other mode names
- * one only where a target was typed, a policy goes only beside a push or a
- * merged proposal, the modes a policy orders, and a value left where the mode
- * draws none is never sent.
+ * How this brief is finalized, sent explicitly on every submission — even
+ * where it is the repository's own default — so the ticket records the
+ * finalization it was released with. `None` names no reference at all, and
+ * every other kind names one only where a target was typed, so a value left in
+ * the box where the kind draws none is never sent.
  */
 function creationFinalizationOf(
   form: TicketCreationForm,
   branches: CreationBranches,
 ): Record<string, unknown> {
-  const mode = form.landingMode;
-  if (mode === "None") return { finalization: { mode } };
+  const finalization = form.finalization;
+  if (finalization.kind === "None") return { finalization };
   return {
     finalization: {
-      mode,
+      ...finalization,
       ...(branches.target.named === "Ref"
         ? { target: branches.target.ref }
         : {}),
     },
-    ...(mode === "PullRequest" || form.landingPolicy === "Direct"
-      ? {}
-      : { landing: form.landingPolicy }),
   };
 }
 

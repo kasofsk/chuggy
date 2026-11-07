@@ -12,6 +12,7 @@ export interface TicketYamlKey {
   readonly key: string;
   readonly hint: string;
   readonly values: readonly TicketYamlValue[];
-  /** Written inside a program's stage or a workload rather than at the top. */
-  readonly place?: "Stage" | "Workload";
+  /** Written inside a program's stage, a workload or a selection, or a
+   * finalization, rather than at the top. */
+  readonly place?: "Stage" | "Workload" | "Finalization";
 }

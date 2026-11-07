@@ -1,5 +1,5 @@
 /**
- * One repository's page: the landing it defaults to, whether its jobs may
+ * One repository's page: the finalization it defaults to, whether its jobs may
  * change its workflow files, what it declares under `.chug/configurations`,
  * and when that was last imported.
  *
@@ -10,8 +10,7 @@
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
-import { repositoryFinalizationOfLanding } from "../../../src/contract/requests.ts";
-import type { BriefFinalizationMode } from "../../../src/contract/rosters.ts";
+import type { FinalizationChoice } from "../app/core/finalizationChoice.ts";
 import { QueryClient } from "@tanstack/react-query";
 import {
   cleanup,
@@ -71,16 +70,29 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
+const push: FinalizationChoice = {
+  kind: "GitMerge",
+  mode: "Push",
+  policy: "Direct",
+};
+const proposal: FinalizationChoice = { kind: "PullRequest" };
+const nothing: FinalizationChoice = { kind: "None" };
+
 function binding(
-  mode: BriefFinalizationMode,
+  finalization: FinalizationChoice,
   repository = chuggy,
   pipelinesWritable = false,
 ): unknown {
   return {
     repository,
     boundAt: "2026-09-11T00:00:00Z",
-    landing: { mode },
-    finalization: repositoryFinalizationOfLanding({ mode }),
+    landing: {
+      mode:
+        finalization.kind === "GitMerge"
+          ? finalization.mode
+          : finalization.kind,
+    },
+    finalization,
     pipelinesWritable,
     configured: true,
   };
@@ -163,7 +175,7 @@ interface Drawing {
   readonly repository?: string;
   /** The bindings the project answers with. */
   readonly bound?: readonly unknown[];
-  /** What the landing write answers with, in turn, each in the route's own
+  /** What the finalization write answers with, in turn, each in the route's own
    * envelope: the row the write left, or the row it lost to. */
   readonly written?: readonly Response[];
   /** Whether every configurations page holds a cursor, so the walk hits the
@@ -184,7 +196,7 @@ interface Drawing {
 
 async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
   routed.repository = drawing.repository ?? chuggy;
-  const bound = drawing.bound ?? [binding("Push")];
+  const bound = drawing.bound ?? [binding(push)];
   const written = [...(drawing.written ?? [])];
   const imported = [...(drawing.imported ?? [])];
   let relisted = drawing.relisted;
@@ -199,7 +211,7 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
       return imported.shift() ?? Promise.resolve(answer({ imported: true }));
     if (init?.method === "PUT")
       return Promise.resolve(
-        written.shift() ?? answer({ repository: binding("Push") }),
+        written.shift() ?? answer({ repository: binding(push) }),
       );
     if (url.includes("/draft-initializations/"))
       return Promise.resolve(answer(initialization));
@@ -244,9 +256,9 @@ function sectionOf(title: string): HTMLElement {
   return screen.getByRole("region", { name: new RegExp(`^${title}`) });
 }
 
-/** The choice in force, which is the radio the group draws as checked. */
-function chosenLanding(): string | undefined {
-  return ["Push", "Pull request"].find(
+/** The kind in force, which is the radio the group draws as checked. */
+function chosenFinalization(): string | undefined {
+  return ["Git merge", "Pull request", "None"].find(
     (name) =>
       screen.getByRole("radio", { name }).getAttribute("aria-checked") ===
       "true",
@@ -281,10 +293,10 @@ function chosenWorkflowFiles(): string | undefined {
 }
 
 test("the page reads its own binding, and says what it lands as", async () => {
-  await drawPage({ bound: [binding("PullRequest")] });
-  const landing = sectionOf("Landing");
+  await drawPage({ bound: [binding(proposal)] });
+  const finalization = sectionOf("Finalization");
   expect(
-    within(landing).getByText(
+    within(finalization).getByText(
       "How a finished ticket lands. A ticket may choose otherwise.",
     ),
   ).toBeTruthy();
@@ -292,21 +304,21 @@ test("the page reads its own binding, and says what it lands as", async () => {
   expect(
     screen.getByRole("link", { name: "Repositories" }).getAttribute("href"),
   ).toBe("/$tenant/$project/repositories");
-  expect(chosenLanding()).toBe("Pull request");
+  expect(chosenFinalization()).toBe("Pull request");
   expect(
-    within(landing)
-      .getByRole<HTMLInputElement>("radio", { name: "Push" })
+    within(finalization)
+      .getByRole<HTMLInputElement>("radio", { name: "Git merge" })
       .getAttribute("data-disabled"),
   ).not.toBe(null);
   styleless();
 });
 
-/** A repository the project does not bind has no landing to draw and no
+/** A repository the project does not bind has no finalization to draw and no
  * configurations of its own to list, so the page says only that. */
 test("a repository this project does not bind draws nothing but Not bound", async () => {
   await drawPage({ repository: "https://forge.test/kasofsk/none" });
   expect(screen.getByText("Not bound")).toBeTruthy();
-  expect(screen.queryByRole("region", { name: /^Landing/u })).toBeNull();
+  expect(screen.queryByRole("region", { name: /^Finalization/u })).toBeNull();
   expect(screen.queryByRole("region", { name: /^Configurations/u })).toBeNull();
 });
 
@@ -324,7 +336,7 @@ test.each([
           repository: chuggy,
           boundAt: "2026-09-11T00:00:00Z",
           landing: { mode: "Push" },
-          finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
+          finalization: push,
           pipelinesWritable: false,
           configured: true,
           ...(retiredAt === undefined ? {} : { retiredAt }),
@@ -338,11 +350,11 @@ test.each([
   },
 );
 
-test("a saved landing is written against the mode the page read", async () => {
+test("a saved finalization is written against the one the page read", async () => {
   const sent = await drawPage({
-    written: [answer({ repository: binding("PullRequest") })],
+    written: [answer({ repository: binding(proposal) })],
   });
-  await edit("Landing");
+  await edit("Finalization");
   await turned(() => {
     fireEvent.click(screen.getByRole("radio", { name: "Pull request" }));
   });
@@ -351,15 +363,49 @@ test("a saved landing is written against the mode the page read", async () => {
   expect(wrote?.url.endsWith("/repositories/landing")).toBe(true);
   expect(wrote?.body).toStrictEqual({
     repository: chuggy,
-    expected: { mode: "Push" },
-    landing: { mode: "PullRequest" },
+    expected: push,
+    landing: proposal,
     pipelinesWritable: { expected: false, wanted: false },
   });
   expect(screen.getByText("Written")).toBeTruthy();
-  expect(chosenLanding()).toBe("Pull request");
+  expect(chosenFinalization()).toBe("Pull request");
   expect(
-    within(sectionOf("Landing")).getByRole("button", { name: "Edit" }),
+    within(sectionOf("Finalization")).getByRole("button", { name: "Edit" }),
   ).toBeTruthy();
+});
+
+/** A policy orders a git merge and nothing else, so the section offers one
+ * only while the kind chosen is a git merge, and writes it inside the
+ * finalization it belongs to. */
+test("a git merge's policy is offered only under a git merge, and is written with it", async () => {
+  const serialized = { ...push, policy: "Serialized" } as const;
+  const sent = await drawPage({
+    written: [answer({ repository: binding(serialized) })],
+  });
+  await edit("Finalization");
+  const section = sectionOf("Finalization");
+  await turned(() => {
+    fireEvent.click(within(section).getByRole("radio", { name: "None" }));
+  });
+  expect(within(section).queryByRole("radiogroup", { name: "Policy" })).toBe(
+    null,
+  );
+  expect(within(section).queryByRole("radiogroup", { name: "Merge" })).toBe(
+    null,
+  );
+  await turned(() => {
+    fireEvent.click(within(section).getByRole("radio", { name: "Git merge" }));
+  });
+  await turned(() => {
+    fireEvent.click(within(section).getByRole("radio", { name: "Serialized" }));
+  });
+  await press("Save changes");
+  expect(sent.find((one) => one.method === "PUT")?.body).toStrictEqual({
+    repository: chuggy,
+    expected: push,
+    landing: serialized,
+    pipelinesWritable: { expected: false, wanted: false },
+  });
 });
 
 /**
@@ -367,7 +413,7 @@ test("a saved landing is written against the mode the page read", async () => {
  * mode it moved to — so the draft takes it, the section says so, and the reload
  * is the one action offered.
  */
-test("a landing that moved under the write says so, and rebases onto what stands", async () => {
+test("a finalization that moved under the write says so, and rebases onto what stands", async () => {
   const sent = await drawPage({
     written: [
       answer(
@@ -376,14 +422,14 @@ test("a landing that moved under the write says so, and rebases onto what stands
             code: "RepositoryLandingMoved",
             message: "the landing moved under this write",
           },
-          repository: binding("PullRequest"),
+          repository: binding(proposal),
         },
         409,
       ),
-      answer({ repository: binding("Push") }),
+      answer({ repository: binding(push) }),
     ],
   });
-  await edit("Landing");
+  await edit("Finalization");
   await turned(() => {
     fireEvent.click(screen.getByRole("radio", { name: "Pull request" }));
   });
@@ -391,15 +437,15 @@ test("a landing that moved under the write says so, and rebases onto what stands
   expect(screen.getByText("Settings moved")).toBeTruthy();
   expect(screen.getByRole("button", { name: "Reload" })).toBeTruthy();
   await turned(() => {
-    fireEvent.click(screen.getByRole("radio", { name: "Push" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Git merge" }));
   });
   await press("Save changes");
   const writes = sent.filter((one) => one.method === "PUT");
   expect(writes.length).toBe(2);
   expect(writes[1]?.body).toStrictEqual({
     repository: chuggy,
-    expected: { mode: "PullRequest" },
-    landing: { mode: "Push" },
+    expected: proposal,
+    landing: push,
     pipelinesWritable: { expected: false, wanted: false },
   });
 });
@@ -419,16 +465,16 @@ test("the workflow files section says they are off until a binding allows them",
       .getAttribute("data-disabled"),
   ).not.toBe(null);
   cleanup();
-  await drawPage({ bound: [binding("Push", chuggy, true)] });
+  await drawPage({ bound: [binding(push, chuggy, true)] });
   expect(chosenWorkflowFiles()).toBe("On");
 });
 
-/** The section moves its own setting and writes the landing as the page read
- * it, so the landing it did not touch is fenced rather than written over. */
-test("allowing workflow files writes them against what the page read, the landing unchanged", async () => {
+/** The section moves its own setting and writes the finalization as the page
+ * read it, so the finalization it did not touch is fenced rather than written over. */
+test("allowing workflow files writes them against what the page read, the finalization unchanged", async () => {
   const sent = await drawPage({
-    bound: [binding("PullRequest")],
-    written: [answer({ repository: binding("PullRequest", chuggy, true) })],
+    bound: [binding(proposal)],
+    written: [answer({ repository: binding(proposal, chuggy, true) })],
   });
   await edit("Workflow files");
   await turned(() => {
@@ -441,17 +487,17 @@ test("allowing workflow files writes them against what the page read, the landin
   expect(wrote?.url.endsWith("/repositories/landing")).toBe(true);
   expect(wrote?.body).toStrictEqual({
     repository: chuggy,
-    expected: { mode: "PullRequest" },
-    landing: { mode: "PullRequest" },
+    expected: proposal,
+    landing: proposal,
     pipelinesWritable: { expected: false, wanted: true },
   });
   expect(within(sectionOf("Workflow files")).getByText("Written")).toBeTruthy();
   expect(chosenWorkflowFiles()).toBe("On");
-  expect(chosenLanding()).toBe("Pull request");
+  expect(chosenFinalization()).toBe("Pull request");
 });
 
-/** A landing written by the other section moves under this one; the retry is
- * fenced against the landing that now stands, the choice standing. */
+/** A finalization written by the other section moves under this one; the
+ * retry is fenced against the finalization that now stands, the choice standing. */
 test("workflow files the binding moved under say so, and the retry fences on what stands", async () => {
   const sent = await drawPage({
     written: [
@@ -461,11 +507,11 @@ test("workflow files the binding moved under say so, and the retry fences on wha
             code: "RepositoryLandingMoved",
             message: "the settings moved under this write",
           },
-          repository: binding("None"),
+          repository: binding(nothing),
         },
         409,
       ),
-      answer({ repository: binding("None", chuggy, true) }),
+      answer({ repository: binding(nothing, chuggy, true) }),
     ],
   });
   await edit("Workflow files");
@@ -484,8 +530,8 @@ test("workflow files the binding moved under say so, and the retry fences on wha
   expect(writes.length).toBe(2);
   expect(writes[1]?.body).toStrictEqual({
     repository: chuggy,
-    expected: { mode: "None" },
-    landing: { mode: "None" },
+    expected: nothing,
+    landing: nothing,
     pipelinesWritable: { expected: false, wanted: true },
   });
 });
@@ -493,11 +539,11 @@ test("workflow files the binding moved under say so, and the retry fences on wha
 /** One section's write moves the binding the other section's draft was read
  * from, so the other's next write fences against the setting it now holds
  * rather than writing back the one the page first read. */
-test("a landing saved after workflow files were allowed keeps them allowed", async () => {
+test("a finalization saved after workflow files were allowed keeps them allowed", async () => {
   const sent = await drawPage({
     written: [
-      answer({ repository: binding("Push", chuggy, true) }),
-      answer({ repository: binding("PullRequest", chuggy, true) }),
+      answer({ repository: binding(push, chuggy, true) }),
+      answer({ repository: binding(proposal, chuggy, true) }),
     ],
   });
   await edit("Workflow files");
@@ -507,7 +553,7 @@ test("a landing saved after workflow files were allowed keeps them allowed", asy
     );
   });
   await press("Save changes");
-  await edit("Landing");
+  await edit("Finalization");
   await turned(() => {
     fireEvent.click(screen.getByRole("radio", { name: "Pull request" }));
   });
@@ -516,8 +562,8 @@ test("a landing saved after workflow files were allowed keeps them allowed", asy
   expect(writes.length).toBe(2);
   expect(writes[1]?.body).toStrictEqual({
     repository: chuggy,
-    expected: { mode: "Push" },
-    landing: { mode: "PullRequest" },
+    expected: push,
+    landing: proposal,
     pipelinesWritable: { expected: true, wanted: true },
   });
   expect(chosenWorkflowFiles()).toBe("On");
@@ -541,7 +587,7 @@ test("a refused write says so and leaves the edit open", async () => {
       answer({ error: { code: "RepositoryLocked", message: "no" } }, 403),
     ],
   });
-  await edit("Landing");
+  await edit("Finalization");
   await turned(() => {
     fireEvent.click(screen.getByRole("radio", { name: "Pull request" }));
   });
@@ -551,14 +597,14 @@ test("a refused write says so and leaves the edit open", async () => {
   expect(screen.queryByRole("button", { name: "Reload" })).toBeNull();
 });
 
-test("cancelling a choice leaves the landing the page read", async () => {
+test("cancelling a choice leaves the finalization the page read", async () => {
   await drawPage();
-  await edit("Landing");
+  await edit("Finalization");
   await turned(() => {
     fireEvent.click(screen.getByRole("radio", { name: "Pull request" }));
   });
   await press("Cancel");
-  expect(chosenLanding()).toBe("Push");
+  expect(chosenFinalization()).toBe("Git merge");
 });
 
 /**
@@ -602,42 +648,42 @@ test("a walk the budget stopped says so under the rows it did read", async () =>
   styleless();
 });
 
-function landingEditOffered(title = "Landing"): boolean {
+function finalizationEditOffered(title = "Finalization"): boolean {
   return (
     within(sectionOf(title)).queryByRole("button", { name: "Edit" }) !== null
   );
 }
 
-test("a reader who may not administer reads the landing and is offered no Edit", async () => {
+test("a reader who may not administer reads the finalization and is offered no Edit", async () => {
   await drawPage({
     over: abilitiesOver({ ...abilitiesEvery, administer: false }),
   });
-  expect(chosenLanding()).toBe("Push");
-  expect(landingEditOffered()).toBe(false);
+  expect(chosenFinalization()).toBe("Git merge");
+  expect(finalizationEditOffered()).toBe(false);
 });
 
 test("a reader who may not administer reads the workflow files and is offered no Edit", async () => {
   await drawPage({
-    bound: [binding("Push", chuggy, true)],
+    bound: [binding(push, chuggy, true)],
     over: abilitiesOver({ ...abilitiesEvery, administer: false }),
   });
   expect(chosenWorkflowFiles()).toBe("On");
-  expect(landingEditOffered("Workflow files")).toBe(false);
+  expect(finalizationEditOffered("Workflow files")).toBe(false);
 });
 
 test.each(abilitiesUnrefusing)(
-  "a reader the abilities read %s is offered the landing's Edit",
+  "a reader the abilities read %s is offered the finalization's Edit",
   async (_said, abilities) => {
     await drawPage({ over: abilitiesOver(abilities) });
-    expect(landingEditOffered()).toBe(true);
-    expect(landingEditOffered("Workflow files")).toBe(true);
+    expect(finalizationEditOffered()).toBe(true);
+    expect(finalizationEditOffered("Workflow files")).toBe(true);
   },
 );
 
 /** The bound repository as the listing answers it, carrying the last import where one is given. */
 function attempted(lastImport?: unknown): unknown {
   return {
-    ...(binding("Push") as object),
+    ...(binding(push) as object),
     ...(lastImport === undefined ? {} : { lastImport }),
   };
 }

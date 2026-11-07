@@ -27,10 +27,6 @@ import type {
   DraftResponse,
   ProjectRepositoryResponse,
 } from "../../../../src/contract/responses.ts";
-import {
-  briefFinalizationModes,
-  briefGitMergePolicies,
-} from "../../../../src/contract/rosters.ts";
 import type { ApiFailure, ApiPorts } from "../core/apiRequest.ts";
 import { base64urlFromBytes } from "../core/base64url.ts";
 import { readFailedLine } from "../core/failureWords.ts";
@@ -41,12 +37,7 @@ import type {
   ConsoleWriteRefused,
 } from "../core/consoleWrite.ts";
 import type { ProjectQueryKey } from "../core/projectQueryKeys.ts";
-import {
-  landingEffect,
-  landingLabel,
-  landingPolicyEffect,
-  landingPolicyLabel,
-} from "../core/codeLabels.ts";
+import { FinalizationChoiceFields } from "./FinalizationChoice.tsx";
 import { epicPickerMax, epicPickerOptions, epicsQuery } from "../core/epics.ts";
 import type { EpicPicked } from "../core/epics.ts";
 import { repositoryLabel } from "../core/projectRepositories.ts";
@@ -153,7 +144,6 @@ import { Button } from "./ui/Button.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { Notice } from "./ui/Notice.tsx";
 import { Picker } from "./ui/Picker.tsx";
-import { RadioGroup } from "./ui/RadioGroup.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
 import { AddRunnerLink, useWorkRunner } from "./workRunner.tsx";
 
@@ -492,7 +482,7 @@ function TargetBranch(props: FormEdit): ReactNode {
   return (
     <BranchRow
       label="Target branch"
-      hint={creationTargetBranchFieldHint(form.landingMode)}
+      hint={creationTargetBranchFieldHint(form.finalization)}
       value={form.targetBranchName}
       placeholder="the branch to land on"
       onChange={(targetBranchName) => {
@@ -602,56 +592,22 @@ function EpicChoice(
   );
 }
 
-const landingOptions = briefFinalizationModes.map((mode) => ({
-  value: mode,
-  text: landingLabel(mode),
-  description: landingEffect(mode),
-}));
-
-/** How this ticket lands, seeded from the repository's default. */
-function Landing(props: FormEdit): ReactNode {
+/** How this ticket is finalized, seeded from the repository's default. */
+function Finalization(props: FormEdit): ReactNode {
   const { form, onChange } = props;
   return (
-    <div className="creation-row">
-      <span>Landing</span>
-      <RadioGroup
-        label="Landing"
-        value={form.landingMode}
-        options={landingOptions}
-        onChoose={(value) => {
-          const chosen = briefFinalizationModes.find((mode) => mode === value);
-          if (chosen !== undefined) onChange({ ...form, landingMode: chosen });
-        }}
-      />
-    </div>
-  );
-}
-
-const landingPolicyOptions = briefGitMergePolicies.map((policy) => ({
-  value: policy,
-  text: landingPolicyLabel(policy),
-  description: landingPolicyEffect(policy),
-}));
-
-/** How this ticket's landing is ordered against the others on its reference. */
-function LandingPolicy(props: FormEdit): ReactNode {
-  const { form, onChange } = props;
-  return (
-    <div className="creation-row">
-      <span>Landing policy</span>
-      <RadioGroup
-        label="Landing policy"
-        value={form.landingPolicy}
-        options={landingPolicyOptions}
-        onChoose={(value) => {
-          const chosen = briefGitMergePolicies.find(
-            (policy) => policy === value,
-          );
-          if (chosen !== undefined)
-            onChange({ ...form, landingPolicy: chosen });
-        }}
-      />
-    </div>
+    <FinalizationChoiceFields
+      choice={form.finalization}
+      onChoose={(finalization) => {
+        onChange({ ...form, finalization });
+      }}
+      row={(label, control) => (
+        <div className="creation-row">
+          <span>{label}</span>
+          {control}
+        </div>
+      )}
+    />
   );
 }
 
@@ -798,16 +754,14 @@ export function CreationFields(props: CreationFieldsProps): ReactNode {
           partition={props.api.partition}
         />
       ) : null}
-      <Landing form={form} onChange={onChange} />
-      <Fault field="landing" faults={faults} />
-      {form.landingMode === "None" ? null : (
+      <Finalization form={form} onChange={onChange} />
+      <Fault field="finalization" faults={faults} />
+      {form.finalization.kind === "None" ? null : (
         <>
           <TargetBranch form={form} onChange={onChange} />
           <Fault field="target" faults={faults} />
         </>
       )}
-      <LandingPolicy form={form} onChange={onChange} />
-      <Fault field="landingPolicy" faults={faults} />
       {drawn === undefined ? null : (
         <TicketCreationAdvanced
           form={form}

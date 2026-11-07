@@ -133,12 +133,15 @@ function chugEditorDiagnosticOf(
   };
 }
 
+/** Where a key is written below the top of the document. */
+type ChugEditorPlace = NonNullable<TicketYamlKey["place"]>;
+
 /**
  * Where the caret is asking for something: a top-level key, a key's value, an
- * item of a list under a key, or a key inside a program's stage, with how much
- * of the answer is already typed. Read from the line alone, and the lines
- * above it for a list item's owner, because a half-typed line is exactly the
- * text a parser gives up on.
+ * item of a list under a key, a key inside a program's stage, or a field of a
+ * workload, a selection or a finalization, with how much of the answer is
+ * already typed. Read from the line alone, and the lines above it for its
+ * owner, because a half-typed line is exactly the text a parser gives up on.
  */
 export type ChugEditorAsked =
   | { readonly asked: "Key"; readonly typed: number }
@@ -146,11 +149,15 @@ export type ChugEditorAsked =
       readonly asked: "Value";
       readonly key: string;
       readonly typed: number;
-      /** Present where the key is written inside a stage or a workload. */
-      readonly nested?: true;
+      /** Present where the key is written below the top of the document. */
+      readonly place?: ChugEditorPlace;
     }
   | { readonly asked: "Nested"; readonly typed: number }
-  | { readonly asked: "Field"; readonly typed: number };
+  | {
+      readonly asked: "Field";
+      readonly typed: number;
+      readonly place: ChugEditorPlace;
+    };
 
 const chugEditorKeyAsked = /^(\w*)$/;
 const chugEditorFieldAsked = /^(\s+)(\w*)$/;
@@ -178,14 +185,20 @@ function chugEditorTopOf(above: readonly string[]): string | undefined {
   return chugEditorOwnerOf(above, 1)?.key;
 }
 
-/** The key of this name written at a line's depth, or of this name anywhere where none is. */
+/** Where a line indented under this top-level key is written. */
+function chugEditorPlaceOf(top: string | undefined): ChugEditorPlace {
+  if (top === "program") return "Stage";
+  return top === "finalization" ? "Finalization" : "Workload";
+}
+
+/** The key of this name written in that place, or of this name anywhere where none is. */
 function chugEditorKeyOf(
   keys: readonly TicketYamlKey[],
   name: string,
-  nested: boolean,
+  place: ChugEditorPlace | undefined,
 ): TicketYamlKey | undefined {
   const named = keys.filter((key) => key.key === name);
-  return named.find((key) => (key.place !== undefined) === nested) ?? named[0];
+  return named.find((key) => key.place === place) ?? named[0];
 }
 
 /** The caret's line up to the caret, and the lines above it nearest first. */
@@ -195,11 +208,15 @@ export function chugEditorAsked(
 ): ChugEditorAsked | undefined {
   if (chugEditorKeyAsked.test(before))
     return { asked: "Key", typed: before.length };
+  const top = chugEditorTopOf(above);
   const field = chugEditorFieldAsked.exec(before);
   if (field !== null)
-    return chugEditorTopOf(above) === "workloads" ||
-      chugEditorTopOf(above) === "selection"
-      ? { asked: "Field", typed: field[2]?.length ?? 0 }
+    return top === "workloads" || top === "selection" || top === "finalization"
+      ? {
+          asked: "Field",
+          typed: field[2]?.length ?? 0,
+          place: chugEditorPlaceOf(top),
+        }
       : undefined;
   const value = chugEditorValueAsked.exec(before);
   if (value?.[1] !== undefined)
@@ -207,7 +224,7 @@ export function chugEditorAsked(
       asked: "Value",
       key: value[1],
       typed: value[2]?.length ?? 0,
-      ...(/^\s/u.test(before) ? { nested: true as const } : {}),
+      ...(/^\s/u.test(before) ? { place: chugEditorPlaceOf(top) } : {}),
     };
   const item = chugEditorItemAsked.exec(before);
   if (item === null) return undefined;
@@ -220,19 +237,29 @@ export function chugEditorAsked(
         asked: "Value",
         key: owner.key,
         typed,
-        ...(owner.nested ? { nested: true as const } : {}),
+        ...(owner.nested ? { place: chugEditorPlaceOf(top) } : {}),
       };
+}
+
+/** The lines above one line of a document, nearest first. */
+function chugEditorAbove(
+  state: EditorState,
+  line: { readonly number: number },
+): readonly string[] {
+  return Array.from(
+    { length: line.number - 1 },
+    (_, index) => state.doc.line(line.number - 1 - index).text,
+  );
 }
 
 function chugEditorAskedAt(
   context: CompletionContext,
 ): ChugEditorAsked | undefined {
   const line = context.state.doc.lineAt(context.pos);
-  const above = Array.from(
-    { length: line.number - 1 },
-    (_, index) => context.state.doc.line(line.number - 1 - index).text,
+  return chugEditorAsked(
+    line.text.slice(0, context.pos - line.from),
+    chugEditorAbove(context.state, line),
   );
-  return chugEditorAsked(line.text.slice(0, context.pos - line.from), above);
 }
 
 /** What the vocabulary offers where the caret asks, and nothing where it
@@ -249,7 +276,9 @@ export function chugEditorOffered(
         .filter(
           (key) =>
             key.place ===
-            { Key: undefined, Nested: "Stage", Field: "Workload" }[asked.asked],
+            (asked.asked === "Field"
+              ? asked.place
+              : { Key: undefined, Nested: "Stage" as const }[asked.asked]),
         )
         .map((key) => ({
           label: key.key,
@@ -258,13 +287,13 @@ export function chugEditorOffered(
           type: "property",
         }));
     case "Value":
-      return (
-        chugEditorKeyOf(keys, asked.key, asked.nested === true)?.values ?? []
-      ).map((value) => ({
-        label: value.label,
-        ...(value.detail === undefined ? {} : { detail: value.detail }),
-        type: "constant",
-      }));
+      return (chugEditorKeyOf(keys, asked.key, asked.place)?.values ?? []).map(
+        (value) => ({
+          label: value.label,
+          ...(value.detail === undefined ? {} : { detail: value.detail }),
+          type: "constant",
+        }),
+      );
   }
 }
 
@@ -303,7 +332,11 @@ function chugEditorHints(vocabulary: () => readonly TicketYamlKey[]) {
     const line = view.state.doc.lineAt(pos);
     const at = chugEditorKeyAt(line.text, pos - line.from);
     if (at === undefined) return null;
-    const hint = chugEditorKeyOf(vocabulary(), at.key, at.from > 0)?.hint;
+    const place =
+      at.from > 0
+        ? chugEditorPlaceOf(chugEditorTopOf(chugEditorAbove(view.state, line)))
+        : undefined;
+    const hint = chugEditorKeyOf(vocabulary(), at.key, place)?.hint;
     if (hint === undefined || hint === "") return null;
     return {
       pos: line.from + at.from,

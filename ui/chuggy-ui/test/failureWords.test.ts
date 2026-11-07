@@ -20,7 +20,7 @@ import {
 } from "../app/core/leadInquiries.ts";
 import { memberRunnerRemoved } from "../app/core/myRunner.ts";
 import { repositoryImportRefused } from "../app/core/repositoryImport.ts";
-import { repositoryLandingRefusal } from "../app/core/repositoryLanding.ts";
+import { repositoryFinalizationRefusal } from "../app/core/repositoryFinalization.ts";
 import { runnersPlacementRefusal } from "../app/core/runners.ts";
 import { selectorSettingsRefusal } from "../app/core/selectorSettingsForm.ts";
 
@@ -121,7 +121,7 @@ const writeLines: readonly (readonly [
   (failure: ApiFailure) => string,
 ])[] = [
   ["a member's runners removed", (failure) => memberRunnerRemoved(failure)],
-  ["a landing saved", repositoryLandingRefusal],
+  ["a finalization saved", repositoryFinalizationRefusal],
   ["a placement saved", runnersPlacementRefusal],
   ["selector settings saved", (failure) => selectorSettingsRefusal(failure, 0)],
   [

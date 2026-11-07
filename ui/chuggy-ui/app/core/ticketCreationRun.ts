@@ -93,7 +93,7 @@ export type CreationContext =
        * draws, or one's initialization could not be read. */
       readonly partial: boolean;
       /** What the project binds, which decides whether the form asks for one,
-       * what it offers, and the landing each one defaults to. Oldest first, as
+       * what it offers, and the finalization each one defaults to. Oldest first, as
        * the listing answers. */
       readonly repositories: readonly ProjectRepositoryResponse[];
     }

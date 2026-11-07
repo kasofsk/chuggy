@@ -153,3 +153,48 @@ test("a workload naming a prompt file is written with the path alone, an empty l
     ),
   ).toBe("Build it.\nTest it.");
 });
+
+/** A finalizer says its finalization by its kind, and a git merge's policy as
+ * a field of its own, which no other kind has. */
+test("a finalizer's entry says how it lands, and a git merge's policy beside it", () => {
+  const written = JSON.parse(creationCatalogCanonical) as Record<
+    string,
+    unknown
+  >;
+  const finalized = entriesOf(
+    JSON.stringify({
+      ...written,
+      version: 3,
+      finalizers: {
+        land: {
+          finalization: {
+            kind: "GitMerge",
+            mode: "Push",
+            target: "refs/heads/release",
+            policy: "Serialized",
+          },
+        },
+        approved: {
+          approvalRequired: true,
+          finalization: { kind: "PullRequest" },
+        },
+      },
+    }),
+  );
+  expect(catalogEntrySummary(entryOf(finalized, "finalizers/land"))).toBe(
+    "Lands unapproved · Push",
+  );
+  expect(
+    catalogEntryFields(entryOf(finalized, "finalizers/land")),
+  ).toStrictEqual([
+    ["Approval", "Lands unapproved"],
+    ["Finalization", "Push · lands on refs/heads/release"],
+    ["Policy", "Serialized"],
+  ]);
+  expect(
+    catalogEntryFields(entryOf(finalized, "finalizers/approved")),
+  ).toStrictEqual([
+    ["Approval", "Approved first"],
+    ["Finalization", "Pull request · into the default branch"],
+  ]);
+});

@@ -56,9 +56,9 @@ test("a text the handle is given is not reported as typed", () => {
 
 test("the caret asks for a key, a value, a list item's value or a stage's key", () => {
   expect(chugEditorAsked("lan", [])).toStrictEqual({ asked: "Key", typed: 3 });
-  expect(chugEditorAsked("landing: Pu", [])).toStrictEqual({
+  expect(chugEditorAsked("title: Pu", [])).toStrictEqual({
     asked: "Value",
-    key: "landing",
+    key: "title",
     typed: 2,
   });
   expect(chugEditorAsked("dependencies: [7, ", [])).toStrictEqual({
@@ -79,13 +79,13 @@ test("the caret asks for a key, a value, a list item's value or a stage's key", 
     asked: "Value",
     key: "evaluators",
     typed: 0,
-    nested: true,
+    place: "Stage",
   });
   expect(chugEditorAsked("intent: |", [])).toBeUndefined();
 });
 
 const vocabulary: readonly TicketYamlKey[] = [
-  { key: "landing", hint: "how it lands", values: [{ label: "Push" }] },
+  { key: "branch", hint: "where it starts", values: [{ label: "main" }] },
   { key: "title", hint: "its name", values: [] },
   {
     key: "evaluators",
@@ -100,7 +100,7 @@ test("what is offered is the vocabulary's, a stage's keys only in a stage", () =
     chugEditorOffered({ asked: "Key", typed: 0 }, vocabulary).map(
       (option) => option.label,
     ),
-  ).toStrictEqual(["landing", "title"]);
+  ).toStrictEqual(["branch", "title"]);
   expect(
     chugEditorOffered({ asked: "Nested", typed: 0 }, vocabulary).map(
       (option) => option.apply,
@@ -109,6 +109,33 @@ test("what is offered is the vocabulary's, a stage's keys only in a stage", () =
   expect(
     chugEditorOffered({ asked: "Value", key: "title", typed: 0 }, vocabulary),
   ).toStrictEqual([]);
+});
+
+/** A finalization and a workload each write a `mode`, so a nested key is
+ * looked up in the place the top-level key above it writes it in. */
+test("a finalization's fields are offered under it, and a nested key's values are the place's own", () => {
+  const keys: readonly TicketYamlKey[] = [
+    { key: "mode", hint: "the worker's mode", values: [], place: "Workload" },
+    {
+      key: "mode",
+      hint: "how a git merge advances",
+      values: [{ label: "Push" }],
+      place: "Finalization",
+    },
+    { key: "kind", hint: "its kind", values: [], place: "Finalization" },
+  ];
+  const offered = (before: string, above: readonly string[]) => {
+    const asked = chugEditorAsked(before, above);
+    return asked === undefined
+      ? []
+      : chugEditorOffered(asked, keys).map((option) => option.label);
+  };
+  expect(offered("  ", ["finalization:"])).toStrictEqual(["mode", "kind"]);
+  expect(offered("  ", ["workloads:"])).toStrictEqual(["mode"]);
+  expect(
+    offered("  mode: ", ["  kind: GitMerge", "finalization:"]),
+  ).toStrictEqual(["Push"]);
+  expect(offered("    mode: ", ["  build:", "workloads:"])).toStrictEqual([]);
 });
 
 test("a nested key's values are its own where a top-level key shares its name", () => {
@@ -140,6 +167,6 @@ test("a hint is found only on the key a pointer rests on", () => {
     from: 4,
     to: 14,
   });
-  expect(chugEditorKeyAt("landing: Push", 11)).toBeUndefined();
+  expect(chugEditorKeyAt("branch: main", 10)).toBeUndefined();
   expect(chugEditorKeyAt("  - 7", 4)).toBeUndefined();
 });

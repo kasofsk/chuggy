@@ -257,10 +257,7 @@ test("a duplicate opens holding its original's draft, less a revoked dependency,
     configurationDigest: creationInitialization.fence.configurationDigest,
     expectedProjectSequence: creationInitialization.fence.projectSequence,
     authoring: { dependencies: [40], program: eleven.authoring.program },
-    brief: {
-      ...brief,
-      finalization: { mode: "PullRequest", target: "refs/heads/main" },
-    },
+    brief,
   });
   expect(left.to).toStrictEqual(["/$tenant/$project/tickets/$ticket"]);
 });

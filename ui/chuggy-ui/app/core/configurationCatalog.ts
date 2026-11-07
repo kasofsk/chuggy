@@ -16,7 +16,11 @@
 
 import { z } from "zod";
 
-import { briefFinalizationResponseSchema } from "../../../../src/contract/brief.ts";
+import {
+  briefFinalizationForward,
+  briefFinalizationResponseSchema,
+  type BriefFinalizationOf,
+} from "../../../../src/contract/brief.ts";
 import {
   configurationFollowings,
   finalizationConfigurationVersion,
@@ -24,11 +28,7 @@ import {
   workloadConfigurationVersion,
 } from "../../../../src/contract/configurationDocument.ts";
 import type { ConfigurationSelection } from "../../../../src/contract/configurationSelection.ts";
-import {
-  briefFinalizationModeOf,
-  briefFinalizationModes,
-  type BriefFinalizationMode,
-} from "../../../../src/contract/rosters.ts";
+import { briefFinalizationModes } from "../../../../src/contract/rosters.ts";
 import type { DraftInitializationResponse } from "../../../../src/contract/responses.ts";
 import { configurationModelLabelOf } from "./configurationView.ts";
 
@@ -123,11 +123,8 @@ export interface CatalogPlanStage {
 export interface CatalogFinalizer {
   readonly name: string;
   readonly approvalRequired: boolean;
-  /** The landing a ticket it lands takes where its brief names none, and its target where it names one. */
-  readonly landing?: {
-    readonly mode: BriefFinalizationMode;
-    readonly target?: string;
-  };
+  /** The finalization a ticket it lands takes where its brief names none. */
+  readonly finalization?: BriefFinalizationOf<string | undefined>;
 }
 
 export interface ConfigurationCatalog {
@@ -167,19 +164,19 @@ function configurationCatalogEntry(
   };
 }
 
-/** A version 3 finalizer's finalization as the landing a version 2 one writes: its mode and its target, its policy not read. */
-function catalogFinalizationLanding(
-  finalization: z.output<typeof briefFinalizationResponseSchema> | undefined,
-):
-  | { readonly mode: BriefFinalizationMode; readonly target?: string }
-  | undefined {
-  if (finalization === undefined) return undefined;
-  return {
-    mode: briefFinalizationModeOf(finalization),
-    ...(finalization.kind === "None" || finalization.target === undefined
-      ? {}
-      : { target: finalization.target }),
-  };
+/**
+ * A finalizer's finalization: a version 3 one's as it writes it, and a version
+ * 2 one's landing mapped forward to its kind as the importer maps it, ordered
+ * `Direct`.
+ */
+function catalogFinalizerFinalization(
+  version: number,
+  finalizer: NonNullable<z.output<typeof catalogSchema>["finalizers"]>[string],
+): BriefFinalizationOf<string | undefined> | undefined {
+  if (version === finalizationConfigurationVersion)
+    return finalizer.finalization;
+  const forward = briefFinalizationForward(finalizer.landing, undefined);
+  return forward.forward === "Mapped" ? forward.finalization : undefined;
 }
 
 /** The catalog these bytes are, or none where they are any other document or no JSON at all. */
@@ -201,23 +198,14 @@ export function configurationCatalogOf(
     plans: new Map(Object.entries(catalog.plans)),
     finalizers: Object.entries(catalog.finalizers ?? {}).map(
       ([name, finalizer]) => {
-        const landing =
-          catalog.version === finalizationConfigurationVersion
-            ? catalogFinalizationLanding(finalizer.finalization)
-            : finalizer.landing;
+        const finalization = catalogFinalizerFinalization(
+          catalog.version,
+          finalizer,
+        );
         return {
           name,
           approvalRequired: finalizer.approvalRequired ?? false,
-          ...(landing === undefined
-            ? {}
-            : {
-                landing: {
-                  mode: landing.mode,
-                  ...(landing.target === undefined
-                    ? {}
-                    : { target: landing.target }),
-                },
-              }),
+          ...(finalization === undefined ? {} : { finalization }),
         };
       },
     ),

@@ -30,8 +30,14 @@
  * one the text names and under none.
  *
  * A KEY LEFT OUT IS EMPTY, except the three a form never leaves empty: the
- * landing and the dependencies keep what the form held, and so does a program
- * the reader moved, an unmoved one being the named configuration's default.
+ * finalization and the dependencies keep what the form held, and so does a
+ * program the reader moved, an unmoved one being the named configuration's
+ * default.
+ *
+ * A FINALIZATION IS WRITTEN BY ITS KIND, as the brief writes it: a `GitMerge`
+ * names its mode and its policy and no other kind names either, and `None`
+ * names no target, so the text holds no finalization the server refuses. The
+ * target is the branch name the form's box holds rather than a reference.
  *
  * This lives under `browser/` rather than `core/` because the parser is a
  * package the decision layer may not reach; everything here is still pure.
@@ -55,14 +61,16 @@ import type {
 } from "../../../../../src/contract/responses.ts";
 import { briefImagesMax } from "../../../../../src/contract/brief.ts";
 import {
-  briefFinalizationModes,
+  briefFinalizationKinds,
+  briefGitMergeModes,
   briefGitMergePolicies,
 } from "../../../../../src/contract/rosters.ts";
-import type {
-  BriefFinalizationMode,
-  BriefGitMergePolicy,
-} from "../../../../../src/contract/rosters.ts";
-import { landingEffect, landingPolicyEffect } from "../../core/codeLabels.ts";
+import {
+  finalizationKindEffect,
+  gitMergeModeEffect,
+  gitMergePolicyEffect,
+} from "../../core/codeLabels.ts";
+import type { FinalizationChoice } from "../../core/finalizationChoice.ts";
 import { repositoryLabel } from "../../core/projectRepositories.ts";
 import { configurationFollowings } from "../../../../../src/contract/configurationDocument.ts";
 import type { ConfigurationSelection } from "../../../../../src/contract/configurationSelection.ts";
@@ -185,7 +193,6 @@ const ticketYamlConfigured: ReadonlySet<string> = new Set([
 function ticketYamlKeys(
   context: TicketYamlContext,
   form: Pick<TicketCreationForm, "configuration" | "selection">,
-  landing: BriefFinalizationMode,
 ): readonly string[] {
   const drawn = ticketYamlDrawn(context, form);
   const chosen =
@@ -201,9 +208,7 @@ function ticketYamlKeys(
     ...(drawn?.commandedCheckStage === undefined ? [] : ["checks"]),
     "branch",
     ...(ticketYamlRepositoryOffered(context) ? ["repository"] : []),
-    "landing",
-    ...(landing === "None" ? [] : ["target"]),
-    "landingPolicy",
+    "finalization",
     ...(drawn === undefined
       ? []
       : [
@@ -253,6 +258,64 @@ function ticketYamlUnwritten(value: unknown): boolean {
         Object.keys(value).length === 0;
 }
 
+/** A form's finalization as its text writes it, the target box's name inside
+ * it under every kind that names one. */
+function ticketYamlFinalizationShown(
+  form: TicketCreationForm,
+): Readonly<Record<string, string | null>> {
+  const finalization = form.finalization;
+  const target = form.targetBranchName === "" ? null : form.targetBranchName;
+  switch (finalization.kind) {
+    case "GitMerge":
+      return {
+        kind: finalization.kind,
+        mode: finalization.mode,
+        target,
+        policy: finalization.policy,
+      };
+    case "PullRequest":
+      return { kind: finalization.kind, target };
+    case "None":
+      return { kind: finalization.kind };
+  }
+}
+
+/**
+ * A form's overrides as its text writes them, every list in block style: a
+ * mode's arguments are left out where it has none, since a mode read without
+ * them has none, and a field overridden with an empty list is written with no
+ * value, since leaving it out would give it back to the configuration.
+ */
+function ticketYamlOverridesShown(
+  held: CreationOverrides,
+): Record<string, unknown> | undefined {
+  return overridesNestedOf(
+    Object.fromEntries(
+      Object.entries(held).map(([field, value]) => {
+        if (Array.isArray(value) && value.length === 0) return [field, null];
+        if (
+          !ticketYamlIsRecord(value) ||
+          !Array.isArray(value["arguments"]) ||
+          value["arguments"].length > 0
+        )
+          return [field, value];
+        return [
+          field,
+          Object.fromEntries(
+            Object.entries(value).filter(([key]) => key !== "arguments"),
+          ),
+        ];
+      }),
+    ),
+  );
+}
+
+function ticketYamlIsRecord(
+  value: unknown,
+): value is Readonly<Record<string, unknown>> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 /** The text a form reads as. */
 export function ticketYamlOf(
   form: TicketCreationForm,
@@ -268,15 +331,12 @@ export function ticketYamlOf(
     checks: [...form.checks],
     branch: form.branchName,
     repository: form.repository,
-    landing: form.landingMode,
-    target: form.targetBranchName,
-    landingPolicy:
-      form.landingPolicy === "Direct" ? undefined : form.landingPolicy,
+    finalization: ticketYamlFinalizationShown(form),
     dependencies: [...form.dependencies],
     program: form.program.map((stage) => ({
       evaluators: stage.evaluators.length,
     })),
-    overrides: overridesNestedOf(form.overrides),
+    overrides: ticketYamlOverridesShown(form.overrides),
     selection: ticketYamlSelectionShown(context, form),
     workloads:
       canonical === undefined
@@ -284,7 +344,7 @@ export function ticketYamlOf(
         : workloadsOverriddenOf(canonical, form.workloads),
   };
   const shown = Object.fromEntries(
-    ticketYamlKeys(context, form, form.landingMode)
+    ticketYamlKeys(context, form)
       .filter(
         (key) => values[key] !== undefined && !ticketYamlUnwritten(values[key]),
       )
@@ -366,28 +426,138 @@ function ticketYamlWholeOf(node: unknown): number | undefined {
     : undefined;
 }
 
-function ticketYamlLandingOf(
+/** The member of a roster a scalar names, or the sentence naming the roster. */
+function ticketYamlMemberOf<Member extends string>(
   node: unknown,
-): TicketYamlTook<BriefFinalizationMode> {
+  roster: readonly Member[],
+  refusal: string,
+): TicketYamlTook<Member> {
   const text = ticketYamlTextOf(node);
   if (text.took === "Problem") return text;
-  const mode = briefFinalizationModes.find((held) => held === text.value);
-  return mode === undefined
-    ? ticketYamlRefused(`land as one of ${briefFinalizationModes.join(", ")}`)
-    : ticketYamlTook(mode);
+  const member = roster.find((held) => held === text.value);
+  return member === undefined
+    ? ticketYamlRefused(`${refusal} one of ${roster.join(", ")}`)
+    : ticketYamlTook(member);
 }
 
-function ticketYamlLandingPolicyOf(
-  node: unknown,
-): TicketYamlTook<BriefGitMergePolicy> {
-  const text = ticketYamlTextOf(node);
-  if (text.took === "Problem") return text;
-  const policy = briefGitMergePolicies.find((held) => held === text.value);
-  return policy === undefined
+const ticketYamlFinalizationFields = [
+  "kind",
+  "mode",
+  "target",
+  "policy",
+] as const;
+
+type TicketYamlFinalizationField =
+  (typeof ticketYamlFinalizationFields)[number];
+
+/** A finalization as the form holds it: its choice, and its target box's text. */
+type TicketYamlFinalization = Pick<
+  TicketCreationForm,
+  "finalization" | "targetBranchName"
+>;
+
+/** The fields a finalization's kind names, which are the only ones it may write. */
+function ticketYamlFinalizationNamed(
+  kind: FinalizationChoice["kind"],
+): readonly TicketYamlFinalizationField[] {
+  switch (kind) {
+    case "GitMerge":
+      return ticketYamlFinalizationFields;
+    case "PullRequest":
+      return ["kind", "target"];
+    case "None":
+      return ["kind"];
+  }
+}
+
+/** What one field of a finalization reads as, at the value it is about. */
+function ticketYamlFinalizationFieldOf<T>(
+  field: TicketYamlFinalizationField,
+  pairs: ReadonlyMap<TicketYamlFinalizationField, TicketYamlPair>,
+  read: (node: unknown) => TicketYamlTook<T>,
+): TicketYamlTook<T> {
+  const pair = pairs.get(field);
+  if (pair === undefined)
+    return ticketYamlRefused(`a GitMerge names its ${field}`);
+  const took = read(pair.value);
+  return took.took === "Problem" && took.at === undefined
     ? ticketYamlRefused(
-        `order the landing as one of ${briefGitMergePolicies.join(", ")}`,
+        took.message,
+        ticketYamlSpanOf(isNode(pair.value) ? pair.value : pair.key),
       )
-    : ticketYamlTook(policy);
+    : took;
+}
+
+/** The choice a finalization's fields make under the kind they name. */
+function ticketYamlFinalizationChoiceOf(
+  kind: FinalizationChoice["kind"],
+  pairs: ReadonlyMap<TicketYamlFinalizationField, TicketYamlPair>,
+): TicketYamlTook<FinalizationChoice> {
+  if (kind !== "GitMerge") return ticketYamlTook({ kind });
+  const mode = ticketYamlFinalizationFieldOf("mode", pairs, (node) =>
+    ticketYamlMemberOf(node, briefGitMergeModes, "merge by"),
+  );
+  if (mode.took === "Problem") return mode;
+  const policy = ticketYamlFinalizationFieldOf("policy", pairs, (node) =>
+    ticketYamlMemberOf(node, briefGitMergePolicies, "order the merge as"),
+  );
+  if (policy.took === "Problem") return policy;
+  return ticketYamlTook({ kind, mode: mode.value, policy: policy.value });
+}
+
+/**
+ * A finalization as its text writes it: a map naming its kind, and under that
+ * kind the fields it names and no others, each refused at its own key.
+ */
+function ticketYamlFinalizationOf(
+  node: unknown,
+): TicketYamlTook<TicketYamlFinalization> {
+  if (!isMap(node))
+    return ticketYamlRefused(
+      `write the finalization as a map of ${ticketYamlFinalizationFields.join(", ")}`,
+    );
+  const pairs = new Map<TicketYamlFinalizationField, TicketYamlPair>();
+  for (const pair of node.items as readonly TicketYamlPair[]) {
+    const field = ticketYamlFinalizationFields.find(
+      (one) => one === ticketYamlKeyNameOf(pair),
+    );
+    if (field === undefined)
+      return ticketYamlRefused(
+        `a finalization names ${ticketYamlFinalizationFields.join(", ")}`,
+        ticketYamlSpanOf(pair.key),
+      );
+    pairs.set(field, pair);
+  }
+  const kindPair = pairs.get("kind");
+  if (kindPair === undefined)
+    return ticketYamlRefused(
+      `a finalization names its kind: one of ${briefFinalizationKinds.join(", ")}`,
+    );
+  const kind = ticketYamlFinalizationFieldOf("kind", pairs, (value) =>
+    ticketYamlMemberOf(value, briefFinalizationKinds, "finalize by"),
+  );
+  if (kind.took === "Problem") return kind;
+  const named = ticketYamlFinalizationNamed(kind.value);
+  for (const [field, pair] of pairs)
+    if (!named.includes(field))
+      return ticketYamlRefused(
+        field === "target"
+          ? "None lands nothing, so it names no target"
+          : `a ${kind.value} names no ${field}; only a GitMerge does`,
+        ticketYamlSpanOf(pair.key),
+      );
+  const choice = ticketYamlFinalizationChoiceOf(kind.value, pairs);
+  if (choice.took === "Problem") return choice;
+  const target = pairs.get("target");
+  const targetText =
+    target === undefined
+      ? ticketYamlTook("")
+      : ticketYamlFinalizationFieldOf("target", pairs, ticketYamlTextOf);
+  if (targetText.took === "Problem") return targetText;
+  return ticketYamlTook({
+    finalization: choice.value,
+    targetBranchName: targetText.value,
+  });
 }
 
 /** The configuration a text names: one of the offers, or none yet. */
@@ -542,8 +712,15 @@ function ticketYamlOverrideOf(
   field: OverrideField,
   node: unknown,
 ): TicketYamlTook<unknown> {
-  if (overrideFieldKind(field) === "Lines") return ticketYamlTextsOf(node);
-  return ticketYamlTook(isNode(node) ? node.toJSON() : node);
+  const kind = overrideFieldKind(field);
+  if (kind === "Lines") return ticketYamlTextsOf(node);
+  const written: unknown = isNode(node) ? node.toJSON() : node;
+  if (kind === "Files") return ticketYamlTook(written === null ? [] : written);
+  return ticketYamlTook(
+    ticketYamlIsRecord(written) && !Object.hasOwn(written, "arguments")
+      ? { ...written, arguments: [] }
+      : written,
+  );
 }
 
 const ticketYamlOverridesShape =
@@ -730,25 +907,15 @@ function ticketYamlKeyApplied(
         ...form,
         branchName,
       }));
-    case "target":
-      return into(ticketYamlTextOf(value), (targetBranchName) => ({
-        ...form,
-        targetBranchName,
-      }));
     case "repository":
       return into(ticketYamlTextOf(value), (repository) => ({
         ...form,
         repository,
       }));
-    case "landing":
-      return into(ticketYamlLandingOf(value), (landingMode) => ({
+    case "finalization":
+      return into(ticketYamlFinalizationOf(value), (finalization) => ({
         ...form,
-        landingMode,
-      }));
-    case "landingPolicy":
-      return into(ticketYamlLandingPolicyOf(value), (landingPolicy) => ({
-        ...form,
-        landingPolicy,
+        ...finalization,
       }));
     case "checks":
     case "dependencies":
@@ -774,7 +941,6 @@ function ticketYamlEmpty(base: TicketCreationForm): TicketCreationForm {
     branchName: "",
     targetBranchName: "",
     repository: "",
-    landingPolicy: "Direct",
     overrides: {},
     selection: {},
     workloads: {},
@@ -913,7 +1079,7 @@ export function ticketYamlRead(
     return { form: undefined, keys, problems: parsed.problems };
   const pairs = parsed.pairs;
   const start = ticketYamlStart(pairs, context);
-  const offered = new Set(ticketYamlKeys(context, start.form, "Push"));
+  const offered = new Set(ticketYamlKeys(context, start.form));
   const problems: TicketYamlProblem[] = [];
   let form = start.form;
   let undrawn = false;
@@ -956,13 +1122,13 @@ function ticketYamlKeyOf(field: CreationField): string | undefined {
     case "links":
     case "images":
     case "checks":
-    case "landing":
-    case "landingPolicy":
+    case "finalization":
     case "repository":
-    case "target":
     case "branch":
     case "overrides":
       return field;
+    case "target":
+      return "finalization";
     case "authoring":
       return "program";
     case "fence":
@@ -1045,7 +1211,6 @@ function ticketYamlSelectionKeys(
 }
 
 function ticketYamlDescribed(
-  form: TicketCreationForm,
   context: TicketYamlContext,
   drawn: DraftInitializationResponse | undefined,
 ): Readonly<Record<string, TicketYamlDescribed>> {
@@ -1072,23 +1237,49 @@ function ticketYamlDescribed(
         detail: repositoryLabel(binding.repository),
       })),
     },
-    landing: {
-      hint: "how the finished work lands",
-      values: briefFinalizationModes.map((mode) => ({
-        label: mode,
-        detail: landingEffect(mode),
-      })),
-    },
-    target: { hint: creationTargetBranchHint(form.landingMode), values: [] },
-    landingPolicy: {
-      hint: "how the landing is ordered against the others on its reference; left out is Direct",
-      values: briefGitMergePolicies.map((policy) => ({
-        label: policy,
-        detail: landingPolicyEffect(policy),
-      })),
+    finalization: {
+      hint: `how the finished work lands: its kind, a GitMerge's mode and policy, and its target where it lands somewhere`,
+      values: [],
     },
     ...ticketYamlConfiguredDescribed(drawn),
   };
+}
+
+/** The fields a finalization is written with, each with the values it takes. */
+function ticketYamlFinalizationKeys(
+  form: TicketCreationForm,
+): readonly TicketYamlKey[] {
+  const described: Readonly<
+    Record<TicketYamlFinalizationField, TicketYamlDescribed>
+  > = {
+    kind: {
+      hint: "how the finished work lands: merged, proposed, or not at all",
+      values: briefFinalizationKinds.map((kind) => ({
+        label: kind,
+        detail: finalizationKindEffect(kind),
+      })),
+    },
+    mode: {
+      hint: "how a GitMerge advances its target, which only a GitMerge names",
+      values: briefGitMergeModes.map((mode) => ({
+        label: mode,
+        detail: gitMergeModeEffect(mode),
+      })),
+    },
+    target: { hint: creationTargetBranchHint(form.finalization), values: [] },
+    policy: {
+      hint: "how a GitMerge is ordered against the others on its target, which only a GitMerge names",
+      values: briefGitMergePolicies.map((policy) => ({
+        label: policy,
+        detail: gitMergePolicyEffect(policy),
+      })),
+    },
+  };
+  return ticketYamlFinalizationFields.map((field) => ({
+    key: field,
+    ...described[field],
+    place: "Finalization",
+  }));
 }
 
 /** The one key written inside a stage, which only a drawn program has. */
@@ -1114,13 +1305,14 @@ export function ticketYamlVocabulary(
   context: TicketYamlContext,
 ): readonly TicketYamlKey[] {
   const drawn = ticketYamlDrawn(context, form);
-  const described = ticketYamlDescribed(form, context, drawn);
+  const described = ticketYamlDescribed(context, drawn);
   const catalog = ticketYamlCatalog(context, form.configuration);
   return [
-    ...ticketYamlKeys(context, form, form.landingMode).map((key) => ({
+    ...ticketYamlKeys(context, form).map((key) => ({
       key,
       ...(described[key] ?? { hint: "", values: [] }),
     })),
+    ...ticketYamlFinalizationKeys(form),
     ...ticketYamlNestedKeys(drawn),
     ...ticketYamlSelectionKeys(catalog),
     ...(catalog === undefined

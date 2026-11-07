@@ -12,7 +12,8 @@ import { expect, test } from "vitest";
 
 import {
   blockedReasons,
-  briefFinalizationModes,
+  briefFinalizationKinds,
+  briefGitMergeModes,
   briefGitMergePolicies,
   changeProposalCreations,
   changeProposalMergeabilities,
@@ -37,7 +38,6 @@ import {
 import {
   approvalLabel,
   blockedReasonLabel,
-  briefLandingLine,
   changeProposalCreationLabel,
   changeProposalMergeabilityLabel,
   changeProposalStatusLabel,
@@ -51,10 +51,14 @@ import {
   finalizationFailureKindLabel,
   finalizationUnavailableKindLabel,
   gitEvidenceLabel,
-  landingEffect,
-  landingLabel,
-  landingPolicyEffect,
-  landingPolicyLabel,
+  finalizationKindEffect,
+  finalizationKindLabel,
+  finalizationLine,
+  finalizationMethodLabel,
+  gitMergeModeEffect,
+  gitMergeModeLabel,
+  gitMergePolicyEffect,
+  gitMergePolicyLabel,
   leadAbsenceLabel,
   resumeActionEffect,
   wallExitLine,
@@ -598,10 +602,14 @@ test("every step of a follow draws one line, and only a settled one stops", () =
   expect(refused.wrong).toBe(true);
 });
 
-test("every landing and approval label is inside the budget", () => {
+test("every finalization and approval label is inside the budget", () => {
   const drawn = [
-    ...briefFinalizationModes.map(landingLabel),
-    ...briefFinalizationModes.map(landingEffect),
+    ...briefFinalizationKinds.map(finalizationKindLabel),
+    ...briefFinalizationKinds.map(finalizationKindEffect),
+    ...briefGitMergeModes.map(gitMergeModeLabel),
+    ...briefGitMergeModes.map(gitMergeModeEffect),
+    ...briefGitMergePolicies.map(gitMergePolicyLabel),
+    ...briefGitMergePolicies.map(gitMergePolicyEffect),
     approvalLabel(true),
     approvalLabel(false),
   ];
@@ -614,36 +622,36 @@ test("every landing and approval label is inside the budget", () => {
 
 /**
  * The choice is made by the label and understood by the line under it, so both
- * are pinned: a mode renamed on the wire must not silently rename the choice a
- * person already made.
+ * are pinned: a kind, mode or policy renamed on the wire must not silently
+ * rename the choice a person already made.
  */
-test("a landing is named as a noun and explained as what it does", () => {
-  expect(briefFinalizationModes.map(landingLabel)).toStrictEqual([
-    "Push",
+test("a finalization's kind, a git merge's mode and its policy are each named as a noun and explained as what it does", () => {
+  expect(briefFinalizationKinds.map(finalizationKindLabel)).toStrictEqual([
+    "Git merge",
     "Pull request",
-    "Pull request, then merge",
     "None",
   ]);
-  expect(briefFinalizationModes.map(landingEffect)).toStrictEqual([
-    "Commits straight onto the target branch",
-    "Opens a pull request into the target branch",
-    "Opens a pull request into the target branch and merges it",
+  expect(briefFinalizationKinds.map(finalizationKindEffect)).toStrictEqual([
+    "Merges the work into the target branch",
+    "Opens a pull request a person merges",
     "Lands nothing",
   ]);
-});
-
-test("a landing policy is named as a noun and explained as what it does", () => {
-  expect(briefGitMergePolicies.map(landingPolicyLabel)).toStrictEqual([
+  expect(briefGitMergeModes.map(gitMergeModeLabel)).toStrictEqual([
+    "Push",
+    "Pull request, then merge",
+  ]);
+  expect(briefGitMergeModes.map(gitMergeModeEffect)).toStrictEqual([
+    "Commits straight onto the target branch",
+    "Opens a pull request into the target branch and merges it",
+  ]);
+  expect(briefGitMergePolicies.map(gitMergePolicyLabel)).toStrictEqual([
     "Direct",
     "Serialized",
   ]);
-  for (const text of [
-    ...briefGitMergePolicies.map(landingPolicyLabel),
-    ...briefGitMergePolicies.map(landingPolicyEffect),
-  ]) {
-    expect(text.length).toBeLessThanOrEqual(copyBudgetChars);
-    expect(text).not.toMatch(/[.:;]/u);
-  }
+  expect(briefGitMergePolicies.map(gitMergePolicyEffect)).toStrictEqual([
+    "Lands as soon as it is accepted",
+    "Lands alone on its reference, evaluated on what it lands",
+  ]);
 });
 
 test("an approval reads as one noun", () => {
@@ -655,23 +663,36 @@ test("an approval reads as one noun", () => {
  * mode and no reference rather than a reference the page invents. A proposal
  * with none opens into the branch the repository defaults to, which is where
  * the reader would otherwise have to know it goes. */
-test("a landing read back names its reference, and a proposal names the default", () => {
-  expect(briefLandingLine({ mode: "Push", target: "refs/heads/main" })).toBe(
+test("a finalization read back names its reference, and a proposal names the default", () => {
+  const target = "refs/heads/main";
+  const push = { kind: "GitMerge", mode: "Push", policy: "Direct" } as const;
+  const merge = {
+    kind: "GitMerge",
+    mode: "PullRequestMerge",
+    policy: "Serialized",
+  } as const;
+  expect(finalizationLine({ ...push, target })).toBe(
     "Push · lands on refs/heads/main",
   );
-  expect(
-    briefLandingLine({ mode: "PullRequest", target: "refs/heads/main" }),
-  ).toBe("Pull request · into refs/heads/main");
-  expect(briefLandingLine({ mode: "Push", target: undefined })).toBe("Push");
-  expect(briefLandingLine({ mode: "PullRequest", target: undefined })).toBe(
+  expect(finalizationLine(push)).toBe("Push");
+  expect(finalizationLine({ kind: "PullRequest", target })).toBe(
+    "Pull request · into refs/heads/main",
+  );
+  expect(finalizationLine({ kind: "PullRequest" })).toBe(
     "Pull request · into the default branch",
   );
+  expect(finalizationLine({ ...merge, target })).toBe(
+    "Pull request, then merge · into refs/heads/main",
+  );
+  expect(finalizationLine(merge)).toBe(
+    "Pull request, then merge · into the default branch",
+  );
+  expect(finalizationLine({ kind: "None" })).toBe("None");
   expect(
-    briefLandingLine({ mode: "PullRequestMerge", target: "refs/heads/main" }),
-  ).toBe("Pull request, then merge · into refs/heads/main");
-  expect(
-    briefLandingLine({ mode: "PullRequestMerge", target: undefined }),
-  ).toBe("Pull request, then merge · into the default branch");
+    [push, merge, { kind: "PullRequest" } as const].map(
+      finalizationMethodLabel,
+    ),
+  ).toStrictEqual(["Push", "Pull request, then merge", "Pull request"]);
 });
 
 const labelOfKind: Readonly<Record<EscalationKind, string>> = {

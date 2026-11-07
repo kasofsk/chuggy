@@ -23,7 +23,7 @@ import {
   repositoryLabel,
   repositoryUnbound,
 } from "../../core/projectRepositories.ts";
-import { projectRepositoryBound } from "../../core/repositoryLanding.ts";
+import { projectRepositoryBound } from "../../core/repositoryFinalization.ts";
 import {
   repositoryConfigurationRow,
   repositoryConfigurations,
@@ -43,7 +43,7 @@ import {
   useRepositoryImportNow,
 } from "./RepositoryImport.tsx";
 import { RepositoryConfigurationTable } from "./RepositoryConfigurations.tsx";
-import { RepositoryLandingSection } from "./RepositoryLandingSection.tsx";
+import { RepositoryFinalizationSection } from "./RepositoryFinalizationSection.tsx";
 import { RepositoryWorkflowFilesSection } from "./RepositoryWorkflowFilesSection.tsx";
 
 /** This page's own address, which its reads take their partition from. */
@@ -131,7 +131,10 @@ export function RepositoryPage(): ReactNode {
       ) : null}
       {binding === undefined ? null : (
         <>
-          <RepositoryLandingSection partition={partition} binding={binding} />
+          <RepositoryFinalizationSection
+            partition={partition}
+            binding={binding}
+          />
           <RepositoryWorkflowFilesSection
             partition={partition}
             binding={binding}

@@ -19,7 +19,7 @@ import { Tabs } from "radix-ui";
 import { stringify } from "yaml";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
-import type { BriefFinalizationMode } from "../../../../src/contract/rosters.ts";
+import type { BriefFinalizationOf } from "../../../../src/contract/brief.ts";
 import type { ConfigurationFollowing } from "../../../../src/contract/configurationDocument.ts";
 import { configurationFollowingOf } from "../../../../src/contract/configurationSelection.ts";
 import type {
@@ -27,8 +27,7 @@ import type {
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
 import { configurationQuery } from "../core/configurationQueries.ts";
-import { briefLandingOf } from "../core/briefLanding.ts";
-import { briefLandingLine } from "../core/codeLabels.ts";
+import { finalizationLine, gitMergePolicyLabel } from "../core/codeLabels.ts";
 import { ticketFollowingSentence } from "../core/codeSentences.ts";
 import type {
   ConfigurationBrief,
@@ -485,17 +484,26 @@ function ConfigurationSubsection(props: {
   );
 }
 
-/** The landing a ticket's brief names. */
-type ConfigurationLanding = {
-  readonly mode: BriefFinalizationMode;
-  readonly target?: string | undefined;
-};
+/** The finalization a ticket's brief or its finalizer names. */
+type ConfigurationFinalization = BriefFinalizationOf<string | undefined>;
 
-/** The landing a ticket takes, as the one line its brief or its finalizer says it. */
-export function FinalizationLanding(props: {
-  readonly landing: ConfigurationLanding;
+/** The finalization a ticket takes, as the one line its brief or its
+ * finalizer says it, and the policy a git merge is ordered under. */
+export function FinalizationMethod(props: {
+  readonly finalization: ConfigurationFinalization;
 }): ReactNode {
-  return <SummaryCell name="Method" value={briefLandingLine(props.landing)} />;
+  const finalization = props.finalization;
+  return (
+    <>
+      <SummaryCell name="Method" value={finalizationLine(finalization)} />
+      {finalization.kind === "GitMerge" ? (
+        <SummaryCell
+          name="Policy"
+          value={gitMergePolicyLabel(finalization.policy)}
+        />
+      ) : null}
+    </>
+  );
 }
 
 function ConfigurationEvaluations(props: {
@@ -949,23 +957,23 @@ function CatalogSummary(props: {
 }
 
 /** The finalizer a catalog ticket lands through: whether a person approves
- * first, and the landing it takes where the brief names none. */
+ * first, and the finalization it takes where the brief names none. */
 function CatalogFinalizerBody(props: {
   readonly name: string | undefined;
   readonly defaulted: string | undefined;
   readonly finalizer: CatalogFinalizer | undefined;
-  /** The landing the ticket's brief names, which is what lands the work where
-   * the catalog names no finalizer. */
-  readonly landing: ConfigurationLanding | undefined;
+  /** The finalization the ticket's brief names, which is what lands the work
+   * where the catalog names no finalizer. */
+  readonly finalization: ConfigurationFinalization | undefined;
 }): ReactNode {
   const { finalizer } = props;
-  const landing = props.landing ?? finalizer?.landing;
+  const finalization = props.finalization ?? finalizer?.finalization;
   return (
     <div className="ticket-config-settings">
-      {landing === undefined ? (
+      {finalization === undefined ? (
         <SummaryCell name="Method" value={absentMark} />
       ) : (
-        <FinalizationLanding landing={landing} />
+        <FinalizationMethod finalization={finalization} />
       )}
       {props.name === undefined ? null : finalizer === undefined ? (
         <SummaryCell name="Finalizer" value={`No finalizer ${props.name}`} />
@@ -1018,7 +1026,7 @@ function CatalogBody(props: {
   readonly catalog: ConfigurationCatalog;
   readonly overrides: CatalogOverrides;
   readonly selection: TicketResponse["selection"];
-  readonly landing: ConfigurationLanding | undefined;
+  readonly finalization: ConfigurationFinalization | undefined;
 }): ReactNode {
   const { catalog, configuration, overrides } = props;
   const selected = configurationCatalogSelected(catalog, props.selection);
@@ -1064,7 +1072,7 @@ function CatalogBody(props: {
           name={selected.finalization}
           defaulted={catalog.defaults.finalization}
           finalizer={finalizer}
-          landing={props.landing}
+          finalization={props.finalization}
         />
       </ConfigurationSubsection>
       <ConfigurationFoot
@@ -1139,13 +1147,8 @@ export function ConfigurationBody(props: {
   readonly configuration: ConfigurationResponse;
   readonly overrides: TicketResponse["overrides"];
   readonly selection: TicketResponse["selection"];
-  /** The landing a version 1 ticket's brief names, which its configuration has no place for. */
-  readonly landing?:
-    | {
-        readonly mode: BriefFinalizationMode;
-        readonly target?: string | undefined;
-      }
-    | undefined;
+  /** The finalization a version 1 ticket's brief names, which its configuration has no place for. */
+  readonly finalization?: ConfigurationFinalization | undefined;
 }): ReactNode {
   const configuration = props.configuration;
   const catalog = configurationCatalogOf(
@@ -1161,7 +1164,7 @@ export function ConfigurationBody(props: {
         catalog={catalog}
         overrides={props.overrides?.workloads}
         selection={props.selection}
-        landing={props.landing}
+        finalization={props.finalization}
       />
     );
   const { view, overridden: fields } = overriddenViewOf(
@@ -1175,10 +1178,10 @@ export function ConfigurationBody(props: {
         <LegacyWorkTask view={view} overridden={overridden} />
       </ConfigurationSubsection>
       <ConfigurationEvaluations evaluations={view.evaluations} />
-      {props.landing === undefined ? null : (
+      {props.finalization === undefined ? null : (
         <ConfigurationSubsection title="Finalization">
           <div className="ticket-config-settings">
-            <FinalizationLanding landing={props.landing} />
+            <FinalizationMethod finalization={props.finalization} />
           </div>
         </ConfigurationSubsection>
       )}
@@ -1207,7 +1210,7 @@ function ConfigurationPanel(props: {
   readonly overrides: TicketResponse["overrides"];
   readonly selection: TicketResponse["selection"];
   readonly following: TicketResponse["following"];
-  readonly landing: ConfigurationLanding | undefined;
+  readonly finalization: ConfigurationFinalization | undefined;
 }): ReactNode {
   const stays = ticketFollowingSentence(props.following);
   const state = usePanelState(
@@ -1240,7 +1243,7 @@ function ConfigurationPanel(props: {
           configuration={state.value}
           overrides={props.overrides}
           selection={props.selection}
-          landing={props.landing}
+          finalization={props.finalization}
         />
       ) : null}
     </Panel>
@@ -1274,7 +1277,7 @@ export function TicketConfiguration(props: {
       overrides={ticket.overrides}
       selection={ticket.selection}
       following={ticket.following}
-      landing={briefLandingOf(ticket.brief?.finalization)}
+      finalization={ticket.brief?.finalization}
     />
   );
 }

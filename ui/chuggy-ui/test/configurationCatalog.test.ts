@@ -55,11 +55,10 @@ test("a catalog reads as its workloads, plans, finalizers and defaults", () => {
   });
 });
 
-test("a version 3 catalog reads each finalizer's finalization as its landing, and a version 2 one its landing", () => {
-  const written = JSON.parse(creationCatalogCanonical) as Record<
-    string,
-    unknown
-  >;
+/** The catalog fixture as data, for a case to write other finalizers into. */
+const written = JSON.parse(creationCatalogCanonical) as Record<string, unknown>;
+
+test("a version 3 catalog reads each finalizer's finalization whole, policy and all", () => {
   const read = configurationCatalogOf(
     JSON.stringify({
       ...written,
@@ -87,22 +86,36 @@ test("a version 3 catalog reads each finalizer's finalization as its landing, an
     {
       name: "merge",
       approvalRequired: false,
-      landing: { mode: "PullRequestMerge", target: "refs/heads/release" },
+      finalization: {
+        kind: "GitMerge",
+        mode: "PullRequestMerge",
+        target: "refs/heads/release",
+        policy: "Serialized",
+      },
     },
     {
       name: "proposal",
       approvalRequired: true,
-      landing: { mode: "PullRequest", target: "refs/heads/main" },
+      finalization: { kind: "PullRequest", target: "refs/heads/main" },
     },
-    { name: "nothing", approvalRequired: false, landing: { mode: "None" } },
+    {
+      name: "nothing",
+      approvalRequired: false,
+      finalization: { kind: "None" },
+    },
     { name: "written", approvalRequired: false },
   ]);
+});
+
+test("a version 2 catalog's landing reads forward to its kind, a git merge ordered Direct", () => {
   expect(
     configurationCatalogOf(
       JSON.stringify({
         ...written,
         finalizers: {
           landed: { landing: { mode: "Push", target: "refs/heads/release" } },
+          proposed: { landing: { mode: "PullRequest" } },
+          nothing: { landing: { mode: "None" } },
           written: { finalization: { kind: "None" } },
         },
       }),
@@ -111,7 +124,22 @@ test("a version 3 catalog reads each finalizer's finalization as its landing, an
     {
       name: "landed",
       approvalRequired: false,
-      landing: { mode: "Push", target: "refs/heads/release" },
+      finalization: {
+        kind: "GitMerge",
+        mode: "Push",
+        target: "refs/heads/release",
+        policy: "Direct",
+      },
+    },
+    {
+      name: "proposed",
+      approvalRequired: false,
+      finalization: { kind: "PullRequest" },
+    },
+    {
+      name: "nothing",
+      approvalRequired: false,
+      finalization: { kind: "None" },
     },
     { name: "written", approvalRequired: false },
   ]);

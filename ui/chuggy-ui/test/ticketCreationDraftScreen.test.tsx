@@ -39,7 +39,6 @@ import {
   creationInitialization,
   creationListed,
   creationPartition,
-  revisionServed,
 } from "./ticketCreationFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
@@ -132,7 +131,7 @@ function routed(held: {
     if (method === "PUT") {
       held.draft = {
         ...held.draft,
-        ...revisionServed(body as object),
+        ...(body as object),
         authoringVersion: held.draft.authoringVersion + 1,
       };
       return answer(held.draft);
