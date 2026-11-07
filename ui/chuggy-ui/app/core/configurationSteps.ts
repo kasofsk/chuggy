@@ -298,37 +298,65 @@ function catalogFieldChanged(held: CatalogHeld, field: string): boolean {
   );
 }
 
-/** Whether a workload runs a model other than the pinned one. */
-function stepsModelChanged(
+/** What a workload's mode changed of the pinned one. The model is carried
+ * by the arguments where either side names it there and the arguments
+ * changed, and is then marked on those arguments rather than on its own. */
+interface StepsModeChange {
+  readonly agent: boolean;
+  readonly model: boolean;
+  readonly carried: boolean;
+}
+
+function stepsModeChangeOf(
   effective: StepsRecord,
   pinned: StepsRecord,
-): boolean {
-  return (
-    configurationModelLabelOf(catalogMode(effective)).label !==
-    configurationModelLabelOf(catalogMode(pinned)).label
-  );
+): StepsModeChange {
+  const now = configurationModelLabelOf(catalogMode(effective));
+  const was = configurationModelLabelOf(catalogMode(pinned));
+  const model = now.label !== was.label;
+  return {
+    agent: catalogMode(effective)["agent"] !== catalogMode(pinned)["agent"],
+    model,
+    carried:
+      model &&
+      (now.argument !== undefined || was.argument !== undefined) &&
+      !overridesSame(catalogArguments(effective), catalogArguments(pinned)),
+  };
 }
 
 /** The agent and the model it runs, each drawn as a detail of its own
- * only where it differs from the pinned, since its cell already holds it.
- * A model its changed arguments carry is marked on those arguments. */
+ * only where it differs from the pinned, since its cell already holds it. */
 function stepsModeDetailsOf(
   effective: StepsRecord,
-  pinned: StepsRecord,
+  change: StepsModeChange,
 ): readonly ConfigurationStepDetail[] {
-  const agent = catalogMode(effective)["agent"];
   const detail = (name: string, line: unknown) => [
     { name, lines: stepsString(line), code: false, overridden: true },
   ];
-  const modelOwn =
-    stepsModelChanged(effective, pinned) &&
-    overridesSame(catalogArguments(effective), catalogArguments(pinned));
   return [
-    ...(agent === catalogMode(pinned)["agent"] ? [] : detail("Agent", agent)),
-    ...(modelOwn
+    ...(change.agent ? detail("Agent", catalogMode(effective)["agent"]) : []),
+    ...(change.model && !change.carried
       ? detail("Model", configurationModelLabelOf(catalogMode(effective)).label)
       : []),
   ];
+}
+
+/** What the Overrides column names of each marked detail, arguments that
+ * carry a changed model named as the model. */
+function stepsOverrideWordsOf(
+  effective: StepsRecord,
+  change: StepsModeChange,
+  details: readonly ConfigurationStepDetail[],
+): readonly string[] {
+  return details
+    .filter((detail) => detail.overridden)
+    .map((detail) => {
+      if (detail.name === "Arguments" && change.carried) return "Model";
+      const word = catalogDetailReads.find(
+        (read) => read.name === detail.name,
+      )?.word;
+      return word === undefined ? detail.name : word(effective);
+    });
 }
 
 /** The details a catalog workload opens onto, each it overrode marked, and
@@ -361,7 +389,11 @@ function catalogDetailsOf(
           },
         ];
   });
-  return [...stepsModeDetailsOf(effective, pinned), ...read, ...unread];
+  return [
+    ...stepsModeDetailsOf(effective, stepsModeChangeOf(effective, pinned)),
+    ...read,
+    ...unread,
+  ];
 }
 
 /** What the Overrides column names of one catalog workload. */
@@ -369,20 +401,11 @@ function catalogOverridesOf(
   held: CatalogHeld,
   details: readonly ConfigurationStepDetail[],
 ): readonly string[] {
-  const modelChanged = stepsModelChanged(held.effective, held.pinned);
-  const words = details
-    .filter((detail) => detail.overridden)
-    .map((detail) => {
-      const word = catalogDetailReads.find(
-        (read) => read.name === detail.name,
-      )?.word;
-      if (detail.name === "Arguments" && modelChanged) return "Model";
-      return word === undefined ? detail.name : word(held.effective);
-    });
+  const change = stepsModeChangeOf(held.effective, held.pinned);
   return [
     ...new Set([
       ...(catalogFieldChanged(held, "prompt") ? ["Prompt"] : []),
-      ...words,
+      ...stepsOverrideWordsOf(held.effective, change, details),
     ]),
   ];
 }
@@ -617,7 +640,7 @@ function legacyWorkDetailsOf(
   const worker = stepsRecord(document["worker"]);
   const files = Array.isArray(worker["files"]) ? worker["files"] : [];
   return [
-    ...stepsModeDetailsOf(document, pinned),
+    ...stepsModeDetailsOf(document, stepsModeChangeOf(document, pinned)),
     ...legacyDetail(
       "Arguments",
       catalogArguments(document),
@@ -690,9 +713,40 @@ function legacyWorkPromptOf(
   );
 }
 
+/** The fields of a version 1 document its work's details mark. */
+const legacyDetailFields: ReadonlySet<OverrideField> = new Set([
+  "worker.mode",
+  "worker.setup",
+  "worker.files",
+  "practices",
+]);
+
+/** What the Overrides column names of the work: each marked detail as the
+ * catalog's steps name it, then each prompt part by its field. */
+function legacyOverridesOf(
+  held: LegacyHeld,
+  details: readonly ConfigurationStepDetail[],
+): readonly string[] {
+  const { document, pinned, overridden } = held;
+  return [
+    ...stepsOverrideWordsOf(
+      document,
+      stepsModeChangeOf(document, pinned),
+      details,
+    ),
+    ...[...overridden]
+      .filter((field) => !legacyDetailFields.has(field))
+      .map(overrideFieldLabel),
+  ];
+}
+
 function legacyWorkRowOf(held: LegacyHeld): ConfigurationStepRow {
-  const { view, document, overridden } = held;
+  const { view, document } = held;
   const commands = view.work.commands;
+  const details = [
+    ...legacyWorkDetailsOf(held),
+    ...legacyDetail("Commands", commands, true),
+  ];
   return stepsRow({
     step: "Work",
     runs:
@@ -700,11 +754,8 @@ function legacyWorkRowOf(held: LegacyHeld): ConfigurationStepRow {
         ? { by: legacyAgentOf(document), from: undefined, more: 0 }
         : stepsCommandsRuns(commands),
     model: commands === undefined ? view.settings.model.label : undefined,
-    overrides: [...overridden].map(overrideFieldLabel),
-    details: [
-      ...legacyWorkDetailsOf(held),
-      ...legacyDetail("Commands", commands, true),
-    ],
+    overrides: legacyOverridesOf(held, details),
+    details,
     prompt: legacyWorkPromptOf(held),
     definition: Object.fromEntries(
       ["worker", "authority", "brief", "practices", "work"].flatMap((key) =>

@@ -244,6 +244,39 @@ test("a Codex model the ticket changed is named and marked, though its arguments
   ]);
 });
 
+test("a Codex model and arguments the ticket both changed are each named and marked beside their own value", () => {
+  const work = workRow(
+    steps(
+      {
+        workloads: {
+          quick: {
+            worker: {
+              mode: {
+                type: "SingleAgent",
+                agent: "Codex",
+                arguments: ["--sandbox"],
+                model: "gpt-5-mini",
+              },
+              setup: [],
+              files: [],
+            },
+          },
+        },
+      },
+      { work: "quick" },
+    ),
+  );
+  expect(work.overrides).toEqual(["Model", "Arguments"]);
+  expect(
+    work.details
+      .filter((detail) => detail.overridden)
+      .map((detail) => [detail.name, detail.lines]),
+  ).toEqual([
+    ["Model", ["gpt-5-mini"]],
+    ["Arguments", ["--sandbox"]],
+  ]);
+});
+
 test("an agent the ticket changed is named and marked beside the agent", () => {
   const work = workRow(
     steps({
@@ -387,4 +420,57 @@ test("a landing a person approves says so, and one that needs no approval says n
   ]);
   const [landed] = rowsOf(steps(), "Finalization");
   expect(landed?.details).toEqual([]);
+});
+
+test("a version 1 mode override that changes only the arguments is named as the arguments", () => {
+  const legacy = JSON.stringify({
+    version: 1,
+    worker: { mode: { agent: "Claude", arguments: ["--model=sonnet"] } },
+  });
+  const work = workRow(
+    steps(
+      {
+        worker: {
+          mode: {
+            type: "SingleAgent",
+            agent: "Claude",
+            arguments: ["--model=sonnet", "--verbose"],
+          },
+        },
+      },
+      undefined,
+      legacy,
+    ),
+  );
+  expect(work.model).toBe("Sonnet");
+  expect(work.overrides).toEqual(["Arguments"]);
+  expect(
+    work.details
+      .filter((detail) => detail.overridden)
+      .map((detail) => detail.name),
+  ).toEqual(["Arguments"]);
+});
+
+test("a version 1 mode override that changes only the agent is named as the agent", () => {
+  const legacy = JSON.stringify({
+    version: 1,
+    worker: { mode: { agent: "Claude", arguments: [] } },
+  });
+  const work = workRow(
+    steps(
+      {
+        worker: {
+          mode: { type: "SingleAgent", agent: "Codex", arguments: [] },
+        },
+      },
+      undefined,
+      legacy,
+    ),
+  );
+  expect(work.overrides).toEqual(["Agent"]);
+  expect(
+    work.details
+      .filter((detail) => detail.overridden)
+      .map((detail) => [detail.name, detail.lines]),
+  ).toEqual([["Agent", ["Codex"]]]);
 });
