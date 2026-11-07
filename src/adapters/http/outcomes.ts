@@ -33,6 +33,7 @@ import {
   handoffNotePreview,
   type LeadAbsence,
   type LeadRead,
+  type LeadRefused,
   type LeadTranscriptRead,
   type LeadTurnRecord,
 } from "../../interpreter/leadRead.ts";
@@ -2402,9 +2403,17 @@ function leadTurnBody(turn: LeadTurnRecord): unknown {
   };
 }
 
+function leadRefusalBody(refused: LeadRefused): unknown {
+  return {
+    reason: refused.reason,
+    since: refused.since,
+    ...(refused.until === undefined ? {} : { until: refused.until }),
+  };
+}
+
 function leadAbsenceBody(absence: LeadAbsence): unknown {
   return "since" in absence
-    ? { reason: absence.reason, since: absence.since }
+    ? leadRefusalBody(absence)
     : { reason: absence.reason };
 }
 
@@ -2429,6 +2438,9 @@ export function leadResponse(result: LeadRead): NativeHttpResponse {
         handoffNote: handoffNotePreview(result.lead.handoffNote),
         turns: result.lead.turns.map(leadTurnBody),
         streams: result.streams,
+        ...(result.refusal === undefined
+          ? {}
+          : { refusal: leadRefusalBody(result.refusal) }),
       });
   }
 }

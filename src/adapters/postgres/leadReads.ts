@@ -39,6 +39,7 @@ import type {
   LeadStanding,
 } from "../../interpreter/leadRead.ts";
 import { leadAdmissionRefusals } from "../../contract/rosters.ts";
+import { sessionRunnerPolledSecsMax } from "../../interpreter/sessionPlacement.ts";
 import type { SelectorHistoryStore } from "../../interpreter/selectorHistory.ts";
 import { projectRowCounter } from "./rows.ts";
 import {
@@ -186,13 +187,23 @@ async function leadRefusal(
   const found = await pool.query<{
     refusal: string | null;
     refused_since: Date | null;
+    paused_until: Date | null;
   }>(
-    sql`SELECT refusal,refused_since
-          FROM read_lead_refusal(${partition.tenant},${partition.project})`,
+    sql`SELECT refusal,refused_since,paused_until
+          FROM read_lead_refusal(${partition.tenant},${partition.project},
+                                 ${sessionRunnerPolledSecsMax})`,
   );
   const row = found.rows[0];
   if (row === undefined) return undefined;
   return {
+    ...(row.paused_until === null
+      ? {}
+      : {
+          until: interactionInstant(
+            row.paused_until,
+            "a lead refusal's end",
+          ).toISOString(),
+        }),
     reason: sessionRowMember(
       leadAdmissionRefusals,
       row.refusal,

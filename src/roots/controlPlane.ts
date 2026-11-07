@@ -240,6 +240,8 @@ const selectorProcessAdmissionWhy: Readonly<
     "its tenant grants this selector no hosted runs, so its lead does not run",
   RunnerOffline:
     "its lead runs on the project's runners and none has polled lately, so its lead does not run",
+  UsagePaused:
+    "its lead runs on the project's runners and every live one's owner has their Claude account paused, so its lead does not run",
   AdmissionUndecided:
     "the project authority or the database could not say whether its lead may run",
 };

@@ -52,7 +52,6 @@ const settings = {
   fiveHourPercent: 80,
   sevenDayPercent: 90,
   pausesThreads: true,
-  pausesLead: false,
 };
 
 /** Claude read two minutes ago in its five-hour window and last week in its
@@ -145,7 +144,7 @@ test("each window's reading is drawn as its share and how long ago it was read, 
   expect(claude).toContain("95 %");
   expect(within(sectionOf("Claude")).getAllByText("Stale")).toHaveLength(1);
   expect(claude).toContain("Threads and inquiriesPause with it");
-  expect(claude).toContain("Lead of your poolsKeep running");
+  expect(claude).not.toMatch(/lead/iu);
   const codex = sectionOf("Codex").textContent ?? "";
   expect(codex).toContain("No reading");
   expect(codex).not.toContain("Paused");
@@ -228,7 +227,7 @@ test("an agent's thresholds and options are written whole, at either end of the 
   await turned(() => {
     fireEvent.click(
       within(section).getByRole("checkbox", {
-        name: "Lead of your pools pauses with it",
+        name: "Threads and inquiries pause with it",
       }),
     );
   });
@@ -239,12 +238,18 @@ test("an agent's thresholds and options are written whole, at either end of the 
       {
         fiveHourPercent: 1,
         sevenDayPercent: 100,
-        pausesThreads: true,
-        pausesLead: true,
+        pausesThreads: false,
       },
     ],
   ]);
   expect(
     within(sectionOf("Codex")).queryByRole("button", { name: "Save changes" }),
   ).toBeNull();
+});
+
+test("an agent's lead is offered no option, since it always pauses with the account", async () => {
+  await drawUsage();
+  const section = await editing("Codex");
+  expect(within(section).getAllByRole("checkbox")).toHaveLength(1);
+  expect(section.textContent).not.toMatch(/lead/iu);
 });

@@ -52,7 +52,7 @@ import {
   type SelectorPolicyExecution,
   type SelectorPolicyRequest,
 } from "../../src/interpreter/selector.ts";
-import type { SessionRouteReads } from "../../src/interpreter/sessionPlacement.ts";
+import type { LeadRouteReads } from "../../src/interpreter/sessionPlacement.ts";
 import { selectorOperationalContext } from "./selectorFixture.ts";
 import {
   sessionRoutesAt,
@@ -1224,7 +1224,7 @@ function hostedAuthority(answer: "Granted" | "Refused" | "Unavailable"): {
 function hostedPolicyOf(
   double: MailboxDouble,
   access: ProjectAccess,
-  routes: SessionRouteReads = sessionRoutesAt(),
+  routes: LeadRouteReads = sessionRoutesAt(),
 ) {
   return leadSelectorPolicy(
     double.mailbox,
@@ -1297,6 +1297,18 @@ test("a lead routed to the project's runners is admitted by a live one and asks 
     assert.equal(await policy.leadAdmission(partition), admission);
     assert.deepEqual(authority.asked, [], "a runner route spends no grant");
   }
+});
+
+test("a lead whose project's live runners all have their owners' accounts paused is refused UsagePaused, offering no turn", async () => {
+  const authority = hostedAuthority("Refused");
+  const double = mailboxDouble({ absent: true });
+  const policy = hostedPolicyOf(double, authority.access, {
+    ...sessionRoutesAt({ Lead: "Pool" }),
+    leadRunners: () => Promise.resolve("Paused"),
+  });
+  assert.equal(await policy.leadAdmission(partition), "UsagePaused");
+  assert.deepEqual(authority.asked, [], "a runner route spends no grant");
+  assert.deepEqual(double.offers, [], "and offers no turn");
 });
 
 /** A mailbox double that also keeps the route each turn was offered on. */

@@ -337,7 +337,6 @@ test("a threshold raised over the reading that pauses the account makes the tick
       fiveHourPercent: 90,
       sevenDayPercent: 90,
       pausesThreads: false,
-      pausesLead: true,
     },
   });
   assert.equal(await steps.resumedByScheduler(routed), 1);

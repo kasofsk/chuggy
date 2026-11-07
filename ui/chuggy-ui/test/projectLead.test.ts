@@ -12,6 +12,7 @@ import {
   projectLeadDispatches,
   projectLeadFound,
   projectLeadPanelState,
+  projectLeadPolled,
   projectLeadPresent,
 } from "../app/core/projectLead.ts";
 import { leadBody } from "./leadFixture.ts";
@@ -134,8 +135,8 @@ test("a project with no lead says why under the line, and since when where it wa
 /**
  * Once the placement says where the project's runners stand, a refusal for no
  * live runner is left out: the runner notice beside the line says it where none
- * is live, and where one is, or the lead runs hosted, the refusal is one the
- * next selector pass clears. Only a placement not yet read leaves it standing.
+ * is live, and where one is, or the lead runs hosted, the next selector pass
+ * answers again. Only a placement not yet read leaves it standing.
  */
 test("a refusal for no live runner is drawn only until the placement has said where the runners stand", () => {
   const offline = ready({
@@ -193,6 +194,7 @@ test("a lead dispatches where one stands or will open, and not otherwise", () =>
     { reason: "SelectorUnnamed" },
     { reason: "RunnerOffline", since: sinceIso },
     { reason: "HostedRunsNotGranted", since: sinceIso },
+    { reason: "UsagePaused", since: sinceIso },
   ] as const)
     expect(projectLeadDispatches(ready({ lead: "None", absence }))).toBe(false);
   expect(projectLeadDispatches(ready(none))).toBe(false);
@@ -218,4 +220,53 @@ test("a server that gives no reason reads as tickets run by hand, and a lead or 
   expect(
     projectLeadAbsenceLine({ state: "Absent" }, laterMs, undefined),
   ).toBeUndefined();
+});
+
+/** When a usage pause ends, later the same day as `sameDayMs`. */
+const untilIso = "2026-09-02T23:00:00.000Z";
+
+function untilLocal(): string {
+  const until = new Date(untilIso);
+  return `${String(until.getHours()).padStart(2, "0")}:${String(until.getMinutes()).padStart(2, "0")}`;
+}
+
+/**
+ * A lead paused for usage has live runners, so no runner notice says why it
+ * takes no turn: its line is drawn whatever the placement says, naming when
+ * the pause ends where the read names it, and since when where it does not.
+ */
+test("a lead paused for usage says until when, whatever the placement says", () => {
+  const paused = ready({
+    lead: "None",
+    absence: { reason: "UsagePaused", since: sinceIso, until: untilIso },
+  });
+  for (const placement of [
+    undefined,
+    sessionPlacementBody({ project: "Live" }),
+  ])
+    expect(projectLeadAbsenceLine(paused, sameDayMs, placement)).toBe(
+      `Paused for usage · until ${untilLocal()}`,
+    );
+  expect(
+    projectLeadAbsenceLine(
+      ready({
+        lead: "None",
+        absence: { reason: "UsagePaused", since: sinceIso },
+      }),
+      sameDayMs,
+      undefined,
+    ),
+  ).toBe(`Paused for usage · since ${sinceLocal().clock}`);
+});
+
+/** No frame says a refusal was kept or forgotten, so a read naming one is read again on the clock, and a lead with none is not. */
+test("a read is polled while it names no lead, or a lead a refusal is kept for", () => {
+  expect(projectLeadPolled(none)).toBe(true);
+  expect(projectLeadPolled(lead)).toBe(false);
+  expect(
+    projectLeadPolled({
+      ...lead,
+      refusal: { reason: "UsagePaused", since: sinceIso, until: untilIso },
+    }),
+  ).toBe(true);
 });

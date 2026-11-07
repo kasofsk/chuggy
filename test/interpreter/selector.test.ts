@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { leadDispatchesPerDecision } from "../../src/adapters/postgres/schema/migrations/baseline/seed.ts";
+import { leadAdmissionRefusals } from "../../src/contract/rosters.ts";
 import {
   agenticRefusalReasonCharsMax,
   configurationCanonicalCharsMax,
@@ -2464,6 +2465,26 @@ test("a project whose runners are offline takes no permit, and decides once one 
   assert.deepEqual(passes.started, [`decision-${partition.project}`]);
 });
 
+test("a project whose live runners' owners are all paused for usage takes no permit, keeps the refusal, and decides once one is not", async () => {
+  const passes = await admissionPasses([
+    () => Promise.resolve("UsagePaused"),
+    () => Promise.resolve("Admitted"),
+  ]);
+  assert.deepEqual(
+    passes.results.map((result) => [result.observed, result.failures]),
+    [
+      [0, [{ phase: "UsagePaused", partition }]],
+      [1, []],
+    ],
+  );
+  assert.deepEqual(passes.kept, [
+    `${partition.project} UsagePaused`,
+    `${partition.project} forgotten`,
+  ]);
+  assert.deepEqual(passes.allocated, [`decision-${partition.project}`]);
+  assert.deepEqual(passes.started, [`decision-${partition.project}`]);
+});
+
 test("an authority that cannot say skips the project this pass and serves it on a later one", async () => {
   const passes = await admissionPasses([
     () => Promise.reject(new ProjectAccessUnavailable("no answer")),
@@ -2527,6 +2548,18 @@ test("a store that cannot keep or forget a lead refusal is reported and changes 
   );
   assert.deepEqual(passes.allocated, [`decision-${partition.project}`]);
   assert.deepEqual(passes.started, [`decision-${partition.project}`]);
+});
+
+test("every refusal a lead's admission answers, and a read that gave none, is reported as an admission skip", () => {
+  for (const phase of [...leadAdmissionRefusals, "AdmissionUndecided"] as const)
+    assert.deepEqual(
+      selectorAdmissionChanges(new Map(), {
+        reached: [partition],
+        failures: [{ phase, partition }],
+      }).changed,
+      [{ phase, partition }],
+      phase,
+    );
 });
 
 test("an admission skip is reported per project, and no other failure is", () => {

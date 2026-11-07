@@ -504,10 +504,10 @@ test("a project with no lead answers that it has none, and one nobody may read a
 /**
  * A project whose lead the selector was refused says which refusal and since
  * when, so a reader can tell a project whose runner is down from one that has
- * not needed a lead yet. A lead that exists answers itself, whatever refusal is
+ * not needed a lead yet. A lead that exists answers itself, with the refusal
  * kept beside it.
  */
-test("a project with no lead answers the refusal the selector keeps for it, and a lead answers over one", async () => {
+test("a project with no lead answers the refusal the selector keeps for it, and a lead answers itself carrying it", async () => {
   const refused: LeadRefused = {
     reason: "RunnerOffline",
     since: "2026-09-02T00:00:00.000Z",
@@ -536,6 +536,30 @@ test("a project with no lead answers the refusal the selector keeps for it, and 
   const lead = nativeHttpEndpoints.lead.response.parse(found.json());
   assert.ok("session" in lead);
   assert.equal(lead.session, leadStanding.session);
+  assert.deepEqual(lead.refusal, refused);
+});
+
+test("a lead refused for usage names when the pause ends, with a session and without one", async () => {
+  const refused: LeadRefused = {
+    reason: "UsagePaused",
+    since: "2026-11-07T09:00:00.000Z",
+    until: "2026-11-08T01:00:00.000Z",
+  };
+  assert.deepEqual(
+    await leadAbsenceOf({ refused }),
+    refused,
+    "no session stands",
+  );
+  await using present = appOf({ refused });
+  const found = await present.inject({
+    url: `${root}/lead`,
+    headers: authorized,
+  });
+  assert.deepEqual(found.json<{ refusal: unknown }>().refusal, refused);
+  assert.deepEqual(
+    nativeHttpEndpoints.lead.response.parse(found.json()),
+    found.json(),
+  );
 });
 
 /**
@@ -572,6 +596,7 @@ test("a project whose selector is paused answers Paused over any refusal kept, a
       headers: authorized,
     });
     assert.equal(Object.hasOwn(found.json(), "absence"), false);
+    assert.equal(Object.hasOwn(found.json(), "refusal"), false);
   }
 });
 

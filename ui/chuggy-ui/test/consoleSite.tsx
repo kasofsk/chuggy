@@ -530,7 +530,6 @@ const consoleReads: readonly ConsoleRead[] = [
           fiveHourPercent: 90,
           sevenDayPercent: 90,
           pausesThreads: false,
-          pausesLead: false,
         },
         readings: [],
       })),

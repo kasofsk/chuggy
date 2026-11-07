@@ -60,9 +60,11 @@ import {
   postgresHarnessRolePool,
 } from "./harness.ts";
 import { sessionStoreDouble, sessionStoreEntryLine } from "./storeDouble.ts";
+import { agentAccountHarnessCommitted } from "./agentAccountHarness.ts";
 import {
   leadRigDecision,
   leadRigOpen,
+  leadRigPooled,
   leadRigProject,
   type LeadRig,
 } from "./leadHarness.ts";
@@ -696,6 +698,58 @@ test("a project holding a lead answers it over the refusal kept beside it", asyn
   assert.equal(found.statusCode, 200);
   assert.equal(Object.hasOwn(found.json(), "absence"), false);
   assert.equal(leadResponseSchema.safeParse(found.json()).success, true);
+});
+
+/**
+ * A lead paused for usage names when the pause ends to any reader of the
+ * project, whether or not a session stands, read from the pause rule at the
+ * read; whose account it is, its reading and its threshold stay its owner's.
+ */
+test("a lead refused for usage answers when the pause ends, and never whose account, reading or threshold holds it", async () => {
+  const partition = await readableProject("http-usage-paused");
+  const owner = oidcPrincipal(issuer, `owner-${randomUUID()}`);
+  await leadRigPooled(rig, partition, owner);
+  await agentAccountHarnessCommitted(rig.sessions.harness, owner, "Claude", {
+    readings: [
+      {
+        window: "seven_day",
+        utilization: 0.93,
+        resetsSecs: 3600,
+        observedSecs: -60,
+      },
+    ],
+  });
+  await postgresSelectorState(rig.selectorPool).recordLeadRefusal(
+    partition,
+    "UsagePaused",
+  );
+  const [reset] = await rig.sessions.harness.query(
+    `SELECT resets_at FROM agent_account_usage WHERE principal=$1`,
+    [owner],
+  );
+  const until = (reset?.["resets_at"] as Date).toISOString();
+  const absence = await leadAbsence("http-usage-paused", partition);
+  assert.equal(absence?.reason, "UsagePaused");
+  assert.ok(absence !== undefined && "since" in absence);
+  assert.equal(absence.until, until);
+  await sessionRigSession(rig.sessions, partition, "http-usage-paused", {
+    kind: "Lead",
+  });
+  await using app = leadApp("http-usage-paused");
+  const found = await app.inject({
+    url: `${pathOf(partition)}/lead`,
+    headers: authorized,
+  });
+  assert.equal(found.statusCode, 200);
+  const refusal = leadResponseSchema.parse(found.json()).refusal;
+  assert.deepEqual(refusal, {
+    reason: "UsagePaused",
+    since: absence.since,
+    until,
+  });
+  const carried = found.json<{ refusal: object }>().refusal;
+  assert.deepEqual(Object.keys(carried).sort(), ["reason", "since", "until"]);
+  assert.ok(!found.body.includes(owner), "the read names the owner");
 });
 
 test("the refusals the wire names are the refusals the selector may keep", async () => {

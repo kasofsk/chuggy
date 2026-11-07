@@ -14,7 +14,7 @@ import { after, before, test } from "node:test";
 
 import { leadSessionMint } from "../../src/adapters/crypto/leadSessionMint.ts";
 import { postgresSelectorState } from "../../src/adapters/postgres/selector.ts";
-import { postgresSessionRouteReads } from "../../src/adapters/postgres/sessionPlacement.ts";
+import { postgresLeadRouteReads } from "../../src/adapters/postgres/sessionPlacement.ts";
 import {
   leadAutoCompactWindowTokensDefault,
   leadTurnTokensMax,
@@ -108,7 +108,7 @@ function leadPolicy() {
       leadSessionMint(),
       leadRigClock,
       leadRigHostedAccess,
-      postgresSessionRouteReads(rig.selectorPool),
+      postgresLeadRouteReads(rig.selectorPool),
       {
         pollIntervalMs: 5,
         implementationRevision: "selector-build",

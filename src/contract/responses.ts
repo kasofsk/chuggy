@@ -1547,7 +1547,24 @@ export const leadStoreStreamResponseSchema = z.object({
   batches: countSchema,
 });
 
-/** The project's lead session: what it is, what it decided under, and its mailbox tail. */
+/**
+ * The admission refusal the last cycle that needed a lead met, which has been
+ * the answer since `since`. A `UsagePaused` refusal names in `until` the
+ * earliest instant one of the paused runner owners stops being paused, as the
+ * pause stands at the read, and never whose account it is or why.
+ */
+export const leadRefusalResponseSchema = z.object({
+  reason: z.enum(leadAdmissionRefusals),
+  since: instantSchema,
+  until: instantSchema.optional(),
+});
+export type LeadRefusalResponse = z.infer<typeof leadRefusalResponseSchema>;
+
+/**
+ * The project's lead session: what it is, what it decided under, its mailbox
+ * tail, and the refusal kept for it where one stands and neither the
+ * selector's pause nor its want of a grant outranks it.
+ */
 export const leadResponseSchema = z.object({
   session: identitySchema,
   state: z.enum(sessionStates),
@@ -1559,6 +1576,7 @@ export const leadResponseSchema = z.object({
   streams: z
     .array(leadStoreStreamResponseSchema)
     .max(sessionStoreStreamsAnswered),
+  refusal: leadRefusalResponseSchema.optional(),
 });
 export type LeadResponse = z.infer<typeof leadResponseSchema>;
 
@@ -1566,15 +1584,14 @@ export type LeadResponse = z.infer<typeof leadResponseSchema>;
  * Why a project holds no lead: `Paused` while its selector is paused, by the
  * project or the whole installation, then `SelectorNotGranted` while the site's
  * selector may not read the project, each ahead of any refusal it keeps, and
- * otherwise the admission refusal the last cycle that needed a lead met, which
- * has been the answer since `since`. Where none holds and a released ticket
- * waits on a dispatch decision, `AwaitingSelector`, or `SelectorUnnamed` where
- * the API names no selector to say whether one reaches the project; `NotNeeded`
- * where none waits.
+ * otherwise the admission refusal the last cycle that needed a lead met. Where
+ * none holds and a released ticket waits on a dispatch decision,
+ * `AwaitingSelector`, or `SelectorUnnamed` where the API names no selector to
+ * say whether one reaches the project; `NotNeeded` where none waits.
  */
 export const leadAbsenceResponseSchema = z.discriminatedUnion("reason", [
   z.object({ reason: z.enum(leadAbsencesUntimed) }),
-  z.object({ reason: z.enum(leadAdmissionRefusals), since: instantSchema }),
+  leadRefusalResponseSchema,
 ]);
 export type LeadAbsenceResponse = z.infer<typeof leadAbsenceResponseSchema>;
 

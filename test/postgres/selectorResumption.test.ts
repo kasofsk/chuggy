@@ -19,7 +19,7 @@ import {
   postgresSelectorRuntimeControl,
   postgresSelectorState,
 } from "../../src/adapters/postgres/selector.ts";
-import { postgresSessionRouteReads } from "../../src/adapters/postgres/sessionPlacement.ts";
+import { postgresLeadRouteReads } from "../../src/adapters/postgres/sessionPlacement.ts";
 import { composeSelectorRuntime } from "../../src/compose.ts";
 import { configurationCanonicalCharsMax } from "../../src/contract/http.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
@@ -607,7 +607,7 @@ test("a decision one process began and finished over a project that moved is end
         leadSessionMint(),
         leadRigClock,
         leadRigHostedAccess,
-        postgresSessionRouteReads(rig.selectorPool),
+        postgresLeadRouteReads(rig.selectorPool),
         {
           pollIntervalMs: 5,
           implementationRevision: "selector-build",

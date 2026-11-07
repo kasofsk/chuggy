@@ -89,6 +89,14 @@ export function sessionRunnersServing(
   }
 }
 
+/**
+ * Whether a live runner of the project could take its lead now: `Paused`
+ * where every live one's owner has their Claude account paused, and `Offline`
+ * where none is live.
+ */
+export const leadRunnerStandings = ["Live", "Paused", "Offline"] as const;
+export type LeadRunnerStanding = (typeof leadRunnerStandings)[number];
+
 /** The reads every door that spends a session asks of where it runs. */
 export interface SessionRouteReads {
   route(partition: Partition, kind: SessionKind): Promise<SessionRouteResolved>;
@@ -97,6 +105,11 @@ export interface SessionRouteReads {
     partition: Partition,
     member: Principal | undefined,
   ): Promise<SessionRunners>;
+}
+
+/** The reads a lead's admission asks: where it runs, and whether a runner there could take it. */
+export interface LeadRouteReads extends Pick<SessionRouteReads, "route"> {
+  leadRunners(partition: Partition): Promise<LeadRunnerStanding>;
 }
 
 export interface SessionPlacementStore extends SessionRouteReads {
@@ -237,13 +250,13 @@ export type LeadRouteAdmission =
 
 /**
  * Whether a project's lead may take a turn now: on a hosted route the tenant
- * must grant the lead's principal, and on a runner one of the project's must
- * be live, since a turn offered to none would hold its decision until the
- * decision's deadline.
+ * must grant the lead's principal, and on a runner route one of the project's
+ * must be live with its owner's account not paused, since a turn offered to
+ * none that may take it would hold its decision until the decision's deadline.
  */
 export async function leadAdmission(
   access: ProjectAccess,
-  routes: SessionRouteReads,
+  routes: LeadRouteReads,
   principal: Principal,
   partition: Partition,
 ): Promise<LeadRouteAdmission> {
@@ -252,7 +265,12 @@ export async function leadAdmission(
     return (await hostedRunsGranted(access, principal, partition.tenant))
       ? { admission: "Admitted", route }
       : { admission: "HostedRunsNotGranted" };
-  return (await routes.runners(partition, undefined)).project === "Live"
-    ? { admission: "Admitted", route }
-    : { admission: "RunnerOffline" };
+  switch (await routes.leadRunners(partition)) {
+    case "Live":
+      return { admission: "Admitted", route };
+    case "Paused":
+      return { admission: "UsagePaused" };
+    case "Offline":
+      return { admission: "RunnerOffline" };
+  }
 }
