@@ -856,6 +856,27 @@ test("an open execution names its carrier and when its run started, and a page w
   assert.equal(older.executions[0]?.runStartedAt, undefined);
 });
 
+test("an execution names when it was taken, and a page without it still reads", () => {
+  const body = structuredClone(
+    executionsResponse(partition, {
+      result: "Authorized",
+      value: { executions: [executionSummary] },
+    }).body,
+  ) as { readonly executions: Record<string, unknown>[] };
+  assert.equal(
+    executionsResponseSchema.parse(body).executions[0]?.takenAt,
+    instant,
+  );
+  const summary = body.executions[0];
+  assert.ok(summary !== undefined);
+  summary["takenAt"] = "";
+  assert.throws(() => executionsResponseSchema.parse(body));
+  delete summary["takenAt"];
+  const older = executionsResponseSchema.parse(body);
+  assert.equal(older.executions[0]?.takenAt, undefined);
+  assert.equal(older.executions[0]?.registeredAt, instant);
+});
+
 test("an execution names the image it ran on", () => {
   const page = executionsResponseSchema.parse(
     executionsResponse(partition, {

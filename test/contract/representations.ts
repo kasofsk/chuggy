@@ -237,6 +237,7 @@ export const executionSummary: ExecutionSummary = {
   retriesSpent: 2,
   relaunches: 1,
   registeredAt: instant,
+  takenAt: instant,
   carrier: "Agent",
   terminalAt: instant,
   ownerFallback: "Strict",

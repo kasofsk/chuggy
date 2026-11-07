@@ -46,10 +46,10 @@
  *
  * WHAT IT EMITS IS FACTS, and the labels at the end are the only strings
  * in it: each names a row the ledger numbered, and every word a reader is given
- * about what those facts mean belongs to whatever draws them. Time and money
- * are facts like any other, so a set and a cycle each carry the span they ran
- * over and a cycle and the page each carry what the executions under them
- * spent, unrounded, unformatted and in the units the wire sends.
+ * about what those facts mean belongs to whatever draws them. Money is a fact
+ * like any other, so a cycle and the page each carry what the executions under
+ * them spent, unrounded, unformatted and in the units the wire sends; time is
+ * read off the executions against a clock, by whatever draws it.
  *
  * A ROLLUP SAYS HOW MUCH OF ITSELF IT COULD SEE. `complete` is false wherever
  * the page cannot have held every execution of a cycle — a short page, a work
@@ -63,8 +63,8 @@ import type {
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
 import type { ExecutionTaskKind } from "../../../../src/contract/rosters.ts";
-import { identityCycle, runSpanOf, runSpendOf } from "./runTotals.ts";
-import type { RunSpan, RunSpend } from "./runTotals.ts";
+import { identityCycle, runSpendOf } from "./runTotals.ts";
+import type { RunSpend } from "./runTotals.ts";
 
 /**
  * The evaluation program the ledger groups by: the one the ticket's own read
@@ -87,7 +87,6 @@ export interface TaskSet {
   readonly executions: readonly ExecutionSummary[];
   readonly expected: number;
   readonly verdict: SetVerdict;
-  readonly span: RunSpan;
 }
 
 /** One evaluator's own row, at one generation: its key, the set it holds
@@ -105,7 +104,6 @@ export interface RanStage {
   readonly evaluators: readonly EvaluatorRow[];
   readonly expected: number;
   readonly verdict: SetVerdict;
-  readonly span: RunSpan;
 }
 
 /**
@@ -124,7 +122,6 @@ export interface Cycle {
   readonly artifact: CycleArtifact;
   readonly stages: readonly StageRow[];
   readonly standing: CycleStanding;
-  readonly span: RunSpan;
   readonly spend: RunSpend;
   readonly complete: boolean;
 }
@@ -132,7 +129,6 @@ export interface Cycle {
 export interface Ledger {
   readonly cycles: readonly Cycle[];
   readonly truncated: boolean;
-  readonly span: RunSpan;
   readonly spend: RunSpend;
   readonly complete: boolean;
 }
@@ -161,7 +157,6 @@ function taskSetOf(
     executions,
     expected,
     verdict: setVerdict(executions),
-    span: runSpanOf(executions),
   };
 }
 
@@ -276,7 +271,6 @@ interface StageAggregate {
   readonly evaluators: readonly EvaluatorRow[];
   readonly expected: number;
   readonly verdict: SetVerdict;
-  readonly span: RunSpan;
 }
 
 /**
@@ -304,7 +298,7 @@ function evaluatorRowsOf(
  * generation an evaluator key names, held apart from the others under the
  * same key, since a resume re-asks only the evaluators a stage blocked and
  * leaves the rest at the generation that produced them. The stage's own
- * `verdict`, `expected` and `span` read off each key's highest generation
+ * `verdict` and `expected` read off each key's highest generation
  * only — the earlier ones are rows, not inputs to the stage's own facts.
  */
 function stageAggregatesOf(
@@ -335,7 +329,6 @@ function stageAggregatesOf(
       evaluators,
       expected: stageExpected(stage, current.length, program),
       verdict: setVerdict(executions),
-      span: runSpanOf(executions),
     });
   }
   return aggregates;
@@ -450,7 +443,6 @@ function cycleFacts(
     artifact: cycleArtifactOf(work),
     stages,
     standing,
-    span: runSpanOf(held),
     spend: runSpendOf(held),
     complete: cycleComplete(work, stages, pageTruncated(page)),
   };
@@ -481,7 +473,6 @@ export function ticketLedger(
   return {
     cycles,
     truncated,
-    span: runSpanOf(page.executions),
     spend: runSpendOf(page.executions),
     complete: !truncated && cycles.every((cycle) => cycle.complete),
   };

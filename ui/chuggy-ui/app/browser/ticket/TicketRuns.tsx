@@ -20,7 +20,7 @@ import {
   executionQuery,
   ticketExecutionsQuery,
 } from "../../core/executionQueries.ts";
-import { spanRanFigure, spendFigures } from "../../core/figures.ts";
+import { spendFigures } from "../../core/figures.ts";
 import type { PanelState } from "../../core/freshness.ts";
 import { runReasonAttempt, runRefusalOf } from "../../core/runReason.ts";
 import { runResultLineOf } from "../../core/runResult.ts";
@@ -53,6 +53,7 @@ import { Figure } from "../ui/Figure.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
+import { TicketRunTime } from "./TicketRunTime.tsx";
 import { readValue } from "./TicketPageHeld.tsx";
 import type { TicketPageHeld } from "./TicketPageHeld.tsx";
 
@@ -236,7 +237,7 @@ function TicketRunsRowDrawn(props: {
         </span>
         <span className="ticket-runs-time">
           {row.kind === "Run" ? (
-            <Figure figure={spanRanFigure(row.span, props.nowMs)} />
+            <TicketRunTime runs={[row.execution]} nowMs={props.nowMs} />
           ) : null}
         </span>
         <span className="ticket-runs-cost">
@@ -271,7 +272,7 @@ function TicketRunsCycleDrawn(props: {
         ) : null}
         <span className="ticket-runs-outcome">{cycle.outcome}</span>
         <span className="ticket-runs-rollup">
-          <Figure figure={spanRanFigure(cycle.span, props.nowMs)} />
+          <TicketRunTime runs={cycle.executions} nowMs={props.nowMs} />
           <i className="fig-sep" aria-hidden="true">
             ·
           </i>
@@ -367,7 +368,7 @@ function TicketRailRow(props: {
         <span className="ticket-rail-name">{ticketRunsRowName(row)}</span>
         <span className="ticket-rail-time">
           {row.kind === "Run" ? (
-            <Figure figure={spanRanFigure(row.span, props.nowMs)} />
+            <TicketRunTime runs={[row.execution]} nowMs={props.nowMs} />
           ) : null}
         </span>
       </TicketRunsRowLink>

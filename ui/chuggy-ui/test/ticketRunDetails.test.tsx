@@ -23,9 +23,12 @@ import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
+const pageClock = vi.hoisted(() => ({ atMs: undefined as number | undefined }));
+
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
   sleepMs: () => Promise.resolve(),
+  nowMs: () => pageClock.atMs ?? Date.now(),
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -44,6 +47,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  pageClock.atMs = undefined;
   cleanup();
   vi.unstubAllGlobals();
 });
@@ -161,19 +165,59 @@ test("a run its fabric opened again counts every attempt it took", async () => {
   expect(field(drawn, "Attempts")).toBe("2");
 });
 
-test("a run waited from its registration to its first attempt's opening", async () => {
-  const drawn = await details({
-    ...passed([runAttempt("a1", { openedAt, endedAt })], []),
-    execution: {
-      ...runSummary({
-        execution,
-        registeredAt: "2026-08-27T00:00:00Z",
-        startedAt: "2026-08-27T00:01:30Z",
-      }),
-      attempts: [runAttempt("a1")],
-    },
+/** A run registered at midnight and opened at once, taken where a case says. */
+function registeredRun(over: Record<string, unknown>): RunPageServed {
+  const summary = runSummary({
+    execution,
+    registeredAt: "2026-08-27T00:00:00Z",
+    startedAt: "2026-08-27T00:00:01Z",
+    ...over,
   });
-  expect(field(drawn, "Waited")).toBe("1m 30s");
+  return {
+    ...passed([runAttempt("a1", { openedAt, endedAt })], []),
+    executions: [summary],
+    execution: { ...summary, attempts: [runAttempt("a1")] },
+  };
+}
+
+/** What the run page's header says beside its name, part by part. */
+function metaSaid(): readonly (string | null)[] {
+  const meta = document.querySelector(".ticket-run-meta");
+  return [...(meta?.children ?? [])]
+    .map((part) => part.textContent)
+    .filter((text) => text?.startsWith("$") !== true && text !== "—");
+}
+
+test("a run waited from its registration to when it was taken, and ran from then to its end", async () => {
+  pageClock.atMs = Date.parse("2026-08-27T01:00:00Z");
+  const drawn = await details(
+    registeredRun({
+      takenAt: "2026-08-27T00:23:00Z",
+      terminalAt: "2026-08-27T00:25:00Z",
+    }),
+  );
+  expect(field(drawn, "Waited")).toBe("23m");
+  expect(metaSaid().slice(0, 3)).toEqual([
+    "Started 37m ago",
+    "ran 2m",
+    "waited 23m",
+  ]);
+});
+
+test("a run nothing has taken waits until now, and reads as waiting", async () => {
+  const waiting = {
+    status: "Launching",
+    outcome: undefined,
+    runTotals: undefined,
+  };
+  pageClock.atMs = Date.parse("2026-08-27T00:05:00Z");
+  expect(field(await details(registeredRun(waiting)), "Waited")).toBe("5m");
+  expect(metaSaid()[0]).toBe("Waiting 5m");
+  cleanup();
+  vi.unstubAllGlobals();
+  pageClock.atMs = Date.parse("2026-08-27T00:09:00Z");
+  expect(field(await details(registeredRun(waiting)), "Waited")).toBe("9m");
+  expect(metaSaid()[0]).toBe("Waiting 9m");
 });
 
 /** A diagnostic a worker uploads that no task output declares. */

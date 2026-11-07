@@ -27,7 +27,10 @@ import {
   briefingStageCarrier,
   type BriefingCarrier,
 } from "../../interpreter/taskBriefing.ts";
-import { asPublicInstant } from "../../interpreter/publicResource.ts";
+import {
+  asPublicInstant,
+  type PublicInstant,
+} from "../../interpreter/publicResource.ts";
 import {
   configuredOutputs,
   executionSummaryImages,
@@ -513,7 +516,48 @@ async function executionsPaused(
   );
 }
 
-/** A page's summaries with their workers labelled, their runs totalled, and the reader's own pause on those waiting. */
+interface ExecutionTakenRow {
+  readonly execution: string;
+  readonly taken_at: string | null;
+}
+
+/**
+ * When something first took each of `executions` to run it, for those something
+ * has: a runner's claim, or an opening in cluster or of an attempt that ended
+ * unclaimed with its run recorded.
+ */
+async function executionsTaken(
+  pool: pg.Pool,
+  partition: Partition,
+  executions: readonly string[],
+): Promise<ReadonlyMap<string, PublicInstant>> {
+  if (executions.length === 0) return new Map();
+  const found = await pool.query<ExecutionTakenRow>(
+    sql`SELECT e.execution,
+               to_char(min(CASE WHEN e.placement='InCluster' THEN a.opened_at
+                                WHEN a.claimed_at IS NOT NULL THEN a.claimed_at
+                                WHEN a.ended_at IS NOT NULL AND r.attempt IS NOT NULL THEN a.opened_at END)
+                       AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS taken_at
+          FROM execution e
+          JOIN execution_attempt a
+            ON a.tenant=e.tenant AND a.project=e.project AND a.execution=e.execution
+          LEFT JOIN execution_run r
+            ON r.tenant=a.tenant AND r.project=a.project
+           AND r.execution=a.execution AND r.attempt=a.attempt
+         WHERE e.tenant=${partition.tenant} AND e.project=${partition.project}
+           AND e.execution=ANY(${[...executions]}::text[])
+         GROUP BY e.execution`,
+  );
+  return new Map(
+    found.rows.flatMap((row) =>
+      row.taken_at === null
+        ? []
+        : [[row.execution, asPublicInstant(row.taken_at)] as const],
+    ),
+  );
+}
+
+/** A page's summaries with their workers labelled, their runs totalled, when each was taken, and the reader's own pause on those waiting. */
 async function executionPageAnswered(
   pool: pg.Pool,
   partition: Partition,
@@ -526,14 +570,20 @@ async function executionPageAnswered(
     executionSummaryImages(summaries),
   );
   const totals = await postgresExecutionRunTotals(pool, partition, executions);
+  const taken = await executionsTaken(pool, partition, executions);
   const paused = await executionsPaused(pool, partition, reader, executions);
   return summaries.map((summary) => {
     const answered = executionSummaryTotalled(
       executionSummaryLabelled(summary, workers),
       totals,
     );
+    const takenAt = taken.get(summary.execution);
     const pause = paused.get(summary.execution);
-    return pause === undefined ? answered : { ...answered, paused: pause };
+    return {
+      ...answered,
+      ...(takenAt === undefined ? {} : { takenAt }),
+      ...(pause === undefined ? {} : { paused: pause }),
+    };
   });
 }
 

@@ -85,37 +85,81 @@ test("a ticket that lands nothing lands on no branch, and one whose brief names 
   expect(ticketOverviewBranchOf(ticket(), [])).toBeUndefined();
 });
 
-/** A run from `startedAt` to `terminalAt`, or still going where it has none. */
-function run(task: number, startedAt: string, terminalAt?: string) {
-  const row = ledgerExecution({
+/** A run registered, taken and ended where a case says, still going where
+ * it names no end and untaken where it names no taking. */
+function run(
+  task: number,
+  registeredAt: string,
+  takenAt?: string,
+  terminalAt?: string,
+) {
+  return ledgerExecution({
     execution: `e-${String(task)}`,
     task,
     identity: workIdentity(task),
+    registeredAt,
+    ...(takenAt === undefined ? { untaken: true } : { takenAt }),
     ...(terminalAt === undefined ? { status: "Running" } : { terminalAt }),
   });
-  return { ...row, startedAt };
 }
 
-test("the run time is the runs' spans added, the wait between them left out, and none before the first run", () => {
+test("the run time and the wait are each the runs' summed, the gap between runs in neither, and none before the first run", () => {
   const ran = [
-    run(1, "2026-08-26T10:00:00Z", "2026-08-26T10:05:25Z"),
-    run(2, "2026-08-26T11:00:00Z", "2026-08-26T11:00:07Z"),
+    run(
+      1,
+      "2026-11-07T10:00:00Z",
+      "2026-11-07T10:23:00Z",
+      "2026-11-07T10:25:00Z",
+    ),
+    run(
+      2,
+      "2026-11-07T11:00:00Z",
+      "2026-11-07T11:00:30Z",
+      "2026-11-07T11:00:37Z",
+    ),
   ];
-  const nowMs = Date.parse("2026-08-26T12:00:00Z");
+  const nowMs = Date.parse("2026-11-07T12:00:00Z");
   expect(ticketOverviewRunTime(ran, nowMs)).toEqual({
-    kind: "Duration",
-    text: "5m 32s",
+    ran: { kind: "Duration", text: "2m 07s" },
+    waited: { kind: "Duration", text: "23m 30s" },
   });
   expect(ticketOverviewRunning(ran)).toBe(false);
   expect(ticketOverviewRunTime([], nowMs)).toBeUndefined();
 });
 
 test("a run still going counts to now, and makes every sum one still growing", () => {
-  const going = [run(1, "2026-08-26T11:58:48Z")];
+  const going = [run(1, "2026-11-07T11:50:00Z", "2026-11-07T11:58:48Z")];
   expect(
-    ticketOverviewRunTime(going, Date.parse("2026-08-26T12:00:00Z")),
-  ).toEqual({ kind: "Duration", text: "1m 12s" });
+    ticketOverviewRunTime(going, Date.parse("2026-11-07T12:00:00Z")),
+  ).toEqual({
+    ran: { kind: "Duration", text: "1m 12s" },
+    waited: { kind: "Duration", text: "8m 48s" },
+  });
   expect(ticketOverviewRunning(going)).toBe(true);
+});
+
+test("a run nothing has taken adds no run time, and its wait grows with now", () => {
+  const ended = run(
+    1,
+    "2026-11-07T10:00:00Z",
+    "2026-11-07T10:23:00Z",
+    "2026-11-07T10:25:00Z",
+  );
+  const waiting = run(2, "2026-11-07T11:00:00Z");
+  expect(
+    ticketOverviewRunTime([ended, waiting], Date.parse("2026-11-07T11:05:00Z")),
+  ).toEqual({
+    ran: { kind: "Duration", text: "2m" },
+    waited: { kind: "Duration", text: "28m" },
+  });
+  expect(
+    ticketOverviewRunTime([ended, waiting], Date.parse("2026-11-07T11:10:00Z"))
+      ?.waited,
+  ).toEqual({ kind: "Duration", text: "33m" });
+  expect(
+    ticketOverviewRunTime([waiting], Date.parse("2026-11-07T11:05:00Z"))?.ran
+      .kind,
+  ).toBe("Absent");
 });
 
 test("each dependency is at its own phase: revoked, open, or else done", () => {

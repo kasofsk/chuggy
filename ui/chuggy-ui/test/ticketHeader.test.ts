@@ -123,16 +123,14 @@ test("a blocked ticket counts the dependencies still open as unfinished, and nam
   });
 });
 
-test("a moving ticket names its step and when its run started, and nothing where no run is held", () => {
-  const execution = {
-    ...ledgerExecution({
-      execution: "execution-1",
-      task: 1,
-      identity: workIdentity(1),
-      status: "Running",
-    }),
-    startedAt: "2026-11-06T10:00:00Z",
-  };
+test("a moving ticket names its step and the run its time is aged from, and nothing where no run is held", () => {
+  const execution = ledgerExecution({
+    execution: "execution-1",
+    task: 1,
+    identity: workIdentity(1),
+    status: "Running",
+    takenAt: "2026-11-06T10:00:00Z",
+  });
   const moving = ticket({ phase: "Evaluation" });
   expect(
     fragmentOf({
@@ -145,7 +143,7 @@ test("a moving ticket names its step and when its run started, and nothing where
   ).toStrictEqual({
     fragment: "Running",
     step: "review",
-    since: "2026-11-06T10:00:00Z",
+    run: execution,
   });
   expect(fragmentOf({ ticket: moving })).toStrictEqual({ fragment: "None" });
 });

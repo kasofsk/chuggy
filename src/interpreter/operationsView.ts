@@ -164,6 +164,8 @@ export interface ExecutionSummary {
   readonly registeredAt: PublicInstant;
   /** When the first attempt opened, absent while the execution has none. */
   readonly startedAt?: PublicInstant;
+  /** When something first took one of its attempts to run, absent while nothing has. */
+  readonly takenAt?: PublicInstant;
   /** When the worker of the attempt now open recorded its run, absent until it does. */
   readonly runStartedAt?: PublicInstant;
   /** What carries out the stage, absent where the pinned revision cannot be briefed. */

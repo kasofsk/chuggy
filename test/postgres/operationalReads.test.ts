@@ -691,11 +691,10 @@ async function operationalReopened(
 }
 
 /**
- * Where the wait ends and the run begins, on the summary a row is drawn from.
- * It is the first attempt's opening and not the latest one's, so a retry does
- * not move it and a row can subtract it from `registeredAt` and be right.
+ * In cluster nothing claims, so the summary is taken where it starts: at the
+ * first attempt's opening and not the latest one's, so a retry moves neither.
  */
-test("an execution's summary starts at its first attempt and stays there", async () => {
+test("an in-cluster execution's summary starts, and is taken, at its first attempt's opening and stays there", async () => {
   const project = await schedulerProject(rig, "operational-started");
   await rig.store.registerSpawn(
     await schedulerClaimFor(
@@ -723,8 +722,8 @@ test("an execution's summary starts at its first attempt and stays there", async
   );
   assert.ok(queued.executions.length >= 1);
   assert.deepEqual(
-    queued.executions.map((each) => each.startedAt),
-    queued.executions.map(() => undefined),
+    queued.executions.map((each) => [each.startedAt, each.takenAt]),
+    queued.executions.map(() => [undefined, undefined]),
   );
   const placed = await schedulerPlacedAttempt(
     rig,
@@ -738,6 +737,7 @@ test("an execution's summary starts at its first attempt and stays there", async
   );
   assert.ok(opened?.startedAt !== undefined);
   assert.equal(opened.startedAt, opened.attempts[0]?.openedAt);
+  assert.equal(opened.takenAt, opened.startedAt);
   assert.equal(
     (await summaryOf(placed.execution))?.startedAt,
     opened.startedAt,
@@ -747,10 +747,9 @@ test("an execution's summary starts at its first attempt and stays there", async
     true,
   );
   await operationalReopened(project, placed.execution);
-  assert.equal(
-    (await summaryOf(placed.execution))?.startedAt,
-    opened.startedAt,
-  );
+  const reopened = await summaryOf(placed.execution);
+  assert.equal(reopened?.startedAt, opened.startedAt);
+  assert.equal(reopened?.takenAt, opened.startedAt);
 });
 
 /**

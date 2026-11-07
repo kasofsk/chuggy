@@ -3,9 +3,8 @@
  * the branch and where it lands, what it waits on, how long its runs have
  * taken, and the draft's edits not yet released.
  *
- * A RUN'S TIME IS ITS SPAN, as the Runs tab reads it, and the ticket's is the
- * sum of its runs' rather than one span across them, so a wait between two
- * runs is not counted as either.
+ * A RUN'S TIME AND ITS WAIT ARE `runTotals.ts`'s, as the Runs tab reads them,
+ * and the ticket's are its runs' summed.
  */
 
 import type {
@@ -17,7 +16,7 @@ import type { TicketPhase } from "../../../../src/contract/rosters.ts";
 import { durationFigure } from "./figures.ts";
 import type { Figure } from "./figures.ts";
 import { branchName } from "./labels.ts";
-import { runSpanRanOf } from "./runTotals.ts";
+import { runTimeOf } from "./runTotals.ts";
 import { draftReleaseOf } from "./ticketEdit.ts";
 import type { TicketLanding } from "./ticketLandings.ts";
 
@@ -62,22 +61,26 @@ export function ticketOverviewRunning(
   return executions.some(ticketOverviewLive);
 }
 
-/** The runs' spans added, a run still going counted to now; none before the
- * first run. */
+/** The runs' times and their waits, each summed and counted to now while it
+ * lasts; none before the first run, and no time while nothing has been taken. */
+export interface TicketOverviewRunTime {
+  readonly ran: Figure;
+  readonly waited: Figure;
+}
+
 export function ticketOverviewRunTime(
   executions: readonly ExecutionSummary[],
   nowMs: number,
-): Figure | undefined {
+): TicketOverviewRunTime | undefined {
   if (executions.length === 0) return undefined;
-  let ranMs = 0;
-  for (const execution of executions) {
-    const span = runSpanRanOf([execution]);
-    const fromMs = span.from === undefined ? NaN : Date.parse(span.from);
-    const toMs = span.to === undefined ? nowMs : Date.parse(span.to);
-    if (Number.isFinite(fromMs) && Number.isFinite(toMs) && toMs > fromMs)
-      ranMs += toMs - fromMs;
-  }
-  return durationFigure(ranMs);
+  const time = runTimeOf(executions, nowMs);
+  return {
+    ran:
+      time.ranMs === undefined
+        ? { kind: "Absent", why: "Waiting" }
+        : durationFigure(time.ranMs),
+    waited: durationFigure(time.waitedMs),
+  };
 }
 
 /** A dependency and the phase it is at. */
