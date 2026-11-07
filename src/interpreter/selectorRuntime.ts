@@ -358,7 +358,7 @@ type ProjectAdmission =
  * that its lead may take a turn now: a refusal or a read that could not say
  * moves no notification cursor, so the next pass that reaches the project asks
  * again and finds its changes waiting. A refusal is kept and an admission
- * forgets it, for a reader of a project with no lead; a read that could not say
+ * forgets it, for a reader of the lead; a read that could not say
  * leaves what is kept, and a store that cannot keep or forget is reported under
  * `Observation` and changes no admission.
  */
