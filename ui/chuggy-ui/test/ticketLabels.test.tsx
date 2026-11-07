@@ -178,9 +178,7 @@ const named: Named = {
 
 test("the revision a ticket was released under stays reachable from its name", async () => {
   await drawTicket(named);
-  const releasedUnder = drawn("chuggy #12");
-  fireEvent.focus(releasedUnder);
-  expect((await screen.findByRole("tooltip")).textContent).toBe(revision);
+  expect(drawn("chuggy #12").getAttribute("title")).toBe(revision);
 });
 
 test("the configuration panel keeps the revision its heading no longer shows", async () => {

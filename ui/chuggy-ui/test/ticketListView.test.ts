@@ -8,9 +8,14 @@ import { defaultParseSearch } from "@tanstack/react-router";
 import { expect, test } from "vitest";
 
 import type { ProjectTableRow } from "../app/core/projectTableRows.ts";
-import { ticketSearchCharsMax } from "../../../src/contract/http.ts";
 import {
+  nativeHttpPathSegmentCharsMax,
+  ticketSearchCharsMax,
+} from "../../../src/contract/http.ts";
+import {
+  ticketListCountDimmed,
   ticketListCountTapped,
+  ticketListCreatorsOffered,
   ticketListFiltered,
   ticketListQueryOf,
   ticketListQueryWith,
@@ -178,4 +183,61 @@ test("a state's count tapped filters to that state, and tapped as the filter goe
     expect(ticketListCountTapped(standing, standing)).toBe("All");
   }
   expect(ticketListCountTapped("Ready", "Blocked")).toBe("Blocked");
+});
+
+test("a state's count is dimmed exactly while a filter is set that draws none of its tickets", () => {
+  for (const standing of ["Ready", "Blocked", "Work", "Escalated"] as const) {
+    expect(ticketListCountDimmed("All", standing), standing).toBe(false);
+    expect(ticketListCountDimmed(standing, standing), standing).toBe(false);
+    expect(ticketListCountDimmed("Done", standing), standing).toBe(true);
+  }
+  expect(ticketListCountDimmed("Ready", "Blocked")).toBe(true);
+  expect(ticketListCountDimmed("Work", "Escalated")).toBe(true);
+  expect(ticketListCountDimmed("Pending", "Ready")).toBe(false);
+  expect(ticketListCountDimmed("Pending", "Blocked")).toBe(false);
+  expect(ticketListCountDimmed("Pending", "Work")).toBe(true);
+});
+
+test("the address holds a creator as the text it was written as, and drops one the server would refuse", () => {
+  const issued = "17:https://idp.test/s-ada";
+  expect(
+    ticketListQueryOf(
+      defaultParseSearch(`?creator=${encodeURIComponent(issued)}`),
+    ),
+  ).toStrictEqual({ creator: issued });
+  expect(ticketListQueryOf(defaultParseSearch("?creator=121"))).toStrictEqual({
+    creator: "121",
+  });
+  for (const creator of [
+    "",
+    "\u0000",
+    "p".repeat(nativeHttpPathSegmentCharsMax + 1),
+    ["s-ada"],
+  ])
+    expect(ticketListQueryOf({ creator })).toStrictEqual({});
+  expect(
+    ticketListQueryWith(
+      { filter: "Done", q: "gate", creator: issued },
+      { creator: undefined },
+    ),
+  ).toStrictEqual({ filter: "Done", q: "gate" });
+  expect(
+    ticketListQueryWith({ filter: "Done" }, { creator: issued }),
+  ).toStrictEqual({ filter: "Done", creator: issued });
+});
+
+test("the creators offered are the project's people under the reader's issuer, the reader apart, and the creator the address names", () => {
+  const reader = "17:https://idp.test/s-ada";
+  expect(
+    ticketListCreatorsOffered(reader, ["s-ada", "s-bob"], undefined),
+  ).toStrictEqual(["17:https://idp.test/s-bob"]);
+  expect(
+    ticketListCreatorsOffered(reader, ["s-bob"], "9:elsewheres-cy"),
+  ).toStrictEqual(["17:https://idp.test/s-bob", "9:elsewheres-cy"]);
+  expect(
+    ticketListCreatorsOffered(reader, ["s-bob"], "17:https://idp.test/s-bob"),
+  ).toStrictEqual(["17:https://idp.test/s-bob"]);
+  expect(
+    ticketListCreatorsOffered(undefined, ["s-bob"], undefined),
+  ).toStrictEqual([]);
 });

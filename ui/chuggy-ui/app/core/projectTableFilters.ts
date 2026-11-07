@@ -82,11 +82,13 @@ export function ticketFilterPhases(
 /** The order a list is read in: by last activity, or by ticket number from either end. */
 export type TicketListOrder = "RecentActivity" | "Newest" | "Oldest";
 
-/** What the list asks the wire for: the filter's phases, the order its sort reads in, and the search, where there is one. */
+/** What the list asks the wire for: the filter's phases, the order its sort reads in, and the search and the creator, where there is one. */
 export interface TicketListAsk {
   readonly filter: TicketFilter;
   readonly order: TicketListOrder;
   readonly search: string | undefined;
+  /** The principal of the member whose tickets alone the list holds. */
+  readonly creator?: string | undefined;
 }
 
 /** The list a reader who has chosen nothing is drawn, which a ticket reference and a mention read too. */
@@ -96,17 +98,21 @@ export const ticketListAskDefault: TicketListAsk = {
   search: undefined,
 };
 
-/** Whether the list is the active one: no search, by recent activity, kept live by folding frames. */
+/** Whether the list is the active one: no search, no creator, by recent activity, kept live by folding frames. */
 function ticketListAskActive(ask: TicketListAsk): boolean {
-  return ask.search === undefined && ask.order === "RecentActivity";
+  return (
+    ask.search === undefined &&
+    ask.creator === undefined &&
+    ask.order === "RecentActivity"
+  );
 }
 
 /**
- * One entry per read, order and search, since a shared entry would let one's
- * page walk answer another's; the filters reading one phase share its entry.
- * The active list folds a frame in, within the phases its filter admits, and
- * reads again for a ticket it has not got; a list under a search or an order
- * by number is read again on a ticket's frame, because whether the ticket
+ * One entry per read, order, search and creator, since a shared entry would
+ * let one's page walk answer another's; the filters reading one phase share
+ * its entry. The active list folds a frame in, within the phases its filter
+ * admits, and reads again for a ticket it has not got; a list under a search,
+ * a creator or an order by number is read again on a ticket's frame, because whether the ticket
  * belongs to it, and where, is the server's to say; every one folds an
  * execution's frame into its ticket's row.
  */
@@ -114,7 +120,7 @@ export function ticketFilterList(
   partition: PartitionIdentity,
   ask: TicketListAsk,
 ): ProjectList<ProjectTicketRows> {
-  const name = `table:${ticketFilterRead(ask.filter)}:${ask.order}:${ask.search ?? ""}`;
+  const name = `table:${ticketFilterRead(ask.filter)}:${ask.order}:${JSON.stringify([ask.search ?? null, ask.creator ?? null])}`;
   if (!ticketListAskActive(ask))
     return projectTicketRowsLive(
       projectListReread<ProjectTicketRows>(partition, "Ticket", name),
@@ -138,6 +144,7 @@ function ticketFilterReads(ask: TicketListAsk): readonly ProjectPage[] {
     order: ask.order,
     limit: nativeHttpPageItemsMax,
     ...(phases === undefined ? {} : { phase: phases }),
+    ...(ask.creator === undefined ? {} : { creator: ask.creator }),
   };
   if (ask.search !== undefined) return [{ ...asked, q: ask.search }];
   if (!ticketListAskActive(ask)) return [asked];
@@ -176,6 +183,7 @@ export function ticketFilterProjectEmpty(
   return (
     ask.filter === ticketFilterAll &&
     ask.search === undefined &&
+    ask.creator === undefined &&
     rows.tickets.length === 0 &&
     rows.next === undefined &&
     rows.failure === undefined

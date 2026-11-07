@@ -60,7 +60,11 @@ import {
 } from "./heldStream.ts";
 import { unreadableLeadReads } from "./leadReadFixtures.ts";
 import { executionSummary } from "../contract/representations.ts";
-import { unservedLeadInquiries, unservedThreads } from "./threadFixtures.ts";
+import {
+  unservedEpics,
+  unservedLeadInquiries,
+  unservedThreads,
+} from "./threadFixtures.ts";
 
 const partition = partitionOf("project");
 const streamPath = "/api/v1/tenants/tenant/projects/project/events";
@@ -96,6 +100,7 @@ function servedWeb(
   return {
     ...unreadableLeadReads(),
     ...unservedThreads,
+    ...unservedEpics,
     ...unservedLeadInquiries,
     cancel: notFound,
     configuration: () => Promise.resolve(undefined),

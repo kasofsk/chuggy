@@ -694,6 +694,7 @@ function abilities(
       overrideTicketConfig: administer,
       skipPlannedEvaluations: administer,
       administer,
+      writeEpic: true,
     })
   );
 }

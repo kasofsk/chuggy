@@ -14,6 +14,8 @@ import {
   ticketHeaderActionsOf,
   ticketHeaderFragment,
   ticketStateLabelOf,
+  ticketStateStandings,
+  ticketStateWords,
 } from "../app/core/ticketHeader.ts";
 import type { TicketHeaderFragmentReads } from "../app/core/ticketHeader.ts";
 import { ticketLandingOf } from "../app/core/ticketLandings.ts";
@@ -49,6 +51,15 @@ test("every state is a word, a tone, a form and a mark, the moving ones filled a
     ["Escalated", "parked", "Filled", "Alert"],
     ["Done", "pass", "Filled", "Check"],
     ["Revoked", "retired", "Filled", "Cross"],
+  ]);
+});
+
+test("a draft never released is labelled Draft, outlined and marked with a pencil", () => {
+  const label = ticketStateLabelOf("Draft");
+  expect([label.word, label.form, label.mark]).toStrictEqual([
+    "Draft",
+    "Outlined",
+    "Pencil",
   ]);
 });
 
@@ -88,19 +99,27 @@ test("a ready ticket waits for the lead, or for a dispatch where no lead dispatc
   });
 });
 
-test("a blocked ticket counts what it waits on, open and revoked alike", () => {
+test("a blocked ticket counts the dependencies still open as unfinished, and names a revoked one as revoked", () => {
   const one = ticket({ openDependencies: [{ ticket: 334, phase: "Work" }] });
   expect(fragmentOf({ ticket: one })).toStrictEqual({
     fragment: "Words",
     words: "1 unfinished dependency",
   });
-  const two = ticket({
-    openDependencies: [{ ticket: 334, phase: "Work" }],
+  const revoked = ticket({ revokedDependencies: [200] });
+  expect(fragmentOf({ ticket: revoked })).toStrictEqual({
+    fragment: "Words",
+    words: "1 revoked dependency",
+  });
+  const both = ticket({
+    openDependencies: [
+      { ticket: 334, phase: "Work" },
+      { ticket: 336, phase: "Pending" },
+    ],
     revokedDependencies: [333],
   });
-  expect(fragmentOf({ ticket: two })).toStrictEqual({
+  expect(fragmentOf({ ticket: both })).toStrictEqual({
     fragment: "Words",
-    words: "2 unfinished dependencies",
+    words: "2 unfinished dependencies · 1 revoked dependency",
   });
 });
 
@@ -120,12 +139,12 @@ test("a moving ticket names its step and when its run started, and nothing where
       ticket: moving,
       slot: {
         slot: "Now",
-        running: { execution, stage: "Stage 2 of 2", run: "run 6" },
+        running: { execution, step: "review", cycle: 2 },
       },
     }),
   ).toStrictEqual({
     fragment: "Running",
-    step: "Stage 2 of 2",
+    step: "review",
     since: "2026-11-06T10:00:00Z",
   });
   expect(fragmentOf({ ticket: moving })).toStrictEqual({ fragment: "None" });
@@ -143,6 +162,23 @@ test("an escalated ticket says its escalation in a few words", () => {
       }),
     }),
   ).toStrictEqual({ fragment: "Words", words: "Rework budget exhausted" });
+});
+
+test("a done ticket names the branch it merged into, not its whole reference", () => {
+  const landed = landingLanded(2, "https://github.com/acme/atlas/pull/1314");
+  const whole = {
+    ...landed,
+    proposal:
+      landed.proposal === undefined
+        ? undefined
+        : { ...landed.proposal, baseRef: "refs/heads/main" },
+  };
+  expect(
+    fragmentOf({
+      ticket: ticket({ phase: "Done" }),
+      landings: [ticketLandingOf(whole)],
+    }),
+  ).toMatchObject({ words: "Merged into main", link: { label: "PR #1314" } });
 });
 
 test("a done ticket says where it merged and links its pull request by number, and nothing where it holds no landing", () => {
@@ -250,4 +286,23 @@ test("an unread offer leads with nothing and offers no edit", () => {
     editable: false,
     duplicate: "Menu",
   });
+});
+
+test("the words a small label is sized by are every standing's word, each once", () => {
+  expect(ticketStateStandings).toHaveLength(new Set(ticketStateStandings).size);
+  expect(new Set(ticketStateStandings)).toStrictEqual(
+    new Set([
+      "Ready",
+      "Blocked",
+      "Work",
+      "Evaluation",
+      "Finalization",
+      "Escalated",
+      "Done",
+      "Revoked",
+    ]),
+  );
+  expect(ticketStateWords).toStrictEqual(
+    ticketStateStandings.map((standing) => ticketStateLabelOf(standing).word),
+  );
 });

@@ -60,7 +60,7 @@ import type {
   OperationAbandonCause,
   OperationStep,
 } from "./operationFollow.ts";
-import type { ClosedSet } from "./ticketLedger.ts";
+import type { ClosedSet, StageNames } from "./ticketLedger.ts";
 import { stageLabel } from "./ticketLedger.ts";
 import type { TicketActionName } from "./ticketActions.ts";
 
@@ -478,14 +478,14 @@ export function escalationEvidenceLine(
 /** What the page knows about the wall, which is what the second line can name. */
 export interface WallFacts {
   readonly lastSet: ClosedSet | undefined;
-  readonly stageCount: number;
+  readonly names: StageNames;
 }
 
 function walledStageLabel(facts: WallFacts): string | undefined {
   const set = facts.lastSet;
   if (set === undefined || set.taskKind !== "Evaluation") return undefined;
   if (set.stage === undefined) return undefined;
-  return stageLabel(set.stage, facts.stageCount);
+  return stageLabel(set.stage, facts.names);
 }
 
 /** The stage the wall interrupted, said as the thing that happened to it. */
@@ -767,6 +767,8 @@ export function ticketActionEffect(
       return offered("Lets finalization proceed");
     case "Decline":
       return offered("Holds finalization back");
+    case "Release":
+      return offered("Makes the draft a ticket");
   }
 }
 

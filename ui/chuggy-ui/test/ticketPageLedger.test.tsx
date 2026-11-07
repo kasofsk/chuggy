@@ -35,7 +35,6 @@ import {
 } from "./ticketLedgerFixture.ts";
 import type { ExecutionShape } from "./ticketLedgerFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
-import { instantExactText } from "../app/core/figures.ts";
 import type { TicketProgram } from "../app/core/ticketLedger.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
@@ -282,11 +281,10 @@ function outcomeOf(group: HTMLElement | undefined): string | undefined {
   return group?.querySelector(".ticket-runs-outcome")?.textContent;
 }
 
-/** The status bar, which is where the page says where the ticket stands. */
-function statusBar(container: HTMLElement): HTMLElement {
-  const bar = container.querySelector<HTMLElement>(".ticket-status");
-  if (bar === null) throw new Error("no status bar drawn");
-  return bar;
+/** The Overview's sidebar, which is where the page says what the ticket is
+ * and what its runs have cost. */
+function sidebar(): HTMLElement {
+  return screen.getByRole("complementary", { name: "Properties" });
 }
 
 /** The Activity panel, which is where the page says what has run. */
@@ -294,29 +292,27 @@ function activity(): HTMLElement {
   return screen.getByRole("region", { name: "Activity" });
 }
 
-test("the parked ticket names its wall, its phase and what the whole of it cost", async () => {
-  const { container } = await drawTicket({
+test("the parked ticket names its wall, its phase and what the whole of it cost, its tokens left to Usage", async () => {
+  await drawTicket({
     shapes: ticket21Parked,
     ticket: parkedTicket,
   });
-  const bar = statusBar(container);
   expect(ticketHeader().textContent).toContain("Escalated");
-  expect(bar.textContent).toContain("$2.74");
-  expect(bar.textContent).toContain("198k tok");
-  expect(bar.textContent).not.toContain("Runs");
+  expect(sidebar().textContent).toContain("$2.74");
+  expect(sidebar().textContent).not.toContain("tok");
+  expect(activity().textContent).toContain("198k");
   expect(activity().textContent).toContain("Runs7");
   expect(screen.getAllByText("Rework budget exhausted").length).toBeGreaterThan(
     0,
   );
 });
 
-test("the page is one column: no aside and no sequence", async () => {
-  const { container } = await drawTicket({
+test("the page draws no sequence", async () => {
+  await drawTicket({
     shapes: ticket21Parked,
     ticket: parkedTicket,
   });
-  expect(container.querySelector("aside")).toBeNull();
-  expect(statusBar(container).textContent).not.toContain("167");
+  expect(sidebar().textContent).not.toContain("167");
   expect(screen.queryByText("Sequence")).toBeNull();
 });
 
@@ -327,7 +323,8 @@ test("the wall is a card that needs you: why and which stage failed, with the re
   });
   const card = screen.getByRole("status", { name: "Needs you" });
   expect(card.textContent).toContain("Rework budget exhausted");
-  expect(card.textContent).toContain("Stage 1 of 2 failed");
+  expect(card.textContent).toContain("Failed at Stage 1 in cycle 3");
+  expect(card.textContent).toContain("Read the run");
   expect(within(card).queryByRole("button")).toBeNull();
   expect(
     within(ticketHeader()).getByRole("button", { name: "Resume" }),
@@ -362,13 +359,13 @@ test("the current cycle draws its work, its stages, where it stopped and its rol
   const rows = rowsOf(current);
   expect(rows[0]).toContain("Work");
   expect(rows[0]).toContain("9m 30s");
-  expect(rows[1]).toContain("Stage 1 of 2");
+  expect(rows[1]).toContain("Stage 1");
   expect(rows[1]).toContain("$0.35");
-  expect(rows[2]).toContain("Stage 2 of 2");
+  expect(rows[2]).toContain("Stage 2");
   expect(rows[2]).toContain("Not reached");
   expect(rows[3]).toContain("Landing");
   expect(rows[3]).toContain("Not reached");
-  expect(outcomeOf(current)).toBe("Failed at Stage 1 of 2");
+  expect(outcomeOf(current)).toBe("Failed at Stage 1");
   expect(current.querySelector(".ticket-runs-rollup")?.textContent).toContain(
     "$2.05",
   );
@@ -379,7 +376,7 @@ test("a superseded cycle says what sent it back", async () => {
     shapes: ticket21Parked,
     ticket: parkedTicket,
   });
-  expect(outcomeOf(groups(container)[1])).toBe("Sent back by Stage 2 of 2");
+  expect(outcomeOf(groups(container)[1])).toBe("Sent back by Stage 2");
 });
 
 test("a page that does not start at cycle 1 draws the cycles it holds", async () => {
@@ -406,8 +403,8 @@ test("the resume states what it re-runs", async () => {
   ).not.toBeNull();
 });
 
-/** The status row's Repository cell: its value, and the address it
- * keeps for hover. */
+/** The sidebar's Repository field: its value, and the address it keeps for
+ * hover. */
 function repositoryCell(): { text: string; title: string | null } {
   const value = screen.getByText("Repository").nextElementSibling;
   return {
@@ -416,7 +413,7 @@ function repositoryCell(): { text: string; title: string | null } {
   };
 }
 
-test("the status row names the repository by its label, the address on hover", async () => {
+test("the sidebar names the repository by its label, the address on hover", async () => {
   await drawTicket({
     shapes: ticket21Parked,
     ticket: {
@@ -434,9 +431,9 @@ test("the status row names the repository by its label, the address on hover", a
   });
 });
 
-test("a brief naming no repository leaves the status row's Repository cell absent", async () => {
+test("a brief naming no repository says so in the sidebar", async () => {
   await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
-  expect(repositoryCell()).toEqual({ text: "—", title: null });
+  expect(repositoryCell()).toEqual({ text: "None", title: null });
 });
 
 test("the ticket is headed by its own title where it has one", async () => {
@@ -488,12 +485,7 @@ test("every part of the page is drawn without being opened, in order", async () 
   const names = screen
     .getAllByRole("heading", { level: 2 })
     .map((heading) => heading.textContent ?? "");
-  const order = [
-    "Instructions",
-    "Revision history",
-    "Configuration",
-    "Activity",
-  ];
+  const order = ["Cycle 3", "Instructions", "Configuration", "Activity"];
   const at = order.map((name) =>
     names.findIndex((held) => held.startsWith(name)),
   );
@@ -562,26 +554,20 @@ test("after a resume the current cycle draws its resumed evaluator running, agai
     row.querySelector(".ticket-run-mark")?.getAttribute("data-mark"),
     row.hasAttribute("data-superseded"),
   ]);
-  expect(marks).toContainEqual(["Stage 1 of 2", "Spin", false]);
-  expect(marks).toContainEqual(["Stage 1 of 2", "Alert", true]);
-  expect(outcomeOf(current)).toBe("Running Stage 1 of 2");
-});
-
-test("a resumed ticket says it was resumed", async () => {
-  const { container } = await drawTicket({
-    shapes: ticket21Resumed,
-    ticket: resumedTicket,
-  });
-  expect(ticketHeader().textContent).toContain("Evaluating");
-  expect(statusBar(container).textContent).toContain(
-    "Resumed at stage 1 · cycle 3",
-  );
+  expect(marks).toContainEqual(["Stage 1", "Spin", false]);
+  expect(marks).toContainEqual(["Stage 1", "Alert", true]);
+  expect(outcomeOf(current)).toBe("Running Stage 1");
 });
 
 test("a running ticket's slot is the run going now, and nothing needs you", async () => {
   await drawTicket({ shapes: ticket21Resumed, ticket: resumedTicket });
   const now = screen.getByRole("region", { name: "Now" });
-  expect(now.textContent).toContain("Stage 1 of 2 · run 8");
+  expect(now.querySelector(".ticket-card-title")?.textContent).toBe(
+    "Running Stage 1",
+  );
+  expect(now.querySelector(".ticket-card-where")?.textContent).toContain(
+    "Cycle 3",
+  );
   expect(screen.queryByRole("status", { name: "Needs you" })).toBeNull();
 });
 
@@ -663,7 +649,7 @@ test("nothing the page draws is a colour of its own, in either theme", async () 
     );
     expect(styled).toEqual([]);
     expect(document.documentElement.getAttribute("data-theme")).toBe(theme);
-    expect(container.querySelector(".ticket-status")).not.toBeNull();
+    expect(container.querySelector(".ticket-steps")).not.toBeNull();
     cleanup();
     vi.unstubAllGlobals();
     viewportAtEm(viewportDeskEm);
@@ -748,48 +734,6 @@ test("a short page marks the run count, draft or no draft", async () => {
   }
 });
 
-/**
- * A settled ticket is dated by when it last moved, which is the journal's own
- * instant and not the failing row's end — those differ whenever anything ran
- * after the wall, and the fixture makes them differ.
- */
-test("the status says when the ticket last moved, hovering the journal's own instant", async () => {
-  const { container } = await drawTicket({
-    shapes: ticket21Parked,
-    ticket: parkedTicket,
-  });
-  const when = statusBar(container).querySelector(".fig");
-  if (when === null) throw new Error("no status figure drawn");
-  expect(when.textContent).toMatch(/ ago·ran /u);
-  fireEvent.focus(when);
-  expect((await screen.findByRole("tooltip")).textContent).toBe(
-    instantExactText(new Date(ticketInstants.changedAt)),
-  );
-});
-
-/**
- * A running ticket is dated from its first run, not from its release — the
- * fixture releases well before its first execution, as a ticket nobody
- * dispatches at once is.
- */
-test("a running ticket says when it started, from its first run", async () => {
-  const { container } = await drawTicket({
-    shapes: ticket21Resumed,
-    ticket: resumedTicket,
-  });
-  const when = statusBar(container).querySelector(".fig");
-  if (when === null) throw new Error("no status figure drawn");
-  expect(when.textContent).toMatch(/^started .+ ago$/u);
-  const first = ledgerPage(ticket21Resumed).executions.find(
-    (row) => row.task === 1,
-  );
-  if (first === undefined) throw new Error("no first run in the fixture");
-  fireEvent.focus(when);
-  expect((await screen.findByRole("tooltip")).textContent).toBe(
-    instantExactText(new Date(first.registeredAt)),
-  );
-});
-
 /** A row reads its run to learn whether it has a conversation, so a cycle
  * the page draws closed reads its runs only once a reader opens it. */
 test("the Runs tab reads each run it lists once, for the line it says", async () => {
@@ -826,34 +770,6 @@ test("a row's time is its run's span from its start, the wait left out", async (
   const ran = await times(started);
   expect(from).not.toBe(ran);
   expect(ran).toMatch(/^\d+m( \d{2}s)?$/u);
-});
-
-/**
- * Only a running ticket has no end. A settled one whose runs this page has not
- * read is over, and drawing it as still going contradicts its own phase pill.
- */
-test("a settled ticket is not drawn as still running when its runs are unread", async () => {
-  for (const phase of ["Done", "Revoked", "Escalated"]) {
-    await drawTicket({
-      shapes: [],
-      ticket: { ...parkedTicket, phase },
-    });
-    const line = document.querySelector(".ticket-status-line");
-    expect(line?.textContent).not.toContain("started");
-    expect(line?.textContent).toMatch(/ ago$/u);
-    cleanup();
-    vi.unstubAllGlobals();
-    viewportAtEm(viewportDeskEm);
-  }
-});
-
-test("a ticket the machine is working on now keeps its open span", async () => {
-  await drawTicket({
-    shapes: [],
-    ticket: { ...resumedTicket, phase: "Evaluation" },
-  });
-  const line = document.querySelector(".ticket-status-line");
-  expect(line?.textContent).toMatch(/^started .+ ago$/u);
 });
 
 /** A cancelled run has stopped, so it is not one of the runs still going. */
@@ -969,10 +885,10 @@ test("a sparse stage draws each evaluator as its own row, priced apart", async (
   const rows = stageRows(groups(container).at(-1));
   expect(rows).toHaveLength(2);
   expect(rows[0]?.querySelector(".ticket-runs-name")?.textContent).toBe(
-    "Stage 1 of 1 · 1",
+    "Stage 1 · 1",
   );
   expect(rows[1]?.querySelector(".ticket-runs-name")?.textContent).toBe(
-    "Stage 1 of 1 · 2",
+    "Stage 1 · 2",
   );
   expect(rows[0]?.querySelector(".ticket-runs-cost")?.textContent).toContain(
     "$0.40",
@@ -1024,30 +940,38 @@ test("a Pending ticket offers the edit screen, and a parked one does not", async
   expect(screen.queryByText("Edit", { selector: "a" })).toBeNull();
 });
 
-test("the provenance names the live revision and a draft revised past it", async () => {
+/** The banner over the steps, which is drawn only for a draft holding edits
+ * no update has released. */
+function unreleased(): HTMLElement | null {
+  return screen.queryByRole("region", { name: "Unreleased changes" });
+}
+
+test("the instructions name the live revision and when it was released, and a draft revised past it is a banner leading to its form", async () => {
   const { container } = await drawTicket({
     shapes: [],
     ticket: pendingTicket,
-    versions: { authoringVersion: 3, releasedAuthoringVersion: 2 },
+    versions: { authoringVersion: 4, releasedAuthoringVersion: 2 },
   });
-  expect(screen.getByText("Live").nextElementSibling?.textContent).toBe(
-    "Revision 2",
+  expect(container.querySelector(".ticket-revision")?.textContent).toMatch(
+    /^Revision 2 · .+ ago$/u,
   );
-  expect(
-    screen.getAllByText("Draft").at(-1)?.nextElementSibling?.textContent,
-  ).toBe("1 unreleased");
+  expect(unreleased()?.textContent).toBe("2 unreleased changesOpen draft");
+  expect(screen.queryByText("Revision history")).toBeNull();
   expect(drawnStringsOver(container)).toEqual([]);
 });
 
-test("the provenance says a draft at its release holds nothing unreleased", async () => {
+test("a draft at its release, or one not yet read, draws no banner", async () => {
   await drawTicket({
     shapes: [],
     ticket: pendingTicket,
     versions: { authoringVersion: 2, releasedAuthoringVersion: 2 },
   });
-  expect(
-    screen.getAllByText("Draft").at(-1)?.nextElementSibling?.textContent,
-  ).toBe("Nothing unreleased");
+  expect(unreleased()).toBeNull();
+  cleanup();
+  vi.unstubAllGlobals();
+  viewportAtEm(viewportDeskEm);
+  await drawTicket({ shapes: [], ticket: pendingTicket, withDraft: false });
+  expect(unreleased()).toBeNull();
 });
 
 /** A Pending ticket's author may revise its draft without releasing it, and
@@ -1066,12 +990,11 @@ test("a ticket whose draft is ahead draws the brief and configuration it was rel
   expect(screen.getAllByText("Give the console a footer").length).toBe(1);
   expect(screen.queryByText("A rewrite nobody has released")).toBeNull();
   expect(
-    screen.getByText("Released under").nextElementSibling?.textContent,
+    within(sidebar()).getByText("Configuration").nextElementSibling
+      ?.textContent,
   ).toBe("r1");
   expect(screen.queryByText("r2")).toBeNull();
-  expect(
-    screen.getAllByText("Draft").at(-1)?.nextElementSibling?.textContent,
-  ).toBe("1 unreleased");
+  expect(unreleased()?.textContent).toContain("1 unreleased change");
 });
 
 /** A draft revised while its ticket was Pending and never released holds a
@@ -1094,11 +1017,11 @@ test("a ticket whose draft's program is ahead draws the stages it ran", async ()
   });
   const current = groups(container)[0];
   expect(stageRows(current)).toHaveLength(2);
-  expect(rowsOf(current ?? container)[1]).toContain("Stage 1 of 2");
-  expect(container.textContent).not.toContain("of 3");
+  expect(rowsOf(current ?? container)[1]).toContain("Stage 1");
+  expect(container.textContent).not.toContain("Stage 3");
   expect(
     screen.getByRole("status", { name: "Needs you" }).textContent,
-  ).toContain("Stage 1 of 2 failed");
+  ).toContain("Failed at Stage 1 in cycle 3");
 });
 
 /** Every run a finished ticket holds has ended, and the page says how each
@@ -1110,4 +1033,50 @@ test("a finished ticket's page never says Terminal", async () => {
   });
   expect(container.textContent).toContain("Done");
   expect(container.textContent).not.toContain("Terminal");
+});
+
+/** What the sidebar says against one name. */
+function sidebarField(name: string): HTMLElement | null {
+  const value = within(sidebar()).queryByText(name, {
+    selector: "dt",
+  })?.nextElementSibling;
+  return value instanceof HTMLElement ? value : null;
+}
+
+test("the sidebar draws each dependency with its state, the configuration it runs under and its branch by name", async () => {
+  await drawTicket({
+    shapes: [],
+    ticket: {
+      ...pendingTicket,
+      dependencies: [19, 20],
+      revokedDependencies: [19],
+      openDependencies: [{ ticket: 20, phase: "Work" }],
+      configurationVersion: { name: "atlas", number: 6 },
+      brief: {
+        ...released.brief,
+        branch: "refs/heads/footer",
+        finalization: { kind: "PullRequest", target: "refs/heads/main" },
+      },
+    },
+  });
+  expect(sidebarField("Depends on")?.textContent).toBe("#19Revoked#20Working");
+  expect(sidebarField("Configuration")?.textContent).toBe("atlas #6");
+  expect(sidebarField("Branch")?.textContent).toBe("footer → main");
+});
+
+test("cost and run time are absent before the first run, and say so far while a run is live", async () => {
+  await drawTicket({ shapes: [], ticket: pendingTicket });
+  expect(sidebarField("Cost")).toBeNull();
+  expect(sidebarField("Run time")).toBeNull();
+  cleanup();
+  vi.unstubAllGlobals();
+  viewportAtEm(viewportDeskEm);
+  await drawTicket({ shapes: ticket21Resumed, ticket: resumedTicket });
+  expect(sidebarField("Cost")?.textContent).toMatch(/^\$2\.74.* so far$/u);
+  expect(sidebarField("Run time")?.textContent).toMatch(/ so far$/u);
+  cleanup();
+  vi.unstubAllGlobals();
+  viewportAtEm(viewportDeskEm);
+  await drawTicket({ shapes: ticket21Parked, ticket: parkedTicket });
+  expect(sidebarField("Run time")?.textContent).not.toContain("so far");
 });

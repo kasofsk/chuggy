@@ -8,6 +8,7 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type {
+  ConfigurationResponse,
   DraftResponse,
   DispatchViewResponse,
   ExecutionsResponse,
@@ -24,6 +25,8 @@ import type { TicketSlot as Slot } from "../../core/ticketSituation.ts";
 /** Everything the page has read, so each part is handed facts and not a query. */
 export interface TicketReads {
   readonly ticketState: PanelState<TicketResponse>;
+  /** The configuration the ticket runs under, pending until it names one. */
+  readonly configurationState: PanelState<ConfigurationResponse>;
   readonly draftState: PanelState<DraftResponse>;
   readonly openState: PanelState<TicketNativeActionsResponse>;
   readonly dispatchState: PanelState<DispatchViewResponse>;
@@ -45,12 +48,10 @@ export interface TicketPageHeld {
   readonly facts: TicketPageFacts;
   readonly nowMs: number;
   readonly slot: Slot;
-  /** The resume line the status bar carries, where it carries one. */
-  readonly resumed: string | undefined;
-  /** The current landing's fragment while the ticket is finalizing, or null. */
-  readonly landing: ReactNode;
   /** What the card offers of the ticket's overrides, where it offers any. */
   readonly overrides: ReactNode;
+  /** The draft drawn in the ticket's place, where it was never released. */
+  readonly draft: DraftResponse | undefined;
 }
 
 const TicketPageContext = createContext<TicketPageHeld | undefined>(undefined);

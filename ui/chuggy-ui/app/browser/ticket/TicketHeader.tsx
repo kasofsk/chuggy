@@ -1,6 +1,6 @@
 /**
  * The head of every tab of the ticket page: the title with its number, the
- * state label and the one fragment beside it, the actions, and the tabs. Once
+ * epics it belongs to, the state label and the one fragment beside it, the actions, and the tabs. Once
  * the header has scrolled out of view, a thin bar holding the small label and
  * the title sticks to the top of the page in its place.
  */
@@ -11,9 +11,12 @@ import type { ReactNode, RefObject } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { runNowElapsedFigure } from "../../core/runNow.ts";
-import type { TicketHeaderFragment } from "../../core/ticketHeader.ts";
-import type { TicketListStanding } from "../../core/ticketListView.ts";
+import type {
+  TicketHeaderFragment,
+  TicketStateStanding,
+} from "../../core/ticketHeader.ts";
 import { Figure } from "../ui/Figure.tsx";
+import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
 import { TicketStateLabel } from "./TicketStateLabel.tsx";
 
 import "./ticket.css";
@@ -58,6 +61,7 @@ function TicketHeaderFragmentDrawn(props: {
     case "Landed":
       return (
         <span className="ticket-header-fragment">
+          <TicketRunMarkDrawn mark="Merge" tone="finalization" />
           {fragment.words}
           {fragment.link === undefined ? null : (
             <>
@@ -91,9 +95,10 @@ function TicketHeaderTitle(props: {
 export function TicketHeader(props: {
   readonly ticket: number;
   readonly title: string;
-  readonly standing: TicketListStanding;
+  readonly standing: TicketStateStanding;
   readonly fragment: TicketHeaderFragment;
   readonly nowMs: number;
+  readonly epics: ReactNode;
   readonly actions: ReactNode;
   readonly notes: ReactNode;
 }): ReactNode {
@@ -109,6 +114,7 @@ export function TicketHeader(props: {
       </div>
       <header ref={header} className="ticket-header">
         <TicketHeaderTitle title={props.title} ticket={props.ticket} />
+        {props.epics}
         <div className="ticket-header-standing">
           <div className="ticket-header-state">
             <TicketStateLabel standing={props.standing} size="page" />

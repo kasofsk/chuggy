@@ -1,14 +1,21 @@
 /**
  * A ticket's state as one label: its word, its tone and its mark, never a
  * button. The page's size heads the ticket; the small one sits in a bar or a
- * row, and what the label is given follows its word.
+ * row, its word as wide as the widest any state says, and what the label is
+ * given follows its word.
  */
 
 import type { ReactNode } from "react";
 
-import type { TicketStateLabelMark } from "../../core/ticketHeader.ts";
-import { ticketStateLabelOf } from "../../core/ticketHeader.ts";
-import type { TicketListStanding } from "../../core/ticketListView.ts";
+import type {
+  TicketStateLabelForm,
+  TicketStateLabelMark,
+  TicketStateStanding,
+} from "../../core/ticketHeader.ts";
+import {
+  ticketStateLabelOf,
+  ticketStateWords,
+} from "../../core/ticketHeader.ts";
 
 import "./ticket.css";
 
@@ -60,11 +67,21 @@ function TicketStateMarkPaths(props: {
           <path d="M5.9 5.9 L10.1 10.1 M10.1 5.9 L5.9 10.1" />
         </>
       );
+    case "Pencil":
+      return (
+        <path d="M10.6 2.6 L13.4 5.4 L5.6 13.2 L2.6 13.4 L2.8 10.4 Z M9.2 4 L12 6.8" />
+      );
   }
 }
 
+const ticketStateFormAttributes = {
+  Filled: "filled",
+  Tinted: "tinted",
+  Outlined: "outlined",
+} as const satisfies Record<TicketStateLabelForm, string>;
+
 export function TicketStateLabel(props: {
-  readonly standing: TicketListStanding;
+  readonly standing: TicketStateStanding;
   readonly size: TicketStateLabelSize;
   readonly children?: ReactNode;
 }): ReactNode {
@@ -73,7 +90,7 @@ export function TicketStateLabel(props: {
     <span
       className="ticket-state"
       data-size={props.size}
-      data-form={label.form === "Filled" ? "filled" : "tinted"}
+      data-form={ticketStateFormAttributes[label.form]}
       data-tone={label.tone}
       data-standing={label.standing}
     >
@@ -85,7 +102,14 @@ export function TicketStateLabel(props: {
       >
         <TicketStateMarkPaths mark={label.mark} />
       </svg>
-      <span className="ticket-state-word">{label.word}</span>
+      <span
+        className="ticket-state-word"
+        data-words={
+          props.size === "small" ? ticketStateWords.join("\n") : undefined
+        }
+      >
+        {label.word}
+      </span>
       {props.children}
     </span>
   );

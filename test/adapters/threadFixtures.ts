@@ -52,6 +52,18 @@ export const unservedThreads: Pick<
   hideThread: unserved("hide thread"),
 };
 
+/** The epic methods a suite that never asks for an epic still has to supply. */
+export const unservedEpics: Pick<
+  NativeWeb,
+  "epics" | "epic" | "epicHistory" | "epicGraph" | "writeEpic"
+> = {
+  epics: unserved("epics"),
+  epic: unserved("epic"),
+  epicHistory: unserved("epic history"),
+  epicGraph: unserved("epic graph"),
+  writeEpic: unserved("write epic"),
+};
+
 /**
  * The three inquiry methods a suite that never asks the lead still has to
  * supply, for the same reason: the app takes one boundary and not three.
@@ -72,6 +84,7 @@ export const unservedLeadInquiries: Pick<
  */
 export const unservedNativeWeb: Parameters<typeof createNativeHttpApp>[0] = {
   ...unservedThreads,
+  ...unservedEpics,
   ...unservedLeadInquiries,
   ...unreadableLeadReads(),
   cancel: unserved("cancel"),

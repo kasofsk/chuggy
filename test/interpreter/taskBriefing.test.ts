@@ -2536,6 +2536,75 @@ test("a rework after a pull request refused for a conflict is told its base and 
   assert.equal(text.includes("Why it failed to land"), false);
 });
 
+test("a rework after a failed landing is told to merge the change as a merge commit, never to squash it", () => {
+  for (const failedLanding of [
+    conflictedLanding,
+    { ...conflictedLanding, conflicted: false },
+    {
+      targetCommit,
+      changeCommit,
+      conflicted: false,
+      failure: "MergeConflict" as const,
+      proposalBase,
+    },
+    {
+      targetCommit,
+      changeCommit,
+      conflicted: false,
+      failure: "QueueChecksFailed" as const,
+      proposalBase,
+    },
+  ]) {
+    const text = failedLandingLines(viewOf({ failedLanding })).join("\n");
+    assert.ok(
+      text.includes(
+        `git -c user.name=worker -c user.email=worker@invalid merge --no-ff --no-edit ${changeCommit}`,
+      ),
+    );
+    assert.equal(text.includes("--squash"), false);
+    assert.ok(
+      text.endsWith(
+        "on top of it, with `git -c user.name=worker -c user.email=worker@invalid commit -m <message>` saying why each change was needed.",
+      ),
+      "what the landing forced past the merge's marks is committed after it, with its reason",
+    );
+  }
+});
+
+test("a rework whose merge stops on a conflict finishes it under the worker's identity, with a message giving each resolution's reason", () => {
+  const finish =
+    "git -c user.name=worker -c user.email=worker@invalid commit -m <message>`, the message saying what each resolution kept and why";
+  const changed = failedLandingLines(
+    viewOf({ failedLanding: conflictedLanding }),
+  ).join("\n");
+  assert.ok(
+    changed.indexOf(briefingFailedLandingCommand(changeCommit)) <
+      changed.indexOf(finish),
+  );
+  const based = failedLandingLines(
+    viewOf({
+      failedLanding: {
+        targetCommit,
+        changeCommit,
+        conflicted: false,
+        failure: "MergeConflict",
+        proposalBase,
+      },
+    }),
+  );
+  const baseMerge = based.findIndex((line) =>
+    line.includes(briefingFailedLandingBaseCommand(proposalBase.commit)),
+  );
+  assert.ok(based[baseMerge + 1]?.includes(finish), "the base's merge too");
+  for (const text of [changed, based.join("\n")]) {
+    assert.equal(
+      text.includes("--no-edit`"),
+      false,
+      "no conflict lands under git's default message",
+    );
+  }
+});
+
 test("a failed landing's base cannot forge a section", () => {
   assert.equal(
     blockedFault(

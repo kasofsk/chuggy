@@ -170,6 +170,7 @@ export function editFormFrom(
     overrides: overridesHeldOf(draft.overrides),
     selection: draft.selection ?? {},
     workloads: draft.overrides?.workloads ?? {},
+    epic: "",
   };
 }
 
@@ -266,17 +267,4 @@ export function draftReleaseOf(draft: DraftResponse): DraftRelease {
   return released < draft.authoringVersion
     ? { release: "Ahead", released, current: draft.authoringVersion }
     : { release: "Current", released };
-}
-
-/** The same standing as one short phrase, a count rather than a sentence, for
- * a summary grid cell. */
-export function draftUnreleasedLabel(release: DraftRelease): string {
-  switch (release.release) {
-    case "Unrecorded":
-      return "Not recorded";
-    case "Current":
-      return "Nothing unreleased";
-    case "Ahead":
-      return `${String(release.current - release.released)} unreleased`;
-  }
 }

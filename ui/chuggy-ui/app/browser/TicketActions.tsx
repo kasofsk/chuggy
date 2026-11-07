@@ -603,7 +603,9 @@ export function TicketActingScope(props: {
 
 /** Where the submission has got to, the Cancel that stops it, and what a
  * refused Cancel said. */
-function FollowNotes(props: { readonly submitting: Submitting }): ReactNode {
+export function FollowNotes(props: {
+  readonly submitting: Submitting;
+}): ReactNode {
   const attempt = props.submitting.attempt;
   const step = attempt?.step;
   const pending = step?.step === "Following" ? step.operation : undefined;

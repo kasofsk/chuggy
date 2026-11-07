@@ -9,8 +9,12 @@
  * abilities read says lacks it neither offers one nor submits one.
  */
 
+import type { ConfigurationSelection } from "../../../../src/contract/configurationSelection.ts";
 import type { DraftInitializationResponse } from "../../../../src/contract/responses.ts";
-import { configurationCatalogOf } from "./configurationCatalog.ts";
+import {
+  configurationCatalogOf,
+  configurationCatalogSelected,
+} from "./configurationCatalog.ts";
 import { configurationViewOf } from "./configurationView.ts";
 
 /** A program as the wire holds it: stages and the evaluators in each, by key. */
@@ -39,9 +43,37 @@ export function programPlanned(
         evaluator: evaluator.key,
       })),
     );
+  return programPlannedDocument(canonical);
+}
+
+/** The tasks a document plans: one stage for each block of its `evaluations`. */
+function programPlannedDocument(canonical: string): readonly PlannedTask[] {
   return configurationViewOf(canonical).evaluations.map((_block, index) => ({
     stage: index + 1,
   }));
+}
+
+/**
+ * The tasks a configuration plans under a selection, read from the document
+ * itself where no initialization was read: a catalog's selected plan stage by
+ * stage, and nothing where the catalog holds no such plan.
+ */
+export function programPlannedUnder(
+  canonical: string,
+  selection: ConfigurationSelection | undefined,
+): readonly PlannedTask[] {
+  const catalog = configurationCatalogOf(canonical);
+  if (catalog === undefined) return programPlannedDocument(canonical);
+  const plan =
+    catalog.plans.get(
+      configurationCatalogSelected(catalog, selection).evaluation,
+    ) ?? [];
+  return plan.flatMap((stage, index) =>
+    stage.evaluators.map((_name, position) => ({
+      stage: index + 1,
+      evaluator: position + 1,
+    })),
+  );
 }
 
 function programRuns(program: PlannedProgram, task: PlannedTask): boolean {

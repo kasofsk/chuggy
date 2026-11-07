@@ -6,59 +6,29 @@
 
 import type { ReactNode } from "react";
 
-import { TicketConfiguration, TicketRevisions } from "../TicketProvenance.tsx";
+import { TicketConfiguration } from "../TicketProvenance.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
-import { Panel } from "../ui/Panel.tsx";
 import { TicketActivity } from "./TicketActivity.tsx";
-import { TicketInstructions } from "./TicketInstructions.tsx";
 import { TicketRunsList } from "./TicketRuns.tsx";
-import { TicketSlot } from "./TicketSlot.tsx";
-import { TicketStatus } from "./TicketStatus.tsx";
 import { readValue, useTicketPageHeld } from "./TicketPageHeld.tsx";
 
-/** The status bar, the card under it, the instructions and the revisions. */
-export function TicketOverviewTab(): ReactNode {
-  const held = useTicketPageHeld();
-  const ticket = readValue(held.reads.ticketState);
-  return (
-    <>
-      <TicketStatus
-        partition={held.partition}
-        state={held.reads.ticketState}
-        page={readValue(held.reads.pageState)}
-        resumed={held.resumed}
-        landing={held.landing}
-        nowMs={held.nowMs}
-      />
-      <TicketSlot
-        partition={held.partition}
-        slot={held.slot}
-        nowMs={held.nowMs}
-        overrides={held.overrides}
-      />
-      <TicketInstructions
-        partition={held.partition}
-        state={held.reads.ticketState}
-      />
-      <Panel title="Revision history" level={2}>
-        <TicketRevisions
-          partition={held.partition}
-          state={held.reads.draftState}
-          ticket={ticket}
-          nowMs={held.nowMs}
-        />
-      </Panel>
-    </>
-  );
-}
+export { TicketOverviewTab } from "./TicketOverview.tsx";
 
+/** A draft never released has run nothing, so it has no runs and no usage. */
 export function TicketRunsTab(): ReactNode {
-  return <TicketRunsList held={useTicketPageHeld()} />;
+  const held = useTicketPageHeld();
+  if (held.draft !== undefined) return <EmptyState label="Nothing has run" />;
+  return <TicketRunsList held={held} />;
 }
 
-/** The configuration the ticket runs under, or that it names none. */
+/** The configuration the ticket runs under, or that it names none; a draft's
+ * is the one it names now. */
 export function TicketConfigurationTab(): ReactNode {
   const held = useTicketPageHeld();
+  if (held.draft !== undefined)
+    return (
+      <TicketConfiguration partition={held.partition} ticket={held.draft} />
+    );
   const ticket = readValue(held.reads.ticketState);
   if (ticket !== undefined && ticket.configurationRevision === undefined)
     return <EmptyState label="No configuration" />;
@@ -67,6 +37,8 @@ export function TicketConfigurationTab(): ReactNode {
 
 export function TicketUsageTab(): ReactNode {
   const held = useTicketPageHeld();
+  if (held.draft !== undefined)
+    return <EmptyState label="No run figures yet" />;
   return (
     <TicketActivity
       ticket={readValue(held.reads.ticketState)}

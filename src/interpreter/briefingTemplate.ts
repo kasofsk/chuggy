@@ -127,7 +127,7 @@ export const briefingTemplateSections: readonly BriefingSectionId[] = [
 ];
 
 /** The wording revision every rendered briefing records, moved by any edit to the text below. */
-export const briefingTemplateVersion = 14;
+export const briefingTemplateVersion = 15;
 
 /** The heading one section renders under, which varies by role and by carrier. */
 export function briefingHeading(
@@ -229,14 +229,18 @@ export interface FailedLanding {
 const briefingWorkerGit =
   "git -c user.name=worker -c user.email=worker@invalid";
 
+/** How a merge stopped on a conflict is finished: its resolutions are the worker's own edits, so its message carries their reason. */
+const briefingMergeFinish = `finish the merge with \`${briefingWorkerGit} commit -m <message>\`, the message saying what each resolution kept and why`;
+
 /**
- * The one command that carries a whole change into the workspace without
- * committing it. A squash merge takes every commit between the target and the
- * change, and leaves the commit to the worker; it still asks for an identity,
- * so the command names one.
+ * The one command that carries a whole change into the workspace, naming an
+ * identity because it commits. A merge keeps every commit's message and the
+ * change's descent, and one left stopped on a conflict is still committed with
+ * both parents when the run reports, though not by the one-parent checkpoint of
+ * a run stopped before it does.
  */
 export function briefingFailedLandingCommand(changeCommit: string): string {
-  return `${briefingWorkerGit} merge --squash ${changeCommit}`;
+  return `${briefingWorkerGit} merge --no-ff --no-edit ${changeCommit}`;
 }
 
 /** The command that brings a pull request's base into the workspace as one merge commit. */
@@ -276,7 +280,7 @@ function briefingFailedLandingBaseLines(
     `The pull request's base is ${base.ref}, which was at commit ${base.commit} when that was read.`,
     "The pull request stays open, and the change this task makes is adopted onto it.",
     `Bring that base in first: run \`${briefingFailedLandingBaseCommand(base.commit)}\`, after \`git fetch origin ${base.ref}\` should this clone not hold that commit.`,
-    `Where it stops on a conflict, resolve it and run \`${briefingWorkerGit} commit --no-edit\` before going on.`,
+    `Where it stops on a conflict, resolve it and ${briefingMergeFinish}, before going on.`,
   ];
 }
 
@@ -300,16 +304,17 @@ export function briefingFailedLandingLines(
   return [
     ...opening,
     `That change ends at commit ${change}, which this clone already holds; it is everything between the target and that commit, and can be more than one commit.`,
-    `Bring that change into this workspace rather than writing it again: run \`${briefingFailedLandingCommand(change)}\`, which takes every commit of it and commits nothing.`,
+    `Bring that change into this workspace rather than writing it again: run \`${briefingFailedLandingCommand(change)}\`, which merges every commit of it, each with its message.`,
     ...(landing.conflicted || landing.proposalBase !== undefined
       ? [
-          "Resolve every conflict it marks, and leave no conflict marker in the tree: whatever the tree holds when you finish is committed.",
+          `Where it stops on a conflict, resolve every conflict it marks and ${briefingMergeFinish}, and leave no conflict marker in the tree: whatever it holds when you finish is committed.`,
         ]
       : []),
     landing.failure === "QueueChecksFailed" &&
     landing.proposalBase !== undefined
       ? "Then run the checks on that tree and reproduce the failure there before changing anything to fix it. A failure that does not reproduce may have come from a change queued ahead of this one that never landed; say so in your report."
       : "Change nothing but what landing on this base forces, and that can include files git merged without a mark, such as a migration whose number the target has since used.",
+    `Commit what you change after the merge on top of it, with \`${briefingWorkerGit} commit -m <message>\` saying why each change was needed.`,
   ];
 }
 

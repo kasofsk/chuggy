@@ -95,6 +95,7 @@ import type {
   WorkerPoolsResponse,
   WorkerPoolTokenResponse,
 } from "../../../../src/contract/responses.ts";
+import type { epicWriteRequestSchema } from "../../../../src/contract/epics.ts";
 import type {
   agentAccountSettingsSchema,
   draftCreationSchema,
@@ -793,6 +794,7 @@ export async function apiProjectInventoryAll(
 export interface ProjectPage {
   readonly active?: true | undefined;
   readonly after?: number | undefined;
+  readonly creator?: string | undefined;
   readonly cursor?: string | undefined;
   readonly limit?: number | undefined;
   readonly minimumSequence?: number | undefined;
@@ -812,6 +814,7 @@ export function apiProject(
     apiPath(partitionPath(partition), {
       active: page.active === true ? "true" : undefined,
       after: page.after,
+      creator: page.creator,
       cursor: page.cursor,
       limit: page.limit,
       minimumSequence: page.minimumSequence,
@@ -1083,6 +1086,25 @@ export function apiDraft(
 ): Promise<ApiResult<DraftResponse>> {
   return apiGet(ports, apiSegments(partition, "drafts", ticket), (value) =>
     draftResponseSchema.parse(value),
+  );
+}
+
+/** A draft deleted, fenced at the version it was read at. */
+export function apiDeleteDraft(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  ticket: number,
+  expectedVersion: number,
+): Promise<ApiResult<DraftResponse>> {
+  return apiRead(
+    ports,
+    {
+      method: "DELETE",
+      path: apiPath(apiSegments(partition, "drafts", ticket), {
+        expectedVersion,
+      }),
+    },
+    (value) => draftResponseSchema.parse(value),
   );
 }
 
@@ -1549,3 +1571,54 @@ export function apiReviseDraft(
     (value) => draftResponseSchema.parse(value),
   );
 }
+
+/** A page of a project's epics under the filters the list takes. */
+export interface EpicsPage {
+  readonly search?: string | undefined;
+  readonly visibility?: string | undefined;
+  readonly ticket?: number | undefined;
+  readonly sort?: string | undefined;
+  readonly after?: number | undefined;
+  readonly limit?: number | undefined;
+}
+
+export const apiEpics = apiProjectEndpoint(
+  nativeHttpEndpoints.listEpics,
+  (partition, page: EpicsPage) => ({
+    parameters: partition,
+    query: {
+      search: page.search,
+      visibility: page.visibility,
+      ticket: page.ticket,
+      sort: page.sort,
+      after: page.after,
+      limit: page.limit,
+    },
+  }),
+);
+
+export const apiEpic = apiProjectEndpoint(
+  nativeHttpEndpoints.viewEpic,
+  (partition, epic: number) => ({ parameters: { ...partition, epic } }),
+);
+
+export const apiEpicHistory = apiProjectEndpoint(
+  nativeHttpEndpoints.epicHistory,
+  (partition, epic: number, page: EpicsPage = {}) => ({
+    parameters: { ...partition, epic },
+    query: { after: page.after, limit: page.limit },
+  }),
+);
+
+export const apiEpicGraph = apiProjectEndpoint(
+  nativeHttpEndpoints.epicGraph,
+  (partition, epic: number) => ({ parameters: { ...partition, epic } }),
+);
+
+export const apiWriteEpic = apiProjectEndpoint(
+  nativeHttpEndpoints.writeEpic,
+  (partition, body: z.infer<typeof epicWriteRequestSchema>) => ({
+    parameters: partition,
+    body,
+  }),
+);

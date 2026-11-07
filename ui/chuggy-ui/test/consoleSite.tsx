@@ -55,6 +55,10 @@ import {
   dispatchViewResponseSchema,
   draftInitializationResponseSchema,
   draftResponseSchema,
+  epicGraphResponseSchema,
+  epicHistoryResponseSchema,
+  epicListResponseSchema,
+  epicViewResponseSchema,
   executionPlacementResponseSchema,
   executionsResponseSchema,
   forgeAppsResponseSchema,
@@ -154,6 +158,30 @@ export const consolePartition = creationPartition;
 /** The repository the project has bound, which its own page is addressed by. */
 export const consoleRepository = "https://forge.test/kasofsk/chuggy";
 
+/** The one epic the project holds, with the ticket the site holds in it. */
+const consoleEpic = {
+  number: 7,
+  revision: 1,
+  title: "Billing",
+  visibility: "Active",
+  progress: {
+    byPhase: {
+      Pending: 1,
+      Work: 0,
+      Evaluation: 0,
+      Finalization: 0,
+      Done: 0,
+      Escalated: 0,
+      Revoked: 0,
+    },
+    drafts: 0,
+    done: 0,
+    total: 1,
+  },
+  status: "not_started",
+  waitingOnOutside: [],
+} as const;
+
 /** What each parameter a route declares is filled with, so a route is
  * visited at an address its fixtures answer. */
 export const consoleRouteParameters: Readonly<Record<string, string>> = {
@@ -163,6 +191,7 @@ export const consoleRouteParameters: Readonly<Record<string, string>> = {
   task: "1",
   session: threadMineSession,
   repository: encodeURIComponent(consoleRepository),
+  epic: String(consoleEpic.number),
 };
 
 /** The ticket the lead refuses, which a held decision of its own also names:
@@ -219,6 +248,43 @@ function consoleReadAt(path: string): RegExp {
 }
 
 const consoleReads: readonly ConsoleRead[] = [
+  {
+    path: consoleReadAt(`${projectPath}/epics`),
+    schema: epicListResponseSchema,
+    body: () => ({ epics: [consoleEpic] }),
+  },
+  {
+    path: consoleReadAt(`${projectPath}/epics/${String(consoleEpic.number)}`),
+    schema: epicViewResponseSchema,
+    body: () => ({
+      ...consoleEpic,
+      description: "",
+      tickets: [ticketPageTicket.ticket],
+    }),
+  },
+  {
+    path: consoleReadAt(
+      `${projectPath}/epics/${String(consoleEpic.number)}/history`,
+    ),
+    schema: epicHistoryResponseSchema,
+    body: () => ({ revisions: [] }),
+  },
+  {
+    path: consoleReadAt(
+      `${projectPath}/epics/${String(consoleEpic.number)}/graph`,
+    ),
+    schema: epicGraphResponseSchema,
+    body: () => ({
+      nodes: [
+        {
+          ticket: ticketPageTicket.ticket,
+          phase: "Pending",
+          member: true,
+        },
+      ],
+      edges: [],
+    }),
+  },
   {
     path: consoleReadAt("/api/v1/projects"),
     schema: projectInventoryResponseSchema,

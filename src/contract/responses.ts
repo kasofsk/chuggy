@@ -15,6 +15,7 @@ import {
   configurationRequirementCapabilitiesMax,
 } from "./configurationDocument.ts";
 import { configurationSelectionSchema } from "./configurationSelection.ts";
+import { epicTicketsMax, epicVisibilitySchema } from "./epics.ts";
 import { z } from "zod";
 
 import {
@@ -41,6 +42,7 @@ import {
   inquiryQuestionCharsMax,
   instantSchema,
   leadTurnsAnsweredMax,
+  nativeHttpDraftDependenciesMax,
   nativeHttpPageItemsMax,
   partitionSchema,
   personalRunnerProjectsMax,
@@ -352,6 +354,13 @@ export const configurationVersionSchema = z.strictObject({
   number: ticketNumberSchema,
 });
 
+/** An epic as a ticket names it. */
+export const ticketEpicSchema = z.strictObject({
+  number: ticketNumberSchema,
+  title: z.string(),
+  visibility: epicVisibilitySchema,
+});
+
 /**
  * Whether a Pending ticket following its configuration's newest revision
  * would move to the revision its repository's newest import declares under the
@@ -467,6 +476,8 @@ export const ticketResponseSchema = z.object({
    */
   following: ticketFollowingSchema.optional(),
   runTotals: runTotalsSchema.optional(),
+  /** The epics the ticket belongs to, archived ones included, at most a page of the lowest-numbered, in epic order, and absent where it belongs to none. */
+  epics: page(ticketEpicSchema).optional(),
 });
 export type TicketResponse = z.infer<typeof ticketResponseSchema>;
 
@@ -816,7 +827,7 @@ export const projectResponseSchema = z.object({
   tickets: page(projectTicketSchema),
   nextAfter: ticketNumberSchema.optional(),
   nextCursor: cursorSchema.optional(),
-  /** How many tickets a search matched across the project, its phases and activity included; only a read naming `q` carries it. */
+  /** How many tickets a search or creator matched across the project, its phases and activity included; only a read naming `q` or `creator` carries it. */
   matched: countSchema.optional(),
 });
 export type ProjectResponse = z.infer<typeof projectResponseSchema>;
@@ -2290,6 +2301,104 @@ export const hostedRunsResponseSchema = z.strictObject({
 });
 export type HostedRunsResponse = z.infer<typeof hostedRunsResponseSchema>;
 
+/** The members of an epic counted by phase, a draft not yet released apart, Revoked left out of `total`. */
+export const epicProgressSchema = z.strictObject({
+  byPhase: z.strictObject(
+    Object.fromEntries(phaseRoster.map((phase) => [phase, countSchema])) as {
+      readonly [Phase in (typeof phaseRoster)[number]]: typeof countSchema;
+    },
+  ),
+  drafts: countSchema,
+  done: countSchema,
+  total: countSchema,
+});
+
+export const epicStatusRoster = [
+  "empty",
+  "done",
+  "attention",
+  "not_started",
+  "in_progress",
+] as const;
+
+/** An epic as a list carries it, with the figures derived from its members' phases. */
+export const epicSummaryResponseSchema = z.strictObject({
+  number: ticketNumberSchema,
+  revision: ticketNumberSchema,
+  title: z.string(),
+  summary: z.string().optional(),
+  visibility: epicVisibilitySchema,
+  progress: epicProgressSchema,
+  status: z.enum(epicStatusRoster),
+  /** Tickets outside the epic that a Pending member depends on and that are not Done, at most a page of the lowest, ascending. */
+  waitingOnOutside: page(ticketNumberSchema),
+});
+export type EpicSummaryResponse = z.infer<typeof epicSummaryResponseSchema>;
+
+export const epicListResponseSchema = z.strictObject({
+  epics: page(epicSummaryResponseSchema),
+  /** The `after` the next page is asked with, absent at the last. */
+  nextAfter: ticketNumberSchema.optional(),
+});
+export type EpicListResponse = z.infer<typeof epicListResponseSchema>;
+
+export const epicViewResponseSchema = epicSummaryResponseSchema.extend({
+  description: z.string(),
+  tickets: z.array(ticketNumberSchema).max(epicTicketsMax),
+});
+export type EpicViewResponse = z.infer<typeof epicViewResponseSchema>;
+
+export const epicHistoryResponseSchema = z.strictObject({
+  /** Newest first. */
+  revisions: page(
+    z.strictObject({
+      revision: ticketNumberSchema,
+      changedAt: instantSchema,
+      actor: z.strictObject({ kind: identitySchema, subject: identitySchema }),
+      title: z.string(),
+    }),
+  ),
+  nextAfter: ticketNumberSchema.optional(),
+});
+export type EpicHistoryResponse = z.infer<typeof epicHistoryResponseSchema>;
+
+/**
+ * The members of an epic and the tickets outside it that they depend on, with
+ * an edge from each dependency to the member. A member that is a draft not yet
+ * released has no phase and no edge.
+ */
+export const epicGraphResponseSchema = z.strictObject({
+  nodes: z
+    .array(
+      z.strictObject({
+        ticket: ticketNumberSchema,
+        title: z.string().optional(),
+        phase: z.enum(phaseRoster).optional(),
+        member: z.boolean(),
+      }),
+    )
+    .max(epicTicketsMax * (1 + nativeHttpDraftDependenciesMax)),
+  edges: z
+    .array(z.strictObject({ from: ticketNumberSchema, to: ticketNumberSchema }))
+    .max(epicTicketsMax * nativeHttpDraftDependenciesMax),
+});
+export type EpicGraphResponse = z.infer<typeof epicGraphResponseSchema>;
+
+/** What a saved write answers: the epic and the revision it is now at. */
+export const epicWriteResponseSchema = z.strictObject({
+  epic: ticketNumberSchema,
+  revision: ticketNumberSchema,
+});
+export type EpicWriteResponse = z.infer<typeof epicWriteResponseSchema>;
+
+/** The error envelope a refused write answers with, carrying what the reason names. */
+export const epicRefusalResponseSchema = z.strictObject({
+  error: z.strictObject({ code: identitySchema, message: z.string() }),
+  current: ticketNumberSchema.optional(),
+  tickets: page(ticketNumberSchema).optional(),
+});
+export type EpicRefusalResponse = z.infer<typeof epicRefusalResponseSchema>;
+
 /** Which of a project's doors its reader may press, each by the kind that door asks. */
 export const projectAbilitiesResponseSchema = z.strictObject({
   /** The reader's own principal, encoded as a ticket's `creator` is. */
@@ -2300,6 +2409,8 @@ export const projectAbilitiesResponseSchema = z.strictObject({
   overrideTicketConfig: z.boolean(),
   skipPlannedEvaluations: z.boolean(),
   administer: z.boolean(),
+  /** Whether the reader may create and revise epics, which is the `Mutate` kind. */
+  writeEpic: z.boolean(),
 });
 export type ProjectAbilitiesResponse = z.infer<
   typeof projectAbilitiesResponseSchema

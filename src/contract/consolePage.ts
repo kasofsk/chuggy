@@ -1,7 +1,7 @@
 /**
  * The console pages a member can be looking at, each named with the one thing
  * on it a reader would ask about: the ticket, the repository, the settings
- * section.
+ * section, the epic.
  *
  * IT IS THE CONTRACT BECAUSE MORE THAN ONE SIDE READS IT. The console names the
  * page its reader is on when they message their thread, and the interpreter
@@ -68,6 +68,8 @@ export const consolePageSchema = z.union([
     repository: consolePageRepositorySchema,
   }),
   z.strictObject({ page: z.literal("Runners") }),
+  z.strictObject({ page: z.literal("Epics") }),
+  z.strictObject({ page: z.literal("Epic"), epic: ticketNumberSchema }),
   z.strictObject({
     page: z.literal("Settings"),
     section: z.enum(consolePageSettingsSections).optional(),

@@ -5,11 +5,13 @@
  *
  * Each row carries its ticket's latest execution, so a `Ticket` frame moves a
  * row and an `Execution` frame changes what one row says it is running, both
- * folded into the one entry the rows are read under. The filter, the search
- * and the order a sort reads in are asked of the wire, and the rows on screen
- * stand until the read under a new choice answers; the search, the sort and
- * the filter are the page's address, so a link holds the view. Each state's
- * count above the rows chooses the filter as the picker does. A project
+ * folded into the one entry the rows are read under. The filter, the creator,
+ * the search and the order a sort reads in are asked of the wire, and the rows
+ * on screen stand until the read under a new choice answers; the search, the
+ * sort, the filter and the creator are the page's address, so a link holds
+ * the view. Each state's
+ * count above the rows, read under every filter, chooses the filter as the
+ * picker does. A project
  * holding no ticket at all offers the first instead.
  *
  * A ROW OFFERS ONE ACTION, DISPATCH, AS ITS READY CHIP. A ready row reads the
@@ -59,7 +61,9 @@ import {
 import type { ProjectTicketRows } from "../core/projectTicketPages.ts";
 import { ticketRowsQuery } from "../core/ticketQueries.ts";
 import {
+  ticketListCountDimmed,
   ticketListCountTapped,
+  ticketListCreatorsOffered,
   ticketListFiltered,
   ticketListQueryWith,
   ticketListSearchOf,
@@ -77,11 +81,13 @@ import type {
   TicketListSort,
 } from "../core/ticketListView.ts";
 import { panelReadRestarted, useApiPorts, usePanelState } from "./api.ts";
+import { EpicChips } from "./EpicChips.tsx";
 import { useCreatorEmails } from "./creatorEmails.ts";
 import { PanelUnready, ReadFailed } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
 import { persistentStore } from "./ports.ts";
 import { useProjectAbilities } from "./projectAbilities.tsx";
+import { useProjectPeople } from "./settings/projectPermissionsResource.ts";
 import { ScreenTitle } from "./shell/slots.tsx";
 import { TicketRowDispatchScope } from "./TicketActions.tsx";
 import type { TicketRowDispatch } from "./TicketActions.tsx";
@@ -253,6 +259,20 @@ function TicketListCreator(props: {
   );
 }
 
+/** What the row waits on, and the epics it belongs to. */
+function TicketListWaits(props: {
+  readonly row: ProjectTableRow;
+  readonly standings: ReadonlyMap<number, TicketListStanding>;
+  readonly partition: PartitionIdentity;
+}): ReactNode {
+  return (
+    <>
+      <TicketListDependencies row={props.row} standings={props.standings} />
+      <EpicChips partition={props.partition} epics={props.row.epics} />
+    </>
+  );
+}
+
 function TicketListRow(props: {
   readonly row: ProjectTableRow;
   readonly standings: ReadonlyMap<number, TicketListStanding>;
@@ -293,7 +313,7 @@ function TicketListRow(props: {
                 className="ticket-list-creator"
               />
             </span>
-            <TicketListDependencies row={row} standings={props.standings} />
+            <TicketListWaits {...props} />
           </div>
         </div>
         <div className="ticket-list-foot">
@@ -354,6 +374,13 @@ const ticketListFilterGlyph = (
   </TicketListGlyph>
 );
 
+const ticketListCreatorGlyph = (
+  <TicketListGlyph>
+    <circle cx="8" cy="5" r="2.75" />
+    <path d="M2.75 14c0-2.9 2.35-4.75 5.25-4.75s5.25 1.85 5.25 4.75" />
+  </TicketListGlyph>
+);
+
 const ticketListDependencyGlyph = (
   <TicketListGlyph>
     <circle cx="4.5" cy="3.5" r="1.75" />
@@ -372,10 +399,11 @@ const ticketListCounted = [
   "Escalated",
 ] as const satisfies readonly TicketListStanding[];
 
-/** How many of the rows drawn stand in each state that is not an end, each
- * the button that filters the list to its state or, as the filter, back to
- * every ticket. The filter's own state is drawn when no row stands in it, so it
- * can always be tapped away. */
+/** How many of the rows read under every filter stand in each state that is
+ * not an end, each the button that filters the list to its state or, as the
+ * filter, back to every ticket; dimmed while a filter is set that draws none
+ * of its tickets. The filter's own state is drawn when no row stands in it, so
+ * it can always be tapped away. */
 function TicketListCounts(props: {
   readonly rows: readonly ProjectTableRow[];
   readonly filter: TicketFilter;
@@ -386,26 +414,28 @@ function TicketListCounts(props: {
     const standing = ticketListStandingOf(row);
     counts.set(standing, (counts.get(standing) ?? 0) + 1);
   }
+  const drawn = ticketListCounted.flatMap((standing) => {
+    const count =
+      counts.get(standing) ?? (standing === props.filter ? 0 : undefined);
+    return count === undefined ? [] : [{ standing, count }];
+  });
+  const countWidest = Math.max(0, ...drawn.map(({ count }) => count));
   return (
     <ul className="ticket-list-counts" aria-label="Tickets by state">
-      {ticketListCounted
-        .flatMap((standing) => {
-          const count =
-            counts.get(standing) ?? (standing === props.filter ? 0 : undefined);
-          return count === undefined ? [] : [{ standing, count }];
-        })
-        .map(({ standing, count }) => (
-          <li key={standing}>
-            <TicketStateCount
-              standing={standing}
-              count={count}
-              pressed={standing === props.filter}
-              onPress={() => {
-                props.onFilter(ticketListCountTapped(props.filter, standing));
-              }}
-            />
-          </li>
-        ))}
+      {drawn.map(({ standing, count }) => (
+        <li key={standing}>
+          <TicketStateCount
+            standing={standing}
+            count={count}
+            pressed={standing === props.filter}
+            dimmed={ticketListCountDimmed(props.filter, standing)}
+            countWidest={countWidest}
+            onPress={() => {
+              props.onFilter(ticketListCountTapped(props.filter, standing));
+            }}
+          />
+        </li>
+      ))}
     </ul>
   );
 }
@@ -423,6 +453,53 @@ function ticketListFilterText(
   filter: Exclude<TicketFilter, typeof ticketFilterAll>,
 ): string {
   return ticketFilterIsStanding(filter) ? filter : phaseLabel(filter);
+}
+
+/** Anyone, as the Creator picker holds it, which no principal is. */
+const ticketListCreatorAnyone = "";
+
+/** Who filed the tickets the list holds: anyone, the reader, or one of the
+ * project's people, each drawn as their row's creator is. */
+function TicketListCreatorPicker(props: {
+  readonly partition: PartitionIdentity;
+  readonly query: TicketListQuery;
+  readonly onQuery: (query: TicketListQuery) => void;
+}): ReactNode {
+  const creator = props.query.creator;
+  const reader = useProjectAbilities(props.partition)?.principal;
+  const people = useProjectPeople(props.partition);
+  const creatorEmails = useCreatorEmails(props.partition);
+  const offered = ticketListCreatorsOffered(
+    reader,
+    people.state === "Ready"
+      ? people.value.people.map((person) => person.subject)
+      : [],
+    creator,
+  );
+  return (
+    <Picker
+      label="Creator"
+      iconOnly
+      glyph={ticketListCreatorGlyph}
+      value={creator ?? ticketListCreatorAnyone}
+      options={[
+        { value: ticketListCreatorAnyone, text: "Anyone" },
+        ...(reader === undefined ? [] : [{ value: reader, text: "Me" }]),
+        ...offered.map((principal) => ({
+          value: principal,
+          text: creatorLabel(principal, creatorEmails).text,
+        })),
+      ]}
+      onChoose={(chosen) => {
+        props.onQuery(
+          ticketListQueryWith(props.query, {
+            creator: chosen === ticketListCreatorAnyone ? undefined : chosen,
+          }),
+        );
+      }}
+      align="end"
+    />
+  );
 }
 
 /** How long the box takes to close, which the room it holds in the row outlasts. */
@@ -512,6 +589,9 @@ function TicketListControls(props: {
   readonly onSort: (sort: TicketListSort) => void;
   readonly filter: TicketFilter;
   readonly onFilter: (filter: TicketFilter) => void;
+  readonly partition: PartitionIdentity;
+  readonly query: TicketListQuery;
+  readonly onQuery: (query: TicketListQuery) => void;
 }): ReactNode {
   const bar = useRef<HTMLDivElement>(null);
   const hidden = useHeadroom(bar);
@@ -560,6 +640,11 @@ function TicketListControls(props: {
           }}
           align="end"
         />
+        <TicketListCreatorPicker
+          partition={props.partition}
+          query={props.query}
+          onQuery={props.onQuery}
+        />
       </div>
     </div>
   );
@@ -572,18 +657,18 @@ function ticketListStatusMatched(matched: number, soFar: boolean): string {
 }
 
 /** One line under the controls where the list needs one: how many tickets a
- * search matched, across the project or, under a standing the server cannot
+ * search or a creator matched, across the project or, under a standing the server cannot
  * count, among the rows drawn; or that the list draws none, of the tickets
  * there are or, while pages remain, of those read so far. */
 function ticketListStatus(
   rows: ProjectTicketRows,
   filter: TicketFilter,
-  searching: boolean,
+  narrowed: boolean,
   shown: number,
 ): string | undefined {
-  if (searching && ticketFilterIsStanding(filter))
+  if (narrowed && ticketFilterIsStanding(filter))
     return ticketListStatusMatched(shown, projectTicketRowsHaveMore(rows));
-  if (searching)
+  if (narrowed)
     return rows.matched === undefined
       ? undefined
       : ticketListStatusMatched(rows.matched, false);
@@ -602,7 +687,8 @@ function TicketListRows(props: {
   readonly partition: PartitionIdentity;
   readonly nowMs: number;
   readonly sort: TicketListSort;
-  readonly searching: boolean;
+  /** The server narrowed the read, by a search or a creator. */
+  readonly narrowed: boolean;
   readonly readMore: (() => void) | undefined;
 }): ReactNode {
   const creatorEmails = useCreatorEmails(props.partition);
@@ -619,7 +705,7 @@ function TicketListRows(props: {
   const status = ticketListStatus(
     state.value,
     props.filter,
-    props.searching,
+    props.narrowed,
     shown.length,
   );
   return (
@@ -748,8 +834,13 @@ export function ProjectTable(props: {
     filter: choices.filter,
     order: ticketListSortOrder(sort),
     search: props.query.q,
+    creator: props.query.creator,
   };
   const tickets = useTicketRows(partition, ask);
+  const unfiltered = useTicketRows(partition, {
+    ...ask,
+    filter: ticketFilterAll,
+  });
   const nowMs = useNowMs();
   const authoring = !projectAbilityRefused(
     useProjectAbilities(partition),
@@ -769,11 +860,8 @@ export function ProjectTable(props: {
       <RepositoryImportRefusedNotice partition={partition} />
       <TicketListControls
         rows={
-          tickets.state.state === "Ready"
-            ? ticketListFiltered(
-                tickets.state.value.tickets.map(projectTableRow),
-                choices.filter,
-              )
+          unfiltered.state.state === "Ready"
+            ? unfiltered.state.value.tickets.map(projectTableRow)
             : []
         }
         search={typed}
@@ -784,6 +872,9 @@ export function ProjectTable(props: {
         }}
         filter={choices.filter}
         onFilter={choices.filtered}
+        partition={partition}
+        query={props.query}
+        onQuery={props.onQuery}
       />
       {partialFailure === undefined ? null : (
         <ReadFailed subject="More" failure={partialFailure} />
@@ -794,7 +885,7 @@ export function ProjectTable(props: {
         partition={partition}
         nowMs={nowMs}
         sort={sort}
-        searching={props.query.q !== undefined}
+        narrowed={ask.search !== undefined || ask.creator !== undefined}
         readMore={tickets.readMore}
       />
       {tickets.reading ? <p className="panel-note">Loading…</p> : null}

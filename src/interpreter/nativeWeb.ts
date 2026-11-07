@@ -28,7 +28,9 @@ import {
 } from "./overridesAccess.ts";
 export type { AuthorizedResult } from "./authorizedProject.ts";
 
-import type { Principal } from "./principal.ts";
+import { nativeEpicMethods, type NativeEpics } from "./epics.ts";
+import type { EpicReference, EpicStore } from "./epicStore.ts";
+import { asPrincipal, type Principal } from "./principal.ts";
 import type { ReleaseAuthoringProgram } from "../contract/authoring.ts";
 import type { ConfigurationOverrides } from "../contract/configurationOverrides.ts";
 import type { ConsolePage } from "../contract/consolePage.ts";
@@ -470,6 +472,8 @@ export interface TicketResource {
   /** Where a Pending ticket that follows stands against the revision its repository's newest import declares under the same name. */
   readonly following?: TicketFollowing;
   readonly runTotals?: RunTotals;
+  /** Every epic the ticket belongs to, archived ones included, in epic order, and absent where it belongs to none. */
+  readonly epics?: readonly EpicReference[];
   /** The execution `latestExecutions` answers for the ticket, where one has run; only the tickets list carries it. */
   readonly latestExecution?: TicketLatestExecution;
 }
@@ -537,7 +541,7 @@ export interface ProjectResource {
   readonly nextAfter?: TicketId;
   readonly nextRecentActivityAfter?: TicketActivityPosition;
   readonly nextNumberAfter?: TicketNumberPosition;
-  /** How many tickets the search matched across the project, where the read named one. */
+  /** How many tickets the search or creator matched across the project, where the read named either. */
   readonly matched?: number;
 }
 
@@ -566,8 +570,12 @@ export interface ProjectReadQuery {
   readonly phaseFilter?: TicketPhaseFilter;
   /** Trimmed text a ticket's title holds, ignoring case, or its number, with or without a leading `#`. */
   readonly search?: string;
+  /** Only the tickets this member filed, as a ticket's `creator` names them. */
+  readonly creator?: Principal;
   /** Only the tickets `ticketActiveFinishedHours` names active. */
   readonly active?: boolean;
+  /** Only the members of this epic. */
+  readonly epic?: number;
 }
 
 export type TicketPhaseFilter =
@@ -603,14 +611,7 @@ export function checkedProjectReadQuery(
     query.numberAfter.order !== query.order
   )
     throw new RangeError("ticket number cursor belongs to another order");
-  if (
-    query.search !== undefined &&
-    (query.search.trim() !== query.search ||
-      !isBoundedText(query.search, ticketSearchCharsMax))
-  )
-    throw new RangeError(
-      `ticket search must be from 1 to ${String(ticketSearchCharsMax)} characters, trimmed`,
-    );
+  checkedProjectReadQueryNarrowing(query);
   if (
     query.order !== "RecentActivity" &&
     query.recentActivityAfter !== undefined
@@ -650,6 +651,19 @@ export function checkedProjectReadQuery(
       throw new RangeError("ticket phase selection is invalid");
   }
   return query;
+}
+
+/** Refuses a search that is untrimmed or past its bound, and a creator no principal could be. */
+function checkedProjectReadQueryNarrowing(query: ProjectReadQuery): void {
+  if (
+    query.search !== undefined &&
+    (query.search.trim() !== query.search ||
+      !isBoundedText(query.search, ticketSearchCharsMax))
+  )
+    throw new RangeError(
+      `ticket search must be from 1 to ${String(ticketSearchCharsMax)} characters, trimmed`,
+    );
+  if (query.creator !== undefined) asPrincipal(query.creator);
 }
 
 /** The ticket a search names by number, where it is a whole number with or without a leading `#`. */
@@ -729,7 +743,7 @@ export type NativeDraftRevised =
       readonly landing: DraftLanding;
     };
 
-export interface NativeWeb {
+export interface NativeWeb extends NativeEpics {
   submit(
     principal: Principal,
     submission: NativeSubmission,
@@ -893,6 +907,8 @@ export interface NativeWeb {
       readonly brief: DraftBrief;
       readonly overrides?: ConfigurationOverrides;
       readonly selection?: ConfigurationSelection;
+      /** The epic the draft joins, which must be Active. */
+      readonly epic?: number;
       /** The session whose bearer carried the request, which the draft keeps as the thread its events wake. */
       readonly originSession?: SessionId;
     },
@@ -2824,8 +2840,10 @@ export function nativeWeb(
   sessionRoutes?: SessionRouteReads,
   projectArtifacts?: ProjectArtifactPort,
   projectArtifactMinting?: ProjectArtifactMinting,
+  epics?: EpicStore,
 ): NativeWeb {
   return {
+    ...nativeEpicMethods(access, epics),
     ...nativeRunEvidenceMethods(access, runEvidenceReads, runEvidenceContents),
     ...nativeLeadReadMethods(access, leads),
     ...nativeThreadMethods(access, threads, sessionRoutes, projectArtifacts),

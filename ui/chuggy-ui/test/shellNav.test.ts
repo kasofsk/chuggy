@@ -28,6 +28,7 @@ test("every entry names a route of the partition and carries its params", () => 
   }
   expect(entries.map((entry) => entry.id)).toStrictEqual([
     "overview",
+    "epics",
     "lead",
     "catalog",
     "settings",
@@ -58,6 +59,8 @@ function currentAt(pathname: string): readonly string[] {
 test("each screen is current on its own address alone", () => {
   expect(currentAt("/acme/atlas")).toStrictEqual(["overview"]);
   expect(currentAt("/acme/atlas/inbox")).toStrictEqual([]);
+  expect(currentAt("/acme/atlas/epics")).toStrictEqual(["epics"]);
+  expect(currentAt("/acme/atlas/epics/7")).toStrictEqual(["epics"]);
   expect(currentAt("/acme/atlas/lead")).toStrictEqual(["lead"]);
   expect(currentAt("/acme/atlas/catalog")).toStrictEqual(["catalog"]);
   expect(currentAt("/acme/atlas/settings")).toStrictEqual(["settings"]);

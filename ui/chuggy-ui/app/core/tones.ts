@@ -12,7 +12,10 @@
 
 import type { AccessInviteLink } from "../../../../src/contract/accessPlane.ts";
 import type { allActionReaches } from "../../../../src/contract/actionReach.ts";
-import type { ProjectRepositoryWorkerReachResponse } from "../../../../src/contract/responses.ts";
+import type {
+  EpicSummaryResponse,
+  ProjectRepositoryWorkerReachResponse,
+} from "../../../../src/contract/responses.ts";
 import type {
   ForgeInstallationPermissionsName,
   SelectorAttention,
@@ -37,6 +40,8 @@ import {
 } from "./repositoryImport.ts";
 import type { RunCommandEnd } from "./runResult.ts";
 import type { SetVerdict } from "./ticketLedger.ts";
+
+type EpicStatus = EpicSummaryResponse["status"];
 
 export const pillTones = [
   "pass",
@@ -69,6 +74,22 @@ export function phaseTone(phase: TicketPhase): Tone {
       return "pass";
     case "Revoked":
       return "retired";
+  }
+}
+
+/** Where an epic's members stand together; one Escalated is the desk's, as its phase is. */
+export function epicStatusTone(status: EpicStatus): Tone {
+  switch (status) {
+    case "empty":
+      return "retired";
+    case "not_started":
+      return "queued";
+    case "in_progress":
+      return "live";
+    case "attention":
+      return "parked";
+    case "done":
+      return "pass";
   }
 }
 

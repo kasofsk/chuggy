@@ -1,0 +1,152 @@
+/**
+ * What a ticket will run, step by step, as its configuration and its release
+ * say: the work, each evaluation stage with its evaluators, and how it lands.
+ *
+ * THE STAGES ARE THE PROGRAM THE TICKET WAS RELEASED WITH, or the one a draft
+ * never released holds, and the names are its catalog's selected plan's, laid
+ * over that program by position, as the catalog initializes one. A version 1 configuration names no stages, so its
+ * stages and evaluators are named by their numbers; a configuration not read
+ * yet is the same.
+ *
+ * THE LANDING IS THE BRIEF'S, and the selected finalizer's where the brief
+ * names none, as the Configuration tab reads it. One whose mode is `None`
+ * lands nothing, so the ticket has no landing to wait on.
+ */
+
+import type { BriefFinalizationMode } from "../../../../src/contract/rosters.ts";
+import type { TicketResponse } from "../../../../src/contract/responses.ts";
+import { briefLandingOf } from "./briefLanding.ts";
+import { landingLabel } from "./codeLabels.ts";
+import {
+  configurationCatalogOf,
+  configurationCatalogSelected,
+  configurationCatalogWorkload,
+} from "./configurationCatalog.ts";
+import type {
+  CatalogPlanStage,
+  CatalogWorkload,
+  ConfigurationCatalog,
+} from "./configurationCatalog.ts";
+import { stageLabel } from "./ticketLedger.ts";
+import type { StageNames, TicketProgram } from "./ticketLedger.ts";
+
+/** One evaluator of a stage: its key, its name, and what it runs. */
+export interface TicketPlanEvaluator {
+  readonly key: number;
+  readonly name: string;
+  readonly runs: string | undefined;
+}
+
+export interface TicketPlanStage {
+  readonly stage: number;
+  readonly name: string;
+  readonly evaluators: readonly TicketPlanEvaluator[];
+}
+
+export interface TicketPlan {
+  /** What the work runs on, where the configuration says. */
+  readonly work: string | undefined;
+  readonly stages: readonly TicketPlanStage[];
+  /** The plan's stage names, none where it names none. */
+  readonly names: StageNames;
+  /** Whether the ticket lands anything at all. */
+  readonly lands: boolean;
+  /** How it lands, where the configuration says. */
+  readonly landing: string | undefined;
+}
+
+/** What a workload runs on: its agent and model, or that it runs commands. */
+function ticketPlanRuns(workload: CatalogWorkload): string | undefined {
+  if (workload.runner === "Commands") return "commands";
+  const said = [
+    workload.agent,
+    workload.model === "Default" ? undefined : workload.model,
+  ].filter((part) => part !== undefined);
+  return said.length === 0 ? undefined : said.join(" · ");
+}
+
+function ticketPlanEvaluator(
+  catalog: ConfigurationCatalog | undefined,
+  named: CatalogPlanStage | undefined,
+  key: number,
+): TicketPlanEvaluator {
+  const name = named?.evaluators[key - 1];
+  const workload =
+    catalog === undefined || name === undefined
+      ? undefined
+      : configurationCatalogWorkload(catalog, name);
+  const runs = workload === undefined ? undefined : ticketPlanRuns(workload);
+  return {
+    key,
+    name: name ?? `Evaluator ${String(key)}`,
+    runs:
+      name === undefined || runs === undefined
+        ? undefined
+        : `${name} · ${runs}`,
+  };
+}
+
+/** The program the ticket was released with, or the plan's own shape where
+ * the read carries none. */
+function ticketPlanProgram(
+  program: TicketProgram | undefined,
+  named: readonly CatalogPlanStage[] | undefined,
+): TicketProgram {
+  return (
+    program ??
+    (named ?? []).map((stage, index) => ({
+      key: index + 1,
+      evaluators: stage.evaluators.map((_name, position) => ({
+        key: position + 1,
+      })),
+    }))
+  );
+}
+
+type TicketPlanFinalization = { readonly mode: BriefFinalizationMode };
+
+/** What a plan is read from: a released ticket's own read, or a draft's
+ * authoring as it stands. */
+export type TicketPlanned = Pick<
+  TicketResponse,
+  "selection" | "brief" | "program"
+>;
+
+export function ticketPlanOf(
+  canonical: string | undefined,
+  ticket: TicketPlanned | undefined,
+): TicketPlan {
+  const catalog =
+    canonical === undefined ? undefined : configurationCatalogOf(canonical);
+  const selected =
+    catalog === undefined
+      ? undefined
+      : configurationCatalogSelected(catalog, ticket?.selection);
+  const named =
+    selected === undefined
+      ? undefined
+      : catalog?.plans.get(selected.evaluation);
+  const work =
+    catalog === undefined || selected === undefined
+      ? undefined
+      : configurationCatalogWorkload(catalog, selected.work);
+  const finalization: TicketPlanFinalization | undefined =
+    briefLandingOf(ticket?.brief?.finalization) ??
+    catalog?.finalizers.find((held) => held.name === selected?.finalization)
+      ?.landing;
+  const names = named?.map((stage) => stage.name);
+  return {
+    work: work === undefined ? undefined : ticketPlanRuns(work),
+    stages: ticketPlanProgram(ticket?.program, named).map((stage, index) => ({
+      stage: index + 1,
+      name: stageLabel(index + 1, names),
+      evaluators: stage.evaluators.map((evaluator) =>
+        ticketPlanEvaluator(catalog, named?.[index], evaluator.key),
+      ),
+    })),
+    names,
+    lands: finalization?.mode !== "None",
+    landing:
+      finalization === undefined ? undefined : landingLabel(finalization.mode),
+  };
+}

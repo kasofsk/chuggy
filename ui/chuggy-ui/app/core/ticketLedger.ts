@@ -44,7 +44,7 @@
  * `evaluator` are each unbounded counts and are never loop bounds, because one
  * row naming a stage in the millions would otherwise build that many rows.
  *
- * WHAT IT EMITS IS FACTS, and the three labels at the end are the only strings
+ * WHAT IT EMITS IS FACTS, and the labels at the end are the only strings
  * in it: each names a row the ledger numbered, and every word a reader is given
  * about what those facts mean belongs to whatever draws them. Time and money
  * are facts like any other, so a set and a cycle each carry the span they ran
@@ -511,15 +511,17 @@ export function ledgerLastSet(ledger: Ledger): ClosedSet | undefined {
   return cycle === undefined ? undefined : cycleLastSet(cycle);
 }
 
+/** The names a ticket's plan gives its stages, in stage order, and none where
+ * its configuration names none or is not read. */
+export type StageNames = readonly string[] | undefined;
+
 /**
- * Stages are numbered from one, as the form a ticket is authored on numbers
- * them — the identity's own stage, with nothing added to it.
+ * A stage by the name its plan writes, and otherwise by its number, counted
+ * from one as the form a ticket is authored on numbers them — the identity's
+ * own stage, with nothing added to it.
  */
-export function stageLabel(stage: number, stageCount: number): string {
-  const named = String(stage);
-  return stageCount >= stage
-    ? `Stage ${named} of ${String(stageCount)}`
-    : `Stage ${named}`;
+export function stageLabel(stage: number, names: StageNames): string {
+  return names?.[stage - 1] ?? `Stage ${String(stage)}`;
 }
 
 export function cycleLabel(ordinal: number): string {

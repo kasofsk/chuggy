@@ -276,6 +276,24 @@ export function draftRevisionFailureSentence(failure: ApiFailure): string {
     : draftRevisionRefusalSentence(code);
 }
 
+/** Why a draft's deletion did not get through: it was written since it was
+ * read, or it is a draft no longer, and a failure read as any submission's
+ * otherwise. */
+export function draftDeletionFailureSentence(failure: ApiFailure): string {
+  const code =
+    failure.outcome === "Conflict"
+      ? draftRevisionRefusalCodes.find((known) => known === failure.code)
+      : undefined;
+  switch (code) {
+    case undefined:
+      return operationFailureSentence(failure);
+    case "DraftChanged":
+      return "Draft changed · Delete again";
+    case "DraftNotEditable":
+      return "Draft closed";
+  }
+}
+
 /** The coded deferrals the same two routes answer with, each meaning try again. */
 export const mutationDeferralCodes = [
   "DispatchBacklog",

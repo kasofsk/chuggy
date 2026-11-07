@@ -194,7 +194,7 @@ test("the configuration is broken out into Work, Evaluation and Finalization", a
   ).toBeDefined();
 });
 
-test("the status row names the member who filed the ticket, the whole subject on hover", async () => {
+test("the sidebar names the member who filed the ticket, the whole subject on hover", async () => {
   const creator = "23:https://issuer.example/alice";
   await drawExpanded(
     canonical,
@@ -221,12 +221,8 @@ test("a ticket the wire names no creator for draws no filed-by field at all", as
     undefined,
     <TicketOverviewTab />,
   );
-  expect(screen.getByText("Released under")).toBeDefined();
-  expect(
-    screen
-      .getAllByText("Filed by")
-      .map((name) => name.nextElementSibling?.textContent),
-  ).toEqual(["—", "—"]);
+  expect(screen.getByText("Depends on")).toBeDefined();
+  expect(screen.queryByText("Filed by")).toBeNull();
 });
 
 test("the settings grid reads the model off its own flag and the tools off the allow-list", async () => {

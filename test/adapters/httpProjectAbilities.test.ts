@@ -62,6 +62,7 @@ test("a member is answered exactly its abilities", async () => {
     overrideTicketConfig: true,
     skipPlannedEvaluations: true,
     administer: false,
+    writeEpic: false,
   });
   assert.deepEqual(nativeHttpEndpoints.abilities.response.parse(body), body);
 });

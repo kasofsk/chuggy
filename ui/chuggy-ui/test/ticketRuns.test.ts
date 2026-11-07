@@ -22,11 +22,11 @@ import { ticketLedger } from "../app/core/ticketLedger.ts";
 import type { TicketProgram } from "../app/core/ticketLedger.ts";
 import {
   ticketRunDetailsOf,
+  ticketRunLandingMarked,
   ticketRunImageLabel,
   ticketRunQueryOf,
   ticketRunsFind,
   ticketRunsLandingCycle,
-  ticketRunsNamesOf,
   ticketRunsOf,
   ticketRunTaskOf,
   ticketRunViewShown,
@@ -43,35 +43,7 @@ import {
 } from "./ticketLedgerFixture.ts";
 import type { ExecutionShape } from "./ticketLedgerFixture.ts";
 
-/** A catalog whose default plan names two stages, and a second plan of one. */
-const catalog = JSON.stringify({
-  version: 2,
-  workloads: {
-    build: { runner: "Agent" },
-    gates: { runner: "Commands", commands: ["npm test"] },
-    review: { runner: "Agent", purpose: "Review" },
-  },
-  plans: {
-    gated: [
-      { name: "checks", evaluators: ["gates"] },
-      { name: "review", evaluators: ["review"] },
-    ],
-    quick: [{ name: "review", evaluators: ["review"] }],
-  },
-  finalizers: { land: { approvalRequired: false } },
-  defaults: { work: "build", evaluation: "gated", finalization: "land" },
-});
-
-test("a stage is named as the plan the ticket's selection names it", () => {
-  expect(ticketRunsNamesOf(catalog, undefined)).toEqual(["checks", "review"]);
-  expect(ticketRunsNamesOf(catalog, { evaluation: "quick" })).toEqual([
-    "review",
-  ]);
-  expect(ticketRunsNamesOf("{}", undefined)).toBeUndefined();
-  expect(ticketRunsNamesOf(undefined, undefined)).toBeUndefined();
-});
-
-const named = { names: ["checks", "review"], stageCount: 2 };
+const named = { names: ["checks", "review"], lands: true };
 
 /** Two cycles: the first sent back by its review, the second failing at it. */
 const twoCycles: readonly ExecutionShape[] = [
@@ -107,6 +79,7 @@ function runsOf(
   shapes: readonly ExecutionShape[],
   landings: readonly TicketLanding[] = [],
   program: TicketProgram = ticket21Program,
+  lands = true,
 ): readonly TicketRunsCycle[] {
   const ledger = ticketLedger(ledgerPage(shapes), program);
   return ticketRunsOf(
@@ -115,7 +88,7 @@ function runsOf(
       landings,
       ledger.cycles.map((cycle) => cycle.ordinal),
     ),
-    { names: named.names, stageCount: program.length },
+    { names: named.names, lands },
   );
 }
 
@@ -130,7 +103,7 @@ function rowsSaid(cycles: readonly TicketRunsCycle[]) {
         ? `${row.name} ${String(row.task)}`
         : row.kind === "Gap"
           ? `${row.name} ${row.words}`
-          : `Landing ${row.landing?.word ?? "Not reached"}`,
+          : `Landing ${row.lands ? (row.landing?.word ?? "Not reached") : "None"}`,
     ),
   ]);
 }
@@ -186,6 +159,25 @@ test("a cycle still running says which step it is at, and one its landing failed
     [ticketLandingOf(landingConflicted(1))],
   );
   expect(conflicted[0]?.outcome).toBe("Landing failed");
+});
+
+test("a ticket that lands nothing has a Landing row that waits on none", () => {
+  const rows = runsOf(twoCycles, [], ticket21Program, false)[0]?.rows ?? [];
+  expect(rows.at(-1)).toEqual({
+    kind: "Landing",
+    landing: undefined,
+    lands: false,
+  });
+});
+
+test("a landing draws the merge mark only while it merged or is under way, and its failure otherwise", () => {
+  expect(ticketRunLandingMarked(ticketLandingOf(landingLanded(1)))).toEqual({
+    mark: "Merge",
+    tone: "finalization",
+  });
+  expect(ticketRunLandingMarked(ticketLandingOf(landingConflicted(1)))).toEqual(
+    { mark: "Cross", tone: "fail" },
+  );
 });
 
 test("a run is found by its task's number, and a number the page holds no run for finds none", () => {

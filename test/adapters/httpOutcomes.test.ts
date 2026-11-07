@@ -708,6 +708,18 @@ test("draft creation maps every closed result, a branchless landing among them",
     { value: { created: "Stale", currentProjectSequence: 9 }, status: 409 },
     { value: { created: "NotActive", lifecycle: "Suspended" }, status: 409 },
     { value: { created: "LandingUnbranched" }, status: 422 },
+    {
+      value: { created: "EpicUnavailable", reason: "MissingEpic" },
+      status: 409,
+    },
+    {
+      value: { created: "EpicUnavailable", reason: "ArchivedEpic" },
+      status: 409,
+    },
+    {
+      value: { created: "EpicUnavailable", reason: "LargeContent" },
+      status: 409,
+    },
   ] as const;
   for (const each of populated(creations, "draft creation outcomes")) {
     assert.equal(

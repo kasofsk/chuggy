@@ -7,6 +7,14 @@
  */
 
 import {
+  epicHistoryQueryParse,
+  epicListQueryParse,
+  epicWriteRequestParse,
+  type EpicHistoryQuery,
+  type EpicListQuery,
+  type EpicWriteRequest,
+} from "../../contract/epics.ts";
+import {
   configurationSelectionSchema,
   type ConfigurationSelection,
 } from "../../contract/configurationSelection.ts";
@@ -330,6 +338,7 @@ export interface ParsedDraftCreation {
   readonly brief: DraftBrief;
   readonly overrides?: ConfigurationOverrides;
   readonly selection?: ConfigurationSelection;
+  readonly epic?: number;
 }
 
 export interface ParsedDraftRevision {
@@ -412,6 +421,7 @@ export function parseDraftCreation(body: unknown): ParsedDraftCreation {
     brief: releaseBrief(value.brief),
     ...(value.overrides === undefined ? {} : { overrides: value.overrides }),
     ...(value.selection === undefined ? {} : { selection: value.selection }),
+    ...(value.epic === undefined ? {} : { epic: value.epic }),
   };
 }
 
@@ -804,4 +814,19 @@ export function parseLeadInquiry(body: unknown): {
     turn: asSessionTurnId(value.turn),
     question: value.question,
   };
+}
+
+/** A write's body: a create or a revision, whole. */
+export function parseEpicWrite(body: unknown): EpicWriteRequest {
+  return epicWriteRequestParse(body);
+}
+
+/** A list's filters, its sort and its page. */
+export function parseEpicList(query: unknown): EpicListQuery {
+  return epicListQueryParse(query);
+}
+
+/** A history's page. */
+export function parseEpicHistory(query: unknown): EpicHistoryQuery {
+  return epicHistoryQueryParse(query);
 }

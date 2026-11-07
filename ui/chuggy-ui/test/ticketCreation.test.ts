@@ -87,6 +87,15 @@ function faultReasons(form: TicketCreationForm): readonly string[] {
     : [];
 }
 
+test("a form names its epic to the API only where it joins one", () => {
+  const sent = (form: TicketCreationForm): unknown => {
+    const assembled = creationBodyFrom(creationOffers, form, noBindings);
+    return assembled.assembled === "Body" ? assembled.body : undefined;
+  };
+  expect(sent(creationForm({ epic: "7" }))).toMatchObject({ epic: 7 });
+  expect(sent(creationForm())).not.toHaveProperty("epic");
+});
+
 test("a serialized form sends its landing policy and a direct one sends none", () => {
   const sent = (form: TicketCreationForm): unknown => {
     const assembled = creationBodyFrom(creationOffers, form, noBindings);

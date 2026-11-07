@@ -1,7 +1,7 @@
 /**
- * Where this ticket came from: the brief's images, a summary of the live revision and
- * the draft beside it, and the configuration the live revision runs under,
- * broken out into its work, its evaluation and its finalization.
+ * Where this ticket came from: the brief's images, and the configuration the
+ * live revision runs under, broken out into its work, its evaluation and its
+ * finalization.
  *
  * What a ticket runs under is the configuration it pinned with its overrides
  * applied. A field it overrode is drawn as the override and marked so, in the
@@ -24,7 +24,6 @@ import type { ConfigurationFollowing } from "../../../../src/contract/configurat
 import { configurationFollowingOf } from "../../../../src/contract/configurationSelection.ts";
 import type {
   ConfigurationResponse,
-  DraftResponse,
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
 import { configurationQuery } from "../core/configurationQueries.ts";
@@ -52,17 +51,12 @@ import type {
   ConfigurationCatalog,
 } from "../core/configurationCatalog.ts";
 import { workloadsEffectiveCanonicalOf } from "../core/workloadOverrides.ts";
-import { agoFigure } from "../core/figures.ts";
 import { overrideFieldOf, overriddenViewOf } from "../core/ticketOverrides.ts";
 import type { OverrideField } from "../core/ticketOverrides.ts";
-import type { PanelState } from "../core/freshness.ts";
 import { configurationLabel, digestShortened } from "../core/labels.ts";
-import { draftReleaseOf, draftUnreleasedLabel } from "../core/ticketEdit.ts";
 import { usePanelState } from "./api.ts";
-import { TicketFiledBy } from "./ticket/TicketMeta.tsx";
-import { DataSection, PanelUnready } from "./DataPanel.tsx";
+import { PanelUnready } from "./DataPanel.tsx";
 import { Disclosure } from "./ui/Disclosure.tsx";
-import { Figure } from "./ui/Figure.tsx";
 import { Freshness } from "./Freshness.tsx";
 import { Panel } from "./ui/Panel.tsx";
 import { MarkdownReport } from "./ui/MarkdownReport.tsx";
@@ -73,15 +67,14 @@ import "./ticket/ticket.css";
 
 /**
  * The images a person attached to the brief, each drawn from the project's own
- * read of it. The brief's other fields are the status row's and the
+ * read of it. The brief's other fields are the sidebar's and the
  * instructions' to draw.
  */
 export function TicketBriefImages(props: {
   readonly partition: PartitionIdentity;
-  readonly state: PanelState<TicketResponse>;
+  readonly brief: TicketResponse["brief"];
 }): ReactNode {
-  const images =
-    props.state.state === "Ready" ? props.state.value.brief?.images : undefined;
+  const images = props.brief?.images;
   if (images === undefined || images.length === 0) return null;
   return (
     <ul className="flex flex-wrap gap-2">
@@ -101,7 +94,7 @@ export function TicketBriefImages(props: {
 
 /** One cell of a summary grid: a small key above a value, and an optional
  * dim line under it for what the value alone does not say. */
-function SummaryCell(props: {
+export function SummaryCell(props: {
   readonly name: string;
   readonly value: ReactNode;
   readonly meta?: ReactNode;
@@ -144,71 +137,6 @@ function OverriddenMark(): ReactNode {
 
 /** The fields a ticket overrode, which the panel marks where it draws them. */
 type ConfigurationOverridden = ReadonlySet<OverrideField>;
-
-/** The live revision and when it released, the draft beside it, who filed
- * the ticket and the configuration its last release pinned. */
-function RevisionSummary(props: {
-  readonly partition: PartitionIdentity;
-  readonly draft: DraftResponse;
-  readonly ticket: TicketResponse | undefined;
-  readonly nowMs: number;
-}): ReactNode {
-  const ticket = props.ticket;
-  const revision = ticket?.configurationRevision;
-  const released =
-    revision === undefined
-      ? undefined
-      : configurationLabel(revision, ticket?.configurationVersion);
-  return (
-    <div className="ticket-provenance-summary">
-      <SummaryCell
-        name="Live"
-        value={
-          ticket?.revision === undefined
-            ? absentMark
-            : `Revision ${String(ticket.revision)}`
-        }
-        meta={
-          ticket?.releasedAt === undefined ? undefined : (
-            <>
-              released{" "}
-              <Figure figure={agoFigure(ticket.releasedAt, props.nowMs)} />
-            </>
-          )
-        }
-      />
-      <SummaryCell
-        name="Draft"
-        value={draftUnreleasedLabel(draftReleaseOf(props.draft))}
-      />
-      <SummaryCell
-        name="Filed by"
-        value={
-          ticket?.creator === undefined ? (
-            absentMark
-          ) : (
-            <TicketFiledBy
-              partition={props.partition}
-              creator={ticket.creator}
-            />
-          )
-        }
-      />
-      <SummaryCell
-        name="Released under"
-        value={
-          released === undefined ? (
-            absentMark
-          ) : (
-            <Tooltip text={released.title}>
-              <span>{released.text}</span>
-            </Tooltip>
-          )
-        }
-      />
-    </div>
-  );
-}
 
 /** A definition as the YAML it is written in, or its JSON where YAML cannot
  * say it. */
@@ -313,7 +241,7 @@ function commandsSummary(commands: readonly string[]): ReactNode {
   );
 }
 
-function ConfigurationChips(props: {
+export function ConfigurationChips(props: {
   readonly items: readonly string[];
 }): ReactNode {
   return (
@@ -564,7 +492,7 @@ type ConfigurationLanding = {
 };
 
 /** The landing a ticket takes, as the one line its brief or its finalizer says it. */
-function FinalizationLanding(props: {
+export function FinalizationLanding(props: {
   readonly landing: ConfigurationLanding;
 }): ReactNode {
   return <SummaryCell name="Method" value={briefLandingLine(props.landing)} />;
@@ -668,7 +596,7 @@ function ConfigurationSettingsGrid(props: {
 
 /** The name and version chip a repository import carries, or the bare
  * revision an authored one has no label for. */
-function ConfigurationHeaderLabel(props: {
+export function ConfigurationHeaderLabel(props: {
   readonly revision: string;
   readonly version: TicketResponse["configurationVersion"];
 }): ReactNode {
@@ -1319,33 +1247,22 @@ function ConfigurationPanel(props: {
   );
 }
 
-/** The revisions the ticket has had: the live one, the draft beside it, who
- * filed it and what it was released under. */
-export function TicketRevisions(props: {
-  readonly partition: PartitionIdentity;
-  readonly state: PanelState<DraftResponse>;
-  /** The ticket, absent until it is read. */
-  readonly ticket: TicketResponse | undefined;
-  readonly nowMs: number;
-}): ReactNode {
-  return (
-    <DataSection state={props.state}>
-      {(draft) => (
-        <RevisionSummary
-          partition={props.partition}
-          draft={draft}
-          ticket={props.ticket}
-          nowMs={props.nowMs}
-        />
-      )}
-    </DataSection>
-  );
-}
+/** What a configuration is drawn from: a released ticket's own read, or a
+ * draft as it stands, which follows nothing. */
+export type TicketConfigured = Pick<
+  TicketResponse,
+  | "configurationRevision"
+  | "configurationVersion"
+  | "overrides"
+  | "selection"
+  | "following"
+  | "brief"
+>;
 
 /** The configuration the live revision pins, drawn once the ticket is read. */
 export function TicketConfiguration(props: {
   readonly partition: PartitionIdentity;
-  readonly ticket: TicketResponse | undefined;
+  readonly ticket: TicketConfigured | undefined;
 }): ReactNode {
   const ticket = props.ticket;
   if (ticket?.configurationRevision === undefined) return null;

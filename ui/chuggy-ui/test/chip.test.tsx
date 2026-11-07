@@ -2,7 +2,8 @@
  * The chip over both its shapes: one that stands, drawn as the neutral pill
  * with no control, and one that can be taken away, ending in a button named by
  * its caller that removes it only while it may. Then the ticket list's state
- * chips, the row's and each count's, as the small state label.
+ * chips, the row's and each count's, as the small state label at its one
+ * width.
  */
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
@@ -12,9 +13,14 @@ import {
   TicketStateChip,
   TicketStateCount,
 } from "../app/browser/ticket/TicketStateChip.tsx";
+import { TicketStateLabel } from "../app/browser/ticket/TicketStateLabel.tsx";
 import { Chip } from "../app/browser/ui/Chip.tsx";
 import { Pill } from "../app/browser/ui/Pill.tsx";
+import listSheet from "../app/browser/ProjectTable.css?raw";
+import ticketSheet from "../app/browser/ticket/ticket.css?raw";
+import { ticketStateWords } from "../app/core/ticketHeader.ts";
 import type { TicketListStanding } from "../app/core/ticketListView.ts";
+import { sheetRules } from "./sheet.ts";
 import { styleless } from "./styleless.ts";
 
 afterEach(() => {
@@ -173,4 +179,91 @@ test("a count is its state's label holding the number, the button that filters",
   );
   fireEvent.click(count);
   expect(pressed).toHaveBeenCalledTimes(1);
+});
+
+test("every small state label's word is sized by every state's word, whatever its own, and the page's by its own", () => {
+  render(
+    <>
+      <TicketStateChip ticket={7} standing="Done" hint={undefined} />
+      <TicketStateChip ticket={8} standing="Finalization" hint={undefined} />
+      <TicketStateCount
+        standing="Ready"
+        count={3}
+        pressed={false}
+        onPress={() => undefined}
+      />
+      <TicketStateLabel standing="Done" size="page" />
+    </>,
+  );
+  const every = ticketStateWords.join("\n");
+  expect(
+    Array.from(
+      document.querySelectorAll<HTMLElement>(
+        '.ticket-state[data-size="small"] .ticket-state-word',
+      ),
+      (word) => [word.textContent, word.dataset["words"]] as const,
+    ),
+  ).toStrictEqual([
+    ["Done", every],
+    ["Finalizing", every],
+    ["Ready", every],
+  ]);
+  expect(
+    document.querySelector<HTMLElement>(
+      '.ticket-state[data-size="page"] .ticket-state-word',
+    )?.dataset["words"],
+  ).toBeUndefined();
+});
+
+test("the words a small label is sized by, and the widest count a count's number is, are laid out unseen and take no height", () => {
+  const sizer = sheetRules(ticketSheet, []).find(
+    (rule) => rule.selectorText === ".ticket-state-word[data-words]::before",
+  );
+  expect(sizer?.style.getPropertyValue("content")).toContain(
+    "attr(data-words)",
+  );
+  expect(sizer?.style.getPropertyValue("display")).toBe("block");
+  expect(sizer?.style.getPropertyValue("height")).toBe("0px");
+  expect(sizer?.style.getPropertyValue("visibility")).toBe("hidden");
+  expect(sizer?.style.getPropertyValue("white-space")).toBe("pre");
+  const count = sheetRules(listSheet, []).find(
+    (rule) =>
+      rule.selectorText ===
+      "button.ticket-state-count .num[data-widest]::before",
+  );
+  expect(count?.style.getPropertyValue("content")).toContain(
+    "attr(data-widest)",
+  );
+  expect(count?.style.getPropertyValue("height")).toBe("0px");
+  expect(count?.style.getPropertyValue("visibility")).toBe("hidden");
+});
+
+test("counts drawn beside each other hold their numbers at the widest one's width", () => {
+  render(
+    <>
+      <TicketStateCount
+        standing="Ready"
+        count={3}
+        pressed={false}
+        countWidest={12}
+        onPress={() => undefined}
+      />
+      <TicketStateCount
+        standing="Blocked"
+        count={12}
+        pressed={false}
+        countWidest={12}
+        onPress={() => undefined}
+      />
+    </>,
+  );
+  expect(
+    Array.from(
+      document.querySelectorAll<HTMLElement>(".ticket-state-count .num"),
+      (number) => [number.textContent, number.dataset["widest"]] as const,
+    ),
+  ).toStrictEqual([
+    ["3", "12"],
+    ["12", "12"],
+  ]);
 });
