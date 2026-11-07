@@ -28,7 +28,6 @@ const settings = {
   fiveHourPercent: 80,
   sevenDayPercent: 90,
   pausesThreads: true,
-  pausesLead: false,
 };
 
 const claude: AgentAccount = {
@@ -123,9 +122,9 @@ test("a draft is the settings as typed, and reads back to them", () => {
     faults: undefined,
   });
   expect(agentAccountDraftSame(draft, settings)).toBe(true);
-  expect(agentAccountDraftSame({ ...draft, pausesLead: true }, settings)).toBe(
-    false,
-  );
+  expect(
+    agentAccountDraftSame({ ...draft, pausesThreads: false }, settings),
+  ).toBe(false);
 });
 
 test.each(["0", "101", "", "8.5", "-3", "eighty"])(

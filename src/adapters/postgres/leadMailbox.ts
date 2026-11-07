@@ -49,6 +49,7 @@ import { projectRowCounter } from "./rows.ts";
 import {
   interactionsReadSignature,
   leadOpenSignature,
+  leadRunnerStandingSignature,
   selectorSignatures,
   sessionRouteSignature,
   sessionRunnerStandingSignature,
@@ -56,6 +57,7 @@ import {
 } from "./schema/lead.ts";
 import {
   leadOpenFunction,
+  leadRunnerStandingFunction,
   selectorInteractionsReadFunction,
   selectorProposalRetireFunction,
   sessionRouteFunction,
@@ -308,6 +310,7 @@ export const leadDoorSignatures: readonly string[] = (
     [leadOpenFunction, leadOpenSignature],
     [sessionRouteFunction, sessionRouteSignature],
     [sessionRunnerStandingFunction, sessionRunnerStandingSignature],
+    [leadRunnerStandingFunction, leadRunnerStandingSignature],
   ] as readonly (readonly [string, string])[]
 ).map(leadDoorNamed);
 

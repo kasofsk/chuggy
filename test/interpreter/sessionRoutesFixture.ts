@@ -2,10 +2,18 @@
 
 import type { PlacementRoute } from "../../src/contract/rosters.ts";
 import type {
+  LeadRouteReads,
   SessionRouteKind,
   SessionRouteReads,
   SessionRunners,
 } from "../../src/interpreter/sessionPlacement.ts";
+
+/** A lead's runners as the project's standing would have them, none of their owners paused. */
+function sessionRoutesLeadRunners(
+  runners: SessionRunners,
+): LeadRouteReads["leadRunners"] {
+  return () => Promise.resolve(runners.project === "Live" ? "Live" : "Offline");
+}
 
 /** Routes fixed per routed kind, an inquiry following the lead as the definer has it. */
 export function sessionRoutesAt(
@@ -15,7 +23,7 @@ export function sessionRoutesAt(
     inquiry: "Unregistered",
     project: "Unregistered",
   },
-): SessionRouteReads {
+): SessionRouteReads & LeadRouteReads {
   return {
     route: (_partition, kind) =>
       Promise.resolve({
@@ -23,6 +31,7 @@ export function sessionRoutesAt(
         source: "Project",
       }),
     runners: () => Promise.resolve(runners),
+    leadRunners: sessionRoutesLeadRunners(runners),
   };
 }
 
@@ -33,7 +42,7 @@ export function sessionRoutesAt(
 export function sessionRoutesFlipping(
   first: PlacementRoute,
   runners: SessionRunners,
-): SessionRouteReads {
+): SessionRouteReads & LeadRouteReads {
   let reads = 0;
   return {
     route: () => {
@@ -45,5 +54,6 @@ export function sessionRoutesFlipping(
       });
     },
     runners: () => Promise.resolve(runners),
+    leadRunners: sessionRoutesLeadRunners(runners),
   };
 }

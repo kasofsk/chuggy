@@ -866,6 +866,48 @@ test("a project with no lead reads why again within one poll", async () => {
   expect(leadlessLine()).toBe("Opens when a ticket is released");
 });
 
+/** A usage pause the selector keeps for the project, ending the next day. */
+const usagePaused = {
+  reason: "UsagePaused",
+  since: "2026-11-07T09:00:00Z",
+  until: "2026-11-08T01:00:00Z",
+} as const;
+
+/**
+ * A LEAD PAUSED FOR USAGE IS DRAWN SAYING SO, with a session and without one,
+ * since its runners are live and no runner notice says why it takes no turn.
+ */
+test("a lead paused for usage draws the pause and when it ends, whether or not its session stands", async () => {
+  leadlessServed(opening, { lead: "None", absence: usagePaused });
+  await mountLead();
+  expect(leadlessLine()).toMatch(/^Paused for usage · until /u);
+  cleanup();
+  leadlessServed(opening, { ...leadBody(1, 1), refusal: usagePaused });
+  await mountLead();
+  expect(screen.getByRole("heading", { name: "Lead" })).toBeDefined();
+  expect(screen.getByText(/^Paused for usage · until /u)).toBeDefined();
+});
+
+/** No frame says the selector forgot a refusal, so a lead a refusal is kept
+ * for is read again on the clock, and stops being once it is forgotten. */
+test("a lead a refusal is kept for reads again within one poll, and draws none once it is forgotten", async () => {
+  vi.useFakeTimers({ shouldAdvanceTime: true });
+  const server = leadlessServed(opening, {
+    ...leadBody(1, 1),
+    refusal: usagePaused,
+  });
+  await mountLead();
+  expect(screen.getByText(/^Paused for usage · until /u)).toBeDefined();
+  server.say(leadBody(1, 1));
+  await act(() => vi.advanceTimersByTimeAsync(projectLeadAbsencePolledMs));
+  await settled();
+  expect(screen.queryByText(/^Paused for usage/u)).toBeNull();
+  const before = server.reads();
+  await act(() => vi.advanceTimersByTimeAsync(projectLeadAbsencePolledMs * 2));
+  await settled();
+  expect(server.reads(), "a lead with no refusal was read again").toBe(before);
+});
+
 /** A lead the read names is moved by its own frames, so the clock that moves
  * a missing one's reason reads nothing once one has opened. */
 test("a project with a lead is not read again on the clock", async () => {

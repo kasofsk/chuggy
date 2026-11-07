@@ -109,6 +109,7 @@ import {
   type ProjectOwnerFallbackAdministration,
 } from "./interpreter/projectOwnerFallback.ts";
 import {
+  postgresLeadRouteReads,
   postgresSessionPlacement,
   postgresSessionRouteReads,
 } from "./adapters/postgres/sessionPlacement.ts";
@@ -265,7 +266,7 @@ export function composeSelectorRuntime(
       lead.sessions,
       lead.clock,
       access,
-      postgresSessionRouteReads(selectorPool),
+      postgresLeadRouteReads(selectorPool),
       lead.policy,
     ),
     lead.deadline,

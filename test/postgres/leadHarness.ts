@@ -37,7 +37,12 @@ import {
   selectorServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
 import { postgresSelectorState } from "../../src/adapters/postgres/selector.ts";
-import { sessionRigAttempt, type SessionRigAttempt } from "./sessionHarness.ts";
+import { postgresWorkerPoolRegistry } from "../../src/adapters/postgres/workerPool.ts";
+import {
+  sessionRigAttempt,
+  sessionRigRouted,
+  type SessionRigAttempt,
+} from "./sessionHarness.ts";
 import type {
   AgenticRefusalBindingRead,
   AgenticRefusalRead,
@@ -51,6 +56,10 @@ import type {
   SessionTurnMeasured,
 } from "../../src/interpreter/agentSession.ts";
 import type { LeadMailbox } from "../../src/interpreter/leadMailbox.ts";
+import {
+  asPrincipal,
+  type Principal,
+} from "../../src/interpreter/principal.ts";
 import {
   memberAuthority,
   type ProjectAccess,
@@ -373,4 +382,34 @@ export function leadRigObservation(
     handoffNote: { watching: "41" },
     nextCandidateScan: { state: "Exhausted", token },
   };
+}
+
+/**
+ * A pool of the project registered by `owner`, polled just now, with the
+ * project's lead routed to its runners: a runner that would take the lead now
+ * but for its owner's account.
+ */
+export async function leadRigPooled(
+  rig: LeadRig,
+  partition: Partition,
+  owner: Principal,
+): Promise<string> {
+  const pool = `lead-pool-${randomUUID()}`;
+  await sessionRigRouted(rig.sessions, partition, "InCluster", "Pool");
+  const registered = await postgresWorkerPoolRegistry(rig.apiPool).register({
+    partition,
+    pool,
+    capabilities: [],
+    class: "Dedicated",
+    clientId: `chuggy-pool-${randomUUID()}`,
+    principal: asPrincipal(`https://issuer.invalid#pool-${randomUUID()}`),
+    registeredBy: owner,
+  });
+  if (!registered) throw new Error(`lead rig: ${pool} was not registered`);
+  await rig.sessions.harness.query(
+    `UPDATE worker_pool SET last_polled_at=now()
+      WHERE tenant=$1 AND project=$2 AND pool=$3`,
+    [partition.tenant, partition.project, pool],
+  );
+  return pool;
 }

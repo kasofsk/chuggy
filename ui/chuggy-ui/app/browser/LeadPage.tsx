@@ -39,7 +39,8 @@ import {
   projectLeadAbsencePolledMs,
   projectLeadFound,
   projectLeadPanelState,
-  projectLeadPresent,
+  projectLeadPolled,
+  projectLeadRefusalLine,
 } from "../core/projectLead.ts";
 import { selectorSettingsQuery } from "../core/projectQueries.ts";
 import { leadQuery } from "../core/sessionQueries.ts";
@@ -84,7 +85,8 @@ import { Tooltip } from "./ui/Tooltip.tsx";
 /**
  * The lead read, re-read on the `Session` frames that name its own session and
  * left alone by the rest, a project holding a session per thread beside its
- * lead, and polled while it last said there is none, since no frame moves why.
+ * lead, and polled while it last said there is none or named a refusal kept
+ * for the one there is, since no frame moves why.
  * Which session that is, is learnt from the read and then KEPT, since a read
  * that has failed would otherwise leave the panel deaf to the very frame
  * telling it to try again, and until then any lead's frame re-reads it, which
@@ -94,12 +96,12 @@ export function useLead(
   partition: PartitionIdentity,
 ): PanelState<LeadReadResponse> {
   const [session, setSession] = useState<string | undefined>(undefined);
-  const [absent, setAbsent] = useState(false);
+  const [polled, setPolled] = useState(false);
   const state = usePanelState(
     leadQuery(
       partition,
       session,
-      absent ? projectLeadAbsencePolledMs : undefined,
+      polled ? projectLeadAbsencePolledMs : undefined,
     ),
   );
   const named =
@@ -107,8 +109,9 @@ export function useLead(
       ? projectLeadFound(state.value)?.session
       : undefined;
   if (named !== undefined && named !== session) setSession(named);
-  const present = projectLeadPresent(state);
-  if (present !== undefined && present === absent) setAbsent(!present);
+  const polling =
+    state.state === "Ready" ? projectLeadPolled(state.value) : undefined;
+  if (polling !== undefined && polling !== polled) setPolled(polling);
   return state;
 }
 
@@ -128,10 +131,12 @@ export function useLeadAbsenceLine(
 }
 
 /** The bar's own title, where the session stands, why no runner can take its
- * turn, how closely it needs watching, and the cursor its mailbox is at. */
+ * turn, how closely it needs watching, the cursor its mailbox is at, and the
+ * refusal kept for it where one stands. */
 function LeadTopBar(props: {
   readonly lead: LeadResponse;
   readonly runner: SessionRunnerShort | undefined;
+  readonly nowMs: number;
 }): ReactNode {
   const lead = props.lead;
   return (
@@ -150,6 +155,11 @@ function LeadTopBar(props: {
         <span className="num text-ink-3 text-sm">
           {lead.notificationCursor}
         </span>
+        {lead.refusal === undefined ? null : (
+          <span className="text-ink-3 text-sm">
+            {projectLeadRefusalLine(lead.refusal, props.nowMs)}
+          </span>
+        )}
       </div>
     </TopBarSlot>
   );
@@ -330,7 +340,7 @@ function LeadBody(props: {
   return (
     <>
       {lead === undefined ? null : (
-        <LeadTopBar lead={lead} runner={props.runner} />
+        <LeadTopBar lead={lead} runner={props.runner} nowMs={props.nowMs} />
       )}
       <LeadSelectorStrip partition={props.partition} />
       <LeadDetails

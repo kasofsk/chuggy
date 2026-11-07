@@ -1,3 +1,4 @@
+import { leadAdmissionRefusals } from "../contract/rosters.ts";
 import type { DispatchCandidate } from "./dispatchView.ts";
 import type { Partition } from "./projectStore.ts";
 import type { SelectorCycleIdentity } from "./selector.ts";
@@ -13,8 +14,8 @@ import type { SelectorCycleIdentity } from "./selector.ts";
  *
  * A PROJECT WHOSE LEAD MAY NOT TAKE A TURN IS NAMED BY WHAT STOPPED IT.
  * `HostedRunsNotGranted` is the tenant's answer on a hosted route,
- * `RunnerOffline` the project's runners' on a runner route, and
- * `AdmissionUndecided` a read that gave none, so an outage never reads as a
+ * `RunnerOffline` and `UsagePaused` the project's runners' on a runner route,
+ * and `AdmissionUndecided` a read that gave none, so an outage never reads as a
  * settled denial.
  */
 export interface SelectorRunFailure {
@@ -38,9 +39,12 @@ export interface SelectorRunFailure {
   readonly ticket?: DispatchCandidate["ticket"];
 }
 
-/** The phases a project whose lead may not take a turn is passed over under. */
-export type SelectorAdmissionPhase =
-  "HostedRunsNotGranted" | "RunnerOffline" | "AdmissionUndecided";
+/** The phases a project whose lead may not take a turn is passed over under: each refusal, and a read that gave none. */
+export const selectorAdmissionPhases = [
+  ...leadAdmissionRefusals,
+  "AdmissionUndecided",
+] as const;
+export type SelectorAdmissionPhase = (typeof selectorAdmissionPhases)[number];
 
 /**
  * Where a decision's identity comes from: drawn for a new decision, or derived

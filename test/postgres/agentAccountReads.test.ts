@@ -48,7 +48,6 @@ const defaults = {
   fiveHourPercent: 80,
   sevenDayPercent: 90,
   pausesThreads: false,
-  pausesLead: true,
 };
 
 /** One agent of `principal`'s account as the API reads it. */
@@ -144,7 +143,6 @@ test("settings are written whole for one agent, and the pause follows them at th
     fiveHourPercent: 90,
     sevenDayPercent: 100,
     pausesThreads: true,
-    pausesLead: false,
   };
   await accounts.write(owner, "Claude", raised);
   const claude = await agentOf(owner, "Claude");

@@ -29,7 +29,6 @@ export interface AgentAccountHarnessState {
     readonly fiveHourPercent: number;
     readonly sevenDayPercent: number;
     readonly pausesThreads: boolean;
-    readonly pausesLead: boolean;
   };
   readonly press?: {
     readonly pressedSecs: number;
@@ -47,15 +46,14 @@ async function agentAccountHarnessChosen(
   if (state.setting !== undefined)
     await transaction.query(
       `INSERT INTO agent_account_setting
-         (principal,agent,five_hour_percent,seven_day_percent,pauses_threads,pauses_lead)
-       VALUES($1,$2,$3,$4,$5,$6)`,
+         (principal,agent,five_hour_percent,seven_day_percent,pauses_threads)
+       VALUES($1,$2,$3,$4,$5)`,
       [
         principal,
         agent,
         state.setting.fiveHourPercent,
         state.setting.sevenDayPercent,
         state.setting.pausesThreads,
-        state.setting.pausesLead,
       ],
     );
   if (state.press !== undefined)

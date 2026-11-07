@@ -40,10 +40,11 @@ import {
   deliverPendingSelectorProposals,
   reconcileSubmittedSelectorProposals,
 } from "./selectorDeliveryRuntime.ts";
-import type {
-  SelectorAdmissionPhase,
-  SelectorIdentityFactory,
-  SelectorRunFailure,
+import {
+  selectorAdmissionPhases,
+  type SelectorAdmissionPhase,
+  type SelectorIdentityFactory,
+  type SelectorRunFailure,
 } from "./selectorRuntimeTypes.ts";
 import {
   resumeSelectorDecisions,
@@ -749,17 +750,13 @@ function selectorAdmissionChangesKey(partition: Partition): string {
   return JSON.stringify([partition.tenant, partition.project]);
 }
 
-const selectorAdmissionPhases: ReadonlySet<SelectorRunFailure["phase"]> =
-  new Set<SelectorAdmissionPhase>([
-    "HostedRunsNotGranted",
-    "RunnerOffline",
-    "AdmissionUndecided",
-  ]);
+const selectorAdmissionPhasesHeld: ReadonlySet<SelectorRunFailure["phase"]> =
+  new Set<SelectorAdmissionPhase>(selectorAdmissionPhases);
 
 function selectorAdmissionPhase(
   phase: SelectorRunFailure["phase"],
 ): phase is SelectorAdmissionPhase {
-  return selectorAdmissionPhases.has(phase);
+  return selectorAdmissionPhasesHeld.has(phase);
 }
 
 /**

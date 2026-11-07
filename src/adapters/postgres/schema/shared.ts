@@ -61,6 +61,8 @@ export const sessionPlacementSetFunction = "set_project_session_placement";
 /** The one resolution of where a session kind runs for one project. */
 export const sessionRouteFunction = "session_route";
 export const sessionRunnerStandingFunction = "session_runner_standing";
+/** Whether a live runner of one project could take its lead now, or every live one's owner is paused, and until when. */
+export const leadRunnerStandingFunction = "lead_runner_standing";
 /** The route a session's oldest queued turn was admitted on, which is the only one that may run next. */
 export const sessionWaitingRouteFunction = "session_waiting_route";
 export const forgeInstallationRecordFunction = "record_forge_installation";
@@ -154,7 +156,7 @@ export const workerRunLimitFunction = "record_worker_run_limit";
 export const agentAccountPauseFunction = "agent_account_pause";
 /** A person's thresholds and session options for one agent account, their defaults where they wrote none. */
 export const agentAccountSettingsFunction = "agent_account_settings";
-/** Whether an account's pause holds back a session of one kind, as its owner's session options say. */
+/** Whether an account's pause holds back a session of one kind: always a lead, and a thread or an inquiry as its owner's option says. */
 export const agentAccountSessionPausedFunction = "agent_account_session_paused";
 /** Each agent of one person's account: their settings, each window's newest reading, the newest limit and the pause they come to. */
 export const agentAccountStandingFunction = "agent_account_standing";
