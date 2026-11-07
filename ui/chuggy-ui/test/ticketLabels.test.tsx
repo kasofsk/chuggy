@@ -178,15 +178,17 @@ const named: Named = {
 
 test("the revision a ticket was released under stays reachable from its name", async () => {
   await drawTicket(named);
-  expect(drawn("chuggy #12").getAttribute("title")).toBe(revision);
+  const names = screen.getAllByText("chuggy #12");
+  expect(names.length).toBeGreaterThan(0);
+  for (const name of names) expect(name.getAttribute("title")).toBe(revision);
 });
 
 test("the configuration panel keeps the revision its heading no longer shows", async () => {
   await drawTicket(named);
   expect(
-    screen.getByRole("heading", { name: /Configuration chuggy #12/u }),
+    screen.getByRole("heading", { level: 2, name: "chuggy #12" }),
   ).toBeDefined();
-  expect(screen.getByText("revision").nextElementSibling?.textContent).toBe(
+  expect(document.querySelector(".config-foot")?.textContent).toContain(
     revision,
   );
 });

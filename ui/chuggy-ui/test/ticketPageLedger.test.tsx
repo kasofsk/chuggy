@@ -485,7 +485,9 @@ test("every part of the page is drawn without being opened, in order", async () 
   const names = screen
     .getAllByRole("heading", { level: 2 })
     .map((heading) => heading.textContent ?? "");
-  const order = ["Cycle 3", "Instructions", "Configuration", "Activity"];
+  /** The configuration is headed by its name, which for this ticket's
+   * unnumbered revision is the revision. */
+  const order = ["Cycle 3", "Instructions", "r1", "Activity"];
   const at = order.map((name) =>
     names.findIndex((held) => held.startsWith(name)),
   );

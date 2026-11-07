@@ -33,27 +33,6 @@ test.each([
   expect(toneWashed(tone)).toContain(`var(--tone-${tone})`);
 });
 
-test.each([
-  ["work", "live"],
-  ["evaluation", "evaluation"],
-  ["finalization", "finalization"],
-] as const)(
-  "the %s configuration is tinted by the phase it runs in",
-  (stage, tone) => {
-    const section = document.createElement("section");
-    section.className = "ticket-config-sub";
-    section.dataset["stage"] = stage;
-    const rules = sheetRules(ticketSheet, []);
-    expect(sheetDeclared(rules, section, "--stage-wash")).toBe(
-      `var(--wash-${tone})`,
-    );
-    expect(sheetDeclared(rules, section, "--stage-tone")).toBe(
-      `var(--tone-${tone})`,
-    );
-    expect(toneWashed(tone)).toContain(`var(--tone-${tone})`);
-  },
-);
-
 test.each(["live", "evaluation", "finalization", "parked"] as const)(
   "a steps column's top edge takes the %s tone it is given, and the plain edge where it is given none",
   (tone) => {

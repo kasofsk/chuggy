@@ -1,23 +1,16 @@
 /**
- * The Configuration panel over a real, non-empty canonical document, broken
- * out into the work, the evaluation and the finalization it decides.
+ * The Configuration tab over a real, non-empty canonical document: one row
+ * per step under a row per phase, each opening onto its details.
  *
  * The canonical body is read from the version 1 `chuggy-development-sonnet.json`
- * this repository declared before its catalogs, so the settings grid, the
- * Instructions and the Evaluation list are asserted against a document that
- * was really declared; the Review
- * tab, which a declared document with stages never draws, is asserted over the
- * same document with its stages taken out.
+ * this repository declared before its catalogs, so the rows are asserted
+ * against a document that was really declared; the Review row, which a
+ * declared document with stages never draws, is asserted over the same
+ * document with its stages taken out.
  */
 
 import { QueryClient } from "@tanstack/react-query";
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  within,
-} from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -44,7 +37,7 @@ import { creationCatalogCanonical } from "./ticketCreationFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import ticketSheet from "../app/browser/ticket/ticket.css?raw";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
-import { sheetDeclared, sheetRules } from "./sheet.ts";
+import { sheetDeclared, sheetNarrowCondition, sheetRules } from "./sheet.ts";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
@@ -158,15 +151,17 @@ async function drawTicket(
   await settled();
 }
 
-/** The page with every task opened and its prompt shown, which the page
+/** The page with every row opened and every prompt shown, which the page
  * draws folded. */
 async function drawExpanded(
   ...args: Parameters<typeof drawTicket>
 ): Promise<void> {
   await drawTicket(...args);
   await turned(() => {
-    for (const label of document.querySelectorAll(".ticket-config-task-label"))
-      label.closest("button")?.click();
+    for (const button of document.querySelectorAll<HTMLElement>(
+      ".config-step > .disclosure > button",
+    ))
+      button.click();
   });
   await turned(() => {
     for (const button of screen.queryAllByRole("button", {
@@ -177,26 +172,86 @@ async function drawExpanded(
   await settled();
 }
 
-test("the configuration is broken out into Work, Evaluation and Finalization", async () => {
-  await drawExpanded();
-  const headings = screen
-    .getAllByRole("heading", { level: 3 })
-    .map((heading) => heading.textContent);
-  expect(headings).toContain("Work");
-  expect(headings).toContain("Evaluation");
-  expect(
-    screen.queryAllByRole("heading", { name: /^Provenance$/iu }),
-  ).toHaveLength(0);
+/** Each phase's group, by its phase. */
+function group(phase: "Work" | "Evaluation" | "Finalization"): HTMLElement {
+  const found = document.querySelector(
+    `.config-steps-group[data-phase="${phase}"]`,
+  );
+  if (!(found instanceof HTMLElement)) throw new Error(`no ${phase} drawn`);
+  return found;
+}
+
+function groupsDrawn(): readonly string[] {
+  return [...document.querySelectorAll<HTMLElement>(".config-steps-group")].map(
+    (drawn) => drawn.dataset["phase"] ?? "",
+  );
+}
+
+/** What a group's own row says after its phase. */
+function groupNote(phase: "Work" | "Evaluation" | "Finalization") {
+  return group(phase).querySelector(".config-steps-note")?.textContent;
+}
+
+/** The rows a part of the page draws, in order. */
+function rowsIn(within: ParentNode = document): readonly HTMLElement[] {
+  return [...within.querySelectorAll<HTMLElement>(".config-step")];
+}
+
+function stepOf(row: HTMLElement): string {
+  return row.querySelector(".config-step-name > span")?.textContent ?? "";
+}
+
+/** The row of a step, by the name in its Step cell. */
+function row(step: string, within?: ParentNode): HTMLElement {
+  const found = rowsIn(within).find((held) => stepOf(held) === step);
+  if (found === undefined) throw new Error(`no ${step} row`);
+  return found;
+}
+
+/** One cell of a row, by its column. */
+function cell(
+  step: HTMLElement,
+  column: "workload" | "runs" | "model" | "overrides",
+): string | undefined {
+  return step.querySelector(`.config-step-${column}`)?.textContent ?? undefined;
+}
+
+/** What an opened row's details say, by the name over each. */
+function details(step: HTMLElement): ReadonlyMap<string, string> {
+  return new Map(
+    [...step.querySelectorAll(".config-step-detail")].map(
+      (detail) =>
+        [
+          detail.querySelector("dt")?.textContent ?? "",
+          detail.querySelector("dd")?.textContent ?? "",
+        ] as const,
+    ),
+  );
+}
+
+const overriddenWords = "overridden on this ticket";
+
+test("the configuration is drawn as one row per step under a row per phase, headed by its name", async () => {
+  await drawTicket();
+  expect(groupsDrawn()).toStrictEqual(["Work", "Evaluation"]);
+  expect(rowsIn(group("Work")).map(stepOf)).toStrictEqual(["Work"]);
+  expect(rowsIn(group("Evaluation")).map(stepOf)).toStrictEqual([
+    "Stage 1",
+    "Stage 2",
+  ]);
   expect(
     screen.getByRole("heading", {
-      name: /Configuration chuggy-development-sonnet/u,
+      level: 2,
+      name: "chuggy-development-sonnet #1",
     }),
   ).toBeDefined();
+  expect(screen.getByText("Pinned")).toBeDefined();
+  expect(screen.getByRole("link", { name: /^Catalog/u })).toBeDefined();
 });
 
 test("the sidebar names the member who filed the ticket, the whole subject on hover", async () => {
   const creator = "23:https://issuer.example/alice";
-  await drawExpanded(
+  await drawTicket(
     canonical,
     undefined,
     creator,
@@ -212,7 +267,7 @@ test("the sidebar names the member who filed the ticket, the whole subject on ho
 });
 
 test("a ticket the wire names no creator for draws no filed-by field at all", async () => {
-  await drawExpanded(
+  await drawTicket(
     canonical,
     undefined,
     undefined,
@@ -225,23 +280,26 @@ test("a ticket the wire names no creator for draws no filed-by field at all", as
   expect(screen.queryByText("Filed by")).toBeNull();
 });
 
-test("the settings grid reads the model off its own flag and the tools off the allow-list", async () => {
+test("the Work row reads the model off its own flag, and opens onto its settings", async () => {
   await drawExpanded();
-  expect(screen.getByText("Sonnet")).toBeDefined();
-  expect(screen.getByText("--model=sonnet")).toBeDefined();
-  expect(screen.getByText("Claude Code")).toBeDefined();
-  expect(screen.getByText("Single agent")).toBeDefined();
-  expect(
-    screen.getByText("Bash · Edit · Read · Write · Glob · Grep"),
-  ).toBeDefined();
-  expect(
-    screen.getByText("chuggy-github-worker · claude-code · track-record"),
-  ).toBeDefined();
-  expect(screen.getByText("Network · Workspace writable")).toBeDefined();
-  expect(screen.getByText("npm ci")).toBeDefined();
-  expect(
-    screen.getByText("Completes task").nextElementSibling?.textContent,
-  ).toBe("No");
+  const work = row("Work");
+  expect(cell(work, "runs")).toBe("Claude");
+  expect(cell(work, "model")).toBe("Sonnet");
+  expect(details(work)).toStrictEqual(
+    new Map([
+      [
+        "Arguments",
+        "--allowedTools=Bash,Edit,Read,Write,Glob,Grep --model=sonnet",
+      ],
+      ["Tools", "Bash · Edit · Read · Write · Glob · Grep"],
+      ["Credentials", "chuggy-github-worker · claude-code · track-record"],
+      ["Access", "Network · Workspace writable"],
+      ["Image", "worker@sha256:0efb9a93"],
+      ["Setup", "npm ci"],
+      ["Practices", "Regression coverage · Acceptance criteria"],
+      ["Completes task", "No"],
+    ]),
+  );
 });
 
 const workText =
@@ -249,149 +307,94 @@ const workText =
 const reviewText =
   "Read .chug/tasks/review-change.md and review the change exactly as that brief requires.";
 
-/** The Instructions block alone, since the Evaluation section below it can
- * carry the very same sentence as a stage's own instructions. */
-function instructions(): HTMLElement {
-  const region = document.querySelector(".ticket-config-instructions");
-  if (!(region instanceof HTMLElement))
-    throw new Error("no instructions block");
-  return region;
-}
-
-test("the Instructions draw the shared brief and the work's own words, and no Review where stages brief the review", async () => {
+test("the Work prompt is the shared brief and the work's own words, and holds no review", async () => {
   await drawExpanded();
+  const work = row("Work");
   expect(
-    within(instructions()).getByText(
+    within(work).getByText(
       /Develop Chuggy itself in the same repository-native/u,
     ),
   ).toBeDefined();
-  expect(within(instructions()).getByText(workText)).toBeDefined();
-  expect(within(instructions()).getByText("Regression coverage")).toBeDefined();
-  expect(within(instructions()).queryByRole("tab")).toBeNull();
-  expect(within(instructions()).queryByRole("tabpanel")).toBeNull();
-  expect(within(instructions()).queryByText(reviewText)).toBeNull();
+  expect(within(work).getByText(workText)).toBeDefined();
+  expect(within(work).queryByText(reviewText)).toBeNull();
+  expect(screen.queryByRole("tab")).toBeNull();
 });
 
-test("a configuration with no stages draws a Review tab, Work first", async () => {
+test("a configuration with no stages draws its review block as one Review row", async () => {
   const unstaged = Object.fromEntries(
     Object.entries(JSON.parse(canonical) as Record<string, unknown>).filter(
       ([key]) => key !== "evaluations",
     ),
   );
   await drawExpanded(JSON.stringify(unstaged));
-  expect(within(instructions()).queryByText(reviewText)).toBeNull();
-  await turned(() => {
-    /** Radix selects a tab on `mousedown`, not `click`, and jsdom's own
-     * `.click()` never raises the former. */
-    fireEvent.mouseDown(
-      within(instructions()).getByRole("tab", { name: "Review" }),
-    );
-  });
-  expect(within(instructions()).getByText(reviewText)).toBeDefined();
-  expect(within(instructions()).getByText("Regression coverage")).toBeDefined();
-  expect(within(instructions()).queryByText(workText)).toBeNull();
+  expect(rowsIn(group("Evaluation")).map(stepOf)).toStrictEqual(["Review"]);
+  const review = row("Review");
+  expect(within(review).getByText(reviewText)).toBeDefined();
+  expect(within(review).queryByText(workText)).toBeNull();
+  expect(details(review).get("Practices")).toBe(
+    "Regression coverage · Acceptance criteria",
+  );
 });
 
-/** The part of the configuration drawn for one phase. */
-function configurationSection(
-  stage: "work" | "evaluation" | "finalization",
-): HTMLElement {
-  const section = document.querySelector(
-    `.ticket-config-sub[data-stage="${stage}"]`,
-  );
-  if (!(section instanceof HTMLElement)) throw new Error(`no ${stage} drawn`);
-  return section;
-}
-
-/** Each task the Evaluation section draws, by the title on its folded line. */
-function stageTasks(): ReadonlyMap<string, HTMLElement> {
-  const section = document.querySelector(
-    '.ticket-config-sub[data-stage="evaluation"]',
-  );
-  return new Map(
-    [
-      ...(section?.querySelectorAll<HTMLElement>(".ticket-config-task") ?? []),
-    ].map(
-      (task) =>
-        [task.querySelector("strong")?.textContent ?? "", task] as const,
-    ),
-  );
-}
-
-function stageTask(title: string): HTMLElement {
-  const task = stageTasks().get(title);
-  if (task === undefined) throw new Error(`no ${title} task`);
-  return task;
-}
-
-test("the evaluation list draws one task per stage, its checks or its instructions and practices", async () => {
+test("a version 1 configuration's stages read Stage N, each with what runs it", async () => {
   await drawExpanded();
-  expect([...stageTasks().keys()]).toStrictEqual(["Stage 1", "Stage 2"]);
-  const check = stageTask("Stage 1");
-  expect(check.querySelector(".ticket-config-task-line")?.textContent).toBe(
-    "Commands · .chug/tasks/ci.sh",
+  const check = row("Stage 1");
+  expect(cell(check, "runs")).toBe("Commands · .chug/tasks/ci.sh");
+  expect(cell(check, "model")).toBe("—");
+  expect(details(check).get("Commands")).toBe(".chug/tasks/ci.sh");
+  const review = row("Stage 2");
+  expect(cell(review, "runs")).toBe("Claude");
+  expect(details(review).get("Practices")).toBe(
+    "Changed call paths · Acceptance criteria",
   );
-  expect(check.querySelector(".ticket-config-command")?.textContent).toBe(
-    ".chug/tasks/ci.sh",
-  );
-  const review = stageTask("Stage 2");
-  expect(review.querySelector(".ticket-config-task-line")?.textContent).toBe(
-    "Review",
-  );
-  expect(within(review).getByText("Changed call paths")).toBeDefined();
   expect(within(review).getByText(/Acceptance criteria/u)).toBeDefined();
+  expect(screen.queryByText(/^Stage \d · /u)).toBeNull();
 });
 
-/** A check is one token as often as not, and the column it stands in is as
- * narrow as the reader leaves the pages. */
-test("a stage's check breaks inside the column rather than widening it", async () => {
+/** A command is one token as often as not, and the column it stands in is as
+ * narrow as the reader leaves the page. */
+test("a detail breaks inside its column rather than widening it", async () => {
   await drawExpanded();
-  const check = stageTask("Stage 1").querySelector(".ticket-config-command");
-  if (check === null) throw new Error("no check drawn");
+  const value = row("Stage 1").querySelector(".config-step-detail dd");
+  if (value === null) throw new Error("no detail drawn");
   const rules = sheetRules(ticketSheet, []);
-  expect(sheetDeclared(rules, check, "overflow-wrap")).toBe("anywhere");
-  expect(sheetDeclared(rules, check, "min-width")).toBe("0px");
-  expect(sheetDeclared(rules, check, "max-width")).toBe("100%");
+  expect(sheetDeclared(rules, value, "overflow-wrap")).toBe("anywhere");
+  expect(sheetDeclared(rules, value, "min-width")).toBe("0px");
 });
 
-test("a version 1 configuration's evaluation draws no hint about stage order", async () => {
-  await drawExpanded();
-  expect(screen.queryByText(/Stages run in order/u)).toBeNull();
-  expect(screen.queryByText("Evaluators run side by side")).toBeNull();
+test("narrow, the column names go and a row stacks what runs it under its step", async () => {
+  await drawTicket();
+  const columns = document.querySelector(".config-steps-columns");
+  const runs = row("Work").querySelector(".config-step-runs");
+  if (columns === null || runs === null) throw new Error("no table drawn");
+  const desk = sheetRules(ticketSheet, []);
+  const narrow = sheetRules(ticketSheet, [sheetNarrowCondition]);
+  expect(sheetDeclared(desk, columns, "display")).toBe("grid");
+  expect(sheetDeclared(narrow, columns, "display")).toBe("none");
+  expect(sheetDeclared(narrow, runs, "grid-column")).toBe("2 / -1");
 });
 
-test("the panel keeps the digest and the full revision on a caption line", async () => {
-  await drawExpanded();
-  expect(screen.getByText("revision").nextElementSibling?.textContent).toBe(
-    revision,
-  );
+test("the foot keeps the digest and the full revision", async () => {
+  await drawTicket();
   expect(screen.getByText("Digest").nextElementSibling?.textContent).toBe(
     `${digest.slice(0, 12)}…${digest.slice(-6)}`,
   );
+  expect(document.querySelector(".config-foot")?.textContent).toContain(
+    revision,
+  );
 });
 
-const caption = "As configured · Exact prompt in the run's conversation";
-
-test("a ticket with no overrides is drawn as its pinned configuration, marking nothing", async () => {
+test("a ticket with no overrides marks nothing, and its Overrides column is empty", async () => {
   await drawExpanded();
-  expect(within(instructions()).getByText(caption)).toBeDefined();
+  expect(screen.queryByText(new RegExp(overriddenWords, "u"))).toBeNull();
+  expect(rowsIn().map((drawn) => cell(drawn, "overrides"))).toEqual(
+    rowsIn().map(() => ""),
+  );
   expect(screen.queryByText("Overridden")).toBeNull();
-  expect(screen.queryByText("Also overridden")).toBeNull();
-  expect(screen.queryByText("Pinned ·")).toBeNull();
   expect(screen.getByRole("button", { name: "Canonical JSON" })).toBeDefined();
 });
 
-/** The cell a field is drawn in, by the name over it. */
-function cell(name: string): HTMLElement {
-  const found = screen
-    .getAllByText(name)
-    .map((one) => one.closest(".ticket-config-cell"))
-    .find((one) => one instanceof HTMLElement);
-  if (!(found instanceof HTMLElement)) throw new Error(`no ${name} cell`);
-  return found;
-}
-
-test("a model the ticket overrode is drawn in the model's place, marked overridden", async () => {
+test("a model the ticket overrode is drawn as the row's model, named in its column and marked beside its arguments alone", async () => {
   const sonnetMode = (
     JSON.parse(canonical) as {
       readonly worker: { readonly mode: { readonly arguments: string[] } };
@@ -408,74 +411,95 @@ test("a model the ticket overrode is drawn in the model's place, marked overridd
       },
     },
   });
-  expect(within(cell("Model")).getByText("Opus")).toBeDefined();
-  expect(within(cell("Model")).getByText("--model=opus")).toBeDefined();
-  expect(within(cell("Model")).getByText("Overridden")).toBeDefined();
+  const work = row("Work");
+  expect(cell(work, "model")).toBe("Opus");
+  expect(cell(work, "overrides")).toBe("Model");
+  expect(details(work).get("Arguments")).toContain("--model=opus");
+  expect(details(work).get("Arguments")).toContain(overriddenWords);
+  expect(details(work).get("Setup")).toBe("npm ci");
+  expect(screen.getAllByText(new RegExp(overriddenWords, "u"))).toHaveLength(1);
   expect(screen.queryByText("Sonnet")).toBeNull();
-  expect(within(cell("Setup")).queryByText("Overridden")).toBeNull();
-  expect(screen.getByText("Pinned ·")).toBeDefined();
-  expect(
-    screen.getByRole("button", { name: "Pinned canonical JSON" }),
-  ).toBeDefined();
-  expect(screen.getByText("revision").nextElementSibling?.textContent).toBe(
-    revision,
-  );
 });
 
-test("an override the panel has no place for is listed under it by name, with its value", async () => {
+test("an override is drawn once, beside its value, whatever field it is", async () => {
   await drawExpanded(canonical, {
     worker: { files: [{ path: "notes.md", content: "remember this" }] },
   });
-  expect(screen.getByText("Also overridden")).toBeDefined();
-  const listed = screen.getByText("worker.files").closest("div");
-  expect(listed?.textContent).toContain("remember this");
-  expect(listed?.textContent).toContain("notes.md");
+  const work = row("Work");
+  expect(cell(work, "overrides")).toBe("Files");
+  expect(details(work).get("Files")).toBe(`notes.md · ${overriddenWords}`);
+  expect(screen.getAllByText(new RegExp(overriddenWords, "u"))).toHaveLength(1);
 });
 
-test("instructions the ticket overrode are drawn as the override, and the caption no longer says as configured", async () => {
+test("instructions the ticket overrode are its prompt, marked over them", async () => {
   await drawExpanded(canonical, {
     work: { instructions: ["Do it the overridden way."] },
   });
+  const work = row("Work");
+  expect(cell(work, "overrides")).toBe("Work instructions");
+  expect(within(work).getByText("Do it the overridden way.")).toBeDefined();
+  expect(within(work).queryByText(workText)).toBeNull();
   expect(
-    within(instructions()).getByText("Do it the overridden way."),
-  ).toBeDefined();
-  expect(within(instructions()).queryByText(workText)).toBeNull();
-  expect(within(instructions()).queryByText(caption)).toBeNull();
-  expect(
-    within(instructions()).getByText(
-      "With overrides · Exact prompt in the run's conversation",
-    ),
-  ).toBeDefined();
-  const heading = within(instructions()).getByRole("heading", {
-    name: /^Instructions/u,
-  });
-  expect(within(heading).getByText("Overridden")).toBeDefined();
+    within(work).getByRole("heading", { name: /^Instructions/u }).textContent,
+  ).toBe(`Instructions · ${overriddenWords}`);
 });
 
-test("a catalog draws what the ticket selected of it: its work's prompt, its plan's stages and its finalizer", async () => {
+test("a catalog draws what the ticket selected of it: its work, its plan's stages in order and its landing", async () => {
   await drawExpanded(creationCatalogCanonical, undefined, undefined, {
     evaluation: "gated",
     finalization: "approved",
   });
-  expect(within(cell("Work")).getByText("build")).toBeDefined();
-  expect(within(cell("Evaluation")).getByText("gated")).toBeDefined();
-  const work = configurationSection("work");
-  expect(work.querySelector(".ticket-config-task strong")?.textContent).toBe(
-    "build",
-  );
-  expect(within(work).getAllByText("prompts/build.md").length).toBeGreaterThan(
-    0,
-  );
+  expect(groupsDrawn()).toStrictEqual(["Work", "Evaluation", "Finalization"]);
+  const work = row("Work");
+  expect(cell(work, "workload")).toBe("build");
+  expect(cell(work, "runs")).toBe("Claude · prompts/build.md");
   expect(within(work).getByText(/^Build it\./u)).toBeDefined();
-  expect(
-    within(stageTask("Stage 2 · gates")).getAllByText("npm test").length,
-  ).toBeGreaterThan(0);
-  const finalization = configurationSection("finalization");
-  expect(
-    within(finalization).getByText("Finalizer").nextElementSibling?.textContent,
-  ).toBe("approved");
-  expect(within(finalization).getByText(/Approved first/u)).toBeDefined();
+  expect(rowsIn(group("Evaluation")).map(stepOf)).toStrictEqual([
+    "review",
+    "review",
+    "review",
+    "gates",
+  ]);
+  const gates = row("gates");
+  expect(cell(gates, "workload")).toBeUndefined();
+  expect(cell(gates, "runs")).toBe("Commands · npm test");
+  expect(details(row("Landing", group("Finalization")))).toStrictEqual(
+    new Map([["Approval", "Required"]]),
+  );
   expect(screen.queryByText("Do it fast.")).toBeNull();
+});
+
+test("a stage of two evaluators is a row with a row per evaluator under it", async () => {
+  await drawTicket(creationCatalogCanonical, undefined, undefined, {
+    evaluation: "gated",
+  });
+  const [stage, ...evaluators] = rowsIn(group("Evaluation"));
+  if (stage === undefined) throw new Error("no stage drawn");
+  expect(cell(stage, "runs")).toBe("2 side by side");
+  expect(stage.querySelector("button")).toBeNull();
+  expect(stage.dataset["nested"]).toBeUndefined();
+  expect(
+    evaluators.map((drawn) => [stepOf(drawn), drawn.dataset["nested"]]),
+  ).toStrictEqual([
+    ["review", "true"],
+    ["review", "true"],
+    ["gates", undefined],
+  ]);
+});
+
+test("the selection's default is said once, in its group's row", async () => {
+  await drawTicket(creationCatalogCanonical);
+  expect(groupNote("Work")).toBe("default");
+  expect(groupNote("Evaluation")).toBe("plan review · default");
+  expect(groupNote("Finalization")).toBe("finalizer land · default");
+  expect(screen.getAllByText(/default$/u)).toHaveLength(3);
+  cleanup();
+  await drawTicket(creationCatalogCanonical, undefined, undefined, {
+    work: "quick",
+    evaluation: "gated",
+  });
+  expect(groupNote("Work")).toBeUndefined();
+  expect(groupNote("Evaluation")).toBe("plan gated");
 });
 
 /** The fixture catalog with its defaults naming the revision its tickets follow. */
@@ -489,29 +513,18 @@ function catalogFollowing(configuration: string): string {
   });
 }
 
-test("a catalog ticket draws the revision it runs on: its own choice, else its catalog's default, else Pinned", async () => {
+test("a catalog ticket's heading says the revision it runs on: its own choice, else its catalog's default, else Pinned", async () => {
   const cases = [
-    [
-      creationCatalogCanonical,
-      { configuration: "Latest" },
-      "Latest",
-      "Selected",
-    ],
-    [
-      catalogFollowing("Latest"),
-      { configuration: "Pinned" },
-      "Pinned",
-      "Selected",
-    ],
-    [catalogFollowing("Latest"), undefined, "Latest", "Default"],
-    [creationCatalogCanonical, undefined, "Pinned", "Default"],
+    [creationCatalogCanonical, { configuration: "Latest" }, "Latest"],
+    [catalogFollowing("Latest"), { configuration: "Pinned" }, "Pinned"],
+    [catalogFollowing("Latest"), undefined, "Latest"],
+    [creationCatalogCanonical, undefined, "Pinned"],
   ] as const;
-  for (const [served, selection, value, meta] of cases) {
-    await drawExpanded(served, undefined, undefined, selection);
-    const cell = screen.getByText("Version").closest(".ticket-config-cell");
-    if (!(cell instanceof HTMLElement)) throw new Error("no Version cell");
-    expect(within(cell).getByText(value)).toBeDefined();
-    expect(within(cell).getByText(meta)).toBeDefined();
+  for (const [served, selection, value] of cases) {
+    await drawTicket(served, undefined, undefined, selection);
+    const heading = document.querySelector(".config-heading");
+    if (!(heading instanceof HTMLElement)) throw new Error("no heading");
+    expect(within(heading).getByText(value)).toBeDefined();
     cleanup();
   }
 });
@@ -535,7 +548,7 @@ test("a following ticket held on its revision, or trimmed, says why in one line,
     [undefined, undefined],
   ] as const;
   for (const [following, line] of cases) {
-    await drawExpanded(
+    await drawTicket(
       catalogFollowing("Latest"),
       undefined,
       undefined,
@@ -550,59 +563,43 @@ test("a following ticket held on its revision, or trimmed, says why in one line,
   }
 });
 
-/** A catalog stage of several evaluators is drawn as a list of them, so the row says they do not run one after another. */
-test("a catalog plan draws its stages in order, and says a stage's several evaluators run side by side", async () => {
-  await drawExpanded(creationCatalogCanonical, undefined, undefined, {
-    evaluation: "gated",
-    finalization: "approved",
-  });
-  expect(screen.queryByText(/Stages run in order/u)).toBeNull();
-  expect([...stageTasks().keys()]).toStrictEqual([
-    "Stage 1 · review",
-    "Stage 2 · gates",
-  ]);
-  expect(
-    within(stageTask("Stage 1 · review")).getByText(
-      "Evaluators run side by side",
-    ),
-  ).toBeDefined();
-  expect(
-    within(stageTask("Stage 2 · gates")).queryByText(
-      "Evaluators run side by side",
-    ),
-  ).toBeNull();
-});
-
-test("a catalog ticket is drawn under its workload overrides, the workload and its fields marked", async () => {
+test("a catalog ticket is drawn under its workload overrides, each named on its own row", async () => {
   await drawExpanded(
     creationCatalogCanonical,
-    { workloads: { build: { prompt: { text: "Build it twice." } } } },
+    {
+      workloads: {
+        build: { prompt: { text: "Build it twice." }, resources: { cpus: 4 } },
+      },
+    },
     undefined,
-    undefined,
+    { evaluation: "gated" },
   );
-  expect(screen.getByText("Build it twice.")).toBeDefined();
+  const work = row("Work");
+  expect(cell(work, "overrides")).toBe("Prompt · 4 CPUs");
+  expect(details(work).get("CPUs")).toBe(`4 · ${overriddenWords}`);
+  expect(within(work).getByText("Build it twice.")).toBeDefined();
   expect(screen.queryByText("Build it.")).toBeNull();
-  expect(screen.getAllByText("Overridden").length).toBeGreaterThan(0);
-  expect(screen.getByText("prompt")).toBeDefined();
-  expect(screen.getByText("Pinned ·")).toBeDefined();
+  expect(cell(row("gates"), "overrides")).toBe("");
 });
 
-test("the tasks are folded until asked for, and each opens onto a YAML view of its definition", async () => {
+test("the rows are folded until asked for, and each opens onto a YAML view of its definition", async () => {
   await drawTicket();
   expect(screen.queryByRole("button", { name: "YAML" })).toBeNull();
+  const work = row("Work").querySelector("button");
+  expect(work?.getAttribute("aria-expanded")).toBe("false");
   await turned(() => {
-    document
-      .querySelector(".ticket-config-task-label")
-      ?.closest("button")
-      ?.click();
+    work?.click();
   });
-  const toggles = screen.getAllByRole("button", { name: "YAML" });
-  expect(toggles.length).toBeGreaterThan(0);
-  expect(toggles[0]?.getAttribute("aria-expanded")).toBe("false");
+  expect(work?.getAttribute("aria-expanded")).toBe("true");
+  const toggle = within(row("Work")).getByRole("button", { name: "YAML" });
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
   await turned(() => {
-    toggles[0]?.click();
+    toggle.click();
   });
-  expect(toggles[0]?.getAttribute("aria-expanded")).toBe("true");
+  expect(toggle.getAttribute("aria-expanded")).toBe("true");
+  expect(
+    within(row("Work")).getByText(/allowedTools/u, { selector: "pre" }),
+  ).toBeDefined();
 });
 
 /** A brief that names how its work is finalized, and nothing else of note. */
@@ -613,27 +610,12 @@ const briefFinalized = {
   finalization: { kind: "PullRequest", target: "refs/heads/release" },
 } as const;
 
-/** The method that brief's finalization is drawn as. */
-const briefFinalizationMethod = finalizationLine(briefFinalized.finalization);
-
-/** The cells Finalization draws, by the name over each. */
-function finalizationCells(): ReadonlyMap<string, string> {
-  return new Map(
-    [
-      ...configurationSection("finalization").querySelectorAll(
-        ".ticket-config-cell",
-      ),
-    ].map(
-      (cell) =>
-        [
-          cell.querySelector(".eyebrow")?.textContent ?? "",
-          cell.querySelector(".ticket-config-value")?.textContent ?? "",
-        ] as const,
-    ),
-  );
+/** The landing a brief's finalization is drawn as. */
+function landing(): HTMLElement {
+  return row("Landing", group("Finalization"));
 }
 
-test("a version 1 ticket's Finalization is the method its brief names, and is not drawn where the brief names none", async () => {
+test("a version 1 ticket's landing is the one its brief names, and no Finalization is drawn where it names none", async () => {
   await drawTicket(
     canonical,
     undefined,
@@ -642,17 +624,15 @@ test("a version 1 ticket's Finalization is the method its brief names, and is no
     undefined,
     briefFinalized,
   );
-  expect(finalizationCells()).toStrictEqual(
-    new Map([["Method", briefFinalizationMethod]]),
+  expect(cell(landing(), "runs")).toBe(
+    finalizationLine(briefFinalized.finalization),
   );
   cleanup();
   await drawTicket();
-  expect(
-    document.querySelector('.ticket-config-sub[data-stage="finalization"]'),
-  ).toBeNull();
+  expect(groupsDrawn()).not.toContain("Finalization");
 });
 
-test("a catalog ticket's Finalization is the brief's method before its finalizer's, beside the finalizer it lands through", async () => {
+test("a catalog ticket's landing is the brief's before its finalizer's, under the finalizer it lands through", async () => {
   await drawTicket(
     creationCatalogCanonical,
     undefined,
@@ -661,17 +641,15 @@ test("a catalog ticket's Finalization is the brief's method before its finalizer
     undefined,
     briefFinalized,
   );
-  expect(finalizationCells()).toStrictEqual(
-    new Map([
-      ["Method", briefFinalizationMethod],
-      ["Finalizer", "approved"],
-    ]),
+  expect(cell(landing(), "runs")).toBe(
+    finalizationLine(briefFinalized.finalization),
   );
+  expect(groupNote("Finalization")).toBe("finalizer approved");
 });
 
 /** A policy orders a git merge alone, so it is drawn beside a git merge's
- * method and beside no other kind's. */
-test("a git merge's Finalization draws its policy beside its method", async () => {
+ * landing and beside no other kind's. */
+test("a git merge's landing opens onto its policy", async () => {
   const merged = {
     ...briefFinalized,
     finalization: {
@@ -689,15 +667,16 @@ test("a git merge's Finalization draws its policy beside its method", async () =
     undefined,
     merged,
   );
-  expect(finalizationCells()).toStrictEqual(
-    new Map([
-      ["Method", "Pull request, then merge · into refs/heads/release"],
-      ["Policy", "Serialized"],
-    ]),
+  await turned(() => {
+    landing().querySelector("button")?.click();
+  });
+  expect(cell(landing(), "runs")).toBe(
+    "Pull request, then merge · into refs/heads/release",
   );
+  expect(details(landing())).toStrictEqual(new Map([["Policy", "Serialized"]]));
 });
 
-test("a catalog with no finalizer for the ticket draws no Finalizer, and says no method was named", async () => {
+test("a catalog with no finalizer for the ticket draws its landing with nothing to run it", async () => {
   const unfinalized = JSON.parse(creationCatalogCanonical) as {
     finalizers?: unknown;
     readonly defaults: { finalization?: unknown };
@@ -705,5 +684,7 @@ test("a catalog with no finalizer for the ticket draws no Finalizer, and says no
   delete unfinalized.finalizers;
   delete unfinalized.defaults.finalization;
   await drawTicket(JSON.stringify(unfinalized));
-  expect(finalizationCells()).toStrictEqual(new Map([["Method", "—"]]));
+  expect(cell(landing(), "runs")).toBe("—");
+  expect(groupNote("Finalization")).toBeUndefined();
+  expect(landing().querySelector("button")).toBeNull();
 });

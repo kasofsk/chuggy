@@ -329,17 +329,18 @@ test("a member changes the model, saves, resumes, and the page draws the new mod
   });
   expect(screen.queryByRole("status", { name: "Needs you" })).toBeNull();
 
-  const work = document.querySelector('.ticket-config-sub[data-stage="work"]');
-  if (!(work instanceof HTMLElement)) throw new Error("no Work drawn");
-  expect(work.querySelector(".ticket-config-task-line")?.textContent).toContain(
-    "Overridden",
+  const work = screen.getByRole("button", { name: /^Work/u });
+  expect(work.querySelector(".config-step-overrides")?.textContent).toBe(
+    "Model",
   );
   await turned(() => {
-    within(work).getByRole("button", { name: /^Work/u }).click();
+    work.click();
   });
   await settled();
-  const model = within(work).getByText("--model=opus");
-  expect(model.closest("div")?.textContent).toContain("Overridden");
+  const model = screen.getByText(/--model=opus/u);
+  expect(model.closest("dd")?.textContent).toContain(
+    "overridden on this ticket",
+  );
 });
 
 test("Save overrides stays busy until the ticket the change answered has been read again", async () => {
