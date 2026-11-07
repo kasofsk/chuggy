@@ -1,7 +1,8 @@
 /**
  * The header's ⋯ menu: Revoke, which asks before it submits, Duplicate where
- * it is not the header's main action, and Copy link, which stays open to say
- * it copied. A menu with nothing in it is not drawn.
+ * it is not the header's main action, Copy link, which stays open to say it
+ * copied, and a draft's Delete, which asks as Revoke does. A menu with nothing
+ * in it is not drawn.
  */
 
 import { Link } from "@tanstack/react-router";
@@ -43,12 +44,15 @@ interface TicketHeaderMenuProps {
   readonly duplicate: boolean;
   readonly busy: boolean;
   readonly onChoose: (action: TicketAction) => void;
+  /** Deletes the draft, where the menu offers it. */
+  readonly onDelete?: (() => void) | undefined;
 }
 
 function TicketHeaderMenuItems(
   props: TicketHeaderMenuProps & {
     readonly copy: CopyPress | undefined;
     readonly onRevoking: () => void;
+    readonly onDeleting: () => void;
   },
 ): ReactNode {
   const copy = props.copy;
@@ -94,6 +98,15 @@ function TicketHeaderMenuItems(
           {copy.copied ? "Copied" : "Copy link"}
         </DropdownMenu.Item>
       )}
+      {props.onDelete === undefined ? null : (
+        <DropdownMenu.Item
+          className={menuItemClassName}
+          disabled={props.busy}
+          onSelect={props.onDeleting}
+        >
+          Delete draft…
+        </DropdownMenu.Item>
+      )}
     </MenuContent>
   );
 }
@@ -101,8 +114,14 @@ function TicketHeaderMenuItems(
 export function TicketHeaderMenu(props: TicketHeaderMenuProps): ReactNode {
   const copy = useCopyPress();
   const [revoking, setRevoking] = useState(false);
-  const revoke = props.revoke;
-  if (revoke === undefined && !props.duplicate && copy === undefined)
+  const [deleting, setDeleting] = useState(false);
+  const { revoke, onDelete } = props;
+  if (
+    revoke === undefined &&
+    !props.duplicate &&
+    copy === undefined &&
+    onDelete === undefined
+  )
     return null;
   return (
     <>
@@ -120,6 +139,9 @@ export function TicketHeaderMenu(props: TicketHeaderMenuProps): ReactNode {
             onRevoking={() => {
               setRevoking(true);
             }}
+            onDeleting={() => {
+              setDeleting(true);
+            }}
           />
         </DropdownMenu.Portal>
       </DropdownMenu.Root>
@@ -136,6 +158,18 @@ export function TicketHeaderMenu(props: TicketHeaderMenuProps): ReactNode {
           }}
         >
           Ends this ticket and parks its dependents. Can't be undone.
+        </TicketActionConfirm>
+      )}
+      {onDelete === undefined ? null : (
+        <TicketActionConfirm
+          title="Delete this draft?"
+          confirm="Delete draft"
+          danger
+          open={deleting}
+          onOpenChange={setDeleting}
+          onConfirm={onDelete}
+        >
+          Can't be undone.
         </TicketActionConfirm>
       )}
     </>

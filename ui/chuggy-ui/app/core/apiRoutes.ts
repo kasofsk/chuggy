@@ -1088,6 +1088,25 @@ export function apiDraft(
   );
 }
 
+/** A draft deleted, fenced at the version it was read at. */
+export function apiDeleteDraft(
+  ports: ApiPorts,
+  partition: PartitionIdentity,
+  ticket: number,
+  expectedVersion: number,
+): Promise<ApiResult<DraftResponse>> {
+  return apiRead(
+    ports,
+    {
+      method: "DELETE",
+      path: apiPath(apiSegments(partition, "drafts", ticket), {
+        expectedVersion,
+      }),
+    },
+    (value) => draftResponseSchema.parse(value),
+  );
+}
+
 /** One page of the drafts a project still holds open, which a released or deleted one is not among. */
 export function apiDrafts(
   ports: ApiPorts,

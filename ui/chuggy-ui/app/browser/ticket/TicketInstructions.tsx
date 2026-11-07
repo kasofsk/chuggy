@@ -13,7 +13,6 @@ import type { ReactNode, RefObject } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { TicketResponse } from "../../../../../src/contract/responses.ts";
-import type { PanelState } from "../../core/freshness.ts";
 import { TicketBriefImages } from "../TicketProvenance.tsx";
 import { Button } from "../ui/Button.tsx";
 import { MarkdownReport } from "../ui/MarkdownReport.tsx";
@@ -147,14 +146,13 @@ function InstructionsIntent(props: {
 
 export function TicketInstructions(props: {
   readonly partition: PartitionIdentity;
-  readonly state: PanelState<TicketResponse>;
+  readonly brief: TicketResponse["brief"];
   /** How the folded text is told to overflow; the layout's own unless a test supplies one. */
   readonly measure?: InstructionsMeasure;
   /** What sits at the right of the heading. */
   readonly aside?: ReactNode;
 }): ReactNode {
-  const ticket = props.state.state === "Ready" ? props.state.value : undefined;
-  const intent = ticket?.brief?.intent;
+  const intent = props.brief?.intent;
   return (
     <section
       id="ticket-instructions"
@@ -167,7 +165,7 @@ export function TicketInstructions(props: {
         measure={props.measure ?? measured}
         aside={props.aside}
       />
-      <TicketBriefImages partition={props.partition} state={props.state} />
+      <TicketBriefImages partition={props.partition} brief={props.brief} />
     </section>
   );
 }

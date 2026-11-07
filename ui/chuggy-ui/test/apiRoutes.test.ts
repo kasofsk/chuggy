@@ -31,6 +31,7 @@ import {
   apiConfigurations,
   apiConfigureProjectRepository,
   apiDeregisterMemberRunner,
+  apiDeleteDraft,
   apiDeregisterPersonalRunner,
   apiDispatchView,
   apiExecutions,
@@ -888,4 +889,19 @@ test("a stop gives its door less time than another request is given, and is unre
   expect(outcomes).toStrictEqual(["Unreachable"]);
   expect(apiStopTimeoutMs).toBeLessThan(apiTimeoutMsDefault);
   vi.useRealTimers();
+});
+
+/** A draft is deleted by its address and the version in its query, never by a
+ * body. */
+test("a draft is deleted at its own address, fenced at the version it was read at", async () => {
+  const held = recordingRequests(() => ({}));
+  await apiDeleteDraft(held.ports, partition, 12, 3);
+  expect(
+    held.requests.map(
+      (request) =>
+        `${request.init.method} ${request.url} ${String(request.init.body)}`,
+    ),
+  ).toStrictEqual([
+    `DELETE ${partitionPath}/drafts/12?expectedVersion=3 undefined`,
+  ]);
 });

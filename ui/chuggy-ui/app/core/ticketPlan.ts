@@ -2,9 +2,9 @@
  * What a ticket will run, step by step, as its configuration and its release
  * say: the work, each evaluation stage with its evaluators, and how it lands.
  *
- * THE STAGES ARE THE PROGRAM THE TICKET WAS RELEASED WITH, and the names are
- * its catalog's selected plan's, laid over that program by position, as the
- * catalog initializes one. A version 1 configuration names no stages, so its
+ * THE STAGES ARE THE PROGRAM THE TICKET WAS RELEASED WITH, or the one a draft
+ * never released holds, and the names are its catalog's selected plan's, laid
+ * over that program by position, as the catalog initializes one. A version 1 configuration names no stages, so its
  * stages and evaluators are named by their numbers; a configuration not read
  * yet is the same.
  *
@@ -104,9 +104,16 @@ function ticketPlanProgram(
 
 type TicketPlanFinalization = { readonly mode: BriefFinalizationMode };
 
+/** What a plan is read from: a released ticket's own read, or a draft's
+ * authoring as it stands. */
+export type TicketPlanned = Pick<
+  TicketResponse,
+  "selection" | "brief" | "program"
+>;
+
 export function ticketPlanOf(
   canonical: string | undefined,
-  ticket: TicketResponse | undefined,
+  ticket: TicketPlanned | undefined,
 ): TicketPlan {
   const catalog =
     canonical === undefined ? undefined : configurationCatalogOf(canonical);

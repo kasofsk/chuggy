@@ -1,6 +1,7 @@
 /**
- * The question a dispatch or a revoke is asked before it is sent, in a dialog
- * over the page: what it does, then Cancel and the button that sends it.
+ * The question a dispatch, a revoke or a draft's deletion is asked before it
+ * is sent, in a dialog over the page: what it does, then Cancel and the button
+ * that sends it.
  */
 
 import type { ReactNode } from "react";

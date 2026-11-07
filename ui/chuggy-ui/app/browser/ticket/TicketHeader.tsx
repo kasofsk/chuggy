@@ -11,8 +11,10 @@ import type { ReactNode, RefObject } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { runNowElapsedFigure } from "../../core/runNow.ts";
-import type { TicketHeaderFragment } from "../../core/ticketHeader.ts";
-import type { TicketListStanding } from "../../core/ticketListView.ts";
+import type {
+  TicketHeaderFragment,
+  TicketStateStanding,
+} from "../../core/ticketHeader.ts";
 import { Figure } from "../ui/Figure.tsx";
 import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
 import { TicketStateLabel } from "./TicketStateLabel.tsx";
@@ -93,7 +95,7 @@ function TicketHeaderTitle(props: {
 export function TicketHeader(props: {
   readonly ticket: number;
   readonly title: string;
-  readonly standing: TicketListStanding;
+  readonly standing: TicketStateStanding;
   readonly fragment: TicketHeaderFragment;
   readonly nowMs: number;
   readonly actions: ReactNode;
