@@ -334,7 +334,10 @@ function home(): Home {
   for (const made of [kept, beside, folder, running, bin]) mkdirSync(made);
   symlinkSync(real("git"), join(bin, "git"));
   writeFileSync(join(root, "registrar.mjs"), registrar(running));
-  writeFileSync(opener, `#!/bin/sh\nprintf '%s' "$1" > "${record}"\n`);
+  writeFileSync(
+    opener,
+    `#!/bin/sh\nprintf '%s' "$1" > "${record}.part" && /bin/mv "${record}.part" "${record}"\n`,
+  );
   chmodSync(opener, 0o755);
   const preload = `--import ${JSON.stringify(join(root, "registrar.mjs"))}`;
   const written: string[] = [];
