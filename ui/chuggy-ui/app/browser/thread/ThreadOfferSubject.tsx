@@ -67,6 +67,17 @@ function ThreadOfferSubjectIntent(props: {
   );
 }
 
+/** The canonical text of the draft's configuration, once it is read. */
+function useDraftCanonical(
+  partition: PartitionIdentity,
+  draft: DraftResponse,
+): string | undefined {
+  const state = usePanelState(
+    configurationQuery(partition, draft.configurationRevision, "Streamed"),
+  );
+  return state.state === "Ready" ? state.value.canonical : undefined;
+}
+
 /** The catalog's work and plan the draft selects, and whether its program
  * runs all of that plan, once its configuration is read. */
 function ThreadOfferDraftPlan(props: {
@@ -74,15 +85,8 @@ function ThreadOfferDraftPlan(props: {
   readonly draft: DraftResponse;
 }): ReactNode {
   const { draft } = props;
-  const state = usePanelState(
-    configurationQuery(
-      props.partition,
-      draft.configurationRevision,
-      "Streamed",
-    ),
-  );
-  if (state.state !== "Ready") return null;
-  const canonical = state.value.canonical;
+  const canonical = useDraftCanonical(props.partition, draft);
+  if (canonical === undefined) return null;
   const catalog = configurationCatalogOf(canonical);
   const selected =
     catalog === undefined
@@ -105,6 +109,28 @@ function ThreadOfferDraftPlan(props: {
         value={short ? "Partial plan" : "Whole plan"}
       />
     </>
+  );
+}
+
+/** Where the work lands: the brief's landing, or where it names none, the
+ * landing of the finalizer the draft selects from its catalog. */
+function ThreadOfferDraftLanding(props: {
+  readonly partition: PartitionIdentity;
+  readonly draft: DraftResponse;
+}): ReactNode {
+  const { draft } = props;
+  const canonical = useDraftCanonical(props.partition, draft);
+  const catalog =
+    canonical === undefined ? undefined : configurationCatalogOf(canonical);
+  const finalization =
+    catalog === undefined
+      ? undefined
+      : configurationCatalogSelected(catalog, draft.selection).finalization;
+  const landing =
+    draft.brief?.finalization ??
+    catalog?.finalizers.find((held) => held.name === finalization)?.landing;
+  return landing === undefined ? null : (
+    <FinalizationLanding landing={landing} />
   );
 }
 
@@ -150,9 +176,7 @@ function ThreadOfferDraftSettings(props: {
       {brief?.branch === undefined ? null : (
         <SummaryCell name="Branch" value={<code>{brief.branch}</code>} />
       )}
-      {brief?.finalization === undefined ? null : (
-        <FinalizationLanding landing={brief.finalization} />
-      )}
+      <ThreadOfferDraftLanding partition={props.partition} draft={draft} />
       {checks.length === 0 ? null : (
         <SummaryCell
           name="Checks"

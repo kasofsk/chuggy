@@ -90,6 +90,7 @@ function served(
   draft: unknown = creationDraft,
   ticket: unknown = pendingTicket,
   replies: (() => Response)[] = [],
+  canonical: string = creationCatalogCanonical,
 ) {
   return scriptedFetch((request: SentRequest) => {
     if (request.url.includes("/offer-replies"))
@@ -105,7 +106,7 @@ function served(
       return answer({
         partition: atlas,
         revision: "r3",
-        canonical: creationCatalogCanonical,
+        canonical,
         digest: creationDigest,
       });
     if (request.url.includes("/drafts/12")) return answer(draft);
@@ -341,6 +342,24 @@ test("a release card draws the draft it offers: its title, its intent and the se
   expect(card.textContent).toContain("Planreview");
   expect(card.textContent).toContain("ProgramWhole plan");
   expect(screen.getByRole("button", { name: "Confirm" })).toBeDefined();
+});
+
+test("a release card whose brief names no landing draws the landing of the finalizer it selects", async () => {
+  const catalog = JSON.parse(creationCatalogCanonical) as {
+    finalizers: Record<string, object>;
+  };
+  catalog.finalizers["land"] = {
+    approvalRequired: false,
+    landing: { mode: "PullRequest", target: "main" },
+  };
+  await drawn(
+    release,
+    served(creationDraft, pendingTicket, [], JSON.stringify(catalog)),
+  );
+
+  expect(screen.getByRole("region", { name: "Offer" }).textContent).toContain(
+    "MethodPull request · into main",
+  );
 });
 
 test("a revoke card draws the ticket it offers: its title, its phase and its intent", async () => {
