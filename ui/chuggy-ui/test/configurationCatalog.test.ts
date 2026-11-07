@@ -16,6 +16,7 @@ import { configurationFollowings } from "../../../src/contract/configurationDocu
 import {
   creationCatalogCanonical,
   creationCatalogOffer,
+  creationCatalogStagesNamedCanonical,
   creationInitialization,
 } from "./ticketCreationFixture.ts";
 
@@ -247,6 +248,17 @@ test("an initialization whose configuration is no catalog is left as read", () =
       evaluation: "gated",
     }),
   ).toBe(creationInitialization);
+});
+
+test("a plan's choice draws its stages by the names they are written under, spaces and all", () => {
+  const read = configurationCatalogOf(creationCatalogStagesNamedCanonical);
+  if (read === undefined) throw new Error("the fixture is a catalog");
+  expect(
+    configurationCatalogChoices(read).evaluation.map((choice) => choice.text),
+  ).toStrictEqual([
+    "review (default) · review",
+    "gated · Code Review → Checks · étape 2",
+  ]);
 });
 
 test("each choice marks the catalog's default", () => {

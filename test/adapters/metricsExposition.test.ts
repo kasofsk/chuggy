@@ -63,6 +63,20 @@ test("a label value escapes its backslash, double quote and line feed, and help 
   assert.equal(page.split("\n").length, 4, "no value breaks a line");
 });
 
+test("a label value of free text, a stage's name with a space or a letter past ASCII, is written as it is in both formats", () => {
+  const family: MetricsFamily = {
+    type: "counter",
+    name: "chuggy_staged_total",
+    help: "Staged.",
+    samples: [{ labels: { stage: "Code Review · étape" }, value: 1 }],
+  };
+  const sample = 'chuggy_staged_total{stage="Code Review · étape"} 1';
+  assert.ok(metricsExposition([family]).split("\n").includes(sample));
+  assert.ok(
+    metricsExpositionOpenMetrics([family]).split("\n").includes(sample),
+  );
+});
+
 test("a histogram's buckets count everything at or below them and end at +Inf, then its sum and its count", () => {
   assert.equal(
     metricsExposition([

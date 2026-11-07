@@ -25,7 +25,10 @@ import {
   ScreenHarness,
   settled,
 } from "./screenHarness.tsx";
-import { creationCatalogCanonical } from "./ticketCreationFixture.ts";
+import {
+  creationCatalogCanonical,
+  creationCatalogStagesNamedCanonical,
+} from "./ticketCreationFixture.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
@@ -106,6 +109,7 @@ const versionOne = JSON.stringify({ image: "an-image" });
 const canonicals: Readonly<Record<string, string>> = {
   r4: creationCatalogCanonical,
   r2: creationCatalogCanonical,
+  r3: creationCatalogStagesNamedCanonical,
   r5: versionOne,
 };
 
@@ -209,6 +213,20 @@ test("an entry the address names is shown beside the list, with what it uses and
   expect(
     screen.getByRole("link", { name: /^gated/u }).getAttribute("aria-current"),
   ).toBe("true");
+});
+
+test("a plan whose stages are named in free text is listed and shown under those names", async () => {
+  await drawPage({ configuration: "r3", entry: "plans/gated" }, [
+    listed("r3", "chuggy-development", 3, true),
+  ]);
+  expect(
+    within(screen.getByRole("region", { name: "Evaluation plans" })).getByText(
+      "Code Review → Checks · étape 2",
+    ),
+  ).toBeTruthy();
+  const detail = screen.getByRole("article", { name: "gated" });
+  expect(within(detail).getByText("Stage 1 · Code Review")).toBeTruthy();
+  expect(within(detail).getByText("Stage 2 · Checks · étape 2")).toBeTruthy();
 });
 
 test("an entry the catalog does not hold is said to be missing", async () => {
