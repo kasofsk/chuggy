@@ -10,13 +10,12 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
-import { runNowElapsedFigure } from "../../core/runNow.ts";
 import type {
   TicketHeaderFragment,
   TicketStateStanding,
 } from "../../core/ticketHeader.ts";
-import { Figure } from "../ui/Figure.tsx";
 import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
+import { TicketRunTime } from "./TicketRunTime.tsx";
 import { TicketStateLabel } from "./TicketStateLabel.tsx";
 
 import "./ticket.css";
@@ -55,7 +54,7 @@ function TicketHeaderFragmentDrawn(props: {
       return (
         <span className="ticket-header-fragment">
           {`${fragment.step} · `}
-          <Figure figure={runNowElapsedFigure(fragment.since, props.nowMs)} />
+          <TicketRunTime runs={[fragment.run]} nowMs={props.nowMs} />
         </span>
       );
     case "Landed":

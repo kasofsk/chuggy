@@ -483,6 +483,51 @@ test("a waiting attempt is withdrawn and opened again once the backoff has passe
   );
 });
 
+/** What the summary read answers of an execution: when it was taken, read as the API reads it. */
+async function summaryTakenAt(routed: PoolRouted): Promise<string | undefined> {
+  const page = await postgresOperationalReads(apiPool).executions(
+    routed.project.partition,
+    { limit: 10 },
+    reader,
+  );
+  const summary = page.executions.find(
+    (each) => each.execution === routed.execution,
+  );
+  assert.ok(summary !== undefined);
+  return summary.takenAt;
+}
+
+test("a pool execution's summary is taken at its earliest claim, and not by an attempt withdrawn unclaimed or one still waiting", async () => {
+  const routed = await poolRoutedExecution(rig, "pools-taken");
+  await poolRegistered(routed.project.partition, "amd", [
+    "Platform:Linux:Amd64",
+  ]);
+  await executionSchedulerLaunch(service, routed.project.epoch);
+  assert.equal(await summaryTakenAt(routed), undefined);
+  const repinned = {
+    ...service,
+    workerRuntime: `registry.chuggy.internal/chuggy/worker-runtime@sha256:${"f".repeat(64)}`,
+  };
+  await executionSchedulerLaunch(repinned, routed.project.epoch);
+  await rig.harness.query(
+    `UPDATE execution
+        SET placement_backoff_from=placement_backoff_from-make_interval(secs=>$4)
+      WHERE tenant=$1 AND project=$2 AND execution=$3`,
+    [...poolRoutedKey(routed), service.config.placementBackoffSecs],
+  );
+  await executionSchedulerLaunch(repinned, routed.project.epoch);
+  assert.equal((await poolRoutedStanding(rig, routed)).attempts.length, 2);
+  assert.equal(await summaryTakenAt(routed), undefined);
+  assert.notEqual(await poolClaim(routed), undefined);
+  const claimed = await waitingRow(routed);
+  assert.ok(claimed.claimed_at !== null);
+  assert.equal(claimed.attempt_number, 2);
+  assert.equal(
+    Date.parse((await summaryTakenAt(routed)) ?? ""),
+    claimed.claimed_at.getTime(),
+  );
+});
+
 test("a waiting attempt is blocked once a registry change leaves no runner configured to run it", async () => {
   const routed = await poolRoutedExecution(rig, "pools-deregistered");
   const { partition } = routed.project;

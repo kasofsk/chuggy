@@ -758,11 +758,17 @@ export const executionSummarySchema = z.object({
   relaunches: countSchema.optional(),
   registeredAt: instantSchema,
   /**
-   * When this execution's first attempt opened, absent while it has none. It is
-   * the same instant that attempt carries in the detail read, so a row that has
-   * only the summary can still separate the wait from the run.
+   * When this execution's first attempt opened, absent while it has none: the
+   * instant that attempt carries in the detail read, which is before anything
+   * takes it and so is not where a wait ends.
    */
   startedAt: instantSchema.optional(),
+  /**
+   * When something first took one of its attempts to run, absent while nothing
+   * has: a runner's claim, or an opening in cluster or of an attempt that ended
+   * unclaimed with its run recorded. Its wait runs from `registeredAt` to here.
+   */
+  takenAt: instantSchema.optional(),
   /**
    * When the worker of the attempt now open recorded its run, absent until it
    * does: an attempt opens before its worker's image is pulled.

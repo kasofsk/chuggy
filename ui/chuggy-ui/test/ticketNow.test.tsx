@@ -21,13 +21,17 @@ import { elementScrollToStubbed } from "./scrolling.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { ticketInstants } from "./ticketInstants.ts";
+import { ticketHeader } from "./ticketPageEveryTab.tsx";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
+const pageClock = vi.hoisted(() => ({ atMs: undefined as number | undefined }));
+
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
   sleepMs: () => Promise.resolve(),
+  nowMs: () => pageClock.atMs ?? Date.now(),
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -55,6 +59,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  pageClock.atMs = undefined;
   cleanup();
   vi.unstubAllGlobals();
 });
@@ -174,6 +179,72 @@ test("a stage with no transcript says it is running, and reads none", async () =
   );
   expect(card.querySelector(".ticket-card-line")).toBeNull();
   expect(transcriptReads(drawn.reads)).toEqual([]);
+});
+
+/** What a time drawn in a part of the page says: the run's, and its wait. */
+function runTimeIn(part: Element | null): readonly unknown[] {
+  return [
+    part?.querySelector(".ticket-run-time-main")?.textContent,
+    part?.querySelector(".ticket-run-time-waited")?.textContent,
+  ];
+}
+
+test("the card and the header count the step's time from when its run was taken, the image pull included", async () => {
+  pageClock.atMs = Date.parse("2026-08-27T00:25:00Z");
+  const taken = { ...running, takenAt: "2026-08-27T00:20:00Z" };
+  await runPageDrawn(atlas, {
+    ...runningRun(
+      runEvidenceOf(8, {
+        configuration: runConfigurationRef,
+        startedAt: "2026-08-27T00:21:00Z",
+      }),
+    ),
+    executions: [taken],
+    execution: {
+      ...taken,
+      attempts: [
+        runAttempt("a1", {
+          state: "Running",
+          run: runEvidenceOf(8, {
+            configuration: runConfigurationRef,
+            startedAt: "2026-08-27T00:21:00Z",
+          }),
+        }),
+      ],
+    },
+  });
+  expect(runTimeIn(nowCard().querySelector(".ticket-card-where"))).toEqual([
+    "5m",
+    "waited 20m",
+  ]);
+  expect(
+    runTimeIn(ticketHeader().querySelector(".ticket-header-fragment")),
+  ).toEqual(["5m", "waited 20m"]);
+});
+
+test("a step whose run nothing has taken says it waits, and for how long", async () => {
+  pageClock.atMs = Date.parse("2026-08-27T00:25:00Z");
+  const waiting = runSummary({
+    status: "Launching",
+    outcome: undefined,
+    runTotals: undefined,
+  });
+  await runPageDrawn(atlas, {
+    ...runningRun(undefined),
+    executions: [waiting],
+    execution: {
+      ...waiting,
+      attempts: [runAttempt("a1", { state: "Placing", run: undefined })],
+    },
+    transcripts: [],
+  });
+  expect(runTimeIn(nowCard().querySelector(".ticket-card-where"))).toEqual([
+    "Waiting",
+    "25m",
+  ]);
+  expect(
+    runTimeIn(ticketHeader().querySelector(".ticket-header-fragment")),
+  ).toEqual(["Waiting", "25m"]);
 });
 
 /** The reader's own run, routed to runners under Strict, its worker not begun. */

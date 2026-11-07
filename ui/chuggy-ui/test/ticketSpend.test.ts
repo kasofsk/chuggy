@@ -1,6 +1,6 @@
 /**
- * That the ledger carries what a ticket's work took and what it cost, and says
- * how much of that it could see.
+ * That the ledger carries what a ticket's work cost and says how much of that
+ * it could see, and that a run's time and wait are each a sum over runs.
  *
  * The failure this catches is a sum a reader trusts: a page short of the
  * ticket's executions produces a total that looks like the ticket's own and is
@@ -12,7 +12,8 @@ import { expect, test } from "vitest";
 
 import type { Cycle, Ledger } from "../app/core/ticketLedger.ts";
 import { ticketLedger } from "../app/core/ticketLedger.ts";
-import { runSpendOf } from "../app/core/runTotals.ts";
+import { runSpendOf, runTimeOf } from "../app/core/runTotals.ts";
+import type { RunTimed } from "../app/core/runTotals.ts";
 import {
   evalIdentity,
   ledgerExecution,
@@ -46,164 +47,97 @@ function spent(cycle: Cycle | Ledger): readonly unknown[] {
   ];
 }
 
-test("a set runs from its first registration to its last end", () => {
-  const cycle = cycleAt(ledgerOf(ticket21Parked), 0);
-  expect(cycle.work?.span).toEqual({
-    from: "2026-08-26T00:10:00.000Z",
-    to: "2026-08-26T00:20:00.000Z",
-  });
-});
-
-test("a set still holding an open execution has not ended", () => {
-  const cycle = cycleAt(ledgerOf(ticket21Resumed), 2);
-  const row = cycle.stages[0];
-  const span = row?.kind === "Ran" ? row.evaluators[0]?.set.span : undefined;
-  expect(span).toEqual({
-    from: "2026-08-26T01:20:00.000Z",
-    to: undefined,
-  });
-});
-
-test("a fan-out one of whose tasks has ended has not ended", () => {
-  const half = ticketLedger(
-    ledgerPage([
-      {
-        execution: "execution-bb-1",
-        task: 1,
-        identity: evalIdentity(1, 1, 1, 1),
-        outcome: "Passed",
-      },
-      {
-        execution: "execution-bb-2",
-        task: 2,
-        identity: evalIdentity(1, 1, 1, 2),
-        status: "Running",
-      },
-    ]),
-    [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }] }],
-  );
-  const row = cycleAt(half, 0).stages[0];
-  expect(row?.kind === "Ran" ? row.span : undefined).toEqual({
-    from: "2026-08-26T00:10:00.000Z",
-    to: undefined,
-  });
-});
-
-/** One evaluation set of two tasks, each stating the instants a case wants. */
-function spanOfPair(
-  first: Pick<ExecutionShape, "registeredAt" | "terminalAt">,
-  second: Pick<ExecutionShape, "registeredAt" | "terminalAt">,
-): unknown {
-  const paired = ticketLedger(
-    ledgerPage([
-      {
-        execution: "execution-bb-1",
-        task: 1,
-        identity: evalIdentity(1, 1, 1, 1),
-        outcome: "Passed",
-        ...first,
-      },
-      {
-        execution: "execution-bb-2",
-        task: 2,
-        identity: evalIdentity(1, 1, 1, 2),
-        outcome: "Passed",
-        ...second,
-      },
-    ]),
-    [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }] }],
-  );
-  const row = cycleAt(paired, 0).stages[0];
-  return row?.kind === "Ran" ? row.span : undefined;
+/** A run registered at an instant a case names, taken and ended where it says. */
+function timed(
+  registeredAt: string,
+  takenAt?: string,
+  terminalAt?: string,
+): RunTimed {
+  return {
+    registeredAt,
+    ...(takenAt === undefined ? {} : { takenAt }),
+    ...(terminalAt === undefined ? {} : { terminalAt }),
+  };
 }
 
-test("an offset the text sorts after is still the earlier instant", () => {
+const minuteMs = 60_000;
+
+test("a run's time runs from when it was taken to its end, and its wait from its registration to when it was taken", () => {
+  const run = timed(
+    "2026-11-07T10:00:00Z",
+    "2026-11-07T10:23:00Z",
+    "2026-11-07T10:25:00Z",
+  );
+  expect(runTimeOf([run], Date.parse("2026-11-07T12:00:00Z"))).toEqual({
+    ranMs: 2 * minuteMs,
+    waitedMs: 23 * minuteMs,
+  });
+});
+
+test("a run nothing has taken has no time, and its wait grows with now", () => {
+  const run = timed("2026-11-07T10:00:00Z");
+  expect(runTimeOf([run], Date.parse("2026-11-07T10:05:00Z"))).toEqual({
+    ranMs: undefined,
+    waitedMs: 5 * minuteMs,
+  });
+  expect(runTimeOf([run], Date.parse("2026-11-07T10:09:00Z"))).toEqual({
+    ranMs: undefined,
+    waitedMs: 9 * minuteMs,
+  });
+});
+
+test("a run still going has run until now, and one ended untaken waited until its end", () => {
+  const nowMs = Date.parse("2026-11-07T10:30:00Z");
   expect(
-    spanOfPair(
-      {
-        registeredAt: "2026-01-01T13:00:00Z",
-        terminalAt: "2026-01-01T21:00:00.500Z",
-      },
-      {
-        registeredAt: "2026-01-01T14:00:00+02:00",
-        terminalAt: "2026-01-01T21:00:00Z",
-      },
-    ),
-  ).toEqual({
-    from: "2026-01-01T14:00:00+02:00",
-    to: "2026-01-01T21:00:00.500Z",
-  });
-});
-
-test("a durable timestamp trimmed of its trailing zeros orders by its clock", () => {
+    runTimeOf([timed("2026-11-07T10:00:00Z", "2026-11-07T10:01:00Z")], nowMs),
+  ).toEqual({ ranMs: 29 * minuteMs, waitedMs: minuteMs });
   expect(
-    spanOfPair(
-      {
-        registeredAt: "2026-08-26 00:10:00.123456+00",
-        terminalAt: "2026-08-26 00:40:00+00",
-      },
-      {
-        registeredAt: "2026-08-26 00:10:00+00",
-        terminalAt: "2026-08-26 00:40:00.5+00",
-      },
+    runTimeOf(
+      [timed("2026-11-07T10:00:00Z", undefined, "2026-11-07T10:04:00Z")],
+      nowMs,
     ),
-  ).toEqual({
-    from: "2026-08-26 00:10:00+00",
-    to: "2026-08-26 00:40:00.5+00",
-  });
+  ).toEqual({ ranMs: undefined, waitedMs: 4 * minuteMs });
 });
 
-test("an instant no clock can read is left out of the span it cannot order", () => {
+test("a set's time and wait are its runs' summed, and the gap between two runs is neither", () => {
+  const first = timed(
+    "2026-11-07T10:00:00Z",
+    "2026-11-07T10:01:00Z",
+    "2026-11-07T10:05:00Z",
+  );
+  const second = timed(
+    "2026-11-07T10:15:00Z",
+    "2026-11-07T10:17:00Z",
+    "2026-11-07T10:20:00Z",
+  );
   expect(
-    spanOfPair(
-      { registeredAt: "0000-bad", terminalAt: "2026-01-01T05:00:00Z" },
-      {
-        registeredAt: "2026-01-01T01:00:00Z",
-        terminalAt: "2026-01-01T06:00:00Z",
-      },
-    ),
-  ).toEqual({
-    from: "2026-01-01T01:00:00Z",
-    to: "2026-01-01T06:00:00Z",
-  });
+    runTimeOf([first, second], Date.parse("2026-11-07T11:00:00Z")),
+  ).toEqual({ ranMs: 7 * minuteMs, waitedMs: 3 * minuteMs });
+});
+
+test("instants are read by their clock, an offset and a trimmed durable timestamp included, and one no clock can read counts for nothing", () => {
+  const nowMs = Date.parse("2026-11-07T12:00:00Z");
   expect(
-    spanOfPair(
-      {
-        registeredAt: "2026-01-01T01:00:00Z",
-        terminalAt: "2026-01-01T06:00:00Z",
-      },
-      { registeredAt: "2026-01-01T02:00:00Z", terminalAt: "zzzz-bad" },
+    runTimeOf(
+      [
+        timed(
+          "2026-11-07T12:00:00+02:00",
+          "2026-11-07 10:01:00.5+00",
+          "2026-11-07T10:03:00.500Z",
+        ),
+      ],
+      nowMs,
     ),
-  ).toEqual({
-    from: "2026-01-01T01:00:00Z",
-    to: "2026-01-01T06:00:00Z",
-  });
-});
-
-test("a cycle's span covers its work run and every evaluation of it", () => {
-  const parked = ledgerOf(ticket21Parked);
-  expect(cycleAt(parked, 1).span).toEqual({
-    from: "2026-08-26T00:30:00.000Z",
-    to: "2026-08-26T00:53:30.000Z",
-  });
-  expect(cycleAt(parked, 2).span).toEqual({
-    from: "2026-08-26T01:00:00.000Z",
-    to: "2026-08-26T01:14:00.000Z",
-  });
-});
-
-test("a cycle the resume reopened has a span with no end", () => {
-  expect(cycleAt(ledgerOf(ticket21Resumed), 2).span).toEqual({
-    from: "2026-08-26T01:00:00.000Z",
-    to: undefined,
-  });
-});
-
-test("the page's span runs from its earliest row to its latest", () => {
-  expect(ledgerOf(ticket21Parked).span).toEqual({
-    from: "2026-08-26T00:10:00.000Z",
-    to: "2026-08-26T01:14:00.000Z",
-  });
+  ).toEqual({ ranMs: 2 * minuteMs, waitedMs: minuteMs + 500 });
+  expect(
+    runTimeOf(
+      [timed("0000-bad", "2026-11-07T10:00:00Z", "2026-11-07T10:02:00Z")],
+      nowMs,
+    ),
+  ).toEqual({ ranMs: 2 * minuteMs, waitedMs: 0 });
+  expect(runTimeOf([timed("2026-11-07T10:00:00Z", "zzzz-bad")], nowMs)).toEqual(
+    { ranMs: undefined, waitedMs: 120 * minuteMs },
+  );
 });
 
 test("each cycle's spend is the sum of the executions under it", () => {

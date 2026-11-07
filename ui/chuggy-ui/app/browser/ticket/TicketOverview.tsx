@@ -154,7 +154,11 @@ function TicketSidebarRuns(props: {
         <TicketSoFar running={running} />
       </Field>
       <Field name="Run time">
-        <Figure figure={runTime} />
+        <Figure figure={runTime.ran} />
+        <TicketSoFar running={running} />
+      </Field>
+      <Field name="Waited">
+        <Figure figure={runTime.waited} />
         <TicketSoFar running={running} />
       </Field>
     </>

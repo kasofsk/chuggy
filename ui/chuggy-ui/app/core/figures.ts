@@ -34,7 +34,7 @@
  */
 
 import type { RunTotals } from "../../../../src/contract/responses.ts";
-import type { RunRollupBasis, RunSpan } from "./runTotals.ts";
+import type { RunRollupBasis, RunTime } from "./runTotals.ts";
 
 export const figureKinds = [
   "Cost",
@@ -424,12 +424,30 @@ export function sinceFigure(
   };
 }
 
-/** How long a span ran, from its start to its end or, while it is open, to
- * now: a run's time, whatever carried it. */
-export function spanRanFigure(span: RunSpan, nowMs: number): Figure {
-  const fromMs = parsedMs(span.from);
-  if (fromMs === undefined) return { kind: "Absent", why: "Not started" };
-  return durationFigure((parsedMs(span.to) ?? nowMs) - fromMs);
+/** The shortest wait drawn beside a run's time; a shorter one is noise. */
+export const runTimeWaitedShownMsMin = msPerSecond * secondsPerMinute;
+
+/** A run's time as a line draws it, or a set's: that it waits and for how
+ * long, or how long it ran with its wait where that is long enough to read. */
+export type RunTimeLine =
+  | { readonly line: "Waiting"; readonly waited: Figure }
+  | {
+      readonly line: "Ran";
+      readonly ran: Figure;
+      readonly waited: Figure | undefined;
+    };
+
+export function runTimeLineOf(time: RunTime): RunTimeLine {
+  if (time.ranMs === undefined)
+    return { line: "Waiting", waited: durationFigure(time.waitedMs) };
+  return {
+    line: "Ran",
+    ran: durationFigure(time.ranMs),
+    waited:
+      time.waitedMs >= runTimeWaitedShownMsMin
+        ? durationFigure(time.waitedMs)
+        : undefined,
+  };
 }
 
 /** The one absence a set of runs has: it is running, and nothing is counted yet. */

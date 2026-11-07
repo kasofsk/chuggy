@@ -13,7 +13,7 @@ import type { TicketResponse } from "../../../../src/contract/responses.ts";
 import { escalationDetail, phaseLabel } from "./codeLabels.ts";
 import { branchName } from "./labels.ts";
 import { ticketFilterStandings } from "./projectTableFilters.ts";
-import { runNowStartedAt } from "./runNow.ts";
+import type { RunTimed } from "./runTotals.ts";
 import type { TicketAction, TicketActionName } from "./ticketActions.ts";
 import { ticketLandingPullLabel } from "./ticketLandings.ts";
 import type { TicketLanding } from "./ticketLandings.ts";
@@ -128,8 +128,8 @@ export type TicketHeaderFragment =
   | {
       readonly fragment: "Running";
       readonly step: string;
-      /** The instant the step's run started, which the clock ages. */
-      readonly since: string;
+      /** The step's run, whose time and wait the clock ages. */
+      readonly run: RunTimed;
     }
   | {
       readonly fragment: "Landed";
@@ -174,7 +174,7 @@ function ticketHeaderMoving(slot: TicketSlot): TicketHeaderFragment {
       return {
         fragment: "Running",
         step: slot.running.step,
-        since: runNowStartedAt(slot.running.execution, undefined),
+        run: slot.running.execution,
       };
     case "NeedsYou":
       return ticketHeaderWords(slot.detail);

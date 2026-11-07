@@ -14,12 +14,7 @@ import type {
   ExecutionResponse,
   RunTranscriptResponse,
 } from "../../../src/contract/responses.ts";
-import {
-  runNowAttempt,
-  runNowElapsedFigure,
-  runNowOf,
-  runNowStartedAt,
-} from "../app/core/runNow.ts";
+import { runNowAttempt, runNowOf } from "../app/core/runNow.ts";
 import type { RunNowAttempt } from "../app/core/runNow.ts";
 import {
   runTranscriptHeldEmpty,
@@ -149,23 +144,4 @@ test("the card follows the newest live attempt, and the newest where none is liv
       ?.attempt,
   ).toBe("a2");
   expect(runNowAttempt(execution([]))).toBeUndefined();
-});
-
-test("a run's start is its attempt's where the detail is read, and the execution's where not", () => {
-  const summary = {
-    registeredAt: recordedAt(1),
-    startedAt: recordedAt(2),
-  } as Parameters<typeof runNowStartedAt>[0];
-  expect(runNowStartedAt(summary, attempt(5, "Running"))).toBe(recordedAt(5));
-  expect(runNowStartedAt(summary, undefined)).toBe(recordedAt(2));
-  expect(runNowStartedAt({ ...summary, startedAt: undefined }, undefined)).toBe(
-    recordedAt(1),
-  );
-});
-
-test("an elapsed figure is a duration, and an instant nobody recorded is absent", () => {
-  const at = Date.parse(recordedAt(0));
-  expect(runNowElapsedFigure(recordedAt(0), at + 90_000).kind).toBe("Duration");
-  expect(runNowElapsedFigure(undefined, at).kind).toBe("Absent");
-  expect(runNowElapsedFigure("not an instant", at).kind).toBe("Absent");
 });

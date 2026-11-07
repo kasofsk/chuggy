@@ -12,10 +12,11 @@
  * many of the executions it was handed carried figures at all, so a caller
  * never reads a sum over a third of a set as a sum over the set.
  *
- * TIME IS READ BY A CLOCK, NOT BY A STRING. `instantSchema` promises only a
- * non-empty string, so `runSpanOf` orders by what parses as an instant and
- * leaves out what does not, and it ends a span only once nothing in it is still
- * open.
+ * A RUN'S TIME RUNS FROM WHEN IT WAS TAKEN TO ITS END, and its wait from its
+ * registration to when it was taken, each counted to now while it lasts. A
+ * set's time and wait are its runs' summed, never one span across them, so the
+ * gap between two runs is counted as neither. `instantSchema` promises only a
+ * non-empty string, so an instant that does not parse counts for nothing.
  */
 
 import { nativeHttpPageItemsMax } from "../../../../src/contract/http.ts";
@@ -119,12 +120,6 @@ export interface RunSpend {
   readonly totals: RunRollup | undefined;
 }
 
-/** When a set of executions started, and when it ended if nothing in it is open. */
-export interface RunSpan {
-  readonly from: string | undefined;
-  readonly to: string | undefined;
-}
-
 function runRollupBasis(
   totals: readonly RunTotals[],
 ): RunRollupBasis | undefined {
@@ -155,51 +150,47 @@ export function runSpendOf(summaries: readonly ExecutionSummary[]): RunSpend {
   };
 }
 
-/** The instants a clock can read, earliest first; the rest are not ordered at all. */
-function runInstantsOrdered(instants: readonly string[]): readonly string[] {
-  return instants
-    .flatMap((stated) => {
-      const at = Date.parse(stated);
-      return Number.isFinite(at) ? [{ stated, at }] : [];
-    })
-    .sort((left, right) => left.at - right.at)
-    .map((held) => held.stated);
-}
-
-/**
- * From the earliest registration to the latest end. A set still holding an
- * execution the wire has reported no end for has not ended.
- */
-export function runSpanOf(summaries: readonly ExecutionSummary[]): RunSpan {
-  return runSpanFrom(summaries, (row) => row.registeredAt);
-}
-
-/**
- * From the earliest start to the latest end, an execution starting when its
- * first attempt opened, or at its registration where the wire dates no start.
- */
-export function runSpanRanOf(summaries: readonly RunSpanned[]): RunSpan {
-  return runSpanFrom(summaries, (row) => row.startedAt ?? row.registeredAt);
-}
-
-/** What a span is read off an execution. */
-export type RunSpanned = Pick<
+/** What a run's time and its wait are read off. */
+export type RunTimed = Pick<
   ExecutionSummary,
-  "registeredAt" | "startedAt" | "terminalAt"
+  "registeredAt" | "takenAt" | "terminalAt"
 >;
 
-function runSpanFrom(
-  summaries: readonly RunSpanned[],
-  startOf: (row: RunSpanned) => string,
-): RunSpan {
-  const started = runInstantsOrdered(summaries.map(startOf));
-  const ended = runInstantsOrdered(
-    summaries.flatMap((row) =>
-      row.terminalAt === undefined ? [] : [row.terminalAt],
-    ),
-  );
-  const open = summaries.some((row) => row.terminalAt === undefined);
-  return { from: started[0], to: open ? undefined : ended.at(-1) };
+/** A run's time and its wait, or a set's sums of them; `ranMs` is absent
+ * where nothing in the set has been taken. */
+export interface RunTime {
+  readonly ranMs: number | undefined;
+  readonly waitedMs: number;
+}
+
+function runTimeInstantMs(stated: string | undefined): number | undefined {
+  if (stated === undefined) return undefined;
+  const at = Date.parse(stated);
+  return Number.isFinite(at) ? at : undefined;
+}
+
+function runTimeAdded(held: RunTime, run: RunTimed, nowMs: number): RunTime {
+  const registeredMs = runTimeInstantMs(run.registeredAt);
+  const takenMs = runTimeInstantMs(run.takenAt);
+  const endMs = runTimeInstantMs(run.terminalAt) ?? nowMs;
+  const waitEndMs = takenMs ?? endMs;
+  const waitedMs =
+    registeredMs === undefined ? 0 : Math.max(waitEndMs - registeredMs, 0);
+  return {
+    ranMs:
+      takenMs === undefined
+        ? held.ranMs
+        : (held.ranMs ?? 0) + Math.max(endMs - takenMs, 0),
+    waitedMs: held.waitedMs + waitedMs,
+  };
+}
+
+/** The runs' times and waits summed, each run's counted to now while it lasts. */
+export function runTimeOf(runs: readonly RunTimed[], nowMs: number): RunTime {
+  return runs.reduce<RunTime>((held, run) => runTimeAdded(held, run, nowMs), {
+    ranMs: undefined,
+    waitedMs: 0,
+  });
 }
 
 /** Which work cycle a task belongs to, a work task's own or an evaluation's. */
