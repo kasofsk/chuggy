@@ -213,9 +213,10 @@ test("an agent the ticket changed is named and marked beside the agent", () => {
     }),
   );
   expect(work.overrides).toEqual(["Agent", "Model"]);
-  expect(
-    work.details.find((detail) => detail.name === "Agent"),
-  ).toMatchObject({ lines: ["Codex"], overridden: true });
+  expect(work.details.find((detail) => detail.name === "Agent")).toMatchObject({
+    lines: ["Codex"],
+    overridden: true,
+  });
 });
 
 test("a prompt or field the ticket writes back as the catalog holds it marks nothing", () => {
