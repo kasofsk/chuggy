@@ -107,6 +107,23 @@ test("a serialized form sends its landing policy and a direct one sends none", (
   expect(sent(creationForm())).not.toHaveProperty("landing");
 });
 
+test("a policy left serialized under a pull request or no landing is not sent, and the form still submits", () => {
+  for (const landingMode of ["PullRequest", "None"] as const) {
+    const assembled = creationBodyFrom(
+      creationOffers,
+      creationForm({
+        branchName: "topic/one",
+        landingMode,
+        landingPolicy: "Serialized",
+      }),
+      noBindings,
+    );
+    expect(assembled.assembled, landingMode).toBe("Body");
+    if (assembled.assembled === "Body")
+      expect(assembled.body.brief, landingMode).not.toHaveProperty("landing");
+  }
+});
+
 test("the configuration is the newest ready revision, and none is drawable", () => {
   const listed = [
     creationSummary("r4", "Incomplete"),

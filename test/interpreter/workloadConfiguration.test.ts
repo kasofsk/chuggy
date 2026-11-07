@@ -566,6 +566,20 @@ test("a version 2 finalizer's landing mode is read forward as the finalization i
     }),
     { finalization: { kind: "PullRequest", target: "refs/heads/main" } },
   );
+  assert.deepEqual(
+    finalizing(2, { landing: { mode: "Push", target: "refs/heads/main" } }),
+    {
+      finalization: {
+        kind: "GitMerge",
+        mode: "Push",
+        target: "refs/heads/main",
+        policy: "Direct",
+      },
+    },
+  );
+  assert.deepEqual(finalizing(2, { landing: { mode: "None" } }), {
+    finalization: { kind: "None" },
+  });
   assert.deepEqual(finalizing(2, {}), {});
   const serialized = {
     kind: "GitMerge",

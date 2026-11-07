@@ -842,7 +842,7 @@ export const workloadConfigurationSchema = z
     `A catalog a ticket selects its work, its evaluation plan and its finalizer from. The importer also holds that every name a plan or the defaults use is in the catalog, and the size and key rules of a version 1 configuration: at most ${String(configurationCanonicalCharsMax)} UTF-16 code units once every referenced file is stored inline.`,
   );
 
-/** The version 2 catalog with its finalizers naming a whole finalization, which is all that tells the two apart. */
+/** The version 3 catalog: the version 2 one with its finalizers naming a whole finalization, which is all that tells the two apart. */
 export const finalizationConfigurationSchema = workloadConfigurationSchema
   .extend({
     version: z.literal(finalizationConfigurationVersion),

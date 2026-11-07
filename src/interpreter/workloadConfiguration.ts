@@ -45,7 +45,7 @@ type WorkloadReadonly<Value> = Value extends object
   ? { readonly [Key in keyof Value]: WorkloadReadonly<Value[Key]> }
   : Value;
 
-/** The version a parsed document says it is, which is how every reader tells the two apart. */
+/** The version a parsed document says it is, which is how every reader tells a document of stages from a catalog. */
 export function declaredConfigurationVersion(value: unknown): unknown {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as { readonly version?: unknown }).version

@@ -1078,7 +1078,9 @@ function creationStatedFaults(
  * mode is the repository's own default — so the ticket records the landing it
  * was released with. `None` names no reference at all; every other mode names
  * one only where a target was typed, and a value left in the box `None` draws
- * none for is never sent.
+ * none for is never sent. The policy is sent beside a push or a merged
+ * proposal only, the modes a policy orders, so a policy left chosen under
+ * another mode is never sent either.
  */
 function creationFinalizationOf(
   form: TicketCreationForm,
@@ -1093,6 +1095,9 @@ function creationFinalizationOf(
         ? { target: branches.target.ref }
         : {}),
     },
+    ...(mode === "PullRequest" || form.landingPolicy === "Direct"
+      ? {}
+      : { landing: form.landingPolicy }),
   };
 }
 
@@ -1121,7 +1126,6 @@ function creationBriefOf(
     ...(checks.length === 0 ? {} : { checks }),
     ...(branches.branch.named === "Ref" ? { branch: branches.branch.ref } : {}),
     ...creationFinalizationOf(form, branches),
-    ...(form.landingPolicy === "Direct" ? {} : { landing: form.landingPolicy }),
   };
 }
 
