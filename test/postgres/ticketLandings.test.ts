@@ -30,6 +30,7 @@ import {
   ticketServiceRole,
   workerPlaneRole,
 } from "../../src/adapters/postgres/schema.ts";
+import { briefFinalizationOpensProposal } from "../../src/contract/brief.ts";
 import {
   jsonTextBytes,
   ticketLandingConflictBytesMax,
@@ -62,6 +63,7 @@ import {
 } from "../../src/interpreter/ticketLandings.ts";
 import {
   finalizerAccept,
+  finalizerBriefBranch,
   finalizerBriefFinalizationTarget,
   finalizerBriefLandsNothing,
   finalizerClaim,
@@ -118,7 +120,11 @@ function landingsOf(
   }).read(reader, project.partition, asTicketId(project.ticket));
 }
 
-/** One project at finalization landing as `mode` names, in a partition of its own. */
+/**
+ * One project at finalization landing as `mode` names, in a partition of its
+ * own. A brief that opens a pull request names the branch it opens from, as a
+ * release requires.
+ */
 async function finalizing(
   label: string,
   mode: BriefFinalizationMode,
@@ -134,6 +140,8 @@ async function finalizing(
       "refs/heads/main",
       mode,
     );
+  if (briefFinalizationOpensProposal({ mode }))
+    await finalizerBriefBranch(rig, project.partition, project.ticket, headRef);
   return project;
 }
 
