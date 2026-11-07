@@ -320,6 +320,21 @@ test("the Work prompt is the shared brief and the work's own words, and holds no
   expect(screen.queryByRole("tab")).toBeNull();
 });
 
+test("an open prompt and an open YAML view each control what they opened", async () => {
+  await drawExpanded();
+  await turned(() => {
+    within(row("Work")).getByRole("button", { name: "YAML" }).click();
+  });
+  for (const name of ["Hide prompt", "YAML"]) {
+    const toggle = within(row("Work")).getByRole("button", { name });
+    const controlled = toggle.getAttribute("aria-controls");
+    expect(controlled).not.toBeNull();
+    expect(
+      document.getElementById(controlled ?? "")?.getAttribute("data-state"),
+    ).toBe("open");
+  }
+});
+
 test("a configuration with no stages draws its review block as one Review row", async () => {
   const unstaged = Object.fromEntries(
     Object.entries(JSON.parse(canonical) as Record<string, unknown>).filter(

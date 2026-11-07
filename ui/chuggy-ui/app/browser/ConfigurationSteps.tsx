@@ -82,21 +82,17 @@ function ConfigurationStepDetails(props: {
 function ConfigurationStepPromptBody(props: {
   readonly prompt: readonly ConfigurationStepPrompt[];
 }): ReactNode {
-  return (
-    <div className="config-step-prompt">
-      {props.prompt.map((part, at) => (
-        <div key={at} className="config-step-prompt-part">
-          {part.heading === undefined && !part.overridden ? null : (
-            <h4 className="eyebrow">
-              {part.heading ?? "Prompt"}
-              <ConfigurationStepOverridden overridden={part.overridden} />
-            </h4>
-          )}
-          <MarkdownReport text={part.lines.join("\n\n")} bare />
-        </div>
-      ))}
+  return props.prompt.map((part, at) => (
+    <div key={at} className="config-step-prompt-part">
+      {part.heading === undefined && !part.overridden ? null : (
+        <h4 className="eyebrow">
+          {part.heading ?? "Prompt"}
+          <ConfigurationStepOverridden overridden={part.overridden} />
+        </h4>
+      )}
+      <MarkdownReport text={part.lines.join("\n\n")} bare />
     </div>
-  );
+  ));
 }
 
 /** A row's prompt and its YAML, each behind a control of its own. */
@@ -116,7 +112,9 @@ function ConfigurationStepViews(props: {
           label={promptOpen ? "Hide prompt" : "View prompt"}
           look={{ variant: "default", size: "sm" }}
         >
-          <ConfigurationStepPromptBody prompt={row.prompt} />
+          <div className="config-step-prompt">
+            <ConfigurationStepPromptBody prompt={row.prompt} />
+          </div>
         </Disclosure>
       )}
       {row.definition === undefined ? null : (
