@@ -28,7 +28,7 @@ import { inboxCountLabel } from "../../core/inboxList.ts";
 import { projectAbilityRefused } from "../../core/projectAbilities.ts";
 import { projectLeadFound } from "../../core/projectLead.ts";
 import type { ShellCrumb } from "../../core/shellCrumbs.ts";
-import { shellCrumbs } from "../../core/shellCrumbs.ts";
+import { memberChatCrumbs, shellCrumbs } from "../../core/shellCrumbs.ts";
 import { navEntryCurrent, navRoutes, shellNav } from "../../core/shellNav.ts";
 import type { NavEntry } from "../../core/shellNav.ts";
 import { sessionStateTone } from "../../core/tones.ts";
@@ -249,7 +249,6 @@ export function TopBar(props: {
   readonly chat?: string;
 }): ReactNode {
   const partition = props.partition;
-  const text = useCopyText();
   return (
     <div className="grid">
       <header className="topbar">
@@ -259,12 +258,7 @@ export function TopBar(props: {
           ) : (
             <TopBarTrail
               crumbs={
-                props.chat === undefined
-                  ? []
-                  : [
-                      { label: props.chat },
-                      { label: text({ id: "shell-crumb-chat" }) },
-                    ]
+                props.chat === undefined ? [] : memberChatCrumbs(props.chat)
               }
             />
           )}

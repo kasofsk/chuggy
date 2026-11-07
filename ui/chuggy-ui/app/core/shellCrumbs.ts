@@ -3,9 +3,13 @@
  * project, the screen and, where the screen holds one, the thing on it. Every
  * crumb but the last is how back to a level that has a page of its own; the
  * workspace has none, so it is a name and not a link.
+ *
+ * A CRUMB IS ITS ADDRESS SEGMENT, never copy: the trail spells the address the
+ * reader is at, so no vernacular renames it.
  */
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
+import { memberChatRoutes } from "./memberChat.ts";
 import { navRoutes } from "./shellNav.ts";
 import type { NavParams, NavRoute } from "./shellNav.ts";
 
@@ -25,6 +29,7 @@ const screenRoutes: Readonly<Record<string, NavRoute>> = {
   runners: navRoutes.runners,
 };
 
+/** The overview's segment, which the overview's own address leaves out. */
 const overviewLabel = "tickets";
 
 /** The segments of a pathname beneath the project, decoded. */
@@ -72,5 +77,13 @@ export function shellCrumbs(
     page,
     { label: first },
     ...rest.map((label) => ({ label })),
+  ];
+}
+
+/** The trail of a workspace's own chat: the workspace, then the chat. */
+export function memberChatCrumbs(tenant: string): readonly ShellCrumb[] {
+  return [
+    { label: tenant },
+    { label: memberChatRoutes.chat.split("/").at(-1) ?? "" },
   ];
 }

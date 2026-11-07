@@ -44,12 +44,25 @@ test("a vernacular's term is the word inside every base message that references 
   expect(text({ id: "shell-nav-epics" })).toBe("Epics");
 });
 
+test("a vernacular that renames the project renames each of the switcher's own entries", () => {
+  const spaces = `
+-project = { $case ->
+    [upper] Space
+   *[lower] space
+}
+`;
+  const text = copyTextOf(copyBundleOf("en-x-spaces", copyCatalogEn, [spaces]));
+  expect(text({ id: "shell-project-new" })).toBe("New space");
+  expect(text({ id: "shell-project-none" })).toBe("No space");
+});
+
 test("the base language reads as it did with no layer over it", () => {
   expect(copyTextEn({ id: "shell-nav-tickets" })).toBe("Tickets");
   expect(copyTextEn({ id: "shell-inbox-unread", args: { count: 3 } })).toBe(
     "Inbox, 3 unread",
   );
   expect(copyTextEn({ id: "shell-project-new" })).toBe("New project");
+  expect(copyTextEn({ id: "shell-project-none" })).toBe("No project");
 });
 
 test("every phase is a descriptor of its own, which reads as the phase's word", () => {

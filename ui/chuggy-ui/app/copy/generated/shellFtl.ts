@@ -15,7 +15,6 @@ shell-view-only = View only
 shell-inbox = { -inbox(case: "upper") }
 shell-inbox-unread = { -inbox(case: "upper") }, { $count } unread
 shell-crumbs = Breadcrumb
-shell-crumb-chat = chat
 shell-details = Details
 shell-settings = Settings
 shell-settings-theme = Theme
@@ -30,4 +29,5 @@ shell-sign-out = Sign out
 shell-project = { -project(case: "upper") }
 shell-projects-unavailable = { -projects(case: "upper") } unavailable
 shell-project-new = New { -project }
+shell-project-none = No { -project }
 `;

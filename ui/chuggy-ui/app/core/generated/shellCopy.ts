@@ -16,7 +16,6 @@ export interface ShellCopy {
     readonly count: string | number;
   };
   readonly "shell-crumbs": Record<never, never>;
-  readonly "shell-crumb-chat": Record<never, never>;
   readonly "shell-details": Record<never, never>;
   readonly "shell-settings": Record<never, never>;
   readonly "shell-settings-theme": Record<never, never>;
@@ -31,4 +30,5 @@ export interface ShellCopy {
   readonly "shell-project": Record<never, never>;
   readonly "shell-projects-unavailable": Record<never, never>;
   readonly "shell-project-new": Record<never, never>;
+  readonly "shell-project-none": Record<never, never>;
 }

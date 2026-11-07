@@ -35,9 +35,6 @@ export const memberChatRoutes = {
 export const memberChatWithheld =
   "A workspace admin has turned off your chat outside a project";
 
-/** What the project switcher names a workspace's own chat. */
-export const memberChatProjectNone = "No project";
-
 /**
  * How often a member's own thread is read again while its newest turn is
  * being written. No frame names one, so this is what settles a turn the live

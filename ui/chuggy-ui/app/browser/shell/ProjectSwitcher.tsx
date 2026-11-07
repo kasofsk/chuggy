@@ -17,13 +17,10 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
+import type { CopyText } from "../../core/copy.ts";
 import { projectsInventoryQuery } from "../../core/tenantQueries.ts";
 import { lastProjectWrite } from "../../core/lastProject.ts";
-import {
-  memberChatOpens,
-  memberChatProjectNone,
-  memberChatRoutes,
-} from "../../core/memberChat.ts";
+import { memberChatOpens, memberChatRoutes } from "../../core/memberChat.ts";
 import { projectCreationRoutePath } from "../../core/projectCreation.ts";
 import { usePanelState } from "../api.ts";
 import { persistentStore } from "../ports.ts";
@@ -92,15 +89,20 @@ function projectSwitcherHint(
     : `${partition.tenant} / ${partition.project}`;
 }
 
-/** The workspace's own chat, as the picker offers it. */
-function projectSwitcherChat(tenant: string): {
-  readonly value: string;
-  readonly text: string;
-} {
-  return {
-    value: projectSwitcherNone(tenant),
-    text: `${tenant} / ${memberChatProjectNone}`,
-  };
+/** The workspace's own chat, as the picker offers it where it may be had. */
+function projectSwitcherChat(
+  tenant: string | undefined,
+  chats: boolean,
+  text: CopyText,
+): readonly { readonly value: string; readonly text: string }[] {
+  return tenant === undefined || !chats
+    ? []
+    : [
+        {
+          value: projectSwitcherNone(tenant),
+          text: `${tenant} / ${text({ id: "shell-project-none" })}`,
+        },
+      ];
 }
 
 function ProjectSwitcherPicker(props: {
@@ -122,8 +124,7 @@ function ProjectSwitcherPicker(props: {
       />
     );
   const { tenant } = props;
-  const none =
-    tenant === undefined || !props.chats ? [] : [projectSwitcherChat(tenant)];
+  const none = projectSwitcherChat(tenant, props.chats, text);
   return (
     <Picker
       label={text({ id: "shell-project" })}

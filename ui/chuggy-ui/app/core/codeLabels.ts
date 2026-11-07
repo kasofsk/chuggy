@@ -524,12 +524,7 @@ export function escalationDetailLine(
   }
 }
 
-/**
- * Where the ticket is, in the machine's own word for the phase — except the
- * three the phase constructors themselves used to be spelled and no longer
- * are. `Working`/`Evaluating`/`Finalizing` are the product's own words for
- * `Work`/`Evaluation`/`Finalization`.
- */
+/** Where the ticket is, as the phase's own message in `standing.ftl` says it. */
 export function phaseLabel(phase: TicketPhase): Copy {
   switch (phase) {
     case "Pending":
