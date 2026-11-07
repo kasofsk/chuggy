@@ -706,7 +706,7 @@ async function ingressLandingProject(harness: PostgresHarness) {
   });
   const repository = await postgresHarnessBinding(harness, partition);
   await harness.query(
-    `UPDATE project_repository SET landing_mode='PullRequest'
+    `UPDATE project_repository SET landing_kind='PullRequest',landing_mode=NULL,landing_policy=NULL
       WHERE tenant=$1 AND project=$2 AND repository=$3`,
     [partition.tenant, partition.project, repository],
   );

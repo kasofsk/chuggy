@@ -220,8 +220,16 @@ test("a retired binding answers the pipeline definitions it allowed beside its r
       await landing.setLanding({
         partition,
         repository: asRepositoryId(repository),
-        expected: standing?.landing ?? { mode: "Push" },
-        landing: standing?.landing ?? { mode: "Push" },
+        expected: standing?.landing ?? {
+          kind: "GitMerge",
+          mode: "Push",
+          policy: "Direct",
+        },
+        landing: standing?.landing ?? {
+          kind: "GitMerge",
+          mode: "Push",
+          policy: "Direct",
+        },
         pipelinesWritable: { expected: false, wanted: true },
       })
     ).outcome,

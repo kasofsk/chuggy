@@ -40,6 +40,8 @@ import { consolePageSchema } from "./consolePage.ts";
 import { threadOfferReplySchema } from "./threadOffers.ts";
 import {
   briefFinalizationModes,
+  briefGitMergeModes,
+  briefGitMergePolicies,
   forgeCredentialPermissions,
   forgeIds,
   nativeActionResolutions,
@@ -202,11 +204,53 @@ export const projectRepositoryBindSchema = z.strictObject({
   repository: bodyIdentitySchema,
 });
 
-/** How a finished ticket lands: the mode alone today, the reference it lands on staying the brief's. */
+/**
+ * How a finished ticket in a repository lands where its brief names no landing:
+ * a brief's finalization by its kind, but for the reference, which stays the
+ * brief's.
+ */
+export const repositoryFinalizationSchema = z.discriminatedUnion("kind", [
+  z.strictObject({
+    kind: z.literal("GitMerge"),
+    mode: z.enum(briefGitMergeModes),
+    policy: z.enum(briefGitMergePolicies),
+  }),
+  z.strictObject({ kind: z.literal("PullRequest") }),
+  z.strictObject({ kind: z.literal("None") }),
+]);
+export type RepositoryFinalizationBody = z.infer<
+  typeof repositoryFinalizationSchema
+>;
+
+/**
+ * A repository's landing default by its mode alone, as it was written before it
+ * named a kind. The wire still reads it, a `GitMerge` mode mapping to that mode
+ * ordered `Direct`, and answers it beside the kind.
+ */
 export const repositoryLandingSchema = z.strictObject({
   mode: z.enum(briefFinalizationModes),
 });
 export type RepositoryLanding = z.infer<typeof repositoryLandingSchema>;
+
+/** The landing default a mode alone names: a `GitMerge` mode ordered `Direct`, and otherwise the kind of that name. */
+export function repositoryFinalizationOfLanding(
+  landing: RepositoryLanding,
+): RepositoryFinalizationBody {
+  switch (landing.mode) {
+    case "Push":
+    case "PullRequestMerge":
+      return { kind: "GitMerge", mode: landing.mode, policy: "Direct" };
+    case "PullRequest":
+    case "None":
+      return { kind: landing.mode };
+  }
+}
+
+/** A repository's landing default as a write names it: by its kind, or by its mode alone. */
+export const repositoryLandingWrittenSchema = z.union([
+  repositoryFinalizationSchema,
+  repositoryLandingSchema,
+]);
 
 /**
  * A repository's landing default and whether its jobs may write its pipeline
@@ -215,8 +259,8 @@ export type RepositoryLanding = z.infer<typeof repositoryLandingSchema>;
  */
 export const projectRepositoryLandingSchema = z.strictObject({
   repository: bodyIdentitySchema,
-  expected: repositoryLandingSchema,
-  landing: repositoryLandingSchema,
+  expected: repositoryLandingWrittenSchema,
+  landing: repositoryLandingWrittenSchema,
   pipelinesWritable: z.strictObject({
     expected: z.boolean(),
     wanted: z.boolean(),

@@ -238,7 +238,7 @@ function allowanceTokens(pipelinesWritable: boolean, allowance: Allowance) {
           ? {
               repository,
               boundAt: "2026-10-25T00:00:00Z",
-              landing: { mode: "Push" },
+              landing: { kind: "GitMerge", mode: "Push", policy: "Direct" },
               pipelinesWritable,
             }
           : undefined,
@@ -366,7 +366,7 @@ test("a member's write or proposal carries the pipeline definitions only where t
               Promise.resolve({
                 repository: named,
                 boundAt: "2026-10-25T00:00:00Z",
-                landing: { mode: "Push" },
+                landing: { kind: "GitMerge", mode: "Push", policy: "Direct" },
                 pipelinesWritable: false,
               }),
           },

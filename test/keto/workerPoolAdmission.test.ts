@@ -21,7 +21,6 @@ import {
   tenantPrincipalGrant,
 } from "../../src/interpreter/projectGrant.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
-import { asRepositoryLanding } from "../../src/interpreter/repositoryBinding.ts";
 import {
   workerPoolAdmitted,
   type ChatHostIdentity,
@@ -271,7 +270,7 @@ test("a personal runner holds no permit of any project its owner serves, so a pr
         Promise.resolve({
           repository,
           boundAt: "2026-10-01T00:00:00Z",
-          landing: asRepositoryLanding("Push"),
+          landing: { kind: "GitMerge", mode: "Push", policy: "Direct" },
           pipelinesWritable: false,
         }),
     },

@@ -7,10 +7,6 @@
  * rather than in the `TicketGraph`.
  */
 
-import {
-  briefFinalizationModes,
-  type BriefFinalizationMode,
-} from "../contract/rosters.ts";
 import { asRepositoryId, type RepositoryId } from "./finalizer.ts";
 import {
   asAuthorityKind,
@@ -26,6 +22,12 @@ import {
   type Partition,
   type RecoveryEpoch,
 } from "./projectStore.ts";
+import {
+  asBriefFinalization,
+  type BriefGitMergeFinalization,
+  type BriefNoFinalization,
+  type BriefPullRequestFinalization,
+} from "./ticketBrief.ts";
 
 export interface RepositoryBindingRequest {
   readonly tenant: string;
@@ -104,22 +106,33 @@ export interface RepositoryBindingAdministration extends ProjectRepositoryBindin
 
 /**
  * How a finished ticket in one repository lands when its brief names no
- * landing of its own. The mode alone: which reference a proposal is opened
- * into stays the ticket's, because stacked work names a different one per
- * ticket.
+ * landing of its own: a whole finalization but for the reference, which stays
+ * the ticket's, because stacked work names a different one per ticket.
  */
-export interface RepositoryLanding {
-  readonly mode: BriefFinalizationMode;
-}
+export type RepositoryFinalization =
+  | Omit<BriefGitMergeFinalization, "target">
+  | Omit<BriefPullRequestFinalization, "target">
+  | BriefNoFinalization;
 
-/** Narrows one landing mode, whatever door or wire it arrived by. */
-export function asRepositoryLanding(mode: string): RepositoryLanding {
-  const known = briefFinalizationModes.find((each) => each === mode);
-  if (known === undefined)
-    throw new RangeError(
-      "repository landing: the mode is not one this tree lands under",
-    );
-  return { mode: known };
+/** Narrows one repository's finalization by its kind, whatever door or wire it arrived by. */
+export function asRepositoryFinalization(value: {
+  readonly kind: string;
+  readonly mode?: string | undefined;
+  readonly policy?: string | undefined;
+}): RepositoryFinalization {
+  const finalization = asBriefFinalization({ ...value, target: undefined });
+  switch (finalization.kind) {
+    case "GitMerge":
+      return {
+        kind: finalization.kind,
+        mode: finalization.mode,
+        policy: finalization.policy,
+      };
+    case "PullRequest":
+      return { kind: finalization.kind };
+    case "None":
+      return finalization;
+  }
 }
 
 /**
@@ -131,7 +144,7 @@ export function asRepositoryLanding(mode: string): RepositoryLanding {
 export interface ProjectRepositoryBound {
   readonly repository: RepositoryId;
   readonly boundAt: string;
-  readonly landing: RepositoryLanding;
+  readonly landing: RepositoryFinalization;
   /** Whether a mint for the jobs this project runs in the repository may ask the forge for its pipeline definitions, which a binding starts without. */
   readonly pipelinesWritable: boolean;
   readonly retiredAt?: string;
@@ -151,8 +164,8 @@ export interface ProjectRepositoryBindings {
 /** One write of a binding's settings as its writer asks for it, each against the value the writer read. */
 export interface ProjectRepositoryLandingWrite {
   readonly repository: RepositoryId;
-  readonly expected: RepositoryLanding;
-  readonly landing: RepositoryLanding;
+  readonly expected: RepositoryFinalization;
+  readonly landing: RepositoryFinalization;
   readonly pipelinesWritable: {
     readonly expected: boolean;
     readonly wanted: boolean;

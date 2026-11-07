@@ -263,8 +263,8 @@ test("the scheduler root reads the binding its session pass places on", async ()
     `scheduler-root-repository-${randomUUID()}`,
   );
   await harness.query(
-    `INSERT INTO project_repository(tenant,project,repository,recovery_epoch,landing_mode)
-     VALUES($1,$2,$3,$4,'Push')`,
+    `INSERT INTO project_repository(tenant,project,repository,recovery_epoch,landing_kind,landing_mode,landing_policy)
+     VALUES($1,$2,$3,$4,'GitMerge','Push','Direct')`,
     [partition.tenant, partition.project, repository, epoch],
   );
 

@@ -6,6 +6,7 @@
  * here rather than in one suite that happened to be updated.
  */
 
+import { repositoryFinalizationOfLanding } from "../../../src/contract/requests.ts";
 import { bootstrapConfigurationRevisionPrefix } from "../../../src/contract/responses.ts";
 import type {
   ConfigurationSummary,
@@ -168,6 +169,7 @@ export function creationBinding(
     repository,
     boundAt: "2026-08-26T00:00:00Z",
     landing: { mode },
+    finalization: repositoryFinalizationOfLanding({ mode }),
     pipelinesWritable: false,
     ...(retiredAt === undefined ? {} : { retiredAt }),
   };

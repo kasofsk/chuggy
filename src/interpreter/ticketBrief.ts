@@ -539,10 +539,10 @@ export function asDraftBrief(value: {
 }
 
 /**
- * A policy stored beside a finalization that is not a git merge, or beside
- * none. Every writer before the kinds stored the policy with no check of the
- * mode, so such a row exists, and a kind orders only a git merge: a stored row
- * reads without it, and only the wire refuses the pairing.
+ * A policy a release stored beside a finalization that is not a git merge, or
+ * beside none. Every release before the kinds stored the policy with no check
+ * of the mode, so such a brief exists, and a kind orders only a git merge: a
+ * stored brief reads without it, and only the wire refuses the pairing.
  */
 function storedPolicyUnkinded(
   finalization: Parameters<typeof asDraftBrief>[0]["finalization"],
@@ -553,17 +553,6 @@ function storedPolicyUnkinded(
   return (
     !("kind" in finalization) &&
     !briefGitMergeModes.some((mode) => mode === finalization.mode)
-  );
-}
-
-/** A finalization a draft row stores by its mode, its policy beside it, read forward as {@link storedPolicyUnkinded} reads one. */
-export function asStoredBriefFinalizationByMode(
-  value: { readonly mode: string; readonly target?: string | undefined },
-  landing: string | undefined,
-): BriefFinalization | undefined {
-  return asBriefFinalizationByMode(
-    value,
-    storedPolicyUnkinded(value, landing) ? undefined : landing,
   );
 }
 

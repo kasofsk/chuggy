@@ -547,8 +547,8 @@ export type BriefGitMergePolicy = (typeof briefGitMergePolicies)[number];
 
 /**
  * The mode a finalization named before it named a kind, which a brief written
- * so is still read in and a repository's landing default still names. A brief
- * read in this way is mapped forward by `briefFinalizationForward`.
+ * so is still read in and the wire still names a repository's landing default
+ * by beside its kind. Either is mapped forward by `briefFinalizationForward`.
  */
 export const briefFinalizationModes = [
   "Push",

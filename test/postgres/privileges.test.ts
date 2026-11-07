@@ -1119,7 +1119,7 @@ test("only the importer reads the tickets following a head and moves one, and it
   );
   assert.deepEqual(
     await changeLogExecutors(
-      "revise_draft(text,text,bigint,bigint,text,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text,text)",
+      "revise_draft(text,text,bigint,bigint,text,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text,text,text)",
     ),
     [apiRole],
   );
@@ -1506,12 +1506,12 @@ test("no runtime role but the API writes a binding's settings or retires one, an
   const calls = [
     [
       repositoryLandingReadFunction,
-      `SELECT landing_mode,pipelines_writable FROM ${repositoryLandingReadFunction}('tenant','project','repository')`,
+      `SELECT landing_kind,landing_mode,landing_policy,pipelines_writable FROM ${repositoryLandingReadFunction}('tenant','project','repository')`,
       [apiRole, workerPlaneRole, finalizerRole],
     ],
     [
       repositoryLandingWriteFunction,
-      `SELECT outcome FROM ${repositoryLandingWriteFunction}('tenant','project','repository','Push','Push',false,false)`,
+      `SELECT outcome FROM ${repositoryLandingWriteFunction}('tenant','project','repository','GitMerge','Push','Direct','GitMerge','Push','Direct',false,false)`,
       [apiRole],
     ],
     [
@@ -1561,9 +1561,20 @@ test("only the boundary owner may move the columns the doors write", async () =>
     workerPlaneRole,
     configurationImporterRole,
   ])
-    for (const column of ["landing_mode", "retired_at", "bound_at"])
+    for (const column of [
+      "landing_kind",
+      "landing_mode",
+      "landing_policy",
+      "retired_at",
+      "bound_at",
+    ])
       assert.equal(await granted(role, column), false, `${role}: ${column}`);
-  for (const column of ["landing_mode", "retired_at"])
+  for (const column of [
+    "landing_kind",
+    "landing_mode",
+    "landing_policy",
+    "retired_at",
+  ])
     assert.equal(await granted(boundaryOwnerRole, column), true, column);
   assert.equal(await granted(boundaryOwnerRole, "bound_at"), false);
 });

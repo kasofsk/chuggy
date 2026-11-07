@@ -122,6 +122,7 @@ import type {
   ProjectRepositoryConfigurationsResult,
   ProjectRepositoryListed,
 } from "../../src/interpreter/repositoryOnboarding.ts";
+import type { RepositoryFinalization } from "../../src/interpreter/repositoryBinding.ts";
 import {
   agenticRefusalLedgerAnsweredMax,
   agenticRefusalReasonCharsMax,
@@ -2111,19 +2112,26 @@ test("an installation's permissions say whether it is behind and where it is acc
   );
 });
 
+const onboardingPush: RepositoryFinalization = {
+  kind: "GitMerge",
+  mode: "Push",
+  policy: "Direct",
+};
+
 test("a binding and a project's bindings name the repository and its moment", () => {
   assert.deepEqual(
     projectRepositoryBoundSchema.parse(
       projectRepositoryBindResponse(partition, {
         result: "Bound",
         repository: onboardingRepository,
-        landing: { mode: "Push" },
+        landing: onboardingPush,
         configurations: { result: "Imported", count: 2 },
       }).body,
     ),
     {
       repository: onboardingRepository,
       landing: { mode: "Push" },
+      finalization: onboardingPush,
       configurations: { result: "Imported", count: 2 },
     },
   );
@@ -2139,7 +2147,7 @@ test("a binding and a project's bindings name the repository and its moment", ()
   const binding = {
     repository: onboardingRepository,
     boundAt: instant,
-    landing: { mode: "Push" as const },
+    landing: onboardingPush,
     pipelinesWritable: false,
   };
   const listed: readonly ProjectRepositoryListed[] = [
@@ -2164,7 +2172,14 @@ test("a binding and a project's bindings name the repository and its moment", ()
       repositories: listed,
     }).body,
   );
-  assert.deepEqual(bound.repositories, listed);
+  assert.deepEqual(
+    bound.repositories,
+    listed.map((row) => ({
+      ...row,
+      landing: { mode: "Push" },
+      finalization: onboardingPush,
+    })),
+  );
   assert.throws(() =>
     projectRepositoriesResponseSchema.parse({ repositories: [binding] }),
   );
@@ -2213,18 +2228,23 @@ test("a configuration step asked for again answers its outcome beside the reposi
     assert.equal(projectRepositoryConfigureResponse({ result }).status, 404);
 });
 
-test("a binding names a landing, and both answers carry the row that stands", () => {
-  const binding = {
+test("a binding names a landing by its kind and by its mode alone, and both answers carry the row that stands", () => {
+  const stands = {
     repository: onboardingRepository,
     boundAt: instant,
-    landing: { mode: "PullRequest" as const },
+    landing: { kind: "GitMerge", mode: "Push", policy: "Serialized" } as const,
     pipelinesWritable: true,
+  };
+  const binding = {
+    ...stands,
+    landing: { mode: "Push" as const },
+    finalization: stands.landing,
   };
   assert.deepEqual(
     projectRepositoryLandingWrittenSchema.parse(
       projectRepositoryLandingResponse({
         result: "Written",
-        repository: binding,
+        repository: stands,
       }).body,
     ),
     { repository: binding },
@@ -2233,11 +2253,21 @@ test("a binding names a landing, and both answers carry the row that stands", ()
     projectRepositoryLandingConflictSchema.parse(
       projectRepositoryLandingResponse({
         result: "LandingMoved",
-        repository: binding,
+        repository: stands,
       }).body,
     ),
     { repository: binding },
   );
+  for (const finalization of [
+    { kind: "PullRequest", target: "refs/heads/main" },
+    { kind: "None", mode: "Push" },
+    { kind: "GitMerge", mode: "Push" },
+    { kind: "GitMerge", mode: "PullRequest", policy: "Direct" },
+  ])
+    assert.throws(
+      () => projectRepositoryResponseSchema.parse({ ...binding, finalization }),
+      JSON.stringify(finalization),
+    );
   assert.throws(() =>
     projectRepositoryResponseSchema.parse({
       repository: onboardingRepository,
@@ -2266,6 +2296,7 @@ test("a retirement answers the row it left, carrying the instant it was retired 
     repository: onboardingRepository,
     boundAt: instant,
     landing: { mode: "Push" as const },
+    finalization: onboardingPush,
     pipelinesWritable: false,
     retiredAt: instant,
   };
@@ -2273,7 +2304,7 @@ test("a retirement answers the row it left, carrying the instant it was retired 
     projectRepositoryRetiredSchema.parse(
       projectRepositoryRetirementResponse({
         result: "Retired",
-        repository: retired,
+        repository: { ...retired, landing: onboardingPush },
       }).body,
     ),
     { repository: retired },
@@ -2359,7 +2390,7 @@ test("every configuration outcome a bind reports parses as the schema answers it
         projectRepositoryBindResponse(partition, {
           result: "Bound",
           repository: onboardingRepository,
-          landing: { mode: "Push" },
+          landing: onboardingPush,
           configurations,
         }).body,
       ).configurations,
@@ -2373,7 +2404,7 @@ test("a console reading a bind's configurations as they stood before `ignored` s
   const bound = projectRepositoryBindResponse(partition, {
     result: "Bound",
     repository: onboardingRepository,
-    landing: { mode: "Push" },
+    landing: onboardingPush,
     configurations: {
       result: "Bootstrapped",
       revision: asConfigurationRevisionId("bootstrap"),

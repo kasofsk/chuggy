@@ -113,7 +113,7 @@ export async function seedProposingBinding(subject: pg.Pool): Promise<void> {
      VALUES('tenant-91','project-91','Active',0,1,1)`,
   );
   await subject.query(
-    `INSERT INTO project_repository(tenant,project,repository,recovery_epoch,landing_mode)
+    `INSERT INTO project_repository(tenant,project,repository,recovery_epoch,landing_kind)
      VALUES('tenant-91','project-91','bound-91','epoch-91','PullRequest')`,
   );
   await subject.query(

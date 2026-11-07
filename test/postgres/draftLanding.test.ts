@@ -13,7 +13,6 @@ import {
   ticketServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
 import { briefFinalizationDefault } from "../../src/interpreter/ticketBrief.ts";
-import { briefFinalizationModeOf } from "../../src/contract/rosters.ts";
 import type pg from "pg";
 import { encodeDraftAuthoring } from "../../src/interpreter/authoring.ts";
 import { plainAuthoring } from "../actor/harness.ts";
@@ -24,25 +23,55 @@ import {
   seedProposingBinding,
 } from "./migrationHarness.ts";
 
-test("a landing no roster names is refused by the column's own constraint", async () => {
+test("a repository's landing no roster names is refused by the row's own constraint", async () => {
   await migratedDatabase("i90roster", async (subject) => {
     await seedLandinglessBinding(subject);
-    for (const mode of ["Push", "PullRequest", "PullRequestMerge"])
+    for (const [kind, mode, policy] of [
+      ["GitMerge", "Push", "Direct"],
+      ["GitMerge", "PullRequestMerge", "Serialized"],
+      ["PullRequest", null, null],
+      ["None", null, null],
+    ] as const)
       await subject.query(
-        `UPDATE project_repository SET landing_mode=$1
+        `UPDATE project_repository SET landing_kind=$1,landing_mode=$2,landing_policy=$3
           WHERE tenant='tenant-90' AND project='project-90'`,
-        [mode],
+        [kind, mode, policy],
       );
-    await assert.rejects(
-      subject.query(
-        `UPDATE project_repository SET landing_mode='Unknown'
-          WHERE tenant='tenant-90' AND project='project-90'`,
-      ),
-      /project_repository_landing_mode_is_known/u,
-      "the installed CHECK rejects an unknown landing mode",
-    );
+    for (const [written, constraint] of [
+      [`landing_kind='Unknown'`, "project_repository_landing_kind_is_known"],
+      [
+        `landing_kind='GitMerge',landing_mode='PullRequest',landing_policy='Direct'`,
+        "project_repository_landing_mode_is_known",
+      ],
+      [
+        `landing_kind='GitMerge',landing_mode='Push',landing_policy='Stacked'`,
+        "project_repository_landing_policy_is_known",
+      ],
+    ] as const)
+      await assert.rejects(
+        subject.query(
+          `UPDATE project_repository SET ${written}
+            WHERE tenant='tenant-90' AND project='project-90'`,
+        ),
+        new RegExp(constraint, "u"),
+        `the installed CHECK rejects ${written}`,
+      );
   });
 });
+
+/** Every draft brief's finalization columns but its target, in ticket order. */
+async function storedFinalizations(subject: pg.Pool) {
+  return (
+    await subject.query<{
+      finalization_kind: string;
+      finalization_mode: string | null;
+      finalization_policy: string | null;
+    }>(
+      `SELECT finalization_kind,finalization_mode,finalization_policy
+         FROM draft_brief ORDER BY ticket`,
+    )
+  ).rows;
+}
 
 async function createdUnboundDraft(subject: pg.Pool) {
   return (
@@ -66,18 +95,13 @@ test("the draft door falls back to the landing this tree defaults to", async () 
     assert.deepEqual(await createdUnboundDraft(subject), [
       { result: "Created" },
     ]);
-    assert.deepEqual(
-      (
-        await subject.query<{ finalization_mode: string }>(
-          `SELECT finalization_mode FROM draft_brief`,
-        )
-      ).rows,
-      [
-        {
-          finalization_mode: briefFinalizationModeOf(briefFinalizationDefault),
-        },
-      ],
-    );
+    assert.deepEqual(await storedFinalizations(subject), [
+      {
+        finalization_kind: "GitMerge",
+        finalization_mode: "Push",
+        finalization_policy: "Direct",
+      },
+    ]);
   });
 });
 
@@ -191,12 +215,14 @@ test("a draft naming no landing lands where its repository lands, and a revision
       [{ result: "Created" }],
     );
     assert.deepEqual(
-      (
-        await subject.query<{ finalization_mode: string }>(
-          "SELECT finalization_mode FROM draft_brief",
-        )
-      ).rows,
-      [{ finalization_mode: "PullRequest" }],
+      await storedFinalizations(subject),
+      [
+        {
+          finalization_kind: "PullRequest",
+          finalization_mode: null,
+          finalization_policy: null,
+        },
+      ],
       "the draft lands where its repository lands",
     );
     assert.deepEqual(
@@ -205,67 +231,69 @@ test("a draft naming no landing lands where its repository lands, and a revision
           `SELECT result FROM ${draftReviseFunction}(
              'tenant-91','project-91',1,1,'revision-91',$1,
              NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],'refs/heads/rt/work',
-             'Push',NULL,'bound-91',NULL,NULL,'User','author')`,
+             'Push',NULL,'bound-91',NULL,NULL,'User','author','GitMerge','Direct')`,
           [encodeDraftAuthoring(plainAuthoring)],
         )
       ).rows,
       [{ result: "Revised" }],
     );
     assert.deepEqual(
-      (
-        await subject.query<{ finalization_mode: string }>(
-          "SELECT finalization_mode FROM draft_brief",
-        )
-      ).rows,
-      [{ finalization_mode: "Push" }],
+      await storedFinalizations(subject),
+      [
+        {
+          finalization_kind: "GitMerge",
+          finalization_mode: "Push",
+          finalization_policy: "Direct",
+        },
+      ],
       "the revision lands where it says",
     );
   });
 });
 
-/** The landing each roster has to take, and one neither may. */
+/** The kind each roster has to take that names nothing, and one neither may. */
 const landingRosterRows: readonly (readonly [string, string, string])[] = [
   [
-    "draft_brief_finalization_mode_is_known",
+    "draft_brief_finalization_kind_is_known",
     "None",
-    `UPDATE draft_brief SET finalization_mode='None'`,
+    `UPDATE draft_brief SET finalization_kind='None'`,
   ],
   [
-    "draft_brief_finalization_mode_is_known",
+    "draft_brief_finalization_kind_is_known",
     "Nowhere",
-    `UPDATE draft_brief SET finalization_mode='Nowhere'`,
+    `UPDATE draft_brief SET finalization_kind='Nowhere'`,
   ],
   [
-    "project_repository_landing_mode_is_known",
+    "project_repository_landing_kind_is_known",
     "None",
-    `UPDATE project_repository SET landing_mode='None'`,
+    `UPDATE project_repository SET landing_kind='None'`,
   ],
   [
-    "project_repository_landing_mode_is_known",
+    "project_repository_landing_kind_is_known",
     "Nowhere",
-    `UPDATE project_repository SET landing_mode='Nowhere'`,
+    `UPDATE project_repository SET landing_kind='Nowhere'`,
   ],
 ];
 
-test("both landing rosters take the mode that lands nothing and no other new one", async () => {
+test("both landing rosters take the kind that lands nothing and no other new one", async () => {
   await migratedDatabase("threedeletions_none", async (subject) => {
     await seedProposingBinding(subject);
     assert.deepEqual(
       await createdProposingDraft(subject, "refs/heads/rt/work"),
       [{ result: "Created", ticket: "1" }],
     );
-    for (const [constraint, mode, written] of landingRosterRows)
-      if (mode === "None")
+    for (const [constraint, kind, written] of landingRosterRows)
+      if (kind === "None")
         assert.equal(
           (await subject.query(written)).rowCount,
           1,
-          `${constraint} takes ${mode}`,
+          `${constraint} takes ${kind}`,
         );
       else
         await assert.rejects(
           subject.query(written),
           new RegExp(constraint, "u"),
-          `${constraint} refuses ${mode}`,
+          `${constraint} refuses ${kind}`,
         );
   });
 });
@@ -412,34 +440,66 @@ test("the draft's released version is one it has, and only a released draft has 
   });
 });
 
-test("a draft lands Direct unless it is written Serialized, and the column refuses any other", async () => {
-  await migratedDatabase("i115landing", async (subject) => {
+test("a draft's git merge carries the policy it is written with, and only a git merge carries one", async () => {
+  await migratedDatabase("i129policy", async (subject) => {
     await seedProposingBinding(subject);
-    const landings = async () =>
-      (
-        await subject.query<{ landing_policy: string }>(
-          "SELECT landing_policy FROM draft_brief",
-        )
-      ).rows;
     assert.deepEqual(await createdUnboundDraft(subject), [
       { result: "Created" },
     ]);
-    assert.deepEqual(await landings(), [{ landing_policy: "Direct" }]);
-    const revise = async (landing: string) =>
+    const revise = async (
+      mode: string | null,
+      kind: string | null,
+      policy: string | null,
+    ) =>
       (
         await subject.query<{ result: string }>(
           `SELECT result FROM ${draftReviseFunction}(
-             'tenant-91','project-91',1,1,'revision-91',$1,
-             NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],NULL,
-             NULL,NULL,NULL,NULL,NULL,'User','author',$2)`,
-          [encodeDraftAuthoring(plainAuthoring), landing],
+             'tenant-91','project-91',1,
+             (SELECT authoring_version FROM draft WHERE ticket=1),'revision-91',$1,
+             NULL,'Land it.','{}'::text[],'{}'::text[],'{}'::text[],'refs/heads/rt/work',
+             $2,NULL,NULL,NULL,NULL,'User','author',$3,$4)`,
+          [encodeDraftAuthoring(plainAuthoring), mode, kind, policy],
         )
       ).rows;
-    assert.deepEqual(await revise("Serialized"), [{ result: "Revised" }]);
-    assert.deepEqual(await landings(), [{ landing_policy: "Serialized" }]);
-    await assert.rejects(
-      subject.query(`UPDATE draft_brief SET landing_policy='Stacked'`),
-      /draft_brief_landing_policy_is_known/u,
+    assert.deepEqual(await revise("Push", "GitMerge", "Serialized"), [
+      { result: "Revised" },
+    ]);
+    assert.deepEqual(await storedFinalizations(subject), [
+      {
+        finalization_kind: "GitMerge",
+        finalization_mode: "Push",
+        finalization_policy: "Serialized",
+      },
+    ]);
+    for (const [written, refusal] of [
+      [["Push", null, null], /names the kind it belongs to/u],
+      [[null, null, "Serialized"], /names the kind it belongs to/u],
+      [
+        [null, "PullRequest", "Serialized"],
+        /draft_brief_finalization_is_by_kind/u,
+      ],
+      [["Push", "None", null], /draft_brief_finalization_is_by_kind/u],
+      [["Push", "GitMerge", null], /draft_brief_finalization_is_by_kind/u],
+      [
+        ["Push", "GitMerge", "Stacked"],
+        /draft_brief_finalization_policy_is_known/u,
+      ],
+    ] as const)
+      await assert.rejects(
+        revise(written[0], written[1], written[2]),
+        refusal,
+        JSON.stringify(written),
+      );
+    assert.deepEqual(
+      await storedFinalizations(subject),
+      [
+        {
+          finalization_kind: "GitMerge",
+          finalization_mode: "Push",
+          finalization_policy: "Serialized",
+        },
+      ],
+      "a refused revision moves nothing",
     );
   });
 });

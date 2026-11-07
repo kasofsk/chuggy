@@ -27,6 +27,7 @@
 
 import assert from "node:assert/strict";
 import { generateKeyPairSync } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -86,6 +87,7 @@ import type {
   ProjectRepositoryRetirementStore,
   RepositoryBindingCommand,
   RepositoryBindingOutcome,
+  RepositoryFinalization,
 } from "../../src/interpreter/repositoryBinding.ts";
 import {
   repositoryOnboarding,
@@ -106,6 +108,12 @@ const worker = asForgeApp("worker");
 const bothApps = [app, worker] as const;
 const installationId = asForgeInstallationId("156333284");
 const repository = asRepositoryId("https://github.com/acme/atlas.git");
+const gitPush: RepositoryFinalization = {
+  kind: "GitMerge",
+  mode: "Push",
+  policy: "Direct",
+};
+const pullRequest: RepositoryFinalization = { kind: "PullRequest" };
 const epoch = asRecoveryEpoch("epoch-1");
 
 const tenantRoot = `/api/v1/tenants/${tenant}`;
@@ -461,7 +469,7 @@ function fixtureBinding(store: OnboardingStore): ProjectRepositoryBindingWrite {
         store.bound.push({
           repository: command.repository,
           boundAt: "2026-09-11T01:00:00Z",
-          landing: { mode: "Push" },
+          landing: gitPush,
           pipelinesWritable: false,
         });
         return Promise.resolve("Bound" as const);
@@ -494,8 +502,8 @@ function fixtureLanding(store: OnboardingStore): ProjectRepositoryLandingStore {
       if (standing === undefined)
         return Promise.resolve({ outcome: "NotBound" } as const);
       if (
-        (standing.landing.mode !== command.expected.mode &&
-          standing.landing.mode !== command.landing.mode) ||
+        (!isDeepStrictEqual(standing.landing, command.expected) &&
+          !isDeepStrictEqual(standing.landing, command.landing)) ||
         (standing.pipelinesWritable !== command.pipelinesWritable.expected &&
           standing.pipelinesWritable !== command.pipelinesWritable.wanted)
       )
@@ -1323,6 +1331,7 @@ test("a bind is created at its own address and read back by the listing", async 
   assert.deepEqual(served.json(), {
     repository,
     landing: { mode: "Push" },
+    finalization: gitPush,
     configurations: { result: "Deferred", reason: "NotConfigured" },
     workerReach: unclaimedReach,
   });
@@ -1337,6 +1346,7 @@ test("a bind is created at its own address and read back by the listing", async 
         repository,
         boundAt: "2026-09-11T01:00:00Z",
         landing: { mode: "Push" },
+        finalization: gitPush,
         pipelinesWritable: false,
         configured: false,
         workerReach: unclaimedReach,
@@ -1356,7 +1366,7 @@ test("the listing asks the forge for reach unless reach=false, and refuses any o
   store.bound.push({
     repository,
     boundAt: "2026-09-11T01:00:00Z",
-    landing: { mode: "Push" },
+    landing: gitPush,
     pipelinesWritable: false,
   });
   const listing = fixtureCase(t, { granted: ["Read"], store });
@@ -1364,6 +1374,7 @@ test("the listing asks the forge for reach unless reach=false, and refuses any o
     repository,
     boundAt: "2026-09-11T01:00:00Z",
     landing: { mode: "Push" },
+    finalization: gitPush,
     pipelinesWritable: false,
     configured: false,
   };
@@ -1402,13 +1413,13 @@ test("the listing answers a binding's last import attempted, and nothing of one 
     {
       repository,
       boundAt: "2026-09-11T01:00:00Z",
-      landing: { mode: "Push" },
+      landing: gitPush,
       pipelinesWritable: false,
     },
     {
       repository: other,
       boundAt: "2026-09-12T01:00:00Z",
-      landing: { mode: "Push" },
+      landing: gitPush,
       pipelinesWritable: false,
     },
   );
@@ -1628,7 +1639,11 @@ function landingRequest(body: Record<string, unknown>) {
 /** A settings write a setting moved under: refused as moved, answering the binding as it stands. */
 function landingMovedAsserted(
   served: { readonly statusCode: number; json<T>(): T },
-  standing: { readonly mode: string; readonly pipelinesWritable: boolean },
+  standing: {
+    readonly mode: string;
+    readonly finalization: RepositoryFinalization;
+    readonly pipelinesWritable: boolean;
+  },
 ): void {
   assert.equal(served.statusCode, 409);
   assert.equal(
@@ -1639,6 +1654,7 @@ function landingMovedAsserted(
     repository,
     boundAt: "2026-09-11T01:00:00Z",
     landing: { mode: standing.mode },
+    finalization: standing.finalization,
     pipelinesWritable: standing.pipelinesWritable,
   });
 }
@@ -1687,6 +1703,7 @@ test("moving where a repository lands answers the row and the listing agrees", a
       repository,
       boundAt: "2026-09-11T01:00:00Z",
       landing: { mode: "PullRequest" },
+      finalization: pullRequest,
       pipelinesWritable: false,
     },
   });
@@ -1700,11 +1717,53 @@ test("moving where a repository lands answers the row and the listing agrees", a
         repository,
         boundAt: "2026-09-11T01:00:00Z",
         landing: { mode: "PullRequest" },
+        finalization: pullRequest,
         pipelinesWritable: false,
         configured: false,
         workerReach: unclaimedReach,
       },
     ],
+  });
+});
+
+test("a landing written by its kind carries its policy, and a write by mode alone is fenced on the whole of it", async (t) => {
+  const landed = await fixtureLanded(t);
+  const serialized: RepositoryFinalization = {
+    kind: "GitMerge",
+    mode: "Push",
+    policy: "Serialized",
+  };
+  const served = await landed.app.inject(
+    landingRequest({
+      repository,
+      expected: { mode: "Push" },
+      landing: serialized,
+      pipelinesWritable: { expected: false, wanted: false },
+    }),
+  );
+  assert.equal(served.statusCode, 200);
+  assert.deepEqual(served.json(), {
+    repository: {
+      repository,
+      boundAt: "2026-09-11T01:00:00Z",
+      landing: { mode: "Push" },
+      finalization: serialized,
+      pipelinesWritable: false,
+    },
+  });
+  assert.deepEqual(landed.store.bound[0]?.landing, serialized);
+  const crossed = await landed.app.inject(
+    landingRequest({
+      repository,
+      expected: { mode: "Push" },
+      landing: { mode: "PullRequest" },
+      pipelinesWritable: { expected: false, wanted: false },
+    }),
+  );
+  landingMovedAsserted(crossed, {
+    mode: "Push",
+    finalization: serialized,
+    pipelinesWritable: false,
   });
 });
 
@@ -1728,6 +1787,7 @@ test("a landing that moved under the writer is a conflict carrying the row that 
   );
   landingMovedAsserted(served, {
     mode: "PullRequest",
+    finalization: pullRequest,
     pipelinesWritable: false,
   });
 });
@@ -1757,7 +1817,7 @@ test("a landing move without the project permit is not found and writes nothing"
     }),
   );
   assert.equal(served.statusCode, 404);
-  assert.deepEqual(landed.store.bound[0]?.landing, { mode: "Push" });
+  assert.deepEqual(landed.store.bound[0]?.landing, gitPush);
 });
 
 test("a write the durable side could not complete is a wait and says how long", async (t) => {
@@ -1825,7 +1885,11 @@ test("pipeline definitions allowed under the writer are a conflict carrying the 
       pipelinesWritable: { expected: false, wanted: false },
     }),
   );
-  landingMovedAsserted(served, { mode: "Push", pipelinesWritable: true });
+  landingMovedAsserted(served, {
+    mode: "Push",
+    finalization: gitPush,
+    pipelinesWritable: true,
+  });
 });
 
 test("allowing pipeline definitions without the project permit is not found and writes nothing", async (t) => {
@@ -1874,7 +1938,7 @@ test("a landing no roster names, or a write missing either setting, is refused b
     const served = await landed.app.inject(landingRequest(body));
     assert.equal(served.statusCode, 400, JSON.stringify(body));
   }
-  assert.deepEqual(landed.store.bound[0]?.landing, { mode: "Push" });
+  assert.deepEqual(landed.store.bound[0]?.landing, gitPush);
   assert.equal(landed.store.bound[0]?.pipelinesWritable, false);
 });
 
@@ -1896,6 +1960,7 @@ test("retiring a binding answers the row it left and the listing agrees", async 
     repository,
     boundAt: "2026-09-11T01:00:00Z",
     landing: { mode: "Push" },
+    finalization: gitPush,
     pipelinesWritable: false,
     retiredAt: fixtureRetiredAt,
   };
@@ -1955,6 +2020,7 @@ test("binding a retired repository again reinstates it and answers as a bind", a
           repository,
           boundAt: "2026-09-11T01:00:00Z",
           landing: { mode: "Push" },
+          finalization: gitPush,
           pipelinesWritable: false,
           configured: false,
           workerReach: unclaimedReach,

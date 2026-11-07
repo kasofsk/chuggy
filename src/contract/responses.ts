@@ -88,6 +88,7 @@ import {
 } from "./workerPool.ts";
 import {
   agentAccountSettingsSchema,
+  repositoryFinalizationSchema,
   repositoryLandingSchema,
   selectorProjectOverridesSchema,
 } from "./requests.ts";
@@ -2109,6 +2110,7 @@ export type ProjectRepositoryWorkerReachResponse = z.infer<
 export const projectRepositoryBoundSchema = z.object({
   repository: z.string().min(1),
   landing: repositoryLandingSchema,
+  finalization: repositoryFinalizationSchema,
   configurations: projectRepositoryConfigurationsSchema,
   /** Absent where the worker App reaches the repository, or this deployment holds no worker App key to ask with. */
   workerReach: projectRepositoryWorkerReachSchema.optional(),
@@ -2127,7 +2129,8 @@ export type ProjectRepositoryAlreadyBoundResponse = z.infer<
 
 /**
  * One repository a project binds, when it was bound, how a ticket in it lands,
- * and whether its jobs may write its pipeline definitions. `retiredAt` is
+ * as its `finalization` and as the mode alone in `landing`, and whether its jobs
+ * may write its pipeline definitions. `retiredAt` is
  * present only on a binding that has been retired, which is one no longer
  * bound or elected, kept so its history reads by name.
  */
@@ -2135,6 +2138,7 @@ export const projectRepositoryResponseSchema = z.object({
   repository: z.string().min(1),
   boundAt: instantSchema,
   landing: repositoryLandingSchema,
+  finalization: repositoryFinalizationSchema,
   pipelinesWritable: z.boolean(),
   retiredAt: instantSchema.optional(),
 });

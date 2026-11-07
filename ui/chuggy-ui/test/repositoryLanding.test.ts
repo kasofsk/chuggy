@@ -7,6 +7,7 @@
  * invisible in a rendering because both drafts draw the same radios.
  */
 
+import { repositoryFinalizationOfLanding } from "../../../src/contract/requests.ts";
 import { expect, test } from "vitest";
 
 import type { ProjectRepositoryResponse } from "../../../src/contract/responses.ts";
@@ -37,6 +38,7 @@ function binding(
     repository,
     boundAt: "2026-08-26T00:00:00Z",
     landing: { mode },
+    finalization: repositoryFinalizationOfLanding({ mode }),
     pipelinesWritable,
   };
 }

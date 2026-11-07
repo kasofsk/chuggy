@@ -10,6 +10,8 @@
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
+import { repositoryFinalizationOfLanding } from "../../../src/contract/requests.ts";
+import type { BriefFinalizationMode } from "../../../src/contract/rosters.ts";
 import { QueryClient } from "@tanstack/react-query";
 import {
   cleanup,
@@ -70,7 +72,7 @@ afterEach(() => {
 });
 
 function binding(
-  mode: string,
+  mode: BriefFinalizationMode,
   repository = chuggy,
   pipelinesWritable = false,
 ): unknown {
@@ -78,6 +80,7 @@ function binding(
     repository,
     boundAt: "2026-09-11T00:00:00Z",
     landing: { mode },
+    finalization: repositoryFinalizationOfLanding({ mode }),
     pipelinesWritable,
     configured: true,
   };
@@ -321,6 +324,7 @@ test.each([
           repository: chuggy,
           boundAt: "2026-09-11T00:00:00Z",
           landing: { mode: "Push" },
+          finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
           pipelinesWritable: false,
           configured: true,
           ...(retiredAt === undefined ? {} : { retiredAt }),

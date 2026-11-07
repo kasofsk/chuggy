@@ -45,8 +45,8 @@ test("repository binding reads are project-local and preserve their epoch", asyn
   const epoch = row[0]?.epoch;
   if (epoch === undefined) throw new Error("recovery epoch fixture is absent");
   await harness.query(
-    `INSERT INTO project_repository (tenant,project,repository,recovery_epoch,landing_mode)
-     VALUES ($1,$2,$3,$7,'Push'),($4,$5,$6,$7,'Push')`,
+    `INSERT INTO project_repository (tenant,project,repository,recovery_epoch,landing_kind,landing_mode,landing_policy)
+     VALUES ($1,$2,$3,$7,'GitMerge','Push','Direct'),($4,$5,$6,$7,'GitMerge','Push','Direct')`,
     [
       first.tenant,
       first.project,
@@ -114,8 +114,8 @@ test("repository binding reads hold a shared project name and a shared tenant ap
   for (const { partition, repository } of fixtures) {
     await harness.store.createProject(partition);
     await harness.query(
-      `INSERT INTO project_repository (tenant,project,repository,recovery_epoch,landing_mode)
-       VALUES ($1,$2,$3,$4,'Push')`,
+      `INSERT INTO project_repository (tenant,project,repository,recovery_epoch,landing_kind,landing_mode,landing_policy)
+       VALUES ($1,$2,$3,$4,'GitMerge','Push','Direct')`,
       [partition.tenant, partition.project, repository, epoch],
     );
   }
@@ -143,8 +143,8 @@ test("a binding read answers the repository named, and the project's oldest wher
   const older = `repository-binding-named-older-${randomUUID()}`;
   const newer = `repository-binding-named-newer-${randomUUID()}`;
   await harness.query(
-    `INSERT INTO project_repository (tenant,project,repository,recovery_epoch,bound_at,landing_mode)
-     VALUES ($1,$2,$3,$5,'2026-01-01','Push'),($1,$2,$4,$5,'2026-01-02','Push')`,
+    `INSERT INTO project_repository (tenant,project,repository,recovery_epoch,bound_at,landing_kind,landing_mode,landing_policy)
+     VALUES ($1,$2,$3,$5,'2026-01-01','GitMerge','Push','Direct'),($1,$2,$4,$5,'2026-01-02','GitMerge','Push','Direct')`,
     [partition.tenant, partition.project, older, newer, epoch],
   );
   const bindings = postgresProjectRepositoryBinding(pool);

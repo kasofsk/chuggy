@@ -48,7 +48,7 @@ import {
   asGitRefName,
   asRepositoryId,
 } from "../../src/interpreter/finalizer.ts";
-import { asRepositoryLanding } from "../../src/interpreter/repositoryBinding.ts";
+import { asRepositoryFinalization } from "../../src/interpreter/repositoryBinding.ts";
 import {
   asCanonicalConfiguration,
   asConfigurationRevisionId,
@@ -490,7 +490,11 @@ function repositoryImportLanding(
       return Promise.resolve({
         repository,
         boundAt: "2026-10-01T00:00:00Z",
-        landing: asRepositoryLanding("Push"),
+        landing: asRepositoryFinalization({
+          kind: "GitMerge",
+          mode: "Push",
+          policy: "Direct",
+        }),
         pipelinesWritable: false,
         ...(retiredAt === undefined ? {} : { retiredAt }),
       });

@@ -438,6 +438,7 @@ function binding(
     repository: repository.repository,
     boundAt: "2026-08-26T00:00:00Z",
     landing: { mode: "Push" },
+    finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
     pipelinesWritable: false,
     ...(repository.retired === true
       ? { retiredAt: "2026-08-27T00:00:00Z" }
