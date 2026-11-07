@@ -62,6 +62,18 @@ ARG TRACK_RECORD_VERSION
 RUN CGO_ENABLED=0 go install -trimpath \
     "github.com/kasofsk/track-record/cmd/track-record@v${TRACK_RECORD_VERSION}"
 
+# The Playwright the tree's lock names, read in a stage of its own so that the
+# browser the `worker` stage installs for it is fetched again only when that
+# version moves, rather than whenever the lock does.
+FROM base AS playwright-version
+RUN --mount=type=bind,source=package-lock.json,target=/tmp/package-lock.json \
+  node -e ' \
+    const lock = require("/tmp/package-lock.json"); \
+    const version = lock.packages?.["node_modules/playwright-core"]?.version; \
+    if (typeof version !== "string") throw new Error("the lock names no playwright-core"); \
+    console.log(version); \
+  ' > /playwright-version
+
 # The worker core: kasofsk/chuggy-common at the commit `core.json` pins, which
 # `core.sh` fetches and refuses unless that commit is on the core's main. Only
 # what the later stages copy leaves this one: the core's tree, for its suites;
@@ -456,18 +468,6 @@ USER 1000:1000
 WORKDIR /workspace
 ENTRYPOINT ["/opt/chuggy/bin/node", "/opt/chuggy/lib/chuggy/worker.mjs"]
 
-# The Playwright the tree's lock names, read in a stage of its own so that the
-# browser the `worker` stage installs for it is fetched again only when that
-# version moves, rather than whenever the lock does.
-FROM base AS playwright-version
-RUN --mount=type=bind,source=package-lock.json,target=/tmp/package-lock.json \
-  node -e ' \
-    const lock = require("/tmp/package-lock.json"); \
-    const version = lock.packages?.["node_modules/playwright-core"]?.version; \
-    if (typeof version !== "string") throw new Error("the lock names no playwright-core"); \
-    console.log(version); \
-  ' > /playwright-version
-
 # The image this tree's own tickets run on.
 FROM worker-base AS worker
 
@@ -495,13 +495,13 @@ RUN case "$TARGETARCH" in \
   && rm /tmp/keto.tgz \
   && keto version
 
-# THE IMAGE SHIPS THE BROWSER THE TREE'S PLAYWRIGHT LAUNCHES, so that an agent
-# looks at a console change rendered without installing one: the headless
-# shell of the Chromium the lock's `playwright-core` names, and the libraries
-# it loads. The directory is the image's user's, so a ticket that moves
-# Playwright can install the build its lock then names beside it; any other
-# user, as a chat session's is, can launch it and write none of it. The build
-# fails unless the image's user and the first session user both render a page.
+# THE IMAGE SHIPS THE BROWSER THE TREE'S PLAYWRIGHT LAUNCHES, so that a
+# ticket's agent looks at a console change rendered without installing one:
+# the headless shell of the Chromium the lock's `playwright-core` names, and
+# the libraries it loads. The directory is the image's user's, so a ticket that
+# moves Playwright can install the build its lock then names in its place, and
+# no other user can write it. The build fails unless the image's user renders a
+# page with it.
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright
 COPY --from=playwright-version /playwright-version /tmp/playwright-version
 RUN --mount=type=cache,target=/root/.npm \
@@ -516,29 +516,20 @@ RUN --mount=type=cache,target=/root/.npm \
   && rm -rf /var/lib/apt/lists/* \
   && chown -R 1000:1000 "$PLAYWRIGHT_BROWSERS_PATH" \
   && chmod -R go-w "$PLAYWRIGHT_BROWSERS_PATH" \
-  && first="$(/opt/chuggy/bin/node --input-type=module --eval ' \
-    import { chatSessionUidFirst } from "/opt/chuggy/lib/chuggy/chatSession.mjs"; \
-    console.log(chatSessionUidFirst); \
-  ')" \
-  && for uid in 1000 "$first"; do \
-       home="$(mktemp -d)" \
-       && chown "$uid:$uid" "$home" \
-       && setpriv --reuid "$uid" --regid "$uid" --clear-groups env HOME="$home" \
-         node --input-type=module --eval ' \
-           const { chromium } = await import(process.argv[1]); \
-           const browser = await chromium.launch(); \
-           const page = await browser.newPage(); \
-           await page.setContent("<p>rendered</p>"); \
-           await page.screenshot(); \
-           const text = await page.textContent("p"); \
-           await browser.close(); \
-           if (text !== "rendered") throw new Error(`the page read back ${text}`); \
-         ' "$probe/node_modules/playwright-core/index.mjs" \
-       && rm -rf "$home" \
-       && echo "chromium: renders as $uid" \
-       || exit 1; \
-     done \
-  && rm -rf "$probe"
+  && home="$(mktemp -d)" \
+  && chown 1000:1000 "$home" \
+  && setpriv --reuid 1000 --regid 1000 --clear-groups env HOME="$home" \
+    node --input-type=module --eval ' \
+      const { chromium } = await import(process.argv[1]); \
+      const browser = await chromium.launch(); \
+      const page = await browser.newPage(); \
+      await page.setContent("<p>rendered</p>"); \
+      await page.screenshot(); \
+      const text = await page.textContent("p"); \
+      await browser.close(); \
+      if (text !== "rendered") throw new Error(`the page read back ${text}`); \
+    ' "$probe/node_modules/playwright-core/index.mjs" \
+  && rm -rf "$home" "$probe"
 USER 1000:1000
 
 # THE IMAGE SHIPS TRACK RECORD'S CLIENT, which reuses a pass on record rather
