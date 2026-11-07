@@ -18,8 +18,9 @@
  * says so, so a table cell can never be read as a bill that was not one. The
  * tag is total over the roster, which is what makes a basis the wire gains
  * stop compiling here rather than reaching a reader as a price;
- * `costAmountFigure`'s bare amount is the one exception, legitimate because
- * the line it sits on already names the turn it belongs to.
+ * `costAmountFigure`'s bare amount is the one exception, legitimate only where
+ * what sits beside it already says what it is: the turn a conversation line
+ * names, or the basis the Usage tab's Cost tile states in its own note.
  *
  * AN INSTANT IS ABSOLUTE AND AN AGO IS RELATIVE. A table compared row to row
  * keeps the clock face with the full ISO on hover; where a reader is scanning
@@ -136,8 +137,8 @@ export function costFigure(
   };
 }
 
-/** The amount alone, for a line that already says what stood rather than a
- * table column, which states its basis instead. */
+/** The amount alone, for a line or tile that already says what stood rather
+ * than a table column, which states its basis instead. */
 export function costAmountFigure(costUsdMicros: number): Figure {
   return { kind: "Cost", text: costText(costUsdMicros) };
 }
