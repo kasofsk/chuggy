@@ -1844,12 +1844,6 @@ export function projectCreationResponse(
 }
 
 /**
- * A binding. A repository no claimed installation grants is refused as the
- * request's own fault rather than as a missing resource, because the caller may
- * see the project and the repository both; an epoch that moved under the
- * request is a wait, because the same request will land once it is read again.
- */
-/**
  * One binding as the wire answers it: its landing default by its kind as
  * `finalization`, and by its mode alone as `landing`, which a reader written
  * before the kinds still reads.
@@ -1869,6 +1863,12 @@ function projectRepositoryBody<
   };
 }
 
+/**
+ * A binding. A repository no claimed installation grants is refused as the
+ * request's own fault rather than as a missing resource, because the caller may
+ * see the project and the repository both; an epoch that moved under the
+ * request is a wait, because the same request will land once it is read again.
+ */
 export function projectRepositoryBindResponse(
   partition: Partition,
   result: ProjectRepositoryBindResult,
