@@ -158,6 +158,37 @@ test("an override that writes the value the catalog already holds marks nothing"
   expect(work.details.some((detail) => detail.overridden)).toBe(false);
 });
 
+test("a file whose content the ticket changed is named and marked though its path is the same", () => {
+  const catalog = JSON.parse(creationCatalogCanonical) as {
+    workloads: Record<string, Record<string, unknown>>;
+  };
+  const worker = {
+    mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
+    setup: [],
+  };
+  catalog.workloads["build"] = {
+    ...catalog.workloads["build"],
+    worker: { ...worker, files: [{ path: "a", content: "x" }] },
+  };
+  const work = workRow(
+    steps(
+      {
+        workloads: {
+          build: {
+            worker: { ...worker, files: [{ path: "a", content: "y" }] },
+          },
+        },
+      },
+      undefined,
+      JSON.stringify(catalog),
+    ),
+  );
+  expect(work.overrides).toEqual(["Files"]);
+  expect(work.details.filter((detail) => detail.overridden)).toEqual([
+    { name: "Files", lines: ["a"], code: true, overridden: true },
+  ]);
+});
+
 test("a changed model is named as the model, and its arguments are where it is marked", () => {
   const work = workRow(
     steps({

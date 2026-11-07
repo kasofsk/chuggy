@@ -170,6 +170,8 @@ interface CatalogDetailRead {
   readonly code: boolean;
   readonly read: (workload: StepsRecord) => readonly string[];
   readonly word?: (workload: StepsRecord) => string;
+  /** What an override is compared on, where it holds more than is drawn. */
+  readonly compared?: (workload: StepsRecord) => unknown;
 }
 
 function catalogMode(workload: StepsRecord): StepsRecord {
@@ -194,6 +196,11 @@ function catalogCpus(workload: StepsRecord): readonly string[] {
 function catalogMemory(workload: StepsRecord): readonly string[] {
   const memory = catalogResource(workload, "memoryMib");
   return typeof memory === "number" ? [`${String(memory)} MiB`] : [];
+}
+
+function catalogFiles(workload: StepsRecord): readonly unknown[] {
+  const files = stepsRecord(workload["worker"])["files"];
+  return Array.isArray(files) ? files : [];
 }
 
 /** The values a catalog workload opens onto, in the order they are drawn. */
@@ -243,12 +250,11 @@ const catalogDetailReads: readonly CatalogDetailRead[] = [
     name: "Files",
     field: "worker",
     code: true,
-    read: (workload) => {
-      const files = stepsRecord(workload["worker"])["files"];
-      return Array.isArray(files)
-        ? files.flatMap((file) => stepsString(stepsRecord(file)["path"]))
-        : [];
-    },
+    read: (workload) =>
+      catalogFiles(workload).flatMap((file) =>
+        stepsString(stepsRecord(file)["path"]),
+      ),
+    compared: catalogFiles,
   },
   {
     name: "Practices",
@@ -318,9 +324,10 @@ function catalogDetailsOf(
   const { effective, pinned, override } = held;
   const read = catalogDetailReads.flatMap((detail) => {
     const lines = detail.read(effective);
+    const compared = detail.compared ?? detail.read;
     const overridden =
       override?.[detail.field] !== undefined &&
-      !overridesSame(lines, detail.read(pinned));
+      !overridesSame(compared(effective), compared(pinned));
     return lines.length === 0 && !overridden
       ? []
       : [{ name: detail.name, lines, code: detail.code, overridden }];
