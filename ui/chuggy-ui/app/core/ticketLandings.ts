@@ -41,6 +41,7 @@ import {
 } from "./codeLabels.ts";
 import { agoText } from "./figures.ts";
 import type { PanelState } from "./freshness.ts";
+import { httpsUrl } from "./httpsUrl.ts";
 import { commitLabel } from "./labels.ts";
 import type { Label } from "./labels.ts";
 import { countedLabel } from "./runTotals.ts";
@@ -146,15 +147,10 @@ export function ticketLandingLink(
   url: string | undefined,
 ): TicketDeliveryLink | undefined {
   if (url === undefined) return undefined;
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    return undefined;
-  }
-  return parsed.protocol === "https:"
-    ? { href: parsed.href, host: parsed.host }
-    : undefined;
+  const parsed = httpsUrl(url);
+  return parsed === undefined
+    ? undefined
+    : { href: parsed.href, host: parsed.host };
 }
 
 /**
