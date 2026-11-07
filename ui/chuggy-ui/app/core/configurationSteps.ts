@@ -298,22 +298,36 @@ function catalogFieldChanged(held: CatalogHeld, field: string): boolean {
   );
 }
 
+/** Whether a workload runs a model other than the pinned one. */
+function stepsModelChanged(
+  effective: StepsRecord,
+  pinned: StepsRecord,
+): boolean {
+  return (
+    configurationModelLabelOf(catalogMode(effective)).label !==
+    configurationModelLabelOf(catalogMode(pinned)).label
+  );
+}
+
 /** The agent and the model it runs, each drawn as a detail of its own
- * only where it differs from the pinned, since its cell already holds it. */
+ * only where it differs from the pinned, since its cell already holds it.
+ * A model its changed arguments carry is marked on those arguments. */
 function stepsModeDetailsOf(
-  effectiveWorkload: StepsRecord,
-  pinnedWorkload: StepsRecord,
+  effective: StepsRecord,
+  pinned: StepsRecord,
 ): readonly ConfigurationStepDetail[] {
-  const effective = catalogMode(effectiveWorkload);
-  const pinned = catalogMode(pinnedWorkload);
-  const model = configurationModelLabelOf(effective).label;
-  const changed = (name: string, line: unknown, was: unknown) =>
-    line === was
-      ? []
-      : [{ name, lines: stepsString(line), code: false, overridden: true }];
+  const agent = catalogMode(effective)["agent"];
+  const detail = (name: string, line: unknown) => [
+    { name, lines: stepsString(line), code: false, overridden: true },
+  ];
+  const modelOwn =
+    stepsModelChanged(effective, pinned) &&
+    overridesSame(catalogArguments(effective), catalogArguments(pinned));
   return [
-    ...changed("Agent", effective["agent"], pinned["agent"]),
-    ...changed("Model", model, configurationModelLabelOf(pinned).label),
+    ...(agent === catalogMode(pinned)["agent"] ? [] : detail("Agent", agent)),
+    ...(modelOwn
+      ? detail("Model", configurationModelLabelOf(catalogMode(effective)).label)
+      : []),
   ];
 }
 
@@ -355,7 +369,7 @@ function catalogOverridesOf(
   held: CatalogHeld,
   details: readonly ConfigurationStepDetail[],
 ): readonly string[] {
-  const modelChanged = details.some((detail) => detail.name === "Model");
+  const modelChanged = stepsModelChanged(held.effective, held.pinned);
   const words = details
     .filter((detail) => detail.overridden)
     .map((detail) => {

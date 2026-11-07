@@ -189,7 +189,7 @@ test("a file whose content the ticket changed is named and marked though its pat
   ]);
 });
 
-test("a changed model is named as the model, and its arguments are where it is marked", () => {
+test("a changed model is named as the model, and its arguments alone are where it is marked", () => {
   const work = workRow(
     steps({
       workloads: {
@@ -210,8 +210,10 @@ test("a changed model is named as the model, and its arguments are where it is m
   expect(work.model).toBe("Opus");
   expect(work.overrides).toEqual(["Model"]);
   expect(
-    work.details.find((detail) => detail.name === "Arguments"),
-  ).toMatchObject({ lines: ["--model=opus"], overridden: true });
+    work.details
+      .filter((detail) => detail.overridden)
+      .map((detail) => [detail.name, detail.lines]),
+  ).toEqual([["Arguments", ["--model=opus"]]]);
 });
 
 test("a Codex model the ticket changed is named and marked, though its arguments are the same", () => {
