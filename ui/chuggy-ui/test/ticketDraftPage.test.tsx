@@ -129,6 +129,16 @@ interface Holding {
   readonly other?: Promise<Response>;
 }
 
+/** The page over a case's client, and one stream for every time it is drawn. */
+function pageOver(client: QueryClient): () => ReactNode {
+  const transport = openedStream().ports.fetch;
+  return () => (
+    <ScreenHarness partition={atlas} client={client} transport={transport}>
+      <TicketPageEveryTab />
+    </ScreenHarness>
+  );
+}
+
 /** The page over ticket 335: a draft until something is submitted, the
  * ticket it released after, unless a case starts it released. */
 function drawn(
@@ -181,15 +191,7 @@ function drawn(
     }
     return api.fetch(url, init);
   });
-  const page = (): ReactNode => (
-    <ScreenHarness
-      partition={atlas}
-      client={client}
-      transport={openedStream().ports.fetch}
-    >
-      <TicketPageEveryTab />
-    </ScreenHarness>
-  );
+  const page = pageOver(client);
   const { rerender } = render(page());
   return {
     redrawn: () => {
