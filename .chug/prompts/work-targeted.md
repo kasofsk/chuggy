@@ -13,6 +13,9 @@ that satisfies the ticket, and add focused regression coverage for what you
 changed. If the ticket cannot be satisfied as written, report that rather than
 satisfying something adjacent to it.
 
+To look at a console change rendered, use the Chromium the image ships: once
+`npm ci` has run, the tree's Playwright launches it with nothing to install.
+
 **Run only the tests that exercise your change.** Do not run
 `.chug/tasks/ci.sh` on its own, `just check`, `just check-full`, or
 `.chug/tasks/check-source.sh --unit`: the checks stage runs `ci.sh` on your
