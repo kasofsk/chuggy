@@ -124,6 +124,7 @@ const heldFaults = [
   "ConfigurationInvalid:WorkerUndeclared",
   "ConfigurationInvalid:ReleaseShapeInvalid",
   "ConfigurationInvalid:CatalogNameUnknown",
+  "ConfigurationInvalid:StageNameTooLong",
 ];
 
 /** Asserts the schema takes a file the import takes, and refuses one the import refuses but for a held fault. */
@@ -373,6 +374,48 @@ test("a catalog's finalizer names a landing mode under version 2 and a whole fin
   ]) {
     assert.notEqual(imported(content), "Ready", content);
     assert.equal(published(content), false, content);
+  }
+});
+
+/** The bootstrap's catalog declared under `version`, the first stage of each plan named `name`. */
+function catalogStageNamed(version: number, name: string): string {
+  const document = JSON.parse(bootstrapFile) as {
+    readonly configuration: {
+      readonly plans: Readonly<Record<string, readonly object[]>>;
+    };
+  };
+  const plans = Object.fromEntries(
+    Object.entries(document.configuration.plans).map(([plan, stages]) => [
+      plan,
+      stages.map((stage, index) => (index === 0 ? { ...stage, name } : stage)),
+    ]),
+  );
+  return JSON.stringify({
+    ...document,
+    configuration: { ...document.configuration, version, plans },
+  });
+}
+
+test("a stage's name is free text under version 2 and 3, and the import and the schema refuse one blank, padded or unreadable alike", () => {
+  for (const version of [2, 3]) {
+    for (const name of ["Code Review", "Revue du code", "x".repeat(64)]) {
+      const content = catalogStageNamed(version, name);
+      assert.equal(imported(content), "Ready", content);
+      assert.ok(published(content), JSON.stringify(schemaTakes.errors));
+    }
+    for (const [name, fault] of [
+      ["", "StageNameEmpty"],
+      ["x".repeat(65), "StageNameTooLong"],
+      [" Code Review", "StageNamePadded"],
+      ["Code Review\t", "StageNamePadded"],
+      ["Code\u0000Review", "StageNameUnreadable"],
+      ["Code\r\nReview", "StageNameUnreadable"],
+      ["Code\u2029Review", "StageNameUnreadable"],
+    ] as const) {
+      const content = catalogStageNamed(version, name);
+      assert.equal(imported(content), `ConfigurationInvalid:${fault}`, name);
+      assert.equal(published(content), false, name);
+    }
   }
 });
 
@@ -660,6 +703,10 @@ const heldRules: readonly (readonly [unknown, string])[] = [
       },
     }),
     "ConfigurationInvalid:ReleaseShapeInvalid",
+  ],
+  [
+    JSON.parse(catalogStageNamed(2, "\u{1F600}".repeat(33))),
+    "ConfigurationInvalid:StageNameTooLong",
   ],
 ];
 

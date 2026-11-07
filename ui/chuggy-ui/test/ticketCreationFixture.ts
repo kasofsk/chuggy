@@ -308,6 +308,18 @@ export const creationCatalogCanonical = JSON.stringify({
   defaults: { work: "build", evaluation: "review", finalization: "land" },
 });
 
+/** The same catalog with its gated plan's stages named in free text. */
+export const creationCatalogStagesNamedCanonical = JSON.stringify({
+  ...(JSON.parse(creationCatalogCanonical) as object),
+  plans: {
+    review: [{ name: "review", evaluators: ["review"] }],
+    gated: [
+      { name: "Code Review", evaluators: ["review", "review"] },
+      { name: "Checks · étape 2", evaluators: ["gates"] },
+    ],
+  },
+});
+
 /** An offer whose configuration is the catalog above, initialized under its defaults. */
 export function creationCatalogOffer(
   listed: ConfigurationSummary = creationSummary("c1", "Ready"),
@@ -328,14 +340,16 @@ export function creationCatalogOffer(
 }
 
 /**
- * An offer of the same catalog defaulting to its plan of a two-evaluator stage
- * and a one-evaluator stage, initialized as the API answers under that default.
+ * An offer of the same catalog, or of `canonical`, defaulting to its plan of a
+ * two-evaluator stage and a one-evaluator stage, initialized as the API answers
+ * under that default.
  */
 export function creationGatedOffer(
   listed: ConfigurationSummary = creationSummary("c1", "Ready"),
+  canonical: string = creationCatalogCanonical,
 ): CreationOffer {
   const offer = creationCatalogOffer(listed);
-  const catalog = JSON.parse(creationCatalogCanonical) as {
+  const catalog = JSON.parse(canonical) as {
     defaults: Record<string, string>;
   };
   catalog.defaults["evaluation"] = "gated";

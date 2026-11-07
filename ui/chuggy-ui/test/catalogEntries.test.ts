@@ -14,7 +14,10 @@ import {
 } from "../app/core/catalogEntries.ts";
 import type { CatalogEntries } from "../app/core/catalogEntries.ts";
 import { configurationCatalogOf } from "../app/core/configurationCatalog.ts";
-import { creationCatalogCanonical } from "./ticketCreationFixture.ts";
+import {
+  creationCatalogCanonical,
+  creationCatalogStagesNamedCanonical,
+} from "./ticketCreationFixture.ts";
 
 function entriesOf(canonical: string): CatalogEntries {
   const catalog = configurationCatalogOf(canonical);
@@ -134,6 +137,20 @@ test("a plan's fields are its stages, each with the evaluators it runs", () => {
   expect(catalogEntryFields(entryOf(entries, "plans/gated"))).toStrictEqual([
     ["Stage 1 · review", "review, review"],
     ["Stage 2 · gates", "gates"],
+  ]);
+});
+
+test("a plan whose stages are named in free text says each name as written, in its line, its fields and its uses", () => {
+  const named = entriesOf(creationCatalogStagesNamedCanonical);
+  const gated = entryOf(named, "plans/gated");
+  expect(catalogEntrySummary(gated)).toBe("Code Review → Checks · étape 2");
+  expect(catalogEntryFields(gated)).toStrictEqual([
+    ["Stage 1 · Code Review", "review, review"],
+    ["Stage 2 · Checks · étape 2", "gates"],
+  ]);
+  expect(named.uses.get("plans/gated")?.map((use) => use.field)).toStrictEqual([
+    "stage 1 · Code Review",
+    "stage 2 · Checks · étape 2",
   ]);
 });
 

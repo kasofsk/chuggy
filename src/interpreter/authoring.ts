@@ -1056,7 +1056,7 @@ export function ticketCommandedCheckStageNote(
     throw new RangeError(
       `catalog: plan ${plan.name} has no stage ${String(stage)}`,
     );
-  return `Under plan "${plan.name}", a brief's checks run in evaluation stage ${String(stage)}, counted from one, named "${named}", after the commands the plan runs there.`;
+  return `Under plan "${plan.name}", a brief's checks run in evaluation stage ${String(stage)}, counted from one, named ${JSON.stringify(named)}, after the commands the plan runs there.`;
 }
 
 /**

@@ -152,6 +152,74 @@ test("a catalog is not ready while a workload or a prompt is still named by path
   );
 });
 
+/** The catalog with its thorough plan's stages named `names`, in order. */
+function catalogStagesNamed(...names: readonly string[]) {
+  return {
+    ...catalog,
+    plans: {
+      ...catalog.plans,
+      thorough: catalog.plans.thorough.map((stage, index) => ({
+        ...stage,
+        name: names[index] ?? stage.name,
+      })),
+    },
+  };
+}
+
+test("a stage's name is free text under either catalog version, and a blank, padded, over-long or unreadable one is refused by its own fault", () => {
+  const faultOf = (version: number, ...names: readonly string[]) => {
+    const readiness = releaseConfigurationReadiness(
+      canonicalConfigurationOf({ ...catalogStagesNamed(...names), version }),
+    );
+    return readiness.readiness === "Ready" ? "Ready" : readiness.fault;
+  };
+  for (const version of [2, 3]) {
+    assert.equal(faultOf(version, "Code Review", "Seconde étape"), "Ready");
+    assert.equal(faultOf(version, "x".repeat(64)), "Ready");
+    assert.equal(faultOf(version, ""), "StageNameEmpty");
+    assert.equal(faultOf(version, "x".repeat(65)), "StageNameTooLong");
+    assert.equal(
+      faultOf(version, "\u{1F600}".repeat(33)),
+      "StageNameTooLong",
+      "the bound is on UTF-16 code units",
+    );
+    for (const padded of [" Code Review", "Code Review ", "\u00a0Review"])
+      assert.equal(faultOf(version, padded), "StageNamePadded", padded);
+    for (const unreadable of [
+      "Code\u0007Review",
+      "Code\nReview",
+      "Code\u2028Review",
+      "Code\u0085Review",
+    ])
+      assert.equal(
+        faultOf(version, unreadable),
+        "StageNameUnreadable",
+        unreadable,
+      );
+  }
+});
+
+test("a stage named in free text runs its evaluators by position, as the same plan named otherwise does", () => {
+  const named = (...names: readonly string[]) => {
+    const readiness = ticketConfigurationReadiness(
+      canonicalConfigurationOf(catalogStagesNamed(...names)),
+      brief,
+      undefined,
+      { evaluation: "thorough" },
+    );
+    if (readiness.readiness !== "Ready" || readiness.ticket.version !== 2)
+      throw new Error("the renamed catalog ticket is not ready");
+    return ticketDefinitionMaterial({
+      authoring: thoroughAuthoring,
+      ticket: readiness.ticket,
+    }).tasks.map((task) => [task.key, task.inputs.digest] as const);
+  };
+  assert.deepEqual(
+    named("Code Review", "Code Review"),
+    named("checks", "second"),
+  );
+});
+
 test("a prompt path outside .chug, or one climbing out of it, is not a catalog's", () => {
   for (const path of [".chug/../secrets", "prompts/build.md", ".chug/tasks/."])
     assert.equal(

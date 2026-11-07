@@ -620,8 +620,11 @@ export const configurationReferencePathCharsMax = 256;
 /** The most entries one catalog map holds. */
 export const configurationCatalogEntriesMax = 64;
 
-/** The longest name a catalog entry or a plan stage is held under. */
+/** The longest name a catalog entry is held under. */
 const configurationCatalogNameCharsMax = 64;
+
+/** The longest name a plan stage is drawn under, in UTF-16 code units: an output name's bound. */
+const evaluationPlanStageNameCodeUnitsMax = outputNameCodeUnitsMax;
 
 /**
  * A repository file a catalog names: relative to the repository root, under
@@ -765,9 +768,40 @@ function configurationCatalogMap<Entry extends z.ZodType>(entry: Entry) {
     );
 }
 
+/** Why a plan stage's name is refused, each the message of the check that refuses it. */
+export const evaluationPlanStageNameFaults = [
+  "StageNameEmpty",
+  "StageNameTooLong",
+  "StageNamePadded",
+  "StageNameUnreadable",
+] as const;
+export type EvaluationPlanStageNameFault =
+  (typeof evaluationPlanStageNameFaults)[number];
+
+/**
+ * The name a plan stage is drawn and reported under. Nothing looks a stage up
+ * by it, so it is free text with no whitespace at either edge and no control
+ * character, line or paragraph separator, or half of a pair.
+ */
+export const evaluationPlanStageNameSchema = z
+  .string()
+  .min(1, { error: "StageNameEmpty" })
+  .max(evaluationPlanStageNameCodeUnitsMax, { error: "StageNameTooLong" })
+  .refine((name) => name.length <= evaluationPlanStageNameCodeUnitsMax, {
+    error: "StageNameTooLong",
+  })
+  .regex(/^(?:\S(?:[\s\S]*\S)?)?$/u, { error: "StageNamePadded" })
+  // eslint-disable-next-line no-control-regex
+  .regex(/^[^\u0000-\u001f\u007f-\u009f\u2028\u2029\ud800-\udfff]*$/u, {
+    error: "StageNameUnreadable",
+  })
+  .describe(
+    `The importer also holds that it is at most ${String(evaluationPlanStageNameCodeUnitsMax)} UTF-16 code units.`,
+  );
+
 /** One stage of an evaluation plan: the workloads its evaluators run, by name. */
 export const evaluationPlanStageSchema = z.strictObject({
-  name: configurationCatalogNameSchema,
+  name: evaluationPlanStageNameSchema,
   evaluators: z
     .array(configurationCatalogNameSchema)
     .min(1)

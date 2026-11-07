@@ -210,6 +210,26 @@ test("a task of a catalog runs its workload as the ticket's overrides leave it",
   });
 });
 
+test("an evaluator's stage is named in the stage's free text, found by its position", () => {
+  const spaced = {
+    ...catalog,
+    plans: {
+      standard: catalog.plans.standard.map((stage, index) =>
+        index === 1 ? { ...stage, name: "Code Review" } : stage,
+      ),
+    },
+  };
+  const task = catalogNamedWorkloadTask(spaced, undefined, undefined, {
+    taskKind: "Evaluation",
+    stage: 1,
+    evaluator: 2,
+  });
+  assert.deepEqual(
+    task === undefined ? undefined : { name: task.name, stage: task.stage },
+    { name: "tests", stage: "Code Review" },
+  );
+});
+
 test("a task of a catalog is named by its workload's key, and an evaluator by its stage's name too", () => {
   const named = (position: WorkloadTaskPosition) => {
     const task = catalogNamedWorkloadTask(
