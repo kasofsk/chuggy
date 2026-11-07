@@ -80,8 +80,7 @@ test("a draft reads back as the form that would revise it to itself", () => {
     branchName: "topic/one",
     targetBranchName: "main",
     repository,
-    landingMode: "PullRequest",
-    landingPolicy: "Direct",
+    finalization: { kind: "PullRequest" },
     overrides: {},
     selection: {},
     workloads: {},
@@ -93,7 +92,7 @@ test("a draft reads back as the form that would revise it to itself", () => {
   ]);
   expect(again.assembled === "Body" && again.body.brief).toStrictEqual({
     ...released.brief,
-    finalization: { mode: "PullRequest", target: "refs/heads/main" },
+    finalization: { kind: "PullRequest", target: "refs/heads/main" },
   });
 });
 
@@ -107,7 +106,11 @@ test("a draft with no brief prefills nothing a person writes", () => {
   );
   expect(form.intent).toBe("");
   expect(form.branchName).toBe("");
-  expect(form.landingMode).toBe("Push");
+  expect(form.finalization).toStrictEqual({
+    kind: "GitMerge",
+    mode: "Push",
+    policy: "Direct",
+  });
 });
 
 test("a serialized draft reads back as serialized and revises to itself", () => {
@@ -125,7 +128,11 @@ test("a serialized draft reads back as serialized and revises to itself", () => 
     },
   };
   const form = editFormFrom(serialized, [creationBinding(repository)], "r3");
-  expect(form.landingPolicy).toBe("Serialized");
+  expect(form.finalization).toStrictEqual({
+    kind: "GitMerge",
+    mode: "PullRequestMerge",
+    policy: "Serialized",
+  });
   const again = creationBodyFrom(
     [creationOffer(undefined, { commandedCheckStage: 1 })],
     form,
@@ -133,8 +140,12 @@ test("a serialized draft reads back as serialized and revises to itself", () => 
   );
   expect(again.assembled === "Body" && again.body.brief).toStrictEqual({
     ...brief,
-    finalization: { mode: "PullRequestMerge", target: "refs/heads/main" },
-    landing: "Serialized",
+    finalization: {
+      kind: "GitMerge",
+      mode: "PullRequestMerge",
+      target: "refs/heads/main",
+      policy: "Serialized",
+    },
   });
 });
 

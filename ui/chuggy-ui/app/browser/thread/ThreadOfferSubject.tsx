@@ -21,7 +21,6 @@ import type {
   DraftResponse,
   TicketResponse,
 } from "../../../../../src/contract/responses.ts";
-import { briefLandingOf } from "../../core/briefLanding.ts";
 import { phaseLabel } from "../../core/codeLabels.ts";
 import {
   configurationCatalogOf,
@@ -35,7 +34,7 @@ import { IntentFolded } from "../ticket/TicketInstructions.tsx";
 import {
   ConfigurationChips,
   ConfigurationHeaderLabel,
-  FinalizationLanding,
+  FinalizationMethod,
   SummaryCell,
 } from "../TicketProvenance.tsx";
 import { Pill } from "../ui/Pill.tsx";
@@ -113,8 +112,8 @@ function ThreadOfferDraftPlan(props: {
   );
 }
 
-/** Where the work lands: the brief's landing, or where it names none, the
- * landing of the finalizer the draft selects from its catalog. */
+/** Where the work lands: the brief's finalization, or where it names none, the
+ * finalization of the finalizer the draft selects from its catalog. */
 function ThreadOfferDraftLanding(props: {
   readonly partition: PartitionIdentity;
   readonly draft: DraftResponse;
@@ -127,11 +126,12 @@ function ThreadOfferDraftLanding(props: {
     catalog === undefined
       ? undefined
       : configurationCatalogSelected(catalog, draft.selection).finalization;
-  const landing =
-    briefLandingOf(draft.brief?.finalization) ??
-    catalog?.finalizers.find((held) => held.name === finalization)?.landing;
-  return landing === undefined ? null : (
-    <FinalizationLanding landing={landing} />
+  const finalizing =
+    draft.brief?.finalization ??
+    catalog?.finalizers.find((held) => held.name === finalization)
+      ?.finalization;
+  return finalizing === undefined ? null : (
+    <FinalizationMethod finalization={finalizing} />
   );
 }
 

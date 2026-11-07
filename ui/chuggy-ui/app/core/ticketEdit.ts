@@ -27,10 +27,13 @@ import type { z } from "zod";
 import {
   creationBodyFrom,
   creationConfigurationName,
-  creationLandingDefault,
+  creationFinalizationDefault,
 } from "./ticketCreation.ts";
 import { overridesHeldOf } from "./ticketOverrides.ts";
-import { briefLandingOf } from "./briefLanding.ts";
+import {
+  finalizationChoiceOf,
+  finalizationTargetOf,
+} from "./finalizationChoice.ts";
 import type {
   AuthoringStanding,
   CreationFault,
@@ -151,7 +154,7 @@ export function editFormFrom(
 ): TicketCreationForm {
   const brief = draft.brief;
   const repository = brief?.repository ?? "";
-  const landing = briefLandingOf(brief?.finalization);
+  const finalization = brief?.finalization;
   return {
     dependencies: [...draft.authoring.dependencies],
     program: draft.authoring.program,
@@ -162,11 +165,16 @@ export function editFormFrom(
     images: brief?.images ?? [],
     checks: brief?.checks ?? [],
     branchName: editBranchName(brief?.branch),
-    targetBranchName: editBranchName(landing?.target),
+    targetBranchName: editBranchName(
+      finalization === undefined
+        ? undefined
+        : finalizationTargetOf(finalization),
+    ),
     repository,
-    landingMode:
-      landing?.mode ?? creationLandingDefault(repositories, repository),
-    landingPolicy: landing?.policy ?? "Direct",
+    finalization:
+      finalization === undefined
+        ? creationFinalizationDefault(repositories, repository)
+        : finalizationChoiceOf(finalization),
     overrides: overridesHeldOf(draft.overrides),
     selection: draft.selection ?? {},
     workloads: draft.overrides?.workloads ?? {},

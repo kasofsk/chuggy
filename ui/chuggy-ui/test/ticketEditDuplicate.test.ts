@@ -98,10 +98,7 @@ test("an untouched duplicate sends the brief its draft holds", () => {
   const sent = creationBodyFrom([development, sonnet], seed.form, [
     creationBinding(chuggy),
   ]);
-  expect(sent.assembled === "Body" && sent.body.brief).toStrictEqual({
-    ...brief,
-    finalization: { mode: "PullRequest", target: "refs/heads/main" },
-  });
+  expect(sent.assembled === "Body" && sent.body.brief).toStrictEqual(brief);
   expect(sent.assembled === "Body" && sent.body.authoring).toStrictEqual(
     original.authoring,
   );
@@ -110,7 +107,7 @@ test("an untouched duplicate sends the brief its draft holds", () => {
   );
 });
 
-test("a draft recording no landing sends the repository's default", () => {
+test("a draft recording no finalization sends the repository's default", () => {
   const unlanded = {
     intent: brief.intent,
     links: brief.links,
@@ -126,7 +123,11 @@ test("a draft recording no landing sends the repository's default", () => {
   ]);
   expect(
     sent.assembled === "Body" && sent.body.brief.finalization,
-  ).toStrictEqual({ mode: "PullRequestMerge" });
+  ).toStrictEqual({
+    kind: "GitMerge",
+    mode: "PullRequestMerge",
+    policy: "Direct",
+  });
 });
 
 test("a draft holding no brief asks for what an edit of it would", () => {
@@ -190,7 +191,7 @@ test("a repository whose binding is retired is not carried, and is named", () =>
     bound: [creationBinding(chuggy, "Push", "2026-09-01T00:00:00Z")],
   });
   expect(seed.form.repository).toBe("");
-  expect(seed.form.landingMode).toBe("PullRequest");
+  expect(seed.form.finalization).toStrictEqual({ kind: "PullRequest" });
   expect(ticketDuplicateDroppedSentence(seed.dropped)).toBe(
     "Not carried · repository kasofsk/chuggy, no longer bound",
   );

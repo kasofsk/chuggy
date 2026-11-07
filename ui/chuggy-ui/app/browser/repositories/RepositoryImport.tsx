@@ -28,7 +28,7 @@ import {
   repositoryImportRefused,
   repositoryImportRefusedFile,
 } from "../../core/repositoryImport.ts";
-import { projectRepositoryBound } from "../../core/repositoryLanding.ts";
+import { projectRepositoryBound } from "../../core/repositoryFinalization.ts";
 import { repositoryImportTone } from "../../core/tones.ts";
 import { useConsoleWrite } from "../consoleWrite.tsx";
 import { useNowMs } from "../Freshness.tsx";

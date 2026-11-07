@@ -26,7 +26,8 @@ import {
   type changeProposalStatuses,
   type finalizationFailureKinds,
   type BlockedReason,
-  type BriefFinalizationMode,
+  type BriefFinalizationKind,
+  type BriefGitMergeMode,
   type BriefGitMergePolicy,
   type EscalationKind,
   type FinalizationUnavailableKind,
@@ -39,6 +40,7 @@ import {
   type TicketLandingState,
   type TicketPhase,
 } from "../../../../src/contract/rosters.ts";
+import type { BriefFinalizationOf } from "../../../../src/contract/brief.ts";
 import type {
   LeadAbsenceResponse,
   RunnerLoss,
@@ -566,37 +568,53 @@ export function revokedDependencyLine(
   return `Blocked by revoked ${noun} ${revokedDependencies.join(", ")}`;
 }
 
-/** How a finished ticket lands, in the word the choice is made by. */
-export function landingLabel(mode: BriefFinalizationMode): string {
-  switch (mode) {
-    case "Push":
-      return "Push";
+/** How a finished ticket is finalized, by its kind, in the word the choice is made by. */
+export function finalizationKindLabel(kind: BriefFinalizationKind): string {
+  switch (kind) {
+    case "GitMerge":
+      return "Git merge";
     case "PullRequest":
       return "Pull request";
-    case "PullRequestMerge":
-      return "Pull request, then merge";
     case "None":
       return "None";
   }
 }
 
-/** What choosing that landing does to the branch the work lands on, `None`
+/** What choosing that kind does to the branch the work lands on, `None`
  * touching no remote at all. */
-export function landingEffect(mode: BriefFinalizationMode): string {
-  switch (mode) {
-    case "Push":
-      return "Commits straight onto the target branch";
+export function finalizationKindEffect(kind: BriefFinalizationKind): string {
+  switch (kind) {
+    case "GitMerge":
+      return "Merges the work into the target branch";
     case "PullRequest":
-      return "Opens a pull request into the target branch";
-    case "PullRequestMerge":
-      return "Opens a pull request into the target branch and merges it";
+      return "Opens a pull request a person merges";
     case "None":
       return "Lands nothing";
   }
 }
 
-/** How a ticket's landing is ordered against the others on its reference, in the word the choice is made by. */
-export function landingPolicyLabel(policy: BriefGitMergePolicy): string {
+/** How a git merge advances its target branch, in the word the choice is made by. */
+export function gitMergeModeLabel(mode: BriefGitMergeMode): string {
+  switch (mode) {
+    case "Push":
+      return "Push";
+    case "PullRequestMerge":
+      return "Pull request, then merge";
+  }
+}
+
+/** What choosing that mode does to the target branch. */
+export function gitMergeModeEffect(mode: BriefGitMergeMode): string {
+  switch (mode) {
+    case "Push":
+      return "Commits straight onto the target branch";
+    case "PullRequestMerge":
+      return "Opens a pull request into the target branch and merges it";
+  }
+}
+
+/** How a git merge is ordered against the others on its reference, in the word the choice is made by. */
+export function gitMergePolicyLabel(policy: BriefGitMergePolicy): string {
   switch (policy) {
     case "Direct":
       return "Direct";
@@ -605,8 +623,8 @@ export function landingPolicyLabel(policy: BriefGitMergePolicy): string {
   }
 }
 
-/** What choosing that policy does to the landing. */
-export function landingPolicyEffect(policy: BriefGitMergePolicy): string {
+/** What choosing that policy does to the merge. */
+export function gitMergePolicyEffect(policy: BriefGitMergePolicy): string {
   switch (policy) {
     case "Direct":
       return "Lands as soon as it is accepted";
@@ -615,45 +633,44 @@ export function landingPolicyEffect(policy: BriefGitMergePolicy): string {
   }
 }
 
-/** A mode that reaches a reference at all, which `None` never does. */
-type LandingWithTarget = Exclude<BriefFinalizationMode, "None">;
+/** A finalization by its kind, over any spelling of its target. */
+type FinalizationOfTarget = BriefFinalizationOf<string | undefined>;
 
-/** How a landing reaches the reference it names, the preposition each mode reads before it. */
-function landingTargetName(mode: LandingWithTarget): string {
-  switch (mode) {
-    case "Push":
-      return "lands on";
-    case "PullRequest":
-    case "PullRequestMerge":
-      return "into";
-  }
+/** How a finalization reaches its target: a git merge by its mode, and a pull request by its kind. */
+export function finalizationMethodLabel(
+  finalization: FinalizationOfTarget,
+): string {
+  return finalization.kind === "GitMerge"
+    ? gitMergeModeLabel(finalization.mode)
+    : finalizationKindLabel(finalization.kind);
 }
 
-/** Where a landing that names no reference goes, which a push says by naming its branch. */
-function landingDefaultTarget(mode: LandingWithTarget): string | undefined {
-  switch (mode) {
-    case "Push":
-      return undefined;
-    case "PullRequest":
-    case "PullRequestMerge":
-      return "the default branch";
-  }
+/** The preposition a finalization reads before the reference it reaches, a push landing on it and a proposal opening into it. */
+function finalizationTargetName(
+  finalization: Exclude<FinalizationOfTarget, { readonly kind: "None" }>,
+): string {
+  return finalization.kind === "GitMerge" && finalization.mode === "Push"
+    ? "lands on"
+    : "into";
 }
 
 /**
- * A brief's landing read back: the mode, and the reference it reaches. `None`
- * names no reference at all, having nothing to advance onto.
+ * A finalization read back: how it reaches its reference, and that reference.
+ * A push naming none lands on the branch the work happened on, which is a mode
+ * and no reference; a proposal naming none opens into the repository's
+ * default; and `None` names no reference at all, having nothing to advance
+ * onto. A git merge's policy is said apart, by `gitMergePolicyLabel`.
  */
-export function briefLandingLine(finalization: {
-  readonly mode: BriefFinalizationMode;
-  readonly target?: string | undefined;
-}): string {
-  const mode = finalization.mode;
-  if (mode === "None") return landingLabel(mode);
-  const target = finalization.target ?? landingDefaultTarget(mode);
+export function finalizationLine(finalization: FinalizationOfTarget): string {
+  const method = finalizationMethodLabel(finalization);
+  if (finalization.kind === "None") return method;
+  const pushed =
+    finalization.kind === "GitMerge" && finalization.mode === "Push";
+  const target =
+    finalization.target ?? (pushed ? undefined : "the default branch");
   return target === undefined
-    ? landingLabel(mode)
-    : `${landingLabel(mode)} · ${landingTargetName(mode)} ${target}`;
+    ? method
+    : `${method} · ${finalizationTargetName(finalization)} ${target}`;
 }
 
 /** Whether finalization waits for a person before it runs. */

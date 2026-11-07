@@ -27,7 +27,14 @@ import type {
   CreationAssembly,
   TicketCreationForm,
 } from "../app/core/ticketCreation.ts";
-import { creationForm, creationOffers } from "./ticketCreationFixture.ts";
+import {
+  creationForm,
+  creationOffers,
+  creationNone,
+  creationPullRequest,
+  creationPullRequestMerge,
+  creationPush,
+} from "./ticketCreationFixture.ts";
 
 const titled = "Fix the login page";
 const named = "fix-the-login-page";
@@ -119,20 +126,30 @@ test("a long title of letters outside the basic plane is cut between letters", (
 });
 
 function proposing(over: Partial<TicketCreationForm> = {}): TicketCreationForm {
-  return creationForm({ landingMode: "PullRequest", title: titled, ...over });
+  return creationForm({
+    finalization: creationPullRequest,
+    title: titled,
+    ...over,
+  });
 }
 
-test.each(["PullRequest", "PullRequestMerge"] as const)(
+test.each([
+  ["PullRequest", creationPullRequest],
+  ["PullRequestMerge", creationPullRequestMerge],
+] as const)(
   "a %s with a title and an empty branch box proposes the title's name",
-  (landingMode) => {
-    expect(creationBranchProposed(proposing({ landingMode }))).toBe(named);
+  (_named, finalization) => {
+    expect(creationBranchProposed(proposing({ finalization }))).toBe(named);
   },
 );
 
-test.each(["Push", "None"] as const)(
-  "a landing of %s opens no pull request and proposes no branch",
-  (landingMode) => {
-    const form = proposing({ landingMode });
+test.each([
+  ["Push", creationPush],
+  ["None", creationNone],
+] as const)(
+  "a finalization of %s opens no pull request and proposes no branch",
+  (_named, finalization) => {
+    const form = proposing({ finalization });
     expect(creationBranchProposed(form)).toBeUndefined();
     expect(creationFormProposed(form)).toBe(form);
   },
@@ -196,7 +213,7 @@ test("a typed branch is what is sent, whatever the title would have proposed", (
 });
 
 test("a push sends no branch for a box left empty, as it did", () => {
-  expect(branchSent(proposing({ landingMode: "Push" }))).toBeUndefined();
+  expect(branchSent(proposing({ finalization: creationPush }))).toBeUndefined();
 });
 
 test.each(["", "!!!"])(

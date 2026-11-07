@@ -30,7 +30,7 @@ import {
   TicketConfigurationTab,
   TicketOverviewTab,
 } from "../app/browser/ticket/TicketPageTabs.tsx";
-import { briefLandingLine } from "../app/core/codeLabels.ts";
+import { finalizationLine } from "../app/core/codeLabels.ts";
 import {
   answer,
   apiDouble,
@@ -605,8 +605,8 @@ test("the tasks are folded until asked for, and each opens onto a YAML view of i
   expect(toggles[0]?.getAttribute("aria-expanded")).toBe("true");
 });
 
-/** A brief that names how its work lands, and nothing else of note. */
-const briefLanding = {
+/** A brief that names how its work is finalized, and nothing else of note. */
+const briefFinalized = {
   intent: "ship it",
   links: [],
   branch: "refs/heads/feature",
@@ -614,10 +614,7 @@ const briefLanding = {
 } as const;
 
 /** The method that brief's finalization is drawn as. */
-const briefLandingMethod = briefLandingLine({
-  mode: "PullRequest",
-  target: "refs/heads/release",
-});
+const briefFinalizationMethod = finalizationLine(briefFinalized.finalization);
 
 /** The cells Finalization draws, by the name over each. */
 function finalizationCells(): ReadonlyMap<string, string> {
@@ -643,10 +640,10 @@ test("a version 1 ticket's Finalization is the method its brief names, and is no
     undefined,
     undefined,
     undefined,
-    briefLanding,
+    briefFinalized,
   );
   expect(finalizationCells()).toStrictEqual(
-    new Map([["Method", briefLandingMethod]]),
+    new Map([["Method", briefFinalizationMethod]]),
   );
   cleanup();
   await drawTicket();
@@ -662,12 +659,40 @@ test("a catalog ticket's Finalization is the brief's method before its finalizer
     undefined,
     { finalization: "approved" },
     undefined,
-    briefLanding,
+    briefFinalized,
   );
   expect(finalizationCells()).toStrictEqual(
     new Map([
-      ["Method", briefLandingMethod],
+      ["Method", briefFinalizationMethod],
       ["Finalizer", "approved"],
+    ]),
+  );
+});
+
+/** A policy orders a git merge alone, so it is drawn beside a git merge's
+ * method and beside no other kind's. */
+test("a git merge's Finalization draws its policy beside its method", async () => {
+  const merged = {
+    ...briefFinalized,
+    finalization: {
+      kind: "GitMerge",
+      mode: "PullRequestMerge",
+      target: "refs/heads/release",
+      policy: "Serialized",
+    },
+  } as const;
+  await drawTicket(
+    canonical,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    merged,
+  );
+  expect(finalizationCells()).toStrictEqual(
+    new Map([
+      ["Method", "Pull request, then merge · into refs/heads/release"],
+      ["Policy", "Serialized"],
     ]),
   );
 });

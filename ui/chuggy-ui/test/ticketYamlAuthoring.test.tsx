@@ -182,7 +182,7 @@ test("a look at the YAML leaves the branch box empty, the proposal following the
   typeTitle("Fix the login page");
   expect(branchBox().value).toBe("");
   expect(branchBox().placeholder).toBe("fix-the-login-page");
-  fireEvent.click(screen.getByRole("radio", { name: "Push" }));
+  fireEvent.click(screen.getByRole("radio", { name: "Git merge" }));
   fireEvent.click(screen.getByRole("button", { name: "Create ticket" }));
   expect(await briefSent(held)).not.toHaveProperty("branch");
 });

@@ -13,10 +13,9 @@
  * lands nothing, so the ticket has no landing to wait on.
  */
 
-import type { BriefFinalizationMode } from "../../../../src/contract/rosters.ts";
+import type { BriefFinalizationOf } from "../../../../src/contract/brief.ts";
 import type { TicketResponse } from "../../../../src/contract/responses.ts";
-import { briefLandingOf } from "./briefLanding.ts";
-import { landingLabel } from "./codeLabels.ts";
+import { finalizationMethodLabel } from "./codeLabels.ts";
 import {
   configurationCatalogOf,
   configurationCatalogSelected,
@@ -103,8 +102,6 @@ function ticketPlanProgram(
   );
 }
 
-type TicketPlanFinalization = { readonly mode: BriefFinalizationMode };
-
 /** What a plan is read from: a released ticket's own read, or a draft's
  * authoring as it stands. */
 export type TicketPlanned = Pick<
@@ -130,10 +127,10 @@ export function ticketPlanOf(
     catalog === undefined || selected === undefined
       ? undefined
       : configurationCatalogWorkload(catalog, selected.work);
-  const finalization: TicketPlanFinalization | undefined =
-    briefLandingOf(ticket?.brief?.finalization) ??
+  const finalization: BriefFinalizationOf<string | undefined> | undefined =
+    ticket?.brief?.finalization ??
     catalog?.finalizers.find((held) => held.name === selected?.finalization)
-      ?.landing;
+      ?.finalization;
   const names = named?.map((stage) => stage.name);
   return {
     work: work === undefined ? undefined : ticketPlanRuns(work),
@@ -145,8 +142,10 @@ export function ticketPlanOf(
       ),
     })),
     names,
-    lands: finalization?.mode !== "None",
+    lands: finalization?.kind !== "None",
     landing:
-      finalization === undefined ? undefined : landingLabel(finalization.mode),
+      finalization === undefined
+        ? undefined
+        : finalizationMethodLabel(finalization),
   };
 }

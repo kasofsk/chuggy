@@ -17,6 +17,11 @@
  * an entry nothing names is still one a ticket can choose.
  */
 
+import {
+  finalizationLine,
+  finalizationMethodLabel,
+  gitMergePolicyLabel,
+} from "./codeLabels.ts";
 import type {
   CatalogFinalizer,
   CatalogPlanStage,
@@ -288,7 +293,9 @@ export function catalogEntrySummary(entry: CatalogEntry): string {
     case "Finalizer":
       return [
         catalogFinalizerApproval(detail.finalizer),
-        detail.finalizer.landing?.mode,
+        detail.finalizer.finalization === undefined
+          ? undefined
+          : finalizationMethodLabel(detail.finalizer.finalization),
       ]
         .filter((part) => part !== undefined)
         .join(" · ");
@@ -328,18 +335,15 @@ export function catalogEntryFields(
       );
     case "Finalizer": {
       const { finalizer } = detail;
+      const finalization = finalizer.finalization;
       return [
         ["Approval", catalogFinalizerApproval(finalizer)],
-        ...(finalizer.landing === undefined
+        ...(finalization === undefined
           ? []
-          : [
-              [
-                "Landing",
-                [finalizer.landing.mode, finalizer.landing.target]
-                  .filter((part) => part !== undefined)
-                  .join(" → "),
-              ] as const,
-            ]),
+          : [["Finalization", finalizationLine(finalization)] as const]),
+        ...(finalization?.kind === "GitMerge"
+          ? [["Policy", gitMergePolicyLabel(finalization.policy)] as const]
+          : []),
       ];
     }
     case "Prompt":

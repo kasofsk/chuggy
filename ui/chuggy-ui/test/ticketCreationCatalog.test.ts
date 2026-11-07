@@ -29,6 +29,9 @@ import {
   creationCatalogOffer,
   creationDraft,
   creationOffers,
+  creationNone,
+  creationPullRequest,
+  creationPush,
 } from "./ticketCreationFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 
@@ -69,45 +72,71 @@ test("selecting a plan draws its program, and the body sends the selection and n
   expect("overrides" in sent.body).toBe(false);
 });
 
-test("selecting a finalizer that names a landing seeds the form with it, and a landing the reader moved stands", () => {
+test("selecting a finalizer that names a finalization seeds the form with it, and a finalization the reader moved stands", () => {
   const offer = creationCatalogOffer();
   const { configuration } = offer.initialization;
   const catalog = JSON.parse(configuration.canonical) as {
     finalizers: Record<string, unknown>;
   };
   catalog.finalizers["proposed"] = {
-    landing: { mode: "PullRequest", target: "refs/heads/release" },
+    finalization: { kind: "PullRequest", target: "refs/heads/release" },
+  };
+  catalog.finalizers["ordered"] = {
+    finalization: {
+      kind: "GitMerge",
+      mode: "PullRequestMerge",
+      policy: "Serialized",
+    },
   };
   const landed = [
     {
       ...offer,
       initialization: {
         ...offer.initialization,
-        configuration: { ...configuration, canonical: JSON.stringify(catalog) },
+        configuration: {
+          ...configuration,
+          canonical: JSON.stringify({ ...catalog, version: 3 }),
+        },
       },
     },
   ];
   const form = creationFormFrom(landed, bound);
-  expect([form.landingMode, form.targetBranchName]).toStrictEqual(["Push", ""]);
+  expect([form.finalization, form.targetBranchName]).toStrictEqual([
+    creationPush,
+    "",
+  ]);
   const proposed = creationSelectionChosen(
     form,
     landed,
     { finalization: "proposed" },
     bound,
   );
-  expect([proposed.landingMode, proposed.targetBranchName]).toStrictEqual([
-    "PullRequest",
+  expect([proposed.finalization, proposed.targetBranchName]).toStrictEqual([
+    creationPullRequest,
     "release",
   ]);
+  const ordered = creationSelectionChosen(
+    proposed,
+    landed,
+    { finalization: "ordered" },
+    bound,
+  );
+  expect([ordered.finalization, ordered.targetBranchName]).toStrictEqual([
+    { kind: "GitMerge", mode: "PullRequestMerge", policy: "Serialized" },
+    "",
+  ]);
   const back = creationSelectionChosen(proposed, landed, {}, bound);
-  expect([back.landingMode, back.targetBranchName]).toStrictEqual(["Push", ""]);
+  expect([back.finalization, back.targetBranchName]).toStrictEqual([
+    creationPush,
+    "",
+  ]);
   const moved = creationSelectionChosen(
-    { ...form, landingMode: "None" },
+    { ...form, finalization: creationNone },
     landed,
     { finalization: "proposed" },
     bound,
   );
-  expect(moved.landingMode).toBe("None");
+  expect(moved.finalization).toStrictEqual(creationNone);
 });
 
 test("a reader who may not skip planned evaluations is refused a program running less than its plan, and one who may is not", () => {

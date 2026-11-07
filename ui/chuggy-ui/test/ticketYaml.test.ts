@@ -32,6 +32,7 @@ import {
   creationForm,
   creationOffer,
   creationOffers,
+  creationPullRequest,
   creationYamlKeptUnasked,
 } from "./ticketCreationFixture.ts";
 
@@ -61,7 +62,7 @@ test("a form read as YAML reads back as the same form", () => {
       branchName: "topic/one",
       targetBranchName: "main",
       repository: "acme/one",
-      landingMode: "PullRequest",
+      finalization: creationPullRequest,
       dependencies: [7],
       program: [
         { key: 1, evaluators: [{ key: 1 }, { key: 2 }] },
@@ -100,33 +101,102 @@ test("text the parser cannot read is a problem where it stopped", () => {
   expect(read.problems[0]?.from).toBeGreaterThan(0);
 });
 
-test("a landing the roster does not carry names the ones it does", () => {
-  const read = readForm("intent: y\nlanding: Teleport\n");
-  expect(read.problems.map((problem) => problem.message)).toStrictEqual([
-    "land as one of Push, PullRequest, PullRequestMerge, None",
+/** The text writes a finalization as the brief does, by its kind, in block
+ * style, and reads back the form it was written from under every kind. */
+test("a finalization is written by its kind, its policy inside a GitMerge alone, and reads back", () => {
+  const direct = ticketYamlOf(creationForm(), context);
+  expect(direct).toContain(
+    "finalization:\n  kind: GitMerge\n  mode: Push\n  target:\n  policy: Direct\n",
+  );
+  const forms = [
+    creationForm({
+      finalization: {
+        kind: "GitMerge",
+        mode: "PullRequestMerge",
+        policy: "Serialized",
+      },
+      branchName: "topic/one",
+      targetBranchName: "release",
+    }),
+    creationForm({
+      finalization: creationPullRequest,
+      branchName: "topic/one",
+      targetBranchName: "release",
+    }),
+    creationForm({ finalization: { kind: "None" } }),
+  ];
+  for (const form of forms) {
+    const text = ticketYamlOf(form, context);
+    expect(text, form.finalization.kind).not.toMatch(/[{[]/u);
+    const read = readForm(text);
+    expect(read.problems, form.finalization.kind).toStrictEqual([]);
+    expect(read.form, form.finalization.kind).toStrictEqual(form);
+  }
+  const proposal = ticketYamlOf(forms[1] ?? creationForm(), context);
+  expect(proposal).toContain(
+    "finalization:\n  kind: PullRequest\n  target: release\n",
+  );
+  expect(proposal).not.toContain("policy");
+  expect(ticketYamlOf(forms[2] ?? creationForm(), context)).toContain(
+    "finalization:\n  kind: None\n",
+  );
+});
+
+test("a finalization's kind, mode and policy name the roster each is one of", () => {
+  const messages = (finalization: string) =>
+    readForm(`intent: y\nfinalization:\n${finalization}`).problems.map(
+      (problem) => problem.message,
+    );
+  expect(messages("  kind: Teleport\n")).toStrictEqual([
+    "finalize by one of GitMerge, PullRequest, None",
+  ]);
+  expect(
+    messages("  kind: GitMerge\n  mode: Rebase\n  policy: Direct\n"),
+  ).toStrictEqual(["merge by one of Push, PullRequestMerge"]);
+  expect(
+    messages("  kind: GitMerge\n  mode: Push\n  policy: Stacked\n"),
+  ).toStrictEqual(["order the merge as one of Direct, Serialized"]);
+  expect(messages("  mode: Push\n")).toStrictEqual([
+    "a finalization names its kind: one of GitMerge, PullRequest, None",
+  ]);
+  expect(messages("  kind: GitMerge\n  mode: Push\n")).toStrictEqual([
+    "a GitMerge names its policy",
+  ]);
+  expect(messages("  kind: GitMerge\n  base: main\n")).toStrictEqual([
+    "a finalization names kind, mode, target, policy",
+  ]);
+  expect(
+    readForm("intent: y\nfinalization: GitMerge\n").problems.map(
+      (problem) => problem.message,
+    ),
+  ).toStrictEqual([
+    "write the finalization as a map of kind, mode, target, policy",
   ]);
 });
 
-test("a landing policy is written only where it is Serialized, and reads back", () => {
-  const direct = ticketYamlOf(creationForm(), context);
-  expect(direct).not.toContain("landingPolicy");
-  expect(readForm(direct).form?.landingPolicy).toBe("Direct");
-  const form = creationForm({ landingPolicy: "Serialized" });
-  const text = ticketYamlOf(form, context);
-  expect(text).toContain("landingPolicy: Serialized\n");
-  expect(text).not.toMatch(/[{[]/u);
-  const read = readForm(text);
-  expect(read.problems).toStrictEqual([]);
-  expect(read.form).toStrictEqual(form);
+/** A policy orders a git merge and nothing else, and landing nothing names no
+ * reference, so the text cannot write a finalization the server refuses. */
+test("a field a finalization's kind does not name is refused at its own key", () => {
+  const refused = (finalization: string, field: string) => {
+    const text = `intent: y\nfinalization:\n${finalization}`;
+    const read = readForm(text);
+    expect(read.form).toBeUndefined();
+    const at = text.indexOf(`  ${field}:`) + 2;
+    return read.problems.map((problem) => [
+      problem.from === at && problem.to === at + field.length,
+      problem.message,
+    ]);
+  };
   expect(
-    readForm("intent: y\nlandingPolicy: Direct\n").form?.landingPolicy,
-  ).toBe("Direct");
-});
-
-test("a landing policy the roster does not carry names the ones it does", () => {
-  const read = readForm("intent: y\nlandingPolicy: Stacked\n");
-  expect(read.problems.map((problem) => problem.message)).toStrictEqual([
-    "order the landing as one of Direct, Serialized",
+    refused("  kind: PullRequest\n  policy: Serialized\n", "policy"),
+  ).toStrictEqual([
+    [true, "a PullRequest names no policy; only a GitMerge does"],
+  ]);
+  expect(refused("  kind: None\n  mode: Push\n", "mode")).toStrictEqual([
+    [true, "a None names no mode; only a GitMerge does"],
+  ]);
+  expect(refused("  kind: None\n  target: main\n", "target")).toStrictEqual([
+    [true, "None lands nothing, so it names no target"],
   ]);
 });
 
@@ -145,15 +215,15 @@ test("a stage is written by its evaluator count and keyed by position", () => {
 
 /** An emptied line is an emptied field, but the three a form never leaves
  * empty keep what the screen began with. */
-test("a key left out is empty, except landing, program and dependencies", () => {
+test("a key left out is empty, except finalization, program and dependencies", () => {
   const base = creationForm({
     title: "held",
-    landingMode: "PullRequest",
+    finalization: creationPullRequest,
     dependencies: [8],
   });
   const read = readForm("intent: y\n", { base });
   expect(read.form?.title).toBe("");
-  expect(read.form?.landingMode).toBe("PullRequest");
+  expect(read.form?.finalization).toStrictEqual(creationPullRequest);
   expect(read.form?.dependencies).toStrictEqual([8]);
   expect(read.form?.program).toStrictEqual(base.program);
 });
@@ -200,11 +270,21 @@ test("the vocabulary offers what this project's form draws", () => {
   const named = keys.map((key) => key.key);
   expect(named).not.toContain("checks");
   expect(named).not.toContain("repository");
+  const finalization = keys.filter((key) => key.place === "Finalization");
+  expect(finalization.map((key) => key.key)).toStrictEqual([
+    "kind",
+    "mode",
+    "target",
+    "policy",
+  ]);
   expect(
-    keys
-      .find((key) => key.key === "landing")
-      ?.values.map((value) => value.label),
-  ).toStrictEqual(["Push", "PullRequest", "PullRequestMerge", "None"]);
+    finalization.map((key) => key.values.map((value) => value.label)),
+  ).toStrictEqual([
+    ["GitMerge", "PullRequest", "None"],
+    ["Push", "PullRequestMerge"],
+    [],
+    ["Direct", "Serialized"],
+  ]);
   expect(
     keys.find((key) => key.key === "dependencies")?.values.map((v) => v.label),
   ).toStrictEqual(["7", "8"]);
@@ -228,11 +308,11 @@ test("a program longer than the project offers is refused", () => {
 });
 
 test("a dependency named twice is refused at the dependencies", () => {
-  const text = "intent: y\ndependencies: [7, 7]\n";
+  const text = "intent: y\ndependencies:\n  - 7\n  - 7\n";
   expect(readForm(text).problems).toStrictEqual([
     {
-      from: text.indexOf("[7"),
-      to: text.indexOf("]") + 1,
+      from: text.indexOf("- 7"),
+      to: text.length,
       message: "ticket 7 is named twice",
     },
   ]);
@@ -415,9 +495,11 @@ test("the vocabulary offers the configurations by name, and a program only under
     "links",
     "images",
     "branch",
-    "landing",
+    "finalization",
+    "kind",
+    "mode",
     "target",
-    "landingPolicy",
+    "policy",
   ]);
   expect(unchosen[0]?.values).toStrictEqual([
     { label: "development", detail: "n-development" },
@@ -516,6 +598,27 @@ test("a form's overrides are one map under the configuration's own names, and re
   expect(read.form).toStrictEqual(form);
 });
 
+/** An empty list has no block spelling, so a mode's arguments are left out
+ * where it has none, and a field overridden with nothing is written with no
+ * value, which is still an override rather than the configuration's. */
+test("overrides holding empty lists are written with no flow, and read back as the same form", () => {
+  const form = creationForm({
+    overrides: {
+      "worker.mode": { type: "SingleAgent", agent: "Claude", arguments: [] },
+      "worker.files": [],
+      practices: [],
+    },
+  });
+  const text = ticketYamlOf(form, context);
+  expect(text).not.toMatch(/[{[]/u);
+  expect(text).toContain(
+    "overrides:\n  worker:\n    mode:\n      type: SingleAgent\n      agent: Claude\n    files:\n  practices:\n",
+  );
+  const read = readForm(text);
+  expect(read.problems).toStrictEqual([]);
+  expect(read.form).toStrictEqual(form);
+});
+
 test("a form holding no override writes no overrides key, and a key left out is no override", () => {
   expect(ticketYamlOf(creationForm(), context)).not.toContain("overrides");
   const base = creationForm({ overrides: overridden });
@@ -535,7 +638,7 @@ test("an override of a field the contract does not let a ticket override is refu
         "a ticket may not override `worker.image`; it may override worker.mode, worker.setup, worker.files, practices, brief.motivation, brief.acceptanceCriteria, brief.constraints, work.instructions",
     },
   ]);
-  const top = "intent: y\noverrides:\n  evaluations: []\n";
+  const top = "intent: y\noverrides:\n  evaluations:\n    - review\n";
   expect(readForm(top).problems).toStrictEqual([
     {
       from: top.indexOf("evaluations"),
