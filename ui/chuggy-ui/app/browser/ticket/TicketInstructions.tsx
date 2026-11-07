@@ -80,13 +80,15 @@ function useSlid(
   }, [bodyRef, fromRef, open]);
 }
 
-/** The title row and the intent folded under it, the toggle under that. */
-function InstructionsIntent(props: {
-  readonly text: string | undefined;
-  readonly measure: InstructionsMeasure;
-  readonly aside: ReactNode;
+/** The intent folded to its first lines, and the toggle under it where it
+ * runs longer. The body is named `bodyId`, which the toggle controls. */
+export function IntentFolded(props: {
+  readonly text: string;
+  readonly bodyId: string;
+  readonly measure?: InstructionsMeasure;
 }): ReactNode {
-  const { text, measure } = props;
+  const { text, bodyId } = props;
+  const measure = props.measure ?? measured;
   const body = useRef<HTMLDivElement>(null);
   const from = useRef<number | undefined>(undefined);
   const [open, setOpen] = useState(false);
@@ -107,6 +109,40 @@ function InstructionsIntent(props: {
   useSlid(body, from, open);
   return (
     <>
+      <div
+        id={bodyId}
+        ref={body}
+        className="ticket-instructions-body"
+        data-open={open}
+        data-faded={long && !open}
+      >
+        <MarkdownReport text={text} bare />
+      </div>
+      {long || open ? (
+        <Button
+          size="sm"
+          expanded={open}
+          aria-controls={bodyId}
+          onClick={() => {
+            from.current = body.current?.getBoundingClientRect().height;
+            setOpen(!open);
+          }}
+        >
+          {open ? "Show less" : "Show all"}
+        </Button>
+      ) : null}
+    </>
+  );
+}
+
+/** The title row and the intent folded under it. */
+function InstructionsIntent(props: {
+  readonly text: string | undefined;
+  readonly measure: InstructionsMeasure;
+  readonly aside: ReactNode;
+}): ReactNode {
+  return (
+    <>
       <div className="ticket-instructions-head">
         <h2
           className="ticket-instructions-title"
@@ -116,30 +152,13 @@ function InstructionsIntent(props: {
         </h2>
         {props.aside}
       </div>
-      {text === undefined ? null : (
-        <div
-          id="ticket-instructions-body"
-          ref={body}
-          className="ticket-instructions-body"
-          data-open={open}
-          data-faded={long && !open}
-        >
-          <MarkdownReport text={text} bare />
-        </div>
+      {props.text === undefined ? null : (
+        <IntentFolded
+          text={props.text}
+          bodyId="ticket-instructions-body"
+          measure={props.measure}
+        />
       )}
-      {long || open ? (
-        <Button
-          size="sm"
-          expanded={open}
-          aria-controls="ticket-instructions-body"
-          onClick={() => {
-            from.current = body.current?.getBoundingClientRect().height;
-            setOpen(!open);
-          }}
-        >
-          {open ? "Show less" : "Show all"}
-        </Button>
-      ) : null}
     </>
   );
 }

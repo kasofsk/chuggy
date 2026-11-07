@@ -9,11 +9,13 @@ import { expect, test } from "vitest";
 import { configurationCatalogInitialization } from "../app/core/configurationCatalog.ts";
 import {
   programPlanned,
+  programPlannedUnder,
   programShort,
   programStageLeast,
 } from "../app/core/programPlan.ts";
 import type { PlannedProgram } from "../app/core/programPlan.ts";
 import {
+  creationCatalogCanonical,
   creationCatalogOffer,
   creationInitialization,
 } from "./ticketCreationFixture.ts";
@@ -91,4 +93,24 @@ test("a stage may hold no fewer evaluators than its plan stage, and one where it
     [1, 2, 3].map((stage) => programStageLeast(gated, stage)),
   ).toStrictEqual([2, 1, 1]);
   expect(programStageLeast(documented, 2)).toBe(1);
+});
+
+test("a configuration read alone plans what an initialization under the same selection plans", () => {
+  expect(
+    programPlannedUnder(creationCatalogCanonical, { evaluation: "gated" }),
+  ).toStrictEqual(gated);
+  expect(
+    programPlannedUnder(creationCatalogCanonical, undefined),
+  ).toStrictEqual([{ stage: 1, evaluator: 1 }]);
+  expect(
+    programPlannedUnder(
+      JSON.stringify({
+        evaluations: [{ purpose: "Review" }, { purpose: "Check" }],
+      }),
+      undefined,
+    ),
+  ).toStrictEqual(documented);
+  expect(
+    programPlannedUnder(creationCatalogCanonical, { evaluation: "absent" }),
+  ).toStrictEqual([]);
 });
