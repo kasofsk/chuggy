@@ -52,7 +52,6 @@ import {
   leadRunnerStandingSignature,
   selectorSignatures,
   sessionRouteSignature,
-  sessionRunnerStandingSignature,
   systemPromptSetSignature,
 } from "./schema/lead.ts";
 import {
@@ -61,7 +60,6 @@ import {
   selectorInteractionsReadFunction,
   selectorProposalRetireFunction,
   sessionRouteFunction,
-  sessionRunnerStandingFunction,
   sessionSystemPromptSetFunction,
 } from "./schema/shared.ts";
 import {
@@ -309,7 +307,6 @@ export const leadDoorSignatures: readonly string[] = (
     [sessionSystemPromptSetFunction, systemPromptSetSignature],
     [leadOpenFunction, leadOpenSignature],
     [sessionRouteFunction, sessionRouteSignature],
-    [sessionRunnerStandingFunction, sessionRunnerStandingSignature],
     [leadRunnerStandingFunction, leadRunnerStandingSignature],
   ] as readonly (readonly [string, string])[]
 ).map(leadDoorNamed);

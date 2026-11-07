@@ -118,7 +118,7 @@ async function sessionRunners(
   };
 }
 
-/** Where a session of each kind runs and the runners it would run on, read under the API's or the selector's role. */
+/** Where a session of each kind runs and the runners it would run on, read under the API's role. */
 export function postgresSessionRouteReads(pool: pg.Pool): SessionRouteReads {
   return {
     route: (partition, kind) => sessionRoute(pool, partition, kind),

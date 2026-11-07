@@ -668,7 +668,7 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
   ),
   boundaryGrantsDoor(
     `${sessionRunnerStandingFunction}(text,text,text,bigint)`,
-    [apiRole],
+    [apiRole, selectorServiceRole],
     [schedulerRole, workerPlaneRole, poolPlaneRole],
   ),
   boundaryGrantsDoor(
