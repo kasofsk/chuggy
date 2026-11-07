@@ -32,6 +32,8 @@ import {
   type agentWorkloadSchema,
   type commandsWorkloadSchema,
   type ConfigurationFollowing,
+  type EvaluationPlanStageNameFault,
+  evaluationPlanStageNameFaults,
   type evaluationPlanStageSchema,
   finalizationConfigurationSchema,
   finalizationConfigurationVersion,
@@ -110,9 +112,10 @@ export type WorkloadConfiguration = Readonly<Record<string, unknown>> & {
   readonly outputs?: unknown;
 };
 
-/** Why a catalog is not ready: its shape, an entry still named by path, a name it lacks, or a workload's placement. */
+/** Why a catalog is not ready: its shape or a stage's name, an entry still named by path, a name it lacks, or a workload's placement. */
 export type WorkloadConfigurationFault =
   | "ReleaseShapeInvalid"
+  | EvaluationPlanStageNameFault
   | "WorkloadUnresolved"
   | "CatalogNameUnknown"
   | "WorkloadPlacementInvalid";
@@ -192,6 +195,17 @@ function workloadConfigurationNamesKnown(
   );
 }
 
+/** The fault a catalog's shape earns: its first issue's, which is a stage name's own where it names one. */
+function workloadConfigurationShapeFault(
+  issues: readonly z.core.$ZodIssue[],
+): WorkloadConfigurationFault {
+  const message = issues[0]?.message;
+  return (
+    evaluationPlanStageNameFaults.find((fault) => fault === message) ??
+    "ReleaseShapeInvalid"
+  );
+}
+
 /** Whether a workload names where it runs at most once: by image, or by a requirement carrying its own. */
 function workloadPlacementSingular(workload: Workload): boolean {
   return (
@@ -212,7 +226,10 @@ export function workloadConfigurationReadiness(
       ? finalizationConfigurationSchema.safeParse(value)
       : workloadConfigurationSchema.safeParse(value);
   if (!parsed.success)
-    return { readiness: "Incomplete", fault: "ReleaseShapeInvalid" };
+    return {
+      readiness: "Incomplete",
+      fault: workloadConfigurationShapeFault(parsed.error.issues),
+    };
   const entries = Object.values(parsed.data.workloads).map(
     workloadConfigurationResolved,
   );

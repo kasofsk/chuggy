@@ -1871,6 +1871,14 @@ const gatedCatalog = catalogPlanned({
   gated: [...reviewPlan, { name: "tests", evaluators: ["tests"] }],
 });
 
+/** The gated catalog with its commanded stage named `name`. */
+function gatedNamed(name: string) {
+  return catalogPlanned({
+    review: reviewPlan,
+    gated: [...reviewPlan, { name, evaluators: ["tests"] }],
+  });
+}
+
 /** Each configuration and selection an initialization reads, the stage key it answers and the note beside it. */
 const checkStageNoteCases = [
   {
@@ -1888,6 +1896,18 @@ const checkStageNoteCases = [
     selection: { evaluation: "gated" },
     stage: 2,
     note: 'Under plan "gated", a brief\'s checks run in evaluation stage 2, counted from one, named "tests", after the commands the plan runs there.',
+  },
+  {
+    canonical: gatedNamed("Code Review"),
+    selection: { evaluation: "gated" },
+    stage: 2,
+    note: 'Under plan "gated", a brief\'s checks run in evaluation stage 2, counted from one, named "Code Review", after the commands the plan runs there.',
+  },
+  {
+    canonical: gatedNamed('The "fast" checks'),
+    selection: { evaluation: "gated" },
+    stage: 2,
+    note: 'Under plan "gated", a brief\'s checks run in evaluation stage 2, counted from one, named "The \\"fast\\" checks", after the commands the plan runs there.',
   },
   {
     canonical: gatedCatalog,

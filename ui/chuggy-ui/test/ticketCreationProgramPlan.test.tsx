@@ -3,7 +3,8 @@
  * who may not skip planned evaluations is offered no stage to remove and no
  * width narrower than its plan stage, and a program a draft already held
  * shorter than that is refused at the submit with nothing sent; one who may is
- * offered both, and sends what they drew.
+ * offered both, and sends what they drew. A plan's stages are picked by the
+ * names they are written under and drawn by position.
  */
 
 import {
@@ -22,7 +23,10 @@ import { creationFormFrom } from "../app/core/ticketCreation.ts";
 import { creationFormDrawn } from "./creationFormDrawn.tsx";
 import { answeringApi } from "./answeringApi.ts";
 import type { Sent } from "./answeringApi.ts";
-import { creationGatedOffer } from "./ticketCreationFixture.ts";
+import {
+  creationCatalogStagesNamedCanonical,
+  creationGatedOffer,
+} from "./ticketCreationFixture.ts";
 import { ticketReleasing } from "./ticketReleasing.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 
@@ -94,6 +98,22 @@ test("a reader who may skip planned evaluations is offered every width and a Rem
     dependencies: [],
     program: [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }] }],
   });
+});
+
+test("a plan whose stages are named in free text is picked by those names, and its program drawn by position as any plan's is", () => {
+  render(
+    creationFormDrawn(
+      api().ports,
+      [creationGatedOffer(undefined, creationCatalogStagesNamedCanonical)],
+      { standing: nonholder },
+    ),
+  );
+  expect(
+    screen.getByRole("button", { name: /^Evaluation/u }).textContent,
+  ).toContain("gated (default) · Code Review → Checks · étape 2");
+  fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
+  expect(widths("Stage 1")).toStrictEqual(["2", "3"]);
+  expect(widths("Stage 2")).toStrictEqual(["1", "2", "3"]);
 });
 
 test("a short program seeded from a draft that held one is refused at the submit for a reader who may not skip it, and nothing is sent", async () => {
