@@ -145,6 +145,7 @@ function TicketDraftStanding(props: {
         standing="Draft"
         fragment={ticketDraftFragment}
         nowMs={held.nowMs}
+        epics={null}
         actions={
           <TicketDraftActions
             partition={held.partition}
