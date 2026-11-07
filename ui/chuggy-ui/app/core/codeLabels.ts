@@ -659,7 +659,7 @@ function finalizationTargetName(
  * A push naming none lands on the branch the work happened on, which is a mode
  * and no reference; a proposal naming none opens into the repository's
  * default; and `None` names no reference at all, having nothing to advance
- * onto. A git merge's policy is said apart, by `gitMergePolicyLabel`.
+ * onto.
  */
 export function finalizationLine(finalization: FinalizationOfTarget): string {
   const method = finalizationMethodLabel(finalization);

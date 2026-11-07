@@ -975,9 +975,9 @@ function creationOverrideFaultsOf(
 }
 
 /**
- * The paths one issue is about. A union refused as a whole is the issues of the
- * option it came closest to matching, each under the union's own path, so a
- * target too long for a finalization is the target's and not the
+ * The paths one issue is about, a union refused as a whole being the issues of
+ * the option it came closest to matching, each under the union's own path, so
+ * a target too long for a finalization is the target's and not the
  * finalization's. The recursion is bounded by the depth of the issue.
  */
 function creationIssuePaths(
