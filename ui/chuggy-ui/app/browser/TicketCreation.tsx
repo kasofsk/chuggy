@@ -578,10 +578,24 @@ function EpicChoice(
         actions={[
           ...(nextAfter === undefined
             ? []
-            : [{ text: "More epics", onSelect: () => setAfter(nextAfter) }]),
+            : [
+                {
+                  text: "More epics",
+                  onSelect: () => {
+                    setAfter(nextAfter);
+                  },
+                },
+              ]),
           ...(after === undefined
             ? []
-            : [{ text: "First epics", onSelect: () => setAfter(undefined) }]),
+            : [
+                {
+                  text: "First epics",
+                  onSelect: () => {
+                    setAfter(undefined);
+                  },
+                },
+              ]),
         ]}
       />
     </div>

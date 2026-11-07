@@ -774,8 +774,8 @@ interface TicketPositionsRow {
 
 /**
  * The positions of one more than a page, in the order the read names, with
- * how many tickets its search, creator, phases and activity select across the
- * project.
+ * how many tickets its search, creator, epic, phases and activity select
+ * across the project.
  * The count is over the selection before any cursor, so every page of one
  * walk answers the same count.
  */
@@ -840,7 +840,14 @@ async function readTicketPositions(
                (SELECT array_agg(p.ticket::text ORDER BY p.place) FROM page p) AS tickets,
                (SELECT array_agg(p.seq::text ORDER BY p.place) FROM page p) AS seqs`,
   );
-  const row = found.rows[0];
+  return readTicketPositionsOf(found.rows[0]);
+}
+
+/** The count and the positions out of the one row `readTicketPositions` reads. */
+function readTicketPositionsOf(row: TicketPositionsRow | undefined): {
+  readonly matched: number;
+  readonly positions: readonly TicketPosition[];
+} {
   if (row === undefined) throw new Error("native read: no positions row");
   const seqs = row.seqs ?? [];
   return {
