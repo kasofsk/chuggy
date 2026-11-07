@@ -1,7 +1,7 @@
 /**
- * A version 2 configuration's canonical JSON, read into the catalog a ticket
- * selects from: its workloads, the plans that run them, its finalizers, and
- * the defaults a selection leaves standing.
+ * A version 2 or 3 configuration's canonical JSON, read into the catalog a
+ * ticket selects from: its workloads, the plans that run them, its finalizers,
+ * and the defaults a selection leaves standing.
  *
  * IT IS READ AS LOOSELY AS A DOCUMENT IS, every leaf on its own, so bytes that
  * are no catalog are none rather than a failed screen. A catalog is told from
@@ -16,13 +16,16 @@
 
 import { z } from "zod";
 
+import { briefFinalizationResponseSchema } from "../../../../src/contract/brief.ts";
 import {
   configurationFollowings,
+  finalizationConfigurationVersion,
   type ConfigurationFollowing,
   workloadConfigurationVersion,
 } from "../../../../src/contract/configurationDocument.ts";
 import type { ConfigurationSelection } from "../../../../src/contract/configurationSelection.ts";
 import {
+  briefFinalizationModeOf,
   briefFinalizationModes,
   type BriefFinalizationMode,
 } from "../../../../src/contract/rosters.ts";
@@ -55,7 +58,10 @@ const catalogStageSchema = z.looseObject({
 });
 
 const catalogSchema = z.looseObject({
-  version: z.literal(workloadConfigurationVersion),
+  version: z.union([
+    z.literal(workloadConfigurationVersion),
+    z.literal(finalizationConfigurationVersion),
+  ]),
   workloads: z.record(z.string(), z.unknown()),
   plans: z.record(z.string(), z.array(catalogStageSchema)),
   finalizers: z
@@ -68,6 +74,9 @@ const catalogSchema = z.looseObject({
             mode: z.enum(briefFinalizationModes),
             target: z.string().optional().catch(undefined),
           })
+          .optional()
+          .catch(undefined),
+        finalization: briefFinalizationResponseSchema
           .optional()
           .catch(undefined),
       }),
@@ -158,6 +167,21 @@ function configurationCatalogEntry(
   };
 }
 
+/** A version 3 finalizer's finalization as the landing a version 2 one writes: its mode and its target, its policy not read. */
+function catalogFinalizationLanding(
+  finalization: z.output<typeof briefFinalizationResponseSchema> | undefined,
+):
+  | { readonly mode: BriefFinalizationMode; readonly target?: string }
+  | undefined {
+  if (finalization === undefined) return undefined;
+  return {
+    mode: briefFinalizationModeOf(finalization),
+    ...(finalization.kind === "None" || finalization.target === undefined
+      ? {}
+      : { target: finalization.target }),
+  };
+}
+
 /** The catalog these bytes are, or none where they are any other document or no JSON at all. */
 export function configurationCatalogOf(
   canonical: string,
@@ -176,20 +200,26 @@ export function configurationCatalogOf(
     ),
     plans: new Map(Object.entries(catalog.plans)),
     finalizers: Object.entries(catalog.finalizers ?? {}).map(
-      ([name, finalizer]) => ({
-        name,
-        approvalRequired: finalizer.approvalRequired ?? false,
-        ...(finalizer.landing === undefined
-          ? {}
-          : {
-              landing: {
-                mode: finalizer.landing.mode,
-                ...(finalizer.landing.target === undefined
-                  ? {}
-                  : { target: finalizer.landing.target }),
-              },
-            }),
-      }),
+      ([name, finalizer]) => {
+        const landing =
+          catalog.version === finalizationConfigurationVersion
+            ? catalogFinalizationLanding(finalizer.finalization)
+            : finalizer.landing;
+        return {
+          name,
+          approvalRequired: finalizer.approvalRequired ?? false,
+          ...(landing === undefined
+            ? {}
+            : {
+                landing: {
+                  mode: landing.mode,
+                  ...(landing.target === undefined
+                    ? {}
+                    : { target: landing.target }),
+                },
+              }),
+        };
+      },
     ),
     defaults: {
       work: catalog.defaults.work,
