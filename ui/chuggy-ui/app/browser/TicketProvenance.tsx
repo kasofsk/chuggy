@@ -53,7 +53,6 @@ import type {
 import { workloadsEffectiveCanonicalOf } from "../core/workloadOverrides.ts";
 import { overrideFieldOf, overriddenViewOf } from "../core/ticketOverrides.ts";
 import type { OverrideField } from "../core/ticketOverrides.ts";
-import type { PanelState } from "../core/freshness.ts";
 import { configurationLabel, digestShortened } from "../core/labels.ts";
 import { usePanelState } from "./api.ts";
 import { PanelUnready } from "./DataPanel.tsx";
@@ -73,10 +72,9 @@ import "./ticket/ticket.css";
  */
 export function TicketBriefImages(props: {
   readonly partition: PartitionIdentity;
-  readonly state: PanelState<TicketResponse>;
+  readonly brief: TicketResponse["brief"];
 }): ReactNode {
-  const images =
-    props.state.state === "Ready" ? props.state.value.brief?.images : undefined;
+  const images = props.brief?.images;
   if (images === undefined || images.length === 0) return null;
   return (
     <ul className="flex flex-wrap gap-2">
@@ -1249,10 +1247,22 @@ function ConfigurationPanel(props: {
   );
 }
 
+/** What a configuration is drawn from: a released ticket's own read, or a
+ * draft as it stands, which follows nothing. */
+export type TicketConfigured = Pick<
+  TicketResponse,
+  | "configurationRevision"
+  | "configurationVersion"
+  | "overrides"
+  | "selection"
+  | "following"
+  | "brief"
+>;
+
 /** The configuration the live revision pins, drawn once the ticket is read. */
 export function TicketConfiguration(props: {
   readonly partition: PartitionIdentity;
-  readonly ticket: TicketResponse | undefined;
+  readonly ticket: TicketConfigured | undefined;
 }): ReactNode {
   const ticket = props.ticket;
   if (ticket?.configurationRevision === undefined) return null;

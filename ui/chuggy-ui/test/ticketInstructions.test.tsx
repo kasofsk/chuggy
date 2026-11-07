@@ -26,7 +26,7 @@ function drawn(measure: () => boolean, aside?: string): void {
   render(
     <TicketInstructions
       partition={atlas}
-      state={{ state: "Ready", value: ticket, observedAtMs: 0 }}
+      brief={ticket.brief}
       measure={measure}
       aside={aside}
     />,

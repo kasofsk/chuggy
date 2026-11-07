@@ -18,8 +18,11 @@ import type {
   TicketPhase,
 } from "../../../../src/contract/rosters.ts";
 import type { PublicMutation } from "../../../../src/contract/requests.ts";
-import type { TicketResponse } from "../../../../src/contract/responses.ts";
-import type { DispatchViewResponse } from "../../../../src/contract/responses.ts";
+import type {
+  DispatchViewResponse,
+  DraftResponse,
+  TicketResponse,
+} from "../../../../src/contract/responses.ts";
 
 import { projectListReread } from "./projectQueryKeys.ts";
 import type { ProjectList } from "./projectQueryKeys.ts";
@@ -38,10 +41,11 @@ export const ticketResumablePhases: readonly TicketPhase[] = ["Escalated"];
  * Every word a button in this console carries. `actionsFor` reaches the first
  * two from the phase alone; the rest arrive with an open native action, whose
  * admitted answers `nativeActionAnswers.ts` maps onto this same pair of fields
- * so that one component draws both.
+ * so that one component draws both; `Release` is a draft's, which no phase
+ * reaches.
  */
 export type TicketActionName =
-  "Dispatch" | "Resume" | "Revoke" | "Approve" | "Decline";
+  "Dispatch" | "Resume" | "Revoke" | "Approve" | "Decline" | "Release";
 
 export interface TicketAction {
   readonly action: TicketActionName;
@@ -147,6 +151,20 @@ export function ticketAttemptWithout(
   return written;
 }
 
+/** The Release of a draft, fenced at the authoring version and configuration
+ * it was read at, as the creation form releases one. */
+export function draftReleaseAction(draft: DraftResponse): TicketAction {
+  return {
+    action: "Release",
+    mutation: {
+      mutation: "ReleaseDraft",
+      ticket: draft.ticket,
+      authoringVersion: draft.authoringVersion,
+      configurationRevision: draft.configurationRevision,
+    },
+  };
+}
+
 /** The Dispatch that names the ticket version its press expects, which the
  * actor refuses as `TicketChanged` once the ticket has moved past it. */
 export function manualDispatchAction(
@@ -220,5 +238,7 @@ export function ticketActionSentence(
       return "let this ticket's finalization go ahead";
     case "Decline":
       return "hold this ticket's finalization back";
+    case "Release":
+      return "release this draft as a ticket";
   }
 }

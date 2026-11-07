@@ -767,6 +767,8 @@ export function ticketActionEffect(
       return offered("Lets finalization proceed");
     case "Decline":
       return offered("Holds finalization back");
+    case "Release":
+      return offered("Makes the draft a ticket");
   }
 }
 

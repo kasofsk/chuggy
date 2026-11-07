@@ -8,6 +8,10 @@
  *
  * Every fact is drawn once on the page: what the header says is not said
  * again here, and below the narrow breakpoint the sidebar follows the content.
+ *
+ * A draft never released is drawn from the draft: the steps it would run, its
+ * instructions marked Draft, and a sidebar with no author and no runs, which
+ * the draft's read does not carry.
  */
 
 import { Link } from "@tanstack/react-router";
@@ -18,6 +22,7 @@ import type {
   DraftResponse,
   TicketResponse,
 } from "../../../../../src/contract/responses.ts";
+import type { TicketPhase } from "../../../../../src/contract/rosters.ts";
 import { agoFigure, costFigure } from "../../core/figures.ts";
 import { configurationLabel, creatorLabel } from "../../core/labels.ts";
 import { repositoryLabel } from "../../core/projectRepositories.ts";
@@ -32,6 +37,7 @@ import {
   ticketOverviewRunTime,
   ticketOverviewUnreleased,
 } from "../../core/ticketOverview.ts";
+import type { TicketOverviewBranch } from "../../core/ticketOverview.ts";
 import { ticketLedger } from "../../core/ticketLedger.ts";
 import { phaseIsRunning } from "../../core/ticketPageFacts.ts";
 import { ticketStepsOf } from "../../core/ticketSteps.ts";
@@ -61,16 +67,19 @@ function TicketFiledBy(props: {
   return <Identity label={creatorLabel(props.creator, emails)} />;
 }
 
-/** Each dependency as a link to its ticket with its state beside it. */
+/** Each dependency as a link to its ticket, with its state beside it where
+ * the read says it. */
 function TicketDependencies(props: {
   readonly partition: PartitionIdentity;
-  readonly ticket: TicketResponse;
+  readonly dependencies: readonly {
+    readonly ticket: number;
+    readonly phase?: TicketPhase;
+  }[];
 }): ReactNode {
-  const dependencies = ticketOverviewDependenciesOf(props.ticket);
-  if (dependencies.length === 0) return "None";
+  if (props.dependencies.length === 0) return "None";
   return (
     <ul className="ticket-sidebar-dependencies">
-      {dependencies.map((dependency) => (
+      {props.dependencies.map((dependency) => (
         <li key={dependency.ticket}>
           <Link
             to="/$tenant/$project/tickets/$ticket"
@@ -78,10 +87,12 @@ function TicketDependencies(props: {
           >
             {`#${String(dependency.ticket)}`}
           </Link>
-          <TicketStateLabel
-            standing={dependencyStandingOf(dependency.phase)}
-            size="small"
-          />
+          {dependency.phase === undefined ? null : (
+            <TicketStateLabel
+              standing={dependencyStandingOf(dependency.phase)}
+              size="small"
+            />
+          )}
         </li>
       ))}
     </ul>
@@ -130,23 +141,32 @@ function TicketSidebarRuns(props: {
   );
 }
 
-/** What the ticket is, and what its runs have cost and taken. */
-function TicketSidebar(props: {
+/** What the sidebar says of a ticket or a draft beside its runs. */
+interface TicketSidebarFacts {
+  readonly repository: string | undefined;
+  readonly branch: TicketOverviewBranch | undefined;
+  readonly creator: string | undefined;
+  readonly dependencies: readonly {
+    readonly ticket: number;
+    readonly phase?: TicketPhase;
+  }[];
+  readonly revision: string | undefined;
+  readonly version: TicketResponse["configurationVersion"];
+}
+
+/** What the ticket is, and under it whatever the caller adds of its runs. */
+function TicketSidebarDrawn(props: {
   readonly held: TicketPageHeld;
-  readonly ticket: TicketResponse;
+  readonly facts: TicketSidebarFacts;
+  readonly children?: ReactNode;
 }): ReactNode {
-  const { held, ticket } = props;
+  const { held, facts } = props;
+  const { repository, branch, creator, revision } = facts;
   const params = { ...held.partition, ticket: String(held.ticket) };
-  const repository = ticket.repository ?? ticket.brief?.repository;
-  const branch = ticketOverviewBranchOf(
-    ticket,
-    ticketLandingsHeld(held.reads.landingsState),
-  );
-  const revision = ticket.configurationRevision;
   const configuration =
     revision === undefined
       ? undefined
-      : configurationLabel(revision, ticket.configurationVersion);
+      : configurationLabel(revision, facts.version);
   return (
     <aside className="ticket-sidebar" aria-label="Properties">
       <Fields>
@@ -167,16 +187,16 @@ function TicketSidebar(props: {
             </code>
           </Field>
         )}
-        {ticket.creator === undefined ? null : (
+        {creator === undefined ? null : (
           <Field name="Filed by">
-            <TicketFiledBy
-              partition={held.partition}
-              creator={ticket.creator}
-            />
+            <TicketFiledBy partition={held.partition} creator={creator} />
           </Field>
         )}
         <Field name="Depends on">
-          <TicketDependencies partition={held.partition} ticket={ticket} />
+          <TicketDependencies
+            partition={held.partition}
+            dependencies={facts.dependencies}
+          />
         </Field>
         {configuration === undefined ? null : (
           <Field name="Configuration">
@@ -188,9 +208,36 @@ function TicketSidebar(props: {
             </Link>
           </Field>
         )}
-        <TicketSidebarRuns held={held} ticket={ticket} params={params} />
+        {props.children}
       </Fields>
     </aside>
+  );
+}
+
+/** What the ticket is, and what its runs have cost and taken. */
+function TicketSidebar(props: {
+  readonly held: TicketPageHeld;
+  readonly ticket: TicketResponse;
+}): ReactNode {
+  const { held, ticket } = props;
+  const params = { ...held.partition, ticket: String(held.ticket) };
+  return (
+    <TicketSidebarDrawn
+      held={held}
+      facts={{
+        repository: ticket.repository ?? ticket.brief?.repository,
+        branch: ticketOverviewBranchOf(
+          ticket,
+          ticketLandingsHeld(held.reads.landingsState),
+        ),
+        creator: ticket.creator,
+        dependencies: ticketOverviewDependenciesOf(ticket),
+        revision: ticket.configurationRevision,
+        version: ticket.configurationVersion,
+      }}
+    >
+      <TicketSidebarRuns held={held} ticket={ticket} params={params} />
+    </TicketSidebarDrawn>
   );
 }
 
@@ -266,8 +313,55 @@ function TicketOverviewSteps(props: {
   );
 }
 
+/** A draft never released: the steps it would run, none run yet, its
+ * instructions as they stand, and what it is. */
+function TicketDraftOverview(props: {
+  readonly held: TicketPageHeld;
+  readonly draft: DraftResponse;
+}): ReactNode {
+  const { held, draft } = props;
+  return (
+    <div className="ticket-overview">
+      <div className="ticket-overview-main">
+        <TicketStepsDrawn
+          partition={held.partition}
+          ticket={held.ticket}
+          steps={ticketStepsOf({
+            ledger: undefined,
+            plan: held.facts.plan,
+            landings: new Map(),
+            settled: false,
+            nowMs: held.nowMs,
+          })}
+          nowMs={held.nowMs}
+        />
+        <TicketInstructions
+          partition={held.partition}
+          brief={draft.brief}
+          aside={<span className="ticket-revision">Draft</span>}
+        />
+      </div>
+      <TicketSidebarDrawn
+        held={held}
+        facts={{
+          repository: draft.brief?.repository,
+          branch: ticketOverviewBranchOf(draft, []),
+          creator: undefined,
+          dependencies: draft.authoring.dependencies.map((ticket) => ({
+            ticket,
+          })),
+          revision: draft.configurationRevision,
+          version: draft.configurationVersion,
+        }}
+      />
+    </div>
+  );
+}
+
 export function TicketOverviewTab(): ReactNode {
   const held = useTicketPageHeld();
+  if (held.draft !== undefined)
+    return <TicketDraftOverview held={held} draft={held.draft} />;
   const ticket = readValue(held.reads.ticketState);
   if (ticket === undefined)
     return <PanelUnready state={held.reads.ticketState} />;
@@ -289,7 +383,7 @@ export function TicketOverviewTab(): ReactNode {
         <TicketOverviewSteps held={held} ticket={ticket} />
         <TicketInstructions
           partition={held.partition}
-          state={held.reads.ticketState}
+          brief={ticket.brief}
           aside={<TicketRevisionLine ticket={ticket} nowMs={held.nowMs} />}
         />
       </div>

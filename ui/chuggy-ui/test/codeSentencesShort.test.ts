@@ -18,6 +18,7 @@ import {
 } from "../../../src/contract/rosters.ts";
 import type { ApiFailure } from "../app/core/apiRequest.ts";
 import {
+  draftDeletionFailureSentence,
   draftRevisionFailureSentence,
   draftRevisionRefusalCodes,
   draftRevisionRefusalSentence,
@@ -133,6 +134,10 @@ test("every refusal, deferral and failure a submission meets is one short line",
     ...[...mutationDeferralCodes, unknownCode].map(mutationDeferralSentence),
     ...Object.values(failures).map(operationFailureSentence),
     ...Object.values(failures).map(draftRevisionFailureSentence),
+    ...Object.values(failures).map(draftDeletionFailureSentence),
+    ...draftRevisionRefusalCodes.map((code) =>
+      draftDeletionFailureSentence({ outcome: "Conflict", code, body: {} }),
+    ),
     ...mutationRefusalCodes.map((code) =>
       operationFailureSentence({ outcome: "Conflict", code, body: {} }),
     ),

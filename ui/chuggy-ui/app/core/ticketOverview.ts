@@ -33,7 +33,7 @@ export interface TicketOverviewBranch {
  * A ticket that lands nothing lands on no branch.
  */
 export function ticketOverviewBranchOf(
-  ticket: TicketResponse,
+  ticket: Pick<TicketResponse, "brief">,
   landings: readonly TicketLanding[],
 ): TicketOverviewBranch | undefined {
   const brief = ticket.brief;
