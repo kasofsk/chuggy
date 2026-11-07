@@ -225,6 +225,9 @@
     --col-run-name: 7rem; /* runs: the step's name */
     --col-run-time: 5.5rem; /* runs: how long the run took */
     --col-run-cost: 4.5rem; /* runs: what the run cost */
+    --col-step-name: 8rem; /* configuration: the step's name */
+    --col-step-model: 5rem; /* configuration: the step's model */
+    --col-step-overrides: 7rem; /* configuration: what the ticket overrode */
   }
 
   :root[data-theme="light"] {
