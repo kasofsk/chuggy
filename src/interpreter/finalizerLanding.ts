@@ -15,8 +15,8 @@ import { briefLandsOn, type DraftBrief } from "./ticketBrief.ts";
 
 /**
  * The branches one brief names: where the work happened, and where the
- * promotion lands it. The brief itself is kept, because the mode it names is
- * what the pure pass reads of it.
+ * promotion lands it. The brief itself is kept, because the finalization it
+ * names is what the pure pass reads of it.
  */
 export interface FinalizerBranches {
   readonly work?: GitRefName;

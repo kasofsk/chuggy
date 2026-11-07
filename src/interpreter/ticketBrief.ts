@@ -178,17 +178,6 @@ export function briefFinalizationTarget(
 }
 
 /**
- * The policy a brief's landing is ordered under: its `GitMerge`'s, and `Direct`
- * for a brief naming none or a kind that names none.
- */
-export function briefGitMergePolicyOf(
-  brief: Pick<DraftBrief, "finalization"> | undefined,
-): BriefGitMergePolicy {
-  const finalization = brief?.finalization;
-  return finalization?.kind === "GitMerge" ? finalization.policy : "Direct";
-}
-
-/**
  * The reference a brief's landing advances: a proposal always lands on the
  * work's own branch, and a push on the reference its finalization names or, where
  * it names none, on that branch. Absent where the brief names neither, which is
@@ -244,11 +233,12 @@ export type DraftBriefByMode = Omit<DraftBrief, "finalization"> & {
 export function draftBriefByMode(brief: DraftBrief): DraftBriefByMode {
   const { finalization, ...rest } = brief;
   if (finalization === undefined) return rest;
-  const policy = briefGitMergePolicyOf(brief);
   return {
     ...rest,
     finalization: briefFinalizationByMode(finalization),
-    ...(policy === "Direct" ? {} : { landing: policy }),
+    ...(finalization.kind === "GitMerge" && finalization.policy !== "Direct"
+      ? { landing: finalization.policy }
+      : {}),
   };
 }
 

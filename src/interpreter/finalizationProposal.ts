@@ -75,7 +75,7 @@
  */
 
 import { textCodePointsCount } from "../contract/http.ts";
-import type { BriefFinalizationMode } from "../contract/rosters.ts";
+import type { BriefFinalizationOf } from "../contract/brief.ts";
 import { assertNever } from "../domain/assertNever.ts";
 import type { TicketId } from "../domain/ids.ts";
 import {
@@ -215,7 +215,7 @@ export type FinalizationProposalDecision =
 
 /** What the finalization itself brings to this step: how its brief lands, and what its project will still admit. */
 export interface FinalizationProposalStanding {
-  readonly mode: BriefFinalizationMode | undefined;
+  readonly finalization: BriefFinalizationOf<GitRefName> | undefined;
   readonly lifecycle: Lifecycle;
 }
 
@@ -259,9 +259,12 @@ export function finalizationQueueRework(
  * where merging it was somebody else's to do.
  */
 export function finalizationProposalMergedStanding(
-  mode: BriefFinalizationMode | undefined,
+  finalization: BriefFinalizationOf<GitRefName> | undefined,
 ): ChangeProposalMergedStanding {
-  return mode === "PullRequestMerge" ? "Accepted" : "Contradictory";
+  return finalization?.kind === "GitMerge" &&
+    finalization.mode === "PullRequestMerge"
+    ? "Accepted"
+    : "Contradictory";
 }
 
 /** The hold each reason a publication is held under is, named as this layer names it. */
@@ -542,7 +545,7 @@ export function finalizationProposalNext(
   if (gathered.gathered === "BaseIsHead")
     return { decide: "Hold", hold: "ProposalBaseIsHead" };
   const { request } = gathered;
-  const merged = finalizationProposalMergedStanding(finalization.mode);
+  const merged = finalizationProposalMergedStanding(finalization.finalization);
   const merges = merged === "Accepted";
   const next = changeProposalPublicationNext(
     request,
@@ -833,7 +836,7 @@ export function finalizationProposalDequeue(
     gathered.request,
     gathered.publication,
     bounds.publication,
-    finalizationProposalMergedStanding(finalization.mode),
+    finalizationProposalMergedStanding(finalization.finalization),
   );
   return next.next === "Accepted"
     ? finalizationProposalMergeAddress(

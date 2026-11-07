@@ -81,10 +81,10 @@
  */
 
 import {
-  briefFinalizationProposes,
-  type BriefFinalizationMode,
-  type FinalizationUnavailableKind,
-} from "../contract/rosters.ts";
+  briefFinalizationOpensProposal,
+  type BriefFinalizationOf,
+} from "../contract/brief.ts";
+import type { FinalizationUnavailableKind } from "../contract/rosters.ts";
 import { assertNever } from "../domain/assertNever.ts";
 import type { TicketId } from "../domain/ids.ts";
 import { asBoundedText } from "./boundedText.ts";
@@ -643,7 +643,7 @@ export interface FinalizationView {
   /** The branch the ticket's brief lands its work on, which the remote may not hold yet and the first promotion creates. */
   readonly targetBranch?: GitRefName;
   /** How the ticket's brief lands its work, absent for a ticket carrying no brief at all. */
-  readonly finalizationMode?: BriefFinalizationMode;
+  readonly finalization?: BriefFinalizationOf<GitRefName>;
   readonly observedTarget?: ObservedTarget;
   /** What the branch the work happened on holds, which is the tree a candidate is built over. */
   readonly observedWorkBranch?: ObservedTarget;
@@ -911,7 +911,7 @@ function finalizationNextNotPromoted(
 function finalizationNextPromoted(
   view: FinalizationView,
 ): FinalizationDecision {
-  if (briefFinalizationProposes(view.finalizationMode)) {
+  if (briefFinalizationOpensProposal(view.finalization)) {
     return { decide: "Propose" };
   }
   return {
@@ -1027,7 +1027,7 @@ export function finalizationNext(
   if (view.claim.state === "Fulfilled" || view.claim.state === "Invalidated") {
     return { decide: "Settled" };
   }
-  if (view.finalizationMode === "None") {
+  if (view.finalization?.kind === "None") {
     return {
       decide: "Conclude",
       conclusion: { outcome: "FinalizationSucceeded" },

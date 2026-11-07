@@ -52,7 +52,7 @@
  * say so again.
  *
  * A LANDING THAT LANDS NOTHING IS READ BEFORE THE BINDING IS, BECAUSE IT NEEDS
- * NEITHER. Such a ticket reaches the pure pass with its mode and nothing else,
+ * NEITHER. Such a ticket reaches the pure pass with its kind and nothing else,
  * no repository asked for, no remote read and no proposal base observed for a
  * finalization that concludes the moment it is looked at.
  *
@@ -208,8 +208,6 @@
 
 import { briefFinalizationOpensProposal } from "../contract/brief.ts";
 import {
-  briefFinalizationModeOf,
-  briefFinalizationProposes,
   finalizationUnavailableKinds,
   type FinalizationUnavailableKind,
 } from "../contract/rosters.ts";
@@ -323,7 +321,6 @@ import {
 } from "./finalizerLanding.ts";
 import {
   briefFinalizationTarget,
-  briefGitMergePolicyOf,
   type TicketBriefPort,
 } from "./ticketBrief.ts";
 
@@ -619,7 +616,7 @@ async function finalizerGather(
     case "None":
       return {
         gathered: "View",
-        view: { ...durable, finalizationMode: "None" },
+        view: { ...durable, finalization: { kind: "None" } },
       };
     case "Unbound":
       return { gathered: "View", view: durable };
@@ -652,11 +649,7 @@ async function finalizerGatherLanding(
     ...(branches.target === undefined ? {} : { targetBranch: branches.target }),
     ...(branches.brief?.finalization === undefined
       ? {}
-      : {
-          finalizationMode: briefFinalizationModeOf(
-            branches.brief.finalization,
-          ),
-        }),
+      : { finalization: branches.brief.finalization }),
     ...(base === undefined ? {} : { proposalBase: base }),
   };
   if (observed.observed !== "Target") return { gathered: "View", view };
@@ -1054,7 +1047,7 @@ async function finalizerLandingTarget(
   target: ObservedTarget,
 ): Promise<ObservedTarget | "Unheld" | undefined> {
   const { view } = subject;
-  if (!briefFinalizationProposes(view.finalizationMode))
+  if (!briefFinalizationOpensProposal(view.finalization))
     return target.baseRef === undefined ? target : "Unheld";
   const brief = await service.ticketBriefs.brief(
     view.claim.partition,
@@ -1161,16 +1154,6 @@ async function finalizerIntegratePrepared(
   );
 }
 
-/** Whether the ticket's brief lands it serialized, which a brief naming nothing does not. */
-async function finalizerSerialized(
-  service: FinalizerService,
-  subject: FinalizerPreparation,
-): Promise<boolean> {
-  const { claim } = subject.view;
-  const brief = await service.ticketBriefs.brief(claim.partition, claim.ticket);
-  return briefGitMergePolicyOf(brief) === "Serialized";
-}
-
 /**
  * Records the send-back a serialized landing gets when the target moved past
  * the commit it evaluated, naming that commit for the work cycle to re-report,
@@ -1271,13 +1254,16 @@ async function finalizerBuildSource(
     base: source.source.base,
   });
   switch (prepared.prepared) {
-    case "Candidate":
+    case "Candidate": {
+      const { finalization } = subject.view;
       await (
-        (await finalizerSerialized(service, subject))
+        finalization?.kind === "GitMerge" &&
+          finalization.policy === "Serialized"
           ? finalizerContainedPrepared
           : finalizerIntegratePrepared
       )(service, subject, prepared.candidate, tally);
       return;
+    }
     case "Undescended":
       await finalizerPreparationFailed(service, subject, subject.target, tally);
       return;
@@ -1822,7 +1808,7 @@ async function finalizerReconcileProposal(
       reconcileChangeProposal(
         request,
         read,
-        finalizationProposalMergedStanding(view.finalizationMode),
+        finalizationProposalMergedStanding(view.finalization),
       ),
     ),
     tally,
@@ -2363,7 +2349,7 @@ async function finalizerProposal(
   tally: FinalizerTally,
 ): Promise<void> {
   const decision = finalizationProposalNext(
-    { mode: view.finalizationMode, lifecycle: view.lifecycle },
+    { finalization: view.finalization, lifecycle: view.lifecycle },
     await finalizerGatherProposal(service, view),
     finalizerProposalBounds(service),
   );
@@ -2402,7 +2388,8 @@ async function finalizerDequeueEscalated(
 ): Promise<void> {
   const { attempt, repository } = view;
   if (
-    view.finalizationMode !== "PullRequestMerge" ||
+    view.finalization?.kind !== "GitMerge" ||
+    view.finalization.mode !== "PullRequestMerge" ||
     attempt?.candidate === undefined ||
     repository === undefined
   )
@@ -2411,7 +2398,7 @@ async function finalizerDequeueEscalated(
   const stored = await service.store.changeProposal(view.claim);
   if (binding === undefined || stored === undefined) return;
   const dequeue = finalizationProposalDequeue(
-    { mode: view.finalizationMode, lifecycle: view.lifecycle },
+    { finalization: view.finalization, lifecycle: view.lifecycle },
     {
       gathered: "Request",
       request: finalizerStoredRequest(
@@ -2460,7 +2447,7 @@ async function finalizerConclude(
   tally: FinalizerTally,
 ): Promise<void> {
   const attempt = view.attempt;
-  if (attempt === undefined && view.finalizationMode !== "None") {
+  if (attempt === undefined && view.finalization?.kind !== "None") {
     throw new Error(
       "finalizer pass: a conclusion named no attempt to carry it",
     );

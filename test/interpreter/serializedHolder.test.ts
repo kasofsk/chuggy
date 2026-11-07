@@ -15,6 +15,14 @@ const partition = {
   project: asProjectId("project"),
 };
 
+/** A git merge onto one reference, ordered under `policy`. */
+function gitMerge(
+  policy: "Direct" | "Serialized",
+  mode: "Push" | "PullRequestMerge" = "Push",
+): SerializedCandidate["finalization"] {
+  return { kind: "GitMerge", mode, policy };
+}
+
 /** A Serialized ticket finalizing on `main` of one repository, entered at `entry`. */
 function candidate(
   ticket: number,
@@ -25,7 +33,7 @@ function candidate(
     partition,
     ticket: asTicketId(ticket),
     phase: "Finalization",
-    landing: "Serialized",
+    finalization: gitMerge("Serialized"),
     repository: "repo",
     target: "main",
     entry,
@@ -136,14 +144,44 @@ test("two references are independent, whether by target, repository or project",
 test("Direct tickets and tickets naming no repository are in no queue", () => {
   assert.deepEqual(
     holderOf([
-      candidate(1, 10, { landing: "Direct" }),
+      candidate(1, 10, { finalization: gitMerge("Direct") }),
       candidate(2, 20),
       candidate(3, 30, { repository: undefined }),
     ]),
     [{ holder: asTicketId(2), waiting: [] }],
   );
   assert.deepEqual(
-    serializedQueues([candidate(1, 10, { landing: "Direct" })]),
+    serializedQueues([candidate(1, 10, { finalization: gitMerge("Direct") })]),
     [],
+  );
+});
+
+test("a pull request, a landing of nothing and a ticket carrying no brief are in no queue", () => {
+  for (const finalization of [
+    { kind: "PullRequest" },
+    { kind: "PullRequest", target: "main" },
+    { kind: "None" },
+    undefined,
+  ] as const)
+    assert.deepEqual(
+      holderOf([
+        candidate(1, 10, { finalization }),
+        candidate(2, 20),
+        candidate(3, undefined, { finalization, rechecking: true }),
+      ]),
+      [{ holder: asTicketId(2), waiting: [] }],
+      JSON.stringify(finalization),
+    );
+});
+
+test("a push and a merged proposal onto one reference queue together", () => {
+  assert.deepEqual(
+    holderOf([
+      candidate(1, 10, {
+        finalization: gitMerge("Serialized", "PullRequestMerge"),
+      }),
+      candidate(2, 20),
+    ]),
+    [{ holder: asTicketId(1), waiting: [asTicketId(2)] }],
   );
 });
