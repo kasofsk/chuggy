@@ -1,133 +1,219 @@
 /**
- * What the ticket has spent, by model and by stage.
+ * The Usage tab: what the ticket's runs cost and took, as four tiles, by step
+ * and by model, and where delivery stands where the ticket's repository
+ * declares actions.
  *
- * The roll-up and the by-model table are the ticket read's own figures, because
- * the server summed them over every execution and this screen may hold only a
- * page. The by-stage table is grouped here from the page and priced through
- * `runSpendOf`, which reports the basis every measured run agreed on and
- * reports disagreement as disagreement.
+ * Cost, tokens, turns and the by-model table are the ticket read's own
+ * roll-up, which the server summed over every execution. Run time and the
+ * by-step table are summed here over the executions read by
+ * `core/ticketUsage.ts`, as the Runs tab and the sidebar sum them, and a short
+ * page says so.
  */
 
 import type { ReactNode } from "react";
 
-import type {
-  ExecutionSummary,
-  ExecutionsResponse,
-  RunTotals,
-} from "../../../../../src/contract/responses.ts";
+import type { RunTotals } from "../../../../../src/contract/responses.ts";
+import type { RunCostBasis } from "../../../../../src/contract/rosters.ts";
 import {
+  costAmountFigure,
   costFigure,
   durationFigure,
-  spendFigures,
   tokenCountFigure,
-  tokensFigure,
+  tokensTotal,
 } from "../../core/figures.ts";
-import { runSpendOf } from "../../core/runTotals.ts";
-import { runsLabel } from "../../core/ticketPageFacts.ts";
-import type { RunSpend } from "../../core/runTotals.ts";
+import type { Figure as FigureValue } from "../../core/figures.ts";
+import { countedLabel } from "../../core/runTotals.ts";
+import { ticketDeliveryDrawn } from "../../core/ticketDelivery.ts";
+import { ticketUsageStepsOf } from "../../core/ticketUsage.ts";
+import type { TicketUsageStep } from "../../core/ticketUsage.ts";
+import { PanelUnready } from "../DataPanel.tsx";
+import { EmptyState } from "../ui/EmptyState.tsx";
 import { Field, Fields } from "../ui/Fields.tsx";
 import { Figure } from "../ui/Figure.tsx";
-import { EmptyState } from "../ui/EmptyState.tsx";
+import { Notice } from "../ui/Notice.tsx";
 import { Table } from "../ui/Table.tsx";
+import { TicketDelivery } from "./TicketDelivery.tsx";
+import { readValue } from "./TicketPageHeld.tsx";
+import type { TicketPageHeld } from "./TicketPageHeld.tsx";
 
-/** What the page holds is not what the ticket has, where the route said so. */
-const shortPageNote = "on this page";
+import "./ticket.css";
 
-/** One row of the by-stage table: what the program ran, and what it cost. */
-export interface StageSpendRow {
-  readonly label: string;
-  readonly stage: number;
-  readonly spend: RunSpend;
-}
+const ticketUsageUnmeasured: FigureValue = {
+  kind: "Absent",
+  why: "No run figures yet",
+};
 
-/**
- * Work comes before every stage, which is the order the program runs them in;
- * zero is never a real stage, since the identity's own numbering starts at
- * one.
- */
-const stageOrdinalWork = 0;
-
-function stageOrdinalOf(summary: ExecutionSummary): number {
-  return summary.identity.type === "WorkTask"
-    ? stageOrdinalWork
-    : summary.identity.value.stage;
-}
-
-function stageRowLabel(stage: number): string {
-  return stage === stageOrdinalWork ? "Work" : `Stage ${String(stage)}`;
-}
-
-/**
- * The page's executions grouped on the stage that ran them, work first and then
- * the program's own order. The order is the stage ordinal and never the drawn
- * label, which would sort `Stage 10` between `Stage 1` and `Stage 2`.
- */
-export function stageSpendRows(
-  page: ExecutionsResponse,
-): readonly StageSpendRow[] {
-  const grouped = new Map<number, ExecutionSummary[]>();
-  for (const summary of page.executions) {
-    const stage = stageOrdinalOf(summary);
-    const held = grouped.get(stage);
-    if (held === undefined) grouped.set(stage, [summary]);
-    else held.push(summary);
+/** The basis a ticket's cost was priced on, in a reader's words. */
+function ticketUsageBasisLabel(basis: RunCostBasis): string {
+  switch (basis) {
+    case "List":
+      return "list price";
   }
-  return [...grouped]
-    .map(([stage, executions]) => ({
-      label: stageRowLabel(stage),
-      stage,
-      spend: runSpendOf(executions),
-    }))
-    .sort((left, right) => left.stage - right.stage);
 }
 
-function UsageTotals(props: {
-  readonly totals: RunTotals;
-  readonly page: ExecutionsResponse | undefined;
-  readonly truncated: boolean;
+function ticketUsageModelsLabel(count: number): string {
+  return count === 1 ? "one model" : countedLabel(count, "model");
+}
+
+function TicketUsageTile(props: {
+  readonly name: string;
+  readonly note: string;
+  readonly children: ReactNode;
 }): ReactNode {
-  const totals = props.totals;
   return (
-    <Fields variant="inline">
-      <Field name="Cost">
-        <Figure figure={costFigure(totals.costUsdMicros, totals.costBasis)} />
-      </Field>
-      <Field name="Tokens">
-        <Figure figure={tokensFigure(totals)} />
-      </Field>
-      <Field name="Turns">
-        <span className="num">{totals.turns}</span>
-      </Field>
-      <Field name="Wall">
-        <Figure figure={durationFigure(totals.durationMs)} />
-      </Field>
-      <Field name="API">
-        <Figure figure={durationFigure(totals.durationApiMs)} />
-      </Field>
-      <Field name="Runs">
-        <span className="num">{runsLabel(props.page)}</span>
-        {props.truncated ? (
-          <span className="fig-dim"> {shortPageNote}</span>
-        ) : null}
-      </Field>
-      <Field name="Denials">
-        <span className="num">{totals.permissionDenials}</span>
-      </Field>
-    </Fields>
+    <div className="ticket-usage-tile">
+      <dt>{props.name}</dt>
+      <dd className="ticket-usage-tile-figure">{props.children}</dd>
+      <dd className="ticket-usage-tile-note">{props.note}</dd>
+    </div>
   );
 }
 
-function UsageByModel(props: { readonly totals: RunTotals }): ReactNode {
+function TicketUsageTiles(props: {
+  readonly totals: RunTotals | undefined;
+  readonly total: TicketUsageStep;
+}): ReactNode {
+  const totals = props.totals;
+  return (
+    <dl className="ticket-usage-tiles">
+      <TicketUsageTile
+        name="Cost"
+        note={
+          totals === undefined ? "" : ticketUsageBasisLabel(totals.costBasis)
+        }
+      >
+        <Figure
+          figure={
+            totals === undefined
+              ? ticketUsageUnmeasured
+              : costAmountFigure(totals.costUsdMicros)
+          }
+        />
+      </TicketUsageTile>
+      <TicketUsageTile
+        name="Run time"
+        note={countedLabel(props.total.runs, "run")}
+      >
+        <Figure figure={props.total.time.ran} />
+      </TicketUsageTile>
+      <TicketUsageTile
+        name="Tokens"
+        note={
+          totals === undefined
+            ? ""
+            : ticketUsageModelsLabel(totals.models.length)
+        }
+      >
+        <Figure
+          figure={
+            totals === undefined
+              ? ticketUsageUnmeasured
+              : tokenCountFigure(tokensTotal(totals))
+          }
+        />
+      </TicketUsageTile>
+      <TicketUsageTile name="Turns" note="agent runs">
+        {totals === undefined ? (
+          <Figure figure={ticketUsageUnmeasured} />
+        ) : (
+          <span className="num">{totals.turns}</span>
+        )}
+      </TicketUsageTile>
+    </dl>
+  );
+}
+
+function TicketUsageStepCells(props: {
+  readonly step: TicketUsageStep;
+}): ReactNode {
+  const { step } = props;
+  const totals = step.spend.totals;
+  return (
+    <>
+      <td className="num">{step.runs}</td>
+      <td className="num">
+        <Figure figure={step.time.ran} />
+      </td>
+      <td className="num">
+        <Figure figure={step.time.waited} />
+      </td>
+      <td className="num">
+        <Figure
+          figure={
+            totals === undefined
+              ? ticketUsageUnmeasured
+              : tokenCountFigure(tokensTotal(totals))
+          }
+        />
+      </td>
+      <td className="num">
+        <Figure
+          figure={
+            totals === undefined
+              ? ticketUsageUnmeasured
+              : costFigure(totals.costUsdMicros, totals.costBasis)
+          }
+        />
+      </td>
+    </>
+  );
+}
+
+function TicketUsageBySteps(props: {
+  readonly steps: readonly TicketUsageStep[];
+  readonly total: TicketUsageStep;
+}): ReactNode {
+  return (
+    <Table caption="Usage by step">
+      <thead>
+        <tr>
+          <th scope="col">Step</th>
+          <th scope="col" className="num">
+            Runs
+          </th>
+          <th scope="col" className="num">
+            Run time
+          </th>
+          <th scope="col" className="num">
+            Waited
+          </th>
+          <th scope="col" className="num">
+            Tokens
+          </th>
+          <th scope="col" className="num">
+            Cost
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {props.steps.map((step) => (
+          <tr key={step.label}>
+            <th scope="row">{step.label}</th>
+            <TicketUsageStepCells step={step} />
+          </tr>
+        ))}
+      </tbody>
+      <tfoot>
+        <tr>
+          <th scope="row">{props.total.label}</th>
+          <TicketUsageStepCells step={props.total} />
+        </tr>
+      </tfoot>
+    </Table>
+  );
+}
+
+function TicketUsageByModel(props: { readonly totals: RunTotals }): ReactNode {
   return (
     <Table caption="Usage by model">
       <thead>
         <tr>
           <th scope="col">Model</th>
           <th scope="col" className="num">
-            In
+            Input
           </th>
           <th scope="col" className="num">
-            Out
+            Output
           </th>
           <th scope="col" className="num">
             Cache write
@@ -143,7 +229,9 @@ function UsageByModel(props: { readonly totals: RunTotals }): ReactNode {
       <tbody>
         {props.totals.models.map((usage) => (
           <tr key={usage.model}>
-            <th scope="row">{usage.model}</th>
+            <th scope="row">
+              <code>{usage.model}</code>
+            </th>
             <td className="num">
               <Figure figure={tokenCountFigure(usage.tokensInput)} />
             </td>
@@ -168,88 +256,86 @@ function UsageByModel(props: { readonly totals: RunTotals }): ReactNode {
   );
 }
 
-function StageSpendCells(props: { readonly row: StageSpendRow }): ReactNode {
-  const spend = spendFigures(
-    props.row.spend.totals,
-    props.row.spend.totals?.costBasis,
+function TicketUsageSection(props: {
+  readonly id: string;
+  readonly title: string;
+  readonly children: ReactNode;
+}): ReactNode {
+  return (
+    <section className="ticket-usage-section" aria-labelledby={props.id}>
+      <h2 className="ticket-usage-title" id={props.id}>
+        {props.title}
+      </h2>
+      {props.children}
+    </section>
   );
-  const totals = props.row.spend.totals;
+}
+
+function TicketUsageMinor(props: { readonly totals: RunTotals }): ReactNode {
+  return (
+    <div className="ticket-usage-minor">
+      <Fields variant="inline">
+        <Field name="API time">
+          <Figure figure={durationFigure(props.totals.durationApiMs)} />
+        </Field>
+        <Field name="Permission denials">
+          <span className="num">{props.totals.permissionDenials}</span>
+        </Field>
+      </Fields>
+    </div>
+  );
+}
+
+function TicketUsageFigures(props: {
+  readonly held: TicketPageHeld;
+}): ReactNode {
+  const { held } = props;
+  const page = readValue(held.reads.pageState);
+  if (page === undefined) return <PanelUnready state={held.reads.pageState} />;
+  const usage = ticketUsageStepsOf(
+    page.executions,
+    held.facts.plan.names,
+    held.nowMs,
+  );
+  if (usage === undefined) return <EmptyState label="Nothing has run" />;
+  const totals = readValue(held.reads.ticketState)?.runTotals;
   return (
     <>
-      <td className="num">{props.row.spend.executions}</td>
-      <td className="num">
-        <Figure figure={spend.cost} />
-      </td>
-      <td className="num">
-        <Figure figure={spend.tokens} />
-      </td>
-      <td className="num">
-        <Figure
-          figure={
-            totals === undefined
-              ? { kind: "Absent", why: "No run figures yet" }
-              : durationFigure(totals.durationMs)
-          }
-        />
-      </td>
+      <TicketUsageTiles totals={totals} total={usage.total} />
+      <TicketUsageSection id="ticket-usage-steps" title="By step">
+        {held.facts.truncated ? (
+          <Notice
+            tone="parked"
+            inline
+            detail={`Steps over the first ${countedLabel(usage.total.runs, "run")}`}
+          />
+        ) : null}
+        <TicketUsageBySteps steps={usage.steps} total={usage.total} />
+      </TicketUsageSection>
+      {totals === undefined ? null : (
+        <>
+          <TicketUsageSection id="ticket-usage-models" title="By model">
+            <TicketUsageByModel totals={totals} />
+          </TicketUsageSection>
+          <TicketUsageMinor totals={totals} />
+        </>
+      )}
     </>
   );
 }
 
-function UsageByStage(props: { readonly page: ExecutionsResponse }): ReactNode {
-  return (
-    <Table caption="Usage by stage">
-      <thead>
-        <tr>
-          <th scope="col">Stage</th>
-          <th scope="col" className="num">
-            Runs
-          </th>
-          <th scope="col" className="num">
-            Cost
-          </th>
-          <th scope="col" className="num">
-            Tokens
-          </th>
-          <th scope="col" className="num">
-            Wall
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        {stageSpendRows(props.page).map((row) => (
-          <tr key={row.label}>
-            <th scope="row">{row.label}</th>
-            <StageSpendCells row={row} />
-          </tr>
-        ))}
-      </tbody>
-    </Table>
-  );
-}
-
 export function TicketUsage(props: {
-  readonly totals: RunTotals | undefined;
-  readonly page: ExecutionsResponse | undefined;
-  /** Whether the page is short of the ticket's executions, which the run
-   * count is then this page's of. */
-  readonly truncated: boolean;
+  readonly held: TicketPageHeld;
 }): ReactNode {
+  const delivery = props.held.reads.deliveryState;
   return (
-    <div className="grid gap-4">
-      {props.totals === undefined ? (
-        <EmptyState label="No run figures yet" />
-      ) : (
-        <>
-          <UsageTotals
-            totals={props.totals}
-            page={props.page}
-            truncated={props.truncated}
-          />
-          <UsageByModel totals={props.totals} />
-        </>
-      )}
-      {props.page === undefined ? null : <UsageByStage page={props.page} />}
+    <div className="ticket-usage">
+      <TicketUsageFigures held={props.held} />
+      {ticketDeliveryDrawn(delivery) ? (
+        <TicketUsageSection id="ticket-delivery" title="Delivery">
+          <TicketDelivery state={delivery} />
+        </TicketUsageSection>
+      ) : null}
     </div>
   );
 }

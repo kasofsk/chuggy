@@ -291,9 +291,11 @@ function sidebar(): HTMLElement {
   return screen.getByRole("complementary", { name: "Properties" });
 }
 
-/** The Activity panel, which is where the page says what has run. */
-function activity(): HTMLElement {
-  return screen.getByRole("region", { name: "Activity" });
+/** The Usage tab, which is where the page says what the runs cost and took. */
+function usage(): HTMLElement {
+  const tab = document.querySelector<HTMLElement>(".ticket-usage");
+  if (tab === null) throw new Error("no Usage drawn");
+  return tab;
 }
 
 test("the parked ticket names its wall, its phase and what the whole of it cost, its tokens left to Usage", async () => {
@@ -304,8 +306,8 @@ test("the parked ticket names its wall, its phase and what the whole of it cost,
   expect(ticketHeader().textContent).toContain("Escalated");
   expect(sidebar().textContent).toContain("$2.74");
   expect(sidebar().textContent).not.toContain("tok");
-  expect(activity().textContent).toContain("198k");
-  expect(activity().textContent).toContain("Runs7");
+  expect(usage().textContent).toContain("198k");
+  expect(usage().textContent).toContain("7 runs");
   expect(screen.getAllByText("Rework budget exhausted").length).toBeGreaterThan(
     0,
   );
@@ -529,7 +531,7 @@ test("every part of the page is drawn without being opened, in order", async () 
     .map((heading) => heading.textContent ?? "");
   /** The configuration is headed by its name, which for this ticket's
    * unnumbered revision is the revision. */
-  const order = ["Cycle 3", "Instructions", "r1", "Activity"];
+  const order = ["Cycle 3", "Instructions", "r1", "By step"];
   const at = order.map((name) =>
     names.findIndex((held) => held.startsWith(name)),
   );
@@ -556,19 +558,36 @@ test("the canonical JSON is closed until asked for, and its trigger controls it"
   expect(screen.queryByText("{}")).toBeNull();
 });
 
-test("the usage row names the basis and breaks the spend down twice", async () => {
+test("the usage tab names the basis and breaks the spend down twice", async () => {
   await drawTicket({
     shapes: ticket21Parked,
     ticket: parkedTicket,
   });
-  const usage = activity();
-  expect(usage.querySelector(".fig-basis")?.textContent).toBe("list");
-  expect(usage.textContent).toContain("$2.74");
-  expect(usage.textContent).toContain("1h 06m");
-  expect(usage.textContent).toContain("claude-opus-4");
-  expect(screen.getByRole("table", { name: "Usage by stage" })).toBeDefined();
+  const tab = usage();
+  expect(tab.querySelector(".ticket-usage-tile")?.textContent).toBe(
+    "Cost$2.74list price",
+  );
+  expect(tab.textContent).toContain("claude-opus-4");
+  expect(screen.getByRole("table", { name: "Usage by step" })).toBeDefined();
+  expect(screen.getByRole("table", { name: "Usage by model" })).toBeDefined();
   expect(screen.getByRole("rowheader", { name: "Stage 1" })).toBeDefined();
   expect(screen.getByRole("rowheader", { name: "Work" })).toBeDefined();
+});
+
+/** The agent's own time on its API is not a run's time, so it is named apart
+ * and never drawn as one. */
+test("API time is labelled apart from run time, and nothing is called wall", async () => {
+  await drawTicket({
+    shapes: ticket21Parked,
+    ticket: parkedTicket,
+  });
+  const minor = usage().querySelector(".ticket-usage-minor");
+  expect(minor?.textContent).toBe("API time58m 10sPermission denials0");
+  const tiles = [...usage().querySelectorAll(".ticket-usage-tile dt")].map(
+    (name) => name.textContent,
+  );
+  expect(tiles).toEqual(["Cost", "Run time", "Tokens", "Turns"]);
+  expect(usage().textContent).not.toMatch(/Wall/u);
 });
 
 test("every dollar the page draws carries the basis it was priced on", async () => {
@@ -581,7 +600,12 @@ test("every dollar the page draws carries the basis it was priced on", async () 
   );
   expect(dollars.length).toBeGreaterThan(0);
   for (const cell of dollars)
-    expect(cell.querySelector(".fig-basis")?.textContent).toBe("list");
+    if (cell.closest(".ticket-usage-tile") === null)
+      expect(cell.querySelector(".fig-basis")?.textContent).toBe("list");
+  expect(
+    container.querySelector(".ticket-usage-tile .ticket-usage-tile-note")
+      ?.textContent,
+  ).toBe("list price");
 });
 
 test("after a resume the current cycle draws its resumed evaluator running, again", async () => {
@@ -763,7 +787,7 @@ test("a resume the wire stamped is offered before the draft arrives", async () =
 /**
  * Truncation is the executions read's own fact and does not wait on the draft.
  */
-test("a short page marks the run count, draft or no draft", async () => {
+test("a short page says the steps are over the runs read, draft or no draft", async () => {
   for (const withDraft of [true, false]) {
     await drawTicket({
       shapes: ticket21Parked.slice(0, 4),
@@ -771,7 +795,7 @@ test("a short page marks the run count, draft or no draft", async () => {
       cursor: "more",
       withDraft,
     });
-    expect(activity().textContent).toContain("on this page");
+    expect(usage().textContent).toContain("Steps over the first 4 runs");
     cleanup();
     vi.unstubAllGlobals();
     viewportAtEm(viewportDeskEm);
@@ -843,6 +867,58 @@ test("a run taken long after it registered draws its run time and its wait apart
   expect(sidebarField("Waited")?.textContent).toBe("23m");
 });
 
+/** A stage run of the same cycle, taken four minutes after it registered. */
+const evaluatedAfterWaiting: ExecutionShape = {
+  execution: "execution-evaluated",
+  task: 2,
+  identity: evalIdentity(1, 1, 1),
+  outcome: "Passed",
+  registeredAt: "2026-11-07T10:26:00Z",
+  takenAt: "2026-11-07T10:30:00Z",
+  terminalAt: "2026-11-07T10:33:00Z",
+};
+
+/** A Usage row's Run time and Waited cells. */
+function usageStepTimes(row: Element | null | undefined): readonly unknown[] {
+  const cells = row?.querySelectorAll("td");
+  return [cells?.[1]?.textContent, cells?.[2]?.textContent];
+}
+
+test("each step's run time and wait are its runs' on Runs, and the Total's are the sidebar's", async () => {
+  pageClock.atMs = Date.parse("2026-11-07T12:00:00Z");
+  const { container } = await drawTicket({
+    shapes: [...waitedLong, evaluatedAfterWaiting],
+    ticket: parkedTicket,
+  });
+  const rows = [...rowItems(groups(container)[0])];
+  const ranOnRuns = rows
+    .slice(0, 2)
+    .map((row) => runTimeSaid(row.querySelector(".ticket-runs-time")));
+  expect(ranOnRuns).toEqual([
+    ["2m", "waited 23m"],
+    ["3m", "waited 4m"],
+  ]);
+  const table = screen.getByRole("table", { name: "Usage by step" });
+  const bodyRows = [...table.querySelectorAll("tbody tr")];
+  expect(bodyRows.map((row) => row.querySelector("th")?.textContent)).toEqual([
+    "Work",
+    "Stage 1",
+  ]);
+  expect(bodyRows.map(usageStepTimes)).toEqual([
+    ["2m", "23m"],
+    ["3m", "4m"],
+  ]);
+  expect(usageStepTimes(table.querySelector("tfoot tr"))).toEqual([
+    sidebarField("Run time")?.textContent,
+    sidebarField("Waited")?.textContent,
+  ]);
+  expect(sidebarField("Run time")?.textContent).toBe("5m");
+  expect(sidebarField("Waited")?.textContent).toBe("27m");
+  expect(
+    usage().querySelectorAll(".ticket-usage-tile-figure")[1]?.textContent,
+  ).toBe("5m");
+});
+
 test("a run nothing has taken reads as waiting, its wait growing with now, and adds no run time", async () => {
   const shapes = [...waitedLong, untakenRun];
   const drawnAt = async (at: string) => {
@@ -872,7 +948,7 @@ test("a run nothing has taken reads as waiting, its wait growing with now, and a
 });
 
 /** A cancelled run has stopped, so it is not one of the runs still going. */
-test("a cancelled run is counted but is not counted as running", async () => {
+test("a cancelled run is one of the runs counted", async () => {
   const cancelled: readonly ExecutionShape[] = ticket21Parked.map((shape) => {
     if (shape.task !== 2) return shape;
     const { outcome, ...running } = shape;
@@ -883,9 +959,7 @@ test("a cancelled run is counted but is not counted as running", async () => {
     shapes: cancelled,
     ticket: parkedTicket,
   });
-  const usage = activity().textContent;
-  expect(usage).toContain("Runs7");
-  expect(usage).not.toContain("running");
+  expect(usage().textContent).toContain("7 runs");
 });
 
 test("every action the page draws describes itself by an id that resolves", async () => {
@@ -902,12 +976,12 @@ test("every action the page draws describes itself by an id that resolves", asyn
   }
 });
 
-test("the usage panel counts the runs, and says which are still going", async () => {
+test("the run time tile counts every run read, running or not", async () => {
   await drawTicket({
     shapes: ticket21Parked,
     ticket: parkedTicket,
   });
-  expect(activity().textContent).toContain("Runs7");
+  expect(usage().textContent).toContain("7 runs");
   cleanup();
   vi.unstubAllGlobals();
   viewportAtEm(viewportDeskEm);
@@ -915,16 +989,16 @@ test("the usage panel counts the runs, and says which are still going", async ()
     shapes: ticket21Resumed,
     ticket: resumedTicket,
   });
-  expect(activity().textContent).toContain("Runs8 · 1 running · 1 unmeasured");
+  expect(usage().textContent).toContain("8 runs");
 });
 
-test("the by-stage table is work first and then the program's own order", async () => {
+test("the by-step table is work first and then the program's own order", async () => {
   await drawTicket({
     shapes: ticket21Parked,
     ticket: parkedTicket,
   });
-  const table = within(activity()).getByRole("table", {
-    name: "Usage by stage",
+  const table = within(usage()).getByRole("table", {
+    name: "Usage by step",
   });
   expect(
     [...table.querySelectorAll("tbody th")].map((cell) => cell.textContent),

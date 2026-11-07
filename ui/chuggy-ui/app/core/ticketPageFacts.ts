@@ -32,31 +32,10 @@ import type {
 } from "../../../../src/contract/responses.ts";
 import type { ResumeOffer } from "./codeLabels.ts";
 import type { ResumePoint } from "../../../../src/contract/rosters.ts";
-import { executionStarting, ticketLedger } from "./ticketLedger.ts";
+import { ticketLedger } from "./ticketLedger.ts";
 import type { Ledger as LedgerFacts, TicketProgram } from "./ticketLedger.ts";
 import { ticketPlanOf } from "./ticketPlan.ts";
 import type { TicketPlan } from "./ticketPlan.ts";
-
-/**
- * How many executions this page holds, and what is true of them that a count
- * alone would not say: how many still wait for their worker, how many are
- * running, and how many carry no figures for the spend to be summed from.
- */
-export function runsLabel(page: ExecutionsResponse | undefined): string {
-  const held = page?.executions ?? [];
-  const live = held.filter(
-    (row) => row.status !== "Terminal" && row.status !== "Cancelled",
-  );
-  const starting = live.filter(executionStarting).length;
-  const running = live.length - starting;
-  const unmeasured = held.filter((row) => row.runTotals === undefined).length;
-  return [
-    String(held.length),
-    ...(starting === 0 ? [] : [`${String(starting)} starting`]),
-    ...(running === 0 ? [] : [`${String(running)} running`]),
-    ...(unmeasured === 0 ? [] : [`${String(unmeasured)} unmeasured`]),
-  ].join(" · ");
-}
 
 /**
  * Whether the machine is working on this ticket right now, which is the only

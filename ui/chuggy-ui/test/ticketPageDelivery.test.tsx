@@ -199,7 +199,7 @@ test("a landed ticket whose repository declares nothing draws no Delivery row", 
   expect(screen.queryByText("Delivery")).toBeNull();
 });
 
-test("a landed ticket draws Delivery under Activity, its lines drawn", async () => {
+test("a landed ticket draws Delivery on Usage, its lines drawn", async () => {
   const container = await drawn(() => answer(deliveryEveryMark));
   expect(rowsDrawn(container)).toEqual(["delivery"]);
   expect(reachAsked).toEqual([

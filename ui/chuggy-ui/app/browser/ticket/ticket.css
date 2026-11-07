@@ -1569,4 +1569,95 @@
       transform: translateY(50%) rotate(90deg);
     }
   }
+
+  /* Usage: the tiles over the by-step and by-model tables, each table boxed
+     and scrolling inside its box rather than the page. */
+  .ticket-usage {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-4);
+  }
+
+  .ticket-usage-tiles {
+    display: grid;
+    grid-template-columns: repeat(
+      auto-fit,
+      minmax(var(--width-usage-tile), 1fr)
+    );
+    gap: var(--space-3);
+  }
+
+  .ticket-usage-tile {
+    display: grid;
+    gap: var(--space-1);
+    padding: var(--space-3) var(--space-4);
+    background: var(--surface-1);
+    border: var(--hairline) solid var(--edge);
+    border-radius: var(--radius-2);
+  }
+
+  .ticket-usage-tile dt,
+  .ticket-usage-tile-note {
+    color: var(--ink-3);
+    font-size: var(--text-sm);
+  }
+
+  .ticket-usage-tile-figure {
+    color: var(--ink-1);
+    font-size: var(--text-xl);
+    font-weight: var(--weight-strong);
+  }
+
+  .ticket-usage-tile-figure .fig,
+  .ticket-usage-section .tabular tfoot .fig {
+    color: var(--ink-1);
+  }
+
+  .ticket-usage-section {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-2);
+  }
+
+  .ticket-usage-title {
+    color: var(--ink-1);
+    font-size: var(--text-md);
+    font-weight: var(--weight-strong);
+  }
+
+  .ticket-usage-section .tabular-scroll {
+    background: var(--surface-1);
+    border: var(--hairline) solid var(--edge);
+    border-radius: var(--radius-2);
+  }
+
+  .ticket-usage-section .tabular thead th {
+    font-size: var(--text-xs);
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+  }
+
+  .ticket-usage-section .tabular tbody th {
+    font-weight: var(--weight-regular);
+  }
+
+  .ticket-usage-section .tabular tfoot > tr > * {
+    border-top: var(--hairline) solid var(--edge);
+    border-bottom: 0;
+    color: var(--ink-1);
+    font-weight: var(--weight-strong);
+  }
+
+  .ticket-usage-section .tabular code {
+    font-family: var(--font-mono);
+    font-size: var(--mono-optical);
+  }
+
+  .ticket-usage-minor {
+    font-size: var(--text-sm);
+  }
+
+  .ticket-usage-minor .fields dd {
+    color: var(--ink-1);
+  }
 }

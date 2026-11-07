@@ -58,21 +58,21 @@ async function mountedAt(path: string): Promise<void> {
   await consoleAdvanced(ticketPageSettleMs);
 }
 
-test.each([
-  ["", "Overview", "Instructions"],
-  ["/usage", "Usage", "Activity"],
-])(
-  "the ticket's address%s draws the header, marks %s current, and draws %s",
-  async (tab, current, heading) => {
-    await mountedAt(`${ticketPath}${tab}`);
-    expect(tabCurrent()).toBe(current);
-    expect(document.querySelector("header.ticket-header")).not.toBeNull();
-    expect(
-      screen.getByRole("heading", { name: new RegExp(`^${heading}`, "u") }),
-    ).toBeDefined();
-    consoleSiteClean(site);
-  },
-);
+test("the ticket's address draws the header, marks Overview current, and draws Instructions", async () => {
+  await mountedAt(ticketPath);
+  expect(tabCurrent()).toBe("Overview");
+  expect(document.querySelector("header.ticket-header")).not.toBeNull();
+  expect(screen.getByRole("heading", { name: /^Instructions/u })).toBeDefined();
+  consoleSiteClean(site);
+});
+
+test("a ticket with no run says so on its Usage tab", async () => {
+  await mountedAt(`${ticketPath}/usage`);
+  expect(tabCurrent()).toBe("Usage");
+  expect(document.querySelector("header.ticket-header")).not.toBeNull();
+  expect(screen.getByText("Nothing has run")).toBeDefined();
+  consoleSiteClean(site);
+});
 
 test("a ticket naming no configuration says so on its Configuration tab", async () => {
   await mountedAt(`${ticketPath}/configuration`);
@@ -84,7 +84,7 @@ test("each tab draws only its own panels", async () => {
   await mountedAt(`${ticketPath}/runs`);
   expect(screen.queryByRole("region", { name: "Status" })).toBeNull();
   expect(screen.queryByRole("heading", { name: /^Instructions/u })).toBeNull();
-  expect(screen.queryByRole("heading", { name: /^Activity/u })).toBeNull();
+  expect(screen.queryByRole("heading", { name: /^By step/u })).toBeNull();
 });
 
 test("the tabs are links to each tab's own address, the same whatever the ticket's state", async () => {

@@ -8,9 +8,9 @@ import type { ReactNode } from "react";
 
 import { TicketConfiguration } from "../TicketProvenance.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
-import { TicketActivity } from "./TicketActivity.tsx";
 import { TicketRunsList } from "./TicketRuns.tsx";
 import { readValue, useTicketPageHeld } from "./TicketPageHeld.tsx";
+import { TicketUsage } from "./TicketUsage.tsx";
 
 export { TicketOverviewTab } from "./TicketOverview.tsx";
 
@@ -39,12 +39,5 @@ export function TicketUsageTab(): ReactNode {
   const held = useTicketPageHeld();
   if (held.draft !== undefined)
     return <EmptyState label="No run figures yet" />;
-  return (
-    <TicketActivity
-      ticket={readValue(held.reads.ticketState)}
-      page={readValue(held.reads.pageState)}
-      truncated={held.facts.truncated}
-      delivery={held.reads.deliveryState}
-    />
-  );
+  return <TicketUsage held={held} />;
 }
