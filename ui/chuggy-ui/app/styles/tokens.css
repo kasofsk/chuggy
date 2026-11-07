@@ -228,6 +228,7 @@
     --col-step-name: 8rem; /* configuration: the step's name */
     --col-step-model: 5rem; /* configuration: the step's model */
     --col-step-overrides: 7rem; /* configuration: what the ticket overrode */
+    --width-usage-tile: 10rem; /* usage: a tile, before the row of them wraps */
   }
 
   :root[data-theme="light"] {

@@ -197,14 +197,19 @@ export function tokenCountUnitFigure(count: number): Figure {
   return { kind: "Tokens", text: `${tokenCountText(count)} tok` };
 }
 
+/** Every kind of token counted together. */
+export function tokensTotal(totals: TokenCounts): number {
+  return (
+    totals.tokensInput +
+    totals.tokensOutput +
+    totals.tokensCacheCreation +
+    totals.tokensCacheRead
+  );
+}
+
 /** One number over every kind of token, because a row is read at a glance. */
 export function tokensFigure(totals: TokenCounts): Figure {
-  return tokenCountUnitFigure(
-    totals.tokensInput +
-      totals.tokensOutput +
-      totals.tokensCacheCreation +
-      totals.tokensCacheRead,
-  );
+  return tokenCountUnitFigure(tokensTotal(totals));
 }
 
 /** Below this a sexagesimal or calendar field is written with its leading zero. */

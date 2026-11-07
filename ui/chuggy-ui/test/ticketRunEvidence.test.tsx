@@ -261,7 +261,7 @@ test("the ticket's total is the figure the ticket read answered with", async () 
     screen.getByRole("complementary", { name: "Properties" }).textContent,
   ).toContain("$9.99");
   expect(
-    screen.getByRole("table", { name: "Usage by stage" }).textContent,
+    screen.getByRole("table", { name: "Usage by step" }).textContent,
   ).toContain("$0.30");
 });
 
