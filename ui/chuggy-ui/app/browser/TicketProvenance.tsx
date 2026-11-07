@@ -19,7 +19,6 @@ import { Tabs } from "radix-ui";
 import { stringify } from "yaml";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
-import type { TicketBriefBody } from "../../../../src/contract/brief.ts";
 import type { BriefFinalizationMode } from "../../../../src/contract/rosters.ts";
 import type { ConfigurationFollowing } from "../../../../src/contract/configurationDocument.ts";
 import { configurationFollowingOf } from "../../../../src/contract/configurationSelection.ts";
@@ -28,6 +27,7 @@ import type {
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
 import { configurationQuery } from "../core/configurationQueries.ts";
+import { briefLandingOf } from "../core/briefLanding.ts";
 import { briefLandingLine } from "../core/codeLabels.ts";
 import { ticketFollowingSentence } from "../core/codeSentences.ts";
 import type {
@@ -1207,7 +1207,7 @@ function ConfigurationPanel(props: {
   readonly overrides: TicketResponse["overrides"];
   readonly selection: TicketResponse["selection"];
   readonly following: TicketResponse["following"];
-  readonly landing: TicketBriefBody["finalization"];
+  readonly landing: ConfigurationLanding | undefined;
 }): ReactNode {
   const stays = ticketFollowingSentence(props.following);
   const state = usePanelState(
@@ -1274,7 +1274,7 @@ export function TicketConfiguration(props: {
       overrides={ticket.overrides}
       selection={ticket.selection}
       following={ticket.following}
-      landing={ticket.brief?.finalization}
+      landing={briefLandingOf(ticket.brief?.finalization)}
     />
   );
 }

@@ -100,7 +100,7 @@ test("where the ticket lands is read in the finalizer's order: `None` before an 
   assert.deepEqual(finalizerLandingOf(none, undefined), { landing: "None" });
   const unbranched = {
     ...asDraftBrief(intent),
-    finalization: { mode: "PullRequest" as const },
+    finalization: { kind: "PullRequest" as const },
   };
   assert.deepEqual(finalizerLandingOf(unbranched, undefined), {
     landing: "Unbound",

@@ -36,6 +36,7 @@ import {
   creationDraft,
   creationInitialization,
   creationPartition,
+  revisionServed,
 } from "./ticketCreationFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
@@ -111,7 +112,7 @@ const released: DraftResponse = {
     intent: "ship the thing",
     links: [],
     repository: chuggy,
-    finalization: { mode: "Push" },
+    finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
   },
 };
 
@@ -136,7 +137,7 @@ function routed(
     if (method === "PUT") {
       draft = {
         ...draft,
-        ...(body as object),
+        ...revisionServed(body as object),
         authoringVersion: draft.authoringVersion + 1,
       };
       return answer(draft);

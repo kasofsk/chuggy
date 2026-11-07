@@ -1055,7 +1055,7 @@ test("the sidebar draws each dependency with its state, the configuration it run
       brief: {
         ...released.brief,
         branch: "refs/heads/footer",
-        finalization: { mode: "PullRequest", target: "refs/heads/main" },
+        finalization: { kind: "PullRequest", target: "refs/heads/main" },
       },
     },
   });

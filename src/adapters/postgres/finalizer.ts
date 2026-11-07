@@ -97,7 +97,10 @@ import {
   serializedWaiting,
   type SerializedCandidate,
 } from "../../interpreter/serializedHolder.ts";
-import { briefLandingOf, briefLandsOn } from "../../interpreter/ticketBrief.ts";
+import {
+  briefGitMergePolicyOf,
+  briefLandsOn,
+} from "../../interpreter/ticketBrief.ts";
 import { phaseRoster } from "../../contract/rosters.ts";
 import { releasedBriefOf } from "./ticketBrief.ts";
 import {
@@ -359,7 +362,7 @@ async function finalizerSerializedCandidates(
         ),
       ),
       phase: finalizerRowValue(phaseRoster, row.phase, "ticket phase"),
-      landing: briefLandingOf(brief),
+      landing: briefGitMergePolicyOf(brief),
       repository: brief?.repository,
       target: brief === undefined ? undefined : briefLandsOn(brief),
       entry:

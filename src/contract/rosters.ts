@@ -6,7 +6,7 @@
  * `test/contract/rosters.test.ts` holds each against its source — against a
  * runtime list where one exists, and otherwise against a record the compiler
  * rejects when the union gains or loses a member. `notificationKinds`,
- * `briefFinalizationModes` and `ticketLandingStates` are the exceptions: the
+ * `briefFinalizationKinds` and `ticketLandingStates` are the exceptions: the
  * wire owns each outright and the interpreter takes its union from here. What
  * stands behind the first is the relation to `projectChangeKinds` that the
  * same suite pins; behind the second, `test/contract/brief.test.ts` holding
@@ -518,11 +518,37 @@ export const draftLandingSources = [
 export type DraftLandingSource = (typeof draftLandingSources)[number];
 
 /**
- * How a finalization lands one ticket's work on the reference its brief names:
- * by advancing that reference, by opening a change proposal into it, or by
- * landing nothing at all — `None` being a landing like any other rather than a
+ * How a finalization lands one ticket's work: by merging it into the reference
+ * its brief names, by opening a pull request a person merges, or by landing
+ * nothing at all — `None` being a landing like any other rather than a
  * finalizer that does not run, one that reports at once and touches no remote.
- * `src/interpreter/ticketBrief.ts` takes `BriefFinalizationMode` from here.
+ * `src/interpreter/ticketBrief.ts` takes `BriefFinalizationKind` from here.
+ */
+export const briefFinalizationKinds = [
+  "GitMerge",
+  "PullRequest",
+  "None",
+] as const;
+export type BriefFinalizationKind = (typeof briefFinalizationKinds)[number];
+
+/** How a `GitMerge` advances its reference: directly, or through a change proposal it merges itself. */
+export const briefGitMergeModes = ["Push", "PullRequestMerge"] as const;
+export type BriefGitMergeMode = (typeof briefGitMergeModes)[number];
+
+/**
+ * How the finalizer orders one `GitMerge` against the others on its reference:
+ * `Direct` enforces no order and merges without requiring the evaluation to
+ * have run on what it merges into, and `Serialized` lands one ticket at a time
+ * per repository and target reference, each re-checked against the merge
+ * result.
+ */
+export const briefGitMergePolicies = ["Direct", "Serialized"] as const;
+export type BriefGitMergePolicy = (typeof briefGitMergePolicies)[number];
+
+/**
+ * The mode a finalization named before it named a kind, which a brief written
+ * so is still read in and a repository's landing default still names. A brief
+ * read in this way is mapped forward by `briefFinalizationForward`.
  */
 export const briefFinalizationModes = [
   "Push",
@@ -531,14 +557,6 @@ export const briefFinalizationModes = [
   "None",
 ] as const;
 export type BriefFinalizationMode = (typeof briefFinalizationModes)[number];
-
-/**
- * How one ticket's landing is ordered against the others on its reference:
- * `Direct` lands as the finalization's mode says, and `Serialized` lands one
- * ticket at a time on a reference, each having been evaluated on what it lands.
- */
-export const briefLandings = ["Direct", "Serialized"] as const;
-export type BriefLanding = (typeof briefLandings)[number];
 
 /** Where one landing of a ticket stands; `src/interpreter/ticketLandings.ts` states what each is read from. */
 export const ticketLandingStates = [
@@ -615,6 +633,25 @@ export const changeProposalMergeabilities = [
 /** Whether a mode lands by opening a change proposal rather than advancing a reference directly. */
 export function briefFinalizationProposes(mode: string | undefined): boolean {
   return mode === "PullRequest" || mode === "PullRequestMerge";
+}
+
+/**
+ * The mode one finalization lands by, in the roster a finalization named
+ * before it named a kind, for a reader that still takes a mode.
+ */
+export function briefFinalizationModeOf(
+  finalization:
+    | { readonly kind: "GitMerge"; readonly mode: BriefGitMergeMode }
+    | { readonly kind: "PullRequest" }
+    | { readonly kind: "None" },
+): BriefFinalizationMode {
+  switch (finalization.kind) {
+    case "GitMerge":
+      return finalization.mode;
+    case "PullRequest":
+    case "None":
+      return finalization.kind;
+  }
 }
 
 export const configurationReadinesses = ["Ready", "Incomplete"] as const;

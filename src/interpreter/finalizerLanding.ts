@@ -5,7 +5,7 @@
  * name different refs for one ticket.
  */
 
-import { briefFinalizationProposes } from "../contract/rosters.ts";
+import { briefFinalizationOpensProposal } from "../contract/brief.ts";
 import {
   repositoryBindingNarrowed,
   type GitRefName,
@@ -37,7 +37,7 @@ export function finalizerBranchesOf(
   brief: DraftBrief | undefined,
 ): FinalizerBranches | undefined {
   if (brief === undefined) return {};
-  const proposing = briefFinalizationProposes(brief.finalization?.mode);
+  const proposing = briefFinalizationOpensProposal(brief.finalization);
   if (proposing && brief.branch === undefined) return undefined;
   const target = briefLandsOn(brief);
   return {
@@ -70,7 +70,7 @@ export function finalizerLandingOf(
   brief: DraftBrief | undefined,
   binding: RepositoryBinding | undefined,
 ): FinalizerLanding {
-  if (brief?.finalization?.mode === "None") return { landing: "None" };
+  if (brief?.finalization?.kind === "None") return { landing: "None" };
   if (binding === undefined) return { landing: "Unbound" };
   const branches = finalizerBranchesOf(brief);
   if (branches === undefined) return { landing: "Unbranched" };

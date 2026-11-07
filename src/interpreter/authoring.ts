@@ -7,6 +7,7 @@ import {
   type ReleaseAuthoringBody,
   type ReleaseAuthoringProgram,
 } from "../contract/authoring.ts";
+import { releaseConfigurationVersion } from "../contract/configurationDocument.ts";
 import {
   configurationWithOverrides,
   type ConfigurationOverrides,
@@ -60,7 +61,7 @@ import {
 } from "./taskConfiguration.ts";
 import {
   catalogPlansCommanded,
-  declaredConfigurationVersion,
+  declaredConfigurationIsCatalog,
   selectedCatalogEntries,
   selectedFirstCommandsEvaluator,
   workloadConfigurationReadiness,
@@ -68,7 +69,10 @@ import {
   type WorkloadConfiguration,
   type WorkloadConfigurationFault,
 } from "./workloadConfiguration.ts";
-export { declaredConfigurationVersion } from "./workloadConfiguration.ts";
+export {
+  declaredConfigurationIsCatalog,
+  declaredConfigurationVersion,
+} from "./workloadConfiguration.ts";
 
 declare const configurationRevisionBrand: unique symbol;
 
@@ -269,7 +273,7 @@ export function releaseConfigurationReadiness(
   brief?: ReleaseBrief,
 ): ReleaseConfigurationReadiness {
   const value: unknown = JSON.parse(configuration);
-  if (declaredConfigurationVersion(value) !== 2)
+  if (!declaredConfigurationIsCatalog(value))
     return releaseDocumentReadiness(value, brief);
   const readiness = workloadTicketReadiness(value, brief, undefined, undefined);
   return readiness.readiness === "Incomplete"
@@ -419,7 +423,7 @@ export function ticketConfigurationReadiness(
   selection: ConfigurationSelection | undefined,
 ): TicketConfigurationReadiness {
   const value: unknown = JSON.parse(configuration);
-  return declaredConfigurationVersion(value) === 2
+  return declaredConfigurationIsCatalog(value)
     ? workloadTicketReadiness(value, brief, overrides, selection)
     : releaseDocumentTicketReadiness(value, brief, overrides, selection);
 }
@@ -784,7 +788,7 @@ export function configurationRevisionSummary(input: {
     image: configuration.image,
     finalization: configurationFinalizationOf(input.canonical),
   };
-  if (configuration.version === 2)
+  if (configuration.version !== releaseConfigurationVersion)
     return {
       ...shared,
       practices: [],

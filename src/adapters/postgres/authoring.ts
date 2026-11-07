@@ -35,9 +35,10 @@ import {
 } from "../../interpreter/finalizer.ts";
 import {
   briefFinalizationTarget,
-  briefLandingOf,
+  briefGitMergePolicyOf,
 } from "../../interpreter/ticketBrief.ts";
 import {
+  draftBriefFinalizationMode,
   draftBriefOf,
   storedOverridesOf,
   storedSelectionOf,
@@ -665,10 +666,10 @@ async function createDraftRow(
   const found =
     input.epic === undefined
       ? await pool.query<CreatedRow>(
-          sql`SELECT result,ticket FROM create_draft(${input.partition.tenant},${input.partition.project},${input.configurationRevision},${input.configurationDigest},${input.expectedProjectSequence},${encodeDraftAuthoring(input.authoring)},${input.brief.title ?? null},${input.brief.intent},${[...input.brief.links]},${[...input.brief.images]},${[...input.brief.checks]},${input.brief.branch ?? null},${input.brief.finalization?.mode ?? null},${briefFinalizationTarget(input.brief.finalization) ?? null},${input.brief.repository ?? null},${storedOverridesText(input.overrides)},${storedSelectionText(input.selection)},${input.authority.kind},${input.authority.subject},${input.originSession ?? null},${briefLandingOf(input.brief)})`,
+          sql`SELECT result,ticket FROM create_draft(${input.partition.tenant},${input.partition.project},${input.configurationRevision},${input.configurationDigest},${input.expectedProjectSequence},${encodeDraftAuthoring(input.authoring)},${input.brief.title ?? null},${input.brief.intent},${[...input.brief.links]},${[...input.brief.images]},${[...input.brief.checks]},${input.brief.branch ?? null},${draftBriefFinalizationMode(input.brief)},${briefFinalizationTarget(input.brief.finalization) ?? null},${input.brief.repository ?? null},${storedOverridesText(input.overrides)},${storedSelectionText(input.selection)},${input.authority.kind},${input.authority.subject},${input.originSession ?? null},${briefGitMergePolicyOf(input.brief)})`,
         )
       : await pool.query<CreatedRow>(
-          sql`SELECT result,ticket FROM create_draft_in_epic(${input.partition.tenant},${input.partition.project},${input.configurationRevision},${input.configurationDigest},${input.expectedProjectSequence},${encodeDraftAuthoring(input.authoring)},${input.brief.title ?? null},${input.brief.intent},${[...input.brief.links]},${[...input.brief.images]},${[...input.brief.checks]},${input.brief.branch ?? null},${input.brief.finalization?.mode ?? null},${briefFinalizationTarget(input.brief.finalization) ?? null},${input.brief.repository ?? null},${storedOverridesText(input.overrides)},${storedSelectionText(input.selection)},${input.authority.kind},${input.authority.subject},${input.originSession ?? null},${briefLandingOf(input.brief)},${input.epic})`,
+          sql`SELECT result,ticket FROM create_draft_in_epic(${input.partition.tenant},${input.partition.project},${input.configurationRevision},${input.configurationDigest},${input.expectedProjectSequence},${encodeDraftAuthoring(input.authoring)},${input.brief.title ?? null},${input.brief.intent},${[...input.brief.links]},${[...input.brief.images]},${[...input.brief.checks]},${input.brief.branch ?? null},${draftBriefFinalizationMode(input.brief)},${briefFinalizationTarget(input.brief.finalization) ?? null},${input.brief.repository ?? null},${storedOverridesText(input.overrides)},${storedSelectionText(input.selection)},${input.authority.kind},${input.authority.subject},${input.originSession ?? null},${briefGitMergePolicyOf(input.brief)},${input.epic})`,
         );
   return found.rows[0];
 }
@@ -735,7 +736,7 @@ async function reviseDraft(
     authoring_version: string | null;
     state: string | null;
   }>(
-    sql`SELECT * FROM revise_draft(${input.partition.tenant},${input.partition.project},${input.ticket},${input.expectedVersion},${input.configurationRevision},${encodeDraftAuthoring(input.authoring)},${input.brief.title ?? null},${input.brief.intent},${[...input.brief.links]},${[...input.brief.images]},${[...input.brief.checks]},${input.brief.branch ?? null},${input.brief.finalization?.mode ?? null},${briefFinalizationTarget(input.brief.finalization) ?? null},${input.brief.repository ?? null},${storedOverridesText(input.overrides)},${storedSelectionText(input.selection)},${input.authority.kind},${input.authority.subject},${briefLandingOf(input.brief)})`,
+    sql`SELECT * FROM revise_draft(${input.partition.tenant},${input.partition.project},${input.ticket},${input.expectedVersion},${input.configurationRevision},${encodeDraftAuthoring(input.authoring)},${input.brief.title ?? null},${input.brief.intent},${[...input.brief.links]},${[...input.brief.images]},${[...input.brief.checks]},${input.brief.branch ?? null},${draftBriefFinalizationMode(input.brief)},${briefFinalizationTarget(input.brief.finalization) ?? null},${input.brief.repository ?? null},${storedOverridesText(input.overrides)},${storedSelectionText(input.selection)},${input.authority.kind},${input.authority.subject},${briefGitMergePolicyOf(input.brief)})`,
   );
   const row = found.rows[0];
   if (row === undefined || row.result === "NotFound")

@@ -41,7 +41,7 @@ export function ticketOverviewBranchOf(
   const finalization = brief.finalization;
   const newest = landings.at(-1)?.detail;
   const target =
-    finalization?.mode === "None"
+    finalization?.kind === "None"
       ? undefined
       : (finalization?.target ?? newest?.proposal?.base ?? newest?.targetRef);
   return {

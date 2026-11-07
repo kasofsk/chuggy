@@ -93,9 +93,10 @@ async function sibling(
       ...rest,
       repository: project.repository,
       ...(how.landing === "Direct" ? {} : { landing: how.landing }),
-      ...(how.target === undefined
-        ? {}
-        : { finalization: { mode: "Push", target: how.target } }),
+      finalization: {
+        mode: "Push",
+        ...(how.target === undefined ? {} : { target: how.target }),
+      },
     },
   );
   await rig.harness.query(

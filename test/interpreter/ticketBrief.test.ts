@@ -22,18 +22,22 @@ import {
   briefLinkScheme,
   briefTitleCharsMax,
 } from "../../src/contract/brief.ts";
-import { briefContentDigest } from "../../src/interpreter/ticketDefinition.ts";
+import {
+  briefContentDigest,
+  materialDigest,
+  releasedTicketBrief,
+} from "../../src/interpreter/ticketDefinition.ts";
 import {
   asBriefBranch,
   asBriefCheckLine,
   asBriefIntent,
-  asBriefLanding,
   asBriefLinkUrl,
   asBriefFinalization,
   asBriefTitle,
   asDraftBrief,
+  briefGitMergePolicyOf,
   briefIntentLines,
-  briefLandingOf,
+  draftBriefByMode,
 } from "../../src/interpreter/ticketBrief.ts";
 
 test("an intent is stored under one newline, and a briefing prints the lines of it that say anything", () => {
@@ -310,18 +314,27 @@ test("a check line's bound counts code points, matching the schema in front of i
   assert.equal(asBriefCheckLine(line, 0), line);
 });
 
-test("a finalization target takes the branch's own grammar and no other mode lands", () => {
+test("a finalization target takes the branch's own grammar and no other kind lands", () => {
+  const push = { kind: "GitMerge", mode: "Push", policy: "Direct" } as const;
   assert.deepEqual(
-    asBriefFinalization({ mode: "Push", target: "refs/heads/rt/landing" }),
-    { mode: "Push", target: "refs/heads/rt/landing" },
+    asBriefFinalization({ ...push, target: "refs/heads/rt/landing" }),
+    { ...push, target: "refs/heads/rt/landing" },
   );
-  assert.deepEqual(asBriefFinalization({ mode: "Push" }), { mode: "Push" });
+  assert.deepEqual(asBriefFinalization(push), push);
+  assert.deepEqual(asBriefFinalization({ kind: "None" }), { kind: "None" });
   for (const value of [
-    { mode: "push" },
-    { mode: "PullRequestly" },
-    { mode: "Push", target: "rt/landing" },
-    { mode: "Push", target: "refs/heads/one..two" },
-    { mode: "Push", target: `refs/heads/${"a".repeat(briefBranchCharsMax)}` },
+    { kind: "gitmerge", mode: "Push", policy: "Direct" },
+    { kind: "Push" },
+    { kind: "GitMerge", mode: "PullRequest", policy: "Direct" },
+    { kind: "GitMerge", mode: "Push" },
+    { kind: "GitMerge", mode: "Push", policy: "Stacked" },
+    { kind: "PullRequest", policy: "Direct" },
+    { kind: "PullRequest", mode: "PullRequest" },
+    { kind: "None", policy: "Direct" },
+    { kind: "None", target: "refs/heads/rt/landing" },
+    { ...push, target: "rt/landing" },
+    { ...push, target: "refs/heads/one..two" },
+    { ...push, target: `refs/heads/${"a".repeat(briefBranchCharsMax)}` },
   ])
     assert.throws(
       () => asBriefFinalization(value),
@@ -330,34 +343,43 @@ test("a finalization target takes the branch's own grammar and no other mode lan
     );
 });
 
-/** Both modes that open a proposal, which brand the same way. */
-const proposingModes = ["PullRequest", "PullRequestMerge"] as const;
+/** Both finalizations that open a proposal, which brand the same way. */
+const proposing = [
+  { kind: "PullRequest" },
+  { kind: "GitMerge", mode: "PullRequestMerge", policy: "Direct" },
+] as const;
 
 test("a pull request lands into the reference it names, or into none at all", () => {
-  for (const mode of proposingModes) {
+  for (const finalization of proposing) {
     assert.deepEqual(
       asBriefFinalization({
-        mode,
+        ...finalization,
         target: "refs/heads/rt/landing",
       }),
-      { mode, target: "refs/heads/rt/landing" },
+      { ...finalization, target: "refs/heads/rt/landing" },
     );
-    assert.deepEqual(asBriefFinalization({ mode }), { mode });
+    assert.deepEqual(asBriefFinalization(finalization), finalization);
     assert.throws(
-      () => asBriefFinalization({ mode, target: "rt/landing" }),
+      () => asBriefFinalization({ ...finalization, target: "rt/landing" }),
       RangeError,
-      "a target is a reference name under every mode",
+      "a target is a reference name under every kind",
     );
   }
 });
 
 test("a whole brief brands where it lands apart from where its work happens", () => {
+  const finalization = {
+    kind: "GitMerge",
+    mode: "Push",
+    target: "refs/heads/rt/landing",
+    policy: "Direct",
+  } as const;
   assert.deepEqual(
     asDraftBrief({
       intent: "Fix the importer.",
       links: [],
       branch: "refs/heads/rt/work",
-      finalization: { mode: "Push", target: "refs/heads/rt/landing" },
+      finalization,
     }),
     {
       intent: "Fix the importer.",
@@ -365,7 +387,7 @@ test("a whole brief brands where it lands apart from where its work happens", ()
       images: [],
       checks: [],
       branch: "refs/heads/rt/work",
-      finalization: { mode: "Push", target: "refs/heads/rt/landing" },
+      finalization,
     },
   );
   assert.throws(
@@ -374,36 +396,39 @@ test("a whole brief brands where it lands apart from where its work happens", ()
         intent: "Fix the importer.",
         links: [],
         branch: "refs/heads/rt/work",
-        finalization: { mode: "Push", target: "not-a-ref" },
+        finalization: { ...finalization, target: "not-a-ref" },
       }),
     RangeError,
   );
 });
 
 test("a brief that proposes brands a branch of its own and not the one it opens into", () => {
-  for (const mode of proposingModes) {
-    const proposing = (branch?: string, target = "refs/heads/rt/landing") =>
+  for (const finalization of proposing) {
+    const proposingBrief = (
+      branch?: string,
+      target = "refs/heads/rt/landing",
+    ) =>
       asDraftBrief({
         intent: "Fix the importer.",
         links: [],
         ...(branch === undefined ? {} : { branch }),
-        finalization: { mode, target },
+        finalization: { ...finalization, target },
       });
-    assert.deepEqual(proposing("refs/heads/rt/work"), {
+    assert.deepEqual(proposingBrief("refs/heads/rt/work"), {
       intent: "Fix the importer.",
       links: [],
       images: [],
       checks: [],
       branch: "refs/heads/rt/work",
-      finalization: { mode, target: "refs/heads/rt/landing" },
+      finalization: { ...finalization, target: "refs/heads/rt/landing" },
     });
     assert.throws(
-      () => proposing(),
+      () => proposingBrief(),
       RangeError,
       "a proposal has no head where the brief names no branch",
     );
     assert.throws(
-      () => proposing("refs/heads/rt/landing"),
+      () => proposingBrief("refs/heads/rt/landing"),
       RangeError,
       "a proposal is never opened from its own base",
     );
@@ -411,55 +436,227 @@ test("a brief that proposes brands a branch of its own and not the one it opens 
 });
 
 test("a brief proposing into the default branch brands its head and no base", () => {
-  for (const mode of proposingModes) {
-    const proposing = (branch?: string) =>
+  for (const finalization of proposing) {
+    const proposingBrief = (branch?: string) =>
       asDraftBrief({
         intent: "Fix the importer.",
         links: [],
         ...(branch === undefined ? {} : { branch }),
-        finalization: { mode },
+        finalization,
       });
-    assert.deepEqual(proposing("refs/heads/rt/work"), {
+    assert.deepEqual(proposingBrief("refs/heads/rt/work"), {
       intent: "Fix the importer.",
       links: [],
       images: [],
       checks: [],
       branch: "refs/heads/rt/work",
-      finalization: { mode },
+      finalization,
     });
     assert.throws(
-      () => proposing(),
+      () => proposingBrief(),
       RangeError,
       "a proposal into the default branch has no head where the brief names no branch",
     );
   }
 });
 
-test("a brief lands Direct unless it says Serialized, and a Direct one is stored as one that never said", () => {
-  const brief = { intent: "Do it.", links: [] };
-  assert.equal(briefLandingOf(asDraftBrief(brief)), "Direct");
-  assert.equal(
-    briefLandingOf(asDraftBrief({ ...brief, landing: "Serialized" })),
-    "Serialized",
+test("a brief stored by its mode is read forward to its kind, its landing the git merge's policy", () => {
+  const brief = {
+    intent: "Do it.",
+    links: [],
+    branch: "refs/heads/rt/work",
+  };
+  const target = "refs/heads/rt/landing";
+  assert.deepEqual(
+    asDraftBrief({ ...brief, finalization: { mode: "Push" } }).finalization,
+    { kind: "GitMerge", mode: "Push", policy: "Direct" },
   );
-  const direct = asDraftBrief({ ...brief, landing: "Direct" });
-  assert.equal("landing" in direct, false);
+  assert.deepEqual(
+    asDraftBrief({
+      ...brief,
+      finalization: { mode: "PullRequestMerge", target },
+      landing: "Serialized",
+    }).finalization,
+    {
+      kind: "GitMerge",
+      mode: "PullRequestMerge",
+      target,
+      policy: "Serialized",
+    },
+  );
+  assert.deepEqual(
+    asDraftBrief({
+      ...brief,
+      finalization: { mode: "PullRequest", target },
+      landing: "Direct",
+    }).finalization,
+    { kind: "PullRequest", target },
+  );
+  assert.deepEqual(
+    asDraftBrief({ ...brief, finalization: { mode: "None" } }).finalization,
+    { kind: "None" },
+  );
   assert.equal(
-    briefContentDigest(direct),
-    briefContentDigest(asDraftBrief(brief)),
+    "landing" in asDraftBrief({ ...brief, landing: "Direct" }),
+    false,
+  );
+  for (const refused of [
+    { finalization: { mode: "PullRequest" }, landing: "Serialized" },
+    { finalization: { mode: "None" }, landing: "Serialized" },
+    { landing: "Serialized" },
+    { finalization: { mode: "Push" }, landing: "Stacked" },
+    { finalization: { mode: "Pushed" } },
+    { finalization: { mode: "None", target: "refs/heads/rt/landing" } },
+    {
+      finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
+      landing: "Direct",
+    },
+  ])
+    assert.throws(
+      () => asDraftBrief({ ...brief, ...refused }),
+      RangeError,
+      JSON.stringify(refused),
+    );
+});
+
+test("a git merge lands Direct unless it says Serialized, and a brief naming no git merge lands Direct", () => {
+  const brief = { intent: "Do it.", links: [] };
+  const gitMerge = (policy: string) =>
+    asDraftBrief({
+      ...brief,
+      finalization: { kind: "GitMerge", mode: "Push", policy },
+    });
+  assert.equal(briefGitMergePolicyOf(asDraftBrief(brief)), "Direct");
+  assert.equal(briefGitMergePolicyOf(gitMerge("Direct")), "Direct");
+  assert.equal(briefGitMergePolicyOf(gitMerge("Serialized")), "Serialized");
+  assert.equal(
+    briefGitMergePolicyOf(
+      asDraftBrief({ ...brief, finalization: { kind: "None" } }),
+    ),
+    "Direct",
   );
   assert.notEqual(
-    briefContentDigest(asDraftBrief({ ...brief, landing: "Serialized" })),
-    briefContentDigest(direct),
+    briefContentDigest(gitMerge("Serialized")),
+    briefContentDigest(gitMerge("Direct")),
   );
 });
 
-test("a landing is one of the two this tree orders by, and Stacked is not yet", () => {
-  assert.equal(asBriefLanding("Direct"), undefined);
-  assert.equal(asBriefLanding("Serialized"), "Serialized");
-  assert.throws(() => asBriefLanding("Stacked"), RangeError);
-  assert.throws(
-    () => asDraftBrief({ intent: "Do it.", links: [], landing: "Stacked" }),
-    RangeError,
-  );
+/**
+ * A released brief keeps the JSON its release stored and the digest its
+ * definition names, each written by its mode with the landing beside it; only
+ * the reader maps it forward. So a brief written by its kind is stored and
+ * digested as the same brief written by its mode was.
+ */
+test("a brief is stored and digested by its mode, so one released before kinds reads back to its own digest", () => {
+  for (const stored of [
+    {
+      intent: "Do it.",
+      links: [],
+      images: [],
+      checks: [],
+      branch: "refs/heads/rt/work",
+      finalization: {
+        mode: "PullRequestMerge",
+        target: "refs/heads/rt/landing",
+      },
+      landing: "Serialized",
+    },
+    {
+      intent: "Do it.",
+      links: [],
+      images: [],
+      checks: [],
+      branch: "refs/heads/rt/work",
+      finalization: { mode: "PullRequest" },
+    },
+    {
+      intent: "Do it.",
+      links: [],
+      images: [],
+      checks: [],
+      finalization: { mode: "Push" },
+    },
+    {
+      intent: "Do it.",
+      links: [],
+      images: [],
+      checks: [],
+      finalization: { mode: "None" },
+    },
+  ]) {
+    const digest = materialDigest({ ...stored, images: undefined });
+    const brief = releasedTicketBrief(stored, digest);
+    assert.ok(
+      brief?.finalization !== undefined && "kind" in brief.finalization,
+    );
+    assert.deepEqual(draftBriefByMode(brief), stored);
+    assert.equal(briefContentDigest(brief), digest);
+    assert.equal(
+      briefContentDigest(
+        asDraftBrief({
+          intent: stored.intent,
+          links: stored.links,
+          ...("branch" in stored ? { branch: stored.branch } : {}),
+          finalization: brief.finalization,
+        }),
+      ),
+      digest,
+      "the same brief written by its kind digests as it did by its mode",
+    );
+  }
+});
+
+/**
+ * Every writer before the kinds stored a policy with no check of the mode, so
+ * a released brief can pair one with a finalization no kind orders. The wire
+ * refuses that pairing; a stored one reads as the bare kind, held to the
+ * digest of what was stored.
+ */
+test("a released brief ordering what no kind orders reads without the policy, to its own digest", () => {
+  for (const [stored, finalization] of [
+    [
+      {
+        intent: "Do it.",
+        links: [],
+        images: [],
+        checks: [],
+        branch: "refs/heads/rt/work",
+        finalization: { mode: "PullRequest" },
+        landing: "Serialized",
+      },
+      { kind: "PullRequest" },
+    ],
+    [
+      {
+        intent: "Do it.",
+        links: [],
+        images: [],
+        checks: [],
+        finalization: { mode: "None" },
+        landing: "Serialized",
+      },
+      { kind: "None" },
+    ],
+    [
+      {
+        intent: "Do it.",
+        links: [],
+        images: [],
+        checks: [],
+        landing: "Serialized",
+      },
+      undefined,
+    ],
+  ] as const) {
+    const digest = materialDigest({ ...stored, images: undefined });
+    const brief = releasedTicketBrief(stored, digest);
+    assert.deepEqual(brief?.finalization, finalization);
+    assert.equal(brief !== undefined && "landing" in brief, false);
+    assert.equal(briefGitMergePolicyOf(brief), "Direct");
+    assert.throws(
+      () => releasedTicketBrief(stored, briefContentDigest(brief)),
+      /not the one the released content names/u,
+      "the digest is the stored brief's, not the one read forward",
+    );
+  }
 });

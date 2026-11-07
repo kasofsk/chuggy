@@ -44,7 +44,10 @@ test("the branch and the one it lands on are drawn by their names", () => {
       ticket({
         brief: {
           ...brief,
-          finalization: { mode: "PullRequest", target: "refs/heads/release" },
+          finalization: {
+            kind: "PullRequest",
+            target: "refs/heads/release",
+          },
         },
       }),
       [],
@@ -54,7 +57,14 @@ test("the branch and the one it lands on are drawn by their names", () => {
 
 test("a target the brief left to its repository is the one its landing named, and none before a landing", () => {
   const unnamed = ticket({
-    brief: { ...brief, finalization: { mode: "PullRequestMerge" } },
+    brief: {
+      ...brief,
+      finalization: {
+        kind: "GitMerge",
+        mode: "PullRequestMerge",
+        policy: "Direct",
+      },
+    },
   });
   expect(
     ticketOverviewBranchOf(unnamed, [ticketLandingOf(landingConflicted(1))]),
@@ -68,7 +78,7 @@ test("a target the brief left to its repository is the one its landing named, an
 test("a ticket that lands nothing lands on no branch, and one whose brief names no branch draws none", () => {
   expect(
     ticketOverviewBranchOf(
-      ticket({ brief: { ...brief, finalization: { mode: "None" } } }),
+      ticket({ brief: { ...brief, finalization: { kind: "None" } } }),
       [ticketLandingOf(landingConflicted(1))],
     ),
   ).toEqual({ branch: "contract/thread-offer-tools", target: undefined });

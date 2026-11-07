@@ -30,6 +30,7 @@ import {
   creationLandingDefault,
 } from "./ticketCreation.ts";
 import { overridesHeldOf } from "./ticketOverrides.ts";
+import { briefLandingOf } from "./briefLanding.ts";
 import type {
   AuthoringStanding,
   CreationFault,
@@ -150,7 +151,7 @@ export function editFormFrom(
 ): TicketCreationForm {
   const brief = draft.brief;
   const repository = brief?.repository ?? "";
-  const finalization = brief?.finalization;
+  const landing = briefLandingOf(brief?.finalization);
   return {
     dependencies: [...draft.authoring.dependencies],
     program: draft.authoring.program,
@@ -161,15 +162,11 @@ export function editFormFrom(
     images: brief?.images ?? [],
     checks: brief?.checks ?? [],
     branchName: editBranchName(brief?.branch),
-    targetBranchName: editBranchName(
-      finalization !== undefined && "target" in finalization
-        ? finalization.target
-        : undefined,
-    ),
+    targetBranchName: editBranchName(landing?.target),
     repository,
     landingMode:
-      finalization?.mode ?? creationLandingDefault(repositories, repository),
-    landingPolicy: brief?.landing ?? "Direct",
+      landing?.mode ?? creationLandingDefault(repositories, repository),
+    landingPolicy: landing?.policy ?? "Direct",
     overrides: overridesHeldOf(draft.overrides),
     selection: draft.selection ?? {},
     workloads: draft.overrides?.workloads ?? {},

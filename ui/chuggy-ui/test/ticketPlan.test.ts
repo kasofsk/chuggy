@@ -102,7 +102,7 @@ test("the brief's landing comes before the finalizer's, and one that lands nothi
   expect(
     ticketPlanOf(
       catalog,
-      ticket({ brief: { ...brief, finalization: { mode: "None" } } }),
+      ticket({ brief: { ...brief, finalization: { kind: "None" } } }),
     ),
   ).toMatchObject({ lands: false, landing: "None" });
   expect(
@@ -112,7 +112,7 @@ test("the brief's landing comes before the finalizer's, and one that lands nothi
     ticketPlanOf(
       catalog,
       ticket({
-        brief: { ...brief, finalization: { mode: "PullRequest" } },
+        brief: { ...brief, finalization: { kind: "PullRequest" } },
         selection: { finalization: "none" },
       }),
     ),

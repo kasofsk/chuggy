@@ -85,7 +85,7 @@ interface Served {
   readonly program?: boolean;
   readonly shapes?: readonly ExecutionShape[];
   /** How the brief lands the work, its read's default where a case names none. */
-  readonly finalization?: { readonly mode: string };
+  readonly finalization?: { readonly kind: string };
 }
 
 function ticketBody(served: Served): Record<string, unknown> {
@@ -536,7 +536,7 @@ test("the clock asks the read again, and a read that fails keeps the last answer
 test("a ticket that lands nothing reads None for its Landing on the Runs tab, the rail and the steps block, with no mark and no link", async () => {
   const container = await drawn(
     () => answer({ landings: [], truncated: false }),
-    { phase: "Done", finalization: { mode: "None" } },
+    { phase: "Done", finalization: { kind: "None" } },
   );
   const current = groupOf(container, 3);
   expect(landingSaid(current)).toBe("None");
@@ -554,7 +554,7 @@ test("a ticket that lands nothing reads None for its Landing on the Runs tab, th
   const rail = within(
     await landingPage(() => answer({ landings: [], truncated: false }), {
       phase: "Done",
-      finalization: { mode: "None" },
+      finalization: { kind: "None" },
     }),
   ).getByRole("navigation", { name: "Runs" });
   const landing = within(rail).getByText("Landing");

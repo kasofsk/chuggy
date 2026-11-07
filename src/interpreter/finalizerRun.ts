@@ -206,7 +206,9 @@
  * may stand queued there, since a queued proposal merges with nobody asking.
  */
 
+import { briefFinalizationOpensProposal } from "../contract/brief.ts";
 import {
+  briefFinalizationModeOf,
   briefFinalizationProposes,
   finalizationUnavailableKinds,
   type FinalizationUnavailableKind,
@@ -321,7 +323,7 @@ import {
 } from "./finalizerLanding.ts";
 import {
   briefFinalizationTarget,
-  briefLandingOf,
+  briefGitMergePolicyOf,
   type TicketBriefPort,
 } from "./ticketBrief.ts";
 
@@ -585,7 +587,7 @@ async function finalizerGatherProposalBase(
   branches: FinalizerBranches,
 ): Promise<TargetObserved | undefined> {
   if (
-    !briefFinalizationProposes(branches.brief?.finalization?.mode) ||
+    !briefFinalizationOpensProposal(branches.brief?.finalization) ||
     briefFinalizationTarget(branches.brief?.finalization) !== undefined
   )
     return undefined;
@@ -650,7 +652,11 @@ async function finalizerGatherLanding(
     ...(branches.target === undefined ? {} : { targetBranch: branches.target }),
     ...(branches.brief?.finalization === undefined
       ? {}
-      : { finalizationMode: branches.brief.finalization.mode }),
+      : {
+          finalizationMode: briefFinalizationModeOf(
+            branches.brief.finalization,
+          ),
+        }),
     ...(base === undefined ? {} : { proposalBase: base }),
   };
   if (observed.observed !== "Target") return { gathered: "View", view };
@@ -1162,7 +1168,7 @@ async function finalizerSerialized(
 ): Promise<boolean> {
   const { claim } = subject.view;
   const brief = await service.ticketBriefs.brief(claim.partition, claim.ticket);
-  return briefLandingOf(brief) === "Serialized";
+  return briefGitMergePolicyOf(brief) === "Serialized";
 }
 
 /**
@@ -1570,7 +1576,7 @@ async function finalizerOpeningProposal(
   if (
     brief === undefined ||
     finalization === undefined ||
-    !briefFinalizationProposes(finalization.mode)
+    !briefFinalizationOpensProposal(finalization)
   ) {
     throw new Error(
       "finalizer proposal: a proposal was authorized by no brief that opens one",

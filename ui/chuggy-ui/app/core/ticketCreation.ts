@@ -35,7 +35,7 @@ import { draftCreationSchema } from "../../../../src/contract/requests.ts";
 import {
   briefFinalizationProposes,
   type BriefFinalizationMode,
-  type BriefLanding,
+  type BriefGitMergePolicy,
 } from "../../../../src/contract/rosters.ts";
 import type { PublicMutation } from "../../../../src/contract/requests.ts";
 import {
@@ -112,7 +112,7 @@ export interface TicketCreationForm extends CreationAuthoring {
    * reader's from the moment they move it. */
   readonly landingMode: BriefFinalizationMode;
   /** How that landing is ordered against the others on its reference. */
-  readonly landingPolicy: BriefLanding;
+  readonly landingPolicy: BriefGitMergePolicy;
   /** What this ticket replaces of its configuration, drawn only once a
    * configuration is chosen and kept when another is; sent only under a
    * configuration that is no catalog. */
@@ -1031,7 +1031,14 @@ function creationLandingFault(
   if (branches.target.named !== "Ref") return undefined;
   return briefLandingIsWhole({
     branch: branches.branch.ref,
-    finalization: { mode: form.landingMode, target: branches.target.ref },
+    finalization:
+      form.landingMode === "PullRequestMerge"
+        ? {
+            kind: "GitMerge",
+            mode: form.landingMode,
+            target: branches.target.ref,
+          }
+        : { kind: "PullRequest", target: branches.target.ref },
   })
     ? undefined
     : { field: "target", reason: creationLandingWholeSentence };
@@ -1070,8 +1077,9 @@ function creationStatedFaults(
  * How this brief lands, sent explicitly on every submission — even where the
  * mode is the repository's own default — so the ticket records the landing it
  * was released with. `None` names no reference at all; every other mode names
- * one only where a target was typed, and a value left in the box `None` draws
- * none for is never sent.
+ * one only where a target was typed, a policy goes only beside a push or a
+ * merged proposal, the modes a policy orders, and a value left where the mode
+ * draws none is never sent.
  */
 function creationFinalizationOf(
   form: TicketCreationForm,
@@ -1086,6 +1094,9 @@ function creationFinalizationOf(
         ? { target: branches.target.ref }
         : {}),
     },
+    ...(mode === "PullRequest" || form.landingPolicy === "Direct"
+      ? {}
+      : { landing: form.landingPolicy }),
   };
 }
 
@@ -1114,7 +1125,6 @@ function creationBriefOf(
     ...(checks.length === 0 ? {} : { checks }),
     ...(branches.branch.named === "Ref" ? { branch: branches.branch.ref } : {}),
     ...creationFinalizationOf(form, branches),
-    ...(form.landingPolicy === "Direct" ? {} : { landing: form.landingPolicy }),
   };
 }
 

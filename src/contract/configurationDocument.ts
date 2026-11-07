@@ -29,7 +29,10 @@
 
 import { z } from "zod";
 
-import { briefFinalizationSchema } from "./brief.ts";
+import {
+  briefFinalizationModeSchema,
+  briefFinalizationSchema,
+} from "./brief.ts";
 import {
   configurationCanonicalCharsMax,
   configurationPromptTextCharsMax,
@@ -68,6 +71,9 @@ export const releaseConfigurationVersion = 1;
 
 /** The configuration version that is a catalog of independent workloads. */
 export const workloadConfigurationVersion = 2;
+
+/** The catalog version whose finalizers name a whole finalization rather than a landing mode. */
+export const finalizationConfigurationVersion = 3;
 
 /** The directory an import reads, from the repository root. */
 export const repositoryConfigurationRoot = ".chug/configurations/";
@@ -774,12 +780,25 @@ export const evaluationPlanSchema = z
   .min(1)
   .max(evaluationBlocksMax);
 
-/** How a ticket's passed work lands, and whether a person approves it first. */
+/**
+ * How a version 2 catalog's passed work lands, by a landing mode and no policy,
+ * and whether a person approves it first.
+ */
 export const finalizerSchema = z.strictObject({
-  landing: briefFinalizationSchema
+  landing: briefFinalizationModeSchema
     .optional()
     .describe(
-      "The landing a ticket whose brief names none takes, in place of its repository's.",
+      "The landing a ticket whose brief names none takes, in place of its repository's, ordered Direct.",
+    ),
+  approvalRequired: z.boolean().optional(),
+});
+
+/** How a version 3 catalog's passed work lands, as a whole finalization, and whether a person approves it first. */
+export const finalizationFinalizerSchema = z.strictObject({
+  finalization: briefFinalizationSchema
+    .optional()
+    .describe(
+      "The finalization a ticket whose brief names none takes, in place of its repository's landing.",
     ),
   approvalRequired: z.boolean().optional(),
 });
@@ -823,10 +842,21 @@ export const workloadConfigurationSchema = z
     `A catalog a ticket selects its work, its evaluation plan and its finalizer from. The importer also holds that every name a plan or the defaults use is in the catalog, and the size and key rules of a version 1 configuration: at most ${String(configurationCanonicalCharsMax)} UTF-16 code units once every referenced file is stored inline.`,
   );
 
+/** The version 3 catalog: the version 2 one with its finalizers naming a whole finalization, which is all that tells the two apart. */
+export const finalizationConfigurationSchema = workloadConfigurationSchema
+  .extend({
+    version: z.literal(finalizationConfigurationVersion),
+    finalizers: configurationCatalogMap(finalizationFinalizerSchema).optional(),
+  })
+  .describe(
+    `A catalog a ticket selects its work, its evaluation plan and its finalizer from, each finalizer naming a whole finalization. The importer also holds that every name a plan or the defaults use is in the catalog, and the size and key rules of a version 1 configuration: at most ${String(configurationCanonicalCharsMax)} UTF-16 code units once every referenced file is stored inline.`,
+  );
+
 /** The configuration one file declares, told apart by its version. */
 export const declaredConfigurationSchema = z.discriminatedUnion("version", [
   releaseConfigurationSchema,
   workloadConfigurationSchema,
+  finalizationConfigurationSchema,
 ]);
 
 /** The name a configuration is declared under, which is one URL path segment exactly as written. */

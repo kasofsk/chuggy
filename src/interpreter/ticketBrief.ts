@@ -74,6 +74,8 @@
 import {
   briefBranchCharsMax,
   briefChecksMax,
+  briefFinalizationForward,
+  briefFinalizationOpensProposal,
   briefImagesMax,
   briefIntentCharsMax,
   briefLandingIsWhole,
@@ -84,11 +86,15 @@ import {
 } from "../contract/brief.ts";
 import { textCodePointsCount } from "../contract/http.ts";
 import {
+  briefFinalizationKinds,
+  briefFinalizationModeOf,
   briefFinalizationModes,
-  briefFinalizationProposes,
-  briefLandings,
+  briefGitMergeModes,
+  briefGitMergePolicies,
+  type BriefFinalizationKind,
   type BriefFinalizationMode,
-  type BriefLanding,
+  type BriefGitMergeMode,
+  type BriefGitMergePolicy,
 } from "../contract/rosters.ts";
 import {
   asRepositoryId,
@@ -116,21 +122,27 @@ export type BriefIntent = string & { readonly [briefIntentBrand]: true };
 export type BriefLinkUrl = string & { readonly [briefLinkUrlBrand]: true };
 export type BriefCheckLine = string & { readonly [briefCheckLineBrand]: true };
 
-/** Landing by advancing the reference itself, which is where a brief naming none lands. */
-export interface BriefPushFinalization {
-  readonly mode: Extract<BriefFinalizationMode, "Push">;
+/**
+ * Landing by merging the work into the reference through git: advancing it
+ * directly, or opening a change proposal and merging it, under a policy that
+ * orders it against the others on that reference. A push names no reference
+ * where it lands on the branch the work happened on, and a merged proposal none
+ * where it lands on the repository's default.
+ */
+export interface BriefGitMergeFinalization {
+  readonly kind: Extract<BriefFinalizationKind, "GitMerge">;
+  readonly mode: BriefGitMergeMode;
   readonly target?: GitRefName;
+  readonly policy: BriefGitMergePolicy;
 }
 
-/** Landing by opening a change proposal into the reference, the repository's default where it names none. */
+/**
+ * Landing by opening a change proposal a person merges, into the repository's
+ * default where it names none. It names no policy, because nothing orders a
+ * merge a person makes.
+ */
 export interface BriefPullRequestFinalization {
-  readonly mode: Extract<BriefFinalizationMode, "PullRequest">;
-  readonly target?: GitRefName;
-}
-
-/** Landing by opening that same change proposal and merging it, the repository's default where it names none. */
-export interface BriefPullRequestMergeFinalization {
-  readonly mode: Extract<BriefFinalizationMode, "PullRequestMerge">;
+  readonly kind: Extract<BriefFinalizationKind, "PullRequest">;
   readonly target?: GitRefName;
 }
 
@@ -140,26 +152,40 @@ export interface BriefPullRequestMergeFinalization {
  * that advances nothing having nothing to advance onto.
  */
 export interface BriefNoFinalization {
-  readonly mode: Extract<BriefFinalizationMode, "None">;
+  readonly kind: Extract<BriefFinalizationKind, "None">;
 }
 
 /** How and where one ticket's work is landed, which is the finalizer's half of a brief. */
 export type BriefFinalization =
-  | BriefPushFinalization
+  | BriefGitMergeFinalization
   | BriefPullRequestFinalization
-  | BriefPullRequestMergeFinalization
   | BriefNoFinalization;
 
 /** What a brief naming neither a finalization nor a repository to take one from lands by. */
-export const briefFinalizationDefault: BriefFinalization = { mode: "Push" };
+export const briefFinalizationDefault: BriefFinalization = {
+  kind: "GitMerge",
+  mode: "Push",
+  policy: "Direct",
+};
 
 /** The reference a landing names, which a landing that advances nothing does not have. */
 export function briefFinalizationTarget(
   finalization: BriefFinalization | undefined,
 ): GitRefName | undefined {
-  return finalization === undefined || finalization.mode === "None"
+  return finalization === undefined || finalization.kind === "None"
     ? undefined
     : finalization.target;
+}
+
+/**
+ * The policy a brief's landing is ordered under: its `GitMerge`'s, and `Direct`
+ * for a brief naming none or a kind that names none.
+ */
+export function briefGitMergePolicyOf(
+  brief: Pick<DraftBrief, "finalization"> | undefined,
+): BriefGitMergePolicy {
+  const finalization = brief?.finalization;
+  return finalization?.kind === "GitMerge" ? finalization.policy : "Direct";
 }
 
 /**
@@ -171,7 +197,7 @@ export function briefFinalizationTarget(
 export function briefLandsOn(
   brief: Pick<DraftBrief, "finalization" | "branch">,
 ): GitRefName | undefined {
-  return briefFinalizationProposes(brief.finalization?.mode)
+  return briefFinalizationOpensProposal(brief.finalization)
     ? brief.branch
     : (briefFinalizationTarget(brief.finalization) ?? brief.branch);
 }
@@ -186,15 +212,44 @@ export interface DraftBrief {
   readonly repository?: RepositoryId;
   readonly branch?: GitRefName;
   readonly finalization?: BriefFinalization;
-  /** Absent where the brief lands `Direct`, so a brief that never named one is digested as it was. */
-  readonly landing?: Exclude<BriefLanding, "Direct">;
 }
 
-/** How a brief orders its landing against the others on its reference. */
-export function briefLandingOf(
-  brief: Pick<DraftBrief, "landing"> | undefined,
-): BriefLanding {
-  return brief?.landing ?? "Direct";
+/** One finalization as it is stored and digested: by its mode, the reference it names beside it. */
+export interface BriefFinalizationByMode {
+  readonly mode: BriefFinalizationMode;
+  readonly target?: GitRefName;
+}
+
+/** One finalization by its mode, which is how storage still holds it. */
+export function briefFinalizationByMode(
+  finalization: BriefFinalization,
+): BriefFinalizationByMode {
+  const target = briefFinalizationTarget(finalization);
+  return {
+    mode: briefFinalizationModeOf(finalization),
+    ...(target === undefined ? {} : { target }),
+  };
+}
+
+/**
+ * One brief as it is stored and digested: its finalization by its mode, and its
+ * policy beside it as `landing` where it is not `Direct`, so a brief released
+ * before a finalization named its kind still digests to what its release stored.
+ */
+export type DraftBriefByMode = Omit<DraftBrief, "finalization"> & {
+  readonly finalization?: BriefFinalizationByMode;
+  readonly landing?: Exclude<BriefGitMergePolicy, "Direct">;
+};
+
+export function draftBriefByMode(brief: DraftBrief): DraftBriefByMode {
+  const { finalization, ...rest } = brief;
+  if (finalization === undefined) return rest;
+  const policy = briefGitMergePolicyOf(brief);
+  return {
+    ...rest,
+    finalization: briefFinalizationByMode(finalization),
+    ...(policy === "Direct" ? {} : { landing: policy }),
+  };
 }
 
 /**
@@ -316,40 +371,122 @@ export function asBriefBranch(value: string): GitRefName {
 
 /**
  * Brands a finalization, its target through the grammar a branch takes. The
- * mode selects the variant it is, so a mode added to the roster and to no
+ * kind selects the variant it is, so a kind added to the roster and to no
  * variant is refused by the compiler here.
  */
 export function asBriefFinalization(value: {
-  readonly mode: string;
-  readonly target?: string;
+  readonly kind: string;
+  readonly mode?: string | undefined;
+  readonly target?: string | undefined;
+  readonly policy?: string | undefined;
 }): BriefFinalization {
-  const mode = briefFinalizationModes.find((known) => known === value.mode);
+  const kind = briefFinalizationKinds.find((known) => known === value.kind);
+  if (kind === undefined)
+    throw new RangeError(
+      "ticket finalization: the kind is not one this tree lands under",
+    );
+  const target =
+    value.target === undefined ? undefined : asBriefBranch(value.target);
+  const targeted = target === undefined ? {} : { target };
+  switch (kind) {
+    case "None":
+      if (value.target !== undefined)
+        throw new RangeError(
+          "ticket finalization: a landing that lands nothing lands on no reference",
+        );
+      if (value.mode !== undefined || value.policy !== undefined)
+        throw new RangeError(
+          "ticket finalization: a landing that lands nothing names no mode and no policy",
+        );
+      return { kind };
+    case "PullRequest":
+      if (value.mode !== undefined || value.policy !== undefined)
+        throw new RangeError(
+          "ticket finalization: a pull request a person merges names no mode and no policy",
+        );
+      return { kind, ...targeted };
+    case "GitMerge":
+      return {
+        kind,
+        mode: asBriefGitMergeMode(value.mode),
+        ...targeted,
+        policy: asBriefGitMergePolicy(value.policy),
+      };
+  }
+}
+
+function asBriefGitMergeMode(value: string | undefined): BriefGitMergeMode {
+  const mode = briefGitMergeModes.find((known) => known === value);
   if (mode === undefined)
+    throw new RangeError(
+      "ticket finalization: the mode is not one a git merge lands by",
+    );
+  return mode;
+}
+
+function asBriefGitMergePolicy(value: string | undefined): BriefGitMergePolicy {
+  const policy = briefGitMergePolicies.find((known) => known === value);
+  if (policy === undefined)
+    throw new RangeError(
+      "ticket finalization: the policy is not one this tree orders landings by",
+    );
+  return policy;
+}
+
+/**
+ * Brands a finalization stored by its mode, and the landing stored beside it,
+ * by mapping both forward to its kind. A pairing with no representation is
+ * refused by the wire's own reason for it.
+ */
+export function asBriefFinalizationByMode(
+  value:
+    { readonly mode: string; readonly target?: string | undefined } | undefined,
+  landing: string | undefined,
+): BriefFinalization | undefined {
+  const mode =
+    value === undefined
+      ? undefined
+      : briefFinalizationModes.find((known) => known === value.mode);
+  if (value !== undefined && mode === undefined)
     throw new RangeError(
       "ticket finalization: the mode is not one this tree lands under",
     );
-  if (mode === "None") {
-    if (value.target !== undefined)
-      throw new RangeError(
-        "ticket finalization: a landing that lands nothing lands on no reference",
-      );
-    return { mode };
-  }
-  const target =
-    value.target === undefined ? undefined : asBriefBranch(value.target);
-  return { mode, ...(target === undefined ? {} : { target }) };
+  if (mode === "None" && value?.target !== undefined)
+    throw new RangeError(
+      "ticket finalization: a landing that lands nothing lands on no reference",
+    );
+  const forward = briefFinalizationForward(
+    mode === undefined || value === undefined
+      ? undefined
+      : {
+          mode,
+          ...(value.target === undefined ? {} : { target: value.target }),
+        },
+    landing === undefined ? undefined : asBriefGitMergePolicy(landing),
+  );
+  if (forward.forward === "Refused")
+    throw new RangeError(`ticket finalization: ${forward.reason}`);
+  return forward.finalization === undefined
+    ? undefined
+    : asBriefFinalization(forward.finalization);
 }
 
-/** Brands a landing, which is held absent where it is `Direct`. */
-export function asBriefLanding(
-  value: string,
-): Exclude<BriefLanding, "Direct"> | undefined {
-  const landing = briefLandings.find((known) => known === value);
-  if (landing === undefined)
+/**
+ * A whole brief's finalization: one naming its kind as it is, and one named by
+ * its mode mapped forward with the landing beside it, a landing beside a kind
+ * being refused because the kind names its own policy.
+ */
+function asDraftBriefFinalization(
+  value: Pick<Parameters<typeof asDraftBrief>[0], "finalization" | "landing">,
+): BriefFinalization | undefined {
+  const { finalization, landing } = value;
+  if (finalization === undefined || !("kind" in finalization))
+    return asBriefFinalizationByMode(finalization, landing);
+  if (landing !== undefined)
     throw new RangeError(
-      "ticket landing: the value is not one this tree orders landings by",
+      "ticket brief: a finalization naming its kind names its own policy, so no landing is named beside it",
     );
-  return landing === "Direct" ? undefined : landing;
+  return asBriefFinalization(finalization);
 }
 
 /**
@@ -366,7 +503,9 @@ export function asDraftBrief(value: {
   readonly checks?: readonly string[];
   readonly repository?: string;
   readonly branch?: string;
-  readonly finalization?: { readonly mode: string; readonly target?: string };
+  readonly finalization?:
+    | Parameters<typeof asBriefFinalization>[0]
+    | { readonly mode: string; readonly target?: string | undefined };
   readonly landing?: string;
 }): DraftBrief {
   if (value.links.length > briefLinksMax)
@@ -377,8 +516,7 @@ export function asDraftBrief(value: {
   const checks = value.checks ?? [];
   if (checks.length > briefChecksMax)
     throw new RangeError("ticket brief: more checks than one brief appends");
-  const landing =
-    value.landing === undefined ? undefined : asBriefLanding(value.landing);
+  const finalization = asDraftBriefFinalization(value);
   const brief: DraftBrief = {
     ...(value.title === undefined ? {} : { title: asBriefTitle(value.title) }),
     intent: asBriefIntent(value.intent),
@@ -391,16 +529,75 @@ export function asDraftBrief(value: {
     ...(value.branch === undefined
       ? {}
       : { branch: asBriefBranch(value.branch) }),
-    ...(value.finalization === undefined
-      ? {}
-      : { finalization: asBriefFinalization(value.finalization) }),
-    ...(landing === undefined ? {} : { landing }),
+    ...(finalization === undefined ? {} : { finalization }),
   };
   if (!briefLandingIsWhole(brief))
     throw new RangeError(
       "ticket brief: a pull request opens from a branch of its own, into another where it names one",
     );
   return brief;
+}
+
+/**
+ * A policy stored beside a finalization that is not a git merge, or beside
+ * none. Every writer before the kinds stored the policy with no check of the
+ * mode, so such a row exists, and a kind orders only a git merge: a stored row
+ * reads without it, and only the wire refuses the pairing.
+ */
+function storedPolicyUnkinded(
+  finalization: Parameters<typeof asDraftBrief>[0]["finalization"],
+  landing: string | undefined,
+): boolean {
+  if (landing === undefined) return false;
+  if (finalization === undefined) return true;
+  return (
+    !("kind" in finalization) &&
+    !briefGitMergeModes.some((mode) => mode === finalization.mode)
+  );
+}
+
+/** A finalization a draft row stores by its mode, its policy beside it, read forward as {@link storedPolicyUnkinded} reads one. */
+export function asStoredBriefFinalizationByMode(
+  value: { readonly mode: string; readonly target?: string | undefined },
+  landing: string | undefined,
+): BriefFinalization | undefined {
+  return asBriefFinalizationByMode(
+    value,
+    storedPolicyUnkinded(value, landing) ? undefined : landing,
+  );
+}
+
+/** A brief a release stored, read forward, and the shape it was stored and digested as. */
+export interface StoredDraftBrief {
+  readonly brief: DraftBrief;
+  readonly stored: DraftBriefByMode;
+}
+
+/**
+ * Brands a brief a release stored. A policy no kind carries is read out of the
+ * brief and kept in its stored shape, so the brief digests to what its release
+ * stored.
+ */
+export function asStoredDraftBrief(
+  value: Parameters<typeof asDraftBrief>[0],
+): StoredDraftBrief {
+  if (
+    value.landing === undefined ||
+    !storedPolicyUnkinded(value.finalization, value.landing)
+  ) {
+    const brief = asDraftBrief(value);
+    return { brief, stored: draftBriefByMode(brief) };
+  }
+  const { landing, ...rest } = value;
+  const brief = asDraftBrief(rest);
+  const policy = asBriefGitMergePolicy(landing);
+  return {
+    brief,
+    stored: {
+      ...draftBriefByMode(brief),
+      ...(policy === "Direct" ? {} : { landing: policy }),
+    },
+  };
 }
 
 /**

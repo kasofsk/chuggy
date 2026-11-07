@@ -54,7 +54,7 @@ const original: DraftResponse = {
     links: [],
     checks: ["npm test"],
     repository: chuggy,
-    finalization: { mode: "Push" },
+    finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
   },
 };
 

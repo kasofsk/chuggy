@@ -55,6 +55,68 @@ test("a catalog reads as its workloads, plans, finalizers and defaults", () => {
   });
 });
 
+test("a version 3 catalog reads each finalizer's finalization as its landing, and a version 2 one its landing", () => {
+  const written = JSON.parse(creationCatalogCanonical) as Record<
+    string,
+    unknown
+  >;
+  const read = configurationCatalogOf(
+    JSON.stringify({
+      ...written,
+      version: 3,
+      finalizers: {
+        merge: {
+          finalization: {
+            kind: "GitMerge",
+            mode: "PullRequestMerge",
+            target: "refs/heads/release",
+            policy: "Serialized",
+          },
+        },
+        proposal: {
+          approvalRequired: true,
+          finalization: { kind: "PullRequest", target: "refs/heads/main" },
+        },
+        nothing: { finalization: { kind: "None" } },
+        written: { landing: { mode: "Push" } },
+      },
+    }),
+  );
+  expect(read?.defaults.work).toBe("build");
+  expect(read?.finalizers).toStrictEqual([
+    {
+      name: "merge",
+      approvalRequired: false,
+      landing: { mode: "PullRequestMerge", target: "refs/heads/release" },
+    },
+    {
+      name: "proposal",
+      approvalRequired: true,
+      landing: { mode: "PullRequest", target: "refs/heads/main" },
+    },
+    { name: "nothing", approvalRequired: false, landing: { mode: "None" } },
+    { name: "written", approvalRequired: false },
+  ]);
+  expect(
+    configurationCatalogOf(
+      JSON.stringify({
+        ...written,
+        finalizers: {
+          landed: { landing: { mode: "Push", target: "refs/heads/release" } },
+          written: { finalization: { kind: "None" } },
+        },
+      }),
+    )?.finalizers,
+  ).toStrictEqual([
+    {
+      name: "landed",
+      approvalRequired: false,
+      landing: { mode: "Push", target: "refs/heads/release" },
+    },
+    { name: "written", approvalRequired: false },
+  ]);
+});
+
 test("a version 1 document, and bytes that are no JSON, are no catalog", () => {
   expect(configurationCatalogOf(JSON.stringify({ version: 1 }))).toBe(
     undefined,

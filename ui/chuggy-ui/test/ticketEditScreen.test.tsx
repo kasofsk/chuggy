@@ -129,7 +129,7 @@ function pinned(name: string, revision: string): DraftResponse {
       intent: "ship the thing",
       links: [],
       repository: chuggy,
-      finalization: { mode: "Push" },
+      finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
     },
   };
 }

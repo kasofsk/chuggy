@@ -62,7 +62,7 @@ const released: DraftResponse = {
     checks: ["npm test"],
     repository,
     branch: "refs/heads/topic/one",
-    finalization: { mode: "PullRequest", target: "refs/heads/main" },
+    finalization: { kind: "PullRequest", target: "refs/heads/main" },
   },
 };
 
@@ -91,9 +91,10 @@ test("a draft reads back as the form that would revise it to itself", () => {
   const again = creationBodyFrom(commanding, form, [
     creationBinding(repository),
   ]);
-  expect(again.assembled === "Body" && again.body.brief).toStrictEqual(
-    released.brief,
-  );
+  expect(again.assembled === "Body" && again.body.brief).toStrictEqual({
+    ...released.brief,
+    finalization: { mode: "PullRequest", target: "refs/heads/main" },
+  });
 });
 
 /** A draft kept from before briefs were stored has none: the form is empty
@@ -113,7 +114,15 @@ test("a serialized draft reads back as serialized and revises to itself", () => 
   const brief = { ...released.brief, intent: "ship the thing", links: [] };
   const serialized: DraftResponse = {
     ...released,
-    brief: { ...brief, landing: "Serialized" },
+    brief: {
+      ...brief,
+      finalization: {
+        kind: "GitMerge",
+        mode: "PullRequestMerge",
+        target: "refs/heads/main",
+        policy: "Serialized",
+      },
+    },
   };
   const form = editFormFrom(serialized, [creationBinding(repository)], "r3");
   expect(form.landingPolicy).toBe("Serialized");
@@ -122,9 +131,11 @@ test("a serialized draft reads back as serialized and revises to itself", () => 
     form,
     [creationBinding(repository)],
   );
-  expect(again.assembled === "Body" && again.body.brief).toStrictEqual(
-    serialized.brief,
-  );
+  expect(again.assembled === "Body" && again.body.brief).toStrictEqual({
+    ...brief,
+    finalization: { mode: "PullRequestMerge", target: "refs/heads/main" },
+    landing: "Serialized",
+  });
 });
 
 test("the revision is written against the draft version it was read at", () => {

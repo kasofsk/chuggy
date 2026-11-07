@@ -39,6 +39,7 @@ import {
   creationInitialization,
   creationListed,
   creationPartition,
+  revisionServed,
 } from "./ticketCreationFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
@@ -108,7 +109,7 @@ const twelve: DraftResponse = {
     links: [],
     repository: chuggy,
     branch: "refs/heads/topic/one",
-    finalization: { mode: "Push" },
+    finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
   },
 };
 
@@ -131,7 +132,7 @@ function routed(held: {
     if (method === "PUT") {
       held.draft = {
         ...held.draft,
-        ...(body as object),
+        ...revisionServed(body as object),
         authoringVersion: held.draft.authoringVersion + 1,
       };
       return answer(held.draft);

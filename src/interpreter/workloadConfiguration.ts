@@ -1,7 +1,9 @@
 /**
- * A version 2 configuration: a catalog of workloads, the evaluation plans that
- * run them, the finalizers that land their work, and the defaults a ticket
- * selecting nothing takes.
+ * A version 2 or 3 configuration: a catalog of workloads, the evaluation plans
+ * that run them, the finalizers that land their work, and the defaults a ticket
+ * selecting nothing takes. The two versions differ only in a finalizer: a
+ * version 2 one names a landing mode, which is read forward as the finalization
+ * it names, and a version 3 one names its finalization whole.
  *
  * A WORKLOAD IS WHOLE. Its prompt, its worker, its authority and where it runs
  * are its own, so nothing one workload says reaches another, and nothing the
@@ -23,13 +25,19 @@
 import type { z } from "zod";
 
 import {
+  briefFinalizationForward,
+  type BriefFinalizationBody,
+} from "../contract/brief.ts";
+import {
   type agentWorkloadSchema,
   type commandsWorkloadSchema,
   type ConfigurationFollowing,
   type evaluationPlanStageSchema,
+  finalizationConfigurationSchema,
+  finalizationConfigurationVersion,
   type finalizerSchema,
   workloadConfigurationSchema,
-  type workloadConfigurationVersion,
+  workloadConfigurationVersion,
 } from "../contract/configurationDocument.ts";
 import type { ConfigurationSelection } from "../contract/configurationSelection.ts";
 
@@ -37,11 +45,23 @@ type WorkloadReadonly<Value> = Value extends object
   ? { readonly [Key in keyof Value]: WorkloadReadonly<Value[Key]> }
   : Value;
 
-/** The version a parsed document says it is, which is how every reader tells the two apart. */
+/** The version a parsed document says it is, which is how every reader tells a document of stages from a catalog. */
 export function declaredConfigurationVersion(value: unknown): unknown {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as { readonly version?: unknown }).version
     : undefined;
+}
+
+/** The versions a catalog is declared under, which differ only in how a finalizer names its landing. */
+export const catalogConfigurationVersions = [
+  workloadConfigurationVersion,
+  finalizationConfigurationVersion,
+] as const;
+
+/** Whether a parsed document says it is a catalog rather than a document of stages. */
+export function declaredConfigurationIsCatalog(value: unknown): boolean {
+  const version = declaredConfigurationVersion(value);
+  return catalogConfigurationVersions.some((known) => known === version);
 }
 
 /** An agent workload whose prompt text is held, which is the only kind a ready catalog holds. */
@@ -59,12 +79,19 @@ export type CommandsWorkload = WorkloadReadonly<
 /** One resolved workload. */
 export type Workload = AgentWorkload | CommandsWorkload;
 
-/** One finalizer of a catalog. */
-export type Finalizer = WorkloadReadonly<z.output<typeof finalizerSchema>>;
+/**
+ * One finalizer of a catalog, its finalization named whole. A version 2
+ * finalizer's landing mode is read as the finalization it maps forward to,
+ * ordered `Direct`.
+ */
+export interface Finalizer {
+  readonly finalization?: WorkloadReadonly<BriefFinalizationBody> | undefined;
+  readonly approvalRequired?: boolean | undefined;
+}
 
-/** A ready version 2 configuration: every workload inline and every prompt read. */
+/** A ready catalog: every workload inline and every prompt read, and every finalizer named whole. */
 export type WorkloadConfiguration = Readonly<Record<string, unknown>> & {
-  readonly version: typeof workloadConfigurationVersion;
+  readonly version: (typeof catalogConfigurationVersions)[number];
   readonly image: string;
   readonly workloads: Readonly<Record<string, Workload>>;
   readonly plans: Readonly<
@@ -100,9 +127,46 @@ export type WorkloadConfigurationReadiness =
       readonly fault: WorkloadConfigurationFault;
     };
 
+/** One catalog of either version, as its schema parses it. */
+type ParsedCatalog =
+  | z.output<typeof workloadConfigurationSchema>
+  | z.output<typeof finalizationConfigurationSchema>;
+
+/** One version 2 finalizer read forward: its landing mode the finalization it names, ordered `Direct`. */
+function workloadConfigurationFinalizerForward(
+  finalizer: z.output<typeof finalizerSchema>,
+): Finalizer {
+  const forward = briefFinalizationForward(finalizer.landing, undefined);
+  if (forward.forward === "Refused")
+    throw new Error(`catalog finalizer: ${forward.reason}`);
+  return {
+    ...(forward.finalization === undefined
+      ? {}
+      : { finalization: forward.finalization }),
+    ...(finalizer.approvalRequired === undefined
+      ? {}
+      : { approvalRequired: finalizer.approvalRequired }),
+  };
+}
+
+/** A catalog's finalizers named whole, whichever version declared them. */
+function workloadConfigurationFinalizers(
+  parsed: ParsedCatalog,
+): Readonly<Record<string, Finalizer>> | undefined {
+  if (parsed.finalizers === undefined) return undefined;
+  if (parsed.version === finalizationConfigurationVersion)
+    return parsed.finalizers;
+  return Object.fromEntries(
+    Object.entries(parsed.finalizers).map(([name, finalizer]) => [
+      name,
+      workloadConfigurationFinalizerForward(finalizer),
+    ]),
+  );
+}
+
 /** One parsed catalog entry as a resolved workload, or undefined where it is a path still to read. */
 function workloadConfigurationResolved(
-  entry: z.output<typeof workloadConfigurationSchema>["workloads"][string],
+  entry: ParsedCatalog["workloads"][string],
 ): Workload | undefined {
   if (typeof entry === "string") return undefined;
   return entry.runner === "Commands" || entry.prompt.text !== undefined
@@ -112,7 +176,7 @@ function workloadConfigurationResolved(
 
 /** Whether every name the plans and the defaults use is one the catalog holds. */
 function workloadConfigurationNamesKnown(
-  configuration: z.output<typeof workloadConfigurationSchema>,
+  configuration: ParsedCatalog,
 ): boolean {
   const { workloads, plans, finalizers = {}, defaults } = configuration;
   return (
@@ -143,7 +207,10 @@ function workloadPlacementSingular(workload: Workload): boolean {
 export function workloadConfigurationReadiness(
   value: unknown,
 ): WorkloadConfigurationReadiness {
-  const parsed = workloadConfigurationSchema.safeParse(value);
+  const parsed =
+    declaredConfigurationVersion(value) === finalizationConfigurationVersion
+      ? finalizationConfigurationSchema.safeParse(value)
+      : workloadConfigurationSchema.safeParse(value);
   if (!parsed.success)
     return { readiness: "Incomplete", fault: "ReleaseShapeInvalid" };
   const entries = Object.values(parsed.data.workloads).map(
@@ -156,9 +223,13 @@ export function workloadConfigurationReadiness(
     return { readiness: "Incomplete", fault: "CatalogNameUnknown" };
   if (!resolved.every(workloadPlacementSingular))
     return { readiness: "Incomplete", fault: "WorkloadPlacementInvalid" };
+  const finalizers = workloadConfigurationFinalizers(parsed.data);
   return {
     readiness: "Ready",
-    configuration: value as WorkloadConfiguration,
+    configuration: {
+      ...(value as WorkloadConfiguration),
+      ...(finalizers === undefined ? {} : { finalizers }),
+    },
   };
 }
 

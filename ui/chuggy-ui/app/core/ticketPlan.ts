@@ -15,6 +15,7 @@
 
 import type { BriefFinalizationMode } from "../../../../src/contract/rosters.ts";
 import type { TicketResponse } from "../../../../src/contract/responses.ts";
+import { briefLandingOf } from "./briefLanding.ts";
 import { landingLabel } from "./codeLabels.ts";
 import {
   configurationCatalogOf,
@@ -130,7 +131,7 @@ export function ticketPlanOf(
       ? undefined
       : configurationCatalogWorkload(catalog, selected.work);
   const finalization: TicketPlanFinalization | undefined =
-    ticket?.brief?.finalization ??
+    briefLandingOf(ticket?.brief?.finalization) ??
     catalog?.finalizers.find((held) => held.name === selected?.finalization)
       ?.landing;
   const names = named?.map((stage) => stage.name);

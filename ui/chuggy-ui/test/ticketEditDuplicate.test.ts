@@ -39,7 +39,7 @@ const brief = {
   checks: ["npm test"],
   repository: chuggy,
   branch: "refs/heads/topic/one",
-  finalization: { mode: "PullRequest" as const, target: "refs/heads/main" },
+  finalization: { kind: "PullRequest" as const, target: "refs/heads/main" },
 };
 
 /** A revoked ticket's draft, authored under an older commit's development. */
@@ -98,7 +98,10 @@ test("an untouched duplicate sends the brief its draft holds", () => {
   const sent = creationBodyFrom([development, sonnet], seed.form, [
     creationBinding(chuggy),
   ]);
-  expect(sent.assembled === "Body" && sent.body.brief).toStrictEqual(brief);
+  expect(sent.assembled === "Body" && sent.body.brief).toStrictEqual({
+    ...brief,
+    finalization: { mode: "PullRequest", target: "refs/heads/main" },
+  });
   expect(sent.assembled === "Body" && sent.body.authoring).toStrictEqual(
     original.authoring,
   );

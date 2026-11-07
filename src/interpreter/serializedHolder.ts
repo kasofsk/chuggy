@@ -25,7 +25,7 @@
  * default and one omitting it are two queues.
  */
 
-import type { BriefLanding, TicketPhase } from "../contract/rosters.ts";
+import type { BriefGitMergePolicy, TicketPhase } from "../contract/rosters.ts";
 import type { TicketId } from "../domain/ids.ts";
 import type { Partition } from "./projectStore.ts";
 
@@ -41,7 +41,7 @@ export interface SerializedCandidate {
   readonly partition: Partition;
   readonly ticket: TicketId;
   readonly phase: TicketPhase;
-  readonly landing: BriefLanding;
+  readonly landing: BriefGitMergePolicy;
   readonly repository: string | undefined;
   readonly target: string | undefined;
   /** The journal position its finalization request was authorized at, absent where none is pending. */

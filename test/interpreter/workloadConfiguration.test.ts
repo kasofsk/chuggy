@@ -1,5 +1,5 @@
 /**
- * A version 2 configuration: which catalogs are ready, what a ticket's
+ * A version 2 or 3 configuration: which catalogs are ready, what a ticket's
  * selection resolves to, and what a release of one resolves per evaluator.
  */
 
@@ -23,7 +23,10 @@ import {
 } from "../../src/interpreter/authoring.ts";
 import { refinementInstance } from "../actor/harness.ts";
 import { handoffApprovalRequired } from "../../src/interpreter/finalizerPreparation.ts";
-import { catalogSelectedFinalizer } from "../../src/interpreter/workloadConfiguration.ts";
+import {
+  catalogSelectedFinalizer,
+  declaredConfigurationIsCatalog,
+} from "../../src/interpreter/workloadConfiguration.ts";
 import { asBriefCheckLine } from "../../src/interpreter/ticketBrief.ts";
 import { asRepositoryId } from "../../src/interpreter/finalizer.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
@@ -530,4 +533,87 @@ test("a configuration summary names the revision its catalog's tickets follow, a
       configuration,
     });
   assert.deepEqual(defaultsOf(catalog.defaults), catalog.defaults);
+});
+
+test("a version 2 finalizer's landing mode is read forward as the finalization it names, ordered Direct, and a version 3 one names its finalization whole", () => {
+  const finalizing = (version: number, finalizer: object) =>
+    catalogSelectedFinalizer(
+      {
+        ...catalog,
+        version,
+        finalizers: { landed: finalizer },
+        defaults: { ...catalog.defaults, finalization: "landed" },
+      },
+      undefined,
+    )?.finalizer;
+  assert.deepEqual(
+    finalizing(2, {
+      landing: { mode: "PullRequestMerge" },
+      approvalRequired: true,
+    }),
+    {
+      finalization: {
+        kind: "GitMerge",
+        mode: "PullRequestMerge",
+        policy: "Direct",
+      },
+      approvalRequired: true,
+    },
+  );
+  assert.deepEqual(
+    finalizing(2, {
+      landing: { mode: "PullRequest", target: "refs/heads/main" },
+    }),
+    { finalization: { kind: "PullRequest", target: "refs/heads/main" } },
+  );
+  assert.deepEqual(
+    finalizing(2, { landing: { mode: "Push", target: "refs/heads/main" } }),
+    {
+      finalization: {
+        kind: "GitMerge",
+        mode: "Push",
+        target: "refs/heads/main",
+        policy: "Direct",
+      },
+    },
+  );
+  assert.deepEqual(finalizing(2, { landing: { mode: "None" } }), {
+    finalization: { kind: "None" },
+  });
+  assert.deepEqual(finalizing(2, {}), {});
+  const serialized = {
+    kind: "GitMerge",
+    mode: "Push",
+    target: "refs/heads/main",
+    policy: "Serialized",
+  } as const;
+  assert.deepEqual(finalizing(3, { finalization: serialized }), {
+    finalization: serialized,
+  });
+  assert.equal(
+    finalizing(3, { landing: { mode: "Push" } }),
+    undefined,
+    "a version 3 catalog whose finalizer names a landing mode is not ready",
+  );
+  assert.equal(
+    finalizing(2, { finalization: serialized }),
+    undefined,
+    "and nor is a version 2 one naming a whole finalization",
+  );
+});
+
+test("a catalog is declared under version 2 or 3, and both are read as catalogs", () => {
+  for (const version of [2, 3])
+    assert.equal(
+      releaseConfigurationReadiness(
+        canonicalConfigurationOf({ ...catalog, version }),
+      ).readiness,
+      "Ready",
+    );
+  assert.deepEqual(
+    [1, 2, 3, 4, undefined].map((version) =>
+      declaredConfigurationIsCatalog({ version }),
+    ),
+    [false, true, true, false, false],
+  );
 });

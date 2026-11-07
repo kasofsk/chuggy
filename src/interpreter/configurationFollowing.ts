@@ -18,6 +18,7 @@
  * answer: asked again of a later head, it is answered again.
  */
 
+import { releaseConfigurationVersion } from "../contract/configurationDocument.ts";
 import type { ConfigurationOverrides } from "../contract/configurationOverrides.ts";
 import {
   configurationFollowingOf,
@@ -26,7 +27,7 @@ import {
 import type { TicketFollowing } from "../contract/responses.ts";
 import { assertNever } from "../domain/assertNever.ts";
 import {
-  declaredConfigurationVersion,
+  declaredConfigurationIsCatalog,
   draftInitializationProgram,
   draftReleaseReadiness,
   draftReleaseRefusalCode,
@@ -108,7 +109,7 @@ export function configurationFollowingVerdict(
     return { verdict: "Held", fault: held.fault };
   if (ticketProgramShort(held.ticket, ticket.program))
     return { verdict: "Trimmed" };
-  if (declaredConfigurationVersion(JSON.parse(ticket.head)) !== 2)
+  if (!declaredConfigurationIsCatalog(JSON.parse(ticket.head)))
     return { verdict: "Held", fault: "SelectionUnsupported" };
   const selected = ticketConfigurationReadiness(
     ticket.head,
@@ -163,7 +164,8 @@ export function configurationFollowingRead(
 ): TicketFollowing | undefined {
   const declared = releaseConfigurationReadiness(ticket.held);
   const defaults =
-    declared.readiness === "Ready" && declared.configuration.version === 2
+    declared.readiness === "Ready" &&
+    declared.configuration.version !== releaseConfigurationVersion
       ? declared.configuration.defaults
       : undefined;
   if (configurationFollowingOf(ticket.selection, defaults) !== "Latest")

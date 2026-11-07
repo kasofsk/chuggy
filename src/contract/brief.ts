@@ -15,7 +15,14 @@
 import { z } from "zod";
 
 import { identitySchema, repositoryIdentityCharsMax } from "./http.ts";
-import { briefFinalizationProposes, briefLandings } from "./rosters.ts";
+import {
+  briefFinalizationProposes,
+  briefGitMergeModes,
+  briefGitMergePolicies,
+  type BriefFinalizationMode,
+  type BriefGitMergeMode,
+  type BriefGitMergePolicy,
+} from "./rosters.ts";
 
 /**
  * The longest line a briefing renders, which bounds each thing a brief states
@@ -119,36 +126,161 @@ export const briefIntentSchema = z
   });
 
 /**
- * How and where a finalization lands the work, as one variant per mode: a push
- * names the reference it lands on only where that is not the branch the work
- * happened on, and a pull request — merged afterwards or left for a human —
- * only where that is not the branch its repository defaults to, and `None` names
- * no reference at all, a landing that advances nothing having nothing to
- * advance onto. The target shares the branch's grammar, being the same kind of
- * name.
+ * How and where a finalization lands the work, as one variant per kind: a
+ * `GitMerge` names its mode and the policy it is ordered under, a push naming a
+ * target only where it is not the branch the work happened on and a merged
+ * proposal only where it is not the repository's default; a `PullRequest` names
+ * a base the same way and no policy, because a person merges it and nothing
+ * orders that; and `None` names nothing, having nothing to advance onto. A
+ * target shares the branch's grammar, being the same kind of name.
  */
 const briefFinalizationShapes = {
-  Push: { mode: z.literal("Push"), target: briefBranchSchema.optional() },
+  GitMerge: {
+    kind: z.literal("GitMerge"),
+    mode: z.enum(briefGitMergeModes),
+    target: briefBranchSchema.optional(),
+    policy: z.enum(briefGitMergePolicies),
+  },
   PullRequest: {
-    mode: z.literal("PullRequest"),
+    kind: z.literal("PullRequest"),
     target: briefBranchSchema.optional(),
   },
-  PullRequestMerge: {
-    mode: z.literal("PullRequestMerge"),
-    target: briefBranchSchema.optional(),
-  },
-  None: { mode: z.literal("None") },
+  None: { kind: z.literal("None") },
 } as const;
 
-export const briefFinalizationSchema = z.discriminatedUnion("mode", [
-  z.strictObject(briefFinalizationShapes.Push),
+export const briefFinalizationSchema = z.discriminatedUnion("kind", [
+  z.strictObject(briefFinalizationShapes.GitMerge),
   z.strictObject(briefFinalizationShapes.PullRequest),
-  z.strictObject(briefFinalizationShapes.PullRequestMerge),
   z.strictObject(briefFinalizationShapes.None),
 ]);
 
-/** How the brief's landing is ordered against the others on its reference, `Direct` where it names none. */
-export const briefLandingSchema = z.enum(briefLandings);
+export type BriefFinalizationBody = z.output<typeof briefFinalizationSchema>;
+
+/**
+ * A finalization as it was written before it named a kind: one variant per
+ * mode, its ordering a `landing` beside it on the brief. The wire still reads
+ * it, and `briefFinalizationForward` maps it forward.
+ */
+export const briefFinalizationModeSchema = z.discriminatedUnion("mode", [
+  z.strictObject({
+    mode: z.literal("Push"),
+    target: briefBranchSchema.optional(),
+  }),
+  z.strictObject({
+    mode: z.literal("PullRequest"),
+    target: briefBranchSchema.optional(),
+  }),
+  z.strictObject({
+    mode: z.literal("PullRequestMerge"),
+    target: briefBranchSchema.optional(),
+  }),
+  z.strictObject({ mode: z.literal("None") }),
+]);
+
+/** A finalization in its kind's shape, over whatever spelling of a reference its reader holds. */
+export type BriefFinalizationOf<Target> =
+  | {
+      readonly kind: "GitMerge";
+      readonly mode: BriefGitMergeMode;
+      readonly target?: Target;
+      readonly policy: BriefGitMergePolicy;
+    }
+  | { readonly kind: "PullRequest"; readonly target?: Target }
+  | { readonly kind: "None" };
+
+/** What mapping one finalization written by its mode forward came to. */
+export type BriefFinalizationForward<Target> =
+  | {
+      readonly forward: "Mapped";
+      readonly finalization?: BriefFinalizationOf<Target>;
+    }
+  | { readonly forward: "Refused"; readonly reason: string };
+
+/** Why a `Serialized` landing written with no finalization has no representation by kind. */
+export const briefSerializedUnfinalizedError =
+  "a Serialized landing orders a finalization, so a brief naming one names the finalization it orders";
+
+/** Why a pull request written by its mode and ordered `Serialized` has no representation by kind. */
+export const briefPullRequestSerializedError =
+  "a pull request is merged by a person and nothing orders it, so it lands under no Serialized landing";
+
+/** Why a landing of nothing written by its mode and ordered `Serialized` has no representation by kind. */
+export const briefNoneSerializedError =
+  "a landing of nothing has nothing to order, so it lands under no Serialized landing";
+
+/**
+ * Maps a finalization written by its mode, and the landing written beside it,
+ * forward to its kind: a push or a merged proposal is a `GitMerge` under that
+ * landing, `Direct` where it names none, a pull request is a `PullRequest` and
+ * landing nothing is `None`. A pull request or a landing of nothing ordered
+ * `Serialized` has no representation, and nor has a `Serialized` landing with
+ * no finalization to order, so each is refused with the reason.
+ */
+export function briefFinalizationForward<Target extends string>(
+  finalization:
+    | {
+        readonly mode: BriefFinalizationMode;
+        readonly target?: Target | undefined;
+      }
+    | undefined,
+  landing: BriefGitMergePolicy | undefined,
+): BriefFinalizationForward<Target> {
+  const serialized = landing === "Serialized";
+  if (finalization === undefined)
+    return serialized
+      ? {
+          forward: "Refused",
+          reason: briefSerializedUnfinalizedError,
+        }
+      : { forward: "Mapped" };
+  const target =
+    finalization.target === undefined ? {} : { target: finalization.target };
+  switch (finalization.mode) {
+    case "Push":
+    case "PullRequestMerge":
+      return {
+        forward: "Mapped",
+        finalization: {
+          kind: "GitMerge",
+          mode: finalization.mode,
+          ...target,
+          policy: landing ?? "Direct",
+        },
+      };
+    case "PullRequest":
+      return serialized
+        ? {
+            forward: "Refused",
+            reason: briefPullRequestSerializedError,
+          }
+        : {
+            forward: "Mapped",
+            finalization: { kind: "PullRequest", ...target },
+          };
+    case "None":
+      return serialized
+        ? {
+            forward: "Refused",
+            reason: briefNoneSerializedError,
+          }
+        : { forward: "Mapped", finalization: { kind: "None" } };
+  }
+}
+
+/**
+ * Whether a finalization opens a change proposal: a `PullRequest` does, and a
+ * `GitMerge` that merges one, and so does one written by a mode that proposes.
+ */
+export function briefFinalizationOpensProposal(
+  finalization:
+    | { readonly kind?: string | undefined; readonly mode?: string | undefined }
+    | undefined,
+): boolean {
+  return (
+    finalization?.kind === "PullRequest" ||
+    briefFinalizationProposes(finalization?.mode)
+  );
+}
 
 /**
  * Whether one brief's branch and its finalization stand together. A proposal is
@@ -161,12 +293,17 @@ export const briefLandingSchema = z.enum(briefLandings);
 export function briefLandingIsWhole(value: {
   readonly branch?: string | undefined;
   readonly finalization?:
-    { readonly mode: string; readonly target?: string | undefined } | undefined;
+    | {
+        readonly kind?: string | undefined;
+        readonly mode?: string | undefined;
+        readonly target?: string | undefined;
+      }
+    | undefined;
 }): boolean {
   const finalization = value.finalization;
   if (
     finalization === undefined ||
-    !briefFinalizationProposes(finalization.mode)
+    !briefFinalizationOpensProposal(finalization)
   )
     return true;
   if (value.branch === undefined) return false;
@@ -175,37 +312,92 @@ export function briefLandingIsWhole(value: {
   );
 }
 
+/** What `briefLandingIsWhole` refuses, said once for every door that refuses it. */
+const briefLandingWholeError =
+  "a pull request is opened from a branch of its own, into another where it names one";
+
+/** Every field a brief states but how it lands. */
+const briefFields = {
+  title: briefTitleSchema.optional(),
+  intent: briefIntentSchema,
+  links: z.array(briefLinkSchema).max(briefLinksMax),
+  checks: z.array(briefCheckSchema).max(briefChecksMax).optional(),
+  images: z.array(briefImageSchema).max(briefImagesMax).optional(),
+  repository: briefRepositorySchema.optional(),
+  branch: briefBranchSchema.optional(),
+} as const;
+
+/**
+ * Why a written brief's finalization and the landing beside it have no kind to
+ * map forward to, where they have none; one naming its kind maps as it is.
+ */
+function briefWrittenRefusal(value: {
+  readonly finalization?:
+    | z.output<typeof briefFinalizationSchema>
+    | z.output<typeof briefFinalizationModeSchema>
+    | undefined;
+  readonly landing?: BriefGitMergePolicy | undefined;
+}): string | undefined {
+  const { finalization, landing } = value;
+  if (finalization !== undefined && "kind" in finalization) return undefined;
+  const forward = briefFinalizationForward(finalization, landing);
+  return forward.forward === "Refused" ? forward.reason : undefined;
+}
+
+/** Whether a written brief names a `landing` beside a finalization naming its kind, whose policy is its own. */
+function briefLandingBesideKind(value: {
+  readonly finalization?: object | undefined;
+  readonly landing?: string | undefined;
+}): boolean {
+  return (
+    value.landing !== undefined &&
+    value.finalization !== undefined &&
+    "kind" in value.finalization
+  );
+}
+
+/** Why a written brief's `landing` beside a finalization naming its kind is refused. */
+export const briefLandingBesideKindError =
+  "a finalization naming its kind names its own policy, so no landing is named beside it";
+
 /**
  * The brief as a write states it, its finalization omitted where the work lands
  * where it happened and its checks where a ticket appends none. The intent
  * cannot be empty, because a ticket nobody stated a purpose for is the one thing
  * an agent cannot be briefed on, and the pairing above is refused here so that a
- * brief the finalizer could not open a proposal for is never a brief at all.
+ * brief the finalizer could not open a proposal for, or whose finalization
+ * written by its mode has no kind to map forward to, is never a brief at all.
  */
 export const briefSchema = z
   .strictObject({
-    title: briefTitleSchema.optional(),
-    intent: briefIntentSchema,
-    links: z.array(briefLinkSchema).max(briefLinksMax),
-    checks: z.array(briefCheckSchema).max(briefChecksMax).optional(),
-    images: z.array(briefImageSchema).max(briefImagesMax).optional(),
-    repository: briefRepositorySchema.optional(),
-    branch: briefBranchSchema.optional(),
-    finalization: briefFinalizationSchema.optional(),
-    landing: briefLandingSchema.optional(),
+    ...briefFields,
+    finalization: z
+      .union([briefFinalizationSchema, briefFinalizationModeSchema])
+      .optional(),
+    landing: z.enum(briefGitMergePolicies).optional(),
   })
-  .refine(briefLandingIsWhole, {
-    error:
-      "a pull request is opened from a branch of its own, into another where it names one",
+  .refine(briefLandingIsWhole, { error: briefLandingWholeError })
+  .refine((value) => !briefLandingBesideKind(value), {
+    error: briefLandingBesideKindError,
+  })
+  .refine(
+    (value) => briefWrittenRefusal(value) !== briefSerializedUnfinalizedError,
+    { error: briefSerializedUnfinalizedError },
+  )
+  .refine(
+    (value) => briefWrittenRefusal(value) !== briefPullRequestSerializedError,
+    { error: briefPullRequestSerializedError },
+  )
+  .refine((value) => briefWrittenRefusal(value) !== briefNoneSerializedError, {
+    error: briefNoneSerializedError,
   });
 
 export type TicketBriefBody = z.infer<typeof briefSchema>;
 
 /** The same finalization read back, each variant dropping a field the reader does not know. */
-export const briefFinalizationResponseSchema = z.discriminatedUnion("mode", [
-  z.object(briefFinalizationShapes.Push),
+export const briefFinalizationResponseSchema = z.discriminatedUnion("kind", [
+  z.object(briefFinalizationShapes.GitMerge),
   z.object(briefFinalizationShapes.PullRequest),
-  z.object(briefFinalizationShapes.PullRequestMerge),
   z.object(briefFinalizationShapes.None),
 ]);
 
@@ -214,6 +406,9 @@ export const briefFinalizationResponseSchema = z.discriminatedUnion("mode", [
  * depth and carrying the pairing forward, a brief being one thing in both
  * directions.
  */
-export const briefResponseSchema = briefSchema.strip().safeExtend({
-  finalization: briefFinalizationResponseSchema.optional(),
-});
+export const briefResponseSchema = z
+  .object({
+    ...briefFields,
+    finalization: briefFinalizationResponseSchema.optional(),
+  })
+  .refine(briefLandingIsWhole, { error: briefLandingWholeError });

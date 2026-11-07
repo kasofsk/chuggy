@@ -532,7 +532,12 @@ const draft = {
   configurationRevision: configuration.revision,
   authoring: plainAuthoring,
 };
-const landing = { mode: "Push", source: "Default" } as const;
+const landing = {
+  kind: "GitMerge",
+  mode: "Push",
+  policy: "Direct",
+  source: "Default",
+} as const;
 
 test("an absent configuration is answered as not found", () => {
   assert.equal(configurationResponse(undefined).status, 404);

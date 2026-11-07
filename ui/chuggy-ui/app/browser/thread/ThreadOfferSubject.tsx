@@ -21,6 +21,7 @@ import type {
   DraftResponse,
   TicketResponse,
 } from "../../../../../src/contract/responses.ts";
+import { briefLandingOf } from "../../core/briefLanding.ts";
 import { phaseLabel } from "../../core/codeLabels.ts";
 import {
   configurationCatalogOf,
@@ -127,7 +128,7 @@ function ThreadOfferDraftLanding(props: {
       ? undefined
       : configurationCatalogSelected(catalog, draft.selection).finalization;
   const landing =
-    draft.brief?.finalization ??
+    briefLandingOf(draft.brief?.finalization) ??
     catalog?.finalizers.find((held) => held.name === finalization)?.landing;
   return landing === undefined ? null : (
     <FinalizationLanding landing={landing} />

@@ -2683,7 +2683,7 @@ test("a brief naming a landing keeps it over the one its repository is bound und
     await draftFixture();
   assert.deepEqual(
     draft.brief?.finalization,
-    { mode: "Push" },
+    { kind: "GitMerge", mode: "Push", policy: "Direct" },
     "the binding this project was made with lands where the work happened",
   );
   await landingSetTo(partition, repository, "PullRequest");
@@ -2697,14 +2697,14 @@ test("a brief naming a landing keeps it over the one its repository is bound und
     brief: {
       ...postgresHarnessBrief,
       repository,
-      finalization: { mode: "Push" },
+      finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
     },
   });
   assert.deepEqual(
     revised.revised === "Revised"
       ? revised.draft.brief?.finalization
       : undefined,
-    { mode: "Push" },
+    { kind: "GitMerge", mode: "Push", policy: "Direct" },
     "the mode the brief named is the one stored, not the binding's",
   );
 });
@@ -2740,7 +2740,7 @@ test("a brief naming no repository lands where the work happened", async () => {
     created.created === "Created"
       ? created.draft.brief?.finalization
       : undefined,
-    { mode: "Push" },
+    { kind: "GitMerge", mode: "Push", policy: "Direct" },
     "no repository names no landing to take, so the tree's own default stands",
   );
 });
@@ -2808,7 +2808,7 @@ test("a repository landing by proposal stores a brief that names no base", async
   if (created.created !== "Created")
     throw new Error(`the proposing draft was ${created.created}`);
   assert.deepEqual(created.draft.brief?.finalization, {
-    mode: "PullRequest",
+    kind: "PullRequest",
   });
   assert.deepEqual(
     await storedLanding(proposing.partition, created.draft.ticket),
@@ -2949,11 +2949,11 @@ test("a repository that lands nothing lands its drafts nowhere", async () => {
       finalization_target: null,
     },
   );
-  assert.deepEqual(created.draft.brief?.finalization, { mode: "None" });
+  assert.deepEqual(created.draft.brief?.finalization, { kind: "None" });
   assert.deepEqual(
     (await landless.store.draft(landless.partition, created.draft.ticket))
       ?.brief?.finalization,
-    { mode: "None" },
+    { kind: "None" },
   );
 });
 
@@ -2994,7 +2994,7 @@ test("a brief that lands nothing keeps it over a repository that proposes", asyn
   const created = await landless.create({
     ...postgresHarnessBrief,
     repository: landless.repository,
-    finalization: { mode: "None" },
+    finalization: { kind: "None" },
   });
   assert.equal(created.created, "Created");
   if (created.created !== "Created") return;
@@ -3047,7 +3047,10 @@ test("a ticket that starts landing somewhere keeps the landing it names", async 
     expectedVersion: created.draft.authoringVersion,
     configurationRevision: landless.revision,
     authoring: plainAuthoring,
-    brief: { ...brief, finalization: { mode: "Push" } },
+    brief: {
+      ...brief,
+      finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
+    },
   });
   assert.equal(landing.revised, "Revised");
   assert.deepEqual(
@@ -3110,7 +3113,7 @@ test("a released ticket that lands nothing still hands release a brief", async (
       ...postgresHarnessBrief,
       checks: [],
       repository: landless.repository,
-      finalization: { mode: "None" },
+      finalization: { kind: "None" },
     },
     "the brief release reads is the whole of one, landing and all",
   );
