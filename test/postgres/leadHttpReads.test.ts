@@ -747,11 +747,8 @@ test("a lead refused for usage answers when the pause ends, and never whose acco
     since: absence.since,
     until,
   });
-  assert.deepEqual(Object.keys(found.json().refusal).sort(), [
-    "reason",
-    "since",
-    "until",
-  ]);
+  const carried = found.json<{ refusal: object }>().refusal;
+  assert.deepEqual(Object.keys(carried).sort(), ["reason", "since", "until"]);
   assert.ok(!found.body.includes(owner), "the read names the owner");
 });
 
