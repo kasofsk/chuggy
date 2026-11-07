@@ -35,7 +35,6 @@ import {
   asBriefFinalization,
   asBriefTitle,
   asDraftBrief,
-  briefGitMergePolicyOf,
   briefIntentLines,
   draftBriefByMode,
 } from "../../src/interpreter/ticketBrief.ts";
@@ -519,21 +518,20 @@ test("a brief stored by its mode is read forward to its kind, its landing the gi
     );
 });
 
-test("a git merge lands Direct unless it says Serialized, and a brief naming no git merge lands Direct", () => {
+test("a brief is stored Serialized only where its git merge says so, and Direct, which is no landing beside it, otherwise", () => {
   const brief = { intent: "Do it.", links: [] };
   const gitMerge = (policy: string) =>
     asDraftBrief({
       ...brief,
       finalization: { kind: "GitMerge", mode: "Push", policy },
     });
-  assert.equal(briefGitMergePolicyOf(asDraftBrief(brief)), "Direct");
-  assert.equal(briefGitMergePolicyOf(gitMerge("Direct")), "Direct");
-  assert.equal(briefGitMergePolicyOf(gitMerge("Serialized")), "Serialized");
+  assert.equal(draftBriefByMode(asDraftBrief(brief)).landing, undefined);
+  assert.equal(draftBriefByMode(gitMerge("Direct")).landing, undefined);
+  assert.equal(draftBriefByMode(gitMerge("Serialized")).landing, "Serialized");
   assert.equal(
-    briefGitMergePolicyOf(
-      asDraftBrief({ ...brief, finalization: { kind: "None" } }),
-    ),
-    "Direct",
+    draftBriefByMode(asDraftBrief({ ...brief, finalization: { kind: "None" } }))
+      .landing,
+    undefined,
   );
   assert.notEqual(
     briefContentDigest(gitMerge("Serialized")),
@@ -652,7 +650,10 @@ test("a released brief ordering what no kind orders reads without the policy, to
     const brief = releasedTicketBrief(stored, digest);
     assert.deepEqual(brief?.finalization, finalization);
     assert.equal(brief !== undefined && "landing" in brief, false);
-    assert.equal(briefGitMergePolicyOf(brief), "Direct");
+    assert.equal(
+      brief === undefined ? undefined : draftBriefByMode(brief).landing,
+      undefined,
+    );
     assert.throws(
       () => releasedTicketBrief(stored, briefContentDigest(brief)),
       /not the one the released content names/u,

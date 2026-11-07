@@ -97,10 +97,7 @@ import {
   serializedWaiting,
   type SerializedCandidate,
 } from "../../interpreter/serializedHolder.ts";
-import {
-  briefGitMergePolicyOf,
-  briefLandsOn,
-} from "../../interpreter/ticketBrief.ts";
+import { briefLandsOn } from "../../interpreter/ticketBrief.ts";
 import { phaseRoster } from "../../contract/rosters.ts";
 import { releasedBriefOf } from "./ticketBrief.ts";
 import {
@@ -318,9 +315,9 @@ interface SerializedRow {
 
 /**
  * Every Serialized ticket between a send-back to re-check and its landing,
- * across partitions. The filter on the stored brief only keeps Direct tickets,
- * which are most, out of the read; whether a ticket queues is
- * `serializedQueues`' to say.
+ * across partitions. The filter on the brief, which a release stores by mode,
+ * only keeps Direct tickets, which are most, and any that is no git merge out
+ * of the read; whether a ticket queues is `serializedQueues`' to say.
  */
 async function finalizerSerializedCandidates(
   client: pg.PoolClient,
@@ -346,6 +343,7 @@ async function finalizerSerializedCandidates(
           JOIN ticket_projection p
             ON p.tenant = d.tenant AND p.project = d.project AND p.ticket = d.ticket
          WHERE d.brief->>'landing' = 'Serialized'
+           AND d.brief->'finalization'->>'mode' IN ('Push', 'PullRequestMerge')
            AND p.phase IN ('Work', 'Evaluation', 'Finalization')`,
   );
   return found.rows.map((row) => {
@@ -362,7 +360,7 @@ async function finalizerSerializedCandidates(
         ),
       ),
       phase: finalizerRowValue(phaseRoster, row.phase, "ticket phase"),
-      landing: briefGitMergePolicyOf(brief),
+      finalization: brief?.finalization,
       repository: brief?.repository,
       target: brief === undefined ? undefined : briefLandsOn(brief),
       entry:

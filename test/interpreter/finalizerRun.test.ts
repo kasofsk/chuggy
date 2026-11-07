@@ -2196,14 +2196,21 @@ test("a proposing brief naming no base is promoted onto its own branch", async (
   );
 });
 
+/** A finalization that merges the proposal it opens. */
+const proposalMerged = {
+  kind: "GitMerge",
+  mode: "PullRequestMerge",
+  policy: "Direct",
+} as const;
+
 /** One view whose candidate is promoted and whose brief lands it by opening a proposal. */
 function proposedView(
   request: string,
-  mode: BriefFinalizationMode = "PullRequest",
+  finalization: FinalizationView["finalization"] = { kind: "PullRequest" },
 ): FinalizationView {
   return {
     ...promotableOnBriefBranch(request),
-    finalizationMode: mode,
+    finalization,
     permit: { ...permitOf(request), state: "Concluded" },
     reconciliation: {
       permit: asCommitPermitId(`permit-${request}`),
@@ -2270,9 +2277,7 @@ test("a promoted candidate whose brief proposes opens one from its branch into i
 });
 
 test("a brief that lands by merging its proposal opens one exactly as a brief that proposes alone", async () => {
-  const store = recordingStore([
-    proposedView("request-one", "PullRequestMerge"),
-  ]);
+  const store = recordingStore([proposedView("request-one", proposalMerged)]);
   const forge = recordingForge(store);
   forge.created = "Created";
   const service = mergingService(store, forge);
@@ -2296,9 +2301,7 @@ function mergingService(
 }
 
 test("a merging brief asks for the merge its proved proposal authorizes and concludes on the commit", async () => {
-  const store = recordingStore([
-    proposedView("request-one", "PullRequestMerge"),
-  ]);
+  const store = recordingStore([proposedView("request-one", proposalMerged)]);
   const forge = recordingForge(store);
   forge.created = "Created";
   const service = mergingService(store, forge);
@@ -2361,9 +2364,7 @@ function earlierProposal(
 }
 
 test("a rework adopts its ticket's open proposal rather than ask for a second one, and merges it", async () => {
-  const store = recordingStore([
-    proposedView("request-two", "PullRequestMerge"),
-  ]);
+  const store = recordingStore([proposedView("request-two", proposalMerged)]);
   const forge = recordingForge(store);
   const earlier = earlierProposal();
   store.ticketProposal = earlier.identity;
@@ -2402,9 +2403,7 @@ test("a rework adopts its ticket's open proposal rather than ask for a second on
 });
 
 test("a ticket's proposal found closed is left closed, and the request opens its own", async () => {
-  const store = recordingStore([
-    proposedView("request-two", "PullRequestMerge"),
-  ]);
+  const store = recordingStore([proposedView("request-two", proposalMerged)]);
   const forge = recordingForge(store);
   forge.created = "Created";
   store.ticketProposal = earlierProposal().identity;
@@ -2418,9 +2417,7 @@ test("a ticket's proposal found closed is left closed, and the request opens its
 });
 
 test("a ticket's proposal that could not be read holds rather than spend a create", async () => {
-  const store = recordingStore([
-    proposedView("request-two", "PullRequestMerge"),
-  ]);
+  const store = recordingStore([proposedView("request-two", proposalMerged)]);
   const forge = recordingForge(store);
   store.ticketProposal = earlierProposal().identity;
   forge.numberRead = "Unavailable";
@@ -2434,9 +2431,7 @@ test("a ticket's proposal that could not be read holds rather than spend a creat
 });
 
 test("a merge nobody heard the fate of is read back by number and concluded on what it read", async () => {
-  const store = recordingStore([
-    proposedView("request-one", "PullRequestMerge"),
-  ]);
+  const store = recordingStore([proposedView("request-one", proposalMerged)]);
   const forge = recordingForge(store);
   forge.created = "Created";
   forge.merged = { merged: "Ambiguous" };
@@ -2474,9 +2469,7 @@ test("a merge nobody heard the fate of is read back by number and concluded on w
 });
 
 test("a create nobody heard back from is read by its marker, and the merge is asked over that reading", async () => {
-  const store = recordingStore([
-    proposedView("request-one", "PullRequestMerge"),
-  ]);
+  const store = recordingStore([proposedView("request-one", proposalMerged)]);
   const forge = recordingForge(store);
   forge.created = "Ambiguous";
   forge.read = "Found";
@@ -2532,9 +2525,7 @@ function blockedCase(bounds: Partial<typeof finalizerDefaults> = {}): {
   readonly emitted: FinalizerHoldReason[];
 } {
   const emitted: FinalizerHoldReason[] = [];
-  const store = recordingStore([
-    proposedView("request-one", "PullRequestMerge"),
-  ]);
+  const store = recordingStore([proposedView("request-one", proposalMerged)]);
   const forge = recordingForge(store);
   forge.created = "Created";
   forge.merged = { merged: "NotMergeable", reason: "Blocked" };
@@ -2767,9 +2758,7 @@ test("a closed proposal a person reopens goes back to waiting, its dwell cleared
 });
 
 test("a merge read closed while it was in flight waits on the proposal being reopened", async () => {
-  const store = recordingStore([
-    proposedView("request-one", "PullRequestMerge"),
-  ]);
+  const store = recordingStore([proposedView("request-one", proposalMerged)]);
   const forge = recordingForge(store);
   forge.created = "Created";
   forge.merged = { merged: "Ambiguous" };
@@ -2834,9 +2823,7 @@ function movedHead(
 
 test("a moved head waits on whoever moved it, is never merged again, and lands on their merge of the head they pushed", async () => {
   const emitted: FinalizerHoldReason[] = [];
-  const store = recordingStore([
-    proposedView("request-one", "PullRequestMerge"),
-  ]);
+  const store = recordingStore([proposedView("request-one", proposalMerged)]);
   const forge = recordingForge(store);
   forge.created = "Created";
   forge.merged = { merged: "HeadMoved" };
@@ -2990,9 +2977,7 @@ test("an update the forge refused is spent and read, and one it would not take i
 });
 
 test("a branch a person brought up to date is adopted after the merge it moved, and merged at", async () => {
-  const store = recordingStore([
-    proposedView("request-one", "PullRequestMerge"),
-  ]);
+  const store = recordingStore([proposedView("request-one", proposalMerged)]);
   const forge = recordingForge(store);
   forge.created = "Created";
   forge.merged = { merged: "HeadMoved" };
@@ -3081,9 +3066,7 @@ test("a waiting proposal whose body was edited, if only to other line endings, i
 });
 
 test("a merge the forge refused for a conflict fails this finalization as a preparation's conflict does", async () => {
-  const store = recordingStore([
-    proposedView("request-one", "PullRequestMerge"),
-  ]);
+  const store = recordingStore([proposedView("request-one", proposalMerged)]);
   const forge = recordingForge(store);
   forge.created = "Created";
   forge.merged = { merged: "NotMergeable", reason: "Conflict" };
@@ -3136,7 +3119,7 @@ function fannedOut(views: FinalizationView[], lifecycle: Lifecycle): void {
     0,
     views.length,
     ...["request-one", "request-two", "request-three"].map((request) => ({
-      ...proposedView(request, "PullRequestMerge" as const),
+      ...proposedView(request, proposalMerged),
       lifecycle,
     })),
   );
@@ -3163,7 +3146,7 @@ function holdingService(
 
 test("an abort out of a proposal is priced against the preparations the pass allows", async () => {
   const views: FinalizationView[] = [
-    proposedView("request-one", "PullRequestMerge"),
+    proposedView("request-one", proposalMerged),
   ];
   const store = recordingStore(views);
   const forge = recordingForge(store);
@@ -3197,7 +3180,7 @@ test("an abort out of a proposal is priced against the preparations the pass all
 
 test("a merge refused for a conflict is priced against the same preparations", async () => {
   const views: FinalizationView[] = [
-    proposedView("request-one", "PullRequestMerge"),
+    proposedView("request-one", proposalMerged),
   ];
   const store = recordingStore(views);
   const forge = recordingForge(store);
@@ -3231,7 +3214,7 @@ test("a merge refused for a conflict is priced against the same preparations", a
 test("a project that will admit no further act aborts the finalization rather than merging", async () => {
   const store = recordingStore([
     {
-      ...proposedView("request-one", "PullRequestMerge"),
+      ...proposedView("request-one", proposalMerged),
       lifecycle: "Deleting",
     },
   ]);
@@ -3604,7 +3587,10 @@ test("a pass opens no more proposals than its ceiling admits", async () => {
 
 test("a brief that pushes reaches no forge however the deployment is bound", async () => {
   const store = recordingStore([
-    { ...proposedView("request-one"), finalizationMode: "Push" },
+    {
+      ...proposedView("request-one"),
+      finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
+    },
   ]);
   const forge = recordingForge(store);
   const report = await passOver({
@@ -3974,7 +3960,7 @@ test("a proposing brief asks its base whether the candidate landed, and never it
   const store = recordingStore([
     {
       ...preparableView("request-one"),
-      finalizationMode: "PullRequestMerge",
+      finalization: proposalMerged,
     },
   ]);
   const git = recordingGit();
@@ -4537,7 +4523,7 @@ function queueCase(bounds: Partial<typeof finalizerDefaults> = {}): {
   readonly emitted: FinalizerHoldReason[];
 } {
   const emitted: FinalizerHoldReason[] = [];
-  const views = [proposedView("request-one", "PullRequestMerge")];
+  const views = [proposedView("request-one", proposalMerged)];
   const store = recordingStore(views);
   const forge = recordingForge(store);
   forge.created = "Created";

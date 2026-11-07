@@ -124,13 +124,17 @@ const bounds = {
 
 /** The finalization every case below stands in unless it names another: one that only proposes. */
 const proposing: FinalizationProposalStanding = {
-  mode: "PullRequest",
+  finalization: { kind: "PullRequest" },
   lifecycle: "Active",
 };
 
 /** The same finalization under the landing that merges what it proposed. */
 const merging: FinalizationProposalStanding = {
-  mode: "PullRequestMerge",
+  finalization: {
+    kind: "GitMerge",
+    mode: "PullRequestMerge",
+    policy: "Direct",
+  },
   lifecycle: "Active",
 };
 
@@ -685,17 +689,13 @@ test("every reason a merge is held reaches a hold this tree declares", () => {
 test("a project that will admit no further act aborts rather than merging", () => {
   for (const lifecycle of allClosingLifecycles) {
     assert.deepEqual(
-      finalizationProposalNext(
-        { mode: "PullRequestMerge", lifecycle },
-        proved(),
-        bounds,
-      ),
+      finalizationProposalNext({ ...merging, lifecycle }, proved(), bounds),
       { decide: "Abort" },
       lifecycle,
     );
     assert.deepEqual(
       finalizationProposalNext(
-        { mode: "PullRequestMerge", lifecycle },
+        { ...merging, lifecycle },
         proved(unheard(1, 0)),
         bounds,
       ),
@@ -704,7 +704,7 @@ test("a project that will admit no further act aborts rather than merging", () =
     );
     assert.deepEqual(
       finalizationProposalNext(
-        { mode: "PullRequestMerge", lifecycle },
+        { ...merging, lifecycle },
         proved({
           merging: "Answered",
           merge: { merged: "Merged", mergeCommit },
@@ -835,7 +835,7 @@ test("a proposal behind its base is updated at the pinned head, and its ceiling 
   for (const lifecycle of allClosingLifecycles)
     assert.deepEqual(
       finalizationProposalNext(
-        { mode: "PullRequestMerge", lifecycle },
+        { ...merging, lifecycle },
         proved(waitingOn(0, { mergeability: "Behind" })),
         bounds,
       ),
@@ -1262,7 +1262,7 @@ test("a removal for a conflict sends the ticket back to work, as a conflicted me
 
 test("a closing project gives up a queued proposal before it aborts, and enqueues nothing", () => {
   for (const lifecycle of allClosingLifecycles) {
-    const closing = { mode: "PullRequestMerge", lifecycle } as const;
+    const closing = { ...merging, lifecycle };
     assert.deepEqual(
       finalizationProposalNext(
         closing,

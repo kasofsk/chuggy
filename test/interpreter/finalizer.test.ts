@@ -45,6 +45,7 @@ import {
   type FinalizationView,
   type FinalizerConfig,
   type GitObjectId,
+  type GitRefName,
   type ObservedTarget,
   type PromotionDecline,
   type ReconciliationVerdict,
@@ -55,7 +56,11 @@ import {
   asRecoveryEpoch,
   asTenantId,
 } from "../../src/interpreter/projectStore.ts";
-import { briefFinalizationModes } from "../../src/contract/rosters.ts";
+import type { BriefFinalizationOf } from "../../src/contract/brief.ts";
+import {
+  briefGitMergeModes,
+  briefGitMergePolicies,
+} from "../../src/contract/rosters.ts";
 import { asSafeInteger } from "../../src/domain/ids.ts";
 import { assertBoundsAreRefused } from "./configBounds.ts";
 import { populated } from "./roster.ts";
@@ -1017,19 +1022,25 @@ test("a promoted candidate whose brief proposes is not concluded by the promotio
     permit: permitIn("Concluded"),
     reconciliation: reconciliationOf("Promoted"),
   };
-  for (const finalizationMode of ["PullRequest", "PullRequestMerge"] as const)
+  for (const finalization of [
+    { kind: "PullRequest" },
+    { kind: "GitMerge", mode: "PullRequestMerge", policy: "Direct" },
+  ] as const)
     assert.deepEqual(
       finalizationNext(
         finalizerDefaults,
-        viewWith({ ...promoted, finalizationMode }),
+        viewWith({ ...promoted, finalization }),
       ),
       { decide: "Propose" },
-      finalizationMode,
+      finalization.kind,
     );
   assert.deepEqual(
     finalizationNext(
       finalizerDefaults,
-      viewWith({ ...promoted, finalizationMode: "Push" }),
+      viewWith({
+        ...promoted,
+        finalization: { kind: "GitMerge", mode: "Push", policy: "Direct" },
+      }),
     ),
     { decide: "Conclude", conclusion: { outcome: "FinalizationSucceeded" } },
   );
@@ -1041,16 +1052,20 @@ test("a promoted candidate whose brief proposes is not concluded by the promotio
 });
 
 /**
- * Every mode but the one that lands nothing, which is decided before anything
- * else is read and so has nothing in common with the rest.
+ * Every finalization but the one that lands nothing, which is decided before
+ * anything else is read and so has nothing in common with the rest.
  */
-const landingModes = populated(
-  briefFinalizationModes,
-  "briefFinalizationModes",
-).filter((mode) => mode !== "None");
+const landingFinalizations: readonly BriefFinalizationOf<GitRefName>[] = [
+  ...populated(briefGitMergeModes, "briefGitMergeModes").flatMap((mode) =>
+    populated(briefGitMergePolicies, "briefGitMergePolicies").map(
+      (policy) => ({ kind: "GitMerge", mode, policy }) as const,
+    ),
+  ),
+  { kind: "PullRequest" },
+];
 
-test("nothing before the promotion is decided by the mode a brief names", () => {
-  for (const mode of landingModes) {
+test("nothing before the promotion is decided by the finalization a brief names", () => {
+  for (const finalization of landingFinalizations) {
     for (const varied of [
       {},
       { attempt: prepared, attemptsMade: 1 },
@@ -1060,10 +1075,10 @@ test("nothing before the promotion is decided by the mode a brief names", () => 
       assert.deepEqual(
         finalizationNext(
           finalizerDefaults,
-          viewWith({ ...varied, finalizationMode: mode }),
+          viewWith({ ...varied, finalization }),
         ),
         finalizationNext(finalizerDefaults, viewWith(varied)),
-        `${mode}/${JSON.stringify(Object.keys(varied))}`,
+        `${JSON.stringify(finalization)}/${JSON.stringify(Object.keys(varied))}`,
       );
     }
   }
@@ -1085,7 +1100,7 @@ test("a brief that lands nothing succeeds before anything is prepared", () => {
     assert.deepEqual(
       finalizationNext(
         finalizerDefaults,
-        viewWith({ ...varied, finalizationMode: "None" }),
+        viewWith({ ...varied, finalization: { kind: "None" } }),
       ),
       { decide: "Conclude", conclusion: { outcome: "FinalizationSucceeded" } },
       JSON.stringify(Object.keys(varied)),

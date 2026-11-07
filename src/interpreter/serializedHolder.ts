@@ -16,16 +16,19 @@
  *
  * THE HOLDER OF A REFERENCE IS THE TICKET WHOSE RE-CHECK IS IN FLIGHT, ELSE THE
  * FIRST PENDING FINALIZATION BY WHERE IT ENTERED. A re-check goes first because
- * the tickets that entered earlier are waiting on it. Direct tickets are in no
- * queue, and a ticket naming no repository is in none either: nothing it does can
- * collide on a reference it does not name.
+ * the tickets that entered earlier are waiting on it. Only a `GitMerge` names a
+ * policy, so a Direct one, a pull request and a landing of nothing are in no
+ * queue, and a ticket naming no repository is in none either: nothing it does
+ * can collide on a reference it does not name.
  *
  * A reference is `(partition, repository, target)`, and an absent target is the
  * repository's default, which this does not resolve: a ticket naming that
- * default and one omitting it are two queues.
+ * default and one omitting it are two queues. A git merge's mode is not part of
+ * it, so a push and a merged proposal onto one reference queue together.
  */
 
-import type { BriefGitMergePolicy, TicketPhase } from "../contract/rosters.ts";
+import type { BriefFinalizationOf } from "../contract/brief.ts";
+import type { TicketPhase } from "../contract/rosters.ts";
 import type { TicketId } from "../domain/ids.ts";
 import type { Partition } from "./projectStore.ts";
 
@@ -41,7 +44,8 @@ export interface SerializedCandidate {
   readonly partition: Partition;
   readonly ticket: TicketId;
   readonly phase: TicketPhase;
-  readonly landing: BriefGitMergePolicy;
+  /** How its brief lands it, absent for a ticket carrying no brief. */
+  readonly finalization: BriefFinalizationOf<string> | undefined;
   readonly repository: string | undefined;
   readonly target: string | undefined;
   /** The journal position its finalization request was authorized at, absent where none is pending. */
@@ -60,8 +64,10 @@ export interface SerializedQueue {
 }
 
 function serializedHolds(candidate: SerializedCandidate): boolean {
+  const { finalization } = candidate;
   return (
-    candidate.landing === "Serialized" &&
+    finalization?.kind === "GitMerge" &&
+    finalization.policy === "Serialized" &&
     candidate.repository !== undefined &&
     serializedPathPhases.includes(candidate.phase) &&
     (candidate.entry !== undefined || candidate.rechecking)
