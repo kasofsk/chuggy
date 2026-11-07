@@ -66,8 +66,9 @@ terminal program may reach beyond those.
 
 ## Copy
 
-Every word a reader is shown is in `ui/chuggy-ui/app/copy/en/`, in Project
-Fluent: `terms.ftl` holds the product's nouns, and each other file is a
+Every word a reader is shown belongs in `ui/chuggy-ui/app/copy/en/`, in
+Project Fluent; a file still spelling its own copy carries the exemption step 4
+deletes. `terms.ftl` holds the product's nouns, and each other file is a
 section whose ids are kebab-case under its name. `app/core/` hands out a
 descriptor, `{ id, args }`, typed by `app/core/generated/`; `useCopyText` in
 `app/copy/CopyProvider.tsx` formats one in a component. A vernacular is a

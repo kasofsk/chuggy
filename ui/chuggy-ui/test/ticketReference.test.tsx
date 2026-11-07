@@ -8,10 +8,10 @@
  * draws the number alone rather than a link to nowhere — which is the
  * degradation the agent's own objectives promise, so it is asserted rather than
  * left to hold by accident. It is also what lets every other conversation suite
- * mount a report with `renderCopied()` and no provider at all.
+ * mount a report with `render()` and no provider at all.
  */
 
-import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { renderCopied } from "./copied.tsx";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
@@ -43,7 +43,7 @@ function underShell(held: TicketReferenceHeld, body: ReactNode): ReactNode {
 const report = <MarkdownReport text="closed [[ticket:15]]" bare />;
 
 test("a reference with nothing held draws the number and no link", () => {
-  const view = renderCopied(report);
+  const view = render(report);
   expect(view.container.textContent).toContain("#15");
   expect(view.container.querySelector("a")).toBeNull();
 });
