@@ -300,11 +300,12 @@ function catalogFieldChanged(held: CatalogHeld, field: string): boolean {
 
 /** The agent and the model it runs, each drawn as a detail of its own
  * only where it differs from the pinned, since its cell already holds it. */
-function catalogModeDetailsOf(
-  held: CatalogHeld,
+function stepsModeDetailsOf(
+  effectiveWorkload: StepsRecord,
+  pinnedWorkload: StepsRecord,
 ): readonly ConfigurationStepDetail[] {
-  const effective = catalogMode(held.effective);
-  const pinned = catalogMode(held.pinned);
+  const effective = catalogMode(effectiveWorkload);
+  const pinned = catalogMode(pinnedWorkload);
   const model = configurationModelLabelOf(effective).label;
   const changed = (name: string, line: unknown, was: unknown) =>
     line === was
@@ -346,7 +347,7 @@ function catalogDetailsOf(
           },
         ];
   });
-  return [...catalogModeDetailsOf(held), ...read, ...unread];
+  return [...stepsModeDetailsOf(effective, pinned), ...read, ...unread];
 }
 
 /** What the Overrides column names of one catalog workload. */
@@ -546,6 +547,7 @@ function catalogStepsOf(
 interface LegacyHeld {
   readonly view: ConfigurationView;
   readonly document: StepsRecord;
+  readonly pinned: StepsRecord;
   readonly overridden: ReadonlySet<OverrideField>;
 }
 
@@ -562,6 +564,7 @@ function legacyHeldOf(
         ? document
         : configurationWithOverrides(document, overrides),
     ),
+    pinned: stepsRecord(document),
     overridden: new Set(
       overridden.filter(
         (field) =>
@@ -595,16 +598,17 @@ function legacyAgentOf(document: StepsRecord): string {
 function legacyWorkDetailsOf(
   held: LegacyHeld,
 ): readonly ConfigurationStepDetail[] {
-  const { view, document, overridden } = held;
+  const { view, document, pinned, overridden } = held;
   const settings = view.settings;
   const worker = stepsRecord(document["worker"]);
   const files = Array.isArray(worker["files"]) ? worker["files"] : [];
   return [
+    ...stepsModeDetailsOf(document, pinned),
     ...legacyDetail(
       "Arguments",
       catalogArguments(document),
       true,
-      overridden.has("worker.mode"),
+      !overridesSame(catalogArguments(document), catalogArguments(pinned)),
     ),
     ...legacyDetail("Tools", stepsJoined(settings.tools), false),
     ...legacyDetail("Credentials", stepsJoined(settings.credentials), false),

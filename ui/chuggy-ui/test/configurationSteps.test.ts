@@ -304,6 +304,33 @@ test("a prompt the ticket replaced is named in the column and marked over the pr
   ]);
 });
 
+test("a version 1 Codex model the ticket changed is marked beside the model, though its arguments are the same", () => {
+  const legacy = JSON.stringify({
+    version: 1,
+    worker: { mode: { agent: "Codex", arguments: [], model: "gpt-5" } },
+  });
+  const work = workRow(
+    steps(
+      {
+        worker: {
+          mode: {
+            type: "SingleAgent",
+            agent: "Codex",
+            arguments: [],
+            model: "gpt-5-mini",
+          },
+        },
+      },
+      undefined,
+      legacy,
+    ),
+  );
+  expect(work.overrides).toEqual(["Model"]);
+  expect(work.details.filter((detail) => detail.overridden)).toEqual([
+    { name: "Model", lines: [work.model], code: false, overridden: true },
+  ]);
+});
+
 test("a version 1 override is named by its field", () => {
   const legacy = JSON.stringify({
     version: 1,
