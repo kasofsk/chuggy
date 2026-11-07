@@ -320,6 +320,31 @@ test("the purpose lets a thread dispatch or revoke a ticket on its owner's word 
 });
 
 /**
+ * A filed draft is put in front of its owner before it runs, and the release
+ * that skips the card is the one their explicit word asks for. Releasing
+ * unless told otherwise is a phrase a rewording could restore.
+ */
+test("the purpose offers a filed draft by default and releases it only on its owner's explicit word", () => {
+  assert.match(
+    threadPurposeStanding,
+    /put it in front of your owner with `offer_release` rather than releasing it/u,
+  );
+  assert.match(
+    threadPurposeStanding,
+    /release it yourself only on their explicit word/u,
+  );
+  assert.doesNotMatch(
+    threadPurposeStanding,
+    /unless your owner asked to see it first/u,
+  );
+  assert.match(threadOfferStanding, /A draft you file is offered by default/u);
+  assert.match(
+    threadOfferStanding,
+    /a revocation is offered wherever your owner has not yet said yes/u,
+  );
+});
+
+/**
  * A ticket runs on the agent of the configuration it was released against, so
  * the choice of one is where a thread decides who does the work. The telling
  * names no configuration, and stands after the purpose it qualifies.

@@ -1,0 +1,35 @@
+/* An offer's subject inside its card: the folded intent fades into the card's
+   own surface rather than the page's, and the settings sit in a grid tighter
+   than the ticket page's. */
+
+@layer page {
+  .thread-offer-subject {
+    display: grid;
+    justify-items: start;
+    gap: var(--space-2);
+  }
+
+  .thread-offer-subject > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .thread-offer-subject .ticket-instructions-body {
+    max-height: 6em;
+  }
+
+  .thread-offer-subject .ticket-instructions-body[data-open="true"] {
+    max-height: none;
+  }
+
+  .thread-offer-subject .ticket-instructions-body[data-faded="true"]::after {
+    background: linear-gradient(transparent, var(--surface-1));
+  }
+
+  .thread-offer-settings {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(9em, 1fr));
+    gap: var(--space-2) var(--space-4);
+    width: 100%;
+  }
+}
