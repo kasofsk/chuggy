@@ -747,8 +747,12 @@ test("a lead refused for usage answers when the pause ends, and never whose acco
     since: absence.since,
     until,
   });
-  for (const owned of [owner, "0.93", "90"])
-    assert.ok(!found.body.includes(owned), `the read names ${owned}`);
+  assert.deepEqual(Object.keys(found.json().refusal).sort(), [
+    "reason",
+    "since",
+    "until",
+  ]);
+  assert.ok(!found.body.includes(owner), "the read names the owner");
 });
 
 test("the refusals the wire names are the refusals the selector may keep", async () => {
