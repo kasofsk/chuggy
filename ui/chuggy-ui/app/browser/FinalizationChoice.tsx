@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The controls a finalization is chosen with: its kind, and under a git merge
  * alone its mode and its policy, so no kind is drawn a choice it has no field

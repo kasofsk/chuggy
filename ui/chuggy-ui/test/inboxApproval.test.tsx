@@ -11,7 +11,8 @@
 
 // jscpd:ignore-start -- the imports and vi.mock factories a case cannot hoist out
 import { QueryClient } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -147,7 +148,7 @@ function mounted(route: (url: string) => Response): {
   viewportAtEm(viewportDeskEm);
   vi.stubGlobal("fetch", api.fetch);
   const server = openedStream();
-  render(
+  renderCopied(
     <ScreenHarness
       partition={atlas}
       client={

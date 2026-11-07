@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * A settings page that is a list, as the People page drew the first: a table
  * edge to edge in a card, under the line that counts it and beside that line

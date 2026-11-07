@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * One thread's own page: its conversation as a column to read, under a bar
  * that names it and offers on it what the chat pane offers.

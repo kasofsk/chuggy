@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The one card the Overview leads with: the run going now, what the ticket is
  * waiting on a person for, or nothing. What answers it is the header's.

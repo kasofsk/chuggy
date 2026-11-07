@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * What a minted registration token is handed over in: the steps that make a
  * machine a runner, each command copied by its own control, for a project's

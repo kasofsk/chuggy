@@ -9,13 +9,8 @@
  */
 
 import { QueryClient } from "@tanstack/react-query";
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  within,
-} from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeAll, beforeEach, expect, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -97,7 +92,7 @@ export async function mounted(
       <Shell partition={atlas} />
     </ScreenHarness>
   );
-  const view = render(drawn());
+  const view = renderCopied(drawn());
   await settled();
   return {
     redrawn: async () => {

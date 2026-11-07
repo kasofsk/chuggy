@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The composer of a member's own thread, made from the thread's record in the
  * store: what its door would answer, what a message may carry, and what the

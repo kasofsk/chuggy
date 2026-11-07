@@ -6,13 +6,8 @@
 
 // jscpd:ignore-start -- the imports and vi.mock factories a case cannot hoist out
 import { QueryClient } from "@tanstack/react-query";
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  within,
-} from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -102,7 +97,7 @@ function inboxDrawn(
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
   store?: ConsoleStore,
 ): QueryClient {
-  render(
+  renderCopied(
     <ScreenHarness
       partition={atlas}
       client={client}

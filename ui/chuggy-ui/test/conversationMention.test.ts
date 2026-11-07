@@ -13,6 +13,7 @@ import { describe, expect, test } from "vitest";
 
 import { ticketReferenceSplit } from "../../../src/contract/ticketReference.ts";
 import type { TicketResponse } from "../../../src/contract/responses.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 import {
   conversationMentionFiltered,
   conversationMentionFormatter,
@@ -39,7 +40,7 @@ const offered = [
   ticketOf(15, "Fix the thing"),
   ticketOf(16, "Ship the console"),
   ticketOf(150, "Fix the other thing"),
-].map(conversationMentionItem);
+].map((ticket) => conversationMentionItem(ticket, copyTextEn));
 
 describe("the query a member's typing leaves", () => {
   test("the kind names itself and leaves the rest", () => {
@@ -84,7 +85,10 @@ describe("what a query answers with", () => {
   });
 
   test("a ticket with no title is still offered, and says its phase", () => {
-    const untitled = conversationMentionItem(ticketOf(7, undefined));
+    const untitled = conversationMentionItem(
+      ticketOf(7, undefined),
+      copyTextEn,
+    );
     expect(untitled.description).toBe("Working");
     expect(conversationMentionFiltered([untitled], "7")).toHaveLength(1);
   });

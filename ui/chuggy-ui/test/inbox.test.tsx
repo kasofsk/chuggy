@@ -9,13 +9,8 @@
  */
 
 import { QueryClient } from "@tanstack/react-query";
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  within,
-} from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -143,7 +138,7 @@ function drawInbox(
 ): ApiDouble {
   const api = apiDouble({ operation: operationAt("Pending"), route });
   vi.stubGlobal("fetch", over(api.fetch));
-  render(
+  renderCopied(
     <ScreenHarness
       partition={atlas}
       client={
@@ -161,7 +156,7 @@ function drawInbox(
 function drawInboxOver(api: ApiDouble): ReturnType<typeof openedStream> {
   vi.stubGlobal("fetch", api.fetch);
   const server = openedStream();
-  render(
+  renderCopied(
     <ScreenHarness
       partition={atlas}
       client={
@@ -676,7 +671,7 @@ test("an inbox press after a lost answer sends the same operation identity as th
     return api.fetch(url, init);
   });
   const visit = visitHeld();
-  render(
+  renderCopied(
     <ScreenHarness
       partition={atlas}
       client={

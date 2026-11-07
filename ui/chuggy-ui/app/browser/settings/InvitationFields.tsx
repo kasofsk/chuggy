@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The fields of the forms that invite, the same in each: a labelled line with
  * its fault under it before anything is sent, or what the field holds where a

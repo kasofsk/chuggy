@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * What stands ahead of a run's thread: the prompt the run was handed, as the
  * first message on the member's side, and the read of the batches below the

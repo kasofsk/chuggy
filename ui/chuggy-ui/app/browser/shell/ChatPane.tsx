@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The console's chat pane: every thread the reader can reach, beside every page
  * rather than on one.

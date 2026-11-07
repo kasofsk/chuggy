@@ -3,11 +3,11 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   act,
   cleanup,
-  render,
   renderHook,
   screen,
   within,
 } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -140,7 +140,7 @@ async function drawn(
       <TicketPageEveryTab />
     </ScreenHarness>
   );
-  const view = render(page());
+  const view = renderCopied(page());
   addressedAt = async (ticket) => {
     addressed.ticket = String(ticket);
     view.rerender(page());

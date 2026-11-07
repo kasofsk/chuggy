@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * One exchange drawn as a chat turn: the member's bubble on the right, the
  * assistant's answer flush left, and one quiet line under it.

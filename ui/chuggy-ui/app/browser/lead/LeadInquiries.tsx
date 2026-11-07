@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The questions members have asked this lead aside, and the box for asking one.
  *

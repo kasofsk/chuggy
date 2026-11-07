@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * A block of code as a panel: its own ground, the language it was fenced as
  * said quietly above it, and a control that copies it.

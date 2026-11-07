@@ -11,7 +11,8 @@ import {
   Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import type { ReactNode } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 
@@ -69,7 +70,7 @@ async function drawnAt(path: string): Promise<readonly string[]> {
     ]),
   });
   viewportAtEm(viewportDeskEm);
-  render(<RouterProvider router={router} />);
+  renderCopied(<RouterProvider router={router} />);
   await screen.findByRole("navigation", { name: "Console" });
   return screen
     .getAllByRole("link")

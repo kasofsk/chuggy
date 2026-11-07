@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * Inviting one person to a workspace, in a dialog: their email, their GitHub
  * username, a workspace role, and roles on the workspace's projects, each

@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The rename and close actions for the thread the pane or its own page holds,
  * and the editor the rename opens into.

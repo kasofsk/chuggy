@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The Usage tab: what the ticket's runs cost and took, as four tiles, by step
  * and by model, and where delivery stands where the ticket's repository

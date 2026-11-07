@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * One person's roles, hosted runs, personal runners and unscoped chat, changed
  * in the dialog their row's Edit opens: a box for each workspace role, for

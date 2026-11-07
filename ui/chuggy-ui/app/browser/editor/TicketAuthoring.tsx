@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * One ticket, typed either as the form or as YAML, over the same form value.
  *

@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * What the ticket asks for: the brief's intent as markdown, folded to its
  * first lines with a fade and opened by a toggle under it that is drawn only

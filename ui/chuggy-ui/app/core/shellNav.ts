@@ -10,6 +10,7 @@
  */
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
+import type { Copy } from "./copy.ts";
 import type { Tone } from "./tones.ts";
 
 export const navRoutes = {
@@ -54,7 +55,7 @@ export type NavEntryId =
 
 export interface NavEntry {
   readonly id: NavEntryId;
-  readonly label: string;
+  readonly label: Copy;
   readonly to: NavRoute;
   readonly params: NavParams;
   readonly standing?: NavStanding | undefined;
@@ -71,16 +72,31 @@ export function shellNav(input: ShellNavInput): readonly NavEntry[] {
     project: input.partition.project,
   };
   return [
-    { id: "overview", label: "Tickets", to: navRoutes.overview, params },
-    { id: "epics", label: "Epics", to: navRoutes.epics, params },
+    {
+      id: "overview",
+      label: { id: "shell-nav-tickets" },
+      to: navRoutes.overview,
+      params,
+    },
+    {
+      id: "epics",
+      label: { id: "shell-nav-epics" },
+      to: navRoutes.epics,
+      params,
+    },
     {
       id: "lead",
-      label: "Lead",
+      label: { id: "shell-nav-lead" },
       to: navRoutes.lead,
       params,
       standing: input.leadStanding,
     },
-    { id: "catalog", label: "Catalog", to: navRoutes.catalog, params },
+    {
+      id: "catalog",
+      label: { id: "shell-nav-catalog" },
+      to: navRoutes.catalog,
+      params,
+    },
   ];
 }
 
@@ -95,17 +111,22 @@ export function shellSetupNav(
   return [
     {
       id: "settings",
-      label: "Project settings",
+      label: { id: "shell-nav-settings" },
       to: navRoutes.settings,
       params,
     },
     {
       id: "repositories",
-      label: "Repositories",
+      label: { id: "shell-nav-repositories" },
       to: navRoutes.repositories,
       params,
     },
-    { id: "runners", label: "Runners", to: navRoutes.runners, params },
+    {
+      id: "runners",
+      label: { id: "shell-nav-runners" },
+      to: navRoutes.runners,
+      params,
+    },
   ];
 }
 

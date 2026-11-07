@@ -14,10 +14,8 @@ import { afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { Landing } from "../app/browser/routes.tsx";
-import {
-  ProjectSwitcher,
-  projectSwitcherCreateText,
-} from "../app/browser/shell/ProjectSwitcher.tsx";
+import { ProjectSwitcher } from "../app/browser/shell/ProjectSwitcher.tsx";
+import { copyTextEn } from "../app/copy/catalog.ts";
 import { consoleQueryClient } from "../app/core/consoleWrite.ts";
 import { lastProjectRead } from "../app/core/lastProject.ts";
 import { memberChatRoutes } from "../app/core/memberChat.ts";
@@ -305,7 +303,7 @@ test("the switcher offers a new project beside every project, and it opens the f
     key: "ArrowDown",
   });
   const item = await screen.findByRole("menuitem", {
-    name: projectSwitcherCreateText,
+    name: copyTextEn({ id: "shell-project-new" }),
   });
   expect(
     screen.getAllByRole("menuitemradio").map((one) => one.textContent),

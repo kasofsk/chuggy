@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * One level's permissions as one card: a row a permission, and in each row
  * every holder as a chip, in the order the rows give them, or `Nobody`.

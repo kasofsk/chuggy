@@ -8,13 +8,8 @@
  */
 
 import { QueryClient } from "@tanstack/react-query";
-import {
-  act,
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-} from "@testing-library/react";
+import { act, cleanup, fireEvent, screen } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
@@ -118,7 +113,7 @@ const client = new QueryClient({
 test("a press after a project switch sends nothing to the thread the last project opened", async () => {
   const doors = doorsStubbed();
   const server = streamServer([stageProjectOpening, stageProjectOpening]);
-  const view = render(pane(server, threadPartition));
+  const view = renderCopied(pane(server, threadPartition));
   await settled();
 
   await stageSent("for atlas");
@@ -143,7 +138,7 @@ test("a press after a project switch sends nothing to the thread the last projec
 test("a first message refused in one project keeps no thread of the next off the screen", async () => {
   const doors = doorsStubbed([otherHeld]);
   const server = streamServer([stageProjectOpening, stageProjectOpening]);
-  const view = render(pane(server, threadPartition));
+  const view = renderCopied(pane(server, threadPartition));
   await settled();
   await stageSent("for atlas");
   await stageAnswered(doors.sends[0], { error: { code: "Invalid" } }, 400);
@@ -159,7 +154,7 @@ test("a first message refused in one project keeps no thread of the next off the
 test("a first message answered after a project switch reads nothing of its thread in the next", async () => {
   const doors = doorsStubbed();
   const server = streamServer([stageProjectOpening, stageProjectOpening]);
-  const view = render(pane(server, threadPartition));
+  const view = renderCopied(pane(server, threadPartition));
   await settled();
   await stageSent("for atlas");
   expect(doors.sends.map((sent) => sent.session)).toStrictEqual(["thread-a"]);
@@ -227,7 +222,7 @@ test("a pick in one project is held through a pick in another and a return to th
     stageProjectOpening,
     stageProjectOpening,
   ]);
-  const view = render(pane(server, threadPartition));
+  const view = renderCopied(pane(server, threadPartition));
   await settled();
   await pickedOutOfHistory("a-second");
   expect(screen.getByRole("heading", { name: "a-second" })).toBeDefined();
@@ -259,7 +254,7 @@ test("New the hosted grant refused in one project leaves the next project's firs
   const held = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  const view = render(pane(server, threadPartition, held));
+  const view = renderCopied(pane(server, threadPartition, held));
   await settled();
   await act(async () => {
     fireEvent.click(screen.getByRole("button", { name: "New" }));

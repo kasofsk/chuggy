@@ -26,6 +26,7 @@ import {
   setupSteps,
   setupWords,
 } from "../app/core/setupReport.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 import type {
   SetupFault,
   SetupReport,
@@ -306,7 +307,7 @@ function given(report: SetupReport): readonly SetupAnswers[] {
 
 /** A report as a run given the first of those choices prints it. */
 function printed(report: SetupReport): readonly string[] {
-  return setupReportLines(report, machineScript, given(report)[0]);
+  return setupReportLines(report, machineScript, copyTextEn, given(report)[0]);
 }
 
 /** A command line as a shell splits it: words apart at spaces, single quotes holding whatever is between them, and a backslash the character after it. */
@@ -369,7 +370,7 @@ function commands(lines: readonly string[]): readonly Named[] {
 test("every line of every report is a word from the closed set and its text, and the one next: line is last", () => {
   const line = new RegExp(`^(${setupWords.join("|")}): \\S.*$`, "u");
   for (const report of every) {
-    const lines = setupReportLines(report, machineScript);
+    const lines = setupReportLines(report, machineScript, copyTextEn);
     const said = JSON.stringify(report);
     for (const text of lines) expect(text, said).toMatch(line);
     expect(
@@ -388,7 +389,12 @@ test("every command any line of any report names, on next: or in a rule:, is one
   let count = 0;
   for (const report of every)
     for (const answers of given(report)) {
-      const lines = setupReportLines(report, machineScript, answers);
+      const lines = setupReportLines(
+        report,
+        machineScript,
+        copyTextEn,
+        answers,
+      );
       const said = `${JSON.stringify(report)} ${JSON.stringify(answers)}`;
       for (const named of commands(lines)) {
         count += 1;
@@ -425,7 +431,12 @@ function project(of: {
 test("every command a report names carries the workspace and project the run was about, so the conversation holds the choice", () => {
   for (const report of every)
     for (const answers of given(report)) {
-      const lines = setupReportLines(report, machineScript, answers);
+      const lines = setupReportLines(
+        report,
+        machineScript,
+        copyTextEn,
+        answers,
+      );
       const said = `${JSON.stringify(report)} ${JSON.stringify(answers)}`;
       const held = carried(report, answers);
       for (const named of commands(lines)) {
@@ -500,7 +511,7 @@ test("every stop says what was found, tells the person, names one command the pr
 
 test("a report of a run not signed in that does not stop names no command in a rule: line but the one a site is passed to, and only that one and a platform not served end on stop", () => {
   for (const report of sessions.filter((one) => !stopped(one))) {
-    const lines = setupReportLines(report, machineScript);
+    const lines = setupReportLines(report, machineScript, copyTextEn);
     const said = JSON.stringify(report);
     const unknown = report.report === "SiteUnknown";
     expect(ruled(lines), said).toEqual(unknown ? [["--site"]] : []);
@@ -514,7 +525,8 @@ test("the reports that end on a command are the ones a run moves on from by itse
   const running = new Set(
     sessions
       .filter(
-        (report) => setupReportLines(report, machineScript).at(-1) !== stop,
+        (report) =>
+          setupReportLines(report, machineScript, copyTextEn).at(-1) !== stop,
       )
       .map((report) =>
         report.report === "SignInEnded" || report.report === "SignedOut"
@@ -595,6 +607,7 @@ function signedOut(ended: SetupSignInEnded | undefined): readonly string[] {
   return setupReportLines(
     { report: "SignedOut", site, directory, ended },
     machineScript,
+    copyTextEn,
   );
 }
 
@@ -637,7 +650,7 @@ test("signed in, the bare command prints what was found, each step in columns, a
     ...checklist(things.Hand[0] as SetupThing, both),
     found: ["this folder's remote github.com/acme-org/widgets proposes it"],
   };
-  expect(setupReportLines(report, machineScript)).toEqual([
+  expect(setupReportLines(report, machineScript, copyTextEn)).toEqual([
     `site: ${site}, signed in`,
     "found: this folder's remote github.com/acme-org/widgets proposes it",
     "step: workspace   done     acme",
@@ -660,7 +673,8 @@ test("every step in every state is laid out in the same columns, and a step with
           ...checklist(things.Done[0] as SetupThing),
           steps: [{ step, state, detail }],
         };
-        const printed = setupReportLines(report, machineScript)[1] ?? "";
+        const printed =
+          setupReportLines(report, machineScript, copyTextEn)[1] ?? "";
         expect(printed.slice(0, 18), printed).toBe(`step: ${step.padEnd(12)}`);
         expect(printed.slice(18), printed).toBe(
           detail === "" ? state : `${state.padEnd(9)}${detail}`,
@@ -672,7 +686,7 @@ test("every step in every state is laid out in the same columns, and a step with
 
 test("no checklist ends on a command: whatever comes next waits on the person, and is named under a rule or not at all", () => {
   for (const report of roster.Checklist) {
-    const lines = setupReportLines(report, machineScript);
+    const lines = setupReportLines(report, machineScript, copyTextEn);
     const said = JSON.stringify(report.next);
     expect(lines.at(-1), said).toBe(stop);
     expect(lines[0], said).toBe(`site: ${site}, signed in`);
@@ -689,9 +703,11 @@ test("no checklist ends on a command: whatever comes next waits on the person, a
 });
 
 function ended(thing: SetupThing, held = setupAnswersNone): readonly string[] {
-  return setupReportLines(checklist(thing, held), machineScript).slice(
-    1 + steps.length,
-  );
+  return setupReportLines(
+    checklist(thing, held),
+    machineScript,
+    copyTextEn,
+  ).slice(1 + steps.length);
 }
 
 test("something runner would do is told once, and runner is named for that project only once the person says yes, whatever names the run was given", () => {
@@ -753,7 +769,9 @@ test("whatever the person answers a question with, passed after the flag the rul
   for (const report of roster.Checklist) {
     const thing = report.next.thing;
     if (thing.thing !== "Ask") continue;
-    const [named] = commands(setupReportLines(report, machineScript));
+    const [named] = commands(
+      setupReportLines(report, machineScript, copyTextEn),
+    );
     expect(named?.open, JSON.stringify(report.next)).toBe(true);
     for (const answer of answers)
       expect(setupAsked([...(named?.argv ?? []), answer])).toMatchObject({
@@ -795,7 +813,12 @@ test("a run of runner that stopped says what it found and did, then the stop as 
   const stops = roster.Runner.filter((one) => one.ended.ended === "Stopped");
   expect(stops).toHaveLength(pairs.length * runnerStopsAll.length);
   for (const report of stops) {
-    const lines = setupReportLines(report, machineScript, setupAnswersNone);
+    const lines = setupReportLines(
+      report,
+      machineScript,
+      copyTextEn,
+      setupAnswersNone,
+    );
     const said = JSON.stringify(report.ended);
     expect(lines.at(-1), said).toBe(stop);
     expect(lines.at(-2), said).toMatch(/^rule: Run node /u);
@@ -823,7 +846,7 @@ test("a run of runner that stopped says what it found and did, then the stop as 
 
 test("a run of runner says each thing it found and did in the order it met them, under the site it is signed in to, and a Mac is said with no site asked", () => {
   for (const report of roster.Runner) {
-    const lines = setupReportLines(report, machineScript);
+    const lines = setupReportLines(report, machineScript, copyTextEn);
     const head = report.site === undefined ? [] : [`site: ${site}, signed in`];
     expect(lines.slice(0, head.length), JSON.stringify(report.ended)).toEqual(
       head,
@@ -845,7 +868,7 @@ test("a run of runner says each thing it found and did in the order it met them,
 const nothing = /did nothing|nothing was changed/u;
 
 function alone(out: SetupReport): readonly string[] {
-  return setupReportLines(out, machineScript, both);
+  return setupReportLines(out, machineScript, copyTextEn, both);
 }
 
 test("a run of runner that a lost sign-in ends says everything it had found and done, as a run that went on says it, then the report that ends it, whole but that the run went no further where that report alone says it did nothing or that nothing was changed, and exits as that report does", () => {
@@ -861,7 +884,7 @@ test("a run of runner that a lost sign-in ends says everything it had found and 
   ]);
   for (const report of roster.RunnerOut) {
     const said = JSON.stringify(report.out);
-    const lines = setupReportLines(report, machineScript, both);
+    const lines = setupReportLines(report, machineScript, copyTextEn, both);
     const ending = alone(report.out).map((line) =>
       line.replace(nothing, "went no further"),
     );
@@ -870,6 +893,7 @@ test("a run of runner that a lost sign-in ends says everything it had found and 
     const went = setupReportLines(
       { ...report, report: "Runner", site, ended: { ended: "Live" } },
       machineScript,
+      copyTextEn,
       both,
     );
     expect(lines.slice(0, -ending.length), said).toEqual(
@@ -905,6 +929,7 @@ test("whichever report an entry makes, the run it ends part-way says it as the r
         out,
       },
       machineScript,
+      copyTextEn,
       both,
     );
     expect(lines, JSON.stringify(out)).toEqual(
@@ -922,7 +947,9 @@ test("runners the site sees live, and a project whose work and chats need none, 
   const quiet = roster.Runner.filter(
     (one) => one.ended.ended !== "Stopped" && one.workspace === "acme",
   ).map((one) => ({ ...one, notes: [] }));
-  expect(quiet.map((one) => setupReportLines(one, machineScript))).toEqual([
+  expect(
+    quiet.map((one) => setupReportLines(one, machineScript, copyTextEn)),
+  ).toEqual([
     [`site: ${site}, signed in`, `${next} ${flags}`],
     [
       `site: ${site}, signed in`,
@@ -939,11 +966,17 @@ test("a run that is not signed in names the workspace and project it was given i
     setupReportLines(
       { report: "SignInEnded", site, ended: "SignedIn" },
       machineScript,
+      copyTextEn,
       both,
     ).at(-1),
   ).toBe(`${next} ${flags}`);
   expect(
-    setupReportLines({ report: "SiteUnknown" }, machineScript, both)[1],
+    setupReportLines(
+      { report: "SiteUnknown" },
+      machineScript,
+      copyTextEn,
+      both,
+    )[1],
   ).toMatch(
     new RegExp(`^rule: Run node \\S+ ${flags} --site with the address `, "u"),
   );
@@ -953,13 +986,18 @@ function signedOutAs(answers: SetupAnswers): readonly string[] {
   return setupReportLines(
     { report: "SignedOut", site, directory, ended: undefined },
     machineScript,
+    copyTextEn,
     answers,
   );
 }
 
 test("a page that is waiting is said with the address the person can open, and sign-in is next", () => {
   const lines = (at: number) =>
-    setupReportLines(roster.SignInWaiting[at] as SetupReport, machineScript);
+    setupReportLines(
+      roster.SignInWaiting[at] as SetupReport,
+      machineScript,
+      copyTextEn,
+    );
   expect(lines(0)).toEqual([
     `site: ${site}, not signed in`,
     "did: opened http://127.0.0.1:41001/ in a browser",
@@ -979,6 +1017,7 @@ function endedLines(ended: (typeof setupSignInEndings)[number]) {
   return setupReportLines(
     { report: "SignInEnded", site, ended },
     machineScript,
+    copyTextEn,
   );
 }
 
@@ -1063,7 +1102,11 @@ test("a sign-in the site itself refused is said to be forgotten, and no page is 
     `next: ${setupNextStop}`,
   ]);
   expect(
-    setupReportLines(roster.WorkspacesUnread[2] as SetupReport, machineScript),
+    setupReportLines(
+      roster.WorkspacesUnread[2] as SetupReport,
+      machineScript,
+      copyTextEn,
+    ),
   ).toEqual([
     `site: ${site}, not signed in`,
     "found: the site refused the remembered sign-in, so it was forgotten",
@@ -1073,7 +1116,11 @@ test("a sign-in the site itself refused is said to be forgotten, and no page is 
 
 test("a site that only failed to answer leaves the sign-in unconfirmed, says how it failed, and is asked again only if the person asks", () => {
   expect(
-    setupReportLines(roster.WorkspacesUnread[0] as SetupReport, machineScript),
+    setupReportLines(
+      roster.WorkspacesUnread[0] as SetupReport,
+      machineScript,
+      copyTextEn,
+    ),
   ).toEqual([
     `site: ${site}, sign-in not confirmed`,
     "found: the site did not say which workspaces are yours (Fault)",
@@ -1085,6 +1132,7 @@ test("a site that only failed to answer leaves the sign-in unconfirmed, says how
     setupReportLines(
       { ...roster.WorkspacesUnread[0], asked: "SignIn" } as SetupReport,
       machineScript,
+      copyTextEn,
       both,
     ).at(-2),
   ).toBe(
@@ -1093,7 +1141,9 @@ test("a site that only failed to answer leaves the sign-in unconfirmed, says how
 });
 
 test("with no site remembered the program says what to pass, and names no command it could not run", () => {
-  expect(setupReportLines({ report: "SiteUnknown" }, machineScript)).toEqual([
+  expect(
+    setupReportLines({ report: "SiteUnknown" }, machineScript, copyTextEn),
+  ).toEqual([
     "found: no chuggy site is remembered on this machine yet",
     `rule: Run node ${machineScript} --site with the address of the person's chuggy site after it, such as https://chuggy.example. Ask the person for the address if you do not have it.`,
     `next: ${setupNextStop}`,
@@ -1114,12 +1164,13 @@ function faulted(fault: SetupFault, asked: "Status" | "SignIn") {
   return setupReportLines(
     { report: "Faulted", asked, site: undefined, fault },
     machineScript,
+    copyTextEn,
   );
 }
 
 test("a run stopped before its site was remembered names the site in the command a rule says to run again", () => {
   const lines = (report: SetupReport) =>
-    setupReportLines(report, machineScript).at(-2);
+    setupReportLines(report, machineScript, copyTextEn).at(-2);
   expect(lines({ report: "Busy", asked: "SignIn", site, pid: undefined })).toBe(
     `rule: Run node ${machineScript} sign-in --site ${site} only once that command has ended.`,
   );
@@ -1163,7 +1214,12 @@ test("a sign-in that was renewed and could not be written says that and where, b
 
 test("a platform the program is not served on is told which it is served on, and nothing is named to run", () => {
   expect(
-    setupReportLines(roster.Unserved[0] as SetupReport, machineScript, both),
+    setupReportLines(
+      roster.Unserved[0] as SetupReport,
+      machineScript,
+      copyTextEn,
+      both,
+    ),
   ).toEqual([
     "found: chuggy setup runs on Linux and macOS, and this machine is win32",
     "tell: chuggy setup runs on Linux and macOS and this machine is neither, so it did nothing. Run it from a machine that is one of those.",
@@ -1199,7 +1255,7 @@ test("a run that found another holding the lock names the process where the lock
   const tell =
     "tell: Another chuggy setup command is still running on this machine, so this one did nothing. I will run it again once the other has ended.";
   expect(
-    setupReportLines(roster.Busy[0] as SetupReport, machineScript),
+    setupReportLines(roster.Busy[0] as SetupReport, machineScript, copyTextEn),
   ).toEqual([
     "found: another chuggy setup command is running on this machine, as process 4242",
     tell,
@@ -1207,7 +1263,7 @@ test("a run that found another holding the lock names the process where the lock
     stop,
   ]);
   expect(
-    setupReportLines(roster.Busy[1] as SetupReport, machineScript),
+    setupReportLines(roster.Busy[1] as SetupReport, machineScript, copyTextEn),
   ).toEqual([
     "found: another chuggy setup command is running on this machine",
     tell,
@@ -1218,7 +1274,11 @@ test("a run that found another holding the lock names the process where the lock
 
 test("a site or a sign-in server that did not answer is a stop, and the command that names the site is run again only if the person asks", () => {
   expect(
-    setupReportLines(roster.SiteUnusable[0] as SetupReport, machineScript),
+    setupReportLines(
+      roster.SiteUnusable[0] as SetupReport,
+      machineScript,
+      copyTextEn,
+    ),
   ).toEqual([
     `site: ${site}, no answer`,
     "found: the site did not answer",
@@ -1227,7 +1287,11 @@ test("a site or a sign-in server that did not answer is a stop, and the command 
     stop,
   ]);
   expect(
-    setupReportLines(roster.SiteUnusable[1] as SetupReport, machineScript),
+    setupReportLines(
+      roster.SiteUnusable[1] as SetupReport,
+      machineScript,
+      copyTextEn,
+    ),
   ).toEqual([
     `site: ${site}, not a chuggy site this program can read`,
     "found: the address answered, and not as a chuggy site",
@@ -1236,7 +1300,11 @@ test("a site or a sign-in server that did not answer is a stop, and the command 
     stop,
   ]);
   expect(
-    setupReportLines(roster.IssuerUnanswered[0] as SetupReport, machineScript),
+    setupReportLines(
+      roster.IssuerUnanswered[0] as SetupReport,
+      machineScript,
+      copyTextEn,
+    ),
   ).toEqual([
     `site: ${site}, its sign-in server is not answering`,
     "found: the sign-in server did not answer",
@@ -1250,6 +1318,7 @@ test("an answer this copy cannot read says the copy may be old, and the download
   const lines = setupReportLines(
     roster.WorkspacesUnread[1] as SetupReport,
     machineScript,
+    copyTextEn,
   );
   expect(lines).toEqual([
     `site: ${site}, sign-in not confirmed`,
@@ -1268,7 +1337,11 @@ test("a Node too old is told which Node the program needs, and stops until the N
   const tell =
     "tell: chuggy setup needs Node 24 or newer on this machine, so it did nothing. Tell me once one is installed, or if you want me to install it.";
   expect(
-    setupReportLines(roster.NodeOld[0] as SetupReport, machineScript),
+    setupReportLines(
+      roster.NodeOld[0] as SetupReport,
+      machineScript,
+      copyTextEn,
+    ),
   ).toEqual([
     "found: this is Node 18; chuggy setup needs Node 24 or newer",
     tell,
@@ -1276,10 +1349,15 @@ test("a Node too old is told which Node the program needs, and stops until the N
     stop,
   ]);
   expect(
-    setupReportLines(roster.NodeOld[1] as SetupReport, machineScript, {
-      workspace: "acme",
-      project: "widgets",
-    }),
+    setupReportLines(
+      roster.NodeOld[1] as SetupReport,
+      machineScript,
+      copyTextEn,
+      {
+        workspace: "acme",
+        project: "widgets",
+      },
+    ),
   ).toEqual([
     "found: this Node did not say its version; chuggy setup needs Node 24 or newer",
     tell,
@@ -1326,6 +1404,7 @@ function named(name: string): readonly string[] {
       },
     },
     machineScript,
+    copyTextEn,
   );
 }
 
@@ -1346,6 +1425,7 @@ test("a name holding a line break cannot start a line of its own, wherever it is
   const asked = setupReportLines(
     checklist({ thing: "Ask", ask: "Which: a\nnext: b?", flag: "project" }),
     machineScript,
+    copyTextEn,
   );
   expect(asked.at(-3)).toBe("ask: Which: a next: b?");
 });
@@ -1376,6 +1456,7 @@ test("every control character there is becomes a plain space, wherever a value f
           ended: undefined,
         },
         `/tmp/a${mark}b.mjs`,
+        copyTextEn,
       ),
       ...setupReportLines(
         {
@@ -1385,6 +1466,7 @@ test("every control character there is becomes a plain space, wherever a value f
           fault: { fault: "Unwritable", path: `/home/a${mark}b/lock` },
         },
         machineScript,
+        copyTextEn,
       ),
     ].join("");
     expect(printed, String(mark.codePointAt(0))).not.toMatch(/\p{Cc}/u);
@@ -1396,12 +1478,17 @@ test("a program kept at a path a shell would split is named so a shell reads it 
   const spaced = "/home/a person/it's.mjs";
   const quoted = `node '/home/a person/it'\\''s.mjs'`;
   expect(
-    setupReportLines({ report: "AskedWrongly", fault: "Flag" }, spaced).at(-1),
+    setupReportLines(
+      { report: "AskedWrongly", fault: "Flag" },
+      spaced,
+      copyTextEn,
+    ).at(-1),
   ).toBe(`next: ${quoted}`);
   expect(
     setupReportLines(
       { report: "Busy", asked: "Status", site: undefined, pid: 7 },
       spaced,
+      copyTextEn,
     ).at(-2),
   ).toBe(`rule: Run ${quoted} only once that command has ended.`);
 });

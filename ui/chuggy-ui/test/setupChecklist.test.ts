@@ -20,6 +20,7 @@ import {
   setupRemoteWaitMs,
 } from "../app/core/setupRemote.ts";
 import { setupReportExit, setupReportLines } from "../app/core/setupReport.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 import {
   machineScript,
   machineSignedIn,
@@ -49,7 +50,12 @@ async function printed(
 ): Promise<Printed> {
   const report = await machine.command(argv);
   return {
-    lines: setupReportLines(report, machineScript, setupAnswersAsked(argv)),
+    lines: setupReportLines(
+      report,
+      machineScript,
+      copyTextEn,
+      setupAnswersAsked(argv),
+    ),
     exit: setupReportExit(report),
   };
 }

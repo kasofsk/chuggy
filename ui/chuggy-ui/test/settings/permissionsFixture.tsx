@@ -8,7 +8,8 @@
  */
 
 import { QueryClient } from "@tanstack/react-query";
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, screen, within } from "@testing-library/react";
+import { renderCopied } from "../copied.tsx";
 import { expect, vi } from "vitest";
 import type { MockInstance } from "vitest";
 import type { ReactNode } from "react";
@@ -414,7 +415,7 @@ export async function drawProjectPermissions(
     return answer({}, 404);
   });
   vi.stubGlobal("fetch", scripted.fetch);
-  render(
+  renderCopied(
     <ScreenHarness
       partition={{ tenant: permissionsTenant, project: permissionsProject }}
       client={

@@ -5,7 +5,8 @@
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, screen, within } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -41,7 +42,7 @@ const standings: readonly TicketListStanding[] = [
 
 test("every state's label is its word after a mark, and only a moving state's mark spins", () => {
   for (const standing of standings) {
-    const { container } = render(
+    const { container } = renderCopied(
       <TicketStateLabel standing={standing} size="page" />,
     );
     const label = container.querySelector<HTMLElement>(".ticket-state");
@@ -55,7 +56,7 @@ test("every state's label is its word after a mark, and only a moving state's ma
     );
     cleanup();
   }
-  render(<TicketStateLabel standing="Evaluation" size="small" />);
+  renderCopied(<TicketStateLabel standing="Evaluation" size="small" />);
   const small = screen
     .getByText("Evaluating")
     .closest<HTMLElement>(".ticket-state");
@@ -86,7 +87,7 @@ function observerStubbed(): (intersecting: boolean) => void {
 }
 
 function headerDrawn(): void {
-  render(
+  renderCopied(
     <TicketHeader
       ticket={335}
       title="Lock the contract"
@@ -136,7 +137,7 @@ test("a browser without the observer never shows the bar", () => {
 
 test("the epics the header is given are drawn in it, after the title", () => {
   vi.stubGlobal("IntersectionObserver", undefined);
-  render(
+  renderCopied(
     <TicketHeader
       ticket={335}
       title="Lock the contract"
@@ -162,7 +163,7 @@ test("Runs carries its count once the page holds a run, and the tabs are the sam
     runCount: number | undefined,
     runCountCut = false,
   ): readonly string[] => {
-    render(
+    renderCopied(
       <TicketTabs
         partition={partition}
         ticket={335}

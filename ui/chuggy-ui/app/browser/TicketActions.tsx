@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The mutations this ticket's phase enables, submitted and followed to
  * settlement.

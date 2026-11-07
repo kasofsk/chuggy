@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The frame of a screen that writes a ticket's draft, which a new ticket, a
  * duplicate and an edit all are: its title, and its Draft panel for a reader

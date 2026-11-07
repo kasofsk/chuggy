@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The repository's head beside an imported configuration: a line saying
  * whether the head declares what the newest import stored, and the head's own

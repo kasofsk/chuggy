@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The next step a line about a repository offers once the project holds a
  * configuration for it, after the words that say so: a runner where the

@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * A new ticket started from another: the creation screen, its form seeded from
  * the named ticket's draft as an edit of it would be, less what a new ticket

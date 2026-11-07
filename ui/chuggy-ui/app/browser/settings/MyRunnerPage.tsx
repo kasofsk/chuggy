@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The reader's own runners in this workspace, as a list: a row each, saying
  * what it declared and runs and whether it is polling, and taking it off; the

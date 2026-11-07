@@ -13,6 +13,7 @@
 import { Separator } from "radix-ui";
 import type { ReactNode } from "react";
 
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { Button } from "../ui/Button.tsx";
 import {
   useShellDetailsShow,
@@ -24,6 +25,7 @@ import { useViewportColumnAside } from "./viewport.ts";
 export function DetailsToggle(): ReactNode {
   const filled = useShellSlotsFilled();
   const detailsShow = useShellDetailsShow();
+  const text = useCopyText();
   return (
     <Button
       variant="quiet"
@@ -33,7 +35,7 @@ export function DetailsToggle(): ReactNode {
         detailsShow(!filled.detailsOpen);
       }}
     >
-      Details
+      {text({ id: "shell-details" })}
     </Button>
   );
 }
@@ -44,6 +46,7 @@ export function DetailsPane(props: {
   const filled = useShellSlotsFilled();
   const holdDetails = useShellSlotHolder("details");
   const beside = useViewportColumnAside();
+  const text = useCopyText();
   const open = filled.details && filled.detailsOpen;
   const columns =
     open && beside
@@ -75,7 +78,7 @@ export function DetailsPane(props: {
           ) : null}
           <aside
             ref={holdDetails}
-            aria-label="Details"
+            aria-label={text({ id: "shell-details" })}
             className="@container grid min-h-0 content-start gap-4 overflow-y-auto p-4"
           />
         </>

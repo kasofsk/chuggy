@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * One frame for every screen: the bar across the top, and under it the pages
  * and the chat dividing what is left.

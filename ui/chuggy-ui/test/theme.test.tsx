@@ -7,7 +7,8 @@
  * read as `System` rather than trusted.
  */
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -84,7 +85,7 @@ test("the attribute carries the choice, and System takes it off", () => {
 async function themeMenuOpened(): Promise<void> {
   cleanup();
   viewportAtEm(viewportDeskEm);
-  render(
+  renderCopied(
     <SessionProvider holder={holderDouble()}>
       <ConsoleStoreBareProvided>
         <SettingsMenu partition={undefined} />

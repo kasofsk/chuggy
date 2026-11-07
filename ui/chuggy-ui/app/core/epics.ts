@@ -38,6 +38,7 @@ import { consolePartitionQuery } from "./consoleQuery.ts";
 import type { ConsoleWrite } from "./consoleWrite.ts";
 import { consoleWriteKey } from "./consoleWrite.ts";
 import { phaseLabel } from "./codeLabels.ts";
+import type { Copy, CopyText } from "./copy.ts";
 import { epicStatusTone, type Tone } from "./tones.ts";
 
 export type EpicStatusWord = EpicSummaryResponse["status"];
@@ -260,11 +261,13 @@ export const epicGraphNodeHeight = 32;
 /** The most code points a node's label holds before it is cut, which its box fits. */
 export const epicGraphLabelCharsMax = 22;
 
-/** Where a node stands in words: its phase, or a draft where it has none. */
+/** Where a node stands: its phase, or a draft where it has none. */
 export function epicGraphStanding(node: {
   readonly phase?: EpicGraphPlaced["phase"];
-}): string {
-  return node.phase === undefined ? "Draft" : phaseLabel(node.phase);
+}): Copy {
+  return node.phase === undefined
+    ? { id: "standing-draft" }
+    : phaseLabel(node.phase);
 }
 
 /** What a node says: its number and its title, or where it stands where it
@@ -320,7 +323,10 @@ function epicGraphLayoutColumns(
  * number. An edge into a node the graph does not hold, or one on a cycle, is
  * left undrawn rather than looped on.
  */
-export function epicGraphLayout(graph: EpicGraphResponse): EpicGraphLayout {
+export function epicGraphLayout(
+  graph: EpicGraphResponse,
+  text: CopyText,
+): EpicGraphLayout {
   const tickets = [...new Set(graph.nodes.map((node) => node.ticket))].sort(
     (left, right) => left - right,
   );
@@ -345,7 +351,11 @@ export function epicGraphLayout(graph: EpicGraphResponse): EpicGraphLayout {
       title: node.title,
       phase: node.phase,
       member: node.member,
-      label: epicGraphLabel(node.ticket, node.title, epicGraphStanding(node)),
+      label: epicGraphLabel(
+        node.ticket,
+        node.title,
+        text(epicGraphStanding(node)),
+      ),
       x: column * epicGraphColumnWidth,
       y: row * epicGraphRowHeight,
     };

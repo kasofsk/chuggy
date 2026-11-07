@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * An editor following the server draft it is open on: the form held over the
  * draft as the project's cache has it, and the notice drawn where a revision

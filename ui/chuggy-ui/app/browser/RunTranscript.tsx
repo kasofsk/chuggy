@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * One run's transcript: the walk that reads its batches, and the run's
  * conversation drawn from them with the prompt it was handed first — the one

@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The form an epic is made and revised through: its content as typed, the
  * faults it has before it is sent, and the refusal the API answered.

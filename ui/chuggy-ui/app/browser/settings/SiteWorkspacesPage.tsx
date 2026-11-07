@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The site's workspaces: one row a workspace, saying who administers it and
  * whom they may invite, under how many there are and the one action that

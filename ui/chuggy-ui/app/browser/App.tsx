@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * What is drawn before there is a session, and the router once there is one.
  *

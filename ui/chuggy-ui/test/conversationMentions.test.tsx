@@ -23,6 +23,7 @@ import {
 } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
+import { copyTextEn } from "../app/copy/catalog.ts";
 import { Conversation } from "../app/browser/conversation/Conversation.tsx";
 import type {
   ConversationComposerProps,
@@ -51,7 +52,7 @@ function ticketOf(ticket: number, title: string): TicketResponse {
 const offered = [
   ticketOf(15, "Fix the thing"),
   ticketOf(16, "Ship the console"),
-].map(conversationMentionItem);
+].map((ticket) => conversationMentionItem(ticket, copyTextEn));
 
 const answered: ConversationExchange = {
   id: "x1",

@@ -26,6 +26,7 @@ import {
   epicsQueryOf,
   epicsQueryWith,
 } from "../app/core/epics.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 import type { EpicForm } from "../app/core/epics.ts";
 import { epicStatusRoster } from "../../../src/contract/responses.ts";
 import { phaseTone } from "../app/core/tones.ts";
@@ -128,7 +129,7 @@ const graph: EpicGraphResponse = {
 };
 
 test("a node stands in the column of its longest chain, and every edge runs rightward", () => {
-  const layout = epicGraphLayout(graph);
+  const layout = epicGraphLayout(graph, copyTextEn);
   const at = new Map(layout.nodes.map((node) => [node.ticket, node]));
   expect(at.get(2)?.x).toBe(0);
   expect(at.get(5)?.x).toBe(epicGraphColumnWidth);
@@ -139,7 +140,7 @@ test("a node stands in the column of its longest chain, and every edge runs righ
 });
 
 test("nodes of one column take rows by ticket number", () => {
-  const layout = epicGraphLayout(graph);
+  const layout = epicGraphLayout(graph, copyTextEn);
   const column = layout.nodes.filter(
     (node) => node.x === 2 * epicGraphColumnWidth,
   );
@@ -151,40 +152,46 @@ test("nodes of one column take rows by ticket number", () => {
 });
 
 test("an edge from a ticket the graph does not hold is left undrawn", () => {
-  const layout = epicGraphLayout(graph);
+  const layout = epicGraphLayout(graph, copyTextEn);
   expect(layout.edges.some((edge) => edge.from.ticket === 9)).toBe(false);
 });
 
 test("a cycle is laid out without looping and draws no backward edge", () => {
-  const layout = epicGraphLayout({
-    nodes: [
-      { ticket: 1, phase: "Pending", member: true },
-      { ticket: 2, phase: "Pending", member: true },
-    ],
-    edges: [
-      { from: 1, to: 2 },
-      { from: 2, to: 1 },
-    ],
-  });
+  const layout = epicGraphLayout(
+    {
+      nodes: [
+        { ticket: 1, phase: "Pending", member: true },
+        { ticket: 2, phase: "Pending", member: true },
+      ],
+      edges: [
+        { from: 1, to: 2 },
+        { from: 2, to: 1 },
+      ],
+    },
+    copyTextEn,
+  );
   expect(layout.nodes).toHaveLength(2);
   for (const edge of layout.edges) expect(edge.from.x).toBeLessThan(edge.to.x);
 });
 
 test("a cycle hanging off a chain leaves the chain's columns as they were", () => {
-  const layout = epicGraphLayout({
-    nodes: [1, 2, 3, 4, 5].map((ticket) => ({
-      ticket,
-      phase: "Pending" as const,
-      member: true,
-    })),
-    edges: [
-      { from: 1, to: 2 },
-      { from: 2, to: 3 },
-      { from: 4, to: 5 },
-      { from: 5, to: 4 },
-      { from: 3, to: 4 },
-    ],
-  });
+  const layout = epicGraphLayout(
+    {
+      nodes: [1, 2, 3, 4, 5].map((ticket) => ({
+        ticket,
+        phase: "Pending" as const,
+        member: true,
+      })),
+      edges: [
+        { from: 1, to: 2 },
+        { from: 2, to: 3 },
+        { from: 4, to: 5 },
+        { from: 5, to: 4 },
+        { from: 3, to: 4 },
+      ],
+    },
+    copyTextEn,
+  );
   const at = new Map(layout.nodes.map((node) => [node.ticket, node.x]));
   expect([1, 2, 3].map((ticket) => at.get(ticket))).toStrictEqual([
     0,
@@ -195,14 +202,17 @@ test("a cycle hanging off a chain leaves the chain's columns as they were", () =
 });
 
 test("a label past what its node holds is cut, and a draft says so where it has no title", () => {
-  const layout = epicGraphLayout({
-    nodes: [
-      { ticket: 3, title: "x".repeat(epicGraphLabelCharsMax), member: true },
-      { ticket: 4, member: true },
-      { ticket: 5, title: "Short", phase: "Work", member: true },
-    ],
-    edges: [],
-  });
+  const layout = epicGraphLayout(
+    {
+      nodes: [
+        { ticket: 3, title: "x".repeat(epicGraphLabelCharsMax), member: true },
+        { ticket: 4, member: true },
+        { ticket: 5, title: "Short", phase: "Work", member: true },
+      ],
+      edges: [],
+    },
+    copyTextEn,
+  );
   const label = new Map(layout.nodes.map((node) => [node.ticket, node.label]));
   expect([...(label.get(3) ?? "")]).toHaveLength(epicGraphLabelCharsMax);
   expect(label.get(3)?.endsWith("…")).toBe(true);
@@ -211,7 +221,7 @@ test("a label past what its node holds is cut, and a draft says so where it has 
 });
 
 test("an empty graph has a height and no nodes", () => {
-  const layout = epicGraphLayout({ nodes: [], edges: [] });
+  const layout = epicGraphLayout({ nodes: [], edges: [] }, copyTextEn);
   expect(layout.nodes).toStrictEqual([]);
   expect(layout.height).toBe(epicGraphRowHeight);
 });

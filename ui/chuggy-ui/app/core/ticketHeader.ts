@@ -11,6 +11,7 @@ import { phaseRoster } from "../../../../src/contract/rosters.ts";
 import type { TicketPhase } from "../../../../src/contract/rosters.ts";
 import type { TicketResponse } from "../../../../src/contract/responses.ts";
 import { escalationDetail, phaseLabel } from "./codeLabels.ts";
+import type { Copy } from "./copy.ts";
 import { branchName } from "./labels.ts";
 import { ticketFilterStandings } from "./projectTableFilters.ts";
 import type { RunTimed } from "./runTotals.ts";
@@ -37,7 +38,7 @@ export type TicketStateStanding = TicketListStanding | "Draft";
 
 export interface TicketStateLabel {
   readonly standing: TicketStateStanding;
-  readonly word: string;
+  readonly word: Copy;
   readonly tone: Tone;
   readonly form: TicketStateLabelForm;
   readonly mark: TicketStateLabelMark;
@@ -50,7 +51,7 @@ export function ticketStateLabelOf(
     case "Draft":
       return {
         standing,
-        word: "Draft",
+        word: { id: "standing-draft" },
         tone: "queued",
         form: "Outlined",
         mark: "Pencil",
@@ -58,7 +59,7 @@ export function ticketStateLabelOf(
     case "Ready":
       return {
         standing,
-        word: "Ready",
+        word: { id: "standing-ready" },
         tone: "pass",
         form: "Tinted",
         mark: "Dot",
@@ -66,7 +67,7 @@ export function ticketStateLabelOf(
     case "Blocked":
       return {
         standing,
-        word: "Blocked",
+        word: { id: "standing-blocked" },
         tone: "queued",
         form: "Tinted",
         mark: "Slash",
@@ -112,7 +113,7 @@ export const ticketStateStandings: readonly TicketListStanding[] =
 
 /** Every word a small state label says, which its word is as wide as
  * the widest of. */
-export const ticketStateWords: readonly string[] = ticketStateStandings.map(
+export const ticketStateWords: readonly Copy[] = ticketStateStandings.map(
   (standing) => ticketStateLabelOf(standing).word,
 );
 

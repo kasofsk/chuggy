@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * An epic's members and the tickets outside it that they wait on, laid out by
  * `core/epics.ts` with each edge running from a dependency to the ticket that
@@ -11,6 +12,7 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { EpicGraphResponse } from "../../../../src/contract/responses.ts";
+import { useCopyText } from "../copy/CopyProvider.tsx";
 import {
   epicGraphLayout,
   epicGraphNodeHeight,
@@ -25,7 +27,8 @@ export function EpicGraph(props: {
   readonly partition: PartitionIdentity;
   readonly graph: EpicGraphResponse;
 }): ReactNode {
-  const layout = epicGraphLayout(props.graph);
+  const text = useCopyText();
+  const layout = epicGraphLayout(props.graph, text);
   if (layout.nodes.length === 0)
     return <p className="panel-note">No tickets.</p>;
   return (
@@ -50,7 +53,7 @@ export function EpicGraph(props: {
             key={node.ticket}
             to="/$tenant/$project/tickets/$ticket"
             params={{ ...props.partition, ticket: String(node.ticket) }}
-            aria-label={`Ticket ${String(node.ticket)}${node.title === undefined ? "" : ` ${node.title}`}, ${epicGraphStanding(node)}${node.member ? "" : ", outside the epic"}`}
+            aria-label={`Ticket ${String(node.ticket)}${node.title === undefined ? "" : ` ${node.title}`}, ${text(epicGraphStanding(node))}${node.member ? "" : ", outside the epic"}`}
           >
             <g
               className={
@@ -68,7 +71,7 @@ export function EpicGraph(props: {
                 height={epicGraphNodeHeight}
                 rx="6"
               />
-              <title>{`#${String(node.ticket)} ${node.title ?? epicGraphStanding(node)}`}</title>
+              <title>{`#${String(node.ticket)} ${node.title ?? text(epicGraphStanding(node))}`}</title>
               <text x={node.x + 8} y={node.y + epicGraphNodeHeight / 2 + 4}>
                 {node.label}
               </text>

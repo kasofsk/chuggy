@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * One run's own page under the ticket's Runs tab: the rail of the ticket's
  * runs with this one marked, its heading and figures, and its Summary,

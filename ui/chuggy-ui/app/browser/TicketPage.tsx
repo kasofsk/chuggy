@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * One ticket, as a header over four tabs: its title, where it stands with the
  * one fragment that says why and what may be done to it, and under the tabs

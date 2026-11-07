@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The React binding for the ticket editor: it owns the handle's lifetime and
  * nothing else. The document lives in the CodeMirror view, so this component

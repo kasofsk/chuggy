@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The project's catalog: the configurations its repositories declare, as
  * their imports stored them, and for one version of one of them every

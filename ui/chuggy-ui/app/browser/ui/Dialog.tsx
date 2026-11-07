@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * A short interruption over the page: a roster to pick from, a choice to make
  * before going on, a form or a grid to fill.

@@ -574,6 +574,7 @@ fi
 run_selected_gate check-boundaries "check-boundaries" ./.chug/tasks/check-boundaries.sh
 run_selected_gate source-static "check-source static" ./.chug/tasks/check-source.sh --static
 run_selected_gate source-unit "check-source unit" ./.chug/tasks/check-source.sh --unit
+run_selected_gate check-console-copy "check-console-copy" ./.chug/tasks/check-console-copy.sh
 run_selected_gate check-console "check-console" ./.chug/tasks/check-console.sh
 
 run_selected_gate check-conformance "check-conformance" ./.chug/tasks/check-conformance.sh

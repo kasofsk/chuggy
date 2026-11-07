@@ -10,10 +10,10 @@ import {
   act,
   cleanup,
   fireEvent,
-  render,
   screen,
   within,
 } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode, Ref } from "react";
 
@@ -124,7 +124,7 @@ async function bar(
     route: routed(phase, actionsRead),
   });
   vi.stubGlobal("fetch", over(api.fetch));
-  const { container } = render(
+  const { container } = renderCopied(
     <ScreenHarness
       partition={atlas}
       client={queryClientUnretried()}

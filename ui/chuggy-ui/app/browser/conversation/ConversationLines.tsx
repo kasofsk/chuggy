@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The quiet lines of a conversation: what opened a turn nobody typed, what the
  * record could not draw, and where the answer ended up.

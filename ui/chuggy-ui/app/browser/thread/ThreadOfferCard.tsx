@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * An offer the reader's own project thread made them, drawn as a card under
  * the call that made it: what it offers, the draft or the ticket it offers it

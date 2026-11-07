@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The panel a read is drawn in: the chrome, when what it holds was observed,
  * and the three states a read is in when it is not ready, under a title that

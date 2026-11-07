@@ -9,6 +9,7 @@ import { expect, test } from "vitest";
 import type { TicketResponse } from "../../../src/contract/responses.ts";
 import { phaseRoster } from "../../../src/contract/rosters.ts";
 import type { TicketPhase } from "../../../src/contract/rosters.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 import type { TicketAction } from "../app/core/ticketActions.ts";
 import {
   ticketHeaderActionsOf,
@@ -40,7 +41,7 @@ test("every state is a word, a tone, a form and a mark, the moving ones filled a
       ] as const
     ).map((standing) => {
       const label = ticketStateLabelOf(standing);
-      return [label.word, label.tone, label.form, label.mark];
+      return [copyTextEn(label.word), label.tone, label.form, label.mark];
     }),
   ).toStrictEqual([
     ["Ready", "pass", "Tinted", "Dot"],
@@ -56,7 +57,8 @@ test("every state is a word, a tone, a form and a mark, the moving ones filled a
 
 test("a draft never released is labelled Draft, outlined and marked with a pencil", () => {
   const label = ticketStateLabelOf("Draft");
-  expect([label.word, label.form, label.mark]).toStrictEqual([
+  expect(label.word).toStrictEqual({ id: "standing-draft" });
+  expect([copyTextEn(label.word), label.form, label.mark]).toStrictEqual([
     "Draft",
     "Outlined",
     "Pencil",

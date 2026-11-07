@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * Every thread the reader can reach, behind one control in the pane's header —
  * their own, then a divider, then everyone else's; and in the reader's own

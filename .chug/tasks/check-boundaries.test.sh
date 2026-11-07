@@ -664,6 +664,59 @@ printf '%s\n' 'import { relay } from "./relay.ts"' 'export const suite = () => r
 seal
 check "a console suite may not REACH a module of Node's through the terminal program" 1 "$RC" "console-reaches-no-source:"
 
+# The program prints through the console's copy catalog: the catalog and the
+# Fluent runtime that formats it are on its roster.
+fixture
+mkdir -p "$R/ui/chuggy-ui/terminal" "$R/ui/chuggy-ui/app/copy" "$R/ui/chuggy-ui/app/core"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
+printf '%s\n' 'export type Copy = { readonly id: string }' > "$R/ui/chuggy-ui/app/core/copy.ts"
+printf '%s\n' 'import { FluentBundle } from "@fluent/bundle"' 'import type { Copy } from "../core/copy.ts"' 'export const text = (copy: Copy) => new FluentBundle("en").hasMessage(copy.id)' > "$R/ui/chuggy-ui/app/copy/copyBundle.ts"
+printf '%s\n' 'import { text } from "../app/copy/copyBundle.ts"' 'export const main = () => text({ id: "x" })' > "$R/ui/chuggy-ui/terminal/main.ts"
+seal
+check "the terminal program may reach the copy catalog and the Fluent runtime" 0 "$RC" "graph clean"
+
+# The catalog's React half is no part of the program, and the relay is the
+# catalog itself.
+fixture
+mkdir -p "$R/ui/chuggy-ui/terminal" "$R/ui/chuggy-ui/app/copy"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
+printf '%s\n' 'import { useLocalization } from "@fluent/react"' 'export const relay = useLocalization' > "$R/ui/chuggy-ui/app/copy/relay.ts"
+printf '%s\n' 'import { relay } from "../app/copy/relay.ts"' 'export const main = () => relay' > "$R/ui/chuggy-ui/terminal/main.ts"
+seal
+check "the terminal program may not REACH Fluent's React bindings through the catalog" 1 "$RC" "chuggy-ui-terminal-reaches-a-closed-roster:"
+
+# The catalog formats for both programs, so it reaches neither one's layer.
+fixture
+mkdir -p "$R/ui/chuggy-ui/app/copy" "$R/ui/chuggy-ui/app/browser"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
+printf '%s\n' 'export const nowMs = () => Date.now()' > "$R/ui/chuggy-ui/app/browser/ports.ts"
+printf '%s\n' 'import { nowMs } from "../browser/ports.ts"' 'export const relay = nowMs' > "$R/ui/chuggy-ui/app/copy/relay.ts"
+printf '%s\n' 'import { relay } from "./relay.ts"' 'export const text = () => relay()' > "$R/ui/chuggy-ui/app/copy/copyBundle.ts"
+seal
+check "the copy catalog may not REACH the browser's layer" 1 "$RC" "chuggy-ui-copy-reaches-only-decisions:"
+
+# The console's tooling runs on Node and is served to no one.
+fixture
+mkdir -p "$R/ui/chuggy-ui/tools"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
+printf '%s\n' 'import { readFileSync } from "node:fs"' 'export const read = readFileSync' > "$R/ui/chuggy-ui/tools/catalog.ts"
+seal
+check "the console's tooling may reach a module of Node's" 0 "$RC" "graph clean"
+
+# That exemption is the directory's own too.
+fixture
+mkdir -p "$R/ui/chuggy-ui/tools" "$R/ui/chuggy-ui/test"
+printf '%s\n' 'export const x = 1' > "$R/src/domain/a.ts"
+printf '%s\n' 'import { x } from "../src/domain/a.ts"' 'export const y = x' > "$R/test/a.test.ts"
+printf '%s\n' 'import { readFileSync } from "node:fs"' 'export const read = readFileSync' > "$R/ui/chuggy-ui/tools/catalog.ts"
+printf '%s\n' 'import { read } from "../tools/catalog.ts"' 'export const suite = () => read' > "$R/ui/chuggy-ui/test/catalog.test.ts"
+seal
+check "a console suite may not REACH a module of Node's through the tooling" 1 "$RC" "console-reaches-no-source:"
+
 # A primitive draws and performs nothing, through a relay for the same reason:
 # the helper between the primitive and the port is what a per-import check
 # reads as innocent.

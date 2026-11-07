@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * A roster with a box above it that narrows it: the query is held here, the
  * rows it keeps are drawn by the caller, and a query keeping none of them is

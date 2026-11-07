@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * One catalog as the Catalog page draws it, whichever version it is: its
  * entries grouped and listed, and the chosen one beside them with what it

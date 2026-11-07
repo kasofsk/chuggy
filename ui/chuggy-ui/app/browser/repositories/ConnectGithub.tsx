@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * Connecting GitHub accounts: the person authorizes the portal app at the
  * forge, and the accounts it proves they own are what this tenant claims. It is

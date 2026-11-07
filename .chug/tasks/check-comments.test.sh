@@ -165,6 +165,32 @@ check "a jscpd directive with a reason is allowed" 0 "$RC" "0 finding(s)"
 source_saying '// eslint-disable-next-line no-console' 'export const x = 1'
 check "an unsealed rule may be disabled" 0 "$RC" "0 finding(s)"
 
+# The copy mark is the one block directive, as a file's first line, naming its
+# one rule.
+tooled_repo "$R"
+{
+	printf '%s\n' '/* eslint-disable copy/no-literal-text */'
+	printf '%s\n' '/**'
+	printf '%s\n' ' * A module header. It states what this module accepts and emits.'
+	printf '%s\n' ' */'
+	printf '%s\n' 'export const e = <p>Words</p>;'
+} > "$R/a.tsx"
+git -C "$R" add -A
+run_in "$R"
+check "the copy mark is allowed as a file's first line" 0 "$RC" "0 finding(s)"
+
+source_saying '/* eslint-disable copy/no-literal-text */' 'export const x = 1'
+check "the copy mark below a file's first line is a finding" 1 "$RC" "a.ts:4: the copy mark is a file's first line"
+
+tooled_repo "$R"
+{
+	printf '%s\n' '/* eslint-disable no-console */'
+	printf '%s\n' 'export const x = 1'
+} > "$R/a.ts"
+git -C "$R" add -A
+run_in "$R"
+check "a file-wide disable of any other rule is a finding" 1 "$RC" "a.ts:1: a block comment that is not a doc comment"
+
 # A directive is one line. The wrapped half is where an explanation grows that
 # no tool reads.
 source_saying '// prettier-ignore' '// because the table below is aligned by hand' 'export const x = 1'

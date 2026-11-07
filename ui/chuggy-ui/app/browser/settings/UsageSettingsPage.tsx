@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The reader's own agent accounts, which are theirs in every workspace: for
  * each agent, each window's newest reading and the share it pauses at, and

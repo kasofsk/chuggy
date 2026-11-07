@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The reader's own chat at their tenant, outside every project: a thread of
  * it as a column to read under a bar that names it, or the composer whose

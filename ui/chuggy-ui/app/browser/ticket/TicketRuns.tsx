@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The ticket's runs: the Runs tab's list of cycles, newest first, every row a
  * link to its run's own page, and the rail the run and landing pages list the

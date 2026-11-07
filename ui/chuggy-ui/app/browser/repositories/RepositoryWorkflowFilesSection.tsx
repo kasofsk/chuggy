@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * Whether the jobs this project runs may change this repository's GitHub
  * workflow files, written through the finalization's own route and fenced the

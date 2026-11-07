@@ -1,5 +1,6 @@
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -152,7 +153,7 @@ async function drawTicket(
     },
   });
   vi.stubGlobal("fetch", api.fetch);
-  render(
+  renderCopied(
     <ScreenHarness
       partition={atlas}
       client={queryClientUnretried()}

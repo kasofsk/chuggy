@@ -14,6 +14,7 @@
 
 import { expect, test } from "vitest";
 
+import { copyTextEn } from "../app/copy/catalog.ts";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
 import {
   apiMintChatHostToken,
@@ -115,6 +116,7 @@ async function ran(machine: SetupMachine, argv = runner): Promise<Ran> {
   const lines = setupReportLines(
     report,
     machineScript,
+    copyTextEn,
     setupAnswersAsked(argv),
   );
   const said = lines.join("\n");

@@ -15,13 +15,8 @@ import {
   RouterProvider,
   useParams,
 } from "@tanstack/react-router";
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  within,
-} from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
@@ -149,7 +144,7 @@ async function mountedAt(
       Promise.resolve(threadsServed(url))) as typeof fetch),
   );
   const router = routerAt(path);
-  render(
+  renderCopied(
     <ScreenHarness
       partition={threadPartition}
       client={client}

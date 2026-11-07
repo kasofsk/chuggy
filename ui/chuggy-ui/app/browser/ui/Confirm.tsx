@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * An end that cannot be undone, asked in place before it is done: one line
  * saying what it ends, then Cancel and the danger button that does it. Never

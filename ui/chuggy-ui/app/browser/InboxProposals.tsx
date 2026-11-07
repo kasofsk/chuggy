@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The lead's held decisions in the inbox: the read, the pill a row says it
  * with, Approve and Reject, and the line an answer leaves behind once its row

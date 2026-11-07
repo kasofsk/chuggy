@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The header's ⋯ menu: Revoke, which asks before it submits, Duplicate where
  * it is not the header's main action, Copy link, which stays open to say it

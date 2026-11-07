@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The decision log: what the lead decided, newest first, each group holding one
  * row per dispatch with the landing that dispatch reached, beside the tickets

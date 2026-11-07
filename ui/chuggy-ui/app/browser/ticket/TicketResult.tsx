@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * What a run page draws of its result: the report under Summary, or the
  * commands a command stage ran under Output.

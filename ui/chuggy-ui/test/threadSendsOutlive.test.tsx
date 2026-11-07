@@ -9,11 +9,11 @@ import {
   act,
   cleanup,
   fireEvent,
-  render,
   screen,
   waitFor,
   within,
 } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
@@ -168,7 +168,7 @@ async function drawn(shown: Screen, strict = false): Promise<Drawn> {
       </Routed>
     </ScreenHarness>
   );
-  const view = render(tree(shown), { reactStrictMode: strict });
+  const view = renderCopied(tree(shown), { reactStrictMode: strict });
   await settled();
   return {
     store,

@@ -16,6 +16,7 @@ import { useNavigate } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { projectsInventoryQuery } from "../../core/tenantQueries.ts";
 import { lastProjectWrite } from "../../core/lastProject.ts";
 import {
@@ -45,8 +46,6 @@ const projectGlyph = (
     <path d="M2 4.5A1.5 1.5 0 0 1 3.5 3h2.8l1.4 1.5h4.8A1.5 1.5 0 0 1 14 6v5.5a1.5 1.5 0 0 1-1.5 1.5h-9A1.5 1.5 0 0 1 2 11.5z" />
   </svg>
 );
-
-export const projectSwitcherCreateText = "New project";
 
 /** The value the picker names a workspace's own chat by, which no project's
  * value is, since a project's name is never empty. */
@@ -93,6 +92,17 @@ function projectSwitcherHint(
     : `${partition.tenant} / ${partition.project}`;
 }
 
+/** The workspace's own chat, as the picker offers it. */
+function projectSwitcherChat(tenant: string): {
+  readonly value: string;
+  readonly text: string;
+} {
+  return {
+    value: projectSwitcherNone(tenant),
+    text: `${tenant} / ${memberChatProjectNone}`,
+  };
+}
+
 function ProjectSwitcherPicker(props: {
   readonly partition: PartitionIdentity | undefined;
   readonly chat?: string;
@@ -101,22 +111,22 @@ function ProjectSwitcherPicker(props: {
   readonly chats: boolean;
 }): ReactNode {
   const navigate = useNavigate();
+  const text = useCopyText();
   const state = usePanelState(projectsInventoryQuery());
   if (state.state !== "Ready")
-    return <Notice tone="parked" inline detail="Projects unavailable" />;
+    return (
+      <Notice
+        tone="parked"
+        inline
+        detail={text({ id: "shell-projects-unavailable" })}
+      />
+    );
   const { tenant } = props;
   const none =
-    tenant === undefined || !props.chats
-      ? []
-      : [
-          {
-            value: projectSwitcherNone(tenant),
-            text: `${tenant} / ${memberChatProjectNone}`,
-          },
-        ];
+    tenant === undefined || !props.chats ? [] : [projectSwitcherChat(tenant)];
   return (
     <Picker
-      label="Project"
+      label={text({ id: "shell-project" })}
       glyph={projectGlyph}
       hint={projectSwitcherHint(props.partition)}
       value={
@@ -126,7 +136,7 @@ function ProjectSwitcherPicker(props: {
             ? projectSwitcherNone(props.chat)
             : ""
       }
-      placeholder="Project"
+      placeholder={text({ id: "shell-project" })}
       options={[
         ...none,
         ...state.value.map((candidate) => ({
@@ -151,7 +161,7 @@ function ProjectSwitcherPicker(props: {
       }}
       actions={[
         {
-          text: projectSwitcherCreateText,
+          text: text({ id: "shell-project-new" }),
           onSelect: () => {
             void navigate({
               to: projectCreationRoutePath,

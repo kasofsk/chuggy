@@ -31,6 +31,7 @@
  */
 
 import type { ApiFailure } from "./apiRequest.ts";
+import type { Copy, CopyText } from "./copy.ts";
 import {
   setupAnswerArguments,
   setupAnswersNone,
@@ -242,8 +243,12 @@ type SetupWord = (typeof setupWords)[number];
 
 /** A line before it is printed: its word and its text, a step's being the cells its columns are laid out from. */
 type SetupLine =
-  | readonly [Exclude<SetupWord, "step">, string]
+  | SetupPlainLine
+  | readonly [Exclude<SetupWord, "step">, Copy]
   | readonly ["step", SetupStepSaid];
+
+/** A line whose text is the program's own, with nothing from the catalog. */
+type SetupPlainLine = readonly [Exclude<SetupWord, "step">, string];
 
 /** What `next:` says where no command is left to run. */
 export const setupNextStop = "stop";
@@ -380,7 +385,7 @@ interface SetupStop {
   readonly when: string;
 }
 
-function setupStopSaid(stop: SetupStop): readonly SetupLine[] {
+function setupStopSaid(stop: SetupStop): readonly SetupPlainLine[] {
   return [
     ["found", stop.found],
     ["tell", stop.tell],
@@ -390,7 +395,7 @@ function setupStopSaid(stop: SetupStop): readonly SetupLine[] {
 function setupStopRule(
   stop: Pick<SetupStop, "when">,
   command: string,
-): readonly SetupLine[] {
+): readonly SetupPlainLine[] {
   return [
     ["rule", `Run ${command} only ${stop.when}.`],
     ["next", setupNextStop],
@@ -881,19 +886,29 @@ function setupRunnerLines(
   }
 }
 
+function setupNodeOldSaid(
+  major: number | undefined,
+  saying: SetupSaying,
+): readonly SetupPlainLine[] {
+  const stop = setupNodeStop(major);
+  return [
+    ...setupStopSaid(stop),
+    ...setupStopRule(stop, setupCommandOf(saying, "Status")),
+  ];
+}
+
+function setupPlainPrinted(line: SetupPlainLine): string {
+  return `${line[0]}: ${setupFlat(line[1])}`;
+}
+
 function setupLines(
   report: SetupReport,
   saying: SetupSaying,
 ): readonly SetupLine[] {
   const bare: SetupSaying = { ...saying, answers: setupAnswersNone };
   switch (report.report) {
-    case "NodeOld": {
-      const stop = setupNodeStop(report.major);
-      return [
-        ...setupStopSaid(stop),
-        ...setupStopRule(stop, setupCommandOf(bare, "Status")),
-      ];
-    }
+    case "NodeOld":
+      return setupNodeOldSaid(report.major, bare);
     case "Unserved":
       return setupUnservedLines(report.platform);
     case "AskedWrongly":
@@ -903,7 +918,7 @@ function setupLines(
       ];
     case "SiteUnknown":
       return [
-        ["found", "no chuggy site is remembered on this machine yet"],
+        ["found", { id: "setup-site-unknown" }],
         [
           "rule",
           `Run ${setupCommandOf(saying, "Status", ["--site"])} with the address of the person's chuggy site after it, such as https://chuggy.example. Ask the person for the address if you do not have it.`,
@@ -951,8 +966,14 @@ function setupWidth(words: readonly string[]): number {
 }
 
 /** A line as it is printed. A step's name and state are laid out in columns as wide as the longest of each, so the cells are flattened one at a time and the spaces between them are the layout's own. */
-function setupPrinted(line: SetupLine): string {
-  if (line[0] !== "step") return `${line[0]}: ${setupFlat(line[1])}`;
+function setupPrinted(line: SetupLine, text: CopyText): string {
+  if (line[0] !== "step") {
+    const said = line[1];
+    return setupPlainPrinted([
+      line[0],
+      typeof said === "string" ? said : text(said),
+    ]);
+  }
   const { step, state, detail } = line[1];
   const laid = `${step.padEnd(setupWidth(setupSteps))}${state.padEnd(setupWidth(setupStepStates))}${setupFlat(detail)}`;
   return `step: ${laid.trimEnd()}`;
@@ -960,19 +981,34 @@ function setupPrinted(line: SetupLine): string {
 
 /**
  * The lines a report is printed as, for a program kept at `script` and a run
- * whose arguments named `answers`. Every line passes through the one place
- * text is flattened, so a line is one line, and holds nothing a terminal
- * would obey, whatever a name from a server, a file, the folder's remote or
- * the command line held.
+ * whose arguments named `answers`, the catalog's words formatted by `text`.
+ * Every line passes through the one place text is flattened, so a line is one
+ * line, and holds nothing a terminal would obey, whatever a name from a
+ * server, a file, the folder's remote or the command line held.
  */
 export function setupReportLines(
   report: SetupReport,
   script: string,
+  text: CopyText,
   answers: SetupAnswers = setupAnswersNone,
 ): readonly string[] {
-  return setupLines(report, { script, answers, partWay: false }).map(
-    setupPrinted,
+  return setupLines(report, { script, answers, partWay: false }).map((line) =>
+    setupPrinted(line, text),
   );
+}
+
+/** The lines a Node too old to run the program is told, which say nothing
+ * from the catalog, so the check that runs before everything else loads none
+ * of it. */
+export function setupNodeOldLines(
+  major: number | undefined,
+  script: string,
+): readonly string[] {
+  return setupNodeOldSaid(major, {
+    script,
+    answers: setupAnswersNone,
+    partWay: false,
+  }).map(setupPlainPrinted);
 }
 
 const setupEndedFailures: ReadonlySet<SetupSignInEnded> = new Set([

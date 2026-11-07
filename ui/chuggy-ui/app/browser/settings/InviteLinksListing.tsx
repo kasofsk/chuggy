@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * What became of each invite link a list holds, a workspace's or the site's:
  * one row a link, in the plane's order, saying where it stands and who made

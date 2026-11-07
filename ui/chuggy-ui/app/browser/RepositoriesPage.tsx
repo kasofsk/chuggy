@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The project's repositories: what it binds, and what it could bind from the
  * tenant's own connected accounts.

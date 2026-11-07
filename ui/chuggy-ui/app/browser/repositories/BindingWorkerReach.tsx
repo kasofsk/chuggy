@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * Why the worker app cannot be said to reach a bound repository, on that
  * binding's row: the word, why on hover, and the installation's own page on

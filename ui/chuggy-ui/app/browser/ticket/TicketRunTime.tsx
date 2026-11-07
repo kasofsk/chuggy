@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * A run's time, or a set's, as the ticket's pages draw it: how long it ran,
  * with its wait beside it where that is long enough to read, or that it waits

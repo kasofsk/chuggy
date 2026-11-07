@@ -6,7 +6,8 @@
  * width.
  */
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, expect, test, vi } from "vitest";
 
 import {
@@ -18,6 +19,7 @@ import { Chip } from "../app/browser/ui/Chip.tsx";
 import { Pill } from "../app/browser/ui/Pill.tsx";
 import listSheet from "../app/browser/ProjectTable.css?raw";
 import ticketSheet from "../app/browser/ticket/ticket.css?raw";
+import { copyTextEn } from "../app/copy/catalog.ts";
 import { ticketStateWords } from "../app/core/ticketHeader.ts";
 import type { TicketListStanding } from "../app/core/ticketListView.ts";
 import { sheetRules } from "./sheet.ts";
@@ -29,7 +31,7 @@ afterEach(() => {
 });
 
 test("a standing chip is its words in the neutral pill's look, with no control", () => {
-  const view = render(
+  const view = renderCopied(
     <>
       <Chip>Site admins</Chip>
       <Pill tone="neutral">Default</Pill>
@@ -47,7 +49,7 @@ test("a standing chip is its words in the neutral pill's look, with no control",
 
 test("a chip that can be taken away ends in a button named by its caller, which removes it", () => {
   const removed = vi.fn();
-  render(
+  renderCopied(
     <Chip removal={{ name: "Remove Ada from Admins", onRemove: removed }}>
       Ada
     </Chip>,
@@ -61,7 +63,7 @@ test("a chip that can be taken away ends in a button named by its caller, which 
 
 test("a chip whose removal is disabled keeps its button and removes nothing", () => {
   const removed = vi.fn();
-  render(
+  renderCopied(
     <Chip
       removal={{
         name: "Remove Ada from Admins",
@@ -100,7 +102,7 @@ function stateLabelDrawn(word: string): HTMLElement {
 
 test("every state's row chip and count is the small label with a mark, and only a moving state's mark spins", () => {
   for (const standing of standings) {
-    render(
+    renderCopied(
       <>
         <TicketStateChip ticket={7} standing={standing} hint={undefined} />
         <TicketStateCount
@@ -130,7 +132,7 @@ test("every state's row chip and count is the small label with a mark, and only 
 });
 
 test("Ready and Done differ: Ready tinted with its own mark, Done filled with a check", () => {
-  render(
+  renderCopied(
     <>
       <TicketStateChip ticket={7} standing="Ready" hint={undefined} />
       <TicketStateChip ticket={8} standing="Done" hint={undefined} />
@@ -147,7 +149,7 @@ test("Ready and Done differ: Ready tinted with its own mark, Done filled with a 
 
 test("a ready chip that dispatches is the button around the label, which presses the dispatch", () => {
   const press = vi.fn();
-  render(
+  renderCopied(
     <TicketStateChip
       ticket={7}
       standing="Ready"
@@ -163,7 +165,7 @@ test("a ready chip that dispatches is the button around the label, which presses
 
 test("a count is its state's label holding the number, the button that filters", () => {
   const pressed = vi.fn();
-  render(
+  renderCopied(
     <TicketStateCount
       standing="Work"
       count={4}
@@ -182,7 +184,7 @@ test("a count is its state's label holding the number, the button that filters",
 });
 
 test("every small state label's word is sized by every state's word, whatever its own, and the page's by its own", () => {
-  render(
+  renderCopied(
     <>
       <TicketStateChip ticket={7} standing="Done" hint={undefined} />
       <TicketStateChip ticket={8} standing="Finalization" hint={undefined} />
@@ -195,7 +197,7 @@ test("every small state label's word is sized by every state's word, whatever it
       <TicketStateLabel standing="Done" size="page" />
     </>,
   );
-  const every = ticketStateWords.join("\n");
+  const every = ticketStateWords.map(copyTextEn).join("\n");
   expect(
     Array.from(
       document.querySelectorAll<HTMLElement>(
@@ -239,7 +241,7 @@ test("the words a small label is sized by, and the widest count a count's number
 });
 
 test("counts drawn beside each other hold their numbers at the widest one's width", () => {
-  render(
+  renderCopied(
     <>
       <TicketStateCount
         standing="Ready"

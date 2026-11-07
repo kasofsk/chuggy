@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * One pause of the reader's own agent as a line: the status, each reason and
  * the instant it ends in the reader's own zone, then whatever its caller

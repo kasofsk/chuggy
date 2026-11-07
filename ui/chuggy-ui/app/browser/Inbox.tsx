@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The escalation inbox: every ticket that needs a human, newest activity first,
  * each answerable where it stands.
@@ -29,6 +30,7 @@ import type {
   RunnerLoss,
   RunStepFailure,
 } from "../../../../src/contract/responses.ts";
+import { useCopyText } from "../copy/CopyProvider.tsx";
 import { apiInbox } from "../core/apiRoutes.ts";
 import { inboxQuery } from "../core/ticketQueries.ts";
 import {
@@ -283,6 +285,7 @@ function InboxWhy(props: {
 }): ReactNode {
   const held = inboxEntryPhased(props.entry);
   const row = props.row;
+  const text = useCopyText();
   if (held === undefined)
     return (
       <div className="flex flex-wrap gap-2">
@@ -299,7 +302,7 @@ function InboxWhy(props: {
       <InboxLostWhy
         partition={props.partition}
         lost={lost}
-        badge={row.badge ?? phaseLabel(row.phase)}
+        badge={row.badge ?? text(phaseLabel(row.phase))}
       />
     );
   const failed = held.escalation?.failed;
@@ -308,7 +311,7 @@ function InboxWhy(props: {
       <InboxFailedWhy
         partition={props.partition}
         failed={failed}
-        badge={row.badge ?? phaseLabel(row.phase)}
+        badge={row.badge ?? text(phaseLabel(row.phase))}
       />
     );
   const kind = held.escalation?.kind;
@@ -320,7 +323,7 @@ function InboxWhy(props: {
   return (
     <Tooltip text={said.length === 0 ? undefined : said.join(" · ")}>
       <span>
-        <Pill tone="parked">{row.badge ?? phaseLabel(row.phase)}</Pill>
+        <Pill tone="parked">{row.badge ?? text(phaseLabel(row.phase))}</Pill>
       </span>
     </Tooltip>
   );

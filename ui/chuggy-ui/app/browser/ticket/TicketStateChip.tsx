@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * A ticket's state where the ticket list draws it: the row's state label, a
  * dependency's number in its state's colours, and each state's count. Where a
@@ -7,6 +8,8 @@
 import type { ReactNode } from "react";
 
 import { phaseLabel } from "../../core/codeLabels.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
+import type { CopyText } from "../../core/copy.ts";
 import type { TicketPhase } from "../../../../../src/contract/rosters.ts";
 import type { TicketListStanding } from "../../core/ticketListView.ts";
 import { phaseTone } from "../../core/tones.ts";
@@ -22,10 +25,10 @@ function standingTone(standing: TicketListStanding): Tone {
   return standing === "Blocked" ? "queued" : phaseTone(standing);
 }
 
-function standingWord(standing: TicketListStanding): string {
+function standingWord(standing: TicketListStanding, text: CopyText): string {
   return standing === "Ready" || standing === "Blocked"
     ? standing
-    : phaseLabel(standing);
+    : text(phaseLabel(standing));
 }
 
 export interface TicketStateDispatch {
@@ -83,12 +86,13 @@ export function TicketDependencyChip(props: {
   readonly ticket: number;
   readonly standing: TicketListStanding;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <span
       className="ticket-list-state ticket-dependency"
       data-tone={standingTone(props.standing)}
       data-standing={props.standing}
-      title={standingWord(props.standing)}
+      title={standingWord(props.standing, text)}
     >
       {`#${String(props.ticket)}`}
     </span>
@@ -107,13 +111,14 @@ export function TicketStateCount(props: {
   readonly countWidest?: number | undefined;
   readonly onPress: () => void;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <button
       type="button"
       className="ticket-state-count"
       data-standing={props.standing}
       data-dimmed={props.dimmed === true || undefined}
-      title={standingWord(props.standing)}
+      title={standingWord(props.standing, text)}
       aria-pressed={props.pressed}
       onClick={props.onPress}
     >

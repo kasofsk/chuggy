@@ -24,6 +24,10 @@
 # directive line; `prettier-ignore`; `@ts-expect-error` with a description; and
 # `eslint-disable-next-line` naming a rule that is not one of this tree's
 # boundary, purity or exhaustiveness rules — those exist to be unsuppressible.
+# One block directive is on the list: `/* eslint-disable copy/no-literal-text */`
+# as a file's first line, the console's mark on a file whose copy is not yet in
+# its catalog. It names that rule and no other, and its own lint fails it once
+# the file has nothing left for it to excuse.
 #
 # A DIRECTIVE IS ONE LINE. A wrapped second line is an ordinary comment and is
 # rejected as one: the half the tool ignores is where an explanation grows that
@@ -123,6 +127,9 @@ const sealed = new Set([
 	"@typescript-eslint/no-misused-promises",
 ]);
 
+/* The one file-wide disable admitted: a console file not yet in its catalog. */
+const copyMark = "/* eslint-disable copy/no-literal-text */";
+
 /* Every comment is trivia before some token, and JSX text is a token whose
    content is never trivia: so the parser tree, read leaf by leaf, finds each
    comment once and nothing that only looks like one. */
@@ -190,6 +197,9 @@ for (const file of process.argv.slice(1)) {
 		let finding;
 		if (body.startsWith("//")) finding = judgeLine(body.slice(2));
 		else if (body.length < 4 || !body.endsWith("*/")) finding = "unterminated comment";
+		else if (body === copyMark) {
+			if (line !== 1) finding = "the copy mark is a file\x27s first line";
+		}
 		else if (!body.startsWith("/**") || body === "/**/") finding = "a block comment that is not a doc comment";
 		/* The first doc comment in a file is the module header and carries no cap. */
 		else if (!seenHeader) seenHeader = true;

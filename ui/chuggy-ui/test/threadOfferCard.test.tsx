@@ -9,7 +9,8 @@
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
-import { cleanup, render, renderHook, screen } from "@testing-library/react";
+import { cleanup, renderHook, screen } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -127,7 +128,7 @@ async function drawn(
   },
 ): Promise<void> {
   vi.stubGlobal("fetch", api.fetch);
-  render(
+  renderCopied(
     <ScreenHarness
       partition={atlas}
       client={queryClientUnretried()}
@@ -169,7 +170,7 @@ async function drawnIn(
 ): Promise<void> {
   const mine = renderHook(() => useThreadOfferDrawn(atlas, thread));
   const drawnOffer: ReactNode = mine.result.current?.(offerStep, exchange);
-  render(
+  renderCopied(
     <ScreenHarness
       partition={atlas}
       client={queryClientUnretried()}
@@ -445,7 +446,7 @@ test("the reader's own thread draws a card for each offer, settled by the reply 
       exchangeIn("thread-turn-1"),
     ),
   ).toBeNull();
-  render(
+  renderCopied(
     <ScreenHarness
       partition={atlas}
       client={queryClientUnretried()}

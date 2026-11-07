@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The ticket's landing as a page of its Runs tab: the rail with Landing
  * marked, the newest landing's state, its pull request and the commits it

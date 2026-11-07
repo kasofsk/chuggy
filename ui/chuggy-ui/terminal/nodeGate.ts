@@ -12,7 +12,7 @@
 import { writeSync } from "node:fs";
 
 import { setupNodeAccepted, setupNodeMajor } from "../app/core/setupProgram.ts";
-import { setupReportExit, setupReportLines } from "../app/core/setupReport.ts";
+import { setupNodeOldLines, setupReportExit } from "../app/core/setupReport.ts";
 import type { SetupReport } from "../app/core/setupReport.ts";
 
 /** Where the program was run from, as a `next:` line names it. */
@@ -23,6 +23,6 @@ if (!setupNodeAccepted(process.versions.node)) {
     report: "NodeOld",
     major: setupNodeMajor(process.versions.node),
   };
-  writeSync(1, `${setupReportLines(report, script).join("\n")}\n`);
+  writeSync(1, `${setupNodeOldLines(report.major, script).join("\n")}\n`);
   process.exit(setupReportExit(report));
 }

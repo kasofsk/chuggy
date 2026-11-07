@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * One epic: what it says, how far its tickets have come, the tickets outside
  * it that they wait on, the graph between them, and the revisions it has been

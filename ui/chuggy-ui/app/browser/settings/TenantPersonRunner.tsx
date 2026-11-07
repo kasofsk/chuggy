@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * Taking every one of a person's own runners off, in their editor, for a
  * reader who administers the workspace. Nobody but their owner reads them, so

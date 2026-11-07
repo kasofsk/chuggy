@@ -16,6 +16,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
+import { copyTextEn } from "../app/copy/catalog.ts";
 import { setupProgramPath } from "../app/core/setupProgram.ts";
 import { setupReportExit, setupReportLines } from "../app/core/setupReport.ts";
 import type { SetupReport } from "../app/core/setupReport.ts";
@@ -43,7 +44,7 @@ function fault(built: string): string | undefined {
     });
     if (ran.error !== undefined)
       return "did not run to its end within its bounds";
-    const printed = `${setupReportLines(first, built).join("\n")}\n`;
+    const printed = `${setupReportLines(first, built, copyTextEn).join("\n")}\n`;
     if (ran.stdout === printed && ran.status === setupReportExit(first))
       return undefined;
     const said = ran.stderr.split("\n").find((line) => /Error/u.test(line));
