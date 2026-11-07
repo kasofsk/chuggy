@@ -947,6 +947,63 @@ test("a decision leaving finalization withdraws the approval it left unanswered"
   assert.equal(planned.execution[0]?.request, "5:0:ExecuteTask");
 });
 
+/**
+ * A rework after a failed landing runs at the failed attempt's evidence rather
+ * than a source of its own, and is briefed with the ticket's images all the
+ * same, so its bundle pins them beside that evidence.
+ */
+test("a rework a failed landing sends back pins the brief's images beside its evidence", () => {
+  const before = finalizing();
+  const result = reportFinalizationResultCommand(id(1), 1, 1, {
+    type: "FinalizationNeedsWork",
+    value: 1,
+  });
+  const arrived = finalizationInput(result);
+  const evidence: FinalizationEvidence = {
+    attempt: asFinalizationAttemptId("attempt"),
+    attemptDigest: "e".repeat(64),
+    targetCommit: asGitObjectId("a".repeat(40)),
+    failureKind: "MergeConflict",
+    preparation: [{ kind: "Repository", reference: "repository" }],
+  };
+  const image = {
+    artifact: asProjectArtifactId("image/png:one"),
+    digest: "f".repeat(64),
+  };
+  const decided = decidedAt(before, result);
+  const planned = materializationOf(
+    {
+      ...arrived,
+      source: {
+        ...arrived.source,
+        finalizationRequest: {
+          request: "request",
+          requestGeneration: 1,
+          open: true,
+          evidence,
+        },
+      },
+    },
+    decided.before,
+    decided.after,
+    decided.entry,
+    decided.obligations,
+    {
+      source: {
+        repository: asRepositoryId("repository"),
+        target: { commit: asGitObjectId("b".repeat(40)) },
+        manifests: [],
+      },
+      images: [image],
+    },
+  );
+  const bundle = planned.execution[0]?.bundle;
+  assert.equal(planned.execution[0]?.kind, "SpawnWork");
+  assert.deepEqual(bundle?.evidence, evidence);
+  assert.equal(bundle?.source, undefined);
+  assert.deepEqual(bundle?.images, [image]);
+});
+
 /** One ticket end to end: every command decided, and the last one fulfilling the request it concludes and owing nothing more. */
 test("a ticket runs Work, Evaluation and Done, each step decided by its command", () => {
   const dispatched = walked([

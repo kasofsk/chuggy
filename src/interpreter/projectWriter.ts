@@ -144,7 +144,7 @@ export interface ProjectTicketWriter {
   readonly decisions: ProjectDecision;
   readonly executionSources: ExecutionSourceObservationPort;
   readonly ticketBriefs: TicketBriefPort;
-  /** Where a brief's named images are read back, to pin the digest a dispatch's bundle carries for each. */
+  /** Where a brief's named images are read back, to pin the digest every spawn's bundle carries for each. */
   readonly projectArtifacts: Pick<ProjectArtifactPort, "readArtifact">;
   /** What a dispatch pins of what its ticket's dependencies delivered. */
   readonly dependencyPinning: DependencyPinningPort;
@@ -761,7 +761,7 @@ async function projectWriterBriefImages(
     });
     if (read.read === "Unavailable")
       throw new Error(
-        "project writer: a brief's own image was unavailable at dispatch",
+        "project writer: a brief's own image was unavailable to pin",
       );
     if (read.read === "NotFound")
       throw new IntegrityContradiction(
@@ -827,8 +827,10 @@ export function projectWriterSpawnSourceRef(state: TicketState): number {
 
 /**
  * What a decision that is not a dispatch spawns against: the source the ticket
- * already carries, read out of this partition's own rows. NOTHING HERE READS A
- * REF — a rework runs at the commit its work was judged at, and an
+ * already carries, read out of this partition's own rows, and its brief's
+ * images, pinned as a dispatch pins them because every task is briefed with
+ * them and its worker reads only what its own bundle names. NOTHING HERE READS
+ * A REF — a rework runs at the commit its work was judged at, and an
  * evaluation at the commit the result it judges was produced at, both of which
  * are facts already written down, and its change base may also rest on an
  * ancestry answer, which may fetch history from the remote, about whether that
@@ -852,7 +854,16 @@ async function projectWriterSpawnSources(
     ),
     kind: spawn.value.task.task.type === "WorkTask" ? "Work" : "Evaluation",
   });
-  return source === undefined ? {} : { source };
+  const brief = await writer.ticketBriefs.brief(memory.lease.partition, ticket);
+  const images = await projectWriterBriefImages(
+    writer,
+    memory.lease.partition,
+    brief?.images ?? [],
+  );
+  return {
+    ...(source === undefined ? {} : { source }),
+    ...(images.length === 0 ? {} : { images }),
+  };
 }
 
 /**

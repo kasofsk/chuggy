@@ -503,7 +503,7 @@ export interface TicketServiceProcessRootConfig {
   readonly ticket?: TicketServiceConfig;
   readonly source: Omit<GitPromotionOptions, "credentials"> &
     CredentialFilesOptions;
-  /** Where a brief's named images are read back, to pin the digest a dispatch's bundle carries. */
+  /** Where a brief's named images are read back, to pin the digest every spawn's bundle carries. */
   readonly artifacts: { readonly root: string };
   /**
    * The App key this deployment observes a source through, when it holds one.
