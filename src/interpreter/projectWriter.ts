@@ -761,7 +761,7 @@ async function projectWriterBriefImages(
     });
     if (read.read === "Unavailable")
       throw new Error(
-        "project writer: a brief's own image was unavailable at dispatch",
+        "project writer: a brief's own image was unavailable to pin",
       );
     if (read.read === "NotFound")
       throw new IntegrityContradiction(
@@ -832,7 +832,9 @@ export function projectWriterSpawnSourceRef(state: TicketState): number {
  * evaluation at the commit the result it judges was produced at, both of which
  * are facts already written down, and its change base may also rest on an
  * ancestry answer, which may fetch history from the remote, about whether that
- * commit descends from a failed landing's base.
+ * commit descends from a failed landing's base. Its brief's images are pinned
+ * as a dispatch pins them, because every task is briefed with them and its
+ * worker reads only what its own bundle names.
  */
 async function projectWriterSpawnSources(
   writer: ProjectTicketWriter,
@@ -852,7 +854,16 @@ async function projectWriterSpawnSources(
     ),
     kind: spawn.value.task.task.type === "WorkTask" ? "Work" : "Evaluation",
   });
-  return source === undefined ? {} : { source };
+  const brief = await writer.ticketBriefs.brief(memory.lease.partition, ticket);
+  const images = await projectWriterBriefImages(
+    writer,
+    memory.lease.partition,
+    brief?.images ?? [],
+  );
+  return {
+    ...(source === undefined ? {} : { source }),
+    ...(images.length === 0 ? {} : { images }),
+  };
 }
 
 /**

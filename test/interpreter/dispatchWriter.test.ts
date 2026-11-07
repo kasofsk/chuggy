@@ -1150,6 +1150,54 @@ test("a rework spawns at the accepted source, asking no remote", async () => {
   });
 });
 
+/**
+ * Every task is briefed with its ticket's images and its worker reads only
+ * what its own bundle names, so the evaluation a work result opens and the
+ * rework a failed judgement opens each pin them as the dispatch did.
+ */
+test("an evaluation and a rework pin the brief's images, as the dispatch did", async () => {
+  const content = new TextEncoder().encode("a png, more or less");
+  const expectedDigest = createHash("sha256").update(content).digest("hex");
+  const imaged: TicketBriefPort = {
+    brief: () =>
+      Promise.resolve(
+        asDraftBrief({
+          intent: "Fix the importer.",
+          links: [],
+          images: ["image/png:one"],
+        }),
+      ),
+  };
+  for (const [memory, input, kind] of [
+    [dispatchedMemory(), completionInput(workCompletion), "SpawnEvaluation"],
+    [judgementMemory(), reworkCompletionInput(), "SpawnWork"],
+  ] as const) {
+    const reads: string[] = [];
+    const { offered } = await decidedWith(
+      memory,
+      input,
+      pinnedSources([]),
+      imaged,
+      {},
+      {
+        readArtifact: (request) => {
+          reads.push(request.artifact);
+          return Promise.resolve({ read: "Content", content });
+        },
+      },
+    );
+    const spawn =
+      offered?.outcome.outcome === "Journaled"
+        ? offered.outcome.materialization.execution[0]
+        : undefined;
+    assert.equal(spawn?.kind, kind);
+    assert.deepEqual(reads, ["image/png:one"]);
+    assert.deepEqual(spawn?.bundle?.images, [
+      { artifact: "image/png:one", digest: expectedDigest },
+    ]);
+  }
+});
+
 /** A stage whose second evaluator stopped rather than answering, which is what a resume returns to. */
 function stoppedStageMemory(): ProjectMemory {
   const stopping = evaluationTaskOf(1, 1, 1, 1, 2);
