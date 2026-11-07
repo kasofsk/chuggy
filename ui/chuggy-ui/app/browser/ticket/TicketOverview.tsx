@@ -25,7 +25,10 @@ import type {
 import type { TicketPhase } from "../../../../../src/contract/rosters.ts";
 import { agoFigure, costFigure } from "../../core/figures.ts";
 import { configurationLabel, creatorLabel } from "../../core/labels.ts";
-import { repositoryLabel } from "../../core/projectRepositories.ts";
+import {
+  repositoryLabel,
+  repositoryPage,
+} from "../../core/projectRepositories.ts";
 import {
   ticketLandingsHeld,
   ticketLandingsJoined,
@@ -96,6 +99,23 @@ function TicketDependencies(props: {
         </li>
       ))}
     </ul>
+  );
+}
+
+/** The Repository field: a link to the repository's own page where its
+ * address names one, text otherwise. */
+function TicketSidebarRepository(props: {
+  readonly repository: string;
+}): ReactNode {
+  const { repository } = props;
+  const label = repositoryLabel(repository);
+  const page = repositoryPage(repository);
+  return page === undefined ? (
+    <span title={repository}>{label}</span>
+  ) : (
+    <a href={page} rel="noopener noreferrer" target="_blank" title={repository}>
+      {label}
+    </a>
   );
 }
 
@@ -174,7 +194,7 @@ function TicketSidebarDrawn(props: {
           {repository === undefined ? (
             "None"
           ) : (
-            <span title={repository}>{repositoryLabel(repository)}</span>
+            <TicketSidebarRepository repository={repository} />
           )}
         </Field>
         {branch === undefined ? null : (

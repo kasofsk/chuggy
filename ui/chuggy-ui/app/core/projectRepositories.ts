@@ -31,6 +31,7 @@ import {
 } from "./forgeInstallation.ts";
 import type { ForgeReturnWord } from "./forgeReturn.ts";
 import type { PanelState } from "./freshness.ts";
+import { httpsUrl } from "./httpsUrl.ts";
 import type { WorkRunner } from "./workRunner.ts";
 
 /**
@@ -43,6 +44,20 @@ export function repositoryLabel(repository: string): string {
   const segments = repository.split("/").filter((segment) => segment !== "");
   const last = segments.slice(-2);
   return last.length === 2 ? last.join("/").replace(/\.git$/u, "") : repository;
+}
+
+/**
+ * The repository's own page on its forge, where the address names one: an
+ * https clone address less a trailing `/` and a trailing `.git`. Nothing for
+ * any other address — an http one, an ssh one, or one that does not parse —
+ * by the same https-only rule `ticketLandingLink` holds for a pull request's
+ * address.
+ */
+export function repositoryPage(repository: string): string | undefined {
+  const parsed = httpsUrl(repository);
+  return parsed === undefined
+    ? undefined
+    : parsed.href.replace(/\/$/u, "").replace(/\.git$/u, "");
 }
 
 /** What one installation was read to grant, under the account it is on. */
