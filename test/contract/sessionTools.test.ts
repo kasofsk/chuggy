@@ -16,13 +16,19 @@ import {
   configurationCanonicalCharsMax,
   dispatchViewSchemaVersion,
   nativeHttpBodyBytesMax,
+  nativeHttpPageItemsMax,
   sessionTurnToolsMax,
 } from "../../src/contract/http.ts";
 import * as authoring from "../../src/contract/authoring.ts";
 import * as brief from "../../src/contract/brief.ts";
 import * as configurationSelection from "../../src/contract/configurationSelection.ts";
 import * as epics from "../../src/contract/epics.ts";
-import { sessionCapabilities } from "../../src/contract/rosters.ts";
+import { epicViewResponseSchema } from "../../src/contract/responses.ts";
+import {
+  phaseRoster,
+  sessionCapabilities,
+} from "../../src/contract/rosters.ts";
+import * as epicDomain from "../../src/domain/epics.ts";
 import {
   allChuggyTools,
   allDependentRelations,
@@ -31,6 +37,7 @@ import {
   chuggyDocsIndex,
   chuggyToolDispatchViewResponseBytesMax,
   chuggyToolDocsResponseBytesMax,
+  chuggyToolEpicViewResponseBytesMax,
   chuggyToolNames,
   chuggyToolPagesMax,
   chuggyToolPrefix,
@@ -324,6 +331,76 @@ test("a dispatch view page of the heaviest candidate is under the bound dispatch
   assert.ok(bytes <= chuggyToolDispatchViewResponseBytesMax);
 });
 
+/**
+ * The heaviest content the domain saves: every text of control characters,
+ * which JSON escapes heaviest, the description padded to the content's byte
+ * cap, and the most members at the largest numbers.
+ */
+function heaviestEpicContent(): epicDomain.EpicContent {
+  const escaped = "\u0001";
+  const content = {
+    title: escaped.repeat(epics.epicTitleCharsMax),
+    summary: escaped.repeat(epics.epicSummaryCharsMax),
+    description: "",
+    visibility: "Archived" as const,
+    tickets: Array.from(
+      { length: epics.epicTicketsMax },
+      (_, index) => Number.MAX_SAFE_INTEGER - epics.epicTicketsMax + index + 1,
+    ),
+  };
+  const spare =
+    epics.epicContentBytesMax -
+    Buffer.byteLength(JSON.stringify(content), "utf8");
+  const escapedBytes = JSON.stringify(escaped).length - 2;
+  return {
+    ...content,
+    description:
+      escaped.repeat(Math.floor(spare / escapedBytes)) +
+      "x".repeat(spare % escapedBytes),
+  };
+}
+
+/**
+ * An epic whose content is at its cap is past an ordinary answer's bound, so
+ * `add_epic_tickets` and `remove_epic_tickets` reading the view under that
+ * bound would refuse a change the server saves.
+ */
+test("an epic view of the heaviest epic the domain saves is under the bound the epic tools read it with", () => {
+  const content = heaviestEpicContent();
+  assert.deepEqual(
+    epicDomain.decideEpic(new Map(), { kind: "Create", content }, () => true),
+    { kind: "Saved", epic: 1, revision: 1 },
+  );
+  assert.equal(
+    Buffer.byteLength(JSON.stringify(content), "utf8"),
+    epics.epicContentBytesMax,
+  );
+  const longestStatus = [...epicDomain.epicStatuses].sort(
+    (left, right) => right.length - left.length,
+  )[0];
+  const view = epicViewResponseSchema.parse({
+    number: Number.MAX_SAFE_INTEGER,
+    revision: Number.MAX_SAFE_INTEGER,
+    ...content,
+    progress: {
+      byPhase: Object.fromEntries(
+        phaseRoster.map((phase) => [phase, epics.epicTicketsMax]),
+      ),
+      drafts: epics.epicTicketsMax,
+      done: epics.epicTicketsMax,
+      total: epics.epicTicketsMax,
+    },
+    status: longestStatus,
+    waitingOnOutside: Array.from(
+      { length: nativeHttpPageItemsMax },
+      () => Number.MAX_SAFE_INTEGER,
+    ),
+  });
+  const bytes = Buffer.byteLength(JSON.stringify(view), "utf8");
+  assert.ok(bytes > nativeHttpBodyBytesMax);
+  assert.ok(bytes <= chuggyToolEpicViewResponseBytesMax);
+});
+
 test("the request shapes a drafting tool publishes, and their bounds, are the package entry's own", async () => {
   const entry =
     (await import("@chuggy/worker-contract/sessionTools")) as Record<
@@ -353,6 +430,7 @@ test("the request shapes a drafting tool publishes, and their bounds, are the pa
     epicSummaryCharsMax: epics.epicSummaryCharsMax,
     epicContentBytesMax: epics.epicContentBytesMax,
     epicPageLimitMax: epics.epicPageLimitMax,
+    epicTicketsMax: epics.epicTicketsMax,
   };
   for (const [name, value] of Object.entries(published))
     assert.equal(entry[name], value, name);
