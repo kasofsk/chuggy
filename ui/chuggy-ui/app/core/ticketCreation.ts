@@ -1077,10 +1077,9 @@ function creationStatedFaults(
  * How this brief lands, sent explicitly on every submission — even where the
  * mode is the repository's own default — so the ticket records the landing it
  * was released with. `None` names no reference at all; every other mode names
- * one only where a target was typed, and a value left in the box `None` draws
- * none for is never sent. The policy is sent beside a push or a merged
- * proposal only, the modes a policy orders, so a policy left chosen under
- * another mode is never sent either.
+ * one only where a target was typed, a policy goes only beside a push or a
+ * merged proposal, the modes a policy orders, and a value left where the mode
+ * draws none is never sent.
  */
 function creationFinalizationOf(
   form: TicketCreationForm,
