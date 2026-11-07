@@ -12,7 +12,6 @@ import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
-import { spanRanFigure } from "../../core/figures.ts";
 import { cycleLabel } from "../../core/ticketLedger.ts";
 import type {
   TicketStepAddress,
@@ -23,8 +22,8 @@ import type {
   TicketSteps,
 } from "../../core/ticketSteps.ts";
 import { Chevron } from "../ui/Chevron.tsx";
-import { Figure } from "../ui/Figure.tsx";
 import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
+import { TicketRunTime } from "./TicketRunTime.tsx";
 
 import "./ticket.css";
 
@@ -70,8 +69,13 @@ function TicketStepLineDrawn(props: {
 }): ReactNode {
   const { line } = props;
   if (line.line === "Words") return line.words;
-  const ran = <Figure figure={spanRanFigure(line.span, props.nowMs)} />;
-  return line.live && props.said !== false ? <>running · {ran}</> : ran;
+  return (
+    <TicketRunTime
+      runs={line.runs}
+      nowMs={props.nowMs}
+      running={line.live && props.said !== false}
+    />
+  );
 }
 
 function TicketStepEvaluatorDrawn(props: {

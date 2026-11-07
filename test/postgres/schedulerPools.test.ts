@@ -483,6 +483,111 @@ test("a waiting attempt is withdrawn and opened again once the backoff has passe
   );
 });
 
+/** What the summary read answers of an execution: when it was taken, read as the API reads it. */
+async function summaryTakenAt(routed: PoolRouted): Promise<string | undefined> {
+  const page = await postgresOperationalReads(apiPool).executions(
+    routed.project.partition,
+    { limit: 10 },
+    reader,
+  );
+  const summary = page.executions.find(
+    (each) => each.execution === routed.execution,
+  );
+  assert.ok(summary !== undefined);
+  return summary.takenAt;
+}
+
+/** Withdraws a routed execution's first attempt unclaimed, as a repinned runtime does, and opens its second once the backoff has run out. */
+async function poolReopened(routed: PoolRouted): Promise<void> {
+  const repinned = {
+    ...service,
+    workerRuntime: `registry.chuggy.internal/chuggy/worker-runtime@sha256:${"f".repeat(64)}`,
+  };
+  await executionSchedulerLaunch(repinned, routed.project.epoch);
+  await rig.harness.query(
+    `UPDATE execution
+        SET placement_backoff_from=placement_backoff_from-make_interval(secs=>$4)
+      WHERE tenant=$1 AND project=$2 AND execution=$3`,
+    [...poolRoutedKey(routed), service.config.placementBackoffSecs],
+  );
+  await executionSchedulerLaunch(repinned, routed.project.epoch);
+  assert.equal((await poolRoutedStanding(rig, routed)).attempts.length, 2);
+}
+
+/** A routed execution whose first attempt was withdrawn unclaimed and whose second a pool claimed, with that claim. */
+async function poolClaimedSecond(name: string) {
+  const routed = await poolRoutedExecution(rig, name);
+  await poolRegistered(routed.project.partition, "amd", [
+    "Platform:Linux:Amd64",
+  ]);
+  await executionSchedulerLaunch(service, routed.project.epoch);
+  assert.equal(await summaryTakenAt(routed), undefined);
+  await poolReopened(routed);
+  assert.equal(await summaryTakenAt(routed), undefined);
+  assert.notEqual(await poolClaim(routed), undefined);
+  const claimed = await waitingRow(routed);
+  assert.ok(claimed.claimed_at !== null);
+  assert.equal(claimed.attempt_number, 2);
+  return { routed, claimedAt: claimed.claimed_at };
+}
+
+test("a pool execution's summary is taken at its claim, and not by an attempt withdrawn unclaimed or one still waiting", async () => {
+  const { routed, claimedAt } = await poolClaimedSecond("pools-taken");
+  assert.equal(
+    Date.parse((await summaryTakenAt(routed)) ?? ""),
+    claimedAt.getTime(),
+  );
+});
+
+/** Rewrites a finished attempt's claim, as history from before claims were recorded or from another claim would have it; a finished attempt is otherwise written once. */
+async function finishedClaimed(
+  attempt: readonly unknown[],
+  claimedAt: Date | null,
+): Promise<void> {
+  const rewriting = await rig.harness.begin();
+  try {
+    await rewriting.query("SET LOCAL session_replication_role=replica");
+    await rewriting.query(
+      `UPDATE execution_attempt SET claimed_at=$5
+        WHERE tenant=$1 AND project=$2 AND execution=$3 AND attempt_number=$4
+          AND ended_at IS NOT NULL`,
+      [...attempt, claimedAt],
+    );
+  } catch (error) {
+    await rewriting.rollback();
+    throw error;
+  }
+  await rewriting.commit();
+}
+
+test("a pool execution's summary is taken at its earliest claim, or at the opening of an attempt that ended unclaimed with its run recorded", async () => {
+  const { routed, claimedAt } = await poolClaimedSecond("pools-taken-first");
+  const first = [...poolRoutedKey(routed), 1];
+  const earlier = new Date(claimedAt.getTime() - 60_000);
+  await finishedClaimed(first, earlier);
+  assert.equal(
+    Date.parse((await summaryTakenAt(routed)) ?? ""),
+    earlier.getTime(),
+  );
+  await finishedClaimed(first, null);
+  const [opened] = (await rig.harness.query(
+    `INSERT INTO execution_run (tenant,project,execution,attempt)
+     SELECT tenant,project,execution,attempt FROM execution_attempt
+      WHERE tenant=$1 AND project=$2 AND execution=$3 AND attempt_number=$4
+        AND ended_at IS NOT NULL
+     RETURNING (SELECT opened_at FROM execution_attempt a
+                 WHERE a.tenant=$1 AND a.project=$2 AND a.execution=$3
+                   AND a.attempt_number=$4) AS opened_at`,
+    first,
+  )) as readonly { opened_at: Date }[];
+  assert.ok(opened !== undefined);
+  assert.ok(opened.opened_at < claimedAt);
+  assert.equal(
+    Date.parse((await summaryTakenAt(routed)) ?? ""),
+    opened.opened_at.getTime(),
+  );
+});
+
 test("a waiting attempt is blocked once a registry change leaves no runner configured to run it", async () => {
   const routed = await poolRoutedExecution(rig, "pools-deregistered");
   const { partition } = routed.project;

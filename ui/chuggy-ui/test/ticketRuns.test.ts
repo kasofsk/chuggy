@@ -7,9 +7,10 @@
 import { expect, test } from "vitest";
 
 import type { ExecutionResponse } from "../../../src/contract/responses.ts";
-import { spanRanFigure } from "../app/core/figures.ts";
+import { runTimeLineOf } from "../app/core/figures.ts";
 import { runResultLinePlain } from "../app/core/runResult.ts";
-import { runSpanRanOf } from "../app/core/runTotals.ts";
+import { runTimeOf } from "../app/core/runTotals.ts";
+import type { RunTimed } from "../app/core/runTotals.ts";
 import { runTranscriptStepsCut } from "../app/core/runTranscript.ts";
 import type { ConversationExchange } from "../app/core/conversation.ts";
 import {
@@ -201,55 +202,116 @@ test("the landing page draws the newest cycle holding a landing, or the current 
   expect(ticketRunsLandingCycle([])).toBeUndefined();
 });
 
-test("a run's time is its span from its first attempt's opening to its end", () => {
+/** The line a set of runs is drawn with, read against a clock. */
+function lineOf(runs: readonly RunTimed[], nowMs: number) {
+  return runTimeLineOf(runTimeOf(runs, nowMs));
+}
+
+test("a run's line is its time from when it was taken to its end, with its wait beside it", () => {
   const run = ledgerExecution({
     execution: "e-1",
     task: 1,
     identity: workIdentity(1),
     outcome: "Passed",
-    registeredAt: "2026-08-26T00:00:00Z",
-    terminalAt: "2026-08-26T00:08:00Z",
+    registeredAt: "2026-11-07T10:00:00Z",
+    takenAt: "2026-11-07T10:23:00Z",
+    terminalAt: "2026-11-07T10:25:00Z",
   });
-  const started = { ...run, startedAt: "2026-08-26T00:02:24Z" };
-  const nowMs = Date.parse("2026-08-26T01:00:00Z");
-  expect(spanRanFigure(runSpanRanOf([started]), nowMs)).toEqual({
-    kind: "Duration",
-    text: "5m 36s",
+  expect(lineOf([run], Date.parse("2026-11-07T12:00:00Z"))).toEqual({
+    line: "Ran",
+    ran: { kind: "Duration", text: "2m" },
+    waited: { kind: "Duration", text: "23m" },
   });
-  expect(spanRanFigure(runSpanRanOf([run]), nowMs)).toEqual({
-    kind: "Duration",
-    text: "8m",
+});
+
+test("a wait shorter than a minute is not drawn beside a run's time", () => {
+  const run = ledgerExecution({
+    execution: "e-1",
+    task: 1,
+    identity: workIdentity(1),
+    outcome: "Passed",
+    registeredAt: "2026-11-07T10:00:00Z",
+    takenAt: "2026-11-07T10:00:59Z",
+    terminalAt: "2026-11-07T10:08:59Z",
+  });
+  expect(lineOf([run], Date.parse("2026-11-07T12:00:00Z"))).toEqual({
+    line: "Ran",
+    ran: { kind: "Duration", text: "8m" },
+    waited: undefined,
   });
 });
 
 test("a command run that measured no duration still reads the seconds it took", () => {
-  const command = {
-    ...ledgerExecution({
+  const command = ledgerExecution({
+    execution: "e-2",
+    task: 2,
+    identity: evalIdentity(1, 1, 1),
+    outcome: "Passed",
+    carrier: "Commands",
+    totals: { turns: 0, durationMs: 0, costUsdMicros: 0 },
+    takenAt: "2026-08-26T00:20:00Z",
+    terminalAt: "2026-08-26T00:20:07Z",
+  });
+  expect(command.runTotals?.durationMs).toBe(0);
+  expect(lineOf([command], 0)).toMatchObject({
+    line: "Ran",
+    ran: { kind: "Duration", text: "7s" },
+  });
+});
+
+test("a run nothing has taken reads as waiting, its wait growing with now", () => {
+  for (const status of ["Queued", "Admitted", "Launching"] as const) {
+    const run = ledgerExecution({
+      execution: "e-1",
+      task: 1,
+      identity: workIdentity(1),
+      status,
+      untaken: true,
+      registeredAt: "2026-11-07T10:00:00Z",
+    });
+    expect(run.takenAt, status).toBeUndefined();
+    expect(lineOf([run], Date.parse("2026-11-07T10:05:00Z")), status).toEqual({
+      line: "Waiting",
+      waited: { kind: "Duration", text: "5m" },
+    });
+    expect(lineOf([run], Date.parse("2026-11-07T10:07:00Z")), status).toEqual({
+      line: "Waiting",
+      waited: { kind: "Duration", text: "7m" },
+    });
+  }
+});
+
+test("a cycle's line sums its runs' times and does not draw the gap between them", () => {
+  const cycles = runsOf([
+    {
+      execution: "e-1",
+      task: 1,
+      identity: workIdentity(1),
+      outcome: "Passed",
+      registeredAt: "2026-11-07T10:00:00Z",
+      terminalAt: "2026-11-07T10:04:00Z",
+    },
+    {
       execution: "e-2",
       task: 2,
       identity: evalIdentity(1, 1, 1),
       outcome: "Passed",
-      carrier: "Commands",
-      totals: { turns: 0, durationMs: 0, costUsdMicros: 0 },
-      terminalAt: "2026-08-26T00:20:07Z",
-    }),
-    startedAt: "2026-08-26T00:20:00Z",
-  };
-  expect(command.runTotals?.durationMs).toBe(0);
-  expect(spanRanFigure(runSpanRanOf([command]), 0)).toEqual({
-    kind: "Duration",
-    text: "7s",
-  });
-});
-
-test("a run still open has run until now, and one not started has no time", () => {
-  const nowMs = Date.parse("2026-08-26T00:01:30Z");
+      registeredAt: "2026-11-07T10:14:00Z",
+      terminalAt: "2026-11-07T10:17:00Z",
+    },
+  ]);
+  const cycle = cycles[0];
+  expect(cycle?.executions.map((each) => each.execution)).toEqual([
+    "e-1",
+    "e-2",
+  ]);
   expect(
-    spanRanFigure({ from: "2026-08-26T00:00:00Z", to: undefined }, nowMs),
-  ).toEqual({ kind: "Duration", text: "1m 30s" });
-  expect(spanRanFigure({ from: undefined, to: undefined }, nowMs).kind).toBe(
-    "Absent",
-  );
+    lineOf(cycle?.executions ?? [], Date.parse("2026-11-07T12:00:00Z")),
+  ).toEqual({
+    line: "Ran",
+    ran: { kind: "Duration", text: "7m" },
+    waited: undefined,
+  });
 });
 
 test("a sub-tab's address is its word, read in any case, and an unknown word is no sub-tab", () => {
@@ -291,6 +353,7 @@ test("a run's details say where it ran, how long it waited and what it spent, by
     identity: evalIdentity(2, 2, 1),
     outcome: "Passed",
     registeredAt: "2026-08-26T00:00:00Z",
+    takenAt: "2026-08-26T00:23:30Z",
     totals: { turns: 26, durationMs: 156_000, costUsdMicros: 920_000 },
   });
   const read: ExecutionResponse = {
@@ -300,12 +363,12 @@ test("a run's details say where it ran, how long it waited and what it spent, by
     resources: { cpuMillis: 2_000 },
     attempts: [],
   };
-  expect(ticketRunDetailsOf(read)).toEqual({
+  expect(ticketRunDetailsOf(read, Date.parse("2026-08-26T01:00:00Z"))).toEqual({
     runner: "Linux · Amd64 · container",
     image: { text: "chuggy/worker", title: "chuggy/worker" },
     worker: "chuggy-worker 0.63",
     cpus: "2",
-    waited: { kind: "Duration", text: "<1s" },
+    waited: { kind: "Duration", text: "23m 30s" },
     attempts: 0,
     model: "claude-fable-5",
     turns: 26,

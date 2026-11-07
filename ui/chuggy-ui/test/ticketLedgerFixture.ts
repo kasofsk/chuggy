@@ -44,6 +44,9 @@ export interface ExecutionShape {
   readonly relaunches?: number;
   readonly totals?: TotalsShape;
   readonly registeredAt?: string;
+  readonly takenAt?: string;
+  /** That nothing has taken it, where its status alone would say something has. */
+  readonly untaken?: true;
   readonly terminalAt?: string;
   readonly carrier?: BriefingCarrier;
   readonly runStartedAt?: string;
@@ -113,14 +116,19 @@ function ledgerTotals(shape: TotalsShape): RunTotals {
   };
 }
 
-/** One row, with everything the ledger never reads held constant. */
+/** One row, with everything the ledger never reads held constant: taken as
+ * it registered, unless it is queued or a case says nothing has taken it. */
 export function ledgerExecution(shape: ExecutionShape): ExecutionSummary {
-  const { totals, ...wire } = shape;
+  const { totals, untaken, ...wire } = shape;
   const registeredAt = ledgerInstant(shape.task * ledgerTaskGapMs);
   const running =
     shape.status !== undefined &&
     shape.status !== "Terminal" &&
     shape.status !== "Cancelled";
+  const taken =
+    untaken !== true &&
+    shape.status !== "Queued" &&
+    shape.status !== "Admitted";
   return {
     ticket: 21,
     taskKind: shape.identity.type === "WorkTask" ? "Work" : "Evaluation",
@@ -139,6 +147,7 @@ export function ledgerExecution(shape: ExecutionShape): ExecutionSummary {
     status: "Terminal",
     retriesSpent: 0,
     registeredAt,
+    ...(taken ? { takenAt: shape.registeredAt ?? registeredAt } : {}),
     ...(running
       ? {}
       : {

@@ -29,12 +29,11 @@ import {
 import {
   runNowAttempt,
   runNowAttemptLive,
-  runNowElapsedFigure,
   runNowOf,
-  runNowStartedAt,
   runNowStatus,
 } from "../../core/runNow.ts";
 import type { RunNowAttempt } from "../../core/runNow.ts";
+import type { RunTimed } from "../../core/runTotals.ts";
 import { settingsRoutes } from "../../core/settingsNav.ts";
 import { cycleLabel } from "../../core/ticketLedger.ts";
 import type { RunningNow } from "../../core/ticketSituation.ts";
@@ -44,9 +43,9 @@ import { PanelUnready } from "../DataPanel.tsx";
 import { usePersonalRunner } from "../personalRunner.ts";
 import { useRunTranscript } from "../RunTranscript.tsx";
 import { ButtonLink } from "../ui/Button.tsx";
-import { Figure } from "../ui/Figure.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
+import { TicketRunTime } from "./TicketRunTime.tsx";
 
 import "./ticket.css";
 
@@ -55,7 +54,7 @@ function TicketNowHead(props: {
   readonly ticket: number;
   readonly running: RunningNow;
   readonly status: string;
-  readonly since: string;
+  readonly run: RunTimed;
   readonly nowMs: number;
 }): ReactNode {
   const { running } = props;
@@ -65,7 +64,7 @@ function TicketNowHead(props: {
       <strong className="ticket-card-title">{`${props.status} ${running.step}`}</strong>
       <span className="ticket-card-where">
         {`${cycleLabel(running.cycle)} · `}
-        <Figure figure={runNowElapsedFigure(props.since, props.nowMs)} />
+        <TicketRunTime runs={[props.run]} nowMs={props.nowMs} />
       </span>
       <span className="ticket-card-action">
         <ButtonLink
@@ -173,7 +172,7 @@ export function TicketNow(props: {
         ticket={props.ticket}
         running={running}
         status={runNowStatus(summary)}
-        since={runNowStartedAt(execution, attempt)}
+        run={summary}
         nowMs={props.nowMs}
       />
       {attempt === undefined || transcript === undefined ? null : (

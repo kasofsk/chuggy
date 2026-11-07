@@ -8,9 +8,9 @@
  * what this adds is the name of each step, the few words a cycle ended on and
  * the address of each run.
  *
- * A RUN'S TIME IS ITS SPAN, from its first attempt's opening to its end, so a
- * run whose worker measured nothing — a command list — still reads the time it
- * took.
+ * A RUN'S TIME AND ITS WAIT ARE `runTotals.ts`'s, read off the summary rather
+ * than what a worker measured, so a command list still reads the time it took;
+ * a cycle's are its runs' summed.
  *
  * A STAGE IS NAMED BY THE PLAN its catalog selects, and by its number where the
  * configuration is no catalog or is not read yet.
@@ -27,8 +27,8 @@ import { durationFigure, tokenCountText } from "./figures.ts";
 import type { Figure } from "./figures.ts";
 import { digestShortened } from "./labels.ts";
 import type { Label } from "./labels.ts";
-import { runSpanRanOf } from "./runTotals.ts";
-import type { RunSpan, RunSpend } from "./runTotals.ts";
+import { runTimeOf } from "./runTotals.ts";
+import type { RunSpend } from "./runTotals.ts";
 import { ticketLandingSummary } from "./ticketLandings.ts";
 import type { TicketLanding, TicketLandingsJoined } from "./ticketLandings.ts";
 import { cycleLastSet, setVerdict, stageLabel } from "./ticketLedger.ts";
@@ -50,7 +50,6 @@ export interface TicketRunStep {
   readonly name: string;
   readonly cycle: number;
   readonly verdict: SetVerdict;
-  readonly span: RunSpan;
   readonly execution: ExecutionSummary;
   /** A generation an evaluator's resume replaced. */
   readonly superseded: boolean;
@@ -78,7 +77,8 @@ export interface TicketRunsCycle {
   readonly standing: CycleStanding;
   /** What the cycle came to, in a few words. */
   readonly outcome: string;
-  readonly span: RunSpan;
+  /** Its runs' executions, whose times and waits are its own summed. */
+  readonly executions: readonly ExecutionSummary[];
   readonly spend: RunSpend;
   readonly rows: readonly TicketRunsRow[];
 }
@@ -104,7 +104,6 @@ function ticketRunsStep(
         ? execution.identity.value.cycle
         : execution.identity.value.workCycle,
     verdict: setVerdict([execution]),
-    span: runSpanRanOf([execution]),
     execution,
     superseded,
   };
@@ -198,7 +197,7 @@ function ticketRunsCycleOf(
     ordinal: cycle.ordinal,
     standing: cycle.standing,
     outcome: ticketRunsCycleOutcome(cycle, plan.names, landing),
-    span: runSpanRanOf(runs.map((row) => row.execution)),
+    executions: runs.map((row) => row.execution),
     spend: cycle.spend,
     rows: [...work, ...stages, ...landed],
   };
@@ -321,17 +320,14 @@ function ticketRunTokens(totals: TicketRunTotals): string {
   ].join(" · ");
 }
 
-function ticketRunWaited(execution: ExecutionResponse): Figure {
-  const registered = Date.parse(execution.registeredAt);
-  const started =
-    execution.startedAt === undefined ? NaN : Date.parse(execution.startedAt);
-  return Number.isFinite(registered) && Number.isFinite(started)
-    ? durationFigure(started - registered)
-    : { kind: "Absent", why: "Not started" };
+/** The run's wait, counted to now while nothing has taken it. */
+function ticketRunWaited(execution: ExecutionResponse, nowMs: number): Figure {
+  return durationFigure(runTimeOf([execution], nowMs).waitedMs);
 }
 
 export function ticketRunDetailsOf(
   execution: ExecutionResponse,
+  nowMs: number,
 ): TicketRunDetails {
   const requirement = execution.requirement;
   const totals = execution.runTotals;
@@ -355,7 +351,7 @@ export function ticketRunDetailsOf(
       cpuMillis === undefined
         ? undefined
         : String(cpuMillis / ticketRunCpuMillis),
-    waited: ticketRunWaited(execution),
+    waited: ticketRunWaited(execution, nowMs),
     attempts: execution.attempts.length,
     model: models.length === 0 ? undefined : models.join(", "),
     turns: totals?.turns,

@@ -16,8 +16,6 @@ import type {
   ConversationBlock,
 } from "./conversation.ts";
 import { conversationArgumentSummary } from "./conversation.ts";
-import { durationFigure } from "./figures.ts";
-import type { Figure } from "./figures.ts";
 import type { RunTranscriptReading } from "./runTranscript.ts";
 import { executionStarting } from "./ticketLedger.ts";
 
@@ -60,32 +58,6 @@ export function runNowStatus(
   execution: ExecutionSummary,
 ): "Starting" | "Running" {
   return executionStarting(execution) ? "Starting" : "Running";
-}
-
-/** When the run began: its attempt's own start where the detail is read, and
- * the execution's where it is not. */
-export function runNowStartedAt(
-  execution: ExecutionSummary,
-  attempt: RunNowAttempt | undefined,
-): string {
-  return (
-    attempt?.run?.startedAt ??
-    attempt?.openedAt ??
-    execution.startedAt ??
-    execution.registeredAt
-  );
-}
-
-/** How long something the card dates has been going: a duration, because
- * the card reads it as the time a call or a stage has taken so far. */
-export function runNowElapsedFigure(
-  at: string | undefined,
-  nowMs: number,
-): Figure {
-  const atMs = at === undefined ? Number.NaN : Date.parse(at);
-  return Number.isFinite(atMs)
-    ? durationFigure(nowMs - atMs)
-    : { kind: "Absent", why: "No instant" };
 }
 
 interface RunNowWalk {

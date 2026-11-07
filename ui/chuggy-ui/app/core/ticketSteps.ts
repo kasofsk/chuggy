@@ -12,8 +12,7 @@
  * reach it: then it was not reached.
  */
 
-import type { RunSpan } from "./runTotals.ts";
-import { runSpanRanOf } from "./runTotals.ts";
+import type { RunTimed } from "./runTotals.ts";
 import {
   cycleLabel,
   cycleLastSet,
@@ -45,9 +44,14 @@ import type { TicketRunMark } from "./ticketRuns.ts";
 import { verdictTone } from "./tones.ts";
 import type { Tone } from "./tones.ts";
 
-/** What a box says under its name: how long it ran, or a few words. */
+/** What a box says under its name: the runs whose times and waits it sums,
+ * or a few words. */
 export type TicketStepLine =
-  | { readonly line: "Ran"; readonly span: RunSpan; readonly live: boolean }
+  | {
+      readonly line: "Ran";
+      readonly runs: readonly RunTimed[];
+      readonly live: boolean;
+    }
   | { readonly line: "Words"; readonly words: string };
 
 /** Where a box leads: its run's page, the landing's, or nowhere. */
@@ -155,7 +159,7 @@ function ticketStepsRan(name: string, set: TaskSet): TicketStepRan {
     tone: verdictTone(set.verdict),
     line: {
       line: "Ran",
-      span: runSpanRanOf(set.executions),
+      runs: set.executions,
       live: ticketRunLive(set.verdict),
     },
     address: last === undefined ? undefined : { to: "Run", task: last.task },

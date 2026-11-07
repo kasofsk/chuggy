@@ -43,9 +43,12 @@ import { TicketPageEveryTab, ticketHeader } from "./ticketPageEveryTab.tsx";
 
 const atlas: PartitionIdentity = { tenant: "vteng", project: "chuggy" };
 
+const pageClock = vi.hoisted(() => ({ atMs: undefined as number | undefined }));
+
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
   sleepMs: () => Promise.resolve(),
+  nowMs: () => pageClock.atMs ?? Date.now(),
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -77,6 +80,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  pageClock.atMs = undefined;
   cleanup();
   history.replaceState(null, "", "/");
   document.documentElement.removeAttribute("data-theme");
@@ -787,27 +791,82 @@ test("the Runs tab reads each run it lists once, for the line it says", async ()
   );
 });
 
-/** A run's time is how long it ran, from its first attempt's opening, so the
- * queue before it is no part of it. */
-test("a row's time is its run's span from its start, the wait left out", async () => {
-  const started: readonly ExecutionShape[] = ticket21Parked.map((shape) =>
-    shape.task === 1 ? { ...shape, startedAt: "2026-08-26T00:11:00Z" } : shape,
+/** A work run registered at ten, taken by a runner at twenty-three past and
+ * ended at twenty-five past, beside one nothing has taken yet. */
+const waitedLong: readonly ExecutionShape[] = [
+  {
+    execution: "execution-waited",
+    task: 1,
+    identity: workIdentity(1),
+    outcome: "Passed",
+    registeredAt: "2026-11-07T10:00:00Z",
+    takenAt: "2026-11-07T10:23:00Z",
+    terminalAt: "2026-11-07T10:25:00Z",
+  },
+];
+
+const untakenRun: ExecutionShape = {
+  execution: "execution-untaken",
+  task: 2,
+  identity: evalIdentity(1, 1, 1),
+  status: "Launching",
+  untaken: true,
+  registeredAt: "2026-11-07T10:30:00Z",
+};
+
+/** What a run-time cell draws: its run's time, and its wait where it has one. */
+function runTimeSaid(cell: Element | null | undefined): readonly unknown[] {
+  return [
+    cell?.querySelector(".ticket-run-time-main")?.textContent,
+    cell?.querySelector(".ticket-run-time-waited")?.textContent,
+  ];
+}
+
+test("a run taken long after it registered draws its run time and its wait apart, and the sidebar sums each", async () => {
+  pageClock.atMs = Date.parse("2026-11-07T12:00:00Z");
+  const { container } = await drawTicket({
+    shapes: waitedLong,
+    ticket: parkedTicket,
+  });
+  const work = rowItems(groups(container)[0])[0];
+  expect(runTimeSaid(work?.querySelector(".ticket-runs-time"))).toEqual([
+    "2m",
+    "waited 23m",
+  ]);
+  const step = container.querySelector(
+    '.ticket-steps [aria-label="Work"] .ticket-steps-line',
   );
-  const times = async (
-    shapes: readonly ExecutionShape[],
-  ): Promise<string | undefined> => {
-    const { container } = await drawTicket({ shapes, ticket: parkedTicket });
-    const work = rowItems(groups(container).at(-1))[0];
-    const time = work?.querySelector(".ticket-runs-time")?.textContent;
+  expect(runTimeSaid(step)).toEqual(["2m", "waited 23m"]);
+  expect(sidebarField("Run time")?.textContent).toBe("2m");
+  expect(sidebarField("Waited")?.textContent).toBe("23m");
+});
+
+test("a run nothing has taken reads as waiting, its wait growing with now, and adds no run time", async () => {
+  const shapes = [...waitedLong, untakenRun];
+  const drawnAt = async (at: string) => {
+    pageClock.atMs = Date.parse(at);
+    const { container } = await drawTicket({ shapes, ticket: resumedTicket });
+    const row = stageRows(groups(container)[0])[0];
+    const said = {
+      row: runTimeSaid(row?.querySelector(".ticket-runs-time")),
+      ran: sidebarField("Run time")?.textContent,
+      waited: sidebarField("Waited")?.textContent,
+    };
     cleanup();
     vi.unstubAllGlobals();
     viewportAtEm(viewportDeskEm);
-    return time;
+    return said;
   };
-  const from = await times(ticket21Parked);
-  const ran = await times(started);
-  expect(from).not.toBe(ran);
-  expect(ran).toMatch(/^\d+m( \d{2}s)?$/u);
+  expect(await drawnAt("2026-11-07T10:35:00Z")).toEqual({
+    row: ["Waiting", "5m"],
+    ran: "2m so far",
+    waited: "28m so far",
+  });
+  expect(await drawnAt("2026-11-07T10:40:00Z")).toEqual({
+    row: ["Waiting", "10m"],
+    ran: "2m so far",
+    waited: "33m so far",
+  });
 });
 
 /** A cancelled run has stopped, so it is not one of the runs still going. */

@@ -16,12 +16,13 @@ import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ExecutionResponse } from "../../../../../src/contract/responses.ts";
 import { executionQuery } from "../../core/executionQueries.ts";
 import {
+  runTimeLineOf,
   sinceFigure,
-  spanRanFigure,
   spendFigures,
 } from "../../core/figures.ts";
 import { runReasonAttempt, runRefusalOf } from "../../core/runReason.ts";
 import type { RunResultOpened } from "../../core/runResult.ts";
+import { runTimeOf } from "../../core/runTotals.ts";
 import { runTranscriptAttempt } from "../../core/runTranscript.ts";
 import { cycleLabel } from "../../core/ticketLedger.ts";
 import {
@@ -104,15 +105,29 @@ function TicketRunMeta(props: {
   const { step, nowMs } = props;
   const totals = step.execution.runTotals;
   const spend = spendFigures(totals, totals?.costBasis);
-  const from = step.span.from;
+  const taken = step.execution.takenAt;
+  const line = runTimeLineOf(runTimeOf([step.execution], nowMs));
   return (
     <p className="ticket-run-meta">
-      {from === undefined ? null : (
-        <Figure figure={sinceFigure(from, nowMs, "Started")} />
+      {taken === undefined ? null : (
+        <Figure figure={sinceFigure(taken, nowMs, "Started")} />
       )}
-      <span>
-        ran <Figure figure={spanRanFigure(step.span, nowMs)} />
-      </span>
+      {line.line === "Waiting" ? (
+        <span>
+          Waiting <Figure figure={line.waited} />
+        </span>
+      ) : (
+        <>
+          <span>
+            ran <Figure figure={line.ran} />
+          </span>
+          {line.waited === undefined ? null : (
+            <span>
+              waited <Figure figure={line.waited} />
+            </span>
+          )}
+        </>
+      )}
       <Figure figure={spend.cost} />
       <Figure figure={spend.tokens} />
     </p>
@@ -235,8 +250,9 @@ function TicketRunTranscript(props: {
 function TicketRunDetails(props: {
   readonly partition: PartitionIdentity;
   readonly read: ExecutionResponse;
+  readonly nowMs: number;
 }): ReactNode {
-  const details = ticketRunDetailsOf(props.read);
+  const details = ticketRunDetailsOf(props.read, props.nowMs);
   return (
     <div className="grid gap-4">
       <Fields>
@@ -287,6 +303,7 @@ function TicketRunViewBody(props: {
   readonly opened: RunResultOpened | undefined;
   readonly shown: TicketRunView;
   readonly live: boolean;
+  readonly nowMs: number;
 }): ReactNode {
   switch (props.shown) {
     case "Summary":
@@ -296,7 +313,13 @@ function TicketRunViewBody(props: {
         <TicketRunTranscript partition={props.partition} read={props.read} />
       );
     case "Details":
-      return <TicketRunDetails partition={props.partition} read={props.read} />;
+      return (
+        <TicketRunDetails
+          partition={props.partition}
+          read={props.read}
+          nowMs={props.nowMs}
+        />
+      );
     case "Output":
       return props.opened === undefined ? null : (
         <RunResultOpenedBody
@@ -334,6 +357,7 @@ function TicketRunRead(props: {
           opened={opened}
           shown={shown}
           live={live}
+          nowMs={held.nowMs}
         />
       </div>
     </>
