@@ -218,15 +218,16 @@ export function ConfigurationBody(props: {
   return (
     <div className="ticket-config">
       <div className="config-heading">
-        {named === undefined ? null : (
-          <>
-            <h2 className="config-heading-name" title={named.name.title}>
-              {named.name.text}
-            </h2>
-            <Chip>{steps.following}</Chip>
-          </>
-        )}
-        <span className="grow" />
+        <span className="config-heading-title">
+          {named === undefined ? null : (
+            <>
+              <h2 className="config-heading-name" title={named.name.title}>
+                {named.name.text}
+              </h2>
+              <Chip>{steps.following}</Chip>
+            </>
+          )}
+        </span>
         {named?.catalog}
         <ConfigurationCanonical canonical={configuration.canonical} />
       </div>

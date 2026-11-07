@@ -377,8 +377,9 @@ test("a detail breaks inside its column rather than widening it", async () => {
   expect(sheetDeclared(rules, value, "min-width")).toBe("0px");
 });
 
-test("narrow, the column names go and a row stacks what runs it under its step", async () => {
+test("narrow, the heading's links take their own line, the column names go and a row stacks what runs it under its step", async () => {
   await drawTicket();
+  const title = document.querySelector(".config-heading-title");
   const columns = document.querySelector(".config-steps-columns");
   const runs = row("Work").querySelector(".config-step-runs");
   if (columns === null || runs === null) throw new Error("no table drawn");
@@ -387,6 +388,8 @@ test("narrow, the column names go and a row stacks what runs it under its step",
   expect(sheetDeclared(desk, columns, "display")).toBe("grid");
   expect(sheetDeclared(narrow, columns, "display")).toBe("none");
   expect(sheetDeclared(narrow, runs, "grid-column")).toBe("2 / -1");
+  expect(sheetDeclared(desk, title, "flex-basis")).toBe("auto");
+  expect(sheetDeclared(narrow, title, "flex-basis")).toBe("100%");
 });
 
 test("the foot keeps the digest and the full revision", async () => {
@@ -506,8 +509,8 @@ test("the selection's default is said once, in its group's row", async () => {
   await drawTicket(creationCatalogCanonical);
   expect(groupNote("Work")).toBe("default");
   expect(groupNote("Evaluation")).toBe("plan review · default");
-  expect(groupNote("Finalization")).toBe("finalizer land · default");
-  expect(screen.getAllByText(/default$/u)).toHaveLength(3);
+  expect(groupNote("Finalization")).toBeUndefined();
+  expect(screen.getAllByText(/default$/u)).toHaveLength(2);
   cleanup();
   await drawTicket(creationCatalogCanonical, undefined, undefined, {
     work: "quick",
@@ -647,8 +650,8 @@ test("a version 1 ticket's landing is the one its brief names, and no Finalizati
   expect(groupsDrawn()).not.toContain("Finalization");
 });
 
-test("a catalog ticket's landing is the brief's before its finalizer's, under the finalizer it lands through", async () => {
-  await drawTicket(
+test("a catalog ticket's landing is the brief's before its finalizer's, with the finalizer's approval", async () => {
+  await drawExpanded(
     creationCatalogCanonical,
     undefined,
     undefined,
@@ -659,7 +662,9 @@ test("a catalog ticket's landing is the brief's before its finalizer's, under th
   expect(cell(landing(), "runs")).toBe(
     finalizationLine(briefFinalized.finalization),
   );
-  expect(groupNote("Finalization")).toBe("finalizer approved");
+  expect(details(landing())).toStrictEqual(
+    new Map([["Approval", "Required"]]),
+  );
 });
 
 /** A policy orders a git merge alone, so it is drawn beside a git merge's

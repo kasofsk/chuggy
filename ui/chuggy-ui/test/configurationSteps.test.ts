@@ -390,7 +390,7 @@ test("the selection's default is said in its group, once each, and a choice is s
   expect(defaulted.groups.map((group) => group.note)).toEqual([
     "default",
     "plan review · default",
-    "finalizer land · default",
+    undefined,
   ]);
   const chosen = steps(undefined, {
     work: "quick",
@@ -400,7 +400,7 @@ test("the selection's default is said in its group, once each, and a choice is s
   expect(chosen.groups.map((group) => group.note)).toEqual([
     undefined,
     "plan gated",
-    "finalizer approved",
+    undefined,
   ]);
   for (const read of [defaulted, chosen])
     for (const group of read.groups)

@@ -568,10 +568,7 @@ function catalogStepsOf(
       },
       {
         phase: "Finalization",
-        note:
-          selected.finalization === undefined
-            ? undefined
-            : `finalizer ${stepsChosen(selected.finalization, catalog.defaults.finalization)}`,
+        note: undefined,
         rows: [
           stepsLandingOf(finalization ?? finalizer?.finalization, finalizer),
         ],
