@@ -647,6 +647,12 @@ function legacyWorkDetailsOf(
       true,
       !overridesSame(catalogArguments(document), catalogArguments(pinned)),
     ),
+    ...legacyDetail(
+      "Effort",
+      stepsString(catalogMode(document)["effort"]),
+      false,
+      catalogMode(document)["effort"] !== catalogMode(pinned)["effort"],
+    ),
     ...legacyDetail("Tools", stepsJoined(settings.tools), false),
     ...legacyDetail("Credentials", stepsJoined(settings.credentials), false),
     ...legacyDetail(

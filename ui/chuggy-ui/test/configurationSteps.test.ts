@@ -482,3 +482,33 @@ test("a version 1 mode override that changes the agent names the agent and its m
     ["Model", ["gpt-5"]],
   ]);
 });
+
+test("a version 1 mode override that changes only the effort is named and marked beside the effort", () => {
+  const legacy = JSON.stringify({
+    version: 1,
+    worker: {
+      mode: { agent: "Codex", arguments: [], model: "gpt-5", effort: "low" },
+    },
+  });
+  const work = workRow(
+    steps(
+      {
+        worker: {
+          mode: {
+            type: "SingleAgent",
+            agent: "Codex",
+            arguments: [],
+            model: "gpt-5",
+            effort: "high",
+          },
+        },
+      },
+      undefined,
+      legacy,
+    ),
+  );
+  expect(work.overrides).toEqual(["Effort"]);
+  expect(work.details.filter((detail) => detail.overridden)).toEqual([
+    { name: "Effort", lines: ["high"], code: false, overridden: true },
+  ]);
+});
