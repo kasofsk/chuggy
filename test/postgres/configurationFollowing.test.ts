@@ -512,12 +512,12 @@ test("a move keeps a released GitMerge's Serialized policy, and drops one a rele
     );
   assert.deepEqual(
     (await harness.authoring.draft(project.partition, serialized))?.brief
-      .finalization,
+      ?.finalization,
     { kind: "GitMerge", mode: "Push", policy: "Serialized" },
   );
   assert.deepEqual(
     (await harness.authoring.draft(project.partition, proposal))?.brief
-      .finalization,
+      ?.finalization,
     { kind: "PullRequest" },
   );
 });
