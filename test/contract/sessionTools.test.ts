@@ -16,10 +16,12 @@ import {
   configurationCanonicalCharsMax,
   dispatchViewSchemaVersion,
   nativeHttpBodyBytesMax,
+  sessionTurnToolsMax,
 } from "../../src/contract/http.ts";
 import * as authoring from "../../src/contract/authoring.ts";
 import * as brief from "../../src/contract/brief.ts";
 import * as configurationSelection from "../../src/contract/configurationSelection.ts";
+import * as epics from "../../src/contract/epics.ts";
 import { sessionCapabilities } from "../../src/contract/rosters.ts";
 import {
   allChuggyTools,
@@ -64,6 +66,10 @@ test("the roster names every tool the plan gives it, in roster order", () => {
     "fetch_image",
     "read_docs",
     "read_abilities",
+    "list_epics",
+    "read_epic",
+    "read_epic_history",
+    "read_epic_graph",
     "initialize_draft",
     "file_dependent",
     "revise_draft",
@@ -72,6 +78,10 @@ test("the roster names every tool the plan gives it, in roster order", () => {
     "create_draft",
     "revoke_ticket",
     "update_ticket",
+    "create_epic",
+    "revise_epic",
+    "add_epic_tickets",
+    "remove_epic_tickets",
     "dispatch_ticket",
     "dispatch",
     "refuse",
@@ -152,6 +162,10 @@ test("each capability admits the tools the roster gives it and no other", () => 
     "fetch_image",
     "read_docs",
     "read_abilities",
+    "list_epics",
+    "read_epic",
+    "read_epic_history",
+    "read_epic_graph",
   ]);
   assert.deepEqual(chuggyToolCapabilities.DraftAuthor, [
     "initialize_draft",
@@ -164,6 +178,10 @@ test("each capability admits the tools the roster gives it and no other", () => 
     "create_draft",
     "revoke_ticket",
     "update_ticket",
+    "create_epic",
+    "revise_epic",
+    "add_epic_tickets",
+    "remove_epic_tickets",
   ]);
   assert.deepEqual(chuggyToolCapabilities.TicketDispatch, ["dispatch_ticket"]);
   assert.deepEqual(chuggyToolCapabilities.LeadDecision, [
@@ -214,6 +232,11 @@ test("every capability admits a tool, the runtime's own or the chuggy server's",
         0,
       `${capability} admits nothing`,
     );
+});
+
+test("a turn's measurement may name every tool a session can be given", () => {
+  const builtIns = new Set(Object.values(builtInToolCapabilities).flat());
+  assert.ok(allChuggyTools.length + builtIns.size <= sessionTurnToolsMax);
 });
 
 test("the qualified names are the roster's own, prefixed, and never repeated", () => {
@@ -326,6 +349,10 @@ test("the request shapes a drafting tool publishes, and their bounds, are the pa
     briefLineCharsMax: brief.briefLineCharsMax,
     configurationSelectionSchema:
       configurationSelection.configurationSelectionSchema,
+    epicTitleCharsMax: epics.epicTitleCharsMax,
+    epicSummaryCharsMax: epics.epicSummaryCharsMax,
+    epicContentBytesMax: epics.epicContentBytesMax,
+    epicPageLimitMax: epics.epicPageLimitMax,
   };
   for (const [name, value] of Object.entries(published))
     assert.equal(entry[name], value, name);

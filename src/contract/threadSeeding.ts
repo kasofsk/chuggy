@@ -62,6 +62,7 @@ const threadPageNumberFields: ReadonlySet<string> = new Set([
   "ticket",
   "from",
   "draft",
+  "epic",
 ]);
 
 /** What a page names beyond which page it is, field by field in the order a
@@ -76,7 +77,10 @@ function threadPageFields(
     case "Catalog":
     case "Repositories":
     case "Runners":
+    case "Epics":
       return [];
+    case "Epic":
+      return [["epic", page.epic]];
     case "Ticket":
     case "TicketEdit":
       return [["ticket", page.ticket]];

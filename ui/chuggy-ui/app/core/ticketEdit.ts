@@ -173,6 +173,7 @@ export function editFormFrom(
     overrides: overridesHeldOf(draft.overrides),
     selection: draft.selection ?? {},
     workloads: draft.overrides?.workloads ?? {},
+    epic: "",
   };
 }
 

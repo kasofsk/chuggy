@@ -81,6 +81,7 @@ import type {
   TicketListSort,
 } from "../core/ticketListView.ts";
 import { panelReadRestarted, useApiPorts, usePanelState } from "./api.ts";
+import { EpicChips } from "./EpicChips.tsx";
 import { useCreatorEmails } from "./creatorEmails.ts";
 import { PanelUnready, ReadFailed } from "./DataPanel.tsx";
 import { useNowMs } from "./Freshness.tsx";
@@ -258,6 +259,20 @@ function TicketListCreator(props: {
   );
 }
 
+/** What the row waits on, and the epics it belongs to. */
+function TicketListWaits(props: {
+  readonly row: ProjectTableRow;
+  readonly standings: ReadonlyMap<number, TicketListStanding>;
+  readonly partition: PartitionIdentity;
+}): ReactNode {
+  return (
+    <>
+      <TicketListDependencies row={props.row} standings={props.standings} />
+      <EpicChips partition={props.partition} epics={props.row.epics} />
+    </>
+  );
+}
+
 function TicketListRow(props: {
   readonly row: ProjectTableRow;
   readonly standings: ReadonlyMap<number, TicketListStanding>;
@@ -298,7 +313,7 @@ function TicketListRow(props: {
                 className="ticket-list-creator"
               />
             </span>
-            <TicketListDependencies row={row} standings={props.standings} />
+            <TicketListWaits {...props} />
           </div>
         </div>
         <div className="ticket-list-foot">

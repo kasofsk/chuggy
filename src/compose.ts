@@ -45,6 +45,7 @@ import {
 } from "./adapters/git/gitPrerequisites.ts";
 import { gitPromotion } from "./adapters/git/gitPromotion.ts";
 import { postgresOperationInbox } from "./adapters/postgres/operationInbox.ts";
+import { postgresEpics } from "./adapters/postgres/epics.ts";
 import { postgresLeadInquiries } from "./adapters/postgres/leadInquiry.ts";
 import {
   postgresInboxReads,
@@ -936,6 +937,7 @@ export function composeNativeWeb(
     postgresSessionRouteReads(apiPool),
     outputContents,
     projectArtifactMinting(),
+    postgresEpics(apiPool),
   );
 }
 

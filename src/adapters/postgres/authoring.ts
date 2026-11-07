@@ -655,23 +655,42 @@ async function createConfiguration(
   };
 }
 
+type CreatedRow = { result: string | null; ticket: string | null };
+
+/** The draft's own door, or the one that joins its ticket to an epic in the same transaction. */
+async function createDraftRow(
+  pool: pg.Pool,
+  input: CreateDraftInput,
+): Promise<CreatedRow | undefined> {
+  const found =
+    input.epic === undefined
+      ? await pool.query<CreatedRow>(
+          sql`SELECT result,ticket FROM create_draft(${input.partition.tenant},${input.partition.project},${input.configurationRevision},${input.configurationDigest},${input.expectedProjectSequence},${encodeDraftAuthoring(input.authoring)},${input.brief.title ?? null},${input.brief.intent},${[...input.brief.links]},${[...input.brief.images]},${[...input.brief.checks]},${input.brief.branch ?? null},${input.brief.finalization?.mode ?? null},${briefFinalizationTarget(input.brief.finalization) ?? null},${input.brief.repository ?? null},${storedOverridesText(input.overrides)},${storedSelectionText(input.selection)},${input.authority.kind},${input.authority.subject},${input.originSession ?? null},${briefLandingOf(input.brief)})`,
+        )
+      : await pool.query<CreatedRow>(
+          sql`SELECT result,ticket FROM create_draft_in_epic(${input.partition.tenant},${input.partition.project},${input.configurationRevision},${input.configurationDigest},${input.expectedProjectSequence},${encodeDraftAuthoring(input.authoring)},${input.brief.title ?? null},${input.brief.intent},${[...input.brief.links]},${[...input.brief.images]},${[...input.brief.checks]},${input.brief.branch ?? null},${input.brief.finalization?.mode ?? null},${briefFinalizationTarget(input.brief.finalization) ?? null},${input.brief.repository ?? null},${storedOverridesText(input.overrides)},${storedSelectionText(input.selection)},${input.authority.kind},${input.authority.subject},${input.originSession ?? null},${briefLandingOf(input.brief)},${input.epic})`,
+        );
+  return found.rows[0];
+}
+
 async function createDraft(
   pool: pg.Pool,
   input: CreateDraftInput,
 ): Promise<DraftCreated> {
-  const found = await pool.query<{
-    result: string | null;
-    ticket: string | null;
-  }>(
-    sql`SELECT result,ticket FROM create_draft(${input.partition.tenant},${input.partition.project},${input.configurationRevision},${input.configurationDigest},${input.expectedProjectSequence},${encodeDraftAuthoring(input.authoring)},${input.brief.title ?? null},${input.brief.intent},${[...input.brief.links]},${[...input.brief.images]},${[...input.brief.checks]},${input.brief.branch ?? null},${input.brief.finalization?.mode ?? null},${briefFinalizationTarget(input.brief.finalization) ?? null},${input.brief.repository ?? null},${storedOverridesText(input.overrides)},${storedSelectionText(input.selection)},${input.authority.kind},${input.authority.subject},${input.originSession ?? null},${briefLandingOf(input.brief)})`,
-  );
-  const row = found.rows[0];
+  const row = await createDraftRow(pool, input);
   if (row?.result === "ConfigurationNotFound")
     return { created: "ConfigurationNotFound" };
   if (row?.result === "RepositoryNotBound")
     return { created: "RepositoryNotBound" };
   if (row?.result === "LandingUnbranched")
     return { created: "LandingUnbranched" };
+  if (
+    row?.result === "MissingEpic" ||
+    row?.result === "ArchivedEpic" ||
+    row?.result === "ManyTickets" ||
+    row?.result === "LargeContent"
+  )
+    return { created: "EpicUnavailable", reason: row.result };
   if (row?.result === "Stale") return createDraftStale(pool, input.partition);
   if (row?.result !== "Created" || row.ticket === null)
     throw new Error("draft creation returned no ticket");

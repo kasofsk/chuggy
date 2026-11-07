@@ -41,6 +41,7 @@ import {
   projectOwnerFallbackSchema,
   registrationTokenRequestSchema,
 } from "./requests.ts";
+import { epicWriteRequestSchema } from "./epics.ts";
 import { workerPoolRedemptionSchema } from "./workerPool.ts";
 import { actionReportDocumentSchema } from "./actionReport.ts";
 import { contractJsonSchemaInput } from "./jsonSchema.ts";
@@ -108,6 +109,7 @@ function nativeHttpContractDocumentSchemas(): unknown {
     chatThreadMessage: nativeHttpContractDocumentInput(
       nativeHttpEndpoints.sendChatThreadMessage.body,
     ),
+    epicWrite: nativeHttpContractDocumentInput(epicWriteRequestSchema),
     threadRename: nativeHttpContractDocumentInput(
       nativeHttpEndpoints.renameThread.body,
     ),

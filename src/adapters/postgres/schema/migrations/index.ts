@@ -119,6 +119,13 @@ import { migration118 } from "./118-expected-tree.ts";
 import { migration119 } from "./119-recheck-reworked.ts";
 import { migration120 } from "./120-thread-offers.ts";
 import { migration121 } from "./121-thread-offer-replies.ts";
+import { migration122 } from "./122-epics.ts";
+import { migration123 } from "./123-epic-save.ts";
+import { migration124 } from "./124-draft-in-epic.ts";
+import { migration125 } from "./125-lead-reads-epics.ts";
+import { migration126 } from "./126-turn-measure-tools.ts";
+import { migration127 } from "./127-draft-member.ts";
+import { migration128 } from "./128-epic-notifications.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -243,4 +250,11 @@ export const migrations: readonly Migration[] = [
   migration119,
   migration120,
   migration121,
+  migration122,
+  migration123,
+  migration124,
+  migration125,
+  migration126,
+  migration127,
+  migration128,
 ];

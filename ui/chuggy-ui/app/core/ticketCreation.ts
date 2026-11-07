@@ -125,6 +125,8 @@ export interface TicketCreationForm extends CreationAuthoring {
    * catalog holds it under; sent only under a catalog, and cleared with the
    * selection. */
   readonly workloads: Readonly<Record<string, WorkloadOverride>>;
+  /** The epic this ticket joins as it is made, by number, empty where it joins none. */
+  readonly epic: string;
 }
 
 export type CreationField =
@@ -560,6 +562,7 @@ export function creationFormFrom(
     overrides: {},
     selection: {},
     workloads: {},
+    epic: "",
   };
 }
 
@@ -1250,6 +1253,7 @@ export function creationBodyFrom(
     },
     brief,
     ...creationChoicesOf(form, offer),
+    ...(form.epic === "" ? {} : { epic: Number(form.epic) }),
   };
   const parsed = draftCreationSchema.safeParse(candidate);
   const refused = [

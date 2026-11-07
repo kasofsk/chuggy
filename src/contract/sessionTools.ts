@@ -119,6 +119,14 @@ export {
 /** What `read_ticket_landings`'s route answers: at most this many landings, the newest. */
 export { ticketLandingsAnsweredMax } from "./http.ts";
 
+/** What the epic tools hold an argument to: the title and summary a revision carries, the most one revision weighs, and the most one page answers. */
+export {
+  epicContentBytesMax,
+  epicPageLimitMax,
+  epicSummaryCharsMax,
+  epicTitleCharsMax,
+} from "./epics.ts";
+
 /** The one MCP server every session is given, and the prefix its tool names carry. */
 export const chuggyToolServerName = "chuggy";
 export const chuggyToolPrefix = "mcp__chuggy__";
@@ -278,6 +286,10 @@ const chuggyToolRoster = {
     "fetch_image",
     "read_docs",
     "read_abilities",
+    "list_epics",
+    "read_epic",
+    "read_epic_history",
+    "read_epic_graph",
   ],
   DraftAuthor: [
     "initialize_draft",
@@ -292,10 +304,19 @@ const chuggyToolRoster = {
    * member asking is where the work came from; it revokes the ticket its owner
    * said to end; and it releases the revision of a Pending ticket's draft its
    * owner said to apply. None is in `DraftAuthor`, for the reason `DraftAuthor`
-   * exists, and `revoke_ticket` and `update_ticket` are here because a thread
+   * exists, and `revoke_ticket`, `update_ticket` and the epic writes, which
+   * the API authorizes as the member's `Mutate`, are here because a thread
    * holds this capability and a lead does not.
    */
-  DraftOriginate: ["create_draft", "revoke_ticket", "update_ticket"],
+  DraftOriginate: [
+    "create_draft",
+    "revoke_ticket",
+    "update_ticket",
+    "create_epic",
+    "revise_epic",
+    "add_epic_tickets",
+    "remove_epic_tickets",
+  ],
   /**
    * Dispatching one released ticket on the member's own word, as the member's
    * `ManualDispatch`: the API authorizes it as that member's dispatch, so a
@@ -423,6 +444,10 @@ export const chuggyToolRoutes = {
    * learning a permit from a refusal.
    */
   abilities: nativeHttpRoutes.abilities,
+  epics: nativeHttpRoutes.epics,
+  epic: nativeHttpRoutes.epic,
+  epicHistory: nativeHttpRoutes.epicHistory,
+  epicGraph: nativeHttpRoutes.epicGraph,
   /**
    * What a member's own session reads, each at its tenant and none at a
    * project: `read_my_abilities` the tenant's questions, `list_projects` the

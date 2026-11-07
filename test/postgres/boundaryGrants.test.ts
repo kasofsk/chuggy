@@ -20,6 +20,7 @@ import {
   configurationFollowingMoveFunction,
   configurationImporterRole,
   draftCreateFunction,
+  draftInEpicFunction,
   draftReviseFunction,
   executionPlacementSetFunction,
   finalizerRole,
@@ -292,6 +293,7 @@ test("the draft doors are owned and granted to their callers", async () => {
   await migratedDatabase("i91grants", async (subject) => {
     await assertDoorsStandOwned(subject, [
       `${draftCreateFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text,text,text)`,
+      `${draftInEpicFunction}(text,text,text,text,bigint,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text,text,text,bigint)`,
       `${draftReviseFunction}(text,text,bigint,bigint,text,text,text,text,text[],text[],text[],text,text,text,text,text,text,text,text,text)`,
     ]);
   });

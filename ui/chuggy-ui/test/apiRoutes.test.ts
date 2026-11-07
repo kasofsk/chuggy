@@ -426,6 +426,7 @@ test("the reader's abilities hang from the partition and are read door by door",
     overrideTicketConfig: false,
     skipPlannedEvaluations: false,
     administer: false,
+    writeEpic: false,
   };
   const held = recording(() => abilities);
   expect(await apiProjectAbilities(held.ports, partition)).toStrictEqual({

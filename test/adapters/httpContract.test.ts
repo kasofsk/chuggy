@@ -125,6 +125,10 @@ const routesInOrder = [
   "/api/v1/tenants/:tenant/projects/:project/draft-initializations/:revision",
   "/api/v1/tenants/:tenant/projects/:project/drafts/:ticket",
   "/api/v1/tenants/:tenant/projects/:project/dispatch-view",
+  "/api/v1/tenants/:tenant/projects/:project/epics",
+  "/api/v1/tenants/:tenant/projects/:project/epics/:epic",
+  "/api/v1/tenants/:tenant/projects/:project/epics/:epic/history",
+  "/api/v1/tenants/:tenant/projects/:project/epics/:epic/graph",
   "/api/v1/tenants/:tenant/projects/:project/threads",
   "/api/v1/tenants/:tenant/projects/:project/thread-limits/:subject",
   "/api/v1/tenants/:tenant/projects/:project/threads/:session",
@@ -693,4 +697,19 @@ test("an overrides change names the escalation it was typed against and the whol
     { ...change, resolution: "Resume" },
   ])
     assert.throws(() => parseSubmission("operation", "Key", broken));
+});
+
+test("a draft creation names the epic it joins as a positive number, or none", () => {
+  const base = {
+    configurationRevision: "revision",
+    configurationDigest: "a".repeat(64),
+    expectedProjectSequence: 7,
+    authoring,
+    brief,
+  };
+
+  assert.equal(parseDraftCreation({ ...base, epic: 3 }).epic, 3);
+  assert.equal("epic" in parseDraftCreation(base), false);
+  for (const epic of [0, -1, 1.5, "3"])
+    assert.throws(() => parseDraftCreation({ ...base, epic }), String(epic));
 });

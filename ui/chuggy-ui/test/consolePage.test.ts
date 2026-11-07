@@ -32,8 +32,10 @@ const consolePagesEvery: readonly ConsolePage[] = [
   { page: "Catalog" },
   { page: "Repositories" },
   { page: "Runners" },
+  { page: "Epics" },
   { page: "Settings" },
   { page: "Ticket", ticket: 41 },
+  { page: "Epic", epic: 7 },
   { page: "TicketEdit", ticket: 41 },
   { page: "TicketNew" },
   { page: "TicketNew", from: 12 },
@@ -179,7 +181,11 @@ test("every route the console hangs under a project and draws the pane on is a p
   expect(paned).not.toEqual([]);
   for (const routeId of paned) {
     const page = consolePageOf(
-      matched(routeId, { ticket: "41", repository: "github.com/acme/atlas" }),
+      matched(routeId, {
+        ticket: "41",
+        epic: "7",
+        repository: "github.com/acme/atlas",
+      }),
     );
     expect(page, routeId).toBeDefined();
     expect(consolePageSchema.safeParse(page).success, routeId).toBe(true);
@@ -194,8 +200,10 @@ test("a page is named in the console's own words for it", () => {
     "Catalog",
     "Repositories",
     "Runners",
+    "Epics",
     "Settings",
     "Ticket #41",
+    "Epic #7",
     "Edit ticket #41",
     "New ticket",
     "New ticket from #12",

@@ -47,6 +47,8 @@ import {
   landingPolicyEffect,
   landingPolicyLabel,
 } from "../core/codeLabels.ts";
+import { epicPickerMax, epicPickerOptions, epicsQuery } from "../core/epics.ts";
+import type { EpicPicked } from "../core/epics.ts";
 import { repositoryLabel } from "../core/projectRepositories.ts";
 import { configurationsPartialLabel } from "../core/repositoryConfigurations.ts";
 import {
@@ -527,6 +529,79 @@ function Repository(props: FormDrawn): ReactNode {
   );
 }
 
+const epicNone = "none";
+
+/** The epic this ticket joins as it is made, chosen from the Active ones a
+ * page at a time, by title. The roster is read only once the field is drawn,
+ * and a first page that is not ready leaves the ticket in none rather than
+ * holding the form. */
+function EpicChoice(
+  props: FormEdit & { readonly partition: PartitionIdentity },
+) {
+  const { form, onChange, partition } = props;
+  const [after, setAfter] = useState<number | undefined>(undefined);
+  const [picked, setPicked] = useState<EpicPicked | undefined>(undefined);
+  const state = usePanelState(
+    epicsQuery(partition, {
+      visibility: "Active",
+      sort: "title",
+      after,
+      limit: epicPickerMax,
+    }),
+  );
+  const page = state.state === "Ready" ? state.value : undefined;
+  if (page === undefined && after === undefined) return null;
+  const epics = page?.epics ?? [];
+  if (epics.length === 0 && after === undefined && form.epic === "")
+    return null;
+  const nextAfter = page?.nextAfter;
+  return (
+    <div className="creation-row">
+      <span>Epic</span>
+      <Picker
+        label="Epic"
+        value={form.epic === "" ? epicNone : form.epic}
+        placeholder="None"
+        options={[
+          { value: epicNone, text: "None" },
+          ...epicPickerOptions(
+            epics,
+            picked !== undefined && String(picked.number) === form.epic
+              ? picked
+              : undefined,
+          ),
+        ]}
+        onChoose={(epic) => {
+          setPicked(epics.find((held) => String(held.number) === epic));
+          onChange({ ...form, epic: epic === epicNone ? "" : epic });
+        }}
+        actions={[
+          ...(nextAfter === undefined
+            ? []
+            : [
+                {
+                  text: "More epics",
+                  onSelect: () => {
+                    setAfter(nextAfter);
+                  },
+                },
+              ]),
+          ...(after === undefined
+            ? []
+            : [
+                {
+                  text: "First epics",
+                  onSelect: () => {
+                    setAfter(undefined);
+                  },
+                },
+              ]),
+        ]}
+      />
+    </div>
+  );
+}
+
 const landingOptions = briefFinalizationModes.map((mode) => ({
   value: mode,
   text: landingLabel(mode),
@@ -673,6 +748,10 @@ interface CreationFieldsProps extends FormEdit {
   /** The branch a screen that proposes one sends for a box left empty. */
   readonly branchProposed?: string | undefined;
   readonly api: CreationImagesApi;
+  /** Whether the form offers an epic to join, which only a creation does:
+   * a draft is put into an epic as it is made and moves with the epic's own
+   * write after. */
+  readonly epicChoice?: boolean;
   /** What the reader may draw: the overrides panel is drawn for one who may
    * not override only while the form holds some, which they can remove, and
    * a program for one who may not skip planned evaluations runs the whole
@@ -710,6 +789,13 @@ export function CreationFields(props: CreationFieldsProps): ReactNode {
       <Fault field="branch" faults={faults} />
       <Repository {...drawing} />
       <Fault field="repository" faults={faults} />
+      {props.epicChoice === true ? (
+        <EpicChoice
+          form={form}
+          onChange={onChange}
+          partition={props.api.partition}
+        />
+      ) : null}
       <Landing form={form} onChange={onChange} />
       <Fault field="landing" faults={faults} />
       {form.landingMode === "None" ? null : (
@@ -776,6 +862,14 @@ function creationAttemptHeld(
   return attempt.attempt === "Failed" || attempt.attempt === "Exists"
     ? attempt.held
     : undefined;
+}
+
+/** Whether the next submit creates its draft, which alone puts it into an
+ * epic: one that goes back to a held draft revises it. */
+function creationAttemptCreates(attempt: CreationAttempt): boolean {
+  return (
+    attempt.attempt !== "Held" && creationAttemptHeld(attempt) === undefined
+  );
 }
 
 /** What a refused creation hands on, read as its note reads it. */
@@ -1120,6 +1214,7 @@ export interface CreationFormDrawnProps extends CreationFormProps {
    * draft it follows stands. */
   readonly lead: ReactNode;
   readonly following?: AuthoringFollow;
+  readonly epicChoice?: boolean;
 }
 
 /** The form as drawn, fields or YAML, over what its caller holds. */
@@ -1165,6 +1260,7 @@ export function CreationFormDrawn(props: CreationFormDrawnProps): ReactNode {
               partition: props.partition,
               storeKey: props.storeKey,
             }}
+            epicChoice={props.epicChoice === true}
           />
         }
       />
@@ -1231,6 +1327,7 @@ export function CreationForm(props: CreationFormProps): ReactNode {
       busy={running.busy}
       onSubmit={running.submit}
       lead={<CreationDuplicateDropped duplicate={props.duplicate} />}
+      epicChoice={creationAttemptCreates(running.attempt)}
     />
   );
 }

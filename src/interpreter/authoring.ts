@@ -889,6 +889,12 @@ export type DraftCreated =
   | { readonly created: "ArtifactNotBound" }
   | { readonly created: "Unavailable"; readonly retryAfterSeconds: number }
   | { readonly created: "LandingUnbranched" }
+  /** The epic the draft was to join cannot take it, and no draft was written. */
+  | {
+      readonly created: "EpicUnavailable";
+      readonly reason:
+        "MissingEpic" | "ArchivedEpic" | "ManyTickets" | "LargeContent";
+    }
   /** The project head moved past the one the initialization answered, and is at this one now. */
   | { readonly created: "Stale"; readonly currentProjectSequence: number }
   /** The project's lifecycle mints no ticket at any head, so no head to retry with is answered. */
@@ -1150,6 +1156,8 @@ export interface AuthoringStore {
     readonly brief: DraftBrief;
     readonly overrides?: ConfigurationOverrides;
     readonly selection?: ConfigurationSelection;
+    /** The epic the draft joins in the transaction that creates it. */
+    readonly epic?: number;
     /** The session the draft was created through, absent where no session's bearer carried it; no revision moves it. */
     readonly originSession?: SessionId;
   }): Promise<DraftCreated>;

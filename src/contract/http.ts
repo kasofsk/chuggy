@@ -189,7 +189,7 @@ export const sessionTurnResultCharsMax = 65_536;
 export const sessionTurnModelCharsMax = 256;
 
 /** The most tool names one turn's measurement reports, distinct and in no order. */
-export const sessionTurnToolsMax = 64;
+export const sessionTurnToolsMax = 80;
 
 /** The longest tool name one turn's measurement reports. */
 export const sessionTurnToolNameCharsMax = 128;
@@ -604,6 +604,10 @@ export const nativeHttpRoutes = {
   draftInitialization: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/draft-initializations/:revision`,
   draft: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/drafts/:ticket`,
   dispatchView: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/dispatch-view`,
+  epics: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/epics`,
+  epic: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/epics/:epic`,
+  epicHistory: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/epics/:epic/history`,
+  epicGraph: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/epics/:epic/graph`,
   threads: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads`,
   threadLimit: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/thread-limits/:subject`,
   thread: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session`,

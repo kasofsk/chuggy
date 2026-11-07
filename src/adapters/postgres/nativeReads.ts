@@ -81,6 +81,7 @@ import {
   configurationVersionOf,
   type ConfigurationVersionRow,
 } from "./configurationVersion.ts";
+import { epicsForTickets } from "./epics.ts";
 import { projectRowCounter, projectRowInstant } from "./rows.ts";
 import { postgresTicketRunTotals } from "./runEvidence.ts";
 import {
@@ -272,6 +273,20 @@ function projectionPhase(value: string): Phase {
   return phase;
 }
 
+/** Each ticket's epics, by ticket number. */
+type TicketEpics = Awaited<ReturnType<typeof epicsForTickets>>;
+
+/** The ticket as listed, with the epics it belongs to. */
+function ticketResourceWithEpics(
+  row: TicketProjectionRow,
+  resumes: TicketUsageResumes,
+  epics: TicketEpics,
+): TicketResource {
+  const resource = ticketResource(row, resumes);
+  const held = epics.get(resource.ticket);
+  return held === undefined ? resource : { ...resource, epics: held };
+}
+
 /** A page's rows in the order it answers them, and the row the next page resumes after. */
 interface ProjectTicketPage {
   readonly rows: readonly TicketProjectionRow[];
@@ -291,11 +306,14 @@ function projectResource(
   page: ProjectTicketPage,
   order: ProjectReadQuery["order"],
   resumes: TicketUsageResumes,
+  epics: TicketEpics,
 ): ProjectResource {
   return {
     partition,
     sequence: projectRowCounter(head, "project projection watermark"),
-    tickets: page.rows.map((row) => ticketResource(row, resumes)),
+    tickets: page.rows.map((row) =>
+      ticketResourceWithEpics(row, resumes, epics),
+    ),
     ...(page.next === undefined
       ? {}
       : projectResourceNext(page.next, order ?? "Identity")),
@@ -694,6 +712,11 @@ async function readProject(
       page.rows,
       bounds,
     );
+    const epics = await epicsForTickets(
+      client,
+      partition,
+      page.rows.map((row) => projectRowCounter(row.ticket, "ticket identity")),
+    );
     await client.query("COMMIT");
     return {
       result: "Found",
@@ -703,6 +726,7 @@ async function readProject(
         page,
         query.order,
         resumes,
+        epics,
       ),
     };
   } catch (cause) {
@@ -725,6 +749,7 @@ async function readProjectTickets(
 ): Promise<ProjectTicketPage> {
   if (
     query.search === undefined &&
+    query.epic === undefined &&
     query.creator === undefined &&
     query.active !== true &&
     (query.order === undefined ||
@@ -749,8 +774,8 @@ interface TicketPositionsRow {
 
 /**
  * The positions of one more than a page, in the order the read names, with
- * how many tickets its search, creator, phases and activity select across the
- * project.
+ * how many tickets its search, creator, epic, phases and activity select
+ * across the project.
  * The count is over the selection before any cursor, so every page of one
  * walk answers the same count.
  */
@@ -780,6 +805,10 @@ async function readTicketPositions(
              AND m.authoring_version=1 AND m.authority_kind=${memberAuthorityKind}
            WHERE t.tenant=${partition.tenant} AND t.project=${partition.project}
              AND t.phase = ANY(${[...selectedPhases(query.phaseFilter)]}::text[])
+             AND (${query.epic ?? null}::bigint IS NULL
+               OR EXISTS (SELECT 1 FROM epic_ticket e
+                           WHERE e.tenant=t.tenant AND e.project=t.project
+                             AND e.ticket=t.ticket AND e.epic=${query.epic ?? null}::bigint))
              AND (${query.creator ?? null}::text IS NULL
                OR m.authority_subject = ${query.creator ?? null}::text)
              AND (${query.active === true}::boolean IS FALSE
@@ -811,7 +840,14 @@ async function readTicketPositions(
                (SELECT array_agg(p.ticket::text ORDER BY p.place) FROM page p) AS tickets,
                (SELECT array_agg(p.seq::text ORDER BY p.place) FROM page p) AS seqs`,
   );
-  const row = found.rows[0];
+  return readTicketPositionsOf(found.rows[0]);
+}
+
+/** The count and the positions out of the one row `readTicketPositions` reads. */
+function readTicketPositionsOf(row: TicketPositionsRow | undefined): {
+  readonly matched: number;
+  readonly positions: readonly TicketPosition[];
+} {
   if (row === undefined) throw new Error("native read: no positions row");
   const seqs = row.seqs ?? [];
   return {
@@ -1148,10 +1184,12 @@ async function readTicket(
           dependencies: authoring.deps,
         });
   const runTotals = await postgresTicketRunTotals(pool, partition, ticket);
+  const epics = await epicsForTickets(pool, partition, [ticket]);
   return {
-    ...ticketResource(
+    ...ticketResourceWithEpics(
       row,
       await ticketUsageResumes(pool, partition, [row], bounds),
+      epics,
     ),
     ...(brief === undefined ? {} : { brief }),
     ...(row.configuration_revision === null

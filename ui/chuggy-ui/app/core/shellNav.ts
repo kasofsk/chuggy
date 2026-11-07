@@ -15,6 +15,7 @@ import type { Tone } from "./tones.ts";
 export const navRoutes = {
   overview: "/$tenant/$project",
   inbox: "/$tenant/$project/inbox",
+  epics: "/$tenant/$project/epics",
   lead: "/$tenant/$project/lead",
   catalog: "/$tenant/$project/catalog",
   settings: "/$tenant/$project/settings",
@@ -44,6 +45,7 @@ export interface NavStanding {
 export type NavEntryId =
   | "overview"
   | "inbox"
+  | "epics"
   | "lead"
   | "catalog"
   | "settings"
@@ -70,6 +72,7 @@ export function shellNav(input: ShellNavInput): readonly NavEntry[] {
   };
   return [
     { id: "overview", label: "Tickets", to: navRoutes.overview, params },
+    { id: "epics", label: "Epics", to: navRoutes.epics, params },
     {
       id: "lead",
       label: "Lead",

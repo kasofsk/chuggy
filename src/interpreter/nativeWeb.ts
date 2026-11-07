@@ -28,6 +28,8 @@ import {
 } from "./overridesAccess.ts";
 export type { AuthorizedResult } from "./authorizedProject.ts";
 
+import { nativeEpicMethods, type NativeEpics } from "./epics.ts";
+import type { EpicReference, EpicStore } from "./epicStore.ts";
 import { asPrincipal, type Principal } from "./principal.ts";
 import type { ReleaseAuthoringProgram } from "../contract/authoring.ts";
 import type { ConfigurationOverrides } from "../contract/configurationOverrides.ts";
@@ -470,6 +472,8 @@ export interface TicketResource {
   /** Where a Pending ticket that follows stands against the revision its repository's newest import declares under the same name. */
   readonly following?: TicketFollowing;
   readonly runTotals?: RunTotals;
+  /** Every epic the ticket belongs to, archived ones included, in epic order, and absent where it belongs to none. */
+  readonly epics?: readonly EpicReference[];
   /** The execution `latestExecutions` answers for the ticket, where one has run; only the tickets list carries it. */
   readonly latestExecution?: TicketLatestExecution;
 }
@@ -570,6 +574,8 @@ export interface ProjectReadQuery {
   readonly creator?: Principal;
   /** Only the tickets `ticketActiveFinishedHours` names active. */
   readonly active?: boolean;
+  /** Only the members of this epic. */
+  readonly epic?: number;
 }
 
 export type TicketPhaseFilter =
@@ -737,7 +743,7 @@ export type NativeDraftRevised =
       readonly landing: DraftLanding;
     };
 
-export interface NativeWeb {
+export interface NativeWeb extends NativeEpics {
   submit(
     principal: Principal,
     submission: NativeSubmission,
@@ -901,6 +907,8 @@ export interface NativeWeb {
       readonly brief: DraftBrief;
       readonly overrides?: ConfigurationOverrides;
       readonly selection?: ConfigurationSelection;
+      /** The epic the draft joins, which must be Active. */
+      readonly epic?: number;
       /** The session whose bearer carried the request, which the draft keeps as the thread its events wake. */
       readonly originSession?: SessionId;
     },
@@ -2836,8 +2844,10 @@ export function nativeWeb(
   sessionRoutes?: SessionRouteReads,
   projectArtifacts?: ProjectArtifactPort,
   projectArtifactMinting?: ProjectArtifactMinting,
+  epics?: EpicStore,
 ): NativeWeb {
   return {
+    ...nativeEpicMethods(access, epics),
     ...nativeRunEvidenceMethods(access, runEvidenceReads, runEvidenceContents),
     ...nativeLeadReadMethods(access, leads),
     ...nativeThreadMethods(access, threads, sessionRoutes, projectArtifacts),

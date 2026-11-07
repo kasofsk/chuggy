@@ -1,6 +1,6 @@
 /**
  * The head of every tab of the ticket page: the title with its number, the
- * state label and the one fragment beside it, the actions, and the tabs. Once
+ * epics it belongs to, the state label and the one fragment beside it, the actions, and the tabs. Once
  * the header has scrolled out of view, a thin bar holding the small label and
  * the title sticks to the top of the page in its place.
  */
@@ -98,6 +98,7 @@ export function TicketHeader(props: {
   readonly standing: TicketStateStanding;
   readonly fragment: TicketHeaderFragment;
   readonly nowMs: number;
+  readonly epics: ReactNode;
   readonly actions: ReactNode;
   readonly notes: ReactNode;
 }): ReactNode {
@@ -113,6 +114,7 @@ export function TicketHeader(props: {
       </div>
       <header ref={header} className="ticket-header">
         <TicketHeaderTitle title={props.title} ticket={props.ticket} />
+        {props.epics}
         <div className="ticket-header-standing">
           <div className="ticket-header-state">
             <TicketStateLabel standing={props.standing} size="page" />

@@ -95,6 +95,7 @@ import type {
   WorkerPoolsResponse,
   WorkerPoolTokenResponse,
 } from "../../../../src/contract/responses.ts";
+import type { epicWriteRequestSchema } from "../../../../src/contract/epics.ts";
 import type {
   agentAccountSettingsSchema,
   draftCreationSchema,
@@ -1570,3 +1571,54 @@ export function apiReviseDraft(
     (value) => draftResponseSchema.parse(value),
   );
 }
+
+/** A page of a project's epics under the filters the list takes. */
+export interface EpicsPage {
+  readonly search?: string | undefined;
+  readonly visibility?: string | undefined;
+  readonly ticket?: number | undefined;
+  readonly sort?: string | undefined;
+  readonly after?: number | undefined;
+  readonly limit?: number | undefined;
+}
+
+export const apiEpics = apiProjectEndpoint(
+  nativeHttpEndpoints.listEpics,
+  (partition, page: EpicsPage) => ({
+    parameters: partition,
+    query: {
+      search: page.search,
+      visibility: page.visibility,
+      ticket: page.ticket,
+      sort: page.sort,
+      after: page.after,
+      limit: page.limit,
+    },
+  }),
+);
+
+export const apiEpic = apiProjectEndpoint(
+  nativeHttpEndpoints.viewEpic,
+  (partition, epic: number) => ({ parameters: { ...partition, epic } }),
+);
+
+export const apiEpicHistory = apiProjectEndpoint(
+  nativeHttpEndpoints.epicHistory,
+  (partition, epic: number, page: EpicsPage = {}) => ({
+    parameters: { ...partition, epic },
+    query: { after: page.after, limit: page.limit },
+  }),
+);
+
+export const apiEpicGraph = apiProjectEndpoint(
+  nativeHttpEndpoints.epicGraph,
+  (partition, epic: number) => ({ parameters: { ...partition, epic } }),
+);
+
+export const apiWriteEpic = apiProjectEndpoint(
+  nativeHttpEndpoints.writeEpic,
+  (partition, body: z.infer<typeof epicWriteRequestSchema>) => ({
+    parameters: partition,
+    body,
+  }),
+);

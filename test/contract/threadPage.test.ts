@@ -34,6 +34,8 @@ const pages: readonly ConsolePage[] = [
   { page: "Repository", repository: "1234" },
   { page: "Repository", repository: "r".repeat(repositoryIdentityCharsMax) },
   { page: "Runners" },
+  { page: "Epics" },
+  { page: "Epic", epic: 7 },
   { page: "Settings" },
   ...consolePageSettingsSections.map((section): ConsolePage => ({
     page: "Settings",

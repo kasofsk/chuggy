@@ -32,6 +32,8 @@ import {
   forgeCallbackRoutePath,
 } from "../core/forgeAuthorization.ts";
 import type { ForgeCallbackQuery } from "../core/forgeAuthorization.ts";
+import { epicsQueryOf } from "../core/epics.ts";
+import type { EpicsQuery } from "../core/epics.ts";
 import { forgeSetupQueryOf, forgeSetupRoutePath } from "../core/forgeSetup.ts";
 import type { ForgeSetupQuery } from "../core/forgeSetup.ts";
 import { inviteRoutePath } from "../core/inviteLinks.ts";
@@ -51,6 +53,8 @@ import type { TicketListQuery } from "../core/ticketListView.ts";
 import { usePanelState } from "./api.ts";
 import { CatalogPage } from "./catalog/CatalogPage.tsx";
 import { DataPanel } from "./DataPanel.tsx";
+import { EpicPage } from "./EpicPage.tsx";
+import { EpicsPage } from "./EpicsPage.tsx";
 import { ForgeCallbackPage } from "./ForgeCallbackPage.tsx";
 import { ForgeSetupPage } from "./ForgeSetupPage.tsx";
 import { Inbox } from "./Inbox.tsx";
@@ -183,6 +187,33 @@ const inboxRoute = createRoute({
   getParentRoute: () => partitionRoute,
   path: "/inbox",
   component: Inbox,
+});
+
+/** The epic list, whose search, visibility and sort are the address's,
+ * written in place as the ticket list's are. */
+function EpicsRoute(): ReactNode {
+  const navigate = useNavigate({ from: epicsRoute.fullPath });
+  const onQuery = useCallback(
+    (query: EpicsQuery) => {
+      void navigate({ search: query, replace: true });
+    },
+    [navigate],
+  );
+  return <EpicsPage query={epicsRoute.useSearch()} onQuery={onQuery} />;
+}
+
+const epicsRoute = createRoute({
+  getParentRoute: () => partitionRoute,
+  path: "/epics",
+  component: EpicsRoute,
+  validateSearch: (search: Readonly<Record<string, unknown>>): EpicsQuery =>
+    epicsQueryOf(search),
+});
+
+const epicRoute = createRoute({
+  getParentRoute: () => partitionRoute,
+  path: "/epics/$epic",
+  component: EpicPage,
 });
 
 const leadRoute = createRoute({
@@ -403,6 +434,8 @@ const routeTree = rootRoute.addChildren([
   partitionRoute.addChildren([
     projectRoute,
     inboxRoute,
+    epicsRoute,
+    epicRoute,
     leadRoute,
     catalogRoute,
     projectSettingsRoutes(partitionRoute),

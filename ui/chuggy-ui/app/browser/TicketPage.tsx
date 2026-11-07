@@ -58,6 +58,7 @@ import type {
 import { ticketSlot } from "../core/ticketSituation.ts";
 import type { TicketSlot as Slot } from "../core/ticketSituation.ts";
 import { usePanelState } from "./api.ts";
+import { EpicChips } from "./EpicChips.tsx";
 import { FreshnessInstants, useNowMs } from "./Freshness.tsx";
 import { useLead } from "./LeadPage.tsx";
 import { useProjectAbilities } from "./projectAbilities.tsx";
@@ -259,6 +260,7 @@ function TicketStandingHeader(props: {
       })}
       nowMs={held.nowMs}
       actions={<TicketHeaderActions {...props.actions} />}
+      epics={<EpicChips partition={held.partition} epics={ticket.epics} />}
       notes={<TicketHeaderNotes {...props.actions} />}
     />
   );

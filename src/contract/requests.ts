@@ -286,6 +286,8 @@ export const draftCreationSchema = z.strictObject({
   brief: briefSchema,
   overrides: configurationOverridesSchema.optional(),
   selection: configurationSelectionSchema.optional(),
+  /** The epic the draft joins, which must be Active. */
+  epic: z.number().int().safe().positive().optional(),
 });
 
 export const draftRevisionSchema = z.strictObject({

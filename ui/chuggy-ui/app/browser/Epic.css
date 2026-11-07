@@ -1,0 +1,123 @@
+/* The epic pages: the list's rows, the progress bar and the graph. A member
+   node is filled with its phase's wash and an outside one is outlined only,
+   so what the epic holds does not rest on hue alone. */
+
+@layer page {
+  .epic-list {
+    display: grid;
+    gap: var(--space-2);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .epic-row {
+    display: grid;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    border: var(--hairline) solid var(--edge);
+    border-radius: var(--radius-3);
+    background: var(--surface-1);
+  }
+
+  .epic-row-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .epic-row-title {
+    min-width: 0;
+    margin: 0;
+    font-size: var(--text-md);
+    font-weight: var(--weight-medium);
+  }
+
+  .epic-progress {
+    appearance: none;
+    width: 100%;
+    max-width: var(--width-column);
+    height: var(--space-2);
+    overflow: hidden;
+    border: 0;
+    border-radius: var(--radius-circle);
+    background: var(--wash);
+    accent-color: var(--tone-pass);
+  }
+
+  .epic-progress::-webkit-progress-bar {
+    background: var(--wash);
+  }
+
+  .epic-progress::-webkit-progress-value {
+    background: var(--tone-pass);
+  }
+
+  .epic-progress::-moz-progress-bar {
+    background: var(--tone-pass);
+  }
+
+  .epic-chips {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1);
+  }
+
+  .epic-graph-scroll {
+    max-width: 100%;
+    overflow-x: auto;
+  }
+
+  .epic-graph a {
+    text-decoration: none;
+  }
+
+  .epic-graph text {
+    fill: var(--ink-1);
+    font-family: var(--font-prose);
+    font-size: var(--text-sm);
+  }
+
+  .epic-graph-edge {
+    fill: none;
+    stroke: var(--edge-strong);
+    stroke-width: 1.5;
+  }
+
+  .epic-graph-node rect {
+    fill: var(--wash);
+    stroke: var(--edge-strong);
+    stroke-width: 1;
+  }
+
+  .epic-graph-node[data-external] rect {
+    fill: var(--surface-0);
+    stroke-dasharray: 4 3;
+  }
+
+  .epic-graph-pass rect {
+    fill: var(--wash-pass);
+  }
+
+  .epic-graph-parked rect {
+    fill: var(--wash-parked);
+  }
+
+  .epic-graph-live rect {
+    fill: var(--wash-live);
+  }
+
+  .epic-graph-evaluation rect {
+    fill: var(--wash-evaluation);
+  }
+
+  .epic-graph-finalization rect {
+    fill: var(--wash-finalization);
+  }
+
+  .epic-graph a:focus-visible .epic-graph-node rect {
+    stroke: var(--focus);
+    stroke-width: 2;
+  }
+}

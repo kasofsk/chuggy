@@ -38,7 +38,7 @@ import {
   type TicketCommand,
 } from "../../src/actor/command.ts";
 import { encodeTicketCommand } from "../../src/generated/model-api.ts";
-import { aDispatchSource } from "../../src/domain/config.ts";
+import { aDispatchSource, type Config } from "../../src/domain/config.ts";
 import type { Entry } from "../../src/actor/journal.ts";
 import { actorInit, journalStep } from "../../src/actor/state.ts";
 
@@ -974,9 +974,10 @@ export const harnessReworkCap: ReworkCap = { cyclesMax: 2 };
 /** The writer over a harness's ports, which is what turns a loaded state and an item into a commit. */
 export function postgresHarnessWriter(
   harness: PostgresHarness,
+  config: Config = refinementInstance,
 ): ProjectTicketWriter {
   return {
-    config: refinementInstance,
+    config,
     rework: harnessReworkCap,
     store: harness.store,
     decisions: harness.decisions,
@@ -1098,8 +1099,9 @@ export async function postgresHarnessDrain(
   harness: PostgresHarness,
   partition: Partition,
   memory: ProjectMemory,
+  config: Config = refinementInstance,
 ): Promise<PostgresHarnessDrained> {
-  const writer = postgresHarnessWriter(harness);
+  const writer = postgresHarnessWriter(harness, config);
   let carried = memory;
   const decided: string[] = [];
   for (let drained = 0; drained < postgresHarnessDecisionsMax; drained++) {

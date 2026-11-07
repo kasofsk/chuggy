@@ -16,6 +16,7 @@ export const abilitiesEvery: ProjectAbilitiesResponse = {
   overrideTicketConfig: true,
   skipPlannedEvaluations: true,
   administer: true,
+  writeEpic: true,
 };
 
 export const abilitiesNone: ProjectAbilitiesResponse = {
@@ -26,6 +27,7 @@ export const abilitiesNone: ProjectAbilitiesResponse = {
   overrideTicketConfig: false,
   skipPlannedEvaluations: false,
   administer: false,
+  writeEpic: false,
 };
 
 /** Whether a request is the abilities read. */
