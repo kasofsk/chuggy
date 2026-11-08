@@ -28,6 +28,7 @@ import {
   inquiryRefusalWords,
 } from "../app/core/leadInquiries.ts";
 import type { InquiryDraw } from "../app/core/leadInquiries.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 
 const drawn = "GxUhK1TgQ2iWm4bB0jvA5w";
 
@@ -54,8 +55,12 @@ test("a question is refused at the bound the wire refuses it at", () => {
   const atBound = "q".repeat(inquiryQuestionCharsMax);
   const past = `${atBound}q`;
   expect(inquiryQuestionFault(atBound)).toBeUndefined();
-  expect(inquiryQuestionFault(past)).toBe("Too long");
-  expect(inquiryQuestionFault("")).toBe("Empty");
+  expect(inquiryQuestionFault(past)).toStrictEqual({
+    id: "lead-inquiry-fault-too-long",
+  });
+  expect(inquiryQuestionFault("")).toStrictEqual({
+    id: "lead-inquiry-fault-empty",
+  });
   expect(leadInquirySchema.safeParse(asking(atBound)).success).toBe(true);
   expect(
     leadInquirySchema.safeParse(asking(past)).success,
@@ -80,7 +85,7 @@ test("the bound is counted in the units the schema counts, not in characters", (
   expect(
     inquiryQuestionFault(past),
     "a question the schema rejects was drawn as one the box would send",
-  ).toBe("Too long");
+  ).toStrictEqual({ id: "lead-inquiry-fault-too-long" });
   expect(leadInquirySchema.safeParse(asking(past)).success).toBe(false);
 });
 
@@ -201,7 +206,10 @@ test("each refusal the door states is drawn as one word", () => {
       code: "InquiriesInFlight",
       retryAfterSeconds: 5,
     }),
-  ).toStrictEqual({ ask: "Refused", word: "In flight" });
+  ).toStrictEqual({
+    ask: "Refused",
+    word: { id: "lead-inquiry-refusal-in-flight" },
+  });
   expect(
     inquiryAskRefused({
       outcome: "Rejected",
@@ -260,7 +268,7 @@ test("an inquiry the listing names no asker for is drawn as absent", () => {
   expect(inquiryAskerNamed("geoff")).toBe("geoff");
   expect(inquiryAskerNamed(undefined)).toBe(inquiryAskerAbsent);
   expect(
-    inquiryAskerAbsent.split(" ").length,
+    copyTextEn(inquiryAskerAbsent).split(" ").length,
     "the absent asker is a word",
   ).toBe(1);
 });
@@ -268,14 +276,22 @@ test("an inquiry the listing names no asker for is drawn as absent", () => {
 /** A refusal's line is what the box draws, and what a reader who left the
  * project is told. */
 test("a refusal is said as its word, the runner's own word, or the failure's word", () => {
-  expect(inquiryAskRefusalSentence({ ask: "Refused", word: "In flight" })).toBe(
-    "In flight",
-  );
-  expect(inquiryAskRefusalSentence({ ask: "NoRunner" })).toBe("No chat host");
   expect(
-    inquiryAskRefusalSentence({
-      ask: "Failed",
-      words: { word: "Offline", detail: "fetch failed" },
-    }),
+    inquiryAskRefusalSentence(
+      { ask: "Refused", word: { id: "lead-inquiry-refusal-in-flight" } },
+      copyTextEn,
+    ),
+  ).toBe("In flight");
+  expect(inquiryAskRefusalSentence({ ask: "NoRunner" }, copyTextEn)).toBe(
+    "No chat host",
+  );
+  expect(
+    inquiryAskRefusalSentence(
+      {
+        ask: "Failed",
+        words: { word: "Offline", detail: "fetch failed" },
+      },
+      copyTextEn,
+    ),
   ).toBe("Offline");
 });

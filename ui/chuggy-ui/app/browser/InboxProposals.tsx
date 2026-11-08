@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The lead's held decisions in the inbox: the read, the pill a row says it
  * with, Approve and Reject, and the line an answer leaves behind once its row
@@ -32,6 +31,8 @@ import type {
   ConsoleWrite,
   ConsoleWriteRefused,
 } from "../core/consoleWrite.ts";
+import type { CopyText } from "../core/copy.ts";
+import { useCopyText } from "../copy/CopyProvider.tsx";
 import { inboxQuery } from "../core/ticketQueries.ts";
 import {
   inboxProposalAnswered,
@@ -97,6 +98,7 @@ function inboxProposalReviewWrite(
   partition: PartitionIdentity,
   proposal: SelectorProposalResponse,
   dispatch: ConsoleDispatch,
+  text: CopyText,
 ): ConsoleWrite<InboxProposalPressed, SelectorProposalReviewResponse> {
   return {
     mutationKey: inboxProposalReviewKey(partition, proposal.decision),
@@ -121,7 +123,10 @@ function inboxProposalReviewWrite(
       return result;
     },
     refusal: (failure) =>
-      inboxProposalSentence({ proposal, step: inboxProposalAnswered(failure) }),
+      inboxProposalSentence(
+        { proposal, step: inboxProposalAnswered(failure) },
+        text,
+      ),
     landed: (client) => inboxProposalReviewReread(client, partition),
   };
 }
@@ -138,8 +143,11 @@ export interface InboxProposalAnswers {
 function inboxProposalNoticeDraws(
   last: InboxProposalAnswer | undefined,
   refused: ConsoleWriteRefused,
+  text: CopyText,
 ): boolean {
-  return last !== undefined && inboxProposalSentence(last) === refused.message;
+  return (
+    last !== undefined && inboxProposalSentence(last, text) === refused.message
+  );
 }
 
 /** Every review of the project's decisions the cache holds, watched for as
@@ -148,6 +156,7 @@ function inboxProposalNoticeDraws(
 function useInboxProposalReviewsWatched(
   partition: PartitionIdentity,
   last: InboxProposalAnswer | undefined,
+  text: CopyText,
 ): void {
   const client = useQueryClient();
   const drawn = useRef(last);
@@ -164,7 +173,7 @@ function useInboxProposalReviewsWatched(
       const watch = consoleWriteWatchOf(client);
       const released = keys.map((key) =>
         watch.watched(key, (refused) =>
-          inboxProposalNoticeDraws(drawn.current, refused),
+          inboxProposalNoticeDraws(drawn.current, refused, text),
         ),
       );
       return () => {
@@ -172,7 +181,7 @@ function useInboxProposalReviewsWatched(
       };
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the keys are watched by their hashes, which fresh arrays of the same parts keep
-    [client, keyed],
+    [client, keyed, text],
   );
 }
 
@@ -182,10 +191,11 @@ export function useInboxProposalAnswers(
   partition: PartitionIdentity,
 ): InboxProposalAnswers {
   const dispatch = useConsoleDispatch();
+  const text = useCopyText();
   const last = useConsoleSelector((state) =>
     inboxProposalLastAt(state, partition),
   );
-  useInboxProposalReviewsWatched(partition, last);
+  useInboxProposalReviewsWatched(partition, last, text);
   const { tenant, project } = partition;
   useEffect(() => {
     const drawn = { tenant, project };
@@ -202,6 +212,7 @@ export function InboxProposalWhy(props: {
   readonly ticket: number;
   readonly proposals: readonly SelectorProposalResponse[];
 }): ReactNode {
+  const text = useCopyText();
   return props.proposals.map((proposal) => {
     const others = inboxProposalOthers(proposal, props.ticket);
     return (
@@ -209,12 +220,15 @@ export function InboxProposalWhy(props: {
         key={proposal.decision}
         text={
           others.length === 0
-            ? "Lead proposal"
-            : `Lead proposal · also ${others.join(", ")}`
+            ? text({ id: "inbox-proposal-why" })
+            : text({
+                id: "inbox-proposal-why-others",
+                args: { others: others.join(", ") },
+              })
         }
       >
         <span>
-          <Pill tone="parked">Proposal</Pill>
+          <Pill tone="parked">{text({ id: "inbox-proposal-pill" })}</Pill>
         </span>
       </Tooltip>
     );
@@ -227,11 +241,12 @@ function InboxProposalReject(props: {
   readonly onReject: (note: string) => void;
   readonly onCancel: () => void;
 }): ReactNode {
+  const text = useCopyText();
   const [note, setNote] = useState("");
   return (
     <Confirm
-      question="Reject this proposal?"
-      confirm="Reject"
+      question={text({ id: "inbox-proposal-reject-question" })}
+      confirm={text({ id: "inbox-proposal-reject-confirm" })}
       busy={props.sending}
       onConfirm={() => {
         props.onReject(note);
@@ -239,8 +254,8 @@ function InboxProposalReject(props: {
       onCancel={props.onCancel}
     >
       <Input
-        label="Note"
-        placeholder="Note"
+        label={text({ id: "inbox-proposal-note-label" })}
+        placeholder={text({ id: "inbox-proposal-note-placeholder" })}
         value={note}
         onChange={(typed) => {
           setNote(inboxProposalNoteClamped(typed));
@@ -261,13 +276,16 @@ function InboxProposalAction(props: {
 }): ReactNode {
   const proposal = props.proposal;
   const dispatch = useConsoleDispatch();
+  const text = useCopyText();
   const write = inboxProposalReviewWrite(
     props.answers.partition,
     proposal,
     dispatch,
+    text,
   );
   const reviewing = useConsoleWrite(write, {
-    drawn: (refused) => inboxProposalNoticeDraws(props.answers.last, refused),
+    drawn: (refused) =>
+      inboxProposalNoticeDraws(props.answers.last, refused, text),
   });
   const sending =
     useIsMutating({ mutationKey: write.mutationKey, exact: true }) > 0;
@@ -289,7 +307,7 @@ function InboxProposalAction(props: {
             answer("Approved", "");
           }}
         >
-          approve
+          {text({ id: "inbox-proposal-approve" })}
         </Button>
         <Button
           variant="quiet"
@@ -300,7 +318,7 @@ function InboxProposalAction(props: {
             props.onRejecting(!props.rejecting);
           }}
         >
-          reject
+          {text({ id: "inbox-proposal-reject" })}
         </Button>
       </div>
       {props.rejecting ? (
@@ -352,6 +370,7 @@ function inboxProposalTone(step: InboxProposalStep): NoticeTone {
 export function InboxProposalNotice(props: {
   readonly answers: InboxProposalAnswers;
 }): ReactNode {
+  const text = useCopyText();
   const last = props.answers.last;
   if (last === undefined) return null;
   return (
@@ -359,7 +378,7 @@ export function InboxProposalNotice(props: {
       tone={inboxProposalTone(last.step)}
       inline
       role="status"
-      detail={inboxProposalSentence(last)}
+      detail={inboxProposalSentence(last, text)}
     />
   );
 }

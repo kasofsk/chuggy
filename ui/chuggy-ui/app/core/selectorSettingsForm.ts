@@ -35,6 +35,7 @@ import type {
 } from "../../../../src/contract/responses.ts";
 
 import type { ApiFailure } from "./apiRequest.ts";
+import type { Copy, CopyText } from "./copy.ts";
 import {
   bytesSetFigure,
   countFigure,
@@ -232,19 +233,27 @@ function selectorSettingsLimits(
 /** The draft as the body the route takes, or the fields the wire refused. */
 export interface SelectorSettingsWrite {
   readonly overrides: SelectorProjectOverrides | undefined;
-  readonly faults: Readonly<Record<string, string>>;
+  readonly faults: Readonly<Record<string, Copy>>;
 }
 
 /** The word a refused field is marked with, said once so every field says it. */
-export const selectorSettingsFaultWord = "Invalid";
+export const selectorSettingsFaultWord: Copy = {
+  id: "lead-settings-fault-invalid",
+};
 
 /** What a refused field is marked with: the bound it crossed where the wire's
  * schema names one it includes, and the fault word otherwise. */
-function selectorSettingsFaultText(issue: z.core.$ZodIssue): string {
+function selectorSettingsFaultText(issue: z.core.$ZodIssue): Copy {
   if (issue.code === "too_small" && issue.inclusive === true)
-    return `At least ${groupedDigits(Number(issue.minimum))}`;
+    return {
+      id: "lead-settings-fault-at-least",
+      args: { min: groupedDigits(Number(issue.minimum)) },
+    };
   if (issue.code === "too_big" && issue.inclusive === true)
-    return `At most ${groupedDigits(Number(issue.maximum))}`;
+    return {
+      id: "lead-settings-fault-at-most",
+      args: { max: groupedDigits(Number(issue.maximum)) },
+    };
   return selectorSettingsFaultWord;
 }
 
@@ -270,7 +279,7 @@ export function selectorSettingsWrite(
   };
   const read = selectorProjectOverridesSchema.safeParse(built);
   if (read.success) return { overrides: read.data, faults: {} };
-  const faults: Record<string, string> = {};
+  const faults: Record<string, Copy> = {};
   for (const issue of read.error.issues)
     faults[issue.path.join(".")] = selectorSettingsFaultText(issue);
   return { overrides: undefined, faults };
@@ -279,22 +288,22 @@ export function selectorSettingsWrite(
 /** The name a limit is drawn under, which is the noun and not the wire's key. */
 export function selectorSettingsLimitLabel(
   name: SelectorSettingsLimitName,
-): string {
+): Copy {
   switch (name) {
     case "tokensPerDecision":
-      return "Tokens";
+      return { id: "lead-settings-limit-tokens" };
     case "millisecondsPerDecision":
-      return "Time";
+      return { id: "lead-settings-limit-time" };
     case "toolCallsPerDecision":
-      return "Tool calls";
+      return { id: "lead-settings-limit-tool-calls" };
     case "dispatchesPerDecision":
-      return "Dispatches";
+      return { id: "lead-settings-limit-dispatches" };
     case "inputBytesPerDecision":
-      return "Input";
+      return { id: "lead-settings-limit-input" };
     case "candidatePagesPerDecision":
-      return "Candidate pages";
+      return { id: "lead-settings-limit-candidate-pages" };
     case "autoCompactWindow":
-      return "Compaction window";
+      return { id: "lead-settings-limit-compaction-window" };
   }
 }
 
@@ -329,22 +338,22 @@ export function selectorSettingsLimitFigure(
  * the suffix beside them has to say what the wire will read them as. */
 export function selectorSettingsLimitUnitWord(
   name: SelectorSettingsLimitName,
-): string {
+): Copy {
   switch (name) {
     case "tokensPerDecision":
-      return "tokens";
+      return { id: "lead-settings-unit-tokens" };
     case "millisecondsPerDecision":
-      return "ms";
+      return { id: "lead-settings-unit-ms" };
     case "toolCallsPerDecision":
-      return "calls";
+      return { id: "lead-settings-unit-calls" };
     case "dispatchesPerDecision":
-      return "tickets";
+      return { id: "lead-settings-unit-tickets" };
     case "inputBytesPerDecision":
-      return "bytes";
+      return { id: "lead-settings-unit-bytes" };
     case "candidatePagesPerDecision":
-      return "pages";
+      return { id: "lead-settings-unit-pages" };
     case "autoCompactWindow":
-      return "tokens";
+      return { id: "lead-settings-unit-tokens" };
   }
 }
 
@@ -369,8 +378,8 @@ export type SelectorSettingsSectionName =
 
 /** What a section is called and, in one line, what setting it holds. */
 export interface SelectorSettingsSection {
-  readonly title: string;
-  readonly about: string;
+  readonly title: Copy;
+  readonly about: Copy;
 }
 
 export function selectorSettingsSection(
@@ -379,26 +388,23 @@ export function selectorSettingsSection(
   switch (name) {
     case "northStar":
       return {
-        title: "North Star",
-        about:
-          "What this project is for. Every lead decision is judged against it.",
+        title: { id: "lead-settings-section-north-star-title" },
+        about: { id: "lead-settings-section-north-star-about" },
       };
     case "threadStandingRules":
       return {
-        title: "Standing rules",
-        about: "How threads act on this project.",
+        title: { id: "lead-settings-section-standing-rules-title" },
+        about: { id: "lead-settings-section-standing-rules-about" },
       };
     case "basePrompt":
       return {
-        title: "Base prompt",
-        about:
-          "The lead's system prompt. An edit replaces the lead at its next decision.",
+        title: { id: "lead-settings-section-base-prompt-title" },
+        about: { id: "lead-settings-section-base-prompt-about" },
       };
     case "limits":
       return {
-        title: "Limits",
-        about:
-          "What one decision may spend, and how much context the lead holds before it compacts.",
+        title: { id: "lead-settings-section-limits-title" },
+        about: { id: "lead-settings-section-limits-about" },
       };
   }
 }
@@ -505,11 +511,11 @@ export function selectorSettingsTextOverriddenAtRead(
  * press writes. There is no edit mode here — the press is the write.
  */
 export interface SelectorSettingsStripCell {
-  readonly name: string;
-  readonly value: string;
+  readonly name: Copy;
+  readonly value: Copy;
   readonly tone: Tone | undefined;
   readonly inherited: boolean;
-  readonly action: string;
+  readonly action: Copy;
   readonly pressed: SelectorSettingsDraft;
 }
 
@@ -537,11 +543,15 @@ export function selectorSettingsModeCell(
   const running = effective.mode === "Running";
   const resumed = effective.installationMode === "Running" ? "" : "Running";
   return {
-    name: "Selector",
-    value: effective.mode,
+    name: { id: "lead-mode-name" },
+    value: {
+      id: running ? "lead-mode-running" : "lead-mode-paused",
+    },
     tone: selectorModeTone(effective.mode),
     inherited: draft.mode === "",
-    action: running ? "Pause" : "Resume",
+    action: {
+      id: running ? "lead-mode-action-pause" : "lead-mode-action-resume",
+    },
     pressed: {
       ...selectorSettingsAtRest(draft),
       mode: running ? "Paused" : resumed,
@@ -556,11 +566,17 @@ export function selectorSettingsDispatchCell(
 ): SelectorSettingsStripCell {
   const automatic = settings.effective.dispatchMode === "Automatic";
   return {
-    name: "Dispatch",
-    value: automatic ? "Automatic" : "Approval",
+    name: { id: "lead-dispatch-name" },
+    value: {
+      id: automatic ? "lead-dispatch-automatic" : "lead-dispatch-approval",
+    },
     tone: undefined,
     inherited: draft.dispatchMode === "",
-    action: automatic ? "Require approval" : "Dispatch automatically",
+    action: {
+      id: automatic
+        ? "lead-dispatch-action-require"
+        : "lead-dispatch-action-automatic",
+    },
     pressed: {
       ...selectorSettingsAtRest(draft),
       dispatchMode: automatic ? "ApprovalRequired" : "Automatic",
@@ -582,9 +598,16 @@ export function selectorSettingsConflictOf(
 function selectorSettingsMovedByText(
   movedBy: NonNullable<SelectorSettingsConflictResponse["movedBy"]>,
   nowMs: number,
+  text: CopyText,
 ): string {
   const at = instantFigure(movedBy.recordedAt, nowMs);
-  return `Changed by ${movedBy.administrator.subject} at ${at.kind === "Instant" ? at.text : "—"}`;
+  return text({
+    id: "lead-settings-conflict-moved-by",
+    args: {
+      subject: movedBy.administrator.subject,
+      time: at.kind === "Instant" ? at.text : "—",
+    },
+  });
 }
 
 /**
@@ -595,10 +618,14 @@ function selectorSettingsMovedByText(
 export function selectorSettingsRefusal(
   failure: ApiFailure,
   nowMs: number,
+  text: CopyText,
 ): string {
   const conflict = selectorSettingsConflictOf(failure);
   if (conflict === undefined) return failureWords(failure).word;
   if (conflict.movedBy === undefined)
-    return `Conflict · ${String(conflict.settings.revision)}`;
-  return selectorSettingsMovedByText(conflict.movedBy, nowMs);
+    return text({
+      id: "lead-settings-conflict-revision",
+      args: { revision: String(conflict.settings.revision) },
+    });
+  return selectorSettingsMovedByText(conflict.movedBy, nowMs, text);
 }

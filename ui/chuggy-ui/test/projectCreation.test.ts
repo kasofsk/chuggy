@@ -10,17 +10,20 @@ import type { ProjectCreatedResponse } from "../../../src/contract/responses.ts"
 import type { ApiResult } from "../app/core/apiRequest.ts";
 import {
   projectCreationNameFault,
-  projectCreationRefusal,
+  projectCreationRefusalLabel,
   projectCreationSendable,
   projectCreationStanding,
   projectNameRule,
   projectNameLengthFault,
 } from "../app/core/projectCreation.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 
 const partition = { tenant: "vteng", project: "chuggy" };
 
 function status(result: ApiResult<ProjectCreatedResponse>): string {
-  return result.outcome === "Ok" ? "Created" : projectCreationRefusal(result);
+  return result.outcome === "Ok"
+    ? "Created"
+    : copyTextEn(projectCreationRefusalLabel(result));
 }
 
 test("a name the wire refuses is refused before it is sent, and an empty one says nothing", () => {
@@ -70,7 +73,7 @@ test("each refusal is one short line of its own", () => {
   for (const code of ["TenantNameInvalid", "ProjectNameInvalid"])
     expect(
       status({ outcome: "Rejected", code, status: 422, body: undefined }),
-    ).toBe(projectNameRule);
+    ).toBe(copyTextEn(projectNameRule));
   expect(
     status({
       outcome: "Rejected",

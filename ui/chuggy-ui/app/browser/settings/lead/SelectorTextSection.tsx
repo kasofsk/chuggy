@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * One prose setting: the whole of what the project runs under while the section
  * is read, and a box that grows to the text while it is edited.
@@ -16,6 +15,7 @@ import type {
   SelectorSettingsDraft,
   SelectorSettingsTextName,
 } from "../../../core/selectorSettingsForm.ts";
+import { useCopyText } from "../../../copy/CopyProvider.tsx";
 import { Button } from "../../ui/Button.tsx";
 import { Textarea } from "../../ui/Textarea.tsx";
 import type { SelectorSettingsShown } from "../../selectorSettingsWriting.ts";
@@ -49,7 +49,9 @@ export function SelectorTextSection(props: {
   readonly onSave: () => void;
   readonly onReload: () => void;
 }): ReactNode {
+  const text = useCopyText();
   const section = selectorSettingsSection(props.name);
+  const title = text(section.title);
   const mono = props.name === "basePrompt";
   const placeholder = selectorSettingsTextOverriddenAtRead(
     props.draft,
@@ -59,8 +61,8 @@ export function SelectorTextSection(props: {
     : props.effective;
   return (
     <SelectorSection
-      title={section.title}
-      about={section.about}
+      title={title}
+      about={text(section.about)}
       inherited={selectorSettingsSectionInherited(props.draft, props.name)}
       editing={props.editing}
       editable={props.editable}
@@ -72,13 +74,13 @@ export function SelectorTextSection(props: {
       onReload={props.onReload}
       footLead={
         <Button variant="quiet" size="sm" onClick={props.onReset}>
-          Reset to default
+          {text({ id: "lead-settings-reset-default" })}
         </Button>
       }
     >
       {props.editing ? (
         <Textarea
-          label={section.title}
+          label={title}
           mono={mono}
           value={props.draft[props.name]}
           {...(placeholder === undefined ? {} : { placeholder })}

@@ -24,6 +24,7 @@ import {
 } from "../../../../src/contract/accessPlane.ts";
 
 import type { ApiFailure } from "./apiRequest.ts";
+import type { Copy } from "./copy.ts";
 import {
   projectCreationNameFault,
   tenantNameReservedFault,
@@ -96,7 +97,7 @@ export const siteWorkspaceNameTaken = "Name taken";
 
 /** Why one name cannot be sent, in the lines a project's creation draws, or
  * nothing while it is empty. */
-export function siteWorkspaceNameFault(name: string): string | undefined {
+export function siteWorkspaceNameFault(name: string): Copy | undefined {
   const shape = projectCreationNameFault(name);
   if (name === "" || shape !== undefined) return shape;
   return accessOwnedTenantSchema.safeParse(name).success

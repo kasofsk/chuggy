@@ -16,6 +16,7 @@ import {
 import type { projectCreationSchema } from "../../../../src/contract/requests.ts";
 
 import type { ApiFailure } from "./apiRequest.ts";
+import type { Copy } from "./copy.ts";
 
 export type ProjectCreationForm = z.infer<typeof projectCreationSchema>;
 
@@ -56,18 +57,24 @@ export function projectCreationPathIn(workspace: string): string {
 
 /** The name rule as the form states it under each field before anything is
  * typed, and as it states a name that breaks it. */
-export const projectNameRule = "Lowercase letters, digits, inner hyphens";
-export const projectNameLengthFault = "Too long";
+export const projectNameRule: Copy = { id: "project-creation-name-rule" };
+export const projectNameLengthFault: Copy = {
+  id: "project-creation-name-too-long",
+};
 
 /** What a workspace name the contract reserves is refused as. */
-export const tenantNameReservedFault = "Reserved";
+export const tenantNameReservedFault: Copy = {
+  id: "project-creation-tenant-reserved",
+};
 
 /** What a workspace nobody holds is refused as, to a reader who may make none. */
-export const tenantCreationRefusedLine = "New workspace needs an invite link";
+export const tenantCreationRefusedLine: Copy = {
+  id: "project-creation-tenant-needs-invite",
+};
 
 /** Why one name cannot be sent, or nothing while it is empty, which the submit
  * being unavailable already says. */
-export function projectCreationNameFault(name: string): string | undefined {
+export function projectCreationNameFault(name: string): Copy | undefined {
   if (name === "") return undefined;
   if (name.length > projectNameCharsMax) return projectNameLengthFault;
   return projectNameSchema.safeParse(name).success
@@ -102,18 +109,18 @@ export function projectCreationStanding(
     : undefined;
 }
 
-function projectCreationConflict(code: string): string {
+function projectCreationConflict(code: string): Copy {
   switch (code) {
     case "TenantTaken":
-      return "Taken";
+      return { id: "project-creation-refusal-taken" };
     case "ProjectExists":
-      return "Exists";
+      return { id: "project-creation-refusal-exists" };
     default:
-      return "Conflict";
+      return { id: "project-creation-refusal-conflict" };
   }
 }
 
-function projectCreationRejected(code: string): string {
+function projectCreationRejected(code: string): Copy {
   switch (code) {
     case "TenantNameInvalid":
     case "ProjectNameInvalid":
@@ -123,12 +130,12 @@ function projectCreationRejected(code: string): string {
     case "TenantCreationNotPermitted":
       return tenantCreationRefusedLine;
     default:
-      return "Refused";
+      return { id: "project-creation-refusal-refused" };
   }
 }
 
 /** The one short line a refused creation is drawn as. */
-export function projectCreationRefusal(failure: ApiFailure): string {
+export function projectCreationRefusalLabel(failure: ApiFailure): Copy {
   switch (failure.outcome) {
     case "Conflict":
       return projectCreationConflict(failure.code);
@@ -136,14 +143,14 @@ export function projectCreationRefusal(failure: ApiFailure): string {
       return projectCreationRejected(failure.code);
     case "Absent":
     case "Retryable":
-      return "Unavailable";
+      return { id: "project-creation-refusal-unavailable" };
     case "Unauthenticated":
-      return "Not signed in";
+      return { id: "project-creation-refusal-not-signed-in" };
     case "Fault":
-      return "Failed";
+      return { id: "project-creation-refusal-failed" };
     case "Unreachable":
-      return "Unreachable";
+      return { id: "project-creation-refusal-unreachable" };
     case "Unreadable":
-      return "Unreadable";
+      return { id: "project-creation-refusal-unreadable" };
   }
 }

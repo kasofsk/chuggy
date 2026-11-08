@@ -236,7 +236,7 @@ function exchangeCount(): number {
  * the inquiries panel since the refusals ledger draws listitems of its own. */
 function inquiryQuestions(): readonly string[] {
   const section = screen
-    .getByRole("heading", { name: "Inquiries" })
+    .getByRole("heading", { name: "Questions" })
     .closest("section");
   return within(section as HTMLElement)
     .queryAllByRole("listitem")
@@ -301,6 +301,21 @@ test("the bar's chips wrap on their own rather than crowd the title", async () =
     name: "Lead",
   }).nextElementSibling;
   expect(chips?.className).toContain("flex-wrap");
+});
+
+/** The strip names its own cell by the term a reader reads, never by what the
+ * code calls it: the mode cell says `Lead`, not `Selector`. */
+test("the strip's mode cell is named Lead, not Selector", async () => {
+  await drawLeadSelector(
+    () => opening,
+    () => ({ body: leadSelectorSettingsBody(13), status: 200 }),
+  );
+  const strip = screen
+    .getByRole("button", { name: "Pause" })
+    .closest<HTMLElement>(".selector-strip");
+  if (strip === null) throw new Error("no strip drawn");
+  expect(within(strip).getByText("Lead")).toBeDefined();
+  expect(within(strip).queryByText("Selector")).toBeNull();
 });
 
 /**
@@ -374,7 +389,9 @@ test("Resume writes Running where the installation is paused", async () => {
 test("Require approval writes the dispatch mode the other press undoes", async () => {
   const server = await drawLeadSelector(() => opening);
   await turned(() => {
-    fireEvent.click(screen.getByRole("button", { name: "Require approval" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: "Require dispatch approval" }),
+    );
   });
   await settled();
   expect(server.written()).toStrictEqual({
@@ -944,7 +961,7 @@ test("a project with no lead still draws the strip that leads the page", async (
   expect(screen.getByRole("heading", { name: "No lead" })).toBeDefined();
   expect(screen.getByRole("button", { name: "Pause" })).toBeDefined();
   expect(
-    screen.getByRole("button", { name: "Require approval" }),
+    screen.getByRole("button", { name: "Require dispatch approval" }),
   ).toBeDefined();
 });
 
@@ -2045,7 +2062,7 @@ test("a reader whose abilities read failed is drawn the strip from one read of i
 test("a reader who may not mutate reads the inquiries and View only where the question would be asked", async () => {
   await drawLeadFor({ ...abilitiesEvery, mutate: false });
   const inquiries = screen
-    .getByRole("heading", { name: "Inquiries" })
+    .getByRole("heading", { name: "Questions" })
     .closest("section");
   expect(within(inquiries as HTMLElement).getByText("View only")).toBeDefined();
   expect(screen.getAllByText("View only")).toHaveLength(1);

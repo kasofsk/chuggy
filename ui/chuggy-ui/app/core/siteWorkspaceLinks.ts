@@ -18,6 +18,7 @@ import {
 } from "../../../../src/contract/accessPlane.ts";
 import { textCodePointsCount } from "../../../../src/contract/http.ts";
 
+import type { CopyOrData } from "./copy.ts";
 import { projectNameLengthFault } from "./projectCreation.ts";
 
 /** The words the site's list of links has that a workspace's does not. */
@@ -30,7 +31,9 @@ export const siteWorkspaceLinkWords = {
 export const siteWorkspaceLinkNoteLinesFault = "One line";
 
 /** Why a note cannot be sent, or nothing while it is empty, which only leaves it out. */
-export function siteWorkspaceLinkNoteFault(note: string): string | undefined {
+export function siteWorkspaceLinkNoteFault(
+  note: string,
+): CopyOrData | undefined {
   if (note === "" || accessWorkspaceLinkNoteSchema.safeParse(note).success)
     return undefined;
   return textCodePointsCount(note) > accessWorkspaceLinkNoteCharsMax

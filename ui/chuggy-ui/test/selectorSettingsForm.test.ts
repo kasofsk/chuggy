@@ -20,6 +20,7 @@ import type {
   SelectorSettingsDrawn,
 } from "../app/core/selectorSettingsForm.ts";
 import { leadPartition } from "./leadFixture.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 
 const readDrawn: SelectorSettingsDrawn = {
   northStar: "ship the console",
@@ -125,7 +126,8 @@ test("a limit accepts grouped digits and refuses anything else", () => {
       }),
     );
     expect(malformed.overrides).toBeUndefined();
-    expect(malformed.faults["limits.tokensPerDecision"]).toBe("Invalid");
+    const fault = malformed.faults["limits.tokensPerDecision"];
+    expect(fault === undefined ? undefined : copyTextEn(fault)).toBe("Invalid");
   }
 });
 
@@ -175,7 +177,11 @@ test("a refusal is the conflict's revision, its mover, or the failure's word", (
     code: "SettingsRevisionConflict",
   } as const;
   expect(
-    selectorSettingsRefusal({ ...conflict, body: { settings } }, nowMs),
+    selectorSettingsRefusal(
+      { ...conflict, body: { settings } },
+      nowMs,
+      copyTextEn,
+    ),
   ).toBe(`Conflict · ${String(settings.revision)}`);
   expect(
     selectorSettingsRefusal(
@@ -190,9 +196,14 @@ test("a refusal is the conflict's revision, its mover, or the failure's word", (
         },
       },
       nowMs,
+      copyTextEn,
     ),
   ).toMatch(/^Changed by dave@vteng\.io at \S/u);
-  expect(selectorSettingsRefusal({ ...conflict, body: undefined }, nowMs)).toBe(
-    "Refused",
-  );
+  expect(
+    selectorSettingsRefusal(
+      { ...conflict, body: undefined },
+      nowMs,
+      copyTextEn,
+    ),
+  ).toBe("Refused");
 });

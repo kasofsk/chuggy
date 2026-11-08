@@ -13,12 +13,37 @@ import {
   operationStateSentence,
 } from "./codeSentences.ts";
 import type { OperationStep } from "./operationFollow.ts";
-import type { TicketAction } from "./ticketActions.ts";
-import type { CopyOrData, CopyText } from "./copy.ts";
+import type { TicketAction, TicketActionName } from "./ticketActions.ts";
+import type { Copy, CopyOrData, CopyText } from "./copy.ts";
+
+const inboxStepWords = {
+  Submitting: { id: "inbox-step-submitting" },
+  Backlogged: { id: "inbox-step-busy" },
+  Following: { id: "inbox-step-waiting" },
+  Confirming: { id: "inbox-step-updating" },
+} as const;
 
 export interface InboxAnswer {
   readonly action: TicketAction;
   readonly step: OperationStep;
+}
+
+/** An answer a row offers, in the word its button says. */
+export function inboxActionLabel(action: TicketActionName): Copy {
+  switch (action) {
+    case "Dispatch":
+      return { id: "inbox-action-dispatch" };
+    case "Resume":
+      return { id: "inbox-action-resume" };
+    case "Revoke":
+      return { id: "inbox-action-revoke" };
+    case "Approve":
+      return { id: "inbox-action-approve" };
+    case "Decline":
+      return { id: "inbox-action-decline" };
+    case "Release":
+      return { id: "inbox-action-release" };
+  }
 }
 
 /** A follow past its last step, which is what its row draws from then on. */
@@ -34,13 +59,10 @@ export function inboxAnswerInFlight(step: OperationStep | undefined): boolean {
 export function inboxStepSentence(step: OperationStep, text: CopyText): string {
   switch (step.step) {
     case "Submitting":
-      return "Submitting";
     case "Backlogged":
-      return "Busy";
     case "Following":
-      return "Waiting";
     case "Confirming":
-      return "Updating";
+      return text(inboxStepWords[step.step]);
     case "Settled":
       return text(
         step.refusal === undefined

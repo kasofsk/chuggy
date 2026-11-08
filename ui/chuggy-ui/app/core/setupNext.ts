@@ -35,7 +35,6 @@ import {
   runnerPackages,
   runnerRegisterCommand,
 } from "./runners.ts";
-import { selectorSettingsSection } from "./selectorSettingsForm.ts";
 import { settingsRoutes } from "./settingsNav.ts";
 import type { SetupAnswers } from "./setupArguments.ts";
 import type { SetupChoice } from "./setupReads.ts";
@@ -70,6 +69,15 @@ export const setupPressed = {
   chatHost: "Register chat host",
   ticket: "Create ticket",
   dispatch: "Dispatch",
+} as const;
+
+/**
+ * What the program names on the console's pages beside what is pressed there,
+ * by the name each page draws. A page draws these from the copy catalog, which
+ * core cannot reach, so a case holds each against the catalog's words.
+ */
+export const setupSeen = {
+  northStar: "North Star",
 } as const;
 
 /** How many names a question lists before it says how many more there are. */
@@ -126,7 +134,7 @@ function setupProjectMend(
       `Open ${at.site}${projectCreationPathIn(at.workspace)}, the ${setupPressed.projectPage} page, name the project and press ${setupPressed.projectCreate}. Tell me once it is made.`,
       "once the person says the project is made",
     );
-  const section = selectorSettingsSection("northStar").title;
+  const section = setupSeen.northStar;
   return setupHand(
     `Open ${setupPage(at, settingsRoutes.project.lead)}, press ${setupPressed.edit} beside ${section}, write a paragraph that says what the project is for, and press ${setupPressed.save}. Tell me once it is saved.`,
     `once the person says the ${section} is saved`,

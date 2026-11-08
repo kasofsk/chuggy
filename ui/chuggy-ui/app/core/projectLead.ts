@@ -54,8 +54,14 @@ export function projectLeadRefusalLine(
   const label = text(leadAbsenceLabel(refusal.reason));
   const now = new Date(nowMs);
   return refusal.until === undefined
-    ? `${label} · since ${instantText(new Date(refusal.since), now)}`
-    : `${label} · until ${instantText(new Date(refusal.until), now)}`;
+    ? text({
+        id: "lead-absence-since",
+        args: { label, time: instantText(new Date(refusal.since), now) },
+      })
+    : text({
+        id: "lead-absence-until",
+        args: { label, time: instantText(new Date(refusal.until), now) },
+      });
 }
 
 /** The lead a read answered, or nothing where it answered that there is none. */
@@ -119,7 +125,7 @@ export function projectLeadAbsenceLine(
 ): string | undefined {
   if (state.state !== "Ready" || "session" in state.value) return undefined;
   const absence = state.value.absence;
-  if (absence === undefined) return "Tickets are dispatched by hand";
+  if (absence === undefined) return text({ id: "lead-absence-manual" });
   if (absence.reason === "RunnerOffline" && placement !== undefined)
     return undefined;
   return "since" in absence

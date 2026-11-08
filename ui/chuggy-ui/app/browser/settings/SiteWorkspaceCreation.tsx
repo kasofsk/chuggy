@@ -35,7 +35,9 @@ import {
   apiInviteSiteOwner,
   apiMintSiteWorkspaceLink,
 } from "../../core/accessRoutes.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { consoleWriteKey } from "../../core/consoleWrite.ts";
+import { copyOrDataText } from "../../core/copy.ts";
 import type { ConsoleWrite } from "../../core/consoleWrite.ts";
 import { inviteLinkSendWords } from "../../core/inviteLinks.ts";
 import type { InviteMode } from "../../core/inviteLinks.ts";
@@ -199,13 +201,15 @@ function SiteWorkspaceCreateAccounts(props: SiteWorkspaceDrawn): ReactNode {
 /** The workspace an invitation makes and the person it names, neither of which a link's form holds. */
 function SiteWorkspacePerson(props: SiteWorkspaceDrawn): ReactNode {
   const { form, busy, change } = props.creating;
+  const text = useCopyText();
   const owner = useId();
+  const nameFault = siteWorkspaceNameFault(form.tenant);
   return (
     <>
       <InvitationText
         label="Name"
         value={form.tenant}
-        fault={siteWorkspaceNameFault(form.tenant)}
+        fault={nameFault === undefined ? undefined : text(nameFault)}
         disabled={busy}
         onChange={(tenant) => {
           change({ ...form, tenant });
@@ -238,13 +242,17 @@ function SiteWorkspacePerson(props: SiteWorkspaceDrawn): ReactNode {
 
 function SiteWorkspaceLink(props: SiteWorkspaceDrawn): ReactNode {
   const { note, busy, annotate } = props.creating;
+  const text = useCopyText();
+  const noteFault = siteWorkspaceLinkNoteFault(note);
   return (
     <>
       <SiteWorkspaceCreateAccounts {...props} />
       <InvitationText
         label={siteWorkspaceLinkWords.note}
         value={note}
-        fault={siteWorkspaceLinkNoteFault(note)}
+        fault={
+          noteFault === undefined ? undefined : copyOrDataText(text, noteFault)
+        }
         disabled={busy}
         onChange={annotate}
       />

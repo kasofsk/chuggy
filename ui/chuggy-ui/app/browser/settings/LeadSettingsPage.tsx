@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The project's lead settings: what it is running under, the setting groups a
  * reader edits one at a time, and every revision that got it here.
@@ -40,6 +39,7 @@ import {
   selectorSettingsQuery,
 } from "../../core/projectQueries.ts";
 import { usePanelState } from "../api.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { PanelUnready } from "../DataPanel.tsx";
 import { useNowMs } from "../Freshness.tsx";
 import { useLead, useLeadAbsenceLine } from "../LeadPage.tsx";
@@ -82,6 +82,7 @@ interface SelectorSettingsSectionChrome {
 function SelectorSettingsSections(props: {
   readonly chrome: SelectorSettingsSectionChrome;
 }): ReactNode {
+  const text = useCopyText();
   const chrome = props.chrome;
   const editing = chrome.editing;
   const savable =
@@ -94,7 +95,10 @@ function SelectorSettingsSections(props: {
           key={name}
           name={name}
           draft={chrome.draft}
-          effective={chrome.settings.effective[name] ?? "None"}
+          effective={
+            chrome.settings.effective[name] ??
+            text({ id: "lead-settings-effective-none" })
+          }
           editing={editing === name}
           editable={editing === undefined}
           savable={savable}
@@ -212,6 +216,7 @@ function SelectorSettingsHistory(props: {
 function SelectorSettingsUnled(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
+  const text = useCopyText();
   const nowMs = useNowMs();
   const read = useLead(props.partition);
   const line = useLeadAbsenceLine(props.partition, read, nowMs);
@@ -220,7 +225,7 @@ function SelectorSettingsUnled(props: {
   return (
     <Notice
       tone="info"
-      heading="No lead"
+      heading={text({ id: "lead-no-lead" })}
       {...(line === undefined ? {} : { detail: line })}
     >
       {runner === undefined ? null : (
@@ -235,6 +240,7 @@ function SelectorSettingsUnled(props: {
 }
 
 export function LeadSettingsPage(): ReactNode {
+  const text = useCopyText();
   const params = useParams({ from: settingsRoutes.project.lead });
   const partition: PartitionIdentity = {
     tenant: params.tenant,
@@ -243,11 +249,14 @@ export function LeadSettingsPage(): ReactNode {
   const state = usePanelState(selectorSettingsQuery(partition));
   return (
     <SettingsPage
-      title="Lead"
+      title={text({ id: "lead-settings-title" })}
       chips={
         state.state === "Ready" ? (
           <span className="text-ink-3 text-sm tabular-nums">
-            {`Revision ${String(state.value.revision)}`}
+            {text({
+              id: "lead-settings-revision",
+              args: { revision: String(state.value.revision) },
+            })}
           </span>
         ) : null
       }
