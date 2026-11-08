@@ -69,7 +69,6 @@ import {
 } from "../core/tenantQueries.ts";
 import { usePanelState } from "./api.ts";
 import { useConsoleWrite } from "./consoleWrite.tsx";
-import { useCopyText } from "../copy/CopyProvider.tsx";
 import { copyOrDataText } from "../core/copy.ts";
 import type { CopyText } from "../core/copy.ts";
 import { PanelUnready } from "./DataPanel.tsx";

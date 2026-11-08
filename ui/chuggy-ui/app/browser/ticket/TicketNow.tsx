@@ -48,7 +48,6 @@ import { ButtonLink } from "../ui/Button.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
 import { TicketRunTime } from "./TicketRunTime.tsx";
-import { useCopyText } from "../../copy/CopyProvider.tsx";
 
 import "./ticket.css";
 
@@ -107,7 +106,6 @@ function TicketNowLine(props: {
     attempt: props.attempt.attempt,
     highWaterBatch: props.highWaterBatch,
   });
-  const text = useCopyText();
   const live = runNowAttemptLive(props.attempt);
   const now = useMemo(() => runNowOf(walk.reading, live), [walk.reading, live]);
   const text = useCopyText();
