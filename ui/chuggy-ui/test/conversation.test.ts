@@ -17,6 +17,8 @@ import {
   threadStandingSection,
   threadTurnBoundaryHeading,
 } from "../../../src/contract/threadSeeding.ts";
+import { sessionTurnFailures } from "../../../src/contract/rosters.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 import {
   conversationAskMessage,
   conversationArgumentSummary,
@@ -24,7 +26,6 @@ import {
   conversationArgumentText,
   conversationBlocksMax,
   conversationBlocksOf,
-  conversationBlockUnreadable,
   conversationExchangeContinued,
   conversationExchangeParts,
   conversationExchanges,
@@ -32,6 +33,8 @@ import {
   conversationExchangesMax,
   conversationExchangesWaiting,
   conversationExchangesWithSent,
+  conversationFailureLabel,
+  conversationResultCut,
   conversationSeenNothing,
   conversationSeenWith,
   conversationStepsMax,
@@ -41,10 +44,23 @@ import type {
   ConversationBlock,
   ConversationExchange,
   ConversationItem,
+  ConversationMarker,
   ConversationRecord,
   ConversationTurn,
 } from "../app/core/conversation.ts";
+import { copyOrDataText } from "../app/core/copy.ts";
 import { conversationStoreItems } from "./conversationFixture.ts";
+
+/** Each marker a cut carries, as the sentence the base language says it in. */
+function cappedSaid(
+  markers: readonly ConversationMarker[] | undefined,
+): readonly string[] {
+  return (markers ?? []).flatMap((marker) =>
+    marker.marker === "Capped"
+      ? [copyOrDataText(copyTextEn, marker.sentence)]
+      : [],
+  );
+}
 
 function entryOf(
   id: string,
@@ -163,8 +179,8 @@ describe("the block parser, on a result and an unknown kind", () => {
       }),
     ).toEqual([
       { block: "Other", kind: "server_tool_use" },
-      { block: "Other", kind: conversationBlockUnreadable },
-      { block: "Other", kind: conversationBlockUnreadable },
+      { block: "Other" },
+      { block: "Other" },
     ]);
   });
 
@@ -190,13 +206,15 @@ describe("the block parser, on a result and an unknown kind", () => {
     });
     const result = blocks[0];
     expect(result?.block).toBe("ToolResult");
-    const expected = [
-      ...Array.from({ length: conversationBlocksMax }, () => "part"),
-      "Result cut · 2",
-    ].join("\n");
+    const expected = Array.from(
+      { length: conversationBlocksMax },
+      () => "part",
+    ).join("\n");
     expect(result?.block === "ToolResult" ? result.text : undefined).toBe(
       expected,
     );
+    expect(result?.block === "ToolResult" ? result.cut : undefined).toBe(2);
+    expect(copyTextEn(conversationResultCut(2))).toBe("Result cut · 2");
   });
 });
 
@@ -1811,9 +1829,7 @@ describe("bounds", () => {
     );
     const exchanges = conversationExchanges([askOf("u1", "go"), ...calls]);
     expect(exchanges[0]?.work).toHaveLength(conversationStepsMax);
-    expect(exchanges[0]?.before).toEqual([
-      { marker: "Capped", sentence: "Steps cut · 2" },
-    ]);
+    expect(cappedSaid(exchanges[0]?.before)).toEqual(["Steps cut · 2"]);
   });
 
   test("the exchanges past the bound are counted rather than lost", () => {
@@ -1823,9 +1839,7 @@ describe("bounds", () => {
     );
     const exchanges = conversationExchanges(asks);
     expect(exchanges).toHaveLength(conversationExchangesMax);
-    expect(exchanges[0]?.before).toEqual([
-      { marker: "Capped", sentence: "Exchanges cut · 2" },
-    ]);
+    expect(cappedSaid(exchanges[0]?.before)).toEqual(["Exchanges cut · 2"]);
   });
 
   test("the blocks past the bound are counted on the exchange", () => {
@@ -1834,9 +1848,7 @@ describe("bounds", () => {
       { block: "Capped", count: 4 },
     ];
     const exchanges = conversationExchanges([entryOf("u1", "User", blocks)]);
-    expect(exchanges[0]?.before).toEqual([
-      { marker: "Capped", sentence: "Blocks cut · 4" },
-    ]);
+    expect(cappedSaid(exchanges[0]?.before)).toEqual(["Blocks cut · 4"]);
   });
 });
 
@@ -2389,4 +2401,18 @@ test("a surface whose runner cannot take a turn reads its queued turns as waitin
     { standing: "Running", state: "Claimed" },
     { standing: "Running", state: "Waiting" },
   ]);
+});
+
+/** A turn's failure is the mailbox's code, so each is drawn in a label of its
+ * own rather than as the code. */
+test("every failure the mailbox carries is drawn in a label of its own", () => {
+  const labels = sessionTurnFailures.map((failure) =>
+    copyTextEn(conversationFailureLabel(failure)),
+  );
+  expect(new Set(labels).size).toBe(sessionTurnFailures.length);
+  for (const [at, failure] of sessionTurnFailures.entries())
+    expect(labels[at]).not.toBe(failure);
+  expect(copyTextEn(conversationFailureLabel("StoreRefused"))).toBe(
+    "Store refused",
+  );
 });

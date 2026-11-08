@@ -26,6 +26,7 @@ import { useId, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { ProjectCreatedResponse } from "../../../../src/contract/responses.ts";
+import { useCopyText } from "../copy/CopyProvider.tsx";
 import { apiCreateProject } from "../core/apiRoutes.ts";
 import { base64urlFromBytes } from "../core/base64url.ts";
 import {
@@ -320,12 +321,13 @@ function ProjectCreationForm(props: {
 
 /** The line for this console's own site, as wide as the form it stands over. */
 function ProjectCreationClaudeCode(): ReactNode {
+  const text = useCopyText();
   return (
     <div className="w-full max-w-aside">
       <CopyBox
-        about={claudeCodeLineAbout}
+        about={text(claudeCodeLineAbout)}
         text={claudeCodeLine(currentOrigin())}
-        copyLabel={claudeCodeLineCopy}
+        copyLabel={text(claudeCodeLineCopy)}
         breaks="words"
       />
     </div>

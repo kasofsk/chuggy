@@ -36,6 +36,7 @@ import type {
   DraftResponse,
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
+import { operationRefusalCodes } from "../../../../src/contract/rosters.ts";
 import type { SessionTurnInputKind } from "../../../../src/contract/rosters.ts";
 import { chuggyToolPrefix } from "../../../../src/contract/sessionTools.ts";
 import {
@@ -46,7 +47,9 @@ import {
 } from "../../../../src/contract/threadOffers.ts";
 import type { ThreadOfferReply } from "../../../../src/contract/threadOffers.ts";
 
+import { operationRefusalLabel, phaseLabel } from "./codeLabels.ts";
 import type { ConversationExchange, ConversationStep } from "./conversation.ts";
+import type { Copy, CopyOrData } from "./copy.ts";
 import type { OperationStep } from "./operationFollow.ts";
 import type { KeyValuePort } from "./sessionHolder.ts";
 import { ticketRevocable } from "./ticketActions.ts";
@@ -161,7 +164,7 @@ export function threadOfferAnswerOf(
  */
 export type ThreadOfferStanding =
   | { readonly standing: "Superseded" }
-  | { readonly standing: "Closed"; readonly why: string }
+  | { readonly standing: "Closed"; readonly why: Copy }
   | { readonly standing: "Open" };
 
 /** A release offer against the draft as the project's cache holds it. */
@@ -172,7 +175,13 @@ export function threadOfferReleaseStanding(
   if (draft.state !== "Draft")
     return {
       standing: "Closed",
-      why: `Draft ${String(draft.ticket)} is ${draft.state === "Released" ? "released" : "deleted"}`,
+      why: {
+        id:
+          draft.state === "Released"
+            ? "chat-offer-draft-released"
+            : "chat-offer-draft-deleted",
+        args: { ticket: String(draft.ticket) },
+      },
     };
   return draft.authoringVersion === offer.authoringVersion
     ? { standing: "Open" }
@@ -187,7 +196,13 @@ export function threadOfferRevokeStanding(
   if (!ticketRevocable(ticket.phase))
     return {
       standing: "Closed",
-      why: `#${String(ticket.ticket)} is ${ticket.phase}`,
+      why: {
+        id: "chat-offer-ticket-phase",
+        args: {
+          ticket: String(ticket.ticket),
+          phase: phaseLabel(ticket.phase),
+        },
+      },
     };
   return ticket.revision === offer.revision
     ? { standing: "Open" }
@@ -267,37 +282,58 @@ export function threadOfferConfirmed(
 }
 
 /** What a card says it offers. */
-export function threadOfferSentence(offer: ThreadOfferCall): string {
-  const ticket = `#${String(offer.ticket)}`;
+export function threadOfferSentence(offer: ThreadOfferCall): Copy {
+  const ticket = String(offer.ticket);
   return offer.offer === "Release"
-    ? `Release draft ${ticket} at version ${String(offer.authoringVersion)}`
-    : `Revoke ${ticket} at revision ${String(offer.revision)}`;
+    ? {
+        id: "chat-offer-release",
+        args: { ticket, version: String(offer.authoringVersion) },
+      }
+    : {
+        id: "chat-offer-revoke",
+        args: { ticket, revision: String(offer.revision) },
+      };
+}
+
+/** The code a refused confirmation was refused under, in its label where the
+ * operation door's roster carries it and as the code the server sent where it
+ * does not. */
+function threadOfferRefusalWord(code: string | undefined): CopyOrData {
+  if (code === undefined) return { id: "chat-offer-refused" };
+  const known = operationRefusalCodes.find((held) => held === code);
+  return known === undefined ? code : operationRefusalLabel(known);
 }
 
 /** What a settled card says became of it. */
 export function threadOfferSettledSentence(
   offer: ThreadOfferCall,
   reply: ThreadOfferReply,
-): string {
-  if (reply.decision === "Declined") return "Declined";
-  const done = offer.offer === "Release" ? "Released" : "Revoked";
+): Copy {
+  if (reply.decision === "Declined") return { id: "chat-offer-declined" };
+  const released = offer.offer === "Release";
   switch (reply.outcome) {
     case "Succeeded":
-      return done;
-    case "Refused":
-      return reply.refusal === undefined
-        ? `Not ${done.toLowerCase()} · Refused`
-        : `Not ${done.toLowerCase()} · ${reply.refusal}`;
+      return released
+        ? { id: "chat-offer-released" }
+        : { id: "chat-offer-revoked" };
+    case "Refused": {
+      const args = { refusal: threadOfferRefusalWord(reply.refusal) };
+      return released
+        ? { id: "chat-offer-not-released", args }
+        : { id: "chat-offer-not-revoked", args };
+    }
     case "Unsettled":
-      return `Confirmed · ${done} or not, unseen`;
+      return released
+        ? { id: "chat-offer-unseen-released" }
+        : { id: "chat-offer-unseen-revoked" };
   }
 }
 
-export const threadOfferSupersededSentence =
-  "Superseded · It changed since this was offered";
+export const threadOfferSupersededSentence: Copy = {
+  id: "chat-offer-superseded",
+};
 
-export const threadOfferUnreadSentence =
-  "Not open here · Its reply would be older than the turns this page reads";
+export const threadOfferUnreadSentence: Copy = { id: "chat-offer-unread" };
 
 /** Whether two pages are the same page. */
 function threadNavigatePagesAgree(a: ConsolePage, b: ConsolePage): boolean {

@@ -9,7 +9,9 @@ import { describe, expect, test } from "vitest";
 
 import type { ThreadResponse } from "../../../src/contract/responses.ts";
 import { threadTurnsAnsweredMax } from "../../../src/contract/http.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 import type { ApiResult } from "../app/core/apiRequest.ts";
+import { copyOrDataText } from "../app/core/copy.ts";
 import type { PanelState } from "../app/core/freshness.ts";
 import type { SessionPlacementResponse } from "../../../src/contract/responses.ts";
 import {
@@ -24,9 +26,22 @@ import {
   threadUsageSummed,
   threadUsageTurnsText,
 } from "../app/core/threadCommands.ts";
-import type { ThreadUsagePageRead } from "../app/core/threadCommands.ts";
+import type {
+  ThreadStatusFact,
+  ThreadUsagePageRead,
+} from "../app/core/threadCommands.ts";
 import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
 import { threadBody, threadTurn } from "./threadFixture.ts";
+
+/** What the command line says of a `/clear`, in the base language. */
+function clearedSaid(
+  cleared: Parameters<typeof threadClearedWord>[0],
+): string | undefined {
+  const words = threadClearedWord(cleared);
+  return words === undefined
+    ? undefined
+    : copyOrDataText(copyTextEn, words.word);
+}
 
 function placed(
   value: SessionPlacementResponse,
@@ -34,10 +49,13 @@ function placed(
   return { state: "Ready", value, observedAtMs: undefined };
 }
 
-function said(
-  facts: readonly { readonly term: string; readonly said: string }[],
-): Record<string, string> {
-  return Object.fromEntries(facts.map((fact) => [fact.term, fact.said]));
+function said(facts: readonly ThreadStatusFact[]): Record<string, string> {
+  return Object.fromEntries(
+    facts.map((fact) => [
+      copyTextEn(fact.term),
+      copyOrDataText(copyTextEn, fact.said),
+    ]),
+  );
 }
 
 describe("the status line", () => {
@@ -54,7 +72,7 @@ describe("the status line", () => {
         ),
       ),
     ).toStrictEqual({
-      Thread: "Open",
+      Chat: "Open",
       "Runs on": "Runners",
       "Set by": "Default",
       Runner: "Offline",
@@ -91,7 +109,7 @@ describe("the status line", () => {
     expect(
       said(threadStatusFacts(undefined, { state: "Pending" })),
     ).toMatchObject({
-      Thread: "Not opened",
+      Chat: "Not opened",
       Model: "None reported yet",
     });
   });
@@ -157,15 +175,21 @@ describe("the usage sums", () => {
   });
 
   test("the count says only the newest turns where the bound came first", () => {
-    expect(threadUsageTurnsText(threadUsageSummed([], true))).toBe("0 turns");
+    expect(copyTextEn(threadUsageTurnsText(threadUsageSummed([], true)))).toBe(
+      "0 turns",
+    );
     expect(
-      threadUsageTurnsText(
-        threadUsageSummed([threadTurn({ turn: "t1" })], true),
+      copyTextEn(
+        threadUsageTurnsText(
+          threadUsageSummed([threadTurn({ turn: "t1" })], true),
+        ),
       ),
     ).toBe("1 turn");
     expect(
-      threadUsageTurnsText(
-        threadUsageSummed([threadTurn({ turn: "t1" })], false),
+      copyTextEn(
+        threadUsageTurnsText(
+          threadUsageSummed([threadTurn({ turn: "t1" })], false),
+        ),
       ),
     ).toBe("Newest 1 turn");
   });
@@ -299,12 +323,9 @@ describe("/clear", () => {
         0,
       ),
     ).toBe("Answering");
-    expect(threadClearedWord("Answering")).toStrictEqual({
-      word: "Thread is answering",
-    });
+    expect(clearedSaid("Answering")).toBe("Chat is answering");
     expect(threadClearedWord({ cleared: "Closed" })).toBeUndefined();
-    expect(threadClearedWord({ cleared: "Busy" })).toStrictEqual({
-      word: "A thread is already starting",
-    });
+    expect(clearedSaid({ cleared: "Busy" })).toBe("A chat is already starting");
+    expect(clearedSaid("Unopened")).toBe("No chat to clear");
   });
 });

@@ -20,10 +20,12 @@ import type {
   ImageMediaType,
   PartitionIdentity,
 } from "../../../../src/contract/http.ts";
+import { useCopyText } from "../copy/CopyProvider.tsx";
 import type { ApiPorts, ApiResult } from "../core/apiRequest.ts";
 import { apiUploadProjectArtifact } from "../core/apiRoutes.ts";
 import { consoleWriteKey } from "../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../core/consoleWrite.ts";
+import type { CopyText } from "../core/copy.ts";
 import {
   creationImageMediaType,
   creationImagesBoundSentence,
@@ -83,12 +85,13 @@ async function creationImagesUploaded(
 function creationImagesWrite(
   api: CreationImagesApi,
   held: ReturnType<typeof useProjectImageHeld>,
+  text: CopyText,
 ): ConsoleWrite<readonly File[], readonly CreationImageUploaded[]> {
   const { ports, partition } = api;
   return {
     mutationKey: consoleWriteKey("creation-images", api.storeKey),
     write: (_ports, files) => creationImagesUploaded(ports, partition, files),
-    refusal: creationImageUploadSentence,
+    refusal: (failure) => creationImageUploadSentence(failure, text),
     landed: (_client, uploaded) => {
       for (const image of uploaded)
         held(image.artifact, image.mediaType, image.content);
@@ -105,8 +108,9 @@ function useCreationImagesAttach(props: FormEdit & CreationImagesApi) {
   useEffect(() => {
     latest.current = props;
   });
+  const text = useCopyText();
   const uploading = useConsoleWrite(
-    creationImagesWrite(props, useProjectImageHeld(props.partition)),
+    creationImagesWrite(props, useProjectImageHeld(props.partition), text),
     { drawn: true },
   );
   const [bound, setBound] = useState<string | undefined>(undefined);

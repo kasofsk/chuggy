@@ -159,7 +159,7 @@ async function mountedAt(
 
 /** The names of what the thread's menu offers, its menu opened. */
 async function threadMenuOffers(): Promise<readonly string[]> {
-  fireEvent.keyDown(screen.getByRole("button", { name: "Thread actions" }), {
+  fireEvent.keyDown(screen.getByRole("button", { name: "Chat actions" }), {
     key: "ArrowDown",
   });
   return within(await screen.findByRole("menu"))
@@ -303,7 +303,7 @@ test("Open goes to the thread's page, and back draws the pane holding what it he
   expect(paneHolds()).toBe("theirs");
   fireEvent.keyDown(
     within(chatDrawn() ?? document.body).getByRole("button", {
-      name: "Thread actions",
+      name: "Chat actions",
     }),
     { key: "ArrowDown" },
   );

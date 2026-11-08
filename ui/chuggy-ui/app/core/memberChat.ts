@@ -21,6 +21,7 @@ import type {
 } from "../../../../src/contract/responses.ts";
 import type { SessionRunnerStanding } from "../../../../src/contract/rosters.ts";
 
+import type { Copy } from "./copy.ts";
 import type { PanelState } from "./freshness.ts";
 import type { ThreadDoor } from "./threads.ts";
 
@@ -32,8 +33,7 @@ export const memberChatRoutes = {
 } as const;
 
 /** What a member is told where an admin has taken their own chat away. */
-export const memberChatWithheld =
-  "A workspace admin has turned off your chat outside a project";
+export const memberChatWithheld: Copy = { id: "chat-withheld" };
 
 /**
  * How often a member's own thread is read again while its newest turn is

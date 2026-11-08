@@ -401,7 +401,7 @@ describe("the line under an answer, from the turn's last word to its settling", 
     });
     expect(quiet[2]?.textContent).toBe("Failed");
     expect(view.container.querySelector(".notice-detail")?.textContent).toBe(
-      "StoreRefused",
+      "Store refused",
     );
   });
 

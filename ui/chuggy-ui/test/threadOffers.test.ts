@@ -17,6 +17,7 @@ import type {
   ConversationExchange,
   ConversationStep,
 } from "../app/core/conversation.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 import type { OperationStep } from "../app/core/operationFollow.ts";
 import {
   threadNavigateAppliedMax,
@@ -39,8 +40,16 @@ import {
   threadOfferUnsentOf,
   threadOfferUnsentRead,
 } from "../app/core/threadOffers.ts";
+import type { ThreadOfferStanding } from "../app/core/threadOffers.ts";
 import type { KeyValuePort } from "../app/core/sessionHolder.ts";
 import { creationDraft } from "./ticketCreationFixture.ts";
+
+/** Where a card stands, with why it is closed as the base language says it. */
+function stoodSaid(standing: ThreadOfferStanding): Record<string, string> {
+  return standing.standing === "Closed"
+    ? { standing: standing.standing, why: copyTextEn(standing.why) }
+    : { standing: standing.standing };
+}
 
 function call(
   name: string,
@@ -170,31 +179,39 @@ describe("whether a page answers an offer", () => {
 
 describe("where a card stands", () => {
   test("a release offer is open only at the draft's own authoring version, and superseded past it", () => {
-    expect(threadOfferReleaseStanding(release, creationDraft)).toStrictEqual({
+    expect(
+      stoodSaid(threadOfferReleaseStanding(release, creationDraft)),
+    ).toStrictEqual({
       standing: "Open",
     });
     expect(
-      threadOfferReleaseStanding(release, {
-        ...creationDraft,
-        authoringVersion: 4,
-      }),
+      stoodSaid(
+        threadOfferReleaseStanding(release, {
+          ...creationDraft,
+          authoringVersion: 4,
+        }),
+      ),
     ).toStrictEqual({ standing: "Superseded" });
     const released: DraftResponse = { ...creationDraft, state: "Released" };
-    expect(threadOfferReleaseStanding(release, released)).toStrictEqual({
+    expect(
+      stoodSaid(threadOfferReleaseStanding(release, released)),
+    ).toStrictEqual({
       standing: "Closed",
       why: "Draft 12 is released",
     });
   });
 
   test("a revoke offer is open only at the ticket's own revision, and never for a ticket past revoking", () => {
-    expect(threadOfferRevokeStanding(revoke, ticket)).toStrictEqual({
+    expect(stoodSaid(threadOfferRevokeStanding(revoke, ticket))).toStrictEqual({
       standing: "Open",
     });
     expect(
-      threadOfferRevokeStanding(revoke, { ...ticket, revision: 3 }),
+      stoodSaid(threadOfferRevokeStanding(revoke, { ...ticket, revision: 3 })),
     ).toStrictEqual({ standing: "Superseded" });
     expect(
-      threadOfferRevokeStanding(revoke, { ...ticket, phase: "Done" }),
+      stoodSaid(
+        threadOfferRevokeStanding(revoke, { ...ticket, phase: "Done" }),
+      ),
     ).toStrictEqual({ standing: "Closed", why: "#11 is Done" });
   });
 
@@ -255,26 +272,65 @@ describe("what a confirmation came to", () => {
       }),
     ).toStrictEqual({ call: "c", decision: "Confirmed", outcome: "Unsettled" });
   });
+});
 
+describe("what a settled card says", () => {
   test("a settled card says what became of the offer", () => {
     expect(
-      threadOfferSettledSentence(release, { call: "c", decision: "Declined" }),
+      copyTextEn(
+        threadOfferSettledSentence(release, {
+          call: "c",
+          decision: "Declined",
+        }),
+      ),
     ).toBe("Declined");
     expect(
-      threadOfferSettledSentence(revoke, {
-        call: "c",
-        decision: "Confirmed",
-        outcome: "Succeeded",
-      }),
+      copyTextEn(
+        threadOfferSettledSentence(revoke, {
+          call: "c",
+          decision: "Confirmed",
+          outcome: "Succeeded",
+        }),
+      ),
     ).toBe("Revoked");
     expect(
-      threadOfferSettledSentence(release, {
-        call: "c",
-        decision: "Confirmed",
-        outcome: "Refused",
-        refusal: "AuthoringChanged",
-      }),
-    ).toBe("Not released · AuthoringChanged");
+      copyTextEn(
+        threadOfferSettledSentence(release, {
+          call: "c",
+          decision: "Confirmed",
+          outcome: "Refused",
+          refusal: "AuthoringChanged",
+        }),
+      ),
+    ).toBe("Not released · Authoring changed");
+    expect(
+      copyTextEn(
+        threadOfferSettledSentence(release, {
+          call: "c",
+          decision: "Confirmed",
+          outcome: "Refused",
+          refusal: "SomethingNew",
+        }),
+      ),
+    ).toBe("Not released · SomethingNew");
+    expect(
+      copyTextEn(
+        threadOfferSettledSentence(revoke, {
+          call: "c",
+          decision: "Confirmed",
+          outcome: "Refused",
+        }),
+      ),
+    ).toBe("Not revoked · Refused");
+    expect(
+      copyTextEn(
+        threadOfferSettledSentence(release, {
+          call: "c",
+          decision: "Confirmed",
+          outcome: "Unsettled",
+        }),
+      ),
+    ).toBe("Confirmed · Released or not, unseen");
   });
 });
 

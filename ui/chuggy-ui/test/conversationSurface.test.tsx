@@ -351,7 +351,7 @@ test("a failed exchange draws its reason where the answer would be", () => {
     />,
   );
   expect(screen.getByText("Failed")).toBeDefined();
-  expect(screen.getByText("AgentFailed")).toBeDefined();
+  expect(screen.getByText("Agent failed")).toBeDefined();
   styleless();
 });
 
@@ -482,7 +482,17 @@ test("a markers-only exchange draws its markers and no pill", () => {
   styleless();
 });
 
-test("a wake draws one system line and never its document", () => {
+test("a wake draws one system line, in its reason's word, and never its document", () => {
+  const woken = exchangeOf({
+    ask: { ask: "Wake", wake: "TicketCompleted", resource: "ticket-44" },
+    answer: "done",
+  });
+  renderCopied(<Conversation exchanges={[woken]} empty="No conversation" />);
+  expect(screen.getByText("Done · ticket-44")).toBeDefined();
+  styleless();
+});
+
+test("a wake whose reason the roster lacks draws the code it came with", () => {
   const woken = exchangeOf({
     ask: { ask: "Wake", wake: "TicketDone", resource: "ticket-44" },
     answer: "done",

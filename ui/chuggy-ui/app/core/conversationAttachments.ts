@@ -16,6 +16,8 @@
  * than holding an image the door would refuse the whole message for.
  */
 
+import type { Copy } from "./copy.ts";
+
 /** One image held for the message being written. */
 export interface ConversationAttachment {
   readonly mediaType: string;
@@ -66,14 +68,24 @@ export function conversationAttachedWith(
 export function conversationAttachRefusalLine(
   refused: ConversationAttachRefusal,
   attaches: ConversationAttaches,
-): string {
+): Copy {
   switch (refused) {
     case "Bound":
-      return `At most ${String(attaches.countMax)} images`;
+      return {
+        id: "conversation-attach-bound",
+        args: { count: attaches.countMax },
+      };
     case "Type":
-      return `Only ${attaches.mediaTypes
-        .map((mediaType) => mediaType.replace(/^image\//u, "").toUpperCase())
-        .join(", ")}`;
+      return {
+        id: "conversation-attach-types",
+        args: {
+          types: attaches.mediaTypes
+            .map((mediaType) =>
+              mediaType.replace(/^image\//u, "").toUpperCase(),
+            )
+            .join(", "),
+        },
+      };
   }
 }
 

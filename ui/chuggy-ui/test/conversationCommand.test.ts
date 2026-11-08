@@ -10,6 +10,7 @@
 
 import { describe, expect, test } from "vitest";
 
+import { copyTextEn } from "../app/copy/catalog.ts";
 import {
   conversationCommandChar,
   conversationCommandFiltered,
@@ -30,26 +31,36 @@ function matched(text: string, caret: number = text.length) {
 describe("what the list offers", () => {
   test("a bare `/` offers every command, the one that starts a thread last", () => {
     expect(
-      conversationCommandFiltered(every, "").map((item) => item.label),
+      conversationCommandFiltered(every, "", copyTextEn).map(
+        (item) => item.label,
+      ),
     ).toStrictEqual(["/status", "/usage", "/clear"]);
   });
 
   test("what follows the `/` is the start of a name, in any case", () => {
     expect(
-      conversationCommandFiltered(every, "St").map((item) => item.id),
+      conversationCommandFiltered(every, "St", copyTextEn).map(
+        (item) => item.id,
+      ),
     ).toStrictEqual(["status"]);
-    expect(conversationCommandFiltered(every, "tus")).toStrictEqual([]);
+    expect(conversationCommandFiltered(every, "tus", copyTextEn)).toStrictEqual(
+      [],
+    );
   });
 
   test("a command the page does not offer is not in the list", () => {
-    expect(conversationCommandFiltered(reading, "c")).toStrictEqual([]);
+    expect(conversationCommandFiltered(reading, "c", copyTextEn)).toStrictEqual(
+      [],
+    );
   });
 
   test("an item carries its name as its label and says what it does", () => {
-    const item = conversationCommandItem("usage");
+    const item = conversationCommandItem("usage", copyTextEn);
     expect(item.label).toBe("/usage");
     expect(item.type).toBe("command");
-    expect(item.description.length).toBeGreaterThan(0);
+    expect(item.description).toBe(
+      "Tokens, cost and time over this chat's turns",
+    );
   });
 });
 

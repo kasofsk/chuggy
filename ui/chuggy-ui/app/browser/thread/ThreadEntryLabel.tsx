@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The rename and close actions for the thread the pane or its own page holds,
  * and the editor the rename opens into.
@@ -14,6 +13,7 @@ import type { ReactNode } from "react";
 
 import { threadTitleCharsMax } from "../../../../../src/contract/http.ts";
 import type { ThreadEntryResponse } from "../../../../../src/contract/responses.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { consoleWriteKey } from "../../core/consoleWrite.ts";
 import type {
   ConsoleWrite,
@@ -135,12 +135,13 @@ export function ThreadEntryRename(props: {
   readonly initial: string;
   readonly actions: ThreadEntryActions;
 }): ReactNode {
+  const text = useCopyText();
   const [title, setTitle] = useState(props.initial);
   return (
     <input
       className="bg-surface-1 border-edge-control rounded-2 min-w-0 flex-1 border px-2 py-1 text-md"
       value={title}
-      aria-label="Thread title"
+      aria-label={text({ id: "chat-title" })}
       maxLength={threadTitleCharsMax}
       disabled={props.actions.busy}
       autoFocus

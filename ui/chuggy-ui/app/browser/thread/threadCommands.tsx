@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The composer's `/` commands where the box is the reader's own thread: what
  * each runs, and the line each says over the box.
@@ -20,6 +19,7 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ThreadResponse } from "../../../../../src/contract/responses.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import {
   conversationCommandLabel,
   conversationCommandNames,
@@ -33,9 +33,13 @@ import {
   threadUsageSummed,
   threadUsageTurnsText,
 } from "../../core/threadCommands.ts";
-import type { ThreadCleared, ThreadUsage } from "../../core/threadCommands.ts";
+import type {
+  ThreadCleared,
+  ThreadClearedWords,
+  ThreadUsage,
+} from "../../core/threadCommands.ts";
+import { copyOrDataText } from "../../core/copy.ts";
 import { readFailedLine } from "../../core/failureWords.ts";
-import type { FailureWords } from "../../core/failureWords.ts";
 import { threadUsageQuery } from "../../core/sessionQueries.ts";
 import { usePanelState } from "../api.ts";
 import type { ConversationCommands } from "../conversation/ConversationComposer.tsx";
@@ -55,7 +59,7 @@ const threadCommandsReading: readonly ConversationCommandName[] =
  * nothing where that is what it says. */
 type ThreadCommandSaying =
   | { readonly saying: "status" | "usage" }
-  | { readonly saying: "clear"; readonly why: FailureWords };
+  | { readonly saying: "clear"; readonly why: ThreadClearedWords };
 
 /** One line a command says: its name, then each thing it says, a dot between. */
 function ThreadCommandLine(props: {
@@ -81,12 +85,14 @@ function ThreadStatusSaid(props: {
   readonly partition: PartitionIdentity;
   readonly thread: ThreadResponse | undefined;
 }): ReactNode {
+  const text = useCopyText();
   const placement = useSessionPlacement(props.partition);
   return (
     <ThreadCommandLine name="status">
       {threadStatusFacts(props.thread, placement).map((fact) => (
-        <span key={fact.term}>
-          <span className="text-ink-3">{fact.term}</span> {fact.said}
+        <span key={fact.term.id}>
+          <span className="text-ink-3">{text(fact.term)}</span>{" "}
+          {copyOrDataText(text, fact.said)}
         </span>
       ))}
     </ThreadCommandLine>
@@ -94,10 +100,11 @@ function ThreadStatusSaid(props: {
 }
 
 function ThreadUsageLine(props: { readonly usage: ThreadUsage }): ReactNode {
+  const text = useCopyText();
   return (
     <ThreadCommandLine name="usage">
       {[
-        <span key="turns">{threadUsageTurnsText(props.usage)}</span>,
+        <span key="turns">{text(threadUsageTurnsText(props.usage))}</span>,
         ...threadUsageFigures(props.usage).map((figure) => (
           <Figure key={figure.kind} figure={figure} />
         )),
@@ -110,18 +117,19 @@ function ThreadUsageSaid(props: {
   readonly partition: PartitionIdentity;
   readonly session: string;
 }): ReactNode {
+  const text = useCopyText();
   const state = usePanelState(threadUsageQuery(props.partition, props.session));
   switch (state.state) {
     case "Pending":
       return (
         <ThreadCommandLine name="usage">
-          {[<span key="reading">Loading…</span>]}
+          {[<span key="reading">{text({ id: "chat-status-loading" })}</span>]}
         </ThreadCommandLine>
       );
     case "Absent":
       return (
         <ThreadCommandLine name="usage">
-          {[<span key="refused">Not found</span>]}
+          {[<span key="refused">{text({ id: "chat-status-absent" })}</span>]}
         </ThreadCommandLine>
       );
     case "Failed":
@@ -144,6 +152,7 @@ function ThreadCommandSaid(props: {
   readonly thread: ThreadResponse | undefined;
   readonly saying: ThreadCommandSaying;
 }): ReactNode {
+  const text = useCopyText();
   const saying = props.saying;
   switch (saying.saying) {
     case "status":
@@ -164,7 +173,7 @@ function ThreadCommandSaid(props: {
         <ThreadCommandLine name="clear">
           {[
             <Tooltip key="why" text={saying.why.detail}>
-              <span>{saying.why.word}</span>
+              <span>{copyOrDataText(text, saying.why.word)}</span>
             </Tooltip>,
           ]}
         </ThreadCommandLine>

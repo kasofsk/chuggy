@@ -116,6 +116,7 @@ import {
   threadTurnRecordedLastLine,
 } from "../../../../src/contract/threadSeeding.ts";
 import type { ApiFailure } from "./apiRequest.ts";
+import type { Copy, CopyOrData } from "./copy.ts";
 import { runCountLabel } from "./runTotals.ts";
 import { threadWakeDrawn } from "./threads.ts";
 import type { ThreadSending } from "./threads.ts";
@@ -148,13 +149,14 @@ export type ConversationBlock =
       readonly block: "ToolResult";
       readonly toolUse: string;
       readonly text: string;
+      /** The parts of a nested content array past the bound, where any were. */
+      readonly cut?: number;
       readonly isError: boolean;
     }
-  | { readonly block: "Other"; readonly kind: string }
+  /** A block of a kind the surface does not draw, by that kind, and with none
+   * where its own shape cannot be read. */
+  | { readonly block: "Other"; readonly kind?: string }
   | { readonly block: "Capped"; readonly count: number };
-
-/** The word a block whose own shape cannot be read is carried under. */
-export const conversationBlockUnreadable = "Unreadable";
 
 function conversationRecord(
   value: unknown,
@@ -175,25 +177,27 @@ function conversationBlockText(
 /** A tool result's characters, which the runtime writes either as the string
  * itself or as the text blocks of a nested content array, read no further than
  * the sibling block list is and never cut in silence. */
-function conversationBlockResultText(content: unknown): string {
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
+function conversationBlockResultText(content: unknown): {
+  readonly text: string;
+  readonly cut?: number;
+} {
+  if (typeof content === "string") return { text: content };
+  if (!Array.isArray(content)) return { text: "" };
   const read = content.slice(0, conversationBlocksMax);
   const texts = read.flatMap((part) => {
     const text = conversationRecord(part)?.["text"];
     return typeof text === "string" ? [text] : [];
   });
   const cut = content.length - read.length;
-  return cut === 0
-    ? texts.join("\n")
-    : [...texts, conversationCappedSentence("Result", cut)].join("\n");
+  const text = texts.join("\n");
+  return cut === 0 ? { text } : { text, cut };
 }
 
 function conversationBlockOf(value: unknown): ConversationBlock {
   const block = conversationRecord(value);
   const kind = block?.["type"];
   if (block === undefined || typeof kind !== "string")
-    return { block: "Other", kind: conversationBlockUnreadable };
+    return { block: "Other" };
   switch (kind) {
     case "text":
       return { block: "Text", text: conversationBlockText(block, "text") };
@@ -213,7 +217,7 @@ function conversationBlockOf(value: unknown): ConversationBlock {
       return {
         block: "ToolResult",
         toolUse: conversationBlockText(block, "tool_use_id"),
-        text: conversationBlockResultText(block["content"]),
+        ...conversationBlockResultText(block["content"]),
         isError: block["is_error"] === true,
       };
     default:
@@ -317,7 +321,7 @@ export interface ConversationEntry {
 export type ConversationMarker =
   | { readonly marker: "Compaction"; readonly at?: string }
   | { readonly marker: "Elision"; readonly bytes: number }
-  | { readonly marker: "Capped"; readonly sentence: string }
+  | { readonly marker: "Capped"; readonly sentence: CopyOrData }
   | { readonly marker: "Unreadable" }
   | { readonly marker: "Failure"; readonly failure: ApiFailure }
   | { readonly marker: "Truncated" }
@@ -377,9 +381,48 @@ export type ConversationStep =
       readonly id: string;
       readonly name?: string;
       readonly input: unknown;
-      readonly result?: { readonly text: string; readonly isError: boolean };
+      readonly result?: ConversationToolResult;
     }
-  | { readonly step: "Other"; readonly kind: string };
+  | { readonly step: "Other"; readonly kind?: string };
+
+/** What came back from one call: its text, the parts of it past the bound
+ * where any were, and whether it failed. */
+export interface ConversationToolResult {
+  readonly text: string;
+  readonly cut?: number;
+  readonly isError: boolean;
+}
+
+/** The line that says a call's result was cut, which is drawn under it. */
+export function conversationResultCut(count: number): Copy {
+  return { id: "conversation-cut-result", args: { count: String(count) } };
+}
+
+/** The label a turn's failure is drawn in, total over the mailbox's roster. */
+export function conversationFailureLabel(failure: SessionTurnFailure): Copy {
+  switch (failure) {
+    case "AgentFailed":
+      return { id: "conversation-failure-agent-failed" };
+    case "AgentRateLimited":
+      return { id: "conversation-failure-agent-rate-limited" };
+    case "AgentTurnsExhausted":
+      return { id: "conversation-failure-agent-turns-exhausted" };
+    case "AgentBudgetExhausted":
+      return { id: "conversation-failure-agent-budget-exhausted" };
+    case "StoreRefused":
+      return { id: "conversation-failure-store-refused" };
+    case "AttemptLost":
+      return { id: "conversation-failure-attempt-lost" };
+    case "SessionClosed":
+      return { id: "conversation-failure-session-closed" };
+    case "TurnWithdrawn":
+      return { id: "conversation-failure-turn-withdrawn" };
+    case "TurnStopped":
+      return { id: "conversation-failure-turn-stopped" };
+    case "TurnStoppedQueued":
+      return { id: "conversation-failure-turn-stopped-queued" };
+  }
+}
 
 /** What a running exchange's turn is doing: the mailbox's own state, or
  * `Waiting`, a queued turn no runner can take now, which is this console's word
@@ -563,12 +606,15 @@ export function conversationArgumentSummary(
 /** The words a call's argument summary is drawn in. */
 export function conversationArgumentLine(
   argument: ConversationArgument,
-): string {
+): CopyOrData {
   switch (argument.argument) {
     case "Text":
       return argument.text;
     case "Size":
-      return `${runCountLabel(argument.chars)} chars`;
+      return {
+        id: "conversation-call-size",
+        args: { chars: runCountLabel(argument.chars) },
+      };
     case "None":
       return "";
   }
@@ -774,18 +820,31 @@ export const conversationRecordPlain: ConversationRecord = {
   replaced: false,
 };
 
-/** The one sentence a cut is ever said in, wherever the cut happens. */
-function conversationCappedSentence(noun: string, count: number): string {
-  return `${noun} cut · ${String(count)}`;
+/** What a cut is of, wherever the cut happens past the result's own. */
+type ConversationCut = "Blocks" | "Steps" | "Exchanges";
+
+/** The one sentence a cut of each is ever said in. */
+function conversationCappedSentence(cut: ConversationCut, count: number): Copy {
+  switch (cut) {
+    case "Blocks":
+      return { id: "conversation-cut-blocks", args: { count: String(count) } };
+    case "Steps":
+      return { id: "conversation-cut-steps", args: { count: String(count) } };
+    case "Exchanges":
+      return {
+        id: "conversation-cut-exchanges",
+        args: { count: String(count) },
+      };
+  }
 }
 
 function conversationCappedMarker(
-  noun: string,
+  cut: ConversationCut,
   count: number,
 ): ConversationMarker {
   return {
     marker: "Capped",
-    sentence: conversationCappedSentence(noun, count),
+    sentence: conversationCappedSentence(cut, count),
   };
 }
 
@@ -851,7 +910,11 @@ function conversationResulted(
   built: ConversationSaid,
   block: Extract<ConversationBlock, { block: "ToolResult" }>,
 ): void {
-  const result = { text: block.text, isError: block.isError };
+  const result: ConversationToolResult = {
+    text: block.text,
+    ...(block.cut === undefined ? {} : { cut: block.cut }),
+    isError: block.isError,
+  };
   const at = built.work.findIndex(
     (step) =>
       step.step === "ToolCall" &&
@@ -891,7 +954,12 @@ function conversationBlockWorked(
       conversationResulted(built, block);
       return;
     case "Other":
-      conversationWorked(built, { step: "Other", kind: block.kind });
+      conversationWorked(
+        built,
+        block.kind === undefined
+          ? { step: "Other" }
+          : { step: "Other", kind: block.kind },
+      );
       return;
     case "Capped":
       built.before.push(conversationCappedMarker("Blocks", block.count));
