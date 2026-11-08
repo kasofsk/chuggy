@@ -390,8 +390,9 @@ export interface ContextPoint {
   readonly series: ContextSeries;
 }
 
-/** One compaction, at the call or turn it followed, with the window's size
- * before it and after it where the runtime said. */
+/** One compaction, after the call or turn whose point the series last drew
+ * before it, with the window's size before it and after it where the runtime
+ * said. */
 export interface ContextCompactionMark {
   readonly ordinal: number;
   readonly before: number;

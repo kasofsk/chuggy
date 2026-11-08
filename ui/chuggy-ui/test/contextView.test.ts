@@ -16,6 +16,7 @@ import {
   contextChartTicksY,
   contextChartTop,
 } from "../app/core/contextChart.ts";
+import { contextSessionOf } from "../app/core/contextSession.ts";
 import type { ContextGrowthView } from "../app/core/contextView.ts";
 import {
   contextCompactionsTile,
@@ -24,7 +25,7 @@ import {
   contextWindowRead,
   contextWindowUnread,
 } from "../app/core/contextView.ts";
-import { contextWindow } from "./contextFixture.ts";
+import { contextSessionBody, contextWindow } from "./contextFixture.ts";
 
 test("a reading's bar draws what is held, then the room left, then the buffer, and no deferred tools", () => {
   const view = contextWindowRead("Call", 173, contextWindow());
@@ -125,6 +126,68 @@ test("the main line breaks at a compaction, and a subagent's calls run apart fro
     chart.compactions.length,
   ]).toStrictEqual([2, 1, 1]);
   expect(chart.threshold?.y).toBeLessThan(chart.plot.bottom);
+});
+
+/** The x of a path's vertices, from its `M` and `L` commands. */
+function contextPathXs(path: string | undefined): readonly number[] {
+  return [...(path ?? "").matchAll(/[ML](-?[\d.]+) /gu)].map((match) =>
+    Number(match[1]),
+  );
+}
+
+test("a run's compaction stands between the call it followed and the next, which opens the next stretch", () => {
+  const chart = contextChartOf(growth, 640);
+  const [before, after] = chart.main;
+  const call = (ordinal: number): number =>
+    chart.plot.left +
+    ((ordinal - 1) / (growth.count - 1)) * (chart.plot.right - chart.plot.left);
+  expect(chart.compactions[0]?.x).toBeCloseTo((call(5) + call(6)) / 2, 1);
+  expect(contextPathXs(before?.line).at(-1)).toBeCloseTo(call(5), 1);
+  expect(contextPathXs(after?.line)[0]).toBeCloseTo(call(6), 1);
+});
+
+test("a session's compaction stands before the turn it fell in, after the line's rise to the turn before, and that turn opens the next stretch low", () => {
+  const body = contextSessionBody(
+    [50_000, 120_000, 165_000, 46_000, 70_000].map((total, at) => ({
+      ordinal: at + 1,
+      total,
+    })),
+  );
+  const view = contextSessionOf({
+    context: {
+      ...body,
+      turns: body.turns.map((turn) => ({
+        ...turn,
+        readings: turn.readings.map((reading) => ({
+          ...reading,
+          recordedAt: `2026-11-08T0${String(turn.ordinal)}:00:00.000Z`,
+        })),
+      })),
+    },
+    entries: [],
+    cuts: [
+      {
+        boundary: "cut",
+        at: "2026-11-08T03:30:00.000Z",
+        tokensBefore: 172_355,
+        tokensAfter: 36_000,
+      },
+    ],
+  });
+  expect(view.growth.compactions).toStrictEqual([
+    { ordinal: 3, before: 172_355, after: 36_000 },
+  ]);
+  const chart = contextChartOf(view.growth, 640);
+  const turn = (ordinal: number): number =>
+    chart.plot.left +
+    ((ordinal - 1) / (view.growth.count - 1)) *
+      (chart.plot.right - chart.plot.left);
+  const rule = chart.compactions[0]?.x ?? Number.NaN;
+  expect(rule).toBeCloseTo((turn(3) + turn(4)) / 2, 1);
+  const [before, after] = chart.main;
+  expect(contextPathXs(before?.line)).toHaveLength(3);
+  expect(contextPathXs(before?.line).at(-1)).toBeCloseTo(turn(3), 1);
+  expect(contextPathXs(after?.line)[0]).toBeCloseTo(turn(4), 1);
 });
 
 test("the vertical scale is the window where one is named, and a counted step otherwise", () => {

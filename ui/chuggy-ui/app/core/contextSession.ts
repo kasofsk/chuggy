@@ -8,9 +8,10 @@
  * context its last assistant entry was billed for, from that entry's usage.
  *
  * A COMPACTION IS THE TRANSCRIPT'S. The store names every cut with what the
- * window held before and after it, so those are the marks, placed at the turn
- * they fell in; a reading's own compaction facts stand only where the
- * transcript held none.
+ * window held before and after it, so those are the marks; a reading's own
+ * compaction facts stand only where the transcript held none. A turn's point
+ * is the context it ended on, which a cut in that turn had already shrunk, so
+ * each mark follows the turn before the one it fell in.
  */
 
 import { sessionContextPageTurnsMax } from "../../../../src/contract/http.ts";
@@ -145,8 +146,17 @@ export interface ContextSessionRead {
   readonly cuts: readonly LeadTranscriptCut[];
 }
 
-/** Each cut the transcript named with its sizes, at the turn whose readings
- * were taken at or after it. */
+/** A cut that fell in turn `turn`, as the mark after the turn before it. */
+function contextCutMark(
+  turn: number,
+  before: number,
+  after: number | undefined,
+): ContextCompactionMark {
+  return { ordinal: turn - 1, before, after };
+}
+
+/** Each cut the transcript named with its sizes, in the first turn whose
+ * readings were taken at or after it. */
 function contextCutsByReadings(
   cuts: readonly LeadTranscriptCut[],
   turns: readonly SessionContextTurn[],
@@ -159,17 +169,11 @@ function contextCutsByReadings(
     );
     return turn === undefined
       ? []
-      : [
-          {
-            ordinal: turn.ordinal,
-            before: cut.tokensBefore,
-            after: cut.tokensAfter,
-          },
-        ];
+      : [contextCutMark(turn.ordinal, cut.tokensBefore, cut.tokensAfter)];
   });
 }
 
-/** Each cut the transcript named with its sizes, at the turn it fell in. */
+/** Each cut the transcript named with its sizes, in the turn holding it. */
 function contextCutsByTranscript(
   cuts: readonly LeadTranscriptCut[],
   turns: readonly ContextTranscriptTurn[],
@@ -179,13 +183,7 @@ function contextCutsByTranscript(
     const turn = turns.find((each) => each.entries.includes(cut.boundary));
     return turn === undefined
       ? []
-      : [
-          {
-            ordinal: turn.ordinal,
-            before: cut.tokensBefore,
-            after: cut.tokensAfter,
-          },
-        ];
+      : [contextCutMark(turn.ordinal, cut.tokensBefore, cut.tokensAfter)];
   });
 }
 
@@ -197,11 +195,11 @@ function contextCutsReadings(
     turn.readings.flatMap((reading) =>
       reading.cause === "Compaction" && reading.compaction !== undefined
         ? [
-            {
-              ordinal: turn.ordinal,
-              before: reading.compaction.tokensBefore,
-              after: reading.compaction.tokensAfter,
-            },
+            contextCutMark(
+              turn.ordinal,
+              reading.compaction.tokensBefore,
+              reading.compaction.tokensAfter,
+            ),
           ]
         : [],
     ),

@@ -1,7 +1,7 @@
 /**
  * A session's panel: its growth per turn from its readings where its turns
- * carried any, with each compaction the transcript recorded at the turn it fell
- * in, and from the usage its transcript's entries were billed otherwise; and
+ * carried any, with each compaction the transcript recorded after the turn
+ * before the one it fell in, and from the usage its transcript's entries were billed otherwise; and
  * the mark its readings are keyed by moving only when a turn does.
  */
 
@@ -60,7 +60,7 @@ test("with readings, each turn is the window its last reading held, read at the 
   expect(view.growth.unit).toBe("Turn");
 });
 
-test("with no readings, each turn is the context its last billed entry sent, and a cut falls in the turn holding it", () => {
+test("with no readings, each turn is the context its last billed entry sent, and a cut follows the turn before the one holding it", () => {
   const view = contextSessionOf({
     context: { turns: [], autoCompactWindow: 200_000 },
     entries: [
@@ -80,7 +80,7 @@ test("with no readings, each turn is the context its last billed entry sent, and
     [2, 36_002],
   ]);
   expect(view.growth.compactions).toStrictEqual([
-    { ordinal: 2, before: 172_355, after: 36_000 },
+    { ordinal: 1, before: 172_355, after: 36_000 },
   ]);
   expect([
     view.window.reading,

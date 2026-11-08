@@ -280,15 +280,14 @@ export function contextChartOf(
   };
 }
 
-/** A compaction's rule stands between the call it followed and the next. */
+/** A compaction's rule stands halfway between the call or turn it followed
+ * and the next, and within the axis at either end. */
 function contextChartCompactionX(
   mark: ContextCompactionMark,
   scale: ContextChartScale,
   count: number,
 ): number {
-  return mark.ordinal >= count
-    ? scale.x(mark.ordinal)
-    : (scale.x(mark.ordinal) + scale.x(mark.ordinal + 1)) / 2;
+  return scale.x(Math.min(Math.max(mark.ordinal + 0.5, 1), count));
 }
 
 function contextChartTickX(
