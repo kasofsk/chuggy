@@ -78,11 +78,12 @@ RUN --mount=type=bind,source=package-lock.json,target=/tmp/package-lock.json \
 # file. The runtime stage binds this stage's verdict, so a build of the
 # runtime, or of an image built on it, refuses the Claude Code or Codex this
 # file pins past that gate's cap; a pin a build overrides with `--build-arg` is
-# not read. The verdict reads this file, the gate and the newest versions npm
-# names a bump reaching, so the stage is keyed on all three: it copies the two
-# files, and adds the documents naming those versions, which nothing reads, so
-# that it runs again when any of them moves. The gate finds the root through
-# git, so the copy is made a repository.
+# not read. The stage is keyed on this file, the gate and the newest versions
+# npm names a bump reaching: it copies the two files, and adds the documents
+# naming those versions, which nothing reads, so that it runs again when any of
+# them moves. The count also reads each package's releases, so a cached verdict
+# holds only while neither publishes a release older than its newest. The gate
+# finds the root through git, so the copy is made a repository.
 FROM base AS agent-lag
 ADD https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk/latest /tmp/agent-lag/claude-agent-sdk.json
 ADD https://registry.npmjs.org/@openai/codex/latest /tmp/agent-lag/codex.json

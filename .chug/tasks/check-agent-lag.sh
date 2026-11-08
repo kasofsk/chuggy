@@ -102,7 +102,7 @@ if (typeof ceiling !== "string" || !stable.test(ceiling)) refuse("npm names " + 
 const versions = (await read(packagePath, "application/vnd.npm.install-v1+json"))?.versions
 if (versions === null || typeof versions !== "object" || Array.isArray(versions)) refuse("npm'"'"'s record of it lists no versions")
 const released = Object.keys(versions)
-// The image installs the pin from npm and npm names the ceiling, so a list
+// The pin and the ceiling are each a version npm published, so a list
 // without either is not npm'"'"'s. A list missing what lies between them is not
 // seen, since npm'"'"'s own skips versions.
 const missing = [pin, ceiling].find((version) => !released.includes(version))
