@@ -85,6 +85,7 @@ import {
 import type { CreationOverrides, OverrideField } from "./ticketOverrides.ts";
 import { draftReleaseAction } from "./ticketActions.ts";
 import type { WorkRunner } from "./workRunner.ts";
+import { copyOrDataText } from "./copy.ts";
 import type { CopyText } from "./copy.ts";
 
 /** The authoring half of the form, which is exactly what an initialization defaults. */
@@ -865,9 +866,14 @@ export function creationImagesTaken<T extends { readonly type: string }>(
 
 /** What an upload that failed is said as: the upload's own refusal, and that
  * nothing was attached. */
-export function creationImageUploadSentence(failure: ApiFailure): string {
+export function creationImageUploadSentence(
+  failure: ApiFailure,
+  text: CopyText,
+): string {
   const cause = threadUploadRefused(failure).cause;
-  return cause === undefined ? "Not attached" : `Not attached · ${cause}`;
+  return cause === undefined
+    ? "Not attached"
+    : `Not attached · ${copyOrDataText(text, cause)}`;
 }
 
 /** What a proposal is opened from, which is the one box a push may leave empty. */

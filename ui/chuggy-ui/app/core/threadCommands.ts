@@ -26,6 +26,7 @@ import type {
 } from "../../../../src/contract/responses.ts";
 import { threadTurnsAnsweredMax } from "../../../../src/contract/http.ts";
 import type { ApiFailure, ApiResult } from "./apiRequest.ts";
+import type { Copy, CopyOrData } from "./copy.ts";
 import {
   costAmountFigure,
   durationFigure,
@@ -33,20 +34,21 @@ import {
 } from "./figures.ts";
 import type { Figure } from "./figures.ts";
 import { failureWords, readFailedLine } from "./failureWords.ts";
-import type { FailureWords } from "./failureWords.ts";
 import type { PanelState } from "./freshness.ts";
 import {
   runnerRouteLabel,
   runnerRouteSourceLabel,
   runnerStandingLabel,
 } from "./runners.ts";
-import { threadWriting } from "./threads.ts";
+import { threadStandingLabel, threadWriting } from "./threads.ts";
 
 /** One term of the `/status` line and what it says. */
 export interface ThreadStatusFact {
-  readonly term: string;
-  readonly said: string;
+  readonly term: Copy;
+  readonly said: CopyOrData;
 }
+
+const threadStatusRunsOn: Copy = { id: "chat-status-runs-on" };
 
 /** The model the newest turn that names one ran on: the mailbox lists its
  * turns newest last, and a turn still running has named none yet. */
@@ -63,22 +65,30 @@ function threadStatusPlacement(
 ): readonly ThreadStatusFact[] {
   switch (placement.state) {
     case "Pending":
-      return [{ term: "Runs on", said: "Loading…" }];
+      return [
+        { term: threadStatusRunsOn, said: { id: "chat-status-loading" } },
+      ];
     case "Absent":
-      return [{ term: "Runs on", said: "Not found" }];
+      return [{ term: threadStatusRunsOn, said: { id: "chat-status-absent" } }];
     case "Failed":
       return [
-        { term: "Runs on", said: readFailedLine(undefined, placement.failure) },
+        {
+          term: threadStatusRunsOn,
+          said: readFailedLine(undefined, placement.failure),
+        },
       ];
     case "Ready": {
       const thread = placement.value.thread;
       return [
-        { term: "Runs on", said: runnerRouteLabel(thread.route) },
-        { term: "Set by", said: runnerRouteSourceLabel(thread.source) },
+        { term: threadStatusRunsOn, said: runnerRouteLabel(thread.route) },
+        {
+          term: { id: "chat-status-set-by" },
+          said: runnerRouteSourceLabel(thread.source),
+        },
         ...(thread.route === "Pool"
           ? [
               {
-                term: "Runner",
+                term: { id: "chat-status-runner" } as const,
                 said: runnerStandingLabel(placement.value.runners.mine),
               },
             ]
@@ -96,9 +106,18 @@ export function threadStatusFacts(
 ): readonly ThreadStatusFact[] {
   const model = thread === undefined ? undefined : threadModel(thread.turns);
   return [
-    { term: "Thread", said: thread?.state ?? "Not opened" },
+    {
+      term: { id: "chat-status-chat" },
+      said:
+        thread === undefined
+          ? { id: "chat-status-unopened" }
+          : threadStandingLabel(thread.state),
+    },
     ...threadStatusPlacement(placement),
-    { term: "Model", said: model ?? "None reported yet" },
+    {
+      term: { id: "chat-status-model" },
+      said: model ?? { id: "chat-status-model-none" },
+    },
   ];
 }
 
@@ -173,9 +192,11 @@ export async function threadUsagePaged(
 
 /** How many turns the sums are over, and that they are only the newest where
  * the bound was reached first. */
-export function threadUsageTurnsText(usage: ThreadUsage): string {
-  const counted = `${String(usage.turns)} ${usage.turns === 1 ? "turn" : "turns"}`;
-  return usage.whole ? counted : `Newest ${counted}`;
+export function threadUsageTurnsText(usage: ThreadUsage): Copy {
+  const args = { count: usage.turns };
+  return usage.whole
+    ? { id: "chat-usage-turns", args }
+    : { id: "chat-usage-turns-newest", args };
 }
 
 /** The sums as the meta line under a turn draws each one. */
@@ -225,18 +246,24 @@ export async function threadClearedThenOpened<T>(
   return { cleared: "Closed", opened: await open() };
 }
 
+/** Why a `/clear` opened nothing, and what that carries beyond it on hover. */
+export interface ThreadClearedWords {
+  readonly word: CopyOrData;
+  readonly detail?: CopyOrData;
+}
+
 /** What the command line says of a `/clear` that opened nothing, and nothing
  * where it went through. */
 export function threadClearedWord(
   cleared: ThreadCleared | ThreadClearWithheld,
-): FailureWords | undefined {
-  if (cleared === "Answering") return { word: "Thread is answering" };
-  if (cleared === "Unopened") return { word: "No thread to clear" };
+): ThreadClearedWords | undefined {
+  if (cleared === "Answering") return { word: { id: "chat-clear-answering" } };
+  if (cleared === "Unopened") return { word: { id: "chat-clear-unopened" } };
   switch (cleared.cleared) {
     case "Closed":
       return undefined;
     case "Busy":
-      return { word: "A thread is already starting" };
+      return { word: { id: "chat-clear-busy" } };
     case "Refused":
       return failureWords(cleared.failure);
   }

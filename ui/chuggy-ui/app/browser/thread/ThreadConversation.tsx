@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * One thread's conversation, wherever it is drawn: the transcript with the
  * mailbox over it, and the composer where the thread is the reader's own.
@@ -53,6 +52,7 @@ import type { ReactNode } from "react";
 import type { ConsolePage } from "../../../../../src/contract/consolePage.ts";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ThreadResponse } from "../../../../../src/contract/responses.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import {
   conversationExchanges,
   conversationExchangeSent,
@@ -377,6 +377,7 @@ function ThreadConversationAt(
     readonly navigates?: boolean;
   },
 ): ReactNode {
+  const text = useCopyText();
   const { thread, home, sends, door } = props;
   const walked = useLeadTranscript({
     of: { thread: thread.session, home },
@@ -401,7 +402,7 @@ function ThreadConversationAt(
   return (
     <div
       role="region"
-      aria-label="Conversation"
+      aria-label={text({ id: "chat-conversation" })}
       data-fills-page
       className="min-h-0 min-w-0 flex-1"
     >

@@ -16,6 +16,7 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { threadOfferReplyText } from "../../../src/contract/threadOffers.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 import {
   ThreadOfferCard,
   useThreadOfferDrawn,
@@ -409,7 +410,7 @@ test("a card the mailbox holds a reply for is drawn settled, and reads and sends
     },
   });
 
-  expect(screen.getByText("Not released · AuthoringChanged")).toBeDefined();
+  expect(screen.getByText("Not released · Authoring changed")).toBeDefined();
   expect(screen.queryByRole("button")).toBeNull();
   expect(
     api.sent.filter((sent) => sent.url.includes("/drafts/")),
@@ -469,7 +470,7 @@ test("an offer whose reply could be in a mailbox page the read does not hold off
     threadBody({ turns: tail, nextBefore: 40 }),
     exchangeIn("thread-turn-3"),
   );
-  expect(screen.getByText(threadOfferUnreadSentence)).toBeDefined();
+  expect(screen.getByText(copyTextEn(threadOfferUnreadSentence))).toBeDefined();
   expect(screen.queryByRole("button")).toBeNull();
   cleanup();
 
@@ -477,7 +478,7 @@ test("an offer whose reply could be in a mailbox page the read does not hold off
     threadBody({ turns: tail, nextBefore: 40 }),
     exchangeIn(undefined),
   );
-  expect(screen.getByText(threadOfferUnreadSentence)).toBeDefined();
+  expect(screen.getByText(copyTextEn(threadOfferUnreadSentence))).toBeDefined();
   expect(screen.queryByRole("button")).toBeNull();
   cleanup();
 

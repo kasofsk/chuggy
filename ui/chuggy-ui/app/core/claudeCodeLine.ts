@@ -8,6 +8,7 @@
  * asks for where it cannot tell.
  */
 
+import type { Copy } from "./copy.ts";
 import { setupProgramPath } from "./setupProgram.ts";
 
 /** Where the line has the program kept: the person's home, as a file of its own. */
@@ -21,7 +22,7 @@ export function claudeCodeLine(origin: string): string {
 }
 
 /** What the card says of the line: where it is pasted, and where the reader is when it is. */
-export const claudeCodeLineAbout = "Paste into Claude Code in your repository";
+export const claudeCodeLineAbout: Copy = { id: "chat-claude-code-about" };
 
 /** What the control that copies the line is called. */
-export const claudeCodeLineCopy = "Copy prompt";
+export const claudeCodeLineCopy: Copy = { id: "chat-claude-code-copy" };

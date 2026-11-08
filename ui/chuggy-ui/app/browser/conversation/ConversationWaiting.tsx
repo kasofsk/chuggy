@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The engine, running where an answer is about to be: on the line the first
  * of it will take, for as long as a turn is out and nothing of it is drawn.
@@ -24,6 +23,8 @@
  */
 
 import type { ReactNode } from "react";
+
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 
 import "./conversation.css";
 
@@ -141,13 +142,14 @@ function ConversationWaitingTrain(): ReactNode {
 }
 
 export function ConversationWaiting(): ReactNode {
+  const text = useCopyText();
   return (
     <div className="conversation-waiting">
       <div className="conversation-waiting-track" aria-hidden="true" />
       <div
         className="conversation-waiting-engine"
         role="img"
-        aria-label="chuggy is under way"
+        aria-label={text({ id: "ui-locomotive" })}
       >
         <ConversationWaitingTrain />
       </div>

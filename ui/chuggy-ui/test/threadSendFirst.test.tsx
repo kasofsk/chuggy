@@ -5,16 +5,11 @@
  * to a composer, read before a press or met by one.
  */
 
-import {
-  act,
-  cleanup,
-  render,
-  renderHook,
-  screen,
-} from "@testing-library/react";
+import { act, cleanup, renderHook, screen } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { useThreadSend } from "../app/browser/thread/threadSend.tsx";
+import { renderCopied } from "./copied.tsx";
 import { answer, settled } from "./screenHarness.tsx";
 import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
 import { threadEntry, threadPartition } from "./threadFixture.ts";
@@ -158,8 +153,8 @@ test("a first press refused at the reader's thread limit says so and keeps the t
   await act(async () => {
     expect(await result.current.composer.onSend("hello", [])).toBe("Kept");
   });
-  render(<>{result.current.composer.note}</>);
-  expect(screen.getByText("Not sent · Thread limit reached")).toBeTruthy();
+  renderCopied(<>{result.current.composer.note}</>);
+  expect(screen.getByText("Not sent · Chat limit reached")).toBeTruthy();
 });
 
 /** A press's message is held under the turn it is posted as, which is what

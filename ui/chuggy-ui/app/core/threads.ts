@@ -92,10 +92,13 @@ import type {
   ThreadMessageRefusalCode,
   ThreadStanding,
 } from "../../../../src/contract/rosters.ts";
+import { allThreadWakeReasons } from "../../../../src/contract/threadWake.ts";
+import type { ThreadWakeReason } from "../../../../src/contract/threadWake.ts";
 import type { ApiFailure, ApiResult } from "./apiRequest.ts";
 import { base64urlFromBytes } from "./base64url.ts";
 import { conversationAttachmentsSame } from "./conversationAttachments.ts";
 import type { ConversationAttachment } from "./conversationAttachments.ts";
+import type { Copy, CopyOrData } from "./copy.ts";
 import { threadHomeNamed } from "./threadHome.ts";
 import type { ThreadHome } from "./threadHome.ts";
 import {
@@ -157,12 +160,24 @@ export function threadClosable(
   return thread.state !== "Closed";
 }
 
-/** A thread's own label, wherever one is drawn: its title, or `New thread`
- * before it has one. */
+/** A thread's own label, wherever one is drawn: its title, or the label of a
+ * new one before it has one. */
 export function threadLabel(
   thread: Pick<ThreadEntryResponse, "title">,
-): string {
-  return thread.title ?? "New thread";
+): CopyOrData {
+  return thread.title ?? { id: "chat-untitled" };
+}
+
+/** The word a thread's standing is drawn as, total over the wire's roster. */
+export function threadStandingLabel(standing: ThreadStanding): Copy {
+  switch (standing) {
+    case "Open":
+      return { id: "chat-standing-open" };
+    case "Closed":
+      return { id: "chat-standing-closed" };
+    case "Orphaned":
+      return { id: "chat-standing-orphaned" };
+  }
 }
 
 export const threadActionNames = ["Rename", "Close"] as const;
@@ -187,18 +202,18 @@ export function threadActions(
  * door cannot produce are named rather than defaulted, because a default is how
  * a kind nobody drew reaches a reader as the wrong noun.
  */
-export function threadTurnKindWord(kind: SessionTurnInputKind): string {
+export function threadTurnKindWord(kind: SessionTurnInputKind): Copy {
   switch (kind) {
     case "UserMessage":
-      return "Message";
+      return { id: "chat-turn-message" };
     case "Wake":
-      return "Wake";
+      return { id: "chat-turn-wake" };
     case "Observation":
-      return "Observation";
+      return { id: "chat-turn-observation" };
     case "Inquiry":
-      return "Inquiry";
+      return { id: "chat-turn-inquiry" };
     case "OfferReply":
-      return "Offer reply";
+      return { id: "chat-turn-offer-reply" };
   }
 }
 
@@ -279,6 +294,46 @@ export function threadWakeDrawn(input: string): ThreadWakeDrawn | undefined {
   return read.success ? read.data : undefined;
 }
 
+/** The reason a wake names, and nothing where the server sent one the roster
+ * does not carry. */
+function threadWakeReason(code: string): ThreadWakeReason | undefined {
+  return allThreadWakeReasons.find((known) => known === code);
+}
+
+/** The word one reason the roster carries is drawn as, total over it so a
+ * reason the roster renames or grows stops compiling here. */
+function threadWakeRosterWord(reason: ThreadWakeReason): Copy {
+  switch (reason) {
+    case "TicketRefused":
+      return { id: "chat-wake-refused" };
+    case "RefusalLifted":
+      return { id: "chat-wake-refusal-lifted" };
+    case "DraftDeleted":
+      return { id: "chat-wake-draft-deleted" };
+    case "TicketEscalated":
+      return { id: "chat-wake-escalated" };
+    case "TicketCompleted":
+      return { id: "chat-wake-done" };
+    case "TicketAbandoned":
+      return { id: "chat-wake-revoked" };
+  }
+}
+
+/** The word a wake's reason is drawn as: the roster's own, or the code the
+ * server sent where the roster does not carry it. */
+export function threadWakeLabel(code: string): CopyOrData {
+  const known = threadWakeReason(code);
+  return known === undefined ? code : threadWakeRosterWord(known);
+}
+
+/** The line one wake turn is drawn as: its reason and the ticket. */
+export function threadWakeLine(wake: ThreadWakeDrawn): Copy {
+  return {
+    id: "chat-wake",
+    args: { reason: threadWakeLabel(wake.wake), resource: wake.resource },
+  };
+}
+
 /** How much entropy a thread turn identity is drawn with, which is what the
  * mailbox dedupes on and so what a retried post is safe by. */
 export const threadTurnIdBytesCount = 16;
@@ -308,7 +363,7 @@ export function threadOpenAtLimit(result: ApiResult<unknown>): boolean {
 }
 
 /** The word an open refused at the reader's limit is drawn as. */
-export const threadLimitWord = "Thread limit reached";
+export const threadLimitWord: Copy = { id: "chat-limit" };
 
 /** What a press sent: the text, and the images attached to it. */
 export interface ThreadPressed {
@@ -640,22 +695,35 @@ export function threadTurnsEnded(
 
 /** The word for what a member can do something about in a failed request,
  * which no code the API answers with is. */
-export function threadRefusalCause(failure: ApiFailure): string | undefined {
-  if (failure.outcome === "Unauthenticated") return "Signed out";
-  return failure.outcome === "Unreachable" ? "Unreachable" : undefined;
+export function threadRefusalCause(failure: ApiFailure): Copy | undefined {
+  if (failure.outcome === "Unauthenticated")
+    return { id: "chat-cause-signed-out" };
+  return failure.outcome === "Unreachable"
+    ? { id: "chat-cause-unreachable" }
+    : undefined;
 }
 
 /** A press a door refused: the send, or the stop of one turn, with the word
  * for its cause where a member can act on one. */
 export type ThreadRefused =
-  | { readonly what: "Send"; readonly cause?: string }
-  | { readonly what: "Stop"; readonly turn: string; readonly cause?: string };
+  | { readonly what: "Send"; readonly cause?: CopyOrData }
+  | {
+      readonly what: "Stop";
+      readonly turn: string;
+      readonly cause?: CopyOrData;
+    };
 
 /** The one line a refusal is said in: what was not done, and its cause where
  * a member can act on it. */
-export function threadRefusalLine(refused: ThreadRefused): string {
-  const said = refused.what === "Send" ? "Not sent" : "Not stopped";
-  return refused.cause === undefined ? said : `${said} · ${refused.cause}`;
+export function threadRefusalLine(refused: ThreadRefused): Copy {
+  const { cause } = refused;
+  if (refused.what === "Send")
+    return cause === undefined
+      ? { id: "chat-refused-send" }
+      : { id: "chat-refused-send-cause", args: { cause } };
+  return cause === undefined
+    ? { id: "chat-refused-stop" }
+    : { id: "chat-refused-stop-cause", args: { cause } };
 }
 
 /** What one press of Stop came to: this press ended the turn, the turn had
@@ -663,7 +731,7 @@ export function threadRefusalLine(refused: ThreadRefused): string {
 export type ThreadStop =
   | { readonly stop: "Ended" }
   | { readonly stop: "AlreadyEnded" }
-  | { readonly stop: "Refused"; readonly cause?: string };
+  | { readonly stop: "Refused"; readonly cause?: CopyOrData };
 
 /**
  * One stop, classified. The turn is ended where this press ended it and where
@@ -690,8 +758,8 @@ export type ThreadSend =
   | { readonly send: "Idle" }
   | { readonly send: "Sending" }
   | { readonly send: "Sent"; readonly ordinal: number }
-  | { readonly send: "Waiting"; readonly why: string }
-  | { readonly send: "Ended"; readonly why: string }
+  | { readonly send: "Waiting"; readonly why: CopyOrData }
+  | { readonly send: "Ended"; readonly why: CopyOrData }
   /** The tenant does not grant the reader hosted runs, so this thread takes
    * nothing from them; a refusal counts the placement reads before it. */
   | { readonly send: "Unhosted"; readonly readsAt?: number }
@@ -749,24 +817,24 @@ export function threadRefusalCode(
 
 /** The word one code the roster carries is drawn as, total over it so a code
  * the roster renames or grows stops compiling here. */
-function threadRosterWord(code: ThreadMessageRefusalCode): string {
+function threadRosterWord(code: ThreadMessageRefusalCode): Copy {
   switch (code) {
     case "NotYourThread":
-      return "Elsewhere";
+      return { id: "chat-refusal-elsewhere" };
     case "ThreadClosed":
-      return "Closed";
+      return { id: "chat-refusal-closed" };
     case "ThreadBacklogged":
-      return "Backlogged";
+      return { id: "chat-refusal-backlogged" };
     case "ThreadTurnTooLarge":
-      return "Oversize";
+      return { id: "chat-refusal-oversize" };
     case "ThreadImageUnknown":
-      return "Image missing";
+      return { id: "chat-refusal-image-missing" };
   }
 }
 
 /** The word a refusal is drawn as: the roster's own, or the code the server sent
  * where the roster does not carry it. */
-export function threadRefusalWord(code: string): string {
+export function threadRefusalWord(code: string): CopyOrData {
   const known = threadRefusalCode(code);
   return known === undefined ? code : threadRosterWord(known);
 }
@@ -780,7 +848,7 @@ function threadRefusalSaid(code: string): boolean {
 
 /** A send a door refused, with the word for its cause where there is one. */
 export function threadSendRefused(
-  cause?: string,
+  cause?: CopyOrData,
 ): ThreadSend & { readonly send: "Refused" } {
   return {
     send: "Refused",
@@ -791,18 +859,16 @@ export function threadSendRefused(
 
 /** The word for a store that could not say whether an image is the
  * project's, or take one. */
-const threadImagesUnavailable = "Images unavailable";
+const threadImagesUnavailable: Copy = { id: "chat-images-unavailable" };
 
 /** The word one refusal of the upload's own is drawn as, total over its
  * roster. */
-function threadUploadRosterWord(
-  code: ProjectArtifactUploadRefusalCode,
-): string {
+function threadUploadRosterWord(code: ProjectArtifactUploadRefusalCode): Copy {
   switch (code) {
     case "ArtifactTooLarge":
-      return "Image too large";
+      return { id: "chat-image-too-large" };
     case "UnsupportedMediaType":
-      return "Image type refused";
+      return { id: "chat-image-type-refused" };
   }
 }
 
@@ -825,7 +891,9 @@ export function threadUploadRefused(
     failure.code === artifactUnavailableCode
   )
     return threadSendRefused(threadImagesUnavailable);
-  return threadSendRefused(threadRefusalCause(failure) ?? "Image not uploaded");
+  return threadSendRefused(
+    threadRefusalCause(failure) ?? { id: "chat-image-not-uploaded" },
+  );
 }
 
 /**

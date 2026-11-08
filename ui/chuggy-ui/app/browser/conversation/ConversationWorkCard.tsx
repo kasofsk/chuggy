@@ -28,18 +28,21 @@ import { Collapsible } from "radix-ui";
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import {
   conversationArgumentLine,
   conversationArgumentSummary,
   conversationArgumentText,
+  conversationResultCut,
   conversationWorkSummary,
 } from "../../core/conversation.ts";
 import type {
   ConversationWorkActivity,
   ConversationWorkStep,
 } from "../../core/conversation.ts";
+import { copyOrDataText } from "../../core/copy.ts";
+import type { Copy, CopyText } from "../../core/copy.ts";
 import { durationText } from "../../core/figures.ts";
-import { runCountLabel } from "../../core/runTotals.ts";
 import {
   ConversationChevron,
   ConversationGlyph,
@@ -61,6 +64,7 @@ const conversationResultClassName =
 function ConversationToolCallNamed(props: {
   readonly call: ConversationToolCallStep;
 }): ReactNode {
+  const text = useCopyText();
   const call = props.call;
   return (
     <>
@@ -69,10 +73,13 @@ function ConversationToolCallNamed(props: {
           call.result?.isError === true ? "text-tone-fail" : "text-ink-1"
         }
       >
-        {call.name ?? "Result"}
+        {call.name ?? text({ id: "conversation-call-unnamed" })}
       </code>
       <span className="text-ink-3 wrap-anywhere min-w-0 grow text-sm">
-        {conversationArgumentLine(conversationArgumentSummary(call.input))}
+        {copyOrDataText(
+          text,
+          conversationArgumentLine(conversationArgumentSummary(call.input)),
+        )}
       </span>
     </>
   );
@@ -85,6 +92,7 @@ function ConversationToolCallNamed(props: {
 function ConversationToolCall(props: {
   readonly call: ConversationToolCallStep;
 }): ReactNode {
+  const text = useCopyText();
   const [open, setOpen] = useState(false);
   const call = props.call;
   const result = call.result;
@@ -117,6 +125,9 @@ function ConversationToolCall(props: {
             }
           >
             {result.text}
+            {result.cut === undefined
+              ? null
+              : `\n${text(conversationResultCut(result.cut))}`}
           </pre>
         )}
       </Collapsible.Content>
@@ -127,6 +138,7 @@ function ConversationToolCall(props: {
 function ConversationWorkStepDrawn(props: {
   readonly step: ConversationWorkStep;
 }): ReactNode {
+  const text = useCopyText();
   const step = props.step;
   switch (step.step) {
     case "Thinking":
@@ -134,7 +146,11 @@ function ConversationWorkStepDrawn(props: {
     case "ToolCall":
       return <ConversationToolCall call={step} />;
     case "Other":
-      return <p className="text-ink-3 text-xs">{step.kind}</p>;
+      return (
+        <p className="text-ink-3 text-xs">
+          {step.kind ?? text({ id: "conversation-block-unreadable" })}
+        </p>
+      );
   }
 }
 
@@ -144,32 +160,31 @@ function conversationWorkStepSays(step: ConversationWorkStep): boolean {
   return step.step !== "Thinking" || step.text.length > 0;
 }
 
-function conversationCountWords(count: number, noun: string): string {
-  return `${runCountLabel(count)} ${noun}${count === 1 ? "" : "s"}`;
-}
-
 /** What the line says once the work is over, which is the shape of the work
  * rather than a count of everything in it. */
-function conversationWorkLabel(steps: readonly ConversationWorkStep[]): string {
+function conversationWorkLabel(steps: readonly ConversationWorkStep[]): Copy {
   const summary = conversationWorkSummary(steps);
-  const said = [
-    ...(summary.thought ? ["Thought"] : []),
-    ...(summary.toolCalls === 0
-      ? []
-      : [conversationCountWords(summary.toolCalls, "tool")]),
-  ];
-  return said.length === 0 ? "Worked" : said.join(" · ");
+  const count = summary.toolCalls;
+  if (count === 0)
+    return summary.thought
+      ? { id: "conversation-work-thought" }
+      : { id: "conversation-work-done" };
+  return summary.thought
+    ? { id: "conversation-work-thought-tools", args: { count } }
+    : { id: "conversation-work-tools", args: { count } };
 }
 
 /** What is under way, named the way a step of the work names it. The name's
  * own line is the tight one, so the row is as tall under it as under a word. */
 function conversationActivityLabel(
+  text: CopyText,
   activity: ConversationWorkActivity | undefined,
 ): ReactNode {
-  if (activity?.activity === "Thinking") return "Thinking";
+  if (activity?.activity === "Thinking")
+    return text({ id: "conversation-work-thinking" });
   if (activity !== undefined && activity.name.length > 0)
     return <code className="text-ink-1 leading-tight">{activity.name}</code>;
-  return "Working";
+  return text({ id: "conversation-work-working" });
 }
 
 const conversationSecondMs = 1000;
@@ -214,16 +229,19 @@ export interface ConversationWorkUnderWay {
 /** The words of the line: what is under way, and for how long once a step
  * that is named has lasted a second, or what there was. */
 function conversationWorkWords(
+  text: CopyText,
   steps: readonly ConversationWorkStep[],
   underWay: ConversationWorkUnderWay | undefined,
   elapsedMs: number,
 ): ReactNode {
   if (underWay === undefined)
-    return <span className="min-w-0">{conversationWorkLabel(steps)}</span>;
+    return (
+      <span className="min-w-0">{text(conversationWorkLabel(steps))}</span>
+    );
   return (
     <>
       <span className="min-w-0">
-        {conversationActivityLabel(underWay.activity)}
+        {conversationActivityLabel(text, underWay.activity)}
       </span>
       {elapsedMs < conversationSecondMs ? null : (
         <span className="num">{durationText(elapsedMs)}</span>
@@ -244,6 +262,7 @@ export function ConversationWorkCard(props: {
   /** Whether the card first draws open. */
   readonly open?: boolean;
 }): ReactNode {
+  const text = useCopyText();
   const [open, setOpen] = useState(props.open === true);
   const said = props.steps.filter(conversationWorkStepSays);
   const glyph = (
@@ -259,7 +278,12 @@ export function ConversationWorkCard(props: {
       activity?.joined === true,
     ),
   );
-  const words = conversationWorkWords(props.steps, props.underWay, elapsedMs);
+  const words = conversationWorkWords(
+    text,
+    props.steps,
+    props.underWay,
+    elapsedMs,
+  );
   if (said.length === 0)
     return (
       <div className={conversationWorkLineClassName}>
