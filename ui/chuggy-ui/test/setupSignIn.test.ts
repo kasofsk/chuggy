@@ -10,8 +10,10 @@
 
 import { expect, test } from "vitest";
 
+import { copyTextEn } from "../app/copy/catalog.ts";
 import { setupPacing } from "../app/core/setupPacing.ts";
 import { setupFiles, SetupMachineError } from "../app/core/setupPorts.ts";
+import type { SetupAnswered } from "../app/core/setupPorts.ts";
 import {
   setupOpenerCommand,
   setupSignInPollMs,
@@ -810,4 +812,25 @@ test("a wait that finds its listener gone writes over no page started since", as
   };
   expect(await machine.command(signIn)).toEqual(ended("Expired"));
   expect(noted(machine)).toMatchObject({ note: "Waiting", site: other });
+});
+
+test("each page the browser is shown is the catalog's words: nothing here for a request that is not the answer, already answered for a second answer, and signed in for the person's own", async () => {
+  const machine = setupMachine();
+  const pages: string[] = [];
+  const shown = (answered: SetupAnswered): void => {
+    pages.push(answered.page === undefined ? "" : copyTextEn(answered.page));
+  };
+  machine.opened = async (address) => {
+    const first = await machine.browse(address);
+    const back = machine.authorized(first.location ?? "", true);
+    shown(await machine.browse(answer(machine, "code=code-1&state=forged")));
+    shown(await machine.browse(back));
+    shown(await machine.browse(back));
+  };
+  expect(await machine.command(signIn)).toEqual(ended("SignedIn"));
+  expect(pages).toEqual([
+    "There is nothing here.",
+    "Signed in to chuggy. You can close this tab and go back to your terminal.",
+    "This sign-in page has already been answered.",
+  ]);
 });
