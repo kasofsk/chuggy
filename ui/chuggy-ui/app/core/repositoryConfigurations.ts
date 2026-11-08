@@ -33,11 +33,6 @@ export interface RepositoryConfigurationCell {
 export const repositoryConfigurationsDirectory =
   repositoryConfigurationRoot.replace(/\/$/u, "");
 
-/** The directory holding a repository's declaration, the parent of the one
- * its configurations are under, as a line names it. */
-export const repositoryDeclarationDirectory =
-  repositoryConfigurationRoot.replace(/[^/]+\/$/u, "");
-
 /** What a ready revision decides, which is the whole of what the row says. */
 export interface RepositoryConfigurationFacts {
   readonly worker: RepositoryConfigurationCell;

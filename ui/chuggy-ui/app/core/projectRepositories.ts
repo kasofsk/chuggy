@@ -22,6 +22,7 @@ import type {
   ForgeAppName,
   ProjectRepositoryConfigurationDeferralName,
 } from "../../../../src/contract/rosters.ts";
+import { repositoryConfigurationRoot } from "../../../../src/contract/configurationDocument.ts";
 
 import type { ApiFailure, ApiResult } from "./apiRequest.ts";
 import type { ProjectRepositoryBindAnswer } from "./apiRoutes.ts";
@@ -33,7 +34,6 @@ import {
 import type { ForgeReturnWord } from "./forgeReturn.ts";
 import type { PanelState } from "./freshness.ts";
 import { httpsUrl } from "./httpsUrl.ts";
-import { repositoryDeclarationDirectory } from "./repositoryConfigurations.ts";
 import type { WorkRunner } from "./workRunner.ts";
 
 /**
@@ -515,6 +515,13 @@ export interface RepositoryNote {
   readonly ticketOffered: boolean;
   readonly ignored?: Copy;
 }
+
+/** The directory holding a repository's declaration, the parent of the one
+ * its configurations are under. */
+const repositoryDeclarationDirectory = repositoryConfigurationRoot.replace(
+  /[^/]+\/$/u,
+  "",
+);
 
 /** The entries a configuration step read none of as a line's detail: the
  * first it names, and how many more there are. */
