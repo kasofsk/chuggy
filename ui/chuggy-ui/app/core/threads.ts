@@ -78,6 +78,7 @@ import type {
   ThreadTurnStopResponse,
 } from "../../../../src/contract/responses.ts";
 import {
+  allThreadWakeReasons,
   artifactUnavailableCode,
   hostedRunsNotGrantedCode,
   projectArtifactUploadRefusalCodes,
@@ -91,6 +92,7 @@ import type {
   SessionTurnInputKind,
   ThreadMessageRefusalCode,
   ThreadStanding,
+  ThreadWakeReason,
 } from "../../../../src/contract/rosters.ts";
 import type { ApiFailure, ApiResult } from "./apiRequest.ts";
 import { base64urlFromBytes } from "./base64url.ts";
@@ -290,6 +292,46 @@ export function threadWakeDrawn(input: string): ThreadWakeDrawn | undefined {
   }
   const read = threadWakeDrawnSchema.safeParse(parsed);
   return read.success ? read.data : undefined;
+}
+
+/** The reason a wake names, and nothing where the server sent one the roster
+ * does not carry. */
+function threadWakeReason(code: string): ThreadWakeReason | undefined {
+  return allThreadWakeReasons.find((known) => known === code);
+}
+
+/** The word one reason the roster carries is drawn as, total over it so a
+ * reason the roster renames or grows stops compiling here. */
+function threadWakeRosterWord(reason: ThreadWakeReason): Copy {
+  switch (reason) {
+    case "TicketRefused":
+      return { id: "chat-wake-refused" };
+    case "RefusalLifted":
+      return { id: "chat-wake-refusal-lifted" };
+    case "DraftDeleted":
+      return { id: "chat-wake-draft-deleted" };
+    case "TicketEscalated":
+      return { id: "chat-wake-escalated" };
+    case "TicketCompleted":
+      return { id: "chat-wake-done" };
+    case "TicketAbandoned":
+      return { id: "chat-wake-revoked" };
+  }
+}
+
+/** The word a wake's reason is drawn as: the roster's own, or the code the
+ * server sent where the roster does not carry it. */
+export function threadWakeLabel(code: string): CopyOrData {
+  const known = threadWakeReason(code);
+  return known === undefined ? code : threadWakeRosterWord(known);
+}
+
+/** The line one wake turn is drawn as: its reason and the ticket. */
+export function threadWakeLine(wake: ThreadWakeDrawn): Copy {
+  return {
+    id: "chat-wake",
+    args: { reason: threadWakeLabel(wake.wake), resource: wake.resource },
+  };
 }
 
 /** How much entropy a thread turn identity is drawn with, which is what the

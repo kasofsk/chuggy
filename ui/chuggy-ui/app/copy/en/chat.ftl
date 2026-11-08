@@ -56,6 +56,16 @@ chat-turn-observation = Observation
 chat-turn-inquiry = { -inquiry(case: "upper") }
 chat-turn-offer-reply = Offer reply
 
+## What a wake turn is drawn as: why the chat was woken, and the ticket.
+
+chat-wake = { $reason } · { $resource }
+chat-wake-refused = Refused
+chat-wake-refusal-lifted = Refusal lifted
+chat-wake-draft-deleted = { -draft(case: "upper") } deleted
+chat-wake-escalated = { -escalation(case: "upper") }
+chat-wake-done = Done
+chat-wake-revoked = { -revoke(case: "upper", form: "ed") }
+
 ## What a press of Send or Stop came to.
 
 chat-limit = { -thread(case: "upper") } limit reached

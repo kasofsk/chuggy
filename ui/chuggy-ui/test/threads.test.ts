@@ -11,6 +11,7 @@
 import { describe, expect, test } from "vitest";
 
 import {
+  allThreadWakeReasons,
   sessionTurnInputKinds,
   sessionTurnStates,
   threadLimitReachedCode,
@@ -63,6 +64,7 @@ import {
   threadTurnsEnded,
   threadTurnsWait,
   threadWakeDrawn,
+  threadWakeLabel,
   threadWriting,
   threadsByStanding,
 } from "../app/core/threads.ts";
@@ -220,6 +222,18 @@ describe("a wake read for its pointer", () => {
       JSON.stringify(null),
     ])
       expect(threadWakeDrawn(said), said).toBeUndefined();
+  });
+
+  test("every reason the roster carries has a word of its own", () => {
+    const words = allThreadWakeReasons.map((reason) => threadWakeLabel(reason));
+    for (const word of words) expect(typeof word).toBe("object");
+    expect(new Set(words.map((word) => JSON.stringify(word))).size).toBe(
+      allThreadWakeReasons.length,
+    );
+  });
+
+  test("a reason the roster lacks is drawn as the code it came with", () => {
+    expect(threadWakeLabel("TicketDone")).toBe("TicketDone");
   });
 });
 

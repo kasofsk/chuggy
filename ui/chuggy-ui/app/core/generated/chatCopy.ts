@@ -60,6 +60,16 @@ export interface ChatCopy {
   readonly "chat-turn-observation": Record<never, never>;
   readonly "chat-turn-inquiry": Record<never, never>;
   readonly "chat-turn-offer-reply": Record<never, never>;
+  readonly "chat-wake": {
+    readonly reason: unknown;
+    readonly resource: unknown;
+  };
+  readonly "chat-wake-refused": Record<never, never>;
+  readonly "chat-wake-refusal-lifted": Record<never, never>;
+  readonly "chat-wake-draft-deleted": Record<never, never>;
+  readonly "chat-wake-escalated": Record<never, never>;
+  readonly "chat-wake-done": Record<never, never>;
+  readonly "chat-wake-revoked": Record<never, never>;
   readonly "chat-limit": Record<never, never>;
   readonly "chat-start-refused-limit": Record<never, never>;
   readonly "chat-cause-signed-out": Record<never, never>;

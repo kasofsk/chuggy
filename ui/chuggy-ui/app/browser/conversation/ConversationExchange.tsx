@@ -78,7 +78,7 @@ import type {
   ConversationWorkStep,
 } from "../../core/conversation.ts";
 import { consolePageLabel } from "../../core/consolePage.ts";
-import { threadTurnKindWord } from "../../core/threads.ts";
+import { threadTurnKindWord, threadWakeLine } from "../../core/threads.ts";
 import { Chip } from "../ui/Chip.tsx";
 import { TicketReference } from "../ui/TicketReference.tsx";
 import { MarkdownReport } from "../ui/MarkdownReport.tsx";
@@ -355,7 +355,7 @@ function ConversationAskBody(props: {
     case "Message":
       return <ConversationBubble message={ask} />;
     case "Wake":
-      return <ConversationSystemLine words={`${ask.wake} · ${ask.resource}`} />;
+      return <ConversationSystemLine words={threadWakeLine(ask)} />;
     case "Document":
       return <ConversationSystemLine words={threadTurnKindWord(ask.kind)} />;
     case "Observation":

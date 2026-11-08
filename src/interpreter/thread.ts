@@ -45,6 +45,10 @@ import {
 } from "../contract/http.ts";
 import type { ConsolePage } from "../contract/consolePage.ts";
 import {
+  allThreadWakeReasons,
+  type ThreadWakeReason,
+} from "../contract/rosters.ts";
+import {
   resolvedThreadStandingRules,
   threadDraftsHeading,
   threadImageLine,
@@ -100,19 +104,7 @@ export function threadStanding(input: {
     : input.state;
 }
 
-/**
- * Why a thread was woken without its owner typing: a closed roster, so a wake
- * names a reason rather than carrying a payload.
- */
-export const allThreadWakeReasons = [
-  "TicketRefused",
-  "RefusalLifted",
-  "DraftDeleted",
-  "TicketEscalated",
-  "TicketCompleted",
-  "TicketAbandoned",
-] as const;
-export type ThreadWakeReason = (typeof allThreadWakeReasons)[number];
+export { allThreadWakeReasons, type ThreadWakeReason };
 
 /** The version every wake document this release writes carries. */
 export const threadWakeVersion = 1;
