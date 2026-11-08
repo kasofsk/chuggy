@@ -13,6 +13,7 @@ import { cleanup, screen } from "@testing-library/react";
 import { afterEach, beforeAll, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
+import { copyTextEn } from "../app/copy/catalog.ts";
 import { ProjectCreationPage } from "../app/browser/ProjectCreation.tsx";
 import { Landing } from "../app/browser/routes.tsx";
 import {
@@ -90,7 +91,7 @@ function line(): HTMLElement | null {
 }
 
 function copyControl(): HTMLElement | null {
-  return screen.queryByRole("button", { name: claudeCodeLineCopy });
+  return screen.queryByRole("button", { name: copyTextEn(claudeCodeLineCopy) });
 }
 
 /** Whether `earlier` is drawn before `later` in the document. */
@@ -112,7 +113,7 @@ test.each([
     await drawn(pages[page]);
     const drawnLine = line();
     expect(drawnLine?.textContent).toBe(claudeCodeLine(site.origin));
-    expect(screen.getByText(claudeCodeLineAbout)).toBeDefined();
+    expect(screen.getByText(copyTextEn(claudeCodeLineAbout))).toBeDefined();
     if (drawnLine === null) throw new Error("no line is drawn");
     expect(drawnLine.classList.contains("wrap-anywhere")).toBe(true);
     expect(
@@ -130,7 +131,7 @@ test("the control puts the whole line on the clipboard, says so, and asks the ne
   await drawn(<Landing />);
   const before = asked.mock.calls.length;
   expect(before).toBeGreaterThan(0);
-  await press(claudeCodeLineCopy);
+  await press(copyTextEn(claudeCodeLineCopy));
   expect(site.copied).toStrictEqual([claudeCodeLine(site.origin)]);
   expect(
     screen
@@ -180,6 +181,6 @@ test.each([
     );
     expect(line()).toBeNull();
     expect(copyControl()).toBeNull();
-    expect(screen.queryByText(claudeCodeLineAbout)).toBeNull();
+    expect(screen.queryByText(copyTextEn(claudeCodeLineAbout))).toBeNull();
   },
 );

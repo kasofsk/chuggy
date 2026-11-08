@@ -77,6 +77,7 @@ import type { ThreadEntryResponse } from "../../../../../src/contract/responses.
 import type { ApiPorts } from "../../core/apiRequest.ts";
 import { apiUploadProjectArtifact } from "../../core/apiRoutes.ts";
 import type { ConversationAttachment } from "../../core/conversationAttachments.ts";
+import type { Copy } from "../../core/copy.ts";
 import {
   hostedRunsQuery,
   sessionPlacementQuery,
@@ -306,7 +307,7 @@ async function threadDoorUnhosted(
 
 /** What a press carrying images is refused as where no project would keep
  * them, which a composer offering none never meets. */
-const threadImagesUnhomed = "Images are kept by a project";
+const threadImagesUnhomed: Copy = { id: "chat-images-unhomed" };
 
 /** The identity each image of a press is named by, uploading those the
  * project has not taken, in order, and the refusal of the first that fails. */

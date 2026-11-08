@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The composer of a member's own thread, made from the thread's record in the
  * store: what its door would answer, what a message may carry, and what the
@@ -30,6 +29,8 @@ import {
 } from "../../../../../src/contract/http.ts";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ConsolePage } from "../../../../../src/contract/consolePage.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
+import { copyOrDataText } from "../../core/copy.ts";
 import { memberChatDoor } from "../../core/memberChat.ts";
 import { hostedRunsQuery } from "../../core/projectQueries.ts";
 import { chatHostQuery } from "../../core/tenantQueries.ts";
@@ -102,9 +103,13 @@ export function useMemberThreadDoor(tenant: string): ThreadDoor {
 /** What a thread door refused for the tenant's hosted grant is drawn as,
  * whether the grant's read, the open or a send met it, and who gives it. */
 export function ThreadUnhostedNotice(): ReactNode {
+  const text = useCopyText();
   return (
-    <Notice tone="parked" inline detail="Needs hosted runs">
-      <span className="text-ink-3"> · Granted by the operator</span>
+    <Notice tone="parked" inline detail={text({ id: "chat-unhosted" })}>
+      <span className="text-ink-3">
+        {" · "}
+        {text({ id: "chat-unhosted-granted" })}
+      </span>
     </Notice>
   );
 }
@@ -133,6 +138,7 @@ function ThreadSendNote(props: {
   readonly home: ThreadHome;
   readonly send: ThreadSend;
 }): ReactNode {
+  const text = useCopyText();
   const send = props.send;
   switch (send.send) {
     case "Idle":
@@ -146,9 +152,13 @@ function ThreadSendNote(props: {
       return <ThreadRunnerNotice home={props.home} short={send.send} />;
     case "Waiting":
     case "Ended":
-      return <Notice tone="parked" inline detail={send.why} />;
+      return (
+        <Notice tone="parked" inline detail={copyOrDataText(text, send.why)} />
+      );
     case "Refused":
-      return <Notice tone="danger" inline detail={threadRefusalLine(send)} />;
+      return (
+        <Notice tone="danger" inline detail={text(threadRefusalLine(send))} />
+      );
   }
 }
 

@@ -12,6 +12,8 @@
  * is what a member who closed the list or typed past it has written.
  */
 
+import type { Copy, CopyText } from "./copy.ts";
+
 /** Every command the composer knows, in the order the list offers them: the
  * one that closes the thread is last, so Enter on a bare `/` reads instead. */
 export const conversationCommandNames = ["status", "usage", "clear"] as const;
@@ -31,14 +33,14 @@ export interface ConversationCommandItem {
 }
 
 /** What each command does, in the words the list shows beside its name. */
-function conversationCommandDescription(name: ConversationCommandName): string {
+function conversationCommandDescription(name: ConversationCommandName): Copy {
   switch (name) {
     case "status":
-      return "This thread's standing, where it runs, and its model";
+      return { id: "chat-command-status" };
     case "usage":
-      return "Tokens, cost and time over this thread's turns";
+      return { id: "chat-command-usage" };
     case "clear":
-      return "Close this thread and start a new one";
+      return { id: "chat-command-clear" };
   }
 }
 
@@ -51,25 +53,36 @@ export function conversationCommandLabel(
 
 export function conversationCommandItem(
   name: ConversationCommandName,
+  text: CopyText,
 ): ConversationCommandItem {
   return {
     id: name,
     type: "command",
     label: conversationCommandLabel(name),
-    description: conversationCommandDescription(name),
+    description: text(conversationCommandDescription(name)),
   };
 }
 
 /** The offered commands whose name begins with what was typed after the `/`,
  * in the order they are offered. */
+function conversationCommandNamesFiltered(
+  offered: readonly ConversationCommandName[],
+  query: string,
+): readonly ConversationCommandName[] {
+  const lowered = query.toLowerCase();
+  return offered.filter((name) => name.startsWith(lowered));
+}
+
+/** The offered commands `conversationCommandNamesFiltered` keeps, as the
+ * list offers each. */
 export function conversationCommandFiltered(
   offered: readonly ConversationCommandName[],
   query: string,
+  text: CopyText,
 ): readonly ConversationCommandItem[] {
-  const lowered = query.toLowerCase();
-  return offered
-    .filter((name) => name.startsWith(lowered))
-    .map(conversationCommandItem);
+  return conversationCommandNamesFiltered(offered, query).map((name) =>
+    conversationCommandItem(name, text),
+  );
 }
 
 /** What the popover replaces and what it searches on. */
@@ -95,7 +108,8 @@ export function conversationCommandMatch(
   if (cursorPosition < triggerChar.length) return null;
   const query = text.slice(triggerChar.length);
   if (/\s/u.test(query)) return null;
-  if (conversationCommandFiltered(offered, query).length === 0) return null;
+  if (conversationCommandNamesFiltered(offered, query).length === 0)
+    return null;
   return { query, offset: 0, endOffset: text.length };
 }
 

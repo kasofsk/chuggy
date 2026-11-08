@@ -9,13 +9,7 @@
  * command still reaches the agent.
  */
 
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { Mock } from "vitest";
 
@@ -31,6 +25,7 @@ import type { ConversationCommandName } from "../app/core/conversationCommand.ts
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { elementScrollToStubbed } from "./scrolling.ts";
 import { composerTyped } from "./composerTyped.ts";
+import { renderCopied } from "./copied.tsx";
 
 beforeEach(() => {
   resizeObserverStubbed();
@@ -72,7 +67,7 @@ function composerOf(said?: string, attaches?: ConversationAttaches): Composed {
 }
 
 function mounted(composed: Composed): void {
-  render(<Conversation exchanges={[]} composer={composed.composer} />);
+  renderCopied(<Conversation exchanges={[]} composer={composed.composer} />);
 }
 
 function offered(): readonly string[] {
