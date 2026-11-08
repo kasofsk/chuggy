@@ -103,6 +103,10 @@
     height: var(--height-context-bar);
   }
 
+  .context-view[data-compact="true"] .context-bar-strip {
+    height: var(--height-context-bar-compact);
+  }
+
   .context-bar-mark-label {
     font-size: var(--text-xs);
     fill: var(--ink-2);
@@ -283,7 +287,7 @@
     display: grid;
     grid-template-columns: repeat(
       auto-fit,
-      minmax(var(--width-usage-tile), 1fr)
+      minmax(var(--width-context-tile), 1fr)
     );
     gap: var(--space-3);
   }

@@ -255,8 +255,10 @@
     --width-context-legend: 30rem; /* context: the window's legend table */
     --width-context-panel: 24rem; /* context: the panel beside a conversation */
     --col-context-label: 7rem; /* context: an input's name, beside its value */
-    --height-context-bar: 1.125rem; /* context: the window's bar */
-    --height-context-brief: 5.5em; /* context: a folded brief, before it fades */
+    --width-context-tile: 8rem; /* context: a figure tile, two to a phone's row */
+    --height-context-bar: 1.75rem; /* context: the window's bar */
+    --height-context-bar-compact: 1.25rem; /* context: a session's window bar */
+    --height-context-brief: 6.2em; /* context: a folded brief, before it fades */
     --size-context-swatch: 0.625rem; /* context: a category's key */
   }
 
