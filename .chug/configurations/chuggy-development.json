@@ -16,7 +16,8 @@
             "agent": "Claude",
             "arguments": [
               "--allowedTools=Bash,Edit,Read,Write,Glob,Grep",
-              "--model=opus"
+              "--model=opus",
+              "--settings={\"autoCompactWindow\":350000}"
             ]
           },
           "setup": [
@@ -53,7 +54,8 @@
             "agent": "Claude",
             "arguments": [
               "--allowedTools=Bash,Edit,Read,Write,Glob,Grep",
-              "--model=opus"
+              "--model=opus",
+              "--settings={\"autoCompactWindow\":350000}"
             ]
           },
           "setup": [
@@ -90,7 +92,8 @@
             "agent": "Claude",
             "arguments": [
               "--allowedTools=Bash,Edit,Read,Write,Glob,Grep",
-              "--model=fable"
+              "--model=fable",
+              "--settings={\"autoCompactWindow\":350000}"
             ]
           },
           "setup": [
@@ -127,7 +130,8 @@
             "agent": "Claude",
             "arguments": [
               "--allowedTools=Bash,Edit,Read,Write,Glob,Grep",
-              "--model=fable"
+              "--model=fable",
+              "--settings={\"autoCompactWindow\":350000}"
             ]
           },
           "setup": [
@@ -164,7 +168,8 @@
             "agent": "Claude",
             "arguments": [
               "--allowedTools=Bash,Edit,Read,Write,Glob,Grep",
-              "--model=sonnet"
+              "--model=sonnet",
+              "--settings={\"autoCompactWindow\":350000}"
             ]
           },
           "setup": [
@@ -201,7 +206,8 @@
             "agent": "Claude",
             "arguments": [
               "--allowedTools=Bash,Edit,Read,Write,Glob,Grep",
-              "--model=sonnet"
+              "--model=sonnet",
+              "--settings={\"autoCompactWindow\":350000}"
             ]
           },
           "setup": [
@@ -238,7 +244,8 @@
             "agent": "Claude",
             "arguments": [
               "--allowedTools=Bash,Edit,Read,Write,Glob,Grep",
-              "--model=opus"
+              "--model=opus",
+              "--settings={\"autoCompactWindow\":350000}"
             ]
           },
           "setup": [
