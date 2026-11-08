@@ -135,8 +135,8 @@ test("a first ticket that opened a pull request is said to have done that, in th
   project?.landings.set(1, [{ ...setupSiteProposed(url), state: "Failed" }]);
   const failed = await printed(await machineSignedIn(world));
   expect(failed.lines.slice(-4, -2)).toEqual([
-    "step: ticket      waiting  ticket 1 is in Finalization",
-    `tell: Ticket 1 is in Finalization, and setup is done when it lands. ${pages}/tickets/1 shows where it is. Tell me when you want me to look again.`,
+    "step: ticket      waiting  ticket 1 is in Landing",
+    `tell: Ticket 1 is in Landing, and setup is done when it lands. ${pages}/tickets/1 shows where it is. Tell me when you want me to look again.`,
   ]);
 });
 
@@ -160,7 +160,7 @@ test("a project whose work the cluster runs, with a ticket landed and no runner,
   }
   const done = await printed(await machineSignedIn(world));
   expect(done.lines.slice(-4)).toEqual([
-    "step: runner      done     the cluster runs its work",
+    "step: runner      done     hosted runs take its work",
     "step: ticket      done     ticket 1 is done",
     `tell: chuggy is set up for acme/widgets: ticket 1 is done. The next ticket is made at ${pages}/tickets/new.`,
     "next: stop",

@@ -3,5 +3,635 @@
 
 /** Each message's variables, by name. */
 export interface SetupCopy {
+  readonly "setup-program": Record<never, never>;
+  readonly "setup-came-nothing": Record<never, never>;
+  readonly "setup-came-no-further": Record<never, never>;
+  readonly "setup-came-unchanged": Record<never, never>;
+  readonly "setup-when-sign-in-again": Record<never, never>;
+  readonly "setup-site": Record<never, never>;
+  readonly "setup-stale": Record<never, never>;
   readonly "setup-site-unknown": Record<never, never>;
+  readonly "setup-site-signed-in": {
+    readonly site: unknown;
+  };
+  readonly "setup-site-signed-out": {
+    readonly site: unknown;
+  };
+  readonly "setup-site-unconfirmed": {
+    readonly site: unknown;
+  };
+  readonly "setup-site-unreachable": {
+    readonly site: unknown;
+  };
+  readonly "setup-site-unconfigured": {
+    readonly site: unknown;
+  };
+  readonly "setup-site-issuer": {
+    readonly site: unknown;
+  };
+  readonly "setup-rule-drive": {
+    readonly stop: unknown;
+  };
+  readonly "setup-rule-directory": {
+    readonly directory: unknown;
+  };
+  readonly "setup-rule-site": {
+    readonly command: unknown;
+    readonly example: unknown;
+  };
+  readonly "setup-rule-ask": {
+    readonly command: unknown;
+  };
+  readonly "setup-asked-command": {
+    readonly signIn: unknown;
+    readonly runner: unknown;
+  };
+  readonly "setup-asked-flag": {
+    readonly site: unknown;
+    readonly workspace: unknown;
+    readonly project: unknown;
+    readonly wait: unknown;
+  };
+  readonly "setup-asked-site": {
+    readonly flag: unknown;
+    readonly example: unknown;
+  };
+  readonly "setup-asked-wait-secs": {
+    readonly flag: unknown;
+    readonly secs: unknown;
+  };
+  readonly "setup-asked-name": {
+    readonly workspace: unknown;
+    readonly project: unknown;
+  };
+  readonly "setup-asked-project": {
+    readonly runner: unknown;
+    readonly workspace: unknown;
+    readonly project: unknown;
+  };
+  readonly "setup-platforms-and": {
+    readonly one: unknown;
+    readonly other: unknown;
+  };
+  readonly "setup-unserved-found": {
+    readonly served: unknown;
+    readonly platform: unknown;
+  };
+  readonly "setup-unserved-tell": {
+    readonly served: unknown;
+  };
+  readonly "setup-node-needs": {
+    readonly major: unknown;
+  };
+  readonly "setup-node-unsaid": Record<never, never>;
+  readonly "setup-node-is": {
+    readonly major: unknown;
+  };
+  readonly "setup-node-found": {
+    readonly found: unknown;
+    readonly needs: unknown;
+  };
+  readonly "setup-node-tell": {
+    readonly needs: unknown;
+  };
+  readonly "setup-node-when": {
+    readonly needs: unknown;
+  };
+  readonly "setup-waiting-finish": {
+    readonly address: unknown;
+  };
+  readonly "setup-waiting-opened": {
+    readonly address: unknown;
+  };
+  readonly "setup-waiting-unfinished": {
+    readonly secs: unknown;
+  };
+  readonly "setup-waiting-open-tell": {
+    readonly finish: unknown;
+  };
+  readonly "setup-waiting-attached": Record<never, never>;
+  readonly "setup-waiting-unopened": Record<never, never>;
+  readonly "setup-waiting-unopened-tell": {
+    readonly address: unknown;
+  };
+  readonly "setup-ended-no-renewal-found": Record<never, never>;
+  readonly "setup-ended-no-renewal-tell": Record<never, never>;
+  readonly "setup-ended-no-renewal-when": Record<never, never>;
+  readonly "setup-ended-declined-found": Record<never, never>;
+  readonly "setup-ended-declined-tell": {
+    readonly left: unknown;
+  };
+  readonly "setup-ended-declined-when": Record<never, never>;
+  readonly "setup-ended-refused-found": Record<never, never>;
+  readonly "setup-ended-refused-tell": Record<never, never>;
+  readonly "setup-ended-mismatched-found": Record<never, never>;
+  readonly "setup-ended-mismatched-tell": Record<never, never>;
+  readonly "setup-ended-exchange-found": Record<never, never>;
+  readonly "setup-ended-exchange-tell": Record<never, never>;
+  readonly "setup-ended-site-refused-found": Record<never, never>;
+  readonly "setup-ended-site-refused-tell": Record<never, never>;
+  readonly "setup-ended-expired-found": Record<never, never>;
+  readonly "setup-ended-expired-tell": Record<never, never>;
+  readonly "setup-ended-expired-when": Record<never, never>;
+  readonly "setup-ended-unusable-found": Record<never, never>;
+  readonly "setup-ended-unusable-tell": Record<never, never>;
+  readonly "setup-ended-busy-found": Record<never, never>;
+  readonly "setup-ended-busy-tell": Record<never, never>;
+  readonly "setup-ended-faulted-found": Record<never, never>;
+  readonly "setup-ended-faulted-tell": Record<never, never>;
+  readonly "setup-ended-site-changed": Record<never, never>;
+  readonly "setup-ended-workspaces-unread": Record<never, never>;
+  readonly "setup-fault-unwritable-found": {
+    readonly path: unknown;
+  };
+  readonly "setup-fault-unwritable-tell": {
+    readonly path: unknown;
+  };
+  readonly "setup-fault-unwritable-when": {
+    readonly path: unknown;
+  };
+  readonly "setup-fault-unreadable-found": {
+    readonly path: unknown;
+  };
+  readonly "setup-fault-unreadable-tell": {
+    readonly path: unknown;
+  };
+  readonly "setup-fault-unreadable-when": {
+    readonly path: unknown;
+  };
+  readonly "setup-fault-unkept-found": {
+    readonly path: unknown;
+  };
+  readonly "setup-fault-unkept-tell": {
+    readonly path: unknown;
+  };
+  readonly "setup-fault-homeless-found": Record<never, never>;
+  readonly "setup-fault-homeless-tell": Record<never, never>;
+  readonly "setup-fault-homeless-when": Record<never, never>;
+  readonly "setup-fault-unstarted-found": Record<never, never>;
+  readonly "setup-fault-unstarted-tell": Record<never, never>;
+  readonly "setup-fault-unexpected-found": Record<never, never>;
+  readonly "setup-fault-unexpected-tell": Record<never, never>;
+  readonly "setup-busy-found": Record<never, never>;
+  readonly "setup-busy-found-pid": {
+    readonly running: unknown;
+    readonly pid: unknown;
+  };
+  readonly "setup-busy-tell": {
+    readonly came: unknown;
+  };
+  readonly "setup-busy-when": Record<never, never>;
+  readonly "setup-issuer-found": Record<never, never>;
+  readonly "setup-issuer-tell": Record<never, never>;
+  readonly "setup-unreachable-found": Record<never, never>;
+  readonly "setup-unreachable-tell": {
+    readonly site: unknown;
+    readonly came: unknown;
+  };
+  readonly "setup-unconfigured-found": Record<never, never>;
+  readonly "setup-unconfigured-tell": {
+    readonly site: unknown;
+    readonly came: unknown;
+  };
+  readonly "setup-forgotten": Record<never, never>;
+  readonly "setup-workspaces-unread-found": {
+    readonly outcome: unknown;
+  };
+  readonly "setup-workspaces-unread-tell": Record<never, never>;
+  readonly "setup-failed-tell": Record<never, never>;
+  readonly "setup-failed-stale": {
+    readonly found: unknown;
+  };
+  readonly "setup-stale-tell": Record<never, never>;
+  readonly "setup-stale-when": Record<never, never>;
+  readonly "setup-hosted-found": {
+    readonly project: unknown;
+  };
+  readonly "setup-step-unread": {
+    readonly subject: unknown;
+    readonly fate: unknown;
+  };
+  readonly "setup-step-named": {
+    readonly name: unknown;
+    readonly detail: unknown;
+  };
+  readonly "setup-read-workspaces": Record<never, never>;
+  readonly "setup-read-inventory": Record<never, never>;
+  readonly "setup-read-settings": Record<never, never>;
+  readonly "setup-read-installations": Record<never, never>;
+  readonly "setup-read-portal-grant": Record<never, never>;
+  readonly "setup-read-worker-grant": Record<never, never>;
+  readonly "setup-read-repositories": Record<never, never>;
+  readonly "setup-read-work": Record<never, never>;
+  readonly "setup-read-placement": Record<never, never>;
+  readonly "setup-read-tickets": Record<never, never>;
+  readonly "setup-read-drafts": Record<never, never>;
+  readonly "setup-read-landings": Record<never, never>;
+  readonly "setup-fate-refused": Record<never, never>;
+  readonly "setup-fate-cut": Record<never, never>;
+  readonly "setup-fate-unasked": Record<never, never>;
+  readonly "setup-fate-failed": {
+    readonly outcome: unknown;
+  };
+  readonly "setup-step-workspace-none": Record<never, never>;
+  readonly "setup-step-workspace-unnamed": {
+    readonly workspace: unknown;
+  };
+  readonly "setup-step-workspace-seen": {
+    readonly workspace: unknown;
+  };
+  readonly "setup-step-workspace-member": {
+    readonly workspace: unknown;
+  };
+  readonly "setup-step-projectless": {
+    readonly workspace: unknown;
+  };
+  readonly "setup-step-projectless-named": {
+    readonly workspace: unknown;
+    readonly project: unknown;
+  };
+  readonly "setup-step-projectless-unshown": {
+    readonly workspace: unknown;
+  };
+  readonly "setup-step-projectless-unshown-named": {
+    readonly workspace: unknown;
+    readonly project: unknown;
+  };
+  readonly "setup-step-north-star": {
+    readonly project: unknown;
+    readonly section: unknown;
+  };
+  readonly "setup-app-portal": Record<never, never>;
+  readonly "setup-app-worker": Record<never, never>;
+  readonly "setup-step-apps-none": {
+    readonly account: unknown;
+  };
+  readonly "setup-step-apps-none-owner": {
+    readonly account: unknown;
+    readonly repository: unknown;
+  };
+  readonly "setup-step-app-lacked": {
+    readonly account: unknown;
+    readonly has: unknown;
+    readonly lacks: unknown;
+  };
+  readonly "setup-step-app-lacked-owner": {
+    readonly account: unknown;
+    readonly repository: unknown;
+    readonly has: unknown;
+    readonly lacks: unknown;
+  };
+  readonly "setup-step-ungranted": {
+    readonly app: unknown;
+    readonly account: unknown;
+    readonly repository: unknown;
+  };
+  readonly "setup-step-granted": {
+    readonly account: unknown;
+    readonly repository: unknown;
+  };
+  readonly "setup-step-remote": {
+    readonly remote: unknown;
+  };
+  readonly "setup-step-unconfigured": {
+    readonly repository: unknown;
+  };
+  readonly "setup-step-runner-offline": Record<never, never>;
+  readonly "setup-step-runner-live": Record<never, never>;
+  readonly "setup-step-runner-hosted": Record<never, never>;
+  readonly "setup-step-chat-host-offline": {
+    readonly runner: unknown;
+  };
+  readonly "setup-step-chat-host-none": {
+    readonly runner: unknown;
+  };
+  readonly "setup-step-ticket-done": {
+    readonly ticket: unknown;
+  };
+  readonly "setup-step-ticket-landed": {
+    readonly ticket: unknown;
+  };
+  readonly "setup-step-ticket-proposed": {
+    readonly ticket: unknown;
+  };
+  readonly "setup-step-ticket-escalated": {
+    readonly ticket: unknown;
+  };
+  readonly "setup-step-ticket-unstarted": {
+    readonly ticket: unknown;
+  };
+  readonly "setup-step-ticket-moving": {
+    readonly ticket: unknown;
+    readonly phase: unknown;
+  };
+  readonly "setup-step-ticket-draft": {
+    readonly ticket: unknown;
+  };
+  readonly "setup-remote-among": Record<never, never>;
+  readonly "setup-remote-among-within": {
+    readonly workspace: unknown;
+  };
+  readonly "setup-remote-unbound": {
+    readonly remote: unknown;
+    readonly among: unknown;
+  };
+  readonly "setup-remote-one": {
+    readonly remote: unknown;
+    readonly project: unknown;
+    readonly among: unknown;
+    readonly workspaceFlag: unknown;
+    readonly projectFlag: unknown;
+  };
+  readonly "setup-remote-several": {
+    readonly remote: unknown;
+    readonly among: unknown;
+    readonly projects: unknown;
+  };
+  readonly "setup-remote-unread": {
+    readonly remote: unknown;
+    readonly among: unknown;
+  };
+  readonly "setup-pressed-connect": Record<never, never>;
+  readonly "setup-pressed-add": Record<never, never>;
+  readonly "setup-pressed-retry": Record<never, never>;
+  readonly "setup-pressed-dispatch": Record<never, never>;
+  readonly "setup-mend-admin-tell": {
+    readonly workspace: unknown;
+    readonly people: unknown;
+  };
+  readonly "setup-mend-admin-when": {
+    readonly workspace: unknown;
+  };
+  readonly "setup-mend-workspace-none": Record<never, never>;
+  readonly "setup-mend-workspace-unnamed": {
+    readonly workspace: unknown;
+  };
+  readonly "setup-mend-workspace-tell": {
+    readonly none: unknown;
+    readonly invites: unknown;
+    readonly naming: unknown;
+    readonly create: unknown;
+  };
+  readonly "setup-mend-workspace-when": Record<never, never>;
+  readonly "setup-mend-project-tell": {
+    readonly page: unknown;
+    readonly named: unknown;
+    readonly create: unknown;
+  };
+  readonly "setup-mend-project-when": Record<never, never>;
+  readonly "setup-mend-north-star-tell": {
+    readonly page: unknown;
+    readonly edit: unknown;
+    readonly section: unknown;
+    readonly save: unknown;
+  };
+  readonly "setup-mend-north-star-when": {
+    readonly section: unknown;
+  };
+  readonly "setup-mend-grant-tell": {
+    readonly app: unknown;
+    readonly account: unknown;
+    readonly repository: unknown;
+    readonly page: unknown;
+    readonly add: unknown;
+    readonly status: unknown;
+    readonly label: unknown;
+  };
+  readonly "setup-mend-grant-when": {
+    readonly app: unknown;
+    readonly repository: unknown;
+  };
+  readonly "setup-mend-account-tell": {
+    readonly page: unknown;
+    readonly connect: unknown;
+  };
+  readonly "setup-mend-github-when": Record<never, never>;
+  readonly "setup-mend-worker-tell": {
+    readonly page: unknown;
+    readonly install: unknown;
+    readonly account: unknown;
+  };
+  readonly "setup-mend-worker-when": {
+    readonly account: unknown;
+  };
+  readonly "setup-mend-portal-tell": {
+    readonly page: unknown;
+    readonly connect: unknown;
+    readonly account: unknown;
+  };
+  readonly "setup-mend-binding-yours": Record<never, never>;
+  readonly "setup-mend-binding-mine": {
+    readonly repository: unknown;
+  };
+  readonly "setup-mend-binding-tell": {
+    readonly page: unknown;
+    readonly add: unknown;
+    readonly repository: unknown;
+  };
+  readonly "setup-mend-binding-when": Record<never, never>;
+  readonly "setup-mend-configuration-tell": {
+    readonly repository: unknown;
+    readonly page: unknown;
+    readonly retry: unknown;
+  };
+  readonly "setup-mend-configuration-when": {
+    readonly retry: unknown;
+    readonly repository: unknown;
+  };
+  readonly "setup-offer-when": Record<never, never>;
+  readonly "setup-claude-on-subscription": Record<never, never>;
+  readonly "setup-claude-on-api-key": Record<never, never>;
+  readonly "setup-claude-on-bedrock": Record<never, never>;
+  readonly "setup-claude-on-vertex": Record<never, never>;
+  readonly "setup-claude-on-foundry": Record<never, never>;
+  readonly "setup-runs-in-containers": Record<never, never>;
+  readonly "setup-runs-on": {
+    readonly claude: unknown;
+  };
+  readonly "setup-next-runner": Record<never, never>;
+  readonly "setup-mend-runner-running-when": Record<never, never>;
+  readonly "setup-mend-package-newer": {
+    readonly program: unknown;
+  };
+  readonly "setup-mend-chat-too": Record<never, never>;
+  readonly "setup-mend-runner-live-offer": {
+    readonly project: unknown;
+    readonly runs: unknown;
+    readonly program: unknown;
+    readonly chat: unknown;
+  };
+  readonly "setup-mend-runner-live-tell": Record<never, never>;
+  readonly "setup-mend-runner-put-chat": {
+    readonly program: unknown;
+    readonly runs: unknown;
+  };
+  readonly "setup-mend-runner-put": {
+    readonly program: unknown;
+    readonly runs: unknown;
+  };
+  readonly "setup-mend-chat-by-hand": {
+    readonly page: unknown;
+    readonly register: unknown;
+    readonly linux: unknown;
+    readonly darwin: unknown;
+    readonly agent: unknown;
+  };
+  readonly "setup-mend-chats": {
+    readonly project: unknown;
+  };
+  readonly "setup-mend-chat-besides": {
+    readonly project: unknown;
+  };
+  readonly "setup-mend-chat-live-offer": {
+    readonly chats: unknown;
+    readonly program: unknown;
+    readonly besides: unknown;
+    readonly project: unknown;
+  };
+  readonly "setup-mend-chat-live-tell": {
+    readonly chats: unknown;
+  };
+  readonly "setup-mend-chat-host-when": Record<never, never>;
+  readonly "setup-mend-chat-offer": {
+    readonly chats: unknown;
+    readonly program: unknown;
+    readonly runs: unknown;
+    readonly besides: unknown;
+    readonly project: unknown;
+  };
+  readonly "setup-mend-chat-tell": {
+    readonly chats: unknown;
+    readonly here: unknown;
+    readonly byHand: unknown;
+  };
+  readonly "setup-mend-runner-elsewhere": {
+    readonly page: unknown;
+    readonly add: unknown;
+  };
+  readonly "setup-mend-runner-instead": {
+    readonly page: unknown;
+    readonly add: unknown;
+  };
+  readonly "setup-mend-runner-offer": {
+    readonly put: unknown;
+    readonly page: unknown;
+    readonly add: unknown;
+  };
+  readonly "setup-mend-runner-mac": {
+    readonly program: unknown;
+    readonly page: unknown;
+    readonly add: unknown;
+  };
+  readonly "setup-mend-runner-serviceless": {
+    readonly elsewhere: unknown;
+  };
+  readonly "setup-mend-runner-engineless": {
+    readonly none: unknown;
+    readonly instead: unknown;
+  };
+  readonly "setup-mend-runner-docker": {
+    readonly why: unknown;
+    readonly state: unknown;
+    readonly mend: unknown;
+    readonly instead: unknown;
+  };
+  readonly "setup-mend-runner-or-running": {
+    readonly when: unknown;
+  };
+  readonly "setup-mend-ticket-create": {
+    readonly page: unknown;
+    readonly create: unknown;
+  };
+  readonly "setup-mend-ticket-tell": {
+    readonly create: unknown;
+  };
+  readonly "setup-mend-ticket-when": Record<never, never>;
+  readonly "setup-mend-release-tell": {
+    readonly ticket: unknown;
+    readonly create: unknown;
+  };
+  readonly "setup-mend-dispatch-tell": {
+    readonly ticket: unknown;
+    readonly page: unknown;
+    readonly dispatch: unknown;
+  };
+  readonly "setup-mend-dispatch-when": {
+    readonly ticket: unknown;
+  };
+  readonly "setup-mend-landing-tell": {
+    readonly ticket: unknown;
+    readonly phase: unknown;
+    readonly page: unknown;
+  };
+  readonly "setup-mend-decision-tell": {
+    readonly ticket: unknown;
+    readonly page: unknown;
+  };
+  readonly "setup-mend-decision-when": {
+    readonly ticket: unknown;
+  };
+  readonly "setup-mend-unread-found": {
+    readonly step: unknown;
+    readonly detail: unknown;
+  };
+  readonly "setup-mend-unread-refused-tell": {
+    readonly step: unknown;
+  };
+  readonly "setup-mend-unread-cut-tell": {
+    readonly step: unknown;
+  };
+  readonly "setup-ask-workspace": Record<never, never>;
+  readonly "setup-ask-project": {
+    readonly workspace: unknown;
+  };
+  readonly "setup-ask-more": {
+    readonly names: unknown;
+    readonly more: unknown;
+  };
+  readonly "setup-listed": {
+    readonly names: unknown;
+    readonly last: unknown;
+  };
+  readonly "setup-ask-part": Record<never, never>;
+  readonly "setup-ask": {
+    readonly of: unknown;
+    readonly names: unknown;
+    readonly whole: unknown;
+    readonly flag: unknown;
+  };
+  readonly "setup-ask-unnamed": {
+    readonly of: unknown;
+    readonly whole: unknown;
+    readonly flag: unknown;
+  };
+  readonly "setup-done": {
+    readonly project: unknown;
+    readonly how: unknown;
+    readonly detail: unknown;
+    readonly merge: unknown;
+    readonly url: unknown;
+    readonly page: unknown;
+  };
+  readonly "setup-page-signed-in": Record<never, never>;
+  readonly "setup-page-unfinished": Record<never, never>;
+  readonly "setup-page-answered": Record<never, never>;
+  readonly "setup-page-nothing": Record<never, never>;
+  readonly "setup-built-starts": {
+    readonly path: unknown;
+  };
+  readonly "setup-built-absent": {
+    readonly path: unknown;
+  };
+  readonly "setup-built-unended": {
+    readonly path: unknown;
+  };
+  readonly "setup-built-unstarted": {
+    readonly path: unknown;
+    readonly exit: unknown;
+  };
+  readonly "setup-built-unstarted-said": {
+    readonly path: unknown;
+    readonly exit: unknown;
+    readonly said: unknown;
+  };
 }

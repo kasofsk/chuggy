@@ -71,10 +71,3 @@ function setupShellWord(text: string): string {
 export function setupCommandLine(words: readonly string[]): string {
   return words.map(setupShellWord).join(" ");
 }
-
-/** Names as a sentence lists them, the last after `or`. */
-export function setupListed(names: readonly string[]): string {
-  const flat = names.map(setupFlat);
-  const last = flat.at(-1) ?? "";
-  return flat.length < 2 ? last : `${flat.slice(0, -1).join(", ")} or ${last}`;
-}
