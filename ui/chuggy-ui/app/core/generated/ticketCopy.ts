@@ -39,9 +39,6 @@ export interface TicketCopy {
   readonly "ticket-turn-count": {
     readonly count: unknown;
   };
-  readonly "ticket-model-count": {
-    readonly count: unknown;
-  };
   readonly "ticket-file-count": {
     readonly count: unknown;
   };
@@ -50,6 +47,12 @@ export interface TicketCopy {
   readonly "ticket-tab-configuration": Record<never, never>;
   readonly "ticket-tab-usage": Record<never, never>;
   readonly "ticket-tabs-nav-label": Record<never, never>;
+  readonly "ticket-cycle-number": {
+    readonly cycle: unknown;
+  };
+  readonly "ticket-stage-number": {
+    readonly stage: unknown;
+  };
   readonly "ticket-page-untitled": Record<never, never>;
   readonly "ticket-page-not-found": Record<never, never>;
   readonly "ticket-page-no-configuration": Record<never, never>;
@@ -68,6 +71,8 @@ export interface TicketCopy {
   readonly "ticket-revoke-confirm": Record<never, never>;
   readonly "ticket-draft-delete-confirm-title": Record<never, never>;
   readonly "ticket-revoke-warning": Record<never, never>;
+  readonly "ticket-actions-request-failed": Record<never, never>;
+  readonly "ticket-actions-attempt-cancelled": Record<never, never>;
   readonly "ticket-actions-sentence-dispatch": Record<never, never>;
   readonly "ticket-actions-sentence-resume-default": Record<never, never>;
   readonly "ticket-actions-sentence-resume-rework": Record<never, never>;
@@ -81,6 +86,7 @@ export interface TicketCopy {
   readonly "ticket-overrides-not-saved-because": {
     readonly reason: unknown;
   };
+  readonly "ticket-overrides-save-failed": Record<never, never>;
   readonly "ticket-overrides-invalid": Record<never, never>;
   readonly "ticket-overrides-saving": Record<never, never>;
   readonly "ticket-overrides-saved": Record<never, never>;
@@ -118,7 +124,14 @@ export interface TicketCopy {
   readonly "ticket-steps-in-order": Record<never, never>;
   readonly "ticket-steps-none-run-yet": Record<never, never>;
   readonly "ticket-steps-heading": Record<never, never>;
+  readonly "ticket-steps-phase-work": Record<never, never>;
+  readonly "ticket-steps-phase-evaluation": Record<never, never>;
+  readonly "ticket-steps-phase-landing": Record<never, never>;
   readonly "ticket-now-watch": Record<never, never>;
+  readonly "ticket-now-title": {
+    readonly status: unknown;
+    readonly step: unknown;
+  };
   readonly "ticket-now-prefix": {
     readonly doing: unknown;
   };
@@ -131,6 +144,13 @@ export interface TicketCopy {
   };
   readonly "ticket-term-run": Record<never, never>;
   readonly "ticket-situation-step-work": Record<never, never>;
+  readonly "ticket-situation-running-work": Record<never, never>;
+  readonly "ticket-situation-where": {
+    readonly outcome: unknown;
+    readonly cycle: unknown;
+  };
+  readonly "ticket-situation-step-runners": Record<never, never>;
+  readonly "ticket-situation-step-repositories": Record<never, never>;
   readonly "ticket-dispatch-aria-label": {
     readonly number: unknown;
   };
@@ -179,6 +199,46 @@ export interface TicketCopy {
   readonly "ticket-landing-queue-removal": {
     readonly removal: unknown;
   };
+  readonly "ticket-landing-attempts": Record<never, never>;
+  readonly "ticket-landing-removal-by": {
+    readonly reason: unknown;
+    readonly actor: unknown;
+  };
+  readonly "ticket-landing-hold-removal": {
+    readonly hold: unknown;
+    readonly removal: unknown;
+  };
+  readonly "ticket-landing-held-for": {
+    readonly age: unknown;
+    readonly hold: unknown;
+  };
+  readonly "ticket-landing-held": {
+    readonly hold: unknown;
+  };
+  readonly "ticket-landing-wait-state": {
+    readonly wait: unknown;
+    readonly state: unknown;
+  };
+  readonly "ticket-landing-wait-checked": {
+    readonly wait: unknown;
+    readonly checked: unknown;
+  };
+  readonly "ticket-landing-failure-files": {
+    readonly failure: unknown;
+    readonly files: unknown;
+  };
+  readonly "ticket-landing-merged": Record<never, never>;
+  readonly "ticket-landing-unevaluated-head": Record<never, never>;
+  readonly "ticket-landing-pull-number": {
+    readonly number: unknown;
+  };
+  readonly "ticket-landing-summary-running": Record<never, never>;
+  readonly "ticket-landing-summary-held": Record<never, never>;
+  readonly "ticket-landing-summary-waiting": Record<never, never>;
+  readonly "ticket-landing-summary-failed": Record<never, never>;
+  readonly "ticket-landing-summary-escalated": Record<never, never>;
+  readonly "ticket-landing-summary-proposed": Record<never, never>;
+  readonly "ticket-landing-summary-invalidated": Record<never, never>;
   readonly "ticket-usage-basis-list": Record<never, never>;
   readonly "ticket-usage-models-note": {
     readonly count: unknown;
@@ -221,6 +281,7 @@ export interface TicketCopy {
   };
   readonly "ticket-transcript-earlier-not-held": Record<never, never>;
   readonly "ticket-result-end-cut": Record<never, never>;
+  readonly "ticket-artifact-no-preview": Record<never, never>;
   readonly "ticket-sections-needs-you": Record<never, never>;
   readonly "ticket-sections-in-progress": Record<never, never>;
   readonly "ticket-sections-up-next": Record<never, never>;

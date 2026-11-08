@@ -23,7 +23,6 @@ import {
 } from "./screenHarness.tsx";
 import type { ApiDouble } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
-import { ticketHeaderMenuLabel } from "../app/browser/ticket/TicketHeaderMenu.tsx";
 import {
   abilitiesEvery,
   abilitiesOver,
@@ -247,7 +246,7 @@ test("a revoke the actor refuses closes the ask and says so where any refusal is
 
 async function parkedAnswers(): Promise<readonly boolean[]> {
   const resume = screen.queryByRole("button", { name: "Resume" }) !== null;
-  const menu = screen.queryByRole("button", { name: ticketHeaderMenuLabel });
+  const menu = screen.queryByRole("button", { name: "More actions" });
   const revoke =
     menu !== null &&
     within(await ticketHeaderMenuOpened()).queryByRole("menuitem", {

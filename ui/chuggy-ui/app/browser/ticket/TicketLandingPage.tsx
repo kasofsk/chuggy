@@ -47,7 +47,9 @@ function TicketLandingHead(props: {
       <div className="ticket-run-heading">
         <TicketRunMarkDrawn mark={marked.mark} tone={marked.tone} />
         <h2>{text({ id: "ticket-landing-heading" })}</h2>
-        <span className="ticket-run-cycle">{cycleLabel(landing.cycle)}</span>
+        <span className="ticket-run-cycle">
+          {text(cycleLabel(landing.cycle))}
+        </span>
         <Pill tone={landing.tone}>{landing.word}</Pill>
       </div>
       {prepared === undefined ? null : (
@@ -111,7 +113,7 @@ function TicketLandingFields(props: {
           <Identity label={merge} />
         </Field>
       )}
-      <Field name={text({ id: "ticket-field-attempts" })}>
+      <Field name={text({ id: "ticket-landing-attempts" })}>
         {landing.detail.attempts}
       </Field>
     </Fields>

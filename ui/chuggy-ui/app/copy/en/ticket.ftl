@@ -46,10 +46,6 @@ ticket-turn-count = { $count ->
     [one] { $count } { -turn }
    *[other] { $count } { -turn(form: "plural") }
 }
-ticket-model-count = { $count ->
-    [one] { $count } model
-   *[other] { $count } models
-}
 ticket-file-count = { $count ->
     [one] { $count } file
    *[other] { $count } files
@@ -62,6 +58,11 @@ ticket-tab-runs = { -run(case: "upper", form: "plural") }
 ticket-tab-configuration = { -configuration(case: "upper") }
 ticket-tab-usage = Usage
 ticket-tabs-nav-label = { -ticket(case: "upper") }
+
+## A ticket's cycles and stages by number: `app/core/ticketLedger.ts`.
+
+ticket-cycle-number = { -cycle(case: "upper") } { $cycle }
+ticket-stage-number = { -stage(case: "upper") } { $stage }
 
 ## The page itself: `app/browser/TicketPage.tsx`.
 
@@ -83,6 +84,9 @@ ticket-revoke-confirm-title = { -revoke(case: "upper") } this { -ticket }?
 ticket-revoke-confirm = { -revoke(case: "upper") } { -ticket }
 ticket-draft-delete-confirm-title = Delete this { -draft }?
 ticket-revoke-warning = Ends this { -ticket } and blocks its { -dependent(form: "plural") }. { ticket-cant-be-undone }
+ticket-actions-request-failed = the request failed
+# spells -attempt: one try at an action, not at a run
+ticket-actions-attempt-cancelled = this attempt was cancelled
 
 ## What a resume, a dispatch or any other action does, as the line a reader
 ## hovers the button for: `app/core/ticketActions.ts`.
@@ -105,6 +109,7 @@ ticket-draft-untitled = { -draft(case: "upper") }
 
 ticket-overrides-not-saved = Not saved
 ticket-overrides-not-saved-because = Not saved · { $reason }
+ticket-overrides-save-failed = the save failed
 ticket-overrides-invalid = Not saved · these are not { -override(form: "plural") } a { -ticket } may hold
 ticket-overrides-saving = Saving…
 ticket-overrides-saved = { -override(case: "upper", form: "plural") } saved
@@ -150,7 +155,11 @@ ticket-steps-in-order = in order
 # spells -run: "run" is the verb (none have run yet), not the noun
 ticket-steps-none-run-yet = None run yet
 ticket-steps-heading = Steps
+ticket-steps-phase-work = { -work-stage(case: "upper") }
+ticket-steps-phase-evaluation = { -evaluation(case: "upper") }
+ticket-steps-phase-landing = { -landing(case: "upper") }
 ticket-now-watch = Watch
+ticket-now-title = { $status } { $step }
 ticket-now-prefix = Now: { $doing }
 ticket-now-aria-label = Now
 ticket-now-personal-runners = { -personal-runner(case: "upper", form: "plural") }
@@ -159,6 +168,10 @@ ticket-needs-you-aria-label = Needs you
 ticket-situation-read-the = Read the { $step }
 ticket-term-run = { -run }
 ticket-situation-step-work = { -work-stage }
+ticket-situation-running-work = { -work-stage(case: "upper") }
+ticket-situation-where = { $outcome } in { -cycle } { $cycle }
+ticket-situation-step-runners = { -runner(case: "upper", form: "plural") }
+ticket-situation-step-repositories = { -repository(case: "upper", form: "plural") }
 
 ## `TicketStateChip.tsx`: a dependency chip and the dispatch button it sits in.
 
@@ -213,6 +226,25 @@ ticket-landing-checked = Checked
 ticket-landing-details-label = Details
 ticket-landing-details-hide = Hide
 ticket-landing-queue-removal = Queue removal: { $removal }
+# spells -attempt: tries at the landing, not at a run
+ticket-landing-attempts = Attempts
+ticket-landing-removal-by = { $reason } by { $actor }
+ticket-landing-hold-removal = { $hold }: { $removal }
+ticket-landing-held-for = Held { $age } · { $hold }
+ticket-landing-held = Held · { $hold }
+ticket-landing-wait-state = { $wait } · { $state }
+ticket-landing-wait-checked = { $wait } · checked { $checked }
+ticket-landing-failure-files = { $failure } · { $files }
+ticket-landing-merged = Merged
+ticket-landing-unevaluated-head = Unevaluated head
+ticket-landing-pull-number = PR #{ $number }
+ticket-landing-summary-running = { -landing(case: "upper") } running
+ticket-landing-summary-held = { -landing(case: "upper") } held
+ticket-landing-summary-waiting = { -landing(case: "upper") } waiting
+ticket-landing-summary-failed = { -landing(case: "upper") } failed
+ticket-landing-summary-escalated = { -landing(case: "upper") } { -escalation }
+ticket-landing-summary-proposed = { -landing(case: "upper") } proposed
+ticket-landing-summary-invalidated = { -landing(case: "upper") } invalidated
 
 ## The Usage tab: `TicketUsage.tsx`.
 
@@ -251,9 +283,11 @@ ticket-transcript-gap-missing = batch { $batch }: bytes unavailable
 ticket-transcript-gap-corrupt = batch { $batch }: bytes corrupt
 ticket-transcript-earlier-not-held = Earlier { -conversation } not held
 
-## The result a run's result opens, and its artifacts: `TicketResult.tsx`.
+## The result a run's result opens, and its artifacts: `TicketResult.tsx`,
+## `app/core/artifactPreview.ts`.
 
 ticket-result-end-cut = End cut
+ticket-artifact-no-preview = No preview
 
 ## The inbox's section titles, and a parked row's badge: `app/core/ticketSections.ts`.
 

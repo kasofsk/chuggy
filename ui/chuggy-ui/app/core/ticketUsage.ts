@@ -16,6 +16,8 @@ import { runSpendOf } from "./runTotals.ts";
 import type { RunSpend } from "./runTotals.ts";
 import { ticketOverviewRunTime } from "./ticketOverview.ts";
 import type { TicketOverviewRunTime } from "./ticketOverview.ts";
+import { copyOrDataText } from "./copy.ts";
+import type { CopyText } from "./copy.ts";
 import { stageLabel } from "./ticketLedger.ts";
 import type { StageNames } from "./ticketLedger.ts";
 
@@ -61,6 +63,7 @@ export function ticketUsageStepsOf(
   executions: readonly ExecutionSummary[],
   names: StageNames,
   nowMs: number,
+  text: CopyText,
 ): TicketUsageSteps | undefined {
   const total = ticketUsageStep("Total", executions, nowMs);
   if (total === undefined) return undefined;
@@ -77,7 +80,7 @@ export function ticketUsageStepsOf(
       const step = ticketUsageStep(
         ordinal === ticketUsageWorkOrdinal
           ? "Work"
-          : stageLabel(ordinal, names),
+          : copyOrDataText(text, stageLabel(ordinal, names)),
         runs,
         nowMs,
       );

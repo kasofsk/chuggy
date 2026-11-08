@@ -63,9 +63,14 @@ function TicketNowHead(props: {
   return (
     <div className="ticket-card-head">
       <TicketRunMarkDrawn mark="Spin" tone="live" />
-      <strong className="ticket-card-title">{`${props.status} ${running.step}`}</strong>
+      <strong className="ticket-card-title">
+        {text({
+          id: "ticket-now-title",
+          args: { status: props.status, step: running.step },
+        })}
+      </strong>
       <span className="ticket-card-where">
-        {`${cycleLabel(running.cycle)} · `}
+        {`${text(cycleLabel(running.cycle))} · `}
         <TicketRunTime runs={[props.run]} nowMs={props.nowMs} />
       </span>
       <span className="ticket-card-action">

@@ -34,6 +34,7 @@ import { Figure } from "../ui/Figure.tsx";
 import { Identity } from "../ui/Identity.tsx";
 import { LedgerBlock, LedgerRow } from "../ui/Ledger.tsx";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
+import { copyOrDataText } from "../../core/copy.ts";
 
 import "./ticket.css";
 
@@ -56,10 +57,11 @@ function LandingFragment(props: {
   readonly fragment: TicketLandingFragment;
 }): ReactNode {
   const fragment = props.fragment;
+  const text = useCopyText();
   if (!ticketLandingFragmentSays(fragment)) return null;
   return (
     <span className="ticket-landing-fragment">
-      {fragment.text}
+      {fragment.text === undefined ? null : copyOrDataText(text, fragment.text)}
       {fragment.link === undefined ? null : (
         <a href={fragment.link.href} rel="noopener noreferrer" target="_blank">
           {fragment.link.host}
@@ -67,14 +69,16 @@ function LandingFragment(props: {
       )}
       {fragment.commit === undefined ? null : (
         <span className="ticket-landing-part">
-          {fragment.commit.name}
+          {fragment.commit.name === undefined
+            ? null
+            : text(fragment.commit.name)}
           <Identity label={fragment.commit.label} />
         </span>
       )}
       {fragment.caveat === undefined ? null : (
         <span className="ticket-landing-part">
           <span aria-hidden="true">·</span>
-          {fragment.caveat}
+          {text(fragment.caveat)}
         </span>
       )}
     </span>
@@ -174,7 +178,7 @@ function LandingDetail(props: {
           <Figure figure={sinceFigure(detail.preparedAt, props.nowMs)} />
         </Field>
       )}
-      <Field name={text({ id: "ticket-field-attempts" })}>
+      <Field name={text({ id: "ticket-landing-attempts" })}>
         {runCountLabel(detail.attempts)}
       </Field>
       <LandingConflicts detail={detail} />
@@ -241,7 +245,9 @@ export function LandingBlock(props: {
       {props.landings.map((landing) => (
         <LandingRow
           key={landing.key}
-          label={props.cycleNamed ? cycleLabel(landing.cycle) : landingWord}
+          label={
+            props.cycleNamed ? text(cycleLabel(landing.cycle)) : landingWord
+          }
           landing={landing}
           nowMs={props.nowMs}
         />

@@ -12,7 +12,14 @@
 
 import { expect, test } from "vitest";
 
-import type { Cycle, StageRow, TaskSet } from "../app/core/ticketLedger.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
+import { copyOrDataText } from "../app/core/copy.ts";
+import type {
+  Cycle,
+  StageNames,
+  StageRow,
+  TaskSet,
+} from "../app/core/ticketLedger.ts";
 import {
   cycleLabel,
   cycleLastSet,
@@ -606,14 +613,17 @@ test("a stage the page holds no set for is missing rather than skipped", () => {
 });
 
 test("a stage is named as its plan writes it, and by its number where the plan names none", () => {
-  expect(stageLabel(1, ["checks", "review"])).toBe("checks");
-  expect(stageLabel(2, ["checks", "review"])).toBe("review");
-  expect(stageLabel(3, ["checks", "review"])).toBe("Stage 3");
-  expect(stageLabel(2, undefined)).toBe("Stage 2");
+  const named = (stage: number, names: StageNames) =>
+    copyOrDataText(copyTextEn, stageLabel(stage, names));
+  expect(named(1, ["checks", "review"])).toBe("checks");
+  expect(named(2, ["checks", "review"])).toBe("review");
+  expect(named(3, ["checks", "review"])).toBe("Stage 3");
+  expect(named(2, undefined)).toBe("Stage 2");
 });
 
-test("a cycle is labelled by its own ordinal", () => {
-  expect(cycleLabel(3)).toBe("Cycle 3");
+test("a cycle is labelled by its own ordinal, ungrouped however large", () => {
+  expect(copyTextEn(cycleLabel(3))).toBe("Cycle 3");
+  expect(copyTextEn(cycleLabel(1234))).toBe("Cycle 1234");
 });
 
 test("a stage number in the millions draws rows, not that many rows", () => {

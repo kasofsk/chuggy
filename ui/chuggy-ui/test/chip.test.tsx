@@ -163,6 +163,20 @@ test("a ready chip that dispatches is the button around the label, which presses
   expect(press).toHaveBeenCalledTimes(1);
 });
 
+test("a ticket's number is named as it is written, never grouped as a count is", () => {
+  renderCopied(
+    <TicketStateChip
+      ticket={1345}
+      standing="Ready"
+      hint={undefined}
+      dispatch={{ busy: false, effect: "Starts work", press: vi.fn() }}
+    />,
+  );
+  expect(
+    screen.getByRole("button", { name: "Dispatch ticket #1345" }),
+  ).toBeDefined();
+});
+
 test("a count is its state's label holding the number, the button that filters", () => {
   const pressed = vi.fn();
   renderCopied(

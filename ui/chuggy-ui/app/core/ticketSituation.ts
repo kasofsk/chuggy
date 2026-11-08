@@ -23,6 +23,7 @@ import {
   usageResumeLine,
 } from "./codeLabels.ts";
 import type { EscalationStep } from "./codeLabels.ts";
+import { copyOrDataText } from "./copy.ts";
 import type { CopyText } from "./copy.ts";
 import { ticketLandingEscalatedRemoval } from "./ticketLandings.ts";
 import type { TicketLanding } from "./ticketLandings.ts";
@@ -33,7 +34,6 @@ import type {
   StageNames,
 } from "./ticketLedger.ts";
 import {
-  cycleLabel,
   cycleLastSet,
   ledgerLastSet,
   stageEvaluatorsCurrent,
@@ -197,7 +197,18 @@ function needsYouWhere(
     where:
       cycle === undefined || !stopped
         ? undefined
-        : `${ticketRunsCycleOutcome(cycle, reads.names, undefined)} in ${cycleLabel(cycle.ordinal).toLowerCase()}`,
+        : text({
+            id: "ticket-situation-where",
+            args: {
+              outcome: ticketRunsCycleOutcome(
+                cycle,
+                reads.names,
+                undefined,
+                text,
+              ),
+              cycle: String(cycle.ordinal),
+            },
+          }),
     run:
       execution === undefined
         ? undefined
@@ -257,7 +268,10 @@ function executionLive(row: ExecutionSummary): boolean {
 }
 
 /** The current cycle's newest live run, as the step it is. */
-function runningNow(reads: SituationReads): RunningNow | undefined {
+function runningNow(
+  reads: SituationReads,
+  text: CopyText,
+): RunningNow | undefined {
   if (!phaseIsRunning(reads.ticket.phase) || reads.ledger === undefined)
     return undefined;
   const cycle = currentCycle(reads.ledger);
@@ -270,10 +284,12 @@ function runningNow(reads: SituationReads): RunningNow | undefined {
   const identity = live.identity;
   return {
     execution: live,
-    step:
+    step: copyOrDataText(
+      text,
       identity.type === "WorkTask"
-        ? "Work"
+        ? { id: "ticket-situation-running-work" }
         : stageLabel(identity.value.stage, reads.names),
+    ),
     cycle: cycle.ordinal,
   };
 }
@@ -281,6 +297,6 @@ function runningNow(reads: SituationReads): RunningNow | undefined {
 export function ticketSlot(reads: SituationReads, text: CopyText): TicketSlot {
   const asked = needsYou(reads, text);
   if (asked !== undefined) return asked;
-  const running = runningNow(reads);
+  const running = runningNow(reads, text);
   return running === undefined ? { slot: "Nothing" } : { slot: "Now", running };
 }

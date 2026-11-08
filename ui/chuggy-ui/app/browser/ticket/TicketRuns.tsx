@@ -109,6 +109,7 @@ export interface TicketRunsHeld {
 export function useTicketRuns(
   held: TicketPageHeld,
 ): TicketRunsHeld | undefined {
+  const text = useCopyText();
   const page = readValue(held.reads.pageState);
   if (page === undefined) return undefined;
   const program = held.facts.program ?? [];
@@ -121,6 +122,7 @@ export function useTicketRuns(
         ledger.cycles.map((cycle) => cycle.ordinal),
       ),
       { names: held.facts.plan.names, lands: held.facts.plan.lands },
+      text,
     ),
     truncated: ledger.truncated ? ledger.spend.executions : undefined,
   };
@@ -275,10 +277,10 @@ function TicketRunsCycleDrawn(props: {
   return (
     <section
       className="ticket-runs-cycle"
-      aria-label={cycleLabel(cycle.ordinal)}
+      aria-label={text(cycleLabel(cycle.ordinal))}
     >
       <header className="ticket-runs-head">
-        <h3>{cycleLabel(cycle.ordinal)}</h3>
+        <h3>{text(cycleLabel(cycle.ordinal))}</h3>
         {standingLabel === undefined ? null : (
           <Pill tone="neutral">{text(standingLabel)}</Pill>
         )}
@@ -408,7 +410,7 @@ export function TicketRunsRail(props: {
     <nav aria-label={text({ id: "ticket-tab-runs" })} className="ticket-rail">
       {props.runs.cycles.map((cycle) => (
         <div key={cycle.ordinal} className="ticket-rail-cycle">
-          <p className="ticket-rail-head">{cycleLabel(cycle.ordinal)}</p>
+          <p className="ticket-rail-head">{text(cycleLabel(cycle.ordinal))}</p>
           <ul>
             {cycle.rows
               .filter((row) => row.kind !== "Gap")

@@ -313,10 +313,12 @@ function TicketBody(props: {
   readonly nowMs: number;
   readonly children: ReactNode;
 }): ReactNode {
+  const text = useCopyText();
   const facts = ticketPageFacts(
     readValue(props.reads.ticketState),
     readValue(props.reads.pageState),
     readValue(props.reads.configurationState)?.canonical,
+    text,
   );
   return (
     <FreshnessInstants>

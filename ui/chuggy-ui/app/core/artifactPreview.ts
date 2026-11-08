@@ -22,6 +22,7 @@
  */
 
 import type { OutputRenderer } from "../../../../src/contract/rosters.ts";
+import type { Copy } from "./copy.ts";
 
 /** As much of the artifact roster as a preview decision reads. */
 export interface PreviewableArtifact {
@@ -32,14 +33,17 @@ export interface PreviewableArtifact {
 
 export type ArtifactPreviewOffer =
   | { readonly offer: "Previewable"; readonly renderer: OutputRenderer }
-  | { readonly offer: "Unpreviewable"; readonly note: string };
+  | { readonly offer: "Unpreviewable"; readonly note: Copy };
 
 export function artifactPreviewOffer(
   artifact: PreviewableArtifact,
 ): ArtifactPreviewOffer {
   const output = artifact.output;
   if (output === undefined)
-    return { offer: "Unpreviewable", note: "No preview" };
+    return {
+      offer: "Unpreviewable",
+      note: { id: "ticket-artifact-no-preview" },
+    };
   return { offer: "Previewable", renderer: output.renderer };
 }
 

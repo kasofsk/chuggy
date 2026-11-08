@@ -305,7 +305,7 @@ function TicketRevisionLine(props: {
     <span className="ticket-revision">
       {text({
         id: "ticket-overview-revision",
-        args: { revision: ticket.revision },
+        args: { revision: String(ticket.revision) },
       })}
       {ticket.releasedAt === undefined ? null : (
         <>

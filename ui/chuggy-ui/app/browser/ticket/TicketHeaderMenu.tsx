@@ -19,14 +19,7 @@ import { CopySaid, useCopyPress } from "../ui/CopyButton.tsx";
 import type { CopyPress } from "../ui/CopyButton.tsx";
 import { MenuContent, menuItemClassName } from "../ui/Menu.tsx";
 import { TicketActionConfirm } from "./TicketActionConfirm.tsx";
-import { copyTextEn } from "../../copy/catalog.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
-
-/** The English a suite matches the menu's trigger by; the trigger itself
- * draws its own wording live. */
-export const ticketHeaderMenuLabel = copyTextEn({
-  id: "ticket-header-menu-label",
-});
 
 function TicketHeaderMenuMark(): ReactNode {
   return (

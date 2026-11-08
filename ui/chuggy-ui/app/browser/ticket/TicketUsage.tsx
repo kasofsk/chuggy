@@ -309,6 +309,7 @@ function TicketUsageFigures(props: {
     page.executions,
     held.facts.plan.names,
     held.nowMs,
+    text,
   );
   if (usage === undefined)
     return <EmptyState label={text({ id: "ticket-nothing-has-run" })} />;

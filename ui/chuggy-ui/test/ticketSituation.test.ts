@@ -468,6 +468,15 @@ test("a running ticket's slot is the current cycle's live run, numbered among th
   expect(slot.running.cycle).toBe(3);
 });
 
+test("a running stage its plan names nothing for is the catalog's stage by number", () => {
+  const slot = ticketSlot(
+    { ...over21(ticket21Resumed, { phase: "Evaluation" }), names: undefined },
+    copyTextEn,
+  );
+  if (slot.slot !== "Now") throw new Error("not the Now card");
+  expect(slot.running.step).toBe("Stage 1");
+});
+
 test("a running ticket with nothing live in its current cycle leaves the slot empty", () => {
   expect(
     ticketSlot(over21(ticket21Parked, { phase: "Evaluation" }), copyTextEn),

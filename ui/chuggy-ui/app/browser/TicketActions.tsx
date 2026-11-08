@@ -104,7 +104,8 @@ import { Notice } from "./ui/Notice.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
 import { AddRunnerLink, useWorkRunner } from "./workRunner.tsx";
 import { useCopyText } from "../copy/CopyProvider.tsx";
-import type { CopyText } from "../core/copy.ts";
+import { copyOrDataText } from "../core/copy.ts";
+import type { CopyOrData, CopyText } from "../core/copy.ts";
 
 interface Attempt {
   readonly action: TicketAction;
@@ -153,12 +154,9 @@ async function cancelOperation(
       ? { accepted: true }
       : { accepted: false, said: text(operationFailureLabel(answered)) };
   } catch (thrown: unknown) {
-    return { accepted: false, said: faultReason(thrown) };
+    return { accepted: false, said: copyOrDataText(text, faultReason(thrown)) };
   }
 }
-
-/** The reason a request carries when the reader is the one who stopped it. */
-const attemptCancelledReason = "this attempt was cancelled";
 
 /**
  * Why a request threw, so that a throw is drawn where a returned failure is:
@@ -169,8 +167,10 @@ const attemptCancelledReason = "this attempt was cancelled";
  * is a thrown message and is somebody else's words, so every caller puts the
  * console's own subject in front of it.
  */
-function faultReason(thrown: unknown): string {
-  return thrown instanceof Error ? thrown.message : "the request failed";
+function faultReason(thrown: unknown): CopyOrData {
+  return thrown instanceof Error
+    ? thrown.message
+    : { id: "ticket-actions-request-failed" };
 }
 
 /** What the follow learned, written into the caches this page reads from and
@@ -345,6 +345,7 @@ function attemptCancelled(
   partition: PartitionIdentity,
   ticket: number,
   standing: TicketActionPressed,
+  text: CopyText,
 ): void {
   const step = standing.progress.step;
   if (step === undefined || !operationFinished(step))
@@ -354,7 +355,9 @@ function attemptCancelled(
       state: "Cancelled",
       refusal: undefined,
     });
-  standing.controller.abort(new Error(attemptCancelledReason));
+  standing.controller.abort(
+    new Error(text({ id: "ticket-actions-attempt-cancelled" })),
+  );
   dispatch(ticketAttemptDroppedAt({ partition, ticket }));
 }
 
@@ -403,7 +406,7 @@ function ticketCancelWrite(
             args: { reason: answered.said },
           }),
         );
-      attemptCancelled(dispatch, partition, ticket, standing);
+      attemptCancelled(dispatch, partition, ticket, standing, text);
       return { outcome: "Ok", value: undefined };
     },
     refusal: (failure) =>
@@ -458,7 +461,7 @@ function ActionButtons(props: {
           <TicketActionConfirm
             title={text({
               id: "ticket-dispatch-confirm-title",
-              args: { number: props.ticket },
+              args: { number: String(props.ticket) },
             })}
             confirm={text(ticketActionLabel("Dispatch"))}
             open={asking === action.action}

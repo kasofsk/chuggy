@@ -157,7 +157,7 @@ function TicketRunHead(props: {
       <div className="ticket-run-heading">
         <TicketRunMarkDrawn mark={ticketRunMarkOf(step.verdict)} tone={tone} />
         <h2>{step.name}</h2>
-        <span className="ticket-run-cycle">{cycleLabel(step.cycle)}</span>
+        <span className="ticket-run-cycle">{text(cycleLabel(step.cycle))}</span>
         <Pill tone={tone}>{text(setVerdictLabel(step.verdict))}</Pill>
       </div>
       <TicketRunMeta step={step} nowMs={props.nowMs} />

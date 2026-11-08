@@ -178,7 +178,7 @@ function landingSaid(group: HTMLElement): string | undefined {
 /** What the Overview's steps block says of the current cycle's landing. */
 function stepsLanding(container: HTMLElement): HTMLElement {
   const box = container.querySelector<HTMLElement>(
-    '[aria-label="Finalization"] .ticket-steps-name',
+    '.ticket-steps-column[aria-label="Landing"] .ticket-steps-name',
   )?.parentElement;
   if (box === null || box === undefined)
     throw new Error("no Landing box drawn");

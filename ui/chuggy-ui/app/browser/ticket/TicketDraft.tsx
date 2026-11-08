@@ -203,6 +203,7 @@ export function TicketDraftBody(props: {
   readonly nowMs: number;
   readonly children: ReactNode;
 }): ReactNode {
+  const text = useCopyText();
   const held: TicketPageHeld = {
     partition: props.partition,
     ticket: props.ticket,
@@ -210,6 +211,7 @@ export function TicketDraftBody(props: {
     facts: ticketDraftPageFacts(
       props.draft,
       readValue(props.reads.configurationState)?.canonical,
+      text,
     ),
     nowMs: props.nowMs,
     slot: { slot: "Nothing" },

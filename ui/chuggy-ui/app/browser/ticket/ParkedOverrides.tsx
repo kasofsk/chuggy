@@ -172,7 +172,7 @@ function parkedOverridesWrite(
         { operation: pressed.operation, mutation: pressed.mutation },
         ticket,
         pressed.progress,
-        "the save failed",
+        text({ id: "ticket-overrides-save-failed" }),
       );
       const refused = parkedOverridesRefusal(step, text);
       if (refused === undefined) return { outcome: "Ok", value: step };
@@ -180,7 +180,10 @@ function parkedOverridesWrite(
       throw new ConsoleWriteRefused(refused, operationAbandonFailure(step));
     },
     refusal: (failure) =>
-      `Not saved · ${text(operationFailureSentence(failure))}`,
+      text({
+        id: "ticket-overrides-not-saved-because",
+        args: { reason: operationFailureSentence(failure) },
+      }),
     landed: (client) => reread(client),
   };
 }

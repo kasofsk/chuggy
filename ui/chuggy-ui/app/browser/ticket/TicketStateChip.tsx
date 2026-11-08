@@ -55,7 +55,7 @@ export function TicketStateChip(props: {
           data-standing={standing}
           aria-label={text({
             id: "ticket-dispatch-aria-label",
-            args: { number: props.ticket },
+            args: { number: String(props.ticket) },
           })}
           aria-busy={dispatch.busy || undefined}
           disabled={dispatch.busy}

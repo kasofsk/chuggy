@@ -20,14 +20,26 @@ import { TicketNow } from "./TicketNow.tsx";
 import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
 import { TicketRunLine } from "./TicketRuns.tsx";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
+import type { Copy } from "../../core/copy.ts";
 
 import "./ticket.css";
+
+/** The page the way past the wait is on, in the word the console's nav names it by. */
+function needsYouStepLabel(step: EscalationStep): Copy {
+  switch (step) {
+    case "Runners":
+      return { id: "ticket-situation-step-runners" };
+    case "Repositories":
+      return { id: "ticket-situation-step-repositories" };
+  }
+}
 
 /** The page the way past the wait is on, after the line that names the wait. */
 function NeedsYouStep(props: {
   readonly partition: PartitionIdentity;
   readonly step: EscalationStep | undefined;
 }): ReactNode {
+  const text = useCopyText();
   if (props.step === undefined) return null;
   return (
     <span className="ticket-card-where">
@@ -37,7 +49,7 @@ function NeedsYouStep(props: {
         }
         params={props.partition}
       >
-        {props.step}
+        {text(needsYouStepLabel(props.step))}
       </Link>
     </span>
   );

@@ -19,12 +19,14 @@ import type {
   TicketStepColumn,
   TicketStepEvaluator,
   TicketStepLine,
+  TicketStepPhase,
   TicketSteps,
 } from "../../core/ticketSteps.ts";
 import { Chevron } from "../ui/Chevron.tsx";
 import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
 import { TicketRunTime } from "./TicketRunTime.tsx";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
+import type { Copy } from "../../core/copy.ts";
 
 import "./ticket.css";
 
@@ -145,6 +147,18 @@ function TicketStepBoxDrawn(props: {
   );
 }
 
+/** A phase as the noun its column is headed by. */
+function ticketStepsPhaseLabel(phase: TicketStepPhase): Copy {
+  switch (phase) {
+    case "Work":
+      return { id: "ticket-steps-phase-work" };
+    case "Evaluation":
+      return { id: "ticket-steps-phase-evaluation" };
+    case "Finalization":
+      return { id: "ticket-steps-phase-landing" };
+  }
+}
+
 /** One phase: its heading over its first box, marked "in order" where it
  * holds several, and every box after it in a track of its own. */
 function TicketStepColumnDrawn(props: {
@@ -158,7 +172,7 @@ function TicketStepColumnDrawn(props: {
   return (
     <div
       role="group"
-      aria-label={column.phase}
+      aria-label={text(ticketStepsPhaseLabel(column.phase))}
       className="ticket-steps-column"
       data-edge={column.edge}
     >
@@ -170,7 +184,7 @@ function TicketStepColumnDrawn(props: {
         >
           {index === 0 ? (
             <p className="ticket-steps-phase">
-              {column.phase}
+              {text(ticketStepsPhaseLabel(column.phase))}
               {column.boxes.length > 1 ? (
                 <span className="ticket-steps-order">
                   {text({ id: "ticket-steps-in-order" })}
@@ -211,7 +225,7 @@ export function TicketStepsDrawn(props: {
         <h2 id="ticket-steps-title">
           {steps.cycle === undefined
             ? text({ id: "ticket-steps-heading" })
-            : cycleLabel(steps.cycle)}
+            : text(cycleLabel(steps.cycle))}
         </h2>
         <span className="ticket-steps-aside">
           {steps.cycle === undefined

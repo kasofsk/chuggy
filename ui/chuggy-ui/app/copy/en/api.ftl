@@ -4,4 +4,5 @@
 api-reason-deadline = the request outlived its deadline
 api-reason-abandoned = the caller abandoned the request
 api-reason-failed = the request failed
-api-reason-unattempted = no { -attempt } was made
+# spells -attempt: one try at a request, not at a run
+api-reason-unattempted = no attempt was made
