@@ -78,6 +78,62 @@ test("with readings, each turn is the window its last reading held, read at the 
   expect(view.growth.unit).toBe("Turn");
 });
 
+/** A session holding turns `first` to `last`, one reading a minute from 11:00,
+ * and the cuts its transcript names by their time and their size before. */
+function heldTurns(
+  first: number,
+  last: number,
+  cuts: readonly (readonly [string, number])[],
+): Parameters<typeof contextSessionOf>[0] {
+  const body = contextSessionBody(
+    Array.from({ length: last - first + 1 }, (_unused, index) => ({
+      ordinal: first + index,
+      total: 60_000,
+    })),
+  );
+  return {
+    context: {
+      ...body,
+      turns: body.turns.map((turn) => ({
+        ...turn,
+        readings: turn.readings.map((reading) => ({
+          ...reading,
+          recordedAt: at(
+            `11:${String(turn.ordinal - first).padStart(2, "0")}:00`,
+          ),
+        })),
+      })),
+    },
+    entries: [],
+    cuts: cuts.map(([time, before], index) => ({
+      boundary: `cut-${String(index)}`,
+      at: at(time),
+      tokensBefore: before,
+      tokensAfter: 30_000,
+    })),
+  };
+}
+
+test("a cut older than every held turn is not placed, and one between two held turns stands before the later", () => {
+  const view = contextSessionOf(
+    heldTurns(137, 140, [
+      ["09:50:00", 170_000],
+      ["10:40:00", 171_000],
+      ["11:01:30", 172_000],
+    ]),
+  );
+  expect(view.growth.compactions).toStrictEqual([
+    { ordinal: 138, before: 172_000, after: 30_000 },
+  ]);
+});
+
+test("a cut in a session's first turn is placed where the panel holds that turn", () => {
+  const view = contextSessionOf(heldTurns(1, 3, [["10:59:00", 170_000]]));
+  expect(view.growth.compactions).toStrictEqual([
+    { ordinal: 0, before: 170_000, after: 30_000 },
+  ]);
+});
+
 /** A compacted transcript as the transcript read sends it: user and assistant
  * entries only, the summary the compaction wrote a user entry like a prompt,
  * and the boundary named by its time among the page's cuts. */
@@ -136,6 +192,21 @@ test("a compaction's summary opens no turn, so a compacted transcript keeps its 
   const kept = contextTranscriptTurns(compacted.entries, compacted.cuts);
   expect(kept.turns.length).toBe(3);
   expect(kept.turns.length).toBe(without.turns.length);
+});
+
+test("with no readings, a cut older than the first entry the pane holds is not placed", () => {
+  const { compactions } = contextTranscriptTurns(compacted.entries, [
+    {
+      boundary: "older",
+      at: at("09:30:00"),
+      tokensBefore: 168_000,
+      tokensAfter: 31_000,
+    },
+    ...compacted.cuts,
+  ]);
+  expect(compactions).toStrictEqual([
+    { ordinal: 1, before: 172_355, after: 36_000 },
+  ]);
 });
 
 test("a cut with no time, or no size, is not placed", () => {

@@ -8,10 +8,11 @@
  * context its last assistant entry was billed for, from that entry's usage.
  *
  * A COMPACTION IS THE TRANSCRIPT'S. The store names every cut with what the
- * window held before and after it, so those are the marks; a reading's own
- * compaction facts stand only where the transcript held none. A turn's point
- * is the context it ended on, which a cut in that turn had already shrunk, so
- * each mark follows the turn before the one it fell in.
+ * window held before and after it, so those are the marks, each placed only
+ * within the turns the panel holds; a reading's own compaction facts stand
+ * only where the transcript placed none. A turn's point is the context it
+ * ended on, which a cut in that turn had already shrunk, so each mark follows
+ * the turn before the one it fell in.
  */
 
 import { sessionContextPageTurnsMax } from "../../../../src/contract/http.ts";
@@ -135,7 +136,8 @@ function contextCutMark(
 
 /**
  * A transcript cut into turns at each prompt someone sent, with each cut that
- * names its sizes placed in the turn of the entries following it.
+ * names its sizes placed in the turn of the entries following it, and none
+ * older than the first entry held.
  *
  * The chain carries no boundary entry, so a cut is placed by its time, at the
  * first entry at or after it; that entry is the summary the compaction wrote,
@@ -147,18 +149,17 @@ export function contextTranscriptTurns(
 ): ContextTranscriptTurns {
   const turns: { ordinal: number; tokens: number | undefined }[] = [];
   const compactions: ContextCompactionMark[] = [];
+  const first = entries.find((entry) => entry.timestamp !== undefined);
+  const heldFrom =
+    first?.timestamp === undefined ? Infinity : Date.parse(first.timestamp);
   const pending = cuts
-    .flatMap((cut) =>
-      cut.at === undefined || cut.tokensBefore === undefined
+    .flatMap((cut) => {
+      if (cut.at === undefined || cut.tokensBefore === undefined) return [];
+      const at = Date.parse(cut.at);
+      return at < heldFrom
         ? []
-        : [
-            {
-              at: Date.parse(cut.at),
-              before: cut.tokensBefore,
-              after: cut.tokensAfter,
-            },
-          ],
-    )
+        : [{ at, before: cut.tokensBefore, after: cut.tokensAfter }];
+    })
     .sort((one, other) => one.at - other.at);
   let placed = 0;
   for (const entry of entries) {
@@ -187,8 +188,10 @@ export interface ContextSessionRead {
   readonly cuts: readonly LeadTranscriptCut[];
 }
 
-/** Each cut the transcript named with its sizes, in the first turn whose
- * readings were taken at or after it. */
+/** Each cut the transcript named with its sizes, in the first held turn whose
+ * readings were taken at or after it, and so after every reading of the held
+ * turn before. A cut no earlier held turn bounds may be older than every held
+ * turn, so it is placed in the first only where that is the session's first. */
 function contextCutsByReadings(
   cuts: readonly LeadTranscriptCut[],
   turns: readonly SessionContextTurn[],
@@ -196,12 +199,12 @@ function contextCutsByReadings(
   return cuts.flatMap((cut) => {
     if (cut.tokensBefore === undefined || cut.at === undefined) return [];
     const at = Date.parse(cut.at);
-    const turn = turns.find((each) =>
+    const index = turns.findIndex((each) =>
       each.readings.some((reading) => Date.parse(reading.recordedAt) >= at),
     );
-    return turn === undefined
-      ? []
-      : [contextCutMark(turn.ordinal, cut.tokensBefore, cut.tokensAfter)];
+    const turn = turns[index];
+    if (turn === undefined || (index === 0 && turn.ordinal > 1)) return [];
+    return [contextCutMark(turn.ordinal, cut.tokensBefore, cut.tokensAfter)];
   });
 }
 
