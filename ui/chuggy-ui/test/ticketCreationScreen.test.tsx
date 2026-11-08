@@ -52,7 +52,6 @@ import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
 import { workRunnerOver, workRunnerUnreadable } from "./workRunnerReads.ts";
 import type { WorkRunnerReads } from "./workRunnerReads.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
-import { copyTextEn } from "../app/copy/catalog.ts";
 
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),

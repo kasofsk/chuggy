@@ -30,7 +30,6 @@ import type {
 import type { ApiPorts } from "../app/core/apiRequest.ts";
 import { CreationForm } from "../app/browser/TicketCreation.tsx";
 import { ticketConfigurationKept } from "../app/browser/editor/authoringGuards.tsx";
-import { copyTextEn } from "../app/copy/catalog.ts";
 import { configurationsPartialLabel } from "../app/core/repositoryConfigurations.ts";
 import {
   creationConfigurationName,

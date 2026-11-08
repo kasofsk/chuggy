@@ -266,7 +266,6 @@ function Selection(
 ): ReactNode {
   const text = useCopyText();
   const { form, onChange, offers, repositories } = props;
-  const text = useCopyText();
   const catalog = creationCatalogOf(
     creationOfferOf(offers, form.configuration),
   );

@@ -443,7 +443,7 @@ export interface RepositoryStepStatus {
 export const repositoryDeferrals: Readonly<
   Record<
     ProjectRepositoryConfigurationDeferralName,
-    RepositoryStepStatus & { readonly status: Copy }
+    Omit<RepositoryStepStatus, "status"> & { readonly status: Copy }
   >
 > = {
   NotConfigured: {
@@ -563,7 +563,7 @@ function repositoryConfigurationsNoteIgnored(
  * ticket once the project holds a configuration to file it against. */
 function repositoryConfigurationsNote(
   configurations: ProjectRepositoryConfigurationsResponse,
-): RepositoryNote & { readonly status: Copy } {
+): Omit<RepositoryNote, "status"> & { readonly status: Copy } {
   switch (configurations.result) {
     case "Imported":
       return {
@@ -693,7 +693,7 @@ export function repositoryBindOutcome(
  */
 export function repositoryBindNote(
   outcome: RepositoryBindOutcome,
-): RepositoryNote & { readonly status: Copy } {
+): Omit<RepositoryNote, "status"> & { readonly status: Copy } {
   switch (outcome.outcome) {
     case "Bound": {
       const note = repositoryConfigurationsNote(outcome.configurations);
