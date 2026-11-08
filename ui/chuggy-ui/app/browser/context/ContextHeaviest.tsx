@@ -11,6 +11,7 @@ import { useCopyText } from "../../copy/CopyProvider.tsx";
 import type {
   ContextHeaviest,
   ContextResult,
+  ContextResultWeighed,
   ContextToolRow,
 } from "../../core/contextResults.ts";
 import { groupedDigits } from "../../core/figures.ts";
@@ -98,6 +99,11 @@ function ContextByTool(props: {
             : "context-share-estimated",
         })}
       </p>
+      {!heaviest.exact && heaviest.unweighed ? (
+        <p className="context-note">
+          {text({ id: "context-share-unweighed" })}
+        </p>
+      ) : null}
     </>
   );
 }
@@ -109,7 +115,7 @@ export type ContextCallLink = (
 ) => ReactNode;
 
 function ContextLargest(props: {
-  readonly results: readonly ContextResult[];
+  readonly results: readonly ContextResultWeighed[];
   readonly callLink: ContextCallLink;
 }): ReactNode {
   const text = useCopyText();

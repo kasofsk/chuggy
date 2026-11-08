@@ -189,6 +189,37 @@ export function contextToolLines(
   ];
 }
 
+/** A tool's call and the screenshot it returned: an image, and no text. */
+export function contextImageLines(
+  id: string,
+  read: number,
+): readonly unknown[] {
+  const [asked] = contextToolLines(id, "Read", "shot.png", "", { read });
+  return [
+    asked,
+    {
+      type: "user",
+      message: {
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: id,
+            content: [
+              {
+                type: "image",
+                source: {
+                  type: "base64",
+                  data: { chuggy_truncated: { bytes: 90_000, digest: "d" } },
+                },
+              },
+            ],
+          },
+        ],
+      },
+    },
+  ];
+}
+
 /** A session's readings, one window at the end of each turn named. */
 export function contextSessionBody(
   turns: readonly { readonly ordinal: number; readonly total: number }[],

@@ -119,6 +119,7 @@ context-by-tool = By tool
 context-largest = Largest results
 context-share-estimated = Share of the peak { -context }, at four bytes a token.
 context-share-exact = Share of the { -context } at the latest reading.
+context-share-unweighed = A result with no text, such as an image, is not weighed.
 context-bytes = bytes
 context-growth-after = +{ $tokens } tok
 context-result-uncounted = Call unknown

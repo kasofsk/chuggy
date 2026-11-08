@@ -123,6 +123,7 @@ export interface ContextCopy {
   readonly "context-largest": Record<never, never>;
   readonly "context-share-estimated": Record<never, never>;
   readonly "context-share-exact": Record<never, never>;
+  readonly "context-share-unweighed": Record<never, never>;
   readonly "context-bytes": Record<never, never>;
   readonly "context-growth-after": {
     readonly tokens: unknown;

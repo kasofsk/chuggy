@@ -37,6 +37,7 @@ import { contextPeakOf } from "../app/core/contextView.ts";
 import { renderCopied } from "./copied.tsx";
 import {
   contextCompacted,
+  contextImageLines,
   contextReading,
   contextRow,
   contextSessionBody,
@@ -143,6 +144,29 @@ test("a run with no reading draws used against the snapshot's window, every cate
   ).toBeDefined();
   expect(rowTexts(heaviest)[0]).toBe("Bash | 1 | 8,000 | 14 %");
   expect(within(heaviest).getByText("+4,000 tok")).toBeDefined();
+});
+
+test("a tool whose results held no text is listed with no size and no share, and the note says why", () => {
+  renderCopied(
+    <ContextRunView
+      drawn={drawnOf(
+        rows,
+        [],
+        [...lines, ...contextImageLines("toolu_i", 10_000)],
+      )}
+      callLink={() => null}
+    />,
+  );
+  const heaviest = section("Heaviest");
+  expect(rowTexts(heaviest)).toStrictEqual([
+    "Bash | 1 | 8,000 | 14 %",
+    "Read | 1 | — | ",
+  ]);
+  expect(
+    within(heaviest).getByText(
+      "A result with no text, such as an image, is not weighed.",
+    ),
+  ).toBeDefined();
 });
 
 test("a run that compacted and called a subagent labels the compaction and draws the subagent apart", () => {

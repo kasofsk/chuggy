@@ -3,10 +3,11 @@
  * recorded: how many each tool returned and how large, the largest of them,
  * and the call each was asked for in.
  *
- * A RESULT IS WEIGHED IN BYTES, which is what the transcript holds. Its share
- * of the context is a reading's tokens where a reading weighed the tool, and
- * otherwise its bytes at four to a token against the peak context, and the
- * Heaviest section says which under its table.
+ * A RESULT IS WEIGHED IN BYTES OF TEXT, which is what the transcript holds. A
+ * result that held no text, as an image does not, has no weight here rather
+ * than none at all. Its share of the context is a reading's tokens where a
+ * reading weighed the tool, and otherwise its bytes at four to a token against
+ * the peak context, and the Heaviest section says which under its table.
  *
  * A CALL IS FOUND BY ITS FIGURES. A recorded assistant line carries the usage
  * its call was billed with, and the series folded in `contextRun.ts` is keyed
@@ -36,7 +37,8 @@ export interface ContextResult {
   readonly tool: string;
   /** What the call was asked, in the words a reader recognises it by. */
   readonly input: string;
-  readonly bytes: number;
+  /** The size of its text, and none where it held no text. */
+  readonly bytes: number | undefined;
   /** The call it was asked in, where the series holds that call. */
   readonly call: number | undefined;
   /** How far the context moved from that call to the next of its series. */
@@ -54,13 +56,18 @@ export interface ContextToolRow {
   readonly fraction: number | undefined;
 }
 
+/** A result whose text has a size. */
+export type ContextResultWeighed = ContextResult & { readonly bytes: number };
+
 /** What the Heaviest section draws. */
 export interface ContextHeaviest {
   readonly results: number;
   readonly tools: readonly ContextToolRow[];
   /** Whether the shares are a reading's tokens, or bytes at four to a token. */
   readonly exact: boolean;
-  readonly largest: readonly ContextResult[];
+  /** Whether any result held no text, and so has no size to weigh. */
+  readonly unweighed: boolean;
+  readonly largest: readonly ContextResultWeighed[];
 }
 
 interface ContextAsked {
@@ -114,19 +121,34 @@ export function contextInputSaid(input: unknown): string {
     : "";
 }
 
-function contextResultText(block: Record<string, unknown>): string {
+const contextEncoder = new TextEncoder();
+
+/** The size of a result's text, and none where its parts held no text, as an
+ * image's do not. */
+function contextResultBytes(
+  block: Record<string, unknown>,
+): number | undefined {
   const content = block["content"];
-  if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return "";
-  return content
-    .map((part) => {
-      const text = contextRecord(part)?.["text"];
-      return typeof text === "string" ? text : "";
-    })
-    .join("");
+  if (typeof content === "string") return contextEncoder.encode(content).length;
+  if (!Array.isArray(content) || content.length === 0) return 0;
+  const texts = content.flatMap((part) => {
+    const text = contextRecord(part)?.["text"];
+    return typeof text === "string" ? [text] : [];
+  });
+  return texts.length === 0
+    ? undefined
+    : contextEncoder.encode(texts.join("")).length;
 }
 
-const contextEncoder = new TextEncoder();
+/** The sum of the sizes that are known, and none where none is. */
+function contextBytesSummed(
+  sizes: readonly (number | undefined)[],
+): number | undefined {
+  return sizes.reduce<number | undefined>(
+    (sum, size) => (size === undefined ? sum : (sum ?? 0) + size),
+    undefined,
+  );
+}
 
 function contextGrowthAfter(
   calls: readonly ContextCall[],
@@ -169,7 +191,7 @@ export function contextResultsOf(
         id,
         tool: by?.tool ?? "",
         input: by?.input ?? "",
-        bytes: contextEncoder.encode(contextResultText(block)).length,
+        bytes: contextResultBytes(block),
         call: by?.call?.call,
         growth: contextGrowthAfter(calls, by?.call),
       });
@@ -194,25 +216,32 @@ export function contextLinesOf(held: RunTranscriptHeld): readonly unknown[] {
   );
 }
 
-/** The results summed by tool, heaviest first, against the peak context at
- * four bytes a token. */
+/** The results summed by tool against the peak context at four bytes a token,
+ * heaviest first, and after them the tools none of whose results held text,
+ * which are not ranked by a weight they were never given. */
 function contextToolsEstimated(
   results: readonly ContextResult[],
   peak: number | undefined,
 ): readonly ContextToolRow[] {
-  const byTool = new Map<string, { calls: number; bytes: number }>();
+  const byTool = new Map<
+    string,
+    { calls: number; bytes: number | undefined }
+  >();
   for (const result of results) {
-    const held = byTool.get(result.tool) ?? { calls: 0, bytes: 0 };
+    const held = byTool.get(result.tool) ?? { calls: 0, bytes: undefined };
     byTool.set(result.tool, {
       calls: held.calls + 1,
-      bytes: held.bytes + result.bytes,
+      bytes: contextBytesSummed([held.bytes, result.bytes]),
     });
   }
   return [...byTool.entries()]
-    .sort((left, right) => right[1].bytes - left[1].bytes)
+    .sort(
+      ([, left], [, right]) =>
+        (right.bytes ?? -1) - (left.bytes ?? -1) || right.calls - left.calls,
+    )
     .map(([tool, summed]) => {
       const fraction =
-        peak === undefined || peak <= 0
+        peak === undefined || peak <= 0 || summed.bytes === undefined
           ? undefined
           : summed.bytes / contextBytesPerToken / peak;
       return {
@@ -243,10 +272,7 @@ function contextToolsRead(
       return {
         tool: tool.name,
         calls: own.length === 0 ? undefined : own.length,
-        bytes:
-          own.length === 0
-            ? undefined
-            : own.reduce((sum, result) => sum + result.bytes, 0),
+        bytes: contextBytesSummed(own.map((result) => result.bytes)),
         tokens: tool.resultTokens,
         share: fraction === undefined ? undefined : sharePartFigure(fraction),
         fraction,
@@ -262,6 +288,9 @@ export function contextHeaviestOf(
   peak: number | undefined,
 ): ContextHeaviest {
   const exact = (window?.messages?.byTool.length ?? 0) > 0;
+  const weighed = results.filter(
+    (result): result is ContextResultWeighed => result.bytes !== undefined,
+  );
   return {
     results: results.length,
     tools:
@@ -269,7 +298,8 @@ export function contextHeaviestOf(
         ? contextToolsRead(window, results)
         : contextToolsEstimated(results, peak),
     exact,
-    largest: [...results]
+    unweighed: weighed.length < results.length,
+    largest: weighed
       .sort((left, right) => right.bytes - left.bytes)
       .slice(0, contextResultsLargestMax),
   };

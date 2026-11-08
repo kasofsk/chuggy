@@ -16,6 +16,7 @@ import {
 import { contextCallsOf } from "../app/core/contextRun.ts";
 import { runTranscriptHeldEmpty } from "../app/core/runTranscript.ts";
 import {
+  contextImageLines,
   contextRow,
   contextToolLines,
   contextWindow,
@@ -99,6 +100,52 @@ test("where a reading weighed the tools, a share is its tokens against the conte
     ["Bash", 74_776, "20"],
     ["Read", 456, "<1"],
   ]);
+});
+
+test("a result that held no text has no size, and its tool is listed after the weighed ones with no share rather than as the lightest", () => {
+  const shots = [
+    ...contextToolLines("toolu_s", "StructuredOutput", "verdict", "{}", {
+      read: 15_000,
+    }),
+    ...contextImageLines("toolu_i", 10_000),
+    ...contextImageLines("toolu_j", 14_000),
+    ...contextToolLines("toolu_e", "Bash", "true", "", { read: 99 }),
+  ];
+  const results = contextResultsOf([...lines, ...shots], calls);
+  expect(
+    results.slice(3).map((result) => [result.tool, result.bytes]),
+  ).toStrictEqual([
+    ["StructuredOutput", 2],
+    ["Read", undefined],
+    ["Read", undefined],
+    ["Bash", 0],
+  ]);
+  const heaviest = contextHeaviestOf(
+    contextResultsOf(shots, calls),
+    undefined,
+    10_000,
+  );
+  expect(heaviest.unweighed).toBe(true);
+  expect(
+    heaviest.tools.map((row) => [
+      row.tool,
+      row.calls,
+      row.bytes,
+      row.share?.kind === "Quantity" ? row.share.text : undefined,
+    ]),
+  ).toStrictEqual([
+    ["StructuredOutput", 1, 2, "<1"],
+    ["Bash", 1, 0, "0"],
+    ["Read", 2, undefined, undefined],
+  ]);
+  expect(heaviest.largest.map((result) => result.id)).toStrictEqual([
+    "toolu_s",
+    "toolu_e",
+  ]);
+  expect(
+    contextHeaviestOf(contextResultsOf(lines, calls), undefined, 10_000)
+      .unweighed,
+  ).toBe(false);
 });
 
 test("a call's input is said by its command or path, on one line", () => {
