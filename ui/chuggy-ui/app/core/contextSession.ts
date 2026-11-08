@@ -127,9 +127,9 @@ export interface ContextTranscriptTurns {
  * A transcript cut into turns at each prompt someone sent, with each cut that
  * names its sizes placed in the turn of the entries following it.
  *
- * The chain carries no boundary entry, so a cut is placed by its time: the
- * first entry at or after it. That entry is the summary the compaction wrote in
- * the cut's place, which nobody sent, so a user entry there opens no turn.
+ * The chain carries no boundary entry, so a cut is placed by its time, at the
+ * first entry at or after it; that entry is the summary the compaction wrote,
+ * which nobody sent, so a user entry there opens no turn.
  */
 export function contextTranscriptTurns(
   entries: readonly LeadTranscriptEntry[],
