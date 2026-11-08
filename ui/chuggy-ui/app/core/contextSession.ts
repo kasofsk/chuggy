@@ -90,7 +90,6 @@ function contextTurnWindow(
 interface ContextTranscriptTurn {
   readonly ordinal: number;
   readonly tokens: number | undefined;
-  readonly entries: readonly string[];
 }
 
 /** Whether a user entry is a prompt someone sent, rather than a tool's answer. */
@@ -118,24 +117,61 @@ export function contextEntryTokens(
   );
 }
 
-/** A transcript cut into turns at each prompt someone sent. */
+/** A transcript's turns, and the compactions that fell in them. */
+export interface ContextTranscriptTurns {
+  readonly turns: readonly ContextTranscriptTurn[];
+  readonly compactions: readonly ContextCompactionMark[];
+}
+
+/**
+ * A transcript cut into turns at each prompt someone sent, with each cut that
+ * names its sizes placed in the turn of the entries following it.
+ *
+ * The chain carries no boundary entry, so a cut is placed by its time: the
+ * first entry at or after it. That entry is the summary the compaction wrote in
+ * the cut's place, which nobody sent, so a user entry there opens no turn.
+ */
 export function contextTranscriptTurns(
   entries: readonly LeadTranscriptEntry[],
-): readonly ContextTranscriptTurn[] {
-  const turns: {
-    ordinal: number;
-    tokens: number | undefined;
-    entries: string[];
-  }[] = [];
+  cuts: readonly LeadTranscriptCut[],
+): ContextTranscriptTurns {
+  const turns: { ordinal: number; tokens: number | undefined }[] = [];
+  const compactions: ContextCompactionMark[] = [];
+  const pending = cuts
+    .flatMap((cut) =>
+      cut.at === undefined || cut.tokensBefore === undefined
+        ? []
+        : [
+            {
+              at: Date.parse(cut.at),
+              before: cut.tokensBefore,
+              after: cut.tokensAfter,
+            },
+          ],
+    )
+    .sort((one, other) => one.at - other.at);
+  let placed = 0;
   for (const entry of entries) {
-    if (contextEntryAsks(entry) || turns.length === 0)
-      turns.push({ ordinal: turns.length + 1, tokens: undefined, entries: [] });
+    const at =
+      entry.timestamp === undefined ? undefined : Date.parse(entry.timestamp);
+    const from = placed;
+    while (at !== undefined && (pending[placed]?.at ?? Infinity) <= at)
+      placed += 1;
+    const crossed = pending.slice(from, placed);
+    const summary = crossed.length > 0 && entry.type === "user";
+    if (turns.length === 0 || (!summary && contextEntryAsks(entry)))
+      turns.push({ ordinal: turns.length + 1, tokens: undefined });
     const turn = turns.at(-1);
     if (turn === undefined) continue;
-    if (entry.uuid !== undefined) turn.entries.push(entry.uuid);
+    for (const cut of crossed)
+      compactions.push({
+        ordinal: turn.ordinal,
+        before: cut.before,
+        after: cut.after,
+      });
     turn.tokens = contextEntryTokens(entry) ?? turn.tokens;
   }
-  return turns;
+  return { turns, compactions };
 }
 
 /** What one session's panel is drawn from. */
@@ -157,26 +193,6 @@ function contextCutsByReadings(
     const turn = turns.find((each) =>
       each.readings.some((reading) => Date.parse(reading.recordedAt) >= at),
     );
-    return turn === undefined
-      ? []
-      : [
-          {
-            ordinal: turn.ordinal,
-            before: cut.tokensBefore,
-            after: cut.tokensAfter,
-          },
-        ];
-  });
-}
-
-/** Each cut the transcript named with its sizes, at the turn it fell in. */
-function contextCutsByTranscript(
-  cuts: readonly LeadTranscriptCut[],
-  turns: readonly ContextTranscriptTurn[],
-): readonly ContextCompactionMark[] {
-  return cuts.flatMap((cut) => {
-    if (cut.tokensBefore === undefined) return [];
-    const turn = turns.find((each) => each.entries.includes(cut.boundary));
     return turn === undefined
       ? []
       : [
@@ -256,7 +272,10 @@ function contextSessionRead(
 function contextSessionTranscribed(
   read: ContextSessionRead,
 ): ContextSessionView {
-  const turns = contextTranscriptTurns(read.entries);
+  const { turns, compactions } = contextTranscriptTurns(
+    read.entries,
+    read.cuts,
+  );
   const points = turns.flatMap((turn): ContextPoint[] =>
     turn.tokens === undefined
       ? []
@@ -274,7 +293,7 @@ function contextSessionTranscribed(
     growth: {
       unit: "Turn",
       points,
-      compactions: contextCutsByTranscript(read.cuts, turns),
+      compactions,
       threshold: undefined,
       window: window.window,
       count: turns.length,

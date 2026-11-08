@@ -446,8 +446,6 @@ export function checkedRunTurnsQuery(query: RunTurnsQuery): RunTurnsQuery {
   return query;
 }
 
-export { runTurnsPageLimitMax };
-
 /** Refuses a context page query outside the bounds the wire and the run's readings declare. */
 export function checkedRunContextQuery(
   query: RunContextQuery,

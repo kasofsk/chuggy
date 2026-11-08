@@ -7,24 +7,42 @@
 
 import { expect, test } from "vitest";
 
-import type { LeadTranscriptEntry } from "../app/core/leadTranscript.ts";
+import type {
+  LeadTranscriptCut,
+  LeadTranscriptEntry,
+} from "../app/core/leadTranscript.ts";
 import {
   contextSessionInputsOf,
   contextSessionMarkOf,
   contextSessionOf,
   contextSessionPaged,
   contextThreadSeedOf,
+  contextTranscriptTurns,
 } from "../app/core/contextSession.ts";
 import { contextSessionBody } from "./contextFixture.ts";
 
-function asked(uuid: string, text: string): LeadTranscriptEntry {
-  return { uuid, type: "user", message: { content: text } };
+function at(time: string): string {
+  return `2026-11-01T${time}.000Z`;
 }
 
-function answered(uuid: string, read: number): LeadTranscriptEntry {
+function asked(uuid: string, text: string, time: string): LeadTranscriptEntry {
+  return {
+    uuid,
+    type: "user",
+    timestamp: at(time),
+    message: { content: text },
+  };
+}
+
+function answered(
+  uuid: string,
+  read: number,
+  time: string,
+): LeadTranscriptEntry {
   return {
     uuid,
     type: "assistant",
+    timestamp: at(time),
     message: {
       content: [{ type: "text", text: "ok" }],
       usage: {
@@ -60,24 +78,45 @@ test("with readings, each turn is the window its last reading held, read at the 
   expect(view.growth.unit).toBe("Turn");
 });
 
-test("with no readings, each turn is the context its last billed entry sent, and a cut falls in the turn holding it", () => {
+/** A compacted transcript as the transcript read sends it: user and assistant
+ * entries only, the summary the compaction wrote a user entry like a prompt,
+ * and the boundary named by its time among the page's cuts. */
+const compacted: {
+  readonly entries: readonly LeadTranscriptEntry[];
+  readonly cuts: readonly LeadTranscriptCut[];
+} = {
+  entries: [
+    asked("u1", "first", "10:00:00"),
+    answered("a1", 40_000, "10:00:05"),
+    asked("u2", "second", "10:01:00"),
+    answered("a2", 172_000, "10:01:05"),
+    asked("s", "This session is being continued…", "10:01:10"),
+    answered("a3", 36_000, "10:01:15"),
+    asked("u3", "third", "10:02:00"),
+    answered("a4", 50_000, "10:02:05"),
+  ],
+  cuts: [
+    {
+      boundary: "cut",
+      at: at("10:01:09"),
+      trigger: "Auto",
+      tokensBefore: 172_355,
+      tokensAfter: 36_000,
+    },
+  ],
+};
+
+test("with no readings, each turn is the context its last billed entry sent, and a cut the page names falls in the turn whose entries follow it", () => {
   const view = contextSessionOf({
     context: { turns: [], autoCompactWindow: 200_000 },
-    entries: [
-      asked("u1", "first"),
-      answered("a1", 40_000),
-      asked("u2", "second"),
-      answered("a2", 172_000),
-      { uuid: "cut", type: "system", message: undefined },
-      answered("a3", 36_000),
-    ],
-    cuts: [{ boundary: "cut", tokensBefore: 172_355, tokensAfter: 36_000 }],
+    ...compacted,
   });
   expect(
     view.growth.points.map((point) => [point.ordinal, point.tokens]),
   ).toStrictEqual([
     [1, 40_002],
     [2, 36_002],
+    [3, 50_002],
   ]);
   expect(view.growth.compactions).toStrictEqual([
     { ordinal: 2, before: 172_355, after: 36_000 },
@@ -86,7 +125,25 @@ test("with no readings, each turn is the context its last billed entry sent, and
     view.window.reading,
     view.window.used,
     view.window.window,
-  ]).toStrictEqual([false, 36_002, 200_000]);
+  ]).toStrictEqual([false, 50_002, 200_000]);
+});
+
+test("a compaction's summary opens no turn, so a compacted transcript keeps its count of turns", () => {
+  const without = contextTranscriptTurns(
+    compacted.entries.filter((entry) => entry.uuid !== "s"),
+    [],
+  );
+  const kept = contextTranscriptTurns(compacted.entries, compacted.cuts);
+  expect(kept.turns.length).toBe(3);
+  expect(kept.turns.length).toBe(without.turns.length);
+});
+
+test("a cut with no time, or no size, is not placed", () => {
+  const { compactions } = contextTranscriptTurns(compacted.entries, [
+    { boundary: "untimed", tokensBefore: 172_355 },
+    { boundary: "unsized", at: at("10:01:09") },
+  ]);
+  expect(compactions).toStrictEqual([]);
 });
 
 test("the mark moves with the newest turn and the state it is in, and with nothing else", () => {
