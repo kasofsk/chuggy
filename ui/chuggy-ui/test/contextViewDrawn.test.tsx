@@ -135,6 +135,7 @@ test("a run with no reading draws used against the snapshot's window, every cate
   const growth = section("Growth");
   expect(within(growth).getByText("Threshold not recorded")).toBeDefined();
   expect(within(section("Inputs")).getByText("Snapshot")).toBeDefined();
+  expect(within(section("Inputs")).getByText("Agents")).toBeDefined();
   const heaviest = section("Heaviest");
   expect(
     within(heaviest).getByText(
@@ -245,4 +246,27 @@ test("a session's compact form draws its window per turn, its figures in a line,
       .querySelector(".context-view")
       ?.getAttribute("data-compact"),
   ).toBe("true");
+});
+
+test("a file's path breaks only after its slashes", () => {
+  const snapshot = contextSnapshot({
+    files: [
+      {
+        source: "ProjectInstruction",
+        path: "/work/repo/src/adapters/AGENTS.md",
+        bytes: 396,
+        content: "# Adapters",
+      },
+    ],
+  });
+  renderCopied(
+    <ContextRunView
+      drawn={drawnOf(rows, [], lines, snapshot)}
+      callLink={() => null}
+    />,
+  );
+  const toggle = within(section("Inputs")).getByRole("button", {
+    name: "src/adapters/AGENTS.md",
+  });
+  expect(toggle.querySelectorAll("wbr")).toHaveLength(2);
 });

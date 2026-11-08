@@ -106,7 +106,7 @@ export interface ContextCopy {
   readonly "context-tools": Record<never, never>;
   readonly "context-mcp-servers": Record<never, never>;
   readonly "context-skills": Record<never, never>;
-  readonly "context-subagents": Record<never, never>;
+  readonly "context-agents": Record<never, never>;
   readonly "context-plugins": Record<never, never>;
   readonly "context-deferred-count": {
     readonly tokens: unknown;

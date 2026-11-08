@@ -62,6 +62,21 @@ const contextFileGroupWords: Record<ContextFileGroup, Copy> = {
   Other: { id: "context-files-other" },
 };
 
+/** A path that may break after each of its slashes, and nowhere inside a
+ * segment unless one is wider than the column. */
+function pathBreakable(path: string): ReactNode {
+  return path.split("/").map((segment, index) => (
+    <Fragment key={index}>
+      {index === 0 ? null : (
+        <>
+          /<wbr />
+        </>
+      )}
+      {segment}
+    </Fragment>
+  ));
+}
+
 function ContextFileRow(props: { readonly file: ContextFile }): ReactNode {
   const text = useCopyText();
   const [open, setOpen] = useState(false);
@@ -81,7 +96,7 @@ function ContextFileRow(props: { readonly file: ContextFile }): ReactNode {
             }}
           >
             <Chevron className="context-file-chevron" />
-            {file.path}
+            <span>{pathBreakable(file.path)}</span>
           </button>
         </td>
         <td className="num">
@@ -231,7 +246,7 @@ export function ContextRunInputsSection(props: {
               names={inputs.skills}
             />
             <ContextNamesRow
-              name={{ id: "context-subagents" }}
+              name={{ id: "context-agents" }}
               names={inputs.agents}
             />
             <ContextNamesRow
