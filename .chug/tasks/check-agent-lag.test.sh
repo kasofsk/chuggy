@@ -107,6 +107,22 @@ fixture 2.1.12 0.3.0
 run_in "$R" CHUG_AGENT_LAG_RELEASES_MAX=0
 check "a pin ahead of what a bump reaches is not behind" 0 "$RC" "Claude Code 2.1.12 is not behind 2.1.10"
 
+fixture 2.1.10 0.9.0
+registry 2.1.10 "$CLAUDE" 1.0.1 '["0.9.0","0.10.0","1.0.0","1.0.1"]'
+run_in "$R"
+check "a release of a later major or minor is counted" 0 "$RC" "Codex 0.9.0 is 3 release(s) behind 1.0.1"
+
+fixture 2.1.5 0.2.0
+registry 2.1.10 "$CLAUDE" 0.3.0 "$CODEX"
+printf '# ARG CODEX_VERSION=0.0.1 is how a pin reads\n' >>"$R/images/worker/Dockerfile"
+run_in "$R"
+check "a pin is read only where it is set" 0 "$RC" "Codex 0.2.0 is 1 release(s) behind 0.3.0"
+
+fixture 2.1.5 0.2.0
+mkdir -p "$R/images/worker/deep"
+run_in "$R/images/worker/deep"
+check "a run from below the root reads the root's pins" 0 "$RC" "Claude Code 2.1.5 is 5 release(s) behind 2.1.10"
+
 fixture 2.1.5 0.2.0
 run_in "$R" CHUG_AGENT_LAG_RELEASES_MAX=five
 check "a cap that is not a whole number could not run" 2 "$RC" "not a whole number"

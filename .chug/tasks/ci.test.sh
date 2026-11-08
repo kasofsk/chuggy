@@ -547,8 +547,8 @@ for case in \
 	done
 done
 
-# A GATE THAT RUNS ITSELF IS SELECTED BY WHAT IT DECLARES TOO, and holds no
-# key: check-agent-lag by the worker image's directory and its own script.
+# A GATE THAT RUNS ITSELF IS SELECTED BY WHAT IT DECLARES TOO: check-agent-lag
+# by the worker image's directory and its own script.
 stub_repo 0
 commit_all baseline
 for path in images/worker/Dockerfile images/worker/core.json .chug/tasks/check-agent-lag.sh; do
@@ -556,7 +556,7 @@ for path in images/worker/Dockerfile images/worker/core.json .chug/tasks/check-a
 	printf '# changed\n' >> "$R/$path"
 	commit_all "$path"
 	run_last_commit
-	refute "$path selects check-agent-lag" 0 "$RC" "check-agent-lag: SKIPPED"
+	check "$path selects check-agent-lag" 0 "$RC" "stub check-agent-lag"
 done
 
 # A SUITE'S INPUT OUTSIDE THE SOURCES IS IN ITS GATE'S CONE. The unit suites

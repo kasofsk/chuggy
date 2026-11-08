@@ -1,12 +1,11 @@
 #!/bin/sh
-# The worker image's Claude Code and Codex are each no more than
+# The worker image's Claude Code and Codex pins are each no more than
 # `CHUG_AGENT_LAG_RELEASES_MAX` releases behind the newest one their bump can
 # reach.
 #
 # A configuration names its model by family, `--model=sonnet`, and a family is
 # whichever model the pinned Claude Code takes it to mean, so a pin left behind
-# runs an older model than the family now names while nothing in the tree reads
-# wrong. Only a reading of npm sees it.
+# runs an older model while nothing in the tree reads wrong.
 #
 # A RELEASE IS A STABLE VERSION NEWER THAN THE PIN, up to the newest a bump
 # moves to: for Claude Code the one npm's latest Agent SDK names as its
@@ -14,14 +13,10 @@
 # can go no further, and for Codex npm's `latest`. A prerelease is not one, and
 # neither is a platform build, whose version carries its platform as a suffix.
 #
-# EVERY WORKER IMAGE IS BUILT THROUGH IT. The roster stage of
-# images/worker/Dockerfile runs the whole of `.chug/tasks/ci.sh`, so no image is
-# built past the cap, and a commit that built once is refused once npm has
-# moved far enough past it. In a changed run a change under `images/worker`
-# selects it, since the pins and their bump are there, and a change elsewhere
-# does not, though the image is built from more than that directory: a ticket
-# builds no image, and a cap read on every change would turn every ticket red
-# over what none can fix. Never reused: npm moves under a tree that does not.
+# A CHANGE UNDER `images/worker` SELECTS IT, where the pins and their bump are,
+# and so does a full run, the roster stage of images/worker/Dockerfile's among
+# them. It is not read on every change, so a ticket is not made to take on a
+# bump outside its scope. Never reused: npm moves under a tree that does not.
 #
 # Exits 0 clean, 1 when either is further behind, 2 when it could not run. Two
 # is not a pass.
@@ -37,7 +32,7 @@ cd "$root" || exit 2
 
 max="${CHUG_AGENT_LAG_RELEASES_MAX:-5}"
 case "$max" in
-'' | *[!0-9]*)
+*[!0-9]*)
 	echo "check-agent-lag: LINTER ERROR — CHUG_AGENT_LAG_RELEASES_MAX is $max, not a whole number"
 	exit 2
 	;;
@@ -130,7 +125,7 @@ report "Codex" "$codex_pin" codex-ceiling codex-versions \
 	"move ARG CODEX_VERSION in $dockerfile to it"
 
 if [ "$findings" -gt 0 ]; then
-	echo "check-agent-lag: FAILED — more than $max release(s) behind (CHUG_AGENT_LAG_RELEASES_MAX); the rig runs the new one once the worker image is built from it and admitted"
+	echo "check-agent-lag: FAILED — more than $max release(s) behind (CHUG_AGENT_LAG_RELEASES_MAX); the rig runs the new one once the worker image and its runtime are built from it and admitted"
 	exit 1
 fi
 echo "check-agent-lag: both within $max release(s) (CHUG_AGENT_LAG_RELEASES_MAX)"
