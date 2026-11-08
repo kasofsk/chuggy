@@ -12,6 +12,7 @@ import {
   nativeHttpPageItemsMax,
   nativeHttpRoutes,
   runContextPageReadingsMax,
+  sessionContextPageTurnsMax,
   sessionStorePageBatchesMax,
   threadTurnsAnsweredMax,
 } from "./http.ts";
@@ -38,6 +39,7 @@ import {
   leadReadResponseSchema,
   leadTranscriptResponseSchema,
   runContextResponseSchema,
+  sessionContextResponseSchema,
   runTurnsResponseSchema,
   runTranscriptResponseSchema,
   runConfigurationResponseSchema,
@@ -89,6 +91,10 @@ const transcriptQuery = endpointQuery({
   after: endpointInteger("after", 0),
   limit: endpointInteger("limit", sessionStorePageBatchesMax),
 });
+const sessionContextQuery = endpointQuery({
+  after: endpointInteger("after").optional(),
+  limit: endpointInteger("limit", sessionContextPageTurnsMax),
+});
 const emptyBody = z.preprocess((value) => value ?? {}, endpointQuery({}));
 
 export const nativeHttpEndpoints = {
@@ -132,6 +138,12 @@ export const nativeHttpEndpoints = {
     path: nativeHttpRoutes.leadTranscript,
     query: transcriptQuery,
     response: leadTranscriptResponseSchema,
+  },
+  leadContext: {
+    method: "GET",
+    path: nativeHttpRoutes.leadContext,
+    query: sessionContextQuery,
+    response: sessionContextResponseSchema,
   },
   runTurns: {
     method: "GET",
@@ -183,6 +195,12 @@ export const nativeHttpEndpoints = {
     path: nativeHttpRoutes.threadTranscript,
     query: transcriptQuery,
     response: threadTranscriptResponseSchema,
+  },
+  threadContext: {
+    method: "GET",
+    path: nativeHttpRoutes.threadContext,
+    query: sessionContextQuery,
+    response: sessionContextResponseSchema,
   },
   openThread: {
     method: "POST",
@@ -287,6 +305,12 @@ export const nativeHttpEndpoints = {
     path: nativeHttpRoutes.chatThreadTranscript,
     query: transcriptQuery,
     response: threadTranscriptResponseSchema,
+  },
+  chatThreadContext: {
+    method: "GET",
+    path: nativeHttpRoutes.chatThreadContext,
+    query: sessionContextQuery,
+    response: sessionContextResponseSchema,
   },
   openChatThread: {
     method: "POST",

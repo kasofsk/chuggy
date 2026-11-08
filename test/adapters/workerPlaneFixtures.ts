@@ -12,6 +12,7 @@ import type {
   WorkerPlaneServerService,
   WorkerRunEvidencePorts,
 } from "../../src/adapters/http/workerPlaneServer.ts";
+import type { SessionContextOffered } from "../../src/contract/responses.ts";
 import { workerContractHeader } from "../../src/contract/workerContract.ts";
 import type { SessionPlaneAuthority } from "../../src/interpreter/sessionPlane.ts";
 import type { WorkerTaskPort } from "../../src/interpreter/workerPlane.ts";
@@ -72,6 +73,41 @@ export const runContextReadingBody = {
     },
   },
 } as const;
+
+/** A window naming none of the parts its reading may leave out. */
+export const contextWindowBareBody = {
+  model: "claude-fixture",
+  totalTokens: 9_000,
+  maxTokens: 200_000,
+  categories: [],
+  memoryFiles: [],
+  mcpTools: [],
+  systemTools: [],
+  systemPromptSections: [],
+  agents: [],
+} as const;
+
+/** What a pod read of its context window as one turn compacted and then ended. */
+export const sessionContextReadingsBody: readonly SessionContextOffered[] = [
+  {
+    cause: "Compaction",
+    compaction: { trigger: "Auto", tokensBefore: 180_000, tokensAfter: 12_000 },
+  },
+  {
+    cause: "End",
+    window: {
+      model: "claude-fixture",
+      totalTokens: 9_000,
+      maxTokens: 200_000,
+      categories: [{ name: "Messages", tokens: 9_000, kind: "Used" }],
+      memoryFiles: [],
+      mcpTools: [],
+      systemTools: [],
+      systemPromptSections: [],
+      agents: [],
+    },
+  },
+];
 
 /** Every run-evidence port a case about something else never reaches. */
 export const inertRunEvidence: WorkerRunEvidencePorts = {

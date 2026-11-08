@@ -273,7 +273,7 @@ test("a half-written measurement is refused by the constraint", async () => {
   });
   await assert.rejects(
     rig.sessions.harness.query(
-      `SELECT answer_session_turn($1,$2,$3,$4,NULL,NULL,$5,$6,NULL,$7,$8)`,
+      `SELECT answer_session_turn($1,$2,$3,$4,NULL,NULL,$5,$6,NULL,$7,$8,NULL)`,
       [
         attempt.digest,
         attempt.attempt.generation,
@@ -1068,7 +1068,7 @@ test("a tools array holding nothing where a name should be is refused", async ()
     assert.equal(
       (
         await plane.query<{ answered: string }>(
-          `SELECT answer_session_turn($1,$2,$3,$4,NULL,NULL,$5,$6,$7,$8,$9)::text
+          `SELECT answer_session_turn($1,$2,$3,$4,NULL,NULL,$5,$6,$7,$8,$9,NULL)::text
              AS answered`,
           [
             attempt.digest,

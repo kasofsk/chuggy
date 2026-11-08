@@ -14,6 +14,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  sessionContextPageTurnsMax,
   threadMessageCharsMax,
   threadMessageImagesMax,
   threadOpenKeyCharsMax,
@@ -300,6 +301,26 @@ function ports(doubles: ThreadDoubles): NativeThreadPorts {
         });
       },
     },
+    context: {
+      turns: ({ session, query }) => {
+        doubles.calls.push(
+          `context:${session}:${String(query.after ?? "")}:${String(query.limit)}`,
+        );
+        return Promise.resolve({
+          turns: [
+            {
+              turn: asSessionTurnId("turn-3"),
+              ordinal: 3,
+              readings: [{ cause: "End", recordedAt: threadMovedAt }],
+            },
+          ],
+        });
+      },
+      opening: (_partition, session) => {
+        doubles.calls.push(`opening:${session}`);
+        return Promise.resolve({ systemPrompt: "the thread's objectives" });
+      },
+    },
     credentialSlot: "member-thread",
   };
 }
@@ -427,6 +448,62 @@ test("a thread listing a member may not read answers as one that is not there", 
   );
 });
 
+test("a member who may not read the project's threads may not read a thread's context", async () => {
+  const { web, held } = boundary({}, []);
+
+  assert.equal(
+    (await web.threadContext(geoff, partition, mine, { limit: 1 })).read,
+    "NotFound",
+  );
+  assert.deepEqual(
+    held.calls.filter(
+      (call) => call.startsWith("context:") || call.startsWith("opening:"),
+    ),
+    [],
+  );
+});
+
+test("a context page is read for the thread's own session, with what it was opened under on the first page alone", async () => {
+  const { web, held } = boundary({}, ["Read"]);
+
+  const first = await web.threadContext(dana, partition, mine, { limit: 2 });
+  const later = await web.threadContext(dana, partition, mine, {
+    after: 3,
+    limit: 2,
+  });
+
+  assert.deepEqual(first, {
+    read: "Page",
+    page: {
+      systemPrompt: "the thread's objectives",
+      turns: [
+        {
+          turn: "turn-3",
+          ordinal: 3,
+          readings: [{ cause: "End", recordedAt: threadMovedAt }],
+        },
+      ],
+    },
+  });
+  assert.equal(later.read === "Page" && "systemPrompt" in later.page, false);
+  assert.deepEqual(
+    held.calls.filter(
+      (call) => call.startsWith("context:") || call.startsWith("opening:"),
+    ),
+    [`context:${mine}::2`, `opening:${mine}`, `context:${mine}:3:2`],
+  );
+  await assert.rejects(
+    web.threadContext(dana, partition, mine, {
+      limit: sessionContextPageTurnsMax + 1,
+    }),
+    RangeError,
+  );
+  await assert.rejects(
+    web.threadContext(dana, partition, mine, { after: -1, limit: 1 }),
+    RangeError,
+  );
+});
+
 test("a member reads another member's thread, and it is not theirs", async () => {
   const { web } = boundary();
 
@@ -498,6 +575,14 @@ test("a session this project holds no thread for is not found", async () => {
     (
       await web.threadTranscript(geoff, partition, asSessionId("lead-atlas"), {
         after: 0,
+        limit: 1,
+      })
+    ).read,
+    "NotFound",
+  );
+  assert.equal(
+    (
+      await web.threadContext(geoff, partition, asSessionId("lead-atlas"), {
         limit: 1,
       })
     ).read,

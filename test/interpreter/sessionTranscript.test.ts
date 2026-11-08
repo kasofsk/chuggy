@@ -22,6 +22,7 @@ import {
   sessionStoreEntries,
   sessionTranscriptChain,
   sessionTranscriptCompaction,
+  sessionTranscriptCompactions,
   sessionTranscriptHeld,
   type SessionStoreEntry,
 } from "../../src/interpreter/sessionTranscript.ts";
@@ -166,6 +167,58 @@ test("the seam is the last compaction, not the first", () => {
     !held.includes(first?.anchor ?? ""),
     "the first compaction's summary is not held after the second cut",
   );
+});
+
+test("a compaction boundary answers what its metadata holds: its trigger, and the tokens before and after it", () => {
+  assert.deepEqual(
+    sessionTranscriptCompactions(storedEntries(streams.compacted)),
+    [
+      {
+        boundary: "83738f97-737d-412f-8a49-3c56c4a78ef9",
+        at: "2026-09-02T15:48:54.703Z",
+        trigger: "Manual",
+        tokensBefore: 15_037,
+        tokensAfter: 1_315,
+      },
+    ],
+  );
+  assert.deepEqual(
+    sessionTranscriptCompactions(storedEntries(streams.resumed)),
+    [],
+  );
+});
+
+test("every boundary is answered in the order it was appended, not only the last", () => {
+  const entries = twiceCompacted();
+  assert.deepEqual(
+    sessionTranscriptCompactions(entries).map(
+      (compaction) => compaction.boundary,
+    ),
+    ["83738f97-737d-412f-8a49-3c56c4a78ef9", "second-boundary"],
+  );
+  assert.equal(
+    sessionTranscriptCompaction(entries)?.boundary.uuid,
+    "second-boundary",
+    "the last cut is still the one the held set turns on",
+  );
+});
+
+test("a figure the store holds as no count, and a trigger outside the runtime's two, are left out", () => {
+  const [stored] = storedEntries(streams.compacted).filter(
+    (entry) => entry.subtype === "compact_boundary",
+  );
+  assert.ok(stored !== undefined);
+  const strange: SessionStoreEntry = {
+    ...stored,
+    compactMetadata: {
+      trigger: "scheduled",
+      preTokens: "15037",
+      postTokens: -1,
+    },
+  };
+  assert.deepEqual(sessionTranscriptCompactions([strange, stored]), [
+    { boundary: stored.uuid, at: stored.timestamp },
+  ]);
 });
 
 test("the compaction is keyed on its own entry, not on the summary's prose", () => {

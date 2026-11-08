@@ -212,6 +212,12 @@ export const sessionTurnToolsMax = 80;
 /** The longest tool name one turn's measurement reports. */
 export const sessionTurnToolNameCharsMax = 128;
 
+/** The most readings of its context window one turn's answer carries: one as it ended, and one at each compaction during it. */
+export const sessionContextReadingsMax = 8;
+
+/** The most turns one page of a session's context readings answers. */
+export const sessionContextPageTurnsMax = 4;
+
 /** The longest identity of a model's message, which a live event names its block by. */
 export const sessionLiveMessageCharsMax = 128;
 
@@ -562,6 +568,7 @@ export const nativeHttpRoutes = {
   selectorProposalReview: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/selector-proposals/:decision/review`,
   lead: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/lead`,
   leadTranscript: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/lead/transcript`,
+  leadContext: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/lead/context`,
   leadInquiries: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/lead/inquiries`,
   leadInquiry: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/lead/inquiries/:session`,
   executions: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions`,
@@ -612,6 +619,7 @@ export const nativeHttpRoutes = {
   chatThreads: `${nativeHttpBasePath}/tenants/:tenant/chat/threads`,
   chatThread: `${nativeHttpBasePath}/tenants/:tenant/chat/threads/:session`,
   chatThreadTranscript: `${nativeHttpBasePath}/tenants/:tenant/chat/threads/:session/transcript`,
+  chatThreadContext: `${nativeHttpBasePath}/tenants/:tenant/chat/threads/:session/context`,
   chatThreadMessages: `${nativeHttpBasePath}/tenants/:tenant/chat/threads/:session/messages`,
   chatThreadClose: `${nativeHttpBasePath}/tenants/:tenant/chat/threads/:session/close`,
   chatThreadRename: `${nativeHttpBasePath}/tenants/:tenant/chat/threads/:session/rename`,
@@ -631,6 +639,7 @@ export const nativeHttpRoutes = {
   threadLimit: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/thread-limits/:subject`,
   thread: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session`,
   threadTranscript: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session/transcript`,
+  threadContext: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session/context`,
   threadMessages: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session/messages`,
   threadClose: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session/close`,
   threadRename: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/threads/:session/rename`,

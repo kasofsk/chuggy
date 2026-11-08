@@ -233,6 +233,8 @@ export const leadStandingReadFunction = "read_lead_standing";
 /** The refusal the selector keeps for a project's lead, as the API reads it. */
 export const leadRefusalReadFunction = "read_lead_refusal";
 export const sessionStoreBatchesReadFunction = "read_session_store_batches";
+export const sessionContextReadFunction = "read_session_context";
+export const sessionOpeningReadFunction = "read_session_opening";
 export const sessionStoreStreamListFunction = "list_session_store_streams";
 export const sessionCapabilitiesSetFunction = "set_session_capabilities";
 export const threadOpenFunction = "open_member_thread";

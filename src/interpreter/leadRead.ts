@@ -38,8 +38,10 @@ import {
   sessionStoreEntries,
   sessionTranscriptChain,
   sessionTranscriptCompaction,
+  sessionTranscriptCompactions,
   sessionTranscriptHeld,
   type SessionStoreEntry,
+  type SessionTranscriptBoundary,
 } from "./sessionTranscript.ts";
 import {
   sessionStorePageBatchesMax,
@@ -210,6 +212,8 @@ export interface LeadTranscriptPage {
   /** The batch the stream's last cut fell in, beside the held set it decided. */
   readonly cut?: number;
   readonly compaction?: { readonly boundary: string; readonly at?: string };
+  /** Every cut among this page's entries, absent where it holds none. */
+  readonly compactions?: readonly SessionTranscriptBoundary[];
   readonly elided: number;
   readonly truncated: boolean;
   readonly nextAfter?: number;
@@ -320,6 +324,8 @@ export function leadTranscriptPage(input: {
   const entries = chain.slice(0, sessionTranscriptEntriesMax);
   const compaction = sessionTranscriptCompaction(stored);
   const boundary = compaction?.boundary.uuid;
+  const boundaries = sessionTranscriptCompactions(stored);
+  const compactions = boundaries.slice(0, sessionTranscriptEntriesMax);
   const held = input.walk?.held;
   const cut = input.walk?.cut;
   return {
@@ -345,8 +351,10 @@ export function leadTranscriptPage(input: {
               : { at: compaction.boundary.timestamp }),
           },
         }),
+    ...(compactions.length === 0 ? {} : { compactions }),
     elided,
-    truncated: chain.length > entries.length,
+    truncated:
+      chain.length > entries.length || boundaries.length > compactions.length,
     ...(input.nextAfter === undefined ? {} : { nextAfter: input.nextAfter }),
   };
 }

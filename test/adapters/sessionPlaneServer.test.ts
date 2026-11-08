@@ -29,6 +29,7 @@ import {
 import {
   nativeHttpPageItemsMax,
   repositoryIdentityCharsMax,
+  sessionContextReadingsMax,
   sessionIdentityCharsMax,
   sessionLiveBlockCharsMax,
   sessionLiveBlocksMax,
@@ -74,7 +75,11 @@ import {
   planeTextHeaviest,
   type PlaneHeaviest,
 } from "./planeBodies.ts";
-import { inertSessionPlane, inertWorkerPlane } from "./workerPlaneFixtures.ts";
+import {
+  inertSessionPlane,
+  inertWorkerPlane,
+  sessionContextReadingsBody,
+} from "./workerPlaneFixtures.ts";
 
 /** One bearer in the session language, which is the only token these routes read. */
 const secret = `chgs_${"a".repeat(32)}`;
@@ -1319,7 +1324,10 @@ const measured = {
   tools: ["Bash", "Read"],
 };
 
-test("what a pod measured of a turn is carried through whole, and absent where it is", async () => {
+/** What each answer in `payloads` reached the boundary as, every one accepted. */
+async function answersCarried(
+  payloads: readonly Record<string, unknown>[],
+): Promise<unknown[]> {
   const settled: unknown[] = [];
   const app = sessionPlane({
     settlements: {
@@ -1330,10 +1338,7 @@ test("what a pod measured of a turn is carried through whole, and absent where i
       fail: () => Promise.resolve("Failed"),
     },
   });
-  for (const payload of [
-    { turn: "turn-7", result: "done", measured },
-    { turn: "turn-7", result: "done" },
-  ]) {
+  for (const payload of payloads) {
     const response = await app.inject({
       method: "POST",
       url: "/v1/session/turn/answer",
@@ -1342,11 +1347,21 @@ test("what a pod measured of a turn is carried through whole, and absent where i
     });
     assert.equal(response.statusCode, 204, JSON.stringify(payload));
   }
-  assert.deepEqual(settled, [
-    { secret, generation: 3, turn: "turn-7", result: "done", measured },
-    { secret, generation: 3, turn: "turn-7", result: "done" },
-  ]);
   await app.close();
+  return settled;
+}
+
+test("what a pod measured of a turn is carried through whole, and absent where it is", async () => {
+  assert.deepEqual(
+    await answersCarried([
+      { turn: "turn-7", result: "done", measured },
+      { turn: "turn-7", result: "done" },
+    ]),
+    [
+      { secret, generation: 3, turn: "turn-7", result: "done", measured },
+      { secret, generation: 3, turn: "turn-7", result: "done" },
+    ],
+  );
 });
 
 /**
@@ -1443,6 +1458,62 @@ test("a measurement with a hole, a figure or a name no row holds reaches no boun
     });
     assert.equal(response.statusCode, 400, JSON.stringify(offered));
   }
+  assert.equal(reached, 0);
+  await app.close();
+});
+
+const readings = sessionContextReadingsBody;
+
+test("a turn's readings are carried through in the order the pod took them, and an answer naming none carries none", async () => {
+  assert.deepEqual(
+    await answersCarried([
+      { turn: "turn-7", result: "done", readings },
+      { turn: "turn-7", result: "done", readings: [] },
+    ]),
+    [
+      { secret, generation: 3, turn: "turn-7", result: "done", readings },
+      { secret, generation: 3, turn: "turn-7", result: "done" },
+    ],
+  );
+});
+
+test("readings past their bound, of a cause a turn has no reading for, or a compaction's facts beside its end reach no boundary, and a failure carries none", async () => {
+  let reached = 0;
+  const app = sessionPlane({
+    settlements: {
+      answer: () => {
+        reached += 1;
+        return Promise.resolve("Answered");
+      },
+      fail: () => {
+        reached += 1;
+        return Promise.resolve("Failed");
+      },
+    },
+  });
+  const end = { cause: "End" };
+  for (const offered of [
+    Array.from({ length: sessionContextReadingsMax + 1 }, () => end),
+    [{ cause: "Start" }],
+    [{ ...end, compaction: { trigger: "Auto", tokensBefore: 1 } }],
+    [{ cause: "Compaction", compaction: { trigger: "auto", tokensBefore: 1 } }],
+    [{ ...end, ordinal: 1 }],
+  ]) {
+    const response = await app.inject({
+      method: "POST",
+      url: "/v1/session/turn/answer",
+      headers: held,
+      payload: { turn: "turn-7", result: "done", readings: offered },
+    });
+    assert.equal(response.statusCode, 400, JSON.stringify(offered));
+  }
+  const failed = await app.inject({
+    method: "POST",
+    url: "/v1/session/turn/failure",
+    headers: held,
+    payload: { turn: "turn-7", failure: "AgentFailed", readings },
+  });
+  assert.equal(failed.statusCode, 400);
   assert.equal(reached, 0);
   await app.close();
 });

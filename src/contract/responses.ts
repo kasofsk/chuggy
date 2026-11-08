@@ -42,6 +42,9 @@ import {
   inquiryQuestionCharsMax,
   instantSchema,
   isBoundedText,
+  agentSessionPromptCharsMax,
+  leadAutoCompactWindowTokensMax,
+  leadAutoCompactWindowTokensMin,
   leadTurnsAnsweredMax,
   nativeHttpDraftDependenciesMax,
   nativeHttpPageItemsMax,
@@ -63,6 +66,8 @@ import {
   selectorHandoffNotePreviewCharsMax,
   selectorHistoryLimitMax,
   selectorProposalDispatchesAnsweredMax,
+  sessionContextPageTurnsMax,
+  sessionContextReadingsMax,
   sessionStoreStreamCharsMax,
   sessionStoreStreamsAnswered,
   sessionTranscriptEntriesMax,
@@ -179,6 +184,7 @@ import {
   repositoryConfigurationImportAbsences,
   repositoryConfigurationImportResults,
 } from "./rosters.ts";
+import type { RunContextCause } from "./rosters.ts";
 import { accessProjectRoles } from "./accessPlane.ts";
 
 const page = <T extends z.ZodType>(item: T) =>
@@ -320,18 +326,24 @@ export const runCompactionSchema = z.strictObject({
 });
 export type RunCompaction = z.infer<typeof runCompactionSchema>;
 
+/** A cause a reading names other than a compaction. */
+type ContextSettledCause = Exclude<RunContextCause, "Compaction">;
+
 /**
- * One reading of a run's context window, `shape` the fields its side of the
- * wire adds, and only a compaction's reading carrying the compaction's facts.
+ * One reading of a context window: `placed` the fields that place it in its
+ * series, `added` the fields its side of the wire adds, `settled` the causes
+ * beside a compaction it may name, and only a compaction's reading carrying
+ * the compaction's facts.
  */
-export function runContextReadingSchemaOf<Shape extends z.ZodRawShape>(
-  shape: Shape,
-) {
+function contextReadingSchemaOf<
+  Placed extends z.ZodRawShape,
+  Added extends z.ZodRawShape,
+  Settled extends readonly [ContextSettledCause, ...ContextSettledCause[]],
+>(placed: Placed, added: Added, settled: Settled) {
   const reading = {
-    ordinal: z.number().int().positive().max(runContextReadingsMax),
-    afterTurn: z.number().int().nonnegative().max(runTurnSeriesMax),
+    ...placed,
     window: runContextWindowSchema.optional(),
-    ...shape,
+    ...added,
   };
   return z.discriminatedUnion("cause", [
     z.strictObject({
@@ -339,9 +351,48 @@ export function runContextReadingSchemaOf<Shape extends z.ZodRawShape>(
       cause: z.literal("Compaction"),
       compaction: runCompactionSchema.optional(),
     }),
-    z.strictObject({ ...reading, cause: z.enum(["Start", "End"]) }),
+    z.strictObject({ ...reading, cause: z.enum(settled) }),
   ]);
 }
+
+/**
+ * One reading of a run's context window, `shape` the fields its side of the
+ * wire adds, and only a compaction's reading carrying the compaction's facts.
+ */
+export function runContextReadingSchemaOf<Shape extends z.ZodRawShape>(
+  shape: Shape,
+) {
+  return contextReadingSchemaOf(
+    {
+      ordinal: z.number().int().positive().max(runContextReadingsMax),
+      afterTurn: z.number().int().nonnegative().max(runTurnSeriesMax),
+    },
+    shape,
+    ["Start", "End"],
+  );
+}
+
+/**
+ * One reading of a session's context window, taken as one of its turns ended
+ * or as the window compacted during it, `shape` the fields its side of the
+ * wire adds. The turn it was taken in places it, so it carries no place of its
+ * own.
+ */
+export function sessionContextReadingSchemaOf<Shape extends z.ZodRawShape>(
+  shape: Shape,
+) {
+  return contextReadingSchemaOf({}, shape, ["End"]);
+}
+
+/** A session's reading as its pod offers it with a turn's answer, before the server dates it. */
+export const sessionContextOfferedSchema = sessionContextReadingSchemaOf({});
+export type SessionContextOffered = z.infer<typeof sessionContextOfferedSchema>;
+
+/** A session's reading as a reader is answered with it, dated by the server that stored it. */
+export const sessionContextReadingSchema = sessionContextReadingSchemaOf({
+  recordedAt: instantSchema,
+});
+export type SessionContextReading = z.infer<typeof sessionContextReadingSchema>;
 
 /** A reading as a worker offers it, before the server dates it. */
 export const runContextOfferedSchema = runContextReadingSchemaOf({});
@@ -1772,9 +1823,28 @@ export const leadTranscriptResponseSchema = z.object({
   compaction: z
     .object({ boundary: identitySchema, at: instantSchema.optional() })
     .optional(),
+  /**
+   * Every cut among the entries sent, in the order the store holds them, each
+   * with what set it off and how many tokens the window held before it and
+   * after it where the store says. Absent where the page holds none.
+   */
+  compactions: z
+    .array(
+      z.object({
+        boundary: identitySchema,
+        at: instantSchema.optional(),
+        trigger: z.enum(runCompactionTriggers).optional(),
+        tokensBefore: countSchema.optional(),
+        tokensAfter: countSchema.optional(),
+      }),
+    )
+    .min(1)
+    .max(sessionTranscriptEntriesMax)
+    .optional(),
   elided: countSchema,
-  /** Whether this page's own entries were cut at their bound. A walk that could
-   * not decide what is held says that by omitting `held`, not by this. */
+  /** Whether this page's own entries, or its cuts, were cut at their bound. A
+   * walk that could not decide what is held says that by omitting `held`, not
+   * by this. */
   truncated: z.boolean(),
   nextAfter: countSchema.optional(),
 });
@@ -1978,6 +2048,40 @@ export type ThreadResponse = z.infer<typeof threadResponseSchema>;
  */
 export const threadTranscriptResponseSchema = leadTranscriptResponseSchema;
 export type ThreadTranscriptResponse = LeadTranscriptResponse;
+
+/** One turn's readings of its session's context window, in the order its pod took them. */
+export const sessionContextTurnResponseSchema = z.object({
+  turn: identitySchema,
+  ordinal: countSchema,
+  readings: z
+    .array(sessionContextReadingSchema)
+    .min(1)
+    .max(sessionContextReadingsMax),
+});
+
+/**
+ * One page of a session's context readings, by turn ascending and resumed
+ * after the last turn's ordinal, naming only the turns that hold readings. The
+ * first page alone, the one asked for with no cursor, also answers what the
+ * session was opened under, each where it holds one: the prompt appended to the
+ * agent runtime's own, and the window at which the runtime compacts.
+ */
+export const sessionContextResponseSchema = z.object({
+  systemPrompt: z.string().min(1).max(agentSessionPromptCharsMax).optional(),
+  autoCompactWindow: z
+    .number()
+    .int()
+    .min(leadAutoCompactWindowTokensMin)
+    .max(leadAutoCompactWindowTokensMax)
+    .optional(),
+  turns: z
+    .array(sessionContextTurnResponseSchema)
+    .max(sessionContextPageTurnsMax),
+  nextAfter: countSchema.optional(),
+});
+export type SessionContextResponse = z.infer<
+  typeof sessionContextResponseSchema
+>;
 
 /**
  * What the rename and the hide doors answer: the entry as it now stands, which

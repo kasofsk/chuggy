@@ -407,6 +407,7 @@ test("a measured turn binds the five to the positions the contract declares", as
     measured.costMicros,
     measured.durationMs,
     measured.tools,
+    null,
   ]);
 });
 
@@ -418,6 +419,7 @@ test("a turn with nothing measured binds the five as absent together", async () 
   assert.deepEqual(only(recorded).values.slice(4), [
     12,
     14,
+    null,
     null,
     null,
     null,

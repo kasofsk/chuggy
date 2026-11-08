@@ -153,6 +153,7 @@ import {
   inertSessionPlane,
   inertTasks,
   inertWorkerPlane,
+  contextWindowBareBody,
   runContextReadingBody,
   runTotalsBody,
 } from "./workerPlaneFixtures.ts";
@@ -352,7 +353,24 @@ const workerPlaneRequests: Readonly<
   report: "Unparsed",
   runConfiguration: "Unparsed",
   runTranscript: "Unparsed",
-  runTurns: { schema: "workerRunTurnsSchema", bodies: [] },
+  runTurns: {
+    schema: "workerRunTurnsSchema",
+    bodies: [
+      {
+        turns: [
+          {
+            ordinal: 2,
+            model: "model",
+            tokensInput: 1,
+            tokensOutput: 1,
+            tokensCacheCreation: 0,
+            tokensCacheRead: 0,
+            parentToolUseId: "toolu_fixture",
+          },
+        ],
+      },
+    ],
+  },
   runTotals: {
     schema: "workerRunTotalsSchema",
     bodies: [
@@ -377,7 +395,37 @@ const workerPlaneRequests: Readonly<
   },
   runContext: {
     schema: "workerRunContextSchema",
-    bodies: [{ readings: [runContextReadingBody] }],
+    bodies: [
+      { readings: [runContextReadingBody] },
+      {
+        readings: [
+          {
+            ordinal: 4,
+            afterTurn: 9,
+            cause: "End",
+            window: runContextReadingBody.window,
+          },
+        ],
+      },
+      {
+        readings: [
+          { ordinal: 1, afterTurn: 0, cause: "Compaction" },
+          {
+            ordinal: 2,
+            afterTurn: 3,
+            cause: "End",
+            window: contextWindowBareBody,
+          },
+          {
+            ordinal: 3,
+            afterTurn: 4,
+            cause: "Compaction",
+            compaction: { trigger: "Manual", tokensBefore: 90_000 },
+            window: contextWindowBareBody,
+          },
+        ],
+      },
+    ],
   },
   runEnded: {
     schema: "workerRunEndedSchema",
@@ -1122,6 +1170,20 @@ const sessionPlaneRequests: Readonly<
         batchFirst: 1,
         batchLast: 2,
       },
+      {
+        turn: "turn",
+        result: "result",
+        readings: [
+          {
+            cause: "Compaction",
+            compaction: runContextReadingBody.compaction,
+            window: runContextReadingBody.window,
+          },
+          { cause: "Compaction" },
+          { cause: "End", window: contextWindowBareBody },
+        ],
+      },
+      { turn: "turn", result: "result", readings: [{ cause: "End" }] },
     ],
   },
   turnFailure: { schema: "sessionTurnFailureSchema", bodies: [] },

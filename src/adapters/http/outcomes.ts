@@ -38,6 +38,7 @@ import {
   type LeadTurnRecord,
 } from "../../interpreter/leadRead.ts";
 import type { ProjectInboxPage } from "../../interpreter/projectInbox.ts";
+import type { SessionContextRead } from "../../interpreter/sessionContext.ts";
 import type { EpicRefusal } from "../../domain/epics.ts";
 import type { EpicRead, EpicWritten } from "../../interpreter/epics.ts";
 import type { SelectorHistoryRead } from "../../interpreter/selectorHistory.ts";
@@ -2482,6 +2483,18 @@ export function leadTranscriptResponse(
       return response(404, nativeHttpError("NotFound", "Resource not found."));
     case "Unavailable":
       return retry(503, result.retryAfterSeconds, "TranscriptUnavailable");
+  }
+}
+
+/** A session nobody may read and one that is not there answer alike, as its transcript does. */
+export function sessionContextResponse(
+  result: SessionContextRead,
+): NativeHttpResponse {
+  switch (result.read) {
+    case "Page":
+      return response(200, result.page);
+    case "NotFound":
+      return response(404, nativeHttpError("NotFound", "Resource not found."));
   }
 }
 

@@ -77,6 +77,7 @@ import {
   postgresThreadSeeding,
   postgresThreads,
 } from "../adapters/postgres/thread.ts";
+import { postgresSessionContextReads } from "../adapters/postgres/sessionContextReads.ts";
 import { postgresSessionStoreRows } from "../adapters/postgres/sessionStoreReads.ts";
 import {
   projectArtifactUploadBytesMax,
@@ -1448,6 +1449,7 @@ export function nativeLeadPorts(
   return {
     leads,
     store: artifacts,
+    context: postgresSessionContextReads(pools.pool),
     refusals: postgresAgenticRefusalReads(pools.pool),
     history: leads,
     settings: postgresSelectorResolvedSettings(pools.pool),
@@ -1473,6 +1475,7 @@ export function nativeThreadPorts(
     seeding: postgresThreadSeeding(pools.pool),
     rows: postgresSessionStoreRows(pools.pool),
     store: artifacts,
+    context: postgresSessionContextReads(pools.pool),
     credentialSlot: requiredEnvironment(threadCredentialSlotVariable),
   };
 }

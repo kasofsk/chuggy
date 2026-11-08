@@ -332,9 +332,10 @@ async function sessionPlaneStreams(
 
 /**
  * One turn's answer, with what the pod measured of it where it measured
- * anything. The five measured parameters are passed together or all null,
- * because the row holds them together and four of them beside a null is a
- * measurement the boundary would refuse anyway.
+ * anything and the readings of its context window where it took any. The five
+ * measured parameters are passed together or all null, because the row holds
+ * them together and four of them beside a null is a measurement the boundary
+ * would refuse anyway.
  */
 async function sessionPlaneAnswer(
   pool: pg.Pool,
@@ -347,7 +348,8 @@ async function sessionPlaneAnswer(
       ${input.batchFirst ?? null},${input.batchLast ?? null},
       ${measured?.model ?? null},${measured?.tokens ?? null},
       ${measured?.costMicros ?? null},${measured?.durationMs ?? null},
-      ${measured === undefined ? null : [...measured.tools]})::text AS answered`,
+      ${measured === undefined ? null : [...measured.tools]},
+      ${input.readings === undefined ? null : JSON.stringify(input.readings)}::jsonb)::text AS answered`,
   );
   return sessionVerdict(
     answerArms,

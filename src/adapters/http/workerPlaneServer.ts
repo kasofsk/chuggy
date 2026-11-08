@@ -17,6 +17,7 @@ import {
   runToolUseIdCharsMax,
   runTranscriptBatchBytesMax,
   runTranscriptBatchesMax,
+  sessionContextReadingsMax,
   sessionIdentityCharsMax,
   sessionLiveEventsMax,
   sessionLiveMessageCharsMax,
@@ -345,11 +346,12 @@ export function workerPlaneServed(uploadBytesMax: number) {
   >;
 }
 
-/** One answered turn: its identity and its result, and a measurement naming its model and each of its tools. */
+/** One answered turn: its identity and its result, a measurement naming its model and each of its tools, and every reading of its context window at its heaviest. */
 const sessionTurnAnswerBytesMax =
   planeJsonObjectBytesMax(sessionIdentityCharsMax, sessionTurnResultCharsMax) +
   planeJsonObjectBytesMax(sessionTurnModelCharsMax) +
-  sessionTurnToolsMax * planeJsonTextBytesMax(sessionTurnToolNameCharsMax);
+  sessionTurnToolsMax * planeJsonTextBytesMax(sessionTurnToolNameCharsMax) +
+  sessionContextReadingsMax * workerRunContextReadingBytesMax;
 
 /** One post of live events: its turn, and each event naming its message and carrying a text that holds no more characters than it may weigh. */
 const sessionTurnLiveBytesMax =
@@ -1555,7 +1557,8 @@ function sessionSettleRoutes(
   register("turnAnswer", async (request, reply, caller) => {
     const offered = sessionTurnAnswerSchema.safeParse(request.body);
     if (!offered.success) return reply.code(400).send({ action: "stop" });
-    const { turn, result, batchFirst, batchLast, measured } = offered.data;
+    const { turn, result, batchFirst, batchLast, measured, readings } =
+      offered.data;
     return sessionSettled(
       reply,
       await sessions.settlements.answer({
@@ -1566,6 +1569,9 @@ function sessionSettleRoutes(
         ...(batchFirst === undefined ? {} : { batchFirst }),
         ...(batchLast === undefined ? {} : { batchLast }),
         ...(measured === undefined ? {} : { measured }),
+        ...(readings === undefined || readings.length === 0
+          ? {}
+          : { readings }),
       }),
     );
   });

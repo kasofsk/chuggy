@@ -32,8 +32,17 @@
  * it is dropped for the same reason the bookkeeping types are. The suite pins
  * the chain and what it holds against what the SDK's own accessor answered for
  * the same bytes.
+ *
+ * EVERY BOUNDARY IS ALSO ANSWERED ON ITS OWN, with the figures its metadata
+ * holds, because a cut the context no longer turns on is still a fact about
+ * how the window grew. A figure the store does not hold as a count, and a
+ * trigger it names outside the runtime's two, is left out rather than guessed.
  */
 
+import {
+  runCompactionTriggers,
+  type RunCompactionTrigger,
+} from "../contract/rosters.ts";
 import type { JsonValue } from "./selector.ts";
 
 /** One entry of the raw store, parsed no further than a reader draws it. */
@@ -61,6 +70,15 @@ export interface SessionTranscriptCompaction {
    * did not.
    */
   readonly anchor?: string;
+}
+
+/** One compaction boundary as a reader is told of it, each figure present where the store holds it. */
+export interface SessionTranscriptBoundary {
+  readonly boundary: string;
+  readonly at?: string;
+  readonly trigger?: RunCompactionTrigger;
+  readonly tokensBefore?: number;
+  readonly tokensAfter?: number;
 }
 
 /** The entry types a reader is shown; every other type is the runtime's bookkeeping. */
@@ -251,4 +269,70 @@ export function sessionTranscriptHeld(
       (entry.uuid !== undefined && preserved.has(entry.uuid)) ||
       (appendedAt.get(entry) ?? -1) > cut,
   );
+}
+
+function metadataField(
+  metadata: JsonValue | undefined,
+  field: string,
+): JsonValue | undefined {
+  return typeof metadata === "object" &&
+    metadata !== null &&
+    !Array.isArray(metadata)
+    ? (metadata as Record<string, JsonValue>)[field]
+    : undefined;
+}
+
+/** A figure of a boundary's metadata, where the store holds it as a count. */
+function metadataCount(
+  metadata: JsonValue | undefined,
+  field: string,
+): number | undefined {
+  const value = metadataField(metadata, field);
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+    ? value
+    : undefined;
+}
+
+/** The trigger a boundary names, which the store spells in lower case. */
+function metadataTrigger(
+  metadata: JsonValue | undefined,
+): RunCompactionTrigger | undefined {
+  const value = metadataField(metadata, "trigger");
+  return runCompactionTriggers.find(
+    (trigger) => trigger.toLowerCase() === value,
+  );
+}
+
+/**
+ * Every compaction boundary among the entries, in the order they were
+ * appended, each identity once: a fork re-appends its parent's entries under
+ * their own uuids, so the first is the one kept, as the walk keeps it.
+ */
+export function sessionTranscriptCompactions(
+  entries: readonly SessionStoreEntry[],
+): readonly SessionTranscriptBoundary[] {
+  const seen = new Set<string>();
+  const boundaries: SessionTranscriptBoundary[] = [];
+  for (const entry of entries) {
+    if (
+      entry.type !== "system" ||
+      entry.subtype !== compactionSubtype ||
+      entry.uuid === undefined ||
+      seen.has(entry.uuid)
+    )
+      continue;
+    seen.add(entry.uuid);
+    const metadata = entry.compactMetadata;
+    const trigger = metadataTrigger(metadata);
+    const tokensBefore = metadataCount(metadata, "preTokens");
+    const tokensAfter = metadataCount(metadata, "postTokens");
+    boundaries.push({
+      boundary: entry.uuid,
+      ...(entry.timestamp === undefined ? {} : { at: entry.timestamp }),
+      ...(trigger === undefined ? {} : { trigger }),
+      ...(tokensBefore === undefined ? {} : { tokensBefore }),
+      ...(tokensAfter === undefined ? {} : { tokensAfter }),
+    });
+  }
+  return boundaries;
 }

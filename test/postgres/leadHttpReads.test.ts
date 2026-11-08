@@ -31,6 +31,7 @@ import {
 } from "../../src/contract/responses.ts";
 import { postgresAgenticRefusalReads } from "../../src/adapters/postgres/agenticRefusal.ts";
 import { postgresLeadReads } from "../../src/adapters/postgres/leadReads.ts";
+import { postgresSessionContextReads } from "../../src/adapters/postgres/sessionContextReads.ts";
 import {
   postgresSelectorProjectSettings,
   postgresSelectorResolvedSettings,
@@ -165,6 +166,7 @@ function leadApp(subject: string, selector?: string) {
     {
       leads,
       store: storeReads,
+      context: postgresSessionContextReads(pool),
       refusals: postgresAgenticRefusalReads(pool),
       history: leads,
       settings: postgresSelectorResolvedSettings(pool),

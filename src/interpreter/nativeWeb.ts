@@ -151,6 +151,12 @@ import {
 import type { AttemptId, ExecutionId } from "./schedulerIdentity.ts";
 import type { AttemptEvidence } from "./executionScheduler.ts";
 import type { RunStepEvidence } from "./runEvidence.ts";
+import {
+  sessionContextPage,
+  type SessionContextQuery,
+  type SessionContextRead,
+  type SessionContextReadStore,
+} from "./sessionContext.ts";
 import { type PublicInstant } from "./publicResource.ts";
 import { hostedRunsGranted, memberAuthorities } from "./projectAccess.ts";
 import { projectAbilities } from "./projectAbilities.ts";
@@ -799,6 +805,11 @@ export interface NativeWeb extends NativeEpics {
     partition: Partition,
     query: LeadTranscriptQuery,
   ): Promise<LeadTranscriptRead>;
+  leadContext(
+    principal: Principal,
+    partition: Partition,
+    query: SessionContextQuery,
+  ): Promise<SessionContextRead>;
   agenticRefusals(
     principal: Principal,
     partition: Partition,
@@ -994,6 +1005,12 @@ export interface NativeWeb extends NativeEpics {
     session: SessionId,
     query: LeadTranscriptQuery,
   ): Promise<LeadTranscriptRead>;
+  threadContext(
+    principal: Principal,
+    partition: Partition,
+    session: SessionId,
+    query: SessionContextQuery,
+  ): Promise<SessionContextRead>;
   openThread(
     principal: Principal,
     partition: Partition,
@@ -1831,6 +1848,7 @@ function nativeTicketMethods(
 export interface NativeLeadPorts {
   readonly leads: LeadReadStore;
   readonly store: SessionStoreReadPort;
+  readonly context: SessionContextReadStore;
   readonly refusals: AgenticRefusalRead;
   readonly history: SelectorHistoryStore;
   /** The project's settings as the selector resolves them, which say whether it is paused. */
@@ -1958,6 +1976,7 @@ type NativeLeadMethods = Pick<
   NativeWeb,
   | "lead"
   | "leadTranscript"
+  | "leadContext"
   | "agenticRefusals"
   | "ticketAgenticRefusals"
   | "selectorHistory"
@@ -2030,15 +2049,15 @@ async function nativeLeadDispatchWaits(
 }
 
 /**
- * The lead's own two reads, each reauthorizing before it reaches a store. A
+ * The lead's own three reads, each reauthorizing before it reaches a store. A
  * readable project holding no lead is answered `None` by the head, which is
- * how the project stands, with why as the reason; its transcript has nothing to
- * page and is not found.
+ * how the project stands, with why as the reason; its transcript and its
+ * context readings have nothing to page and are not found.
  */
 function nativeLeadSessionMethods(
   access: ProjectAccess,
   leads?: NativeLeadPorts,
-): Pick<NativeWeb, "lead" | "leadTranscript"> {
+): Pick<NativeWeb, "lead" | "leadTranscript" | "leadContext"> {
   return {
     lead: async (principal, partition) => {
       if ((await access.authorize(principal, partition, "Read")) === undefined)
@@ -2081,6 +2100,25 @@ function nativeLeadSessionMethods(
         checkedLeadTranscriptQuery(query),
       );
     },
+    leadContext: async (principal, partition, query) => {
+      if ((await access.authorize(principal, partition, "Read")) === undefined)
+        return { read: "NotFound" };
+      const ports = composedLeadPorts(leads);
+      const standing = await ports.leads.standing(
+        partition,
+        leadTurnsAnsweredMax,
+      );
+      if (standing === undefined) return { read: "NotFound" };
+      return {
+        read: "Page",
+        page: await sessionContextPage(
+          ports.context,
+          partition,
+          standing.session,
+          query,
+        ),
+      };
+    },
   };
 }
 
@@ -2101,6 +2139,7 @@ export interface NativeThreadPorts {
   readonly seeding: ThreadSeedingRead;
   readonly rows: SessionStoreRowsRead;
   readonly store: SessionStoreReadPort;
+  readonly context: SessionContextReadStore;
   readonly credentialSlot: string;
 }
 
@@ -2524,7 +2563,7 @@ function nativeThreadViewMethods(
 }
 
 /**
- * The three reads every member of the project may make of every thread in it,
+ * The four reads every member of the project may make of every thread in it,
  * each reauthorizing before it reaches a store. A thread that is not this
  * project's own, and a session that is not a thread at all, answer alike:
  * `standing` refuses both, and neither is a fact a reader is owed.
@@ -2532,8 +2571,12 @@ function nativeThreadViewMethods(
 function nativeThreadReadMethods(
   access: ProjectAccess,
   threads?: NativeThreadPorts,
-): Pick<NativeWeb, "threads" | "thread" | "threadTranscript"> {
+): Pick<
+  NativeWeb,
+  "threads" | "thread" | "threadTranscript" | "threadContext"
+> {
   return {
+    ...nativeThreadSessionReadMethods(access, threads),
     threads: async (principal, partition) => {
       if ((await access.authorize(principal, partition, "Read")) === undefined)
         return { result: "NotFound" };
@@ -2572,25 +2615,71 @@ function nativeThreadReadMethods(
         streams: found.streams,
       };
     },
+  };
+}
+
+/** A thread's transcript and context, each read over the session `standing` resolved. */
+function nativeThreadSessionReadMethods(
+  access: ProjectAccess,
+  threads?: NativeThreadPorts,
+): Pick<NativeWeb, "threadTranscript" | "threadContext"> {
+  return {
     threadTranscript: async (principal, partition, session, query) => {
-      if ((await access.authorize(principal, partition, "Read")) === undefined)
-        return { read: "NotFound" };
-      const ports = composedThreadPorts(threads);
-      const found = await ports.threads.standing({
+      const found = await nativeReadableThread(
+        access,
+        threads,
+        principal,
         partition,
         session,
-        query: { limit: 1 },
-      });
+      );
       if (found === undefined) return { read: "NotFound" };
       return nativeSessionTranscriptPage(
-        ports.rows,
-        ports.store,
+        found.ports.rows,
+        found.ports.store,
         partition,
         found.thread,
         checkedLeadTranscriptQuery(query),
       );
     },
+    threadContext: async (principal, partition, session, query) => {
+      const found = await nativeReadableThread(
+        access,
+        threads,
+        principal,
+        partition,
+        session,
+      );
+      if (found === undefined) return { read: "NotFound" };
+      return {
+        read: "Page",
+        page: await sessionContextPage(
+          found.ports.context,
+          partition,
+          found.thread.session,
+          query,
+        ),
+      };
+    },
   };
+}
+
+/** The thread a member of the project may read the session of, or nothing where the read or the thread is refused. */
+async function nativeReadableThread(
+  access: ProjectAccess,
+  threads: NativeThreadPorts | undefined,
+  principal: Principal,
+  partition: Partition,
+  session: SessionId,
+) {
+  if ((await access.authorize(principal, partition, "Read")) === undefined)
+    return undefined;
+  const ports = composedThreadPorts(threads);
+  const found = await ports.threads.standing({
+    partition,
+    session,
+    query: { limit: 1 },
+  });
+  return found === undefined ? undefined : { ports, thread: found.thread };
 }
 
 /**
@@ -2754,6 +2843,7 @@ export function nativeThreadMethods(
   | "threads"
   | "thread"
   | "threadTranscript"
+  | "threadContext"
   | "openThread"
   | "sendThreadMessage"
   | "replyThreadOffer"

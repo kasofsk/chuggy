@@ -35,6 +35,7 @@ import {
 } from "../../src/contract/workerPlane.ts";
 import {
   sessionFactsAnswerSchema,
+  sessionTurnAnswerSchema,
   sessionTurnClaimedSchema,
 } from "../../src/contract/sessionPlane.ts";
 import { resultManifestDocumentSchema } from "../../src/contract/workerDocuments.ts";
@@ -45,6 +46,7 @@ import {
   workerContractEvaluatedTrees,
   workerContractRunContexts,
   workerContractRunUsages,
+  workerContractSessionContexts,
   workerContractTargetRefs,
   workerContractThreadOffer,
 } from "../../src/interpreter/workerPlane.ts";
@@ -328,4 +330,29 @@ test("a session's facts name `ThreadOffer` and its mailbox hands over an `OfferR
         contractVersionAccepted(workerContractThreadOffer, release),
         `${release} ${name}`,
       );
+});
+
+test("a turn's answer carries its context readings from the version a pod holds the plane to, and no release below it offers them", async () => {
+  const offers = (schema: z.ZodType) =>
+    schema instanceof z.ZodObject && Object.hasOwn(schema.shape, "readings");
+  assert.ok(offers(sessionTurnAnswerSchema));
+  assert.ok(
+    contractVersionAccepted(
+      workerContractSessionContexts,
+      workerContractRelease,
+    ),
+  );
+  for (const release of workerContractReplayed("session"))
+    assert.equal(
+      offers(
+        await workerContractReleaseExport(
+          release,
+          "sessionPlane",
+          "sessionTurnAnswerSchema",
+          workerContractReleaseSchema,
+        ),
+      ),
+      contractVersionAccepted(workerContractSessionContexts, release),
+      release,
+    );
 });

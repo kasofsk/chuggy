@@ -145,6 +145,20 @@ function portsOfMemberThreads(
   };
 }
 
+/** A context store answering no readings, recording every call that reaches it. */
+function contextOf(calls: string[]): NativeThreadPorts["context"] {
+  return {
+    turns: ({ partition, session }) => {
+      calls.push(`context:${partition.project}:${session}`);
+      return Promise.resolve({ turns: [] });
+    },
+    opening: (partition, session) => {
+      calls.push(`opening:${partition.project}:${session}`);
+      return Promise.resolve({});
+    },
+  };
+}
+
 /** A store over `kept`, recording every call that reaches it. */
 function portsOf(kept: readonly Kept[], calls: string[]): NativeThreadPorts {
   const found = (partition: Partition, session: SessionId) =>
@@ -205,6 +219,7 @@ function portsOf(kept: readonly Kept[], calls: string[]): NativeThreadPorts {
     },
     rows: { batches: refused("rows") },
     store: { readBatch: refused("bytes") },
+    context: contextOf(calls),
     credentialSlot: "member-thread",
   };
 }
@@ -270,7 +285,28 @@ test("every door answers a member whose tenant took unscoped chat as one that is
     await chat.threadTranscript(geoff, tenant, own, { after: 0, limit: 1 }),
     { read: "NotFound" },
   );
+  assert.deepEqual(await chat.threadContext(geoff, tenant, own, { limit: 1 }), {
+    read: "NotFound",
+  });
   assert.deepEqual(calls, []);
+});
+
+test("a member reads their own thread's context in their reserved partition, and another member reads none of it", async () => {
+  const { chat, calls } = chatOf({ granted: [geoff, dana] }, [ownKept]);
+  assert.deepEqual(await chat.threadContext(geoff, tenant, own, { limit: 1 }), {
+    read: "Page",
+    page: { turns: [] },
+  });
+  assert.deepEqual(await chat.threadContext(dana, tenant, own, { limit: 1 }), {
+    read: "NotFound",
+  });
+  const danas = memberScopePartition(tenant, dana).project;
+  assert.deepEqual(calls, [
+    `standing:${geoffs.project}:${own}`,
+    `context:${geoffs.project}:${own}`,
+    `opening:${geoffs.project}:${own}`,
+    `standing:${danas}:${own}`,
+  ]);
 });
 
 test("a member's own partition admits its owner alone, on the tenant's grant, and no project at all", async () => {
@@ -440,6 +476,10 @@ test("no door reads a project thread's turns, the member's own included, however
       after: 0,
       limit: 1,
     }),
+    { read: "NotFound" },
+  );
+  assert.deepEqual(
+    await chat.threadContext(geoff, tenant, atlasMine, { limit: 1 }),
     { read: "NotFound" },
   );
   assert.ok(

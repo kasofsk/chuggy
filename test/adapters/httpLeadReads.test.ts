@@ -1,5 +1,5 @@
 /**
- * The five lead-side reads, served through the real boundary rather than a
+ * The six lead-side reads, served through the real boundary rather than a
  * double of it, so the authorization gate, the page assembly and the response
  * mapping are all under the same assertion.
  *
@@ -23,6 +23,7 @@ import {
   leadResponseSchema,
   leadTranscriptResponseSchema,
   selectorHistoryResponseSchema,
+  sessionContextResponseSchema,
   ticketAgenticRefusalsResponseSchema,
 } from "../../src/contract/responses.ts";
 import {
@@ -63,6 +64,7 @@ import { asTicketId, type TicketId } from "../../src/domain/ids.ts";
 import {
   agenticRefusalLedgerAnsweredMax,
   agenticRefusalsAnsweredMax,
+  sessionContextPageTurnsMax,
   sessionTranscriptHeldBatchesMax,
 } from "../../src/contract/http.ts";
 import {
@@ -278,6 +280,27 @@ function leadPortsStandingRefusal(
   };
 }
 
+/** The lead's readings: one turn on the first page, none past it, and the prompt and window it was opened under. */
+function leadContextReads(): NativeLeadPorts["context"] {
+  return {
+    turns: ({ session, query }) =>
+      Promise.resolve(
+        session === leadStanding.session && (query.after ?? 0) < 4
+          ? { turns: [leadContextTurn], nextAfter: 4 }
+          : { turns: [] },
+      ),
+    opening: (_partition, session) =>
+      Promise.resolve(
+        session === leadStanding.session
+          ? {
+              systemPrompt: "the lead's objectives",
+              autoCompactWindow: 400_000,
+            }
+          : {},
+      ),
+  };
+}
+
 function leadPorts(shape: LeadCase): NativeLeadPorts {
   const draws = shape.draws ?? [];
   const history: SelectorHistoryStore = {
@@ -308,6 +331,7 @@ function leadPorts(shape: LeadCase): NativeLeadPorts {
         ),
       leadRefusal: () => Promise.resolve(shape.refused),
     },
+    context: leadContextReads(),
     store: {
       readBatch: (object) =>
         Promise.resolve(draws[object.batch - 1] ?? { read: "NotFound" }),
@@ -340,6 +364,24 @@ function leadPorts(shape: LeadCase): NativeLeadPorts {
 }
 
 const selectorPrincipal = asPrincipal("selector-subject");
+
+/** One turn of the lead's readings: a compaction during it, and its end. */
+const leadContextTurn = {
+  turn: asSessionTurnId("selector-decision-one"),
+  ordinal: 4,
+  readings: [
+    {
+      cause: "Compaction",
+      compaction: {
+        trigger: "Auto",
+        tokensBefore: 380_000,
+        tokensAfter: 21_000,
+      },
+      recordedAt: "2026-09-02T00:00:00.000Z",
+    },
+    { cause: "End", recordedAt: "2026-09-02T00:00:00.000Z" },
+  ],
+} as const;
 
 /** The dispatch view's first page, holding one released ticket where a case says one waits. */
 function dispatchPage(shape: LeadCase): DispatchViewPage {
@@ -488,10 +530,20 @@ test("a project with no lead answers that it has none, and one nobody may read a
     ).statusCode,
     404,
   );
+  assert.equal(
+    (
+      await absent.inject({
+        url: `${root}/lead/context`,
+        headers: authorized,
+      })
+    ).statusCode,
+    404,
+  );
   await using refused = appOf({ allowed: false });
   for (const path of [
     `${root}/lead`,
     `${root}/lead/transcript`,
+    `${root}/lead/context`,
     `${root}/agentic-refusals`,
     `${root}/tickets/42/agentic-refusals`,
     `${root}/selector-history`,
@@ -683,6 +735,15 @@ test("the transcript answers the chain over its batches and marks what is held",
     body.compaction?.boundary,
     "83738f97-737d-412f-8a49-3c56c4a78ef9",
   );
+  assert.deepEqual(body.compactions, [
+    {
+      boundary: "83738f97-737d-412f-8a49-3c56c4a78ef9",
+      at: "2026-09-02T15:48:54.703Z",
+      trigger: "Manual",
+      tokensBefore: 15_037,
+      tokensAfter: 1_315,
+    },
+  ]);
   assert.equal(body.entries.length, 15);
   assert.deepEqual(
     [...(body.held ?? [])].sort(),
@@ -752,6 +813,7 @@ test("held is the stream's last cut, whichever page is asked for", async () => {
     "b1",
     "this page carries the first cut",
   );
+  assert.deepEqual(older.compactions, [{ boundary: "b1" }]);
   assert.deepEqual(
     older.held,
     [],
@@ -769,6 +831,20 @@ test("held is the stream's last cut, whichever page is asked for", async () => {
     newer.held,
     ["b2-summary"],
     "what the second cut left is held wherever it is paged",
+  );
+  const whole = leadTranscriptResponseSchema.parse(
+    (
+      await app.inject({
+        url: `${root}/lead/transcript?after=0&limit=8`,
+        headers: authorized,
+      })
+    ).json(),
+  );
+  assert.equal(whole.compaction?.boundary, "b2");
+  assert.deepEqual(
+    whole.compactions?.map((compaction) => compaction.boundary),
+    ["b1", "b2"],
+    "a page carrying both cuts names both, in the order they were written",
   );
 });
 
@@ -814,6 +890,11 @@ test("a stream that never compacted names no cut", async () => {
   );
   assert.ok(body.held !== undefined, "the walk reached the stream's end");
   assert.equal(body.cut, undefined);
+  assert.equal(
+    Object.hasOwn(body, "compactions"),
+    false,
+    "a page holding no cut answers what it answered before",
+  );
 });
 
 test("a page ending on a compaction boundary still answers its chain", async () => {
@@ -827,6 +908,7 @@ test("a page ending on a compaction boundary still answers its chain", async () 
     ).json(),
   );
   assert.equal(page.compaction?.boundary, "b2");
+  assert.deepEqual(page.compactions, [{ boundary: "b2" }]);
   assert.ok(
     page.entries.length > 0,
     "a boundary carries no parent, so the walk must follow its logical one",
@@ -937,6 +1019,38 @@ test("an outage beyond the page leaves held undecided, not the page refused", as
   assert.equal(body.elided, 0, "no batch of this page was elided");
   assert.equal(body.held, undefined, "the walk could not decide what is held");
   assert.equal(body.truncated, false, "and every entry it did draw crossed");
+});
+
+test("the lead's context answers its readings by turn, and what it was opened under on the first page alone", async () => {
+  await using app = appOf();
+  const first = await app.inject({
+    url: `${root}/lead/context?limit=1`,
+    headers: authorized,
+  });
+  assert.equal(first.statusCode, 200);
+  assert.deepEqual(sessionContextResponseSchema.parse(first.json()), {
+    systemPrompt: "the lead's objectives",
+    autoCompactWindow: 400_000,
+    turns: [leadContextTurn],
+    nextAfter: 4,
+  });
+  const later = await app.inject({
+    url: `${root}/lead/context?after=4`,
+    headers: authorized,
+  });
+  assert.equal(later.statusCode, 200);
+  assert.deepEqual(sessionContextResponseSchema.parse(later.json()), {
+    turns: [],
+  });
+  assert.equal(
+    (
+      await app.inject({
+        url: `${root}/lead/context?limit=${String(sessionContextPageTurnsMax + 1)}`,
+        headers: authorized,
+      })
+    ).statusCode,
+    400,
+  );
 });
 
 test("a lead that has bound no stream has no transcript to answer", async () => {

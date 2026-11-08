@@ -39,6 +39,7 @@ import {
   type SessionPodEnding,
 } from "./sessionScheduler.ts";
 import type { SessionStoreRecorded } from "./sessionStore.ts";
+import type { SessionContextRecord } from "./sessionContext.ts";
 
 /** Everything a session bearer recovers, which is the whole of what a pod may be told. */
 export interface SessionPlaneIdentity {
@@ -208,6 +209,8 @@ export interface SessionTurnSettlePort {
     readonly batchLast?: number;
     /** What the runtime spent, absent where the pod could not read it. */
     readonly measured?: SessionTurnMeasured;
+    /** What the context window held as the turn ended and at each compaction during it, absent where the pod read none. */
+    readonly readings?: readonly SessionContextRecord[];
   }): Promise<SessionTurnAnswered>;
   fail(input: {
     readonly secret: SessionBearerSecret;
