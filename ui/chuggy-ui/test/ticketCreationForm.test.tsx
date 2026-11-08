@@ -65,6 +65,8 @@ import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { SessionProvider } from "../app/browser/session.tsx";
 import { ConsoleStoreProvided } from "./consoleStoreProvided.tsx";
 import { holderDouble, settled } from "./screenHarness.tsx";
+import { copyTextEn } from "../app/copy/catalog.ts";
+import { copyOrDataText } from "../app/core/copy.ts";
 
 /** The runner has no globals, so each case tears down the tree it rendered,
  * and starts in a browser that remembers no choice. */
@@ -287,7 +289,7 @@ test("each field is named by its label, and a line beside one describes it", () 
   expect(
     screen.getByRole("button", {
       name: "Create ticket",
-      description: creationSubmitEffect("Waits"),
+      description: copyOrDataText(copyTextEn, creationSubmitEffect("Waits")),
     }),
   ).toBeDefined();
 });
@@ -1329,7 +1331,9 @@ test("several configurations ask, and a submission naming none sends nothing", (
   expect(screen.queryByRole("button", { name: "Advanced" })).toBeNull();
   typeIntent("ship it");
   submit();
-  expect(screen.getByText(creationFaultSentence("configuration"))).toBeTruthy();
+  expect(
+    screen.getByText(copyTextEn(creationFaultSentence("configuration"))),
+  ).toBeTruthy();
   expect(drafts(held.sent).length).toBe(0);
 });
 
@@ -1455,7 +1459,9 @@ test("one configuration under a read that may have missed others is asked, not t
   expect(screen.queryByText(/^Configuration ·/u)).toBeNull();
   typeIntent("ship it");
   submit();
-  expect(screen.getByText(creationFaultSentence("configuration"))).toBeTruthy();
+  expect(
+    screen.getByText(copyTextEn(creationFaultSentence("configuration"))),
+  ).toBeTruthy();
   expect(drafts(held.sent).length).toBe(0);
 });
 

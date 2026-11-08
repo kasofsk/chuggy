@@ -143,8 +143,8 @@ function linesDrawn(step: OperationStep): readonly string[] {
     inboxStepSentence(step, copyTextEn),
     inboxAnswerRefusal(step, copyTextEn) ?? "",
     parkedOverridesRefusal(step, copyTextEn) ?? "",
-    creationStepSentence(step, copyTextEn),
-    creationStepSentence(step, copyTextEn, "Update"),
+    copyTextEn(creationStepSentence(step)),
+    copyTextEn(creationStepSentence(step, "Update")),
   ];
 }
 

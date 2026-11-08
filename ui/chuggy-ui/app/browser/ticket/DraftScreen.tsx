@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The frame of a screen that writes a ticket's draft, which a new ticket, a
  * duplicate and an edit all are: its title, and its Draft panel for a reader
@@ -14,6 +13,7 @@
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { PanelUnready } from "../DataPanel.tsx";
 import { useProjectAbilityRead, ViewOnlyNotice } from "../projectAbilities.tsx";
 import { ScreenTitle, TopBarSlot } from "../shell/slots.tsx";
@@ -28,6 +28,7 @@ export function DraftScreen(props: {
   readonly children: ReactNode;
 }): ReactNode {
   const read = useProjectAbilityRead(props.partition, "mutate");
+  const text = useCopyText();
   return (
     <>
       {props.named === true ? (
@@ -42,7 +43,7 @@ export function DraftScreen(props: {
       {read === "Asked" ? (
         props.children
       ) : (
-        <Panel title="Draft">
+        <Panel title={text({ id: "ticket-authoring-draft" })}>
           {read === "Refused" ? (
             <ViewOnlyNotice />
           ) : (

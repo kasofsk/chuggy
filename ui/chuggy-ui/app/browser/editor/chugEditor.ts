@@ -50,6 +50,8 @@ import { tags } from "@lezer/highlight";
 import { vim } from "@replit/codemirror-vim";
 import { basicSetup } from "codemirror";
 
+import { copyOrDataText } from "../../core/copy.ts";
+import type { Copy, CopyText } from "../../core/copy.ts";
 import { chugFragments } from "./chugFragments.ts";
 import type { TicketYamlProblem } from "./ticketYaml.ts";
 import type { TicketYamlKey } from "./ticketYamlKey.ts";
@@ -76,6 +78,8 @@ export interface EditorOptions {
   readonly onChange: (text: string) => void;
   readonly vim: boolean;
   readonly vocabulary: readonly TicketYamlKey[];
+  /** The words the editor's own controls are drawn in. */
+  readonly text: CopyText;
 }
 
 class InlineFinding extends WidgetType {
@@ -122,13 +126,14 @@ const inlineFindings = StateField.define<ReturnType<typeof Decoration.set>>({
 function chugEditorDiagnosticOf(
   state: EditorState,
   problem: TicketYamlProblem,
+  text: CopyText,
 ): Diagnostic {
   const length = state.doc.length;
   const from = Math.max(0, Math.min(problem.from, length));
   return {
     from,
     to: Math.max(from, Math.min(problem.to, length)),
-    message: problem.message,
+    message: copyOrDataText(text, problem.message),
     severity: "error",
   };
 }
@@ -477,6 +482,57 @@ const editorTheme = EditorView.theme({
   },
 });
 
+/**
+ * The words the editor's own panels and gutters say, under the phrases it
+ * asks for them by; a `$` is where it puts a count or a line itself.
+ */
+const chugEditorPhrases = {
+  "Control character": { id: "ticket-authoring-editor-control-character" },
+  close: { id: "ticket-authoring-editor-close" },
+  "folded code": { id: "ticket-authoring-editor-folded-code" },
+  to: { id: "ticket-authoring-editor-to" },
+  unfold: { id: "ticket-authoring-editor-unfold" },
+  "Fold line": { id: "ticket-authoring-editor-fold-line" },
+  "Unfold line": { id: "ticket-authoring-editor-unfold-line" },
+  "Folded lines": { id: "ticket-authoring-editor-folded-lines" },
+  "Unfolded lines": { id: "ticket-authoring-editor-unfolded-lines" },
+  Find: { id: "ticket-authoring-editor-find" },
+  Replace: { id: "ticket-authoring-editor-replace-field" },
+  next: { id: "ticket-authoring-editor-next" },
+  previous: { id: "ticket-authoring-editor-previous" },
+  all: { id: "ticket-authoring-editor-all" },
+  "match case": { id: "ticket-authoring-editor-match-case" },
+  regexp: { id: "ticket-authoring-editor-regexp" },
+  "by word": { id: "ticket-authoring-editor-by-word" },
+  replace: { id: "ticket-authoring-editor-replace" },
+  "replace all": { id: "ticket-authoring-editor-replace-all" },
+  "Go to line": { id: "ticket-authoring-editor-go-to-line" },
+  go: { id: "ticket-authoring-editor-go" },
+  "current match": { id: "ticket-authoring-editor-current-match" },
+  "on line": { id: "ticket-authoring-editor-on-line" },
+  "replaced $ matches": {
+    id: "ticket-authoring-editor-replaced-matches",
+    args: { count: "$" },
+  },
+  "replaced match on line $": {
+    id: "ticket-authoring-editor-replaced-match",
+    args: { line: "$" },
+  },
+  Diagnostics: { id: "ticket-authoring-editor-diagnostics" },
+  "No diagnostics": { id: "ticket-authoring-editor-no-diagnostics" },
+  Completions: { id: "ticket-authoring-editor-completions" },
+  "Selection deleted": { id: "ticket-authoring-editor-selection-deleted" },
+} as const satisfies Readonly<Record<string, Copy>>;
+
+export function chugEditorPhrasesIn(text: CopyText): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(chugEditorPhrases).map(([phrase, copy]) => [
+      phrase,
+      text(copy),
+    ]),
+  );
+}
+
 /** Everything the view is built with, the vim keys behind a compartment so
  * they can be switched without rebuilding it. */
 function chugEditorExtensions(
@@ -487,6 +543,7 @@ function chugEditorExtensions(
 ): Extension {
   return [
     fragments,
+    EditorState.phrases.of(chugEditorPhrasesIn(options.text)),
     vimCompartment.of(options.vim ? vim() : []),
     basicSetup,
     yaml(),
@@ -513,7 +570,7 @@ export function createChugEditor(
 ): EditorHandle {
   const vimCompartment = new Compartment();
   let vocabulary = options.vocabulary;
-  const fragments = chugFragments(ticketHighlighting);
+  const fragments = chugFragments(ticketHighlighting, options.text);
   const state = EditorState.create({
     doc: options.doc,
     extensions: chugEditorExtensions(
@@ -568,7 +625,7 @@ export function createChugEditor(
         setDiagnostics(
           view.state,
           problems.map((problem) =>
-            chugEditorDiagnosticOf(view.state, problem),
+            chugEditorDiagnosticOf(view.state, problem, options.text),
           ),
         ),
       );

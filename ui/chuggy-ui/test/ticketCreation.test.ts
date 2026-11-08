@@ -60,6 +60,19 @@ import {
   creationPush,
   creationSummary,
 } from "./ticketCreationFixture.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
+import type { Copy } from "../app/core/copy.ts";
+import type { CreationLine } from "../app/core/ticketCreation.ts";
+
+/** A line in the words the screen draws it, or none. */
+function said(copy: Copy | undefined): string | undefined {
+  return copy === undefined ? undefined : copyTextEn(copy);
+}
+
+/** A configuration's line with its text in the words the screen draws. */
+function labelSaid(line: CreationLine): { text: string; title: string } {
+  return { text: copyTextEn(line.text), title: line.title };
+}
 
 /** An intent of the given character count, written as one line. */
 function intentOfChars(chars: number): string {
@@ -87,7 +100,7 @@ function faultFields(form: TicketCreationForm): readonly string[] {
 function faultReasons(form: TicketCreationForm): readonly string[] {
   const assembled = creationBodyFrom(creationOffers, form, noBindings);
   return assembled.assembled === "Faults"
-    ? assembled.faults.map((fault) => fault.reason)
+    ? assembled.faults.map((fault) => copyTextEn(fault.reason))
     : [];
 }
 
@@ -150,18 +163,20 @@ test("the configuration is the newest ready revision, and none is drawable", () 
 
 test("the line names the configuration and keeps its revision on hover", () => {
   expect(
-    creationConfigurationLabel(
-      creationOffer({
-        ...creationSummary("repository:cfaca0a:chuggy", "Ready"),
-        provenance: {
-          source: "Repository",
-          repository: "kasofsk/chuggy",
-          commit: "cfaca0a0f14ec03845a4e01458ac6c3a56d52a23",
-          path: "configurations/chuggy.json",
-          name: "chuggy",
-        },
-        version: { name: "chuggy", number: 12 },
-      }),
+    labelSaid(
+      creationConfigurationLabel(
+        creationOffer({
+          ...creationSummary("repository:cfaca0a:chuggy", "Ready"),
+          provenance: {
+            source: "Repository",
+            repository: "kasofsk/chuggy",
+            commit: "cfaca0a0f14ec03845a4e01458ac6c3a56d52a23",
+            path: "configurations/chuggy.json",
+            name: "chuggy",
+          },
+          version: { name: "chuggy", number: 12 },
+        }),
+      ),
     ),
   ).toEqual({
     text: "Configuration · chuggy #12 · cfaca0a",
@@ -170,7 +185,7 @@ test("the line names the configuration and keeps its revision on hover", () => {
 });
 
 test("a configuration with no version and no commit is named by its revision alone", () => {
-  expect(creationConfigurationLabel(creationOffer())).toEqual({
+  expect(labelSaid(creationConfigurationLabel(creationOffer()))).toEqual({
     text: "Configuration · r3",
     title: "r3",
   });
@@ -184,7 +199,13 @@ test("an offer the listing no longer holds is drawn without a commit", () => {
     version: { name: "dropped", number: 4 },
   });
   expect(
-    creationConfigurationLabel({ ...held, name: "dropped", listed: undefined }),
+    labelSaid(
+      creationConfigurationLabel({
+        ...held,
+        name: "dropped",
+        listed: undefined,
+      }),
+    ),
   ).toEqual({
     text: "Configuration · dropped #4",
     title: "repository:0b5c1d0:dropped",
@@ -211,7 +232,7 @@ const repositoryBootstrap: CreationOffer = {
 };
 
 test("a repository's bootstrap is drawn by the name it is offered under, its revision on hover", () => {
-  expect(creationConfigurationLabel(repositoryBootstrap)).toEqual({
+  expect(labelSaid(creationConfigurationLabel(repositoryBootstrap))).toEqual({
     text: "Configuration · bootstrap · kasofsk/chuggy-common",
     title: creationBootstrapRevision(
       "https://forge.test/kasofsk/chuggy-common",
@@ -222,41 +243,47 @@ test("a repository's bootstrap is drawn by the name it is offered under, its rev
 test("a form on the bootstrap says what its ticket is for, and no other does", () => {
   const line = "First ticket · writes this repository's configuration";
   const authored = creationOffer(creationSummary("bootstrap", "Ready"));
-  expect(creationBootstrapLine(authored)).toBe(line);
+  expect(said(creationBootstrapLine(authored))).toBe(line);
   expect(
-    creationBootstrapLine(
-      creationOffer({
-        ...creationSummary("repository:cfaca0a:bootstrap", "Ready"),
-        provenance: {
-          source: "Repository",
-          repository: "kasofsk/chuggy",
-          commit: "cfaca0a0f14ec03845a4e01458ac6c3a56d52a23",
-          path: "configurations/bootstrap.json",
-          name: "bootstrap",
-        },
-        version: { name: "bootstrap", number: 1 },
-      }),
+    said(
+      creationBootstrapLine(
+        creationOffer({
+          ...creationSummary("repository:cfaca0a:bootstrap", "Ready"),
+          provenance: {
+            source: "Repository",
+            repository: "kasofsk/chuggy",
+            commit: "cfaca0a0f14ec03845a4e01458ac6c3a56d52a23",
+            path: "configurations/bootstrap.json",
+            name: "bootstrap",
+          },
+          version: { name: "bootstrap", number: 1 },
+        }),
+      ),
     ),
   ).toBe(line);
-  expect(creationBootstrapLine({ ...authored, listed: undefined })).toBe(line);
-  expect(creationBootstrapLine(repositoryBootstrap)).toBe(line);
-  expect(creationBootstrapLine(creationOffer())).toBe(undefined);
-  expect(creationBootstrapLine({ ...creationOffer(), listed: undefined })).toBe(
-    undefined,
+  expect(said(creationBootstrapLine({ ...authored, listed: undefined }))).toBe(
+    line,
   );
+  expect(said(creationBootstrapLine(repositoryBootstrap))).toBe(line);
+  expect(said(creationBootstrapLine(creationOffer()))).toBe(undefined);
   expect(
-    creationBootstrapLine(
-      creationOffer({
-        ...creationSummary("bootstrap", "Ready"),
-        provenance: {
-          source: "Repository",
-          repository: "kasofsk/chuggy",
-          commit: "cfaca0a0f14ec03845a4e01458ac6c3a56d52a23",
-          path: "configurations/everyday.json",
-          name: "everyday",
-        },
-        version: { name: "everyday", number: 1 },
-      }),
+    said(creationBootstrapLine({ ...creationOffer(), listed: undefined })),
+  ).toBe(undefined);
+  expect(
+    said(
+      creationBootstrapLine(
+        creationOffer({
+          ...creationSummary("bootstrap", "Ready"),
+          provenance: {
+            source: "Repository",
+            repository: "kasofsk/chuggy",
+            commit: "cfaca0a0f14ec03845a4e01458ac6c3a56d52a23",
+            path: "configurations/everyday.json",
+            name: "everyday",
+          },
+          version: { name: "everyday", number: 1 },
+        }),
+      ),
     ),
   ).toBe(undefined);
 });
@@ -784,9 +811,9 @@ test("a pull request names a branch, and a target that is not it", () => {
           targetBranchName: "release/next",
         }),
       ),
-    ).toStrictEqual([creationLandingBranchSentence]);
+    ).toStrictEqual([copyTextEn(creationLandingBranchSentence)]);
     expect(faultReasons(creationForm({ finalization }))).toStrictEqual([
-      creationLandingBranchSentence,
+      copyTextEn(creationLandingBranchSentence),
     ]);
     expect(
       faultReasons(
@@ -796,7 +823,7 @@ test("a pull request names a branch, and a target that is not it", () => {
           targetBranchName: "topic/one",
         }),
       ),
-    ).toStrictEqual([creationLandingWholeSentence]);
+    ).toStrictEqual([copyTextEn(creationLandingWholeSentence)]);
     expect(
       faultFields(
         creationForm({
@@ -820,10 +847,10 @@ test("a pull request names a branch, and a target that is not it", () => {
 /** The empty target box means two different references, so it says which. */
 test("the target hint names what leaving it empty lands on under each finalization", () => {
   for (const finalization of [creationPullRequest, creationPullRequestMerge])
-    expect(creationTargetBranchHint(finalization)).toContain(
+    expect(copyTextEn(creationTargetBranchHint(finalization))).toContain(
       "the repository's default branch",
     );
-  expect(creationTargetBranchHint(creationPush)).toContain(
+  expect(copyTextEn(creationTargetBranchHint(creationPush))).toContain(
     "the branch the work happened on",
   );
 });
@@ -831,10 +858,10 @@ test("the target hint names what leaving it empty lands on under each finalizati
 /** The form's own line under the target box says the same in its own words. */
 test("the target box's line names what leaving it empty lands on under each finalization", () => {
   for (const finalization of [creationPullRequest, creationPullRequestMerge])
-    expect(creationTargetBranchFieldHint(finalization)).toBe(
+    expect(copyTextEn(creationTargetBranchFieldHint(finalization))).toBe(
       "Empty means the repository's default branch",
     );
-  expect(creationTargetBranchFieldHint(creationPush)).toBe(
+  expect(copyTextEn(creationTargetBranchFieldHint(creationPush))).toBe(
     "Empty means the branch above",
   );
 });
@@ -941,7 +968,7 @@ test("a reader who may not override is refused overrides on a new ticket, and on
   });
   const faults = refused.assembled === "Faults" ? refused.faults : [];
   expect(faults.map((fault) => fault.field)).toStrictEqual(["overrides"]);
-  expect(faults[0]?.reason).toMatch(/may not override/u);
+  expect(said(faults[0]?.reason)).toMatch(/may not override/u);
   for (const standing of [{ mayOverride: true }, undefined])
     expect(
       creationBodyFrom(creationOffers, form, noBindings, standing).assembled,

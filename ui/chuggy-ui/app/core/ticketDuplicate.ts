@@ -16,6 +16,7 @@ import type {
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
 
+import type { Copy } from "./copy.ts";
 import type { PanelState } from "./freshness.ts";
 import { repositoryLabel } from "./projectRepositories.ts";
 import {
@@ -119,17 +120,37 @@ export function ticketDuplicateSeed(input: {
  * nothing where it carried everything. */
 export function ticketDuplicateDroppedSentence(
   dropped: TicketDuplicateDropped,
-): string | undefined {
-  const parts = [
+): Copy | undefined {
+  const parts: readonly Copy[] = [
     ...(dropped.repository === undefined
       ? []
-      : [`repository ${repositoryLabel(dropped.repository)}, no longer bound`]),
-    ...dropped.dependencies.map(
-      (ticket) => `dependency on ticket ${String(ticket)}, revoked`,
-    ),
+      : [
+          {
+            id: "ticket-authoring-dropped-repository" as const,
+            args: { repository: repositoryLabel(dropped.repository) },
+          },
+        ]),
+    ...dropped.dependencies.map((ticket) => ({
+      id: "ticket-authoring-dropped-dependency" as const,
+      args: { ticket: String(ticket) },
+    })),
     ...(dropped.configuration === undefined
       ? []
-      : [`configuration ${dropped.configuration}, no longer offered`]),
+      : [
+          {
+            id: "ticket-authoring-dropped-configuration" as const,
+            args: { configuration: dropped.configuration },
+          },
+        ]),
   ];
-  return parts.length === 0 ? undefined : `Not carried · ${parts.join(" · ")}`;
+  const joined = parts.reduce<Copy | undefined>(
+    (first, second) =>
+      first === undefined
+        ? second
+        : { id: "ticket-authoring-joined", args: { first, second } },
+    undefined,
+  );
+  return joined === undefined
+    ? undefined
+    : { id: "ticket-authoring-dropped", args: { parts: joined } };
 }

@@ -442,9 +442,11 @@ test("a read draws no more offers than its bound, and says so past it", async ()
 
 test("not knowing, there being none and there being nowhere are drawn as three words", () => {
   const sentences = [
-    creationContextSentence({ context: "NoRepository" }),
-    creationContextSentence({ context: "NoReadyConfiguration" }),
-    creationContextSentence({ context: "ReadyConfigurationUnknown" }),
+    copyTextEn(creationContextSentence({ context: "NoRepository" })),
+    copyTextEn(creationContextSentence({ context: "NoReadyConfiguration" })),
+    copyTextEn(
+      creationContextSentence({ context: "ReadyConfigurationUnknown" }),
+    ),
   ];
   expect(new Set(sentences).size).toBe(3);
   expect(sentences[0]).toBe("No repository bound");
@@ -629,7 +631,7 @@ test("a project that is not active is a refusal, not a fence to submit again ove
   );
   expect(created).toMatchObject({
     created: "Refused",
-    reason: creationProjectNotActiveSentence,
+    reason: copyTextEn(creationProjectNotActiveSentence),
   });
   expect(held.calls).toStrictEqual([`POST ${partitionBase}/drafts`]);
 });

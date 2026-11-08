@@ -13,10 +13,13 @@ import {
 } from "../app/core/workloadOverrides.ts";
 import type { WorkloadOverride } from "../../../src/contract/configurationOverrides.ts";
 import { creationCatalogCanonical } from "./ticketCreationFixture.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
+import { copyOrDataText } from "../app/core/copy.ts";
 
 function overrideOf(name: string, written: unknown): WorkloadOverride {
   const read = workloadOverrideRead(creationCatalogCanonical, name, written);
-  if (read.read !== "Override") throw new Error(read.message);
+  if (read.read !== "Override")
+    throw new Error(copyOrDataText(copyTextEn, read.message));
   return read.override;
 }
 
@@ -99,7 +102,9 @@ test("a field the catalog holds and the text leaves out is refused, naming the f
     worker: { mode: { type: "SingleAgent", agent: "Claude", arguments: [] } },
   });
   expect(read).toMatchObject({ read: "Refused" });
-  expect(read.read === "Refused" && read.message).toContain("`prompt`");
+  expect(
+    read.read === "Refused" && copyOrDataText(copyTextEn, read.message),
+  ).toContain("`prompt`");
 });
 
 test("a workload the catalog lacks, or one not written as a map, is refused", () => {

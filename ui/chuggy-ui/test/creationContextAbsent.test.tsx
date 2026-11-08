@@ -12,12 +12,13 @@ import {
   Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, test } from "vitest";
 
 import { CreationContextAbsent } from "../app/browser/TicketCreation.tsx";
 import type { CreationContext } from "../app/core/ticketCreationRun.ts";
 import { creationPartition } from "./ticketCreationFixture.ts";
+import { renderCopied } from "./copied.tsx";
 
 afterEach(cleanup);
 
@@ -50,7 +51,7 @@ async function drawn(
       ]),
     ]),
   });
-  render(<RouterProvider router={router} />);
+  renderCopied(<RouterProvider router={router} />);
   await waitFor(() => {
     expect(document.body.textContent).not.toBe("");
   });

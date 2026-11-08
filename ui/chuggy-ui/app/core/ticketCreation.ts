@@ -63,7 +63,6 @@ import {
   type ConfigurationCatalog,
 } from "./configurationCatalog.ts";
 import { configurationCommitShort, configurationLabel } from "./labels.ts";
-import type { Label } from "./labels.ts";
 import type { OperationStep } from "./operationFollow.ts";
 import { projectAbilityRefused } from "./projectAbilities.ts";
 import type {
@@ -85,8 +84,7 @@ import {
 import type { CreationOverrides, OverrideField } from "./ticketOverrides.ts";
 import { draftReleaseAction } from "./ticketActions.ts";
 import type { WorkRunner } from "./workRunner.ts";
-import { copyOrDataText } from "./copy.ts";
-import type { CopyText } from "./copy.ts";
+import type { Copy, CopyOrData } from "./copy.ts";
 
 /** The authoring half of the form, which is exactly what an initialization defaults. */
 export type CreationAuthoring = DraftInitializationResponse["defaults"];
@@ -150,7 +148,7 @@ export interface CreationFault {
   readonly field: CreationField;
   /** The overridden field an `overrides` fault is stated at. */
   readonly override?: OverrideField;
-  readonly reason: string;
+  readonly reason: Copy;
 }
 
 export type CreationAssembly =
@@ -438,12 +436,18 @@ export function creationConfigurationAsked(
   return sole?.name !== configuration;
 }
 
+/** A line a screen draws, and the value in full that hovering it reveals. */
+export interface CreationLine {
+  readonly text: Copy;
+  readonly title: string;
+}
+
 /**
  * The line a screen draws for a configuration it did not ask about, with the
  * commit it was imported from where the listing says one, and the revision
  * itself on hover.
  */
-export function creationConfigurationLabel(offer: CreationOffer): Label {
+export function creationConfigurationLabel(offer: CreationOffer): CreationLine {
   const held = offer.initialization.configuration;
   const version = offer.listed?.version ?? held.version;
   const label =
@@ -454,8 +458,19 @@ export function creationConfigurationLabel(offer: CreationOffer): Label {
     offer.listed === undefined
       ? undefined
       : configurationCommitShort(offer.listed.provenance);
-  const named = commit === undefined ? label.text : `${label.text} · ${commit}`;
-  return { text: `Configuration · ${named}`, title: label.title };
+  return {
+    text:
+      commit === undefined
+        ? {
+            id: "ticket-authoring-configuration-line",
+            args: { name: label.text },
+          }
+        : {
+            id: "ticket-authoring-configuration-line-commit",
+            args: { name: label.text, commit },
+          },
+    title: label.title,
+  };
 }
 
 /**
@@ -465,15 +480,13 @@ export function creationConfigurationLabel(offer: CreationOffer): Label {
  * repository had its own being the bootstrap's name, and an imported one by the
  * name it was declared under.
  */
-export function creationBootstrapLine(
-  offer: CreationOffer,
-): string | undefined {
+export function creationBootstrapLine(offer: CreationOffer): Copy | undefined {
   const name =
     offer.listed === undefined
       ? offer.initialization.configuration.revision
       : creationConfigurationName(offer.listed);
   return creationBootstrapIs(name)
-    ? "First ticket · writes this repository's configuration"
+    ? { id: "ticket-authoring-bootstrap" }
     : undefined;
 }
 
@@ -789,44 +802,61 @@ export function creationFormProposed(
 }
 
 /** What the branch key asks for and what naming it does, which the YAML editor explains the key with. */
-export const creationBranchHint = `the branch this work starts from, and lands on unless a target names another, created if it does not exist yet: a name, not a reference, which this console sends as ${briefBranchPrefix}<name>`;
+export const creationBranchHint: Copy = {
+  id: "ticket-authoring-branch-hint",
+  args: { prefix: briefBranchPrefix },
+};
 
 /** Where the work lands when the target box is left empty, which each
  * finalization answers for itself. */
-function creationTargetBranchUnnamed(finalization: FinalizationChoice): string {
+function creationTargetBranchUnnamed(finalization: FinalizationChoice): Copy {
   if (finalization.kind === "None")
-    return "nowhere; a finalization that lands nothing names no reference";
+    return { id: "ticket-authoring-target-unnamed-none" };
   return briefFinalizationOpensProposal(finalization)
-    ? "the repository's default branch"
-    : "the branch the work happened on";
+    ? { id: "ticket-authoring-target-unnamed-default" }
+    : { id: "ticket-authoring-target-unnamed-worked" };
 }
 
 /** The same, for the key that names where the work ends up instead. */
 export function creationTargetBranchHint(
   finalization: FinalizationChoice,
-): string {
-  return `where the finished work lands, created if it does not exist yet: a name, not a reference, which this console sends as ${briefBranchPrefix}<name>, and ${creationTargetBranchUnnamed(finalization)} where it is left empty`;
+): Copy {
+  return {
+    id: "ticket-authoring-target-hint",
+    args: {
+      prefix: briefBranchPrefix,
+      unnamed: creationTargetBranchUnnamed(finalization),
+    },
+  };
 }
 
 /** The line under the form's branch box. */
-export const creationBranchFieldHint =
-  "Where the work happens · created if missing";
+export const creationBranchFieldHint: Copy = {
+  id: "ticket-authoring-branch-field-hint",
+};
 
 /** The line under the form's target box: what leaving it empty lands on. */
 export function creationTargetBranchFieldHint(
   finalization: FinalizationChoice,
-): string {
-  if (finalization.kind === "None") return "Lands nothing";
+): Copy {
+  if (finalization.kind === "None")
+    return { id: "ticket-authoring-target-field-none" };
   return briefFinalizationOpensProposal(finalization)
-    ? "Empty means the repository's default branch"
-    : "Empty means the branch above";
+    ? { id: "ticket-authoring-target-field-default" }
+    : { id: "ticket-authoring-target-field-above" };
 }
 
 /** The one input either branch field refuses, said as the edit that fixes it. */
-export const creationBranchPrefixedSentence = `enter the branch name, not the ref: this console adds ${briefBranchPrefix} itself`;
+export const creationBranchPrefixedSentence: Copy = {
+  id: "ticket-authoring-branch-prefixed",
+  args: { prefix: briefBranchPrefix },
+};
 
 /** The bound on a ticket's images, said where an attachment would pass it. */
-export const creationImagesBoundSentence = `one ticket carries at most ${String(briefImagesMax)} images`;
+export const creationImagesBoundSentence: Copy = {
+  id: "ticket-authoring-images-bound",
+  args: { count: String(briefImagesMax) },
+};
 
 /** The types an image is attached in, as a reader names them. */
 export const creationImageTypesLabel = imageMediaTypes
@@ -848,7 +878,7 @@ export function creationImageMediaType(
 export function creationImagesTaken<T extends { readonly type: string }>(
   heldCount: number,
   offered: readonly T[],
-): { readonly taken: readonly T[]; readonly refused?: string } {
+): { readonly taken: readonly T[]; readonly refused?: Copy } {
   const admitted = offered.filter(
     (file) => creationImageMediaType(file.type) !== undefined,
   );
@@ -859,63 +889,90 @@ export function creationImagesTaken<T extends { readonly type: string }>(
   if (admitted.length < offered.length)
     return {
       taken,
-      refused: `only ${creationImageTypesLabel} images attach`,
+      refused: {
+        id: "ticket-authoring-images-types",
+        args: { types: creationImageTypesLabel },
+      },
     };
   return { taken };
 }
 
 /** What an upload that failed is said as: the upload's own refusal, and that
  * nothing was attached. */
-export function creationImageUploadSentence(
-  failure: ApiFailure,
-  text: CopyText,
-): string {
+export function creationImageUploadSentence(failure: ApiFailure): Copy {
   const cause = threadUploadRefused(failure).cause;
   return cause === undefined
-    ? "Not attached"
-    : `Not attached · ${copyOrDataText(text, cause)}`;
+    ? { id: "ticket-authoring-image-unattached" }
+    : { id: "ticket-authoring-image-unattached-cause", args: { cause } };
 }
 
 /** What a proposal is opened from, which is the one box a push may leave empty. */
-export const creationLandingBranchSentence =
-  "a pull request is opened from a branch of its own, so name one above";
+export const creationLandingBranchSentence: Copy = {
+  id: "ticket-authoring-landing-branch",
+};
 
 /** What `briefLandingIsWhole` refuses, said as the two boxes that fix it. */
-export const creationLandingWholeSentence =
-  "a pull request opens from the branch above into a different target branch";
+export const creationLandingWholeSentence: Copy = {
+  id: "ticket-authoring-landing-whole",
+};
 
 /**
  * What this form checked and the reader has to satisfy, and no more than that.
  * The grammar a reference name obeys is not among them — the contract carries
  * no statement of it, so a name the server's grammar refuses is refused there.
  */
-export function creationFaultSentence(field: CreationField): string {
+export function creationFaultSentence(field: CreationField): Copy {
   switch (field) {
     case "configuration":
-      return "a configuration is who does the work, so a ticket names which one it runs under";
+      return { id: "ticket-authoring-fault-configuration" };
     case "title":
-      return `name this ticket in one line of at most ${String(briefTitleCharsMax)} characters`;
+      return {
+        id: "ticket-authoring-fault-title",
+        args: { chars: String(briefTitleCharsMax) },
+      };
     case "intent":
-      return `state what this ticket is for, in at most ${String(briefIntentCharsMax)} characters`;
+      return {
+        id: "ticket-authoring-fault-intent",
+        args: { chars: String(briefIntentCharsMax) },
+      };
     case "links":
-      return `each link is an ${briefLinkScheme} URL of at most ${String(briefLineCharsMax)} characters, and one ticket carries at most ${String(briefLinksMax)}`;
+      return {
+        id: "ticket-authoring-fault-links",
+        args: {
+          scheme: briefLinkScheme,
+          chars: String(briefLineCharsMax),
+          count: String(briefLinksMax),
+        },
+      };
     case "images":
       return creationImagesBoundSentence;
     case "checks":
-      return `each check is one command line of at most ${String(briefLineCharsMax)} characters, and one ticket adds at most ${String(briefChecksMax)}`;
+      return {
+        id: "ticket-authoring-fault-checks",
+        args: {
+          chars: String(briefLineCharsMax),
+          count: String(briefChecksMax),
+        },
+      };
     case "branch":
     case "target":
-      return `a branch is named here without its ${briefBranchPrefix} prefix, and the whole reference is at most ${String(briefBranchCharsMax)} characters`;
+      return {
+        id: "ticket-authoring-fault-branch",
+        args: {
+          prefix: briefBranchPrefix,
+          chars: String(briefBranchCharsMax),
+        },
+      };
     case "finalization":
-      return "this finalization is not one the API will accept";
+      return { id: "ticket-authoring-fault-landing" };
     case "repository":
-      return "this project binds a repository, so a ticket in it names which one";
+      return { id: "ticket-authoring-fault-repository" };
     case "authoring":
-      return "one advanced setting is not one this project offers";
+      return { id: "ticket-authoring-fault-authoring" };
     case "overrides":
-      return "an override is not one a ticket may write";
+      return { id: "ticket-authoring-fault-overrides" };
     case "fence":
-      return "this form no longer describes a configuration the API will accept";
+      return { id: "ticket-authoring-fault-fence" };
   }
 }
 
@@ -943,14 +1000,14 @@ function creationFieldOf(
 }
 
 /** What an overridden field the contract refuses is told, by how it is edited. */
-export function creationOverrideFaultSentence(field: OverrideField): string {
+export function creationOverrideFaultSentence(field: OverrideField): Copy {
   switch (overrideFieldKind(field)) {
     case "Mode":
-      return "this model is written into a mode a ticket may not override with";
+      return { id: "ticket-authoring-fault-override-mode" };
     case "Lines":
-      return "write this as lines of text, one a line";
+      return { id: "ticket-authoring-fault-override-lines" };
     case "Files":
-      return "each file is a path and its content";
+      return { id: "ticket-authoring-fault-override-files" };
   }
 }
 
@@ -976,7 +1033,13 @@ function creationOverrideFaultsOf(
       : {
           field: "overrides",
           override,
-          reason: `${overrideFieldLabel(override)}: ${creationOverrideFaultSentence(override)}`,
+          reason: {
+            id: "ticket-authoring-fault-override",
+            args: {
+              field: overrideFieldLabel(override),
+              reason: creationOverrideFaultSentence(override),
+            },
+          },
         },
   );
 }
@@ -1214,8 +1277,9 @@ export function creationStandingOf(
   };
 }
 
-const overridesRefusedReason =
-  "your role in this project may not override its checked-in configuration; remove the overrides to continue";
+const overridesRefusedReason: Copy = {
+  id: "ticket-authoring-overrides-refused",
+};
 
 /** The fault of overrides a reader who may not override is changing, if it is one. */
 function creationOverridesFaults(
@@ -1232,8 +1296,7 @@ function creationOverridesFaults(
   return [{ field: "overrides", reason: overridesRefusedReason }];
 }
 
-const programShortReason =
-  "your role in this project may not leave out part of the plan; restore every stage and evaluator it plans to continue";
+const programShortReason: Copy = { id: "ticket-authoring-program-short" };
 
 /** The fault of a program running less than its plan, for a reader who may not release one. */
 function creationProgramFaults(
@@ -1340,12 +1403,12 @@ export function creationStart(
 
 /** What creating a ticket does beyond making it, for the reader pressing: work
  * starts, waits on someone who dispatches, or has no runner to start on. */
-export function creationSubmitEffect(start: CreationStart): string {
+export function creationSubmitEffect(start: CreationStart): CopyOrData {
   switch (start) {
     case "Starts":
-      return "Starts work";
+      return { id: "ticket-authoring-effect-starts" };
     case "Waits":
-      return "Released for a dispatcher to start";
+      return { id: "ticket-authoring-effect-waits" };
     case "NoRunner":
       return sessionRunnerShortWord("NoRunner");
   }
@@ -1361,28 +1424,35 @@ export function creationSubmitMotion(start: CreationStart): CreationMotion {
   return start === "Starts" ? "Start" : "Release";
 }
 
-/** The motion's own words: what its release is called, what a submit says
- * while it sends it, and what the note reads once the release has settled. A
- * submit that goes on to dispatch reads there that the ticket is starting. */
+/** The motion's own words: what a submit says while it sends its release,
+ * while the actor decides it and while the project catches up with it, and
+ * what the note reads once it has settled. A submit that goes on to dispatch
+ * reads there that the ticket is starting. */
 function creationMotionWords(motion: CreationMotion): {
-  readonly noun: string;
-  readonly settled: string;
-  readonly submitting: string;
+  readonly submitting: Copy;
+  readonly following: Copy;
+  readonly confirming: Copy;
+  readonly settled: Copy;
 } {
   switch (motion) {
     case "Release":
       return {
-        noun: "release",
-        settled: "released",
-        submitting: "creating the draft and releasing it…",
+        submitting: { id: "ticket-authoring-step-submitting-release" },
+        following: { id: "ticket-authoring-step-following-release" },
+        confirming: { id: "ticket-authoring-step-confirming-release" },
+        settled: { id: "ticket-authoring-step-released" },
       };
     case "Start":
-      return { ...creationMotionWords("Release"), settled: "starting…" };
+      return {
+        ...creationMotionWords("Release"),
+        settled: { id: "ticket-authoring-step-starting" },
+      };
     case "Update":
       return {
-        noun: "update",
-        settled: "updated",
-        submitting: "revising the draft and releasing the update…",
+        submitting: { id: "ticket-authoring-step-submitting-update" },
+        following: { id: "ticket-authoring-step-following-update" },
+        confirming: { id: "ticket-authoring-step-confirming-update" },
+        settled: { id: "ticket-authoring-step-updated" },
       };
   }
 }
@@ -1390,25 +1460,27 @@ function creationMotionWords(motion: CreationMotion): {
 /** Where one submit has got to, for a screen that draws a line and not a log. */
 export function creationStepSentence(
   step: OperationStep,
-  text: CopyText,
   motion: CreationMotion = "Release",
-): string {
+): Copy {
   const words = creationMotionWords(motion);
   switch (step.step) {
     case "Submitting":
       return words.submitting;
     case "Backlogged":
-      return `the API is deferring this; trying again in ${String(step.retryAfterSeconds)}s`;
+      return {
+        id: "ticket-authoring-step-backlogged",
+        args: { seconds: String(step.retryAfterSeconds) },
+      };
     case "Following":
-      return `waiting for the actor to decide the ${words.noun}…`;
+      return words.following;
     case "Confirming":
-      return `waiting for the project to catch up with the ${words.noun}…`;
+      return words.confirming;
     case "Settled":
       return step.state === "Succeeded"
         ? words.settled
-        : text(operationStateSentence(step.state));
+        : operationStateSentence(step.state);
     case "Abandoned":
-      return text(operationAbandonWords(step.cause).word);
+      return operationAbandonWords(step.cause).word;
   }
 }
 

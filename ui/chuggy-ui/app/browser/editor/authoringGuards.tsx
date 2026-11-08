@@ -17,6 +17,7 @@ import { Component, useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { persistentStore } from "../ports.ts";
 
 /** The browser refuses the unload only if the handler is attached when it fires. */
@@ -43,13 +44,15 @@ export function useAuthoringGuards(dirty: boolean): {
   readonly release: () => void;
 } {
   const held = useRef(dirty);
+  const text = useCopyText();
   useEffect(() => {
     held.current = dirty;
   }, [dirty]);
   useUnloadGuard(dirty);
   useBlocker({
     shouldBlockFn: () =>
-      held.current && !window.confirm("Discard the unsaved ticket and leave?"),
+      held.current &&
+      !window.confirm(text({ id: "ticket-authoring-leave-question" })),
     enableBeforeUnload: false,
   });
   return {
