@@ -39,14 +39,13 @@ import type { SetupAnswers } from "./setupArguments.ts";
 import type { SetupChoice } from "./setupReads.ts";
 import type { SetupNext, SetupThing } from "./setupReport.ts";
 import type { SetupRunnerHere } from "./setupRunnerMachine.ts";
-import type { SetupClaudeKind } from "./setupRunnerSaid.ts";
-import {
-  setupClaudeOn,
-  setupDockerBarredTold,
-  setupEngineNeedsPassword,
-  setupEnginesNone,
-  setupMacNone,
+import type {
+  SetupClaudeKind,
+  SetupDockerBarred,
+  SetupEngine,
+  SetupEngineAsked,
 } from "./setupRunnerSaid.ts";
+import { setupJobUser } from "./setupRunnerSaid.ts";
 import type { SetupLack, SetupStanding, SetupStep } from "./setupStanding.ts";
 import { setupListed } from "./setupText.ts";
 import { navRoutes } from "./shellNav.ts";
@@ -207,6 +206,70 @@ function setupOffer(tell: string, at: SetupAt): SetupThing {
   };
 }
 
+/** What work on a runner whose credential is of `kind` runs on, as an offer says it. */
+const setupClaudeOn: Readonly<Record<SetupClaudeKind, string>> = {
+  Subscription: "your Claude plan",
+  ApiKey: "your Anthropic API key",
+  Bedrock: "your Amazon Bedrock account",
+  Vertex: "your Google Cloud project",
+  Foundry: "your Microsoft Foundry resource",
+};
+
+/** Why setup puts no runner on a Mac. */
+const setupMacNone = "chuggy setup puts a runner only on Linux";
+
+const setupEngineNames: Readonly<Record<SetupEngine, string>> = {
+  docker: "Docker",
+  podman: "Podman",
+};
+
+/** Which engines did not answer, as a sentence says it: the one the runner is set to use, or each the package runs on. */
+function setupEnginesNone(asked: readonly SetupEngineAsked[]): string {
+  const names = asked.map(({ engine }) => setupEngineNames[engine]);
+  return names.length < 2
+    ? `${names.join("")}, the engine the runner is set to use, did not answer`
+    : `neither ${names.join(" nor ")} answered`;
+}
+
+/** What taking a password would mend and this program does not do. */
+const setupEngineNeedsPassword =
+  "Installing a container engine, or letting your user reach one, takes a password, and chuggy setup never takes one.";
+
+function setupEngineNone({ engine, answered }: SetupEngineAsked): string {
+  return answered === "Absent"
+    ? `${engine} is not installed`
+    : `${engine} did not answer you without a password`;
+}
+
+const setupPodmanInstead =
+  "The package's own answer for any other user is rootless podman";
+
+/** The package's rule as a person barred from docker is told it: its reason, what leaves them no engine, what mends it, and what that waits on. */
+function setupDockerBarredTold(
+  user: string | undefined,
+  how: SetupDockerBarred,
+): {
+  readonly why: string;
+  readonly state: string;
+  readonly mend: string;
+  readonly when: string;
+} {
+  const why = `Under docker a runner's work runs as this machine's user ${setupJobUser}, which could not read the file your Claude credential is in, so the runner package takes docker only from that user, and you are ${user === undefined ? "not that user" : `user ${user}`}.`;
+  if (how.barred === "Named")
+    return {
+      why,
+      state: `The runner's settings, ${how.settings}, set it to use docker`,
+      mend: `${setupPodmanInstead}: once podman answers you, set "engine" to "podman" in that file, and tell me once you have.`,
+      when: `once the person says ${how.settings} names podman`,
+    };
+  return {
+    why,
+    state: `${setupPodmanInstead}, and ${setupEngineNone({ engine: "podman", answered: how.answered })}`,
+    mend: `${setupEngineNeedsPassword} Tell me once podman answers you.`,
+    when: "once the person says podman answers them on this machine",
+  };
+}
+
 const setupRunnerIs =
   "The next step is a runner: the machine that does the work on your tickets";
 
@@ -223,7 +286,7 @@ const setupPackageNewer = ` If the runner package here, ${runnerPackageOffered.p
 function setupRunsOn(claude: SetupClaudeKind | undefined): string {
   return claude === undefined
     ? "in containers"
-    : `in containers, on ${setupClaudeOn(claude)}`;
+    : `in containers, on ${setupClaudeOn[claude]}`;
 }
 
 /** A runner registered and not running: started here on the person's yes where this machine holds a registration for the project, and otherwise theirs to start where it is. */
