@@ -106,6 +106,22 @@ test("a catalog's row names the work a ticket selecting none runs, among the wor
   ).toStrictEqual({ text: "build of 2 workloads", title: "build, review" });
 });
 
+test("a catalog holding one workload names it in the singular", () => {
+  const ready = declared("r8", chuggy, "chuggy");
+  const catalog = {
+    workloads: ["build"],
+    plans: [],
+    finalizers: [],
+    defaults: { work: "build" },
+  };
+  expect(
+    copiedWords(
+      repositoryConfigurationRow({ ...ready, catalog } as typeof ready).facts
+        ?.worker,
+    ),
+  ).toStrictEqual({ text: "build of 1 workload", title: "build" });
+});
+
 /**
  * The walk is what makes a repository's rows findable at all, and it is bounded
  * rather than run to the end of a project's history: a listing that never stops
