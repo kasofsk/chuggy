@@ -15,12 +15,14 @@
 /// sent back to be re-checked, and its new request enters at the back.
 ///
 /// STACKED. A Stacked ticket evaluates over the queue ahead of it when every
-/// entry ahead is a member of one stack that stands: the holder, then Stacked
-/// entries whose own stack is that stack's prefix. A Serialized entry past the
+/// entry ahead is a member of one stack that stands: the holder, which may still be
+/// in evaluation, then entries already pending whose own stack stands over the
+/// entries before them. An entry still being evaluated that is not the holder is
+/// no member. A Serialized entry past the
 /// holder is a barrier, because its re-check makes a new accepted commit.
 /// Failing that, it evaluates unstacked and behaves as Serialized. Its stack
 /// is written when its evaluation starts and never changes; a ticket whose
-/// stack stops standing goes back to be evaluated again, which is no rework.
+/// stack stops standing goes back to be evaluated again, which is no rework and keeps its rank.
 ///
 /// DIRECT. A Direct landing moves the tip, so every stack built on the old one
 /// stops standing.
@@ -47,7 +49,7 @@ module stacking {
   /// `landedStep` is how many tickets the latest step landed.
   type State = {
     tickets: int -> Ticket, history: Tree, nextEntry: int,
-    landedStep: int, invalidated: List[{ ticket: int, kind: Invalidation }]
+    landedStep: int, rankKept: bool, invalidated: List[{ ticket: int, kind: Invalidation }]
   }
 
   /// Configuration: the most tickets beneath a stacked one, and the number of
@@ -60,14 +62,15 @@ module stacking {
       policy: policies.get(i), phase: Work, entry: 0, rechecking: false,
       commit: 0, stacking: Unstacked, expected: List(), stackFailures: 0,
       reworks: 0, invalidations: 0, landedEntry: 0 }),
-    history: List(), nextEntry: 1, landedStep: 0, invalidated: List()
+    history: List(), nextEntry: 1, landedStep: 0, rankKept: true, invalidated: List()
   }
 
   pure def pairOf(s: State, i: int): Pair = { ticket: i, commit: s.tickets.get(i).commit }
   pure def queued(t: Ticket): bool = t.policy != Direct
-  pure def pendingIn(t: Ticket): bool = and { queued(t), t.phase == Pending, t.entry > 0 }
-  /// The queue is the in-flight re-checks by ticket, then the pending finalizations by entry.
-  pure def inQueue(t: Ticket): bool = or { t.rechecking, pendingIn(t) }
+  pure def ranked(t: Ticket): bool = and {
+    queued(t), t.entry > 0, or { t.phase == Ready, t.phase == Evaluation, t.phase == Pending } }
+  /// The queue is the in-flight re-checks by ticket, then the ranked tickets by entry. A ticket is ranked from its finalization request until it fails, is ejected, lands or is sent back to re-check, and an invalidation keeps its rank.
+  pure def inQueue(t: Ticket): bool = or { t.rechecking, ranked(t) }
   pure def queueKey(t: Ticket, i: int): int = if (t.rechecking) i else 1000 + t.entry
   pure def queueSet(s: State): Set[int] = s.tickets.keys().filter(i => inQueue(s.tickets.get(i)))
   pure def queueRank(s: State, i: int): int =
@@ -112,10 +115,9 @@ module stacking {
     val t = s.tickets.get(line[k])
     val before = line.slice(0, k).foldl(List(), (acc, j) => acc.append(pairOf(s, j)))
     and {
-      or { t.phase == Evaluation, t.phase == Pending },
-      if (k == 0) true
+      if (k == 0) or { t.phase == Evaluation, t.phase == Pending }
       else match t.stacking {
-        | StackedOn(r) => and { t.policy == Stacked, r.beneath == before, stands(s, r) }
+        | StackedOn(r) => and { t.phase == Pending, t.policy == Stacked, r.beneath == before, stands(s, r) }
         | Unstacked => false
       }
     }
@@ -150,7 +152,7 @@ module stacking {
       ...s,
       tickets: s.tickets.keys().mapBy(i =>
         if (stale.contains(i))
-          { ...s.tickets.get(i), phase: Ready, entry: 0, stacking: Unstacked,
+          { ...s.tickets.get(i), phase: Ready, stacking: Unstacked,
             invalidations: s.tickets.get(i).invalidations + 1 }
         else s.tickets.get(i)),
       invalidated: stale.fold(s.invalidated, (acc, i) => acc.append({ ticket: i,
@@ -159,7 +161,9 @@ module stacking {
 
   /// Every step ends here: it counts the landings and sweeps.
   pure def settle(before: State, after: State): State =
-    sweep({ ...after, landedStep: landedCount(after) - landedCount(before) })
+    sweep({ ...after, landedStep: landedCount(after) - landedCount(before),
+      rankKept: before.tickets.keys().forall(i => or { not(ranked(before.tickets.get(i))), not(ranked(after.tickets.get(i))),
+        before.tickets.get(i).entry == after.tickets.get(i).entry }) })
 
   pure def withTicket(s: State, i: int, t: Ticket): State = { ...s, tickets: s.tickets.set(i, t) }
   pure def phaseIs(s: State, i: int, p: Phase): bool = s.tickets.get(i).phase == p
@@ -180,7 +184,8 @@ module stacking {
     val t = s.tickets.get(i)
     if (queued(t))
       settle(s,
-        withTicket({ ...s, nextEntry: s.nextEntry + 1 }, i, { ...t, phase: Pending, entry: s.nextEntry, rechecking: false }))
+        withTicket({ ...s, nextEntry: s.nextEntry + (if (t.entry > 0) 0 else 1) }, i,
+          { ...t, phase: Pending, entry: if (t.entry > 0) t.entry else s.nextEntry, rechecking: false }))
     else settle(s, withTicket(s, i, { ...t, phase: Pending }))
 
   pure def canFail(s: State, i: int): bool = phaseIs(s, i, Evaluation)
@@ -225,7 +230,7 @@ module stacking {
   /// before any ticket still pending entered the queue.
   pure def landsInQueueOrder(s: State): bool =
     landedTickets(s).forall(l => or { not(queued(s.tickets.get(l))),
-      s.tickets.keys().forall(p => or { not(pendingIn(s.tickets.get(p))),
+      s.tickets.keys().forall(p => or { not(ranked(s.tickets.get(p))),
         s.tickets.get(l).landedEntry < s.tickets.get(p).entry }) })
   /// ... and along the history, queued landings have increasing entries.
   pure def historyFollowsEntries(s: State): bool =
@@ -279,8 +284,16 @@ module stacking {
       | StackedOn(r) => r.beneath.length() <= stackDepthMax
       | Unstacked => true })
 
+  /// No step moved the rank of a ticket that was ranked before it and after it, and
+  /// ranks are unique and issued.
+  pure def ranksHold(s: State): bool = and {
+    s.rankKept,
+    s.tickets.keys().forall(i => or { s.tickets.get(i).entry == 0, s.tickets.get(i).entry < s.nextEntry }),
+    s.tickets.keys().forall(i => s.tickets.keys().forall(j => or { i == j, not(ranked(s.tickets.get(i))),
+      s.tickets.get(i).entry != s.tickets.get(j).entry })) }
+
   pure def invariants(s: State): bool = and {
-    landsOneAtATime(s), landsInQueueOrder(s), historyFollowsEntries(s), landedAsEvaluated(s), landedOnce(s),
+    landsOneAtATime(s), landsInQueueOrder(s), historyFollowsEntries(s), landedAsEvaluated(s), landedOnce(s), ranksHold(s),
     liveStacksStand(s), stackBaseIsPrefix(s), serializedOnlyHolderBeneath(s),
     invalidatedOnlyStacked(s), reworksAreReturnsToWork(s), failureCapHolds(s), depthHolds(s)
   }

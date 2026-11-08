@@ -117,4 +117,36 @@ module stacking_test {
       .then(holds(st.history.length() == 4))
       .then(lands(5))
       .then(holds(and { phaseOf(st, 5) == Work, st.tickets.get(5).rechecking }))
+
+  run invalidatedTicketsLandInRankOrderTest =
+    setup(Map(1 -> Stacked, 2 -> Stacked, 3 -> Stacked))
+      .then(enter(1)).then(enter(2)).then(enter(3))
+      .then(ejectIt(1))
+      .then(holds(and { phaseOf(st, 2) == Ready, phaseOf(st, 3) == Ready,
+                        st.tickets.get(2).entry == 2, st.tickets.get(3).entry == 3, holder(st) == 2 }))
+      .then(begin(3)).then(holds(unstacked(st, 3))).then(pass(3))
+      .then(holds(and { st.tickets.get(3).entry == 3, not(canLand(st, 3)), holder(st) == 2 }))
+      .then(begin(2)).then(pass(2))
+      .then(holds(not(canLand(st, 3))))
+      .then(lands(2))
+      .then(holds(st.history == List(pair(2, 1))))
+      .then(lands(3))
+      .then(holds(and { phaseOf(st, 3) == Work, st.tickets.get(3).rechecking }))
+
+  run newerTicketCannotOvertakeAnInvalidatedOneTest =
+    setup(Map(1 -> Stacked, 2 -> Stacked, 3 -> Serialized))
+      .then(enter(1)).then(enter(2)).then(ejectIt(1)).then(enter(3))
+      .then(holds(and { phaseOf(st, 2) == Ready, holder(st) == 2, phaseOf(st, 3) == Pending,
+                        st.tickets.get(3).entry == 3, not(canLand(st, 3)) }))
+      .then(begin(2)).then(pass(2)).then(lands(2))
+      .then(holds(and { st.history == List(pair(2, 1)), holder(st) == 3 }))
+
+  run stackedOnlyOnAHolderInEvaluationTest =
+    setup(Map(1 -> Direct, 2 -> Serialized, 3 -> Stacked, 4 -> Stacked))
+      .then(enter(2)).then(enter(1)).then(lands(1)).then(lands(2))
+      .then(rep(3)).then(begin(3))
+      .then(holds(and { phaseOf(st, 2) == Work, holder(st) == 2, unstacked(st, 3) }))
+      .then(rep(2)).then(begin(2))
+      .then(rep(4)).then(begin(4))
+      .then(holds(and { phaseOf(st, 2) == Evaluation, beneathOf(st, 4) == List(pair(2, 2)) }))
 }
