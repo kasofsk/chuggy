@@ -42,7 +42,10 @@ stub_npm() { # [failing view]
 	cat >"$BIN/npm" <<EOF
 #!/bin/sh
 [ "\$1" = view ] || exit 127
-shift
+case "\$2 \$3" in
+"--fetch-timeout="*" --fetch-retries="*) shift 3 ;;
+*) echo "an npm view with no bound of its own" >&2; exit 1 ;;
+esac
 if [ "\$*" = "${1:-none}" ]; then echo "npm error code E404" >&2; exit 1; fi
 case "\$*" in
 "@anthropic-ai/claude-agent-sdk@latest claudeCodeVersion") cat "$NPM/sdk-claude" ;;
@@ -74,7 +77,13 @@ stub_npm
 run_in "$R"
 check "pins within the cap are clean" 0 "$RC" "both within 5 release(s)"
 check "the clean run says how far Claude Code is behind" 0 "$RC" "Claude Code 2.1.5 is 5 release(s) behind 2.1.10"
-check "a prerelease and a platform build are not releases" 0 "$RC" "Codex 0.2.0 is 1 release(s) behind 0.3.0"
+check "a release between pin and ceiling is counted" 0 "$RC" "Codex 0.2.0 is 1 release(s) behind 0.3.0"
+
+fixture 2.1.10 0.2.0
+registry 2.1.10 "$CLAUDE" 0.4.0 '["0.2.0","0.3.0-alpha.1","0.3.0-linux-x64","0.3.0","0.4.0"]'
+run_in "$R"
+check "a prerelease and a platform build are not releases" 0 "$RC" "Codex 0.2.0 is 2 release(s) behind 0.4.0"
+registry 2.1.10 "$CLAUDE" 0.3.0 "$CODEX"
 
 fixture 2.1.4 0.2.0
 run_in "$R"

@@ -13,10 +13,11 @@
 # can go no further, and for Codex npm's `latest`. A prerelease is not one, and
 # neither is a platform build, whose version carries its platform as a suffix.
 #
-# A CHANGE UNDER `images/worker` SELECTS IT, where the pins and their bump are,
-# and so does a full run, the roster stage of images/worker/Dockerfile's among
-# them. It is not read on every change, so a ticket is not made to take on a
-# bump outside its scope. Never reused: npm moves under a tree that does not.
+# A CHANGE UNDER `images/worker` SELECTS IT, where the pins are, and so do a
+# full run, the roster stage of images/worker/Dockerfile's among them, and a
+# change to the sequencer, which selects every gate. Other changes do not, so
+# most tickets are not made to take on a bump outside their scope. Never
+# reused: npm moves under a tree that does not.
 #
 # Exits 0 clean, 1 when either is further behind, 2 when it could not run. Two
 # is not a pass.
@@ -62,11 +63,13 @@ fi
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
-# Each read is npm's own, so a registry the user's npm is set to is the one read.
+# Each read is npm's own, so a registry the user's npm is set to is the one read,
+# and each is bounded here rather than by whatever npm is set to, so a registry
+# that stalls ends as a could-not-run.
 read_npm() { # <file> <npm view arguments...>
 	file="$1"
 	shift
-	if ! npm view "$@" >"$work/$file" 2>"$work/$file.err"; then
+	if ! npm view --fetch-timeout=60000 --fetch-retries=2 "$@" >"$work/$file" 2>"$work/$file.err"; then
 		echo "check-agent-lag: LINTER ERROR — npm view $* failed:"
 		tail -n 3 "$work/$file.err" | sed 's/^/check-agent-lag: | /'
 		exit 2
