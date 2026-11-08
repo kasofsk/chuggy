@@ -187,7 +187,7 @@ function TopBarPage(): ReactNode {
 }
 
 /** The trail's crumbs, each level that has a page linking to it and the last
- * one named. */
+ * one named, each marked as the address it is rather than words to translate. */
 function TopBarTrail(props: {
   readonly crumbs: readonly ShellCrumb[];
 }): ReactNode {
@@ -203,6 +203,7 @@ function TopBarTrail(props: {
             {crumb.link === undefined || last ? (
               <span
                 className="topbar-crumb"
+                translate="no"
                 {...(last ? { "aria-current": "page" as const } : {})}
               >
                 {crumb.label}
@@ -212,6 +213,7 @@ function TopBarTrail(props: {
                 to={crumb.link.to}
                 params={crumb.link.params}
                 className="topbar-crumb"
+                translate="no"
               >
                 {crumb.label}
               </Link>

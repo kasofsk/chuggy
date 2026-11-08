@@ -94,6 +94,7 @@ import type { InboxResponse } from "../../../src/contract/responses.ts";
 import { InviteProvider } from "../app/browser/InvitePage.tsx";
 import { consoleRouterOver } from "../app/browser/routes.tsx";
 import { SessionProvider, useSilentRefresh } from "../app/browser/session.tsx";
+import { copyLocale } from "../app/copy/catalog.ts";
 import type { ApiFetchInit } from "../app/core/apiRequest.ts";
 import { panelQueryDefaults } from "../app/core/panelQueryDefaults.ts";
 import { projectStreamHeartbeatMs } from "../app/core/projectStream.ts";
@@ -172,7 +173,7 @@ export const consoleRepository = "https://forge.test/kasofsk/chuggy";
 const consoleEpic = {
   number: 7,
   revision: 1,
-  title: "Billing",
+  title: "billing-epic-7",
   visibility: "Active",
   progress: {
     byPhase: {
@@ -191,6 +192,17 @@ const consoleEpic = {
   status: "not_started",
   waitingOnOutside: [],
 } as const;
+
+/** The tenant's forge installations, each account named as the id it is. */
+const consoleInstallations = {
+  ...forgeInstallationsFixture,
+  installations: forgeInstallationsFixture.installations.map(
+    (installation) => ({
+      ...installation,
+      account: `${installation.account}-org`,
+    }),
+  ),
+};
 
 /** What each parameter a route declares is filled with, so a route is
  * visited at an address its fixtures answer. */
@@ -342,7 +354,7 @@ const consoleReads: readonly ConsoleRead[] = [
   {
     path: consoleReadAt(`${projectPath}/selector-settings`),
     schema: selectorProjectSettingsResponseSchema,
-    body: () => leadSelectorSettingsBody(12, { northStar: "ship the console" }),
+    body: () => leadSelectorSettingsBody(12, { northStar: "north-star-1" }),
   },
   {
     path: consoleReadAt(`${projectPath}/selector-settings/history`),
@@ -406,7 +418,7 @@ const consoleReads: readonly ConsoleRead[] = [
     schema: configurationsResponseSchema,
     body: () => ({
       configurations: [
-        creationDeclared("n-development", consoleRepository, "development"),
+        creationDeclared("n-development", consoleRepository, "dev-config-1"),
       ],
     }),
   },
@@ -524,7 +536,7 @@ const consoleReads: readonly ConsoleRead[] = [
   {
     path: consoleReadAt(`${tenantPath}/forge-installations`),
     schema: forgeInstallationsResponseSchema,
-    body: () => forgeInstallationsFixture,
+    body: () => consoleInstallations,
   },
   {
     path: consoleReadUnder(
@@ -960,12 +972,14 @@ export function consoleSiteEachCase(made: (site: ConsoleSite) => void): void {
 /** The console mounted at `path` over the site, as `main.tsx` mounts it —
  * under `StrictMode` unless `strict` is false, which mounts the tree once as a
  * production build does, so a case can count what one mount reads — on a
- * history at `path`, or the one a case hands in to move through itself. */
+ * history at `path`, or the one a case hands in to move through itself, and in
+ * the base language unless a case names another wording. */
 export function consoleMounted(
   path: string,
   session: ConsoleSession = consoleSession(),
   strict = true,
   history: RouterHistory = createMemoryHistory({ initialEntries: [path] }),
+  wording: string = copyLocale,
 ): void {
   const client = new QueryClient({
     defaultOptions: { queries: panelQueryDefaults },
@@ -978,7 +992,7 @@ export function consoleMounted(
       </InviteProvider>
     </SessionProvider>
   );
-  renderCopied(strict ? <StrictMode>{tree}</StrictMode> : tree);
+  renderCopied(strict ? <StrictMode>{tree}</StrictMode> : tree, { wording });
 }
 
 /** The fake clock moved on by `ms`, every timer and read it releases run and

@@ -35,6 +35,7 @@ import type {
 } from "../../../../src/contract/rosters.ts";
 
 import type { ApiFailure } from "./apiRequest.ts";
+import type { Copy, CopyOrData } from "./copy.ts";
 import { forgeAccountRows } from "./forgeInstallation.ts";
 import type { ForgeAccountRow } from "./forgeInstallation.ts";
 import {
@@ -123,7 +124,7 @@ export type SetupLack =
   | {
       readonly lacks: "Landing";
       readonly ticket: number;
-      readonly phase: string;
+      readonly phase: TicketPhase;
     }
   | { readonly lacks: "Decision"; readonly ticket: number };
 
@@ -139,52 +140,89 @@ export interface SetupStanding {
   readonly choice: SetupChoice;
   readonly remote: SetupRemote | undefined;
   /** What the folder's remote came to, where it was looked for. */
-  readonly found: readonly string[];
+  readonly found: readonly Copy[];
   /** One a step in order, or none where which project is meant is still open. */
   readonly steps: readonly SetupStep[];
   /** The address of the pull request that writes the repository's own configuration, where the repository meant holds only the bootstrap and the ticket step is done on a ticket whose pull request stands unmerged. */
   readonly unmerged: string | undefined;
 }
 
-function setupDone(step: SetupStepName, detail: string): SetupStep {
+/**
+ * What the program names on the console's pages beside what is pressed there,
+ * by the message each page draws it as, so a case holds each against the
+ * page.
+ */
+export const setupSeen = {
+  northStar: { id: "lead-settings-section-north-star-title" },
+  workspaceNaming: { id: "settings-invite-naming" },
+} as const satisfies Readonly<Record<string, Copy>>;
+
+/** Each forge app, as a sentence names it. */
+export const setupAppNames: Readonly<Record<ForgeAppName, Copy>> = {
+  portal: { id: "setup-app-portal" },
+  worker: { id: "setup-app-worker" },
+};
+
+/** A phase as a sentence says a ticket is in it: by the name the ticket page gives its step, and by the ticket's standing where no step is named for it — the messages themselves, since the labels that name them reach past what the terminal may load. */
+export function setupPhaseSaid(phase: TicketPhase): Copy {
+  switch (phase) {
+    case "Work":
+      return { id: "ticket-steps-phase-work" };
+    case "Evaluation":
+      return { id: "ticket-steps-phase-evaluation" };
+    case "Finalization":
+      return { id: "ticket-steps-phase-landing" };
+    case "Pending":
+      return { id: "standing-pending" };
+    case "Done":
+      return { id: "standing-done" };
+    case "Escalated":
+      return { id: "standing-escalated" };
+    case "Revoked":
+      return { id: "standing-revoked" };
+  }
+}
+
+/** A done step, said by a name alone or in a few words. */
+function setupDone(step: SetupStepName, detail: CopyOrData): SetupStep {
   return { step, state: "done", detail, lacks: undefined };
 }
 
 function setupUndone(
   step: SetupStepName,
   state: Exclude<SetupStepState, "done" | "unread">,
-  detail: string,
+  detail: Copy | undefined,
   lacks: SetupLack,
 ): SetupStep {
   return { step, state, detail, lacks };
 }
 
 /** What each read is called where a step says it was not got. */
-const setupReadSubjects: Readonly<Record<SetupReadName, string>> = {
-  workspaces: "your workspaces were",
-  inventory: "your projects were",
-  settings: "its lead settings were",
-  installations: "its GitHub accounts were",
-  portalGrant: "what the portal app is granted on GitHub was",
-  workerGrant: "what the worker app is granted on GitHub was",
-  repositories: "its repositories were",
-  work: "where its work runs was",
-  placement: "its runners were",
-  tickets: "its tickets were",
-  drafts: "its drafts were",
-  landings: "a ticket's landings were",
+const setupReadSubjects: Readonly<Record<SetupReadName, Copy>> = {
+  workspaces: { id: "setup-read-workspaces" },
+  inventory: { id: "setup-read-inventory" },
+  settings: { id: "setup-read-settings" },
+  installations: { id: "setup-read-installations" },
+  portalGrant: { id: "setup-read-portal-grant" },
+  workerGrant: { id: "setup-read-worker-grant" },
+  repositories: { id: "setup-read-repositories" },
+  work: { id: "setup-read-work" },
+  placement: { id: "setup-read-placement" },
+  tickets: { id: "setup-read-tickets" },
+  drafts: { id: "setup-read-drafts" },
+  landings: { id: "setup-read-landings" },
 };
 
-function setupFateSaid(fate: SetupFate): string {
+function setupFateSaid(fate: SetupFate): Copy {
   switch (fate.fate) {
     case "Refused":
-      return "not shown to you";
+      return { id: "setup-fate-refused" };
     case "Cut":
-      return "sent only in part";
+      return { id: "setup-fate-cut" };
     case "Unasked":
-      return "not read";
+      return { id: "setup-fate-unasked" };
     case "Failed":
-      return `not answered (${fate.outcome})`;
+      return { id: "setup-fate-failed", args: { outcome: fate.outcome } };
   }
 }
 
@@ -196,7 +234,10 @@ function setupUnread(
   return {
     step,
     state: "unread",
-    detail: `${setupReadSubjects[read]} ${setupFateSaid(fate)}`,
+    detail: {
+      id: "setup-step-unread",
+      args: { subject: setupReadSubjects[read], fate: setupFateSaid(fate) },
+    },
     lacks: { lacks: "Read", read, fate },
   };
 }
@@ -229,7 +270,7 @@ function setupWorkspaceStep(
       : setupUndone(
           "workspace",
           "todo",
-          "you are in no workspace yet",
+          { id: "setup-step-workspace-none" },
           lacking,
         );
   const held = tenants.find((tenant) => tenant.tenant === workspace);
@@ -241,9 +282,13 @@ function setupWorkspaceStep(
     return setupUndone(
       "workspace",
       "waiting",
-      held === undefined
-        ? `${workspace}, where you see a project and are not an admin`
-        : `${workspace}, where you are a member and not an admin`,
+      {
+        id:
+          held === undefined
+            ? "setup-step-workspace-seen"
+            : "setup-step-workspace-member",
+        args: { workspace },
+      },
       { lacks: "Administration", workspace },
     );
   return truncated
@@ -251,7 +296,7 @@ function setupWorkspaceStep(
     : setupUndone(
         "workspace",
         "todo",
-        `you are in no workspace named ${workspace}`,
+        { id: "setup-step-workspace-unnamed", args: { workspace } },
         lacking,
       );
 }
@@ -261,11 +306,20 @@ function setupProjectless(
   workspace: string,
   project: string | undefined,
   administers: boolean,
-): string {
-  const named = project === undefined ? "" : ` named ${project}`;
-  return administers
-    ? `${workspace} has no project${named}${project === undefined ? " yet" : ""}`
-    : `no project of ${workspace}${named} is shown to you`;
+): Copy {
+  if (project === undefined)
+    return {
+      id: administers
+        ? "setup-step-projectless"
+        : "setup-step-projectless-unshown",
+      args: { workspace },
+    };
+  return {
+    id: administers
+      ? "setup-step-projectless-named"
+      : "setup-step-projectless-unshown-named",
+    args: { workspace, project },
+  };
 }
 
 /** The project step where no project is read: one that is to do, or a list that was not got or was cut short of saying so. */
@@ -279,7 +333,7 @@ function setupProjectUnnamed(
     return setupUnread("project", "inventory", setupFateOf(inventory));
   const lacking: SetupLack = { lacks: "Project" };
   if (workspace === undefined)
-    return setupUndone("project", "todo", "", lacking);
+    return setupUndone("project", "todo", undefined, lacking);
   const project =
     reads.choice.choice === "Made" ? reads.choice.project : undefined;
   return inventory.whole
@@ -324,12 +378,24 @@ function setupProjectStep(
   const settings = reads.settings;
   if (settings.read !== "Got") {
     const unread = setupUnread("project", "settings", setupFateOf(settings));
-    return { ...unread, detail: `${name}: ${unread.detail}` };
+    return {
+      ...unread,
+      detail: {
+        id: "setup-step-named",
+        args: { name, detail: unread.detail ?? "" },
+      },
+    };
   }
   return settings.value.overrides.northStar === undefined
-    ? setupUndone("project", "waiting", `${name} has no North Star yet`, {
-        lacks: "NorthStar",
-      })
+    ? setupUndone(
+        "project",
+        "waiting",
+        {
+          id: "setup-step-north-star",
+          args: { project: name, section: setupSeen.northStar },
+        },
+        { lacks: "NorthStar" },
+      )
     : setupDone("project", name);
 }
 
@@ -357,6 +423,21 @@ function setupBoth(row: ForgeAccountRow | undefined): boolean {
   return row?.portal === "Installed" && row.worker === "Installed";
 }
 
+function setupAppLackedSaid(
+  account: string,
+  owned: string | undefined,
+  has: ForgeAppName,
+  lacks: ForgeAppName,
+): Copy {
+  const apps = { has: setupAppNames[has], lacks: setupAppNames[lacks] };
+  return owned === undefined
+    ? { id: "setup-step-app-lacked", args: { account, ...apps } }
+    : {
+        id: "setup-step-app-lacked-owner",
+        args: { account, repository: owned, ...apps },
+      };
+}
+
 /** An account that does not hold both apps, said by the one it lacks: the worker app where it has the portal app, and the portal app first where it has not. */
 function setupAppLacked(
   account: string,
@@ -365,11 +446,15 @@ function setupAppLacked(
 ): SetupStep {
   const [has, app]: readonly [ForgeAppName, ForgeAppName] =
     row?.portal === "Installed" ? ["portal", "worker"] : ["worker", "portal"];
-  const of = owned === undefined ? "" : `, which owns ${owned},`;
-  const detail =
+  const detail: Copy =
     row === undefined
-      ? `${account}${of} has neither app`
-      : `${account}${of} has the ${has} app, not the ${app} app`;
+      ? owned === undefined
+        ? { id: "setup-step-apps-none", args: { account } }
+        : {
+            id: "setup-step-apps-none-owner",
+            args: { account, repository: owned },
+          }
+      : setupAppLackedSaid(account, owned, has, app);
   return setupUndone("github", "waiting", detail, {
     lacks: "App",
     app,
@@ -390,7 +475,7 @@ function setupGithubAny(read: SetupInstallations): SetupStep {
   if (!read.whole) return setupUnread("github", "installations", setupCut);
   const nearest = rows.find((row) => row.portal === "Installed") ?? rows[0];
   return nearest === undefined
-    ? setupUndone("github", "todo", "", { lacks: "Account" })
+    ? setupUndone("github", "todo", undefined, { lacks: "Account" })
     : setupAppLacked(nearest.account, nearest, undefined);
 }
 
@@ -440,7 +525,10 @@ function setupGithubGranted(
     setupUndone(
       "github",
       "waiting",
-      `the ${app} app on ${owner} is not granted ${repository}`,
+      {
+        id: "setup-step-ungranted",
+        args: { app: setupAppNames[app], account: owner, repository },
+      },
       { lacks: "Grant", app, account: owner, repository },
     );
   const portal = setupGrantListed(grants, "portal");
@@ -458,7 +546,10 @@ function setupGithubGranted(
   );
   if (lacked.includes(entry.url)) return waiting("worker");
   return worker.value.some((held) => held.url === entry.url)
-    ? setupDone("github", `${owner}, both apps granted ${repository}`)
+    ? setupDone("github", {
+        id: "setup-step-granted",
+        args: { account: owner, repository },
+      })
     : setupUnread("github", "workerGrant", setupCut);
 }
 
@@ -489,7 +580,7 @@ function setupGithubStep(
   const read = reads.installations;
   if (read.read !== "Got")
     return none
-      ? setupUndone("github", "todo", "", { lacks: "Account" })
+      ? setupUndone("github", "todo", undefined, { lacks: "Account" })
       : setupUnread("github", "installations", setupFateOf(read));
   const meant = setupMeant(reads.repositories);
   switch (meant.meant) {
@@ -506,10 +597,10 @@ function setupGithubStep(
 
 /** Done where the repository meant is configured; waiting where it is added and is not. */
 function setupRepositoryStep(reads: SetupReads, none: boolean): SetupStep {
-  const mine =
+  const mine: Copy | undefined =
     reads.remote === undefined
-      ? ""
-      : `${reads.remote.said} (this folder's remote)`;
+      ? undefined
+      : { id: "setup-step-remote", args: { remote: reads.remote.said } };
   const lacking: SetupLack = { lacks: "Binding" };
   const meant = setupMeant(reads.repositories);
   switch (meant.meant) {
@@ -526,7 +617,7 @@ function setupRepositoryStep(reads: SetupReads, none: boolean): SetupStep {
         : setupUndone(
             "repository",
             "waiting",
-            `${repository} is added, its configuration not read yet`,
+            { id: "setup-step-unconfigured", args: { repository } },
             { lacks: "Configuration", repository },
           );
     }
@@ -548,7 +639,10 @@ function setupRunnerStep(reads: SetupReads, none: boolean): SetupStep {
   const work = reads.work;
   if (work.read !== "Got")
     return none
-      ? setupUndone("runner", "todo", "", { lacks: "Runner", chat: true })
+      ? setupUndone("runner", "todo", undefined, {
+          lacks: "Runner",
+          chat: true,
+        })
       : setupUnread("runner", "work", setupFateOf(work));
   const read = reads.placement;
   if (read.read !== "Got")
@@ -558,17 +652,24 @@ function setupRunnerStep(reads: SetupReads, none: boolean): SetupStep {
   const chat = mine !== undefined;
   switch (sessionRunnerShort(route, read.value.runners.project)) {
     case "RunnerOffline":
-      return setupUndone("runner", "waiting", "registered, not running", {
-        lacks: "RunnerLive",
+      return setupUndone(
+        "runner",
+        "waiting",
+        { id: "setup-step-runner-offline" },
+        { lacks: "RunnerLive", chat },
+      );
+    case "NoRunner":
+      return setupUndone("runner", "todo", undefined, {
+        lacks: "Runner",
         chat,
       });
-    case "NoRunner":
-      return setupUndone("runner", "todo", "", { lacks: "Runner", chat });
     case undefined:
       break;
   }
   const pooled = !setupHosted(route);
-  const said = pooled ? "live" : "the cluster runs its work";
+  const said: Copy = pooled
+    ? { id: "setup-step-runner-live" }
+    : { id: "setup-step-runner-hosted" };
   switch (mine) {
     case undefined:
       return setupDone("runner", said);
@@ -576,14 +677,14 @@ function setupRunnerStep(reads: SetupReads, none: boolean): SetupStep {
       return setupUndone(
         "runner",
         "waiting",
-        `${said}; your chat host is registered, not running`,
+        { id: "setup-step-chat-host-offline", args: { runner: said } },
         { lacks: "ChatHostLive", pooled },
       );
     case "NoRunner":
       return setupUndone(
         "runner",
         "todo",
-        `${said}; you have no chat host for your chats in it`,
+        { id: "setup-step-chat-host-none", args: { runner: said } },
         { lacks: "ChatHost", pooled },
       );
   }
@@ -609,7 +710,7 @@ function setupProposed(landing: TicketLandingResponse): boolean {
 
 /** The ticket setup is done on, as the ticket step says it, and the address of its pull request where one stands unmerged. */
 interface SetupTicketDone {
-  readonly detail: string;
+  readonly detail: Copy;
   readonly unmerged: string | undefined;
 }
 
@@ -629,17 +730,23 @@ function setupTicketDone(reads: SetupReads): SetupTicketDone | undefined {
   const [done] = reads.landed.read === "Got" ? reads.landed.value : [];
   if (done !== undefined)
     return {
-      detail: `ticket ${String(done.ticket)} is done`,
+      detail: {
+        id: "setup-step-ticket-done",
+        args: { ticket: String(done.ticket) },
+      },
       unmerged: setupUnmerged(reads.doneLandings),
     };
   for (const held of reads.landings) {
     if (held.landings.read !== "Got") continue;
-    const ticket = `ticket ${String(held.ticket)}`;
+    const args = { ticket: String(held.ticket) };
     if (held.landings.value.some((landing) => landing.state === "Landed"))
-      return { detail: `${ticket} landed`, unmerged: undefined };
+      return {
+        detail: { id: "setup-step-ticket-landed", args },
+        unmerged: undefined,
+      };
     if (held.landings.value.some(setupProposed))
       return {
-        detail: `${ticket} opened a pull request`,
+        detail: { id: "setup-step-ticket-proposed", args },
         unmerged: setupUnmerged(held),
       };
   }
@@ -672,27 +779,30 @@ export const setupUnstartedPhase = "Pending" satisfies TicketPhase;
 
 /** A ticket on its way, by what it waits on: a decision where it is escalated, a start where it is released and not started, and its landing otherwise. */
 function setupTicketMoving(ticket: number, phase: TicketPhase): SetupStep {
-  const said = `ticket ${String(ticket)}`;
+  const args = { ticket: String(ticket) };
   if (phase === "Escalated")
-    return setupUndone("ticket", "waiting", `${said} is escalated`, {
-      lacks: "Decision",
-      ticket,
-    });
+    return setupUndone(
+      "ticket",
+      "waiting",
+      { id: "setup-step-ticket-escalated", args },
+      { lacks: "Decision", ticket },
+    );
   if (phase === setupUnstartedPhase)
     return setupUndone(
       "ticket",
       "waiting",
-      `${said} is released, not started`,
-      {
-        lacks: "Dispatch",
-        ticket,
-      },
+      { id: "setup-step-ticket-unstarted", args },
+      { lacks: "Dispatch", ticket },
     );
-  return setupUndone("ticket", "waiting", `${said} is in ${phase}`, {
-    lacks: "Landing",
-    ticket,
-    phase,
-  });
+  return setupUndone(
+    "ticket",
+    "waiting",
+    {
+      id: "setup-step-ticket-moving",
+      args: { ...args, phase: setupPhaseSaid(phase) },
+    },
+    { lacks: "Landing", ticket, phase },
+  );
 }
 
 /** Done where a ticket has landed; waiting where one is on its way, escalated, or a draft not yet released. */
@@ -702,7 +812,8 @@ function setupTicketStep(
   done: SetupTicketDone | undefined,
 ): SetupStep {
   if (done !== undefined) return setupDone("ticket", done.detail);
-  if (none) return setupUndone("ticket", "todo", "", { lacks: "Ticket" });
+  if (none)
+    return setupUndone("ticket", "todo", undefined, { lacks: "Ticket" });
   const unread = setupTicketUnread(reads);
   if (unread !== undefined) return unread;
   const [moving] = reads.moving.read === "Got" ? reads.moving.value : [];
@@ -713,10 +824,13 @@ function setupTicketStep(
     return setupUndone(
       "ticket",
       "waiting",
-      `ticket ${String(draft.ticket)} is a draft, not released`,
+      {
+        id: "setup-step-ticket-draft",
+        args: { ticket: String(draft.ticket) },
+      },
       { lacks: "Release", ticket: draft.ticket },
     );
-  return setupUndone("ticket", "todo", "", { lacks: "Ticket" });
+  return setupUndone("ticket", "todo", undefined, { lacks: "Ticket" });
 }
 
 function setupNamed(partition: PartitionIdentity): string {
@@ -724,31 +838,46 @@ function setupNamed(partition: PartitionIdentity): string {
 }
 
 /** What the folder's remote came to among the projects it was looked for in, said of those and of no others, whether or not it proposed one. */
-function setupRemoteFound(reads: SetupReads): readonly string[] {
+function setupRemoteFound(reads: SetupReads): readonly Copy[] {
   const proposal = reads.proposal;
   if (reads.remote === undefined || proposal.proposal === "Unsought") return [];
-  const said = `this folder's remote ${reads.remote.said}`;
-  const project =
+  const remote = reads.remote.said;
+  const among: Copy =
     proposal.within === undefined
-      ? "project the site shows you"
-      : `project of ${proposal.within} the site shows you`;
+      ? { id: "setup-remote-among" }
+      : {
+          id: "setup-remote-among-within",
+          args: { workspace: proposal.within },
+        };
   switch (proposal.proposal) {
     case "Unbound":
-      return [`${said} is added to no ${project}, so it proposes none`];
-    case "One": {
-      const name = setupNamed(proposal.partition);
+      return [{ id: "setup-remote-unbound", args: { remote, among } }];
+    case "One":
       return [
-        `${said} is added to ${name} and to no other ${project}, so this checklist is of ${name}: proposed and not chosen, and --workspace with --project names another`,
+        {
+          id: "setup-remote-one",
+          args: {
+            remote,
+            among,
+            project: setupNamed(proposal.partition),
+            workspaceFlag: "--workspace",
+            projectFlag: "--project",
+          },
+        },
       ];
-    }
     case "Several":
       return [
-        `${said} is added to more than one ${project} (${proposal.partitions.map(setupNamed).join(", ")}), so it proposes none`,
+        {
+          id: "setup-remote-several",
+          args: {
+            remote,
+            among,
+            projects: proposal.partitions.map(setupNamed).join(", "),
+          },
+        },
       ];
     case "Unread":
-      return [
-        `${said} could not be looked for in every ${project}, so it proposes none`,
-      ];
+      return [{ id: "setup-remote-unread", args: { remote, among } }];
   }
 }
 

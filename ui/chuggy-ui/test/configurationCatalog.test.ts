@@ -12,6 +12,7 @@ import {
   configurationCatalogSelected,
   configurationCatalogSelection,
 } from "../app/core/configurationCatalog.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 import { configurationFollowings } from "../../../src/contract/configurationDocument.ts";
 import {
   creationCatalogCanonical,
@@ -254,7 +255,9 @@ test("a plan's choice draws its stages by the names they are written under, spac
   const read = configurationCatalogOf(creationCatalogStagesNamedCanonical);
   if (read === undefined) throw new Error("the fixture is a catalog");
   expect(
-    configurationCatalogChoices(read).evaluation.map((choice) => choice.text),
+    configurationCatalogChoices(read, copyTextEn).evaluation.map(
+      (choice) => choice.text,
+    ),
   ).toStrictEqual([
     "review (default) · review",
     "gated · Code Review → Checks · étape 2",
@@ -262,7 +265,7 @@ test("a plan's choice draws its stages by the names they are written under, spac
 });
 
 test("each choice marks the catalog's default", () => {
-  const choices = configurationCatalogChoices(catalog());
+  const choices = configurationCatalogChoices(catalog(), copyTextEn);
   expect(choices.work.map((choice) => choice.text)[0]).toMatch(
     /^build \(default\) · /u,
   );
@@ -273,5 +276,9 @@ test("each choice marks the catalog's default", () => {
   expect(choices.finalization.map((choice) => choice.value)).toStrictEqual([
     "land",
     "approved",
+  ]);
+  expect(choices.finalization.map((choice) => choice.text)).toStrictEqual([
+    "land (default) · lands unapproved",
+    "approved · approved first",
   ]);
 });

@@ -48,8 +48,9 @@ const copySourcesDir = "generated";
 /** The file that holds the terms, and the only one that does. */
 const copyTermsFile = "terms.ftl";
 
-/** The line beside a message that lets it spell a term's English. */
-const copyExemptionPattern = /^spells (-[a-zA-Z][\w-]*): \S/u;
+/** The line beside a message that lets it spell what it names: a term's
+ * English, as `-<term>`, or one word a term rejects. */
+const copyExemptionPattern = /^spells ([^:]*[^\s:]): \S/u;
 
 /** The line beside a term that lists the words it replaces. */
 const copyRejectionPattern = /^rejects: (\S.*)$/u;
@@ -216,9 +217,10 @@ function copyExemptions(message: Message): readonly string[] {
 
 /**
  * A message that spells a term's English instead of referencing it, or says a
- * word the term replaces, unless a line beside it says which term and why; and
- * such a line that names a term the message does neither for, which outlives
- * the word it excused.
+ * word a term replaces, unless a line beside it names that term or that word
+ * and why; and such a line naming what the message no longer says, which
+ * outlives what it excused. A term's exemption excuses its English alone, and
+ * each rejected word needs its own.
  */
 function copyTermsSpelled(
   files: readonly CopyFile[],
@@ -233,28 +235,48 @@ function copyTermsSpelled(
         { words: copyTermWords(term), rejected: copyTermRejected(term) },
       ]),
   );
+  const rejectedAll = new Set(
+    [...terms.values()].flatMap(({ rejected }) =>
+      rejected.map((word) => word.toLowerCase()),
+    ),
+  );
   for (const file of files)
     for (const entry of file.entries) {
       if (entry.type !== "Message") continue;
       const text = copyMessageText(entry);
       const exempt = copyExemptions(entry);
+      const exemptWords = new Set(
+        exempt
+          .filter((named) => !named.startsWith("-"))
+          .map((word) => word.toLowerCase()),
+      );
       const at = `${copyShown(file.path)}: ${entry.id.name}`;
       for (const [term, { words, rejected }] of terms) {
         const spelled = words.some((word) => copySpelled(text, word));
-        const replaced = rejected.find((word) => copySpelled(text, word));
         const excused = exempt.includes(term);
         if (spelled && !excused)
           findings.push(`${at}: spells ${term} instead of referencing it`);
-        if (replaced !== undefined && !excused)
-          findings.push(`${at}: says "${replaced}", which ${term} replaces`);
-        if (!spelled && replaced === undefined && excused)
+        if (!spelled && excused)
           findings.push(
             `${at}: is exempt for ${term}, which it does not spell`,
           );
+        for (const word of rejected)
+          if (copySpelled(text, word) && !exemptWords.has(word.toLowerCase()))
+            findings.push(`${at}: says "${word}", which ${term} replaces`);
       }
-      for (const term of exempt)
-        if (!terms.has(term))
-          findings.push(`${at}: is exempt for ${term}, which is no term`);
+      for (const named of exempt) {
+        if (named.startsWith("-")) {
+          if (!terms.has(named))
+            findings.push(`${at}: is exempt for ${named}, which is no term`);
+        } else if (!rejectedAll.has(named.toLowerCase()))
+          findings.push(
+            `${at}: is exempt for "${named}", which no term rejects`,
+          );
+        else if (!copySpelled(text, named))
+          findings.push(
+            `${at}: is exempt for "${named}", which it does not say`,
+          );
+      }
     }
 }
 

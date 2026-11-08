@@ -289,7 +289,7 @@ function chosenWorkflowFiles(): string | undefined {
 
 test("the page reads its own binding, and says what it lands as", async () => {
   await drawPage({ bound: [binding(proposal)] });
-  const finalization = sectionOf("Finalization");
+  const finalization = sectionOf("Landing");
   expect(
     within(finalization).getByText(
       "How a finished ticket lands. A ticket may choose otherwise.",
@@ -313,7 +313,7 @@ test("the page reads its own binding, and says what it lands as", async () => {
 test("a repository this project does not bind draws nothing but Not bound", async () => {
   await drawPage({ repository: "https://forge.test/kasofsk/none" });
   expect(screen.getByText("Not bound")).toBeTruthy();
-  expect(screen.queryByRole("region", { name: /^Finalization/u })).toBeNull();
+  expect(screen.queryByRole("region", { name: /^Landing/u })).toBeNull();
   expect(screen.queryByRole("region", { name: /^Configurations/u })).toBeNull();
 });
 
@@ -349,7 +349,7 @@ test("a saved finalization is written against the one the page read", async () =
   const sent = await drawPage({
     written: [answer({ repository: binding(proposal) })],
   });
-  await edit("Finalization");
+  await edit("Landing");
   await turned(() => {
     fireEvent.click(screen.getByRole("radio", { name: "Pull request" }));
   });
@@ -365,7 +365,7 @@ test("a saved finalization is written against the one the page read", async () =
   expect(screen.getByText("Written")).toBeTruthy();
   expect(chosenFinalization()).toBe("Pull request");
   expect(
-    within(sectionOf("Finalization")).getByRole("button", { name: "Edit" }),
+    within(sectionOf("Landing")).getByRole("button", { name: "Edit" }),
   ).toBeTruthy();
 });
 
@@ -377,8 +377,8 @@ test("a git merge's policy is offered only under a git merge, and is written wit
   const sent = await drawPage({
     written: [answer({ repository: binding(serialized) })],
   });
-  await edit("Finalization");
-  const section = sectionOf("Finalization");
+  await edit("Landing");
+  const section = sectionOf("Landing");
   await turned(() => {
     fireEvent.click(within(section).getByRole("radio", { name: "None" }));
   });
@@ -424,7 +424,7 @@ test("a finalization that moved under the write says so, and rebases onto what s
       answer({ repository: binding(push) }),
     ],
   });
-  await edit("Finalization");
+  await edit("Landing");
   await turned(() => {
     fireEvent.click(screen.getByRole("radio", { name: "Pull request" }));
   });
@@ -450,7 +450,7 @@ test("the workflow files section says they are off until a binding allows them",
   const section = sectionOf("Workflow files");
   expect(
     within(section).getByText(
-      "Lets jobs change workflow files · App needs Workflows",
+      "Lets runs change workflow files · App needs Workflows",
     ),
   ).toBeTruthy();
   expect(chosenWorkflowFiles()).toBe("Off");
@@ -548,7 +548,7 @@ test("a finalization saved after workflow files were allowed keeps them allowed"
     );
   });
   await press("Save changes");
-  await edit("Finalization");
+  await edit("Landing");
   await turned(() => {
     fireEvent.click(screen.getByRole("radio", { name: "Pull request" }));
   });
@@ -582,7 +582,7 @@ test("a refused write says so and leaves the edit open", async () => {
       answer({ error: { code: "RepositoryLocked", message: "no" } }, 403),
     ],
   });
-  await edit("Finalization");
+  await edit("Landing");
   await turned(() => {
     fireEvent.click(screen.getByRole("radio", { name: "Pull request" }));
   });
@@ -594,7 +594,7 @@ test("a refused write says so and leaves the edit open", async () => {
 
 test("cancelling a choice leaves the finalization the page read", async () => {
   await drawPage();
-  await edit("Finalization");
+  await edit("Landing");
   await turned(() => {
     fireEvent.click(screen.getByRole("radio", { name: "Pull request" }));
   });
@@ -612,7 +612,7 @@ test("the configurations are this repository's own, incomplete rows saying so", 
   expect(
     rows.map((row) => [...row.children].map((cell) => cell.textContent)),
   ).toStrictEqual([
-    ["Configuration", "Worker", "Stages", "Approval"],
+    ["Configuration", "Workload worker", "Stages", "Approval"],
     ["chuggy #12", "worker:1", "2", "Required"],
     ["nightly #12", "Incomplete"],
   ]);
@@ -643,7 +643,7 @@ test("a walk the budget stopped says so under the rows it did read", async () =>
   styleless();
 });
 
-function finalizationEditOffered(title = "Finalization"): boolean {
+function finalizationEditOffered(title = "Landing"): boolean {
   return (
     within(sectionOf(title)).queryByRole("button", { name: "Edit" }) !== null
   );

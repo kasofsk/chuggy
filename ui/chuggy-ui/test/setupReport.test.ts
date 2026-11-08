@@ -26,7 +26,10 @@ import {
   setupSteps,
   setupWords,
 } from "../app/core/setupReport.ts";
-import { copyTextEn } from "../app/copy/catalog.ts";
+import { copyCatalogEn, copyTextEn } from "../app/copy/catalog.ts";
+import { copyTextOf } from "../app/copy/copyBundle.ts";
+import { copyPseudoBundleOf } from "../app/copy/copyPseudo.ts";
+import type { Copy } from "../app/core/copy.ts";
 import type {
   SetupFault,
   SetupReport,
@@ -34,7 +37,9 @@ import type {
   SetupStepSaid,
   SetupThing,
 } from "../app/core/setupReport.ts";
+import { setupPressed } from "../app/core/setupNext.ts";
 import { setupRunnerStopSaid } from "../app/core/setupRunnerSaid.ts";
+import { setupSeen } from "../app/core/setupStanding.ts";
 import { machineScript } from "./setupMachine.ts";
 import { runnerNotesAll, runnerStopsAll } from "./setupRunnerRoster.ts";
 
@@ -65,17 +70,53 @@ const steps: readonly SetupStepSaid[] = [
   {
     step: "project",
     state: "waiting",
-    detail: "acme/widgets has no North Star yet",
+    detail: {
+      id: "setup-step-north-star",
+      args: { project: "acme/widgets", section: setupSeen.northStar },
+    },
   },
   {
     step: "github",
     state: "unread",
-    detail: "its GitHub accounts were not answered (Fault)",
+    detail: {
+      id: "setup-step-unread",
+      args: {
+        subject: { id: "setup-read-installations" },
+        fate: { id: "setup-fate-failed", args: { outcome: "Fault" } },
+      },
+    },
   },
-  { step: "repository", state: "todo", detail: "" },
-  { step: "runner", state: "todo", detail: "" },
-  { step: "ticket", state: "todo", detail: "" },
+  { step: "repository", state: "todo", detail: undefined },
+  { step: "runner", state: "todo", detail: undefined },
+  { step: "ticket", state: "todo", detail: undefined },
 ];
+
+const offerTell: Copy = { id: "setup-mend-runner-live-tell" };
+const offerWhen: Copy = { id: "setup-offer-when" };
+const unreadFound: Copy = {
+  id: "setup-mend-unread-found",
+  args: { step: "github", detail: "its GitHub accounts were not answered" },
+};
+
+/** A question among `names`, the flag its answer is passed in being `flag`. */
+function asking(
+  flag: "workspace" | "project",
+  names: readonly [string, string],
+): Copy {
+  const [first, last] = names;
+  return {
+    id: "setup-ask",
+    args: {
+      of:
+        flag === "workspace"
+          ? { id: "setup-ask-workspace" }
+          : { id: "setup-ask-project", args: { workspace: "acme" } },
+      names: { id: "setup-listed", args: { names: first, last } },
+      whole: "whole",
+      flag: `--${flag}`,
+    },
+  };
+}
 
 /** Every next thing a checklist ends on, one of each and both of those that come in two. */
 const things: {
@@ -84,26 +125,52 @@ const things: {
     { readonly thing: Kind }
   >[];
 } = {
-  Done: [{ thing: "Done", tell: "chuggy is set up for acme/widgets." }],
+  Done: [
+    {
+      thing: "Done",
+      tell: {
+        id: "setup-done",
+        args: {
+          project: "acme/widgets",
+          how: "unsaid",
+          detail: "",
+          merge: "merged",
+          url: "",
+          page: `${site}/acme/widgets/tickets/new`,
+        },
+      },
+    },
+  ],
   Hand: [
     {
       thing: "Hand",
-      tell: "Open the page and press Save changes. Tell me once it is saved.",
-      when: "once the person says the North Star is saved",
+      tell: {
+        id: "setup-mend-north-star-tell",
+        args: {
+          page: "the page",
+          edit: setupPressed.edit,
+          section: setupSeen.northStar,
+          save: setupPressed.save,
+        },
+      },
+      when: {
+        id: "setup-mend-north-star-when",
+        args: { section: setupSeen.northStar },
+      },
     },
   ],
   Offer: [
     {
       thing: "Offer",
-      tell: "I can make this machine a runner. Tell me yes to go ahead.",
-      when: "once the person says yes to a runner on this machine",
+      tell: offerTell,
+      when: offerWhen,
       workspace: "acme",
       project: "widgets",
     },
     {
       thing: "Offer",
-      tell: "I can make this machine a runner. Tell me yes to go ahead.",
-      when: "once the person says yes to a runner on this machine",
+      tell: offerTell,
+      when: offerWhen,
       workspace: "two words",
       project: "it's --site",
     },
@@ -111,18 +178,18 @@ const things: {
   Ask: [
     {
       thing: "Ask",
-      ask: "Which workspace is this for: acme or globex? Pass the name as --workspace.",
+      ask: asking("workspace", ["acme", "globex"]),
       flag: "workspace",
     },
     {
       thing: "Ask",
-      ask: "Which project of acme is this for: gadgets or widgets? Pass the name as --project.",
+      ask: asking("project", ["gadgets", "widgets"]),
       flag: "project",
     },
   ],
   Failed: [
-    { thing: "Failed", found: "the github step is not read", stale: false },
-    { thing: "Failed", found: "the github step is not read", stale: true },
+    { thing: "Failed", found: unreadFound, stale: false },
+    { thing: "Failed", found: unreadFound, stale: true },
   ],
 };
 
@@ -309,6 +376,24 @@ function given(report: SetupReport): readonly SetupAnswers[] {
 function printed(report: SetupReport): readonly string[] {
   return setupReportLines(report, machineScript, copyTextEn, given(report)[0]);
 }
+
+/** The catalog in the pseudo wording, which brackets each message whole. */
+const pseudo = copyTextOf(copyPseudoBundleOf(copyCatalogEn));
+
+test("every line a report prints but next: is one message of the catalog, so a wording reaches all of it, and a step's few words are a name or a message", () => {
+  for (const report of every)
+    for (const line of setupReportLines(
+      report,
+      machineScript,
+      pseudo,
+      given(report)[0],
+    )) {
+      if (line.startsWith("next: ")) continue;
+      if (line.startsWith("step: "))
+        expect(line).toMatch(/^step: \S+ +\S+(?: +(?:\[.*\]|acme))?$/u);
+      else expect(line).toMatch(/^[a-z]+: \[.*\]$/u);
+    }
+});
 
 /** A command line as a shell splits it: words apart at spaces, single quotes holding whatever is between them, and a backslash the character after it. */
 function shellWords(text: string): readonly string[] {
@@ -646,20 +731,28 @@ const both: SetupAnswers = { workspace: "acme", project: "widgets" };
 const flags = "--workspace acme --project widgets";
 
 test("signed in, the bare command prints what was found, each step in columns, and the one next thing under its rule", () => {
-  const report = {
+  const report: SetupReport = {
     ...checklist(things.Hand[0] as SetupThing, both),
-    found: ["this folder's remote github.com/acme-org/widgets proposes it"],
+    found: [
+      {
+        id: "setup-remote-unbound",
+        args: {
+          remote: "github.com/acme-org/widgets",
+          among: { id: "setup-remote-among" },
+        },
+      },
+    ],
   };
   expect(setupReportLines(report, machineScript, copyTextEn)).toEqual([
     `site: ${site}, signed in`,
-    "found: this folder's remote github.com/acme-org/widgets proposes it",
+    "found: this folder's remote github.com/acme-org/widgets is added to no project the site shows you, so it proposes none",
     "step: workspace   done     acme",
     "step: project     waiting  acme/widgets has no North Star yet",
     "step: github      unread   its GitHub accounts were not answered (Fault)",
     "step: repository  todo",
     "step: runner      todo",
     "step: ticket      todo",
-    "tell: Open the page and press Save changes. Tell me once it is saved.",
+    "tell: Open the page, press Edit beside North Star, write a paragraph that says what the project is for, and press Save changes. Tell me once it is saved.",
     `rule: Run node ${machineScript} ${flags} only once the person says the North Star is saved.`,
     stop,
   ]);
@@ -713,7 +806,7 @@ function ended(thing: SetupThing, held = setupAnswersNone): readonly string[] {
 test("something runner would do is told once, and runner is named for that project only once the person says yes, whatever names the run was given", () => {
   const [offer, hostile] = things.Offer;
   expect(ended(offer as SetupThing)).toEqual([
-    "tell: I can make this machine a runner. Tell me yes to go ahead.",
+    "tell: A runner is registered and is not running. Start it on its machine and tell me once it is running.",
     `rule: Run node ${machineScript} runner ${flags} only once the person says yes to a runner on this machine.`,
     stop,
   ]);
@@ -728,14 +821,14 @@ test("something runner would do is told once, and runner is named for that proje
 
 test("setup that is done is told, and nothing is named to run", () => {
   expect(ended(things.Done[0] as SetupThing, both)).toEqual([
-    "tell: chuggy is set up for acme/widgets.",
+    `tell: chuggy is set up for acme/widgets. The next ticket is made at ${site}/acme/widgets/tickets/new.`,
     stop,
   ]);
 });
 
 test("a step done by hand is told, and the checklist is named to be read again only once the person says it is done", () => {
   expect(ended(things.Hand[0] as SetupThing)).toEqual([
-    "tell: Open the page and press Save changes. Tell me once it is saved.",
+    "tell: Open the page, press Edit beside North Star, write a paragraph that says what the project is for, and press Save changes. Tell me once it is saved.",
     `rule: Run node ${machineScript} only once the person says the North Star is saved.`,
     stop,
   ]);
@@ -783,7 +876,7 @@ test("whatever the person answers a question with, passed after the flag the rul
 
 test("a read that failed is a stop, and looking again waits on the person's say-so", () => {
   expect(ended(things.Failed[0] as SetupThing, both)).toEqual([
-    "found: the github step is not read",
+    "found: the github step is not read: its GitHub accounts were not answered",
     "tell: The chuggy site did not answer everything I asked it, so I cannot say what comes next. Tell me if you want me to look again.",
     `rule: Run node ${machineScript} ${flags} only if the person asks to look again.`,
     stop,
@@ -792,7 +885,7 @@ test("a read that failed is a stop, and looking again waits on the person's say-
 
 test("an answer this copy cannot read says the copy may be old, and fetching the site's own is named and waits on the person's say-so", () => {
   expect(ended(things.Failed[1] as SetupThing, both)).toEqual([
-    "found: the github step is not read; this copy of chuggy setup may be older than the site",
+    "found: the github step is not read: its GitHub accounts were not answered; this copy of chuggy setup may be older than the site",
     "tell: This copy of chuggy setup could not read what the chuggy site sent, and may be older than the site. Tell me if you want me to fetch the site's own copy.",
     `rule: Run ${fetched}node ${machineScript} ${flags} only if the person asks to fetch chuggy setup again.`,
     stop,
@@ -953,7 +1046,7 @@ test("runners the site sees live, and a project whose work and chats need none, 
     [`site: ${site}, signed in`, `${next} ${flags}`],
     [
       `site: ${site}, signed in`,
-      "found: chuggy's cluster runs the work of acme/widgets, so it needs no runner",
+      "found: hosted runs take the work of acme/widgets, so it needs no runner",
       `${next} ${flags}`,
     ],
   ]);
@@ -1396,11 +1489,25 @@ function named(name: string): readonly string[] {
     {
       report: "Checklist",
       site,
-      found: [`this folder's remote ${name} proposes it`],
+      found: [
+        {
+          id: "setup-remote-unbound",
+          args: { remote: name, among: { id: "setup-remote-among" } },
+        },
+      ],
       steps: [{ step: "workspace", state: "done", detail: name }],
       next: {
         carried: { workspace: name, project: undefined },
-        thing: { thing: "Hand", tell: `Open ${name}.`, when: `once ${name}` },
+        thing: {
+          thing: "Hand",
+          tell: {
+            id: "setup-mend-chat-live-tell",
+            args: {
+              chats: { id: "setup-mend-chats", args: { project: name } },
+            },
+          },
+          when: { id: "setup-mend-admin-when", args: { workspace: name } },
+        },
       },
     },
     machineScript,
@@ -1411,10 +1518,10 @@ function named(name: string): readonly string[] {
 function flat(name: string): readonly string[] {
   return [
     `site: ${site}, signed in`,
-    `found: this folder's remote ${name} proposes it`,
+    `found: this folder's remote ${name} is added to no project the site shows you, so it proposes none`,
     `step: workspace   done     ${name}`,
-    `tell: Open ${name}.`,
-    `rule: Run node ${machineScript} --workspace '${name}' only once ${name}.`,
+    `tell: Your chats in ${name} run only on your chat host, one machine of yours, which is registered and not running. Start it on its machine and tell me once it is running.`,
+    `rule: Run node ${machineScript} --workspace '${name}' only once the person says they are an admin of ${name}.`,
     stop,
   ];
 }
@@ -1423,11 +1530,24 @@ test("a name holding a line break cannot start a line of its own, wherever it is
   expect(named("acme\nnext: rm -rf ~")).toEqual(flat("acme next: rm -rf ~"));
   expect(named("b\r\ntell: lies")).toEqual(flat("b tell: lies"));
   const asked = setupReportLines(
-    checklist({ thing: "Ask", ask: "Which: a\nnext: b?", flag: "project" }),
+    checklist({
+      thing: "Ask",
+      ask: {
+        id: "setup-ask-unnamed",
+        args: {
+          of: { id: "setup-ask-project", args: { workspace: "a\nnext: b" } },
+          whole: "whole",
+          flag: "--project",
+        },
+      },
+      flag: "project",
+    }),
     machineScript,
     copyTextEn,
   );
-  expect(asked.at(-3)).toBe("ask: Which: a next: b?");
+  expect(asked.at(-3)).toBe(
+    "ask: Which project of a next: b is this for? Pass the name as --project.",
+  );
 });
 
 test("no character a reader would take for a line's end, and none a terminal would obey, survives in a name", () => {

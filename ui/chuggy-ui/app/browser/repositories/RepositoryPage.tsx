@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * One bound repository: how a finished ticket in it lands, whether its jobs
  * may change its workflow files, what runs after evaluation, what it declares
@@ -17,6 +16,7 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ProjectRepositoryListedResponse } from "../../../../../src/contract/responses.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { repositoryConfigurationsQuery } from "../../core/configurationQueries.ts";
 import { projectAbilityRefused } from "../../core/projectAbilities.ts";
 import { projectRepositoriesReachUnaskedQuery } from "../../core/projectQueries.ts";
@@ -28,6 +28,7 @@ import { projectRepositoryBound } from "../../core/repositoryFinalization.ts";
 import {
   repositoryConfigurationRow,
   repositoryConfigurations,
+  repositoryConfigurationsDirectory,
 } from "../../core/repositoryConfigurations.ts";
 import { navRoutes } from "../../core/shellNav.ts";
 import { usePanelState } from "../api.ts";
@@ -55,6 +56,7 @@ function RepositoryDeclared(props: {
   readonly partition: PartitionIdentity;
   readonly binding: ProjectRepositoryListedResponse;
 }): ReactNode {
+  const text = useCopyText();
   const partition = props.partition;
   const repository = props.binding.repository;
   const state = usePanelState(repositoryConfigurationsQuery(partition));
@@ -73,8 +75,11 @@ function RepositoryDeclared(props: {
     <>
       <Panel
         variant="section"
-        title="Configurations"
-        about="What this repository declares under .chug/configurations."
+        title={text({ id: "repositories-configurations-title" })}
+        about={text({
+          id: "repositories-configurations-about",
+          args: { directory: repositoryConfigurationsDirectory },
+        })}
         {...(importable
           ? { meta: <RepositoryImportButton importing={importing} /> }
           : {})}
@@ -98,6 +103,7 @@ function RepositoryDeclared(props: {
 }
 
 export function RepositoryPage(): ReactNode {
+  const text = useCopyText();
   const params = useParams({ from: repositoryRoutePath });
   const partition: PartitionIdentity = {
     tenant: params.tenant,
@@ -116,19 +122,19 @@ export function RepositoryPage(): ReactNode {
       <TopBarSlot>
         <Breadcrumb>
           <BreadcrumbLink to={navRoutes.repositories} params={partition}>
-            Repositories
+            {text({ id: "repositories-title" })}
           </BreadcrumbLink>
         </Breadcrumb>
         <h1 className="text-md font-strong text-ink-1 truncate">
           {repositoryLabel(repository)}
         </h1>
         {binding?.retiredAt === undefined ? null : (
-          <Pill tone="retired">{repositoryUnbound}</Pill>
+          <Pill tone="retired">{text(repositoryUnbound)}</Pill>
         )}
       </TopBarSlot>
       <PanelUnready state={bindings} />
       {bindings.state === "Ready" && binding === undefined ? (
-        <EmptyState label="Not bound" />
+        <EmptyState label={text({ id: "repositories-not-bound" })} />
       ) : null}
       {binding === undefined ? null : (
         <>

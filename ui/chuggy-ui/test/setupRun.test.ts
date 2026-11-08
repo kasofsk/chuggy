@@ -102,11 +102,15 @@ test("the bare command, signed in, reads where the person stands and reports it 
     found: [],
     steps: [
       { step: "workspace", state: "done", detail: "acme" },
-      { step: "project", state: "todo", detail: "acme has no project yet" },
-      { step: "github", state: "todo", detail: "" },
-      { step: "repository", state: "todo", detail: "" },
-      { step: "runner", state: "todo", detail: "" },
-      { step: "ticket", state: "todo", detail: "" },
+      {
+        step: "project",
+        state: "todo",
+        detail: { id: "setup-step-projectless", args: { workspace: "acme" } },
+      },
+      { step: "github", state: "todo", detail: undefined },
+      { step: "repository", state: "todo", detail: undefined },
+      { step: "runner", state: "todo", detail: undefined },
+      { step: "ticket", state: "todo", detail: undefined },
     ],
     next: { carried: setupAnswersNone, thing: { thing: "Hand" } },
   });

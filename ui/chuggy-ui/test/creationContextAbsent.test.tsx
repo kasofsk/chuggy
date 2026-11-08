@@ -31,7 +31,7 @@ async function drawn(
     path: "/$tenant/$project",
   });
   const router = createRouter({
-    history: createMemoryHistory({ initialEntries: ["/acme/atlas"] }),
+    history: createMemoryHistory({ initialEntries: ["/acme-co/atlas-web"] }),
     routeTree: root.addChildren([
       partition.addChildren([
         createRoute({
@@ -62,7 +62,7 @@ test("a project binding no repository says so and links to Repositories", async 
   expect(screen.getByText("No repository bound")).toBeTruthy();
   expect(
     screen.getByRole("link", { name: "Repositories" }).getAttribute("href"),
-  ).toBe("/acme/atlas/repositories");
+  ).toBe("/acme-co/atlas-web/repositories");
 });
 
 test("a bound repository with no ready revision says no configuration and links nowhere", async () => {

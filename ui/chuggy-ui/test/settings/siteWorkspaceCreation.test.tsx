@@ -64,10 +64,10 @@ afterEach(() => {
 
 const opener = "New workspace";
 
-const createdLine = "northwind created · octocat signs in with GitHub";
+const createdLine = "northwind-co created · octocat signs in with GitHub";
 
 const owner = {
-  Name: "northwind",
+  Name: "northwind-co",
   "GitHub username": "octocat",
   Email: "owner@example.com",
 };
@@ -176,7 +176,7 @@ test("Create sends the four fields the contract states, as typed, to the site's 
       method: "POST",
       url: siteWorkspacesPath,
       body: {
-        tenant: "northwind",
+        tenant: "northwind-co",
         github: "octocat",
         email: "owner@example.com",
         createAccounts: true,
@@ -214,7 +214,7 @@ test.each([[201], [200]])(
   async (status) => {
     const grown = [
       ...workspacesListed.tenants,
-      { ...workspacesListed.tenants[3], tenant: "northwind" },
+      { ...workspacesListed.tenants[3], tenant: "northwind-co" },
     ];
     const drawn = await filled(
       listedAfterCreation(
@@ -227,7 +227,7 @@ test.each([[201], [200]])(
     await press("Create");
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(workspaceListReads(drawn)).toBe(read + 1);
-    expect(workspacesDrawn().map(([name]) => name)).toContain("northwind");
+    expect(workspacesDrawn().map(([name]) => name)).toContain("northwind-co");
     expect(screen.getByRole("heading", { name: "5 workspaces" })).toBeTruthy();
     const said = screen.getByRole("status");
     expect(said.textContent).toBe(createdLine);
@@ -372,7 +372,7 @@ test("a reader who manages the site's permissions starts with the box checked, a
   await press("Create");
   expect(creationsSent(drawn).map((request) => request.body)).toStrictEqual([
     {
-      tenant: "northwind",
+      tenant: "northwind-co",
       github: "octocat",
       email: "owner@example.com",
       createAccounts: false,

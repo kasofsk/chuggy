@@ -20,6 +20,9 @@ import {
   forgeApps,
   projectRepositoryConfigurationDeferrals,
 } from "../../../src/contract/rosters.ts";
+import { copyCatalogEn, copyTextEn } from "../app/copy/catalog.ts";
+import { copyTextOf } from "../app/copy/copyBundle.ts";
+import { copyPseudoBundleOf } from "../app/copy/copyPseudo.ts";
 import type { ApiResult } from "../app/core/apiRequest.ts";
 import type { ProjectRepositoryBindAnswer } from "../app/core/apiRoutes.ts";
 import type { PanelState } from "../app/core/freshness.ts";
@@ -54,10 +57,10 @@ import {
   type RepositoryNextStep,
   type RepositoryNote,
   type RepositoryOffersStep,
-  type RepositoryStepStatus,
 } from "../app/core/projectRepositories.ts";
 import { workRunner } from "../app/core/workRunner.ts";
 import type { WorkRunner } from "../app/core/workRunner.ts";
+import { copiedWords } from "./copiedWords.ts";
 import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
 import {
   executionPlacementBody,
@@ -315,7 +318,7 @@ test("each app has one short line under the roster and a link of its own", () =>
   expect(Object.keys(repositoryGrantLines).toSorted()).toStrictEqual(
     [...forgeApps].toSorted(),
   );
-  expect(repositoryGrantLines).toStrictEqual({
+  expect(copiedWords(repositoryGrantLines)).toStrictEqual({
     portal: { status: "Not listed · grant it on GitHub", label: "Portal app" },
     worker: {
       status: "Worker app missing · grant it on GitHub",
@@ -323,7 +326,9 @@ test("each app has one short line under the roster and a link of its own", () =>
     },
   });
   for (const app of forgeApps)
-    expect(repositoryGrantLines[app].status.length).toBeLessThanOrEqual(60);
+    expect(
+      copyTextEn(repositoryGrantLines[app].status).length,
+    ).toBeLessThanOrEqual(60);
 });
 
 test("the picker's address is the page's own at its anchor", () => {
@@ -372,7 +377,7 @@ test("the worker app's line is what a row marks, and that its listings are unrea
     ["Missing", "Missing"],
     [undefined, undefined],
   ]);
-  expect(repositoryWorkerReading).toBe("Worker app · loading…");
+  expect(copyTextEn(repositoryWorkerReading)).toBe("Worker app · loading…");
 });
 
 /** How long the forge was once seen to take to list a grant just made. */
@@ -402,7 +407,7 @@ test("an open picker's own readings keep one pace until they are spent, and outl
 });
 
 function status(result: ApiResult<ProjectRepositoryBindAnswer>): string {
-  return repositoryBindNote(repositoryBindOutcome(result)).status;
+  return copyTextEn(repositoryBindNote(repositoryBindOutcome(result)).status);
 }
 
 function answered(
@@ -427,18 +432,24 @@ const alreadyBound: ApiResult<ProjectRepositoryBindAnswer> = {
  * repository alone, and the classifier keeps neither status, so the body is
  * what tells the two apart. */
 test("a bind of a repository already bound says so, and offers nothing further", () => {
-  expect(repositoryBindNote(repositoryBindOutcome(alreadyBound))).toStrictEqual(
-    { status: "kasofsk/chuggy · Already bound", ticketOffered: false },
-  );
+  expect(
+    copiedWords(repositoryBindNote(repositoryBindOutcome(alreadyBound))),
+  ).toStrictEqual({
+    status: "kasofsk/chuggy · Already bound",
+    ticketOffered: false,
+  });
   expect(status(answered({ result: "Imported", count: 2 }))).not.toContain(
     "Already bound",
   );
 });
 
+/** The note in the words the picker draws it in. */
 function boundNote(
   configurations: ProjectRepositoryConfigurationsResponse,
-): RepositoryNote {
-  return repositoryBindNote(repositoryBindOutcome(answered(configurations)));
+): Record<keyof RepositoryNote, unknown> {
+  return copiedWords(
+    repositoryBindNote(repositoryBindOutcome(answered(configurations))),
+  ) as Record<keyof RepositoryNote, unknown>;
 }
 
 /** The picker's row marks a new binding Bound, so its one line names the
@@ -455,7 +466,7 @@ test("a new binding names the repository and what its configurations came to, an
   });
   for (const reason of projectRepositoryConfigurationDeferrals)
     expect(boundNote({ result: "Deferred", reason })).toStrictEqual({
-      status: `kasofsk/chuggy · ${repositoryDeferrals[reason].status}`,
+      status: `kasofsk/chuggy · ${copyTextEn(repositoryDeferrals[reason].status)}`,
       ticketOffered: false,
     });
 });
@@ -486,14 +497,23 @@ test("a new binding that bootstrapped names what its `.chug/` holds instead on a
     }).ignored,
   ).toBe(`Not configurations · ${chug}evaluators/ and 2 more`);
   expect(
-    repositoryIgnoredDetail({
-      paths: [`${chug}evaluators/`, `${chug}project.yaml`],
-      truncated: true,
-    }),
+    copyTextEn(
+      repositoryIgnoredDetail({
+        paths: [`${chug}evaluators/`, `${chug}project.yaml`],
+        truncated: true,
+      }),
+    ),
   ).toBe(`${chug}evaluators/ and 2+ more`);
-  expect(repositoryIgnoredDetail({ paths: [], truncated: true })).toBe(
-    `entries in ${chug}`,
-  );
+  expect(
+    copyTextEn(repositoryIgnoredDetail({ paths: [], truncated: true })),
+  ).toBe(`entries in ${chug}`);
+});
+
+test("a step that names no entry names `.chug/` as data, which a wording leaves as it is", () => {
+  const pseudo = copyTextOf(copyPseudoBundleOf(copyCatalogEn));
+  expect(
+    pseudo(repositoryIgnoredDetail({ paths: [], truncated: true })),
+  ).toContain(" .chug/");
 });
 
 test("each refusal is the one line the picker draws under itself", () => {
@@ -536,14 +556,16 @@ test("each refusal is the one line the picker draws under itself", () => {
 test("a configuration step asked for again draws its outcome, or the refusal it met", () => {
   const configured = (
     configurations: ProjectRepositoryConfigurationsResponse,
-  ): RepositoryStepStatus =>
-    repositoryConfigureStatus({
-      outcome: "Ok",
-      value: {
-        repository: "https://forge.test/kasofsk/chuggy",
-        configurations,
-      },
-    });
+  ): unknown =>
+    copiedWords(
+      repositoryConfigureStatus({
+        outcome: "Ok",
+        value: {
+          repository: "https://forge.test/kasofsk/chuggy",
+          configurations,
+        },
+      }),
+    );
   expect(configured({ result: "Imported", count: 1 })).toStrictEqual({
     status: "Imported",
     retry: false,
@@ -572,29 +594,40 @@ test("a configuration step asked for again draws its outcome, or the refusal it 
     status: "Configuration conflict · ask an operator",
     retry: false,
   });
+});
+
+test("a configuration step asked for again and refused draws the refusal it met", () => {
   expect(
-    repositoryConfigureStatus({
-      outcome: "Conflict",
-      code: "RepositoryRetired",
-      body: undefined,
-    }),
+    copiedWords(
+      repositoryConfigureStatus({
+        outcome: "Conflict",
+        code: "RepositoryRetired",
+        body: undefined,
+      }),
+    ),
   ).toStrictEqual({ status: "Unbound", retry: false });
   expect(
-    repositoryConfigureStatus({
-      outcome: "Conflict",
-      code: "SomethingElse",
-      body: undefined,
-    }),
+    copiedWords(
+      repositoryConfigureStatus({
+        outcome: "Conflict",
+        code: "SomethingElse",
+        body: undefined,
+      }),
+    ),
   ).toStrictEqual({ status: "Conflict", retry: true });
   expect(
-    repositoryConfigureStatus({
-      outcome: "Rejected",
-      code: "InvalidRequest",
-      status: 400,
-      body: undefined,
-    }),
+    copiedWords(
+      repositoryConfigureStatus({
+        outcome: "Rejected",
+        code: "InvalidRequest",
+        status: 400,
+        body: undefined,
+      }),
+    ),
   ).toStrictEqual({ status: "Refused", retry: true });
-  expect(repositoryConfigureStatus({ outcome: "Absent" })).toStrictEqual({
+  expect(
+    copiedWords(repositoryConfigureStatus({ outcome: "Absent" })),
+  ).toStrictEqual({
     status: "Not found",
     retry: true,
   });
@@ -604,7 +637,9 @@ test("a configuration step asked for again draws its outcome, or the refusal it 
  * the press was on. */
 test("Unbind asks by the repository's name, and says what it ends and what it leaves", () => {
   expect(
-    repositoryUnbindQuestion("https://forge.test/kasofsk/chuggy.git"),
+    copiedWords(
+      repositoryUnbindQuestion("https://forge.test/kasofsk/chuggy.git"),
+    ),
   ).toStrictEqual({
     question: "Unbind kasofsk/chuggy?",
     line: "New tickets can't name kasofsk/chuggy. Existing tickets and their history stay. It can be added again, here or to another project.",
@@ -613,20 +648,26 @@ test("Unbind asks by the repository's name, and says what it ends and what it le
 
 test("a refused unbind is its word", () => {
   expect(
-    repositoryUnbindNote({
-      outcome: "Retryable",
-      code: "RepositoryRetirementContended",
-      retryAfterSeconds: 1,
-    }),
+    copyTextEn(
+      repositoryUnbindNote({
+        outcome: "Retryable",
+        code: "RepositoryRetirementContended",
+        retryAfterSeconds: 1,
+      }),
+    ),
   ).toBe("Deferring");
-  expect(repositoryUnbindNote({ outcome: "Absent" })).toBe("Not found");
+  expect(copyTextEn(repositoryUnbindNote({ outcome: "Absent" }))).toBe(
+    "Not found",
+  );
   expect(
-    repositoryUnbindNote({
-      outcome: "Rejected",
-      code: "InvalidRequest",
-      status: 400,
-      body: undefined,
-    }),
+    copyTextEn(
+      repositoryUnbindNote({
+        outcome: "Rejected",
+        code: "InvalidRequest",
+        status: 400,
+        body: undefined,
+      }),
+    ),
   ).toBe("Refused");
 });
 
@@ -641,9 +682,10 @@ test("every deferral has one short phrase, and only one a retry can clear offers
   );
   for (const reason of projectRepositoryConfigurationDeferrals) {
     const drawn = repositoryDeferrals[reason];
-    expect(drawn.status.length).toBeGreaterThan(0);
-    expect(drawn.status.length).toBeLessThanOrEqual(60);
-    expect(drawn.status.includes(" · ")).toBe(!drawn.retry);
+    const words = copyTextEn(drawn.status);
+    expect(words.length).toBeGreaterThan(0);
+    expect(words.length).toBeLessThanOrEqual(60);
+    expect(words.includes(" · ")).toBe(!drawn.retry);
   }
   expect(
     projectRepositoryConfigurationDeferrals.filter(
@@ -751,7 +793,7 @@ test("the line under Add says what is missing, and carries a step only where it 
     ],
   ];
   for (const [accounts, apps, status, step] of cases) {
-    expect(repositoryOffersLine(accounts, apps)).toStrictEqual(
+    expect(copiedWords(repositoryOffersLine(accounts, apps))).toStrictEqual(
       status === undefined ? undefined : { status, step },
     );
     expect((status ?? "").length).toBeLessThanOrEqual(60);
@@ -790,7 +832,7 @@ test("an account holding the portal app without the worker app is named, with th
   ];
   for (const [accounts, account] of lacking)
     for (const apps of [authorizing, unauthorizing])
-      expect(repositoryOffersLine(accounts, apps)).toStrictEqual(
+      expect(copiedWords(repositoryOffersLine(accounts, apps))).toStrictEqual(
         workerMissing(account),
       );
 });
@@ -824,7 +866,9 @@ function bindStep(
   placement: Parameters<typeof workRunner>[0],
   runners: Parameters<typeof workRunner>[1],
 ): RepositoryNextStep | undefined {
-  const note = boundNote({ result: "Bootstrapped", revision: "r1" });
+  const note = repositoryBindNote(
+    repositoryBindOutcome(answered({ result: "Bootstrapped", revision: "r1" })),
+  );
   return repositoryNextStep(
     note.ticketOffered,
     workRunner(placement, runners, workRunnerUnnamed, "Reader"),
@@ -893,7 +937,10 @@ test("a line that names no step does not take the lead from Add", () => {
     repositoryAddLeads({
       bindings: [],
       installations: both,
-      line: { status: "GitHub unavailable", step: undefined },
+      line: {
+        status: { id: "repositories-github-unavailable" },
+        step: undefined,
+      },
     }),
   ).toBe(true);
 });
@@ -928,7 +975,7 @@ test.each(["Connect", "InstallWorker"] as const)(
       repositoryAddLeads({
         bindings: [],
         installations: both,
-        line: { status: "a line", step },
+        line: { status: { id: "repositories-offers-failed" }, step },
       }),
     ).toBe(false);
   },
@@ -938,11 +985,13 @@ test("a bound row names the installation that does not select it and its page, t
   const settingsUrl =
     "https://github.com/organizations/kasofsk/settings/installations/156786211";
   expect(
-    repositoryWorkerReachLine({
-      reach: "Unselected",
-      installationId: "156786211",
-      settingsUrl,
-    }),
+    copiedWords(
+      repositoryWorkerReachLine({
+        reach: "Unselected",
+        installationId: "156786211",
+        settingsUrl,
+      }),
+    ),
   ).toStrictEqual({
     status: "Worker app missing",
     detail:
@@ -950,12 +999,16 @@ test("a bound row names the installation that does not select it and its page, t
     settingsUrl,
   });
   expect(
-    repositoryWorkerReachLine({ reach: "Unclaimed", account: "kasofsk" }),
+    copiedWords(
+      repositoryWorkerReachLine({ reach: "Unclaimed", account: "kasofsk" }),
+    ),
   ).toStrictEqual({
     status: "Worker app missing",
     detail: "No worker app installation is connected on kasofsk.",
   });
-  expect(repositoryWorkerReachLine({ reach: "Unknown" })).toStrictEqual({
+  expect(
+    copiedWords(repositoryWorkerReachLine({ reach: "Unknown" })),
+  ).toStrictEqual({
     status: "Worker app unread",
     detail:
       "GitHub did not say whether the worker app reaches this repository.",

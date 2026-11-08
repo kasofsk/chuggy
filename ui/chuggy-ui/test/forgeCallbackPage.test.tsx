@@ -181,7 +181,7 @@ function leftFor(): { readonly address: string; readonly state: string } {
 const notInstalled = {
   tenant: transaction.tenant,
   standing: "Uninstalled",
-  status: "Not installed",
+  status: "NotInstalled",
 };
 
 test("a matching state redeems the code once, for the stored tenant, with the stored verifier", async () => {
@@ -370,7 +370,7 @@ test("a code the forge spent before it could be read returns with Start again", 
   expect(held.navigated.at(-1)).toStrictEqual(returned);
   expect(heldWord()).toMatchObject({
     standing: "Failed",
-    status: "Start again",
+    status: "Spent",
   });
 });
 

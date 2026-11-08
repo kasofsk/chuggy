@@ -33,7 +33,6 @@ import type {
 } from "./configurationCatalog.ts";
 import {
   configurationModelLabelOf,
-  modelDefaultLabel,
   practiceLabel,
 } from "./configurationView.ts";
 import type { ConfigurationView } from "./configurationView.ts";
@@ -132,12 +131,9 @@ function stepsPractices(practices: readonly string[] | undefined) {
   return stepsJoined(practices?.map(practiceLabel));
 }
 
-/** A model as its column draws it: the view's word for none named is the
- * catalog's. */
-function stepsModel(label: string): CopyOrData {
-  return label === modelDefaultLabel
-    ? { id: "configuration-steps-model-default" }
-    : label;
+/** A model as its column draws it, and none named as its agent's default. */
+function stepsModel(label: string | undefined): CopyOrData {
+  return label ?? { id: "configuration-steps-model-default" };
 }
 
 /** A following as its chip draws it. */
@@ -152,7 +148,7 @@ export function configurationFollowingWord(
 const stepsEmpty: readonly ConfigurationStepRow[] = [];
 
 function stepsRow(
-  row: Partial<Omit<ConfigurationStepRow, "step">> & {
+  row: Omit<Partial<ConfigurationStepRow>, "step"> & {
     readonly step: CopyOrData;
   },
 ): ConfigurationStepRow {
@@ -510,7 +506,7 @@ function catalogRowOf(
               more: 0,
             },
     model:
-      workload?.model === undefined ? undefined : stepsModel(workload.model),
+      workload?.runner === "Agent" ? stepsModel(workload.model) : undefined,
     overrides: catalogOverridesOf(held, details),
     details,
     prompt:

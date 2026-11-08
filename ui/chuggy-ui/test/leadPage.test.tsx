@@ -458,7 +458,7 @@ test("the mailbox tail draws what the pod measured of each turn", async () => {
  */
 test("the transcript's entries draw as exchanges", async () => {
   await drawLead(() => opening);
-  expect(screen.getByText("an observation before the cut")).toBeDefined();
+  expect(screen.getByText("observation-1-before-cut")).toBeDefined();
   expect(screen.getByText("first observation")).toBeDefined();
   expect(screen.getByText("compaction summary")).toBeDefined();
   expect(exchangeCount()).toBe(3);

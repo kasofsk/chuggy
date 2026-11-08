@@ -11,11 +11,11 @@
  * from the copy catalog is read for the message's id, and the catalog for the
  * words. A ticket's page draws
  * each action under the action's own name, so that name is read where the
- * action is made; the workspace's accounts page draws the connect button as
+ * action is made; the workspace's GitHub accounts page draws the connect button as
  * the one component that writes it, so the page is read for the component;
  * and the Add picker draws the line for an app not granted a repository from
  * the roster the program's own sentence is made from, so the picker is read
- * for drawing that roster, and the roster for the words.
+ * for drawing that roster, and the catalog for the roster's words.
  */
 
 import assert from "node:assert/strict";
@@ -27,13 +27,11 @@ import {
   repositoryWorkerLine,
 } from "../../ui/chuggy-ui/app/core/projectRepositories.ts";
 import { copyTextEn } from "../../ui/chuggy-ui/app/copy/catalog.ts";
-import type { Copy, CopyId } from "../../ui/chuggy-ui/app/core/copy.ts";
+import type { CopyId } from "../../ui/chuggy-ui/app/core/copy.ts";
 import { invitePageWords } from "../../ui/chuggy-ui/app/core/invitePage.ts";
 import { selectorSettingsSection } from "../../ui/chuggy-ui/app/core/selectorSettingsForm.ts";
-import {
-  setupPressed,
-  setupSeen,
-} from "../../ui/chuggy-ui/app/core/setupNext.ts";
+import { setupPressed } from "../../ui/chuggy-ui/app/core/setupNext.ts";
+import { setupSeen } from "../../ui/chuggy-ui/app/core/setupStanding.ts";
 
 type SetupPressed = keyof typeof setupPressed;
 
@@ -45,7 +43,10 @@ type SetupPressedCatalogued =
   | "projectCreate"
   | "ticket"
   | "runner"
-  | "chatHost";
+  | "chatHost"
+  | "connect"
+  | "add"
+  | "retry";
 
 /** The names the invite page draws from the catalog, as its card's words. */
 type SetupPressedInvite = "workspaceCreate";
@@ -53,6 +54,8 @@ type SetupPressedInvite = "workspaceCreate";
 const settingsSection = "ui/chuggy-ui/app/browser/ui/SettingsSection.tsx";
 const projectCreationPage = "ui/chuggy-ui/app/browser/ProjectCreation.tsx";
 const invitePage = "ui/chuggy-ui/app/browser/InvitePage.tsx";
+const connectButton = "ui/chuggy-ui/app/browser/repositories/ConnectGithub.tsx";
+const addPicker = "ui/chuggy-ui/app/browser/repositories/AddRepository.tsx";
 
 /** The page that draws each name the catalog does not, by its path from the
  * root of this tree. */
@@ -62,9 +65,6 @@ const drawnIn: Readonly<
     string
   >
 > = {
-  connect: "ui/chuggy-ui/app/browser/repositories/ConnectGithub.tsx",
-  add: "ui/chuggy-ui/app/browser/repositories/AddRepository.tsx",
-  retry: "ui/chuggy-ui/app/browser/repositories/BindingConfigurations.tsx",
   dispatch: "ui/chuggy-ui/app/core/ticketActions.ts",
 };
 
@@ -89,13 +89,18 @@ const drawnFromCatalog: Readonly<
     page: "ui/chuggy-ui/app/browser/settings/MyChatHost.tsx",
     id: "runners-chat-host-register",
   },
+  connect: { page: connectButton, id: "repositories-connect-github" },
+  add: { page: addPicker, id: "repositories-add" },
+  retry: {
+    page: "ui/chuggy-ui/app/browser/repositories/BindingConfigurations.tsx",
+    id: "repositories-retry",
+  },
 };
 
 const leadTextSection =
   "ui/chuggy-ui/app/browser/settings/lead/SelectorTextSection.tsx";
 const ticketPage = "ui/chuggy-ui/app/browser/TicketActions.tsx";
 const accountsPage = "ui/chuggy-ui/app/browser/settings/TenantAccountsPage.tsx";
-const connectButton = "ui/chuggy-ui/app/browser/repositories/ConnectGithub.tsx";
 
 /** Whether a page's source draws `name` as the whole of a text or of a label, and not as part of a longer one. */
 function draws(source: string, name: string): boolean {
@@ -105,27 +110,26 @@ function draws(source: string, name: string): boolean {
 
 for (const [key, page] of Object.entries(drawnIn))
   test(`the page ${page} draws what the program says is pressed there (${key})`, () => {
-    const name = setupPressed[key as SetupPressed];
+    const name = copyTextEn(setupPressed[key as SetupPressed]);
     const source = readFileSync(page, "utf8");
     assert.ok(draws(source, name), `${page} draws no "${name}"`);
   });
 
 for (const [key, drawn] of Object.entries(drawnFromCatalog))
   test(`the page ${drawn.page} draws, from the catalog, what the program says is pressed there (${key})`, () => {
-    const name = setupPressed[key as SetupPressed];
     const source = readFileSync(drawn.page, "utf8");
     assert.ok(
       source.includes(`{ id: "${drawn.id}" }`),
       `${drawn.page} draws no ${drawn.id}`,
     );
-    assert.equal(copyTextEn({ id: drawn.id } as Copy), name);
+    assert.deepEqual(setupPressed[key as SetupPressed], { id: drawn.id });
   });
 
 test("the lead's settings page draws, from the catalog, the section the program says Edit is pressed beside", () => {
   const source = readFileSync(leadTextSection, "utf8");
   assert.match(source, /const title = text\(section\.title\);/u);
-  assert.equal(
-    copyTextEn(selectorSettingsSection("northStar").title),
+  assert.deepEqual(
+    selectorSettingsSection("northStar").title,
     setupSeen.northStar,
   );
 });
@@ -134,11 +138,8 @@ test("the invite page draws, from the catalog, the card the program says a works
   const source = readFileSync(invitePage, "utf8");
   assert.match(source, /invitePageWords\.naming\b/u);
   assert.match(source, /\{text\(invitePageWords\.create\)\}/u);
-  assert.equal(copyTextEn(invitePageWords.naming), setupSeen.workspaceNaming);
-  assert.equal(
-    copyTextEn(invitePageWords.create),
-    setupPressed.workspaceCreate,
-  );
+  assert.deepEqual(invitePageWords.naming, setupSeen.workspaceNaming);
+  assert.deepEqual(invitePageWords.create, setupPressed.workspaceCreate);
 });
 
 test("a ticket's page draws each action it offers as a button under the action's own name, and has a line of its own for a project with no runner", () => {
@@ -150,8 +151,8 @@ test("a ticket's page draws each action it offers as a button under the action's
   assert.match(source, /props\.noRunner \? <NoRunnerLine /u);
 });
 
-test("the workspace's accounts page, where the program sends a person whose account lacks the portal app, draws the connect button", () => {
-  assert.equal(drawnIn.connect, connectButton);
+test("the workspace's GitHub accounts page, where the program sends a person whose account lacks the portal app, draws the connect button", () => {
+  assert.equal(drawnFromCatalog.connect.page, connectButton);
   const source = readFileSync(accountsPage, "utf8");
   assert.match(
     source,
@@ -161,16 +162,31 @@ test("the workspace's accounts page, where the program sends a person whose acco
 });
 
 test("the Add picker draws, under its list, the line and the link the program sends a person to for an app not granted her repository: the portal app's always, the worker app's where a row lacks it", () => {
-  assert.deepEqual(repositoryGrantLines, {
-    portal: { status: "Not listed · grant it on GitHub", label: "Portal app" },
-    worker: {
-      status: "Worker app missing · grant it on GitHub",
-      label: "Worker app",
+  assert.deepEqual(
+    {
+      portal: {
+        status: copyTextEn(repositoryGrantLines.portal.status),
+        label: copyTextEn(repositoryGrantLines.portal.label),
+      },
+      worker: {
+        status: copyTextEn(repositoryGrantLines.worker.status),
+        label: copyTextEn(repositoryGrantLines.worker.label),
+      },
     },
-  });
-  const source = readFileSync(drawnIn.add, "utf8");
+    {
+      portal: {
+        status: "Not listed · grant it on GitHub",
+        label: "Portal app",
+      },
+      worker: {
+        status: "Worker app missing · grant it on GitHub",
+        label: "Worker app",
+      },
+    },
+  );
+  const source = readFileSync(addPicker, "utf8");
   assert.match(source, /const line = repositoryGrantLines\[props\.app\];/u);
-  assert.match(source, /<Notice[^>]*\bdetail=\{line\.status\}/u);
+  assert.match(source, /<Notice[^>]*\bdetail=\{text\(line\.status\)\}/u);
   assert.match(source, /<InstallLink[^>]*\blabel=\{line\.label\}/u);
   assert.match(
     source,

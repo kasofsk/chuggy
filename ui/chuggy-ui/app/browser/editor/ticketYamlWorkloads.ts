@@ -125,7 +125,7 @@ function ticketYamlWorkloadField(workload: unknown, field: string): unknown {
 /**
  * The comment written beneath one workload: a skeleton of each field its
  * runner takes that it does not set, none where it sets them all. An image and
- * an execution requirement are one placement, so the one not set is shown as
+ * a run requirement are one placement, so the one not set is shown as
  * the other's replacement.
  */
 export function ticketYamlWorkloadUnset(
@@ -193,15 +193,8 @@ const ticketYamlWorkloadFields: readonly (readonly [
   ],
   ["type", { id: "ticket-authoring-workload-type" }, ["SingleAgent"]],
   ["agent", { id: "ticket-authoring-workload-agent" }, ["Claude", "Codex"]],
-  [
-    "model",
-    { id: "ticket-authoring-workload-model", args: { codex: "Codex" } },
-  ],
-  [
-    "effort",
-    { id: "ticket-authoring-workload-effort", args: { codex: "Codex" } },
-    codexReasoningEfforts,
-  ],
+  ["model", { id: "ticket-authoring-workload-model" }],
+  ["effort", { id: "ticket-authoring-workload-effort" }, codexReasoningEfforts],
   ["arguments", { id: "ticket-authoring-workload-arguments" }],
   ["setup", { id: "ticket-authoring-workload-setup" }],
   ["files", { id: "ticket-authoring-workload-files" }],

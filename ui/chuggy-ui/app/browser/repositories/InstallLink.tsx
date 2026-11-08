@@ -14,6 +14,8 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { ForgeAppName } from "../../../../../src/contract/rosters.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
+import type { Copy } from "../../core/copy.ts";
 import {
   forgeInstallBegin,
   forgeInstallLabel,
@@ -31,8 +33,9 @@ export function InstallLink(props: {
   readonly returnPath: string;
   readonly app: ForgeAppName;
   /** What the link says in place of the app's install label. */
-  readonly label?: string;
+  readonly label?: Copy;
 }): ReactNode {
+  const text = useCopyText();
   const tenant = props.tenant;
   const state = usePanelState(forgeAppsQuery(tenant));
   const [installState] = useState(() => forgeInstallState(drawBytes));
@@ -54,7 +57,7 @@ export function InstallLink(props: {
         });
       }}
     >
-      {props.label ?? forgeInstallLabel(props.app)}
+      {text(props.label ?? forgeInstallLabel(props.app))}
     </a>
   );
 }

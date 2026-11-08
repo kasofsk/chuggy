@@ -72,11 +72,11 @@ afterEach(() => {
 test("a person is a row: an account by its email and login, the reader marked, and what the list holds of them", async () => {
   await drawPeople();
   const ada = personRow("ada@example.com");
-  expect(within(ada).getByText("ada")).toBeTruthy();
+  expect(within(ada).getByText("ada-l")).toBeTruthy();
   expect(within(ada).getByText("You")).toBeTruthy();
   expect(heldIn(ada)).toStrictEqual(["Admin", "Hosted runs"]);
   expect(within(ada).getByText("All projects")).toBeTruthy();
-  expect(projectsIn(ada)).toStrictEqual(["atlas: Admin, Developer"]);
+  expect(projectsIn(ada)).toStrictEqual(["atlas-web: Admin, Developer"]);
   const bob = personRow("s-bob");
   expect(within(bob).queryByText("You")).toBeNull();
   expect(heldIn(bob)).toStrictEqual(["Member"]);
@@ -195,11 +195,11 @@ test("granting a role sends that grant alone and reads the list and the abilitie
 test("removing a project role sends that removal alone, and a project admin asks nothing", async () => {
   const drawn = await drawPeople();
   const read = listReads(drawn);
-  await boxPressed(await editorOf("ada@example.com"), "atlas Admin");
+  await boxPressed(await editorOf("ada@example.com"), "atlas-web Admin");
   expect(changesSent(drawn)).toStrictEqual([
     {
       method: "DELETE",
-      url: `/access/v1/tenants/${peopleTenant}/projects/atlas/people/s-ada/roles/Admin`,
+      url: `/access/v1/tenants/${peopleTenant}/projects/atlas-web/people/s-ada/roles/Admin`,
       body: undefined,
     },
   ]);
@@ -208,11 +208,11 @@ test("removing a project role sends that removal alone, and a project admin asks
 
 test("granting a project role sends that grant alone", async () => {
   const drawn = await drawPeople();
-  await boxPressed(await editorOf("s-bob"), "beacon Dispatcher");
+  await boxPressed(await editorOf("s-bob"), "beacon-api Dispatcher");
   expect(changesSent(drawn)).toStrictEqual([
     {
       method: "POST",
-      url: `/access/v1/tenants/${peopleTenant}/projects/beacon/people/s-bob/roles`,
+      url: `/access/v1/tenants/${peopleTenant}/projects/beacon-api/people/s-bob/roles`,
       body: { role: "Dispatcher" },
     },
   ]);
@@ -258,19 +258,19 @@ test("a change unanswered, no box takes a press and nothing closes the editor, s
     "(Member+)",
     "(Hosted runs)",
   ]);
-  expect(boxesIn(editor, "atlas")).toStrictEqual([
-    "(atlas Admin)",
-    "(atlas Developer)",
-    "(atlas Dispatcher)",
-    "(atlas Viewer)",
+  expect(boxesIn(editor, "atlas-web")).toStrictEqual([
+    "(atlas-web Admin)",
+    "(atlas-web Developer)",
+    "(atlas-web Dispatcher)",
+    "(atlas-web Viewer)",
   ]);
-  for (const name of ["Admin", "atlas Developer"])
+  for (const name of ["Admin", "atlas-web Developer"])
     expect(
       within(editor).getByRole<HTMLButtonElement>("checkbox", { name })
         .disabled,
     ).toBe(false);
   await boxPressed(editor, "Member");
-  await boxPressed(editor, "atlas Developer");
+  await boxPressed(editor, "atlas-web Developer");
   const done = within(editor).getByRole<HTMLButtonElement>("button", {
     name: "Done",
   });
@@ -437,11 +437,11 @@ test("the grid of projects heads its columns once, a role each", async () => {
       .getAllByRole("columnheader")
       .map((header) => header.textContent),
   ).toStrictEqual(["Projects", "Admin", "Developer", "Dispatcher", "Viewer"]);
-  expect(boxesIn(editor, "atlas")).toStrictEqual([
-    "atlas Admin+",
-    "atlas Developer+",
-    "atlas Dispatcher",
-    "atlas Viewer",
+  expect(boxesIn(editor, "atlas-web")).toStrictEqual([
+    "atlas-web Admin+",
+    "atlas-web Developer+",
+    "atlas-web Dispatcher",
+    "atlas-web Viewer",
   ]);
 });
 
@@ -455,11 +455,11 @@ test("a reader who may grant Member alone is offered Member, and sees the rest a
     "Member",
     "(Hosted runs+)",
   ]);
-  expect(boxesIn(ada, "atlas")).toStrictEqual([
-    "(atlas Admin+)",
-    "(atlas Developer+)",
+  expect(boxesIn(ada, "atlas-web")).toStrictEqual([
+    "(atlas-web Admin+)",
+    "(atlas-web Developer+)",
   ]);
-  expect(projectsOffered(ada)).toStrictEqual(["atlas"]);
+  expect(projectsOffered(ada)).toStrictEqual(["atlas-web"]);
   await press("Done");
   const bob = await editorOf("s-bob");
   expect(boxesIn(bob, "Workspace")).toStrictEqual(["Member+"]);
@@ -471,23 +471,23 @@ test("a reader who may grant on one project of two is offered its roles, and see
     abilities: () =>
       answer({
         ...peopleAbilitiesNone,
-        projects: peopleAbilitiesAll(["beacon"]).projects,
+        projects: peopleAbilitiesAll(["beacon-api"]).projects,
       }),
   });
   const offered = [
-    "beacon Admin",
-    "beacon Developer",
-    "beacon Dispatcher",
-    "beacon Viewer",
+    "beacon-api Admin",
+    "beacon-api Developer",
+    "beacon-api Dispatcher",
+    "beacon-api Viewer",
   ];
   const ada = await editorOf("ada@example.com");
-  expect(boxesIn(ada, "atlas")).toStrictEqual([
-    "(atlas Admin+)",
-    "(atlas Developer+)",
+  expect(boxesIn(ada, "atlas-web")).toStrictEqual([
+    "(atlas-web Admin+)",
+    "(atlas-web Developer+)",
   ]);
-  expect(boxesIn(ada, "beacon")).toStrictEqual(offered);
+  expect(boxesIn(ada, "beacon-api")).toStrictEqual(offered);
   await press("Done");
-  expect(boxesIn(await editorOf("s-bob"), "beacon")).toStrictEqual(offered);
+  expect(boxesIn(await editorOf("s-bob"), "beacon-api")).toStrictEqual(offered);
 });
 
 test("a held box the reader may not change takes no press", async () => {
@@ -496,7 +496,7 @@ test("a held box the reader may not change takes no press", async () => {
   });
   const editor = await editorOf("ada@example.com");
   await boxPressed(editor, "Admin");
-  await boxPressed(editor, "atlas Developer");
+  await boxPressed(editor, "atlas-web Developer");
   expect(changesSent(drawn)).toStrictEqual([]);
 });
 
@@ -508,7 +508,7 @@ test("a reader who may change nothing sees what each person holds, and no Edit a
     "Hosted runs",
   ]);
   expect(projectsIn(personRow("ada@example.com"))).toStrictEqual([
-    "atlas: Admin, Developer",
+    "atlas-web: Admin, Developer",
   ]);
 });
 

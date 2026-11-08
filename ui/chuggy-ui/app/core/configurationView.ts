@@ -12,6 +12,7 @@
 
 import { z } from "zod";
 
+import type { Copy, CopyOrData } from "./copy.ts";
 import { imageShortened } from "./labels.ts";
 
 const modelArgumentPrefix = "--model=";
@@ -99,13 +100,12 @@ function configurationDocumentOf(canonical: string): ConfigurationDocument {
   return configurationDocumentSchema.safeParse(parsed).data ?? {};
 }
 
-/** The model a run is given, read from its own flag rather than assumed. */
+/** The model a run is given, read from its own flag rather than assumed, and
+ * none where the mode names none and the run takes its agent's default. */
 export interface ConfigurationModel {
-  readonly label: string;
+  readonly label: string | undefined;
   readonly argument: string | undefined;
 }
-
-export const modelDefaultLabel = "Default";
 
 function capitalized(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
@@ -121,8 +121,7 @@ function configurationModelOf(
   const argument = mode?.arguments?.find((arg) =>
     arg.startsWith(modelArgumentPrefix),
   );
-  if (argument === undefined)
-    return { label: modelDefaultLabel, argument: undefined };
+  if (argument === undefined) return { label: undefined, argument: undefined };
   return {
     label: capitalized(argument.slice(modelArgumentPrefix.length)),
     argument,
@@ -209,26 +208,31 @@ export function configurationModeWithModel(
  * other agent identity is drawn as the document names it. */
 function configurationAgentLabel(
   agent: string | undefined,
-): string | undefined {
-  return agent === "Claude" ? "Claude Code" : agent;
+): CopyOrData | undefined {
+  return agent === "Claude"
+    ? { id: "configuration-catalog-agent-claude-code" }
+    : agent;
 }
 
 function configurationAgentDetail(
   type: string | undefined,
-): string | undefined {
-  return type === "SingleAgent" ? "Single agent" : type;
+): CopyOrData | undefined {
+  return type === "SingleAgent"
+    ? { id: "configuration-catalog-agent-single" }
+    : type;
 }
 
+/** What a workload may do to its working directory, the filesystem it is given. */
 function configurationFilesystemLabel(
   filesystem: string | undefined,
-): string | undefined {
+): Copy | undefined {
   switch (filesystem) {
     case "None":
-      return "No filesystem access";
+      return { id: "configuration-catalog-filesystem-none" };
     case "ReadWorkspace":
-      return "Workspace readable";
+      return { id: "configuration-catalog-filesystem-readable" };
     case "WriteWorkspace":
-      return "Workspace writable";
+      return { id: "configuration-catalog-filesystem-writable" };
     case undefined:
       return undefined;
     default:
@@ -239,12 +243,22 @@ function configurationFilesystemLabel(
 function configurationAccessLine(
   network: boolean | undefined,
   filesystem: string | undefined,
-): string | undefined {
+): Copy | undefined {
   const parts = [
-    network === undefined ? undefined : network ? "Network" : "No network",
+    network === undefined
+      ? undefined
+      : network
+        ? ({ id: "configuration-catalog-network" } as const)
+        : ({ id: "configuration-catalog-network-none" } as const),
     configurationFilesystemLabel(filesystem),
-  ].filter((part): part is string => part !== undefined);
-  return parts.length === 0 ? undefined : parts.join(" · ");
+  ].filter((part): part is Copy => part !== undefined);
+  return parts.reduceRight<Copy | undefined>(
+    (rest, lead) =>
+      rest === undefined
+        ? lead
+        : { id: "configuration-catalog-joined", args: { lead, rest } },
+    undefined,
+  );
 }
 
 /** The tools a run may reach: the flag a `SingleAgent` Claude run is launched
@@ -280,12 +294,12 @@ function configurationWorkerOf(
 /** What one run under this configuration is given, before it is briefed with anything. */
 export interface ConfigurationSettings {
   readonly model: ConfigurationModel;
-  readonly agent: string | undefined;
-  readonly agentDetail: string | undefined;
+  readonly agent: CopyOrData | undefined;
+  readonly agentDetail: CopyOrData | undefined;
   readonly worker: ConfigurationWorker | undefined;
   readonly tools: readonly string[] | undefined;
   readonly credentials: readonly string[] | undefined;
-  readonly access: string | undefined;
+  readonly access: Copy | undefined;
   readonly setup: readonly string[] | undefined;
   readonly completesTask: boolean | undefined;
 }

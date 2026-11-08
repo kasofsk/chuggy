@@ -9,6 +9,8 @@ export interface CodesCopy {
   readonly "codes-escalation-evaluation-blocked": Record<never, never>;
   readonly "codes-escalation-landing-unavailable": Record<never, never>;
   readonly "codes-escalation-lost": Record<never, never>;
+  readonly "codes-agent-claude": Record<never, never>;
+  readonly "codes-agent-codex": Record<never, never>;
   readonly "codes-blocked-policy-denied": Record<never, never>;
   readonly "codes-blocked-configuration-incompatible": Record<never, never>;
   readonly "codes-blocked-profile-unavailable": Record<never, never>;

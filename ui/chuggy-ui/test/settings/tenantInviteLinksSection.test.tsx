@@ -102,8 +102,8 @@ test("a row is headed by what its link carries, drawn as a person's row draws wh
   if (access === undefined) throw new Error("no access");
   expect(heldIn(access)).toStrictEqual(["Member"]);
   expect(projectsIn(access)).toStrictEqual([
-    "beacon: Developer, Viewer",
-    "atlas: Dispatcher",
+    "beacon-api: Developer, Viewer",
+    "atlas-web: Dispatcher",
   ]);
   const admin = cells(ended)["Access"];
   if (admin === undefined) throw new Error("no access");
@@ -144,7 +144,7 @@ test("every link names who made it and when, an account by its address and login
   await drawPeople({ links: () => answer(linksListed) });
   expect(rows().map((row) => cells(row)["Made by"]?.textContent)).toStrictEqual(
     [opened, used, revoked, expired].map(
-      (link) => `Made byada@example.comada${when(link?.mintedAtMs ?? 0)}`,
+      (link) => `Made byada@example.comada-l${when(link?.mintedAtMs ?? 0)}`,
     ),
   );
 });
@@ -193,7 +193,7 @@ test("Revoke is offered on an open link the reader may grant every role of, and 
 });
 
 test("a link carrying a role the reader may not grant draws no Revoke, and a table with none draws no column for it", async () => {
-  const short = peopleAbilitiesAll(["beacon"]);
+  const short = peopleAbilitiesAll(["beacon-api"]);
   await drawPeople({
     links: () => answer(linksListed),
     abilities: () => answer(short),

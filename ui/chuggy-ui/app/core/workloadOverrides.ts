@@ -13,7 +13,7 @@
  *
  * A FIELD IS REPLACED, NEVER REMOVED, since an override names what replaces a
  * field. The one exception is where the workload runs: an image and an
- * execution requirement are one placement, and leaving both out runs it in
+ * run requirement are one placement, and leaving both out runs it in
  * the catalog's own image.
  */
 

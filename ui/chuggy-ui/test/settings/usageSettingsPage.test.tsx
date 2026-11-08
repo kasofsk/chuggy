@@ -13,6 +13,8 @@ import type { ReactNode } from "react";
 
 import { nativeHttpBasePath } from "../../../../src/contract/http.ts";
 import { UsageSettingsPage } from "../../app/browser/settings/UsageSettingsPage.tsx";
+import { copyTextEn } from "../../app/copy/catalog.ts";
+import { copyOrDataText } from "../../app/core/copy.ts";
 import { instantText } from "../../app/core/figures.ts";
 import {
   answer,
@@ -156,7 +158,7 @@ test("a paused agent says why and until when in the reader's own zone, and a pro
   const line = sectionOf("Claude").textContent ?? "";
   expect(line).toContain("Paused · Provider limit");
   expect(line).toContain(
-    `until ${instantText(new Date(limitUntil), new Date(readAtMs))}`,
+    `until ${copyOrDataText(copyTextEn, instantText(new Date(limitUntil), new Date(readAtMs)))}`,
   );
   expect(
     claude.getByRole("button", { name: "Try Claude again now" }),

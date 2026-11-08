@@ -544,7 +544,7 @@ test("a chat host of the person's on another machine that is not running stops t
   expect(offline.lines.slice(-5)).toEqual([
     live,
     "found: your chat host is another machine, registered and not running",
-    `tell: Your chats in acme/widgets run only on your chat host, which is another machine, registered and not running. A member has one chat host, so making this machine it would replace that one. Start it on its machine, or remove it on your My runners page, ${machineSite}/tenants/acme/settings/runner, for this machine to be it instead. Tell me once you have done either.`,
+    `tell: Your chats in acme/widgets run only on your chat host, which is another machine, registered and not running. A member has one chat host, so making this machine it would replace that one. Start it on its machine, or remove it on your Personal runners page, ${machineSite}/tenants/acme/settings/runner, for this machine to be it instead. Tell me once you have done either.`,
     again(
       "once the person says their chat host is running, or that they removed it",
     ),
@@ -586,7 +586,7 @@ test("this machine as the person's chat host is waited on until the site sees it
   expect(writes(machine)).toEqual([mint, chatMint]);
 });
 
-test("a chat host's registration this machine holds that the site no longer holds, as one removed on the My runners page, is said, and this machine is registered as the chat host again and its service restarted onto it", async () => {
+test("a chat host's registration this machine holds that the site no longer holds, as one removed on the personal runners page, is said, and this machine is registered as the chat host again and its service restarted onto it", async () => {
   const machine = await both();
   await ran(machine);
   machine.world.chat.delete("acme");
@@ -701,7 +701,7 @@ test("a project whose work the cluster runs and whose chats run on a chat host g
     exit: 0,
     lines: [
       signedIn,
-      "found: chuggy's cluster runs the work of acme/widgets, so that work needs no runner",
+      "found: hosted runs take the work of acme/widgets, so that work needs no runner",
       found.engine,
       found.login,
       did.package,
@@ -1819,7 +1819,7 @@ test("a project whose work the cluster runs needs no runner, and one this person
     exit: 0,
     lines: [
       signedIn,
-      "found: chuggy's cluster runs the work of acme/widgets, so it needs no runner",
+      "found: hosted runs take the work of acme/widgets, so it needs no runner",
       next,
     ],
   });

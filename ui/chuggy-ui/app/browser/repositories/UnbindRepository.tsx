@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * Unbinding one repository: the press on its row, the question asked under the
  * listing before anything is sent, and the listing read again once the route
@@ -19,6 +18,7 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ProjectRepositoryResponse } from "../../../../../src/contract/responses.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { apiRetireProjectRepository } from "../../core/apiRoutes.ts";
 import { consoleWriteKey } from "../../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../../core/consoleWrite.ts";
@@ -104,6 +104,7 @@ export function UnbindPress(props: {
   readonly repository: string;
   readonly unbinding: RepositoryUnbinding;
 }): ReactNode {
+  const text = useCopyText();
   const unbinding = props.unbinding;
   return (
     <Button
@@ -114,7 +115,7 @@ export function UnbindPress(props: {
         unbinding.press(props.repository);
       }}
     >
-      Unbind
+      {text({ id: "repositories-unbind" })}
     </Button>
   );
 }
@@ -124,6 +125,7 @@ export function UnbindPress(props: {
 export function UnbindAsked(props: {
   readonly unbinding: RepositoryUnbinding;
 }): ReactNode {
+  const text = useCopyText();
   const unbinding = props.unbinding;
   const repository = unbinding.asking;
   if (repository === undefined) return null;
@@ -131,15 +133,15 @@ export function UnbindAsked(props: {
   return (
     <div className="ms-auto grid w-full max-w-aside gap-2">
       <Confirm
-        question={asked.question}
-        confirm="Unbind"
+        question={text(asked.question)}
+        confirm={text({ id: "repositories-unbind" })}
         busy={unbinding.busy}
         onConfirm={() => {
           unbinding.send(repository);
         }}
         onCancel={unbinding.cancel}
       >
-        {asked.line}
+        {text(asked.line)}
       </Confirm>
       {unbinding.note === undefined ? null : (
         <Notice tone="danger" inline role="status" detail={unbinding.note} />

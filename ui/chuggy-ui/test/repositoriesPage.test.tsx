@@ -21,6 +21,7 @@ import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { RepositoriesPage } from "../app/browser/RepositoriesPage.tsx";
+import { copyTextEn } from "../app/copy/catalog.ts";
 import { apiTimeoutMsDefault } from "../app/core/apiRequest.ts";
 import { consoleQueryClient } from "../app/core/consoleWrite.ts";
 import { consoleStoreBare } from "./consoleStoreBare.tsx";
@@ -2235,7 +2236,7 @@ function returnedWith(word: ForgeReturnWord): void {
 /** A press from this page returns to it, so a word this page left held would
  * be drawn by the accounts page, about a press that page never saw. */
 test("a return's word is drawn above the line once, and is not left held", async () => {
-  returnedWith({ standing: "Uninstalled", status: "Not installed" });
+  returnedWith({ standing: "Uninstalled", status: "NotInstalled" });
   await drawAtProject(noAccount);
   expect(sectionLines()).toStrictEqual([
     "Not installed",
@@ -2408,7 +2409,9 @@ test("an empty roster carries Add under its line and how a repository comes to b
   if (head === undefined || body === undefined) throw new Error("one Add");
   expect(more).toStrictEqual([]);
   expect(body.classList.contains("btn-primary")).toBe(true);
-  expect(body.previousElementSibling?.textContent).toBe(repositoryAddHow);
+  expect(body.previousElementSibling?.textContent).toBe(
+    copyTextEn(repositoryAddHow),
+  );
   expect(body.previousElementSibling?.previousElementSibling?.textContent).toBe(
     "No repository bound",
   );

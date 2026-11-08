@@ -485,7 +485,7 @@ test("a held draft the form still describes is released again, unrevised, under 
 /** One request as a case compares it: a revision by the version it was
  * fenced at, and a release by the version it named. */
 function requestLine(one: Sent): string {
-  const said = `${one.method} ${one.path.slice(one.path.indexOf("/atlas") + 6)}`;
+  const said = `${one.method} ${one.path.slice(one.path.indexOf("/atlas-web") + 10)}`;
   const body = one.body as {
     readonly expectedVersion?: number;
     readonly mutation?: { readonly authoringVersion: number };
@@ -1467,8 +1467,8 @@ test("one configuration under a read that may have missed others is asked, not t
 test("a walk the budget stopped says so beside what it did find", () => {
   const ports = api({ state: "Succeeded" }).ports;
   drawOffered(ports, [], several);
-  expect(screen.queryByText(configurationsPartialLabel)).toBeNull();
+  expect(screen.queryByText(copyTextEn(configurationsPartialLabel))).toBeNull();
   cleanup();
   drawOffered(ports, [], { ...several, partial: true });
-  expect(screen.getByText(configurationsPartialLabel)).toBeTruthy();
+  expect(screen.getByText(copyTextEn(configurationsPartialLabel))).toBeTruthy();
 });

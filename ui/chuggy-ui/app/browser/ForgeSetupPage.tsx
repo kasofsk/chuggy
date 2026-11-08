@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * Where the forge sends a person back after they install an app.
  *
@@ -21,8 +20,10 @@ import type { UseNavigateResult } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
+import { useCopyText } from "../copy/CopyProvider.tsx";
 import type { ApiPorts } from "../core/apiRequest.ts";
 import { apiForgeApps } from "../core/apiRoutes.ts";
+import type { Copy } from "../core/copy.ts";
 import { forgeInstallTake } from "../core/forgeInstallation.ts";
 import {
   forgeSetupDecision,
@@ -41,10 +42,12 @@ import { Button } from "./ui/Button.tsx";
 import { Notice } from "./ui/Notice.tsx";
 
 /** What this page says while it reads where to send the person. */
-export const forgeSetupConnecting = "Connecting";
+export const forgeSetupConnecting: Copy = { id: "repositories-connecting" };
 
 /** What this console says where this deployment cannot redeem an authorization. */
-export const forgeSetupNotConfigured = "Not configured";
+export const forgeSetupNotConfigured: Copy = {
+  id: "repositories-not-configured",
+};
 
 async function forgeSetupAnswer(
   ports: ApiPorts,
@@ -63,7 +66,7 @@ async function forgeSetupAnswer(
   if (client === undefined) {
     await forgeReturnNavigate(navigate, transaction, {
       standing: "Failed",
-      status: apps.outcome === "Ok" ? forgeSetupNotConfigured : "Unavailable",
+      status: apps.outcome === "Ok" ? "NotConfigured" : "Unavailable",
     });
     return;
   }
@@ -82,6 +85,7 @@ function ForgeSetupDrawn(props: {
   readonly decision: ForgeSetupDecision;
   readonly navigate: UseNavigateResult<string>;
 }): ReactNode {
+  const text = useCopyText();
   const decision = props.decision;
   switch (decision.decision) {
     case "Authorize":
@@ -90,7 +94,7 @@ function ForgeSetupDrawn(props: {
           tone="info"
           inline
           role="status"
-          detail={forgeSetupConnecting}
+          detail={text(forgeSetupConnecting)}
         />
       );
     case "Requested":
@@ -99,9 +103,9 @@ function ForgeSetupDrawn(props: {
       const press = decision.press;
       return (
         <>
-          <Notice tone="info" inline detail={forgeSetupUpdated} />
+          <Notice tone="info" inline detail={text(forgeSetupUpdated)} />
           {press === undefined ? (
-            <Link to="/">Home</Link>
+            <Link to="/">{text({ id: "repositories-home" })}</Link>
           ) : (
             <div className="flex">
               <Button
@@ -111,7 +115,7 @@ function ForgeSetupDrawn(props: {
                   void forgeReturnNavigate(props.navigate, press, undefined);
                 }}
               >
-                Continue
+                {text({ id: "repositories-continue" })}
               </Button>
             </div>
           )}
@@ -121,14 +125,15 @@ function ForgeSetupDrawn(props: {
     case "Unexpected":
       return (
         <>
-          <Notice tone="danger" inline detail={forgeSetupUnexpected} />
-          <Link to="/">Home</Link>
+          <Notice tone="danger" inline detail={text(forgeSetupUnexpected)} />
+          <Link to="/">{text({ id: "repositories-home" })}</Link>
         </>
       );
   }
 }
 
 export function ForgeSetupPage(): ReactNode {
+  const text = useCopyText();
   const query = useSearch({ from: forgeSetupRoutePath });
   const navigate = useNavigate();
   const ports = useApiPorts();
@@ -144,7 +149,9 @@ export function ForgeSetupPage(): ReactNode {
   return (
     <div className="grid min-h-dvh content-start gap-4 p-4">
       <main className="grid gap-3">
-        <h1 className="text-md font-strong text-ink-1">Setup</h1>
+        <h1 className="text-md font-strong text-ink-1">
+          {text({ id: "repositories-setup-title" })}
+        </h1>
         <ForgeSetupDrawn decision={decision} navigate={navigate} />
       </main>
       <Footer />

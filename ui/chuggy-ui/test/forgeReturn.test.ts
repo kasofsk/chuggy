@@ -40,3 +40,17 @@ test("a held word with a standing this console does not know is none", () => {
   transient.write(forgeReturnKey, "{");
   expect(forgeReturnTake(transient, tenant)).toBeUndefined();
 });
+
+test("a held word whose status is not a code is none", () => {
+  const transient = keyValueDouble();
+  transient.write(
+    forgeReturnKey,
+    JSON.stringify({
+      tenant,
+      standing: "Uninstalled",
+      status: "Not installed",
+    }),
+  );
+  expect(forgeReturnTake(transient, tenant)).toBeUndefined();
+  expect(transient.held.has(forgeReturnKey)).toBe(false);
+});

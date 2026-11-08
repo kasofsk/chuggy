@@ -6,18 +6,20 @@
 
 import { expect, test } from "vitest";
 
+import { copyTextEn } from "../app/copy/catalog.ts";
 import { runnerPackageOffered } from "../app/core/runners.ts";
 import {
   setupCheckFirst,
   setupRegisterRefusal,
   setupRegisterRefusals,
   setupRunnerChecks,
-  setupRunnerNoteSaid,
+  setupRunnerNoteSaid as setupRunnerNoteCopy,
   setupRunnerStopExit,
-  setupRunnerStopSaid,
+  setupRunnerStopSaid as setupRunnerStopCopy,
 } from "../app/core/setupRunnerSaid.ts";
 import type {
   SetupRegisterRefusal,
+  SetupRunnerNote,
   SetupRunnerStop,
 } from "../app/core/setupRunnerSaid.ts";
 import {
@@ -48,6 +50,23 @@ import {
 } from "./setupRunnerRoster.ts";
 
 type Kind = SetupRunnerStop["stop"];
+
+/** A stop in the words the program prints it in. */
+function setupRunnerStopSaid(stop: SetupRunnerStop, project: string) {
+  const { found, tell, when, again } = setupRunnerStopCopy(stop, project);
+  return {
+    found: copyTextEn(found),
+    tell: copyTextEn(tell),
+    when: copyTextEn(when),
+    again,
+  };
+}
+
+/** A note in the words the program prints it in. */
+function setupRunnerNoteSaid(note: SetupRunnerNote, project: string) {
+  const [word, said] = setupRunnerNoteCopy(note, project);
+  return [word, copyTextEn(said)] as const;
+}
 
 function said(kind: Kind): readonly (readonly [string, number, string])[] {
   return runnerStops[kind].map((stop) => {
@@ -738,7 +757,7 @@ test("the person's chat host is said as theirs, apart from the project's runner:
     .map((note) => setupRunnerNoteSaid(note, "acme/widgets").join(": "));
   expect(lines).toEqual([
     "found: the site sees a runner of acme/widgets live",
-    "found: chuggy's cluster runs the work of acme/widgets, so that work needs no runner",
+    "found: hosted runs take the work of acme/widgets, so that work needs no runner",
     `found: this machine is registered as your chat host, in ${rosterChat}`,
     `found: ${rosterChat} registered this machine as your chat host, and the site no longer knows that registration`,
     `did: registered this machine as your chat host, in ${rosterChat}`,
@@ -751,12 +770,12 @@ test("the person's chat host is said as theirs, apart from the project's runner:
   ]);
 });
 
-test("a chat host on another machine that is not running is the person's to start there or to remove, on their My runners page, and is never replaced unasked", () => {
+test("a chat host on another machine that is not running is the person's to start there or to remove, on their Personal runners page, and is never replaced unasked", () => {
   const [offline] = runnerStops.ChatHostOffline.map((stop) =>
     setupRunnerStopSaid(stop, "acme/widgets"),
   );
   expect(offline?.tell).toBe(
-    `Your chats in acme/widgets run only on your chat host, which is another machine, registered and not running. A member has one chat host, so making this machine it would replace that one. Start it on its machine, or remove it on your My runners page, ${rosterMyRunners}, for this machine to be it instead. Tell me once you have done either.`,
+    `Your chats in acme/widgets run only on your chat host, which is another machine, registered and not running. A member has one chat host, so making this machine it would replace that one. Start it on its machine, or remove it on your Personal runners page, ${rosterMyRunners}, for this machine to be it instead. Tell me once you have done either.`,
   );
 });
 
@@ -773,7 +792,7 @@ test("a workspace that does not let the person register a chat host is said with
     again: "Runner",
   });
   expect(cluster?.tell).toBe(
-    `chuggy's cluster runs the work on acme/widgets. ${own}`,
+    `Hosted runs take the work on acme/widgets. ${own}`,
   );
 });
 

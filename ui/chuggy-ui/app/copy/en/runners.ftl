@@ -46,16 +46,16 @@ runners-version-available = { $version } available
 
 runners-ask-aria = { -runner(case: "upper") }
 runners-ask-machine = Machine
-# spells -run: to run is a verb here
-runners-ask-host = Run { -run(form: "plural") } without a container
-# spells -run: to run is a verb here
-runners-ask-host-about = { -run(case: "upper", form: "plural") } with no image run directly on this machine, as you.
+runners-ask-host = { -run(case: "upper", form: "plural") } without a container
+runners-ask-host-about = { -run(case: "upper", form: "plural") } with no image go straight onto this machine, as you.
 runners-ask-capabilities = Capabilities
 # The example is a capability, which is code.
 runners-ask-capabilities-about = Optional · what { -run(form: "a") } may require, like { $example }
 runners-ask-advanced = Advanced
 runners-ask-create = Create token
 runners-ask-cancel = Cancel
+runners-package-linux = Linux
+runners-package-darwin = Mac
 runners-package-needs-linux = Linux · Node 24 · Docker or Podman
 runners-package-needs-darwin = macOS · Node 24 · Colima
 

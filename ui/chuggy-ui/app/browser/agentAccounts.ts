@@ -1,6 +1,6 @@
 /**
  * The reader's own agent accounts, as every screen that says so reads them:
- * the Usage page, and the pauses on the My runners page.
+ * the Usage page, and the pauses on the personal runners page.
  */
 
 import type { QueryClient } from "@tanstack/react-query";

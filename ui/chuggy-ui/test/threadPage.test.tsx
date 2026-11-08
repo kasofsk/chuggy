@@ -188,7 +188,7 @@ test("a thread's address draws its conversation as the page, with no chat pane a
   expect(screen.queryByRole("button", { name: "Expand chat" })).toBeNull();
   const conversation = screen.getByRole("region", { name: "Conversation" });
   expect(conversation.closest(".chat-reading")).not.toBeNull();
-  expect(screen.getByText("a member's question")).toBeDefined();
+  expect(screen.getByText("question-1")).toBeDefined();
   expect(screen.getByRole("textbox", { name: "Message" })).toBeDefined();
   expect(await threadMenuOffers()).toStrictEqual([
     "Copy link",
@@ -271,7 +271,7 @@ test("another member's thread is read without a composer", async () => {
   expect(
     screen.getByRole("heading", { level: 1, name: "theirs" }),
   ).toBeDefined();
-  expect(screen.getByText("a member's question")).toBeDefined();
+  expect(screen.getByText("question-1")).toBeDefined();
   expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
   expect(chatDrawn()).toBeNull();
   expect(await threadMenuOffers()).toStrictEqual(["Copy link", "Close"]);

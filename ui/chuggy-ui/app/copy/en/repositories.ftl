@@ -1,1 +1,168 @@
-## The repositories page.
+## The repositories page, a repository's page, adding one, and connecting
+## GitHub: `RepositoriesPage.tsx`, `repositories/`, the forge's two landings,
+## and the core modules they draw from.
+
+## The words a refusal that says nothing about the repository is drawn as.
+
+repositories-refused = Refused
+repositories-not-found = Not found
+repositories-conflict = Conflict
+repositories-signed-out = Not signed in
+repositories-failed = Failed
+repositories-unreachable = Unreachable
+repositories-unreadable = Unreadable
+repositories-unavailable = Unavailable
+repositories-deferring = Deferring
+repositories-not-configured = Not configured
+repositories-not-installed = Not installed
+repositories-github-unavailable = { -github } unavailable
+repositories-more = { $count } more
+
+## What a person brings back from the forge, and the two landings it returns to.
+
+repositories-return-declined = Declined
+repositories-return-partial = Partial
+repositories-return-requested = Requested
+# The forge spent the code before the api could read what it reaches.
+repositories-return-spent = Start again
+repositories-setup-title = Setup
+repositories-callback-title = { -github }
+repositories-connecting = Connecting
+repositories-setup-unexpected = Not expected
+repositories-setup-updated = Back from { -github }
+repositories-home = Home
+repositories-continue = Continue
+
+## Connecting accounts and installing the apps.
+
+repositories-connect-github = Connect { -github }
+repositories-install-portal = Install portal
+repositories-install-worker = Install worker
+repositories-portal-app = { -portal-app(case: "upper") }
+repositories-worker-app = { -worker-app(case: "upper") }
+repositories-accounts-withheld = { -workspace(case: "upper", form: "a") } { -role-admin } connects { -github } accounts
+
+## The page, and the line under Add.
+
+repositories-title = { -repository(case: "upper", form: "plural") }
+repositories-about = What this { -project } binds. { -ticket(case: "upper", form: "a") } names one of these.
+repositories-none = No { -repository } bound
+repositories-add = Add
+repositories-add-how = Create one on { -github }, install both apps on it, then Add
+repositories-bound-caption = Bound { -repository(form: "plural") }
+repositories-col-repository = { -repository(case: "upper") }
+repositories-bound = Bound
+repositories-unbind = Unbind
+repositories-offers-withheld = { -workspace(case: "upper", form: "a") } { -role-admin } adds { -repository(form: "plural") }
+repositories-offers-failed = Accounts failed to load
+repositories-offers-not-configured = { -github } not configured · ask an operator
+repositories-offers-connect = Connect a { -github } account first
+repositories-offers-portal-missing = No account has the { -portal-app }
+repositories-offers-worker-missing = { -worker-app(case: "upper") } missing · { $account }
+
+## The worker app's reach on a bound row, and the picker's roster.
+
+repositories-worker-missing = { -worker-app(case: "upper") } missing
+repositories-reach-unselected = The { -worker-app }'s installation { $installation } does not select this { -repository }.
+repositories-reach-unclaimed = No { -worker-app } installation is connected on { $account }.
+repositories-reach-unread = { -worker-app(case: "upper") } unread
+repositories-reach-unknown = { -github } did not say whether the { -worker-app } reaches this { -repository }.
+repositories-reach-review = Review on { -github }
+repositories-filter = Filter
+repositories-unlisted = Unlisted
+repositories-unbound = Unbound
+repositories-truncated = More than shown
+repositories-grant-portal = Not listed · grant it on { -github }
+repositories-grant-worker = { -worker-app(case: "upper") } missing · grant it on { -github }
+repositories-worker-reading = { -worker-app(case: "upper") } · loading…
+
+## What a bind, a configuration step and an unbind came to.
+
+repositories-bound-named = { $repository } · { $status }
+repositories-bound-already = { $repository } · Already bound
+repositories-bound-elsewhere = Bound elsewhere
+repositories-configurations-imported = { -configuration(case: "upper", form: "plural") } imported
+repositories-configuration-added = Default { -configuration } added
+repositories-ignored = Not { -configuration(form: "plural") } · { $detail }
+repositories-ignored-entries = entries in { $directory }
+repositories-ignored-one = { $first }
+repositories-ignored-more = { $first } and { $count } more
+repositories-ignored-more-truncated = { $first } and { $count }+ more
+repositories-new-ticket = New { -ticket }
+repositories-deferred = Deferred
+repositories-retry = Retry
+repositories-step-imported = Imported
+repositories-step-added = Added
+repositories-deferral-not-configured = No { -configuration } step · ask an operator
+repositories-deferral-no-bootstrap-image = No worker image · ask an operator
+repositories-deferral-default-branch-absent = Empty { -repository } · push a commit
+repositories-deferral-repository-absent = Not bound · bind again
+repositories-deferral-snapshot-absent = Head unreadable
+repositories-deferral-snapshot-refused = Unreadable { -configuration(form: "plural") } · fix the { -repository }
+repositories-deferral-declarations-refused = Invalid { -configuration(form: "plural") } · fix the { -repository }
+repositories-deferral-identity-conflict = { -configuration(case: "upper") } conflict · ask an operator
+repositories-deferral-bootstrap-differs = Bootstrap differs · add { -configuration(form: "plural") }
+repositories-deferral-stale-binding = Binding changed
+repositories-deferral-project-not-found = { -project(case: "upper") } not found · ask an operator
+repositories-deferral-step-failed = Step failed
+repositories-unbind-question = Unbind { $repository }?
+repositories-unbind-line = New { -ticket(form: "plural") } can't name { $repository }. Existing { -ticket(form: "plural") } and their history stay. It can be added again, here or to another { -project }.
+
+## A repository's page: its settings, what it declares, and its last import.
+
+repositories-not-bound = Not bound
+repositories-writing = Writing
+repositories-written = Written
+repositories-landing-title = { -landing(case: "upper") }
+repositories-landing-about = How a finished { -ticket } { -landing(form: "s") }. { -ticket(case: "upper", form: "a") } may choose otherwise.
+repositories-workflow-files = Workflow files
+repositories-workflow-files-about = Lets { -run(form: "plural") } change workflow files · App needs Workflows
+repositories-off = Off
+repositories-on = On
+repositories-configurations-title = { -configuration(case: "upper", form: "plural") }
+repositories-configurations-about = What this { -repository } declares under { $directory }.
+repositories-configurations-none = No { -configuration } declared
+repositories-configurations-caption = Declared { -configuration(form: "plural") }
+repositories-configurations-partial = Not every { -configuration } was read
+repositories-col-configuration = { -configuration(case: "upper") }
+# The worker a workload runs on, never the worker app.
+repositories-col-worker = { -workload(case: "upper") } worker
+repositories-col-stages = { -stage(case: "upper", form: "plural") }
+repositories-col-approval = { -approval(case: "upper") }
+repositories-incomplete = Incomplete
+repositories-catalog-work = { $work } of { $count ->
+    [one] { $count } { -workload }
+   *[other] { $count } { -workload(form: "plural") }
+}
+repositories-import-label = Last import
+repositories-import-now = Import now
+repositories-importing = Importing…
+repositories-import-imported = Imported
+repositories-import-undeclared = Undeclared
+repositories-import-missing = Missing
+repositories-import-empty = Empty
+repositories-import-invalid = Invalid
+repositories-import-stale = Stale
+repositories-import-never = Never
+repositories-import-refused-now = Not imported · { $word }
+repositories-import-refused-label = Import refused
+repositories-import-refused-file = { $path } · { $fault }
+repositories-import-refused-files = { $path } · { $fault } · { $more } more
+
+## Each fault a refused file is refused for.
+
+repositories-fault-too-many-declarations = Too many files
+repositories-fault-path-invalid = Path not allowed
+repositories-fault-symlink-refused = Symlink
+repositories-fault-content-too-large = File too large
+repositories-fault-document-unreadable = Not JSON
+repositories-fault-envelope-invalid = Not { -configuration(form: "a") } file
+repositories-fault-name-invalid = Name invalid
+repositories-fault-configuration-invalid = { -configuration(case: "upper") } invalid
+repositories-fault-configuration-too-long = Too long
+repositories-fault-duplicate-name = Name declared twice
+repositories-fault-duplicate-path = File listed twice
+repositories-fault-reference-absent = Referenced file missing
+repositories-fault-too-many-references = Too many referenced files
+repositories-fault-chars = { $chars } of { $charsMax } characters
+repositories-fault-reference-named = Missing { $reference }
