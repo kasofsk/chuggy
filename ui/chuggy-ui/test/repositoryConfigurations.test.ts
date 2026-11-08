@@ -112,7 +112,7 @@ test("a catalog holding one workload names it in the singular", () => {
     workloads: ["build"],
     plans: [],
     finalizers: [],
-    defaults: { work: "build" },
+    defaults: { work: "build", evaluation: "build" },
   };
   expect(
     copiedWords(
