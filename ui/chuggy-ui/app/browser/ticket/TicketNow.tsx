@@ -20,7 +20,9 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ExecutionSummary } from "../../../../../src/contract/responses.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { conversationArgumentLine } from "../../core/conversation.ts";
+import { copyOrDataText } from "../../core/copy.ts";
 import { executionQuery } from "../../core/executionQueries.ts";
 import {
   runnerWait,
@@ -99,6 +101,7 @@ function TicketNowLine(props: {
     attempt: props.attempt.attempt,
     highWaterBatch: props.highWaterBatch,
   });
+  const text = useCopyText();
   const live = runNowAttemptLive(props.attempt);
   const now = useMemo(() => runNowOf(walk.reading, live), [walk.reading, live]);
   if (walk.held.failure !== undefined)
@@ -108,7 +111,7 @@ function TicketNowLine(props: {
   const doing =
     now.call === undefined
       ? now.note?.text
-      : `${now.call.name} · ${conversationArgumentLine(now.call.argument)}`;
+      : `${now.call.name} · ${copyOrDataText(text, conversationArgumentLine(now.call.argument))}`;
   return doing === undefined ? null : (
     <p className="ticket-card-line">{`Now: ${doing}`}</p>
   );

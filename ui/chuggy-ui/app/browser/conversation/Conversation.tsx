@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The console's one conversation surface: exchanges drawn as a thread, and a
  * composer where the page hands one in.
@@ -92,6 +91,7 @@ import type {
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import {
   conversationAttachedWith,
   conversationAttachmentsRestored,
@@ -540,13 +540,14 @@ function conversationMessageDrawn(value: {
 /** The way back to the newest words, on a band under the column for as long
  * as the reader is not at its foot. */
 function ConversationBottom(): ReactNode {
+  const text = useCopyText();
   const atBottom = useThreadViewport((viewport) => viewport.isAtBottom);
   if (atBottom) return null;
   return (
     <div className="conversation-bottom-band">
       <ThreadPrimitive.ScrollToBottom
         className="conversation-bottom"
-        aria-label="Scroll to bottom"
+        aria-label={text({ id: "conversation-bottom" })}
       >
         <svg viewBox="0 0 16 16" aria-hidden="true" className="size-3">
           <path
@@ -586,7 +587,15 @@ function ConversationBody(props: {
   readonly emptyTitle: string | undefined;
   readonly sentence: string | undefined;
 }): ReactNode {
-  if (props.reading) return <Notice tone="info" inline detail="Loading…" />;
+  const text = useCopyText();
+  if (props.reading)
+    return (
+      <Notice
+        tone="info"
+        inline
+        detail={text({ id: "conversation-loading" })}
+      />
+    );
   if (props.empty)
     return props.sentence === undefined ? null : (
       <ConversationEmpty title={props.emptyTitle} sentence={props.sentence} />

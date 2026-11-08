@@ -351,7 +351,7 @@ test("a failed exchange draws its reason where the answer would be", () => {
     />,
   );
   expect(screen.getByText("Failed")).toBeDefined();
-  expect(screen.getByText("AgentFailed")).toBeDefined();
+  expect(screen.getByText("Agent failed")).toBeDefined();
   styleless();
 });
 

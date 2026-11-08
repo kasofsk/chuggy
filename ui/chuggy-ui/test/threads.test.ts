@@ -23,6 +23,9 @@ import {
   threadOpenKeyPattern,
 } from "../../../src/contract/http.ts";
 import type { ThreadTurnResponse } from "../../../src/contract/responses.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
+import { copyOrDataText } from "../app/core/copy.ts";
+import type { CopyOrData } from "../app/core/copy.ts";
 import {
   threadActions,
   threadKeptClosed,
@@ -69,6 +72,29 @@ import type {
   ThreadSendRecord,
 } from "../app/core/threads.ts";
 import { threadEntry, threadWakeInput } from "./threadFixture.ts";
+
+/** A line as the base language draws it. */
+function lineSaid(line: CopyOrData): string;
+function lineSaid(line: CopyOrData | undefined): string | undefined;
+function lineSaid(line: CopyOrData | undefined): string | undefined {
+  return line === undefined ? undefined : copyOrDataText(copyTextEn, line);
+}
+
+/** A press's answer with the words it carries as the base language draws
+ * them. */
+function sendSaid<T extends object>(
+  answer: T,
+): { readonly [K in keyof T]: K extends "why" | "cause" ? string : T[K] } {
+  const words = answer as {
+    readonly why?: CopyOrData;
+    readonly cause?: CopyOrData;
+  };
+  return {
+    ...answer,
+    ...(words.why === undefined ? {} : { why: lineSaid(words.why) }),
+    ...(words.cause === undefined ? {} : { cause: lineSaid(words.cause) }),
+  } as { readonly [K in keyof T]: K extends "why" | "cause" ? string : T[K] };
+}
 
 function turnOf(turn: Partial<ThreadTurnResponse>): ThreadTurnResponse {
   return {
@@ -121,10 +147,10 @@ describe("the actions offered on the thread the pane holds", () => {
 describe("the word a turn's kind is drawn as", () => {
   test("every kind the wire carries answers a word, and a member's is Message", () => {
     for (const kind of sessionTurnInputKinds)
-      expect(threadTurnKindWord(kind).length).toBeGreaterThan(0);
-    expect(threadTurnKindWord("UserMessage")).toBe("Message");
-    expect(threadTurnKindWord("Wake")).toBe("Wake");
-    expect(threadTurnKindWord("OfferReply")).toBe("Offer reply");
+      expect(lineSaid(threadTurnKindWord(kind)).length).toBeGreaterThan(0);
+    expect(lineSaid(threadTurnKindWord("UserMessage"))).toBe("Message");
+    expect(lineSaid(threadTurnKindWord("Wake"))).toBe("Wake");
+    expect(lineSaid(threadTurnKindWord("OfferReply"))).toBe("Offer reply");
   });
 });
 
@@ -301,51 +327,65 @@ describe("the turns a mailbox read lists as ended", () => {
 describe("what a press of Stop came to", () => {
   test("a door that stopped the turn ends it, and one that says it had ended stopped nothing", () => {
     expect(
-      threadStopFrom({ outcome: "Ok", value: { stopped: "Stopped" } }),
+      sendSaid(
+        threadStopFrom({ outcome: "Ok", value: { stopped: "Stopped" } }),
+      ),
     ).toStrictEqual({ stop: "Ended" });
     expect(
-      threadStopFrom({ outcome: "Ok", value: { stopped: "AlreadyEnded" } }),
+      sendSaid(
+        threadStopFrom({ outcome: "Ok", value: { stopped: "AlreadyEnded" } }),
+      ),
     ).toStrictEqual({ stop: "AlreadyEnded" });
   });
 
   test("a thread closed under the turn has nothing left to stop, and no other conflict says so", () => {
     expect(
-      threadStopFrom({
-        outcome: "Conflict",
-        code: "ThreadClosed",
-        body: undefined,
-      }),
+      sendSaid(
+        threadStopFrom({
+          outcome: "Conflict",
+          code: "ThreadClosed",
+          body: undefined,
+        }),
+      ),
     ).toStrictEqual({ stop: "Ended" });
     expect(
-      threadStopFrom({
-        outcome: "Conflict",
-        code: "Whatever",
-        body: undefined,
-      }),
+      sendSaid(
+        threadStopFrom({
+          outcome: "Conflict",
+          code: "Whatever",
+          body: undefined,
+        }),
+      ),
     ).toMatchObject({ stop: "Refused" });
   });
 
   test("any other answer leaves the turn out, with a cause only where a member can act on one", () => {
     expect(
-      threadStopFrom({
-        outcome: "Rejected",
-        code: "NotYourThread",
-        status: 403,
-        body: undefined,
-      }),
+      sendSaid(
+        threadStopFrom({
+          outcome: "Rejected",
+          code: "NotYourThread",
+          status: 403,
+          body: undefined,
+        }),
+      ),
     ).toStrictEqual({ stop: "Refused" });
     expect(
-      threadStopFrom({ outcome: "Unreachable", reason: "offline" }),
+      sendSaid(threadStopFrom({ outcome: "Unreachable", reason: "offline" })),
     ).toStrictEqual({ stop: "Refused", cause: "Unreachable" });
-    expect(threadStopFrom({ outcome: "Unauthenticated" })).toStrictEqual({
+    expect(
+      sendSaid(threadStopFrom({ outcome: "Unauthenticated" })),
+    ).toStrictEqual({
       stop: "Refused",
       cause: "Signed out",
     });
-    expect(threadStopFrom({ outcome: "Absent" })).toStrictEqual({
+    expect(sendSaid(threadStopFrom({ outcome: "Absent" }))).toStrictEqual({
       stop: "Refused",
     });
   });
+});
 
+describe("a stop answered late", () => {
   test("a stop answered once its record no longer names the turn leaves the record as it is, and writes no record", () => {
     const answered = { stop: "Refused" } as const;
     expect(threadStopTakenBack(threadSendRecordEmpty, "t1", answered)).toBe(
@@ -364,15 +404,21 @@ describe("what a press of Stop came to", () => {
 
 describe("the line a refusal is said in", () => {
   test("it says what was not done, and the cause where there is one", () => {
-    expect(threadRefusalLine({ what: "Send" })).toBe("Not sent");
-    expect(threadRefusalLine({ what: "Stop", turn: "turn-2" })).toBe(
+    expect(lineSaid(threadRefusalLine({ what: "Send" }))).toBe("Not sent");
+    expect(lineSaid(threadRefusalLine({ what: "Stop", turn: "turn-2" }))).toBe(
       "Not stopped",
     );
-    expect(threadRefusalLine({ what: "Send", cause: "Unreachable" })).toBe(
-      "Not sent · Unreachable",
-    );
     expect(
-      threadRefusalLine({ what: "Stop", turn: "turn-2", cause: "Signed out" }),
+      lineSaid(threadRefusalLine({ what: "Send", cause: "Unreachable" })),
+    ).toBe("Not sent · Unreachable");
+    expect(
+      lineSaid(
+        threadRefusalLine({
+          what: "Stop",
+          turn: "turn-2",
+          cause: "Signed out",
+        }),
+      ),
     ).toBe("Not stopped · Signed out");
   });
 });
@@ -380,7 +426,9 @@ describe("the line a refusal is said in", () => {
 describe("what a press ended as", () => {
   test("an accepted message answers the ordinal it took", () => {
     expect(
-      threadSendFrom({ outcome: "Ok", value: { turn: "t", ordinal: 4 } }),
+      sendSaid(
+        threadSendFrom({ outcome: "Ok", value: { turn: "t", ordinal: 4 } }),
+      ),
     ).toStrictEqual({ send: "Sent", ordinal: 4 });
   });
 
@@ -389,18 +437,22 @@ describe("what a press ended as", () => {
    * own name rather than the one word a console roster happened to hold. */
   test("every conflict the door states ends the composer and says which", () => {
     expect(
-      threadSendFrom({
-        outcome: "Conflict",
-        code: "ThreadClosed",
-        body: undefined,
-      }),
+      sendSaid(
+        threadSendFrom({
+          outcome: "Conflict",
+          code: "ThreadClosed",
+          body: undefined,
+        }),
+      ),
     ).toStrictEqual({ send: "Ended", why: "Closed" });
     expect(
-      threadSendFrom({
-        outcome: "Conflict",
-        code: "Whatever",
-        body: undefined,
-      }),
+      sendSaid(
+        threadSendFrom({
+          outcome: "Conflict",
+          code: "Whatever",
+          body: undefined,
+        }),
+      ),
     ).toStrictEqual({ send: "Ended", why: "Whatever" });
   });
 
@@ -410,43 +462,53 @@ describe("what a press ended as", () => {
    */
   test("a wait says which wait it is", () => {
     expect(
-      threadSendFrom({
-        outcome: "Retryable",
-        code: "ThreadBacklogged",
-        retryAfterSeconds: 9,
-      }),
+      sendSaid(
+        threadSendFrom({
+          outcome: "Retryable",
+          code: "ThreadBacklogged",
+          retryAfterSeconds: 9,
+        }),
+      ),
     ).toStrictEqual({ send: "Waiting", why: "Backlogged" });
     expect(
-      threadSendFrom({
-        outcome: "Retryable",
-        code: "Unavailable",
-        retryAfterSeconds: 9,
-      }),
+      sendSaid(
+        threadSendFrom({
+          outcome: "Retryable",
+          code: "Unavailable",
+          retryAfterSeconds: 9,
+        }),
+      ),
       "a service outage was drawn as a backlogged mailbox",
     ).toStrictEqual({ send: "Waiting", why: "Unavailable" });
   });
+});
 
+describe("what a rejected press ended as", () => {
   test("a send the hosted grant refuses stops the thread taking messages, whatever its status", () => {
     expect(
-      threadSendFrom({
-        outcome: "Rejected",
-        code: "HostedRunsNotGranted",
-        status: 403,
-        body: undefined,
-      }),
+      sendSaid(
+        threadSendFrom({
+          outcome: "Rejected",
+          code: "HostedRunsNotGranted",
+          status: 403,
+          body: undefined,
+        }),
+      ),
     ).toStrictEqual({ send: "Unhosted" });
     expect(
-      threadSendFrom({
-        outcome: "Rejected",
-        code: "NotYourThread",
-        status: 403,
-        body: undefined,
-      }),
+      sendSaid(
+        threadSendFrom({
+          outcome: "Rejected",
+          code: "NotYourThread",
+          status: 403,
+          body: undefined,
+        }),
+      ),
     ).toStrictEqual({ send: "Refused", what: "Send", cause: "Elsewhere" });
   });
 
   test("a code the console has no word for is drawn as the code", () => {
-    expect(threadRefusalWord("SomethingNew")).toBe("SomethingNew");
+    expect(lineSaid(threadRefusalWord("SomethingNew"))).toBe("SomethingNew");
   });
 });
 
@@ -498,7 +560,7 @@ describe("the door's own vocabulary", () => {
   test("every code the roster carries is drawn as its own word", () => {
     const said = threadMessageRefusalCodes.map((code) => [
       code,
-      threadRefusalWord(code),
+      lineSaid(threadRefusalWord(code)),
     ]);
     expect(said).toStrictEqual([
       ["NotYourThread", "Elsewhere"],
@@ -523,7 +585,7 @@ describe("the door's own vocabulary", () => {
   test("a code outside the roster is its own word and narrows to nothing", () => {
     for (const code of ["ThreadNotYours", "ThreadRetired"]) {
       expect(threadRefusalCode(code)).toBeUndefined();
-      expect(threadRefusalWord(code)).toBe(code);
+      expect(lineSaid(threadRefusalWord(code))).toBe(code);
     }
   });
 
@@ -531,37 +593,43 @@ describe("the door's own vocabulary", () => {
    * rather than settles, which is the arm it must not silently take. */
   test("a rejection whose code the roster lacks is refused, not unsettled", () => {
     expect(
-      threadSendFrom({
-        outcome: "Rejected",
-        code: "ThreadNotYours",
-        status: 403,
-        body: undefined,
-      }).send,
+      sendSaid(
+        threadSendFrom({
+          outcome: "Rejected",
+          code: "ThreadNotYours",
+          status: 403,
+          body: undefined,
+        }),
+      ).send,
     ).toBe("Refused");
   });
 
   test("every other rejection is one refusal of a send, and carries no code", () => {
-    const refused = threadSendFrom({
-      outcome: "Rejected",
-      code: "MessageTooLong",
-      status: 400,
-      body: undefined,
-    });
+    const refused = sendSaid(
+      threadSendFrom({
+        outcome: "Rejected",
+        code: "MessageTooLong",
+        status: 400,
+        body: undefined,
+      }),
+    );
     expect(refused).toStrictEqual({ send: "Refused", what: "Send" });
     expect(
-      threadSendFrom({ outcome: "Unreachable", reason: "offline" }),
+      sendSaid(threadSendFrom({ outcome: "Unreachable", reason: "offline" })),
     ).toStrictEqual({ send: "Refused", what: "Send", cause: "Unreachable" });
   });
 });
 
 describe("an image as the reason a send is refused", () => {
   test("an image the door says is not the project's is said as the image, in the refusal's own line", () => {
-    const refused = threadSendFrom({
-      outcome: "Rejected",
-      code: "ThreadImageUnknown",
-      status: 400,
-      body: undefined,
-    });
+    const refused = sendSaid(
+      threadSendFrom({
+        outcome: "Rejected",
+        code: "ThreadImageUnknown",
+        status: 400,
+        body: undefined,
+      }),
+    );
     expect(refused).toStrictEqual({
       send: "Refused",
       what: "Send",
@@ -571,11 +639,13 @@ describe("an image as the reason a send is refused", () => {
 
   test("a store that could not say whether an image is the project's is a wait, said as the images", () => {
     expect(
-      threadSendFrom({
-        outcome: "Retryable",
-        code: "ArtifactUnavailable",
-        retryAfterSeconds: 1,
-      }),
+      sendSaid(
+        threadSendFrom({
+          outcome: "Retryable",
+          code: "ArtifactUnavailable",
+          retryAfterSeconds: 1,
+        }),
+      ),
     ).toStrictEqual({ send: "Waiting", why: "Images unavailable" });
   });
 
@@ -587,18 +657,25 @@ describe("an image as the reason a send is refused", () => {
         status: 400,
         body: undefined,
       }).cause;
-    expect(rejected("ArtifactTooLarge")).toBe("Image too large");
-    expect(rejected("UnsupportedMediaType")).toBe("Image type refused");
-    expect(rejected("Invalid")).toBe("Image not uploaded");
+    expect(lineSaid(rejected("ArtifactTooLarge"))).toBe("Image too large");
+    expect(lineSaid(rejected("UnsupportedMediaType"))).toBe(
+      "Image type refused",
+    );
+    expect(lineSaid(rejected("Invalid"))).toBe("Image not uploaded");
     expect(
-      threadUploadRefused({
-        outcome: "Retryable",
-        code: "ArtifactUnavailable",
-        retryAfterSeconds: 1,
-      }).cause,
+      lineSaid(
+        threadUploadRefused({
+          outcome: "Retryable",
+          code: "ArtifactUnavailable",
+          retryAfterSeconds: 1,
+        }).cause,
+      ),
     ).toBe("Images unavailable");
     expect(
-      threadUploadRefused({ outcome: "Unreachable", reason: "offline" }).cause,
+      lineSaid(
+        threadUploadRefused({ outcome: "Unreachable", reason: "offline" })
+          .cause,
+      ),
     ).toBe("Unreachable");
   });
 });
@@ -863,10 +940,12 @@ test("a press refused for the grant gives way once a later read says runners", (
 test("a send refused for no runner is told apart from any other refusal", () => {
   const rejected = (code: string) =>
     ({ outcome: "Rejected", code, status: 403, body: undefined }) as const;
-  expect(threadSendFrom(rejected("NoRunner"))).toStrictEqual({
+  expect(sendSaid(threadSendFrom(rejected("NoRunner")))).toStrictEqual({
     send: "NoRunner",
   });
-  expect(threadSendFrom(rejected("HostedRunsNotGranted"))).toStrictEqual({
+  expect(
+    sendSaid(threadSendFrom(rejected("HostedRunsNotGranted"))),
+  ).toStrictEqual({
     send: "Unhosted",
   });
 });

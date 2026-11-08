@@ -21,22 +21,20 @@ import { useRef } from "react";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ApiFailure, ApiPorts, ApiResult } from "../../core/apiRequest.ts";
 import { apiOpenThread } from "../../core/apiRoutes.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { consoleWriteKey } from "../../core/consoleWrite.ts";
 import type {
   ConsoleWrite,
   ConsoleWriteRefused,
 } from "../../core/consoleWrite.ts";
+import type { CopyText } from "../../core/copy.ts";
 import { failureWords } from "../../core/failureWords.ts";
 import { sessionPlacementQuery } from "../../core/projectQueries.ts";
 import { sessionRefusedNoRunner } from "../../core/sessionRunners.ts";
 import { threadClearedThenOpened } from "../../core/threadCommands.ts";
 import type { ThreadCleared } from "../../core/threadCommands.ts";
 import { apiCloseThreadAt, threadHomeOf } from "../../core/threadHome.ts";
-import {
-  threadLimitWord,
-  threadOpenAtLimit,
-  threadUnhosted,
-} from "../../core/threads.ts";
+import { threadOpenAtLimit, threadUnhosted } from "../../core/threads.ts";
 import type { ThreadSend } from "../../core/threads.ts";
 import { useConsoleWrite } from "../consoleWrite.tsx";
 import { useConsoleDispatch } from "../store.ts";
@@ -114,6 +112,7 @@ async function chatPaneOpenAnswered(
 function chatPaneOpenWrite(
   partition: PartitionIdentity,
   dispatch: ConsoleDispatch,
+  text: CopyText,
 ): ConsoleWrite<ChatPaneOpenPress, ChatPaneOpened> {
   return {
     mutationKey: consoleWriteKey(
@@ -138,7 +137,7 @@ function chatPaneOpenWrite(
     },
     refusal: (failure) =>
       threadOpenAtLimit(failure)
-        ? `Refused · ${threadLimitWord}`
+        ? text({ id: "chat-start-refused-limit" })
         : failureWords(failure).word,
     landed: (client, opened) => {
       if (opened.opened === "Opened")
@@ -170,9 +169,13 @@ export function useChatPaneStart(props: {
 }): ChatPaneStarting {
   const { partition } = props;
   const dispatch = useConsoleDispatch();
-  const opening = useConsoleWrite(chatPaneOpenWrite(partition, dispatch), {
-    drawn: props.drawn,
-  });
+  const text = useCopyText();
+  const opening = useConsoleWrite(
+    chatPaneOpenWrite(partition, dispatch, text),
+    {
+      drawn: props.drawn,
+    },
+  );
   const pressing = useRef(false);
   const answered = (opened: ChatPaneOpened): void => {
     switch (opened.opened) {

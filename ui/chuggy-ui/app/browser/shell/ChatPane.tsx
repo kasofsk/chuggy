@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The console's chat pane: every thread the reader can reach, beside every page
  * rather than on one.
@@ -34,6 +33,7 @@ import {
   chatPaneUnhosted,
 } from "../../core/chatPane.ts";
 import type { ChatPaneHeaderDoor, ChatPaneState } from "../../core/chatPane.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import {
   conversationExchangeSent,
   conversationExchangesStopped,
@@ -130,12 +130,13 @@ function ChatPaneStartControl(props: {
   /** What the door would answer that nothing under the header says. */
   readonly header: ChatPaneHeaderDoor;
 }): ReactNode {
+  const text = useCopyText();
   const { busy, refused, started } = props.starting;
   return (
     <>
       <ChatPaneIconButton
         glyph="new"
-        label="New"
+        label={text({ id: "chat-start" })}
         busy={busy}
         disabled={busy}
         onClick={started}
@@ -158,6 +159,7 @@ function ChatPaneStartControl(props: {
 function ChatPaneControls(props: {
   readonly placement: ChatPanePlacement;
 }): ReactNode {
+  const text = useCopyText();
   const held = useChatPane();
   const state = held.state;
   return (
@@ -165,7 +167,7 @@ function ChatPaneControls(props: {
       {!held.twoColumn ? null : state.presentation === "Full" ? (
         <ChatPaneIconButton
           glyph="restore"
-          label="Exit full screen"
+          label={text({ id: "chat-restore" })}
           onClick={() => {
             held.moveTo(chatPaneRestored(state));
           }}
@@ -173,7 +175,7 @@ function ChatPaneControls(props: {
       ) : (
         <ChatPaneIconButton
           glyph="fill"
-          label="Full screen"
+          label={text({ id: "chat-fill" })}
           onClick={() => {
             held.moveTo(chatPaneFilled(state));
           }}
@@ -181,7 +183,7 @@ function ChatPaneControls(props: {
       )}
       <ChatPaneIconButton
         glyph={`collapse${props.placement}`}
-        label="Collapse"
+        label={text({ id: "chat-collapse" })}
         onClick={() => {
           held.moveTo(chatPaneToggled(state));
         }}
@@ -217,19 +219,33 @@ function ChatPaneThread(props: {
   );
 }
 
+/** The region the pane's conversation is drawn in, named for a reader who
+ * moves by landmarks. */
+function ChatPaneConversation(props: {
+  readonly className: string;
+  readonly children: ReactNode;
+}): ReactNode {
+  const text = useCopyText();
+  return (
+    <div
+      role="region"
+      aria-label={text({ id: "chat-conversation" })}
+      className={props.className}
+    >
+      {props.children}
+    </div>
+  );
+}
+
 /** The one line that stands where the composer would, for a reader no thread
  * could run for or one who may send nothing. */
 function ChatPaneUnsendable(props: {
   readonly children: ReactNode;
 }): ReactNode {
   return (
-    <div
-      role="region"
-      aria-label="Conversation"
-      className="grid min-h-0 min-w-0 flex-1 content-end px-4 pb-4"
-    >
+    <ChatPaneConversation className="grid min-h-0 min-w-0 flex-1 content-end px-4 pb-4">
       {props.children}
-    </div>
+    </ChatPaneConversation>
   );
 }
 
@@ -318,11 +334,7 @@ function ChatPaneFirst(props: {
       </>
     );
   return (
-    <div
-      role="region"
-      aria-label="Conversation"
-      className="min-h-0 min-w-0 flex-1"
-    >
+    <ChatPaneConversation className="min-h-0 min-w-0 flex-1">
       {opening}
       <Conversation
         exchanges={conversationExchangesStopped(sent, sends.stopping)}
@@ -336,7 +348,7 @@ function ChatPaneFirst(props: {
         }}
         pane
       />
-    </div>
+    </ChatPaneConversation>
   );
 }
 
@@ -345,6 +357,7 @@ function ChatPaneFirst(props: {
 function ChatPaneStrip(props: {
   readonly placement: ChatPanePlacement;
 }): ReactNode {
+  const text = useCopyText();
   const held = useChatPane();
   return (
     <div
@@ -359,9 +372,12 @@ function ChatPaneStrip(props: {
           held.moveTo(chatPaneToggled(held.state));
         }}
       >
-        <ChatPaneIcon glyph={`expand${props.placement}`} label="Expand chat" />
+        <ChatPaneIcon
+          glyph={`expand${props.placement}`}
+          label={text({ id: "chat-expand" })}
+        />
         <span aria-hidden="true" className="chat-strip-name">
-          Chat
+          {text({ id: "chat-strip" })}
         </span>
       </Button>
     </div>
@@ -521,6 +537,23 @@ interface ChatPaneOpenProps {
   readonly page: ConsolePage | undefined;
 }
 
+/** The open pane's frame, named for a reader who moves by landmarks, and set
+ * as a column to read where it has the whole frame. */
+function ChatPaneSection(props: {
+  readonly reading: boolean;
+  readonly children: ReactNode;
+}): ReactNode {
+  const text = useCopyText();
+  return (
+    <section
+      aria-label={text({ id: "chat-region" })}
+      className={`chat-open bg-surface-1 relative grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden ${props.reading ? "chat-reading" : ""}`}
+    >
+      {props.children}
+    </section>
+  );
+}
+
 function ChatPaneOpen(props: ChatPaneOpenProps): ReactNode {
   const pane = useChatPaneOpenHeld(props.partition);
   const door = useChatPaneDoor(props.partition);
@@ -544,10 +577,7 @@ function ChatPaneOpen(props: ChatPaneOpenProps): ReactNode {
     },
   });
   return (
-    <section
-      aria-label="Chat"
-      className={`chat-open bg-surface-1 relative grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)] overflow-hidden ${props.chat.presentation === "Full" ? "chat-reading" : ""}`}
-    >
+    <ChatPaneSection reading={props.chat.presentation === "Full"}>
       <header className="border-edge flex min-w-0 items-center border-b px-1 py-1">
         <ChatPaneTitle thread={held} />
         <div className="ml-auto flex chat-icons min-w-0 flex-wrap items-center">
@@ -588,7 +618,7 @@ function ChatPaneOpen(props: ChatPaneOpenProps): ReactNode {
           clear={viewOnly ? undefined : starting.cleared}
         />
       </div>
-    </section>
+    </ChatPaneSection>
   );
 }
 

@@ -15,6 +15,7 @@ import { ComposerPrimitive } from "@assistant-ui/react";
 import { useCallback, useMemo } from "react";
 import type { ReactNode } from "react";
 
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import {
   conversationCommandChar,
   conversationCommandFiltered,
@@ -33,14 +34,16 @@ export function ConversationCommandsOffered(props: {
   readonly offered: readonly ConversationCommandName[];
   readonly onCommand: (name: ConversationCommandName) => void;
 }): ReactNode {
+  const text = useCopyText();
   const { offered, onCommand } = props;
   const adapter = useMemo(
     () => ({
       categories: () => [],
       categoryItems: () => [],
-      search: (typed: string) => conversationCommandFiltered(offered, typed),
+      search: (typed: string) =>
+        conversationCommandFiltered(offered, typed, text),
     }),
-    [offered],
+    [offered, text],
   );
   const matcher = useCallback(
     (text: string, triggerChar: string, cursorPosition: number) =>

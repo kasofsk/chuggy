@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The reader's own chat at their tenant, outside every project: a thread of
  * it as a column to read under a bar that names it, or the composer whose
@@ -21,6 +20,7 @@ import { useMemo } from "react";
 import type { ReactNode } from "react";
 
 import type { ThreadEntryResponse } from "../../../../src/contract/responses.ts";
+import { useCopyText } from "../copy/CopyProvider.tsx";
 import {
   conversationExchangeSent,
   conversationExchangesStopped,
@@ -87,19 +87,20 @@ function MemberChatBar(props: {
   readonly projects: readonly MemberChatProjectThread[];
   readonly children: ReactNode;
 }): ReactNode {
+  const text = useCopyText();
   const navigate = useNavigate();
   const { tenant } = props;
   return (
     <header className="border-edge flex min-w-0 flex-wrap items-center gap-1 border-b px-4 py-2">
       {props.children}
       {props.session === undefined ? null : (
-        <Tooltip text="New chat">
+        <Tooltip text={{ id: "chat-new" }}>
           <Link
             to={memberChatRoutes.chat}
             params={{ tenant }}
             className={buttonLookClassName({ size: "icon", variant: "quiet" })}
           >
-            <ChatPaneIcon glyph="new" label="New chat" />
+            <ChatPaneIcon glyph="new" label={text({ id: "chat-new" })} />
           </Link>
         </Tooltip>
       )}
@@ -124,6 +125,7 @@ function MemberChatFirst(props: {
   readonly tenant: string;
   readonly onStarted: (session: string) => void;
 }): ReactNode {
+  const text = useCopyText();
   const sends = useMemberThreadSend({
     tenant: props.tenant,
     session: undefined,
@@ -137,7 +139,7 @@ function MemberChatFirst(props: {
   return (
     <div
       role="region"
-      aria-label="Conversation"
+      aria-label={text({ id: "chat-conversation" })}
       className="min-h-0 min-w-0 flex-1"
     >
       <Conversation
@@ -155,6 +157,7 @@ function MemberChatThread(props: {
   readonly own: readonly ThreadEntryResponse[];
   readonly projects: readonly MemberChatProjectThread[];
 }): ReactNode {
+  const text = useCopyText();
   const state = useMemberThread(props.tenant, props.session);
   const home = { scope: "Member", tenant: props.tenant } as const;
   return (
@@ -164,7 +167,7 @@ function MemberChatThread(props: {
           <ChatPaneThreadActions home={home} thread={state.value} at="Page" />
         ) : (
           <h1 className="text-ink-1 font-strong min-w-0 flex-1 truncate text-md">
-            Thread
+            {text({ id: "chat-heading" })}
           </h1>
         )}
       </MemberChatBar>
@@ -189,6 +192,7 @@ function MemberChatOpen(props: {
   readonly tenant: string;
   readonly session: string | undefined;
 }): ReactNode {
+  const text = useCopyText();
   const { tenant, session } = props;
   const navigate = useNavigate();
   const threads = useMemberChatThreads(tenant);
@@ -215,7 +219,7 @@ function MemberChatOpen(props: {
         projects={projects}
       >
         <h1 className="text-ink-1 font-strong min-w-0 flex-1 truncate text-md">
-          New chat
+          {text({ id: "chat-new" })}
         </h1>
       </MemberChatBar>
       <div className="chat-reading flex min-h-0 min-w-0 flex-1 flex-col">
@@ -238,6 +242,7 @@ function MemberChatGranted(props: {
   readonly tenant: string;
   readonly session: string | undefined;
 }): ReactNode {
+  const text = useCopyText();
   const abilities = useChatAbilities(props.tenant);
   if (abilities.state === "Pending" || abilities.state === "Failed")
     return (
@@ -250,7 +255,7 @@ function MemberChatGranted(props: {
   )
     return (
       <div className="p-4">
-        <SettingsListingWithheld line={memberChatWithheld} />
+        <SettingsListingWithheld line={text(memberChatWithheld)} />
       </div>
     );
   return <MemberChatOpen tenant={props.tenant} session={props.session} />;

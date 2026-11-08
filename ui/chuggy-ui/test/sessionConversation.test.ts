@@ -263,7 +263,13 @@ test("a read that failed, an unreached tail, elided batches and dropped entries 
       failure: { outcome: "Fault", code: "InternalError", status: 500 },
     },
     { marker: "Unreached" },
-    { marker: "Capped", sentence: "Elided · 2 batches" },
+    {
+      marker: "Capped",
+      sentence: {
+        id: "conversation-marker-elided-batches",
+        args: { count: "2" },
+      },
+    },
     { marker: "Dropped", count: 3 },
   ]);
 });

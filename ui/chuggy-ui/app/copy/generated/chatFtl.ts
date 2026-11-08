@@ -2,4 +2,147 @@
  * Do not edit by hand; run `node ui/chuggy-ui/tools/copyCatalog.ts`. */
 
 export const chatFtl = `## The chat pane.
+
+chat-region = { -thread(case: "upper") }
+chat-conversation = { -conversation(case: "upper") }
+chat-start = New
+chat-new = New { -thread }
+chat-fill = Full screen
+chat-restore = Exit full screen
+chat-collapse = Collapse
+chat-expand = Expand { -thread }
+chat-strip = { -thread(case: "upper") }
+chat-heading = { -thread(case: "upper") }
+
+## A chat's own label, and where it stands.
+
+chat-untitled = New { -thread }
+chat-title = { -thread(case: "upper") } title
+chat-standing-open = Open
+chat-standing-closed = Closed
+chat-standing-orphaned = Orphaned
+
+## The history, and what is done to the chat the pane holds.
+
+chat-history = History
+chat-history-loading = Loading…
+chat-history-none = No { -thread(form: "plural") } yet
+chat-history-mine = Yours
+chat-history-others = Everyone else's
+chat-history-projects = In { -project(form: "plural") }
+chat-history-row = { $title }, { $standing }, { $ago }
+chat-history-row-undated = { $title }, { $standing }
+chat-history-elsewhere = { $project } · { $title }
+chat-history-elsewhere-row = { $project } · { $title }, { $standing }
+chat-actions = { -thread(case: "upper") } actions
+chat-actions-none = No active { -thread }
+chat-open = Open
+chat-copy-link = Copy link
+chat-copied = Copied
+chat-rename = Rename
+chat-close = Close
+chat-close-question = Close this { -thread }?
+chat-close-confirm = Close { -thread }
+chat-close-not-mine = Not your { -thread } · Ends it for its owner too
+chat-close-kept = Stays in { chat-history } · Takes no more messages
+chat-close-final = Drops any reply in progress · Cannot be undone
+
+## What a member's own chat outside a project says.
+
+chat-withheld = { -workspace(case: "upper", form: "a") } { -role-admin } has turned off your { -thread } outside { -project(form: "a") }
+
+## What one turn's kind is drawn as.
+
+chat-turn-message = Message
+chat-turn-wake = Wake
+chat-turn-observation = Observation
+chat-turn-inquiry = { -inquiry(case: "upper") }
+chat-turn-offer-reply = Offer reply
+
+## What a press of Send or Stop came to.
+
+chat-limit = { -thread(case: "upper") } limit reached
+chat-start-refused-limit = Refused · { chat-limit }
+chat-cause-signed-out = Signed out
+chat-cause-unreachable = Unreachable
+chat-refused-send = Not sent
+chat-refused-send-cause = Not sent · { $cause }
+chat-refused-stop = Not stopped
+chat-refused-stop-cause = Not stopped · { $cause }
+chat-refusal-elsewhere = Elsewhere
+chat-refusal-closed = Closed
+chat-refusal-backlogged = Backlogged
+chat-refusal-oversize = Oversize
+chat-refusal-image-missing = Image missing
+chat-images-unavailable = Images unavailable
+chat-images-unhomed = Images are kept by { -project(form: "a") }
+chat-image-too-large = Image too large
+chat-image-type-refused = Image type refused
+chat-image-not-uploaded = Image not uploaded
+chat-image-sent = Image sent
+chat-unhosted = Needs { -hosted-runs }
+chat-unhosted-granted = Granted by the operator
+
+## What the composer's \`/\` commands say.
+
+# spells -run: to run is a verb here
+chat-command-status = This { -thread }'s standing, where it runs, and its model
+chat-command-usage = Tokens, cost and time over this { -thread }'s { -turn(form: "plural") }
+chat-command-clear = Close this { -thread } and start a new one
+chat-status-chat = { -thread(case: "upper") }
+chat-status-unopened = Not opened
+# spells -run: to run is a verb here
+chat-status-runs-on = Runs on
+chat-status-set-by = Set by
+chat-status-runner = { -runner(case: "upper") }
+chat-status-model = Model
+chat-status-model-none = None reported yet
+chat-status-loading = Loading…
+chat-status-absent = Not found
+chat-usage-turns = { $count ->
+    [one] { $count } { -turn }
+   *[other] { $count } { -turn(form: "plural") }
+}
+chat-usage-turns-newest = Newest { chat-usage-turns }
+chat-clear-answering = { -thread(case: "upper") } is answering
+chat-clear-unopened = No { -thread } to clear
+chat-clear-busy = { -thread(case: "upper", form: "a") } is already starting
+
+## What an agent offers in a chat, and what became of it.
+
+chat-offer = Offer
+chat-offer-release = { -release(case: "upper") } { -draft } #{ $ticket } at version { $version }
+chat-offer-revoke = { -revoke(case: "upper") } #{ $ticket } at { -revision } { $revision }
+chat-offer-declined = Declined
+chat-offer-released = { -release(case: "upper", form: "ed") }
+chat-offer-revoked = { -revoke(case: "upper", form: "ed") }
+chat-offer-not-released = Not { -release(form: "ed") } · { $refusal }
+chat-offer-not-revoked = Not { -revoke(form: "ed") } · { $refusal }
+chat-offer-refused = Refused
+chat-offer-unseen-released = Confirmed · { -release(case: "upper", form: "ed") } or not, unseen
+chat-offer-unseen-revoked = Confirmed · { -revoke(case: "upper", form: "ed") } or not, unseen
+chat-offer-superseded = Superseded · It changed since this was offered
+chat-offer-unread = Not open here · Its reply would be older than the { -turn(form: "plural") } this page reads
+chat-offer-draft-released = { -draft(case: "upper") } { $ticket } is { -release(form: "ed") }
+chat-offer-draft-deleted = { -draft(case: "upper") } { $ticket } is deleted
+chat-offer-ticket-phase = #{ $ticket } is { $phase }
+chat-offer-unsent = { $settled } · Reply not sent
+chat-offer-resend = Send reply
+chat-offer-confirm = Confirm
+chat-offer-decline = Decline
+chat-offer-work = { -work-stage(case: "upper") }
+chat-offer-plan = Plan
+chat-offer-program = Program
+chat-offer-plan-partial = Partial plan
+chat-offer-plan-whole = Whole plan
+chat-offer-configuration = { -configuration(case: "upper") }
+chat-offer-depends-on = Depends on
+chat-offer-repository = { -repository(case: "upper") }
+chat-offer-branch = Branch
+chat-offer-checks = { -brief-check(case: "upper", form: "plural") }
+
+## The line pasted into Claude Code, and its card.
+
+chat-claude-code-about = Paste into { -claude-code } in your { -repository }
+chat-claude-code-copy = Copy prompt
 `;

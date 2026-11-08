@@ -85,6 +85,7 @@ function ThreadOfferDraftPlan(props: {
   readonly partition: PartitionIdentity;
   readonly draft: DraftResponse;
 }): ReactNode {
+  const text = useCopyText();
   const { draft } = props;
   const canonical = useDraftCanonical(props.partition, draft);
   if (canonical === undefined) return null;
@@ -101,13 +102,23 @@ function ThreadOfferDraftPlan(props: {
     <>
       {selected === undefined ? null : (
         <>
-          <SummaryCell name="Work" value={<code>{selected.work}</code>} />
-          <SummaryCell name="Plan" value={<code>{selected.evaluation}</code>} />
+          <SummaryCell
+            name={text({ id: "chat-offer-work" })}
+            value={<code>{selected.work}</code>}
+          />
+          <SummaryCell
+            name={text({ id: "chat-offer-plan" })}
+            value={<code>{selected.evaluation}</code>}
+          />
         </>
       )}
       <SummaryCell
-        name="Program"
-        value={short ? "Partial plan" : "Whole plan"}
+        name={text({ id: "chat-offer-program" })}
+        value={text(
+          short
+            ? { id: "chat-offer-plan-partial" }
+            : { id: "chat-offer-plan-whole" },
+        )}
       />
     </>
   );
@@ -140,6 +151,7 @@ function ThreadOfferDraftSettings(props: {
   readonly partition: PartitionIdentity;
   readonly draft: DraftResponse;
 }): ReactNode {
+  const text = useCopyText();
   const { draft } = props;
   const brief = draft.brief;
   const dependencies = draft.authoring.dependencies;
@@ -147,7 +159,7 @@ function ThreadOfferDraftSettings(props: {
   return (
     <div className="thread-offer-settings">
       <SummaryCell
-        name="Configuration"
+        name={text({ id: "chat-offer-configuration" })}
         overridden={draft.overrides !== undefined}
         value={
           <ConfigurationHeaderLabel
@@ -159,7 +171,7 @@ function ThreadOfferDraftSettings(props: {
       <ThreadOfferDraftPlan partition={props.partition} draft={draft} />
       {dependencies.length === 0 ? null : (
         <SummaryCell
-          name="Depends on"
+          name={text({ id: "chat-offer-depends-on" })}
           value={
             <span className="flex flex-wrap gap-1">
               {dependencies.map((ticket) => (
@@ -171,17 +183,20 @@ function ThreadOfferDraftSettings(props: {
       )}
       {brief?.repository === undefined ? null : (
         <SummaryCell
-          name="Repository"
+          name={text({ id: "chat-offer-repository" })}
           value={<code>{brief.repository}</code>}
         />
       )}
       {brief?.branch === undefined ? null : (
-        <SummaryCell name="Branch" value={<code>{brief.branch}</code>} />
+        <SummaryCell
+          name={text({ id: "chat-offer-branch" })}
+          value={<code>{brief.branch}</code>}
+        />
       )}
       <ThreadOfferDraftLanding partition={props.partition} draft={draft} />
       {checks.length === 0 ? null : (
         <SummaryCell
-          name="Checks"
+          name={text({ id: "chat-offer-checks" })}
           value={<ConfigurationChips items={checks} />}
         />
       )}

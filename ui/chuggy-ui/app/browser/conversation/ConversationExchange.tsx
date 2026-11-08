@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * One exchange drawn as a chat turn: the member's bubble on the right, the
  * assistant's answer flush left, and one quiet line under it.
@@ -65,8 +64,10 @@ import {
 import type { ReactNode } from "react";
 
 import { ticketReferenceSplit } from "../../../../../src/contract/ticketReference.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import {
   conversationExchangeDoing,
+  conversationFailureLabel,
   conversationExchangeNamed,
   conversationExchangeParts,
 } from "../../core/conversation.ts";
@@ -287,24 +288,27 @@ const conversationReportComponents = { Text: ConversationReport };
 function ConversationBubble(props: {
   readonly message: Extract<ConversationAsk, { readonly ask: "Message" }>;
 }): ReactNode {
+  const text = useCopyText();
   const image = useContext(ConversationImage);
   const { context, page, images } = props.message;
   return (
     <div className="flex flex-col items-end gap-2">
       {context === undefined ? null : (
-        <ConversationCard label="Context">
+        <ConversationCard label={text({ id: "conversation-context" })}>
           <MarkdownReport text={context} bare />
         </ConversationCard>
       )}
       {page === undefined ? null : (
         <Chip>
-          <span className="visually-hidden">Sent from </span>
+          <span className="visually-hidden">
+            {text({ id: "conversation-sent-from" })}{" "}
+          </span>
           {consolePageLabel(page)}
         </Chip>
       )}
       {images === undefined || image === undefined ? null : (
         <ul
-          aria-label="Images"
+          aria-label={text({ id: "conversation-images" })}
           className="flex max-w-[85%] flex-wrap justify-end gap-2"
         >
           {images.map((artifact, at) => (
@@ -324,11 +328,13 @@ function ConversationBubble(props: {
 function ConversationObservation(props: {
   readonly text: string | undefined;
 }): ReactNode {
+  const text = useCopyText();
+  const observation = text({ id: "conversation-observation" });
   return (
     <>
-      <ConversationSystemLine words="Observation" />
+      <ConversationSystemLine words={observation} />
       {props.text === undefined ? null : (
-        <ConversationCard label="Observation">
+        <ConversationCard label={observation}>
           <pre className="max-h-(--height-clip) overflow-auto">
             {props.text}
           </pre>
@@ -355,7 +361,7 @@ function ConversationAskBody(props: {
     case "Observation":
       return <ConversationObservation text={ask.text} />;
     case "Inquiry":
-      return <ConversationSystemLine words="Inquiry" />;
+      return <ConversationSystemLine words={{ id: "conversation-inquiry" }} />;
   }
 }
 
@@ -484,6 +490,7 @@ function ConversationAnswerBody(props: {
   readonly exchange: ConversationExchange;
   readonly standing: ConversationStandingDrawn;
 }): ReactNode {
+  const text = useCopyText();
   const { exchange, standing } = props;
   const indicated = useContext(ConversationIndicated);
   const marked = useContext(ConversationMarked);
@@ -503,7 +510,10 @@ function ConversationAnswerBody(props: {
         <ConversationEngine mine={mine} />
       ) : null}
       {standing.standing === "Failed" && standing.failure !== undefined ? (
-        <Notice tone="danger" detail={standing.failure} />
+        <Notice
+          tone="danger"
+          detail={text(conversationFailureLabel(standing.failure))}
+        />
       ) : null}
       <ConversationMetaLine
         exchange={exchange}
