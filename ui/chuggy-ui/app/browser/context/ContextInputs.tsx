@@ -50,9 +50,9 @@ function ContextFolded(props: {
           {text({ id: open ? "context-hide" : "context-show" })}
         </Button>
       </div>
-      <pre className="context-brief" id={bodyId} data-open={open}>
+      <div className="context-brief" id={bodyId} data-open={open}>
         {props.body}
-      </pre>
+      </div>
     </>
   );
 }

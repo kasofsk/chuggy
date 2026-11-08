@@ -481,14 +481,17 @@
     margin-inline-start: auto;
   }
 
+  /* A brief or a prompt, in the face of the text around it, folded to its
+     first lines. */
   .context-brief {
     position: relative;
     margin: 0;
-    padding: var(--space-3);
+    padding: var(--space-2) var(--space-3);
     overflow: hidden;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
     font-size: var(--text-sm);
+    line-height: var(--leading-dense);
     color: var(--ink-2);
     background: var(--surface-2);
     border-radius: var(--radius-2);

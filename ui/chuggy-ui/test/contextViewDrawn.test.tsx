@@ -13,6 +13,8 @@ import {
 } from "../app/browser/context/ContextView.tsx";
 import type { ContextRunDrawn } from "../app/browser/context/ContextView.tsx";
 import type { RunContextReading } from "../../../src/contract/responses.ts";
+import contextSheet from "../app/browser/context/context.css?raw";
+import baseSheet from "../app/styles/base.css?raw";
 import {
   contextInputsOf,
   contextSettingsWindowOf,
@@ -35,6 +37,7 @@ import {
 } from "../app/core/contextSession.ts";
 import { contextPeakOf } from "../app/core/contextView.ts";
 import { renderCopied } from "./copied.tsx";
+import { sheetDeclared, sheetRules } from "./sheet.ts";
 import {
   contextCompacted,
   contextImageLines,
@@ -269,4 +272,29 @@ test("a session's compact form draws its window per turn, its figures in a line,
       .querySelector(".context-view")
       ?.getAttribute("data-compact"),
   ).toBe("true");
+});
+
+test("a run's brief and a session's appended prompt are drawn in the text's own face, not as code", () => {
+  const rules = sheetRules(`${baseSheet}\n${contextSheet}`, []);
+  const run = renderCopied(
+    <ContextRunView drawn={drawnOf(rows, [], lines)} callLink={() => null} />,
+  );
+  const brief = run.container.querySelector(".context-brief");
+  if (brief === null) throw new Error("no brief");
+  expect(sheetDeclared(rules, brief, "font-family")).toBe("");
+  cleanup();
+  const context = contextSessionBody([{ ordinal: 1, total: 96_721 }]);
+  const view = contextSessionOf({ context, entries: [], cuts: [] });
+  const session = renderCopied(
+    <ContextSessionView
+      drawn={{
+        ...view,
+        inputs: contextSessionInputsOf(context, undefined, view.window),
+      }}
+    />,
+  );
+  fireEvent.click(screen.getByRole("button", { name: "Show" }));
+  const prompt = session.container.querySelector(".context-brief");
+  if (prompt === null) throw new Error("no prompt");
+  expect(sheetDeclared(rules, prompt, "font-family")).toBe("");
 });
