@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * Where this ticket came from: the brief's images, and what the live revision
  * runs with, one row per step of the configuration it pinned with its

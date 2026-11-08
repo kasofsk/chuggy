@@ -23,11 +23,12 @@ import { Fragment } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { inboxCountLabel } from "../../core/inboxList.ts";
 import { projectAbilityRefused } from "../../core/projectAbilities.ts";
 import { projectLeadFound } from "../../core/projectLead.ts";
 import type { ShellCrumb } from "../../core/shellCrumbs.ts";
-import { shellCrumbs } from "../../core/shellCrumbs.ts";
+import { memberChatCrumbs, shellCrumbs } from "../../core/shellCrumbs.ts";
 import { navEntryCurrent, navRoutes, shellNav } from "../../core/shellNav.ts";
 import type { NavEntry } from "../../core/shellNav.ts";
 import { sessionStateTone } from "../../core/tones.ts";
@@ -61,6 +62,7 @@ const navDotFills: Readonly<Record<Tone, string>> = {
  * the way, as `useChatPaneYields` says. */
 export function TopBarNavEntry(props: { readonly entry: NavEntry }): ReactNode {
   const entry = props.entry;
+  const text = useCopyText();
   const yields = useChatPaneYields();
   const current = useRouterState({
     select: (router) => navEntryCurrent(entry, router.location.pathname),
@@ -85,7 +87,7 @@ export function TopBarNavEntry(props: { readonly entry: NavEntry }): ReactNode {
             <span className="visually-hidden">{entry.standing.word}</span>
           </>
         )}
-        <span className="topbar-entry-label">{entry.label}</span>
+        <span className="topbar-entry-label">{text(entry.label)}</span>
       </Link>
     </li>
   );
@@ -98,6 +100,7 @@ function TopBarNav(props: {
   const lead =
     read.state === "Ready" ? projectLeadFound(read.value) : undefined;
   const abilities = useProjectAbilities(props.partition);
+  const text = useCopyText();
   const entries = shellNav({
     partition: props.partition,
     leadStanding:
@@ -106,14 +109,14 @@ function TopBarNav(props: {
         : { word: lead.state, tone: sessionStateTone(lead.state) },
   });
   return (
-    <nav aria-label="Console" className="min-w-0">
+    <nav aria-label={text({ id: "shell-nav" })} className="min-w-0">
       <ul className="topbar-nav">
         {entries.map((entry) => (
           <TopBarNavEntry key={entry.id} entry={entry} />
         ))}
         {projectAbilityRefused(abilities, "mutate") ? (
           <li className="px-3">
-            <Pill tone="neutral">View only</Pill>
+            <Pill tone="neutral">{text({ id: "shell-view-only" })}</Pill>
           </li>
         ) : null}
       </ul>
@@ -126,6 +129,7 @@ function TopBarInbox(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
   const yields = useChatPaneYields();
+  const text = useCopyText();
   const count = inboxCountLabel(useInboxRows(props.partition).rows);
   const current = useRouterState({
     select: (router) =>
@@ -139,7 +143,11 @@ function TopBarInbox(props: {
       params={props.partition}
       onClick={yields}
       aria-current={current ? "page" : undefined}
-      aria-label={count === undefined ? "Inbox" : `Inbox, ${count} unread`}
+      aria-label={text(
+        count === undefined
+          ? { id: "shell-inbox" }
+          : { id: "shell-inbox-unread", args: { count } },
+      )}
       className="topbar-inbox"
     >
       <NavIcon id="inbox" />
@@ -180,8 +188,9 @@ function TopBarTrail(props: {
   readonly crumbs: readonly ShellCrumb[];
 }): ReactNode {
   const { crumbs } = props;
+  const text = useCopyText();
   return (
-    <nav aria-label="Breadcrumb" className="topbar-crumbs">
+    <nav aria-label={text({ id: "shell-crumbs" })} className="topbar-crumbs">
       {crumbs.map((crumb, at) => {
         const last = at === crumbs.length - 1;
         return (
@@ -249,9 +258,7 @@ export function TopBar(props: {
           ) : (
             <TopBarTrail
               crumbs={
-                props.chat === undefined
-                  ? []
-                  : [{ label: props.chat }, { label: "chat" }]
+                props.chat === undefined ? [] : memberChatCrumbs(props.chat)
               }
             />
           )}

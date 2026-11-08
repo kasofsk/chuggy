@@ -22,6 +22,7 @@ import type {
   TicketResponse,
 } from "../../../../../src/contract/responses.ts";
 import { phaseLabel } from "../../core/codeLabels.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import {
   configurationCatalogOf,
   configurationCatalogSelected,
@@ -209,13 +210,16 @@ export function ThreadOfferTicketSubject(props: {
   readonly ticket: TicketResponse;
 }): ReactNode {
   const { ticket } = props;
+  const text = useCopyText();
   return (
     <div className="thread-offer-subject">
       <ThreadOfferSubjectTitle
         ticket={ticket.ticket}
         title={ticket.title}
         aside={
-          <Pill tone={phaseTone(ticket.phase)}>{phaseLabel(ticket.phase)}</Pill>
+          <Pill tone={phaseTone(ticket.phase)}>
+            {text(phaseLabel(ticket.phase))}
+          </Pill>
         }
       />
       <ThreadOfferSubjectIntent intent={ticket.brief?.intent} />

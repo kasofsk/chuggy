@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The project's runners: the machines registered to run its agents, and the
  * steps that add one, from installing a runner package to registering the

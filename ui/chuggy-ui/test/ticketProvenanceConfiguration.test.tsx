@@ -10,7 +10,8 @@
  */
 
 import { QueryClient } from "@tanstack/react-query";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, screen, within } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -137,7 +138,7 @@ async function drawTicket(
     },
   });
   vi.stubGlobal("fetch", api.fetch);
-  render(
+  renderCopied(
     <ScreenHarness
       partition={atlas}
       client={

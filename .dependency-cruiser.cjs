@@ -220,10 +220,13 @@ module.exports = {
         "bundles what it reaches and ships the bundle. Node's " +
         "own modules are not packages: they resolve to a bare specifier, so " +
         "this rule refuses them to every console. ui/chuggy-ui/terminal/ is " +
-        "the one directory under ui/ that Node runs and no browser is " +
+        "a directory under ui/ that Node runs and no browser is " +
         "served, so it is not judged here: " +
         "chuggy-ui-terminal-reaches-a-closed-roster names what it may " +
-        "reach. The exemption is the directory's own and nobody else's, " +
+        "reach. ui/chuggy-ui/tools/ is the other, the console's own tooling " +
+        "run by its gates, which nothing served reaches because " +
+        "chuggy-ui-is-what-a-browser-fetches holds app/ to itself. Each " +
+        "exemption is the directory's own and nobody else's, " +
         "because this rule starts from each module in turn, so a browser " +
         "module or a suite that reaches a builtin THROUGH terminal/ is " +
         "still a finding. A package is recognised by " +
@@ -236,7 +239,7 @@ module.exports = {
         "to stop writing a constant twice — which is what src/contract/, the " +
         "one exemption above, already is.",
       severity: "error",
-      from: { path: "^ui/", pathNot: "^ui/chuggy-ui/terminal/" },
+      from: { path: "^ui/", pathNot: "^ui/chuggy-ui/(terminal|tools)/" },
       to: {
         reachable: true,
         path: "^(?!ui/)",
@@ -254,8 +257,10 @@ module.exports = {
         "and what that Node must already have. That is a closed list: its " +
         "own files, the decision layer it is an adapter for, the public " +
         "contract and the parser the contract is written in, which are " +
-        "what the decision layer itself reaches, and the modules of Node's " +
-        "named here. A builtin is named by the bare specifier the resolver " +
+        "what the decision layer itself reaches, the copy catalog and the " +
+        "Fluent runtime that formats it, which is what turns the decision " +
+        "layer's descriptors into the words it prints, and the modules of " +
+        "Node's named here. A builtin is named by the bare specifier the resolver " +
         "reports for it, the `node:` prefix dropped and a subpath kept, and " +
         "the roster is anchored at both ends so `fs` does not admit " +
         "`fs/promises`. One is added with the adapter that needs it. The " +
@@ -269,9 +274,9 @@ module.exports = {
       from: { path: "^ui/chuggy-ui/terminal/" },
       to: {
         reachable: true,
-        path: "^(?!ui/chuggy-ui/(terminal|app/core)/)",
+        path: "^(?!ui/chuggy-ui/(terminal|app/core|app/copy)/)",
         pathNot:
-          "^src/contract/|node_modules/zod/|" +
+          "^src/contract/|node_modules/zod/|node_modules/@fluent/bundle/|" +
           "^(child_process|fs|http|os|path|timers/promises)$",
       },
     },
@@ -352,6 +357,25 @@ module.exports = {
         path: "^(?!ui/chuggy-ui/app/core/)",
         pathNot:
           "^src/contract/|node_modules/zod/|node_modules/@tanstack/query-core/",
+      },
+    },
+    {
+      name: "chuggy-ui-copy-reaches-only-decisions",
+      comment:
+        "ui/chuggy-ui/app/copy/ is the console's copy catalog and what " +
+        "formats a descriptor from it, for the browser's layer and for the " +
+        "terminal program alike: it reaches its own files, the decision " +
+        "layer whose descriptor types it formats, and a package, and no " +
+        "module of browser/ or terminal/. What it buys is that the program " +
+        "run in a terminal can print through it without carrying a " +
+        "renderer, and a primitive can draw through it without reaching an " +
+        "effect. Reachability, because the shape that breaks it is a " +
+        "helper the catalog grows to read where the page is.",
+      severity: "error",
+      from: { path: "^ui/chuggy-ui/app/copy/" },
+      to: {
+        reachable: true,
+        path: "^ui/chuggy-ui/(?!app/(copy|core)/)",
       },
     },
     {

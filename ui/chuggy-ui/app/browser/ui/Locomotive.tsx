@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * A pixel locomotive, inlined at the card's scale and animated as a
  * sprite, so the console's first paint says a read is in flight rather than

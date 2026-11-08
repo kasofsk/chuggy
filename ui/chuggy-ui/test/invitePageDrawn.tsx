@@ -7,7 +7,8 @@
 
 import { QueryClientProvider } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { screen } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { StrictMode } from "react";
 import type { ReactNode } from "react";
 import { vi } from "vitest";
@@ -74,7 +75,7 @@ export async function inviteOpened(
   );
   vi.stubGlobal("fetch", scripted.fetch);
   const client = consoleQueryClient();
-  let view = render(page(session, holder, client));
+  let view = renderCopied(page(session, holder, client));
   await settled();
   return {
     browser,
@@ -82,7 +83,7 @@ export async function inviteOpened(
     sent: scripted.sent,
     remount: async () => {
       view.unmount();
-      view = render(page(session, holder, client));
+      view = renderCopied(page(session, holder, client));
       await settled();
     },
   };

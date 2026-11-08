@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * What the dialogs that invite share: the choice between inviting a person
  * and making a link, and the foot under either, which is the two actions of a

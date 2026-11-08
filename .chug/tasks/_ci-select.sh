@@ -66,9 +66,9 @@
 # A SUITE THAT RUNS ITS GATE OVER THE TREE ITSELF DECLARES THE GATE'S INPUTS.
 # Most suites hold a gate to fixtures, and read the gate's script, the harness
 # and what else they copy. The replays', the generated API's, the golden
-# emitter's and the shell-quoting gate's run over the tree's own files, so
-# their declarations hold their gate's, and the random replay's copies the
-# sources and the tests whole.
+# emitter's, the shell-quoting gate's and the console copy gate's run over the
+# tree's own files, so their declarations hold their gate's, and the random
+# replay's copies the sources and the tests whole.
 #
 # A GATE THAT READS NAMED PACKAGES FOLLOWS THEM, NOT THE PACKAGE FILES. Quint
 # and the ticket package are all `check-model` takes from them, so the lock
@@ -241,6 +241,13 @@ ci_declare() { # <gate id or suite path>
 		ci_manifests
 		ci_install
 		;;
+	check-console-copy)
+		ci_code ui/chuggy-ui/app/copy ui/chuggy-ui/app/core/generated \
+			ui/chuggy-ui/tools/copyCatalog.ts .chug/tasks/check-console-copy.sh
+		ci_node_looks ui/chuggy-ui/tools ui/chuggy-ui
+		ci_manifests
+		ci_packages @fluent/syntax
+		;;
 	check-conformance)
 		ci_code src/domain src/generated test/conformance test/domain test/itf test/golden \
 			model .chug/tasks/check-conformance.sh
@@ -311,7 +318,7 @@ ci_declare() { # <gate id or suite path>
 		ci_install
 		;;
 	.chug/tasks/check-conformance.test.sh | .chug/tasks/check-model-api.test.sh | \
-		.chug/tasks/check-shell-quoting.test.sh)
+		.chug/tasks/check-shell-quoting.test.sh | .chug/tasks/check-console-copy.test.sh)
 		ci_suite_over="${1##*/}"
 		ci_code "$1" .chug/tasks/_suite.sh
 		ci_declare "${ci_suite_over%.test.sh}"

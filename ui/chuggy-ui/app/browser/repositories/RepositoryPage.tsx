@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * One bound repository: how a finished ticket in it lands, whether its jobs
  * may change its workflow files, what runs after evaluation, what it declares

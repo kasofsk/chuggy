@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * A line that arrives on its own, over the page's corner: a refusal the screen
  * that asked for it is no longer there to draw.

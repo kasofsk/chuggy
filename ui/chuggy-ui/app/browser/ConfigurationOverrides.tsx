@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The fields a ticket may override of a configuration, each drawn as the
  * configuration says it until it is overridden and editable from then on.

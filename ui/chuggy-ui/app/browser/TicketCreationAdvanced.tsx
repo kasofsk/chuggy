@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * Everything a ticket's creation does not ask a human about, behind one
  * disclosure and prefilled from the initialization.

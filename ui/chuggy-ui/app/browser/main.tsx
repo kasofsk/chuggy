@@ -27,6 +27,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { Provider } from "react-redux";
 
+import { CopyProvider } from "../copy/CopyProvider.tsx";
 import { apiPortsOver } from "../core/apiPorts.ts";
 import { createInviteHolder } from "../core/inviteHolder.ts";
 import { consoleQueryClient } from "../core/consoleWrite.ts";
@@ -84,13 +85,15 @@ if (container === null)
 
 createRoot(container).render(
   <StrictMode>
-    <SessionProvider holder={holder}>
-      <InviteProvider holder={invite}>
-        <Provider store={store}>
-          <App queryClient={queryClient} />
-        </Provider>
-      </InviteProvider>
-    </SessionProvider>
+    <CopyProvider>
+      <SessionProvider holder={holder}>
+        <InviteProvider holder={invite}>
+          <Provider store={store}>
+            <App queryClient={queryClient} />
+          </Provider>
+        </InviteProvider>
+      </SessionProvider>
+    </CopyProvider>
   </StrictMode>,
 );
 

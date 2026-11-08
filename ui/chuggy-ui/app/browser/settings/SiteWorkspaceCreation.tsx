@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * Inviting a person into a workspace of their own, in a dialog: the
  * workspace's name first, then its owner's fields together under their own

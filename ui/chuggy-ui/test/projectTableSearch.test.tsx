@@ -12,11 +12,11 @@ import { QueryClient } from "@tanstack/react-query";
 import {
   cleanup,
   fireEvent,
-  render,
   screen,
   waitFor,
   within,
 } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { useCallback, useState } from "react";
 import type { ReactNode } from "react";
@@ -131,7 +131,7 @@ async function drawnAt(
     return <ProjectTable query={query} onQuery={onQuery} />;
   }
   const server = openedStream();
-  render(
+  renderCopied(
     <ScreenHarness
       partition={atlas}
       client={

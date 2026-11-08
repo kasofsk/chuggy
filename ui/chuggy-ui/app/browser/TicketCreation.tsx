@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * Creating a ticket: one screen, one submit, and a configuration asked about
  * unless the project is known to offer one alone.

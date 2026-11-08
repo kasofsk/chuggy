@@ -5,7 +5,8 @@
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import { QueryClient } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -136,7 +137,7 @@ async function drawn(
 ): Promise<readonly SentRequest[]> {
   const scripted = scriptedFetch(served(written));
   vi.stubGlobal("fetch", abilitiesFetch(abilities, scripted.fetch));
-  render(
+  renderCopied(
     <ScreenHarness
       partition={leadPartition}
       client={client}
@@ -264,7 +265,7 @@ test("the edit form holds the epic the page is on, after a move between two it h
     </ScreenHarness>
   );
   routed.epic = "8";
-  const { rerender } = render(page());
+  const { rerender } = renderCopied(page());
   await settled();
   routed.epic = "7";
   rerender(page());

@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * Every recorded revision of these settings, what each one moved, and the one
  * action that puts a revision's overrides back.

@@ -18,13 +18,8 @@ import {
   RouterProvider,
   useParams,
 } from "@tanstack/react-router";
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  within,
-} from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { renderCopied } from "../copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -166,7 +161,7 @@ async function drawnSettings(
   vi.stubGlobal("fetch", scripted.fetch);
   const router = settingsRouter([address]);
   await router.load();
-  render(
+  renderCopied(
     <SessionProvider holder={holderDouble()}>
       <QueryClientProvider
         client={
@@ -503,7 +498,7 @@ test("a workspace link made on the site's Workspaces page outside a project is d
 /** Inside the shell the settings' own nav names the page, so its title is
  * for a reader who does not see that and no row of the bar says it again. */
 test("a page's title is hidden where the shell is around it, and over its sections where it is not", () => {
-  render(
+  renderCopied(
     <ShellSlots>
       <ShellSlotLandmarks>
         <SettingsPage title="People" chips={<span>Five</span>}>
@@ -519,7 +514,7 @@ test("a page's title is hidden where the shell is around it, and over its sectio
   expect(shelled.getByText("Five")).toBeTruthy();
   expect(within(screen.getByRole("banner")).queryByRole("heading")).toBeNull();
   cleanup();
-  render(
+  renderCopied(
     <main>
       <SettingsPage title="People" chips={<span>Five</span>}>
         <p>the sections</p>

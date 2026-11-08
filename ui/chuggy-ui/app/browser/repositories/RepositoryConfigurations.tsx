@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * What a repository declares, one row per configuration name: what it runs the
  * work on, how many stages judge it, and what finalizing it takes.

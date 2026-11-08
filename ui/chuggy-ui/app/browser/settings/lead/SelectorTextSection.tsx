@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * One prose setting: the whole of what the project runs under while the section
  * is read, and a box that grows to the text while it is edited.

@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The project's placement setting: where its work, evaluation, chat and lead
  * run, read and edited behind one Edit; and beside it, whether a member's own

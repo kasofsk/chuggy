@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * Making a project: the workspace it belongs to, its own name, and one submit,
  * on the landing a reader with no project meets and at its own address, where

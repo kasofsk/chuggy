@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * Where the forge sends a person back after they install an app.
  *

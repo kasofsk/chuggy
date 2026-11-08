@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The project's lead settings: what it is running under, the setting groups a
  * reader edits one at a time, and every revision that got it here.

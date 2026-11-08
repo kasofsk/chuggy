@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * A runner's version as a table cell: the release it runs, after its package
  * where `named`, with Outdated where chuggy pins a later one, and the dash

@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The box a member types into, which knows nothing of the API: the page it is
  * mounted on owns the send, the turn identity and what a refusal means.

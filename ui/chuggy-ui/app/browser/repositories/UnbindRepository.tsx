@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * Unbinding one repository: the press on its row, the question asked under the
  * listing before anything is sent, and the listing read again once the route

@@ -17,6 +17,7 @@
 
 import { useMemo } from "react";
 
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { conversationMentionItem } from "../../core/conversationMention.ts";
 import type { ConversationMentionItem } from "../../core/conversationMention.ts";
@@ -28,14 +29,17 @@ export function useConversationMentions(
   partition: PartitionIdentity,
 ): readonly ConversationMentionItem[] {
   const state = usePanelState(ticketRowsQuery(partition, ticketListAskDefault));
+  const text = useCopyText();
   /** The same array until the rows themselves change: the popover derives its
    * navigable list from this, and a fresh array on every render would put the
    * highlight back to the top under a reader's own arrow keys. */
   return useMemo(
     () =>
       state.state === "Ready"
-        ? state.value.tickets.map(conversationMentionItem)
+        ? state.value.tickets.map((ticket) =>
+            conversationMentionItem(ticket, text),
+          )
         : [],
-    [state],
+    [state, text],
   );
 }

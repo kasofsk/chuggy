@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * Adding a repository: what the tenant's portal installations grant, marked
  * against what this project already binds and against what the worker app was

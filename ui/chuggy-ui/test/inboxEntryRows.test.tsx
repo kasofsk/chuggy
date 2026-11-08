@@ -6,7 +6,8 @@
 
 // jscpd:ignore-start -- the imports and vi.mock factories a case cannot hoist out
 import { QueryClient } from "@tanstack/react-query";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, screen, within } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -129,7 +130,7 @@ function drawInbox(entries: readonly InboxEntryResponse[]): {
         answer({ partition: atlas, sequence: 9, tickets: [] }),
     );
   });
-  render(
+  renderCopied(
     <ScreenHarness
       partition={atlas}
       client={

@@ -64,6 +64,28 @@ reaches only itself, `src/contract/` and the parser that contract is written in,
 and `chuggy-ui-terminal-reaches-a-closed-roster` names every Node builtin the
 terminal program may reach beyond those.
 
+## Copy
+
+Every word a reader is shown belongs in `ui/chuggy-ui/app/copy/en/`, in
+Project Fluent. `copy/no-literal-text` reports what a component spells as JSX
+text or in an attribute `lint/copyText.js` lists, and a file it still reports
+carries the exemption step 4 deletes. It reads no other prop, no `.ts` file and
+nothing in `app/core/`, so copy there is unmarked and a section finds it by
+reading its files. `terms.ftl` holds the product's nouns, and each other file is a
+section whose ids are kebab-case under its name. `app/core/` hands out a
+descriptor, `{ id, args }`, typed by `app/core/generated/`; `useCopyText` in
+`app/copy/CopyProvider.tsx` formats one in a component. A vernacular is a
+directory `en-x-<name>` beside `en/`, layered over it. To move a file:
+
+1. Put its strings in its section's `.ftl`, naming each term as `{ -term }`.
+2. Run `node ui/chuggy-ui/tools/copyCatalog.ts`; a new section's two modules
+   join `app/copy/catalog.ts` and `app/core/copy.ts`.
+3. Return descriptors from `app/core/`, format them where they are drawn.
+4. Delete the file's first line, `/* eslint-disable copy/no-literal-text */`.
+5. Render its suites through `renderCopied` in `ui/chuggy-ui/test/copied.tsx`.
+
+`.chug/tasks/check-console-copy.sh` holds the catalog to its rules.
+
 ## The contract is imported, never restated
 
 Types, schemas, routes, outcome classification and the event shapes all come

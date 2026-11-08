@@ -9,7 +9,7 @@
  */
 
 import { QueryClient } from "@tanstack/react-query";
-import { render } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import type { ReactNode } from "react";
 import { vi } from "vitest";
 
@@ -254,7 +254,7 @@ export async function runPageDrawn(
   });
   vi.stubGlobal("fetch", api.fetch);
   const server = openedStream();
-  const view = render(
+  const view = renderCopied(
     <ScreenHarness
       partition={partition}
       client={

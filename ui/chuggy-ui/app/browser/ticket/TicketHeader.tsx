@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The head of every tab of the ticket page: the title with its number, the
  * epics it belongs to, the state label and the one fragment beside it, the actions, and the tabs. Once

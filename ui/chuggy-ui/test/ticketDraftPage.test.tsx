@@ -8,7 +8,8 @@
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import { QueryClient } from "@tanstack/react-query";
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, screen, within } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode, Ref } from "react";
 
@@ -192,7 +193,7 @@ function drawn(
     return api.fetch(url, init);
   });
   const page = pageOver(client);
-  const { rerender } = render(page());
+  const { rerender } = renderCopied(page());
   return {
     redrawn: () => {
       rerender(page());

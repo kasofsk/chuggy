@@ -11,7 +11,8 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, screen } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { StrictMode, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import { vi } from "vitest";
@@ -204,7 +205,7 @@ export async function drawnStrict(
       </SessionProvider>
     </StrictMode>
   );
-  const view = render(drawn(0));
+  const view = renderCopied(drawn(0));
   await settled();
   return {
     sent,

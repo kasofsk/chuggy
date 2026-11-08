@@ -10,6 +10,7 @@
 import { expect, test } from "vitest";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 import {
   navEntryCurrent,
   navRoutes,
@@ -34,6 +35,28 @@ test("every entry names a route of the partition and carries its params", () => 
     "settings",
     "repositories",
     "runners",
+  ]);
+});
+
+test("every entry is labelled by a catalog id, which reads as the screen's name", () => {
+  const entries = [...shellNav({ partition: atlas }), ...shellSetupNav(atlas)];
+  expect(entries.map((entry) => entry.label)).toStrictEqual([
+    { id: "shell-nav-tickets" },
+    { id: "shell-nav-epics" },
+    { id: "shell-nav-lead" },
+    { id: "shell-nav-catalog" },
+    { id: "shell-nav-settings" },
+    { id: "shell-nav-repositories" },
+    { id: "shell-nav-runners" },
+  ]);
+  expect(entries.map((entry) => copyTextEn(entry.label))).toStrictEqual([
+    "Tickets",
+    "Epics",
+    "Lead",
+    "Catalog",
+    "Project settings",
+    "Repositories",
+    "Runners",
   ]);
 });
 

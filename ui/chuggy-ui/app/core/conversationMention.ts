@@ -28,6 +28,7 @@ import {
   ticketReferenceSplit,
 } from "../../../../src/contract/ticketReference.ts";
 import { phaseLabel } from "./codeLabels.ts";
+import type { CopyText } from "./copy.ts";
 
 /** The kind a mention carries, which is also the word a member may type after
  * the `@` to mean this kind and nothing else. */
@@ -51,12 +52,13 @@ function conversationMentionLabel(ticket: number): string {
  * reference is, and the title is what a member is searching by. */
 export function conversationMentionItem(
   ticket: TicketResponse,
+  text: CopyText,
 ): ConversationMentionItem {
   return {
     id: String(ticket.ticket),
     type: conversationMentionKind,
     label: conversationMentionLabel(ticket.ticket),
-    description: ticket.title ?? phaseLabel(ticket.phase),
+    description: ticket.title ?? text(phaseLabel(ticket.phase)),
   };
 }
 

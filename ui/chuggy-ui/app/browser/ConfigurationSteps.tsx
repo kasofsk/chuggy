@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * What a ticket runs with, one row per step under a row per phase: who runs
  * it, its model and what the ticket overrode of it, each row opening onto its

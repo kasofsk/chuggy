@@ -602,7 +602,7 @@ lock_json() { # <quint> <grpc> <zod> <left-pad> [flags | hoisted]
 	hoisted) lock_long=node_modules/@grpc/grpc-js/node_modules/long ;;
 	esac
 	printf '{\n  "lockfileVersion": 3,\n  "packages": {\n'
-	printf '    "": { "devDependencies": { "@informalsystems/quint": "%s", "zod": "%s", "prettier": "3.0.0", "left-pad": "%s", "@kasofsk/chug-ticket-domain": "github:kasofsk/chug-ticket-domain" } },\n' "$1" "$3" "$4"
+	printf '    "": { "devDependencies": { "@informalsystems/quint": "%s", "zod": "%s", "prettier": "3.0.0", "left-pad": "%s", "@kasofsk/chug-ticket-domain": "github:kasofsk/chug-ticket-domain", "@fluent/syntax": "0.19.0" } },\n' "$1" "$3" "$4"
 	printf '    "node_modules/@kasofsk/chug-ticket-domain": { "version": "0.7.0", "resolved": "git+ssh://git@github.com/kasofsk/chug-ticket-domain.git#%s"%s },\n' "$lock_ticket" "$lock_dev"
 	printf '    "node_modules/@informalsystems/quint": { "version": "%s", "integrity": "sha512-quint-%s"%s, "dependencies": { "@grpc/grpc-js": "^%s" } },\n' "$1" "$1" "$lock_dev" "$2"
 	printf '    "node_modules/@grpc/grpc-js": { "version": "%s", "integrity": "sha512-grpc-%s"%s, "dependencies": { "long": "^5" } },\n' "$2" "$2" "$lock_dev"
@@ -612,6 +612,7 @@ lock_json() { # <quint> <grpc> <zod> <left-pad> [flags | hoisted]
 	fi
 	printf '    "node_modules/zod": { "version": "%s", "integrity": "sha512-zod-%s"%s },\n' "$3" "$3" "$lock_dev"
 	printf '    "node_modules/prettier": { "version": "3.0.0", "integrity": "sha512-prettier-3"%s },\n' "$lock_dev"
+	printf '    "node_modules/@fluent/syntax": { "version": "0.19.0", "integrity": "sha512-fluent-syntax-0"%s },\n' "$lock_dev"
 	printf '    "node_modules/left-pad": { "version": "%s", "integrity": "sha512-left-pad-%s"%s }\n' "$4" "$4" "$lock_dev"
 	printf '  }\n}\n'
 }
@@ -1392,6 +1393,7 @@ narrowed=0
 for gate in \
 	"check-model|packages|--|./.chug/tasks/check-model.sh|" \
 	"check-model-api|packages|--|./.chug/tasks/check-model-api.sh|" \
+	"check-console-copy|packages|--|./.chug/tasks/check-console-copy.sh|" \
 	"check-conformance|packages|--env|CHUG_GOLDEN_DIR|--|./.chug/tasks/check-conformance.sh|" \
 	"check-random|packages|--env|CHUG_WALK_SAMPLES|--env|CHUG_WALK_SEED_BASE|--env|CHUG_WALK_SEED|--env|CHUG_WALK_INSTANCE|--|./.chug/tasks/check-random.sh|" \
 	"check-console|install|--|./.chug/tasks/check-console.sh|" \
@@ -1422,7 +1424,8 @@ done
 # A narrowed gate whose tools look above its inputs holds each place they look:
 # the console the root's settings and the package directory and compiler
 # settings above the contract, the replays that package directory, the
-# generated API the one above its generator, the query check the linter's
+# generated API the one above its generator, the console's copy gate the ones
+# above its tool, the query check the linter's
 # settings, and the server gates the package directories and manifests above
 # their database helper. The model's gate looks nowhere else, and a whole-tree
 # key holds every place already.
@@ -1430,6 +1433,7 @@ for gate in \
 	"check-console|'.editorconfig'|'.prettierrc'|':(glob)postcss.config.*'|'src/tsconfig.json'|'src/node_modules'" \
 	"check-conformance|'src/node_modules'" "check-random|'src/node_modules'" \
 	"check-model-api|'scripts/node_modules'" \
+	"check-console-copy|'ui/chuggy-ui/tools/node_modules'|'ui/chuggy-ui/node_modules'" \
 	"check-queries|':(glob)eslint.config.*'|'eslint-suppressions.json'" \
 	"check-postgres|'.chug/tasks/node_modules'|'.chug/tasks/package.json'" \
 	"check-keto|'.chug/node_modules'|'.chug/package.json'"; do
@@ -1445,7 +1449,7 @@ for gate in \
 done
 OUT="$WORK/.log"
 printf 'looking %s\n' "$(grep -c "|--tool|$record_tool_probed" "$TRLOG" || true)" >> "$OUT"
-check "no other gate holds a place a tool looks" 0 "$RC" "looking 7"
+check "no other gate holds a place a tool looks" 0 "$RC" "looking 8"
 # Every gate neither table names is keyed on the whole tree and nothing more.
 printf 'plain %s\n' "$(grep -cF "|$common--|./" "$TRLOG" || true)" >> "$OUT"
 check "a whole-tree gate whose verdict reads nothing else is keyed on nothing else" 0 "$RC" \
@@ -1479,6 +1483,10 @@ pin_scope() { # <gate or suite> <what it holds of the install, or ""> <pathspec>
 pin_scope check-model-api "$record_tool_installed '@informalsystems/quint' 'prettier' '@kasofsk/chug-ticket-domain'" \
 	':(glob)model/**/*.qnt' scripts/generate-model-api.ts src/generated src/domain/generated \
 	.chug/tasks/check-model-api.sh ':(glob)**/package.json' -- scripts/node_modules scripts/package.json
+pin_scope check-console-copy "$record_tool_installed '@fluent/syntax'" ui/chuggy-ui/app/copy \
+	ui/chuggy-ui/app/core/generated ui/chuggy-ui/tools/copyCatalog.ts .chug/tasks/check-console-copy.sh \
+	':(glob)**/package.json' -- ui/chuggy-ui/tools/node_modules ui/chuggy-ui/tools/package.json \
+	ui/chuggy-ui/node_modules ui/chuggy-ui/package.json
 pin_scope check-conformance "$record_tool_installed 'zod' '@kasofsk/chug-ticket-domain'" src/domain src/generated test/conformance \
 	test/domain test/itf test/golden model .chug/tasks/check-conformance.sh ':(glob)**/package.json' \
 	-- src/node_modules src/package.json

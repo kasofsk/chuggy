@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * A project's permissions: who may grant each of its roles and who may change
  * that, drawn and changed by the workspace page's own section. Each holder a

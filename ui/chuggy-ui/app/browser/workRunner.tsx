@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * Whether the project's work has a runner to go to, as every screen that
  * leads to one reads it, and the link that leads there.

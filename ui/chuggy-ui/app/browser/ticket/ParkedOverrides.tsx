@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * An escalated ticket's overrides on the card that asks about it, closed until
  * asked for or a save of them is out: the fields a parked ticket may change,

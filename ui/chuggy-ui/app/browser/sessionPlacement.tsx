@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * Where the project's threads and lead run and the runners they would run on,
  * as every screen that says so reads it, and the one line that says a runner,

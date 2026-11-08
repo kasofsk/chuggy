@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The route tree, which carries the partition in the path.
  *

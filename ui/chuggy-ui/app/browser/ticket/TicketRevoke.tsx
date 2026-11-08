@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * Revoke, asked before it is sent, because a revoked ticket is final. Anything
  * else submitted for the ticket closes the ask, and a revoke in flight keeps it

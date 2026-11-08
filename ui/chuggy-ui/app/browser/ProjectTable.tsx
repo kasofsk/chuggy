@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The ticket list: the first screen inside a project, one row a ticket, which a
  * reader searches, sorts and filters to what needs them, what is moving and
@@ -35,6 +36,8 @@ import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import { phaseRoster } from "../../../../src/contract/rosters.ts";
 import { apiProject } from "../core/apiRoutes.ts";
 import { phaseLabel } from "../core/codeLabels.ts";
+import { useCopyText } from "../copy/CopyProvider.tsx";
+import type { CopyText } from "../core/copy.ts";
 import { creatorLabel } from "../core/labels.ts";
 import type { PanelState } from "../core/freshness.ts";
 import { projectAbilityRefused } from "../core/projectAbilities.ts";
@@ -451,8 +454,9 @@ const ticketListFilterChoices: readonly Exclude<
 
 function ticketListFilterText(
   filter: Exclude<TicketFilter, typeof ticketFilterAll>,
+  text: CopyText,
 ): string {
-  return ticketFilterIsStanding(filter) ? filter : phaseLabel(filter);
+  return ticketFilterIsStanding(filter) ? filter : text(phaseLabel(filter));
 }
 
 /** Anyone, as the Creator picker holds it, which no principal is. */
@@ -595,6 +599,7 @@ function TicketListControls(props: {
 }): ReactNode {
   const bar = useRef<HTMLDivElement>(null);
   const hidden = useHeadroom(bar);
+  const text = useCopyText();
   return (
     <div
       className="ticket-list-controls"
@@ -632,7 +637,7 @@ function TicketListControls(props: {
             { value: ticketFilterAll, text: "All states" },
             ...ticketListFilterChoices.map((filter) => ({
               value: filter,
-              text: ticketListFilterText(filter),
+              text: ticketListFilterText(filter, text),
             })),
           ]}
           onChoose={(chosen) => {

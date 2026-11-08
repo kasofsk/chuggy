@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The console's one conversation surface: exchanges drawn as a thread, and a
  * composer where the page hands one in.

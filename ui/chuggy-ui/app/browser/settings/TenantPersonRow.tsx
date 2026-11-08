@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * One person in a workspace as one table row: who they are, what they hold in
  * the workspace as chips, the projects they hold a role on as a line each, and

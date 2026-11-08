@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The Overview tab: the content, and beside it the ticket's properties, as an
  * issue tracker draws an issue. The content is the one card the slot holds,

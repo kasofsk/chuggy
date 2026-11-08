@@ -9,13 +9,8 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import {
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import type { ReactNode } from "react";
 import { expect, vi } from "vitest";
 
@@ -110,7 +105,7 @@ export async function drawn(
   children: ReactNode,
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
 ): Promise<void> {
-  render(
+  renderCopied(
     <SessionProvider holder={holderDouble()}>
       <QueryClientProvider client={client}>{children}</QueryClientProvider>
     </SessionProvider>,
@@ -134,7 +129,7 @@ export async function redrawable(
       </QueryClientProvider>
     </SessionProvider>
   );
-  const view = render(tree(true));
+  const view = renderCopied(tree(true));
   await settled();
   return async (shown) => {
     await turned(() => {

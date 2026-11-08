@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * One image a thread's message named, drawn as the project's image it is.
  */

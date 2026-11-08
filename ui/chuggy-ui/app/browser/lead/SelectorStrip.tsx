@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * What the selector is doing for this project right now, and the one press that
  * changes each of those facts.

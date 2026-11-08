@@ -23,6 +23,8 @@ import eslint from "@eslint/js";
 import reactHooks from "eslint-plugin-react-hooks";
 import tseslint from "typescript-eslint";
 
+import { copyPlugin } from "./lint/copyText.js";
+
 // `removeQueries` and `resetQueries` take a cache entry away before anything
 // is read in its place, so every screen drawn from it unmounts, and what a
 // reader had typed into it goes with it. `invalidateQueries` reads again and
@@ -45,6 +47,7 @@ const consoleQueriesKept = [
 
 export default tseslint.config(
   { ignores: ["dist/**", "node_modules/**"] },
+  { linterOptions: { reportUnusedDisableDirectives: "error" } },
   eslint.configs.recommended,
   tseslint.configs.recommendedTypeChecked,
   reactHooks.configs.flat.recommended,
@@ -95,6 +98,14 @@ export default tseslint.config(
     rules: {
       "no-restricted-syntax": ["error", ...consoleQueriesKept],
     },
+  },
+  // What a reader is shown is the copy catalog's. A file not yet moved onto it
+  // carries a disable of this one rule at its top, and an unused disable is an
+  // error, so the mark leaves with the last literal it excused.
+  {
+    files: ["app/**/*.tsx"],
+    plugins: { copy: copyPlugin },
+    rules: { "copy/no-literal-text": "error" },
   },
   // A browser that refuses storage throws on the first touch of it, and the
   // ports are what answer that.

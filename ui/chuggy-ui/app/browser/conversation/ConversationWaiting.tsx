@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The engine, running where an answer is about to be: on the line the first
  * of it will take, for as long as a turn is out and nothing of it is drawn.

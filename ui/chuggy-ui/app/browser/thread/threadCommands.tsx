@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The composer's `/` commands where the box is the reader's own thread: what
  * each runs, and the line each says over the box.

@@ -16,6 +16,8 @@ import { DropdownMenu } from "radix-ui";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
+import type { Copy } from "../../core/copy.ts";
 import { navEntryCurrent, shellSetupNav } from "../../core/shellNav.ts";
 import {
   chatPaneOnPage,
@@ -23,6 +25,7 @@ import {
   chatPanePlacements,
   chatPaneRepositioned,
 } from "../../core/chatPane.ts";
+import type { ChatPanePlacement } from "../../core/chatPane.ts";
 import { persistentStore } from "../ports.ts";
 import { useSessionHolder } from "../session.tsx";
 import {
@@ -58,18 +61,32 @@ function SettingsGear(): ReactNode {
   );
 }
 
+const settingsThemeWords: Readonly<Record<ThemeChoice, Copy>> = {
+  System: { id: "shell-settings-theme-system" },
+  Light: { id: "shell-settings-theme-light" },
+  Dark: { id: "shell-settings-theme-dark" },
+};
+
+const settingsChatWords: Readonly<Record<ChatPanePlacement, Copy>> = {
+  Right: { id: "shell-settings-chat-right" },
+  Left: { id: "shell-settings-chat-left" },
+  Bottom: { id: "shell-settings-chat-bottom" },
+};
+
 /** One labelled roster of radio items, which is the shape every choice in this
  * menu takes. */
-function SettingsChoice(props: {
-  readonly label: string;
-  readonly value: string;
-  readonly options: readonly string[];
+function SettingsChoice<Option extends string>(props: {
+  readonly label: Copy;
+  readonly value: Option;
+  readonly options: readonly Option[];
+  readonly words: Readonly<Record<Option, Copy>>;
   readonly onChoose: (value: string) => void;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <>
       <DropdownMenu.Label className="text-ink-3 px-2 py-1 text-xs">
-        {props.label}
+        {text(props.label)}
       </DropdownMenu.Label>
       <DropdownMenu.RadioGroup
         value={props.value}
@@ -84,7 +101,7 @@ function SettingsChoice(props: {
             <span className="picker-gutter">
               <DropdownMenu.ItemIndicator className="picker-mark" />
             </span>
-            {option}
+            {text(props.words[option])}
           </DropdownMenu.RadioItem>
         ))}
       </DropdownMenu.RadioGroup>
@@ -100,9 +117,10 @@ function SettingsTheme(): ReactNode {
   );
   return (
     <SettingsChoice
-      label="Theme"
+      label={{ id: "shell-settings-theme" }}
       value={chosen}
       options={themeChoices}
+      words={settingsThemeWords}
       onChoose={(value) => {
         const choice = themeChoices.find((candidate) => candidate === value);
         if (choice === undefined) return;
@@ -125,9 +143,10 @@ function SettingsChatPlacement(): ReactNode {
     <>
       <DropdownMenu.Separator className="bg-edge my-1 h-px" />
       <SettingsChoice
-        label="Chat position"
+        label={{ id: "shell-settings-chat" }}
         value={held.state.placement}
         options={chatPanePlacements}
+        words={settingsChatWords}
         onChoose={(picked) => {
           const placement = chatPanePlacements.find(
             (candidate) => candidate === picked,
@@ -146,6 +165,7 @@ function SettingsSetup(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
   const yields = useChatPaneYields();
+  const text = useCopyText();
   const pathname = useRouterState({
     select: (router) => router.location.pathname,
   });
@@ -166,7 +186,7 @@ function SettingsSetup(props: {
             <span className="picker-gutter">
               <NavIcon id={entry.id} />
             </span>
-            {entry.label}
+            {text(entry.label)}
           </Link>
         </DropdownMenu.Item>
       ))}
@@ -177,6 +197,7 @@ function SettingsSetup(props: {
 
 function SettingsSignOut(): ReactNode {
   const holder = useSessionHolder();
+  const text = useCopyText();
   return (
     <DropdownMenu.Item
       className={menuItemClassName}
@@ -185,7 +206,7 @@ function SettingsSignOut(): ReactNode {
       }}
     >
       <span className="picker-gutter" />
-      Sign out
+      {text({ id: "shell-sign-out" })}
     </DropdownMenu.Item>
   );
 }
@@ -193,13 +214,16 @@ function SettingsSignOut(): ReactNode {
 export function SettingsMenu(props: {
   readonly partition: PartitionIdentity | undefined;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <DropdownMenu.Root modal={false}>
       <DropdownMenu.Trigger
         className={buttonLookClassName({ size: "sm", variant: "quiet" })}
       >
         <SettingsGear />
-        <span className="visually-hidden">Settings</span>
+        <span className="visually-hidden">
+          {text({ id: "shell-settings" })}
+        </span>
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <MenuContent className="settings-menu" sideOffset={4} align="end">

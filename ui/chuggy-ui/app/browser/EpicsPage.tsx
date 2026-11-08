@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * A project's epics: a search, a visibility filter and a sort, each the
  * address's so a link holds the view, and one row an epic with its status and

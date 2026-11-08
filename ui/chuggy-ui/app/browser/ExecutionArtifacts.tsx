@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The artifacts one run left beside its own result, each previewed one press
  * further in where its renderer can draw it, as a run's Details lists them.

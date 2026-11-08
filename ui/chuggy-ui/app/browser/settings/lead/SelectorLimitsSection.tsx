@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * What one decision may spend, as a row per limit that carries its own state:
  * on the installation's value, or the project's own and resettable, or moved by

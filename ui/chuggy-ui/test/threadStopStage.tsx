@@ -10,13 +10,8 @@
  */
 
 import { QueryClient } from "@tanstack/react-query";
-import {
-  act,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { expect, vi } from "vitest";
 
 import type {
@@ -242,7 +237,7 @@ export async function stagePaneMounted(): Promise<{
     stageLiveOpening(),
   ]);
   viewportAtEm(viewportDeskEm);
-  const view = render(
+  const view = renderCopied(
     <ScreenHarness
       partition={threadPartition}
       client={

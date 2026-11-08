@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * One thread's conversation, wherever it is drawn: the transcript with the
  * mailbox over it, and the composer where the thread is the reader's own.

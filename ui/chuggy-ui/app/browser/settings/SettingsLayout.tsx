@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The settings' one frame: a navigation of every settings page the reader has,
  * a group a level, and beside it the page the address names.

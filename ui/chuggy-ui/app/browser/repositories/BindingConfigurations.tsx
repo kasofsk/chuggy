@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * A live binding the project holds no configuration for, and its configuration
  * step asked for again.

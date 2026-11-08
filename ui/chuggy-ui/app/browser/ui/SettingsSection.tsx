@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * One setting group as a card: what it is, the Edit that opens it, the foot its
  * cancel and save sit in, and the line its last write left.

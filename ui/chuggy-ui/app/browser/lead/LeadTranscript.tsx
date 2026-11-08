@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * One session's transcript walk, and the note a lead leaves a successor with
  * nothing else to read yet.

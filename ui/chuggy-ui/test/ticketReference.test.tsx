@@ -12,6 +12,7 @@
  */
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -48,7 +49,7 @@ test("a reference with nothing held draws the number and no link", () => {
 });
 
 test("a reference draws the ticket's title and phase, and links to its screen", () => {
-  render(
+  renderCopied(
     underShell(
       heldOf({ 15: { title: "Fix the thing", phase: "Work" } }),
       report,
@@ -64,7 +65,7 @@ test("a reference draws the ticket's title and phase, and links to its screen", 
 });
 
 test("a ticket the project has not read is still the number, and still follows", () => {
-  render(underShell(heldOf({}), report));
+  renderCopied(underShell(heldOf({}), report));
 
   const link = screen.getByRole("link");
   expect(link.getAttribute("href")).toBe("/acme/atlas/tickets/15");
@@ -74,7 +75,7 @@ test("a ticket the project has not read is still the number, and still follows",
 
 test("a plain press is the shell's navigation, not the browser's", () => {
   const open = vi.fn();
-  render(underShell(heldOf({}, open), report));
+  renderCopied(underShell(heldOf({}, open), report));
 
   const notPrevented = fireEvent.click(screen.getByRole("link"), { button: 0 });
   expect(open).toHaveBeenCalledWith(15);
@@ -84,7 +85,7 @@ test("a plain press is the shell's navigation, not the browser's", () => {
 /** A reader asking for a new tab is asking their browser, not the shell. */
 test("a press the reader meant for their browser is left to it", () => {
   const open = vi.fn();
-  render(underShell(heldOf({}, open), report));
+  renderCopied(underShell(heldOf({}, open), report));
 
   fireEvent.click(screen.getByRole("link"), { button: 0, metaKey: true });
   expect(open).not.toHaveBeenCalled();

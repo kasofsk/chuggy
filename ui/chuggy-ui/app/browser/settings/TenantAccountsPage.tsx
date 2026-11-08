@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The tenant's accounts: the forge accounts it has connected, and the apps
  * each holds.

@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * One selector setting group as a card: whether it stands on the installation's
  * value, and what its own last write answered.

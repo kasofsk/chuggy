@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * Where the forge returns a person's authorization of the portal app, outside
  * the partition because the stored transaction names the tenant. The

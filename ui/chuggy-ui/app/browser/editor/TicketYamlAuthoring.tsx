@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The ticket as YAML: the text, what is wrong with it, and the submit that
  * shows what it will send before it sends it.

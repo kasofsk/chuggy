@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The card a reader is drawn where there is no console to draw: a title, one
  * line, and at most one action.

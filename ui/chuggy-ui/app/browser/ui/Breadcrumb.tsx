@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The page a drill-down was reached from, linked before the page's own title.
  */

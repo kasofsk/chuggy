@@ -24,7 +24,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createMemoryHistory, RouterProvider } from "@tanstack/react-router";
 import type { RouterHistory } from "@tanstack/react-router";
-import { act, cleanup, render } from "@testing-library/react";
+import { act, cleanup } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { StrictMode, useState } from "react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, expect, vi } from "vitest";
@@ -935,7 +936,7 @@ export function consoleMounted(
       </InviteProvider>
     </SessionProvider>
   );
-  render(strict ? <StrictMode>{tree}</StrictMode> : tree);
+  renderCopied(strict ? <StrictMode>{tree}</StrictMode> : tree);
 }
 
 /** The fake clock moved on by `ms`, every timer and read it releases run and

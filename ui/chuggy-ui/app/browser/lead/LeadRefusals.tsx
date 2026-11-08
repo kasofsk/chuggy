@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * What the lead is declining to dispatch: one row per ticket whose latest
  * refusal entry still stands, with the authoring version it was made against.

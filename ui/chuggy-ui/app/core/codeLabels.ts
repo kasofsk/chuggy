@@ -48,6 +48,7 @@ import type {
   TicketEscalation,
 } from "../../../../src/contract/responses.ts";
 import type { ApiFailure } from "./apiRequest.ts";
+import type { Copy } from "./copy.ts";
 import { failureWords } from "./failureWords.ts";
 import type { FailureWords } from "./failureWords.ts";
 import {
@@ -523,25 +524,23 @@ export function escalationDetailLine(
   }
 }
 
-/**
- * Where the ticket is, in the machine's own word for the phase — except the
- * three the phase constructors themselves used to be spelled and no longer
- * are. `Working`/`Evaluating`/`Finalizing` are the product's own words for
- * `Work`/`Evaluation`/`Finalization`.
- */
-export function phaseLabel(phase: TicketPhase): string {
+/** Where the ticket is, as the phase's own message in `standing.ftl` says it. */
+export function phaseLabel(phase: TicketPhase): Copy {
   switch (phase) {
-    case "Work":
-      return "Working";
-    case "Evaluation":
-      return "Evaluating";
-    case "Finalization":
-      return "Finalizing";
     case "Pending":
+      return { id: "standing-pending" };
+    case "Work":
+      return { id: "standing-work" };
+    case "Evaluation":
+      return { id: "standing-evaluation" };
+    case "Finalization":
+      return { id: "standing-finalization" };
     case "Done":
+      return { id: "standing-done" };
     case "Escalated":
+      return { id: "standing-escalated" };
     case "Revoked":
-      return phase;
+      return { id: "standing-revoked" };
   }
 }
 

@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * A workspace's projects as a grid of boxes, a row a project and a column a
  * role: where a person's project roles are changed, and where an invitation's

@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * Editing a Pending ticket: the creation form, prefilled from the ticket's
  * draft, offering the creation candidates and the dependencies the draft holds,

@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The reader's chat host in this workspace, the one machine of theirs their
  * questions run on and their threads run on first: a row saying when it

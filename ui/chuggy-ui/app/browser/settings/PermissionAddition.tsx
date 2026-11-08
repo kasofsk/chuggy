@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * Adding one holder to one permission: a dialog offering what the row is
  * given, one choice at a time, and for a person a roster of the people given

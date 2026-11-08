@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * A new ticket written on a draft the project already holds: the creation
  * screen opened on the draft the address names, following it as it is

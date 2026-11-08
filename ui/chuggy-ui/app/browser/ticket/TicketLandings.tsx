@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * A ticket's landings: the read, asked on a clock and again on every frame
  * naming the ticket, and the records, fragments and detail the page draws of

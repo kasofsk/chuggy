@@ -78,6 +78,7 @@ import {
   ticketLandingStateLabel,
   usageResumeLine,
 } from "../app/core/codeLabels.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 import { mutationRefusalCodes } from "../app/core/codeSentences.ts";
 import type { TicketActionName } from "../app/core/ticketActions.ts";
 
@@ -98,7 +99,7 @@ test("every wall, phase, state and refusal has a label inside the copy budget", 
     ...blockedReasons.map(blockedReasonLabel),
     ...gitEvidences.map(gitEvidenceLabel),
     ...finalizationUnavailableKinds.map(finalizationUnavailableKindLabel),
-    ...phaseRoster.map(phaseLabel),
+    ...phaseRoster.map((phase) => copyTextEn(phaseLabel(phase))),
     ...operationStates.map(operationStateLabel),
     ...operationRefusalCodes.map(operationRefusalLabel),
     ...mutationRefusalCodes.map(mutationRefusalLabel),

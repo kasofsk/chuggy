@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The ticket page's four tabs, each its own address under the page's layout.
  * The layout makes every read once and hands it down here, so switching tabs

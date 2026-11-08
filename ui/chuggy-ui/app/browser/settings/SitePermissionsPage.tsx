@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The site's permissions: who may make an account, who may make a workspace
  * and who may change who may, drawn and changed by the workspace page's own

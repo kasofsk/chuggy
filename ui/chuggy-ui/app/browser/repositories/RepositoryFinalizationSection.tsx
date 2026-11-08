@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * How a finished ticket in this repository is finalized, and the write that moves it,
  * which the binding's other settings write through as well.

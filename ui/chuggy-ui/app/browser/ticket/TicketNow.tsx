@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The run the ticket is on now: its step, its cycle and how long it has gone,
  * the one thing it is doing — the call it waits on, or else the newest thing

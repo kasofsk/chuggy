@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The Overview's steps block: the current cycle's Work, Evaluation and
  * Finalization as columns of boxes, each box a step with its mark and one

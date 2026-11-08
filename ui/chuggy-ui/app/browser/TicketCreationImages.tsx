@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The images a ticket carries, attached in the form: picked, pasted or
  * dropped, each uploaded as the bytes it is and held as the identity the

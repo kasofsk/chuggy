@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The question a dispatch, a revoke or a draft's deletion is asked before it
  * is sent, in a dialog over the page: what it does, then Cancel and the button

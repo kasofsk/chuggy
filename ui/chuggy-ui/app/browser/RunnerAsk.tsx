@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * What the register command a token is handed over in declares, asked before
  * the token is minted: the package the machine runs and, folded away since few

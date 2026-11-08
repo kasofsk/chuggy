@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The epics a ticket belongs to, each a link to its page, drawn where a ticket
  * is named. An archived epic is drawn as one, so a reader who follows the link

@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * The project's lead: where its session stands, what its mailbox has done, what
  * it currently holds, what it decided and what it is refusing to dispatch.

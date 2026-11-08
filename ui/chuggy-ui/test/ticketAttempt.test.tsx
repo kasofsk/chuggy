@@ -14,13 +14,8 @@
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import type { QueryClient } from "@tanstack/react-query";
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  within,
-} from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import type { RenderResult } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode, Ref } from "react";
@@ -280,7 +275,7 @@ function page(client: QueryClient): ReactNode {
 /** The page under its providers. A case remounts over the unmount, and moves
  * between tickets by re-rendering the same instance. */
 function mounted(client: QueryClient): RenderResult {
-  return render(page(client));
+  return renderCopied(page(client));
 }
 
 /** A move to another ticket, which is all `ticketRoute` does: the params

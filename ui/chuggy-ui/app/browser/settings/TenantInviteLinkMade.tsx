@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * A link that was just made, as the whole body of the dialog that made it:
  * its address in a field a reader selects from, the control that copies it,

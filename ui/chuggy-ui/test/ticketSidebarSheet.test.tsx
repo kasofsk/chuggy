@@ -5,7 +5,8 @@
  * Draft label is outlined rather than toned.
  */
 
-import { cleanup, render } from "@testing-library/react";
+import { cleanup } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, expect, test } from "vitest";
 
 import ticketSheet from "../app/browser/ticket/ticket.css?raw";
@@ -27,7 +28,7 @@ test.each([
 ] as const)(
   "a sidebar value wraps within its cell at the %s width, however long and unbroken",
   (_width, conditions) => {
-    render(
+    renderCopied(
       <aside className="ticket-sidebar">
         <Fields>
           <Field name="Filed by">
@@ -49,7 +50,7 @@ test.each([
 );
 
 test("the Draft label is a dashed edge in the control edge colour, in secondary ink, on no ground", () => {
-  render(<TicketStateLabel standing="Draft" size="page" />);
+  renderCopied(<TicketStateLabel standing="Draft" size="page" />);
   const label = drawnElement(".ticket-state");
   const rules = sheetRules(ticketSheet, []);
   expect(sheetDeclared(rules, label, "border")).toBe(

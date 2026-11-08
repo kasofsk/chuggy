@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * A workspace's people: one row a person, saying what they hold and nothing
  * they do not, under how many there are and the one action inviting someone

@@ -12,7 +12,8 @@
  */
 
 import { QueryClient } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { App } from "../app/browser/App.tsx";
@@ -46,7 +47,7 @@ async function fieldsAt(address: string): Promise<readonly string[]> {
   vi.stubGlobal("fetch", scriptedFetch(() => answer({}, 404)).fetch);
   const { session } = inviteSession("SignedIn");
   const { holder } = inviteBrowser({ pathname: "/" });
-  render(
+  renderCopied(
     <SessionProvider holder={session}>
       <InviteProvider holder={holder}>
         <App

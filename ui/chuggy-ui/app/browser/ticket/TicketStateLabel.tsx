@@ -7,6 +7,7 @@
 
 import type { ReactNode } from "react";
 
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import type {
   TicketStateLabelForm,
   TicketStateLabelMark,
@@ -86,6 +87,7 @@ export function TicketStateLabel(props: {
   readonly children?: ReactNode;
 }): ReactNode {
   const label = ticketStateLabelOf(props.standing);
+  const text = useCopyText();
   return (
     <span
       className="ticket-state"
@@ -105,10 +107,12 @@ export function TicketStateLabel(props: {
       <span
         className="ticket-state-word"
         data-words={
-          props.size === "small" ? ticketStateWords.join("\n") : undefined
+          props.size === "small"
+            ? ticketStateWords.map(text).join("\n")
+            : undefined
         }
       >
-        {label.word}
+        {text(label.word)}
       </span>
       {props.children}
     </span>

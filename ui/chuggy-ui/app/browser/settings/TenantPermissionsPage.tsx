@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * A workspace's permissions: who may grant each of its roles, give it hosted
  * runs or personal runners and change who may. Where the reader may change a permission, each

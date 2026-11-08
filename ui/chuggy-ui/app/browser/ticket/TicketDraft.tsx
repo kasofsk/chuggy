@@ -1,3 +1,4 @@
+/* eslint-disable copy/no-literal-text */
 /**
  * A draft never released, drawn as the ticket page draws a ticket: the Draft
  * label and "Not released", Release, Edit, which opens the form, and a menu

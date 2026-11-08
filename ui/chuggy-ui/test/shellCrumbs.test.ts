@@ -7,7 +7,7 @@
 import { expect, test } from "vitest";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
-import { shellCrumbs } from "../app/core/shellCrumbs.ts";
+import { memberChatCrumbs, shellCrumbs } from "../app/core/shellCrumbs.ts";
 import { navRoutes } from "../app/core/shellNav.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
@@ -62,5 +62,12 @@ test("a screen with no page of its own is named and links nowhere", () => {
     ...head,
     { label: "threads" },
     { label: "s1" },
+  ]);
+});
+
+test("a workspace's own chat is named by its address, as every crumb is", () => {
+  expect(memberChatCrumbs("acme")).toStrictEqual([
+    { label: "acme" },
+    { label: "chat" },
   ]);
 });
