@@ -164,6 +164,23 @@ run_in "$R"
 check "versions that are not a list could not run, and say so" 2 "$RC" "Claude Code: npm's list of its versions is not a list"
 refute "versions that are not a list are read, not crashed on" 2 "$RC" "TypeError"
 
+for list in '[]' '["2.1.1","2.1.5","2.1.9"]'; do
+	fixture 2.1.5 0.2.0
+	registry 2.1.10 "$list" 0.3.0 "$CODEX"
+	run_in "$R"
+	check "a list of $list, without the ceiling, could not run" 2 "$RC" "Claude Code: npm's list of its versions does not hold 2.1.10"
+done
+
+fixture 2.1.5 0.2.0
+registry 2.1.10 "$CLAUDE" 0.3.0 '[{"version":"0.3.0"},"0.3.0"]'
+run_in "$R"
+check "a list holding what is not a version could not run" 2 "$RC" "Codex: npm's list of its versions holds something other than versions"
+
+fixture 2.1.10 0.3.0
+registry 2.1.10 '["2.1.10"]' 0.3.0 '[]'
+run_in "$R"
+check "a pin at the ceiling needs nothing more of the list" 0 "$RC" "Codex 0.3.0 is not behind 0.3.0"
+
 fixture 2.1.5 0.2.0
 registry 2.1.10 'not json' 0.3.0 "$CODEX"
 run_in "$R"

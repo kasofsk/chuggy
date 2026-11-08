@@ -13,11 +13,12 @@
 # can go no further, and for Codex npm's `latest`. A prerelease is not one, and
 # neither is a platform build, whose version carries its platform as a suffix.
 #
-# A CHANGE UNDER `images/worker` SELECTS IT, where the pins are, and so do a
-# full run, the roster stage of images/worker/Dockerfile's among them, and a
-# change to the sequencer, which selects every gate. Other changes do not, so
-# most tickets are not made to take on a bump outside their scope. Never
-# reused: npm moves under a tree that does not.
+# A CHANGE UNDER `images/worker` SELECTS IT, where the pins are, as does a
+# change to this script, and so do a full run, the roster stage of
+# images/worker/Dockerfile's among them, and a change to the sequencer, which
+# selects every gate. Other changes do not, so most tickets are not made to take
+# on a bump outside their scope. Never reused: npm moves under a tree that does
+# not.
 #
 # Exits 0 clean, 1 when either is further behind, 2 when it could not run. Two
 # is not a pass.
@@ -94,13 +95,15 @@ try { versions = JSON.parse(fs.readFileSync(versionsFile, "utf8")) } catch { ref
 if (!stable.test(pin)) refuse("the pin " + pin + " is not a release")
 if (!stable.test(ceiling)) refuse("npm names " + JSON.stringify(ceiling) + " as the newest a bump reaches, which is not a release")
 if (!Array.isArray(versions)) refuse("npm'"'"'s list of its versions is not a list")
+if (versions.some((v) => typeof v !== "string")) refuse("npm'"'"'s list of its versions holds something other than versions")
 const order = (a, b) => {
   const [x, y] = [a, b].map((v) => v.split(".").map(Number))
   return x[0] - y[0] || x[1] - y[1] || x[2] - y[2]
 }
-const after = versions.filter(
-  (v) => typeof v === "string" && stable.test(v) && order(v, pin) > 0 && order(v, ceiling) <= 0,
-)
+// The ceiling is a release after the pin whenever it is newer, so a list
+// without it is not npm'"'"'s whole list.
+if (order(ceiling, pin) > 0 && !versions.includes(ceiling)) refuse("npm'"'"'s list of its versions does not hold " + ceiling)
+const after = versions.filter((v) => stable.test(v) && order(v, pin) > 0 && order(v, ceiling) <= 0)
 console.log(after.length + " " + ceiling)
 ' "$1" "$2" "$3"
 }
