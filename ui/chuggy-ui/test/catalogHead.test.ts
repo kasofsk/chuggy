@@ -10,6 +10,7 @@ import {
   catalogHeadStandingOf,
   catalogHeadText,
 } from "../app/core/catalogHead.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 
 const at = { branch: "main", commit: "e".repeat(40) } as const;
 
@@ -44,22 +45,26 @@ test("a head declaring other configurations, or none, declares no such one", () 
     at: ready("a"),
   });
   expect(
-    catalogHeadText(
-      catalogHeadStandingOf(
-        { state: "ConfigurationsAbsent", ...at },
+    copyTextEn(
+      catalogHeadText(
+        catalogHeadStandingOf(
+          { state: "ConfigurationsAbsent", ...at },
+          "work",
+          "a",
+        ),
         "work",
-        "a",
       ),
-      "work",
     ),
   ).toBe("The repository's main at eeeeeee declares no work.");
 });
 
 test("a head that could not be read says why, and names no commit", () => {
   expect(
-    catalogHeadText(
-      catalogHeadStandingOf({ state: "BranchAbsent" }, "work", "a"),
-      "work",
+    copyTextEn(
+      catalogHeadText(
+        catalogHeadStandingOf({ state: "BranchAbsent" }, "work", "a"),
+        "work",
+      ),
     ),
   ).toBe("The repository has no default branch to read.");
   expect(

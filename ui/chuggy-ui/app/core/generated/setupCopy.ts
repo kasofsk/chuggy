@@ -351,9 +351,6 @@ export interface SetupCopy {
     readonly remote: unknown;
     readonly among: unknown;
   };
-  readonly "setup-pressed-connect": Record<never, never>;
-  readonly "setup-pressed-add": Record<never, never>;
-  readonly "setup-pressed-retry": Record<never, never>;
   readonly "setup-pressed-dispatch": Record<never, never>;
   readonly "setup-mend-admin-tell": {
     readonly workspace: unknown;

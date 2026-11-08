@@ -264,6 +264,7 @@ const selectionLabels: Readonly<
 function Selection(
   props: FormDrawn & { readonly faults: readonly CreationFault[] },
 ): ReactNode {
+  const text = useCopyText();
   const { form, onChange, offers, repositories } = props;
   const text = useCopyText();
   const catalog = creationCatalogOf(
@@ -271,7 +272,7 @@ function Selection(
   );
   if (catalog === undefined) return null;
   const selected = configurationCatalogSelected(catalog, form.selection);
-  const choices = configurationCatalogChoices(catalog);
+  const choices = configurationCatalogChoices(catalog, text);
   return (
     <>
       {(["work", "evaluation", "finalization"] as const).map((field) =>
@@ -770,6 +771,7 @@ interface CreationFieldsProps extends FormEdit {
 }
 
 export function CreationFields(props: CreationFieldsProps): ReactNode {
+  const text = useCopyText();
   const { faults, form, onChange, offers, repositories } = props;
   const drawn = creationOfferDrawn(offers, form);
   const drawing: FormDrawn = { form, onChange, offers, repositories };
@@ -779,7 +781,7 @@ export function CreationFields(props: CreationFieldsProps): ReactNode {
       <Selection {...drawing} faults={faults} />
       <Fault field="configuration" faults={faults} />
       {props.partial === true ? (
-        <p className="text-ink-3 text-sm">{configurationsPartialLabel}</p>
+        <p className="text-ink-3 text-sm">{text(configurationsPartialLabel)}</p>
       ) : null}
       <Title form={form} onChange={onChange} />
       <Fault field="title" faults={faults} />

@@ -241,7 +241,7 @@ export function TenantAccountsPage(): ReactNode {
                 tenant={tenant}
                 returnPath={currentPath()}
                 app="portal"
-                label={text({ id: "settings-accounts-add" })}
+                label={{ id: "settings-accounts-add" }}
               />
             ) : null}
           </span>
@@ -249,7 +249,7 @@ export function TenantAccountsPage(): ReactNode {
       >
         <ForgeReturned word={returned} />
         {withheld ? (
-          <Notice tone="parked" inline detail={forgeAccountsWithheld} />
+          <Notice tone="parked" inline detail={text(forgeAccountsWithheld)} />
         ) : (
           <PanelUnready state={accounts} />
         )}

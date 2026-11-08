@@ -14,6 +14,7 @@ import { expect, test } from "vitest";
 
 import type { TicketLandingResponse } from "../../../src/contract/responses.ts";
 import { setupAnswersNone } from "../app/core/setupArguments.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 import { repositoryGrantLines } from "../app/core/projectRepositories.ts";
 import {
   setupAskNamesMax,
@@ -287,8 +288,12 @@ test("an app not granted the repository is mended from the line the Add picker d
   for (const app of ["portal", "worker"] as const) {
     const line = repositoryGrantLines[app];
     const tell = told({ lacks: "Grant", app, ...grant });
-    expect(tell, app).toContain(`under the list find ${line.status}. `);
-    expect(tell, app).toContain(`Follow the link beside it, ${line.label}, `);
+    expect(tell, app).toContain(
+      `under the list find ${copyTextEn(line.status)}. `,
+    );
+    expect(tell, app).toContain(
+      `Follow the link beside it, ${copyTextEn(line.label)}, `,
+    );
   }
   expect(thing({ lacks: "Grant", app: "portal", ...grant })).toEqual(
     hand(

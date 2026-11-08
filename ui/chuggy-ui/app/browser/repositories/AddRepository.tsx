@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * Adding a repository: what the tenant's portal installations grant, marked
  * against what this project already binds and against what the worker app was
@@ -53,6 +52,7 @@ import type {
   ProjectRepositoryResponse,
 } from "../../../../../src/contract/responses.ts";
 import type { ForgeAppName } from "../../../../../src/contract/rosters.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import type { ApiPorts, ApiResult } from "../../core/apiRequest.ts";
 import { base64urlFromBytes } from "../../core/base64url.ts";
 import {
@@ -63,6 +63,7 @@ import type { ProjectRepositoryBindAnswer } from "../../core/apiRoutes.ts";
 import type { PanelState } from "../../core/freshness.ts";
 import { consoleWriteKey } from "../../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../../core/consoleWrite.ts";
+import { copyOrDataText } from "../../core/copy.ts";
 import { operationIdBytesCount } from "../../core/operationFollow.ts";
 import { projectRepositoriesInvalidated } from "../../core/projectQueries.ts";
 import {
@@ -208,6 +209,7 @@ function RepositoryChoiceRow(props: {
   readonly busy: boolean;
   readonly onChoose: (choice: RepositoryChoice) => void;
 }): ReactNode {
+  const text = useCopyText();
   const choice = props.choice;
   return (
     <span className="flex flex-wrap items-center gap-x-2">
@@ -222,12 +224,16 @@ function RepositoryChoiceRow(props: {
         {choice.repository.fullName}
       </Button>
       {choice.listed ? null : (
-        <span className="text-sm text-ink-3">{repositoryUnlisted}</span>
+        <span className="text-sm text-ink-3">{text(repositoryUnlisted)}</span>
       )}
-      {choice.bound ? <span className="text-sm text-ink-3">Bound</span> : null}
+      {choice.bound ? (
+        <span className="text-sm text-ink-3">
+          {text({ id: "repositories-bound" })}
+        </span>
+      ) : null}
       {choice.workerless ? (
         <span className="text-sm text-tone-parked">
-          {repositoryWorkerMissing}
+          {text(repositoryWorkerMissing)}
         </span>
       ) : null}
     </span>
@@ -240,13 +246,14 @@ function RepositoryGrant(props: {
   readonly tenant: string;
   readonly app: ForgeAppName;
 }): ReactNode {
+  const text = useCopyText();
   const line = repositoryGrantLines[props.app];
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Notice
         tone={props.app === "worker" ? "parked" : "info"}
         inline
-        detail={line.status}
+        detail={text(line.status)}
       />
       <InstallLink
         tenant={props.tenant}
@@ -265,9 +272,12 @@ function RepositoryWorkerGrant(props: {
   readonly workerless: readonly string[] | undefined;
   readonly chosen: boolean;
 }): ReactNode {
+  const text = useCopyText();
   switch (repositoryWorkerLine(props.workerless, props.chosen)) {
     case "Reading":
-      return <Notice tone="info" inline detail={repositoryWorkerReading} />;
+      return (
+        <Notice tone="info" inline detail={text(repositoryWorkerReading)} />
+      );
     case "Missing":
       return <RepositoryGrant tenant={props.tenant} app="worker" />;
     case undefined:
@@ -414,6 +424,7 @@ function AddRepositoryBody(props: {
   readonly runner: WorkRunner;
   readonly onBound: () => void;
 }): ReactNode {
+  const text = useCopyText();
   const partition = props.partition;
   const state = useReachable(
     partition.tenant,
@@ -429,7 +440,7 @@ function AddRepositoryBody(props: {
       <PanelUnready state={state} />
       {state.state === "Ready" ? (
         <SearchableRoster
-          label="Filter"
+          label={text({ id: "repositories-filter" })}
           rows={repositoryChoices(
             drawn,
             props.bound,
@@ -447,7 +458,7 @@ function AddRepositoryBody(props: {
         />
       ) : null}
       {state.state === "Ready" && state.value.truncated ? (
-        <Notice tone="parked" inline detail={repositoriesTruncated} />
+        <Notice tone="parked" inline detail={text(repositoriesTruncated)} />
       ) : null}
       {state.state === "Ready" ? (
         <RepositoryGrant tenant={partition.tenant} app="portal" />
@@ -477,9 +488,15 @@ function AddRepositoryNote(props: {
   readonly note: RepositoryNote;
   readonly runner: WorkRunner;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <>
-      <Notice tone="info" inline detail={props.note.status} role="status">
+      <Notice
+        tone="info"
+        inline
+        detail={copyOrDataText(text, props.note.status)}
+        role="status"
+      >
         <RepositoryNextStep
           partition={props.partition}
           ticketOffered={props.note.ticketOffered}
@@ -490,7 +507,7 @@ function AddRepositoryNote(props: {
         <Notice
           tone="parked"
           inline
-          detail={props.note.ignored}
+          detail={text(props.note.ignored)}
           role="status"
         />
       )}
@@ -513,11 +530,13 @@ export function AddRepository(props: {
   /** Told of a bind the route accepted, the picker staying open over what it came to. */
   readonly onBound: () => void;
 }): ReactNode {
+  const text = useCopyText();
   const offered = props.installations.length > 0;
+  const add = text({ id: "repositories-add" });
   return (
     <Dialog
-      title="Add"
-      trigger="Add"
+      title={add}
+      trigger={add}
       triggerDisabled={!offered}
       open={props.open && offered}
       onOpenChange={props.onOpenChange}

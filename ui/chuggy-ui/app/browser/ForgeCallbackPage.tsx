@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * Where the forge returns a person's authorization of the portal app, outside
  * the partition because the stored transaction names the tenant. The
@@ -17,10 +16,12 @@ import type { ReactNode } from "react";
 
 import type { ForgeAuthorizationResponse } from "../../../../src/contract/responses.ts";
 import type { ForgeAppName } from "../../../../src/contract/rosters.ts";
+import { useCopyText } from "../copy/CopyProvider.tsx";
 import type { ApiPorts } from "../core/apiRequest.ts";
 import { apiForgeApps, apiForgeAuthorization } from "../core/apiRoutes.ts";
 import { consoleWriteKey } from "../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../core/consoleWrite.ts";
+import type { Copy } from "../core/copy.ts";
 import {
   forgeAuthorizationDeclined,
   forgeAuthorizationInstall,
@@ -40,6 +41,7 @@ import {
   forgeInstallUrl,
 } from "../core/forgeInstallation.ts";
 import { forgePressSentOn } from "../core/forgePress.ts";
+import { forgeReturnStatusLabel } from "../core/forgeReturn.ts";
 import type { ForgePress } from "../core/forgePress.ts";
 import { forgeSetupUnexpected } from "../core/forgeSetup.ts";
 import { useApiPorts } from "./api.ts";
@@ -55,7 +57,7 @@ import {
 import { Notice } from "./ui/Notice.tsx";
 
 /** What this page says while the code is being redeemed. */
-export const forgeCallbackConnecting = "Connecting";
+export const forgeCallbackConnecting: Copy = { id: "repositories-connecting" };
 
 /** Whether the person was sent on to the app's install, which they are not
  * where this deployment does not offer it. */
@@ -118,7 +120,8 @@ function forgeCallbackRedeemWrite(
         redirectUri: forgeCallbackRedirectUri(currentOrigin()),
         codeVerifier: transaction.verifier,
       }),
-    refusal: (failure) => forgeAuthorizationRefusal(failure).status,
+    refusal: (failure) =>
+      forgeReturnStatusLabel(forgeAuthorizationRefusal(failure).status),
     landed: (_client, redeemed, redeem) =>
       forgeCallbackRedeemed(ports, navigate, redeem.transaction, redeemed),
     refused: (refused, redeem) => {
@@ -160,6 +163,7 @@ function forgeCallbackAnswer(
 function ForgeCallbackDrawn(props: {
   readonly decision: ForgeCallbackDecision;
 }): ReactNode {
+  const text = useCopyText();
   switch (props.decision.decision) {
     case "Redeem":
       return (
@@ -167,7 +171,7 @@ function ForgeCallbackDrawn(props: {
           tone="info"
           inline
           role="status"
-          detail={forgeCallbackConnecting}
+          detail={text(forgeCallbackConnecting)}
         />
       );
     case "Declined":
@@ -175,14 +179,15 @@ function ForgeCallbackDrawn(props: {
     case "Unexpected":
       return (
         <>
-          <Notice tone="danger" inline detail={forgeSetupUnexpected} />
-          <Link to="/">Home</Link>
+          <Notice tone="danger" inline detail={text(forgeSetupUnexpected)} />
+          <Link to="/">{text({ id: "repositories-home" })}</Link>
         </>
       );
   }
 }
 
 export function ForgeCallbackPage(): ReactNode {
+  const text = useCopyText();
   const query = useSearch({ from: forgeCallbackRoutePath });
   const navigate = useNavigate();
   const ports = useApiPorts();
@@ -204,7 +209,9 @@ export function ForgeCallbackPage(): ReactNode {
   return (
     <div className="grid min-h-dvh content-start gap-4 p-4">
       <main className="grid gap-3">
-        <h1 className="text-md font-strong text-ink-1">GitHub</h1>
+        <h1 className="text-md font-strong text-ink-1">
+          {text({ id: "repositories-callback-title" })}
+        </h1>
         <ForgeCallbackDrawn decision={decision} />
       </main>
       <Footer />

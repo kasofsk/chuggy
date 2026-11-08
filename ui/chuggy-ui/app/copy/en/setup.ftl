@@ -221,9 +221,6 @@ setup-remote-unread = this folder's remote { $remote } could not be looked for i
 
 ## What is pressed on a console page that spells its own name, by that name.
 
-setup-pressed-connect = Connect { -github }
-setup-pressed-add = Add
-setup-pressed-retry = Retry
 # spells -dispatch: a ticket's page draws the action under its code's name
 setup-pressed-dispatch = Dispatch
 

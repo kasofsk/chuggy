@@ -11,6 +11,7 @@ import type {
   RepositoryConfigurationHeadDeclaration,
   RepositoryConfigurationHeadResponse,
 } from "../../../../src/contract/responses.ts";
+import type { Copy } from "./copy.ts";
 import { commitLabel } from "./labels.ts";
 
 type CatalogHeadRead = RepositoryConfigurationHeadResponse["head"];
@@ -79,46 +80,62 @@ export function catalogHeadStandingOf(
   }
 }
 
-function catalogHeadAtText(at: CatalogHeadAt): string {
-  return `${at.branch} at ${commitLabel(at.commit).text}`;
+/** Where the head was read, as the variables a line names it by. */
+function catalogHeadAtArgs(at: CatalogHeadAt): {
+  readonly branch: string;
+  readonly commit: string;
+} {
+  return { branch: at.branch, commit: commitLabel(at.commit).text };
 }
 
 const catalogHeadUnreadTexts: Readonly<
   Record<
     Extract<CatalogHeadStanding, { readonly standing: "Unread" }>["why"],
-    string
+    Copy
   >
 > = {
-  BranchAbsent: "The repository has no default branch to read.",
-  CommitAbsent: "The repository's head moved while it was read.",
-  SnapshotRefused: "The repository refused a read of its head.",
+  BranchAbsent: { id: "configuration-catalog-head-branch-absent" },
+  CommitAbsent: { id: "configuration-catalog-head-commit-absent" },
+  SnapshotRefused: { id: "configuration-catalog-head-snapshot-refused" },
 };
 
 /** What the head says of the configuration, in the one line the page draws it as. */
 export function catalogHeadText(
   standing: CatalogHeadStanding,
   name: string,
-): string {
+): Copy {
   switch (standing.standing) {
     case "Matches":
-      return `The repository's ${catalogHeadAtText(standing.at)} declares ${name} as its newest import stored it.`;
+      return {
+        id: "configuration-catalog-head-matches",
+        args: { ...catalogHeadAtArgs(standing.at), name },
+      };
     case "Differs":
-      return `The repository's ${catalogHeadAtText(standing.at)} declares a ${name} its newest import does not hold.`;
+      return {
+        id: "configuration-catalog-head-differs",
+        args: { ...catalogHeadAtArgs(standing.at), name },
+      };
     case "Undeclared":
-      return `The repository's ${catalogHeadAtText(standing.at)} declares no ${name}.`;
+      return {
+        id: "configuration-catalog-head-undeclared",
+        args: { ...catalogHeadAtArgs(standing.at), name },
+      };
     case "Refused":
-      return `An import of the repository's ${catalogHeadAtText(standing.at)} would be refused.`;
+      return {
+        id: "configuration-catalog-head-refused",
+        args: catalogHeadAtArgs(standing.at),
+      };
     case "Unread":
       return catalogHeadUnreadTexts[standing.why];
   }
 }
 
 /** What the page says while it draws the head's version in the import's place. */
-export function catalogHeadShowingText(
-  at: CatalogHeadAt,
-  name: string,
-): string {
-  return `Showing ${name} as the repository's ${catalogHeadAtText(at)} declares it.`;
+export function catalogHeadShowingText(at: CatalogHeadAt, name: string): Copy {
+  return {
+    id: "configuration-catalog-head-showing",
+    args: { ...catalogHeadAtArgs(at), name },
+  };
 }
 
 /** One fault an import of the head would be refused with, as the page lists it. */

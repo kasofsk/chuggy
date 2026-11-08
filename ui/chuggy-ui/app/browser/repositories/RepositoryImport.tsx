@@ -12,6 +12,7 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { RepositoryConfigurationImportAttemptResponse } from "../../../../../src/contract/responses.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { apiImportRepositoryConfigurations } from "../../core/apiRoutes.ts";
 import { consoleWriteKey } from "../../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../../core/consoleWrite.ts";
@@ -27,6 +28,7 @@ import {
   repositoryImportPress,
   repositoryImportRefused,
   repositoryImportRefusedFile,
+  repositoryImportWordLabel,
 } from "../../core/repositoryImport.ts";
 import { projectRepositoryBound } from "../../core/repositoryFinalization.ts";
 import { repositoryImportTone } from "../../core/tones.ts";
@@ -111,6 +113,7 @@ export function useRepositoryImportNow(
 export function RepositoryImportButton(props: {
   readonly importing: RepositoryImporting;
 }): ReactNode {
+  const text = useCopyText();
   const busy = props.importing.busy;
   return (
     <Button
@@ -120,7 +123,7 @@ export function RepositoryImportButton(props: {
       disabled={busy}
       onClick={props.importing.importNow}
     >
-      {busy ? repositoryImportPress.busy : repositoryImportPress.idle}
+      {text(busy ? repositoryImportPress.busy : repositoryImportPress.idle)}
     </Button>
   );
 }
@@ -129,14 +132,17 @@ export function RepositoryImportLine(props: {
   readonly lastImport: RepositoryConfigurationImportAttemptResponse | undefined;
   readonly refused: string | undefined;
 }): ReactNode {
+  const text = useCopyText();
   const nowMs = useNowMs();
   const line = repositoryImportLine(props.lastImport);
   const refusal = repositoryImportRefusedFile(props.lastImport);
   return (
     <div className="grid gap-1">
       <p className="flex flex-wrap items-center gap-2 text-sm">
-        <span className="text-ink-3">{repositoryImportLabel}</span>
-        <Pill tone={repositoryImportTone(line.word)}>{line.word}</Pill>
+        <span className="text-ink-3">{text(repositoryImportLabel)}</span>
+        <Pill tone={repositoryImportTone(line.word)}>
+          {text(repositoryImportWordLabel(line.word))}
+        </Pill>
         {"attemptedAt" in line ? (
           <Figure figure={agoFigure(line.attemptedAt, nowMs)} />
         ) : null}
@@ -145,7 +151,7 @@ export function RepositoryImportLine(props: {
         ) : null}
       </p>
       {refusal === undefined ? null : (
-        <p className="text-sm text-ink-2">{refusal}</p>
+        <p className="text-sm text-ink-2">{text(refusal)}</p>
       )}
       {props.refused === undefined ? null : (
         <Notice tone="danger" inline role="status" detail={props.refused} />
