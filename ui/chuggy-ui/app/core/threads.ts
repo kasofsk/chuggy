@@ -78,7 +78,6 @@ import type {
   ThreadTurnStopResponse,
 } from "../../../../src/contract/responses.ts";
 import {
-  allThreadWakeReasons,
   artifactUnavailableCode,
   hostedRunsNotGrantedCode,
   projectArtifactUploadRefusalCodes,
@@ -92,8 +91,9 @@ import type {
   SessionTurnInputKind,
   ThreadMessageRefusalCode,
   ThreadStanding,
-  ThreadWakeReason,
 } from "../../../../src/contract/rosters.ts";
+import { allThreadWakeReasons } from "../../../../src/contract/threadWake.ts";
+import type { ThreadWakeReason } from "../../../../src/contract/threadWake.ts";
 import type { ApiFailure, ApiResult } from "./apiRequest.ts";
 import { base64urlFromBytes } from "./base64url.ts";
 import { conversationAttachmentsSame } from "./conversationAttachments.ts";

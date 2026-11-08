@@ -47,7 +47,7 @@ import type { ConsolePage } from "../contract/consolePage.ts";
 import {
   allThreadWakeReasons,
   type ThreadWakeReason,
-} from "../contract/rosters.ts";
+} from "../contract/threadWake.ts";
 import {
   resolvedThreadStandingRules,
   threadDraftsHeading,

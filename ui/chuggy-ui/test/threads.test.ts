@@ -11,13 +11,13 @@
 import { describe, expect, test } from "vitest";
 
 import {
-  allThreadWakeReasons,
   sessionTurnInputKinds,
   sessionTurnStates,
   threadLimitReachedCode,
   threadMessageRefusalCodes,
   threadStandings,
 } from "../../../src/contract/rosters.ts";
+import { allThreadWakeReasons } from "../../../src/contract/threadWake.ts";
 import {
   threadBacklogMax,
   threadOpenKeyCharsMax,
