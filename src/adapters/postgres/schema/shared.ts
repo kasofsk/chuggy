@@ -234,6 +234,12 @@ export const leadStandingReadFunction = "read_lead_standing";
 export const leadRefusalReadFunction = "read_lead_refusal";
 export const sessionStoreBatchesReadFunction = "read_session_store_batches";
 export const sessionStoreStreamListFunction = "list_session_store_streams";
+/** A session's context readings, a page of turns at a time, as the API reads them. */
+export const sessionContextReadFunction = "read_session_context";
+/** What a session was opened under that its context read answers: its appended prompt and its compaction window. */
+export const sessionOpeningReadFunction = "read_session_opening";
+export const sessionContextImmutableFunction =
+  "session_turn_context_is_immutable";
 export const sessionCapabilitiesSetFunction = "set_session_capabilities";
 export const threadOpenFunction = "open_member_thread";
 export const threadMessageEnqueueFunction = "enqueue_thread_message";

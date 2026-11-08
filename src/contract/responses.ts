@@ -21,6 +21,7 @@ import { z } from "zod";
 import {
   imageMediaTypes,
   projectArtifactEncoding,
+  agentSessionPromptCharsMax,
   agenticRefusalLedgerAnsweredMax,
   agenticRefusalReasonCharsMax,
   agenticRefusalsAnsweredMax,
@@ -42,6 +43,8 @@ import {
   inquiryQuestionCharsMax,
   instantSchema,
   isBoundedText,
+  leadAutoCompactWindowTokensMax,
+  leadAutoCompactWindowTokensMin,
   leadTurnsAnsweredMax,
   nativeHttpDraftDependenciesMax,
   nativeHttpPageItemsMax,
@@ -63,9 +66,11 @@ import {
   selectorHandoffNotePreviewCharsMax,
   selectorHistoryLimitMax,
   selectorProposalDispatchesAnsweredMax,
+  sessionContextPageTurnsMax,
   sessionStoreStreamCharsMax,
   sessionStoreStreamsAnswered,
   sessionTranscriptEntriesMax,
+  sessionTurnContextReadingsMax,
   sessionTurnModelCharsMax,
   sessionTurnResultCharsMax,
   sessionTurnToolNameCharsMax,
@@ -352,6 +357,35 @@ export const runContextReadingSchema = runContextReadingSchemaOf({
   recordedAt: instantSchema,
 });
 export type RunContextReading = z.infer<typeof runContextReadingSchema>;
+
+/**
+ * One reading of a session's context window during one of its turns, `shape`
+ * the fields its side of the wire adds: the window a run's reading holds, and
+ * only a compaction's reading carrying the compaction's facts.
+ */
+export function sessionContextReadingSchemaOf<Shape extends z.ZodRawShape>(
+  shape: Shape,
+) {
+  const reading = { window: runContextWindowSchema.optional(), ...shape };
+  return z.discriminatedUnion("cause", [
+    z.strictObject({
+      ...reading,
+      cause: z.literal("Compaction"),
+      compaction: runCompactionSchema.optional(),
+    }),
+    z.strictObject({ ...reading, cause: z.literal("End") }),
+  ]);
+}
+
+/** A session's reading as its pod offers it with a turn's answer, before the server dates it. */
+export const sessionContextOfferedSchema = sessionContextReadingSchemaOf({});
+export type SessionContextOffered = z.infer<typeof sessionContextOfferedSchema>;
+
+/** A session's reading as a reader is answered with it, dated by the server that stored it. */
+export const sessionContextReadingSchema = sessionContextReadingSchemaOf({
+  recordedAt: instantSchema,
+});
+export type SessionContextReading = z.infer<typeof sessionContextReadingSchema>;
 
 /** Where the snapshot is and how much of it there is; its contents are their own read. */
 const runConfigurationRefSchema = z.strictObject({
@@ -1748,6 +1782,15 @@ export const leadTranscriptEntryResponseSchema = z.object({
   message: z.unknown(),
 });
 
+/** One compaction boundary of a session's transcript, with the facts its store kept of it where it kept them. */
+export const sessionTranscriptCompactionResponseSchema = z.object({
+  boundary: identitySchema,
+  at: instantSchema.optional(),
+  trigger: z.enum(runCompactionTriggers).optional(),
+  tokensBefore: countSchema.optional(),
+  tokensAfter: countSchema.optional(),
+});
+
 /**
  * The chain over the batches read, with `held` naming the entries of this page
  * the lead still holds, decided by the last compaction in the whole stream and
@@ -1772,14 +1815,58 @@ export const leadTranscriptResponseSchema = z.object({
   compaction: z
     .object({ boundary: identitySchema, at: instantSchema.optional() })
     .optional(),
+  /**
+   * Every cut among the entries sent, in the order they were appended, each
+   * with what the store says set it off and how many tokens the window held
+   * before and after it; absent where the page holds none.
+   */
+  compactions: z
+    .array(sessionTranscriptCompactionResponseSchema)
+    .min(1)
+    .max(sessionTranscriptEntriesMax)
+    .optional(),
   elided: countSchema,
-  /** Whether this page's own entries were cut at their bound. A walk that could
-   * not decide what is held says that by omitting `held`, not by this. */
+  /** Whether this page's own entries, or its cuts, were cut at their bound. A
+   * walk that could not decide what is held says that by omitting `held`, not
+   * by this. */
   truncated: z.boolean(),
   nextAfter: countSchema.optional(),
 });
 export type LeadTranscriptResponse = z.infer<
   typeof leadTranscriptResponseSchema
+>;
+
+/** One turn's readings of its session's context window, in the order the turn took them. */
+export const sessionContextTurnResponseSchema = z.object({
+  turn: identitySchema,
+  ordinal: countSchema,
+  readings: z
+    .array(sessionContextReadingSchema)
+    .min(1)
+    .max(sessionTurnContextReadingsMax),
+});
+
+/**
+ * One page of a session's context readings, by turn ascending and resumed by
+ * the last turn's ordinal. The first page alone carries what the session was
+ * opened under: the text it appends to the agent runtime's own system prompt,
+ * and the window at which its runtime compacts, each where it has one.
+ */
+export const sessionContextResponseSchema = z.object({
+  turns: z
+    .array(sessionContextTurnResponseSchema)
+    .max(sessionContextPageTurnsMax),
+  systemPrompt: z.string().min(1).max(agentSessionPromptCharsMax).optional(),
+  autoCompactWindow: z
+    .number()
+    .int()
+    .min(leadAutoCompactWindowTokensMin)
+    .max(leadAutoCompactWindowTokensMax)
+    .optional(),
+  nextAfter: countSchema.optional(),
+});
+export type SessionContextResponse = z.infer<
+  typeof sessionContextResponseSchema
 >;
 
 /** One dispatch of one decision, and where the delivery record left it. */

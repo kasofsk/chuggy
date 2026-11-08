@@ -20,6 +20,7 @@ import { workerPlaneRole } from "../../src/adapters/postgres/schema.ts";
 import { migrations } from "../../src/adapters/postgres/schema/migrations/index.ts";
 import { postgresSessionPlane } from "../../src/adapters/postgres/sessionPlane.ts";
 import { postgresWorkerReportStore } from "../../src/adapters/postgres/workerPlane.ts";
+import type { SessionContextOffered } from "../../src/contract/responses.ts";
 import {
   asSessionBearerSecret,
   asSessionTurnId,
@@ -377,10 +378,11 @@ function only(recorded: readonly RecordedQuery[]): RecordedQuery {
   return statement;
 }
 
-/** One answer over a pool that records rather than connects, its measurement optional. */
+/** One answer over a pool that records rather than connects, its measurement and its readings optional. */
 function recordedAnswer(
   recorded: RecordedQuery[],
   measurement?: typeof measured,
+  readings?: readonly SessionContextOffered[],
 ): Promise<unknown> {
   return postgresSessionPlane(recordingPool(recorded)).answer({
     secret: asSessionBearerSecret(`chgs_${"a".repeat(32)}`),
@@ -390,6 +392,7 @@ function recordedAnswer(
     batchFirst: 12,
     batchLast: 14,
     ...(measurement === undefined ? {} : { measured: measurement }),
+    ...(readings === undefined ? {} : { readings }),
   });
 }
 
@@ -407,6 +410,7 @@ test("a measured turn binds the five to the positions the contract declares", as
     measured.costMicros,
     measured.durationMs,
     measured.tools,
+    null,
   ]);
 });
 
@@ -423,5 +427,24 @@ test("a turn with nothing measured binds the five as absent together", async () 
     null,
     null,
     null,
+    null,
   ]);
+});
+
+test("a turn's readings bind as one array after the measurement, in the order the turn took them", async () => {
+  const recorded: RecordedQuery[] = [];
+  const readings: readonly SessionContextOffered[] = [
+    {
+      cause: "Compaction",
+      compaction: { trigger: "Auto", tokensBefore: 160_000 },
+    },
+    { cause: "End" },
+  ];
+
+  await recordedAnswer(recorded, undefined, readings);
+
+  const statement = only(recorded);
+  assert.match(statement.text, /::jsonb\)::text AS answered/u);
+  assert.equal(statement.values.length, 12);
+  assert.deepEqual(JSON.parse(String(statement.values[11])), readings);
 });

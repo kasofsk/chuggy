@@ -252,6 +252,13 @@ export type RunUsageWindow = (typeof runUsageWindows)[number];
 export const runContextCauses = ["Start", "Compaction", "End"] as const;
 export type RunContextCause = (typeof runContextCauses)[number];
 
+/** Why a session read its context window during one of its turns: as the turn compacted the window, or as the turn ended. */
+export const sessionContextCauses = [
+  "Compaction",
+  "End",
+] as const satisfies readonly RunContextCause[];
+export type SessionContextCause = (typeof sessionContextCauses)[number];
+
 /** What set a compaction off: the runtime nearing its window's threshold, or someone asking for one. */
 export const runCompactionTriggers = ["Auto", "Manual"] as const;
 export type RunCompactionTrigger = (typeof runCompactionTriggers)[number];

@@ -72,6 +72,7 @@ import type {
   RunContextPage,
   RunTurnsPage,
 } from "../../interpreter/runEvidence.ts";
+import type { SessionContextPageRead } from "../../interpreter/sessionContext.ts";
 import type {
   Accepted,
   Cancelled,
@@ -2483,6 +2484,15 @@ export function leadTranscriptResponse(
     case "Unavailable":
       return retry(503, result.retryAfterSeconds, "TranscriptUnavailable");
   }
+}
+
+/** A session nobody may read and a session holding no lead or thread answer alike, as its transcript does. */
+export function sessionContextResponse(
+  result: SessionContextPageRead,
+): NativeHttpResponse {
+  return result.read === "NotFound"
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, result.page);
 }
 
 export function agenticRefusalsResponse(

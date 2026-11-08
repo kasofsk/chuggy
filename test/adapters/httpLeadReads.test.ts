@@ -22,6 +22,7 @@ import {
   agenticRefusalsResponseSchema,
   leadResponseSchema,
   leadTranscriptResponseSchema,
+  sessionContextResponseSchema,
   selectorHistoryResponseSchema,
   ticketAgenticRefusalsResponseSchema,
 } from "../../src/contract/responses.ts";
@@ -43,6 +44,10 @@ import type {
   LeadRefused,
   LeadStanding,
 } from "../../src/interpreter/leadRead.ts";
+import type {
+  SessionContextRead,
+  SessionContextTurn,
+} from "../../src/interpreter/sessionContext.ts";
 import {
   resolvedSelectorSettings,
   type SelectorInteractionRecord,
@@ -131,6 +136,20 @@ const leadStanding: LeadStanding = {
       batchFirst: 12,
       batchLast: 14,
     },
+  ],
+};
+
+/** The readings the lead's first turn carried: one as it compacted, and one as it ended. */
+const leadReadings: SessionContextTurn = {
+  turn: asSessionTurnId("selector-decision-one"),
+  ordinal: 7,
+  readings: [
+    {
+      cause: "Compaction",
+      compaction: { trigger: "Auto", tokensBefore: 160_000 },
+      recordedAt: "2026-11-08T00:00:00.000000Z",
+    },
+    { cause: "End", recordedAt: "2026-11-08T00:00:01.000000Z" },
   ],
 };
 
@@ -278,6 +297,19 @@ function leadPortsStandingRefusal(
   };
 }
 
+/** The lead's own session holds one turn's readings, and was opened under an objective and a window. */
+const leadContext: SessionContextRead = {
+  turns: ({ session, after }) =>
+    Promise.resolve(
+      session === leadStanding.session && after === 0 ? [leadReadings] : [],
+    ),
+  opening: () =>
+    Promise.resolve({
+      systemPrompt: "the lead's objectives",
+      autoCompactWindow: 150_000,
+    }),
+};
+
 function leadPorts(shape: LeadCase): NativeLeadPorts {
   const draws = shape.draws ?? [];
   const history: SelectorHistoryStore = {
@@ -312,6 +344,7 @@ function leadPorts(shape: LeadCase): NativeLeadPorts {
       readBatch: (object) =>
         Promise.resolve(draws[object.batch - 1] ?? { read: "NotFound" }),
     },
+    context: leadContext,
     refusals: {
       standing: (_partition, limit) =>
         Promise.resolve(
@@ -479,19 +512,17 @@ test("a project with no lead answers that it has none, and one nobody may read a
     lead: "None",
     absence: { reason: "NotNeeded" },
   });
-  assert.equal(
-    (
-      await absent.inject({
-        url: `${root}/lead/transcript`,
-        headers: authorized,
-      })
-    ).statusCode,
-    404,
-  );
+  for (const path of [`${root}/lead/transcript`, `${root}/lead/context`])
+    assert.equal(
+      (await absent.inject({ url: path, headers: authorized })).statusCode,
+      404,
+      path,
+    );
   await using refused = appOf({ allowed: false });
   for (const path of [
     `${root}/lead`,
     `${root}/lead/transcript`,
+    `${root}/lead/context`,
     `${root}/agentic-refusals`,
     `${root}/tickets/42/agentic-refusals`,
     `${root}/selector-history`,
@@ -736,6 +767,26 @@ function twiceCompactedBatches(): readonly SessionStoreRead[] {
     said("b2-summary", "b2"),
   ];
 }
+
+test("the lead's context answers its readings by turn, and what it was opened under on the first page alone", async () => {
+  await using app = appOf();
+  const first = await app.inject({
+    url: `${root}/lead/context`,
+    headers: authorized,
+  });
+  assert.equal(first.statusCode, 200);
+  assert.deepEqual(sessionContextResponseSchema.parse(first.json()), {
+    systemPrompt: "the lead's objectives",
+    autoCompactWindow: 150_000,
+    turns: [leadReadings],
+  });
+  const later = await app.inject({
+    url: `${root}/lead/context?after=7&limit=1`,
+    headers: authorized,
+  });
+  assert.equal(later.statusCode, 200);
+  assert.deepEqual(later.json(), { turns: [] });
+});
 
 test("held is the stream's last cut, whichever page is asked for", async () => {
   await using app = appOf({ draws: twiceCompactedBatches() });
@@ -1132,6 +1183,8 @@ test("a page bound the wire does not admit is refused, never clamped", async () 
   });
   for (const path of [
     `${root}/lead/transcript?limit=99`,
+    `${root}/lead/context?limit=99`,
+    `${root}/lead/context?after=-1`,
     `${root}/agentic-refusals?limit=99`,
     `${root}/selector-history?limit=999`,
   ]) {

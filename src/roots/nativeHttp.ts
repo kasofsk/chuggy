@@ -78,6 +78,7 @@ import {
   postgresThreads,
 } from "../adapters/postgres/thread.ts";
 import { postgresSessionStoreRows } from "../adapters/postgres/sessionStoreReads.ts";
+import { postgresSessionContext } from "../adapters/postgres/sessionContext.ts";
 import {
   projectArtifactUploadBytesMax,
   sessionStoreStreamsAnswered,
@@ -1448,6 +1449,7 @@ export function nativeLeadPorts(
   return {
     leads,
     store: artifacts,
+    context: postgresSessionContext(pools.pool),
     refusals: postgresAgenticRefusalReads(pools.pool),
     history: leads,
     settings: postgresSelectorResolvedSettings(pools.pool),
@@ -1458,8 +1460,9 @@ export function nativeLeadPorts(
 
 /**
  * The four ports one project's threads are reached through, beside the store
- * the lead's transcript is already read from. The rows read is the session-keyed
- * one, so a thread's transcript and the lead's are one walk over one function.
+ * the lead's transcript is already read from. The rows read and the context
+ * read are the session-keyed ones, so a thread's transcript and the lead's are
+ * one walk over one function, and their readings one read.
  */
 export function nativeThreadPorts(
   pools: NativePools,
@@ -1473,6 +1476,7 @@ export function nativeThreadPorts(
     seeding: postgresThreadSeeding(pools.pool),
     rows: postgresSessionStoreRows(pools.pool),
     store: artifacts,
+    context: postgresSessionContext(pools.pool),
     credentialSlot: requiredEnvironment(threadCredentialSlotVariable),
   };
 }

@@ -4,6 +4,7 @@ import {
   workerContractRelease,
   workerContractRunContext,
   workerContractRunUsage,
+  workerContractSessionContext,
   workerContractTargetRef,
   workerContractUnnamed,
   workerContractVersionOf,
@@ -105,6 +106,12 @@ export const workerContractRunUsages: WorkerContractRange = {
 /** The versions in which a run may offer its context readings and a turn the subagent call it was made under, a route and a field a plane of an earlier one does not take. */
 export const workerContractRunContexts: WorkerContractRange = {
   min: workerContractRunContext,
+  max: workerContractAccepted.max,
+};
+
+/** The versions in which a turn's answer may carry the readings of its session's context window, a field a plane of an earlier one refuses the whole answer over. */
+export const workerContractSessionContexts: WorkerContractRange = {
+  min: workerContractSessionContext,
   max: workerContractAccepted.max,
 };
 

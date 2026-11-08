@@ -34,6 +34,7 @@
  * the same bytes.
  */
 
+import type { RunCompactionTrigger } from "../contract/rosters.ts";
 import type { JsonValue } from "./selector.ts";
 
 /** One entry of the raw store, parsed no further than a reader draws it. */
@@ -61,6 +62,15 @@ export interface SessionTranscriptCompaction {
    * did not.
    */
   readonly anchor?: string;
+}
+
+/** One compaction boundary, and what the store kept of what set it off and how much the window held around it. */
+export interface SessionTranscriptBoundary {
+  readonly boundary: string;
+  readonly at?: string;
+  readonly trigger?: RunCompactionTrigger;
+  readonly tokensBefore?: number;
+  readonly tokensAfter?: number;
 }
 
 /** The entry types a reader is shown; every other type is the runtime's bookkeeping. */
@@ -251,4 +261,64 @@ export function sessionTranscriptHeld(
       (entry.uuid !== undefined && preserved.has(entry.uuid)) ||
       (appendedAt.get(entry) ?? -1) > cut,
   );
+}
+
+/** How the store spells what set a compaction off, and the trigger each spelling is. */
+const compactionTriggers: Readonly<Record<string, RunCompactionTrigger>> = {
+  auto: "Auto",
+  manual: "Manual",
+};
+
+function metadataCount(
+  metadata: JsonValue | undefined,
+  field: string,
+): number | undefined {
+  if (typeof metadata !== "object" || metadata === null) return undefined;
+  const value = (metadata as Record<string, JsonValue>)[field];
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
+    ? value
+    : undefined;
+}
+
+function metadataTrigger(
+  metadata: JsonValue | undefined,
+): RunCompactionTrigger | undefined {
+  if (typeof metadata !== "object" || metadata === null) return undefined;
+  const value = (metadata as Record<string, JsonValue>)["trigger"];
+  return typeof value === "string" && Object.hasOwn(compactionTriggers, value)
+    ? compactionTriggers[value]
+    : undefined;
+}
+
+/**
+ * Every compaction boundary among `entries`, in the order they were appended,
+ * each with the trigger and the token counts its metadata names. A boundary
+ * the store wrote without a uuid is one no reader could name, and is skipped;
+ * a fact the metadata does not hold, or holds in a shape the runtime does not
+ * write, is absent.
+ */
+export function sessionTranscriptBoundaries(
+  entries: readonly SessionStoreEntry[],
+): readonly SessionTranscriptBoundary[] {
+  return entries.flatMap((entry) => {
+    if (
+      entry.type !== "system" ||
+      entry.subtype !== compactionSubtype ||
+      entry.uuid === undefined
+    )
+      return [];
+    const metadata = entry.compactMetadata;
+    const trigger = metadataTrigger(metadata);
+    const tokensBefore = metadataCount(metadata, "preTokens");
+    const tokensAfter = metadataCount(metadata, "postTokens");
+    return [
+      {
+        boundary: entry.uuid,
+        ...(entry.timestamp === undefined ? {} : { at: entry.timestamp }),
+        ...(trigger === undefined ? {} : { trigger }),
+        ...(tokensBefore === undefined ? {} : { tokensBefore }),
+        ...(tokensAfter === undefined ? {} : { tokensAfter }),
+      },
+    ];
+  });
 }

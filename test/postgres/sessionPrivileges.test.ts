@@ -74,6 +74,8 @@ import {
   sessionStreamListFunction,
   sessionSystemPromptSetFunction,
   sessionTaskReadFunction,
+  sessionContextReadFunction,
+  sessionOpeningReadFunction,
   sessionTurnAnswerFunction,
   sessionTurnClaimFunction,
   sessionTurnEnqueueFunction,
@@ -156,6 +158,8 @@ const boundaries: readonly (readonly [string, string | undefined])[] = [
   [threadStandingReadFunction, apiRole],
   [sessionStoreBatchesReadFunction, apiRole],
   [sessionStoreStreamListFunction, apiRole],
+  [sessionContextReadFunction, apiRole],
+  [sessionOpeningReadFunction, apiRole],
   [threadWakeFunction, selectorServiceRole],
   [threadWakeCandidatesFunction, selectorServiceRole],
   [threadWakeCursorAdvanceFunction, selectorServiceRole],
@@ -200,6 +204,7 @@ const relations = [
   "session_attempt",
   "session_turn",
   "session_store_batch",
+  "session_turn_context",
 ] as const;
 
 /** The one identity of a boundary function, read from the catalogue rather than retyped. */

@@ -48,6 +48,7 @@ function chatOf(calls: string[], chat: Partial<MemberChat>): MemberChat {
     threads: unasked("threads"),
     thread: unasked("thread"),
     threadTranscript: unasked("threadTranscript"),
+    threadContext: unasked("threadContext"),
     openThread: unasked("openThread"),
     sendThreadMessage: unasked("sendThreadMessage"),
     stopThreadTurn: unasked("stopThreadTurn"),

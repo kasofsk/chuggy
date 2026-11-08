@@ -32,6 +32,7 @@ export const unservedThreads: Pick<
   | "threads"
   | "thread"
   | "threadTranscript"
+  | "threadContext"
   | "openThread"
   | "sendThreadMessage"
   | "replyThreadOffer"
@@ -43,6 +44,7 @@ export const unservedThreads: Pick<
   threads: unserved("threads"),
   thread: unserved("thread"),
   threadTranscript: unserved("thread transcript"),
+  threadContext: unserved("thread context"),
   openThread: unserved("open thread"),
   sendThreadMessage: unserved("thread message"),
   replyThreadOffer: unserved("thread offer reply"),
