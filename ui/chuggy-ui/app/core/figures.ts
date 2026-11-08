@@ -36,6 +36,7 @@
 
 import type { RunTotals } from "../../../../src/contract/responses.ts";
 import type { RunRollupBasis, RunTime } from "./runTotals.ts";
+import type { Copy } from "./copy.ts";
 
 export const figureKinds = [
   "Cost",
@@ -49,23 +50,23 @@ export const figureKinds = [
 ] as const;
 
 export type Figure =
-  | { readonly kind: "Cost"; readonly text: string; readonly basis?: string }
-  | { readonly kind: "Tokens"; readonly text: string }
+  | { readonly kind: "Cost"; readonly text: string; readonly basis?: Copy }
+  | { readonly kind: "Tokens"; readonly text: string; readonly unit?: Copy }
   | { readonly kind: "Duration"; readonly text: string }
   | {
       readonly kind: "Quantity";
       readonly text: string;
-      readonly unit: string;
+      readonly unit: Copy;
     }
   | { readonly kind: "Instant"; readonly text: string; readonly iso: string }
-  | { readonly kind: "Ago"; readonly text: string; readonly full: string }
+  | { readonly kind: "Ago"; readonly text: Copy; readonly full: string }
   | {
       readonly kind: "Span";
       readonly parts: readonly string[];
       readonly open: boolean;
       readonly title: string;
     }
-  | { readonly kind: "Absent"; readonly why: string };
+  | { readonly kind: "Absent"; readonly why: Copy };
 
 /** What one row or one rollup spent, as the two cells a ledger draws for it. */
 export interface Spend {
@@ -93,28 +94,18 @@ const million = 1_000_000;
 /** Above this a scaled figure is whole; below it one decimal tells two apart. */
 const scaledDecimalBelow = 10;
 
-const monthNames = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-] as const;
+/** A month as a date within the year names it, in the language the console
+ * is written in rather than the reader's locale, for the reason
+ * `groupedDigits` gives. */
+const monthFormat = new Intl.DateTimeFormat("en", { month: "short" });
 
 /** The basis in the reader's own case, total over the roster and the rollup's own arm. */
-function costBasisTag(basis: RunRollupBasis): string {
+function costBasisTag(basis: RunRollupBasis): Copy {
   switch (basis) {
     case "List":
-      return "list";
+      return { id: "figures-basis-list" };
     case "Mixed":
-      return "mixed";
+      return { id: "figures-basis-mixed" };
   }
 }
 
@@ -195,7 +186,11 @@ export function tokenCountFigure(count: number): Figure {
 
 /** One count carrying its unit, for a line with no column head to say it. */
 export function tokenCountUnitFigure(count: number): Figure {
-  return { kind: "Tokens", text: `${tokenCountText(count)} tok` };
+  return {
+    kind: "Tokens",
+    text: tokenCountText(count),
+    unit: { id: "figures-tokens" },
+  };
 }
 
 /** Every kind of token counted together. */
@@ -273,7 +268,7 @@ export function groupedDigits(count: number): string {
 }
 
 /** A count in the unit its own row is read in, whole. */
-export function countFigure(count: number, unit: string): Figure {
+export function countFigure(count: number, unit: Copy): Figure {
   return { kind: "Quantity", text: groupedDigits(count), unit };
 }
 
@@ -288,7 +283,7 @@ const shareDigits = 12;
  * percent never reads as reaching it. */
 export function shareFigure(share: number): Figure {
   const percent = Number((share * percentPerWhole).toPrecision(shareDigits));
-  return countFigure(Math.floor(percent), "%");
+  return countFigure(Math.floor(percent), { id: "figures-unit-percent" });
 }
 
 const msPerMinute = msPerSecond * secondsPerMinute;
@@ -298,21 +293,29 @@ const msPerHour = msPerMinute * minutesPerHour;
 /** A span somebody set, in the largest whole unit that states it exactly. */
 export function spanSetFigure(durationMs: number): Figure {
   if (durationMs >= msPerHour && durationMs % msPerHour === 0)
-    return countFigure(durationMs / msPerHour, "h");
+    return countFigure(durationMs / msPerHour, { id: "figures-unit-hours" });
   if (durationMs >= msPerMinute && durationMs % msPerMinute === 0)
-    return countFigure(durationMs / msPerMinute, "min");
+    return countFigure(durationMs / msPerMinute, {
+      id: "figures-unit-minutes",
+    });
   if (durationMs >= msPerSecond && durationMs % msPerSecond === 0)
-    return countFigure(durationMs / msPerSecond, "s");
-  return countFigure(durationMs, "ms");
+    return countFigure(durationMs / msPerSecond, {
+      id: "figures-unit-seconds",
+    });
+  return countFigure(durationMs, { id: "figures-unit-milliseconds" });
 }
 
 /** A size somebody set, in the largest whole unit that states it exactly. */
 export function bytesSetFigure(bytes: number): Figure {
   if (bytes >= bytesPerMebibyte && bytes % bytesPerMebibyte === 0)
-    return countFigure(bytes / bytesPerMebibyte, "MiB");
+    return countFigure(bytes / bytesPerMebibyte, {
+      id: "figures-unit-mebibytes",
+    });
   if (bytes >= bytesPerKibibyte && bytes % bytesPerKibibyte === 0)
-    return countFigure(bytes / bytesPerKibibyte, "KiB");
-  return countFigure(bytes, "bytes");
+    return countFigure(bytes / bytesPerKibibyte, {
+      id: "figures-unit-kibibytes",
+    });
+  return countFigure(bytes, { id: "figures-unit-bytes" });
 }
 
 function clockOf(at: Date): string {
@@ -338,7 +341,7 @@ export function instantText(at: Date, now: Date): string {
     at.getDate() === now.getDate()
   )
     return clock;
-  const month = monthNames[at.getMonth()] ?? "";
+  const month = monthFormat.format(at);
   if (at.getFullYear() === now.getFullYear())
     return `${month} ${String(at.getDate())} ${clock}`;
   return instantFullText(at);
@@ -348,7 +351,7 @@ export function instantText(at: Date, now: Date): string {
 export function instantFigureAtMs(atMs: number, nowMs: number): Figure {
   const at = new Date(atMs);
   if (!Number.isFinite(at.getTime()))
-    return { kind: "Absent", why: "No instant" };
+    return { kind: "Absent", why: { id: "figures-absent-instant" } };
   return {
     kind: "Instant",
     text: instantText(at, new Date(nowMs)),
@@ -385,10 +388,11 @@ export function agoText(nowMs: number, sinceMs: number): string {
  * string; where it can, the hover always carries the full date and clock. */
 export function agoFigure(stated: string, nowMs: number): Figure {
   const at = Date.parse(stated);
-  if (!Number.isFinite(at)) return { kind: "Absent", why: "No instant" };
+  if (!Number.isFinite(at))
+    return { kind: "Absent", why: { id: "figures-absent-instant" } };
   return {
     kind: "Ago",
-    text: `${agoText(nowMs, at)} ago`,
+    text: { id: "figures-ago", args: { elapsed: agoText(nowMs, at) } },
     full: instantFullText(new Date(at)),
   };
 }
@@ -408,10 +412,12 @@ function parsedMs(stated: string | undefined): number | undefined {
 function sinceText(
   nowMs: number,
   atMs: number,
-  happened: string | undefined,
-): string {
-  const ago = `${durationText(nowMs - atMs)} ago`;
-  return happened === undefined ? ago : `${happened} ${ago}`;
+  happened: Copy | undefined,
+): Copy {
+  const elapsed = durationText(nowMs - atMs);
+  return happened === undefined
+    ? { id: "figures-ago", args: { elapsed } }
+    : { id: "figures-since", args: { happened, elapsed } };
 }
 
 /** How long ago in two units, the ticket page's reading of an instant, with
@@ -419,10 +425,11 @@ function sinceText(
 export function sinceFigure(
   stated: string,
   nowMs: number,
-  happened?: string,
+  happened?: Copy,
 ): Figure {
   const atMs = parsedMs(stated);
-  if (atMs === undefined) return { kind: "Absent", why: "No instant" };
+  if (atMs === undefined)
+    return { kind: "Absent", why: { id: "figures-absent-instant" } };
   return {
     kind: "Ago",
     text: sinceText(nowMs, atMs, happened),
@@ -457,7 +464,7 @@ export function runTimeLineOf(time: RunTime): RunTimeLine {
 }
 
 /** The one absence a set of runs has: it is running, and nothing is counted yet. */
-export function spendAbsent(why: string): Spend {
+export function spendAbsent(why: Copy): Spend {
   return { cost: { kind: "Absent", why }, tokens: { kind: "Absent", why } };
 }
 
@@ -467,7 +474,7 @@ export function spendFigures(
   basis: RunRollupBasis | undefined,
 ): Spend {
   if (totals === undefined || basis === undefined)
-    return spendAbsent("No run figures yet");
+    return spendAbsent({ id: "figures-absent-run" });
   return {
     cost: costFigure(totals.costUsdMicros, basis),
     tokens: tokensFigure(totals),

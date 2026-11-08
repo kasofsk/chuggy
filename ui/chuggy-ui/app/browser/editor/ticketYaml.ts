@@ -116,6 +116,7 @@ import {
   ticketYamlWorkloadKeys,
   ticketYamlWorkloadUnset,
 } from "./ticketYamlWorkloads.ts";
+import type { CopyText } from "../../core/copy.ts";
 
 /** What a document is read and written against: the project's offer, and the
  * form a key left out keeps its value from. */
@@ -1248,6 +1249,7 @@ function ticketYamlDescribed(
 /** The fields a finalization is written with, each with the values it takes. */
 function ticketYamlFinalizationKeys(
   form: TicketCreationForm,
+  text: CopyText,
 ): readonly TicketYamlKey[] {
   const described: Readonly<
     Record<TicketYamlFinalizationField, TicketYamlDescribed>
@@ -1256,14 +1258,14 @@ function ticketYamlFinalizationKeys(
       hint: "how the finished work lands: merged, proposed, or not at all",
       values: briefFinalizationKinds.map((kind) => ({
         label: kind,
-        detail: finalizationKindEffect(kind),
+        detail: text(finalizationKindEffect(kind)),
       })),
     },
     mode: {
       hint: "how a GitMerge advances its target, which only a GitMerge names",
       values: briefGitMergeModes.map((mode) => ({
         label: mode,
-        detail: gitMergeModeEffect(mode),
+        detail: text(gitMergeModeEffect(mode)),
       })),
     },
     target: { hint: creationTargetBranchHint(form.finalization), values: [] },
@@ -1271,7 +1273,7 @@ function ticketYamlFinalizationKeys(
       hint: "how a GitMerge is ordered against the others on its target, which only a GitMerge names",
       values: briefGitMergePolicies.map((policy) => ({
         label: policy,
-        detail: gitMergePolicyEffect(policy),
+        detail: text(gitMergePolicyEffect(policy)),
       })),
     },
   };
@@ -1303,6 +1305,7 @@ function ticketYamlNestedKeys(
 export function ticketYamlVocabulary(
   form: TicketCreationForm,
   context: TicketYamlContext,
+  text: CopyText,
 ): readonly TicketYamlKey[] {
   const drawn = ticketYamlDrawn(context, form);
   const described = ticketYamlDescribed(context, drawn);
@@ -1312,7 +1315,7 @@ export function ticketYamlVocabulary(
       key,
       ...(described[key] ?? { hint: "", values: [] }),
     })),
-    ...ticketYamlFinalizationKeys(form),
+    ...ticketYamlFinalizationKeys(form, text),
     ...ticketYamlNestedKeys(drawn),
     ...ticketYamlSelectionKeys(catalog),
     ...(catalog === undefined

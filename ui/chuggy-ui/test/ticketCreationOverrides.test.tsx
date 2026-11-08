@@ -8,13 +8,8 @@
  * its model as an argument and one naming none.
  */
 
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ComponentProps } from "react";
 
@@ -101,7 +96,7 @@ function draw(
   extra: Partial<ComponentProps<typeof CreationForm>> = {},
   offers: readonly CreationOffer[] = [basic, sonnet],
 ): void {
-  render(creationFormDrawn(ports, offers, extra));
+  renderCopied(creationFormDrawn(ports, offers, extra));
 }
 
 function model(): HTMLInputElement {

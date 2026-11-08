@@ -35,6 +35,7 @@ import {
   creationPullRequest,
   creationYamlKeptUnasked,
 } from "./ticketCreationFixture.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 
 const context: TicketYamlContext = {
   base: creationForm({ intent: "" }),
@@ -266,7 +267,7 @@ test("a fault is drawn at the key it names, and the fence at the start", () => {
 });
 
 test("the vocabulary offers what this project's form draws", () => {
-  const keys = ticketYamlVocabulary(context.base, context);
+  const keys = ticketYamlVocabulary(context.base, context, copyTextEn);
   const named = keys.map((key) => key.key);
   expect(named).not.toContain("checks");
   expect(named).not.toContain("repository");
@@ -487,7 +488,7 @@ test("the keys a configuration decides are read under the one the text names", (
 });
 
 test("the vocabulary offers the configurations by name, and a program only under one", () => {
-  const unchosen = ticketYamlVocabulary(several.base, several);
+  const unchosen = ticketYamlVocabulary(several.base, several, copyTextEn);
   expect(unchosen.map((key) => key.key)).toStrictEqual([
     "configuration",
     "title",
@@ -513,6 +514,7 @@ test("the vocabulary offers the configurations by name, and a program only under
       [],
     ),
     several,
+    copyTextEn,
   ).map((key) => key.key);
   expect(chosen).toContain("checks");
   expect(chosen).toContain("program");
@@ -685,9 +687,11 @@ test("a workload a form overrides is written whole under workloads and reads bac
 });
 
 test("the vocabulary offers a workload's Codex effort as the efforts Codex names", () => {
-  const effort = ticketYamlVocabulary(catalogContext.base, catalogContext).find(
-    (key) => key.key === "effort",
-  );
+  const effort = ticketYamlVocabulary(
+    catalogContext.base,
+    catalogContext,
+    copyTextEn,
+  ).find((key) => key.key === "effort");
   expect(effort?.place).toBe("Workload");
   expect(effort?.values.map((value) => value.label)).toStrictEqual([
     ...codexReasoningEfforts,

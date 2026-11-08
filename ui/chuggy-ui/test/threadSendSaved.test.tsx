@@ -23,6 +23,7 @@ import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
 import { creationDraft } from "./ticketCreationFixture.ts";
 import { threadPartition } from "./threadFixture.ts";
 import { threadSendWrapped } from "./threadSendWrapped.tsx";
+import { CopyProvider } from "../app/copy/CopyProvider.tsx";
 
 afterEach(() => {
   cleanup();
@@ -81,12 +82,14 @@ function FormBeside(): null {
 function besideAForm(): (props: { readonly children: ReactNode }) => ReactNode {
   const Wrapped = threadSendWrapped();
   return (props) => (
-    <Wrapped>
-      <DraftSaveHeld>
-        <FormBeside />
-        {props.children}
-      </DraftSaveHeld>
-    </Wrapped>
+    <CopyProvider>
+      <Wrapped>
+        <DraftSaveHeld>
+          <FormBeside />
+          {props.children}
+        </DraftSaveHeld>
+      </Wrapped>
+    </CopyProvider>
   );
 }
 

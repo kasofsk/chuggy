@@ -39,6 +39,7 @@ import {
 import { answeringApi } from "./answeringApi.ts";
 import type { Answer, Sent } from "./answeringApi.ts";
 import { ticketInstants } from "./ticketInstants.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 
 const partitionBase = `${nativeHttpBasePath}/tenants/acme/projects/atlas`;
 
@@ -542,6 +543,7 @@ test("a fence the API refuses returns the reader to the form, unreleased", async
     creationPartition,
     releaseSubmission,
     () => undefined,
+    copyTextEn,
   );
   expect(created.created).toBe("Stale");
   expect(held.calls).toStrictEqual([`POST ${partitionBase}/drafts`]);
@@ -572,6 +574,7 @@ test("an epic that cannot take the ticket is a refusal naming the epic, not a fe
       creationPartition,
       intoEpic,
       () => undefined,
+      copyTextEn,
     );
     expect(created).toStrictEqual({
       created: "Refused",
@@ -589,6 +592,7 @@ test("an epic that cannot take the ticket is a refusal naming the epic, not a fe
     creationPartition,
     intoEpic,
     () => undefined,
+    copyTextEn,
   );
   expect(unbound.created).toBe("Refused");
   expect(unbound.created === "Refused" ? unbound.reason : "").not.toContain(
@@ -605,6 +609,7 @@ test("an epic that cannot take the ticket is a refusal naming the epic, not a fe
         creationPartition,
         intoEpic,
         () => undefined,
+        copyTextEn,
       )
     ).created,
   ).toBe("Stale");
@@ -620,6 +625,7 @@ test("a project that is not active is a refusal, not a fence to submit again ove
     creationPartition,
     releaseSubmission,
     () => undefined,
+    copyTextEn,
   );
   expect(created).toMatchObject({
     created: "Refused",
@@ -652,6 +658,7 @@ test("a release that settles as succeeded is the one ticket to navigate to", asy
     creationPartition,
     releaseSubmission,
     () => undefined,
+    copyTextEn,
   );
   expect(created).toStrictEqual({ created: "Created", ticket: 12 });
 });
@@ -678,6 +685,7 @@ test("a release onto a revoked ticket says so, and what to depend on instead", a
     creationPartition,
     releaseSubmission,
     () => undefined,
+    copyTextEn,
   );
   expect(created.created === "Refused" && created.reason).toContain(
     "#12 depends on revoked #7 · Pick open ones",
@@ -702,6 +710,7 @@ test("a follow that never settles ends in a reason, not in a navigation", async 
     creationPartition,
     releaseSubmission,
     (step) => steps.push(step.step),
+    copyTextEn,
   );
   expect(created.created).toBe("Refused");
   expect(steps.at(-1)).toBe("Abandoned");
@@ -767,6 +776,7 @@ test("an edit revises the draft, then releases it against the revision read", as
     creationPartition,
     updateSubmission,
     () => undefined,
+    copyTextEn,
   );
   expect(updated).toStrictEqual({ created: "Created", ticket: 12 });
   expect(held.calls.slice(0, 2)).toStrictEqual([
@@ -803,6 +813,7 @@ test("a revision the door refuses is refused, and nothing is released", async ()
     creationPartition,
     updateSubmission,
     () => undefined,
+    copyTextEn,
   );
   expect(updated).toStrictEqual({
     created: "Refused",
@@ -822,6 +833,7 @@ test("a draft revised under the form is the stale ending, not a refusal", async 
     creationPartition,
     updateSubmission,
     () => undefined,
+    copyTextEn,
   );
   expect(updated.created).toBe("Stale");
 });
@@ -839,6 +851,7 @@ test("an update nobody saw settle says so, holding the revised draft", async () 
     creationPartition,
     updateSubmission,
     () => undefined,
+    copyTextEn,
   );
   expect(updated).toStrictEqual({
     created: "Refused",
@@ -859,6 +872,7 @@ test("an update whose release the API faults keeps its code on hover and in no l
     creationPartition,
     updateSubmission,
     () => undefined,
+    copyTextEn,
   );
   if (updated.created !== "Refused") throw new Error(updated.created);
   expect(updated.reason).toBe("Server error");
@@ -887,6 +901,7 @@ test("an update onto a ticket that waits on this one says it would never start",
     creationPartition,
     updateSubmission,
     () => undefined,
+    copyTextEn,
   );
   expect(updated).toStrictEqual({
     created: "Refused",
@@ -915,6 +930,7 @@ test("an update the machine refuses says which refusal, holding the revised draf
     creationPartition,
     updateSubmission,
     () => undefined,
+    copyTextEn,
   );
   expect(updated).toStrictEqual({
     created: "Refused",

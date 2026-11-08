@@ -22,6 +22,7 @@ import {
   operationStateSentence,
 } from "../app/core/codeSentences.ts";
 import { failureWords } from "../app/core/failureWords.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 
 /** A line is distinct and quotes no member of its own roster. */
 function sentences(said: readonly string[], roster: readonly string[]): void {
@@ -31,59 +32,83 @@ function sentences(said: readonly string[], roster: readonly string[]): void {
 }
 
 test("every escalation kind reads as a distinct sentence and not as its code", () => {
-  sentences(escalationKinds.map(escalationKindSentence), escalationKinds);
+  sentences(
+    escalationKinds.map((each) => copyTextEn(escalationKindSentence(each))),
+    escalationKinds,
+  );
 });
 
 /** A state's name is a plain word, which its sentence may be. */
 test("every operation state reads as a distinct sentence", () => {
-  sentences(operationStates.map(operationStateSentence), []);
+  sentences(
+    operationStates.map((each) => copyTextEn(operationStateSentence(each))),
+    [],
+  );
 });
 
 test("every boundary refusal reads as a distinct sentence and not as its code", () => {
-  sentences(mutationRefusalCodes.map(mutationRefusalSentence), [
-    ...mutationRefusalCodes,
-  ]);
+  sentences(
+    mutationRefusalCodes.map((each) =>
+      copyTextEn(mutationRefusalSentence(each)),
+    ),
+    [...mutationRefusalCodes],
+  );
 });
 
 test("every deferral reads as a distinct sentence and not as its code", () => {
-  sentences(mutationDeferralCodes.map(mutationDeferralSentence), [
-    ...mutationDeferralCodes,
-  ]);
+  sentences(
+    mutationDeferralCodes.map((each) =>
+      copyTextEn(mutationDeferralSentence(each)),
+    ),
+    [...mutationDeferralCodes],
+  );
 });
 
 test("a refused cancellation reads as a sentence, not as its code", () => {
-  const said = operationFailureSentence({
-    outcome: "Conflict",
-    code: "OperationNotPending",
-    body: undefined,
-  });
-  expect(said).toBe(mutationRefusalSentence("OperationNotPending"));
+  const said = copyTextEn(
+    operationFailureSentence({
+      outcome: "Conflict",
+      code: "OperationNotPending",
+      body: undefined,
+    }),
+  );
+  expect(said).toBe(copyTextEn(mutationRefusalSentence("OperationNotPending")));
   expect(said).not.toContain("OperationNotPending");
 });
 
 test("every refusal the two mutation routes answer with reaches a sentence", () => {
   for (const code of mutationRefusalCodes)
     expect(
-      operationFailureSentence({ outcome: "Conflict", code, body: undefined }),
+      copyTextEn(
+        operationFailureSentence({
+          outcome: "Conflict",
+          code,
+          body: undefined,
+        }),
+      ),
     ).not.toContain(code);
   for (const code of mutationDeferralCodes)
     expect(
-      operationFailureSentence({
-        outcome: "Retryable",
-        code,
-        retryAfterSeconds: 1,
-      }),
+      copyTextEn(
+        operationFailureSentence({
+          outcome: "Retryable",
+          code,
+          retryAfterSeconds: 1,
+        }),
+      ),
     ).not.toContain(code);
 });
 
 /** The actor's refusals arrive on a settled operation, so a failure carrying
  * one of their codes is not read as the refusal it would have been. */
 test("a failure carrying an actor's refusal code is named as unrecognised", () => {
-  const said = operationFailureSentence({
-    outcome: "Conflict",
-    code: "TicketChanged",
-    body: undefined,
-  });
+  const said = copyTextEn(
+    operationFailureSentence({
+      outcome: "Conflict",
+      code: "TicketChanged",
+      body: undefined,
+    }),
+  );
   expect(said).toContain("Unknown reason");
   expect(said).toContain("TicketChanged");
 });
@@ -100,7 +125,7 @@ test("a failure the wire has no refusal for is its word, and carries no thrown t
       "Unreadable",
     ],
   ] as const) {
-    expect(operationFailureSentence(failure)).toBe(word);
+    expect(copyTextEn(operationFailureSentence(failure))).toBe(word);
     expect(failureWords(failure)).toStrictEqual({
       word,
       detail: failure.reason,
@@ -111,7 +136,7 @@ test("a failure the wire has no refusal for is its word, and carries no thrown t
 /** The two fallbacks carry the same sentinel, which is what lets
  * `test/ui/mutationSentences.test.ts` tell a rostered answer from a fallback. */
 test("a deferral belonging to no roster is named as one this console does not know", () => {
-  const said = mutationDeferralSentence("SubmissionQuotaExhausted");
+  const said = copyTextEn(mutationDeferralSentence("SubmissionQuotaExhausted"));
   expect(said).toContain("Unknown reason");
   expect(said).toContain("SubmissionQuotaExhausted");
 });
@@ -119,12 +144,14 @@ test("a deferral belonging to no roster is named as one this console does not kn
 /** An unrostered code is named as unrecognised rather than offered as the
  * reason, which is the one place a code may still reach a reader. */
 test("a code belonging to no roster is named as one this console does not know", () => {
-  const said = operationFailureSentence({
-    outcome: "Rejected",
-    code: "InvalidRequest",
-    status: 400,
-    body: undefined,
-  });
+  const said = copyTextEn(
+    operationFailureSentence({
+      outcome: "Rejected",
+      code: "InvalidRequest",
+      status: 400,
+      body: undefined,
+    }),
+  );
   expect(said).toContain("Unknown reason");
   expect(said).toContain("InvalidRequest");
 });

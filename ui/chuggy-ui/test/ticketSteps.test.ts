@@ -20,6 +20,7 @@ import {
   workIdentity,
 } from "./ticketLedgerFixture.ts";
 import type { ExecutionShape } from "./ticketLedgerFixture.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 
 const program = [
   { key: 1, evaluators: [{ key: 1 }] },
@@ -47,7 +48,7 @@ const plan: TicketPlan = {
   ],
   names: ["checks", "review"],
   lands: true,
-  landing: "Pull request, then merge",
+  landing: { id: "codes-merge-mode-pull-request" },
 };
 
 function stepsOf(
@@ -65,13 +66,16 @@ function stepsOf(
       ...(landings.get(landing.cycle) ?? []),
       landing,
     ]);
-  return ticketStepsOf({
-    ledger,
-    plan: over.plan ?? plan,
-    landings,
-    settled: over.settled ?? false,
-    nowMs: Date.parse("2026-08-26T12:00:00Z"),
-  });
+  return ticketStepsOf(
+    {
+      ledger,
+      plan: over.plan ?? plan,
+      landings,
+      settled: over.settled ?? false,
+      nowMs: Date.parse("2026-08-26T12:00:00Z"),
+    },
+    copyTextEn,
+  );
 }
 
 /** Each column as its phase, its edge, and each box's name, mark and line. */
@@ -231,7 +235,7 @@ test("a landing that failed draws its failure and parks its column; one that mer
     shape.task === 3 ? { ...shape, outcome: "Passed" as const } : shape,
   );
   const failed = stepsOf(passed, {
-    landings: [ticketLandingOf(landingConflicted(1))],
+    landings: [ticketLandingOf(landingConflicted(1), copyTextEn)],
   });
   expect(failed.columns[2]?.edge).toBe("parked");
   expect(failed.columns[2]?.boxes[0]).toMatchObject({
@@ -242,8 +246,8 @@ test("a landing that failed draws its failure and parks its column; one that mer
   });
   const merged = stepsOf(passed, {
     landings: [
-      ticketLandingOf(landingConflicted(1)),
-      ticketLandingOf(landingLanded(1)),
+      ticketLandingOf(landingConflicted(1), copyTextEn),
+      ticketLandingOf(landingLanded(1), copyTextEn),
     ],
   });
   expect(merged.columns[2]?.edge).toBe("finalization");

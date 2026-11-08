@@ -39,6 +39,7 @@ import {
   ticketRefusedFirst,
 } from "./ticketReleasing.tsx";
 import type { TicketDoor } from "./ticketReleasing.tsx";
+import { copyTextEn } from "../app/copy/catalog.ts";
 
 type Body = TicketCreationRequest["body"];
 
@@ -134,6 +135,7 @@ function creation(
         creationPartition,
         { body, operation: `op-${String(form.drawn)}`, held: form.held },
         () => undefined,
+        copyTextEn,
       );
       form.held = "held" in ended ? ended.held : undefined;
       return {
@@ -182,6 +184,7 @@ test("a release the API faults keeps its code on hover and in no line", async ()
     creationPartition,
     { body: first, operation: "op-1", held: undefined },
     () => undefined,
+    copyTextEn,
   );
   if (ended.created !== "Refused") throw new Error(ended.created);
   expect(ended.unread).toBeUndefined();
@@ -262,6 +265,7 @@ test.each(moved)(
       creationPartition,
       { body: first, operation: "op-1" },
       () => undefined,
+      copyTextEn,
     );
     const from = api.sent.length;
     const created = await createAndReleaseTicket(
@@ -273,6 +277,7 @@ test.each(moved)(
         held: "held" in refused ? refused.held : undefined,
       },
       () => undefined,
+      copyTextEn,
     );
     expect(created).toStrictEqual({ created: "Created", ticket: 12 });
     expect(
@@ -768,6 +773,7 @@ test("a release refused over an override is released again once the override alo
       creationPartition,
       { body, operation, held },
       () => undefined,
+      copyTextEn,
     );
   const refused = await submit(overridden("x".repeat(9)), "op-1");
   const held = "held" in refused ? refused.held : undefined;
@@ -786,6 +792,7 @@ test("a release refused over an override is released again once the override alo
     creationPartition,
     { body: overridden("x".repeat(9)), operation: "op-1" },
     () => undefined,
+    copyTextEn,
   );
   const since = again.sent.length;
   const corrected = await createAndReleaseTicket(
@@ -797,6 +804,7 @@ test("a release refused over an override is released again once the override alo
       held: "held" in refusedAgain ? refusedAgain.held : undefined,
     },
     () => undefined,
+    copyTextEn,
   );
   expect(corrected).toStrictEqual({ created: "Created", ticket: 12 });
   const sent = again.sent.slice(since);
@@ -835,6 +843,7 @@ test("a form following its draft revises it at the version it stands on, and rel
       expectedVersion: 3,
     },
     () => undefined,
+    copyTextEn,
   );
   expect(ended).toStrictEqual({ created: "Created", ticket: 12 });
   expect(lines(api.sent)).toStrictEqual([
@@ -854,6 +863,7 @@ test("a form following its draft is refused where the draft moved past what it s
     creationPartition,
     { body: changed, operation: "op-1", held, expectedVersion: 3 },
     () => undefined,
+    copyTextEn,
   );
   expect(endedSaid(ended)).toBe(
     `${creationDraftChangedSentence} · Draft 12 · Not released`,
@@ -875,6 +885,7 @@ test("a draft a following form finds deleted says nothing will be released, and 
       creationPartition,
       { body: changed, operation: "op-1", held: followedHeld(door) },
       () => undefined,
+      copyTextEn,
     );
   const said = "Draft 12 deleted · Nothing here will be released";
   expect(await submit()).toStrictEqual({

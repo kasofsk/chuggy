@@ -12,10 +12,10 @@ import {
   act,
   cleanup,
   fireEvent,
-  render,
   screen,
   waitFor,
 } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import {
@@ -77,7 +77,7 @@ afterEach(() => {
 });
 
 test("an exchange draws its ask, its standing and its answer", () => {
-  render(<Conversation exchanges={[answered]} empty="No conversation" />);
+  renderCopied(<Conversation exchanges={[answered]} empty="No conversation" />);
   expect(screen.getByText("what did it say")).toBeDefined();
   expect(screen.getByText("Answered")).toBeDefined();
   expect(screen.getByText("Exit 1: one prettier finding.")).toBeDefined();
@@ -89,7 +89,7 @@ test("an exchange draws its ask, its standing and its answer", () => {
  * composer are the same column and neither states a width at its call site. */
 test("the viewport and the composer are one column, and neither states a width of its own", () => {
   const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
-  const view = render(
+  const view = renderCopied(
     <Conversation
       exchanges={[answered]}
       composer={composerOf({ onSend })}
@@ -110,7 +110,7 @@ test("the viewport and the composer are one column, and neither states a width o
 /** With `mx-auto` and no width, a shrink-to-fit column resolves to its own cap
  * whatever its container is, and a pane narrower than that cap clips it. */
 test("the scroller column takes its container's width, not its own cap", () => {
-  const view = render(
+  const view = renderCopied(
     <Conversation exchanges={[answered]} empty="No conversation" pane />,
   );
   const column = view.container.querySelector(".conversation-column");
@@ -121,7 +121,7 @@ test("the scroller column takes its container's width, not its own cap", () => {
 /** The report's own bordered panel is a box inside a box wherever this surface
  * draws it, and width the words need more. */
 test("the report gives up its own panel on this surface", () => {
-  const view = render(
+  const view = renderCopied(
     <Conversation exchanges={[answered]} empty="No conversation" pane />,
   );
   expect(
@@ -141,7 +141,7 @@ test("the report gives up its own panel on this surface", () => {
  * width it was given.
  */
 test("every stack down an exchange is a column flex, so nothing widens past the pane", () => {
-  const view = render(
+  const view = renderCopied(
     <Conversation exchanges={[answered]} empty="No conversation" pane />,
   );
   const stacks = [
@@ -166,7 +166,7 @@ test("every stack down an exchange is a column flex, so nothing widens past the 
  * sideways unless the other half is stated, and what is too wide to fit
  * carries its own scroller instead. */
 test("the scroller states both axes, so a narrow column never scrolls sideways", () => {
-  const view = render(
+  const view = renderCopied(
     <Conversation exchanges={[answered]} empty="No conversation" pane />,
   );
   const viewport = view.container.querySelector(".overflow-y-auto");
@@ -176,7 +176,7 @@ test("the scroller states both axes, so a narrow column never scrolls sideways",
 
 test("only a pane caller carries the pane's own inset on the column and the composer", () => {
   const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
-  const paneView = render(
+  const paneView = renderCopied(
     <Conversation
       exchanges={[answered]}
       composer={composerOf({ onSend })}
@@ -192,7 +192,7 @@ test("only a pane caller carries the pane's own inset on the column and the comp
   expect(paneComposer?.className).toContain("conversation-foot");
   paneView.unmount();
 
-  const plainView = render(
+  const plainView = renderCopied(
     <Conversation
       exchanges={[answered]}
       composer={composerOf({ onSend })}
@@ -214,7 +214,7 @@ test("only a pane caller carries the pane's own inset on the column and the comp
  * the composer beneath is not part of what is waited on. */
 test("exchanges still being read draw the waiting word and keep the composer", () => {
   const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
-  render(
+  renderCopied(
     <Conversation
       exchanges={[answered]}
       composer={composerOf({ onSend })}
@@ -236,20 +236,20 @@ test("exchanges still being read draw the waiting word and keep the composer", (
  * empty column and a composer, which says what to do without a line saying it
  * is empty. */
 test("a caller that words no empty state draws nothing in its place", () => {
-  const view = render(<Conversation exchanges={[]} />);
+  const view = renderCopied(<Conversation exchanges={[]} />);
   expect(view.container.textContent).toBe("");
   styleless();
 });
 
 test("no exchanges draws the empty label and no composer", () => {
-  render(<Conversation exchanges={[]} empty="No conversation" />);
+  renderCopied(<Conversation exchanges={[]} empty="No conversation" />);
   expect(screen.getByText("No conversation")).toBeDefined();
   expect(screen.queryByRole("textbox")).toBeNull();
   styleless();
 });
 
 test("the work is collapsed, and opens on the steps in order", () => {
-  render(<Conversation exchanges={[answered]} empty="No conversation" />);
+  renderCopied(<Conversation exchanges={[answered]} empty="No conversation" />);
   const trigger = screen.getByRole("button", { name: /Thought/ });
   expect(trigger.getAttribute("aria-expanded")).toBe("false");
   expect(screen.queryByText("weighed it")).toBeNull();
@@ -263,7 +263,7 @@ test("the work is collapsed, and opens on the steps in order", () => {
 });
 
 test("a tool call opens on its arguments and its result", () => {
-  render(<Conversation exchanges={[answered]} empty="No conversation" />);
+  renderCopied(<Conversation exchanges={[answered]} empty="No conversation" />);
   fireEvent.click(screen.getByRole("button", { name: /Thought/ }));
   const call = screen.getByRole("button", { name: /Read/ });
   expect(screen.queryByText("bytes")).toBeNull();
@@ -277,7 +277,7 @@ test("a pipe table in an exchange's answer draws as a table", () => {
   const tabled = exchangeOf({
     answer: "| Stage | Result |\n| --- | --- |\n| lint | pass |",
   });
-  render(<Conversation exchanges={[tabled]} empty="No conversation" />);
+  renderCopied(<Conversation exchanges={[tabled]} empty="No conversation" />);
   const table = screen.getByRole("table");
   expect(table.querySelector("thead th")?.textContent).toBe("Stage");
   expect(screen.getByText("pass")).toBeDefined();
@@ -285,7 +285,7 @@ test("a pipe table in an exchange's answer draws as a table", () => {
 });
 
 test("no work draws no disclosure", () => {
-  render(
+  renderCopied(
     <Conversation
       exchanges={[exchangeOf({ answer: "done" })]}
       empty="No conversation"
@@ -296,7 +296,7 @@ test("no work draws no disclosure", () => {
 });
 
 test("the meta line omits a measure no turn recorded", () => {
-  render(
+  renderCopied(
     <Conversation
       exchanges={[
         exchangeOf({ answer: "done", measures: { durationMs: 4200 } }),
@@ -317,7 +317,7 @@ function lineText(element: Element): string {
 }
 
 test("the meta line drops the cost figure's basis word", () => {
-  render(
+  renderCopied(
     <Conversation
       exchanges={[
         exchangeOf({
@@ -340,7 +340,7 @@ test("the meta line drops the cost figure's basis word", () => {
 });
 
 test("a failed exchange draws its reason where the answer would be", () => {
-  render(
+  renderCopied(
     <Conversation
       exchanges={[
         exchangeOf({
@@ -368,7 +368,7 @@ test("a tool result that failed marks the row and draws no pill", () => {
       },
     ],
   });
-  render(<Conversation exchanges={[failed]} empty="No conversation" />);
+  renderCopied(<Conversation exchanges={[failed]} empty="No conversation" />);
   fireEvent.click(screen.getByRole("button", { name: /tool/ }));
   expect(screen.getByText("Bash").className).toContain("text-tone-fail");
   expect(document.querySelectorAll(".pill")).toHaveLength(0);
@@ -389,7 +389,7 @@ test("a result whose call was not read is titled Result, never its id", () => {
       },
     ],
   });
-  render(<Conversation exchanges={[orphan]} empty="No conversation" />);
+  renderCopied(<Conversation exchanges={[orphan]} empty="No conversation" />);
   fireEvent.click(screen.getByRole("button", { name: /tool/ }));
   expect(screen.getByText("Result")).toBeDefined();
   expect(screen.queryByText("toolu_012xu4dezNK5ynXZCchUbpXF")).toBeNull();
@@ -405,7 +405,7 @@ test("a running exchange's card says Working, and nothing else does", () => {
     standing: { standing: "Running", state: "Claimed" },
     work: [{ step: "Thinking", text: "weighing it" }],
   });
-  const view = render(
+  const view = renderCopied(
     <Conversation exchanges={[running]} empty="No conversation" />,
   );
   const trigger = screen.getByRole("button", { name: "Working" });
@@ -427,7 +427,7 @@ test("a running exchange nothing is drawn of says its state once that has lasted
       id: "x2",
       standing: { standing: "Running", state: "Queued" },
     });
-    const view = render(
+    const view = renderCopied(
       <Conversation exchanges={[running]} empty="No conversation" />,
     );
     expect(screen.queryByText("Queued")).toBeNull();
@@ -450,7 +450,7 @@ test("a marker stands above the exchange it precedes", () => {
     before: [{ marker: "Compaction" }, { marker: "Truncated" }],
     answer: "done",
   });
-  render(<Conversation exchanges={[marked]} empty="No conversation" />);
+  renderCopied(<Conversation exchanges={[marked]} empty="No conversation" />);
   expect(screen.getByText("Compaction")).toBeDefined();
   expect(screen.getByText("Truncated")).toBeDefined();
   styleless();
@@ -461,7 +461,7 @@ test("an elision marker says the unit its count is in", () => {
     before: [{ marker: "Elision", bytes: 2 }],
     answer: "done",
   });
-  render(<Conversation exchanges={[marked]} empty="No conversation" />);
+  renderCopied(<Conversation exchanges={[marked]} empty="No conversation" />);
   expect(screen.getByText("Elided · 2 bytes")).toBeDefined();
   styleless();
 });
@@ -473,7 +473,9 @@ test("a markers-only exchange draws its markers and no pill", () => {
     standing: { standing: "Markers" },
     before: [{ marker: "Truncated" }],
   };
-  render(<Conversation exchanges={[markersOnly]} empty="No conversation" />);
+  renderCopied(
+    <Conversation exchanges={[markersOnly]} empty="No conversation" />,
+  );
   expect(screen.getByText("Truncated")).toBeDefined();
   expect(screen.queryByRole("button")).toBeNull();
   expect(document.querySelectorAll(".pill").length).toBe(0);
@@ -485,7 +487,7 @@ test("a wake draws one system line and never its document", () => {
     ask: { ask: "Wake", wake: "TicketDone", resource: "ticket-44" },
     answer: "done",
   });
-  render(<Conversation exchanges={[woken]} empty="No conversation" />);
+  renderCopied(<Conversation exchanges={[woken]} empty="No conversation" />);
   expect(screen.getByText("TicketDone · ticket-44")).toBeDefined();
   styleless();
 });
@@ -499,7 +501,7 @@ test("the seeding is a folded Context card, and the bubble is the words", () => 
     },
     answer: "two things",
   });
-  render(<Conversation exchanges={[seeded]} empty="No conversation" />);
+  renderCopied(<Conversation exchanges={[seeded]} empty="No conversation" />);
   expect(screen.getByText("what is left to do")).toBeDefined();
   expect(screen.queryByText("Ship the console.")).toBeNull();
   fireEvent.click(screen.getByRole("button", { name: "Context" }));
@@ -516,7 +518,7 @@ test("the page a message was sent from is a chip over the words, and no Context 
     },
     answer: "the review",
   });
-  render(<Conversation exchanges={[sent]} empty="No conversation" />);
+  renderCopied(<Conversation exchanges={[sent]} empty="No conversation" />);
   expect(screen.getByText("Edit ticket #41")).toBeDefined();
   expect(screen.getByText("what is blocking it?")).toBeDefined();
   expect(screen.queryByRole("button", { name: "Context" })).toBeNull();
@@ -528,7 +530,7 @@ test("an Observation with text draws the line and its collapsed card", () => {
     ask: { ask: "Observation", text: '{"version":1,"decision":"lead"}' },
     answer: "done",
   });
-  render(<Conversation exchanges={[observed]} empty="No conversation" />);
+  renderCopied(<Conversation exchanges={[observed]} empty="No conversation" />);
   expect(screen.getAllByText("Observation")).toHaveLength(2);
   const trigger = screen.getByRole("button", { name: "Observation" });
   expect(screen.queryByText(/"version":1/)).toBeNull();
@@ -538,7 +540,7 @@ test("an Observation with text draws the line and its collapsed card", () => {
 });
 
 test("no exchanges draws the empty title above its one sentence", () => {
-  render(
+  renderCopied(
     <Conversation
       exchanges={[]}
       empty="Ask for a draft"
@@ -568,7 +570,7 @@ async function typed(text: string): Promise<HTMLTextAreaElement> {
 
 test("Enter sends what was typed, and the box clears on Sent", async () => {
   const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
-  render(
+  renderCopied(
     <Conversation
       exchanges={[answered]}
       composer={composerOf({ onSend })}
@@ -588,7 +590,7 @@ test("Enter sends what was typed, and the box clears on Sent", async () => {
 
 test("Shift and Enter is a newline, not a send", async () => {
   const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
-  render(
+  renderCopied(
     <Conversation
       exchanges={[answered]}
       composer={composerOf({ onSend })}
@@ -604,7 +606,7 @@ test("Shift and Enter is a newline, not a send", async () => {
 
 test("a page that kept the message puts the characters back", async () => {
   const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Kept"));
-  render(
+  renderCopied(
     <Conversation
       exchanges={[answered]}
       composer={composerOf({ onSend })}
@@ -628,7 +630,7 @@ test("a running exchange still takes a message, because the mailbox queues", asy
     id: "x3",
     standing: { standing: "Running", state: "Claimed" },
   });
-  render(
+  renderCopied(
     <Conversation
       exchanges={[running]}
       composer={composerOf({ onSend })}
@@ -660,7 +662,7 @@ test("a page that takes a stop draws Stop while a turn is out, and one press han
       empty="No conversation"
     />
   );
-  const view = render(drawn({ standing: "Running", state: "Claimed" }));
+  const view = renderCopied(drawn({ standing: "Running", state: "Claimed" }));
   expect(buttonSaid()).toStrictEqual(["Stop"]);
   fireEvent.click(screen.getByRole("button", { name: "Stop" }));
   expect(onStop.mock.calls).toStrictEqual([["turn-3"]]);
@@ -679,7 +681,7 @@ test("a stop that fails has been answered all the same, so past the beat the but
   const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
   const onStop = vi.fn(() => Promise.reject(new Error("the door fell over")));
   const standing = { standing: "Running", state: "Claimed" } as const;
-  render(
+  renderCopied(
     <Conversation
       exchanges={[exchangeOf({ id: "x3", turn: "turn-3", standing })]}
       composer={{ ...composerOf({ onSend }), onStop }}
@@ -731,7 +733,7 @@ test("for the beat after a press of Stop the button says it takes no press, whic
   beatClock();
   const onStop = vi.fn(() => Promise.resolve());
   const drawn = oneTurnSurface(onStop);
-  const view = render(drawn({ standing: "Running", state: "Claimed" }));
+  const view = renderCopied(drawn({ standing: "Running", state: "Claimed" }));
   expect(buttonRests("Stop")).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "Stop" }));
   await beatPassed(0);
@@ -762,7 +764,7 @@ test("a stop no door has answered keeps Stop saying it takes no press past the b
       }),
   );
   const drawn = oneTurnSurface(onStop, onSend);
-  const view = render(drawn({ standing: "Running", state: "Claimed" }));
+  const view = renderCopied(drawn({ standing: "Running", state: "Claimed" }));
   fireEvent.click(screen.getByRole("button", { name: "Stop" }));
   await beatPassed(conversationStopBeatMs);
   expect(buttonRests("Stop")).toBe(true);
@@ -784,7 +786,7 @@ test("a timer that runs ahead of the clock a press is asked against does not end
   vi.spyOn(performance, "now").mockImplementation(() => clock.ms);
   const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
   const onStop = vi.fn(() => Promise.resolve());
-  render(
+  renderCopied(
     <Conversation
       exchanges={[
         exchangeOf({
@@ -821,7 +823,7 @@ test("a click that sent begins the beat on the button it leaves under the pointe
       empty="No conversation"
     />
   );
-  const view = render(drawn([answered]));
+  const view = renderCopied(drawn([answered]));
   fireEvent.change(screen.getByRole("textbox", { name: "Message" }), {
     target: { value: "one more thing" },
   });
@@ -890,7 +892,7 @@ function drafted(text: string): void {
 test("an older stop's late answer leaves a newer stop no door has answered saying it takes no press", async () => {
   beatClock();
   const { answers, onStop, onSend, drawn } = heldDoors();
-  const view = render(drawn(turnOut));
+  const view = renderCopied(drawn(turnOut));
   pressed("Stop");
   view.rerender(drawn(turnStopped));
   drafted("one more thing");
@@ -922,7 +924,7 @@ test("an older stop's late answer leaves a newer stop no door has answered sayin
 test("a press 250 ms behind a click that sent is a double click's and does nothing, and the two an audit found ignored are taken: Stop at 516 ms, and Send 331 ms after Stop", async () => {
   beatClock();
   const { onStop, onSend, drawn } = heldDoors();
-  const view = render(drawn(turnStopped));
+  const view = renderCopied(drawn(turnStopped));
   drafted("first");
   await beatPassed(0);
   pressed("Send");
@@ -952,7 +954,7 @@ test("a press taken as a beat ends leaves no older timer to end its own beat ear
   const clock = { ms: Math.floor(performance.now()) };
   vi.spyOn(performance, "now").mockImplementation(() => clock.ms);
   const { answers, onStop, drawn } = heldDoors();
-  const view = render(drawn(turnOut, turnBehind));
+  const view = renderCopied(drawn(turnOut, turnBehind));
   pressed("Stop");
   answers[0]?.();
   await beatPassed(0);
@@ -973,7 +975,7 @@ test("a press taken as a beat ends leaves no older timer to end its own beat ear
 
 test("a pointer's press of the button takes no focus, so the caret stays in the box", () => {
   const drawn = oneTurnSurface(() => Promise.resolve());
-  const view = render(drawn({ standing: "Running", state: "Claimed" }));
+  const view = renderCopied(drawn({ standing: "Running", state: "Claimed" }));
   const refused = (name: string): boolean =>
     !fireEvent.mouseDown(screen.getByRole("button", { name }));
   expect(refused("Stop")).toBe(true);
@@ -987,7 +989,7 @@ test("a pointer's press of the button takes no focus, so the caret stays in the 
 
 test("a page that takes no stop draws Send whatever is out", () => {
   const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
-  render(
+  renderCopied(
     <Conversation
       exchanges={[
         exchangeOf({
@@ -1006,7 +1008,7 @@ test("a page that takes no stop draws Send whatever is out", () => {
 
 test("a closed door draws no box to type into", () => {
   const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
-  render(
+  renderCopied(
     <Conversation
       exchanges={[answered]}
       composer={composerOf({ takes: false, onSend })}
@@ -1020,7 +1022,7 @@ test("a closed door draws no box to type into", () => {
 
 test("a door that takes nothing more and holds a kept message draws it read-only with the note", async () => {
   const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Kept"));
-  const { rerender } = render(
+  const { rerender } = renderCopied(
     <Conversation
       exchanges={[answered]}
       composer={composerOf({ onSend })}
@@ -1053,7 +1055,7 @@ test("a door that takes nothing more and holds a kept message draws it read-only
 
 test("the counter appears only once the text nears the bound", async () => {
   const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
-  render(
+  renderCopied(
     <Conversation
       exchanges={[answered]}
       composer={composerOf({ onSend })}
@@ -1069,7 +1071,7 @@ test("the counter appears only once the text nears the bound", async () => {
 
 test("the note the page worded stands under the field", () => {
   const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
-  render(
+  renderCopied(
     <Conversation
       exchanges={[answered]}
       composer={{ ...composerOf({ onSend }), note: "Queued" }}
@@ -1083,7 +1085,7 @@ test("the note the page worded stands under the field", () => {
 test("a note that is itself a paragraph nests in no paragraph, open or closed", () => {
   const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
   const note = <p>Queued</p>;
-  const { unmount } = render(
+  const { unmount } = renderCopied(
     <Conversation
       exchanges={[answered]}
       composer={{ ...composerOf({ onSend }), note }}
@@ -1092,7 +1094,7 @@ test("a note that is itself a paragraph nests in no paragraph, open or closed", 
   );
   expect(screen.getByText("Queued").closest("p p")).toBeNull();
   unmount();
-  render(
+  renderCopied(
     <Conversation
       exchanges={[answered]}
       composer={{ ...composerOf({ onSend }), takes: false, note }}
@@ -1121,7 +1123,7 @@ test("what a step offers is drawn under the work that holds it, and nothing wher
     step.step === "ToolCall" && step.id === "call-2" ? (
       <section aria-label="Offer">offered</section>
     ) : null;
-  const { unmount } = render(
+  const { unmount } = renderCopied(
     <Conversation
       exchanges={[offered]}
       offer={offer}
@@ -1130,7 +1132,7 @@ test("what a step offers is drawn under the work that holds it, and nothing wher
   );
   expect(screen.getAllByRole("region", { name: "Offer" })).toHaveLength(1);
   unmount();
-  render(<Conversation exchanges={[offered]} empty="No conversation" />);
+  renderCopied(<Conversation exchanges={[offered]} empty="No conversation" />);
   expect(screen.queryByRole("region", { name: "Offer" })).toBeNull();
   styleless();
 });

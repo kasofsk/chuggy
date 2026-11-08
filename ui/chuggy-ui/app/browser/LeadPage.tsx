@@ -82,6 +82,7 @@ import { Figure } from "./ui/Figure.tsx";
 import { Pill } from "./ui/Pill.tsx";
 import { Table } from "./ui/Table.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
+import { useCopyText } from "../copy/CopyProvider.tsx";
 
 /**
  * The lead read, re-read on the `Session` frames that name its own session and
@@ -124,10 +125,12 @@ export function useLeadAbsenceLine(
   nowMs: number,
 ): string | undefined {
   const placement = useSessionPlacement(partition);
+  const text = useCopyText();
   return projectLeadAbsenceLine(
     read,
     nowMs,
     placement.state === "Ready" ? placement.value : undefined,
+    text,
   );
 }
 
@@ -140,6 +143,7 @@ function LeadTopBar(props: {
   readonly nowMs: number;
 }): ReactNode {
   const lead = props.lead;
+  const text = useCopyText();
   return (
     <TopBarSlot>
       <h1 className="visually-hidden">Lead</h1>
@@ -158,7 +162,7 @@ function LeadTopBar(props: {
         </span>
         {lead.refusal === undefined ? null : (
           <span className="text-ink-3 text-sm">
-            {projectLeadRefusalLine(lead.refusal, props.nowMs)}
+            {projectLeadRefusalLine(lead.refusal, props.nowMs, text)}
           </span>
         )}
       </div>
@@ -237,7 +241,7 @@ function LeadTurnRow(props: { readonly turn: LeadTurnResponse }): ReactNode {
         <Figure
           figure={
             turn.tokens === undefined
-              ? { kind: "Absent", why: "No tokens measured" }
+              ? { kind: "Absent", why: { id: "figures-absent-tokens" } }
               : tokenCountFigure(turn.tokens)
           }
         />
@@ -246,7 +250,7 @@ function LeadTurnRow(props: { readonly turn: LeadTurnResponse }): ReactNode {
         <Figure
           figure={
             turn.costMicros === undefined
-              ? { kind: "Absent", why: "No cost measured" }
+              ? { kind: "Absent", why: { id: "figures-absent-cost" } }
               : costFigure(turn.costMicros, "List")
           }
         />
@@ -255,7 +259,7 @@ function LeadTurnRow(props: { readonly turn: LeadTurnResponse }): ReactNode {
         <Figure
           figure={
             turn.durationMs === undefined
-              ? { kind: "Absent", why: "No duration measured" }
+              ? { kind: "Absent", why: { id: "figures-absent-duration" } }
               : durationFigure(turn.durationMs)
           }
         />

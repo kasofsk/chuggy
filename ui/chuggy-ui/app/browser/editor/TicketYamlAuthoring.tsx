@@ -52,6 +52,7 @@ import type { TicketYamlContext, TicketYamlProblem } from "./ticketYaml.ts";
 import "./TicketEditor.css";
 
 import { ticketYamlCatalogOf } from "./ticketYamlFragments.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 
 const TicketEditor = lazy(() => import("./TicketEditor.tsx"));
 
@@ -178,9 +179,10 @@ function useYamlText(props: TicketYamlAuthoringProps) {
       ? []
       : ticketYamlFaultProblems(props.faultsOf(read), reading.keys)),
   ];
+  const copyText = useCopyText();
   const vocabulary = useMemo(
-    () => ticketYamlVocabulary(read ?? context.base, context),
-    [read, context],
+    () => ticketYamlVocabulary(read ?? context.base, context, copyText),
+    [read, context, copyText],
   );
   const configuration = (read ?? context.base).configuration;
   const catalog = useMemo(() => {

@@ -45,7 +45,9 @@ function SelectorRevisionChanged(props: {
   const changes = props.changes;
   if (changes === undefined)
     return (
-      <Figure figure={{ kind: "Absent", why: "No earlier revision read" }} />
+      <Figure
+        figure={{ kind: "Absent", why: { id: "figures-absent-revision" } }}
+      />
     );
   if (changes.length === 0)
     return (

@@ -98,6 +98,8 @@ import {
   attemptRunning,
 } from "./TicketCreation.tsx";
 import type { Attempt } from "./TicketCreation.tsx";
+import type { CopyText } from "../core/copy.ts";
+import { useCopyText } from "../copy/CopyProvider.tsx";
 
 /** What the edit is written against: the ticket as read, and its draft. */
 interface EditSubject {
@@ -144,6 +146,7 @@ function editWrite(
   ports: ApiPorts,
   partition: PartitionIdentity,
   ticket: number,
+  text: CopyText,
 ): ConsoleWrite<EditPressed, number> {
   const reread = (client: QueryClient): Promise<unknown> =>
     Promise.all([
@@ -169,6 +172,7 @@ function editWrite(
         (step) => {
           pressed.progress.report(step);
         },
+        text,
       );
       if (updated.created === "Created")
         return { outcome: "Ok", value: updated.ticket };
@@ -179,7 +183,7 @@ function editWrite(
           : `${updated.reason}${attemptHeldDraft(updated.held?.draft, "Update")}`;
       throw new TicketUpdateRefused(reason, updated);
     },
-    refusal: operationFailureSentence,
+    refusal: (failure) => text(operationFailureSentence(failure)),
     landed: reread,
   };
 }
@@ -203,8 +207,9 @@ function useEditSubmit(props: {
   readonly onUpdated: () => void;
 }): EditSubmit {
   const { partition, ticket } = props;
+  const text = useCopyText();
   const writing = useConsoleWrite(
-    editWrite(props.ports, partition, ticket.ticket),
+    editWrite(props.ports, partition, ticket.ticket, text),
     { drawn: true },
   );
   const step = useConsoleWriteProgress(writing.variables?.progress);

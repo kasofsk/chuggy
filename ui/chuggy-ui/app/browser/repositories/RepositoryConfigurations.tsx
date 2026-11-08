@@ -17,10 +17,12 @@ import { EmptyState } from "../ui/EmptyState.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import { Table } from "../ui/Table.tsx";
 import { Tooltip } from "../ui/Tooltip.tsx";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 
 function RepositoryConfigurationFacts(props: {
   readonly row: RepositoryConfigurationRow;
 }): ReactNode {
+  const text = useCopyText();
   const facts = props.row.facts;
   if (facts === undefined)
     return (
@@ -36,7 +38,7 @@ function RepositoryConfigurationFacts(props: {
         </Tooltip>
       </td>
       <td className="tabular-nums">{facts.stages}</td>
-      <td>{facts.approval}</td>
+      <td>{text(facts.approval)}</td>
     </>
   );
 }

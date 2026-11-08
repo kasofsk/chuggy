@@ -6,7 +6,8 @@
  * each is a fact the reader would otherwise have to take on trust.
  */
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import type { Figure as FigureValue } from "../app/core/figures.ts";
@@ -14,6 +15,7 @@ import { figureKinds } from "../app/core/figures.ts";
 import { Figure, figureBasisTitle } from "../app/browser/ui/Figure.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { styleless } from "./styleless.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 
 beforeEach(resizeObserverStubbed);
 
@@ -24,19 +26,27 @@ afterEach(() => {
 });
 
 const everyKind: readonly FigureValue[] = [
-  { kind: "Cost", text: "$0.42", basis: "list" },
-  { kind: "Tokens", text: "9.1k tok" },
+  { kind: "Cost", text: "$0.42", basis: { id: "figures-basis-list" } },
+  { kind: "Tokens", text: "9.1k", unit: { id: "figures-tokens" } },
   { kind: "Duration", text: "4m 12s" },
-  { kind: "Quantity", text: "17,523,063", unit: "tokens" },
+  {
+    kind: "Quantity",
+    text: "17,523,063",
+    unit: { id: "figures-unit-tokens" },
+  },
   { kind: "Instant", text: "10:12", iso: "2026-08-27T10:12:00.000Z" },
-  { kind: "Ago", text: "3h ago", full: "2026-08-27 07:12" },
+  {
+    kind: "Ago",
+    text: { id: "figures-ago", args: { elapsed: "3h" } },
+    full: "2026-08-27 07:12",
+  },
   {
     kind: "Span",
     parts: ["started 48m ago", "ran 30m"],
     open: false,
     title: "a → b",
   },
-  { kind: "Absent", why: "No run figures yet" },
+  { kind: "Absent", why: { id: "figures-absent-run" } },
 ];
 
 test("the roster and the cases the suite draws are the same set", () => {
@@ -47,7 +57,7 @@ test("the roster and the cases the suite draws are the same set", () => {
 
 test("every kind draws in the figure cell and emits no style attribute", () => {
   for (const figure of everyKind) {
-    const { container } = render(<Figure figure={figure} />);
+    const { container } = renderCopied(<Figure figure={figure} />);
     expect(container.querySelector(".fig")).not.toBeNull();
     expect(container.querySelector("[style]")).toBeNull();
     cleanup();
@@ -55,17 +65,25 @@ test("every kind draws in the figure cell and emits no style attribute", () => {
 });
 
 test("a dollar carries its basis, and the tag says what a list price is not", async () => {
-  render(<Figure figure={{ kind: "Cost", text: "$0.42", basis: "list" }} />);
+  renderCopied(
+    <Figure
+      figure={{
+        kind: "Cost",
+        text: "$0.42",
+        basis: { id: "figures-basis-list" },
+      }}
+    />,
+  );
   const tag = screen.getByText("list");
   expect(tag.classList.contains("fig-basis")).toBe(true);
   fireEvent.focus(tag);
   expect((await screen.findByRole("tooltip")).textContent).toBe(
-    figureBasisTitle,
+    copyTextEn(figureBasisTitle),
   );
 });
 
 test("an instant hovers its full ISO and an absence hovers its reason", async () => {
-  render(
+  renderCopied(
     <Figure
       figure={{ kind: "Instant", text: "10:12", iso: "2026-08-27T10:12:00Z" }}
     />,
@@ -75,7 +93,9 @@ test("an instant hovers its full ISO and an absence hovers its reason", async ()
     "2026-08-27T10:12:00Z",
   );
   cleanup();
-  render(<Figure figure={{ kind: "Absent", why: "No run figures yet" }} />);
+  renderCopied(
+    <Figure figure={{ kind: "Absent", why: { id: "figures-absent-run" } }} />,
+  );
   const absent = screen.getByText("—");
   expect(absent.classList.contains("fig-dim")).toBe(true);
   fireEvent.focus(absent);
@@ -85,9 +105,13 @@ test("an instant hovers its full ISO and an absence hovers its reason", async ()
 });
 
 test("an ago figure hovers its full date and clock, like an instant hovers its ISO", async () => {
-  render(
+  renderCopied(
     <Figure
-      figure={{ kind: "Ago", text: "3h ago", full: "2026-08-27 07:12" }}
+      figure={{
+        kind: "Ago",
+        text: { id: "figures-ago", args: { elapsed: "3h" } },
+        full: "2026-08-27 07:12",
+      }}
     />,
   );
   fireEvent.focus(screen.getByText("3h ago"));
@@ -103,13 +127,13 @@ test("an open span is drawn live and a closed one is not", () => {
     open: true,
     title: "a",
   };
-  const { container } = render(<Figure figure={open} />);
+  const { container } = renderCopied(<Figure figure={open} />);
   const drawn = container.querySelector(".fig");
   expect(drawn?.classList.contains("fig-live")).toBe(true);
   expect(drawn?.textContent).toBe("started 48m ago·waited <1s");
   expect(drawn?.querySelectorAll(".fig-sep")).toHaveLength(1);
   cleanup();
-  const closed = render(
+  const closed = renderCopied(
     <Figure
       figure={{ ...open, parts: ["started 48m ago", "ran 30m"], open: false }}
     />,
@@ -122,7 +146,7 @@ test("an open span is drawn live and a closed one is not", () => {
 /** A narrow cell wraps a span between its parts, never inside one, so
  * `1h 59m` is not split across lines. */
 test("a span breaks only between its parts", () => {
-  const { container } = render(
+  const { container } = renderCopied(
     <Figure
       figure={{
         kind: "Span",
@@ -145,8 +169,14 @@ test("a span breaks only between its parts", () => {
  * the digits rather than left to the column head a settings row does not have,
  * and a space in the text keeps the two words apart wherever it is read as text. */
 test("a quantity draws its unit beside its digits", () => {
-  const { container } = render(
-    <Figure figure={{ kind: "Quantity", text: "15", unit: "min" }} />,
+  const { container } = renderCopied(
+    <Figure
+      figure={{
+        kind: "Quantity",
+        text: "15",
+        unit: { id: "figures-unit-minutes" },
+      }}
+    />,
   );
   expect(container.querySelector(".fig")?.textContent).toBe("15 min");
   expect(container.querySelector(".fig-unit")?.textContent).toBe("min");

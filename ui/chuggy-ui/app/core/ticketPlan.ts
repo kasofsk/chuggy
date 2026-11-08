@@ -28,6 +28,7 @@ import type {
 } from "./configurationCatalog.ts";
 import { stageLabel } from "./ticketLedger.ts";
 import type { StageNames, TicketProgram } from "./ticketLedger.ts";
+import type { Copy } from "./copy.ts";
 
 /** One evaluator of a stage: its key, its name, and what it runs. */
 export interface TicketPlanEvaluator {
@@ -51,7 +52,7 @@ export interface TicketPlan {
   /** Whether the ticket lands anything at all. */
   readonly lands: boolean;
   /** How it lands, where the configuration says. */
-  readonly landing: string | undefined;
+  readonly landing: Copy | undefined;
 }
 
 /** What a workload runs on: its agent and model, or that it runs commands. */

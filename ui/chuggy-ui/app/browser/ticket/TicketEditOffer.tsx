@@ -9,11 +9,13 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { ticketEditEffect } from "../../core/codeLabels.ts";
 import { ButtonLink } from "../ui/Button.tsx";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 
 export function TicketEditOffer(props: {
   readonly partition: PartitionIdentity;
   readonly ticket: number;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <div className="act">
       <div className="act-head">
@@ -24,7 +26,7 @@ export function TicketEditOffer(props: {
           Edit
         </ButtonLink>
       </div>
-      <p className="act-effect">{ticketEditEffect}</p>
+      <p className="act-effect">{text(ticketEditEffect)}</p>
     </div>
   );
 }

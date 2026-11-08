@@ -79,7 +79,7 @@ test("a ready row states three facts, and an incomplete one states none", () => 
     facts: {
       worker: { text: "an-image", title: "an-image" },
       stages: "1",
-      approval: "Not required",
+      approval: { id: "codes-approval-not-required" },
     },
   });
   expect(

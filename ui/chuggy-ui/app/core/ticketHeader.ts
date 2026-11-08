@@ -11,7 +11,7 @@ import { phaseRoster } from "../../../../src/contract/rosters.ts";
 import type { TicketPhase } from "../../../../src/contract/rosters.ts";
 import type { TicketResponse } from "../../../../src/contract/responses.ts";
 import { escalationDetail, phaseLabel } from "./codeLabels.ts";
-import type { Copy } from "./copy.ts";
+import type { Copy, CopyText } from "./copy.ts";
 import { branchName } from "./labels.ts";
 import { ticketFilterStandings } from "./projectTableFilters.ts";
 import type { RunTimed } from "./runTotals.ts";
@@ -215,6 +215,7 @@ function ticketHeaderLanded(
 
 export function ticketHeaderFragment(
   reads: TicketHeaderFragmentReads,
+  text: CopyText,
 ): TicketHeaderFragment {
   const ticket = reads.ticket;
   switch (reads.standing) {
@@ -237,7 +238,7 @@ export function ticketHeaderFragment(
     case "Escalated":
       return ticket.escalation === undefined
         ? ticketHeaderNone
-        : ticketHeaderWords(escalationDetail(ticket.escalation));
+        : ticketHeaderWords(text(escalationDetail(ticket.escalation)));
     case "Done":
       return ticketHeaderLanded(reads.landings);
     case "Revoked":

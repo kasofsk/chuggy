@@ -11,13 +11,8 @@
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import { QueryClient } from "@tanstack/react-query";
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  within,
-} from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -53,6 +48,7 @@ import {
 } from "./projectAbilitiesFixture.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 import { readFailedLines } from "./readFailedLines.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 
 /**
  * Whether a wait ever ends. Held while the screen is drawn, so the fallback a
@@ -209,7 +205,7 @@ async function drawEdit(drawing: Drawing): Promise<readonly SentRequest[]> {
     "fetch",
     (drawing.over ?? ((served) => served))(scripted.fetch),
   );
-  render(
+  renderCopied(
     <ScreenHarness
       partition={creationPartition}
       client={
@@ -365,7 +361,7 @@ test("a refused update of a ticket moved off such a name is said over what was t
   await chooseConfiguration("development");
   await retitleAndSubmit();
   expect(document.querySelector(".panel-failed")?.textContent).toBe(
-    `${operationStateSentence("Cancelled")} · Draft version ${String(creationDraft.authoringVersion + 1)} not released`,
+    `${copyTextEn(operationStateSentence("Cancelled"))} · Draft version ${String(creationDraft.authoringVersion + 1)} not released`,
   );
   expect(configurationChosen()).toContain("development");
   expect(configurationChosen()).not.toContain("opus");

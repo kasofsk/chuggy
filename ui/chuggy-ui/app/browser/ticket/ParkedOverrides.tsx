@@ -66,6 +66,8 @@ import { Notice } from "../ui/Notice.tsx";
 import { Tooltip } from "../ui/Tooltip.tsx";
 import { Panel } from "../ui/Panel.tsx";
 import { configurationCatalogOf } from "../../core/configurationCatalog.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
+import type { CopyText } from "../../core/copy.ts";
 
 /** What the save has come to, said on the card. */
 function ParkedOverridesNote(props: {
@@ -73,6 +75,7 @@ function ParkedOverridesNote(props: {
   readonly invalid: boolean;
 }): ReactNode {
   const step = props.step;
+  const text = useCopyText();
   if (props.invalid)
     return (
       <Notice
@@ -85,7 +88,7 @@ function ParkedOverridesNote(props: {
   if (step === undefined) return null;
   if (!operationFinished(step))
     return <Notice tone="live" inline role="status" detail="Saving…" />;
-  const refused = parkedOverridesRefusal(step);
+  const refused = parkedOverridesRefusal(step, text);
   if (refused === undefined)
     return <Notice tone="info" inline role="status" detail="Overrides saved" />;
   const refusal = step.step === "Settled" ? step.refusal : undefined;
@@ -96,7 +99,7 @@ function ParkedOverridesNote(props: {
       role="alert"
       {...(refusal === undefined
         ? {}
-        : { more: operationRefusalSentence(refusal) })}
+        : { more: text(operationRefusalSentence(refusal)) })}
     >
       <Tooltip
         text={
@@ -135,6 +138,7 @@ interface ParkedOverridesPressed {
 function parkedOverridesWrite(
   partition: PartitionIdentity,
   ticket: number,
+  text: CopyText,
 ): ConsoleWrite<ParkedOverridesPressed, OperationStep> {
   const reread = (client: QueryClient): Promise<void> =>
     client.invalidateQueries({
@@ -157,12 +161,13 @@ function parkedOverridesWrite(
         pressed.progress,
         "the save failed",
       );
-      const refused = parkedOverridesRefusal(step);
+      const refused = parkedOverridesRefusal(step, text);
       if (refused === undefined) return { outcome: "Ok", value: step };
       if (step.step === "Settled") await reread(client);
       throw new ConsoleWriteRefused(refused, operationAbandonFailure(step));
     },
-    refusal: (failure) => `Not saved · ${operationFailureSentence(failure)}`,
+    refusal: (failure) =>
+      `Not saved · ${text(operationFailureSentence(failure))}`,
     landed: (client) => reread(client),
   };
 }
@@ -177,9 +182,13 @@ export function useParkedOverridesSave(
   drawn: boolean,
 ): ParkedOverridesSaving {
   const [asked, setAsked] = useState<boolean | undefined>(undefined);
-  const writing = useConsoleWrite(parkedOverridesWrite(partition, ticket), {
-    drawn: drawn && asked !== false,
-  });
+  const text = useCopyText();
+  const writing = useConsoleWrite(
+    parkedOverridesWrite(partition, ticket, text),
+    {
+      drawn: drawn && asked !== false,
+    },
+  );
   const step = useConsoleWriteProgress(writing.variables?.progress);
   const shown = step ?? (writing.isPending ? operationSubmitting() : undefined);
   return {

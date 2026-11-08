@@ -25,6 +25,14 @@ import {
   verdictTone,
 } from "../app/core/tones.ts";
 import type { SetVerdict } from "../app/core/ticketLedger.ts";
+import type { Tone } from "../app/core/tones.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
+import type { Copy } from "../app/core/copy.ts";
+
+/** An arm as a pill draws it: its word in the base language, and its tone. */
+function drawn(arm: { readonly word: Copy; readonly tone: Tone }) {
+  return { word: copyTextEn(arm.word), tone: arm.tone };
+}
 
 const verdicts: readonly SetVerdict[] = [
   "Passed",
@@ -84,46 +92,58 @@ test("the machine's own meanings keep their own hues", () => {
 });
 
 test("each standing the arm draws is its own word and its own tone", () => {
-  expect(conversationStandingArm({ standing: "Answered" }, true)).toEqual({
+  expect(
+    drawn(conversationStandingArm({ standing: "Answered" }, true)),
+  ).toEqual({
     word: "Answered",
     tone: "pass",
   });
   expect(
-    conversationStandingArm({ standing: "Running", state: "Queued" }, false),
+    drawn(
+      conversationStandingArm({ standing: "Running", state: "Queued" }, false),
+    ),
   ).toEqual({ word: "Queued", tone: "queued" });
   expect(
-    conversationStandingArm({ standing: "Running", state: "Waiting" }, false),
+    drawn(
+      conversationStandingArm({ standing: "Running", state: "Waiting" }, false),
+    ),
   ).toEqual({ word: "Waiting", tone: "parked" });
   expect(
-    conversationStandingArm(
-      { standing: "Failed", failure: "AgentFailed" },
-      true,
+    drawn(
+      conversationStandingArm(
+        { standing: "Failed", failure: "AgentFailed" },
+        true,
+      ),
     ),
   ).toEqual({ word: "Failed", tone: "fail" });
-  expect(conversationStandingArm({ standing: "Abandoned" }, true)).toEqual({
+  expect(
+    drawn(conversationStandingArm({ standing: "Abandoned" }, true)),
+  ).toEqual({
     word: "Abandoned",
     tone: "retired",
   });
-  expect(conversationStandingArm({ standing: "Open" }, true)).toEqual({
+  expect(drawn(conversationStandingArm({ standing: "Open" }, true))).toEqual({
     word: "Open",
     tone: "live",
   });
 });
 
 test("a turn a member stopped says so in the ink of a turn given up, and not a failure's", () => {
-  expect(conversationStandingArm({ standing: "Stopped" }, true)).toEqual({
-    word: "Stopped",
-    tone: "retired",
-  });
+  expect(drawn(conversationStandingArm({ standing: "Stopped" }, true))).toEqual(
+    {
+      word: "Stopped",
+      tone: "retired",
+    },
+  );
 });
 
 test("a turn a runner has is starting until something has come of it, and working from then", () => {
   const claimed = { standing: "Running", state: "Claimed" } as const;
-  expect(conversationStandingArm(claimed, false)).toEqual({
+  expect(drawn(conversationStandingArm(claimed, false))).toEqual({
     word: "Starting",
     tone: "live",
   });
-  expect(conversationStandingArm(claimed, true)).toEqual({
+  expect(drawn(conversationStandingArm(claimed, true))).toEqual({
     word: "Working",
     tone: "live",
   });
@@ -132,24 +152,37 @@ test("a turn a runner has is starting until something has come of it, and workin
 test("a turn nobody has taken is called the same whatever was heard of it before", () => {
   for (const state of ["Queued", "Waiting"] as const)
     expect(
-      conversationStandingArm({ standing: "Running", state }, true).word,
+      copyTextEn(
+        conversationStandingArm({ standing: "Running", state }, true).word,
+      ),
     ).toBe(state);
 });
 
 test("each place a declared action stands is its own word in its own tone", () => {
-  expect(actionReachArm("Reached")).toEqual({ word: "Reached", tone: "pass" });
-  expect(actionReachArm("NotYet")).toEqual({ word: "Waiting", tone: "queued" });
-  expect(actionReachArm("Failed")).toEqual({ word: "Failed", tone: "fail" });
-  expect(actionReachArm("RolledBack")).toEqual({
+  expect(drawn(actionReachArm("Reached"))).toEqual({
+    word: "Reached",
+    tone: "pass",
+  });
+  expect(drawn(actionReachArm("NotYet"))).toEqual({
+    word: "Waiting",
+    tone: "queued",
+  });
+  expect(drawn(actionReachArm("Failed"))).toEqual({
+    word: "Failed",
+    tone: "fail",
+  });
+  expect(drawn(actionReachArm("RolledBack"))).toEqual({
     word: "Rolled back",
     tone: "retired",
   });
-  expect(actionReachArm("Unknown")).toEqual({
+  expect(drawn(actionReachArm("Unknown"))).toEqual({
     word: "Unknown",
     tone: "neutral",
   });
   const arms = allActionReaches.map(actionReachArm);
-  expect(new Set(arms.map((arm) => arm.word)).size).toBe(arms.length);
+  expect(new Set(arms.map((arm) => copyTextEn(arm.word))).size).toBe(
+    arms.length,
+  );
   expect(new Set(arms.map((arm) => arm.tone)).size).toBe(arms.length);
   for (const arm of arms) expect(pillTones).toContain(arm.tone);
 });

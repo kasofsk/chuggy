@@ -39,6 +39,8 @@ import { TicketHeader, TicketTabs } from "./TicketHeader.tsx";
 import { TicketHeaderMenu } from "./TicketHeaderMenu.tsx";
 import { readValue, TicketPageHeldProvider } from "./TicketPageHeld.tsx";
 import type { TicketPageHeld, TicketReads } from "./TicketPageHeld.tsx";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
+import type { CopyText } from "../../core/copy.ts";
 
 const ticketDraftFragment = {
   fragment: "Words",
@@ -50,6 +52,7 @@ export type TicketDraftDeletion = ConsoleWriting<number, DraftResponse>;
 function draftDeleteWrite(
   partition: PartitionIdentity,
   ticket: number,
+  text: CopyText,
 ): ConsoleWrite<number, DraftResponse> {
   return {
     mutationKey: consoleWriteKey(
@@ -60,7 +63,7 @@ function draftDeleteWrite(
     ),
     write: (ports, version) =>
       apiDeleteDraft(ports, partition, ticket, version),
-    refusal: draftDeletionFailureSentence,
+    refusal: (failure) => text(draftDeletionFailureSentence(failure)),
   };
 }
 
@@ -72,7 +75,8 @@ export function useTicketDraftDeletion(
   ticket: number,
   drawn: boolean,
 ): TicketDraftDeletion {
-  return useConsoleWrite(draftDeleteWrite(partition, ticket), { drawn });
+  const text = useCopyText();
+  return useConsoleWrite(draftDeleteWrite(partition, ticket, text), { drawn });
 }
 
 /** Release leading, Edit beside it, and the menu, for a reader who may write
@@ -90,6 +94,7 @@ function TicketDraftActions(props: {
     "mutate",
   );
   const release = draftReleaseAction(draft);
+  const text = useCopyText();
   const busy = acting.busy || props.deleting;
   return (
     <div className="ticket-header-actions">
@@ -97,9 +102,9 @@ function TicketDraftActions(props: {
         <>
           <OfferedAction
             action={release.action}
-            effect={
-              ticketActionEffect(release.action, { kind: "NoPoint" }).effect
-            }
+            effect={text(
+              ticketActionEffect(release.action, { kind: "NoPoint" }).effect,
+            )}
             busy={busy}
             primary
             onChoose={() => {

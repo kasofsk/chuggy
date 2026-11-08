@@ -41,7 +41,7 @@ import "./ticket.css";
 
 const ticketUsageUnmeasured: FigureValue = {
   kind: "Absent",
-  why: "No run figures yet",
+  why: { id: "figures-absent-run" },
 };
 
 /** The basis a ticket's cost was priced on, in a reader's words. */

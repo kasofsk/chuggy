@@ -15,6 +15,7 @@ import type { TicketEscalation } from "../../../src/contract/responses.ts";
 import { leadPartition } from "./leadFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import type * as RouterModule from "@tanstack/react-router";
+import { copyTextEn } from "../app/copy/catalog.ts";
 
 /** A link's path is filled from its params, so a link into the wrong project
  * is a wrong href rather than the same one. */
@@ -45,22 +46,25 @@ function drawParked(
   escalation: TicketEscalation,
   setupOverridable = false,
 ): HTMLElement {
-  const slot = ticketSlot({
-    ticket: {
-      ticket: 11,
-      phase: "Escalated",
-      sequence: 7,
-      escalation,
-      ...ticketInstants,
+  const slot = ticketSlot(
+    {
+      ticket: {
+        ticket: 11,
+        phase: "Escalated",
+        sequence: 7,
+        escalation,
+        ...ticketInstants,
+      },
+      landings: [],
+      ledger: undefined,
+      names: undefined,
+      open: [],
+      executions: [],
+      setupOverridable,
+      nowMs: 0,
     },
-    landings: [],
-    ledger: undefined,
-    names: undefined,
-    open: [],
-    executions: [],
-    setupOverridable,
-    nowMs: 0,
-  });
+    copyTextEn,
+  );
   render(
     <TicketSlot partition={leadPartition} ticket={11} slot={slot} nowMs={0} />,
   );
@@ -88,7 +92,7 @@ test("a ticket parked at any other wall draws its line and no link", () => {
     evidence: "ExecutionProfileUnavailable",
     resumeAt: "ResumeWork",
   });
-  expect(within(card).getByText("No matching execution profile")).toBeTruthy();
+  expect(within(card).getByText("No matching run profile")).toBeTruthy();
   expect(within(card).queryByRole("link")).toBeNull();
 });
 

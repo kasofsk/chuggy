@@ -7,13 +7,8 @@
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import { QueryClient } from "@tanstack/react-query";
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  within,
-} from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -213,7 +208,7 @@ async function drawDuplicate(
       {inner}
     </ScreenHarness>
   );
-  const view = render(harnessed(drawn(from)));
+  const view = renderCopied(harnessed(drawn(from)));
   await settled();
   return {
     sent: scripted.sent,

@@ -48,7 +48,7 @@ test("every state is a word, a tone, a form and a mark, the moving ones filled a
     ["Blocked", "queued", "Tinted", "Slash"],
     ["Working", "live", "Filled", "Spin"],
     ["Evaluating", "evaluation", "Filled", "Spin"],
-    ["Finalizing", "finalization", "Filled", "Spin"],
+    ["Landing", "finalization", "Filled", "Spin"],
     ["Escalated", "parked", "Filled", "Alert"],
     ["Done", "pass", "Filled", "Check"],
     ["Revoked", "retired", "Filled", "Cross"],
@@ -77,14 +77,17 @@ function ticket(over: Partial<TicketResponse> = {}): TicketResponse {
 
 function fragmentOf(over: Partial<TicketHeaderFragmentReads>) {
   const read = over.ticket ?? ticket();
-  return ticketHeaderFragment({
-    ticket: read,
-    standing: ticketListStandingOf(read),
-    leadDispatches: true,
-    slot: { slot: "Nothing" },
-    landings: [],
-    ...over,
-  });
+  return ticketHeaderFragment(
+    {
+      ticket: read,
+      standing: ticketListStandingOf(read),
+      leadDispatches: true,
+      slot: { slot: "Nothing" },
+      landings: [],
+      ...over,
+    },
+    copyTextEn,
+  );
 }
 
 test("a ready ticket waits for the lead, or for a dispatch where no lead dispatches, and says nothing while the lead is unread", () => {
@@ -176,7 +179,7 @@ test("a done ticket names the branch it merged into, not its whole reference", (
   expect(
     fragmentOf({
       ticket: ticket({ phase: "Done" }),
-      landings: [ticketLandingOf(whole)],
+      landings: [ticketLandingOf(whole, copyTextEn)],
     }),
   ).toMatchObject({ words: "Merged into main", link: { label: "PR #1314" } });
 });
@@ -187,9 +190,10 @@ test("a done ticket says where it merged and links its pull request by number, a
     fragmentOf({
       ticket: done,
       landings: [
-        ticketLandingOf(landingConflicted(1)),
+        ticketLandingOf(landingConflicted(1), copyTextEn),
         ticketLandingOf(
           landingLanded(2, "https://github.com/acme/atlas/pull/138"),
+          copyTextEn,
         ),
       ],
     }),
@@ -202,7 +206,10 @@ test("a done ticket says where it merged and links its pull request by number, a
     fragmentOf({
       ticket: done,
       landings: [
-        ticketLandingOf(landingLanded(2, "https://forge.example.test/merge/7")),
+        ticketLandingOf(
+          landingLanded(2, "https://forge.example.test/merge/7"),
+          copyTextEn,
+        ),
       ],
     }),
   ).toMatchObject({ link: { label: "forge.example.test" } });

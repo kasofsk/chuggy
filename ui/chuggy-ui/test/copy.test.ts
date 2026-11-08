@@ -4,20 +4,30 @@
  * the layer that draws them.
  */
 
+import { renderHook } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import { phaseRoster } from "../../../src/contract/rosters.ts";
 import { copyCatalogEn, copyTextEn } from "../app/copy/catalog.ts";
 import { copyBundleOf, copyTextOf } from "../app/copy/copyBundle.ts";
+import { CopyProvider, useCopyText } from "../app/copy/CopyProvider.tsx";
 import { phaseLabel } from "../app/core/codeLabels.ts";
 import type { Copy } from "../app/core/copy.ts";
 import { epicGraphStanding } from "../app/core/epics.ts";
 
 /** A vernacular that calls a ticket a job and the inbox a tray, and nothing else. */
 const jobs = `
--tickets = { $case ->
-    [upper] Jobs
-   *[lower] jobs
+-ticket = { $case ->
+    [upper] { $form ->
+        [plural] Jobs
+        [a] A job
+       *[one] Job
+    }
+   *[lower] { $form ->
+        [plural] jobs
+        [a] a job
+       *[one] job
+    }
 }
 -inbox = { $case ->
     [upper] Tray
@@ -74,7 +84,7 @@ test("every phase is a descriptor of its own, which reads as the phase's word", 
     "Pending",
     "Working",
     "Evaluating",
-    "Finalizing",
+    "Landing",
     "Done",
     "Escalated",
     "Revoked",
@@ -86,6 +96,27 @@ test("an epic's node stands at its phase, or as a draft where it has none", () =
     id: "standing-work",
   });
   expect(epicGraphStanding({})).toStrictEqual({ id: "standing-draft" });
+});
+
+test("a vernacular's term reaches the codes' labels, its article and plural with it", () => {
+  const text = copyTextOf(copyBundleOf("en-x-jobs", copyCatalogEn, [jobs]));
+  expect(text({ id: "codes-action-release-effect" })).toBe(
+    "Makes the draft a job",
+  );
+  expect(text({ id: "codes-refusal-capacity-reached" })).toBe(
+    "Job capacity reached",
+  );
+  expect(text({ id: "figures-unit-tickets" })).toBe("jobs");
+});
+
+test("a descriptor handed another as a variable reads with the other's words in its place", () => {
+  const nested: Copy = {
+    id: "codes-failure-deferring",
+    args: { deferral: { id: "codes-deferral-unknown", args: { code: "Q" } } },
+  };
+  expect(copyTextEn(nested)).toBe("Kept deferring · Deferred (Q)");
+  const { result } = renderHook(useCopyText, { wrapper: CopyProvider });
+  expect(result.current(nested)).toBe("Kept deferring · Deferred (Q)");
 });
 
 test("an id the catalog lacks, or a message without its variables, does not compile", () => {

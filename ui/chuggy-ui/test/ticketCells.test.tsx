@@ -24,7 +24,7 @@ function row(
     creator: undefined,
     phase: "Escalated",
     sequence: 1,
-    badge: "work failed",
+    badge: { id: "codes-escalation-work-failure" },
     executionVerdict,
     activityAt: "2026-08-26T00:00:00Z",
     openDependencies: [],

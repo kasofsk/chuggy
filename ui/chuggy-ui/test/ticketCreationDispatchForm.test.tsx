@@ -13,11 +13,11 @@ import {
   act,
   cleanup,
   fireEvent,
-  render,
   screen,
   waitFor,
   within,
 } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -88,7 +88,7 @@ interface Api {
  * handed its caller to navigate to. */
 function draw(ports: ApiPorts, start: CreationStart): readonly number[] {
   const created: number[] = [];
-  render(
+  renderCopied(
     <SessionProvider holder={holderDouble()}>
       <QueryClientProvider
         client={

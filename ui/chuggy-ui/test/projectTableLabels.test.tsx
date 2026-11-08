@@ -386,7 +386,7 @@ test("an escalated row answers its kind on the phase chip's hover", async () => 
     .closest('[tabindex="0"]');
   if (trigger === null) throw new Error("no tooltip trigger around Escalated");
   fireEvent.focus(trigger);
-  expect((await screen.findByRole("tooltip")).textContent).toBe("work failed");
+  expect((await screen.findByRole("tooltip")).textContent).toBe("Work failed");
 });
 
 test("opening the list issues no executions read, and no sentence names a page budget", async () => {

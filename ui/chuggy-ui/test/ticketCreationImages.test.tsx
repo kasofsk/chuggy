@@ -10,11 +10,11 @@
 import {
   cleanup,
   fireEvent,
-  render,
   screen,
   waitFor,
   within,
 } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { briefImagesMax } from "../../../src/contract/brief.ts";
@@ -95,7 +95,7 @@ function draw(
   created: number[] = [],
   offers = creationOffers,
 ): void {
-  render(
+  renderCopied(
     creationFormDrawn(ports, offers, {
       onCreated: (ticket) => created.push(ticket),
     }),

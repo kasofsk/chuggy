@@ -23,6 +23,7 @@ import {
   usageResumeLine,
 } from "./codeLabels.ts";
 import type { EscalationStep } from "./codeLabels.ts";
+import type { CopyText } from "./copy.ts";
 import { ticketLandingEscalatedRemoval } from "./ticketLandings.ts";
 import type { TicketLanding } from "./ticketLandings.ts";
 import type {
@@ -105,23 +106,31 @@ function currentCycle(facts: LedgerFacts): Cycle | undefined {
 function needsYouMore(
   reads: SituationReads,
   escalation: NonNullable<TicketResponse["escalation"]>,
+  text: CopyText,
 ): string | undefined {
   if (escalation.usageResume !== undefined)
-    return usageResumeLine(escalation.usageResume, reads.nowMs);
-  if (escalation.lost !== undefined) return runnerLossLine(escalation.lost);
+    return text(usageResumeLine(escalation.usageResume, reads.nowMs));
+  if (escalation.lost !== undefined)
+    return text(runnerLossLine(escalation.lost));
   const failed = escalation.failed;
-  return (
-    (failed === undefined
+  const line =
+    failed === undefined
       ? undefined
-      : runStepLine(failed, reads.setupOverridable)) ??
-    ticketLandingEscalatedRemoval(reads.landings, escalation.evidence) ??
+      : runStepLine(failed, reads.setupOverridable);
+  if (line !== undefined) return text(line);
+  const removal = ticketLandingEscalatedRemoval(
+    reads.landings,
+    escalation.evidence,
+  );
+  if (removal !== undefined) return removal;
+  const more =
     escalationEvidenceLine(escalation.evidence) ??
     escalationDetailLine(escalation.kind, {
       lastSet:
         reads.ledger === undefined ? undefined : ledgerLastSet(reads.ledger),
       names: reads.names,
-    })
-  );
+    });
+  return more === undefined ? undefined : text(more);
 }
 
 /** A card that names only what is asked, with nowhere it stopped. */
@@ -198,24 +207,27 @@ function needsYouWhere(
   };
 }
 
-function needsYou(reads: SituationReads): TicketSlot | undefined {
+function needsYou(
+  reads: SituationReads,
+  text: CopyText,
+): TicketSlot | undefined {
   const ticket = reads.ticket;
   const blocked = revokedDependencyLine(ticket.revokedDependencies);
-  if (blocked !== undefined) return needsYouAsked(blocked);
+  if (blocked !== undefined) return needsYouAsked(text(blocked));
   const escalation = ticket.escalation;
   if (escalation !== undefined) {
     const said = escalation.lost ?? escalation.failed;
     const { where, run } = needsYouWhere(reads, said);
     return {
       slot: "NeedsYou",
-      detail: escalationDetail(escalation),
+      detail: text(escalationDetail(escalation)),
       where,
       run,
       step: escalationStep(escalation),
       more:
         where !== undefined && escalation.kind === "EvaluationFailureEscalated"
           ? undefined
-          : needsYouMore(reads, escalation),
+          : needsYouMore(reads, escalation, text),
       reason:
         said?.error === undefined
           ? undefined
@@ -224,7 +236,7 @@ function needsYou(reads: SituationReads): TicketSlot | undefined {
   }
   const question = reads.open?.[0];
   if (question === undefined) return undefined;
-  return needsYouAsked(nativeActionKindLabel(question.kind));
+  return needsYouAsked(text(nativeActionKindLabel(question.kind)));
 }
 
 function cycleExecutions(cycle: Cycle): readonly ExecutionSummary[] {
@@ -264,8 +276,8 @@ function runningNow(reads: SituationReads): RunningNow | undefined {
   };
 }
 
-export function ticketSlot(reads: SituationReads): TicketSlot {
-  const asked = needsYou(reads);
+export function ticketSlot(reads: SituationReads, text: CopyText): TicketSlot {
+  const asked = needsYou(reads, text);
   if (asked !== undefined) return asked;
   const running = runningNow(reads);
   return running === undefined ? { slot: "Nothing" } : { slot: "Now", running };
