@@ -11,7 +11,7 @@
 --
 -- WHAT IT IS NOT is a step of a rig release. The rig's tickets are its users'
 -- work and this empties every tenant's at once, so running it there is its
--- operator's decision about their data, never a release's.
+-- operator's decision about those users' data, never a release's.
 --
 -- WHAT IT KEEPS is everything a project IS rather than everything it has DONE:
 -- the tenants, the project rows, their lifecycles, the operations that
