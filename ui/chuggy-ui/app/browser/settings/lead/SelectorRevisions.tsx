@@ -15,18 +15,14 @@ import type { ReactNode } from "react";
 import type { SelectorSettingsHistoryResponse } from "../../../../../../src/contract/responses.ts";
 import { instantFigure } from "../../../core/figures.ts";
 import type { PanelState } from "../../../core/freshness.ts";
-import {
-  selectorSettingsHistoryDefaultWord,
-  selectorSettingsHistoryDiffs,
-  selectorSettingsHistoryEmptyWord,
-} from "../../../core/selectorSettingsHistory.ts";
+import { selectorSettingsHistoryDiffs } from "../../../core/selectorSettingsHistory.ts";
 import type {
   SelectorSettingsFieldChange,
   SelectorSettingsRevisionDiff,
 } from "../../../core/selectorSettingsHistory.ts";
 import type { SelectorProjectOverrides } from "../../../core/selectorSettingsForm.ts";
 import { useCopyText } from "../../../copy/CopyProvider.tsx";
-import type { CopyText } from "../../../core/copy.ts";
+import { copyOrDataText } from "../../../core/copy.ts";
 import { PanelUnready } from "../../DataPanel.tsx";
 import type { SelectorSettingsShown } from "../../selectorSettingsWriting.ts";
 import { Button, buttonLookClassName } from "../../ui/Button.tsx";
@@ -43,17 +39,6 @@ import "./selector.css";
 /** How many revisions stand before the rest are asked for, which is as many as
  * a reader scans without the list becoming the page. */
 export const selectorRevisionsShownMax = 5;
-
-/** A field's before or after text: the catalog's word for the two sentinels
- * an override field with no value is drawn as, or the value itself, which is
- * data. */
-function selectorRevisionFieldText(text: CopyText, value: string): string {
-  if (value === selectorSettingsHistoryDefaultWord)
-    return text({ id: "lead-settings-default" });
-  if (value === selectorSettingsHistoryEmptyWord)
-    return text({ id: "lead-history-none" });
-  return value;
-}
 
 function SelectorRevisionChanged(props: {
   readonly changes: readonly SelectorSettingsFieldChange[] | undefined;
@@ -94,10 +79,10 @@ function SelectorRevisionDiff(props: {
           <dt>{text(change.label)}</dt>
           <dd>
             <span className="selector-before">
-              {selectorRevisionFieldText(text, change.before)}
+              {copyOrDataText(text, change.before)}
             </span>{" "}
             <span className="selector-after">
-              {selectorRevisionFieldText(text, change.after)}
+              {copyOrDataText(text, change.after)}
             </span>
           </dd>
         </div>

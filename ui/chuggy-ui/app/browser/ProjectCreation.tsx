@@ -102,6 +102,7 @@ interface ProjectCreationNameProps {
 
 /** A name's box and, under it, the rule or the name's fault against it. */
 function ProjectCreationNameBox(props: ProjectCreationNameProps): ReactNode {
+  const text = useCopyText();
   const ruleId = useId();
   const fault = projectCreationNameFault(props.value);
   return (
@@ -117,7 +118,7 @@ function ProjectCreationNameBox(props: ProjectCreationNameProps): ReactNode {
         id={ruleId}
         className={`text-xs ${fault === undefined ? "text-ink-3" : "text-tone-fail"}`}
       >
-        {fault ?? projectNameRule}
+        {text(fault ?? projectNameRule)}
       </span>
     </>
   );
@@ -238,8 +239,7 @@ function projectCreationWrite(
     mutationKey: consoleWriteKey("project-creation"),
     write: (ports, sent) =>
       apiCreateProject(ports, sent.fields, sent.operation),
-    refusal: (failure) =>
-      copyOrDataText(text, projectCreationRefusalLabel(failure)),
+    refusal: (failure) => text(projectCreationRefusalLabel(failure)),
     landed: async (client, partition) => {
       lastProjectWrite(persistentStore, partition);
       await client.invalidateQueries({

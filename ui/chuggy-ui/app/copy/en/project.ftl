@@ -24,7 +24,7 @@ project-creation-workspace-new = New { -workspace }
 project-creation-workspace-unheld-label = No { -workspace }
 project-creation-workspace-unheld-detail = A new { -workspace } needs an invite link
 project-creation-workspace-unadmin-label = No { -workspace } to add to
-project-creation-workspace-unadmin-detail = { -role-admin(case: "upper", form: "a") } adds { -project(form: "plural") }
+project-creation-workspace-unadmin-detail = { -workspace(case: "upper", form: "a") } { -role-admin } adds { -project(form: "plural") }
 
 ## The ticket table.
 
@@ -44,6 +44,7 @@ project-table-search = Search { -ticket(form: "plural") }
 project-table-search-placeholder = Search titles or #number…
 project-table-show-more = Show more
 project-table-loading = Loading…
+project-table-more-failed = More
 project-table-blocked-hint = Blocked · { $count ->
     [one] { $count } unfinished { -dependency }
    *[other] { $count } unfinished { -dependency(form: "plural") }

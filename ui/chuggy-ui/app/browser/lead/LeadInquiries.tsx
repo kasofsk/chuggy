@@ -163,7 +163,10 @@ function leadAskWrite(
             error.failure === undefined
               ? {
                   ask: "Failed",
-                  words: { word: "Failed", detail: error.message },
+                  words: {
+                    word: text({ id: "lead-inquiry-failed" }),
+                    detail: error.message,
+                  },
                 }
               : inquiryAskRefused(error.failure),
         }),

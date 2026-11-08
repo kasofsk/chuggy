@@ -16,7 +16,11 @@ import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
+import { copyCatalogEn, copyTextEn } from "../app/copy/catalog.ts";
+import { copyTextOf } from "../app/copy/copyBundle.ts";
 import { CopyProvider } from "../app/copy/CopyProvider.tsx";
+import { copyPseudoBundleOf } from "../app/copy/copyPseudo.ts";
+import { inboxActionLabel } from "../app/core/inboxAnswers.ts";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import type {
@@ -236,9 +240,7 @@ test("nothing the inbox draws is a runtime style element", async () => {
   expect(document.querySelectorAll("style").length).toBe(0);
 });
 
-/** A native action's answers are drawn from the same ticket action label every
- * other button on the page draws from, so they move under a vernacular too. */
-test("an open action's answers are drawn through the catalog, not the wire's own case", async () => {
+test("an open action's answers are drawn under the catalog's words for them, which a wording alters", async () => {
   vi.stubGlobal(
     "fetch",
     serving(() => [awaiting]),
@@ -257,6 +259,12 @@ test("an open action's answers are drawn through the catalog, not the wire's own
     </CopyProvider>,
   );
   await settled();
+  const pseudo = copyTextOf(copyPseudoBundleOf(copyCatalogEn));
+  for (const action of ["Approve", "Decline"] as const) {
+    const name = pseudo(inboxActionLabel(action));
+    expect(name).not.toBe(copyTextEn(inboxActionLabel(action)));
+    expect(screen.getByRole("button", { name })).toBeDefined();
+  }
   expect(screen.queryByRole("button", { name: "approve" })).toBeNull();
   expect(screen.queryByRole("button", { name: "decline" })).toBeNull();
 });

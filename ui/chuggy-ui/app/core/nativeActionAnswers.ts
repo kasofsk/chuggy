@@ -7,7 +7,7 @@
  * what this action admits — which is also what puts them in the kind's own
  * order rather than the page's, so the destructive answer is never the first
  * button. `ResolveNativeAction` carries the action's identity and the fence it
- * was raised at, which is how the API refuses an answer to a question that has
+ * was raised at, which is how the API refuses an answer to an action that has
  * moved on.
  */
 

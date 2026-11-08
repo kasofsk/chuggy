@@ -2,7 +2,7 @@
  * The lead's decisions held for approval, as the inbox draws and answers them.
  *
  * A DECISION IS ANSWERED WHOLE, so a decision naming two tickets puts the same
- * question on both rows, and either row's answer is the other's too.
+ * proposal on both rows, and either row's answer is the other's too.
  *
  * NO FRAME NAMES A HELD DECISION, so the inbox is polled while anything draws
  * it and read again as soon as this tab answers.
@@ -18,8 +18,8 @@ import {
   selectorProposalNotHeldCode,
   type SelectorReviewOutcome,
 } from "../../../../src/contract/rosters.ts";
-import type { ApiResult } from "./apiRequest.ts";
-import type { Copy, CopyText } from "./copy.ts";
+import type { ApiFailure, ApiResult } from "./apiRequest.ts";
+import type { Copy, CopyOrData, CopyText } from "./copy.ts";
 
 /** How often the inbox is read again for its held decisions while it or its badge is drawn. */
 export const inboxProposalsPolledMs = 15_000;
@@ -28,7 +28,7 @@ export const inboxProposalsPolledMs = 15_000;
 export type InboxProposalStep =
   | { readonly step: "Answered"; readonly outcome: SelectorReviewOutcome }
   | { readonly step: "Stale" }
-  | { readonly step: "Failed"; readonly why: string };
+  | { readonly step: "Failed"; readonly why: CopyOrData };
 
 /** One review this tab sent, and the tickets its decision named. */
 export interface InboxProposalAnswer {
@@ -36,7 +36,26 @@ export interface InboxProposalAnswer {
   readonly step: InboxProposalStep;
 }
 
-/** A refusal is said as the code the server named it by, or as the outcome where it named none. */
+/** The code the server named a refusal by, which is data, or the outcome's
+ * word where it named none. */
+function inboxProposalFailedWhy(failure: ApiFailure): CopyOrData {
+  switch (failure.outcome) {
+    case "Unauthenticated":
+      return { id: "inbox-proposal-failed-unauthenticated" };
+    case "Absent":
+      return { id: "inbox-proposal-failed-absent" };
+    case "Unreachable":
+      return { id: "inbox-proposal-failed-unreachable" };
+    case "Unreadable":
+      return { id: "inbox-proposal-failed-unreadable" };
+    case "Conflict":
+    case "Retryable":
+    case "Rejected":
+    case "Fault":
+      return failure.code;
+  }
+}
+
 export function inboxProposalAnswered(
   result: ApiResult<SelectorProposalReviewResponse>,
 ): InboxProposalStep {
@@ -47,10 +66,7 @@ export function inboxProposalAnswered(
     result.code === selectorProposalNotHeldCode
   )
     return { step: "Stale" };
-  return {
-    step: "Failed",
-    why: "code" in result ? result.code : result.outcome,
-  };
+  return { step: "Failed", why: inboxProposalFailedWhy(result) };
 }
 
 /** The outcome's own word, where a review was answered. */

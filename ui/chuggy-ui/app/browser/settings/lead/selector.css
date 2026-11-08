@@ -14,9 +14,14 @@
 
   .selector-cell {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: var(--space-3);
     padding: var(--space-3) var(--space-4);
+  }
+
+  .selector-cell > :last-child {
+    margin-left: auto;
   }
 
   .selector-cell + .selector-cell {
@@ -37,11 +42,11 @@
   .selector-key {
     color: var(--ink-3);
     font-size: var(--text-sm);
-    width: 5em;
+    min-width: 5em;
   }
 
   .selector-standing {
-    flex: 1;
+    flex: 1 0 auto;
     display: flex;
     align-items: center;
     gap: var(--space-2);
@@ -90,11 +95,21 @@
 
   .selector-limit {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto minmax(8em, auto);
+    grid-template-columns: minmax(min-content, 1fr) auto minmax(8em, auto);
     align-items: center;
     gap: var(--space-3);
     padding: var(--space-2) 0;
     border-bottom: var(--hairline) solid var(--edge);
+  }
+
+  @container (max-width: 30em) {
+    .selector-limit {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .selector-was {
+      grid-column: 1 / -1;
+    }
   }
 
   .selector-limit-key {
@@ -122,10 +137,10 @@
     display: flex;
     align-items: center;
     gap: var(--space-2);
+    flex-wrap: wrap;
     justify-content: flex-end;
     font-size: var(--text-sm);
     color: var(--ink-3);
-    white-space: nowrap;
   }
 
   .selector-fault {

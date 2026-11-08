@@ -18,7 +18,11 @@
  */
 
 import type { SelectorSettingsHistoryResponse } from "../../../../src/contract/responses.ts";
-import type { Copy } from "./copy.ts";
+import type {
+  SelectorDispatchMode,
+  SelectorMode,
+} from "../../../../src/contract/rosters.ts";
+import type { Copy, CopyOrData } from "./copy.ts";
 import { groupedDigits } from "./figures.ts";
 import {
   selectorSettingsLimitLabel,
@@ -30,20 +34,22 @@ import type { SelectorProjectOverrides } from "./selectorSettingsForm.ts";
 export type SelectorSettingsRevisionRead =
   SelectorSettingsHistoryResponse["revisions"][number];
 
-/** The word a field that carries no override is drawn as, on both sides. This
- * stays a plain sentinel rather than a `Copy`, because a row's before and
- * after are compared by value across revisions; the component that draws them
- * maps the sentinel to the catalog's word. */
-export const selectorSettingsHistoryDefaultWord = "Default";
+/** The word a field that carries no override is drawn as, on both sides. */
+export const selectorSettingsHistoryDefaultWord: Copy = {
+  id: "lead-settings-default",
+};
 
 /** The word an override that clears an allowlist to nothing is drawn as. */
-export const selectorSettingsHistoryEmptyWord = "None";
+export const selectorSettingsHistoryEmptyWord: Copy = {
+  id: "lead-history-none",
+};
 
-/** One field one revision moved, as the two texts a row draws. */
+/** One field one revision moved, as the two texts a row draws: a word for a
+ * value the console names, or the value itself, which is data. */
 export interface SelectorSettingsFieldChange {
   readonly label: Copy;
-  readonly before: string;
-  readonly after: string;
+  readonly before: CopyOrData;
+  readonly after: CopyOrData;
   readonly mono: boolean;
 }
 
@@ -56,8 +62,38 @@ export interface SelectorSettingsRevisionDiff {
 /** How one override field is drawn on either side of an arrow. */
 interface SelectorSettingsHistoryField {
   readonly label: Copy;
-  readonly text: string;
+  readonly text: CopyOrData;
   readonly mono: boolean;
+}
+
+function selectorSettingsHistoryModeLabel(mode: SelectorMode): Copy {
+  switch (mode) {
+    case "Running":
+      return { id: "lead-mode-running" };
+    case "Paused":
+      return { id: "lead-mode-paused" };
+  }
+}
+
+function selectorSettingsHistoryDispatchLabel(
+  mode: SelectorDispatchMode,
+): Copy {
+  switch (mode) {
+    case "Automatic":
+      return { id: "lead-dispatch-automatic" };
+    case "ApprovalRequired":
+      return { id: "lead-dispatch-approval" };
+  }
+}
+
+/** Whether two sides draw the same: the same word, or the same data. */
+function selectorSettingsHistorySame(
+  before: CopyOrData,
+  after: CopyOrData,
+): boolean {
+  if (typeof before === "string" || typeof after === "string")
+    return before === after;
+  return before.id === after.id;
 }
 
 function selectorSettingsHistoryTexts(
@@ -101,12 +137,18 @@ function selectorSettingsHistoryFields(
     ...selectorSettingsHistoryTexts(overrides),
     {
       label: { id: "lead-history-mode-label" },
-      text: overrides.mode ?? absent,
+      text:
+        overrides.mode === undefined
+          ? absent
+          : selectorSettingsHistoryModeLabel(overrides.mode),
       mono: false,
     },
     {
       label: { id: "lead-history-dispatch-label" },
-      text: overrides.dispatchMode ?? absent,
+      text:
+        overrides.dispatchMode === undefined
+          ? absent
+          : selectorSettingsHistoryDispatchLabel(overrides.dispatchMode),
       mono: false,
     },
     ...limits,
@@ -128,7 +170,7 @@ function selectorSettingsHistoryFields(
   ];
 }
 
-function selectorSettingsHistoryNumber(value: number | undefined): string {
+function selectorSettingsHistoryNumber(value: number | undefined): CopyOrData {
   return value === undefined
     ? selectorSettingsHistoryDefaultWord
     : groupedDigits(value);
@@ -136,7 +178,7 @@ function selectorSettingsHistoryNumber(value: number | undefined): string {
 
 function selectorSettingsHistoryList(
   value: readonly string[] | undefined,
-): string {
+): CopyOrData {
   if (value === undefined) return selectorSettingsHistoryDefaultWord;
   return value.length === 0
     ? selectorSettingsHistoryEmptyWord
@@ -173,8 +215,11 @@ function selectorSettingsHistoryChanges(
   const changes: SelectorSettingsFieldChange[] = [];
   selectorSettingsHistoryFields(overrides).forEach((field, at) => {
     const before = was[at]?.text ?? selectorSettingsHistoryDefaultWord;
-    if (before === field.text) return;
-    const lines = selectorSettingsHistoryDiffered(before, field.text);
+    if (selectorSettingsHistorySame(before, field.text)) return;
+    const lines =
+      typeof before === "string" && typeof field.text === "string"
+        ? selectorSettingsHistoryDiffered(before, field.text)
+        : { before, after: field.text };
     changes.push({
       label: field.label,
       before: lines.before,

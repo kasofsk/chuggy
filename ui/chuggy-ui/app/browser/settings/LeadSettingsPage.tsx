@@ -82,6 +82,7 @@ interface SelectorSettingsSectionChrome {
 function SelectorSettingsSections(props: {
   readonly chrome: SelectorSettingsSectionChrome;
 }): ReactNode {
+  const text = useCopyText();
   const chrome = props.chrome;
   const editing = chrome.editing;
   const savable =
@@ -94,7 +95,10 @@ function SelectorSettingsSections(props: {
           key={name}
           name={name}
           draft={chrome.draft}
-          effective={chrome.settings.effective[name] ?? "None"}
+          effective={
+            chrome.settings.effective[name] ??
+            text({ id: "lead-settings-effective-none" })
+          }
           editing={editing === name}
           editable={editing === undefined}
           savable={savable}

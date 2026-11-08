@@ -19,6 +19,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
+import { useCopyText } from "../copy/CopyProvider.tsx";
 import { apiRedeemInviteLink } from "../core/accessRoutes.ts";
 import type { ApiResult } from "../core/apiRequest.ts";
 import { ConsoleWriteRefused, consoleWriteKey } from "../core/consoleWrite.ts";
@@ -257,6 +258,8 @@ function useInviteNaming(
 /** The card as a form: the field, under it what a workspace is until a fault stands there, and `Create`, which Enter in the field presses. */
 function InviteNamingForm(props: { readonly named: InviteNamed }): ReactNode {
   const { name, sending, refused, change, create } = props.named;
+  const text = useCopyText();
+  const nameFault = siteWorkspaceNameFault(name);
   return (
     <SessionCard
       title={inviteCardTitle}
@@ -273,7 +276,7 @@ function InviteNamingForm(props: { readonly named: InviteNamed }): ReactNode {
             label={invitePageWords.workspaceName}
             value={name}
             fault={
-              siteWorkspaceNameFault(name) ??
+              (nameFault === undefined ? undefined : text(nameFault)) ??
               (refused !== null && inviteRefusalOf(refused) === "Refused"
                 ? refused.message
                 : undefined)

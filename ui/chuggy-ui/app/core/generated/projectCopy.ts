@@ -42,6 +42,7 @@ export interface ProjectCopy {
   readonly "project-table-search-placeholder": Record<never, never>;
   readonly "project-table-show-more": Record<never, never>;
   readonly "project-table-loading": Record<never, never>;
+  readonly "project-table-more-failed": Record<never, never>;
   readonly "project-table-blocked-hint": {
     readonly count: unknown;
   };

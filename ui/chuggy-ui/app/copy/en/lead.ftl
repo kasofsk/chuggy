@@ -6,6 +6,8 @@ lead-heading = { -lead(case: "upper") }
 lead-no-lead = No { -lead }
 lead-session-open = Open
 lead-session-closed = Closed
+lead-absence-since = { $label } · since { $time }
+lead-absence-until = { $label } · until { $time }
 lead-absence-manual = { -ticket(case: "upper", form: "plural") } are { -dispatch(form: "ed") } by hand
 
 lead-attention-monitoring = Monitoring
@@ -92,6 +94,7 @@ lead-inquiry-ask = Ask
 lead-inquiry-mine = Mine
 lead-inquiry-asking = Asking
 lead-inquiry-asked = Asked
+lead-inquiry-failed = Failed
 lead-inquiry-fault-empty = Empty
 lead-inquiry-fault-too-long = Too long
 lead-inquiry-asker-none = None
@@ -108,6 +111,7 @@ lead-settings-title = { -lead(case: "upper") }
 lead-settings-revision = { -revision(case: "upper") } { $revision }
 lead-settings-default = Default
 lead-settings-default-lower = default
+lead-settings-effective-none = None
 
 lead-mode-name = { -lead(case: "upper") }
 lead-mode-running = Running

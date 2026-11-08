@@ -13,8 +13,8 @@ import {
   operationStateSentence,
 } from "./codeSentences.ts";
 import type { OperationStep } from "./operationFollow.ts";
-import type { TicketAction } from "./ticketActions.ts";
-import type { CopyOrData, CopyText } from "./copy.ts";
+import type { TicketAction, TicketActionName } from "./ticketActions.ts";
+import type { Copy, CopyOrData, CopyText } from "./copy.ts";
 
 const inboxStepWords = {
   Submitting: { id: "inbox-step-submitting" },
@@ -26,6 +26,24 @@ const inboxStepWords = {
 export interface InboxAnswer {
   readonly action: TicketAction;
   readonly step: OperationStep;
+}
+
+/** An answer a row offers, in the word its button says. */
+export function inboxActionLabel(action: TicketActionName): Copy {
+  switch (action) {
+    case "Dispatch":
+      return { id: "inbox-action-dispatch" };
+    case "Resume":
+      return { id: "inbox-action-resume" };
+    case "Revoke":
+      return { id: "inbox-action-revoke" };
+    case "Approve":
+      return { id: "inbox-action-approve" };
+    case "Decline":
+      return { id: "inbox-action-decline" };
+    case "Release":
+      return { id: "inbox-action-release" };
+  }
 }
 
 /** A follow past its last step, which is what its row draws from then on. */

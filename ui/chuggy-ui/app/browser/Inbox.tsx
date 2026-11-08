@@ -42,7 +42,6 @@ import {
   runnerLossDetail,
   runnerLossLine,
   runStepLabel,
-  ticketActionLabel,
   usageResumeLine,
 } from "../core/codeLabels.ts";
 import type { PanelState } from "../core/freshness.ts";
@@ -53,6 +52,7 @@ import {
 } from "../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../core/consoleWrite.ts";
 import {
+  inboxActionLabel,
   inboxAnswerInFlight,
   inboxAnswerRefusal,
   inboxStepDetail,
@@ -218,7 +218,7 @@ function InboxActions(props: {
                       }
                 }
               >
-                {text(ticketActionLabel(action.action)).toLowerCase()}
+                {text(inboxActionLabel(action.action))}
               </Button>
             </span>
           </Tooltip>
@@ -284,7 +284,7 @@ function InboxFailedWhy(props: {
 }
 
 /** Why this ticket is here: its phase where that is what holds it, and what
- * its open questions ask where it is not. */
+ * its open actions ask where it is not. */
 function InboxWhy(props: {
   readonly partition: PartitionIdentity;
   readonly entry: InboxEntryResponse;
@@ -339,10 +339,10 @@ function InboxWhy(props: {
   );
 }
 
-/** That the lead is declining to dispatch this ticket. The reason is on hover,
- * because a row is one line. */
 const inboxRefusalStanding: AgenticRefusalStanding = "Standing";
 
+/** That the lead is declining to dispatch this ticket. The reason is on hover,
+ * because a row is one line. */
 function InboxRefusal(props: {
   readonly entry: InboxEntryResponse;
 }): ReactNode {
@@ -393,7 +393,7 @@ function inboxAnswerWrite(
         { operation: held.operation, mutation: held.action.mutation },
         ticket,
         pressed.progress,
-        "the answer failed",
+        text({ id: "inbox-answer-unsaid" }),
         pressed.startedFrom,
       );
       if (operationAnswered(step))
@@ -541,9 +541,10 @@ function InboxTable(props: {
 function InboxPageFailure(props: {
   readonly rows: InboxRows | undefined;
 }): ReactNode {
+  const text = useCopyText();
   const failure = props.rows?.failure;
   return failure === undefined ? null : (
-    <ReadFailed subject="More" failure={failure} />
+    <ReadFailed subject={text({ id: "inbox-more-failed" })} failure={failure} />
   );
 }
 

@@ -15,6 +15,8 @@ import type {
   AccessSiteAbilities,
   AccessWorkspaceLink,
 } from "../../../src/contract/accessPlane.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
+import { copyOrDataText } from "../app/core/copy.ts";
 import {
   siteWorkspaceLinkBody,
   siteWorkspaceLinkNoteFault,
@@ -27,7 +29,8 @@ const atBound = "n".repeat(accessWorkspaceLinkNoteCharsMax);
 
 test("a note is counted by its code points, and one past the bound says Too long", () => {
   expect(siteWorkspaceLinkNoteFault(atBound)).toBeUndefined();
-  expect(siteWorkspaceLinkNoteFault(`${atBound}n`)).toBe("Too long");
+  const fault = siteWorkspaceLinkNoteFault(`${atBound}n`);
+  expect(fault && copyOrDataText(copyTextEn, fault)).toBe("Too long");
   expect(
     siteWorkspaceLinkNoteFault("😀".repeat(accessWorkspaceLinkNoteCharsMax)),
   ).toBeUndefined();

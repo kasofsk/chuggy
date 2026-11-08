@@ -71,6 +71,15 @@ export const setupPressed = {
   dispatch: "Dispatch",
 } as const;
 
+/**
+ * What the program names on the console's pages beside what is pressed there,
+ * by the name each page draws. A page draws these from the copy catalog, which
+ * core cannot reach, so a case holds each against the catalog's words.
+ */
+export const setupSeen = {
+  northStar: "North Star",
+} as const;
+
 /** How many names a question lists before it says how many more there are. */
 export const setupAskNamesMax = 12;
 
@@ -125,9 +134,7 @@ function setupProjectMend(
       `Open ${at.site}${projectCreationPathIn(at.workspace)}, the ${setupPressed.projectPage} page, name the project and press ${setupPressed.projectCreate}. Tell me once it is made.`,
       "once the person says the project is made",
     );
-  /** The settings section's title, named in English: the setup program has
-   * no reach into `app/copy/`. */
-  const section = "North Star";
+  const section = setupSeen.northStar;
   return setupHand(
     `Open ${setupPage(at, settingsRoutes.project.lead)}, press ${setupPressed.edit} beside ${section}, write a paragraph that says what the project is for, and press ${setupPressed.save}. Tell me once it is saved.`,
     `once the person says the ${section} is saved`,

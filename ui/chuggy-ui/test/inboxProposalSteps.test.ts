@@ -16,6 +16,7 @@ import {
 } from "../app/core/inboxProposals.ts";
 import { selectorReviewFeedbackCharsMax } from "../../../src/contract/http.ts";
 import { copyTextEn } from "../app/copy/catalog.ts";
+import { copyOrDataText } from "../app/core/copy.ts";
 
 test("an answer is the outcome the server recorded", () => {
   const step = inboxProposalAnswered({
@@ -43,14 +44,23 @@ test("a decision no longer held is stale, and any other conflict is not", () => 
   ).toStrictEqual({ step: "Failed", why: "IdempotencyConflict" });
 });
 
-test("a refusal with no code is said as its outcome", () => {
-  expect(inboxProposalAnswered({ outcome: "Absent" })).toStrictEqual({
+function failedWhy(step: ReturnType<typeof inboxProposalAnswered>): string {
+  if (step.step !== "Failed") throw new Error(`not failed: ${step.step}`);
+  return copyOrDataText(copyTextEn, step.why);
+}
+
+test("a refusal with no code is said as its outcome, under the outcome's label", () => {
+  const absent = inboxProposalAnswered({ outcome: "Absent" });
+  expect(absent).toStrictEqual({
     step: "Failed",
-    why: "Absent",
+    why: { id: "inbox-proposal-failed-absent" },
   });
+  expect(failedWhy(absent)).toBe("Absent");
   expect(
-    inboxProposalAnswered({ outcome: "Unreachable", reason: "offline" }),
-  ).toStrictEqual({ step: "Failed", why: "Unreachable" });
+    failedWhy(
+      inboxProposalAnswered({ outcome: "Unreachable", reason: "offline" }),
+    ),
+  ).toBe("Unreachable");
 });
 
 test("a note of nothing but space is no note, and a note is sent trimmed", () => {

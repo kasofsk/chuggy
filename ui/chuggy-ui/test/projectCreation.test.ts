@@ -16,7 +16,6 @@ import {
   projectNameRule,
   projectNameLengthFault,
 } from "../app/core/projectCreation.ts";
-import { copyOrDataText } from "../app/core/copy.ts";
 import { copyTextEn } from "../app/copy/catalog.ts";
 
 const partition = { tenant: "vteng", project: "chuggy" };
@@ -24,7 +23,7 @@ const partition = { tenant: "vteng", project: "chuggy" };
 function status(result: ApiResult<ProjectCreatedResponse>): string {
   return result.outcome === "Ok"
     ? "Created"
-    : copyOrDataText(copyTextEn, projectCreationRefusalLabel(result));
+    : copyTextEn(projectCreationRefusalLabel(result));
 }
 
 test("a name the wire refuses is refused before it is sent, and an empty one says nothing", () => {
@@ -74,7 +73,7 @@ test("each refusal is one short line of its own", () => {
   for (const code of ["TenantNameInvalid", "ProjectNameInvalid"])
     expect(
       status({ outcome: "Rejected", code, status: 422, body: undefined }),
-    ).toBe(projectNameRule);
+    ).toBe(copyTextEn(projectNameRule));
   expect(
     status({
       outcome: "Rejected",

@@ -7,6 +7,14 @@ export interface LeadCopy {
   readonly "lead-no-lead": Record<never, never>;
   readonly "lead-session-open": Record<never, never>;
   readonly "lead-session-closed": Record<never, never>;
+  readonly "lead-absence-since": {
+    readonly label: unknown;
+    readonly time: unknown;
+  };
+  readonly "lead-absence-until": {
+    readonly label: unknown;
+    readonly time: unknown;
+  };
   readonly "lead-absence-manual": Record<never, never>;
   readonly "lead-attention-monitoring": Record<never, never>;
   readonly "lead-attention-attention": Record<never, never>;
@@ -79,6 +87,7 @@ export interface LeadCopy {
   readonly "lead-inquiry-mine": Record<never, never>;
   readonly "lead-inquiry-asking": Record<never, never>;
   readonly "lead-inquiry-asked": Record<never, never>;
+  readonly "lead-inquiry-failed": Record<never, never>;
   readonly "lead-inquiry-fault-empty": Record<never, never>;
   readonly "lead-inquiry-fault-too-long": Record<never, never>;
   readonly "lead-inquiry-asker-none": Record<never, never>;
@@ -94,6 +103,7 @@ export interface LeadCopy {
   };
   readonly "lead-settings-default": Record<never, never>;
   readonly "lead-settings-default-lower": Record<never, never>;
+  readonly "lead-settings-effective-none": Record<never, never>;
   readonly "lead-mode-name": Record<never, never>;
   readonly "lead-mode-running": Record<never, never>;
   readonly "lead-mode-paused": Record<never, never>;

@@ -8,12 +8,20 @@ export interface InboxCopy {
   readonly "inbox-no-action": Record<never, never>;
   readonly "inbox-more": Record<never, never>;
   readonly "inbox-loading": Record<never, never>;
+  readonly "inbox-more-failed": Record<never, never>;
+  readonly "inbox-answer-unsaid": Record<never, never>;
   readonly "inbox-col-title": Record<never, never>;
   readonly "inbox-col-why": Record<never, never>;
   readonly "inbox-col-last-run": Record<never, never>;
   readonly "inbox-col-last-activity": Record<never, never>;
   readonly "inbox-col-answer": Record<never, never>;
   readonly "inbox-col-happened": Record<never, never>;
+  readonly "inbox-action-dispatch": Record<never, never>;
+  readonly "inbox-action-resume": Record<never, never>;
+  readonly "inbox-action-revoke": Record<never, never>;
+  readonly "inbox-action-approve": Record<never, never>;
+  readonly "inbox-action-decline": Record<never, never>;
+  readonly "inbox-action-release": Record<never, never>;
   readonly "inbox-step-submitting": Record<never, never>;
   readonly "inbox-step-busy": Record<never, never>;
   readonly "inbox-step-waiting": Record<never, never>;
@@ -31,6 +39,10 @@ export interface InboxCopy {
   readonly "inbox-proposal-note-placeholder": Record<never, never>;
   readonly "inbox-proposal-stale": Record<never, never>;
   readonly "inbox-proposal-failed": Record<never, never>;
+  readonly "inbox-proposal-failed-unauthenticated": Record<never, never>;
+  readonly "inbox-proposal-failed-absent": Record<never, never>;
+  readonly "inbox-proposal-failed-unreachable": Record<never, never>;
+  readonly "inbox-proposal-failed-unreadable": Record<never, never>;
   readonly "inbox-proposal-outcome-approved": Record<never, never>;
   readonly "inbox-proposal-outcome-rejected": Record<never, never>;
   readonly "inbox-proposal-sentence": {

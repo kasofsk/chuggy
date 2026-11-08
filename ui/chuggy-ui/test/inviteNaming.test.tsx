@@ -13,6 +13,7 @@ import {
   accessWorkspaceLinkNameWantedCode,
 } from "../../../src/contract/accessPlane.ts";
 import { inviteCookieCleared } from "../app/core/invitePage.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 import { projectNameRule } from "../app/core/projectCreation.ts";
 import { inviteConfiguration } from "./inviteDouble.ts";
 import {
@@ -149,8 +150,8 @@ test("the line gives way to the field's fault, a rule broken or a name refused, 
   expect(fault()).toBe("Name taken");
   expect(screen.queryByText(about)).toBeNull();
   await typed("North Wind");
-  expect(under().textContent).toBe(projectNameRule);
-  expect(fault()).toBe(projectNameRule);
+  expect(under().textContent).toBe(copyTextEn(projectNameRule));
+  expect(fault()).toBe(copyTextEn(projectNameRule));
   expect(screen.queryByText(about)).toBeNull();
   await typed("north-wind");
   expect(under().textContent).toBe(about);
@@ -168,7 +169,7 @@ test("the send without a name is made once under a double mount and a remount, a
 test("the field is judged as the New workspace dialog judges its name, and Create is held until the name may be sent", async () => {
   await linked();
   await typed("North Wind");
-  expect(fault()).toBe(projectNameRule);
+  expect(fault()).toBe(copyTextEn(projectNameRule));
   expect(field().getAttribute("aria-invalid")).toBe("true");
   expect(create().disabled).toBe(true);
   await typed("projects");

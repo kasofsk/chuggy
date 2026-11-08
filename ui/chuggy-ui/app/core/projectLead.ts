@@ -54,8 +54,14 @@ export function projectLeadRefusalLine(
   const label = text(leadAbsenceLabel(refusal.reason));
   const now = new Date(nowMs);
   return refusal.until === undefined
-    ? `${label} · since ${instantText(new Date(refusal.since), now)}`
-    : `${label} · until ${instantText(new Date(refusal.until), now)}`;
+    ? text({
+        id: "lead-absence-since",
+        args: { label, time: instantText(new Date(refusal.since), now) },
+      })
+    : text({
+        id: "lead-absence-until",
+        args: { label, time: instantText(new Date(refusal.until), now) },
+      });
 }
 
 /** The lead a read answered, or nothing where it answered that there is none. */

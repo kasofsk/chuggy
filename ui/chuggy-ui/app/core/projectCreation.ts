@@ -16,7 +16,7 @@ import {
 import type { projectCreationSchema } from "../../../../src/contract/requests.ts";
 
 import type { ApiFailure } from "./apiRequest.ts";
-import type { Copy, CopyOrData } from "./copy.ts";
+import type { Copy } from "./copy.ts";
 
 export type ProjectCreationForm = z.infer<typeof projectCreationSchema>;
 
@@ -55,17 +55,17 @@ export function projectCreationPathIn(workspace: string): string {
   return `${projectCreationRoutePath}?workspace=${encodeURIComponent(projectCreationQueryText(workspace))}`;
 }
 
-/**
- * The name rule as the form states it under each field before anything is
- * typed, and as it states a name that breaks it. These two and
- * `tenantNameReservedFault` stay plain strings rather than `Copy`, because
- * `core/siteWorkspaces.ts` reads them too and is not this ticket's to migrate.
- */
-export const projectNameRule = "Lowercase letters, digits, inner hyphens";
-export const projectNameLengthFault = "Too long";
+/** The name rule as the form states it under each field before anything is
+ * typed, and as it states a name that breaks it. */
+export const projectNameRule: Copy = { id: "project-creation-name-rule" };
+export const projectNameLengthFault: Copy = {
+  id: "project-creation-name-too-long",
+};
 
 /** What a workspace name the contract reserves is refused as. */
-export const tenantNameReservedFault = "Reserved";
+export const tenantNameReservedFault: Copy = {
+  id: "project-creation-tenant-reserved",
+};
 
 /** What a workspace nobody holds is refused as, to a reader who may make none. */
 export const tenantCreationRefusedLine: Copy = {
@@ -74,7 +74,7 @@ export const tenantCreationRefusedLine: Copy = {
 
 /** Why one name cannot be sent, or nothing while it is empty, which the submit
  * being unavailable already says. */
-export function projectCreationNameFault(name: string): string | undefined {
+export function projectCreationNameFault(name: string): Copy | undefined {
   if (name === "") return undefined;
   if (name.length > projectNameCharsMax) return projectNameLengthFault;
   return projectNameSchema.safeParse(name).success
@@ -120,7 +120,7 @@ function projectCreationConflict(code: string): Copy {
   }
 }
 
-function projectCreationRejected(code: string): CopyOrData {
+function projectCreationRejected(code: string): Copy {
   switch (code) {
     case "TenantNameInvalid":
     case "ProjectNameInvalid":
@@ -135,7 +135,7 @@ function projectCreationRejected(code: string): CopyOrData {
 }
 
 /** The one short line a refused creation is drawn as. */
-export function projectCreationRefusalLabel(failure: ApiFailure): CopyOrData {
+export function projectCreationRefusalLabel(failure: ApiFailure): Copy {
   switch (failure.outcome) {
     case "Conflict":
       return projectCreationConflict(failure.code);

@@ -108,9 +108,13 @@ test("a reader with no project meets the form, under a bar that signs out and se
 test("the rule both names are held to stands under each field before anything is typed", async () => {
   served([], () => Promise.resolve(answer(partition, 201)));
   await drawn(<Landing />);
-  expect(projectNameRule).toBe("Lowercase letters, digits, inner hyphens");
+  expect(copyTextEn(projectNameRule)).toBe(
+    "Lowercase letters, digits, inner hyphens",
+  );
   for (const label of ["Workspace", "Project"]) {
-    expect(ruleUnder(label).textContent, label).toBe(projectNameRule);
+    expect(ruleUnder(label).textContent, label).toBe(
+      copyTextEn(projectNameRule),
+    );
     expect(ruleUnder(label).className, label).not.toContain("text-tone-fail");
   }
   expect(screen.queryByText("Tenant")).toBeNull();
@@ -121,7 +125,7 @@ test("a name the wire refuses turns its own rule line, and nothing is sent", asy
   await drawn(<Landing />);
   typed("Workspace", "Vteng");
   typed("Project", "chuggy");
-  expect(ruleUnder("Workspace").textContent).toBe(projectNameRule);
+  expect(ruleUnder("Workspace").textContent).toBe(copyTextEn(projectNameRule));
   expect(ruleUnder("Workspace").className).toContain("text-tone-fail");
   expect(ruleUnder("Project").className).not.toContain("text-tone-fail");
   expect(

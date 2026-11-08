@@ -36,6 +36,7 @@ import { phaseRoster } from "../../../../src/contract/rosters.ts";
 import { apiProject } from "../core/apiRoutes.ts";
 import { phaseLabel } from "../core/codeLabels.ts";
 import { useCopyText } from "../copy/CopyProvider.tsx";
+import type { ApiFailure } from "../core/apiRequest.ts";
 import type { CopyText } from "../core/copy.ts";
 import { creatorLabel } from "../core/labels.ts";
 import type { PanelState } from "../core/freshness.ts";
@@ -949,6 +950,19 @@ function useProjectTableState(props: {
   };
 }
 
+/** A further page that could not be read, beside the rows that were. */
+function ProjectTableMoreFailed(props: {
+  readonly failure: ApiFailure | undefined;
+}): ReactNode {
+  const text = useCopyText();
+  return props.failure === undefined ? null : (
+    <ReadFailed
+      subject={text({ id: "project-table-more-failed" })}
+      failure={props.failure}
+    />
+  );
+}
+
 export function ProjectTable(props: {
   readonly query: TicketListQuery;
   readonly onQuery: (query: TicketListQuery) => void;
@@ -1000,9 +1014,7 @@ export function ProjectTable(props: {
         query={props.query}
         onQuery={props.onQuery}
       />
-      {partialFailure === undefined ? null : (
-        <ReadFailed subject="More" failure={partialFailure} />
-      )}
+      <ProjectTableMoreFailed failure={partialFailure} />
       <TicketListRows
         state={tickets.state}
         filter={choices.filter}
