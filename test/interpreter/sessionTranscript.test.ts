@@ -3,11 +3,13 @@
  *
  * THE FIXTURES ARE A CAPTURED STORE, NOT A HAND-WRITTEN SHAPE, because a walk
  * proved against a fixture the walk's author invented proves that the author
- * agrees with themselves. `test/fixtures/sessionStore/` holds three streams a
- * spike drove through the SDK's own custom-store hook: a resumed session, the
- * same conversation after a manual compaction, and a fork of it. One token in
- * each file's skill listing is redacted, and nothing the walk reads is: every
- * entry's type, uuid, `parentUuid` and `compactMetadata` are the runtime's.
+ * agrees with themselves. `test/fixtures/sessionStore/` holds four streams
+ * driven through the SDK's own custom-store hook: a resumed session, the same
+ * conversation after a manual compaction, a fork of it, and a second
+ * conversation compacted twice. One token in each of the first three files'
+ * skill listings is redacted, and the fourth's account email, organisation id
+ * and paths are replaced. Nothing the walk reads is: every entry's type, uuid,
+ * `parentUuid` and `compactMetadata` are the runtime's.
  *
  * The resumed stream's chain is the count `getSessionMessages` answered for the
  * same bytes, which is what makes this walk a substitute for that accessor
@@ -31,6 +33,7 @@ const streams = {
   resumed: "1ffa6adc-2acf-4f98-a642-f2de9acd0623",
   compacted: "489c5211-ca5d-4031-acc7-4e8014ea966d",
   forked: "09ea97c5-877e-4dd8-b6ed-168e0f154375",
+  twiceCompacted: "18cd0585-fce6-4d19-8c79-e5daa7b10f74",
 };
 
 function storedEntries(stream: string): readonly SessionStoreEntry[] {
@@ -118,11 +121,11 @@ test("the chain drops the runtime's bookkeeping entries", () => {
 });
 
 /**
- * The stored stream with a second compaction laid over it, built from the real
- * boundary's own shape: its uuids are rewritten so the case has two, every
- * field the walk reads keeps the value the runtime wrote, and its own
- * compaction's facts are an automatic one's. The real store holds one
- * compaction, so a stream that has compacted twice can only be composed.
+ * The once-compacted stream with a second compaction laid over it, built from
+ * the real boundary's own shape, whose next turn branches from the old tip. A
+ * real second compaction re-appends the conversation's opening entries under
+ * the uuids they already had and leaves no branch behind, so only a composed
+ * stream holds an entry on neither live branch.
  */
 function twiceCompacted(): readonly SessionStoreEntry[] {
   const entries = [...storedEntries(streams.compacted)];
@@ -133,11 +136,7 @@ function twiceCompacted(): readonly SessionStoreEntry[] {
     ...first.boundary,
     uuid: "second-boundary",
     logicalParentUuid: tip?.uuid ?? "",
-    timestamp: "2026-09-02T16:20:11.112Z",
     compactMetadata: {
-      trigger: "auto",
-      preTokens: 167_412,
-      postTokens: 9_870,
       preservedMessages: {
         anchorUuid: "second-summary",
         uuids: [first.anchor],
@@ -160,14 +159,25 @@ function twiceCompacted(): readonly SessionStoreEntry[] {
 }
 
 test("the seam is the last compaction, not the first", () => {
-  const entries = twiceCompacted();
+  const entries = storedEntries(streams.twiceCompacted);
   const compaction = sessionTranscriptCompaction(entries);
-  assert.equal(compaction?.boundary.uuid, "second-boundary");
-  assert.equal(compaction?.anchor, "second-summary");
-  const first = sessionTranscriptCompaction(storedEntries(streams.compacted));
-  assert.notEqual(compaction?.boundary.uuid, first?.boundary.uuid);
+  assert.equal(
+    compaction?.boundary.uuid,
+    "0e0c1851-4f5a-4e70-aa92-f567add77fef",
+  );
+  assert.equal(compaction?.anchor, "c09a73a4-b6a6-42d0-929c-4d3e77af74e5");
+  const first = sessionTranscriptCompaction(
+    entries.slice(
+      0,
+      entries.findIndex((entry) => entry.uuid === compaction?.boundary.uuid),
+    ),
+  );
+  assert.equal(first?.anchor, "1519f9f4-c392-4c45-b328-1b6004b8e893");
   const held = uuids(sessionTranscriptHeld(entries));
-  assert.deepEqual([...held].sort(), ["second-summary", "second-turn"].sort());
+  assert.deepEqual(held.slice(0, 2), [
+    "4444acbc-e658-4071-9ec5-1053aeb08f3f",
+    "c09a73a4-b6a6-42d0-929c-4d3e77af74e5",
+  ]);
   assert.ok(
     !held.includes(first?.anchor ?? ""),
     "the first compaction's summary is not held after the second cut",
@@ -312,22 +322,25 @@ test("a compaction boundary answers the trigger and the tokens its store kept, o
 });
 
 test("every compaction is answered in the order it was appended, not only the last", () => {
-  assert.deepEqual(sessionTranscriptBoundaries(twiceCompacted()), [
-    {
-      boundary: "83738f97-737d-412f-8a49-3c56c4a78ef9",
-      at: "2026-09-02T15:48:54.703Z",
-      trigger: "Manual",
-      tokensBefore: 15_037,
-      tokensAfter: 1_315,
-    },
-    {
-      boundary: "second-boundary",
-      at: "2026-09-02T16:20:11.112Z",
-      trigger: "Auto",
-      tokensBefore: 167_412,
-      tokensAfter: 9_870,
-    },
-  ]);
+  assert.deepEqual(
+    sessionTranscriptBoundaries(storedEntries(streams.twiceCompacted)),
+    [
+      {
+        boundary: "4b6fb7bd-18fa-4c2b-aebe-5c9296d62acb",
+        at: "2026-11-08T08:41:21.423Z",
+        trigger: "Manual",
+        tokensBefore: 499,
+        tokensAfter: 731,
+      },
+      {
+        boundary: "0e0c1851-4f5a-4e70-aa92-f567add77fef",
+        at: "2026-11-08T08:41:23.446Z",
+        trigger: "Manual",
+        tokensBefore: 1_571,
+        tokensAfter: 300,
+      },
+    ],
+  );
 });
 
 /** The entry as the runtime would have written it had it left `key` out. */
