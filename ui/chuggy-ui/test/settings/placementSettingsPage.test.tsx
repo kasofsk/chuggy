@@ -148,10 +148,10 @@ test("each kind is drawn with where it runs, what decided it, and a session's ru
   await drawPage();
   expect(placementRows()).toStrictEqual([
     "KindRuns onSet byRunner",
-    "WorkHostedProject",
-    "EvaluationHostedDeployment",
+    "WorkHosted runsProject",
+    "EvaluationHosted runsSite",
     "ChatRunnersDefaultOffline",
-    "LeadHostedDeployment",
+    "LeadHosted runsSite",
   ]);
 });
 
@@ -188,7 +188,7 @@ test("a reader the tenant granted hosted runs is offered both routes, and a save
   expect(offered("Work")).toStrictEqual(["InCluster", "Pool"]);
   expect(offered("Chat")).toStrictEqual(["InCluster", "Pool"]);
   await choose("Evaluation", "Runners");
-  await choose("Chat", "Hosted");
+  await choose("Chat", "Hosted runs");
   await choose("Lead", "Runners");
   await press("Save changes");
   const wrote = sent.filter((one) => one.method === "PUT");
@@ -200,7 +200,7 @@ test("a reader the tenant granted hosted runs is offered both routes, and a save
   ]);
   expect(screen.getByText("Written")).toBeTruthy();
   expect(placementRows()).toContain("EvaluationRunnersProject");
-  expect(placementRows()).toContain("ChatHostedProject");
+  expect(placementRows()).toContain("ChatHosted runsProject");
   expect(placementRows()).toContain("LeadRunnersProjectLive");
 });
 
@@ -240,8 +240,10 @@ test("a reader without the hosted grant sees hosted kinds as they stand, and an 
   await press("Edit");
   for (const kind of ["Work", "Chat", "Lead"]) {
     expect(offered(kind)).toStrictEqual(["InCluster", "Pool"]);
-    expect(radio(kind, "Hosted").getAttribute("aria-checked")).toBe("true");
-    expect(radio(kind, "Hosted").hasAttribute("disabled")).toBe(true);
+    expect(radio(kind, "Hosted runs").getAttribute("aria-checked")).toBe(
+      "true",
+    );
+    expect(radio(kind, "Hosted runs").hasAttribute("disabled")).toBe(true);
     expect(radio(kind, "Runners").hasAttribute("disabled")).toBe(false);
   }
   expect(offered("Evaluation")).toStrictEqual(["Pool"]);
@@ -269,7 +271,7 @@ test("a reader without the hosted grant who moves work alone writes work's place
     ["execution-placement", { work: "Pool", evaluation: "Pool" }],
   ]);
   expect(screen.getByText("Written")).toBeTruthy();
-  expect(placementRows()).toContain("ChatHostedDefault");
+  expect(placementRows()).toContain("ChatHosted runsDefault");
 });
 
 test("a reader who moves chat alone writes the session placement alone", async () => {
@@ -282,7 +284,7 @@ test("a reader who moves chat alone writes the session placement alone", async (
     ],
   });
   await press("Edit");
-  await choose("Chat", "Hosted");
+  await choose("Chat", "Hosted runs");
   await press("Save changes");
   expect(puts(sent)).toStrictEqual([
     ["session-placement", { thread: "InCluster", lead: "InCluster" }],
@@ -359,7 +361,7 @@ test("a lead moved under an open editor is drawn where it moved, and a chat move
     },
   );
   expect(radio("Lead", "Runners").getAttribute("aria-checked")).toBe("true");
-  await choose("Chat", "Hosted");
+  await choose("Chat", "Hosted runs");
   await press("Save changes");
   expect(puts(sent)).toStrictEqual([
     ["session-placement", { thread: "InCluster", lead: "Pool" }],
@@ -401,9 +403,11 @@ test("a session placement poll that fails leaves the open editor and the reader'
     (moving) => {
       moving.sessionsFailing = true;
     },
-    ["Chat", "Hosted"],
+    ["Chat", "Hosted runs"],
   );
-  expect(radio("Chat", "Hosted").getAttribute("aria-checked")).toBe("true");
+  expect(radio("Chat", "Hosted runs").getAttribute("aria-checked")).toBe(
+    "true",
+  );
   expect(screen.getByRole("button", { name: "Save changes" })).toBeTruthy();
 });
 
@@ -425,13 +429,13 @@ test("a session placement read in flight at a save does not draw over it", async
         answered = resolve;
       });
     },
-    ["Chat", "Hosted"],
+    ["Chat", "Hosted runs"],
   );
   await press("Save changes");
   await turned(answered);
   await settled();
   expect(puts(sent)).toHaveLength(1);
-  expect(placementRows()).toContain("ChatHostedProject");
+  expect(placementRows()).toContain("ChatHosted runsProject");
 });
 
 test("a write the hosted grant refuses says so and stays open", async () => {
@@ -457,7 +461,7 @@ test("a session write the hosted grant refuses says so and stays open after work
   });
   await press("Edit");
   await choose("Work", "Runners");
-  await choose("Chat", "Hosted");
+  await choose("Chat", "Hosted runs");
   await press("Save changes");
   expect(puts(sent)).toHaveLength(2);
   expect(screen.getByText("Needs hosted runs")).toBeTruthy();

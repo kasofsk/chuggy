@@ -87,7 +87,7 @@ describe("the status line", () => {
         placed(sessionPlacementBody({ thread: "InCluster" })),
       ),
     );
-    expect(facts["Runs on"]).toBe("Hosted");
+    expect(facts["Runs on"]).toBe("Hosted runs");
     expect(facts["Runner"]).toBeUndefined();
   });
 

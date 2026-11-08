@@ -16,6 +16,7 @@ import {
 import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
+import { copyTextEn } from "../app/copy/catalog.ts";
 import { nativeHttpBasePath } from "../../../src/contract/http.ts";
 import { ticketYamlStoreKey } from "../app/browser/editor/authoringGuards.tsx";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
@@ -293,7 +294,7 @@ test("the submit asks first, and refuses while a problem stands", async () => {
   expect(asked.textContent).toMatch(/One problem to fix before sending/u);
   const confirm = within(asked).getByRole("button", {
     name: "Create ticket",
-    description: creationSubmitEffect("Waits"),
+    description: creationSubmitEffect("Waits", copyTextEn),
   });
   expect(confirm.hasAttribute("disabled")).toBe(true);
   fireEvent.click(within(asked).getByRole("button", { name: "Close" }));

@@ -604,9 +604,9 @@ test("a reader who gives personal runners and does not administer the workspace 
   await drawPeople({ abilities: personalRunnersGivenOnly });
   const editor = await editorOf("s-bob");
   expect(within(editor).queryByRole("group", { name: "Runners" })).toBe(null);
-  expect(within(editor).queryByRole("button", { name: "Remove runners" })).toBe(
-    null,
-  );
+  expect(
+    within(editor).queryByRole("button", { name: "Remove personal runners" }),
+  ).toBe(null);
 });
 
 test("a workspace administrator removes every runner of a member's once asked, and is told when there was none they may remove", async () => {
@@ -615,21 +615,24 @@ test("a workspace administrator removes every runner of a member's once asked, a
       answer({ ...peopleAbilitiesAll(), grantPersonalRunners: false }),
   });
   const editor = await editorOf("s-bob");
-  await press("Remove runners");
+  await press("Remove personal runners");
   expect(
     drawn.sent.filter((request) => request.method === "DELETE"),
   ).toStrictEqual([]);
   expect(
-    within(editor).getByRole("group", { name: /^Remove .*'s runners\?$/u })
-      .textContent,
-  ).toContain("Every runner of theirs");
+    within(editor).getByRole("group", {
+      name: /^Remove .*'s personal runners\?$/u,
+    }).textContent,
+  ).toContain("Their personal runners stop");
   await press("Remove all");
   expect(
     drawn.sent
       .filter((request) => request.method === "DELETE")
       .map((request) => request.url),
   ).toStrictEqual([`/api/v1/tenants/${peopleTenant}/personal-runners/s-bob`]);
-  expect(within(editor).getByText("No runner you may remove")).toBeTruthy();
+  expect(
+    within(editor).getByText("No personal runner you may remove"),
+  ).toBeTruthy();
 });
 
 /** The abilities of a reader who may also give and take unscoped chat. */

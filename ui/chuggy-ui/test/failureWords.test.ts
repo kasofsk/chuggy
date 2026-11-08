@@ -128,9 +128,15 @@ const writeLines: readonly (readonly [
   string,
   (failure: ApiFailure) => CopyOrData,
 ])[] = [
-  ["a member's runners removed", (failure) => memberRunnerRemoved(failure)],
+  [
+    "a member's runners removed",
+    (failure) => copyOrDataText(copyTextEn, memberRunnerRemoved(failure)),
+  ],
   ["a finalization saved", repositoryFinalizationRefusal],
-  ["a placement saved", runnersPlacementRefusal],
+  [
+    "a placement saved",
+    (failure) => copyOrDataText(copyTextEn, runnersPlacementRefusal(failure)),
+  ],
   [
     "selector settings saved",
     (failure) => selectorSettingsRefusal(failure, 0, copyTextEn),

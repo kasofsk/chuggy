@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * What a minted registration token is handed over in: the steps that make a
  * machine a runner, each command copied by its own control, for a project's
@@ -9,6 +8,7 @@ import { useEffect, useRef } from "react";
 import type { ReactNode, RefObject } from "react";
 
 import type { WorkerPoolTokenResponse } from "../../../../src/contract/responses.ts";
+import { useCopyText } from "../copy/CopyProvider.tsx";
 import { instantFigure } from "../core/figures.ts";
 import { runnerPackages, runnerRegisterCommand } from "../core/runners.ts";
 import type { RunnerAsk, RunnerKind } from "../core/runners.ts";
@@ -58,6 +58,7 @@ export function RunnerSteps(props: {
   readonly kind: RunnerKind;
   readonly onDone: () => void;
 }): ReactNode {
+  const text = useCopyText();
   const nowMs = useNowMs();
   const steps = useFocusedUnheld<HTMLOListElement>();
   const offered = runnerPackages[props.ask.package];
@@ -67,21 +68,24 @@ export function RunnerSteps(props: {
       <ol
         ref={steps}
         tabIndex={-1}
-        aria-label={props.kind === "Pool" ? "Add runner" : "Register runner"}
+        aria-label={text({
+          id: props.kind === "Pool" ? "runners-add" : "runners-register",
+        })}
         className="grid min-w-0 list-decimal gap-3 pl-6"
       >
-        <RunnerStep title="Install">
+        <RunnerStep title={text({ id: "runners-steps-install" })}>
           <CopyBox
-            about={offered.needs}
+            about={text(offered.needs)}
             text={offered.installCommand}
-            copyLabel="Copy install command"
+            copyLabel={text({ id: "runners-steps-copy-install" })}
           />
         </RunnerStep>
-        <RunnerStep title="Register">
+        <RunnerStep title={text({ id: "runners-steps-register" })}>
           <CopyBox
             about={
               <>
-                Expires <Figure figure={instantFigure(expires, nowMs)} />
+                {text({ id: "runners-steps-expires" })}{" "}
+                <Figure figure={instantFigure(expires, nowMs)} />
               </>
             }
             text={runnerRegisterCommand(
@@ -91,23 +95,23 @@ export function RunnerSteps(props: {
               props.kind,
               props.ask,
             )}
-            copyLabel="Copy register command"
+            copyLabel={text({ id: "runners-steps-copy-register" })}
           />
         </RunnerStep>
-        <RunnerStep title="Finish">
+        <RunnerStep title={text({ id: "runners-steps-finish" })}>
           <a
             className="justify-self-start"
             href={offered.guideAddress}
             rel="noopener noreferrer"
             target="_blank"
           >
-            Setup guide
+            {text({ id: "runners-steps-guide" })}
           </a>
         </RunnerStep>
       </ol>
       <div className="pl-6">
         <Button size="sm" onClick={props.onDone}>
-          Done
+          {text({ id: "runners-done" })}
         </Button>
       </div>
     </div>
