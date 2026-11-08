@@ -9,7 +9,8 @@
  * served policy both hold.
  */
 
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, waitFor } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { Conversation } from "../app/browser/conversation/Conversation.tsx";
@@ -57,7 +58,7 @@ test("a turn out with nothing drawn of it runs the engine in its own answer, abo
   const running = exchangeOf({
     standing: { standing: "Running", state: "Claimed" },
   });
-  const view = render(
+  const view = renderCopied(
     <Conversation
       exchanges={[running]}
       composer={composerOf()}
@@ -79,7 +80,7 @@ test("a running exchange already carrying its answer draws no engine", () => {
     standing: { standing: "Running", state: "Claimed" },
     answer: "the answer is already on the transcript",
   });
-  const view = render(
+  const view = renderCopied(
     <Conversation
       exchanges={[answered]}
       composer={composerOf()}
@@ -91,7 +92,7 @@ test("a running exchange already carrying its answer draws no engine", () => {
 
 test("a send no exchange stands for yet runs the engine at the foot of the column, and nothing between the column and the composer", async () => {
   const answered = exchangeOf({ answer: "done" });
-  const view = render(
+  const view = renderCopied(
     <Conversation
       exchanges={[answered]}
       composer={{
@@ -117,7 +118,7 @@ test("a send no exchange stands for yet runs the engine at the foot of the colum
 });
 
 test("the engine runs a rail, and turns a wheel under every axle", () => {
-  const running = render(<ConversationWaiting />);
+  const running = renderCopied(<ConversationWaiting />);
   expect(
     running.container.querySelector(".conversation-waiting-track"),
   ).not.toBeNull();
@@ -133,14 +134,14 @@ test("the engine runs a rail, and turns a wheel under every axle", () => {
 });
 
 test("the sprite states no colour and no style of its own", () => {
-  const running = render(<ConversationWaiting />);
+  const running = renderCopied(<ConversationWaiting />);
   expect(running.container.querySelector("[style]")).toBeNull();
   expect(running.container.querySelector("[fill]")).toBeNull();
 });
 
 test("every exchange settled draws no engine and holds no place for one", () => {
   const answered = exchangeOf({ answer: "done" });
-  const view = render(
+  const view = renderCopied(
     <Conversation
       exchanges={[answered]}
       composer={composerOf()}
@@ -154,7 +155,7 @@ test("no composer draws no engine, running or settled alike", () => {
   const running = exchangeOf({
     standing: { standing: "Running", state: "Claimed" },
   });
-  const view = render(
+  const view = renderCopied(
     <Conversation exchanges={[running]} empty="No conversation" />,
   );
   expect(view.container.querySelector(".conversation-waiting")).toBeNull();

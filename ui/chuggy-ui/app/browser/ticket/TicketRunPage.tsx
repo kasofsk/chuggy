@@ -111,7 +111,9 @@ function TicketRunMeta(props: {
   return (
     <p className="ticket-run-meta">
       {taken === undefined ? null : (
-        <Figure figure={sinceFigure(taken, nowMs, "Started")} />
+        <Figure
+          figure={sinceFigure(taken, nowMs, { id: "figures-happened-started" })}
+        />
       )}
       {line.line === "Waiting" ? (
         <span>

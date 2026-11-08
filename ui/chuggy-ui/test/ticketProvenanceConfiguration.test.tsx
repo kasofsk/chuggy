@@ -41,6 +41,7 @@ import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { sheetDeclared, sheetNarrowCondition, sheetRules } from "./sheet.ts";
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 
 const atlas: PartitionIdentity = { tenant: "acme", project: "atlas" };
 
@@ -553,7 +554,7 @@ test("a following ticket held on its revision, or trimmed, says why in one line,
   const cases = [
     [
       { verdict: "Held", code: "SelectionUnknown" },
-      "Stays on this revision · Workload, plan or finalizer not in the catalog",
+      "Stays on this revision · Workload, plan or landing not in the catalog",
     ],
     [
       { verdict: "Held", code: "ConfigurationInvalid" },
@@ -645,7 +646,7 @@ test("a version 1 ticket's landing is the one its brief names, and no Finalizati
     briefFinalized,
   );
   expect(cell(landing(), "runs")).toBe(
-    finalizationLine(briefFinalized.finalization),
+    copyTextEn(finalizationLine(briefFinalized.finalization)),
   );
   cleanup();
   await drawTicket();
@@ -662,7 +663,7 @@ test("a catalog ticket's landing is the brief's before its finalizer's, with the
     briefFinalized,
   );
   expect(cell(landing(), "runs")).toBe(
-    finalizationLine(briefFinalized.finalization),
+    copyTextEn(finalizationLine(briefFinalized.finalization)),
   );
   expect(details(landing())).toStrictEqual(new Map([["Approval", "Required"]]));
 });

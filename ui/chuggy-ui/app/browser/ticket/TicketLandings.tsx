@@ -34,6 +34,7 @@ import { Field, Fields } from "../ui/Fields.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Identity } from "../ui/Identity.tsx";
 import { LedgerBlock, LedgerRow } from "../ui/Ledger.tsx";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 
 import "./ticket.css";
 
@@ -44,6 +45,7 @@ export function useTicketLandings(
 ): TicketLandingsState {
   return ticketLandingsRead(
     usePanelState(ticketLandingsQuery(partition, ticket)),
+    useCopyText(),
   );
 }
 

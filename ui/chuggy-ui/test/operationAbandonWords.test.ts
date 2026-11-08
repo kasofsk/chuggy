@@ -33,6 +33,7 @@ import type {
 } from "../app/core/operationFollow.ts";
 import { parkedOverridesRefusal } from "../app/core/parkedOverrides.ts";
 import { creationStepSentence } from "../app/core/ticketCreation.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 
 const failures: readonly ApiFailure[] = [
   { outcome: "Unauthenticated" },
@@ -138,18 +139,18 @@ const abandonedSteps: readonly OperationStep[] = [
 /** Every line drawn for a step, in every place that draws one. */
 function linesDrawn(step: OperationStep): readonly string[] {
   return [
-    operationStepLabel(step, "Resume").text,
-    inboxStepSentence(step),
-    inboxAnswerRefusal(step) ?? "",
-    parkedOverridesRefusal(step) ?? "",
-    creationStepSentence(step),
-    creationStepSentence(step, "Update"),
+    copyTextEn(operationStepLabel(step, "Resume").text),
+    inboxStepSentence(step, copyTextEn),
+    inboxAnswerRefusal(step, copyTextEn) ?? "",
+    parkedOverridesRefusal(step, copyTextEn) ?? "",
+    creationStepSentence(step, copyTextEn),
+    creationStepSentence(step, copyTextEn, "Update"),
   ];
 }
 
 test("every abandon cause has a word of at most two words", () => {
   for (const cause of causes) {
-    const { word } = operationAbandonWords(cause);
+    const word = copyTextEn(operationAbandonWords(cause).word);
     expect(word.trim()).not.toBe("");
     expect(word.split(" ").length).toBeLessThanOrEqual(2);
   }
@@ -159,7 +160,7 @@ test("the machine abandons each wait in that wait's word", () => {
   expect(
     abandonedByTheMachine
       .slice(0, 7)
-      .map((step) => operationStepLabel(step, "Resume").text),
+      .map((step) => copyTextEn(operationStepLabel(step, "Resume").text)),
   ).toStrictEqual([
     "Busy",
     "Still pending",
@@ -191,12 +192,9 @@ test("an inbox answer under way is one word at each step", () => {
     operationFollowing("op-1"),
     confirming,
   ];
-  expect(underWay.map(inboxStepSentence)).toStrictEqual([
-    "Submitting",
-    "Busy",
-    "Waiting",
-    "Updating",
-  ]);
+  expect(
+    underWay.map((step) => inboxStepSentence(step, copyTextEn)),
+  ).toStrictEqual(["Submitting", "Busy", "Waiting", "Updating"]);
 });
 
 test("a thrown follow says one word, and its message is only the detail", () => {
@@ -205,11 +203,12 @@ test("a thrown follow says one word, and its message is only the detail", () => 
     reason: "the clock stopped",
   });
   expect(operationStepLabel(step, "Resume")).toStrictEqual({
-    text: "Failed",
+    text: { id: "codes-abandon-thrown" },
     detail: "the clock stopped",
     settled: true,
     wrong: true,
   });
+  expect(copyTextEn({ id: "codes-abandon-thrown" })).toBe("Failed");
   expect(inboxStepDetail(step)).toBe("the clock stopped");
   expect(operationAbandonFailure(step)).toBeUndefined();
 });
@@ -247,10 +246,9 @@ test("a refused submission is still refused, and keeps its code for the hover", 
     outcome: "Conflict",
     code: "TicketVersionStale",
   });
-  expect(operationStepLabel(step, "Revoke")).toMatchObject({
-    text: "Refused",
-    detail: "TicketVersionStale",
-  });
+  const drawn = operationStepLabel(step, "Revoke");
+  expect(copyTextEn(drawn.text)).toBe("Refused");
+  expect(drawn.detail).toBe("TicketVersionStale");
   expect(inboxStepDetail(step)).toBe("TicketVersionStale");
   for (const line of linesDrawn(step))
     expect(line).not.toContain("TicketVersionStale");

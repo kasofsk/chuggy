@@ -6,11 +6,11 @@
 import {
   cleanup,
   fireEvent,
-  render,
   screen,
   waitFor,
   within,
 } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { answeringApi } from "./answeringApi.ts";
@@ -69,7 +69,7 @@ function drawnOver(
     );
   });
   const { ports } = answeringApi(() => ({ status: 404, body: {} }));
-  render(creationFormDrawn(ports, creationOffers));
+  renderCopied(creationFormDrawn(ports, creationOffers));
   return asked;
 }
 

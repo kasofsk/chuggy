@@ -34,11 +34,12 @@ import {
   landingRunning,
   landingsRead,
 } from "./ticketLandingsFixture.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 
 const nowMs = Date.parse("2026-10-07T15:00:00Z");
 
 test("a landing that failed on a conflict says so and how many files it names", () => {
-  const landing = ticketLandingOf(landingConflicted(2));
+  const landing = ticketLandingOf(landingConflicted(2), copyTextEn);
   expect(landing.word).toBe("Failed");
   expect(landing.tone).toBe("fail");
   expect(ticketLandingFragment(landing, nowMs)).toEqual({
@@ -51,7 +52,10 @@ test("a landing that failed on a conflict says so and how many files it names", 
 });
 
 test("a held landing says how long it has been held and on what", () => {
-  const landing = ticketLandingOf(landingHeld(2, "2026-10-07T14:48:00Z"));
+  const landing = ticketLandingOf(
+    landingHeld(2, "2026-10-07T14:48:00Z"),
+    copyTextEn,
+  );
   expect(landing.word).toBe("Held");
   expect(ticketLandingFragment(landing, nowMs).text).toBe(
     "Held 12m · Target unreadable",
@@ -61,7 +65,7 @@ test("a held landing says how long it has been held and on what", () => {
 test("an escalated landing names the hold it escalated from, with who removed its pull request from the merge queue and why where that hold says", () => {
   const since = "2026-10-07T14:48:00Z";
   const said = (read: Parameters<typeof ticketLandingOf>[0]) =>
-    ticketLandingFragment(ticketLandingOf(read), nowMs);
+    ticketLandingFragment(ticketLandingOf(read, copyTextEn), nowMs);
   expect(
     said(
       landingEscalated(2, since, "ProposalDequeued", {
@@ -89,9 +93,9 @@ test("an escalated landing names the hold it escalated from, with who removed it
         actor: "github-merge-queue",
       }),
     ).text,
-  ).toBe("Proposal merges exhausted: failed_checks by github-merge-queue");
+  ).toBe("Pull request merges exhausted: failed_checks by github-merge-queue");
   expect(said(landingEscalated(2, since, "ProposalMergesExhausted")).text).toBe(
-    "Proposal merges exhausted",
+    "Pull request merges exhausted",
   );
   expect(
     said(
@@ -103,12 +107,15 @@ test("an escalated landing names the hold it escalated from, with who removed it
   ).toBe(
     "Merge queue checks failed again: failed_checks by github-merge-queue",
   );
-  const bare = ticketLandingOf({
-    cycle: 2,
-    generation: 1,
-    attempts: 1,
-    state: "Unavailable",
-  });
+  const bare = ticketLandingOf(
+    {
+      cycle: 2,
+      generation: 1,
+      attempts: 1,
+      state: "Unavailable",
+    },
+    copyTextEn,
+  );
   expect(bare.word).toBe("Escalated");
   expect(bare.hold).toBeUndefined();
   expect(ticketLandingFragmentSays(ticketLandingFragment(bare, nowMs))).toBe(
@@ -119,6 +126,7 @@ test("an escalated landing names the hold it escalated from, with who removed it
 test("a landing whose merge waits on the forge says on what, what the forge said, and when it was asked", () => {
   const landing = ticketLandingOf(
     landingAwaitingMerge(2, "2026-10-07T14:57:00Z"),
+    copyTextEn,
   );
   expect(landing.word).toBe("Waiting");
   expect(landing.tone).toBe("parked");
@@ -137,6 +145,7 @@ test("a required check that failed reads as the forge's own word, which the frag
     ticketLandingFragment(
       ticketLandingOf(
         landingAwaitingMerge(2, "2026-10-07T14:59:30Z", "Blocked", "blocked"),
+        copyTextEn,
       ),
       nowMs,
     ).text,
@@ -145,6 +154,7 @@ test("a required check that failed reads as the forge's own word, which the frag
     ticketLandingFragment(
       ticketLandingOf(
         landingAwaitingMerge(2, "2026-10-07T14:00:00Z", "HeadMoved", "clean"),
+        copyTextEn,
       ),
       nowMs,
     ).text,
@@ -153,7 +163,7 @@ test("a required check that failed reads as the forge's own word, which the frag
 
 test("a landed landing offers its pull request under its host and its commit short", () => {
   const fragment = ticketLandingFragment(
-    ticketLandingOf(landingLanded(2)),
+    ticketLandingOf(landingLanded(2), copyTextEn),
     nowMs,
   );
   expect(fragment.link).toEqual({
@@ -165,13 +175,13 @@ test("a landed landing offers its pull request under its host and its commit sho
     label: { text: "e0f3a7c", title: landingLandedCommit },
   });
   expect(fragment.caveat).toBeUndefined();
-  expect(ticketLandingSummary(ticketLandingOf(landingLanded(2)))).toBe(
-    "Landed",
-  );
+  expect(
+    ticketLandingSummary(ticketLandingOf(landingLanded(2), copyTextEn)),
+  ).toBe("Landed");
 });
 
 test("a pull request a person merged at a head it was not opened at names its merge commit as the row always does, says the head was not evaluated, and names both heads in its detail", () => {
-  const landing = ticketLandingOf(landingMergedElsewhere(2));
+  const landing = ticketLandingOf(landingMergedElsewhere(2), copyTextEn);
   expect(landing.word).toBe("Landed");
   const fragment = ticketLandingFragment(landing, nowMs);
   expect(fragment.commit).toEqual({
@@ -192,41 +202,50 @@ test("a pull request a person merged at a head it was not opened at names its me
     "a merge somebody else made names the commit it landed at",
   ).toEqual({ text: "e0f3a7c", title: landingLandedCommit });
   expect(
-    ticketLandingOf(landingLanded(2)).detail.proposal?.heads,
+    ticketLandingOf(landingLanded(2), copyTextEn).detail.proposal?.heads,
     "a merge at the head opened names one commit",
   ).toBeUndefined();
 });
 
 test("a pull request held on being closed is labelled closed, and an absent one is still absent", () => {
-  const closed = ticketLandingOf(landingClosed(2, "2026-10-07T14:58:00Z"));
+  const closed = ticketLandingOf(
+    landingClosed(2, "2026-10-07T14:58:00Z"),
+    copyTextEn,
+  );
   expect(closed.word).toBe("Held");
   expect(ticketLandingFragment(closed, nowMs).text).toBe("Held 2m · Closed");
   expect(closed.detail.proposal?.status).toBe("Closed");
   const absent = landingClosed(2, "2026-10-07T14:58:00Z");
   expect(
     ticketLandingFragment(
-      ticketLandingOf({
-        ...absent,
-        proposal:
-          absent.proposal === undefined
-            ? undefined
-            : { ...absent.proposal, status: "Open" },
-      }),
+      ticketLandingOf(
+        {
+          ...absent,
+          proposal:
+            absent.proposal === undefined
+              ? undefined
+              : { ...absent.proposal, status: "Open" },
+        },
+        copyTextEn,
+      ),
       nowMs,
     ).text,
-  ).toBe("Held 2m · Proposal absent");
+  ).toBe("Held 2m · Pull request absent");
 });
 
 test("the forge's word on a pull request is drawn while its landing is live, and not once a landing has settled it", () => {
   const running = landingRunning(2);
   const opened = (landing: typeof running) =>
-    ticketLandingOf({
-      ...landing,
-      proposal:
-        landing.proposal === undefined
-          ? undefined
-          : { ...landing.proposal, status: "Open" },
-    }).detail.proposal?.status;
+    ticketLandingOf(
+      {
+        ...landing,
+        proposal:
+          landing.proposal === undefined
+            ? undefined
+            : { ...landing.proposal, status: "Open" },
+      },
+      copyTextEn,
+    ).detail.proposal?.status;
   expect(opened(running)).toBe("Open");
   expect(opened(landingAwaitingMerge(2, "2026-10-07T14:57:00Z"))).toBe("Open");
   expect(opened({ ...running, state: "Proposed" })).toBeUndefined();
@@ -239,7 +258,10 @@ test("an address that does not parse, or is not https, is no link and no throw",
   expect(ticketLandingLink("javascript:alert(1)")).toBeUndefined();
   expect(ticketLandingLink(undefined)).toBeUndefined();
   expect(
-    ticketLandingOf(landingLanded(2, "http://forge.example.test/pull/1")).link,
+    ticketLandingOf(
+      landingLanded(2, "http://forge.example.test/pull/1"),
+      copyTextEn,
+    ).link,
   ).toBeUndefined();
 });
 
@@ -248,7 +270,7 @@ test("landings join the cycles the ledger holds in the read's order, and the res
     landingConflicted(2),
     landingLanded(2),
     landingRunning(4),
-  ].map(ticketLandingOf);
+  ].map((read) => ticketLandingOf(read, copyTextEn));
   const joined = ticketLandingsJoined(landings, [1, 2, 3]);
   expect(joined.byCycle.get(2)?.map((landing) => landing.state)).toEqual([
     "Failed",
@@ -267,11 +289,14 @@ test("a read that never answered holds no landings, and one that did holds them 
       failure: { outcome: "Unreachable", reason: "the read failed" },
     }),
   ).toEqual([]);
-  const read = ticketLandingsRead({
-    state: "Ready",
-    value: landingsRead([landingConflicted(2)]),
-    observedAtMs: nowMs,
-  });
+  const read = ticketLandingsRead(
+    {
+      state: "Ready",
+      value: landingsRead([landingConflicted(2)]),
+      observedAtMs: nowMs,
+    },
+    copyTextEn,
+  );
   expect(ticketLandingsHeld(read).map((landing) => landing.key)).toEqual([
     "2/1",
   ]);

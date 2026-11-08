@@ -93,6 +93,8 @@ import {
 import type { TicketPageHeld, TicketReads } from "./ticket/TicketPageHeld.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 import { useWorkRunner } from "./workRunner.tsx";
+import { useCopyText } from "../copy/CopyProvider.tsx";
+import type { CopyText } from "../core/copy.ts";
 
 interface StandingProps {
   readonly partition: PartitionIdentity;
@@ -126,6 +128,7 @@ function setupOverridable(
 function standingOf(
   props: StandingProps,
   setupOverridable: boolean,
+  text: CopyText,
 ): {
   readonly offers: TicketOffers;
   readonly slot: Slot;
@@ -145,16 +148,19 @@ function standingOf(
       : undefined;
   return {
     offers: ticketOffers(props.reads.openState, ticket, dispatch),
-    slot: ticketSlot({
-      ticket,
-      landings: ticketLandingsHeld(props.reads.landingsState),
-      ledger: props.facts.ledger,
-      names: props.facts.plan.names,
-      open: readValue(props.reads.openState)?.actions,
-      executions: readValue(props.reads.pageState)?.executions ?? [],
-      setupOverridable,
-      nowMs: props.nowMs,
-    }),
+    slot: ticketSlot(
+      {
+        ticket,
+        landings: ticketLandingsHeld(props.reads.landingsState),
+        ledger: props.facts.ledger,
+        names: props.facts.plan.names,
+        open: readValue(props.reads.openState)?.actions,
+        executions: readValue(props.reads.pageState)?.executions ?? [],
+        setupOverridable,
+        nowMs: props.nowMs,
+      },
+      text,
+    ),
     fence: parkedOverridesFence(
       ticket,
       readValue(props.reads.openState)?.actions,
@@ -204,9 +210,11 @@ function useTicketStanding(
 ) {
   const abilities = useProjectAbilities(props.partition);
   const runner = useWorkRunner(props.partition, "Unknown");
+  const text = useCopyText();
   const { slot, fence, ...standing } = standingOf(
     props,
     setupOverridable(props, abilities),
+    text,
   );
   const { offers, noRunner } = ticketOffersStartable(
     ticketOffersAllowed(standing.offers, abilities),
@@ -244,6 +252,7 @@ function TicketStandingHeader(props: {
   readonly actions: TicketHeaderActionsProps;
 }): ReactNode {
   const { held } = props;
+  const text = useCopyText();
   const ticket = readValue(held.reads.ticketState);
   if (ticket === undefined) return null;
   const standing = ticketListStandingOf(ticket);
@@ -252,13 +261,16 @@ function TicketStandingHeader(props: {
       ticket={held.ticket}
       title={ticket.title ?? "Ticket"}
       standing={standing}
-      fragment={ticketHeaderFragment({
-        ticket,
-        standing,
-        leadDispatches: projectLeadDispatches(held.reads.leadState),
-        slot: held.slot,
-        landings: ticketLandingsHeld(held.reads.landingsState),
-      })}
+      fragment={ticketHeaderFragment(
+        {
+          ticket,
+          standing,
+          leadDispatches: projectLeadDispatches(held.reads.leadState),
+          slot: held.slot,
+          landings: ticketLandingsHeld(held.reads.landingsState),
+        },
+        text,
+      )}
       nowMs={held.nowMs}
       actions={<TicketHeaderActions {...props.actions} />}
       epics={<EpicChips partition={held.partition} epics={ticket.epics} />}

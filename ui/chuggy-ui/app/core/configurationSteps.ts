@@ -45,6 +45,7 @@ import {
 } from "./ticketOverrides.ts";
 import type { OverrideField } from "./ticketOverrides.ts";
 import { workloadsEffectiveCanonicalOf } from "./workloadOverrides.ts";
+import type { CopyText } from "./copy.ts";
 
 export type ConfigurationStepPhase = "Work" | "Evaluation" | "Finalization";
 
@@ -512,6 +513,7 @@ function catalogStageRowOf(
 function stepsLandingOf(
   finalization: StepsFinalization | undefined,
   finalizer: CatalogFinalizer | undefined,
+  text: CopyText,
 ): ConfigurationStepRow {
   const detail = (name: string, line: string): ConfigurationStepDetail => ({
     name,
@@ -524,10 +526,14 @@ function stepsLandingOf(
     runs:
       finalization === undefined
         ? undefined
-        : { by: finalizationLine(finalization), from: undefined, more: 0 },
+        : {
+            by: text(finalizationLine(finalization)),
+            from: undefined,
+            more: 0,
+          },
     details: [
       ...(finalization?.kind === "GitMerge"
-        ? [detail("Policy", gitMergePolicyLabel(finalization.policy))]
+        ? [detail("Policy", text(gitMergePolicyLabel(finalization.policy)))]
         : []),
       ...(finalizer?.approvalRequired === true
         ? [detail("Approval", "Required")]
@@ -545,6 +551,7 @@ function catalogStepsOf(
   documents: CatalogDocuments,
   selection: ConfigurationSelection | undefined,
   finalization: StepsFinalization | undefined,
+  text: CopyText,
 ): ConfigurationSteps {
   const { catalog } = documents;
   const selected = configurationCatalogSelected(catalog, selection);
@@ -570,7 +577,11 @@ function catalogStepsOf(
         phase: "Finalization",
         note: undefined,
         rows: [
-          stepsLandingOf(finalization ?? finalizer?.finalization, finalizer),
+          stepsLandingOf(
+            finalization ?? finalizer?.finalization,
+            finalizer,
+            text,
+          ),
         ],
       },
     ],
@@ -832,6 +843,7 @@ function legacyStepsOf(
   overrides: ConfigurationOverrides | undefined,
   selection: ConfigurationSelection | undefined,
   finalization: StepsFinalization | undefined,
+  text: CopyText,
 ): ConfigurationSteps {
   const held = legacyHeldOf(canonical, overrides);
   const evaluation = legacyEvaluationRowsOf(held);
@@ -846,7 +858,7 @@ function legacyStepsOf(
           {
             phase: "Finalization" as const,
             note: undefined,
-            rows: [stepsLandingOf(finalization, undefined)],
+            rows: [stepsLandingOf(finalization, undefined, text)],
           },
         ]),
   ];
@@ -863,6 +875,8 @@ export function configurationStepsOf(props: {
   readonly overrides: ConfigurationOverrides | undefined;
   readonly selection: ConfigurationSelection | undefined;
   readonly finalization: StepsFinalization | undefined;
+  /** The words the finalization's codes are drawn in. */
+  readonly text: CopyText;
 }): ConfigurationSteps {
   const documents = catalogDocumentsOf(props.canonical, props.overrides);
   return documents === undefined
@@ -871,6 +885,12 @@ export function configurationStepsOf(props: {
         props.overrides,
         props.selection,
         props.finalization,
+        props.text,
       )
-    : catalogStepsOf(documents, props.selection, props.finalization);
+    : catalogStepsOf(
+        documents,
+        props.selection,
+        props.finalization,
+        props.text,
+      );
 }

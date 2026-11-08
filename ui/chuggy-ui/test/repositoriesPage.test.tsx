@@ -13,10 +13,10 @@ import {
   act,
   cleanup,
   fireEvent,
-  render,
   screen,
   within,
 } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -327,7 +327,7 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
       <RepositoriesPage />
     </ScreenHarness>
   );
-  render(page);
+  renderCopied(page);
   await settled();
   return sent;
 }

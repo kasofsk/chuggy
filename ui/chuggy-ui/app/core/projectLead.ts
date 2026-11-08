@@ -24,6 +24,7 @@ import type { SessionKind } from "../../../../src/contract/rosters.ts";
 import { leadAbsenceLabel } from "./codeLabels.ts";
 import { instantText } from "./figures.ts";
 import type { PanelState } from "./freshness.ts";
+import type { CopyText } from "./copy.ts";
 
 /** The session kind a lead's change frames carry. */
 export const projectLeadSessionKind: SessionKind = "Lead";
@@ -48,8 +49,9 @@ export function projectLeadPolled(read: LeadReadResponse): boolean {
 export function projectLeadRefusalLine(
   refusal: LeadRefusalResponse,
   nowMs: number,
+  text: CopyText,
 ): string {
-  const label = leadAbsenceLabel(refusal.reason);
+  const label = text(leadAbsenceLabel(refusal.reason));
   const now = new Date(nowMs);
   return refusal.until === undefined
     ? `${label} · since ${instantText(new Date(refusal.since), now)}`
@@ -113,6 +115,7 @@ export function projectLeadAbsenceLine(
   state: PanelState<LeadReadResponse>,
   nowMs: number,
   placement: SessionPlacementResponse | undefined,
+  text: CopyText,
 ): string | undefined {
   if (state.state !== "Ready" || "session" in state.value) return undefined;
   const absence = state.value.absence;
@@ -120,6 +123,6 @@ export function projectLeadAbsenceLine(
   if (absence.reason === "RunnerOffline" && placement !== undefined)
     return undefined;
   return "since" in absence
-    ? projectLeadRefusalLine(absence, nowMs)
-    : leadAbsenceLabel(absence.reason);
+    ? projectLeadRefusalLine(absence, nowMs, text)
+    : text(leadAbsenceLabel(absence.reason));
 }

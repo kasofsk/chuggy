@@ -43,6 +43,7 @@ import {
   workIdentity,
 } from "./ticketLedgerFixture.ts";
 import type { ExecutionShape } from "./ticketLedgerFixture.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 
 const named = { names: ["checks", "review"], lands: true };
 
@@ -134,7 +135,7 @@ test("a stage the program never reached is a step not reached, and a landing is 
     ],
   ]);
   const landed = runsOf(twoCycles.slice(0, 2), [
-    ticketLandingOf(landingLanded(1)),
+    ticketLandingOf(landingLanded(1), copyTextEn),
   ]);
   expect(rowsSaid(landed)).toEqual([
     [
@@ -157,7 +158,7 @@ test("a cycle still running says which step it is at, and one its landing failed
       .map((shape) =>
         shape.task === 3 ? { ...shape, outcome: "Passed" as const } : shape,
       ),
-    [ticketLandingOf(landingConflicted(1))],
+    [ticketLandingOf(landingConflicted(1), copyTextEn)],
   );
   expect(conflicted[0]?.outcome).toBe("Landing failed");
 });
@@ -172,13 +173,15 @@ test("a ticket that lands nothing has a Landing row that waits on none", () => {
 });
 
 test("a landing draws the merge mark only while it merged or is under way, and its failure otherwise", () => {
-  expect(ticketRunLandingMarked(ticketLandingOf(landingLanded(1)))).toEqual({
+  expect(
+    ticketRunLandingMarked(ticketLandingOf(landingLanded(1), copyTextEn)),
+  ).toEqual({
     mark: "Merge",
     tone: "finalization",
   });
-  expect(ticketRunLandingMarked(ticketLandingOf(landingConflicted(1)))).toEqual(
-    { mark: "Cross", tone: "fail" },
-  );
+  expect(
+    ticketRunLandingMarked(ticketLandingOf(landingConflicted(1), copyTextEn)),
+  ).toEqual({ mark: "Cross", tone: "fail" });
 });
 
 test("a run is found by its task's number, and a number the page holds no run for finds none", () => {
@@ -195,7 +198,7 @@ test("a run is found by its task's number, and a number the page holds no run fo
 test("the landing page draws the newest cycle holding a landing, or the current one where none does", () => {
   expect(
     ticketRunsLandingCycle(
-      runsOf(twoCycles, [ticketLandingOf(landingConflicted(1))]),
+      runsOf(twoCycles, [ticketLandingOf(landingConflicted(1), copyTextEn)]),
     ),
   ).toBe(1);
   expect(ticketRunsLandingCycle(runsOf(twoCycles))).toBe(2);

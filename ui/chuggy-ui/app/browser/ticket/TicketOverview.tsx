@@ -57,6 +57,7 @@ import { TicketSlot } from "./TicketSlot.tsx";
 import { dependencyStandingOf } from "./TicketStateChip.tsx";
 import { TicketStateLabel } from "./TicketStateLabel.tsx";
 import { TicketStepsDrawn } from "./TicketSteps.tsx";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 
 import "./ticket.css";
 
@@ -147,7 +148,7 @@ function TicketSidebarRuns(props: {
           <Figure
             figure={
               totals === undefined
-                ? { kind: "Absent", why: "No run figures yet" }
+                ? { kind: "Absent", why: { id: "figures-absent-run" } }
                 : costFigure(totals.costUsdMicros, totals.costBasis)
             }
           />
@@ -314,6 +315,7 @@ function TicketOverviewSteps(props: {
   readonly ticket: TicketResponse;
 }): ReactNode {
   const { held, ticket } = props;
+  const text = useCopyText();
   const page = readValue(held.reads.pageState);
   const ledger =
     held.facts.ledger ??
@@ -326,13 +328,16 @@ function TicketOverviewSteps(props: {
     <TicketStepsDrawn
       partition={held.partition}
       ticket={held.ticket}
-      steps={ticketStepsOf({
-        ledger,
-        plan: held.facts.plan,
-        landings: landings.byCycle,
-        settled: ticket.phase !== "Pending" && !phaseIsRunning(ticket.phase),
-        nowMs: held.nowMs,
-      })}
+      steps={ticketStepsOf(
+        {
+          ledger,
+          plan: held.facts.plan,
+          landings: landings.byCycle,
+          settled: ticket.phase !== "Pending" && !phaseIsRunning(ticket.phase),
+          nowMs: held.nowMs,
+        },
+        text,
+      )}
       nowMs={held.nowMs}
     />
   );
@@ -345,19 +350,23 @@ function TicketDraftOverview(props: {
   readonly draft: DraftResponse;
 }): ReactNode {
   const { held, draft } = props;
+  const text = useCopyText();
   return (
     <div className="ticket-overview">
       <div className="ticket-overview-main">
         <TicketStepsDrawn
           partition={held.partition}
           ticket={held.ticket}
-          steps={ticketStepsOf({
-            ledger: undefined,
-            plan: held.facts.plan,
-            landings: new Map(),
-            settled: false,
-            nowMs: held.nowMs,
-          })}
+          steps={ticketStepsOf(
+            {
+              ledger: undefined,
+              plan: held.facts.plan,
+              landings: new Map(),
+              settled: false,
+              nowMs: held.nowMs,
+            },
+            text,
+          )}
           nowMs={held.nowMs}
         />
         <TicketInstructions

@@ -13,11 +13,13 @@ import type { ReactNode } from "react";
 
 import type { Figure as FigureValue } from "../../core/figures.ts";
 import { Tooltip } from "./Tooltip.tsx";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
+import type { Copy } from "../../core/copy.ts";
 
 import "./Figure.css";
 
 /** What a list price is not, said where a reader hovers the tag that says it. */
-export const figureBasisTitle = "List price, not a bill";
+export const figureBasisTitle: Copy = { id: "figures-basis-title" };
 
 function FigureSpan(props: {
   readonly figure: Extract<FigureValue, { kind: "Span" }>;
@@ -49,25 +51,33 @@ function FigureSpan(props: {
 
 export function Figure(props: { readonly figure: FigureValue }): ReactNode {
   const figure = props.figure;
+  const text = useCopyText();
   switch (figure.kind) {
     case "Cost":
       return (
         <span className="fig">
           {figure.text}
           {figure.basis === undefined ? null : (
-            <Tooltip text={figureBasisTitle}>
-              <i className="fig-basis">{figure.basis}</i>
+            <Tooltip text={text(figureBasisTitle)}>
+              <i className="fig-basis">{text(figure.basis)}</i>
             </Tooltip>
           )}
         </span>
       );
     case "Tokens":
+      return (
+        <span className="fig">
+          {figure.unit === undefined
+            ? figure.text
+            : `${figure.text} ${text(figure.unit)}`}
+        </span>
+      );
     case "Duration":
       return <span className="fig">{figure.text}</span>;
     case "Quantity":
       return (
         <span className="fig">
-          {figure.text} <i className="fig-unit">{figure.unit}</i>
+          {figure.text} <i className="fig-unit">{text(figure.unit)}</i>
         </span>
       );
     case "Instant":
@@ -79,14 +89,14 @@ export function Figure(props: { readonly figure: FigureValue }): ReactNode {
     case "Ago":
       return (
         <Tooltip text={figure.full}>
-          <span className="fig">{figure.text}</span>
+          <span className="fig">{text(figure.text)}</span>
         </Tooltip>
       );
     case "Span":
       return <FigureSpan figure={figure} />;
     case "Absent":
       return (
-        <Tooltip text={figure.why}>
+        <Tooltip text={text(figure.why)}>
           <span className="fig fig-dim">—</span>
         </Tooltip>
       );

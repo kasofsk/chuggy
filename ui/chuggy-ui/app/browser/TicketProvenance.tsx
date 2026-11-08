@@ -32,6 +32,7 @@ import { Chip } from "./ui/Chip.tsx";
 import { Disclosure } from "./ui/Disclosure.tsx";
 import { ProjectImage } from "./ProjectImage.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
+import { useCopyText } from "../copy/CopyProvider.tsx";
 
 import "./ticket/ticket.css";
 
@@ -126,13 +127,14 @@ export function FinalizationMethod(props: {
   readonly finalization: ConfigurationFinalization;
 }): ReactNode {
   const finalization = props.finalization;
+  const text = useCopyText();
   return (
     <>
-      <SummaryCell name="Method" value={finalizationLine(finalization)} />
+      <SummaryCell name="Method" value={text(finalizationLine(finalization))} />
       {finalization.kind === "GitMerge" ? (
         <SummaryCell
           name="Policy"
-          value={gitMergePolicyLabel(finalization.policy)}
+          value={text(gitMergePolicyLabel(finalization.policy))}
         />
       ) : null}
     </>
@@ -210,11 +212,13 @@ export function ConfigurationBody(props: {
   readonly children?: ReactNode;
 }): ReactNode {
   const { configuration, named } = props;
+  const text = useCopyText();
   const steps = configurationStepsOf({
     canonical: configuration.canonical,
     overrides: props.overrides,
     selection: props.selection,
     finalization: props.finalization,
+    text,
   });
   return (
     <div className="ticket-config">
@@ -280,6 +284,7 @@ function ConfigurationDrawn(props: {
   readonly ticket: TicketConfigured;
 }): ReactNode {
   const { ticket } = props;
+  const text = useCopyText();
   const stays = ticketFollowingSentence(ticket.following);
   const state = usePanelState(
     configurationQuery(props.partition, props.revision, "Streamed"),
@@ -302,7 +307,7 @@ function ConfigurationDrawn(props: {
       }}
     >
       {stays === undefined ? null : (
-        <p className="ticket-config-following">{stays}</p>
+        <p className="ticket-config-following">{text(stays)}</p>
       )}
     </ConfigurationBody>
   );

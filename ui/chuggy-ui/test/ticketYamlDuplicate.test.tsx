@@ -9,11 +9,11 @@ import { QueryClient } from "@tanstack/react-query";
 import {
   cleanup,
   fireEvent,
-  render,
   screen,
   waitFor,
   within,
 } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import type { DraftResponse } from "../../../src/contract/responses.ts";
@@ -82,7 +82,7 @@ const duplicate: CreationDuplicate = {
 };
 
 function draw(ports: ApiPorts, created: number[], from?: CreationDuplicate) {
-  render(
+  renderCopied(
     <ScreenHarness
       partition={creationPartition}
       client={

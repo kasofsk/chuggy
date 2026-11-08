@@ -31,6 +31,7 @@ import {
   operationRefusalSentence,
   ticketFollowingSentence,
 } from "../../ui/chuggy-ui/app/core/codeSentences.ts";
+import { copyTextEn } from "../../ui/chuggy-ui/app/copy/catalog.ts";
 import {
   operationAdvanced,
   operationFollowing,
@@ -59,8 +60,8 @@ test("every refusal the boundary can answer an operation with reaches a reader",
   for (const refusal of refusals) {
     const step = settledOn(refusal);
     assert.ok(step.refusal !== undefined);
-    const sentence = operationRefusalSentence(step.refusal);
-    const label = operationStepLabel(step, "Dispatch").text;
+    const sentence = copyTextEn(operationRefusalSentence(step.refusal));
+    const label = copyTextEn(operationStepLabel(step, "Dispatch").text);
     for (const code of operationRefusalCodes) {
       assert.ok(!sentence.includes(code), `${refusal.type}: ${sentence}`);
       assert.ok(!label.includes(code), `${refusal.type}: ${label}`);
@@ -75,24 +76,26 @@ test("every refusal the boundary can answer an operation with reaches a reader",
 test("a refusal over dependencies reaches the reader with each one named", () => {
   const step = settledOn(ticketRefusals.DependenciesNotFound);
   assert.ok(step.refusal !== undefined);
-  const sentence = operationRefusalSentence(step.refusal);
+  const sentence = copyTextEn(operationRefusalSentence(step.refusal));
   for (const ticket of ["#3", "#5", "#7"])
     assert.ok(sentence.includes(ticket), sentence);
 });
 
 test("a ticket held on its revision is told why in the words its release would be refused with, and a trimmed one in its own", () => {
   for (const code of draftReleaseRefusalCodes) {
-    const line = ticketFollowingSentence({ verdict: "Held", code });
-    assert.ok(line !== undefined, code);
+    const held = ticketFollowingSentence({ verdict: "Held", code });
+    assert.ok(held !== undefined, code);
+    const line = copyTextEn(held);
     assert.ok(
-      line.includes(operationRefusalSentence({ type: code })),
+      line.includes(copyTextEn(operationRefusalSentence({ type: code }))),
       `${code}: ${line}`,
     );
     for (const word of operationRefusalCodes)
       assert.ok(!line.includes(word), `${code}: ${line}`);
   }
-  const trimmed = ticketFollowingSentence({ verdict: "Trimmed" });
-  assert.ok(trimmed !== undefined);
+  const trimmedCopy = ticketFollowingSentence({ verdict: "Trimmed" });
+  assert.ok(trimmedCopy !== undefined);
+  const trimmed = copyTextEn(trimmedCopy);
   for (const word of operationRefusalCodes)
     assert.ok(!trimmed.includes(word), trimmed);
   for (const following of [

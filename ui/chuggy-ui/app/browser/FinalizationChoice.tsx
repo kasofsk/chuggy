@@ -27,24 +27,32 @@ import {
   type FinalizationChoice,
 } from "../core/finalizationChoice.ts";
 import { RadioGroup } from "./ui/RadioGroup.tsx";
+import { useCopyText } from "../copy/CopyProvider.tsx";
+import type { CopyText } from "../core/copy.ts";
 
-const finalizationKindOptions = briefFinalizationKinds.map((kind) => ({
-  value: kind,
-  text: finalizationKindLabel(kind),
-  description: finalizationKindEffect(kind),
-}));
+function finalizationKindOptions(text: CopyText) {
+  return briefFinalizationKinds.map((kind) => ({
+    value: kind,
+    text: text(finalizationKindLabel(kind)),
+    description: text(finalizationKindEffect(kind)),
+  }));
+}
 
-const gitMergeModeOptions = briefGitMergeModes.map((mode) => ({
-  value: mode,
-  text: gitMergeModeLabel(mode),
-  description: gitMergeModeEffect(mode),
-}));
+function gitMergeModeOptions(text: CopyText) {
+  return briefGitMergeModes.map((mode) => ({
+    value: mode,
+    text: text(gitMergeModeLabel(mode)),
+    description: text(gitMergeModeEffect(mode)),
+  }));
+}
 
-const gitMergePolicyOptions = briefGitMergePolicies.map((policy) => ({
-  value: policy,
-  text: gitMergePolicyLabel(policy),
-  description: gitMergePolicyEffect(policy),
-}));
+function gitMergePolicyOptions(text: CopyText) {
+  return briefGitMergePolicies.map((policy) => ({
+    value: policy,
+    text: text(gitMergePolicyLabel(policy)),
+    description: text(gitMergePolicyEffect(policy)),
+  }));
+}
 
 /** The member of a roster a radio's value names, none where it names no member. */
 function finalizationChoiceMember<Member extends string>(
@@ -63,6 +71,7 @@ export function FinalizationChoiceFields(props: {
 }): ReactNode {
   const { choice, onChoose, row } = props;
   const disabled = props.disabled ?? false;
+  const text = useCopyText();
   return (
     <>
       {row(
@@ -71,7 +80,7 @@ export function FinalizationChoiceFields(props: {
           label="Finalization"
           value={choice.kind}
           disabled={disabled}
-          options={finalizationKindOptions}
+          options={finalizationKindOptions(text)}
           onChoose={(value) => {
             const kind = finalizationChoiceMember(
               briefFinalizationKinds,
@@ -90,7 +99,7 @@ export function FinalizationChoiceFields(props: {
               label="Merge"
               value={choice.mode}
               disabled={disabled}
-              options={gitMergeModeOptions}
+              options={gitMergeModeOptions(text)}
               onChoose={(value) => {
                 const mode = finalizationChoiceMember(
                   briefGitMergeModes,
@@ -107,7 +116,7 @@ export function FinalizationChoiceFields(props: {
               label="Policy"
               value={choice.policy}
               disabled={disabled}
-              options={gitMergePolicyOptions}
+              options={gitMergePolicyOptions(text)}
               onChoose={(value) => {
                 const policy = finalizationChoiceMember(
                   briefGitMergePolicies,

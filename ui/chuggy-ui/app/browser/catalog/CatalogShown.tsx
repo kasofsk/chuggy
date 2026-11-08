@@ -26,6 +26,7 @@ import type {
 import { navRoutes } from "../../core/shellNav.ts";
 import { MarkdownReport } from "../ui/MarkdownReport.tsx";
 import { catalogEntrySource } from "./catalogSource.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 
 export function useCatalogPartition(): PartitionIdentity {
   const params = useParams({ from: navRoutes.catalog });
@@ -72,6 +73,7 @@ function CatalogList(props: {
   readonly entries: CatalogEntries;
   readonly selected: string | undefined;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <div className="catalog-groups">
       {props.entries.groups.map((group) => (
@@ -86,7 +88,7 @@ function CatalogList(props: {
           </h2>
           <ul className="catalog-list">
             {group.entries.map((entry) => {
-              const summary = catalogEntrySummary(entry);
+              const summary = catalogEntrySummary(entry, text);
               return (
                 <li key={entry.key}>
                   <CatalogLink
@@ -149,6 +151,7 @@ function CatalogDetail(props: {
   readonly entry: CatalogEntry;
 }): ReactNode {
   const { entry, entries } = props;
+  const text = useCopyText();
   const source = catalogEntrySource(props.canonical, entry);
   return (
     <article className="catalog-detail" aria-label={entry.name}>
@@ -158,7 +161,7 @@ function CatalogDetail(props: {
         <CatalogBadges entry={entry} />
       </header>
       <dl className="catalog-fields">
-        {catalogEntryFields(entry).map(([label, value]) => (
+        {catalogEntryFields(entry, text).map(([label, value]) => (
           <div key={label}>
             <dt>{label}</dt>
             <dd>{value}</dd>

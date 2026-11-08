@@ -12,7 +12,7 @@
 
 import { FluentBundle, FluentResource } from "@fluent/bundle";
 
-import type { Copy, CopyText } from "../core/copy.ts";
+import type { Copy, CopyArgument, CopyText } from "../core/copy.ts";
 
 export function copyBundleOf(
   locale: string,
@@ -51,22 +51,38 @@ function copyResourceAdded(
     );
 }
 
+/** A descriptor's variables as a bundle takes them, each descriptor among
+ * them formatted first. */
+export function copyArgumentsOf(
+  copy: Copy,
+  text: CopyText,
+): Record<string, string | number> | null {
+  if (!("args" in copy)) return null;
+  const args: Record<string, string | number> = {};
+  for (const [name, value] of Object.entries(
+    copy.args as Readonly<Record<string, CopyArgument>>,
+  ))
+    args[name] = typeof value === "object" ? text(value as Copy) : value;
+  return args;
+}
+
 /** The words of a descriptor, as a bundle formats them. */
 export function copyTextOf(bundle: FluentBundle): CopyText {
-  return (copy: Copy) => {
+  const text = (copy: Copy): string => {
     const pattern = bundle.getMessage(copy.id)?.value;
     if (pattern === undefined || pattern === null)
       throw new Error(`the copy catalog has no message ${copy.id}`);
     const errors: Error[] = [];
-    const text = bundle.formatPattern(
+    const formatted = bundle.formatPattern(
       pattern,
-      "args" in copy ? copy.args : null,
+      copyArgumentsOf(copy, text),
       errors,
     );
     if (errors.length > 0)
       throw new Error(
         `the copy catalog cannot format ${copy.id}: ${errors.map(String).join("; ")}`,
       );
-    return text;
+    return formatted;
   };
+  return text;
 }

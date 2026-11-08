@@ -4,13 +4,13 @@
 export const shellFtl = `## The bar above every page, its gear and its project switcher.
 
 shell-nav = Console
-shell-nav-tickets = { -tickets(case: "upper") }
-shell-nav-epics = { -epics(case: "upper") }
+shell-nav-tickets = { -ticket(case: "upper", form: "plural") }
+shell-nav-epics = { -epic(case: "upper", form: "plural") }
 shell-nav-lead = { -lead(case: "upper") }
 shell-nav-catalog = { -catalog(case: "upper") }
 shell-nav-settings = { -project(case: "upper") } settings
-shell-nav-repositories = { -repositories(case: "upper") }
-shell-nav-runners = { -runners(case: "upper") }
+shell-nav-repositories = { -repository(case: "upper", form: "plural") }
+shell-nav-runners = { -runner(case: "upper", form: "plural") }
 shell-view-only = View only
 shell-inbox = { -inbox(case: "upper") }
 shell-inbox-unread = { -inbox(case: "upper") }, { $count } unread
@@ -25,13 +25,13 @@ shell-settings-wording = Wording
 shell-settings-wording-standard = Standard
 shell-settings-wording-pseudo = Pseudo
 shell-settings-wording-vernacular = { $name }
-shell-settings-chat = Chat position
+shell-settings-chat = { -thread(case: "upper") } position
 shell-settings-chat-right = Right
 shell-settings-chat-left = Left
 shell-settings-chat-bottom = Bottom
 shell-sign-out = Sign out
 shell-project = { -project(case: "upper") }
-shell-projects-unavailable = { -projects(case: "upper") } unavailable
+shell-projects-unavailable = { -project(case: "upper", form: "plural") } unavailable
 shell-project-new = New { -project }
 shell-project-none = No { -project }
 `;

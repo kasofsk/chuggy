@@ -14,13 +14,8 @@
  * input around it registers nothing and would draw nothing here either.
  */
 
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { copyTextEn } from "../app/copy/catalog.ts";
@@ -90,7 +85,7 @@ function mentioned(): readonly string[] {
 }
 
 test("an address with no list offered opens nothing at all", async () => {
-  render(
+  renderCopied(
     <Conversation
       exchanges={[answered]}
       composer={composerBare()}
@@ -102,7 +97,7 @@ test("an address with no list offered opens nothing at all", async () => {
 });
 
 test("an address offers every ticket, and typing the kind still offers them", async () => {
-  render(
+  renderCopied(
     <Conversation
       exchanges={[answered]}
       composer={composerOf()}
@@ -122,7 +117,7 @@ test("an address offers every ticket, and typing the kind still offers them", as
 /** The case the library's own matcher could not answer: its query ends at the
  * first whitespace, so the space here would have closed the list. */
 test("a query runs over the space after the kind, by number and by title", async () => {
-  render(
+  renderCopied(
     <Conversation
       exchanges={[answered]}
       composer={composerOf()}
@@ -143,7 +138,7 @@ test("a query runs over the space after the kind, by number and by title", async
 });
 
 test("picking a ticket writes the form the agent is asked for", async () => {
-  render(
+  renderCopied(
     <Conversation
       exchanges={[answered]}
       composer={composerOf()}

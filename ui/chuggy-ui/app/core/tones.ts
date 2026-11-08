@@ -40,6 +40,7 @@ import {
 } from "./repositoryImport.ts";
 import type { RunCommandEnd } from "./runResult.ts";
 import type { SetVerdict } from "./ticketLedger.ts";
+import type { Copy } from "./copy.ts";
 
 type EpicStatus = EpicSummaryResponse["status"];
 
@@ -286,14 +287,14 @@ export function sessionTurnStateTone(state: SessionTurnState): Tone {
 
 /** One status word and its tone for one of a decision's dispatches. */
 export interface LeadDispatchArm {
-  readonly word: string;
+  readonly word: Copy;
   readonly tone: Tone;
 }
 
 /** A settled dispatch whose outcome this console cannot read. The delivery
  * record says it is over and does not say how it went, and a pill saying
  * nothing would read as one that had not settled at all. */
-const leadDispatchUnread = "Unknown";
+const leadDispatchUnread: Copy = { id: "tones-dispatch-unread" };
 
 /**
  * Where one dispatch of a decision got to, in the one word the log says it in.
@@ -305,17 +306,23 @@ const leadDispatchUnread = "Unknown";
 export function leadDispatchArm(dispatch: LeadDispatch): LeadDispatchArm {
   switch (dispatch.state) {
     case "AwaitingApproval":
-      return { word: "Approval", tone: "parked" };
+      return { word: { id: "tones-dispatch-approval" }, tone: "parked" };
     case "Pending":
-      return { word: "Queued", tone: "pass" };
+      return { word: { id: "tones-dispatch-pending" }, tone: "pass" };
     case "Submitted":
-      return { word: "Sent", tone: "pass" };
+      return { word: { id: "tones-dispatch-submitted" }, tone: "pass" };
     case "Terminal":
       if (leadDispatchLanded(dispatch))
-        return { word: "Dispatched", tone: "pass" };
+        return { word: { id: "tones-dispatch-landed" }, tone: "pass" };
       return dispatch.outcome === undefined
         ? { word: leadDispatchUnread, tone: "neutral" }
-        : { word: dispatch.outcome, tone: "fail" };
+        : {
+            word: {
+              id: "tones-dispatch-outcome",
+              args: { outcome: dispatch.outcome },
+            },
+            tone: "fail",
+          };
   }
 }
 
@@ -324,7 +331,7 @@ export type ActionReach = (typeof allActionReaches)[number];
 
 /** One status word and its tone for where a declared action stands. */
 export interface ActionReachArm {
-  readonly word: string;
+  readonly word: Copy;
   readonly tone: Tone;
 }
 
@@ -336,15 +343,15 @@ export interface ActionReachArm {
 export function actionReachArm(reach: ActionReach): ActionReachArm {
   switch (reach) {
     case "Reached":
-      return { word: "Reached", tone: "pass" };
+      return { word: { id: "tones-reach-reached" }, tone: "pass" };
     case "NotYet":
-      return { word: "Waiting", tone: "queued" };
+      return { word: { id: "tones-reach-not-yet" }, tone: "queued" };
     case "Failed":
-      return { word: "Failed", tone: "fail" };
+      return { word: { id: "tones-reach-failed" }, tone: "fail" };
     case "RolledBack":
-      return { word: "Rolled back", tone: "retired" };
+      return { word: { id: "tones-reach-rolled-back" }, tone: "retired" };
     case "Unknown":
-      return { word: "Unknown", tone: "neutral" };
+      return { word: { id: "tones-reach-unknown" }, tone: "neutral" };
   }
 }
 
@@ -374,7 +381,7 @@ function conversationRunningTone(state: ConversationRunningState): Tone {
 
 /** One status word and its tone for where an exchange stands. */
 export interface ConversationStandingArm {
-  readonly word: string;
+  readonly word: Copy;
   readonly tone: Tone;
 }
 
@@ -383,9 +390,17 @@ export interface ConversationStandingArm {
 function conversationRunningWord(
   state: ConversationRunningState,
   begun: boolean,
-): string {
-  if (state !== "Claimed") return state;
-  return begun ? "Working" : "Starting";
+): Copy {
+  switch (state) {
+    case "Queued":
+      return { id: "tones-exchange-queued" };
+    case "Claimed":
+      return begun
+        ? { id: "tones-exchange-working" }
+        : { id: "tones-exchange-starting" };
+    case "Waiting":
+      return { id: "tones-exchange-waiting" };
+  }
 }
 
 /**
@@ -401,19 +416,31 @@ export function conversationStandingArm(
 ): ConversationStandingArm {
   switch (standing.standing) {
     case "Answered":
-      return { word: "Answered", tone: sessionTurnStateTone("Answered") };
+      return {
+        word: { id: "tones-exchange-answered" },
+        tone: sessionTurnStateTone("Answered"),
+      };
     case "Running":
       return {
         word: conversationRunningWord(standing.state, begun),
         tone: conversationRunningTone(standing.state),
       };
     case "Failed":
-      return { word: "Failed", tone: sessionTurnStateTone("Failed") };
+      return {
+        word: { id: "tones-exchange-failed" },
+        tone: sessionTurnStateTone("Failed"),
+      };
     case "Abandoned":
-      return { word: "Abandoned", tone: sessionTurnStateTone("Abandoned") };
+      return {
+        word: { id: "tones-exchange-abandoned" },
+        tone: sessionTurnStateTone("Abandoned"),
+      };
     case "Stopped":
-      return { word: "Stopped", tone: sessionTurnStateTone("Abandoned") };
+      return {
+        word: { id: "tones-exchange-stopped" },
+        tone: sessionTurnStateTone("Abandoned"),
+      };
     case "Open":
-      return { word: "Open", tone: "live" };
+      return { word: { id: "tones-exchange-open" }, tone: "live" };
   }
 }

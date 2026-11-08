@@ -82,6 +82,7 @@ import {
 } from "./ticketCreation.ts";
 import type { CreationOffer, CreationOfferListed } from "./ticketCreation.ts";
 import { ticketUpdateMutation } from "./ticketEdit.ts";
+import type { CopyText } from "./copy.ts";
 
 export type CreationContext =
   | {
@@ -412,6 +413,7 @@ async function creationDraftCreated(
   ports: ApiPorts,
   partition: PartitionIdentity,
   request: TicketCreationRequest,
+  text: CopyText,
 ): Promise<CreationDraftHeld | TicketCreationEnded> {
   const { body, operation } = request;
   const answered = await apiCreateDraft(ports, partition, body);
@@ -434,7 +436,7 @@ async function creationDraftCreated(
     reason:
       answered.outcome === "Conflict"
         ? creationProjectNotActiveSentence
-        : operationFailureSentence(answered),
+        : text(operationFailureSentence(answered)),
     held: undefined,
   };
 }
@@ -480,6 +482,7 @@ export async function draftRevisionSaved(
   partition: PartitionIdentity,
   ticket: number,
   revision: z.infer<typeof draftRevisionSchema>,
+  text: CopyText,
 ): Promise<DraftSaveEnded> {
   const revised = await apiReviseDraft(ports, partition, ticket, revision);
   if (revised.outcome === "Ok") return { saved: "Saved", draft: revised.value };
@@ -488,7 +491,7 @@ export async function draftRevisionSaved(
     reason:
       revised.outcome === "Conflict" && revised.code === "DraftChanged"
         ? creationDraftChangedSentence
-        : draftRevisionFailureSentence(revised),
+        : text(draftRevisionFailureSentence(revised)),
   };
 }
 
@@ -553,6 +556,7 @@ async function creationDraftRevised(
   partition: PartitionIdentity,
   request: TicketCreationRequest,
   held: CreationDraftHeld,
+  text: CopyText,
 ): Promise<CreationDraftHeld | TicketCreationEnded> {
   const { body, operation } = request;
   const ticket = held.draft.ticket;
@@ -568,10 +572,10 @@ async function creationDraftRevised(
   if (revised.outcome === "Ok")
     return { ...held, draft: revised.value, body, operation };
   if (revised.outcome !== "Conflict")
-    return creationRefused(draftRevisionFailureSentence(revised), held);
+    return creationRefused(text(draftRevisionFailureSentence(revised)), held);
   return revised.code === "DraftChanged"
     ? creationRefused(creationDraftChangedSentence, held)
-    : creationRefused(draftRevisionFailureSentence(revised), {
+    : creationRefused(text(draftRevisionFailureSentence(revised)), {
         ...held,
         unsettled: true,
       });
@@ -587,23 +591,25 @@ async function creationDraftWritten(
   ports: ApiPorts,
   partition: PartitionIdentity,
   request: TicketCreationRequest,
+  text: CopyText,
 ): Promise<CreationDraftHeld | TicketCreationEnded> {
   const { body, held } = request;
   if (held === undefined)
-    return creationDraftCreated(ports, partition, request);
+    return creationDraftCreated(ports, partition, request, text);
   if (creationDraftHolds(held, body)) return held;
-  return creationDraftRevised(ports, partition, request, held);
+  return creationDraftRevised(ports, partition, request, held, text);
 }
 
 function releasedTicket<Held extends DraftHeld>(
   step: OperationStep,
   held: Held,
+  text: CopyText,
 ): TicketCreated<Held> {
   if (step.step === "Abandoned") {
     const released = operationAbandonFailure(step);
     return {
       created: "Refused",
-      reason: operationAbandonWords(step.cause).word,
+      reason: text(operationAbandonWords(step.cause).word),
       held,
       ...(released === undefined ? {} : { released }),
     };
@@ -618,10 +624,11 @@ function releasedTicket<Held extends DraftHeld>(
     return { created: "Created", ticket: held.draft.ticket };
   return {
     created: "Refused",
-    reason:
+    reason: text(
       step.refusal === undefined
         ? operationStateSentence(step.state)
         : operationRefusalSentence(step.refusal),
+    ),
     held,
   };
 }
@@ -707,8 +714,9 @@ export async function createAndReleaseTicket(
   partition: PartitionIdentity,
   request: TicketCreationRequest,
   onStep: (step: OperationStep) => void,
+  text: CopyText,
 ): Promise<TicketCreationEnded> {
-  const written = await creationDraftWritten(ports, partition, request);
+  const written = await creationDraftWritten(ports, partition, request, text);
   if ("created" in written) return written;
   const seen = { accepted: false, attempts: 0 };
   const followed = await followOperation(
@@ -726,7 +734,7 @@ export async function createAndReleaseTicket(
     },
   );
   const step = followed.step;
-  const released = releasedTicket(step, written);
+  const released = releasedTicket(step, written, text);
   const dispatchOperation = request.dispatchOperation;
   if (released.created === "Created" && dispatchOperation !== undefined)
     await creationTicketDispatched(
@@ -767,6 +775,7 @@ export async function reviseAndUpdateTicket(
   partition: PartitionIdentity,
   request: TicketUpdateRequest,
   onStep: (step: OperationStep) => void,
+  text: CopyText,
 ): Promise<TicketCreated> {
   const ticket = request.ticket.ticket;
   const revised = await apiReviseDraft(ports, partition, ticket, request.body);
@@ -774,11 +783,11 @@ export async function reviseAndUpdateTicket(
     return revised.outcome === "Conflict" && revised.code === "DraftChanged"
       ? {
           created: "Stale",
-          reason: draftRevisionRefusalSentence("DraftChanged"),
+          reason: text(draftRevisionRefusalSentence("DraftChanged")),
         }
       : {
           created: "Refused",
-          reason: draftRevisionFailureSentence(revised),
+          reason: text(draftRevisionFailureSentence(revised)),
           held: undefined,
         };
   const followed = await followOperation(
@@ -791,5 +800,5 @@ export async function reviseAndUpdateTicket(
     ticket,
     onStep,
   );
-  return releasedTicket(followed.step, { draft: revised.value });
+  return releasedTicket(followed.step, { draft: revised.value }, text);
 }

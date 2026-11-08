@@ -85,6 +85,7 @@ import {
 import type { CreationOverrides, OverrideField } from "./ticketOverrides.ts";
 import { draftReleaseAction } from "./ticketActions.ts";
 import type { WorkRunner } from "./workRunner.ts";
+import type { CopyText } from "./copy.ts";
 
 /** The authoring half of the form, which is exactly what an initialization defaults. */
 export type CreationAuthoring = DraftInitializationResponse["defaults"];
@@ -1383,6 +1384,7 @@ function creationMotionWords(motion: CreationMotion): {
 /** Where one submit has got to, for a screen that draws a line and not a log. */
 export function creationStepSentence(
   step: OperationStep,
+  text: CopyText,
   motion: CreationMotion = "Release",
 ): string {
   const words = creationMotionWords(motion);
@@ -1398,9 +1400,9 @@ export function creationStepSentence(
     case "Settled":
       return step.state === "Succeeded"
         ? words.settled
-        : operationStateSentence(step.state);
+        : text(operationStateSentence(step.state));
     case "Abandoned":
-      return operationAbandonWords(step.cause).word;
+      return text(operationAbandonWords(step.cause).word);
   }
 }
 

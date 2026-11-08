@@ -364,7 +364,7 @@ test("a panel remounted mid-follow draws the follow that kept running", async ()
   await settled();
 
   expect(api.urls.filter(polling)).toEqual([]);
-  expect(screen.getByText("Waiting for actor…")).toBeDefined();
+  expect(screen.getByText("Submitting…")).toBeDefined();
   expect(button("Cancel")).not.toBeNull();
   expect(api.posts()).toBe(1);
   expect(api.identities()).toHaveLength(1);
@@ -430,7 +430,7 @@ test("a resume pressed in the header is followed there, its other actions held w
   });
   await settled();
 
-  expect(within(header).getByText("Waiting for actor…")).toBeDefined();
+  expect(within(header).getByText("Submitting…")).toBeDefined();
   expect(within(header).getByRole("button", { name: "Cancel" })).toBeDefined();
   expect(
     within(header)
@@ -481,7 +481,7 @@ test("moving to another ticket leaves the first ticket's attempt behind", async 
   await settled();
 
   expect(button("Cancel")).toBeNull();
-  expect(screen.queryByText("Waiting for actor…")).toBeNull();
+  expect(screen.queryByText("Submitting…")).toBeNull();
   expect(button("Resume")?.hasAttribute("disabled")).toBe(false);
 });
 
@@ -503,7 +503,7 @@ test("the attempt held for the ticket arrived at is the one picked up", async ()
   await navigated(view, client, "12");
   await settled();
 
-  expect(screen.getByText("Waiting for actor…")).toBeDefined();
+  expect(screen.getByText("Submitting…")).toBeDefined();
   expect(
     api.urls.some(
       (url) => url.startsWith("GET") && url.includes("/operations/op-held"),
@@ -711,7 +711,7 @@ test("an unmount with the submission in flight still holds its identity", async 
   mounted(client);
   await settled();
 
-  expect(screen.getByText("Waiting for actor…")).toBeDefined();
+  expect(screen.getByText("Submitting…")).toBeDefined();
   expect(api.urls.filter(polling)).toEqual([]);
   expect(api.identities()).toHaveLength(1);
   expect(api.posts()).toBe(1);
@@ -742,7 +742,7 @@ test("a submission the API never took is made again under the same identity", as
 
   expect(api.posts()).toBe(1);
   expect(api.identities()).toEqual(["op-held"]);
-  expect(screen.getByText("Waiting for actor…")).toBeDefined();
+  expect(screen.getByText("Submitting…")).toBeDefined();
 });
 
 test("a cancellation does not overwrite a follow that ended while it was asked", async () => {
@@ -794,7 +794,7 @@ test("a cancellation is applied to the operation it asked about and no other", a
   );
   await settled();
 
-  expect(screen.getByText("Waiting for actor…")).toBeDefined();
+  expect(screen.getByText("Submitting…")).toBeDefined();
   expect(screen.queryByText("Resume cancelled")).toBeNull();
   expect(attemptRead(client, 11)?.operation).toBe(second);
 });
@@ -850,7 +850,7 @@ async function pressedAgain(api: Served): Promise<void> {
 
   expect(api.identities()).toHaveLength(1);
   expect(api.urls.filter(polling)).not.toEqual([]);
-  expect(screen.getByText("Waiting for actor…")).toBeDefined();
+  expect(screen.getByText("Submitting…")).toBeDefined();
 }
 
 test("pressing again reaches the held attempt rather than drawing a second", async () => {

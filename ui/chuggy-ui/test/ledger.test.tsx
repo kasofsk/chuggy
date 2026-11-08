@@ -8,7 +8,8 @@
  * the class is the half a theme can change and the markup is the half it cannot.
  */
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -46,13 +47,13 @@ const when: FigureValue = {
 };
 
 const spent: Spend = {
-  cost: { kind: "Cost", text: "$0.31", basis: "list" },
+  cost: { kind: "Cost", text: "$0.31", basis: { id: "figures-basis-list" } },
   tokens: { kind: "Tokens", text: "25k tok" },
 };
 
 test("both standings draw a group that is a disclosure, open where it is told", () => {
   for (const standing of ledgerStandings) {
-    const { container } = render(
+    const { container } = renderCopied(
       <LedgerGroup
         title="Cycle 3"
         standing={standing}
@@ -77,7 +78,7 @@ test("both standings draw a group that is a disclosure, open where it is told", 
 });
 
 test("a row draws its label, its status, its window and its spend", async () => {
-  const { container } = render(
+  const { container } = renderCopied(
     <LedgerBlock eyebrow="Evaluation" pill={{ tone: "live", text: "Current" }}>
       <LedgerRow
         label="Stage 1 of 2"
@@ -110,7 +111,7 @@ test("a row draws its label, its status, its window and its spend", async () => 
 });
 
 test("a ghost row is marked as one and still carries a word", () => {
-  const { container } = render(
+  const { container } = renderCopied(
     <LedgerBlock>
       <LedgerRow
         label="Stage 2 of 2"
@@ -127,7 +128,7 @@ test("a ghost row is marked as one and still carries a word", () => {
 
 test("an expander says whether it is open and swaps its own word", () => {
   const toggled = vi.fn();
-  const { rerender } = render(
+  const { rerender } = renderCopied(
     <LedgerBlock>
       <LedgerRow
         label="Work"
@@ -183,7 +184,7 @@ test("a row's expanders share one detail area, the open one's", () => {
     onToggle: vi.fn(),
     children: <p>{label} detail</p>,
   });
-  const { container } = render(
+  const { container } = renderCopied(
     <LedgerBlock>
       <LedgerRow
         label="Work"
@@ -204,7 +205,7 @@ test("a row's expanders share one detail area, the open one's", () => {
 });
 
 test("a changed row is marked, and a short page says so above the groups", () => {
-  const { container } = render(
+  const { container } = renderCopied(
     <Ledger truncated="Showing the first 7 executions">
       <LedgerBlock>
         <LedgerRow

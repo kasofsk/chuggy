@@ -1,5 +1,6 @@
 /**
- * The coded values the wire sends a person, as the sentences they read.
+ * The coded values the wire sends a person, as the sentences they read:
+ * descriptors, whose words are `sentences.ftl`'s.
  *
  * A code is the API's word to another program; a screen that prints it makes
  * the reader look it up, and there is nowhere to look. Each switch is total
@@ -32,47 +33,48 @@ import type {
   TicketFollowing,
 } from "../../../../src/contract/responses.ts";
 import type { ApiFailure } from "./apiRequest.ts";
+import type { Copy } from "./copy.ts";
 import { failureWords } from "./failureWords.ts";
 
 /** Which wall the ticket hit, in the person's own terms. */
-export function escalationKindSentence(kind: EscalationKind): string {
+export function escalationKindSentence(kind: EscalationKind): Copy {
   switch (kind) {
     case "WorkFailureEscalated":
-      return "Work failed or did not finish";
+      return { id: "sentences-escalation-work-failure" };
     case "EvaluationFailureEscalated":
-      return "Out of rework";
+      return { id: "sentences-escalation-evaluation-failure" };
     case "WorkExecutionUnavailableEscalated":
-      return "Work could not be run";
+      return { id: "sentences-escalation-work-unavailable" };
     case "EvaluationBlockedEscalated":
-      return "Evaluation could not run or finish";
+      return { id: "sentences-escalation-evaluation-blocked" };
     case "FinalizationUnavailableEscalated":
-      return "Finalizing could not run";
+      return { id: "sentences-escalation-landing-unavailable" };
   }
 }
 
 /** What an open native action is asking, short enough for a badge to carry. */
-export function nativeActionKindSentence(kind: NativeActionKind): string {
+export function nativeActionKindSentence(kind: NativeActionKind): Copy {
   switch (kind) {
     case "TicketEscalation":
-      return "escalated";
+      return { id: "sentences-native-escalation" };
     case "FinalizationApproval":
-      return "awaiting your approval";
+      return { id: "sentences-native-approval" };
   }
 }
 
 /** What the actor did with the submission, before any refusal code refines it. */
-export function operationStateSentence(state: OperationState): string {
+export function operationStateSentence(state: OperationState): Copy {
   switch (state) {
     case "Pending":
-      return "Not decided yet";
+      return { id: "sentences-state-pending" };
     case "Succeeded":
-      return "Accepted";
+      return { id: "sentences-state-succeeded" };
     case "Refused":
-      return "Refused";
+      return { id: "sentences-state-refused" };
     case "Answered":
-      return "Closed without a decision";
+      return { id: "sentences-state-answered" };
     case "Cancelled":
-      return "Cancelled before a decision";
+      return { id: "sentences-state-cancelled" };
   }
 }
 
@@ -93,101 +95,214 @@ function operationRefusalTicket(ticket: number): string {
 }
 
 /** Several tickets as one phrase, in the order the wire gave them. */
-function operationRefusalTickets(tickets: readonly number[]): string {
+function operationRefusalTickets(tickets: readonly number[]): Copy {
   const named = tickets.map(operationRefusalTicket);
   const last = named.pop();
-  if (last === undefined) return "no ticket";
-  return named.length === 0 ? last : `${named.join(", ")} and ${last}`;
+  if (last === undefined) return { id: "sentences-tickets-none" };
+  return named.length === 0
+    ? { id: "sentences-tickets-one", args: { last } }
+    : { id: "sentences-tickets-many", args: { named: named.join(", "), last } };
 }
 
 /** Which task a report was for, as its identity names it. */
-function operationRefusalTask(task: TaskIdentity): string {
+function operationRefusalTask(task: TaskIdentity): Copy {
   switch (task.type) {
     case "WorkTask":
-      return `cycle ${String(task.value.cycle)} work`;
+      return { id: "sentences-task-work", args: { cycle: task.value.cycle } };
     case "EvaluationTask":
-      return `cycle ${String(task.value.workCycle)} stage ${String(task.value.stage)}`;
+      return {
+        id: "sentences-task-evaluation",
+        args: { cycle: task.value.workCycle, stage: task.value.stage },
+      };
   }
 }
 
+/** A refusal the machine names the tickets, task or attempt of. */
+type OperationRefusalNamed = Extract<
+  OperationRefusal,
+  { readonly value: unknown }
+>;
+
+/** A refusal over a ticket and the dependencies it names. */
+type OperationRefusalOfDependencies = Extract<
+  OperationRefusalNamed,
+  {
+    readonly type:
+      | "DependenciesNotFound"
+      | "DependenciesRevoked"
+      | "DependencyCycle"
+      | "DependenciesIncomplete";
+  }
+>;
+
+/** A refusal of a report for a task or a cycle that is not current. */
+type OperationRefusalOfReport = Extract<
+  OperationRefusalNamed,
+  {
+    readonly type:
+      "TaskNotCurrent" | "EvaluationNotCurrent" | "FinalizationNotCurrent";
+  }
+>;
+
 /** Why the machine declined the command, naming what it declined over. */
-function operationRefusalTicketSentence(
-  refused: Extract<OperationRefusal, { readonly value: unknown }>,
-): string {
+function operationRefusalTicketSentence(refused: OperationRefusalNamed): Copy {
   switch (refused.type) {
     case "TicketAlreadyExists":
-      return `${operationRefusalTicket(refused.value)} already exists · Nothing to release`;
+      return {
+        id: "sentences-refusal-ticket-exists",
+        args: { ticket: operationRefusalTicket(refused.value) },
+      };
     case "DependenciesNotFound":
-      return `${operationRefusalTicket(refused.value.ticket)} depends on missing ${operationRefusalTickets(refused.value.dependencies)}`;
     case "DependenciesRevoked":
-      return `${operationRefusalTicket(refused.value.ticket)} depends on revoked ${operationRefusalTickets(refused.value.dependencies)} · Pick open ones`;
     case "DependencyCycle":
-      return `${operationRefusalTicket(refused.value.ticket)} cannot depend on ${operationRefusalTickets(refused.value.dependencies)} · Would form a cycle`;
-    case "SelfDependency":
-      return `${operationRefusalTicket(refused.value)} depends on itself · Remove that dependency`;
-    case "TicketNotFound":
-      return `No ticket ${operationRefusalTicket(refused.value)}`;
-    case "TicketNotPending":
-      return `${operationRefusalTicket(refused.value)} is no longer pending`;
-    case "TicketIdentityMismatch":
-      return `Not the same ticket as ${operationRefusalTicket(refused.value)}`;
-    case "TicketRevisionStale":
-      return `${operationRefusalTicket(refused.value.ticket)} moved from revision ${String(refused.value.expected)} to revision ${String(refused.value.current)}`;
     case "DependenciesIncomplete":
-      return `${operationRefusalTicket(refused.value.ticket)} waits on ${operationRefusalTickets(refused.value.dependencies)} · Not done yet`;
+      return operationRefusalDependenciesSentence(refused);
+    case "SelfDependency":
+      return {
+        id: "sentences-refusal-self-dependency",
+        args: { ticket: operationRefusalTicket(refused.value) },
+      };
+    case "TicketNotFound":
+      return {
+        id: "sentences-refusal-ticket-not-found",
+        args: { ticket: operationRefusalTicket(refused.value) },
+      };
+    case "TicketNotPending":
+      return {
+        id: "sentences-refusal-ticket-not-pending",
+        args: { ticket: operationRefusalTicket(refused.value) },
+      };
+    case "TicketIdentityMismatch":
+      return {
+        id: "sentences-refusal-ticket-mismatch",
+        args: { ticket: operationRefusalTicket(refused.value) },
+      };
+    case "TicketRevisionStale":
+      return {
+        id: "sentences-refusal-revision-stale",
+        args: {
+          ticket: operationRefusalTicket(refused.value.ticket),
+          expected: refused.value.expected,
+          current: refused.value.current,
+        },
+      };
     case "TicketNotRevocable":
-      return `${operationRefusalTicket(refused.value)} can no longer be revoked`;
+      return {
+        id: "sentences-refusal-not-revocable",
+        args: { ticket: operationRefusalTicket(refused.value) },
+      };
     case "TicketNotResumable":
-      return `${operationRefusalTicket(refused.value)} has nothing to resume`;
+      return {
+        id: "sentences-refusal-not-resumable",
+        args: { ticket: operationRefusalTicket(refused.value) },
+      };
     case "TaskNotCurrent":
-      return `Report for ${operationRefusalTask(refused.value.task)} of ${operationRefusalTicket(refused.value.ticket)} · Not current`;
     case "EvaluationNotCurrent":
-      return `Evaluation of cycle ${String(refused.value.workCycle)} of ${operationRefusalTicket(refused.value.ticket)} · Not current`;
     case "FinalizationNotCurrent":
-      return `Finalizing result for cycle ${String(refused.value.workCycle)} of ${operationRefusalTicket(refused.value.ticket)} · Not current`;
+      return operationRefusalReportSentence(refused);
   }
+}
+
+/** Why the machine declined a ticket over the dependencies it named. */
+function operationRefusalDependenciesSentence(
+  refused: OperationRefusalOfDependencies,
+): Copy {
+  const args = operationRefusalDependencies(refused.value);
+  switch (refused.type) {
+    case "DependenciesNotFound":
+      return { id: "sentences-refusal-dependencies-not-found", args };
+    case "DependenciesRevoked":
+      return { id: "sentences-refusal-dependencies-revoked", args };
+    case "DependencyCycle":
+      return { id: "sentences-refusal-dependency-cycle", args };
+    case "DependenciesIncomplete":
+      return { id: "sentences-refusal-dependencies-incomplete", args };
+  }
+}
+
+/** Why the machine declined a report that is not current. */
+function operationRefusalReportSentence(
+  refused: OperationRefusalOfReport,
+): Copy {
+  switch (refused.type) {
+    case "TaskNotCurrent":
+      return {
+        id: "sentences-refusal-task-not-current",
+        args: {
+          task: operationRefusalTask(refused.value.task),
+          ticket: operationRefusalTicket(refused.value.ticket),
+        },
+      };
+    case "EvaluationNotCurrent":
+      return {
+        id: "sentences-refusal-evaluation-not-current",
+        args: {
+          cycle: refused.value.workCycle,
+          ticket: operationRefusalTicket(refused.value.ticket),
+        },
+      };
+    case "FinalizationNotCurrent":
+      return {
+        id: "sentences-refusal-landing-not-current",
+        args: {
+          cycle: refused.value.workCycle,
+          ticket: operationRefusalTicket(refused.value.ticket),
+        },
+      };
+  }
+}
+
+/** A ticket and the dependencies it was refused over. */
+function operationRefusalDependencies(value: {
+  readonly ticket: number;
+  readonly dependencies: readonly number[];
+}): { readonly ticket: string; readonly dependencies: Copy } {
+  return {
+    ticket: operationRefusalTicket(value.ticket),
+    dependencies: operationRefusalTickets(value.dependencies),
+  };
 }
 
 /** Why the actor declined the submitted mutation, and what to do about it. */
-export function operationRefusalSentence(refused: OperationRefusal): string {
+export function operationRefusalSentence(refused: OperationRefusal): Copy {
   if ("value" in refused) return operationRefusalTicketSentence(refused);
   switch (refused.type) {
     case "AuthoringChanged":
-      return "Draft changed since submit";
+      return { id: "sentences-refusal-authoring-changed" };
     case "ConfigurationInvalid":
-      return "Configuration or overrides cannot run";
+      return { id: "sentences-refusal-configuration-invalid" };
     case "TicketChanged":
-      return "Ticket changed since submit";
+      return { id: "sentences-refusal-ticket-changed" };
     case "SelectionChanged":
-      return "Dispatch selection out of date";
+      return { id: "sentences-refusal-selection-changed" };
     case "ExecutionSourceUnreadable":
-      return "Start branch or commit not on the remote";
+      return { id: "sentences-refusal-source-unreadable" };
     case "ExecutionSourceDenied":
-      return "Remote refused this project's credential";
+      return { id: "sentences-refusal-source-denied" };
     case "BriefNamesNoRepository":
-      return "Brief names no repository · Name a bound one";
+      return { id: "sentences-refusal-brief-no-repository" };
     case "BriefChecksUncommanded":
-      return "No check stage · Drop the brief's checks";
+      return { id: "sentences-refusal-brief-checks-uncommanded" };
     case "ConfigurationFromAnotherRepository":
-      return "Configuration not from the brief's repository";
+      return { id: "sentences-refusal-configuration-elsewhere" };
     case "SelectionUnknown":
-      return "Workload, plan or finalizer not in the catalog";
+      return { id: "sentences-refusal-selection-unknown" };
     case "SelectionUnsupported":
-      return "Selection needs a version 2 configuration";
+      return { id: "sentences-refusal-selection-unsupported" };
     case "ProgramExceedsPlan":
-      return "Program goes past the plan's stages";
+      return { id: "sentences-refusal-program-exceeds-plan" };
     case "ProgramSkipsBriefChecks":
-      return "Program skips the brief's checks · Restore them";
+      return { id: "sentences-refusal-program-skips-checks" };
     case "OverridesUnsupported":
-      return "Overrides do not fit this configuration";
+      return { id: "sentences-refusal-overrides-unsupported" };
     case "OverridesUnknown":
-      return "Overrides name an unknown workload or prompt";
+      return { id: "sentences-refusal-overrides-unknown" };
     case "TicketCapacityReached":
-      return "Project full · Finish or revoke a ticket";
+      return { id: "sentences-refusal-capacity-reached" };
     case "FinalizationRequestClosed":
-      return "Finalizing request closed · Ticket still waiting";
+      return { id: "sentences-refusal-landing-request-closed" };
     case "OverridesMoveDefinition":
-      return "Only start settings can change while parked";
+      return { id: "sentences-refusal-overrides-move-definition" };
   }
 }
 
@@ -198,16 +313,19 @@ export function operationRefusalSentence(refused: OperationRefusal): string {
  */
 export function ticketFollowingSentence(
   following: TicketFollowing | undefined,
-): string | undefined {
+): Copy | undefined {
   switch (following?.verdict) {
     case undefined:
     case "Current":
     case "Moves":
       return undefined;
     case "Held":
-      return `Stays on this revision · ${operationRefusalSentence({ type: following.code })}`;
+      return {
+        id: "sentences-following-held",
+        args: { refusal: operationRefusalSentence({ type: following.code }) },
+      };
     case "Trimmed":
-      return "Stays on this revision · Program skips part of its plan";
+      return { id: "sentences-following-trimmed" };
   }
 }
 
@@ -227,18 +345,18 @@ export const mutationRefusalCodes = [
 ] as const;
 export type MutationRefusalCode = (typeof mutationRefusalCodes)[number];
 
-export function mutationRefusalSentence(code: MutationRefusalCode): string {
+export function mutationRefusalSentence(code: MutationRefusalCode): Copy {
   switch (code) {
     case "IdempotencyConflict":
-      return "Clashes with an earlier submit";
+      return { id: "sentences-mutation-key-used" };
     case "InvalidMutation":
-      return "Request not valid";
+      return { id: "sentences-mutation-invalid" };
     case "MutationNotAdmitted":
-      return "Project not taking this right now";
+      return { id: "sentences-mutation-not-admitted" };
     case "OperationNotPending":
-      return "Already decided · Nothing to cancel";
+      return { id: "sentences-mutation-decided" };
     case "ProgramSkipsPlannedEvaluations":
-      return "Partial plan needs an administrator · Use the whole plan";
+      return { id: "sentences-mutation-skips-evaluations" };
   }
 }
 
@@ -255,18 +373,18 @@ export type DraftRevisionRefusalCode =
 
 export function draftRevisionRefusalSentence(
   code: DraftRevisionRefusalCode,
-): string {
+): Copy {
   switch (code) {
     case "DraftChanged":
-      return "Draft changed · Submit again";
+      return { id: "sentences-draft-changed" };
     case "DraftNotEditable":
-      return "Draft closed · Ticket no longer pending";
+      return { id: "sentences-draft-not-editable" };
   }
 }
 
 /** Why a revision did not get through: the door's own conflict where it named
  * one, and a failure read as any submission's otherwise. */
-export function draftRevisionFailureSentence(failure: ApiFailure): string {
+export function draftRevisionFailureSentence(failure: ApiFailure): Copy {
   const code =
     failure.outcome === "Conflict"
       ? draftRevisionRefusalCodes.find((known) => known === failure.code)
@@ -279,7 +397,7 @@ export function draftRevisionFailureSentence(failure: ApiFailure): string {
 /** Why a draft's deletion did not get through: it was written since it was
  * read, or it is a draft no longer, and a failure read as any submission's
  * otherwise. */
-export function draftDeletionFailureSentence(failure: ApiFailure): string {
+export function draftDeletionFailureSentence(failure: ApiFailure): Copy {
   const code =
     failure.outcome === "Conflict"
       ? draftRevisionRefusalCodes.find((known) => known === failure.code)
@@ -288,9 +406,9 @@ export function draftDeletionFailureSentence(failure: ApiFailure): string {
     case undefined:
       return operationFailureSentence(failure);
     case "DraftChanged":
-      return "Draft changed · Delete again";
+      return { id: "sentences-draft-deletion-changed" };
     case "DraftNotEditable":
-      return "Draft closed";
+      return { id: "sentences-draft-deletion-not-editable" };
   }
 }
 
@@ -302,16 +420,16 @@ export const mutationDeferralCodes = [
 ] as const;
 export type MutationDeferralCode = (typeof mutationDeferralCodes)[number];
 
-export function mutationDeferralSentence(code: string): string {
+export function mutationDeferralSentence(code: string): Copy {
   switch (mutationDeferralCodeOf(code)) {
     case "DispatchBacklog":
-      return "Dispatch queue full";
+      return { id: "sentences-deferral-dispatch-backlog" };
     case "MailboxBackpressure":
-      return "Project queue full";
+      return { id: "sentences-deferral-mailbox-full" };
     case "MailboxUnavailable":
-      return "Project unreachable";
+      return { id: "sentences-deferral-mailbox-unavailable" };
     case undefined:
-      return `Unknown reason (${code})`;
+      return { id: "sentences-deferral-unknown", args: { code } };
   }
 }
 
@@ -331,23 +449,29 @@ function mutationDeferralCodeOf(
  * and never as a failure; a code outside it is named as unrecognised rather
  * than offered to the reader as the explanation.
  */
-export function operationFailureSentence(failure: ApiFailure): string {
+export function operationFailureSentence(failure: ApiFailure): Copy {
   switch (failure.outcome) {
     case "Unauthenticated":
-      return "Signed out · Sign in again";
+      return { id: "sentences-failure-signed-out" };
     case "Absent":
-      return "Not found, or not visible to you";
+      return { id: "sentences-failure-absent" };
     case "Retryable":
-      return `Try later · ${mutationDeferralSentence(failure.code)}`;
+      return {
+        id: "sentences-failure-retryable",
+        args: { deferral: mutationDeferralSentence(failure.code) },
+      };
     case "Unreachable":
     case "Unreadable":
-      return failureWords(failure).word;
+      return {
+        id: "sentences-failure-words",
+        args: { word: failureWords(failure).word },
+      };
     case "Conflict":
     case "Rejected":
     case "Fault": {
       const declined = mutationRefusalCodeOf(failure.code);
       if (declined !== undefined) return mutationRefusalSentence(declined);
-      return `Refused · Unknown reason (${failure.code})`;
+      return { id: "sentences-failure-refused", args: { code: failure.code } };
     }
   }
 }

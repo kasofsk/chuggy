@@ -34,6 +34,7 @@ import {
   creationPush,
 } from "./ticketCreationFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 
 const repository = "https://forge.test/kasofsk/chuggy";
 const bound = [creationBinding(repository)];
@@ -223,7 +224,7 @@ test("a selection naming its defaults holds none of them", () => {
 
 test("a catalog draws selection where a document draws overrides", () => {
   const keys = (over: TicketYamlContext) =>
-    ticketYamlVocabulary(over.base, over).map((key) => key.key);
+    ticketYamlVocabulary(over.base, over, copyTextEn).map((key) => key.key);
   expect(keys(context)).toContain("selection");
   expect(keys(context)).not.toContain("overrides");
   const documented = {
@@ -339,7 +340,7 @@ test("a revision other than Pinned or Latest is refused at its value, and the vo
   expect(text.slice(read.problems[0]?.from, read.problems[0]?.to)).toBe(
     "Newest",
   );
-  const offered = ticketYamlVocabulary(context.base, context).find(
+  const offered = ticketYamlVocabulary(context.base, context, copyTextEn).find(
     (key) => key.key === "configuration" && key.place === "Workload",
   );
   expect(offered?.values.map((value) => value.label)).toStrictEqual([

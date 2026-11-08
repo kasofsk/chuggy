@@ -5,7 +5,8 @@
  * in. The sizes themselves are a browser's to measure.
  */
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test } from "vitest";
 
 import { Conversation } from "../app/browser/conversation/Conversation.tsx";
@@ -66,7 +67,7 @@ function drawn(pane: string): {
   readonly input: HTMLElement;
   readonly send: HTMLElement;
 } {
-  const view = render(
+  const view = renderCopied(
     <section className={pane}>
       <Conversation
         exchanges={[answered]}
@@ -135,7 +136,7 @@ test("a box with nothing to say over it has no line over it", () => {
 });
 
 test("a control that is only its glyph is a square, and on a narrow screen the least a finger is given", () => {
-  render(
+  renderCopied(
     <ChatPaneIconButton glyph="new" label="New" onClick={() => undefined} />,
   );
   const control = screen.getByRole("button", { name: "New" });
@@ -185,7 +186,7 @@ const called: ConversationExchange = {
 };
 
 test("on a narrow screen the copy of an answer and a row that opens take a press over the least a finger is given, and no room for it", () => {
-  const view = render(
+  const view = renderCopied(
     <CopyProvider write={() => Promise.resolve(true)}>
       <Conversation exchanges={[called]} workOpen pane />
     </CopyProvider>,
@@ -212,7 +213,9 @@ test("on a narrow screen the copy of an answer and a row that opens take a press
 });
 
 test("on a narrow screen a step that opens is itself a row as tall as a finger is given, within the room the list keeps for it", () => {
-  const view = render(<Conversation exchanges={[called]} workOpen pane />);
+  const view = renderCopied(
+    <Conversation exchanges={[called]} workOpen pane />,
+  );
   const steps = view.container.querySelector(".conversation-steps");
   const [, line, step] = view.container.querySelectorAll(
     ".conversation-trigger",

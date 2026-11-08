@@ -11,7 +11,8 @@
  * after; the offsets are measured in a browser.
  */
 
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, screen, waitFor } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -95,7 +96,7 @@ async function settledOn(
   exchange: Partial<ConversationExchange>,
   expected: readonly string[],
 ): Promise<void> {
-  const view = render(drawn([running(exchange)]));
+  const view = renderCopied(drawn([running(exchange)]));
   await waitFor(() => {
     expect(moving(view.container)).toEqual(expected);
   });
@@ -147,7 +148,7 @@ describe("one thing moves while a turn is out", () => {
 
 describe("the one thing that moves, where it is not the only turn or the only place", () => {
   test("a turn waiting behind one being answered is still", async () => {
-    const view = render(
+    const view = renderCopied(
       drawn([
         running({ answer, activity: writing }),
         running({
@@ -170,7 +171,7 @@ describe("the one thing that moves, where it is not the only turn or the only pl
   });
 
   test("where no engine is drawn the glyph under the first turn out moves in its place", async () => {
-    const view = render(
+    const view = renderCopied(
       drawn(
         [running({ standing: { standing: "Running", state: "Queued" } })],
         false,
@@ -209,7 +210,7 @@ const momentHeldMs = 40;
 
 describe("a turn drawn through", () => {
   test("never has two things moving at once, at any moment", async () => {
-    const view = render(
+    const view = renderCopied(
       drawn([running({ standing: { standing: "Running", state: "Queued" } })]),
     );
     const seen: (readonly string[])[] = [moving(view.container)];
@@ -255,7 +256,7 @@ describe("the word under an answer", () => {
     readonly told: string;
     readonly shown: string;
   } {
-    const view = render(drawn([running(exchange)]));
+    const view = renderCopied(drawn([running(exchange)]));
     const told = word(view.container);
     const shown = shownWord(view.container);
     const text = view.container.textContent;
@@ -288,7 +289,7 @@ describe("the word under an answer", () => {
       [{ work: [read] }, true],
       [{ answer, activity: writing }, false],
     ] as const) {
-      const view = render(drawn([running(moment)]));
+      const view = renderCopied(drawn([running(moment)]));
       expect(word(view.container)).toEqual(["Working"]);
       expect(shownWord(view.container)).toEqual([""]);
       expect(
@@ -307,7 +308,7 @@ describe("the word under an answer", () => {
 
 describe("what a reader who cannot see the answer arriving is told", () => {
   test("is one status that is there throughout, so a reader is told when it changes and of no word of the text", async () => {
-    const view = render(drawn([running({})]));
+    const view = renderCopied(drawn([running({})]));
     const status = found(
       view.container,
       '.conversation-meta p [role="status"]',
@@ -335,7 +336,7 @@ describe("what a reader who cannot see the answer arriving is told", () => {
   });
 
   test("the answer is marked busy for as long as its turn is out", () => {
-    const view = render(drawn([running({ answer, activity: writing })]));
+    const view = renderCopied(drawn([running({ answer, activity: writing })]));
     const root = found(view.container, ".conversation-answer");
     expect(root.getAttribute("aria-busy")).toBe("true");
     view.rerender(
@@ -358,7 +359,7 @@ describe("the line under an answer, from the turn's last word to its settling", 
   }
 
   test("says nothing and shows nothing, in the box, the lead and the status that were there", async () => {
-    const view = render(drawn([running({ answer, activity: writing })]));
+    const view = renderCopied(drawn([running({ answer, activity: writing })]));
     await waitFor(() => {
       expect(view.container.querySelector(".run-report")?.textContent).toBe(
         answer,
@@ -390,7 +391,7 @@ describe("the line under an answer, from the turn's last word to its settling", 
   });
 
   test("a turn that settles failed says so in the status that said nothing", () => {
-    const view = render(drawn([running(whole)]));
+    const view = renderCopied(drawn([running(whole)]));
     const quiet = held(view.container);
     expect(quiet[2]?.textContent).toBe("");
     const failed = { standing: "Failed", failure: "StoreRefused" } as const;
@@ -405,7 +406,7 @@ describe("the line under an answer, from the turn's last word to its settling", 
   });
 
   test("more of the turn being written brings the word and the motion back", async () => {
-    const view = render(drawn([running(whole)]));
+    const view = renderCopied(drawn([running(whole)]));
     const quiet = held(view.container);
     view.rerender(
       drawn([running({ answer: `${answer} And 41.`, activity: writing })]),
@@ -448,7 +449,7 @@ describe("a word for waiting", () => {
       [queued, "Queued"],
       [{}, "Starting"],
     ] as const) {
-      const view = render(drawn([running(moment)]));
+      const view = renderCopied(drawn([running(moment)]));
       expect(shownWord(view.container)).toEqual([""]);
       expect(moving(view.container)).toEqual(["engine"]);
       lasting(conversationWaitWordAfterMs - 1);
@@ -461,7 +462,7 @@ describe("a word for waiting", () => {
   });
 
   test("is never said of a wait that ends within the glance, however many follow one another", () => {
-    const view = render(drawn([running(queued)]));
+    const view = renderCopied(drawn([running(queued)]));
     lasting(conversationWaitWordAfterMs - 1);
     view.rerender(drawn([running({})]));
     lasting(conversationWaitWordAfterMs - 1);
@@ -474,7 +475,7 @@ describe("a word for waiting", () => {
   });
 
   test("goes when the wait it named ends, and the next wait is timed from its own start", () => {
-    const view = render(drawn([running(queued)]));
+    const view = renderCopied(drawn([running(queued)]));
     lasting(conversationWaitWordAfterMs);
     expect(shownWord(view.container)).toEqual(["Queued"]);
     view.rerender(drawn([running({})]));
@@ -486,7 +487,7 @@ describe("a word for waiting", () => {
   });
 
   test("a turn no runner can take now says so at once", () => {
-    const view = render(
+    const view = renderCopied(
       drawn([running({ standing: { standing: "Running", state: "Waiting" } })]),
     );
     expect(shownWord(view.container)).toEqual(["Waiting"]);
@@ -494,7 +495,7 @@ describe("a word for waiting", () => {
   });
 
   test("comes in slowly where the wait has lasted, and a word that is not for waiting is there at once", () => {
-    const view = render(drawn([running(queued)]));
+    const view = renderCopied(drawn([running(queued)]));
     expect(slowly(view.container)).toBe(false);
     lasting(conversationWaitWordAfterMs);
     expect(shownWord(view.container)).toEqual(["Queued"]);
@@ -511,7 +512,7 @@ describe("a word for waiting", () => {
 
 describe("what is written later is drawn after what was written before", () => {
   test("a step that begins after the words have is drawn under them, and they keep their node", async () => {
-    const view = render(drawn([running({ answer, activity: writing })]));
+    const view = renderCopied(drawn([running({ answer, activity: writing })]));
     await waitFor(() => {
       expect(view.container.querySelector(".run-report")?.textContent).toBe(
         answer,
@@ -533,7 +534,7 @@ describe("what is written later is drawn after what was written before", () => {
   });
 
   test("an answer that took no work begins with its text, written or stored", () => {
-    const view = render(
+    const view = renderCopied(
       drawn([running({ answer, standing: { standing: "Answered" } })]),
     );
     const root = found(view.container, ".conversation-answer");
@@ -543,7 +544,7 @@ describe("what is written later is drawn after what was written before", () => {
   });
 
   test("the line under the answer is one line from the turn's first moment to its last", () => {
-    const view = render(
+    const view = renderCopied(
       drawn([running({ standing: { standing: "Running", state: "Queued" } })]),
     );
     const line = found(view.container, ".conversation-meta");

@@ -28,6 +28,7 @@ import type { z } from "zod";
 import type { ApiPorts } from "../../core/apiRequest.ts";
 import type { CreationFault } from "../../core/ticketCreation.ts";
 import { draftRevisionSaved } from "../../core/ticketCreationRun.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 
 /** Whether the edits are on the draft now, or the send is to wait for the
  * reader. */
@@ -132,6 +133,7 @@ export interface DraftSaving {
 export function useDraftSaveOffered(offer: DraftSaveOffer): DraftSaving {
   const held = useContext(DraftSaves);
   const [refusal, setRefusal] = useState<string>();
+  const text = useCopyText();
   const latest = useRef(offer);
   useEffect(() => {
     latest.current = offer;
@@ -152,6 +154,7 @@ export function useDraftSaveOffered(offer: DraftSaveOffer): DraftSaving {
         now.partition,
         now.ticket,
         assembled.revision,
+        text,
       );
       if (ended.saved === "Refused") {
         setRefusal(ended.reason);
@@ -162,7 +165,7 @@ export function useDraftSaveOffered(offer: DraftSaveOffer): DraftSaving {
       return "Saved";
     };
     return held.offered(save);
-  }, [held, offered]);
+  }, [held, offered, text]);
   return {
     refusal,
     cleared: () => {

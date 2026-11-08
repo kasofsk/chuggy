@@ -1,44 +1,47 @@
 /**
- * What each parked reason says, against the wire's own rosters rather than
+ * What a parked row's badge says, against the wire's own rosters rather than
  * against a list written here.
  *
- * The expectations are a total record over the roster, so a member the contract
- * gains fails to compile rather than going untested.
+ * A badge is the label the ledger page draws its escalation in, so each kind
+ * has one message wherever it is drawn.
  */
 
 import { expect, test } from "vitest";
 
 import { escalationKinds } from "../../../src/contract/rosters.ts";
-import type { EscalationKind } from "../../../src/contract/rosters.ts";
-import {
-  escalationBadgeLabel,
-  ticketBadgeLabel,
-} from "../app/core/ticketSections.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
+import { escalationKindLabel, phaseLabel } from "../app/core/codeLabels.ts";
+import { ticketBadgeLabel } from "../app/core/ticketSections.ts";
 
-const badgeOfKind: Readonly<Record<EscalationKind, string>> = {
-  WorkFailureEscalated: "work failed",
-  EvaluationFailureEscalated: "rework budget spent",
-  WorkExecutionUnavailableEscalated: "execution unavailable",
-  EvaluationBlockedEscalated: "evaluation blocked",
-  FinalizationUnavailableEscalated: "finalization unavailable",
-};
+/** What a badge reads as, or nothing where the row carries none. */
+function badgeText(
+  ...badged: Parameters<typeof ticketBadgeLabel>
+): string | undefined {
+  const label = ticketBadgeLabel(...badged);
+  return label === undefined ? undefined : copyTextEn(label);
+}
 
-test.each(escalationKinds)("the badge for %s says what it says", (kind) => {
-  expect(escalationBadgeLabel(kind)).toBe(badgeOfKind[kind]);
+test.each(escalationKinds)(
+  "the badge for %s is the escalation kind's own message",
+  (kind) => {
+    expect(
+      ticketBadgeLabel("Escalated", { kind, resumeAt: "ResumeWork" }),
+    ).toStrictEqual(escalationKindLabel(kind));
+  },
+);
+
+test("each escalation kind is one message of its own", () => {
+  const ids = escalationKinds.map((kind) => escalationKindLabel(kind).id);
+  expect(new Set(ids).size).toBe(escalationKinds.length);
 });
 
-test("no two kinds are drawn with the same badge", () => {
-  const drawn = escalationKinds.map((kind) => escalationBadgeLabel(kind));
-  expect(new Set(drawn).size).toBe(drawn.length);
-});
-
-test("an escalated row's badge is its kind", () => {
+test("an escalated row's badge reads as its kind's label", () => {
   expect(
-    ticketBadgeLabel("Escalated", {
+    badgeText("Escalated", {
       kind: "EvaluationFailureEscalated",
       resumeAt: "ResumeRework",
     }),
-  ).toBe("rework budget spent");
+  ).toBe("Rework budget exhausted");
 });
 
 test("a row whose job was lost on its runner says so rather than what failed", () => {
@@ -54,30 +57,33 @@ test("a row whose job was lost on its runner says so rather than what failed", (
     "WorkFailureEscalated",
     "EvaluationBlockedEscalated",
   ] as const)
-    expect(
-      ticketBadgeLabel("Escalated", { kind, resumeAt: "ResumeWork", lost }),
-    ).toBe("lost on runner");
+    expect(badgeText("Escalated", { kind, resumeAt: "ResumeWork", lost })).toBe(
+      "Lost on runner",
+    );
 });
 
 test("a row whose run stopped at a failed step names the step", () => {
   for (const [evidence, badge] of [
-    ["RunPushFailed", "push failed"],
-    ["RunTimedOut", "timed out"],
-    ["RunDiskLow", "disk low"],
-  ] as const)
+    ["RunPushFailed", "Push failed"],
+    ["RunTimedOut", "Timed out"],
+    ["RunDiskLow", "Disk low"],
+  ] as const) {
     expect(
-      ticketBadgeLabel("Escalated", {
+      badgeText("Escalated", {
         kind: "WorkFailureEscalated",
         resumeAt: "ResumeWork",
         failed: { evidence, execution: "execution-1", attempt: "attempt-1" },
       }),
     ).toBe(badge);
+  }
+});
+
+test("an escalated row whose kind did not arrive still says it is escalated", () => {
+  expect(ticketBadgeLabel("Escalated", undefined)).toStrictEqual(
+    phaseLabel("Escalated"),
+  );
 });
 
 test("a row with nothing to answer for carries no badge", () => {
   expect(ticketBadgeLabel("Work", undefined)).toBeUndefined();
-});
-
-test("an escalated row whose kind did not arrive still says it is escalated", () => {
-  expect(ticketBadgeLabel("Escalated", undefined)).toBe("escalated");
 });

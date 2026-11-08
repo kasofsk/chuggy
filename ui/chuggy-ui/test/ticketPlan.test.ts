@@ -63,7 +63,7 @@ test("a catalog's selected plan names each stage, and each step says what runs i
     ["checks", ["ci · commands"]],
     ["review", ["review · Claude · Opus", "security · Claude"]],
   ]);
-  expect(plan.landing).toBe("Pull request, then merge");
+  expect(plan.landing).toStrictEqual({ id: "codes-merge-mode-pull-request" });
   expect(plan.lands).toBe(true);
   expect(
     ticketPlanOf(catalog, ticket({ selection: { evaluation: "quick" } })).names,
@@ -104,7 +104,7 @@ test("the brief's landing comes before the finalizer's, and one that lands nothi
       catalog,
       ticket({ brief: { ...brief, finalization: { kind: "None" } } }),
     ),
-  ).toMatchObject({ lands: false, landing: "None" });
+  ).toMatchObject({ lands: false, landing: { id: "codes-landing-kind-none" } });
   expect(
     ticketPlanOf(catalog, ticket({ selection: { finalization: "none" } })),
   ).toMatchObject({ lands: false });
@@ -116,7 +116,10 @@ test("the brief's landing comes before the finalizer's, and one that lands nothi
         selection: { finalization: "none" },
       }),
     ),
-  ).toMatchObject({ lands: true, landing: "Pull request" });
+  ).toMatchObject({
+    lands: true,
+    landing: { id: "codes-landing-kind-pull-request" },
+  });
   expect(ticketPlanOf(undefined, ticket())).toMatchObject({
     lands: true,
     landing: undefined,
