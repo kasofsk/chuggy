@@ -267,6 +267,30 @@ test("a window smaller than the context reached raises the scale above both, so 
   expect(high).toBeLessThan(higher ?? 0);
 });
 
+test("the threshold's label sits beneath its line, and above it where a grid line would cross its letters beneath", () => {
+  const labelled = (threshold: number, window: number) => {
+    const chart = contextChartOf({ ...growth, threshold, window }, 640);
+    const line = chart.threshold?.y ?? Number.NaN;
+    const baseline = chart.threshold?.labelY ?? Number.NaN;
+    const crossed = chart.yTicks.some(
+      (tick) => tick.at > baseline - 9 && tick.at < baseline + 3,
+    );
+    return { beneath: baseline > line, crossed };
+  };
+  expect(labelled(300_000, 400_000)).toStrictEqual({
+    beneath: true,
+    crossed: false,
+  });
+  expect(labelled(317_000, 350_000)).toStrictEqual({
+    beneath: false,
+    crossed: false,
+  });
+  expect(labelled(167_000, 200_000)).toStrictEqual({
+    beneath: false,
+    crossed: false,
+  });
+});
+
 test("a hover says the context, the call, and how far it moved from the call before it in its series", () => {
   const point = growth.points[3];
   if (point === undefined) throw new Error("no point");

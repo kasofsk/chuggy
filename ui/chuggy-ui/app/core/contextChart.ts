@@ -68,7 +68,15 @@ export interface ContextChart {
   readonly xTicks: readonly ContextTick[];
   readonly main: readonly ContextChartPiece[];
   readonly subagent: readonly ContextChartPiece[];
-  readonly threshold: { readonly y: number; readonly label: Copy } | undefined;
+  readonly threshold:
+    | {
+        readonly y: number;
+        readonly label: Copy;
+        /** The label's baseline, beside the line where no grid line crosses
+         * its letters. */
+        readonly labelY: number;
+      }
+    | undefined;
   readonly compactions: readonly { readonly x: number; readonly label: Copy }[];
 }
 
@@ -225,6 +233,32 @@ function contextChartPiece(
   return { line, area, ends };
 }
 
+/** Where the threshold's label's baseline sits against its line: this far
+ * beneath it, or this far above it. */
+const contextChartThresholdBelow = 12;
+const contextChartThresholdAbove = 4;
+
+/** The rows a label's letters take above its baseline and below it. */
+const contextChartLabelAscent = 9;
+const contextChartLabelDescent = 3;
+
+/** The threshold label's baseline: beneath its line, unless a grid line would
+ * cross its letters there and would not above it. */
+function contextChartThresholdLabelY(
+  y: number,
+  grid: readonly number[],
+): number {
+  const crossed = (baseline: number): boolean =>
+    grid.some(
+      (at) =>
+        at > baseline - contextChartLabelAscent &&
+        at < baseline + contextChartLabelDescent,
+    );
+  const below = y + contextChartThresholdBelow;
+  const above = y - contextChartThresholdAbove;
+  return crossed(below) && !crossed(above) ? above : below;
+}
+
 /** Every mark of the chart for a plot `width` wide. */
 export function contextChartOf(
   view: ContextGrowthView,
@@ -241,14 +275,17 @@ export function contextChartOf(
   const scale = contextChartScaleOf(plot, count, top);
   const main = view.points.filter((point) => point.series === "Main");
   const subagent = view.points.filter((point) => point.series === "Subagent");
+  const yTicks = contextChartTicksY(top).map((value) => ({
+    at: scale.y(value),
+    label: tokenCountText(value),
+  }));
+  const thresholdY =
+    view.threshold === undefined ? undefined : scale.y(view.threshold);
   return {
     width,
     height: contextChartHeight,
     plot,
-    yTicks: contextChartTicksY(top).map((value) => ({
-      at: scale.y(value),
-      label: tokenCountText(value),
-    })),
+    yTicks,
     xTicks: contextChartTicksX(count)
       .map((ordinal) => ({
         at: scale.x(ordinal),
@@ -265,14 +302,18 @@ export function contextChartOf(
       contextChartPiece(run, scale, undefined),
     ),
     threshold:
-      view.threshold === undefined
+      view.threshold === undefined || thresholdY === undefined
         ? undefined
         : {
-            y: scale.y(view.threshold),
+            y: thresholdY,
             label: {
               id: "context-compacts-at",
               args: { tokens: tokenCountText(view.threshold) },
             },
+            labelY: contextChartThresholdLabelY(
+              thresholdY,
+              yTicks.map((tick) => tick.at),
+            ),
           },
     compactions: view.compactions.map((mark) => ({
       x: contextChartCompactionX(mark, scale, count),

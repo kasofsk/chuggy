@@ -180,7 +180,7 @@ function ContextChartRules(props: { readonly chart: ContextChart }): ReactNode {
           <text
             className="context-chart-label"
             x={plot.left + 4}
-            y={chart.threshold.y + 12}
+            y={chart.threshold.labelY}
           >
             {text(chart.threshold.label)}
           </text>
