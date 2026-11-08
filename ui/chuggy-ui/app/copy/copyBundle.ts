@@ -19,7 +19,19 @@ export function copyBundleOf(
   base: readonly string[],
   layer: readonly string[] = [],
 ): FluentBundle {
-  const bundle = new FluentBundle(locale, { useIsolating: false });
+  return copyCatalogAdded(
+    new FluentBundle(locale, { useIsolating: false }),
+    base,
+    layer,
+  );
+}
+
+/** A bundle made some other way, holding the catalog as `copyBundleOf`'s does. */
+export function copyCatalogAdded(
+  bundle: FluentBundle,
+  base: readonly string[],
+  layer: readonly string[] = [],
+): FluentBundle {
   for (const source of base) copyResourceAdded(bundle, source, false);
   for (const source of layer) copyResourceAdded(bundle, source, true);
   return bundle;

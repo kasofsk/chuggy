@@ -22,6 +22,12 @@ export interface ShellCopy {
   readonly "shell-settings-theme-system": Record<never, never>;
   readonly "shell-settings-theme-light": Record<never, never>;
   readonly "shell-settings-theme-dark": Record<never, never>;
+  readonly "shell-settings-wording": Record<never, never>;
+  readonly "shell-settings-wording-standard": Record<never, never>;
+  readonly "shell-settings-wording-pseudo": Record<never, never>;
+  readonly "shell-settings-wording-vernacular": {
+    readonly name: string | number;
+  };
   readonly "shell-settings-chat": Record<never, never>;
   readonly "shell-settings-chat-right": Record<never, never>;
   readonly "shell-settings-chat-left": Record<never, never>;
