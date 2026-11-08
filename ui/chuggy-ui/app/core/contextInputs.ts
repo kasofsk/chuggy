@@ -131,6 +131,12 @@ function contextFilePath(path: string, cwd: string | undefined): string {
   return path.startsWith(under) ? path.slice(under.length) : path;
 }
 
+/** A path as the pieces a line may break between, each up to and with its
+ * slash, so a long path wraps between names and never inside one. */
+export function contextPathParts(path: string): readonly string[] {
+  return path.split(/(?<=\/)/u);
+}
+
 const contextFileGroupOrder: readonly ContextFileGroup[] = [
   "Instructions",
   "Settings",

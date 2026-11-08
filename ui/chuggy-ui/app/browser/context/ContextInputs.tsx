@@ -16,6 +16,7 @@ import type {
   ContextInputs,
   ContextNames,
 } from "../../core/contextInputs.ts";
+import { contextPathParts } from "../../core/contextInputs.ts";
 import type { ContextSessionInputs } from "../../core/contextSession.ts";
 import { groupedDigits } from "../../core/figures.ts";
 import { Button } from "../ui/Button.tsx";
@@ -81,7 +82,14 @@ function ContextFileRow(props: { readonly file: ContextFile }): ReactNode {
             }}
           >
             <Chevron className="context-file-chevron" />
-            {file.path}
+            <span className="context-file-path">
+              {contextPathParts(file.path).map((part, index) => (
+                <Fragment key={index}>
+                  {index === 0 ? null : <wbr />}
+                  {part}
+                </Fragment>
+              ))}
+            </span>
           </button>
         </td>
         <td className="num">

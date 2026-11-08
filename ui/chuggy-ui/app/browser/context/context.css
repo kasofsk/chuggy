@@ -523,7 +523,7 @@
     font-size: var(--mono-optical);
     color: var(--ink-1);
     text-align: left;
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
     white-space: normal;
   }
 

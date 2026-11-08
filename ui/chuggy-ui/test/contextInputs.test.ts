@@ -9,6 +9,7 @@ import { expect, test } from "vitest";
 import {
   contextBriefOf,
   contextInputsOf,
+  contextPathParts,
   contextSettingsWindowOf,
 } from "../app/core/contextInputs.ts";
 import { contextSnapshot, contextWindow } from "./contextFixture.ts";
@@ -47,6 +48,23 @@ test("the files are grouped instructions first, named under the working director
   expect(inputs.tools?.deferred).toBe(22_455);
   expect(inputs.mcpServers?.names).toStrictEqual([]);
   expect(inputs.agents?.names).toStrictEqual(["Explore"]);
+});
+
+test("a path breaks only after a slash, so no name is split", () => {
+  expect(contextPathParts("src/adapters/postgres/AGENTS.md")).toStrictEqual([
+    "src/",
+    "adapters/",
+    "postgres/",
+    "AGENTS.md",
+  ]);
+  expect(contextPathParts("/home/node/.claude/settings.json")).toStrictEqual([
+    "/",
+    "home/",
+    "node/",
+    ".claude/",
+    "settings.json",
+  ]);
+  expect(contextPathParts("CLAUDE.md")).toStrictEqual(["CLAUDE.md"]);
 });
 
 test("an init the snapshot did not keep lists nothing rather than failing", () => {

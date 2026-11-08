@@ -1,8 +1,9 @@
 /**
  * The Context view's sheet as far as a suite with no layout can follow it:
  * the view draws inside the frame the page gives it rather than a second one
- * of its own, a bar span's label is shown whole or not at all, and a table
- * closes up to a phone's width rather than scrolling.
+ * of its own, a bar span's label is shown whole or not at all, a table
+ * closes up to a phone's width rather than scrolling, and a file's path
+ * breaks between its names.
  */
 
 import { afterEach, expect, test } from "vitest";
@@ -62,4 +63,11 @@ test("at a phone's width a table's outer columns sit flush with the section and 
   expect(sheetDeclared(rules, name, "white-space")).toBe("normal");
   expect(sheetDeclared(rules, middle, "padding-inline")).toBe("var(--space-2)");
   expect(sheetDeclared(rules, last, "padding-inline-end")).toBe("0px");
+});
+
+test("a file's path inside the run's body breaks only where it may, not at any letter", () => {
+  const toggle = contextSheetPlaced("ticket-run-body", "context-file-toggle");
+  expect(
+    sheetDeclared(sheetRules(contextSheet, []), toggle, "overflow-wrap"),
+  ).toBe("break-word");
 });
