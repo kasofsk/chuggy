@@ -13,10 +13,13 @@
  *
  * NO STREAM NAMES ANY OF IT. The listing and the thread drawn are polled, and
  * what the reader changes here is read again at once.
+ *
+ * A thread's bar offers its Context, which opens what the thread's model holds
+ * beside the conversation, as a project thread's page does.
  */
 
 import { Link, useNavigate } from "@tanstack/react-router";
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { ThreadEntryResponse } from "../../../../src/contract/responses.ts";
@@ -32,6 +35,7 @@ import {
   memberChatWithheld,
 } from "../core/memberChat.ts";
 import type { MemberChatProjectThread } from "../core/memberChat.ts";
+import { ThreadContextPanel } from "./context/SessionContext.tsx";
 import { Conversation } from "./conversation/Conversation.tsx";
 import { PanelUnready } from "./DataPanel.tsx";
 import { clipboardWritten, elapsedMs, syntaxWorkerOpened } from "./ports.ts";
@@ -50,7 +54,7 @@ import {
   useMemberThread,
 } from "./thread/threadRead.ts";
 import { useMemberThreadSend } from "./thread/threadSend.tsx";
-import { buttonLookClassName } from "./ui/Button.tsx";
+import { Button, buttonLookClassName } from "./ui/Button.tsx";
 import { CopyProvider } from "./ui/copyHeld.tsx";
 import { MarkdownProvider } from "./ui/markdownHeld.ts";
 import { Tooltip } from "./ui/Tooltip.tsx";
@@ -160,11 +164,30 @@ function MemberChatThread(props: {
   const text = useCopyText();
   const state = useMemberThread(props.tenant, props.session);
   const home = { scope: "Member", tenant: props.tenant } as const;
+  const [context, setContext] = useState(false);
   return (
     <>
       <MemberChatBar {...props}>
         {state.state === "Ready" ? (
-          <ChatPaneThreadActions home={home} thread={state.value} at="Page" />
+          <>
+            <div className="flex min-w-0 flex-1 flex-wrap items-center">
+              <ChatPaneThreadActions
+                home={home}
+                thread={state.value}
+                at="Page"
+              />
+            </div>
+            <Button
+              size="sm"
+              variant={context ? "primary" : "default"}
+              pressed={context}
+              onClick={() => {
+                setContext(!context);
+              }}
+            >
+              {text({ id: "context-open" })}
+            </Button>
+          </>
         ) : (
           <h1 className="text-ink-1 font-strong min-w-0 flex-1 truncate text-md">
             {text({ id: "chat-heading" })}
@@ -172,11 +195,28 @@ function MemberChatThread(props: {
         )}
       </MemberChatBar>
       {state.state === "Ready" ? (
-        <div className="chat-reading flex min-h-0 min-w-0 flex-1 flex-col">
+        <div
+          className="chat-reading context-beside flex min-h-0 min-w-0 flex-1"
+          data-open={context}
+        >
           <MemberThreadConversation
             tenant={props.tenant}
             thread={state.value}
             named
+            beside={
+              context
+                ? (held) => (
+                    <ThreadContextPanel
+                      home={home}
+                      thread={state.value}
+                      held={held}
+                      onClose={() => {
+                        setContext(false);
+                      }}
+                    />
+                  )
+                : undefined
+            }
           />
         </div>
       ) : (

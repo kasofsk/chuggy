@@ -35,8 +35,8 @@ import { DataPanel, PanelUnready } from "../DataPanel.tsx";
 import { ChatPaneIconButton } from "../shell/chatPaneIcons.tsx";
 import { ContextSessionView } from "./ContextView.tsx";
 
-/** A session's panel once its readings have answered, or failed to: a failed
- * read still draws what the transcript says. */
+/** A session's panel from its readings, where it has any, and what its
+ * transcript holds. */
 function SessionContextDrawn(props: {
   readonly context: SessionContextResponse | undefined;
   readonly held: LeadTranscriptHeld;
@@ -85,6 +85,8 @@ export function LeadContextPanel(props: {
   );
 }
 
+/** A thread's panel once its readings have answered, or failed to: a failed
+ * read still draws what the transcript says. */
 function ThreadContextBody(props: {
   readonly state: PanelState<SessionContextResponse>;
   readonly held: LeadTranscriptHeld;
