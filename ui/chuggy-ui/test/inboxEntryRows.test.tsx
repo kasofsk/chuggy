@@ -167,7 +167,7 @@ test("a ticket only an open action names draws its last execution", async () => 
   drawInbox([inboxEntry(finalizing, { actions: [approval] })]);
   await settled();
   expect(cell(11, "title")).toBe(`${finalizing.title ?? ""}11`);
-  expect(cell(11, "last execution")).toContain("Failed");
+  expect(cell(11, "last run")).toContain("Failed");
   expect(cell(11, "last activity")).not.toBe("—");
   expect(within(row(11)).getByText("awaiting your approval")).toBeDefined();
 });
@@ -189,7 +189,7 @@ test("a ticket only a refusal names draws its last execution", async () => {
   ]);
   await settled();
   expect(cell(42, "title")).toBe(`${refused.title ?? ""}42`);
-  expect(cell(42, "last execution")).toContain("Failed");
+  expect(cell(42, "last run")).toContain("Failed");
 });
 
 test("a proposed ticket's row names it, says it never ran, and offers the proposal's answers alone", async () => {
@@ -200,7 +200,7 @@ test("a proposed ticket's row names it, says it never ran, and offers the propos
   ]);
   await settled();
   expect(cell(7, "title")).toBe(`${proposed.title ?? ""}7`);
-  expect(cell(7, "last execution")).toBe("—");
+  expect(cell(7, "last run")).toBe("—");
   expect(
     within(row(7))
       .getAllByRole("button")

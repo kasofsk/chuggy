@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * One selector setting group as a card: whether it stands on the installation's
  * value, and what its own last write answered.
@@ -12,6 +11,7 @@ import type { ReactNode } from "react";
 import { instantFigure } from "../../../core/figures.ts";
 import type { SelectorSettingsConflictResponse } from "../../../../../../src/contract/responses.ts";
 import { selectorSettingsConflictOf } from "../../../core/selectorSettingsForm.ts";
+import { useCopyText } from "../../../copy/CopyProvider.tsx";
 import { ConsoleWriteRefusedWords } from "../../consoleWrite.tsx";
 import { useNowMs } from "../../Freshness.tsx";
 import type { SelectorSettingsShown } from "../../selectorSettingsWriting.ts";
@@ -29,12 +29,13 @@ function SelectorSettingsMovedBy(props: {
   readonly movedBy: NonNullable<SelectorSettingsConflictResponse["movedBy"]>;
 }): ReactNode {
   const nowMs = useNowMs();
+  const text = useCopyText();
   const subject = props.movedBy.administrator.subject;
   return (
     <>
-      {"Changed by "}
-      <Identity label={{ text: subject, title: subject }} />
-      {" at "}
+      {text({ id: "lead-settings-changed-by" })}{" "}
+      <Identity label={{ text: subject, title: subject }} />{" "}
+      {text({ id: "lead-settings-changed-at" })}{" "}
       <Figure figure={instantFigure(props.movedBy.recordedAt, nowMs)} />
     </>
   );
@@ -51,9 +52,17 @@ export function selectorSettingsConflicted(
 export function SelectorSettingsSavedNotice(props: {
   readonly saved: SelectorSettingsShown | undefined;
 }): ReactNode {
+  const text = useCopyText();
   const saved = props.saved;
   if (saved === undefined) return null;
-  if (saved.isPending) return <Notice tone="info" inline detail="Writing" />;
+  if (saved.isPending)
+    return (
+      <Notice
+        tone="info"
+        inline
+        detail={text({ id: "lead-settings-writing" })}
+      />
+    );
   if (saved.error !== null) {
     const conflict = selectorSettingsConflictOf(saved.error.failure);
     if (conflict === undefined)
@@ -77,7 +86,10 @@ export function SelectorSettingsSavedNotice(props: {
       <Notice
         tone="live"
         inline
-        detail={`Written · ${String(saved.data.revision)}`}
+        detail={text({
+          id: "lead-settings-written",
+          args: { revision: String(saved.data.revision) },
+        })}
       />
     );
   return null;
@@ -108,13 +120,16 @@ export function SelectorSection(props: {
   readonly onReload: () => void;
   readonly children: ReactNode;
 }): ReactNode {
+  const text = useCopyText();
   const saved = props.saved;
   return (
     <SettingsSection
       title={
         <span className="flex items-center gap-2">
           {props.title}
-          {props.inherited ? <Pill tone="neutral">Default</Pill> : null}
+          {props.inherited ? (
+            <Pill tone="neutral">{text({ id: "lead-settings-default" })}</Pill>
+          ) : null}
         </span>
       }
       about={props.about}

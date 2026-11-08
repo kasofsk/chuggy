@@ -19,6 +19,7 @@ import {
   type SelectorReviewOutcome,
 } from "../../../../src/contract/rosters.ts";
 import type { ApiResult } from "./apiRequest.ts";
+import type { Copy, CopyText } from "./copy.ts";
 
 /** How often the inbox is read again for its held decisions while it or its badge is drawn. */
 export const inboxProposalsPolledMs = 15_000;
@@ -52,23 +53,42 @@ export function inboxProposalAnswered(
   };
 }
 
+/** The outcome's own word, where a review was answered. */
+function inboxProposalOutcomeWord(outcome: SelectorReviewOutcome): Copy {
+  switch (outcome) {
+    case "Approved":
+      return { id: "inbox-proposal-outcome-approved" };
+    case "Rejected":
+      return { id: "inbox-proposal-outcome-rejected" };
+  }
+}
+
 /** The one word a review's standing is drawn as. */
-export function inboxProposalStepWord(step: InboxProposalStep): string {
+export function inboxProposalStepWord(step: InboxProposalStep): Copy {
   switch (step.step) {
     case "Answered":
-      return step.outcome;
+      return inboxProposalOutcomeWord(step.outcome);
     case "Stale":
-      return "Stale";
+      return { id: "inbox-proposal-stale" };
     case "Failed":
-      return "Failed";
+      return { id: "inbox-proposal-failed" };
   }
 }
 
 /** The line one review leaves behind once its row may have left: the tickets
  * its decision named, then the word, then why where it failed. */
-export function inboxProposalSentence(answer: InboxProposalAnswer): string {
-  const why = answer.step.step === "Failed" ? ` · ${answer.step.why}` : "";
-  return `Proposal ${answer.proposal.tickets.join(", ")} · ${inboxProposalStepWord(answer.step)}${why}`;
+export function inboxProposalSentence(
+  answer: InboxProposalAnswer,
+  text: CopyText,
+): string {
+  const word = inboxProposalStepWord(answer.step);
+  const tickets = answer.proposal.tickets.join(", ");
+  return answer.step.step === "Failed"
+    ? text({
+        id: "inbox-proposal-sentence-why",
+        args: { tickets, word, why: answer.step.why },
+      })
+    : text({ id: "inbox-proposal-sentence", args: { tickets, word } });
 }
 
 /** A note is held to what the wire takes as it is typed, so a review is never refused for its length. */

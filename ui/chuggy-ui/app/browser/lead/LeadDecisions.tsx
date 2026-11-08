@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The decision log: what the lead decided, newest first, each group holding one
  * row per dispatch with the landing that dispatch reached, beside the tickets
@@ -46,6 +45,7 @@ import { leadDecisionsQuery } from "../../core/sessionQueries.ts";
 import { navRoutes } from "../../core/shellNav.ts";
 import { leadDispatchArm } from "../../core/tones.ts";
 import type { Tone } from "../../core/tones.ts";
+import type { Copy } from "../../core/copy.ts";
 import { usePanelState } from "../api.ts";
 import { DataPanel } from "../DataPanel.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
@@ -92,10 +92,10 @@ function LeadDecisionRollup(props: {
 }
 
 interface LeadDecisionArm {
-  readonly label: string;
+  readonly id: "refused" | "lifted";
+  readonly label: Copy;
   readonly tickets: readonly number[];
   readonly tone: Tone;
-  readonly word: string;
 }
 
 /**
@@ -110,16 +110,16 @@ function leadDecisionArms(
 ): readonly LeadDecisionArm[] {
   return [
     {
-      label: "Refused",
+      id: "refused",
+      label: { id: "lead-decision-refused" },
       tickets: decision.refused,
       tone: "fail",
-      word: "Refused",
     },
     {
-      label: "Lifted",
+      id: "lifted",
+      label: { id: "lead-decision-lifted" },
       tickets: decision.lifted,
       tone: "retired",
-      word: "Lifted",
     },
   ];
 }
@@ -139,8 +139,8 @@ function LeadDecisionRows(props: {
   if (decision.dispatches.length === 0 && arms.length === 0)
     return (
       <LedgerRow
-        label="Tickets"
-        pill={{ tone: "retired", text: "None" }}
+        label={text({ id: "lead-decision-tickets-label" })}
+        pill={{ tone: "retired", text: text({ id: "lead-decision-none" }) }}
         ghost
         when={props.when}
       />
@@ -152,7 +152,7 @@ function LeadDecisionRows(props: {
         return (
           <LedgerRow
             key={dispatch.ticket}
-            label="Dispatch"
+            label={text({ id: "lead-decision-dispatch-label" })}
             pill={{ tone: arm.tone, text: text(arm.word) }}
             when={props.when}
             note={
@@ -162,7 +162,7 @@ function LeadDecisionRows(props: {
                   <span className="text-ink-3">
                     {" · "}
                     <Link to={navRoutes.inbox} params={props.partition}>
-                      Inbox
+                      {text({ id: "lead-decision-inbox-link" })}
                     </Link>
                   </span>
                 </>
@@ -175,9 +175,9 @@ function LeadDecisionRows(props: {
       })}
       {arms.map((arm) => (
         <LedgerRow
-          key={arm.label}
-          label={arm.label}
-          pill={{ tone: arm.tone, text: arm.word }}
+          key={arm.id}
+          label={text(arm.label)}
+          pill={{ tone: arm.tone, text: text(arm.label) }}
           when={props.when}
           note={arm.tickets.map((ticket) => String(ticket)).join(", ")}
         />
@@ -192,12 +192,16 @@ function LeadDecisionGroup(props: {
   readonly current: boolean;
   readonly nowMs: number;
 }): ReactNode {
+  const text = useCopyText();
   const decision = props.decision;
   return (
     <LedgerGroup
-      title={`Decision ${String(decision.ordinal)}`}
+      title={text({
+        id: "lead-decision-title",
+        args: { ordinal: String(decision.ordinal) },
+      })}
       standing={props.current ? "Current" : "Superseded"}
-      summary={leadDecisionSummary(decision)}
+      summary={leadDecisionSummary(decision, text)}
       rollup={<LeadDecisionRollup decision={decision} />}
       open={props.current}
     >
@@ -217,9 +221,11 @@ function LeadDecisionList(props: {
   readonly history: SelectorHistoryResponse;
   readonly nowMs: number;
 }): ReactNode {
+  const text = useCopyText();
   const decisions = leadDecisionsNewestFirst(props.history.decisions);
   const newest = decisions[0]?.ordinal;
-  if (decisions.length === 0) return <EmptyState label="No decisions" />;
+  if (decisions.length === 0)
+    return <EmptyState label={text({ id: "lead-decisions-none" })} />;
   return (
     <Ledger>
       {decisions.map((decision) => (
@@ -239,10 +245,11 @@ export function LeadDecisions(props: {
   readonly partition: PartitionIdentity;
   readonly nowMs: number;
 }): ReactNode {
+  const text = useCopyText();
   const partition = props.partition;
   const state = usePanelState(leadDecisionsQuery(partition));
   return (
-    <DataPanel title="Decisions" state={state}>
+    <DataPanel title={text({ id: "lead-decisions-title" })} state={state}>
       {(history) => (
         <LeadDecisionList
           partition={partition}

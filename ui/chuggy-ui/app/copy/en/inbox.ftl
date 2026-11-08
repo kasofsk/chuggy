@@ -1,1 +1,34 @@
 ## The inbox.
+
+inbox-title = { -inbox(case: "upper") }
+inbox-clear = { -inbox(case: "upper") } is clear
+inbox-no-action = no action can be sent from here yet
+inbox-more = more
+inbox-loading = Loading…
+inbox-col-title = title
+inbox-col-why = why
+inbox-col-last-run = last { -run }
+inbox-col-last-activity = last activity
+inbox-col-answer = answer
+inbox-col-happened = what happened
+
+inbox-step-submitting = Submitting
+inbox-step-busy = Busy
+inbox-step-waiting = Waiting
+inbox-step-updating = Updating
+
+inbox-proposal-pill = { -proposal(case: "upper") }
+inbox-proposal-why = { -lead(case: "upper") } { -proposal }
+inbox-proposal-why-others = { -lead(case: "upper") } { -proposal } · also { $others }
+inbox-proposal-approve = approve
+inbox-proposal-reject = reject
+inbox-proposal-reject-question = Reject this { -proposal }?
+inbox-proposal-reject-confirm = Reject
+inbox-proposal-note-label = Note
+inbox-proposal-note-placeholder = Note
+inbox-proposal-stale = Stale
+inbox-proposal-failed = Failed
+inbox-proposal-outcome-approved = Approved
+inbox-proposal-outcome-rejected = Rejected
+inbox-proposal-sentence = { -proposal(case: "upper") } { $tickets } · { $word }
+inbox-proposal-sentence-why = { -proposal(case: "upper") } { $tickets } · { $word } · { $why }

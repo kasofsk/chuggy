@@ -16,6 +16,13 @@ import type { OperationStep } from "./operationFollow.ts";
 import type { TicketAction } from "./ticketActions.ts";
 import type { CopyOrData, CopyText } from "./copy.ts";
 
+const inboxStepWords = {
+  Submitting: { id: "inbox-step-submitting" },
+  Backlogged: { id: "inbox-step-busy" },
+  Following: { id: "inbox-step-waiting" },
+  Confirming: { id: "inbox-step-updating" },
+} as const;
+
 export interface InboxAnswer {
   readonly action: TicketAction;
   readonly step: OperationStep;
@@ -34,13 +41,10 @@ export function inboxAnswerInFlight(step: OperationStep | undefined): boolean {
 export function inboxStepSentence(step: OperationStep, text: CopyText): string {
   switch (step.step) {
     case "Submitting":
-      return "Submitting";
     case "Backlogged":
-      return "Busy";
     case "Following":
-      return "Waiting";
     case "Confirming":
-      return "Updating";
+      return text(inboxStepWords[step.step]);
     case "Settled":
       return text(
         step.refusal === undefined

@@ -729,7 +729,7 @@ const unheld = {
 const unadministered = {
   access: accessHolding([joined("harbour"), joined("zephyr")]),
   label: "No workspace to add to",
-  detail: "A workspace admin adds projects",
+  detail: "An admin adds projects",
 };
 
 test.each([

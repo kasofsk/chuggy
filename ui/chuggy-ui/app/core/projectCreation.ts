@@ -16,6 +16,7 @@ import {
 import type { projectCreationSchema } from "../../../../src/contract/requests.ts";
 
 import type { ApiFailure } from "./apiRequest.ts";
+import type { Copy, CopyOrData } from "./copy.ts";
 
 export type ProjectCreationForm = z.infer<typeof projectCreationSchema>;
 
@@ -54,8 +55,17 @@ export function projectCreationPathIn(workspace: string): string {
   return `${projectCreationRoutePath}?workspace=${encodeURIComponent(projectCreationQueryText(workspace))}`;
 }
 
-/** The name rule as the form states it under each field before anything is
- * typed, and as it states a name that breaks it. */
+/**
+ * The name rule as the form states it under each field before anything is
+ * typed, and as it states a name that breaks it.
+ *
+ * THESE TWO AND `tenantNameReservedFault` STAY PLAIN STRINGS, NOT `Copy`. The
+ * site's own workspace creation (`core/siteWorkspaces.ts`,
+ * `core/siteWorkspaceLinks.ts`) reads them too, and that section is not this
+ * ticket's to migrate; a `Copy` here would need a `text` neither of those
+ * pure core modules is handed. Project creation's own call site renders them
+ * as the data they already are.
+ */
 export const projectNameRule = "Lowercase letters, digits, inner hyphens";
 export const projectNameLengthFault = "Too long";
 
@@ -63,7 +73,9 @@ export const projectNameLengthFault = "Too long";
 export const tenantNameReservedFault = "Reserved";
 
 /** What a workspace nobody holds is refused as, to a reader who may make none. */
-export const tenantCreationRefusedLine = "New workspace needs an invite link";
+export const tenantCreationRefusedLine: Copy = {
+  id: "project-creation-tenant-needs-invite",
+};
 
 /** Why one name cannot be sent, or nothing while it is empty, which the submit
  * being unavailable already says. */
@@ -102,18 +114,18 @@ export function projectCreationStanding(
     : undefined;
 }
 
-function projectCreationConflict(code: string): string {
+function projectCreationConflict(code: string): Copy {
   switch (code) {
     case "TenantTaken":
-      return "Taken";
+      return { id: "project-creation-refusal-taken" };
     case "ProjectExists":
-      return "Exists";
+      return { id: "project-creation-refusal-exists" };
     default:
-      return "Conflict";
+      return { id: "project-creation-refusal-conflict" };
   }
 }
 
-function projectCreationRejected(code: string): string {
+function projectCreationRejected(code: string): CopyOrData {
   switch (code) {
     case "TenantNameInvalid":
     case "ProjectNameInvalid":
@@ -123,12 +135,12 @@ function projectCreationRejected(code: string): string {
     case "TenantCreationNotPermitted":
       return tenantCreationRefusedLine;
     default:
-      return "Refused";
+      return { id: "project-creation-refusal-refused" };
   }
 }
 
 /** The one short line a refused creation is drawn as. */
-export function projectCreationRefusal(failure: ApiFailure): string {
+export function projectCreationRefusalLabel(failure: ApiFailure): CopyOrData {
   switch (failure.outcome) {
     case "Conflict":
       return projectCreationConflict(failure.code);
@@ -136,14 +148,14 @@ export function projectCreationRefusal(failure: ApiFailure): string {
       return projectCreationRejected(failure.code);
     case "Absent":
     case "Retryable":
-      return "Unavailable";
+      return { id: "project-creation-refusal-unavailable" };
     case "Unauthenticated":
-      return "Not signed in";
+      return { id: "project-creation-refusal-not-signed-in" };
     case "Fault":
-      return "Failed";
+      return { id: "project-creation-refusal-failed" };
     case "Unreachable":
-      return "Unreachable";
+      return { id: "project-creation-refusal-unreachable" };
     case "Unreadable":
-      return "Unreadable";
+      return { id: "project-creation-refusal-unreadable" };
   }
 }

@@ -2,4 +2,181 @@
  * Do not edit by hand; run `node ui/chuggy-ui/tools/copyCatalog.ts`. */
 
 export const leadFtl = `## The lead's page.
+
+## The top bar.
+
+lead-heading = { -lead(case: "upper") }
+lead-no-lead = No { -lead }
+lead-session-open = Open
+lead-session-closed = Closed
+lead-absence-manual = { -ticket(case: "upper", form: "plural") } are { -dispatch(form: "ed") } by hand
+
+lead-attention-monitoring = Monitoring
+lead-attention-attention = Attention
+lead-attention-stopped = Stopped
+
+## The mailbox tail.
+
+lead-turns-title = { -turn(case: "upper", form: "plural") }
+lead-turns-none = No { -turn(form: "plural") }
+lead-turns-col-turn = { -turn(case: "upper") }
+lead-turns-col-input = Input
+lead-turns-col-state = State
+lead-turns-col-model = Model
+lead-turns-col-tokens = Tokens
+lead-turns-col-cost = Cost
+lead-turns-col-duration = Duration
+
+lead-turn-input-observation = Observation
+lead-turn-input-message = Message
+lead-turn-input-wake = Wake
+lead-turn-input-question = { -inquiry(case: "upper") }
+lead-turn-input-offer-reply = Offer reply
+
+lead-turn-state-queued = Queued
+lead-turn-state-claimed = Claimed
+lead-turn-state-answered = Answered
+lead-turn-state-failed = Failed
+lead-turn-state-abandoned = Abandoned
+
+lead-turn-failure-agent-failed = { -agent(case: "upper") } failed
+lead-turn-failure-rate-limited = Rate limited
+lead-turn-failure-turns-exhausted = { -turn(case: "upper", form: "plural") } exhausted
+lead-turn-failure-budget-exhausted = Budget exhausted
+lead-turn-failure-store-refused = Store refused
+lead-turn-failure-attempt-lost = Attempt lost
+lead-turn-failure-session-closed = Session closed
+lead-turn-failure-withdrawn = Withdrawn
+lead-turn-failure-stopped = Stopped
+lead-turn-failure-stopped-queued = Stopped while queued
+
+## The conversation.
+
+lead-conversation-aria = { -conversation(case: "upper") }
+lead-conversation-empty = No { -conversation }
+lead-handoff-note = Handoff note
+lead-handoff-truncated = Truncated
+
+## The decision log.
+
+lead-decisions-title = Decisions
+lead-decisions-none = No decisions
+lead-decision-title = Decision { $ordinal }
+lead-decision-none = None
+lead-decision-tickets-label = { -ticket(case: "upper", form: "plural") }
+lead-decision-dispatch-label = { -dispatch(case: "upper") }
+lead-decision-inbox-link = { -inbox(case: "upper") }
+lead-decision-refused = Refused
+lead-decision-lifted = Lifted
+lead-decision-refused-count = refused
+lead-decision-lifted-count = lifted
+lead-decision-summary-dispatched = { $landed } of { $named } { -dispatch(form: "ed") }
+
+## Standing refusals.
+
+lead-refusals-title = Refusals
+lead-refusals-none = No refusals
+lead-refusals-more = More
+lead-refusals-caption = Standing refusals
+lead-refusals-col-ticket = { -ticket(case: "upper") }
+lead-refusals-col-version = Version
+lead-refusals-col-state = State
+lead-refusals-col-recorded = Recorded
+lead-refusals-col-reason = Reason
+lead-refusal-standing = Standing
+lead-refusal-superseded = Superseded
+
+## The questions asked of the lead.
+
+lead-inquiries-title = { -inquiry(case: "upper", form: "plural") }
+lead-inquiries-none = No { -inquiry(form: "plural") }
+lead-inquiry-field = { -inquiry(case: "upper") }
+lead-inquiry-ask = Ask
+lead-inquiry-mine = Mine
+lead-inquiry-asking = Asking
+lead-inquiry-asked = Asked
+lead-inquiry-fault-empty = Empty
+lead-inquiry-fault-too-long = Too long
+lead-inquiry-asker-none = None
+lead-inquiry-refusal-not-started = Not started
+lead-inquiry-refusal-closed = Closed
+lead-inquiry-refusal-in-flight = In flight
+lead-inquiry-refusal-needs-hosted-runs = Needs { -hosted-runs }
+lead-inquiry-refusal-unknown = Refused
+lead-inquiry-refusal-no-lead = No { -lead }
+
+## The strip and the settings page.
+
+lead-settings-title = { -lead(case: "upper") }
+lead-settings-revision = { -revision(case: "upper") } { $revision }
+lead-settings-default = Default
+lead-settings-default-lower = default
+
+lead-mode-name = { -lead(case: "upper") }
+lead-mode-running = Running
+lead-mode-paused = Paused
+lead-mode-action-pause = Pause
+lead-mode-action-resume = Resume
+
+lead-dispatch-name = { -dispatch(case: "upper") }
+lead-dispatch-automatic = Automatic
+# spells -approval: approving a dispatch, never a landing
+lead-dispatch-approval = { -dispatch(case: "upper") } approval
+# spells -approval: approving a dispatch, never a landing
+lead-dispatch-action-require = Require { -dispatch } approval
+lead-dispatch-action-automatic = { -dispatch(case: "upper") } automatically
+
+lead-settings-fault-invalid = Invalid
+lead-settings-fault-at-least = At least { $min }
+lead-settings-fault-at-most = At most { $max }
+
+lead-settings-limit-tokens = Tokens
+lead-settings-limit-time = Time
+lead-settings-limit-tool-calls = Tool calls
+lead-settings-limit-dispatches = { -dispatch(case: "upper", form: "s") }
+lead-settings-limit-input = Input
+lead-settings-limit-candidate-pages = Candidate pages
+lead-settings-limit-compaction-window = Compaction window
+
+lead-settings-unit-tokens = tokens
+lead-settings-unit-ms = ms
+lead-settings-unit-calls = calls
+lead-settings-unit-tickets = { -ticket(form: "plural") }
+lead-settings-unit-bytes = bytes
+lead-settings-unit-pages = pages
+
+lead-settings-section-north-star-title = North Star
+lead-settings-section-north-star-about = What this { -project } is for. Every { -lead } decision is judged against it.
+lead-settings-section-standing-rules-title = Standing rules
+lead-settings-section-standing-rules-about = How { -thread(form: "plural") } act on this { -project }.
+lead-settings-section-base-prompt-title = Base prompt
+lead-settings-section-base-prompt-about = The { -lead }'s system prompt. An edit replaces the { -lead } at its next decision.
+lead-settings-section-limits-title = Limits
+lead-settings-section-limits-about = What one decision may spend, and how much context the { -lead } holds before it compacts.
+lead-settings-reset-default = Reset to default
+lead-settings-reset = Reset
+
+lead-settings-writing = Writing
+lead-settings-written = Written · { $revision }
+lead-settings-changed-by = Changed by
+lead-settings-changed-at = at
+lead-settings-conflict-moved-by = Changed by { $subject } at { $time }
+lead-settings-conflict-revision = Conflict · { $revision }
+
+## The settings history.
+
+lead-history-none = None
+lead-history-mode-label = Mode
+lead-history-dispatch-label = { -dispatch(case: "upper") }
+lead-history-models-label = Models
+lead-history-tools-label = Tools
+lead-history-context-age-label = Context age
+lead-history-no-change = No change
+lead-history-diff = Diff
+lead-history-hide-diff = Hide diff
+lead-history-restore = Restore
+lead-history-show-all = Show all { $count }
+lead-history-none-recorded = No { -revision(form: "plural") }
+lead-history-title = { -revision(case: "upper", form: "plural") }
+lead-history-about = Every save, newest first.
 `;

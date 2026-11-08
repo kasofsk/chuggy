@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The questions members have asked this lead aside, and the box for asking one.
  *
@@ -59,6 +58,8 @@ import { apiAskLead } from "../../core/apiRoutes.ts";
 import { base64urlFromBytes } from "../../core/base64url.ts";
 import { consoleWriteKey } from "../../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../../core/consoleWrite.ts";
+import { copyOrDataText } from "../../core/copy.ts";
+import type { CopyText } from "../../core/copy.ts";
 import {
   costFigure,
   durationFigure,
@@ -88,7 +89,12 @@ import {
 } from "./inquiryBoxes.ts";
 import { projectAbilityRefused } from "../../core/projectAbilities.ts";
 import { leadInquiriesQuery } from "../../core/sessionQueries.ts";
+import {
+  leadTurnFailureLabel,
+  leadTurnStateLabel,
+} from "../../core/leadTranscript.ts";
 import { sessionTurnStateTone } from "../../core/tones.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { usePanelState } from "../api.ts";
 import { useConsoleWrite } from "../consoleWrite.tsx";
 import { PanelUnready } from "../DataPanel.tsx";
@@ -125,6 +131,7 @@ function useInquiryBox(partition: PartitionIdentity): InquiryBox {
 function leadAskWrite(
   partition: PartitionIdentity,
   dispatch: ConsoleDispatch,
+  text: CopyText,
 ): ConsoleWrite<InquiryDraw, LeadInquiryAccepted> {
   return {
     mutationKey: consoleWriteKey(
@@ -134,7 +141,8 @@ function leadAskWrite(
     ),
     write: (ports, draw) =>
       apiAskLead(ports, draw.partition, inquiryAsking(draw)),
-    refusal: (failure) => inquiryAskRefusalSentence(inquiryAskRefused(failure)),
+    refusal: (failure) =>
+      inquiryAskRefusalSentence(inquiryAskRefused(failure), text),
     landed: (client, accepted, draw) => {
       dispatch(
         inquiryBoxAnsweredAt({
@@ -170,15 +178,25 @@ function LeadAskNotice(props: {
   readonly ask: InquiryAsk;
   readonly pending: boolean;
 }): ReactNode {
-  if (props.pending) return <Notice tone="info" inline detail="Asking" />;
+  const text = useCopyText();
+  if (props.pending)
+    return (
+      <Notice tone="info" inline detail={text({ id: "lead-inquiry-asking" })} />
+    );
   const ask = props.ask;
   switch (ask.ask) {
     case "Idle":
       return null;
     case "Asked":
-      return <Notice tone="live" inline detail="Asked" />;
+      return (
+        <Notice
+          tone="live"
+          inline
+          detail={text({ id: "lead-inquiry-asked" })}
+        />
+      );
     case "Refused":
-      return <Notice tone="parked" inline detail={ask.word} />;
+      return <Notice tone="parked" inline detail={text(ask.word)} />;
     case "NoRunner":
       return (
         <SessionRunnerNotice
@@ -191,7 +209,7 @@ function LeadAskNotice(props: {
       return (
         <Notice tone="danger" inline>
           <Tooltip text={ask.words.detail}>
-            <span>{inquiryAskRefusalSentence(ask)}</span>
+            <span>{inquiryAskRefusalSentence(ask, text)}</span>
           </Tooltip>
         </Notice>
       );
@@ -235,8 +253,9 @@ function LeadAskRunner(props: {
 function LeadAsk(props: { readonly partition: PartitionIdentity }): ReactNode {
   const client = useQueryClient();
   const dispatch = useConsoleDispatch();
+  const text = useCopyText();
   const partition = props.partition;
-  const write = leadAskWrite(partition, dispatch);
+  const write = leadAskWrite(partition, dispatch, text);
   const asking = useConsoleWrite(write, { drawn: true });
   const pending =
     useIsMutating({ mutationKey: write.mutationKey, exact: true }) > 0;
@@ -266,10 +285,10 @@ function LeadAsk(props: { readonly partition: PartitionIdentity }): ReactNode {
       <LeadAskNotice partition={partition} ask={box.ask} pending={pending} />
       <LeadAskRunner partition={partition} ask={box.ask} pending={pending} />
       <Fields>
-        <Field name="Question">
+        <Field name={text({ id: "lead-inquiry-field" })}>
           <textarea
             className="inquiry-ask-text w-full resize-y"
-            aria-label="Question"
+            aria-label={text({ id: "lead-inquiry-field" })}
             aria-invalid={shown !== undefined}
             value={typed}
             onChange={(event) => {
@@ -278,7 +297,7 @@ function LeadAsk(props: { readonly partition: PartitionIdentity }): ReactNode {
             onBlur={left}
           />
           <span className="num">{`${String(question.length)} / ${String(inquiryQuestionCharsMax)}`}</span>
-          {shown === undefined ? null : <Pill tone="fail">{shown}</Pill>}
+          {shown === undefined ? null : <Pill tone="fail">{text(shown)}</Pill>}
         </Field>
       </Fields>
       <div className="justify-self-start">
@@ -288,7 +307,7 @@ function LeadAsk(props: { readonly partition: PartitionIdentity }): ReactNode {
           disabled={fault !== undefined || pending}
           onClick={submit}
         >
-          Ask
+          {text({ id: "lead-inquiry-ask" })}
         </Button>
       </div>
     </div>
@@ -328,18 +347,27 @@ function LeadInquiryRow(props: {
   readonly inquiry: LeadInquiryResponse;
   readonly nowMs: number;
 }): ReactNode {
+  const text = useCopyText();
   const inquiry = props.inquiry;
   return (
     <li className="grid min-w-0 gap-1 border-t border-edge pt-2">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-ink-3 max-w-measure truncate font-mono text-xs">
-          {inquiryAskerNamed(inquiry.asker)}
+          {copyOrDataText(text, inquiryAskerNamed(inquiry.asker))}
         </span>
-        {inquiry.mine ? <Pill tone="neutral">Mine</Pill> : null}
-        <Tooltip text={inquiry.failure}>
+        {inquiry.mine ? (
+          <Pill tone="neutral">{text({ id: "lead-inquiry-mine" })}</Pill>
+        ) : null}
+        <Tooltip
+          text={
+            inquiry.failure === undefined
+              ? undefined
+              : text(leadTurnFailureLabel(inquiry.failure))
+          }
+        >
           <span>
             <Pill tone={sessionTurnStateTone(inquiry.turnState)}>
-              {inquiry.turnState}
+              {text(leadTurnStateLabel(inquiry.turnState))}
             </Pill>
           </span>
         </Tooltip>
@@ -361,8 +389,9 @@ function LeadInquiryList(props: {
   readonly inquiries: LeadInquiriesResponse;
   readonly nowMs: number;
 }): ReactNode {
+  const text = useCopyText();
   if (props.inquiries.inquiries.length === 0)
-    return <EmptyState label="No inquiries" />;
+    return <EmptyState label={text({ id: "lead-inquiries-none" })} />;
   return (
     <ol className="grid min-w-0 list-none gap-3 p-0">
       {props.inquiries.inquiries.map((inquiry) => (
@@ -393,10 +422,11 @@ export function LeadInquiries(props: {
   readonly head: string | undefined;
   readonly nowMs: number;
 }): ReactNode {
+  const text = useCopyText();
   const partition = props.partition;
   const state = usePanelState(leadInquiriesQuery(partition));
   return (
-    <Panel title="Inquiries">
+    <Panel title={text({ id: "lead-inquiries-title" })}>
       {props.head === undefined ? null : (
         <LeadAskOffered partition={partition} />
       )}

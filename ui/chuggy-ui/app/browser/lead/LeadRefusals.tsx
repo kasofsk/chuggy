@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * What the lead is declining to dispatch: one row per ticket whose latest
  * refusal entry still stands, with the authoring version it was made against.
@@ -17,9 +16,13 @@ import type {
   AgenticRefusalsResponse,
 } from "../../../../../src/contract/responses.ts";
 import { instantFigure } from "../../core/figures.ts";
-import { agenticRefusalStanding } from "../../core/leadTranscript.ts";
+import {
+  agenticRefusalStanding,
+  agenticRefusalStandingLabel,
+} from "../../core/leadTranscript.ts";
 import { agenticRefusalsQuery } from "../../core/sessionQueries.ts";
 import { agenticRefusalStandingTone } from "../../core/tones.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { usePanelState } from "../api.ts";
 import { DataPanel } from "../DataPanel.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
@@ -31,6 +34,7 @@ function LeadRefusalRow(props: {
   readonly refusal: AgenticRefusalResponse;
   readonly nowMs: number;
 }): ReactNode {
+  const text = useCopyText();
   const refusal = props.refusal;
   const standing = agenticRefusalStanding(refusal);
   return (
@@ -38,7 +42,9 @@ function LeadRefusalRow(props: {
       <td className="num">{refusal.ticket}</td>
       <td className="num">{refusal.ticketVersion}</td>
       <td>
-        <Pill tone={agenticRefusalStandingTone(standing)}>{standing}</Pill>
+        <Pill tone={agenticRefusalStandingTone(standing)}>
+          {text(agenticRefusalStandingLabel(standing))}
+        </Pill>
       </td>
       <td>
         <Figure figure={instantFigure(refusal.recordedAt, props.nowMs)} />
@@ -52,23 +58,24 @@ function LeadRefusalTable(props: {
   readonly refusals: AgenticRefusalsResponse;
   readonly nowMs: number;
 }): ReactNode {
+  const text = useCopyText();
   if (props.refusals.refusals.length === 0)
-    return <EmptyState label="No refusals" />;
+    return <EmptyState label={text({ id: "lead-refusals-none" })} />;
   return (
     <>
       {props.refusals.more ? (
         <p className="text-ink-3">
-          <span className="eyebrow">More</span>
+          <span className="eyebrow">{text({ id: "lead-refusals-more" })}</span>
         </p>
       ) : null}
-      <Table caption="Standing refusals">
+      <Table caption={text({ id: "lead-refusals-caption" })}>
         <thead>
           <tr>
-            <th scope="col">Ticket</th>
-            <th scope="col">Version</th>
-            <th scope="col">State</th>
-            <th scope="col">Recorded</th>
-            <th scope="col">Reason</th>
+            <th scope="col">{text({ id: "lead-refusals-col-ticket" })}</th>
+            <th scope="col">{text({ id: "lead-refusals-col-version" })}</th>
+            <th scope="col">{text({ id: "lead-refusals-col-state" })}</th>
+            <th scope="col">{text({ id: "lead-refusals-col-recorded" })}</th>
+            <th scope="col">{text({ id: "lead-refusals-col-reason" })}</th>
           </tr>
         </thead>
         <tbody>
@@ -89,10 +96,11 @@ export function LeadRefusals(props: {
   readonly partition: PartitionIdentity;
   readonly nowMs: number;
 }): ReactNode {
+  const text = useCopyText();
   const partition = props.partition;
   const state = usePanelState(agenticRefusalsQuery(partition));
   return (
-    <DataPanel title="Refusals" state={state}>
+    <DataPanel title={text({ id: "lead-refusals-title" })} state={state}>
       {(refusals) => (
         <LeadRefusalTable refusals={refusals} nowMs={props.nowMs} />
       )}

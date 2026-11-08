@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The escalation inbox: every ticket that needs a human, newest activity first,
  * each answerable where it stands.
@@ -43,6 +42,7 @@ import {
   runnerLossDetail,
   runnerLossLine,
   runStepLabel,
+  ticketActionLabel,
   usageResumeLine,
 } from "../core/codeLabels.ts";
 import type { PanelState } from "../core/freshness.ts";
@@ -67,6 +67,10 @@ import {
   inboxSection,
 } from "../core/inboxList.ts";
 import type { InboxRows } from "../core/inboxList.ts";
+import {
+  agenticRefusalStandingLabel,
+  type AgenticRefusalStanding,
+} from "../core/leadTranscript.ts";
 import { nativeActionsAnswers } from "../core/nativeActionAnswers.ts";
 import { projectAbilityRefused } from "../core/projectAbilities.ts";
 import {
@@ -180,13 +184,14 @@ function InboxActions(props: {
   readonly answer: InboxAnswer | undefined;
   readonly onAnswer: (action: TicketAction) => void;
 }): ReactNode {
+  const text = useCopyText();
   const actions = inboxEntryActions(props.entry);
   const revoke = useTicketRevokeAsk(props.answer);
   const abilities = useProjectAbilities(props.partition);
   const revoking = actions.find((action) => action.action === "Revoke");
   if (actions.length === 0)
     return props.entry.proposals.length > 0 ? null : (
-      <span className="text-ink-3">no action can be sent from here yet</span>
+      <span className="text-ink-3">{text({ id: "inbox-no-action" })}</span>
     );
   if (projectAbilityRefused(abilities, "mutate")) return null;
   return (
@@ -213,7 +218,7 @@ function InboxActions(props: {
                       }
                 }
               >
-                {action.action.toLowerCase()}
+                {text(ticketActionLabel(action.action)).toLowerCase()}
               </Button>
             </span>
           </Tooltip>
@@ -336,15 +341,20 @@ function InboxWhy(props: {
 
 /** That the lead is declining to dispatch this ticket. The reason is on hover,
  * because a row is one line. */
+const inboxRefusalStanding: AgenticRefusalStanding = "Standing";
+
 function InboxRefusal(props: {
   readonly entry: InboxEntryResponse;
 }): ReactNode {
+  const text = useCopyText();
   const refusal = props.entry.refusals[0];
   if (refusal === undefined) return null;
   return (
     <Tooltip text={refusal.reason}>
       <span>
-        <Pill tone={agenticRefusalStandingTone("Standing")}>Standing</Pill>
+        <Pill tone={agenticRefusalStandingTone(inboxRefusalStanding)}>
+          {text(agenticRefusalStandingLabel(inboxRefusalStanding))}
+        </Pill>
       </span>
     </Tooltip>
   );
@@ -499,16 +509,17 @@ function InboxTable(props: {
   readonly proposed: InboxProposalAnswers;
   readonly nowMs: number;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <Table caption={ticketSectionTitles[inboxSection]}>
       <thead>
         <tr>
-          <th scope="col">title</th>
-          <th scope="col">why</th>
-          <th scope="col">last execution</th>
-          <th scope="col">last activity</th>
-          <th scope="col">answer</th>
-          <th scope="col">what happened</th>
+          <th scope="col">{text({ id: "inbox-col-title" })}</th>
+          <th scope="col">{text({ id: "inbox-col-why" })}</th>
+          <th scope="col">{text({ id: "inbox-col-last-run" })}</th>
+          <th scope="col">{text({ id: "inbox-col-last-activity" })}</th>
+          <th scope="col">{text({ id: "inbox-col-answer" })}</th>
+          <th scope="col">{text({ id: "inbox-col-happened" })}</th>
         </tr>
       </thead>
       <tbody>
@@ -541,20 +552,21 @@ function InboxPageFailure(props: {
 export function InboxScreen(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
+  const text = useCopyText();
   const partition = props.partition;
   const inbox = useInboxRows(partition);
   const proposed = useInboxProposalAnswers(partition);
   const nowMs = useNowMs();
   return (
     <>
-      <ScreenTitle>Inbox</ScreenTitle>
+      <ScreenTitle>{text({ id: "inbox-title" })}</ScreenTitle>
       <RepositoryImportRefusedNotice partition={partition} />
       <InboxPageFailure rows={inbox.rows} />
       <InboxProposalNotice answers={proposed} />
       <DataPanel title={ticketSectionTitles[inboxSection]} state={inbox.panel}>
         {(rows) =>
           rows.entries.length === 0 ? (
-            <p className="panel-note">Inbox is clear</p>
+            <p className="panel-note">{text({ id: "inbox-clear" })}</p>
           ) : (
             <InboxTable
               entries={rows.entries}
@@ -568,11 +580,13 @@ export function InboxScreen(props: {
       {inbox.readMore === undefined ? null : (
         <div>
           <Button size="sm" onClick={inbox.readMore}>
-            more
+            {text({ id: "inbox-more" })}
           </Button>
         </div>
       )}
-      {inbox.reading ? <p className="panel-note">Loading…</p> : null}
+      {inbox.reading ? (
+        <p className="panel-note">{text({ id: "inbox-loading" })}</p>
+      ) : null}
     </>
   );
 }

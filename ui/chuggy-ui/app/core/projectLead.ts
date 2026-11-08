@@ -119,7 +119,7 @@ export function projectLeadAbsenceLine(
 ): string | undefined {
   if (state.state !== "Ready" || "session" in state.value) return undefined;
   const absence = state.value.absence;
-  if (absence === undefined) return "Tickets are dispatched by hand";
+  if (absence === undefined) return text({ id: "lead-absence-manual" });
   if (absence.reason === "RunnerOffline" && placement !== undefined)
     return undefined;
   return "since" in absence

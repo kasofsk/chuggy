@@ -11,10 +11,12 @@
 
 // jscpd:ignore-start -- the imports and vi.mock factories a case cannot hoist out
 import { QueryClient } from "@tanstack/react-query";
-import { cleanup, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
+
+import { CopyProvider } from "../app/copy/CopyProvider.tsx";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import type {
@@ -232,4 +234,29 @@ test("nothing the inbox draws is a runtime style element", async () => {
   });
   expect(held.api.submissions()).toBe(1);
   expect(document.querySelectorAll("style").length).toBe(0);
+});
+
+/** A native action's answers are drawn from the same ticket action label every
+ * other button on the page draws from, so they move under a vernacular too. */
+test("an open action's answers are drawn through the catalog, not the wire's own case", async () => {
+  vi.stubGlobal(
+    "fetch",
+    serving(() => [awaiting]),
+  );
+  render(
+    <CopyProvider wording="en-x-pseudo">
+      <ScreenHarness
+        partition={atlas}
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+        transport={openedStream().ports.fetch}
+      >
+        <InboxScreen partition={atlas} />
+      </ScreenHarness>
+    </CopyProvider>,
+  );
+  await settled();
+  expect(screen.queryByRole("button", { name: "approve" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "decline" })).toBeNull();
 });

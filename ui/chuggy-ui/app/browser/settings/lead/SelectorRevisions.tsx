@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * Every recorded revision of these settings, what each one moved, and the one
  * action that puts a revision's overrides back.
@@ -16,12 +15,18 @@ import type { ReactNode } from "react";
 import type { SelectorSettingsHistoryResponse } from "../../../../../../src/contract/responses.ts";
 import { instantFigure } from "../../../core/figures.ts";
 import type { PanelState } from "../../../core/freshness.ts";
-import { selectorSettingsHistoryDiffs } from "../../../core/selectorSettingsHistory.ts";
+import {
+  selectorSettingsHistoryDefaultWord,
+  selectorSettingsHistoryDiffs,
+  selectorSettingsHistoryEmptyWord,
+} from "../../../core/selectorSettingsHistory.ts";
 import type {
   SelectorSettingsFieldChange,
   SelectorSettingsRevisionDiff,
 } from "../../../core/selectorSettingsHistory.ts";
 import type { SelectorProjectOverrides } from "../../../core/selectorSettingsForm.ts";
+import { useCopyText } from "../../../copy/CopyProvider.tsx";
+import type { CopyText } from "../../../core/copy.ts";
 import { PanelUnready } from "../../DataPanel.tsx";
 import type { SelectorSettingsShown } from "../../selectorSettingsWriting.ts";
 import { Button, buttonLookClassName } from "../../ui/Button.tsx";
@@ -39,9 +44,21 @@ import "./selector.css";
  * a reader scans without the list becoming the page. */
 export const selectorRevisionsShownMax = 5;
 
+/** A field's before or after text: the catalog's word for the two sentinels
+ * an override field with no value is drawn as, or the value itself, which is
+ * data. */
+function selectorRevisionFieldText(text: CopyText, value: string): string {
+  if (value === selectorSettingsHistoryDefaultWord)
+    return text({ id: "lead-settings-default" });
+  if (value === selectorSettingsHistoryEmptyWord)
+    return text({ id: "lead-history-none" });
+  return value;
+}
+
 function SelectorRevisionChanged(props: {
   readonly changes: readonly SelectorSettingsFieldChange[] | undefined;
 }): ReactNode {
+  const text = useCopyText();
   const changes = props.changes;
   if (changes === undefined)
     return (
@@ -52,12 +69,12 @@ function SelectorRevisionChanged(props: {
   if (changes.length === 0)
     return (
       <span className="selector-changed" data-none="">
-        No change
+        {text({ id: "lead-history-no-change" })}
       </span>
     );
   return (
     <span className="selector-changed">
-      {changes.map((change) => change.label).join(", ")}
+      {changes.map((change) => text(change.label)).join(", ")}
     </span>
   );
 }
@@ -65,18 +82,23 @@ function SelectorRevisionChanged(props: {
 function SelectorRevisionDiff(props: {
   readonly changes: readonly SelectorSettingsFieldChange[];
 }): ReactNode {
+  const text = useCopyText();
   return (
     <dl className="selector-diff">
       {props.changes.map((change) => (
         <div
-          key={change.label}
+          key={change.label.id}
           className="selector-diff-row"
           data-mono={change.mono ? "" : undefined}
         >
-          <dt>{change.label}</dt>
+          <dt>{text(change.label)}</dt>
           <dd>
-            <span className="selector-before">{change.before}</span>{" "}
-            <span className="selector-after">{change.after}</span>
+            <span className="selector-before">
+              {selectorRevisionFieldText(text, change.before)}
+            </span>{" "}
+            <span className="selector-after">
+              {selectorRevisionFieldText(text, change.after)}
+            </span>
           </dd>
         </div>
       ))}
@@ -91,6 +113,7 @@ function SelectorRevision(props: {
   readonly busy: boolean;
   readonly onRestore: (overrides: SelectorProjectOverrides) => void;
 }): ReactNode {
+  const text = useCopyText();
   const [open, setOpen] = useState(false);
   const { diff, onRestore } = props;
   const changes = diff.changes ?? [];
@@ -106,7 +129,9 @@ function SelectorRevision(props: {
             <Collapsible.Trigger
               className={buttonLookClassName({ variant: "quiet", size: "sm" })}
             >
-              {open ? "Hide diff" : "Diff"}
+              {text({
+                id: open ? "lead-history-hide-diff" : "lead-history-diff",
+              })}
             </Collapsible.Trigger>
           )}
           {props.restorable ? (
@@ -118,7 +143,7 @@ function SelectorRevision(props: {
                 onRestore(diff.revision.overrides);
               }}
             >
-              Restore
+              {text({ id: "lead-history-restore" })}
             </Button>
           ) : null}
         </span>
@@ -136,9 +161,11 @@ function SelectorRevisionList(props: {
   readonly busy: boolean;
   readonly onRestore: (overrides: SelectorProjectOverrides) => void;
 }): ReactNode {
+  const text = useCopyText();
   const [all, setAll] = useState(false);
   const diffs = selectorSettingsHistoryDiffs(props.history.revisions);
-  if (diffs.length === 0) return <EmptyState label="No revisions" />;
+  if (diffs.length === 0)
+    return <EmptyState label={text({ id: "lead-history-none-recorded" })} />;
   const shown = all ? diffs : diffs.slice(0, selectorRevisionsShownMax);
   return (
     <div className="grid justify-items-start gap-2">
@@ -162,7 +189,7 @@ function SelectorRevisionList(props: {
             setAll(true);
           }}
         >
-          {`Show all ${String(diffs.length)}`}
+          {text({ id: "lead-history-show-all", args: { count: diffs.length } })}
         </Button>
       )}
     </div>
@@ -177,11 +204,12 @@ export function SelectorRevisions(props: {
   readonly onRestore: (overrides: SelectorProjectOverrides) => void;
 }): ReactNode {
   const state = props.state;
+  const text = useCopyText();
   return (
     <Panel
       variant="section"
-      title="Revisions"
-      about="Every save, newest first."
+      title={text({ id: "lead-history-title" })}
+      about={text({ id: "lead-history-about" })}
       foot={
         selectorSettingsNoticed(props.saved) ? (
           <SelectorSettingsSavedNotice saved={props.saved} />

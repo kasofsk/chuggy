@@ -11,12 +11,20 @@
 
 import { expect, test } from "vitest";
 
+import { copyTextEn } from "../app/copy/catalog.ts";
 import {
   agenticRefusalStanding,
+  agenticRefusalStandingLabel,
+  agenticRefusalStandings,
   leadDecisionsNewestFirst,
   leadDecisionSummary,
   leadDispatchLanded,
   leadSessionNamed,
+  leadSessionStateLabel,
+  leadTurnFailureLabel,
+  leadTurnInputKindLabel,
+  leadTurnStateLabel,
+  selectorAttentionLabel,
   sessionChangeKindNamed,
   leadStreamBatches,
   leadStreamListed,
@@ -30,6 +38,13 @@ import {
   leadTranscriptNextAfter,
   leadTranscriptReached,
 } from "../app/core/leadTranscript.ts";
+import {
+  selectorAttentions,
+  sessionStates,
+  sessionTurnFailures,
+  sessionTurnInputKinds,
+  sessionTurnStates,
+} from "../../../src/contract/rosters.ts";
 import {
   sessionStoreBatchesMax,
   sessionStorePageBatchesMax,
@@ -759,13 +774,13 @@ test("a resource neither accessor can read is ignored by both", () => {
 });
 
 test("a decision says what it did, and says so when it did nothing", () => {
-  expect(leadDecisionSummary(leadDecisionRefusing)).toBe(
+  expect(leadDecisionSummary(leadDecisionRefusing, copyTextEn)).toBe(
     "Attention · 1 refused",
   );
-  expect(leadDecisionSummary(leadDecisionDispatching)).toBe(
+  expect(leadDecisionSummary(leadDecisionDispatching, copyTextEn)).toBe(
     "Monitoring · 0 of 1 dispatched · 1 lifted",
   );
-  expect(leadDecisionSummary(leadDecisionIdle)).toBe("None");
+  expect(leadDecisionSummary(leadDecisionIdle, copyTextEn)).toBe("None");
 });
 
 /**
@@ -775,10 +790,10 @@ test("a decision says what it did, and says so when it did nothing", () => {
  * which is the reading the log had while the record could not tell.
  */
 test("a decision's summary says how many of its dispatches landed", () => {
-  expect(leadDecisionSummary(leadDecisionLanding)).toBe(
+  expect(leadDecisionSummary(leadDecisionLanding, copyTextEn)).toBe(
     "Monitoring · 1 of 3 dispatched · 1 refused",
   );
-  expect(leadDecisionSummary(leadDecisionRefusedEvery)).toBe(
+  expect(leadDecisionSummary(leadDecisionRefusedEvery, copyTextEn)).toBe(
     "Attention · 0 of 2 dispatched · 1 refused",
   );
 });
@@ -794,14 +809,17 @@ test("the landing figure follows the record it is read from", () => {
     state: "Terminal" as const,
     outcome: "Succeeded",
   }));
-  expect(leadDecisionSummary({ ...leadDecisionLanding, dispatches })).toContain(
-    "3 of 3 dispatched",
-  );
   expect(
-    leadDecisionSummary({
-      ...leadDecisionLanding,
-      dispatches: dispatches.slice(1),
-    }),
+    leadDecisionSummary({ ...leadDecisionLanding, dispatches }, copyTextEn),
+  ).toContain("3 of 3 dispatched");
+  expect(
+    leadDecisionSummary(
+      {
+        ...leadDecisionLanding,
+        dispatches: dispatches.slice(1),
+      },
+      copyTextEn,
+    ),
   ).toContain("2 of 2 dispatched");
 });
 
@@ -1088,4 +1106,34 @@ test("a walk resumed past a stall stops saying it stopped short", () => {
     leadTranscriptDrawn(reached).unreached,
     "a pane that reached the rest of the stream still said it had not",
   ).toBe(false);
+});
+
+/**
+ * EVERY SESSION STATE, ATTENTION, REFUSAL STANDING, TURN INPUT KIND, TURN
+ * STATE AND TURN FAILURE DRAWS A LABEL. The lead page and the questions panel
+ * draw these rosters as the wire names them, and a member gained to one must
+ * not reach a reader as an unworded code.
+ */
+test("every session state, attention, standing, turn input kind, turn state and turn failure has a label", () => {
+  const drawn = [
+    ...sessionStates.map((each) => copyTextEn(leadSessionStateLabel(each))),
+    ...selectorAttentions.map((each) =>
+      copyTextEn(selectorAttentionLabel(each)),
+    ),
+    ...agenticRefusalStandings.map((each) =>
+      copyTextEn(agenticRefusalStandingLabel(each)),
+    ),
+    ...sessionTurnInputKinds.map((each) =>
+      copyTextEn(leadTurnInputKindLabel(each)),
+    ),
+    ...sessionTurnStates.map((each) => copyTextEn(leadTurnStateLabel(each))),
+    ...sessionTurnFailures.map((each) =>
+      copyTextEn(leadTurnFailureLabel(each)),
+    ),
+  ];
+  for (const label of drawn) expect(label.length).toBeGreaterThan(0);
+});
+
+test("a turn's input kind the mailbox calls UserMessage reads as a message", () => {
+  expect(copyTextEn(leadTurnInputKindLabel("UserMessage"))).toBe("Message");
 });

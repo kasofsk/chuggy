@@ -18,6 +18,7 @@
  */
 
 import type { SelectorSettingsHistoryResponse } from "../../../../src/contract/responses.ts";
+import type { Copy } from "./copy.ts";
 import { groupedDigits } from "./figures.ts";
 import {
   selectorSettingsLimitLabel,
@@ -29,12 +30,18 @@ import type { SelectorProjectOverrides } from "./selectorSettingsForm.ts";
 export type SelectorSettingsRevisionRead =
   SelectorSettingsHistoryResponse["revisions"][number];
 
-/** The word a field that carries no override is drawn as, on both sides. */
+/** The word a field that carries no override is drawn as, on both sides. This
+ * stays a plain sentinel rather than a `Copy`, because a row's before and
+ * after are compared by value across revisions; the component that draws them
+ * maps the sentinel to the catalog's word. */
 export const selectorSettingsHistoryDefaultWord = "Default";
+
+/** The word an override that clears an allowlist to nothing is drawn as. */
+export const selectorSettingsHistoryEmptyWord = "None";
 
 /** One field one revision moved, as the two texts a row draws. */
 export interface SelectorSettingsFieldChange {
-  readonly label: string;
+  readonly label: Copy;
   readonly before: string;
   readonly after: string;
   readonly mono: boolean;
@@ -48,7 +55,7 @@ export interface SelectorSettingsRevisionDiff {
 
 /** How one override field is drawn on either side of an arrow. */
 interface SelectorSettingsHistoryField {
-  readonly label: string;
+  readonly label: Copy;
   readonly text: string;
   readonly mono: boolean;
 }
@@ -68,14 +75,14 @@ function selectorSettingsHistoryTexts(
 
 function selectorSettingsHistoryTextLabel(
   name: (typeof selectorSettingsTextNames)[number],
-): string {
+): Copy {
   switch (name) {
     case "northStar":
-      return "North Star";
+      return { id: "lead-settings-section-north-star-title" };
     case "threadStandingRules":
-      return "Standing rules";
+      return { id: "lead-settings-section-standing-rules-title" };
     case "basePrompt":
-      return "Base prompt";
+      return { id: "lead-settings-section-base-prompt-title" };
   }
 }
 
@@ -92,21 +99,29 @@ function selectorSettingsHistoryFields(
   }));
   return [
     ...selectorSettingsHistoryTexts(overrides),
-    { label: "Mode", text: overrides.mode ?? absent, mono: false },
-    { label: "Dispatch", text: overrides.dispatchMode ?? absent, mono: false },
+    {
+      label: { id: "lead-history-mode-label" },
+      text: overrides.mode ?? absent,
+      mono: false,
+    },
+    {
+      label: { id: "lead-history-dispatch-label" },
+      text: overrides.dispatchMode ?? absent,
+      mono: false,
+    },
     ...limits,
     {
-      label: "Models",
+      label: { id: "lead-history-models-label" },
       text: selectorSettingsHistoryList(overrides.modelAllowlist),
       mono: false,
     },
     {
-      label: "Tools",
+      label: { id: "lead-history-tools-label" },
       text: selectorSettingsHistoryList(overrides.toolAllowlist),
       mono: false,
     },
     {
-      label: "Context age",
+      label: { id: "lead-history-context-age-label" },
       text: selectorSettingsHistoryNumber(overrides.operationalContextMaxAgeMs),
       mono: false,
     },
@@ -123,7 +138,9 @@ function selectorSettingsHistoryList(
   value: readonly string[] | undefined,
 ): string {
   if (value === undefined) return selectorSettingsHistoryDefaultWord;
-  return value.length === 0 ? "None" : value.join(", ");
+  return value.length === 0
+    ? selectorSettingsHistoryEmptyWord
+    : value.join(", ");
 }
 
 /**

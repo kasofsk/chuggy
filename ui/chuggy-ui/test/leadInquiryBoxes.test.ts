@@ -68,7 +68,7 @@ const walkQuestions = ["why", "why not", "  why  ", ""] as const;
 
 const walkAnswers: readonly InquiryAskAnswer[] = [
   { ask: "Asked", session: "inq-taken" },
-  { ask: "Refused", word: "In flight" },
+  { ask: "Refused", word: { id: "lead-inquiry-refusal-in-flight" } },
   { ask: "Failed", words: { word: "Offline" } },
 ];
 
@@ -329,7 +329,10 @@ function boxAt(at: number): PartitionIdentity {
  * pair a bound counting only text would evict.
  */
 test("the record is bounded, and never by dropping a pair", () => {
-  const said: InquiryAsk = { ask: "Refused", word: "In flight" };
+  const said: InquiryAsk = {
+    ask: "Refused",
+    word: { id: "lead-inquiry-refusal-in-flight" },
+  };
   let boxes: InquiryBoxes = inquiryBoxWith({}, boxAt(0), {
     typed: "",
     ask: said,

@@ -34,6 +34,7 @@ import type {
   AccessSiteAbilities,
 } from "../../../../src/contract/accessPlane.ts";
 
+import type { Copy, CopyOrData } from "./copy.ts";
 import type { PanelState } from "./freshness.ts";
 import { siteWorkspaceOffered } from "./siteWorkspaces.ts";
 
@@ -44,11 +45,13 @@ export type ProjectCreationWorkspaceEntry =
   | { readonly entry: "New" };
 
 /** What the entry that makes a workspace is called. */
-const projectCreationWorkspaceNewText = "New workspace";
+const projectCreationWorkspaceNewText: CopyOrData = {
+  id: "project-creation-workspace-new",
+};
 
 export function projectCreationWorkspaceEntryText(
   entry: ProjectCreationWorkspaceEntry,
-): string {
+): CopyOrData {
   switch (entry.entry) {
     case "Held":
       return entry.tenant;
@@ -59,14 +62,14 @@ export function projectCreationWorkspaceEntryText(
 
 /** The empty state of a reader no workspace holds, who may make none. */
 const projectCreationWithheldUnheld = {
-  label: "No workspace",
-  detail: "A new workspace needs an invite link",
+  label: { id: "project-creation-workspace-unheld-label" },
+  detail: { id: "project-creation-workspace-unheld-detail" },
 } as const;
 
 /** The empty state of a reader some workspace holds and none as its admin. */
 const projectCreationWithheldUnadministered = {
-  label: "No workspace to add to",
-  detail: "A workspace admin adds projects",
+  label: { id: "project-creation-workspace-unadmin-label" },
+  detail: { id: "project-creation-workspace-unadmin-detail" },
 } as const;
 
 /**
@@ -84,8 +87,8 @@ export type ProjectCreationWorkspaceOffer =
     }
   | {
       readonly offer: "Withheld";
-      readonly label: string;
-      readonly detail: string;
+      readonly label: Copy;
+      readonly detail: Copy;
     };
 
 /** The offers a form is drawn under, which the one that replaces it is not. */

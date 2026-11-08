@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The project's lead: where its session stands, what its mailbox has done, what
  * it currently holds, what it decided and what it is refusing to dispatch.
@@ -34,7 +33,15 @@ import {
   tokenCountFigure,
 } from "../core/figures.ts";
 import type { PanelState } from "../core/freshness.ts";
-import { leadStreamBatches, leadStreamListed } from "../core/leadTranscript.ts";
+import {
+  leadSessionStateLabel,
+  leadStreamBatches,
+  leadStreamListed,
+  leadTurnFailureLabel,
+  leadTurnInputKindLabel,
+  leadTurnStateLabel,
+  selectorAttentionLabel,
+} from "../core/leadTranscript.ts";
 import {
   projectLeadAbsenceLine,
   projectLeadAbsencePolledMs,
@@ -146,16 +153,16 @@ function LeadTopBar(props: {
   const text = useCopyText();
   return (
     <TopBarSlot>
-      <h1 className="visually-hidden">Lead</h1>
+      <h1 className="visually-hidden">{text({ id: "lead-heading" })}</h1>
       <div className="flex min-w-0 flex-wrap items-center gap-3">
         <Pill tone={sessionStateTone(lead.state)} emphasis>
-          {lead.state}
+          {text(leadSessionStateLabel(lead.state))}
         </Pill>
         {props.runner === undefined ? null : (
           <Pill tone="parked">{sessionRunnerShortWord(props.runner)}</Pill>
         )}
         <Pill tone={selectorAttentionTone(lead.attention)}>
-          {lead.attention}
+          {text(selectorAttentionLabel(lead.attention))}
         </Pill>
         <span className="num text-ink-3 text-sm">
           {lead.notificationCursor}
@@ -224,15 +231,24 @@ function LeadSelectorStrip(props: {
 }
 
 function LeadTurnRow(props: { readonly turn: LeadTurnResponse }): ReactNode {
+  const text = useCopyText();
   const turn = props.turn;
   return (
     <tr>
       <td className="num">{turn.ordinal}</td>
-      <td>{turn.inputKind}</td>
+      <td>{text(leadTurnInputKindLabel(turn.inputKind))}</td>
       <td>
-        <Tooltip text={turn.failure}>
+        <Tooltip
+          text={
+            turn.failure === undefined
+              ? undefined
+              : text(leadTurnFailureLabel(turn.failure))
+          }
+        >
           <span>
-            <Pill tone={sessionTurnStateTone(turn.state)}>{turn.state}</Pill>
+            <Pill tone={sessionTurnStateTone(turn.state)}>
+              {text(leadTurnStateLabel(turn.state))}
+            </Pill>
           </span>
         </Tooltip>
       </td>
@@ -270,18 +286,20 @@ function LeadTurnRow(props: { readonly turn: LeadTurnResponse }): ReactNode {
 
 /** The mailbox tail, newest last, with what the pod measured of each turn. */
 function LeadTurns(props: { readonly lead: LeadResponse }): ReactNode {
-  if (props.lead.turns.length === 0) return <EmptyState label="No turns" />;
+  const text = useCopyText();
+  if (props.lead.turns.length === 0)
+    return <EmptyState label={text({ id: "lead-turns-none" })} />;
   return (
-    <Table caption="Turns">
+    <Table caption={text({ id: "lead-turns-title" })}>
       <thead>
         <tr>
-          <th scope="col">Turn</th>
-          <th scope="col">Input</th>
-          <th scope="col">State</th>
-          <th scope="col">Model</th>
-          <th scope="col">Tokens</th>
-          <th scope="col">Cost</th>
-          <th scope="col">Duration</th>
+          <th scope="col">{text({ id: "lead-turns-col-turn" })}</th>
+          <th scope="col">{text({ id: "lead-turns-col-input" })}</th>
+          <th scope="col">{text({ id: "lead-turns-col-state" })}</th>
+          <th scope="col">{text({ id: "lead-turns-col-model" })}</th>
+          <th scope="col">{text({ id: "lead-turns-col-tokens" })}</th>
+          <th scope="col">{text({ id: "lead-turns-col-cost" })}</th>
+          <th scope="col">{text({ id: "lead-turns-col-duration" })}</th>
         </tr>
       </thead>
       <tbody>
@@ -301,10 +319,11 @@ function LeadDetails(props: {
   readonly state: PanelState<LeadResponse>;
   readonly nowMs: number;
 }): ReactNode {
+  const text = useCopyText();
   const lead = props.state.state === "Ready" ? props.state.value : undefined;
   return (
     <DetailsSlot openFirst>
-      <DataPanel title="Turns" state={props.state}>
+      <DataPanel title={text({ id: "lead-turns-title" })} state={props.state}>
         {(value) => <LeadTurns lead={value} />}
       </DataPanel>
       <LeadDecisions partition={props.partition} nowMs={props.nowMs} />
@@ -326,6 +345,7 @@ function LeadBody(props: {
   readonly runner: SessionRunnerShort | undefined;
   readonly nowMs: number;
 }): ReactNode {
+  const text = useCopyText();
   const lead = props.state.state === "Ready" ? props.state.value : undefined;
   const listed = lead !== undefined && leadStreamListed(lead);
   const walked = useLeadTranscript({
@@ -356,14 +376,14 @@ function LeadBody(props: {
       <LeadNote note={lead?.handoffNote} />
       <div
         role="region"
-        aria-label="Conversation"
+        aria-label={text({ id: "lead-conversation-aria" })}
         data-fills-page
         className="flex-1 min-h-0 min-w-0"
       >
         <Conversation
           exchanges={exchanges}
           reading={walked.reading || props.state.state === "Pending"}
-          empty="No conversation"
+          empty={text({ id: "lead-conversation-empty" })}
           pane
         />
       </div>
@@ -372,6 +392,7 @@ function LeadBody(props: {
 }
 
 export function LeadPage(): ReactNode {
+  const text = useCopyText();
   const params = useParams({ from: "/$tenant/$project/lead" });
   const partition: PartitionIdentity = {
     tenant: params.tenant,
@@ -391,14 +412,15 @@ export function LeadPage(): ReactNode {
           short={runner}
         />
       );
+    const label = text({ id: "lead-no-lead" });
     return (
       <>
         <LeadSelectorStrip partition={partition} />
         {absence === undefined ? (
-          <EmptyState label="No lead" variant="page" action={action} />
+          <EmptyState label={label} variant="page" action={action} />
         ) : (
           <EmptyState
-            label="No lead"
+            label={label}
             variant="page"
             detail={absence}
             action={action}

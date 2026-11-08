@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * What the selector is doing for this project right now, and the one press that
  * changes each of those facts.
@@ -21,6 +20,7 @@ import type {
   SelectorSettingsStripCell,
 } from "../../core/selectorSettingsForm.ts";
 import type { SelectorProjectOverrides } from "../../core/selectorSettingsForm.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import {
@@ -37,11 +37,12 @@ function SelectorStripCell(props: {
   readonly busy: boolean;
   readonly onPress: (overrides: SelectorProjectOverrides) => void;
 }): ReactNode {
+  const text = useCopyText();
   const cell = props.cell;
   const overrides = selectorSettingsWrite(cell.pressed).overrides;
   return (
     <div className="selector-cell">
-      <span className="selector-key">{cell.name}</span>
+      <span className="selector-key">{text(cell.name)}</span>
       <span className="selector-standing">
         {cell.tone === undefined ? null : (
           <i
@@ -50,8 +51,10 @@ function SelectorStripCell(props: {
             aria-hidden="true"
           />
         )}
-        {cell.value}
-        {cell.inherited ? <Pill tone="neutral">Default</Pill> : null}
+        {text(cell.value)}
+        {cell.inherited ? (
+          <Pill tone="neutral">{text({ id: "lead-settings-default" })}</Pill>
+        ) : null}
       </span>
       <Button
         size="sm"
@@ -61,7 +64,7 @@ function SelectorStripCell(props: {
           if (overrides !== undefined) props.onPress(overrides);
         }}
       >
-        {cell.action}
+        {text(cell.action)}
       </Button>
     </div>
   );

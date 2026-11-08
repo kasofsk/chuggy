@@ -267,7 +267,7 @@ test("a row names the asker, its state, the question and the answer in place", a
 
 test("a lead nobody has asked anything says so", async () => {
   await drawInquiries({ listing: () => ({ inquiries: [] }) });
-  expect(screen.getByText("No inquiries")).toBeDefined();
+  expect(screen.getByText("No questions")).toBeDefined();
 });
 
 /** Every state a turn can be in is drawn as its own word; a roster the wire
