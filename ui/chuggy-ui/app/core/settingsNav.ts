@@ -11,6 +11,7 @@
 
 import type { AccessSiteAbilities } from "../../../../src/contract/accessPlane.ts";
 
+import type { Copy } from "./copy.ts";
 import { siteWorkspaceOffered } from "./siteWorkspaces.ts";
 
 /** Every settings page's address, in a project and under the workspace alone. */
@@ -53,7 +54,7 @@ export interface SettingsNavParams {
 
 export interface SettingsNavEntry {
   readonly id: string;
-  readonly label: string;
+  readonly label: Copy;
   readonly to: SettingsRoute;
   readonly params: SettingsNavParams;
 }
@@ -61,7 +62,7 @@ export interface SettingsNavEntry {
 /** One level's pages under the level's word and, where it has one, its name. */
 export interface SettingsNavGroup {
   readonly id: "project" | "workspace" | "site";
-  readonly label: string;
+  readonly label: Copy;
   readonly name: string | undefined;
   readonly entries: readonly SettingsNavEntry[];
 }
@@ -90,6 +91,20 @@ export function settingsNavSiteDrawn(
   };
 }
 
+/** Each entry's word, by its id. */
+const settingsNavLabels = {
+  lead: { id: "settings-nav-lead" },
+  placement: { id: "settings-nav-placement" },
+  permissions: { id: "settings-nav-permissions" },
+  people: { id: "settings-nav-people" },
+  accounts: { id: "settings-nav-accounts" },
+  "workspace-permissions": { id: "settings-nav-permissions" },
+  "my-runner": { id: "settings-nav-personal-runners" },
+  usage: { id: "settings-nav-usage" },
+  "site-workspaces": { id: "settings-nav-workspaces" },
+  "site-permissions": { id: "settings-nav-permissions" },
+} as const satisfies Readonly<Record<string, Copy>>;
+
 export function settingsNav(
   input: SettingsNavInput,
 ): readonly SettingsNavGroup[] {
@@ -99,42 +114,41 @@ export function settingsNav(
   const params: SettingsNavParams =
     project === undefined ? { tenant } : { tenant, project };
   const entry = (
-    id: string,
-    label: string,
+    id: keyof typeof settingsNavLabels,
     to: SettingsRoute,
-  ): SettingsNavEntry => ({ id, label, to, params });
+  ): SettingsNavEntry => ({ id, label: settingsNavLabels[id], to, params });
   const projectGroup: SettingsNavGroup = {
     id: "project",
-    label: "Project",
+    label: { id: "settings-nav-project" },
     name: project,
     entries: [
-      entry("lead", "Lead", settingsRoutes.project.lead),
-      entry("placement", "Placement", settingsRoutes.project.placement),
-      entry("permissions", "Permissions", settingsRoutes.project.permissions),
+      entry("lead", settingsRoutes.project.lead),
+      entry("placement", settingsRoutes.project.placement),
+      entry("permissions", settingsRoutes.project.permissions),
     ],
   };
   const workspaceGroup: SettingsNavGroup = {
     id: "workspace",
-    label: "Workspace",
+    label: { id: "settings-nav-workspace" },
     name: tenant,
     entries: [
-      entry("people", "People", frame.people),
-      entry("accounts", "Accounts", frame.accounts),
-      entry("workspace-permissions", "Permissions", frame.workspacePermissions),
-      entry("my-runner", "My runners", frame.myRunner),
-      entry("usage", "Usage", frame.usage),
+      entry("people", frame.people),
+      entry("accounts", frame.accounts),
+      entry("workspace-permissions", frame.workspacePermissions),
+      entry("my-runner", frame.myRunner),
+      entry("usage", frame.usage),
     ],
   };
   const siteGroup: SettingsNavGroup = {
     id: "site",
-    label: "Site",
+    label: { id: "settings-nav-site" },
     name: undefined,
     entries: [
       ...(input.site.workspaces
-        ? [entry("site-workspaces", "Workspaces", frame.siteWorkspaces)]
+        ? [entry("site-workspaces", frame.siteWorkspaces)]
         : []),
       ...(input.site.permissions
-        ? [entry("site-permissions", "Permissions", frame.sitePermissions)]
+        ? [entry("site-permissions", frame.sitePermissions)]
         : []),
     ],
   };

@@ -17,6 +17,7 @@ import type {
 import type { ApiPorts, ApiResult } from "../../core/apiRequest.ts";
 import { consoleWriteKey } from "../../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../../core/consoleWrite.ts";
+import type { CopyText } from "../../core/copy.ts";
 import {
   permissionAdditionChoices,
   permissionAdditionPeople,
@@ -46,7 +47,7 @@ export interface PermissionHolderRoutes {
 
 /** What one level's page gives its changes: whose they are and the scope
  * their writes are keyed under, what each row admits, the routes that send
- * them, and what they read again. */
+ * them, what they read again, and the words a refusal is drawn in. */
 export interface PermissionsChanging<Authority extends PermissionAuthority> {
   readonly tenant: string;
   readonly level: PermissionLevel;
@@ -61,6 +62,7 @@ export interface PermissionsChanging<Authority extends PermissionAuthority> {
     change: PermissionChange,
   ) => PermissionHolderRoutes;
   readonly reread: (client: QueryClient) => Promise<void>;
+  readonly text: CopyText;
 }
 
 function permissionHolderUnrouted(holder: PermissionHolder): never {
@@ -103,7 +105,7 @@ function permissionsChangeWrite<Authority extends PermissionAuthority>(
       if (answered.outcome !== "Ok") await changing.reread(client);
       return answered;
     },
-    refusal: accessFailureLabel,
+    refusal: (failure) => changing.text(accessFailureLabel(failure)),
     landed: (client) => changing.reread(client),
   };
 }

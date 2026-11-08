@@ -10,7 +10,7 @@ project-creation-submit = Create { -project }
 project-creation-name-rule = Lowercase letters, digits, inner hyphens
 project-creation-name-too-long = Too long
 project-creation-tenant-reserved = Reserved
-project-creation-tenant-needs-invite = New { -workspace } needs an invite link
+project-creation-tenant-needs-invite = New { -workspace } needs { -invite(form: "a") } link
 project-creation-refusal-taken = Taken
 project-creation-refusal-exists = Exists
 project-creation-refusal-conflict = Conflict
@@ -22,7 +22,7 @@ project-creation-refusal-unreadable = Unreadable
 project-creation-refusal-refused = Refused
 project-creation-workspace-new = New { -workspace }
 project-creation-workspace-unheld-label = No { -workspace }
-project-creation-workspace-unheld-detail = A new { -workspace } needs an invite link
+project-creation-workspace-unheld-detail = A new { -workspace } needs { -invite(form: "a") } link
 project-creation-workspace-unadmin-label = No { -workspace } to add to
 project-creation-workspace-unadmin-detail = { -workspace(case: "upper", form: "a") } { -role-admin } adds { -project(form: "plural") }
 

@@ -91,7 +91,7 @@ function fault(): string {
     : "";
 }
 
-const about = "Your team or company. Projects go inside.";
+const about = "Your workspace. Projects go inside.";
 
 async function typed(name: string): Promise<void> {
   fireEvent.change(field(), { target: { value: name } });

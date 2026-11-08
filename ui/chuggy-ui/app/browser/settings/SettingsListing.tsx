@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * A settings page that is a list, as the People page drew the first: a table
  * edge to edge in a card, under the line that counts it and beside that line
@@ -14,6 +13,7 @@
 import { useId } from "react";
 import type { ReactNode } from "react";
 
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import type { PanelState } from "../../core/freshness.ts";
 import { tenantPeopleTruncated } from "../../core/tenantPeople.ts";
 import { PanelUnready } from "../DataPanel.tsx";
@@ -72,10 +72,11 @@ export function SettingsListingTable(props: {
 
 /** What stands in a cell for a row that holds nothing there. */
 export function SettingsListingNone(): ReactNode {
+  const text = useCopyText();
   return (
     <span className="text-ink-3">
       <span aria-hidden="true">—</span>
-      <span className="visually-hidden">None</span>
+      <span className="visually-hidden">{text({ id: "settings-none" })}</span>
     </span>
   );
 }
@@ -88,7 +89,8 @@ export function settingsListingNone(empty: boolean): "" | undefined {
 
 /** The line under a list the plane cut short. */
 export function SettingsListingCut(): ReactNode {
-  return <Notice tone="parked" inline detail={tenantPeopleTruncated} />;
+  const text = useCopyText();
+  return <Notice tone="parked" inline detail={text(tenantPeopleTruncated)} />;
 }
 
 function SettingsListingLine(props: {

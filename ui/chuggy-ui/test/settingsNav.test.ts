@@ -7,6 +7,7 @@
 import { expect, test } from "vitest";
 
 import type { AccessSiteAbilities } from "../../../src/contract/accessPlane.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 import {
   settingsNav,
   settingsNavSiteDrawn,
@@ -25,9 +26,9 @@ function drawn(
   groups: readonly SettingsNavGroup[],
 ): readonly (readonly [string, string | undefined, readonly string[]])[] {
   return groups.map((group) => [
-    group.label,
+    copyTextEn(group.label),
     group.name,
-    group.entries.map((entry) => entry.label),
+    group.entries.map((entry) => copyTextEn(entry.label)),
   ]);
 }
 
@@ -42,7 +43,7 @@ test("in a project the project's pages lead, then the workspace's, each group un
     [
       "Workspace",
       "acme",
-      ["People", "Accounts", "Permissions", "My runners", "Usage"],
+      ["People", "GitHub accounts", "Permissions", "Personal runners", "Usage"],
     ],
   ]);
 });
@@ -57,7 +58,7 @@ test("outside a project the workspace's pages are the whole navigation", () => {
     [
       "Workspace",
       "acme",
-      ["People", "Accounts", "Permissions", "My runners", "Usage"],
+      ["People", "GitHub accounts", "Permissions", "Personal runners", "Usage"],
     ],
   ]);
 });

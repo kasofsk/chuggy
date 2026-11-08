@@ -72,11 +72,23 @@ type CopyCatalog = {
 
 export type CopyId = keyof CopyCatalog;
 
-export type Copy = {
-  readonly [Id in CopyId]: keyof CopyCatalog[Id] extends never
-    ? { readonly id: Id }
-    : { readonly id: Id; readonly args: CopyCatalog[Id] };
+/** The ids of the messages with no variables. */
+type CopyIdBare = {
+  readonly [Id in CopyId]: keyof CopyCatalog[Id] extends never ? Id : never;
 }[CopyId];
+
+/** A message with no variables is one shape whatever its id, so the union a
+ * descriptor is checked against grows by a member only for a message that has
+ * variables: TypeScript reduces a union of object types pairwise, and gives up
+ * on one past a bound the whole catalog's ids would cross. */
+export type Copy =
+  | { readonly id: CopyIdBare }
+  | {
+      readonly [Id in Exclude<CopyId, CopyIdBare>]: {
+        readonly id: Id;
+        readonly args: CopyCatalog[Id];
+      };
+    }[Exclude<CopyId, CopyIdBare>];
 
 /** What a message is formatted with: a value, or another descriptor, whose
  * words stand in its place, so a line a decision joins from two is still
