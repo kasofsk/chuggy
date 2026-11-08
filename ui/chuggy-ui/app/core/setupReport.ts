@@ -877,10 +877,16 @@ function setupRunnerLines(
       ];
     case "Stopped": {
       const stop = setupRunnerStopSaid(report.ended.stop, named);
+      const command = setupCommandOf(of, stop.again);
       return [
         ...head,
-        ...setupStopSaid(stop),
-        ...setupStopRule(stop, setupCommandOf(of, stop.again)),
+        ["found", stop.found],
+        ["tell", stop.tell],
+        [
+          "rule",
+          { id: "setup-runner-rule", args: { command, when: stop.when } },
+        ],
+        ["next", setupNextStop],
       ];
     }
   }
