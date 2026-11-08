@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * A run's time, or a set's, as the ticket's pages draw it: how long it ran,
  * with its wait beside it where that is long enough to read, or that it waits
@@ -15,6 +14,7 @@ import { runTimeLineOf } from "../../core/figures.ts";
 import { runTimeOf } from "../../core/runTotals.ts";
 import type { RunTimed } from "../../core/runTotals.ts";
 import { Figure } from "../ui/Figure.tsx";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 
 import "./ticket.css";
 
@@ -24,11 +24,14 @@ export function TicketRunTime(props: {
   readonly running?: boolean;
 }): ReactNode {
   const line = runTimeLineOf(runTimeOf(props.runs, props.nowMs));
+  const text = useCopyText();
   switch (line.line) {
     case "Waiting":
       return (
         <span className="ticket-run-time" data-line="waiting">
-          <span className="ticket-run-time-main">Waiting</span>
+          <span className="ticket-run-time-main">
+            {text({ id: "ticket-waiting" })}
+          </span>
           <span className="ticket-run-time-waited">
             <Figure figure={line.waited} />
           </span>
@@ -38,12 +41,15 @@ export function TicketRunTime(props: {
       return (
         <span className="ticket-run-time" data-line="ran">
           <span className="ticket-run-time-main">
-            {props.running === true ? "running · " : null}
+            {props.running === true
+              ? `${text({ id: "ticket-run-time-running" })} · `
+              : null}
             <Figure figure={line.ran} />
           </span>
           {line.waited === undefined ? null : (
             <span className="ticket-run-time-waited">
-              waited <Figure figure={line.waited} />
+              {text({ id: "ticket-waited-lower" })}{" "}
+              <Figure figure={line.waited} />
             </span>
           )}
         </span>

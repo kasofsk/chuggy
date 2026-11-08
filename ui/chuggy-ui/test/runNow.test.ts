@@ -10,6 +10,7 @@
 
 import { expect, test } from "vitest";
 
+import { copyTextEn } from "../app/copy/catalog.ts";
 import type {
   ExecutionResponse,
   RunTranscriptResponse,
@@ -66,7 +67,10 @@ function reading(
     observedAt: "2026-08-27T00:01:00Z",
     complete: false,
   };
-  return runTranscriptRead(runTranscriptMerged(runTranscriptHeldEmpty, page));
+  return runTranscriptRead(
+    runTranscriptMerged(runTranscriptHeldEmpty, page, copyTextEn),
+    copyTextEn,
+  );
 }
 
 test("the newest note leads", () => {

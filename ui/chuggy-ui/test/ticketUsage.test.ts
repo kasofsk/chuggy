@@ -6,6 +6,8 @@
 
 import { expect, test } from "vitest";
 
+import { copyTextEn } from "../app/copy/catalog.ts";
+
 import { durationFigure } from "../app/core/figures.ts";
 import { runTimeOf } from "../app/core/runTotals.ts";
 import { ticketOverviewRunTime } from "../app/core/ticketOverview.ts";
@@ -71,7 +73,7 @@ const twoCycles: readonly ExecutionShape[] = [
 const executions = ledgerPage(twoCycles).executions;
 
 function stepsOf(names: readonly string[] | undefined) {
-  const usage = ticketUsageStepsOf(executions, names, nowMs);
+  const usage = ticketUsageStepsOf(executions, names, nowMs, copyTextEn);
   if (usage === undefined) throw new Error("no usage");
   return usage;
 }
@@ -141,5 +143,5 @@ test("the Total is the steps' times and waits added, which is the sidebar's", ()
 });
 
 test("there are no steps before the first run", () => {
-  expect(ticketUsageStepsOf([], ["checks"], nowMs)).toBeUndefined();
+  expect(ticketUsageStepsOf([], ["checks"], nowMs, copyTextEn)).toBeUndefined();
 });

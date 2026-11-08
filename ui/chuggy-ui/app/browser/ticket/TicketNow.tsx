@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The run the ticket is on now: its step, its cycle and how long it has gone,
  * the one thing it is doing — the call it waits on, or else the newest thing
@@ -47,6 +46,7 @@ import { ButtonLink } from "../ui/Button.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
 import { TicketRunTime } from "./TicketRunTime.tsx";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 
 import "./ticket.css";
 
@@ -59,12 +59,18 @@ function TicketNowHead(props: {
   readonly nowMs: number;
 }): ReactNode {
   const { running } = props;
+  const text = useCopyText();
   return (
     <div className="ticket-card-head">
       <TicketRunMarkDrawn mark="Spin" tone="live" />
-      <strong className="ticket-card-title">{`${props.status} ${running.step}`}</strong>
+      <strong className="ticket-card-title">
+        {text({
+          id: "ticket-now-title",
+          args: { status: props.status, step: running.step },
+        })}
+      </strong>
       <span className="ticket-card-where">
-        {`${cycleLabel(running.cycle)} · `}
+        {`${text(cycleLabel(running.cycle))} · `}
         <TicketRunTime runs={[props.run]} nowMs={props.nowMs} />
       </span>
       <span className="ticket-card-action">
@@ -78,7 +84,7 @@ function TicketNowHead(props: {
           search={{ view: "Transcript" }}
           size="sm"
         >
-          Watch
+          {text({ id: "ticket-now-watch" })}
         </ButtonLink>
       </span>
     </div>
@@ -101,6 +107,7 @@ function TicketNowLine(props: {
   });
   const live = runNowAttemptLive(props.attempt);
   const now = useMemo(() => runNowOf(walk.reading, live), [walk.reading, live]);
+  const text = useCopyText();
   if (walk.held.failure !== undefined)
     return (
       <PanelUnready state={{ state: "Failed", failure: walk.held.failure }} />
@@ -110,7 +117,9 @@ function TicketNowLine(props: {
       ? now.note?.text
       : `${now.call.name} · ${conversationArgumentLine(now.call.argument)}`;
   return doing === undefined ? null : (
-    <p className="ticket-card-line">{`Now: ${doing}`}</p>
+    <p className="ticket-card-line">
+      {text({ id: "ticket-now-prefix", args: { doing } })}
+    </p>
   );
 }
 
@@ -123,6 +132,7 @@ function TicketNowRunnerWait(props: {
   readonly nowMs: number;
 }): ReactNode {
   const runner = usePersonalRunner(props.partition.tenant);
+  const text = useCopyText();
   const wait = runnerWait(
     props.execution,
     runner.state === "Ready" ? runner.value : undefined,
@@ -135,7 +145,7 @@ function TicketNowRunnerWait(props: {
       <AgentPause pause={paused} nowMs={props.nowMs}>
         {" · "}
         <Link to={settingsRoutes.project.usage} params={props.partition}>
-          Usage
+          {text({ id: "ticket-tab-usage" })}
         </Link>
       </AgentPause>
     );
@@ -144,7 +154,7 @@ function TicketNowRunnerWait(props: {
       <span className="text-ink-3">
         {" · "}
         <Link to={settingsRoutes.project.myRunner} params={props.partition}>
-          My runners
+          {text({ id: "ticket-now-personal-runners" })}
         </Link>
       </span>
     </Notice>
@@ -166,13 +176,18 @@ export function TicketNow(props: {
   const attempt = read === undefined ? undefined : runNowAttempt(read);
   const summary = read ?? execution;
   const transcript = attempt?.run?.transcript;
+  const text = useCopyText();
   return (
-    <section className="ticket-card" data-tone="live" aria-label="Now">
+    <section
+      className="ticket-card"
+      data-tone="live"
+      aria-label={text({ id: "ticket-now-aria-label" })}
+    >
       <TicketNowHead
         partition={partition}
         ticket={props.ticket}
         running={running}
-        status={runNowStatus(summary)}
+        status={text(runNowStatus(summary))}
         run={summary}
         nowMs={props.nowMs}
       />

@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * A ticket's state where the ticket list draws it: the row's state label, a
  * dependency's number in its state's colours, and each state's count. Where a
@@ -26,9 +25,9 @@ function standingTone(standing: TicketListStanding): Tone {
 }
 
 function standingWord(standing: TicketListStanding, text: CopyText): string {
-  return standing === "Ready" || standing === "Blocked"
-    ? standing
-    : text(phaseLabel(standing));
+  if (standing === "Ready") return text({ id: "ticket-standing-ready" });
+  if (standing === "Blocked") return text({ id: "ticket-verdict-blocked" });
+  return text(phaseLabel(standing));
 }
 
 export interface TicketStateDispatch {
@@ -45,6 +44,7 @@ export function TicketStateChip(props: {
   readonly dispatch?: TicketStateDispatch | undefined;
 }): ReactNode {
   const { standing, dispatch } = props;
+  const text = useCopyText();
   const label = <TicketStateLabel standing={standing} size="small" />;
   if (dispatch !== undefined)
     return (
@@ -53,7 +53,10 @@ export function TicketStateChip(props: {
           type="button"
           className="ticket-list-standing"
           data-standing={standing}
-          aria-label={`Dispatch ticket #${String(props.ticket)}`}
+          aria-label={text({
+            id: "ticket-dispatch-aria-label",
+            args: { number: String(props.ticket) },
+          })}
           aria-busy={dispatch.busy || undefined}
           disabled={dispatch.busy}
           onClick={dispatch.press}

@@ -23,6 +23,7 @@ import { usePanelState } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import { Disclosure } from "./ui/Disclosure.tsx";
 import { MarkdownReport } from "./ui/MarkdownReport.tsx";
+import { useCopyText } from "../copy/CopyProvider.tsx";
 
 type ResultArtifact = NonNullable<
   ExecutionResponse["result"]
@@ -93,6 +94,7 @@ function Artifact(props: {
   readonly artifact: ResultArtifact;
 }): ReactNode {
   const [shown, setShown] = useState(false);
+  const text = useCopyText();
   const offer = artifactPreviewOffer(props.artifact);
   return (
     <li className="flex flex-wrap items-baseline gap-2">
@@ -102,7 +104,7 @@ function Artifact(props: {
         {runCountLabel(props.artifact.bytes)} bytes
       </span>
       {offer.offer === "Unpreviewable" ? (
-        <span className="text-ink-3 text-xs">{offer.note}</span>
+        <span className="text-ink-3 text-xs">{text(offer.note)}</span>
       ) : (
         <Disclosure
           open={shown}

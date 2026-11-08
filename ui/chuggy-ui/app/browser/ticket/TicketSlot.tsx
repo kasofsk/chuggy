@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The one card the Overview leads with: the run going now, what the ticket is
  * waiting on a person for, or nothing. What answers it is the header's.
@@ -20,14 +19,27 @@ import { Chevron } from "../ui/Chevron.tsx";
 import { TicketNow } from "./TicketNow.tsx";
 import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
 import { TicketRunLine } from "./TicketRuns.tsx";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
+import type { Copy } from "../../core/copy.ts";
 
 import "./ticket.css";
+
+/** The page the way past the wait is on, in the word the console's nav names it by. */
+function needsYouStepLabel(step: EscalationStep): Copy {
+  switch (step) {
+    case "Runners":
+      return { id: "ticket-situation-step-runners" };
+    case "Repositories":
+      return { id: "ticket-situation-step-repositories" };
+  }
+}
 
 /** The page the way past the wait is on, after the line that names the wait. */
 function NeedsYouStep(props: {
   readonly partition: PartitionIdentity;
   readonly step: EscalationStep | undefined;
 }): ReactNode {
+  const text = useCopyText();
   if (props.step === undefined) return null;
   return (
     <span className="ticket-card-where">
@@ -37,7 +49,7 @@ function NeedsYouStep(props: {
         }
         params={props.partition}
       >
-        {props.step}
+        {text(needsYouStepLabel(props.step))}
       </Link>
     </span>
   );
@@ -73,6 +85,8 @@ function NeedsYouRunLine(props: {
   readonly run: NeedsYouRun;
   readonly reasoned: boolean;
 }): ReactNode {
+  const text = useCopyText();
+  const step = props.run.step ?? text({ id: "ticket-term-run" });
   return (
     <p className="ticket-card-line">
       {props.reasoned ? null : (
@@ -90,7 +104,7 @@ function NeedsYouRunLine(props: {
         }}
         className="ticket-card-link"
       >
-        {`Read the ${props.run.step ?? "run"}`}
+        {text({ id: "ticket-situation-read-the", args: { step } })}
         <Chevron className="ticket-card-chevron" />
       </Link>
     </p>
@@ -104,11 +118,12 @@ function NeedsYou(props: {
   readonly overrides: ReactNode;
 }): ReactNode {
   const { slot } = props;
+  const text = useCopyText();
   return (
     <section
       className="ticket-card"
       data-tone="parked"
-      aria-label="Needs you"
+      aria-label={text({ id: "ticket-needs-you-aria-label" })}
       role="status"
     >
       <div className="ticket-card-head">

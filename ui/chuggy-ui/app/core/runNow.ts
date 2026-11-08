@@ -16,6 +16,7 @@ import type {
   ConversationBlock,
 } from "./conversation.ts";
 import { conversationArgumentSummary } from "./conversation.ts";
+import type { Copy } from "./copy.ts";
 import type { RunTranscriptReading } from "./runTranscript.ts";
 import { executionStarting } from "./ticketLedger.ts";
 
@@ -54,10 +55,10 @@ export function runNowAttempt(
 }
 
 /** The card's word for a run that has said nothing yet: whether its worker has begun. */
-export function runNowStatus(
-  execution: ExecutionSummary,
-): "Starting" | "Running" {
-  return executionStarting(execution) ? "Starting" : "Running";
+export function runNowStatus(execution: ExecutionSummary): Copy {
+  return executionStarting(execution)
+    ? { id: "ticket-verdict-starting" }
+    : { id: "ticket-verdict-running" };
 }
 
 interface RunNowWalk {

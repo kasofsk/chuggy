@@ -28,7 +28,8 @@ import type {
 } from "./configurationCatalog.ts";
 import { stageLabel } from "./ticketLedger.ts";
 import type { StageNames, TicketProgram } from "./ticketLedger.ts";
-import type { Copy } from "./copy.ts";
+import { copyOrDataText } from "./copy.ts";
+import type { Copy, CopyText } from "./copy.ts";
 
 /** One evaluator of a stage: its key, its name, and what it runs. */
 export interface TicketPlanEvaluator {
@@ -113,6 +114,7 @@ export type TicketPlanned = Pick<
 export function ticketPlanOf(
   canonical: string | undefined,
   ticket: TicketPlanned | undefined,
+  text: CopyText,
 ): TicketPlan {
   const catalog =
     canonical === undefined ? undefined : configurationCatalogOf(canonical);
@@ -137,7 +139,7 @@ export function ticketPlanOf(
     work: work === undefined ? undefined : ticketPlanRuns(work),
     stages: ticketPlanProgram(ticket?.program, named).map((stage, index) => ({
       stage: index + 1,
-      name: stageLabel(index + 1, names),
+      name: copyOrDataText(text, stageLabel(index + 1, names)),
       evaluators: stage.evaluators.map((evaluator) =>
         ticketPlanEvaluator(catalog, named?.[index], evaluator.key),
       ),

@@ -499,8 +499,9 @@ function InboxTable(props: {
   readonly proposed: InboxProposalAnswers;
   readonly nowMs: number;
 }): ReactNode {
+  const text = useCopyText();
   return (
-    <Table caption={ticketSectionTitles[inboxSection]}>
+    <Table caption={text(ticketSectionTitles[inboxSection])}>
       <thead>
         <tr>
           <th scope="col">title</th>
@@ -545,13 +546,17 @@ export function InboxScreen(props: {
   const inbox = useInboxRows(partition);
   const proposed = useInboxProposalAnswers(partition);
   const nowMs = useNowMs();
+  const text = useCopyText();
   return (
     <>
       <ScreenTitle>Inbox</ScreenTitle>
       <RepositoryImportRefusedNotice partition={partition} />
       <InboxPageFailure rows={inbox.rows} />
       <InboxProposalNotice answers={proposed} />
-      <DataPanel title={ticketSectionTitles[inboxSection]} state={inbox.panel}>
+      <DataPanel
+        title={text(ticketSectionTitles[inboxSection])}
+        state={inbox.panel}
+      >
         {(rows) =>
           rows.entries.length === 0 ? (
             <p className="panel-note">Inbox is clear</p>

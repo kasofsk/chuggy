@@ -47,7 +47,7 @@ function snapshotOf(over: Record<string, unknown> = {}): string {
 
 function read(content: string): RunConfigurationSnapshot {
   const reading = runConfigurationRead(content);
-  if (reading.reading !== "Snapshot") throw new Error(reading.reason);
+  if (reading.reading !== "Snapshot") throw new Error("not a snapshot");
   return reading.snapshot;
 }
 

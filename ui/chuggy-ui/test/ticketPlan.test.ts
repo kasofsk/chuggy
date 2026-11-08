@@ -6,6 +6,8 @@
 
 import { expect, test } from "vitest";
 
+import { copyTextEn } from "../app/copy/catalog.ts";
+
 import type { TicketResponse } from "../../../src/contract/responses.ts";
 import { ticketPlanOf } from "../app/core/ticketPlan.ts";
 import { ticketInstants } from "./ticketInstants.ts";
@@ -51,7 +53,7 @@ function ticket(over: Partial<TicketResponse> = {}): TicketResponse {
 }
 
 test("a catalog's selected plan names each stage, and each step says what runs it", () => {
-  const plan = ticketPlanOf(catalog, ticket());
+  const plan = ticketPlanOf(catalog, ticket(), copyTextEn);
   expect(plan.names).toEqual(["checks", "review"]);
   expect(plan.work).toBe("Claude · Opus");
   expect(
@@ -66,7 +68,11 @@ test("a catalog's selected plan names each stage, and each step says what runs i
   expect(plan.landing).toStrictEqual({ id: "codes-merge-mode-pull-request" });
   expect(plan.lands).toBe(true);
   expect(
-    ticketPlanOf(catalog, ticket({ selection: { evaluation: "quick" } })).names,
+    ticketPlanOf(
+      catalog,
+      ticket({ selection: { evaluation: "quick" } }),
+      copyTextEn,
+    ).names,
   ).toEqual(["review"]);
 });
 
@@ -74,6 +80,7 @@ test("the stages are the program the ticket was released with, named by position
   const plan = ticketPlanOf(
     catalog,
     ticket({ program: [{ key: 1, evaluators: [{ key: 1 }] }] }),
+    copyTextEn,
   );
   expect(plan.stages.map((stage) => stage.name)).toEqual(["checks"]);
 });
@@ -81,7 +88,7 @@ test("the stages are the program the ticket was released with, named by position
 test("a version 1 configuration, or one not read, names its stages and evaluators by number", () => {
   const program = [{ key: 1, evaluators: [{ key: 1 }, { key: 2 }] }];
   for (const canonical of [JSON.stringify({ version: 1 }), undefined]) {
-    const plan = ticketPlanOf(canonical, ticket({ program }));
+    const plan = ticketPlanOf(canonical, ticket({ program }), copyTextEn);
     expect(plan.names).toBeUndefined();
     expect(plan.work).toBeUndefined();
     expect(plan.stages).toEqual([
@@ -103,10 +110,15 @@ test("the brief's landing comes before the finalizer's, and one that lands nothi
     ticketPlanOf(
       catalog,
       ticket({ brief: { ...brief, finalization: { kind: "None" } } }),
+      copyTextEn,
     ),
   ).toMatchObject({ lands: false, landing: { id: "codes-landing-kind-none" } });
   expect(
-    ticketPlanOf(catalog, ticket({ selection: { finalization: "none" } })),
+    ticketPlanOf(
+      catalog,
+      ticket({ selection: { finalization: "none" } }),
+      copyTextEn,
+    ),
   ).toMatchObject({ lands: false });
   expect(
     ticketPlanOf(
@@ -115,12 +127,13 @@ test("the brief's landing comes before the finalizer's, and one that lands nothi
         brief: { ...brief, finalization: { kind: "PullRequest" } },
         selection: { finalization: "none" },
       }),
+      copyTextEn,
     ),
   ).toMatchObject({
     lands: true,
     landing: { id: "codes-landing-kind-pull-request" },
   });
-  expect(ticketPlanOf(undefined, ticket())).toMatchObject({
+  expect(ticketPlanOf(undefined, ticket(), copyTextEn)).toMatchObject({
     lands: true,
     landing: undefined,
   });

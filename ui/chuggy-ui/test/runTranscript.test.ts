@@ -10,6 +10,7 @@
 
 import { expect, test } from "vitest";
 
+import { copyTextEn } from "../app/copy/catalog.ts";
 import { conversationExchanges } from "../app/core/conversation.ts";
 import type {
   ExecutionResponse,
@@ -93,27 +94,37 @@ test("a pane holding nothing opens a long run on the newest batches it keeps", (
 
 /** Asking after zero again is how a pane reads every batch a second time. */
 test("a pane asks after the highest batch it holds and no earlier", () => {
-  const held = runTranscriptMerged(runTranscriptHeldEmpty, page([1, 2, 3]));
+  const held = runTranscriptMerged(
+    runTranscriptHeldEmpty,
+    page([1, 2, 3]),
+    copyTextEn,
+  );
   expect(runTranscriptNextAfter(held, 5)).toBe(3);
 });
 
 test("a pane holding everything the run has written asks for nothing", () => {
-  const held = runTranscriptMerged(runTranscriptHeldEmpty, page([1, 2]));
+  const held = runTranscriptMerged(
+    runTranscriptHeldEmpty,
+    page([1, 2]),
+    copyTextEn,
+  );
   expect(runTranscriptNextAfter(held, 2)).toBeUndefined();
   expect(runTranscriptNextAfter(held, 1)).toBeUndefined();
 });
 
 test("batches arrive in order, each number once, whatever order they came in", () => {
   const held = runTranscriptMerged(
-    runTranscriptMerged(runTranscriptHeldEmpty, page([2, 1])),
+    runTranscriptMerged(runTranscriptHeldEmpty, page([2, 1]), copyTextEn),
     page([2, 3]),
+    copyTextEn,
   );
   expect(held.batches.map((batch) => batch.batch)).toEqual([1, 2, 3]);
 });
 
 function heldPast(batches: number): RunTranscriptHeld {
   return Array.from({ length: batches }, (_unused, at) => at + 1).reduce(
-    (previous, batch) => runTranscriptMerged(previous, page([batch])),
+    (previous, batch) =>
+      runTranscriptMerged(previous, page([batch]), copyTextEn),
     runTranscriptHeldEmpty,
   );
 }
@@ -138,7 +149,7 @@ test("a pane already at its cap still advances when the high-water mark rises", 
   const highest = runTranscriptCapacityBatches + 2;
   expect(runTranscriptHighestBatch(held)).toBe(highest);
   expect(runTranscriptNextAfter(held, highest + 1)).toBe(highest);
-  const advanced = runTranscriptMerged(held, page([highest + 1]));
+  const advanced = runTranscriptMerged(held, page([highest + 1]), copyTextEn);
   expect(runTranscriptHighestBatch(advanced)).toBe(highest + 1);
   expect(runTranscriptNextAfter(advanced, highest + 1)).toBeUndefined();
 });
@@ -150,9 +161,14 @@ test("a pane already at its cap still advances when the high-water mark rises", 
  * command returned.
  */
 test("a run that records only that a tool is still running keeps what it last said", () => {
-  const said = runTranscriptMerged(runTranscriptHeldEmpty, page([1, 2, 3]));
+  const said = runTranscriptMerged(
+    runTranscriptHeldEmpty,
+    page([1, 2, 3]),
+    copyTextEn,
+  );
   const waited = numbered(4, 4 * runTranscriptCapacityBatches).reduce(
-    (previous, batch) => runTranscriptMerged(previous, waiting([batch])),
+    (previous, batch) =>
+      runTranscriptMerged(previous, waiting([batch]), copyTextEn),
     said,
   );
   const highest = 4 * runTranscriptCapacityBatches;
@@ -163,7 +179,9 @@ test("a run that records only that a tool is still running keeps what it last sa
     highest,
   ]);
   expect(
-    runTranscriptRead(waited).items.filter((item) => item.item === "Entry"),
+    runTranscriptRead(waited, copyTextEn).items.filter(
+      (item) => item.item === "Entry",
+    ),
   ).toHaveLength(3);
   expect(runTranscriptNextAfter(waited, highest + 1)).toBe(highest);
 });
@@ -175,10 +193,13 @@ test("only a batch that draws something counts against the cap", () => {
       runTranscriptMerged(
         previous,
         batch % 2 === 1 ? page([batch]) : waiting([batch]),
+        copyTextEn,
       ),
     runTranscriptHeldEmpty,
   );
-  const kept = held.batches.filter(runTranscriptBatchDraws);
+  const kept = held.batches.filter((batch) =>
+    runTranscriptBatchDraws(batch, copyTextEn),
+  );
   expect(kept.map((batch) => batch.batch)).toEqual(
     Array.from(
       { length: runTranscriptCapacityBatches },
@@ -195,17 +216,22 @@ test("a pane holding nothing that draws asks for the page beneath it until one d
   const opened = runTranscriptMerged(
     runTranscriptHeldEmpty,
     waiting(numbered(25, 40)),
+    copyTextEn,
   );
   expect(opened.batches.map((batch) => batch.batch)).toEqual([25, 40]);
-  expect(runTranscriptQuietAfter(opened)).toBe(
+  expect(runTranscriptQuietAfter(opened, copyTextEn)).toBe(
     24 - runTranscriptPageBatchesMax,
   );
-  const beneath = runTranscriptMerged(opened, waiting(numbered(17, 24)));
-  expect(runTranscriptQuietAfter(beneath)).toBe(
+  const beneath = runTranscriptMerged(
+    opened,
+    waiting(numbered(17, 24)),
+    copyTextEn,
+  );
+  expect(runTranscriptQuietAfter(beneath, copyTextEn)).toBe(
     16 - runTranscriptPageBatchesMax,
   );
-  const said = runTranscriptMerged(beneath, page(numbered(9, 16)));
-  expect(runTranscriptQuietAfter(said)).toBeUndefined();
+  const said = runTranscriptMerged(beneath, page(numbered(9, 16)), copyTextEn);
+  expect(runTranscriptQuietAfter(said, copyTextEn)).toBeUndefined();
   expect(said.batches.map((batch) => batch.batch)).toEqual([
     ...numbered(9, 16),
     40,
@@ -214,9 +240,15 @@ test("a pane holding nothing that draws asks for the page beneath it until one d
 });
 
 test("a pane on the run's first batch, or holding none, asks for nothing beneath it", () => {
-  expect(runTranscriptQuietAfter(runTranscriptHeldEmpty)).toBeUndefined();
-  const first = runTranscriptMerged(runTranscriptHeldEmpty, waiting([1, 2]));
-  expect(runTranscriptQuietAfter(first)).toBeUndefined();
+  expect(
+    runTranscriptQuietAfter(runTranscriptHeldEmpty, copyTextEn),
+  ).toBeUndefined();
+  const first = runTranscriptMerged(
+    runTranscriptHeldEmpty,
+    waiting([1, 2]),
+    copyTextEn,
+  );
+  expect(runTranscriptQuietAfter(first, copyTextEn)).toBeUndefined();
 });
 
 /** The batches below the window are offered as the page just beneath it, and
@@ -226,8 +258,9 @@ test("an earlier read reads the page beneath the window, and keeps it", () => {
   const held = runTranscriptMerged(
     runTranscriptHeldEmpty,
     page(Array.from({ length: 16 }, (_unused, at) => at + 25)),
+    copyTextEn,
   );
-  const earlier = runTranscriptRead(held).earlier;
+  const earlier = runTranscriptRead(held, copyTextEn).earlier;
   expect(earlier).toEqual({
     batches: 24,
     after: 24 - runTranscriptPageBatchesMax,
@@ -235,29 +268,44 @@ test("an earlier read reads the page beneath the window, and keeps it", () => {
   const widened = runTranscriptEarlierMerged(
     held,
     page(Array.from({ length: 8 }, (_unused, at) => at + 17)),
+    copyTextEn,
   );
   expect(widened.batches.map((batch) => batch.batch)).toEqual(
     Array.from({ length: 24 }, (_unused, at) => at + 17),
   );
-  expect(runTranscriptRead(widened).earlier).toEqual({ batches: 16, after: 8 });
+  expect(runTranscriptRead(widened, copyTextEn).earlier).toEqual({
+    batches: 16,
+    after: 8,
+  });
 });
 
 test("the last earlier page asks from the first batch", () => {
-  const held = runTranscriptMerged(runTranscriptHeldEmpty, page([4, 5, 6]));
-  expect(runTranscriptRead(held).earlier).toEqual({ batches: 3, after: 0 });
-  const whole = runTranscriptEarlierMerged(held, page([1, 2, 3, 4, 5, 6]));
-  expect(runTranscriptRead(whole).earlier).toBeUndefined();
-  expect(runTranscriptRead(whole).batchesBefore).toBe(0);
+  const held = runTranscriptMerged(
+    runTranscriptHeldEmpty,
+    page([4, 5, 6]),
+    copyTextEn,
+  );
+  expect(runTranscriptRead(held, copyTextEn).earlier).toEqual({
+    batches: 3,
+    after: 0,
+  });
+  const whole = runTranscriptEarlierMerged(
+    held,
+    page([1, 2, 3, 4, 5, 6]),
+    copyTextEn,
+  );
+  expect(runTranscriptRead(whole, copyTextEn).earlier).toBeUndefined();
+  expect(runTranscriptRead(whole, copyTextEn).batchesBefore).toBe(0);
 });
 
 /** A pane that may hold no more says what it is not holding, rather than
  * offering a read whose page the cap would drop as it landed. */
 test("a pane at its ceiling offers no earlier read and says what it does not hold", () => {
   const held = {
-    ...runTranscriptMerged(runTranscriptHeldEmpty, page([10, 11])),
+    ...runTranscriptMerged(runTranscriptHeldEmpty, page([10, 11]), copyTextEn),
     capacity: runTranscriptCapacityBatchesMax,
   };
-  const reading = runTranscriptRead(held);
+  const reading = runTranscriptRead(held, copyTextEn);
   expect(reading.earlier).toBeUndefined();
   expect(reading.items[0]).toEqual({
     item: "Marker",
@@ -272,19 +320,23 @@ test("an entry is dated by the batch that recorded it", () => {
     type: "assistant",
     message: { content: [{ type: "text", text: "said" }] },
   });
-  const held = runTranscriptMerged(runTranscriptHeldEmpty, {
-    batches: [1, 2].map((batch) => ({
-      batch,
-      recordedAt: `2026-08-27T00:00:0${String(batch)}Z`,
-      bytes: 1,
-      read: "Content" as const,
-      content: line,
-    })),
-    observedAt: "2026-08-27T00:00:00Z",
-    complete: false,
-  });
+  const held = runTranscriptMerged(
+    runTranscriptHeldEmpty,
+    {
+      batches: [1, 2].map((batch) => ({
+        batch,
+        recordedAt: `2026-08-27T00:00:0${String(batch)}Z`,
+        bytes: 1,
+        read: "Content" as const,
+        content: line,
+      })),
+      observedAt: "2026-08-27T00:00:00Z",
+      complete: false,
+    },
+    copyTextEn,
+  );
   expect(
-    runTranscriptRead(held).items.map((item) =>
+    runTranscriptRead(held, copyTextEn).items.map((item) =>
       item.item === "Entry" ? item.entry.at : undefined,
     ),
   ).toEqual(["2026-08-27T00:00:01Z", "2026-08-27T00:00:02Z"]);
@@ -328,6 +380,7 @@ test("an assistant line is an entry carrying the blocks the surface reads", () =
         ],
       },
     }),
+    copyTextEn,
   );
   expect(items).toEqual([
     {
@@ -351,6 +404,7 @@ test("an entry's id is the message's own where the line carries one", () => {
       type: "user",
       message: { id: "msg_9", content: "ok" },
     }),
+    copyTextEn,
   );
   expect(items).toEqual([
     {
@@ -379,6 +433,7 @@ test("an elided payload is a marker standing before the entry it was inside", ()
         ],
       },
     }),
+    copyTextEn,
   );
   expect(items[0]).toEqual({
     item: "Marker",
@@ -392,6 +447,7 @@ test("the run's own truncation lines are drawn as what they say", () => {
     runTranscriptStep(
       1,
       JSON.stringify({ type: "chuggy_transcript_truncated", batches: 4_096 }),
+      copyTextEn,
     ),
   ).toEqual([
     {
@@ -407,18 +463,19 @@ test("the run's own truncation lines are drawn as what they say", () => {
     runTranscriptStep(
       2,
       JSON.stringify({ type: "chuggy_turns_truncated", turns: 1_000 }),
+      copyTextEn,
     ),
   ).toMatchObject([{ marker: { marker: "Capped" } }]);
 });
 
 test("a line this console cannot read is a marker rather than a throw", () => {
-  expect(runTranscriptStep(1, "not json at all")).toEqual([
+  expect(runTranscriptStep(1, "not json at all", copyTextEn)).toEqual([
     { item: "Marker", marker: { marker: "Unreadable" } },
   ]);
-  expect(runTranscriptStep(2, JSON.stringify({ noType: true }))).toEqual([
-    { item: "Marker", marker: { marker: "Unreadable" } },
-  ]);
-  expect(runTranscriptStep(3, JSON.stringify([1, 2]))).toEqual([
+  expect(
+    runTranscriptStep(2, JSON.stringify({ noType: true }), copyTextEn),
+  ).toEqual([{ item: "Marker", marker: { marker: "Unreadable" } }]);
+  expect(runTranscriptStep(3, JSON.stringify([1, 2]), copyTextEn)).toEqual([
     { item: "Marker", marker: { marker: "Unreadable" } },
   ]);
 });
@@ -428,7 +485,9 @@ test("a line this console cannot read is a marker rather than a throw", () => {
  * still does, because that is a fact about the bytes and not about the type
  * that carried them. */
 test("a type the surface has no place for is dropped, and its elisions are not", () => {
-  expect(runTranscriptStep(1, JSON.stringify({ type: "system" }))).toEqual([]);
+  expect(
+    runTranscriptStep(1, JSON.stringify({ type: "system" }), copyTextEn),
+  ).toEqual([]);
   expect(
     runTranscriptStep(
       2,
@@ -436,6 +495,7 @@ test("a type the surface has no place for is dropped, and its elisions are not",
         type: "system",
         payload: { chuggy_truncated: { bytes: 512, digest: "d" } },
       }),
+      copyTextEn,
     ),
   ).toEqual([{ item: "Marker", marker: { marker: "Elision", bytes: 512 } }]);
 });
@@ -448,7 +508,11 @@ test.each([
   "what the runtime writes of an interruption is bookkeeping, and its elisions are still said",
   (message) => {
     expect(
-      runTranscriptStep(1, JSON.stringify({ type: "user", message })),
+      runTranscriptStep(
+        1,
+        JSON.stringify({ type: "user", message }),
+        copyTextEn,
+      ),
     ).toEqual([]);
     expect(
       runTranscriptStep(
@@ -458,6 +522,7 @@ test.each([
           message,
           toolUseResult: { chuggy_truncated: { bytes: 512, digest: "d" } },
         }),
+        copyTextEn,
       ),
     ).toEqual([{ item: "Marker", marker: { marker: "Elision", bytes: 512 } }]);
   },
@@ -465,7 +530,7 @@ test.each([
 
 test("the runtime's words in a line it did not write are a step: typed, said by the assistant, or the result of a call that failed", () => {
   const stepped = (type: string, message: unknown): number =>
-    runTranscriptStep(1, JSON.stringify({ type, message })).length;
+    runTranscriptStep(1, JSON.stringify({ type, message }), copyTextEn).length;
   expect(stepped("user", { content: interruptionSentence })).toBe(1);
   expect(stepped("assistant", interruptionNote(interruptionSentence))).toBe(1);
   expect(stepped("user", interruptionResult("call-1", "Exit code 1"))).toBe(1);
@@ -473,27 +538,35 @@ test("the runtime's words in a line it did not write are a step: typed, said by 
 
 test("the runtime's filler for a turn that ended without an answer is bookkeeping, and only it: its sentence under a model's name and other words under its mark are steps", () => {
   const stepped = (message: unknown): number =>
-    runTranscriptStep(1, JSON.stringify({ type: "assistant", message })).length;
+    runTranscriptStep(
+      1,
+      JSON.stringify({ type: "assistant", message }),
+      copyTextEn,
+    ).length;
   expect(stepped(fillerMessage())).toBe(0);
   expect(stepped(fillerMessage("claude-opus-5-5"))).toBe(1);
   expect(stepped(fillerMessage(fillerModel, fillerRefusedSentence))).toBe(1);
 });
 
 test("every held batch's lines are read in order and blank lines are not steps", () => {
-  const held = runTranscriptMerged(runTranscriptHeldEmpty, {
-    ...page([]),
-    batches: [
-      {
-        batch: 1,
-        recordedAt: "2026-08-27T00:00:00Z",
-        bytes: 1,
-        read: "Content",
-        content:
-          '{"type":"system"}\n\n{"type":"assistant","message":{"content":[{"type":"text","text":"hi"}]}}\n',
-      },
-    ],
-  });
-  const reading = runTranscriptRead(held);
+  const held = runTranscriptMerged(
+    runTranscriptHeldEmpty,
+    {
+      ...page([]),
+      batches: [
+        {
+          batch: 1,
+          recordedAt: "2026-08-27T00:00:00Z",
+          bytes: 1,
+          read: "Content",
+          content:
+            '{"type":"system"}\n\n{"type":"assistant","message":{"content":[{"type":"text","text":"hi"}]}}\n',
+        },
+      ],
+    },
+    copyTextEn,
+  );
+  const reading = runTranscriptRead(held, copyTextEn);
   expect(reading.items).toEqual([
     {
       item: "Entry",
@@ -517,19 +590,23 @@ test("a batch of more lines than one pane draws keeps the newest", () => {
         message: { content: [{ type: "text", text: `line-${String(at)}` }] },
       }),
   ).join("\n");
-  const held = runTranscriptMerged(runTranscriptHeldEmpty, {
-    ...page([]),
-    batches: [
-      {
-        batch: 1,
-        recordedAt: "2026-08-27T00:00:00Z",
-        bytes: 1,
-        read: "Content",
-        content: lines,
-      },
-    ],
-  });
-  const reading = runTranscriptRead(held);
+  const held = runTranscriptMerged(
+    runTranscriptHeldEmpty,
+    {
+      ...page([]),
+      batches: [
+        {
+          batch: 1,
+          recordedAt: "2026-08-27T00:00:00Z",
+          bytes: 1,
+          read: "Content",
+          content: lines,
+        },
+      ],
+    },
+    copyTextEn,
+  );
+  const reading = runTranscriptRead(held, copyTextEn);
   expect(reading.stepsBefore).toBe(3);
   expect(reading.items[0]).toEqual({
     item: "Marker",
@@ -547,39 +624,43 @@ test("a batch of more lines than one pane draws keeps the newest", () => {
 /** A batch whose bytes are gone or fail their digest is a hole in the record,
  * and a pane that drew nothing for it would show a transcript that looks whole. */
 test("a batch the server has no characters for is a marker naming the gap", () => {
-  const held = runTranscriptMerged(runTranscriptHeldEmpty, {
-    ...page([]),
-    batches: [
-      {
-        batch: 1,
-        recordedAt: "2026-08-27T00:00:00Z",
-        bytes: 20,
-        read: "Content",
-        content: '{"type":"system"}',
-      },
-      {
-        batch: 2,
-        recordedAt: "2026-08-27T00:00:05Z",
-        bytes: 0,
-        read: "Missing",
-      },
-      {
-        batch: 3,
-        recordedAt: "2026-08-27T00:00:06Z",
-        bytes: 9,
-        read: "Corrupt",
-      },
-      {
-        batch: 4,
-        recordedAt: "2026-08-27T00:00:10Z",
-        bytes: 20,
-        read: "Content",
-        content:
-          '{"type":"assistant","message":{"content":[{"type":"text","text":"back"}]}}',
-      },
-    ],
-  });
-  const reading = runTranscriptRead(held);
+  const held = runTranscriptMerged(
+    runTranscriptHeldEmpty,
+    {
+      ...page([]),
+      batches: [
+        {
+          batch: 1,
+          recordedAt: "2026-08-27T00:00:00Z",
+          bytes: 20,
+          read: "Content",
+          content: '{"type":"system"}',
+        },
+        {
+          batch: 2,
+          recordedAt: "2026-08-27T00:00:05Z",
+          bytes: 0,
+          read: "Missing",
+        },
+        {
+          batch: 3,
+          recordedAt: "2026-08-27T00:00:06Z",
+          bytes: 9,
+          read: "Corrupt",
+        },
+        {
+          batch: 4,
+          recordedAt: "2026-08-27T00:00:10Z",
+          bytes: 20,
+          read: "Content",
+          content:
+            '{"type":"assistant","message":{"content":[{"type":"text","text":"back"}]}}',
+        },
+      ],
+    },
+    copyTextEn,
+  );
+  const reading = runTranscriptRead(held, copyTextEn);
   expect(reading.items).toEqual([
     {
       item: "Marker",
@@ -604,23 +685,27 @@ test("a batch the server has no characters for is a marker naming the gap", () =
 /** A marked batch occupies its number, so the cursor must pass it rather than
  * ask for it again forever. */
 test("a batch with no characters is still held, and the cursor passes it", () => {
-  const held = runTranscriptMerged(runTranscriptHeldEmpty, {
-    ...page([]),
-    batches: [
-      {
-        batch: 1,
-        recordedAt: "2026-08-27T00:00:00Z",
-        bytes: 0,
-        read: "Missing",
-      },
-      {
-        batch: 2,
-        recordedAt: "2026-08-27T00:00:05Z",
-        bytes: 9,
-        read: "Corrupt",
-      },
-    ],
-  });
+  const held = runTranscriptMerged(
+    runTranscriptHeldEmpty,
+    {
+      ...page([]),
+      batches: [
+        {
+          batch: 1,
+          recordedAt: "2026-08-27T00:00:00Z",
+          bytes: 0,
+          read: "Missing",
+        },
+        {
+          batch: 2,
+          recordedAt: "2026-08-27T00:00:05Z",
+          bytes: 9,
+          read: "Corrupt",
+        },
+      ],
+    },
+    copyTextEn,
+  );
   expect(held.batches.map((batch) => batch.batch)).toEqual([1, 2]);
   expect(runTranscriptHighestBatch(held)).toBe(2);
   expect(runTranscriptNextAfter(held, 2)).toBeUndefined();
@@ -631,26 +716,32 @@ test("a batch with no characters is still held, and the cursor passes it", () =>
  * yet, and no turn overlay speaks for it from a read-only pane — so it draws
  * as open rather than as answered or failed. */
 test("a run whose last assistant line has no answer yet draws an open exchange", () => {
-  const held = runTranscriptMerged(runTranscriptHeldEmpty, {
-    ...page([]),
-    batches: [
-      {
-        batch: 1,
-        recordedAt: "2026-08-27T00:00:00Z",
-        bytes: 1,
-        read: "Content",
-        content: JSON.stringify({
-          type: "assistant",
-          message: {
-            content: [
-              { type: "tool_use", id: "call-1", name: "Read", input: {} },
-            ],
-          },
-        }),
-      },
-    ],
-  });
-  const exchanges = conversationExchanges(runTranscriptRead(held).items);
+  const held = runTranscriptMerged(
+    runTranscriptHeldEmpty,
+    {
+      ...page([]),
+      batches: [
+        {
+          batch: 1,
+          recordedAt: "2026-08-27T00:00:00Z",
+          bytes: 1,
+          read: "Content",
+          content: JSON.stringify({
+            type: "assistant",
+            message: {
+              content: [
+                { type: "tool_use", id: "call-1", name: "Read", input: {} },
+              ],
+            },
+          }),
+        },
+      ],
+    },
+    copyTextEn,
+  );
+  const exchanges = conversationExchanges(
+    runTranscriptRead(held, copyTextEn).items,
+  );
   expect(exchanges).toHaveLength(1);
   expect(exchanges[0]?.answer).toBeUndefined();
   expect(exchanges[0]?.standing).toEqual({ standing: "Open" });

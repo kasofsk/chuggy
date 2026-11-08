@@ -24,6 +24,7 @@ import type {
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
 
+import type { Copy } from "./copy.ts";
 import { projectListReread } from "./projectQueryKeys.ts";
 import type { ProjectList } from "./projectQueryKeys.ts";
 
@@ -198,24 +199,26 @@ export interface TicketActionContext {
   readonly kind?: EscalationKind | undefined;
 }
 
-const rejoinSentence =
-  "rejoin the pipeline at the point this ticket was parked at";
+const resumeDefaultCopy: Copy = {
+  id: "ticket-actions-sentence-resume-default",
+};
 
 /** What the rework wall's Resume does, which is a fresh cycle rather than a
  * pick-up of the one that failed. Every other wall, and a page that has not
- * read the kind, rejoins where the ticket parked — named per kind rather than
- * as a fallback, so a kind the roster gains is a case here too. */
-function resumeSentence(context: TicketActionContext): string {
+ * read the kind, continues from where the ticket was escalated — named per
+ * kind rather than as a fallback, so a kind the roster gains is a case here
+ * too. */
+function resumeSentence(context: TicketActionContext): Copy {
   const kind = context.kind;
-  if (kind === undefined) return rejoinSentence;
+  if (kind === undefined) return resumeDefaultCopy;
   switch (kind) {
     case "EvaluationFailureEscalated":
-      return "rework this ticket with a fresh cycle";
+      return { id: "ticket-actions-sentence-resume-rework" };
     case "WorkFailureEscalated":
     case "WorkExecutionUnavailableEscalated":
     case "EvaluationBlockedEscalated":
     case "FinalizationUnavailableEscalated":
-      return rejoinSentence;
+      return resumeDefaultCopy;
   }
 }
 
@@ -226,19 +229,19 @@ function resumeSentence(context: TicketActionContext): string {
 export function ticketActionSentence(
   action: TicketActionName,
   context: TicketActionContext = {},
-): string {
+): Copy {
   switch (action) {
     case "Dispatch":
-      return "dispatch this ticket from the version the console observed";
+      return { id: "ticket-actions-sentence-dispatch" };
     case "Resume":
       return resumeSentence(context);
     case "Revoke":
-      return "revoke this ticket";
+      return { id: "ticket-actions-sentence-revoke" };
     case "Approve":
-      return "let this ticket's finalization go ahead";
+      return { id: "ticket-actions-sentence-approve" };
     case "Decline":
-      return "hold this ticket's finalization back";
+      return { id: "ticket-actions-sentence-decline" };
     case "Release":
-      return "release this draft as a ticket";
+      return { id: "ticket-actions-sentence-release" };
   }
 }

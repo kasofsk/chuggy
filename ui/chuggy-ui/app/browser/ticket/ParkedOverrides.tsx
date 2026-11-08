@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * An escalated ticket's overrides on the card that asks about it, closed until
  * asked for or a save of them is out: the fields a parked ticket may change,
@@ -82,15 +81,29 @@ function ParkedOverridesNote(props: {
         tone="danger"
         inline
         role="alert"
-        detail="Not saved · these are not overrides a ticket may hold"
+        detail={text({ id: "ticket-overrides-invalid" })}
       />
     );
   if (step === undefined) return null;
   if (!operationFinished(step))
-    return <Notice tone="live" inline role="status" detail="Saving…" />;
+    return (
+      <Notice
+        tone="live"
+        inline
+        role="status"
+        detail={text({ id: "ticket-overrides-saving" })}
+      />
+    );
   const refused = parkedOverridesRefusal(step, text);
   if (refused === undefined)
-    return <Notice tone="info" inline role="status" detail="Overrides saved" />;
+    return (
+      <Notice
+        tone="info"
+        inline
+        role="status"
+        detail={text({ id: "ticket-overrides-saved" })}
+      />
+    );
   const refusal = step.step === "Settled" ? step.refusal : undefined;
   return (
     <Notice
@@ -159,7 +172,7 @@ function parkedOverridesWrite(
         { operation: pressed.operation, mutation: pressed.mutation },
         ticket,
         pressed.progress,
-        "the save failed",
+        text({ id: "ticket-overrides-save-failed" }),
       );
       const refused = parkedOverridesRefusal(step, text);
       if (refused === undefined) return { outcome: "Ok", value: step };
@@ -167,7 +180,10 @@ function parkedOverridesWrite(
       throw new ConsoleWriteRefused(refused, operationAbandonFailure(step));
     },
     refusal: (failure) =>
-      `Not saved · ${text(operationFailureSentence(failure))}`,
+      text({
+        id: "ticket-overrides-not-saved-because",
+        args: { reason: operationFailureSentence(failure) },
+      }),
     landed: (client) => reread(client),
   };
 }
@@ -222,6 +238,7 @@ function ParkedOverridesEdit(props: {
     [props.canonical],
   );
   const [invalid, setInvalid] = useState(false);
+  const text = useCopyText();
   const shown = parkedOverridesShown(typed, fence, ticket.overrides);
   const unsaved = parkedOverridesUnsaved(typed, fence, ticket.overrides);
   const busy = saving.busy;
@@ -254,7 +271,7 @@ function ParkedOverridesEdit(props: {
               saving.save(change.mutation);
             }}
           >
-            Save overrides
+            {text({ id: "ticket-overrides-save" })}
           </Button>
         )}
         {unsaved && !busy && !refused ? (
@@ -266,7 +283,7 @@ function ParkedOverridesEdit(props: {
               onTyped(undefined);
             }}
           >
-            Discard
+            {text({ id: "ticket-overrides-discard" })}
           </Button>
         ) : null}
         <ParkedOverridesNote step={saving.step} invalid={invalid} />
@@ -286,6 +303,7 @@ export function ParkedOverrides(props: {
 }): ReactNode {
   const revision = props.ticket.configurationRevision ?? "";
   const state = usePanelState(configurationQuery(props.partition, revision));
+  const text = useCopyText();
   if (revision === "") return null;
   if (
     state.state === "Ready" &&
@@ -294,7 +312,7 @@ export function ParkedOverrides(props: {
     return null;
   return (
     <Panel
-      title="Overrides"
+      title={text({ id: "ticket-overrides-title" })}
       collapsible={{
         open: props.saving.open,
         onOpenChange: props.saving.onOpenChange,

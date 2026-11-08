@@ -17,12 +17,12 @@ export const ticketSectionRoster = [
 ] as const;
 export type TicketSection = (typeof ticketSectionRoster)[number];
 
-export const ticketSectionTitles: Readonly<Record<TicketSection, string>> = {
-  NeedsYou: "Needs you",
-  InProgress: "In progress",
-  UpNext: "Up next",
-  Done: "Done",
-  Stopped: "Failed or revoked",
+export const ticketSectionTitles: Readonly<Record<TicketSection, Copy>> = {
+  NeedsYou: { id: "ticket-sections-needs-you" },
+  InProgress: { id: "ticket-sections-in-progress" },
+  UpNext: { id: "ticket-sections-up-next" },
+  Done: { id: "ticket-sections-done" },
+  Stopped: { id: "ticket-sections-stopped" },
 };
 
 /** An escalated ticket with no read of its escalation is still an open human

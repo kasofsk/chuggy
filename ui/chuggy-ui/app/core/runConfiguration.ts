@@ -57,26 +57,20 @@ export type RunConfigurationReading =
       readonly reading: "Snapshot";
       readonly snapshot: RunConfigurationSnapshot;
     }
-  | { readonly reading: "Unreadable"; readonly reason: string };
+  | { readonly reading: "Unreadable" };
 
-/** The stored bytes as the snapshot they are, or the reason they are not one. */
+/** The stored bytes as the snapshot they are, or that they are not one. */
 export function runConfigurationRead(content: string): RunConfigurationReading {
   let parsed: unknown;
   try {
     parsed = JSON.parse(content);
   } catch {
-    return {
-      reading: "Unreadable",
-      reason: "the stored snapshot is not the JSON document a run writes",
-    };
+    return { reading: "Unreadable" };
   }
   const read = runConfigurationSnapshotSchema.safeParse(parsed);
   return read.success
     ? { reading: "Snapshot", snapshot: read.data }
-    : {
-        reading: "Unreadable",
-        reason: "the stored snapshot is not shaped as this console reads one",
-      };
+    : { reading: "Unreadable" };
 }
 
 function truncationMarkerOf(

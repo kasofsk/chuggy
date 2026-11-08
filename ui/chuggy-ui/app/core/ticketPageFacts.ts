@@ -31,6 +31,7 @@ import type {
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
 import type { ResumeOffer } from "./codeLabels.ts";
+import type { CopyText } from "./copy.ts";
 import type { ResumePoint } from "../../../../src/contract/rosters.ts";
 import { ticketLedger } from "./ticketLedger.ts";
 import type { Ledger as LedgerFacts, TicketProgram } from "./ticketLedger.ts";
@@ -74,9 +75,10 @@ export function ticketPageFacts(
   ticket: TicketResponse | undefined,
   page: ExecutionsResponse | undefined,
   canonical: string | undefined,
+  text: CopyText,
 ): TicketPageFacts {
   const program = ticket?.program;
-  const plan = ticketPlanOf(canonical, ticket);
+  const plan = ticketPlanOf(canonical, ticket, text);
   const truncated = page?.nextCursor !== undefined;
   const resume = resumeOfferOf(ticket?.escalation?.resumeAt);
   if (program === undefined || page === undefined)
@@ -123,14 +125,19 @@ export function ticketPageDrawn(
 export function ticketDraftPageFacts(
   draft: DraftResponse,
   canonical: string | undefined,
+  text: CopyText,
 ): TicketPageFacts {
   return {
     program: undefined,
-    plan: ticketPlanOf(canonical, {
-      selection: draft.selection,
-      brief: draft.brief,
-      program: draft.authoring.program,
-    }),
+    plan: ticketPlanOf(
+      canonical,
+      {
+        selection: draft.selection,
+        brief: draft.brief,
+        program: draft.authoring.program,
+      },
+      text,
+    ),
     ledger: undefined,
     resume: resumeOfferOf(undefined),
     truncated: false,

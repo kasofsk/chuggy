@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The edit screen, offered on a ticket that admits an update. It is a link and
  * not a submission, because what an update sends is written on that screen.
@@ -23,7 +22,7 @@ export function TicketEditOffer(props: {
           to="/$tenant/$project/tickets/$ticket/edit"
           params={{ ...props.partition, ticket: String(props.ticket) }}
         >
-          Edit
+          {text({ id: "ticket-edit" })}
         </ButtonLink>
       </div>
       <p className="act-effect">{text(ticketEditEffect)}</p>

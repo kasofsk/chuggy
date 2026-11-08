@@ -36,7 +36,7 @@ import {
   conversationMessageInterruption,
 } from "./conversation.ts";
 import type { ApiFailure } from "./apiRequest.ts";
-import { runCountLabel } from "./runTotals.ts";
+import type { CopyText } from "./copy.ts";
 
 /** The batches a pane keeps while it follows a run, past which the oldest
  * leave so a live run stays followable. Only a batch that draws something is
@@ -150,12 +150,16 @@ const runTranscriptBatchDrawn = new WeakMap<RunTranscriptBatch, boolean>();
  * gap it stands for where its characters were not answered. A batch of
  * bookkeeping alone does not, and the runtime's note that a tool is still
  * running is one, written again and again for as long as the tool runs. */
-export function runTranscriptBatchDraws(batch: RunTranscriptBatch): boolean {
+export function runTranscriptBatchDraws(
+  batch: RunTranscriptBatch,
+  text: CopyText,
+): boolean {
   const known = runTranscriptBatchDrawn.get(batch);
   if (known !== undefined) return known;
   const draws = runTranscriptLines(batch).some(
     (held) =>
-      held.line === undefined || runTranscriptStep(0, held.line).length > 0,
+      held.line === undefined ||
+      runTranscriptStep(0, held.line, text).length > 0,
   );
   runTranscriptBatchDrawn.set(batch, draws);
   return draws;
@@ -172,12 +176,13 @@ export function runTranscriptBatchDraws(batch: RunTranscriptBatch): boolean {
 function runTranscriptKept(
   ordered: readonly RunTranscriptBatch[],
   capacity: number,
+  text: CopyText,
 ): readonly RunTranscriptBatch[] {
   let from = 0;
   let drawing = 0;
   for (let at = ordered.length - 1; at >= 0; at -= 1) {
     const batch = ordered[at];
-    if (batch === undefined || !runTranscriptBatchDraws(batch)) continue;
+    if (batch === undefined || !runTranscriptBatchDraws(batch, text)) continue;
     drawing += 1;
     if (drawing === capacity) {
       from = at;
@@ -187,7 +192,9 @@ function runTranscriptKept(
   const span = ordered.slice(from);
   return span.filter(
     (batch, at) =>
-      at === 0 || at === span.length - 1 || runTranscriptBatchDraws(batch),
+      at === 0 ||
+      at === span.length - 1 ||
+      runTranscriptBatchDraws(batch, text),
   );
 }
 
@@ -196,6 +203,7 @@ function runTranscriptKept(
 export function runTranscriptMerged(
   held: RunTranscriptHeld,
   page: RunTranscriptResponse,
+  text: CopyText,
 ): RunTranscriptHeld {
   const byBatch = new Map<number, RunTranscriptBatch>();
   for (const batch of held.batches) byBatch.set(batch.batch, batch);
@@ -204,7 +212,7 @@ export function runTranscriptMerged(
     left.batch === right.batch ? 0 : left.batch - right.batch,
   );
   return {
-    batches: runTranscriptKept(ordered, held.capacity),
+    batches: runTranscriptKept(ordered, held.capacity, text),
     observedAt: page.observedAt,
     complete: page.complete,
     failure: undefined,
@@ -221,9 +229,11 @@ export function runTranscriptMerged(
  */
 export function runTranscriptQuietAfter(
   held: RunTranscriptHeld,
+  text: CopyText,
 ): number | undefined {
   if (held.batches.length === 0) return undefined;
-  if (held.batches.some(runTranscriptBatchDraws)) return undefined;
+  if (held.batches.some((batch) => runTranscriptBatchDraws(batch, text)))
+    return undefined;
   const before = runTranscriptBatchesBefore(held);
   return before === 0
     ? undefined
@@ -235,12 +245,13 @@ export function runTranscriptQuietAfter(
 export function runTranscriptEarlierMerged(
   held: RunTranscriptHeld,
   page: RunTranscriptResponse,
+  text: CopyText,
 ): RunTranscriptHeld {
   const capacity = Math.min(
     held.capacity + runTranscriptPageBatchesMax,
     runTranscriptCapacityBatchesMax,
   );
-  return runTranscriptMerged({ ...held, capacity }, page);
+  return runTranscriptMerged({ ...held, capacity }, page, text);
 }
 
 /** A read that did not answer leaves what is held alone and says why. */
@@ -267,12 +278,22 @@ function elisionBytes(node: unknown, found: number[], depth: number): void {
   }
 }
 
-function cappedSentence(type: string, event: Record<string, unknown>): string {
+function cappedSentence(
+  type: string,
+  event: Record<string, unknown>,
+  text: CopyText,
+): string {
   const batches = event["batches"];
   const turns = event["turns"];
   if (type === transcriptTruncatedType)
-    return `the run reached its transcript cap and stopped recording after ${runCountLabel(typeof batches === "number" ? batches : 0)} batches`;
-  return `the per-turn series reached its cap and stopped after ${runCountLabel(typeof turns === "number" ? turns : 0)} turns`;
+    return text({
+      id: "ticket-transcript-capped-batches",
+      args: { batches: typeof batches === "number" ? batches : 0 },
+    });
+  return text({
+    id: "ticket-transcript-capped-turns",
+    args: { turns: typeof turns === "number" ? turns : 0 },
+  });
 }
 
 /** The elisions a raw event holds, wherever in it they fall, as the markers
@@ -309,6 +330,7 @@ function runTranscriptEntryId(ordinal: number, message: unknown): string {
 export function runTranscriptStep(
   ordinal: number,
   line: string,
+  text: CopyText,
 ): readonly ConversationItem[] {
   let parsed: unknown;
   try {
@@ -326,7 +348,10 @@ export function runTranscriptStep(
     return [
       {
         item: "Marker",
-        marker: { marker: "Capped", sentence: cappedSentence(type, event) },
+        marker: {
+          marker: "Capped",
+          sentence: cappedSentence(type, event, text),
+        },
       },
     ];
   const elisions = runTranscriptElisionItems(event);
@@ -376,14 +401,15 @@ interface RunTranscriptLine {
 export function runTranscriptGapSentence(
   batch: number,
   read: RunTranscriptBatchRead,
+  text: CopyText,
 ): string {
   switch (read) {
     case "Content":
-      return `batch ${runCountLabel(batch)}: no lines recorded`;
+      return text({ id: "ticket-transcript-gap-content", args: { batch } });
     case "Missing":
-      return `batch ${runCountLabel(batch)}: bytes unavailable`;
+      return text({ id: "ticket-transcript-gap-missing", args: { batch } });
     case "Corrupt":
-      return `batch ${runCountLabel(batch)}: bytes corrupt`;
+      return text({ id: "ticket-transcript-gap-corrupt", args: { batch } });
   }
 }
 
@@ -407,6 +433,7 @@ function runTranscriptLines(
 function runTranscriptLineItems(
   ordinal: number,
   held: RunTranscriptLine,
+  text: CopyText,
 ): readonly ConversationItem[] {
   if (held.line === undefined)
     return [
@@ -414,11 +441,11 @@ function runTranscriptLineItems(
         item: "Marker",
         marker: {
           marker: "Capped",
-          sentence: runTranscriptGapSentence(held.batch, held.read),
+          sentence: runTranscriptGapSentence(held.batch, held.read, text),
         },
       },
     ];
-  return runTranscriptStep(ordinal, held.line).map((item) =>
+  return runTranscriptStep(ordinal, held.line, text).map((item) =>
     item.item === "Entry"
       ? { ...item, entry: { ...item.entry, at: held.recordedAt } }
       : item,
@@ -448,6 +475,7 @@ function runTranscriptEarlierOf(
  */
 export function runTranscriptRead(
   held: RunTranscriptHeld,
+  text: CopyText,
 ): RunTranscriptReading {
   const lines = held.batches.flatMap(runTranscriptLines);
   const from = Math.max(lines.length - runTranscriptStepsMax, 0);
@@ -464,12 +492,12 @@ export function runTranscriptRead(
       item: "Marker",
       marker: {
         marker: "Capped",
-        sentence: "Earlier conversation not held",
+        sentence: text({ id: "ticket-transcript-earlier-not-held" }),
       },
     });
   const items = lines
     .slice(from)
-    .flatMap((line, at) => runTranscriptLineItems(from + at + 1, line));
+    .flatMap((line, at) => runTranscriptLineItems(from + at + 1, line, text));
   return {
     items: [...leading, ...items],
     stepsBefore: from,

@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * What a run page draws of its result: the report under Summary, or the
  * commands a command stage ran under Output.
@@ -26,7 +25,11 @@ import {
   runResultOpenedOf,
   runResultOpenedSettled,
 } from "../../core/runResult.ts";
-import type { RunCommand, RunResultOpened } from "../../core/runResult.ts";
+import type {
+  RunCommand,
+  RunCommandEnd,
+  RunResultOpened,
+} from "../../core/runResult.ts";
 import { runCommandTone } from "../../core/tones.ts";
 import {
   panelQueryState,
@@ -37,6 +40,20 @@ import { PanelUnready } from "../DataPanel.tsx";
 import { Disclosure } from "../ui/Disclosure.tsx";
 import { MarkdownReport } from "../ui/MarkdownReport.tsx";
 import { Pill } from "../ui/Pill.tsx";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
+import type { Copy } from "../../core/copy.ts";
+
+/** A command's end as the one word its pill says. */
+function runCommandEndLabel(end: RunCommandEnd): Copy {
+  switch (end) {
+    case "Passed":
+      return { id: "ticket-verdict-passed" };
+    case "Failed":
+      return { id: "ticket-verdict-failed" };
+    case "Killed":
+      return { id: "ticket-verdict-killed" };
+  }
+}
 
 /** One output of one execution, read as the details' preview reads it. */
 function useRunResultOutput(
@@ -103,9 +120,12 @@ function RunResultCommand(props: {
   const command = props.command;
   const [shown, setShown] = useState(command.open);
   const ended = command.truncated && props.last ? props.report : undefined;
+  const text = useCopyText();
   return (
     <li className="flex flex-wrap items-baseline gap-2" data-end={command.end}>
-      <Pill tone={runCommandTone(command.end)}>{command.end}</Pill>
+      <Pill tone={runCommandTone(command.end)}>
+        {text(runCommandEndLabel(command.end))}
+      </Pill>
       <Disclosure
         open={shown}
         onOpenChange={setShown}
@@ -115,7 +135,9 @@ function RunResultCommand(props: {
         <div className="basis-full grid gap-2">
           <pre className="preview">{command.output}</pre>
           {command.truncated ? (
-            <p className="text-ink-3 text-xs">End cut</p>
+            <p className="text-ink-3 text-xs">
+              {text({ id: "ticket-result-end-cut" })}
+            </p>
           ) : null}
           {ended === undefined ? null : (
             <p className="text-ink-2 text-sm whitespace-pre-wrap wrap-anywhere">

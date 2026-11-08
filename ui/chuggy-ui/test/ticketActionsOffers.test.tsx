@@ -31,7 +31,6 @@ import {
 } from "./screenHarness.tsx";
 import type { ApiDouble } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
-import { ticketHeaderMenuLabel } from "../app/browser/ticket/TicketHeaderMenu.tsx";
 import { CopyProvider } from "../app/browser/ui/copyHeld.tsx";
 import type { CopyWrite } from "../app/browser/ui/copyHeld.tsx";
 import {
@@ -205,7 +204,7 @@ async function offeredTo(
   return {
     ...pending,
     revoke:
-      named("button", ticketHeaderMenuLabel) &&
+      named("button", "More actions") &&
       within(await ticketHeaderMenuOpened()).queryByRole("menuitem", {
         name: "Revoke…",
       }) !== null,

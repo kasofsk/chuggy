@@ -15,7 +15,6 @@ import {
   TicketRunsTab,
   TicketUsageTab,
 } from "../app/browser/ticket/TicketPageTabs.tsx";
-import { ticketHeaderMenuLabel } from "../app/browser/ticket/TicketHeaderMenu.tsx";
 import { TicketLandingTab } from "../app/browser/ticket/TicketLandingPage.tsx";
 import { TicketRunAt } from "../app/browser/ticket/TicketRunPage.tsx";
 import type { TicketRunView } from "../app/core/ticketRuns.ts";
@@ -63,10 +62,9 @@ export function ticketHeader(): HTMLElement {
 /** The header's ⋯ menu, opened as a keyboard opens it. */
 export async function ticketHeaderMenuOpened(): Promise<HTMLElement> {
   await turned(() => {
-    fireEvent.keyDown(
-      screen.getByRole("button", { name: ticketHeaderMenuLabel }),
-      { key: "ArrowDown" },
-    );
+    fireEvent.keyDown(screen.getByRole("button", { name: "More actions" }), {
+      key: "ArrowDown",
+    });
   });
   return screen.getByRole("menu");
 }
