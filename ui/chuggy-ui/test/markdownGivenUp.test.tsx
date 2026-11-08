@@ -7,7 +7,7 @@
  * suite writes, the way an engine out of stack does.
  */
 
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type * as Lowlight from "lowlight";
 import type * as Parser from "mdast-util-from-markdown";
@@ -22,6 +22,7 @@ import {
   markdownSyntaxRead,
 } from "../app/browser/ui/markdownSyntaxRead.ts";
 import { syntaxDoubleReading } from "./markdownSyntaxDouble.ts";
+import { renderCopied } from "./copied.tsx";
 
 const given = vi.hoisted(() => ({
   word: "overflowing",
@@ -62,7 +63,7 @@ describe("a text the parser gives up on", () => {
   const text = "An overflowing **text**.\n\n```ts\nconst a = 1;\n```";
 
   test("is drawn as its characters, and the code after it is still code", () => {
-    const view = render(<MarkdownReport text={text} bare />);
+    const view = renderCopied(<MarkdownReport text={text} bare />);
     expect(view.container.querySelector("p")?.textContent).toBe(
       "An overflowing **text**.",
     );
@@ -73,7 +74,7 @@ describe("a text the parser gives up on", () => {
   });
 
   test("is drawn as its characters at every moment it is written", () => {
-    const view = render(<MarkdownReport text="" bare writing />);
+    const view = renderCopied(<MarkdownReport text="" bare writing />);
     for (let length = 1; length <= text.length; length += 1) {
       const written = text.slice(0, length);
       view.rerender(<MarkdownReport text={written} bare writing />);
@@ -86,7 +87,7 @@ describe("a text the parser gives up on", () => {
   });
 
   test("is, as one line, the line as it was written", () => {
-    const view = render(
+    const view = renderCopied(
       <p>
         <MarkdownLine text="An overflowing **line**." />
       </p>,
@@ -96,7 +97,7 @@ describe("a text the parser gives up on", () => {
   });
 
   test("and a text it does not is read as it ever was", () => {
-    const view = render(<MarkdownReport text="A **text**." bare />);
+    const view = renderCopied(<MarkdownReport text="A **text**." bare />);
     expect(view.container.querySelector("strong")?.textContent).toBe("text");
   });
 });
@@ -115,7 +116,7 @@ describe("code a grammar gives up on", () => {
   });
 
   test("is drawn as its characters beside code that is coloured", async () => {
-    const view = render(
+    const view = renderCopied(
       <MarkdownProvider
         clock={() => performance.now()}
         syntax={syntaxDoubleReading().open}

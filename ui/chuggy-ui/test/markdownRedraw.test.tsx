@@ -7,7 +7,7 @@
  * same either way.
  */
 
-import { cleanup, render } from "@testing-library/react";
+import { cleanup } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -15,6 +15,7 @@ import type * as Code from "../app/browser/ui/MarkdownCode.tsx";
 import { MarkdownReport } from "../app/browser/ui/MarkdownReport.tsx";
 import { corpusLongAnswer, corpusReview } from "./markdownCorpus.ts";
 import { prefixes } from "./markdownShape.ts";
+import { renderCopied } from "./copied.tsx";
 
 const draws = vi.hoisted(() => new Map<string, number>());
 
@@ -44,7 +45,7 @@ function drawsAsWritten(
   code: string,
 ): readonly number[] {
   const seen: number[] = [];
-  const view = render(<MarkdownReport text="" bare writing />);
+  const view = renderCopied(<MarkdownReport text="" bare writing />);
   for (const prefix of prefixes(text, stride)) {
     view.rerender(<MarkdownReport text={prefix} bare writing />);
     seen.push(draws.get(code) ?? 0);
@@ -70,7 +71,9 @@ test("a block is drawn while it is at the end of the text, and not again once th
 });
 
 test("a text that stops being written draws again none of the blocks that read the same", () => {
-  const view = render(<MarkdownReport text={corpusReview} bare writing />);
+  const view = renderCopied(
+    <MarkdownReport text={corpusReview} bare writing />,
+  );
   const before = new Map(draws);
   expect(before.get(first)).toBe(1);
   view.rerender(<MarkdownReport text={corpusReview} bare />);

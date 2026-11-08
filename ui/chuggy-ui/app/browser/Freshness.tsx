@@ -9,6 +9,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
+import { useCopyText } from "../copy/CopyProvider.tsx";
 import { instantExactText } from "../core/figures.ts";
 import { freshnessIsStale, freshnessLabel } from "../core/freshness.ts";
 import { nowMs } from "./ports.ts";
@@ -46,12 +47,13 @@ export function FreshnessInstants(props: {
 export function Freshness(props: {
   readonly observedAtMs: number | undefined;
 }): ReactNode {
+  const text = useCopyText();
   const now = useNowMs();
   const hovered = useContext(freshnessInstantsContext);
   const stale = freshnessIsStale(now, props.observedAtMs);
   const label = (
     <span className={stale ? "freshness freshness-stale" : "freshness"}>
-      {freshnessLabel(now, props.observedAtMs)}
+      {text(freshnessLabel(now, props.observedAtMs))}
     </span>
   );
   if (!hovered || props.observedAtMs === undefined) return label;

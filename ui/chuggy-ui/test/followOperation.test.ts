@@ -193,3 +193,25 @@ test("an abandoned screen stops the follow rather than only its reporting", asyn
     ),
   ).toBe(false);
 });
+
+/** A value shaped like an error and not one of this realm's, as one thrown
+ * across a frame is. */
+const foreign: Error = { name: "AbortError", message: "aborted" };
+
+test("a wait that throws no error abandons the follow with the catalog's reason", async () => {
+  const server = serverDouble((call) =>
+    call.startsWith("POST") ? accepted : succeeded,
+  );
+  const followed = await followOperation(
+    { ...server.ports, sleepMs: () => Promise.reject(foreign) },
+    partition,
+    submission(2),
+    2,
+    () => undefined,
+  );
+  expect(followed.step).toEqual({
+    step: "Abandoned",
+    cause: { type: "Thrown", reason: { id: "operation-wait-unfinished" } },
+    refused: false,
+  });
+});

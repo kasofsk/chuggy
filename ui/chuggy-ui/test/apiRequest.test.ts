@@ -110,6 +110,45 @@ test("a request that outlives its deadline is unreachable, not a hang", async ()
   expect(outcome.outcome).toBe("Unreachable");
 });
 
+/** A fetch that rejects as a browser's does once its signal is aborted: with
+ * the reason the signal was aborted for. */
+const fetchUntilAborted: ApiPorts["fetch"] = (_url, init) =>
+  new Promise((_resolve, reject) => {
+    const aborted = () => {
+      reject(init.signal.reason as Error);
+    };
+    if (init.signal.aborted) aborted();
+    else init.signal.addEventListener("abort", aborted);
+  });
+
+test("a request the console ends says why in the catalog's words, not an error's", async () => {
+  const ports: ApiPorts = {
+    fetch: fetchUntilAborted,
+    bearer: () => Promise.resolve("token"),
+    sleepMs: () => Promise.resolve(),
+  };
+  const outlived = await apiSend(ports, {
+    method: "GET",
+    path: "/api/v1/installation",
+    timeoutMs: 1,
+  });
+  expect(outlived).toEqual({
+    outcome: "Unreachable",
+    reason: { id: "api-reason-deadline" },
+  });
+  const caller = new AbortController();
+  const abandoned = apiSend(ports, {
+    method: "GET",
+    path: "/api/v1/installation",
+    signal: caller.signal,
+  });
+  caller.abort();
+  expect(await abandoned).toEqual({
+    outcome: "Unreachable",
+    reason: { id: "api-reason-abandoned" },
+  });
+});
+
 test("retry-after is honoured, bounded by the attempt count", async () => {
   const held = harness([
     {

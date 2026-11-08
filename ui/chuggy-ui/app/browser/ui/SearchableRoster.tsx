@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * A roster with a box above it that narrows it: the query is held here, the
  * rows it keeps are drawn by the caller, and a query keeping none of them is
@@ -15,6 +14,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { rosterSearchFilter } from "../../core/rosterSearch.ts";
 import { EmptyState } from "./EmptyState.tsx";
 import { Input } from "./Input.tsx";
@@ -26,6 +26,7 @@ export function SearchableRoster<Row>(props: {
   readonly keyOf: (row: Row) => string;
   readonly renderRow: (row: Row) => ReactNode;
 }): ReactNode {
+  const text = useCopyText();
   const [query, setQuery] = useState("");
   const kept = rosterSearchFilter(props.rows, query, props.textOf);
   return (
@@ -38,7 +39,7 @@ export function SearchableRoster<Row>(props: {
         autoFocus
       />
       {kept.length === 0 && props.rows.length > 0 ? (
-        <EmptyState variant="inline" label="No match" />
+        <EmptyState variant="inline" label={text({ id: "ui-no-match" })} />
       ) : (
         <ul className="-m-1 grid content-start gap-1 overflow-y-auto p-1">
           {kept.map((row) => (

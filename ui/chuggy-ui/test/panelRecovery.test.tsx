@@ -9,7 +9,7 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, expect, test } from "vitest";
 
@@ -21,6 +21,7 @@ import { consoleCallerQuery } from "../app/core/consoleQuery.ts";
 import { panelQueryDefaults } from "../app/core/panelQueryDefaults.ts";
 import { holderDouble, settled, turned } from "./screenHarness.tsx";
 import { readFailedLines } from "./readFailedLines.ts";
+import { renderCopied } from "./copied.tsx";
 
 afterEach(cleanup);
 
@@ -51,7 +52,7 @@ async function drawProbe(probe: Probe): Promise<QueryClient> {
   const client = new QueryClient({
     defaultOptions: { queries: { ...panelQueryDefaults, retry: false } },
   });
-  render(
+  renderCopied(
     <SessionProvider holder={holderDouble()}>
       <QueryClientProvider client={client}>
         <Probed

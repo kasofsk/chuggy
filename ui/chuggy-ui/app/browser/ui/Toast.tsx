@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * A line that arrives on its own, over the page's corner: a refusal the screen
  * that asked for it is no longer there to draw.
@@ -12,6 +11,8 @@
 import { Toast as RadixToast } from "radix-ui";
 import type { ReactNode } from "react";
 
+import { useCopyText } from "../../copy/CopyProvider.tsx";
+import type { CopyOrData } from "../../core/copy.ts";
 import { buttonLookClassName } from "./Button.tsx";
 import { Tooltip } from "./Tooltip.tsx";
 import "./Toast.css";
@@ -20,15 +21,16 @@ export interface ToastLine {
   readonly id: number;
   readonly line: string;
   /** On hover of the line, for a reader reporting it. */
-  readonly detail?: string | undefined;
+  readonly detail?: CopyOrData | undefined;
 }
 
 export function Toasts(props: {
   readonly toasts: readonly ToastLine[];
   readonly onDismiss: (id: number) => void;
 }): ReactNode {
+  const text = useCopyText();
   return (
-    <RadixToast.Provider label="Refusal">
+    <RadixToast.Provider label={text({ id: "ui-refusals" })}>
       {props.toasts.map((toast) => (
         <RadixToast.Root
           key={toast.id}
@@ -47,7 +49,7 @@ export function Toasts(props: {
           <RadixToast.Close
             className={buttonLookClassName({ variant: "quiet", size: "sm" })}
           >
-            Dismiss
+            {text({ id: "ui-dismiss" })}
           </RadixToast.Close>
         </RadixToast.Root>
       ))}

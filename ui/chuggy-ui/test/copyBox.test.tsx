@@ -4,18 +4,13 @@
  * text on the clipboard, and no control where no clipboard is held.
  */
 
-import {
-  act,
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-} from "@testing-library/react";
+import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, expect, test } from "vitest";
 
 import { CopyBox, copyBoxBreaks } from "../app/browser/ui/CopyBox.tsx";
 import { CopyProvider } from "../app/browser/ui/copyHeld.tsx";
 import { styleless } from "./styleless.ts";
+import { renderCopied } from "./copied.tsx";
 
 afterEach(() => {
   styleless();
@@ -32,7 +27,7 @@ const drawnAs = {
 
 test("a box draws its whole text as code under what is said of it, broken the way it is asked to", () => {
   for (const breaks of copyBoxBreaks) {
-    const view = render(
+    const view = renderCopied(
       <CopyBox about="Linux" text={text} copyLabel="Copy" breaks={breaks} />,
     );
     const code = view.container.querySelector("code");
@@ -47,7 +42,9 @@ test("a box draws its whole text as code under what is said of it, broken the wa
 });
 
 test("a box asked nothing of its breaks is a command's, broken wherever its line ends", () => {
-  const view = render(<CopyBox about="Linux" text={text} copyLabel="Copy" />);
+  const view = renderCopied(
+    <CopyBox about="Linux" text={text} copyLabel="Copy" />,
+  );
   expect(
     view.container.querySelector("code")?.classList.contains("break-all"),
   ).toBe(true);
@@ -55,7 +52,7 @@ test("a box asked nothing of its breaks is a command's, broken wherever its line
 
 test("the control puts exactly the text on the clipboard under the name it is given, and says so", async () => {
   const copied: string[] = [];
-  render(
+  renderCopied(
     <CopyProvider
       write={(written) => {
         copied.push(written);
@@ -75,7 +72,9 @@ test("the control puts exactly the text on the clipboard under the name it is gi
 });
 
 test("a box under no clipboard draws its text and no control", () => {
-  const view = render(<CopyBox about="Linux" text={text} copyLabel="Copy" />);
+  const view = renderCopied(
+    <CopyBox about="Linux" text={text} copyLabel="Copy" />,
+  );
   expect(view.container.querySelector("code")?.textContent).toBe(text);
   expect(screen.queryByRole("button")).toBeNull();
 });

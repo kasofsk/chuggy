@@ -1,0 +1,24 @@
+## The card drawn before there is a console, and why a session is not held.
+
+session-brand = { -brand-name }
+session-loading = Loading…
+session-unconfigured = Not configured
+session-unconfigured-unsaid = No reason given
+session-unreachable = Unreachable
+session-unreachable-unsaid = No answer
+session-retry = Retry
+session-signed-out = Signed out
+session-sign-in = Sign in
+session-reload = Reload
+session-ended = Session ended
+session-unrenewed = this session could not be renewed
+session-changed = Session changed
+session-refused = the API refused this session, so it was signed out
+session-load-unusable = { $source } answered nothing usable
+session-load-unanswered = No answer from { $source }
+session-answered = { $source } answered { $status }
+session-request-unanswered = the request got no answer
+session-request-failed = the request failed
+session-callback-mismatched = the callback did not match this tab
+session-callback-denied = { $refusal }: { $description }
+session-callback-declined = { $refusal }: the authorization server declined

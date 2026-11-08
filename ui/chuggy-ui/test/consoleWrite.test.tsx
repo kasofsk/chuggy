@@ -10,13 +10,7 @@
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import type { QueryClient } from "@tanstack/react-query";
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  within,
-} from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import type { RenderResult } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
@@ -41,6 +35,7 @@ import {
 import type { SentRequest } from "./screenHarness.tsx";
 import { leadPartition } from "./leadFixture.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
+import { renderCopied } from "./copied.tsx";
 
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
@@ -87,7 +82,7 @@ async function drawn(
       <ConsoleWriteToasts />
     </ScreenHarness>
   );
-  const view = render(tree(true));
+  const view = renderCopied(tree(true));
   await settled();
   return {
     view,
@@ -230,7 +225,7 @@ test("a refusal's code is not in its toast, and is on hover of it", async () => 
 
 test("a creation refused for its held draft's failed read keeps that read's code on hover of its toast", async () => {
   const client = consoleQueryClient();
-  render(
+  renderCopied(
     <ScreenHarness
       partition={leadPartition}
       client={client}

@@ -11,6 +11,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { AccessAuthorityPerson } from "../../../../../src/contract/accessPlane.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import type { ConsoleWrite } from "../../core/consoleWrite.ts";
 import {
   permissionChoiceHolder,
@@ -71,7 +72,8 @@ function PermissionAdditionChoice(props: {
 }): ReactNode {
   const person = props.person;
   const named = tenantPersonName(person);
-  const marks = permissionPersonMarks(person);
+  const text = useCopyText();
+  const marks = permissionPersonMarks(person).map(text);
   return (
     <span className="flex w-0 min-w-full items-center gap-2">
       <span className="truncate">
@@ -153,6 +155,7 @@ function PermissionAdditionBody(props: {
   readonly people: readonly AccessAuthorityPerson[];
   readonly draft: ReturnType<typeof usePermissionDraft>;
 }): ReactNode {
+  const text = useCopyText();
   const draft = props.draft;
   if (props.choices.length === 0)
     return <EmptyState variant="inline" label="Nothing to add" />;
@@ -165,8 +168,10 @@ function PermissionAdditionBody(props: {
         }
         options={props.choices.map((offered) => ({
           value: permissionChoiceValue(offered),
-          text: offered.words,
-          ...(offered.line === undefined ? {} : { description: offered.line }),
+          text: text(offered.words),
+          ...(offered.line === undefined
+            ? {}
+            : { description: text(offered.line) }),
         }))}
         onChoose={(value) => {
           draft.choose(
@@ -244,6 +249,7 @@ export function PermissionAddition<
   readonly row: PermissionRow<Authority>;
   readonly addition: PermissionsAddition<Authority>;
 }): ReactNode {
+  const text = useCopyText();
   const [open, setOpen] = useState(false);
   const row = props.row;
   const addition = props.addition;
@@ -259,7 +265,8 @@ export function PermissionAddition<
         <>
           <PermissionAdditionPlus />
           <span>
-            Add <span className="visually-hidden">{`to ${row.name}`}</span>
+            Add{" "}
+            <span className="visually-hidden">{`to ${text(row.name)}`}</span>
           </span>
         </>
       }

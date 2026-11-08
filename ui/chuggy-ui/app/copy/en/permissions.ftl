@@ -1,0 +1,36 @@
+## Who holds each permission of a project, a workspace and the site.
+
+permissions-withheld-workspace = { -workspace(case: "upper", form: "a") } { -role-admin } manages permissions
+permissions-withheld-project = { -project(case: "upper", form: "a") } { -role-admin } manages permissions
+permissions-withheld-site = { -site(case: "upper", form: "a") } { -role-admin } manages permissions
+permissions-nobody = Nobody
+permissions-removal-question = Remove permission manager
+permissions-removal-line = This may lock people out of this page.
+permissions-grant-admin = Grant { -role-admin(case: "upper") }
+permissions-grant-member = Grant { -role-member(case: "upper") }
+permissions-grant-developer = Grant { -role-developer(case: "upper") }
+permissions-grant-dispatcher = Grant { -role-dispatcher(case: "upper") }
+permissions-grant-viewer = Grant { -role-viewer(case: "upper") }
+permissions-grant-hosted-runs = Grant { -hosted-runs }
+permissions-grant-personal-runners = Grant { -personal-runner(form: "plural") }
+permissions-grant-unscoped-chat = Grant unscoped { -thread }
+permissions-change = Change permissions
+permissions-create-accounts = Create accounts
+permissions-create-workspaces = Create { -workspace(form: "plural") }
+permissions-group-site-admins = { -site(case: "upper") } { -role-admin(form: "plural") }
+permissions-group-workspace-admins = { -workspace(case: "upper") } { -role-admin(form: "plural") }
+permissions-group-workspace-members = { -workspace(case: "upper") } { -role-member(form: "plural") }
+permissions-group-project-admins = { -project(case: "upper") } { -role-admin(form: "plural") }
+permissions-group-project-developers = { -project(case: "upper") } { -role-developer(form: "plural") }
+permissions-tenant-admins = { $tenant } { -role-admin(form: "plural") }
+permissions-this-workspace-admins = This { -workspace }'s { -role-admin(form: "plural") }
+permissions-person = Person
+permissions-person-named = { $name }
+permissions-person-unaccounted = No account
+permissions-person-mine = You
+permissions-unnamed = { $count } unnamed
+permissions-members-grant = { -role-member(case: "upper", form: "plural") } will see people and can remove other { -role-member(form: "plural") }.
+permissions-developers-grant = { -role-developer(case: "upper", form: "plural") } will see people and can remove other { -role-developer(form: "plural") }.
+permissions-developers-viewer-grant = { -role-developer(case: "upper", form: "plural") } will see people and can remove { -role-viewer(form: "plural") }.
+permissions-from-project = From this { -project }'s people
+permissions-from-people = From the People list

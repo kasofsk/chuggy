@@ -140,7 +140,7 @@ generate
 copy_check
 check "a message reference resolving to a base message is clean" 0 "$RC" "generated modules current"
 grep -A1 '"shell-more"' "$G/shellCopy.ts" >"$OUT"
-check "a message is typed with the variables of the message it references" 0 "$RC" "readonly count: Argument"
+check "a message is typed with the variables of the message it references" 0 "$RC" "readonly count: unknown"
 
 catalog
 printf '%s\n' 'shell-other = Other' > "$C/en-x-job/shell.ftl"
@@ -185,6 +185,20 @@ copy_check
 check "a term outside terms.ftl is a finding" 1 "$RC" "-run: a term belongs in terms.ftl"
 
 # --- The generated types -----------------------------------------------------
+
+# A section's module is imported by name alone, so its type must be the same
+# one whether the section holds no message, one with no variable, or one with.
+catalog
+printf '%s\n' '## Nothing yet.' > "$C/en/ticket.ftl"
+generate
+copy_check
+check "a section holding no message is clean" 0 "$RC" "5 catalog file(s) clean"
+cp "$G/ticketCopy.ts" "$OUT"
+check "a section holding no message is typed as naming no id" 0 0 "export type TicketCopy = Record<never, never>;"
+printf '%s\n' 'ticket-left = { $count } left' > "$C/en/ticket.ftl"
+generate
+cp "$G/ticketCopy.ts" "$OUT"
+check "a section's type takes no parameter once a message has variables" 0 0 "export interface TicketCopy {"
 
 catalog
 generate

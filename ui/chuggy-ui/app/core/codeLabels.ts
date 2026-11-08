@@ -48,7 +48,7 @@ import type {
   TicketEscalation,
 } from "../../../../src/contract/responses.ts";
 import type { ApiFailure } from "./apiRequest.ts";
-import type { Copy } from "./copy.ts";
+import type { Copy, CopyOrData } from "./copy.ts";
 import { failureWords } from "./failureWords.ts";
 import {
   mutationDeferralCodes,
@@ -982,7 +982,7 @@ export function operationFailureLabel(failure: ApiFailure): Copy {
 /** The word an abandoned follow is drawn as, and what hovering it says. */
 export interface AbandonWords {
   readonly word: Copy;
-  readonly detail?: string;
+  readonly detail?: CopyOrData;
 }
 
 /**
@@ -1036,7 +1036,7 @@ function operationSettledLabel(state: OperationState, action: Copy): Copy {
 /** How far a submission has got, and whether that is a state to stop on. */
 export interface StepLabel {
   readonly text: Copy;
-  readonly detail?: string;
+  readonly detail?: CopyOrData;
   readonly settled: boolean;
   readonly wrong: boolean;
 }

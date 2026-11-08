@@ -3,18 +3,19 @@
  * draws, and a query keeping none of them is the one empty line.
  */
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, expect, test } from "vitest";
 
 import { SearchableRoster } from "../app/browser/ui/SearchableRoster.tsx";
 import { styleless } from "./styleless.ts";
+import { renderCopied } from "./copied.tsx";
 
 afterEach(cleanup);
 
 const names = ["kasofsk/chuggy", "gdoteof/scratch", "kasofsk/scratch"];
 
 function drawRoster(): HTMLInputElement {
-  render(
+  renderCopied(
     <SearchableRoster
       label="Search"
       rows={names}

@@ -67,7 +67,7 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-const footerText = "Copyright 2026. Chuggy";
+const footerText = "Copyright 2026. chuggy";
 
 function mount(children: ReactNode): void {
   const api = apiDouble({

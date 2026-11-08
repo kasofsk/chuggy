@@ -14,6 +14,8 @@ import { classify } from "../../../../src/contract/outcomes.ts";
 import type { ApiOutcome } from "../../../../src/contract/outcomes.ts";
 import { nativeHttpMediaType } from "../../../../src/contract/http.ts";
 
+import type { Copy, CopyOrData } from "./copy.ts";
+
 export const apiTimeoutMsDefault = 15_000;
 export const apiAttemptsMax = 3;
 
@@ -82,10 +84,10 @@ type ApiRefusal = Exclude<
  * parser rejected, which only an API newer than this console answers.
  */
 type ApiNoAnswer =
-  | { readonly outcome: "Unreachable"; readonly reason: string }
+  | { readonly outcome: "Unreachable"; readonly reason: CopyOrData }
   | {
       readonly outcome: "Unreadable";
-      readonly reason: string;
+      readonly reason: CopyOrData;
       readonly shapeRefused?: true;
     };
 
@@ -117,6 +119,18 @@ export function apiOrThrow<T>(
   throw new ApiOutcomeError(result, reason(result));
 }
 
+/** What a request is aborted with where the console ends it, so the line a
+ * reader is shown is the catalog's and not the error's. */
+class ApiStopped extends Error {
+  readonly copy: Copy;
+
+  constructor(copy: Copy) {
+    super(copy.id);
+    this.name = "ApiStopped";
+    this.copy = copy;
+  }
+}
+
 interface ApiDeadline {
   readonly signal: AbortSignal;
   readonly done: () => void;
@@ -128,10 +142,10 @@ function apiDeadline(
 ): ApiDeadline {
   const controller = new AbortController();
   const timer = setTimeout(() => {
-    controller.abort(new Error("the request outlived its deadline"));
+    controller.abort(new ApiStopped({ id: "api-reason-deadline" }));
   }, timeoutMs);
   const relay = () => {
-    controller.abort(new Error("the caller abandoned the request"));
+    controller.abort(new ApiStopped({ id: "api-reason-abandoned" }));
   };
   caller?.addEventListener("abort", relay, { once: true });
   return {
@@ -206,8 +220,11 @@ async function apiOnce(
   }
 }
 
-function apiReason(failure: unknown): string {
-  return failure instanceof Error ? failure.message : "the request failed";
+function apiReason(failure: unknown): CopyOrData {
+  if (failure instanceof ApiStopped) return failure.copy;
+  return failure instanceof Error
+    ? failure.message
+    : { id: "api-reason-failed" };
 }
 
 /** The retry is the server's own instruction, honoured a bounded number of times. */
@@ -226,7 +243,9 @@ async function apiAttempts(
     if (attempt + 1 === apiAttemptsMax) return last;
     await ports.sleepMs(last.retryAfterSeconds * 1_000, request.signal);
   }
-  return last ?? { outcome: "Unreachable", reason: "no attempt was made" };
+  return (
+    last ?? { outcome: "Unreachable", reason: { id: "api-reason-unattempted" } }
+  );
 }
 
 /**

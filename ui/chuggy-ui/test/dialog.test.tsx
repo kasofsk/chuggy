@@ -6,7 +6,7 @@
  * that stay outside it: Close, or the actions a caller hands it.
  */
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { afterEach, expect, test } from "vitest";
@@ -14,6 +14,7 @@ import { afterEach, expect, test } from "vitest";
 import { Dialog } from "../app/browser/ui/Dialog.tsx";
 import { turned } from "./screenHarness.tsx";
 import { styleless } from "./styleless.ts";
+import { renderCopied } from "./copied.tsx";
 
 afterEach(cleanup);
 
@@ -22,7 +23,7 @@ function classesOf(element: Element | null): readonly string[] {
 }
 
 test("the body scrolls inside a dialog bounded by the viewport, between its title and Close", () => {
-  render(
+  renderCopied(
     <Dialog title="Add" trigger="Add" open onOpenChange={() => undefined}>
       <p>first</p>
       <p>last</p>
@@ -47,7 +48,7 @@ test("the body scrolls inside a dialog bounded by the viewport, between its titl
 });
 
 test("the scrim stacks in the overlay band, under the dialog's own frame", () => {
-  render(
+  renderCopied(
     <Dialog title="Add" trigger="Add" open onOpenChange={() => undefined}>
       <p>body</p>
     </Dialog>,
@@ -60,7 +61,7 @@ test("the scrim stacks in the overlay band, under the dialog's own frame", () =>
 });
 
 test("a caller's foot stands in place of Close, at the width a form takes", () => {
-  render(
+  renderCopied(
     <Dialog
       wide
       title="Invite"
@@ -84,7 +85,7 @@ test("a caller's foot stands in place of Close, at the width a form takes", () =
 });
 
 test("a refusal's line stands in the foot before the caller's actions, outside the body that scrolls", () => {
-  render(
+  renderCopied(
     <Dialog
       title="Invite"
       trigger="Invite"
@@ -103,7 +104,7 @@ test("a refusal's line stands in the foot before the caller's actions, outside t
 });
 
 test("a refusal's line never stands between the caller's actions", () => {
-  render(
+  renderCopied(
     <Dialog
       title="Invite"
       trigger="Invite"
@@ -155,7 +156,7 @@ function Held(props: {
 }
 
 test("a request unanswered, nothing closes the dialog, and the close after it returns the focus to the trigger", async () => {
-  const drawn = render(<Held busy />);
+  const drawn = renderCopied(<Held busy />);
   await turned();
   const dialog = screen.getByRole("dialog", { name: "Edit" });
   const trigger = screen.getByRole("button", { name: "Edit" });
@@ -176,7 +177,7 @@ test("a request unanswered, nothing closes the dialog, and the close after it re
 });
 
 test("a press outside closes a dialog whose caller awaits nothing", async () => {
-  render(<Held busy={false} />);
+  renderCopied(<Held busy={false} />);
   await turned();
   await turned(pressedOutside);
   await turned();
@@ -185,7 +186,7 @@ test("a press outside closes a dialog whose caller awaits nothing", async () => 
 });
 
 test("a press outside does not close a kept dialog, and Escape does", async () => {
-  render(<Held busy={false} kept />);
+  renderCopied(<Held busy={false} kept />);
   await turned();
   const dialog = screen.getByRole("dialog", { name: "Edit" });
   await turned(pressedOutside);
@@ -200,7 +201,7 @@ test("a press outside does not close a kept dialog, and Escape does", async () =
 });
 
 test("a trigger is named by its word, or by the name a caller gives it", () => {
-  render(
+  renderCopied(
     <>
       <Dialog
         title="One"

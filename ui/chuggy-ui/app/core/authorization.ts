@@ -12,6 +12,7 @@ import { z } from "zod";
 
 import { pkceChallengeMethod } from "./pkce.ts";
 import type { ConsoleConfiguration } from "./configuration.ts";
+import type { Copy } from "./copy.ts";
 
 export const discoveryPath = "/.well-known/openid-configuration";
 export const sessionRefreshSecondsBefore = 60;
@@ -50,7 +51,7 @@ export interface IssuedTokens {
 
 export type AuthorizationCallback =
   | { readonly result: "Code"; readonly code: string; readonly state: string }
-  | { readonly result: "Denied"; readonly reason: string }
+  | { readonly result: "Denied"; readonly reason: Copy }
   | { readonly result: "None" };
 
 export function discoveryUrl(configuration: ConsoleConfiguration): string {
@@ -90,6 +91,16 @@ export function authorizeUrl(
   return `${endpoints.authorize}?${query.toString()}`;
 }
 
+/** The issuer's refusal, its code and its own words, which are data. */
+function parseAuthorizationRefusal(
+  refusal: string,
+  description: string | null,
+): Copy {
+  return description === null
+    ? { id: "session-callback-declined", args: { refusal } }
+    : { id: "session-callback-denied", args: { refusal, description } };
+}
+
 export function parseAuthorizationCallback(
   search: string,
 ): AuthorizationCallback {
@@ -98,7 +109,10 @@ export function parseAuthorizationCallback(
   if (refusal !== null)
     return {
       result: "Denied",
-      reason: `${refusal}: ${query.get("error_description") ?? "the authorization server declined"}`,
+      reason: parseAuthorizationRefusal(
+        refusal,
+        query.get("error_description"),
+      ),
     };
   const code = query.get("code");
   const state = query.get("state");

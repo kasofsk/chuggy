@@ -13,7 +13,7 @@
  * thread the page is drawn in and the page itself must run none.
  */
 
-import { act, cleanup, render, waitFor } from "@testing-library/react";
+import { act, cleanup, waitFor } from "@testing-library/react";
 import type { RenderResult } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type * as Lowlight from "lowlight";
@@ -41,6 +41,7 @@ import {
 } from "./markdownSyntaxDouble.ts";
 import type { SyntaxDouble } from "./markdownSyntaxDouble.ts";
 import { styleless } from "./styleless.ts";
+import { renderCopied } from "./copied.tsx";
 
 /** How many times a grammar has been run in this thread, which for the page
  * is the thread a reader is waiting on. */
@@ -236,7 +237,7 @@ function mounted(
       {props.children}
     </MarkdownProvider>
   );
-  return render(<MarkdownReport text={text} bare writing={writing} />, {
+  return renderCopied(<MarkdownReport text={text} bare writing={writing} />, {
     wrapper,
   });
 }
@@ -316,7 +317,7 @@ describe("a block of code drawn", () => {
   });
 
   test("with nothing to have it read is its characters, and stays them", async () => {
-    const view = render(<MarkdownReport text={fenced} bare />);
+    const view = renderCopied(<MarkdownReport text={fenced} bare />);
     await new Promise((resolve) => setTimeout(resolve, uncolouredHeldMs));
     const [code] = blocks(view.container);
     expect(code?.textContent).toBe("const wait = 250;\nreturn wait;");

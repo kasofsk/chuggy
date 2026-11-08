@@ -7,6 +7,7 @@
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
+import { useCopyText } from "../copy/CopyProvider.tsx";
 import { projectAbilityRead } from "../core/projectAbilities.ts";
 import type {
   ProjectAbilities,
@@ -44,5 +45,6 @@ export function useProjectAbilityRead(
 
 /** The line drawn in place of a composer or a form the reader may not send. */
 export function ViewOnlyNotice(): ReactNode {
-  return <Notice tone="info" inline detail="View only" />;
+  const text = useCopyText();
+  return <Notice tone="info" inline detail={text({ id: "shell-view-only" })} />;
 }

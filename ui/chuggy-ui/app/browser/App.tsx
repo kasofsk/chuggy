@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * What is drawn before there is a session, and the router once there is one.
  *
@@ -17,6 +16,8 @@ import type { QueryClient } from "@tanstack/react-query";
 import { RouterProvider } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
+import { useCopyText } from "../copy/CopyProvider.tsx";
+import { copyOrDataText } from "../core/copy.ts";
 import { inviteRoutePath } from "../core/inviteLinks.ts";
 import { InvitePage } from "./InvitePage.tsx";
 import { currentLocation } from "./ports.ts";
@@ -34,23 +35,34 @@ import { Locomotive } from "./ui/Locomotive.tsx";
 export function App(props: { readonly queryClient: QueryClient }): ReactNode {
   const holder = useSessionHolder();
   const snapshot = useSessionSnapshot();
+  const text = useCopyText();
   useSilentRefresh();
   if (snapshot.phase === "Loading")
     return (
-      <SessionCard title="chuggy" detail="Loading…" media={<Locomotive />} />
+      <SessionCard
+        title={text({ id: "session-brand" })}
+        detail={text({ id: "session-loading" })}
+        media={<Locomotive />}
+      />
     );
   if (snapshot.phase === "Unconfigured")
     return (
       <SessionCard
-        title="Not configured"
-        detail={snapshot.reason ?? "No reason given"}
+        title={text({ id: "session-unconfigured" })}
+        detail={copyOrDataText(
+          text,
+          snapshot.reason ?? { id: "session-unconfigured-unsaid" },
+        )}
       />
     );
   if (snapshot.phase === "Unreachable")
     return (
       <SessionCard
-        title="Unreachable"
-        detail={snapshot.reason ?? "No answer"}
+        title={text({ id: "session-unreachable" })}
+        detail={copyOrDataText(
+          text,
+          snapshot.reason ?? { id: "session-unreachable-unsaid" },
+        )}
         action={
           <Button
             variant="primary"
@@ -58,7 +70,7 @@ export function App(props: { readonly queryClient: QueryClient }): ReactNode {
               void sessionBegin(holder);
             }}
           >
-            Retry
+            {text({ id: "session-retry" })}
           </Button>
         }
       />

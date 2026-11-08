@@ -63,7 +63,7 @@ test("a session no fresh token could be had for is signed out and said to be", a
 
   expect(await portsOf(holder).renew?.()).toBe(false);
   expect(holder.snapshot().phase).toBe("SignedOut");
-  expect(holder.snapshot().reason).toContain("refused");
+  expect(holder.snapshot().reason).toEqual({ id: "session-refused" });
 });
 
 /** The issuer ended this one, so the reader is not told the API did. */
@@ -88,5 +88,5 @@ test("a fresh token the API refuses too ends the session", async () => {
   await portsOf(holder).refused?.();
 
   expect(holder.snapshot().phase).toBe("SignedOut");
-  expect(holder.snapshot().reason).toContain("refused");
+  expect(holder.snapshot().reason).toEqual({ id: "session-refused" });
 });

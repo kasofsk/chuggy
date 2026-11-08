@@ -4,11 +4,12 @@
  * as it always has.
  */
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { Freshness, FreshnessInstants } from "../app/browser/Freshness.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
+import { renderCopied } from "./copied.tsx";
 
 beforeEach(resizeObserverStubbed);
 
@@ -20,7 +21,7 @@ afterEach(() => {
 const observedAtMs = new Date(2026, 7, 27, 10, 19, 5).getTime();
 
 test("a stamp on a page that reads instants relative hovers the instant, to the second", async () => {
-  render(
+  renderCopied(
     <FreshnessInstants>
       <Freshness observedAtMs={observedAtMs} />
     </FreshnessInstants>,
@@ -32,13 +33,13 @@ test("a stamp on a page that reads instants relative hovers the instant, to the 
 });
 
 test("a stamp anywhere else is the label alone", () => {
-  const { container } = render(<Freshness observedAtMs={observedAtMs} />);
+  const { container } = renderCopied(<Freshness observedAtMs={observedAtMs} />);
   expect(container.querySelector("[tabindex]")).toBeNull();
   expect(container.textContent).toMatch(/ ago$/u);
 });
 
 test("a stamp never observed has no instant to hover", () => {
-  const { container } = render(
+  const { container } = renderCopied(
     <FreshnessInstants>
       <Freshness observedAtMs={undefined} />
     </FreshnessInstants>,

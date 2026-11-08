@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * An end that cannot be undone, asked in place before it is done: one line
  * saying what it ends, then Cancel and the danger button that does it. Never
@@ -9,6 +8,7 @@
 
 import type { ReactNode } from "react";
 
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { Button } from "./Button.tsx";
 
 export function Confirm(props: {
@@ -20,6 +20,7 @@ export function Confirm(props: {
   readonly onCancel: () => void;
   readonly children: ReactNode;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <div
       role="group"
@@ -30,7 +31,7 @@ export function Confirm(props: {
       <div className="flex justify-end gap-2">
         {props.busy ? null : (
           <Button variant="quiet" size="sm" onClick={props.onCancel}>
-            Cancel
+            {text({ id: "ui-cancel" })}
           </Button>
         )}
         <Button

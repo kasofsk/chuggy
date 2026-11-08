@@ -1,10 +1,11 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The page a drill-down was reached from, linked before the page's own title.
  */
 
 import { createLink } from "@tanstack/react-router";
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
+
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 
 import "./Breadcrumb.css";
 
@@ -16,9 +17,10 @@ function BreadcrumbAnchor(props: ComponentPropsWithoutRef<"a">): ReactNode {
 export const BreadcrumbLink = createLink(BreadcrumbAnchor);
 
 export function Breadcrumb(props: { readonly children: ReactNode }): ReactNode {
+  const text = useCopyText();
   return (
     <nav
-      aria-label="Breadcrumb"
+      aria-label={text({ id: "ui-crumbs" })}
       className="flex items-center gap-2 text-sm text-ink-3"
     >
       {props.children}

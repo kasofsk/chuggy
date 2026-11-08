@@ -8,7 +8,7 @@
  * report says a thing in: a column's side, and the mark.
  */
 
-import { act, cleanup, render } from "@testing-library/react";
+import { act, cleanup } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -36,9 +36,12 @@ import {
 import { prefixes } from "./markdownShape.ts";
 import { syntaxDoubleHeld } from "./markdownSyntaxDouble.ts";
 import { styleless } from "./styleless.ts";
+import { renderCopied } from "./copied.tsx";
 
 function drawn(text: string, writing = false): HTMLElement {
-  const view = render(<MarkdownReport text={text} bare writing={writing} />);
+  const view = renderCopied(
+    <MarkdownReport text={text} bare writing={writing} />,
+  );
   const root = view.container.firstElementChild;
   if (!(root instanceof HTMLElement)) throw new Error("no report is drawn");
   return root;
@@ -628,7 +631,7 @@ describe("a table written a few characters at a time", () => {
     (_name, text) => {
       const fresh = drawn(text).outerHTML;
       cleanup();
-      const view = render(<MarkdownReport text="" bare writing />);
+      const view = renderCopied(<MarkdownReport text="" bare writing />);
       const seen = new Map<string, Element>();
       const kept = (place: string, element: Element): void => {
         if (seen.has(place)) expect(seen.get(place), place).toBe(element);
@@ -723,7 +726,7 @@ describe("the mark, while a text is being written", () => {
 
   test("is one mark and never two or none, at every moment each answer is written", () => {
     for (const [name, text] of Object.entries(corpusAnswers)) {
-      const view = render(<MarkdownReport text="" bare writing />);
+      const view = renderCopied(<MarkdownReport text="" bare writing />);
       for (const prefix of prefixes(text, name === "longLine" ? 211 : 7)) {
         view.rerender(<MarkdownReport text={prefix} bare writing />);
         const root = view.container.firstElementChild as HTMLElement;
@@ -788,7 +791,7 @@ describe("a text being written and the same text whole", () => {
     for (const [name, text] of Object.entries(corpusAnswers)) {
       const fresh = drawn(text).outerHTML;
       cleanup();
-      const view = render(<MarkdownReport text="" bare writing />);
+      const view = renderCopied(<MarkdownReport text="" bare writing />);
       for (const moment of stepped(text, name === "longLine" ? 211 : 13))
         view.rerender(moment);
       const root = view.container.firstElementChild;
@@ -804,7 +807,7 @@ describe("a text being written and the same text whole", () => {
 
 describe("a line of prose with its marks", () => {
   test("is drawn as its marks with no block around them", () => {
-    const view = render(
+    const view = renderCopied(
       <p>
         <MarkdownLine text={"Filed **[[ticket:15]]**\nand `moved` on."} />
       </p>,
@@ -824,7 +827,7 @@ describe("a line of prose with its marks", () => {
   ])(
     "is its words, marks and references whatever it opens with: %j",
     (note) => {
-      const view = render(
+      const view = renderCopied(
         <p>
           <MarkdownLine text={note} />
         </p>,
@@ -838,7 +841,7 @@ describe("a line of prose with its marks", () => {
   );
 
   test("keeps what it opens with as the characters they are", () => {
-    const view = render(
+    const view = renderCopied(
       <p>
         <MarkdownLine text={"## Summary\n\n- one **two**\r\n\t> three"} />
       </p>,
@@ -851,7 +854,7 @@ describe("a line of prose with its marks", () => {
 
   test("past what a line may cost is the line as it was written", () => {
     const note = `${"a* ".repeat(4_000)}and **bold**`;
-    const view = render(
+    const view = renderCopied(
       <p>
         <MarkdownLine text={note} />
       </p>,
@@ -928,7 +931,7 @@ describe("a block of code's language", () => {
 
 describe("a text written a character at a time", () => {
   function written(text: string, each: (root: Element) => void): Element {
-    const view = render(<MarkdownReport text="" bare writing />);
+    const view = renderCopied(<MarkdownReport text="" bare writing />);
     for (let length = 1; length <= text.length; length += 1) {
       view.rerender(
         <MarkdownReport text={text.slice(0, length)} bare writing />,
@@ -1019,7 +1022,7 @@ describe("a text that is dear to read", () => {
     time: { now: number; step: number },
   ): HTMLElement {
     const clock = (): number => (time.now += time.step);
-    const view = render(
+    const view = renderCopied(
       <MarkdownProvider clock={clock} syntax={syntaxDoubleHeld().open}>
         <MarkdownReport text={text} bare writing={writing} />
       </MarkdownProvider>,

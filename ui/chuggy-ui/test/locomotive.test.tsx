@@ -8,7 +8,7 @@
  */
 
 import { QueryClient } from "@tanstack/react-query";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import type { SessionHolder, SessionPhase } from "../app/core/sessionHolder.ts";
@@ -16,6 +16,7 @@ import { App } from "../app/browser/App.tsx";
 import { SessionProvider } from "../app/browser/session.tsx";
 import { Locomotive } from "../app/browser/ui/Locomotive.tsx";
 import { styleless } from "./styleless.ts";
+import { renderCopied } from "./copied.tsx";
 
 vi.mock("../app/browser/routes.tsx", () => ({ consoleRouter: {} }));
 vi.mock("@tanstack/react-router", () => ({
@@ -43,7 +44,7 @@ function holderAt(phase: SessionPhase): SessionHolder {
 }
 
 test("the locomotive draws an animated sprite and carries an accessible name, with no provider", () => {
-  const view = render(<Locomotive />);
+  const view = renderCopied(<Locomotive />);
   const drawn = screen.getByRole("img", { name: /chuggy/i });
   expect(drawn.classList.contains("locomotive")).toBe(true);
   const rects = Array.from(
@@ -59,7 +60,7 @@ test("the locomotive draws an animated sprite and carries an accessible name, wi
 });
 
 test("the Loading card draws the locomotive", () => {
-  render(
+  renderCopied(
     <SessionProvider holder={holderAt("Loading")}>
       <App
         queryClient={
@@ -73,7 +74,7 @@ test("the Loading card draws the locomotive", () => {
 });
 
 test("a phase that is not Loading draws no locomotive", () => {
-  render(
+  renderCopied(
     <SessionProvider holder={holderAt("SignedOut")}>
       <App
         queryClient={

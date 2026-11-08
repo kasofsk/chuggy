@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * A pixel locomotive, inlined at the card's scale and animated as a
  * sprite, so the console's first paint says a read is in flight rather than
@@ -35,6 +34,7 @@
 
 import type { ReactNode } from "react";
 
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import "./Locomotive.css";
 
 type PixelRect = readonly [number, number, number, number, string];
@@ -221,8 +221,13 @@ function LocomotiveEngine(): ReactNode {
 }
 
 export function Locomotive(): ReactNode {
+  const text = useCopyText();
   return (
-    <div className="locomotive" role="img" aria-label="chuggy is under way">
+    <div
+      className="locomotive"
+      role="img"
+      aria-label={text({ id: "ui-locomotive" })}
+    >
       <LocomotiveEngine />
       <div className="locomotive-track" aria-hidden="true" />
     </div>

@@ -25,6 +25,7 @@ import { apiOperation, apiProject, apiSubmitOperation } from "./apiRoutes.ts";
 import type { ProjectPage } from "./apiRoutes.ts";
 import type { ApiFailure, ApiPorts, ApiResult } from "./apiRequest.ts";
 import type { OperationRefusal } from "./codeSentences.ts";
+import type { CopyOrData } from "./copy.ts";
 
 /** How much entropy an operation identity is drawn with. It is also the
  * idempotency key the route refuses a submission without, so every screen that
@@ -54,7 +55,7 @@ export type OperationAbandonCause =
         | "Overstepped";
     }
   | { readonly type: "Failed"; readonly failure: ApiFailure }
-  | { readonly type: "Thrown"; readonly reason: string };
+  | { readonly type: "Thrown"; readonly reason: CopyOrData };
 
 export type OperationStep =
   | { readonly step: "Submitting"; readonly attempts: number }
@@ -533,7 +534,7 @@ export async function followOperation(
         reason:
           failure instanceof Error
             ? failure.message
-            : "the wait between attempts did not finish",
+            : { id: "operation-wait-unfinished" },
       });
       onStep(abandoned);
       return { step: abandoned, ticket: confirmed };

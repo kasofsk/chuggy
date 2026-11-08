@@ -10,7 +10,7 @@
  */
 
 import { QueryClient } from "@tanstack/react-query";
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { App } from "../app/browser/App.tsx";
@@ -21,6 +21,7 @@ import { createSessionHolder } from "../app/core/sessionHolder.ts";
 import { inviteBrowser, inviteSession } from "./inviteDouble.ts";
 import { answer, scriptedFetch, settled } from "./screenHarness.tsx";
 import { sessionHarness } from "./sessionHolderHarness.ts";
+import { renderCopied } from "./copied.tsx";
 
 /** The router restores a scroll position on every load, and jsdom scrolls nothing. */
 beforeEach(() => {
@@ -56,7 +57,7 @@ test("a person returning from sign-in to the invite page is drawn it, and their 
     cookies: "chuggy_invite=crossed",
   });
   const returned = createSessionHolder(harness.ports);
-  render(
+  renderCopied(
     <SessionProvider holder={returned}>
       <InviteProvider holder={holder}>
         <App
@@ -94,12 +95,12 @@ test("a browser with no session is drawn the invite page at its address, and the
     </SessionProvider>
   );
   history.replaceState(null, "", inviteRoutePath);
-  const view = render(tree);
+  const view = renderCopied(tree);
   await settled();
   expect(screen.getByText("Invited")).toBeTruthy();
   view.unmount();
   history.replaceState(null, "", "/acme/atlas");
-  render(tree);
+  renderCopied(tree);
   await settled();
   expect(screen.getByText("Signed out")).toBeTruthy();
   expect(screen.queryByText("Invited")).toBeNull();

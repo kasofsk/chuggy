@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * A block of code as a panel: its own ground, the language it was fenced as
  * said quietly above it, and a control that copies it.
@@ -26,6 +25,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { CopyButton } from "./CopyButton.tsx";
 import { useMarkdownHeld } from "./markdownHeld.ts";
 import { markdownSyntaxLanguage } from "./markdownSyntax.ts";
@@ -87,6 +87,7 @@ export function MarkdownCode(props: {
    * written. */
   readonly className: string | undefined;
 }): ReactNode {
+  const text = useCopyText();
   const language = (props.code.lang ?? "").slice(
     0,
     markdownCodeLanguageCharsMax,
@@ -103,7 +104,11 @@ export function MarkdownCode(props: {
     <div className="run-report-code">
       <div className="run-report-code-bar">
         <span className="run-report-code-language">{language}</span>
-        <CopyButton text={props.code.value} label="Copy code" worded />
+        <CopyButton
+          text={props.code.value}
+          label={text({ id: "ui-copy-code" })}
+          worded
+        />
       </div>
       <pre>
         <code className={props.className}>

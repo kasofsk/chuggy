@@ -4,13 +4,19 @@
  * focus. Absent text draws the child alone, matching a `title` never set.
  */
 
-import type { ReactElement } from "react";
+import type { ReactElement, ReactNode } from "react";
 import { Tooltip as TooltipPrimitive } from "radix-ui";
 
+import { useCopyText } from "../../copy/CopyProvider.tsx";
+import type { Copy, CopyOrData } from "../../core/copy.ts";
 import "./Tooltip.css";
 
+function TooltipCopy(props: { readonly copy: Copy }): ReactNode {
+  return useCopyText()(props.copy);
+}
+
 export function Tooltip(props: {
-  readonly text: string | undefined;
+  readonly text: CopyOrData | undefined;
   readonly children: ReactElement;
   readonly sideOffset?: number;
 }): ReactElement {
@@ -26,7 +32,11 @@ export function Tooltip(props: {
             className="tooltip"
             sideOffset={props.sideOffset ?? 6}
           >
-            {props.text}
+            {typeof props.text === "string" ? (
+              props.text
+            ) : (
+              <TooltipCopy copy={props.text} />
+            )}
           </TooltipPrimitive.Content>
         </TooltipPrimitive.Portal>
       </TooltipPrimitive.Root>

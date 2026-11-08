@@ -5,13 +5,7 @@
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import { QueryClient } from "@tanstack/react-query";
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  within,
-} from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -31,6 +25,7 @@ import {
   ScreenHarness,
   settled,
 } from "./screenHarness.tsx";
+import { renderCopied } from "./copied.tsx";
 
 vi.mock("@tanstack/react-router", () => ({
   createLink: (component: unknown) => component,
@@ -110,7 +105,7 @@ async function drawn(
     return Promise.resolve(answer(pages[after] ?? { epics: [] }));
   }) as unknown as typeof fetch;
   vi.stubGlobal("fetch", abilitiesFetch(abilities, served));
-  const { rerender } = render(screenAt(query, onQuery));
+  const { rerender } = renderCopied(screenAt(query, onQuery));
   await settled();
   return {
     asked,

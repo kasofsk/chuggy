@@ -64,6 +64,7 @@ import {
   sessionWithRefreshToken,
 } from "./session.ts";
 import type { SessionHeld, SessionState } from "./session.ts";
+import type { Copy, CopyOrData } from "./copy.ts";
 
 export const sessionRefreshTokenKey = "chuggy.refreshToken";
 /** Where the store keeps the mark of the sign-in its refresh token is of. */
@@ -77,11 +78,11 @@ export const sessionRenewalLockName = "chuggy.session.renewal";
 export const sessionRenewalWaitMs = 30_000;
 
 /** What a reader is told of a session the issuer would not renew. */
-export const sessionEndedReason = "Session ended";
+export const sessionEndedReason: Copy = { id: "session-ended" };
 /** What a reader is told of one the issuer kept answering unusably for. */
-export const sessionUnrenewedReason = "this session could not be renewed";
+export const sessionUnrenewedReason: Copy = { id: "session-unrenewed" };
 /** What a reader is told where another document signed in over this one's. */
-export const sessionChangedReason = "Session changed";
+export const sessionChangedReason: Copy = { id: "session-changed" };
 
 export interface KeyValuePort {
   read: (key: string) => string | null;
@@ -95,14 +96,17 @@ export type FetchJsonFault =
   | { readonly fault: "Status"; readonly status: number };
 
 /** What `fetchJson` rejects with when it has no body to parse, so a request
- * that got no answer is told from one that answered with something unusable. */
+ * that got no answer is told from one that answered with something unusable,
+ * and `said` is the line a reader is shown of it. */
 export class FetchJsonError extends Error {
   readonly fault: FetchJsonFault;
+  readonly said: CopyOrData;
 
-  constructor(fault: FetchJsonFault, message: string) {
-    super(message);
+  constructor(fault: FetchJsonFault, said: CopyOrData) {
+    super(typeof said === "string" ? said : said.id);
     this.name = "FetchJsonError";
     this.fault = fault;
+    this.said = said;
   }
 }
 
@@ -141,7 +145,9 @@ function fetchJsonInit(request: FormRequest | string): FetchJsonInit {
 function fetchJsonUnanswered(failure: unknown): FetchJsonError {
   return new FetchJsonError(
     { fault: "Unanswered" },
-    failure instanceof Error ? failure.message : "the request got no answer",
+    failure instanceof Error
+      ? failure.message
+      : { id: "session-request-unanswered" },
   );
 }
 
@@ -163,7 +169,10 @@ export async function fetchJsonThrough(
   if (!response.ok)
     throw new FetchJsonError(
       { fault: "Status", status: response.status },
-      `${url} answered ${String(response.status)}`,
+      {
+        id: "session-answered",
+        args: { source: url, status: String(response.status) },
+      },
     );
   const text = await response.text().catch((failure: unknown) => {
     throw fetchJsonUnanswered(failure);
@@ -201,7 +210,7 @@ export type SessionPhase =
 
 export interface SessionSnapshot {
   readonly phase: SessionPhase;
-  readonly reason: string | undefined;
+  readonly reason: CopyOrData | undefined;
   readonly configuration: ConsoleConfiguration | undefined;
 }
 
@@ -212,7 +221,7 @@ export type SessionCallback =
        * that asked to be returned to. */
       readonly returnPath: string | undefined;
     }
-  | { readonly result: "Denied"; readonly reason: string }
+  | { readonly result: "Denied"; readonly reason: CopyOrData }
   | { readonly result: "None" };
 
 /** Where a completed callback leaves the tab: the page the sign-in was started
@@ -239,7 +248,7 @@ export interface SessionHolder {
   readonly signOut: () => Promise<void>;
   readonly bearer: () => Promise<string | undefined>;
   readonly refresh: () => Promise<boolean>;
-  readonly refuse: (reason: string) => void;
+  readonly refuse: (reason: CopyOrData) => void;
   readonly refreshDueAtMs: () => number | undefined;
   readonly generation: () => number;
   readonly snapshot: () => SessionSnapshot;
@@ -250,7 +259,7 @@ interface SessionInner {
   readonly ports: SessionHolderPorts;
   readonly listeners: Set<() => void>;
   phase: SessionPhase;
-  reason: string | undefined;
+  reason: CopyOrData | undefined;
   configuration: ConsoleConfiguration | undefined;
   endpoints: AuthorizationEndpoints | undefined;
   session: SessionState;
@@ -270,8 +279,11 @@ interface SessionInner {
   renewal: Promise<boolean> | undefined;
 }
 
-function sessionReason(failure: unknown): string {
-  return failure instanceof Error ? failure.message : "the request failed";
+function sessionReason(failure: unknown): CopyOrData {
+  if (failure instanceof FetchJsonError) return failure.said;
+  return failure instanceof Error
+    ? failure.message
+    : { id: "session-request-failed" };
 }
 
 /**
@@ -303,7 +315,7 @@ type SessionLoaded =
     }
   | {
       readonly phase: "Unconfigured" | "Unreachable";
-      readonly reason: string;
+      readonly reason: Copy;
     };
 
 /** What a gateway answers for a server it could not reach or that is briefly
@@ -318,17 +330,23 @@ function sessionLoadFailure(source: string, failure: unknown): SessionLoaded {
   if (!(failure instanceof FetchJsonError))
     return {
       phase: "Unconfigured",
-      reason: `${source} answered nothing usable`,
+      reason: { id: "session-load-unusable", args: { source } },
     };
   switch (failure.fault.fault) {
     case "Unanswered":
-      return { phase: "Unreachable", reason: `No answer from ${source}` };
+      return {
+        phase: "Unreachable",
+        reason: { id: "session-load-unanswered", args: { source } },
+      };
     case "Status":
       return {
         phase: sessionTransientStatuses.has(failure.fault.status)
           ? "Unreachable"
           : "Unconfigured",
-        reason: `${source} answered ${String(failure.fault.status)}`,
+        reason: {
+          id: "session-answered",
+          args: { source, status: String(failure.fault.status) },
+        },
       };
   }
 }
@@ -486,7 +504,10 @@ function sessionStoreClear(inner: SessionInner): void {
 }
 
 /** Ends the session in this document and leaves the store as it is. */
-function sessionDrop(inner: SessionInner, reason: string | undefined): void {
+function sessionDrop(
+  inner: SessionInner,
+  reason: CopyOrData | undefined,
+): void {
   inner.generation += 1;
   inner.era += 1;
   inner.session = sessionSignedOut;
@@ -494,7 +515,10 @@ function sessionDrop(inner: SessionInner, reason: string | undefined): void {
   sessionSettle(inner);
 }
 
-function sessionForget(inner: SessionInner, reason: string | undefined): void {
+function sessionForget(
+  inner: SessionInner,
+  reason: CopyOrData | undefined,
+): void {
   sessionStoreClear(inner);
   sessionDrop(inner, reason);
 }
@@ -784,7 +808,10 @@ async function sessionCallbackAnswered(
   const transaction = sessionTakeTransaction(inner);
   if (callback.result === "Denied") return callback;
   if (transaction === undefined || transaction.state !== callback.state)
-    return { result: "Denied", reason: "the callback did not match this tab" };
+    return {
+      result: "Denied",
+      reason: { id: "session-callback-mismatched" },
+    };
   try {
     sessionSignedIn(
       inner,
@@ -833,7 +860,7 @@ async function sessionSignOut(inner: SessionInner): Promise<void> {
 }
 
 /** What the sign-in was refused for, kept where the tree that draws it reads. */
-function sessionRefuse(inner: SessionInner, reason: string): void {
+function sessionRefuse(inner: SessionInner, reason: CopyOrData): void {
   inner.reason = reason;
   sessionAnnounce(inner);
 }
@@ -876,7 +903,7 @@ export function createSessionHolder(ports: SessionHolderPorts): SessionHolder {
     signOut: () => sessionSignOut(inner),
     bearer: () => sessionBearer(inner),
     refresh: () => sessionRefresh(inner),
-    refuse: (reason: string) => {
+    refuse: (reason: CopyOrData) => {
       sessionRefuse(inner, reason);
     },
     refreshDueAtMs: () => sessionRefreshDue(inner),
