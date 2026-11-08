@@ -60,7 +60,24 @@ import {
   tenantRoleLabel,
   tenantRoleOffered,
 } from "../app/core/tenantPeople.ts";
-import type { TenantInvitationForm } from "../app/core/tenantPeople.ts";
+import type {
+  TenantInvitationForm,
+  TenantPersonBox,
+} from "../app/core/tenantPeople.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
+import type { Copy } from "../app/core/copy.ts";
+
+/** A line in the base language's words, nothing where there is no line. */
+function en(copy: Copy | undefined): string | undefined {
+  return copy === undefined ? undefined : copyTextEn(copy);
+}
+
+/** A box with its label in the base language's words. */
+function enBox(box: TenantPersonBox | undefined) {
+  return box === undefined
+    ? undefined
+    : { ...box, label: copyTextEn(box.label) };
+}
 
 const fallback = /^Unknown refusal/u;
 
@@ -72,41 +89,40 @@ test("every refusal the plane names has its own line, and an unknown one is prin
     accessNotPermittedCode,
     accessHolderNotAdmittedCode,
   ];
-  const lines = named.map((code) => accessCodeLabel(code));
+  const lines = named.map((code) => copyTextEn(accessCodeLabel(code)));
   for (const line of lines) expect(line).not.toMatch(fallback);
   expect(new Set(lines).size).toBe(named.length);
-  expect(accessCodeLabel("SomethingNew")).toBe(
+  expect(en(accessCodeLabel("SomethingNew"))).toBe(
     "Unknown refusal (SomethingNew)",
   );
 });
 
 test("a change and an account the reader may not make each have their own line", () => {
-  expect(accessCodeLabel(accessNotPermittedCode)).toBe("Change not permitted");
-  expect(accessCodeLabel(accessInvitationCodes.AccountNotPermitted)).toBe(
+  expect(en(accessCodeLabel(accessNotPermittedCode))).toBe(
+    "Change not permitted",
+  );
+  expect(en(accessCodeLabel(accessInvitationCodes.AccountNotPermitted))).toBe(
     "Account creation not permitted",
   );
-  expect(accessCodeLabel(accessHolderNotAdmittedCode)).toBe(
+  expect(en(accessCodeLabel(accessHolderNotAdmittedCode))).toBe(
     "Holder not admitted",
   );
 });
 
 test("a workspace at its limit of open links says so", () => {
-  expect(accessCodeLabel(accessInviteLinkLimitReachedCode)).toBe(
+  expect(en(accessCodeLabel(accessInviteLinkLimitReachedCode))).toBe(
     "Link limit reached",
   );
 });
 
 test("every role in both rosters has a word", () => {
-  expect(accessTenantRoles.map(tenantRoleLabel)).toStrictEqual([
+  expect(accessTenantRoles.map(tenantRoleLabel).map(copyTextEn)).toStrictEqual([
     "Admin",
     "Member",
   ]);
-  expect(accessProjectRoles.map(projectRoleLabel)).toStrictEqual([
-    "Admin",
-    "Developer",
-    "Dispatcher",
-    "Viewer",
-  ]);
+  expect(
+    accessProjectRoles.map(projectRoleLabel).map(copyTextEn),
+  ).toStrictEqual(["Admin", "Developer", "Dispatcher", "Viewer"]);
 });
 
 const person: AccessTenantPerson = {
@@ -204,15 +220,15 @@ test("taking hosted runs from a subject that is no account is asked first, and g
 });
 
 test("each change asked first has its own question and line", () => {
-  expect(
-    tenantPersonQuestion({ scope: "HostedRuns", held: true }),
-  ).toStrictEqual({
+  const asked = (change: Parameters<typeof tenantPersonQuestion>[0]) => {
+    const question = tenantPersonQuestion(change);
+    return { question: en(question.question), line: en(question.line) };
+  };
+  expect(asked({ scope: "HostedRuns", held: true })).toStrictEqual({
     question: "Remove hosted runs",
     line: "Runs this identity starts will stop.",
   });
-  expect(
-    tenantPersonQuestion({ scope: "Tenant", role: "Admin", held: true }),
-  ).toStrictEqual({
+  expect(asked({ scope: "Tenant", role: "Admin", held: true })).toStrictEqual({
     question: "Remove your admin role",
     line: "You will no longer manage this workspace.",
   });
@@ -220,18 +236,22 @@ test("each change asked first has its own question and line", () => {
 
 test("a refused change says its line", () => {
   expect(
-    accessFailureLabel({
-      outcome: "Conflict",
-      code: accessLastTenantAdministratorCode,
-      body: {},
-    }),
+    en(
+      accessFailureLabel({
+        outcome: "Conflict",
+        code: accessLastTenantAdministratorCode,
+        body: {},
+      }),
+    ),
   ).toBe("Only admin · grant another first");
-  expect(accessFailureLabel({ outcome: "Absent" })).toBe("Not available");
+  expect(en(accessFailureLabel({ outcome: "Absent" }))).toBe("Not available");
 });
 
 test("principals from another sign-in are counted only where there are any", () => {
-  expect(tenantPeopleOtherIssuersLine(0)).toBe(undefined);
-  expect(tenantPeopleOtherIssuersLine(3)).toBe("3 more from another sign-in");
+  expect(en(tenantPeopleOtherIssuersLine(0))).toBe(undefined);
+  expect(en(tenantPeopleOtherIssuersLine(3))).toBe(
+    "3 more from another sign-in",
+  );
 });
 
 const form: TenantInvitationForm = {
@@ -245,12 +265,12 @@ const form: TenantInvitationForm = {
 };
 
 test("a username and an email the schema refuses each have a fault, and an empty one none", () => {
-  expect(tenantInvitationGithubFault("")).toBe(undefined);
-  expect(tenantInvitationGithubFault("ada")).toBe(undefined);
-  expect(tenantInvitationGithubFault("-ada")).toBe("Not a GitHub username");
-  expect(tenantInvitationEmailFault("")).toBe(undefined);
-  expect(tenantInvitationEmailFault("ada@example.com")).toBe(undefined);
-  expect(tenantInvitationEmailFault("ada")).toBe("Not an email");
+  expect(en(tenantInvitationGithubFault(""))).toBe(undefined);
+  expect(en(tenantInvitationGithubFault("ada"))).toBe(undefined);
+  expect(en(tenantInvitationGithubFault("-ada"))).toBe("Not a GitHub username");
+  expect(en(tenantInvitationEmailFault(""))).toBe(undefined);
+  expect(en(tenantInvitationEmailFault("ada@example.com"))).toBe(undefined);
+  expect(en(tenantInvitationEmailFault("ada"))).toBe("Not an email");
   expect(tenantInvitationSendable({ ...form, email: "ada" })).toBe(false);
 });
 
@@ -292,8 +312,8 @@ test("more projects than one invitation names is a fault, and is not sendable", 
       (_, index) => ({ project: `p${String(index)}`, roles: ["Admin"] }),
     ),
   };
-  expect(tenantInvitationProjectsFault(form)).toBe(undefined);
-  expect(tenantInvitationProjectsFault(many)).toBe(
+  expect(en(tenantInvitationProjectsFault(form))).toBe(undefined);
+  expect(en(tenantInvitationProjectsFault(many))).toBe(
     `At most ${String(accessInvitationProjectsMax)} projects`,
   );
   expect(tenantInvitationSendable(many)).toBe(false);
@@ -305,11 +325,11 @@ test("a named refusal of an invitation says its line and rereads nothing, and an
     code: accessInvitationCodes.EmailHeld,
     body: {},
   } as const;
-  expect(accessFailureLabel(held)).toBe(
+  expect(en(accessFailureLabel(held))).toBe(
     "Email held by another account · use another address",
   );
   expect(tenantInvitationRefusalRereads(held)).toBe(false);
-  expect(accessFailureLabel({ outcome: "Absent" })).toBe("Not available");
+  expect(en(accessFailureLabel({ outcome: "Absent" }))).toBe("Not available");
   expect(tenantInvitationRefusalRereads({ outcome: "Absent" })).toBe(true);
 });
 
@@ -408,11 +428,13 @@ test("an invitation offers the list's projects the reader may grant on, in the l
 });
 
 test("a reader who may not make an account is told so, and one who may is told nothing", () => {
-  expect(tenantInvitationAccountLine(abilities)).toBe("Existing accounts only");
+  expect(en(tenantInvitationAccountLine(abilities))).toBe(
+    "Existing accounts only",
+  );
   expect(
     tenantInvitationAccountLine({ ...abilities, createAccount: true }),
   ).toBe(undefined);
-  expect(tenantInvitationAccountLine(undefined)).toBe(undefined);
+  expect(en(tenantInvitationAccountLine(undefined))).toBe(undefined);
 });
 
 test("the subjects that are no account are parted from the people, each in the list's order", () => {
@@ -434,7 +456,7 @@ test("the subjects that are no account are parted from the people, each in the l
 });
 
 test("the people are counted in a word that agrees with how many", () => {
-  expect([0, 1, 2].map(tenantPeopleCountLine)).toStrictEqual([
+  expect([0, 1, 2].map(tenantPeopleCountLine).map(copyTextEn)).toStrictEqual([
     "0 people",
     "1 person",
     "2 people",
@@ -442,20 +464,24 @@ test("the people are counted in a word that agrees with how many", () => {
 });
 
 test("a row draws what its person holds in the workspace, roles in the roster's order, then hosted runs, then personal runners", () => {
-  expect(tenantHeldWords(person)).toStrictEqual([]);
+  expect(tenantHeldWords(person).map(copyTextEn)).toStrictEqual([]);
   expect(
     tenantHeldWords({
       ...person,
       tenantRoles: ["Member", "Admin"],
       hostedRuns: true,
       personalRunners: false,
-    }),
+    }).map(copyTextEn),
   ).toStrictEqual(["Admin", "Member", "Hosted runs"]);
-  expect(tenantHeldWords({ ...person, hostedRuns: true })).toStrictEqual([
-    "Hosted runs",
-  ]);
   expect(
-    tenantHeldWords({ ...person, hostedRuns: true, personalRunners: true }),
+    tenantHeldWords({ ...person, hostedRuns: true }).map(copyTextEn),
+  ).toStrictEqual(["Hosted runs"]);
+  expect(
+    tenantHeldWords({
+      ...person,
+      hostedRuns: true,
+      personalRunners: true,
+    }).map(copyTextEn),
   ).toStrictEqual(["Hosted runs", "Personal runners"]);
 });
 
@@ -484,10 +510,12 @@ test("a row draws a line for each project its person holds a role on, in the lis
     ],
   };
   expect(
-    tenantHeldProjectLines(holding, ["atlas", "beacon", "cedar", "delta"]),
+    tenantHeldProjectLines(holding, ["atlas", "beacon", "cedar", "delta"]).map(
+      (line) => ({ project: line.project, roles: line.roles.map(copyTextEn) }),
+    ),
   ).toStrictEqual([
-    { project: "atlas", roles: "Admin" },
-    { project: "beacon", roles: "Developer, Dispatcher, Viewer" },
+    { project: "atlas", roles: ["Admin"] },
+    { project: "beacon", roles: ["Developer", "Dispatcher", "Viewer"] },
   ]);
   expect(tenantHeldProjectLines(person, ["atlas"])).toStrictEqual([]);
 });
@@ -527,7 +555,9 @@ test("an editor's workspace boxes are each role and hosted runs, one the reader 
     hostedRuns: true,
     personalRunners: false,
   };
-  expect(tenantPersonWorkspaceBoxes(abilities, holding)).toStrictEqual([
+  expect(
+    tenantPersonWorkspaceBoxes(abilities, holding).map(enBox),
+  ).toStrictEqual([
     {
       label: "Admin",
       change: { scope: "Tenant", role: "Admin", held: true },
@@ -545,17 +575,21 @@ test("an editor's workspace boxes are each role and hosted runs, one the reader 
     },
   ]);
   expect(
-    tenantPersonWorkspaceBoxes(abilities, person).map((box) => box.label),
+    tenantPersonWorkspaceBoxes(abilities, person).map((box) =>
+      copyTextEn(box.label),
+    ),
   ).toStrictEqual(["Member"]);
   expect(tenantPersonWorkspaceBoxes(undefined, person)).toStrictEqual([]);
 });
 
 test("an editor's personal runners box follows hosted runs, offered by its own ability and drawn where held", () => {
   expect(
-    tenantPersonWorkspaceBoxes(
-      { ...abilities, grantPersonalRunners: true },
-      person,
-    ).at(-1),
+    enBox(
+      tenantPersonWorkspaceBoxes(
+        { ...abilities, grantPersonalRunners: true },
+        person,
+      ).at(-1),
+    ),
   ).toStrictEqual({
     label: "Personal runners",
     change: { scope: "PersonalRunners", held: false },
@@ -566,7 +600,7 @@ test("an editor's personal runners box follows hosted runs, offered by its own a
       ...person,
       hostedRuns: true,
       personalRunners: true,
-    }).map((box) => [box.label, box.offered]),
+    }).map((box) => [copyTextEn(box.label), box.offered]),
   ).toStrictEqual([
     ["Member", true],
     ["Hosted runs", false],
@@ -576,17 +610,21 @@ test("an editor's personal runners box follows hosted runs, offered by its own a
 
 test("an editor's unscoped chat box comes last, drawn only where its own ability offers it, held as the person is not refused it", () => {
   expect(
-    tenantPersonWorkspaceBoxes(
-      { ...abilities, grantUnscopedChat: true },
-      person,
-    ).at(-1),
+    enBox(
+      tenantPersonWorkspaceBoxes(
+        { ...abilities, grantUnscopedChat: true },
+        person,
+      ).at(-1),
+    ),
   ).toStrictEqual({
     label: "Unscoped chat",
     change: { scope: "UnscopedChat", held: true },
     offered: true,
   });
   expect(
-    tenantPersonWorkspaceBoxes(abilities, person).map((box) => box.label),
+    tenantPersonWorkspaceBoxes(abilities, person).map((box) =>
+      copyTextEn(box.label),
+    ),
   ).toStrictEqual(["Member"]);
   expect(tenantUnscopedChatOffered(undefined)).toBe(false);
 });
@@ -597,7 +635,7 @@ test("an editor's project box is the change a press asks for, absent where neith
     projects: [{ project: "atlas", roles: ["Developer"] }],
   };
   expect(
-    tenantPersonProjectBox(abilities, holding, "atlas", "Developer"),
+    enBox(tenantPersonProjectBox(abilities, holding, "atlas", "Developer")),
   ).toStrictEqual({
     label: "Developer",
     change: {
@@ -612,7 +650,7 @@ test("an editor's project box is the change a press asks for, absent where neith
     undefined,
   );
   expect(
-    tenantPersonProjectBox(abilities, holding, "beacon", "Admin"),
+    enBox(tenantPersonProjectBox(abilities, holding, "beacon", "Admin")),
   ).toStrictEqual({
     label: "Admin",
     change: { scope: "Project", project: "beacon", role: "Admin", held: false },

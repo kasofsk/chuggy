@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * What became of each invite link a list holds, a workspace's or the site's:
  * one row a link, in the plane's order, saying where it stands and who made
@@ -16,9 +15,11 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { AccessInviteLink } from "../../../../../src/contract/accessPlane.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import type { ApiPorts, ApiResult } from "../../core/apiRequest.ts";
 import { consoleWriteKey } from "../../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../../core/consoleWrite.ts";
+import type { Copy, CopyText } from "../../core/copy.ts";
 import { instantFigureAtMs } from "../../core/figures.ts";
 import {
   inviteLinkRevocationNote,
@@ -57,7 +58,7 @@ export type InviteLinkListed = Pick<
 
 /** A column a list draws its own way: its word, and what it draws of one link, which is nothing where the link has nothing there. */
 export interface InviteLinkColumn<Link> {
-  readonly heading: string;
+  readonly heading: Copy;
   readonly cell: (link: Link, nowMs: number) => ReactNode;
 }
 
@@ -78,6 +79,7 @@ export function inviteLinkRevocationWrite(
   named: readonly string[],
   revoke: (ports: ApiPorts, link: string) => Promise<ApiResult<undefined>>,
   reread: (client: QueryClient) => Promise<void>,
+  text: CopyText,
 ): ConsoleWrite<string, undefined> {
   return {
     mutationKey: consoleWriteKey(...named),
@@ -88,7 +90,7 @@ export function inviteLinkRevocationWrite(
       await reread(client);
       return answered;
     },
-    refusal: accessFailureLabel,
+    refusal: (failure) => text(accessFailureLabel(failure)),
     landed: (client) => reread(client),
   };
 }
@@ -143,16 +145,17 @@ function useInviteLinkRevoking(
 /** Who made or used a link and when, down a narrow column: the name cut short
  * on a line as a person's row cuts it, under the column's words where one is given and the row is stacked. */
 export function InviteLinkWho(props: {
-  readonly label?: string;
+  readonly label?: Copy;
   readonly person: TenantSubject;
   readonly atMs: number;
   readonly nowMs: number;
 }): ReactNode {
+  const text = useCopyText();
   const named = tenantPersonName(props.person);
   return (
     <div className="grid min-w-0">
       {props.label === undefined ? null : (
-        <span className="people-stacked-label">{props.label}</span>
+        <span className="people-stacked-label">{text(props.label)}</span>
       )}
       <span className="people-name" title={named.name}>
         {named.subject ? (
@@ -165,7 +168,9 @@ export function InviteLinkWho(props: {
         <span className="truncate text-sm text-ink-3">{named.githubLogin}</span>
       )}
       {named.noAccount ? (
-        <span className="text-sm text-ink-3">No account</span>
+        <span className="text-sm text-ink-3">
+          {text({ id: "permissions-person-unaccounted" })}
+        </span>
       ) : null}
       <span className="text-sm text-ink-3">
         <Figure figure={instantFigureAtMs(props.atMs, props.nowMs)} />
@@ -178,15 +183,16 @@ function InviteLinkStatus(props: {
   readonly link: InviteLinkListed;
   readonly nowMs: number;
 }): ReactNode {
+  const text = useCopyText();
   const link = props.link;
   return (
     <div className="grid justify-items-start gap-1">
       <Pill tone={inviteLinkStateTone(link.state)}>
-        {inviteLinkStateLabel(link.state)}
+        {text(inviteLinkStateLabel(link.state))}
       </Pill>
       {link.state === "Open" ? (
         <span className="text-sm text-ink-3">
-          {inviteLinksWords.expires}{" "}
+          {text(inviteLinksWords.expires)}{" "}
           <Figure figure={instantFigureAtMs(link.expiresAtMs, props.nowMs)} />
         </span>
       ) : null}
@@ -201,6 +207,7 @@ function InviteLinkAsked(props: {
   readonly columns: number;
   readonly revoking: InviteLinkRevoking;
 }): ReactNode {
+  const text = useCopyText();
   const { link, revoking } = props;
   const words = revoking.note?.link === link ? revoking.note.words : undefined;
   const asked = revoking.asking === link;
@@ -214,15 +221,15 @@ function InviteLinkAsked(props: {
           )}
           {asked ? (
             <Confirm
-              question={inviteLinkRevocationQuestion.question}
-              confirm={inviteLinksWords.revoke}
+              question={text(inviteLinkRevocationQuestion.question)}
+              confirm={text(inviteLinksWords.revoke)}
               busy={revoking.busy}
               onConfirm={() => {
                 revoking.send(link);
               }}
               onCancel={revoking.cancel}
             >
-              {inviteLinkRevocationQuestion.line}
+              {text(inviteLinkRevocationQuestion.line)}
             </Confirm>
           ) : null}
         </div>
@@ -244,6 +251,7 @@ interface InviteLinkRowDrawn<Link extends InviteLinkListed> {
 function InviteLinkRow<Link extends InviteLinkListed>(
   props: InviteLinkRowDrawn<Link>,
 ): ReactNode {
+  const text = useCopyText();
   const { link, listed, revoking, nowMs } = props;
   const third = listed.third.cell(link, nowMs);
   return (
@@ -274,7 +282,7 @@ function InviteLinkRow<Link extends InviteLinkListed>(
                 revoking.press(link.link);
               }}
             >
-              {inviteLinksWords.revoke}
+              {text(inviteLinksWords.revoke)}
             </Button>
           ) : null}
         </td>
@@ -286,26 +294,29 @@ function InviteLinkRow<Link extends InviteLinkListed>(
 const inviteLinkColumnsCount = 4;
 
 function InviteLinksHead(props: {
-  readonly first: string;
-  readonly third: string;
+  readonly first: Copy;
+  readonly third: Copy;
   readonly revocations: boolean;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <thead>
       <tr>
-        <th scope="col">{props.first}</th>
+        <th scope="col">{text(props.first)}</th>
         <th scope="col" className="people-col-status">
-          {inviteLinksWords.status}
+          {text(inviteLinksWords.status)}
         </th>
         <th scope="col" className="people-col-who">
-          {props.third}
+          {text(props.third)}
         </th>
         <th scope="col" className="people-col-who">
-          {inviteLinksWords.madeBy}
+          {text(inviteLinksWords.madeBy)}
         </th>
         {props.revocations ? (
           <th scope="col" className="people-col-revoke">
-            <span className="visually-hidden">{inviteLinksWords.revoke}</span>
+            <span className="visually-hidden">
+              {text(inviteLinksWords.revoke)}
+            </span>
           </th>
         ) : null}
       </tr>
@@ -333,14 +344,15 @@ function InviteLinkRows<Link extends InviteLinkListed>(
 export function InviteLinksListing<Link extends InviteLinkListed>(
   props: InviteLinksListed<Link>,
 ): ReactNode {
+  const text = useCopyText();
   const revoking = useInviteLinkRevoking(props.revocation, props.links);
   const nowMs = useNowMs();
   if (props.links.length === 0) return null;
   const revocable = props.links.filter((link) => props.revocable(link));
   const revocations = revocable.length > 0;
   return (
-    <SettingsListingSection heading={inviteLinksWords.heading}>
-      <SettingsListingTable caption={inviteLinksWords.heading}>
+    <SettingsListingSection heading={text(inviteLinksWords.heading)}>
+      <SettingsListingTable caption={text(inviteLinksWords.heading)}>
         <InviteLinksHead
           first={props.first.heading}
           third={props.third.heading}

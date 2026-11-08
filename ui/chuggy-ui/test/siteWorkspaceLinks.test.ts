@@ -16,7 +16,6 @@ import type {
   AccessWorkspaceLink,
 } from "../../../src/contract/accessPlane.ts";
 import { copyTextEn } from "../app/copy/catalog.ts";
-import { copyOrDataText } from "../app/core/copy.ts";
 import {
   siteWorkspaceLinkBody,
   siteWorkspaceLinkNoteFault,
@@ -27,10 +26,15 @@ import { siteWorkspaceRefusal } from "../app/core/siteWorkspaces.ts";
 
 const atBound = "n".repeat(accessWorkspaceLinkNoteCharsMax);
 
+/** Why a note cannot be sent, in the base language's words. */
+function noteFault(note: string): string | undefined {
+  const fault = siteWorkspaceLinkNoteFault(note);
+  return fault === undefined ? undefined : copyTextEn(fault);
+}
+
 test("a note is counted by its code points, and one past the bound says Too long", () => {
   expect(siteWorkspaceLinkNoteFault(atBound)).toBeUndefined();
-  const fault = siteWorkspaceLinkNoteFault(`${atBound}n`);
-  expect(fault && copyOrDataText(copyTextEn, fault)).toBe("Too long");
+  expect(noteFault(`${atBound}n`)).toBe("Too long");
   expect(
     siteWorkspaceLinkNoteFault("😀".repeat(accessWorkspaceLinkNoteCharsMax)),
   ).toBeUndefined();
@@ -38,11 +42,9 @@ test("a note is counted by its code points, and one past the bound says Too long
 
 test("a note of more than one line says One line, and an empty one says nothing", () => {
   expect(siteWorkspaceLinkNoteFault("")).toBeUndefined();
-  expect(siteWorkspaceLinkNoteFault("for\nLisbon")).toBe("One line");
+  expect(noteFault("for\nLisbon")).toBe("One line");
   expect(
-    siteWorkspaceLinkNoteFault(
-      `${"😀".repeat(accessWorkspaceLinkNoteCharsMax - 1)}\n`,
-    ),
+    noteFault(`${"😀".repeat(accessWorkspaceLinkNoteCharsMax - 1)}\n`),
   ).toBe("One line");
   expect(siteWorkspaceLinkNoteFault("For the Lisbon team")).toBeUndefined();
 });
@@ -97,7 +99,7 @@ test.each([
     "Failed",
   ],
 ] as const)("%s is the dialog's one line", (_named, result, line) => {
-  expect(siteWorkspaceRefusal(result)).toBe(line);
+  expect(copyTextEn(siteWorkspaceRefusal(result))).toBe(line);
 });
 
 const none: AccessSiteAbilities = {

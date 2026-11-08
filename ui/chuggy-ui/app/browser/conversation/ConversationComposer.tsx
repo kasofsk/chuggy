@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The box a member types into, which knows nothing of the API: the page it is
  * mounted on owns the send, the turn identity and what a refusal means.
@@ -60,6 +59,7 @@ import type {
 } from "react";
 
 import { textCodePointsCount } from "../../../../../src/contract/http.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import {
   conversationAttachmentUri,
   conversationAttachRefusalLine,
@@ -221,22 +221,32 @@ function ConversationAttachments(props: {
   readonly removes: boolean;
   readonly onDetach: (attachment: ConversationAttachment) => void;
 }): ReactNode {
+  const text = useCopyText();
   if (props.attaches === undefined || props.attached.length === 0) return null;
   return (
     <div className="flex flex-wrap items-end gap-2">
-      <ul aria-label="Images" className="flex flex-wrap gap-2">
+      <ul
+        aria-label={text({ id: "conversation-images" })}
+        className="flex flex-wrap gap-2"
+      >
         {props.attached.map((attachment, at) => (
           <li key={at} className="relative">
             <img
               className="rounded-2 border-edge block h-[var(--space-7)] max-w-full border"
               src={conversationAttachmentUri(attachment)}
-              alt={`Image ${String(at + 1)}`}
+              alt={text({
+                id: "conversation-image",
+                args: { ordinal: String(at + 1) },
+              })}
             />
             {props.removes ? (
               <button
                 type="button"
                 className="bg-surface-inverse text-ink-inverse rounded-circle absolute top-1 right-1 px-1 text-xs"
-                aria-label={`Remove image ${String(at + 1)}`}
+                aria-label={text({
+                  id: "conversation-image-remove",
+                  args: { ordinal: String(at + 1) },
+                })}
                 onMouseDown={conversationCaretKept}
                 onClick={() => {
                   props.onDetach(attachment);
@@ -264,6 +274,7 @@ function conversationCaretKept(event: MouseEvent<HTMLButtonElement>): void {
 function ConversationComposerPressed(
   props: ConversationComposerSurface,
 ): ReactNode {
+  const text = useCopyText();
   const pressed =
     (button: ConversationComposerButton) =>
     (event: MouseEvent<HTMLButtonElement>): void => {
@@ -282,7 +293,9 @@ function ConversationComposerPressed(
         <span className="conversation-send-mark">
           <ConversationStopGlyph />
         </span>
-        <span className="visually-hidden">Stop</span>
+        <span className="visually-hidden">
+          {text({ id: "conversation-stop" })}
+        </span>
       </ComposerPrimitive.Cancel>
     );
   return (
@@ -296,7 +309,9 @@ function ConversationComposerPressed(
       <span className="conversation-send-mark">
         <ConversationSendGlyph />
       </span>
-      <span className="visually-hidden">Send</span>
+      <span className="visually-hidden">
+        {text({ id: "conversation-send" })}
+      </span>
     </ComposerPrimitive.Send>
   );
 }
@@ -307,6 +322,7 @@ function ConversationAttachPicker(props: {
   readonly attaches: ConversationAttaches;
   readonly onPick: (event: ChangeEvent<HTMLInputElement>) => void;
 }): ReactNode {
+  const text = useCopyText();
   const picker = useRef<HTMLInputElement>(null);
   return (
     <>
@@ -324,7 +340,7 @@ function ConversationAttachPicker(props: {
       <button
         type="button"
         className="conversation-attach"
-        aria-label="Attach image"
+        aria-label={text({ id: "conversation-attach" })}
         onMouseDown={conversationCaretKept}
         onClick={() => {
           picker.current?.click();
@@ -340,6 +356,7 @@ function ConversationAttachPicker(props: {
 function ConversationCommandSaid(props: {
   readonly commands: ConversationCommands;
 }): ReactNode {
+  const text = useCopyText();
   const commands = props.commands;
   if (commands.said === undefined || commands.said === null) return null;
   return (
@@ -350,7 +367,7 @@ function ConversationCommandSaid(props: {
       <button
         type="button"
         className="conversation-trigger text-ink-3 px-1"
-        aria-label="Dismiss"
+        aria-label={text({ id: "conversation-dismiss" })}
         onMouseDown={conversationCaretKept}
         onClick={commands.onDismiss}
       >
@@ -394,13 +411,16 @@ function ConversationComposerNote(props: {
   readonly count: number;
   readonly charsMax: number;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <div className="conversation-note text-ink-3 flex flex-wrap items-baseline gap-3 text-xs">
       {props.note}
       {props.attaches === undefined ||
       props.attachRefused === undefined ? null : (
         <span role="status">
-          {conversationAttachRefusalLine(props.attachRefused, props.attaches)}
+          {text(
+            conversationAttachRefusalLine(props.attachRefused, props.attaches),
+          )}
         </span>
       )}
       {props.count < props.charsMax * conversationCounterShare ? null : (
@@ -501,12 +521,13 @@ export function ConversationComposer(
     ConversationComposerSurface &
     ConversationComposerAttached,
 ): ReactNode {
+  const text = useCopyText();
   const written = useAuiState((state) => state.composer.text);
   const taken = conversationComposerTaken(props, written);
   if (!props.takes && props.holds !== true)
     return (
       <div className="text-ink-3 flex flex-wrap justify-center gap-3 text-center">
-        <span>Closed</span>
+        <span>{text({ id: "conversation-closed" })}</span>
         {props.note}
       </div>
     );
@@ -542,8 +563,8 @@ export function ConversationComposer(
             readOnly={!props.takes}
             submitMode="enter"
             cancelOnEscape={false}
-            aria-label="Message"
-            placeholder="Message"
+            aria-label={text({ id: "conversation-message" })}
+            placeholder={text({ id: "conversation-message" })}
             autoFocus={props.focusOnMount === true}
             addAttachmentOnPaste={false}
             onPaste={taken.pasted}

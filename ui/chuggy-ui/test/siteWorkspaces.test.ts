@@ -36,6 +36,7 @@ import {
   siteWorkspaceUnnamedLine,
 } from "../app/core/siteWorkspaces.ts";
 import type { SiteWorkspaceForm } from "../app/core/siteWorkspaces.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 
 const none: AccessSiteAbilities = {
   administer: false,
@@ -54,7 +55,7 @@ const typed: SiteWorkspaceForm = {
 };
 
 function line(failure: ApiFailure): string {
-  return siteWorkspaceRefusal(failure);
+  return copyTextEn(siteWorkspaceRefusal(failure));
 }
 
 test("the list and its form are drawn to a reader who may make a workspace, and to no other", () => {
@@ -71,7 +72,7 @@ test("the list and its form are drawn to a reader who may make a workspace, and 
 });
 
 test("the workspaces are counted in the singular at one and the plural at every other count", () => {
-  expect([0, 1, 2].map(siteWorkspacesCountLine)).toStrictEqual([
+  expect([0, 1, 2].map(siteWorkspacesCountLine).map(copyTextEn)).toStrictEqual([
     "0 workspaces",
     "1 workspace",
     "2 workspaces",
@@ -86,17 +87,21 @@ test("the admins an answer only counts follow the ones it names, stand alone whe
   expect(
     siteWorkspaceUnnamedLine({ administrators: [], unnamed: 0 }),
   ).toBeUndefined();
-  expect(siteWorkspaceUnnamedLine({ administrators: named, unnamed: 2 })).toBe(
-    "+2 more",
-  );
-  expect(siteWorkspaceUnnamedLine({ administrators: [], unnamed: 2 })).toBe(
-    "2 unnamed",
-  );
+  const worded = (
+    listed: Parameters<typeof siteWorkspaceUnnamedLine>[0],
+  ): string | undefined => {
+    const line = siteWorkspaceUnnamedLine(listed);
+    return line === undefined ? undefined : copyTextEn(line);
+  };
+  expect(worded({ administrators: named, unnamed: 2 })).toBe("+2 more");
+  expect(worded({ administrators: [], unnamed: 2 })).toBe("2 unnamed");
 });
 
 test("a workspace's row says whom its admins may invite", () => {
-  expect(siteWorkspaceInvitesLabel(true)).toBe("New people");
-  expect(siteWorkspaceInvitesLabel(false)).toBe("Existing accounts");
+  expect(copyTextEn(siteWorkspaceInvitesLabel(true))).toBe("New people");
+  expect(copyTextEn(siteWorkspaceInvitesLabel(false))).toBe(
+    "Existing accounts",
+  );
 });
 
 test("the form starts with nothing typed, its box checked only where the reader manages the site's permissions", () => {
@@ -152,11 +157,13 @@ test("a form is sent only when the plane's own schema takes every field of it", 
 test("a creation or its replay names the workspace answered and the person typed", () => {
   for (const created of [true, false])
     expect(
-      siteWorkspaceCreatedLine(typed, {
-        tenant: "northwind-answered",
-        subject: "s-owner",
-        created,
-      }),
+      copyTextEn(
+        siteWorkspaceCreatedLine(typed, {
+          tenant: "northwind-answered",
+          subject: "s-owner",
+          created,
+        }),
+      ),
     ).toBe("northwind-answered created · octocat signs in with GitHub");
 });
 

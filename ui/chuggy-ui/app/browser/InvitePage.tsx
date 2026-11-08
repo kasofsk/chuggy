@@ -24,6 +24,8 @@ import { apiRedeemInviteLink } from "../core/accessRoutes.ts";
 import type { ApiResult } from "../core/apiRequest.ts";
 import { ConsoleWriteRefused, consoleWriteKey } from "../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../core/consoleWrite.ts";
+import { copyOrDataText } from "../core/copy.ts";
+import type { Copy, CopyOrData, CopyText } from "../core/copy.ts";
 import type { InviteHolder } from "../core/inviteHolder.ts";
 import { inviteRoutePath } from "../core/inviteLinks.ts";
 import {
@@ -54,8 +56,6 @@ export function InviteProvider(props: {
   );
 }
 
-const inviteCardTitle = "chuggy";
-
 function useInviteHolder(): InviteHolder {
   const holder = useContext(InviteContext);
   if (holder === undefined)
@@ -64,21 +64,22 @@ function useInviteHolder(): InviteHolder {
 }
 
 function InviteCard(props: {
-  readonly line: string;
-  readonly action?: string;
+  readonly line: CopyOrData;
+  readonly action?: Copy;
   readonly onAction?: () => void;
   readonly media?: ReactNode;
 }): ReactNode {
   const { action, onAction } = props;
+  const text = useCopyText();
   return (
     <SessionCard
-      title={inviteCardTitle}
-      detail={props.line}
+      title={text(invitePageWords.brand)}
+      detail={copyOrDataText(text, props.line)}
       media={props.media}
       action={
         action === undefined || onAction === undefined ? undefined : (
           <Button variant="primary" onClick={onAction}>
-            {action}
+            {text(action)}
           </Button>
         )
       }
@@ -139,17 +140,18 @@ function inviteRefusalOf(refused: ConsoleWriteRefused): InviteRefusal {
  * name answered, and any other thrown as the refusal it is drawn as. */
 function inviteAnswered<Came extends InviteRedemption | InviteNaming>(
   came: Came,
+  text: CopyText,
 ): ApiResult<Came> {
   switch (came.outcome) {
     case "Redeemed":
     case "NameWanted":
       return { outcome: "Ok", value: came };
     case "NotValid":
-      throw new InviteRefused("NotValid", invitePageWords.notValid);
+      throw new InviteRefused("NotValid", text(invitePageWords.notValid));
     case "Failed":
-      throw new InviteRefused("Failed", came.line);
+      throw new InviteRefused("Failed", text(came.line));
     case "Refused":
-      throw new InviteRefused("Refused", came.fault);
+      throw new InviteRefused("Refused", text(came.fault));
   }
 }
 
@@ -159,6 +161,7 @@ function inviteRedemptionWrite(
   invite: InviteHolder,
   token: string,
   domain: string | undefined,
+  text: CopyText,
 ): ConsoleWrite<undefined, InviteRedemption> {
   return {
     mutationKey: consoleWriteKey("invite-redemption"),
@@ -167,8 +170,9 @@ function inviteRedemptionWrite(
         await invite.redeem(token, domain, (sent) =>
           apiRedeemInviteLink(ports, sent),
         ),
+        text,
       ),
-    refusal: accessFailureLabel,
+    refusal: (failure) => text(accessFailureLabel(failure)),
   };
 }
 
@@ -177,6 +181,7 @@ function inviteNamingWrite(
   invite: InviteHolder,
   token: string,
   domain: string | undefined,
+  text: CopyText,
 ): ConsoleWrite<string, InviteNaming> {
   return {
     mutationKey: consoleWriteKey("invite-naming"),
@@ -185,8 +190,9 @@ function inviteNamingWrite(
         await invite.named(token, domain, name, (sent, workspace) =>
           apiRedeemInviteLink(ports, sent, workspace),
         ),
+        text,
       ),
-    refusal: accessFailureLabel,
+    refusal: (failure) => text(accessFailureLabel(failure)),
   };
 }
 
@@ -201,8 +207,9 @@ function useInviteRedemption(
   readonly retry: () => void;
 } {
   const invite = useInviteHolder();
+  const text = useCopyText();
   const redeeming = useConsoleWrite(
-    inviteRedemptionWrite(invite, token, domain),
+    inviteRedemptionWrite(invite, token, domain, text),
     { drawn: true },
   );
   const { mutate } = redeeming;
@@ -235,10 +242,12 @@ function useInviteNaming(
   domain: string | undefined,
 ): InviteNamed {
   const invite = useInviteHolder();
+  const text = useCopyText();
   const [name, setName] = useState("");
-  const naming = useConsoleWrite(inviteNamingWrite(invite, token, domain), {
-    drawn: true,
-  });
+  const naming = useConsoleWrite(
+    inviteNamingWrite(invite, token, domain, text),
+    { drawn: true },
+  );
   const sending = naming.isPending || naming.isSuccess;
   return {
     name,
@@ -262,8 +271,8 @@ function InviteNamingForm(props: { readonly named: InviteNamed }): ReactNode {
   const nameFault = siteWorkspaceNameFault(name);
   return (
     <SessionCard
-      title={inviteCardTitle}
-      detail={sending ? invitePageWords.creating : invitePageWords.naming}
+      title={text(invitePageWords.brand)}
+      detail={text(sending ? invitePageWords.creating : invitePageWords.naming)}
       action={
         <form
           className="grid gap-4"
@@ -273,7 +282,7 @@ function InviteNamingForm(props: { readonly named: InviteNamed }): ReactNode {
           }}
         >
           <InvitationText
-            label={invitePageWords.workspaceName}
+            label={text(invitePageWords.workspaceName)}
             value={name}
             fault={
               (nameFault === undefined ? undefined : text(nameFault)) ??
@@ -281,7 +290,7 @@ function InviteNamingForm(props: { readonly named: InviteNamed }): ReactNode {
                 ? refused.message
                 : undefined)
             }
-            about={invitePageWords.workspaceAbout}
+            about={text(invitePageWords.workspaceAbout)}
             disabled={sending}
             onChange={change}
           />
@@ -291,7 +300,7 @@ function InviteNamingForm(props: { readonly named: InviteNamed }): ReactNode {
             disabled={sending || !inviteWorkspaceSendable(name)}
             busy={sending}
           >
-            {invitePageWords.create}
+            {text(invitePageWords.create)}
           </Button>
         </form>
       }

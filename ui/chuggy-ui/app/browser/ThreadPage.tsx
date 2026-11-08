@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * One thread's own page: its conversation as a column to read, under a bar
  * that names it and offers on it what the chat pane offers.
@@ -11,6 +10,7 @@
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
+import { useCopyText } from "../copy/CopyProvider.tsx";
 import { projectAbilityRefused } from "../core/projectAbilities.ts";
 import { threadHomeOf } from "../core/threadHome.ts";
 import { PanelUnready } from "./DataPanel.tsx";
@@ -26,6 +26,7 @@ export function ThreadPage(props: {
   readonly partition: PartitionIdentity;
   readonly session: string;
 }): ReactNode {
+  const text = useCopyText();
   const state = useThread(props.partition, props.session);
   const viewOnly = projectAbilityRefused(
     useProjectAbilities(props.partition),
@@ -34,7 +35,7 @@ export function ThreadPage(props: {
   if (state.state !== "Ready")
     return (
       <>
-        <ScreenTitle>Thread</ScreenTitle>
+        <ScreenTitle>{text({ id: "chat-heading" })}</ScreenTitle>
         <PanelUnready state={state} />
       </>
     );

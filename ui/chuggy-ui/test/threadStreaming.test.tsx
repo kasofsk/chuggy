@@ -1284,7 +1284,7 @@ test("a turn heard to end that the mailbox settles failed shows its failure wher
   expect(
     answers.item(answers.length - 1).querySelector(".notice-detail")
       ?.textContent,
-  ).toBe("StoreRefused");
+  ).toBe("Store refused");
 });
 
 test("more heard of a turn after its end brings the motion back, on the line of the work it is now at", async () => {
@@ -1403,7 +1403,7 @@ function halvesNoticed(
   ]);
 }
 
-const refusedDrawn = [undefined, "Failed", "AgentFailed"];
+const refusedDrawn = [undefined, "Failed", "Agent failed"];
 
 test("a turn its session refused without running, sent again: the answer is the retry's as it is written, stored and settled", async () => {
   const of = (

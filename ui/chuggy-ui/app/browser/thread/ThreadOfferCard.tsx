@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * An offer the reader's own project thread made them, drawn as a card under
  * the call that made it: what it offers, the draft or the ticket it offers it
@@ -172,12 +171,15 @@ function ThreadOfferShell(props: {
   readonly offer: ThreadOfferCall;
   readonly children: ReactNode;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <section
-      aria-label="Offer"
+      aria-label={text({ id: "chat-offer" })}
       className="bg-surface-1 border-edge rounded-3 flex flex-col gap-2 border p-3"
     >
-      <p className="text-sm font-medium">{threadOfferSentence(props.offer)}</p>
+      <p className="text-sm font-medium">
+        {text(threadOfferSentence(props.offer))}
+      </p>
       {props.children}
     </section>
   );
@@ -198,11 +200,15 @@ function ThreadOfferResend(props: {
   readonly reply: ThreadOfferReply;
   readonly writing: ThreadOfferWriting;
 }): ReactNode {
+  const text = useCopyText();
   const { offer, reply, writing } = props;
   return (
     <>
       <p className="text-ink-3 text-sm">
-        {threadOfferSettledSentence(offer, reply)} · Reply not sent
+        {text({
+          id: "chat-offer-unsent",
+          args: { settled: threadOfferSettledSentence(offer, reply) },
+        })}
       </p>
       <div className="flex flex-wrap gap-2">
         <Button
@@ -214,7 +220,7 @@ function ThreadOfferResend(props: {
             writing.mutate({ decision: "Resent", reply });
           }}
         >
-          Send reply
+          {text({ id: "chat-offer-resend" })}
         </Button>
       </div>
       <ThreadOfferRefused writing={writing} />
@@ -229,13 +235,16 @@ function ThreadOfferOpen(props: {
   readonly standing: ThreadOfferStanding;
   readonly mutation: PublicMutation | undefined;
 }): ReactNode {
+  const text = useCopyText();
   const { writing, standing, mutation } = props;
   if (standing.standing === "Superseded")
     return (
-      <p className="text-ink-3 text-sm">{threadOfferSupersededSentence}</p>
+      <p className="text-ink-3 text-sm">
+        {text(threadOfferSupersededSentence)}
+      </p>
     );
   if (standing.standing === "Closed")
-    return <p className="text-ink-3 text-sm">{standing.why}</p>;
+    return <p className="text-ink-3 text-sm">{text(standing.why)}</p>;
   return (
     <>
       <div className="flex flex-wrap gap-2">
@@ -253,7 +262,7 @@ function ThreadOfferOpen(props: {
             });
           }}
         >
-          Confirm
+          {text({ id: "chat-offer-confirm" })}
         </Button>
         <Button
           size="sm"
@@ -262,7 +271,7 @@ function ThreadOfferOpen(props: {
             writing.mutate({ decision: "Declined" });
           }}
         >
-          Decline
+          {text({ id: "chat-offer-decline" })}
         </Button>
       </div>
       <ThreadOfferRefused writing={writing} />
@@ -342,7 +351,7 @@ function ThreadOfferUnanswered(props: {
   const settled =
     writing.isSuccess && writing.data !== undefined ? (
       <p className="text-ink-3 text-sm" role="status">
-        {threadOfferSettledSentence(offer, writing.data)}
+        {text(threadOfferSettledSentence(offer, writing.data))}
       </p>
     ) : undefined;
   const unsent =
@@ -377,15 +386,16 @@ export function ThreadOfferCard(props: {
   readonly offer: ThreadOfferCall;
   readonly answer: ThreadOfferAnswer;
 }): ReactNode {
+  const text = useCopyText();
   const { offer, answer } = props;
   return (
     <ThreadOfferShell offer={offer}>
       {answer.answer === "Replied" ? (
         <p className="text-ink-3 text-sm">
-          {threadOfferSettledSentence(offer, answer.reply)}
+          {text(threadOfferSettledSentence(offer, answer.reply))}
         </p>
       ) : answer.answer === "Unread" ? (
-        <p className="text-ink-3 text-sm">{threadOfferUnreadSentence}</p>
+        <p className="text-ink-3 text-sm">{text(threadOfferUnreadSentence)}</p>
       ) : (
         <ThreadOfferUnanswered
           partition={props.partition}

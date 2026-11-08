@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * Inviting one person to a workspace, in a dialog: their email, their GitHub
  * username, a workspace role, and roles on the workspace's projects, each
@@ -28,13 +27,15 @@ import {
   apiInviteTenantPerson,
   apiMintTenantInviteLink,
 } from "../../core/accessRoutes.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { consoleWriteKey } from "../../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../../core/consoleWrite.ts";
+import type { CopyText } from "../../core/copy.ts";
 import {
   inviteLinkSendWords,
   tenantInviteLinkSendable,
 } from "../../core/inviteLinks.ts";
-import type { InviteMode } from "../../core/inviteLinks.ts";
+import type { InviteMode, InviteSendWords } from "../../core/inviteLinks.ts";
 import {
   accessFailureLabel,
   projectRoleOffered,
@@ -74,17 +75,19 @@ function TenantInviteRole(props: {
   readonly role: AccessTenantRole;
   readonly onChoose: (role: AccessTenantRole) => void;
 }): ReactNode {
+  const text = useCopyText();
+  const label = text({ id: "settings-invitation-role" });
   return (
     <div className="grid gap-2">
       <span aria-hidden="true" className={invitationLabelClassName}>
-        Workspace role
+        {label}
       </span>
       <RadioGroup
-        label="Workspace role"
+        label={label}
         value={props.role}
         options={props.offered.map((role) => ({
           value: role,
-          text: tenantRoleLabel(role),
+          text: text(tenantRoleLabel(role)),
         }))}
         onChoose={(value) => {
           const role = props.offered.find((known) => known === value);
@@ -114,6 +117,7 @@ interface TenantInviting {
  * again; an absent answer leaves them to be read again behind it. */
 function tenantInvitationWrite(
   tenant: string,
+  text: CopyText,
 ): ConsoleWrite<TenantInvitationForm, AccessInvited> {
   return {
     mutationKey: consoleWriteKey("tenant-invitation", tenant),
@@ -127,7 +131,7 @@ function tenantInvitationWrite(
         void tenantPeopleReread(client, tenant);
       return answered;
     },
-    refusal: accessFailureLabel,
+    refusal: (failure) => text(accessFailureLabel(failure)),
     landed: (client) => tenantPeopleReread(client, tenant),
   };
 }
@@ -136,6 +140,7 @@ function tenantInvitationWrite(
  * leaves them and the people to be read again behind it. */
 function tenantInviteLinkWrite(
   tenant: string,
+  text: CopyText,
 ): ConsoleWrite<TenantInvitationForm, AccessInviteLinkMinted> {
   return {
     mutationKey: consoleWriteKey("tenant-invite-link", tenant),
@@ -154,7 +159,7 @@ function tenantInviteLinkWrite(
       }
       return answered;
     },
-    refusal: accessFailureLabel,
+    refusal: (failure) => text(accessFailureLabel(failure)),
     landed: (client) => tenantInviteLinksReread(client, tenant),
   };
 }
@@ -167,12 +172,13 @@ function useTenantInvite(
   open: boolean,
   onInvited: () => void,
 ): TenantInviting {
+  const text = useCopyText();
   const [form, setForm] = useState(blank);
   const [mode, setMode] = useState<InviteMode>("Person");
-  const inviting = useConsoleWrite(tenantInvitationWrite(tenant), {
+  const inviting = useConsoleWrite(tenantInvitationWrite(tenant, text), {
     drawn: open,
   });
-  const minting = useConsoleWrite(tenantInviteLinkWrite(tenant), {
+  const minting = useConsoleWrite(tenantInviteLinkWrite(tenant, text), {
     drawn: open,
   });
   const quiet = (): void => {
@@ -211,8 +217,10 @@ function TenantInviteProjects(props: {
   readonly offered: ReturnType<typeof tenantInvitationProjects>;
   readonly inviting: TenantInviting;
 }): ReactNode {
+  const text = useCopyText();
   const { form, change } = props.inviting;
   if (props.offered.length === 0) return null;
+  const fault = tenantInvitationProjectsFault(form);
   return (
     <div className="grid gap-1">
       <TenantProjectsGrid
@@ -229,7 +237,7 @@ function TenantInviteProjects(props: {
           change(tenantInvitationProjectToggled(form, project, role));
         }}
       />
-      <InvitationFault fault={tenantInvitationProjectsFault(form)} />
+      <InvitationFault fault={fault === undefined ? undefined : text(fault)} />
     </div>
   );
 }
@@ -298,11 +306,11 @@ function TenantInviteFields(props: {
 }
 
 /** What sending the form is called in each mode, and while it is unanswered. */
-const tenantInviteSendWords: Record<
-  InviteMode,
-  { readonly idle: string; readonly busy: string }
-> = {
-  Person: { idle: "Invite", busy: "Inviting…" },
+const tenantInviteSendWords: Record<InviteMode, InviteSendWords> = {
+  Person: {
+    idle: { id: "settings-invitation-send" },
+    busy: { id: "settings-invitation-sending" },
+  },
   Link: inviteLinkSendWords,
 };
 
@@ -335,6 +343,7 @@ function TenantInviteDialog(props: {
   readonly opening: AccessTenantRole;
   readonly links: boolean;
 }): ReactNode {
+  const text = useCopyText();
   const [open, setOpen] = useState(false);
   const offered = tenantInvitationProjects(props.abilities, props.projects);
   const blank = tenantInvitationBlank(props.opening, offered);
@@ -348,8 +357,11 @@ function TenantInviteDialog(props: {
   return (
     <Dialog
       wide
-      title={`Invite to ${props.tenant}`}
-      trigger="Invite"
+      title={text({
+        id: "settings-invitation-title",
+        args: { tenant: props.tenant },
+      })}
+      trigger={text({ id: "settings-invitation-send" })}
       open={open}
       onOpenChange={moved}
       busy={inviting.busy}

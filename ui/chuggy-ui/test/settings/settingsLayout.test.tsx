@@ -217,9 +217,9 @@ const projectGroups = [
     "Workspace acme",
     [
       "People /acme/atlas/settings/workspace/people",
-      "Accounts /acme/atlas/settings/workspace/accounts",
+      "GitHub accounts /acme/atlas/settings/workspace/accounts",
       "Permissions /acme/atlas/settings/workspace/permissions",
-      "My runners /acme/atlas/settings/workspace/runner",
+      "Personal runners /acme/atlas/settings/workspace/runner",
       "Usage /acme/atlas/settings/workspace/usage",
     ],
   ],
@@ -230,9 +230,9 @@ const workspaceGroups = [
     "Workspace acme",
     [
       "People /tenants/acme/settings/people",
-      "Accounts /tenants/acme/settings/accounts",
+      "GitHub accounts /tenants/acme/settings/accounts",
       "Permissions /tenants/acme/settings/permissions",
-      "My runners /tenants/acme/settings/runner",
+      "Personal runners /tenants/acme/settings/runner",
       "Usage /tenants/acme/settings/usage",
     ],
   ],

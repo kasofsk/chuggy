@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * A workspace's people: one row a person, saying what they hold and nothing
  * they do not, under how many there are and the one action inviting someone
@@ -26,6 +25,8 @@ import type {
   AccessTenantPeople,
   AccessTenantPerson,
 } from "../../../../../src/contract/accessPlane.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
+import type { Copy } from "../../core/copy.ts";
 import {
   tenantInvitationOffered,
   tenantPeopleCountLine,
@@ -57,28 +58,31 @@ import "./tenantPeople.css";
 
 /** One of the page's two tables, the same columns in each so they line up. */
 function TenantPeopleTable(props: {
-  readonly caption: string;
-  readonly named: string;
+  readonly caption: Copy;
+  readonly named: Copy;
   readonly tenant: string;
   readonly people: readonly AccessTenantPerson[];
   readonly projects: readonly string[];
   readonly abilities: AccessTenantAbilities | undefined;
 }): ReactNode {
+  const text = useCopyText();
   const editable = tenantPersonEditOffered(props.abilities, props.projects);
   return (
-    <SettingsListingTable caption={props.caption}>
+    <SettingsListingTable caption={text(props.caption)}>
       <thead>
         <tr>
-          <th scope="col">{props.named}</th>
+          <th scope="col">{text(props.named)}</th>
           <th scope="col" className="people-col-held">
-            Workspace
+            {text({ id: "settings-people-workspace" })}
           </th>
           <th scope="col" className="people-col-projects">
-            Projects
+            {text({ id: "settings-people-projects" })}
           </th>
           {editable ? (
             <th scope="col" className="people-col-edit">
-              <span className="visually-hidden">Edit</span>
+              <span className="visually-hidden">
+                {text({ id: "settings-edit" })}
+              </span>
             </th>
           ) : null}
         </tr>
@@ -104,6 +108,7 @@ function TenantPeopleListed(props: {
   readonly listed: AccessTenantPeople;
   readonly abilities: AccessTenantAbilities | undefined;
 }): ReactNode {
+  const text = useCopyText();
   const { tenant, listed, abilities } = props;
   const read = useTenantInviteLinks(tenant);
   const links = read.state === "Ready" ? read.value.links : undefined;
@@ -113,7 +118,7 @@ function TenantPeopleListed(props: {
   return (
     <>
       <SettingsListingSection
-        heading={tenantPeopleCountLine(parted.people.length)}
+        heading={text(tenantPeopleCountLine(parted.people.length))}
         action={
           abilities === undefined ||
           !tenantInvitationOffered(abilities) ? undefined : (
@@ -128,8 +133,8 @@ function TenantPeopleListed(props: {
       >
         {parted.people.length === 0 ? null : (
           <TenantPeopleTable
-            caption="People"
-            named="Person"
+            caption={{ id: "settings-people-title" }}
+            named={{ id: "settings-people-person" }}
             people={parted.people}
             {...table}
           />
@@ -143,17 +148,19 @@ function TenantPeopleListed(props: {
         />
       )}
       {parted.identities.length === 0 ? null : (
-        <SettingsListingSection heading="Other identities">
+        <SettingsListingSection
+          heading={text({ id: "settings-people-identities" })}
+        >
           <TenantPeopleTable
-            caption="Other identities"
-            named="Identity"
+            caption={{ id: "settings-people-identities" }}
+            named={{ id: "settings-people-identity" }}
             people={parted.identities}
             {...table}
           />
         </SettingsListingSection>
       )}
       {otherIssuers === undefined ? null : (
-        <Notice tone="info" inline detail={otherIssuers} />
+        <Notice tone="info" inline detail={text(otherIssuers)} />
       )}
       {listed.truncated ? <SettingsListingCut /> : null}
     </>
@@ -161,12 +168,13 @@ function TenantPeopleListed(props: {
 }
 
 export function TenantPeoplePage(): ReactNode {
+  const text = useCopyText();
   const tenant = useSettingsTenant();
   const people = useTenantPeople(tenant);
   const read = useTenantAbilities(tenant);
   const abilities = read.state === "Ready" ? read.value : undefined;
   return (
-    <SettingsPage title="People">
+    <SettingsPage title={text({ id: "settings-people-title" })}>
       <SettingsListing>
         {people.state === "Ready" ? (
           <TenantPeopleListed
@@ -177,7 +185,7 @@ export function TenantPeoplePage(): ReactNode {
         ) : (
           <SettingsListingUnread
             state={people}
-            withheld={tenantPeopleWithheld}
+            withheld={text(tenantPeopleWithheld)}
           />
         )}
         {people.state !== "Ready" || read.state === "Pending" ? null : (

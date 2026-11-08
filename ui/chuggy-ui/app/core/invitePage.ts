@@ -23,6 +23,7 @@ import {
 } from "../../../../src/contract/accessPlane.ts";
 
 import type { ApiFailure, ApiResult } from "./apiRequest.ts";
+import type { Copy } from "./copy.ts";
 import { projectCreationPathIn } from "./projectCreation.ts";
 import { siteWorkspaceNameTaken } from "./siteWorkspaces.ts";
 import { accessFailureLabel } from "./tenantPeople.ts";
@@ -138,20 +139,21 @@ export function invitePageDecided(arrival: InviteArrival): InvitePage {
 
 /** The words of the page's cards. */
 export const invitePageWords = {
-  needed: "Invite needed",
-  invited: "Invited",
-  redeeming: "Joining…",
-  notValid: "Link not valid",
-  signIn: "Sign in",
-  open: "Open chuggy",
-  retry: "Retry",
-  naming: "New workspace",
-  workspaceName: "Workspace name",
-  workspaceAbout: "Your team or company. Projects go inside.",
-  create: "Create",
-  creating: "Creating…",
-  nameNotValid: "Name not valid",
-} as const;
+  brand: { id: "settings-invite-brand" },
+  needed: { id: "settings-invite-needed" },
+  invited: { id: "settings-invite-invited" },
+  redeeming: { id: "settings-invite-joining" },
+  notValid: { id: "settings-invite-not-valid" },
+  signIn: { id: "settings-invite-sign-in" },
+  open: { id: "settings-invite-open" },
+  retry: { id: "settings-invite-retry" },
+  naming: { id: "settings-invite-naming" },
+  workspaceName: { id: "settings-invite-workspace-name" },
+  workspaceAbout: { id: "settings-invite-workspace-about" },
+  create: { id: "settings-invite-create" },
+  creating: { id: "settings-creating" },
+  nameNotValid: { id: "settings-invite-name-not-valid" },
+} as const satisfies Readonly<Record<string, Copy>>;
 
 /** What any send of a token may come to, and whether it clears the cookie. */
 type InviteAnswered =
@@ -163,7 +165,7 @@ type InviteAnswered =
   | { readonly outcome: "NotValid"; readonly cookieCleared: true }
   | {
       readonly outcome: "Failed";
-      readonly line: string;
+      readonly line: Copy;
       readonly cookieCleared: false;
     };
 
@@ -179,7 +181,7 @@ export type InviteNaming =
   | InviteAnswered
   | {
       readonly outcome: "Refused";
-      readonly fault: string;
+      readonly fault: Copy;
       readonly cookieCleared: false;
     };
 

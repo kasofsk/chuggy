@@ -22,6 +22,7 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { nativeHttpRoutes } from "../../../src/contract/http.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 import { MemberChatPage } from "../app/browser/MemberChatPage.tsx";
 import { SessionProvider } from "../app/browser/session.tsx";
 import { memberChatWithheld } from "../app/core/memberChat.ts";
@@ -232,7 +233,7 @@ test("the project switcher names the chat as the workspace's own, with no projec
 
 test("a reader whose chat an admin turned off is told so, and draws no composer", async () => {
   await mountedAt(`/tenants/${tenant}/chat`, { opens: false });
-  expect(screen.getByText(memberChatWithheld)).toBeDefined();
+  expect(screen.getByText(copyTextEn(memberChatWithheld))).toBeDefined();
   expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
   styleless();
 });
@@ -240,7 +241,7 @@ test("a reader whose chat an admin turned off is told so, and draws no composer"
 test("abilities not read yet draw the page as loading, and no composer", async () => {
   await mountedAt(`/tenants/${tenant}/chat`, { abilities: "Pending" });
   expect(screen.getByText("Loading…")).toBeDefined();
-  expect(screen.queryByText(memberChatWithheld)).toBeNull();
+  expect(screen.queryByText(copyTextEn(memberChatWithheld))).toBeNull();
   expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
   styleless();
 });
@@ -248,7 +249,7 @@ test("abilities not read yet draw the page as loading, and no composer", async (
 test("abilities whose read failed say so, and draw no composer", async () => {
   await mountedAt(`/tenants/${tenant}/chat`, { abilities: "Failed" });
   expect(readFailedLines()).toStrictEqual(["Not read · Server error"]);
-  expect(screen.queryByText(memberChatWithheld)).toBeNull();
+  expect(screen.queryByText(copyTextEn(memberChatWithheld))).toBeNull();
   expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
   styleless();
 });
@@ -321,7 +322,7 @@ test("a first message refused at the reader's thread limit says so and stays", a
       answer({ error: { code: "ThreadLimitReached" }, threadsMax: 1 }, 409),
   });
   await sent("hello");
-  expect(screen.getByText("Not sent · Thread limit reached")).toBeDefined();
+  expect(screen.getByText("Not sent · Chat limit reached")).toBeDefined();
   expect(router.state.location.pathname).toBe(`/tenants/${tenant}/chat`);
   styleless();
 });

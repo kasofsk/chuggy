@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * Every thread the reader can reach, behind one control in the pane's header —
  * their own, then a divider, then everyone else's; and in the reader's own
@@ -19,13 +18,20 @@ import type { ReactNode } from "react";
 
 import type { ThreadEntryResponse } from "../../../../../src/contract/responses.ts";
 import type { ThreadStanding } from "../../../../../src/contract/rosters.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
+import { copyOrDataText } from "../../core/copy.ts";
+import type { Copy } from "../../core/copy.ts";
 import { agoText } from "../../core/figures.ts";
 import { memberChatRoutes } from "../../core/memberChat.ts";
 import type { MemberChatProjectThread } from "../../core/memberChat.ts";
 import { navRoutes } from "../../core/shellNav.ts";
 import type { ThreadHome } from "../../core/threadHome.ts";
 import { useChatPane } from "./chatPaneHeld.ts";
-import { threadLabel, threadsByStanding } from "../../core/threads.ts";
+import {
+  threadLabel,
+  threadsByStanding,
+  threadStandingLabel,
+} from "../../core/threads.ts";
 import { threadStandingTone } from "../../core/tones.ts";
 import { ConsoleWriteRefusedWords } from "../consoleWrite.tsx";
 import { useNowMs } from "../Freshness.tsx";
@@ -77,9 +83,26 @@ const chatPaneStandingTones: Readonly<Record<ThreadStanding, string>> = {
 
 /** How long ago the thread last moved, and nothing where the instant does not
  * read. */
-function chatPaneActivityAgo(stated: string, nowMs: number): string {
+function chatPaneActivityAgo(stated: string, nowMs: number): Copy | undefined {
   const at = Date.parse(stated);
-  return Number.isFinite(at) ? `${agoText(nowMs, at)} ago` : "";
+  return Number.isFinite(at)
+    ? { id: "figures-ago", args: { elapsed: agoText(nowMs, at) } }
+    : undefined;
+}
+
+/** What a reader who does not see the row is told of it: its title, its
+ * standing, and how long ago it last moved where that reads. */
+function chatPaneHistoryRowSpoken(
+  thread: ThreadEntryResponse,
+  ago: Copy | undefined,
+): Copy {
+  const named = {
+    title: threadLabel(thread),
+    standing: threadStandingLabel(thread.state),
+  };
+  return ago === undefined
+    ? { id: "chat-history-row-undated", args: named }
+    : { id: "chat-history-row", args: { ...named, ago } };
 }
 
 /** One thread in the history: its standing, its title and how long ago it
@@ -88,45 +111,42 @@ function ChatPaneHistoryRow(props: {
   readonly thread: ThreadEntryResponse;
   readonly nowMs: number;
 }): ReactNode {
+  const text = useCopyText();
   const thread = props.thread;
-  const nowMs = props.nowMs;
+  const ago = chatPaneActivityAgo(thread.lastActivityAt, props.nowMs);
   return (
     <DropdownMenu.RadioItem
       className={`${menuItemClassName} chat-history-row`}
       value={thread.session}
-      aria-label={[
-        threadLabel(thread),
-        thread.state,
-        chatPaneActivityAgo(thread.lastActivityAt, nowMs),
-      ]
-        .filter((part) => part !== "")
-        .join(", ")}
+      aria-label={text(chatPaneHistoryRowSpoken(thread, ago))}
     >
       <span className={`flex ${chatPaneStandingTones[thread.state]}`}>
         <ChatPaneIcon
           glyph={chatPaneStandingGlyphs[thread.state]}
-          label={thread.state}
+          label={text(threadStandingLabel(thread.state))}
         />
       </span>
       <span className="max-w-[32ch] min-w-0 flex-1 truncate">
-        {threadLabel(thread)}
+        {copyOrDataText(text, threadLabel(thread))}
       </span>
       <span className="text-ink-3 ml-auto pl-3 text-xs">
-        {chatPaneActivityAgo(thread.lastActivityAt, nowMs)}
+        {ago === undefined ? "" : text(ago)}
       </span>
     </DropdownMenu.RadioItem>
   );
 }
 
-const chatPaneHistoryLabel = "History";
+const chatPaneHistoryLabel: Copy = { id: "chat-history" };
 
 /** One of the reader's threads a project keeps, as a way to its own page there
  * rather than a thread this history holds. */
 function ChatPaneHistoryElsewhere(props: {
   readonly held: MemberChatProjectThread;
 }): ReactNode {
+  const text = useCopyText();
   const { partition, thread } = props.held;
-  const label = `${partition.project} · ${threadLabel(thread)}`;
+  const named = { project: partition.project, title: threadLabel(thread) };
+  const standing = threadStandingLabel(thread.state);
   return (
     <DropdownMenu.Item
       className={`${menuItemClassName} chat-history-row text-ink-1 no-underline`}
@@ -135,15 +155,20 @@ function ChatPaneHistoryElsewhere(props: {
       <Link
         to={navRoutes.thread}
         params={{ ...partition, session: thread.session }}
-        aria-label={`${label}, ${thread.state}`}
+        aria-label={text({
+          id: "chat-history-elsewhere-row",
+          args: { ...named, standing },
+        })}
       >
         <span className={`flex ${chatPaneStandingTones[thread.state]}`}>
           <ChatPaneIcon
             glyph={chatPaneStandingGlyphs[thread.state]}
-            label={thread.state}
+            label={text(standing)}
           />
         </span>
-        <span className="max-w-[32ch] min-w-0 flex-1 truncate">{label}</span>
+        <span className="max-w-[32ch] min-w-0 flex-1 truncate">
+          {text({ id: "chat-history-elsewhere", args: named })}
+        </span>
       </Link>
     </DropdownMenu.Item>
   );
@@ -155,6 +180,7 @@ function ChatPaneHistoryElsewhereGroup(props: {
   readonly elsewhere: readonly MemberChatProjectThread[];
   readonly separated: boolean;
 }): ReactNode {
+  const text = useCopyText();
   if (props.elsewhere.length === 0) return null;
   return (
     <>
@@ -163,7 +189,7 @@ function ChatPaneHistoryElsewhereGroup(props: {
       ) : null}
       <DropdownMenu.Group>
         <DropdownMenu.Label className="text-ink-3 px-2 py-1 text-xs">
-          In projects
+          {text({ id: "chat-history-projects" })}
         </DropdownMenu.Label>
         {props.elsewhere.map((held) => (
           <ChatPaneHistoryElsewhere
@@ -185,6 +211,7 @@ export function ChatPaneHistory(props: {
    * page and offered here as the way there. */
   readonly elsewhere?: readonly MemberChatProjectThread[];
 }): ReactNode {
+  const text = useCopyText();
   const rows = chatPaneHistoryRows(props.threads ?? []);
   const elsewhere = props.elsewhere ?? [];
   const nowMs = useNowMs();
@@ -201,14 +228,18 @@ export function ChatPaneHistory(props: {
         <DropdownMenu.Trigger
           className={buttonLookClassName({ size: "icon", variant: "quiet" })}
         >
-          <ChatPaneIcon glyph="history" label={chatPaneHistoryLabel} />
+          <ChatPaneIcon glyph="history" label={text(chatPaneHistoryLabel)} />
         </DropdownMenu.Trigger>
       </Tooltip>
       <DropdownMenu.Portal>
         <MenuContent sideOffset={4} align="end">
           {empty ? (
             <p className="text-ink-3 px-2 py-1 text-xs">
-              {props.threads === undefined ? "Loading…" : "No threads yet"}
+              {text(
+                props.threads === undefined
+                  ? { id: "chat-history-loading" }
+                  : { id: "chat-history-none" },
+              )}
             </p>
           ) : null}
           <DropdownMenu.RadioGroup
@@ -218,7 +249,7 @@ export function ChatPaneHistory(props: {
             {rows.mine.length === 0 ? null : (
               <DropdownMenu.Group>
                 <DropdownMenu.Label className="text-ink-3 px-2 py-1 text-xs">
-                  Yours
+                  {text({ id: "chat-history-mine" })}
                 </DropdownMenu.Label>
                 {rows.mine.map(drawn)}
               </DropdownMenu.Group>
@@ -229,7 +260,7 @@ export function ChatPaneHistory(props: {
             {rows.others.length === 0 ? null : (
               <DropdownMenu.Group>
                 <DropdownMenu.Label className="text-ink-3 px-2 py-1 text-xs">
-                  Everyone else's
+                  {text({ id: "chat-history-others" })}
                 </DropdownMenu.Label>
                 {rows.others.map(drawn)}
               </DropdownMenu.Group>
@@ -257,23 +288,20 @@ function ChatPaneCloseConfirm(props: {
   readonly onConfirm: () => void;
   readonly onCancel: () => void;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <Confirm
-      question="Close this thread?"
-      confirm="Close thread"
+      question={text({ id: "chat-close-question" })}
+      confirm={text({ id: "chat-close-confirm" })}
       busy={props.busy}
       onConfirm={props.onConfirm}
       onCancel={props.onCancel}
     >
       {props.mine ? null : (
-        <span className="block">
-          Not your thread · Ends it for its owner too
-        </span>
+        <span className="block">{text({ id: "chat-close-not-mine" })}</span>
       )}
-      <span className="block">Stays in History · Takes no more messages</span>
-      <span className="block">
-        Drops any reply in progress · Cannot be undone
-      </span>
+      <span className="block">{text({ id: "chat-close-kept" })}</span>
+      <span className="block">{text({ id: "chat-close-final" })}</span>
     </Confirm>
   );
 }
@@ -294,22 +322,38 @@ function ChatPaneThreadTitle(props: {
   readonly thread: ChatPaneThreadNamed;
   readonly at: ChatPaneThreadActionsAt;
 }): ReactNode {
+  const text = useCopyText();
   if (props.at === "Pane") return null;
   return (
     <>
       <h1 className="text-ink-1 font-strong min-w-0 truncate text-md">
-        {threadLabel(props.thread)}
+        {copyOrDataText(text, threadLabel(props.thread))}
       </h1>
       <span className="flex shrink-0 px-2">
         <Pill tone={threadStandingTone(props.thread.state)} emphasis>
-          {props.thread.state}
+          {text(threadStandingLabel(props.thread.state))}
         </Pill>
       </span>
     </>
   );
 }
 
-const chatPaneThreadMenuLabel = "Thread actions";
+const chatPaneThreadMenuLabel: Copy = { id: "chat-actions" };
+
+/** The control the thread's menu opens from, named for a reader who does not
+ * see its glyph. */
+function ChatPaneThreadMenuTrigger(): ReactNode {
+  const text = useCopyText();
+  return (
+    <Tooltip text={chatPaneThreadMenuLabel}>
+      <DropdownMenu.Trigger
+        className={`${buttonLookClassName({ size: "icon", variant: "quiet" })} shrink-0`}
+      >
+        <ChatPaneIcon glyph="more" label={text(chatPaneThreadMenuLabel)} />
+      </DropdownMenu.Trigger>
+    </Tooltip>
+  );
+}
 
 /** One item of the thread's menu: its glyph, then its name. */
 function ChatPaneThreadItemFace(props: {
@@ -330,8 +374,11 @@ function ChatPaneThreadOpenItem(props: {
   readonly home: ThreadHome;
   readonly session: string;
 }): ReactNode {
+  const text = useCopyText();
   const { home, session } = props;
-  const face = <ChatPaneThreadItemFace glyph="page" label="Open" />;
+  const face = (
+    <ChatPaneThreadItemFace glyph="page" label={text({ id: "chat-open" })} />
+  );
   return (
     <DropdownMenu.Item
       className={`${menuItemClassName} text-ink-1 no-underline`}
@@ -382,6 +429,7 @@ function ChatPaneThreadMenu(props: {
   readonly changes: boolean;
   readonly onConfirming: () => void;
 }): ReactNode {
+  const text = useCopyText();
   const copy = useCopyPress();
   const { home, session } = props;
   const pageHref = useThreadPageHref(home, session);
@@ -390,13 +438,7 @@ function ChatPaneThreadMenu(props: {
   return (
     <>
       <DropdownMenu.Root modal={false}>
-        <Tooltip text={chatPaneThreadMenuLabel}>
-          <DropdownMenu.Trigger
-            className={`${buttonLookClassName({ size: "icon", variant: "quiet" })} shrink-0`}
-          >
-            <ChatPaneIcon glyph="more" label={chatPaneThreadMenuLabel} />
-          </DropdownMenu.Trigger>
-        </Tooltip>
+        <ChatPaneThreadMenuTrigger />
         <DropdownMenu.Portal>
           <MenuContent sideOffset={4} align="start">
             {props.at === "Pane" ? (
@@ -412,7 +454,11 @@ function ChatPaneThreadMenu(props: {
               >
                 <ChatPaneThreadItemFace
                   glyph={copy.copied ? "copied" : "link"}
-                  label={copy.copied ? "Copied" : "Copy link"}
+                  label={text(
+                    copy.copied
+                      ? { id: "chat-copied" }
+                      : { id: "chat-copy-link" },
+                  )}
                 />
               </DropdownMenu.Item>
             )}
@@ -421,7 +467,10 @@ function ChatPaneThreadMenu(props: {
                 className={menuItemClassName}
                 onSelect={props.actions.startRename}
               >
-                <ChatPaneThreadItemFace glyph="rename" label="Rename" />
+                <ChatPaneThreadItemFace
+                  glyph="rename"
+                  label={text({ id: "chat-rename" })}
+                />
               </DropdownMenu.Item>
             ) : null}
             {closes ? (
@@ -429,7 +478,10 @@ function ChatPaneThreadMenu(props: {
                 className={menuItemClassName}
                 onSelect={props.onConfirming}
               >
-                <ChatPaneThreadItemFace glyph="close" label="Close" />
+                <ChatPaneThreadItemFace
+                  glyph="close"
+                  label={text({ id: "chat-close" })}
+                />
               </DropdownMenu.Item>
             ) : null}
           </MenuContent>
@@ -446,6 +498,7 @@ function ChatPaneThreadMenu(props: {
 export function ChatPaneTitle(props: {
   readonly thread: ChatPaneThreadNamed | undefined;
 }): ReactNode {
+  const text = useCopyText();
   const held = useChatPane();
   if (props.thread === undefined) return null;
   const shown = held.twoColumn;
@@ -457,25 +510,22 @@ export function ChatPaneTitle(props: {
           : "visually-hidden"
       }
     >
-      {threadLabel(props.thread)}
+      {copyOrDataText(text, threadLabel(props.thread))}
     </h2>
   );
 }
 
 /** The menu where the pane holds no thread, so the control stays in place. */
 export function ChatPaneThreadActionsIdle(): ReactNode {
+  const text = useCopyText();
   return (
     <DropdownMenu.Root modal={false}>
-      <Tooltip text={chatPaneThreadMenuLabel}>
-        <DropdownMenu.Trigger
-          className={`${buttonLookClassName({ size: "icon", variant: "quiet" })} shrink-0`}
-        >
-          <ChatPaneIcon glyph="more" label={chatPaneThreadMenuLabel} />
-        </DropdownMenu.Trigger>
-      </Tooltip>
+      <ChatPaneThreadMenuTrigger />
       <DropdownMenu.Portal>
         <MenuContent sideOffset={4} align="start">
-          <p className="text-ink-3 px-2 py-1 text-xs">No active thread</p>
+          <p className="text-ink-3 px-2 py-1 text-xs">
+            {text({ id: "chat-actions-none" })}
+          </p>
         </MenuContent>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>

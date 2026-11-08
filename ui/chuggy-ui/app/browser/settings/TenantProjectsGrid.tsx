@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * A workspace's projects as a grid of boxes, a row a project and a column a
  * role: where a person's project roles are changed, and where an invitation's
@@ -15,6 +14,7 @@ import type { ReactNode } from "react";
 
 import { accessProjectRoles } from "../../../../../src/contract/accessPlane.ts";
 import type { AccessProjectRole } from "../../../../../src/contract/accessPlane.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { projectRoleLabel } from "../../core/tenantPeople.ts";
 import { Checkbox } from "../ui/Checkbox.tsx";
 import { Table } from "../ui/Table.tsx";
@@ -34,6 +34,7 @@ function TenantProjectsRow(props: {
   readonly box: (role: AccessProjectRole) => TenantProjectsBox | undefined;
   readonly onToggle: (role: AccessProjectRole) => void;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <tr>
       <th scope="row">{props.project}</th>
@@ -45,11 +46,14 @@ function TenantProjectsRow(props: {
             {box === undefined ? null : (
               <label className="people-grid-box">
                 <span className="people-grid-role" aria-hidden="true">
-                  {word}
+                  {text(word)}
                 </span>
                 <Checkbox
                   bare
-                  label={`${props.project} ${word}`}
+                  label={text({
+                    id: "settings-people-grid-box",
+                    args: { project: props.project, role: word },
+                  })}
                   checked={box.checked}
                   disabled={box.disabled}
                   held={box.held ?? false}
@@ -74,16 +78,18 @@ export function TenantProjectsGrid(props: {
   ) => TenantProjectsBox | undefined;
   readonly onToggle: (project: string, role: AccessProjectRole) => void;
 }): ReactNode {
+  const text = useCopyText();
   if (props.projects.length === 0) return null;
+  const projects = text({ id: "settings-people-projects" });
   return (
     <div className="people-grid">
-      <Table caption="Projects">
+      <Table caption={projects}>
         <thead>
           <tr>
-            <th scope="col">Projects</th>
+            <th scope="col">{projects}</th>
             {accessProjectRoles.map((role) => (
               <th key={role} scope="col">
-                {projectRoleLabel(role)}
+                {text(projectRoleLabel(role))}
               </th>
             ))}
           </tr>

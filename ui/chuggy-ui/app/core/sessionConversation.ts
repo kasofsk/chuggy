@@ -68,7 +68,10 @@ function sessionConversationShortfall(
 function sessionConversationElision(count: number): ConversationMarker {
   return {
     marker: "Capped",
-    sentence: `Elided · ${runCountLabel(count)} batches`,
+    sentence: {
+      id: "conversation-marker-elided-batches",
+      args: { count: runCountLabel(count) },
+    },
   };
 }
 

@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The quiet lines of a conversation: what opened a turn nobody typed, what the
  * record could not draw, and where the answer ended up.
@@ -43,6 +42,7 @@ import type {
   ConversationMeasures,
   ConversationStanding,
 } from "../../core/conversation.ts";
+import { copyOrDataText } from "../../core/copy.ts";
 import type { CopyOrData } from "../../core/copy.ts";
 import { failureWords, readFailedLine } from "../../core/failureWords.ts";
 import type { Figure as FigureValue } from "../../core/figures.ts";
@@ -75,10 +75,11 @@ export type ConversationStandingDrawn = Exclude<
  * runtime opened, and `detail` is on hover of the words.
  */
 export function ConversationSystemLine(props: {
-  readonly words: string;
+  readonly words: CopyOrData;
   readonly detail?: CopyOrData | undefined;
   readonly ruled?: boolean;
 }): ReactNode {
+  const text = useCopyText();
   const rule =
     props.ruled === true ? (
       <span className="border-edge grow border-t" aria-hidden="true" />
@@ -87,7 +88,7 @@ export function ConversationSystemLine(props: {
     <p className="text-ink-3 flex items-center justify-center gap-3 text-xs">
       {rule}
       <Tooltip text={props.detail}>
-        <span>{props.words}</span>
+        <span>{copyOrDataText(text, props.words)}</span>
       </Tooltip>
       {rule}
     </p>
@@ -95,28 +96,36 @@ export function ConversationSystemLine(props: {
 }
 
 /** One marker in the words the lead's panels already say it in. */
-export function conversationMarkerWords(marker: ConversationMarker): string {
+export function conversationMarkerWords(
+  marker: ConversationMarker,
+): CopyOrData {
   switch (marker.marker) {
     case "Compaction":
-      return "Compaction";
+      return { id: "conversation-marker-compaction" };
     case "Elision":
-      return `Elided · ${runCountLabel(marker.bytes)} bytes`;
+      return {
+        id: "conversation-marker-elided",
+        args: { bytes: runCountLabel(marker.bytes) },
+      };
     case "Capped":
       return marker.sentence;
     case "Unreadable":
-      return "Unreadable";
+      return { id: "conversation-marker-unreadable" };
     case "Failure":
       return readFailedLine(undefined, marker.failure);
     case "Truncated":
-      return "Truncated";
+      return { id: "conversation-marker-truncated" };
     case "Dropped":
-      return `Dropped · ${runCountLabel(marker.count)}`;
+      return {
+        id: "conversation-marker-dropped",
+        args: { count: runCountLabel(marker.count) },
+      };
     case "Unreached":
-      return "Not reached";
+      return { id: "conversation-marker-unreached" };
     case "Unlisted":
-      return "Stream unlisted";
+      return { id: "conversation-marker-unlisted" };
     case "NoStore":
-      return "No store";
+      return { id: "conversation-marker-no-store" };
   }
 }
 
@@ -235,8 +244,14 @@ function ConversationMetaLeadDrawn(props: {
   readonly said: string | undefined;
   readonly running: boolean;
 }): ReactNode {
+  const text = useCopyText();
   if (props.lead === "Copy" && props.said !== undefined)
-    return <CopyButton text={props.said} label="Copy answer" />;
+    return (
+      <CopyButton
+        text={props.said}
+        label={text({ id: "conversation-copy-answer" })}
+      />
+    );
   return (
     <ConversationGlyph filled={props.running} live={props.lead === "Live"} />
   );

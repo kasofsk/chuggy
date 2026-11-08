@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The site's permissions: who may make an account, who may make a workspace
  * and who may change who may, drawn and changed by the workspace page's own
@@ -20,6 +19,7 @@ import type {
   AccessSiteAuthority,
   AccessTenantPeople,
 } from "../../../../../src/contract/accessPlane.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import type { ApiPorts } from "../../core/apiRequest.ts";
 import {
   apiAddSiteAuthorityGroup,
@@ -82,6 +82,7 @@ function SitePermissions(props: {
   readonly read: PanelState<AccessSiteAuthorities>;
   readonly people: AccessTenantPeople | undefined;
 }): ReactNode {
+  const text = useCopyText();
   const change = permissionsChange<AccessSiteAuthority>({
     tenant: props.tenant,
     scope: [props.tenant],
@@ -90,11 +91,12 @@ function SitePermissions(props: {
     people: props.people,
     admits: sitePermissionAdmits,
     routes: sitePermissionRoutes,
+    text,
     reread: (client) => tenantPermissionsReread(client, props.tenant),
   });
   return (
     <PermissionsSection
-      label="Site permissions"
+      label={{ id: "settings-permissions-site" }}
       read={props.read}
       rows={sitePermissionRows}
       withheld={sitePermissionsWithheld}
@@ -108,8 +110,9 @@ export function SitePermissionsPage(): ReactNode {
   const tenant = useSettingsTenant();
   const site = useSiteAuthorities(tenant);
   const read = useTenantPeople(tenant);
+  const text = useCopyText();
   return (
-    <SettingsPage title="Permissions">
+    <SettingsPage title={text({ id: "settings-permissions-title" })}>
       <SitePermissions
         tenant={tenant}
         read={site}

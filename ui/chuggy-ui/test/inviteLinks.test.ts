@@ -28,6 +28,26 @@ import {
   tenantInvitationBlank,
   tenantInvitationRefusalRereads,
 } from "../app/core/tenantPeople.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
+import type { Copy } from "../app/core/copy.ts";
+
+/** A line in the base language's words, nothing where there is no line. */
+function en(copy: Copy | undefined): string | undefined {
+  return copy === undefined ? undefined : copyTextEn(copy);
+}
+
+/** What a link's row draws, in the base language's words. */
+function enAccess(link: AccessInviteLink) {
+  const access = inviteLinkAccess(link);
+  return {
+    held: access.held.map(copyTextEn),
+    every: access.every,
+    lines: access.lines.map((line) => ({
+      project: line.project,
+      roles: line.roles.map(copyTextEn),
+    })),
+  };
+}
 
 const open: AccessInviteLink = {
   link: "l-1",
@@ -90,29 +110,33 @@ test("a workspace at its link limit says so and rereads nothing, and an absent a
     code: accessInviteLinkLimitReachedCode,
     body: {},
   } as const;
-  expect(accessFailureLabel(limit)).toBe("Link limit reached");
+  expect(en(accessFailureLabel(limit))).toBe("Link limit reached");
   expect(tenantInvitationRefusalRereads(limit)).toBe(false);
-  expect(accessFailureLabel({ outcome: "Absent" })).toBe("Not available");
+  expect(en(accessFailureLabel({ outcome: "Absent" }))).toBe("Not available");
   expect(tenantInvitationRefusalRereads({ outcome: "Absent" })).toBe(true);
 });
 
 test("every state a link is in has its own word", () => {
-  const words = accessInviteLinkStates.map(inviteLinkStateLabel);
+  const words = accessInviteLinkStates
+    .map(inviteLinkStateLabel)
+    .map(copyTextEn);
   expect(words).toStrictEqual(["Open", "Used", "Revoked", "Expired"]);
 });
 
 test("a row draws what its link carries: the workspace role, then a line a project in the link's order and the roster's", () => {
-  expect(inviteLinkAccess(open)).toStrictEqual({
+  expect(enAccess(open)).toStrictEqual({
     held: ["Member"],
     every: false,
     lines: [
-      { project: "beacon", roles: "Developer, Viewer" },
-      { project: "atlas", roles: "Dispatcher" },
+      { project: "beacon", roles: ["Developer", "Viewer"] },
+      { project: "atlas", roles: ["Dispatcher"] },
     ],
   });
-  expect(
-    inviteLinkAccess({ ...open, role: "Admin", projects: [] }),
-  ).toStrictEqual({ held: ["Admin"], every: true, lines: [] });
+  expect(enAccess({ ...open, role: "Admin", projects: [] })).toStrictEqual({
+    held: ["Admin"],
+    every: true,
+    lines: [],
+  });
 });
 
 test("a link is the reader's to revoke where it is open and they may grant every role it carries", () => {
@@ -160,18 +184,22 @@ test("a revocation done, and one of a link that had already ended, say nothing; 
     }),
   ).toBe(undefined);
   expect(
-    inviteLinkRevocationNote({
-      outcome: "Rejected",
-      code: accessNotPermittedCode,
-      status: 403,
-      body: {},
-    }),
+    en(
+      inviteLinkRevocationNote({
+        outcome: "Rejected",
+        code: accessNotPermittedCode,
+        status: 403,
+        body: {},
+      }),
+    ),
   ).toBe("Change not permitted");
   expect(
-    inviteLinkRevocationNote({
-      outcome: "Conflict",
-      code: "SomethingElse",
-      body: {},
-    }),
+    en(
+      inviteLinkRevocationNote({
+        outcome: "Conflict",
+        code: "SomethingElse",
+        body: {},
+      }),
+    ),
   ).toBe("Unknown refusal (SomethingElse)");
 });

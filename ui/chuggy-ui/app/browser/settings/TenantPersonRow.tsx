@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * One person in a workspace as one table row: who they are, what they hold in
  * the workspace as chips, the projects they hold a role on as a line each, and
@@ -17,6 +16,8 @@ import type {
   AccessTenantAbilities,
   AccessTenantPerson,
 } from "../../../../../src/contract/accessPlane.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
+import type { Copy } from "../../core/copy.ts";
 import {
   tenantHeldEveryProject,
   tenantHeldEveryProjectLine,
@@ -40,6 +41,7 @@ import "./tenantPeople.css";
 export function TenantPersonWho(props: {
   readonly person: AccessAuthorityPerson;
 }): ReactNode {
+  const text = useCopyText();
   const named = tenantPersonName(props.person);
   return (
     <span className="flex flex-wrap items-baseline gap-x-2 wrap-anywhere">
@@ -52,10 +54,14 @@ export function TenantPersonWho(props: {
         <span className="text-sm text-ink-3">{named.githubLogin}</span>
       )}
       {named.noAccount ? (
-        <span className="text-sm text-ink-3">No account</span>
+        <span className="text-sm text-ink-3">
+          {text({ id: "permissions-person-unaccounted" })}
+        </span>
       ) : null}
       {props.person.mine ? (
-        <span className="text-sm text-ink-3">You</span>
+        <span className="text-sm text-ink-3">
+          {text({ id: "permissions-person-mine" })}
+        </span>
       ) : null}
     </span>
   );
@@ -66,6 +72,7 @@ export function TenantPersonWho(props: {
 function TenantPersonNamed(props: {
   readonly person: AccessTenantPerson;
 }): ReactNode {
+  const text = useCopyText();
   const named = tenantPersonName(props.person);
   return (
     <span className="grid min-w-0">
@@ -83,7 +90,9 @@ function TenantPersonNamed(props: {
           </span>
         )}
         {props.person.mine ? (
-          <span className="shrink-0 text-sm text-ink-3">You</span>
+          <span className="shrink-0 text-sm text-ink-3">
+            {text({ id: "permissions-person-mine" })}
+          </span>
         ) : null}
       </span>
       {named.githubLogin === undefined ? null : (
@@ -95,14 +104,15 @@ function TenantPersonNamed(props: {
 
 /** What is held in the workspace as a chip a word, or the listing's none-mark. */
 export function TenantHeldWords(props: {
-  readonly held: readonly string[];
+  readonly held: readonly Copy[];
 }): ReactNode {
+  const text = useCopyText();
   if (props.held.length === 0) return <SettingsListingNone />;
   return (
     <ul className="flex flex-wrap gap-1">
       {props.held.map((word) => (
-        <li key={word} className="flex">
-          <Pill tone="neutral">{word}</Pill>
+        <li key={word.id} className="flex">
+          <Pill tone="neutral">{text(word)}</Pill>
         </li>
       ))}
     </ul>
@@ -115,17 +125,18 @@ export function TenantHeldProjects(props: {
   readonly every: boolean;
   readonly lines: readonly TenantHeldProjectLine[];
 }): ReactNode {
+  const text = useCopyText();
   const lines = props.lines;
   if (!props.every && lines.length === 0) return <SettingsListingNone />;
   return (
     <div className="grid min-w-0">
-      {props.every ? <span>{tenantHeldEveryProjectLine}</span> : null}
+      {props.every ? <span>{text(tenantHeldEveryProjectLine)}</span> : null}
       {lines.length === 0 ? null : (
         <dl className="people-projects">
           {lines.map((line) => (
             <div key={line.project} className="contents">
               <dt className="truncate">{line.project}</dt>
-              <dd className="text-ink-3">{line.roles}</dd>
+              <dd className="text-ink-3">{line.roles.map(text).join(", ")}</dd>
             </div>
           ))}
         </dl>

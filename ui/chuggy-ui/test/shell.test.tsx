@@ -1736,7 +1736,7 @@ test("the pane's title and every control of it stand in the header's one row", a
   for (const name of [
     "New",
     "History",
-    "Thread actions",
+    "Chat actions",
     "Full screen",
     "Collapse",
   ])
@@ -2082,7 +2082,7 @@ test("New the door refuses at the reader's thread limit says so", async () => {
   );
   await pressed("New");
   expect(postsNamed(posts)).toStrictEqual(["open"]);
-  expect(screen.getByText("Refused · Thread limit reached")).toBeTruthy();
+  expect(screen.getByText("Refused · Chat limit reached")).toBeTruthy();
   styleless();
 });
 
@@ -2204,7 +2204,7 @@ async function clearedWhileOpening(
   );
   await first();
   await commanded("/clear");
-  expect(commandSaid()).toBe("/clear·A thread is already starting");
+  expect(commandSaid()).toBe("/clear·A chat is already starting");
   const held = postsNamed(posts);
   await turned(opening.go);
   await settled();
@@ -2247,7 +2247,7 @@ test("/clear in the box of a reader with no thread opens nothing, and sends noth
   const posts = await mountedPostsRecorded(threadServed([]));
   await commanded("/clear");
   expect(posts).toStrictEqual([]);
-  expect(commandSaid()).toBe("/clear·No thread to clear");
+  expect(commandSaid()).toBe("/clear·No chat to clear");
   styleless();
 });
 
@@ -2255,7 +2255,7 @@ test("/clear while the reader's thread answers closes nothing, and says why", as
   const posts = await mountedPostsRecorded(answeringThreadServed());
   await commanded("/clear");
   expect(posts).toStrictEqual([]);
-  expect(commandSaid()).toBe("/clear·Thread is answering");
+  expect(commandSaid()).toBe("/clear·Chat is answering");
   styleless();
 });
 
@@ -2310,7 +2310,7 @@ test("/status says the thread's standing, where it runs and its model, and sends
   }) as unknown as typeof fetch);
   await commanded("/status");
   const said = commandSaid();
-  for (const word of ["Thread Open", "Runs on Runners", "Model claude-opus-4"])
+  for (const word of ["Chat Open", "Runs on Runners", "Model claude-opus-4"])
     expect(said).toContain(word);
   expect(posts).toStrictEqual([]);
   styleless();
@@ -3331,7 +3331,7 @@ async function offeredToChange(): Promise<Record<string, boolean>> {
     new: named("button", "New"),
     box: named("textbox", "Message"),
   };
-  const menu = screen.queryByRole("button", { name: "Thread actions" });
+  const menu = screen.queryByRole("button", { name: "Chat actions" });
   if (menu === null) return { ...offered, rename: false, close: false };
   fireEvent.keyDown(menu, { key: "ArrowDown" });
   const items = within(await screen.findByRole("menu"))

@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The site's workspaces: one row a workspace, saying who administers it and
  * whom they may invite, under how many there are and the one action that
@@ -24,6 +23,8 @@ import type {
   AccessSiteAbilities,
   AccessSiteTenant,
 } from "../../../../../src/contract/accessPlane.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
+import type { Copy } from "../../core/copy.ts";
 import type { PanelState } from "../../core/freshness.ts";
 import {
   siteWorkspaceInvitesLabel,
@@ -57,8 +58,9 @@ import { useSiteAbilities } from "./tenantPermissionsResource.ts";
  * the answer does not name. */
 function SiteWorkspaceAdmins(props: {
   readonly listed: AccessSiteTenant;
-  readonly unnamed: string | undefined;
+  readonly unnamed: Copy | undefined;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <ul className="grid min-w-0 gap-1">
       {props.listed.administrators.map((person) => (
@@ -67,7 +69,7 @@ function SiteWorkspaceAdmins(props: {
         </li>
       ))}
       {props.unnamed === undefined ? null : (
-        <li className="text-sm text-ink-3">{props.unnamed}</li>
+        <li className="text-sm text-ink-3">{text(props.unnamed)}</li>
       )}
     </ul>
   );
@@ -76,6 +78,7 @@ function SiteWorkspaceAdmins(props: {
 function SiteWorkspaceRow(props: {
   readonly listed: AccessSiteTenant;
 }): ReactNode {
+  const text = useCopyText();
   const listed = props.listed;
   const unnamed = siteWorkspaceUnnamedLine(listed);
   const none = listed.administrators.length === 0 && unnamed === undefined;
@@ -101,7 +104,7 @@ function SiteWorkspaceRow(props: {
           listed.createAccounts ? "people-beside" : "people-beside text-ink-3"
         }
       >
-        {siteWorkspaceInvitesLabel(listed.createAccounts)}
+        {text(siteWorkspaceInvitesLabel(listed.createAccounts))}
       </td>
     </tr>
   );
@@ -110,16 +113,17 @@ function SiteWorkspaceRow(props: {
 function SiteWorkspacesTable(props: {
   readonly tenants: readonly AccessSiteTenant[];
 }): ReactNode {
+  const text = useCopyText();
   return (
-    <SettingsListingTable caption="Workspaces">
+    <SettingsListingTable caption={text({ id: "settings-workspaces-title" })}>
       <thead>
         <tr>
           <th scope="col" className="w-[28%]">
-            Workspace
+            {text({ id: "settings-workspaces-workspace" })}
           </th>
-          <th scope="col">Admins</th>
+          <th scope="col">{text({ id: "settings-workspaces-admins" })}</th>
           <th scope="col" className="w-[14em]">
-            Invites
+            {text({ id: "settings-workspaces-invites" })}
           </th>
         </tr>
       </thead>
@@ -138,19 +142,20 @@ function SiteWorkspacesListed(props: {
   readonly tenant: string;
   readonly abilities: AccessSiteAbilities;
 }): ReactNode {
+  const text = useCopyText();
   const listed = useSiteWorkspaces(props.tenant);
   const read = useSiteWorkspaceLinks(props.tenant);
   const links = read.state === "Ready" ? read.value.links : undefined;
-  const [created, setCreated] = useState<string | undefined>(undefined);
+  const [created, setCreated] = useState<Copy | undefined>(undefined);
   return (
     <>
       {created === undefined ? null : (
-        <Notice tone="pass" inline role="status" detail={created} />
+        <Notice tone="pass" inline role="status" detail={text(created)} />
       )}
       {listed.state === "Ready" ? (
         <>
           <SettingsListingSection
-            heading={siteWorkspacesCountLine(listed.value.tenants.length)}
+            heading={text(siteWorkspacesCountLine(listed.value.tenants.length))}
             action={
               <SiteWorkspaceNew
                 tenant={props.tenant}
@@ -169,7 +174,7 @@ function SiteWorkspacesListed(props: {
       ) : (
         <SettingsListingUnread
           state={listed}
-          withheld={siteWorkspacesWithheld}
+          withheld={text(siteWorkspacesWithheld)}
         />
       )}
       <SiteWorkspaceLinks
@@ -185,20 +190,21 @@ function SiteWorkspaces(props: {
   readonly tenant: string;
   readonly read: PanelState<AccessSiteAbilities>;
 }): ReactNode {
+  const text = useCopyText();
   const read = props.read;
+  const withheld = text(siteWorkspacesWithheld);
   if (read.state !== "Ready")
-    return (
-      <SettingsListingUnread state={read} withheld={siteWorkspacesWithheld} />
-    );
+    return <SettingsListingUnread state={read} withheld={withheld} />;
   if (!siteWorkspaceOffered(read.value))
-    return <SettingsListingWithheld line={siteWorkspacesWithheld} />;
+    return <SettingsListingWithheld line={withheld} />;
   return <SiteWorkspacesListed tenant={props.tenant} abilities={read.value} />;
 }
 
 export function SiteWorkspacesPage(): ReactNode {
   const tenant = useSettingsTenant();
+  const text = useCopyText();
   return (
-    <SettingsPage title="Workspaces">
+    <SettingsPage title={text({ id: "settings-workspaces-title" })}>
       <SettingsListing>
         <SiteWorkspaces tenant={tenant} read={useSiteAbilities(tenant)} />
       </SettingsListing>

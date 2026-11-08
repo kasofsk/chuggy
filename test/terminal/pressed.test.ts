@@ -28,6 +28,7 @@ import {
 } from "../../ui/chuggy-ui/app/core/projectRepositories.ts";
 import { copyTextEn } from "../../ui/chuggy-ui/app/copy/catalog.ts";
 import type { Copy, CopyId } from "../../ui/chuggy-ui/app/core/copy.ts";
+import { invitePageWords } from "../../ui/chuggy-ui/app/core/invitePage.ts";
 import { selectorSettingsSection } from "../../ui/chuggy-ui/app/core/selectorSettingsForm.ts";
 import {
   setupPressed,
@@ -39,13 +40,20 @@ type SetupPressed = keyof typeof setupPressed;
 /** The names a page draws from the catalog. */
 type SetupPressedCatalogued = "edit" | "save" | "projectPage" | "projectCreate";
 
+/** The names the invite page draws from the catalog, as its card's words. */
+type SetupPressedInvite = "workspaceCreate";
+
 const settingsSection = "ui/chuggy-ui/app/browser/ui/SettingsSection.tsx";
 const projectCreationPage = "ui/chuggy-ui/app/browser/ProjectCreation.tsx";
+const invitePage = "ui/chuggy-ui/app/browser/InvitePage.tsx";
 
 /** The page that draws each name the catalog does not, by its path from the
  * root of this tree. */
 const drawnIn: Readonly<
-  Record<Exclude<SetupPressed, SetupPressedCatalogued>, string>
+  Record<
+    Exclude<SetupPressed, SetupPressedCatalogued | SetupPressedInvite>,
+    string
+  >
 > = {
   connect: "ui/chuggy-ui/app/browser/repositories/ConnectGithub.tsx",
   add: "ui/chuggy-ui/app/browser/repositories/AddRepository.tsx",
@@ -103,6 +111,17 @@ test("the lead's settings page draws, from the catalog, the section the program 
   assert.equal(
     copyTextEn(selectorSettingsSection("northStar").title),
     setupSeen.northStar,
+  );
+});
+
+test("the invite page draws, from the catalog, the card the program says a workspace is named under and what is pressed there", () => {
+  const source = readFileSync(invitePage, "utf8");
+  assert.match(source, /invitePageWords\.naming\b/u);
+  assert.match(source, /\{text\(invitePageWords\.create\)\}/u);
+  assert.equal(copyTextEn(invitePageWords.naming), setupSeen.workspaceNaming);
+  assert.equal(
+    copyTextEn(invitePageWords.create),
+    setupPressed.workspaceCreate,
   );
 });
 

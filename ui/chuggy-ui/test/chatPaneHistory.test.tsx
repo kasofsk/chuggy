@@ -11,12 +11,14 @@ import {
   act,
   cleanup,
   fireEvent,
+  render,
   screen,
   within,
 } from "@testing-library/react";
 import { QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
+import { CopyProvider as CatalogProvider } from "../app/copy/CopyProvider.tsx";
 import { consoleQueryClient } from "../app/core/consoleWrite.ts";
 import { SessionProvider } from "../app/browser/session.tsx";
 import {
@@ -187,6 +189,46 @@ test("each row names its standing and how long ago it moved", async () => {
   ).toBeDefined();
 });
 
+/** A standing is the wire's code, so each is drawn in its own label; a thread
+ * not yet titled is a new chat, and one whose instant does not read says no
+ * age rather than an empty one. */
+test("an orphaned, untitled row is named by its standing's label, as a new chat, and with no age it cannot read", async () => {
+  await historyOpened(vi.fn(), [
+    threadEntry({ session: "left", state: "Orphaned" }),
+    threadEntry({ session: "odd", title: "odd", lastActivityAt: "never" }),
+  ]);
+  const left = screen.getByRole("menuitemradio", {
+    name: /^New chat, Orphaned, \d+[smhd] ago$/,
+  });
+  expect(left.textContent).toContain("New chat");
+  expect(within(left).getByText("Orphaned")).toBeDefined();
+  expect(
+    screen.getByRole("menuitemradio", { name: "odd, Open" }),
+  ).toBeDefined();
+});
+
+/** Under the pseudo wording every word the history says is the catalog's and
+ * altered, and a thread's title, which is data, is drawn as it was typed. */
+test("under the pseudo wording the history's words are altered and a title is not", async () => {
+  render(
+    <CatalogProvider wording="en-x-pseudo">
+      <ChatPaneHistory
+        threads={threads}
+        session={threadMineSession}
+        onChoose={vi.fn()}
+      />
+    </CatalogProvider>,
+  );
+  expect(screen.queryByRole("button", { name: "History" })).toBeNull();
+  fireEvent.keyDown(screen.getByRole("button"), { key: "ArrowDown" });
+  await screen.findByRole("menu");
+  expect(screen.getByText("mine")).toBeDefined();
+  expect(screen.queryByText("Yours")).toBeNull();
+  expect(screen.queryByText("Everyone else's")).toBeNull();
+  for (const row of screen.getAllByRole("menuitemradio"))
+    expect(row.getAttribute("aria-label")).not.toMatch(/Open|ago/);
+});
+
 test("a listing still being read draws the control, loading in its menu", async () => {
   renderCopied(
     <ChatPaneHistory
@@ -208,7 +250,7 @@ test("a listing with nothing to offer says so in its menu", async () => {
   fireEvent.keyDown(screen.getByRole("button", { name: "History" }), {
     key: "Enter",
   });
-  expect(await screen.findByText("No threads yet")).toBeDefined();
+  expect(await screen.findByText("No chats yet")).toBeDefined();
 });
 
 /** The trigger's hidden name is also the tooltip a pointer or a keyboard focus
@@ -266,7 +308,7 @@ function threadPageHref(session: string): string {
 
 /** The thread's menu, opened from the one control beside its title. */
 async function threadMenuOpened(): Promise<HTMLElement> {
-  fireEvent.keyDown(screen.getByRole("button", { name: "Thread actions" }), {
+  fireEvent.keyDown(screen.getByRole("button", { name: "Chat actions" }), {
     key: "ArrowDown",
   });
   return screen.findByRole("menu");
@@ -285,12 +327,10 @@ async function threadMenuOffers(): Promise<readonly string[]> {
 test("what is done to the thread is one control beside its title, named again on focus", async () => {
   await renderedActions({ session: threadMineSession, mine: true });
   expect(screen.getAllByRole("button")).toHaveLength(1);
-  const button = screen.getByRole("button", { name: "Thread actions" });
+  const button = screen.getByRole("button", { name: "Chat actions" });
   const trigger = button.closest('[tabindex="0"]') ?? button;
   fireEvent.focus(trigger);
-  expect((await screen.findByRole("tooltip")).textContent).toBe(
-    "Thread actions",
-  );
+  expect((await screen.findByRole("tooltip")).textContent).toBe("Chat actions");
 });
 
 test("the reader's own thread offers Open, Copy link, Rename and Close, and neither Hide nor Show", async () => {
@@ -322,18 +362,16 @@ test("Close asks what closing does before it closes", async () => {
     fireEvent.click(within(menu).getByRole("menuitem", { name: "Close" }));
   });
   expect(screen.queryByRole("menu")).toBeNull();
-  const asked = screen.getByRole("group", { name: "Close this thread?" });
+  const asked = screen.getByRole("group", { name: "Close this chat?" });
   expect(
     [...asked.querySelectorAll("p > span")].map((line) => line.textContent),
   ).toStrictEqual([
-    "Not your thread · Ends it for its owner too",
+    "Not your chat · Ends it for its owner too",
     "Stays in History · Takes no more messages",
     "Drops any reply in progress · Cannot be undone",
   ]);
   fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-  expect(
-    screen.queryByRole("group", { name: "Close this thread?" }),
-  ).toBeNull();
+  expect(screen.queryByRole("group", { name: "Close this chat?" })).toBeNull();
   expect(fetched).not.toHaveBeenCalled();
 });
 
@@ -346,14 +384,14 @@ test("Rename puts the editor in the title's place, and leaving it abandons the r
     fireEvent.click(within(menu).getByRole("menuitem", { name: "Rename" }));
   });
   await settled();
-  const editor = screen.getByRole("textbox", { name: "Thread title" });
+  const editor = screen.getByRole("textbox", { name: "Chat title" });
   expect(document.activeElement).toBe(editor);
   expect(screen.queryByRole("heading")).toBeNull();
-  expect(screen.queryByRole("button", { name: "Thread actions" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Chat actions" })).toBeNull();
   fireEvent.change(editor, { target: { value: "never saved" } });
   fireEvent.blur(editor);
-  expect(screen.queryByRole("textbox", { name: "Thread title" })).toBeNull();
-  expect(screen.getByRole("button", { name: "Thread actions" })).toBeDefined();
+  expect(screen.queryByRole("textbox", { name: "Chat title" })).toBeNull();
+  expect(screen.getByRole("button", { name: "Chat actions" })).toBeDefined();
 });
 
 /** A real anchor is what lets a reader open the page in a tab of its own,

@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * One person's roles, hosted runs, personal runners and unscoped chat, changed
  * in the dialog their row's Edit opens: a box for each workspace role, for
@@ -21,6 +20,7 @@ import type {
   AccessTenantAbilities,
   AccessTenantPerson,
 } from "../../../../../src/contract/accessPlane.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import type { ApiPorts, ApiResult } from "../../core/apiRequest.ts";
 import {
   apiGrantHostedRuns,
@@ -39,6 +39,7 @@ import {
   consoleWriteKey,
 } from "../../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../../core/consoleWrite.ts";
+import type { CopyText } from "../../core/copy.ts";
 import {
   accessFailureLabel,
   tenantPersonBoxChecked,
@@ -115,6 +116,7 @@ interface TenantPersonChangePressed {
 function tenantPersonChangeWrite(
   tenant: string,
   subject: string,
+  text: CopyText,
 ): ConsoleWrite<TenantPersonChangePressed, undefined> {
   return {
     mutationKey: consoleWriteKey("tenant-person-change", tenant, subject),
@@ -129,7 +131,7 @@ function tenantPersonChangeWrite(
       if (answered.outcome !== "Ok") void tenantPeopleReread(client, tenant);
       return answered;
     },
-    refusal: accessFailureLabel,
+    refusal: (failure) => text(accessFailureLabel(failure)),
     landed: (client) => tenantPeopleReread(client, tenant),
   };
 }
@@ -142,8 +144,9 @@ function useTenantPersonChange(
   person: AccessTenantPerson,
   open: boolean,
 ): TenantPersonChanging {
+  const text = useCopyText();
   const writing = useConsoleWrite(
-    tenantPersonChangeWrite(tenant, person.subject),
+    tenantPersonChangeWrite(tenant, person.subject, text),
     { drawn: open },
   );
   const answered =
@@ -190,19 +193,20 @@ function TenantPersonWorkspace(props: {
   readonly boxes: readonly TenantPersonBox[];
   readonly changing: TenantPersonChanging;
 }): ReactNode {
+  const text = useCopyText();
   const labelled = useId();
   const changing = props.changing;
   if (props.boxes.length === 0) return null;
   return (
     <div role="group" aria-labelledby={labelled} className="grid gap-2">
       <span id={labelled} className="text-sm text-ink-3">
-        Workspace
+        {text({ id: "settings-people-workspace" })}
       </span>
       <div className="flex flex-wrap gap-x-5 gap-y-2">
         {props.boxes.map((box) => (
           <Checkbox
-            key={box.label}
-            label={box.label}
+            key={box.label.id}
+            label={text(box.label)}
             checked={tenantPersonBoxChecked(box, changing.sending)}
             disabled={!box.offered}
             held={tenantPersonChangeHeld(changing)}
@@ -219,21 +223,22 @@ function TenantPersonWorkspace(props: {
 function TenantPersonAsked(props: {
   readonly changing: TenantPersonChanging;
 }): ReactNode {
+  const text = useCopyText();
   const changing = props.changing;
   const asking = changing.asking;
   if (asking === undefined) return null;
   const asked = tenantPersonQuestion(asking);
   return (
     <Confirm
-      question={asked.question}
-      confirm="Remove"
+      question={text(asked.question)}
+      confirm={text({ id: "settings-remove" })}
       busy={changing.sending !== undefined}
       onConfirm={() => {
         changing.send(asking);
       }}
       onCancel={changing.cancel}
     >
-      {asked.line}
+      {text(asked.line)}
     </Confirm>
   );
 }
@@ -290,6 +295,7 @@ export function TenantPersonEditor(props: {
   readonly projects: readonly string[];
   readonly abilities: AccessTenantAbilities | undefined;
 }): ReactNode {
+  const text = useCopyText();
   const [open, setOpen] = useState(false);
   const changing = useTenantPersonChange(props.tenant, props.person, open);
   const name = tenantPersonName(props.person).name;
@@ -298,8 +304,8 @@ export function TenantPersonEditor(props: {
     <Dialog
       wide
       title={name}
-      trigger="Edit"
-      triggerNamed={`Edit ${name}`}
+      trigger={text({ id: "settings-edit" })}
+      triggerNamed={text({ id: "settings-people-edit-named", args: { name } })}
       triggerVariant="quiet"
       open={open}
       onOpenChange={(opened) => {
@@ -316,7 +322,7 @@ export function TenantPersonEditor(props: {
             setOpen(false);
           }}
         >
-          Done
+          {text({ id: "settings-done" })}
         </Button>
       }
     >
