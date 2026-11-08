@@ -74,7 +74,6 @@ test("a held category far under the least visible width is drawn at it, at the r
   expect(prompt?.width).toBe(contextSegmentWidthMin);
   expect(messages?.width).toBe(0.5);
   expect((free?.width ?? 0) + contextSegmentWidthMin + 0.5).toBeCloseTo(1, 9);
-  expect([prompt?.labelled, messages?.labelled]).toStrictEqual([false, true]);
 });
 
 test("a window no reading split lists every category as not recorded, and the series' context as used", () => {

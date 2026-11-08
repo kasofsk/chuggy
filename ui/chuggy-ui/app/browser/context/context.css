@@ -179,15 +179,34 @@
     stroke-width: 1px;
   }
 
+  /* A span's name and size, inside the span only where it fits whole: the
+     empty first item takes the line's whole height, so a label wider than
+     its span wraps beneath it, where the box clips it. */
   .context-seg-label {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    height: 100%;
+    overflow: hidden;
     font-size: var(--text-xs);
-    fill: var(--ink-inverse);
-    dominant-baseline: central;
+    font-weight: var(--weight-medium);
+    line-height: var(--leading-tight);
+    color: var(--ink-inverse);
+    white-space: nowrap;
     pointer-events: none;
   }
 
+  .context-seg-label::before {
+    content: "";
+    height: 100%;
+  }
+
+  .context-seg-label > span {
+    padding-inline: var(--space-2);
+  }
+
   .context-seg-label[data-kind="Free"] {
-    fill: var(--ink-3);
+    color: var(--ink-3);
   }
 
   .context-threshold-rule {

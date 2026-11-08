@@ -105,8 +105,6 @@ export interface ContextSegment {
   readonly tokens: number;
   readonly start: number;
   readonly width: number;
-  /** Whether the span is wide enough to carry its name and size inside it. */
-  readonly labelled: boolean;
 }
 
 /** The window as the latest reading held it, or as far as the series says. */
@@ -126,9 +124,6 @@ export interface ContextWindowView {
 /** The narrowest a held category is drawn, as a share of the bar, so a small
  * one is still seen. */
 export const contextSegmentWidthMin = 0.006;
-
-/** The narrowest span that carries its own name and size inside it. */
-export const contextSegmentLabelledMin = 0.12;
 
 /** The category the runtime named, as the catalog words it and the slot it is
  * drawn in. */
@@ -296,12 +291,7 @@ export function contextSegmentsOf(
   let start = 0;
   return spans.map((span, index) => {
     const width = widths[index] ?? 0;
-    const segment = {
-      ...span,
-      start,
-      width,
-      labelled: width >= contextSegmentLabelledMin,
-    };
+    const segment = { ...span, start, width };
     start += width;
     return segment;
   });

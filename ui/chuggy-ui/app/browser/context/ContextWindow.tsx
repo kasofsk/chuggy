@@ -107,16 +107,13 @@ function ContextBarSegment(props: {
           fill={`url(#${props.hatch})`}
         />
       ) : null}
-      {segment.labelled && segment.kind !== "Buffer" ? (
-        <text
-          className="context-seg-label"
-          data-kind={segment.kind}
-          x={contextPercent(segment.start + 0.008)}
-          y="50%"
-        >
-          {`${contextNameText(text, segment.name)} ${tokenCountText(segment.tokens)}`}
-        </text>
-      ) : null}
+      {segment.kind === "Buffer" ? null : (
+        <foreignObject x={x} y="0" width={width} height="100%">
+          <div className="context-seg-label" data-kind={segment.kind}>
+            <span>{`${contextNameText(text, segment.name)} ${tokenCountText(segment.tokens)}`}</span>
+          </div>
+        </foreignObject>
+      )}
     </g>
   );
 }
