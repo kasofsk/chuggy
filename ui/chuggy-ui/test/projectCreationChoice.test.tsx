@@ -24,6 +24,7 @@ import type { ReactNode } from "react";
 
 import { ProjectCreationPage } from "../app/browser/ProjectCreation.tsx";
 import { Landing } from "../app/browser/routes.tsx";
+import { copyTextEn } from "../app/copy/catalog.ts";
 import { projectNameRule } from "../app/core/projectCreation.ts";
 import {
   accessHolding,
@@ -546,7 +547,7 @@ test("choosing New workspace shows its name field under the rule, and choosing a
   typed("Project", "atlas");
   await workspaceChosen("New workspace");
   expect(workspaceBox()).toHaveProperty("value", "");
-  expect(ruleUnder("Workspace").textContent).toBe(projectNameRule);
+  expect(ruleUnder("Workspace").textContent).toBe(copyTextEn(projectNameRule));
   expect(ruleUnder("Workspace").className).not.toContain("text-tone-fail");
   expect(submit()).toHaveProperty("disabled", true);
   typed("Workspace", "Brand New");
@@ -678,7 +679,9 @@ test.each([
     const posted = served([], created, access);
     await drawn(<ProjectCreationPage workspace="northwind" />);
     expect(workspaceBox()).toHaveProperty("value", "northwind");
-    expect(ruleUnder("Workspace").textContent).toBe(projectNameRule);
+    expect(ruleUnder("Workspace").textContent).toBe(
+      copyTextEn(projectNameRule),
+    );
     expect(screen.queryByRole("button", { name: /^Workspace / })).toBeNull();
     typed("Workspace", "typed-here");
     typed("Project", "atlas");

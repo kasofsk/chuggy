@@ -20,6 +20,8 @@ import type { SelectorProjectSettingsResponse } from "../../../../src/contract/r
 import { apiWriteSelectorSettings } from "../core/apiRoutes.ts";
 import { consoleWriteKey } from "../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../core/consoleWrite.ts";
+import type { CopyText } from "../core/copy.ts";
+import { useCopyText } from "../copy/CopyProvider.tsx";
 import { selectorSettingsQuery } from "../core/projectQueries.ts";
 import {
   selectorSettingsConflictOf,
@@ -87,6 +89,7 @@ export type SelectorSettingsPage = "Lead" | "Settings";
 function selectorSettingsSaveWrite<TWriter extends string>(
   page: SelectorSettingsPage,
   partition: PartitionIdentity,
+  text: CopyText,
 ): ConsoleWrite<
   SelectorSettingsPressed<TWriter>,
   SelectorProjectSettingsResponse
@@ -103,7 +106,7 @@ function selectorSettingsSaveWrite<TWriter extends string>(
         expectedRevision: pressed.expectedRevision,
         overrides: pressed.overrides,
       }),
-    refusal: (failure) => selectorSettingsRefusal(failure, nowMs()),
+    refusal: (failure) => selectorSettingsRefusal(failure, nowMs(), text),
     landed: (client, settings) =>
       Promise.resolve(
         client.setQueryData(
@@ -149,8 +152,9 @@ export function useSelectorSettingsWriting<TWriter extends string>(
   held: SelectorSettingsHeld,
 ): SelectorSettingsWriting<TWriter> {
   const client = useQueryClient();
+  const text = useCopyText();
   const saving = useConsoleWrite(
-    selectorSettingsSaveWrite<TWriter>(page, partition),
+    selectorSettingsSaveWrite<TWriter>(page, partition, text),
     { drawn: true },
   );
   return {

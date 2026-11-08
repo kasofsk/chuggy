@@ -2,7 +2,7 @@
  * The lead's decisions held for approval, as the inbox draws and answers them.
  *
  * A DECISION IS ANSWERED WHOLE, so a decision naming two tickets puts the same
- * question on both rows, and either row's answer is the other's too.
+ * proposal on both rows, and either row's answer is the other's too.
  *
  * NO FRAME NAMES A HELD DECISION, so the inbox is polled while anything draws
  * it and read again as soon as this tab answers.
@@ -18,7 +18,8 @@ import {
   selectorProposalNotHeldCode,
   type SelectorReviewOutcome,
 } from "../../../../src/contract/rosters.ts";
-import type { ApiResult } from "./apiRequest.ts";
+import type { ApiFailure, ApiResult } from "./apiRequest.ts";
+import type { Copy, CopyOrData, CopyText } from "./copy.ts";
 
 /** How often the inbox is read again for its held decisions while it or its badge is drawn. */
 export const inboxProposalsPolledMs = 15_000;
@@ -27,7 +28,7 @@ export const inboxProposalsPolledMs = 15_000;
 export type InboxProposalStep =
   | { readonly step: "Answered"; readonly outcome: SelectorReviewOutcome }
   | { readonly step: "Stale" }
-  | { readonly step: "Failed"; readonly why: string };
+  | { readonly step: "Failed"; readonly why: CopyOrData };
 
 /** One review this tab sent, and the tickets its decision named. */
 export interface InboxProposalAnswer {
@@ -35,7 +36,26 @@ export interface InboxProposalAnswer {
   readonly step: InboxProposalStep;
 }
 
-/** A refusal is said as the code the server named it by, or as the outcome where it named none. */
+/** The code the server named a refusal by, which is data, or the outcome's
+ * word where it named none. */
+function inboxProposalFailedWhy(failure: ApiFailure): CopyOrData {
+  switch (failure.outcome) {
+    case "Unauthenticated":
+      return { id: "inbox-proposal-failed-unauthenticated" };
+    case "Absent":
+      return { id: "inbox-proposal-failed-absent" };
+    case "Unreachable":
+      return { id: "inbox-proposal-failed-unreachable" };
+    case "Unreadable":
+      return { id: "inbox-proposal-failed-unreadable" };
+    case "Conflict":
+    case "Retryable":
+    case "Rejected":
+    case "Fault":
+      return failure.code;
+  }
+}
+
 export function inboxProposalAnswered(
   result: ApiResult<SelectorProposalReviewResponse>,
 ): InboxProposalStep {
@@ -46,29 +66,45 @@ export function inboxProposalAnswered(
     result.code === selectorProposalNotHeldCode
   )
     return { step: "Stale" };
-  return {
-    step: "Failed",
-    why: "code" in result ? result.code : result.outcome,
-  };
+  return { step: "Failed", why: inboxProposalFailedWhy(result) };
+}
+
+/** The outcome's own word, where a review was answered. */
+function inboxProposalOutcomeWord(outcome: SelectorReviewOutcome): Copy {
+  switch (outcome) {
+    case "Approved":
+      return { id: "inbox-proposal-outcome-approved" };
+    case "Rejected":
+      return { id: "inbox-proposal-outcome-rejected" };
+  }
 }
 
 /** The one word a review's standing is drawn as. */
-export function inboxProposalStepWord(step: InboxProposalStep): string {
+export function inboxProposalStepWord(step: InboxProposalStep): Copy {
   switch (step.step) {
     case "Answered":
-      return step.outcome;
+      return inboxProposalOutcomeWord(step.outcome);
     case "Stale":
-      return "Stale";
+      return { id: "inbox-proposal-stale" };
     case "Failed":
-      return "Failed";
+      return { id: "inbox-proposal-failed" };
   }
 }
 
 /** The line one review leaves behind once its row may have left: the tickets
  * its decision named, then the word, then why where it failed. */
-export function inboxProposalSentence(answer: InboxProposalAnswer): string {
-  const why = answer.step.step === "Failed" ? ` · ${answer.step.why}` : "";
-  return `Proposal ${answer.proposal.tickets.join(", ")} · ${inboxProposalStepWord(answer.step)}${why}`;
+export function inboxProposalSentence(
+  answer: InboxProposalAnswer,
+  text: CopyText,
+): string {
+  const word = inboxProposalStepWord(answer.step);
+  const tickets = answer.proposal.tickets.join(", ");
+  return answer.step.step === "Failed"
+    ? text({
+        id: "inbox-proposal-sentence-why",
+        args: { tickets, word, why: answer.step.why },
+      })
+    : text({ id: "inbox-proposal-sentence", args: { tickets, word } });
 }
 
 /** A note is held to what the wire takes as it is typed, so a review is never refused for its length. */

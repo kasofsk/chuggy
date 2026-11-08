@@ -1,6 +1,6 @@
 /**
- * The names the setup program tells a person to press, held against the
- * console pages that draw them.
+ * The names the setup program tells a person to press, and the section it
+ * names beside one, held against the console pages that draw them.
  *
  * The program sends her to a page and names what to press there, and the
  * pages write those names in their own markup, where the program's code
@@ -28,22 +28,25 @@ import {
 } from "../../ui/chuggy-ui/app/core/projectRepositories.ts";
 import { copyTextEn } from "../../ui/chuggy-ui/app/copy/catalog.ts";
 import type { Copy, CopyId } from "../../ui/chuggy-ui/app/core/copy.ts";
-import { setupPressed } from "../../ui/chuggy-ui/app/core/setupNext.ts";
+import { selectorSettingsSection } from "../../ui/chuggy-ui/app/core/selectorSettingsForm.ts";
+import {
+  setupPressed,
+  setupSeen,
+} from "../../ui/chuggy-ui/app/core/setupNext.ts";
 
 type SetupPressed = keyof typeof setupPressed;
 
 /** The names a page draws from the catalog. */
-type SetupPressedCatalogued = "edit" | "save";
+type SetupPressedCatalogued = "edit" | "save" | "projectPage" | "projectCreate";
 
 const settingsSection = "ui/chuggy-ui/app/browser/ui/SettingsSection.tsx";
+const projectCreationPage = "ui/chuggy-ui/app/browser/ProjectCreation.tsx";
 
 /** The page that draws each name the catalog does not, by its path from the
  * root of this tree. */
 const drawnIn: Readonly<
   Record<Exclude<SetupPressed, SetupPressedCatalogued>, string>
 > = {
-  projectPage: "ui/chuggy-ui/app/browser/ProjectCreation.tsx",
-  projectCreate: "ui/chuggy-ui/app/browser/ProjectCreation.tsx",
   connect: "ui/chuggy-ui/app/browser/repositories/ConnectGithub.tsx",
   add: "ui/chuggy-ui/app/browser/repositories/AddRepository.tsx",
   retry: "ui/chuggy-ui/app/browser/repositories/BindingConfigurations.tsx",
@@ -60,8 +63,12 @@ const drawnFromCatalog: Readonly<
 > = {
   edit: { page: settingsSection, id: "ui-edit" },
   save: { page: settingsSection, id: "ui-save" },
+  projectPage: { page: projectCreationPage, id: "project-creation-new-title" },
+  projectCreate: { page: projectCreationPage, id: "project-creation-submit" },
 };
 
+const leadTextSection =
+  "ui/chuggy-ui/app/browser/settings/lead/SelectorTextSection.tsx";
 const ticketPage = "ui/chuggy-ui/app/browser/TicketActions.tsx";
 const accountsPage = "ui/chuggy-ui/app/browser/settings/TenantAccountsPage.tsx";
 const connectButton = "ui/chuggy-ui/app/browser/repositories/ConnectGithub.tsx";
@@ -89,6 +96,15 @@ for (const [key, drawn] of Object.entries(drawnFromCatalog))
     );
     assert.equal(copyTextEn({ id: drawn.id } as Copy), name);
   });
+
+test("the lead's settings page draws, from the catalog, the section the program says Edit is pressed beside", () => {
+  const source = readFileSync(leadTextSection, "utf8");
+  assert.match(source, /const title = text\(section\.title\);/u);
+  assert.equal(
+    copyTextEn(selectorSettingsSection("northStar").title),
+    setupSeen.northStar,
+  );
+});
 
 test("a ticket's page draws each action it offers as a button under the action's own name, and has a line of its own for a project with no runner", () => {
   const source = readFileSync(ticketPage, "utf8");

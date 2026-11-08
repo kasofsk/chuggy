@@ -18,6 +18,11 @@
  */
 
 import type { SelectorSettingsHistoryResponse } from "../../../../src/contract/responses.ts";
+import type {
+  SelectorDispatchMode,
+  SelectorMode,
+} from "../../../../src/contract/rosters.ts";
+import type { Copy, CopyOrData } from "./copy.ts";
 import { groupedDigits } from "./figures.ts";
 import {
   selectorSettingsLimitLabel,
@@ -30,13 +35,21 @@ export type SelectorSettingsRevisionRead =
   SelectorSettingsHistoryResponse["revisions"][number];
 
 /** The word a field that carries no override is drawn as, on both sides. */
-export const selectorSettingsHistoryDefaultWord = "Default";
+export const selectorSettingsHistoryDefaultWord: Copy = {
+  id: "lead-settings-default",
+};
 
-/** One field one revision moved, as the two texts a row draws. */
+/** The word an override that clears an allowlist to nothing is drawn as. */
+export const selectorSettingsHistoryEmptyWord: Copy = {
+  id: "lead-history-none",
+};
+
+/** One field one revision moved, as the two texts a row draws: a word for a
+ * value the console names, or the value itself, which is data. */
 export interface SelectorSettingsFieldChange {
-  readonly label: string;
-  readonly before: string;
-  readonly after: string;
+  readonly label: Copy;
+  readonly before: CopyOrData;
+  readonly after: CopyOrData;
   readonly mono: boolean;
 }
 
@@ -48,9 +61,39 @@ export interface SelectorSettingsRevisionDiff {
 
 /** How one override field is drawn on either side of an arrow. */
 interface SelectorSettingsHistoryField {
-  readonly label: string;
-  readonly text: string;
+  readonly label: Copy;
+  readonly text: CopyOrData;
   readonly mono: boolean;
+}
+
+function selectorSettingsHistoryModeLabel(mode: SelectorMode): Copy {
+  switch (mode) {
+    case "Running":
+      return { id: "lead-mode-running" };
+    case "Paused":
+      return { id: "lead-mode-paused" };
+  }
+}
+
+function selectorSettingsHistoryDispatchLabel(
+  mode: SelectorDispatchMode,
+): Copy {
+  switch (mode) {
+    case "Automatic":
+      return { id: "lead-dispatch-automatic" };
+    case "ApprovalRequired":
+      return { id: "lead-dispatch-approval" };
+  }
+}
+
+/** Whether two sides draw the same: the same word, or the same data. */
+function selectorSettingsHistorySame(
+  before: CopyOrData,
+  after: CopyOrData,
+): boolean {
+  if (typeof before === "string" || typeof after === "string")
+    return before === after;
+  return before.id === after.id;
 }
 
 function selectorSettingsHistoryTexts(
@@ -68,14 +111,14 @@ function selectorSettingsHistoryTexts(
 
 function selectorSettingsHistoryTextLabel(
   name: (typeof selectorSettingsTextNames)[number],
-): string {
+): Copy {
   switch (name) {
     case "northStar":
-      return "North Star";
+      return { id: "lead-settings-section-north-star-title" };
     case "threadStandingRules":
-      return "Standing rules";
+      return { id: "lead-settings-section-standing-rules-title" };
     case "basePrompt":
-      return "Base prompt";
+      return { id: "lead-settings-section-base-prompt-title" };
   }
 }
 
@@ -92,28 +135,42 @@ function selectorSettingsHistoryFields(
   }));
   return [
     ...selectorSettingsHistoryTexts(overrides),
-    { label: "Mode", text: overrides.mode ?? absent, mono: false },
-    { label: "Dispatch", text: overrides.dispatchMode ?? absent, mono: false },
+    {
+      label: { id: "lead-history-mode-label" },
+      text:
+        overrides.mode === undefined
+          ? absent
+          : selectorSettingsHistoryModeLabel(overrides.mode),
+      mono: false,
+    },
+    {
+      label: { id: "lead-history-dispatch-label" },
+      text:
+        overrides.dispatchMode === undefined
+          ? absent
+          : selectorSettingsHistoryDispatchLabel(overrides.dispatchMode),
+      mono: false,
+    },
     ...limits,
     {
-      label: "Models",
+      label: { id: "lead-history-models-label" },
       text: selectorSettingsHistoryList(overrides.modelAllowlist),
       mono: false,
     },
     {
-      label: "Tools",
+      label: { id: "lead-history-tools-label" },
       text: selectorSettingsHistoryList(overrides.toolAllowlist),
       mono: false,
     },
     {
-      label: "Context age",
+      label: { id: "lead-history-context-age-label" },
       text: selectorSettingsHistoryNumber(overrides.operationalContextMaxAgeMs),
       mono: false,
     },
   ];
 }
 
-function selectorSettingsHistoryNumber(value: number | undefined): string {
+function selectorSettingsHistoryNumber(value: number | undefined): CopyOrData {
   return value === undefined
     ? selectorSettingsHistoryDefaultWord
     : groupedDigits(value);
@@ -121,9 +178,11 @@ function selectorSettingsHistoryNumber(value: number | undefined): string {
 
 function selectorSettingsHistoryList(
   value: readonly string[] | undefined,
-): string {
+): CopyOrData {
   if (value === undefined) return selectorSettingsHistoryDefaultWord;
-  return value.length === 0 ? "None" : value.join(", ");
+  return value.length === 0
+    ? selectorSettingsHistoryEmptyWord
+    : value.join(", ");
 }
 
 /**
@@ -156,8 +215,11 @@ function selectorSettingsHistoryChanges(
   const changes: SelectorSettingsFieldChange[] = [];
   selectorSettingsHistoryFields(overrides).forEach((field, at) => {
     const before = was[at]?.text ?? selectorSettingsHistoryDefaultWord;
-    if (before === field.text) return;
-    const lines = selectorSettingsHistoryDiffered(before, field.text);
+    if (selectorSettingsHistorySame(before, field.text)) return;
+    const lines =
+      typeof before === "string" && typeof field.text === "string"
+        ? selectorSettingsHistoryDiffered(before, field.text)
+        : { before, after: field.text };
     changes.push({
       label: field.label,
       before: lines.before,

@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * Making a project: the workspace it belongs to, its own name, and one submit,
  * on the landing a reader with no project meets and at its own address, where
@@ -40,7 +39,7 @@ import { lastProjectWrite } from "../core/lastProject.ts";
 import { operationIdBytesCount } from "../core/operationFollow.ts";
 import {
   projectCreationNameFault,
-  projectCreationRefusal,
+  projectCreationRefusalLabel,
   projectCreationSendable,
   projectCreationStanding,
   projectNameRule,
@@ -69,6 +68,9 @@ import {
 } from "../core/tenantQueries.ts";
 import { usePanelState } from "./api.ts";
 import { useConsoleWrite } from "./consoleWrite.tsx";
+import { useCopyText } from "../copy/CopyProvider.tsx";
+import { copyOrDataText } from "../core/copy.ts";
+import type { CopyText } from "../core/copy.ts";
 import { PanelUnready } from "./DataPanel.tsx";
 import { Footer } from "./Footer.tsx";
 import {
@@ -100,6 +102,7 @@ interface ProjectCreationNameProps {
 
 /** A name's box and, under it, the rule or the name's fault against it. */
 function ProjectCreationNameBox(props: ProjectCreationNameProps): ReactNode {
+  const text = useCopyText();
   const ruleId = useId();
   const fault = projectCreationNameFault(props.value);
   return (
@@ -115,7 +118,7 @@ function ProjectCreationNameBox(props: ProjectCreationNameProps): ReactNode {
         id={ruleId}
         className={`text-xs ${fault === undefined ? "text-ink-3" : "text-tone-fail"}`}
       >
-        {fault ?? projectNameRule}
+        {text(fault ?? projectNameRule)}
       </span>
     </>
   );
@@ -146,22 +149,27 @@ function ProjectCreationWorkspaceChoice(
     >;
   },
 ): ReactNode {
+  const text = useCopyText();
   const { offer, said, onSay } = props;
   const chosen = projectCreationWorkspaceChosen(offer, said);
+  const workspaceLabel = text({ id: "project-creation-workspace-label" });
   return (
     <div className={fieldClassName}>
-      <span>Workspace</span>
+      <span>{workspaceLabel}</span>
       <div className="min-w-0">
         <Picker
-          label="Workspace"
+          label={workspaceLabel}
           align="start"
           value={
             chosen === undefined ? "" : String(offer.entries.indexOf(chosen))
           }
-          placeholder="Choose"
+          placeholder={text({ id: "project-creation-workspace-choose" })}
           options={offer.entries.map((entry, at) => ({
             value: String(at),
-            text: projectCreationWorkspaceEntryText(entry),
+            text: copyOrDataText(
+              text,
+              projectCreationWorkspaceEntryText(entry),
+            ),
           }))}
           onChoose={(at) => {
             const picked = offer.entries[Number(at)];
@@ -172,7 +180,7 @@ function ProjectCreationWorkspaceChoice(
       </div>
       {chosen?.entry === "New" ? (
         <ProjectCreationNameBox
-          label="Workspace"
+          label={workspaceLabel}
           value={projectCreationWorkspaceTenant(offer, said)}
           onChange={(name) => {
             onSay(projectCreationWorkspaceNamed(offer, name));
@@ -188,19 +196,21 @@ function ProjectCreationWorkspace(
     readonly offer: ProjectCreationWorkspaceDrawn;
   },
 ): ReactNode {
+  const text = useCopyText();
   const { offer, said, onSay } = props;
+  const workspaceLabel = text({ id: "project-creation-workspace-label" });
   switch (offer.offer) {
     case "Pending":
       return (
         <div className={fieldClassName}>
-          <span>Workspace</span>
+          <span>{workspaceLabel}</span>
           <PanelUnready state={{ state: "Pending" }} />
         </div>
       );
     case "Typed":
       return (
         <ProjectCreationName
-          label="Workspace"
+          label={workspaceLabel}
           value={projectCreationWorkspaceTenant(offer, said)}
           onChange={(name) => {
             onSay(projectCreationWorkspaceNamed(offer, name));
@@ -223,12 +233,13 @@ function ProjectCreationWorkspace(
  * repositories, whether or not the form is still drawn. */
 function projectCreationWrite(
   navigate: UseNavigateResult<string>,
+  text: CopyText,
 ): ConsoleWrite<ProjectCreationSent, ProjectCreatedResponse> {
   return {
     mutationKey: consoleWriteKey("project-creation"),
     write: (ports, sent) =>
       apiCreateProject(ports, sent.fields, sent.operation),
-    refusal: projectCreationRefusal,
+    refusal: (failure) => text(projectCreationRefusalLabel(failure)),
     landed: async (client, partition) => {
       lastProjectWrite(persistentStore, partition);
       await client.invalidateQueries({
@@ -250,7 +261,8 @@ function useProjectCreationSend(fields: ProjectCreationFields): {
   readonly create: () => void;
 } {
   const navigate = useNavigate();
-  const creating = useConsoleWrite(projectCreationWrite(navigate), {
+  const text = useCopyText();
+  const creating = useConsoleWrite(projectCreationWrite(navigate, text), {
     drawn: (_, sent) => projectCreationStanding(sent, fields) !== undefined,
   });
   const standing = projectCreationStanding(creating.variables, fields);
@@ -276,6 +288,7 @@ function ProjectCreationForm(props: {
     project,
   };
   const send = useProjectCreationSend(fields);
+  const text = useCopyText();
   return (
     <div className="grid w-full max-w-aside gap-3">
       <ProjectCreationWorkspace
@@ -284,7 +297,7 @@ function ProjectCreationForm(props: {
         onSay={setWorkspace}
       />
       <ProjectCreationName
-        label="Project"
+        label={text({ id: "project-creation-project-label" })}
         value={project}
         onChange={setProject}
       />
@@ -295,7 +308,7 @@ function ProjectCreationForm(props: {
           busy={send.busy}
           onClick={send.create}
         >
-          Create project
+          {text({ id: "project-creation-submit" })}
         </Button>
         {send.status === undefined ? null : (
           <Notice tone="info" inline role="status" detail={send.status} />
@@ -328,6 +341,7 @@ export function ProjectCreation(props: {
   readonly workspace?: string | undefined;
   readonly lead?: ReactNode;
 }): ReactNode {
+  const text = useCopyText();
   const offer = projectCreationWorkspaceOffer(
     usePanelState(callerTenantsQuery()),
     usePanelState(callerSiteAbilitiesQuery()),
@@ -335,7 +349,11 @@ export function ProjectCreation(props: {
   );
   if (offer.offer === "Withheld")
     return (
-      <EmptyState variant="page" label={offer.label} detail={offer.detail} />
+      <EmptyState
+        variant="page"
+        label={text(offer.label)}
+        detail={text(offer.detail)}
+      />
     );
   return (
     <>
@@ -367,11 +385,16 @@ export function ProjectlessFrame(props: {
 export function ProjectCreationPage(props: {
   readonly workspace?: string | undefined;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <ProjectlessFrame>
       <ProjectCreation
         workspace={props.workspace}
-        lead={<h1 className="text-md font-strong text-ink-1">New project</h1>}
+        lead={
+          <h1 className="text-md font-strong text-ink-1">
+            {text({ id: "project-creation-new-title" })}
+          </h1>
+        }
       />
     </ProjectlessFrame>
   );

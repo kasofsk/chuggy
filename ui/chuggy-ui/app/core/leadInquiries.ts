@@ -52,6 +52,7 @@ import {
   noRunnerCode,
 } from "../../../../src/contract/rosters.ts";
 import type { ApiFailure } from "./apiRequest.ts";
+import type { Copy, CopyOrData, CopyText } from "./copy.ts";
 import { failureWords } from "./failureWords.ts";
 import type { FailureWords } from "./failureWords.ts";
 import { sessionRunnerNoticeWord } from "./sessionRunners.ts";
@@ -79,9 +80,9 @@ export const inquirySessionKind = "Inquiry";
  * the word this console draws every absent identity as rather than a blank
  * where a person's name stood.
  */
-export const inquiryAskerAbsent = "None";
+export const inquiryAskerAbsent: Copy = { id: "lead-inquiry-asker-none" };
 
-export function inquiryAskerNamed(asker: string | undefined): string {
+export function inquiryAskerNamed(asker: string | undefined): CopyOrData {
   return asker ?? inquiryAskerAbsent;
 }
 
@@ -92,10 +93,10 @@ export function inquiryQuestion(typed: string): string {
 }
 
 /** Why a question cannot be asked, in the one word the box refuses it with. */
-export function inquiryQuestionFault(question: string): string | undefined {
-  if (question === "") return "Empty";
+export function inquiryQuestionFault(question: string): Copy | undefined {
+  if (question === "") return { id: "lead-inquiry-fault-empty" };
   if (textCodePointsCount(question) > inquiryQuestionCharsMax)
-    return "Too long";
+    return { id: "lead-inquiry-fault-too-long" };
   return undefined;
 }
 
@@ -170,22 +171,26 @@ export function inquiryAsking(
  * know is drawn as a refusal rather than as nothing, because a box that went
  * quiet on an unrecognised code would look exactly like one that had asked.
  */
-export const inquiryRefusalWords: Readonly<Record<string, string>> = {
-  LeadNotStarted: "Not started",
-  LeadClosed: "Closed",
-  InquiriesInFlight: "In flight",
-  [hostedRunsNotGrantedCode]: "Needs hosted runs",
+export const inquiryRefusalWords: Readonly<Record<string, Copy>> = {
+  LeadNotStarted: { id: "lead-inquiry-refusal-not-started" },
+  LeadClosed: { id: "lead-inquiry-refusal-closed" },
+  InquiriesInFlight: { id: "lead-inquiry-refusal-in-flight" },
+  [hostedRunsNotGrantedCode]: { id: "lead-inquiry-refusal-needs-hosted-runs" },
 };
 
-export const inquiryRefusalWordUnknown = "Refused";
+export const inquiryRefusalWordUnknown: Copy = {
+  id: "lead-inquiry-refusal-unknown",
+};
 
 /** The 404 arm carries no code — `classify` keeps none for an absence — so the
  * word for it is chosen from the outcome instead. */
-export const inquiryRefusalWordNoLead = "No lead";
+export const inquiryRefusalWordNoLead: Copy = {
+  id: "lead-inquiry-refusal-no-lead",
+};
 
 /** Why the door did not take a question, as the box draws it. */
 export type InquiryAskRefusal =
-  | { readonly ask: "Refused"; readonly word: string }
+  | { readonly ask: "Refused"; readonly word: Copy }
   | { readonly ask: "NoRunner" }
   | { readonly ask: "Failed"; readonly words: FailureWords };
 
@@ -232,10 +237,13 @@ export function inquiryAskRefused(failure: ApiFailure): InquiryAskRefusal {
 
 /** The line a refusal is drawn as, which is the word, the runner notice's own
  * word, or the failure's. */
-export function inquiryAskRefusalSentence(refusal: InquiryAskRefusal): string {
+export function inquiryAskRefusalSentence(
+  refusal: InquiryAskRefusal,
+  text: CopyText,
+): string {
   switch (refusal.ask) {
     case "Refused":
-      return refusal.word;
+      return text(refusal.word);
     case "NoRunner":
       return sessionRunnerNoticeWord("NoRunner", "Inquiry");
     case "Failed":

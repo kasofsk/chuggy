@@ -2,4 +2,64 @@
  * Do not edit by hand; run `node ui/chuggy-ui/tools/copyCatalog.ts`. */
 
 export const projectFtl = `## A project's table of tickets.
+
+## Making a project.
+
+project-creation-new-title = New { -project }
+project-creation-workspace-label = { -workspace(case: "upper") }
+project-creation-workspace-choose = Choose
+project-creation-project-label = { -project(case: "upper") }
+project-creation-submit = Create { -project }
+project-creation-name-rule = Lowercase letters, digits, inner hyphens
+project-creation-name-too-long = Too long
+project-creation-tenant-reserved = Reserved
+project-creation-tenant-needs-invite = New { -workspace } needs an invite link
+project-creation-refusal-taken = Taken
+project-creation-refusal-exists = Exists
+project-creation-refusal-conflict = Conflict
+project-creation-refusal-unavailable = Unavailable
+project-creation-refusal-not-signed-in = Not signed in
+project-creation-refusal-failed = Failed
+project-creation-refusal-unreachable = Unreachable
+project-creation-refusal-unreadable = Unreadable
+project-creation-refusal-refused = Refused
+project-creation-workspace-new = New { -workspace }
+project-creation-workspace-unheld-label = No { -workspace }
+project-creation-workspace-unheld-detail = A new { -workspace } needs an invite link
+project-creation-workspace-unadmin-label = No { -workspace } to add to
+project-creation-workspace-unadmin-detail = { -workspace(case: "upper", form: "a") } { -role-admin } adds { -project(form: "plural") }
+
+## The ticket table.
+
+project-table-title = { -ticket(case: "upper", form: "plural") }
+project-table-new-ticket = New { -ticket }
+project-table-empty = No { -ticket(form: "plural") }
+project-table-aria-tickets = { -ticket(case: "upper", form: "plural") }
+project-table-aria-by-state = { -ticket(case: "upper", form: "plural") } by state
+project-table-waits-on = Waits on
+project-table-creator-label = Creator
+project-table-creator-anyone = Anyone
+project-table-creator-me = Me
+project-table-sort-label = Sort
+project-table-filter-label = Filter
+project-table-filter-all = All states
+project-table-search = Search { -ticket(form: "plural") }
+project-table-search-placeholder = Search titles or #number…
+project-table-show-more = Show more
+project-table-loading = Loading…
+project-table-more-failed = More
+project-table-blocked-hint = Blocked · { $count ->
+    [one] { $count } unfinished { -dependency }
+   *[other] { $count } unfinished { -dependency(form: "plural") }
+}
+project-table-status-matched = { $matched ->
+    [one] { $matched } matching { -ticket }
+   *[other] { $matched } matching { -ticket(form: "plural") }
+}
+project-table-status-matched-so-far = { $matched ->
+    [one] { $matched } matching { -ticket } so far
+   *[other] { $matched } matching { -ticket(form: "plural") } so far
+}
+project-table-status-none-in-state = None of the { -ticket(form: "plural") } read so far is in this state.
+project-table-status-none-active = No active or recently finished { -ticket(form: "plural") }.
 `;

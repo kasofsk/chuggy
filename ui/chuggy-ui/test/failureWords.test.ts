@@ -10,6 +10,7 @@ import { expect, test } from "vitest";
 
 import type { ApiFailure } from "../app/core/apiRequest.ts";
 import type { CopyOrData } from "../app/core/copy.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 import {
   failureOfThrown,
   failureWords,
@@ -124,10 +125,14 @@ const writeLines: readonly (readonly [
   ["a member's runners removed", (failure) => memberRunnerRemoved(failure)],
   ["a finalization saved", repositoryFinalizationRefusal],
   ["a placement saved", runnersPlacementRefusal],
-  ["selector settings saved", (failure) => selectorSettingsRefusal(failure, 0)],
+  [
+    "selector settings saved",
+    (failure) => selectorSettingsRefusal(failure, 0, copyTextEn),
+  ],
   [
     "an inquiry asked",
-    (failure) => inquiryAskRefusalSentence(inquiryAskRefused(failure)),
+    (failure) =>
+      inquiryAskRefusalSentence(inquiryAskRefused(failure), copyTextEn),
   ],
   ["an import pressed", repositoryImportRefused],
 ];

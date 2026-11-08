@@ -11,10 +11,16 @@
 
 // jscpd:ignore-start -- the imports and vi.mock factories a case cannot hoist out
 import { QueryClient } from "@tanstack/react-query";
-import { cleanup, screen } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
+
+import { copyCatalogEn, copyTextEn } from "../app/copy/catalog.ts";
+import { copyTextOf } from "../app/copy/copyBundle.ts";
+import { CopyProvider } from "../app/copy/CopyProvider.tsx";
+import { copyPseudoBundleOf } from "../app/copy/copyPseudo.ts";
+import { inboxActionLabel } from "../app/core/inboxAnswers.ts";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import type {
@@ -232,4 +238,33 @@ test("nothing the inbox draws is a runtime style element", async () => {
   });
   expect(held.api.submissions()).toBe(1);
   expect(document.querySelectorAll("style").length).toBe(0);
+});
+
+test("an open action's answers are drawn under the catalog's words for them, which a wording alters", async () => {
+  vi.stubGlobal(
+    "fetch",
+    serving(() => [awaiting]),
+  );
+  render(
+    <CopyProvider wording="en-x-pseudo">
+      <ScreenHarness
+        partition={atlas}
+        client={
+          new QueryClient({ defaultOptions: { queries: { retry: false } } })
+        }
+        transport={openedStream().ports.fetch}
+      >
+        <InboxScreen partition={atlas} />
+      </ScreenHarness>
+    </CopyProvider>,
+  );
+  await settled();
+  const pseudo = copyTextOf(copyPseudoBundleOf(copyCatalogEn));
+  for (const action of ["Approve", "Decline"] as const) {
+    const name = pseudo(inboxActionLabel(action));
+    expect(name).not.toBe(copyTextEn(inboxActionLabel(action)));
+    expect(screen.getByRole("button", { name })).toBeDefined();
+  }
+  expect(screen.queryByRole("button", { name: "approve" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "decline" })).toBeNull();
 });

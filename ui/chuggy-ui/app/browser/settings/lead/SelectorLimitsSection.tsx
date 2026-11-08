@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * What one decision may spend, as a row per limit that carries its own state:
  * on the installation's value, or the project's own and resettable, or moved by
@@ -30,6 +29,8 @@ import type {
   SelectorSettingsLimitName,
 } from "../../../core/selectorSettingsForm.ts";
 import type { SelectorProjectSettingsResponse } from "../../../../../../src/contract/responses.ts";
+import { useCopyText } from "../../../copy/CopyProvider.tsx";
+import type { Copy } from "../../../core/copy.ts";
 import { Button } from "../../ui/Button.tsx";
 import { Figure } from "../../ui/Figure.tsx";
 import { Input } from "../../ui/Input.tsx";
@@ -44,7 +45,7 @@ interface SelectorLimitRow {
   readonly draft: SelectorSettingsDraft;
   readonly effective: number;
   readonly installationEffective: number;
-  readonly fault: string | undefined;
+  readonly fault: Copy | undefined;
   readonly editing: boolean;
   readonly onChange: (draft: SelectorSettingsDraft) => void;
 }
@@ -55,11 +56,12 @@ interface SelectorLimitRow {
 function SelectorLimitStanding(props: {
   readonly row: SelectorLimitRow;
 }): ReactNode {
+  const text = useCopyText();
   const row = props.row;
   if (!selectorSettingsLimitOverridden(row.draft, row.name))
     return (
       <span className="selector-was">
-        <Pill tone="neutral">Default</Pill>
+        <Pill tone="neutral">{text({ id: "lead-settings-default" })}</Pill>
       </span>
     );
   const installation = selectorSettingsLimitFigure(
@@ -68,7 +70,8 @@ function SelectorLimitStanding(props: {
   );
   return (
     <span className="selector-was">
-      default <Figure figure={installation} />
+      {text({ id: "lead-settings-default-lower" })}{" "}
+      <Figure figure={installation} />
       {row.editing ? (
         <Button
           variant="quiet"
@@ -77,7 +80,7 @@ function SelectorLimitStanding(props: {
             row.onChange(selectorSettingsLimitTyped(row.draft, row.name, ""));
           }}
         >
-          Reset
+          {text({ id: "lead-settings-reset" })}
         </Button>
       ) : null}
     </span>
@@ -85,8 +88,9 @@ function SelectorLimitStanding(props: {
 }
 
 function SelectorLimit(props: { readonly row: SelectorLimitRow }): ReactNode {
+  const text = useCopyText();
   const row = props.row;
-  const label = selectorSettingsLimitLabel(row.name);
+  const label = text(selectorSettingsLimitLabel(row.name));
   const edited = selectorSettingsLimitEdited(row.draft, row.name);
   const placeholder = selectorSettingsLimitOverridden(row.draft, row.name)
     ? undefined
@@ -102,7 +106,7 @@ function SelectorLimit(props: { readonly row: SelectorLimitRow }): ReactNode {
         <Input
           numeric
           label={label}
-          unit={selectorSettingsLimitUnitWord(row.name)}
+          unit={text(selectorSettingsLimitUnitWord(row.name))}
           value={row.draft.limits[row.name]}
           {...(placeholder === undefined ? {} : { placeholder })}
           invalid={row.fault !== undefined}
@@ -119,7 +123,7 @@ function SelectorLimit(props: { readonly row: SelectorLimitRow }): ReactNode {
       <SelectorLimitStanding row={row} />
       {row.fault === undefined ? null : (
         <span id={faultId} className="selector-fault">
-          {row.fault}
+          {text(row.fault)}
         </span>
       )}
     </div>
@@ -129,7 +133,7 @@ function SelectorLimit(props: { readonly row: SelectorLimitRow }): ReactNode {
 export function SelectorLimitsSection(props: {
   readonly draft: SelectorSettingsDraft;
   readonly settings: SelectorProjectSettingsResponse;
-  readonly faults: Readonly<Record<string, string>>;
+  readonly faults: Readonly<Record<string, Copy>>;
   readonly editing: boolean;
   readonly editable: boolean;
   readonly savable: boolean;
@@ -140,12 +144,13 @@ export function SelectorLimitsSection(props: {
   readonly onSave: () => void;
   readonly onReload: () => void;
 }): ReactNode {
+  const text = useCopyText();
   const section = selectorSettingsSection("limits");
   const changed = selectorSettingsSectionChangedCount(props.draft, "limits");
   return (
     <SelectorSection
-      title={section.title}
-      about={section.about}
+      title={text(section.title)}
+      about={text(section.about)}
       inherited={selectorSettingsSectionInherited(props.draft, "limits")}
       editing={props.editing}
       editable={props.editable}

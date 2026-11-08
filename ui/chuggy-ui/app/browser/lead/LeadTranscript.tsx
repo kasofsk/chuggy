@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * One session's transcript walk, and the note a lead leaves a successor with
  * nothing else to read yet.
@@ -51,6 +50,7 @@ import type {
 } from "../../core/leadTranscript.ts";
 import { apiThreadTranscriptAt } from "../../core/threadHome.ts";
 import type { ThreadHome } from "../../core/threadHome.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { useApiPorts } from "../api.ts";
 import { ConversationCard } from "../conversation/ConversationCard.tsx";
 import { Pill } from "../ui/Pill.tsx";
@@ -212,6 +212,7 @@ export function useLeadTranscript(
 export function LeadNote(props: {
   readonly note: LeadHandoffNote | undefined;
 }): ReactNode {
+  const text = useCopyText();
   const note = props.note;
   if (note === undefined || note.bytes === 0) return null;
   return (
@@ -219,9 +220,13 @@ export function LeadNote(props: {
       <ConversationCard
         label={
           <span className="flex flex-wrap items-center gap-2">
-            <span>Handoff note</span>
+            <span>{text({ id: "lead-handoff-note" })}</span>
             <span className="text-ink-3 tabular-nums">{note.bytes}</span>
-            {note.truncated ? <Pill tone="parked">Truncated</Pill> : null}
+            {note.truncated ? (
+              <Pill tone="parked">
+                {text({ id: "lead-handoff-truncated" })}
+              </Pill>
+            ) : null}
           </span>
         }
       >

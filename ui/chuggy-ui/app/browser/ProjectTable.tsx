@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The ticket list: the first screen inside a project, one row a ticket, which a
  * reader searches, sorts and filters to what needs them, what is moving and
@@ -37,6 +36,7 @@ import { phaseRoster } from "../../../../src/contract/rosters.ts";
 import { apiProject } from "../core/apiRoutes.ts";
 import { phaseLabel } from "../core/codeLabels.ts";
 import { useCopyText } from "../copy/CopyProvider.tsx";
+import type { ApiFailure } from "../core/apiRequest.ts";
 import type { CopyText } from "../core/copy.ts";
 import { creatorLabel } from "../core/labels.ts";
 import type { PanelState } from "../core/freshness.ts";
@@ -196,7 +196,10 @@ function TicketListState(props: {
       standing={standing}
       hint={
         standing === "Blocked"
-          ? `Blocked · ${String(unfinished)} unfinished ${unfinished === 1 ? "dependency" : "dependencies"}`
+          ? text({
+              id: "project-table-blocked-hint",
+              args: { count: unfinished },
+            })
           : row.badge === undefined
             ? undefined
             : text(row.badge)
@@ -225,6 +228,7 @@ function TicketListDependencies(props: {
   readonly row: ProjectTableRow;
   readonly standings: ReadonlyMap<number, TicketListStanding>;
 }): ReactNode {
+  const text = useCopyText();
   const waits = [
     ...props.row.openDependencies.map(
       (dependency) => [dependency.ticket, dependency.phase] as const,
@@ -234,9 +238,10 @@ function TicketListDependencies(props: {
     ),
   ];
   if (waits.length === 0) return null;
+  const waitsOn = text({ id: "project-table-waits-on" });
   return (
-    <span className="ticket-list-dependencies" aria-label="Waits on">
-      <Tooltip text="Waits on">
+    <span className="ticket-list-dependencies" aria-label={waitsOn}>
+      <Tooltip text={waitsOn}>
         <span className="ticket-list-waits">{ticketListDependencyGlyph}</span>
       </Tooltip>
       {waits.map(([ticket, phase]) => (
@@ -415,6 +420,7 @@ function TicketListCounts(props: {
   readonly filter: TicketFilter;
   readonly onFilter: (filter: TicketFilter) => void;
 }): ReactNode {
+  const text = useCopyText();
   const counts = new Map<TicketListStanding, number>();
   for (const row of props.rows) {
     const standing = ticketListStandingOf(row);
@@ -427,7 +433,10 @@ function TicketListCounts(props: {
   });
   const countWidest = Math.max(0, ...drawn.map(({ count }) => count));
   return (
-    <ul className="ticket-list-counts" aria-label="Tickets by state">
+    <ul
+      className="ticket-list-counts"
+      aria-label={text({ id: "project-table-aria-by-state" })}
+    >
       {drawn.map(({ standing, count }) => (
         <li key={standing}>
           <TicketStateCount
@@ -472,6 +481,7 @@ function TicketListCreatorPicker(props: {
   readonly query: TicketListQuery;
   readonly onQuery: (query: TicketListQuery) => void;
 }): ReactNode {
+  const text = useCopyText();
   const creator = props.query.creator;
   const reader = useProjectAbilities(props.partition)?.principal;
   const people = useProjectPeople(props.partition);
@@ -485,13 +495,20 @@ function TicketListCreatorPicker(props: {
   );
   return (
     <Picker
-      label="Creator"
+      label={text({ id: "project-table-creator-label" })}
       iconOnly
       glyph={ticketListCreatorGlyph}
       value={creator ?? ticketListCreatorAnyone}
       options={[
-        { value: ticketListCreatorAnyone, text: "Anyone" },
-        ...(reader === undefined ? [] : [{ value: reader, text: "Me" }]),
+        {
+          value: ticketListCreatorAnyone,
+          text: text({ id: "project-table-creator-anyone" }),
+        },
+        ...(reader === undefined
+          ? []
+          : [
+              { value: reader, text: text({ id: "project-table-creator-me" }) },
+            ]),
         ...offered.map((principal) => ({
           value: principal,
           text: creatorLabel(principal, creatorEmails).text,
@@ -518,6 +535,8 @@ function TicketListSearch(props: {
   readonly search: string;
   readonly onSearch: (search: string) => void;
 }): ReactNode {
+  const text = useCopyText();
+  const searchLabel = text({ id: "project-table-search" });
   const [asked, setAsked] = useState(false);
   const field = useRef<HTMLSpanElement>(null);
   const [laidOut, setLaidOut] = useState(false);
@@ -559,9 +578,9 @@ function TicketListSearch(props: {
       <button
         type="button"
         className={`${buttonLookClassName({ size: "sm" })} ticket-list-search-toggle`}
-        aria-label="Search tickets"
+        aria-label={searchLabel}
         aria-expanded={open}
-        title="Search tickets"
+        title={searchLabel}
         data-active={props.search === "" ? undefined : ""}
         onClick={() => {
           if (open) close();
@@ -572,8 +591,8 @@ function TicketListSearch(props: {
       </button>
       <span className="ticket-list-search-field" ref={field} inert={!open}>
         <Input
-          label="Search tickets"
-          placeholder="Search titles or #number…"
+          label={searchLabel}
+          placeholder={text({ id: "project-table-search-placeholder" })}
           value={props.search}
           onChange={props.onSearch}
         />
@@ -587,6 +606,58 @@ const ticketListSearchGlyph = (
     <path d="M7 12A5 5 0 1 0 7 2a5 5 0 0 0 0 10zM10.8 10.8l3 3" />
   </TicketListGlyph>
 );
+
+function TicketListSortPicker(props: {
+  readonly sort: TicketListSort;
+  readonly onSort: (sort: TicketListSort) => void;
+}): ReactNode {
+  const text = useCopyText();
+  return (
+    <Picker
+      label={text({ id: "project-table-sort-label" })}
+      iconOnly
+      glyph={ticketListSortGlyph}
+      value={props.sort}
+      options={ticketListSorts.map((sort) => ({
+        value: sort,
+        text: ticketListSortTitles[sort],
+      }))}
+      onChoose={(chosen) => {
+        props.onSort(ticketListSortOf(chosen));
+      }}
+      align="end"
+    />
+  );
+}
+
+function TicketListFilterPicker(props: {
+  readonly filter: TicketFilter;
+  readonly onFilter: (filter: TicketFilter) => void;
+}): ReactNode {
+  const text = useCopyText();
+  return (
+    <Picker
+      label={text({ id: "project-table-filter-label" })}
+      iconOnly
+      glyph={ticketListFilterGlyph}
+      value={props.filter}
+      options={[
+        {
+          value: ticketFilterAll,
+          text: text({ id: "project-table-filter-all" }),
+        },
+        ...ticketListFilterChoices.map((filter) => ({
+          value: filter,
+          text: ticketListFilterText(filter, text),
+        })),
+      ]}
+      onChoose={(chosen) => {
+        props.onFilter(ticketListFilterOf(chosen));
+      }}
+      align="end"
+    />
+  );
+}
 
 function TicketListControls(props: {
   readonly rows: readonly ProjectTableRow[];
@@ -602,7 +673,6 @@ function TicketListControls(props: {
 }): ReactNode {
   const bar = useRef<HTMLDivElement>(null);
   const hidden = useHeadroom(bar);
-  const text = useCopyText();
   return (
     <div
       className="ticket-list-controls"
@@ -617,36 +687,10 @@ function TicketListControls(props: {
       />
       <div className="ticket-list-selects">
         <TicketListSearch search={props.search} onSearch={props.onSearch} />
-        <Picker
-          label="Sort"
-          iconOnly
-          glyph={ticketListSortGlyph}
-          value={props.sort}
-          options={ticketListSorts.map((sort) => ({
-            value: sort,
-            text: ticketListSortTitles[sort],
-          }))}
-          onChoose={(chosen) => {
-            props.onSort(ticketListSortOf(chosen));
-          }}
-          align="end"
-        />
-        <Picker
-          label="Filter"
-          iconOnly
-          glyph={ticketListFilterGlyph}
-          value={props.filter}
-          options={[
-            { value: ticketFilterAll, text: "All states" },
-            ...ticketListFilterChoices.map((filter) => ({
-              value: filter,
-              text: ticketListFilterText(filter, text),
-            })),
-          ]}
-          onChoose={(chosen) => {
-            props.onFilter(ticketListFilterOf(chosen));
-          }}
-          align="end"
+        <TicketListSortPicker sort={props.sort} onSort={props.onSort} />
+        <TicketListFilterPicker
+          filter={props.filter}
+          onFilter={props.onFilter}
         />
         <TicketListCreatorPicker
           partition={props.partition}
@@ -660,8 +704,17 @@ function TicketListControls(props: {
 
 /** How many tickets a search matched, and, where that is a count of the rows
  * read while pages remain, that it is of those read so far. */
-function ticketListStatusMatched(matched: number, soFar: boolean): string {
-  return `${String(matched)} matching ${matched === 1 ? "ticket" : "tickets"}${soFar ? " so far" : ""}`;
+function ticketListStatusMatched(
+  matched: number,
+  soFar: boolean,
+  text: CopyText,
+): string {
+  return text({
+    id: soFar
+      ? "project-table-status-matched-so-far"
+      : "project-table-status-matched",
+    args: { matched },
+  });
 }
 
 /** One line under the controls where the list needs one: how many tickets a
@@ -673,17 +726,22 @@ function ticketListStatus(
   filter: TicketFilter,
   narrowed: boolean,
   shown: number,
+  text: CopyText,
 ): string | undefined {
   if (narrowed && ticketFilterIsStanding(filter))
-    return ticketListStatusMatched(shown, projectTicketRowsHaveMore(rows));
+    return ticketListStatusMatched(
+      shown,
+      projectTicketRowsHaveMore(rows),
+      text,
+    );
   if (narrowed)
     return rows.matched === undefined
       ? undefined
-      : ticketListStatusMatched(rows.matched, false);
+      : ticketListStatusMatched(rows.matched, false, text);
   if (shown > 0) return undefined;
   return rows.tickets.length > 0 && projectTicketRowsHaveMore(rows)
-    ? "None of the tickets read so far is in this state."
-    : "No active or recently finished tickets.";
+    ? text({ id: "project-table-status-none-in-state" })
+    : text({ id: "project-table-status-none-active" });
 }
 
 /** The rows the list's read holds that its filter draws, in the order the sort
@@ -699,6 +757,7 @@ function TicketListRows(props: {
   readonly narrowed: boolean;
   readonly readMore: (() => void) | undefined;
 }): ReactNode {
+  const text = useCopyText();
   const creatorEmails = useCreatorEmails(props.partition);
   const state = props.state;
   if (state.state !== "Ready") return <PanelUnready state={state} />;
@@ -715,6 +774,7 @@ function TicketListRows(props: {
     props.filter,
     props.narrowed,
     shown.length,
+    text,
   );
   return (
     <>
@@ -724,7 +784,10 @@ function TicketListRows(props: {
         </p>
       )}
       {shown.length === 0 ? null : (
-        <ul className="ticket-list" aria-label="Tickets">
+        <ul
+          className="ticket-list"
+          aria-label={text({ id: "project-table-aria-tickets" })}
+        >
           {shown.map((row) => (
             <TicketListRow
               key={row.ticket}
@@ -739,7 +802,9 @@ function TicketListRows(props: {
       )}
       {props.readMore === undefined ? null : (
         <div className="ticket-list-more">
-          <Button onClick={props.readMore}>Show more</Button>
+          <Button onClick={props.readMore}>
+            {text({ id: "project-table-show-more" })}
+          </Button>
         </div>
       )}
     </>
@@ -747,15 +812,17 @@ function TicketListRows(props: {
 }
 
 function ProjectTableTitle(): ReactNode {
-  return <ScreenTitle>Tickets</ScreenTitle>;
+  const text = useCopyText();
+  return <ScreenTitle>{text({ id: "project-table-title" })}</ScreenTitle>;
 }
 
 function ProjectTableNewTicket(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <ButtonLink to="/$tenant/$project/tickets/new" params={props.partition}>
-      New ticket
+      {text({ id: "project-table-new-ticket" })}
     </ButtonLink>
   );
 }
@@ -766,13 +833,14 @@ function ProjectTableEmpty(props: {
   readonly partition: PartitionIdentity;
   readonly authoring: boolean;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <>
       <ProjectTableTitle />
       <RepositoryImportRefusedNotice partition={props.partition} />
       <EmptyState
         variant="page"
-        label="No tickets"
+        label={text({ id: "project-table-empty" })}
         action={
           props.authoring ? (
             <ProjectTableNewTicket partition={props.partition} />
@@ -830,10 +898,25 @@ function useTicketListTyped(
   return [typed, setTyped];
 }
 
-export function ProjectTable(props: {
+/** Everything the page needs before it draws: the partition, the filter,
+ * sort and search the address and this browser's own keeping agree on, the
+ * rows under them and under every filter, and whether this reader may
+ * author a first ticket. */
+function useProjectTableState(props: {
   readonly query: TicketListQuery;
   readonly onQuery: (query: TicketListQuery) => void;
-}): ReactNode {
+}): {
+  readonly partition: PartitionIdentity;
+  readonly choices: ReturnType<typeof useTicketListFilter>;
+  readonly typed: string;
+  readonly setTyped: (typed: string) => void;
+  readonly sort: TicketListSort;
+  readonly ask: TicketListAsk;
+  readonly tickets: TicketRowsHeld;
+  readonly unfiltered: TicketRowsHeld;
+  readonly nowMs: number;
+  readonly authoring: boolean;
+} {
   const partition = useParams({ from: "/$tenant/$project" });
   const choices = useTicketListFilter(props.query, props.onQuery);
   const [typed, setTyped] = useTicketListTyped(props.query, props.onQuery);
@@ -849,11 +932,54 @@ export function ProjectTable(props: {
     ...ask,
     filter: ticketFilterAll,
   });
-  const nowMs = useNowMs();
   const authoring = !projectAbilityRefused(
     useProjectAbilities(partition),
     "mutate",
   );
+  return {
+    partition,
+    choices,
+    typed,
+    setTyped,
+    sort,
+    ask,
+    tickets,
+    unfiltered,
+    nowMs: useNowMs(),
+    authoring,
+  };
+}
+
+/** A further page that could not be read, beside the rows that were. */
+function ProjectTableMoreFailed(props: {
+  readonly failure: ApiFailure | undefined;
+}): ReactNode {
+  const text = useCopyText();
+  return props.failure === undefined ? null : (
+    <ReadFailed
+      subject={text({ id: "project-table-more-failed" })}
+      failure={props.failure}
+    />
+  );
+}
+
+export function ProjectTable(props: {
+  readonly query: TicketListQuery;
+  readonly onQuery: (query: TicketListQuery) => void;
+}): ReactNode {
+  const text = useCopyText();
+  const {
+    partition,
+    choices,
+    typed,
+    setTyped,
+    sort,
+    ask,
+    tickets,
+    unfiltered,
+    nowMs,
+    authoring,
+  } = useProjectTableState(props);
   if (
     tickets.state.state === "Ready" &&
     !tickets.kept &&
@@ -863,7 +989,11 @@ export function ProjectTable(props: {
   const partialFailure =
     tickets.state.state === "Ready" ? tickets.state.value.failure : undefined;
   return (
-    <section className="ticket-list-page" aria-label="Tickets" data-fills-width>
+    <section
+      className="ticket-list-page"
+      aria-label={text({ id: "project-table-aria-tickets" })}
+      data-fills-width
+    >
       <ProjectTableTitle />
       <RepositoryImportRefusedNotice partition={partition} />
       <TicketListControls
@@ -884,9 +1014,7 @@ export function ProjectTable(props: {
         query={props.query}
         onQuery={props.onQuery}
       />
-      {partialFailure === undefined ? null : (
-        <ReadFailed subject="More" failure={partialFailure} />
-      )}
+      <ProjectTableMoreFailed failure={partialFailure} />
       <TicketListRows
         state={tickets.state}
         filter={choices.filter}
@@ -896,7 +1024,9 @@ export function ProjectTable(props: {
         narrowed={ask.search !== undefined || ask.creator !== undefined}
         readMore={tickets.readMore}
       />
-      {tickets.reading ? <p className="panel-note">Loading…</p> : null}
+      {tickets.reading ? (
+        <p className="panel-note">{text({ id: "project-table-loading" })}</p>
+      ) : null}
     </section>
   );
 }

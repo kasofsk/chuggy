@@ -186,8 +186,8 @@ test("a reader no workspace holds, who may make none, is drawn that a new one ne
       projectCreationWorkspaceOffer(listed(), may, undefined),
     ).toStrictEqual({
       offer: "Withheld",
-      label: "No workspace",
-      detail: "A new workspace needs an invite link",
+      label: { id: "project-creation-workspace-unheld-label" },
+      detail: { id: "project-creation-workspace-unheld-detail" },
     });
 });
 
@@ -200,8 +200,8 @@ test("a member of some workspace who administers none is drawn that an admin add
     ),
   ).toStrictEqual({
     offer: "Withheld",
-    label: "No workspace to add to",
-    detail: "A workspace admin adds projects",
+    label: { id: "project-creation-workspace-unadmin-label" },
+    detail: { id: "project-creation-workspace-unadmin-detail" },
   });
 });
 
@@ -259,7 +259,9 @@ test("the abilities read failing over one workspace to add to starts the free te
 
 test("an entry is called by its workspace, and the making of one by its own words", () => {
   expect(projectCreationWorkspaceEntryText(held("mimage"))).toBe("mimage");
-  expect(projectCreationWorkspaceEntryText(creation)).toBe("New workspace");
+  expect(projectCreationWorkspaceEntryText(creation)).toStrictEqual({
+    id: "project-creation-workspace-new",
+  });
 });
 
 const offered = {

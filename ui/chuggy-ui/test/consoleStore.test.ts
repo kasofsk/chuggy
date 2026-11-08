@@ -45,15 +45,16 @@ test("a box keeps its pair through a refusal and spends it on an accepted send",
   store.dispatch(inquiryBoxTypedAt({ partition: atlas, typed: "why" }));
   const draw = inquiryDraw(undefined, "why", atlas, () => "pair-1");
   store.dispatch(inquiryBoxSentAt(draw));
+  const refusedWord = { id: "lead-inquiry-refusal-unknown" } as const;
   store.dispatch(
     inquiryBoxAnsweredAt({
       draw,
-      answer: { ask: "Refused", word: "Busy" },
+      answer: { ask: "Refused", word: refusedWord },
     }),
   );
   const refused = inquiryBoxAt(store.getState(), atlas);
   expect(refused.held).toStrictEqual(draw);
-  expect(refused.ask).toStrictEqual({ ask: "Refused", word: "Busy" });
+  expect(refused.ask).toStrictEqual({ ask: "Refused", word: refusedWord });
   store.dispatch(
     inquiryBoxAnsweredAt({ draw, answer: { ask: "Asked", session: "inq-1" } }),
   );

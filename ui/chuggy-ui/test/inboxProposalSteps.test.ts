@@ -15,6 +15,8 @@ import {
   inboxProposalStepWord,
 } from "../app/core/inboxProposals.ts";
 import { selectorReviewFeedbackCharsMax } from "../../../src/contract/http.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
+import { copyOrDataText } from "../app/core/copy.ts";
 
 test("an answer is the outcome the server recorded", () => {
   const step = inboxProposalAnswered({
@@ -22,7 +24,7 @@ test("an answer is the outcome the server recorded", () => {
     value: { decision: "dec-a", outcome: "Rejected" },
   });
   expect(step).toStrictEqual({ step: "Answered", outcome: "Rejected" });
-  expect(inboxProposalStepWord(step)).toBe("Rejected");
+  expect(copyTextEn(inboxProposalStepWord(step))).toBe("Rejected");
 });
 
 test("a decision no longer held is stale, and any other conflict is not", () => {
@@ -32,7 +34,7 @@ test("a decision no longer held is stale, and any other conflict is not", () => 
     body: undefined,
   });
   expect(stale).toStrictEqual({ step: "Stale" });
-  expect(inboxProposalStepWord(stale)).toBe("Stale");
+  expect(copyTextEn(inboxProposalStepWord(stale))).toBe("Stale");
   expect(
     inboxProposalAnswered({
       outcome: "Conflict",
@@ -42,14 +44,23 @@ test("a decision no longer held is stale, and any other conflict is not", () => 
   ).toStrictEqual({ step: "Failed", why: "IdempotencyConflict" });
 });
 
-test("a refusal with no code is said as its outcome", () => {
-  expect(inboxProposalAnswered({ outcome: "Absent" })).toStrictEqual({
+function failedWhy(step: ReturnType<typeof inboxProposalAnswered>): string {
+  if (step.step !== "Failed") throw new Error(`not failed: ${step.step}`);
+  return copyOrDataText(copyTextEn, step.why);
+}
+
+test("a refusal with no code is said as its outcome, under the outcome's label", () => {
+  const absent = inboxProposalAnswered({ outcome: "Absent" });
+  expect(absent).toStrictEqual({
     step: "Failed",
-    why: "Absent",
+    why: { id: "inbox-proposal-failed-absent" },
   });
+  expect(failedWhy(absent)).toBe("Absent");
   expect(
-    inboxProposalAnswered({ outcome: "Unreachable", reason: "offline" }),
-  ).toStrictEqual({ step: "Failed", why: "Unreachable" });
+    failedWhy(
+      inboxProposalAnswered({ outcome: "Unreachable", reason: "offline" }),
+    ),
+  ).toBe("Unreachable");
 });
 
 test("a note of nothing but space is no note, and a note is sent trimmed", () => {
@@ -73,15 +84,21 @@ test("a note is held to what the wire takes", () => {
 test("a review's line names its decision's tickets, then the word, then why it failed", () => {
   const proposal = { decision: "dec-a", tickets: [7, 8] };
   expect(
-    inboxProposalSentence({
-      proposal,
-      step: { step: "Answered", outcome: "Approved" },
-    }),
+    inboxProposalSentence(
+      {
+        proposal,
+        step: { step: "Answered", outcome: "Approved" },
+      },
+      copyTextEn,
+    ),
   ).toBe("Proposal 7, 8 · Approved");
   expect(
-    inboxProposalSentence({
-      proposal,
-      step: { step: "Failed", why: "InternalError" },
-    }),
+    inboxProposalSentence(
+      {
+        proposal,
+        step: { step: "Failed", why: "InternalError" },
+      },
+      copyTextEn,
+    ),
   ).toBe("Proposal 7, 8 · Failed · InternalError");
 });
