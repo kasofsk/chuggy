@@ -624,7 +624,7 @@ function TicketListControls(props: {
           value={props.sort}
           options={ticketListSorts.map((sort) => ({
             value: sort,
-            text: ticketListSortTitles[sort],
+            text: text(ticketListSortTitles[sort]),
           }))}
           onChoose={(chosen) => {
             props.onSort(ticketListSortOf(chosen));

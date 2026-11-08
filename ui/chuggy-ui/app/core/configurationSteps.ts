@@ -740,6 +740,7 @@ const legacyDetailFields: ReadonlySet<OverrideField> = new Set([
 function legacyOverridesOf(
   held: LegacyHeld,
   details: readonly ConfigurationStepDetail[],
+  text: CopyText,
 ): readonly string[] {
   const { document, pinned, overridden } = held;
   return [
@@ -750,11 +751,14 @@ function legacyOverridesOf(
     ),
     ...[...overridden]
       .filter((field) => !legacyDetailFields.has(field))
-      .map(overrideFieldLabel),
+      .map((field) => text(overrideFieldLabel(field))),
   ];
 }
 
-function legacyWorkRowOf(held: LegacyHeld): ConfigurationStepRow {
+function legacyWorkRowOf(
+  held: LegacyHeld,
+  text: CopyText,
+): ConfigurationStepRow {
   const { view, document } = held;
   const commands = view.work.commands;
   const details = [
@@ -768,7 +772,7 @@ function legacyWorkRowOf(held: LegacyHeld): ConfigurationStepRow {
         ? { by: legacyAgentOf(document), from: undefined, more: 0 }
         : stepsCommandsRuns(commands),
     model: commands === undefined ? view.settings.model.label : undefined,
-    overrides: legacyOverridesOf(held, details),
+    overrides: legacyOverridesOf(held, details, text),
     details,
     prompt: legacyWorkPromptOf(held),
     definition: Object.fromEntries(
@@ -848,7 +852,7 @@ function legacyStepsOf(
   const held = legacyHeldOf(canonical, overrides);
   const evaluation = legacyEvaluationRowsOf(held);
   const groups: readonly ConfigurationStepGroup[] = [
-    { phase: "Work", note: undefined, rows: [legacyWorkRowOf(held)] },
+    { phase: "Work", note: undefined, rows: [legacyWorkRowOf(held, text)] },
     ...(evaluation.length === 0
       ? []
       : [{ phase: "Evaluation" as const, note: undefined, rows: evaluation }]),

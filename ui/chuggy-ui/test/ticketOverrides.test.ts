@@ -32,6 +32,7 @@ import {
   creationOffers,
   creationSummary,
 } from "./ticketCreationFixture.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 
 const declarations = import.meta.glob<string>(
   "../../../test/fixtures/configurations/*.json",
@@ -242,7 +243,10 @@ test("a mode the contract refuses is a fault at the model, before submit", () =>
     creationForm({ overrides: overrideModelChosen({}, unread, "o3") }),
     [],
   );
-  expect(body.assembled === "Faults" && body.faults).toStrictEqual([
+  const faults = body.assembled === "Faults" ? body.faults : [];
+  expect(
+    faults.map((fault) => ({ ...fault, reason: copyTextEn(fault.reason) })),
+  ).toStrictEqual([
     {
       field: "overrides",
       override: "worker.mode",

@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The images a ticket carries, attached in the form: picked, pasted or
  * dropped, each uploaded as the bytes it is and held as the identity the
@@ -32,6 +31,8 @@ import {
   creationImageUploadSentence,
 } from "../core/ticketCreation.ts";
 import type { TicketCreationForm } from "../core/ticketCreation.ts";
+import { useCopyText } from "../copy/CopyProvider.tsx";
+import type { Copy, CopyText } from "../core/copy.ts";
 import { useConsoleWrite } from "./consoleWrite.tsx";
 import { ProjectImage, useProjectImageHeld } from "./ProjectImage.tsx";
 import { Button } from "./ui/Button.tsx";
@@ -83,12 +84,13 @@ async function creationImagesUploaded(
 function creationImagesWrite(
   api: CreationImagesApi,
   held: ReturnType<typeof useProjectImageHeld>,
+  text: CopyText,
 ): ConsoleWrite<readonly File[], readonly CreationImageUploaded[]> {
   const { ports, partition } = api;
   return {
     mutationKey: consoleWriteKey("creation-images", api.storeKey),
     write: (_ports, files) => creationImagesUploaded(ports, partition, files),
-    refusal: creationImageUploadSentence,
+    refusal: (failure) => text(creationImageUploadSentence(failure)),
     landed: (_client, uploaded) => {
       for (const image of uploaded)
         held(image.artifact, image.mediaType, image.content);
@@ -105,11 +107,12 @@ function useCreationImagesAttach(props: FormEdit & CreationImagesApi) {
   useEffect(() => {
     latest.current = props;
   });
+  const text = useCopyText();
   const uploading = useConsoleWrite(
-    creationImagesWrite(props, useProjectImageHeld(props.partition)),
+    creationImagesWrite(props, useProjectImageHeld(props.partition), text),
     { drawn: true },
   );
-  const [bound, setBound] = useState<string | undefined>(undefined);
+  const [bound, setBound] = useState<Copy | undefined>(undefined);
   const attach = (files: readonly File[]): void => {
     const offered = creationImagesTaken(props.form.images.length, files);
     setBound(offered.refused);
@@ -129,7 +132,8 @@ function useCreationImagesAttach(props: FormEdit & CreationImagesApi) {
   };
   const refused = uploading.isPending
     ? undefined
-    : (uploading.error?.message ?? bound);
+    : (uploading.error?.message ??
+      (bound === undefined ? undefined : text(bound)));
   return { busy: uploading.isPending, refused, attach };
 }
 
@@ -140,12 +144,15 @@ function CreationImagesNote(props: {
   readonly refused: string | undefined;
   readonly count: number;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <p className="text-ink-3 m-0 text-sm" role="status">
       <span className="num">
         {props.count} / {briefImagesMax}
       </span>
-      {props.busy ? " · uploading…" : null}
+      {props.busy
+        ? ` · ${text({ id: "ticket-authoring-images-uploading" })}`
+        : null}
       {props.refused === undefined ? null : (
         <span className="text-tone-fail"> · {props.refused}</span>
       )}
@@ -158,15 +165,22 @@ function CreationImagesHeld(
   props: FormEdit & { readonly partition: PartitionIdentity },
 ): ReactNode {
   const { form, onChange } = props;
+  const text = useCopyText();
   if (form.images.length === 0) return null;
   return (
-    <ul aria-label="Images" className="m-0 flex flex-wrap gap-2 p-0">
+    <ul
+      aria-label={text({ id: "ticket-authoring-images" })}
+      className="m-0 flex flex-wrap gap-2 p-0"
+    >
       {form.images.map((artifact, at) => (
         <li key={artifact} className="flex items-end gap-1">
           <ProjectImage
             partition={props.partition}
             artifact={artifact}
-            alt={`Image ${String(at + 1)}`}
+            alt={text({
+              id: "ticket-authoring-image",
+              args: { number: String(at + 1) },
+            })}
             className="rounded-2 border-edge block h-[calc(var(--space-7)*2)] max-w-full border"
           />
           <Button
@@ -178,7 +192,7 @@ function CreationImagesHeld(
               });
             }}
           >
-            Remove
+            {text({ id: "ticket-authoring-remove" })}
           </Button>
         </li>
       ))}
@@ -192,19 +206,20 @@ function CreationImagesPick(props: {
   readonly busy: boolean;
   readonly onFiles: (files: readonly File[]) => void;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <div
       tabIndex={0}
       role="group"
       className="creation-row"
-      aria-label="Paste or drop images here"
+      aria-label={text({ id: "ticket-authoring-images-drop" })}
     >
-      <span>Attach</span>
+      <span>{text({ id: "ticket-authoring-attach" })}</span>
       <input
         type="file"
         multiple
         accept={imageMediaTypes.join(",")}
-        aria-label="Attach images"
+        aria-label={text({ id: "ticket-authoring-attach-images" })}
         disabled={props.full || props.busy}
         onChange={(event) => {
           const files = Array.from(event.target.files ?? []);
@@ -213,9 +228,14 @@ function CreationImagesPick(props: {
         }}
       />
       <span className="creation-hint text-ink-3 text-xs">
-        {props.full
-          ? creationImagesBoundSentence
-          : `Pick, paste or drop · ${creationImageTypesLabel}`}
+        {text(
+          props.full
+            ? creationImagesBoundSentence
+            : {
+                id: "ticket-authoring-images-pick",
+                args: { types: creationImageTypesLabel },
+              },
+        )}
       </span>
     </div>
   );
@@ -225,6 +245,7 @@ export function CreationImages(
   props: FormEdit & { readonly api: CreationImagesApi },
 ): ReactNode {
   const { form } = props;
+  const text = useCopyText();
   const { busy, refused, attach } = useCreationImagesAttach({
     ...props,
     ...props.api,
@@ -251,7 +272,7 @@ export function CreationImages(
         offered(event.dataTransfer.files, event);
       }}
     >
-      <legend>Images</legend>
+      <legend>{text({ id: "ticket-authoring-images" })}</legend>
       <CreationImagesHeld
         form={form}
         onChange={props.onChange}

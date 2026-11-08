@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * Creating a ticket: one screen, one submit, and a configuration asked about
  * unless the project is known to offer one alone.
@@ -21,6 +20,7 @@ import type { ReactNode } from "react";
 
 import {
   briefChecksMax,
+  briefLinkScheme,
   briefLinksMax,
 } from "../../../../src/contract/brief.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -148,7 +148,8 @@ import { Picker } from "./ui/Picker.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
 import { AddRunnerLink, useWorkRunner } from "./workRunner.tsx";
 import { useCopyText } from "../copy/CopyProvider.tsx";
-import type { CopyText } from "../core/copy.ts";
+import { copyOrDataText } from "../core/copy.ts";
+import type { Copy, CopyText } from "../core/copy.ts";
 
 import "./TicketCreation.css";
 
@@ -173,9 +174,10 @@ function Fault(props: {
   readonly field: CreationField;
   readonly faults: readonly CreationFault[];
 }): ReactNode {
+  const text = useCopyText();
   const found = props.faults.find((fault) => fault.field === props.field);
   return found === undefined ? null : (
-    <p className="text-tone-fail">{found.reason}</p>
+    <p className="text-tone-fail">{text(found.reason)}</p>
   );
 }
 
@@ -183,10 +185,11 @@ function Fault(props: {
 function ConfigurationLine(props: {
   readonly offer: CreationOffer;
 }): ReactNode {
+  const text = useCopyText();
   const shaping = creationConfigurationLabel(props.offer);
   return (
     <Tooltip text={shaping.title}>
-      <p className="text-ink-3">{shaping.text}</p>
+      <p className="text-ink-3">{text(shaping.text)}</p>
     </Tooltip>
   );
 }
@@ -204,6 +207,7 @@ type FormDrawn = FormEdit & {
  */
 function Configuration(props: FormDrawn): ReactNode {
   const { form, onChange, offers, repositories } = props;
+  const text = useCopyText();
   const chosen = creationOfferOf(offers, form.configuration);
   const sole = creationConfigurationAsked(offers, form.configuration)
     ? undefined
@@ -214,11 +218,11 @@ function Configuration(props: FormDrawn): ReactNode {
     <>
       {sole === undefined ? (
         <div className="creation-row">
-          <span>Configuration</span>
+          <span>{text({ id: "ticket-authoring-configuration" })}</span>
           <Picker
-            label="Configuration"
+            label={text({ id: "ticket-authoring-configuration" })}
             value={form.configuration}
-            placeholder="Choose"
+            placeholder={text({ id: "ticket-authoring-choose" })}
             hint={chosen?.initialization.configuration.revision}
             options={offers.map((offer) => ({
               value: offer.name,
@@ -235,19 +239,20 @@ function Configuration(props: FormDrawn): ReactNode {
         <ConfigurationLine offer={sole} />
       )}
       {bootstrap === undefined ? null : (
-        <Notice tone="info" detail={bootstrap} />
+        <Notice tone="info" detail={text(bootstrap)} />
       )}
     </>
   );
 }
 
-/** What each field of a selection is called where it is chosen. */
+/** What each field of a selection is called where it is chosen: the third
+ * is the landing. */
 const selectionLabels: Readonly<
-  Record<Exclude<keyof CatalogSelected, "configuration">, string>
+  Record<Exclude<keyof CatalogSelected, "configuration">, Copy>
 > = {
-  work: "Work",
-  evaluation: "Evaluation",
-  finalization: "Finalizer",
+  work: { id: "ticket-authoring-selection-work" },
+  evaluation: { id: "ticket-authoring-selection-evaluation" },
+  finalization: { id: "ticket-authoring-selection-landing" },
 };
 
 /**
@@ -261,6 +266,7 @@ function Selection(
   props: FormDrawn & { readonly faults: readonly CreationFault[] },
 ): ReactNode {
   const { form, onChange, offers, repositories } = props;
+  const text = useCopyText();
   const catalog = creationCatalogOf(
     creationOfferOf(offers, form.configuration),
   );
@@ -272,11 +278,11 @@ function Selection(
       {(["work", "evaluation", "finalization"] as const).map((field) =>
         choices[field].length === 0 ? null : (
           <div className="creation-row" key={field}>
-            <span>{selectionLabels[field]}</span>
+            <span>{text(selectionLabels[field])}</span>
             <Picker
-              label={selectionLabels[field]}
+              label={text(selectionLabels[field])}
               value={selected[field] ?? ""}
-              placeholder="None"
+              placeholder={text({ id: "ticket-authoring-none" })}
               options={choices[field]}
               onChoose={(name) => {
                 onChange(
@@ -302,13 +308,14 @@ function Selection(
 
 function Title(props: FormEdit): ReactNode {
   const { form, onChange } = props;
+  const text = useCopyText();
   return (
     <label className="creation-row">
-      <span>Title</span>
+      <span>{text({ id: "ticket-authoring-title" })}</span>
       <input
         type="text"
         value={form.title}
-        placeholder="what this ticket is called"
+        placeholder={text({ id: "ticket-authoring-title-placeholder" })}
         onChange={(event) => {
           onChange({ ...form, title: event.target.value });
         }}
@@ -319,13 +326,14 @@ function Title(props: FormEdit): ReactNode {
 
 function Intent(props: FormEdit): ReactNode {
   const { form, onChange } = props;
+  const text = useCopyText();
   return (
     <label className="creation-row creation-intent">
-      <span>Intent</span>
+      <span>{text({ id: "ticket-authoring-intent" })}</span>
       <textarea
         rows={8}
         value={form.intent}
-        placeholder="what this ticket is for"
+        placeholder={text({ id: "ticket-authoring-intent-placeholder" })}
         onChange={(event) => {
           onChange({ ...form, intent: event.target.value });
         }}
@@ -336,16 +344,20 @@ function Intent(props: FormEdit): ReactNode {
 
 function Links(props: FormEdit): ReactNode {
   const { form, onChange } = props;
+  const text = useCopyText();
   return (
     <fieldset className="creation-set">
-      <legend>Links</legend>
+      <legend>{text({ id: "ticket-authoring-links" })}</legend>
       {form.links.map((link, index) => (
         <div key={index} className="creation-row creation-line">
           <input
             type="url"
-            aria-label={`Link ${String(index + 1)}`}
+            aria-label={text({
+              id: "ticket-authoring-link",
+              args: { number: String(index + 1) },
+            })}
             value={link}
-            placeholder="https://"
+            placeholder={briefLinkScheme}
             onChange={(event) => {
               onChange({
                 ...form,
@@ -364,7 +376,7 @@ function Links(props: FormEdit): ReactNode {
               });
             }}
           >
-            Remove
+            {text({ id: "ticket-authoring-remove" })}
           </Button>
         </div>
       ))}
@@ -375,7 +387,7 @@ function Links(props: FormEdit): ReactNode {
           onChange({ ...form, links: [...form.links, ""] });
         }}
       >
-        Add link
+        {text({ id: "ticket-authoring-add-link" })}
       </Button>
     </fieldset>
   );
@@ -384,16 +396,20 @@ function Links(props: FormEdit): ReactNode {
 /** The command lines this ticket adds to the stage its configuration runs. */
 function Checks(props: FormEdit): ReactNode {
   const { form, onChange } = props;
+  const text = useCopyText();
   return (
     <fieldset className="creation-set">
-      <legend>Checks</legend>
+      <legend>{text({ id: "ticket-authoring-checks" })}</legend>
       {form.checks.map((check, index) => (
         <div key={index} className="creation-row creation-line">
           <input
             type="text"
-            aria-label={`Check ${String(index + 1)}`}
+            aria-label={text({
+              id: "ticket-authoring-check",
+              args: { number: String(index + 1) },
+            })}
             value={check}
-            placeholder="a command line"
+            placeholder={text({ id: "ticket-authoring-check-placeholder" })}
             onChange={(event) => {
               onChange({
                 ...form,
@@ -412,7 +428,7 @@ function Checks(props: FormEdit): ReactNode {
               });
             }}
           >
-            Remove
+            {text({ id: "ticket-authoring-remove" })}
           </Button>
         </div>
       ))}
@@ -423,7 +439,7 @@ function Checks(props: FormEdit): ReactNode {
           onChange({ ...form, checks: [...form.checks, ""] });
         }}
       >
-        Add check
+        {text({ id: "ticket-authoring-add-check" })}
       </Button>
     </fieldset>
   );
@@ -467,12 +483,15 @@ function Branch(
   props: FormEdit & { readonly proposed: string | undefined },
 ): ReactNode {
   const { form, onChange } = props;
+  const text = useCopyText();
   return (
     <BranchRow
-      label="Branch"
-      hint={creationBranchFieldHint}
+      label={text({ id: "ticket-authoring-branch" })}
+      hint={text(creationBranchFieldHint)}
       value={form.branchName}
-      placeholder={props.proposed ?? "the branch name"}
+      placeholder={
+        props.proposed ?? text({ id: "ticket-authoring-branch-placeholder" })
+      }
       onChange={(branchName) => {
         onChange({ ...form, branchName });
       }}
@@ -482,12 +501,13 @@ function Branch(
 
 function TargetBranch(props: FormEdit): ReactNode {
   const { form, onChange } = props;
+  const text = useCopyText();
   return (
     <BranchRow
-      label="Target branch"
-      hint={creationTargetBranchFieldHint(form.finalization)}
+      label={text({ id: "ticket-authoring-target-branch" })}
+      hint={text(creationTargetBranchFieldHint(form.finalization))}
       value={form.targetBranchName}
-      placeholder="the branch to land on"
+      placeholder={text({ id: "ticket-authoring-target-branch-placeholder" })}
       onChange={(targetBranchName) => {
         onChange({ ...form, targetBranchName });
       }}
@@ -499,14 +519,15 @@ function TargetBranch(props: FormEdit): ReactNode {
  * binding: holding none names none, and the form neither asks nor sends. */
 function Repository(props: FormDrawn): ReactNode {
   const { form, onChange, offers, repositories } = props;
+  const text = useCopyText();
   if (repositories.length === 0) return null;
   return (
     <div className="creation-row">
-      <span>Repository</span>
+      <span>{text({ id: "ticket-authoring-repository" })}</span>
       <Picker
-        label="Repository"
+        label={text({ id: "ticket-authoring-repository" })}
         value={form.repository}
-        placeholder="Choose"
+        placeholder={text({ id: "ticket-authoring-choose" })}
         hint={form.repository === "" ? undefined : form.repository}
         options={repositories.map((binding) => ({
           value: binding.repository,
@@ -532,6 +553,7 @@ function EpicChoice(
   props: FormEdit & { readonly partition: PartitionIdentity },
 ) {
   const { form, onChange, partition } = props;
+  const text = useCopyText();
   const [after, setAfter] = useState<number | undefined>(undefined);
   const [picked, setPicked] = useState<EpicPicked | undefined>(undefined);
   const state = usePanelState(
@@ -550,13 +572,13 @@ function EpicChoice(
   const nextAfter = page?.nextAfter;
   return (
     <div className="creation-row">
-      <span>Epic</span>
+      <span>{text({ id: "ticket-authoring-epic" })}</span>
       <Picker
-        label="Epic"
+        label={text({ id: "ticket-authoring-epic" })}
         value={form.epic === "" ? epicNone : form.epic}
-        placeholder="None"
+        placeholder={text({ id: "ticket-authoring-none" })}
         options={[
-          { value: epicNone, text: "None" },
+          { value: epicNone, text: text({ id: "ticket-authoring-none" }) },
           ...epicPickerOptions(
             epics,
             picked !== undefined && String(picked.number) === form.epic
@@ -573,7 +595,7 @@ function EpicChoice(
             ? []
             : [
                 {
-                  text: "More epics",
+                  text: text({ id: "ticket-authoring-epics-more" }),
                   onSelect: () => {
                     setAfter(nextAfter);
                   },
@@ -583,7 +605,7 @@ function EpicChoice(
             ? []
             : [
                 {
-                  text: "First epics",
+                  text: text({ id: "ticket-authoring-epics-first" }),
                   onSelect: () => {
                     setAfter(undefined);
                   },
@@ -620,9 +642,26 @@ function Finalization(props: FormEdit): ReactNode {
 export function attemptHeldDraft(
   draft: DraftResponse | undefined,
   motion: CreationMotion,
+): Copy | undefined {
+  if (draft === undefined || motion !== "Update") return undefined;
+  return {
+    id: "ticket-authoring-held-draft",
+    args: { version: String(draft.authoringVersion) },
+  };
+}
+
+/** A failed attempt's reason, with what it left in the draft after it. */
+export function attemptReasonHeld(
+  reason: string,
+  held: Copy | undefined,
+  text: CopyText,
 ): string {
-  if (draft === undefined || motion !== "Update") return "";
-  return ` · Draft version ${String(draft.authoringVersion)} not released`;
+  return held === undefined
+    ? reason
+    : text({
+        id: "ticket-authoring-joined",
+        args: { first: reason, second: held },
+      });
 }
 
 export function AttemptNote(props: {
@@ -638,7 +677,7 @@ export function AttemptNote(props: {
     case "Running":
       return (
         <p className="panel-note">
-          {creationStepSentence(attempt.step, text, motion)}
+          {text(creationStepSentence(attempt.step, motion))}
         </p>
       );
     case "Stale":
@@ -647,11 +686,17 @@ export function AttemptNote(props: {
       return (
         <>
           {attempt.unread === undefined ? null : (
-            <ReadFailed subject="Draft" failure={attempt.unread} />
+            <ReadFailed
+              subject={text({ id: "ticket-authoring-draft" })}
+              failure={attempt.unread}
+            />
           )}
           <p className="panel-failed">
-            {attempt.reason}
-            {attemptHeldDraft(attempt.held?.draft, motion)}
+            {attemptReasonHeld(
+              attempt.reason,
+              attemptHeldDraft(attempt.held?.draft, motion),
+              text,
+            )}
           </p>
         </>
       );
@@ -671,6 +716,7 @@ function Overrides(
   },
 ): ReactNode {
   const { form, onChange } = props;
+  const text = useCopyText();
   const canonical = props.offer?.initialization.configuration.canonical;
   const document = useMemo(
     () => (canonical === undefined ? undefined : overrideDocumentOf(canonical)),
@@ -679,14 +725,17 @@ function Overrides(
   const general = props.faults.filter(
     (fault) => fault.field === "overrides" && fault.override === undefined,
   );
-  const faults = new Map<OverrideField, string>(
+  const faults = new Map<OverrideField, Copy>(
     props.faults.flatMap((fault) =>
       fault.override === undefined ? [] : [[fault.override, fault.reason]],
     ),
   );
   if (canonical === undefined) return null;
   return (
-    <Panel title="Overrides" collapsible={{ open: false }}>
+    <Panel
+      title={text({ id: "ticket-authoring-overrides" })}
+      collapsible={{ open: false }}
+    >
       <ConfigurationOverrides
         document={document}
         overrides={form.overrides}
@@ -852,15 +901,18 @@ function CreationAttemptNote(props: {
   readonly existing: (ticket: number) => ReactNode;
 }): ReactNode {
   const attempt = props.attempt;
+  const text = useCopyText();
   if (attempt.attempt === "Held")
     return (
-      <p className="panel-note">{creationDraftHeldSentence(attempt.held)}</p>
+      <p className="panel-note">
+        {text(creationDraftHeldSentence(attempt.held))}
+      </p>
     );
   if (attempt.attempt !== "Exists")
     return <AttemptNote attempt={attempt} motion={props.motion} />;
   return (
     <p className="panel-failed">
-      {creationTicketExistsSentence(attempt.held)} —{" "}
+      {text(creationTicketExistsSentence(attempt.held))} —{" "}
       {props.existing(attempt.ticket)}
     </p>
   );
@@ -903,11 +955,23 @@ function creationAttemptOf(
 
 /** The sentence a submit that made no ticket is refused in, which is the
  * one its note leads with. */
-function creationUnmadeSentence(ended: TicketCreationUnmade): string {
+function creationUnmadeSentence(
+  ended: TicketCreationUnmade,
+  text: CopyText,
+): string {
   if (ended.created === "Exists")
-    return creationTicketExistsSentence(ended.held);
+    return text(creationTicketExistsSentence(ended.held));
   return ended.created === "Refused" && ended.unread !== undefined
-    ? `${readFailedLine("Draft", ended.unread)} · ${ended.reason}`
+    ? text({
+        id: "ticket-authoring-joined",
+        args: {
+          first: readFailedLine(
+            text({ id: "ticket-authoring-draft" }),
+            ended.unread,
+          ),
+          second: ended.reason,
+        },
+      })
     : ended.reason;
 }
 
@@ -948,13 +1012,16 @@ function creationWrite(
         return { outcome: "Ok", value: created.ticket };
       if (created.created !== "Stale")
         throw new TicketCreationRefused(
-          creationUnmadeSentence(created),
+          creationUnmadeSentence(created, text),
           created,
         );
       await client.invalidateQueries({ queryKey });
       const ended =
         client.getQueryState(queryKey)?.status === "error"
-          ? { created: "Stale" as const, reason: creationStaleUnreadSentence }
+          ? {
+              created: "Stale" as const,
+              reason: text(creationStaleUnreadSentence),
+            }
           : created;
       throw new TicketCreationRefused(ended.reason, ended);
     },
@@ -1131,11 +1198,14 @@ function creationStoreKey(
 function CreationDuplicateDropped(props: {
   readonly duplicate: CreationDuplicate | undefined;
 }): ReactNode {
+  const text = useCopyText();
   const dropped =
     props.duplicate === undefined
       ? undefined
       : ticketDuplicateDroppedSentence(props.duplicate.seed.dropped);
-  return dropped === undefined ? null : <Notice tone="info" detail={dropped} />;
+  return dropped === undefined ? null : (
+    <Notice tone="info" detail={text(dropped)} />
+  );
 }
 
 /** The assembly a creation form is judged by, for a reader who may or may not
@@ -1186,6 +1256,7 @@ export function CreationFormDrawn(props: CreationFormDrawnProps): ReactNode {
   const { held, repositories } = props;
   const { offers, partial } = props.context;
   const standing = props.standing ?? { mayOverride: true };
+  const text = useCopyText();
   return (
     <div className="creation">
       {props.lead}
@@ -1198,8 +1269,8 @@ export function CreationFormDrawn(props: CreationFormDrawnProps): ReactNode {
         assemble={creationAssembler(offers, repositories, standing)}
         proposed={creationFormProposed}
         storeKey={props.storeKey}
-        submitLabel="Create ticket"
-        submitEffect={creationSubmitEffect(props.start)}
+        submitLabel={text({ id: "ticket-authoring-create-ticket" })}
+        submitEffect={copyOrDataText(text, creationSubmitEffect(props.start))}
         submitStep={
           props.start === "NoRunner" ? (
             <AddRunnerLink partition={props.partition} />
@@ -1305,13 +1376,17 @@ export function CreationTicketLink(props: {
   readonly partition: PartitionIdentity;
   readonly ticket: number;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <Link
       to="/$tenant/$project/tickets/$ticket"
       params={{ ...props.partition, ticket: String(props.ticket) }}
       ignoreBlocker
     >
-      Ticket {props.ticket}
+      {text({
+        id: "ticket-authoring-ticket",
+        args: { ticket: String(props.ticket) },
+      })}
     </Link>
   );
 }
@@ -1323,16 +1398,19 @@ export function CreationContextAbsent(props: {
   readonly context: Exclude<CreationContext, { context: "Ready" }>;
 }): ReactNode {
   const { partition, context } = props;
+  const text = useCopyText();
   if (context.context === "ReadyConfigurationUnknown")
-    return <p className="panel-absent">{creationContextSentence(context)}</p>;
+    return (
+      <p className="panel-absent">{text(creationContextSentence(context))}</p>
+    );
   return (
     <EmptyState
       variant="page"
-      label={creationContextSentence(context)}
+      label={text(creationContextSentence(context))}
       action={
         context.context === "NoRepository" ? (
           <Link to="/$tenant/$project/repositories" params={partition}>
-            Repositories
+            {text({ id: "ticket-authoring-repositories" })}
           </Link>
         ) : undefined
       }
@@ -1375,8 +1453,9 @@ function CreationScreenRead(props: {
   const query = creationContextQuery(partition);
   const queryKey = query.queryKey;
   const state = usePanelState(query);
+  const text = useCopyText();
   return (
-    <DataPanel title="Draft" state={state}>
+    <DataPanel title={text({ id: "ticket-authoring-draft" })} state={state}>
       {(context) =>
         context.context === "Ready" ? (
           props.children({
@@ -1433,8 +1512,9 @@ export function CreationScreen(props: {
 }
 
 export function TicketCreation(): ReactNode {
+  const text = useCopyText();
   return (
-    <CreationScreen heading="New ticket" named>
+    <CreationScreen heading={text({ id: "ticket-authoring-new-ticket" })} named>
       {(ready) => <CreationForm {...ready} />}
     </CreationScreen>
   );

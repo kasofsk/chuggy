@@ -14,6 +14,8 @@ import {
 } from "../app/core/ticketCreation.ts";
 import type { CreationStart } from "../app/core/ticketCreation.ts";
 import type { WorkRunner } from "../app/core/workRunner.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
+import { copyOrDataText } from "../app/core/copy.ts";
 
 const starts: readonly (readonly [
   ProjectAbilityRead,
@@ -47,7 +49,9 @@ const words: readonly (readonly [CreationStart, string, string])[] = [
 test.each(words)(
   "a press that %s reads %j beside the button and makes the motion %s",
   (start, effect, motion) => {
-    expect(creationSubmitEffect(start)).toBe(effect);
+    expect(copyOrDataText(copyTextEn, creationSubmitEffect(start))).toBe(
+      effect,
+    );
     expect(creationSubmitMotion(start)).toBe(motion);
   },
 );

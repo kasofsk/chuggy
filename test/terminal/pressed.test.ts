@@ -33,7 +33,7 @@ import { setupPressed } from "../../ui/chuggy-ui/app/core/setupNext.ts";
 type SetupPressed = keyof typeof setupPressed;
 
 /** The names a page draws from the catalog. */
-type SetupPressedCatalogued = "edit" | "save";
+type SetupPressedCatalogued = "edit" | "save" | "ticket";
 
 const settingsSection = "ui/chuggy-ui/app/browser/ui/SettingsSection.tsx";
 
@@ -49,7 +49,6 @@ const drawnIn: Readonly<
   retry: "ui/chuggy-ui/app/browser/repositories/BindingConfigurations.tsx",
   runner: "ui/chuggy-ui/app/browser/RunnersPage.tsx",
   chatHost: "ui/chuggy-ui/app/browser/settings/MyChatHost.tsx",
-  ticket: "ui/chuggy-ui/app/browser/TicketCreation.tsx",
   dispatch: "ui/chuggy-ui/app/core/ticketActions.ts",
 };
 
@@ -60,6 +59,10 @@ const drawnFromCatalog: Readonly<
 > = {
   edit: { page: settingsSection, id: "ui-edit" },
   save: { page: settingsSection, id: "ui-save" },
+  ticket: {
+    page: "ui/chuggy-ui/app/browser/TicketCreation.tsx",
+    id: "ticket-authoring-create-ticket",
+  },
 };
 
 const ticketPage = "ui/chuggy-ui/app/browser/TicketActions.tsx";

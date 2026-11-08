@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The fields a ticket may override of a configuration, each drawn as the
  * configuration says it until it is overridden and editable from then on.
@@ -12,10 +11,13 @@
 import { useId, useState } from "react";
 import type { ReactNode } from "react";
 
+import { useCopyText } from "../copy/CopyProvider.tsx";
+import type { Copy } from "../core/copy.ts";
 import {
   overrideFieldKind,
   overrideFieldLabel,
   overrideFieldOf,
+  overrideFieldOverride,
   overrideFilesOf,
   overrideHeld,
   overrideLinesOf,
@@ -37,14 +39,15 @@ interface OverridesEdit {
   readonly overrides: CreationOverrides;
   readonly onChange: (overrides: CreationOverrides) => void;
   /** What the contract refuses of a field, stated beside it. */
-  readonly faults?: ReadonlyMap<OverrideField, string>;
+  readonly faults?: ReadonlyMap<OverrideField, Copy>;
 }
 
 function OverrideFault(props: {
-  readonly reason: string | undefined;
+  readonly reason: Copy | undefined;
 }): ReactNode {
+  const text = useCopyText();
   return props.reason === undefined ? null : (
-    <p className="text-tone-fail">{props.reason}</p>
+    <p className="text-tone-fail">{text(props.reason)}</p>
   );
 }
 
@@ -73,6 +76,7 @@ function FilesEditor(props: {
   readonly onChange: (files: readonly OverrideFile[]) => void;
 }): ReactNode {
   const { files, onChange } = props;
+  const text = useCopyText();
   const changed = (index: number, file: OverrideFile): void => {
     onChange(files.map((held, at) => (at === index ? file : held)));
   };
@@ -82,15 +86,21 @@ function FilesEditor(props: {
         <div key={index} className="grid gap-1">
           <input
             type="text"
-            aria-label={`${props.label} ${String(index + 1)} path`}
+            aria-label={text({
+              id: "ticket-authoring-file-path",
+              args: { field: props.label, number: String(index + 1) },
+            })}
             value={file.path}
-            placeholder="a path in the workspace"
+            placeholder={text({ id: "ticket-authoring-file-path-placeholder" })}
             onChange={(event) => {
               changed(index, { ...file, path: event.target.value });
             }}
           />
           <textarea
-            aria-label={`${props.label} ${String(index + 1)} content`}
+            aria-label={text({
+              id: "ticket-authoring-file-content",
+              args: { field: props.label, number: String(index + 1) },
+            })}
             rows={4}
             value={file.content}
             onChange={(event) => {
@@ -103,7 +113,7 @@ function FilesEditor(props: {
               onChange(files.filter((_, at) => at !== index));
             }}
           >
-            Remove
+            {text({ id: "ticket-authoring-remove" })}
           </Button>
         </div>
       ))}
@@ -113,7 +123,7 @@ function FilesEditor(props: {
           onChange([...files, { path: "", content: "" }]);
         }}
       >
-        Add file
+        {text({ id: "ticket-authoring-add-file" })}
       </Button>
     </div>
   );
@@ -124,12 +134,14 @@ function ConfiguredValue(props: {
   readonly field: OverrideField;
   readonly value: unknown;
 }): ReactNode {
-  if (props.value === undefined) return <p className="text-ink-3">None</p>;
+  const text = useCopyText();
+  const none = text({ id: "ticket-authoring-none" });
+  if (props.value === undefined) return <p className="text-ink-3">{none}</p>;
   switch (overrideFieldKind(props.field)) {
     case "Lines": {
       const lines = overrideLinesOf(props.value);
       return lines.length === 0 ? (
-        <p className="text-ink-3">None</p>
+        <p className="text-ink-3">{none}</p>
       ) : (
         <pre className="whitespace-pre-wrap">{lines.join("\n")}</pre>
       );
@@ -149,7 +161,8 @@ function OverriddenEditor(props: {
   readonly value: unknown;
   readonly onChange: (value: unknown) => void;
 }): ReactNode {
-  const label = overrideFieldLabel(props.field);
+  const text = useCopyText();
+  const label = text(overrideFieldLabel(props.field));
   switch (overrideFieldKind(props.field)) {
     case "Lines":
       return (
@@ -178,15 +191,18 @@ function OverrideRow(
   props: OverridesEdit & { readonly field: OverrideField },
 ): ReactNode {
   const { document, field, overrides, onChange } = props;
-  const label = overrideFieldLabel(field);
+  const text = useCopyText();
   const configured = overrideFieldOf(document, field);
   const held = overrides[field];
   return (
     <div className="creation-row">
       <span>
-        {label}
+        {text(overrideFieldLabel(field))}
         {held === undefined ? null : (
-          <span className="text-ink-3 text-xs"> · Overridden</span>
+          <span className="text-ink-3 text-xs">
+            {" · "}
+            {text({ id: "ticket-authoring-overridden" })}
+          </span>
         )}
       </span>
       {held === undefined ? (
@@ -212,9 +228,11 @@ function OverrideRow(
           );
         }}
       >
-        {held === undefined
-          ? `Override ${label.toLowerCase()}`
-          : "Use the configuration's"}
+        {text(
+          held === undefined
+            ? overrideFieldOverride(field)
+            : { id: "ticket-authoring-use-configuration" },
+        )}
       </Button>
       <OverrideFault reason={props.faults?.get(field)} />
     </div>
@@ -229,6 +247,7 @@ function OverrideRow(
  */
 function ModelRow(props: OverridesEdit): ReactNode {
   const { document, overrides, onChange } = props;
+  const text = useCopyText();
   const box = useId();
   const [typed, setTyped] = useState<string | undefined>(undefined);
   const shown =
@@ -239,9 +258,12 @@ function ModelRow(props: OverridesEdit): ReactNode {
   return (
     <div className="creation-row">
       <label htmlFor={box}>
-        Model
+        {text(overrideFieldLabel("worker.mode"))}
         {mode === undefined ? null : (
-          <span className="text-ink-3 text-xs"> · Overridden</span>
+          <span className="text-ink-3 text-xs">
+            {" · "}
+            {text({ id: "ticket-authoring-overridden" })}
+          </span>
         )}
       </label>
       <input
@@ -266,7 +288,7 @@ function ModelRow(props: OverridesEdit): ReactNode {
               onChange(overrideHeld(overrides, "worker.mode", undefined));
             }}
           >
-            Use the configuration's
+            {text({ id: "ticket-authoring-use-configuration" })}
           </Button>
         </>
       )}

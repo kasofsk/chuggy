@@ -301,7 +301,9 @@ test("a held revision that cannot be read is said, and the reader is asked rathe
   expect(readFailedLines()).toStrictEqual(["Not found"]);
   expect(configurationChosen()).toContain("Choose");
   await retitleAndSubmit();
-  expect(screen.getByText(creationFaultSentence("configuration"))).toBeTruthy();
+  expect(
+    screen.getByText(copyTextEn(creationFaultSentence("configuration"))),
+  ).toBeTruthy();
   expect(revised(sent)).toBe(undefined);
 });
 

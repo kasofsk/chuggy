@@ -866,7 +866,7 @@ test("a form following its draft is refused where the draft moved past what it s
     copyTextEn,
   );
   expect(endedSaid(ended)).toBe(
-    `${creationDraftChangedSentence} · Draft 12 · Not released`,
+    `${copyTextEn(creationDraftChangedSentence)} · Draft 12 · Not released`,
   );
   expect(lines(api.sent)).toStrictEqual([
     draftRead,
@@ -900,17 +900,19 @@ test("a draft a following form finds deleted says nothing will be released, and 
 test("a following form's endings say what became of the draft, not that this form created or released it", () => {
   const held = { ...followedHeld(ticketDoor()), unsettled: true };
   const created = { ...held, origin: "Created" } as const;
-  expect(creationDraftHeldSentence(held)).toBe("Draft 12 · Maybe released");
-  expect(creationDraftHeldSentence(created)).toBe(
+  expect(copyTextEn(creationDraftHeldSentence(held))).toBe(
+    "Draft 12 · Maybe released",
+  );
+  expect(copyTextEn(creationDraftHeldSentence(created))).toBe(
     "Draft 12 kept · Maybe released",
   );
-  expect(creationTicketExistsSentence(held)).toBe(
+  expect(copyTextEn(creationTicketExistsSentence(held))).toBe(
     "#12 already exists · Changes since are not in it",
   );
-  expect(creationTicketExistsSentence(created)).toBe(
+  expect(copyTextEn(creationTicketExistsSentence(created))).toBe(
     "#12 already exists · Changes since are not in it",
   );
-  expect(creationDraftDeletedSentence(created)).toBe(
+  expect(copyTextEn(creationDraftDeletedSentence(created))).toBe(
     "Draft 12 deleted · Submit again for a new one",
   );
 });

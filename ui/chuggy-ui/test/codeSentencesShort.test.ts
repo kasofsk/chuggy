@@ -191,30 +191,34 @@ const held = {
 } as unknown as CreationDraftHeld;
 
 test("every line a creation's submit says is one short line", () => {
-  expectShort([
-    creationContextSentence({ context: "NoRepository" }),
-    creationContextSentence({ context: "NoReadyConfiguration" }),
-    creationContextSentence({ context: "ReadyConfigurationUnknown" }),
-    creationStaleSentence,
-    creationStaleUnreadSentence,
-    creationProjectNotActiveSentence,
-    creationDraftChangedSentence,
-    creationDraftHeldSentence(held),
-    creationDraftHeldSentence({ ...held, unsettled: true }),
-    creationDraftUnreadSentence,
-    creationDraftHeldSentence({ ...held, origin: "Followed" }),
-    creationDraftDeletedSentence(held),
-    creationDraftDeletedSentence({ ...held, origin: "Followed" }),
-    creationTicketExistsSentence(held),
-    creationTicketExistsSentence({ ...held, origin: "Followed" }),
-  ]);
+  expectShort(
+    [
+      creationContextSentence({ context: "NoRepository" }),
+      creationContextSentence({ context: "NoReadyConfiguration" }),
+      creationContextSentence({ context: "ReadyConfigurationUnknown" }),
+      creationStaleSentence,
+      creationStaleUnreadSentence,
+      creationProjectNotActiveSentence,
+      creationDraftChangedSentence,
+      creationDraftHeldSentence(held),
+      creationDraftHeldSentence({ ...held, unsettled: true }),
+      creationDraftUnreadSentence,
+      creationDraftHeldSentence({ ...held, origin: "Followed" }),
+      creationDraftDeletedSentence(held),
+      creationDraftDeletedSentence({ ...held, origin: "Followed" }),
+      creationTicketExistsSentence(held),
+      creationTicketExistsSentence({ ...held, origin: "Followed" }),
+    ].map(copyTextEn),
+  );
 });
 
 test("a held draft's line says whether it was released, settled or not", () => {
-  expect(creationDraftHeldSentence(held)).toMatch(/· Not released$/u);
-  expect(creationDraftHeldSentence({ ...held, unsettled: true })).toMatch(
-    /· Maybe released$/u,
+  expect(copyTextEn(creationDraftHeldSentence(held))).toMatch(
+    /· Not released$/u,
   );
+  expect(
+    copyTextEn(creationDraftHeldSentence({ ...held, unsettled: true })),
+  ).toMatch(/· Maybe released$/u);
 });
 
 test("a panel never read says so in one word", () => {

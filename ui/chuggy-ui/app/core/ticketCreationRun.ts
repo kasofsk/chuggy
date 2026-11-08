@@ -82,7 +82,7 @@ import {
 } from "./ticketCreation.ts";
 import type { CreationOffer, CreationOfferListed } from "./ticketCreation.ts";
 import { ticketUpdateMutation } from "./ticketEdit.ts";
-import type { CopyText } from "./copy.ts";
+import type { Copy, CopyText } from "./copy.ts";
 
 export type CreationContext =
   | {
@@ -106,14 +106,14 @@ export type CreationContext =
  * no ready one in a repository, and not knowing, each apart. */
 export function creationContextSentence(
   context: Exclude<CreationContext, { context: "Ready" }>,
-): string {
+): Copy {
   switch (context.context) {
     case "NoRepository":
-      return "No repository bound";
+      return { id: "ticket-authoring-context-no-repository" };
     case "NoReadyConfiguration":
-      return "No configuration";
+      return { id: "ticket-authoring-context-no-configuration" };
     case "ReadyConfigurationUnknown":
-      return "No ready configuration found";
+      return { id: "ticket-authoring-context-unknown" };
   }
 }
 
@@ -244,47 +244,61 @@ export class TicketUpdateRefused extends ConsoleWriteRefused {
 }
 
 /** The conflict a creation route answers where the fence this body carries moved. */
-export const creationStaleSentence = "Project changed · Submit again";
+export const creationStaleSentence: Copy = { id: "ticket-authoring-stale" };
 
 /** The same conflict where the project could not be read again after it, so the
  * form still stands on what it was opened over. */
-export const creationStaleUnreadSentence = "Project changed · Could not reload";
+export const creationStaleUnreadSentence: Copy = {
+  id: "ticket-authoring-stale-unread",
+};
 
 /** The conflict it answers instead where the project takes no new ticket at any fence. */
-export const creationProjectNotActiveSentence =
-  "Project not active · No new tickets";
+export const creationProjectNotActiveSentence: Copy = {
+  id: "ticket-authoring-project-inactive",
+};
 
 /** The version fence of a held draft, which it is read for just before it is
  * written, so only a writer in between meets it. */
-export const creationDraftChangedSentence =
-  "Draft changed elsewhere · Not written";
+export const creationDraftChangedSentence: Copy = {
+  id: "ticket-authoring-draft-changed",
+};
 
 /** Where a held draft stands as far as its form knows, which every later
  * submit goes back to whatever the form then says. */
-export function creationDraftHeldSentence(held: CreationDraftHeld): string {
-  const draft = `Draft ${String(held.draft.ticket)}`;
-  const kept = held.origin === "Followed" ? draft : `${draft} kept`;
-  return `${kept} · ${held.unsettled ? "Maybe released" : "Not released"}`;
+export function creationDraftHeldSentence(held: CreationDraftHeld): Copy {
+  const args = { ticket: String(held.draft.ticket) };
+  if (held.origin === "Followed")
+    return held.unsettled
+      ? { id: "ticket-authoring-draft-followed-unsettled", args }
+      : { id: "ticket-authoring-draft-followed-unreleased", args };
+  return held.unsettled
+    ? { id: "ticket-authoring-draft-kept-unsettled", args }
+    : { id: "ticket-authoring-draft-kept-unreleased", args };
 }
 
 /** What a submit did to a held draft it could not read, which it reads before
  * it writes. */
-export const creationDraftUnreadSentence = "Draft not written";
+export const creationDraftUnreadSentence: Copy = {
+  id: "ticket-authoring-draft-unread",
+};
 
 /** A held draft read as deleted: one this form created is let go of, and one
  * it follows is still all it could release. */
-export function creationDraftDeletedSentence(held: CreationDraftHeld): string {
-  const deleted = `Draft ${String(held.draft.ticket)} deleted`;
+export function creationDraftDeletedSentence(held: CreationDraftHeld): Copy {
+  const args = { ticket: String(held.draft.ticket) };
   return held.origin === "Followed"
-    ? `${deleted} · Nothing here will be released`
-    : `${deleted} · Submit again for a new one`;
+    ? { id: "ticket-authoring-draft-deleted-followed", args }
+    : { id: "ticket-authoring-draft-deleted-created", args };
 }
 
 /** What a submit says of a ticket it found already made of its draft,
  * whether this form released it earlier or it was released elsewhere: what
  * was typed after that release is not in it. */
-export function creationTicketExistsSentence(held: CreationDraftHeld): string {
-  return `#${String(held.draft.ticket)} already exists · Changes since are not in it`;
+export function creationTicketExistsSentence(held: CreationDraftHeld): Copy {
+  return {
+    id: "ticket-authoring-ticket-exists",
+    args: { ticket: String(held.draft.ticket) },
+  };
 }
 
 /** How many offers one read draws, each being a request of its own. */
@@ -430,12 +444,12 @@ async function creationDraftCreated(
   if (epicRefusal !== undefined)
     return { created: "Refused", reason: epicRefusal, held: undefined };
   if (answered.outcome === "Conflict" && answered.code !== "ProjectNotActive")
-    return { created: "Stale", reason: creationStaleSentence };
+    return { created: "Stale", reason: text(creationStaleSentence) };
   return {
     created: "Refused",
     reason:
       answered.outcome === "Conflict"
-        ? creationProjectNotActiveSentence
+        ? text(creationProjectNotActiveSentence)
         : text(operationFailureSentence(answered)),
     held: undefined,
   };
@@ -490,7 +504,7 @@ export async function draftRevisionSaved(
     saved: "Refused",
     reason:
       revised.outcome === "Conflict" && revised.code === "DraftChanged"
-        ? creationDraftChangedSentence
+        ? text(creationDraftChangedSentence)
         : text(draftRevisionFailureSentence(revised)),
   };
 }
@@ -511,11 +525,15 @@ function creationDraftHolds(
 function creationRefused(
   reason: string,
   held: CreationDraftHeld,
+  text: CopyText,
   failed: { readonly unread?: ApiFailure; readonly released?: ApiFailure } = {},
 ): TicketCreationEnded {
   return {
     created: "Refused",
-    reason: `${reason} · ${creationDraftHeldSentence(held)}`,
+    reason: text({
+      id: "ticket-authoring-joined",
+      args: { first: reason, second: creationDraftHeldSentence(held) },
+    }),
     held,
     ...failed,
   };
@@ -529,6 +547,7 @@ function creationRefused(
 function creationDraftClosed(
   draft: DraftResponse,
   held: CreationDraftHeld,
+  text: CopyText,
 ): TicketCreationEnded | undefined {
   switch (draft.state) {
     case "Draft":
@@ -538,7 +557,7 @@ function creationDraftClosed(
     case "Deleted":
       return {
         created: "Refused",
-        reason: creationDraftDeletedSentence(held),
+        reason: text(creationDraftDeletedSentence(held)),
         held: undefined,
       };
   }
@@ -562,8 +581,10 @@ async function creationDraftRevised(
   const ticket = held.draft.ticket;
   const read = await apiDraft(ports, partition, ticket);
   if (read.outcome !== "Ok")
-    return creationRefused(creationDraftUnreadSentence, held, { unread: read });
-  const closed = creationDraftClosed(read.value, held);
+    return creationRefused(text(creationDraftUnreadSentence), held, text, {
+      unread: read,
+    });
+  const closed = creationDraftClosed(read.value, held, text);
   if (closed !== undefined) return closed;
   const revised = await apiReviseDraft(ports, partition, ticket, {
     expectedVersion: request.expectedVersion ?? read.value.authoringVersion,
@@ -572,13 +593,18 @@ async function creationDraftRevised(
   if (revised.outcome === "Ok")
     return { ...held, draft: revised.value, body, operation };
   if (revised.outcome !== "Conflict")
-    return creationRefused(text(draftRevisionFailureSentence(revised)), held);
+    return creationRefused(
+      text(draftRevisionFailureSentence(revised)),
+      held,
+      text,
+    );
   return revised.code === "DraftChanged"
-    ? creationRefused(creationDraftChangedSentence, held)
-    : creationRefused(text(draftRevisionFailureSentence(revised)), {
-        ...held,
-        unsettled: true,
-      });
+    ? creationRefused(text(creationDraftChangedSentence), held, text)
+    : creationRefused(
+        text(draftRevisionFailureSentence(revised)),
+        { ...held, unsettled: true },
+        text,
+      );
 }
 
 /**
@@ -617,7 +643,7 @@ function releasedTicket<Held extends DraftHeld>(
   if (step.step !== "Settled")
     return {
       created: "Refused",
-      reason: "Release did not finish",
+      reason: text({ id: "ticket-authoring-release-unfinished" }),
       held,
     };
   if (step.state === "Succeeded")
@@ -662,13 +688,18 @@ async function creationDraftFencedOut(
   partition: PartitionIdentity,
   reason: string,
   written: CreationDraftHeld,
+  text: CopyText,
 ): Promise<TicketCreationEnded> {
   const read = await apiDraft(ports, partition, written.draft.ticket);
   if (read.outcome !== "Ok")
-    return creationRefused(reason, { ...written, unsettled: true });
+    return creationRefused(reason, { ...written, unsettled: true }, text);
   return (
-    creationDraftClosed(read.value, written) ??
-    creationRefused(reason, { ...written, body: undefined, unsettled: false })
+    creationDraftClosed(read.value, written, text) ??
+    creationRefused(
+      reason,
+      { ...written, body: undefined, unsettled: false },
+      text,
+    )
   );
 }
 
@@ -746,13 +777,20 @@ export async function createAndReleaseTicket(
     );
   if (released.created !== "Refused") return released;
   if (step.step === "Settled" && step.refusal?.type === "AuthoringChanged")
-    return creationDraftFencedOut(ports, partition, released.reason, written);
+    return creationDraftFencedOut(
+      ports,
+      partition,
+      released.reason,
+      written,
+      text,
+    );
   return creationRefused(
     released.reason,
     {
       ...written,
       unsettled: creationReleaseUnsettled(step, seen.accepted, written),
     },
+    text,
     released.released === undefined ? {} : { released: released.released },
   );
 }

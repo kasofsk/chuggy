@@ -18,25 +18,42 @@ import {
   filesystemAccesses,
 } from "../../../../../src/contract/workerTask.ts";
 
+import type { Copy, CopyText } from "../../core/copy.ts";
 import type { TicketYamlKey } from "./ticketYamlKey.ts";
 
-/** Each field a workload may set and the commented skeleton shown where it does not, in the order the schema declares them. */
+/** What fills each slot a skeleton's lines leave, which is the skeleton's only copy. */
+const ticketYamlWorkloadSlots = {
+  purpose: {
+    id: "ticket-authoring-skeleton-default",
+    args: { default: "Review" },
+  },
+  setup: { id: "ticket-authoring-placeholder-setup" },
+  path: { id: "ticket-authoring-placeholder-path" },
+  content: { id: "ticket-authoring-placeholder-content" },
+  tool: { id: "ticket-authoring-placeholder-tool" },
+  credential: { id: "ticket-authoring-placeholder-credential" },
+  motivation: { id: "ticket-authoring-placeholder-motivation" },
+  done: { id: "ticket-authoring-placeholder-done" },
+  constraint: { id: "ticket-authoring-placeholder-constraint" },
+} as const satisfies Readonly<Record<string, Copy>>;
+
+/** Each field a workload may set and the commented skeleton shown where it does not, in the order the schema declares them. A skeleton's lines are code; `{slot}` is where its copy goes. */
 const ticketYamlWorkloadSkeletons: readonly (readonly [
   field: string,
   runner: "Agent" | "Commands" | "Both",
   skeleton: readonly string[],
 ])[] = [
-  ["purpose", "Agent", ["purpose: Check  # Review where left out"]],
+  ["purpose", "Agent", ["purpose: Check  # {purpose}"]],
   [
     "worker",
     "Commands",
     [
       "worker:",
       "  setup:",
-      "    - <a command run before the workload>",
+      "    - <{setup}>",
       "  files:",
-      "    - path: <a path in the workspace>",
-      "      content: <its text>",
+      "    - path: <{path}>",
+      "      content: <{content}>",
     ],
   ],
   [
@@ -45,9 +62,9 @@ const ticketYamlWorkloadSkeletons: readonly (readonly [
     [
       "authority:",
       "  tools:",
-      "    - <a tool the agent may call>",
+      "    - <{tool}>",
       "  credentials:",
-      "    - <a credential it may mint>",
+      "    - <{credential}>",
       "  network: false",
       `  filesystem: ${filesystemAccesses.join(" | ")}`,
       "  mayCompleteTask: true",
@@ -65,11 +82,11 @@ const ticketYamlWorkloadSkeletons: readonly (readonly [
     [
       "brief:",
       "  motivation:",
-      "    - <why the work matters>",
+      "    - <{motivation}>",
       "  acceptanceCriteria:",
-      "    - <what done looks like>",
+      "    - <{done}>",
       "  constraints:",
-      "    - <what it must not do>",
+      "    - <{constraint}>",
     ],
   ],
   ["image", "Both", ["image: <registry/path:tag@sha256:digest>"]],
@@ -88,6 +105,17 @@ const ticketYamlWorkloadSkeletons: readonly (readonly [
   ["resources", "Both", ["resources:", "  cpus: 2", "  memoryMib: 4096"]],
 ];
 
+/** A skeleton's line with each slot filled in the reader's words. */
+function ticketYamlWorkloadFilled(line: string, text: CopyText): string {
+  return line.replace(/\{(\w+)\}/gu, (slot, name: string) =>
+    name in ticketYamlWorkloadSlots
+      ? text(
+          ticketYamlWorkloadSlots[name as keyof typeof ticketYamlWorkloadSlots],
+        )
+      : slot,
+  );
+}
+
 function ticketYamlWorkloadField(workload: unknown, field: string): unknown {
   return typeof workload === "object" && workload !== null
     ? (workload as Readonly<Record<string, unknown>>)[field]
@@ -100,18 +128,30 @@ function ticketYamlWorkloadField(workload: unknown, field: string): unknown {
  * an execution requirement are one placement, so the one not set is shown as
  * the other's replacement.
  */
-export function ticketYamlWorkloadUnset(workload: unknown): string | undefined {
+export function ticketYamlWorkloadUnset(
+  workload: unknown,
+  text: CopyText,
+): string | undefined {
   const runner = ticketYamlWorkloadField(workload, "runner");
   const placed = ["image", "executionRequirement"].find(
     (field) => ticketYamlWorkloadField(workload, field) !== undefined,
   );
   const lines = ticketYamlWorkloadSkeletons.flatMap(
-    ([field, takes, skeleton]) => {
+    ([field, takes, written]) => {
       if (takes !== "Both" && takes !== runner) return [];
       if (ticketYamlWorkloadField(workload, field) !== undefined) return [];
+      const skeleton = written.map((line) =>
+        ticketYamlWorkloadFilled(line, text),
+      );
       const replacing =
         placed !== undefined && field !== placed && skeleton[0] !== undefined
-          ? [`${skeleton[0]}  # in place of ${placed}`, ...skeleton.slice(1)]
+          ? [
+              `${skeleton[0]}  # ${text({
+                id: "ticket-authoring-skeleton-in-place",
+                args: { field: placed },
+              })}`,
+              ...skeleton.slice(1),
+            ]
           : skeleton;
       return replacing;
     },
@@ -124,104 +164,101 @@ export function ticketYamlWorkloadUnset(workload: unknown): string | undefined {
 /** Each field a written workload may hold, what it means, and the values it takes where they are a closed set. */
 const ticketYamlWorkloadFields: readonly (readonly [
   key: string,
-  hint: string,
+  hint: Copy,
   values?: readonly string[] | "PromptPaths",
 ])[] = [
-  [
-    "runner",
-    "how the workload runs: an agent briefed with its prompt, or commands the worker runs itself",
-    ["Agent", "Commands"],
-  ],
+  ["runner", { id: "ticket-authoring-workload-runner" }, ["Agent", "Commands"]],
   [
     "purpose",
-    "what the workload is as an evaluator; Review where left out",
+    { id: "ticket-authoring-workload-purpose", args: { default: "Review" } },
     ["Review", "Check"],
   ],
   [
     "prompt",
-    "what the agent is briefed with: a `path` to a prompt file the catalog stores, or `text`",
+    {
+      id: "ticket-authoring-workload-prompt",
+      args: { path: "path", text: "text" },
+    },
   ],
-  [
-    "path",
-    "a prompt file the catalog stores, read as the text its import stored",
-    "PromptPaths",
-  ],
-  ["text", "the prompt itself, in place of the catalog's"],
-  [
-    "worker",
-    "the agent the workload runs as, and what is installed before it runs",
-  ],
+  ["path", { id: "ticket-authoring-workload-path" }, "PromptPaths"],
+  ["text", { id: "ticket-authoring-workload-text" }],
+  ["worker", { id: "ticket-authoring-workload-worker" }],
   [
     "mode",
-    "the agent a worker runs as, or where an execution requirement runs: Container on its image, Capability on any runner declaring its capabilities",
+    {
+      id: "ticket-authoring-workload-mode",
+      args: { container: "Container", capability: "Capability" },
+    },
     ["Container", "Capability"],
   ],
-  ["type", "how many agents run the workload", ["SingleAgent"]],
-  ["agent", "which agent runs the workload", ["Claude", "Codex"]],
-  ["model", "the model a Codex agent runs"],
+  ["type", { id: "ticket-authoring-workload-type" }, ["SingleAgent"]],
+  ["agent", { id: "ticket-authoring-workload-agent" }, ["Claude", "Codex"]],
+  [
+    "model",
+    { id: "ticket-authoring-workload-model", args: { codex: "Codex" } },
+  ],
   [
     "effort",
-    "the reasoning effort a Codex agent runs at; Codex's default where left out",
+    { id: "ticket-authoring-workload-effort", args: { codex: "Codex" } },
     codexReasoningEfforts,
   ],
-  ["arguments", "the agent's command-line arguments, one a line"],
-  ["setup", "commands run before the workload, one a line"],
-  [
-    "files",
-    "files written into the workspace before the workload, each a path and its content",
-  ],
-  ["authority", "what the workload narrows of what its worker may reach"],
-  ["tools", "the tools the agent may call"],
-  ["credentials", "the credentials the workload may mint"],
-  ["network", "whether the workload may reach the network", ["true", "false"]],
+  ["arguments", { id: "ticket-authoring-workload-arguments" }],
+  ["setup", { id: "ticket-authoring-workload-setup" }],
+  ["files", { id: "ticket-authoring-workload-files" }],
+  ["authority", { id: "ticket-authoring-workload-authority" }],
+  ["tools", { id: "ticket-authoring-workload-tools" }],
+  ["credentials", { id: "ticket-authoring-workload-credentials" }],
+  ["network", { id: "ticket-authoring-workload-network" }, ["true", "false"]],
   [
     "filesystem",
-    "what the workload may do to the filesystem",
+    { id: "ticket-authoring-workload-filesystem" },
     filesystemAccesses,
   ],
   [
     "mayCompleteTask",
-    "whether the agent may complete its task",
+    { id: "ticket-authoring-workload-may-complete" },
     ["true", "false"],
   ],
   [
     "framing",
-    "Chuggy wraps the prompt in chuggy's own role and result wording; left out adds none",
+    { id: "ticket-authoring-workload-framing", args: { framing: "Chuggy" } },
     ["Chuggy"],
   ],
-  ["practices", "the practices the workload is held to", allPracticeIds],
-  [
-    "brief",
-    "the claim the workload is briefed with: motivation, acceptance criteria and constraints",
-  ],
-  ["commands", "the lines a commands workload runs at the repository root"],
-  [
-    "image",
-    "the image the workload runs in, in place of its execution requirement",
-  ],
-  ["executionRequirement", "where the workload runs, in place of its image"],
+  ["practices", { id: "ticket-authoring-workload-practices" }, allPracticeIds],
+  ["brief", { id: "ticket-authoring-workload-brief" }],
+  ["commands", { id: "ticket-authoring-workload-commands" }],
+  ["image", { id: "ticket-authoring-workload-image" }],
+  ["executionRequirement", { id: "ticket-authoring-workload-execution" }],
   [
     "operatingSystem",
-    "the operating system a runner must offer",
+    { id: "ticket-authoring-workload-operating-system" },
     allOperatingSystems,
   ],
-  ["architecture", "the architecture a runner must offer", allArchitectures],
+  [
+    "architecture",
+    { id: "ticket-authoring-workload-architecture" },
+    allArchitectures,
+  ],
   [
     "capabilities",
-    "tokens a runner's pool must declare, an agent among them as Agent:<name>",
+    {
+      id: "ticket-authoring-workload-capabilities",
+      args: { token: "Agent:<name>" },
+    },
   ],
-  ["resources", "the CPU and memory the workload is given"],
-  ["cpus", "whole CPUs"],
-  ["memoryMib", "memory, in MiB"],
+  ["resources", { id: "ticket-authoring-workload-resources" }],
+  ["cpus", { id: "ticket-authoring-workload-cpus" }],
+  ["memoryMib", { id: "ticket-authoring-workload-memory" }],
 ];
 
 /** What each field of a written workload means and takes; the prompt files the catalog stores are what a prompt path may name. */
 export function ticketYamlWorkloadKeys(
   promptPaths: readonly string[],
+  text: CopyText,
 ): readonly TicketYamlKey[] {
   return ticketYamlWorkloadFields.map(([key, hint, values = []]) => ({
     key,
-    hint,
+    hint: text(hint),
     values: (values === "PromptPaths" ? promptPaths : values).map((label) => ({
       label,
     })),

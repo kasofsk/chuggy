@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * An editor following the server draft it is open on: the form held over the
  * draft as the project's cache has it, and the notice drawn where a revision
@@ -30,6 +29,7 @@ import type {
   DraftFollowHeld,
   DraftFollowStanding,
 } from "../../core/draftFollow.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import {
@@ -148,6 +148,7 @@ export function DraftFollowNotice(props: {
   readonly onKept: () => void;
   readonly released: (ticket: number) => ReactNode;
 }): ReactNode {
+  const text = useCopyText();
   const standing = props.standing;
   switch (standing.standing) {
     case "Current":
@@ -162,10 +163,10 @@ export function DraftFollowNotice(props: {
         >
           <div className="flex flex-wrap gap-2">
             <Button size="sm" onClick={props.onTaken}>
-              Take theirs
+              {text({ id: "ticket-authoring-take-theirs" })}
             </Button>
             <Button size="sm" onClick={props.onKept}>
-              Keep mine
+              {text({ id: "ticket-authoring-keep-mine" })}
             </Button>
           </div>
         </Notice>

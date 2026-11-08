@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The React binding for the ticket editor: it owns the handle's lifetime and
  * nothing else. The document lives in the CodeMirror view, so this component
@@ -13,6 +12,8 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 
+import { useCopyText } from "../../copy/CopyProvider.tsx";
+import type { CopyText } from "../../core/copy.ts";
 import { persistentStore } from "../ports.ts";
 import { Button } from "../ui/Button.tsx";
 import { createChugEditor } from "./chugEditor.ts";
@@ -32,7 +33,10 @@ export interface TicketEditorProps {
   readonly catalog: TicketYamlCatalog | undefined;
 }
 
-function useEditorHandle(props: TicketEditorProps): {
+function useEditorHandle(
+  props: TicketEditorProps,
+  text: CopyText,
+): {
   readonly host: RefObject<HTMLDivElement | null>;
   readonly handle: RefObject<EditorHandle | null>;
   readonly ready: boolean;
@@ -40,9 +44,11 @@ function useEditorHandle(props: TicketEditorProps): {
   const host = useRef<HTMLDivElement>(null);
   const handle = useRef<EditorHandle | null>(null);
   const held = useRef(props);
+  const words = useRef(text);
   const [ready, setReady] = useState(false);
   useEffect(() => {
     held.current = props;
+    words.current = text;
   });
   useEffect(() => {
     const node = host.current;
@@ -55,6 +61,7 @@ function useEditorHandle(props: TicketEditorProps): {
       },
       vim: false,
       vocabulary: held.current.vocabulary,
+      text: (copy) => words.current(copy),
     });
     setReady(true);
     return () => {
@@ -88,6 +95,7 @@ function EditorActions(props: {
 }): ReactNode {
   const [vimming, setVimming] = useState(ticketEditorVimRemembered);
   const { handle, ready } = props;
+  const text = useCopyText();
   useEffect(() => {
     if (ready && vimming) handle.current?.setVim(true);
   }, [ready, handle, vimming]);
@@ -100,7 +108,7 @@ function EditorActions(props: {
           handle.current?.foldAll();
         }}
       >
-        Fold all
+        {text({ id: "ticket-authoring-fold-all" })}
       </Button>
       <Button
         size="sm"
@@ -109,7 +117,7 @@ function EditorActions(props: {
           handle.current?.unfoldAll();
         }}
       >
-        Unfold all
+        {text({ id: "ticket-authoring-unfold-all" })}
       </Button>
       <Button
         size="sm"
@@ -118,7 +126,7 @@ function EditorActions(props: {
           handle.current?.expandReferences();
         }}
       >
-        Expand references
+        {text({ id: "ticket-authoring-expand-references" })}
       </Button>
       <Button
         size="sm"
@@ -127,7 +135,7 @@ function EditorActions(props: {
           handle.current?.collapseReferences();
         }}
       >
-        Collapse references
+        {text({ id: "ticket-authoring-collapse-references" })}
       </Button>
       <label>
         <input
@@ -139,14 +147,15 @@ function EditorActions(props: {
             ticketEditorVimKept(event.target.checked);
           }}
         />
-        <span>Vim keys</span>
+        <span>{text({ id: "ticket-authoring-vim-keys" })}</span>
       </label>
     </div>
   );
 }
 
 export default function TicketEditor(props: TicketEditorProps): ReactNode {
-  const { host, handle, ready } = useEditorHandle(props);
+  const text = useCopyText();
+  const { host, handle, ready } = useEditorHandle(props, text);
   useEffect(() => {
     if (ready && handle.current?.getValue() !== props.value)
       handle.current?.setValue(props.value);
@@ -171,7 +180,7 @@ export default function TicketEditor(props: TicketEditorProps): ReactNode {
       <div
         className="ticket-editor-host"
         role="group"
-        aria-label="Ticket YAML"
+        aria-label={text({ id: "ticket-authoring-ticket-yaml" })}
         ref={host}
       />
     </div>

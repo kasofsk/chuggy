@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * A new ticket started from another: the creation screen, its form seeded from
  * the named ticket's draft as an edit of it would be, less what a new ticket
@@ -20,6 +19,7 @@ import type {
   DraftResponse,
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
+import { useCopyText } from "../copy/CopyProvider.tsx";
 import { draftQuery, ticketQuery } from "../core/ticketQueries.ts";
 import {
   ticketDuplicateRevoked,
@@ -111,9 +111,10 @@ export function TicketDuplicate(props: { readonly from: number }): ReactNode {
  * back to it. */
 function DuplicateHeading(props: { readonly from: number }): ReactNode {
   const params = useParams({ from: "/$tenant/$project" });
+  const text = useCopyText();
   return (
     <>
-      New ticket from{" "}
+      {text({ id: "ticket-authoring-duplicate-heading" })}{" "}
       <Link
         to="/$tenant/$project/tickets/$ticket"
         params={{
@@ -122,7 +123,10 @@ function DuplicateHeading(props: { readonly from: number }): ReactNode {
           ticket: String(props.from),
         }}
       >
-        ticket {props.from}
+        {text({
+          id: "ticket-authoring-duplicate-from",
+          args: { ticket: String(props.from) },
+        })}
       </Link>
     </>
   );
