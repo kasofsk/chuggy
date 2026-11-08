@@ -1,14 +1,17 @@
 -- Every ticket the rig has ever run, removed, so the machine starts from an
 -- empty journal.
 --
--- WHAT THIS IS FOR. The rig is a rehearsal box and its tickets are disposable.
--- A migration that changes what a journal row means (the first was
--- `src/adapters/postgres/schema/migrations/008-escalation-sum.ts`) refuses to
--- apply while any `journal_entry` row exists, because the image that carries it
--- replays no journal written before it: a row left behind would come up with a
--- ticket the actor cannot replay, under a schema that looks migrated. This file
--- is what makes that refusal answerable. It is a release step and not a repair
--- one, and each such migration names it because nothing else can.
+-- WHAT THIS IS FOR. A migration that changes what a journal row means (the
+-- first was `src/adapters/postgres/schema/migrations/008-escalation-sum.ts`)
+-- refuses to apply while any `journal_entry` row exists, because the image
+-- that carries it replays no journal written before it: a row left behind
+-- would come up with a ticket the actor cannot replay, under a schema that
+-- looks migrated. This file is what makes that refusal answerable, and each
+-- such migration names it because nothing else can.
+--
+-- WHAT IT IS NOT is a step of a rig release. The rig's tickets are its users'
+-- work and this empties every tenant's at once, so running it there is its
+-- operator's decision about their data, never a release's.
 --
 -- WHAT IT KEEPS is everything a project IS rather than everything it has DONE:
 -- the tenants, the project rows, their lifecycles, the operations that
@@ -21,7 +24,7 @@
 -- routing the scheduler published, the execution cluster, the capacity
 -- entitlements drawn on it, the worker catalog and the recovery epochs, and
 -- each tenant's invite links.
--- Re-onboarding a project is not part of the release, so none of that is in
+-- Re-onboarding a project is not part of a wipe, so none of that is in
 -- the list below. Nor is what each declared action was reported to have done,
 -- or the last configuration import attempted of each repository: each is a
 -- record of a repository and names no ticket. Nor is what a person set of
