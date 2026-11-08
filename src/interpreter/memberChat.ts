@@ -40,6 +40,10 @@ import {
 import type { LeadTranscriptQuery, LeadTranscriptRead } from "./leadRead.ts";
 import { nativeThreadMethods, type NativeThreadPorts } from "./nativeWeb.ts";
 import type { Authority } from "./operationInbox.ts";
+import type {
+  SessionContextPageRead,
+  SessionContextQuery,
+} from "./sessionContext.ts";
 import type { Principal } from "./principal.ts";
 import {
   memberAuthority,
@@ -149,6 +153,12 @@ export interface MemberChat {
     session: SessionId,
     query: LeadTranscriptQuery,
   ): Promise<LeadTranscriptRead>;
+  threadContext(
+    principal: Principal,
+    tenant: TenantId,
+    session: SessionId,
+    query: SessionContextQuery,
+  ): Promise<SessionContextPageRead>;
   openThread(
     principal: Principal,
     tenant: TenantId,
@@ -492,6 +502,8 @@ export function memberChat(
       doors.thread(principal, at(principal, tenant), session, query),
     threadTranscript: (principal, tenant, session, query) =>
       doors.threadTranscript(principal, at(principal, tenant), session, query),
+    threadContext: (principal, tenant, session, query) =>
+      doors.threadContext(principal, at(principal, tenant), session, query),
     openThread: memberChatOpenMethod(own, threads, routes),
     sendThreadMessage: memberChatSendMethod(own, threads, routes),
     stopThreadTurn: (principal, tenant, input) =>

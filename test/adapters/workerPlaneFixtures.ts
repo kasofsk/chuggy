@@ -73,6 +73,19 @@ export const runContextReadingBody = {
   },
 } as const;
 
+/** A context window carrying none of the fields a window may leave out, and every list empty. */
+export const runContextWindowBare = {
+  model: "claude-fixture",
+  totalTokens: 0,
+  maxTokens: 200_000,
+  categories: [],
+  memoryFiles: [],
+  mcpTools: [],
+  systemTools: [],
+  systemPromptSections: [],
+  agents: [],
+} as const;
+
 /** Every run-evidence port a case about something else never reaches. */
 export const inertRunEvidence: WorkerRunEvidencePorts = {
   configurations: { record: () => Promise.resolve("Stored") },

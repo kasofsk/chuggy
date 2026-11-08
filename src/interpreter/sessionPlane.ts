@@ -30,6 +30,7 @@ import type {
   SessionTurnInputKind,
   SessionTurnMeasured,
 } from "./agentSession.ts";
+import type { SessionContextOffered } from "../contract/responses.ts";
 import type { SessionContainerEnd } from "../contract/rosters.ts";
 import type { SessionLiveEvent } from "../contract/sessionLive.ts";
 import type { Partition } from "./projectStore.ts";
@@ -208,6 +209,8 @@ export interface SessionTurnSettlePort {
     readonly batchLast?: number;
     /** What the runtime spent, absent where the pod could not read it. */
     readonly measured?: SessionTurnMeasured;
+    /** What the turn's context window held as it compacted and as it ended, in the order the turn read it, absent where the pod read none. */
+    readonly readings?: readonly SessionContextOffered[];
   }): Promise<SessionTurnAnswered>;
   fail(input: {
     readonly secret: SessionBearerSecret;

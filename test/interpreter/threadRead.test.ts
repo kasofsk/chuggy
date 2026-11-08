@@ -300,6 +300,18 @@ function ports(doubles: ThreadDoubles): NativeThreadPorts {
         });
       },
     },
+    context: {
+      turns: ({ session, after, limit }) => {
+        doubles.calls.push(
+          `readings:${session}:${String(after)}:${String(limit)}`,
+        );
+        return Promise.resolve([]);
+      },
+      opening: (_partition, session) => {
+        doubles.calls.push(`opening:${session}`);
+        return Promise.resolve({});
+      },
+    },
     credentialSlot: "member-thread",
   };
 }
@@ -425,6 +437,11 @@ test("a thread listing a member may not read answers as one that is not there", 
       .read,
     "NotFound",
   );
+  assert.equal(
+    (await web.threadContext(geoff, partition, mine, { after: 0, limit: 1 }))
+      .read,
+    "NotFound",
+  );
 });
 
 test("a member reads another member's thread, and it is not theirs", async () => {
@@ -497,6 +514,15 @@ test("a session this project holds no thread for is not found", async () => {
   assert.equal(
     (
       await web.threadTranscript(geoff, partition, asSessionId("lead-atlas"), {
+        after: 0,
+        limit: 1,
+      })
+    ).read,
+    "NotFound",
+  );
+  assert.equal(
+    (
+      await web.threadContext(geoff, partition, asSessionId("lead-atlas"), {
         after: 0,
         limit: 1,
       })
@@ -577,6 +603,48 @@ test("a transcript page is the lead's walk over the thread's own session", async
   );
   await assert.rejects(
     web.threadTranscript(geoff, partition, mine, { after: -1, limit: 1 }),
+    RangeError,
+  );
+});
+
+/**
+ * A thread's context is read as its transcript is, under `Read` and keyed on
+ * the thread's own session, and what the session was opened under crosses on
+ * the first page alone.
+ */
+test("a context page reads the thread's own session, its opening on the first page alone", async () => {
+  const first = boundary({}, ["Read"]);
+  const later = boundary({}, ["Read"]);
+
+  const head = await first.web.threadContext(dana, partition, mine, {
+    after: 0,
+    limit: 2,
+  });
+  const next = await later.web.threadContext(dana, partition, mine, {
+    after: 3,
+    limit: 2,
+  });
+
+  assert.deepEqual(head, { read: "Page", page: { turns: [] } });
+  assert.deepEqual(next, { read: "Page", page: { turns: [] } });
+  assert.deepEqual(
+    first.held.calls.filter(
+      (call) => call.startsWith("readings:") || call.startsWith("opening:"),
+    ),
+    [`readings:${mine}:0:2`, `opening:${mine}`],
+  );
+  assert.deepEqual(
+    later.held.calls.filter(
+      (call) => call.startsWith("readings:") || call.startsWith("opening:"),
+    ),
+    [`readings:${mine}:3:2`],
+  );
+  assert.deepEqual(
+    first.held.calls.filter((call) => call.startsWith("authorize:")),
+    ["authorize:Read"],
+  );
+  await assert.rejects(
+    first.web.threadContext(geoff, partition, mine, { after: 0, limit: 0 }),
     RangeError,
   );
 });

@@ -26,6 +26,7 @@ import {
   sessionStoreBatchesMax,
   sessionStorePageBatchesMax,
   sessionStoreStreamCharsMax,
+  sessionTurnContextReadingsMax,
   sessionTurnInputCharsMax,
   sessionTurnModelCharsMax,
   sessionTurnResultCharsMax,
@@ -37,7 +38,10 @@ import {
   workerPlaneAnswersRefusingVersions,
   type WorkerPlaneAnswers,
 } from "./planeAnswers.ts";
-import { leadStoreStreamResponseSchema } from "./responses.ts";
+import {
+  leadStoreStreamResponseSchema,
+  sessionContextOfferedSchema,
+} from "./responses.ts";
 import {
   agentReportedTurnFailures,
   sessionCapabilities,
@@ -56,7 +60,7 @@ import {
   type WorkerPlaneRoute,
 } from "./workerPlane.ts";
 
-/** The bounds a session pod's identities, turns, live events and store are written against, the failures a turn may name, and the capabilities a session may hold. */
+/** The bounds a session pod's identities, turns, readings, live events and store are written against, the failures a turn may name, why it may read its context window, and the capabilities a session may hold. */
 export {
   jsonTextBytes,
   repositoryIdentityCharsMax,
@@ -70,6 +74,7 @@ export {
   sessionStoreBatchesMax,
   sessionStorePageBatchesMax,
   sessionStoreStreamCharsMax,
+  sessionTurnContextReadingsMax,
   sessionTurnModelCharsMax,
   sessionTurnResultCharsMax,
   sessionTurnToolNameCharsMax,
@@ -79,6 +84,7 @@ export {
   agentReportedTurnFailures,
   sessionCapabilities,
   sessionContainerEnds,
+  sessionContextCauses,
 } from "./rosters.ts";
 export {
   isSessionLiveText,
@@ -183,13 +189,19 @@ const sessionStoreBatchNumberSchema = z
  * measurement is optional for two reasons that are both real: a thread's turn
  * is answered by this same route and has no policy control over it, and a
  * runtime that reported no usage must still be able to answer rather than be
- * stuck.
+ * stuck; the readings of its context window are optional for the second
+ * reason, and are the turn's own in the order it took them.
  */
 export const sessionTurnAnswerSchema = z
   .strictObject({
     turn: sessionIdentitySchema,
     result: z.string().max(sessionTurnResultCharsMax),
     measured: sessionTurnMeasuredSchema.optional(),
+    readings: z
+      .array(sessionContextOfferedSchema)
+      .min(1)
+      .max(sessionTurnContextReadingsMax)
+      .optional(),
     batchFirst: sessionStoreBatchNumberSchema.optional(),
     batchLast: sessionStoreBatchNumberSchema.optional(),
   })

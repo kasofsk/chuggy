@@ -205,6 +205,7 @@ function portsOf(kept: readonly Kept[], calls: string[]): NativeThreadPorts {
     },
     rows: { batches: refused("rows") },
     store: { readBatch: refused("bytes") },
+    context: { turns: refused("readings"), opening: refused("opening") },
     credentialSlot: "member-thread",
   };
 }
@@ -268,6 +269,10 @@ test("every door answers a member whose tenant took unscoped chat as one that is
   for (const each of answered) assert.deepEqual(each, { result: "NotFound" });
   assert.deepEqual(
     await chat.threadTranscript(geoff, tenant, own, { after: 0, limit: 1 }),
+    { read: "NotFound" },
+  );
+  assert.deepEqual(
+    await chat.threadContext(geoff, tenant, own, { after: 0, limit: 1 }),
     { read: "NotFound" },
   );
   assert.deepEqual(calls, []);
@@ -437,6 +442,13 @@ test("no door reads a project thread's turns, the member's own included, however
   });
   assert.deepEqual(
     await chat.threadTranscript(geoff, tenant, atlasMine, {
+      after: 0,
+      limit: 1,
+    }),
+    { read: "NotFound" },
+  );
+  assert.deepEqual(
+    await chat.threadContext(geoff, tenant, atlasMine, {
       after: 0,
       limit: 1,
     }),

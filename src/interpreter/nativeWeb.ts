@@ -197,6 +197,12 @@ import {
   type SessionTranscriptSubject,
 } from "./leadRead.ts";
 import {
+  sessionContextPage,
+  type SessionContextPageRead,
+  type SessionContextQuery,
+  type SessionContextRead,
+} from "./sessionContext.ts";
+import {
   selectorHistory,
   type SelectorHistoryQuery,
   type SelectorHistoryRead,
@@ -799,6 +805,11 @@ export interface NativeWeb extends NativeEpics {
     partition: Partition,
     query: LeadTranscriptQuery,
   ): Promise<LeadTranscriptRead>;
+  leadContext(
+    principal: Principal,
+    partition: Partition,
+    query: SessionContextQuery,
+  ): Promise<SessionContextPageRead>;
   agenticRefusals(
     principal: Principal,
     partition: Partition,
@@ -994,6 +1005,12 @@ export interface NativeWeb extends NativeEpics {
     session: SessionId,
     query: LeadTranscriptQuery,
   ): Promise<LeadTranscriptRead>;
+  threadContext(
+    principal: Principal,
+    partition: Partition,
+    session: SessionId,
+    query: SessionContextQuery,
+  ): Promise<SessionContextPageRead>;
   openThread(
     principal: Principal,
     partition: Partition,
@@ -1831,6 +1848,7 @@ function nativeTicketMethods(
 export interface NativeLeadPorts {
   readonly leads: LeadReadStore;
   readonly store: SessionStoreReadPort;
+  readonly context: SessionContextRead;
   readonly refusals: AgenticRefusalRead;
   readonly history: SelectorHistoryStore;
   /** The project's settings as the selector resolves them, which say whether it is paused. */
@@ -1958,6 +1976,7 @@ type NativeLeadMethods = Pick<
   NativeWeb,
   | "lead"
   | "leadTranscript"
+  | "leadContext"
   | "agenticRefusals"
   | "ticketAgenticRefusals"
   | "selectorHistory"
@@ -2038,7 +2057,7 @@ async function nativeLeadDispatchWaits(
 function nativeLeadSessionMethods(
   access: ProjectAccess,
   leads?: NativeLeadPorts,
-): Pick<NativeWeb, "lead" | "leadTranscript"> {
+): Pick<NativeWeb, "lead" | "leadTranscript" | "leadContext"> {
   return {
     lead: async (principal, partition) => {
       if ((await access.authorize(principal, partition, "Read")) === undefined)
@@ -2081,6 +2100,25 @@ function nativeLeadSessionMethods(
         checkedLeadTranscriptQuery(query),
       );
     },
+    leadContext: async (principal, partition, query) => {
+      if ((await access.authorize(principal, partition, "Read")) === undefined)
+        return { read: "NotFound" };
+      const ports = composedLeadPorts(leads);
+      const standing = await ports.leads.standing(
+        partition,
+        leadTurnsAnsweredMax,
+      );
+      if (standing === undefined) return { read: "NotFound" };
+      return {
+        read: "Page",
+        page: await sessionContextPage(
+          ports.context,
+          partition,
+          standing.session,
+          query,
+        ),
+      };
+    },
   };
 }
 
@@ -2088,9 +2126,10 @@ function nativeLeadSessionMethods(
  * The ports one project's threads are read and written through, arriving
  * together because a thread page needs all of them and a deployment that
  * composed some would answer a page that is part blank without saying which
- * part. `rows` and `store` are the lead's own two, session-keyed — a thread's
- * transcript is drawn by the SAME walk over the SAME bytes, so one transcript
- * has one page type and one wire answer — and `credentialSlot` is the
+ * part. `rows`, `store` and `context` are the lead's own, session-keyed — a
+ * thread's transcript is drawn by the SAME walk over the SAME bytes, so one
+ * transcript has one page type and one wire answer, and its context readings
+ * likewise — and `credentialSlot` is the
  * installation's named mount for a member's thread, configuration rather than a
  * port because what a thread speaks through is decided where a deployment is
  * described and never by a caller.
@@ -2101,6 +2140,7 @@ export interface NativeThreadPorts {
   readonly seeding: ThreadSeedingRead;
   readonly rows: SessionStoreRowsRead;
   readonly store: SessionStoreReadPort;
+  readonly context: SessionContextRead;
   readonly credentialSlot: string;
 }
 
@@ -2524,15 +2564,43 @@ function nativeThreadViewMethods(
 }
 
 /**
- * The three reads every member of the project may make of every thread in it,
- * each reauthorizing before it reaches a store. A thread that is not this
- * project's own, and a session that is not a thread at all, answer alike:
- * `standing` refuses both, and neither is a fact a reader is owed.
+ * The thread a session read is of, found only where the reader may read the
+ * project and the project holds the thread, with the ports its read goes on to.
+ */
+async function nativeThreadSessionRead(
+  access: ProjectAccess,
+  threads: NativeThreadPorts | undefined,
+  principal: Principal,
+  partition: Partition,
+  session: SessionId,
+): Promise<
+  | {
+      readonly ports: NativeThreadPorts;
+      readonly thread: SessionTranscriptSubject;
+    }
+  | undefined
+> {
+  if ((await access.authorize(principal, partition, "Read")) === undefined)
+    return undefined;
+  const ports = composedThreadPorts(threads);
+  const found = await ports.threads.standing({
+    partition,
+    session,
+    query: { limit: 1 },
+  });
+  return found === undefined ? undefined : { ports, thread: found.thread };
+}
+
+/**
+ * The roster and mailbox reads every member of the project may make of every
+ * thread in it, each reauthorizing before it reaches a store. A thread that is
+ * not this project's own, and a session that is not a thread at all, answer
+ * alike: `standing` refuses both, and neither is a fact a reader is owed.
  */
 function nativeThreadReadMethods(
   access: ProjectAccess,
   threads?: NativeThreadPorts,
-): Pick<NativeWeb, "threads" | "thread" | "threadTranscript"> {
+): Pick<NativeWeb, "threads" | "thread"> {
   return {
     threads: async (principal, partition) => {
       if ((await access.authorize(principal, partition, "Read")) === undefined)
@@ -2572,23 +2640,53 @@ function nativeThreadReadMethods(
         streams: found.streams,
       };
     },
+  };
+}
+
+/**
+ * The reads of what a thread's own session held, for every member of the
+ * project, each refused as `nativeThreadSessionRead` refuses.
+ */
+function nativeThreadSessionMethods(
+  access: ProjectAccess,
+  threads?: NativeThreadPorts,
+): Pick<NativeWeb, "threadTranscript" | "threadContext"> {
+  return {
     threadTranscript: async (principal, partition, session, query) => {
-      if ((await access.authorize(principal, partition, "Read")) === undefined)
-        return { read: "NotFound" };
-      const ports = composedThreadPorts(threads);
-      const found = await ports.threads.standing({
+      const found = await nativeThreadSessionRead(
+        access,
+        threads,
+        principal,
         partition,
         session,
-        query: { limit: 1 },
-      });
+      );
       if (found === undefined) return { read: "NotFound" };
       return nativeSessionTranscriptPage(
-        ports.rows,
-        ports.store,
+        found.ports.rows,
+        found.ports.store,
         partition,
         found.thread,
         checkedLeadTranscriptQuery(query),
       );
+    },
+    threadContext: async (principal, partition, session, query) => {
+      const found = await nativeThreadSessionRead(
+        access,
+        threads,
+        principal,
+        partition,
+        session,
+      );
+      if (found === undefined) return { read: "NotFound" };
+      return {
+        read: "Page",
+        page: await sessionContextPage(
+          found.ports.context,
+          partition,
+          found.thread.session,
+          query,
+        ),
+      };
     },
   };
 }
@@ -2754,6 +2852,7 @@ export function nativeThreadMethods(
   | "threads"
   | "thread"
   | "threadTranscript"
+  | "threadContext"
   | "openThread"
   | "sendThreadMessage"
   | "replyThreadOffer"
@@ -2764,6 +2863,7 @@ export function nativeThreadMethods(
 > {
   return {
     ...nativeThreadReadMethods(access, threads),
+    ...nativeThreadSessionMethods(access, threads),
     ...nativeThreadViewMethods(access, threads),
     openThread: nativeOpenThreadMethod(access, threads, routes),
     sendThreadMessage: nativeSendThreadMessageMethod(

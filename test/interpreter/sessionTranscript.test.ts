@@ -20,6 +20,7 @@ import test from "node:test";
 
 import {
   sessionStoreEntries,
+  sessionTranscriptBoundaries,
   sessionTranscriptChain,
   sessionTranscriptCompaction,
   sessionTranscriptHeld,
@@ -118,9 +119,10 @@ test("the chain drops the runtime's bookkeeping entries", () => {
 
 /**
  * The stored stream with a second compaction laid over it, built from the real
- * boundary's own shape: its uuids are rewritten so the case has two, and every
- * field the walk reads keeps the value the runtime wrote. The real store holds
- * one compaction, so a stream that has compacted twice can only be composed.
+ * boundary's own shape: its uuids are rewritten so the case has two, every
+ * field the walk reads keeps the value the runtime wrote, and its own
+ * compaction's facts are an automatic one's. The real store holds one
+ * compaction, so a stream that has compacted twice can only be composed.
  */
 function twiceCompacted(): readonly SessionStoreEntry[] {
   const entries = [...storedEntries(streams.compacted)];
@@ -131,7 +133,11 @@ function twiceCompacted(): readonly SessionStoreEntry[] {
     ...first.boundary,
     uuid: "second-boundary",
     logicalParentUuid: tip?.uuid ?? "",
+    timestamp: "2026-09-02T16:20:11.112Z",
     compactMetadata: {
+      trigger: "auto",
+      preTokens: 167_412,
+      postTokens: 9_870,
       preservedMessages: {
         anchorUuid: "second-summary",
         uuids: [first.anchor],
@@ -284,4 +290,82 @@ test("a line no reader can speak for is dropped and the rest are read", () => {
   const halfWritten = sessionStoreEntries(`${text}{"type":"user","uu`);
   assert.deepEqual(halfWritten, whole);
   assert.deepEqual(sessionStoreEntries('["not an entry"]\n{"no":"type"}'), []);
+});
+
+test("a compaction boundary answers the trigger and the tokens its store kept, over the runtime's own bytes", () => {
+  assert.deepEqual(
+    sessionTranscriptBoundaries(storedEntries(streams.compacted)),
+    [
+      {
+        boundary: "83738f97-737d-412f-8a49-3c56c4a78ef9",
+        at: "2026-09-02T15:48:54.703Z",
+        trigger: "Manual",
+        tokensBefore: 15_037,
+        tokensAfter: 1_315,
+      },
+    ],
+  );
+  assert.deepEqual(
+    sessionTranscriptBoundaries(storedEntries(streams.resumed)),
+    [],
+  );
+});
+
+test("every compaction is answered in the order it was appended, not only the last", () => {
+  assert.deepEqual(sessionTranscriptBoundaries(twiceCompacted()), [
+    {
+      boundary: "83738f97-737d-412f-8a49-3c56c4a78ef9",
+      at: "2026-09-02T15:48:54.703Z",
+      trigger: "Manual",
+      tokensBefore: 15_037,
+      tokensAfter: 1_315,
+    },
+    {
+      boundary: "second-boundary",
+      at: "2026-09-02T16:20:11.112Z",
+      trigger: "Auto",
+      tokensBefore: 167_412,
+      tokensAfter: 9_870,
+    },
+  ]);
+});
+
+/** The entry as the runtime would have written it had it left `key` out. */
+function entryWithout(
+  entry: SessionStoreEntry,
+  key: keyof SessionStoreEntry,
+): SessionStoreEntry {
+  return Object.fromEntries(
+    Object.entries(entry).filter(([name]) => name !== key),
+  ) as unknown as SessionStoreEntry;
+}
+
+test("a boundary's fact the runtime did not write in its own shape is absent, and the boundary is still answered", () => {
+  const [real] = storedEntries(streams.compacted).filter(
+    (entry) => entry.subtype === "compact_boundary",
+  );
+  assert.ok(real !== undefined);
+  const odd: SessionStoreEntry = {
+    ...real,
+    compactMetadata: { trigger: "sideways", preTokens: -1, postTokens: "9" },
+  };
+  assert.deepEqual(
+    sessionTranscriptBoundaries([
+      odd,
+      { ...entryWithout(real, "timestamp"), uuid: "undated" },
+    ]),
+    [
+      { boundary: real.uuid, at: real.timestamp },
+      {
+        boundary: "undated",
+        trigger: "Manual",
+        tokensBefore: 15_037,
+        tokensAfter: 1_315,
+      },
+    ],
+  );
+  assert.deepEqual(
+    sessionTranscriptBoundaries([entryWithout(real, "uuid")]),
+    [],
+  );
 });

@@ -207,6 +207,7 @@ import {
   runErrorResponse,
   runTranscriptResponse,
   runContextResponse,
+  sessionContextResponse,
   runTurnsResponse,
   submissionResponse,
   askLeadResponse,
@@ -346,6 +347,7 @@ type InitialNativeWeb = Pick<
   | "abilities"
   | "lead"
   | "leadTranscript"
+  | "leadContext"
   | "agenticRefusals"
   | "ticketAgenticRefusals"
   | "selectorHistory"
@@ -365,6 +367,7 @@ type InitialNativeWeb = Pick<
   | "threads"
   | "thread"
   | "threadTranscript"
+  | "threadContext"
   | "openThread"
   | "sendThreadMessage"
   | "replyThreadOffer"
@@ -873,6 +876,17 @@ function registerLead(app: FastifyInstance, web: InitialNativeWeb): void {
       });
     },
     leadTranscriptResponse,
+  );
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.leadContext,
+    (request, principal, partition) =>
+      web.leadContext(
+        principal,
+        partition,
+        nativeHttpEndpoints.leadContext.query.parse(request.query),
+      ),
+    sessionContextResponse,
   );
 }
 
@@ -2525,6 +2539,18 @@ function registerThreadReads(
     },
     leadTranscriptResponse,
   );
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.threadContext,
+    (request, principal, partition) =>
+      web.threadContext(
+        principal,
+        partition,
+        registerEndpointSession(request),
+        nativeHttpEndpoints.threadContext.query.parse(request.query),
+      ),
+    sessionContextResponse,
+  );
 }
 
 /** The door a member answers an offer of their thread's through, answered as
@@ -2882,6 +2908,12 @@ function registerChatReads(app: FastifyInstance, chat: MemberChat): void {
     },
     threadResponse,
   );
+}
+
+function registerChatSessionReads(
+  app: FastifyInstance,
+  chat: MemberChat,
+): void {
   registerChatEndpoint(
     app,
     nativeHttpEndpoints.chatThreadTranscript,
@@ -2903,6 +2935,18 @@ function registerChatReads(app: FastifyInstance, chat: MemberChat): void {
       );
     },
     leadTranscriptResponse,
+  );
+  registerChatEndpoint(
+    app,
+    nativeHttpEndpoints.chatThreadContext,
+    (request, principal, tenant) =>
+      chat.threadContext(
+        principal,
+        tenant,
+        registerEndpointSession(request),
+        nativeHttpEndpoints.chatThreadContext.query.parse(request.query),
+      ),
+    sessionContextResponse,
   );
 }
 
@@ -3021,6 +3065,7 @@ function registerMemberChat(
   hub: ThreadLiveHub | undefined,
 ): void {
   registerChatReads(app, chat);
+  registerChatSessionReads(app, chat);
   registerChatWrites(app, chat);
   if (hub !== undefined)
     app.get(

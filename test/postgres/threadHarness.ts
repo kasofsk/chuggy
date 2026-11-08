@@ -23,6 +23,7 @@ import { postgresAgenticRefusalReads } from "../../src/adapters/postgres/agentic
 import { postgresDispatchViews } from "../../src/adapters/postgres/dispatchViews.ts";
 import { postgresInstallationAuthority } from "../../src/adapters/postgres/installationAuthority.ts";
 import { postgresLeadReads } from "../../src/adapters/postgres/leadReads.ts";
+import { postgresSessionContext } from "../../src/adapters/postgres/sessionContext.ts";
 import { postgresSelectorResolvedSettings } from "../../src/adapters/postgres/selector.ts";
 import { postgresExecutionBacklogGuard } from "../../src/adapters/postgres/schedulerContext.ts";
 import { postgresSessionStoreRows } from "../../src/adapters/postgres/sessionStoreReads.ts";
@@ -266,6 +267,23 @@ export async function threadRigTicketPhase(
   );
 }
 
+/** The lead's reads over the API's pool, which a thread's routes are composed beside. */
+function threadRigLeadPorts(
+  pool: ThreadRig["apiPool"],
+  store: SessionStoreDouble,
+) {
+  const leads = postgresLeadReads(pool);
+  return {
+    leads,
+    store,
+    context: postgresSessionContext(pool),
+    refusals: postgresAgenticRefusalReads(pool),
+    history: leads,
+    settings: postgresSelectorResolvedSettings(pool),
+    candidates: postgresDispatchViews(pool),
+  };
+}
+
 /**
  * The app the thread routes are driven through, composed from the bundle the
  * ROOT composes. It is here rather than in either suite because the two that
@@ -280,7 +298,6 @@ export function threadRigApp(input: {
   readonly threadLive?: ThreadLiveHub;
 }) {
   const pool = input.rig.apiPool;
-  const leads = postgresLeadReads(pool);
   const web = composeNativeWeb(
     pool,
     postgresHarnessKeying(),
@@ -292,14 +309,7 @@ export function threadRigApp(input: {
     undefined,
     undefined,
     undefined,
-    {
-      leads,
-      store: input.store,
-      refusals: postgresAgenticRefusalReads(pool),
-      history: leads,
-      settings: postgresSelectorResolvedSettings(pool),
-      candidates: postgresDispatchViews(pool),
-    },
+    threadRigLeadPorts(pool, input.store),
     {
       threads: postgresThreads(pool, {
         streamsMax: sessionStoreStreamsAnswered,
@@ -308,6 +318,7 @@ export function threadRigApp(input: {
       seeding: postgresThreadSeeding(pool),
       rows: postgresSessionStoreRows(pool),
       store: input.store,
+      context: postgresSessionContext(pool),
       credentialSlot: threadRigSlot,
     },
   );

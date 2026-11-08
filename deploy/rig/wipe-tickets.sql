@@ -115,6 +115,7 @@ TRUNCATE TABLE
   public.session_attempt,
   public.session_store_batch,
   public.session_turn,
+  public.session_turn_context,
   public.ticket_definition,
   public.ticket_projection,
   public.ticket_source,

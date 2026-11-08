@@ -10,6 +10,7 @@ type LeadReads = Pick<
   NativeWeb,
   | "lead"
   | "leadTranscript"
+  | "leadContext"
   | "agenticRefusals"
   | "ticketAgenticRefusals"
   | "selectorHistory"
@@ -20,6 +21,7 @@ export function unreadableLeadReads(): LeadReads {
   return {
     lead: missing,
     leadTranscript: () => Promise.resolve({ read: "NotFound" } as const),
+    leadContext: () => Promise.resolve({ read: "NotFound" } as const),
     agenticRefusals: missing,
     ticketAgenticRefusals: missing,
     selectorHistory: missing,
