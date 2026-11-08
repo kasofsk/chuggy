@@ -12,6 +12,8 @@
 
 import { expect, test } from "vitest";
 
+import { copiedWords } from "./copiedWords.ts";
+
 import {
   configurationViewOf,
   practiceLabel,
@@ -44,8 +46,8 @@ test("a configuration naming no worker states no worker-only field", () => {
       evaluations: [{ purpose: "Check", checks: ["npm test"] }],
     }),
   );
-  expect(view.settings).toStrictEqual({
-    model: { label: "Default", argument: undefined },
+  expect(copiedWords(view.settings)).toStrictEqual({
+    model: { label: undefined, argument: undefined },
     agent: undefined,
     agentDetail: undefined,
     worker: { short: "worker:v1", full: "worker:v1" },
@@ -67,8 +69,8 @@ test("a configuration naming no worker states no worker-only field", () => {
 
 test("a worker with no authority states its agent, tools and setup and no grant", () => {
   const view = configurationViewOf(declaredConfiguration("basic-coding"));
-  expect(view.settings).toStrictEqual({
-    model: { label: "Default", argument: undefined },
+  expect(copiedWords(view.settings)).toStrictEqual({
+    model: { label: undefined, argument: undefined },
     agent: "Claude Code",
     agentDetail: "Single agent",
     worker: { short: "worker:v1", full: "worker:v1" },
@@ -102,8 +104,8 @@ test("a pinned tool flag is read ahead of the authority's own list", () => {
     label: "Opus",
     argument: "--model=opus",
   });
-  expect(view.settings.agent).toBe("Claude Code");
-  expect(view.settings.agentDetail).toBe("Single agent");
+  expect(copiedWords(view.settings.agent)).toBe("Claude Code");
+  expect(copiedWords(view.settings.agentDetail)).toBe("Single agent");
   expect(view.settings.tools).toStrictEqual([
     "Bash",
     "Edit",
@@ -117,7 +119,9 @@ test("a pinned tool flag is read ahead of the authority's own list", () => {
     "claude-code",
     "track-record",
   ]);
-  expect(view.settings.access).toBe("Network · Workspace writable");
+  expect(copiedWords(view.settings.access)).toBe(
+    "Network · Working directory writable",
+  );
   expect(view.settings.setup).toStrictEqual(["npm ci"]);
   expect(view.settings.completesTask).toBe(false);
   expect(view.work.practices).toStrictEqual([
@@ -139,7 +143,7 @@ test("a pinned model is read from its own flag and shown capitalised", () => {
 test("bytes that are not JSON draw an emptier configuration, not a failed one", () => {
   const view = configurationViewOf("not json");
   expect(view.settings.model).toStrictEqual({
-    label: "Default",
+    label: undefined,
     argument: undefined,
   });
   expect(view.settings.worker).toBeUndefined();
@@ -172,7 +176,7 @@ test("a mode other than SingleAgent still reads its own type, not an agent it ne
   expect(view.settings.agent).toBeUndefined();
   expect(view.settings.agentDetail).toBe("Commands");
   expect(view.settings.model).toStrictEqual({
-    label: "Default",
+    label: undefined,
     argument: undefined,
   });
 });
@@ -190,7 +194,7 @@ test("arguments naming no model read as the default, and the tool flag alone", (
     }),
   );
   expect(view.settings.model).toStrictEqual({
-    label: "Default",
+    label: undefined,
     argument: undefined,
   });
   expect(view.settings.tools).toStrictEqual(["Bash"]);

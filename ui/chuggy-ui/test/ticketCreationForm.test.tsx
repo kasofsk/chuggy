@@ -1467,8 +1467,8 @@ test("one configuration under a read that may have missed others is asked, not t
 test("a walk the budget stopped says so beside what it did find", () => {
   const ports = api({ state: "Succeeded" }).ports;
   drawOffered(ports, [], several);
-  expect(screen.queryByText(configurationsPartialLabel)).toBeNull();
+  expect(screen.queryByText(copyTextEn(configurationsPartialLabel))).toBeNull();
   cleanup();
   drawOffered(ports, [], { ...several, partial: true });
-  expect(screen.getByText(configurationsPartialLabel)).toBeTruthy();
+  expect(screen.getByText(copyTextEn(configurationsPartialLabel))).toBeTruthy();
 });

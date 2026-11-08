@@ -20,6 +20,7 @@ import type {
 } from "../../../../src/contract/responses.ts";
 
 import { base64urlFromBytes } from "./base64url.ts";
+import type { Copy } from "./copy.ts";
 import { forgePressOf } from "./forgePress.ts";
 import type { ForgePress } from "./forgePress.ts";
 import type { KeyValuePort } from "./sessionHolder.ts";
@@ -99,12 +100,12 @@ export function forgeInstallUrl(installUrl: string, state: string): string {
 }
 
 /** The action that installs one of the two apps, as a person reads it. */
-export function forgeInstallLabel(app: ForgeAppName): string {
+export function forgeInstallLabel(app: ForgeAppName): Copy {
   switch (app) {
     case "portal":
-      return "Install portal";
+      return { id: "repositories-install-portal" };
     case "worker":
-      return "Install worker";
+      return { id: "repositories-install-worker" };
   }
 }
 

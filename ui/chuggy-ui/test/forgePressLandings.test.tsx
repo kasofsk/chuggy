@@ -207,7 +207,7 @@ test("a press whose portal install changed nothing returns with Not installed, s
     word: {
       tenant: press.tenant,
       standing: "Uninstalled",
-      status: "Not installed",
+      status: "NotInstalled",
     },
   });
 });

@@ -9,10 +9,12 @@ import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { projectRepositoriesReachUnaskedQuery } from "../../core/projectQueries.ts";
 import { repositoryLabel } from "../../core/projectRepositories.ts";
 import {
   repositoryImportRefusedLabel,
+  repositoryImportRefusedMore,
   repositoryImportsRefused,
 } from "../../core/repositoryImport.ts";
 import { usePanelState } from "../api.ts";
@@ -22,6 +24,7 @@ import { repositoryRoutePath } from "./RepositoryPage.tsx";
 export function RepositoryImportRefusedNotice(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
+  const text = useCopyText();
   const partition = props.partition;
   const bindings = usePanelState(
     projectRepositoriesReachUnaskedQuery(partition),
@@ -36,7 +39,7 @@ export function RepositoryImportRefusedNotice(props: {
       tone="danger"
       inline
       role="status"
-      detail={`${repositoryImportRefusedLabel} · `}
+      detail={`${text(repositoryImportRefusedLabel)} · `}
     >
       <Link
         to={repositoryRoutePath}
@@ -44,7 +47,9 @@ export function RepositoryImportRefusedNotice(props: {
       >
         {repositoryLabel(first)}
       </Link>
-      {more.length === 0 ? null : ` · ${String(more.length)} more`}
+      {more.length === 0
+        ? null
+        : ` · ${text(repositoryImportRefusedMore(more.length))}`}
     </Notice>
   );
 }

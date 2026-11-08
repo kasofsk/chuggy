@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The repository's head beside an imported configuration: a line saying
  * whether the head declares what the newest import stored, and the head's own
@@ -14,6 +13,7 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { RepositoryConfigurationHeadResponse } from "../../../../../src/contract/responses.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { catalogQueryImported } from "../../core/catalogConfigurations.ts";
 import type { CatalogQuery } from "../../core/catalogConfigurations.ts";
 import { catalogEntriesOf } from "../../core/catalogEntries.ts";
@@ -55,6 +55,7 @@ export function CatalogHeadLine(props: {
   /** The address the import is drawn under, which the head's link extends. */
   readonly query: CatalogQuery;
 }): ReactNode {
+  const text = useCopyText();
   const showing = props.query.source === "head";
   const [pressed, setPressed] = useState(false);
   const asked = pressed || showing;
@@ -69,7 +70,7 @@ export function CatalogHeadLine(props: {
             setPressed(true);
           }}
         >
-          Compare with the repository head
+          {text({ id: "configuration-catalog-compare-head" })}
         </Button>
       </p>
     );
@@ -83,25 +84,29 @@ export function CatalogHeadLine(props: {
   return (
     <div className="catalog-head" role="status">
       <p>
-        {showing &&
-        (standing.standing === "Matches" || standing.standing === "Differs")
-          ? catalogHeadShowingText(standing.at, props.name)
-          : catalogHeadText(standing, props.name)}{" "}
+        {text(
+          showing &&
+            (standing.standing === "Matches" || standing.standing === "Differs")
+            ? catalogHeadShowingText(standing.at, props.name)
+            : catalogHeadText(standing, props.name),
+        )}{" "}
         {showing ? (
-          <CatalogLink query={imported}>Show the import</CatalogLink>
+          <CatalogLink query={imported}>
+            {text({ id: "configuration-catalog-show-import" })}
+          </CatalogLink>
         ) : standing.standing === "Differs" ? (
           <CatalogLink query={{ ...imported, source: "head" }}>
-            Show the head
+            {text({ id: "configuration-catalog-show-head" })}
           </CatalogLink>
         ) : null}
       </p>
       {standing.standing === "Refused" ? (
         <ul className="catalog-head-faults">
           {standing.faults.map((fault) => {
-            const text = catalogHeadFaultText(fault);
+            const said = catalogHeadFaultText(fault);
             return (
-              <li key={text}>
-                <code>{text}</code>
+              <li key={said}>
+                <code>{said}</code>
               </li>
             );
           })}
@@ -119,6 +124,7 @@ export function CatalogHeadRevision(props: {
   readonly query: CatalogQuery;
   readonly imported: ReactNode;
 }): ReactNode {
+  const text = useCopyText();
   const state = useCatalogHead(props.partition, props.repository, true);
   if (state.state !== "Ready") return <PanelUnready state={state} />;
   const declaration = catalogHeadDeclaration(state.value.head, props.name);
@@ -126,7 +132,10 @@ export function CatalogHeadRevision(props: {
   const catalog = configurationCatalogOf(declaration.canonical);
   if (catalog === undefined)
     return (
-      <Panel variant="section" title="Version 1 configuration">
+      <Panel
+        variant="section"
+        title={text({ id: "configuration-catalog-version-one" })}
+      >
         <ConfigurationBody
           configuration={{ partition: props.partition, ...declaration }}
           overrides={undefined}

@@ -177,7 +177,7 @@ test("the page opens on the newest catalog and lists its entries by what each is
   ).toStrictEqual([
     "Workloads 4",
     "Evaluation plans 2",
-    "Finalizers 2",
+    "Landings 2",
     "Prompts 1",
   ]);
   const workloads = screen.getByRole("region", { name: "Workloads" });
@@ -233,7 +233,7 @@ test("an entry the catalog does not hold is said to be missing", async () => {
 
 test("a configuration with several versions offers them, and says where the drawn one was read", async () => {
   await drawPage({ configuration: "r2" });
-  expect(screen.getByRole("button", { name: /Version/u })).toBeTruthy();
+  expect(screen.getByRole("button", { name: /Revision/u })).toBeTruthy();
   expect(
     screen.getByText(".chug/configurations/chuggy-development.json"),
   ).toBeTruthy();
@@ -243,7 +243,7 @@ test("a version 1 configuration is drawn as no catalog", async () => {
   await drawPage({ configuration: "r5" });
   expect(screen.getByText("Version 1 configuration")).toBeTruthy();
   expect(screen.queryByRole("region", { name: "Workloads" })).toBeNull();
-  expect(screen.queryByRole("button", { name: /Version/u })).toBeNull();
+  expect(screen.queryByRole("button", { name: /Revision/u })).toBeNull();
 });
 
 test("a project that imported nothing says so", async () => {

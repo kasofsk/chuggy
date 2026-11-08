@@ -63,10 +63,9 @@ function ticketPlanRuns(
 ): string | undefined {
   if (workload.runner === "Commands")
     return text({ id: "ticket-plan-commands" });
-  const said = [
-    workload.agent,
-    workload.model === "Default" ? undefined : workload.model,
-  ].filter((part) => part !== undefined);
+  const said = [workload.agent, workload.model].filter(
+    (part) => part !== undefined,
+  );
   return said.length === 0 ? undefined : said.join(" · ");
 }
 

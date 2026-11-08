@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * A live binding the project holds no configuration for, and its configuration
  * step asked for again.
@@ -13,9 +12,11 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { apiConfigureProjectRepository } from "../../core/apiRoutes.ts";
 import { consoleWriteKey } from "../../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../../core/consoleWrite.ts";
+import { copyOrDataText } from "../../core/copy.ts";
 import { projectAbilityRefused } from "../../core/projectAbilities.ts";
 import { projectRepositoriesInvalidated } from "../../core/projectQueries.ts";
 import {
@@ -29,7 +30,7 @@ import { Pill } from "../ui/Pill.tsx";
 
 /** What the row draws before any retry has answered. */
 const bindingConfigurationsDeferred: RepositoryStepStatus = {
-  status: "Deferred",
+  status: { id: "repositories-deferred" },
   retry: true,
 };
 
@@ -97,12 +98,13 @@ export function BindingConfigurations(props: {
   readonly partition: PartitionIdentity;
   readonly repository: string;
 }): ReactNode {
+  const text = useCopyText();
   const step = useBindingConfigurationsRetry(props.partition, props.repository);
   const abilities = useProjectAbilities(props.partition);
   return (
     <>
       <span role="status">
-        <Pill tone="parked">{step.status.status}</Pill>
+        <Pill tone="parked">{copyOrDataText(text, step.status.status)}</Pill>
       </span>
       {step.status.retry && !projectAbilityRefused(abilities, "administer") ? (
         <Button
@@ -112,7 +114,7 @@ export function BindingConfigurations(props: {
           disabled={step.busy}
           onClick={step.retry}
         >
-          Retry
+          {text({ id: "repositories-retry" })}
         </Button>
       ) : null}
     </>

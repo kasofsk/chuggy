@@ -11,14 +11,17 @@ import {
   repositoryConfigurationImportAbsences,
   repositoryConfigurationImportResults,
 } from "../../../src/contract/rosters.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 import {
   repositoryImportFault,
   repositoryImportLine,
   repositoryImportNote,
   repositoryImportRefusedFile,
   repositoryImportsRefused,
+  repositoryImportWordLabel,
 } from "../app/core/repositoryImport.ts";
 import { repositoryImportTone } from "../app/core/tones.ts";
+import { copiedWords } from "./copiedWords.ts";
 
 const commit = "cfaca0a0f14ec03845a4e01458ac6c3a56d52a23";
 const attemptedAt = "2026-10-17T09:30:00.000000Z";
@@ -45,7 +48,7 @@ test("every kept outcome is one word and a tone, a head that named no commit an 
       });
       return [
         `${outcome.result}${"absent" in outcome ? `/${outcome.absent}` : ""}${read === undefined ? "" : "@"}`,
-        line.word,
+        copyTextEn(repositoryImportWordLabel(line.word)),
         repositoryImportTone(line.word),
       ];
     }),
@@ -83,6 +86,7 @@ test("a line names when and at which commit, and a repository never attempted sa
     commit: { text: "cfaca0a", title: commit },
   });
   expect(repositoryImportLine(undefined)).toStrictEqual({ word: "Never" });
+  expect(copyTextEn(repositoryImportWordLabel("Never"))).toBe("Never");
   expect(repositoryImportTone("Never")).toBe("neutral");
 });
 
@@ -131,9 +135,9 @@ test.each([
   [{ outcome: "Unauthenticated" }, "Not signed in"],
   [{ outcome: "Unreachable", reason: "offline" }, "Unreachable"],
 ] as const)("an import answered %j leaves %s to be said", (answered, note) => {
-  expect(repositoryImportNote({ answered, over: undefined }, unchanged)).toBe(
-    note,
-  );
+  expect(
+    copiedWords(repositoryImportNote({ answered, over: undefined }, unchanged)),
+  ).toBe(note);
 });
 
 /** Declaring nothing is no fault, so a refusal naming it says nothing whatever the line holds. */
@@ -144,9 +148,9 @@ test("an import refused for declaring nothing leaves nothing to be said", () => 
     status: 422,
     body: {},
   } as const;
-  expect(repositoryImportNote({ answered, over: undefined }, unchanged)).toBe(
-    undefined,
-  );
+  expect(
+    copiedWords(repositoryImportNote({ answered, over: undefined }, unchanged)),
+  ).toBe(undefined);
 });
 
 /**
@@ -159,32 +163,34 @@ test("a miss beside a new attempt the line draws as no fault leaves nothing to b
     attemptedAt,
     outcome: { result: "SnapshotAbsent", absent: "Commit" },
   });
-  expect(repositoryImportNote({ answered, over: undefined }, empty)).toBe(
-    undefined,
-  );
-  expect(repositoryImportNote({ answered, over: attemptedAt }, empty)).toBe(
-    "Not found",
-  );
+  expect(
+    copiedWords(repositoryImportNote({ answered, over: undefined }, empty)),
+  ).toBe(undefined);
+  expect(
+    copiedWords(repositoryImportNote({ answered, over: attemptedAt }, empty)),
+  ).toBe("Not found");
   const refused = repositoryImportLine({
     attemptedAt,
     commit,
     outcome: { result: "DeclarationsRefused" },
   });
   expect(
-    repositoryImportNote(
-      {
-        answered: {
-          outcome: "Rejected",
-          code: "RepositoryConfigurationsRefused",
-          status: 422,
-          body: {},
+    copiedWords(
+      repositoryImportNote(
+        {
+          answered: {
+            outcome: "Rejected",
+            code: "RepositoryConfigurationsRefused",
+            status: 422,
+            body: {},
+          },
+          over: undefined,
         },
-        over: undefined,
-      },
-      refused,
+        refused,
+      ),
     ),
   ).toBe("Invalid");
-  expect(repositoryImportNote(undefined, refused)).toBe(undefined);
+  expect(copiedWords(repositoryImportNote(undefined, refused))).toBe(undefined);
 });
 
 const refusedPath = ".chug/configurations/basic-coding.json";
@@ -193,7 +199,7 @@ test("every fault a file is refused for is the console's own words, a configurat
   expect(
     repositoryConfigurationFaults.map((fault) => [
       fault,
-      repositoryImportFault({ path: refusedPath, fault }),
+      copyTextEn(repositoryImportFault({ path: refusedPath, fault })),
     ]),
   ).toStrictEqual([
     ["TooManyDeclarations", "Too many files"],
@@ -211,33 +217,39 @@ test("every fault a file is refused for is the console's own words, a configurat
     ["TooManyReferences", "Too many referenced files"],
   ]);
   expect(
-    repositoryImportFault({
-      path: refusedPath,
-      fault: "ConfigurationTooLong",
-      chars: 70_412,
-      charsMax: 65_536,
-    }),
+    copiedWords(
+      repositoryImportFault({
+        path: refusedPath,
+        fault: "ConfigurationTooLong",
+        chars: 70_412,
+        charsMax: 65_536,
+      }),
+    ),
   ).toBe("70,412 of 65,536 characters");
   expect(
-    repositoryImportFault({
-      path: refusedPath,
-      fault: "ReferenceAbsent",
-      reference: ".chug/workloads/ci.json",
-    }),
+    copiedWords(
+      repositoryImportFault({
+        path: refusedPath,
+        fault: "ReferenceAbsent",
+        reference: ".chug/workloads/ci.json",
+      }),
+    ),
   ).toBe("Missing .chug/workloads/ci.json");
 });
 
 test("a refused import names its first file and fault and how many more, and no other attempt names any", () => {
   const refused = (refusalCount: number) =>
-    repositoryImportRefusedFile({
-      attemptedAt,
-      commit,
-      outcome: {
-        result: "DeclarationsRefused",
-        refusals: [{ path: refusedPath, fault: "DocumentUnreadable" }],
-        refusalCount,
-      },
-    });
+    copiedWords(
+      repositoryImportRefusedFile({
+        attemptedAt,
+        commit,
+        outcome: {
+          result: "DeclarationsRefused",
+          refusals: [{ path: refusedPath, fault: "DocumentUnreadable" }],
+          refusalCount,
+        },
+      }),
+    );
   expect(refused(1)).toBe(`${refusedPath} · Not JSON`);
   expect(refused(7)).toBe(`${refusedPath} · Not JSON · 6 more`);
   expect(

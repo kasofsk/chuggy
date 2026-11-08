@@ -30,6 +30,7 @@ import {
 import type { ConfigurationSelection } from "../../../../src/contract/configurationSelection.ts";
 import { briefFinalizationModes } from "../../../../src/contract/rosters.ts";
 import type { DraftInitializationResponse } from "../../../../src/contract/responses.ts";
+import type { Copy, CopyOrData, CopyText } from "./copy.ts";
 import { configurationModelLabelOf } from "./configurationView.ts";
 
 const optionalString = () => z.string().optional().catch(undefined);
@@ -98,7 +99,8 @@ export interface CatalogWorkload {
   readonly runner: string | undefined;
   /** What it is as an evaluator, Review where it says nothing. */
   readonly purpose: string;
-  /** Its agent's model, labelled; absent for a commands workload. */
+  /** Its agent's model, labelled; absent for a commands workload and for an
+   * agent whose mode names none, which runs its agent's default. */
   readonly model: string | undefined;
   readonly prompt: string | undefined;
   readonly promptPath: string | undefined;
@@ -113,6 +115,15 @@ export interface CatalogWorkload {
   readonly access: string | undefined;
   /** The workload exactly as the catalog writes it, for a view of it as a document. */
   readonly definition: unknown;
+}
+
+/** The model a workload's agent runs as a reader is shown it: the one it
+ * names, or its agent's default, and none for a workload that runs no agent. */
+export function catalogWorkloadModel(
+  workload: CatalogWorkload,
+): CopyOrData | undefined {
+  if (workload.runner !== "Agent") return undefined;
+  return workload.model ?? { id: "configuration-catalog-model-default" };
 }
 
 export interface CatalogPlanStage {
@@ -326,6 +337,13 @@ export interface CatalogChoice {
   readonly text: string;
 }
 
+/** What a landing asks before it proceeds, as the line beside its name. */
+export function catalogFinalizerApproval(finalizer: CatalogFinalizer): Copy {
+  return finalizer.approvalRequired
+    ? { id: "configuration-catalog-approved-first" }
+    : { id: "configuration-catalog-lands-unapproved" };
+}
+
 /** What each field of a selection chooses among, the catalog's default marked as one. */
 export interface CatalogChoices {
   readonly work: readonly CatalogChoice[];
@@ -334,28 +352,46 @@ export interface CatalogChoices {
 }
 
 function configurationCatalogChoice(
+  text: CopyText,
   name: string,
-  detail: string,
+  detail: CopyOrData,
   defaulted: string | undefined,
 ): CatalogChoice {
-  const marked = name === defaulted ? " (default)" : "";
-  return { value: name, text: `${name}${marked} · ${detail}` };
+  return {
+    value: name,
+    text: text(
+      name === defaulted
+        ? { id: "configuration-catalog-choice-default", args: { name, detail } }
+        : { id: "configuration-catalog-choice", args: { name, detail } },
+    ),
+  };
+}
+
+/** What a workload runs, as the one word beside its name. */
+function configurationCatalogRuns(workload: CatalogWorkload): CopyOrData {
+  return (
+    catalogWorkloadModel(workload) ??
+    workload.runner ?? { id: "configuration-catalog-unread" }
+  );
 }
 
 export function configurationCatalogChoices(
   catalog: ConfigurationCatalog,
+  text: CopyText,
 ): CatalogChoices {
   const { defaults } = catalog;
   return {
     work: catalog.workloads.map((workload) =>
       configurationCatalogChoice(
+        text,
         workload.name,
-        workload.model ?? workload.runner ?? "Unread",
+        configurationCatalogRuns(workload),
         defaults.work,
       ),
     ),
     evaluation: [...catalog.plans].map(([name, stages]) =>
       configurationCatalogChoice(
+        text,
         name,
         stages.map((stage) => stage.name).join(" → "),
         defaults.evaluation,
@@ -363,8 +399,13 @@ export function configurationCatalogChoices(
     ),
     finalization: catalog.finalizers.map((finalizer) =>
       configurationCatalogChoice(
+        text,
         finalizer.name,
-        finalizer.approvalRequired ? "approved first" : "lands unapproved",
+        {
+          id: finalizer.approvalRequired
+            ? "configuration-catalog-choice-approved-first"
+            : "configuration-catalog-choice-unapproved",
+        },
         defaults.finalization,
       ),
     ),

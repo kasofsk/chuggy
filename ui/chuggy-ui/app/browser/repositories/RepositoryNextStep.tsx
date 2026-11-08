@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The next step a line about a repository offers once the project holds a
  * configuration for it, after the words that say so: a runner where the
@@ -9,6 +8,7 @@ import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { repositoryNextStep } from "../../core/projectRepositories.ts";
 import type { WorkRunner } from "../../core/workRunner.ts";
 import { AddRunnerLink } from "../workRunner.tsx";
@@ -18,6 +18,7 @@ export function RepositoryNextStep(props: {
   readonly ticketOffered: boolean;
   readonly runner: WorkRunner;
 }): ReactNode {
+  const text = useCopyText();
   const step = repositoryNextStep(props.ticketOffered, props.runner);
   if (step === undefined) return null;
   return (
@@ -27,7 +28,7 @@ export function RepositoryNextStep(props: {
         <AddRunnerLink partition={props.partition} />
       ) : (
         <Link to="/$tenant/$project/tickets/new" params={props.partition}>
-          New ticket
+          {text({ id: "repositories-new-ticket" })}
         </Link>
       )}
     </>
