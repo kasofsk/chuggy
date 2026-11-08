@@ -442,11 +442,7 @@ test("a reset starts the gathered cuts over", () => {
   expect(first.fold.compactions.map((cut) => cut.boundary)).toStrictEqual([
     "uuid-a",
   ]);
-  const reset = paged(
-    first,
-    cutsPage(3, ["uuid-c", "uuid-d"], ["uuid-c"]),
-    2,
-  );
+  const reset = paged(first, cutsPage(3, ["uuid-c", "uuid-d"], ["uuid-c"]), 2);
   expect(reset.fold.compactions).toStrictEqual([]);
   const rebuilt = paged(
     paged(reset, cutsPage(3, ["uuid-a", "uuid-b"], ["uuid-a"], 1), 2),
