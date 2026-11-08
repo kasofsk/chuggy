@@ -23,6 +23,23 @@ export interface FiguresCopy {
   };
   readonly "figures-happened-started": Record<never, never>;
   readonly "figures-happened-prepared": Record<never, never>;
+  readonly "figures-instant-in-year": {
+    readonly month: unknown;
+    readonly day: unknown;
+    readonly clock: unknown;
+  };
+  readonly "figures-month-january": Record<never, never>;
+  readonly "figures-month-february": Record<never, never>;
+  readonly "figures-month-march": Record<never, never>;
+  readonly "figures-month-april": Record<never, never>;
+  readonly "figures-month-may": Record<never, never>;
+  readonly "figures-month-june": Record<never, never>;
+  readonly "figures-month-july": Record<never, never>;
+  readonly "figures-month-august": Record<never, never>;
+  readonly "figures-month-september": Record<never, never>;
+  readonly "figures-month-october": Record<never, never>;
+  readonly "figures-month-november": Record<never, never>;
+  readonly "figures-month-december": Record<never, never>;
   readonly "figures-unit-percent": Record<never, never>;
   readonly "figures-unit-hours": Record<never, never>;
   readonly "figures-unit-minutes": Record<never, never>;

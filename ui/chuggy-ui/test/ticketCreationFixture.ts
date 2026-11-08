@@ -31,7 +31,7 @@ import { answer } from "./screenHarness.tsx";
 
 export const creationDigest = "a".repeat(64);
 
-export const creationPartition = { tenant: "acme", project: "atlas" };
+export const creationPartition = { tenant: "acme-co", project: "atlas-web" };
 
 export function creationSummary(
   revision: string,

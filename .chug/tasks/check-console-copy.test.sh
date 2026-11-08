@@ -111,10 +111,40 @@ copy_check
 check "a rejected phrase is matched whole and in any case" 1 "$RC" 'shell-new: says "work item", which -ticket replaces'
 
 catalog
+printf '%s\n' '# spells issue: an issue of a magazine' 'shell-new = New issue' 'shell-left = { $count } left' > "$C/en/shell.ftl"
+generate
+copy_check
+check "an exemption naming a rejected word lets a message say it" 0 "$RC" "generated modules current"
+
+catalog
 printf '%s\n' '# spells -ticket: an issue of a magazine' 'shell-new = New issue' 'shell-left = { $count } left' > "$C/en/shell.ftl"
 generate
 copy_check
-check "the exemption a homonym carries lets a message say a rejected word" 0 "$RC" "generated modules current"
+check "a term's exemption does not excuse a word the term rejects" 1 "$RC" 'shell-new: says "issue", which -ticket replaces'
+
+catalog
+printf '%s\n' '# spells issue: an issue of a magazine' 'shell-new = Ticket an issue' 'shell-left = { $count } left' > "$C/en/shell.ftl"
+generate
+copy_check
+check "a rejected word's exemption does not excuse the term's English" 1 "$RC" "shell-new: spells -ticket instead of referencing it"
+
+catalog
+printf '%s\n' '# spells -ticket: to ticket is a verb here' '# spells issue: an issue of a magazine' 'shell-new = Ticket an issue' 'shell-left = { $count } left' > "$C/en/shell.ftl"
+generate
+copy_check
+check "each exemption excuses what it names, side by side" 0 "$RC" "generated modules current"
+
+catalog
+printf '%s\n' '# spells issue: an issue of a magazine' 'shell-new = New { -ticket }' 'shell-left = { $count } left' > "$C/en/shell.ftl"
+generate
+copy_check
+check "an exemption for a rejected word the message no longer says is a finding" 1 "$RC" 'shell-new: is exempt for "issue", which it does not say'
+
+catalog
+printf '%s\n' '# spells problem: a word no term rejects' 'shell-new = New problem' 'shell-left = { $count } left' > "$C/en/shell.ftl"
+generate
+copy_check
+check "an exemption for a word no term rejects is a finding" 1 "$RC" 'shell-new: is exempt for "problem", which no term rejects'
 
 catalog
 printf '%s\n' 'shell-new = New { -tikcet }' 'shell-left = { $count } left' > "$C/en/shell.ftl"

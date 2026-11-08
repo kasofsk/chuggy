@@ -15,6 +15,8 @@ ui-ledger-superseded = Superseded
 ui-locomotive = { -brand-name } is under way
 ui-no-match = No match
 ui-refusals = Refusal
+# The landmark the refusals arrive in, with the keys that move focus to it.
+ui-refusals-held = Refusals ({ $hotkey })
 ui-reload = Reload
 ui-save = Save changes
 `;

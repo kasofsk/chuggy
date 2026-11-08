@@ -274,10 +274,10 @@ test("a runner that is registered and not running is started on its machine, and
   expect(tell).not.toMatch(/https?:|page|shows/u);
 });
 
-test("the portal app missing from an account is mended on the workspace's accounts page, which is the page that draws Connect GitHub where an account is already connected", () => {
+test("the portal app missing from an account is mended on the workspace's GitHub accounts page, which is the page that draws Connect GitHub where an account is already connected", () => {
   expect(thing({ lacks: "App", app: "portal", account: "acme-org" })).toEqual(
     hand(
-      `Open ${stoodSite}/tenants/acme/settings/accounts, the workspace's accounts page, and press Connect GitHub, so chuggy is shown acme-org. Tell me once GitHub is connected.`,
+      `Open ${stoodSite}/tenants/acme/settings/accounts, the workspace's GitHub accounts page, and press Connect GitHub, so chuggy is shown acme-org. Tell me once GitHub is connected.`,
       "once the person says GitHub is connected",
     ),
   );

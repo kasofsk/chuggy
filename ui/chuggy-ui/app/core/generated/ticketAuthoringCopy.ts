@@ -248,6 +248,7 @@ export interface TicketAuthoringCopy {
   readonly "ticket-authoring-yaml-loading": Record<never, never>;
   readonly "ticket-authoring-mode-switch": Record<never, never>;
   readonly "ticket-authoring-mode-form": Record<never, never>;
+  readonly "ticket-authoring-mode-yaml": Record<never, never>;
   readonly "ticket-authoring-yaml-stuck": Record<never, never>;
   readonly "ticket-authoring-fold-all": Record<never, never>;
   readonly "ticket-authoring-unfold-all": Record<never, never>;
@@ -477,12 +478,8 @@ export interface TicketAuthoringCopy {
   };
   readonly "ticket-authoring-workload-type": Record<never, never>;
   readonly "ticket-authoring-workload-agent": Record<never, never>;
-  readonly "ticket-authoring-workload-model": {
-    readonly codex: unknown;
-  };
-  readonly "ticket-authoring-workload-effort": {
-    readonly codex: unknown;
-  };
+  readonly "ticket-authoring-workload-model": Record<never, never>;
+  readonly "ticket-authoring-workload-effort": Record<never, never>;
   readonly "ticket-authoring-workload-arguments": Record<never, never>;
   readonly "ticket-authoring-workload-setup": Record<never, never>;
   readonly "ticket-authoring-workload-files": Record<never, never>;

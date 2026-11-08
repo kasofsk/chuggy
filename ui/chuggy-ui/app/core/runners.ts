@@ -31,7 +31,7 @@ import type { PanelState } from "./freshness.ts";
 /** A runner package as the console hands it to a reader. */
 export interface RunnerPackage {
   /** What a reader chooses it as: the machine it runs on. */
-  readonly label: string;
+  readonly label: Copy;
   /** The program the package installs, which registers the machine. */
   readonly program: string;
   /** What a machine needs before the install, in one line. */
@@ -68,7 +68,7 @@ export function runnerOutdated(
 /** The packages a machine is made a runner with, an entry a package. */
 export const runnerPackages = {
   linux: {
-    label: "Linux",
+    label: { id: "runners-package-linux" },
     program: "chuggy-linux",
     needs: { id: "runners-package-needs-linux" },
     installCommand:
@@ -76,7 +76,7 @@ export const runnerPackages = {
     guideAddress: "https://github.com/kasofsk/chuggy-linux#configure",
   },
   darwin: {
-    label: "Mac",
+    label: { id: "runners-package-darwin" },
     program: "chuggy-darwin",
     needs: { id: "runners-package-needs-darwin" },
     installCommand:

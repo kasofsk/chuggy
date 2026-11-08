@@ -212,6 +212,7 @@ ticket-authoring-yaml-unloaded = YAML editor did not load · Form still holds th
 ticket-authoring-yaml-loading = loading the YAML editor…
 ticket-authoring-mode-switch = Write the { -ticket } as
 ticket-authoring-mode-form = Form
+ticket-authoring-mode-yaml = YAML
 ticket-authoring-yaml-stuck = fix the YAML to switch back to the form
 ticket-authoring-fold-all = Fold all
 ticket-authoring-unfold-all = Unfold all
@@ -302,8 +303,8 @@ ticket-authoring-yaml-no-key = this form has no \`{ $key }\`
 ticket-authoring-yaml-keys = write the { -ticket } as keys, one \`{ $shape }\` a line
 ticket-authoring-workload-unknown = the { -catalog } holds no { -workload } \`{ $name }\`
 ticket-authoring-workload-unmapped = write the { -workload } as a map of its fields
-# spells -run: runs is the verb, and an execution requirement is a workload's placement, not a run
-ticket-authoring-workload-unplaced = { -workload(form: "a") } runs in an image or under an execution requirement; name one
+# spells -run: the verb
+ticket-authoring-workload-unplaced = { -workload(form: "a") } runs in an image or under { -run(form: "a") } requirement; name one
 ticket-authoring-workload-removed = { -ticket(form: "a") } replaces \`{ $field }\` and cannot remove it; write it back
 # spells -run: the verb
 ticket-authoring-workload-refused = this { -workload } is not one { -ticket(form: "a") } may run
@@ -357,16 +358,16 @@ ticket-authoring-workload-path = a prompt file the { -catalog } stores, read as 
 ticket-authoring-workload-text = the prompt itself, in place of the { -catalog }'s
 # spells -run: the verb
 ticket-authoring-workload-worker = the { -agent } the { -workload } runs as, and what is installed before it runs
-# spells -run: runs is the verb, and an execution requirement is a workload's placement, not a run
-ticket-authoring-workload-mode = the { -agent } a worker runs as, or where an execution requirement runs: { $container } on its image, { $capability } on any { -runner } declaring its capabilities
+# spells -run: the verb
+ticket-authoring-workload-mode = the { -agent } a worker runs as, or how { -run(form: "a") } requirement is met: { $container } on its image, { $capability } on any { -runner } declaring its capabilities
 # spells -run: the verb
 ticket-authoring-workload-type = how many { -agent(form: "plural") } run the { -workload }
 # spells -run: the verb
 ticket-authoring-workload-agent = which { -agent } runs the { -workload }
 # spells -run: the verb
-ticket-authoring-workload-model = the model a { $codex } { -agent } runs
+ticket-authoring-workload-model = the model a { -codex } { -agent } runs
 # spells -run: the verb
-ticket-authoring-workload-effort = the reasoning effort a { $codex } { -agent } runs at; { $codex }'s default where left out
+ticket-authoring-workload-effort = the reasoning effort a { -codex } { -agent } runs at; { -codex }'s default where left out
 ticket-authoring-workload-arguments = the { -agent }'s command-line arguments, one a line
 # spells -run: the verb
 ticket-authoring-workload-setup = commands run before the { -workload }, one a line
@@ -382,8 +383,8 @@ ticket-authoring-workload-practices = the practices the { -workload } is held to
 ticket-authoring-workload-brief = the claim the { -workload } is briefed with: motivation, acceptance criteria and constraints
 # spells -run: the verb
 ticket-authoring-workload-commands = the lines a commands { -workload } runs at the { -repository } root
-# spells -run: runs is the verb, and an execution requirement is a workload's placement, not a run
-ticket-authoring-workload-image = the image the { -workload } runs in, in place of its execution requirement
+# spells -run: the verb
+ticket-authoring-workload-image = the image the { -workload } runs in, in place of its { -run } requirement
 # spells -run: the verb
 ticket-authoring-workload-execution = where the { -workload } runs, in place of its image
 ticket-authoring-workload-operating-system = the operating system { -runner(form: "a") } must offer

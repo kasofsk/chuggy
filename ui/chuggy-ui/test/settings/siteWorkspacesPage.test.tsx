@@ -57,15 +57,15 @@ test("a workspace is a row, in the order answered: its name, its admins a line e
   ).toStrictEqual(["Workspace", "Admins", "Invites"]);
   expect(workspacesDrawn()).toStrictEqual([
     [
-      "globex",
-      "bob@example.com bob",
+      "globex-co",
+      "bob@example.com bob-k",
       "s-robot No account",
       "+2 more",
       "Existing accounts",
     ],
-    ["acme", "ada@example.com ada You", "s-dan", "New people"],
-    ["umbrella", "3 unnamed", "New people"],
-    ["initech", "Existing accounts"],
+    ["acme-co", "ada@example.com ada-l You", "s-dan", "New people"],
+    ["umbrella-co", "3 unnamed", "New people"],
+    ["initech-co", "Existing accounts"],
   ]);
   styleless();
 });
@@ -84,20 +84,20 @@ test("a workspace whose admins may make no account says so quietly, one whose ma
   const invites = (name: string): readonly string[] => [
     ...(workspaceRow(name).lastElementChild?.classList ?? []),
   ];
-  expect(invites("globex")).toStrictEqual(["people-beside", "text-ink-3"]);
-  expect(invites("acme")).toStrictEqual(["people-beside"]);
+  expect(invites("globex-co")).toStrictEqual(["people-beside", "text-ink-3"]);
+  expect(invites("acme-co")).toStrictEqual(["people-beside"]);
 });
 
 test("a workspace with no admin draws a dash its stacked row leaves out, and no other row does", async () => {
   await drawWorkspaces();
-  const none = within(workspaceRow("initech")).getByText("None");
+  const none = within(workspaceRow("initech-co")).getByText("None");
   expect(none.closest("td")?.getAttribute("data-none")).toBe("");
   expect(screen.getAllByText("None")).toStrictEqual([none]);
   expect(
     [...document.querySelectorAll("td[data-none]")].map(
       (cell) => cell.closest("tr")?.firstElementChild?.textContent,
     ),
-  ).toStrictEqual(["initech"]);
+  ).toStrictEqual(["initech-co"]);
 });
 
 test("the workspaces are counted over their table, beside the one action, with nothing said", async () => {

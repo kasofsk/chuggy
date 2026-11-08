@@ -56,7 +56,7 @@ test("a prompt names new text or another stored file's path, and a path is writt
   expect(overrideOf("build", writtenOf("build", {}))).toStrictEqual({});
 });
 
-test("an image and an execution requirement are one placement: naming one replaces the other, naming neither keeps the catalog's image", () => {
+test("an image and a run requirement are one placement: naming one replaces the other, naming neither keeps the catalog's image", () => {
   const requirement: WorkloadOverride = {
     executionRequirement: {
       mode: "Capability",

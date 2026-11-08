@@ -40,6 +40,7 @@ import {
   apiWriteAgentAccountSettings,
 } from "../../core/apiRoutes.ts";
 import type { ApiResult } from "../../core/apiRequest.ts";
+import { accountAgentLabel } from "../../core/codeLabels.ts";
 import { consoleWriteKey } from "../../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../../core/consoleWrite.ts";
 import type { Copy } from "../../core/copy.ts";
@@ -142,7 +143,7 @@ function UsageSettingsPause(props: {
             disabled={pressing.isPending}
             named={text({
               id: "usage-try-again-named",
-              args: { agent: props.agent },
+              args: { agent: accountAgentLabel(props.agent) },
             })}
             onClick={() => {
               pressing.mutate(undefined);
@@ -304,7 +305,7 @@ function UsageSettingsAgent(props: {
   const read = draft === undefined ? undefined : agentAccountDraftRead(draft);
   return (
     <SettingsSection
-      title={account.agent}
+      title={text(accountAgentLabel(account.agent))}
       about={text({ id: "usage-agent-about" })}
       editing={draft !== undefined}
       editable

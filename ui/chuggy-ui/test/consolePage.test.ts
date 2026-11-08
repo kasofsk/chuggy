@@ -216,7 +216,7 @@ test("a page is named in the console's own words for it", () => {
     "Settings · Project · Placement",
     "Settings · Project · Permissions",
     "Settings · Workspace · People",
-    "Settings · Workspace · Accounts",
+    "Settings · Workspace · GitHub accounts",
     "Settings · Workspace · Permissions",
     "Settings · Workspace · Personal runners",
     "Settings · Workspace · Usage",

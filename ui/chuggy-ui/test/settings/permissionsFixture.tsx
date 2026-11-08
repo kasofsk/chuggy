@@ -50,7 +50,7 @@ interface PermissionsSent {
   readonly sent: readonly SentRequest[];
 }
 
-export const permissionsTenant = "acme";
+export const permissionsTenant = "acme-co";
 
 export const tenantAuthoritiesPath = `/access/v1/tenants/${permissionsTenant}/authorities`;
 
@@ -85,7 +85,7 @@ export const permissionsPeopleListed: AccessTenantPeople = {
       projects: [],
       account: true,
       email: "ada@example.com",
-      githubLogin: "ada",
+      githubLogin: "ada-l",
     },
     {
       subject: "s-bob",
@@ -170,7 +170,7 @@ export const siteAuthoritiesStarting: AccessSiteAuthorities = {
       authority: "AccountCreators",
       people: [],
       groups: ["SiteAdmins"],
-      tenants: [permissionsTenant, "globex"],
+      tenants: [permissionsTenant, "globex-co"],
       unnamed: 0,
     },
     {
@@ -216,7 +216,7 @@ export const siteAuthoritiesHeld: AccessSiteAuthorities = {
   ],
 };
 
-export const permissionsProject = "atlas";
+export const permissionsProject = "atlas-web";
 
 export const projectAuthoritiesPath = `/access/v1/tenants/${permissionsTenant}/projects/${permissionsProject}/authorities`;
 

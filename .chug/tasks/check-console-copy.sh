@@ -13,8 +13,10 @@
 #     or says a word the `rejects:` line beside the term lists, since that is
 #     the one thing called two names. A homonym is real ("Run now" is a verb; a
 #     run is a noun), so a message may carry `# spells -<term>: <why>` in the
-#     comment beside it, and an exemption whose message no longer says the
-#     term or a word it rejects is a finding too.
+#     comment beside it, which excuses the term's English and nothing else; a
+#     rejected word needs its own, `# spells <word>: <why>`. An exemption whose
+#     message no longer says what it names, or that names no term or no
+#     rejected word, is a finding too.
 #   - a message or term references a term or message nothing defines, in the
 #     base or in a layer over it. Fluent formats one as its own braces, and
 #     the console throws on it at render.

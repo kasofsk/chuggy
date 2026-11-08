@@ -88,8 +88,8 @@ function leadEntry(
 const leadBatchEntries: readonly (readonly LeadTranscriptResponse["entries"][number][])[] =
   [
     [
-      leadEntry("uuid-p", "user", "an observation before the cut"),
-      leadEntry("uuid-q", "assistant", "a decision before the cut"),
+      leadEntry("uuid-p", "user", "observation-1-before-cut"),
+      leadEntry("uuid-q", "assistant", "decision-1-before-cut"),
     ],
     [
       leadEntry("uuid-a", "user", "first observation"),
@@ -324,9 +324,9 @@ export function leadSelectorSettingsBody(
       mode: "Running",
       installationMode: "Running",
       dispatchMode: "Automatic",
-      basePrompt: "choose the next ticket",
-      northStar: "ship the console",
-      threadStandingRules: "- You act through your owner's own commands.",
+      basePrompt: "base-prompt-1",
+      northStar: "north-star-1",
+      threadStandingRules: "- standing-rule-1",
       modelAllowlist: [],
       toolAllowlist: [],
       limits: leadSelectorSettingsLimits,

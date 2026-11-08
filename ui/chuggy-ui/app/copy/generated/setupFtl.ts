@@ -249,7 +249,7 @@ setup-mend-github-when = once the person says { -github } is connected
 # The install button's label is the accounts page's own, which another section holds.
 setup-mend-worker-tell = Open { $page } and press { $install }, then install it on { $account }. Where { $account } is an organisation you do not own, { -github } asks its owner for you and this waits on them. Tell me once it is installed.
 setup-mend-worker-when = once the person says the { -worker-app } is installed on { $account }
-setup-mend-portal-tell = Open { $page }, the { -workspace }'s accounts page, and press { $connect }, so { -brand-name } is shown { $account }. Tell me once { -github } is connected.
+setup-mend-portal-tell = Open { $page }, the { -workspace }'s { -github } accounts page, and press { $connect }, so { -brand-name } is shown { $account }. Tell me once { -github } is connected.
 setup-mend-binding-yours = your { -repository }
 setup-mend-binding-mine = { $repository }, this folder's { -repository }
 setup-mend-binding-tell = Open { $page }, press { $add } and choose { $repository }. Tell me once it is added.
@@ -261,7 +261,7 @@ setup-mend-configuration-when = once the person says { $retry } has answered for
 ## person's yes.
 
 setup-offer-when = once the person says yes to { -runner(form: "a") } on this machine
-setup-claude-on-subscription = your Claude plan
+setup-claude-on-subscription = your { -claude } plan
 setup-claude-on-api-key = your Anthropic API key
 setup-claude-on-bedrock = your Amazon Bedrock account
 # spells -project: a Google Cloud project is Google's
