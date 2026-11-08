@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The project's placement setting: where its work, evaluation, chat and lead
  * run, read and edited behind one Edit; and beside it, whether a member's own
@@ -22,7 +21,6 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
-import { useCopyText } from "../../copy/CopyProvider.tsx";
 import type {
   ExecutionPlacementResponse,
   SessionPlacementResponse,
@@ -31,6 +29,7 @@ import type {
   PlacementRoute,
   SessionRunnerStanding,
 } from "../../../../../src/contract/rosters.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import {
   apiWriteExecutionPlacement,
   apiWriteSessionPlacement,
@@ -41,7 +40,7 @@ import {
   consoleWriteKey,
 } from "../../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../../core/consoleWrite.ts";
-import type { CopyText } from "../../core/copy.ts";
+import type { Copy, CopyText } from "../../core/copy.ts";
 import {
   executionPlacementQuery,
   sessionPlacementQuery,
@@ -86,7 +85,7 @@ import { SettingsPage } from "./SettingsPage.tsx";
 /** One kind's row: where it runs, what decided it, and, for a session on
  * runners, whether the runners it would run on are there. */
 interface PlacementRow {
-  readonly kind: string;
+  readonly kind: keyof RunnersPlacementDraft;
   readonly resolved: ExecutionPlacementResponse["work"];
   readonly runners: SessionRunnerStanding | undefined;
 }
@@ -95,33 +94,50 @@ function PlacementTable(props: {
   readonly execution: ExecutionPlacementResponse;
   readonly session: SessionPlacementResponse;
 }): ReactNode {
+  const text = useCopyText();
   const { execution, session } = props;
   const rows: readonly PlacementRow[] = [
-    { kind: "Work", resolved: execution.work, runners: undefined },
-    { kind: "Evaluation", resolved: execution.evaluation, runners: undefined },
-    { kind: "Chat", resolved: session.thread, runners: session.runners.mine },
-    { kind: "Lead", resolved: session.lead, runners: session.runners.project },
+    {
+      kind: "work",
+      resolved: execution.work,
+      runners: undefined,
+    },
+    {
+      kind: "evaluation",
+      resolved: execution.evaluation,
+      runners: undefined,
+    },
+    {
+      kind: "thread",
+      resolved: session.thread,
+      runners: session.runners.mine,
+    },
+    {
+      kind: "lead",
+      resolved: session.lead,
+      runners: session.runners.project,
+    },
   ];
   return (
-    <Table caption="Placement">
+    <Table caption={text({ id: "runners-placement-title" })}>
       <thead>
         <tr>
-          <th scope="col">Kind</th>
-          <th scope="col">Runs on</th>
-          <th scope="col">Set by</th>
-          <th scope="col">Runner</th>
+          <th scope="col">{text({ id: "runners-placement-col-kind" })}</th>
+          <th scope="col">{text({ id: "runners-placement-col-runs-on" })}</th>
+          <th scope="col">{text({ id: "runners-placement-col-set-by" })}</th>
+          <th scope="col">{text({ id: "runners-placement-col-runner" })}</th>
         </tr>
       </thead>
       <tbody>
         {rows.map((row) => (
           <tr key={row.kind}>
-            <th scope="row">{row.kind}</th>
-            <td>{runnerRouteLabel(row.resolved.route)}</td>
-            <td>{runnerRouteSourceLabel(row.resolved.source)}</td>
+            <th scope="row">{text(placementKindLabels[row.kind])}</th>
+            <td>{text(runnerRouteLabel(row.resolved.route))}</td>
+            <td>{text(runnerRouteSourceLabel(row.resolved.source))}</td>
             <td>
               {row.runners === undefined || row.resolved.route !== "Pool"
                 ? null
-                : runnerStandingLabel(row.runners)}
+                : text(runnerStandingLabel(row.runners))}
             </td>
           </tr>
         ))}
@@ -136,6 +152,7 @@ function PlacementChoice(props: {
   readonly options: readonly RunnersPlacementOption[];
   readonly onChoose: (route: PlacementRoute) => void;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <div className="grid gap-1">
       <span className="text-sm text-ink-3">{props.label}</span>
@@ -144,7 +161,7 @@ function PlacementChoice(props: {
         value={props.value}
         options={props.options.map((option) => ({
           value: option.route,
-          text: runnerRouteLabel(option.route),
+          text: text(runnerRouteLabel(option.route)),
           disabled: !option.choosable,
         }))}
         onChoose={(value) => {
@@ -159,9 +176,13 @@ function PlacementChoice(props: {
 function PlacementNotice(props: {
   readonly saving: ConsoleWriting<PlacementSave, unknown>;
 }): ReactNode {
+  const text = useCopyText();
   const saving = props.saving;
   const step = useConsoleWriteProgress(saving.variables?.progress);
-  if (saving.isPending) return <Notice tone="info" inline detail="Writing" />;
+  if (saving.isPending)
+    return (
+      <Notice tone="info" inline detail={text({ id: "runners-writing" })} />
+    );
   if (saving.error !== null) {
     const failure = saving.error.failure;
     return (
@@ -180,24 +201,41 @@ function PlacementNotice(props: {
       </>
     );
   }
-  if (saving.isSuccess) return <Notice tone="live" inline detail="Written" />;
+  if (saving.isSuccess)
+    return (
+      <Notice tone="live" inline detail={text({ id: "runners-written" })} />
+    );
   return null;
 }
 
 /** The placement a save wrote before the one refused, which stands. */
 function PlacementLanded(props: { readonly landed: boolean }): ReactNode {
+  const text = useCopyText();
   return props.landed ? (
-    <Notice tone="live" inline detail="Work and evaluation saved" />
+    <Notice
+      tone="live"
+      inline
+      detail={text({ id: "runners-placement-landed" })}
+    />
   ) : null;
 }
 
-/** The draft's kinds in the order the table draws them, each with the label
- * it is drawn under and which placement's choices it is chosen from. */
+/** The label each of the draft's kinds is drawn under. */
+const placementKindLabels: Readonly<Record<keyof RunnersPlacementDraft, Copy>> =
+  {
+    work: { id: "runners-placement-work" },
+    evaluation: { id: "runners-placement-evaluation" },
+    thread: { id: "runners-placement-chat" },
+    lead: { id: "runners-placement-lead" },
+  };
+
+/** The draft's kinds in the order the table draws them, each with which
+ * placement's choices it is chosen from. */
 const placementEditorKinds = [
-  ["work", "Work", "execution"],
-  ["evaluation", "Evaluation", "execution"],
-  ["thread", "Chat", "session"],
-  ["lead", "Lead", "session"],
+  ["work", "execution"],
+  ["evaluation", "execution"],
+  ["thread", "session"],
+  ["lead", "session"],
 ] as const;
 
 function PlacementEditor(props: {
@@ -209,12 +247,13 @@ function PlacementEditor(props: {
   };
   readonly onMove: (moves: RunnersPlacementMoves) => void;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <div className="grid gap-3">
-      {placementEditorKinds.map(([kind, label, placement]) => (
+      {placementEditorKinds.map(([kind, placement]) => (
         <PlacementChoice
           key={kind}
-          label={label}
+          label={text(placementKindLabels[kind])}
           value={props.draft[kind]}
           options={runnersPlacementOptions(
             props.read[kind],
@@ -316,8 +355,8 @@ function PlacementSection(props: {
   };
   return (
     <SettingsSection
-      title="Placement"
-      about="Where this project's agents run."
+      title={text({ id: "runners-placement-title" })}
+      about={text({ id: "runners-placement-about" })}
       editing={editing}
       editable={choices.execution.length > 0 && choices.session.length > 0}
       savable={!saving.isPending}
@@ -363,6 +402,8 @@ function PlacementSection(props: {
 }
 
 export function PlacementSettingsPage(): ReactNode {
+  const text = useCopyText();
+  const title = text({ id: "runners-placement-title" });
   const params = useParams({ from: settingsRoutes.project.placement });
   const partition: PartitionIdentity = {
     tenant: params.tenant,
@@ -371,7 +412,7 @@ export function PlacementSettingsPage(): ReactNode {
   const placement = usePanelState(executionPlacementQuery(partition));
   const sessions = useSessionPlacement(partition);
   return (
-    <SettingsPage title="Placement">
+    <SettingsPage title={title}>
       {placement.state === "Ready" && sessions.state === "Ready" ? (
         <PlacementSection
           partition={partition}
@@ -379,7 +420,7 @@ export function PlacementSettingsPage(): ReactNode {
           session={sessions.value}
         />
       ) : (
-        <Panel variant="section" title="Placement">
+        <Panel variant="section" title={title}>
           <PanelUnready
             state={placement.state === "Ready" ? sessions : placement}
           />

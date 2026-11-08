@@ -20,13 +20,12 @@ import type {
 import { ownerFallbacks } from "../../../../src/contract/rosters.ts";
 import type { OwnerFallback } from "../../../../src/contract/rosters.ts";
 import type { ApiResult } from "./apiRequest.ts";
-import type { CopyOrData } from "./copy.ts";
+import type { Copy, CopyOrData } from "./copy.ts";
 import { failureWords } from "./failureWords.ts";
 import { executionStarting } from "./ticketLedger.ts";
 
 /** What a member is told where the workspace has not let them register one. */
-export const myRunnerWithheld =
-  "A workspace admin lets members register their own runners";
+export const myRunnerWithheld: Copy = { id: "runners-personal-withheld" };
 
 /** The radio value a project naming no fallback is chosen by. */
 export const ownerFallbackNone = "None";
@@ -52,33 +51,31 @@ export function ownerFallbackChosen(
   return fallback === undefined ? undefined : { fallback };
 }
 
-export function ownerFallbackLabel(
-  fallback: OwnerFallback | undefined,
-): string {
+export function ownerFallbackLabel(fallback: OwnerFallback | undefined): Copy {
   switch (fallback) {
     case undefined:
-      return "None";
+      return { id: "runners-fallback-none" };
     case "Strict":
-      return "Strict";
+      return { id: "runners-fallback-strict" };
     case "Preferred":
-      return "Preferred";
+      return { id: "runners-fallback-preferred" };
   }
 }
 
-/** An execution keeps the fallback it was registered under, so a change reaches only work started after it. */
-export const ownerFallbackPinned = "Changes reach new work only";
+/** The section's line: whose work the setting takes, and that a change
+ * reaches only work started after it, since an execution keeps the fallback
+ * it was registered under. */
+export const ownerFallbackAboutSection: Copy = { id: "runners-fallback-about" };
 
 /** One plain line for what each value does to a member's own work. */
-export function ownerFallbackAbout(
-  fallback: OwnerFallback | undefined,
-): string {
+export function ownerFallbackAbout(fallback: OwnerFallback | undefined): Copy {
   switch (fallback) {
     case undefined:
-      return "Personal runners take no work started from now on.";
+      return { id: "runners-fallback-none-about" };
     case "Strict":
-      return "A member's own runners take the work they start here, and while they have one serving this project no shared runner does.";
+      return { id: "runners-fallback-strict-about" };
     case "Preferred":
-      return "A member's own runners take the work they start here while one is online, and a shared runner takes it while none is.";
+      return { id: "runners-fallback-preferred-about" };
   }
 }
 
@@ -88,8 +85,8 @@ export function myRunnerShort(id: string): string {
 }
 
 /** The line a member's runners are listed under. */
-export function myRunnersCountLine(count: number): string {
-  return count === 1 ? "1 runner" : `${String(count)} runners`;
+export function myRunnersCountLine(count: number): Copy {
+  return { id: "runners-personal-count", args: { count } };
 }
 
 /** Whether the reader holds fewer runners than a member may, none where they hold none. */
@@ -100,10 +97,10 @@ export function myRunnerRoom(
 }
 
 /** What taking one of the reader's runners off does, said in its question: the last takes the projects with it. */
-export function myRunnerRemovalLine(short: string, last: boolean): string {
+export function myRunnerRemovalLine(short: string, last: boolean): Copy {
   return last
-    ? `Runner ${short} is your last; your project list goes too.`
-    : `Runner ${short} stops taking your work in this workspace.`;
+    ? { id: "runners-personal-removal-last", args: { short } }
+    : { id: "runners-personal-removal", args: { short } };
 }
 
 /** The tenant's projects the reader reads and their runners do not yet serve, in name order. */
@@ -159,16 +156,16 @@ export function runnerWaitPause(
  * not let take them as one with none, so the line names both.
  */
 export function memberRunnerRemoved(result: ApiResult<undefined>): CopyOrData {
-  if (result.outcome === "Ok") return "Runners removed";
-  if (result.outcome === "Absent") return "No runner you may remove";
+  if (result.outcome === "Ok") return { id: "runners-member-removed" };
+  if (result.outcome === "Absent") return { id: "runners-member-none" };
   return failureWords(result).word;
 }
 
-export function runnerWaitWord(wait: RunnerWait): string {
+export function runnerWaitWord(wait: RunnerWait): Copy {
   switch (wait) {
     case "Waiting":
-      return "Waiting on your runners";
+      return { id: "runners-wait-waiting" };
     case "Offline":
-      return "Waiting on your runners · offline";
+      return { id: "runners-wait-offline" };
   }
 }

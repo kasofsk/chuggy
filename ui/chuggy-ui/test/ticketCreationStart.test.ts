@@ -6,6 +6,7 @@
 
 import { expect, test } from "vitest";
 
+import { copyTextEn } from "../app/copy/catalog.ts";
 import type { ProjectAbilityRead } from "../app/core/projectAbilities.ts";
 import {
   creationStart,
@@ -47,7 +48,7 @@ const words: readonly (readonly [CreationStart, string, string])[] = [
 test.each(words)(
   "a press that %s reads %j beside the button and makes the motion %s",
   (start, effect, motion) => {
-    expect(creationSubmitEffect(start)).toBe(effect);
+    expect(creationSubmitEffect(start, copyTextEn)).toBe(effect);
     expect(creationSubmitMotion(start)).toBe(motion);
   },
 );

@@ -151,7 +151,7 @@ function TicketNowRunnerWait(props: {
       </AgentPause>
     );
   return (
-    <Notice tone="parked" inline detail={runnerWaitWord(wait)}>
+    <Notice tone="parked" inline detail={text(runnerWaitWord(wait))}>
       <span className="text-ink-3">
         {" · "}
         <Link to={settingsRoutes.project.myRunner} params={props.partition}>

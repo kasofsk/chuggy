@@ -676,7 +676,9 @@ test("a question refused for no chat host says so once, with the asker's own run
   await turned(ask);
   await settled();
   expect(screen.getAllByText("No chat host")).toHaveLength(1);
-  expect(screen.getAllByRole("link", { name: "My runners" })).toHaveLength(1);
+  expect(
+    screen.getAllByRole("link", { name: "Personal runners" }),
+  ).toHaveLength(1);
 });
 
 /**

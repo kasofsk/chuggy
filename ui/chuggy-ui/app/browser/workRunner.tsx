@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * Whether the project's work has a runner to go to, as every screen that
  * leads to one reads it, and the link that leads there.
@@ -8,6 +7,7 @@ import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
+import { useCopyText } from "../copy/CopyProvider.tsx";
 import {
   executionPlacementQuery,
   ownerFallbackQuery,
@@ -42,9 +42,10 @@ export function useWorkRunner(
 export function AddRunnerLink(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <Link to={navRoutes.runners} params={props.partition}>
-      Add runner
+      {text({ id: "runners-add" })}
     </Link>
   );
 }

@@ -7,12 +7,11 @@
  */
 
 import { expect, test } from "vitest";
-import { copyTextEn } from "../app/copy/catalog.ts";
-import { copyOrDataText } from "../app/core/copy.ts";
-import type { CopyOrData } from "../app/core/copy.ts";
 
 import { personalRunnersMax } from "../../../src/contract/http.ts";
 import type { PersonalRunnerResponse } from "../../../src/contract/responses.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
+import { copyOrDataText } from "../app/core/copy.ts";
 import {
   memberRunnerRemoved,
   myRunnerAddable,
@@ -74,22 +73,22 @@ const waiting = {
 };
 
 test("each fallback is chosen by its own value, none included, and said in its own plain line", () => {
-  expect(ownerFallbackChoices.map(ownerFallbackLabel)).toStrictEqual([
-    "None",
-    "Strict",
-    "Preferred",
-  ]);
+  expect(
+    ownerFallbackChoices.map((each) => copyTextEn(ownerFallbackLabel(each))),
+  ).toStrictEqual(["None", "Strict", "Preferred"]);
   for (const fallback of ownerFallbackChoices)
     expect(ownerFallbackChosen(ownerFallbackValue(fallback))).toStrictEqual({
       fallback,
     });
   expect(ownerFallbackChosen("Sometimes")).toBeUndefined();
-  expect(ownerFallbackAbout(undefined)).toBe(
+  expect(copyTextEn(ownerFallbackAbout(undefined))).toBe(
     "Personal runners take no work started from now on.",
   );
-  expect(new Set(ownerFallbackChoices.map(ownerFallbackAbout)).size).toBe(
-    ownerFallbackChoices.length,
-  );
+  expect(
+    new Set(
+      ownerFallbackChoices.map((each) => copyTextEn(ownerFallbackAbout(each))),
+    ).size,
+  ).toBe(ownerFallbackChoices.length);
 });
 
 test("a runner is offered the workspace's projects the reader reads and it does not yet serve, in name order", () => {
@@ -112,15 +111,21 @@ test("a runner minted with a UUID is told by the UUID's first part, and any othe
     myRunnerShort("chuggy-personal-3f2a9c1e-0b7d-4e21-9a43-5c1d2e3f4a5b"),
   ).toBe("3f2a9c1e");
   expect(myRunnerShort("chuggy-personal-1")).toBe("chuggy-personal-1");
-  expect(myRunnerRemovalLine("3f2a9c1e", false)).toContain("3f2a9c1e");
-  expect(myRunnerRemovalLine("3f2a9c1e", true)).toContain("project list");
+  expect(copyTextEn(myRunnerRemovalLine("3f2a9c1e", false))).toContain(
+    "3f2a9c1e",
+  );
+  expect(copyTextEn(myRunnerRemovalLine("3f2a9c1e", true))).toContain(
+    "project list",
+  );
 });
 
 test("a member's runners are counted, and one more may be registered only below the bound", () => {
-  expect([0, 1, 2].map((count) => myRunnersCountLine(count))).toStrictEqual([
-    "0 runners",
-    "1 runner",
-    "2 runners",
+  expect(
+    [0, 1, 2].map((count) => copyTextEn(myRunnersCountLine(count))),
+  ).toStrictEqual([
+    "0 personal runners",
+    "1 personal runner",
+    "2 personal runners",
   ]);
   const holding = (count: number): PersonalRunnerResponse => ({
     ...runner,
@@ -140,7 +145,9 @@ test("a run of the reader's that has not begun waits on their runner while it is
   expect(
     runnerWait({ ...waiting, ownerFallback: "Preferred" }, runner, "atlas"),
   ).toBe("Waiting");
-  expect(runnerWaitWord("Waiting")).toBe("Waiting on your runners");
+  expect(copyTextEn(runnerWaitWord("Waiting"))).toBe(
+    "Waiting on your personal runners",
+  );
 });
 
 /** Under Preferred a pool takes it while the runner is down, so it waits on nothing of the reader's. */
@@ -153,7 +160,9 @@ test("an offline runner holds a run under Strict alone", () => {
   expect(
     runnerWait({ ...waiting, ownerFallback: "Preferred" }, offline, "atlas"),
   ).toBeUndefined();
-  expect(runnerWaitWord("Offline")).toBe("Waiting on your runners · offline");
+  expect(copyTextEn(runnerWaitWord("Offline"))).toBe(
+    "Waiting on your personal runners · offline",
+  );
 });
 
 /** A pool's claim defers under Preferred only to a runner polling for
@@ -236,22 +245,18 @@ test("a run of the reader's waiting on their runners says the pause their accoun
   ).toBeUndefined();
 });
 
-function said(line: CopyOrData): string {
-  return copyOrDataText(copyTextEn, line);
-}
-
 test("taking a member's runners off says whether there were any it could take", () => {
-  expect(said(memberRunnerRemoved({ outcome: "Ok", value: undefined }))).toBe(
-    "Runners removed",
+  const removed = (result: Parameters<typeof memberRunnerRemoved>[0]): string =>
+    copyOrDataText(copyTextEn, memberRunnerRemoved(result));
+  expect(removed({ outcome: "Ok", value: undefined })).toBe(
+    "Personal runners removed",
   );
-  expect(said(memberRunnerRemoved({ outcome: "Absent" }))).toBe(
-    "No runner you may remove",
+  expect(removed({ outcome: "Absent" })).toBe(
+    "No personal runner you may remove",
   );
-  expect(
-    said(
-      memberRunnerRemoved({ outcome: "Fault", code: "Internal", status: 500 }),
-    ),
-  ).toBe("Server error");
+  expect(removed({ outcome: "Fault", code: "Internal", status: 500 })).toBe(
+    "Server error",
+  );
 });
 
 test("a thread's, an inquiry's and a member's own chat's missing runner is added on the member's own page, and the lead's on the project's", () => {
@@ -263,13 +268,17 @@ test("a thread's, an inquiry's and a member's own chat's missing runner is added
 
 test("a thread's, an inquiry's and a member's own chat's missing runner is named their chat host, and the lead's a runner", () => {
   for (const session of ["Thread", "Inquiry", "Chat"] as const) {
-    expect(sessionRunnerNoticeWord("NoRunner", session)).toBe("No chat host");
-    expect(sessionRunnerNoticeWord("RunnerOffline", session)).toBe(
+    expect(copyTextEn(sessionRunnerNoticeWord("NoRunner", session))).toBe(
+      "No chat host",
+    );
+    expect(copyTextEn(sessionRunnerNoticeWord("RunnerOffline", session))).toBe(
       "Chat host offline",
     );
   }
-  expect(sessionRunnerNoticeWord("NoRunner", "Lead")).toBe("No runner");
-  expect(sessionRunnerNoticeWord("RunnerOffline", "Lead")).toBe(
+  expect(copyTextEn(sessionRunnerNoticeWord("NoRunner", "Lead"))).toBe(
+    "No runner",
+  );
+  expect(copyTextEn(sessionRunnerNoticeWord("RunnerOffline", "Lead"))).toBe(
     "Runner offline",
   );
 });
