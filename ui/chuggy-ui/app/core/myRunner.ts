@@ -20,6 +20,7 @@ import type {
 import { ownerFallbacks } from "../../../../src/contract/rosters.ts";
 import type { OwnerFallback } from "../../../../src/contract/rosters.ts";
 import type { ApiResult } from "./apiRequest.ts";
+import type { CopyOrData } from "./copy.ts";
 import { failureWords } from "./failureWords.ts";
 import { executionStarting } from "./ticketLedger.ts";
 
@@ -157,7 +158,7 @@ export function runnerWaitPause(
  * caller may take, or why it was refused. The server answers a caller it will
  * not let take them as one with none, so the line names both.
  */
-export function memberRunnerRemoved(result: ApiResult<undefined>): string {
+export function memberRunnerRemoved(result: ApiResult<undefined>): CopyOrData {
   if (result.outcome === "Ok") return "Runners removed";
   if (result.outcome === "Absent") return "No runner you may remove";
   return failureWords(result).word;

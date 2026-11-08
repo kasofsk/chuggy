@@ -621,7 +621,7 @@ export function selectorSettingsRefusal(
   text: CopyText,
 ): string {
   const conflict = selectorSettingsConflictOf(failure);
-  if (conflict === undefined) return failureWords(failure).word;
+  if (conflict === undefined) return text(failureWords(failure).word);
   if (conflict.movedBy === undefined)
     return text({
       id: "lead-settings-conflict-revision",

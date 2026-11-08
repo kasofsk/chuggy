@@ -6,6 +6,8 @@
  */
 
 import { expect, test } from "vitest";
+import { copyTextEn } from "../app/copy/catalog.ts";
+import { copyOrDataText } from "../app/core/copy.ts";
 
 import type {
   ExecutionPlacementResponse,
@@ -148,9 +150,13 @@ test("a write refused for the hosted grant is told apart from any other refusal"
     body: undefined,
   } as const;
   expect(runnersPlacementUnhosted(unhosted)).toBe(true);
-  expect(runnersPlacementRefusal(unhosted)).toBe("Needs hosted runs");
+  expect(copyOrDataText(copyTextEn, runnersPlacementRefusal(unhosted))).toBe(
+    "Needs hosted runs",
+  );
   expect(runnersPlacementUnhosted(invalid)).toBe(false);
-  expect(runnersPlacementRefusal(invalid)).toBe("Refused");
+  expect(copyOrDataText(copyTextEn, runnersPlacementRefusal(invalid))).toBe(
+    "Refused",
+  );
 });
 
 test("setup offers the Linux package: what it needs, the command that installs its current release, and its guide", () => {

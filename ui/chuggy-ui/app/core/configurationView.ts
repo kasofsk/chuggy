@@ -105,7 +105,7 @@ export interface ConfigurationModel {
   readonly argument: string | undefined;
 }
 
-const modelDefaultLabel = "Default";
+export const modelDefaultLabel = "Default";
 
 function capitalized(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);

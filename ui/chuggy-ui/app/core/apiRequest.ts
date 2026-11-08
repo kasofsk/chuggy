@@ -121,7 +121,7 @@ export function apiOrThrow<T>(
 
 /** What a request is aborted with where the console ends it, so the line a
  * reader is shown is the catalog's and not the error's. */
-class ApiStopped extends Error {
+export class ApiStopped extends Error {
   readonly copy: Copy;
 
   constructor(copy: Copy) {

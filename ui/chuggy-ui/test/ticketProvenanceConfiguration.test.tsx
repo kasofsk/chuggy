@@ -299,7 +299,7 @@ test("the Work row reads the model off its own flag, and opens onto its settings
       ["Image", "worker@sha256:0efb9a93"],
       ["Setup", "npm ci"],
       ["Practices", "Regression coverage · Acceptance criteria"],
-      ["Completes task", "No"],
+      ["Completes run", "No"],
     ]),
   );
 });

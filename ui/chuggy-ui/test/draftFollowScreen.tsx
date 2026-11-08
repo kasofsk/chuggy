@@ -11,6 +11,7 @@ import type { ReactNode } from "react";
 
 import type { DraftResponse } from "../../../src/contract/responses.ts";
 import { useDraftSavedBeforeSend } from "../app/browser/editor/draftSaveBeforeSend.tsx";
+import { copyTextEn } from "../app/copy/catalog.ts";
 import { draftFollowBehindSentence } from "../app/core/draftFollow.ts";
 import { settled, turned } from "./screenHarness.tsx";
 import { frame } from "./streamDouble.ts";
@@ -45,7 +46,7 @@ export function followRetitled(value: string): void {
 
 /** The notice draft 12's form draws once a revision moved past what is typed. */
 export function followBehind(): HTMLElement | null {
-  return screen.queryByText(draftFollowBehindSentence(12));
+  return screen.queryByText(copyTextEn(draftFollowBehindSentence(12)));
 }
 
 /** What the probe was answered each time it asked, in order, which a case

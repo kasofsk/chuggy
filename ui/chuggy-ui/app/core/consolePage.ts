@@ -16,6 +16,7 @@ import type {
   ConsolePage,
   ConsolePageSettingsSection,
 } from "../../../../src/contract/consolePage.ts";
+import type { Copy } from "./copy.ts";
 import { repositoryLabel } from "./projectRepositories.ts";
 import { ticketCreationQueryOf } from "./ticketCreationQuery.ts";
 
@@ -197,18 +198,66 @@ export function consolePageOf(
 /** The settings section's words, as the settings' side navigation draws its
  * level and its page. */
 const consolePageSectionWords: Readonly<
-  Record<ConsolePageSettingsSection, string>
+  Record<ConsolePageSettingsSection, readonly [Copy, Copy]>
 > = {
-  ProjectLead: "Project · Lead",
-  ProjectPlacement: "Project · Placement",
-  ProjectPermissions: "Project · Permissions",
-  WorkspacePeople: "Workspace · People",
-  WorkspaceAccounts: "Workspace · Accounts",
-  WorkspacePermissions: "Workspace · Permissions",
-  WorkspaceRunners: "Workspace · My runners",
-  WorkspaceUsage: "Workspace · Usage",
-  SiteWorkspaces: "Site · Workspaces",
-  SitePermissions: "Site · Permissions",
+  ProjectLead: [{ id: "settings-nav-project" }, { id: "settings-nav-lead" }],
+  ProjectPlacement: [
+    { id: "settings-nav-project" },
+    { id: "settings-nav-placement" },
+  ],
+  ProjectPermissions: [
+    { id: "settings-nav-project" },
+    { id: "settings-nav-permissions" },
+  ],
+  WorkspacePeople: [
+    { id: "settings-nav-workspace" },
+    { id: "settings-nav-people" },
+  ],
+  WorkspaceAccounts: [
+    { id: "settings-nav-workspace" },
+    { id: "pages-settings-accounts" },
+  ],
+  WorkspacePermissions: [
+    { id: "settings-nav-workspace" },
+    { id: "settings-nav-permissions" },
+  ],
+  WorkspaceRunners: [
+    { id: "settings-nav-workspace" },
+    { id: "settings-nav-personal-runners" },
+  ],
+  WorkspaceUsage: [
+    { id: "settings-nav-workspace" },
+    { id: "settings-nav-usage" },
+  ],
+  SiteWorkspaces: [
+    { id: "settings-nav-site" },
+    { id: "settings-nav-workspaces" },
+  ],
+  SitePermissions: [
+    { id: "settings-nav-site" },
+    { id: "settings-nav-permissions" },
+  ],
+};
+
+const consolePageListWords: Readonly<
+  Record<
+    | "Tickets"
+    | "Inbox"
+    | "Lead"
+    | "Catalog"
+    | "Repositories"
+    | "Runners"
+    | "Epics",
+    Copy
+  >
+> = {
+  Tickets: { id: "pages-tickets" },
+  Inbox: { id: "pages-inbox" },
+  Lead: { id: "pages-lead" },
+  Catalog: { id: "pages-catalog" },
+  Repositories: { id: "pages-repositories" },
+  Runners: { id: "pages-runners" },
+  Epics: { id: "pages-epics" },
 };
 
 /** A ticket number as the console writes it everywhere. */
@@ -218,7 +267,7 @@ function consolePageTicketWord(ticket: number): string {
 
 /** The words a page is named by where a message says it was sent from it, in
  * the console's own words for each page. */
-export function consolePageLabel(page: ConsolePage): string {
+export function consolePageLabel(page: ConsolePage): Copy {
   switch (page.page) {
     case "Tickets":
     case "Inbox":
@@ -227,24 +276,43 @@ export function consolePageLabel(page: ConsolePage): string {
     case "Repositories":
     case "Runners":
     case "Epics":
-      return page.page;
+      return consolePageListWords[page.page];
     case "Epic":
-      return `Epic ${consolePageTicketWord(page.epic)}`;
+      return {
+        id: "pages-epic",
+        args: { number: consolePageTicketWord(page.epic) },
+      };
     case "Ticket":
-      return `Ticket ${consolePageTicketWord(page.ticket)}`;
+      return {
+        id: "pages-ticket",
+        args: { number: consolePageTicketWord(page.ticket) },
+      };
     case "TicketEdit":
-      return `Edit ticket ${consolePageTicketWord(page.ticket)}`;
+      return {
+        id: "pages-ticket-edit",
+        args: { number: consolePageTicketWord(page.ticket) },
+      };
     case "TicketNew":
       if ("draft" in page)
-        return `New ticket · draft ${consolePageTicketWord(page.draft)}`;
+        return {
+          id: "pages-ticket-new-draft",
+          args: { number: consolePageTicketWord(page.draft) },
+        };
       return page.from === undefined
-        ? "New ticket"
-        : `New ticket from ${consolePageTicketWord(page.from)}`;
+        ? { id: "pages-ticket-new" }
+        : {
+            id: "pages-ticket-new-from",
+            args: { number: consolePageTicketWord(page.from) },
+          };
     case "Repository":
-      return `Repository ${repositoryLabel(page.repository)}`;
-    case "Settings":
-      return page.section === undefined
-        ? "Settings"
-        : `Settings · ${consolePageSectionWords[page.section]}`;
+      return {
+        id: "pages-repository",
+        args: { repository: repositoryLabel(page.repository) },
+      };
+    case "Settings": {
+      if (page.section === undefined) return { id: "pages-settings" };
+      const [level, section] = consolePageSectionWords[page.section];
+      return { id: "pages-settings-section", args: { level, section } };
+    }
   }
 }

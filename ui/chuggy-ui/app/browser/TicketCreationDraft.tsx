@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * A new ticket written on a draft the project already holds: the creation
  * screen opened on the draft the address names, following it as it is
@@ -21,6 +20,7 @@ import type {
   DraftResponse,
   ProjectRepositoryResponse,
 } from "../../../../src/contract/responses.ts";
+import { useCopyText } from "../copy/CopyProvider.tsx";
 import {
   draftFollowClosedOf,
   draftFollowNewest,
@@ -230,8 +230,14 @@ function CreationDraftRead(
 export function TicketCreationDraft(props: {
   readonly draft: number;
 }): ReactNode {
+  const text = useCopyText();
   return (
-    <CreationScreen heading={<>Draft {props.draft}</>}>
+    <CreationScreen
+      heading={text({
+        id: "drafts-heading",
+        args: { ticket: String(props.draft) },
+      })}
+    >
       {(ready) => <CreationDraftRead {...ready} ticket={props.draft} />}
     </CreationScreen>
   );

@@ -137,17 +137,17 @@ export async function epicsInvalidated(
   });
 }
 
-const epicStatusWords: Readonly<Record<EpicStatusWord, string>> = {
-  empty: "Empty",
-  not_started: "Not started",
-  in_progress: "In progress",
-  attention: "Needs attention",
-  done: "Done",
+const epicStatusWords: Readonly<Record<EpicStatusWord, Copy>> = {
+  empty: { id: "epics-status-empty" },
+  not_started: { id: "epics-status-not-started" },
+  in_progress: { id: "epics-status-in-progress" },
+  attention: { id: "epics-status-attention" },
+  done: { id: "epics-status-done" },
 };
 
 /** The word and the hue a status is drawn in. */
 export function epicStatusLook(status: EpicStatusWord): {
-  readonly word: string;
+  readonly word: Copy;
   readonly tone: Tone;
 } {
   return { word: epicStatusWords[status], tone: epicStatusTone(status) };
@@ -156,23 +156,26 @@ export function epicStatusLook(status: EpicStatusWord): {
 /** What an epic's progress says, as `done of total`, or that it holds nothing. */
 export function epicProgressLine(
   progress: EpicSummaryResponse["progress"],
-): string {
+): Copy {
   return progress.total === 0
-    ? "no tickets"
-    : `${String(progress.done)} of ${String(progress.total)} done`;
+    ? { id: "epics-progress-none" }
+    : {
+        id: "epics-progress",
+        args: { done: String(progress.done), total: String(progress.total) },
+      };
 }
 
 export const epicVisibilityChoices = [
-  { value: "Active", text: "Active" },
-  { value: "Archived", text: "Archived" },
-  { value: "All", text: "All" },
-] as const;
+  { value: "Active", text: { id: "epics-visibility-active" } },
+  { value: "Archived", text: { id: "epics-visibility-archived" } },
+  { value: "All", text: { id: "epics-visibility-all" } },
+] as const satisfies readonly { readonly value: string; readonly text: Copy }[];
 
 export const epicSortChoices = [
-  { value: "newest", text: "Newest" },
-  { value: "oldest", text: "Oldest" },
-  { value: "title", text: "Title" },
-] as const;
+  { value: "newest", text: { id: "epics-sort-newest" } },
+  { value: "oldest", text: { id: "epics-sort-oldest" } },
+  { value: "title", text: { id: "epics-sort-title" } },
+] as const satisfies readonly { readonly value: string; readonly text: Copy }[];
 
 export type EpicVisibilityChoice =
   (typeof epicVisibilityChoices)[number]["value"];
@@ -421,16 +424,19 @@ export function epicTicketsParsed(
 }
 
 /** The faults a form has before it is sent, none where it may be. */
-export function epicFormFaults(form: EpicForm): readonly string[] {
-  const faults: string[] = [];
-  if (form.title.trim() === "") faults.push("The title is empty.");
+export function epicFormFaults(form: EpicForm): readonly Copy[] {
+  const faults: Copy[] = [];
+  if (form.title.trim() === "") faults.push({ id: "epics-fault-title-empty" });
   if ([...form.title].length > epicTitleCharsMax)
-    faults.push("The title is too long.");
+    faults.push({ id: "epics-fault-title-long" });
   if ([...form.summary].length > epicSummaryCharsMax)
-    faults.push("The summary is too long.");
+    faults.push({ id: "epics-fault-summary-long" });
   const tickets = epicTicketsParsed(form.tickets);
   if (tickets.parsed === "Refused")
-    faults.push(`Not ticket numbers: ${tickets.words.join(", ")}.`);
+    faults.push({
+      id: "epics-fault-not-tickets",
+      args: { words: tickets.words.join(", ") },
+    });
   return faults;
 }
 
@@ -458,31 +464,34 @@ export function epicWriteFrom(
       };
 }
 
-const epicRefusalWords: Readonly<Record<string, string>> = {
-  StaleRevision:
-    "The epic was changed since you opened it. Reload it and make the change again.",
-  ArchivedEpic:
-    "An epic kept archived keeps its tickets; unarchive it to change them.",
-  EmptyTitle: "The title is empty.",
-  LongTitle: "The title is too long.",
-  LongSummary: "The summary is too long.",
-  ManyTickets: "The epic holds too many tickets.",
-  LargeContent: "The epic is too large.",
+const epicRefusalWords: Readonly<Record<string, Copy>> = {
+  StaleRevision: { id: "epics-refusal-stale" },
+  ArchivedEpic: { id: "epics-refusal-archived" },
+  EmptyTitle: { id: "epics-fault-title-empty" },
+  LongTitle: { id: "epics-fault-title-long" },
+  LongSummary: { id: "epics-fault-summary-long" },
+  ManyTickets: { id: "epics-refusal-many-tickets" },
+  LargeContent: { id: "epics-refusal-large" },
 };
 
 /** The sentence a refused epic write is drawn as. */
-export function epicWriteRefusal(failure: ApiFailure): string {
-  if (failure.outcome === "Absent") return "The epic no longer exists.";
+export function epicWriteRefusal(failure: ApiFailure): Copy {
+  if (failure.outcome === "Absent") return { id: "epics-refusal-absent" };
   if (failure.outcome === "Conflict") {
     if (failure.code === "UnknownTickets") {
       const tickets = unknownTicketsOf(failure.body);
       return tickets.length === 0
-        ? "The epic names tickets the project does not have."
-        : `The project has no ticket ${tickets.map((ticket) => `#${String(ticket)}`).join(", ")}.`;
+        ? { id: "epics-refusal-unknown-tickets" }
+        : {
+            id: "epics-refusal-unknown-tickets-named",
+            args: {
+              tickets: tickets.map((ticket) => `#${String(ticket)}`).join(", "),
+            },
+          };
     }
-    return epicRefusalWords[failure.code] ?? "The epic was refused.";
+    return epicRefusalWords[failure.code] ?? { id: "epics-refusal-refused" };
   }
-  return "The epic could not be saved.";
+  return { id: "epics-refusal-unsaved" };
 }
 
 function unknownTicketsOf(body: unknown): readonly number[] {
@@ -494,14 +503,12 @@ function unknownTicketsOf(body: unknown): readonly number[] {
 }
 
 /** The refusal a draft creation into an epic is drawn as, none where it is not that. */
-export function epicDraftRefusal(failure: ApiFailure): string | undefined {
+export function epicDraftRefusal(failure: ApiFailure): Copy | undefined {
   if (failure.outcome !== "Conflict") return undefined;
-  if (failure.code === "MissingEpic")
-    return "The epic no longer exists, so the ticket was not made.";
-  if (failure.code === "ArchivedEpic")
-    return "The epic is archived, so it takes no new ticket.";
+  if (failure.code === "MissingEpic") return { id: "epics-draft-missing" };
+  if (failure.code === "ArchivedEpic") return { id: "epics-draft-archived" };
   if (failure.code === "ManyTickets" || failure.code === "LargeContent")
-    return "The epic is full, so it takes no new ticket.";
+    return { id: "epics-draft-full" };
   return undefined;
 }
 

@@ -303,7 +303,7 @@ function ConversationBubble(props: {
           <span className="visually-hidden">
             {text({ id: "conversation-sent-from" })}{" "}
           </span>
-          {consolePageLabel(page)}
+          {text(consolePageLabel(page))}
         </Chip>
       )}
       {images === undefined || image === undefined ? null : (

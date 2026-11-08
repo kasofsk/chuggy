@@ -13,6 +13,7 @@ import type {
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
 import type { TicketPhase } from "../../../../src/contract/rosters.ts";
+import type { Copy } from "./copy.ts";
 import { durationFigure } from "./figures.ts";
 import type { Figure } from "./figures.ts";
 import { branchName } from "./labels.ts";
@@ -107,9 +108,9 @@ export function ticketOverviewDependenciesOf(
  * banner's line, and none where it holds none. */
 export function ticketOverviewUnreleased(
   draft: DraftResponse,
-): string | undefined {
+): Copy | undefined {
   const release = draftReleaseOf(draft);
   if (release.release !== "Ahead") return undefined;
   const count = release.current - release.released;
-  return `${String(count)} unreleased ${count === 1 ? "change" : "changes"}`;
+  return { id: "ticket-overview-unreleased-count", args: { count } };
 }

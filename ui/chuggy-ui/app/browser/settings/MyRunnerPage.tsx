@@ -42,6 +42,7 @@ import type {
   ConsoleWriteRefused,
 } from "../../core/consoleWrite.ts";
 import { instantFigure } from "../../core/figures.ts";
+import type { Copy } from "../../core/copy.ts";
 import { failureWords } from "../../core/failureWords.ts";
 import type { PanelState } from "../../core/freshness.ts";
 import {
@@ -119,7 +120,7 @@ async function myRunnerWritten(
     : answered;
 }
 
-function myRunnerRefusal(failure: ApiFailure): string {
+function myRunnerRefusal(failure: ApiFailure): Copy {
   return failureWords(failure).word;
 }
 

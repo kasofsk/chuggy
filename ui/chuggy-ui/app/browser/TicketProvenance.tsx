@@ -20,7 +20,10 @@ import type {
 import { configurationQuery } from "../core/configurationQueries.ts";
 import { finalizationLine, gitMergePolicyLabel } from "../core/codeLabels.ts";
 import { ticketFollowingSentence } from "../core/codeSentences.ts";
-import { configurationStepsOf } from "../core/configurationSteps.ts";
+import {
+  configurationFollowingWord,
+  configurationStepsOf,
+} from "../core/configurationSteps.ts";
 import { configurationLabel, digestShortened } from "../core/labels.ts";
 import type { Label } from "../core/labels.ts";
 import { navRoutes } from "../core/shellNav.ts";
@@ -229,7 +232,6 @@ export function ConfigurationBody(props: {
     overrides: props.overrides,
     selection: props.selection,
     finalization: props.finalization,
-    text,
   });
   return (
     <div className="ticket-config">
@@ -240,7 +242,7 @@ export function ConfigurationBody(props: {
               <h2 className="config-heading-name" title={named.name.title}>
                 {named.name.text}
               </h2>
-              <Chip>{steps.following}</Chip>
+              <Chip>{text(configurationFollowingWord(steps.following))}</Chip>
             </>
           )}
         </span>

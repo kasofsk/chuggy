@@ -22,6 +22,7 @@ import type {
 import type { z } from "zod";
 
 import type { ApiFailure } from "./apiRequest.ts";
+import type { Copy } from "./copy.ts";
 import { failureWords } from "./failureWords.ts";
 import {
   finalizationChoiceKey,
@@ -126,7 +127,9 @@ export function repositoryFinalizationWrite(
 const repositoryFinalizationMovedCode = "RepositoryLandingMoved";
 
 /** What a refusal of the write moved for says. */
-export const repositoryFinalizationMovedLine = "Settings moved";
+export const repositoryFinalizationMovedLine: Copy = {
+  id: "repository-landing-moved",
+};
 
 /** The binding as it stands, where the write was refused because a setting
  * moved under it. */
@@ -144,7 +147,7 @@ export function repositoryFinalizationMoved(
 
 /** The line a refused write is drawn as: a moved setting, or the failure
  * in its word. */
-export function repositoryFinalizationRefusal(failure: ApiFailure): string {
+export function repositoryFinalizationRefusal(failure: ApiFailure): Copy {
   return repositoryFinalizationMoved(failure) === undefined
     ? failureWords(failure).word
     : repositoryFinalizationMovedLine;

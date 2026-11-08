@@ -289,9 +289,12 @@ test("a refusal is said as its word, the runner's own word, or the failure's wor
     inquiryAskRefusalSentence(
       {
         ask: "Failed",
-        words: { word: "Offline", detail: "fetch failed" },
+        words: {
+          word: { id: "failure-no-connection" },
+          detail: "fetch failed",
+        },
       },
       copyTextEn,
     ),
-  ).toBe("Offline");
+  ).toBe("No connection");
 });

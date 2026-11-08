@@ -58,6 +58,17 @@ ticket-tab-runs = { -run(case: "upper", form: "plural") }
 ticket-tab-configuration = { -configuration(case: "upper") }
 ticket-tab-usage = Usage
 ticket-tabs-nav-label = { -ticket(case: "upper") }
+ticket-header-merged-into = Merged into { $base }
+ticket-header-waiting-lead = Waiting for the { -lead }
+ticket-header-waiting-dispatch = Waiting for { -dispatch }
+ticket-header-unfinished = { $count ->
+    [one] { $count } unfinished { -dependency }
+   *[other] { $count } unfinished { -dependency(form: "plural") }
+}
+ticket-header-revoked = { $count ->
+    [one] { $count } { -revoke(form: "ed") } { -dependency }
+   *[other] { $count } { -revoke(form: "ed") } { -dependency(form: "plural") }
+}
 
 ## A ticket's cycles and stages by number: `app/core/ticketLedger.ts`.
 
@@ -145,6 +156,10 @@ ticket-overview-depends-on = Depends on
 ticket-overview-configuration = { -configuration(case: "upper") }
 ticket-overview-revision = { -revision(case: "upper") } { $revision }
 ticket-overview-unreleased-changes = Unreleased changes
+ticket-overview-unreleased-count = { $count ->
+    [one] { $count } unreleased change
+   *[other] { $count } unreleased changes
+}
 ticket-overview-open-draft = Open { -draft }
 ticket-overview-draft-badge = { -draft(case: "upper") }
 
@@ -158,6 +173,10 @@ ticket-steps-heading = Steps
 ticket-steps-phase-work = { -work-stage(case: "upper") }
 ticket-steps-phase-evaluation = { -evaluation(case: "upper") }
 ticket-steps-phase-landing = { -landing(case: "upper") }
+ticket-steps-not-started = Not started
+ticket-steps-not-on-page = Not on this page
+ticket-plan-commands = commands
+ticket-plan-evaluator = { -evaluator(case: "upper") } { $key }
 ticket-now-watch = Watch
 ticket-now-title = { $status } { $step }
 ticket-now-prefix = Now: { $doing }
@@ -196,6 +215,15 @@ ticket-run-cpus = CPUs
 ticket-run-id-field = { -run(case: "upper") } ID
 ticket-run-not-found = No such { -run }
 ticket-run-showing-first = Showing first { $run }
+ticket-run-tokens = { $input } in · { $output } out · { $write } cache write · { $read } cache read
+ticket-run-mode-container = container
+ticket-run-mode-capability = capability
+ticket-runs-work-not-on-page = { -work-stage(case: "upper") } not on this page
+ticket-runs-starting = Starting { $step }
+ticket-runs-running = Running { $step }
+ticket-runs-sent-back = Sent back by { $step }
+ticket-runs-failed-at = Failed at { $step }
+ticket-runs-blocked-at = Blocked at { $step }
 
 ## The ticket's landing, under the Runs tab: `TicketLandingPage.tsx`,
 ## `TicketLandings.tsx`.
@@ -257,6 +285,7 @@ ticket-usage-agent-runs = { -agent } { -run(form: "plural") }
 ticket-usage-by-step-caption = Usage by step
 ticket-usage-by-model-caption = Usage by model
 ticket-usage-col-step = Step
+ticket-usage-total = Total
 ticket-usage-col-runs = { -run(case: "upper", form: "plural") }
 ticket-usage-col-input = Input
 ticket-usage-col-output = Output
@@ -288,6 +317,9 @@ ticket-transcript-earlier-not-held = Earlier { -conversation } not held
 
 ticket-result-end-cut = End cut
 ticket-artifact-no-preview = No preview
+ticket-artifact-preview = Preview
+ticket-artifact-hide = Hide
+ticket-artifact-bytes = { $bytes } bytes
 
 ## The inbox's section titles, and a parked row's badge: `app/core/ticketSections.ts`.
 

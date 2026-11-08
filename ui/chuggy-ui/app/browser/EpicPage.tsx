@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * One epic: what it says, how far its tickets have come, the tickets outside
  * it that they wait on, the graph between them, and the revisions it has been
@@ -13,6 +12,7 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { EpicViewResponse } from "../../../../src/contract/responses.ts";
+import { useCopyText } from "../copy/CopyProvider.tsx";
 import { instantFigure } from "../core/figures.ts";
 import { projectAbilityRefused } from "../core/projectAbilities.ts";
 import {
@@ -43,7 +43,9 @@ function TicketLinks(props: {
   readonly partition: PartitionIdentity;
   readonly tickets: readonly number[];
 }): ReactNode {
-  if (props.tickets.length === 0) return <span>None</span>;
+  const text = useCopyText();
+  if (props.tickets.length === 0)
+    return <span>{text({ id: "epics-none-value" })}</span>;
   return (
     <span className="epic-chips">
       {props.tickets.map((ticket) => (
@@ -63,6 +65,7 @@ function EpicSummary(props: {
   readonly partition: PartitionIdentity;
   readonly epic: EpicViewResponse;
 }): ReactNode {
+  const text = useCopyText();
   const { epic } = props;
   return (
     <Panel title={epic.title}>
@@ -71,17 +74,19 @@ function EpicSummary(props: {
           <span className="text-ink-3 text-sm">{`#${String(epic.number)}`}</span>
           <EpicStatusPill status={epic.status} />
           {epic.visibility === "Archived" ? (
-            <Pill tone="retired">Archived</Pill>
+            <Pill tone="retired">
+              {text({ id: "epics-visibility-archived" })}
+            </Pill>
           ) : null}
         </div>
         {epic.summary === undefined ? null : <p>{epic.summary}</p>}
         <EpicProgress progress={epic.progress} />
         <Fields>
-          <Field name="Tickets">
+          <Field name={text({ id: "epics-field-tickets" })}>
             <TicketLinks partition={props.partition} tickets={epic.tickets} />
           </Field>
           <Field
-            name="Waiting on outside"
+            name={text({ id: "epics-field-waiting-outside" })}
             absent={epic.waitingOnOutside.length === 0}
           >
             <TicketLinks
@@ -89,7 +94,9 @@ function EpicSummary(props: {
               tickets={epic.waitingOnOutside}
             />
           </Field>
-          <Field name="Revision">{String(epic.revision)}</Field>
+          <Field name={text({ id: "epics-field-revision" })}>
+            {String(epic.revision)}
+          </Field>
         </Fields>
         {epic.description === "" ? null : (
           <MarkdownReport text={epic.description} />
@@ -103,9 +110,10 @@ function EpicGraphPanel(props: {
   readonly partition: PartitionIdentity;
   readonly epic: number;
 }): ReactNode {
+  const text = useCopyText();
   const state = usePanelState(epicGraphQuery(props.partition, props.epic));
   return (
-    <DataPanel title="Graph" state={state}>
+    <DataPanel title={text({ id: "epics-graph" })} state={state}>
       {(graph) => <EpicGraph partition={props.partition} graph={graph} />}
     </DataPanel>
   );
@@ -118,6 +126,7 @@ function EpicHistoryPage(props: {
   readonly after: number | undefined;
   readonly nowMs: number;
 }): ReactNode {
+  const text = useCopyText();
   const [older, setOlder] = useState(false);
   const state = usePanelState(
     epicHistoryQuery(props.partition, props.epic, props.after),
@@ -126,10 +135,18 @@ function EpicHistoryPage(props: {
   const { revisions, nextAfter } = state.value;
   return (
     <>
-      <ol className="grid gap-1 text-sm" aria-label="Revisions">
+      <ol
+        className="grid gap-1 text-sm"
+        aria-label={text({ id: "epics-revisions-label" })}
+      >
         {revisions.map((revision) => (
           <li key={revision.revision} className="flex flex-wrap gap-2">
-            <span>{`Revision ${String(revision.revision)}`}</span>
+            <span>
+              {text({
+                id: "epics-revision",
+                args: { revision: String(revision.revision) },
+              })}
+            </span>
             <span>{revision.title}</span>
             <span className="text-ink-3">{revision.actor.subject}</span>
             <Figure figure={instantFigure(revision.changedAt, props.nowMs)} />
@@ -151,7 +168,7 @@ function EpicHistoryPage(props: {
               setOlder(true);
             }}
           >
-            Show older
+            {text({ id: "epics-show-older" })}
           </Button>
         </div>
       )}
@@ -163,8 +180,9 @@ function EpicRevision(props: {
   readonly partition: PartitionIdentity;
   readonly epic: EpicViewResponse;
 }): ReactNode {
+  const text = useCopyText();
   return (
-    <Panel title="Edit" collapsible={{ open: false }}>
+    <Panel title={text({ id: "ui-edit" })} collapsible={{ open: false }}>
       <EpicFormPanel
         key={props.epic.number}
         partition={props.partition}
@@ -173,7 +191,7 @@ function EpicRevision(props: {
           revision: props.epic.revision,
           form: epicFormFrom(props.epic),
         }}
-        submit="Save changes"
+        submit={text({ id: "ui-save" })}
         onSaved={() => undefined}
       />
     </Panel>
@@ -181,6 +199,7 @@ function EpicRevision(props: {
 }
 
 export function EpicPage(): ReactNode {
+  const text = useCopyText();
   const params = useParams({ from: "/$tenant/$project/epics/$epic" });
   const partition: PartitionIdentity = {
     tenant: params.tenant,
@@ -194,10 +213,12 @@ export function EpicPage(): ReactNode {
     "writeEpic",
   );
   if (!Number.isSafeInteger(epic) || epic <= 0)
-    return <EmptyState label="No such epic" variant="page" />;
+    return (
+      <EmptyState label={text({ id: "epics-not-found" })} variant="page" />
+    );
   return (
     <div className="grid min-w-0 gap-4" data-fills-width>
-      <ScreenTitle>Epic</ScreenTitle>
+      <ScreenTitle>{text({ id: "epics-page-title" })}</ScreenTitle>
       {state.state === "Ready" ? (
         <>
           <EpicSummary partition={partition} epic={state.value} />
@@ -209,7 +230,7 @@ export function EpicPage(): ReactNode {
         <PanelUnready state={state} />
       )}
       <EpicGraphPanel partition={partition} epic={epic} />
-      <Panel title="History">
+      <Panel title={text({ id: "epics-history" })}>
         <EpicHistoryPage
           partition={partition}
           epic={epic}

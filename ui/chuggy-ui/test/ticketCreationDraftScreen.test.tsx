@@ -20,6 +20,7 @@ import type { DraftResponse } from "../../../src/contract/responses.ts";
 import { ticketYamlStoreKey } from "../app/browser/editor/authoringGuards.tsx";
 import { TicketCreationFrom } from "../app/browser/TicketCreationStart.tsx";
 import { DraftSaveHeld } from "../app/browser/editor/draftSaveBeforeSend.tsx";
+import { copyTextEn } from "../app/copy/catalog.ts";
 import { draftFollowClosedSentence } from "../app/core/draftFollow.ts";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import {
@@ -346,7 +347,9 @@ test("a draft released while the form is open says so, with the way to its ticke
   );
   expect(
     screen.getByText(
-      draftFollowClosedSentence({ standing: "Released", ticket: 12 }),
+      copyTextEn(
+        draftFollowClosedSentence({ standing: "Released", ticket: 12 }),
+      ),
     ),
   ).toBeTruthy();
   expect(screen.getByRole("link", { name: "Ticket 12" })).toBeTruthy();
@@ -373,7 +376,9 @@ test("a draft deleted while the form is open says so, and offers no submit", asy
   await followArrives(server, revisedBy("Ship it", { state: "Deleted" }));
   expect(
     screen.getByText(
-      draftFollowClosedSentence({ standing: "Deleted", ticket: 12 }),
+      copyTextEn(
+        draftFollowClosedSentence({ standing: "Deleted", ticket: 12 }),
+      ),
     ),
   ).toBeTruthy();
   expect(submitButton().disabled).toBe(true);
@@ -387,7 +392,9 @@ test("a draft already released as the screen opens is said in place of the form"
   });
   expect(
     screen.getByText(
-      draftFollowClosedSentence({ standing: "Released", ticket: 12 }),
+      copyTextEn(
+        draftFollowClosedSentence({ standing: "Released", ticket: 12 }),
+      ),
     ),
   ).toBeTruthy();
   expect(

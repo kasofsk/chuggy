@@ -1,0 +1,78 @@
+## A project's epics, one epic's page, its graph and its form:
+## `app/core/epics.ts`, `EpicsPage.tsx`, `EpicPage.tsx`, `EpicGraph.tsx`,
+## `EpicForm.tsx`, `EpicChips.tsx`.
+
+epics-title = { -epic(case: "upper", form: "plural") }
+epics-page-title = { -epic(case: "upper") }
+epics-none = No { -epic(form: "plural") }
+epics-not-found = No such { -epic }
+epics-new = New { -epic }
+epics-create = Create { -epic }
+epics-search = Search { -epic(form: "plural") }
+epics-search-placeholder = Search titles and summaries…
+epics-show-more = Show more
+epics-show-older = Show older
+epics-reload = Reload the { -epic }
+epics-progress-label = Progress
+epics-chip-archived = { $title } (archived)
+
+## A status, and how far an epic's tickets have come.
+
+epics-status-empty = Empty
+epics-status-not-started = Not started
+epics-status-in-progress = In progress
+epics-status-attention = Needs attention
+epics-status-done = Done
+epics-progress-none = no { -ticket(form: "plural") }
+epics-progress = { $done } of { $total } done
+
+## The list's filters, and the form's fields.
+
+epics-visibility = Visibility
+epics-visibility-active = Active
+epics-visibility-archived = Archived
+epics-visibility-all = All
+epics-sort = Sort
+epics-sort-newest = Newest
+epics-sort-oldest = Oldest
+epics-sort-title = Title
+epics-field-title = Title
+epics-field-summary = Summary
+epics-field-description = Description
+epics-field-tickets = { -ticket(case: "upper", form: "plural") }
+epics-field-tickets-placeholder = { -ticket(case: "upper") } numbers, such as 12, 14
+epics-field-waiting-outside = Waiting on outside
+epics-field-revision = { -revision(case: "upper") }
+epics-faults-label = Faults
+epics-none-value = None
+
+## The graph and the history.
+
+epics-graph = Graph
+epics-graph-empty = No { -ticket(form: "plural") }.
+epics-graph-label = { -ticket(case: "upper", form: "plural") } of the { -epic } and what they wait on
+epics-graph-node = { -ticket(case: "upper") } { $ticket }, { $standing }
+epics-graph-node-titled = { -ticket(case: "upper") } { $ticket } { $title }, { $standing }
+epics-graph-node-outside = { $node }, outside the { -epic }
+epics-history = History
+epics-revisions-label = { -revision(case: "upper", form: "plural") }
+epics-revision = { -revision(case: "upper") } { $revision }
+
+## What a form has wrong before it is sent, and what a refused write says.
+
+epics-fault-title-empty = The title is empty.
+epics-fault-title-long = The title is too long.
+epics-fault-summary-long = The summary is too long.
+epics-fault-not-tickets = Not { -ticket } numbers: { $words }.
+epics-refusal-stale = The { -epic } was changed since you opened it. Reload it and make the change again.
+epics-refusal-archived = { -epic(case: "upper", form: "a") } kept archived keeps its { -ticket(form: "plural") }; unarchive it to change them.
+epics-refusal-many-tickets = The { -epic } holds too many { -ticket(form: "plural") }.
+epics-refusal-large = The { -epic } is too large.
+epics-refusal-absent = The { -epic } no longer exists.
+epics-refusal-unknown-tickets = The { -epic } names { -ticket(form: "plural") } the { -project } does not have.
+epics-refusal-unknown-tickets-named = The { -project } has no { -ticket } { $tickets }.
+epics-refusal-refused = The { -epic } was refused.
+epics-refusal-unsaved = The { -epic } could not be saved.
+epics-draft-missing = The { -epic } no longer exists, so the { -ticket } was not made.
+epics-draft-archived = The { -epic } is archived, so it takes no new { -ticket }.
+epics-draft-full = The { -epic } is full, so it takes no new { -ticket }.

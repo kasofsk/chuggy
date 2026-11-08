@@ -13,15 +13,21 @@ import type { ApiCopy } from "./generated/apiCopy.ts";
 import type { ChatCopy } from "./generated/chatCopy.ts";
 import type { CodesCopy } from "./generated/codesCopy.ts";
 import type { ConfigurationCatalogCopy } from "./generated/configurationCatalogCopy.ts";
+import type { ConfigurationStepsCopy } from "./generated/configurationStepsCopy.ts";
 import type { ConversationCopy } from "./generated/conversationCopy.ts";
+import type { DraftsCopy } from "./generated/draftsCopy.ts";
+import type { EpicsCopy } from "./generated/epicsCopy.ts";
+import type { FailureCopy } from "./generated/failureCopy.ts";
 import type { FiguresCopy } from "./generated/figuresCopy.ts";
 import type { InboxCopy } from "./generated/inboxCopy.ts";
 import type { LeadCopy } from "./generated/leadCopy.ts";
 import type { OperationCopy } from "./generated/operationCopy.ts";
+import type { PagesCopy } from "./generated/pagesCopy.ts";
 import type { PanelCopy } from "./generated/panelCopy.ts";
 import type { PermissionsCopy } from "./generated/permissionsCopy.ts";
 import type { ProjectCopy } from "./generated/projectCopy.ts";
 import type { RepositoriesCopy } from "./generated/repositoriesCopy.ts";
+import type { RepositoryLandingCopy } from "./generated/repositoryLandingCopy.ts";
 import type { RunnersCopy } from "./generated/runnersCopy.ts";
 import type { SentencesCopy } from "./generated/sentencesCopy.ts";
 import type { SessionCopy } from "./generated/sessionCopy.ts";
@@ -35,21 +41,28 @@ import type { TicketCopy } from "./generated/ticketCopy.ts";
 import type { TicketAuthoringCopy } from "./generated/ticketAuthoringCopy.ts";
 import type { TonesCopy } from "./generated/tonesCopy.ts";
 import type { UiCopy } from "./generated/uiCopy.ts";
+import type { UsageCopy } from "./generated/usageCopy.ts";
 
 /** Each message's variables by name, as its section's module names them. */
 type CopyVariables = ApiCopy &
   ChatCopy &
   CodesCopy &
   ConfigurationCatalogCopy &
+  ConfigurationStepsCopy &
   ConversationCopy &
+  DraftsCopy &
+  EpicsCopy &
+  FailureCopy &
   FiguresCopy &
   InboxCopy &
   LeadCopy &
   OperationCopy &
+  PagesCopy &
   PanelCopy &
   PermissionsCopy &
   ProjectCopy &
   RepositoriesCopy &
+  RepositoryLandingCopy &
   RunnersCopy &
   SentencesCopy &
   SessionCopy &
@@ -62,7 +75,8 @@ type CopyVariables = ApiCopy &
   TicketCopy &
   TicketAuthoringCopy &
   TonesCopy &
-  UiCopy;
+  UiCopy &
+  UsageCopy;
 
 type CopyCatalog = {
   readonly [Id in keyof CopyVariables]: {

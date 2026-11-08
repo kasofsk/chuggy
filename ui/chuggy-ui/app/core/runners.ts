@@ -24,6 +24,7 @@ import type {
   SessionRunnerStanding,
 } from "../../../../src/contract/rosters.ts";
 import type { ApiFailure } from "./apiRequest.ts";
+import type { CopyOrData } from "./copy.ts";
 import { failureWords } from "./failureWords.ts";
 import type { PanelState } from "./freshness.ts";
 
@@ -329,7 +330,7 @@ export function runnersPlacementUnhosted(failure: ApiFailure): boolean {
 }
 
 /** The line a refused placement's write leaves in the section. */
-export function runnersPlacementRefusal(failure: ApiFailure): string {
+export function runnersPlacementRefusal(failure: ApiFailure): CopyOrData {
   return runnersPlacementUnhosted(failure)
     ? "Needs hosted runs"
     : failureWords(failure).word;

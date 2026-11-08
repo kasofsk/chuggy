@@ -965,7 +965,7 @@ test("two bindings ask, and a submission naming none sends nothing", () => {
   expect(drafts(held.sent).length).toBe(0);
 });
 
-function finalizationGroup(name = "Finalization"): HTMLElement | null {
+function finalizationGroup(name = "Landing"): HTMLElement | null {
   return screen.queryByRole("radiogroup", { name });
 }
 
@@ -987,7 +987,7 @@ function chosenIn(
 
 /** The kind the Finalization group draws as chosen. */
 function finalizationChosen(): string | undefined {
-  return chosenIn("Finalization", ["Git merge", "Pull request", "None"]);
+  return chosenIn("Landing", ["Git merge", "Pull request", "None"]);
 }
 
 async function chooseRepository(name: string): Promise<void> {

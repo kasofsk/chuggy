@@ -33,6 +33,7 @@ import {
   ticketLandingPullLabel,
 } from "./ticketLandings.ts";
 import type { TicketLanding } from "./ticketLandings.ts";
+import { ticketPlanEvaluatorNumber } from "./ticketPlan.ts";
 import type { TicketPlan, TicketPlanStage } from "./ticketPlan.ts";
 import {
   ticketRunLandingMarked,
@@ -44,7 +45,7 @@ import type { TicketRunMark } from "./ticketRuns.ts";
 import { verdictTone } from "./tones.ts";
 import type { Tone } from "./tones.ts";
 import { copyOrDataText } from "./copy.ts";
-import type { CopyText } from "./copy.ts";
+import type { Copy, CopyText } from "./copy.ts";
 
 /** What a box says under its name: the runs whose times and waits it sums,
  * or a few words. */
@@ -110,8 +111,8 @@ export interface TicketStepsReads {
   readonly nowMs: number;
 }
 
-const ticketStepsNotReached = "Not reached";
-const ticketStepsNotStarted = "Not started";
+const ticketStepsNotReached: Copy = { id: "ticket-landing-not-reached" };
+const ticketStepsNotStarted: Copy = { id: "ticket-steps-not-started" };
 
 function ticketStepsWords(words: string): TicketStepLine {
   return { line: "Words", words };
@@ -121,21 +122,23 @@ function ticketStepsWords(words: string): TicketStepLine {
 function ticketStepsAhead(
   runs: string | undefined,
   stopped: boolean,
+  text: CopyText,
 ): TicketStepLine {
-  if (stopped) return ticketStepsWords(ticketStepsNotReached);
-  return ticketStepsWords(runs ?? ticketStepsNotStarted);
+  if (stopped) return ticketStepsWords(text(ticketStepsNotReached));
+  return ticketStepsWords(runs ?? text(ticketStepsNotStarted));
 }
 
 function ticketStepsWaiting(
   name: string,
   runs: string | undefined,
   stopped: boolean,
+  text: CopyText,
 ): TicketStepBox {
   return {
     name,
     mark: "Open",
     tone: "retired",
-    line: ticketStepsAhead(runs, stopped),
+    line: ticketStepsAhead(runs, stopped, text),
     address: undefined,
     evaluators: [],
   };
@@ -148,6 +151,13 @@ interface TicketStepRan {
   readonly tone: Tone;
   readonly line: TicketStepLine;
   readonly address: TicketStepAddress;
+}
+
+function ticketStepsSideBySide(count: number): Copy {
+  return {
+    id: "configuration-steps-side-by-side",
+    args: { count: String(count) },
+  };
 }
 
 /** A run's box: its mark, how long it ran, and its page. */
@@ -172,13 +182,14 @@ function ticketStepsEvaluator(
   evaluator: TicketPlanStage["evaluators"][number],
   ran: EvaluatorRow | undefined,
   stopped: boolean,
+  text: CopyText,
 ): TicketStepEvaluator {
   if (ran === undefined)
     return {
       name: evaluator.name,
       mark: "Open",
       tone: "retired",
-      line: stopped ? ticketStepsWords(ticketStepsNotReached) : undefined,
+      line: stopped ? ticketStepsWords(text(ticketStepsNotReached)) : undefined,
       address: undefined,
     };
   return ticketStepsRan(evaluator.name, ran.set);
@@ -190,6 +201,7 @@ function ticketStepsStageRan(
   stage: TicketPlanStage,
   row: RanStage,
   stopped: boolean,
+  text: CopyText,
 ): TicketStepBox {
   const current = stageEvaluatorsCurrent(row);
   const keys = [
@@ -198,7 +210,7 @@ function ticketStepsStageRan(
       .filter((ran) => !stage.evaluators.some((each) => each.key === ran.key))
       .map((ran) => ({
         key: ran.key,
-        name: `Evaluator ${String(ran.key)}`,
+        name: text(ticketPlanEvaluatorNumber(ran.key)),
         runs: undefined,
       })),
   ];
@@ -209,13 +221,14 @@ function ticketStepsStageRan(
     name: stage.name,
     mark: ticketRunMarkOf(row.verdict),
     tone: verdictTone(row.verdict),
-    line: ticketStepsWords(`${String(keys.length)} side by side`),
+    line: ticketStepsWords(text(ticketStepsSideBySide(keys.length))),
     address: undefined,
     evaluators: keys.map((evaluator) =>
       ticketStepsEvaluator(
         evaluator,
         current.find((ran) => ran.key === evaluator.key),
         stopped,
+        text,
       ),
     ),
   };
@@ -226,17 +239,22 @@ function ticketStepsStageRan(
 function ticketStepsStageAhead(
   stage: TicketPlanStage,
   stopped: boolean,
+  text: CopyText,
 ): TicketStepBox {
   const only = stage.evaluators.length === 1 ? stage.evaluators[0] : undefined;
   if (stage.evaluators.length <= 1)
-    return ticketStepsWaiting(stage.name, only?.runs, stopped);
+    return ticketStepsWaiting(stage.name, only?.runs, stopped, text);
   return {
-    ...ticketStepsWaiting(stage.name, undefined, false),
-    line: stopped
-      ? ticketStepsWords(ticketStepsNotReached)
-      : ticketStepsWords(`${String(stage.evaluators.length)} side by side`),
+    ...ticketStepsWaiting(stage.name, undefined, false, text),
+    line: ticketStepsWords(
+      text(
+        stopped
+          ? ticketStepsNotReached
+          : ticketStepsSideBySide(stage.evaluators.length),
+      ),
+    ),
     evaluators: stage.evaluators.map((evaluator) =>
-      ticketStepsEvaluator(evaluator, undefined, false),
+      ticketStepsEvaluator(evaluator, undefined, false, text),
     ),
   };
 }
@@ -245,20 +263,21 @@ function ticketStepsStage(
   stage: TicketPlanStage,
   row: StageRow | undefined,
   stopped: boolean,
+  text: CopyText,
 ): TicketStepBox {
   switch (row?.kind) {
     case "Ran":
-      return ticketStepsStageRan(stage, row, stopped);
+      return ticketStepsStageRan(stage, row, stopped, text);
     case "Skipped":
-      return ticketStepsStageAhead(stage, true);
+      return ticketStepsStageAhead(stage, true, text);
     case "Missing":
       return {
-        ...ticketStepsWaiting(stage.name, undefined, false),
-        line: ticketStepsWords("Not on this page"),
+        ...ticketStepsWaiting(stage.name, undefined, false, text),
+        line: ticketStepsWords(text({ id: "ticket-steps-not-on-page" })),
       };
     case "Queued":
     case undefined:
-      return ticketStepsStageAhead(stage, stopped);
+      return ticketStepsStageAhead(stage, stopped, text);
   }
 }
 
@@ -315,23 +334,25 @@ function ticketStepsLanding(
   nowMs: number,
   text: CopyText,
 ): TicketStepBox {
+  const name = text({ id: "ticket-steps-phase-landing" });
   if (!plan.lands)
     return {
-      name: "Landing",
+      name,
       mark: undefined,
       tone: "retired",
-      line: ticketStepsWords("None"),
+      line: ticketStepsWords(text({ id: "ticket-value-none" })),
       address: undefined,
       evaluators: [],
     };
   if (landing === undefined)
     return ticketStepsWaiting(
-      "Landing",
+      name,
       plan.landing === undefined ? undefined : text(plan.landing),
       stopped,
+      text,
     );
   return {
-    name: "Landing",
+    name,
     ...ticketRunLandingMarked(landing),
     line: ticketStepsWords(ticketStepsLandingWords(landing, nowMs, text)),
     address: { to: "Landing" },
@@ -412,10 +433,11 @@ export function ticketStepsOf(
     cycle === undefined ? undefined : reads.landings.get(cycle.ordinal)?.at(-1);
   const stopped = ticketStepsStopped(cycle, reads.settled);
   const edges = ticketStepsEdges(cycle, landing);
+  const name = text({ id: "ticket-steps-phase-work" });
   const work =
     cycle?.work === undefined
-      ? ticketStepsWaiting("Work", plan.work, stopped)
-      : { ...ticketStepsRan("Work", cycle.work), evaluators: [] };
+      ? ticketStepsWaiting(name, plan.work, stopped, text)
+      : { ...ticketStepsRan(name, cycle.work), evaluators: [] };
   return {
     cycle: cycle?.ordinal,
     previous: ticketStepsPrevious(reads, text),
@@ -429,6 +451,7 @@ export function ticketStepsOf(
             stage,
             cycle?.stages.find((row) => row.stage === stage.stage),
             stopped,
+            text,
           ),
         ),
       },

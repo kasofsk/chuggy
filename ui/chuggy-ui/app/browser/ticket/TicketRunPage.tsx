@@ -358,7 +358,8 @@ function TicketRunDetails(props: {
   readonly read: ExecutionResponse;
   readonly nowMs: number;
 }): ReactNode {
-  const details = ticketRunDetailsOf(props.read, props.nowMs);
+  const text = useCopyText();
+  const details = ticketRunDetailsOf(props.read, props.nowMs, text);
   return (
     <div className="grid gap-4">
       <TicketRunDetailsFields details={details} />

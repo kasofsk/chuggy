@@ -1,0 +1,20 @@
+## A console page as it is named where a message says it was sent from it:
+## `app/core/consolePage.ts`.
+
+pages-tickets = { -ticket(case: "upper", form: "plural") }
+pages-inbox = { -inbox(case: "upper") }
+pages-lead = { -lead(case: "upper") }
+pages-catalog = { -catalog(case: "upper") }
+pages-repositories = { -repository(case: "upper", form: "plural") }
+pages-runners = { -runner(case: "upper", form: "plural") }
+pages-epics = { -epic(case: "upper", form: "plural") }
+pages-epic = { -epic(case: "upper") } { $number }
+pages-ticket = { -ticket(case: "upper") } { $number }
+pages-ticket-edit = Edit { -ticket } { $number }
+pages-ticket-new = New { -ticket }
+pages-ticket-new-from = New { -ticket } from { $number }
+pages-ticket-new-draft = New { -ticket } · { -draft } { $number }
+pages-repository = { -repository(case: "upper") } { $repository }
+pages-settings = Settings
+pages-settings-accounts = Accounts
+pages-settings-section = Settings · { $level } · { $section }

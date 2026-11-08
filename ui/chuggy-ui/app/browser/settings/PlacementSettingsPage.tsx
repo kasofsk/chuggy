@@ -22,6 +22,7 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import type {
   ExecutionPlacementResponse,
   SessionPlacementResponse,
@@ -40,6 +41,7 @@ import {
   consoleWriteKey,
 } from "../../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../../core/consoleWrite.ts";
+import type { CopyText } from "../../core/copy.ts";
 import {
   executionPlacementQuery,
   sessionPlacementQuery,
@@ -256,6 +258,7 @@ async function placementHeld<T>(
  */
 function placementWrite(
   partition: PartitionIdentity,
+  text: CopyText,
 ): ConsoleWrite<PlacementSave, SessionPlacementResponse | undefined> {
   return {
     mutationKey: consoleWriteKey(
@@ -268,6 +271,7 @@ function placementWrite(
         const execution = consoleWriteAnswered(
           await apiWriteExecutionPlacement(ports, partition, writes.execution),
           runnersPlacementRefusal,
+          text,
         );
         await placementHeld(
           client,
@@ -297,7 +301,8 @@ function PlacementSection(props: {
   readonly execution: ExecutionPlacementResponse;
   readonly session: SessionPlacementResponse;
 }): ReactNode {
-  const saving = useConsoleWrite(placementWrite(props.partition), {
+  const text = useCopyText();
+  const saving = useConsoleWrite(placementWrite(props.partition, text), {
     drawn: true,
   });
   const shown = saving.isPending || saving.error !== null || saving.isSuccess;

@@ -36,6 +36,7 @@ import type {
   ConsoleWriteProgress,
   ConsoleWriteRefused,
 } from "../core/consoleWrite.ts";
+import { useCopyText } from "../copy/CopyProvider.tsx";
 import { useApiPorts } from "./api.ts";
 import {
   consoleWriteUnseenLetGo,
@@ -148,6 +149,7 @@ export function useConsoleWrite<V, T>(
 ): ConsoleWriting<V, T> {
   const ports = useApiPorts();
   const client = useQueryClient();
+  const text = useCopyText();
   useConsoleWriteWatched(write.mutationKey, shown.drawn);
   const own = useMutation<T, ConsoleWriteRefused, V>({
     mutationKey: write.mutationKey,
@@ -156,9 +158,10 @@ export function useConsoleWrite<V, T>(
         return consoleWriteAnswered(
           await write.write(ports, variables, client),
           write.refusal,
+          text,
         );
       } catch (thrown: unknown) {
-        throw consoleWriteRefusedOf(thrown);
+        throw consoleWriteRefusedOf(thrown, text);
       }
     },
     onSuccess: async (value, variables) => {

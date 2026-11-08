@@ -13,6 +13,7 @@ import type { ReactNode } from "react";
 import type { WorkerPoolTokenResponse } from "../../../../src/contract/responses.ts";
 import type { ApiFailure } from "../core/apiRequest.ts";
 import type { ConsoleWrite } from "../core/consoleWrite.ts";
+import type { Copy } from "../core/copy.ts";
 import { failureWords } from "../core/failureWords.ts";
 import { runnerAskRead, runnerPackages } from "../core/runners.ts";
 import type {
@@ -150,7 +151,7 @@ function RunnerAskPresses(props: {
 }
 
 /** The line a refused mint leaves in its ask. */
-export function runnerMintRefusal(failure: ApiFailure): string {
+export function runnerMintRefusal(failure: ApiFailure): Copy {
   return failureWords(failure).word;
 }
 

@@ -154,18 +154,20 @@ function ticketHeaderWords(words: string): TicketHeaderFragment {
   return { fragment: "Words", words };
 }
 
-function ticketDependencyCount(count: number, standing: string): string {
-  return `${String(count)} ${standing} ${count === 1 ? "dependency" : "dependencies"}`;
-}
-
 /** What a blocked ticket waits on: the dependencies still open, and those
  * revoked, which nothing will ever finish. */
-export function ticketUnfinishedLine(open: number, revoked: number): string {
+export function ticketUnfinishedLine(
+  open: number,
+  revoked: number,
+  text: CopyText,
+): string {
   return [
     ...(open > 0 || revoked === 0
-      ? [ticketDependencyCount(open, "unfinished")]
+      ? [text({ id: "ticket-header-unfinished", args: { count: open } })]
       : []),
-    ...(revoked > 0 ? [ticketDependencyCount(revoked, "revoked")] : []),
+    ...(revoked > 0
+      ? [text({ id: "ticket-header-revoked", args: { count: revoked } })]
+      : []),
   ].join(" · ");
 }
 
@@ -209,8 +211,8 @@ function ticketHeaderLanded(
       newest.state === "Proposed"
         ? newest.word
         : base === undefined
-          ? "Merged"
-          : `Merged into ${base}`,
+          ? text({ id: "ticket-landing-merged" })
+          : text({ id: "ticket-header-merged-into", args: { base } }),
     link: ticketHeaderLinkOf(newest.link, text),
   };
 }
@@ -224,13 +226,18 @@ export function ticketHeaderFragment(
     case "Ready":
       if (reads.leadDispatches === undefined) return ticketHeaderNone;
       return ticketHeaderWords(
-        reads.leadDispatches ? "Waiting for the lead" : "Waiting for dispatch",
+        text(
+          reads.leadDispatches
+            ? { id: "ticket-header-waiting-lead" }
+            : { id: "ticket-header-waiting-dispatch" },
+        ),
       );
     case "Blocked":
       return ticketHeaderWords(
         ticketUnfinishedLine(
           ticket.openDependencies.length,
           ticket.revokedDependencies.length,
+          text,
         ),
       );
     case "Work":

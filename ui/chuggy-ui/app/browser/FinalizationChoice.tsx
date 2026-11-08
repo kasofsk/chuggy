@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The controls a finalization is chosen with: its kind, and under a git merge
  * alone its mode and its policy, so no kind is drawn a choice it has no field
@@ -75,9 +74,9 @@ export function FinalizationChoiceFields(props: {
   return (
     <>
       {row(
-        "Finalization",
+        text({ id: "ticket-landing-heading" }),
         <RadioGroup
-          label="Finalization"
+          label={text({ id: "ticket-landing-heading" })}
           value={choice.kind}
           disabled={disabled}
           options={finalizationKindOptions(text)}
@@ -94,9 +93,9 @@ export function FinalizationChoiceFields(props: {
       {choice.kind !== "GitMerge" ? null : (
         <>
           {row(
-            "Merge",
+            text({ id: "ticket-landing-merge" }),
             <RadioGroup
-              label="Merge"
+              label={text({ id: "ticket-landing-merge" })}
               value={choice.mode}
               disabled={disabled}
               options={gitMergeModeOptions(text)}
@@ -111,9 +110,9 @@ export function FinalizationChoiceFields(props: {
             />,
           )}
           {row(
-            "Policy",
+            text({ id: "configuration-steps-policy" }),
             <RadioGroup
-              label="Policy"
+              label={text({ id: "configuration-steps-policy" })}
               value={choice.policy}
               disabled={disabled}
               options={gitMergePolicyOptions(text)}

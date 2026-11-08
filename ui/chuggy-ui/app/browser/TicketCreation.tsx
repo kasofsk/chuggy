@@ -903,11 +903,14 @@ function creationAttemptOf(
 
 /** The sentence a submit that made no ticket is refused in, which is the
  * one its note leads with. */
-function creationUnmadeSentence(ended: TicketCreationUnmade): string {
+function creationUnmadeSentence(
+  ended: TicketCreationUnmade,
+  text: CopyText,
+): string {
   if (ended.created === "Exists")
     return creationTicketExistsSentence(ended.held);
   return ended.created === "Refused" && ended.unread !== undefined
-    ? `${readFailedLine("Draft", ended.unread)} · ${ended.reason}`
+    ? `${text(readFailedLine("Draft", ended.unread))} · ${ended.reason}`
     : ended.reason;
 }
 
@@ -948,7 +951,7 @@ function creationWrite(
         return { outcome: "Ok", value: created.ticket };
       if (created.created !== "Stale")
         throw new TicketCreationRefused(
-          creationUnmadeSentence(created),
+          creationUnmadeSentence(created, text),
           created,
         );
       await client.invalidateQueries({ queryKey });
