@@ -1819,7 +1819,7 @@ test("a project whose work the cluster runs needs no runner, and one this person
     exit: 0,
     lines: [
       signedIn,
-      "found: chuggy's cluster runs the work of acme/widgets, so it needs no runner",
+      "found: hosted runs take the work of acme/widgets, so it needs no runner",
       next,
     ],
   });

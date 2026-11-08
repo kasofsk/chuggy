@@ -732,7 +732,7 @@ function setupJoined(
 }
 
 /** Which engines did not answer, as a sentence says it: the one the runner is set to use, or each the package runs on. */
-function setupEnginesNone(asked: readonly SetupEngineAsked[]): Copy {
+export function setupEnginesNone(asked: readonly SetupEngineAsked[]): Copy {
   const names = asked.map(({ engine }) => setupEngineNames[engine]);
   const engines = setupJoined("setup-runner-engines-nor", names);
   return names.length < 2
@@ -765,7 +765,7 @@ function setupEnginelessSaid(
 }
 
 /** A person the package bars from docker, as they are told it: the package's reason, what leaves them no engine, what mends it, and what that waits on. */
-interface SetupDockerBarredTold {
+export interface SetupDockerBarredTold {
   readonly why: Copy;
   readonly state: Copy;
   readonly mend: Copy;
@@ -773,7 +773,7 @@ interface SetupDockerBarredTold {
 }
 
 /** The package's rule in this program's words: a job under docker is one user of the machine, who could read no other's Claude credential. */
-function setupDockerBarredTold(
+export function setupDockerBarredTold(
   user: string | undefined,
   how: SetupDockerBarred,
 ): SetupDockerBarredTold {

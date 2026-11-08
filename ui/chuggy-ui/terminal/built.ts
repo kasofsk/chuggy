@@ -17,6 +17,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import { copyTextEn } from "../app/copy/catalog.ts";
+import type { Copy } from "../app/core/copy.ts";
 import { setupProgramPath } from "../app/core/setupProgram.ts";
 import { setupReportExit, setupReportLines } from "../app/core/setupReport.ts";
 import type { SetupReport } from "../app/core/setupReport.ts";
@@ -30,9 +31,10 @@ const outputBytesMax = 16_384;
 /** What a bare run reports on a machine that remembers nothing. */
 const first: SetupReport = { report: "SiteUnknown" };
 
-/** Why the built program is not one a person can run, or nothing where it is. */
-function fault(built: string): string | undefined {
-  if (!existsSync(built)) return "is not there";
+/** What starting the built program came to, in the catalog's words. */
+function said(built: string): Copy {
+  const path = built;
+  if (!existsSync(built)) return { id: "setup-built-absent", args: { path } };
   const home = mkdtempSync(join(tmpdir(), "chuggy-setup-built-"));
   try {
     const ran = spawnSync(process.execPath, [built], {
@@ -43,20 +45,24 @@ function fault(built: string): string | undefined {
       maxBuffer: outputBytesMax,
     });
     if (ran.error !== undefined)
-      return "did not run to its end within its bounds";
+      return { id: "setup-built-unended", args: { path } };
     const printed = `${setupReportLines(first, built, copyTextEn).join("\n")}\n`;
     if (ran.stdout === printed && ran.status === setupReportExit(first))
-      return undefined;
-    const said = ran.stderr.split("\n").find((line) => /Error/u.test(line));
-    return `did not start as a first run does: exit ${String(ran.status)}${said === undefined ? "" : `, saying ${said.trim()}`}`;
+      return { id: "setup-built-starts", args: { path } };
+    const exit = String(ran.status);
+    const error = ran.stderr.split("\n").find((line) => /Error/u.test(line));
+    return error === undefined
+      ? { id: "setup-built-unstarted", args: { path, exit } }
+      : {
+          id: "setup-built-unstarted-said",
+          args: { path, exit, said: error.trim() },
+        };
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
 }
 
 const built = resolve(process.argv[2] ?? "dist", setupProgramPath.slice(1));
-const found = fault(built);
-process.stdout.write(
-  `the setup program at ${built} ${found ?? "starts as a first run does"}\n`,
-);
-if (found !== undefined) process.exitCode = 1;
+const found = said(built);
+process.stdout.write(`${copyTextEn(found)}\n`);
+if (found.id !== "setup-built-starts") process.exitCode = 1;

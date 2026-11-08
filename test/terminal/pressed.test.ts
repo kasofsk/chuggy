@@ -27,13 +27,11 @@ import {
   repositoryWorkerLine,
 } from "../../ui/chuggy-ui/app/core/projectRepositories.ts";
 import { copyTextEn } from "../../ui/chuggy-ui/app/copy/catalog.ts";
-import type { Copy, CopyId } from "../../ui/chuggy-ui/app/core/copy.ts";
+import type { CopyId } from "../../ui/chuggy-ui/app/core/copy.ts";
 import { invitePageWords } from "../../ui/chuggy-ui/app/core/invitePage.ts";
 import { selectorSettingsSection } from "../../ui/chuggy-ui/app/core/selectorSettingsForm.ts";
-import {
-  setupPressed,
-  setupSeen,
-} from "../../ui/chuggy-ui/app/core/setupNext.ts";
+import { setupPressed } from "../../ui/chuggy-ui/app/core/setupNext.ts";
+import { setupSeen } from "../../ui/chuggy-ui/app/core/setupStanding.ts";
 
 type SetupPressed = keyof typeof setupPressed;
 
@@ -105,27 +103,26 @@ function draws(source: string, name: string): boolean {
 
 for (const [key, page] of Object.entries(drawnIn))
   test(`the page ${page} draws what the program says is pressed there (${key})`, () => {
-    const name = setupPressed[key as SetupPressed];
+    const name = copyTextEn(setupPressed[key as SetupPressed]);
     const source = readFileSync(page, "utf8");
     assert.ok(draws(source, name), `${page} draws no "${name}"`);
   });
 
 for (const [key, drawn] of Object.entries(drawnFromCatalog))
   test(`the page ${drawn.page} draws, from the catalog, what the program says is pressed there (${key})`, () => {
-    const name = setupPressed[key as SetupPressed];
     const source = readFileSync(drawn.page, "utf8");
     assert.ok(
       source.includes(`{ id: "${drawn.id}" }`),
       `${drawn.page} draws no ${drawn.id}`,
     );
-    assert.equal(copyTextEn({ id: drawn.id } as Copy), name);
+    assert.deepEqual(setupPressed[key as SetupPressed], { id: drawn.id });
   });
 
 test("the lead's settings page draws, from the catalog, the section the program says Edit is pressed beside", () => {
   const source = readFileSync(leadTextSection, "utf8");
   assert.match(source, /const title = text\(section\.title\);/u);
-  assert.equal(
-    copyTextEn(selectorSettingsSection("northStar").title),
+  assert.deepEqual(
+    selectorSettingsSection("northStar").title,
     setupSeen.northStar,
   );
 });
@@ -134,11 +131,8 @@ test("the invite page draws, from the catalog, the card the program says a works
   const source = readFileSync(invitePage, "utf8");
   assert.match(source, /invitePageWords\.naming\b/u);
   assert.match(source, /\{text\(invitePageWords\.create\)\}/u);
-  assert.equal(copyTextEn(invitePageWords.naming), setupSeen.workspaceNaming);
-  assert.equal(
-    copyTextEn(invitePageWords.create),
-    setupPressed.workspaceCreate,
-  );
+  assert.deepEqual(invitePageWords.naming, setupSeen.workspaceNaming);
+  assert.deepEqual(invitePageWords.create, setupPressed.workspaceCreate);
 });
 
 test("a ticket's page draws each action it offers as a button under the action's own name, and has a line of its own for a project with no runner", () => {
