@@ -36,6 +36,7 @@ import {
   runContextReadingsMax,
   runTranscriptBatchesMax,
   runTurnSeriesMax,
+  runTurnsPageLimitMax,
 } from "../contract/http.ts";
 import type { RunContextOffered } from "../contract/responses.ts";
 import type { RunCostBasis, RunUsageWindow } from "../contract/rosters.ts";
@@ -445,8 +446,7 @@ export function checkedRunTurnsQuery(query: RunTurnsQuery): RunTurnsQuery {
   return query;
 }
 
-/** The most turns one page carries, which is the page bound every route shares. */
-export const runTurnsPageLimitMax = 100;
+export { runTurnsPageLimitMax };
 
 /** Refuses a context page query outside the bounds the wire and the run's readings declare. */
 export function checkedRunContextQuery(
