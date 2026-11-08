@@ -33,6 +33,7 @@ import {
 import type { ForgeReturnWord } from "./forgeReturn.ts";
 import type { PanelState } from "./freshness.ts";
 import { httpsUrl } from "./httpsUrl.ts";
+import { repositoryDeclarationDirectory } from "./repositoryConfigurations.ts";
 import type { WorkRunner } from "./workRunner.ts";
 
 /**
@@ -521,7 +522,11 @@ export function repositoryIgnoredDetail(
   ignored: RepositoryConfigurationIgnoredResponse,
 ): Copy {
   const [first, ...rest] = ignored.paths;
-  if (first === undefined) return { id: "repositories-ignored-entries" };
+  if (first === undefined)
+    return {
+      id: "repositories-ignored-entries",
+      args: { directory: repositoryDeclarationDirectory },
+    };
   if (ignored.truncated)
     return {
       id: "repositories-ignored-more-truncated",

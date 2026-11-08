@@ -20,7 +20,9 @@ import {
   forgeApps,
   projectRepositoryConfigurationDeferrals,
 } from "../../../src/contract/rosters.ts";
-import { copyTextEn } from "../app/copy/catalog.ts";
+import { copyCatalogEn, copyTextEn } from "../app/copy/catalog.ts";
+import { copyTextOf } from "../app/copy/copyBundle.ts";
+import { copyPseudoBundleOf } from "../app/copy/copyPseudo.ts";
 import type { ApiResult } from "../app/core/apiRequest.ts";
 import type { ProjectRepositoryBindAnswer } from "../app/core/apiRoutes.ts";
 import type { PanelState } from "../app/core/freshness.ts";
@@ -505,6 +507,13 @@ test("a new binding that bootstrapped names what its `.chug/` holds instead on a
   expect(
     copyTextEn(repositoryIgnoredDetail({ paths: [], truncated: true })),
   ).toBe(`entries in ${chug}`);
+});
+
+test("a step that names no entry names `.chug/` as data, which a wording leaves as it is", () => {
+  const pseudo = copyTextOf(copyPseudoBundleOf(copyCatalogEn));
+  expect(
+    pseudo(repositoryIgnoredDetail({ paths: [], truncated: true })),
+  ).toContain(" .chug/");
 });
 
 test("each refusal is the one line the picker draws under itself", () => {

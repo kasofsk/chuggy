@@ -82,7 +82,9 @@ export interface RepositoriesCopy {
   readonly "repositories-ignored": {
     readonly detail: unknown;
   };
-  readonly "repositories-ignored-entries": Record<never, never>;
+  readonly "repositories-ignored-entries": {
+    readonly directory: unknown;
+  };
   readonly "repositories-ignored-one": {
     readonly first: unknown;
   };
