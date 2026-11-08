@@ -2,6 +2,7 @@
 
 @layer ui {
   .tooltip {
+    z-index: var(--z-overlay);
     max-width: min(
       var(--measure),
       var(--radix-tooltip-content-available-width)

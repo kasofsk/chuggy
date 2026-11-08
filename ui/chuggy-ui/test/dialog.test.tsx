@@ -46,6 +46,19 @@ test("the body scrolls inside a dialog bounded by the viewport, between its titl
   styleless();
 });
 
+test("the scrim stacks in the overlay band, under the dialog's own frame", () => {
+  render(
+    <Dialog title="Add" trigger="Add" open onOpenChange={() => undefined}>
+      <p>body</p>
+    </Dialog>,
+  );
+  const frame = screen.getByRole("dialog", { name: "Add" }).parentElement;
+  const scrim = frame?.previousElementSibling ?? null;
+  expect(classesOf(scrim)).toContain("z-[calc(var(--z-overlay)+20)]");
+  expect(classesOf(frame)).toContain("z-[calc(var(--z-overlay)+30)]");
+  styleless();
+});
+
 test("a caller's foot stands in place of Close, at the width a form takes", () => {
   render(
     <Dialog

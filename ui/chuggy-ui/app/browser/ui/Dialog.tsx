@@ -106,8 +106,11 @@ export function Dialog(props: {
         </RadixDialog.Trigger>
       )}
       <RadixDialog.Portal>
-        <div aria-hidden="true" className="fixed inset-0 z-10 bg-scrim" />
-        <div className="pointer-events-none fixed inset-x-4 inset-y-6 z-20">
+        <div
+          aria-hidden="true"
+          className="fixed inset-0 z-[calc(var(--z-overlay)+20)] bg-scrim"
+        />
+        <div className="pointer-events-none fixed inset-x-4 inset-y-6 z-[calc(var(--z-overlay)+30)]">
           <RadixDialog.Content
             aria-describedby={undefined}
             onInteractOutside={(event) => {
