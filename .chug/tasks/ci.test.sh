@@ -140,6 +140,7 @@ RC=$?
 set -e
 check "a resolved base activates a changed run" 0 "$RC" "changed run"
 check "a docs-only change skips the model" 0 "$RC" "check-model: SKIPPED"
+check "a docs-only change skips the agents' lag behind npm" 0 "$RC" "check-agent-lag: SKIPPED"
 check "a docs-only change still runs doc-lint" 0 "$RC" "stub doc-lint"
 
 stub_repo 0
@@ -157,6 +158,7 @@ set +e
 RC=$?
 set -e
 check "a source-only change skips Quint" 0 "$RC" "check-model: SKIPPED"
+check "a source-only change skips the agents' lag behind npm" 0 "$RC" "check-agent-lag: SKIPPED"
 check "a source-only change selects static checks" 0 "$RC" "stub check-source"
 refute "a source-only change runs the suites" 0 "$RC" "check-source unit: SKIPPED"
 
@@ -532,7 +534,8 @@ for case in \
 	".chug/prompts/x.md|check-source unit" ".chug/tasks/review-change.md|check-source unit" \
 	".dependency-cruiser.cjs|check-source unit|check-boundaries" \
 	".chug/tasks/check-boundaries.sh|check-boundaries" ".chug/tasks/check-roster.sh|check-roster" \
-	".claude/settings.json|check-roster"; do
+	".claude/settings.json|check-roster" "images/worker/Dockerfile|check-source unit|check-agent-lag" \
+	".chug/tasks/check-agent-lag.sh|check-agent-lag"; do
 	path="${case%%|*}"
 	mkdir -p "$R/$(dirname "$path")"
 	printf '# changed\n' >> "$R/$path"
@@ -1299,8 +1302,9 @@ record_tool_probed=""
 eval "$(sed -n '/^record_tool_[a-z]*="[^"]*"$/p' "$SUT")"
 [ -n "$record_tool_node" ] && [ -n "$record_tool_install" ] && [ -n "$record_tool_ignored" ] &&
 	[ -n "$record_tool_installed" ] && [ -n "$record_tool_probed" ]
-# Every gate the sequencer names is wrapped but check-roster and doc-lint.
-gate_calls="$(named_gates "$SUT" | grep -vcx -e check-roster -e doc-lint)"
+# Every gate the sequencer names is wrapped but check-roster, doc-lint and
+# check-agent-lag.
+gate_calls="$(named_gates "$SUT" | grep -vcx -e check-roster -e doc-lint -e check-agent-lag)"
 
 # The gate stage with the stub first on PATH and whatever VAR=value the case
 # names; the token is the case's to give.
@@ -1351,9 +1355,9 @@ for case in "no token|no Track Record token|" \
 done
 
 # A token, in the variable or in a file, wraps every gate the sequencer calls
-# once but check-roster and doc-lint, named by its id, keyed on node and the
-# salt and on what else its verdict reads, and never on the platform.
-# check-roster and doc-lint run as they do unwrapped.
+# once but check-roster, doc-lint and check-agent-lag, named by its id, keyed
+# on node and the salt and on what else its verdict reads, and never on the
+# platform. Those three run as they do unwrapped.
 printf 'trk_stub\n' > "$WORK/token"
 run_recorded TRACK_RECORD_TOKEN_FILE="$WORK/token"
 check "a token file wraps the run" 0 "$RC" "a pass on record at https://track-record.vteng.io (chuggy) is reused"
@@ -1361,11 +1365,13 @@ refute "a run that reuses says nothing of running fresh" 0 "$RC" "$fresh_line"
 check "a wrapped clean run counts what it reused" 0 "$RC" "ci: all gates clean (0 reused)"
 check "check-roster still runs" 0 "$RC" "stub check-roster"
 check "doc-lint still runs" 0 "$RC" "stub doc-lint"
+check "check-agent-lag still runs" 0 "$RC" "stub check-agent-lag"
 recorded_log
 check "every gate the sequencer calls is wrapped once" 0 "$RC" "calls $gate_calls"
 refute "no gate is keyed on the platform" 0 "$RC" "|--platform|"
 refute "check-roster is not wrapped" 0 "$RC" "run|--name|check-roster|"
 refute "doc-lint is not wrapped" 0 "$RC" "run|--name|doc-lint|"
+refute "check-agent-lag is not wrapped" 0 "$RC" "run|--name|check-agent-lag|"
 check "the store defaults to the shared one" 0 "$RC" "env|FRESH=unset|URL=https://track-record.vteng.io|NAMESPACE=chuggy|"
 # A gate keyed on the whole tree holds the whole install record and every
 # ignored file, and passes no inputs.
@@ -1830,7 +1836,8 @@ run_stored
 check "the same tree again reuses the model's gate" 0 "$RC" "reused check-model|"
 refute "the same tree again runs no wrapped gate" 0 "$RC" "ran check-model|"
 printf 'gates run %s|\n' "$(grep -c '^ran ' "$OUT" || true)" >> "$OUT"
-check "the same tree again runs only the gates no key wraps" 0 "$RC" "gates run 2|"
+check "the same tree again runs only the gates no key wraps" 0 "$RC" \
+	"gates run $(($(named_gates "$SUT" | grep -c .) - gate_calls))|"
 # A change, committed where git tracks any of it.
 commit_any() { # <message>
 	git -C "$R" add -A

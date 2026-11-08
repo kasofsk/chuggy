@@ -26,9 +26,9 @@
 # exits 1.
 #
 # A PASS ON RECORD IS REUSED RATHER THAN RUN AGAIN, given a Track Record token
-# and a `track-record` that runs. Every gate but check-roster and doc-lint, and
-# every suite, then runs under `track-record run`, keyed on what
-# `.chug/tasks/_ci-select.sh` declares it reads: the tracked files its
+# and a `track-record` that runs. Every gate but check-roster, doc-lint and
+# check-agent-lag, and every suite, then runs under `track-record run`, keyed
+# on what `.chug/tasks/_ci-select.sh` declares it reads: the tracked files its
 # pathspecs match as they are on disk, the ignored files among them, what
 # sits where its tools look for settings the tree need not hold, and npm's
 # record of the packages it names, or of the whole install. A gate declared
@@ -376,12 +376,13 @@ record_gate() { # <gate-id> <script> [args...]
 }
 
 run_gate_itself() { # <gate-id> <script> [args...]
-	# check-roster and doc-lint run themselves, as each reads what no key holds
-	# for less than the gate costs to run: check-roster the plugins installed
-	# on this machine, down to whether their files are there, and doc-lint
-	# whatever a relative link names on disk, a console's build output
-	# included.
-	if [ -z "$record" ] || [ "$1" = "check-roster" ] || [ "$1" = "doc-lint" ]; then
+	# check-roster, doc-lint and check-agent-lag run themselves, as each reads
+	# what no key holds for less than the gate costs to run: check-roster the
+	# plugins installed on this machine, down to whether their files are there,
+	# doc-lint whatever a relative link names on disk, a console's build output
+	# included, and check-agent-lag what npm has released since.
+	if [ -z "$record" ] || [ "$1" = "check-roster" ] || [ "$1" = "doc-lint" ] ||
+		[ "$1" = "check-agent-lag" ]; then
 		shift
 		"$@"
 		rc=$?
@@ -475,6 +476,7 @@ run_selected_gate check-console-sheets "check-console-sheets" ./.chug/tasks/chec
 run_selected_gate check-gates "check-gates" ./.chug/tasks/check-gates.sh
 run_selected_gate check-comments "check-comments" ./.chug/tasks/check-comments.sh
 run_selected_gate check-roster "check-roster" ./.chug/tasks/check-roster.sh
+run_selected_gate check-agent-lag "check-agent-lag" ./.chug/tasks/check-agent-lag.sh
 
 if [ "${CHUG_CI_SHELL_SUITES:-1}" = "0" ]; then
 	printf '\n--- shell suites: SKIPPED (CHUG_CI_SHELL_SUITES=0)\n'

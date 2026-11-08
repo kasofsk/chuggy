@@ -215,6 +215,9 @@ ci_declare() { # <gate id or suite path>
 		ci_tree
 		ci_text .claude/settings.json CLAUDE.md .agents .codex .chug/tasks/check-roster.sh
 		;;
+	check-agent-lag)
+		ci_code images/worker .chug/tasks/check-agent-lag.sh
+		;;
 	check-boundaries)
 		ci_tree
 		ci_code src test scripts ui .chug/tasks/check-boundaries.sh
