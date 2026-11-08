@@ -28,6 +28,7 @@ import {
 import { asTenantId } from "../../src/interpreter/projectStore.ts";
 import {
   repositoryWorkerReaches,
+  repositoryWorkerReachesInFlightMax,
   type RepositoryWorkerReachPorts,
 } from "../../src/interpreter/repositoryWorkerReach.ts";
 
@@ -223,4 +224,57 @@ test("nothing is held between questions, so a selection changed on the forge is 
   await repositoryWorkerReaches(ports, tenant, [chuggy]);
   await repositoryWorkerReaches(ports, tenant, [chuggy]);
   assert.equal(asked.listed.length, 2);
+});
+
+test("repositories under different owners are asked about at once, each owner's reads settling only once both have started", async () => {
+  const fabric = asRepositoryId("https://github.com/gdoteof/chuggy-fabric.git");
+  const started = new Set<string>();
+  let bothStarted: () => void = () => undefined;
+  const both = new Promise<void>((resolve) => {
+    bothStarted = resolve;
+  });
+  const { ports } = fixturePorts();
+  const overlapping: RepositoryWorkerReachPorts = {
+    ...ports,
+    installations: {
+      installation: async (query) => {
+        started.add(query.account);
+        if (started.size === 2) bothStarted();
+        await both;
+        return ports.installations.installation(query);
+      },
+    },
+  };
+  assert.deepEqual(
+    await repositoryWorkerReaches(overlapping, tenant, [chuggy, fabric]),
+    new Map([
+      [chuggy, { reach: "Covered" }],
+      [fabric, { reach: "Unselected", installationId, settingsUrl }],
+    ]),
+  );
+});
+
+test("no more repositories are asked about at once than the bound, and every one is still answered in the order named", async () => {
+  const named = Array.from(
+    { length: repositoryWorkerReachesInFlightMax * 2 + 1 },
+    (_, index) => asRepositoryId(`https://github.com/owner${index}/chuggy.git`),
+  );
+  const { ports } = fixturePorts({ claimed: false });
+  let asking = 0;
+  let askingMost = 0;
+  const counted: RepositoryWorkerReachPorts = {
+    ...ports,
+    installations: {
+      installation: async (query) => {
+        asking += 1;
+        askingMost = Math.max(askingMost, asking);
+        await Promise.resolve();
+        asking -= 1;
+        return ports.installations.installation(query);
+      },
+    },
+  };
+  const reaches = await repositoryWorkerReaches(counted, tenant, named);
+  assert.equal(askingMost, repositoryWorkerReachesInFlightMax);
+  assert.deepEqual([...reaches.keys()], named);
 });

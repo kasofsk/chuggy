@@ -276,6 +276,40 @@ export function repositoryRosterRereadMs(rereads: number): number | undefined {
     : undefined;
 }
 
+/** How many installations' listings one reading of the picker asks at once. */
+export const repositoryListingsInFlightMax = 4;
+
+/**
+ * Each installation's listing read through `read`, at most
+ * `repositoryListingsInFlightMax` at a time, so one account's listing does not
+ * wait on another's; the answers keep the order the installations were given.
+ */
+export async function repositoryListingsRead<Answer>(
+  installations: readonly ForgeInstallationResponse[],
+  read: (installation: ForgeInstallationResponse) => Promise<Answer>,
+): Promise<readonly Answer[]> {
+  const answers: Answer[] = [];
+  let next = 0;
+  const reading = async (): Promise<void> => {
+    while (next < installations.length) {
+      const index = next;
+      next += 1;
+      const installation = installations[index];
+      if (installation === undefined) return;
+      answers[index] = await read(installation);
+    }
+  };
+  await Promise.all(
+    Array.from(
+      {
+        length: Math.min(repositoryListingsInFlightMax, installations.length),
+      },
+      reading,
+    ),
+  );
+  return answers;
+}
+
 /** The anchor the page's address opens the picker at. */
 export const repositoryAddAnchor = "add";
 
