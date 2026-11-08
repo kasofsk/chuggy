@@ -152,7 +152,9 @@ export function configurationFollowingWord(
 const stepsEmpty: readonly ConfigurationStepRow[] = [];
 
 function stepsRow(
-  row: Partial<ConfigurationStepRow> & { readonly step: CopyOrData },
+  row: Omit<Partial<ConfigurationStepRow>, "step"> & {
+    readonly step: CopyOrData;
+  },
 ): ConfigurationStepRow {
   return {
     workload: undefined,

@@ -1,6 +1,6 @@
 /**
  * What a run of `runner` found, did and stopped on, as values, and the
- * sentences each is printed as.
+ * catalog's sentences each is printed as.
  *
  * Everything said of another program is this program's own words. The most
  * that is kept of what one printed is an excerpt already through the
@@ -13,6 +13,7 @@
  */
 
 import type { ApiFailure } from "./apiRequest.ts";
+import type { Copy, CopyArgument, CopyHanded, CopyId } from "./copy.ts";
 import { runnerPackages } from "./runners.ts";
 
 /** The container engines the runner package runs its work in, the package's own default first. */
@@ -47,50 +48,45 @@ export type SetupClaudeCredential =
       readonly profile: string | undefined;
     };
 
-/** Each kind as the person is told it: the credential, what makes one where its file holds it alone, and what the work then runs on. */
+/** Each kind as the person is told it: the credential, and what makes one where its file holds it alone. */
 const setupClaudeWords: Record<
   SetupClaudeKind,
-  { readonly credential: string; readonly made: string; readonly on: string }
+  { readonly credential: Copy; readonly made: Copy }
 > = {
   Subscription: {
-    credential: "Claude login",
-    made: "the login the command claude setup-token makes, which needs a Claude plan that allows it",
-    on: "your Claude plan",
+    credential: { id: "setup-runner-claude-subscription" },
+    made: { id: "setup-runner-claude-subscription-made" },
   },
   ApiKey: {
-    credential: "Anthropic API key",
-    made: "a key from the Claude Console, made in a workspace",
-    on: "your Anthropic API key",
+    credential: { id: "setup-runner-claude-api-key" },
+    made: { id: "setup-runner-claude-api-key-made" },
   },
   Bedrock: {
-    credential: "Bedrock credential",
-    made: "a Bedrock API key",
-    on: "your Amazon Bedrock account",
+    credential: { id: "setup-runner-claude-bedrock" },
+    made: { id: "setup-runner-claude-bedrock-made" },
   },
   Vertex: {
-    credential: "Google Cloud service account key",
-    made: "the JSON key Google Cloud made for a service account",
-    on: "your Google Cloud project",
+    credential: { id: "setup-runner-claude-vertex" },
+    made: { id: "setup-runner-claude-vertex-made" },
   },
   Foundry: {
-    credential: "Foundry API key",
-    made: "a key of the Microsoft Foundry resource",
-    on: "your Microsoft Foundry resource",
+    credential: { id: "setup-runner-claude-foundry" },
+    made: { id: "setup-runner-claude-foundry-made" },
   },
 };
 
 /** What the credential is and where it is kept, as the person is told it: its secret alone in its file, or an AWS credentials file whose profile holds an access key. */
-function setupClaudeSaved(credential: SetupClaudeCredential): string {
+function setupClaudeSaved(credential: SetupClaudeCredential): Copy {
   const { path } = credential;
-  const kept = "readable only by you (mode 600)";
   return credential.kind === "Bedrock" && credential.profile !== undefined
-    ? `It is an AWS credentials file, saved in ${path} and ${kept}, whose [${credential.profile}] profile holds aws_access_key_id and aws_secret_access_key.`
-    : `It is ${setupClaudeWords[credential.kind].made}, saved alone in ${path} and ${kept}.`;
-}
-
-/** What work on a runner whose credential is of `kind` runs on, as an offer says it. */
-export function setupClaudeOn(kind: SetupClaudeKind): string {
-  return setupClaudeWords[kind].on;
+    ? {
+        id: "setup-runner-claude-saved-profile",
+        args: { path, profile: credential.profile },
+      }
+    : {
+        id: "setup-runner-claude-saved",
+        args: { made: setupClaudeWords[credential.kind].made, path },
+      };
 }
 
 /** How an engine answered this user: it did, it did not, or there is no such command. */
@@ -127,22 +123,15 @@ export type SetupRunnerAct =
  * command of the package, before anything else.
  */
 export const setupRegisterRefusals = {
-  "needs Node":
-    "the runner package needs a newer Node than the node this machine's PATH finds first",
-  "a Linux pool runs on":
-    "the runner package does not run on this machine's kind of processor",
-  "hostname makes no pool name":
-    "this machine's name makes no name for a runner",
-  "no token was spent":
-    "the runner package could not make the directory it keeps registrations in",
-  "did not answer the registration":
-    "the site did not answer the runner package",
-  "is unknown, spent or expired":
-    "the site did not take the registration token it had just made",
-  "run register again": "the site could not register this machine just then",
-  "pool file could not be written":
-    "the runner package could not write this machine's registration",
-} as const;
+  "needs Node": { id: "setup-runner-refusal-node" },
+  "a Linux pool runs on": { id: "setup-runner-refusal-processor" },
+  "hostname makes no pool name": { id: "setup-runner-refusal-hostname" },
+  "no token was spent": { id: "setup-runner-refusal-directory" },
+  "did not answer the registration": { id: "setup-runner-refusal-unanswered" },
+  "is unknown, spent or expired": { id: "setup-runner-refusal-token" },
+  "run register again": { id: "setup-runner-refusal-again" },
+  "pool file could not be written": { id: "setup-runner-refusal-pool-file" },
+} as const satisfies Readonly<Record<string, Copy>>;
 
 export type SetupRegisterRefusal = keyof typeof setupRegisterRefusals;
 
@@ -234,25 +223,21 @@ export type SetupRunnerNote =
  * under, each with what a failure of it means in this program's words.
  */
 export const setupRunnerChecks = {
-  "pool file": "this machine's registration could not be read",
-  "runner configuration": "the runner's settings are not as it needs them",
-  "runtime directory": "the runner has nowhere to keep what it runs with",
-  "Claude credential": "the runner's Claude credential is not as it needs it",
-  "podman credential helpers": "podman would present logins of its own",
-  "container engine": "the runner could not use the container engine",
-  "job network": "the runner could not read its containers' network",
-  "pool token":
-    "chuggy's sign-in server did not take this machine's registration",
-  plane: "chuggy did not answer this machine as a runner",
-  "chat credential directory":
-    "the Claude credential is not alone in a directory of its own, which a chat host needs",
-  "chat settings": "the chat host's settings are not as it needs them",
-  "chat session users":
-    "the container engine cannot run each chat as a user of its own",
-  "chat supervisor":
-    "a container left from an earlier chat host is in the way of this one",
-  "chat image": "the image the chat host runs could not be found or pulled",
-} as const;
+  "pool file": { id: "setup-runner-check-pool-file" },
+  "runner configuration": { id: "setup-runner-check-configuration" },
+  "runtime directory": { id: "setup-runner-check-runtime" },
+  "Claude credential": { id: "setup-runner-check-credential" },
+  "podman credential helpers": { id: "setup-runner-check-helpers" },
+  "container engine": { id: "setup-runner-check-engine" },
+  "job network": { id: "setup-runner-check-network" },
+  "pool token": { id: "setup-runner-check-pool-token" },
+  plane: { id: "setup-runner-check-plane" },
+  "chat credential directory": { id: "setup-runner-check-chat-credential" },
+  "chat settings": { id: "setup-runner-check-chat-settings" },
+  "chat session users": { id: "setup-runner-check-chat-users" },
+  "chat supervisor": { id: "setup-runner-check-chat-supervisor" },
+  "chat image": { id: "setup-runner-check-chat-image" },
+} as const satisfies Readonly<Record<string, Copy>>;
 
 export type SetupRunnerCheck = keyof typeof setupRunnerChecks;
 
@@ -397,22 +382,33 @@ export type SetupRunnerEnded =
 
 /** A stop as it is said, and what its rule names: this command again, or the checklist where this command could do nothing more. */
 export interface SetupRunnerStopSaid {
-  readonly found: string;
-  readonly tell: string;
-  readonly when: string;
+  readonly found: Copy;
+  readonly tell: Copy;
+  readonly when: Copy;
   readonly again: "Runner" | "Status";
 }
 
 /** A note as its word and its text. */
-export type SetupRunnerNoteSaid = readonly ["found" | "did", string];
+export type SetupRunnerNoteSaid = readonly ["found" | "did", Copy];
 
-function setupVersioned(program: string, version: string | undefined): string {
-  return version === undefined ? program : `${program} ${version}`;
+/** A program by its name, and by its version where it said one. */
+function setupVersioned(
+  program: string,
+  version: string | undefined,
+): CopyArgument {
+  return version === undefined
+    ? program
+    : { id: "setup-runner-versioned", args: { program, version } };
 }
 
 /** The program a command's path ends in, which is how the package is named. */
 function setupProgramOf(command: string): string {
   return command.slice(command.lastIndexOf("/") + 1);
+}
+
+/** The package at `command`, by its name and version. */
+function setupPackageOf(command: string, version: string | undefined) {
+  return setupVersioned(setupProgramOf(command), version);
 }
 
 type SetupServiceNote = Extract<
@@ -433,31 +429,45 @@ type SetupServiceNote = Extract<
 function setupServiceNoteSaid(note: SetupServiceNote): SetupRunnerNoteSaid {
   switch (note.note) {
     case "Unit":
-      return ["found", `the runner's service is installed: ${note.unit}`];
+      return [
+        "found",
+        { id: "setup-runner-note-unit", args: { unit: note.unit } },
+      ];
     case "UnitWritten":
-      return ["did", `installed the runner's service, ${note.unit}`];
+      return [
+        "did",
+        { id: "setup-runner-note-unit-written", args: { unit: note.unit } },
+      ];
     case "Linger":
-      return ["found", "your services keep running after you log out"];
+      return ["found", { id: "setup-runner-note-linger" }];
     case "LingerOn":
       return [
         "did",
-        note.read
-          ? "set your services to keep running after you log out"
-          : "set your services to keep running after you log out, not having learned whether they already did",
+        {
+          id: note.read
+            ? "setup-runner-note-linger-on"
+            : "setup-runner-note-linger-on-unread",
+        },
       ];
     case "Running":
-      return ["found", `${note.unit} is enabled and running`];
+      return [
+        "found",
+        { id: "setup-runner-note-running", args: { unit: note.unit } },
+      ];
     case "Enabled":
       return [
         "did",
-        `set ${note.unit}, which was running, to start when you log in`,
+        { id: "setup-runner-note-enabled", args: { unit: note.unit } },
       ];
     case "Started":
-      return ["did", `started ${note.unit}, which also starts when you log in`];
+      return [
+        "did",
+        { id: "setup-runner-note-started", args: { unit: note.unit } },
+      ];
     case "Restarted":
       return [
         "did",
-        `restarted ${note.unit}, so it runs as it is now registered and installed`,
+        { id: "setup-runner-note-restarted", args: { unit: note.unit } },
       ];
   }
 }
@@ -486,47 +496,62 @@ function setupChatNoteSaid(
 ): SetupRunnerNoteSaid {
   switch (note.note) {
     case "ProjectLive":
-      return ["found", `the site sees a runner of ${project} live`];
-    case "Hosted":
       return [
         "found",
-        `chuggy's cluster runs the work of ${project}, so that work needs no runner`,
+        { id: "setup-runner-note-project-live", args: { project } },
       ];
+    case "Hosted":
+      return ["found", { id: "setup-runner-note-hosted", args: { project } }];
     case "ChatHost":
       return [
         "found",
-        `this machine is registered as your chat host, in ${note.path}`,
+        { id: "setup-runner-note-chat-host", args: { path: note.path } },
       ];
     case "ChatHostGone":
       return [
         "found",
-        `${note.path} registered this machine as your chat host, and the site no longer knows that registration`,
+        { id: "setup-runner-note-chat-host-gone", args: { path: note.path } },
       ];
     case "ChatHostRegistered":
       return [
         "did",
-        `registered this machine as your chat host, in ${note.path}`,
+        {
+          id: "setup-runner-note-chat-host-registered",
+          args: { path: note.path },
+        },
       ];
     case "ChatChecked":
       return [
         "found",
         note.warned === undefined
-          ? "the chat host's own check passed"
-          : `the chat host's own check passed, with a warning: ${note.warned}`,
+          ? { id: "setup-runner-note-chat-checked" }
+          : {
+              id: "setup-runner-note-chat-checked-warned",
+              args: { warned: note.warned },
+            },
       ];
     case "ChatUnit":
-      return ["found", `your chat host's service is installed: ${note.unit}`];
+      return [
+        "found",
+        { id: "setup-runner-note-chat-unit", args: { unit: note.unit } },
+      ];
     case "ChatUnitWritten":
-      return ["did", `installed your chat host's service, ${note.unit}`];
+      return [
+        "did",
+        {
+          id: "setup-runner-note-chat-unit-written",
+          args: { unit: note.unit },
+        },
+      ];
     case "ChatHostLive":
       return [
         "found",
-        `the site sees this machine live as your chat host, so your chats in ${project} can run on it`,
+        { id: "setup-runner-note-chat-host-live", args: { project } },
       ];
     case "ChatHostElsewhere":
       return [
         "found",
-        `the site sees your chat host live on another machine, so your chats in ${project} run there`,
+        { id: "setup-runner-note-chat-host-elsewhere", args: { project } },
       ];
   }
 }
@@ -544,24 +569,76 @@ function setupPoolNoteSaid(
     case "Pool":
       return [
         "found",
-        `this machine is registered as a runner of ${project}, in ${note.path}`,
+        { id: "setup-runner-note-pool", args: { project, path: note.path } },
       ];
     case "PoolGone":
       return [
         "found",
-        `${note.path} registered this machine as ${note.pool}, and the site lists no runner of ${project} by that name`,
+        {
+          id: "setup-runner-note-pool-gone",
+          args: { path: note.path, pool: note.pool, project },
+        },
       ];
     case "Registered":
       return [
         "did",
-        `registered this machine as a runner of ${project}, in ${note.path}`,
+        {
+          id: "setup-runner-note-registered",
+          args: { project, path: note.path },
+        },
       ];
     case "Checked":
       return [
         "found",
         note.warned === undefined
-          ? "the runner's own check passed"
-          : `the runner's own check passed, with a warning: ${note.warned}`,
+          ? { id: "setup-runner-note-checked" }
+          : {
+              id: "setup-runner-note-checked-warned",
+              args: { warned: note.warned },
+            },
+      ];
+  }
+}
+
+type SetupPackageNote = Extract<
+  SetupRunnerNote,
+  { readonly note: "Package" | "Outdated" | "Installed" }
+>;
+
+function setupPackageNoteSaid(note: SetupPackageNote): SetupRunnerNoteSaid {
+  const versioned = setupPackageOf(note.command, note.version);
+  const { command } = note;
+  switch (note.note) {
+    case "Package":
+      return [
+        "found",
+        { id: "setup-runner-note-package", args: { versioned, command } },
+      ];
+    case "Outdated":
+      return [
+        "found",
+        {
+          id:
+            note.version === undefined
+              ? "setup-runner-note-outdated-unread"
+              : "setup-runner-note-outdated",
+          args: { versioned, command, least: note.least },
+        },
+      ];
+    case "Installed":
+      return [
+        "did",
+        note.kept === undefined
+          ? { id: "setup-runner-note-installed", args: { versioned, command } }
+          : {
+              id: "setup-runner-note-installed-kept",
+              args: {
+                versioned,
+                command,
+                kept: setupPackageOf(note.kept.command, note.kept.version),
+                where: note.kept.command,
+              },
+            },
       ];
   }
 }
@@ -572,33 +649,37 @@ export function setupRunnerNoteSaid(
 ): SetupRunnerNoteSaid {
   switch (note.note) {
     case "Engine":
-      return ["found", `${note.engine} answers you without a password`];
+      return [
+        "found",
+        { id: "setup-runner-note-engine", args: { engine: note.engine } },
+      ];
     case "Package":
-      return [
-        "found",
-        `the runner package is installed: ${setupVersioned(setupProgramOf(note.command), note.version)}, at ${note.command}`,
-      ];
     case "Outdated":
+    case "Installed":
+      return setupPackageNoteSaid(note);
+    case "Settings":
       return [
         "found",
-        `the runner package is installed: ${setupVersioned(setupProgramOf(note.command), note.version)}, at ${note.command}, and chuggy setup needs ${note.least} or later${note.version === undefined ? " and could not read its version" : ""}`,
+        { id: "setup-runner-note-settings", args: { path: note.path } },
       ];
-    case "Installed":
-      return [
-        "did",
-        `installed the runner package, ${setupVersioned(setupProgramOf(note.command), note.version)}, at ${note.command}${note.kept === undefined ? "" : `, and ${setupVersioned(setupProgramOf(note.kept.command), note.kept.version)} is still at ${note.kept.command}`}`,
-      ];
-    case "Settings":
-      return ["found", `the runner's settings are in ${note.path}`];
     case "SettingsWritten":
       return [
         "did",
-        `wrote the runner's settings to ${note.path}: its guide's own, with ${note.engine} as the engine`,
+        {
+          id: "setup-runner-note-settings-written",
+          args: { path: note.path, engine: note.engine },
+        },
       ];
     case "Login":
       return [
         "found",
-        `the runner's ${setupClaudeWords[note.credential.kind].credential} is in ${note.credential.path}`,
+        {
+          id: "setup-runner-note-login",
+          args: {
+            credential: setupClaudeWords[note.credential.kind].credential,
+            path: note.credential.path,
+          },
+        },
       ];
     case "Pool":
     case "PoolGone":
@@ -628,78 +709,107 @@ export function setupRunnerNoteSaid(
   }
 }
 
-const setupUnchanged = "so nothing was changed on this machine";
+const setupUnchanged: Copy = { id: "setup-runner-unchanged" };
+const setupTryAgain: Copy = { id: "setup-runner-when-try-again" };
+const setupLookAgain: Copy = { id: "setup-runner-when-look-again" };
 
-/** Why setup puts no runner on a Mac, said wherever one is met. */
-export const setupMacNone = "chuggy setup puts a runner only on Linux";
-const setupTryAgain = "if the person asks to try again";
-const setupLookAgain = "if the person asks to look again";
-const setupElsewhere =
-  "once the person says a runner is running on another machine";
-
-const setupEngineNames: Readonly<Record<SetupEngine, string>> = {
-  docker: "Docker",
-  podman: "Podman",
+const setupEngineNames: Readonly<Record<SetupEngine, Copy>> = {
+  docker: { id: "setup-runner-engine-docker" },
+  podman: { id: "setup-runner-engine-podman" },
 };
 
-/** Which engines did not answer, as a sentence says it: the one the runner is set to use, or each the package runs on. */
-export function setupEnginesNone(asked: readonly SetupEngineAsked[]): string {
-  const names = asked.map(({ engine }) => setupEngineNames[engine]);
-  return names.length < 2
-    ? `${names.join("")}, the engine the runner is set to use, did not answer`
-    : `neither ${names.join(" nor ")} answered`;
+/** Lines said as one, each in its place and in order; there is always one. */
+function setupJoined(
+  id: "setup-runner-engine-each" | "setup-runner-engines-nor",
+  said: readonly Copy[],
+): Copy {
+  const [first, ...rest] = said;
+  if (first === undefined) throw new Error("setupJoined: nothing to join");
+  return rest.reduce<Copy>(
+    (one, other) => ({ id, args: { one, other } }),
+    first,
+  );
 }
 
-/** What taking a password would mend and this program does not do. */
-export const setupEngineNeedsPassword =
-  "Installing a container engine, or letting your user reach one, takes a password, and chuggy setup never takes one.";
+/** Which engines did not answer, as a sentence says it: the one the runner is set to use, or each the package runs on. */
+function setupEnginesNone(asked: readonly SetupEngineAsked[]): Copy {
+  const names = asked.map(({ engine }) => setupEngineNames[engine]);
+  const engines = setupJoined("setup-runner-engines-nor", names);
+  return names.length < 2
+    ? { id: "setup-runner-engines-one", args: { engine: engines } }
+    : { id: "setup-runner-engines-neither", args: { engines } };
+}
 
-function setupEngineNone({ engine, answered }: SetupEngineAsked): string {
-  return answered === "Absent"
-    ? `${engine} is not installed`
-    : `${engine} did not answer you without a password`;
+function setupEngineNone({ engine, answered }: SetupEngineAsked): Copy {
+  return {
+    id:
+      answered === "Absent"
+        ? "setup-runner-engine-absent"
+        : "setup-runner-engine-silent",
+    args: { engine },
+  };
 }
 
 function setupEnginelessSaid(
   asked: readonly SetupEngineAsked[],
 ): SetupRunnerStopSaid {
   return {
-    found: asked.map(setupEngineNone).join("; "),
-    tell: `A runner does its work in containers, and ${setupEnginesNone(asked)} on this machine without a password, ${setupUnchanged}. ${setupEngineNeedsPassword} Tell me once one answers you.`,
-    when: "once the person says a container engine answers them on this machine",
+    found: setupJoined("setup-runner-engine-each", asked.map(setupEngineNone)),
+    tell: {
+      id: "setup-runner-engineless-tell",
+      args: { none: setupEnginesNone(asked) },
+    },
+    when: { id: "setup-runner-engineless-when" },
     again: "Runner",
   };
 }
 
 /** A person the package bars from docker, as they are told it: the package's reason, what leaves them no engine, what mends it, and what that waits on. */
-export interface SetupDockerBarredTold {
-  readonly why: string;
-  readonly state: string;
-  readonly mend: string;
-  readonly when: string;
+interface SetupDockerBarredTold {
+  readonly why: Copy;
+  readonly state: Copy;
+  readonly mend: Copy;
+  readonly when: Copy;
 }
 
-const setupPodmanInstead =
-  "The package's own answer for any other user is rootless podman";
-
 /** The package's rule in this program's words: a job under docker is one user of the machine, who could read no other's Claude credential. */
-export function setupDockerBarredTold(
+function setupDockerBarredTold(
   user: string | undefined,
   how: SetupDockerBarred,
 ): SetupDockerBarredTold {
-  const why = `Under docker a runner's work runs as this machine's user ${setupJobUser}, which could not read the file your Claude credential is in, so the runner package takes docker only from that user, and you are ${user === undefined ? "not that user" : `user ${user}`}.`;
+  const why: Copy = {
+    id: "setup-runner-docker-why",
+    args: {
+      job: setupJobUser,
+      who:
+        user === undefined
+          ? { id: "setup-runner-docker-who-unnumbered" }
+          : { id: "setup-runner-docker-who", args: { user } },
+    },
+  };
   if (how.barred === "Named")
     return {
       why,
-      state: `The runner's settings, ${how.settings}, set it to use docker`,
-      mend: `${setupPodmanInstead}: once podman answers you, set "engine" to "podman" in that file, and tell me once you have.`,
-      when: `once the person says ${how.settings} names podman`,
+      state: {
+        id: "setup-runner-docker-named-state",
+        args: { settings: how.settings },
+      },
+      mend: { id: "setup-runner-docker-named-mend" },
+      when: {
+        id: "setup-runner-docker-named-when",
+        args: { settings: how.settings },
+      },
     };
   return {
     why,
-    state: `${setupPodmanInstead}, and ${setupEngineNone({ engine: "podman", answered: how.answered })}`,
-    mend: `${setupEngineNeedsPassword} Tell me once podman answers you.`,
-    when: "once the person says podman answers them on this machine",
+    state: {
+      id: "setup-runner-docker-podmanless-state",
+      args: {
+        none: setupEngineNone({ engine: "podman", answered: how.answered }),
+      },
+    },
+    mend: { id: "setup-runner-docker-podmanless-mend" },
+    when: { id: "setup-runner-docker-podmanless-when" },
   };
 }
 
@@ -707,33 +817,43 @@ function setupDockerBarredSaid(
   stop: Extract<SetupRunnerStop, { readonly stop: "DockerBarred" }>,
 ): SetupRunnerStopSaid {
   const { why, state, mend, when } = setupDockerBarredTold(stop.user, stop.how);
-  const only = `the runner package takes docker only from this machine's user ${setupJobUser}`;
   return {
     found:
       stop.how.barred === "Named"
-        ? `the runner is set to use docker, in ${stop.how.settings}, and ${only}`
-        : `${setupEngineNone({ engine: "podman", answered: stop.how.answered })}, and docker was not asked: ${only}`,
-    tell: `${why} ${state}, ${setupUnchanged}. ${mend}`,
+        ? {
+            id: "setup-runner-docker-named-found",
+            args: { settings: stop.how.settings, job: setupJobUser },
+          }
+        : {
+            id: "setup-runner-docker-podmanless-found",
+            args: {
+              none: setupEngineNone({
+                engine: "podman",
+                answered: stop.how.answered,
+              }),
+              job: setupJobUser,
+            },
+          },
+    tell: { id: "setup-runner-docker-tell", args: { why, state, mend } },
     when,
     again: "Runner",
   };
 }
 
-const setupReadsSaid: Readonly<Record<SetupRunnerRead, string>> = {
-  work: "where its work runs",
-  threads: "where your chats in it run",
-  placement: "how its runners stand",
-  pools: "which runners it has",
-  permit: "whether you may register a chat host",
-  chat: "whether you have a chat host",
+const setupReadsSaid: Readonly<Record<SetupRunnerRead, Copy>> = {
+  work: { id: "setup-runner-read-work" },
+  threads: { id: "setup-runner-read-threads" },
+  placement: { id: "setup-runner-read-placement" },
+  pools: { id: "setup-runner-read-pools" },
+  permit: { id: "setup-runner-read-permit" },
+  chat: { id: "setup-runner-read-chat" },
 };
 
 /** The reads a run makes before it looks at the machine, which makes them the ones a stop at can say nothing was changed. */
 const setupReadsFirst: readonly SetupRunnerRead[] = ["work", "threads"];
 
 /** What a read the site did not give leaves of a run: a runner not known to be set up, which is not one known not to be. */
-const setupUnknown =
-  "so I cannot say the runner is set up. What was done before stays done";
+const setupUnknown: Copy = { id: "setup-runner-unknown" };
 
 function setupUnreadSaid(
   stop: Extract<SetupRunnerStop, { readonly stop: "Unread" }>,
@@ -742,57 +862,93 @@ function setupUnreadSaid(
   const what = setupReadsSaid[stop.read];
   if (stop.outcome === "Refused")
     return {
-      found: `the site does not show you ${project} or ${what}`,
-      tell: `The chuggy site does not show you what a runner for ${project} is set up from, ${setupReadsFirst.includes(stop.read) ? setupUnchanged : setupUnknown}. An admin of the workspace can see it, or can give you the access to. Tell me if your access changes.`,
-      when: "if the person says their access has changed",
+      found: {
+        id: "setup-runner-unread-refused-found",
+        args: { project, what },
+      },
+      tell: {
+        id: "setup-runner-unread-refused-tell",
+        args: {
+          project,
+          left: setupReadsFirst.includes(stop.read)
+            ? setupUnchanged
+            : setupUnknown,
+        },
+      },
+      when: { id: "setup-runner-unread-refused-when" },
       again: "Runner",
     };
   return {
-    found: `the site did not say of ${project} ${what} (${stop.outcome})`,
-    tell: `The chuggy site did not answer everything I asked it, ${setupUnknown}. Tell me if you want me to try again.`,
+    found: {
+      id: "setup-runner-unread-found",
+      args: { project, what, outcome: stop.outcome },
+    },
+    tell: { id: "setup-runner-unread-tell" },
     when: setupTryAgain,
     again: "Runner",
   };
 }
 
-const setupActs: Readonly<Record<SetupRunnerAct, string>> = {
-  Install: "installing the runner package",
-  Register: "registering this machine",
-  Check: "the runner's own check",
-  Service: "installing the runner's service",
-  RegisterChat: "registering this machine as your chat host",
-  CheckChat: "the chat host's own check",
-  ServiceChat: "installing your chat host's service",
-  Reload: "reloading your services",
-  Start: "starting the runner's service",
-  Restart: "restarting the runner's service",
+const setupActs: Readonly<Record<SetupRunnerAct, CopyId>> = {
+  Install: "setup-runner-act-install",
+  Register: "setup-runner-act-register",
+  Check: "setup-runner-act-check",
+  Service: "setup-runner-act-service",
+  RegisterChat: "setup-runner-act-register-chat",
+  CheckChat: "setup-runner-act-check-chat",
+  ServiceChat: "setup-runner-act-service-chat",
+  Reload: "setup-runner-act-reload",
+  Start: "setup-runner-act-start",
+  Restart: "setup-runner-act-restart",
 };
 
-function setupFailedSaid(failed: SetupChildFailed): string {
+/** An act as a sentence names it, `upper` where the act begins the sentence. */
+function setupActOf(act: SetupRunnerAct, upper = false): CopyHanded {
+  return { id: setupActs[act], args: { case: upper ? "upper" : "lower" } };
+}
+
+function setupFailedSaid(failed: SetupChildFailed): Copy {
   switch (failed.how) {
     case "Unstarted":
-      return "could not be started";
+      return { id: "setup-runner-failed-unstarted" };
     case "Unended":
-      return `did not end within ${String(failed.secs)} s and was stopped`;
+      return {
+        id: "setup-runner-failed-unended",
+        args: { secs: String(failed.secs) },
+      };
     case "Exit":
       return failed.excerpt === ""
-        ? `ended with exit ${String(failed.exit)} and said nothing`
-        : `ended with exit ${String(failed.exit)}, saying: ${failed.excerpt}`;
+        ? {
+            id: "setup-runner-failed-exit-silent",
+            args: { exit: String(failed.exit) },
+          }
+        : {
+            id: "setup-runner-failed-exit",
+            args: { exit: String(failed.exit), excerpt: failed.excerpt },
+          };
     case "ExitUnquoted":
       return failed.refusal === undefined
-        ? `ended with exit ${String(failed.exit)}, and what it printed is not shown, since it was handed the registration token`
-        : `ended with exit ${String(failed.exit)}: ${setupRegisterRefusals[failed.refusal]}`;
+        ? {
+            id: "setup-runner-failed-unquoted",
+            args: { exit: String(failed.exit) },
+          }
+        : {
+            id: "setup-runner-failed-refused",
+            args: {
+              exit: String(failed.exit),
+              refusal: setupRegisterRefusals[failed.refusal],
+            },
+          };
   }
 }
 
-const setupPickedUp =
-  "What was done before it stays done, and running again picks up from there. Tell me if you want me to try again.";
-
-function setupActSaid(act: SetupRunnerAct, found: string): SetupRunnerStopSaid {
-  const said = setupActs[act];
+function setupActSaid(act: SetupRunnerAct, failed: Copy): SetupRunnerStopSaid {
   return {
-    found: `${said} ${found}`,
-    tell: `${said.charAt(0).toUpperCase()}${said.slice(1)} did not work, so the runner is not set up yet. ${setupPickedUp}`,
+    found: {
+      id: "setup-runner-act-found",
+      args: { act: setupActOf(act), failed },
+    },
+    tell: { id: "setup-runner-act-tell", args: { act: setupActOf(act, true) } },
     when: setupTryAgain,
     again: "Runner",
   };
@@ -804,12 +960,17 @@ function setupBehindSaid(
 ): SetupRunnerStopSaid {
   const program = setupProgramOf(stop.command);
   const left = setupVersioned(program, stop.version);
-  const unread =
-    stop.version === undefined ? " and could not read its version" : "";
+  const { command, least } = stop;
   return {
-    found: `installing the runner package left ${left} at ${stop.command}, and chuggy setup needs ${stop.least} or later${unread}`,
-    tell: `Installing the runner package left ${left}, and chuggy setup needs ${stop.least} or later here, so the runner is not set up yet. chuggy setup installs the package's latest release, so running again now would install the same one. Tell me once a newer ${program} is out.`,
-    when: `once the person says a newer ${program} is out`,
+    found: {
+      id:
+        stop.version === undefined
+          ? "setup-runner-behind-found-unread"
+          : "setup-runner-behind-found",
+      args: { left, command, least },
+    },
+    tell: { id: "setup-runner-behind-tell", args: { left, least, program } },
+    when: { id: "setup-runner-behind-when", args: { program } },
     again: "Runner",
   };
 }
@@ -826,18 +987,18 @@ const setupRefusalsLasting: {
   >;
 } = {
   "needs Node": {
-    tell: "The runner package needs a newer Node than the node this machine's PATH finds first, so the runner is not set up yet. Running again under the same Node would end the same way. Tell me once node is newer.",
-    when: "once the person says node on this machine is newer",
+    tell: { id: "setup-runner-lasting-node-tell" },
+    when: { id: "setup-runner-lasting-node-when" },
     again: "Runner",
   },
   "a Linux pool runs on": {
-    tell: "The runner package does not run on this machine's kind of processor, so chuggy setup cannot set a runner up here. The work on your tickets needs a runner on a Linux machine it does run on. Tell me once one is running there.",
-    when: setupElsewhere,
+    tell: { id: "setup-runner-lasting-processor-tell" },
+    when: { id: "setup-runner-when-elsewhere" },
     again: "Status",
   },
   "hostname makes no pool name": {
-    tell: "The runner package names a runner after its machine, and this machine's name makes no name for one, so the runner is not set up yet. Running again as the machine is named now would end the same way. Tell me once this machine's name starts with a letter from a to z or a digit.",
-    when: "once the person says this machine's name starts with a letter from a to z or a digit",
+    tell: { id: "setup-runner-lasting-hostname-tell" },
+    when: { id: "setup-runner-lasting-hostname-when" },
     again: "Runner",
   },
 };
@@ -869,11 +1030,17 @@ function setupActStopSaid(
 function setupServiceRefusedSaid(
   stop: Extract<SetupRunnerStop, { readonly stop: "ServiceRefused" }>,
 ): SetupRunnerStopSaid {
-  const said = setupActs[stop.act];
+  const { path } = stop;
   return {
-    found: `${said} ${setupFailedSaid(stop.failed)}`,
-    tell: `${said.charAt(0).toUpperCase()}${said.slice(1)} did not work, so the runner is not set up yet: the runner package would not write it over the service already at ${stop.path}. If that one is left from a runner set up before, remove it, and tell me once you have or if you want me to try again.`,
-    when: `once the person says ${stop.path} is removed, or asks to try again`,
+    found: {
+      id: "setup-runner-act-found",
+      args: { act: setupActOf(stop.act), failed: setupFailedSaid(stop.failed) },
+    },
+    tell: {
+      id: "setup-runner-service-refused-tell",
+      args: { act: setupActOf(stop.act, true), path },
+    },
+    when: { id: "setup-runner-service-refused-when", args: { path } },
     again: "Runner",
     ...setupLasting(stop.failed),
   };
@@ -883,24 +1050,30 @@ function setupMintSaid(
   stop: Extract<SetupRunnerStop, { readonly stop: "MintRefused" }>,
   project: string,
 ): SetupRunnerStopSaid {
-  const found = `the site made no registration token for ${project} (${stop.outcome})`;
+  const found: Copy = {
+    id: "setup-runner-mint-found",
+    args: { project, outcome: stop.outcome },
+  };
   if (stop.outcome === "Absent")
     return {
       found,
-      tell: `The chuggy site would not make a registration for ${project}: that takes an admin of it. The runner package is on this machine and nothing is registered. Tell me once you are an admin of ${project}.`,
-      when: `once the person says they are an admin of ${project}`,
+      tell: { id: "setup-runner-mint-absent-tell", args: { project } },
+      when: { id: "setup-runner-when-admin", args: { project } },
       again: "Runner",
     };
   if (stop.outcome === "Conflict")
     return {
       found,
-      tell: `chuggy already holds as many unused registrations for ${project} as it keeps at once, so it made no more. Each lapses by itself within ${String(stop.lapseMins)} minutes of being made. Tell me when you want me to try again.`,
+      tell: {
+        id: "setup-runner-mint-conflict-tell",
+        args: { project, mins: String(stop.lapseMins) },
+      },
       when: setupTryAgain,
       again: "Runner",
     };
   return {
     found,
-    tell: `The chuggy site did not make a registration for ${project}, so this machine is not registered yet. ${setupPickedUp}`,
+    tell: { id: "setup-runner-mint-tell", args: { project } },
     when: setupTryAgain,
     again: "Runner",
   };
@@ -914,15 +1087,43 @@ function setupLoginMissingSaid(
   const { credential } = setupClaudeWords[kind];
   const saved = setupClaudeSaved(stop.credential);
   return {
-    found: `the runner has no ${credential} on this machine: nothing is at ${path}`,
+    found: {
+      id: "setup-runner-login-missing-found",
+      args: { credential, path },
+    },
     tell:
       kind === "Subscription"
-        ? `The runner needs a Claude login of its own on this machine, and there is none at ${path}, ${setupUnchanged}. ${saved} An Anthropic API key or a cloud provider's credential can be used instead; the runner's guide says how: ${stop.guide}. Tell me once one is there.`
-        : `The runner's settings name its ${credential} as ${path}, and nothing is there, ${setupUnchanged}. ${saved} Tell me once it is there.`,
-    when: `once the person says the runner's ${credential} is on this machine`,
+        ? {
+            id: "setup-runner-login-missing-tell",
+            args: { path, saved, guide: stop.guide },
+          }
+        : {
+            id: "setup-runner-login-missing-named-tell",
+            args: { credential, path, saved },
+          },
+    when: { id: "setup-runner-login-missing-when", args: { credential } },
     again: "Runner",
   };
 }
+
+/** Settings at their place that do not read as the runner's. */
+function setupSettingsUnreadSaid(
+  stop: Extract<SetupRunnerStop, { readonly stop: "SettingsUnread" }>,
+): SetupRunnerStopSaid {
+  const { path } = stop;
+  return {
+    found: { id: "setup-runner-settings-unread-found", args: { path } },
+    tell: {
+      id: "setup-runner-settings-unread-tell",
+      args: { path, guide: stop.guide },
+    },
+    when: { id: "setup-runner-settings-unread-when", args: { path } },
+    again: "Runner",
+  };
+}
+
+/** What the person's user services are asked through, which is how a manager that does not answer is named. */
+const setupUserServices = "systemctl --user";
 
 function setupMachineSaid(
   stop: Extract<
@@ -941,41 +1142,46 @@ function setupMachineSaid(
   switch (stop.stop) {
     case "Mac":
       return {
-        found:
-          "this machine is a Mac, and chuggy setup puts a runner only on Linux",
-        tell: `${setupMacNone} and cannot set one up here, ${setupUnchanged}. A Mac runs one with ${runnerPackages.darwin.program}, added by hand, and a Linux machine runs one too. Tell me once one is running.`,
-        when: "once the person says a runner is running",
+        found: { id: "setup-runner-mac-found" },
+        tell: {
+          id: "setup-runner-mac-tell",
+          args: { program: runnerPackages.darwin.program },
+        },
+        when: { id: "setup-runner-mac-when" },
         again: "Status",
       };
     case "Serviceless":
       return {
-        found: "this machine's user services did not answer systemctl --user",
-        tell: `chuggy setup runs the runner as a service of yours, and this machine's user services did not answer, ${setupUnchanged}. The runner's guide says how it is run by hand: ${stop.guide}. Tell me if you want me to try again.`,
+        found: {
+          id: "setup-runner-serviceless-found",
+          args: { command: setupUserServices },
+        },
+        tell: {
+          id: "setup-runner-serviceless-tell",
+          args: { guide: stop.guide },
+        },
         when: setupTryAgain,
         again: "Runner",
       };
     case "SettingsUnread":
-      return {
-        found: `${stop.path} is there and does not read as the runner's settings`,
-        tell: `The runner's settings file, ${stop.path}, is there, and chuggy setup could not read from it which engine and which Claude credential the runner uses, ${setupUnchanged}. The runner's guide says what the file holds: ${stop.guide}. Tell me once it is mended.`,
-        when: `once the person says ${stop.path} is mended`,
-        again: "Runner",
-      };
+      return setupSettingsUnreadSaid(stop);
     case "LoginMissing":
       return setupLoginMissingSaid(stop);
     case "Npmless":
       return {
-        found:
-          "the runner package is not installed at a version chuggy setup can use, and npm did not answer",
-        tell: `The runner package is installed with npm, and npm did not answer on this machine, ${setupUnchanged}. npm comes with Node. Tell me once npm runs here.`,
-        when: "once the person says npm runs on this machine",
+        found: { id: "setup-runner-npmless-found" },
+        tell: { id: "setup-runner-npmless-tell" },
+        when: { id: "setup-runner-npmless-when" },
         again: "Runner",
       };
     case "Unwritten":
       return {
-        found: `chuggy setup could not make ${stop.path}`,
-        tell: `chuggy setup could not write the runner's settings to ${stop.path} on this machine, so the runner is not set up yet. ${setupPickedUp}`,
-        when: `once ${stop.path} can be made`,
+        found: {
+          id: "setup-runner-unwritten-found",
+          args: { path: stop.path },
+        },
+        tell: { id: "setup-runner-unwritten-tell", args: { path: stop.path } },
+        when: { id: "setup-runner-unwritten-when", args: { path: stop.path } },
         again: "Runner",
       };
   }
@@ -985,21 +1191,67 @@ function setupMachineSaid(
 function setupInactiveSaid(
   stop: Extract<SetupRunnerStop, { readonly stop: "Inactive" }>,
 ): SetupRunnerStopSaid {
-  const was =
+  const was: Copy =
     stop.waitedSecs === undefined
-      ? "was started and"
-      : `was running and after ${String(stop.waitedSecs)} s`;
+      ? { id: "setup-runner-inactive-started" }
+      : {
+          id: "setup-runner-inactive-waited",
+          args: { secs: String(stop.waitedSecs) },
+        };
+  const { unit } = stop;
   if (stop.state === undefined)
     return {
-      found: `${stop.unit} ${was} this machine's user services did not answer whether it is running`,
-      tell: `This machine's user services did not answer when I asked whether the runner's service is running, so I cannot say the runner is set up. ${setupPickedUp}`,
+      found: { id: "setup-runner-inactive-silent-found", args: { unit, was } },
+      tell: { id: "setup-runner-inactive-silent-tell" },
       when: setupTryAgain,
       again: "Runner",
     };
   return {
-    found: `${stop.unit} ${was} is ${stop.state === "" ? "not running" : stop.state}`,
-    tell: `The runner's service was started and is not running, so the runner is not set up yet. ${setupPickedUp}`,
+    found: {
+      id: "setup-runner-inactive-found",
+      args: {
+        unit,
+        was,
+        state:
+          stop.state === ""
+            ? { id: "setup-runner-inactive-not-running" }
+            : stop.state,
+      },
+    },
+    tell: { id: "setup-runner-inactive-tell" },
     when: setupTryAgain,
+    again: "Runner",
+  };
+}
+
+function setupCheckFailedSaid(
+  stop: Extract<SetupRunnerStop, { readonly stop: "CheckFailed" }>,
+): SetupRunnerStopSaid {
+  const check = setupActOf(stop.act);
+  const meant: Copy =
+    stop.check === undefined
+      ? { id: "setup-runner-check-unpassed", args: { check } }
+      : setupRunnerChecks[stop.check];
+  const { line } = stop;
+  return {
+    found: {
+      id: "setup-runner-check-failed-found",
+      args: { meant, check, line },
+    },
+    tell: {
+      id: "setup-runner-check-failed-tell",
+      args: {
+        what: {
+          id:
+            stop.act === "Check"
+              ? "setup-runner-check-failed-runner"
+              : "setup-runner-check-failed-chat",
+        },
+        meant,
+        line,
+      },
+    },
+    when: { id: "setup-runner-check-failed-when" },
     again: "Runner",
   };
 }
@@ -1012,38 +1264,35 @@ function setupServiceSaid(
   project: string,
 ): SetupRunnerStopSaid {
   switch (stop.stop) {
-    case "CheckFailed": {
-      const check = setupActs[stop.act];
-      const meant =
-        stop.check === undefined
-          ? `${check} did not pass`
-          : setupRunnerChecks[stop.check];
-      const what =
-        stop.act === "Check"
-          ? "The runner is installed and registered on this machine"
-          : "This machine is registered as your chat host";
-      return {
-        found: `${meant}; ${check} said: ${stop.line}`,
-        tell: `${what}, and its own check did not pass: ${meant}. What it said is: ${stop.line}. Tell me once that is mended, or if you want me to try again.`,
-        when: "once the person says it is mended or asks to try again",
-        again: "Runner",
-      };
-    }
+    case "CheckFailed":
+      return setupCheckFailedSaid(stop);
     case "LingerAsks":
       return {
-        found: `your services stop when you log out, and chuggy setup could not change that${stop.excerpt === "" ? "" : `: loginctl said ${stop.excerpt}`}`,
-        tell: `The runner is installed and registered on this machine. For it to keep running after you log out, one command is yours to run, because it may ask for your password and chuggy setup never takes one. In a terminal of your own, run ${stop.command} and tell me once you have.`,
-        when: "once the person says they have run it",
+        found:
+          stop.excerpt === ""
+            ? { id: "setup-runner-linger-found" }
+            : {
+                id: "setup-runner-linger-found-said",
+                args: { excerpt: stop.excerpt },
+              },
+        tell: {
+          id: "setup-runner-linger-tell",
+          args: { command: stop.command },
+        },
+        when: { id: "setup-runner-linger-when" },
         again: "Runner",
       };
     case "Inactive":
       return setupInactiveSaid(stop);
     case "NotLive":
       return {
-        found: stop.registered
-          ? `the runner's service is running, and after ${String(stop.waitedSecs)} s the site still sees no runner of ${project} live`
-          : `the runner's service is running, and after ${String(stop.waitedSecs)} s the site lists no runner of ${project}`,
-        tell: "The runner is installed, registered and started on this machine, and the chuggy site does not see it live yet. It can take a little longer. Tell me when you want me to look again.",
+        found: {
+          id: stop.registered
+            ? "setup-runner-not-live-found"
+            : "setup-runner-not-live-unregistered-found",
+          args: { secs: String(stop.waitedSecs), project },
+        },
+        tell: { id: "setup-runner-not-live-tell" },
         when: setupLookAgain,
         again: "Runner",
       };
@@ -1054,24 +1303,30 @@ function setupServiceSaid(
 function setupChatMintSaid(
   stop: Extract<SetupRunnerStop, { readonly stop: "ChatMintRefused" }>,
 ): SetupRunnerStopSaid {
-  const found = `the site made no registration token for your chat host (${stop.outcome})`;
+  const found: Copy = {
+    id: "setup-runner-chat-mint-found",
+    args: { outcome: stop.outcome },
+  };
   if (stop.outcome === "Absent")
     return {
       found,
-      tell: "The chuggy site would not make a registration for a chat host of yours: the workspace lets only members it chooses register one. Tell me once a workspace admin has let you.",
-      when: "once the person says a workspace admin has let them register a chat host",
+      tell: { id: "setup-runner-chat-mint-absent-tell" },
+      when: { id: "setup-runner-chat-mint-absent-when" },
       again: "Runner",
     };
   if (stop.outcome === "Conflict")
     return {
       found,
-      tell: `chuggy already holds as many unused registrations of yours as it keeps at once, so it made no more. Each lapses by itself within ${String(stop.lapseMins)} minutes of being made. Tell me when you want me to try again.`,
+      tell: {
+        id: "setup-runner-chat-mint-conflict-tell",
+        args: { mins: String(stop.lapseMins) },
+      },
       when: setupTryAgain,
       again: "Runner",
     };
   return {
     found,
-    tell: `The chuggy site did not make a registration for your chat host, so this machine is not your chat host yet. ${setupPickedUp}`,
+    tell: { id: "setup-runner-chat-mint-tell" },
     when: setupTryAgain,
     again: "Runner",
   };
@@ -1091,22 +1346,41 @@ function setupChatLoginSaid(
 ): SetupRunnerStopSaid {
   const { kind, path } = stop.credential;
   const { credential } = setupClaudeWords[kind];
-  const directory = stop.login.slice(0, stop.login.lastIndexOf("/"));
-  const why =
-    stop.how === "Linked"
-      ? `is handed the runner's ${credential} only as a file of its own, and ${path} is a symbolic link`
-      : `is handed the directory of the runner's ${credential} whole, and ${path} shares its directory with other files`;
-  const copy =
-    kind === "Subscription"
-      ? `Copy the token itself alone to ${stop.login}, readable only by you (mode 600), and set claudeTokenFile in ${stop.settings} to ${stop.login}.`
-      : `Copy it alone into a directory of its own, such as ${directory}, readable only by you, and change where ${stop.settings} names it to the copy.`;
+  const { login, settings } = stop;
+  const linked = stop.how === "Linked";
   return {
-    found:
-      stop.how === "Linked"
-        ? `the runner's ${credential}, ${path}, is a symbolic link, which your chat host is not handed`
-        : `the runner's ${credential}, ${path}, is not alone in its directory, which your chat host is handed whole`,
-    tell: `Your chat host ${why}, so this machine is not your chat host yet. ${copy} Then restart this machine's runner services, which read the settings only as they start: ${setupRestartAll}. The old one can go once they have. Tell me once they have restarted.`,
-    when: `once the person says the runner's ${credential} is copied alone into a directory of its own and its services have restarted`,
+    found: {
+      id: linked
+        ? "setup-runner-chat-login-linked-found"
+        : "setup-runner-chat-login-shared-found",
+      args: { credential, path },
+    },
+    tell: {
+      id: "setup-runner-chat-login-tell",
+      args: {
+        why: {
+          id: linked
+            ? "setup-runner-chat-login-linked-why"
+            : "setup-runner-chat-login-shared-why",
+          args: { credential, path },
+        },
+        copy:
+          kind === "Subscription"
+            ? {
+                id: "setup-runner-chat-login-token-copy",
+                args: { login, settings },
+              }
+            : {
+                id: "setup-runner-chat-login-copy",
+                args: {
+                  directory: login.slice(0, login.lastIndexOf("/")),
+                  settings,
+                },
+              },
+        restart: setupRestartAll,
+      },
+    },
+    when: { id: "setup-runner-chat-login-when", args: { credential } },
     again: "Runner",
   };
 }
@@ -1129,26 +1403,44 @@ function setupChatSaid(
   switch (stop.stop) {
     case "PermitWithheld":
       return {
-        found: "the workspace does not let you register a chat host",
-        tell: `${stop.work === "Runner" ? `The runner for the work on ${project} is set up and live.` : `chuggy's cluster runs the work on ${project}.`} Your chats there run only on your chat host, and the workspace does not let you register one yet. An admin of the workspace, you if you are one, turns on Personal runners for you on its People page, ${stop.people}, with Edit on your row. Tell me once it is on.`,
-        when: "once the person says Personal runners is on for them in the workspace",
+        found: { id: "setup-runner-permit-found" },
+        tell: {
+          id: "setup-runner-permit-tell",
+          args: {
+            work: {
+              id:
+                stop.work === "Runner"
+                  ? "setup-runner-permit-runner"
+                  : "setup-runner-permit-hosted",
+              args: { project },
+            },
+            people: stop.people,
+          },
+        },
+        when: { id: "setup-runner-permit-when" },
         again: "Runner",
       };
     case "ChatMintRefused":
       return setupChatMintSaid(stop);
     case "ChatHostOffline":
       return {
-        found: "your chat host is another machine, registered and not running",
-        tell: `Your chats in ${project} run only on your chat host, which is another machine, registered and not running. A member has one chat host, so making this machine it would replace that one. Start it on its machine, or remove it on your My runners page, ${stop.runners}, for this machine to be it instead. Tell me once you have done either.`,
-        when: "once the person says their chat host is running, or that they removed it",
+        found: { id: "setup-runner-offline-found" },
+        tell: {
+          id: "setup-runner-offline-tell",
+          args: { project, runners: stop.runners },
+        },
+        when: { id: "setup-runner-offline-when" },
         again: "Runner",
       };
     case "ChatLogin":
       return setupChatLoginSaid(stop);
     case "ChatHostNotLive":
       return {
-        found: `your chat host's service is running, and after ${String(stop.waitedSecs)} s the site still does not see this machine live as your chat host`,
-        tell: "Your chat host is installed, registered and started on this machine, and the chuggy site does not see it live yet. It can take a little longer. Tell me when you want me to look again.",
+        found: {
+          id: "setup-runner-chat-not-live-found",
+          args: { secs: String(stop.waitedSecs) },
+        },
+        tell: { id: "setup-runner-chat-not-live-tell" },
         when: setupLookAgain,
         again: "Runner",
       };
@@ -1172,9 +1464,9 @@ export function setupRunnerStopSaid(
       return setupUnreadSaid(stop, project);
     case "NotAdmin":
       return {
-        found: `the site says you are not an admin of ${project}`,
-        tell: `Putting a runner on a project takes an admin of it, and the chuggy site says you are not one of ${project}, ${setupUnchanged}. Ask an admin to make you one. Tell me once you are.`,
-        when: `once the person says they are an admin of ${project}`,
+        found: { id: "setup-runner-not-admin-found", args: { project } },
+        tell: { id: "setup-runner-not-admin-tell", args: { project } },
+        when: { id: "setup-runner-when-admin", args: { project } },
         again: "Runner",
       };
     case "Engineless":
@@ -1184,10 +1476,10 @@ export function setupRunnerStopSaid(
     case "Act":
       return setupActStopSaid(stop);
     case "Unseen":
-      return setupActSaid(
-        stop.act,
-        `ended well, and what it makes is not at ${stop.path}`,
-      );
+      return setupActSaid(stop.act, {
+        id: "setup-runner-failed-unseen",
+        args: { path: stop.path },
+      });
     case "Behind":
       return setupBehindSaid(stop);
     case "ServiceRefused":

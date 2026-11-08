@@ -544,7 +544,7 @@ test("a chat host of the person's on another machine that is not running stops t
   expect(offline.lines.slice(-5)).toEqual([
     live,
     "found: your chat host is another machine, registered and not running",
-    `tell: Your chats in acme/widgets run only on your chat host, which is another machine, registered and not running. A member has one chat host, so making this machine it would replace that one. Start it on its machine, or remove it on your My runners page, ${machineSite}/tenants/acme/settings/runner, for this machine to be it instead. Tell me once you have done either.`,
+    `tell: Your chats in acme/widgets run only on your chat host, which is another machine, registered and not running. A member has one chat host, so making this machine it would replace that one. Start it on its machine, or remove it on your Personal runners page, ${machineSite}/tenants/acme/settings/runner, for this machine to be it instead. Tell me once you have done either.`,
     again(
       "once the person says their chat host is running, or that they removed it",
     ),
@@ -701,7 +701,7 @@ test("a project whose work the cluster runs and whose chats run on a chat host g
     exit: 0,
     lines: [
       signedIn,
-      "found: chuggy's cluster runs the work of acme/widgets, so that work needs no runner",
+      "found: hosted runs take the work of acme/widgets, so that work needs no runner",
       found.engine,
       found.login,
       did.package,
