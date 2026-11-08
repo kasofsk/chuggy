@@ -28,6 +28,7 @@ import {
   tokensFigure,
 } from "../app/core/figures.ts";
 import { copyTextEn } from "../app/copy/catalog.ts";
+import { copyOrDataText } from "../app/core/copy.ts";
 
 /** The drawn text of a figure, which every kind but an absence carries. */
 function textOf(figure: Figure): string {
@@ -41,10 +42,11 @@ function textOf(figure: Figure): string {
       return figure.unit === undefined
         ? figure.text
         : `${figure.text} ${copyTextEn(figure.unit)}`;
+    case "Instant":
+      return copyOrDataText(copyTextEn, figure.text);
     case "Cost":
     case "Duration":
     case "Quantity":
-    case "Instant":
       return figure.text;
   }
 }
@@ -148,11 +150,12 @@ test("a duration is the largest two units, whole, and says when it is under a se
 
 test("an instant is the clock today, the date within the year, and the year before it", () => {
   const now = new Date(2026, 7, 27, 11, 7);
-  expect(instantText(new Date(2026, 7, 27, 10, 12), now)).toBe("10:12");
-  expect(instantText(new Date(2026, 7, 26, 18, 40), now)).toBe("Aug 26 18:40");
-  expect(instantText(new Date(2025, 10, 2, 9, 0), now)).toBe(
-    "2025-11-02 09:00",
-  );
+  const said = (at: Date): string =>
+    copyOrDataText(copyTextEn, instantText(at, now));
+  expect(said(new Date(2026, 7, 27, 10, 12))).toBe("10:12");
+  expect(said(new Date(2026, 7, 26, 18, 40))).toBe("Aug 26 18:40");
+  expect(said(new Date(2026, 0, 3, 7, 5))).toBe("Jan 3 07:05");
+  expect(said(new Date(2025, 10, 2, 9, 0))).toBe("2025-11-02 09:00");
 });
 
 const agoNowMs = Date.parse("2026-08-26T12:00:00Z");
@@ -181,10 +184,7 @@ test("an instant counted in milliseconds reads as one stated does, and one no da
   expect(instantFigureAtMs(at.getTime(), now)).toStrictEqual(
     instantFigure(at.toISOString(), now),
   );
-  expect(instantFigureAtMs(at.getTime(), now)).toMatchObject({
-    kind: "Instant",
-    text: "Aug 26 18:40",
-  });
+  expect(textOf(instantFigureAtMs(at.getTime(), now))).toBe("Aug 26 18:40");
   expect(instantFigureAtMs(Number.MAX_SAFE_INTEGER, now).kind).toBe("Absent");
   expect(instantFigure("not an instant", now).kind).toBe("Absent");
 });

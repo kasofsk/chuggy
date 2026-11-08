@@ -485,7 +485,7 @@ test("a held draft the form still describes is released again, unrevised, under 
 /** One request as a case compares it: a revision by the version it was
  * fenced at, and a release by the version it named. */
 function requestLine(one: Sent): string {
-  const said = `${one.method} ${one.path.slice(one.path.indexOf("/atlas") + 6)}`;
+  const said = `${one.method} ${one.path.slice(one.path.indexOf("/atlas-web") + 10)}`;
   const body = one.body as {
     readonly expectedVersion?: number;
     readonly mutation?: { readonly authoringVersion: number };

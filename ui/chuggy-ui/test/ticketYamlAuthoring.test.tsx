@@ -497,7 +497,7 @@ test("a YAML changed over a release that had gone through is told of its ticket,
   expect(
     held.sent.slice(from).map((one) => `${one.method} ${one.path}`),
   ).toStrictEqual([
-    `GET ${nativeHttpBasePath}/tenants/acme/projects/atlas/drafts/12`,
+    `GET ${nativeHttpBasePath}/tenants/acme-co/projects/atlas-web/drafts/12`,
   ]);
   expect(created).toStrictEqual([]);
   expect(window.localStorage.getItem(storeKey)).toBe(changed);

@@ -13,6 +13,11 @@ codes-escalation-evaluation-blocked = { -evaluation(case: "upper") } blocked
 codes-escalation-landing-unavailable = { -landing(case: "upper") } unavailable
 codes-escalation-lost = Lost on { -runner }
 
+## Which agent an account is lent for.
+
+codes-agent-claude = { -claude }
+codes-agent-codex = { -codex }
+
 ## Which wall the fabric hit.
 
 codes-blocked-policy-denied = { -run(case: "upper") } denied by policy

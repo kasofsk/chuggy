@@ -130,7 +130,7 @@ test("a link's form names no person, and offers the roles and projects a person'
       .getAllByRole("radio")
       .map((radio) => radio.textContent),
     projects: projectsOffered(dialog()),
-    boxes: boxesIn(dialog(), "beacon"),
+    boxes: boxesIn(dialog(), "beacon-api"),
   };
   await chose("Link");
   expect(modes()).toStrictEqual(["Person", "Link+"]);
@@ -140,7 +140,7 @@ test("a link's form names no person, and offers the roles and projects a person'
       .getAllByRole("radio")
       .map((radio) => radio.textContent),
     projects: projectsOffered(dialog()),
-    boxes: boxesIn(dialog(), "beacon"),
+    boxes: boxesIn(dialog(), "beacon-api"),
   }).toStrictEqual(offered);
   expect(actions()).toStrictEqual(["Cancel", "Create link"]);
   styleless();
@@ -158,7 +158,7 @@ test("Create link sends what the link grants and nothing of a person", async () 
   await chose("Link");
   fireEvent.click(within(dialog()).getByRole("radio", { name: "Admin" }));
   fireEvent.click(
-    within(dialog()).getByRole("checkbox", { name: "beacon Viewer" }),
+    within(dialog()).getByRole("checkbox", { name: "beacon-api Viewer" }),
   );
   await press("Create link");
   expect(changesSent(drawn)).toStrictEqual([
@@ -167,7 +167,7 @@ test("Create link sends what the link grants and nothing of a person", async () 
       url: linksPath,
       body: {
         role: "Admin",
-        projects: [{ project: "beacon", roles: ["Viewer"] }],
+        projects: [{ project: "beacon-api", roles: ["Viewer"] }],
       },
     },
   ]);
@@ -178,12 +178,12 @@ test("a workspace at its limit of open links says so in the dialog's one line, e
     changed: () => refused(409, accessInviteLinkLimitReachedCode),
   });
   fireEvent.click(
-    within(dialog()).getByRole("checkbox", { name: "beacon Viewer" }),
+    within(dialog()).getByRole("checkbox", { name: "beacon-api Viewer" }),
   );
   await press("Create link");
   expect(within(dialog()).getByText("Link limit reached")).toBeTruthy();
   expect(modes()).toStrictEqual(["Person", "Link+"]);
-  expect(boxesIn(dialog(), "beacon")).toContain("beacon Viewer+");
+  expect(boxesIn(dialog(), "beacon-api")).toContain("beacon-api Viewer+");
   expect(actions()).toStrictEqual(["Cancel", "Create link"]);
   await chose("Person");
   expect(within(dialog()).queryByText("Link limit reached")).toBeNull();

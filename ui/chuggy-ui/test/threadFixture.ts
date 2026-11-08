@@ -173,7 +173,7 @@ export const threadToolCall = "toolu_thread_read";
 export function threadTranscriptPage(after: number): ThreadTranscriptResponse {
   return threadTranscriptOf(after, [
     threadStoreEntry("uuid-thread-a", "user", [
-      { type: "text", text: "a member's question" },
+      { type: "text", text: "question-1" },
     ]),
     threadStoreEntry("uuid-thread-b", "assistant", [
       {
@@ -191,7 +191,7 @@ export function threadTranscriptPage(after: number): ThreadTranscriptResponse {
       },
     ]),
     threadStoreEntry("uuid-thread-d", "assistant", [
-      { type: "text", text: "it waits on 40" },
+      { type: "text", text: "answer-1-waits-on-40" },
     ]),
   ]);
 }

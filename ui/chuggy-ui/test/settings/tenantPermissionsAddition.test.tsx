@@ -199,7 +199,7 @@ test("the roster draws each person on a line: their address or subject, their lo
       .getAllByRole("listitem")
       .map((item) => item.textContent),
   ).toStrictEqual([
-    "ada@example.comadaChoose ada@example.com",
+    "ada@example.comada-lChoose ada@example.com",
     "s-bobNo accountChoose s-bob",
   ]);
 });

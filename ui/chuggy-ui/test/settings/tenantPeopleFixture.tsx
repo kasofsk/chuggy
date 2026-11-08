@@ -27,7 +27,7 @@ import {
 } from "../screenHarness.tsx";
 import type { DrawnStrict, SentRequest } from "../screenHarness.tsx";
 
-export const peopleTenant = "acme";
+export const peopleTenant = "acme-co";
 
 export const peoplePath = `/access/v1/tenants/${peopleTenant}/people`;
 
@@ -53,7 +53,7 @@ const linkMade: Omit<LinkUnused, "link" | "state"> = {
     subject: "s-ada",
     account: true,
     email: "ada@example.com",
-    githubLogin: "ada",
+    githubLogin: "ada-l",
   },
   mintedAtMs: Date.UTC(2026, 7, 20, 9, 0),
   expiresAtMs: Date.UTC(2026, 7, 27, 9, 0),
@@ -73,8 +73,8 @@ export const linksListed: AccessInviteLinks = {
   links: [
     linkListed("l-open", {
       projects: [
-        { project: "beacon", roles: ["Viewer", "Developer"] },
-        { project: "atlas", roles: ["Dispatcher"] },
+        { project: "beacon-api", roles: ["Viewer", "Developer"] },
+        { project: "atlas-web", roles: ["Dispatcher"] },
       ],
     }),
     {
@@ -93,7 +93,7 @@ export const linksListed: AccessInviteLinks = {
  * no account, the second holding hosted runs as a workspace's selector does. */
 export const peopleListed: AccessTenantPeople = {
   tenant: peopleTenant,
-  projects: ["atlas", "beacon"],
+  projects: ["atlas-web", "beacon-api"],
   people: [
     {
       subject: "s-ada",
@@ -102,10 +102,10 @@ export const peopleListed: AccessTenantPeople = {
       hostedRuns: true,
       personalRunners: false,
       unscopedChat: true,
-      projects: [{ project: "atlas", roles: ["Admin", "Developer"] }],
+      projects: [{ project: "atlas-web", roles: ["Admin", "Developer"] }],
       account: true,
       email: "ada@example.com",
-      githubLogin: "ada",
+      githubLogin: "ada-l",
     },
     {
       subject: "s-bob",

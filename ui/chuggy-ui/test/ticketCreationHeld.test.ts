@@ -43,7 +43,7 @@ import { copyTextEn } from "../app/copy/catalog.ts";
 
 type Body = TicketCreationRequest["body"];
 
-const partitionBase = `${nativeHttpBasePath}/tenants/acme/projects/atlas`;
+const partitionBase = `${nativeHttpBasePath}/tenants/acme-co/projects/atlas-web`;
 
 const first: Body = creationBody;
 

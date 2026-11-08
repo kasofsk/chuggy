@@ -165,8 +165,8 @@ check "a jscpd directive with a reason is allowed" 0 "$RC" "0 finding(s)"
 source_saying '// eslint-disable-next-line no-console' 'export const x = 1'
 check "an unsealed rule may be disabled" 0 "$RC" "0 finding(s)"
 
-# The copy mark is the one block directive, as a file's first line, naming its
-# one rule.
+# The copy rule is sealed: no file and no line opts out of it, in any form a
+# mark could take, while prose naming it is still prose.
 tooled_repo "$R"
 {
 	printf '%s\n' '/* eslint-disable copy/no-literal-text */'
@@ -177,10 +177,19 @@ tooled_repo "$R"
 } > "$R/a.tsx"
 git -C "$R" add -A
 run_in "$R"
-check "the copy mark is allowed as a file's first line" 0 "$RC" "0 finding(s)"
+check "the copy rule's file mark, as a file's first line, is a finding" 1 "$RC" "a.tsx:1: copy/no-literal-text is not suppressible"
 
-source_saying '/* eslint-disable copy/no-literal-text */' 'export const x = 1'
-check "the copy mark below a file's first line is a finding" 1 "$RC" "a.ts:4: the copy mark is a file's first line"
+source_saying '// eslint-disable-next-line copy/no-literal-text -- a word nobody moved' 'export const x = 1'
+check "a line's disable of the copy rule is a finding" 1 "$RC" "a.ts:4: copy/no-literal-text is not suppressible"
+
+source_saying '// eslint-disable-next-line no-console, copy/no-literal-text' 'export const x = 1'
+check "the copy rule among others a line disables is a finding" 1 "$RC" "a.ts:4: copy/no-literal-text is not suppressible"
+
+source_saying 'export const x = 1 // eslint-disable-line copy/no-literal-text'
+check "a trailing disable of the copy rule is a finding" 1 "$RC" "a.ts:4: copy/no-literal-text is not suppressible"
+
+source_saying '/** Holds what `copy/no-literal-text` reports. */' 'export const x = 1'
+check "a doc comment naming the copy rule is prose, not a mark" 0 "$RC" "0 finding(s)"
 
 tooled_repo "$R"
 {

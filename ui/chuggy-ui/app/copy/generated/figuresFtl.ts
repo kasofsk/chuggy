@@ -20,6 +20,22 @@ figures-since = { $happened } { $elapsed } ago
 figures-happened-started = Started
 figures-happened-prepared = Prepared
 
+## An instant within the year: its month, its day and its clock.
+
+figures-instant-in-year = { $month } { $day } { $clock }
+figures-month-january = Jan
+figures-month-february = Feb
+figures-month-march = Mar
+figures-month-april = Apr
+figures-month-may = May
+figures-month-june = Jun
+figures-month-july = Jul
+figures-month-august = Aug
+figures-month-september = Sep
+figures-month-october = Oct
+figures-month-november = Nov
+figures-month-december = Dec
+
 ## The units a quantity somebody set is counted in.
 
 figures-unit-percent = %

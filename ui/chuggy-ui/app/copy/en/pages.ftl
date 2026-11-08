@@ -16,5 +16,4 @@ pages-ticket-new-from = New { -ticket } from { $number }
 pages-ticket-new-draft = New { -ticket } · { -draft } { $number }
 pages-repository = { -repository(case: "upper") } { $repository }
 pages-settings = Settings
-pages-settings-accounts = Accounts
 pages-settings-section = Settings · { $level } · { $section }

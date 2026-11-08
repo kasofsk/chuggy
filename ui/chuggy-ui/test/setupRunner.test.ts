@@ -586,7 +586,7 @@ test("this machine as the person's chat host is waited on until the site sees it
   expect(writes(machine)).toEqual([mint, chatMint]);
 });
 
-test("a chat host's registration this machine holds that the site no longer holds, as one removed on the My runners page, is said, and this machine is registered as the chat host again and its service restarted onto it", async () => {
+test("a chat host's registration this machine holds that the site no longer holds, as one removed on the personal runners page, is said, and this machine is registered as the chat host again and its service restarted onto it", async () => {
   const machine = await both();
   await ran(machine);
   machine.world.chat.delete("acme");

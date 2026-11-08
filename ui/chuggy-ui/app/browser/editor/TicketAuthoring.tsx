@@ -48,11 +48,10 @@ const TicketYamlAuthoring = lazy(() => import("./TicketYamlAuthoring.tsx"));
 const authoringModes = ["Form", "YAML"] as const;
 type AuthoringMode = (typeof authoringModes)[number];
 
-/** What a mode is called where it is chosen: the form in the catalog's words,
- * and YAML by the name of the language. */
-const authoringModeWords: Readonly<Record<AuthoringMode, Copy | string>> = {
+/** What a mode is called where it is chosen. */
+const authoringModeWords: Readonly<Record<AuthoringMode, Copy>> = {
   Form: { id: "ticket-authoring-mode-form" },
-  YAML: "YAML",
+  YAML: { id: "ticket-authoring-mode-yaml" },
 };
 
 /** Whether two forms say the same thing, which is what a screen is dirty by. */
@@ -131,10 +130,7 @@ function ModeSwitch(props: {
   readonly onMode: (mode: AuthoringMode) => void;
 }): ReactNode {
   const text = useCopyText();
-  const word = (mode: AuthoringMode): string => {
-    const words = authoringModeWords[mode];
-    return typeof words === "string" ? words : text(words);
-  };
+  const word = (mode: AuthoringMode): string => text(authoringModeWords[mode]);
   return (
     <div className="flex flex-wrap items-center gap-3">
       <ToggleGroup
