@@ -119,18 +119,21 @@ staged_verdict() { # <label> <status> <output> <marker> <finding-message>
 unit_suites='model/tests/chuggy_test.qnt
 model/tests/capacity_test.qnt
 model/tests/runner_test.qnt
-model/tests/execution_requirement_test.qnt'
+model/tests/execution_requirement_test.qnt
+model/tests/stacking_test.qnt'
 package_suite=node_modules/@kasofsk/chug-ticket-domain/model/ticket-domain/ticket_tests.qnt
 witness_suite=model/tests/chuggy_witness_test.qnt
 refinement_suite=model/tests/chuggy_refinement_test.qnt
 ticket_instance=model/mc/mc_chuggy.qnt
 runner_instance=model/mc/mc_runner.qnt
+stacking_instance=model/mc/mc_stacking.qnt
 staged="$unit_suites
 $package_suite
 $witness_suite
 $refinement_suite
 $ticket_instance
-$runner_instance"
+$runner_instance
+$stacking_instance"
 
 # EVERY CALL RUNS BESIDE THE OTHERS AND IS JUDGED IN THE ORDER WRITTEN. The
 # stages below are walked twice: the first walk queues each quint call,
@@ -355,6 +358,12 @@ stages() {
 		[ "$rc" -ne 0 ]; then
 		staged_verdict "registered runner instance" "$rc" "$out" '\[violation\]' \
 			"registered runner instance violated an invariant"
+	fi
+	if quint_call run "$stacking_instance" --main=mc_stacking ${seed:+"--seed=$seed"} \
+		--invariant=allInvariants --max-samples=2000 --max-steps=60 &&
+		[ "$rc" -ne 0 ]; then
+		staged_verdict "stacking instance" "$rc" "$out" '\[violation\]' \
+			"the stacking instance violated an invariant"
 	fi
 }
 
