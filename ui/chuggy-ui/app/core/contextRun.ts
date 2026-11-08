@@ -218,7 +218,7 @@ export function contextRunTiles(
   calls: readonly ContextCall[],
   growth: ContextGrowthView,
 ): readonly ContextTile[] {
-  const peak = contextPeakOf(growth.points);
+  const peak = contextPeakOf(growth);
   const subagent = calls.filter((call) => call.series === "Subagent").length;
   const cache = contextCacheRead(calls);
   return [

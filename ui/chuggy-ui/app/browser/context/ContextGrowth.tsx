@@ -389,7 +389,7 @@ function ContextTiles(props: {
 function ContextStats(props: { readonly view: ContextGrowthView }): ReactNode {
   const text = useCopyText();
   const { view } = props;
-  const peak = contextPeakOf(view.points);
+  const peak = contextPeakOf(view);
   return (
     <ul className="context-stats">
       <li>

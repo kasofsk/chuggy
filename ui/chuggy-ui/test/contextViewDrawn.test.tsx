@@ -76,7 +76,7 @@ function drawnOf(
     heaviest: contextHeaviestOf(
       contextResultsOf(lines, calls),
       latest,
-      contextPeakOf(growth.points)?.tokens,
+      contextPeakOf(growth)?.tokens,
     ),
   };
 }

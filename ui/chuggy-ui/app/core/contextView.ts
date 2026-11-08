@@ -410,17 +410,23 @@ export interface ContextGrowthView {
   readonly count: number;
 }
 
-/** The highest context the main series reached, and where. */
+/** The highest context the main series reached, and where: a compaction's
+ * figure before it is one the context reached, after the call or turn it
+ * followed. */
 export function contextPeakOf(
-  points: readonly ContextPoint[],
+  view: ContextGrowthView,
 ): ContextPoint | undefined {
+  const reached = [
+    ...view.points.filter((point) => point.series === "Main"),
+    ...view.compactions.map((mark): ContextPoint => ({
+      ordinal: mark.ordinal,
+      tokens: mark.before,
+      series: "Main",
+    })),
+  ];
   let peak: ContextPoint | undefined = undefined;
-  for (const point of points)
-    if (
-      point.series === "Main" &&
-      (peak === undefined || point.tokens > peak.tokens)
-    )
-      peak = point;
+  for (const point of reached)
+    if (peak === undefined || point.tokens > peak.tokens) peak = point;
   return peak;
 }
 

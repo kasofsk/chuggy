@@ -20,6 +20,7 @@ import { contextSessionOf } from "../app/core/contextSession.ts";
 import type { ContextGrowthView } from "../app/core/contextView.ts";
 import {
   contextCompactionsTile,
+  contextPeakOf,
   contextPointSaid,
   contextSegmentWidthMin,
   contextWindowRead,
@@ -188,6 +189,20 @@ test("a session's compaction stands before the turn it fell in, after the line's
   expect(contextPathXs(before?.line)).toHaveLength(3);
   expect(contextPathXs(before?.line).at(-1)).toBeCloseTo(turn(3), 1);
   expect(contextPathXs(after?.line)[0]).toBeCloseTo(turn(4), 1);
+});
+
+test("the peak is the highest the context reached, a compaction's figure before it included", () => {
+  expect(contextPeakOf(growth)).toStrictEqual({
+    ordinal: 5,
+    tokens: 317_189,
+    series: "Main",
+  });
+  expect(
+    contextPeakOf({
+      ...growth,
+      compactions: [{ ordinal: 5, before: 300_000, after: 45_000 }],
+    }),
+  ).toStrictEqual({ ordinal: 5, tokens: 317_000, series: "Main" });
 });
 
 test("the vertical scale is the window where one is named, and a counted step otherwise", () => {

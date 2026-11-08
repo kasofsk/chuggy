@@ -93,11 +93,7 @@ function contextRunDrawn(
     tiles: contextRunTiles(calls, growth),
     inputs:
       snapshot === undefined ? undefined : contextInputsOf(snapshot, latest),
-    heaviest: contextHeaviestOf(
-      results,
-      latest,
-      contextPeakOf(growth.points)?.tokens,
-    ),
+    heaviest: contextHeaviestOf(results, latest, contextPeakOf(growth)?.tokens),
   };
 }
 
