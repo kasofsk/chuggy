@@ -25,7 +25,7 @@ import {
   contextHeaviestOf,
   contextLinesLatestOnly,
   contextLinesOf,
-  contextResultsOf,
+  contextToolCallsOf,
 } from "../../core/contextResults.ts";
 import {
   contextCallsOf,
@@ -87,19 +87,20 @@ function contextRunDrawn(
     snapshot === undefined ? undefined : contextSettingsWindowOf(snapshot.argv),
   );
   const growth = contextRunGrowth(calls, readings.readings, window);
-  const results = contextResultsOf(contextLinesOf(transcript), calls);
   return {
     window,
     growth,
     tiles: contextRunTiles(calls, growth),
     inputs:
       snapshot === undefined ? undefined : contextInputsOf(snapshot, latest),
-    heaviest: contextHeaviestOf(
-      results,
-      latest,
-      contextPeakOf(growth)?.tokens,
-      contextLinesLatestOnly(transcript),
-    ),
+    heaviest: contextHeaviestOf({
+      calls,
+      compactions: growth.compactions,
+      held: contextToolCallsOf(contextLinesOf(transcript), calls),
+      latestOnly: contextLinesLatestOnly(transcript),
+      window: latest,
+      peak: contextPeakOf(growth)?.tokens,
+    }),
   };
 }
 

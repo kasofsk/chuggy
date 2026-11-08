@@ -236,10 +236,10 @@ function agentRunServed(): void {
   };
 }
 
-test("a result's call on the Context tab links to its step, and the transcript opens at it", async () => {
+test("a largest call on the Context tab links to the step of the tool call whose result it first read, and the transcript opens at it", async () => {
   agentRunServed();
   await mountedAt(`${ticketPath}/runs/1?view=Context`);
-  const link = screen.getByRole("link", { name: "Call 1" });
+  const link = screen.getByRole("link", { name: "Call 2" });
   expect(link.getAttribute("href")).toBe(
     `${ticketPath}/runs/1?view=Transcript&step=toolu_big`,
   );

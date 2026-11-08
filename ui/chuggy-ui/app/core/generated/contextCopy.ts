@@ -116,6 +116,9 @@ export interface ContextCopy {
   readonly "context-appended-prompt": Record<never, never>;
   readonly "context-thread-seed": Record<never, never>;
   readonly "context-heaviest-title": Record<never, never>;
+  readonly "context-heaviest-calls": {
+    readonly count: unknown;
+  };
   readonly "context-results": {
     readonly count: unknown;
   };
@@ -127,11 +130,14 @@ export interface ContextCopy {
   readonly "context-share-estimated": Record<never, never>;
   readonly "context-share-exact": Record<never, never>;
   readonly "context-share-unweighed": Record<never, never>;
+  readonly "context-results-unasked": {
+    readonly count: unknown;
+  };
   readonly "context-bytes": Record<never, never>;
-  readonly "context-growth-after": {
+  readonly "context-growth-into": {
     readonly tokens: unknown;
   };
-  readonly "context-result-uncounted": Record<never, never>;
+  readonly "context-largest-subagent": Record<never, never>;
   readonly "context-heaviest-none": Record<never, never>;
   readonly "context-subject-run": Record<never, never>;
   readonly "context-subject-session": Record<never, never>;

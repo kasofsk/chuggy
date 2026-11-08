@@ -14,7 +14,6 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ExecutionResponse } from "../../../../../src/contract/responses.ts";
-import type { ContextResult } from "../../core/contextResults.ts";
 import { contextAtLabel } from "../../core/contextView.ts";
 import { executionQuery } from "../../core/executionQueries.ts";
 import {
@@ -379,11 +378,13 @@ function TicketRunDetails(props: {
   );
 }
 
-/** A result's call, as a link to the run's transcript opened at that call. */
+/** A call the Context tab names, as a link to the run's transcript opened at
+ * the step its tool call is in. */
 function TicketRunCallLink(props: {
   readonly held: TicketPageHeld;
   readonly task: number;
-  readonly result: ContextResult & { readonly call: number };
+  readonly call: number;
+  readonly step: string;
 }): ReactNode {
   const text = useCopyText();
   return (
@@ -394,10 +395,10 @@ function TicketRunCallLink(props: {
         ticket: String(props.held.ticket),
         task: String(props.task),
       }}
-      search={{ view: "Transcript", step: props.result.id }}
+      search={{ view: "Transcript", step: props.step }}
       className="context-largest-call"
     >
-      {text(contextAtLabel("Call", props.result.call))}
+      {text(contextAtLabel("Call", props.call))}
     </Link>
   );
 }
@@ -446,11 +447,12 @@ function TicketRunViewBody(props: {
         <RunContext
           partition={props.partition}
           read={props.read}
-          callLink={(result) => (
+          callLink={(link) => (
             <TicketRunCallLink
               held={props.held}
               task={props.task}
-              result={result}
+              call={link.call}
+              step={link.step}
             />
           )}
         />

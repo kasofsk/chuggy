@@ -108,9 +108,13 @@ context-inputs-none = No snapshot kept
 context-appended-prompt = Appended prompt
 context-thread-seed = { -context(case: "upper") }
 
-## Heaviest: the tool results that filled it.
+## Heaviest: the calls the context grew into most, and the tools that filled it.
 
 context-heaviest-title = Heaviest
+context-heaviest-calls = { $count ->
+    [one] { $count } call
+   *[other] { $count } calls
+}
 context-results = { $count ->
     [one] { $count } result
    *[other] { $count } results
@@ -124,9 +128,13 @@ context-largest = Largest results
 context-share-estimated = Share of the peak { -context }, at four bytes a token.
 context-share-exact = Share of the { -context } at the latest reading.
 context-share-unweighed = A result with no text, such as an image, is not weighed.
+context-results-unasked = { $count ->
+    [one] One result whose tool call is not held is left out.
+   *[other] { $count } results whose tool calls are not held are left out.
+}
 context-bytes = bytes
-context-growth-after = +{ $tokens } tok
-context-result-uncounted = Call unknown
+context-growth-into = +{ $tokens } tok
+context-largest-subagent = { -subagent(case: "upper") }
 context-heaviest-none = No tool results read yet
 
 ## The reads behind it.

@@ -156,7 +156,7 @@ export function contextSnapshot(
 }
 
 /** The transcript lines of one tool call and its result, billed as the call
- * whose figures they name. */
+ * whose figures they name, and made under the subagent call `parent` names. */
 export function contextToolLines(
   id: string,
   tool: string,
@@ -166,11 +166,13 @@ export function contextToolLines(
     readonly input?: number;
     readonly read: number;
     readonly created?: number;
+    readonly parent?: string;
   },
 ): readonly unknown[] {
   return [
     {
       type: "assistant",
+      parent_tool_use_id: billed.parent ?? null,
       message: {
         content: [{ type: "tool_use", id, name: tool, input: { command } }],
         usage: {

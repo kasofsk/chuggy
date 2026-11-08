@@ -21,7 +21,7 @@ import {
 } from "../app/core/contextInputs.ts";
 import {
   contextHeaviestOf,
-  contextResultsOf,
+  contextToolCallsOf,
 } from "../app/core/contextResults.ts";
 import type { RunTurnRowFixture } from "./contextFixture.ts";
 import {
@@ -78,12 +78,14 @@ function drawnOf(
     growth,
     tiles: contextRunTiles(calls, growth),
     inputs: contextInputsOf(snapshot, latest),
-    heaviest: contextHeaviestOf(
-      contextResultsOf(lines, calls),
-      latest,
-      contextPeakOf(growth)?.tokens,
+    heaviest: contextHeaviestOf({
+      calls,
+      compactions: growth.compactions,
+      held: contextToolCallsOf(lines, calls),
       latestOnly,
-    ),
+      window: latest,
+      peak: contextPeakOf(growth)?.tokens,
+    }),
   };
 }
 
@@ -111,7 +113,7 @@ test("a run with a reading draws its window against the whole, the threshold, an
   renderCopied(
     <ContextRunView
       drawn={drawnOf(rows, [contextReading(1, 3, contextWindow())], lines)}
-      callLink={(result) => <a href="#t">{String(result.call)}</a>}
+      callLink={(link) => <a href={`#${link.step}`}>{String(link.call)}</a>}
     />,
   );
   const window = section("Window");
@@ -127,7 +129,11 @@ test("a run with a reading draws its window against the whole, the threshold, an
   expect(
     within(heaviest).getByText("Share of the context at the latest reading."),
   ).toBeDefined();
-  expect(rowTexts(heaviest)[0]).toBe("Bash | 1 | 74,776 | 20 %");
+  expect(rowTexts(heaviest)).toStrictEqual([
+    "Bash | 75,076 | 20 %",
+    "Read | 476 | <1 %",
+  ]);
+  expect(within(heaviest).queryByText("Calls")).toBeNull();
 });
 
 test("a run with no reading draws used against the snapshot's window, every category not recorded, and estimated shares", () => {
@@ -302,7 +308,7 @@ test("a run's brief and a session's appended prompt are drawn in the text's own 
   expect(sheetDeclared(rules, prompt, "font-family")).toBe("");
 });
 
-test("Heaviest counts its results as the latest where the pane holds only the run's latest batches", () => {
+test("Heaviest counts the run's calls, and By tool with no reading counts the results held, as the latest where the pane holds only those", () => {
   const meta = (latestOnly: boolean) => {
     renderCopied(
       <ContextRunView
@@ -310,12 +316,61 @@ test("Heaviest counts its results as the latest where the pane holds only the ru
         callLink={() => null}
       />,
     );
-    const head = within(section("Heaviest")).getByRole("heading", {
-      name: "Heaviest",
-    }).nextElementSibling?.textContent;
+    const heaviest = section("Heaviest");
+    const head = (name: string) =>
+      within(heaviest).getByRole("heading", { name }).nextElementSibling
+        ?.textContent;
+    const read = [head("Heaviest"), head("By tool")];
     cleanup();
-    return head;
+    return read;
   };
-  expect(meta(false)).toBe("1 result");
-  expect(meta(true)).toBe("Latest result");
+  expect(meta(false)).toStrictEqual(["2 calls", "1 result"]);
+  expect(meta(true)).toStrictEqual(["2 calls", "Latest result"]);
+});
+
+test("a largest call links to its step where the pane holds the tool call it answered, and is its growth alone where it does not", () => {
+  const ranked = [
+    contextRow(1, { read: 10_000 }),
+    contextRow(2, { read: 30_000 }),
+    contextRow(3, { read: 1_000, parent: "toolu_task" }),
+    contextRow(4, { read: 4_000, parent: "toolu_task" }),
+    contextRow(5, { read: 38_000 }),
+  ];
+  const held = [
+    contextToolLines("toolu_orphan", "Bash", "git log", "o", { read: 1 })[1],
+    ...contextToolLines("toolu_big", "Bash", "npm test", "x".repeat(9_000), {
+      read: 30_000,
+    }),
+  ];
+  renderCopied(
+    <ContextRunView
+      drawn={drawnOf(ranked, [], held, contextSnapshot(), true)}
+      callLink={(link) => (
+        <a href={`#${link.step}`}>{`Call ${String(link.call)}`}</a>
+      )}
+    />,
+  );
+  const heaviest = section("Heaviest");
+  const largest = heaviest.querySelector<HTMLElement>(".context-largest");
+  if (largest === null) throw new Error("no largest");
+  expect(
+    [...largest.querySelectorAll("li")].map((row) =>
+      [...row.children].map((cell) => cell.textContent).join(" | "),
+    ),
+  ).toStrictEqual([
+    "Call 2 |  |  |  | +20,000 tok",
+    "Call 5 | Bash | npm test | 9,000 bytes | +8,000 tok",
+    "Call 4 Subagent |  |  |  | +3,000 tok",
+  ]);
+  expect(
+    within(largest).getByRole("link", { name: "Call 5" }).getAttribute("href"),
+  ).toBe("#toolu_big");
+  expect(within(largest).queryAllByRole("link")).toHaveLength(1);
+  expect(within(heaviest).queryByText(/unknown/u)).toBeNull();
+  expect(rowTexts(heaviest)).toStrictEqual(["Bash | 1 | 9,000 | 5 %"]);
+  expect(
+    within(heaviest).getByText(
+      "One result whose tool call is not held is left out.",
+    ),
+  ).toBeDefined();
 });

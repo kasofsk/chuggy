@@ -50,6 +50,9 @@ export interface ContextCall {
   /** Its place among every call the run made, subagents' included, from one. */
   readonly call: number;
   readonly series: ContextSeries;
+  /** The subagent call it was made under, which names its series apart from
+   * every other subagent's, and none for the run's own. */
+  readonly parent: string | undefined;
   readonly model: string;
   readonly tokensInput: number;
   readonly tokensCacheRead: number;
@@ -67,7 +70,7 @@ function contextCallSame(
 ): boolean {
   return (
     call !== undefined &&
-    call.series === contextRowSeries(row) &&
+    call.parent === row.parentToolUseId &&
     call.model === row.model &&
     call.tokensInput === row.tokensInput &&
     call.tokensCacheRead === row.tokensCacheRead &&
@@ -94,6 +97,7 @@ export function contextCallsOf(
     calls.push({
       call: calls.length + 1,
       series: contextRowSeries(row),
+      parent: row.parentToolUseId,
       model: row.model,
       tokensInput: row.tokensInput,
       tokensCacheRead: row.tokensCacheRead,
