@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The mutations this ticket's phase enables, submitted and followed to
  * settlement.
@@ -43,6 +42,7 @@ import {
   operationFailureLabel,
   operationStepLabel,
   ticketActionEffect,
+  ticketActionLabel,
 } from "../core/codeLabels.ts";
 import type { ResumeOffer } from "../core/codeLabels.ts";
 import {
@@ -397,12 +397,20 @@ function ticketCancelWrite(
       )
         return { outcome: "Ok", value: undefined };
       if (!answered.accepted)
-        throw new ConsoleWriteRefused(`Cancel refused · ${answered.said}`);
+        throw new ConsoleWriteRefused(
+          text({
+            id: "ticket-cancel-refused",
+            args: { reason: answered.said },
+          }),
+        );
       attemptCancelled(dispatch, partition, ticket, standing);
       return { outcome: "Ok", value: undefined };
     },
     refusal: (failure) =>
-      `Cancel refused · ${text(operationFailureLabel(failure))}`,
+      text({
+        id: "ticket-cancel-refused",
+        args: { reason: text(operationFailureLabel(failure)) },
+      }),
   };
 }
 
@@ -448,8 +456,11 @@ function ActionButtons(props: {
       >
         {asks ? (
           <TicketActionConfirm
-            title={`Dispatch ticket #${String(props.ticket)}?`}
-            confirm="Dispatch"
+            title={text({
+              id: "ticket-dispatch-confirm-title",
+              args: { number: props.ticket },
+            })}
+            confirm={text(ticketActionLabel("Dispatch"))}
             open={asking === action.action}
             onOpenChange={(open) => {
               setAsking(open ? action.action : undefined);
@@ -620,6 +631,7 @@ export function FollowNotes(props: {
   const attempt = props.submitting.attempt;
   const step = attempt?.step;
   const pending = step?.step === "Following" ? step.operation : undefined;
+  const text = useCopyText();
   return (
     <>
       {attempt === undefined ? null : (
@@ -633,7 +645,7 @@ export function FollowNotes(props: {
             props.submitting.cancel(pending);
           }}
         >
-          Cancel
+          {text({ id: "ticket-cancel" })}
         </Button>
       )}
       {props.submitting.refused === undefined ? null : (
@@ -680,6 +692,7 @@ function TicketDuplicateLink(props: {
   readonly partition: PartitionIdentity;
   readonly ticket: number;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <ButtonLink
       to="/$tenant/$project/tickets/new"
@@ -687,7 +700,7 @@ function TicketDuplicateLink(props: {
       search={{ from: props.ticket }}
       variant="primary"
     >
-      Duplicate
+      {text({ id: "ticket-duplicate" })}
     </ButtonLink>
   );
 }
@@ -748,6 +761,7 @@ export function TicketHeaderActions(
 /** What stands in the way of the actions, and the follow of whichever was
  * pressed, wherever it was pressed. */
 export function TicketHeaderNotes(props: TicketHeaderActionsProps): ReactNode {
+  const text = useCopyText();
   return (
     <div className="ticket-header-notes">
       {props.noRunner ? <NoRunnerLine partition={props.partition} /> : null}
@@ -755,10 +769,17 @@ export function TicketHeaderNotes(props: TicketHeaderActionsProps): ReactNode {
         <PanelUnready state={props.openState} />
       ) : null}
       {props.dispatchState.state === "Failed" ? (
-        <ReadFailed subject="Dispatch" failure={props.dispatchState.failure} />
+        <ReadFailed
+          subject={text(ticketActionLabel("Dispatch"))}
+          failure={props.dispatchState.failure}
+        />
       ) : null}
       {props.byHand ? (
-        <Notice tone="info" inline detail="No lead · Dispatched by hand" />
+        <Notice
+          tone="info"
+          inline
+          detail={text({ id: "ticket-no-lead-dispatched-by-hand" })}
+        />
       ) : null}
       <FollowNotes submitting={props.acting.submitting} />
     </div>

@@ -157,7 +157,7 @@ test("one press of Revoke sends nothing and asks what it ends", async () => {
 
   expect(api.submissions()).toBe(0);
   expect(group.textContent).toContain(
-    "Ends this ticket and parks its dependents. Can't be undone.",
+    "Ends this ticket and blocks its dependents. Can't be undone.",
   );
   expect(header.contains(group)).toBe(false);
 });

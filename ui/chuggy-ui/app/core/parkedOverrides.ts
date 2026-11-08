@@ -174,9 +174,18 @@ export function parkedOverridesRefusal(
   text: CopyText,
 ): string | undefined {
   if (step.step === "Abandoned")
-    return `Not saved · ${text(operationAbandonWords(step.cause).word)}`;
-  if (step.step !== "Settled") return "Not saved";
+    return text({
+      id: "ticket-overrides-not-saved-because",
+      args: { reason: operationAbandonWords(step.cause).word },
+    });
+  if (step.step !== "Settled")
+    return text({ id: "ticket-overrides-not-saved" });
   if (step.refusal !== undefined)
-    return `Not saved · ${text(operationRefusalLabel(step.refusal.type))}`;
-  return step.state === "Answered" ? undefined : "Not saved";
+    return text({
+      id: "ticket-overrides-not-saved-because",
+      args: { reason: operationRefusalLabel(step.refusal.type) },
+    });
+  return step.state === "Answered"
+    ? undefined
+    : text({ id: "ticket-overrides-not-saved" });
 }

@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The Usage tab: what the ticket's runs cost and took, as four tiles, by step
  * and by model, and where delivery stands where the ticket's repository
@@ -23,7 +22,6 @@ import {
   tokensTotal,
 } from "../../core/figures.ts";
 import type { Figure as FigureValue } from "../../core/figures.ts";
-import { countedLabel } from "../../core/runTotals.ts";
 import { ticketDeliveryDrawn } from "../../core/ticketDelivery.ts";
 import { ticketUsageStepsOf } from "../../core/ticketUsage.ts";
 import type { TicketUsageStep } from "../../core/ticketUsage.ts";
@@ -36,6 +34,8 @@ import { Table } from "../ui/Table.tsx";
 import { TicketDelivery } from "./TicketDelivery.tsx";
 import { readValue } from "./TicketPageHeld.tsx";
 import type { TicketPageHeld } from "./TicketPageHeld.tsx";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
+import type { CopyText } from "../../core/copy.ts";
 
 import "./ticket.css";
 
@@ -45,15 +45,11 @@ const ticketUsageUnmeasured: FigureValue = {
 };
 
 /** The basis a ticket's cost was priced on, in a reader's words. */
-function ticketUsageBasisLabel(basis: RunCostBasis): string {
+function ticketUsageBasisLabel(basis: RunCostBasis, text: CopyText): string {
   switch (basis) {
     case "List":
-      return "list price";
+      return text({ id: "ticket-usage-basis-list" });
   }
-}
-
-function ticketUsageModelsLabel(count: number): string {
-  return count === 1 ? "one model" : countedLabel(count, "model");
 }
 
 function TicketUsageTile(props: {
@@ -75,12 +71,15 @@ function TicketUsageTiles(props: {
   readonly total: TicketUsageStep;
 }): ReactNode {
   const totals = props.totals;
+  const text = useCopyText();
   return (
     <dl className="ticket-usage-tiles">
       <TicketUsageTile
-        name="Cost"
+        name={text({ id: "ticket-field-cost" })}
         note={
-          totals === undefined ? "" : ticketUsageBasisLabel(totals.costBasis)
+          totals === undefined
+            ? ""
+            : ticketUsageBasisLabel(totals.costBasis, text)
         }
       >
         <Figure
@@ -92,17 +91,23 @@ function TicketUsageTiles(props: {
         />
       </TicketUsageTile>
       <TicketUsageTile
-        name="Run time"
-        note={countedLabel(props.total.runs, "run")}
+        name={text({ id: "ticket-field-run-time" })}
+        note={text({
+          id: "ticket-run-count",
+          args: { count: props.total.runs },
+        })}
       >
         <Figure figure={props.total.time.ran} />
       </TicketUsageTile>
       <TicketUsageTile
-        name="Tokens"
+        name={text({ id: "ticket-field-tokens" })}
         note={
           totals === undefined
             ? ""
-            : ticketUsageModelsLabel(totals.models.length)
+            : text({
+                id: "ticket-usage-models-note",
+                args: { count: totals.models.length },
+              })
         }
       >
         <Figure
@@ -113,7 +118,10 @@ function TicketUsageTiles(props: {
           }
         />
       </TicketUsageTile>
-      <TicketUsageTile name="Turns" note="agent runs">
+      <TicketUsageTile
+        name={text({ id: "ticket-field-turns" })}
+        note={text({ id: "ticket-usage-agent-runs" })}
+      >
         {totals === undefined ? (
           <Figure figure={ticketUsageUnmeasured} />
         ) : (
@@ -164,25 +172,26 @@ function TicketUsageBySteps(props: {
   readonly steps: readonly TicketUsageStep[];
   readonly total: TicketUsageStep;
 }): ReactNode {
+  const text = useCopyText();
   return (
-    <Table caption="Usage by step">
+    <Table caption={text({ id: "ticket-usage-by-step-caption" })}>
       <thead>
         <tr>
-          <th scope="col">Step</th>
+          <th scope="col">{text({ id: "ticket-usage-col-step" })}</th>
           <th scope="col" className="num">
-            Runs
+            {text({ id: "ticket-usage-col-runs" })}
           </th>
           <th scope="col" className="num">
-            Run time
+            {text({ id: "ticket-field-run-time" })}
           </th>
           <th scope="col" className="num">
-            Waited
+            {text({ id: "ticket-field-waited" })}
           </th>
           <th scope="col" className="num">
-            Tokens
+            {text({ id: "ticket-field-tokens" })}
           </th>
           <th scope="col" className="num">
-            Cost
+            {text({ id: "ticket-field-cost" })}
           </th>
         </tr>
       </thead>
@@ -205,25 +214,26 @@ function TicketUsageBySteps(props: {
 }
 
 function TicketUsageByModel(props: { readonly totals: RunTotals }): ReactNode {
+  const text = useCopyText();
   return (
-    <Table caption="Usage by model">
+    <Table caption={text({ id: "ticket-usage-by-model-caption" })}>
       <thead>
         <tr>
-          <th scope="col">Model</th>
+          <th scope="col">{text({ id: "ticket-field-model" })}</th>
           <th scope="col" className="num">
-            Input
+            {text({ id: "ticket-usage-col-input" })}
           </th>
           <th scope="col" className="num">
-            Output
+            {text({ id: "ticket-usage-col-output" })}
           </th>
           <th scope="col" className="num">
-            Cache write
+            {text({ id: "ticket-usage-col-cache-write" })}
           </th>
           <th scope="col" className="num">
-            Cache read
+            {text({ id: "ticket-usage-col-cache-read" })}
           </th>
           <th scope="col" className="num">
-            Cost
+            {text({ id: "ticket-field-cost" })}
           </th>
         </tr>
       </thead>
@@ -273,13 +283,14 @@ function TicketUsageSection(props: {
 }
 
 function TicketUsageMinor(props: { readonly totals: RunTotals }): ReactNode {
+  const text = useCopyText();
   return (
     <div className="ticket-usage-minor">
       <Fields variant="inline">
-        <Field name="API time">
+        <Field name={text({ id: "ticket-field-api-time" })}>
           <Figure figure={durationFigure(props.totals.durationApiMs)} />
         </Field>
-        <Field name="Permission denials">
+        <Field name={text({ id: "ticket-usage-permission-denials" })}>
           <span className="num">{props.totals.permissionDenials}</span>
         </Field>
       </Fields>
@@ -291,6 +302,7 @@ function TicketUsageFigures(props: {
   readonly held: TicketPageHeld;
 }): ReactNode {
   const { held } = props;
+  const text = useCopyText();
   const page = readValue(held.reads.pageState);
   if (page === undefined) return <PanelUnready state={held.reads.pageState} />;
   const usage = ticketUsageStepsOf(
@@ -298,24 +310,39 @@ function TicketUsageFigures(props: {
     held.facts.plan.names,
     held.nowMs,
   );
-  if (usage === undefined) return <EmptyState label="Nothing has run" />;
+  if (usage === undefined)
+    return <EmptyState label={text({ id: "ticket-nothing-has-run" })} />;
   const totals = readValue(held.reads.ticketState)?.runTotals;
   return (
     <>
       <TicketUsageTiles totals={totals} total={usage.total} />
-      <TicketUsageSection id="ticket-usage-steps" title="By step">
+      <TicketUsageSection
+        id="ticket-usage-steps"
+        title={text({ id: "ticket-usage-by-step-title" })}
+      >
         {held.facts.truncated ? (
           <Notice
             tone="parked"
             inline
-            detail={`Steps over the first ${countedLabel(usage.total.runs, "run")}`}
+            detail={text({
+              id: "ticket-usage-steps-over",
+              args: {
+                run: {
+                  id: "ticket-run-count",
+                  args: { count: usage.total.runs },
+                },
+              },
+            })}
           />
         ) : null}
         <TicketUsageBySteps steps={usage.steps} total={usage.total} />
       </TicketUsageSection>
       {totals === undefined ? null : (
         <>
-          <TicketUsageSection id="ticket-usage-models" title="By model">
+          <TicketUsageSection
+            id="ticket-usage-models"
+            title={text({ id: "ticket-usage-by-model-title" })}
+          >
             <TicketUsageByModel totals={totals} />
           </TicketUsageSection>
           <TicketUsageMinor totals={totals} />
@@ -329,11 +356,15 @@ export function TicketUsage(props: {
   readonly held: TicketPageHeld;
 }): ReactNode {
   const delivery = props.held.reads.deliveryState;
+  const text = useCopyText();
   return (
     <div className="ticket-usage">
       <TicketUsageFigures held={props.held} />
       {ticketDeliveryDrawn(delivery) ? (
-        <TicketUsageSection id="ticket-delivery" title="Delivery">
+        <TicketUsageSection
+          id="ticket-delivery"
+          title={text({ id: "ticket-usage-delivery-title" })}
+        >
           <TicketDelivery state={delivery} />
         </TicketUsageSection>
       ) : null}

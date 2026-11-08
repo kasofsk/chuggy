@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * One ticket, as a header over four tabs: its title, where it stands with the
  * one fragment that says why and what may be done to it, and under the tabs
@@ -259,7 +258,7 @@ function TicketStandingHeader(props: {
   return (
     <TicketHeader
       ticket={held.ticket}
-      title={ticket.title ?? "Ticket"}
+      title={ticket.title ?? text({ id: "ticket-page-untitled" })}
       standing={standing}
       fragment={ticketHeaderFragment(
         {
@@ -404,6 +403,13 @@ export function TicketPage(props: { readonly children: ReactNode }): ReactNode {
   );
 }
 
+function TicketPageNotFound(): ReactNode {
+  const text = useCopyText();
+  return (
+    <EmptyState label={text({ id: "ticket-page-not-found" })} variant="page" />
+  );
+}
+
 function TicketPageOf(props: {
   readonly partition: PartitionIdentity;
   readonly ticket: number;
@@ -434,7 +440,7 @@ function TicketPageOf(props: {
   const deliveryState = useTicketDelivery(partition, ticket);
   const landingsState = useTicketLandings(partition, ticket);
   if (!Number.isSafeInteger(ticket) || ticket <= 0)
-    return <EmptyState label="No such ticket" variant="page" />;
+    return <TicketPageNotFound />;
   const reads: TicketReads = {
     ticketState,
     configurationState,

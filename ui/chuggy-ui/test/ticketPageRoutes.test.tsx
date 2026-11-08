@@ -194,7 +194,7 @@ test("a run's sub-tab is its own address", async () => {
   runServed();
   await mountedAt(`${ticketPath}/runs/1?view=Details`);
   expect(runViewCurrent()).toBe("Details");
-  expect(screen.getByText("Execution", { selector: "dt" })).toBeDefined();
+  expect(screen.getByText("Run ID", { selector: "dt" })).toBeDefined();
   consoleSiteClean(site);
 });
 

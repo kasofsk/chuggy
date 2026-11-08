@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The question a dispatch, a revoke or a draft's deletion is asked before it
  * is sent, in a dialog over the page: what it does, then Cancel and the button
@@ -9,6 +8,7 @@ import type { ReactNode } from "react";
 
 import { Button } from "../ui/Button.tsx";
 import { Dialog } from "../ui/Dialog.tsx";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 
 export function TicketActionConfirm(props: {
   readonly title: string;
@@ -19,6 +19,7 @@ export function TicketActionConfirm(props: {
   readonly onConfirm: () => void;
   readonly children: ReactNode;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <Dialog
       title={props.title}
@@ -33,7 +34,7 @@ export function TicketActionConfirm(props: {
               props.onOpenChange(false);
             }}
           >
-            Cancel
+            {text({ id: "ticket-cancel" })}
           </Button>
           <Button
             variant={props.danger === true ? "danger" : "primary"}

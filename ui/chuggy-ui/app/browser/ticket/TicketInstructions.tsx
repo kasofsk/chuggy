@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * What the ticket asks for: the brief's intent as markdown, folded to its
  * first lines with a fade and opened by a toggle under it that is drawn only
@@ -17,6 +16,7 @@ import type { TicketResponse } from "../../../../../src/contract/responses.ts";
 import { TicketBriefImages } from "../TicketProvenance.tsx";
 import { Button } from "../ui/Button.tsx";
 import { MarkdownReport } from "../ui/MarkdownReport.tsx";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 
 import "./ticket.css";
 
@@ -94,6 +94,7 @@ export function IntentFolded(props: {
   const from = useRef<number | undefined>(undefined);
   const [open, setOpen] = useState(false);
   const [long, setLong] = useState(false);
+  const copyText = useCopyText();
   useLayoutEffect(() => {
     const element = body.current;
     if (element === null || open) return;
@@ -129,7 +130,11 @@ export function IntentFolded(props: {
             setOpen(!open);
           }}
         >
-          {open ? "Show less" : "Show all"}
+          {copyText({
+            id: open
+              ? "ticket-instructions-show-less"
+              : "ticket-instructions-show-all",
+          })}
         </Button>
       ) : null}
     </>
@@ -142,6 +147,7 @@ function InstructionsIntent(props: {
   readonly measure: InstructionsMeasure;
   readonly aside: ReactNode;
 }): ReactNode {
+  const copyText = useCopyText();
   return (
     <>
       <div className="ticket-instructions-head">
@@ -149,7 +155,7 @@ function InstructionsIntent(props: {
           className="ticket-instructions-title"
           id="ticket-instructions-title"
         >
-          Instructions
+          {copyText({ id: "ticket-instructions-title" })}
         </h2>
         {props.aside}
       </div>

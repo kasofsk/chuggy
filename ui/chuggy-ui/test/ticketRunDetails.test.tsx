@@ -141,11 +141,11 @@ test("a run's details say where and on what it ran, with no raw identity and no 
   expect(text).not.toContain("agent-result");
 });
 
-test("the execution's identity is cut in the middle", async () => {
+test("the run's identity is cut in the middle", async () => {
   const drawn = await details(
     passed([runAttempt("a1", { openedAt, endedAt })], [agentResult]),
   );
-  expect(field(drawn, "Execution")).toBe("execution-17…c82b-1");
+  expect(field(drawn, "Run ID")).toBe("execution-17…c82b-1");
 });
 
 test("a run its fabric opened again counts every attempt it took", async () => {

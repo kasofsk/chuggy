@@ -122,7 +122,7 @@ function needsYouMore(
     reads.landings,
     escalation.evidence,
   );
-  if (removal !== undefined) return removal;
+  if (removal !== undefined) return text(removal);
   const more =
     escalationEvidenceLine(escalation.evidence) ??
     escalationDetailLine(escalation.kind, {
@@ -150,10 +150,11 @@ function needsYouAsked(detail: string): TicketSlot {
 function needsYouStep(
   execution: ExecutionSummary,
   names: StageNames,
+  text: CopyText,
 ): string | undefined {
   const identity = execution.identity;
   return identity.type === "WorkTask"
-    ? "work"
+    ? text({ id: "ticket-situation-step-work" })
     : names?.[identity.value.stage - 1];
 }
 
@@ -177,6 +178,7 @@ function needsYouStopped(cycle: Cycle): ExecutionSummary | undefined {
 function needsYouWhere(
   reads: SituationReads,
   said: { readonly execution: string } | undefined,
+  text: CopyText,
 ): {
   readonly where: string | undefined;
   readonly run: NeedsYouRun | undefined;
@@ -202,7 +204,7 @@ function needsYouWhere(
         : {
             task: execution.task,
             execution: execution.execution,
-            step: needsYouStep(execution, reads.names),
+            step: needsYouStep(execution, reads.names, text),
           },
   };
 }
@@ -217,7 +219,7 @@ function needsYou(
   const escalation = ticket.escalation;
   if (escalation !== undefined) {
     const said = escalation.lost ?? escalation.failed;
-    const { where, run } = needsYouWhere(reads, said);
+    const { where, run } = needsYouWhere(reads, said, text);
     return {
       slot: "NeedsYou",
       detail: text(escalationDetail(escalation)),

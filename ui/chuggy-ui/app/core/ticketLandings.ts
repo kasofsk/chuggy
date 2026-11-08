@@ -39,13 +39,13 @@ import {
   finalizationUnavailableKindLabel,
   ticketLandingStateLabel,
 } from "./codeLabels.ts";
-import type { CopyText } from "./copy.ts";
+import type { Copy, CopyText } from "./copy.ts";
 import { agoText } from "./figures.ts";
 import type { PanelState } from "./freshness.ts";
 import { httpsUrl } from "./httpsUrl.ts";
 import { commitLabel } from "./labels.ts";
 import type { Label } from "./labels.ts";
-import { countedLabel } from "./runTotals.ts";
+import { runCountLabel } from "./runTotals.ts";
 import type { TicketDeliveryLink } from "./ticketDelivery.ts";
 import { ticketLandingTone } from "./tones.ts";
 import type { Tone } from "./tones.ts";
@@ -412,7 +412,9 @@ export function ticketLandingFragment(
             : [
                 landing.failure,
                 ...(landing.conflictCount > 0
-                  ? [countedLabel(landing.conflictCount, "file")]
+                  ? [
+                      `${runCountLabel(landing.conflictCount)} file${landing.conflictCount === 1 ? "" : "s"}`,
+                    ]
                   : []),
               ].join(" · "),
         link: undefined,
@@ -491,12 +493,12 @@ export function ticketLandingSummary(landing: TicketLanding): string {
 export function ticketLandingEscalatedRemoval(
   landings: readonly TicketLanding[],
   evidence: TicketEscalation["evidence"],
-): string | undefined {
+): Copy | undefined {
   const newest = landings.at(-1);
   const hold = newest?.state === "Unavailable" ? newest.hold : undefined;
   return hold?.removal === undefined || hold.kind !== evidence
     ? undefined
-    : `Queue removal: ${hold.removal}`;
+    : { id: "ticket-landing-queue-removal", args: { removal: hold.removal } };
 }
 
 /** The landings joined to the cycles the ledger holds, and those it does not. */

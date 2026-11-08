@@ -4,7 +4,7 @@
  * injected measurement.
  */
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, expect, test } from "vitest";
 
 import type { TicketResponse } from "../../../src/contract/responses.ts";
@@ -12,6 +12,7 @@ import {
   TicketInstructions,
   instructionsOverflow,
 } from "../app/browser/ticket/TicketInstructions.tsx";
+import { renderCopied } from "./copied.tsx";
 
 afterEach(cleanup);
 
@@ -23,7 +24,7 @@ const ticket = {
 } as unknown as TicketResponse;
 
 function drawn(measure: () => boolean, aside?: string): void {
-  render(
+  renderCopied(
     <TicketInstructions
       partition={atlas}
       brief={ticket.brief}

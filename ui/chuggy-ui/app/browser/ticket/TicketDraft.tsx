@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * A draft never released, drawn as the ticket page draws a ticket: the Draft
  * label and "Not released", Release, Edit, which opens the form, and a menu
@@ -41,11 +40,6 @@ import { readValue, TicketPageHeldProvider } from "./TicketPageHeld.tsx";
 import type { TicketPageHeld, TicketReads } from "./TicketPageHeld.tsx";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import type { CopyText } from "../../core/copy.ts";
-
-const ticketDraftFragment = {
-  fragment: "Words",
-  words: "Not released",
-} as const;
 
 export type TicketDraftDeletion = ConsoleWriting<number, DraftResponse>;
 
@@ -116,7 +110,7 @@ function TicketDraftActions(props: {
             params={partition}
             search={{ draft: draft.ticket }}
           >
-            Edit
+            {text({ id: "ticket-edit" })}
           </ButtonLink>
         </>
       ) : null}
@@ -143,13 +137,19 @@ function TicketDraftStanding(props: {
   const { held, draft } = props;
   const navigate = useNavigate();
   const deleting = props.deletion;
+  const text = useCopyText();
   return (
     <>
       <TicketHeader
         ticket={held.ticket}
-        title={ticketDraftTitleOf(draft) ?? "Draft"}
+        title={
+          ticketDraftTitleOf(draft) ?? text({ id: "ticket-draft-untitled" })
+        }
         standing="Draft"
-        fragment={ticketDraftFragment}
+        fragment={{
+          fragment: "Words",
+          words: text({ id: "ticket-draft-not-released" }),
+        }}
         nowMs={held.nowMs}
         epics={null}
         actions={

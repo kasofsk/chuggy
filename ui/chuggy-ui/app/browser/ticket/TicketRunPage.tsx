@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * One run's own page under the ticket's Runs tab: the rail of the ticket's
  * runs with this one marked, its heading and figures, and its Summary,
@@ -25,7 +24,7 @@ import { runReasonAttempt, runRefusalOf } from "../../core/runReason.ts";
 import type { RunResultOpened } from "../../core/runResult.ts";
 import { runTimeOf } from "../../core/runTotals.ts";
 import { runTranscriptAttempt } from "../../core/runTranscript.ts";
-import { cycleLabel } from "../../core/ticketLedger.ts";
+import { cycleLabel, setVerdictLabel } from "../../core/ticketLedger.ts";
 import {
   ticketRunDetailsOf,
   ticketRunLive,
@@ -35,7 +34,11 @@ import {
   ticketRunViewShown,
   ticketRunViews,
 } from "../../core/ticketRuns.ts";
-import type { TicketRunStep, TicketRunView } from "../../core/ticketRuns.ts";
+import type {
+  TicketRunDetails as TicketRunDetailsFacts,
+  TicketRunStep,
+  TicketRunView,
+} from "../../core/ticketRuns.ts";
 import { verdictTone } from "../../core/tones.ts";
 import { usePanelState } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
@@ -59,6 +62,8 @@ import { RunResultOpenedBody, useRunResultOpened } from "./TicketResult.tsx";
 import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
 import { TicketRunsRail, useTicketRuns } from "./TicketRuns.tsx";
 import type { TicketRunsRailCurrent } from "./TicketRuns.tsx";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
+import type { Copy } from "../../core/copy.ts";
 
 import "./ticket.css";
 
@@ -66,6 +71,7 @@ import "./ticket.css";
 export function TicketRunsBack(props: {
   readonly held: TicketPageHeld;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <Link
       to="/$tenant/$project/tickets/$ticket/runs"
@@ -73,7 +79,7 @@ export function TicketRunsBack(props: {
       className="ticket-run-back"
     >
       <Chevron className="ticket-run-back-chevron" />
-      All runs
+      {text({ id: "ticket-all-runs" })}
     </Link>
   );
 }
@@ -108,6 +114,7 @@ function TicketRunMeta(props: {
   const spend = spendFigures(totals, totals?.costBasis);
   const taken = step.execution.takenAt;
   const line = runTimeLineOf(runTimeOf([step.execution], nowMs));
+  const text = useCopyText();
   return (
     <p className="ticket-run-meta">
       {taken === undefined ? null : (
@@ -117,16 +124,17 @@ function TicketRunMeta(props: {
       )}
       {line.line === "Waiting" ? (
         <span>
-          Waiting <Figure figure={line.waited} />
+          {text({ id: "ticket-waiting" })} <Figure figure={line.waited} />
         </span>
       ) : (
         <>
           <span>
-            ran <Figure figure={line.ran} />
+            {text({ id: "ticket-ran-lower" })} <Figure figure={line.ran} />
           </span>
           {line.waited === undefined ? null : (
             <span>
-              waited <Figure figure={line.waited} />
+              {text({ id: "ticket-waited-lower" })}{" "}
+              <Figure figure={line.waited} />
             </span>
           )}
         </>
@@ -143,13 +151,14 @@ function TicketRunHead(props: {
 }): ReactNode {
   const step = props.step;
   const tone = verdictTone(step.verdict);
+  const text = useCopyText();
   return (
     <div className="ticket-run-head">
       <div className="ticket-run-heading">
         <TicketRunMarkDrawn mark={ticketRunMarkOf(step.verdict)} tone={tone} />
         <h2>{step.name}</h2>
         <span className="ticket-run-cycle">{cycleLabel(step.cycle)}</span>
-        <Pill tone={tone}>{step.verdict}</Pill>
+        <Pill tone={tone}>{text(setVerdictLabel(step.verdict))}</Pill>
       </div>
       <TicketRunMeta step={step} nowMs={props.nowMs} />
     </div>
@@ -165,6 +174,20 @@ function ticketRunViewsOffered(
   );
 }
 
+/** A run's sub-tab, in the word its own link says. */
+function ticketRunViewLabel(view: TicketRunView): Copy {
+  switch (view) {
+    case "Summary":
+      return { id: "ticket-run-view-summary" };
+    case "Transcript":
+      return { id: "ticket-run-view-transcript" };
+    case "Details":
+      return { id: "ticket-run-view-details" };
+    case "Output":
+      return { id: "ticket-run-view-output" };
+  }
+}
+
 function TicketRunViewTabs(props: {
   readonly held: TicketPageHeld;
   readonly task: number;
@@ -176,8 +199,12 @@ function TicketRunViewTabs(props: {
     ticket: String(props.held.ticket),
     task: String(props.task),
   };
+  const text = useCopyText();
   return (
-    <nav aria-label="Run" className="ticket-tabs ticket-run-views">
+    <nav
+      aria-label={text({ id: "ticket-run-nav-label" })}
+      className="ticket-tabs ticket-run-views"
+    >
       <ul>
         {props.offered.map((view) => (
           <li key={view}>
@@ -190,7 +217,7 @@ function TicketRunViewTabs(props: {
               className="ticket-tab"
               replace
             >
-              {view}
+              {text(ticketRunViewLabel(view))}
             </Link>
           </li>
         ))}
@@ -207,6 +234,7 @@ function TicketRunSummary(props: {
   readonly live: boolean;
 }): ReactNode {
   const { read, opened } = props;
+  const text = useCopyText();
   if (opened?.opened === "Report")
     return (
       <RunResultOpenedBody
@@ -229,7 +257,13 @@ function TicketRunSummary(props: {
   const refusal = runRefusalOf(read);
   if (refusal !== undefined)
     return <p className="ticket-run-refusal">{refusal.full}</p>;
-  return <EmptyState label={props.live ? "Running" : "No summary"} />;
+  return (
+    <EmptyState
+      label={text({
+        id: props.live ? "ticket-verdict-running" : "ticket-run-no-summary",
+      })}
+    />
+  );
 }
 
 function TicketRunTranscript(props: {
@@ -237,7 +271,9 @@ function TicketRunTranscript(props: {
   readonly read: ExecutionResponse;
 }): ReactNode {
   const attempt = runTranscriptAttempt(props.read);
-  if (attempt === undefined) return <EmptyState label="No transcript" />;
+  const text = useCopyText();
+  if (attempt === undefined)
+    return <EmptyState label={text({ id: "ticket-run-no-transcript" })} />;
   return (
     <RunTranscriptOfRun
       key={attempt.attempt}
@@ -250,6 +286,73 @@ function TicketRunTranscript(props: {
   );
 }
 
+function TicketRunDetailsFields(props: {
+  readonly details: TicketRunDetailsFacts;
+}): ReactNode {
+  const { details } = props;
+  const text = useCopyText();
+  const none = text({ id: "ticket-value-none" });
+  return (
+    <Fields>
+      <Field name={text({ id: "ticket-run-runner" })}>{details.runner}</Field>
+      {details.image === undefined ? null : (
+        <Field name={text({ id: "ticket-run-image" })}>
+          <Identity label={details.image} />
+        </Field>
+      )}
+      <Field
+        name={text({ id: "ticket-run-worker" })}
+        absent={details.worker === undefined}
+      >
+        {details.worker ?? text({ id: "ticket-value-unknown" })}
+      </Field>
+      <Field
+        name={text({ id: "ticket-run-cpus" })}
+        absent={details.cpus === undefined}
+      >
+        {details.cpus ?? text({ id: "ticket-value-default" })}
+      </Field>
+      <Field name={text({ id: "ticket-field-waited" })}>
+        <Figure figure={details.waited} />
+      </Field>
+      <Field name={text({ id: "ticket-field-attempts" })}>
+        {details.attempts}
+      </Field>
+      <Field
+        name={text({ id: "ticket-field-model" })}
+        absent={details.model === undefined}
+      >
+        {details.model ?? none}
+      </Field>
+      <Field
+        name={text({ id: "ticket-field-turns" })}
+        absent={details.turns === undefined}
+      >
+        {details.turns ?? none}
+      </Field>
+      <Field
+        name={text({ id: "ticket-field-api-time" })}
+        absent={details.apiTime === undefined}
+      >
+        {details.apiTime === undefined ? (
+          none
+        ) : (
+          <Figure figure={details.apiTime} />
+        )}
+      </Field>
+      <Field
+        name={text({ id: "ticket-field-tokens" })}
+        absent={details.tokens === undefined}
+      >
+        {details.tokens ?? none}
+      </Field>
+      <Field name={text({ id: "ticket-run-id-field" })}>
+        <Identity label={details.execution} />
+      </Field>
+    </Fields>
+  );
+}
+
 function TicketRunDetails(props: {
   readonly partition: PartitionIdentity;
   readonly read: ExecutionResponse;
@@ -258,43 +361,7 @@ function TicketRunDetails(props: {
   const details = ticketRunDetailsOf(props.read, props.nowMs);
   return (
     <div className="grid gap-4">
-      <Fields>
-        <Field name="Runner">{details.runner}</Field>
-        {details.image === undefined ? null : (
-          <Field name="Image">
-            <Identity label={details.image} />
-          </Field>
-        )}
-        <Field name="Worker" absent={details.worker === undefined}>
-          {details.worker ?? "Unknown"}
-        </Field>
-        <Field name="CPUs" absent={details.cpus === undefined}>
-          {details.cpus ?? "Default"}
-        </Field>
-        <Field name="Waited">
-          <Figure figure={details.waited} />
-        </Field>
-        <Field name="Attempts">{details.attempts}</Field>
-        <Field name="Model" absent={details.model === undefined}>
-          {details.model ?? "None"}
-        </Field>
-        <Field name="Turns" absent={details.turns === undefined}>
-          {details.turns ?? "None"}
-        </Field>
-        <Field name="API time" absent={details.apiTime === undefined}>
-          {details.apiTime === undefined ? (
-            "None"
-          ) : (
-            <Figure figure={details.apiTime} />
-          )}
-        </Field>
-        <Field name="Tokens" absent={details.tokens === undefined}>
-          {details.tokens ?? "None"}
-        </Field>
-        <Field name="Execution">
-          <Identity label={details.execution} />
-        </Field>
-      </Fields>
+      <TicketRunDetailsFields details={details} />
       <ExecutionArtifacts partition={props.partition} execution={props.read} />
     </div>
   );
@@ -400,12 +467,13 @@ function TicketRunOf(props: {
   readonly asked: TicketRunView | undefined;
 }): ReactNode {
   const runs = useTicketRuns(props.held);
+  const text = useCopyText();
   const step =
     runs === undefined || props.task === undefined
       ? undefined
       : ticketRunsFind(runs.cycles, props.task);
   return step === undefined ? (
-    <EmptyState label="No such run" />
+    <EmptyState label={text({ id: "ticket-run-not-found" })} />
   ) : (
     <TicketRunFound held={props.held} step={step} asked={props.asked} />
   );

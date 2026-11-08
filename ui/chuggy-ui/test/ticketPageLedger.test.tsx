@@ -649,7 +649,7 @@ test("a short page says so", async () => {
     ticket: parkedTicket,
     cursor: "more",
   });
-  const short = screen.getByText(/Showing first 4 executions/u);
+  const short = screen.getByText(/Showing first 4 runs/u);
   expect(short.classList.contains("notice-inline")).toBe(true);
   expect(short.classList.contains("notice-parked")).toBe(true);
   expect(

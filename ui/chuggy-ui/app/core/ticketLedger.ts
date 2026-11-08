@@ -63,6 +63,7 @@ import type {
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
 import type { ExecutionTaskKind } from "../../../../src/contract/rosters.ts";
+import type { Copy } from "./copy.ts";
 import { identityCycle, runSpendOf } from "./runTotals.ts";
 import type { RunSpend } from "./runTotals.ts";
 
@@ -517,4 +518,33 @@ export function stageLabel(stage: number, names: StageNames): string {
 
 export function cycleLabel(ordinal: number): string {
   return `Cycle ${String(ordinal)}`;
+}
+
+/** A set's verdict as the one word its pill says. */
+export function setVerdictLabel(verdict: SetVerdict): Copy {
+  switch (verdict) {
+    case "Passed":
+      return { id: "ticket-verdict-passed" };
+    case "Failed":
+      return { id: "ticket-verdict-failed" };
+    case "Starting":
+      return { id: "ticket-verdict-starting" };
+    case "Running":
+      return { id: "ticket-verdict-running" };
+    case "Cancelled":
+      return { id: "ticket-verdict-cancelled" };
+    case "Blocked":
+      return { id: "ticket-verdict-blocked" };
+  }
+}
+
+/** Whether the cycle is the ticket's current one, the one word a pill says
+ * beside it where it is; a superseded cycle's pill says nothing. */
+export function cycleStandingLabel(standing: CycleStanding): Copy | undefined {
+  switch (standing) {
+    case "Current":
+      return { id: "ticket-cycle-current" };
+    case "Superseded":
+      return undefined;
+  }
 }

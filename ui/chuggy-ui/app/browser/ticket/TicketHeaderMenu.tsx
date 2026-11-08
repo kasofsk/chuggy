@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The header's ⋯ menu: Revoke, which asks before it submits, Duplicate where
  * it is not the header's main action, Copy link, which stays open to say it
@@ -20,8 +19,14 @@ import { CopySaid, useCopyPress } from "../ui/CopyButton.tsx";
 import type { CopyPress } from "../ui/CopyButton.tsx";
 import { MenuContent, menuItemClassName } from "../ui/Menu.tsx";
 import { TicketActionConfirm } from "./TicketActionConfirm.tsx";
+import { copyTextEn } from "../../copy/catalog.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 
-export const ticketHeaderMenuLabel = "More actions";
+/** The English a suite matches the menu's trigger by; the trigger itself
+ * draws its own wording live. */
+export const ticketHeaderMenuLabel = copyTextEn({
+  id: "ticket-header-menu-label",
+});
 
 function TicketHeaderMenuMark(): ReactNode {
   return (
@@ -57,6 +62,7 @@ function TicketHeaderMenuItems(
   },
 ): ReactNode {
   const copy = props.copy;
+  const text = useCopyText();
   return (
     <MenuContent sideOffset={4} align="end">
       {props.revoke === undefined ? null : (
@@ -65,7 +71,7 @@ function TicketHeaderMenuItems(
           disabled={props.busy}
           onSelect={props.onRevoking}
         >
-          Revoke…
+          {text({ id: "ticket-revoke-menu-item" })}
         </DropdownMenu.Item>
       )}
       {props.duplicate ? (
@@ -76,7 +82,7 @@ function TicketHeaderMenuItems(
             search={{ from: props.ticket }}
             className="text-ink-1 no-underline"
           >
-            Duplicate
+            {text({ id: "ticket-duplicate" })}
           </Link>
         </DropdownMenu.Item>
       ) : null}
@@ -96,7 +102,9 @@ function TicketHeaderMenuItems(
             );
           }}
         >
-          {copy.copied ? "Copied" : "Copy link"}
+          {text({
+            id: copy.copied ? "ticket-copy-link-copied" : "ticket-copy-link",
+          })}
         </DropdownMenu.Item>
       )}
       {props.onDelete === undefined ? null : (
@@ -105,7 +113,7 @@ function TicketHeaderMenuItems(
           disabled={props.busy}
           onSelect={props.onDeleting}
         >
-          Delete draft…
+          {text({ id: "ticket-draft-delete-menu-item" })}
         </DropdownMenu.Item>
       )}
     </MenuContent>
@@ -117,6 +125,7 @@ export function TicketHeaderMenu(props: TicketHeaderMenuProps): ReactNode {
   const [revoking, setRevoking] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const { revoke, onDelete } = props;
+  const text = useCopyText();
   if (
     revoke === undefined &&
     !props.duplicate &&
@@ -129,7 +138,7 @@ export function TicketHeaderMenu(props: TicketHeaderMenuProps): ReactNode {
       <DropdownMenu.Root modal={false}>
         <DropdownMenu.Trigger
           className={buttonLookClassName({ size: "icon" })}
-          aria-label={ticketHeaderMenuLabel}
+          aria-label={text({ id: "ticket-header-menu-label" })}
         >
           <TicketHeaderMenuMark />
         </DropdownMenu.Trigger>
@@ -149,8 +158,8 @@ export function TicketHeaderMenu(props: TicketHeaderMenuProps): ReactNode {
       {copy === undefined ? null : <CopySaid copied={copy.copied} />}
       {revoke === undefined ? null : (
         <TicketActionConfirm
-          title="Revoke this ticket?"
-          confirm="Revoke ticket"
+          title={text({ id: "ticket-revoke-confirm-title" })}
+          confirm={text({ id: "ticket-revoke-confirm" })}
           danger
           open={revoking}
           onOpenChange={setRevoking}
@@ -158,19 +167,19 @@ export function TicketHeaderMenu(props: TicketHeaderMenuProps): ReactNode {
             props.onChoose(revoke);
           }}
         >
-          Ends this ticket and parks its dependents. Can't be undone.
+          {text({ id: "ticket-revoke-warning" })}
         </TicketActionConfirm>
       )}
       {onDelete === undefined ? null : (
         <TicketActionConfirm
-          title="Delete this draft?"
-          confirm="Delete draft"
+          title={text({ id: "ticket-draft-delete-confirm-title" })}
+          confirm={text({ id: "ticket-draft-delete" })}
           danger
           open={deleting}
           onOpenChange={setDeleting}
           onConfirm={onDelete}
         >
-          Can't be undone.
+          {text({ id: "ticket-cant-be-undone" })}
         </TicketActionConfirm>
       )}
     </>

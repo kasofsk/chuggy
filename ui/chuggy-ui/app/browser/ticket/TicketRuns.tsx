@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The ticket's runs: the Runs tab's list of cycles, newest first, every row a
  * link to its run's own page, and the rail the run and landing pages list the
@@ -29,7 +28,12 @@ import {
   ticketLandingsHeld,
   ticketLandingsJoined,
 } from "../../core/ticketLandings.ts";
-import { cycleLabel, ticketLedger } from "../../core/ticketLedger.ts";
+import {
+  cycleLabel,
+  cycleStandingLabel,
+  ticketLedger,
+} from "../../core/ticketLedger.ts";
+import type { CopyText } from "../../core/copy.ts";
 import {
   ticketRunLandingMarked,
   ticketRunMarkOf,
@@ -57,6 +61,7 @@ import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
 import { TicketRunTime } from "./TicketRunTime.tsx";
 import { readValue } from "./TicketPageHeld.tsx";
 import type { TicketPageHeld } from "./TicketPageHeld.tsx";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 
 import "./ticket.css";
 
@@ -164,10 +169,13 @@ export function TicketRunLine(props: {
 }
 
 /** What a row that is not a run says: why it has none, or its landing's state. */
-function ticketRunsRowWords(row: TicketRunGap | TicketRunLanding): string {
+function ticketRunsRowWords(
+  row: TicketRunGap | TicketRunLanding,
+  text: CopyText,
+): string {
   if (row.kind === "Gap") return row.words;
-  if (!row.lands) return "None";
-  return row.landing?.word ?? "Not reached";
+  if (!row.lands) return text({ id: "ticket-value-none" });
+  return row.landing?.word ?? text({ id: "ticket-landing-not-reached" });
 }
 
 type TicketRunsParams = PartitionIdentity & { readonly ticket: string };
@@ -214,6 +222,7 @@ function TicketRunsRowDrawn(props: {
 }): ReactNode {
   const { row, params } = props;
   const marked = ticketRunsRowMark(row);
+  const text = useCopyText();
   const spend =
     row.kind === "Run"
       ? spendFigures(
@@ -233,7 +242,7 @@ function TicketRunsRowDrawn(props: {
               execution={row.execution.execution}
             />
           ) : (
-            ticketRunsRowWords(row)
+            ticketRunsRowWords(row, text)
           )}
         </span>
         <span className="ticket-runs-time">
@@ -261,6 +270,8 @@ function TicketRunsCycleDrawn(props: {
 }): ReactNode {
   const cycle = props.cycle;
   const spend = spendFigures(cycle.spend.totals, cycle.spend.totals?.costBasis);
+  const text = useCopyText();
+  const standingLabel = cycleStandingLabel(cycle.standing);
   return (
     <section
       className="ticket-runs-cycle"
@@ -268,9 +279,9 @@ function TicketRunsCycleDrawn(props: {
     >
       <header className="ticket-runs-head">
         <h3>{cycleLabel(cycle.ordinal)}</h3>
-        {cycle.standing === "Current" ? (
-          <Pill tone="neutral">Current</Pill>
-        ) : null}
+        {standingLabel === undefined ? null : (
+          <Pill tone="neutral">{text(standingLabel)}</Pill>
+        )}
         <span className="ticket-runs-outcome">{cycle.outcome}</span>
         <span className="ticket-runs-rollup">
           <TicketRunTime runs={cycle.executions} nowMs={props.nowMs} />
@@ -300,14 +311,21 @@ function TicketRunsBody(props: {
 }): ReactNode {
   const { held, runs } = props;
   const params = { ...held.partition, ticket: String(held.ticket) };
-  if (runs.cycles.length === 0) return <EmptyState label="Nothing has run" />;
+  const text = useCopyText();
+  if (runs.cycles.length === 0)
+    return <EmptyState label={text({ id: "ticket-nothing-has-run" })} />;
   return (
     <div className="ticket-runs">
       {runs.truncated === undefined ? null : (
         <Notice
           tone="parked"
           inline
-          detail={`Showing first ${String(runs.truncated)} executions`}
+          detail={text({
+            id: "ticket-run-showing-first",
+            args: {
+              run: { id: "ticket-run-count", args: { count: runs.truncated } },
+            },
+          })}
         />
       )}
       {runs.cycles.map((cycle) => (
@@ -385,8 +403,9 @@ export function TicketRunsRail(props: {
 }): ReactNode {
   const { held } = props;
   const params = { ...held.partition, ticket: String(held.ticket) };
+  const text = useCopyText();
   return (
-    <nav aria-label="Runs" className="ticket-rail">
+    <nav aria-label={text({ id: "ticket-tab-runs" })} className="ticket-rail">
       {props.runs.cycles.map((cycle) => (
         <div key={cycle.ordinal} className="ticket-rail-cycle">
           <p className="ticket-rail-head">{cycleLabel(cycle.ordinal)}</p>

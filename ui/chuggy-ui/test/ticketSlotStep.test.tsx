@@ -5,13 +5,14 @@
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, screen, within } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { TicketSlot } from "../app/browser/ticket/TicketSlot.tsx";
 import { ticketSlot } from "../app/core/ticketSituation.ts";
 import type { TicketEscalation } from "../../../src/contract/responses.ts";
+import { renderCopied } from "./copied.tsx";
 import { leadPartition } from "./leadFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import type * as RouterModule from "@tanstack/react-router";
@@ -65,7 +66,7 @@ function drawParked(
     },
     copyTextEn,
   );
-  render(
+  renderCopied(
     <TicketSlot partition={leadPartition} ticket={11} slot={slot} nowMs={0} />,
   );
   return screen.getByRole("status", { name: "Needs you" });

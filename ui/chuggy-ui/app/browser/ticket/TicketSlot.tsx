@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The one card the Overview leads with: the run going now, what the ticket is
  * waiting on a person for, or nothing. What answers it is the header's.
@@ -20,6 +19,7 @@ import { Chevron } from "../ui/Chevron.tsx";
 import { TicketNow } from "./TicketNow.tsx";
 import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
 import { TicketRunLine } from "./TicketRuns.tsx";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 
 import "./ticket.css";
 
@@ -73,6 +73,8 @@ function NeedsYouRunLine(props: {
   readonly run: NeedsYouRun;
   readonly reasoned: boolean;
 }): ReactNode {
+  const text = useCopyText();
+  const step = props.run.step ?? text({ id: "ticket-term-run" });
   return (
     <p className="ticket-card-line">
       {props.reasoned ? null : (
@@ -90,7 +92,7 @@ function NeedsYouRunLine(props: {
         }}
         className="ticket-card-link"
       >
-        {`Read the ${props.run.step ?? "run"}`}
+        {text({ id: "ticket-situation-read-the", args: { step } })}
         <Chevron className="ticket-card-chevron" />
       </Link>
     </p>
@@ -104,11 +106,12 @@ function NeedsYou(props: {
   readonly overrides: ReactNode;
 }): ReactNode {
   const { slot } = props;
+  const text = useCopyText();
   return (
     <section
       className="ticket-card"
       data-tone="parked"
-      aria-label="Needs you"
+      aria-label={text({ id: "ticket-needs-you-aria-label" })}
       role="status"
     >
       <div className="ticket-card-head">
