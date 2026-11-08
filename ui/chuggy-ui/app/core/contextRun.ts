@@ -19,6 +19,7 @@ import type {
   RunTurnsResponse,
 } from "../../../../src/contract/responses.ts";
 import {
+  nativeHttpPageItemsMax,
   runContextPageReadingsMax,
   runContextReadingsMax,
   runTurnSeriesMax,
@@ -258,9 +259,10 @@ export function contextRunTiles(
   ];
 }
 
-/** The most pages of a run's series one read walks: the whole series, at the
- * most rows a page answers. */
-export const contextRunTurnsPageRows = 100;
+/** The rows one page of a run's series is asked for: the most a page answers. */
+export const contextRunTurnsPageRows = nativeHttpPageItemsMax;
+/** The most pages of a run's series one read walks: the whole series, at
+ * `contextRunTurnsPageRows` a page. */
 const contextRunTurnsPagesMax =
   Math.ceil(runTurnSeriesMax / contextRunTurnsPageRows) + 1;
 
