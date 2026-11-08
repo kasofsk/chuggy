@@ -725,12 +725,6 @@ function ConversationFoot(props: {
   );
 }
 
-/**
- * The conversation as a page holds it: a column of exchanges that scrolls, and
- * the composer beneath it. A bounded height pins the composer to the foot of
- * it, and an unbounded one — a transcript inside a panel — leaves both in
- * normal flow.
- */
 /** The conversation's scroll, which stays where a call it was opened at
  * scrolled it, rather than at the newest entry. */
 function ConversationViewport(props: {
@@ -749,6 +743,12 @@ function ConversationViewport(props: {
   );
 }
 
+/**
+ * The conversation as a page holds it: a column of exchanges that scrolls, and
+ * the composer beneath it. A bounded height pins the composer to the foot of
+ * it, and an unbounded one — a transcript inside a panel — leaves both in
+ * normal flow.
+ */
 export function Conversation(props: ConversationProps): ReactNode {
   const reading = props.reading === true;
   const activeExchanges = reading ? [] : props.exchanges;

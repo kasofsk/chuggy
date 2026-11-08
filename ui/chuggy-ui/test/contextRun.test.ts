@@ -13,9 +13,15 @@ import {
   contextCallsOf,
   contextRunCompactions,
   contextRunGrowth,
+  contextRunReadingsPageRows,
   contextRunTiles,
+  contextRunTurnsPageRows,
   contextRunWindow,
 } from "../app/core/contextRun.ts";
+import {
+  runContextPageReadingsMax,
+  runTurnsPageLimitMax,
+} from "../../../src/contract/http.ts";
 import {
   contextCompacted,
   contextReading,
@@ -147,4 +153,9 @@ test("cache read is what every call read from cache, and its share of everything
   expect(cache.share?.kind === "Quantity" ? cache.share.text : undefined).toBe(
     "90",
   );
+});
+
+test("a page of either series asks for the most rows the server answers", () => {
+  expect(contextRunTurnsPageRows).toBe(runTurnsPageLimitMax);
+  expect(contextRunReadingsPageRows).toBe(runContextPageReadingsMax);
 });

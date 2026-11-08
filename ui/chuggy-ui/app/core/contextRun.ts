@@ -22,6 +22,7 @@ import {
   runContextPageReadingsMax,
   runContextReadingsMax,
   runTurnSeriesMax,
+  runTurnsPageLimitMax,
 } from "../../../../src/contract/http.ts";
 import type { ApiResult } from "./apiRequest.ts";
 import type {
@@ -260,7 +261,7 @@ export function contextRunTiles(
 
 /** The most pages of a run's series one read walks: the whole series, at the
  * most rows a page answers. */
-export const contextRunTurnsPageRows = 100;
+export const contextRunTurnsPageRows = runTurnsPageLimitMax;
 const contextRunTurnsPagesMax =
   Math.ceil(runTurnSeriesMax / contextRunTurnsPageRows) + 1;
 
