@@ -2,8 +2,9 @@
  * The worker image against this tree. The image runs the worker core at the
  * commit `images/worker/core.json` pins, and its build holds everything it can
  * read off itself; what it cannot read is the server its pods call, the
- * variable the work launcher leaves to the image, and an artifact outside the
- * runtime fetched for the wrong architecture.
+ * variable the work launcher leaves to the image, an artifact outside the
+ * runtime fetched for the wrong architecture, and whether the runtime waits on
+ * the pins' lag behind npm, read again when npm moves.
  *
  * THE PIN'S RELEASE IS HELD TO THE RANGE THE PLANES ACCEPT, which is what a
  * pod's every request is refused against. Raising a plane's floor past it turns
@@ -79,6 +80,19 @@ function dockerStages(text: string): DockerStage[] {
     }
   }
   return stages;
+}
+
+/** The instructions of the stage a name names, from its FROM to the next. */
+function dockerStageInstructions(text: string, name: string): string[] {
+  const instructions = dockerInstructions(text);
+  const start = instructions.findIndex((instruction) =>
+    new RegExp(`^FROM .* AS ${name}$`, "u").test(instruction),
+  );
+  assert.notEqual(start, -1, `no stage is named ${name}`);
+  const end = instructions.findIndex(
+    (instruction, index) => index > start && instruction.startsWith("FROM "),
+  );
+  return instructions.slice(start, end === -1 ? undefined : end);
 }
 
 /** The default one build argument declares, quoted as this file quotes each it declares. */
@@ -184,4 +198,37 @@ test("whatever is made for one architecture is chosen by TARGETARCH, and for eac
       suffixes,
       `${stem} is pinned for ${found.join(" and ")}`,
     );
+});
+
+/** Catches a runtime built without the pins' lag read, or on a verdict cached while npm's newest moved. */
+test("the runtime is built only on the pins' lag behind npm, read again whenever npm's newest moves", () => {
+  const text = readFileSync(dockerfilePath, "utf8");
+  const lag = dockerStageInstructions(text, "agent-lag");
+  const gate = lag.findIndex((instruction) =>
+    /^RUN cd \/tree +&& git init --quiet +&& \.\/\.chug\/tasks\/check-agent-lag\.sh +&& touch \/agent-lag-clean$/u.test(
+      instruction,
+    ),
+  );
+  assert.notEqual(gate, -1, "the agent-lag stage does not run the gate");
+  const keys = [
+    "ADD https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk/latest ",
+    "ADD https://registry.npmjs.org/@openai/codex/latest ",
+    "COPY images/worker/Dockerfile ",
+    "COPY .chug/tasks/check-agent-lag.sh ",
+  ];
+  for (const key of keys) {
+    const keyed = lag.findIndex((instruction) => instruction.startsWith(key));
+    assert.ok(
+      keyed !== -1 && keyed < gate,
+      `the gate's run in the agent-lag stage is not keyed on ${key.trim()}`,
+    );
+  }
+  assert.ok(
+    dockerStageInstructions(text, "runtime").some((instruction) =>
+      instruction.startsWith(
+        "RUN --mount=type=bind,from=agent-lag,source=/agent-lag-clean,",
+      ),
+    ),
+    "the runtime binds no agent-lag verdict",
+  );
 });
