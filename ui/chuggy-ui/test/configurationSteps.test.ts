@@ -14,6 +14,7 @@ import type {
   ConfigurationSteps,
 } from "../app/core/configurationSteps.ts";
 import { creationCatalogCanonical } from "./ticketCreationFixture.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 
 function steps(
   overrides?: ConfigurationOverrides,
@@ -25,6 +26,7 @@ function steps(
     overrides,
     selection,
     finalization: undefined,
+    text: copyTextEn,
   });
 }
 

@@ -9,13 +9,8 @@
  * reader's own scroll sends them.
  */
 
-import {
-  act,
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-} from "@testing-library/react";
+import { act, cleanup, fireEvent, screen } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -81,7 +76,7 @@ afterEach(() => {
 describe("the copy of an answer", () => {
   test("puts the answer as it was written on the clipboard, and says so in the place it stands", async () => {
     const write = vi.fn<CopyWrite>(() => Promise.resolve(true));
-    const view = render(copying(write, [exchangeOf({})]));
+    const view = renderCopied(copying(write, [exchangeOf({})]));
     const line = view.container.querySelector(".conversation-meta");
     const control = screen.getByRole("button", { name: "Copy answer" });
     expect(line?.contains(control)).toBe(true);
@@ -101,7 +96,7 @@ describe("the copy of an answer", () => {
 
   test("is not offered while the turn is out, and takes the glyph's place when it settles", () => {
     const write = vi.fn<CopyWrite>(() => Promise.resolve(true));
-    const view = render(
+    const view = renderCopied(
       copying(write, [
         exchangeOf({ standing: { standing: "Running", state: "Claimed" } }),
       ]),
@@ -124,16 +119,16 @@ describe("the copy of an answer", () => {
     };
     const unanswered = { ...exchangeOf(failed) };
     delete unanswered.answer;
-    render(copying(write, [unanswered]));
+    renderCopied(copying(write, [unanswered]));
     expect(screen.queryByRole("button", { name: "Copy answer" })).toBeNull();
     cleanup();
-    render(<Conversation exchanges={[exchangeOf({})]} pane />);
+    renderCopied(<Conversation exchanges={[exchangeOf({})]} pane />);
     expect(screen.queryByRole("button", { name: /Copy/u })).toBeNull();
   });
 
   test("says nothing the browser did not do", async () => {
     const write = vi.fn<CopyWrite>(() => Promise.resolve(false));
-    const view = render(copying(write, [exchangeOf({})]));
+    const view = renderCopied(copying(write, [exchangeOf({})]));
     await pressed(screen.getByRole("button", { name: "Copy answer" }));
     expect(write).toHaveBeenCalledTimes(1);
     expect(view.container.textContent).not.toContain("Copied");
@@ -144,7 +139,7 @@ describe("the copy of a block of code", () => {
   test("puts the code and not its fence on the clipboard, and says so in one word that then goes", async () => {
     vi.useFakeTimers();
     const write = vi.fn<CopyWrite>(() => Promise.resolve(true));
-    const view = render(copying(write, [exchangeOf({})]));
+    const view = renderCopied(copying(write, [exchangeOf({})]));
     const panel = view.container.querySelector(".run-report-code");
     const control = screen.getByRole("button", { name: "Copy code" });
     expect(panel?.contains(control)).toBe(true);
@@ -222,7 +217,7 @@ function back(): HTMLElement | null {
 
 describe("the way back to the foot of the column", () => {
   test("is not there while the reader is at the foot", () => {
-    const view = render(<Conversation exchanges={[first]} pane />);
+    const view = renderCopied(<Conversation exchanges={[first]} pane />);
     const column = scrolling(view.container);
     act(() => {
       column.at(600);
@@ -231,7 +226,7 @@ describe("the way back to the foot of the column", () => {
   });
 
   test("appears when they scroll away, and what is written then leaves them where they are", async () => {
-    const view = render(<Conversation exchanges={[first]} pane />);
+    const view = renderCopied(<Conversation exchanges={[first]} pane />);
     const column = scrolling(view.container);
     act(column.away);
     const sentBefore = column.sent.length;
@@ -245,7 +240,7 @@ describe("the way back to the foot of the column", () => {
   });
 
   test("stands on a band of its own under the column, over no line of it", () => {
-    const view = render(<Conversation exchanges={[first]} pane />);
+    const view = renderCopied(<Conversation exchanges={[first]} pane />);
     const column = scrolling(view.container);
     act(column.away);
     const scroller = view.container.querySelector(".overflow-y-auto");
@@ -257,7 +252,7 @@ describe("the way back to the foot of the column", () => {
   });
 
   test("returns them there when pressed, goes, and holds them there as more is written", async () => {
-    const view = render(<Conversation exchanges={[first]} pane />);
+    const view = renderCopied(<Conversation exchanges={[first]} pane />);
     const column = scrolling(view.container);
     act(column.away);
     column.grown(1200);
@@ -305,7 +300,7 @@ function message(): HTMLTextAreaElement {
 
 describe("the composer's controls", () => {
   test("stand in a row under the box, the paperclip first and the button last, with the images over the box and the box holding the text alone", async () => {
-    const view = render(composing({ standing: "Answered" }));
+    const view = renderCopied(composing({ standing: "Answered" }));
     fireEvent.paste(message(), {
       clipboardData: {
         files: [new File([new Uint8Array([1])], "shot", { type: "image/png" })],
@@ -334,7 +329,9 @@ describe("the composer's controls", () => {
   });
 
   test("take no focus from a pointer's press, so the caret stays in the box", () => {
-    const view = render(composing({ standing: "Running", state: "Claimed" }));
+    const view = renderCopied(
+      composing({ standing: "Running", state: "Claimed" }),
+    );
     const controls = view.container.querySelector(".conversation-controls");
     const refused = (name: string): boolean => {
       const button = screen.getByRole("button", { name });
@@ -355,7 +352,7 @@ describe("the composer's button in its row", () => {
     vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "performance"] });
     const onSend = vi.fn(() => Promise.resolve<ConversationSent>("Sent"));
     const onStop = vi.fn(() => Promise.resolve());
-    const view = render(
+    const view = renderCopied(
       composing({ standing: "Running", state: "Claimed" }, onSend, onStop),
     );
     const controls = view.container.querySelector(".conversation-controls");

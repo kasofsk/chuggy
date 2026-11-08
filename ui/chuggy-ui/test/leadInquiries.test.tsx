@@ -11,7 +11,8 @@
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import { QueryClient } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, expect, test, vi } from "vitest";
 import { useEffect } from "react";
 import type { ReactNode } from "react";
@@ -194,7 +195,7 @@ async function drawInquiries(served: InquiryServed): Promise<InquiryServer> {
       <InquiryHolder partition={partition} head={at} />
     </ScreenHarness>
   );
-  const drawn = render(panel(leadPartition, head));
+  const drawn = renderCopied(panel(leadPartition, head));
   await settled();
   return {
     ...door,

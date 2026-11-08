@@ -15,10 +15,10 @@ import {
   act,
   cleanup,
   fireEvent,
-  render,
   screen,
   within,
 } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -109,7 +109,7 @@ afterEach(() => {
 /** The page under its providers, over whatever fetch the case has stubbed. */
 async function mountLead(): Promise<ReturnType<typeof openedStream>> {
   const server = openedStream();
-  render(
+  renderCopied(
     <ScreenHarness
       partition={leadPartition}
       client={
@@ -207,7 +207,7 @@ async function drawLeadBeside(
   });
   vi.stubGlobal("fetch", api.fetch);
   const server = openedStream();
-  render(
+  renderCopied(
     <ScreenHarness
       partition={leadPartition}
       client={
@@ -837,7 +837,7 @@ test("a project with no lead says why under the line, and which refusal stands",
   cleanup();
   leadlessServed(opening, { lead: "None", absence: { reason: "Paused" } });
   await mountLead();
-  expect(leadlessLine()).toBe("Selector paused");
+  expect(leadlessLine()).toBe("Lead paused");
 });
 
 /**
@@ -1819,7 +1819,7 @@ async function drawLeadPage(fetching: typeof fetch): Promise<LeadNavigation> {
       </ShellSlotHarness>
     </ScreenHarness>
   );
-  const page = render(under(drawnPartition));
+  const page = renderCopied(under(drawnPartition));
   await settled();
   return {
     moveTo: async (partition: PartitionIdentity) => {

@@ -22,7 +22,7 @@ G="$WORK/generated"
 catalog() {
 	rm -rf "$C" "$G"
 	mkdir -p "$C/en" "$C/en-x-job"
-	printf '%s\n' '-ticket = { $case ->' '    [upper] Ticket' '   *[lower] ticket' '}' > "$C/en/terms.ftl"
+	printf '%s\n' '# rejects: issue, work item' '-ticket = { $case ->' '    [upper] Ticket' '   *[lower] ticket' '}' > "$C/en/terms.ftl"
 	printf '%s\n' 'shell-new = New { -ticket }' 'shell-left = { $count } left' > "$C/en/shell.ftl"
 	printf '%s\n' 'setup-done = done' > "$C/en/setup.ftl"
 	printf '%s\n' '-ticket = { $case ->' '    [upper] Job' '   *[lower] job' '}' > "$C/en-x-job/terms.ftl"
@@ -97,6 +97,50 @@ printf '%s\n' '# spells -job: a word that is no term' 'shell-new = New { -ticket
 generate
 copy_check
 check "an exemption for no term is a finding" 1 "$RC" "is exempt for -job, which is no term"
+
+catalog
+printf '%s\n' 'shell-new = New issue' 'shell-left = { $count } left' > "$C/en/shell.ftl"
+generate
+copy_check
+check "a message saying a word its term rejects is a finding" 1 "$RC" 'shell-new: says "issue", which -ticket replaces'
+
+catalog
+printf '%s\n' 'shell-new = New Work Item' 'shell-left = { $count } left' > "$C/en/shell.ftl"
+generate
+copy_check
+check "a rejected phrase is matched whole and in any case" 1 "$RC" 'shell-new: says "work item", which -ticket replaces'
+
+catalog
+printf '%s\n' '# spells -ticket: an issue of a magazine' 'shell-new = New issue' 'shell-left = { $count } left' > "$C/en/shell.ftl"
+generate
+copy_check
+check "the exemption a homonym carries lets a message say a rejected word" 0 "$RC" "generated modules current"
+
+catalog
+printf '%s\n' 'shell-new = New { -tikcet }' 'shell-left = { $count } left' > "$C/en/shell.ftl"
+generate
+copy_check
+check "a term reference that resolves to nothing is a finding" 1 "$RC" "shell-new: references -tikcet, which nothing defines"
+
+catalog
+printf '%s\n' 'shell-new = New { -ticket }' 'shell-left = { $count } left · { setup-dnoe }' > "$C/en/shell.ftl"
+generate
+copy_check
+check "a message reference that resolves to nothing is a finding" 1 "$RC" "shell-left: references setup-dnoe, which nothing defines"
+
+catalog
+printf '%s\n' '-ticket = { -jbo }' > "$C/en-x-job/terms.ftl"
+generate
+copy_check
+check "a layer's reference that resolves to nothing is a finding" 1 "$RC" "-ticket: references -jbo, which nothing defines"
+
+catalog
+printf '%s\n' 'shell-new = New { -ticket }' 'shell-left = { $count } left' 'shell-more = More · { shell-left }' > "$C/en/shell.ftl"
+generate
+copy_check
+check "a message reference resolving to a base message is clean" 0 "$RC" "generated modules current"
+grep -A1 '"shell-more"' "$G/shellCopy.ts" >"$OUT"
+check "a message is typed with the variables of the message it references" 0 "$RC" "readonly count: Argument"
 
 catalog
 printf '%s\n' 'shell-other = Other' > "$C/en-x-job/shell.ftl"

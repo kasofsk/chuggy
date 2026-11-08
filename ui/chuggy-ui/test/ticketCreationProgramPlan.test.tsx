@@ -7,13 +7,8 @@
  * names they are written under and drawn by position.
  */
 
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ComponentProps } from "react";
 
@@ -53,7 +48,7 @@ function draw(
   ports: ApiPorts,
   extra: Partial<ComponentProps<typeof CreationForm>> = {},
 ): void {
-  render(creationFormDrawn(ports, offers, extra));
+  renderCopied(creationFormDrawn(ports, offers, extra));
   fireEvent.click(screen.getByRole("button", { name: "Advanced" }));
 }
 
@@ -101,7 +96,7 @@ test("a reader who may skip planned evaluations is offered every width and a Rem
 });
 
 test("a plan whose stages are named in free text is picked by those names, and its program drawn by position as any plan's is", () => {
-  render(
+  renderCopied(
     creationFormDrawn(
       api().ports,
       [creationGatedOffer(undefined, creationCatalogStagesNamedCanonical)],

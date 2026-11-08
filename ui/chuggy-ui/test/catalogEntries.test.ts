@@ -18,6 +18,7 @@ import {
   creationCatalogCanonical,
   creationCatalogStagesNamedCanonical,
 } from "./ticketCreationFixture.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 
 function entriesOf(canonical: string): CatalogEntries {
   const catalog = configurationCatalogOf(canonical);
@@ -103,17 +104,20 @@ test("two workloads naming one prompt file share its entry", () => {
 });
 
 test("each entry says in a line what it is", () => {
-  expect(catalogEntrySummary(entryOf(entries, "workloads/gates"))).toBe(
-    "Commands · npm test",
-  );
-  expect(catalogEntrySummary(entryOf(entries, "plans/gated"))).toBe(
+  expect(
+    catalogEntrySummary(entryOf(entries, "workloads/gates"), copyTextEn),
+  ).toBe("Commands · npm test");
+  expect(catalogEntrySummary(entryOf(entries, "plans/gated"), copyTextEn)).toBe(
     "review → gates",
   );
-  expect(catalogEntrySummary(entryOf(entries, "finalizers/approved"))).toBe(
-    "Approved first",
-  );
   expect(
-    catalogEntrySummary(entryOf(entries, "prompts/prompts/build.md")),
+    catalogEntrySummary(entryOf(entries, "finalizers/approved"), copyTextEn),
+  ).toBe("Approved first");
+  expect(
+    catalogEntrySummary(
+      entryOf(entries, "prompts/prompts/build.md"),
+      copyTextEn,
+    ),
   ).toBe("Build it.");
 });
 
@@ -124,17 +128,19 @@ test("a workload read from a file names it first among its fields, and one with 
     review: ".chug/workloads/review.json",
   });
   expect(
-    catalogEntryFields(entryOf(kept, "workloads/review"))[0],
+    catalogEntryFields(entryOf(kept, "workloads/review"), copyTextEn)[0],
   ).toStrictEqual(["File", ".chug/workloads/review.json"]);
   expect(
-    catalogEntryFields(entryOf(kept, "workloads/build")).map(
+    catalogEntryFields(entryOf(kept, "workloads/build"), copyTextEn).map(
       ([label]) => label,
     ),
   ).not.toContain("File");
 });
 
 test("a plan's fields are its stages, each with the evaluators it runs", () => {
-  expect(catalogEntryFields(entryOf(entries, "plans/gated"))).toStrictEqual([
+  expect(
+    catalogEntryFields(entryOf(entries, "plans/gated"), copyTextEn),
+  ).toStrictEqual([
     ["Stage 1 · review", "review, review"],
     ["Stage 2 · gates", "gates"],
   ]);
@@ -143,8 +149,10 @@ test("a plan's fields are its stages, each with the evaluators it runs", () => {
 test("a plan whose stages are named in free text says each name as written, in its line, its fields and its uses", () => {
   const named = entriesOf(creationCatalogStagesNamedCanonical);
   const gated = entryOf(named, "plans/gated");
-  expect(catalogEntrySummary(gated)).toBe("Code Review → Checks · étape 2");
-  expect(catalogEntryFields(gated)).toStrictEqual([
+  expect(catalogEntrySummary(gated, copyTextEn)).toBe(
+    "Code Review → Checks · étape 2",
+  );
+  expect(catalogEntryFields(gated, copyTextEn)).toStrictEqual([
     ["Stage 1 · Code Review", "review, review"],
     ["Stage 2 · Checks · étape 2", "gates"],
   ]);
@@ -198,18 +206,18 @@ test("a finalizer's entry says how it lands, and a git merge's policy beside it"
       },
     }),
   );
-  expect(catalogEntrySummary(entryOf(finalized, "finalizers/land"))).toBe(
-    "Lands unapproved · Push",
-  );
   expect(
-    catalogEntryFields(entryOf(finalized, "finalizers/land")),
+    catalogEntrySummary(entryOf(finalized, "finalizers/land"), copyTextEn),
+  ).toBe("Lands unapproved · Push");
+  expect(
+    catalogEntryFields(entryOf(finalized, "finalizers/land"), copyTextEn),
   ).toStrictEqual([
     ["Approval", "Lands unapproved"],
     ["Finalization", "Push · lands on refs/heads/release"],
     ["Policy", "Serialized"],
   ]);
   expect(
-    catalogEntryFields(entryOf(finalized, "finalizers/approved")),
+    catalogEntryFields(entryOf(finalized, "finalizers/approved"), copyTextEn),
   ).toStrictEqual([
     ["Approval", "Approved first"],
     ["Finalization", "Pull request · into the default branch"],

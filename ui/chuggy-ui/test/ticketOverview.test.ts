@@ -21,6 +21,7 @@ import {
 import { ticketInstants } from "./ticketInstants.ts";
 import { landingConflicted } from "./ticketLandingsFixture.ts";
 import { ledgerExecution, workIdentity } from "./ticketLedgerFixture.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 
 function ticket(over: Partial<TicketResponse> = {}): TicketResponse {
   return {
@@ -67,7 +68,9 @@ test("a target the brief left to its repository is the one its landing named, an
     },
   });
   expect(
-    ticketOverviewBranchOf(unnamed, [ticketLandingOf(landingConflicted(1))]),
+    ticketOverviewBranchOf(unnamed, [
+      ticketLandingOf(landingConflicted(1), copyTextEn),
+    ]),
   ).toEqual({ branch: "contract/thread-offer-tools", target: "main" });
   expect(ticketOverviewBranchOf(unnamed, [])).toEqual({
     branch: "contract/thread-offer-tools",
@@ -79,7 +82,7 @@ test("a ticket that lands nothing lands on no branch, and one whose brief names 
   expect(
     ticketOverviewBranchOf(
       ticket({ brief: { ...brief, finalization: { kind: "None" } } }),
-      [ticketLandingOf(landingConflicted(1))],
+      [ticketLandingOf(landingConflicted(1), copyTextEn)],
     ),
   ).toEqual({ branch: "contract/thread-offer-tools", target: undefined });
   expect(ticketOverviewBranchOf(ticket(), [])).toBeUndefined();

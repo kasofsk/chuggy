@@ -71,14 +71,16 @@ Project Fluent. `copy/no-literal-text` reports what a component spells as JSX
 text or in an attribute `lint/copyText.js` lists, and a file it still reports
 carries the exemption step 4 deletes. It reads no other prop, no `.ts` file and
 nothing in `app/core/`, so copy there is unmarked and a section finds it by
-reading its files. `terms.ftl` holds the product's nouns, and each other file is a
-section whose ids are kebab-case under its name. `app/core/` hands out a
-descriptor, `{ id, args }`, typed by `app/core/generated/`; `useCopyText` in
-`app/copy/CopyProvider.tsx` formats one in a component. A vernacular is a
-directory `en-x-<name>` beside `en/`, layered over it, and once generated it is
-a choice under the gear's Wording, offered to a site administrator beside
-`en-x-pseudo`: the base language with every catalogued word altered, so what
-is still spelled outside the catalog reads as plain English. To move a file:
+reading its files. `terms.ftl` holds the product's nouns, its header says how
+a term's forms are asked for, and each other file is a section whose ids are
+kebab-case under its name. `app/core/` hands out a descriptor, `{ id, args }`,
+typed by `app/core/generated/`, a descriptor among its args formatted in its
+place; `useCopyText` in `app/copy/CopyProvider.tsx` formats one in a
+component. A vernacular is a directory `en-x-<name>` beside `en/`, layered
+over it, and once generated it is a choice under the gear's Wording, offered
+to a site administrator beside `en-x-pseudo`: the base language with every
+catalogued word altered, so what is still spelled outside the catalog reads
+as plain English. To move a file:
 
 1. Put its strings in its section's `.ftl`, naming each term as `{ -term }`.
 2. Run `node ui/chuggy-ui/tools/copyCatalog.ts`; a new section's two modules

@@ -28,6 +28,7 @@ import type {
   CatalogWorkload,
   ConfigurationCatalog,
 } from "./configurationCatalog.ts";
+import type { CopyText } from "./copy.ts";
 
 export type CatalogEntryKind = "Workload" | "Plan" | "Finalizer" | "Prompt";
 
@@ -276,7 +277,10 @@ function catalogPromptOpening(text: string): string {
 }
 
 /** What an entry is, in the one line under its name in the list. */
-export function catalogEntrySummary(entry: CatalogEntry): string {
+export function catalogEntrySummary(
+  entry: CatalogEntry,
+  text: CopyText,
+): string {
   const { detail } = entry;
   switch (detail.kind) {
     case "Workload": {
@@ -295,7 +299,7 @@ export function catalogEntrySummary(entry: CatalogEntry): string {
         catalogFinalizerApproval(detail.finalizer),
         detail.finalizer.finalization === undefined
           ? undefined
-          : finalizationMethodLabel(detail.finalizer.finalization),
+          : text(finalizationMethodLabel(detail.finalizer.finalization)),
       ]
         .filter((part) => part !== undefined)
         .join(" · ");
@@ -307,6 +311,7 @@ export function catalogEntrySummary(entry: CatalogEntry): string {
 /** What an entry says, field by field, as its detail lists it. */
 export function catalogEntryFields(
   entry: CatalogEntry,
+  text: CopyText,
 ): readonly (readonly [label: string, value: string])[] {
   const { detail } = entry;
   switch (detail.kind) {
@@ -340,9 +345,14 @@ export function catalogEntryFields(
         ["Approval", catalogFinalizerApproval(finalizer)],
         ...(finalization === undefined
           ? []
-          : [["Finalization", finalizationLine(finalization)] as const]),
+          : [["Finalization", text(finalizationLine(finalization))] as const]),
         ...(finalization?.kind === "GitMerge"
-          ? [["Policy", gitMergePolicyLabel(finalization.policy)] as const]
+          ? [
+              [
+                "Policy",
+                text(gitMergePolicyLabel(finalization.policy)),
+              ] as const,
+            ]
           : []),
       ];
     }

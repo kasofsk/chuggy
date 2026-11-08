@@ -32,6 +32,7 @@ import { projectAbilityRefused } from "./projectAbilities.ts";
 import type { ProjectAbilities } from "./projectAbilities.ts";
 import { overridesHeldOf, overridesNestedOf } from "./ticketOverrides.ts";
 import type { CreationOverrides, OverrideField } from "./ticketOverrides.ts";
+import type { CopyText } from "./copy.ts";
 
 /** The fields a parked ticket's card draws, in the contract's order. */
 export const parkedOverrideFields: readonly OverrideField[] =
@@ -170,11 +171,12 @@ export function parkedOverridesChange(
  * nothing for one that was. */
 export function parkedOverridesRefusal(
   step: OperationStep,
+  text: CopyText,
 ): string | undefined {
   if (step.step === "Abandoned")
-    return `Not saved · ${operationAbandonWords(step.cause).word}`;
+    return `Not saved · ${text(operationAbandonWords(step.cause).word)}`;
   if (step.step !== "Settled") return "Not saved";
   if (step.refusal !== undefined)
-    return `Not saved · ${operationRefusalLabel(step.refusal.type)}`;
+    return `Not saved · ${text(operationRefusalLabel(step.refusal.type))}`;
   return step.state === "Answered" ? undefined : "Not saved";
 }

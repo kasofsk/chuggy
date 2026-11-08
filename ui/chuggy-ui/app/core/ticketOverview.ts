@@ -77,7 +77,7 @@ export function ticketOverviewRunTime(
   return {
     ran:
       time.ranMs === undefined
-        ? { kind: "Absent", why: "Waiting" }
+        ? { kind: "Absent", why: { id: "figures-absent-waiting" } }
         : durationFigure(time.ranMs),
     waited: durationFigure(time.waitedMs),
   };

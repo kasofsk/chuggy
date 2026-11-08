@@ -51,7 +51,11 @@ function TicketLandingHead(props: {
       </div>
       {prepared === undefined ? null : (
         <p className="ticket-run-meta">
-          <Figure figure={sinceFigure(prepared, props.nowMs, "Prepared")} />
+          <Figure
+            figure={sinceFigure(prepared, props.nowMs, {
+              id: "figures-happened-prepared",
+            })}
+          />
         </p>
       )}
     </div>

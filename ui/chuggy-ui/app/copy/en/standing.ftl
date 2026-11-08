@@ -4,10 +4,10 @@
 standing-pending = Pending
 standing-work = Working
 standing-evaluation = Evaluating
-standing-finalization = Finalizing
+standing-finalization = { -landing(case: "upper") }
 standing-done = Done
-standing-escalated = Escalated
-standing-revoked = Revoked
+standing-escalated = { -escalation(case: "upper") }
+standing-revoked = { -revoke(case: "upper", form: "ed") }
 standing-ready = Ready
 standing-blocked = Blocked
-standing-draft = Draft
+standing-draft = { -draft(case: "upper") }

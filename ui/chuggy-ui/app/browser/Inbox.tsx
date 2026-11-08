@@ -116,6 +116,7 @@ import { useRunReason } from "./RunEvidence.tsx";
 import { Pill } from "./ui/Pill.tsx";
 import { Table } from "./ui/Table.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
+import type { CopyText } from "../core/copy.ts";
 
 export interface InboxRowsHeld {
   readonly panel: PanelState<InboxRows>;
@@ -238,8 +239,9 @@ function InboxLostWhy(props: {
   readonly badge: string;
 }): ReactNode {
   const lost = props.lost;
+  const text = useCopyText();
   const reason = useRunReason(props.partition, lost.execution, lost.attempt);
-  const said = [runnerLossDetail(lost), runnerLossLine(lost)];
+  const said = [text(runnerLossDetail(lost)), text(runnerLossLine(lost))];
   if (lost.error !== undefined && reason !== undefined) said.push(reason.line);
   return (
     <Tooltip text={said.join(" · ")}>
@@ -258,12 +260,13 @@ function InboxFailedWhy(props: {
   readonly badge: string;
 }): ReactNode {
   const failed = props.failed;
+  const text = useCopyText();
   const reason = useRunReason(
     props.partition,
     failed.execution,
     failed.attempt,
   );
-  const said = [runStepLabel(failed.evidence)];
+  const said = [text(runStepLabel(failed.evidence))];
   if (failed.error !== undefined && reason !== undefined)
     said.push(reason.line);
   return (
@@ -291,7 +294,7 @@ function InboxWhy(props: {
       <div className="flex flex-wrap gap-2">
         {props.entry.actions.map((action) => (
           <Pill key={action.action} tone="parked">
-            {nativeActionKindSentence(action.kind)}
+            {text(nativeActionKindSentence(action.kind))}
           </Pill>
         ))}
       </div>
@@ -302,7 +305,7 @@ function InboxWhy(props: {
       <InboxLostWhy
         partition={props.partition}
         lost={lost}
-        badge={row.badge ?? text(phaseLabel(row.phase))}
+        badge={text(row.badge ?? phaseLabel(row.phase))}
       />
     );
   const failed = held.escalation?.failed;
@@ -311,19 +314,21 @@ function InboxWhy(props: {
       <InboxFailedWhy
         partition={props.partition}
         failed={failed}
-        badge={row.badge ?? text(phaseLabel(row.phase))}
+        badge={text(row.badge ?? phaseLabel(row.phase))}
       />
     );
   const kind = held.escalation?.kind;
   const resume = held.escalation?.usageResume;
   const said = [
-    ...(kind === undefined ? [] : [escalationKindSentence(kind)]),
-    ...(resume === undefined ? [] : [usageResumeLine(resume, props.nowMs)]),
+    ...(kind === undefined ? [] : [text(escalationKindSentence(kind))]),
+    ...(resume === undefined
+      ? []
+      : [text(usageResumeLine(resume, props.nowMs))]),
   ];
   return (
     <Tooltip text={said.length === 0 ? undefined : said.join(" · ")}>
       <span>
-        <Pill tone="parked">{row.badge ?? text(phaseLabel(row.phase))}</Pill>
+        <Pill tone="parked">{text(row.badge ?? phaseLabel(row.phase))}</Pill>
       </span>
     </Tooltip>
   );
@@ -361,6 +366,7 @@ function inboxAnswerWrite(
   partition: PartitionIdentity,
   ticket: number,
   dispatch: ConsoleDispatch,
+  text: CopyText,
 ): ConsoleWrite<InboxAnswerPressed, OperationStep> {
   return {
     mutationKey: consoleWriteKey(
@@ -382,12 +388,12 @@ function inboxAnswerWrite(
       );
       if (operationAnswered(step))
         dispatch(ticketAttemptDroppedAt({ partition, ticket }));
-      const refused = inboxAnswerRefusal(step);
+      const refused = inboxAnswerRefusal(step, text);
       if (refused !== undefined)
         throw new ConsoleWriteRefused(refused, operationAbandonFailure(step));
       return { outcome: "Ok", value: step };
     },
-    refusal: operationFailureSentence,
+    refusal: (failure) => text(operationFailureSentence(failure)),
   };
 }
 
@@ -402,8 +408,9 @@ function useInboxAnswer(
   readonly onAnswer: (action: TicketAction) => void;
 } {
   const dispatch = useConsoleDispatch();
+  const text = useCopyText();
   const writing = useConsoleWrite(
-    inboxAnswerWrite(partition, ticket, dispatch),
+    inboxAnswerWrite(partition, ticket, dispatch, text),
     { drawn: true },
   );
   const reported = useConsoleWriteProgress(writing.variables?.progress);
@@ -435,6 +442,7 @@ function InboxRow(props: {
   readonly nowMs: number;
 }): ReactNode {
   const row = projectTableRow(props.entry.ticket);
+  const text = useCopyText();
   const { answer, onAnswer } = useInboxAnswer(props.partition, row.ticket);
   return (
     <tr>
@@ -477,7 +485,7 @@ function InboxRow(props: {
           cellAbsent
         ) : (
           <Tooltip text={inboxStepDetail(answer.step)}>
-            <span>{inboxStepSentence(answer.step)}</span>
+            <span>{inboxStepSentence(answer.step, text)}</span>
           </Tooltip>
         )}
       </td>

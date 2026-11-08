@@ -103,6 +103,8 @@ import { Button, ButtonLink } from "./ui/Button.tsx";
 import { Notice } from "./ui/Notice.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
 import { AddRunnerLink, useWorkRunner } from "./workRunner.tsx";
+import { useCopyText } from "../copy/CopyProvider.tsx";
+import type { CopyText } from "../core/copy.ts";
 
 interface Attempt {
   readonly action: TicketAction;
@@ -113,12 +115,13 @@ function StepNote(props: {
   readonly step: OperationStep;
   readonly action: TicketAction;
 }): ReactNode {
+  const text = useCopyText();
   const drawn = operationStepLabel(props.step, props.action.action);
   const tone = drawn.wrong ? "danger" : drawn.settled ? "info" : "live";
   return (
     <Notice tone={tone} inline role="status">
       <Tooltip text={drawn.detail}>
-        <span>{drawn.text}</span>
+        <span>{text(drawn.text)}</span>
       </Tooltip>
     </Notice>
   );
@@ -137,6 +140,7 @@ async function cancelOperation(
   partition: PartitionIdentity,
   operation: string,
   signal: AbortSignal | undefined,
+  text: CopyText,
 ): Promise<Cancellation> {
   try {
     const answered = await apiCancelOperation(
@@ -147,7 +151,7 @@ async function cancelOperation(
     );
     return answered.outcome === "Ok"
       ? { accepted: true }
-      : { accepted: false, said: operationFailureLabel(answered) };
+      : { accepted: false, said: text(operationFailureLabel(answered)) };
   } catch (thrown: unknown) {
     return { accepted: false, said: faultReason(thrown) };
   }
@@ -298,6 +302,7 @@ function ticketActionWrite(
   partition: PartitionIdentity,
   ticket: number,
   dispatch: ConsoleDispatch,
+  text: CopyText,
 ): ConsoleWrite<TicketActionPressed, undefined> {
   return {
     mutationKey: ticketActionWriteKey(partition, ticket),
@@ -318,12 +323,12 @@ function ticketActionWrite(
       const drawn = operationStepLabel(step, pressed.held.action.action);
       if (drawn.wrong)
         throw new ConsoleWriteRefused(
-          drawn.text,
+          text(drawn.text),
           operationAbandonFailure(step),
         );
       return { outcome: "Ok", value: undefined };
     },
-    refusal: operationFailureLabel,
+    refusal: (failure) => text(operationFailureLabel(failure)),
   };
 }
 
@@ -367,6 +372,7 @@ function ticketCancelWrite(
   partition: PartitionIdentity,
   ticket: number,
   dispatch: ConsoleDispatch,
+  text: CopyText,
 ): ConsoleWrite<string, undefined> {
   return {
     mutationKey: consoleWriteKey(
@@ -381,6 +387,7 @@ function ticketCancelWrite(
         partition,
         operation,
         ticketActionRunning(client, partition, ticket)?.controller.signal,
+        text,
       );
       const standing = ticketActionRunning(client, partition, ticket);
       if (
@@ -394,7 +401,8 @@ function ticketCancelWrite(
       attemptCancelled(dispatch, partition, ticket, standing);
       return { outcome: "Ok", value: undefined };
     },
-    refusal: (failure) => `Cancel refused · ${operationFailureLabel(failure)}`,
+    refusal: (failure) =>
+      `Cancel refused · ${text(operationFailureLabel(failure))}`,
   };
 }
 
@@ -411,6 +419,7 @@ function ActionButtons(props: {
   readonly onChoose: (action: TicketAction) => void;
 }): ReactNode {
   const [asking, setAsking] = useState<TicketActionName | undefined>(undefined);
+  const text = useCopyText();
   return props.actions.map((action, index) => {
     const effect = ticketActionEffect(action.action, props.resume, props.exits);
     const asks = action.action === "Dispatch";
@@ -421,8 +430,8 @@ function ActionButtons(props: {
       <OfferedAction
         key={action.action}
         action={action.action}
-        effect={effect.effect}
-        {...(effect.more === undefined ? {} : { more: effect.more })}
+        effect={text(effect.effect)}
+        {...(effect.more === undefined ? {} : { more: text(effect.more) })}
         {...(effect.refusedBecause === undefined
           ? {}
           : { refusedBecause: effect.refusedBecause })}
@@ -447,7 +456,7 @@ function ActionButtons(props: {
             }}
             onConfirm={chosen}
           >
-            {effect.effect}
+            {text(effect.effect)}
           </TicketActionConfirm>
         ) : null}
       </OfferedAction>
@@ -503,8 +512,9 @@ function useTicketActionWrite(
 ): TicketActing {
   const client = useQueryClient();
   const dispatch = useConsoleDispatch();
+  const text = useCopyText();
   const writing = useConsoleWrite(
-    ticketActionWrite(partition, ticket, dispatch),
+    ticketActionWrite(partition, ticket, dispatch, text),
     { drawn },
   );
   const standing = useConsoleSelector((state) =>
@@ -516,7 +526,7 @@ function useTicketActionWrite(
   const refusedOperation =
     following && "operation" in step ? step.operation : undefined;
   const cancelling = useConsoleWrite(
-    ticketCancelWrite(partition, ticket, dispatch),
+    ticketCancelWrite(partition, ticket, dispatch, text),
     { drawn: (_, operation) => drawn && operation === refusedOperation },
   );
 
@@ -780,6 +790,7 @@ export function TicketRowDispatchScope(props: {
 }): ReactNode {
   const abilities = useProjectAbilities(props.partition);
   const runner = useWorkRunner(props.partition, "Unknown");
+  const text = useCopyText();
   const { offers } = ticketOffersStartable(
     ticketOffersAllowed(
       {
@@ -796,7 +807,9 @@ export function TicketRowDispatchScope(props: {
       ? offers.actions.find((action) => action.action === "Dispatch")
       : undefined;
   if (offered === undefined) return props.children(undefined, null);
-  const effect = ticketActionEffect("Dispatch", { kind: "NoPoint" }).effect;
+  const effect = text(
+    ticketActionEffect("Dispatch", { kind: "NoPoint" }).effect,
+  );
   return (
     <TicketActingScope partition={props.partition} ticket={props.ticket} drawn>
       {(acting) =>

@@ -21,7 +21,7 @@ import type { ReactNode } from "react";
 
 import type { Copy, CopyText } from "../core/copy.ts";
 import { copyCatalogEn, copyLocale } from "./catalog.ts";
-import { copyBundleOf } from "./copyBundle.ts";
+import { copyArgumentsOf, copyBundleOf } from "./copyBundle.ts";
 import { copyWordingBundle, copyWordingsOf } from "./copyWordings.ts";
 import type { CopyVernaculars } from "./copyWordings.ts";
 import { copyVernaculars } from "./generated/vernaculars.ts";
@@ -98,7 +98,11 @@ export function useCopyWording(): CopyWording {
 export function useCopyText(): CopyText {
   const { l10n } = useLocalization();
   return useCallback(
-    (copy: Copy) => l10n.getString(copy.id, "args" in copy ? copy.args : null),
+    (copy: Copy) => {
+      const text = (each: Copy): string =>
+        l10n.getString(each.id, copyArgumentsOf(each, text));
+      return text(copy);
+    },
     [l10n],
   );
 }

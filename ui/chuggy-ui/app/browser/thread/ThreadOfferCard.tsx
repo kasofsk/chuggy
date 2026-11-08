@@ -83,6 +83,8 @@ import {
   ThreadOfferDraftSubject,
   ThreadOfferTicketSubject,
 } from "./ThreadOfferSubject.tsx";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
+import type { CopyText } from "../../core/copy.ts";
 
 /** One press of a card: a decline, a confirmation and what it submits, or a
  * reply the mailbox did not take, sent again. */
@@ -134,6 +136,7 @@ function threadOfferWrite(
   partition: PartitionIdentity,
   session: string,
   offer: ThreadOfferCall,
+  text: CopyText,
 ): ConsoleWrite<ThreadOfferPressed, ThreadOfferReply> {
   return {
     mutationKey: consoleWriteKey(
@@ -160,7 +163,7 @@ function threadOfferWrite(
       threadOfferUnsentLetGo(persistentStore, session, offer.call);
       return { outcome: "Ok", value: reply };
     },
-    refusal: operationFailureSentence,
+    refusal: (failure) => text(operationFailureSentence(failure)),
   };
 }
 
@@ -329,9 +332,13 @@ function ThreadOfferUnanswered(props: {
   readonly offer: ThreadOfferCall;
 }): ReactNode {
   const { partition, session, offer } = props;
-  const writing = useConsoleWrite(threadOfferWrite(partition, session, offer), {
-    drawn: true,
-  });
+  const text = useCopyText();
+  const writing = useConsoleWrite(
+    threadOfferWrite(partition, session, offer, text),
+    {
+      drawn: true,
+    },
+  );
   const settled =
     writing.isSuccess && writing.data !== undefined ? (
       <p className="text-ink-3 text-sm" role="status">

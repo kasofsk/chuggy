@@ -57,6 +57,7 @@ import { useCopyHeld } from "../ui/copyHeld.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Tooltip } from "../ui/Tooltip.tsx";
 import { ConversationGlyph } from "./ConversationCard.tsx";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 
 import "./conversation.css";
 
@@ -265,20 +266,22 @@ export function ConversationMetaLine(props: {
   const doing = conversationExchangeDoing(exchange);
   const said = conversationExchangeSaid(exchange);
   const copies = useCopyHeld() !== undefined && said !== undefined;
+  const text = useCopyText();
   const arm = conversationStandingArm(
     standing,
     conversationExchangeBegun(exchange),
   );
+  const word = text(arm.word);
   const parked =
     standing.standing === "Running" && standing.state === "Waiting";
   const waited = useConversationWaitLasted(
-    doing.doing === "Unbegun" && !parked ? arm.word : undefined,
+    doing.doing === "Unbegun" && !parked ? word : undefined,
   );
   const lasted = waited || parked;
   const drawn: ConversationMetaDrawn =
     doing.doing === "Settled"
-      ? { lead: copies ? "Copy" : "Still", word: arm.word, worded: true }
-      : conversationMetaRunning(doing, arm.word, {
+      ? { lead: copies ? "Copy" : "Still", word, worded: true }
+      : conversationMetaRunning(doing, word, {
           live: props.live,
           marked: props.marked,
           engine: props.engine,

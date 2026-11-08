@@ -14,6 +14,7 @@ import {
 } from "./codeSentences.ts";
 import type { OperationStep } from "./operationFollow.ts";
 import type { TicketAction } from "./ticketActions.ts";
+import type { CopyText } from "./copy.ts";
 
 export interface InboxAnswer {
   readonly action: TicketAction;
@@ -30,7 +31,7 @@ export function inboxAnswerInFlight(step: OperationStep | undefined): boolean {
 }
 
 /** What the row says about the answer it is carrying, in the reader's terms. */
-export function inboxStepSentence(step: OperationStep): string {
+export function inboxStepSentence(step: OperationStep, text: CopyText): string {
   switch (step.step) {
     case "Submitting":
       return "Submitting";
@@ -41,11 +42,13 @@ export function inboxStepSentence(step: OperationStep): string {
     case "Confirming":
       return "Updating";
     case "Settled":
-      return step.refusal === undefined
-        ? operationStateSentence(step.state)
-        : operationRefusalSentence(step.refusal);
+      return text(
+        step.refusal === undefined
+          ? operationStateSentence(step.state)
+          : operationRefusalSentence(step.refusal),
+      );
     case "Abandoned":
-      return operationAbandonWords(step.cause).word;
+      return text(operationAbandonWords(step.cause).word);
   }
 }
 
@@ -58,10 +61,13 @@ export function inboxStepDetail(step: OperationStep): string | undefined {
 
 /** The row's sentence for a follow that ended without the actor accepting or
  * answering it, and nothing for one that did. */
-export function inboxAnswerRefusal(step: OperationStep): string | undefined {
+export function inboxAnswerRefusal(
+  step: OperationStep,
+  text: CopyText,
+): string | undefined {
   if (step.step === "Settled")
     return step.state === "Succeeded" || step.state === "Answered"
       ? undefined
-      : inboxStepSentence(step);
-  return inboxStepSentence(step);
+      : inboxStepSentence(step, text);
+  return inboxStepSentence(step, text);
 }

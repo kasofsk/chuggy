@@ -8,7 +8,8 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import sheetText from "../app/browser/TicketCreation.css?raw";
@@ -72,7 +73,7 @@ function drawEveryRow(): HTMLElement {
     },
     [binding],
   );
-  const { container } = render(
+  const { container } = renderCopied(
     <SessionProvider holder={holderDouble()}>
       <QueryClientProvider
         client={

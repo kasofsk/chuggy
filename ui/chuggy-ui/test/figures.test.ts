@@ -27,18 +27,32 @@ import {
   tokenCountText,
   tokensFigure,
 } from "../app/core/figures.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 
 /** The drawn text of a figure, which every kind but an absence carries. */
 function textOf(figure: Figure): string {
-  if (figure.kind === "Absent" || figure.kind === "Span")
-    throw new Error(`no plain text on a ${figure.kind} figure`);
-  return figure.text;
+  switch (figure.kind) {
+    case "Absent":
+    case "Span":
+      throw new Error(`no plain text on a ${figure.kind} figure`);
+    case "Ago":
+      return copyTextEn(figure.text);
+    case "Tokens":
+      return figure.unit === undefined
+        ? figure.text
+        : `${figure.text} ${copyTextEn(figure.unit)}`;
+    case "Cost":
+    case "Duration":
+    case "Quantity":
+    case "Instant":
+      return figure.text;
+  }
 }
 
 /** The basis a cost figure carries, which is the half a bill would not have. */
 function basisOf(figure: Figure): string | undefined {
   if (figure.kind !== "Cost") throw new Error("not a cost figure");
-  return figure.basis;
+  return figure.basis === undefined ? undefined : copyTextEn(figure.basis);
 }
 
 function tokens(counts: {
@@ -57,7 +71,11 @@ function tokens(counts: {
 
 test("a cost is cents, is finer below a cent, and always carries its basis", () => {
   const listed = costFigure(420_000, "List");
-  expect(listed).toEqual({ kind: "Cost", text: "$0.42", basis: "list" });
+  expect(listed).toEqual({
+    kind: "Cost",
+    text: "$0.42",
+    basis: { id: "figures-basis-list" },
+  });
   expect(textOf(costFigure(3_100, "List"))).toBe("$0.0031");
   expect(textOf(costFigure(0, "List"))).toBe("$0.00");
   expect(textOf(costFigure(12_800_000, "List"))).toBe("$12.80");
@@ -175,23 +193,21 @@ test("an ago figure carries the relative reading and the full date and clock for
   const at = new Date(2026, 7, 24, 12, 0);
   const figure = agoFigure(at.toISOString(), at.getTime() + 3_600_000 * 24 * 2);
   if (figure.kind !== "Ago") throw new Error("not an ago figure");
-  expect(figure.text).toBe("2d ago");
+  expect(textOf(figure)).toBe("2d ago");
   expect(figure.full).toBe("2026-08-24 12:00");
 });
 
 test("an ago on the ticket page is two units, names what happened and hovers the second", () => {
   const at = new Date(2026, 7, 27, 10, 19, 5);
-  const figure = sinceFigure(
-    at.toISOString(),
-    at.getTime() + 634_000,
-    "started",
-  );
+  const figure = sinceFigure(at.toISOString(), at.getTime() + 634_000, {
+    id: "figures-happened-started",
+  });
   if (figure.kind !== "Ago") throw new Error("not an ago figure");
-  expect(figure.text).toBe("started 10m 34s ago");
+  expect(textOf(figure)).toBe("Started 10m 34s ago");
   expect(figure.full).toBe("2026-08-27 10:19:05");
   const bare = sinceFigure(at.toISOString(), at.getTime() + 4_000);
   if (bare.kind !== "Ago") throw new Error("not an ago figure");
-  expect(bare.text).toBe("4s ago");
+  expect(textOf(bare)).toBe("4s ago");
   expect(sinceFigure("not an instant", 0).kind).toBe("Absent");
 });
 
@@ -204,7 +220,7 @@ test("a spend with no totals is an absence", () => {
 /** The unit a quantity carries, which is the half that says what it counts. */
 function unitOf(figure: Figure): string {
   if (figure.kind !== "Quantity") throw new Error("not a quantity figure");
-  return figure.unit;
+  return copyTextEn(figure.unit);
 }
 
 /**
@@ -213,11 +229,13 @@ function unitOf(figure: Figure): string {
  * the set figures group their digits instead of shortening them.
  */
 test("a count keeps every digit it was given, in groups", () => {
-  expect(textOf(countFigure(17_523_063, "tokens"))).toBe("17,523,063");
-  expect(unitOf(countFigure(17_523_063, "tokens"))).toBe("tokens");
-  expect(textOf(countFigure(0, "pages"))).toBe("0");
-  expect(textOf(countFigure(999, "calls"))).toBe("999");
-  expect(textOf(countFigure(1000, "calls"))).toBe("1,000");
+  const tokens = { id: "figures-unit-tokens" } as const;
+  const calls = { id: "figures-unit-calls" } as const;
+  expect(textOf(countFigure(17_523_063, tokens))).toBe("17,523,063");
+  expect(unitOf(countFigure(17_523_063, tokens))).toBe("tokens");
+  expect(textOf(countFigure(0, { id: "figures-unit-pages" }))).toBe("0");
+  expect(textOf(countFigure(999, calls))).toBe("999");
+  expect(textOf(countFigure(1000, calls))).toBe("1,000");
 });
 
 /** A span somebody set is written in the largest unit that states it exactly,

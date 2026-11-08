@@ -10,6 +10,7 @@
 import type { ProjectTicket } from "../../../../src/contract/responses.ts";
 import type { TicketPhase } from "../../../../src/contract/rosters.ts";
 
+import type { Copy } from "./copy.ts";
 import { setVerdict } from "./ticketLedger.ts";
 import type { SetVerdict } from "./ticketLedger.ts";
 import { ticketBadgeLabel } from "./ticketSections.ts";
@@ -28,7 +29,7 @@ export interface ProjectTableRow {
   /** The journal entry that last changed the ticket's own row, which is the
    * version a Dispatch from the row expects. */
   readonly sequence: number;
-  readonly badge: string | undefined;
+  readonly badge: Copy | undefined;
   /** The latest execution as the ticket's ledger judges it, a set of one, so
    * the row draws it in the word and hue the ticket page does. */
   readonly executionVerdict: SetVerdict | undefined;

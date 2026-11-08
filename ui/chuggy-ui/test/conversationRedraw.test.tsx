@@ -7,7 +7,8 @@
  * either way.
  */
 
-import { cleanup, render } from "@testing-library/react";
+import { cleanup } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -56,7 +57,7 @@ afterEach(() => {
 
 test("an exchange that did not change is not drawn again when another does", () => {
   const first = answered("turn-1", "40 is open.");
-  const view = render(
+  const view = renderCopied(
     <Conversation exchanges={[first, answered("turn-2", "It is")]} pane />,
   );
   expect(draws.get("40 is open.")).toBe(1);

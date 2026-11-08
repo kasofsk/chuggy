@@ -7,13 +7,8 @@
 
 import { QueryClientProvider, useQuery } from "@tanstack/react-query";
 import type { QueryClient } from "@tanstack/react-query";
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  within,
-} from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { renderCopied } from "../copied.tsx";
 import { afterEach, expect, test } from "vitest";
 import type { ReactNode } from "react";
 
@@ -75,7 +70,7 @@ function drawnOver(
       <QueryClientProvider client={client}>{drawn}</QueryClientProvider>
     </SessionProvider>
   );
-  const view = render(tree(children));
+  const view = renderCopied(tree(children));
   return async (again) => {
     await turned(() => {
       view.rerender(tree(again));

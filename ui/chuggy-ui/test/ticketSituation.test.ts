@@ -25,6 +25,7 @@ import {
 } from "./ticketLedgerFixture.ts";
 import type { ExecutionShape } from "./ticketLedgerFixture.ts";
 import { landingEscalated, landingHeld } from "./ticketLandingsFixture.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 
 const facts = ticketLedger(ledgerPage([]), []);
 
@@ -75,7 +76,10 @@ const approval: NativeActionResponse = {
 
 test("a Pending ticket blocked by one revoked dependency needs you, and names it singular", () => {
   expect(
-    ticketSlot(reads({ ticket: ticket({ revokedDependencies: [3] }) })),
+    ticketSlot(
+      reads({ ticket: ticket({ revokedDependencies: [3] }) }),
+      copyTextEn,
+    ),
   ).toEqual({
     slot: "NeedsYou",
     detail: "Blocked by revoked dependency 3",
@@ -88,6 +92,7 @@ test("a Pending ticket blocked by one revoked dependency needs you, and names it
 test("a Pending ticket blocked by more than one names them, plural and ascending", () => {
   const slot = ticketSlot(
     reads({ ticket: ticket({ revokedDependencies: [1, 2] }) }),
+    copyTextEn,
   );
   expect(slot).toMatchObject({
     detail: "Blocked by revoked dependencies 1, 2",
@@ -96,7 +101,9 @@ test("a Pending ticket blocked by more than one names them, plural and ascending
 
 test("a Pending ticket waiting on nothing, a Done one and a Revoked one leave the slot empty", () => {
   for (const phase of ["Pending", "Done", "Revoked"] as const)
-    expect(ticketSlot(reads({ ticket: ticket({ phase }) }))).toEqual({
+    expect(
+      ticketSlot(reads({ ticket: ticket({ phase }) }), copyTextEn),
+    ).toEqual({
       slot: "Nothing",
     });
 });
@@ -107,7 +114,9 @@ const reworkExhausted = {
 } as const;
 
 test("a parked ticket needs you: its wall, the step and cycle it stopped at by the plan's name, and the run that stopped it", () => {
-  expect(ticketSlot(over21(ticket21Parked, reworkExhausted))).toStrictEqual({
+  expect(
+    ticketSlot(over21(ticket21Parked, reworkExhausted), copyTextEn),
+  ).toStrictEqual({
     slot: "NeedsYou",
     detail: "Rework budget exhausted",
     where: "Failed at checks in cycle 3",
@@ -135,13 +144,17 @@ test("a parked ticket's stop is read from as much of its cycle as the page holds
       ),
       names: ["checks", "review"],
     }),
+    copyTextEn,
   );
   expect(slot).toMatchObject({
     where: "Failed at review in cycle 1",
     run: { task: 1, step: "review" },
   });
   expect(
-    ticketSlot(reads({ ticket: ticket(reworkExhausted), ledger: undefined })),
+    ticketSlot(
+      reads({ ticket: ticket(reworkExhausted), ledger: undefined }),
+      copyTextEn,
+    ),
   ).toMatchObject({ where: undefined, run: undefined });
 });
 
@@ -159,6 +172,7 @@ test("a ticket parked with nowhere to run says so, and leads to Runners", () => 
           },
         }),
       }),
+      copyTextEn,
     ),
   ).toStrictEqual({
     slot: "NeedsYou",
@@ -189,6 +203,7 @@ test("a ticket the scheduler resumes once its usage pauses end says so under its
           },
         }),
       }),
+      copyTextEn,
     );
   expect(parked({ until })).toStrictEqual({
     slot: "NeedsYou",
@@ -229,6 +244,7 @@ test("a job lost on its runner says where, how often, and the attempt its worker
           },
         }),
       }),
+      copyTextEn,
     );
   expect(parked(kept)).toStrictEqual({
     slot: "NeedsYou",
@@ -267,6 +283,7 @@ const parkedAtStep = (
       }),
       setupOverridable,
     }),
+    copyTextEn,
   );
 
 /**
@@ -363,6 +380,7 @@ test("a landing whose push was declined or would not read says what to change, a
           },
         }),
       }),
+      copyTextEn,
     );
   expect(parked("PromotionWorkflowsRefused")).toStrictEqual({
     slot: "NeedsYou",
@@ -405,11 +423,13 @@ test("a ticket that needs you for anything else leads to no page", () => {
         },
       }),
     }),
+    copyTextEn,
   );
   const blocked = ticketSlot(
     reads({ ticket: ticket({ revokedDependencies: [3] }) }),
+    copyTextEn,
   );
-  const asked = ticketSlot(reads({ open: [approval] }));
+  const asked = ticketSlot(reads({ open: [approval] }), copyTextEn);
   for (const slot of [parked, blocked, asked])
     expect(slot).toMatchObject({ slot: "NeedsYou", step: undefined });
   expect(Object.keys(asked)).toContain("step");
@@ -427,7 +447,7 @@ test("an open approval needs you even while the ticket is running", () => {
     ],
     { phase: "Finalization" },
   );
-  expect(ticketSlot({ ...running, open: [approval] })).toEqual({
+  expect(ticketSlot({ ...running, open: [approval] }, copyTextEn)).toEqual({
     slot: "NeedsYou",
     detail: "Awaiting approval",
     where: undefined,
@@ -437,7 +457,10 @@ test("an open approval needs you even while the ticket is running", () => {
 });
 
 test("a running ticket's slot is the current cycle's live run, numbered among the page's", () => {
-  const slot = ticketSlot(over21(ticket21Resumed, { phase: "Evaluation" }));
+  const slot = ticketSlot(
+    over21(ticket21Resumed, { phase: "Evaluation" }),
+    copyTextEn,
+  );
   expect(slot.slot).toBe("Now");
   if (slot.slot !== "Now") throw new Error("not the Now card");
   expect(slot.running.execution.execution).toBe("execution-c40de507-8");
@@ -446,13 +469,17 @@ test("a running ticket's slot is the current cycle's live run, numbered among th
 });
 
 test("a running ticket with nothing live in its current cycle leaves the slot empty", () => {
-  expect(ticketSlot(over21(ticket21Parked, { phase: "Evaluation" }))).toEqual({
+  expect(
+    ticketSlot(over21(ticket21Parked, { phase: "Evaluation" }), copyTextEn),
+  ).toEqual({
     slot: "Nothing",
   });
 });
 
 test("a live run a phase no longer running left behind is not drawn as now", () => {
-  expect(ticketSlot(over21(ticket21Resumed, { phase: "Done" }))).toEqual({
+  expect(
+    ticketSlot(over21(ticket21Resumed, { phase: "Done" }), copyTextEn),
+  ).toEqual({
     slot: "Nothing",
   });
 });
@@ -480,6 +507,7 @@ function parkedOver(
       }),
       landings,
     }),
+    copyTextEn,
   );
 }
 
@@ -488,7 +516,12 @@ function escalatedFrom(
   kind: Parameters<typeof landingEscalated>[2],
   removal?: { readonly reason: string; readonly actor?: string },
 ): SituationReads["landings"] {
-  return [ticketLandingOf(landingEscalated(5, escalatedSince, kind, removal))];
+  return [
+    ticketLandingOf(
+      landingEscalated(5, escalatedSince, kind, removal),
+      copyTextEn,
+    ),
+  ];
 }
 
 test("an escalation over a merge queue removal names the forge's reason and who removed the pull request", () => {
@@ -534,11 +567,11 @@ test("an escalation over a hold that names no removal, or whose newest landing i
     [],
     escalatedFrom("ProposalMergesExhausted"),
     escalatedFrom("ProposalDequeued", { reason: "manual", actor: "gdoteof" }),
-    [ticketLandingOf(landingHeld(5, escalatedSince))],
+    [ticketLandingOf(landingHeld(5, escalatedSince), copyTextEn)],
   ])
     expect(parkedOver("ProposalMergesExhausted", landings)).toStrictEqual({
       slot: "NeedsYou",
-      detail: "Proposal merges exhausted",
+      detail: "Pull request merges exhausted",
       where: undefined,
       run: undefined,
       step: undefined,

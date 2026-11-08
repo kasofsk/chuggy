@@ -51,6 +51,7 @@ import { DataPanel } from "../DataPanel.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Ledger, LedgerBlock, LedgerGroup, LedgerRow } from "../ui/Ledger.tsx";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 
 /** What one decision cost and how long it took, as the group's own roll-up. */
 function LeadDecisionRollup(props: {
@@ -62,7 +63,7 @@ function LeadDecisionRollup(props: {
       <Figure
         figure={
           decision.costMicros === undefined
-            ? { kind: "Absent", why: "No cost measured" }
+            ? { kind: "Absent", why: { id: "figures-absent-cost" } }
             : costFigure(decision.costMicros, "List")
         }
       />
@@ -72,7 +73,7 @@ function LeadDecisionRollup(props: {
       <Figure
         figure={
           decision.tokens === undefined
-            ? { kind: "Absent", why: "No tokens measured" }
+            ? { kind: "Absent", why: { id: "figures-absent-tokens" } }
             : tokenCountFigure(decision.tokens)
         }
       />
@@ -82,7 +83,7 @@ function LeadDecisionRollup(props: {
       <Figure
         figure={
           decision.durationMs === undefined
-            ? { kind: "Absent", why: "No duration measured" }
+            ? { kind: "Absent", why: { id: "figures-absent-duration" } }
             : durationFigure(decision.durationMs)
         }
       />
@@ -131,6 +132,7 @@ function LeadDecisionRows(props: {
   readonly when: FigureValue;
 }): ReactNode {
   const decision = props.decision;
+  const text = useCopyText();
   const arms = leadDecisionArms(decision).filter(
     (arm) => arm.tickets.length > 0,
   );
@@ -151,7 +153,7 @@ function LeadDecisionRows(props: {
           <LedgerRow
             key={dispatch.ticket}
             label="Dispatch"
-            pill={{ tone: arm.tone, text: arm.word }}
+            pill={{ tone: arm.tone, text: text(arm.word) }}
             when={props.when}
             note={
               dispatch.state === "AwaitingApproval" ? (

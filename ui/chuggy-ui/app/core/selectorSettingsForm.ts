@@ -309,19 +309,19 @@ export function selectorSettingsLimitFigure(
 ): Figure {
   switch (name) {
     case "tokensPerDecision":
-      return countFigure(value, "tokens");
+      return countFigure(value, { id: "figures-unit-tokens" });
     case "millisecondsPerDecision":
       return spanSetFigure(value);
     case "toolCallsPerDecision":
-      return countFigure(value, "calls");
+      return countFigure(value, { id: "figures-unit-calls" });
     case "dispatchesPerDecision":
-      return countFigure(value, "tickets");
+      return countFigure(value, { id: "figures-unit-tickets" });
     case "inputBytesPerDecision":
       return bytesSetFigure(value);
     case "candidatePagesPerDecision":
-      return countFigure(value, "pages");
+      return countFigure(value, { id: "figures-unit-pages" });
     case "autoCompactWindow":
-      return countFigure(value, "tokens");
+      return countFigure(value, { id: "figures-unit-tokens" });
   }
 }
 

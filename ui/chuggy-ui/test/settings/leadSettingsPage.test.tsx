@@ -15,13 +15,8 @@
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import { QueryClient } from "@tanstack/react-query";
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  within,
-} from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
+import { renderCopied } from "../copied.tsx";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -182,7 +177,7 @@ async function drawSettings(
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  render(
+  renderCopied(
     <ScreenHarness
       partition={leadPartition}
       client={client}
@@ -249,7 +244,7 @@ test("a project with no lead is told above the settings why, as the lead page sa
   expect(screen.queryByText("Tickets are dispatched by hand")).toBeNull();
   cleanup();
   await drawSettings({ lead: { lead: "None", absence: { reason: "Paused" } } });
-  expect(screen.getByText("Selector paused")).toBeDefined();
+  expect(screen.getByText("Lead paused")).toBeDefined();
 });
 
 /** A refusal for no live runner is left to the runner notice, which says it

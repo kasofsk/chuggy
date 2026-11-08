@@ -186,6 +186,7 @@ function TicketListState(props: {
   readonly dispatch?: TicketRowDispatch | undefined;
 }): ReactNode {
   const row = props.row;
+  const text = useCopyText();
   const standing = ticketListStandingOf(row);
   const unfinished =
     row.openDependencies.length + row.revokedDependencies.length;
@@ -196,7 +197,9 @@ function TicketListState(props: {
       hint={
         standing === "Blocked"
           ? `Blocked · ${String(unfinished)} unfinished ${unfinished === 1 ? "dependency" : "dependencies"}`
-          : row.badge
+          : row.badge === undefined
+            ? undefined
+            : text(row.badge)
       }
       dispatch={props.dispatch}
     />

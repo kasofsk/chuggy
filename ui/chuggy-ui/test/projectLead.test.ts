@@ -17,6 +17,7 @@ import {
 } from "../app/core/projectLead.ts";
 import { leadBody } from "./leadFixture.ts";
 import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 
 const lead = leadBody(1, 1);
 const none: LeadReadResponse = { lead: "None" };
@@ -80,6 +81,7 @@ test("a project with no lead says why under the line, and since when where it wa
       ready({ lead: "None", absence: { reason: "NotNeeded" } }),
       sameDayMs,
       undefined,
+      copyTextEn,
     ),
   ).toBe("Opens when a ticket is released");
   expect(
@@ -87,29 +89,33 @@ test("a project with no lead says why under the line, and since when where it wa
       ready({ lead: "None", absence: { reason: "Paused" } }),
       sameDayMs,
       undefined,
+      copyTextEn,
     ),
-  ).toBe("Selector paused");
+  ).toBe("Lead paused");
   expect(
     projectLeadAbsenceLine(
       ready({ lead: "None", absence: { reason: "SelectorNotGranted" } }),
       sameDayMs,
       undefined,
+      copyTextEn,
     ),
-  ).toBe("Selector not granted this project");
+  ).toBe("Lead not granted this project");
   expect(
     projectLeadAbsenceLine(
       ready({ lead: "None", absence: { reason: "AwaitingSelector" } }),
       sameDayMs,
       undefined,
+      copyTextEn,
     ),
-  ).toBe("Opens at the selector's next pass");
+  ).toBe("Opens at the lead's next pass");
   expect(
     projectLeadAbsenceLine(
       ready({ lead: "None", absence: { reason: "SelectorUnnamed" } }),
       sameDayMs,
       undefined,
+      copyTextEn,
     ),
-  ).toBe("No selector named for this site");
+  ).toBe("No lead named for this site");
   expect(
     projectLeadAbsenceLine(
       ready({
@@ -118,6 +124,7 @@ test("a project with no lead says why under the line, and since when where it wa
       }),
       sameDayMs,
       undefined,
+      copyTextEn,
     ),
   ).toBe(`No live runner · since ${clock}`);
   expect(
@@ -128,6 +135,7 @@ test("a project with no lead says why under the line, and since when where it wa
       }),
       laterMs,
       undefined,
+      copyTextEn,
     ),
   ).toBe(`Hosted runs not granted · since ${day} ${clock}`);
 });
@@ -150,20 +158,21 @@ test("a refusal for no live runner is drawn only until the placement has said wh
     sessionPlacementBody({ lead: "InCluster", project: "Offline" }),
   ])
     expect(
-      projectLeadAbsenceLine(offline, sameDayMs, placement),
+      projectLeadAbsenceLine(offline, sameDayMs, placement, copyTextEn),
       JSON.stringify(placement),
     ).toBeUndefined();
-  expect(projectLeadAbsenceLine(offline, sameDayMs, undefined)).toMatch(
-    /^No live runner · since /u,
-  );
+  expect(
+    projectLeadAbsenceLine(offline, sameDayMs, undefined, copyTextEn),
+  ).toMatch(/^No live runner · since /u);
   const live = sessionPlacementBody({ project: "Live" });
   expect(
     projectLeadAbsenceLine(
       ready({ lead: "None", absence: { reason: "Paused" } }),
       sameDayMs,
       live,
+      copyTextEn,
     ),
-  ).toBe("Selector paused");
+  ).toBe("Lead paused");
   expect(
     projectLeadAbsenceLine(
       ready({
@@ -172,9 +181,10 @@ test("a refusal for no live runner is drawn only until the placement has said wh
       }),
       sameDayMs,
       live,
+      copyTextEn,
     ),
   ).toMatch(/^Hosted runs not granted · since /u);
-  expect(projectLeadAbsenceLine(ready(none), sameDayMs, live)).toBe(
+  expect(projectLeadAbsenceLine(ready(none), sameDayMs, live, copyTextEn)).toBe(
     "Tickets are dispatched by hand",
   );
 });
@@ -208,17 +218,22 @@ test("a lead dispatches where one stands or will open, and not otherwise", () =>
 });
 
 test("a server that gives no reason reads as tickets run by hand, and a lead or no read draws no line", () => {
-  expect(projectLeadAbsenceLine(ready(none), laterMs, undefined)).toBe(
-    "Tickets are dispatched by hand",
-  );
   expect(
-    projectLeadAbsenceLine(ready(lead), laterMs, undefined),
+    projectLeadAbsenceLine(ready(none), laterMs, undefined, copyTextEn),
+  ).toBe("Tickets are dispatched by hand");
+  expect(
+    projectLeadAbsenceLine(ready(lead), laterMs, undefined, copyTextEn),
   ).toBeUndefined();
   expect(
-    projectLeadAbsenceLine({ state: "Pending" }, laterMs, undefined),
+    projectLeadAbsenceLine(
+      { state: "Pending" },
+      laterMs,
+      undefined,
+      copyTextEn,
+    ),
   ).toBeUndefined();
   expect(
-    projectLeadAbsenceLine({ state: "Absent" }, laterMs, undefined),
+    projectLeadAbsenceLine({ state: "Absent" }, laterMs, undefined, copyTextEn),
   ).toBeUndefined();
 });
 
@@ -244,9 +259,9 @@ test("a lead paused for usage says until when, whatever the placement says", () 
     undefined,
     sessionPlacementBody({ project: "Live" }),
   ])
-    expect(projectLeadAbsenceLine(paused, sameDayMs, placement)).toBe(
-      `Paused for usage · until ${untilLocal()}`,
-    );
+    expect(
+      projectLeadAbsenceLine(paused, sameDayMs, placement, copyTextEn),
+    ).toBe(`Paused for usage · until ${untilLocal()}`);
   expect(
     projectLeadAbsenceLine(
       ready({
@@ -255,6 +270,7 @@ test("a lead paused for usage says until when, whatever the placement says", () 
       }),
       sameDayMs,
       undefined,
+      copyTextEn,
     ),
   ).toBe(`Paused for usage · since ${sinceLocal().clock}`);
 });

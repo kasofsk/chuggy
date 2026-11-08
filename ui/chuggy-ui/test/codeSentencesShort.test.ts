@@ -47,8 +47,15 @@ import {
   type CreationDraftHeld,
 } from "../app/core/ticketCreationRun.ts";
 import { operationRefusalSamples } from "./operationRefusalFixture.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
+import type { Copy } from "../app/core/copy.ts";
 
 const lineLengthMax = 60;
+
+/** A line's words, or nothing where there is no line. */
+function textOf(copy: Copy | undefined): string | undefined {
+  return copy === undefined ? undefined : copyTextEn(copy);
+}
 
 /** Words only someone who has read this repository would use. */
 const internalWords =
@@ -82,37 +89,43 @@ const failures: { readonly [O in ApiFailure["outcome"]]: ApiFailure } = {
 
 test("every escalation, open action and operation state is one short line", () => {
   expectShort([
-    ...escalationKinds.map(escalationKindSentence),
-    ...nativeActionKinds.map(nativeActionKindSentence),
-    ...operationStates.map(operationStateSentence),
+    ...escalationKinds.map((each) => copyTextEn(escalationKindSentence(each))),
+    ...nativeActionKinds.map((each) =>
+      copyTextEn(nativeActionKindSentence(each)),
+    ),
+    ...operationStates.map((each) => copyTextEn(operationStateSentence(each))),
   ]);
 });
 
 test("every refusal a settled operation carries is one short line", () => {
   expectShort([
     ...operationRefusalCodes.map((code) =>
-      operationRefusalSentence(refusals[code]),
+      copyTextEn(operationRefusalSentence(refusals[code])),
     ),
-    operationRefusalSentence({
-      type: "TaskNotCurrent",
-      value: {
-        ticket,
-        task: {
-          type: "EvaluationTask",
-          value: {
-            ticket,
-            workCycle: 12,
-            stage: 10,
-            generation: 4,
-            evaluator: 6,
+    copyTextEn(
+      operationRefusalSentence({
+        type: "TaskNotCurrent",
+        value: {
+          ticket,
+          task: {
+            type: "EvaluationTask",
+            value: {
+              ticket,
+              workCycle: 12,
+              stage: 10,
+              generation: 4,
+              evaluator: 6,
+            },
           },
         },
-      },
-    }),
-    operationRefusalSentence({
-      type: "DependencyCycle",
-      value: { ticket, dependencies: [290] },
-    }),
+      }),
+    ),
+    copyTextEn(
+      operationRefusalSentence({
+        type: "DependencyCycle",
+        value: { ticket, dependencies: [290] },
+      }),
+    ),
   ]);
 });
 
@@ -120,33 +133,51 @@ test("every way a ticket stays on its revision is one short line", () => {
   expectShort(
     [
       ...draftReleaseRefusalCodes.map((code) =>
-        ticketFollowingSentence({ verdict: "Held", code }),
+        textOf(ticketFollowingSentence({ verdict: "Held", code })),
       ),
-      ticketFollowingSentence({ verdict: "Trimmed" }),
+      textOf(ticketFollowingSentence({ verdict: "Trimmed" })),
     ].filter((line) => line !== undefined),
   );
 });
 
 test("every refusal, deferral and failure a submission meets is one short line", () => {
   expectShort([
-    ...mutationRefusalCodes.map(mutationRefusalSentence),
-    ...draftRevisionRefusalCodes.map(draftRevisionRefusalSentence),
-    ...[...mutationDeferralCodes, unknownCode].map(mutationDeferralSentence),
-    ...Object.values(failures).map(operationFailureSentence),
-    ...Object.values(failures).map(draftRevisionFailureSentence),
-    ...Object.values(failures).map(draftDeletionFailureSentence),
+    ...mutationRefusalCodes.map((each) =>
+      copyTextEn(mutationRefusalSentence(each)),
+    ),
+    ...draftRevisionRefusalCodes.map((each) =>
+      copyTextEn(draftRevisionRefusalSentence(each)),
+    ),
+    ...[...mutationDeferralCodes, unknownCode].map((each) =>
+      copyTextEn(mutationDeferralSentence(each)),
+    ),
+    ...Object.values(failures).map((each) =>
+      copyTextEn(operationFailureSentence(each)),
+    ),
+    ...Object.values(failures).map((each) =>
+      copyTextEn(draftRevisionFailureSentence(each)),
+    ),
+    ...Object.values(failures).map((each) =>
+      copyTextEn(draftDeletionFailureSentence(each)),
+    ),
     ...draftRevisionRefusalCodes.map((code) =>
-      draftDeletionFailureSentence({ outcome: "Conflict", code, body: {} }),
+      copyTextEn(
+        draftDeletionFailureSentence({ outcome: "Conflict", code, body: {} }),
+      ),
     ),
     ...mutationRefusalCodes.map((code) =>
-      operationFailureSentence({ outcome: "Conflict", code, body: {} }),
+      copyTextEn(
+        operationFailureSentence({ outcome: "Conflict", code, body: {} }),
+      ),
     ),
     ...mutationDeferralCodes.map((code) =>
-      operationFailureSentence({
-        outcome: "Retryable",
-        code,
-        retryAfterSeconds: 3,
-      }),
+      copyTextEn(
+        operationFailureSentence({
+          outcome: "Retryable",
+          code,
+          retryAfterSeconds: 3,
+        }),
+      ),
     ),
   ]);
 });

@@ -51,6 +51,9 @@ const copyTermsFile = "terms.ftl";
 /** The line beside a message that lets it spell a term's English. */
 const copyExemptionPattern = /^spells (-[a-zA-Z][\w-]*): \S/u;
 
+/** The line beside a term that lists the words it replaces. */
+const copyRejectionPattern = /^rejects: (\S.*)$/u;
+
 interface CopyFile {
   readonly path: string;
   readonly source: string;
@@ -130,12 +133,42 @@ function copyOfType<T>(entry: Entry, type: string): T[] {
   );
 }
 
-/** The variables an entry is formatted with, in the order first named. */
-function copyVariables(entry: Message | Term): readonly string[] {
-  const names = copyOfType<{ readonly id: { readonly name: string } }>(
-    entry,
-    "VariableReference",
-  ).map((reference) => reference.id.name);
+/** The base's messages by id, which a message referencing one is formatted
+ * alongside. */
+type CopyMessages = ReadonlyMap<string, Message>;
+
+function copyMessagesOf(files: readonly CopyFile[]): CopyMessages {
+  return new Map(
+    files
+      .flatMap((file) => file.entries)
+      .filter((entry): entry is Message => entry.type === "Message")
+      .map((message) => [message.id.name, message]),
+  );
+}
+
+/** The variables an entry is formatted with, in the order first named. A
+ * message it references is formatted with the same ones, so theirs are its
+ * own; each is read once, which bounds the walk by the catalog. */
+function copyVariables(
+  entry: Message | Term,
+  messages: CopyMessages,
+  seen: Set<string> = new Set(),
+): readonly string[] {
+  const names: string[] = [];
+  for (const node of copyNodes(entry)) {
+    const reference = node as {
+      readonly type?: unknown;
+      readonly id?: { readonly name: string };
+    };
+    if (reference.id === undefined) continue;
+    if (reference.type === "VariableReference") names.push(reference.id.name);
+    if (reference.type !== "MessageReference" || seen.has(reference.id.name))
+      continue;
+    seen.add(reference.id.name);
+    const referenced = messages.get(reference.id.name);
+    if (referenced !== undefined)
+      names.push(...copyVariables(referenced, messages, seen));
+  }
   return [...new Set(names)];
 }
 
@@ -145,6 +178,17 @@ function copyTermWords(term: Term): readonly string[] {
     .map((text) => text.value.trim())
     .filter((text) => /\p{L}/u.test(text));
   return [...new Set(words)];
+}
+
+/** The words a term replaces, as the `rejects:` line beside it lists them. */
+function copyTermRejected(term: Term): readonly string[] {
+  const lines = term.comment?.content.split("\n") ?? [];
+  return lines.flatMap((line) => {
+    const listed = copyRejectionPattern.exec(line.trim());
+    return listed?.[1] === undefined
+      ? []
+      : listed[1].split(",").map((word) => word.trim());
+  });
 }
 
 /** The words a message says itself, outside every placeable it references. */
@@ -171,9 +215,10 @@ function copyExemptions(message: Message): readonly string[] {
 }
 
 /**
- * A message that spells a term's English instead of referencing it, unless a
- * line beside it says which term and why; and such a line that names a term
- * the message does not spell, which outlives the word it excused.
+ * A message that spells a term's English instead of referencing it, or says a
+ * word the term replaces, unless a line beside it says which term and why; and
+ * such a line that names a term the message does neither for, which outlives
+ * the word it excused.
  */
 function copyTermsSpelled(
   files: readonly CopyFile[],
@@ -183,29 +228,64 @@ function copyTermsSpelled(
     files
       .flatMap((file) => file.entries)
       .filter((entry): entry is Term => entry.type === "Term")
-      .map((term) => [`-${term.id.name}`, copyTermWords(term)]),
+      .map((term) => [
+        `-${term.id.name}`,
+        { words: copyTermWords(term), rejected: copyTermRejected(term) },
+      ]),
   );
   for (const file of files)
     for (const entry of file.entries) {
       if (entry.type !== "Message") continue;
       const text = copyMessageText(entry);
       const exempt = copyExemptions(entry);
-      for (const [term, words] of terms) {
+      const at = `${copyShown(file.path)}: ${entry.id.name}`;
+      for (const [term, { words, rejected }] of terms) {
         const spelled = words.some((word) => copySpelled(text, word));
-        const at = `${copyShown(file.path)}: ${entry.id.name}`;
-        if (spelled && !exempt.includes(term))
+        const replaced = rejected.find((word) => copySpelled(text, word));
+        const excused = exempt.includes(term);
+        if (spelled && !excused)
           findings.push(`${at}: spells ${term} instead of referencing it`);
-        if (!spelled && exempt.includes(term))
+        if (replaced !== undefined && !excused)
+          findings.push(`${at}: says "${replaced}", which ${term} replaces`);
+        if (!spelled && replaced === undefined && excused)
           findings.push(
             `${at}: is exempt for ${term}, which it does not spell`,
           );
       }
       for (const term of exempt)
         if (!terms.has(term))
+          findings.push(`${at}: is exempt for ${term}, which is no term`);
+    }
+}
+
+/** Each term and message a file's entries reference, which must be defined
+ * where they are formatted: in the base, or in the base under a layer. */
+function copyReferencesResolved(
+  files: readonly CopyFile[],
+  defined: ReadonlySet<string>,
+  findings: string[],
+): void {
+  for (const file of files)
+    for (const entry of file.entries) {
+      const terms = copyOfType<{ readonly id: { readonly name: string } }>(
+        entry,
+        "TermReference",
+      ).map((reference) => `-${reference.id.name}`);
+      const messages = copyOfType<{ readonly id: { readonly name: string } }>(
+        entry,
+        "MessageReference",
+      ).map((reference) => reference.id.name);
+      for (const id of new Set([...terms, ...messages]))
+        if (!defined.has(id))
           findings.push(
-            `${copyShown(file.path)}: ${entry.id.name}: is exempt for ${term}, which is no term`,
+            `${copyShown(file.path)}: ${copyEntryKey(entry)}: references ${id}, which nothing defines`,
           );
     }
+}
+
+/** An entry as a reference names it, a term with its leading dash. */
+function copyEntryKey(entry: Message | Term): string {
+  return `${entry.type === "Term" ? "-" : ""}${entry.id.name}`;
 }
 
 /** Ids prefixed by their section, unique, and terms in their own file. */
@@ -213,7 +293,7 @@ function copyIdsPlaced(files: readonly CopyFile[], findings: string[]): void {
   const seen = new Set<string>();
   for (const file of files)
     for (const entry of file.entries) {
-      const id = `${entry.type === "Term" ? "-" : ""}${entry.id.name}`;
+      const id = copyEntryKey(entry);
       const at = `${copyShown(file.path)}: ${id}`;
       if (seen.has(id)) findings.push(`${at}: is defined twice`);
       seen.add(id);
@@ -236,21 +316,22 @@ function copyLayerHeld(
   layer: CopyLayer,
   findings: string[],
 ): void {
-  const key = (entry: Message | Term) =>
-    `${entry.type === "Term" ? "-" : ""}${entry.id.name}`;
   const defined = new Map(
-    base.flatMap((file) => file.entries).map((entry) => [key(entry), entry]),
+    base
+      .flatMap((file) => file.entries)
+      .map((entry) => [copyEntryKey(entry), entry]),
   );
+  const messages = copyMessagesOf(base);
   for (const file of layer.files)
     for (const entry of file.entries) {
-      const at = `${copyShown(file.path)}: ${key(entry)}`;
-      const over = defined.get(key(entry));
+      const at = `${copyShown(file.path)}: ${copyEntryKey(entry)}`;
+      const over = defined.get(copyEntryKey(entry));
       if (over === undefined) {
         findings.push(`${at}: is not defined by ${copyBase}`);
         continue;
       }
-      const mine = [...copyVariables(entry)].sort().join(", ");
-      const theirs = [...copyVariables(over)].sort().join(", ");
+      const mine = [...copyVariables(entry, messages)].sort().join(", ");
+      const theirs = [...copyVariables(over, messages)].sort().join(", ");
       if (mine !== theirs)
         findings.push(
           `${at}: takes { ${mine} } where ${copyBase} takes { ${theirs} }`,
@@ -274,17 +355,32 @@ function copyKey(name: string): string {
 }
 
 /** A section's module, in the formatter's own layout. */
-function copyModule(file: CopyFile, catalogShown: string): string {
+function copyModule(
+  file: CopyFile,
+  messagesAll: CopyMessages,
+  catalogShown: string,
+): string {
   const name = copyCamel(file.section);
+  const messages = file.entries.filter(
+    (entry): entry is Message => entry.type === "Message",
+  );
   const lines = [
     `/** Generated by ui/chuggy-ui/tools/copyCatalog.ts from ${catalogShown}/${copyBase}/${file.section}.ftl.`,
     " * Do not edit by hand; run `node ui/chuggy-ui/tools/copyCatalog.ts`. */",
     "",
-    `export interface ${name.charAt(0).toUpperCase()}${name.slice(1)}Copy {`,
+    ...(messages.some(
+      (message) => copyVariables(message, messagesAll).length > 0,
+    )
+      ? [
+          "/** Each message's variables, `Argument` being what one may be handed. */",
+          `export interface ${name.charAt(0).toUpperCase()}${name.slice(1)}Copy<Argument> {`,
+        ]
+      : [
+          `export interface ${name.charAt(0).toUpperCase()}${name.slice(1)}Copy {`,
+        ]),
   ];
-  for (const entry of file.entries) {
-    if (entry.type !== "Message") continue;
-    const variables = copyVariables(entry);
+  for (const entry of messages) {
+    const variables = copyVariables(entry, messagesAll);
     const id = JSON.stringify(entry.id.name);
     if (variables.length === 0) {
       lines.push(`  readonly ${id}: Record<never, never>;`);
@@ -292,7 +388,7 @@ function copyModule(file: CopyFile, catalogShown: string): string {
     }
     lines.push(`  readonly ${id}: {`);
     for (const variable of variables)
-      lines.push(`    readonly ${copyKey(variable)}: string | number;`);
+      lines.push(`    readonly ${copyKey(variable)}: Argument;`);
     lines.push("  };");
   }
   lines.push("}", "");
@@ -402,10 +498,14 @@ function copyGenerated(
   check: boolean,
 ): string[] {
   const shown = relative(consoleDir, catalog) || "app/copy";
+  const messagesAll = copyMessagesOf(base);
   const types = new Map(
     base
       .filter((file) => basename(file.path) !== copyTermsFile)
-      .map((file) => [copyModuleName(file.section), copyModule(file, shown)]),
+      .map((file) => [
+        copyModuleName(file.section),
+        copyModule(file, messagesAll, shown),
+      ]),
   );
   const sources = new Map(
     base.map((file) => [
@@ -435,7 +535,14 @@ function copyCatalogRun(argv: readonly string[]): 0 | 1 {
   const layers = copyLayersRead(catalog, findings);
   copyIdsPlaced(base, findings);
   copyTermsSpelled(base, findings);
-  for (const layer of layers) copyLayerHeld(base, layer, findings);
+  const defined = new Set(
+    base.flatMap((file) => file.entries).map(copyEntryKey),
+  );
+  copyReferencesResolved(base, defined, findings);
+  for (const layer of layers) {
+    copyLayerHeld(base, layer, findings);
+    copyReferencesResolved(layer.files, defined, findings);
+  }
   if (findings.length === 0)
     findings.push(...copyGenerated(base, layers, catalog, generated, check));
   for (const finding of findings) console.log(`ERROR ${finding}`);

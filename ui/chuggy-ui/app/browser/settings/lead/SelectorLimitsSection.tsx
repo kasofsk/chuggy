@@ -157,7 +157,10 @@ export function SelectorLimitsSection(props: {
       onReload={props.onReload}
       footLead={
         <Figure
-          figure={countFigure(changed, changed === 1 ? "change" : "changes")}
+          figure={countFigure(changed, {
+            id: "figures-unit-changes",
+            args: { count: changed },
+          })}
         />
       }
     >

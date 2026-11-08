@@ -44,9 +44,17 @@ vi.mock("@tanstack/react-router", () => ({
 /** A vernacular that calls a ticket a job, and nothing else. */
 const jobs: CopyVernaculars = {
   "en-x-jobs": [
-    `-tickets = { $case ->
-    [upper] Jobs
-   *[lower] jobs
+    `-ticket = { $case ->
+    [upper] { $form ->
+        [plural] Jobs
+        [a] A job
+       *[one] Job
+    }
+   *[lower] { $form ->
+        [plural] jobs
+        [a] a job
+       *[one] job
+    }
 }
 `,
   ],

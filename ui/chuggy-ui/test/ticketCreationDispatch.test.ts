@@ -33,6 +33,7 @@ import {
   ticketDispatching,
 } from "./ticketDispatching.ts";
 import type { TicketDispatching } from "./ticketDispatching.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 
 const partitionBase = `${nativeHttpBasePath}/tenants/acme/projects/atlas`;
 
@@ -74,6 +75,7 @@ async function submitted(
     creationPartition,
     request,
     () => undefined,
+    copyTextEn,
   );
   return {
     ended,
@@ -238,6 +240,7 @@ test.each([0, 1, operationAttemptsMax - 1])(
       creationPartition,
       dispatching,
       () => undefined,
+      copyTextEn,
     );
     expect(ended).toStrictEqual(created);
     expect(

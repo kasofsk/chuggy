@@ -1,6 +1,6 @@
 /**
  * The coded values the wire sends a person, as the short labels a ledger page
- * draws them in.
+ * draws them in: descriptors, whose words are `codes.ftl`'s.
  *
  * Each switch is total over the roster it speaks for, so a member the wire
  * gains stops compiling here rather than reaching a reader as an unexplained
@@ -50,7 +50,6 @@ import type {
 import type { ApiFailure } from "./apiRequest.ts";
 import type { Copy } from "./copy.ts";
 import { failureWords } from "./failureWords.ts";
-import type { FailureWords } from "./failureWords.ts";
 import {
   mutationDeferralCodes,
   mutationRefusalCodes,
@@ -68,18 +67,18 @@ import { stageLabel } from "./ticketLedger.ts";
 import type { TicketActionName } from "./ticketActions.ts";
 
 /** Which wall the ticket hit, as the noun the reader scans for. */
-export function escalationKindLabel(kind: EscalationKind): string {
+export function escalationKindLabel(kind: EscalationKind): Copy {
   switch (kind) {
     case "WorkFailureEscalated":
-      return "Work failed";
+      return { id: "codes-escalation-work-failure" };
     case "EvaluationFailureEscalated":
-      return "Rework budget exhausted";
+      return { id: "codes-escalation-evaluation-failure" };
     case "WorkExecutionUnavailableEscalated":
-      return "Execution unavailable";
+      return { id: "codes-escalation-work-unavailable" };
     case "EvaluationBlockedEscalated":
-      return "Evaluation blocked";
+      return { id: "codes-escalation-evaluation-blocked" };
     case "FinalizationUnavailableEscalated":
-      return "Finalization unavailable";
+      return { id: "codes-escalation-landing-unavailable" };
   }
 }
 
@@ -89,22 +88,22 @@ export function escalationKindLabel(kind: EscalationKind): string {
  * arm for `WorkExecutionUnavailableEscalated` or `EvaluationBlockedEscalated`
  * names only that a wall happened and not which one.
  */
-export function blockedReasonLabel(reason: BlockedReason): string {
+export function blockedReasonLabel(reason: BlockedReason): Copy {
   switch (reason) {
     case "ExecutionPolicyDenied":
-      return "Execution denied by policy";
+      return { id: "codes-blocked-policy-denied" };
     case "TicketConfigIncompatible":
-      return "Configuration incompatible";
+      return { id: "codes-blocked-configuration-incompatible" };
     case "ExecutionProfileUnavailable":
-      return "No matching execution profile";
+      return { id: "codes-blocked-profile-unavailable" };
     case "RuntimeVersionUnsupported":
-      return "Runtime version unsupported";
+      return { id: "codes-blocked-runtime-unsupported" };
     case "RequiredCapabilityUnavailable":
-      return "Nowhere to run this work";
+      return { id: "codes-blocked-capability-unavailable" };
     case "RequiredMemoryUnavailable":
-      return "Too large for every runner";
+      return { id: "codes-blocked-memory-unavailable" };
     case "EvaluatedTreeNotExpected":
-      return "Evaluated a different tree than the work produced";
+      return { id: "codes-blocked-tree-unexpected" };
   }
 }
 
@@ -113,24 +112,24 @@ export function blockedReasonLabel(reason: BlockedReason): string {
  * `GitEvidenceLabel`: a rework whose source could not be read before any
  * execution row existed to carry a `BlockedReason`.
  */
-export function gitEvidenceLabel(evidence: GitEvidenceLabel): string {
+export function gitEvidenceLabel(evidence: GitEvidenceLabel): Copy {
   switch (evidence) {
     case "RemoteUnreachable":
-      return "Remote unreachable";
+      return { id: "codes-git-remote-unreachable" };
     case "RemoteDenied":
-      return "Remote denied";
+      return { id: "codes-git-remote-denied" };
     case "RefUnreadable":
-      return "Ref unreadable";
+      return { id: "codes-git-ref-unreadable" };
     case "ObjectMissing":
-      return "Object missing";
+      return { id: "codes-git-object-missing" };
     case "IntegrationFailed":
-      return "Integration failed";
+      return { id: "codes-git-integration-failed" };
     case "PromotionTimedOut":
-      return "Promotion timed out";
+      return { id: "codes-git-promotion-timed-out" };
     case "RemoteDeclined":
-      return "Remote declined";
+      return { id: "codes-git-remote-declined" };
     case "WorkflowsRefused":
-      return "Workflows refused";
+      return { id: "codes-git-workflows-refused" };
   }
 }
 
@@ -142,199 +141,197 @@ export function gitEvidenceLabel(evidence: GitEvidenceLabel): string {
  */
 export function finalizationUnavailableKindLabel(
   kind: FinalizationUnavailableKind,
-): string {
+): Copy {
   switch (kind) {
     case "RepositoryUnbound":
-      return "Repository unbound";
+      return { id: "codes-hold-repository-unbound" };
     case "TargetUnreadable":
-      return "Target unreadable";
+      return { id: "codes-hold-target-unreadable" };
     case "ProposalBaseUnreadable":
-      return "Proposal base unreadable";
+      return { id: "codes-hold-base-unreadable" };
     case "ProposalBaseIsHead":
-      return "Proposal base at head";
+      return { id: "codes-hold-base-is-head" };
     case "ProposalDenied":
-      return "Proposal denied";
+      return { id: "codes-hold-denied" };
     case "ReconciliationUnreadable":
-      return "Reconciliation unreadable";
+      return { id: "codes-hold-reconciliation-unreadable" };
     case "ProposalEvidenceUnstorable":
-      return "Proposal evidence unstorable";
+      return { id: "codes-hold-evidence-unstorable" };
     case "ProposalAbsent":
-      return "Proposal absent";
+      return { id: "codes-hold-absent" };
     case "ProposalUnaddressed":
-      return "Proposal unaddressed";
+      return { id: "codes-hold-unaddressed" };
     case "ProposalUnavailable":
-      return "Proposal unavailable";
+      return { id: "codes-hold-unavailable" };
     case "PreparationRestartsExhausted":
-      return "Preparation restarts exhausted";
+      return { id: "codes-hold-preparation-restarts-exhausted" };
     case "ProposalCreationsExhausted":
-      return "Proposal creations exhausted";
+      return { id: "codes-hold-creations-exhausted" };
     case "ProposalMergesExhausted":
-      return "Proposal merges exhausted";
+      return { id: "codes-hold-merges-exhausted" };
     case "PromotionDeclined":
-      return "Push declined";
+      return { id: "codes-hold-push-declined" };
     case "PromotionWorkflowsRefused":
-      return "Workflow files refused";
+      return { id: "codes-hold-workflows-refused" };
     case "ProposalQueueChecksFailed":
-      return "Merge queue checks failed again";
+      return { id: "codes-hold-queue-checks-failed" };
     case "ProposalQueueTimedOut":
-      return "Merge queue checks timed out again";
+      return { id: "codes-hold-queue-timed-out" };
     case "ProposalDequeued":
-      return "Removed from merge queue";
+      return { id: "codes-hold-dequeued" };
     case "RecheckReworksExhausted":
-      return "Re-checks exhausted";
+      return { id: "codes-hold-rechecks-exhausted" };
   }
 }
 
 /** Why a project holds no lead, as the line under its empty lead page says it. */
-export function leadAbsenceLabel(
-  reason: LeadAbsenceResponse["reason"],
-): string {
+export function leadAbsenceLabel(reason: LeadAbsenceResponse["reason"]): Copy {
   switch (reason) {
     case "NotNeeded":
-      return "Opens when a ticket is released";
+      return { id: "codes-lead-absence-not-needed" };
     case "Paused":
-      return "Selector paused";
+      return { id: "codes-lead-absence-paused" };
     case "SelectorNotGranted":
-      return "Selector not granted this project";
+      return { id: "codes-lead-absence-not-granted" };
     case "AwaitingSelector":
-      return "Opens at the selector's next pass";
+      return { id: "codes-lead-absence-awaiting" };
     case "SelectorUnnamed":
-      return "No selector named for this site";
+      return { id: "codes-lead-absence-unnamed" };
     case "HostedRunsNotGranted":
-      return "Hosted runs not granted";
+      return { id: "codes-lead-absence-hosted-runs" };
     case "RunnerOffline":
-      return "No live runner";
+      return { id: "codes-lead-absence-runner-offline" };
     case "UsagePaused":
-      return "Paused for usage";
+      return { id: "codes-lead-absence-usage-paused" };
   }
 }
 
 /** Where one landing stands, as the one word its pill says. */
-export function ticketLandingStateLabel(state: TicketLandingState): string {
+export function ticketLandingStateLabel(state: TicketLandingState): Copy {
   switch (state) {
     case "Running":
-      return "Running";
+      return { id: "codes-landing-running" };
     case "Held":
-      return "Held";
+      return { id: "codes-landing-held" };
     case "AwaitingApproval":
     case "AwaitingMerge":
-      return "Waiting";
+      return { id: "codes-landing-waiting" };
     case "Failed":
-      return "Failed";
+      return { id: "codes-landing-failed" };
     case "Unavailable":
-      return "Escalated";
+      return { id: "codes-landing-escalated" };
     case "Landed":
-      return "Landed";
+      return { id: "codes-landing-landed" };
     case "Proposed":
-      return "Proposed";
+      return { id: "codes-landing-proposed" };
     case "Invalidated":
-      return "Invalidated";
+      return { id: "codes-landing-invalidated" };
   }
 }
 
 /** Why one finalization attempt failed. */
 export function finalizationFailureKindLabel(
   kind: (typeof finalizationFailureKinds)[number],
-): string {
+): Copy {
   switch (kind) {
     case "MergeConflict":
-      return "Merge conflict";
+      return { id: "codes-landing-failure-conflict" };
     case "PreparationFailed":
-      return "Preparation failed";
+      return { id: "codes-landing-failure-preparation" };
     case "QueueChecksFailed":
-      return "Merge queue checks failed";
+      return { id: "codes-landing-failure-queue-checks" };
     case "RecheckRequired":
-      return "Target moved, re-check required";
+      return { id: "codes-landing-failure-recheck" };
   }
 }
 
 /** What opening a landing's pull request came to. */
 export function changeProposalCreationLabel(
   creation: (typeof changeProposalCreations)[number],
-): string {
+): Copy {
   switch (creation) {
     case "Created":
-      return "Opened";
+      return { id: "codes-creation-created" };
     case "AlreadyExists":
-      return "Already open";
+      return { id: "codes-creation-exists" };
     case "Contradictory":
-      return "Contradictory";
+      return { id: "codes-creation-contradictory" };
     case "Unstorable":
-      return "Unstorable";
+      return { id: "codes-creation-unstorable" };
     case "Adopted":
-      return "Adopted";
+      return { id: "codes-creation-adopted" };
   }
 }
 
 /** What merging a landing's pull request came to. */
 export function changeProposalMergeLabel(
   merge: (typeof changeProposalMerges)[number],
-): string {
+): Copy {
   switch (merge) {
     case "Merged":
-      return "Merged";
+      return { id: "codes-merge-merged" };
     case "HeadMoved":
-      return "Head moved";
+      return { id: "codes-merge-head-moved" };
     case "NotMergeable":
-      return "Not mergeable";
+      return { id: "codes-merge-not-mergeable" };
   }
 }
 
 /** Why a landing's pull request was not merged. */
 export function changeProposalMergeReasonLabel(
   reason: (typeof changeProposalMergeReasons)[number],
-): string {
+): Copy {
   switch (reason) {
     case "Conflict":
-      return "Conflict";
+      return { id: "codes-merge-reason-conflict" };
   }
 }
 
 /** What the forge last said of a pull request itself. */
 export function changeProposalStatusLabel(
   status: (typeof changeProposalStatuses)[number],
-): string {
+): Copy {
   switch (status) {
     case "Open":
-      return "Open";
+      return { id: "codes-status-open" };
     case "Closed":
-      return "Closed";
+      return { id: "codes-status-closed" };
     case "Merged":
-      return "Merged";
+      return { id: "codes-status-merged" };
     case "Superseded":
-      return "Superseded";
+      return { id: "codes-status-superseded" };
   }
 }
 
 /** What a landing's merge waits on at the forge. */
 export function changeProposalMergeWaitLabel(
   wait: (typeof changeProposalMergeWaits)[number],
-): string {
+): Copy {
   switch (wait) {
     case "Blocked":
-      return "Blocked";
+      return { id: "codes-merge-wait-blocked" };
     case "HeadMoved":
-      return "Head moved";
+      return { id: "codes-merge-wait-head-moved" };
     case "Queued":
-      return "In merge queue";
+      return { id: "codes-merge-wait-queued" };
   }
 }
 
 /** What the forge last said of whether a pull request can merge. */
 export function changeProposalMergeabilityLabel(
   mergeability: (typeof changeProposalMergeabilities)[number],
-): string {
+): Copy {
   switch (mergeability) {
     case "Mergeable":
-      return "Mergeable";
+      return { id: "codes-mergeability-mergeable" };
     case "Conflicting":
-      return "Conflicting";
+      return { id: "codes-mergeability-conflicting" };
     case "Blocked":
-      return "Blocked";
+      return { id: "codes-mergeability-blocked" };
     case "Behind":
-      return "Behind its base";
+      return { id: "codes-mergeability-behind" };
     case "Unknown":
-      return "Unknown";
+      return { id: "codes-mergeability-unknown" };
   }
 }
 
@@ -353,27 +350,28 @@ function isGitEvidence(value: string): value is GitEvidenceLabel {
  */
 export function escalationEvidenceLabel(
   evidence: NonNullable<TicketEscalation["evidence"]>,
-): string {
+): Copy {
   if (isBlockedReason(evidence)) return blockedReasonLabel(evidence);
   if (isGitEvidence(evidence)) return gitEvidenceLabel(evidence);
   return finalizationUnavailableKindLabel(evidence);
 }
 
 /** The runner a job was lost on: its pool's name, or the member whose own runner it is. */
-export function runnerLossDetail(lost: RunnerLoss): string {
+export function runnerLossDetail(lost: RunnerLoss): Copy {
   return lost.runner.kind === "Pool"
-    ? `Lost on ${lost.runner.pool}`
-    : `Lost on ${creatorLabel(lost.runner.owner).text}'s runner`;
-}
-
-function countNoun(count: number, one: string, many: string): string {
-  return `${String(count)} ${count === 1 ? one : many}`;
+    ? { id: "codes-runner-lost-pool", args: { pool: lost.runner.pool } }
+    : {
+        id: "codes-runner-lost-owner",
+        args: { owner: creatorLabel(lost.runner.owner).text },
+      };
 }
 
 /** How often the job was lost where it stands, and how many of those the scheduler resumed by itself. */
-export function runnerLossLine(lost: RunnerLoss): string {
-  const resumed = lost.resumed === 0 ? "none" : String(lost.resumed);
-  return `${countNoun(lost.losses, "loss", "losses")} · ${resumed} resumed automatically`;
+export function runnerLossLine(lost: RunnerLoss): Copy {
+  return {
+    id: "codes-runner-losses",
+    args: { losses: lost.losses, resumed: lost.resumed },
+  };
 }
 
 /** That the scheduler resumes the escalation by itself, and when the latest
@@ -381,31 +379,31 @@ export function runnerLossLine(lost: RunnerLoss): string {
 export function usageResumeLine(
   usageResume: NonNullable<TicketEscalation["usageResume"]>,
   nowMs: number,
-): string {
+): Copy {
   const until =
     usageResume.until === undefined
       ? undefined
       : instantFigure(usageResume.until, nowMs);
   return until?.kind === "Instant"
-    ? `Resumes automatically · ${until.text}`
-    : "Resumes automatically";
+    ? { id: "codes-usage-resumes-at", args: { until: until.text } }
+    : { id: "codes-usage-resumes" };
 }
 
 /** The step a run stopped at. */
-export function runStepLabel(step: RunStepEvidence): string {
+export function runStepLabel(step: RunStepEvidence): Copy {
   switch (step) {
     case "RunCloneFailed":
-      return "Clone failed";
+      return { id: "codes-step-clone-failed" };
     case "RunSetupFailed":
-      return "Setup failed";
+      return { id: "codes-step-setup-failed" };
     case "RunCommitFailed":
-      return "Commit failed";
+      return { id: "codes-step-commit-failed" };
     case "RunPushFailed":
-      return "Push failed";
+      return { id: "codes-step-push-failed" };
     case "RunTimedOut":
-      return "Timed out";
+      return { id: "codes-step-timed-out" };
     case "RunDiskLow":
-      return "Disk low";
+      return { id: "codes-step-disk-low" };
   }
 }
 
@@ -413,14 +411,12 @@ export function runStepLabel(step: RunStepEvidence): string {
 export function runStepLine(
   failed: RunStepFailure,
   setupOverridable: boolean,
-): string | undefined {
+): Copy | undefined {
   switch (failed.evidence) {
     case "RunSetupFailed":
-      return setupOverridable
-        ? "Fix it under Overrides · Setup, then Resume"
-        : undefined;
+      return setupOverridable ? { id: "codes-step-setup-line" } : undefined;
     case "RunDiskLow":
-      return "Free space on its runner, then Resume";
+      return { id: "codes-step-disk-line" };
     case "RunCloneFailed":
     case "RunCommitFailed":
     case "RunPushFailed":
@@ -436,7 +432,7 @@ export function runStepLine(
  * — a work failure and a rework wall explain themselves, so neither ever
  * carries one.
  */
-export function escalationDetail(escalation: TicketEscalation): string {
+export function escalationDetail(escalation: TicketEscalation): Copy {
   if (escalation.lost !== undefined) return runnerLossDetail(escalation.lost);
   if (escalation.failed !== undefined)
     return runStepLabel(escalation.failed.evidence);
@@ -470,13 +466,13 @@ export function escalationStep(
  * whose evidence is a declined push or a push whose branch would not read. */
 export function escalationEvidenceLine(
   evidence: TicketEscalation["evidence"],
-): string | undefined {
+): Copy | undefined {
   if (evidence === "PromotionWorkflowsRefused")
-    return "Turn on Workflow files and the App's Workflows, then Resume";
+    return { id: "codes-evidence-workflows-line" };
   if (evidence === "PromotionDeclined")
-    return "Check the branch's rules and hooks, then Resume";
+    return { id: "codes-evidence-declined-line" };
   if (evidence === "ReconciliationUnreadable")
-    return "Restore the branch or the App's access, then Resume";
+    return { id: "codes-evidence-unreadable-line" };
   return undefined;
 }
 
@@ -494,9 +490,11 @@ function walledStageLabel(facts: WallFacts): string | undefined {
 }
 
 /** The stage the wall interrupted, said as the thing that happened to it. */
-function walledStageFailed(facts: WallFacts): string | undefined {
+function walledStageFailed(facts: WallFacts): Copy | undefined {
   const stage = walledStageLabel(facts);
-  return stage === undefined ? undefined : `${stage} failed`;
+  return stage === undefined
+    ? undefined
+    : { id: "codes-stage-failed", args: { stage } };
 }
 
 /**
@@ -509,16 +507,16 @@ function walledStageFailed(facts: WallFacts): string | undefined {
 export function escalationDetailLine(
   kind: EscalationKind,
   facts: WallFacts,
-): string | undefined {
+): Copy | undefined {
   switch (kind) {
     case "WorkFailureEscalated":
-      return "Failed work is not reworked";
+      return { id: "codes-detail-work-failure" };
     case "EvaluationFailureEscalated":
       return walledStageFailed(facts);
     case "WorkExecutionUnavailableEscalated":
-      return "Work cancelled";
+      return { id: "codes-detail-work-unavailable" };
     case "EvaluationBlockedEscalated":
-      return "Resume asks it again";
+      return { id: "codes-detail-evaluation-blocked" };
     case "FinalizationUnavailableEscalated":
       return undefined;
   }
@@ -546,12 +544,12 @@ export function phaseLabel(phase: TicketPhase): Copy {
 
 /** What an open native action is asking, as the line a card answering it
  * leads with. */
-export function nativeActionKindLabel(kind: NativeActionKind): string {
+export function nativeActionKindLabel(kind: NativeActionKind): Copy {
   switch (kind) {
     case "TicketEscalation":
-      return "Escalated";
+      return { id: "codes-native-escalation" };
     case "FinalizationApproval":
-      return "Awaiting approval";
+      return { id: "codes-native-approval" };
   }
 }
 
@@ -563,74 +561,79 @@ export function nativeActionKindLabel(kind: NativeActionKind): string {
  */
 export function revokedDependencyLine(
   revokedDependencies: readonly number[],
-): string | undefined {
+): Copy | undefined {
   if (revokedDependencies.length === 0) return undefined;
-  const noun = revokedDependencies.length === 1 ? "dependency" : "dependencies";
-  return `Blocked by revoked ${noun} ${revokedDependencies.join(", ")}`;
+  return {
+    id: "codes-revoked-dependencies",
+    args: {
+      count: revokedDependencies.length,
+      tickets: revokedDependencies.join(", "),
+    },
+  };
 }
 
 /** How a finished ticket is finalized, by its kind, in the word the choice is made by. */
-export function finalizationKindLabel(kind: BriefFinalizationKind): string {
+export function finalizationKindLabel(kind: BriefFinalizationKind): Copy {
   switch (kind) {
     case "GitMerge":
-      return "Git merge";
+      return { id: "codes-landing-kind-git-merge" };
     case "PullRequest":
-      return "Pull request";
+      return { id: "codes-landing-kind-pull-request" };
     case "None":
-      return "None";
+      return { id: "codes-landing-kind-none" };
   }
 }
 
 /** What choosing that kind does to the branch the work lands on, `None`
  * touching no remote at all. */
-export function finalizationKindEffect(kind: BriefFinalizationKind): string {
+export function finalizationKindEffect(kind: BriefFinalizationKind): Copy {
   switch (kind) {
     case "GitMerge":
-      return "Merges the work into the target branch";
+      return { id: "codes-landing-kind-git-merge-effect" };
     case "PullRequest":
-      return "Opens a pull request a person merges";
+      return { id: "codes-landing-kind-pull-request-effect" };
     case "None":
-      return "Lands nothing";
+      return { id: "codes-landing-kind-none-effect" };
   }
 }
 
 /** How a git merge advances its target branch, in the word the choice is made by. */
-export function gitMergeModeLabel(mode: BriefGitMergeMode): string {
+export function gitMergeModeLabel(mode: BriefGitMergeMode): Copy {
   switch (mode) {
     case "Push":
-      return "Push";
+      return { id: "codes-merge-mode-push" };
     case "PullRequestMerge":
-      return "Pull request, then merge";
+      return { id: "codes-merge-mode-pull-request" };
   }
 }
 
 /** What choosing that mode does to the target branch. */
-export function gitMergeModeEffect(mode: BriefGitMergeMode): string {
+export function gitMergeModeEffect(mode: BriefGitMergeMode): Copy {
   switch (mode) {
     case "Push":
-      return "Commits straight onto the target branch";
+      return { id: "codes-merge-mode-push-effect" };
     case "PullRequestMerge":
-      return "Opens a pull request into the target branch and merges it";
+      return { id: "codes-merge-mode-pull-request-effect" };
   }
 }
 
 /** How a git merge is ordered against the others on its reference, in the word the choice is made by. */
-export function gitMergePolicyLabel(policy: BriefGitMergePolicy): string {
+export function gitMergePolicyLabel(policy: BriefGitMergePolicy): Copy {
   switch (policy) {
     case "Direct":
-      return "Direct";
+      return { id: "codes-merge-policy-direct" };
     case "Serialized":
-      return "Serialized";
+      return { id: "codes-merge-policy-serialized" };
   }
 }
 
 /** What choosing that policy does to the merge. */
-export function gitMergePolicyEffect(policy: BriefGitMergePolicy): string {
+export function gitMergePolicyEffect(policy: BriefGitMergePolicy): Copy {
   switch (policy) {
     case "Direct":
-      return "Lands as soon as it is accepted";
+      return { id: "codes-merge-policy-direct-effect" };
     case "Serialized":
-      return "Lands alone on its reference, evaluated on what it lands";
+      return { id: "codes-merge-policy-serialized-effect" };
   }
 }
 
@@ -640,19 +643,10 @@ type FinalizationOfTarget = BriefFinalizationOf<string | undefined>;
 /** How a finalization reaches its target: a git merge by its mode, and a pull request by its kind. */
 export function finalizationMethodLabel(
   finalization: FinalizationOfTarget,
-): string {
+): Copy {
   return finalization.kind === "GitMerge"
     ? gitMergeModeLabel(finalization.mode)
     : finalizationKindLabel(finalization.kind);
-}
-
-/** The preposition a finalization reads before the reference it reaches, a push landing on it and a proposal opening into it. */
-function finalizationTargetName(
-  finalization: Exclude<FinalizationOfTarget, { readonly kind: "None" }>,
-): string {
-  return finalization.kind === "GitMerge" && finalization.mode === "Push"
-    ? "lands on"
-    : "into";
 }
 
 /**
@@ -662,21 +656,32 @@ function finalizationTargetName(
  * default; and `None` names no reference at all, having nothing to advance
  * onto.
  */
-export function finalizationLine(finalization: FinalizationOfTarget): string {
+export function finalizationLine(finalization: FinalizationOfTarget): Copy {
   const method = finalizationMethodLabel(finalization);
   if (finalization.kind === "None") return method;
   const pushed =
     finalization.kind === "GitMerge" && finalization.mode === "Push";
-  const target =
-    finalization.target ?? (pushed ? undefined : "the default branch");
-  return target === undefined
-    ? method
-    : `${method} · ${finalizationTargetName(finalization)} ${target}`;
+  if (pushed)
+    return finalization.target === undefined
+      ? method
+      : {
+          id: "codes-landing-onto",
+          args: { method, target: finalization.target },
+        };
+  return {
+    id: "codes-landing-into",
+    args: {
+      method,
+      target: finalization.target ?? { id: "codes-landing-default-branch" },
+    },
+  };
 }
 
 /** Whether finalization waits for a person before it runs. */
-export function approvalLabel(required: boolean): string {
-  return required ? "Required" : "Not required";
+export function approvalLabel(required: boolean): Copy {
+  return required
+    ? { id: "codes-approval-required" }
+    : { id: "codes-approval-not-required" };
 }
 
 /**
@@ -686,8 +691,8 @@ export function approvalLabel(required: boolean): string {
  * that cannot offer it yet.
  */
 export interface ActionEffect {
-  readonly effect: string;
-  readonly more?: string;
+  readonly effect: Copy;
+  readonly more?: Copy;
   readonly offered: boolean;
   readonly refusedBecause?: string;
 }
@@ -706,21 +711,21 @@ export type ResumeOffer =
 /** The answers a wall leaves when the resume is not one of them. */
 export type WallExits = readonly TicketActionName[];
 
-function resumeEffect(point: ResumePoint): string {
+function resumeEffect(point: ResumePoint): Copy {
   switch (point) {
     case "ResumeWork":
-      return "Re-runs the work · new artifact";
+      return { id: "codes-resume-work" };
     case "ResumeRework":
-      return "Reworks · new artifact";
+      return { id: "codes-resume-rework" };
     case "ResumeEvaluation":
-      return "Re-runs evaluation from stage 1";
+      return { id: "codes-resume-evaluation" };
     case "ResumeFinalization":
-      return "Re-runs finalization";
+      return { id: "codes-resume-landing" };
   }
 }
 
 /** An answer the machine admits, which is every one but a resume with no point. */
-function offered(effect: string): ActionEffect {
+function offered(effect: Copy): ActionEffect {
   return { effect, offered: true };
 }
 
@@ -730,16 +735,22 @@ function offered(effect: string): ActionEffect {
  * which phases offer Revoke, so the exit named here is always one the ticket's
  * own read admits.
  */
-export function wallExitLine(exits: WallExits): string | undefined {
-  const left = exits.filter((action) => action !== "Resume");
-  if (left.length === 1) return `only ${String(left[0])} exits this wall`;
-  if (left.length === 2)
-    return `only ${String(left[0])} or ${String(left[1])} exit this wall`;
-  return undefined;
+export function wallExitLine(exits: WallExits): Copy | undefined {
+  const [action, other, ...more] = exits.filter((exit) => exit !== "Resume");
+  if (action === undefined || more.length > 0) return undefined;
+  return other === undefined
+    ? { id: "codes-wall-exit-one", args: { action: ticketActionLabel(action) } }
+    : {
+        id: "codes-wall-exit-two",
+        args: {
+          action: ticketActionLabel(action),
+          other: ticketActionLabel(other),
+        },
+      };
 }
 
 /** The wall's own exit, said the way §1.2 joins it to what cannot be done. */
-function resumeRefused(effect: string, exits: WallExits): ActionEffect {
+function resumeRefused(effect: Copy, exits: WallExits): ActionEffect {
   const more = wallExitLine(exits);
   return {
     effect,
@@ -755,14 +766,32 @@ export function resumeActionEffect(
 ): ActionEffect {
   switch (offer.kind) {
     case "NoPoint":
-      return resumeRefused("Nothing to resume", exits);
+      return resumeRefused({ id: "codes-resume-nothing" }, exits);
     case "Offered":
       return offered(resumeEffect(offer.point));
   }
 }
 
 /** What the edit screen does, which is revise the draft and release it again. */
-export const ticketEditEffect = "Revises the draft · releases a new revision";
+export const ticketEditEffect: Copy = { id: "codes-edit-effect" };
+
+/** An answer a ticket offers, in the word its button says. */
+export function ticketActionLabel(action: TicketActionName): Copy {
+  switch (action) {
+    case "Dispatch":
+      return { id: "codes-action-dispatch" };
+    case "Resume":
+      return { id: "codes-action-resume" };
+    case "Revoke":
+      return { id: "codes-action-revoke" };
+    case "Approve":
+      return { id: "codes-action-approve" };
+    case "Decline":
+      return { id: "codes-action-decline" };
+    case "Release":
+      return { id: "codes-action-release" };
+  }
+}
 
 /**
  * What answering the action does to the ticket. A resume is named by the point
@@ -776,121 +805,121 @@ export function ticketActionEffect(
 ): ActionEffect {
   switch (action) {
     case "Dispatch":
-      return offered("Dispatches the observed version");
+      return offered({ id: "codes-action-dispatch-effect" });
     case "Resume":
       return resumeActionEffect(resume, exits);
     case "Revoke":
-      return offered("Parks every dependent ticket");
+      return offered({ id: "codes-action-revoke-effect" });
     case "Approve":
-      return offered("Lets finalization proceed");
+      return offered({ id: "codes-action-approve-effect" });
     case "Decline":
-      return offered("Holds finalization back");
+      return offered({ id: "codes-action-decline-effect" });
     case "Release":
-      return offered("Makes the draft a ticket");
+      return offered({ id: "codes-action-release-effect" });
   }
 }
 
 /** What the actor did with the submission, before any refusal code refines it. */
-export function operationStateLabel(state: OperationState): string {
+export function operationStateLabel(state: OperationState): Copy {
   switch (state) {
     case "Pending":
-      return "Pending";
+      return { id: "codes-state-pending" };
     case "Succeeded":
-      return "Accepted";
+      return { id: "codes-state-succeeded" };
     case "Refused":
-      return "Refused";
+      return { id: "codes-state-refused" };
     case "Answered":
-      return "Answered";
+      return { id: "codes-state-answered" };
     case "Cancelled":
-      return "Cancelled";
+      return { id: "codes-state-cancelled" };
   }
 }
 
 /** Why the actor declined the mutation, as the fragment that goes after it. */
-export function operationRefusalLabel(code: OperationRefusalCode): string {
+export function operationRefusalLabel(code: OperationRefusalCode): Copy {
   switch (code) {
     case "TicketAlreadyExists":
-      return "Ticket already exists";
+      return { id: "codes-refusal-ticket-exists" };
     case "DependenciesNotFound":
-      return "Dependencies not found";
+      return { id: "codes-refusal-dependencies-not-found" };
     case "DependenciesRevoked":
-      return "Dependencies revoked";
+      return { id: "codes-refusal-dependencies-revoked" };
     case "DependencyCycle":
-      return "Dependency cycle";
+      return { id: "codes-refusal-dependency-cycle" };
     case "SelfDependency":
-      return "Depends on itself";
+      return { id: "codes-refusal-self-dependency" };
     case "TicketNotFound":
-      return "Ticket not found";
+      return { id: "codes-refusal-ticket-not-found" };
     case "TicketNotPending":
-      return "No longer pending";
+      return { id: "codes-refusal-ticket-not-pending" };
     case "TicketIdentityMismatch":
-      return "Different ticket";
+      return { id: "codes-refusal-ticket-mismatch" };
     case "TicketRevisionStale":
-      return "Revision out of date";
+      return { id: "codes-refusal-revision-stale" };
     case "DependenciesIncomplete":
-      return "Dependencies not done";
+      return { id: "codes-refusal-dependencies-incomplete" };
     case "TicketNotRevocable":
-      return "Not revocable";
+      return { id: "codes-refusal-not-revocable" };
     case "TicketNotResumable":
-      return "Nothing to resume";
+      return { id: "codes-refusal-not-resumable" };
     case "TaskNotCurrent":
-      return "Task not current";
+      return { id: "codes-refusal-run-not-current" };
     case "EvaluationNotCurrent":
-      return "Evaluation not current";
+      return { id: "codes-refusal-evaluation-not-current" };
     case "FinalizationNotCurrent":
-      return "Finalization not current";
+      return { id: "codes-refusal-landing-not-current" };
     case "AuthoringChanged":
-      return "Authoring changed";
+      return { id: "codes-refusal-authoring-changed" };
     case "ConfigurationInvalid":
-      return "Configuration not runnable";
+      return { id: "codes-refusal-configuration-invalid" };
     case "TicketChanged":
-      return "Ticket changed";
+      return { id: "codes-refusal-ticket-changed" };
     case "SelectionChanged":
-      return "Dispatch selection changed";
+      return { id: "codes-refusal-selection-changed" };
     case "ExecutionSourceUnreadable":
-      return "Source ref not on remote";
+      return { id: "codes-refusal-source-unreadable" };
     case "ExecutionSourceDenied":
-      return "Remote refused credentials";
+      return { id: "codes-refusal-source-denied" };
     case "BriefNamesNoRepository":
-      return "Brief names no repository";
+      return { id: "codes-refusal-brief-no-repository" };
     case "BriefChecksUncommanded":
-      return "No check stage for brief checks";
+      return { id: "codes-refusal-brief-checks-uncommanded" };
     case "ConfigurationFromAnotherRepository":
-      return "Configuration from another repository";
+      return { id: "codes-refusal-configuration-elsewhere" };
     case "SelectionUnknown":
-      return "Selection names no catalog entry";
+      return { id: "codes-refusal-selection-unknown" };
     case "SelectionUnsupported":
-      return "Configuration cannot take this selection";
+      return { id: "codes-refusal-selection-unsupported" };
     case "ProgramExceedsPlan":
-      return "Program exceeds the evaluation plan";
+      return { id: "codes-refusal-program-exceeds-plan" };
     case "ProgramSkipsBriefChecks":
-      return "Program skips the brief's checks";
+      return { id: "codes-refusal-program-skips-checks" };
     case "OverridesUnsupported":
-      return "Configuration cannot take these overrides";
+      return { id: "codes-refusal-overrides-unsupported" };
     case "OverridesUnknown":
-      return "Overrides name no catalog workload";
+      return { id: "codes-refusal-overrides-unknown" };
     case "TicketCapacityReached":
-      return "Ticket capacity reached";
+      return { id: "codes-refusal-capacity-reached" };
     case "FinalizationRequestClosed":
-      return "Finalization request closed";
+      return { id: "codes-refusal-landing-request-closed" };
     case "OverridesMoveDefinition":
-      return "Overrides would change the definition";
+      return { id: "codes-refusal-overrides-move-definition" };
   }
 }
 
 /** Why the boundary would not carry the request to the actor at all. */
-export function mutationRefusalLabel(code: MutationRefusalCode): string {
+export function mutationRefusalLabel(code: MutationRefusalCode): Copy {
   switch (code) {
     case "IdempotencyConflict":
-      return "Key already used";
+      return { id: "codes-mutation-key-used" };
     case "InvalidMutation":
-      return "Invalid mutation";
+      return { id: "codes-mutation-invalid" };
     case "MutationNotAdmitted":
-      return "Not admitted right now";
+      return { id: "codes-mutation-not-admitted" };
     case "OperationNotPending":
-      return "Already decided";
+      return { id: "codes-mutation-decided" };
     case "ProgramSkipsPlannedEvaluations":
-      return "Program skips planned evaluations";
+      return { id: "codes-mutation-skips-evaluations" };
   }
 }
 
@@ -901,16 +930,16 @@ function mutationDeferralCodeOf(
 }
 
 /** Why the boundary asked for the same request again, each meaning try later. */
-export function mutationDeferralLabel(code: string): string {
+export function mutationDeferralLabel(code: string): Copy {
   switch (mutationDeferralCodeOf(code)) {
     case "DispatchBacklog":
-      return "Dispatch backlog";
+      return { id: "codes-deferral-dispatch-backlog" };
     case "MailboxBackpressure":
-      return "Actor mailbox full";
+      return { id: "codes-deferral-mailbox-full" };
     case "MailboxUnavailable":
-      return "Actor unreachable";
+      return { id: "codes-deferral-mailbox-unavailable" };
     case undefined:
-      return `Deferred (${code})`;
+      return { id: "codes-deferral-unknown", args: { code } };
   }
 }
 
@@ -919,26 +948,41 @@ function mutationRefusalCodeOf(code: string): MutationRefusalCode | undefined {
 }
 
 /** What went wrong, named thing first and cause second, as fragments. */
-export function operationFailureLabel(failure: ApiFailure): string {
+export function operationFailureLabel(failure: ApiFailure): Copy {
   switch (failure.outcome) {
     case "Unauthenticated":
-      return "Not signed in";
+      return { id: "codes-failure-signed-out" };
     case "Absent":
-      return "Operation not found";
+      return { id: "codes-failure-absent" };
     case "Retryable":
-      return `Kept deferring · ${mutationDeferralLabel(failure.code)}`;
+      return {
+        id: "codes-failure-deferring",
+        args: { deferral: mutationDeferralLabel(failure.code) },
+      };
     case "Unreachable":
-      return `API unreachable · ${failure.reason}`;
+      return {
+        id: "codes-failure-unreachable",
+        args: { reason: failure.reason },
+      };
     case "Unreadable":
-      return `Unreadable response · ${failure.reason}`;
+      return {
+        id: "codes-failure-unreadable",
+        args: { reason: failure.reason },
+      };
     case "Conflict":
     case "Rejected":
     case "Fault": {
       const declined = mutationRefusalCodeOf(failure.code);
       if (declined !== undefined) return mutationRefusalLabel(declined);
-      return `Refused (${failure.code})`;
+      return { id: "codes-failure-refused", args: { code: failure.code } };
     }
   }
+}
+
+/** The word an abandoned follow is drawn as, and what hovering it says. */
+export interface AbandonWords {
+  readonly word: Copy;
+  readonly detail?: string;
 }
 
 /**
@@ -948,29 +992,50 @@ export function operationFailureLabel(failure: ApiFailure): string {
  */
 export function operationAbandonWords(
   cause: OperationAbandonCause,
-): FailureWords {
+): AbandonWords {
   switch (cause.type) {
     case "Deferred":
-      return { word: "Busy" };
+      return { word: { id: "codes-abandon-deferred" } };
     case "Pending":
-      return { word: "Still pending" };
+      return { word: { id: "codes-abandon-pending" } };
     case "Unaccepted":
-      return { word: "Not accepted" };
+      return { word: { id: "codes-abandon-unaccepted" } };
     case "Behind":
-      return { word: "Still updating" };
+      return { word: { id: "codes-abandon-behind" } };
     case "OutOfOrder":
     case "Overstepped":
-      return { word: "Status unknown" };
-    case "Failed":
-      return failureWords(cause.failure);
+      return { word: { id: "codes-abandon-unknown" } };
+    case "Failed": {
+      const { word, detail } = failureWords(cause.failure);
+      return {
+        word: { id: "codes-abandon-failed", args: { word } },
+        ...(detail === undefined ? {} : { detail }),
+      };
+    }
     case "Thrown":
-      return { word: "Failed", detail: cause.reason };
+      return { word: { id: "codes-abandon-thrown" }, detail: cause.reason };
+  }
+}
+
+/** What a submission came to, said after the answer it was. */
+function operationSettledLabel(state: OperationState, action: Copy): Copy {
+  switch (state) {
+    case "Pending":
+      return { id: "codes-step-settled-pending", args: { action } };
+    case "Succeeded":
+      return { id: "codes-step-settled-succeeded", args: { action } };
+    case "Refused":
+      return { id: "codes-step-settled-refused", args: { action } };
+    case "Answered":
+      return { id: "codes-step-settled-answered", args: { action } };
+    case "Cancelled":
+      return { id: "codes-step-settled-cancelled", args: { action } };
   }
 }
 
 /** How far a submission has got, and whether that is a state to stop on. */
 export interface StepLabel {
-  readonly text: string;
+  readonly text: Copy;
   readonly detail?: string;
   readonly settled: boolean;
   readonly wrong: boolean;
@@ -987,29 +1052,51 @@ export function operationStepLabel(
 ): StepLabel {
   switch (step.step) {
     case "Submitting":
-      return { text: "Submitting…", settled: false, wrong: false };
+      return {
+        text: { id: "codes-step-submitting" },
+        settled: false,
+        wrong: false,
+      };
     case "Backlogged":
       return {
-        text: `${mutationDeferralLabel(step.code)} · retry in ${String(step.retryAfterSeconds)}s`,
+        text: {
+          id: "codes-step-backlogged",
+          args: {
+            deferral: mutationDeferralLabel(step.code),
+            seconds: step.retryAfterSeconds,
+          },
+        },
         settled: false,
         wrong: false,
       };
     case "Following":
-      return { text: "Waiting for actor…", settled: false, wrong: false };
+      return {
+        text: { id: "codes-step-following" },
+        settled: false,
+        wrong: false,
+      };
     case "Confirming":
       return {
-        text: `Syncing to seq ${String(step.minimumSequence)}…`,
+        text: { id: "codes-step-confirming" },
         settled: false,
         wrong: false,
       };
     case "Settled": {
-      const state = operationStateLabel(step.state);
-      const refusal =
-        step.refusal === undefined
-          ? ""
-          : ` · ${operationRefusalLabel(step.refusal.type)}`;
+      const settled = operationSettledLabel(
+        step.state,
+        ticketActionLabel(action),
+      );
       return {
-        text: `${action} ${state.toLowerCase()}${refusal}`,
+        text:
+          step.refusal === undefined
+            ? settled
+            : {
+                id: "codes-step-settled-refusal",
+                args: {
+                  settled,
+                  refusal: operationRefusalLabel(step.refusal.type),
+                },
+              },
         settled: true,
         wrong: step.state !== "Succeeded",
       };

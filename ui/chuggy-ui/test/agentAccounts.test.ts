@@ -104,7 +104,7 @@ test("a share is read in whole percent, rounded down past the float's noise", ()
   expect(shareFigure(0.29)).toStrictEqual({
     kind: "Quantity",
     text: "29",
-    unit: "%",
+    unit: { id: "figures-unit-percent" },
   });
   expect(shareFigure(0.799)).toMatchObject({ text: "79" });
   expect(shareFigure(1)).toMatchObject({ text: "100" });

@@ -9,11 +9,11 @@
 import {
   cleanup,
   fireEvent,
-  render,
   screen,
   waitFor,
   within,
 } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { nativeHttpBasePath } from "../../../src/contract/http.ts";
@@ -71,7 +71,7 @@ function draw(
   offers: readonly CreationOffer[] = creationOffers,
 ): boolean[] {
   const dirty: boolean[] = [];
-  render(
+  renderCopied(
     creationFormDrawn(ports, offers, {
       onCreated: (ticket) => created.push(ticket),
       existing: (ticket) => <a href="/there">Ticket {ticket}</a>,

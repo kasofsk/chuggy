@@ -43,6 +43,7 @@ import {
 import type { TicketRunMark } from "./ticketRuns.ts";
 import { verdictTone } from "./tones.ts";
 import type { Tone } from "./tones.ts";
+import type { CopyText } from "./copy.ts";
 
 /** What a box says under its name: the runs whose times and waits it sums,
  * or a few words. */
@@ -306,6 +307,7 @@ function ticketStepsLanding(
   landing: TicketLanding | undefined,
   stopped: boolean,
   nowMs: number,
+  text: CopyText,
 ): TicketStepBox {
   if (!plan.lands)
     return {
@@ -317,7 +319,11 @@ function ticketStepsLanding(
       evaluators: [],
     };
   if (landing === undefined)
-    return ticketStepsWaiting("Landing", plan.landing, stopped);
+    return ticketStepsWaiting(
+      "Landing",
+      plan.landing === undefined ? undefined : text(plan.landing),
+      stopped,
+    );
   return {
     name: "Landing",
     ...ticketRunLandingMarked(landing),
@@ -386,7 +392,10 @@ function ticketStepsPrevious(reads: TicketStepsReads): string | undefined {
   return `${cycleLabel(previous.ordinal)} ${outcome.charAt(0).toLowerCase()}${outcome.slice(1)}`;
 }
 
-export function ticketStepsOf(reads: TicketStepsReads): TicketSteps {
+export function ticketStepsOf(
+  reads: TicketStepsReads,
+  text: CopyText,
+): TicketSteps {
   const { plan } = reads;
   const cycle = reads.ledger?.cycles.at(-1);
   const landing =
@@ -416,7 +425,7 @@ export function ticketStepsOf(reads: TicketStepsReads): TicketSteps {
       {
         phase: "Finalization",
         edge: edges.Finalization,
-        boxes: [ticketStepsLanding(plan, landing, stopped, reads.nowMs)],
+        boxes: [ticketStepsLanding(plan, landing, stopped, reads.nowMs, text)],
       },
     ],
   };

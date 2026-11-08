@@ -147,6 +147,8 @@ import { Notice } from "./ui/Notice.tsx";
 import { Picker } from "./ui/Picker.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
 import { AddRunnerLink, useWorkRunner } from "./workRunner.tsx";
+import { useCopyText } from "../copy/CopyProvider.tsx";
+import type { CopyText } from "../core/copy.ts";
 
 import "./TicketCreation.css";
 
@@ -629,13 +631,14 @@ export function AttemptNote(props: {
 }): ReactNode {
   const attempt = props.attempt;
   const motion = props.motion ?? "Release";
+  const text = useCopyText();
   switch (attempt.attempt) {
     case "Idle":
       return null;
     case "Running":
       return (
         <p className="panel-note">
-          {creationStepSentence(attempt.step, motion)}
+          {creationStepSentence(attempt.step, text, motion)}
         </p>
       );
     case "Stale":
@@ -927,6 +930,7 @@ function creationWrite(
   queryKey: ProjectQueryKey,
   storeKey: string,
   dispatch: ConsoleDispatch,
+  text: CopyText,
 ): ConsoleWrite<CreationPressed, number> {
   return {
     mutationKey: consoleWriteKey("ticket-creation", storeKey),
@@ -938,6 +942,7 @@ function creationWrite(
         (step) => {
           pressed.progress.report(step);
         },
+        text,
       );
       if (created.created === "Created")
         return { outcome: "Ok", value: created.ticket };
@@ -953,7 +958,7 @@ function creationWrite(
           : created;
       throw new TicketCreationRefused(ended.reason, ended);
     },
-    refusal: operationFailureSentence,
+    refusal: (failure) => text(operationFailureSentence(failure)),
     landed: () => {
       dispatch(creationDraftKeptAt({ storeKey, held: undefined }));
       return Promise.resolve();
@@ -1007,6 +1012,7 @@ export function useCreationSubmit(props: {
 }): CreationSubmit {
   const { dispatches, standing, offers, onFaults, repositories } = props;
   const dispatch = useConsoleDispatch();
+  const text = useCopyText();
   const writing = useConsoleWrite(
     creationWrite(
       props.ports,
@@ -1014,6 +1020,7 @@ export function useCreationSubmit(props: {
       props.queryKey,
       props.storeKey,
       dispatch,
+      text,
     ),
     { drawn: true },
   );

@@ -13,10 +13,10 @@ import {
   act,
   cleanup,
   fireEvent,
-  render,
   screen,
   waitFor,
 } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -75,7 +75,7 @@ describe("what the work's line says is going on", () => {
     readonly moving: boolean;
     readonly named: string | undefined;
   } {
-    const view = render(
+    const view = renderCopied(
       drawn(
         running({
           work: [thought, read],
@@ -123,7 +123,7 @@ describe("what the work's line says is going on", () => {
       moving: true,
       named: undefined,
     });
-    const view = render(drawn(running({ work: [thought, read] })));
+    const view = renderCopied(drawn(running({ work: [thought, read] })));
     expect(moving(view.container)).toEqual(["card"]);
     expect(
       view.container.querySelector(
@@ -167,7 +167,7 @@ describe("how long what is under way has been", () => {
   });
 
   test("is counted in seconds on its line once it has lasted one, and from nothing for the step after it", () => {
-    const view = render(
+    const view = renderCopied(
       drawn(running({ work: [thought], activity: thinking })),
     );
     expect(line(view.container)).toBe("Thinking");
@@ -184,7 +184,7 @@ describe("how long what is under way has been", () => {
   });
 
   test("is said no longer once the work is over, when the line reads as the record will", () => {
-    const view = render(
+    const view = renderCopied(
       drawn(running({ work: [thought], activity: thinking })),
     );
     lasting(5000);
@@ -214,7 +214,7 @@ describe("how long a step the page did not hear begin has been", () => {
 
   test("is not counted for a step the page found under way, and is for the step heard to begin after it", () => {
     const found = { ...reading, joined: true } as const;
-    const view = render(
+    const view = renderCopied(
       drawn(running({ work: [thought, read], activity: found })),
     );
     lasting(120_000);
@@ -227,7 +227,7 @@ describe("how long a step the page did not hear begin has been", () => {
   });
 
   test("goes on being counted for a step heard to begin once only the record names it", () => {
-    const view = render(
+    const view = renderCopied(
       drawn(running({ work: [thought, read], activity: reading })),
     );
     lasting(5000);
@@ -254,7 +254,7 @@ describe("a call a stop cut off", () => {
   });
 
   test("is a still line that says what the work was, counts no time and is in no error ink", () => {
-    const view = render(
+    const view = renderCopied(
       drawn(running({ work: [thought, read], activity: reading })),
     );
     lasting(5000);
@@ -286,7 +286,7 @@ describe("a line of the work is a control only where it opens to something", () 
     readonly line: string;
     readonly opens: boolean;
   } {
-    const view = render(
+    const view = renderCopied(
       drawn(running({ work, ...(activity === undefined ? {} : { activity }) })),
     );
     const line = view.container.querySelector(".conversation-work-line");
@@ -322,7 +322,7 @@ describe("a line of the work is a control only where it opens to something", () 
   });
 
   test("what it opens to leaves out the thought with no words, and a call nothing is held of is its name and no control", () => {
-    const view = render(
+    const view = renderCopied(
       drawn(
         running({ work: [thought, read], activity: { activity: "Whole" } }),
       ),
@@ -341,7 +341,7 @@ describe("a line of the work is a control only where it opens to something", () 
 describe("an answer as it is written", () => {
   test("its words come out in order and none is taken back as more arrive", async () => {
     const writing = { activity: "Writing" } as const;
-    const view = render(
+    const view = renderCopied(
       drawn(running({ answer: "It is blocked", activity: writing })),
     );
     await written(view.container, "It is blocked");
@@ -355,7 +355,7 @@ describe("an answer as it is written", () => {
 
   test("the transcript naming its exchange anew does not write it out again", async () => {
     const whole = { activity: "Whole" } as const;
-    const view = render(
+    const view = renderCopied(
       drawn(running({ answer: "It is blocked by 40.", activity: whole })),
     );
     await written(view.container, "It is blocked by 40.");
@@ -375,7 +375,7 @@ describe("an answer as it is written", () => {
 describe("where each text of an answer is drawn", () => {
   test("a newer text is written under the work that followed the one before it, which stays as it was", async () => {
     const writing = { activity: "Writing" } as const;
-    const view = render(
+    const view = renderCopied(
       drawn(running({ answer: "Looking at 41.", activity: writing })),
     );
     await written(view.container, "Looking at 41.");
@@ -418,7 +418,7 @@ describe("where each text of an answer is drawn", () => {
 
   test("work the record comes to hold between two texts takes neither text's node", async () => {
     const earlier = { step: "Text", text: "Looking at 41." } as const;
-    const view = render(
+    const view = renderCopied(
       drawn(running({ work: [earlier], answer: "It is blocked by 40." })),
     );
     await waitFor(() => {
@@ -442,7 +442,9 @@ describe("where each text of an answer is drawn", () => {
 describe("what of an answer is let out at a pace", () => {
   test("a text something is written after is drawn whole at once, so nothing is drawn under a text still arriving", () => {
     const writing = { activity: "Writing" } as const;
-    const view = render(drawn(running({ answer: "It is", activity: writing })));
+    const view = renderCopied(
+      drawn(running({ answer: "It is", activity: writing })),
+    );
     const whole = "It is blocked by 40, and 40 is waiting on a review.";
     view.rerender(
       drawn(
@@ -460,7 +462,9 @@ describe("what of an answer is let out at a pace", () => {
   test("a text there when the page is first drawn is drawn whole, and only what is added is let out", async () => {
     const writing = { activity: "Writing" } as const;
     const held = "It is blocked by 40, and 40 is waiting on a review.";
-    const view = render(drawn(running({ answer: held, activity: writing })));
+    const view = renderCopied(
+      drawn(running({ answer: held, activity: writing })),
+    );
     expect(said(view.container)).toBe(held);
     const more = `${held} That review is due tomorrow.`;
     view.rerender(drawn(running({ answer: more, activity: writing })));
@@ -470,7 +474,7 @@ describe("what of an answer is let out at a pace", () => {
 
   test("a text the transcript says differently is drawn as the transcript has it, at once and never from nothing", async () => {
     const writing = { activity: "Writing" } as const;
-    const view = render(
+    const view = renderCopied(
       drawn(running({ answer: "It is blocked by 40", activity: writing })),
     );
     const seen: string[] = [];
@@ -493,7 +497,7 @@ describe("what of an answer is let out at a pace", () => {
 
 describe("what an answer being written is drawn as", () => {
   test("a mark its last line leaves open is drawn as what it is about to be", async () => {
-    const view = render(
+    const view = renderCopied(
       drawn(
         running({ answer: "It is **block", activity: { activity: "Writing" } }),
       ),
@@ -505,7 +509,7 @@ describe("what an answer being written is drawn as", () => {
   });
 
   test("the mark at its end stands while it is written and goes when it is whole", async () => {
-    const view = render(
+    const view = renderCopied(
       drawn(running({ answer: "It is", activity: { activity: "Writing" } })),
     );
     await written(view.container, "It is");
@@ -524,7 +528,7 @@ describe("what an answer being written is drawn as", () => {
       addEventListener: () => undefined,
       removeEventListener: () => undefined,
     }));
-    const view = render(
+    const view = renderCopied(
       drawn(
         running({ answer: "It is blocked", activity: { activity: "Writing" } }),
       ),
@@ -533,7 +537,7 @@ describe("what an answer being written is drawn as", () => {
   });
 
   test("a surface that is not paced draws what it is handed at once, and marks only the text a turn is still at", () => {
-    const view = render(drawn(running({ answer: "It is" }), false));
+    const view = renderCopied(drawn(running({ answer: "It is" }), false));
     view.rerender(drawn(running({ answer: "It is blocked" }), false));
     expect(said(view.container)).toBe("It is blocked");
     expect(
@@ -558,7 +562,9 @@ describe("the answer of a turn that was stopped", () => {
   const writing = { activity: "Writing" } as const;
 
   test("is drawn whole at the stop, with no mark and nothing moving, however little of it the pace had let out", async () => {
-    const view = render(drawn(running({ answer: "It is", activity: writing })));
+    const view = renderCopied(
+      drawn(running({ answer: "It is", activity: writing })),
+    );
     await written(view.container, "It is");
     view.rerender(drawn(running({ answer: whole, activity: writing })));
     expect(said(view.container).length).toBeLessThan(whole.length);
@@ -572,7 +578,7 @@ describe("the answer of a turn that was stopped", () => {
   });
 
   test("says Stopped under it in the ink of a settled turn, and draws no failure", () => {
-    const view = render(
+    const view = renderCopied(
       drawn(running({ answer: whole, standing: { standing: "Stopped" } })),
     );
     const word = view.container.querySelector(
@@ -591,7 +597,7 @@ describe("the answer of a turn that was stopped", () => {
 
 describe("the mark at the end of an answer", () => {
   test("the mark stands on words already whole until the pace has let them all out", async () => {
-    const view = render(
+    const view = renderCopied(
       drawn(running({ answer: "It is", activity: { activity: "Writing" } })),
     );
     await written(view.container, "It is");
@@ -613,7 +619,7 @@ describe("the turn ending", () => {
   const work = [thought, { ...read, result: { text: "ok", isError: false } }];
 
   test("nothing of the answer moves when the turn is whole, is stored and settles", async () => {
-    const view = render(
+    const view = renderCopied(
       drawn(running({ work, answer, activity: { activity: "Writing" } })),
     );
     await waitFor(() => {
@@ -675,7 +681,7 @@ describe("the end of an answer is one step", () => {
   }
 
   test("the mark stays until the last character is drawn, and the copy is there the moment it goes", async () => {
-    const view = render(
+    const view = renderCopied(
       copying(running({ answer: "It is", activity: { activity: "Writing" } })),
     );
     view.rerender(
@@ -712,7 +718,7 @@ describe("the end of an answer is one step", () => {
   });
 
   test("the mailbox settling the turn puts its word and what it took beside the copy, which keeps its node", () => {
-    const view = render(
+    const view = renderCopied(
       copying(running({ answer: whole, activity: { activity: "Whole" } })),
     );
     const control = copy(view.container);
@@ -744,7 +750,7 @@ describe("what the end of an answer offers", () => {
   }
 
   test("a turn that ended saying nothing offers nothing to copy", () => {
-    const view = render(
+    const view = renderCopied(
       copying(running({ work: [read], activity: { activity: "Whole" } })),
     );
     expect(
@@ -761,7 +767,7 @@ describe("the engine", () => {
       onSend: () => Promise.resolve("Sent" as const),
     };
     const waiting = (activity: ConversationActivity | undefined): boolean => {
-      const view = render(
+      const view = renderCopied(
         <Conversation
           exchanges={[running(activity === undefined ? {} : { activity })]}
           composer={composer}
@@ -803,7 +809,7 @@ describe("the engine of a turn behind one heard to end", () => {
         pane
       />
     );
-    const view = render(
+    const view = renderCopied(
       both(running({ answer: "It is", activity: { activity: "Writing" } })),
     );
     view.rerender(

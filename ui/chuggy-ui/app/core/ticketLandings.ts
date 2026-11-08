@@ -39,6 +39,7 @@ import {
   finalizationUnavailableKindLabel,
   ticketLandingStateLabel,
 } from "./codeLabels.ts";
+import type { CopyText } from "./copy.ts";
 import { agoText } from "./figures.ts";
 import type { PanelState } from "./freshness.ts";
 import { httpsUrl } from "./httpsUrl.ts";
@@ -176,6 +177,7 @@ function ticketLandingHeads(
  */
 function ticketLandingProposal(
   read: TicketLandingRead,
+  text: CopyText,
 ): TicketLandingProposal | undefined {
   const proposal = read.proposal;
   if (proposal === undefined) return undefined;
@@ -188,23 +190,23 @@ function ticketLandingProposal(
     creation:
       proposal.creation === undefined
         ? undefined
-        : changeProposalCreationLabel(proposal.creation),
+        : text(changeProposalCreationLabel(proposal.creation)),
     status:
       proposal.status === undefined || !ticketLandingLive(read.state)
         ? undefined
-        : changeProposalStatusLabel(proposal.status),
+        : text(changeProposalStatusLabel(proposal.status)),
     merge:
       proposal.merge === undefined
         ? undefined
-        : changeProposalMergeLabel(proposal.merge),
+        : text(changeProposalMergeLabel(proposal.merge)),
     mergeReason:
       proposal.mergeReason === undefined
         ? undefined
-        : changeProposalMergeReasonLabel(proposal.mergeReason),
+        : text(changeProposalMergeReasonLabel(proposal.mergeReason)),
     mergeability:
       proposal.mergeability === undefined
         ? undefined
-        : changeProposalMergeabilityLabel(proposal.mergeability),
+        : text(changeProposalMergeabilityLabel(proposal.mergeability)),
     mergeState: proposal.mergeState,
     mergeCommit:
       mergeCommit === undefined ? undefined : commitLabel(mergeCommit),
@@ -232,6 +234,7 @@ function ticketLandingRemovalText(
  */
 function ticketLandingHoldOf(
   read: TicketLandingRead,
+  text: CopyText,
 ): TicketLandingHold | undefined {
   const hold =
     read.state === "Held" || read.state === "Unavailable"
@@ -242,10 +245,11 @@ function ticketLandingHoldOf(
     hold.removal === undefined
       ? undefined
       : ticketLandingRemovalText(hold.removal);
-  const label =
+  const label = text(
     hold.kind === "ProposalAbsent" && read.proposal?.status === "Closed"
       ? changeProposalStatusLabel(read.proposal.status)
-      : finalizationUnavailableKindLabel(hold.kind);
+      : finalizationUnavailableKindLabel(hold.kind),
+  );
   return {
     kind: hold.kind,
     label: removal === undefined ? label : `${label}: ${removal}`,
@@ -254,7 +258,10 @@ function ticketLandingHoldOf(
   };
 }
 
-function ticketLandingDetail(read: TicketLandingRead): TicketLandingDetail {
+function ticketLandingDetail(
+  read: TicketLandingRead,
+  text: CopyText,
+): TicketLandingDetail {
   const attempt = read.attempt;
   return {
     targetRef: attempt?.targetRef,
@@ -268,30 +275,34 @@ function ticketLandingDetail(read: TicketLandingRead): TicketLandingDetail {
     attempts: read.attempts,
     conflicts: read.conflict?.paths ?? [],
     conflictsCut: read.conflict?.truncated ?? false,
-    proposal: ticketLandingProposal(read),
+    proposal: ticketLandingProposal(read, text),
     checkedAt: read.state === "AwaitingMerge" ? read.wait.checkedAt : undefined,
   };
 }
 
-/** One landing of the read, as the page draws it. */
-export function ticketLandingOf(read: TicketLandingRead): TicketLanding {
+/** One landing of the read, as the page draws it, in the words `text` gives
+ * its codes. */
+export function ticketLandingOf(
+  read: TicketLandingRead,
+  text: CopyText,
+): TicketLanding {
   const failureKind = read.attempt?.failureKind;
   return {
     key: `${String(read.cycle)}/${String(read.generation)}`,
     cycle: read.cycle,
     state: read.state,
-    word: ticketLandingStateLabel(read.state),
+    word: text(ticketLandingStateLabel(read.state)),
     tone: ticketLandingTone(read.state),
     failure:
       failureKind === undefined
         ? undefined
-        : finalizationFailureKindLabel(failureKind),
+        : text(finalizationFailureKindLabel(failureKind)),
     conflictCount: read.conflict?.paths.length ?? 0,
-    hold: ticketLandingHoldOf(read),
+    hold: ticketLandingHoldOf(read, text),
     wait:
       read.state === "AwaitingMerge"
         ? {
-            label: changeProposalMergeWaitLabel(read.wait.reason),
+            label: text(changeProposalMergeWaitLabel(read.wait.reason)),
             mergeState: read.proposal?.mergeState,
             checkedAt: read.wait.checkedAt,
           }
@@ -299,16 +310,20 @@ export function ticketLandingOf(read: TicketLandingRead): TicketLanding {
     link: ticketLandingLink(read.proposal?.url),
     landedCommit:
       read.state === "Landed" ? commitLabel(read.landedCommit) : undefined,
-    detail: ticketLandingDetail(read),
+    detail: ticketLandingDetail(read, text),
   };
 }
 
 /** The read's state with its answer turned into the landings the page draws. */
 export function ticketLandingsRead(
   state: PanelState<TicketLandingsResponse>,
+  text: CopyText,
 ): TicketLandingsState {
   return state.state === "Ready"
-    ? { ...state, value: state.value.landings.map(ticketLandingOf) }
+    ? {
+        ...state,
+        value: state.value.landings.map((read) => ticketLandingOf(read, text)),
+      }
     : state;
 }
 

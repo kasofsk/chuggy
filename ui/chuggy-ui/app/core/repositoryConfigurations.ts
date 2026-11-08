@@ -19,12 +19,13 @@ import { apiConfigurations, configurationPagesMax } from "./apiRoutes.ts";
 import { approvalLabel } from "./codeLabels.ts";
 import { configurationLabel, workerLabel } from "./labels.ts";
 import type { Label } from "./labels.ts";
+import type { Copy } from "./copy.ts";
 
 /** What a ready revision decides, which is the whole of what the row says. */
 export interface RepositoryConfigurationFacts {
   readonly worker: Label;
   readonly stages: string;
-  readonly approval: string;
+  readonly approval: Copy;
 }
 
 /** One row: the revision it names, and its facts where it has any. */

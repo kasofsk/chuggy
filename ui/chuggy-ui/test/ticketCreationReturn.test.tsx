@@ -7,13 +7,8 @@
  */
 
 import { QueryClientProvider } from "@tanstack/react-query";
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  waitFor,
-} from "@testing-library/react";
+import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { CreationForm } from "../app/browser/TicketCreation.tsx";
@@ -61,7 +56,7 @@ function drawnReturnable(decide: (nth: number) => string): {
   const held = answeringApi(ticketDoorAnswers(ticketDoor(), decide));
   const created: number[] = [];
   const visit = visitHeld();
-  render(
+  renderCopied(
     <SessionProvider holder={holderDouble()}>
       <QueryClientProvider client={queryClientUnretried()}>
         <ConsoleStoreProvided>

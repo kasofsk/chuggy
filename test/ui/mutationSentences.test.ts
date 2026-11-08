@@ -41,6 +41,7 @@ import {
   mutationRefusalCodes,
   operationFailureSentence,
 } from "../../ui/chuggy-ui/app/core/codeSentences.ts";
+import { copyTextEn } from "../../ui/chuggy-ui/app/copy/catalog.ts";
 
 const partition = { tenant: "acme", project: "atlas" } as Parameters<
   typeof submissionResponse
@@ -129,7 +130,7 @@ function saysSomethingFor(
   const code = codeOf(built);
   if (outcome.outcome === "Ok" || outcome.outcome === "Accepted") return code;
   if (code === undefined) return undefined;
-  const said = operationFailureSentence(outcome);
+  const said = copyTextEn(operationFailureSentence(outcome));
   assert.ok(
     !said.includes(code),
     `${what} answers ${code} and the console read it back verbatim: ${said}`,

@@ -204,7 +204,11 @@ function UsageSettingsRead(props: {
             />
             <span className="text-ink-3">
               {"· pauses at "}
-              <Figure figure={countFigure(settings[name], "%")} />
+              <Figure
+                figure={countFigure(settings[name], {
+                  id: "figures-unit-percent",
+                })}
+              />
             </span>
           </span>
         </Field>
