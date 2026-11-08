@@ -13,6 +13,7 @@ import type { threadMessageSchema } from "../../../../src/contract/requests.ts";
 import type { z } from "zod";
 
 import {
+  apiChatThreadContext,
   apiChatThreadTranscript,
   apiCloseChatThread,
   apiCloseThread,
@@ -24,9 +25,10 @@ import {
   apiSendThreadMessage,
   apiStopChatThreadTurn,
   apiStopThreadTurn,
+  apiThreadContext,
   apiThreadTranscript,
 } from "./apiRoutes.ts";
-import type { LeadTranscriptPage } from "./apiRoutes.ts";
+import type { LeadTranscriptPage, SessionContextPage } from "./apiRoutes.ts";
 import type { ApiPorts } from "./apiRequest.ts";
 
 export type ThreadHome =
@@ -66,6 +68,17 @@ export function apiThreadTranscriptAt(
   return home.scope === "Project"
     ? apiThreadTranscript(ports, home.partition, session, page)
     : apiChatThreadTranscript(ports, home.tenant, session, page);
+}
+
+export function apiThreadContextAt(
+  ports: ApiPorts,
+  home: ThreadHome,
+  session: string,
+  page: SessionContextPage,
+): ReturnType<typeof apiThreadContext> {
+  return home.scope === "Project"
+    ? apiThreadContext(ports, home.partition, session, page)
+    : apiChatThreadContext(ports, home.tenant, session, page);
 }
 
 export function apiOpenThreadAt(

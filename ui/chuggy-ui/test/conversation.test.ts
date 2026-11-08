@@ -31,6 +31,7 @@ import {
   conversationExchanges,
   conversationExchangeSent,
   conversationExchangesMax,
+  conversationExchangesHoldCall,
   conversationExchangesWaiting,
   conversationExchangesWithSent,
   conversationFailureLabel,
@@ -215,6 +216,21 @@ describe("the block parser, on a result and an unknown kind", () => {
     );
     expect(result?.block === "ToolResult" ? result.cut : undefined).toBe(2);
     expect(copyTextEn(conversationResultCut(2))).toBe("Result cut · 2");
+  });
+});
+
+describe("finding a call", () => {
+  test("exchanges hold a call by its own identity, and no text or other call stands for it", () => {
+    const exchanges = conversationExchanges([
+      askOf("u1", "read it"),
+      entryOf("a1", "Assistant", [
+        { block: "ToolUse", id: "call-1", name: "Read", input: { path: "a" } },
+      ]),
+      answerOf("a2", "call-2"),
+    ]);
+    expect(conversationExchangesHoldCall(exchanges, "call-1")).toBe(true);
+    expect(conversationExchangesHoldCall(exchanges, "call-2")).toBe(false);
+    expect(conversationExchangesHoldCall([], "call-1")).toBe(false);
   });
 });
 

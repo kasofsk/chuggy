@@ -10,6 +10,7 @@
  */
 
 import type {
+  SessionContextResponse,
   AgenticRefusalsResponse,
   LeadInquiriesResponse,
   LeadResponse,
@@ -400,6 +401,7 @@ export interface LeadServed {
   readonly inquiries?: LeadInquiriesResponse;
   readonly placement?: SessionPlacementResponse;
   readonly settings?: unknown;
+  readonly context?: SessionContextResponse;
 }
 
 /** The body and status every route the lead page reads answers with, so a case
@@ -413,6 +415,8 @@ export function leadRouteAnswer(
     return found(served.placement ?? sessionPlacementBody());
   if (url.includes("/lead/inquiries"))
     return found(served.inquiries ?? { inquiries: [] });
+  if (url.includes("/lead/context"))
+    return found(served.context ?? { turns: [] });
   if (url.includes("/lead/transcript")) {
     const asked = new URL(url, "https://console").searchParams.get("after");
     return found(leadTranscriptPage(Number(asked ?? "0"), served.batches));

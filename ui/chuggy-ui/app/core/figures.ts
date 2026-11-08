@@ -303,6 +303,15 @@ export function shareFigure(share: number): Figure {
   return countFigure(Math.floor(percent), { id: "figures-unit-percent" });
 }
 
+/** A share as `shareFigure` reads it, except that a part short of a whole
+ * percent reads as under one rather than as none of it. */
+export function sharePartFigure(share: number): Figure {
+  const whole = shareFigure(share);
+  return share > 0 && whole.kind === "Quantity" && whole.text === "0"
+    ? { ...whole, text: "<1" }
+    : whole;
+}
+
 const msPerMinute = msPerSecond * secondsPerMinute;
 
 const msPerHour = msPerMinute * minutesPerHour;

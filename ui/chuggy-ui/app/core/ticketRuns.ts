@@ -273,25 +273,33 @@ export const ticketRunViews = [
   "Transcript",
   "Details",
   "Output",
+  "Context",
 ] as const;
 
 export type TicketRunView = (typeof ticketRunViews)[number];
 
-/** A run page's address query: the sub-tab it names, if it names one. */
+/** A run page's address query: the sub-tab it names, if it names one, and
+ * the tool call its transcript is opened at, by the call's own identity. */
 export interface TicketRunQuery {
   readonly view?: TicketRunView;
+  readonly step?: string;
 }
 
-/** The sub-tab an address names, its word read in any case. */
+/** The sub-tab an address names, its word read in any case, and the call it
+ * names where it names one. */
 export function ticketRunQueryOf(
   search: Readonly<Record<string, unknown>>,
 ): TicketRunQuery {
   const asked = search["view"];
+  const step = search["step"];
   const view = ticketRunViews.find(
     (each) =>
       typeof asked === "string" && each.toLowerCase() === asked.toLowerCase(),
   );
-  return view === undefined ? {} : { view };
+  return {
+    ...(view === undefined ? {} : { view }),
+    ...(typeof step === "string" && step.length > 0 ? { step } : {}),
+  };
 }
 
 /** The sub-tab a run page draws: the one its address names where the run

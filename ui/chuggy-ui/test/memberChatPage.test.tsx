@@ -36,6 +36,7 @@ import {
   threadEntry,
   threadTranscriptPage,
 } from "./threadFixture.ts";
+import { contextSessionBody } from "./contextFixture.ts";
 import { readFailedLines } from "./readFailedLines.ts";
 import { ConsoleStoreProvided } from "./consoleStoreProvided.tsx";
 
@@ -120,6 +121,10 @@ function chatServed(served: ChatServed, posts: string[]): typeof fetch {
         )(),
       );
     if (url === chatPath) return Promise.resolve(answer({ threads: listed }));
+    if (url.includes(`/chat/threads/${ownSession}/context`))
+      return Promise.resolve(
+        answer(contextSessionBody([{ ordinal: 1, total: 125_280 }])),
+      );
     if (url.endsWith("/messages"))
       return Promise.resolve(answer({ turn: "t", ordinal: 1 }, 202));
     for (const session of [ownSession, openedSession])
@@ -217,6 +222,30 @@ test("a thread of the reader's own chat is the page, with its project threads of
   expect(
     within(menu).getByRole("menuitemradio", { name: /^my own/u }),
   ).toBeDefined();
+  styleless();
+});
+
+test("a thread's bar opens its context beside the conversation, read at the chat, and its close takes it away", async () => {
+  const reads: string[] = [];
+  await mountedAt(`/tenants/${tenant}/chat/${ownSession}`);
+  const answered = globalThis.fetch;
+  vi.stubGlobal("fetch", (url: string, init?: RequestInit) => {
+    reads.push(url);
+    return answered(url, init);
+  });
+  expect(screen.queryByRole("complementary", { name: "Context" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Context" }));
+  await settled();
+  const panel = screen.getByRole("complementary", { name: "Context" });
+  expect(panel.closest(".context-beside")).not.toBeNull();
+  expect(screen.getByRole("region", { name: "Conversation" })).toBeDefined();
+  expect(
+    reads.some((url) => url.includes(`${chatPath}/${ownSession}/context`)),
+  ).toBe(true);
+  const window = within(panel).getByRole("region", { name: "Window" });
+  expect(within(window).getByText("125,280")).toBeDefined();
+  fireEvent.click(within(panel).getByRole("button", { name: "Close" }));
+  expect(screen.queryByRole("complementary", { name: "Context" })).toBeNull();
   styleless();
 });
 

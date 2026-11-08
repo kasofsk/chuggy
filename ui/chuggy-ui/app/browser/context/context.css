@@ -1,0 +1,802 @@
+/* The Context view: a run's tab and the panel beside a session. The window's
+   bar and the growth chart are SVG, coloured by the categorical slots and
+   sized here, so every mark takes the theme the page has. The view draws no
+   frame of its own: the run's body and the session's panel are its frame. */
+
+@layer page {
+  .context-view {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-5);
+  }
+
+  .context-view[data-compact="true"] {
+    gap: var(--space-4);
+  }
+
+  .context-section {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-3);
+    min-width: 0;
+  }
+
+  .context-section + .context-section {
+    padding-top: var(--space-5);
+    border-top: var(--hairline) solid var(--edge);
+  }
+
+  .context-view[data-compact="true"] .context-section + .context-section {
+    padding-top: var(--space-4);
+  }
+
+  .context-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-3);
+  }
+
+  .context-title {
+    font-size: var(--text-md);
+    font-weight: var(--weight-strong);
+    color: var(--ink-1);
+  }
+
+  .context-subtitle {
+    font-size: var(--text-sm);
+    font-weight: var(--weight-medium);
+    color: var(--ink-2);
+  }
+
+  .context-meta,
+  .context-muted,
+  .context-note {
+    font-size: var(--text-sm);
+    color: var(--ink-3);
+  }
+
+  .context-used {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-2);
+    color: var(--ink-2);
+    font-size: var(--text-md);
+  }
+
+  .context-used-figure {
+    font-size: var(--text-2xl);
+    font-weight: var(--weight-strong);
+    color: var(--ink-1);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .context-view[data-compact="true"] .context-used-figure {
+    font-size: var(--text-xl);
+  }
+
+  .context-used-share {
+    font-weight: var(--weight-strong);
+    color: var(--ink-1);
+  }
+
+  /* The bar: a line of labels over a strip of spans. */
+
+  .context-bar {
+    display: grid;
+    gap: var(--space-1);
+  }
+
+  .context-bar-marks,
+  .context-bar-strip {
+    display: block;
+    width: 100%;
+    overflow: visible;
+  }
+
+  .context-bar-marks {
+    height: var(--text-md);
+  }
+
+  .context-bar-strip {
+    height: var(--height-context-bar);
+  }
+
+  .context-view[data-compact="true"] .context-bar-strip {
+    height: var(--height-context-bar-compact);
+  }
+
+  .context-bar-mark-label {
+    font-size: var(--text-xs);
+    fill: var(--ink-2);
+  }
+
+  .context-seg {
+    fill: var(--slot-8);
+  }
+
+  .context-seg[data-slot="1"],
+  .context-swatch[data-slot="1"] {
+    fill: var(--slot-1);
+    background: var(--slot-1);
+  }
+
+  .context-seg[data-slot="2"],
+  .context-swatch[data-slot="2"] {
+    fill: var(--slot-2);
+    background: var(--slot-2);
+  }
+
+  .context-seg[data-slot="3"],
+  .context-swatch[data-slot="3"] {
+    fill: var(--slot-3);
+    background: var(--slot-3);
+  }
+
+  .context-seg[data-slot="4"],
+  .context-swatch[data-slot="4"] {
+    fill: var(--slot-4);
+    background: var(--slot-4);
+  }
+
+  .context-seg[data-slot="5"],
+  .context-swatch[data-slot="5"] {
+    fill: var(--slot-5);
+    background: var(--slot-5);
+  }
+
+  .context-seg[data-slot="6"],
+  .context-swatch[data-slot="6"] {
+    fill: var(--slot-6);
+    background: var(--slot-6);
+  }
+
+  .context-seg[data-slot="7"],
+  .context-swatch[data-slot="7"] {
+    fill: var(--slot-7);
+    background: var(--slot-7);
+  }
+
+  .context-seg[data-slot="8"],
+  .context-swatch[data-slot="8"] {
+    fill: var(--slot-8);
+    background: var(--slot-8);
+  }
+
+  .context-seg[data-kind="Used"]:not([data-slot]),
+  .context-swatch[data-kind="Used"]:not([data-slot]) {
+    fill: var(--slot-used);
+    background: var(--slot-used);
+  }
+
+  .context-seg[data-kind="Free"] {
+    fill: var(--slot-free);
+  }
+
+  .context-seg-hatch {
+    fill: var(--slot-free);
+  }
+
+  .context-hatch-line {
+    stroke: var(--edge-strong);
+    stroke-width: 1px;
+  }
+
+  /* A span's name and size, inside the span only where it fits whole: the
+     empty first item takes the line's whole height, so a label wider than
+     its span wraps beneath it, where the box clips it. */
+  .context-seg-label {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    height: 100%;
+    overflow: hidden;
+    font-size: var(--text-xs);
+    font-weight: var(--weight-medium);
+    line-height: var(--leading-tight);
+    color: var(--ink-inverse);
+    white-space: nowrap;
+    pointer-events: none;
+  }
+
+  .context-seg-label::before {
+    content: "";
+    height: 100%;
+  }
+
+  .context-seg-label > span {
+    padding-inline: var(--space-2);
+  }
+
+  .context-seg-label[data-kind="Free"] {
+    color: var(--ink-3);
+  }
+
+  .context-threshold-rule {
+    stroke: var(--ink-1);
+    stroke-width: var(--rail);
+  }
+
+  /* The legend: a key, a name, the tokens and the share. */
+
+  .context-legend {
+    max-width: var(--width-context-legend);
+  }
+
+  .context-view[data-compact="true"] .context-legend {
+    max-width: none;
+  }
+
+  .context-legend td,
+  .context-legend th {
+    padding: var(--space-1) var(--space-2);
+  }
+
+  .context-legend-name {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .context-swatch {
+    display: inline-block;
+    flex: none;
+    width: var(--size-context-swatch);
+    height: var(--size-context-swatch);
+    border-radius: var(--radius-1);
+    background: var(--slot-8);
+  }
+
+  .context-swatch[data-kind="Free"] {
+    background: var(--slot-free);
+    border: var(--hairline) solid var(--edge-strong);
+  }
+
+  .context-swatch[data-kind="Buffer"] {
+    background: repeating-linear-gradient(
+      135deg,
+      var(--edge-strong) 0 1px,
+      transparent 1px 0.2em
+    );
+  }
+
+  .context-swatch[data-kind="Deferred"],
+  .context-swatch[data-kind="Unrecorded"] {
+    background: none;
+    border: var(--hairline) dashed var(--edge-strong);
+  }
+
+  .context-swatch[data-kind="Window"] {
+    visibility: hidden;
+  }
+
+  .context-legend tr[data-kind="Deferred"] > *,
+  .context-legend tr[data-kind="Unrecorded"] > * {
+    color: var(--ink-3);
+  }
+
+  .context-legend tr[data-kind="Window"] > * {
+    color: var(--ink-1);
+    font-weight: var(--weight-medium);
+  }
+
+  /* Growth: the tiles, then the chart and its key. */
+
+  .context-tiles {
+    display: grid;
+    grid-template-columns: repeat(
+      auto-fit,
+      minmax(var(--width-context-tile), 1fr)
+    );
+    gap: var(--space-3);
+  }
+
+  .context-tile {
+    display: grid;
+    gap: var(--space-1);
+    padding: var(--space-3) var(--space-4);
+    border: var(--hairline) solid var(--edge);
+    border-radius: var(--radius-2);
+  }
+
+  .context-tile dt,
+  .context-tile-note {
+    font-size: var(--text-sm);
+    color: var(--ink-3);
+  }
+
+  .context-tile-figure {
+    font-size: var(--text-lg);
+    font-weight: var(--weight-strong);
+    color: var(--ink-1);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .context-stats {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-2);
+    font-size: var(--text-sm);
+    color: var(--ink-3);
+  }
+
+  .context-stats > li + li::before {
+    content: "·";
+    margin-inline-end: var(--space-2);
+  }
+
+  .context-stats strong {
+    font-size: var(--text-md);
+    font-weight: var(--weight-medium);
+    color: var(--ink-1);
+  }
+
+  .context-chart {
+    position: relative;
+    min-width: 0;
+  }
+
+  .context-chart svg {
+    display: block;
+    overflow: visible;
+  }
+
+  .context-chart-grid {
+    stroke: var(--edge);
+    stroke-width: 1px;
+  }
+
+  .context-chart-axis {
+    stroke: var(--edge-strong);
+    stroke-width: 1px;
+  }
+
+  .context-chart-tick {
+    font-size: var(--text-xs);
+    fill: var(--ink-3);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .context-chart-area {
+    fill: var(--slot-area);
+    stroke: none;
+  }
+
+  .context-chart-line {
+    fill: none;
+    stroke: var(--slot-5);
+    stroke-width: var(--rail);
+    stroke-linejoin: round;
+  }
+
+  .context-chart-line[data-series="Subagent"] {
+    stroke: var(--slot-subagent);
+  }
+
+  .context-chart-dot {
+    fill: var(--slot-subagent);
+  }
+
+  .context-chart-threshold {
+    stroke: var(--ink-2);
+    stroke-width: 1px;
+    stroke-dasharray: 4 3;
+  }
+
+  .context-chart-rule {
+    stroke: var(--ink-1);
+    stroke-width: 1px;
+  }
+
+  .context-chart-label {
+    font-size: var(--text-xs);
+    fill: var(--ink-2);
+  }
+
+  .context-chart-hit {
+    fill: transparent;
+    cursor: crosshair;
+  }
+
+  .context-chart-cross {
+    stroke: var(--ink-3);
+    stroke-width: 1px;
+  }
+
+  .context-chart-point {
+    fill: var(--slot-5);
+    stroke: var(--surface-1);
+    stroke-width: var(--rail);
+  }
+
+  .context-chart-point[data-series="Subagent"] {
+    fill: var(--slot-subagent);
+  }
+
+  .context-chart-tip {
+    display: grid;
+    width: max-content;
+    padding: var(--space-1) var(--space-2);
+    font-size: var(--text-xs);
+    color: var(--ink-3);
+    background: var(--surface-1);
+    border: var(--hairline) solid var(--edge-strong);
+    border-radius: var(--radius-2);
+  }
+
+  .context-chart-tip > :first-child {
+    font-weight: var(--weight-strong);
+    color: var(--ink-1);
+  }
+
+  .context-key {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-1) var(--space-4);
+    font-size: var(--text-sm);
+    color: var(--ink-2);
+  }
+
+  .context-key li {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+  }
+
+  .context-key-mark {
+    display: inline-block;
+    width: var(--space-4);
+    border-top: var(--rail) solid var(--slot-5);
+  }
+
+  .context-key-mark[data-mark="Subagent"] {
+    width: var(--space-2);
+    height: var(--space-2);
+    border: 0;
+    border-radius: var(--radius-circle);
+    background: var(--slot-subagent);
+  }
+
+  .context-key-mark[data-mark="Threshold"] {
+    border-top: var(--hairline) dashed var(--ink-2);
+  }
+
+  .context-key-mark[data-mark="Compaction"] {
+    width: 0;
+    height: var(--space-3);
+    border-top: 0;
+    border-left: var(--hairline) solid var(--ink-1);
+  }
+
+  /* Inputs: the brief, the files, and what the runtime named. */
+
+  .context-brief-head {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+  }
+
+  .context-brief-head > :last-child {
+    margin-inline-start: auto;
+  }
+
+  /* A brief or a prompt, in the face of the text around it, folded to its
+     first lines. */
+  .context-brief {
+    position: relative;
+    margin: 0;
+    padding: var(--space-2) var(--space-3);
+    overflow: hidden;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-size: var(--text-sm);
+    line-height: var(--leading-dense);
+    color: var(--ink-2);
+    background: var(--surface-2);
+    border-radius: var(--radius-2);
+  }
+
+  .context-brief[data-open="false"] {
+    max-height: var(--height-context-brief);
+  }
+
+  .context-brief[data-open="false"]::after {
+    content: "";
+    position: absolute;
+    inset: auto 0 0;
+    height: 2.5em;
+    background: linear-gradient(transparent, var(--surface-2));
+    pointer-events: none;
+  }
+
+  .context-files th[scope="rowgroup"] {
+    padding-top: var(--space-3);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-medium);
+    color: var(--ink-3);
+  }
+
+  .context-file-toggle {
+    display: inline-flex;
+    padding: 0;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    align-items: center;
+    gap: var(--space-2);
+    max-width: 100%;
+    font-family: var(--font-mono);
+    font-size: var(--mono-optical);
+    color: var(--ink-1);
+    text-align: left;
+    overflow-wrap: break-word;
+    white-space: normal;
+  }
+
+  .context-file-chevron {
+    flex: none;
+    transition: transform var(--duration-1) var(--ease-out);
+  }
+
+  .context-file-toggle[aria-expanded="true"] .context-file-chevron {
+    transform: rotate(90deg);
+  }
+
+  .context-file-content {
+    max-height: var(--height-clip);
+    margin: 0;
+    padding: var(--space-3);
+    overflow: auto;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font-size: var(--text-xs);
+    background: var(--surface-2);
+    border: var(--hairline) solid var(--edge);
+    border-radius: var(--radius-2);
+  }
+
+  .context-files td.context-file-open {
+    white-space: normal;
+  }
+
+  .context-names {
+    display: grid;
+    grid-template-columns: var(--col-context-label) minmax(0, 1fr);
+    gap: var(--space-3);
+    margin: 0;
+  }
+
+  .context-names > div {
+    display: contents;
+  }
+
+  .context-names dt {
+    font-size: var(--text-sm);
+    color: var(--ink-3);
+  }
+
+  .context-names dd {
+    display: grid;
+    gap: var(--space-1);
+    margin: 0;
+  }
+
+  .context-names-count {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: var(--space-2);
+    color: var(--ink-1);
+  }
+
+  .context-names-list {
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--ink-2);
+    overflow-wrap: anywhere;
+  }
+
+  /* Heaviest: by tool, then the largest results. */
+
+  .context-meter {
+    display: inline-flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-2);
+    width: 100%;
+  }
+
+  .context-meter svg {
+    width: 50%;
+    height: var(--space-1);
+  }
+
+  .context-meter-track {
+    fill: var(--edge);
+  }
+
+  .context-meter-fill {
+    fill: var(--slot-5);
+  }
+
+  .context-largest {
+    display: grid;
+    grid-template-columns: auto auto minmax(0, 1fr) auto auto;
+    align-items: baseline;
+    gap: var(--space-2) var(--space-4);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: var(--text-sm);
+  }
+
+  .context-largest > li {
+    display: contents;
+  }
+
+  .context-largest-input {
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    color: var(--ink-2);
+  }
+
+  .context-largest .num {
+    text-align: end;
+  }
+
+  .context-largest-tool {
+    color: var(--ink-1);
+  }
+
+  .context-largest-call {
+    color: var(--ink-1);
+    text-decoration: underline;
+  }
+
+  .context-session-inputs {
+    display: grid;
+    grid-template-columns: var(--col-context-label) minmax(0, 1fr) auto;
+    align-items: baseline;
+    gap: var(--space-2) var(--space-3);
+    margin: 0;
+    font-size: var(--text-sm);
+  }
+
+  .context-session-inputs > div {
+    display: contents;
+  }
+
+  .context-session-inputs dt {
+    color: var(--ink-3);
+  }
+
+  .context-session-inputs dd {
+    margin: 0;
+    color: var(--ink-1);
+  }
+
+  .context-session-inputs .context-brief {
+    grid-column: 1 / -1;
+  }
+
+  /* A thread's panel: beside its conversation, or in its place on a phone. */
+
+  .context-beside {
+    flex-direction: row;
+  }
+
+  .context-panel {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    width: var(--width-context-panel);
+    min-height: 0;
+    background: var(--surface-1);
+    border-left: var(--hairline) solid var(--edge);
+  }
+
+  .context-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding: var(--space-3) var(--space-4);
+    border-bottom: var(--hairline) solid var(--edge);
+  }
+
+  .context-panel-title {
+    font-size: var(--text-md);
+    font-weight: var(--weight-strong);
+    color: var(--ink-1);
+  }
+
+  .context-panel-body {
+    flex: 1;
+    min-height: 0;
+    padding: var(--space-4);
+    overflow-y: auto;
+  }
+
+  @media (max-width: 40em) {
+    .context-beside[data-open="true"] > [role="region"] {
+      display: none;
+    }
+
+    .context-panel {
+      flex: 1;
+      width: auto;
+      border-left: 0;
+    }
+
+    .context-legend {
+      max-width: none;
+    }
+
+    /* A table fits the width rather than scrolling: its columns close up,
+       the outer ones flush with the section, and a row's name wraps. */
+    .context-view .tabular th,
+    .context-view .tabular td {
+      padding-inline: var(--space-2);
+    }
+
+    .context-view .tabular :is(th, td):first-child {
+      padding-inline-start: 0;
+      white-space: normal;
+    }
+
+    .context-view .tabular :is(th, td):last-child {
+      padding-inline-end: 0;
+    }
+
+    .context-meter svg {
+      display: none;
+    }
+
+    .context-largest {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .context-largest > li {
+      display: grid;
+      grid-template-columns: auto minmax(0, 1fr) auto;
+      gap: var(--space-1) var(--space-3);
+      padding: var(--space-2) var(--space-3);
+      border: var(--hairline) solid var(--edge);
+      border-radius: var(--radius-2);
+    }
+
+    .context-largest > li > :empty {
+      display: none;
+    }
+
+    .context-largest-at {
+      grid-row: 1;
+      grid-column: 1 / 3;
+    }
+
+    .context-largest-growth {
+      grid-row: 1;
+      grid-column: 3;
+    }
+
+    .context-largest-tool {
+      grid-row: 2;
+      grid-column: 1;
+    }
+
+    .context-largest-input {
+      grid-row: 2;
+      grid-column: 2;
+    }
+
+    .context-largest-bytes {
+      grid-row: 2;
+      grid-column: 3;
+    }
+  }
+}

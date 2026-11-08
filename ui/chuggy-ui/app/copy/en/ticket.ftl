@@ -206,6 +206,7 @@ ticket-run-view-summary = Summary
 ticket-run-view-transcript = { -transcript(case: "upper") }
 ticket-run-view-details = Details
 ticket-run-view-output = Output
+ticket-run-view-context = { -context(case: "upper") }
 ticket-run-no-summary = No summary
 ticket-run-no-transcript = No { -transcript }
 ticket-run-runner = { -runner(case: "upper") }

@@ -214,6 +214,66 @@ export const termsFtl = `## The product's own nouns, and the verbs done to a tic
     }
 }
 
+## What an agent's model holds.
+
+# Everything an agent's model is handed on one call: its prompt, its tools, its files and the conversation so far.
+# rejects: context size, prompt size
+-context = { $case ->
+    [upper] Context
+   *[lower] context
+}
+
+# The most tokens a context holds, the noun of a context's capacity only; an account's usage window is no term.
+# rejects: context limit, context length, max tokens
+-window = { $case ->
+    [upper] { $form ->
+        [plural] Windows
+        [a] A window
+       *[one] Window
+    }
+   *[lower] { $form ->
+        [plural] windows
+        [a] a window
+       *[one] window
+    }
+}
+
+# The runtime cutting a context down to a summary of itself so it fits its window; "base" is to compact.
+# rejects: summarization, summarisation, compression, compress, compressed
+-compaction = { $case ->
+    [upper] { $form ->
+        [plural] Compactions
+        [a] A compaction
+        [base] Compact
+        [s] Compacts
+        [ed] Compacted
+       *[one] Compaction
+    }
+   *[lower] { $form ->
+        [plural] compactions
+        [a] a compaction
+        [base] compact
+        [s] compacts
+        [ed] compacted
+       *[one] compaction
+    }
+}
+
+# An agent a run's own agent starts for one of its calls, whose calls are a series of their own.
+# rejects: sub-agent, sub-agents, child agent, child agents
+-subagent = { $case ->
+    [upper] { $form ->
+        [plural] Subagents
+        [a] A subagent
+       *[one] Subagent
+    }
+   *[lower] { $form ->
+        [plural] subagents
+        [a] a subagent
+       *[one] subagent
+    }
+}
+
 ## What runs the work.
 
 # One execution of a stage's work or check, the noun only; to run is no term.

@@ -25,11 +25,12 @@
  */
 
 import { Collapsible } from "radix-ui";
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import {
+  conversationStepIsCall,
   conversationArgumentLine,
   conversationArgumentSummary,
   conversationArgumentText,
@@ -55,6 +56,12 @@ type ConversationToolCallStep = Extract<
   ConversationWorkStep,
   { step: "ToolCall" }
 >;
+
+/** The tool call a surface was opened at, by the call's own identity: it draws
+ * open, in the work drawn open around it, and is scrolled to once drawn. */
+export const ConversationCallAsked = createContext<string | undefined>(
+  undefined,
+);
 
 const conversationResultClassName =
   "bg-surface-2 rounded-2 max-h-(--height-clip) overflow-auto p-2 text-xs";
@@ -93,18 +100,30 @@ function ConversationToolCall(props: {
   readonly call: ConversationToolCallStep;
 }): ReactNode {
   const text = useCopyText();
-  const [open, setOpen] = useState(false);
   const call = props.call;
+  const asked = useContext(ConversationCallAsked) === call.id;
+  const [open, setOpen] = useState(asked);
+  const at = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (asked) at.current?.scrollIntoView({ block: "center" });
+  }, [asked]);
   const result = call.result;
+  const current = asked ? "location" : undefined;
   if (call.input === undefined && result === undefined)
     return (
-      <div className="flex min-w-0 items-center gap-2">
+      <div
+        ref={at}
+        className="conversation-call flex min-w-0 items-center gap-2"
+        aria-current={current}
+      >
         <ConversationToolCallNamed call={call} />
       </div>
     );
   return (
     <Collapsible.Root
-      className="flex flex-col gap-2"
+      ref={at}
+      className="conversation-call flex flex-col gap-2"
+      aria-current={current}
       open={open}
       onOpenChange={setOpen}
     >
@@ -263,7 +282,16 @@ export function ConversationWorkCard(props: {
   readonly open?: boolean;
 }): ReactNode {
   const text = useCopyText();
-  const [open, setOpen] = useState(props.open === true);
+  const asked = useContext(ConversationCallAsked);
+  const holdsAsked =
+    asked !== undefined &&
+    props.steps.some((step) => conversationStepIsCall(step, asked));
+  const [open, setOpen] = useState(props.open === true || holdsAsked);
+  const [held, setHeld] = useState(holdsAsked);
+  if (held !== holdsAsked) {
+    setHeld(holdsAsked);
+    if (holdsAsked) setOpen(true);
+  }
   const said = props.steps.filter(conversationWorkStepSays);
   const glyph = (
     <ConversationGlyph

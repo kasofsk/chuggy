@@ -32,12 +32,12 @@ conversation-prompt-unreadable = Prompt unreadable
 
 ## The ask, and the lines that belong to neither speaker.
 
-conversation-context = Context
+conversation-context = { -context(case: "upper") }
 conversation-sent-from = Sent from
 conversation-observation = Observation
 conversation-inquiry = { -inquiry(case: "upper") }
 conversation-copy-answer = Copy answer
-conversation-marker-compaction = Compaction
+conversation-marker-compaction = { -compaction(case: "upper") }
 conversation-marker-elided = Elided · { $bytes } bytes
 conversation-marker-elided-batches = Elided · { $count } batches
 conversation-marker-unreadable = Unreadable

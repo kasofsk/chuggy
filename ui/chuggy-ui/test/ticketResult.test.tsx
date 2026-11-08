@@ -133,7 +133,7 @@ test("a failed review's row carries its report's opening, and its Summary draws 
   );
   cleanup();
   const drawn = await runPage(served);
-  expect(views()).toEqual(["Summary", "Transcript", "Details"]);
+  expect(views()).toEqual(["Summary", "Transcript", "Details", "Context"]);
   expect(body(drawn).textContent).toContain(runResultReviewReport);
   expect(artifactReads(drawn)).toEqual([]);
 });

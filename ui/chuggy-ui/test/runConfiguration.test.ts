@@ -163,6 +163,44 @@ test("a command line that did not fit, or holds nothing, kept no prompt", () => 
   });
 });
 
+/** A run handed its prompt on stdin keeps it in the snapshot's own field, or
+ * a marker where it did not fit, and its command line ends on a flag's value. */
+test("the prompt is the snapshot's brief where it kept one, and never a command line's last word where the prompt went to stdin", () => {
+  const streamed = ["claude", "--print", "--input-format", "stream-json"];
+  expect(
+    runPromptOf(read(snapshotOf({ argv: streamed, brief: "the brief" }))),
+  ).toEqual({ prompt: "Kept", text: "the brief" });
+  for (const argv of [streamed, ["claude", "--print", "do the thing"]])
+    expect(
+      runPromptOf(read(snapshotOf({ argv, briefTruncated: marker }))),
+    ).toEqual({ prompt: "NotKept" });
+  expect(runPromptOf(read(snapshotOf({ argv: streamed })))).toEqual({
+    prompt: "NotKept",
+  });
+  expect(
+    runPromptOf(
+      read(
+        snapshotOf({
+          argv: ["claude", "--input-format=stream-json", "--verbose"],
+        }),
+      ),
+    ),
+  ).toEqual({ prompt: "NotKept" });
+  expect(
+    runPromptOf(
+      read(
+        snapshotOf({
+          argv: ["claude", "--output-format", "stream-json", "do the thing"],
+        }),
+      ),
+    ),
+  ).toEqual({ prompt: "Kept", text: "do the thing" });
+  expect(runPromptOf(read(snapshotOf({ brief: "" })))).toEqual({
+    prompt: "Kept",
+    text: "do the thing",
+  });
+});
+
 /** A read that failed says nothing about whether the run kept a prompt, so it
  * must not be drawn as one that kept none. */
 test("the prompt follows the snapshot's read, and a failed read is not a missing prompt", () => {

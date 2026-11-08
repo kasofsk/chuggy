@@ -137,7 +137,7 @@ lead-settings-limit-tool-calls = Tool calls
 lead-settings-limit-dispatches = { -dispatch(case: "upper", form: "s") }
 lead-settings-limit-input = Input
 lead-settings-limit-candidate-pages = Candidate pages
-lead-settings-limit-compaction-window = Compaction window
+lead-settings-limit-compaction-window = { -compaction(case: "upper") } { -window }
 
 lead-settings-unit-tokens = tokens
 lead-settings-unit-ms = ms
@@ -153,7 +153,7 @@ lead-settings-section-standing-rules-about = How { -thread(form: "plural") } act
 lead-settings-section-base-prompt-title = Base prompt
 lead-settings-section-base-prompt-about = The { -lead }'s system prompt. An edit replaces the { -lead } at its next decision.
 lead-settings-section-limits-title = Limits
-lead-settings-section-limits-about = What one decision may spend, and how much context the { -lead } holds before it compacts.
+lead-settings-section-limits-about = What one decision may spend, and how much { -context } the { -lead } holds before it { -compaction(form: "s") }.
 lead-settings-reset-default = Reset to default
 lead-settings-reset = Reset
 
@@ -171,6 +171,7 @@ lead-history-mode-label = Mode
 lead-history-dispatch-label = { -dispatch(case: "upper") }
 lead-history-models-label = Models
 lead-history-tools-label = Tools
+# spells -context: the lead's operational context, a document it is handed
 lead-history-context-age-label = Context age
 lead-history-no-change = No change
 lead-history-diff = Diff

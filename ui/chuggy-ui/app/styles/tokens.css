@@ -58,6 +58,23 @@
     --syntax-value: light-dark(#80489b, #c79ae0);
     --syntax-note: var(--ink-3);
 
+    /* categories — the parts of an agent's context, told apart by hue alone;
+       slots and not the machine's tones, since none of them is a state */
+    --slot-1: light-dark(#6a4fd0, #a593f2); /* system prompt */
+    --slot-2: light-dark(#17936a, #58c79b); /* system tools */
+    --slot-3: light-dark(#d18d00, #f0bd4f); /* memory files */
+    --slot-4: light-dark(#d4578a, #f08fb4); /* skills */
+    --slot-5: light-dark(#2a6fd6, #6ea6f2); /* messages */
+    --slot-6: light-dark(#0b839e, #5cc2d8); /* MCP tools */
+    --slot-7: light-dark(#8a5a2b, #c99a6a); /* custom agents */
+    --slot-8: light-dark(#6b7280, #a3a9b3); /* a category no slot names */
+    --slot-subagent: light-dark(#d9581f, #f29a66); /* a subagent's own calls */
+    /* used, where nothing split it */
+    --slot-used: light-dark(#59625c, #8a948c);
+    --slot-free: light-dark(#e2e6de, #1d2420); /* the room left */
+    /* under the context's line */
+    --slot-area: color-mix(in srgb, var(--slot-5) 14%, transparent);
+
     /* washes — a tone at background strength, for notices */
     --wash: 10%;
     --wash-pass: color-mix(
@@ -235,6 +252,14 @@
     --col-step-model: 5rem; /* configuration: the step's model */
     --col-step-overrides: 7rem; /* configuration: what the ticket overrode */
     --width-usage-tile: 10rem; /* usage: a tile, before the row of them wraps */
+    --width-context-legend: 30rem; /* context: the window's legend table */
+    --width-context-panel: 24rem; /* context: the panel beside a conversation */
+    --col-context-label: 7rem; /* context: an input's name, beside its value */
+    --width-context-tile: 8rem; /* context: a figure tile, two to a phone's row */
+    --height-context-bar: 1.75rem; /* context: the window's bar */
+    --height-context-bar-compact: 1.25rem; /* context: a session's window bar */
+    --height-context-brief: 6.2em; /* context: a folded brief, before it fades */
+    --size-context-swatch: 0.625rem; /* context: a category's key */
   }
 
   :root[data-theme="light"] {
