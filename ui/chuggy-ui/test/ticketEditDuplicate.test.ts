@@ -27,6 +27,13 @@ import {
   creationOffer,
 } from "./ticketCreationFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
+import type { Copy } from "../app/core/copy.ts";
+
+/** A line in the words the screen draws it, or none. */
+function said(copy: Copy | undefined): string | undefined {
+  return copy === undefined ? undefined : copyTextEn(copy);
+}
 
 const chuggy = "https://forge.test/kasofsk/chuggy";
 const other = "https://forge.test/kasofsk/other";
@@ -90,7 +97,7 @@ test("a duplicate holds every field the edit reads from the draft", () => {
   expect(seed.form).toStrictEqual(
     editFormFrom(original, [creationBinding(chuggy)], "development"),
   );
-  expect(ticketDuplicateDroppedSentence(seed.dropped)).toBe(undefined);
+  expect(said(ticketDuplicateDroppedSentence(seed.dropped))).toBe(undefined);
 });
 
 test("an untouched duplicate sends the brief its draft holds", () => {
@@ -181,7 +188,7 @@ test("a configuration no longer offered starts where a new ticket starts", () =>
   ).toBe("development-sonnet");
   const sole = seeded(gone, { offers: [sonnet] });
   expect(sole.form.configuration).toBe("development-sonnet");
-  expect(ticketDuplicateDroppedSentence(sole.dropped)).toBe(
+  expect(said(ticketDuplicateDroppedSentence(sole.dropped))).toBe(
     "Not carried · configuration opus, no longer offered",
   );
 });
@@ -192,7 +199,7 @@ test("a repository whose binding is retired is not carried, and is named", () =>
   });
   expect(seed.form.repository).toBe("");
   expect(seed.form.finalization).toStrictEqual({ kind: "PullRequest" });
-  expect(ticketDuplicateDroppedSentence(seed.dropped)).toBe(
+  expect(said(ticketDuplicateDroppedSentence(seed.dropped))).toBe(
     "Not carried · repository kasofsk/chuggy, no longer bound",
   );
 });
@@ -200,7 +207,7 @@ test("a repository whose binding is retired is not carried, and is named", () =>
 test("a dependency on a revoked ticket is not carried, and the others are, listed or not", () => {
   const seed = seeded(original, { revoked: [7] });
   expect(seed.form.dependencies).toStrictEqual([40]);
-  expect(ticketDuplicateDroppedSentence(seed.dropped)).toBe(
+  expect(said(ticketDuplicateDroppedSentence(seed.dropped))).toBe(
     "Not carried · dependency on ticket 7, revoked",
   );
 });
@@ -213,7 +220,7 @@ test("everything not carried is said in one line", () => {
       revoked: [7, 40],
     },
   );
-  expect(ticketDuplicateDroppedSentence(seed.dropped)).toBe(
+  expect(said(ticketDuplicateDroppedSentence(seed.dropped))).toBe(
     "Not carried · repository kasofsk/chuggy, no longer bound · dependency on ticket 7, revoked · dependency on ticket 40, revoked · configuration opus, no longer offered",
   );
 });

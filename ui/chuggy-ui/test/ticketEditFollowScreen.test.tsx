@@ -48,6 +48,7 @@ import {
   followSendsAsked,
   followTitle,
 } from "./draftFollowScreen.tsx";
+import { copyTextEn } from "../app/copy/catalog.ts";
 
 const waiting = vi.hoisted(() => ({ held: true }));
 
@@ -308,7 +309,7 @@ test("a save the draft refuses holds the send back, and the form says why where 
   await settled();
   expect(followSendsAsked).toStrictEqual([false]);
   expect(sent.filter((one) => one.method === "PUT")).toHaveLength(1);
-  expect(screen.getByText(creationDraftChangedSentence).className).toBe(
-    "panel-failed",
-  );
+  expect(
+    screen.getByText(copyTextEn(creationDraftChangedSentence)).className,
+  ).toBe("panel-failed");
 });

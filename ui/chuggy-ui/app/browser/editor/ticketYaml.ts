@@ -116,7 +116,7 @@ import {
   ticketYamlWorkloadKeys,
   ticketYamlWorkloadUnset,
 } from "./ticketYamlWorkloads.ts";
-import type { CopyText } from "../../core/copy.ts";
+import type { Copy, CopyOrData, CopyText } from "../../core/copy.ts";
 
 /** What a document is read and written against: the project's offer, and the
  * form a key left out keeps its value from. */
@@ -133,7 +133,7 @@ export interface TicketYamlContext {
 export interface TicketYamlProblem {
   readonly from: number;
   readonly to: number;
-  readonly message: string;
+  readonly message: CopyOrData;
 }
 
 export interface TicketYamlSpan {
@@ -321,6 +321,7 @@ function ticketYamlIsRecord(
 export function ticketYamlOf(
   form: TicketCreationForm,
   context: TicketYamlContext,
+  text: CopyText,
 ): string {
   const canonical = ticketYamlCanonical(context, form.configuration);
   const values: Record<string, unknown> = {
@@ -360,7 +361,7 @@ export function ticketYamlOf(
     for (const pair of workloads.items)
       if (isMap(pair.value))
         pair.value.comment =
-          ticketYamlWorkloadUnset(pair.value.toJSON()) ?? null;
+          ticketYamlWorkloadUnset(pair.value.toJSON(), text) ?? null;
   return document.toString({ lineWidth: 0, nullStr: "" });
 }
 
@@ -375,7 +376,7 @@ type TicketYamlTook<T> =
   | { readonly took: "Value"; readonly value: T }
   | {
       readonly took: "Problem";
-      readonly message: string;
+      readonly message: CopyOrData;
       /** Where inside the value it is about, where that is narrower. */
       readonly at?: TicketYamlSpan;
     };
@@ -385,7 +386,7 @@ function ticketYamlTook<T>(value: T): TicketYamlTook<T> {
 }
 
 function ticketYamlRefused<T>(
-  message: string,
+  message: CopyOrData,
   at?: TicketYamlSpan,
 ): TicketYamlTook<T> {
   return at === undefined
@@ -393,15 +394,15 @@ function ticketYamlRefused<T>(
     : { took: "Problem", message, at };
 }
 
+const ticketYamlOneLine: Copy = { id: "ticket-authoring-yaml-one-line" };
+
 /** A scalar as the text the form holds, nothing written reading as empty. */
 function ticketYamlTextOf(node: unknown): TicketYamlTook<string> {
   if (node === null || node === undefined) return ticketYamlTook("");
-  if (!isScalar(node))
-    return ticketYamlRefused("write this as one line of text");
+  if (!isScalar(node)) return ticketYamlRefused(ticketYamlOneLine);
   const value = node.value;
   if (value === null) return ticketYamlTook("");
-  if (typeof value === "object")
-    return ticketYamlRefused("write this as one line of text");
+  if (typeof value === "object") return ticketYamlRefused(ticketYamlOneLine);
   return ticketYamlTook(String(value as string | number | boolean));
 }
 
@@ -409,7 +410,7 @@ function ticketYamlTextsOf(node: unknown): TicketYamlTook<readonly string[]> {
   if (node === null || node === undefined) return ticketYamlTook([]);
   if (isScalar(node) && node.value === null) return ticketYamlTook([]);
   if (!isSeq(node))
-    return ticketYamlRefused("write this as a list, one entry a line");
+    return ticketYamlRefused({ id: "ticket-authoring-yaml-list" });
   const texts: string[] = [];
   for (const item of node.items) {
     const text = ticketYamlTextOf(item);
@@ -431,13 +432,16 @@ function ticketYamlWholeOf(node: unknown): number | undefined {
 function ticketYamlMemberOf<Member extends string>(
   node: unknown,
   roster: readonly Member[],
-  refusal: string,
+  refusal: Copy,
 ): TicketYamlTook<Member> {
   const text = ticketYamlTextOf(node);
   if (text.took === "Problem") return text;
   const member = roster.find((held) => held === text.value);
   return member === undefined
-    ? ticketYamlRefused(`${refusal} one of ${roster.join(", ")}`)
+    ? ticketYamlRefused({
+        id: "ticket-authoring-yaml-member",
+        args: { refusal, members: roster.join(", ") },
+      })
     : ticketYamlTook(member);
 }
 
@@ -479,7 +483,10 @@ function ticketYamlFinalizationFieldOf<T>(
 ): TicketYamlTook<T> {
   const pair = pairs.get(field);
   if (pair === undefined)
-    return ticketYamlRefused(`a GitMerge names its ${field}`);
+    return ticketYamlRefused({
+      id: "ticket-authoring-yaml-kind-names-field",
+      args: { kind: "GitMerge", field },
+    });
   const took = read(pair.value);
   return took.took === "Problem" && took.at === undefined
     ? ticketYamlRefused(
@@ -496,11 +503,15 @@ function ticketYamlFinalizationChoiceOf(
 ): TicketYamlTook<FinalizationChoice> {
   if (kind !== "GitMerge") return ticketYamlTook({ kind });
   const mode = ticketYamlFinalizationFieldOf("mode", pairs, (node) =>
-    ticketYamlMemberOf(node, briefGitMergeModes, "merge by"),
+    ticketYamlMemberOf(node, briefGitMergeModes, {
+      id: "ticket-authoring-yaml-merge-by",
+    }),
   );
   if (mode.took === "Problem") return mode;
   const policy = ticketYamlFinalizationFieldOf("policy", pairs, (node) =>
-    ticketYamlMemberOf(node, briefGitMergePolicies, "order the merge as"),
+    ticketYamlMemberOf(node, briefGitMergePolicies, {
+      id: "ticket-authoring-yaml-order-as",
+    }),
   );
   if (policy.took === "Problem") return policy;
   return ticketYamlTook({ kind, mode: mode.value, policy: policy.value });
@@ -514,9 +525,10 @@ function ticketYamlFinalizationOf(
   node: unknown,
 ): TicketYamlTook<TicketYamlFinalization> {
   if (!isMap(node))
-    return ticketYamlRefused(
-      `write the finalization as a map of ${ticketYamlFinalizationFields.join(", ")}`,
-    );
+    return ticketYamlRefused({
+      id: "ticket-authoring-yaml-landing-map",
+      args: { fields: ticketYamlFinalizationFields.join(", ") },
+    });
   const pairs = new Map<TicketYamlFinalizationField, TicketYamlPair>();
   for (const pair of node.items as readonly TicketYamlPair[]) {
     const field = ticketYamlFinalizationFields.find(
@@ -524,18 +536,24 @@ function ticketYamlFinalizationOf(
     );
     if (field === undefined)
       return ticketYamlRefused(
-        `a finalization names ${ticketYamlFinalizationFields.join(", ")}`,
+        {
+          id: "ticket-authoring-yaml-landing-fields",
+          args: { fields: ticketYamlFinalizationFields.join(", ") },
+        },
         ticketYamlSpanOf(pair.key),
       );
     pairs.set(field, pair);
   }
   const kindPair = pairs.get("kind");
   if (kindPair === undefined)
-    return ticketYamlRefused(
-      `a finalization names its kind: one of ${briefFinalizationKinds.join(", ")}`,
-    );
+    return ticketYamlRefused({
+      id: "ticket-authoring-yaml-landing-kind",
+      args: { kinds: briefFinalizationKinds.join(", ") },
+    });
   const kind = ticketYamlFinalizationFieldOf("kind", pairs, (value) =>
-    ticketYamlMemberOf(value, briefFinalizationKinds, "finalize by"),
+    ticketYamlMemberOf(value, briefFinalizationKinds, {
+      id: "ticket-authoring-yaml-land-by",
+    }),
   );
   if (kind.took === "Problem") return kind;
   const named = ticketYamlFinalizationNamed(kind.value);
@@ -543,8 +561,11 @@ function ticketYamlFinalizationOf(
     if (!named.includes(field))
       return ticketYamlRefused(
         field === "target"
-          ? "None lands nothing, so it names no target"
-          : `a ${kind.value} names no ${field}; only a GitMerge does`,
+          ? { id: "ticket-authoring-yaml-none-target", args: { none: "None" } }
+          : {
+              id: "ticket-authoring-yaml-kind-names-no",
+              args: { kind: kind.value, field, merge: "GitMerge" },
+            },
         ticketYamlSpanOf(pair.key),
       );
   const choice = ticketYamlFinalizationChoiceOf(kind.value, pairs);
@@ -569,9 +590,12 @@ function ticketYamlConfigurationOf(
   const text = ticketYamlTextOf(node);
   if (text.took === "Problem" || text.value === "") return text;
   return creationOfferOf(context.offers, text.value) === undefined
-    ? ticketYamlRefused(
-        `name one of ${context.offers.map((offer) => offer.name).join(", ")}`,
-      )
+    ? ticketYamlRefused({
+        id: "ticket-authoring-yaml-name-one",
+        args: {
+          names: context.offers.map((offer) => offer.name).join(", "),
+        },
+      })
     : text;
 }
 
@@ -607,9 +631,10 @@ function ticketYamlSelectionOf(
   if (node === undefined || (isScalar(node) && node.value === null))
     return ticketYamlTook({});
   if (!isMap(node))
-    return ticketYamlRefused(
-      `write the selection as a map of ${ticketYamlSelectionFields.join(", ")}`,
-    );
+    return ticketYamlRefused({
+      id: "ticket-authoring-yaml-selection-map",
+      args: { fields: ticketYamlSelectionFields.join(", ") },
+    });
   const named: {
     -readonly [
       Field in keyof ConfigurationSelection
@@ -622,14 +647,20 @@ function ticketYamlSelectionOf(
     const at = ticketYamlSpanOf(pair.key);
     if (field === undefined)
       return ticketYamlRefused(
-        `a selection names ${ticketYamlSelectionFields.join(", ")}`,
+        {
+          id: "ticket-authoring-yaml-selection-fields",
+          args: { fields: ticketYamlSelectionFields.join(", ") },
+        },
         at,
       );
     const names = ticketYamlSelectionNames(catalog, field);
     const text = ticketYamlTextOf(pair.value);
     if (text.took === "Problem" || !names.includes(text.value))
       return ticketYamlRefused(
-        `name one of ${names.join(", ")}`,
+        {
+          id: "ticket-authoring-yaml-name-one",
+          args: { names: names.join(", ") },
+        },
         ticketYamlSpanOf(pair.value),
       );
     if (field === "configuration")
@@ -649,16 +680,17 @@ function ticketYamlSelectionOf(
 function ticketYamlDependenciesOf(node: unknown): TicketYamlTook<number[]> {
   if (isScalar(node) && node.value === null) return ticketYamlTook([]);
   if (!isSeq(node))
-    return ticketYamlRefused(
-      "write the tickets this one waits for as a list of ticket numbers",
-    );
+    return ticketYamlRefused({ id: "ticket-authoring-yaml-dependencies" });
   const numbers: number[] = [];
   for (const item of node.items) {
     const number = ticketYamlWholeOf(item);
     if (number === undefined)
-      return ticketYamlRefused("a dependency is a ticket number");
+      return ticketYamlRefused({ id: "ticket-authoring-yaml-dependency" });
     if (numbers.includes(number))
-      return ticketYamlRefused(`ticket ${String(number)} is named twice`);
+      return ticketYamlRefused({
+        id: "ticket-authoring-yaml-dependency-twice",
+        args: { ticket: String(number) },
+      });
     numbers.push(number);
   }
   return ticketYamlTook(numbers);
@@ -669,12 +701,16 @@ function ticketYamlProgramOf(
   choices: DraftInitializationResponse["choices"],
 ): TicketYamlTook<CreationStage[]> {
   if (isScalar(node) && node.value === null) return ticketYamlTook([]);
-  const shape = "write each stage as `- evaluators: <count>`";
+  const shape: Copy = {
+    id: "ticket-authoring-yaml-stage-shape",
+    args: { shape: "- evaluators: <count>" },
+  };
   if (!isSeq(node)) return ticketYamlRefused(shape);
   if (node.items.length > choices.programStagesMax)
-    return ticketYamlRefused(
-      `a program has at most ${String(choices.programStagesMax)} stages here`,
-    );
+    return ticketYamlRefused({
+      id: "ticket-authoring-yaml-stages-max",
+      args: { count: String(choices.programStagesMax) },
+    });
   const { evaluatorsMax } = choices;
   const stages: CreationStage[] = [];
   for (const item of node.items) {
@@ -683,9 +719,10 @@ function ticketYamlProgramOf(
     const count = ticketYamlWholeOf(item.get("evaluators", true));
     if (count === undefined) return ticketYamlRefused(shape);
     if (count > evaluatorsMax)
-      return ticketYamlRefused(
-        `a stage takes at most ${String(evaluatorsMax)} evaluators here`,
-      );
+      return ticketYamlRefused({
+        id: "ticket-authoring-yaml-evaluators-max",
+        args: { count: String(evaluatorsMax) },
+      });
     stages.push(creationStageOf(count, stages.length + 1));
   }
   return ticketYamlTook(stages);
@@ -702,9 +739,10 @@ function ticketYamlImagesOf(
   const unknown = read.value.find((image) => !context.images.includes(image));
   return unknown === undefined
     ? read
-    : ticketYamlRefused(
-        `\`${unknown}\` names no image attached to this ticket; attach images in the form`,
-      );
+    : ticketYamlRefused({
+        id: "ticket-authoring-yaml-image-unknown",
+        args: { image: unknown },
+      });
 }
 
 /** One overridden value as the form holds it: lines as text, and a mode or
@@ -724,8 +762,11 @@ function ticketYamlOverrideOf(
   );
 }
 
-const ticketYamlOverridesShape =
-  "write the overrides as a map under the configuration's own field names";
+const ticketYamlOverridesShape: Copy = {
+  id: "ticket-authoring-yaml-overrides-shape",
+};
+
+const ticketYamlPlainKey: Copy = { id: "ticket-authoring-yaml-plain-key" };
 
 /** Whether a name is a block some overridable field sits in. */
 function ticketYamlOverrideBlock(name: string): boolean {
@@ -744,10 +785,7 @@ function ticketYamlOverridePairs(
   for (const pair of node.items as readonly TicketYamlPair[]) {
     const name = ticketYamlKeyNameOf(pair);
     if (name === undefined)
-      return ticketYamlRefused(
-        "a key is a plain word",
-        ticketYamlSpanOf(pair.key),
-      );
+      return ticketYamlRefused(ticketYamlPlainKey, ticketYamlSpanOf(pair.key));
     const path = `${prefix}${name}`;
     if (prefix === "" && ticketYamlOverrideBlock(name)) {
       const inner = ticketYamlOverridePairs(pair.value, `${name}.`);
@@ -775,7 +813,10 @@ function ticketYamlOverridesOf(
     const at = ticketYamlSpanOf(pair.key);
     if (field === undefined)
       return ticketYamlRefused(
-        `a ticket may not override \`${path}\`; it may override ${overrideFields.join(", ")}`,
+        {
+          id: "ticket-authoring-yaml-override-refused",
+          args: { path, fields: overrideFields.join(", ") },
+        },
         at,
       );
     const value = ticketYamlOverrideOf(field, pair.value);
@@ -794,15 +835,13 @@ function ticketYamlWorkloadsOf(
   if (node === undefined || (isScalar(node) && node.value === null))
     return ticketYamlTook({});
   if (!isMap(node))
-    return ticketYamlRefused(
-      "write the workloads as a map, each under the name its catalog holds it under",
-    );
+    return ticketYamlRefused({ id: "ticket-authoring-yaml-workloads-shape" });
   const held: Record<string, WorkloadOverride> = {};
   for (const pair of node.items as readonly TicketYamlPair[]) {
     const name = ticketYamlKeyNameOf(pair);
     if (name === undefined)
       return ticketYamlRefused(
-        "a workload is named by a plain word",
+        { id: "ticket-authoring-yaml-workload-key" },
         ticketYamlSpanOf(pair.key),
       );
     const value = pair.value;
@@ -838,7 +877,10 @@ function ticketYamlInto<T>(
 }
 
 function ticketYamlNoKey(key: string): TicketYamlApplied {
-  return ticketYamlRefused(`this form has no \`${key}\``);
+  return ticketYamlRefused({
+    id: "ticket-authoring-yaml-no-key",
+    args: { key },
+  });
 }
 
 /** The keys a configuration decides, each read against the one the form names. */
@@ -984,7 +1026,10 @@ function ticketYamlParsed(text: string): TicketYamlParsed {
     problems: [
       {
         ...ticketYamlSpanOf(contents),
-        message: "write the ticket as keys, one `key: value` a line",
+        message: {
+          id: "ticket-authoring-yaml-keys",
+          args: { shape: "key: value" },
+        },
       },
     ],
   };
@@ -1088,7 +1133,7 @@ export function ticketYamlRead(
     const key = ticketYamlKeyNameOf(pair);
     const at = ticketYamlSpanOf(pair.key);
     if (key === undefined) {
-      problems.push({ ...at, message: "a key is a plain word" });
+      problems.push({ ...at, message: ticketYamlPlainKey });
       continue;
     }
     keys.set(key, at);
@@ -1159,31 +1204,51 @@ type TicketYamlDescribed = Omit<TicketYamlKey, "key">;
 /** What the keys a configuration decides mean under the one the form names. */
 function ticketYamlConfiguredDescribed(
   drawn: DraftInitializationResponse | undefined,
+  text: CopyText,
 ): Readonly<Record<string, TicketYamlDescribed>> {
   if (drawn === undefined) return {};
   return {
-    checks: { hint: creationFaultSentence("checks"), values: [] },
+    checks: { hint: text(creationFaultSentence("checks")), values: [] },
     dependencies: {
-      hint: "the tickets this one waits for, by number",
+      hint: text({ id: "ticket-authoring-hint-dependencies" }),
       values: drawn.dependencyCandidates.map((candidate) => ({
         label: String(candidate),
-        detail: `ticket ${String(candidate)}`,
+        detail: text({
+          id: "ticket-authoring-dependency-candidate",
+          args: { ticket: String(candidate) },
+        }),
       })),
     },
     program: {
-      hint: `the evaluation program: at most ${String(drawn.choices.programStagesMax)} stages, each judged by the evaluators it counts`,
+      hint: text({
+        id: "ticket-authoring-hint-program",
+        args: { count: String(drawn.choices.programStagesMax) },
+      }),
       values: [],
     },
     overrides: {
-      hint: `what this ticket replaces of its configuration, each field whole, under the configuration's own names: ${overrideFields.join(", ")}`,
+      hint: text({
+        id: "ticket-authoring-hint-overrides",
+        args: { fields: overrideFields.join(", ") },
+      }),
       values: [],
     },
     selection: {
-      hint: `what this ticket runs from its catalog: each of work, evaluation and finalization a name the catalog holds, configuration ${configurationFollowings.join(" or ")}, and each its default where left out`,
+      hint: text({
+        id: "ticket-authoring-hint-selection",
+        args: {
+          work: "work",
+          evaluation: "evaluation",
+          finalization: "finalization",
+          configuration: "configuration",
+          pinned: configurationFollowings[0],
+          latest: configurationFollowings[1],
+        },
+      }),
       values: [],
     },
     workloads: {
-      hint: "each workload this ticket runs, as its catalog holds it; a field changed here is this ticket's own, and a commented skeleton is a field to fill in",
+      hint: text({ id: "ticket-authoring-hint-workloads" }),
       values: [],
     },
   };
@@ -1192,18 +1257,18 @@ function ticketYamlConfiguredDescribed(
 /** What each field of a selection means and the names it may take, under the catalog a form names. */
 function ticketYamlSelectionKeys(
   catalog: ConfigurationCatalog | undefined,
+  text: CopyText,
 ): readonly TicketYamlKey[] {
   if (catalog === undefined) return [];
   const hints = {
-    work: "the workload that does the work",
-    evaluation: "the plan whose stages judge the work",
-    finalization: "the finalizer that lands the work",
-    configuration:
-      "the revision it runs on: the one it was released on, or the newest",
-  } as const;
+    work: { id: "ticket-authoring-hint-selection-work" },
+    evaluation: { id: "ticket-authoring-hint-selection-evaluation" },
+    finalization: { id: "ticket-authoring-hint-selection-landing" },
+    configuration: { id: "ticket-authoring-hint-selection-revision" },
+  } as const satisfies Record<(typeof ticketYamlSelectionFields)[number], Copy>;
   return ticketYamlSelectionFields.map((field) => ({
     key: field,
-    hint: hints[field],
+    hint: text(hints[field]),
     values: ticketYamlSelectionNames(catalog, field).map((label) => ({
       label,
     })),
@@ -1214,35 +1279,42 @@ function ticketYamlSelectionKeys(
 function ticketYamlDescribed(
   context: TicketYamlContext,
   drawn: DraftInitializationResponse | undefined,
+  text: CopyText,
 ): Readonly<Record<string, TicketYamlDescribed>> {
   return {
     configuration: {
-      hint: creationFaultSentence("configuration"),
+      hint: text(creationFaultSentence("configuration")),
       values: context.offers.map((offer) => ({
         label: offer.name,
         detail: offer.initialization.configuration.revision,
       })),
     },
-    title: { hint: creationFaultSentence("title"), values: [] },
-    intent: { hint: creationFaultSentence("intent"), values: [] },
-    links: { hint: creationFaultSentence("links"), values: [] },
+    title: { hint: text(creationFaultSentence("title")), values: [] },
+    intent: { hint: text(creationFaultSentence("intent")), values: [] },
+    links: { hint: text(creationFaultSentence("links")), values: [] },
     images: {
-      hint: `the images attached in the form, by identity: ${creationFaultSentence("images")}`,
+      hint: text({
+        id: "ticket-authoring-hint-images",
+        args: { bound: creationFaultSentence("images") },
+      }),
       values: context.images.map((image) => ({ label: image })),
     },
-    branch: { hint: creationBranchHint, values: [] },
+    branch: { hint: text(creationBranchHint), values: [] },
     repository: {
-      hint: creationFaultSentence("repository"),
+      hint: text(creationFaultSentence("repository")),
       values: context.repositories.map((binding) => ({
         label: binding.repository,
         detail: repositoryLabel(binding.repository),
       })),
     },
     finalization: {
-      hint: `how the finished work lands: its kind, a GitMerge's mode and policy, and its target where it lands somewhere`,
+      hint: text({
+        id: "ticket-authoring-hint-landing",
+        args: { merge: "GitMerge" },
+      }),
       values: [],
     },
-    ...ticketYamlConfiguredDescribed(drawn),
+    ...ticketYamlConfiguredDescribed(drawn, text),
   };
 }
 
@@ -1251,26 +1323,30 @@ function ticketYamlFinalizationKeys(
   form: TicketCreationForm,
   text: CopyText,
 ): readonly TicketYamlKey[] {
+  const merge = { merge: "GitMerge" };
   const described: Readonly<
     Record<TicketYamlFinalizationField, TicketYamlDescribed>
   > = {
     kind: {
-      hint: "how the finished work lands: merged, proposed, or not at all",
+      hint: text({ id: "ticket-authoring-hint-kind" }),
       values: briefFinalizationKinds.map((kind) => ({
         label: kind,
         detail: text(finalizationKindEffect(kind)),
       })),
     },
     mode: {
-      hint: "how a GitMerge advances its target, which only a GitMerge names",
+      hint: text({ id: "ticket-authoring-hint-mode", args: merge }),
       values: briefGitMergeModes.map((mode) => ({
         label: mode,
         detail: text(gitMergeModeEffect(mode)),
       })),
     },
-    target: { hint: creationTargetBranchHint(form.finalization), values: [] },
+    target: {
+      hint: text(creationTargetBranchHint(form.finalization)),
+      values: [],
+    },
     policy: {
-      hint: "how a GitMerge is ordered against the others on its target, which only a GitMerge names",
+      hint: text({ id: "ticket-authoring-hint-policy", args: merge }),
       values: briefGitMergePolicies.map((policy) => ({
         label: policy,
         detail: text(gitMergePolicyEffect(policy)),
@@ -1287,13 +1363,17 @@ function ticketYamlFinalizationKeys(
 /** The one key written inside a stage, which only a drawn program has. */
 function ticketYamlNestedKeys(
   drawn: DraftInitializationResponse | undefined,
+  text: CopyText,
 ): readonly TicketYamlKey[] {
   if (drawn === undefined) return [];
   const evaluatorsMax = drawn.choices.evaluatorsMax;
   return [
     {
       key: "evaluators",
-      hint: `how many evaluators judge this stage, from one to ${String(evaluatorsMax)}`,
+      hint: text({
+        id: "ticket-authoring-hint-evaluators",
+        args: { count: String(evaluatorsMax) },
+      }),
       values: Array.from({ length: evaluatorsMax }, (_, index) => ({
         label: String(index + 1),
       })),
@@ -1308,7 +1388,7 @@ export function ticketYamlVocabulary(
   text: CopyText,
 ): readonly TicketYamlKey[] {
   const drawn = ticketYamlDrawn(context, form);
-  const described = ticketYamlDescribed(context, drawn);
+  const described = ticketYamlDescribed(context, drawn, text);
   const catalog = ticketYamlCatalog(context, form.configuration);
   return [
     ...ticketYamlKeys(context, form).map((key) => ({
@@ -1316,14 +1396,15 @@ export function ticketYamlVocabulary(
       ...(described[key] ?? { hint: "", values: [] }),
     })),
     ...ticketYamlFinalizationKeys(form, text),
-    ...ticketYamlNestedKeys(drawn),
-    ...ticketYamlSelectionKeys(catalog),
+    ...ticketYamlNestedKeys(drawn, text),
+    ...ticketYamlSelectionKeys(catalog, text),
     ...(catalog === undefined
       ? []
       : ticketYamlWorkloadKeys(
           catalog.workloads.flatMap((workload) =>
             workload.promptPath === undefined ? [] : [workload.promptPath],
           ),
+          text,
         )),
   ];
 }

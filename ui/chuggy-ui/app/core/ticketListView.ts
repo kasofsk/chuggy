@@ -31,6 +31,7 @@ import {
   ticketFilterStandingOf,
 } from "./projectTableFilters.ts";
 import type { TicketFilter, TicketListOrder } from "./projectTableFilters.ts";
+import type { Copy } from "./copy.ts";
 import { creatorSubject } from "./labels.ts";
 import type { ProjectTableRow } from "./projectTableRows.ts";
 import { upNextOrdered } from "./upNextOrder.ts";
@@ -43,11 +44,11 @@ export const ticketListSorts = [
 ] as const;
 export type TicketListSort = (typeof ticketListSorts)[number];
 
-export const ticketListSortTitles: Readonly<Record<TicketListSort, string>> = {
-  State: "State",
-  Newest: "Newest first",
-  Oldest: "Oldest first",
-  Activity: "Last activity",
+export const ticketListSortTitles: Readonly<Record<TicketListSort, Copy>> = {
+  State: { id: "ticket-authoring-sort-state" },
+  Newest: { id: "ticket-authoring-sort-newest" },
+  Oldest: { id: "ticket-authoring-sort-oldest" },
+  Activity: { id: "ticket-authoring-sort-activity" },
 };
 
 /** The sort a word names, State where it names none. */

@@ -23,6 +23,7 @@ import {
 } from "../../../../src/contract/configurationOverrides.ts";
 import type { ConfigurationOverrides } from "../../../../src/contract/configurationOverrides.ts";
 
+import type { Copy } from "./copy.ts";
 import {
   configurationModeModel,
   configurationModeOf,
@@ -52,17 +53,53 @@ export type OverrideField = {
 export type OverrideKind = "Lines" | "Files" | "Mode";
 
 const overrideFieldDrawn = {
-  "worker.mode": { label: "Model", kind: "Mode" },
-  "worker.setup": { label: "Setup", kind: "Lines" },
-  "worker.files": { label: "Files", kind: "Files" },
-  practices: { label: "Practices", kind: "Lines" },
-  "brief.motivation": { label: "Motivation", kind: "Lines" },
-  "brief.acceptanceCriteria": { label: "Acceptance criteria", kind: "Lines" },
-  "brief.constraints": { label: "Constraints", kind: "Lines" },
-  "work.instructions": { label: "Work instructions", kind: "Lines" },
+  "worker.mode": {
+    label: { id: "ticket-authoring-field-model" },
+    override: { id: "ticket-authoring-override-model" },
+    kind: "Mode",
+  },
+  "worker.setup": {
+    label: { id: "ticket-authoring-field-setup" },
+    override: { id: "ticket-authoring-override-setup" },
+    kind: "Lines",
+  },
+  "worker.files": {
+    label: { id: "ticket-authoring-field-files" },
+    override: { id: "ticket-authoring-override-files" },
+    kind: "Files",
+  },
+  practices: {
+    label: { id: "ticket-authoring-field-practices" },
+    override: { id: "ticket-authoring-override-practices" },
+    kind: "Lines",
+  },
+  "brief.motivation": {
+    label: { id: "ticket-authoring-field-motivation" },
+    override: { id: "ticket-authoring-override-motivation" },
+    kind: "Lines",
+  },
+  "brief.acceptanceCriteria": {
+    label: { id: "ticket-authoring-field-acceptance-criteria" },
+    override: { id: "ticket-authoring-override-criteria" },
+    kind: "Lines",
+  },
+  "brief.constraints": {
+    label: { id: "ticket-authoring-field-constraints" },
+    override: { id: "ticket-authoring-override-constraints" },
+    kind: "Lines",
+  },
+  "work.instructions": {
+    label: { id: "ticket-authoring-field-work-instructions" },
+    override: { id: "ticket-authoring-override-work-instructions" },
+    kind: "Lines",
+  },
 } as const satisfies Record<
   OverrideField,
-  { readonly label: string; readonly kind: OverrideKind }
+  {
+    readonly label: Copy;
+    readonly override: Copy;
+    readonly kind: OverrideKind;
+  }
 >;
 
 /** Every overridable field, in the order the contract's schema declares them. */
@@ -79,8 +116,13 @@ export const overrideFields: readonly OverrideField[] = Object.entries(
   );
 });
 
-export function overrideFieldLabel(field: OverrideField): string {
+export function overrideFieldLabel(field: OverrideField): Copy {
   return overrideFieldDrawn[field].label;
+}
+
+/** What the press that overrides a field says. */
+export function overrideFieldOverride(field: OverrideField): Copy {
+  return overrideFieldDrawn[field].override;
 }
 
 export function overrideFieldKind(field: OverrideField): OverrideKind {

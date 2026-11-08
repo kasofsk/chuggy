@@ -39,7 +39,13 @@ type SetupPressed = keyof typeof setupPressed;
 
 /** The names a page draws from the catalog. */
 type SetupPressedCatalogued =
-  "edit" | "save" | "projectPage" | "projectCreate" | "runner" | "chatHost";
+  | "edit"
+  | "save"
+  | "projectPage"
+  | "projectCreate"
+  | "ticket"
+  | "runner"
+  | "chatHost";
 
 /** The names the invite page draws from the catalog, as its card's words. */
 type SetupPressedInvite = "workspaceCreate";
@@ -59,7 +65,6 @@ const drawnIn: Readonly<
   connect: "ui/chuggy-ui/app/browser/repositories/ConnectGithub.tsx",
   add: "ui/chuggy-ui/app/browser/repositories/AddRepository.tsx",
   retry: "ui/chuggy-ui/app/browser/repositories/BindingConfigurations.tsx",
-  ticket: "ui/chuggy-ui/app/browser/TicketCreation.tsx",
   dispatch: "ui/chuggy-ui/app/core/ticketActions.ts",
 };
 
@@ -72,6 +77,10 @@ const drawnFromCatalog: Readonly<
   save: { page: settingsSection, id: "ui-save" },
   projectPage: { page: projectCreationPage, id: "project-creation-new-title" },
   projectCreate: { page: projectCreationPage, id: "project-creation-submit" },
+  ticket: {
+    page: "ui/chuggy-ui/app/browser/TicketCreation.tsx",
+    id: "ticket-authoring-create-ticket",
+  },
   runner: {
     page: "ui/chuggy-ui/app/browser/RunnersPage.tsx",
     id: "runners-add",

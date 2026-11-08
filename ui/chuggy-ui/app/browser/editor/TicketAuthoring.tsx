@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * One ticket, typed either as the form or as YAML, over the same form value.
  *
@@ -31,6 +30,8 @@ import type {
   CreationOffer,
   TicketCreationForm,
 } from "../../core/ticketCreation.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
+import type { Copy } from "../../core/copy.ts";
 import { Button } from "../ui/Button.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import { ToggleGroup } from "../ui/ToggleGroup.tsx";
@@ -46,6 +47,13 @@ const TicketYamlAuthoring = lazy(() => import("./TicketYamlAuthoring.tsx"));
 
 const authoringModes = ["Form", "YAML"] as const;
 type AuthoringMode = (typeof authoringModes)[number];
+
+/** What a mode is called where it is chosen: the form in the catalog's words,
+ * and YAML by the name of the language. */
+const authoringModeWords: Readonly<Record<AuthoringMode, Copy | string>> = {
+  Form: { id: "ticket-authoring-mode-form" },
+  YAML: "YAML",
+};
 
 /** Whether two forms say the same thing, which is what a screen is dirty by. */
 function formsAgree(a: TicketCreationForm, b: TicketCreationForm): boolean {
@@ -93,18 +101,23 @@ export interface TicketAuthoringProps {
 }
 
 function YamlSide(props: TicketYamlAuthoringProps): ReactNode {
+  const text = useCopyText();
   return (
     <EditorBoundary
       fallback={
         <Notice
           tone="danger"
           inline
-          detail="YAML editor did not load · Form still holds this ticket"
+          detail={text({ id: "ticket-authoring-yaml-unloaded" })}
         />
       }
     >
       <Suspense
-        fallback={<p className="panel-note">loading the YAML editor…</p>}
+        fallback={
+          <p className="panel-note">
+            {text({ id: "ticket-authoring-yaml-loading" })}
+          </p>
+        }
       >
         <TicketYamlAuthoring {...props} />
       </Suspense>
@@ -117,20 +130,25 @@ function ModeSwitch(props: {
   readonly stuck: boolean;
   readonly onMode: (mode: AuthoringMode) => void;
 }): ReactNode {
+  const text = useCopyText();
+  const word = (mode: AuthoringMode): string => {
+    const words = authoringModeWords[mode];
+    return typeof words === "string" ? words : text(words);
+  };
   return (
     <div className="flex flex-wrap items-center gap-3">
       <ToggleGroup
-        label="Write the ticket as"
-        options={authoringModes}
-        value={props.mode}
+        label={text({ id: "ticket-authoring-mode-switch" })}
+        options={authoringModes.map(word)}
+        value={word(props.mode)}
         onChange={(value) => {
-          const chosen = authoringModes.find((held) => held === value);
+          const chosen = authoringModes.find((held) => word(held) === value);
           if (chosen !== undefined) props.onMode(chosen);
         }}
       />
       {props.stuck ? (
         <span className="text-ink-3 text-sm">
-          fix the YAML to switch back to the form
+          {text({ id: "ticket-authoring-yaml-stuck" })}
         </span>
       ) : null}
     </div>

@@ -288,7 +288,7 @@ test("each field is named by its label, and a line beside one describes it", () 
   expect(
     screen.getByRole("button", {
       name: "Create ticket",
-      description: creationSubmitEffect("Waits", copyTextEn),
+      description: copyTextEn(creationSubmitEffect("Waits")),
     }),
   ).toBeDefined();
 });
@@ -1330,7 +1330,9 @@ test("several configurations ask, and a submission naming none sends nothing", (
   expect(screen.queryByRole("button", { name: "Advanced" })).toBeNull();
   typeIntent("ship it");
   submit();
-  expect(screen.getByText(creationFaultSentence("configuration"))).toBeTruthy();
+  expect(
+    screen.getByText(copyTextEn(creationFaultSentence("configuration"))),
+  ).toBeTruthy();
   expect(drafts(held.sent).length).toBe(0);
 });
 
@@ -1456,7 +1458,9 @@ test("one configuration under a read that may have missed others is asked, not t
   expect(screen.queryByText(/^Configuration ·/u)).toBeNull();
   typeIntent("ship it");
   submit();
-  expect(screen.getByText(creationFaultSentence("configuration"))).toBeTruthy();
+  expect(
+    screen.getByText(copyTextEn(creationFaultSentence("configuration"))),
+  ).toBeTruthy();
   expect(drafts(held.sent).length).toBe(0);
 });
 

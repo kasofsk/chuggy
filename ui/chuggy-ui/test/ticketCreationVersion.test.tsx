@@ -4,7 +4,7 @@
  * none, and a choice is kept as made even where it equals that default.
  */
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { TicketCreationAdvanced } from "../app/browser/TicketCreationAdvanced.tsx";
@@ -15,6 +15,7 @@ import {
   creationCatalogOffer,
   creationOffers,
 } from "./ticketCreationFixture.ts";
+import { renderCopied } from "./copied.tsx";
 
 afterEach(() => {
   cleanup();
@@ -44,7 +45,7 @@ function offerFollowing(defaulted: string | undefined) {
 function drawn(defaulted: string | undefined, form?: TicketCreationForm) {
   const offer = offerFollowing(defaulted);
   const onChange = vi.fn<(form: TicketCreationForm) => void>();
-  render(
+  renderCopied(
     <TicketCreationAdvanced
       form={form ?? creationFormFrom([offer], [])}
       onChange={onChange}
@@ -97,7 +98,7 @@ test("a revision chosen is held as chosen, the default's own among them, and the
 test("a configuration that is no catalog offers no version", () => {
   const [offer] = creationOffers;
   if (offer === undefined) throw new Error("no offer");
-  render(
+  renderCopied(
     <TicketCreationAdvanced
       form={creationFormFrom([offer], [])}
       onChange={() => undefined}

@@ -9,10 +9,10 @@ import { expect, test } from "vitest";
 import {
   ticketYamlFaultProblems,
   ticketYamlOf,
-  ticketYamlRead,
   ticketYamlVocabulary,
 } from "../app/browser/editor/ticketYaml.ts";
 import type { TicketYamlContext } from "../app/browser/editor/ticketYaml.ts";
+import { ticketYamlReadWorded } from "./ticketYamlReadWorded.ts";
 import { codexReasoningEfforts } from "../../../src/contract/workerTask.ts";
 import {
   creationConfigurationChosen,
@@ -45,7 +45,7 @@ const context: TicketYamlContext = {
 };
 
 function readForm(text: string, over: Partial<TicketYamlContext> = {}) {
-  return ticketYamlRead(text, { ...context, ...over });
+  return ticketYamlReadWorded(text, { ...context, ...over });
 }
 
 /** Switching to the YAML and back must not move a single field, or the
@@ -72,13 +72,17 @@ test("a form read as YAML reads back as the same form", () => {
     },
     repositories,
   );
-  const read = ticketYamlRead(ticketYamlOf(form, over), over);
+  const read = ticketYamlReadWorded(ticketYamlOf(form, over, copyTextEn), over);
   expect(read.problems).toStrictEqual([]);
   expect(read.form).toStrictEqual(form);
 });
 
 test("the intent is written as a block, one line of text a line", () => {
-  const text = ticketYamlOf(creationForm({ intent: "first\nsecond" }), context);
+  const text = ticketYamlOf(
+    creationForm({ intent: "first\nsecond" }),
+    context,
+    copyTextEn,
+  );
   expect(text).toContain("intent: |-\n  first\n  second\n");
 });
 
@@ -105,7 +109,7 @@ test("text the parser cannot read is a problem where it stopped", () => {
 /** The text writes a finalization as the brief does, by its kind, in block
  * style, and reads back the form it was written from under every kind. */
 test("a finalization is written by its kind, its policy inside a GitMerge alone, and reads back", () => {
-  const direct = ticketYamlOf(creationForm(), context);
+  const direct = ticketYamlOf(creationForm(), context, copyTextEn);
   expect(direct).toContain(
     "finalization:\n  kind: GitMerge\n  mode: Push\n  target:\n  policy: Direct\n",
   );
@@ -127,20 +131,24 @@ test("a finalization is written by its kind, its policy inside a GitMerge alone,
     creationForm({ finalization: { kind: "None" } }),
   ];
   for (const form of forms) {
-    const text = ticketYamlOf(form, context);
+    const text = ticketYamlOf(form, context, copyTextEn);
     expect(text, form.finalization.kind).not.toMatch(/[{[]/u);
     const read = readForm(text);
     expect(read.problems, form.finalization.kind).toStrictEqual([]);
     expect(read.form, form.finalization.kind).toStrictEqual(form);
   }
-  const proposal = ticketYamlOf(forms[1] ?? creationForm(), context);
+  const proposal = ticketYamlOf(
+    forms[1] ?? creationForm(),
+    context,
+    copyTextEn,
+  );
   expect(proposal).toContain(
     "finalization:\n  kind: PullRequest\n  target: release\n",
   );
   expect(proposal).not.toContain("policy");
-  expect(ticketYamlOf(forms[2] ?? creationForm(), context)).toContain(
-    "finalization:\n  kind: None\n",
-  );
+  expect(
+    ticketYamlOf(forms[2] ?? creationForm(), context, copyTextEn),
+  ).toContain("finalization:\n  kind: None\n");
 });
 
 test("a finalization's kind, mode and policy name the roster each is one of", () => {
@@ -149,7 +157,7 @@ test("a finalization's kind, mode and policy name the roster each is one of", ()
       (problem) => problem.message,
     );
   expect(messages("  kind: Teleport\n")).toStrictEqual([
-    "finalize by one of GitMerge, PullRequest, None",
+    "land by one of GitMerge, PullRequest, None",
   ]);
   expect(
     messages("  kind: GitMerge\n  mode: Rebase\n  policy: Direct\n"),
@@ -158,21 +166,19 @@ test("a finalization's kind, mode and policy name the roster each is one of", ()
     messages("  kind: GitMerge\n  mode: Push\n  policy: Stacked\n"),
   ).toStrictEqual(["order the merge as one of Direct, Serialized"]);
   expect(messages("  mode: Push\n")).toStrictEqual([
-    "a finalization names its kind: one of GitMerge, PullRequest, None",
+    "a landing names its kind: one of GitMerge, PullRequest, None",
   ]);
   expect(messages("  kind: GitMerge\n  mode: Push\n")).toStrictEqual([
     "a GitMerge names its policy",
   ]);
   expect(messages("  kind: GitMerge\n  base: main\n")).toStrictEqual([
-    "a finalization names kind, mode, target, policy",
+    "a landing names kind, mode, target, policy",
   ]);
   expect(
     readForm("intent: y\nfinalization: GitMerge\n").problems.map(
       (problem) => problem.message,
     ),
-  ).toStrictEqual([
-    "write the finalization as a map of kind, mode, target, policy",
-  ]);
+  ).toStrictEqual(["write the landing as a map of kind, mode, target, policy"]);
 });
 
 /** A policy orders a git merge and nothing else, and landing nothing names no
@@ -231,7 +237,7 @@ test("a key left out is empty, except finalization, program and dependencies", (
 
 test("dependencies changed in the text read back as written, whatever the form held", () => {
   const base = creationForm({ dependencies: [7] });
-  const text = ticketYamlOf(base, { ...context, base });
+  const text = ticketYamlOf(base, { ...context, base }, copyTextEn);
   const read = readForm(text.replace("  - 7\n", "  - 8\n  - 3\n"), { base });
   expect(read.problems).toStrictEqual([]);
   expect(read.form?.dependencies).toStrictEqual([8, 3]);
@@ -251,8 +257,8 @@ test("a fault is drawn at the key it names, and the fence at the start", () => {
   expect(
     ticketYamlFaultProblems(
       [
-        { field: "intent", reason: "say more" },
-        { field: "fence", reason: "read again" },
+        { field: "intent", reason: creationFaultSentence("intent") },
+        { field: "fence", reason: creationFaultSentence("fence") },
       ],
       keys,
     ),
@@ -260,9 +266,9 @@ test("a fault is drawn at the key it names, and the fence at the start", () => {
     {
       from: text.indexOf("intent"),
       to: text.indexOf("intent") + 6,
-      message: "say more",
+      message: creationFaultSentence("intent"),
     },
-    { from: 0, to: 0, message: "read again" },
+    { from: 0, to: 0, message: creationFaultSentence("fence") },
   ]);
 });
 
@@ -344,7 +350,9 @@ const several: TicketYamlContext = {
 };
 
 test("a project offering one configuration draws no key for it, and refuses one", () => {
-  expect(ticketYamlOf(context.base, context)).not.toContain("configuration");
+  expect(ticketYamlOf(context.base, context, copyTextEn)).not.toContain(
+    "configuration",
+  );
   expect(
     readForm("configuration: r3\nintent: y\n").problems.map(
       (problem) => problem.message,
@@ -364,9 +372,9 @@ test("a project offering several writes the choice first, by name, and reads it 
     intent: "ship it",
     checks: ["npm test"],
   };
-  const text = ticketYamlOf(form, several);
+  const text = ticketYamlOf(form, several, copyTextEn);
   expect(text.startsWith("configuration: development\n")).toBe(true);
-  const read = ticketYamlRead(text, several);
+  const read = ticketYamlReadWorded(text, several);
   expect(read.problems).toStrictEqual([]);
   expect(read.form).toStrictEqual(form);
 });
@@ -374,11 +382,11 @@ test("a project offering several writes the choice first, by name, and reads it 
 /** A form that has chosen nothing still switches to the YAML and back: the
  * text names none, and what is wrong with that is the form's fault to state. */
 test("a form naming no configuration reads as YAML and back, without the keys one decides", () => {
-  const text = ticketYamlOf(several.base, several);
+  const text = ticketYamlOf(several.base, several, copyTextEn);
   expect(text.startsWith("configuration:\n")).toBe(true);
   expect(text).not.toContain("program");
   expect(text).not.toContain("dependencies");
-  const read = ticketYamlRead(text, several);
+  const read = ticketYamlReadWorded(text, several);
   expect(read.problems).toStrictEqual([]);
   expect(read.form).toStrictEqual(several.base);
   const fault = {
@@ -393,7 +401,7 @@ test("a form naming no configuration reads as YAML and back, without the keys on
 test("a configuration nothing offers is refused, naming the ones offered", () => {
   const text =
     "configuration: development-opus\nintent: y\nprogram:\n  - evaluators: 1\n";
-  const read = ticketYamlRead(text, several);
+  const read = ticketYamlReadWorded(text, several);
   expect(read.form).toBeUndefined();
   expect(read.problems).toStrictEqual([
     {
@@ -404,7 +412,7 @@ test("a configuration nothing offers is refused, naming the ones offered", () =>
   ]);
 });
 
-const unnamed = creationFaultSentence("configuration");
+const unnamed = copyTextEn(creationFaultSentence("configuration"));
 
 /**
  * The keys a configuration decides wait on the name: a text that writes them
@@ -414,10 +422,13 @@ const unnamed = creationFaultSentence("configuration");
 test("a text writing a key a configuration decides under none is held, and told only to name one", () => {
   const rest =
     "intent: y\nchecks:\n  - npm test\nprogram:\n  - evaluators: 9\n";
-  const left = ticketYamlRead(rest, several);
+  const left = ticketYamlReadWorded(rest, several);
   expect(left.form).toBeUndefined();
   expect(left.problems).toStrictEqual([{ from: 0, to: 0, message: unnamed }]);
-  const empty = ticketYamlRead(`title: x\nconfiguration: ""\n${rest}`, several);
+  const empty = ticketYamlReadWorded(
+    `title: x\nconfiguration: ""\n${rest}`,
+    several,
+  );
   expect(empty.form).toBeUndefined();
   expect(empty.problems).toStrictEqual([
     {
@@ -429,12 +440,12 @@ test("a text writing a key a configuration decides under none is held, and told 
 });
 
 test("a text kept under one configuration reads as no form among several until it names one, and then whole", () => {
-  const kept = ticketYamlRead(creationYamlKeptUnasked, several);
+  const kept = ticketYamlReadWorded(creationYamlKeptUnasked, several);
   expect(kept.form).toBeUndefined();
   expect(kept.problems.map((problem) => problem.message)).toStrictEqual([
     unnamed,
   ]);
-  const named = ticketYamlRead(
+  const named = ticketYamlReadWorded(
     `configuration: development\n${creationYamlKeptUnasked}`,
     several,
   );
@@ -455,17 +466,17 @@ test("a project offering one configuration the form does not name still asks in 
     base: creationFormFrom(creationOffers, [], undefined, true),
   };
   expect(asked.base.configuration).toBe("");
-  expect(ticketYamlOf(asked.base, asked).startsWith("configuration:\n")).toBe(
-    true,
-  );
-  const read = ticketYamlRead("configuration: r3\nintent: y\n", asked);
+  expect(
+    ticketYamlOf(asked.base, asked, copyTextEn).startsWith("configuration:\n"),
+  ).toBe(true);
+  const read = ticketYamlReadWorded("configuration: r3\nintent: y\n", asked);
   expect(read.problems).toStrictEqual([]);
   expect(read.form?.configuration).toBe("r3");
 });
 
 test("the keys a configuration decides are read under the one the text names", () => {
   const named = (configuration: string, rest: string) =>
-    ticketYamlRead(
+    ticketYamlReadWorded(
       `intent: y\n${rest}configuration: ${configuration}\n`,
       several,
     );
@@ -529,21 +540,21 @@ test("the vocabulary offers the configurations by name, and a program only under
 test("images are read under no configuration, and kept under the one a text names", () => {
   const over = { ...several, images: ["artifact-1"] };
   const rest = "intent: y\nimages:\n  - artifact-1\n";
-  const unnamed = ticketYamlRead(rest, over);
+  const unnamed = ticketYamlReadWorded(rest, over);
   expect(unnamed.problems).toStrictEqual([]);
   expect(unnamed.form).toMatchObject({
     configuration: "",
     images: ["artifact-1"],
   });
-  expect(unnamed.form && ticketYamlOf(unnamed.form, over)).toContain(
-    "images:\n  - artifact-1\n",
-  );
-  expect(ticketYamlRead(`${rest}checks:\n  - npm test\n`, over).form).toBe(
-    undefined,
-  );
+  expect(
+    unnamed.form && ticketYamlOf(unnamed.form, over, copyTextEn),
+  ).toContain("images:\n  - artifact-1\n");
+  expect(
+    ticketYamlReadWorded(`${rest}checks:\n  - npm test\n`, over).form,
+  ).toBe(undefined);
   for (const name of ["development", "development-sonnet"])
     expect(
-      ticketYamlRead(`configuration: ${name}\n${rest}`, over).form,
+      ticketYamlReadWorded(`configuration: ${name}\n${rest}`, over).form,
     ).toMatchObject({ configuration: name, images: ["artifact-1"] });
 });
 
@@ -552,13 +563,14 @@ test("images are read under no configuration, and kept under the one a text name
 test("images are written by identity and read back as the same form", () => {
   const over = { ...context, images: ["artifact-1", "artifact-2"] };
   const form = creationForm({ images: ["artifact-2", "artifact-1"] });
-  const text = ticketYamlOf(form, over);
+  const text = ticketYamlOf(form, over, copyTextEn);
   expect(text).toContain("images:\n  - artifact-2\n  - artifact-1\n");
-  const read = ticketYamlRead(text, over);
+  const read = ticketYamlReadWorded(text, over);
   expect(read.problems).toStrictEqual([]);
   expect(read.form).toStrictEqual(form);
   expect(
-    ticketYamlRead(text.replace("  - artifact-1\n", ""), over).form?.images,
+    ticketYamlReadWorded(text.replace("  - artifact-1\n", ""), over).form
+      ?.images,
   ).toStrictEqual(["artifact-2"]);
   expect(readForm("intent: y\n", over).form?.images).toStrictEqual([]);
 });
@@ -590,7 +602,7 @@ const overridden = {
 
 test("a form's overrides are one map under the configuration's own names, and read back as the same form", () => {
   const form = creationForm({ overrides: overridden });
-  const text = ticketYamlOf(form, context);
+  const text = ticketYamlOf(form, context, copyTextEn);
   expect(text).toContain(
     "overrides:\n  worker:\n    mode:\n      type: SingleAgent\n",
   );
@@ -611,7 +623,7 @@ test("overrides holding empty lists are written with no flow, and read back as t
       practices: [],
     },
   });
-  const text = ticketYamlOf(form, context);
+  const text = ticketYamlOf(form, context, copyTextEn);
   expect(text).not.toMatch(/[{[]/u);
   expect(text).toContain(
     "overrides:\n  worker:\n    mode:\n      type: SingleAgent\n      agent: Claude\n    files:\n  practices:\n",
@@ -622,7 +634,9 @@ test("overrides holding empty lists are written with no flow, and read back as t
 });
 
 test("a form holding no override writes no overrides key, and a key left out is no override", () => {
-  expect(ticketYamlOf(creationForm(), context)).not.toContain("overrides");
+  expect(ticketYamlOf(creationForm(), context, copyTextEn)).not.toContain(
+    "overrides",
+  );
   const base = creationForm({ overrides: overridden });
   expect(readForm("intent: y\n", { base }).form?.overrides).toStrictEqual({});
 });
@@ -654,11 +668,14 @@ test("an override of a field the contract does not let a ticket override is refu
 
 test("overrides are a configuration's: under none the text reads as no form, and naming another keeps them", () => {
   const rest = "intent: y\noverrides:\n  practices:\n    - Kept\n";
-  const left = ticketYamlRead(rest, several);
+  const left = ticketYamlReadWorded(rest, several);
   expect(left.form).toBeUndefined();
   expect(left.problems).toStrictEqual([{ from: 0, to: 0, message: unnamed }]);
   for (const name of ["development", "development-sonnet"]) {
-    const named = ticketYamlRead(`configuration: ${name}\n${rest}`, several);
+    const named = ticketYamlReadWorded(
+      `configuration: ${name}\n${rest}`,
+      several,
+    );
     expect(named.problems).toStrictEqual([]);
     expect(named.form?.overrides).toStrictEqual({ practices: ["Kept"] });
   }
@@ -678,10 +695,10 @@ test("a workload a form overrides is written whole under workloads and reads bac
     intent: "i",
     workloads: { quick: { prompt: { text: "Do it slowly." } } },
   };
-  const text = ticketYamlOf(form, catalogContext);
+  const text = ticketYamlOf(form, catalogContext, copyTextEn);
   expect(text).toContain("workloads:\n  quick:");
   expect(text).toContain("Do it slowly.");
-  const read = ticketYamlRead(text, catalogContext);
+  const read = ticketYamlReadWorded(text, catalogContext);
   expect(read.problems).toStrictEqual([]);
   expect(read.form).toStrictEqual(form);
 });
@@ -700,10 +717,13 @@ test("the vocabulary offers a workload's Codex effort as the efforts Codex names
 
 test("a workloads key that is no map, or names a workload the catalog lacks, is refused", () => {
   const head = "title: t\nintent: i\n";
-  const scalar = ticketYamlRead(`${head}workloads: nope\n`, catalogContext);
+  const scalar = ticketYamlReadWorded(
+    `${head}workloads: nope\n`,
+    catalogContext,
+  );
   expect(scalar.form).toBe(undefined);
   expect(scalar.problems[0]?.message).toContain("write the workloads as a map");
-  const unknown = ticketYamlRead(
+  const unknown = ticketYamlReadWorded(
     `${head}workloads:\n  nowhere:\n    runner: Commands\n`,
     catalogContext,
   );
@@ -711,7 +731,7 @@ test("a workloads key that is no map, or names a workload the catalog lacks, is 
 });
 
 test("a workloads key with nothing under it overrides nothing", () => {
-  const read = ticketYamlRead(
+  const read = ticketYamlReadWorded(
     "title: t\nintent: i\nworkloads:\n",
     catalogContext,
   );
@@ -735,6 +755,7 @@ test("taking a workload into a ticket whose workloads is empty or a scalar write
       `title: t\n${held}`,
       reference,
       catalog,
+      copyTextEn,
     );
     expect(taken).toContain("workloads:\n  gates:");
     expect(taken).toContain("npm test");
