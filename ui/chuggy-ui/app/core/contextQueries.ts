@@ -19,7 +19,7 @@ import {
   consoleTenantQuery,
 } from "./consoleQuery.ts";
 import {
-  contextRunReadingsPageMax,
+  contextRunReadingsPageRows,
   contextRunReadingsPaged,
   contextRunTurnsPageRows,
   contextRunTurnsPaged,
@@ -65,7 +65,7 @@ export function runContextQuery(
       contextRunReadingsPaged((after) =>
         apiRunContext(ports, partition, execution, attempt, {
           after,
-          limit: contextRunReadingsPageMax,
+          limit: contextRunReadingsPageRows,
         }),
       ),
   );

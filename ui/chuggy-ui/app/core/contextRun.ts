@@ -19,6 +19,7 @@ import type {
   RunTurnsResponse,
 } from "../../../../src/contract/responses.ts";
 import {
+  runContextPageReadingsMax,
   runContextReadingsMax,
   runTurnSeriesMax,
 } from "../../../../src/contract/http.ts";
@@ -263,10 +264,11 @@ export const contextRunTurnsPageRows = 100;
 const contextRunTurnsPagesMax =
   Math.ceil(runTurnSeriesMax / contextRunTurnsPageRows) + 1;
 
-/** The most pages of a run's readings one read walks. */
-export const contextRunReadingsPageMax = 4;
+/** The most readings a page of them answers, and the most pages one read
+ * walks. */
+export const contextRunReadingsPageRows = runContextPageReadingsMax;
 const contextRunReadingsPagesMax =
-  Math.ceil(runContextReadingsMax / contextRunReadingsPageMax) + 1;
+  Math.ceil(runContextReadingsMax / contextRunReadingsPageRows) + 1;
 
 /** Every row of a run's series, page after page to its end or the bound; the
  * first read the server refuses is the answer instead. */
