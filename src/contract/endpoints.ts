@@ -11,6 +11,7 @@ import {
   nativeHttpPageItemsDefault,
   nativeHttpPageItemsMax,
   nativeHttpRoutes,
+  runContextPageReadingsMax,
   sessionStorePageBatchesMax,
   threadTurnsAnsweredMax,
 } from "./http.ts";
@@ -36,6 +37,7 @@ import {
   projectAbilitiesResponseSchema,
   leadReadResponseSchema,
   leadTranscriptResponseSchema,
+  runContextResponseSchema,
   runTurnsResponseSchema,
   runTranscriptResponseSchema,
   runConfigurationResponseSchema,
@@ -139,6 +141,15 @@ export const nativeHttpEndpoints = {
       limit: endpointInteger("limit", 50),
     }),
     response: runTurnsResponseSchema,
+  },
+  runContext: {
+    method: "GET",
+    path: nativeHttpRoutes.runContext,
+    query: endpointQuery({
+      after: endpointInteger("after").optional(),
+      limit: endpointInteger("limit", runContextPageReadingsMax),
+    }),
+    response: runContextResponseSchema,
   },
   runTranscript: {
     method: "GET",

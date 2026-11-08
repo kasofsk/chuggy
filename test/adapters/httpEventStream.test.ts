@@ -93,6 +93,14 @@ const unreadExecutions = {
   latestExecutions: notFound,
 };
 
+const unreadRunEvidence = {
+  runTurns: () => Promise.resolve(undefined),
+  runContext: () => Promise.resolve(undefined),
+  runTranscript: () => Promise.resolve({ read: "NotFound" as const }),
+  runConfiguration: () => Promise.resolve({ read: "NotFound" as const }),
+  runError: () => Promise.resolve({ read: "NotFound" as const }),
+};
+
 function servedWeb(
   readable: boolean,
   actions: () => readonly TicketNativeAction[] | undefined,
@@ -157,10 +165,7 @@ function servedWeb(
     outputContent: () => Promise.resolve({ read: "NotFound" }),
     uploadProjectArtifact: notFound,
     projectArtifact: () => Promise.resolve({ fetched: "NotFound" }),
-    runTurns: () => Promise.resolve(undefined),
-    runTranscript: () => Promise.resolve({ read: "NotFound" }),
-    runConfiguration: () => Promise.resolve({ read: "NotFound" }),
-    runError: () => Promise.resolve({ read: "NotFound" }),
+    ...unreadRunEvidence,
   };
 }
 

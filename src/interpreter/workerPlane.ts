@@ -2,6 +2,7 @@ import {
   workerContractEvaluatedTree,
   workerContractMemoryRoom,
   workerContractRelease,
+  workerContractRunContext,
   workerContractRunUsage,
   workerContractTargetRef,
   workerContractUnnamed,
@@ -98,6 +99,12 @@ export const workerContractUnscopedChat: WorkerContractRange = {
 /** The versions in which a run's totals may carry its account's usage and its end the limit that stopped it, fields a plane of an earlier one refuses the whole body over. */
 export const workerContractRunUsages: WorkerContractRange = {
   min: workerContractRunUsage,
+  max: workerContractAccepted.max,
+};
+
+/** The versions in which a run may offer its context readings and a turn the subagent call it was made under, a route and a field a plane of an earlier one does not take. */
+export const workerContractRunContexts: WorkerContractRange = {
+  min: workerContractRunContext,
   max: workerContractAccepted.max,
 };
 

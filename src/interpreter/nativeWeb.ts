@@ -133,6 +133,7 @@ import {
 } from "./operationsView.ts";
 import {
   checkedRunTranscriptAfter,
+  checkedRunContextQuery,
   checkedRunTurnsQuery,
   runConfigurationPath,
   type RunConfigurationRead,
@@ -142,6 +143,8 @@ import {
   type RunTotals,
   type RunTranscriptBatch,
   type RunTranscriptRead,
+  type RunContextPage,
+  type RunContextQuery,
   type RunTurnsPage,
   type RunTurnsQuery,
 } from "./runEvidence.ts";
@@ -857,6 +860,13 @@ export interface NativeWeb extends NativeEpics {
     attempt: AttemptId,
     query: RunTurnsQuery,
   ): Promise<RunTurnsPage | undefined>;
+  runContext(
+    principal: Principal,
+    partition: Partition,
+    execution: ExecutionId,
+    attempt: AttemptId,
+    query: RunContextQuery,
+  ): Promise<RunContextPage | undefined>;
   runTranscript(
     principal: Principal,
     partition: Partition,
@@ -1665,7 +1675,7 @@ function nativeProjectArtifactMethods(
 
 type NativeRunEvidenceMethods = Pick<
   NativeWeb,
-  "runTurns" | "runTranscript" | "runConfiguration" | "runError"
+  "runTurns" | "runContext" | "runTranscript" | "runConfiguration" | "runError"
 >;
 
 /**
@@ -1706,6 +1716,35 @@ async function nativeRunTranscriptBatches(
   };
 }
 
+/** The two paged series a run keeps, its turns and its context readings, each read under `Read`. */
+function nativeRunEvidenceSeries(
+  access: ProjectAccess,
+  reads: () => RunEvidenceReadStore,
+): Pick<NativeWeb, "runTurns" | "runContext"> {
+  return {
+    runTurns: authorizedProjectRead(
+      access,
+      (partition, execution, attempt, query) =>
+        reads().turns(
+          partition,
+          execution,
+          attempt,
+          checkedRunTurnsQuery(query),
+        ),
+    ),
+    runContext: authorizedProjectRead(
+      access,
+      (partition, execution, attempt, query) =>
+        reads().context(
+          partition,
+          execution,
+          attempt,
+          checkedRunContextQuery(query),
+        ),
+    ),
+  };
+}
+
 /** The run-evidence reads, each reauthorizing before it reaches a store. */
 function nativeRunEvidenceMethods(
   access: ProjectAccess,
@@ -1723,16 +1762,7 @@ function nativeRunEvidenceMethods(
     return evidenceContents;
   };
   return {
-    runTurns: authorizedProjectRead(
-      access,
-      (partition, execution, attempt, query) =>
-        reads().turns(
-          partition,
-          execution,
-          attempt,
-          checkedRunTurnsQuery(query),
-        ),
-    ),
+    ...nativeRunEvidenceSeries(access, reads),
     runTranscript: async (principal, partition, execution, attempt, after) => {
       if ((await access.authorize(principal, partition, "Read")) === undefined)
         return { read: "NotFound" };

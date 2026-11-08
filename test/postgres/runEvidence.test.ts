@@ -25,6 +25,7 @@ import {
 } from "../../src/adapters/postgres/runEvidence.ts";
 import {
   postgresWorkerRunConfiguration,
+  postgresWorkerRunContext,
   postgresWorkerRunEnded,
   postgresWorkerRunTotal,
   postgresWorkerRunTranscript,
@@ -32,12 +33,22 @@ import {
 } from "../../src/adapters/postgres/workerPlane.ts";
 import {
   nativeHttpPageItemsMax,
+  runContextItemsMax,
+  runContextNameCharsMax,
+  runContextPageReadingsMax,
+  runContextPathCharsMax,
+  runContextReadingsMax,
+  runModelCharsMax,
+  runToolUseIdCharsMax,
   runTranscriptBatchesMax,
   runTurnSeriesMax,
 } from "../../src/contract/http.ts";
+import { runContextOfferedSchema } from "../../src/contract/responses.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import { asArtifactDigest } from "../../src/interpreter/resultManifest.ts";
+import { asAttemptId } from "../../src/interpreter/schedulerIdentity.ts";
 import type {
+  RunContextRecord,
   RunEndedEvidence,
   RunTotals,
 } from "../../src/interpreter/runEvidence.ts";
@@ -71,6 +82,7 @@ const configurations = postgresWorkerRunConfiguration(workerPool);
 const transcripts = postgresWorkerRunTranscript(workerPool);
 const turns = postgresWorkerRunTurns(workerPool);
 const totals = postgresWorkerRunTotal(workerPool);
+const contexts = postgresWorkerRunContext(workerPool);
 const endings = postgresWorkerRunEnded(workerPool);
 
 const digestOf = (seed: string) =>
@@ -223,6 +235,362 @@ test("a run's turns are absolute, idempotent and refuse a contradiction", async 
       { ordinal: "1", model: "one" },
       { ordinal: "2", model: "two" },
     ],
+  );
+});
+
+test("a turn naming its subagent call keeps it, and a turn naming none is stored and read as before", async () => {
+  const { attempt } = await placedAttempt("run-turn-parent");
+  const main = {
+    ordinal: 1,
+    model: "one",
+    tokensInput: 1,
+    tokensOutput: 2,
+    tokensCacheCreation: 3,
+    tokensCacheRead: 4,
+  };
+  const subagent = { ...main, ordinal: 2, parentToolUseId: "toolu_fixture" };
+  const record = (offered: readonly object[]) =>
+    turns.record({
+      secret: attempt.capability.secret,
+      generation: attempt.generation,
+      turns: offered as readonly (typeof main)[],
+    });
+  for (let offers = 0; offers < 2; offers += 1)
+    assert.deepEqual(await record([main, subagent]), {
+      recorded: "Recorded",
+      turnsRecorded: 2,
+    });
+  for (const contradiction of [
+    { ...subagent, parentToolUseId: "toolu_other" },
+    { ...main, ordinal: 2 },
+    { ...main, parentToolUseId: "toolu_fixture" },
+    { ...main, ordinal: 3, parentToolUseId: "" },
+    {
+      ...main,
+      ordinal: 3,
+      parentToolUseId: "x".repeat(runToolUseIdCharsMax + 1),
+    },
+    { ...main, ordinal: 3, parentToolUseId: 7 },
+  ])
+    assert.deepEqual(
+      await record([contradiction]),
+      { recorded: "Conflict" },
+      JSON.stringify(contradiction),
+    );
+  const page = await postgresRunEvidenceReads(apiPool).turns(
+    attempt.partition,
+    attempt.execution,
+    attempt.attempt,
+    { limit: 10 },
+  );
+  assert.deepEqual(page?.turns.map(runEvidenceUnstamped), [main, subagent]);
+});
+
+/** A read row without the stamp its boundary gave it, as it was offered, once the stamp is a time. */
+function runEvidenceUnstamped<T extends { recordedAt: string }>(
+  read: T,
+): Omit<T, "recordedAt"> {
+  const { recordedAt, ...offered } = read;
+  assert.ok(!Number.isNaN(Date.parse(recordedAt)), recordedAt);
+  return offered;
+}
+
+/** Records `attempt`'s first turn, every token figure of it `tokens`. */
+function runTurnOneRecorded(attempt: RunBearer, tokens: number) {
+  return turns.record({
+    secret: attempt.capability.secret,
+    generation: attempt.generation,
+    turns: [
+      {
+        ordinal: 1,
+        model: "one",
+        tokensInput: tokens,
+        tokensOutput: tokens,
+        tokensCacheCreation: tokens,
+        tokensCacheRead: tokens,
+      },
+    ],
+  });
+}
+
+/** A run's first reading, as a run starting with an empty window offers it. */
+const runContextStart: RunContextRecord = {
+  ordinal: 1,
+  afterTurn: 0,
+  cause: "Start",
+};
+
+/** A compaction's reading at `ordinal`, its window holding `tokens`. */
+function runContextCompaction(
+  ordinal: number,
+  tokens: number,
+): RunContextRecord {
+  return {
+    ordinal,
+    afterTurn: ordinal * 10,
+    cause: "Compaction",
+    compaction: { trigger: "Auto", tokensBefore: 150_000, tokensAfter: tokens },
+    window: {
+      model: "claude-fixture",
+      totalTokens: tokens,
+      maxTokens: 200_000,
+      categories: [{ name: "Messages", tokens, kind: "Used" }],
+      memoryFiles: [{ path: "/workspace/CLAUDE.md", tokens: 100 }],
+      mcpTools: [{ server: "chuggy", name: "read_ticket", tokens: 50 }],
+      systemTools: [],
+      systemPromptSections: [],
+      agents: [],
+    },
+  };
+}
+
+/** A page of readings as the worker plane role offers it, past any check the port's types make. */
+async function runContextOffered(
+  attempt: RunBearer,
+  readings: unknown,
+): Promise<string | null | undefined> {
+  const found = await workerPool.query<{ stored: string | null }>(
+    "SELECT record_worker_run_context($1,$2,$3::jsonb)::text AS stored",
+    [
+      createHash("sha256")
+        .update(attempt.capability.secret, "utf8")
+        .digest("hex"),
+      attempt.generation,
+      JSON.stringify(readings),
+    ],
+  );
+  return found.rows[0]?.stored;
+}
+
+test("a run's context readings are contiguous, idempotent and refuse a contradiction", async () => {
+  const { attempt } = await placedAttempt("run-context");
+  const record = (readings: readonly RunContextRecord[]) =>
+    contexts.record({
+      secret: attempt.capability.secret,
+      generation: attempt.generation,
+      readings,
+    });
+  assert.equal(await record([runContextCompaction(2, 9)]), "OutOfOrder");
+  assert.equal(
+    await record([runContextStart, runContextCompaction(2, 9)]),
+    "Stored",
+  );
+  assert.equal(
+    await record([runContextCompaction(2, 9), runContextStart]),
+    "AlreadyStored",
+  );
+  assert.equal(await record([runContextCompaction(2, 8)]), "Conflict");
+  assert.equal(
+    await record([{ ...runContextStart, afterTurn: 1 }]),
+    "Conflict",
+  );
+  assert.equal(
+    await record([runContextCompaction(2, 9), runContextCompaction(4, 9)]),
+    "OutOfOrder",
+  );
+  assert.equal(
+    await record([runContextCompaction(2, 9), runContextCompaction(3, 7)]),
+    "Stored",
+  );
+  const stored = await rig.harness.query(
+    `SELECT ordinal::text AS ordinal FROM execution_run_context
+      WHERE tenant=$1 AND project=$2 AND execution=$3 AND attempt=$4
+      ORDER BY ordinal`,
+    [
+      attempt.partition.tenant,
+      attempt.partition.project,
+      attempt.execution,
+      attempt.attempt,
+    ],
+  );
+  assert.deepEqual(stored, [
+    { ordinal: "1" },
+    { ordinal: "2" },
+    { ordinal: "3" },
+  ]);
+});
+
+test("a context page the plane's schema would refuse is refused by the boundary too", async () => {
+  const { attempt } = await placedAttempt("run-context-malformed");
+  const compaction = runContextCompaction(1, 9);
+  for (const readings of [
+    [],
+    {},
+    [runContextStart, runContextStart],
+    Array.from({ length: runContextPageReadingsMax + 1 }, (_unused, index) => ({
+      ...runContextStart,
+      ordinal: index + 1,
+    })),
+    [{ ...runContextStart, ordinal: 0 }],
+    [{ ...runContextStart, ordinal: runContextReadingsMax + 1 }],
+    [{ ...runContextStart, ordinal: "1" }],
+    [{ ...runContextStart, afterTurn: runTurnSeriesMax + 1 }],
+    [{ ...runContextStart, cause: "Resume" }],
+    [{ ...compaction, cause: "Start" }],
+    [{ ...compaction, compaction: { trigger: "Eventually", tokensBefore: 1 } }],
+    [{ ...compaction, compaction: { trigger: "Auto" } }],
+    [{ ...compaction, compaction: { trigger: "Auto", tokensBefore: -1 } }],
+    [
+      {
+        ...compaction,
+        compaction: { trigger: "Auto", tokensBefore: 1, tokensAfter: 1.5 },
+      },
+    ],
+    [{ ...compaction, window: [] }],
+  ])
+    assert.equal(
+      await runContextOffered(attempt, readings),
+      "Conflict",
+      JSON.stringify(readings),
+    );
+  assert.deepEqual(
+    await rig.harness.query(
+      `SELECT count(*)::text AS stored FROM execution_run_context
+        WHERE tenant=$1 AND project=$2 AND execution=$3 AND attempt=$4`,
+      [
+        attempt.partition.tenant,
+        attempt.partition.project,
+        attempt.execution,
+        attempt.attempt,
+      ],
+    ),
+    [{ stored: "0" }],
+  );
+});
+
+/** A text of `chars` characters that the stored window writes at its heaviest, each as an escape. */
+function runContextTextHeaviest(chars: number): string {
+  return "\u0001".repeat(chars);
+}
+
+test("the heaviest reading the wire takes is stored whole and read back as it was offered", async () => {
+  const { attempt } = await placedAttempt("run-context-heaviest");
+  const name = runContextTextHeaviest(runContextNameCharsMax);
+  const listed = (item: object) =>
+    Array.from({ length: runContextItemsMax }, () => item);
+  const named = { name, tokens: Number.MAX_SAFE_INTEGER };
+  const heaviest = runContextOfferedSchema.parse({
+    ordinal: 1,
+    afterTurn: runTurnSeriesMax,
+    cause: "Compaction",
+    compaction: {
+      trigger: "Manual",
+      tokensBefore: Number.MAX_SAFE_INTEGER,
+      tokensAfter: Number.MAX_SAFE_INTEGER,
+    },
+    window: {
+      model: runContextTextHeaviest(runModelCharsMax),
+      totalTokens: Number.MAX_SAFE_INTEGER,
+      maxTokens: Number.MAX_SAFE_INTEGER,
+      autoCompactThreshold: Number.MAX_SAFE_INTEGER,
+      categories: listed({ ...named, kind: "Deferred" }),
+      memoryFiles: listed({
+        path: runContextTextHeaviest(runContextPathCharsMax),
+        tokens: Number.MAX_SAFE_INTEGER,
+      }),
+      mcpTools: listed({ server: name, ...named }),
+      systemTools: listed(named),
+      systemPromptSections: listed(named),
+      skills: {
+        total: Number.MAX_SAFE_INTEGER,
+        included: Number.MAX_SAFE_INTEGER,
+        tokens: Number.MAX_SAFE_INTEGER,
+        items: listed(named),
+      },
+      agents: listed({ type: name, tokens: Number.MAX_SAFE_INTEGER }),
+      messages: {
+        toolCalls: Number.MAX_SAFE_INTEGER,
+        toolResults: Number.MAX_SAFE_INTEGER,
+        attachments: Number.MAX_SAFE_INTEGER,
+        assistant: Number.MAX_SAFE_INTEGER,
+        user: Number.MAX_SAFE_INTEGER,
+        byTool: listed({
+          name,
+          callTokens: Number.MAX_SAFE_INTEGER,
+          resultTokens: Number.MAX_SAFE_INTEGER,
+        }),
+      },
+    },
+  });
+  assert.equal(
+    await contexts.record({
+      secret: attempt.capability.secret,
+      generation: attempt.generation,
+      readings: [heaviest],
+    }),
+    "Stored",
+  );
+  const page = await postgresRunEvidenceReads(apiPool).context(
+    attempt.partition,
+    attempt.execution,
+    attempt.attempt,
+    { limit: 1 },
+  );
+  const read = page?.readings[0];
+  assert.ok(read !== undefined);
+  assert.deepEqual(runEvidenceUnstamped(read), heaviest);
+});
+
+test("a run's context readings walk in ascending order past one page, and its run counts them", async () => {
+  const { attempt } = await placedAttempt("run-context-paging");
+  const reads = postgresRunEvidenceReads(apiPool);
+  const run = async () =>
+    (
+      await postgresAttemptRuns(apiPool, attempt.partition, attempt.execution)
+    ).get(attempt.attempt);
+  assert.deepEqual(await runTurnOneRecorded(attempt, 0), {
+    recorded: "Recorded",
+    turnsRecorded: 1,
+  });
+  assert.equal((await run())?.readingsRecorded, undefined);
+  assert.deepEqual(
+    await reads.context(attempt.partition, attempt.execution, attempt.attempt, {
+      limit: runContextPageReadingsMax,
+    }),
+    { readings: [] },
+  );
+  const series = runContextPageReadingsMax * 2 + 1;
+  const offered = [
+    runContextStart,
+    ...Array.from({ length: series - 1 }, (_unused, index) =>
+      runContextCompaction(index + 2, index + 1),
+    ),
+  ];
+  for (let first = 0; first < series; first += runContextPageReadingsMax)
+    assert.equal(
+      await contexts.record({
+        secret: attempt.capability.secret,
+        generation: attempt.generation,
+        readings: offered.slice(first, first + runContextPageReadingsMax),
+      }),
+      "Stored",
+    );
+  assert.equal((await run())?.readingsRecorded, series);
+  const drawn: RunContextRecord[] = [];
+  const walked = await runWalk(async (after) => {
+    const page = await reads.context(
+      attempt.partition,
+      attempt.execution,
+      attempt.attempt,
+      { ...(after === undefined ? {} : { after }), limit: 2 },
+    );
+    if (page === undefined) throw new Error("run walk: the attempt is absent");
+    drawn.push(...page.readings.map(runEvidenceUnstamped));
+    return {
+      drawn: page.readings.map((reading) => reading.ordinal),
+      ...(page.nextAfter === undefined ? {} : { nextAfter: page.nextAfter }),
+    };
+  });
+  runWalkIsWhole(walked, series);
+  assert.deepEqual(drawn, offered);
+  assert.equal(
+    await reads.context(
+      attempt.partition,
+      attempt.execution,
+      asAttemptId("no-such-attempt"),
+      { limit: 1 },
+    ),
+    undefined,
   );
 });
 
@@ -386,28 +754,23 @@ test("every run evidence row refuses an update and a delete", async () => {
     }),
     "Stored",
   );
-  assert.deepEqual(
-    await turns.record({
-      secret: attempt.capability.secret,
-      generation: attempt.generation,
-      turns: [
-        {
-          ordinal: 1,
-          model: "one",
-          tokensInput: 1,
-          tokensOutput: 1,
-          tokensCacheCreation: 1,
-          tokensCacheRead: 1,
-        },
-      ],
-    }),
-    { recorded: "Recorded", turnsRecorded: 1 },
-  );
+  assert.deepEqual(await runTurnOneRecorded(attempt, 1), {
+    recorded: "Recorded",
+    turnsRecorded: 1,
+  });
   assert.equal(
     await totals.record({
       secret: attempt.capability.secret,
       generation: attempt.generation,
       totals: runTotalsFixture(1),
+    }),
+    "Stored",
+  );
+  assert.equal(
+    await contexts.record({
+      secret: attempt.capability.secret,
+      generation: attempt.generation,
+      readings: [runContextStart],
     }),
     "Stored",
   );
@@ -419,6 +782,7 @@ test("every run evidence row refuses an update and a delete", async () => {
     ["execution_run_turn", "model='rewritten'"],
     ["execution_run_total", "turns=turns+1"],
     ["execution_run_model_usage", "cost_usd_micros=0"],
+    ["execution_run_context", "after_turn=after_turn+1"],
   ] as const) {
     await assert.rejects(
       rig.harness.query(`UPDATE ${relation} SET ${column} ${where}`, keys),
@@ -472,6 +836,11 @@ async function runWritesAreFenced(
     await totals.record({ ...write, totals: runTotalsFixture(1) }),
     "Fenced",
     `${what}: the totals`,
+  );
+  assert.equal(
+    await contexts.record({ ...write, readings: [runContextStart] }),
+    "Fenced",
+    `${what}: a context page`,
   );
   assert.deepEqual(
     await rig.harness.query(

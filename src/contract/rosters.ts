@@ -248,6 +248,23 @@ export type RunEndedEvidence = (typeof runEndedEvidences)[number];
 export const runUsageWindows = ["five_hour", "seven_day"] as const;
 export type RunUsageWindow = (typeof runUsageWindows)[number];
 
+/** Why a run read its context window: as it started, as it compacted the window, or as it ended. */
+export const runContextCauses = ["Start", "Compaction", "End"] as const;
+export type RunContextCause = (typeof runContextCauses)[number];
+
+/** What set a compaction off: the runtime nearing its window's threshold, or someone asking for one. */
+export const runCompactionTriggers = ["Auto", "Manual"] as const;
+export type RunCompactionTrigger = (typeof runCompactionTriggers)[number];
+
+/** What one category of a context window is: content in the window, the room left, the compaction reserve, or tool schemas held out of it. */
+export const runContextCategoryKinds = [
+  "Used",
+  "Free",
+  "Buffer",
+  "Deferred",
+] as const;
+export type RunContextCategoryKind = (typeof runContextCategoryKinds)[number];
+
 /** The agents a person lends their own account for, each paused on that account alone. */
 export const accountAgents = ["Claude", "Codex"] as const;
 export type AccountAgent = (typeof accountAgents)[number];

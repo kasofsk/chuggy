@@ -97,6 +97,7 @@ import {
 } from "../../src/interpreter/resultManifest.ts";
 import {
   allRunEvidenceStored,
+  type RunContextStored,
   type RunTurnsRecorded,
 } from "../../src/interpreter/runEvidence.ts";
 import type {
@@ -152,6 +153,7 @@ import {
   inertSessionPlane,
   inertTasks,
   inertWorkerPlane,
+  runContextReadingBody,
   runTotalsBody,
 } from "./workerPlaneFixtures.ts";
 
@@ -308,6 +310,10 @@ const workerPlaneCalls: Readonly<
     },
   },
   runTotals: { headers: json, payload: runTotalsBody },
+  runContext: {
+    headers: json,
+    payload: { readings: [{ ordinal: 1, afterTurn: 0, cause: "Start" }] },
+  },
   runEnded: { headers: json, payload: { evidence: "RunFailed" } },
   credential: {},
   heldCredentials: { headers: json, payload: { credentials: [heldName] } },
@@ -368,6 +374,10 @@ const workerPlaneRequests: Readonly<
       { ...runTotalsBody, usage: { five_hour: usageReading } },
       { ...runTotalsBody, usage: { seven_day: usageReading } },
     ],
+  },
+  runContext: {
+    schema: "workerRunContextSchema",
+    bodies: [{ readings: [runContextReadingBody] }],
   },
   runEnded: {
     schema: "workerRunEndedSchema",
@@ -1001,6 +1011,23 @@ const workerPlaneCases: Readonly<
     ...workerPlaneStrangers,
     workerPlaneMalformed,
     ...runRecordCases("totals"),
+  ],
+  runContext: [
+    ...workerPlaneStrangers,
+    workerPlaneMalformed,
+    ...allRunEvidenceStored
+      .filter(
+        (stored): stored is RunContextStored => stored !== "QuotaExceeded",
+      )
+      .map((stored) => ({
+        name: `the context page answering ${stored}`,
+        service: {
+          runEvidence: {
+            ...inertRunEvidence,
+            context: { record: () => Promise.resolve(stored) },
+          },
+        },
+      })),
   ],
   runEnded: [
     ...workerPlaneStrangers,

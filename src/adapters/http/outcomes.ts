@@ -69,6 +69,7 @@ import type {
   RunConfigurationRead,
   RunEvidenceContentRead,
   RunTranscriptRead,
+  RunContextPage,
   RunTurnsPage,
 } from "../../interpreter/runEvidence.ts";
 import type {
@@ -815,6 +816,15 @@ export function projectArtifactReadResponse(
 /** A run nobody may read and a run that never happened answer alike. */
 export function runTurnsResponse(
   page: RunTurnsPage | undefined,
+): NativeHttpResponse {
+  return page === undefined
+    ? response(404, nativeHttpError("NotFound", "Resource not found."))
+    : response(200, page);
+}
+
+/** A run nobody may read and a run that never happened answer alike, as its turns do. */
+export function runContextResponse(
+  page: RunContextPage | undefined,
 ): NativeHttpResponse {
   return page === undefined
     ? response(404, nativeHttpError("NotFound", "Resource not found."))

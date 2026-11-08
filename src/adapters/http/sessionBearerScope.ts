@@ -122,6 +122,7 @@ export const sessionBearerRouteClasses = {
   projectArtifacts: partitionWrite,
   projectArtifact: partitionRead,
   runTurns: partitionRead,
+  runContext: partitionRead,
   runTranscript: partitionRead,
   runConfiguration: partitionRead,
   runError: partitionRead,

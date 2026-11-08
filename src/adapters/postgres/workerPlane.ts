@@ -35,6 +35,7 @@ import {
   runTranscriptBatchPath,
   type RunEvidenceStored,
   type WorkerRunConfigurationPort,
+  type WorkerRunContextPort,
   type WorkerRunEndedPort,
   type WorkerRunTotalPort,
   type WorkerRunTranscriptPort,
@@ -440,6 +441,24 @@ export function postgresWorkerRunTurns(pool: pg.Pool): WorkerRunTurnsPort {
         recorded: "Recorded",
         turnsRecorded: projectRowCounter(row.turns, "recorded run turns"),
       };
+    },
+  };
+}
+
+export function postgresWorkerRunContext(pool: pg.Pool): WorkerRunContextPort {
+  return {
+    record: async (input) => {
+      const found = await pool.query<{ stored: string | null }>(
+        sql`SELECT record_worker_run_context(
+          ${workerSecretDigest(input.secret)},${input.generation},
+          ${JSON.stringify(input.readings)}::jsonb)::text AS stored`,
+      );
+      const stored = workerRunStored(found.rows[0]?.stored, "a context page");
+      if (stored === "QuotaExceeded")
+        throw new Error(
+          "postgres worker plane: a context page answered a quota it has none of",
+        );
+      return stored;
     },
   };
 }

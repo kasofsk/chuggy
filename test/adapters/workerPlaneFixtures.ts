@@ -34,6 +34,45 @@ export const runTotalsBody = {
   permissionDenials: 0,
 } as const;
 
+/** A compaction's reading of a run's context window, carrying every field a reading may. */
+export const runContextReadingBody = {
+  ordinal: 2,
+  afterTurn: 7,
+  cause: "Compaction",
+  compaction: { trigger: "Auto", tokensBefore: 160_000, tokensAfter: 12_000 },
+  window: {
+    model: "claude-fixture",
+    totalTokens: 12_000,
+    maxTokens: 200_000,
+    autoCompactThreshold: 167_000,
+    categories: [
+      { name: "System prompt", tokens: 3_000, kind: "Used" },
+      { name: "Free space", tokens: 155_000, kind: "Free" },
+      { name: "Autocompact buffer", tokens: 33_000, kind: "Buffer" },
+      { name: "MCP tools", tokens: 900, kind: "Deferred" },
+    ],
+    memoryFiles: [{ path: "/workspace/repository/CLAUDE.md", tokens: 2_100 }],
+    mcpTools: [{ server: "chuggy", name: "read_ticket", tokens: 300 }],
+    systemTools: [{ name: "Bash", tokens: 1_200 }],
+    systemPromptSections: [{ name: "Environment", tokens: 400 }],
+    skills: {
+      total: 2,
+      included: 1,
+      tokens: 80,
+      items: [{ name: "layering", tokens: 80 }],
+    },
+    agents: [{ type: "Explore", tokens: 150 }],
+    messages: {
+      toolCalls: 2_000,
+      toolResults: 4_000,
+      attachments: 0,
+      assistant: 1_000,
+      user: 500,
+      byTool: [{ name: "Bash", callTokens: 2_000, resultTokens: 4_000 }],
+    },
+  },
+} as const;
+
 /** Every run-evidence port a case about something else never reaches. */
 export const inertRunEvidence: WorkerRunEvidencePorts = {
   configurations: { record: () => Promise.resolve("Stored") },
@@ -42,6 +81,7 @@ export const inertRunEvidence: WorkerRunEvidencePorts = {
     record: () => Promise.resolve({ recorded: "Recorded", turnsRecorded: 0 }),
   },
   totals: { record: () => Promise.resolve("Stored") },
+  context: { record: () => Promise.resolve("Stored") },
   endings: { end: () => Promise.resolve(true) },
 };
 

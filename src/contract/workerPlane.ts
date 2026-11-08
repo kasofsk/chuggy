@@ -19,6 +19,7 @@ import {
   isBoundedText,
   nativeHttpPageItemsMax,
   repositoryIdentityCharsMax,
+  runContextPageReadingsMax,
   runModelCharsMax,
   runTurnSeriesMax,
 } from "./http.ts";
@@ -26,7 +27,12 @@ import {
   workerPlaneAnswersRefusingVersions,
   type WorkerPlaneAnswers,
 } from "./planeAnswers.ts";
-import { runModelUsageSchema, runTotalsSchema } from "./responses.ts";
+import {
+  runContextOfferedSchema,
+  runModelUsageSchema,
+  runToolUseIdSchema,
+  runTotalsSchema,
+} from "./responses.ts";
 import {
   artifactRoles,
   forgeApps,
@@ -57,6 +63,7 @@ export const workerPlaneRoutes = {
   runTranscript: { method: "PUT", path: "/v1/run/transcript/*" },
   runTurns: { method: "POST", path: "/v1/run/turns" },
   runTotals: { method: "POST", path: "/v1/run/totals" },
+  runContext: { method: "POST", path: "/v1/run/context" },
   runEnded: { method: "POST", path: "/v1/run/ended" },
   credential: { method: "POST", path: "/v1/credential" },
   heldCredentials: { method: "POST", path: "/v1/credentials/held" },
@@ -85,17 +92,28 @@ export const repositoryCredentialCharsMax = 4_096;
 export {
   nativeHttpPageItemsMax,
   runConfigurationBytesMax,
+  runContextItemsMax,
+  runContextNameCharsMax,
+  runContextPageReadingsMax,
+  runContextPathCharsMax,
+  runContextReadingsMax,
   runModelCharsMax,
   runOutcomeLabelCharsMax,
+  runToolUseIdCharsMax,
   runTranscriptBatchBytesMax,
   runTranscriptBatchesMax,
   runTurnSeriesMax,
   workerPlaneUploadBytesMax,
 } from "./http.ts";
-export { runEndedEvidences, runUsageWindows } from "./rosters.ts";
+export {
+  runCompactionTriggers,
+  runContextCategoryKinds,
+  runEndedEvidences,
+  runUsageWindows,
+} from "./rosters.ts";
 export type { WorkerPlaneAnswer } from "./planeAnswers.ts";
 
-/** One turn as a worker offers it; the server is what dates the stored row. */
+/** One turn as a worker offers it, naming the subagent call it was made under where it was; the server is what dates the stored row. */
 export const workerRunTurnsSchema = z.strictObject({
   turns: z
     .array(
@@ -106,10 +124,19 @@ export const workerRunTurnsSchema = z.strictObject({
         tokensOutput: countSchema,
         tokensCacheCreation: countSchema,
         tokensCacheRead: countSchema,
+        parentToolUseId: runToolUseIdSchema.exactOptional(),
       }),
     )
     .min(1)
     .max(nativeHttpPageItemsMax),
+});
+
+/** A page of a run's context readings as a worker offers them; the server is what dates each stored row. */
+export const workerRunContextSchema = z.strictObject({
+  readings: z
+    .array(runContextOfferedSchema)
+    .min(1)
+    .max(runContextPageReadingsMax),
 });
 
 /**
@@ -364,6 +391,12 @@ export const workerPlaneAnswers = workerPlaneAnswersRefusingVersions({
     401: workerPlaneStopSchema,
     409: workerPlaneRefusalSchema(["OutOfOrder", "Conflict", "Fenced"]),
     413: workerPlaneRefusalSchema(["QuotaExceeded"]),
+  },
+  runContext: {
+    204: "empty",
+    400: workerPlaneStopSchema,
+    401: workerPlaneStopSchema,
+    409: workerPlaneRefusalSchema(["OutOfOrder", "Conflict", "Fenced"]),
   },
   runEnded: {
     204: "empty",

@@ -105,6 +105,7 @@ const documentRouteNames = [
   "projectRepositoryRetirement",
   "projects",
   "runConfiguration",
+  "runContext",
   "runError",
   "runTranscript",
   "runTurns",

@@ -1,6 +1,6 @@
 /**
  * PostgreSQL reads over run evidence: what one attempt's run holds, what an
- * execution's runs sum to, what a ticket's runs sum to, and the pages the three
+ * execution's runs sum to, what a ticket's runs sum to, and the pages the
  * public run routes answer with.
  *
  * EVERY PAGED SORT NAMES ITS RELATION. A counter is carried to the wire as text
@@ -28,6 +28,7 @@ import {
   runTranscriptPageBatchesMax,
   workerErrorPath,
 } from "../../contract/http.ts";
+import { runContextOfferedSchema } from "../../contract/responses.ts";
 import { runCostBases, type RunCostBasis } from "../../contract/rosters.ts";
 import { allAttemptStates } from "../../interpreter/executionScheduler.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
@@ -40,6 +41,8 @@ import {
   runIsComplete,
   type ExecutionRunResource,
   type RunConfigurationStored,
+  type RunContextPage,
+  type RunContextQuery,
   type RunEvidenceObject,
   type RunEvidenceReadStore,
   type RunModelUsage,
@@ -274,6 +277,7 @@ interface RunAttemptRow extends RunTotalRow {
   readonly transcript_high_water: string;
   readonly transcript_observed_at: string | null;
   readonly turns_recorded: string;
+  readonly readings_recorded: string;
   readonly result_subtype: string | null;
   readonly stop_reason: string | null;
 }
@@ -293,6 +297,7 @@ function runResource(
   models: readonly RunModelUsage[],
 ): ExecutionRunResource {
   const batches = runCount(row.transcript_batches, "run transcript batches");
+  const readings = runCount(row.readings_recorded, "run readings recorded");
   return {
     startedAt: projectRowInstant(row.started_at, "run start"),
     ...(row.configuration_digest === null ||
@@ -320,6 +325,7 @@ function runResource(
           },
         }),
     turnsRecorded: runCount(row.turns_recorded, "run turns recorded"),
+    ...(readings === 0 ? {} : { readingsRecorded: readings }),
     ...(row.cost_basis === null
       ? {}
       : { totals: runTotals(row, models, runLabels(row)) }),
@@ -368,6 +374,7 @@ export async function postgresAttemptRuns(
                b.high_water::text AS transcript_high_water,
                to_char(b.observed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS transcript_observed_at,
                n.turns::text AS turns_recorded,
+               c.readings::text AS readings_recorded,
                t.turns::text AS turns,t.duration_ms::text AS duration_ms,
                t.duration_api_ms::text AS duration_api_ms,
                t.tokens_input::text AS tokens_input,
@@ -389,6 +396,10 @@ export async function postgresAttemptRuns(
             SELECT count(*) AS turns FROM execution_run_turn y
              WHERE y.tenant=r.tenant AND y.project=r.project
                AND y.execution=r.execution AND y.attempt=r.attempt) n
+          CROSS JOIN LATERAL (
+            SELECT count(*) AS readings FROM execution_run_context z
+             WHERE z.tenant=r.tenant AND z.project=r.project
+               AND z.execution=r.execution AND z.attempt=r.attempt) c
           LEFT JOIN execution_run_total t
             ON t.tenant=r.tenant AND t.project=r.project
            AND t.execution=r.execution AND t.attempt=r.attempt
@@ -434,6 +445,7 @@ async function runAttemptStanding(
 interface RunTurnRow extends RunTokenRow {
   readonly ordinal: string;
   readonly model: string;
+  readonly parent_tool_use_id: string | null;
   readonly recorded_at: string | null;
 }
 
@@ -460,7 +472,7 @@ async function runTurnsPage(
   );
   if (standing === undefined) return undefined;
   const found = await pool.query<RunTurnRow>(
-    sql`SELECT ordinal::text AS ordinal,model,
+    sql`SELECT ordinal::text AS ordinal,model,parent_tool_use_id,
                tokens_input::text AS tokens_input,
                tokens_output::text AS tokens_output,
                tokens_cache_creation::text AS tokens_cache_creation,
@@ -479,11 +491,96 @@ async function runTurnsPage(
       ...runTokens(row),
       ordinal: projectRowCounter(row.ordinal, "run turn ordinal"),
       model: row.model,
+      ...(row.parent_tool_use_id === null
+        ? {}
+        : { parentToolUseId: row.parent_tool_use_id }),
       recordedAt: projectRowInstant(row.recorded_at, "recording time"),
     })),
     ...(next === undefined
       ? {}
       : { nextAfter: projectRowCounter(next.ordinal, "run turn cursor") }),
+  };
+}
+
+interface RunContextRow {
+  readonly ordinal: string;
+  readonly after_turn: string;
+  readonly cause: string;
+  readonly compaction_trigger: string | null;
+  readonly compaction_tokens_before: string | null;
+  readonly compaction_tokens_after: string | null;
+  readonly context_window: unknown;
+  readonly recorded_at: string | null;
+}
+
+/** One stored reading as the wire carries it, refused whole where a row is not one a pod could have offered. */
+function runContextReading(row: RunContextRow) {
+  const compacted =
+    row.compaction_trigger === null || row.compaction_tokens_before === null
+      ? {}
+      : {
+          compaction: {
+            trigger: row.compaction_trigger,
+            tokensBefore: projectRowCounter(
+              row.compaction_tokens_before,
+              "compaction tokens before",
+            ),
+            ...(row.compaction_tokens_after === null
+              ? {}
+              : {
+                  tokensAfter: projectRowCounter(
+                    row.compaction_tokens_after,
+                    "compaction tokens after",
+                  ),
+                }),
+          },
+        };
+  return {
+    ...runContextOfferedSchema.parse({
+      ordinal: projectRowCounter(row.ordinal, "run context ordinal"),
+      afterTurn: projectRowCounter(row.after_turn, "run context turn"),
+      cause: row.cause,
+      ...compacted,
+      ...(row.context_window === null ? {} : { window: row.context_window }),
+    }),
+    recordedAt: projectRowInstant(row.recorded_at, "recording time"),
+  };
+}
+
+async function runContextPage(
+  pool: pg.Pool,
+  partition: Partition,
+  execution: ExecutionId,
+  attempt: AttemptId,
+  query: RunContextQuery,
+): Promise<RunContextPage | undefined> {
+  const standing = await runAttemptStanding(
+    pool,
+    partition,
+    execution,
+    attempt,
+  );
+  if (standing === undefined) return undefined;
+  const found = await pool.query<RunContextRow>(
+    sql`SELECT ordinal::text AS ordinal,after_turn::text AS after_turn,cause,
+               compaction_trigger,
+               compaction_tokens_before::text AS compaction_tokens_before,
+               compaction_tokens_after::text AS compaction_tokens_after,
+               context_window,
+               to_char(recorded_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"')::text AS recorded_at
+          FROM execution_run_context
+         WHERE tenant=${partition.tenant} AND project=${partition.project}
+           AND execution=${execution} AND attempt=${attempt}
+           AND ordinal>${query.after ?? 0}
+         ORDER BY execution_run_context.ordinal LIMIT ${query.limit + 1}`,
+  );
+  const page = found.rows.slice(0, query.limit);
+  const next = found.rows.length > query.limit ? page.at(-1) : undefined;
+  return {
+    readings: page.map(runContextReading),
+    ...(next === undefined
+      ? {}
+      : { nextAfter: projectRowCounter(next.ordinal, "run context cursor") }),
   };
 }
 
@@ -613,6 +710,8 @@ export function postgresRunEvidenceReads(pool: pg.Pool): RunEvidenceReadStore {
   return {
     turns: (partition, execution, attempt, query) =>
       runTurnsPage(pool, partition, execution, attempt, query),
+    context: (partition, execution, attempt, query) =>
+      runContextPage(pool, partition, execution, attempt, query),
     transcript: (partition, execution, attempt, after) =>
       runTranscriptStored(pool, partition, execution, attempt, after),
     configuration: (partition, execution, attempt) =>

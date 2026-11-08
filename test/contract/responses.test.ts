@@ -42,6 +42,7 @@ import {
   runConfigurationResponse,
   runErrorResponse,
   runTranscriptResponse,
+  runContextResponse,
   runTurnsResponse,
   repositoryConfigurationImportResponse,
   selectorProjectSettingsResponse,
@@ -92,6 +93,7 @@ import {
   runConfigurationResponseSchema,
   runErrorResponseSchema,
   runTranscriptResponseSchema,
+  runContextResponseSchema,
   runTurnsResponseSchema,
   selectorProjectSettingsResponseSchema,
   selectorSettingsConflictResponseSchema,
@@ -1797,6 +1799,60 @@ test("the run reads parse as the contract names them", () => {
     ].map((answered) => answered.status),
     [404, 503, 409],
   );
+});
+
+test("a turn's subagent call and a run's context readings parse as the contract names them", () => {
+  assert.equal(
+    runTurnsResponseSchema.parse(
+      runTurnsResponse({
+        turns: [
+          {
+            ordinal: 2,
+            model: "claude-representation",
+            tokensInput: 1,
+            tokensOutput: 2,
+            tokensCacheCreation: 3,
+            tokensCacheRead: 4,
+            parentToolUseId: "toolu_representation",
+            recordedAt: instant,
+          },
+        ],
+      }).body,
+    ).turns[0]?.parentToolUseId,
+    "toolu_representation",
+  );
+  const context = runContextResponseSchema.parse(
+    runContextResponse({
+      readings: [
+        { ordinal: 1, afterTurn: 0, cause: "Start", recordedAt: instant },
+        {
+          ordinal: 2,
+          afterTurn: 7,
+          cause: "Compaction",
+          compaction: { trigger: "Manual", tokensBefore: 90_000 },
+          window: {
+            model: "claude-representation",
+            totalTokens: 9_000,
+            maxTokens: 200_000,
+            categories: [{ name: "Messages", tokens: 9_000, kind: "Used" }],
+            memoryFiles: [],
+            mcpTools: [],
+            systemTools: [],
+            systemPromptSections: [],
+            agents: [],
+          },
+          recordedAt: instant,
+        },
+      ],
+      nextAfter: 2,
+    }).body,
+  );
+  assert.deepEqual(
+    context.readings.map((reading) => reading.cause),
+    ["Start", "Compaction"],
+  );
+  assert.equal(context.nextAfter, 2);
+  assert.equal(runContextResponse(undefined).status, 404);
 });
 
 test("a run figure past the bound the contract names is refused", () => {

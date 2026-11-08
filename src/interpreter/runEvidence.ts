@@ -1,7 +1,8 @@
 /**
  * What one agent run left behind, at the grain the attempt that produced it
  * already has: the configuration it started under, its transcript in batches,
- * its per-turn usage series, and what it spent.
+ * its per-turn usage series, the readings of its context window, and what it
+ * spent.
  *
  * EVIDENCE NEVER TRAVELS IN THE RESULT MANIFEST. A run that dies has no
  * manifest and must still carry its figures, so a manifest-borne copy would be
@@ -30,7 +31,13 @@ import {
   type ArtifactPath,
 } from "./resultManifest.ts";
 import type { AttemptId, ExecutionId } from "./schedulerIdentity.ts";
-import { runTranscriptBatchesMax, runTurnSeriesMax } from "../contract/http.ts";
+import {
+  runContextPageReadingsMax,
+  runContextReadingsMax,
+  runTranscriptBatchesMax,
+  runTurnSeriesMax,
+} from "../contract/http.ts";
+import type { RunContextOffered } from "../contract/responses.ts";
 import type { RunCostBasis, RunUsageWindow } from "../contract/rosters.ts";
 
 /** Where a run's configuration snapshot is stored, which no worker chooses. */
@@ -99,16 +106,25 @@ export interface RunLimit {
   readonly resetsAt?: number;
 }
 
-/** One assistant turn's usage, as the worker offers it before the server dates it. */
+/** One assistant turn's usage, as the worker offers it before the server dates it, naming the subagent call it was made under where it was. */
 export interface RunTurnRecord extends RunTokens {
   readonly ordinal: number;
   readonly model: string;
+  readonly parentToolUseId?: string;
 }
 
 /** The same turn as a read returns it, dated by the server that stored it. */
 export interface RunTurnResource extends RunTurnRecord {
   readonly recordedAt: PublicInstant;
 }
+
+/** One reading of a run's context window, as the worker offers it before the server dates it. */
+export type RunContextRecord = RunContextOffered;
+
+/** The same reading as a read returns it, dated by the server that stored it. */
+export type RunContextResource = RunContextRecord & {
+  readonly recordedAt: PublicInstant;
+};
 
 /** Where a run's snapshot is and how much of it there is. */
 export interface RunConfigurationRef {
@@ -131,6 +147,8 @@ export interface ExecutionRunResource {
   readonly configuration?: RunConfigurationRef;
   readonly transcript?: RunTranscriptRef;
   readonly turnsRecorded: number;
+  /** How many context readings the run kept, absent where it kept none. */
+  readonly readingsRecorded?: number;
   readonly totals?: RunTotals;
 }
 
@@ -180,6 +198,18 @@ export interface WorkerRunTurnsPort {
   record(
     input: RunEvidenceWrite & { readonly turns: readonly RunTurnRecord[] },
   ): Promise<RunTurnsRecorded>;
+}
+
+/** What offering a page of context readings found, which no bound of the stored row refuses past the wire's own. */
+export type RunContextStored = Exclude<RunEvidenceStored, "QuotaExceeded">;
+
+/** A page of a run's context readings, each kept once at its ordinal and the ordinals contiguous from the first. */
+export interface WorkerRunContextPort {
+  record(
+    input: RunEvidenceWrite & {
+      readonly readings: readonly RunContextRecord[];
+    },
+  ): Promise<RunContextStored>;
 }
 
 /** A run's totals, and the usage of the account it spent, which is kept with totals that were stored or already were. */
@@ -269,6 +299,17 @@ export interface RunTurnsPage {
   readonly nextAfter?: number;
 }
 
+/** One page of a run's context readings, resumed after the ordinal it names. */
+export interface RunContextQuery {
+  readonly after?: number;
+  readonly limit: number;
+}
+
+export interface RunContextPage {
+  readonly readings: readonly RunContextResource[];
+  readonly nextAfter?: number;
+}
+
 /** Where one batch stands in a run's transcript, whatever its bytes turned out to be. */
 interface RunTranscriptBatchAt {
   readonly batch: number;
@@ -345,6 +386,12 @@ export interface RunEvidenceReadStore {
     attempt: AttemptId,
     query: RunTurnsQuery,
   ): Promise<RunTurnsPage | undefined>;
+  context(
+    partition: Partition,
+    execution: ExecutionId,
+    attempt: AttemptId,
+    query: RunContextQuery,
+  ): Promise<RunContextPage | undefined>;
   transcript(
     partition: Partition,
     execution: ExecutionId,
@@ -400,6 +447,26 @@ export function checkedRunTurnsQuery(query: RunTurnsQuery): RunTurnsQuery {
 
 /** The most turns one page carries, which is the page bound every route shares. */
 export const runTurnsPageLimitMax = 100;
+
+/** Refuses a context page query outside the bounds the wire and the run's readings declare. */
+export function checkedRunContextQuery(
+  query: RunContextQuery,
+): RunContextQuery {
+  if (
+    !Number.isSafeInteger(query.limit) ||
+    query.limit < 1 ||
+    query.limit > runContextPageReadingsMax
+  )
+    throw new RangeError("a context page limit is outside the wire's bound");
+  if (
+    query.after !== undefined &&
+    (!Number.isSafeInteger(query.after) ||
+      query.after < 0 ||
+      query.after > runContextReadingsMax)
+  )
+    throw new RangeError("a context cursor is outside the run's bound");
+  return query;
+}
 
 /** Refuses a transcript cursor outside the run's own batch bound. */
 export function checkedRunTranscriptAfter(after: number): number {

@@ -123,6 +123,24 @@ export const runCountMax = Number.MAX_SAFE_INTEGER;
  */
 export const runTurnSeriesMax = 1_000;
 
+/** The longest tool-use id a turn names the subagent call it was made under by. */
+export const runToolUseIdCharsMax = 128;
+
+/** The most readings of its context window one run keeps: where it starts, where it ends, and at each compaction between. */
+export const runContextReadingsMax = 64;
+
+/** The most readings one page carries, offered by a pod or answered to a reader. */
+export const runContextPageReadingsMax = 4;
+
+/** The most entries any one list of a context reading holds. */
+export const runContextItemsMax = 256;
+
+/** The longest name a context reading gives a category, a tool, a server, a prompt section, a skill or an agent. */
+export const runContextNameCharsMax = 128;
+
+/** The longest memory file path a context reading names. */
+export const runContextPathCharsMax = 512;
+
 /** One transcript batch is one wire body's worth, so a batch never needs a second read. */
 export const runTranscriptBatchBytesMax = nativeHttpBodyBytesMax;
 
@@ -552,6 +570,7 @@ export const nativeHttpRoutes = {
   projectArtifacts: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/artifacts`,
   projectArtifact: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/artifacts/:artifact`,
   runTurns: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/turns`,
+  runContext: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/context`,
   runTranscript: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/transcript`,
   runConfiguration: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/configuration`,
   runError: `${nativeHttpBasePath}/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/error`,

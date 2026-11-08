@@ -41,6 +41,7 @@ import {
   leadDispatchesMax,
   inquiryQuestionCharsMax,
   instantSchema,
+  isBoundedText,
   leadTurnsAnsweredMax,
   nativeHttpDraftDependenciesMax,
   nativeHttpPageItemsMax,
@@ -48,9 +49,16 @@ import {
   personalRunnerProjectsMax,
   personalRunnersMax,
   resultReportCharsMax,
+  runContextItemsMax,
+  runContextNameCharsMax,
+  runContextPageReadingsMax,
+  runContextPathCharsMax,
+  runContextReadingsMax,
   runModelCharsMax,
   runOutcomeLabelCharsMax,
+  runToolUseIdCharsMax,
   runTranscriptPageBatchesMax,
+  runTurnSeriesMax,
   selectorHandoffNoteBytesMax,
   selectorHandoffNotePreviewCharsMax,
   selectorHistoryLimitMax,
@@ -138,6 +146,8 @@ import {
   requirementSources,
   resultVerdicts,
   resumePoints,
+  runCompactionTriggers,
+  runContextCategoryKinds,
   runCostBases,
   runStepEvidences,
   runUsageWindows,
@@ -226,12 +236,122 @@ export const runTotalsSchema = runTokensSchema.extend({
 });
 export type RunTotals = z.infer<typeof runTotalsSchema>;
 
+/** The tool-use id of the subagent call a turn was made under, which the main conversation's turns name none of. */
+export const runToolUseIdSchema = z
+  .string()
+  .refine((value) => isBoundedText(value, runToolUseIdCharsMax));
+
 /** One assistant turn's usage, folded so it outlives the transcript it came from. */
 export const runTurnSchema = runTokensSchema.extend({
   ordinal: countSchema,
   model: z.string().min(1).max(runModelCharsMax),
+  parentToolUseId: runToolUseIdSchema.optional(),
   recordedAt: instantSchema,
 });
+
+const runContextNameSchema = z
+  .string()
+  .refine((value) => isBoundedText(value, runContextNameCharsMax));
+
+const runContextList = <Shape extends z.ZodRawShape>(shape: Shape) =>
+  z.array(z.strictObject(shape)).max(runContextItemsMax);
+
+const runContextNamedTokens = {
+  name: runContextNameSchema,
+  tokens: countSchema,
+};
+
+/**
+ * What one run's context window held when it was read, as the agent runtime
+ * breaks it down: the whole, each category, and what each list put in it.
+ */
+export const runContextWindowSchema = z.strictObject({
+  model: z.string().min(1).max(runModelCharsMax),
+  totalTokens: countSchema,
+  maxTokens: countSchema,
+  autoCompactThreshold: countSchema.optional(),
+  categories: runContextList({
+    ...runContextNamedTokens,
+    kind: z.enum(runContextCategoryKinds),
+  }),
+  memoryFiles: runContextList({
+    path: z
+      .string()
+      .refine((value) => isBoundedText(value, runContextPathCharsMax)),
+    tokens: countSchema,
+  }),
+  mcpTools: runContextList({
+    server: runContextNameSchema,
+    ...runContextNamedTokens,
+  }),
+  systemTools: runContextList(runContextNamedTokens),
+  systemPromptSections: runContextList(runContextNamedTokens),
+  skills: z
+    .strictObject({
+      total: countSchema,
+      included: countSchema,
+      tokens: countSchema,
+      items: runContextList(runContextNamedTokens),
+    })
+    .optional(),
+  agents: runContextList({ type: runContextNameSchema, tokens: countSchema }),
+  messages: z
+    .strictObject({
+      toolCalls: countSchema,
+      toolResults: countSchema,
+      attachments: countSchema,
+      assistant: countSchema,
+      user: countSchema,
+      byTool: runContextList({
+        name: runContextNameSchema,
+        callTokens: countSchema,
+        resultTokens: countSchema,
+      }),
+    })
+    .optional(),
+});
+export type RunContextWindow = z.infer<typeof runContextWindowSchema>;
+
+/** What set one compaction off, and how many tokens the window held before it and after it where the runtime said. */
+export const runCompactionSchema = z.strictObject({
+  trigger: z.enum(runCompactionTriggers),
+  tokensBefore: countSchema,
+  tokensAfter: countSchema.optional(),
+});
+export type RunCompaction = z.infer<typeof runCompactionSchema>;
+
+/**
+ * One reading of a run's context window, `shape` the fields its side of the
+ * wire adds, and only a compaction's reading carrying the compaction's facts.
+ */
+export function runContextReadingSchemaOf<Shape extends z.ZodRawShape>(
+  shape: Shape,
+) {
+  const reading = {
+    ordinal: z.number().int().positive().max(runContextReadingsMax),
+    afterTurn: z.number().int().nonnegative().max(runTurnSeriesMax),
+    window: runContextWindowSchema.optional(),
+    ...shape,
+  };
+  return z.discriminatedUnion("cause", [
+    z.strictObject({
+      ...reading,
+      cause: z.literal("Compaction"),
+      compaction: runCompactionSchema.optional(),
+    }),
+    z.strictObject({ ...reading, cause: z.enum(["Start", "End"]) }),
+  ]);
+}
+
+/** A reading as a worker offers it, before the server dates it. */
+export const runContextOfferedSchema = runContextReadingSchemaOf({});
+export type RunContextOffered = z.infer<typeof runContextOfferedSchema>;
+
+/** A reading as a reader is answered with it, dated by the server that stored it. */
+export const runContextReadingSchema = runContextReadingSchemaOf({
+  recordedAt: instantSchema,
+});
+export type RunContextReading = z.infer<typeof runContextReadingSchema>;
 
 /** Where the snapshot is and how much of it there is; its contents are their own read. */
 const runConfigurationRefSchema = z.strictObject({
@@ -257,6 +377,7 @@ export const executionRunSchema = z.object({
   configuration: runConfigurationRefSchema.optional(),
   transcript: runTranscriptRefSchema.optional(),
   turnsRecorded: countSchema,
+  readingsRecorded: countSchema.optional(),
   totals: runTotalsSchema.optional(),
 });
 export type ExecutionRun = z.infer<typeof executionRunSchema>;
@@ -939,6 +1060,13 @@ export const runTurnsResponseSchema = z.object({
   nextAfter: countSchema.optional(),
 });
 export type RunTurnsResponse = z.infer<typeof runTurnsResponseSchema>;
+
+/** One page of a run's context readings, ascending, resumed by the last ordinal. */
+export const runContextResponseSchema = z.object({
+  readings: z.array(runContextReadingSchema).max(runContextPageReadingsMax),
+  nextAfter: countSchema.optional(),
+});
+export type RunContextResponse = z.infer<typeof runContextResponseSchema>;
 
 const runTranscriptBatchAt = {
   batch: countSchema,
