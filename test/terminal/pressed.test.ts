@@ -39,11 +39,7 @@ type SetupPressed = keyof typeof setupPressed;
 
 /** The names a page draws from the catalog. */
 type SetupPressedCatalogued =
-  | "edit"
-  | "save"
-  | "projectPage"
-  | "projectCreate"
-  | "ticket";
+  "edit" | "save" | "projectPage" | "projectCreate" | "ticket";
 
 /** The names the invite page draws from the catalog, as its card's words. */
 type SetupPressedInvite = "workspaceCreate";
