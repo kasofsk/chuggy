@@ -195,7 +195,7 @@ test("an authorization that connected an account and read every one says nothing
 });
 
 test("reaching no account the person owns says so, and only that returns to the portal's install", () => {
-  const uninstalled = { standing: "Uninstalled", status: "Not installed" };
+  const uninstalled = { standing: "Uninstalled", status: "NotInstalled" };
   expect(wordOf([])).toStrictEqual(uninstalled);
   expect(wordOf([reached("globex", "NotOwner")])).toStrictEqual(uninstalled);
 });
@@ -249,11 +249,11 @@ test("a refusal is one failed word, a dead code's being Start again", () => {
   ).toBe("Refused");
   expect(
     status({ outcome: "Fault", code: "AuthorizationSpent", status: 502 }),
-  ).toBe("Start again");
+  ).toBe("Spent");
   expect(status({ outcome: "Fault", code: "InternalError", status: 500 })).toBe(
     "Failed",
   );
-  expect(status({ outcome: "Absent" })).toBe("Not found");
+  expect(status({ outcome: "Absent" })).toBe("NotFound");
   expect(
     status({
       outcome: "Retryable",

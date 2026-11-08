@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * How a finished ticket in this repository is finalized, and the write that moves it,
  * which the binding's other settings write through as well.
@@ -15,6 +14,7 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ProjectRepositoryResponse } from "../../../../../src/contract/responses.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { apiWriteProjectRepositoryLanding } from "../../core/apiRoutes.ts";
 import { finalizationChoiceKey } from "../../core/finalizationChoice.ts";
 import { projectAbilityRefused } from "../../core/projectAbilities.ts";
@@ -25,6 +25,7 @@ import {
 } from "../../core/projectQueries.ts";
 import { consoleWriteKey } from "../../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../../core/consoleWrite.ts";
+import type { Copy } from "../../core/copy.ts";
 import {
   projectRepositoriesWith,
   repositoryFinalizationChosen,
@@ -51,8 +52,16 @@ function RepositoryFinalizationNotice(props: {
     ProjectRepositoryResponse
   >;
 }): ReactNode {
+  const text = useCopyText();
   const saving = props.saving;
-  if (saving.isPending) return <Notice tone="info" inline detail="Writing" />;
+  if (saving.isPending)
+    return (
+      <Notice
+        tone="info"
+        inline
+        detail={text({ id: "repositories-writing" })}
+      />
+    );
   if (saving.error !== null)
     return (
       <Notice
@@ -66,7 +75,14 @@ function RepositoryFinalizationNotice(props: {
         <ConsoleWriteRefusedWords refused={saving.error} />
       </Notice>
     );
-  if (saving.isSuccess) return <Notice tone="live" inline detail="Written" />;
+  if (saving.isSuccess)
+    return (
+      <Notice
+        tone="live"
+        inline
+        detail={text({ id: "repositories-written" })}
+      />
+    );
   return null;
 }
 
@@ -104,7 +120,7 @@ function useRepositoryFinalizationDraft(
 function repositorySettingWrite(
   partition: PartitionIdentity,
   repository: string,
-  title: string,
+  title: Copy,
 ): ConsoleWrite<RepositoryFinalizationDraft, ProjectRepositoryResponse> {
   return {
     mutationKey: consoleWriteKey(
@@ -112,7 +128,7 @@ function repositorySettingWrite(
       partition.tenant,
       partition.project,
       repository,
-      title,
+      title.id,
     ),
     write: (ports, draft) =>
       apiWriteProjectRepositoryLanding(
@@ -144,14 +160,15 @@ function repositorySettingWrite(
 export function RepositorySettingSection(props: {
   readonly partition: PartitionIdentity;
   readonly binding: ProjectRepositoryResponse;
-  readonly title: string;
-  readonly about: string;
+  readonly title: Copy;
+  readonly about: Copy;
   /** The section's own control, over the draft it moves. */
   readonly body: (
     held: RepositoryFinalizationHeld,
     editing: boolean,
   ) => ReactNode;
 }): ReactNode {
+  const text = useCopyText();
   const held = useRepositoryFinalizationDraft(props.binding);
   const client = useQueryClient();
   const saving = useConsoleWrite(
@@ -168,8 +185,8 @@ export function RepositorySettingSection(props: {
   const moved = repositoryFinalizationMoved(saving.error?.failure);
   return (
     <SettingsSection
-      title={props.title}
-      about={props.about}
+      title={text(props.title)}
+      about={text(props.about)}
       editing={editing}
       editable
       readOnly={projectAbilityRefused(abilities, "administer")}
@@ -219,8 +236,8 @@ export function RepositoryFinalizationSection(props: {
     <RepositorySettingSection
       partition={props.partition}
       binding={props.binding}
-      title="Finalization"
-      about="How a finished ticket lands. A ticket may choose otherwise."
+      title={{ id: "repositories-landing-title" }}
+      about={{ id: "repositories-landing-about" }}
       body={(held, editing) => (
         <div className="flex flex-col gap-3">
           <FinalizationChoiceFields

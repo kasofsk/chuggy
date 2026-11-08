@@ -11,6 +11,7 @@
  * so it is a row saying so.
  */
 
+import { repositoryConfigurationRoot } from "../../../../src/contract/configurationDocument.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { ConfigurationSummary } from "../../../../src/contract/responses.ts";
 
@@ -19,11 +20,22 @@ import { apiConfigurations, configurationPagesMax } from "./apiRoutes.ts";
 import { approvalLabel } from "./codeLabels.ts";
 import { configurationLabel, workerLabel } from "./labels.ts";
 import type { Label } from "./labels.ts";
-import type { Copy } from "./copy.ts";
+import type { Copy, CopyOrData } from "./copy.ts";
+
+/** What a row's cell draws, and the value in full that hovering it reveals. */
+export interface RepositoryConfigurationCell {
+  readonly text: CopyOrData;
+  readonly title: string;
+}
+
+/** The directory a repository declares its configurations under, as a line
+ * names it. */
+export const repositoryConfigurationsDirectory =
+  repositoryConfigurationRoot.replace(/\/$/u, "");
 
 /** What a ready revision decides, which is the whole of what the row says. */
 export interface RepositoryConfigurationFacts {
-  readonly worker: Label;
+  readonly worker: RepositoryConfigurationCell;
   readonly stages: string;
   readonly approval: Copy;
 }
@@ -58,9 +70,12 @@ function repositoryCatalogLabel(
   catalog: NonNullable<
     Extract<ConfigurationSummary, { readiness: "Ready" }>["catalog"]
   >,
-): Label {
+): RepositoryConfigurationCell {
   return {
-    text: `${catalog.defaults.work} of ${String(catalog.workloads.length)} workloads`,
+    text: {
+      id: "repositories-catalog-work",
+      args: { work: catalog.defaults.work, count: catalog.workloads.length },
+    },
     title: catalog.workloads.join(", "),
   };
 }
@@ -87,7 +102,9 @@ export function repositoryConfigurationRow(
 
 /** What a screen says of a walk the budget cut short, the revisions it did
  * not reach being otherwise indistinguishable from ones that do not exist. */
-export const configurationsPartialLabel = "Not every configuration was read";
+export const configurationsPartialLabel: Copy = {
+  id: "repositories-configurations-partial",
+};
 
 /** What a walk of the listing read, and whether the budget cut it short. */
 export interface ProjectConfigurationsRead {

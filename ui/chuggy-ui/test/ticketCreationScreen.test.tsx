@@ -15,6 +15,7 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { TicketCreation } from "../app/browser/TicketCreation.tsx";
+import { copyTextEn } from "../app/copy/catalog.ts";
 import { configurationsPartialLabel } from "../app/core/repositoryConfigurations.ts";
 import {
   creationProjectNotActiveSentence,
@@ -160,7 +161,7 @@ test("an offer that could not be read is left out, said, and the one left is ask
   await drawCreation(({ url }) =>
     url.endsWith("/n-sonnet") ? unreadable() : undefined,
   );
-  expect(screen.getByText(configurationsPartialLabel)).toBeTruthy();
+  expect(screen.getByText(copyTextEn(configurationsPartialLabel))).toBeTruthy();
   expect(configurationPicker().textContent).toContain("Choose");
   expect(await offeredNames()).toStrictEqual(["development"]);
 });

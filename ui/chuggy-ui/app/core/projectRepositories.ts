@@ -25,6 +25,7 @@ import type {
 
 import type { ApiFailure, ApiResult } from "./apiRequest.ts";
 import type { ProjectRepositoryBindAnswer } from "./apiRoutes.ts";
+import type { Copy, CopyOrData } from "./copy.ts";
 import {
   forgePortalInstallations,
   forgeWorkerlessAccounts,
@@ -151,22 +152,24 @@ export function repositoryChoices(
 }
 
 /** What a row says once the latest reading no longer lists it. */
-export const repositoryUnlisted = "Unlisted";
+export const repositoryUnlisted: Copy = { id: "repositories-unlisted" };
 
 /** What a retired binding is called wherever one is drawn, which is the word
  * of the button that retires one. */
-export const repositoryUnbound = "Unbound";
+export const repositoryUnbound: Copy = { id: "repositories-unbound" };
 
 /** The line the picker draws when a listing is not all of what an installation holds. */
-export const repositoriesTruncated = "More than shown";
+export const repositoriesTruncated: Copy = { id: "repositories-truncated" };
 
 /** What the page and the picker both call a job's app not being where the work is. */
-export const repositoryWorkerMissing = "Worker app missing";
+export const repositoryWorkerMissing: Copy = {
+  id: "repositories-worker-missing",
+};
 
 /** What a bound row says of the worker app's reach, why, and the forge's page an owner changes it on where it names one. */
 export interface RepositoryWorkerReachLine {
-  readonly status: string;
-  readonly detail: string;
+  readonly status: Copy;
+  readonly detail: Copy;
   readonly settingsUrl?: string;
 }
 
@@ -178,27 +181,32 @@ export function repositoryWorkerReachLine(
     case "Unselected":
       return {
         status: repositoryWorkerMissing,
-        detail: `The worker app's installation ${reach.installationId} does not select this repository.`,
+        detail: {
+          id: "repositories-reach-unselected",
+          args: { installation: reach.installationId },
+        },
         settingsUrl: reach.settingsUrl,
       };
     case "Unclaimed":
       return {
         status: repositoryWorkerMissing,
-        detail: `No worker app installation is connected on ${reach.account}.`,
+        detail: {
+          id: "repositories-reach-unclaimed",
+          args: { account: reach.account },
+        },
       };
     case "Unknown":
       return {
-        status: "Worker app unread",
-        detail:
-          "GitHub did not say whether the worker app reaches this repository.",
+        status: { id: "repositories-reach-unread" },
+        detail: { id: "repositories-reach-unknown" },
       };
   }
 }
 
 /** A line under the picker's roster, and what its link to the forge says. */
 export interface RepositoryGrantLine {
-  readonly status: string;
-  readonly label: string;
+  readonly status: Copy;
+  readonly label: Copy;
 }
 
 /**
@@ -209,10 +217,13 @@ export interface RepositoryGrantLine {
 export const repositoryGrantLines: Readonly<
   Record<ForgeAppName, RepositoryGrantLine>
 > = {
-  portal: { status: "Not listed · grant it on GitHub", label: "Portal app" },
+  portal: {
+    status: { id: "repositories-grant-portal" },
+    label: { id: "repositories-portal-app" },
+  },
   worker: {
-    status: `${repositoryWorkerMissing} · grant it on GitHub`,
-    label: "Worker app",
+    status: { id: "repositories-grant-worker" },
+    label: { id: "repositories-worker-app" },
   },
 };
 
@@ -222,7 +233,9 @@ export type RepositoryWorkerLine = "Reading" | "Missing";
 
 /** The line the picker draws where a row was chosen before the worker app's
  * listings were read, so it is not taken for one the worker app grants. */
-export const repositoryWorkerReading = "Worker app · loading…";
+export const repositoryWorkerReading: Copy = {
+  id: "repositories-worker-reading",
+};
 
 /**
  * The worker app's line under the roster, from what it was read not to grant,
@@ -297,15 +310,17 @@ export function repositoryAddOpened(
 
 /** What the accounts panel draws for a viewer the listing is not shown to,
  * which is anyone who does not administer the workspace. */
-export const forgeAccountsWithheld =
-  "A workspace admin connects GitHub accounts";
+export const forgeAccountsWithheld: Copy = {
+  id: "repositories-accounts-withheld",
+};
 
-const repositoryOffersNotConfigured = "GitHub not configured · ask an operator";
+const repositoryOffersNotConfigured: Copy = {
+  id: "repositories-offers-not-configured",
+};
 
 /** How a repository comes to be one Add lists, drawn over Add on an empty
  * roster. */
-export const repositoryAddHow =
-  "Create one on GitHub, install both apps on it, then Add";
+export const repositoryAddHow: Copy = { id: "repositories-add-how" };
 
 /** What this reader takes from the page itself, under the line that names it. */
 export const repositoryOffersSteps = ["Connect", "InstallWorker"] as const;
@@ -315,11 +330,11 @@ export type RepositoryOffersStep = (typeof repositoryOffersSteps)[number];
 /** The one line drawn under Add, and the step drawn under it where the page
  * offers one. */
 export interface RepositoryOffersLine {
-  readonly status: string;
+  readonly status: Copy;
   readonly step: RepositoryOffersStep | undefined;
 }
 
-function repositoryOffersSaid(status: string): RepositoryOffersLine {
+function repositoryOffersSaid(status: Copy): RepositoryOffersLine {
   return { status, step: undefined };
 }
 
@@ -337,9 +352,9 @@ export function repositoryOffersLine(
     case "Pending":
       return undefined;
     case "Absent":
-      return repositoryOffersSaid("A workspace admin adds repositories");
+      return repositoryOffersSaid({ id: "repositories-offers-withheld" });
     case "Failed":
-      return repositoryOffersSaid("Accounts failed to load");
+      return repositoryOffersSaid({ id: "repositories-offers-failed" });
     case "Ready": {
       const installations = accounts.value.installations;
       return installations.length === 0
@@ -359,11 +374,11 @@ function repositoryOffersLineUnconnected(
     case "Absent":
       return repositoryOffersSaid(repositoryOffersNotConfigured);
     case "Failed":
-      return repositoryOffersSaid("GitHub unavailable");
+      return repositoryOffersSaid({ id: "repositories-github-unavailable" });
     case "Ready":
       return apps.value.authorization === undefined
         ? repositoryOffersSaid(repositoryOffersNotConfigured)
-        : { status: "Connect a GitHub account first", step: "Connect" };
+        : { status: { id: "repositories-offers-connect" }, step: "Connect" };
   }
 }
 
@@ -373,12 +388,15 @@ function repositoryOffersLineClaimed(
   installations: readonly ForgeInstallationResponse[],
 ): RepositoryOffersLine | undefined {
   if (forgePortalInstallations(installations).length === 0)
-    return repositoryOffersSaid("No account has the portal app");
+    return repositoryOffersSaid({ id: "repositories-offers-portal-missing" });
   const [workerless] = forgeWorkerlessAccounts(installations);
   return workerless === undefined
     ? undefined
     : {
-        status: `${repositoryWorkerMissing} · ${workerless}`,
+        status: {
+          id: "repositories-offers-worker-missing",
+          args: { account: workerless },
+        },
         step: "InstallWorker",
       };
 }
@@ -393,26 +411,27 @@ export function repositoryRefusalStatus(
     ApiFailure,
     { readonly outcome: "Rejected" } | { readonly outcome: "Conflict" }
   >,
-): string {
+): Copy {
   switch (refusal.outcome) {
     case "Retryable":
-      return "Deferring";
+      return { id: "repositories-deferring" };
     case "Absent":
-      return "Not found";
+      return { id: "repositories-not-found" };
     case "Unauthenticated":
-      return "Not signed in";
+      return { id: "repositories-signed-out" };
     case "Fault":
-      return "Failed";
+      return { id: "repositories-failed" };
     case "Unreachable":
-      return "Unreachable";
+      return { id: "repositories-unreachable" };
     case "Unreadable":
-      return "Unreadable";
+      return { id: "repositories-unreadable" };
   }
 }
 
-/** What a binding's configuration step draws, and whether asking again could change it. */
+/** What a binding's configuration step draws, and whether asking again could
+ * change it: the catalog's words, or a refusal's as the write threw them. */
 export interface RepositoryStepStatus {
-  readonly status: string;
+  readonly status: CopyOrData;
   readonly retry: boolean;
 }
 
@@ -421,81 +440,110 @@ export interface RepositoryStepStatus {
  * who has to act instead, and its row offers no Retry.
  */
 export const repositoryDeferrals: Readonly<
-  Record<ProjectRepositoryConfigurationDeferralName, RepositoryStepStatus>
+  Record<
+    ProjectRepositoryConfigurationDeferralName,
+    RepositoryStepStatus & { readonly status: Copy }
+  >
 > = {
   NotConfigured: {
-    status: "No configuration step · ask an operator",
+    status: { id: "repositories-deferral-not-configured" },
     retry: false,
   },
   NoBootstrapImage: {
-    status: "No worker image · ask an operator",
+    status: { id: "repositories-deferral-no-bootstrap-image" },
     retry: false,
   },
   DefaultBranchAbsent: {
-    status: "Empty repository · push a commit",
+    status: { id: "repositories-deferral-default-branch-absent" },
     retry: false,
   },
-  DefaultBranchUnavailable: { status: "GitHub unavailable", retry: true },
-  RepositoryAbsent: { status: "Not bound · bind again", retry: false },
-  SnapshotAbsent: { status: "Head unreadable", retry: true },
-  SnapshotUnavailable: { status: "GitHub unavailable", retry: true },
+  DefaultBranchUnavailable: {
+    status: { id: "repositories-github-unavailable" },
+    retry: true,
+  },
+  RepositoryAbsent: {
+    status: { id: "repositories-deferral-repository-absent" },
+    retry: false,
+  },
+  SnapshotAbsent: {
+    status: { id: "repositories-deferral-snapshot-absent" },
+    retry: true,
+  },
+  SnapshotUnavailable: {
+    status: { id: "repositories-github-unavailable" },
+    retry: true,
+  },
   SnapshotRefused: {
-    status: "Unreadable configurations · fix the repository",
+    status: { id: "repositories-deferral-snapshot-refused" },
     retry: false,
   },
   DeclarationsRefused: {
-    status: "Invalid configurations · fix the repository",
+    status: { id: "repositories-deferral-declarations-refused" },
     retry: false,
   },
   IdentityConflict: {
-    status: "Configuration conflict · ask an operator",
+    status: { id: "repositories-deferral-identity-conflict" },
     retry: false,
   },
   BootstrapDiffers: {
-    status: "Bootstrap differs · add configurations",
+    status: { id: "repositories-deferral-bootstrap-differs" },
     retry: false,
   },
-  StaleBinding: { status: "Binding changed", retry: true },
-  NotFound: { status: "Project not found · ask an operator", retry: false },
+  StaleBinding: {
+    status: { id: "repositories-deferral-stale-binding" },
+    retry: true,
+  },
+  NotFound: {
+    status: { id: "repositories-deferral-project-not-found" },
+    retry: false,
+  },
   ParentNotFound: {
-    status: "Project not found · ask an operator",
+    status: { id: "repositories-deferral-project-not-found" },
     retry: false,
   },
-  StepFailed: { status: "Step failed", retry: true },
+  StepFailed: {
+    status: { id: "repositories-deferral-step-failed" },
+    retry: true,
+  },
 };
 
 /** The line a bind leaves, whether it offers a first ticket as the next step,
  * and the line under it naming what under `.chug/` the step read none of. */
 export interface RepositoryNote {
-  readonly status: string;
+  readonly status: CopyOrData;
   readonly ticketOffered: boolean;
-  readonly ignored?: string;
+  readonly ignored?: Copy;
 }
-
-/** What the entries a configuration step read none of are called wherever
- * they are drawn. */
-const repositoryIgnoredLabel = "Not configurations";
 
 /** The entries a configuration step read none of as a line's detail: the
  * first it names, and how many more there are. */
 export function repositoryIgnoredDetail(
   ignored: RepositoryConfigurationIgnoredResponse,
-): string {
+): Copy {
   const [first, ...rest] = ignored.paths;
-  if (first === undefined) return "entries in .chug/";
-  if (ignored.truncated) return `${first} and ${String(rest.length + 1)}+ more`;
-  return rest.length === 0 ? first : `${first} and ${String(rest.length)} more`;
+  if (first === undefined) return { id: "repositories-ignored-entries" };
+  if (ignored.truncated)
+    return {
+      id: "repositories-ignored-more-truncated",
+      args: { first, count: rest.length + 1 },
+    };
+  return rest.length === 0
+    ? { id: "repositories-ignored-one", args: { first } }
+    : { id: "repositories-ignored-more", args: { first, count: rest.length } };
 }
 
 /** The line under a step's own naming what it read none of, where there is
  * anything. */
 function repositoryConfigurationsNoteIgnored(
   ignored: RepositoryConfigurationIgnoredResponse | undefined,
-): { readonly ignored?: string } {
+): { readonly ignored?: Copy } {
   return ignored === undefined
     ? {}
     : {
-        ignored: `${repositoryIgnoredLabel} · ${repositoryIgnoredDetail(ignored)}`,
+        ignored: {
+          id: "repositories-ignored",
+          args: { detail: repositoryIgnoredDetail(ignored) },
+        },
       };
 }
 
@@ -503,13 +551,16 @@ function repositoryConfigurationsNoteIgnored(
  * ticket once the project holds a configuration to file it against. */
 function repositoryConfigurationsNote(
   configurations: ProjectRepositoryConfigurationsResponse,
-): RepositoryNote {
+): RepositoryNote & { readonly status: Copy } {
   switch (configurations.result) {
     case "Imported":
-      return { status: "Configurations imported", ticketOffered: true };
+      return {
+        status: { id: "repositories-configurations-imported" },
+        ticketOffered: true,
+      };
     case "Bootstrapped":
       return {
-        status: "Default configuration added",
+        status: { id: "repositories-configuration-added" },
         ticketOffered: true,
         ...repositoryConfigurationsNoteIgnored(configurations.ignored),
       };
@@ -532,9 +583,9 @@ export function repositoryConfigureStatus(
     const configurations = result.value.configurations;
     switch (configurations.result) {
       case "Imported":
-        return { status: "Imported", retry: false };
+        return { status: { id: "repositories-step-imported" }, retry: false };
       case "Bootstrapped":
-        return { status: "Added", retry: false };
+        return { status: { id: "repositories-step-added" }, retry: false };
       case "Deferred":
         return repositoryDeferrals[configurations.reason];
     }
@@ -542,16 +593,17 @@ export function repositoryConfigureStatus(
   if (result.outcome === "Conflict")
     return result.code === "RepositoryRetired"
       ? { status: repositoryUnbound, retry: false }
-      : { status: "Conflict", retry: true };
-  if (result.outcome === "Rejected") return { status: "Refused", retry: true };
+      : { status: { id: "repositories-conflict" }, retry: true };
+  if (result.outcome === "Rejected")
+    return { status: { id: "repositories-refused" }, retry: true };
   return { status: repositoryRefusalStatus(result), retry: true };
 }
 
 /** What Unbind asks before it is sent: the question its confirm is named by,
  * and the line drawn above the press that sends it. */
 export interface RepositoryUnbindQuestion {
-  readonly question: string;
-  readonly line: string;
+  readonly question: Copy;
+  readonly line: Copy;
 }
 
 /** The question names the repository, what a new ticket can no longer do with
@@ -561,15 +613,18 @@ export function repositoryUnbindQuestion(
 ): RepositoryUnbindQuestion {
   const label = repositoryLabel(repository);
   return {
-    question: `Unbind ${label}?`,
-    line: `New tickets can't name ${label}. Existing tickets and their history stay. It can be added again, here or to another project.`,
+    question: {
+      id: "repositories-unbind-question",
+      args: { repository: label },
+    },
+    line: { id: "repositories-unbind-line", args: { repository: label } },
   };
 }
 
 /** The word a refused unbind is drawn as. */
-export function repositoryUnbindNote(failure: ApiFailure): string {
-  if (failure.outcome === "Rejected") return "Refused";
-  if (failure.outcome === "Conflict") return "Conflict";
+export function repositoryUnbindNote(failure: ApiFailure): Copy {
+  if (failure.outcome === "Rejected") return { id: "repositories-refused" };
+  if (failure.outcome === "Conflict") return { id: "repositories-conflict" };
   return repositoryRefusalStatus(failure);
 }
 
@@ -580,7 +635,7 @@ export type RepositoryBindOutcome =
       readonly configurations: ProjectRepositoryConfigurationsResponse;
     }
   | { readonly outcome: "AlreadyBound"; readonly repository: string }
-  | { readonly outcome: "Refused"; readonly status: string };
+  | { readonly outcome: "Refused"; readonly status: Copy };
 
 /**
  * THE SHAPE IS WHAT TELLS A NEW BINDING FROM ONE THAT STOOD. The route answers
@@ -603,13 +658,17 @@ export function repositoryBindOutcome(
     return {
       outcome: "Refused",
       status:
-        result.code === "RepositoryNotInstalled" ? "Not installed" : "Refused",
+        result.code === "RepositoryNotInstalled"
+          ? { id: "repositories-not-installed" }
+          : { id: "repositories-refused" },
     };
   if (result.outcome === "Conflict")
     return {
       outcome: "Refused",
       status:
-        result.code === "RepositoryBound" ? "Bound elsewhere" : "Conflict",
+        result.code === "RepositoryBound"
+          ? { id: "repositories-bound-elsewhere" }
+          : { id: "repositories-conflict" },
     };
   return { outcome: "Refused", status: repositoryRefusalStatus(result) };
 }
@@ -622,18 +681,27 @@ export function repositoryBindOutcome(
  */
 export function repositoryBindNote(
   outcome: RepositoryBindOutcome,
-): RepositoryNote {
+): RepositoryNote & { readonly status: Copy } {
   switch (outcome.outcome) {
     case "Bound": {
       const note = repositoryConfigurationsNote(outcome.configurations);
       return {
         ...note,
-        status: `${repositoryLabel(outcome.repository)} · ${note.status}`,
+        status: {
+          id: "repositories-bound-named",
+          args: {
+            repository: repositoryLabel(outcome.repository),
+            status: note.status,
+          },
+        },
       };
     }
     case "AlreadyBound":
       return {
-        status: `${repositoryLabel(outcome.repository)} · Already bound`,
+        status: {
+          id: "repositories-bound-already",
+          args: { repository: repositoryLabel(outcome.repository) },
+        },
         ticketOffered: false,
       };
     case "Refused":

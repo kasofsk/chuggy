@@ -22,13 +22,18 @@ import {
   finalizationMethodLabel,
   gitMergePolicyLabel,
 } from "./codeLabels.ts";
+import {
+  catalogFinalizerApproval,
+  catalogWorkloadModel,
+} from "./configurationCatalog.ts";
 import type {
   CatalogFinalizer,
   CatalogPlanStage,
   CatalogWorkload,
   ConfigurationCatalog,
 } from "./configurationCatalog.ts";
-import type { CopyText } from "./copy.ts";
+import type { Copy, CopyOrData, CopyText } from "./copy.ts";
+import { copyOrDataText } from "./copy.ts";
 
 export type CatalogEntryKind = "Workload" | "Plan" | "Finalizer" | "Prompt";
 
@@ -61,12 +66,18 @@ export interface CatalogEntry {
 export interface CatalogReference {
   readonly key: string;
   readonly name: string;
-  readonly field: string;
+  /** The field's name as the document writes it, or the stage it is named in. */
+  readonly field: CopyOrData;
+}
+
+/** Which reference this is among an entry's, by what it names and where. */
+export function catalogReferenceAt(reference: CatalogReference): string {
+  return `${reference.key}\u0000${JSON.stringify(reference.field)}`;
 }
 
 export interface CatalogGroup {
   readonly kind: CatalogEntryKind;
-  readonly title: string;
+  readonly title: Copy;
   readonly entries: readonly CatalogEntry[];
 }
 
@@ -78,12 +89,24 @@ export interface CatalogEntries {
   readonly usedBy: ReadonlyMap<string, readonly CatalogReference[]>;
 }
 
-const catalogGroupTitles: Readonly<Record<CatalogEntryKind, string>> = {
-  Workload: "Workloads",
-  Plan: "Evaluation plans",
-  Finalizer: "Finalizers",
-  Prompt: "Prompts",
+const catalogGroupTitles: Readonly<Record<CatalogEntryKind, Copy>> = {
+  Workload: { id: "configuration-catalog-group-workloads" },
+  Plan: { id: "configuration-catalog-group-plans" },
+  Finalizer: { id: "configuration-catalog-group-landings" },
+  Prompt: { id: "configuration-catalog-group-prompts" },
 };
+
+const catalogKindLabels: Readonly<Record<CatalogEntryKind, Copy>> = {
+  Workload: { id: "configuration-catalog-kind-workload" },
+  Plan: { id: "configuration-catalog-kind-plan" },
+  Finalizer: { id: "configuration-catalog-kind-landing" },
+  Prompt: { id: "configuration-catalog-kind-prompt" },
+};
+
+/** What an entry is, as the word beside its name. */
+export function catalogKindLabel(kind: CatalogEntryKind): Copy {
+  return catalogKindLabels[kind];
+}
 
 const catalogKeyPrefixes: Readonly<Record<CatalogEntryKind, string>> = {
   Workload: "workloads",
@@ -147,7 +170,10 @@ function catalogUsesOf(entry: CatalogEntry): readonly CatalogReference[] {
         stage.evaluators.map((evaluator) => ({
           key: catalogEntryKey("Workload", evaluator),
           name: evaluator,
-          field: `stage ${String(index + 1)} · ${stage.name}`,
+          field: {
+            id: "configuration-catalog-stage-field",
+            args: { number: index + 1, name: stage.name },
+          },
         })),
       );
     case "Finalizer":
@@ -162,7 +188,7 @@ function catalogReferencesDistinct(
 ): readonly CatalogReference[] {
   const seen = new Set<string>();
   return references.filter((reference) => {
-    const at = `${reference.key}\u0000${reference.field}`;
+    const at = catalogReferenceAt(reference);
     if (seen.has(at)) return false;
     seen.add(at);
     return true;
@@ -253,18 +279,22 @@ export function catalogEntriesOf(
   };
 }
 
-const catalogDefaultLabels: Readonly<Record<CatalogDefaultRole, string>> = {
-  work: "Default work",
-  evaluation: "Default evaluation",
-  finalization: "Default finalizer",
+const catalogDefaultLabels: Readonly<Record<CatalogDefaultRole, Copy>> = {
+  work: { id: "configuration-catalog-default-work" },
+  evaluation: { id: "configuration-catalog-default-evaluation" },
+  finalization: { id: "configuration-catalog-default-landing" },
 };
 
-export function catalogDefaultLabel(role: CatalogDefaultRole): string {
+export function catalogDefaultLabel(role: CatalogDefaultRole): Copy {
   return catalogDefaultLabels[role];
 }
 
-function catalogFinalizerApproval(finalizer: CatalogFinalizer): string {
-  return finalizer.approvalRequired ? "Approved first" : "Lands unapproved";
+/** A workload's model, or what it runs where it names none. */
+function catalogEntryRuns(workload: CatalogWorkload): CopyOrData {
+  return (
+    catalogWorkloadModel(workload) ??
+    workload.runner ?? { id: "configuration-catalog-unread" }
+  );
 }
 
 /** The first line of a prompt that says anything, its heading marks dropped. */
@@ -286,17 +316,21 @@ export function catalogEntrySummary(
     case "Workload": {
       const { workload } = detail;
       if (workload.runner === "Commands")
-        return ["Commands", ...workload.commands].join(" · ");
+        return [
+          text({ id: "configuration-catalog-commands" }),
+          ...workload.commands,
+        ].join(" · ");
       return [
-        workload.model ?? workload.runner ?? "Unread",
-        workload.promptPath ?? "inline prompt",
+        copyOrDataText(text, catalogEntryRuns(workload)),
+        workload.promptPath ??
+          text({ id: "configuration-catalog-prompt-inline" }),
       ].join(" · ");
     }
     case "Plan":
       return detail.stages.map((stage) => stage.name).join(" → ");
     case "Finalizer":
       return [
-        catalogFinalizerApproval(detail.finalizer),
+        text(catalogFinalizerApproval(detail.finalizer)),
         detail.finalizer.finalization === undefined
           ? undefined
           : text(finalizationMethodLabel(detail.finalizer.finalization)),
@@ -308,55 +342,94 @@ export function catalogEntrySummary(
   }
 }
 
+/** What a workload says, field by field: a command list where it runs
+ * commands, and its model and prompt where an agent runs it. */
+function catalogWorkloadFields<Field>(
+  detail: Extract<CatalogEntry["detail"], { kind: "Workload" }>,
+  field: (label: Copy, value: CopyOrData) => Field,
+): readonly Field[] {
+  const { workload } = detail;
+  const unread: Copy = { id: "configuration-catalog-unread" };
+  const commanded = workload.runner === "Commands";
+  return [
+    ...(detail.path === undefined
+      ? []
+      : [field({ id: "configuration-catalog-field-file" }, detail.path)]),
+    field(
+      { id: "configuration-catalog-field-runner" },
+      workload.runner ?? unread,
+    ),
+    field({ id: "configuration-catalog-field-evaluator" }, workload.purpose),
+    ...(commanded
+      ? [
+          field(
+            { id: "configuration-catalog-commands" },
+            workload.commands.join("\n"),
+          ),
+        ]
+      : [
+          field(
+            { id: "configuration-catalog-field-model" },
+            catalogWorkloadModel(workload) ?? unread,
+          ),
+          field(
+            { id: "configuration-catalog-field-prompt" },
+            workload.promptPath ?? {
+              id: "configuration-catalog-prompt-written-inline",
+            },
+          ),
+        ]),
+  ];
+}
+
 /** What an entry says, field by field, as its detail lists it. */
 export function catalogEntryFields(
   entry: CatalogEntry,
   text: CopyText,
 ): readonly (readonly [label: string, value: string])[] {
   const { detail } = entry;
+  const field = (label: Copy, value: CopyOrData) =>
+    [text(label), copyOrDataText(text, value)] as const;
   switch (detail.kind) {
-    case "Workload": {
-      const { workload } = detail;
-      const commanded = workload.runner === "Commands";
-      return [
-        ...(detail.path === undefined ? [] : [["File", detail.path] as const]),
-        ["Runner", workload.runner ?? "Unread"],
-        ["As an evaluator", workload.purpose],
-        ...(commanded
-          ? [["Commands", workload.commands.join("\n")] as const]
-          : [
-              ["Model", workload.model ?? "Unread"] as const,
-              ["Prompt", workload.promptPath ?? "Written inline"] as const,
-            ]),
-      ];
-    }
+    case "Workload":
+      return catalogWorkloadFields(detail, field);
     case "Plan":
-      return detail.stages.map(
-        (stage, index) =>
-          [
-            `Stage ${String(index + 1)} · ${stage.name}`,
-            stage.evaluators.join(", "),
-          ] as const,
+      return detail.stages.map((stage, index) =>
+        field(
+          {
+            id: "configuration-catalog-stage",
+            args: { number: index + 1, name: stage.name },
+          },
+          stage.evaluators.join(", "),
+        ),
       );
     case "Finalizer": {
       const { finalizer } = detail;
       const finalization = finalizer.finalization;
       return [
-        ["Approval", catalogFinalizerApproval(finalizer)],
+        field(
+          { id: "configuration-catalog-field-approval" },
+          catalogFinalizerApproval(finalizer),
+        ),
         ...(finalization === undefined
           ? []
-          : [["Finalization", text(finalizationLine(finalization))] as const]),
+          : [
+              field(
+                { id: "configuration-catalog-field-landing" },
+                finalizationLine(finalization),
+              ),
+            ]),
         ...(finalization?.kind === "GitMerge"
           ? [
-              [
-                "Policy",
-                text(gitMergePolicyLabel(finalization.policy)),
-              ] as const,
+              field(
+                { id: "configuration-catalog-field-policy" },
+                gitMergePolicyLabel(finalization.policy),
+              ),
             ]
           : []),
       ];
     }
     case "Prompt":
-      return [["Path", detail.path]];
+      return [field({ id: "configuration-catalog-field-path" }, detail.path)];
   }
 }

@@ -29,6 +29,7 @@ import type {
 import type { ApiPorts } from "../app/core/apiRequest.ts";
 import { CreationForm } from "../app/browser/TicketCreation.tsx";
 import { ticketConfigurationKept } from "../app/browser/editor/authoringGuards.tsx";
+import { copyTextEn } from "../app/copy/catalog.ts";
 import { configurationsPartialLabel } from "../app/core/repositoryConfigurations.ts";
 import {
   creationConfigurationName,
@@ -1462,8 +1463,8 @@ test("one configuration under a read that may have missed others is asked, not t
 test("a walk the budget stopped says so beside what it did find", () => {
   const ports = api({ state: "Succeeded" }).ports;
   drawOffered(ports, [], several);
-  expect(screen.queryByText(configurationsPartialLabel)).toBeNull();
+  expect(screen.queryByText(copyTextEn(configurationsPartialLabel))).toBeNull();
   cleanup();
   drawOffered(ports, [], { ...several, partial: true });
-  expect(screen.getByText(configurationsPartialLabel)).toBeTruthy();
+  expect(screen.getByText(copyTextEn(configurationsPartialLabel))).toBeTruthy();
 });

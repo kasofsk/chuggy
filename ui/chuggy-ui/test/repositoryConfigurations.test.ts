@@ -9,6 +9,8 @@
 
 import { expect, test } from "vitest";
 
+import { copiedWords } from "./copiedWords.ts";
+
 import { nativeHttpBasePath } from "../../../src/contract/http.ts";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
 import { configurationPagesMax } from "../app/core/apiRoutes.ts";
@@ -97,8 +99,10 @@ test("a catalog's row names the work a ticket selecting none runs, among the wor
     defaults: { work: "build", evaluation: "review" },
   };
   expect(
-    repositoryConfigurationRow({ ...ready, catalog } as typeof ready).facts
-      ?.worker,
+    copiedWords(
+      repositoryConfigurationRow({ ...ready, catalog } as typeof ready).facts
+        ?.worker,
+    ),
   ).toStrictEqual({ text: "build of 2 workloads", title: "build, review" });
 });
 

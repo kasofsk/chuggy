@@ -15,6 +15,7 @@
  * the page this tab left by where it stored one.
  */
 
+import type { Copy } from "./copy.ts";
 import type { ForgeInstallTransaction } from "./forgeInstallation.ts";
 import type { ForgePress } from "./forgePress.ts";
 import type { ForgeReturnWord } from "./forgeReturn.ts";
@@ -61,11 +62,13 @@ export type ForgeSetupDecision =
   | { readonly decision: "Unexpected" };
 
 /** The landing's one line for a return it cannot place. */
-export const forgeSetupUnexpected = "Not expected";
+export const forgeSetupUnexpected: Copy = {
+  id: "repositories-setup-unexpected",
+};
 
 /** The landing's one line for an update it cannot place, which says only where
  * the person has come from: what they saved there is not this console's to say. */
-export const forgeSetupUpdated = "Back from GitHub";
+export const forgeSetupUpdated: Copy = { id: "repositories-setup-updated" };
 
 /** What the landing returns with for an install an organization's owner has to approve. */
 export const forgeSetupRequested: ForgeReturnWord = {

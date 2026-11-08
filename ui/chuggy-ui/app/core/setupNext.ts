@@ -22,13 +22,10 @@
  */
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
-import { forgeInstallLabel } from "./forgeInstallation.ts";
+import type { ForgeAppName } from "../../../../src/contract/rosters.ts";
 import { inviteRoutePath } from "./inviteLinks.ts";
 import { projectCreationPathIn } from "./projectCreation.ts";
-import {
-  repositoryGrantLines,
-  repositoryLabel,
-} from "./projectRepositories.ts";
+import { repositoryLabel } from "./projectRepositories.ts";
 import {
   runnerPackageOffered,
   runnerPackages,
@@ -64,6 +61,7 @@ export const setupPressed = {
   connect: "Connect GitHub",
   add: "Add",
   retry: "Retry",
+  installWorker: "Install worker",
   runner: "Add runner",
   chatHost: "Register chat host",
   ticket: "Create ticket",
@@ -80,6 +78,19 @@ export const setupSeen = {
   northStar: "North Star",
   workspaceNaming: "New workspace",
 } as const;
+
+/** The line the Add picker draws under its list for an app not granted a
+ * repository, and the link beside it, by the app, in the picker's own words
+ * and held against them as `setupSeen` is. */
+export const setupGrantSeen: Readonly<
+  Record<ForgeAppName, { readonly status: string; readonly label: string }>
+> = {
+  portal: { status: "Not listed · grant it on GitHub", label: "Portal app" },
+  worker: {
+    status: "Worker app missing · grant it on GitHub",
+    label: "Worker app",
+  },
+};
 
 /** How many names a question lists before it says how many more there are. */
 export const setupAskNamesMax = 12;
@@ -147,7 +158,7 @@ function setupGrantMend(
   lack: Extract<SetupLack, { readonly lacks: "Grant" }>,
   page: string,
 ): SetupThing {
-  const line = repositoryGrantLines[lack.app];
+  const line = setupGrantSeen[lack.app];
   return setupHand(
     `The ${lack.app} app is installed on ${lack.account}, and GitHub does not let it into ${lack.repository}. Open ${page}, press ${setupPressed.add}, and under the list find ${line.status}. Follow the link beside it, ${line.label}, and on GitHub add ${lack.repository} to the repositories the app may reach. Tell me once it is granted.`,
     `once the person says the ${lack.app} app is granted ${lack.repository}`,
@@ -166,7 +177,7 @@ function setupGithubMend(
       "once the person says GitHub is connected",
     );
   if (lack.app === "worker") {
-    const install = forgeInstallLabel(lack.app);
+    const install = setupPressed.installWorker;
     return setupHand(
       `Open ${page} and press ${install}, then install it on ${lack.account}. Where ${lack.account} is an organisation you do not own, GitHub asks its owner for you and this waits on them. Tell me once it is installed.`,
       `once the person says the worker app is installed on ${lack.account}`,

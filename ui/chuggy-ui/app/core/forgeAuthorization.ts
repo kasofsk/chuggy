@@ -16,7 +16,7 @@ import type { ApiFailure, ApiResult } from "./apiRequest.ts";
 import { base64urlFromBytes } from "./base64url.ts";
 import { forgePressOf } from "./forgePress.ts";
 import type { ForgePress } from "./forgePress.ts";
-import type { ForgeReturnWord } from "./forgeReturn.ts";
+import type { ForgeReturnStatus, ForgeReturnWord } from "./forgeReturn.ts";
 import {
   pkceChallengeFromVerifier,
   pkceChallengeMethod,
@@ -152,10 +152,9 @@ export const forgeAuthorizationDeclined: ForgeReturnWord = {
   status: "Declined",
 };
 
-/** What this console says where the forge spent the code before the api could read what it reaches. */
-export const forgeAuthorizationSpent = "Start again";
-
-function forgeAuthorizationWordFailed(status: string): ForgeReturnWord {
+function forgeAuthorizationWordFailed(
+  status: ForgeReturnStatus,
+): ForgeReturnWord {
   return { standing: "Failed", status };
 }
 
@@ -178,7 +177,7 @@ function forgeAuthorizationWordAnswered(
   const uninstalled = forgeAuthorizationUninstalled(answered);
   const standing = uninstalled ? "Uninstalled" : "Unfinished";
   if (answered.truncated) return { standing, status: "Partial" };
-  if (uninstalled) return { standing, status: "Not installed" };
+  if (uninstalled) return { standing, status: "NotInstalled" };
   if (answered.accounts.some((account) => account.proof === "Unavailable"))
     return { standing, status: "Unavailable" };
   return undefined;
@@ -205,18 +204,16 @@ export function forgeAuthorizationRefusal(
     case "Rejected":
       return forgeAuthorizationWordFailed("Refused");
     case "Absent":
-      return forgeAuthorizationWordFailed("Not found");
+      return forgeAuthorizationWordFailed("NotFound");
     case "Retryable":
       return forgeAuthorizationWordFailed("Unavailable");
     case "Conflict":
       return forgeAuthorizationWordFailed("Conflict");
     case "Unauthenticated":
-      return forgeAuthorizationWordFailed("Not signed in");
+      return forgeAuthorizationWordFailed("SignedOut");
     case "Fault":
       return forgeAuthorizationWordFailed(
-        failure.code === "AuthorizationSpent"
-          ? forgeAuthorizationSpent
-          : "Failed",
+        failure.code === "AuthorizationSpent" ? "Spent" : "Failed",
       );
     case "Unreachable":
       return forgeAuthorizationWordFailed("Unreachable");

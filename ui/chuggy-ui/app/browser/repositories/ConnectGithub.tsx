@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * Connecting GitHub accounts: the person authorizes the portal app at the
  * forge, and the accounts it proves they own are what this tenant claims. It is
@@ -10,6 +9,7 @@
 import { useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { forgeAppsQuery } from "../../core/tenantQueries.ts";
 import { usePanelState } from "../api.ts";
 import { forgeAuthorizeRedirect } from "../forgeAuthorizeRedirect.ts";
@@ -23,6 +23,7 @@ export function ConnectGithub(props: {
   readonly returnPath: string;
   readonly variant?: ButtonVariant | undefined;
 }): ReactNode {
+  const text = useCopyText();
   const tenant = props.tenant;
   const state = usePanelState(forgeAppsQuery(tenant));
   const [leaving, setLeaving] = useState(false);
@@ -54,10 +55,12 @@ export function ConnectGithub(props: {
           );
         }}
       >
-        Connect GitHub
+        {text({ id: "repositories-connect-github" })}
       </Button>
       {state.state === "Ready" && client === undefined ? (
-        <span className="text-xs text-ink-3">{forgeSetupNotConfigured}</span>
+        <span className="text-xs text-ink-3">
+          {text(forgeSetupNotConfigured)}
+        </span>
       ) : null}
     </span>
   );

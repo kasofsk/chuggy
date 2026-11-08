@@ -9,6 +9,8 @@
 
 import { expect, test } from "vitest";
 
+import { copyTextEn } from "../app/copy/catalog.ts";
+
 import type {
   ForgeAppsResponse,
   ForgeInstallationResponse,
@@ -179,6 +181,6 @@ test("the worker claims read are the ones on an account a portal claim lists", (
 });
 
 test("each app's install is named as a person reads it", () => {
-  expect(forgeInstallLabel("portal")).toBe("Install portal");
-  expect(forgeInstallLabel("worker")).toBe("Install worker");
+  expect(copyTextEn(forgeInstallLabel("portal"))).toBe("Install portal");
+  expect(copyTextEn(forgeInstallLabel("worker"))).toBe("Install worker");
 });

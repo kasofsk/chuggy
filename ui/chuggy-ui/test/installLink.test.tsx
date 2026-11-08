@@ -11,7 +11,7 @@
  */
 
 import { QueryClient } from "@tanstack/react-query";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import type { ForgeAppName } from "../../../src/contract/rosters.ts";
@@ -23,6 +23,7 @@ import {
   ScreenHarness,
   settled,
 } from "./screenHarness.tsx";
+import { renderCopied } from "./copied.tsx";
 import { leadPartition } from "./leadFixture.ts";
 
 const returnPath = "/acme/atlas/repositories";
@@ -62,7 +63,7 @@ async function drawLinks(
       answer(authorizes ? { apps: held, authorization } : { apps: held }),
     ),
   );
-  render(
+  renderCopied(
     <ScreenHarness
       partition={leadPartition}
       client={

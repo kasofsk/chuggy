@@ -378,7 +378,7 @@ test("an offer that could not be read is left out of an edit, and said", async (
     draft: pinned("development", "o-development"),
     unread: (url) => (url.endsWith("/n-sonnet") ? unreadable() : undefined),
   });
-  expect(screen.getByText(configurationsPartialLabel)).toBeTruthy();
+  expect(screen.getByText(copyTextEn(configurationsPartialLabel))).toBeTruthy();
   expect(screen.getByText(/^Configuration · /u).textContent).toContain(
     "development",
   );

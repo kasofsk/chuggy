@@ -19,6 +19,7 @@ import {
   creationCatalogStagesNamedCanonical,
 } from "./ticketCreationFixture.ts";
 import { copyTextEn } from "../app/copy/catalog.ts";
+import { copiedWords } from "./copiedWords.ts";
 
 function entriesOf(canonical: string): CatalogEntries {
   const catalog = configurationCatalogOf(canonical);
@@ -65,11 +66,11 @@ test("each default is a badge on the entry it names, and no use", () => {
 });
 
 test("a plan uses each evaluator once per stage, and the workload says which plans run it", () => {
-  expect(entries.uses.get("plans/gated")).toStrictEqual([
+  expect(copiedWords(entries.uses.get("plans/gated"))).toStrictEqual([
     { key: "workloads/review", name: "review", field: "stage 1 · review" },
     { key: "workloads/gates", name: "gates", field: "stage 2 · gates" },
   ]);
-  expect(entries.usedBy.get("workloads/review")).toStrictEqual([
+  expect(copiedWords(entries.usedBy.get("workloads/review"))).toStrictEqual([
     { key: "plans/review", name: "review", field: "stage 1 · review" },
     { key: "plans/gated", name: "gated", field: "stage 1 · review" },
   ]);
@@ -156,10 +157,9 @@ test("a plan whose stages are named in free text says each name as written, in i
     ["Stage 1 · Code Review", "review, review"],
     ["Stage 2 · Checks · étape 2", "gates"],
   ]);
-  expect(named.uses.get("plans/gated")?.map((use) => use.field)).toStrictEqual([
-    "stage 1 · Code Review",
-    "stage 2 · Checks · étape 2",
-  ]);
+  expect(
+    copiedWords(named.uses.get("plans/gated")?.map((use) => use.field)),
+  ).toStrictEqual(["stage 1 · Code Review", "stage 2 · Checks · étape 2"]);
 });
 
 test("a workload naming a prompt file is written with the path alone, an empty list left out, and the file as its text", () => {
@@ -213,13 +213,13 @@ test("a finalizer's entry says how it lands, and a git merge's policy beside it"
     catalogEntryFields(entryOf(finalized, "finalizers/land"), copyTextEn),
   ).toStrictEqual([
     ["Approval", "Lands unapproved"],
-    ["Finalization", "Push · lands on refs/heads/release"],
+    ["Landing", "Push · lands on refs/heads/release"],
     ["Policy", "Serialized"],
   ]);
   expect(
     catalogEntryFields(entryOf(finalized, "finalizers/approved"), copyTextEn),
   ).toStrictEqual([
     ["Approval", "Approved first"],
-    ["Finalization", "Pull request · into the default branch"],
+    ["Landing", "Pull request · into the default branch"],
   ]);
 });
