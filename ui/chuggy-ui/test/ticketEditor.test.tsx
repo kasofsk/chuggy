@@ -7,7 +7,7 @@
  * moment it was put back.
  */
 
-import { cleanup, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import {
@@ -19,6 +19,9 @@ import {
 import TicketEditor from "../app/browser/editor/TicketEditor.tsx";
 import type { TicketYamlKey } from "../app/browser/editor/ticketYamlKey.ts";
 import { copyTextEn } from "../app/copy/catalog.ts";
+import { copyPseudoLocale } from "../app/copy/copyPseudo.ts";
+import { useCopyWording } from "../app/copy/CopyProvider.tsx";
+import type { CopyWording } from "../app/copy/CopyProvider.tsx";
 import { renderCopied } from "./copied.tsx";
 
 afterEach(cleanup);
@@ -39,6 +42,43 @@ test("the editor mounts in a shadow root and adds no style to the document", asy
   });
   expect(host.shadowRoot?.textContent).toContain("title: x");
   expect(document.querySelectorAll("style")).toHaveLength(0);
+});
+
+test("a wording chosen redraws the editor's own controls in it and keeps the text", async () => {
+  let held: CopyWording | undefined;
+  function Chooser(): null {
+    held = useCopyWording();
+    return null;
+  }
+  renderCopied(
+    <>
+      <Chooser />
+      <TicketEditor
+        value={"program:\n  build: x\n"}
+        onChange={() => undefined}
+        problems={[]}
+        vocabulary={[]}
+        catalog={undefined}
+      />
+    </>,
+  );
+  const shadow = () =>
+    document.querySelector(".ticket-editor-host")?.shadowRoot ?? undefined;
+  const folds = () =>
+    [...(shadow()?.querySelectorAll(".cm-foldGutter span[title]") ?? [])].map(
+      (marker) => marker.getAttribute("title"),
+    );
+  await waitFor(() => {
+    expect(folds()).toContain("Fold line");
+  });
+  act(() => {
+    held?.choose(copyPseudoLocale);
+  });
+  await waitFor(() => {
+    expect(folds()).not.toContain("Fold line");
+  });
+  expect(folds().length).toBeGreaterThan(0);
+  expect(shadow()?.textContent).toContain("build: x");
 });
 
 test("a text the handle is given is not reported as typed", () => {

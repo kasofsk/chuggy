@@ -1214,7 +1214,7 @@ function ticketYamlConfiguredDescribed(
       values: drawn.dependencyCandidates.map((candidate) => ({
         label: String(candidate),
         detail: text({
-          id: "ticket-authoring-duplicate-from",
+          id: "ticket-authoring-dependency-candidate",
           args: { ticket: String(candidate) },
         }),
       })),

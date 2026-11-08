@@ -414,6 +414,9 @@ export interface TicketAuthoringCopy {
     readonly merge: unknown;
   };
   readonly "ticket-authoring-hint-dependencies": Record<never, never>;
+  readonly "ticket-authoring-dependency-candidate": {
+    readonly ticket: unknown;
+  };
   readonly "ticket-authoring-hint-program": {
     readonly count: unknown;
   };

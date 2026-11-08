@@ -311,6 +311,7 @@ ticket-authoring-hint-images = the images attached in the form, by identity: { $
 # spells -work-stage: the work in general, not the stage
 ticket-authoring-hint-landing = how the finished work { -landing(form: "s") }: its kind, a { $merge }'s mode and policy, and its target where it { -landing(form: "s") } somewhere
 ticket-authoring-hint-dependencies = the { -ticket(form: "plural") } this one waits for, by number
+ticket-authoring-dependency-candidate = { -ticket } { $ticket }
 ticket-authoring-hint-program = the { -evaluation } program: at most { $count } { -stage(form: "plural") }, each judged by the { -evaluator(form: "plural") } it counts
 ticket-authoring-hint-overrides = what this { -ticket } replaces of its { -configuration }, each field whole, under the { -configuration }'s own names: { $fields }
 # spells -run: the verb

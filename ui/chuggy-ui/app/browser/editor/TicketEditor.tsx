@@ -12,7 +12,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode, RefObject } from "react";
 
-import { useCopyText } from "../../copy/CopyProvider.tsx";
+import { useCopyText, useCopyWording } from "../../copy/CopyProvider.tsx";
 import type { CopyText } from "../../core/copy.ts";
 import { persistentStore } from "../ports.ts";
 import { Button } from "../ui/Button.tsx";
@@ -153,7 +153,17 @@ function EditorActions(props: {
   );
 }
 
+/**
+ * The view is built in the words of the wording it mounts under, and
+ * CodeMirror draws its own panels and gutters once, so a wording chosen is a
+ * view built again from the text it holds.
+ */
 export default function TicketEditor(props: TicketEditorProps): ReactNode {
+  const { wording } = useCopyWording();
+  return <TicketEditorWorded key={wording} {...props} />;
+}
+
+function TicketEditorWorded(props: TicketEditorProps): ReactNode {
   const text = useCopyText();
   const { host, handle, ready } = useEditorHandle(props, text);
   useEffect(() => {
