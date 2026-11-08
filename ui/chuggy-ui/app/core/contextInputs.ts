@@ -48,7 +48,8 @@ export type ContextFileGroup = "Instructions" | "Settings" | "Other";
 /** One file the runtime read, as the Inputs table lists it. */
 export interface ContextFile {
   readonly group: ContextFileGroup;
-  /** As a reader names it: under the working directory where it is there. */
+  /** As a reader names it: under the working directory where it is there,
+   * and under the home where it is there. */
   readonly path: string;
   readonly bytes: number;
   readonly tokens: number | undefined;
@@ -125,10 +126,44 @@ function contextFileGroup(source: string): ContextFileGroup {
   return source === "Settings" ? "Settings" : "Other";
 }
 
-function contextFilePath(path: string, cwd: string | undefined): string {
-  if (cwd === undefined || cwd.length === 0) return path;
-  const under = cwd.endsWith("/") ? cwd : `${cwd}/`;
-  return path.startsWith(under) ? path.slice(under.length) : path;
+/** A directory as the prefix of the paths under it. */
+function contextDirectoryPrefix(directory: string): string {
+  return directory.endsWith("/") ? directory : `${directory}/`;
+}
+
+/** The runtime's home: the directory its own `.claude` directory sits in, as
+ * a file it read from there outside the working directory names it. */
+function contextHomeOf(
+  paths: readonly string[],
+  cwd: string | undefined,
+): string | undefined {
+  const outside = paths.filter(
+    (path) =>
+      cwd === undefined ||
+      cwd.length === 0 ||
+      !path.startsWith(contextDirectoryPrefix(cwd)),
+  );
+  for (const path of outside) {
+    const at = path.indexOf("/.claude/");
+    if (at > 0) return path.slice(0, at);
+  }
+  return undefined;
+}
+
+/** A path as a reader names it: under the working directory from there, and
+ * under the home from `~`. */
+function contextFilePath(
+  path: string,
+  cwd: string | undefined,
+  home: string | undefined,
+): string {
+  if (cwd !== undefined && cwd.length > 0) {
+    const under = contextDirectoryPrefix(cwd);
+    if (path.startsWith(under)) return path.slice(under.length);
+  }
+  if (home === undefined) return path;
+  const under = contextDirectoryPrefix(home);
+  return path.startsWith(under) ? `~/${path.slice(under.length)}` : path;
 }
 
 /** A path as the pieces a line may break between, each up to and with its
@@ -153,9 +188,13 @@ export function contextFilesOf(
   const weighed = new Map(
     (window?.memoryFiles ?? []).map((file) => [file.path, file.tokens]),
   );
+  const home = contextHomeOf(
+    snapshot.files.map((file) => file.path),
+    cwd,
+  );
   const files = snapshot.files.map((file): ContextFile => ({
     group: contextFileGroup(file.source),
-    path: contextFilePath(file.path, cwd),
+    path: contextFilePath(file.path, cwd, home),
     bytes: file.bytes,
     tokens: weighed.get(file.path),
     content: file.content,

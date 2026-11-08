@@ -50,6 +50,39 @@ test("the files are grouped instructions first, named under the working director
   expect(inputs.agents?.names).toStrictEqual(["Explore"]);
 });
 
+test("a file under the runtime's home is named from ~, the home being where a .claude directory outside the working directory sits", () => {
+  const settings = (path: string) => ({
+    source: "Settings",
+    path,
+    bytes: 620,
+    content: "{}",
+  });
+  const named = (paths: readonly string[]) =>
+    contextInputsOf(
+      contextSnapshot({ files: paths.map(settings) }),
+      undefined,
+    ).files.map((file) => file.path);
+  expect(
+    named([
+      "/work/repo/.claude/settings.json",
+      "/home/node/.claude/settings.json",
+      "/home/node/notes/plan.md",
+      "/etc/claude-code/managed-settings.json",
+    ]),
+  ).toStrictEqual([
+    ".claude/settings.json",
+    "~/.claude/settings.json",
+    "~/notes/plan.md",
+    "/etc/claude-code/managed-settings.json",
+  ]);
+  expect(named(["/root/.claude/settings.json"])).toStrictEqual([
+    "~/.claude/settings.json",
+  ]);
+  expect(named(["/home/node/notes/plan.md"])).toStrictEqual([
+    "/home/node/notes/plan.md",
+  ]);
+});
+
 test("a path breaks only after a slash, so no name is split", () => {
   expect(contextPathParts("src/adapters/postgres/AGENTS.md")).toStrictEqual([
     "src/",
