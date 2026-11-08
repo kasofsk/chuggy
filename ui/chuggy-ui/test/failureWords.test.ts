@@ -9,6 +9,7 @@
 import { expect, test } from "vitest";
 
 import type { ApiFailure } from "../app/core/apiRequest.ts";
+import { copyOrDataText } from "../app/core/copy.ts";
 import type { CopyOrData } from "../app/core/copy.ts";
 import { copyTextEn } from "../app/copy/catalog.ts";
 import {
@@ -60,7 +61,10 @@ function failureInternals(failure: ApiFailure): readonly CopyOrData[] {
 test("every outcome is one word of at most two", () => {
   expect(
     Object.fromEntries(
-      failures.map((failure) => [failure.outcome, failureWords(failure).word]),
+      failures.map((failure) => [
+        failure.outcome,
+        copyTextEn(failureWords(failure).word),
+      ]),
     ),
   ).toStrictEqual({
     Unauthenticated: "Signed out",
@@ -74,7 +78,7 @@ test("every outcome is one word of at most two", () => {
   });
   for (const failure of failures)
     expect(
-      failureWords(failure).word.split(" ").length,
+      copyTextEn(failureWords(failure).word).split(" ").length,
       failure.outcome,
     ).toBeLessThanOrEqual(2);
 });
@@ -85,9 +89,9 @@ test("what an outcome carries beyond its word is its detail, and in no word or l
     const internals = failureInternals(failure).slice(1);
     expect(words.detail, failure.outcome).toBe(internals[0]);
     for (const drawn of [
-      words.word,
-      readFailedLine(undefined, failure),
-      readFailedLine("Tickets", failure),
+      copyTextEn(words.word),
+      copyTextEn(readFailedLine(undefined, failure)),
+      copyTextEn(readFailedLine("Tickets", failure)),
     ])
       for (const internal of failureInternals(failure))
         expect(drawn, failure.outcome).not.toContain(internal);
@@ -95,24 +99,26 @@ test("what an outcome carries beyond its word is its detail, and in no word or l
 });
 
 test("a failed read is its noun, that it was not read, and its word, and an absence says only that it is not found", () => {
-  expect(readFailedLine("Tickets", every.Unreachable)).toBe(
+  expect(copyTextEn(readFailedLine("Tickets", every.Unreachable))).toBe(
     "Tickets · Not read · No connection",
   );
-  expect(readFailedLine(undefined, every.Unreachable)).toBe(
+  expect(copyTextEn(readFailedLine(undefined, every.Unreachable))).toBe(
     "Not read · No connection",
   );
-  expect(readFailedLine("More", every.Fault)).toBe(
+  expect(copyTextEn(readFailedLine("More", every.Fault))).toBe(
     "More · Not read · Server error",
   );
-  expect(readFailedLine("Draft", every.Absent)).toBe("Draft · Not found");
-  expect(readFailedLine(undefined, every.Absent)).toBe("Not found");
+  expect(copyTextEn(readFailedLine("Draft", every.Absent))).toBe(
+    "Draft · Not found",
+  );
+  expect(copyTextEn(readFailedLine(undefined, every.Absent))).toBe("Not found");
 });
 
 test("a throw in place of an answer is drawn in the same words as an answer the console could not read", () => {
   const thrown = failureOfThrown(new Error("boom"));
   expect(thrown).toStrictEqual({ outcome: "Unreadable", reason: "boom" });
   expect(failureWords(thrown)).toStrictEqual({
-    word: "Unreadable",
+    word: { id: "failure-unreadable" },
     detail: "boom",
   });
 });
@@ -120,7 +126,7 @@ test("a throw in place of an answer is drawn in the same words as an answer the 
 /** Every write's generic fallback, as the line it leaves. */
 const writeLines: readonly (readonly [
   string,
-  (failure: ApiFailure) => string,
+  (failure: ApiFailure) => CopyOrData,
 ])[] = [
   ["a member's runners removed", (failure) => memberRunnerRemoved(failure)],
   ["a finalization saved", repositoryFinalizationRefusal],
@@ -140,7 +146,7 @@ const writeLines: readonly (readonly [
 test("no write's line says its refusal twice, or carries a code", () => {
   for (const [write, line] of writeLines)
     for (const failure of failures) {
-      const drawn = line(failure);
+      const drawn = copyOrDataText(copyTextEn, line(failure));
       const parts = drawn.split(" · ");
       expect(new Set(parts).size, `${write}: ${drawn}`).toBe(parts.length);
       expect(drawn, write).not.toMatch(/(?:Failed|Refused) · Refused/u);

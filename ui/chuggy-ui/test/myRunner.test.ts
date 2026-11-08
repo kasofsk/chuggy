@@ -7,6 +7,9 @@
  */
 
 import { expect, test } from "vitest";
+import { copyTextEn } from "../app/copy/catalog.ts";
+import { copyOrDataText } from "../app/core/copy.ts";
+import type { CopyOrData } from "../app/core/copy.ts";
 
 import { personalRunnersMax } from "../../../src/contract/http.ts";
 import type { PersonalRunnerResponse } from "../../../src/contract/responses.ts";
@@ -233,15 +236,21 @@ test("a run of the reader's waiting on their runners says the pause their accoun
   ).toBeUndefined();
 });
 
+function said(line: CopyOrData): string {
+  return copyOrDataText(copyTextEn, line);
+}
+
 test("taking a member's runners off says whether there were any it could take", () => {
-  expect(memberRunnerRemoved({ outcome: "Ok", value: undefined })).toBe(
+  expect(said(memberRunnerRemoved({ outcome: "Ok", value: undefined }))).toBe(
     "Runners removed",
   );
-  expect(memberRunnerRemoved({ outcome: "Absent" })).toBe(
+  expect(said(memberRunnerRemoved({ outcome: "Absent" }))).toBe(
     "No runner you may remove",
   );
   expect(
-    memberRunnerRemoved({ outcome: "Fault", code: "Internal", status: 500 }),
+    said(
+      memberRunnerRemoved({ outcome: "Fault", code: "Internal", status: 500 }),
+    ),
   ).toBe("Server error");
 });
 

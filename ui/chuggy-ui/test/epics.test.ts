@@ -27,6 +27,7 @@ import {
   epicsQueryWith,
 } from "../app/core/epics.ts";
 import { copyTextEn } from "../app/copy/catalog.ts";
+import { saidEn } from "./saidEn.ts";
 import type { EpicForm } from "../app/core/epics.ts";
 import { epicStatusRoster } from "../../../src/contract/responses.ts";
 import { phaseTone } from "../app/core/tones.ts";
@@ -88,7 +89,7 @@ test("the list asks for the defaults an address leaves out", () => {
 
 test("every status the wire speaks has a word and a tone", () => {
   for (const status of epicStatusRoster)
-    expect(epicStatusLook(status).word).not.toBe("");
+    expect(copyTextEn(epicStatusLook(status).word)).not.toBe("");
 });
 
 test("an epic needing attention is drawn in the hue an Escalated ticket is", () => {
@@ -105,12 +106,12 @@ test("progress is said as what is done of what there is", () => {
     Escalated: 0,
     Revoked: 0,
   };
-  expect(epicProgressLine({ byPhase, drafts: 0, done: 0, total: 0 })).toBe(
-    "no tickets",
-  );
-  expect(epicProgressLine({ byPhase, drafts: 0, done: 2, total: 5 })).toBe(
-    "2 of 5 done",
-  );
+  expect(
+    saidEn(epicProgressLine({ byPhase, drafts: 0, done: 0, total: 0 })),
+  ).toBe("no tickets");
+  expect(
+    saidEn(epicProgressLine({ byPhase, drafts: 0, done: 2, total: 5 })),
+  ).toBe("2 of 5 done");
 });
 
 const graph: EpicGraphResponse = {
@@ -295,53 +296,65 @@ test("a form reads back as the epic it was made from", () => {
 });
 
 test("a form with no title or unreadable tickets is faulted before it is sent", () => {
-  expect(epicFormFaults(form)).toStrictEqual([]);
-  expect(epicFormFaults({ ...form, title: " " })).toStrictEqual([
+  expect(saidEn(epicFormFaults(form))).toStrictEqual([]);
+  expect(saidEn(epicFormFaults({ ...form, title: " " }))).toStrictEqual([
     "The title is empty.",
   ]);
-  expect(epicFormFaults({ ...form, tickets: "q" })).toStrictEqual([
+  expect(saidEn(epicFormFaults({ ...form, tickets: "q" }))).toStrictEqual([
     "Not ticket numbers: q.",
   ]);
 });
 
 test("a stale revision is said to need a reload, and unknown tickets are named", () => {
   expect(
-    epicWriteRefusal({
-      outcome: "Conflict",
-      code: "StaleRevision",
-      body: { current: 5 },
-    }),
+    saidEn(
+      epicWriteRefusal({
+        outcome: "Conflict",
+        code: "StaleRevision",
+        body: { current: 5 },
+      }),
+    ),
   ).toContain("Reload");
   expect(
-    epicWriteRefusal({
-      outcome: "Conflict",
-      code: "UnknownTickets",
-      body: { tickets: [4, 8] },
-    }),
+    saidEn(
+      epicWriteRefusal({
+        outcome: "Conflict",
+        code: "UnknownTickets",
+        body: { tickets: [4, 8] },
+      }),
+    ),
   ).toBe("The project has no ticket #4, #8.");
-  expect(epicWriteRefusal({ outcome: "Absent" })).toBe(
+  expect(saidEn(epicWriteRefusal({ outcome: "Absent" }))).toBe(
     "The epic no longer exists.",
   );
 });
 
 test("a draft refused for its epic is said so, and any other refusal is not the epic's", () => {
   expect(
-    epicDraftRefusal({ outcome: "Conflict", code: "ArchivedEpic", body: {} }),
+    saidEn(
+      epicDraftRefusal({ outcome: "Conflict", code: "ArchivedEpic", body: {} }),
+    ),
   ).toContain("archived");
   expect(
-    epicDraftRefusal({ outcome: "Conflict", code: "LargeContent", body: {} }),
+    saidEn(
+      epicDraftRefusal({ outcome: "Conflict", code: "LargeContent", body: {} }),
+    ),
   ).toContain("full");
   expect(
-    epicDraftRefusal({ outcome: "Conflict", code: "MissingEpic", body: {} }),
+    saidEn(
+      epicDraftRefusal({ outcome: "Conflict", code: "MissingEpic", body: {} }),
+    ),
   ).toContain("no longer exists");
   expect(
-    epicDraftRefusal({
-      outcome: "Conflict",
-      code: "DraftInitializationStale",
-      body: {},
-    }),
+    saidEn(
+      epicDraftRefusal({
+        outcome: "Conflict",
+        code: "DraftInitializationStale",
+        body: {},
+      }),
+    ),
   ).toBeUndefined();
-  expect(epicDraftRefusal({ outcome: "Absent" })).toBeUndefined();
+  expect(saidEn(epicDraftRefusal({ outcome: "Absent" }))).toBeUndefined();
 });
 
 test("the picker keeps the epic chosen on another page among its options, once", () => {

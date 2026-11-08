@@ -428,7 +428,7 @@ async function creationDraftCreated(
   const epicRefusal =
     body.epic === undefined ? undefined : epicDraftRefusal(answered);
   if (epicRefusal !== undefined)
-    return { created: "Refused", reason: epicRefusal, held: undefined };
+    return { created: "Refused", reason: text(epicRefusal), held: undefined };
   if (answered.outcome === "Conflict" && answered.code !== "ProjectNotActive")
     return { created: "Stale", reason: creationStaleSentence };
   return {

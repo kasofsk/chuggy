@@ -8,6 +8,7 @@
  */
 
 import { expect, test } from "vitest";
+import { copyTextEn } from "../app/copy/catalog.ts";
 
 import type { ProjectRepositoryResponse } from "../../../src/contract/responses.ts";
 import type { FinalizationChoice } from "../app/core/finalizationChoice.ts";
@@ -163,23 +164,25 @@ test("only the moved code with a readable body is a conflict", () => {
   expect(repositoryFinalizationMoved(moved)).toStrictEqual(
     binding(chuggy, proposal),
   );
-  expect(repositoryFinalizationRefusal(moved)).toBe("Settings moved");
+  expect(copyTextEn(repositoryFinalizationRefusal(moved))).toBe(
+    "Settings moved",
+  );
   const unreadable = {
     outcome: "Conflict",
     code: "RepositoryLandingMoved",
     body: { repository: { repository: chuggy } },
   } as const;
   expect(repositoryFinalizationMoved(unreadable)).toBeUndefined();
-  expect(repositoryFinalizationRefusal(unreadable)).toBe("Refused");
+  expect(copyTextEn(repositoryFinalizationRefusal(unreadable))).toBe("Refused");
   const other = {
     outcome: "Conflict",
     code: "SomethingElse",
     body: undefined,
   } as const;
   expect(repositoryFinalizationMoved(other)).toBeUndefined();
-  expect(repositoryFinalizationRefusal(other)).toBe("Refused");
+  expect(copyTextEn(repositoryFinalizationRefusal(other))).toBe("Refused");
   expect(repositoryFinalizationMoved({ outcome: "Absent" })).toBeUndefined();
-  expect(repositoryFinalizationRefusal({ outcome: "Absent" })).toBe(
+  expect(copyTextEn(repositoryFinalizationRefusal({ outcome: "Absent" }))).toBe(
     "Not found",
   );
 });

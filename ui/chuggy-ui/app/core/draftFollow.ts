@@ -22,6 +22,7 @@
 import type { DraftResponse } from "../../../../src/contract/responses.ts";
 
 import type { CreationDraftHeld } from "./ticketCreationRun.ts";
+import type { Copy } from "./copy.ts";
 
 export interface DraftFollowHeld<Form> {
   /** The revision the form is drawn from and judged touched against. */
@@ -243,19 +244,18 @@ export function draftFollowCreationHeld(
     : attempted;
 }
 
-export function draftFollowBehindSentence(ticket: number): string {
-  return `Draft ${String(ticket)} changed while you were editing; your edits are kept.`;
+export function draftFollowBehindSentence(ticket: number): Copy {
+  return { id: "drafts-behind", args: { ticket: String(ticket) } };
 }
 
-export const draftFollowBehindChoice =
-  "Take theirs to drop your edits, or keep yours to replace its new revision with the whole ticket as it is here.";
+export const draftFollowBehindChoice: Copy = { id: "drafts-behind-choice" };
 
-export function draftFollowClosedSentence(closed: DraftFollowClosed): string {
-  const draft = `Draft ${String(closed.ticket)}`;
+export function draftFollowClosedSentence(closed: DraftFollowClosed): Copy {
+  const args = { ticket: String(closed.ticket) };
   switch (closed.standing) {
     case "Released":
-      return `${draft} was released as ticket ${String(closed.ticket)}, so there is nothing left here to release.`;
+      return { id: "drafts-closed-released", args };
     case "Deleted":
-      return `${draft} was deleted, so there is nothing left here to release.`;
+      return { id: "drafts-closed-deleted", args };
   }
 }

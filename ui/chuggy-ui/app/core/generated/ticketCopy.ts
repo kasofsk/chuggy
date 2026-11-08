@@ -47,6 +47,17 @@ export interface TicketCopy {
   readonly "ticket-tab-configuration": Record<never, never>;
   readonly "ticket-tab-usage": Record<never, never>;
   readonly "ticket-tabs-nav-label": Record<never, never>;
+  readonly "ticket-header-merged-into": {
+    readonly base: unknown;
+  };
+  readonly "ticket-header-waiting-lead": Record<never, never>;
+  readonly "ticket-header-waiting-dispatch": Record<never, never>;
+  readonly "ticket-header-unfinished": {
+    readonly count: unknown;
+  };
+  readonly "ticket-header-revoked": {
+    readonly count: unknown;
+  };
   readonly "ticket-cycle-number": {
     readonly cycle: unknown;
   };
@@ -119,6 +130,9 @@ export interface TicketCopy {
     readonly revision: unknown;
   };
   readonly "ticket-overview-unreleased-changes": Record<never, never>;
+  readonly "ticket-overview-unreleased-count": {
+    readonly count: unknown;
+  };
   readonly "ticket-overview-open-draft": Record<never, never>;
   readonly "ticket-overview-draft-badge": Record<never, never>;
   readonly "ticket-steps-in-order": Record<never, never>;
@@ -127,6 +141,12 @@ export interface TicketCopy {
   readonly "ticket-steps-phase-work": Record<never, never>;
   readonly "ticket-steps-phase-evaluation": Record<never, never>;
   readonly "ticket-steps-phase-landing": Record<never, never>;
+  readonly "ticket-steps-not-started": Record<never, never>;
+  readonly "ticket-steps-not-on-page": Record<never, never>;
+  readonly "ticket-plan-commands": Record<never, never>;
+  readonly "ticket-plan-evaluator": {
+    readonly key: unknown;
+  };
   readonly "ticket-now-watch": Record<never, never>;
   readonly "ticket-now-title": {
     readonly status: unknown;
@@ -170,6 +190,30 @@ export interface TicketCopy {
   readonly "ticket-run-not-found": Record<never, never>;
   readonly "ticket-run-showing-first": {
     readonly run: unknown;
+  };
+  readonly "ticket-run-tokens": {
+    readonly input: unknown;
+    readonly output: unknown;
+    readonly write: unknown;
+    readonly read: unknown;
+  };
+  readonly "ticket-run-mode-container": Record<never, never>;
+  readonly "ticket-run-mode-capability": Record<never, never>;
+  readonly "ticket-runs-work-not-on-page": Record<never, never>;
+  readonly "ticket-runs-starting": {
+    readonly step: unknown;
+  };
+  readonly "ticket-runs-running": {
+    readonly step: unknown;
+  };
+  readonly "ticket-runs-sent-back": {
+    readonly step: unknown;
+  };
+  readonly "ticket-runs-failed-at": {
+    readonly step: unknown;
+  };
+  readonly "ticket-runs-blocked-at": {
+    readonly step: unknown;
   };
   readonly "ticket-landing-heading": Record<never, never>;
   readonly "ticket-landing-none": Record<never, never>;
@@ -247,6 +291,7 @@ export interface TicketCopy {
   readonly "ticket-usage-by-step-caption": Record<never, never>;
   readonly "ticket-usage-by-model-caption": Record<never, never>;
   readonly "ticket-usage-col-step": Record<never, never>;
+  readonly "ticket-usage-total": Record<never, never>;
   readonly "ticket-usage-col-runs": Record<never, never>;
   readonly "ticket-usage-col-input": Record<never, never>;
   readonly "ticket-usage-col-output": Record<never, never>;
@@ -282,6 +327,11 @@ export interface TicketCopy {
   readonly "ticket-transcript-earlier-not-held": Record<never, never>;
   readonly "ticket-result-end-cut": Record<never, never>;
   readonly "ticket-artifact-no-preview": Record<never, never>;
+  readonly "ticket-artifact-preview": Record<never, never>;
+  readonly "ticket-artifact-hide": Record<never, never>;
+  readonly "ticket-artifact-bytes": {
+    readonly bytes: unknown;
+  };
   readonly "ticket-sections-needs-you": Record<never, never>;
   readonly "ticket-sections-in-progress": Record<never, never>;
   readonly "ticket-sections-up-next": Record<never, never>;

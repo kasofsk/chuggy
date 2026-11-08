@@ -333,7 +333,7 @@ function TicketUnreleased(props: {
       className="ticket-unreleased"
       aria-label={text({ id: "ticket-overview-unreleased-changes" })}
     >
-      <strong>{line}</strong>
+      <strong>{text(line)}</strong>
       <Link
         to="/$tenant/$project/tickets/$ticket/edit"
         params={props.params}

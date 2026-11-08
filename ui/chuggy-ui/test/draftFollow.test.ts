@@ -9,6 +9,7 @@
  */
 
 import { expect, test } from "vitest";
+import { copyTextEn } from "../app/copy/catalog.ts";
 
 import type { DraftResponse } from "../../../src/contract/responses.ts";
 import {
@@ -277,18 +278,20 @@ test("a creation goes back to what its last submit wrote, and forgets what wrote
 });
 
 test("each standing is said in a sentence of its own", () => {
-  expect(draftFollowBehindSentence(12)).toBe(
+  expect(copyTextEn(draftFollowBehindSentence(12))).toBe(
     "Draft 12 changed while you were editing; your edits are kept.",
   );
-  expect(draftFollowBehindChoice).toBe(
+  expect(copyTextEn(draftFollowBehindChoice)).toBe(
     "Take theirs to drop your edits, or keep yours to replace its new revision with the whole ticket as it is here.",
   );
-  expect(draftFollowClosedSentence({ standing: "Released", ticket: 12 })).toBe(
+  expect(
+    copyTextEn(draftFollowClosedSentence({ standing: "Released", ticket: 12 })),
+  ).toBe(
     "Draft 12 was released as ticket 12, so there is nothing left here to release.",
   );
-  expect(draftFollowClosedSentence({ standing: "Deleted", ticket: 12 })).toBe(
-    "Draft 12 was deleted, so there is nothing left here to release.",
-  );
+  expect(
+    copyTextEn(draftFollowClosedSentence({ standing: "Deleted", ticket: 12 })),
+  ).toBe("Draft 12 was deleted, so there is nothing left here to release.");
 });
 
 test("a form is edited where it says anything its base does not, whatever it was typed through", () => {

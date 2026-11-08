@@ -27,7 +27,6 @@ import { apiPortsOver } from "../core/apiPorts.ts";
 import { apiOrThrow } from "../core/apiRequest.ts";
 import type { ApiPorts } from "../core/apiRequest.ts";
 import type { ConsoleQuery } from "../core/consoleQuery.ts";
-import { readFailedLine } from "../core/failureWords.ts";
 import { panelStateFromQuery } from "../core/freshness.ts";
 import type { PanelState } from "../core/freshness.ts";
 import { apiFetch, sleepMs } from "./ports.ts";
@@ -66,7 +65,7 @@ export function panelQueryOptions<T>(
     queryFn: async ({ signal, client }) =>
       apiOrThrow(
         await query.read(ports, signal, client.getQueryData(query.queryKey)),
-        (failure) => readFailedLine(undefined, failure),
+        (failure) => failure.outcome,
       ),
     refetchInterval: query.polledMs ?? false,
     staleTime: query.kept === "Streamed" && streamHolding ? Infinity : 0,

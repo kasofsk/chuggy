@@ -30,6 +30,7 @@ import type {
   ConsoleWriteRefused,
 } from "../../core/consoleWrite.ts";
 import { instantFigure } from "../../core/figures.ts";
+import type { Copy } from "../../core/copy.ts";
 import { failureWords } from "../../core/failureWords.ts";
 import type { PanelState } from "../../core/freshness.ts";
 import { myRunnerShort } from "../../core/myRunner.ts";
@@ -73,7 +74,7 @@ async function chatHostReread(
   });
 }
 
-function chatHostRefusal(failure: ApiFailure): string {
+function chatHostRefusal(failure: ApiFailure): Copy {
   return failureWords(failure).word;
 }
 

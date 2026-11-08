@@ -65,7 +65,11 @@ export function ticketUsageStepsOf(
   nowMs: number,
   text: CopyText,
 ): TicketUsageSteps | undefined {
-  const total = ticketUsageStep("Total", executions, nowMs);
+  const total = ticketUsageStep(
+    text({ id: "ticket-usage-total" }),
+    executions,
+    nowMs,
+  );
   if (total === undefined) return undefined;
   const grouped = new Map<number, ExecutionSummary[]>();
   for (const summary of executions) {
@@ -79,7 +83,7 @@ export function ticketUsageStepsOf(
     .flatMap(([ordinal, runs]) => {
       const step = ticketUsageStep(
         ordinal === ticketUsageWorkOrdinal
-          ? "Work"
+          ? text({ id: "ticket-steps-phase-work" })
           : copyOrDataText(text, stageLabel(ordinal, names)),
         runs,
         nowMs,

@@ -6,6 +6,7 @@
  */
 
 import { expect, test } from "vitest";
+import { copyTextEn } from "../app/copy/catalog.ts";
 
 import {
   consolePageSchema,
@@ -193,7 +194,9 @@ test("every route the console hangs under a project and draws the pane on is a p
 });
 
 test("a page is named in the console's own words for it", () => {
-  expect(consolePagesEvery.map(consolePageLabel)).toEqual([
+  expect(
+    consolePagesEvery.map((page) => copyTextEn(consolePageLabel(page))),
+  ).toEqual([
     "Tickets",
     "Inbox",
     "Lead",
@@ -215,16 +218,18 @@ test("a page is named in the console's own words for it", () => {
     "Settings · Workspace · People",
     "Settings · Workspace · Accounts",
     "Settings · Workspace · Permissions",
-    "Settings · Workspace · My runners",
+    "Settings · Workspace · Personal runners",
     "Settings · Workspace · Usage",
     "Settings · Site · Workspaces",
     "Settings · Site · Permissions",
   ]);
   expect(
-    consolePageLabel({
-      page: "Repository",
-      repository: "github.com/acme/atlas.git",
-    }),
+    copyTextEn(
+      consolePageLabel({
+        page: "Repository",
+        repository: "github.com/acme/atlas.git",
+      }),
+    ),
   ).toBe("Repository acme/atlas");
 });
 

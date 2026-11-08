@@ -33,6 +33,7 @@ import type {
 } from "./configurationCatalog.ts";
 import {
   configurationModelLabelOf,
+  modelDefaultLabel,
   practiceLabel,
 } from "./configurationView.ts";
 import type { ConfigurationView } from "./configurationView.ts";
@@ -45,41 +46,41 @@ import {
 } from "./ticketOverrides.ts";
 import type { OverrideField } from "./ticketOverrides.ts";
 import { workloadsEffectiveCanonicalOf } from "./workloadOverrides.ts";
-import type { CopyText } from "./copy.ts";
+import type { Copy, CopyOrData } from "./copy.ts";
 
 export type ConfigurationStepPhase = "Work" | "Evaluation" | "Finalization";
 
 /** One value a step opens onto, one line per entry. */
 export interface ConfigurationStepDetail {
-  readonly name: string;
-  readonly lines: readonly string[];
+  readonly name: Copy;
+  readonly lines: readonly CopyOrData[];
   readonly code: boolean;
   readonly overridden: boolean;
 }
 
 /** One part of a step's prompt, under the heading it is briefed with. */
 export interface ConfigurationStepPrompt {
-  readonly heading: string | undefined;
+  readonly heading: CopyOrData | undefined;
   readonly lines: readonly string[];
   readonly overridden: boolean;
 }
 
 /** Who runs a step, and the file or first line it runs from. */
 export interface ConfigurationStepRuns {
-  readonly by: string;
+  readonly by: CopyOrData;
   readonly from: string | undefined;
   /** How many more lines follow the first. */
   readonly more: number;
 }
 
 export interface ConfigurationStepRow {
-  readonly step: string;
+  readonly step: CopyOrData;
   /** The workload it runs, where its name is not the step's. */
   readonly workload: string | undefined;
   readonly runs: ConfigurationStepRuns | undefined;
-  readonly model: string | undefined;
+  readonly model: CopyOrData | undefined;
   /** Each value the ticket changed, as its column names it. */
-  readonly overrides: readonly string[];
+  readonly overrides: readonly CopyOrData[];
   readonly details: readonly ConfigurationStepDetail[];
   readonly prompt: readonly ConfigurationStepPrompt[];
   /** What the YAML view writes out; absent where there is none. */
@@ -91,7 +92,7 @@ export interface ConfigurationStepRow {
 export interface ConfigurationStepGroup {
   readonly phase: ConfigurationStepPhase;
   /** What the selection took here, and whether it was the default. */
-  readonly note: string | undefined;
+  readonly note: Copy | undefined;
   readonly rows: readonly ConfigurationStepRow[];
 }
 
@@ -131,15 +132,27 @@ function stepsPractices(practices: readonly string[] | undefined) {
   return stepsJoined(practices?.map(practiceLabel));
 }
 
-/** A count in whole units, the noun singular for one. */
-function stepsCounted(count: number, noun: string): string {
-  return `${String(count)} ${noun}${count === 1 ? "" : "s"}`;
+/** A model as its column draws it: the view's word for none named is the
+ * catalog's. */
+function stepsModel(label: string): CopyOrData {
+  return label === modelDefaultLabel
+    ? { id: "configuration-steps-model-default" }
+    : label;
+}
+
+/** A following as its chip draws it. */
+export function configurationFollowingWord(
+  following: ConfigurationFollowing,
+): Copy {
+  return following === "Pinned"
+    ? { id: "configuration-steps-following-pinned" }
+    : { id: "configuration-steps-following-latest" };
 }
 
 const stepsEmpty: readonly ConfigurationStepRow[] = [];
 
 function stepsRow(
-  row: Partial<ConfigurationStepRow> & { readonly step: string },
+  row: Partial<ConfigurationStepRow> & { readonly step: CopyOrData },
 ): ConfigurationStepRow {
   return {
     workload: undefined,
@@ -157,7 +170,7 @@ function stepsRow(
 /** Who runs commands: the first of them, and how many follow it. */
 function stepsCommandsRuns(commands: readonly string[]): ConfigurationStepRuns {
   return {
-    by: "Commands",
+    by: { id: "configuration-steps-commands" },
     from: commands[0],
     more: Math.max(0, commands.length - 1),
   };
@@ -166,11 +179,11 @@ function stepsCommandsRuns(commands: readonly string[]): ConfigurationStepRuns {
 /** One value a workload is read for, the field of it that holds the value,
  * and what its override is named in the Overrides column. */
 interface CatalogDetailRead {
-  readonly name: string;
+  readonly name: Copy;
   readonly field: string;
   readonly code: boolean;
-  readonly read: (workload: StepsRecord) => readonly string[];
-  readonly word?: (workload: StepsRecord) => string;
+  readonly read: (workload: StepsRecord) => readonly CopyOrData[];
+  readonly word?: (workload: StepsRecord) => Copy;
   /** What an override is compared on, where it holds more than is drawn. */
   readonly compared?: (workload: StepsRecord) => unknown;
 }
@@ -194,9 +207,11 @@ function catalogCpus(workload: StepsRecord): readonly string[] {
   return typeof cpus === "number" ? [String(cpus)] : [];
 }
 
-function catalogMemory(workload: StepsRecord): readonly string[] {
+function catalogMemory(workload: StepsRecord): readonly Copy[] {
   const memory = catalogResource(workload, "memoryMib");
-  return typeof memory === "number" ? [`${String(memory)} MiB`] : [];
+  return typeof memory === "number"
+    ? [{ id: "configuration-steps-memory-mib", args: { mib: String(memory) } }]
+    : [];
 }
 
 function catalogFiles(workload: StepsRecord): readonly unknown[] {
@@ -207,48 +222,51 @@ function catalogFiles(workload: StepsRecord): readonly unknown[] {
 /** The values a catalog workload opens onto, in the order they are drawn. */
 const catalogDetailReads: readonly CatalogDetailRead[] = [
   {
-    name: "Arguments",
+    name: { id: "configuration-steps-arguments" },
     field: "worker",
     code: true,
     read: catalogArguments,
   },
   {
-    name: "Effort",
+    name: { id: "configuration-steps-effort" },
     field: "worker",
     code: false,
     read: (workload) => stepsString(catalogMode(workload)["effort"]),
   },
   {
-    name: "Commands",
+    name: { id: "configuration-steps-commands" },
     field: "commands",
     code: true,
     read: (workload) => stepsStrings(workload["commands"]),
   },
   {
-    name: "CPUs",
+    name: { id: "configuration-steps-cpus" },
     field: "resources",
     code: false,
     read: catalogCpus,
     word: (workload) => {
       const cpus = catalogResource(workload, "cpus");
-      return typeof cpus === "number" ? stepsCounted(cpus, "CPU") : "CPUs";
+      return typeof cpus === "number"
+        ? { id: "configuration-steps-cpu-count", args: { count: cpus } }
+        : { id: "configuration-steps-cpus" };
     },
   },
   {
-    name: "Memory",
+    name: { id: "configuration-steps-memory" },
     field: "resources",
     code: false,
     read: catalogMemory,
-    word: (workload) => catalogMemory(workload)[0] ?? "Memory",
+    word: (workload) =>
+      catalogMemory(workload)[0] ?? { id: "configuration-steps-memory" },
   },
   {
-    name: "Setup",
+    name: { id: "configuration-steps-setup" },
     field: "worker",
     code: true,
     read: (workload) => stepsStrings(stepsRecord(workload["worker"])["setup"]),
   },
   {
-    name: "Files",
+    name: { id: "configuration-steps-files" },
     field: "worker",
     code: true,
     read: (workload) =>
@@ -258,13 +276,13 @@ const catalogDetailReads: readonly CatalogDetailRead[] = [
     compared: catalogFiles,
   },
   {
-    name: "Practices",
+    name: { id: "configuration-steps-practices" },
     field: "practices",
     code: false,
     read: (workload) => stepsPractices(stepsStrings(workload["practices"])),
   },
   {
-    name: "Image",
+    name: { id: "configuration-steps-image" },
     field: "image",
     code: true,
     read: (workload) => stepsString(workload["image"]),
@@ -273,13 +291,13 @@ const catalogDetailReads: readonly CatalogDetailRead[] = [
 
 /** The fields of a workload an override may name that no detail above
  * reads, each by the name it is drawn under. */
-const catalogFieldNames: Readonly<Record<string, string>> = {
-  runner: "Runner",
-  purpose: "Purpose",
-  authority: "Authority",
-  framing: "Framing",
-  brief: "Brief",
-  executionRequirement: "Execution requirement",
+const catalogFieldNames: Readonly<Record<string, Copy>> = {
+  runner: { id: "configuration-steps-runner" },
+  purpose: { id: "configuration-steps-purpose" },
+  authority: { id: "configuration-steps-authority" },
+  framing: { id: "configuration-steps-framing" },
+  brief: { id: "configuration-steps-brief" },
+  executionRequirement: { id: "configuration-steps-run-requirement" },
 };
 
 /** One workload as the ticket runs it beside the catalog's own, with what
@@ -331,13 +349,29 @@ function stepsModeDetailsOf(
   effective: StepsRecord,
   change: StepsModeChange,
 ): readonly ConfigurationStepDetail[] {
-  const detail = (name: string, line: unknown) => [
+  const detail = (name: Copy, line: unknown) => [
     { name, lines: stepsString(line), code: false, overridden: true },
   ];
   return [
-    ...(change.agent ? detail("Agent", catalogMode(effective)["agent"]) : []),
+    ...(change.agent
+      ? detail(
+          { id: "configuration-steps-agent" },
+          catalogMode(effective)["agent"],
+        )
+      : []),
     ...(change.model && !change.carried
-      ? detail("Model", configurationModelLabelOf(catalogMode(effective)).label)
+      ? [
+          {
+            name: { id: "configuration-steps-model" } as const,
+            lines: [
+              stepsModel(
+                configurationModelLabelOf(catalogMode(effective)).label,
+              ),
+            ],
+            code: false,
+            overridden: true,
+          },
+        ]
       : []),
   ];
 }
@@ -348,13 +382,14 @@ function stepsOverrideWordsOf(
   effective: StepsRecord,
   change: StepsModeChange,
   details: readonly ConfigurationStepDetail[],
-): readonly string[] {
+): readonly Copy[] {
   return details
     .filter((detail) => detail.overridden)
-    .map((detail) => {
-      if (detail.name === "Arguments" && change.carried) return "Model";
+    .map((detail): Copy => {
+      if (detail.name.id === "configuration-steps-arguments" && change.carried)
+        return { id: "configuration-steps-model" };
       const word = catalogDetailReads.find(
-        (read) => read.name === detail.name,
+        (read) => read.name.id === detail.name.id,
       )?.word;
       return word === undefined ? detail.name : word(effective);
     });
@@ -401,13 +436,16 @@ function catalogDetailsOf(
 function catalogOverridesOf(
   held: CatalogHeld,
   details: readonly ConfigurationStepDetail[],
-): readonly string[] {
+): readonly Copy[] {
   const change = stepsModeChangeOf(held.effective, held.pinned);
+  const words: readonly Copy[] = [
+    ...(catalogFieldChanged(held, "prompt")
+      ? [{ id: "configuration-steps-prompt" } as const]
+      : []),
+    ...stepsOverrideWordsOf(held.effective, change, details),
+  ];
   return [
-    ...new Set([
-      ...(catalogFieldChanged(held, "prompt") ? ["Prompt"] : []),
-      ...stepsOverrideWordsOf(held.effective, change, details),
-    ]),
+    ...new Map(words.map((word) => [JSON.stringify(word), word])).values(),
   ];
 }
 
@@ -444,7 +482,7 @@ function catalogDocumentsOf(
 /** One catalog workload run as one step. */
 function catalogRowOf(
   documents: CatalogDocuments,
-  step: string,
+  step: CopyOrData,
   name: string,
 ): ConfigurationStepRow {
   const workload = configurationCatalogWorkload(documents.catalog, name);
@@ -465,11 +503,12 @@ function catalogRowOf(
         : commands
           ? stepsCommandsRuns(workload.commands)
           : {
-              by: workload.agent ?? "Agent",
+              by: workload.agent ?? { id: "configuration-steps-agent" },
               from: workload.promptPath,
               more: 0,
             },
-    model: workload?.model,
+    model:
+      workload?.model === undefined ? undefined : stepsModel(workload.model),
     overrides: catalogOverridesOf(held, details),
     details,
     prompt:
@@ -498,7 +537,10 @@ function catalogStageRowOf(
   return stepsRow({
     step: stage.name,
     runs: {
-      by: `${String(stage.evaluators.length)} side by side`,
+      by: {
+        id: "configuration-steps-side-by-side",
+        args: { count: String(stage.evaluators.length) },
+      },
       from: undefined,
       more: 0,
     },
@@ -513,45 +555,51 @@ function catalogStageRowOf(
 function stepsLandingOf(
   finalization: StepsFinalization | undefined,
   finalizer: CatalogFinalizer | undefined,
-  text: CopyText,
 ): ConfigurationStepRow {
-  const detail = (name: string, line: string): ConfigurationStepDetail => ({
+  const detail = (name: Copy, line: Copy): ConfigurationStepDetail => ({
     name,
     lines: [line],
     code: false,
     overridden: false,
   });
   return stepsRow({
-    step: "Landing",
+    step: { id: "ticket-steps-phase-landing" },
     runs:
       finalization === undefined
         ? undefined
-        : {
-            by: text(finalizationLine(finalization)),
-            from: undefined,
-            more: 0,
-          },
+        : { by: finalizationLine(finalization), from: undefined, more: 0 },
     details: [
       ...(finalization?.kind === "GitMerge"
-        ? [detail("Policy", text(gitMergePolicyLabel(finalization.policy)))]
+        ? [
+            detail(
+              { id: "configuration-steps-policy" },
+              gitMergePolicyLabel(finalization.policy),
+            ),
+          ]
         : []),
       ...(finalizer?.approvalRequired === true
-        ? [detail("Approval", "Required")]
+        ? [
+            detail(
+              { id: "configuration-steps-approval" },
+              { id: "configuration-steps-required" },
+            ),
+          ]
         : []),
     ],
   });
 }
 
 /** What a selection took, and that it is the default where it is. */
-function stepsChosen(name: string, defaulted: string | undefined): string {
-  return name === defaulted ? `${name} · default` : name;
+function stepsChosen(name: string, defaulted: string | undefined): CopyOrData {
+  return name === defaulted
+    ? { id: "configuration-steps-chosen-default", args: { name } }
+    : name;
 }
 
 function catalogStepsOf(
   documents: CatalogDocuments,
   selection: ConfigurationSelection | undefined,
   finalization: StepsFinalization | undefined,
-  text: CopyText,
 ): ConfigurationSteps {
   const { catalog } = documents;
   const selected = configurationCatalogSelected(catalog, selection);
@@ -563,12 +611,26 @@ function catalogStepsOf(
     groups: [
       {
         phase: "Work",
-        note: selected.work === catalog.defaults.work ? "default" : undefined,
-        rows: [catalogRowOf(documents, "Work", selected.work)],
+        note:
+          selected.work === catalog.defaults.work
+            ? { id: "configuration-steps-default" }
+            : undefined,
+        rows: [
+          catalogRowOf(
+            documents,
+            { id: "ticket-steps-phase-work" },
+            selected.work,
+          ),
+        ],
       },
       {
         phase: "Evaluation",
-        note: `plan ${stepsChosen(selected.evaluation, catalog.defaults.evaluation)}`,
+        note: {
+          id: "configuration-steps-plan",
+          args: {
+            name: stepsChosen(selected.evaluation, catalog.defaults.evaluation),
+          },
+        },
         rows: (catalog.plans.get(selected.evaluation) ?? []).map((stage) =>
           catalogStageRowOf(documents, stage),
         ),
@@ -577,11 +639,7 @@ function catalogStepsOf(
         phase: "Finalization",
         note: undefined,
         rows: [
-          stepsLandingOf(
-            finalization ?? finalizer?.finalization,
-            finalizer,
-            text,
-          ),
+          stepsLandingOf(finalization ?? finalizer?.finalization, finalizer),
         ],
       },
     ],
@@ -623,8 +681,8 @@ function legacyHeldOf(
 }
 
 function legacyDetail(
-  name: string,
-  lines: readonly string[] | undefined,
+  name: Copy,
+  lines: readonly CopyOrData[] | undefined,
   code: boolean,
   overridden = false,
 ): readonly ConfigurationStepDetail[] {
@@ -635,9 +693,11 @@ function legacyDetail(
 }
 
 /** The agent a version 1 document's worker names, as its mode writes it. */
-function legacyAgentOf(document: StepsRecord): string {
+function legacyAgentOf(document: StepsRecord): CopyOrData {
   const agent = catalogMode(document)["agent"];
-  return typeof agent === "string" ? agent : "Agent";
+  return typeof agent === "string"
+    ? agent
+    : { id: "configuration-steps-agent" };
 }
 
 function legacyWorkDetailsOf(
@@ -650,54 +710,69 @@ function legacyWorkDetailsOf(
   return [
     ...stepsModeDetailsOf(document, stepsModeChangeOf(document, pinned)),
     ...legacyDetail(
-      "Arguments",
+      { id: "configuration-steps-arguments" },
       catalogArguments(document),
       true,
       !overridesSame(catalogArguments(document), catalogArguments(pinned)),
     ),
     ...legacyDetail(
-      "Effort",
+      { id: "configuration-steps-effort" },
       stepsString(catalogMode(document)["effort"]),
       false,
       catalogMode(document)["effort"] !== catalogMode(pinned)["effort"],
     ),
-    ...legacyDetail("Tools", stepsJoined(settings.tools), false),
-    ...legacyDetail("Credentials", stepsJoined(settings.credentials), false),
     ...legacyDetail(
-      "Access",
+      { id: "configuration-steps-tools" },
+      stepsJoined(settings.tools),
+      false,
+    ),
+    ...legacyDetail(
+      { id: "configuration-steps-credentials" },
+      stepsJoined(settings.credentials),
+      false,
+    ),
+    ...legacyDetail(
+      { id: "configuration-steps-access" },
       settings.access === undefined ? [] : [settings.access],
       false,
     ),
     ...legacyDetail(
-      "Image",
+      { id: "configuration-steps-image" },
       settings.worker === undefined ? [] : [settings.worker.short],
       true,
     ),
     ...legacyDetail(
-      "Setup",
+      { id: "configuration-steps-setup" },
       settings.setup,
       true,
       overridden.has("worker.setup"),
     ),
     ...legacyDetail(
-      "Files",
+      { id: "configuration-steps-files" },
       files.flatMap((file) => stepsString(stepsRecord(file)["path"])),
       true,
       overridden.has("worker.files"),
     ),
     ...legacyDetail(
-      "Practices",
+      { id: "configuration-steps-practices" },
       stepsPractices(view.work.practices),
       false,
       overridden.has("practices"),
     ),
     ...legacyDetail(
-      "Completes task",
-      settings.completesTask === undefined
-        ? []
-        : [settings.completesTask ? "Yes" : "No"],
+      { id: "configuration-steps-completes-run" },
+      stepsYesNo(settings.completesTask),
       false,
     ),
+  ];
+}
+
+function stepsYesNo(value: boolean | undefined): readonly Copy[] {
+  if (value === undefined) return [];
+  return [
+    value
+      ? { id: "configuration-steps-yes" }
+      : { id: "configuration-steps-no" },
   ];
 }
 
@@ -707,18 +782,30 @@ function legacyWorkPromptOf(
 ): readonly ConfigurationStepPrompt[] {
   const { view, overridden } = held;
   const parts: readonly (readonly [
-    string,
+    Copy,
     readonly string[] | undefined,
     OverrideField,
   ])[] = [
-    ["Motivation", view.brief.motivation, "brief.motivation"],
     [
-      "Acceptance criteria",
+      { id: "configuration-steps-motivation" },
+      view.brief.motivation,
+      "brief.motivation",
+    ],
+    [
+      { id: "configuration-steps-acceptance-criteria" },
       view.brief.acceptanceCriteria,
       "brief.acceptanceCriteria",
     ],
-    ["Constraints", view.brief.constraints, "brief.constraints"],
-    ["Instructions", view.work.instructions, "work.instructions"],
+    [
+      { id: "configuration-steps-constraints" },
+      view.brief.constraints,
+      "brief.constraints",
+    ],
+    [
+      { id: "configuration-steps-instructions" },
+      view.work.instructions,
+      "work.instructions",
+    ],
   ];
   return parts.flatMap(([heading, lines, field]) =>
     lines === undefined || lines.length === 0
@@ -740,7 +827,7 @@ const legacyDetailFields: ReadonlySet<OverrideField> = new Set([
 function legacyOverridesOf(
   held: LegacyHeld,
   details: readonly ConfigurationStepDetail[],
-): readonly string[] {
+): readonly CopyOrData[] {
   const { document, pinned, overridden } = held;
   return [
     ...stepsOverrideWordsOf(
@@ -759,15 +846,18 @@ function legacyWorkRowOf(held: LegacyHeld): ConfigurationStepRow {
   const commands = view.work.commands;
   const details = [
     ...legacyWorkDetailsOf(held),
-    ...legacyDetail("Commands", commands, true),
+    ...legacyDetail({ id: "configuration-steps-commands" }, commands, true),
   ];
   return stepsRow({
-    step: "Work",
+    step: { id: "ticket-steps-phase-work" },
     runs:
       commands === undefined
         ? { by: legacyAgentOf(document), from: undefined, more: 0 }
         : stepsCommandsRuns(commands),
-    model: commands === undefined ? view.settings.model.label : undefined,
+    model:
+      commands === undefined
+        ? stepsModel(view.settings.model.label)
+        : undefined,
     overrides: legacyOverridesOf(held, details),
     details,
     prompt: legacyWorkPromptOf(held),
@@ -795,17 +885,17 @@ function legacyEvaluationRowsOf(
 ): readonly ConfigurationStepRow[] {
   const { view, document } = held;
   const agent = legacyAgentOf(document);
-  const model = view.settings.model.label;
+  const model = stepsModel(view.settings.model.label);
   if (view.evaluations.length === 0)
     return view.review === undefined
       ? []
       : [
           stepsRow({
-            step: "Review",
+            step: { id: "configuration-steps-review" },
             runs: { by: agent, from: undefined, more: 0 },
             model,
             details: legacyDetail(
-              "Practices",
+              { id: "configuration-steps-practices" },
               stepsPractices(view.review.practices),
               false,
             ),
@@ -818,16 +908,20 @@ function legacyEvaluationRowsOf(
     : [];
   return view.evaluations.map((evaluation, index) =>
     stepsRow({
-      step: `Stage ${String(index + 1)}`,
+      step: { id: "ticket-stage-number", args: { stage: String(index + 1) } },
       runs:
         evaluation.checks === undefined
           ? { by: agent, from: undefined, more: 0 }
           : stepsCommandsRuns(evaluation.checks),
       model: evaluation.checks === undefined ? model : undefined,
       details: [
-        ...legacyDetail("Commands", evaluation.checks, true),
         ...legacyDetail(
-          "Practices",
+          { id: "configuration-steps-commands" },
+          evaluation.checks,
+          true,
+        ),
+        ...legacyDetail(
+          { id: "configuration-steps-practices" },
           stepsPractices(evaluation.practices),
           false,
         ),
@@ -843,7 +937,6 @@ function legacyStepsOf(
   overrides: ConfigurationOverrides | undefined,
   selection: ConfigurationSelection | undefined,
   finalization: StepsFinalization | undefined,
-  text: CopyText,
 ): ConfigurationSteps {
   const held = legacyHeldOf(canonical, overrides);
   const evaluation = legacyEvaluationRowsOf(held);
@@ -858,7 +951,7 @@ function legacyStepsOf(
           {
             phase: "Finalization" as const,
             note: undefined,
-            rows: [stepsLandingOf(finalization, undefined, text)],
+            rows: [stepsLandingOf(finalization, undefined)],
           },
         ]),
   ];
@@ -875,8 +968,6 @@ export function configurationStepsOf(props: {
   readonly overrides: ConfigurationOverrides | undefined;
   readonly selection: ConfigurationSelection | undefined;
   readonly finalization: StepsFinalization | undefined;
-  /** The words the finalization's codes are drawn in. */
-  readonly text: CopyText;
 }): ConfigurationSteps {
   const documents = catalogDocumentsOf(props.canonical, props.overrides);
   return documents === undefined
@@ -885,12 +976,6 @@ export function configurationStepsOf(props: {
         props.overrides,
         props.selection,
         props.finalization,
-        props.text,
       )
-    : catalogStepsOf(
-        documents,
-        props.selection,
-        props.finalization,
-        props.text,
-      );
+    : catalogStepsOf(documents, props.selection, props.finalization);
 }

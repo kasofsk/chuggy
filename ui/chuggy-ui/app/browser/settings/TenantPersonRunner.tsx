@@ -9,7 +9,9 @@
 import { useId, useState } from "react";
 import type { ReactNode } from "react";
 
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { apiDeregisterMemberRunner } from "../../core/apiRoutes.ts";
+import { copyOrDataText } from "../../core/copy.ts";
 import { consoleWriteKey } from "../../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../../core/consoleWrite.ts";
 import { memberRunnerRemoved } from "../../core/myRunner.ts";
@@ -35,6 +37,7 @@ export function TenantPersonRunner(props: {
   readonly subject: string;
   readonly name: string;
 }): ReactNode {
+  const text = useCopyText();
   const labelled = useId();
   const [asking, setAsking] = useState(false);
   const removing = useConsoleWrite(
@@ -44,7 +47,10 @@ export function TenantPersonRunner(props: {
   const line =
     removing.error === null ? (
       removing.isSuccess ? (
-        memberRunnerRemoved({ outcome: "Ok", value: undefined })
+        copyOrDataText(
+          text,
+          memberRunnerRemoved({ outcome: "Ok", value: undefined }),
+        )
       ) : undefined
     ) : (
       <ConsoleWriteRefusedWords refused={removing.error} />

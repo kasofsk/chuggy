@@ -8,35 +8,42 @@ import { expect, test } from "vitest";
 
 import type { ConfigurationOverrides } from "../../../src/contract/configurationOverrides.ts";
 import type { ConfigurationSelection } from "../../../src/contract/configurationSelection.ts";
-import { configurationStepsOf } from "../app/core/configurationSteps.ts";
+import {
+  configurationFollowingWord,
+  configurationStepsOf,
+} from "../app/core/configurationSteps.ts";
 import type {
   ConfigurationStepRow,
   ConfigurationSteps,
 } from "../app/core/configurationSteps.ts";
+import { saidEn } from "./saidEn.ts";
+import type { SaidEn } from "./saidEn.ts";
 import { creationCatalogCanonical } from "./ticketCreationFixture.ts";
-import { copyTextEn } from "../app/copy/catalog.ts";
 
 function steps(
   overrides?: ConfigurationOverrides,
   selection?: ConfigurationSelection,
   canonical: string = creationCatalogCanonical,
-): ConfigurationSteps {
-  return configurationStepsOf({
-    canonical,
-    overrides,
-    selection,
-    finalization: undefined,
-    text: copyTextEn,
-  });
+): SaidEn<ConfigurationSteps> {
+  return saidEn(
+    configurationStepsOf({
+      canonical,
+      overrides,
+      selection,
+      finalization: undefined,
+    }),
+  );
 }
 
-function rowsOf(read: ConfigurationSteps, phase: string) {
+function rowsOf(read: SaidEn<ConfigurationSteps>, phase: string) {
   const group = read.groups.find((held) => held.phase === phase);
   if (group === undefined) throw new Error(`no ${phase} group`);
   return group.rows;
 }
 
-function workRow(read: ConfigurationSteps): ConfigurationStepRow {
+function workRow(
+  read: SaidEn<ConfigurationSteps>,
+): SaidEn<ConfigurationStepRow> {
   const [work] = rowsOf(read, "Work");
   if (work === undefined) throw new Error("no work row");
   return work;
@@ -216,6 +223,30 @@ test("a changed model is named as the model, and its arguments alone are where i
       .filter((detail) => detail.overridden)
       .map((detail) => [detail.name, detail.lines]),
   ).toEqual([["Arguments", ["--model=opus"]]]);
+});
+
+test("a model no flag names, and the following, are the catalog's words and not the view's", () => {
+  const read = configurationStepsOf({
+    canonical: creationCatalogCanonical,
+    overrides: {
+      workloads: {
+        build: {
+          worker: {
+            mode: { type: "SingleAgent", agent: "Claude", arguments: [] },
+            setup: [],
+            files: [],
+          },
+        },
+      },
+    },
+    selection: undefined,
+    finalization: undefined,
+  });
+  const work = read.groups.find((group) => group.phase === "Work")?.rows[0];
+  expect(work?.model).toStrictEqual({
+    id: "configuration-steps-model-default",
+  });
+  expect(saidEn(configurationFollowingWord(read.following))).toBe("Pinned");
 });
 
 test("a Codex model the ticket changed is named and marked, though its arguments are the same", () => {

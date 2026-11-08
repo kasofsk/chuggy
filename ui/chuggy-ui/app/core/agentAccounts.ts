@@ -20,6 +20,7 @@ import type {
   RunUsageWindow,
 } from "../../../../src/contract/rosters.ts";
 import type { ApiFailure } from "./apiRequest.ts";
+import type { Copy } from "./copy.ts";
 import { failureWords } from "./failureWords.ts";
 
 export type AgentAccountSettings = AgentAccount["settings"];
@@ -27,34 +28,38 @@ export type AgentAccountSettings = AgentAccount["settings"];
 export type AgentAccountReading = AgentAccount["readings"][number];
 
 /** The status a paused agent is drawn with. */
-export const agentPausedWord = "Paused";
+export const agentPausedWord: Copy = { id: "usage-paused" };
 
 /** What stands where a press already lets the next claim through the limit. */
-export const agentPausePressedLine = "Trying once";
+export const agentPausePressedLine: Copy = { id: "usage-pressed" };
 
-export function runUsageWindowLabel(window: RunUsageWindow): string {
+export function runUsageWindowLabel(window: RunUsageWindow): Copy {
   switch (window) {
     case "five_hour":
-      return "Five-hour window";
+      return { id: "usage-window-five-hour" };
     case "seven_day":
-      return "Weekly window";
+      return { id: "usage-window-seven-day" };
   }
 }
 
-export function agentPauseReasonLabel(reason: AgentPauseReason): string {
+export function agentPauseReasonLabel(reason: AgentPauseReason): Copy {
   switch (reason) {
     case "five_hour":
     case "seven_day":
       return runUsageWindowLabel(reason);
     case "limit":
-      return "Provider limit";
+      return { id: "usage-provider-limit" };
   }
 }
 
 /** The status and every reason holding the agent, in the wire's order. */
-export function agentPauseLine(pause: AgentPause): string {
-  return [agentPausedWord, ...pause.reasons.map(agentPauseReasonLabel)].join(
-    " · ",
+export function agentPauseLine(pause: AgentPause): Copy {
+  return pause.reasons.reduce<Copy>(
+    (lead, reason) => ({
+      id: "usage-joined",
+      args: { lead, rest: agentPauseReasonLabel(reason) },
+    }),
+    agentPausedWord,
   );
 }
 
@@ -85,11 +90,10 @@ export function agentAccountReading(
   return account.readings.find((reading) => reading.window === window);
 }
 
-export const agentAccountReadingStaleWord = "Stale";
+export const agentAccountReadingStaleWord: Copy = { id: "usage-stale" };
 
 /** Why a stale reading is marked, said where a reader hovers the mark. */
-export const agentAccountReadingStaleLine =
-  "Its window has reset; it pauses nothing until the next reading";
+export const agentAccountReadingStaleLine: Copy = { id: "usage-stale-line" };
 
 /** A reading whose window has reset since it was read, or whose reset the clock cannot read. */
 export function agentAccountReadingStale(
@@ -118,7 +122,13 @@ const agentAccountPercentSchema =
   agentAccountSettingsSchema.shape.fiveHourPercent;
 
 /** What a refused threshold box says: the whole percentages the wire takes. */
-export const agentAccountPercentFault = `Whole percent, ${String(agentAccountPercentSchema.minValue)} to ${String(agentAccountPercentSchema.maxValue)}`;
+export const agentAccountPercentFault: Copy = {
+  id: "usage-percent-fault",
+  args: {
+    min: String(agentAccountPercentSchema.minValue),
+    max: String(agentAccountPercentSchema.maxValue),
+  },
+};
 
 export function agentAccountDraftOf(
   settings: AgentAccountSettings,
@@ -177,8 +187,8 @@ export function agentAccountDraftSame(
 }
 
 /** A press refused because no limit holds the agent any longer says so. */
-export function agentAccountPressRefusal(failure: ApiFailure): string {
+export function agentAccountPressRefusal(failure: ApiFailure): Copy {
   return failure.outcome === "Conflict" && failure.code === "NotHardPaused"
-    ? "No limit holds it"
+    ? { id: "usage-press-unheld" }
     : failureWords(failure).word;
 }

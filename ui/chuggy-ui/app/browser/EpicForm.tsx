@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The form an epic is made and revised through: its content as typed, the
  * faults it has before it is sent, and the refusal the API answered.
@@ -15,6 +14,8 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
+import { useCopyText } from "../copy/CopyProvider.tsx";
+import type { Copy } from "../core/copy.ts";
 import {
   epicFormEmpty,
   epicFormFaults,
@@ -38,14 +39,18 @@ export interface EpicHeld {
 }
 
 function EpicFormFaults(props: {
-  readonly faults: readonly string[];
+  readonly faults: readonly Copy[];
 }): ReactNode {
+  const text = useCopyText();
   if (props.faults.length === 0) return null;
   return (
-    <ul className="grid gap-1 text-sm" aria-label="Faults">
+    <ul
+      className="grid gap-1 text-sm"
+      aria-label={text({ id: "epics-faults-label" })}
+    >
       {props.faults.map((fault) => (
-        <li key={fault}>
-          <Notice tone="danger" inline detail={fault} />
+        <li key={fault.id}>
+          <Notice tone="danger" inline detail={text(fault)} />
         </li>
       ))}
     </ul>
@@ -56,46 +61,50 @@ export function EpicFormFields(props: {
   readonly form: EpicForm;
   readonly onChange: (form: EpicForm) => void;
 }): ReactNode {
+  const text = useCopyText();
   const { form, onChange } = props;
   return (
     <div className="grid gap-3">
       <Input
-        label="Title"
+        label={text({ id: "epics-field-title" })}
         value={form.title}
         onChange={(title) => {
           onChange({ ...form, title });
         }}
       />
       <Input
-        label="Summary"
+        label={text({ id: "epics-field-summary" })}
         value={form.summary}
         onChange={(summary) => {
           onChange({ ...form, summary });
         }}
       />
       <Textarea
-        label="Description"
+        label={text({ id: "epics-field-description" })}
         value={form.description}
         onChange={(description) => {
           onChange({ ...form, description });
         }}
       />
       <Input
-        label="Tickets"
-        placeholder="Ticket numbers, such as 12, 14"
+        label={text({ id: "epics-field-tickets" })}
+        placeholder={text({ id: "epics-field-tickets-placeholder" })}
         value={form.tickets}
         onChange={(tickets) => {
           onChange({ ...form, tickets });
         }}
       />
       <div className="flex items-center gap-2 text-sm text-ink-2">
-        <span>Visibility</span>
+        <span>{text({ id: "epics-visibility" })}</span>
         <Picker
-          label="Visibility"
+          label={text({ id: "epics-visibility" })}
           value={form.visibility}
           options={[
-            { value: "Active", text: "Active" },
-            { value: "Archived", text: "Archived" },
+            { value: "Active", text: text({ id: "epics-visibility-active" }) },
+            {
+              value: "Archived",
+              text: text({ id: "epics-visibility-archived" }),
+            },
           ]}
           onChoose={(visibility) => {
             onChange({
@@ -112,6 +121,16 @@ export function EpicFormFields(props: {
 /** A revision a sibling's write has overtaken, which only reading the epic again can mend. */
 function stale(code: string | undefined): boolean {
   return code === "StaleRevision";
+}
+
+/** The press that reads the epic again once a sibling's write overtook it. */
+function EpicFormReload(props: { readonly onReload: () => void }): ReactNode {
+  const text = useCopyText();
+  return (
+    <Button variant="quiet" onClick={props.onReload}>
+      {text({ id: "epics-reload" })}
+    </Button>
+  );
 }
 
 export function EpicFormPanel(props: {
@@ -170,15 +189,12 @@ export function EpicFormPanel(props: {
           {props.submit}
         </Button>
         {refusedStale ? (
-          <Button
-            variant="quiet"
-            onClick={() => {
+          <EpicFormReload
+            onReload={() => {
               setReloading(true);
               void epicsInvalidated(client, partition);
             }}
-          >
-            Reload the epic
-          </Button>
+          />
         ) : null}
       </div>
     </form>

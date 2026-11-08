@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * A project's epics: a search, a visibility filter and a sort, each the
  * address's so a link holds the view, and one row an epic with its status and
@@ -12,6 +11,7 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { EpicSummaryResponse } from "../../../../src/contract/responses.ts";
+import { useCopyText } from "../copy/CopyProvider.tsx";
 import { projectAbilityRefused } from "../core/projectAbilities.ts";
 import {
   epicProgressLine,
@@ -41,24 +41,26 @@ import "./Epic.css";
 export function EpicStatusPill(props: {
   readonly status: EpicSummaryResponse["status"];
 }): ReactNode {
+  const text = useCopyText();
   const look = epicStatusLook(props.status);
-  return <Pill tone={look.tone}>{look.word}</Pill>;
+  return <Pill tone={look.tone}>{text(look.word)}</Pill>;
 }
 
 /** How much of the epic is done, as a bar and in words. */
 export function EpicProgress(props: {
   readonly progress: EpicSummaryResponse["progress"];
 }): ReactNode {
+  const text = useCopyText();
   return (
     <>
       <progress
         className="epic-progress"
-        aria-label="Progress"
+        aria-label={text({ id: "epics-progress-label" })}
         max={Math.max(props.progress.total, 1)}
         value={props.progress.done}
       />
       <span className="text-ink-3 text-sm">
-        {epicProgressLine(props.progress)}
+        {text(epicProgressLine(props.progress))}
       </span>
     </>
   );
@@ -68,6 +70,7 @@ function EpicRow(props: {
   readonly partition: PartitionIdentity;
   readonly epic: EpicSummaryResponse;
 }): ReactNode {
+  const text = useCopyText();
   const { epic } = props;
   return (
     <li className="epic-row" data-epic={epic.number}>
@@ -83,7 +86,9 @@ function EpicRow(props: {
         <span className="text-ink-3 text-sm">{`#${String(epic.number)}`}</span>
         <EpicStatusPill status={epic.status} />
         {epic.visibility === "Archived" ? (
-          <Pill tone="retired">Archived</Pill>
+          <Pill tone="retired">
+            {text({ id: "epics-visibility-archived" })}
+          </Pill>
         ) : null}
       </div>
       {epic.summary === undefined ? null : (
@@ -101,6 +106,7 @@ function EpicRowsPage(props: {
   readonly after: number | undefined;
   readonly first: boolean;
 }): ReactNode {
+  const text = useCopyText();
   const [more, setMore] = useState(false);
   const state = usePanelState(
     epicsQuery(props.partition, {
@@ -113,9 +119,9 @@ function EpicRowsPage(props: {
   return (
     <>
       {epics.length === 0 && props.first ? (
-        <EmptyState label="No epics" />
+        <EmptyState label={text({ id: "epics-none" })} />
       ) : (
-        <ul className="epic-list" aria-label="Epics">
+        <ul className="epic-list" aria-label={text({ id: "epics-title" })}>
           {epics.map((epic) => (
             <EpicRow
               key={epic.number}
@@ -139,7 +145,7 @@ function EpicRowsPage(props: {
               setMore(true);
             }}
           >
-            Show more
+            {text({ id: "epics-show-more" })}
           </Button>
         </div>
       )}
@@ -183,28 +189,35 @@ function EpicsControls(props: {
   readonly query: EpicsQuery;
   readonly onQuery: (query: EpicsQuery) => void;
 }): ReactNode {
+  const text = useCopyText();
   const { query, onQuery } = props;
   const [typed, setTyped] = useEpicsTyped(query, onQuery);
   return (
     <div className="flex flex-wrap items-center gap-2">
       <Input
-        label="Search epics"
-        placeholder="Search titles and summaries…"
+        label={text({ id: "epics-search" })}
+        placeholder={text({ id: "epics-search-placeholder" })}
         value={typed}
         onChange={setTyped}
       />
       <Picker
-        label="Visibility"
+        label={text({ id: "epics-visibility" })}
         value={query.visibility ?? "Active"}
-        options={epicVisibilityChoices.map((choice) => ({ ...choice }))}
+        options={epicVisibilityChoices.map((choice) => ({
+          value: choice.value,
+          text: text(choice.text),
+        }))}
         onChoose={(visibility) => {
           onQuery(epicsQueryWith(query, { visibility }));
         }}
       />
       <Picker
-        label="Sort"
+        label={text({ id: "epics-sort" })}
         value={query.sort ?? "newest"}
-        options={epicSortChoices.map((choice) => ({ ...choice }))}
+        options={epicSortChoices.map((choice) => ({
+          value: choice.value,
+          text: text(choice.text),
+        }))}
         onChoose={(sort) => {
           onQuery(epicsQueryWith(query, { sort }));
         }}
@@ -216,13 +229,14 @@ function EpicsControls(props: {
 function EpicCreation(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
+  const text = useCopyText();
   const navigate = useNavigate();
   return (
-    <Panel title="New epic" collapsible={{ open: false }}>
+    <Panel title={text({ id: "epics-new" })} collapsible={{ open: false }}>
       <EpicFormPanel
         partition={props.partition}
         held={undefined}
-        submit="Create epic"
+        submit={text({ id: "epics-create" })}
         onSaved={(saved) => {
           void navigate({
             to: "/$tenant/$project/epics/$epic",
@@ -238,14 +252,19 @@ export function EpicsPage(props: {
   readonly query: EpicsQuery;
   readonly onQuery: (query: EpicsQuery) => void;
 }): ReactNode {
+  const text = useCopyText();
   const partition = useParams({ from: "/$tenant/$project" });
   const writing = !projectAbilityRefused(
     useProjectAbilities(partition),
     "writeEpic",
   );
   return (
-    <section className="grid min-w-0 gap-3" aria-label="Epics" data-fills-width>
-      <ScreenTitle>Epics</ScreenTitle>
+    <section
+      className="grid min-w-0 gap-3"
+      aria-label={text({ id: "epics-title" })}
+      data-fills-width
+    >
+      <ScreenTitle>{text({ id: "epics-title" })}</ScreenTitle>
       <EpicsControls query={props.query} onQuery={props.onQuery} />
       {writing ? <EpicCreation partition={partition} /> : null}
       <EpicRowsPage

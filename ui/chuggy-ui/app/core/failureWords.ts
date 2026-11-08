@@ -8,30 +8,30 @@
  */
 
 import type { ApiFailure } from "./apiRequest.ts";
-import type { CopyOrData } from "./copy.ts";
+import type { Copy, CopyOrData } from "./copy.ts";
 
 export interface FailureWords {
-  readonly word: string;
+  readonly word: Copy;
   readonly detail?: CopyOrData;
 }
 
 export function failureWords(result: ApiFailure): FailureWords {
   switch (result.outcome) {
     case "Unauthenticated":
-      return { word: "Signed out" };
+      return { word: { id: "failure-signed-out" } };
     case "Absent":
-      return { word: "Not found" };
+      return { word: { id: "failure-not-found" } };
     case "Conflict":
     case "Rejected":
-      return { word: "Refused", detail: result.code };
+      return { word: { id: "failure-refused" }, detail: result.code };
     case "Retryable":
-      return { word: "Busy", detail: result.code };
+      return { word: { id: "failure-busy" }, detail: result.code };
     case "Fault":
-      return { word: "Server error", detail: result.code };
+      return { word: { id: "failure-server-error" }, detail: result.code };
     case "Unreachable":
-      return { word: "No connection", detail: result.reason };
+      return { word: { id: "failure-no-connection" }, detail: result.reason };
     case "Unreadable":
-      return { word: "Unreadable", detail: result.reason };
+      return { word: { id: "failure-unreadable" }, detail: result.reason };
   }
 }
 
@@ -40,28 +40,32 @@ export function failureWords(result: ApiFailure): FailureWords {
 export function failureOfThrown(thrown: unknown): ApiFailure {
   return {
     outcome: "Unreadable",
-    reason: thrown instanceof Error ? thrown.message : "the read failed",
+    reason:
+      thrown instanceof Error ? thrown.message : { id: "failure-read-failed" },
   };
 }
 
 /** What a failed read says before its word: what was not read, where the
  * place names it, and that it was not — which an absence already says. */
 export function readFailedLead(
-  subject: string | undefined,
+  subject: CopyOrData | undefined,
   failure: ApiFailure,
-): readonly string[] {
+): readonly CopyOrData[] {
   return [
     ...(subject === undefined ? [] : [subject]),
-    ...(failure.outcome === "Absent" ? [] : ["Not read"]),
+    ...(failure.outcome === "Absent"
+      ? []
+      : [{ id: "failure-not-read" } as const]),
   ];
 }
 
 /** A failed read as one line, for a place that draws a string. */
 export function readFailedLine(
-  subject: string | undefined,
+  subject: CopyOrData | undefined,
   failure: ApiFailure,
-): string {
-  return [...readFailedLead(subject, failure), failureWords(failure).word].join(
-    " · ",
+): Copy {
+  return readFailedLead(subject, failure).reduceRight<Copy>(
+    (rest, lead) => ({ id: "failure-joined", args: { lead, rest } }),
+    failureWords(failure).word,
   );
 }

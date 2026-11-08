@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * An epic's members and the tickets outside it that they wait on, laid out by
  * `core/epics.ts` with each edge running from a dependency to the ticket that
@@ -19,9 +18,30 @@ import {
   epicGraphNodeWidth,
   epicGraphStanding,
 } from "../core/epics.ts";
+import type { EpicGraphPlaced } from "../core/epics.ts";
+import type { Copy } from "../core/copy.ts";
 import { phaseTone } from "../core/tones.ts";
 
 import "./Epic.css";
+
+/** What a node's link is named: the ticket, where it stands, and whether it
+ * is outside the epic. */
+function epicGraphNodeName(node: EpicGraphPlaced): Copy {
+  const standing = epicGraphStanding(node);
+  const named: Copy =
+    node.title === undefined
+      ? {
+          id: "epics-graph-node",
+          args: { ticket: String(node.ticket), standing },
+        }
+      : {
+          id: "epics-graph-node-titled",
+          args: { ticket: String(node.ticket), title: node.title, standing },
+        };
+  return node.member
+    ? named
+    : { id: "epics-graph-node-outside", args: { node: named } };
+}
 
 export function EpicGraph(props: {
   readonly partition: PartitionIdentity;
@@ -30,13 +50,13 @@ export function EpicGraph(props: {
   const text = useCopyText();
   const layout = epicGraphLayout(props.graph, text);
   if (layout.nodes.length === 0)
-    return <p className="panel-note">No tickets.</p>;
+    return <p className="panel-note">{text({ id: "epics-graph-empty" })}</p>;
   return (
     <div className="epic-graph-scroll">
       <svg
         className="epic-graph"
         role="group"
-        aria-label="Tickets of the epic and what they wait on"
+        aria-label={text({ id: "epics-graph-label" })}
         width={layout.width}
         height={layout.height}
         viewBox={`0 0 ${String(layout.width)} ${String(layout.height)}`}
@@ -53,7 +73,7 @@ export function EpicGraph(props: {
             key={node.ticket}
             to="/$tenant/$project/tickets/$ticket"
             params={{ ...props.partition, ticket: String(node.ticket) }}
-            aria-label={`Ticket ${String(node.ticket)}${node.title === undefined ? "" : ` ${node.title}`}, ${text(epicGraphStanding(node))}${node.member ? "" : ", outside the epic"}`}
+            aria-label={text(epicGraphNodeName(node))}
           >
             <g
               className={

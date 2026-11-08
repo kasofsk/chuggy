@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The epics a ticket belongs to, each a link to its page, drawn where a ticket
  * is named. An archived epic is drawn as one, so a reader who follows the link
@@ -10,6 +9,7 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type { TicketResponse } from "../../../../src/contract/responses.ts";
+import { useCopyText } from "../copy/CopyProvider.tsx";
 import { pillLookClassName } from "./ui/Pill.tsx";
 
 import "./Epic.css";
@@ -18,9 +18,14 @@ export function EpicChips(props: {
   readonly partition: PartitionIdentity;
   readonly epics: TicketResponse["epics"];
 }): ReactNode {
+  const text = useCopyText();
   if (props.epics === undefined || props.epics.length === 0) return null;
   return (
-    <span className="epic-chips" role="group" aria-label="Epics">
+    <span
+      className="epic-chips"
+      role="group"
+      aria-label={text({ id: "epics-title" })}
+    >
       {props.epics.map((epic) => (
         <Link
           key={epic.number}
@@ -29,7 +34,7 @@ export function EpicChips(props: {
           className={pillLookClassName({ tone: "neutral" })}
         >
           {epic.visibility === "Archived"
-            ? `${epic.title} (archived)`
+            ? text({ id: "epics-chip-archived", args: { title: epic.title } })
             : epic.title}
         </Link>
       ))}

@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The reader's own agent accounts, which are theirs in every workspace: for
  * each agent, each window's newest reading and the share it pauses at, and
@@ -15,6 +14,7 @@ import type {
   AgentPause as AgentPauseValue,
 } from "../../../../../src/contract/responses.ts";
 import type { AccountAgent } from "../../../../../src/contract/rosters.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import {
   agentAccountDraftOf,
   agentAccountDraftRead,
@@ -42,6 +42,7 @@ import {
 import type { ApiResult } from "../../core/apiRequest.ts";
 import { consoleWriteKey } from "../../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../../core/consoleWrite.ts";
+import type { Copy } from "../../core/copy.ts";
 import { failureWords } from "../../core/failureWords.ts";
 import { agoFigure, countFigure, shareFigure } from "../../core/figures.ts";
 import { AgentPause } from "../AgentPause.tsx";
@@ -101,11 +102,13 @@ function usageSettingsPressWrite(
 function UsageSettingsNotice(props: {
   readonly writing: ConsoleWriting<AgentAccountSettings, undefined>;
 }): ReactNode {
+  const text = useCopyText();
   const writing = props.writing;
-  if (writing.isPending) return <Notice tone="info" inline detail="Writing" />;
+  if (writing.isPending)
+    return <Notice tone="info" inline detail={text({ id: "usage-writing" })} />;
   if (writing.error === null)
     return writing.isSuccess ? (
-      <Notice tone="live" inline detail="Written" />
+      <Notice tone="live" inline detail={text({ id: "usage-written" })} />
     ) : null;
   return (
     <Notice tone="danger" inline>
@@ -121,6 +124,7 @@ function UsageSettingsPause(props: {
   readonly pause: AgentPauseValue;
   readonly nowMs: number;
 }): ReactNode {
+  const text = useCopyText();
   const pressing = useConsoleWrite(usageSettingsPressWrite(props.agent), {
     drawn: true,
   });
@@ -129,19 +133,22 @@ function UsageSettingsPause(props: {
     <div className="grid gap-2">
       <div className="flex flex-wrap items-center gap-2">
         <AgentPause pause={props.pause} nowMs={props.nowMs}>
-          {props.pause.pressed ? ` · ${agentPausePressedLine}` : null}
+          {props.pause.pressed ? ` · ${text(agentPausePressedLine)}` : null}
         </AgentPause>
         {pressable ? (
           <Button
             size="sm"
             busy={pressing.isPending}
             disabled={pressing.isPending}
-            named={`Try ${props.agent} again now`}
+            named={text({
+              id: "usage-try-again-named",
+              args: { agent: props.agent },
+            })}
             onClick={() => {
               pressing.mutate(undefined);
             }}
           >
-            Try again now
+            {text({ id: "usage-try-again" })}
           </Button>
         ) : null}
       </div>
@@ -161,11 +168,13 @@ function UsageSettingsReading(props: {
   readonly name: AgentAccountPercentName;
   readonly nowMs: number;
 }): ReactNode {
+  const text = useCopyText();
   const reading = agentAccountReading(
     props.account,
     agentAccountPercentWindows[props.name],
   );
-  if (reading === undefined) return <span>No reading</span>;
+  if (reading === undefined)
+    return <span>{text({ id: "usage-no-reading" })}</span>;
   return (
     <span className="inline-flex flex-wrap items-center gap-2">
       <Figure figure={shareFigure(reading.utilization)} />
@@ -176,7 +185,7 @@ function UsageSettingsReading(props: {
       {agentAccountReadingStale(reading, props.nowMs) ? (
         <Tooltip text={agentAccountReadingStaleLine}>
           <span>
-            <Pill tone="parked">{agentAccountReadingStaleWord}</Pill>
+            <Pill tone="parked">{text(agentAccountReadingStaleWord)}</Pill>
           </span>
         </Tooltip>
       ) : null}
@@ -189,13 +198,16 @@ function UsageSettingsRead(props: {
   readonly account: AgentAccount;
   readonly nowMs: number;
 }): ReactNode {
+  const text = useCopyText();
   const settings = props.account.settings;
-  const options = (pauses: boolean): string =>
-    pauses ? "Pause with it" : "Keep running";
+  const options = (pauses: boolean): Copy =>
+    pauses
+      ? { id: "usage-threads-pause-with" }
+      : { id: "usage-threads-keep-running" };
   return (
     <Fields>
       {usageSettingsPercentNames.map((name) => (
-        <Field key={name} name={usageSettingsPercentLabel(name)}>
+        <Field key={name} name={text(usageSettingsPercentLabel(name))}>
           <span className="inline-flex flex-wrap items-center gap-2">
             <UsageSettingsReading
               account={props.account}
@@ -203,7 +215,7 @@ function UsageSettingsRead(props: {
               nowMs={props.nowMs}
             />
             <span className="text-ink-3">
-              {"· pauses at "}
+              {`· ${text({ id: "usage-pauses-at" })} `}
               <Figure
                 figure={countFigure(settings[name], {
                   id: "figures-unit-percent",
@@ -213,8 +225,8 @@ function UsageSettingsRead(props: {
           </span>
         </Field>
       ))}
-      <Field name={usageSettingsThreadsLabel}>
-        {options(settings.pausesThreads)}
+      <Field name={text(usageSettingsThreadsLabel)}>
+        {text(options(settings.pausesThreads))}
       </Field>
     </Fields>
   );
@@ -225,11 +237,11 @@ const usageSettingsPercentNames: readonly AgentAccountPercentName[] = [
   "sevenDayPercent",
 ];
 
-function usageSettingsPercentLabel(name: AgentAccountPercentName): string {
+function usageSettingsPercentLabel(name: AgentAccountPercentName): Copy {
   return runUsageWindowLabel(agentAccountPercentWindows[name]);
 }
 
-const usageSettingsThreadsLabel = "Threads and inquiries";
+const usageSettingsThreadsLabel: Copy = { id: "usage-threads" };
 
 /** Each window's threshold as typed, marked where the wire would refuse it,
  * and the threads option. */
@@ -237,6 +249,7 @@ function UsageSettingsEditing(props: {
   readonly draft: AgentAccountDraft;
   readonly onDraft: (draft: AgentAccountDraft) => void;
 }): ReactNode {
+  const text = useCopyText();
   const draft = props.draft;
   const faults = agentAccountDraftRead(draft).faults;
   return (
@@ -244,11 +257,14 @@ function UsageSettingsEditing(props: {
       {usageSettingsPercentNames.map((name) => (
         <label key={name} className="grid gap-1">
           <span className="text-sm text-ink-3">
-            {`${usageSettingsPercentLabel(name)} pauses at`}
+            {text({
+              id: "usage-window-pauses-at",
+              args: { window: usageSettingsPercentLabel(name) },
+            })}
           </span>
           <Input
             numeric
-            label={usageSettingsPercentLabel(name)}
+            label={text(usageSettingsPercentLabel(name))}
             unit="%"
             value={draft[name]}
             invalid={faults?.has(name) === true}
@@ -258,13 +274,13 @@ function UsageSettingsEditing(props: {
           />
           {faults?.has(name) === true ? (
             <span className="text-sm text-tone-fail">
-              {agentAccountPercentFault}
+              {text(agentAccountPercentFault)}
             </span>
           ) : null}
         </label>
       ))}
       <Checkbox
-        label={`${usageSettingsThreadsLabel} pause with it`}
+        label={text({ id: "usage-threads-pause" })}
         checked={draft.pausesThreads}
         onChange={(pausesThreads) => {
           props.onDraft({ ...draft, pausesThreads });
@@ -278,6 +294,7 @@ function UsageSettingsAgent(props: {
   readonly account: AgentAccount;
   readonly nowMs: number;
 }): ReactNode {
+  const text = useCopyText();
   const { account, nowMs } = props;
   const [draft, setDraft] = useState<AgentAccountDraft | undefined>(undefined);
   const saving = useConsoleWrite(usageSettingsWrite(account.agent), {
@@ -288,7 +305,7 @@ function UsageSettingsAgent(props: {
   return (
     <SettingsSection
       title={account.agent}
-      about="When this agent pauses"
+      about={text({ id: "usage-agent-about" })}
       editing={draft !== undefined}
       editable
       savable={!saving.isPending && read?.settings !== undefined}
@@ -330,13 +347,12 @@ function UsageSettingsAgent(props: {
 }
 
 export function UsageSettingsPage(): ReactNode {
+  const text = useCopyText();
   const accounts = useAgentAccounts();
   const nowMs = useNowMs();
   return (
-    <SettingsPage title="Usage">
-      <p className="text-sm text-ink-3">
-        Your own agent accounts, the same in every workspace.
-      </p>
+    <SettingsPage title={text({ id: "usage-title" })}>
+      <p className="text-sm text-ink-3">{text({ id: "usage-about" })}</p>
       {accounts.state === "Ready" ? (
         accounts.value.accounts.map((account) => (
           <UsageSettingsAgent
