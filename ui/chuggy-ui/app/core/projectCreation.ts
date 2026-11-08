@@ -57,14 +57,9 @@ export function projectCreationPathIn(workspace: string): string {
 
 /**
  * The name rule as the form states it under each field before anything is
- * typed, and as it states a name that breaks it.
- *
- * THESE TWO AND `tenantNameReservedFault` STAY PLAIN STRINGS, NOT `Copy`. The
- * site's own workspace creation (`core/siteWorkspaces.ts`,
- * `core/siteWorkspaceLinks.ts`) reads them too, and that section is not this
- * ticket's to migrate; a `Copy` here would need a `text` neither of those
- * pure core modules is handed. Project creation's own call site renders them
- * as the data they already are.
+ * typed, and as it states a name that breaks it. These two and
+ * `tenantNameReservedFault` stay plain strings rather than `Copy`, because
+ * `core/siteWorkspaces.ts` reads them too and is not this ticket's to migrate.
  */
 export const projectNameRule = "Lowercase letters, digits, inner hyphens";
 export const projectNameLengthFault = "Too long";

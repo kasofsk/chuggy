@@ -33,17 +33,16 @@ import { setupPressed } from "../../ui/chuggy-ui/app/core/setupNext.ts";
 type SetupPressed = keyof typeof setupPressed;
 
 /** The names a page draws from the catalog. */
-type SetupPressedCatalogued = "edit" | "save";
+type SetupPressedCatalogued = "edit" | "save" | "projectPage" | "projectCreate";
 
 const settingsSection = "ui/chuggy-ui/app/browser/ui/SettingsSection.tsx";
+const projectCreationPage = "ui/chuggy-ui/app/browser/ProjectCreation.tsx";
 
 /** The page that draws each name the catalog does not, by its path from the
  * root of this tree. */
 const drawnIn: Readonly<
   Record<Exclude<SetupPressed, SetupPressedCatalogued>, string>
 > = {
-  projectPage: "ui/chuggy-ui/app/browser/ProjectCreation.tsx",
-  projectCreate: "ui/chuggy-ui/app/browser/ProjectCreation.tsx",
   connect: "ui/chuggy-ui/app/browser/repositories/ConnectGithub.tsx",
   add: "ui/chuggy-ui/app/browser/repositories/AddRepository.tsx",
   retry: "ui/chuggy-ui/app/browser/repositories/BindingConfigurations.tsx",
@@ -60,6 +59,8 @@ const drawnFromCatalog: Readonly<
 > = {
   edit: { page: settingsSection, id: "ui-edit" },
   save: { page: settingsSection, id: "ui-save" },
+  projectPage: { page: projectCreationPage, id: "project-creation-new-title" },
+  projectCreate: { page: projectCreationPage, id: "project-creation-submit" },
 };
 
 const ticketPage = "ui/chuggy-ui/app/browser/TicketActions.tsx";
