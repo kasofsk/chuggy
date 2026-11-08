@@ -378,6 +378,9 @@ export interface ContextPoint {
   readonly ordinal: number;
   readonly tokens: number;
   readonly series: ContextSeries;
+  /** The subagent call a subagent's point was made under, which tells one
+   * subagent's context from another's. */
+  readonly parent?: string | undefined;
 }
 
 /** One compaction, after the call or turn whose point the series last drew
@@ -420,7 +423,8 @@ export function contextPeakOf(
   return peak;
 }
 
-/** The point before `point` in its own series, which its growth is read from. */
+/** The point before `point` in its own series, and for a subagent's, the same
+ * subagent's: the one its growth is read from. */
 export function contextPointPrevious(
   points: readonly ContextPoint[],
   point: ContextPoint,
@@ -428,7 +432,8 @@ export function contextPointPrevious(
   let previous: ContextPoint | undefined = undefined;
   for (const each of points) {
     if (each.ordinal >= point.ordinal) break;
-    if (each.series === point.series) previous = each;
+    if (each.series === point.series && each.parent === point.parent)
+      previous = each;
   }
   return previous;
 }

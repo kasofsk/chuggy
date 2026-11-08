@@ -166,7 +166,8 @@ export function contextChartBroken(
   return pieces;
 }
 
-/** A subagent series split wherever its calls are not consecutive. */
+/** A subagent series split wherever its calls are not consecutive, or the
+ * next is another subagent's. */
 export function contextChartRuns(
   points: readonly ContextPoint[],
 ): readonly (readonly ContextPoint[])[] {
@@ -177,7 +178,8 @@ export function contextChartRuns(
     if (
       run !== undefined &&
       last !== undefined &&
-      point.ordinal === last.ordinal + 1
+      point.ordinal === last.ordinal + 1 &&
+      point.parent === last.parent
     )
       run.push(point);
     else runs.push([point]);

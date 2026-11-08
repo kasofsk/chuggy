@@ -196,6 +196,7 @@ export function contextRunGrowth(
       ordinal: call.call,
       tokens: call.tokens,
       series: call.series,
+      parent: call.parent,
     })),
     compactions: contextRunCompactions(calls, readings),
     threshold: window.threshold,

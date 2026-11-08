@@ -305,6 +305,31 @@ test("a hover says the context, the call, and how far it moved from the call bef
   ]);
 });
 
+test("two subagents are two series: a hover moves from the same subagent's call, and their lines never join", () => {
+  const two: ContextGrowthView = {
+    ...growth,
+    points: [
+      { ordinal: 1, tokens: 20_000, series: "Main" },
+      { ordinal: 2, tokens: 9_000, series: "Subagent", parent: "toolu_a" },
+      { ordinal: 3, tokens: 4_000, series: "Subagent", parent: "toolu_b" },
+      { ordinal: 4, tokens: 12_000, series: "Subagent", parent: "toolu_a" },
+      { ordinal: 5, tokens: 5_000, series: "Subagent", parent: "toolu_b" },
+    ],
+    compactions: [],
+  };
+  const point = two.points[4];
+  if (point === undefined) throw new Error("no point");
+  expect(contextPointSaid(two, point).at(-1)).toStrictEqual({
+    id: "context-point-moved",
+    args: { moved: "rose", growth: "1,000", unit: "call", previous: "3" },
+  });
+  expect(
+    contextChartRuns(
+      two.points.filter((each) => each.series === "Subagent"),
+    ).map((run) => run.map((each) => each.ordinal)),
+  ).toStrictEqual([[2], [3], [4], [5]]);
+});
+
 test("the compactions tile counts them and says after which call the last came, or the threshold where none did", () => {
   expect(contextCompactionsTile(growth).note).toStrictEqual({
     id: "context-compactions-after",
