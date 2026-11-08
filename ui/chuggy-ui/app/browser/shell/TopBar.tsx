@@ -273,7 +273,10 @@ export function TopBar(props: {
             {partition === undefined ? null : (
               <TopBarInbox partition={partition} />
             )}
-            <SettingsMenu partition={partition} />
+            <SettingsMenu
+              partition={partition}
+              tenant={partition?.tenant ?? props.chat}
+            />
           </div>
         </div>
       </header>

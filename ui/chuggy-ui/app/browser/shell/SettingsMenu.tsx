@@ -1,7 +1,8 @@
 /**
  * Everything a reader reaches rarely, behind one gear in the bar: the pages
- * that set the open project up, how the console looks, where the chat pane
- * sits where the frame divides and has one, and signing out.
+ * that set the open project up, how the console looks, the wording it is
+ * drawn in for a site administrator, where the chat pane sits where the frame
+ * divides and has one, and signing out.
  *
  * A reader visits these once and forgets them — so the bar carries the gear
  * and they live inside it, rather than each spending bar width on every
@@ -16,7 +17,9 @@ import { DropdownMenu } from "radix-ui";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
-import { useCopyText } from "../../copy/CopyProvider.tsx";
+import { copyLocale } from "../../copy/catalog.ts";
+import { useCopyText, useCopyWording } from "../../copy/CopyProvider.tsx";
+import { copyPseudoLocale } from "../../copy/copyPseudo.ts";
 import type { Copy } from "../../core/copy.ts";
 import { navEntryCurrent, shellSetupNav } from "../../core/shellNav.ts";
 import {
@@ -28,6 +31,7 @@ import {
 import type { ChatPanePlacement } from "../../core/chatPane.ts";
 import { persistentStore } from "../ports.ts";
 import { useSessionHolder } from "../session.tsx";
+import { useSiteAbilities } from "../settings/tenantPermissionsResource.ts";
 import {
   themeChoiceApply,
   themeChoiceRead,
@@ -132,6 +136,49 @@ function SettingsTheme(): ReactNode {
   );
 }
 
+/** A vernacular is named by what follows its private-use subtag. */
+function settingsWordingWord(wording: string): Copy {
+  if (wording === copyLocale) return { id: "shell-settings-wording-standard" };
+  if (wording === copyPseudoLocale)
+    return { id: "shell-settings-wording-pseudo" };
+  const name = wording.slice(`${copyLocale}-x-`.length);
+  return {
+    id: "shell-settings-wording-vernacular",
+    args: { name: name.charAt(0).toUpperCase() + name.slice(1) },
+  };
+}
+
+/** The wording the console is drawn in, offered to a site administrator
+ * alone: it compares wordings, and a read that failed draws the same as one
+ * that said no. */
+function SettingsWording(props: { readonly tenant: string }): ReactNode {
+  const abilities = useSiteAbilities(props.tenant);
+  const held = useCopyWording();
+  if (abilities.state !== "Ready" || !abilities.value.administer) return null;
+  return (
+    <>
+      <DropdownMenu.Separator className="bg-edge my-1 h-px" />
+      <SettingsChoice
+        label={{ id: "shell-settings-wording" }}
+        value={held.wording}
+        options={held.wordings}
+        words={Object.fromEntries(
+          held.wordings.map((wording) => [
+            wording,
+            settingsWordingWord(wording),
+          ]),
+        )}
+        onChoose={(picked) => {
+          const wording = held.wordings.find(
+            (candidate) => candidate === picked,
+          );
+          if (wording !== undefined) held.choose(wording);
+        }}
+      />
+    </>
+  );
+}
+
 /** Where the pane sits, offered on every page that draws one where the
  * viewport divides. */
 function SettingsChatPlacement(): ReactNode {
@@ -213,6 +260,8 @@ function SettingsSignOut(): ReactNode {
 
 export function SettingsMenu(props: {
   readonly partition: PartitionIdentity | undefined;
+  /** The tenant the page is in, where one is known. */
+  readonly tenant: string | undefined;
 }): ReactNode {
   const text = useCopyText();
   return (
@@ -231,6 +280,9 @@ export function SettingsMenu(props: {
             <SettingsSetup partition={props.partition} />
           )}
           <SettingsTheme />
+          {props.tenant === undefined ? null : (
+            <SettingsWording tenant={props.tenant} />
+          )}
           {props.partition === undefined ? null : <SettingsChatPlacement />}
           <DropdownMenu.Separator className="bg-edge my-1 h-px" />
           <SettingsSignOut />

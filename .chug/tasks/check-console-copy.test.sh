@@ -117,6 +117,12 @@ copy_check
 check "a vernacular not named as a private use of the base is a finding" 1 "$RC" "a vernacular is named en-x-<name>"
 
 catalog
+mkdir -p "$C/en-x-pseudo"
+generate
+copy_check
+check "a directory claiming the pseudo wording is a finding" 1 "$RC" "en-x-pseudo is drawn from en, not from files"
+
+catalog
 printf '%s\n' 'new-shell = New { -ticket }' > "$C/en/shell.ftl"
 generate
 copy_check
@@ -177,6 +183,17 @@ generate
 printf '%s\n' 'export const goneFtl = ``;' > "$C/generated/goneFtl.ts"
 copy_check
 check "a text no file generates is stale" 1 "$RC" "goneFtl.ts: is stale: no section generates it"
+
+catalog
+generate
+printf '%s\n' 'shell-new = A { -ticket }' > "$C/en-x-job/shell.ftl"
+copy_check
+check "a vernacular's file added without regenerating leaves its text stale" 1 "$RC" "vernaculars.ts: is stale"
+
+catalog
+generate
+cp "$C/generated/vernaculars.ts" "$OUT"
+check "every vernacular's text is generated under its name" 0 0 '"en-x-job": ['
 
 catalog
 generate

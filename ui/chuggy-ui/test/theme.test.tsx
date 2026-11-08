@@ -88,7 +88,7 @@ async function themeMenuOpened(): Promise<void> {
   renderCopied(
     <SessionProvider holder={holderDouble()}>
       <ConsoleStoreBareProvided>
-        <SettingsMenu partition={undefined} />
+        <SettingsMenu partition={undefined} tenant={undefined} />
       </ConsoleStoreBareProvided>
     </SessionProvider>,
   );

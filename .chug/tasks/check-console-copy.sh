@@ -18,12 +18,15 @@
 #   - a vernacular defines an id the base does not, or with other variables.
 #     It is a layer that overrides, so either would be a word no base
 #     message could reach, or a message formatted without what it names.
+#   - a directory is named `en-x-pseudo`, the wording the console draws from
+#     the base language itself, so its files would never be read.
 #   - a module under `ui/chuggy-ui/app/core/generated/` or
 #     `ui/chuggy-ui/app/copy/generated/` differs from what its file generates,
 #     or no file generates it. The first are the types that make a misspelled
 #     id or a missing variable a compile error, so stale ones admit exactly
 #     that; the second are the text the catalog loads, so a stale one draws
-#     words the `.ftl` no longer says.
+#     words the `.ftl` no longer says. Every vernacular's text is one of the
+#     second, `vernaculars.ts`, which is what offers it as a wording.
 #
 # WHAT IT CANNOT SEE. Whether a word is a term at all is the catalog's to say;
 # the gate holds a message only to the terms `terms.ftl` defines, matched as
