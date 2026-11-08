@@ -13,10 +13,10 @@ import {
 import type { TicketResponse } from "../../../src/contract/responses.ts";
 import {
   ticketYamlOf,
-  ticketYamlRead,
   ticketYamlVocabulary,
 } from "../app/browser/editor/ticketYaml.ts";
 import type { TicketYamlContext } from "../app/browser/editor/ticketYaml.ts";
+import { ticketYamlReadWorded } from "./ticketYamlReadWorded.ts";
 import {
   creationBodyFrom,
   creationFormFrom,
@@ -163,7 +163,9 @@ test("a reader who may not skip planned evaluations is refused a program running
     });
     const faults = refused.assembled === "Faults" ? refused.faults : [];
     expect(faults.map((fault) => fault.field)).toStrictEqual(["authoring"]);
-    expect(faults[0]?.reason).toMatch(/may not leave out part of the plan/u);
+    expect(
+      faults[0] === undefined ? undefined : copyTextEn(faults[0].reason),
+    ).toMatch(/may not leave out part of the plan/u);
     for (const standing of [
       { mayOverride: true, maySkipPlanned: true },
       { mayOverride: true },
@@ -197,14 +199,17 @@ test("a selection written as YAML reads back as the same form", () => {
     },
     [],
   );
-  const read = ticketYamlRead(ticketYamlOf(form, context), context);
+  const read = ticketYamlReadWorded(
+    ticketYamlOf(form, context, copyTextEn),
+    context,
+  );
   expect(read.problems).toStrictEqual([]);
   expect(read.form).toStrictEqual(form);
 });
 
 test("a selection naming what the catalog does not hold is refused at its value", () => {
   const text = "title: t\nintent: i\nselection:\n  work: nowhere\n";
-  const read = ticketYamlRead(text, context);
+  const read = ticketYamlReadWorded(text, context);
   expect(read.form).toBe(undefined);
   expect(read.problems.map((problem) => problem.message)).toStrictEqual([
     "name one of build, quick, gates, review",
@@ -215,7 +220,7 @@ test("a selection naming what the catalog does not hold is refused at its value"
 });
 
 test("a selection naming its defaults holds none of them", () => {
-  const read = ticketYamlRead(
+  const read = ticketYamlReadWorded(
     "title: t\nintent: i\nselection:\n  work: build\n",
     context,
   );
@@ -304,9 +309,9 @@ test("the revision a ticket follows is sent, written and read back as it named i
         work: "quick",
         configuration,
       });
-      const text = ticketYamlOf(form, over);
+      const text = ticketYamlOf(form, over, copyTextEn);
       expect(text).toContain(`  configuration: ${configuration}\n`);
-      const read = ticketYamlRead(text, over);
+      const read = ticketYamlReadWorded(text, over);
       expect(read.problems).toStrictEqual([]);
       expect(read.form).toStrictEqual(form);
     }
@@ -323,16 +328,16 @@ test("a ticket naming no revision writes none and reads back naming none", () =>
       { work: "quick" },
       bound,
     );
-    const text = ticketYamlOf(form, over);
+    const text = ticketYamlOf(form, over, copyTextEn);
     expect(text).not.toContain("  configuration:");
-    const read = ticketYamlRead(text, over);
+    const read = ticketYamlReadWorded(text, over);
     expect(read.form?.selection).toStrictEqual({ work: "quick" });
   }
 });
 
 test("a revision other than Pinned or Latest is refused at its value, and the vocabulary offers those two", () => {
   const text = "title: t\nintent: i\nselection:\n  configuration: Newest\n";
-  const read = ticketYamlRead(text, context);
+  const read = ticketYamlReadWorded(text, context);
   expect(read.form).toBe(undefined);
   expect(read.problems.map((problem) => problem.message)).toStrictEqual([
     "name one of Pinned, Latest",

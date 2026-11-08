@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * Everything a ticket's creation does not ask a human about, behind one
  * disclosure and prefilled from the initialization.
@@ -37,6 +36,7 @@ import type {
   CreationStage,
   TicketCreationForm,
 } from "../core/ticketCreation.ts";
+import { useCopyText } from "../copy/CopyProvider.tsx";
 import { Button } from "./ui/Button.tsx";
 import { Panel } from "./ui/Panel.tsx";
 
@@ -83,11 +83,16 @@ function Dependencies(
   },
 ): ReactNode {
   const { form, onChange } = props;
+  const text = useCopyText();
   if (props.candidates.length === 0)
-    return <p className="panel-note">No tickets to depend on</p>;
+    return (
+      <p className="panel-note">
+        {text({ id: "ticket-authoring-dependencies-none" })}
+      </p>
+    );
   return (
     <fieldset className="creation-set">
-      <legend>Dependencies</legend>
+      <legend>{text({ id: "ticket-authoring-dependencies" })}</legend>
       {props.candidates.map((candidate) => (
         <label key={candidate} className="creation-check">
           <input
@@ -102,11 +107,18 @@ function Dependencies(
               });
             }}
           />
-          <span>Ticket {candidate}</span>
+          <span>
+            {text({
+              id: "ticket-authoring-ticket",
+              args: { ticket: String(candidate) },
+            })}
+          </span>
         </label>
       ))}
       {props.truncated ? (
-        <p className="panel-note">Not every ticket is listed</p>
+        <p className="panel-note">
+          {text({ id: "ticket-authoring-dependencies-truncated" })}
+        </p>
       ) : null}
     </fieldset>
   );
@@ -130,6 +142,7 @@ function ConfigurationVersion(
   props: FormEdit & { readonly initialization: DraftInitializationResponse },
 ): ReactNode {
   const { form, onChange } = props;
+  const text = useCopyText();
   const catalog = configurationCatalogOf(
     props.initialization.configuration.canonical,
   );
@@ -137,10 +150,16 @@ function ConfigurationVersion(
   const defaulted = configurationFollowingOf(undefined, catalog.defaults);
   return (
     <ChoiceRow<ConfigurationFollowing | undefined>
-      label="Configuration version"
+      label={text({ id: "ticket-authoring-configuration-version" })}
       offered={[undefined, ...configurationFollowings]}
       chosen={form.selection.configuration}
-      render={(value) => value ?? `Default (${defaulted})`}
+      render={(value) =>
+        value ??
+        text({
+          id: "ticket-authoring-configuration-version-default",
+          args: { following: defaulted },
+        })
+      }
       onChoose={(value) => {
         onChange({
           ...form,
@@ -193,16 +212,20 @@ function Program(
   },
 ): ReactNode {
   const { form, evaluatorsMax, onChange, planned } = props;
+  const text = useCopyText();
   return (
     <fieldset className="creation-set">
-      <legend>Evaluators per stage</legend>
+      <legend>{text({ id: "ticket-authoring-evaluators-per-stage" })}</legend>
       {form.program.map((stage, index) => (
         <div
           key={`${String(index)}-${creationStageLabel(stage)}`}
           className="creation-stage"
         >
           <ChoiceRow
-            label={`Stage ${index + 1}`}
+            label={text({
+              id: "ticket-authoring-stage",
+              args: { number: String(index + 1) },
+            })}
             offered={evaluatorCountsOffered(
               planned === undefined ? 1 : programStageLeast(planned, index + 1),
               evaluatorsMax,
@@ -228,7 +251,7 @@ function Program(
                 onChange({ ...form, program: stageRemoved(form, index) });
               }}
             >
-              Remove
+              {text({ id: "ticket-authoring-remove" })}
             </Button>
           )}
         </div>
@@ -240,7 +263,7 @@ function Program(
           onChange({ ...form, program: stageAdded(form, evaluatorsMax) });
         }}
       >
-        Add stage
+        {text({ id: "ticket-authoring-add-stage" })}
       </Button>
     </fieldset>
   );
@@ -254,8 +277,12 @@ export function TicketCreationAdvanced(
   },
 ): ReactNode {
   const { form, initialization, onChange } = props;
+  const text = useCopyText();
   return (
-    <Panel title="Advanced" collapsible={{ open: false }}>
+    <Panel
+      title={text({ id: "ticket-authoring-advanced" })}
+      collapsible={{ open: false }}
+    >
       <div className="grid gap-2">
         <ConfigurationVersion
           form={form}

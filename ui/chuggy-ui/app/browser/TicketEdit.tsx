@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * Editing a Pending ticket: the creation form, prefilled from the ticket's
  * draft, offering the creation candidates and the dependencies the draft holds,
@@ -95,6 +94,7 @@ import {
   CreationContextAbsent,
   CreationFields,
   attemptHeldDraft,
+  attemptReasonHeld,
   attemptRunning,
 } from "./TicketCreation.tsx";
 import type { Attempt } from "./TicketCreation.tsx";
@@ -180,7 +180,11 @@ function editWrite(
       const reason =
         updated.created === "Stale"
           ? updated.reason
-          : `${updated.reason}${attemptHeldDraft(updated.held?.draft, "Update")}`;
+          : attemptReasonHeld(
+              updated.reason,
+              attemptHeldDraft(updated.held?.draft, "Update"),
+              text,
+            );
       throw new TicketUpdateRefused(reason, updated);
     },
     refusal: (failure) => text(operationFailureSentence(failure)),
@@ -392,6 +396,7 @@ export function EditForm(props: EditFormProps): ReactNode {
   );
   const base = follow.base;
   const attempt = draftSaveAttempt(saving.refusal, running.attempt);
+  const text = useCopyText();
   return (
     <div className="creation">
       <DraftFollowNotice
@@ -410,7 +415,7 @@ export function EditForm(props: EditFormProps): ReactNode {
           editRevisionFrom(base, offers, held, repositories, standing)
         }
         storeKey={storeKey}
-        submitLabel="revise and release"
+        submitLabel={text({ id: "ticket-authoring-revise-and-release" })}
         busy={running.busy}
         onSubmit={submit}
         onDirty={props.onDirty}
@@ -526,12 +531,13 @@ function EditSubjectRead(props: {
   readonly children: (subject: EditSubject) => ReactNode;
 }): ReactNode {
   const { ticketState, draftState } = props;
+  const text = useCopyText();
   if (ticketState.state !== "Ready")
     return <PanelUnready state={ticketState} />;
   if (!ticketRevisable(ticketState.value.phase))
     return (
       <p className="panel-absent">
-        this ticket is no longer pending, so it cannot be edited
+        {text({ id: "ticket-authoring-not-pending" })}
       </p>
     );
   if (draftState.state !== "Ready") return <PanelUnready state={draftState} />;
@@ -554,8 +560,12 @@ function TicketEditRead(props: {
   const ticketState = usePanelState(ticketQuery(partition, ticket, "Streamed"));
   const draftState = usePanelState(draftQuery(partition, ticket, "Streamed"));
   const contextState = usePanelState(creationContextQuery(partition));
+  const text = useCopyText();
   return (
-    <DataPanel title="Draft" state={contextState}>
+    <DataPanel
+      title={text({ id: "ticket-authoring-draft" })}
+      state={contextState}
+    >
       {(context) =>
         context.context === "Ready" ? (
           <EditSubjectRead ticketState={ticketState} draftState={draftState}>
@@ -586,6 +596,7 @@ function TicketEditRead(props: {
 
 export function TicketEdit(): ReactNode {
   const params = useParams({ from: "/$tenant/$project/tickets/$ticket/edit" });
+  const text = useCopyText();
   const partition: PartitionIdentity = {
     tenant: params.tenant,
     project: params.project,
@@ -593,7 +604,10 @@ export function TicketEdit(): ReactNode {
   return (
     <DraftScreen
       partition={partition}
-      heading={<>Edit ticket {params.ticket}</>}
+      heading={text({
+        id: "ticket-authoring-edit-heading",
+        args: { ticket: params.ticket },
+      })}
     >
       <TicketEditRead partition={partition} ticket={Number(params.ticket)} />
     </DraftScreen>

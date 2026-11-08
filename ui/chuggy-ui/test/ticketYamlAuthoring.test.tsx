@@ -43,6 +43,8 @@ import {
   ticketRefusedFirst,
   ticketReleasing,
 } from "./ticketReleasing.tsx";
+import { copyTextEn } from "../app/copy/catalog.ts";
+import { copyOrDataText } from "../app/core/copy.ts";
 
 vi.mock(
   "../app/browser/editor/TicketEditor.tsx",
@@ -293,7 +295,7 @@ test("the submit asks first, and refuses while a problem stands", async () => {
   expect(asked.textContent).toMatch(/One problem to fix before sending/u);
   const confirm = within(asked).getByRole("button", {
     name: "Create ticket",
-    description: creationSubmitEffect("Waits"),
+    description: copyOrDataText(copyTextEn, creationSubmitEffect("Waits")),
   });
   expect(confirm.hasAttribute("disabled")).toBe(true);
   fireEvent.click(within(asked).getByRole("button", { name: "Close" }));

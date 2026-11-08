@@ -7,7 +7,7 @@
  * moment it was put back.
  */
 
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import {
@@ -18,11 +18,13 @@ import {
 } from "../app/browser/editor/chugEditor.ts";
 import TicketEditor from "../app/browser/editor/TicketEditor.tsx";
 import type { TicketYamlKey } from "../app/browser/editor/ticketYamlKey.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
+import { renderCopied } from "./copied.tsx";
 
 afterEach(cleanup);
 
 test("the editor mounts in a shadow root and adds no style to the document", async () => {
-  render(
+  renderCopied(
     <TicketEditor
       value={"title: x\n"}
       onChange={() => undefined}
@@ -47,6 +49,7 @@ test("a text the handle is given is not reported as typed", () => {
     onChange: typed,
     vim: false,
     vocabulary: [],
+    text: copyTextEn,
   });
   handle.setValue("title: given\n");
   expect(handle.getValue()).toBe("title: given\n");

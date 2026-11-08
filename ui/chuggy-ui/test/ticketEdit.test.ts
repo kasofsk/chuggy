@@ -37,6 +37,13 @@ import {
   creationSummary,
 } from "./ticketCreationFixture.ts";
 import { ticketInstants } from "./ticketInstants.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
+import type { Copy } from "../app/core/copy.ts";
+
+/** A line in the words the screen draws it, or none. */
+function said(copy: Copy | undefined): string | undefined {
+  return copy === undefined ? undefined : copyTextEn(copy);
+}
 
 const repository = "https://forge.test/kasofsk/chuggy";
 
@@ -535,7 +542,7 @@ test("a reader who may not override keeps the draft's overrides in any key order
   );
   const faults = changed.assembled === "Faults" ? changed.faults : [];
   expect(faults.map((fault) => fault.field)).toStrictEqual(["overrides"]);
-  expect(faults[0]?.reason).toMatch(/may not override/u);
+  expect(said(faults[0]?.reason)).toMatch(/may not override/u);
   const admin = editRevisionFrom(
     draft,
     creationOffers,

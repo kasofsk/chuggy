@@ -4,7 +4,7 @@
  * that refuses costing the copy and nothing on screen.
  */
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import {
@@ -18,6 +18,7 @@ import {
   ticketYamlStoreKey,
 } from "../app/browser/editor/authoringGuards.tsx";
 import TicketEditor from "../app/browser/editor/TicketEditor.tsx";
+import { renderCopied } from "./copied.tsx";
 
 const atlas = { tenant: "acme", project: "atlas" };
 
@@ -42,7 +43,7 @@ function storeRefusing(): void {
 }
 
 function editorDrawn(): HTMLInputElement {
-  render(
+  renderCopied(
     <TicketEditor
       value={"title: x\n"}
       onChange={() => undefined}

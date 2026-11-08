@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The ticket as YAML: the text, what is wrong with it, and the submit that
  * shows what it will send before it sends it.
@@ -53,6 +52,7 @@ import "./TicketEditor.css";
 
 import { ticketYamlCatalogOf } from "./ticketYamlFragments.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
+import { copyOrDataText } from "../../core/copy.ts";
 
 const TicketEditor = lazy(() => import("./TicketEditor.tsx"));
 
@@ -80,23 +80,26 @@ function ticketYamlLineOf(text: string, offset: number): number {
   return text.slice(0, offset).split("\n").length;
 }
 
-function ticketYamlProblemsSentence(count: number): string {
-  if (count === 0) return "No problems";
-  return count === 1
-    ? "One problem to fix before sending"
-    : `${String(count)} problems to fix before sending`;
-}
-
 function ProblemList(props: {
   readonly text: string;
   readonly problems: readonly TicketYamlProblem[];
 }): ReactNode {
+  const text = useCopyText();
   if (props.problems.length === 0) return null;
   return (
-    <ul className="ticket-yaml-problems" aria-label="Problems">
+    <ul
+      className="ticket-yaml-problems"
+      aria-label={text({ id: "ticket-authoring-problems" })}
+    >
       {props.problems.map((problem, index) => (
         <li key={index}>
-          line {ticketYamlLineOf(props.text, problem.from)}: {problem.message}
+          {text({
+            id: "ticket-authoring-problem-line",
+            args: {
+              line: String(ticketYamlLineOf(props.text, problem.from)),
+              message: copyOrDataText(text, problem.message),
+            },
+          })}
         </li>
       ))}
     </ul>
@@ -114,12 +117,16 @@ function YamlSubmit(props: {
   readonly busy: boolean;
   readonly onSubmit: (form: TicketCreationForm) => void;
 }): ReactNode {
+  const text = useCopyText();
   const [open, setOpen] = useState(false);
   const effect = useId();
   const form = props.form;
   return (
     <Dialog
-      title={`${props.label}?`}
+      title={text({
+        id: "ticket-authoring-submit-question",
+        args: { label: props.label },
+      })}
       trigger={props.label}
       triggerVariant="primary"
       triggerSize="md"
@@ -129,7 +136,10 @@ function YamlSubmit(props: {
     >
       <pre className="ticket-yaml-confirm-source">{props.text}</pre>
       <p className="text-ink-2 m-0 text-sm">
-        {ticketYamlProblemsSentence(props.problems)}
+        {text({
+          id: "ticket-authoring-problems-count",
+          args: { count: props.problems },
+        })}
       </p>
       {props.effect === undefined ? null : (
         <p className="text-ink-3 m-0 text-sm">
@@ -165,9 +175,10 @@ function useYamlText(props: TicketYamlAuthoringProps) {
   useEffect(() => {
     handed.current = props;
   });
+  const copyText = useCopyText();
   const [kept] = useState(() => ticketYamlStored(storeKey));
   const [text, setText] = useState(
-    () => kept ?? ticketYamlOf(props.form, context),
+    () => kept ?? ticketYamlOf(props.form, context, copyText),
   );
   const [restored, setRestored] = useState(kept !== undefined);
   const [authored, setAuthored] = useState(kept !== undefined);
@@ -179,7 +190,6 @@ function useYamlText(props: TicketYamlAuthoringProps) {
       ? []
       : ticketYamlFaultProblems(props.faultsOf(read), reading.keys)),
   ];
-  const copyText = useCopyText();
   const vocabulary = useMemo(
     () => ticketYamlVocabulary(read ?? context.base, context, copyText),
     [read, context, copyText],
@@ -211,7 +221,7 @@ function useYamlText(props: TicketYamlAuthoringProps) {
     },
     discarded: (): void => {
       ticketYamlForgotten(storeKey);
-      setText(ticketYamlOf(context.base, context));
+      setText(ticketYamlOf(context.base, context, copyText));
       setRestored(false);
       props.onAuthored?.(false);
     },
@@ -219,14 +229,15 @@ function useYamlText(props: TicketYamlAuthoringProps) {
 }
 
 function RestoredNote(props: { readonly onDiscard: () => void }): ReactNode {
+  const text = useCopyText();
   return (
     <Notice
       tone="info"
       inline
-      detail="Restored the unsaved YAML this browser kept for this ticket."
+      detail={text({ id: "ticket-authoring-restored" })}
     >
       <Button size="sm" onClick={props.onDiscard}>
-        Discard it
+        {text({ id: "ticket-authoring-discard" })}
       </Button>
     </Notice>
   );
@@ -235,11 +246,12 @@ function RestoredNote(props: { readonly onDiscard: () => void }): ReactNode {
 export default function TicketYamlAuthoring(
   props: TicketYamlAuthoringProps,
 ): ReactNode {
+  const text = useCopyText();
   const yaml = useYamlText(props);
   const fallback = (
     <textarea
       className="ticket-editor-fallback"
-      aria-label="Ticket YAML"
+      aria-label={text({ id: "ticket-authoring-ticket-yaml" })}
       spellCheck={false}
       value={yaml.text}
       onChange={(event) => {

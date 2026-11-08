@@ -23,6 +23,7 @@ import {
 } from "../../../../src/contract/configurationOverrides.ts";
 import { workloadOverrideSchema } from "../../../../src/contract/configurationDocument.ts";
 
+import type { CopyOrData } from "./copy.ts";
 import { overridesSame } from "./ticketOverrides.ts";
 import { configurationCatalogOf } from "./configurationCatalog.ts";
 
@@ -134,7 +135,7 @@ export type WorkloadOverrideRead =
   | { readonly read: "Override"; readonly override: WorkloadOverride }
   | {
       readonly read: "Refused";
-      readonly message: string;
+      readonly message: CopyOrData;
       readonly path: readonly PropertyKey[];
     };
 
@@ -197,13 +198,13 @@ export function workloadOverrideRead(
   if (document === undefined || !workloadIsRecord(catalogHeld))
     return {
       read: "Refused",
-      message: `the catalog holds no workload \`${name}\``,
+      message: { id: "ticket-authoring-workload-unknown", args: { name } },
       path: [],
     };
   if (!workloadIsRecord(written))
     return {
       read: "Refused",
-      message: "write the workload as a map of its fields",
+      message: { id: "ticket-authoring-workload-unmapped" },
       path: [],
     };
   const held = workloadSwitchesRunner(written, catalogHeld) ? {} : catalogHeld;
@@ -211,8 +212,7 @@ export function workloadOverrideRead(
   if (workloadPlacementFields.every((field) => restored[field] !== undefined))
     return {
       read: "Refused",
-      message:
-        "a workload runs in an image or under an execution requirement; name one",
+      message: { id: "ticket-authoring-workload-unplaced" },
       path: ["executionRequirement"],
     };
   const removed = Object.keys(held).find(
@@ -223,7 +223,10 @@ export function workloadOverrideRead(
   if (removed !== undefined)
     return {
       read: "Refused",
-      message: `a ticket replaces \`${removed}\` and cannot remove it; write it back`,
+      message: {
+        id: "ticket-authoring-workload-removed",
+        args: { field: removed },
+      },
       path: [],
     };
   const changed = Object.fromEntries(
@@ -244,7 +247,7 @@ export function workloadOverrideRead(
   const issue = parsed.error.issues[0];
   return {
     read: "Refused",
-    message: issue?.message ?? "this workload is not one a ticket may run",
+    message: issue?.message ?? { id: "ticket-authoring-workload-refused" },
     path: issue?.path ?? [],
   };
 }
