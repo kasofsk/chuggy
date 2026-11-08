@@ -13,6 +13,7 @@
 import type { ReactNode } from "react";
 
 import { useCopyText } from "../copy/CopyProvider.tsx";
+import { copyOrDataText } from "../core/copy.ts";
 import type { ApiFailure } from "../core/apiRequest.ts";
 import { failureWords, readFailedLead } from "../core/failureWords.ts";
 import type { PanelState } from "../core/freshness.ts";
@@ -45,6 +46,7 @@ export function ReadFailed(props: {
   readonly failure: ApiFailure;
   readonly retry?: (() => void) | undefined;
 }): ReactNode {
+  const text = useCopyText();
   const words = failureWords(props.failure);
   const lead = readFailedLead(props.subject, props.failure);
   return (
@@ -53,9 +55,9 @@ export function ReadFailed(props: {
         tone={props.failure.outcome === "Absent" ? "parked" : "danger"}
         inline
       >
-        {lead.map((part) => `${part} · `).join("")}
+        {lead.map((part) => `${copyOrDataText(text, part)} · `).join("")}
         <Tooltip text={words.detail}>
-          <span>{words.word}</span>
+          <span>{text(words.word)}</span>
         </Tooltip>
       </Notice>
       <PanelRetry retry={props.retry} />

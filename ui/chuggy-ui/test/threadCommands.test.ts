@@ -87,7 +87,7 @@ describe("the status line", () => {
         placed(sessionPlacementBody({ thread: "InCluster" })),
       ),
     );
-    expect(facts["Runs on"]).toBe("Hosted");
+    expect(facts["Runs on"]).toBe("Hosted runs");
     expect(facts["Runner"]).toBeUndefined();
   });
 
@@ -306,7 +306,7 @@ describe("/clear", () => {
     expect(cleared).toStrictEqual({ cleared: "Refused", failure: absent });
     expect(
       threadClearedWord({ cleared: "Refused", failure: absent }),
-    ).toStrictEqual({ word: "Not found" });
+    ).toStrictEqual({ word: { id: "failure-not-found" } });
   });
 
   test("a thread with a turn unsettled, or a message no read lists yet, is not cleared", () => {

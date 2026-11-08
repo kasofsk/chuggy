@@ -57,8 +57,12 @@ export interface TicketPlan {
 }
 
 /** What a workload runs on: its agent and model, or that it runs commands. */
-function ticketPlanRuns(workload: CatalogWorkload): string | undefined {
-  if (workload.runner === "Commands") return "commands";
+function ticketPlanRuns(
+  workload: CatalogWorkload,
+  text: CopyText,
+): string | undefined {
+  if (workload.runner === "Commands")
+    return text({ id: "ticket-plan-commands" });
   const said = [
     workload.agent,
     workload.model === "Default" ? undefined : workload.model,
@@ -66,20 +70,27 @@ function ticketPlanRuns(workload: CatalogWorkload): string | undefined {
   return said.length === 0 ? undefined : said.join(" · ");
 }
 
+/** An evaluator the plan does not name, by its number. */
+export function ticketPlanEvaluatorNumber(key: number): Copy {
+  return { id: "ticket-plan-evaluator", args: { key: String(key) } };
+}
+
 function ticketPlanEvaluator(
   catalog: ConfigurationCatalog | undefined,
   named: CatalogPlanStage | undefined,
   key: number,
+  text: CopyText,
 ): TicketPlanEvaluator {
   const name = named?.evaluators[key - 1];
   const workload =
     catalog === undefined || name === undefined
       ? undefined
       : configurationCatalogWorkload(catalog, name);
-  const runs = workload === undefined ? undefined : ticketPlanRuns(workload);
+  const runs =
+    workload === undefined ? undefined : ticketPlanRuns(workload, text);
   return {
     key,
-    name: name ?? `Evaluator ${String(key)}`,
+    name: name ?? text(ticketPlanEvaluatorNumber(key)),
     runs:
       name === undefined || runs === undefined
         ? undefined
@@ -136,12 +147,12 @@ export function ticketPlanOf(
       ?.finalization;
   const names = named?.map((stage) => stage.name);
   return {
-    work: work === undefined ? undefined : ticketPlanRuns(work),
+    work: work === undefined ? undefined : ticketPlanRuns(work, text),
     stages: ticketPlanProgram(ticket?.program, named).map((stage, index) => ({
       stage: index + 1,
       name: copyOrDataText(text, stageLabel(index + 1, names)),
       evaluators: stage.evaluators.map((evaluator) =>
-        ticketPlanEvaluator(catalog, named?.[index], evaluator.key),
+        ticketPlanEvaluator(catalog, named?.[index], evaluator.key, text),
       ),
     })),
     names,

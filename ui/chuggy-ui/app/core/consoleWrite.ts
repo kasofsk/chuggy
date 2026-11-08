@@ -23,7 +23,8 @@ import {
 import type { MutationKey } from "@tanstack/query-core";
 
 import type { ApiFailure, ApiPorts, ApiResult } from "./apiRequest.ts";
-import type { CopyOrData } from "./copy.ts";
+import { copyOrDataText } from "./copy.ts";
+import type { CopyOrData, CopyText } from "./copy.ts";
 import { failureWords } from "./failureWords.ts";
 import { panelQueryDefaults } from "./panelQueryDefaults.ts";
 
@@ -52,18 +53,24 @@ export function consoleWriteRefusedDetail(
 /** The value a write answered, or its refusal thrown in its screen's words. */
 export function consoleWriteAnswered<T>(
   result: ApiResult<T>,
-  refusal: (failure: ApiFailure) => string,
+  refusal: (failure: ApiFailure) => CopyOrData,
+  text: CopyText,
 ): T {
   if (result.outcome === "Ok") return result.value;
-  throw new ConsoleWriteRefused(refusal(result), result);
+  throw new ConsoleWriteRefused(copyOrDataText(text, refusal(result)), result);
 }
 
 /** A throw that was no refusal, as one: the request or the wait threw rather
  * than answered, and a screen told nothing is a screen that stays busy. */
-export function consoleWriteRefusedOf(thrown: unknown): ConsoleWriteRefused {
+export function consoleWriteRefusedOf(
+  thrown: unknown,
+  text: CopyText,
+): ConsoleWriteRefused {
   if (thrown instanceof ConsoleWriteRefused) return thrown;
   return new ConsoleWriteRefused(
-    thrown instanceof Error ? thrown.message : "the request failed",
+    thrown instanceof Error
+      ? thrown.message
+      : text({ id: "api-reason-failed" }),
   );
 }
 
@@ -87,7 +94,7 @@ export interface ConsoleWrite<V, T> {
     variables: V,
     client: QueryClient,
   ) => Promise<ApiResult<T>>;
-  readonly refusal: (failure: ApiFailure) => string;
+  readonly refusal: (failure: ApiFailure) => CopyOrData;
   readonly landed?: (
     client: QueryClient,
     value: T,
@@ -253,7 +260,9 @@ export function consoleQueryClient(): QueryClient {
         notifyManager.schedule(() => {
           consoleWriteWatchOf(client).refused(
             mutation.options.mutationKey,
-            consoleWriteRefusedOf(error),
+            error instanceof ConsoleWriteRefused
+              ? error
+              : new ConsoleWriteRefused(error.message),
             variables,
           );
         });

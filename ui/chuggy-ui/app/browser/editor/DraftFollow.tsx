@@ -13,6 +13,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { DraftResponse } from "../../../../../src/contract/responses.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import {
   draftFollowBehindChoice,
   draftFollowBehindSentence,
@@ -29,7 +30,6 @@ import type {
   DraftFollowHeld,
   DraftFollowStanding,
 } from "../../core/draftFollow.ts";
-import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { Button } from "../ui/Button.tsx";
 import { Notice } from "../ui/Notice.tsx";
 import {
@@ -128,12 +128,13 @@ export function DraftClosedNotice(props: {
   readonly closed: DraftFollowClosed;
   readonly released: (ticket: number) => ReactNode;
 }): ReactNode {
+  const text = useCopyText();
   const closed = props.closed;
   return (
     <Notice
       tone={closed.standing === "Released" ? "info" : "danger"}
       role="status"
-      detail={draftFollowClosedSentence(closed)}
+      detail={text(draftFollowClosedSentence(closed))}
     >
       {closed.standing === "Released" ? props.released(closed.ticket) : null}
     </Notice>
@@ -158,8 +159,8 @@ export function DraftFollowNotice(props: {
         <Notice
           tone="parked"
           role="status"
-          detail={draftFollowBehindSentence(standing.current.ticket)}
-          more={draftFollowBehindChoice}
+          detail={text(draftFollowBehindSentence(standing.current.ticket))}
+          more={text(draftFollowBehindChoice)}
         >
           <div className="flex flex-wrap gap-2">
             <Button size="sm" onClick={props.onTaken}>

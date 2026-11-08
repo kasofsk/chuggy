@@ -6,5 +6,6 @@ export interface ApiCopy {
   readonly "api-reason-deadline": Record<never, never>;
   readonly "api-reason-abandoned": Record<never, never>;
   readonly "api-reason-failed": Record<never, never>;
+  readonly "api-reason-unrenewed": Record<never, never>;
   readonly "api-reason-unattempted": Record<never, never>;
 }

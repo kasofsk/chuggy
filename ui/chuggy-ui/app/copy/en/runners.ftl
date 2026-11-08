@@ -1,1 +1,170 @@
 ## The runners page.
+
+runners-title = { -runner(case: "upper", form: "plural") }
+# spells -run: to run is a verb here
+runners-about = Machines that run this { -project }'s { -agent(form: "plural") }.
+runners-none = No { -runner } registered
+runners-caption = Registered { -runner(form: "plural") }
+runners-col-runner = { -runner(case: "upper") }
+runners-col-platforms = Platforms
+runners-col-version = Version
+runners-col-registered = Registered
+runners-col-last-polled = Last polled
+runners-col-status = Status
+runners-col-remove = Remove
+runners-more = More not shown
+runners-add = Add { -runner }
+runners-register = Register { -runner }
+runners-done = Done
+runners-remove = Remove
+runners-never = Never
+
+## Where a runner stands, where its work and sessions run, and what decided it.
+
+runners-standing-none = None
+runners-standing-offline = Offline
+runners-standing-live = Live
+runners-route-hosted = { -hosted-runs(case: "upper") }
+runners-route-pool = { -runner(case: "upper", form: "plural") }
+runners-source-override = { -site(case: "upper") }
+runners-source-project = { -project(case: "upper") }
+runners-source-default = Default
+runners-short-none = No { -runner }
+runners-short-offline = { -runner(case: "upper") } offline
+runners-chat-host-none = No { -chat-host }
+runners-chat-host-offline = { -chat-host(case: "upper") } offline
+runners-personal-link = { -personal-runner(case: "upper", form: "plural") }
+
+## A runner's version.
+
+# The release a runner runs, after its package's name.
+runners-version-named = { $package } { $version }
+runners-version-outdated = Outdated
+runners-version-available = { $version } available
+
+## The ask a registration token is minted for.
+
+runners-ask-aria = { -runner(case: "upper") }
+runners-ask-machine = Machine
+# spells -run: to run is a verb here
+runners-ask-host = Run { -run(form: "plural") } without a container
+# spells -run: to run is a verb here
+runners-ask-host-about = { -run(case: "upper", form: "plural") } with no image run directly on this machine, as you.
+runners-ask-capabilities = Capabilities
+# The example is a capability, which is code.
+runners-ask-capabilities-about = Optional · what { -run(form: "a") } may require, like { $example }
+runners-ask-advanced = Advanced
+runners-ask-create = Create token
+runners-ask-cancel = Cancel
+runners-package-needs-linux = Linux · Node 24 · Docker or Podman
+runners-package-needs-darwin = macOS · Node 24 · Colima
+
+## What is wrong with a capability typed.
+
+runners-capability-refused = { $capability } · { $fault }
+runners-capability-too-long = at most { $chars } characters
+runners-capability-start = start with a letter or digit
+runners-capability-characters = use letters, digits, _, : and -
+runners-capability-detected = { $capability } is detected, not typed
+runners-capability-twice = A capability is listed twice
+
+## The steps a minted token is handed over in.
+
+runners-steps-install = Install
+runners-steps-register = Register
+runners-steps-finish = Finish
+runners-steps-copy-install = Copy install command
+runners-steps-copy-register = Copy register command
+runners-steps-expires = Expires
+runners-steps-guide = Setup guide
+
+## A member's personal runners.
+
+runners-personal-title = { -personal-runner(case: "upper", form: "plural") }
+runners-personal-withheld = A { -workspace } { -role-admin } lets { -role-member(form: "plural") } register { -personal-runner(form: "plural") }
+runners-personal-count = { $count ->
+    [one] { $count } { -personal-runner }
+   *[other] { $count } { -personal-runner(form: "plural") }
+}
+# spells -run: to run is a verb here
+# spells -work-stage: the work in general
+runners-personal-about = Machines of yours that run the work you start here.
+runners-personal-limit = Limit reached
+runners-personal-remove-named = Remove { -runner } { $short }
+runners-personal-remove-question = Remove { -runner } { $short }?
+runners-personal-removal-last = { -runner(case: "upper") } { $short } is your last; your { -project } list goes too.
+# spells -work-stage: the work in general
+runners-personal-removal = { -runner(case: "upper") } { $short } stops taking your work in this { -workspace }.
+runners-personal-projects = { -project(case: "upper", form: "plural") }
+# spells -work-stage: the work in general
+runners-personal-projects-about = { -personal-runner(case: "upper", form: "plural") } take work in these.
+runners-personal-projects-none = No { -project } yet
+runners-personal-project-col = { -project(case: "upper") }
+runners-personal-project-add = Add { -project(form: "a") }
+runners-personal-project-remove = Remove { $project }
+runners-personal-paused = Paused { -agent(form: "plural") }
+runners-personal-usage = Usage
+
+## A member's chat host.
+
+runners-chat-host-title = { -chat-host(case: "upper") }
+# spells -run: to run is a verb here
+runners-chat-host-about = The machine of yours your { -thread(form: "plural") } and { -inquiry(form: "plural") } run on.
+runners-chat-host-register = Register { -chat-host }
+runners-chat-host-empty = No { -chat-host } yet
+runners-chat-host-remove-named = Remove { -chat-host } { $short }
+runners-chat-host-remove-question = Remove { -chat-host } { $short }?
+runners-chat-host-removal = { -chat-host(case: "upper") } { $short } stops taking your { -thread(form: "plural") } and { -inquiry(form: "plural") } in this { -workspace }, and the sessions it is running now end.
+runners-chat-host-token-about = Registers your { -chat-host } once · expires
+runners-chat-host-copy-token = Copy token
+runners-chat-host-replaces = Replaces { -chat-host } { $short } · Ends its sessions
+
+## Taking a member's personal runners off, in their editor.
+
+runners-member-label = { -personal-runner(case: "upper", form: "plural") }
+runners-member-question = Remove { $name }'s { -personal-runner(form: "plural") }?
+runners-member-confirm = Remove all
+# spells -work-stage: the work in general
+runners-member-line = Their { -personal-runner(form: "plural") } stop taking their work here.
+runners-member-remove = Remove { -personal-runner(form: "plural") }
+runners-member-removed = { -personal-runner(case: "upper", form: "plural") } removed
+runners-member-none = No { -personal-runner } you may remove
+
+## Whether a run of the reader's waits on their personal runners.
+
+runners-wait-waiting = Waiting on your { -personal-runner(form: "plural") }
+runners-wait-offline = Waiting on your { -personal-runner(form: "plural") } · offline
+
+## Whether personal runners take a member's work in a project.
+
+runners-fallback-title = { -personal-runner(case: "upper", form: "plural") }
+# spells -work-stage: the work in general
+runners-fallback-about = Take { -role-member(form: "a") }'s own work · Changes reach new work only
+runners-fallback-none = None
+runners-fallback-strict = Strict
+runners-fallback-preferred = Preferred
+# spells -work-stage: the work in general
+runners-fallback-none-about = { -personal-runner(case: "upper", form: "plural") } take no work started from now on.
+# spells -work-stage: the work in general
+runners-fallback-strict-about = { -role-member(case: "upper", form: "a") }'s { -personal-runner(form: "plural") } take the work they start here, and while they have one serving this { -project } no shared { -runner } does.
+# spells -work-stage: the work in general
+runners-fallback-preferred-about = { -role-member(case: "upper", form: "a") }'s { -personal-runner(form: "plural") } take the work they start here while one is online, and a shared { -runner } takes it while none is.
+runners-writing = Writing
+runners-written = Written
+
+## The project's placement.
+
+runners-placement-title = { -placement(case: "upper") }
+# spells -run: to run is a verb here
+runners-placement-about = Where this { -project }'s { -agent(form: "plural") } run.
+runners-placement-col-kind = Kind
+# spells -run: to run is a verb here
+runners-placement-col-runs-on = Runs on
+runners-placement-col-set-by = Set by
+runners-placement-col-runner = { -runner(case: "upper") }
+runners-placement-work = { -work-stage(case: "upper") }
+runners-placement-evaluation = { -evaluation(case: "upper") }
+runners-placement-chat = { -thread(case: "upper") }
+runners-placement-lead = { -lead(case: "upper") }
+runners-placement-landed = { -work-stage(case: "upper") } and { -evaluation } saved
+runners-placement-unhosted = Needs { -hosted-runs }

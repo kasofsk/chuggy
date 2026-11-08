@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The reader's own runners in this workspace, as a list: a row each, saying
  * what it declared and runs and whether it is polling, and taking it off; the
@@ -29,6 +28,7 @@ import type {
   PersonalRunnerResponse,
   WorkerPoolTokenResponse,
 } from "../../../../../src/contract/responses.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { agentAccountsPaused } from "../../core/agentAccounts.ts";
 import type { ApiFailure, ApiResult } from "../../core/apiRequest.ts";
 import {
@@ -42,6 +42,7 @@ import type {
   ConsoleWriteRefused,
 } from "../../core/consoleWrite.ts";
 import { instantFigure } from "../../core/figures.ts";
+import type { Copy } from "../../core/copy.ts";
 import { failureWords } from "../../core/failureWords.ts";
 import type { PanelState } from "../../core/freshness.ts";
 import {
@@ -119,7 +120,7 @@ async function myRunnerWritten(
     : answered;
 }
 
-function myRunnerRefusal(failure: ApiFailure): string {
+function myRunnerRefusal(failure: ApiFailure): Copy {
   return failureWords(failure).word;
 }
 
@@ -200,9 +201,14 @@ function MyRunnerRegister(props: {
   /** Drawn as the one thing to do, which it is where the reader holds none. */
   readonly leading: boolean;
 }): ReactNode {
+  const text = useCopyText();
   if (!props.granted) return null;
   if (!props.room)
-    return <span className="text-sm text-ink-3">Limit reached</span>;
+    return (
+      <span className="text-sm text-ink-3">
+        {text({ id: "runners-personal-limit" })}
+      </span>
+    );
   return (
     <Button
       size="sm"
@@ -210,7 +216,7 @@ function MyRunnerRegister(props: {
       disabled={props.minting.opened}
       onClick={props.minting.open}
     >
-      Register runner
+      {text({ id: "runners-register" })}
     </Button>
   );
 }
@@ -257,6 +263,7 @@ function MyRunnerRow(props: {
   readonly removing: MyRunnerRemoving;
   readonly nowMs: number;
 }): ReactNode {
+  const text = useCopyText();
   const { runner, removing, nowMs } = props;
   const short = myRunnerShort(runner.id);
   const standing = runner.live ? "Live" : "Offline";
@@ -271,37 +278,43 @@ function MyRunnerRow(props: {
         </span>
       </th>
       <td data-none={settingsListingNone(runner.runner === undefined)}>
-        <span className="people-stacked-label">Version</span>
+        <span className="people-stacked-label">
+          {text({ id: "runners-col-version" })}
+        </span>
         <RunnerVersion runner={runner.runner} named />
       </td>
       <td>
-        <span className="people-stacked-label">Registered</span>
+        <span className="people-stacked-label">
+          {text({ id: "runners-col-registered" })}
+        </span>
         <Figure figure={instantFigure(runner.registeredAt, nowMs)} />
       </td>
       <td>
-        <span className="people-stacked-label">Last polled</span>
+        <span className="people-stacked-label">
+          {text({ id: "runners-col-last-polled" })}
+        </span>
         {runner.polledAt === undefined ? (
-          "Never"
+          text({ id: "runners-never" })
         ) : (
           <Figure figure={instantFigure(runner.polledAt, nowMs)} />
         )}
       </td>
       <td>
         <Pill tone={runnerStandingTone(standing)}>
-          {runnerStandingLabel(standing)}
+          {text(runnerStandingLabel(standing))}
         </Pill>
       </td>
       <td className="people-edit">
         <Button
           variant="quiet"
           size="sm"
-          named={`Remove runner ${short}`}
+          named={text({ id: "runners-personal-remove-named", args: { short } })}
           disabled={removing.busy || removing.asking !== undefined}
           onClick={() => {
             removing.press(runner.id);
           }}
         >
-          Remove
+          {text({ id: "runners-remove" })}
         </Button>
       </td>
     </tr>
@@ -314,6 +327,7 @@ function MyRunnerAsked(props: {
   readonly last: boolean;
   readonly removing: MyRunnerRemoving;
 }): ReactNode {
+  const text = useCopyText();
   const { runner, removing } = props;
   if (removing.asking !== runner.id) return null;
   const short = myRunnerShort(runner.id);
@@ -322,15 +336,18 @@ function MyRunnerAsked(props: {
       <td colSpan={myRunnerColumnsCount}>
         <div className="ms-auto grid max-w-aside gap-2">
           <Confirm
-            question={`Remove runner ${short}?`}
-            confirm="Remove"
+            question={text({
+              id: "runners-personal-remove-question",
+              args: { short },
+            })}
+            confirm={text({ id: "runners-remove" })}
             busy={removing.busy}
             onConfirm={() => {
               removing.send(runner.id);
             }}
             onCancel={removing.cancel}
           >
-            {myRunnerRemovalLine(short, props.last)}
+            {text(myRunnerRemovalLine(short, props.last))}
           </Confirm>
         </div>
       </td>
@@ -364,11 +381,12 @@ function MyRunnersTable(props: {
   readonly held: PersonalRunnerResponse;
   readonly removing: MyRunnerRemoving;
 }): ReactNode {
+  const text = useCopyText();
   const nowMs = useNowMs();
   const runners = props.held.runners;
   return (
-    <SettingsListingTable caption="Runners">
-      <HostListingHead name="Runner" />
+    <SettingsListingTable caption={text({ id: "runners-title" })}>
+      <HostListingHead name={text({ id: "runners-col-runner" })} />
       <tbody>
         {runners.map((runner) => (
           <MyRunnerRows
@@ -389,17 +407,68 @@ function MyRunnerProjectAdd(props: {
   readonly addable: readonly string[] | undefined;
   readonly onAdd: (project: string) => void;
 }): ReactNode {
+  const text = useCopyText();
   const addable = props.addable ?? [];
   if (addable.length === 0) return null;
+  const add = text({ id: "runners-personal-project-add" });
   return (
     <Picker
-      label="Add a project"
+      label={add}
       value=""
-      placeholder="Add a project"
+      placeholder={add}
       align="end"
       options={addable.map((project) => ({ value: project, text: project }))}
       onChoose={props.onAdd}
     />
+  );
+}
+
+/** The projects every runner of the reader's takes work in, each with the
+ * press that removes it. */
+function MyRunnerProjectsTable(props: {
+  readonly projects: readonly string[];
+  readonly busy: boolean;
+  readonly onRemove: (project: string) => void;
+}): ReactNode {
+  const text = useCopyText();
+  return (
+    <SettingsListingTable caption={text({ id: "runners-personal-projects" })}>
+      <thead>
+        <tr>
+          <th scope="col">{text({ id: "runners-personal-project-col" })}</th>
+          <th scope="col" className="w-[8em]">
+            <span className="visually-hidden">
+              {text({ id: "runners-col-remove" })}
+            </span>
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {props.projects.map((project) => (
+          <tr key={project}>
+            <th scope="row">
+              <span className="people-name block text-ink-1">{project}</span>
+            </th>
+            <td className="people-edit">
+              <Button
+                variant="quiet"
+                size="sm"
+                named={text({
+                  id: "runners-personal-project-remove",
+                  args: { project },
+                })}
+                disabled={props.busy}
+                onClick={() => {
+                  props.onRemove(project);
+                }}
+              >
+                {text({ id: "runners-remove" })}
+              </Button>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </SettingsListingTable>
   );
 }
 
@@ -409,6 +478,7 @@ function MyRunnerProjects(props: {
   readonly addable: readonly string[] | undefined;
   readonly writing: MyRunnerWriting;
 }): ReactNode {
+  const text = useCopyText();
   const { held, writing } = props;
   const busy = writing.busy;
   const serves = (project: string, served: boolean): void => {
@@ -418,8 +488,8 @@ function MyRunnerProjects(props: {
   };
   return (
     <SettingsListingSection
-      heading="Projects"
-      about="Your runners take work in these."
+      heading={text({ id: "runners-personal-projects" })}
+      about={text({ id: "runners-personal-projects-about" })}
       action={
         <MyRunnerProjectAdd
           addable={props.addable}
@@ -430,42 +500,15 @@ function MyRunnerProjects(props: {
       }
     >
       {held.projects.length === 0 ? (
-        <EmptyState label="No project yet" />
+        <EmptyState label={text({ id: "runners-personal-projects-none" })} />
       ) : (
-        <SettingsListingTable caption="Projects">
-          <thead>
-            <tr>
-              <th scope="col">Project</th>
-              <th scope="col" className="w-[8em]">
-                <span className="visually-hidden">Remove</span>
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {held.projects.map((project) => (
-              <tr key={project}>
-                <th scope="row">
-                  <span className="people-name block text-ink-1">
-                    {project}
-                  </span>
-                </th>
-                <td className="people-edit">
-                  <Button
-                    variant="quiet"
-                    size="sm"
-                    named={`Remove ${project}`}
-                    disabled={busy}
-                    onClick={() => {
-                      serves(project, false);
-                    }}
-                  >
-                    Remove
-                  </Button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </SettingsListingTable>
+        <MyRunnerProjectsTable
+          projects={held.projects}
+          busy={busy}
+          onRemove={(project) => {
+            serves(project, false);
+          }}
+        />
       )}
     </SettingsListingSection>
   );
@@ -510,23 +553,25 @@ function MyRunners(props: {
   readonly permit: PanelState<PersonalRunnerPermitResponse>;
   readonly addable: readonly string[] | undefined;
 }): ReactNode {
+  const text = useCopyText();
   const client = useQueryClient();
   const { runner, permit } = props;
+  const withheld = text(myRunnerWithheld);
   const held = runner.state === "Ready" ? runner.value : undefined;
   const granted = permit.state === "Ready" && permit.value.granted;
   const minting = useRunnerMinting(myRunnerTokenWrite(props.tenant), {
     drawn: held !== undefined || (runner.state === "Absent" && granted),
   });
   if (held === undefined && runner.state !== "Absent")
-    return <SettingsListingUnread state={runner} withheld={myRunnerWithheld} />;
+    return <SettingsListingUnread state={runner} withheld={withheld} />;
   if (held === undefined && permit.state !== "Ready")
-    return <SettingsListingUnread state={permit} withheld={myRunnerWithheld} />;
+    return <SettingsListingUnread state={permit} withheld={withheld} />;
   if (held === undefined && !granted)
-    return <SettingsListingWithheld line={myRunnerWithheld} />;
+    return <SettingsListingWithheld line={withheld} />;
   const listed = (table: ReactNode): ReactNode => (
     <SettingsListingSection
-      heading={myRunnersCountLine(held?.runners.length ?? 0)}
-      about="Machines of yours that run the work you start here."
+      heading={text(myRunnersCountLine(held?.runners.length ?? 0))}
+      about={text({ id: "runners-personal-about" })}
       action={
         <MyRunnerRegister
           granted={granted}
@@ -561,30 +606,37 @@ function MyRunners(props: {
 
 /** Where the reader's agent accounts are set, in the frame the page is drawn in. */
 function MyRunnerUsageLink(props: { readonly tenant: string }): ReactNode {
+  const text = useCopyText();
+  const usage = text({ id: "runners-personal-usage" });
   const project = useParams({ strict: false }).project;
   return project === undefined ? (
     <Link to={settingsRoutes.workspace.usage} params={{ tenant: props.tenant }}>
-      Usage
+      {usage}
     </Link>
   ) : (
     <Link
       to={settingsRoutes.project.usage}
       params={{ tenant: props.tenant, project }}
     >
-      Usage
+      {usage}
     </Link>
   );
 }
 
 /** Each agent of the reader's own account a pause holds, and nothing where none does. */
 function MyRunnerPauses(props: { readonly tenant: string }): ReactNode {
+  const text = useCopyText();
   const accounts = useAgentAccounts();
   const nowMs = useNowMs();
   if (accounts.state !== "Ready") return null;
   const paused = agentAccountsPaused(accounts.value);
   if (paused.length === 0) return null;
   return (
-    <div className="grid gap-1" aria-label="Paused agents" role="group">
+    <div
+      className="grid gap-1"
+      aria-label={text({ id: "runners-personal-paused" })}
+      role="group"
+    >
       {paused.map((account) => (
         <AgentPause
           key={account.agent}
@@ -601,13 +653,14 @@ function MyRunnerPauses(props: { readonly tenant: string }): ReactNode {
 }
 
 export function MyRunnerPage(): ReactNode {
+  const text = useCopyText();
   const tenant = useSettingsTenant();
   const permit = usePanelState(personalRunnerPermitQuery(tenant));
   const runner = usePersonalRunner(tenant);
   const host = useChatHost(tenant);
   const inventory = usePanelState(projectsInventoryQuery());
   return (
-    <SettingsPage title="My runners">
+    <SettingsPage title={text({ id: "runners-personal-title" })}>
       <SettingsListing>
         <MyRunnerPauses tenant={tenant} />
         <MyRunners

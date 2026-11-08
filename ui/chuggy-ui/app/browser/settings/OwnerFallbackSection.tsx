@@ -14,14 +14,15 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ProjectOwnerFallbackResponse } from "../../../../../src/contract/responses.ts";
 import type { OwnerFallback } from "../../../../../src/contract/rosters.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { apiWriteOwnerFallback } from "../../core/apiRoutes.ts";
 import { failureWords } from "../../core/failureWords.ts";
 import {
   ownerFallbackAbout,
+  ownerFallbackAboutSection,
   ownerFallbackChoices,
   ownerFallbackChosen,
   ownerFallbackLabel,
-  ownerFallbackPinned,
   ownerFallbackValue,
 } from "../../core/myRunner.ts";
 import { consoleWriteKey } from "../../core/consoleWrite.ts";
@@ -36,21 +37,26 @@ import { Panel } from "../ui/Panel.tsx";
 import { RadioGroup } from "../ui/RadioGroup.tsx";
 import { SettingsSection } from "../ui/SettingsSection.tsx";
 
-const ownerFallbackTitle = "Personal runners";
-
 /** The write's line: under way, landed, or refused in the write's own words. */
 function OwnerFallbackNotice(props: {
   readonly saving: ConsoleWriting<OwnerFallback | undefined, unknown>;
 }): ReactNode {
+  const text = useCopyText();
   const saving = props.saving;
-  if (saving.isPending) return <Notice tone="info" inline detail="Writing" />;
+  if (saving.isPending)
+    return (
+      <Notice tone="info" inline detail={text({ id: "runners-writing" })} />
+    );
   if (saving.error !== null)
     return (
       <Notice tone="danger" inline>
         <ConsoleWriteRefusedWords refused={saving.error} />
       </Notice>
     );
-  if (saving.isSuccess) return <Notice tone="live" inline detail="Written" />;
+  if (saving.isSuccess)
+    return (
+      <Notice tone="live" inline detail={text({ id: "runners-written" })} />
+    );
   return null;
 }
 
@@ -83,11 +89,14 @@ function ownerFallbackWrite(
 function OwnerFallbackRead(props: {
   readonly fallback: OwnerFallback | undefined;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <div className="grid gap-1">
-      <span className="text-ink-1">{ownerFallbackLabel(props.fallback)}</span>
+      <span className="text-ink-1">
+        {text(ownerFallbackLabel(props.fallback))}
+      </span>
       <span className="text-sm text-ink-3">
-        {ownerFallbackAbout(props.fallback)}
+        {text(ownerFallbackAbout(props.fallback))}
       </span>
     </div>
   );
@@ -97,14 +106,15 @@ function OwnerFallbackChoice(props: {
   readonly draft: OwnerFallback | undefined;
   readonly onChoose: (fallback: OwnerFallback | undefined) => void;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <RadioGroup
-      label={ownerFallbackTitle}
+      label={text({ id: "runners-fallback-title" })}
       value={ownerFallbackValue(props.draft)}
       options={ownerFallbackChoices.map((fallback) => ({
         value: ownerFallbackValue(fallback),
-        text: ownerFallbackLabel(fallback),
-        description: ownerFallbackAbout(fallback),
+        text: text(ownerFallbackLabel(fallback)),
+        description: text(ownerFallbackAbout(fallback)),
       }))}
       onChoose={(value) => {
         const chosen = ownerFallbackChosen(value);
@@ -118,6 +128,7 @@ function OwnerFallbackEditing(props: {
   readonly partition: PartitionIdentity;
   readonly read: ProjectOwnerFallbackResponse;
 }): ReactNode {
+  const text = useCopyText();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<OwnerFallback | undefined>(
     props.read.fallback,
@@ -128,8 +139,8 @@ function OwnerFallbackEditing(props: {
   const shown = saving.isPending || saving.error !== null || saving.isSuccess;
   return (
     <SettingsSection
-      title={ownerFallbackTitle}
-      about={`Take a member's own work · ${ownerFallbackPinned}`}
+      title={text({ id: "runners-fallback-title" })}
+      about={text(ownerFallbackAboutSection)}
       editing={editing}
       editable={props.read.administers}
       savable={!saving.isPending}
@@ -165,12 +176,13 @@ function OwnerFallbackEditing(props: {
 export function OwnerFallbackSection(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
+  const text = useCopyText();
   const partition = props.partition;
   const read = usePanelState(ownerFallbackQuery(partition));
   return read.state === "Ready" ? (
     <OwnerFallbackEditing partition={partition} read={read.value} />
   ) : (
-    <Panel variant="section" title={ownerFallbackTitle}>
+    <Panel variant="section" title={text({ id: "runners-fallback-title" })}>
       <PanelUnready state={read} />
     </Panel>
   );

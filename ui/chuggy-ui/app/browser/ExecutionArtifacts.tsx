@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The artifacts one run left beside its own result, each previewed one press
  * further in where its renderer can draw it, as a run's Details lists them.
@@ -76,11 +75,12 @@ function ArtifactPreview(props: {
   readonly ordinal: number;
   readonly name: string;
 }): ReactNode {
+  const text = useCopyText();
   const state = usePanelState(
     outputContentQuery(props.partition, props.execution, props.ordinal),
   );
   return (
-    <DataPanel title="Preview" state={state}>
+    <DataPanel title={text({ id: "ticket-artifact-preview" })} state={state}>
       {(preview) => (
         <ArtifactPreviewContent name={props.name} preview={preview} />
       )}
@@ -101,7 +101,10 @@ function Artifact(props: {
       <span className="text-ink-3">{props.artifact.role}</span>
       <code>{props.artifact.path}</code>
       <span className="text-ink-3 text-xs">
-        {runCountLabel(props.artifact.bytes)} bytes
+        {text({
+          id: "ticket-artifact-bytes",
+          args: { bytes: runCountLabel(props.artifact.bytes) },
+        })}
       </span>
       {offer.offer === "Unpreviewable" ? (
         <span className="text-ink-3 text-xs">{text(offer.note)}</span>
@@ -109,7 +112,11 @@ function Artifact(props: {
         <Disclosure
           open={shown}
           onOpenChange={setShown}
-          label={shown ? "Hide" : "Preview"}
+          label={text(
+            shown
+              ? { id: "ticket-artifact-hide" }
+              : { id: "ticket-artifact-preview" },
+          )}
         >
           <div className="basis-full">
             <ArtifactPreview

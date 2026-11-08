@@ -164,7 +164,7 @@ function leadAskWrite(
               ? {
                   ask: "Failed",
                   words: {
-                    word: text({ id: "lead-inquiry-failed" }),
+                    word: { id: "lead-inquiry-failed" },
                     detail: error.message,
                   },
                 }

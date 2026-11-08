@@ -143,7 +143,7 @@ test("each window's reading is drawn as its share and how long ago it was read, 
   expect(claude).toContain("pauses at 80 %");
   expect(claude).toContain("95 %");
   expect(within(sectionOf("Claude")).getAllByText("Stale")).toHaveLength(1);
-  expect(claude).toContain("Threads and inquiriesPause with it");
+  expect(claude).toContain("Chats and questionsPause with it");
   expect(claude).not.toMatch(/lead/iu);
   const codex = sectionOf("Codex").textContent ?? "";
   expect(codex).toContain("No reading");
@@ -227,7 +227,7 @@ test("an agent's thresholds and options are written whole, at either end of the 
   await turned(() => {
     fireEvent.click(
       within(section).getByRole("checkbox", {
-        name: "Threads and inquiries pause with it",
+        name: "Chats and questions pause with it",
       }),
     );
   });

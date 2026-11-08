@@ -84,7 +84,7 @@ import {
 import type { CreationOverrides, OverrideField } from "./ticketOverrides.ts";
 import { draftReleaseAction } from "./ticketActions.ts";
 import type { WorkRunner } from "./workRunner.ts";
-import type { Copy, CopyOrData } from "./copy.ts";
+import type { Copy } from "./copy.ts";
 
 /** The authoring half of the form, which is exactly what an initialization defaults. */
 export type CreationAuthoring = DraftInitializationResponse["defaults"];
@@ -1403,7 +1403,7 @@ export function creationStart(
 
 /** What creating a ticket does beyond making it, for the reader pressing: work
  * starts, waits on someone who dispatches, or has no runner to start on. */
-export function creationSubmitEffect(start: CreationStart): CopyOrData {
+export function creationSubmitEffect(start: CreationStart): Copy {
   switch (start) {
     case "Starts":
       return { id: "ticket-authoring-effect-starts" };

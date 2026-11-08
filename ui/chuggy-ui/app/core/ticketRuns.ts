@@ -24,7 +24,7 @@ import type {
   ExecutionSummary,
 } from "../../../../src/contract/responses.ts";
 import { copyOrDataText } from "./copy.ts";
-import type { CopyText } from "./copy.ts";
+import type { Copy, CopyText } from "./copy.ts";
 import { durationFigure, tokenCountText } from "./figures.ts";
 import type { Figure } from "./figures.ts";
 import { digestShortened } from "./labels.ts";
@@ -68,6 +68,7 @@ export interface TicketRunGap {
  * ticket whose finalization lands nothing, which never has one. */
 export interface TicketRunLanding {
   readonly kind: "Landing";
+  readonly name: string;
   readonly landing: TicketLanding | undefined;
   readonly lands: boolean;
 }
@@ -139,9 +140,17 @@ function ticketRunsStageRows(
       return ticketRunsEvaluatorSteps(name, row.evaluators);
     case "Skipped":
     case "Queued":
-      return [{ kind: "Gap", name, words: "Not reached" }];
+      return [
+        {
+          kind: "Gap",
+          name,
+          words: text({ id: "ticket-landing-not-reached" }),
+        },
+      ];
     case "Missing":
-      return [{ kind: "Gap", name, words: "Not on this page" }];
+      return [
+        { kind: "Gap", name, words: text({ id: "ticket-steps-not-on-page" }) },
+      ];
   }
 }
 
@@ -153,7 +162,7 @@ function ticketRunsCycleStep(
 ): string {
   const last = cycleLastSet(cycle);
   return last?.stage === undefined
-    ? "work"
+    ? text({ id: "ticket-situation-step-work" })
     : copyOrDataText(text, stageLabel(last.stage, names));
 }
 
@@ -165,22 +174,25 @@ export function ticketRunsCycleOutcome(
   text: CopyText,
 ): string {
   const last = cycleLastSet(cycle);
-  if (last === undefined) return "Work not on this page";
-  const step = ticketRunsCycleStep(cycle, names, text);
+  if (last === undefined) return text({ id: "ticket-runs-work-not-on-page" });
+  const args = { step: ticketRunsCycleStep(cycle, names, text) };
   switch (last.verdict) {
     case "Starting":
+      return text({ id: "ticket-runs-starting", args });
     case "Running":
-      return `${last.verdict} ${step}`;
+      return text({ id: "ticket-runs-running", args });
     case "Failed":
       return cycle.standing === "Superseded" && last.stage !== undefined
-        ? `Sent back by ${step}`
-        : `Failed at ${step}`;
+        ? text({ id: "ticket-runs-sent-back", args })
+        : text({ id: "ticket-runs-failed-at", args });
     case "Blocked":
-      return `Blocked at ${step}`;
+      return text({ id: "ticket-runs-blocked-at", args });
     case "Cancelled":
-      return "Cancelled";
+      return text({ id: "ticket-verdict-cancelled" });
     case "Passed":
-      return landing === undefined ? "Passed" : ticketLandingSummary(landing);
+      return landing === undefined
+        ? text({ id: "ticket-verdict-passed" })
+        : ticketLandingSummary(landing);
   }
 }
 
@@ -192,14 +204,21 @@ function ticketRunsCycleOf(
 ): TicketRunsCycle {
   const landing = landings.byCycle.get(cycle.ordinal)?.at(-1);
   const work = (cycle.work?.executions ?? []).map((execution) =>
-    ticketRunsStep(execution, "Work", false),
+    ticketRunsStep(execution, text({ id: "ticket-steps-phase-work" }), false),
   );
   const stages = cycle.stages.flatMap((row) =>
     ticketRunsStageRows(row, plan.names, text),
   );
   const landed: readonly TicketRunsRow[] =
     landing !== undefined || cycle.standing === "Current"
-      ? [{ kind: "Landing", landing, lands: plan.lands }]
+      ? [
+          {
+            kind: "Landing",
+            name: text({ id: "ticket-steps-phase-landing" }),
+            landing,
+            lands: plan.lands,
+          },
+        ]
       : [];
   const runs = [...work, ...stages].filter(
     (row): row is TicketRunStep => row.kind === "Run",
@@ -323,14 +342,24 @@ export interface TicketRunDetails {
   readonly execution: Label;
 }
 
-function ticketRunTokens(totals: TicketRunTotals): string {
-  return [
-    `${tokenCountText(totals.tokensInput)} in`,
-    `${tokenCountText(totals.tokensOutput)} out`,
-    `${tokenCountText(totals.tokensCacheCreation)} cache write`,
-    `${tokenCountText(totals.tokensCacheRead)} cache read`,
-  ].join(" · ");
+function ticketRunTokens(totals: TicketRunTotals, text: CopyText): string {
+  return text({
+    id: "ticket-run-tokens",
+    args: {
+      input: tokenCountText(totals.tokensInput),
+      output: tokenCountText(totals.tokensOutput),
+      write: tokenCountText(totals.tokensCacheCreation),
+      read: tokenCountText(totals.tokensCacheRead),
+    },
+  });
 }
+
+const ticketRunModeWords: Readonly<
+  Record<ExecutionResponse["requirement"]["mode"], Copy>
+> = {
+  Container: { id: "ticket-run-mode-container" },
+  Capability: { id: "ticket-run-mode-capability" },
+};
 
 /** The run's wait, counted to now while nothing has taken it. */
 function ticketRunWaited(execution: ExecutionResponse, nowMs: number): Figure {
@@ -340,6 +369,7 @@ function ticketRunWaited(execution: ExecutionResponse, nowMs: number): Figure {
 export function ticketRunDetailsOf(
   execution: ExecutionResponse,
   nowMs: number,
+  text: CopyText,
 ): TicketRunDetails {
   const requirement = execution.requirement;
   const totals = execution.runTotals;
@@ -349,7 +379,7 @@ export function ticketRunDetailsOf(
     runner: [
       requirement.operatingSystem,
       requirement.architecture,
-      requirement.mode.toLowerCase(),
+      text(ticketRunModeWords[requirement.mode]),
     ].join(" · "),
     image:
       requirement.mode === "Container"
@@ -369,7 +399,7 @@ export function ticketRunDetailsOf(
     turns: totals?.turns,
     apiTime:
       totals === undefined ? undefined : durationFigure(totals.durationApiMs),
-    tokens: totals === undefined ? undefined : ticketRunTokens(totals),
+    tokens: totals === undefined ? undefined : ticketRunTokens(totals, text),
     execution: {
       text: digestShortened(execution.execution),
       title: execution.execution,
@@ -427,7 +457,7 @@ export function ticketRunLandingMarked(
 
 /** The name a row is listed under. */
 export function ticketRunsRowName(row: TicketRunsRow): string {
-  return row.kind === "Landing" ? "Landing" : row.name;
+  return row.name;
 }
 
 /** The cycle whose landing the landing page draws: the newest holding one,

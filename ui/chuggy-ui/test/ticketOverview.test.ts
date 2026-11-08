@@ -5,6 +5,7 @@
  */
 
 import { expect, test } from "vitest";
+import type { Copy } from "../app/core/copy.ts";
 
 import type {
   DraftResponse,
@@ -194,9 +195,17 @@ function draft(authoringVersion: number, released?: number): DraftResponse {
   };
 }
 
+function said(line: Copy | undefined): string | undefined {
+  return line === undefined ? undefined : copyTextEn(line);
+}
+
 test("a draft ahead of its release counts its unreleased changes, and one at it or unrecorded has none", () => {
-  expect(ticketOverviewUnreleased(draft(5, 3))).toBe("2 unreleased changes");
-  expect(ticketOverviewUnreleased(draft(4, 3))).toBe("1 unreleased change");
+  expect(said(ticketOverviewUnreleased(draft(5, 3)))).toBe(
+    "2 unreleased changes",
+  );
+  expect(said(ticketOverviewUnreleased(draft(4, 3)))).toBe(
+    "1 unreleased change",
+  );
   expect(ticketOverviewUnreleased(draft(3, 3))).toBeUndefined();
   expect(ticketOverviewUnreleased(draft(3))).toBeUndefined();
 });

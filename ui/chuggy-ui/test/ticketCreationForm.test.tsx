@@ -20,6 +20,7 @@ import {
 import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
+import { copyTextEn } from "../app/copy/catalog.ts";
 import { briefChecksMax, briefLinksMax } from "../../../src/contract/brief.ts";
 import { bootstrapConfigurationName } from "../../../src/contract/responses.ts";
 import type {
@@ -65,8 +66,6 @@ import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { SessionProvider } from "../app/browser/session.tsx";
 import { ConsoleStoreProvided } from "./consoleStoreProvided.tsx";
 import { holderDouble, settled } from "./screenHarness.tsx";
-import { copyTextEn } from "../app/copy/catalog.ts";
-import { copyOrDataText } from "../app/core/copy.ts";
 
 /** The runner has no globals, so each case tears down the tree it rendered,
  * and starts in a browser that remembers no choice. */
@@ -289,7 +288,7 @@ test("each field is named by its label, and a line beside one describes it", () 
   expect(
     screen.getByRole("button", {
       name: "Create ticket",
-      description: copyOrDataText(copyTextEn, creationSubmitEffect("Waits")),
+      description: copyTextEn(creationSubmitEffect("Waits")),
     }),
   ).toBeDefined();
 });
@@ -967,7 +966,7 @@ test("two bindings ask, and a submission naming none sends nothing", () => {
   expect(drafts(held.sent).length).toBe(0);
 });
 
-function finalizationGroup(name = "Finalization"): HTMLElement | null {
+function finalizationGroup(name = "Landing"): HTMLElement | null {
   return screen.queryByRole("radiogroup", { name });
 }
 
@@ -989,7 +988,7 @@ function chosenIn(
 
 /** The kind the Finalization group draws as chosen. */
 function finalizationChosen(): string | undefined {
-  return chosenIn("Finalization", ["Git merge", "Pull request", "None"]);
+  return chosenIn("Landing", ["Git merge", "Pull request", "None"]);
 }
 
 async function chooseRepository(name: string): Promise<void> {

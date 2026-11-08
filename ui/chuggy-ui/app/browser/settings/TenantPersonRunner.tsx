@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * Taking every one of a person's own runners off, in their editor, for a
  * reader who administers the workspace. Nobody but their owner reads them, so
@@ -9,7 +8,9 @@
 import { useId, useState } from "react";
 import type { ReactNode } from "react";
 
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { apiDeregisterMemberRunner } from "../../core/apiRoutes.ts";
+import { copyOrDataText } from "../../core/copy.ts";
 import { consoleWriteKey } from "../../core/consoleWrite.ts";
 import type { ConsoleWrite } from "../../core/consoleWrite.ts";
 import { memberRunnerRemoved } from "../../core/myRunner.ts";
@@ -35,6 +36,7 @@ export function TenantPersonRunner(props: {
   readonly subject: string;
   readonly name: string;
 }): ReactNode {
+  const text = useCopyText();
   const labelled = useId();
   const [asking, setAsking] = useState(false);
   const removing = useConsoleWrite(
@@ -44,7 +46,10 @@ export function TenantPersonRunner(props: {
   const line =
     removing.error === null ? (
       removing.isSuccess ? (
-        memberRunnerRemoved({ outcome: "Ok", value: undefined })
+        copyOrDataText(
+          text,
+          memberRunnerRemoved({ outcome: "Ok", value: undefined }),
+        )
       ) : undefined
     ) : (
       <ConsoleWriteRefusedWords refused={removing.error} />
@@ -52,12 +57,15 @@ export function TenantPersonRunner(props: {
   return (
     <div role="group" aria-labelledby={labelled} className="grid gap-2">
       <span id={labelled} className="text-sm text-ink-3">
-        Runners
+        {text({ id: "runners-member-label" })}
       </span>
       {asking || removing.isPending ? (
         <Confirm
-          question={`Remove ${props.name}'s runners?`}
-          confirm="Remove all"
+          question={text({
+            id: "runners-member-question",
+            args: { name: props.name },
+          })}
+          confirm={text({ id: "runners-member-confirm" })}
           busy={removing.isPending}
           onConfirm={() => {
             removing.mutate(undefined, {
@@ -70,7 +78,7 @@ export function TenantPersonRunner(props: {
             setAsking(false);
           }}
         >
-          Every runner of theirs stops taking their work here.
+          {text({ id: "runners-member-line" })}
         </Confirm>
       ) : (
         <div className="flex flex-wrap items-center gap-2">
@@ -82,7 +90,7 @@ export function TenantPersonRunner(props: {
               setAsking(true);
             }}
           >
-            Remove runners
+            {text({ id: "runners-member-remove" })}
           </Button>
           {line === undefined ? null : (
             <span className="text-sm text-ink-3">{line}</span>

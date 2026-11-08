@@ -27,6 +27,7 @@ import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { inboxCountLabel } from "../../core/inboxList.ts";
 import { projectAbilityRefused } from "../../core/projectAbilities.ts";
 import { projectLeadFound } from "../../core/projectLead.ts";
+import { leadSessionStateLabel } from "../../core/leadTranscript.ts";
 import type { ShellCrumb } from "../../core/shellCrumbs.ts";
 import { memberChatCrumbs, shellCrumbs } from "../../core/shellCrumbs.ts";
 import { navEntryCurrent, navRoutes, shellNav } from "../../core/shellNav.ts";
@@ -84,7 +85,7 @@ export function TopBarNavEntry(props: { readonly entry: NavEntry }): ReactNode {
               aria-hidden="true"
               className={`block size-2 shrink-0 rounded-circle ${navDotFills[entry.standing.tone]}`}
             />
-            <span className="visually-hidden">{entry.standing.word}</span>
+            <span className="visually-hidden">{text(entry.standing.word)}</span>
           </>
         )}
         <span className="topbar-entry-label">{text(entry.label)}</span>
@@ -106,7 +107,10 @@ function TopBarNav(props: {
     leadStanding:
       lead === undefined
         ? undefined
-        : { word: lead.state, tone: sessionStateTone(lead.state) },
+        : {
+            word: leadSessionStateLabel(lead.state),
+            tone: sessionStateTone(lead.state),
+          },
   });
   return (
     <nav aria-label={text({ id: "shell-nav" })} className="min-w-0">

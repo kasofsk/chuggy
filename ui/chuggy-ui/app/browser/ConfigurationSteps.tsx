@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * What a ticket runs with, one row per step under a row per phase: who runs
  * it, its model and what the ticket overrode of it, each row opening onto its
@@ -13,9 +12,13 @@ import { useState } from "react";
 import type { ReactNode } from "react";
 import { stringify } from "yaml";
 
+import { useCopyText } from "../copy/CopyProvider.tsx";
+import { copyOrDataText } from "../core/copy.ts";
+import type { Copy } from "../core/copy.ts";
 import type {
   ConfigurationStepDetail,
   ConfigurationStepGroup,
+  ConfigurationStepPhase,
   ConfigurationStepPrompt,
   ConfigurationStepRow,
   ConfigurationSteps,
@@ -35,25 +38,27 @@ function definitionYaml(definition: unknown): string {
   }
 }
 
-const overriddenWords = "overridden on this ticket";
-
 function ConfigurationStepOverridden(props: {
   readonly overridden: boolean;
 }): ReactNode {
+  const text = useCopyText();
   return props.overridden ? (
-    <span className="config-step-overridden">{` · ${overriddenWords}`}</span>
+    <span className="config-step-overridden">
+      {` · ${text({ id: "configuration-steps-overridden" })}`}
+    </span>
   ) : null;
 }
 
 function ConfigurationStepDetails(props: {
   readonly details: readonly ConfigurationStepDetail[];
 }): ReactNode {
+  const text = useCopyText();
   if (props.details.length === 0) return null;
   return (
     <dl className="config-step-details">
       {props.details.map((detail) => (
-        <div key={detail.name} className="config-step-detail">
-          <dt>{detail.name}</dt>
+        <div key={detail.name.id} className="config-step-detail">
+          <dt>{text(detail.name)}</dt>
           <dd>
             {(detail.lines.length === 0 ? [undefined] : detail.lines).map(
               (line, at, all) => (
@@ -61,9 +66,9 @@ function ConfigurationStepDetails(props: {
                   {line === undefined ? (
                     <span className="config-step-absent">—</span>
                   ) : detail.code ? (
-                    <code>{line}</code>
+                    <code>{copyOrDataText(text, line)}</code>
                   ) : (
-                    line
+                    copyOrDataText(text, line)
                   )}
                   {at === all.length - 1 ? (
                     <ConfigurationStepOverridden
@@ -83,11 +88,15 @@ function ConfigurationStepDetails(props: {
 function ConfigurationStepPromptBody(props: {
   readonly prompt: readonly ConfigurationStepPrompt[];
 }): ReactNode {
+  const text = useCopyText();
   return props.prompt.map((part, at) => (
     <div key={at} className="config-step-prompt-part">
       {part.heading === undefined && !part.overridden ? null : (
         <h4 className="eyebrow">
-          {part.heading ?? "Prompt"}
+          {copyOrDataText(
+            text,
+            part.heading ?? { id: "configuration-steps-prompt" },
+          )}
           <ConfigurationStepOverridden overridden={part.overridden} />
         </h4>
       )}
@@ -100,6 +109,7 @@ function ConfigurationStepPromptBody(props: {
 function ConfigurationStepViews(props: {
   readonly row: ConfigurationStepRow;
 }): ReactNode {
+  const text = useCopyText();
   const [promptOpen, setPromptOpen] = useState(false);
   const [yamlOpen, setYamlOpen] = useState(false);
   const { row } = props;
@@ -110,7 +120,11 @@ function ConfigurationStepViews(props: {
         <Disclosure
           open={promptOpen}
           onOpenChange={setPromptOpen}
-          label={promptOpen ? "Hide prompt" : "View prompt"}
+          label={text(
+            promptOpen
+              ? { id: "configuration-steps-prompt-hide" }
+              : { id: "configuration-steps-prompt-view" },
+          )}
           look={{ variant: "default", size: "sm" }}
         >
           <div className="config-step-prompt">
@@ -122,7 +136,7 @@ function ConfigurationStepViews(props: {
         <Disclosure
           open={yamlOpen}
           onOpenChange={setYamlOpen}
-          label="YAML"
+          label={text({ id: "configuration-steps-yaml" })}
           look={{ variant: "default", size: "sm" }}
         >
           <pre className="ticket-config-canonical">
@@ -138,12 +152,13 @@ function ConfigurationStepViews(props: {
 function ConfigurationStepCells(props: {
   readonly row: ConfigurationStepRow;
 }): ReactNode {
+  const text = useCopyText();
   const { row } = props;
   const runs = row.runs;
   return (
     <>
       <span className="config-step-name">
-        <span>{row.step}</span>
+        <span>{copyOrDataText(text, row.step)}</span>
         {row.workload === undefined ? null : (
           <code className="config-step-workload">{row.workload}</code>
         )}
@@ -153,7 +168,7 @@ function ConfigurationStepCells(props: {
           <span className="config-step-absent">—</span>
         ) : (
           <>
-            {runs.by}
+            {copyOrDataText(text, runs.by)}
             {runs.from === undefined ? null : (
               <>
                 {" · "}
@@ -165,9 +180,15 @@ function ConfigurationStepCells(props: {
         )}
       </span>
       <span className="config-step-model">
-        {row.evaluators.length > 0 ? null : (row.model ?? "—")}
+        {row.evaluators.length > 0
+          ? null
+          : row.model === undefined
+            ? "—"
+            : copyOrDataText(text, row.model)}
       </span>
-      <span className="config-step-overrides">{row.overrides.join(" · ")}</span>
+      <span className="config-step-overrides">
+        {row.overrides.map((word) => copyOrDataText(text, word)).join(" · ")}
+      </span>
     </>
   );
 }
@@ -214,16 +235,27 @@ function ConfigurationStepLine(props: {
   );
 }
 
+const configurationStepPhaseWords: Readonly<
+  Record<ConfigurationStepPhase, Copy>
+> = {
+  Work: { id: "ticket-steps-phase-work" },
+  Evaluation: { id: "ticket-steps-phase-evaluation" },
+  Finalization: { id: "ticket-steps-phase-landing" },
+};
+
 function ConfigurationStepGroupDrawn(props: {
   readonly group: ConfigurationStepGroup;
 }): ReactNode {
+  const text = useCopyText();
   const { group } = props;
   return (
     <section className="config-steps-group" data-phase={group.phase}>
       <h3 className="config-steps-group-head">
-        <span className="config-steps-phase">{group.phase}</span>
+        <span className="config-steps-phase">
+          {text(configurationStepPhaseWords[group.phase])}
+        </span>
         {group.note === undefined ? null : (
-          <span className="config-steps-note">{group.note}</span>
+          <span className="config-steps-note">{text(group.note)}</span>
         )}
       </h3>
       {group.rows.map((row, at) => (
@@ -236,14 +268,15 @@ function ConfigurationStepGroupDrawn(props: {
 export function ConfigurationStepsTable(props: {
   readonly steps: ConfigurationSteps;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <div className="config-steps">
       <div className="config-steps-columns">
         <span />
-        <span>Step</span>
-        <span>Runs</span>
-        <span>Model</span>
-        <span>Overrides</span>
+        <span>{text({ id: "configuration-steps-col-step" })}</span>
+        <span>{text({ id: "configuration-steps-col-runs" })}</span>
+        <span>{text({ id: "configuration-steps-col-model" })}</span>
+        <span>{text({ id: "configuration-steps-col-overrides" })}</span>
       </div>
       {props.steps.groups.map((group) => (
         <ConfigurationStepGroupDrawn key={group.phase} group={group} />

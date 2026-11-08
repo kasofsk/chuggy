@@ -126,10 +126,9 @@ test("a failure the wire has no refusal for is its word, and carries no thrown t
     ],
   ] as const) {
     expect(copyTextEn(operationFailureSentence(failure))).toBe(word);
-    expect(failureWords(failure)).toStrictEqual({
-      word,
-      detail: failure.reason,
-    });
+    const words = failureWords(failure);
+    expect(copyTextEn(words.word)).toBe(word);
+    expect(words.detail).toBe(failure.reason);
   }
 });
 

@@ -15,11 +15,13 @@
  * carries the holder's own reason, and nothing is said over that.
  */
 
+import { ApiStopped } from "./apiRequest.ts";
 import type { ApiFetchPort, ApiPorts } from "./apiRequest.ts";
+import type { Copy } from "./copy.ts";
 import type { SessionHolder } from "./sessionHolder.ts";
 
 /** Why a request under a session was not sent. */
-export const apiBearerUnrenewedReason = "the session could not be renewed";
+export const apiBearerUnrenewedReason: Copy = { id: "api-reason-unrenewed" };
 
 /** The bearer a request goes out with: none where no session is held, and a
  * rejection, so no request, where one is held and has no token to send. */
@@ -30,7 +32,7 @@ export function apiBearerOver(
     const signedIn = holder.snapshot().phase === "SignedIn";
     const bearer = await holder.bearer();
     if (bearer === undefined && signedIn)
-      throw new Error(apiBearerUnrenewedReason);
+      throw new ApiStopped(apiBearerUnrenewedReason);
     return bearer;
   };
 }

@@ -168,6 +168,7 @@ test("a ticket that lands nothing has a Landing row that waits on none", () => {
   const rows = runsOf(twoCycles, [], ticket21Program, false)[0]?.rows ?? [];
   expect(rows.at(-1)).toEqual({
     kind: "Landing",
+    name: "Landing",
     landing: undefined,
     lands: false,
   });
@@ -367,7 +368,9 @@ test("a run's details say where it ran, how long it waited and what it spent, by
     resources: { cpuMillis: 2_000 },
     attempts: [],
   };
-  expect(ticketRunDetailsOf(read, Date.parse("2026-08-26T01:00:00Z"))).toEqual({
+  expect(
+    ticketRunDetailsOf(read, Date.parse("2026-08-26T01:00:00Z"), copyTextEn),
+  ).toEqual({
     runner: "Linux · Amd64 · container",
     image: { text: "chuggy/worker", title: "chuggy/worker" },
     worker: "chuggy-worker 0.63",

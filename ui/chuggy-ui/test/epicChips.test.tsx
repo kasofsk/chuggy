@@ -4,7 +4,8 @@
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, screen, within } from "@testing-library/react";
+import { renderCopied } from "./copied.tsx";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -32,7 +33,7 @@ vi.mock("@tanstack/react-router", () => ({
 afterEach(cleanup);
 
 test("each epic is a link to its page and an archived one says so", () => {
-  render(
+  renderCopied(
     <EpicChips
       partition={leadPartition}
       epics={[
@@ -49,7 +50,7 @@ test("each epic is a link to its page and an archived one says so", () => {
 });
 
 test("a ticket in no epic draws nothing", () => {
-  const { container } = render(
+  const { container } = renderCopied(
     <EpicChips partition={leadPartition} epics={undefined} />,
   );
   expect(container.textContent).toBe("");

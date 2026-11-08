@@ -34,10 +34,10 @@ export interface NavParams {
   readonly session?: string | undefined;
 }
 
-/** One entry's standing, in the word the wire says it in and the hue it takes,
- * so a dot is not the only thing carrying it. */
+/** One entry's standing, in its word and the hue it takes, so a dot is not
+ * the only thing carrying it. */
 export interface NavStanding {
-  readonly word: string;
+  readonly word: Copy;
   readonly tone: Tone;
 }
 

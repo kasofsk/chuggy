@@ -65,10 +65,10 @@ test("the lead's standing is drawn only where a read supplied it", () => {
   expect(silent.find((entry) => entry.id === "lead")?.standing).toBeUndefined();
   const told = shellNav({
     partition: atlas,
-    leadStanding: { word: "Working", tone: "live" },
+    leadStanding: { word: { id: "lead-session-open" }, tone: "live" },
   });
   expect(told.find((entry) => entry.id === "lead")?.standing).toStrictEqual({
-    word: "Working",
+    word: { id: "lead-session-open" },
     tone: "live",
   });
 });

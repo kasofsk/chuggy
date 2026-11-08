@@ -137,7 +137,7 @@ function ThreadUsageSaid(props: {
         <ThreadCommandLine name="usage">
           {[
             <span key="refused">
-              {readFailedLine(undefined, state.failure)}
+              {text(readFailedLine(undefined, state.failure))}
             </span>,
           ]}
         </ThreadCommandLine>

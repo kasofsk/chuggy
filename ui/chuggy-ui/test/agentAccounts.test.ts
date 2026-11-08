@@ -6,6 +6,7 @@
  */
 
 import { expect, test } from "vitest";
+import { copyTextEn } from "../app/copy/catalog.ts";
 
 import type { AgentAccount } from "../../../src/contract/responses.ts";
 import { agentPauseReasons } from "../../../src/contract/rosters.ts";
@@ -44,17 +45,19 @@ const claude: AgentAccount = {
 };
 
 test("every reason a pause gives is a noun, and a pause reads as its status and each reason", () => {
-  expect(agentPauseReasons.map(agentPauseReasonLabel)).toStrictEqual([
-    "Five-hour window",
-    "Weekly window",
-    "Provider limit",
-  ]);
   expect(
-    agentPauseLine({
-      until: "2026-10-03T14:00:00Z",
-      reasons: ["seven_day", "limit"],
-      pressed: false,
-    }),
+    agentPauseReasons.map((reason) =>
+      copyTextEn(agentPauseReasonLabel(reason)),
+    ),
+  ).toStrictEqual(["Five-hour window", "Weekly window", "Provider limit"]);
+  expect(
+    copyTextEn(
+      agentPauseLine({
+        until: "2026-10-03T14:00:00Z",
+        reasons: ["seven_day", "limit"],
+        pressed: false,
+      }),
+    ),
   ).toBe("Paused · Weekly window · Provider limit");
 });
 
@@ -149,16 +152,20 @@ test("both ends of the bound are taken, and the refusal names them", () => {
     fiveHourPercent: 1,
     sevenDayPercent: 100,
   });
-  expect(agentAccountPercentFault).toBe("Whole percent, 1 to 100");
+  expect(copyTextEn(agentAccountPercentFault)).toBe("Whole percent, 1 to 100");
 });
 
 test("a press refused because no limit holds the agent says so, and any other refusal is its word", () => {
   expect(
-    agentAccountPressRefusal({
-      outcome: "Conflict",
-      code: "NotHardPaused",
-      body: undefined,
-    }),
+    copyTextEn(
+      agentAccountPressRefusal({
+        outcome: "Conflict",
+        code: "NotHardPaused",
+        body: undefined,
+      }),
+    ),
   ).toBe("No limit holds it");
-  expect(agentAccountPressRefusal({ outcome: "Absent" })).toBe("Not found");
+  expect(copyTextEn(agentAccountPressRefusal({ outcome: "Absent" }))).toBe(
+    "Not found",
+  );
 });

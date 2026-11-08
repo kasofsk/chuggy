@@ -148,7 +148,6 @@ import { Picker } from "./ui/Picker.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
 import { AddRunnerLink, useWorkRunner } from "./workRunner.tsx";
 import { useCopyText } from "../copy/CopyProvider.tsx";
-import { copyOrDataText } from "../core/copy.ts";
 import type { Copy, CopyText } from "../core/copy.ts";
 
 import "./TicketCreation.css";
@@ -965,10 +964,7 @@ function creationUnmadeSentence(
     ? text({
         id: "ticket-authoring-joined",
         args: {
-          first: readFailedLine(
-            text({ id: "ticket-authoring-draft" }),
-            ended.unread,
-          ),
+          first: readFailedLine({ id: "ticket-authoring-draft" }, ended.unread),
           second: ended.reason,
         },
       })
@@ -1253,10 +1249,10 @@ export interface CreationFormDrawnProps extends CreationFormProps {
 
 /** The form as drawn, fields or YAML, over what its caller holds. */
 export function CreationFormDrawn(props: CreationFormDrawnProps): ReactNode {
+  const text = useCopyText();
   const { held, repositories } = props;
   const { offers, partial } = props.context;
   const standing = props.standing ?? { mayOverride: true };
-  const text = useCopyText();
   return (
     <div className="creation">
       {props.lead}
@@ -1270,7 +1266,7 @@ export function CreationFormDrawn(props: CreationFormDrawnProps): ReactNode {
         proposed={creationFormProposed}
         storeKey={props.storeKey}
         submitLabel={text({ id: "ticket-authoring-create-ticket" })}
-        submitEffect={copyOrDataText(text, creationSubmitEffect(props.start))}
+        submitEffect={text(creationSubmitEffect(props.start))}
         submitStep={
           props.start === "NoRunner" ? (
             <AddRunnerLink partition={props.partition} />
