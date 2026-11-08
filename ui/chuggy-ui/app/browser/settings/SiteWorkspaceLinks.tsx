@@ -14,6 +14,7 @@ import type {
   AccessSiteAbilities,
   AccessWorkspaceLink,
 } from "../../../../../src/contract/accessPlane.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { apiRevokeSiteWorkspaceLink } from "../../core/accessRoutes.ts";
 import {
   siteWorkspaceLinkRevocable,
@@ -31,6 +32,7 @@ import { siteWorkspaceLinksReread } from "./siteWorkspacesResource.ts";
 function SiteWorkspaceLinkNote(props: {
   readonly link: AccessWorkspaceLink;
 }): ReactNode {
+  const text = useCopyText();
   const link = props.link;
   return (
     <div className="grid min-w-0 justify-items-start gap-1">
@@ -41,7 +43,7 @@ function SiteWorkspaceLinkNote(props: {
       )}
       {link.createAccounts ? (
         <span className="text-sm text-ink-3">
-          {siteWorkspaceCreateAccountsLabel}
+          {text(siteWorkspaceCreateAccountsLabel)}
         </span>
       ) : null}
     </div>
@@ -53,11 +55,12 @@ function SiteWorkspaceLinkMade(props: {
   readonly link: Extract<AccessWorkspaceLink, { state: "Used" }>;
   readonly nowMs: number;
 }): ReactNode {
+  const text = useCopyText();
   const link = props.link;
   return (
     <div className="grid min-w-0">
       <span className="people-stacked-label">
-        {siteWorkspaceLinkWords.workspace}
+        {text(siteWorkspaceLinkWords.workspace)}
       </span>
       <span
         className="people-name font-strong text-ink-1"
@@ -82,6 +85,7 @@ export function SiteWorkspaceLinks(props: {
   readonly links: readonly AccessWorkspaceLink[];
   readonly abilities: AccessSiteAbilities;
 }): ReactNode {
+  const text = useCopyText();
   const { tenant, abilities } = props;
   return (
     <InviteLinksListing
@@ -102,6 +106,7 @@ export function SiteWorkspaceLinks(props: {
         ["site-workspace-link-revocation", tenant],
         apiRevokeSiteWorkspaceLink,
         (client) => siteWorkspaceLinksReread(client, tenant),
+        text,
       )}
     />
   );

@@ -558,7 +558,6 @@ export function InboxScreen(props: {
   const inbox = useInboxRows(partition);
   const proposed = useInboxProposalAnswers(partition);
   const nowMs = useNowMs();
-  const text = useCopyText();
   return (
     <>
       <ScreenTitle>{text({ id: "inbox-title" })}</ScreenTitle>

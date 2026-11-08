@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The tenant's accounts: the forge accounts it has connected, and the apps
  * each holds.
@@ -21,8 +20,13 @@
 
 import type { ReactNode } from "react";
 
-import type { ForgeAppName } from "../../../../../src/contract/rosters.ts";
+import type {
+  ForgeAccountKindName,
+  ForgeAppName,
+} from "../../../../../src/contract/rosters.ts";
 import type { ForgeInstallationResponse } from "../../../../../src/contract/responses.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
+import type { Copy } from "../../core/copy.ts";
 import {
   forgeAccountInstallationId,
   forgeAccountRows,
@@ -57,21 +61,46 @@ import { Table } from "../ui/Table.tsx";
 import { buttonLookClassName } from "../ui/Button.tsx";
 import { SettingsPage, useSettingsTenant } from "./SettingsPage.tsx";
 
+/** Whether an app is on an account, as its pill says it. */
+function forgeAppStandingLabel(standing: ForgeAppStanding): Copy {
+  switch (standing) {
+    case "Installed":
+      return { id: "settings-accounts-installed" };
+    case "Missing":
+      return { id: "settings-accounts-missing" };
+  }
+}
+
+/** What kind of account the forge says one is. */
+function forgeAccountKindLabel(kind: ForgeAccountKindName): Copy {
+  switch (kind) {
+    case "User":
+      return { id: "settings-accounts-kind-user" };
+    case "Organization":
+      return { id: "settings-accounts-kind-organization" };
+  }
+}
+
 /** An installed app as its installation stands, which says more than
  * Installed only once the forge has answered that it is behind. */
 function InstalledApp(props: {
   readonly tenant: string;
   readonly installationId: string;
 }): ReactNode {
+  const text = useCopyText();
   const read = usePanelState(
     forgeInstallationPermissionsQuery(props.tenant, props.installationId),
   );
   if (read.state !== "Ready" || read.value.permissions !== "Behind")
-    return <Pill tone={forgeAppStandingTone("Installed")}>Installed</Pill>;
+    return (
+      <Pill tone={forgeAppStandingTone("Installed")}>
+        {text(forgeAppStandingLabel("Installed"))}
+      </Pill>
+    );
   return (
     <>
       <Pill tone={forgeInstallationPermissionsTone(read.value.permissions)}>
-        Update pending
+        {text({ id: "settings-accounts-update-pending" })}
       </Pill>
       <a
         href={read.value.settingsUrl}
@@ -79,7 +108,7 @@ function InstalledApp(props: {
         rel="noopener noreferrer"
         target="_blank"
       >
-        Review on GitHub
+        {text({ id: "settings-accounts-review" })}
       </a>
     </>
   );
@@ -92,6 +121,7 @@ function AppStanding(props: {
   readonly app: ForgeAppName;
   readonly standing: ForgeAppStanding;
 }): ReactNode {
+  const text = useCopyText();
   const installationId = forgeAccountInstallationId(
     props.installations,
     props.account,
@@ -99,7 +129,9 @@ function AppStanding(props: {
   );
   if (installationId === undefined)
     return (
-      <Pill tone={forgeAppStandingTone(props.standing)}>{props.standing}</Pill>
+      <Pill tone={forgeAppStandingTone(props.standing)}>
+        {text(forgeAppStandingLabel(props.standing))}
+      </Pill>
     );
   return <InstalledApp tenant={props.tenant} installationId={installationId} />;
 }
@@ -109,11 +141,12 @@ function AccountRow(props: {
   readonly installations: readonly ForgeInstallationResponse[];
   readonly row: ForgeAccountRow;
 }): ReactNode {
+  const text = useCopyText();
   const row = props.row;
   return (
     <tr>
       <th scope="row">{row.account}</th>
-      <td>{row.kind}</td>
+      <td>{text(forgeAccountKindLabel(row.kind))}</td>
       <td>
         <span className="flex items-center gap-2">
           <AppStanding
@@ -151,16 +184,18 @@ function AccountTable(props: {
   readonly tenant: string;
   readonly installations: readonly ForgeInstallationResponse[];
 }): ReactNode {
+  const text = useCopyText();
   const rows = forgeAccountRows(props.installations);
-  if (rows.length === 0) return <EmptyState label="No account connected" />;
+  if (rows.length === 0)
+    return <EmptyState label={text({ id: "settings-accounts-none" })} />;
   return (
-    <Table caption="Connected accounts">
+    <Table caption={text({ id: "settings-accounts-table" })}>
       <thead>
         <tr>
-          <th scope="col">Account</th>
-          <th scope="col">Kind</th>
-          <th scope="col">Portal</th>
-          <th scope="col">Worker</th>
+          <th scope="col">{text({ id: "settings-accounts-account" })}</th>
+          <th scope="col">{text({ id: "settings-accounts-kind" })}</th>
+          <th scope="col">{text({ id: "settings-accounts-portal" })}</th>
+          <th scope="col">{text({ id: "settings-accounts-worker" })}</th>
         </tr>
       </thead>
       <tbody>
@@ -180,6 +215,7 @@ function AccountTable(props: {
 /** The listing answers only a workspace admin, so its absence is this reader's
  * standing rather than a fault, and a claim they started would be refused. */
 export function TenantAccountsPage(): ReactNode {
+  const text = useCopyText();
   const tenant = useSettingsTenant();
   const returned = useForgeReturned(tenant);
   const accounts = usePanelState(forgeInstallationsQuery(tenant));
@@ -190,11 +226,11 @@ export function TenantAccountsPage(): ReactNode {
     (installations !== undefined && installations.length > 0) ||
     returned?.standing === "Uninstalled";
   return (
-    <SettingsPage title="Accounts">
+    <SettingsPage title={text({ id: "settings-accounts-title" })}>
       <Panel
         variant="section"
-        title="Accounts"
-        about="Connected accounts and their apps"
+        title={text({ id: "settings-accounts-title" })}
+        about={text({ id: "settings-accounts-about" })}
         meta={
           <span className="flex items-center gap-2">
             {withheld ? null : (
@@ -205,7 +241,7 @@ export function TenantAccountsPage(): ReactNode {
                 tenant={tenant}
                 returnPath={currentPath()}
                 app="portal"
-                label="Add account"
+                label={text({ id: "settings-accounts-add" })}
               />
             ) : null}
           </span>

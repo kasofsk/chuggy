@@ -24,7 +24,6 @@
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import { forgeInstallLabel } from "./forgeInstallation.ts";
 import { inviteRoutePath } from "./inviteLinks.ts";
-import { invitePageWords } from "./invitePage.ts";
 import { projectCreationPathIn } from "./projectCreation.ts";
 import {
   repositoryGrantLines,
@@ -69,6 +68,7 @@ export const setupPressed = {
   chatHost: "Register chat host",
   ticket: "Create ticket",
   dispatch: "Dispatch",
+  workspaceCreate: "Create",
 } as const;
 
 /**
@@ -78,6 +78,7 @@ export const setupPressed = {
  */
 export const setupSeen = {
   northStar: "North Star",
+  workspaceNaming: "New workspace",
 } as const;
 
 /** How many names a question lists before it says how many more there are. */
@@ -120,7 +121,7 @@ function setupWorkspaceMend(
       ? "You are not in a chuggy workspace yet."
       : `You are not in a chuggy workspace named ${lack.workspace}.`;
   return setupHand(
-    `${none} A new workspace is made from an invite link: open the one you were sent (it starts ${at.site}${inviteRoutePath}), and under ${invitePageWords.naming} name the workspace and press ${invitePageWords.create}. Tell me once it is made.`,
+    `${none} A new workspace is made from an invite link: open the one you were sent (it starts ${at.site}${inviteRoutePath}), and under ${setupSeen.workspaceNaming} name the workspace and press ${setupPressed.workspaceCreate}. Tell me once it is made.`,
     "once the person says their workspace is made",
   );
 }

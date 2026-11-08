@@ -22,6 +22,7 @@ import {
 } from "../../../../src/contract/accessPlane.ts";
 
 import type { ApiResult } from "./apiRequest.ts";
+import type { Copy } from "./copy.ts";
 import {
   accessFailureLabel,
   projectRoleOffered,
@@ -51,16 +52,34 @@ export const inviteModes = ["Person", "Link"] as const;
 export type InviteMode = (typeof inviteModes)[number];
 
 /** What the choice between the two is labelled. */
-export const inviteModesLabel = "Invite by";
+export const inviteModesLabel: Copy = { id: "settings-invitation-mode" };
+
+/** One of the two as its choice is labelled. */
+export function inviteModeLabel(mode: InviteMode): Copy {
+  switch (mode) {
+    case "Person":
+      return { id: "settings-invitation-mode-person" };
+    case "Link":
+      return { id: "settings-invitation-mode-link" };
+  }
+}
+
+/** What sending a dialog's form is called, and while it is unanswered. */
+export interface InviteSendWords {
+  readonly idle: Copy;
+  readonly busy: Copy;
+}
 
 /** What making a link is called on the action that sends it, and while it is unanswered. */
-export const inviteLinkSendWords = {
-  idle: "Create link",
-  busy: "Creating…",
-} as const;
+export const inviteLinkSendWords: InviteSendWords = {
+  idle: { id: "settings-invite-link-create" },
+  busy: { id: "settings-creating" },
+};
 
 /** What a made link's dialog says of the address it holds. */
-export const tenantInviteLinkShownOnce = "Shown once";
+export const tenantInviteLinkShownOnce: Copy = {
+  id: "settings-invite-link-shown-once",
+};
 
 export function tenantInviteLinkSendable(
   form: TenantInvitationGrantsForm,
@@ -71,23 +90,23 @@ export function tenantInviteLinkSendable(
 }
 
 /** One link's state as the word its row draws. */
-export function inviteLinkStateLabel(state: AccessInviteLink["state"]): string {
+export function inviteLinkStateLabel(state: AccessInviteLink["state"]): Copy {
   switch (state) {
     case "Open":
-      return "Open";
+      return { id: "settings-invite-link-open" };
     case "Used":
-      return "Used";
+      return { id: "settings-invite-link-used" };
     case "Revoked":
-      return "Revoked";
+      return { id: "settings-invite-link-revoked" };
     case "Expired":
-      return "Expired";
+      return { id: "settings-invite-link-expired" };
   }
 }
 
 /** What a link's row draws of what it carries: the workspace role's word,
  * whether that reaches every project, and a line for each project it names. */
 export interface InviteLinkAccess {
-  readonly held: readonly string[];
+  readonly held: readonly Copy[];
   readonly every: boolean;
   readonly lines: readonly TenantHeldProjectLine[];
 }
@@ -128,26 +147,26 @@ export function inviteLinkRevocable(
 
 /** The words of the section a workspace's links are listed in. */
 export const inviteLinksWords = {
-  heading: "Invite links",
-  access: "Access",
-  status: "Status",
-  usedBy: "Used by",
-  madeBy: "Made by",
-  expires: "Expires",
-  revoke: "Revoke",
-} as const;
+  heading: { id: "settings-invite-links" },
+  access: { id: "settings-invite-links-access" },
+  status: { id: "settings-invite-links-status" },
+  usedBy: { id: "settings-invite-links-used-by" },
+  madeBy: { id: "settings-invite-links-made-by" },
+  expires: { id: "settings-invite-links-expires" },
+  revoke: { id: "settings-invite-links-revoke" },
+} as const satisfies Readonly<Record<string, Copy>>;
 
 /** What a revocation is asked with before it is sent. */
 export const inviteLinkRevocationQuestion = {
-  question: "Revoke link",
-  line: "This link will stop working.",
-} as const;
+  question: { id: "settings-invite-links-revoke-question" },
+  line: { id: "settings-invite-links-revoke-line" },
+} as const satisfies Readonly<Record<string, Copy>>;
 
 /** What a revocation leaves to be said: nothing where it was done or the link
  * had already ended, and the refusal's line otherwise. */
 export function inviteLinkRevocationNote(
   result: ApiResult<undefined>,
-): string | undefined {
+): Copy | undefined {
   if (result.outcome === "Ok") return undefined;
   if (
     result.outcome === "Conflict" &&

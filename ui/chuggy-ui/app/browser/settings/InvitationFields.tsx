@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The fields of the forms that invite, the same in each: a labelled line with
  * its fault under it before anything is sent, or what the field holds where a
@@ -10,6 +9,7 @@
 import { useId } from "react";
 import type { ReactNode } from "react";
 
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import {
   tenantInvitationAccountLine,
   tenantInvitationEmailFault,
@@ -73,10 +73,12 @@ interface InvitationField {
 }
 
 export function InvitationEmail(props: InvitationField): ReactNode {
+  const text = useCopyText();
+  const fault = tenantInvitationEmailFault(props.value);
   return (
     <InvitationText
-      label="Email"
-      fault={tenantInvitationEmailFault(props.value)}
+      label={text({ id: "settings-invitation-email" })}
+      fault={fault === undefined ? undefined : text(fault)}
       {...props}
     />
   );
@@ -89,11 +91,14 @@ export function InvitationGithub(
   },
 ): ReactNode {
   const { abilities, ...field } = props;
+  const text = useCopyText();
+  const fault = tenantInvitationGithubFault(field.value);
+  const line = tenantInvitationAccountLine(abilities);
   return (
     <InvitationText
-      label="GitHub username"
-      fault={tenantInvitationGithubFault(field.value)}
-      line={tenantInvitationAccountLine(abilities)}
+      label={text({ id: "settings-invitation-github" })}
+      fault={fault === undefined ? undefined : text(fault)}
+      line={line === undefined ? undefined : text(line)}
       {...field}
     />
   );

@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * Inviting a person into a workspace of their own, in a dialog: the
  * workspace's name first, then its owner's fields together under their own
@@ -37,10 +36,10 @@ import {
 } from "../../core/accessRoutes.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { consoleWriteKey } from "../../core/consoleWrite.ts";
-import { copyOrDataText } from "../../core/copy.ts";
+import type { Copy, CopyText } from "../../core/copy.ts";
 import type { ConsoleWrite } from "../../core/consoleWrite.ts";
 import { inviteLinkSendWords } from "../../core/inviteLinks.ts";
-import type { InviteMode } from "../../core/inviteLinks.ts";
+import type { InviteMode, InviteSendWords } from "../../core/inviteLinks.ts";
 import {
   siteWorkspaceLinkBody,
   siteWorkspaceLinkNoteFault,
@@ -96,11 +95,12 @@ interface SiteWorkspaceCreating {
 /** One workspace created, over once the site's list has answered again. */
 function siteWorkspaceCreationWrite(
   tenant: string,
+  text: CopyText,
 ): ConsoleWrite<SiteWorkspaceForm, AccessOwnerInvited> {
   return {
     mutationKey: consoleWriteKey("site-workspace-creation", tenant),
     write: (ports, form) => apiInviteSiteOwner(ports, form),
-    refusal: siteWorkspaceRefusal,
+    refusal: (failure) => text(siteWorkspaceRefusal(failure)),
     landed: (client) => siteWorkspacesReread(client, tenant),
   };
 }
@@ -108,11 +108,12 @@ function siteWorkspaceCreationWrite(
 /** One workspace link made, over once the site's links have answered again. */
 function siteWorkspaceLinkWrite(
   tenant: string,
+  text: CopyText,
 ): ConsoleWrite<AccessWorkspaceLinkCreation, AccessInviteLinkMinted> {
   return {
     mutationKey: consoleWriteKey("site-workspace-link", tenant),
     write: (ports, body) => apiMintSiteWorkspaceLink(ports, body),
-    refusal: siteWorkspaceRefusal,
+    refusal: (failure) => text(siteWorkspaceRefusal(failure)),
     landed: (client) => siteWorkspaceLinksReread(client, tenant),
   };
 }
@@ -123,15 +124,16 @@ function useSiteWorkspaceCreation(
   tenant: string,
   abilities: AccessSiteAbilities,
   open: boolean,
-  onCreated: (line: string) => void,
+  onCreated: (line: Copy) => void,
 ): SiteWorkspaceCreating {
+  const text = useCopyText();
   const [typed, setTyped] = useState(() => siteWorkspaceBlank(abilities));
   const [note, setNote] = useState("");
   const [mode, setMode] = useState<InviteMode>("Person");
-  const creating = useConsoleWrite(siteWorkspaceCreationWrite(tenant), {
+  const creating = useConsoleWrite(siteWorkspaceCreationWrite(tenant, text), {
     drawn: open,
   });
-  const minting = useConsoleWrite(siteWorkspaceLinkWrite(tenant), {
+  const minting = useConsoleWrite(siteWorkspaceLinkWrite(tenant, text), {
     drawn: open,
   });
   const form = siteWorkspaceHeld(typed, abilities);
@@ -185,9 +187,10 @@ interface SiteWorkspaceDrawn {
 /** The box that hands account creation on, the same under a person's fields and in a link's. */
 function SiteWorkspaceCreateAccounts(props: SiteWorkspaceDrawn): ReactNode {
   const { form, busy, change } = props.creating;
+  const text = useCopyText();
   return (
     <Checkbox
-      label={siteWorkspaceCreateAccountsLabel}
+      label={text(siteWorkspaceCreateAccountsLabel)}
       checked={form.createAccounts}
       disabled={!props.abilities.manageAuthorities}
       held={busy}
@@ -207,7 +210,7 @@ function SiteWorkspacePerson(props: SiteWorkspaceDrawn): ReactNode {
   return (
     <>
       <InvitationText
-        label="Name"
+        label={text({ id: "settings-workspaces-name" })}
         value={form.tenant}
         fault={nameFault === undefined ? undefined : text(nameFault)}
         disabled={busy}
@@ -217,7 +220,7 @@ function SiteWorkspacePerson(props: SiteWorkspaceDrawn): ReactNode {
       />
       <div role="group" aria-labelledby={owner} className="grid gap-4">
         <span id={owner} className="text-md font-strong text-ink-1">
-          Owner
+          {text({ id: "settings-workspaces-owner" })}
         </span>
         <InvitationGithub
           value={form.github}
@@ -248,11 +251,9 @@ function SiteWorkspaceLink(props: SiteWorkspaceDrawn): ReactNode {
     <>
       <SiteWorkspaceCreateAccounts {...props} />
       <InvitationText
-        label={siteWorkspaceLinkWords.note}
+        label={text(siteWorkspaceLinkWords.note)}
         value={note}
-        fault={
-          noteFault === undefined ? undefined : copyOrDataText(text, noteFault)
-        }
+        fault={noteFault === undefined ? undefined : text(noteFault)}
         disabled={busy}
         onChange={annotate}
       />
@@ -283,11 +284,11 @@ function SiteWorkspaceFields(
 }
 
 /** What sending the form is called in each mode, and while it is unanswered. */
-const siteWorkspaceSendWords: Record<
-  InviteMode,
-  { readonly idle: string; readonly busy: string }
-> = {
-  Person: { idle: "Create", busy: "Creating…" },
+const siteWorkspaceSendWords: Record<InviteMode, InviteSendWords> = {
+  Person: {
+    idle: { id: "settings-workspaces-create" },
+    busy: { id: "settings-creating" },
+  },
   Link: inviteLinkSendWords,
 };
 
@@ -325,8 +326,9 @@ export function SiteWorkspaceNew(props: {
   readonly abilities: AccessSiteAbilities;
   /** Whether the site keeps workspace links, which is whether one may be made here. */
   readonly links: boolean;
-  readonly onSaid: (line: string | undefined) => void;
+  readonly onSaid: (line: Copy | undefined) => void;
 }): ReactNode {
+  const text = useCopyText();
   const [open, setOpen] = useState(false);
   const creating = useSiteWorkspaceCreation(
     props.tenant,
@@ -347,8 +349,8 @@ export function SiteWorkspaceNew(props: {
   return (
     <Dialog
       wide
-      title="New workspace"
-      trigger="New workspace"
+      title={text({ id: "settings-workspaces-new" })}
+      trigger={text({ id: "settings-workspaces-new" })}
       open={open}
       onOpenChange={moved}
       busy={creating.busy}

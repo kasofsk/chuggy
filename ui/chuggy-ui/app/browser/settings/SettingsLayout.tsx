@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The settings' one frame: a navigation of every settings page the reader has,
  * a group a level, and beside it the page the address names.
@@ -13,6 +12,7 @@ import { Link, Outlet } from "@tanstack/react-router";
 import { useId } from "react";
 import type { ReactNode } from "react";
 
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { settingsNav, settingsNavSiteDrawn } from "../../core/settingsNav.ts";
 import type { SettingsNavGroup } from "../../core/settingsNav.ts";
 import { useSiteAbilities } from "./tenantPermissionsResource.ts";
@@ -22,12 +22,13 @@ import "./settings.css";
 function SettingsNavGroupLinks(props: {
   readonly group: SettingsNavGroup;
 }): ReactNode {
+  const text = useCopyText();
   const group = props.group;
   const labelled = useId();
   return (
     <div role="group" aria-labelledby={labelled} className="grid min-w-0 gap-1">
       <p id={labelled} className="flex min-w-0 items-baseline gap-2 px-3">
-        <span className="eyebrow">{group.label}</span>
+        <span className="eyebrow">{text(group.label)}</span>
         {group.name === undefined ? null : (
           <>
             {" "}
@@ -45,7 +46,7 @@ function SettingsNavGroupLinks(props: {
               activeProps={{ className: "bg-surface-2 text-ink-1" }}
               inactiveProps={{ className: "text-ink-2" }}
             >
-              {entry.label}
+              {text(entry.label)}
             </Link>
           </li>
         ))}
@@ -60,6 +61,7 @@ export function SettingsLayout(props: {
   readonly tenant: string;
   readonly project: string | undefined;
 }): ReactNode {
+  const text = useCopyText();
   const abilities = useSiteAbilities(props.tenant);
   const groups = settingsNav({
     tenant: props.tenant,
@@ -71,7 +73,7 @@ export function SettingsLayout(props: {
   return (
     <div className="@container w-full" data-fills-width>
       <div className="settings">
-        <nav aria-label="Settings" className="settings-nav">
+        <nav aria-label={text({ id: "settings-nav" })} className="settings-nav">
           {groups.map((group) => (
             <SettingsNavGroupLinks key={group.id} group={group} />
           ))}

@@ -13,6 +13,7 @@ import type {
   AccessInviteLink,
   AccessTenantAbilities,
 } from "../../../../../src/contract/accessPlane.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { apiRevokeTenantInviteLink } from "../../core/accessRoutes.ts";
 import {
   inviteLinkAccess,
@@ -47,6 +48,7 @@ export function TenantInviteLinks(props: {
   readonly links: readonly AccessInviteLink[];
   readonly abilities: AccessTenantAbilities | undefined;
 }): ReactNode {
+  const text = useCopyText();
   const { tenant, abilities } = props;
   return (
     <InviteLinksListing
@@ -72,6 +74,7 @@ export function TenantInviteLinks(props: {
         ["tenant-invite-link-revocation", tenant],
         (ports, link) => apiRevokeTenantInviteLink(ports, tenant, link),
         (client) => tenantInviteLinksReread(client, tenant),
+        text,
       )}
     />
   );

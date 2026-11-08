@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * One level's permissions as one card: a row a permission, and in each row
  * every holder as a chip, in the order the rows give them, or `Nobody`.
@@ -137,7 +136,7 @@ function PermissionHolderWords(props: {
 
 function PermissionHolderItem(props: {
   readonly holder: PermissionHolder;
-  readonly permission: string;
+  readonly permission: Copy;
   readonly removable: boolean;
   readonly busy: boolean;
   readonly onRemove: () => void;
@@ -150,7 +149,10 @@ function PermissionHolderItem(props: {
         removal={
           props.removable
             ? {
-                name: `Remove ${text(holder.words)} from ${props.permission}`,
+                name: text({
+                  id: "settings-permissions-remove-holder",
+                  args: { holder: holder.words, permission: props.permission },
+                }),
                 disabled: props.busy,
                 onRemove: props.onRemove,
               }
@@ -182,7 +184,7 @@ function PermissionRowAsked<Authority extends PermissionAuthority>(props: {
         <div className="max-w-aside">
           <Confirm
             question={text(permissionRemovalQuestion.question)}
-            confirm="Remove"
+            confirm={text({ id: "settings-remove" })}
             busy={removing.busy}
             onConfirm={() => {
               removing.send(asking);
@@ -220,7 +222,7 @@ function PermissionRowDrawn<Authority extends PermissionAuthority>(props: {
                   <PermissionHolderItem
                     key={permissionHolderKey(holder)}
                     holder={holder}
-                    permission={text(row.name)}
+                    permission={row.name}
                     removable={
                       props.removable && permissionHolderRemovable(row, holder)
                     }
@@ -252,14 +254,15 @@ function PermissionsTable<Authority extends PermissionAuthority>(props: {
   readonly removing: PermissionsRemovalState<Authority>;
   readonly addition: PermissionsAddition<Authority>;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <Table caption={props.label}>
       <thead>
         <tr>
           <th scope="col" className="permissions-name">
-            Permission
+            {text({ id: "settings-permissions-permission" })}
           </th>
-          <th scope="col">Held by</th>
+          <th scope="col">{text({ id: "settings-permissions-held-by" })}</th>
         </tr>
       </thead>
       <tbody>
@@ -282,11 +285,12 @@ function PermissionsTable<Authority extends PermissionAuthority>(props: {
 function permissionsLine(
   read: PanelState<{ readonly truncated: boolean }>,
   withheld: string,
+  truncated: string,
 ): ReactNode {
   switch (read.state) {
     case "Ready":
       return read.value.truncated ? (
-        <Notice tone="parked" inline detail={tenantPeopleTruncated} />
+        <Notice tone="parked" inline detail={truncated} />
       ) : undefined;
     case "Absent":
       return <Notice tone="parked" inline detail={withheld} />;
@@ -301,7 +305,7 @@ export function PermissionsSection<
   Answer extends { readonly truncated: boolean },
 >(props: {
   /** What the card and its table are named for a reader who sees neither. */
-  readonly label: string;
+  readonly label: Copy;
   readonly read: PanelState<Answer>;
   readonly rows: (answer: Answer) => readonly PermissionRow<Authority>[];
   /** The one line for a reader the level's list is not answered to. */
@@ -313,15 +317,19 @@ export function PermissionsSection<
   const read = props.read;
   const rows = read.state === "Ready" ? props.rows(read.value) : [];
   const removing = usePermissionsSectionRemoval(props.removal, rows);
-  const line = permissionsLine(read, text(props.withheld));
+  const line = permissionsLine(
+    read,
+    text(props.withheld),
+    text(tenantPeopleTruncated),
+  );
   return (
     <section
-      aria-label={props.label}
+      aria-label={text(props.label)}
       className="permissions bg-surface-1 border-edge rounded-2 min-w-0 border"
     >
       {read.state === "Ready" ? (
         <PermissionsTable
-          label={props.label}
+          label={text(props.label)}
           rows={rows}
           removal={props.removal}
           removing={removing}

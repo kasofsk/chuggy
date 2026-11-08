@@ -18,22 +18,22 @@ import {
 } from "../../../../src/contract/accessPlane.ts";
 import { textCodePointsCount } from "../../../../src/contract/http.ts";
 
-import type { CopyOrData } from "./copy.ts";
+import type { Copy } from "./copy.ts";
 import { projectNameLengthFault } from "./projectCreation.ts";
 
 /** The words the site's list of links has that a workspace's does not. */
 export const siteWorkspaceLinkWords = {
-  note: "Note",
-  workspace: "Workspace",
-} as const;
+  note: { id: "settings-workspaces-note" },
+  workspace: { id: "settings-workspaces-workspace" },
+} as const satisfies Readonly<Record<string, Copy>>;
 
 /** What a note that runs past one line is refused as. */
-export const siteWorkspaceLinkNoteLinesFault = "One line";
+export const siteWorkspaceLinkNoteLinesFault: Copy = {
+  id: "settings-workspaces-note-lines",
+};
 
 /** Why a note cannot be sent, or nothing while it is empty, which only leaves it out. */
-export function siteWorkspaceLinkNoteFault(
-  note: string,
-): CopyOrData | undefined {
+export function siteWorkspaceLinkNoteFault(note: string): Copy | undefined {
   if (note === "" || accessWorkspaceLinkNoteSchema.safeParse(note).success)
     return undefined;
   return textCodePointsCount(note) > accessWorkspaceLinkNoteCharsMax
