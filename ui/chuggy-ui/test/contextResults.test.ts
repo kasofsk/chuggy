@@ -10,6 +10,7 @@ import { expect, test } from "vitest";
 import {
   contextHeaviestOf,
   contextInputSaid,
+  contextLinesLatestOnly,
   contextLinesOf,
   contextResultsOf,
 } from "../app/core/contextResults.ts";
@@ -17,6 +18,7 @@ import { contextCallsOf } from "../app/core/contextRun.ts";
 import { runTranscriptHeldEmpty } from "../app/core/runTranscript.ts";
 import {
   contextImageLines,
+  contextRecordedAt,
   contextRow,
   contextToolLines,
   contextWindow,
@@ -62,6 +64,7 @@ test("with no reading that weighed the tools, a share is the bytes at four to a 
     contextResultsOf(lines, calls),
     undefined,
     10_000,
+    false,
   );
   expect(heaviest.exact).toBe(false);
   expect(heaviest.results).toBe(3);
@@ -88,6 +91,7 @@ test("where a reading weighed the tools, a share is its tokens against the conte
     contextResultsOf(lines, calls),
     contextWindow(),
     10_000,
+    false,
   );
   expect(heaviest.exact).toBe(true);
   expect(
@@ -124,6 +128,7 @@ test("a result that held no text has no size, and its tool is listed after the w
     contextResultsOf(shots, calls),
     undefined,
     10_000,
+    false,
   );
   expect(heaviest.unweighed).toBe(true);
   expect(
@@ -143,7 +148,7 @@ test("a result that held no text has no size, and its tool is listed after the w
     "toolu_e",
   ]);
   expect(
-    contextHeaviestOf(contextResultsOf(lines, calls), undefined, 10_000)
+    contextHeaviestOf(contextResultsOf(lines, calls), undefined, 10_000, false)
       .unweighed,
   ).toBe(false);
 });
@@ -173,4 +178,19 @@ test("only the lines a batch answered with are parsed, and a line that is not JS
       ],
     } as never),
   ).toStrictEqual([{ type: "user" }]);
+});
+
+test("held batches are the run's latest only where the run wrote batches below the lowest held", () => {
+  const heldFrom = (lowest: number) => ({
+    ...runTranscriptHeldEmpty,
+    batches: [lowest, lowest + 1].map((batch) => ({
+      batch,
+      recordedAt: contextRecordedAt,
+      bytes: 0,
+      read: "Missing" as const,
+    })),
+  });
+  expect(contextLinesLatestOnly(heldFrom(1) as never)).toBe(false);
+  expect(contextLinesLatestOnly(heldFrom(230) as never)).toBe(true);
+  expect(contextLinesLatestOnly(runTranscriptHeldEmpty)).toBe(false);
 });

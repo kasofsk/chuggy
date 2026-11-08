@@ -115,6 +115,10 @@ context-results = { $count ->
     [one] { $count } result
    *[other] { $count } results
 }
+context-results-latest = { $count ->
+    [one] Latest result
+   *[other] Latest { $count } results
+}
 context-by-tool = By tool
 context-largest = Largest results
 context-share-estimated = Share of the peak { -context }, at four bytes a token.

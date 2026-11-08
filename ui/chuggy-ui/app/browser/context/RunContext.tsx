@@ -23,6 +23,7 @@ import {
 } from "../../core/contextInputs.ts";
 import {
   contextHeaviestOf,
+  contextLinesLatestOnly,
   contextLinesOf,
   contextResultsOf,
 } from "../../core/contextResults.ts";
@@ -93,7 +94,12 @@ function contextRunDrawn(
     tiles: contextRunTiles(calls, growth),
     inputs:
       snapshot === undefined ? undefined : contextInputsOf(snapshot, latest),
-    heaviest: contextHeaviestOf(results, latest, contextPeakOf(growth)?.tokens),
+    heaviest: contextHeaviestOf(
+      results,
+      latest,
+      contextPeakOf(growth)?.tokens,
+      contextLinesLatestOnly(transcript),
+    ),
   };
 }
 

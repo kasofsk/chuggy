@@ -174,7 +174,12 @@ export function ContextHeaviestSection(props: {
         </h3>
         {heaviest.results === 0 ? null : (
           <span className="context-meta">
-            {text({ id: "context-results", args: { count: heaviest.results } })}
+            {text({
+              id: heaviest.latestOnly
+                ? "context-results-latest"
+                : "context-results",
+              args: { count: heaviest.results },
+            })}
           </span>
         )}
       </header>

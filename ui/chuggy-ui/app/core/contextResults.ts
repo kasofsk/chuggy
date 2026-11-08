@@ -9,6 +9,10 @@
  * reading weighed the tool, and otherwise its bytes at four to a token against
  * the peak context, and the Heaviest section says which under its table.
  *
+ * THE RESULTS ARE THOSE THE PANE HOLDS, which for a long run are its latest
+ * batches only, the walk keeping a bounded number. The count, the sizes and
+ * the largest are then the latest results', and the section says so.
+ *
  * A CALL IS FOUND BY ITS FIGURES. A recorded assistant line carries the usage
  * its call was billed with, and the series folded in `contextRun.ts` is keyed
  * by the same three figures, so the two are joined on them rather than on a
@@ -18,6 +22,7 @@
 import type { RunContextWindow } from "../../../../src/contract/responses.ts";
 import type { ContextCall } from "./contextRun.ts";
 import type { RunTranscriptHeld } from "./runTranscript.ts";
+import { runTranscriptBatchesBefore } from "./runTranscript.ts";
 import { contextNumber, contextRecord } from "./contextRecord.ts";
 import { sharePartFigure } from "./figures.ts";
 import type { Figure } from "./figures.ts";
@@ -67,6 +72,9 @@ export interface ContextHeaviest {
   readonly exact: boolean;
   /** Whether any result held no text, and so has no size to weigh. */
   readonly unweighed: boolean;
+  /** Whether the results are the run's latest only, its earlier batches not
+   * held. */
+  readonly latestOnly: boolean;
   readonly largest: readonly ContextResultWeighed[];
 }
 
@@ -200,6 +208,12 @@ export function contextResultsOf(
   return results;
 }
 
+/** Whether the held batches are the run's latest only, with batches before
+ * them that the pane does not hold. */
+export function contextLinesLatestOnly(held: RunTranscriptHeld): boolean {
+  return runTranscriptBatchesBefore(held) > 0;
+}
+
 /** Every line the held batches recorded, parsed, with any that is not JSON
  * left out. */
 export function contextLinesOf(held: RunTranscriptHeld): readonly unknown[] {
@@ -286,6 +300,7 @@ export function contextHeaviestOf(
   results: readonly ContextResult[],
   window: RunContextWindow | undefined,
   peak: number | undefined,
+  latestOnly: boolean,
 ): ContextHeaviest {
   const exact = (window?.messages?.byTool.length ?? 0) > 0;
   const weighed = results.filter(
@@ -299,6 +314,7 @@ export function contextHeaviestOf(
         : contextToolsEstimated(results, peak),
     exact,
     unweighed: weighed.length < results.length,
+    latestOnly,
     largest: weighed
       .sort((left, right) => right.bytes - left.bytes)
       .slice(0, contextResultsLargestMax),

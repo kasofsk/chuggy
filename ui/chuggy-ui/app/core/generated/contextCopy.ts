@@ -119,6 +119,9 @@ export interface ContextCopy {
   readonly "context-results": {
     readonly count: unknown;
   };
+  readonly "context-results-latest": {
+    readonly count: unknown;
+  };
   readonly "context-by-tool": Record<never, never>;
   readonly "context-largest": Record<never, never>;
   readonly "context-share-estimated": Record<never, never>;

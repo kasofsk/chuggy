@@ -63,6 +63,7 @@ function drawnOf(
   readings: readonly RunContextReading[],
   lines: readonly unknown[],
   snapshot = contextSnapshot(),
+  latestOnly = false,
 ): ContextRunDrawn {
   const calls = contextCallsOf(rows);
   const latest = contextReadingLatest(readings)?.window;
@@ -81,6 +82,7 @@ function drawnOf(
       contextResultsOf(lines, calls),
       latest,
       contextPeakOf(growth)?.tokens,
+      latestOnly,
     ),
   };
 }
@@ -298,4 +300,22 @@ test("a run's brief and a session's appended prompt are drawn in the text's own 
   const prompt = session.container.querySelector(".context-brief");
   if (prompt === null) throw new Error("no prompt");
   expect(sheetDeclared(rules, prompt, "font-family")).toBe("");
+});
+
+test("Heaviest counts its results as the latest where the pane holds only the run's latest batches", () => {
+  const meta = (latestOnly: boolean) => {
+    renderCopied(
+      <ContextRunView
+        drawn={drawnOf(rows, [], lines, contextSnapshot(), latestOnly)}
+        callLink={() => null}
+      />,
+    );
+    const head = within(section("Heaviest")).getByRole("heading", {
+      name: "Heaviest",
+    }).nextElementSibling?.textContent;
+    cleanup();
+    return head;
+  };
+  expect(meta(false)).toBe("1 result");
+  expect(meta(true)).toBe("Latest result");
 });
