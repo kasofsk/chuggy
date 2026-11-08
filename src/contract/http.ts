@@ -123,9 +123,6 @@ export const runCountMax = Number.MAX_SAFE_INTEGER;
  */
 export const runTurnSeriesMax = 1_000;
 
-/** The most turns one page of a run's series carries, which is the page bound every route shares. */
-export const runTurnsPageLimitMax = nativeHttpPageItemsMax;
-
 /** The longest tool-use id a turn names the subagent call it was made under by. */
 export const runToolUseIdCharsMax = 128;
 

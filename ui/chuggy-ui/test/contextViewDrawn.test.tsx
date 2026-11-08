@@ -253,7 +253,7 @@ test("a file's path breaks only after its slashes", () => {
     files: [
       {
         source: "ProjectInstruction",
-        path: "/work/repo/src/adapters/AGENTS.md",
+        path: "/work/repo/src/adapters/postgres/AGENTS.md",
         bytes: 396,
         content: "# Adapters",
       },
@@ -266,7 +266,7 @@ test("a file's path breaks only after its slashes", () => {
     />,
   );
   const toggle = within(section("Inputs")).getByRole("button", {
-    name: "src/adapters/AGENTS.md",
+    name: "src/adapters/postgres/AGENTS.md",
   });
-  expect(toggle.querySelectorAll("wbr")).toHaveLength(2);
+  expect(toggle.querySelectorAll("wbr")).toHaveLength(3);
 });

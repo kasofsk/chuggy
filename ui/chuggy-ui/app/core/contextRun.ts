@@ -22,8 +22,8 @@ import {
   runContextPageReadingsMax,
   runContextReadingsMax,
   runTurnSeriesMax,
-  runTurnsPageLimitMax,
 } from "../../../../src/contract/http.ts";
+import { runTurnsPageLimitMax } from "../../../../src/contract/runTurns.ts";
 import type { ApiResult } from "./apiRequest.ts";
 import type {
   ContextCompactionMark,

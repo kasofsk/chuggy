@@ -18,10 +18,8 @@ import {
   contextRunTurnsPageRows,
   contextRunWindow,
 } from "../app/core/contextRun.ts";
-import {
-  runContextPageReadingsMax,
-  runTurnsPageLimitMax,
-} from "../../../src/contract/http.ts";
+import { runContextPageReadingsMax } from "../../../src/contract/http.ts";
+import { runTurnsPageLimitMax } from "../../../src/contract/runTurns.ts";
 import {
   contextCompacted,
   contextReading,

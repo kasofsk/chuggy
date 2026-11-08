@@ -36,8 +36,8 @@ import {
   runContextReadingsMax,
   runTranscriptBatchesMax,
   runTurnSeriesMax,
-  runTurnsPageLimitMax,
 } from "../contract/http.ts";
+import { runTurnsPageLimitMax } from "../contract/runTurns.ts";
 import type { RunContextOffered } from "../contract/responses.ts";
 import type { RunCostBasis, RunUsageWindow } from "../contract/rosters.ts";
 
