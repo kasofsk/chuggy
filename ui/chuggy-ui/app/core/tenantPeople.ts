@@ -45,36 +45,39 @@ import {
 } from "../../../../src/contract/accessPlane.ts";
 
 import type { ApiFailure } from "./apiRequest.ts";
+import type { Copy } from "./copy.ts";
 
 /** What the page draws for a reader the list is not answered to. */
-export const tenantPeopleWithheld = "A workspace admin manages people";
+export const tenantPeopleWithheld: Copy = { id: "settings-people-withheld" };
 
-export const tenantPeopleTruncated = "List cut short";
+export const tenantPeopleTruncated: Copy = { id: "settings-people-truncated" };
 
 /** What the invitation says to a reader who may not make an account. */
-export const tenantInvitationAccountsLine = "Existing accounts only";
+export const tenantInvitationAccountsLine: Copy = {
+  id: "settings-invitation-accounts",
+};
 
 /** One workspace role as the label its control carries. */
-export function tenantRoleLabel(role: AccessTenantRole): string {
+export function tenantRoleLabel(role: AccessTenantRole): Copy {
   switch (role) {
     case "Admin":
-      return "Admin";
+      return { id: "settings-role-admin" };
     case "Member":
-      return "Member";
+      return { id: "settings-role-member" };
   }
 }
 
 /** One project role as the label its control carries. */
-export function projectRoleLabel(role: AccessProjectRole): string {
+export function projectRoleLabel(role: AccessProjectRole): Copy {
   switch (role) {
     case "Admin":
-      return "Admin";
+      return { id: "settings-role-admin" };
     case "Developer":
-      return "Developer";
+      return { id: "settings-role-developer" };
     case "Dispatcher":
-      return "Dispatcher";
+      return { id: "settings-role-dispatcher" };
     case "Viewer":
-      return "Viewer";
+      return { id: "settings-role-viewer" };
   }
 }
 
@@ -95,36 +98,36 @@ export const accessRefusalCodes: readonly AccessRefusalCode[] = [
 ];
 
 /** Why the plane refused, as the one line under what was refused. */
-export function accessRefusalLabel(code: AccessRefusalCode): string {
+export function accessRefusalLabel(code: AccessRefusalCode): Copy {
   switch (code) {
     case "InvitationNotConfigured":
-      return "Invitations not configured";
+      return { id: "settings-access-invites-unconfigured" };
     case "InvitationProjectUnknown":
-      return "Project not in this workspace";
+      return { id: "settings-access-project-unknown" };
     case "InvitationAccountNotPermitted":
-      return "Account creation not permitted";
+      return { id: "settings-access-account-not-permitted" };
     case "GithubAccountUnknown":
-      return "No such GitHub user";
+      return { id: "settings-access-github-unknown" };
     case "GithubAccountNotUser":
-      return "Not a person's GitHub account";
+      return { id: "settings-access-github-not-user" };
     case "InvitationEmailHeld":
-      return "Email held by another account · use another address";
+      return { id: "settings-access-email-held" };
     case "InvitationEmailRefused":
-      return "Email refused";
+      return { id: "settings-access-email-refused" };
     case "GithubUnavailable":
-      return "GitHub unavailable";
+      return { id: "settings-access-github-unavailable" };
     case "DirectoryRaced":
-      return "Directory changed · try again";
+      return { id: "settings-access-directory-raced" };
     case "DirectoryUnavailable":
-      return "Directory unavailable";
+      return { id: "settings-access-directory-unavailable" };
     case "InviteLinkLimitReached":
-      return "Link limit reached";
+      return { id: "settings-access-link-limit" };
     case "LastTenantAdministrator":
-      return "Only admin · grant another first";
+      return { id: "settings-access-last-admin" };
     case "AccessNotPermitted":
-      return "Change not permitted";
+      return { id: "settings-access-not-permitted" };
     case "AccessHolderNotAdmitted":
-      return "Holder not admitted";
+      return { id: "settings-access-holder-not-admitted" };
   }
 }
 
@@ -133,30 +136,30 @@ function accessRefusalCodeOf(code: string): AccessRefusalCode | undefined {
 }
 
 /** A name the plane answered with, or the fallback that prints it. */
-export function accessCodeLabel(code: string): string {
+export function accessCodeLabel(code: string): Copy {
   const known = accessRefusalCodeOf(code);
   return known === undefined
-    ? `Unknown refusal (${code})`
+    ? { id: "settings-access-unknown", args: { code } }
     : accessRefusalLabel(known);
 }
 
 /** Any answer but `Ok`, as one or two words or the plane's own line. */
-export function accessFailureLabel(failure: ApiFailure): string {
+export function accessFailureLabel(failure: ApiFailure): Copy {
   switch (failure.outcome) {
     case "Unauthenticated":
-      return "Not signed in";
+      return { id: "settings-access-signed-out" };
     case "Absent":
-      return "Not available";
+      return { id: "settings-access-absent" };
     case "Conflict":
     case "Rejected":
     case "Retryable":
       return accessCodeLabel(failure.code);
     case "Fault":
-      return "Failed";
+      return { id: "settings-access-failed" };
     case "Unreachable":
-      return "Unreachable";
+      return { id: "settings-access-unreachable" };
     case "Unreadable":
-      return "Unreadable";
+      return { id: "settings-access-unreadable" };
   }
 }
 
@@ -192,8 +195,8 @@ export function tenantPersonChangeAsks(
 
 /** What a change asked first is named for, and the line it is asked with. */
 export interface TenantPersonQuestion {
-  readonly question: string;
-  readonly line: string;
+  readonly question: Copy;
+  readonly line: Copy;
 }
 
 export function tenantPersonQuestion(
@@ -201,12 +204,12 @@ export function tenantPersonQuestion(
 ): TenantPersonQuestion {
   return change.scope === "HostedRuns"
     ? {
-        question: "Remove hosted runs",
-        line: "Runs this identity starts will stop.",
+        question: { id: "settings-person-hosted-runs-question" },
+        line: { id: "settings-person-hosted-runs-line" },
       }
     : {
-        question: "Remove your admin role",
-        line: "You will no longer manage this workspace.",
+        question: { id: "settings-person-admin-question" },
+        line: { id: "settings-person-admin-line" },
       };
 }
 
@@ -292,13 +295,17 @@ export function tenantPersonProjectDrawn(
 }
 
 /** What hosted runs are called wherever a person holds them or may be given them. */
-export const tenantHostedRunsLabel = "Hosted runs";
+export const tenantHostedRunsLabel: Copy = { id: "settings-role-hosted-runs" };
 
 /** What personal runners are called wherever a person holds them or may be given them. */
-export const tenantPersonalRunnersLabel = "Personal runners";
+export const tenantPersonalRunnersLabel: Copy = {
+  id: "settings-role-personal-runners",
+};
 
 /** What unscoped chat is called wherever a person may be given it. */
-export const tenantUnscopedChatLabel = "Unscoped chat";
+export const tenantUnscopedChatLabel: Copy = {
+  id: "settings-role-unscoped-chat",
+};
 
 /** The list's people, and apart from them its subjects the plane says are no
  * account, each in the list's order. */
@@ -317,13 +324,13 @@ export function tenantPeopleParted(
 }
 
 /** How many people the table under this line holds. */
-export function tenantPeopleCountLine(count: number): string {
-  return count === 1 ? "1 person" : `${String(count)} people`;
+export function tenantPeopleCountLine(count: number): Copy {
+  return { id: "settings-people-count", args: { count } };
 }
 
 /** What is held in the workspace, as the words a row draws: each role in the
  * roster's order, then hosted runs, then personal runners. */
-export function tenantHeldWords(held: TenantHeld): readonly string[] {
+export function tenantHeldWords(held: TenantHeld): readonly Copy[] {
   return [
     ...accessTenantRoles
       .filter((role) => held.tenantRoles.includes(role))
@@ -334,7 +341,9 @@ export function tenantHeldWords(held: TenantHeld): readonly string[] {
 }
 
 /** What a row says where every project of the workspace is administered. */
-export const tenantHeldEveryProjectLine = "All projects";
+export const tenantHeldEveryProjectLine: Copy = {
+  id: "settings-people-every-project",
+};
 
 /** Whether every project of the workspace is administered with no role
  * there, which `.chug/tasks/keto/namespaces.ts` gives a workspace admin
@@ -347,7 +356,7 @@ export function tenantHeldEveryProject(held: TenantHeld): boolean {
  * roles in the roster's order. */
 export interface TenantHeldProjectLine {
   readonly project: string;
-  readonly roles: string;
+  readonly roles: readonly Copy[];
 }
 
 /** A line for each of `projects` a role is held on, in their order. */
@@ -362,11 +371,10 @@ export function tenantHeldProjectLines(
         project,
         roles: accessProjectRoles
           .filter((role) => roles.includes(role))
-          .map(projectRoleLabel)
-          .join(", "),
+          .map(projectRoleLabel),
       };
     })
-    .filter((line) => line.roles !== "");
+    .filter((line) => line.roles.length > 0);
 }
 
 /** Whether the reader may change anything a person holds, which is whether a
@@ -392,7 +400,7 @@ export function tenantPersonEditOffered(
 /** One box of a person's editor: the change a press on it asks for, `held` in
  * it being what the list holds now, and whether the reader may make it. */
 export interface TenantPersonBox {
-  readonly label: string;
+  readonly label: Copy;
   readonly change: TenantPersonChange;
   readonly offered: boolean;
 }
@@ -531,7 +539,7 @@ export function tenantInvitationProjects(
  * for a reader whose abilities, a workspace's or the site's, make no account. */
 export function tenantInvitationAccountLine(
   abilities: { readonly createAccount: boolean } | undefined,
-): string | undefined {
+): Copy | undefined {
   return abilities === undefined || abilities.createAccount
     ? undefined
     : tenantInvitationAccountsLine;
@@ -562,10 +570,10 @@ export function tenantPersonName(person: TenantSubject): TenantPersonName {
 /** The line counting principals from another sign-in, where there are any. */
 export function tenantPeopleOtherIssuersLine(
   otherIssuers: number,
-): string | undefined {
+): Copy | undefined {
   return otherIssuers === 0
     ? undefined
-    : `${String(otherIssuers)} more from another sign-in`;
+    : { id: "settings-people-other-issuers", args: { count: otherIssuers } };
 }
 
 /** What an invitation grants as a dialog holds it, every project's roles kept
@@ -599,20 +607,18 @@ export function tenantInvitationBlank(
   };
 }
 
-export function tenantInvitationGithubFault(
-  github: string,
-): string | undefined {
+export function tenantInvitationGithubFault(github: string): Copy | undefined {
   if (github === "") return undefined;
   return accessGithubLoginSchema.safeParse(github).success
     ? undefined
-    : "Not a GitHub username";
+    : { id: "settings-invitation-github-fault" };
 }
 
-export function tenantInvitationEmailFault(email: string): string | undefined {
+export function tenantInvitationEmailFault(email: string): Copy | undefined {
   if (email === "") return undefined;
   return accessEmailSchema.safeParse(email).success
     ? undefined
-    : "Not an email";
+    : { id: "settings-invitation-email-fault" };
 }
 
 function tenantInvitationProjectsChosen(
@@ -625,13 +631,16 @@ function tenantInvitationProjectsChosen(
 
 export function tenantInvitationProjectsFault(
   form: TenantInvitationGrantsForm,
-): string | undefined {
+): Copy | undefined {
   const projects = tenantInvitationProjectsChosen(form);
   if (accessInvitationGrantsSchema.shape.projects.safeParse(projects).success)
     return undefined;
   return (projects?.length ?? 0) > accessInvitationProjectsMax
-    ? `At most ${String(accessInvitationProjectsMax)} projects`
-    : "Each project once";
+    ? {
+        id: "settings-invitation-projects-most",
+        args: { count: accessInvitationProjectsMax },
+      }
+    : { id: "settings-invitation-projects-once" };
 }
 
 /** What an invitation grants as the plane is sent it, projects named only

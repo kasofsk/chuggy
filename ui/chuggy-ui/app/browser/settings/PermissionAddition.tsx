@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * Adding one holder to one permission: a dialog offering what the row is
  * given, one choice at a time, and for a person a roster of the people given
@@ -92,7 +91,8 @@ function PermissionAdditionChoice(props: {
           pressed={props.chosen}
           onClick={props.onChoose}
         >
-          Choose <span className="visually-hidden">{named.name}</span>
+          {text({ id: "settings-permissions-choose" })}{" "}
+          <span className="visually-hidden">{named.name}</span>
         </Button>
       </span>
     </span>
@@ -104,9 +104,10 @@ function PermissionAdditionPerson(props: {
   readonly chosen: AccessAuthorityPerson | undefined;
   readonly onChoose: (person: AccessAuthorityPerson) => void;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <SearchableRoster
-      label="Filter"
+      label={text({ id: "settings-permissions-filter" })}
       rows={props.people}
       textOf={(person) => {
         const named = tenantPersonName(person);
@@ -158,11 +159,16 @@ function PermissionAdditionBody(props: {
   const text = useCopyText();
   const draft = props.draft;
   if (props.choices.length === 0)
-    return <EmptyState variant="inline" label="Nothing to add" />;
+    return (
+      <EmptyState
+        variant="inline"
+        label={text({ id: "settings-permissions-nothing" })}
+      />
+    );
   return (
     <div className="grid min-h-0 gap-3">
       <RadioGroup
-        label="Holder"
+        label={text({ id: "settings-permissions-holder" })}
         value={
           draft.choice === undefined ? "" : permissionChoiceValue(draft.choice)
         }
@@ -202,6 +208,7 @@ function PermissionAdditionFoot<Authority extends PermissionAuthority>(props: {
   readonly onAdded: () => void;
   readonly onCancel: () => void;
 }): ReactNode {
+  const text = useCopyText();
   const { row, holder, adding } = props;
   return (
     <>
@@ -211,7 +218,7 @@ function PermissionAdditionFoot<Authority extends PermissionAuthority>(props: {
         disabled={adding.isPending}
         onClick={props.onCancel}
       >
-        Cancel
+        {text({ id: "settings-cancel" })}
       </Button>
       <Button
         variant="primary"
@@ -223,7 +230,7 @@ function PermissionAdditionFoot<Authority extends PermissionAuthority>(props: {
             adding.mutate({ row, holder }, { onSuccess: props.onAdded });
         }}
       >
-        Add
+        {text({ id: "settings-permissions-add" })}
       </Button>
     </>
   );
@@ -260,13 +267,18 @@ export function PermissionAddition<
   });
   return (
     <Dialog
-      title="Add holder"
+      title={text({ id: "settings-permissions-add-title" })}
       trigger={
         <>
           <PermissionAdditionPlus />
           <span>
-            Add{" "}
-            <span className="visually-hidden">{`to ${text(row.name)}`}</span>
+            {text({ id: "settings-permissions-add" })}{" "}
+            <span className="visually-hidden">
+              {text({
+                id: "settings-permissions-add-to",
+                args: { permission: row.name },
+              })}
+            </span>
           </span>
         </>
       }

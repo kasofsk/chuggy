@@ -134,17 +134,17 @@ function returnedWith(word: ForgeReturnWord): void {
 
 /** The panel's own lines, which a return's word is one of. */
 function accountsLines(): readonly (string | null)[] {
-  return within(sectionOf("Accounts"))
+  return within(sectionOf("GitHub accounts"))
     .queryAllByRole("paragraph")
     .map((line) => line.textContent);
 }
 
 test("an account is one row saying which of the two apps it holds", async () => {
   await drawAccounts();
-  const accounts = sectionOf("Accounts");
+  const accounts = sectionOf("GitHub accounts");
   const rows = within(accounts).getAllByRole("row");
   expect(rows.map((row) => row.textContent)).toStrictEqual([
-    "AccountKindPortalWorker",
+    "AccountKindPortal appWorker app",
     "kasofskOrganizationInstalledInstalled",
     "gdoteofUserInstalledMissing",
   ]);
@@ -152,7 +152,7 @@ test("an account is one row saying which of the two apps it holds", async () => 
 
 test("a panel with no account offers Connect GitHub alone", async () => {
   await drawAccounts({ claimed: { truncated: false, installations: [] } });
-  const accounts = within(sectionOf("Accounts"));
+  const accounts = within(sectionOf("GitHub accounts"));
   expect(
     accounts.getAllByRole("button").map((one) => one.textContent),
   ).toStrictEqual(["Connect GitHub"]);
@@ -166,16 +166,16 @@ test("a panel with no account offers Connect GitHub alone", async () => {
  * answers no client the panel offers no install that could not be finished. */
 test("a panel whose deployment cannot authorize offers no install", async () => {
   await drawAccounts({ described: { apps: forgeApps } });
-  expect(within(sectionOf("Accounts")).queryAllByRole("link")).toStrictEqual(
-    [],
-  );
+  expect(
+    within(sectionOf("GitHub accounts")).queryAllByRole("link"),
+  ).toStrictEqual([]);
 });
 
 /** Connect GitHub goes on to the portal's install only for a person owning no
  * account that holds it, so a second account is that install asked for here. */
 test("a panel with an account offers Add account, which installs the portal", async () => {
   await drawAccounts({ described: { apps: forgeApps, authorization: client } });
-  const add = within(sectionOf("Accounts")).getByRole<HTMLAnchorElement>(
+  const add = within(sectionOf("GitHub accounts")).getByRole<HTMLAnchorElement>(
     "link",
     { name: "Add account" },
   );
@@ -195,7 +195,7 @@ test("a return's word is drawn on the Accounts panel once, and not on the next v
   await drawAccounts();
   expect(accountsLines()).toStrictEqual(["Refused"]);
   expect(
-    within(sectionOf("Accounts"))
+    within(sectionOf("GitHub accounts"))
       .getByText("Refused")
       .classList.contains("notice-danger"),
   ).toBe(true);
@@ -212,7 +212,7 @@ test("a return that reached no account the person owns offers Add account beside
     claimed: { truncated: false, installations: [] },
     described: { apps: forgeApps, authorization: client },
   });
-  const accounts = within(sectionOf("Accounts"));
+  const accounts = within(sectionOf("GitHub accounts"));
   expect(accountsLines()).toStrictEqual([
     "Not installed",
     "No account connected",
@@ -228,7 +228,7 @@ test("a return that stopped short for another reason offers no install with no a
   returnedWith({ standing: "Unfinished", status: "Declined" });
   await drawAccounts({ claimed: { truncated: false, installations: [] } });
   expect(accountsLines()).toStrictEqual(["Declined", "No account connected"]);
-  const accounts = within(sectionOf("Accounts"));
+  const accounts = within(sectionOf("GitHub accounts"));
   expect(
     accounts.getByText("Declined").classList.contains("notice-parked"),
   ).toBe(true);
@@ -239,7 +239,7 @@ test("a return that stopped short for another reason offers no install with no a
  * install is the one thing a connected account can still be missing. */
 test("an account connected without the worker offers the worker's install on its own row", async () => {
   await drawAccounts({ described: { apps: forgeApps, authorization: client } });
-  const rows = within(sectionOf("Accounts")).getAllByRole("row");
+  const rows = within(sectionOf("GitHub accounts")).getAllByRole("row");
   expect(rows.map((row) => within(row).queryAllByRole("link").length)).toEqual([
     0, 0, 1,
   ]);
@@ -306,11 +306,11 @@ test("connecting stores this tab's transaction and sends the person to authorize
  * standing, and a connect they started would be refused at the claim. */
 test("a reader the accounts are withheld from is told who connects them and offered no connect", async () => {
   await drawAccounts({ listing: () => answer({}, 404) });
-  const accounts = within(sectionOf("Accounts"));
+  const accounts = within(sectionOf("GitHub accounts"));
   expect(
     accounts.getByText("A workspace admin connects GitHub accounts"),
   ).toBeTruthy();
-  expect(readFailedLines(sectionOf("Accounts"))).toStrictEqual([]);
+  expect(readFailedLines(sectionOf("GitHub accounts"))).toStrictEqual([]);
   expect(accounts.queryAllByRole("button")).toStrictEqual([]);
   expect(accounts.queryAllByRole("link")).toStrictEqual([]);
 });
@@ -319,7 +319,7 @@ test("a reader the accounts are withheld from is told who connects them and offe
  * forbidden listing above, which this reader's standing rather than a fault. */
 test("a listing that failed keeps its own line", async () => {
   await drawAccounts({ listing: () => answer({}, 500) });
-  expect(readFailedLines(sectionOf("Accounts"))).toStrictEqual([
+  expect(readFailedLines(sectionOf("GitHub accounts"))).toStrictEqual([
     "Not read · Server error",
   ]);
 });
@@ -339,9 +339,9 @@ function workerBehind(installationId: string): Response {
 
 test("an installation behind its app says so and opens its own page on the forge", async () => {
   await drawAccounts({ permissions: workerBehind });
-  const rows = within(sectionOf("Accounts")).getAllByRole("row");
+  const rows = within(sectionOf("GitHub accounts")).getAllByRole("row");
   expect(rows.map((row) => row.textContent)).toStrictEqual([
-    "AccountKindPortalWorker",
+    "AccountKindPortal appWorker app",
     "kasofskOrganizationInstalledUpdate pendingReview on GitHub",
     "gdoteofUserInstalledMissing",
   ]);
@@ -367,11 +367,11 @@ test("an installation current or unknown says Installed and offers nothing", asy
     () => answer({ permissions: "Pending", settingsUrl: "x" }),
   ]) {
     await drawAccounts({ permissions });
-    const accounts = within(sectionOf("Accounts"));
+    const accounts = within(sectionOf("GitHub accounts"));
     expect(
       accounts.getAllByRole("row").map((row) => row.textContent),
     ).toStrictEqual([
-      "AccountKindPortalWorker",
+      "AccountKindPortal appWorker app",
       "kasofskOrganizationInstalledInstalled",
       "gdoteofUserInstalledMissing",
     ]);

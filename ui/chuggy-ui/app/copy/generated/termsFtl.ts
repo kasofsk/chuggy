@@ -772,6 +772,23 @@ export const termsFtl = `## The product's own nouns, and the verbs done to a tic
     }
 }
 
+## How a person joins a workspace.
+
+# What asks a person into a workspace, as a person or as a link; to invite is no term.
+# rejects: invitation, invitations
+-invite = { $case ->
+    [upper] { $form ->
+        [plural] Invites
+        [a] An invite
+       *[one] Invite
+    }
+   *[lower] { $form ->
+        [plural] invites
+        [a] an invite
+       *[one] invite
+    }
+}
+
 ## What is done to a ticket, which a vernacular may rename.
 
 # Making a draft a ticket.

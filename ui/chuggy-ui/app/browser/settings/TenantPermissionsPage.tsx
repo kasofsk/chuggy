@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * A workspace's permissions: who may grant each of its roles, give it hosted
  * runs or personal runners and change who may. Where the reader may change a permission, each
@@ -21,6 +20,7 @@ import type {
   AccessTenantAuthority,
   AccessTenantPeople,
 } from "../../../../../src/contract/accessPlane.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import type { ApiPorts } from "../../core/apiRequest.ts";
 import {
   apiAddTenantAuthorityGroup,
@@ -80,6 +80,7 @@ function TenantPermissions(props: {
   readonly people: AccessTenantPeople | undefined;
 }): ReactNode {
   const tenant = props.tenant;
+  const text = useCopyText();
   const change = permissionsChange<AccessTenantAuthority>({
     tenant,
     scope: [tenant],
@@ -89,11 +90,12 @@ function TenantPermissions(props: {
     admits: tenantPermissionAdmits,
     routes: (ports, authority, sent) =>
       tenantPermissionRoutes(ports, tenant, authority, sent),
+    text,
     reread: (client) => tenantPermissionsReread(client, tenant),
   });
   return (
     <PermissionsSection
-      label="Workspace permissions"
+      label={{ id: "settings-permissions-workspace" }}
       read={props.read}
       rows={tenantPermissionRows}
       withheld={tenantPermissionsWithheld}
@@ -108,8 +110,9 @@ export function TenantPermissionsPage(): ReactNode {
   const read = useTenantAuthorities(tenant);
   const abilities = useTenantAbilities(tenant);
   const people = useTenantPeople(tenant);
+  const text = useCopyText();
   return (
-    <SettingsPage title="Permissions">
+    <SettingsPage title={text({ id: "settings-permissions-title" })}>
       <TenantPermissions
         tenant={tenant}
         read={read}

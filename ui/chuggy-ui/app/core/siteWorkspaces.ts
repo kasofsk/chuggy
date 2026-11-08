@@ -34,7 +34,9 @@ import { accessFailureLabel } from "./tenantPeople.ts";
 export type SiteWorkspaceForm = AccessOwnerInvitation;
 
 /** What the page draws for a reader who may make no workspace. */
-export const siteWorkspacesWithheld = "A site admin creates workspaces";
+export const siteWorkspacesWithheld: Copy = {
+  id: "settings-workspaces-withheld",
+};
 
 /** Whether the reader is drawn the list and its form, which a reader whose
  * abilities were not answered is not. */
@@ -45,27 +47,34 @@ export function siteWorkspaceOffered(
 }
 
 /** How many workspaces the table under this line holds. */
-export function siteWorkspacesCountLine(count: number): string {
-  return count === 1 ? "1 workspace" : `${String(count)} workspaces`;
+export function siteWorkspacesCountLine(count: number): Copy {
+  return { id: "settings-workspaces-count", args: { count } };
 }
 
 /** The administrators a workspace's answer counts and does not name: a line
  * after those it names, the count alone where it names none, nothing at zero. */
 export function siteWorkspaceUnnamedLine(
   listed: Pick<AccessSiteTenant, "administrators" | "unnamed">,
-): string | undefined {
+): Copy | undefined {
   if (listed.unnamed === 0) return undefined;
   return listed.administrators.length === 0
-    ? `${String(listed.unnamed)} unnamed`
-    : `+${String(listed.unnamed)} more`;
+    ? { id: "settings-workspaces-unnamed", args: { count: listed.unnamed } }
+    : {
+        id: "settings-workspaces-unnamed-more",
+        args: { count: listed.unnamed },
+      };
 }
 
 /** The box that hands account creation on with a workspace, as its form and a link's row word it. */
-export const siteWorkspaceCreateAccountsLabel = "Can invite new people";
+export const siteWorkspaceCreateAccountsLabel: Copy = {
+  id: "settings-workspaces-create-accounts",
+};
 
 /** Whom a workspace's admins may invite, as its row says it. */
-export function siteWorkspaceInvitesLabel(createAccounts: boolean): string {
-  return createAccounts ? "New people" : "Existing accounts";
+export function siteWorkspaceInvitesLabel(createAccounts: boolean): Copy {
+  return createAccounts
+    ? { id: "settings-workspaces-new-people" }
+    : { id: "settings-workspaces-existing-accounts" };
 }
 
 /** The form as every opening of the dialog starts it: nothing typed, and the
@@ -93,7 +102,9 @@ export function siteWorkspaceHeld(
 }
 
 /** What a name something already holds is refused as. */
-export const siteWorkspaceNameTaken = "Name taken";
+export const siteWorkspaceNameTaken: Copy = {
+  id: "settings-workspaces-name-taken",
+};
 
 /** Why one name cannot be sent, in the lines a project's creation draws, or
  * nothing while it is empty. */
@@ -110,12 +121,13 @@ export function siteWorkspaceSendable(form: SiteWorkspaceForm): boolean {
 }
 
 /** What the dialog's one line says of an answer that made nothing. */
-export function siteWorkspaceRefusal(failure: ApiFailure): string {
+export function siteWorkspaceRefusal(failure: ApiFailure): Copy {
   switch (failure.outcome) {
     case "Conflict":
     case "Rejected":
       if (failure.code === accessTenantTakenCode) return siteWorkspaceNameTaken;
-      if (failure.code === accessNotPermittedCode) return "Not permitted";
+      if (failure.code === accessNotPermittedCode)
+        return { id: "settings-workspaces-not-permitted" };
       return accessFailureLabel(failure);
     case "Unauthenticated":
     case "Absent":
@@ -133,6 +145,9 @@ export function siteWorkspaceRefusal(failure: ApiFailure): string {
 export function siteWorkspaceCreatedLine(
   sent: SiteWorkspaceForm,
   created: AccessOwnerInvited,
-): string {
-  return `${created.tenant} created · ${sent.github} signs in with GitHub`;
+): Copy {
+  return {
+    id: "settings-workspaces-created",
+    args: { tenant: created.tenant, github: sent.github },
+  };
 }

@@ -28,6 +28,7 @@ import {
 import { consoleStoreBare } from "../consoleStoreBare.tsx";
 import type { ConsoleStore } from "../../app/browser/store.ts";
 import { consoleWriteUnseenOf } from "../../app/browser/consoleWriteUnseen.ts";
+import { copyTextEn } from "../../app/copy/catalog.ts";
 import type { ConsoleWrite } from "../../app/core/consoleWrite.ts";
 import type { PanelState } from "../../app/core/freshness.ts";
 import type { PermissionRow } from "../../app/core/permissions.ts";
@@ -102,8 +103,14 @@ function links(
   return (
     <InviteLinksListing
       links={listed}
-      first={{ heading: "Access", cell: (link) => link.link }}
-      third={{ heading: "Used by", cell: () => undefined }}
+      first={{
+        heading: { id: "settings-invite-links-access" },
+        cell: (link) => link.link,
+      }}
+      third={{
+        heading: { id: "settings-invite-links-used-by" },
+        cell: () => undefined,
+      }}
       revocable={(link) => link.link === "l-one"}
       revocation={revocation}
     />
@@ -191,6 +198,7 @@ function linksRead(client: QueryClient, held: LinksHeld): () => void {
           return Promise.resolve({ outcome: "Absent" });
         },
         (client) => client.invalidateQueries({ queryKey: linksKey }),
+        copyTextEn,
       ),
     );
   }
@@ -249,7 +257,7 @@ function permissions(
 ): ReactNode {
   return (
     <PermissionsSection
-      label="Project permissions"
+      label={{ id: "settings-permissions-project" }}
       read={read}
       rows={() => [developers]}
       withheld={{ id: "permissions-withheld-project" }}

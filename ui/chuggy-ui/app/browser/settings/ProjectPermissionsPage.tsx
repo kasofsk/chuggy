@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * A project's permissions: who may grant each of its roles and who may change
  * that, drawn and changed by the workspace page's own section. Each holder a
@@ -20,6 +19,7 @@ import type {
   AccessProjectPeople,
 } from "../../../../../src/contract/accessPlane.ts";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import type { ApiPorts } from "../../core/apiRequest.ts";
 import {
   apiAddProjectAuthorityGroup,
@@ -98,6 +98,7 @@ function ProjectPermissions(props: {
 }): ReactNode {
   const partition = props.partition;
   const read = useProjectAuthorities(partition);
+  const text = useCopyText();
   const change = permissionsChange<AccessProjectAuthority>({
     tenant: partition.tenant,
     scope: [partition.tenant, partition.project],
@@ -107,11 +108,12 @@ function ProjectPermissions(props: {
     admits: projectPermissionAdmits,
     routes: (ports, authority, sent) =>
       projectPermissionRoutes(ports, partition, authority, sent),
+    text,
     reread: (client) => projectPermissionsReread(client, partition),
   });
   return (
     <PermissionsSection
-      label="Project permissions"
+      label={{ id: "settings-permissions-project" }}
       read={read}
       rows={projectPermissionRows}
       withheld={projectPermissionsWithheld}
@@ -128,8 +130,9 @@ export function ProjectPermissionsPage(): ReactNode {
     project: params.project,
   };
   const people = useProjectPeople(partition);
+  const text = useCopyText();
   return (
-    <SettingsPage title="Permissions">
+    <SettingsPage title={text({ id: "settings-permissions-title" })}>
       <ProjectPermissions
         partition={partition}
         people={people.state === "Ready" ? people.value : undefined}

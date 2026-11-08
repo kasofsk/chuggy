@@ -30,7 +30,21 @@ import {
   inviteTokenRead,
   inviteWorkspaceSendable,
 } from "../app/core/invitePage.ts";
-import type { InviteArrival } from "../app/core/invitePage.ts";
+import type {
+  InviteArrival,
+  InviteNaming,
+  InviteRedemption,
+} from "../app/core/invitePage.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
+
+/** What a send came to, its line or its fault in the base language's words. */
+function worded(came: InviteRedemption | InviteNaming): object {
+  if (came.outcome === "Failed")
+    return { ...came, line: copyTextEn(came.line) };
+  if (came.outcome === "Refused")
+    return { ...came, fault: copyTextEn(came.fault) };
+  return came;
+}
 
 const longest = "t".repeat(accessInviteLinkTokenCharsMax);
 
@@ -233,7 +247,7 @@ test("a link that asks for its workspace's name is no failure, and keeps the coo
 
 test("any other conflict answering the send without a name is a failure with its own line", () => {
   expect(
-    inviteRedemption(conflict(accessInviteLinkLimitReachedCode)),
+    worded(inviteRedemption(conflict(accessInviteLinkLimitReachedCode))),
   ).toStrictEqual({
     outcome: "Failed",
     line: "Link limit reached",
@@ -265,7 +279,7 @@ test("a workspace made sends its reader to where its first project is made, the 
 });
 
 test("a name something holds is the field's to say, the link still open and the cookie kept", () => {
-  expect(inviteNaming(conflict(accessTenantTakenCode))).toStrictEqual({
+  expect(worded(inviteNaming(conflict(accessTenantTakenCode)))).toStrictEqual({
     outcome: "Refused",
     fault: "Name taken",
     cookieCleared: false,
@@ -274,12 +288,14 @@ test("a name something holds is the field's to say, the link still open and the 
 
 test("a name the plane will not read is the field's to say, and keeps the cookie", () => {
   expect(
-    inviteNaming({
-      outcome: "Rejected",
-      code: "InvalidRequest",
-      status: 400,
-      body: {},
-    }),
+    worded(
+      inviteNaming({
+        outcome: "Rejected",
+        code: "InvalidRequest",
+        status: 400,
+        body: {},
+      }),
+    ),
   ).toStrictEqual({
     outcome: "Refused",
     fault: "Name not valid",
@@ -296,13 +312,15 @@ test("a link the plane no longer knows when its name is sent is not valid, and c
 
 test("any other answer to a name is a failure with its own line, and keeps the cookie", () => {
   expect(
-    inviteNaming({ outcome: "Fault", code: "InternalError", status: 500 }),
+    worded(
+      inviteNaming({ outcome: "Fault", code: "InternalError", status: 500 }),
+    ),
   ).toStrictEqual({ outcome: "Failed", line: "Failed", cookieCleared: false });
   expect(
     inviteNaming(conflict(accessWorkspaceLinkNameWantedCode)),
   ).toMatchObject({ outcome: "Failed", cookieCleared: false });
   expect(
-    inviteNaming({ outcome: "Unreachable", reason: "no answer" }),
+    worded(inviteNaming({ outcome: "Unreachable", reason: "no answer" })),
   ).toStrictEqual({
     outcome: "Failed",
     line: "Unreachable",
