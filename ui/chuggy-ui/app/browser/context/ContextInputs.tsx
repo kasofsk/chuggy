@@ -193,8 +193,11 @@ function ContextNamesRow(props: {
   );
 }
 
+/** A run's Inputs; `reading` is whether a reading weighed them, and where
+ * none did they are the snapshot's alone, which the section's head says. */
 export function ContextRunInputsSection(props: {
   readonly inputs: ContextInputs | undefined;
+  readonly reading: boolean;
 }): ReactNode {
   const text = useCopyText();
   const titleId = useId();
@@ -205,7 +208,7 @@ export function ContextRunInputsSection(props: {
         <h3 className="context-title" id={titleId}>
           {text({ id: "context-inputs-title" })}
         </h3>
-        {inputs === undefined ? null : (
+        {inputs === undefined || props.reading ? null : (
           <span className="context-meta">
             {text({ id: "context-snapshot" })}
           </span>

@@ -105,7 +105,7 @@ function rowTexts(scope: HTMLElement): readonly string[] {
   );
 }
 
-test("a run with a reading draws its window against the whole, the threshold, and an unloaded deferred row", () => {
+test("a run with a reading draws its window against the whole, the threshold, and an unloaded deferred row, and does not call its inputs the snapshot's", () => {
   renderCopied(
     <ContextRunView
       drawn={drawnOf(rows, [contextReading(1, 3, contextWindow())], lines)}
@@ -120,6 +120,7 @@ test("a run with a reading draws its window against the whole, the threshold, an
   expect(within(window).getByText("Messages 350k")).toBeDefined();
   expect(rowTexts(window)).toContain("Deferred tools | 22,455 | Unloaded");
   expect(rowTexts(window).at(-1)).toBe("Window | 1,000,000 | 100 %");
+  expect(within(section("Inputs")).queryByText("Snapshot")).toBeNull();
   const heaviest = section("Heaviest");
   expect(
     within(heaviest).getByText("Share of the context at the latest reading."),

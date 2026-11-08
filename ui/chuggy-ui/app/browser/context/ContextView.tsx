@@ -51,7 +51,10 @@ export function ContextRunView(props: {
     >
       <ContextWindowSection view={drawn.window} />
       <ContextGrowthSection view={drawn.growth} tiles={drawn.tiles} />
-      <ContextRunInputsSection inputs={drawn.inputs} />
+      <ContextRunInputsSection
+        inputs={drawn.inputs}
+        reading={drawn.window.reading}
+      />
       <ContextHeaviestSection
         heaviest={drawn.heaviest}
         callLink={props.callLink}
