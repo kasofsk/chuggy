@@ -67,8 +67,11 @@ terminal program may reach beyond those.
 ## Copy
 
 Every word a reader is shown belongs in `ui/chuggy-ui/app/copy/en/`, in
-Project Fluent; a file still spelling its own copy carries the exemption step 4
-deletes. `terms.ftl` holds the product's nouns, and each other file is a
+Project Fluent. `copy/no-literal-text` reports what a component spells as JSX
+text or in an attribute `lint/copyText.js` lists, and a file it still reports
+carries the exemption step 4 deletes. It reads no other prop, no `.ts` file and
+nothing in `app/core/`, so copy there is unmarked and a section finds it by
+reading its files. `terms.ftl` holds the product's nouns, and each other file is a
 section whose ids are kebab-case under its name. `app/core/` hands out a
 descriptor, `{ id, args }`, typed by `app/core/generated/`; `useCopyText` in
 `app/copy/CopyProvider.tsx` formats one in a component. A vernacular is a
