@@ -13,16 +13,26 @@
  * UNDER THE PSEUDO WORDING EVERY ROUTE SAYS NOTHING BUT DATA beside the
  * catalog's altered words, in its text and in what a reader hears of it, which
  * holds the copy no lint can see. The site's fixtures are written to read as
- * data, so the check needs no list of words it allows.
+ * data, so the check needs no list of allowed words. A word is data when it
+ * holds no plain letter or holds a digit, as a pseudo word or a figure does;
+ * or when it is shaped as an id is, its letters joined by a mark such as a
+ * hyphen, slash or dot, or capitals alone, and every run of letters in it,
+ * matched by case, is held by some shaped word the site served or a contract
+ * value a message takes holds. A code a read's schema fixes is not served.
+ * The trades: a word holding a digit passes, and so does a shaped word made
+ * only of letters some served shaped words hold.
  */
 
 import { screen } from "@testing-library/react";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { expect, test, vi } from "vitest";
+import { z } from "zod";
 
 import { consoleRouterOver } from "../app/browser/routes.tsx";
 import { copyPseudoLocale } from "../app/copy/copyPseudo.ts";
 import { inboxProposalsPolledMs } from "../app/core/inboxProposals.ts";
+import { repositoryConfigurationsDirectory } from "../app/core/repositoryConfigurations.ts";
+import { creationImageTypesLabel } from "../app/core/ticketCreation.ts";
 import { inboxPhases } from "../../../src/contract/http.ts";
 import {
   consoleAdvanced,
@@ -32,6 +42,7 @@ import {
   consoleSession,
   consoleSiteClean,
   consoleSiteEachCase,
+  consoleSiteServedOf,
 } from "./consoleSite.tsx";
 import type { ConsoleSite } from "./consoleSite.tsx";
 import { ticketPageTicket } from "./ticketPageFixture.ts";
@@ -81,28 +92,59 @@ const consoleRouteCode = 'code, pre, kbd, samp, [translate="no"]';
 /** The attributes a reader is shown or hears beside an element's text. */
 const consoleRouteAttributes = ["aria-label", "title", "placeholder"] as const;
 
-/** Whether a word is data rather than copy: it holds no plain letter, as a
- * pseudo word or a figure does; it holds a digit or joins its letters with a
- * mark no sentence puts inside a word, as an id, a path or a name written as
- * an identifier does; or it is capitals alone, as a format's name is. */
-function consoleRouteWordData(word: string): boolean {
-  const bare = word.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
+/** What the contract fixes that a message takes as its variable, which the
+ * pseudo wording leaves as it is because it is data. */
+const consoleRouteContractNamed = [
+  repositoryConfigurationsDirectory,
+  creationImageTypesLabel,
+];
+
+/** Whether a word, bare of the marks around it, is shaped as an id is. */
+function consoleRouteWordShaped(bare: string): boolean {
   return (
-    !/[A-Za-z]/u.test(bare) ||
-    /\p{N}/u.test(bare) ||
     /[\p{L}\p{N}][-_/.@:#=+~][\p{L}\p{N}]/u.test(bare) ||
     /^[A-Z]{2,}$/u.test(bare)
   );
 }
 
+/** A word bare of the marks before and after it. */
+function consoleRouteWordBare(word: string): string {
+  return word.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
+}
+
+/** Every run of letters in a shaped word that a served value or a contract
+ * value a message takes holds. */
+function consoleRouteDataLetters(values: readonly string[]): Set<string> {
+  return new Set(
+    values
+      .flatMap((value) => value.split(/\s+/u).map(consoleRouteWordBare))
+      .filter(consoleRouteWordShaped)
+      .flatMap((word) => word.match(/\p{L}+/gu) ?? []),
+  );
+}
+
+/** Whether a word is data rather than copy, as the header says. */
+function consoleRouteWordData(word: string, letters: Set<string>): boolean {
+  const bare = consoleRouteWordBare(word);
+  if (!/[A-Za-z]/u.test(bare) || /\p{N}/u.test(bare)) return true;
+  return (
+    consoleRouteWordShaped(bare) &&
+    (bare.match(/\p{L}+/gu) ?? []).every((run) => letters.has(run))
+  );
+}
+
 /** Every word a reader is shown under the pseudo wording that is neither the
  * catalog's, altered, nor data, with the text or attribute it was in. */
-function consoleRoutePlain(root: HTMLElement): readonly string[] {
+function consoleRoutePlain(
+  root: HTMLElement,
+  data: readonly string[],
+): readonly string[] {
+  const letters = consoleRouteDataLetters(data);
   const found: string[] = [];
   const said = (text: string, where: string): void => {
     const plain = text
       .split(/\s+/u)
-      .filter((word) => word !== "" && !consoleRouteWordData(word));
+      .filter((word) => word !== "" && !consoleRouteWordData(word, letters));
     if (plain.length > 0) found.push(`${where} "${text.trim()}"`);
   };
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
@@ -123,15 +165,66 @@ function consoleRoutePlain(root: HTMLElement): readonly string[] {
 test("the pseudo check names plain English, and passes pseudo words and data", () => {
   const drawn = document.createElement("div");
   drawn.innerHTML = [
-    "<p>[Ƞḗḗẇ ŧīīƈķḗḗŧ] acme-co #42 PNG</p>",
+    "<p>[Ƞḗḗẇ ŧīīƈķḗḗŧ] acme-co #42 · 1,204 · 73d</p>",
+    "<p>kasofsk/chuggy · n-development · PNG</p>",
     "<p>Billing</p>",
+    "<p>chuggy</p>",
+    "<p>Acme-co</p>",
+    "<p>Read</p>",
+    "<p>Read-only</p>",
+    "<p>acme-only</p>",
+    "<p>user/assistant</p>",
+    "<p>the lead is waiting</p>",
+    "<p>lead/waiting</p>",
+    "<p>Sign-in</p>",
+    "<p>OK</p>",
     '<code>npm ci</code><span translate="no">settings</span>',
     '<button aria-label="Close" title="[Ƈŀǿǿşḗḗ]"></button>',
   ].join("");
-  expect(consoleRoutePlain(drawn)).toStrictEqual([
+  expect(
+    consoleRoutePlain(drawn, [
+      "acme-co",
+      "Read",
+      "user",
+      "assistant",
+      "it is waiting on the lead",
+      "https://forge.test/kasofsk/chuggy",
+      "repository:cfaca0a:n-development",
+      "PNG, JPEG",
+    ]),
+  ).toStrictEqual([
     'text "Billing"',
+    'text "chuggy"',
+    'text "Acme-co"',
+    'text "Read"',
+    'text "Read-only"',
+    'text "acme-only"',
+    'text "user/assistant"',
+    'text "the lead is waiting"',
+    'text "lead/waiting"',
+    'text "Sign-in"',
+    'text "OK"',
     'aria-label "Close"',
   ]);
+});
+
+test("a read's codes are not served, and every other string it answers with is", () => {
+  const schema = z.object({
+    state: z.enum(["Open", "Pending"]),
+    kind: z.literal("Plan"),
+    phase: z.union([z.literal("Held"), z.literal("Landed")]),
+    title: z.string(),
+    labels: z.array(z.string()),
+  });
+  expect(
+    consoleSiteServedOf(schema, {
+      state: "Open",
+      kind: "Plan",
+      phase: "Held",
+      title: "billing-epic-7",
+      labels: ["acme-co"],
+    }),
+  ).toStrictEqual(["billing-epic-7", "acme-co"]);
 });
 
 test.each(consoleRoutePaths)(
@@ -146,7 +239,10 @@ test.each(consoleRoutePaths)(
     );
     await consoleAdvanced(consoleRouteWalkSettleMs);
     expect(
-      consoleRoutePlain(document.body),
+      consoleRoutePlain(document.body, [
+        ...site.served,
+        ...consoleRouteContractNamed,
+      ]),
       `plain English on ${path}`,
     ).toStrictEqual([]);
   },
