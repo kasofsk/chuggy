@@ -74,6 +74,26 @@ RUN --mount=type=bind,source=package-lock.json,target=/tmp/package-lock.json \
     console.log(version); \
   ' > /playwright-version
 
+# The pins' lag behind npm, read by `.chug/tasks/check-agent-lag.sh` from this
+# file. The runtime stage binds this stage's verdict, so a build of the
+# runtime, or of an image built on it, refuses the Claude Code or Codex this
+# file pins past that gate's cap; a pin a build overrides with `--build-arg` is
+# not read. The stage is keyed on this file, the gate and the newest versions
+# npm names a bump reaching: it copies the two files, and adds the documents
+# naming those versions, which nothing reads, so that it runs again when any of
+# them moves. The count also reads each package's releases, so a cached verdict
+# holds only while neither publishes a release older than its newest. The gate
+# finds the root through git, so the copy is made a repository.
+FROM base AS agent-lag
+ADD https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk/latest /tmp/agent-lag/claude-agent-sdk.json
+ADD https://registry.npmjs.org/@openai/codex/latest /tmp/agent-lag/codex.json
+COPY images/worker/Dockerfile /tree/images/worker/Dockerfile
+COPY .chug/tasks/check-agent-lag.sh /tree/.chug/tasks/check-agent-lag.sh
+RUN cd /tree \
+  && git init --quiet \
+  && ./.chug/tasks/check-agent-lag.sh \
+  && touch /agent-lag-clean
+
 # The worker core: kasofsk/chuggy-common at the commit `core.json` pins, which
 # `core.sh` fetches and refuses unless that commit is on the core's main. Only
 # what the later stages copy leaves this one: the core's tree, for its suites;
@@ -397,6 +417,11 @@ RUN copy="$(mktemp -d)" \
   && CHUG_WORKER_WORKSPACE="$workspace" /bin/sh /opt/chuggy/check.sh check \
   && CHUG_WORKER_WORKSPACE="$workspace" /bin/sh "$copy/chuggy/check.sh" check \
   && rm -rf "$copy" "$workspace"
+
+# The bind is what makes the runtime refuse to finish without the `agent-lag`
+# stage's verdict, and it leaves nothing behind.
+RUN --mount=type=bind,from=agent-lag,source=/agent-lag-clean,target=/tmp/agent-lag-clean \
+  true
 
 # What the `worker` stage and the core suites build on: chuggy's runtime, and
 # the tools a tree is worked on with.
