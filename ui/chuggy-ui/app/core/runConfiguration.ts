@@ -1,11 +1,12 @@
 /**
- * The effective configuration one run was given, read for the prompt its
- * command line ends on.
+ * The effective configuration one run was given, read for the prompt it was
+ * handed: the brief the worker kept in its own field, or, for a run handed its
+ * prompt on the command line, that line's last word.
  *
  * The snapshot is bytes a worker wrote, so it is parsed leniently: the init
  * event is opaque to the schema, because a runtime that says something new
- * about itself must not cost the document, and a command line that did not fit
- * keeps no prompt rather than a cut one.
+ * about itself must not cost the document, and a brief or a command line that
+ * did not fit keeps no prompt rather than a cut one.
  */
 
 import { z } from "zod";
@@ -43,6 +44,7 @@ export const runConfigurationSnapshotSchema = z.object({
   argvTruncated: truncationMarkerSchema.optional(),
   agent: z.string().optional(),
   brief: z.string().optional().catch(undefined),
+  briefTruncated: truncationMarkerSchema.optional(),
   claudeVersion: z.string().optional(),
   init: z.unknown(),
   files: z.array(snapshotFileSchema).max(runConfigurationFilesMax),
@@ -95,11 +97,27 @@ function runPromptLast(snapshot: RunConfigurationSnapshot): boolean {
   return snapshot.agent === "Claude" || snapshot.agent === "Codex";
 }
 
-/** The prompt the snapshot's command line ends on, where it kept that line. */
+/** Whether the command line has the runtime read its input from stdin as a
+ * stream, which is then where its prompt went rather than the line's end. */
+function runPromptOnStdin(argv: readonly string[]): boolean {
+  return argv.some(
+    (word, at) =>
+      word === "--input-format=stream-json" ||
+      (word === "--input-format" && argv[at + 1] === "stream-json"),
+  );
+}
+
+/** The prompt a run was handed: the snapshot's brief where it kept one, and
+ * otherwise the word its command line ends on, where the prompt was handed
+ * there and the line was kept whole. */
 export function runPromptOf(snapshot: RunConfigurationSnapshot): RunPrompt {
+  if (snapshot.brief !== undefined && snapshot.brief.length > 0)
+    return { prompt: "Kept", text: snapshot.brief };
   const text = snapshot.argv.at(-1);
   if (
+    truncationMarkerOf(snapshot.briefTruncated) !== undefined ||
     truncationMarkerOf(snapshot.argvTruncated) !== undefined ||
+    runPromptOnStdin(snapshot.argv) ||
     !runPromptLast(snapshot) ||
     text === undefined ||
     text.length === 0

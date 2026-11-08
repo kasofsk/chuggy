@@ -1,17 +1,18 @@
 /**
- * What a run was handed, as its snapshot kept it: the brief from its own field
- * or the command line's last word, the window `--settings` named in either
+ * What a run was handed, as its snapshot kept it: the brief as the run page
+ * reads the prompt, the window `--settings` named in either
  * spelling, and the files grouped and named under the working directory.
  */
 
 import { expect, test } from "vitest";
 
 import {
-  contextBriefOf,
   contextInputsOf,
   contextPathParts,
   contextSettingsWindowOf,
 } from "../app/core/contextInputs.ts";
+import { runPromptOf } from "../app/core/runConfiguration.ts";
+import type { RunConfigurationSnapshot } from "../app/core/runConfiguration.ts";
 import { contextSnapshot, contextWindow } from "./contextFixture.ts";
 
 test("the window is the one --settings names, as one word or as the word after it, and none where it names none", () => {
@@ -27,13 +28,30 @@ test("the window is the one --settings names, as one word or as the word after i
   expect(contextSettingsWindowOf(['--settings={"model":"x"}'])).toBeUndefined();
 });
 
-test("the brief is the snapshot's own field where it has one, and the command line's last word otherwise", () => {
-  expect(contextBriefOf(contextSnapshot())).toBe(
+test("the brief is the prompt the run was handed, as the run page reads it", () => {
+  const briefOf = (snapshot: RunConfigurationSnapshot) => {
+    const prompt = runPromptOf(snapshot);
+    return {
+      inputs: contextInputsOf(snapshot, undefined).brief,
+      prompt: prompt.prompt === "Kept" ? prompt.text : undefined,
+    };
+  };
+  const streamed = contextSnapshot()
+    .argv.slice(0, -1)
+    .concat(["--input-format", "stream-json"]);
+  for (const snapshot of [
+    contextSnapshot(),
+    contextSnapshot({ brief: "The brief." }),
+    contextSnapshot({ argv: streamed }),
+    contextSnapshot({ argv: streamed, brief: "The brief." }),
+  ]) {
+    const read = briefOf(snapshot);
+    expect(read.inputs).toBe(read.prompt);
+  }
+  expect(briefOf(contextSnapshot()).inputs).toBe(
     "# Implement the ticket\n\nYou are developing Chuggy itself.",
   );
-  expect(contextBriefOf(contextSnapshot({ brief: "The brief." }))).toBe(
-    "The brief.",
-  );
+  expect(briefOf(contextSnapshot({ argv: streamed })).inputs).toBeUndefined();
 });
 
 test("the files are grouped instructions first, named under the working directory, and weighed where a reading named them", () => {

@@ -73,13 +73,10 @@ export interface ContextInputs {
   readonly plugins: ContextNames | undefined;
 }
 
-/** The snapshot's brief: its own field where the worker wrote one, or the
- * prompt its command line ends on. */
-export function contextBriefOf(
+/** The snapshot's brief: the prompt the run was handed, where it kept one. */
+function contextBriefOf(
   snapshot: RunConfigurationSnapshot,
 ): string | undefined {
-  if (snapshot.brief !== undefined && snapshot.brief.length > 0)
-    return snapshot.brief;
   const prompt = runPromptOf(snapshot);
   return prompt.prompt === "Kept" ? prompt.text : undefined;
 }
