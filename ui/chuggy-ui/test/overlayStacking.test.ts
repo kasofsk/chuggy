@@ -39,7 +39,11 @@ function sheetZIndexValues(text: string): readonly string[] {
 }
 
 const overlay = Number(
-  sheetDeclared(sheetRules(tokenSheet, []), document.documentElement, "--z-overlay"),
+  sheetDeclared(
+    sheetRules(tokenSheet, []),
+    document.documentElement,
+    "--z-overlay",
+  ),
 );
 
 test("the overlay token is the number every page layer is held under", () => {
@@ -64,9 +68,9 @@ test("a menu and a tooltip draw in the overlay band", () => {
 test("a toast keeps stacking above the overlay band, as it stacked above a menu before it existed", () => {
   const viewport = document.createElement("ul");
   viewport.className = "toast-viewport";
-  expect(
-    sheetDeclared(sheetRules(toastSheet, []), viewport, "z-index"),
-  ).toBe("calc(var(--z-overlay) + 10)");
+  expect(sheetDeclared(sheetRules(toastSheet, []), viewport, "z-index")).toBe(
+    "calc(var(--z-overlay) + 10)",
+  );
 });
 
 test("every page layer's own z-index stays under the overlay band", () => {
