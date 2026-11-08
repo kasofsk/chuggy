@@ -9,6 +9,9 @@
  * is drawn as deferred, with its configuration step offered again on its row,
  * and one the worker app cannot be said to reach says why on its row, with the
  * installation's page on GitHub where its selection is what is missing.
+ * The rows are drawn from the read that does not ask the forge, and the reach
+ * marks are laid on them when the read that asks it answers; one that has not
+ * answered, or failed, leaves the rows drawn and unmarked.
  * Each binding offers Unbind unless the abilities read refuses this reader
  * `administer`, which is the permit the retirement route asks.
  * The line under Add says why it is withheld, or that a connected account
@@ -42,6 +45,7 @@ import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import type {
   ForgeInstallationResponse,
   ProjectRepositoryListedResponse,
+  ProjectRepositoryWorkerReachResponse,
 } from "../../../../src/contract/responses.ts";
 import { useCopyText } from "../copy/CopyProvider.tsx";
 import { instantFigure } from "../core/figures.ts";
@@ -66,6 +70,7 @@ import type {
 import {
   projectForgeAppsQuery,
   projectRepositoriesQuery,
+  projectRepositoriesReachUnaskedQuery,
 } from "../core/projectQueries.ts";
 import { forgeInstallationsQuery } from "../core/tenantQueries.ts";
 import type { WorkRunner } from "../core/workRunner.ts";
@@ -103,9 +108,19 @@ import { useWorkRunner } from "./workRunner.tsx";
 /** This page's own address, which its parameters are read from. */
 const repositoriesRoutePath = "/$tenant/$project/repositories";
 
+/** What the worker app reaches of each binding, by its repository, where the
+ * read that asks has answered; a binding it reaches maps to nothing. */
+type BindingReaches = ReadonlyMap<
+  string,
+  ProjectRepositoryWorkerReachResponse | undefined
+>;
+
 function BindingRow(props: {
   readonly partition: PartitionIdentity;
   readonly binding: ProjectRepositoryListedResponse;
+  /** Why the worker app cannot be said to reach it, nothing where it does or
+   * that has not been read. */
+  readonly workerReach: ProjectRepositoryWorkerReachResponse | undefined;
   readonly nowMs: number;
   /** The listing's unbinding, where it has a column of them. */
   readonly unbinding: RepositoryUnbinding | undefined;
@@ -129,8 +144,8 @@ function BindingRow(props: {
               repository={binding.repository}
             />
           )}
-          {binding.workerReach === undefined ? null : (
-            <BindingWorkerReach reach={binding.workerReach} />
+          {props.workerReach === undefined ? null : (
+            <BindingWorkerReach reach={props.workerReach} />
           )}
         </span>
       </th>
@@ -170,6 +185,7 @@ function useBindingUnbinding(
 function BindingTable(props: {
   readonly partition: PartitionIdentity;
   readonly bindings: readonly ProjectRepositoryListedResponse[];
+  readonly reaches: BindingReaches | undefined;
   readonly action: ReactNode;
 }): ReactNode {
   const text = useCopyText();
@@ -210,6 +226,7 @@ function BindingTable(props: {
               key={binding.repository}
               partition={props.partition}
               binding={binding}
+              workerReach={props.reaches?.get(binding.repository)}
               nowMs={nowMs}
               unbinding={unbinding}
             />
@@ -297,6 +314,7 @@ function RepositoriesSection(props: {
   readonly partition: PartitionIdentity;
   readonly installations: readonly ForgeInstallationResponse[];
   readonly bindings: readonly ProjectRepositoryListedResponse[] | undefined;
+  readonly reaches: BindingReaches | undefined;
   readonly line: RepositoryOffersLine | undefined;
   readonly returned: ForgeReturnWord | undefined;
   readonly unready: ReactNode;
@@ -337,6 +355,7 @@ function RepositoriesSection(props: {
         <BindingTable
           partition={props.partition}
           bindings={bindings}
+          reaches={props.reaches}
           action={
             leads ? (
               <Button
@@ -365,7 +384,10 @@ export function RepositoriesPage(): ReactNode {
   };
   const accounts = usePanelState(forgeInstallationsQuery(partition.tenant));
   const apps = usePanelState(projectForgeAppsQuery(partition));
-  const bindings = usePanelState(projectRepositoriesQuery(partition));
+  const bindings = usePanelState(
+    projectRepositoriesReachUnaskedQuery(partition),
+  );
+  const reached = usePanelState(projectRepositoriesQuery(partition));
   const returned = useForgeReturned(partition.tenant);
   const runner = useWorkRunner(partition, "Reader");
   return (
@@ -378,6 +400,16 @@ export function RepositoriesPage(): ReactNode {
         }
         bindings={
           bindings.state === "Ready" ? bindings.value.repositories : undefined
+        }
+        reaches={
+          reached.state === "Ready"
+            ? new Map(
+                reached.value.repositories.map((binding) => [
+                  binding.repository,
+                  binding.workerReach,
+                ]),
+              )
+            : undefined
         }
         line={repositoryOffersLine(accounts, apps)}
         returned={returned}

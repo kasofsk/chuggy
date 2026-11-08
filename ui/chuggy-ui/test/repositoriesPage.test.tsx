@@ -271,8 +271,13 @@ interface Drawing {
     url: string,
     signal: AbortSignal | undefined,
   ) => Response | Promise<Response>;
-  /** The bindings this project holds, where a case is about how one is drawn. */
+  /** The bindings this project holds, where a case is about how one is drawn.
+   * The read that does not ask the forge is answered them without their
+   * `workerReach`, which only the read that asks carries. */
   readonly bound?: unknown;
+  /** What the read asking the worker app's reach answers with, at once or
+   * when the case lets it, where a case is about that read alone. */
+  readonly reaching?: () => Response | Promise<Response>;
   /** The bindings it holds once a bind has been answered, where a case is
    * about what the picker draws after one. */
   readonly rebound?: unknown;
@@ -286,6 +291,22 @@ interface Drawing {
   readonly client?: QueryClient;
   /** The store made over that cache, where a case reads what it kept. */
   readonly store?: ConsoleStore;
+}
+
+/** Bindings as the read that does not ask the forge answers them: each without
+ * the `workerReach` only the read that asks it carries. */
+function reachUnasked(served: unknown): unknown {
+  const listed = served as { readonly repositories?: unknown };
+  if (!Array.isArray(listed.repositories)) return served;
+  return {
+    ...listed,
+    repositories: listed.repositories.map((binding: unknown) => {
+      if (binding === null || typeof binding !== "object") return binding;
+      return Object.fromEntries(
+        Object.entries(binding).filter(([field]) => field !== "workerReach"),
+      );
+    }),
+  };
 }
 
 async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
@@ -312,7 +333,12 @@ async function drawPage(drawing: Drawing = {}): Promise<readonly Sent[]> {
       return Promise.resolve(granting(url, init?.signal));
     if (url.includes("/forge-installations")) return Promise.resolve(listing());
     const written = sent.some((one) => one.method !== "GET");
-    return Promise.resolve(answer(written ? rebound : bound));
+    const served = written ? rebound : bound;
+    if (url.endsWith("?reach=false"))
+      return Promise.resolve(answer(reachUnasked(served)));
+    if (url.endsWith("/repositories") && drawing.reaching !== undefined)
+      return Promise.resolve(drawing.reaching());
+    return Promise.resolve(answer(served));
   }) as unknown as typeof fetch;
   vi.stubGlobal("fetch", (drawing.over ?? ((served) => served))(fetching));
   const page = (
@@ -465,8 +491,62 @@ test("a binding the worker app's installation does not select is marked on its r
         ),
     ),
   ]).toStrictEqual([
+    `/api/v1/tenants/${leadPartition.tenant}/projects/${leadPartition.project}/repositories?reach=false`,
     `/api/v1/tenants/${leadPartition.tenant}/projects/${leadPartition.project}/repositories`,
   ]);
+});
+
+/** Two bindings, the second one the worker app's installation does not select. */
+const twoBound = {
+  repositories: [
+    bindings.repositories[0],
+    {
+      ...bindings.repositories[0],
+      repository: freeUrl,
+      workerReach: {
+        reach: "Unselected",
+        installationId: "156786211",
+        settingsUrl: workerSettingsUrl,
+      },
+    },
+  ],
+};
+
+/** The bindings' row headers in the order drawn, by the name each reads. */
+function rowsDrawn(): readonly string[] {
+  return within(sectionOf("Repositories"))
+    .getAllByRole("rowheader")
+    .map((row) => row.textContent);
+}
+
+/**
+ * The table is drawn from the read that does not ask the forge, so a reach
+ * GitHub has not answered yet holds no row back, and the marks it brings are
+ * laid on the rows where they stand.
+ */
+test("the bindings are drawn while the worker app's reach is unread, and its marks arrive on the rows where they stand", async () => {
+  const reach = heldAnswer();
+  await drawPage({ bound: twoBound, reaching: () => reach.answered });
+  const section = sectionOf("Repositories");
+  expect(rowsDrawn()).toStrictEqual(["kasofsk/chuggy", "gdoteof/scratch"]);
+  expect(within(section).queryByText("Worker app missing")).toBeNull();
+  expect(within(section).queryByText(/^Loading/u)).toBeNull();
+  const drawnRows = within(section).getAllByRole("rowheader");
+  reach.release(answer(twoBound));
+  await settled();
+  expect(rowsDrawn()).toStrictEqual([
+    "kasofsk/chuggy",
+    "gdoteof/scratchWorker app missingReview on GitHub",
+  ]);
+  expect(within(section).getAllByRole("rowheader")).toStrictEqual(drawnRows);
+});
+
+test("a reach read that fails leaves the bindings drawn and unmarked, with no failure in their place", async () => {
+  await drawPage({ bound: twoBound, reaching: () => answer({}, 503) });
+  const section = sectionOf("Repositories");
+  expect(rowsDrawn()).toStrictEqual(["kasofsk/chuggy", "gdoteof/scratch"]);
+  expect(within(section).queryByText("Worker app missing")).toBeNull();
+  expect(readFailedLines(section)).toStrictEqual([]);
 });
 
 test("a binding the worker app reaches carries no mark, and one GitHub said nothing of is unread", async () => {
@@ -527,6 +607,49 @@ test("the picker reads every portal installation, then the worker's on a listed 
   expect(picker.getByRole("button", { name: "kasofsk/chuggy" })).toBeTruthy();
   expect(picker.getByText("Bound")).toBeTruthy();
   expect(picker.queryByText(/Worker app missing/u)).toBeNull();
+});
+
+/**
+ * Each app's listings are read side by side: a listing here answers only once
+ * every listing of its app has been asked for, which a picker reading one
+ * account after another never reaches. The portal app's are still all asked
+ * for before the worker app's, and gdoteof's worker installation granting
+ * nothing marks its row once they answer.
+ */
+test("the picker asks every account's listing of one app at once, the portal app's before the worker app's", async () => {
+  const asking: Readonly<Record<string, readonly string[]>> = {
+    portal: ["11", "13"],
+    worker: ["12", "14"],
+  };
+  const asked = new Set<string>();
+  const answered = Object.fromEntries(
+    Object.keys(asking).map((app) => [app, heldAnswer()]),
+  );
+  const sent = await drawPage({
+    claimed: twoAccounts,
+    granting: (url) => {
+      const id = /\/forge-installations\/(\d+)\//u.exec(url)?.[1] ?? "";
+      asked.add(id);
+      const [app, ids] = Object.entries(asking).find(([, of]) =>
+        of.includes(id),
+      ) ?? ["", []];
+      const held = answered[app];
+      if (held === undefined) return answer(grantedBy(url));
+      if (ids.every((one) => asked.has(one))) held.release(answer({}));
+      return held.answered.then(() =>
+        answer(
+          id === "14" ? { truncated: false, repositories: [] } : grantedBy(url),
+        ),
+      );
+    },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Add" }));
+  await settled();
+  expect(listingsRead(sent)).toStrictEqual(["11", "13", "12", "14"]);
+  expect(pickerRows()).toStrictEqual([
+    "kasofsk/chuggyBound",
+    "gdoteof/scratchWorker app missing",
+  ]);
 });
 
 test("choosing a repository binds it by address under an idempotency key", async () => {

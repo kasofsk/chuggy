@@ -135,9 +135,15 @@ async function repositoryWorkerReachOf(
   return repositoryWorkerReachUnselected(ports, installation.installationId);
 }
 
+/** How many repositories one question asks the reach of at once. */
+export const repositoryWorkerReachesInFlightMax = 4;
+
 /**
  * The reach of each repository named that this forge addresses, read under the
- * tenant asking; a repository it does not address is absent.
+ * tenant asking; a repository it does not address is absent. Repositories are
+ * asked at most `repositoryWorkerReachesInFlightMax` at a time, so those under
+ * different owners do not wait on each other, and the answer keeps the order
+ * they were named in.
  */
 export async function repositoryWorkerReaches(
   ports: RepositoryWorkerReachPorts,
@@ -145,16 +151,38 @@ export async function repositoryWorkerReaches(
   repositories: readonly RepositoryId[],
 ): Promise<ReadonlyMap<RepositoryId, RepositoryWorkerReach>> {
   const reads: RepositoryWorkerReachReads = new Map();
-  const reaches = new Map<RepositoryId, RepositoryWorkerReach>();
-  for (const repository of repositories) {
+  const addressed = repositories.flatMap((repository) => {
     const address = ports.addressOf(repository);
-    if (address === undefined) continue;
-    reaches.set(
+    return address === undefined ? [] : [{ repository, address }];
+  });
+  const answered: RepositoryWorkerReach[] = [];
+  let next = 0;
+  const asking = async (): Promise<void> => {
+    while (next < addressed.length) {
+      const index = next;
+      next += 1;
+      const asked = addressed[index];
+      if (asked === undefined) return;
+      answered[index] = await repositoryWorkerReachOf(
+        ports,
+        tenant,
+        asked.address,
+        reads,
+      ).catch((): RepositoryWorkerReach => ({ reach: "Unknown" }));
+    }
+  };
+  await Promise.all(
+    Array.from(
+      {
+        length: Math.min(repositoryWorkerReachesInFlightMax, addressed.length),
+      },
+      asking,
+    ),
+  );
+  return new Map(
+    addressed.map(({ repository }, index) => [
       repository,
-      await repositoryWorkerReachOf(ports, tenant, address, reads).catch(
-        (): RepositoryWorkerReach => ({ reach: "Unknown" }),
-      ),
-    );
-  }
-  return reaches;
+      answered[index] ?? { reach: "Unknown" },
+    ]),
+  );
 }

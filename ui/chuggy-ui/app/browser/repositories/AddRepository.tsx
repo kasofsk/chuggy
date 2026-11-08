@@ -75,6 +75,7 @@ import {
   repositoryChoices,
   repositoriesDrawn,
   repositoryGrantLines,
+  repositoryListingsRead,
   repositoryRosterRereadMs,
   repositoryUnlisted,
   repositoryWorkerLine,
@@ -142,19 +143,17 @@ async function readWorkerGrants(
   tenant: string,
   workers: readonly ForgeInstallationResponse[],
 ): Promise<readonly InstallationGrant[]> {
-  const granted: InstallationGrant[] = [];
-  for (const installation of workers) {
-    const answered = await readGrant(ports, tenant, installation);
-    if (answered.outcome === "Ok") granted.push(answered.value);
-  }
-  return granted;
+  const answered = await repositoryListingsRead(workers, (installation) =>
+    readGrant(ports, tenant, installation),
+  );
+  return answered.flatMap((one) => (one.outcome === "Ok" ? [one.value] : []));
 }
 
 /**
- * What every portal installation the tenant holds grants, read one after
- * another: a listing that is partial makes the whole roster partial, because a
- * repository the reader cannot find may be in the part that was not answered.
- * The first installation that does not answer `Ok` is therefore the answer for
+ * What every portal installation the tenant holds grants: a listing that is
+ * partial makes the whole roster partial, because a repository the reader
+ * cannot find may be in the part that was not answered. The first installation
+ * in the tenant's order that does not answer `Ok` is therefore the answer for
  * them all, deliberately, so one revoked claim is read as a refusal rather
  * than as a roster silently missing the account it covered.
  */
@@ -163,11 +162,13 @@ async function readPortalGrants(
   tenant: string,
   installations: readonly ForgeInstallationResponse[],
 ): Promise<ApiResult<readonly InstallationGrant[]>> {
+  const answered = await repositoryListingsRead(installations, (installation) =>
+    readGrant(ports, tenant, installation),
+  );
   const portal: InstallationGrant[] = [];
-  for (const installation of installations) {
-    const answered = await readGrant(ports, tenant, installation);
-    if (answered.outcome !== "Ok") return answered;
-    portal.push(answered.value);
+  for (const one of answered) {
+    if (one.outcome !== "Ok") return one;
+    portal.push(one.value);
   }
   return { outcome: "Ok", value: portal };
 }
