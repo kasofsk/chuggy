@@ -534,8 +534,7 @@ for case in \
 	".chug/prompts/x.md|check-source unit" ".chug/tasks/review-change.md|check-source unit" \
 	".dependency-cruiser.cjs|check-source unit|check-boundaries" \
 	".chug/tasks/check-boundaries.sh|check-boundaries" ".chug/tasks/check-roster.sh|check-roster" \
-	".claude/settings.json|check-roster" "images/worker/Dockerfile|check-source unit|check-agent-lag" \
-	".chug/tasks/check-agent-lag.sh|check-agent-lag"; do
+	".claude/settings.json|check-roster"; do
 	path="${case%%|*}"
 	mkdir -p "$R/$(dirname "$path")"
 	printf '# changed\n' >> "$R/$path"
@@ -546,6 +545,18 @@ for case in \
 		refute "$path selects ${gates%%|*}" 0 "$RC" "${gates%%|*}: SKIPPED"
 		gates="${gates#*|}"
 	done
+done
+
+# A GATE THAT RUNS ITSELF IS SELECTED BY WHAT IT DECLARES TOO, and holds no
+# key: check-agent-lag by the worker image's directory and its own script.
+stub_repo 0
+commit_all baseline
+for path in images/worker/Dockerfile images/worker/core.json .chug/tasks/check-agent-lag.sh; do
+	mkdir -p "$R/$(dirname "$path")"
+	printf '# changed\n' >> "$R/$path"
+	commit_all "$path"
+	run_last_commit
+	refute "$path selects check-agent-lag" 0 "$RC" "check-agent-lag: SKIPPED"
 done
 
 # A SUITE'S INPUT OUTSIDE THE SOURCES IS IN ITS GATE'S CONE. The unit suites

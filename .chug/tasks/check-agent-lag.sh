@@ -1,11 +1,12 @@
 #!/bin/sh
 # The worker image's Claude Code and Codex are each no more than
-# `CHUG_AGENT_LAG_MAX` releases behind the newest one their bump can reach.
+# `CHUG_AGENT_LAG_RELEASES_MAX` releases behind the newest one their bump can
+# reach.
 #
-# A configuration names its model by family, `--model=sonnet`, and a family
-# means what the pinned Claude Code takes it to mean: under 2.1.282 sonnet ran
-# Sonnet 5 after Sonnet 5.5 had shipped, in every worker image built while that
-# pin stood. Nothing in the tree read wrong, so only a reading of npm sees it.
+# A configuration names its model by family, `--model=sonnet`, and a family is
+# whichever model the pinned Claude Code takes it to mean, so a pin left behind
+# runs an older model than the family now names while nothing in the tree reads
+# wrong. Only a reading of npm sees it.
 #
 # A RELEASE IS A STABLE VERSION NEWER THAN THE PIN, up to the newest a bump
 # moves to: for Claude Code the one npm's latest Agent SDK names as its
@@ -13,14 +14,17 @@
 # can go no further, and for Codex npm's `latest`. A prerelease is not one, and
 # neither is a platform build, whose version carries its platform as a suffix.
 #
-# SELECTED BY A CHANGE TO THE WORKER IMAGE, AND BY A FULL RUN. A change there is
-# one an image is built from, so the bump goes out in the same build. A change
-# anywhere else cannot move the image, and holding it to npm would turn every
-# ticket red over what no ticket can fix. Never reused: npm moves under a tree
-# that does not.
+# EVERY WORKER IMAGE IS BUILT THROUGH IT. The roster stage of
+# images/worker/Dockerfile runs the whole of `.chug/tasks/ci.sh`, so no image is
+# built past the cap, and a commit that built once is refused once npm has
+# moved far enough past it. In a changed run a change under `images/worker`
+# selects it, since the pins and their bump are there, and a change elsewhere
+# does not, though the image is built from more than that directory: a ticket
+# builds no image, and a cap read on every change would turn every ticket red
+# over what none can fix. Never reused: npm moves under a tree that does not.
 #
-# Exits 0 clean, 1 when either is further behind, 2 when the pins or npm could
-# not be read. Two is not a pass.
+# Exits 0 clean, 1 when either is further behind, 2 when it could not run. Two
+# is not a pass.
 set -eu
 export LC_ALL=C
 
@@ -31,10 +35,10 @@ if [ -z "$root" ]; then
 fi
 cd "$root" || exit 2
 
-max="${CHUG_AGENT_LAG_MAX:-5}"
+max="${CHUG_AGENT_LAG_RELEASES_MAX:-5}"
 case "$max" in
 '' | *[!0-9]*)
-	echo "check-agent-lag: LINTER ERROR — CHUG_AGENT_LAG_MAX is $max, not a whole number"
+	echo "check-agent-lag: LINTER ERROR — CHUG_AGENT_LAG_RELEASES_MAX is $max, not a whole number"
 	exit 2
 	;;
 esac
@@ -78,16 +82,20 @@ read_npm claude-versions @anthropic-ai/claude-code versions --json
 read_npm codex-ceiling @openai/codex@latest version
 read_npm codex-versions @openai/codex versions --json
 
-# How many stable releases lie after the pin, up to and including the ceiling.
+# How many stable releases lie after the pin, up to and including the ceiling,
+# and the ceiling; or, exiting 3, which input is not what it should be.
 behind() { # <pin> <ceiling file> <versions file>
 	node -e '
 const fs = require("fs")
 const [pin, ceilingFile, versionsFile] = process.argv.slice(1)
+const refuse = (why) => { console.log(why); process.exit(3) }
 const stable = /^\d+\.\d+\.\d+$/
 const ceiling = fs.readFileSync(ceilingFile, "utf8").trim()
 let versions
-try { versions = JSON.parse(fs.readFileSync(versionsFile, "utf8")) } catch { versions = null }
-if (!stable.test(pin) || !stable.test(ceiling) || !Array.isArray(versions)) process.exit(3)
+try { versions = JSON.parse(fs.readFileSync(versionsFile, "utf8")) } catch { refuse("npm'"'"'s list of its versions is not JSON") }
+if (!stable.test(pin)) refuse("the pin " + pin + " is not a release")
+if (!stable.test(ceiling)) refuse("npm names " + JSON.stringify(ceiling) + " as the newest a bump reaches, which is not a release")
+if (!Array.isArray(versions)) refuse("npm'"'"'s list of its versions is not a list")
 const order = (a, b) => {
   const [x, y] = [a, b].map((v) => v.split(".").map(Number))
   return x[0] - y[0] || x[1] - y[1] || x[2] - y[2]
@@ -102,16 +110,18 @@ console.log(after.length + " " + ceiling)
 findings=0
 report() { # <name> <pin> <ceiling file> <versions file> <remedy>
 	if ! result="$(behind "$2" "$work/$3" "$work/$4")"; then
-		echo "check-agent-lag: LINTER ERROR — $1's pin $2 or npm's releases of it are not versions"
+		echo "check-agent-lag: LINTER ERROR — $1: ${result:-its releases could not be counted}"
 		exit 2
 	fi
 	count="${result% *}"
 	ceiling="${result#* }"
 	if [ "$count" -gt "$max" ]; then
-		echo "ERROR $1 $2 is $count releases behind $ceiling: $5"
+		echo "ERROR $1 $2 is $count release(s) behind $ceiling: $5"
 		findings=$((findings + 1))
+	elif [ "$count" = 0 ]; then
+		echo "check-agent-lag: $1 $2 is not behind $ceiling"
 	else
-		echo "check-agent-lag: $1 $2 is $count releases behind $ceiling"
+		echo "check-agent-lag: $1 $2 is $count release(s) behind $ceiling"
 	fi
 }
 report "Claude Code" "$claude_pin" claude-ceiling claude-versions \
@@ -120,7 +130,7 @@ report "Codex" "$codex_pin" codex-ceiling codex-versions \
 	"move ARG CODEX_VERSION in $dockerfile to it"
 
 if [ "$findings" -gt 0 ]; then
-	echo "check-agent-lag: FAILED — more than $max releases behind (CHUG_AGENT_LAG_MAX); the rig runs the new one once the worker image is built from it and admitted"
+	echo "check-agent-lag: FAILED — more than $max release(s) behind (CHUG_AGENT_LAG_RELEASES_MAX); the rig runs the new one once the worker image is built from it and admitted"
 	exit 1
 fi
-echo "check-agent-lag: both within $max releases (CHUG_AGENT_LAG_MAX)"
+echo "check-agent-lag: both within $max release(s) (CHUG_AGENT_LAG_RELEASES_MAX)"

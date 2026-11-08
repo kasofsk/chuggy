@@ -72,43 +72,43 @@ fixture 2.1.5 0.2.0
 registry 2.1.10 "$CLAUDE" 0.3.0 "$CODEX"
 stub_npm
 run_in "$R"
-check "pins within the cap are clean" 0 "$RC" "both within 5 releases"
-check "the clean run says how far Claude Code is behind" 0 "$RC" "Claude Code 2.1.5 is 5 releases behind 2.1.10"
-check "a prerelease and a platform build are not releases" 0 "$RC" "Codex 0.2.0 is 1 releases behind 0.3.0"
+check "pins within the cap are clean" 0 "$RC" "both within 5 release(s)"
+check "the clean run says how far Claude Code is behind" 0 "$RC" "Claude Code 2.1.5 is 5 release(s) behind 2.1.10"
+check "a prerelease and a platform build are not releases" 0 "$RC" "Codex 0.2.0 is 1 release(s) behind 0.3.0"
 
 fixture 2.1.4 0.2.0
 run_in "$R"
-check "one release past the cap is a finding" 1 "$RC" "ERROR Claude Code 2.1.4 is 6 releases behind 2.1.10"
+check "one release past the cap is a finding" 1 "$RC" "ERROR Claude Code 2.1.4 is 6 release(s) behind 2.1.10"
 check "a Claude Code finding names its bump" 1 "$RC" "just bump-claude-code"
 
 fixture 2.1.4 0.2.0
 registry 2.1.9 "$CLAUDE" 0.3.0 "$CODEX"
 run_in "$R"
-check "a Claude Code release past what the SDK names is not counted" 0 "$RC" "Claude Code 2.1.4 is 5 releases behind 2.1.9"
+check "a Claude Code release past what the SDK names is not counted" 0 "$RC" "Claude Code 2.1.4 is 5 release(s) behind 2.1.9"
 
 fixture 2.1.10 0.1.0
 registry 2.1.10 "$CLAUDE" 0.3.0 "$CODEX"
-run_in "$R" CHUG_AGENT_LAG_MAX=1
-check "a Codex finding names the version it is behind" 1 "$RC" "ERROR Codex 0.1.0 is 2 releases behind 0.3.0"
+run_in "$R" CHUG_AGENT_LAG_RELEASES_MAX=1
+check "a Codex finding names the version it is behind" 1 "$RC" "ERROR Codex 0.1.0 is 2 release(s) behind 0.3.0"
 check "a Codex finding names the pin to move" 1 "$RC" "move ARG CODEX_VERSION in images/worker/Dockerfile"
 refute "a pin that is current is no finding" 1 "$RC" "ERROR Claude Code"
 
 fixture 2.1.10 0.1.0
 registry 2.1.10 "$CLAUDE" 0.2.0 "$CODEX"
-run_in "$R" CHUG_AGENT_LAG_MAX=0
-check "a Codex release past npm's latest is not counted" 1 "$RC" "Codex 0.1.0 is 1 releases behind 0.2.0"
+run_in "$R" CHUG_AGENT_LAG_RELEASES_MAX=0
+check "a Codex release past npm's latest is not counted" 1 "$RC" "Codex 0.1.0 is 1 release(s) behind 0.2.0"
 
 fixture 2.1.10 0.3.0
 registry 2.1.10 "$CLAUDE" 0.3.0 "$CODEX"
-run_in "$R" CHUG_AGENT_LAG_MAX=0
-check "pins at the newest pass a cap of none" 0 "$RC" "both within 0 releases"
+run_in "$R" CHUG_AGENT_LAG_RELEASES_MAX=0
+check "pins at the newest pass a cap of none" 0 "$RC" "both within 0 release(s)"
 
 fixture 2.1.12 0.3.0
-run_in "$R" CHUG_AGENT_LAG_MAX=0
-check "a pin ahead of what a bump reaches is no release behind" 0 "$RC" "Claude Code 2.1.12 is 0 releases behind 2.1.10"
+run_in "$R" CHUG_AGENT_LAG_RELEASES_MAX=0
+check "a pin ahead of what a bump reaches is not behind" 0 "$RC" "Claude Code 2.1.12 is not behind 2.1.10"
 
 fixture 2.1.5 0.2.0
-run_in "$R" CHUG_AGENT_LAG_MAX=five
+run_in "$R" CHUG_AGENT_LAG_RELEASES_MAX=five
 check "a cap that is not a whole number could not run" 2 "$RC" "not a whole number"
 
 fixture 2.1.5 0.2.0
@@ -136,18 +136,46 @@ stub_npm
 fixture 2.1.5 0.2.0
 registry 2.1.10 '{"error":"not a list"}' 0.3.0 "$CODEX"
 run_in "$R"
-check "versions that are not a list could not run" 2 "$RC" "npm's releases of it are not versions"
+check "versions that are not a list could not run, and say so" 2 "$RC" "Claude Code: npm's list of its versions is not a list"
 refute "versions that are not a list are read, not crashed on" 2 "$RC" "TypeError"
+
+fixture 2.1.5 0.2.0
+registry 2.1.10 'not json' 0.3.0 "$CODEX"
+run_in "$R"
+check "versions that are not JSON could not run, and say so" 2 "$RC" "Claude Code: npm's list of its versions is not JSON"
+refute "versions that are not JSON are read, not crashed on" 2 "$RC" "SyntaxError"
 
 fixture 2.1.5 0.2.0
 registry "" "$CLAUDE" 0.3.0 "$CODEX"
 run_in "$R"
-check "an SDK naming no Claude Code could not run" 2 "$RC" "Claude Code's pin 2.1.5 or npm's releases of it are not versions"
+check "an SDK naming no Claude Code could not run, and say so" 2 "$RC" 'npm names "" as the newest a bump reaches'
 
 fixture 2.1.5-beta 0.2.0
 registry 2.1.10 "$CLAUDE" 0.3.0 "$CODEX"
 run_in "$R"
-check "a pin that is not a release could not run" 2 "$RC" "Claude Code's pin 2.1.5-beta"
+check "a pin that is not a release could not run, and say so" 2 "$RC" "Claude Code: the pin 2.1.5-beta is not a release"
+
+# A PATH holding only the tools named, each the one this shell finds, so a case
+# can leave out npm or node and keep what the gate needs before it asks for them.
+only_tools() { # <tool>...
+	rm -rf "$WORK/tools"
+	mkdir -p "$WORK/tools"
+	for tool in "$@"; do ln -s "$(command -v "$tool")" "$WORK/tools/$tool"; done
+}
+run_only_tools() {
+	OUT="$WORK/.out"
+	set +e
+	(cd "$R" && env PATH="$WORK/tools" "$SUT") >"$OUT" 2>&1
+	RC=$?
+	set -e
+}
+fixture 2.1.5 0.2.0
+only_tools git grep sed node
+run_only_tools
+check "no npm could not run" 2 "$RC" "no npm or no node"
+PATH="$BIN:$PATH" only_tools git grep sed npm
+run_only_tools
+check "no node could not run" 2 "$RC" "no npm or no node"
 
 mkdir -p "$WORK/bare"
 run_in "$WORK/bare"

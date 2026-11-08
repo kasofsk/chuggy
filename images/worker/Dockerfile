@@ -587,7 +587,10 @@ RUN cd /opt/chuggy/lib/chuggy/core-suites \
 # move it. So this stage stages the tree the image was built from, installs it
 # and runs the whole roster, and the final stage binds this stage's verdict,
 # which is what makes the build depend on it. Nothing installed here ships: it
-# is a stage FROM the image, not the image.
+# is a stage FROM the image, not the image. The roster holds
+# `.chug/tasks/check-agent-lag.sh`, which reads npm, so the build also refuses
+# an image whose Claude Code or Codex is past that gate's cap, and a commit that
+# built once can be refused once npm has moved on.
 #
 # WHAT THIS PROVES IS THE IMAGE, NOT THE POD. A build has no sidecars, so the
 # PostgreSQL the server gates are given is the stage's own: Debian's, started
