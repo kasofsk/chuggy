@@ -14,6 +14,7 @@ import {
   contextChartRuns,
   contextChartTicksX,
   contextChartTicksY,
+  contextChartTipAt,
   contextChartTop,
 } from "../app/core/contextChart.ts";
 import { contextSessionOf } from "../app/core/contextSession.ts";
@@ -202,6 +203,38 @@ test("the peak is the highest the context reached, a compaction's figure before 
       compactions: [{ ordinal: 5, before: 300_000, after: 45_000 }],
     }),
   ).toStrictEqual({ ordinal: 5, tokens: 317_000, series: "Main" });
+});
+
+test("the hover's note stands beside its point where a side has the room, and above or below it where neither has, never over it", () => {
+  const note = { width: 140, height: 78 };
+  for (const width of [260, 320, 640]) {
+    const chart = contextChartOf(growth, width);
+    for (let x = chart.plot.left; x <= chart.plot.right; x += 7)
+      for (let y = chart.plot.top; y <= chart.plot.bottom; y += 11) {
+        const tip = contextChartTipAt(chart, { x, y }, note);
+        const covers =
+          x >= tip.x &&
+          x <= tip.x + note.width &&
+          y >= tip.y &&
+          y <= tip.y + note.height;
+        expect(covers, `${String(width)}: ${String(x)}, ${String(y)}`).toBe(
+          false,
+        );
+        expect(tip.x).toBeGreaterThanOrEqual(0);
+        expect(tip.x + note.width).toBeLessThanOrEqual(chart.width);
+        expect(tip.y).toBeGreaterThanOrEqual(0);
+        expect(tip.y + note.height).toBeLessThanOrEqual(chart.height);
+      }
+  }
+  const chart = contextChartOf(growth, 640);
+  expect(contextChartTipAt(chart, { x: 100, y: 100 }, note)).toStrictEqual({
+    x: 108,
+    y: 61,
+  });
+  expect(contextChartTipAt(chart, { x: 600, y: 100 }, note)).toStrictEqual({
+    x: 452,
+    y: 61,
+  });
 });
 
 test("the vertical scale is the window where one is named, and a counted step otherwise", () => {

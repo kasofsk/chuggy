@@ -9,7 +9,7 @@
  */
 
 import { useId, useLayoutEffect, useRef, useState } from "react";
-import type { KeyboardEvent, PointerEvent, ReactNode } from "react";
+import type { KeyboardEvent, PointerEvent, ReactNode, RefObject } from "react";
 
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import type { ContextChart } from "../../core/contextChart.ts";
@@ -17,6 +17,7 @@ import {
   contextChartAt,
   contextChartNearest,
   contextChartOf,
+  contextChartTipAt,
   contextChartWidthDefault,
 } from "../../core/contextChart.ts";
 import type {
@@ -28,9 +29,26 @@ import { contextPeakOf, contextPointSaid } from "../../core/contextView.ts";
 import { groupedDigits } from "../../core/figures.ts";
 import { contextNameText } from "./ContextWindow.tsx";
 
-/** The room the hover's note is laid out in, beside the point it names. */
-const contextTipWidth = 180;
-const contextTipHeight = 72;
+/** The hover's note's size before it has been measured. */
+const contextTipSizeDefault = { width: 180, height: 72 };
+
+/** The size the hover's note lays out at, measured before the browser paints
+ * each point it names, as a tooltip is. */
+function useContextTipSize(
+  point: ContextPoint,
+): [
+  RefObject<HTMLDivElement | null>,
+  { readonly width: number; readonly height: number },
+] {
+  const tip = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState(contextTipSizeDefault);
+  useLayoutEffect(() => {
+    const box = tip.current?.getBoundingClientRect();
+    if (box === undefined || box.width === 0) return;
+    setSize({ width: Math.ceil(box.width), height: Math.ceil(box.height) });
+  }, [point]);
+  return [tip, size];
+}
 
 function useMeasuredWidth(): [
   (element: HTMLDivElement | null) => void,
@@ -200,12 +218,8 @@ function ContextChartTip(props: {
   const { view, chart, point } = props;
   const at = contextChartAt(view, chart, point);
   const { plot } = chart;
-  const right = at.x + contextTipWidth + 8 <= chart.width;
-  const x = right ? at.x + 8 : Math.max(plot.left, at.x - contextTipWidth - 8);
-  const y = Math.min(
-    Math.max(plot.top, at.y - contextTipHeight / 2),
-    plot.bottom - contextTipHeight,
-  );
+  const [measured, size] = useContextTipSize(point);
+  const tip = contextChartTipAt(chart, at, size);
   return (
     <g pointerEvents="none">
       <line
@@ -223,12 +237,12 @@ function ContextChartTip(props: {
         r="4"
       />
       <foreignObject
-        x={x}
-        y={y}
-        width={contextTipWidth}
-        height={contextTipHeight}
+        x={tip.x}
+        y={tip.y}
+        width={size.width}
+        height={size.height}
       >
-        <div className="context-chart-tip" data-side={right ? "Right" : "Left"}>
+        <div className="context-chart-tip" ref={measured}>
           {contextPointSaid(view, point).map((line, index) => (
             <span key={index}>{text(line)}</span>
           ))}

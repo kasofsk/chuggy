@@ -322,6 +322,44 @@ export function contextChartNearest(
   return nearest;
 }
 
+/** The room between a point and the note that names it. */
+const contextChartTipGap = 8;
+
+/** Where a box the size of the hover's note stands. */
+export interface ContextChartTipAt {
+  readonly x: number;
+  readonly y: number;
+}
+
+/**
+ * Where the hover's note of `size` stands for the point drawn `at`: beside it,
+ * right or else left, level with it within the plot, and where neither side has
+ * the room, above it or else below it. The note never covers the point it
+ * names.
+ */
+export function contextChartTipAt(
+  chart: ContextChart,
+  at: { readonly x: number; readonly y: number },
+  size: { readonly width: number; readonly height: number },
+): ContextChartTipAt {
+  const gap = contextChartTipGap;
+  const { plot } = chart;
+  const level = Math.max(
+    plot.top,
+    Math.min(at.y - size.height / 2, plot.bottom - size.height),
+  );
+  if (at.x + gap + size.width <= chart.width)
+    return { x: at.x + gap, y: level };
+  if (at.x - gap - size.width >= 0)
+    return { x: at.x - gap - size.width, y: level };
+  const x = Math.max(
+    0,
+    Math.min(at.x - size.width / 2, chart.width - size.width),
+  );
+  const above = at.y - gap - size.height;
+  return { x, y: above >= 0 ? above : at.y + gap };
+}
+
 /** Where one point is drawn, for the mark a hover puts on it. */
 export function contextChartAt(
   view: ContextGrowthView,
