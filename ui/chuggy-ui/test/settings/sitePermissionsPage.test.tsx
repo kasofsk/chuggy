@@ -67,7 +67,7 @@ test("a site manager sees the site's three permissions and no workspace section,
   expect(permissionsDrawn("Site")).toStrictEqual([
     {
       name: "Create accounts",
-      holders: ["Site admins", "acme admins", "globex admins"],
+      holders: ["Site admins", "acme-co admins", "globex-co admins"],
     },
     { name: "Create workspaces", holders: ["Site admins"] },
     { name: "Change permissions", holders: ["Site admins"] },
@@ -110,8 +110,8 @@ test("a site manager may remove the site's holders, but no standing admin or unn
   const names = removeButtons("Site");
   expect(names).toStrictEqual([
     "Remove Site admins from Create accounts",
-    "Remove acme admins from Create accounts",
-    "Remove globex admins from Create accounts",
+    "Remove acme-co admins from Create accounts",
+    "Remove globex-co admins from Create accounts",
     "Remove Site admins from Create workspaces",
     "Remove ada@example.com from Change permissions",
   ]);
@@ -125,7 +125,7 @@ test.each([
     confirmed: true,
   },
   {
-    holder: "Remove acme admins from Create accounts",
+    holder: "Remove acme-co admins from Create accounts",
     path: `${siteAuthoritiesPath}/AccountCreators/tenants/${permissionsTenant}`,
   },
   {
@@ -179,7 +179,7 @@ test("This workspace's admins is offered on Create accounts only where they do n
         authorities: siteAuthoritiesStarting.authorities.map((held) => ({
           ...held,
           groups: [],
-          tenants: ["globex"],
+          tenants: ["globex-co"],
         })),
       }),
   });

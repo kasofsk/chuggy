@@ -92,8 +92,8 @@ test("the links are a section under the workspaces, a row a link in the plane's 
 test("a row is headed by its link's note or the none-mark, and says under it where the link hands account creation on", async () => {
   await drawWorkspaces(listed);
   expect(linkColumn("Note")).toStrictEqual([
-    "For the Lisbon teamCan invite new people",
-    "Sent to Grace",
+    "note-for-lisbonCan invite new people",
+    "note-for-grace",
     "—None",
     "—NoneCan invite new people",
   ]);
@@ -124,11 +124,11 @@ test("a used link names the workspace it made, then who used it and when, a subj
   if (row === undefined || used?.state !== "Used") throw new Error("no row");
   const made = linkCells(row)["Workspace"];
   expect(made?.textContent).toBe(
-    `Workspacenorthwinds-grace${linkWhen(used.usedAtMs)}`,
+    `Workspacenorthwind-cos-grace${linkWhen(used.usedAtMs)}`,
   );
   const name = made?.querySelector(".people-name");
-  expect(name?.textContent).toBe("northwind");
-  expect(name?.getAttribute("title")).toBe("northwind");
+  expect(name?.textContent).toBe("northwind-co");
+  expect(name?.getAttribute("title")).toBe("northwind-co");
   expect(made?.querySelector(".identity")?.textContent).toBe("s-grace");
   expect(made?.hasAttribute("data-none")).toBe(false);
 });
@@ -146,7 +146,7 @@ test("every link names who made it and when", async () => {
   await drawWorkspaces(listed);
   expect(linkColumn("Made by")).toStrictEqual(
     [opened, used, revoked, expired].map(
-      (link) => `Made byada@example.comada${linkWhen(link?.mintedAtMs ?? 0)}`,
+      (link) => `Made byada@example.comada-l${linkWhen(link?.mintedAtMs ?? 0)}`,
     ),
   );
 });

@@ -206,50 +206,50 @@ function groupsDrawn(): readonly (readonly [string, readonly string[]])[] {
 
 const projectGroups = [
   [
-    "Project atlas",
+    "Project atlas-web",
     [
-      "Lead /acme/atlas/settings/lead",
-      "Placement /acme/atlas/settings/placement",
-      "Permissions /acme/atlas/settings/permissions",
+      "Lead /acme-co/atlas-web/settings/lead",
+      "Placement /acme-co/atlas-web/settings/placement",
+      "Permissions /acme-co/atlas-web/settings/permissions",
     ],
   ],
   [
-    "Workspace acme",
+    "Workspace acme-co",
     [
-      "People /acme/atlas/settings/workspace/people",
-      "GitHub accounts /acme/atlas/settings/workspace/accounts",
-      "Permissions /acme/atlas/settings/workspace/permissions",
-      "Personal runners /acme/atlas/settings/workspace/runner",
-      "Usage /acme/atlas/settings/workspace/usage",
+      "People /acme-co/atlas-web/settings/workspace/people",
+      "GitHub accounts /acme-co/atlas-web/settings/workspace/accounts",
+      "Permissions /acme-co/atlas-web/settings/workspace/permissions",
+      "Personal runners /acme-co/atlas-web/settings/workspace/runner",
+      "Usage /acme-co/atlas-web/settings/workspace/usage",
     ],
   ],
 ];
 
 const workspaceGroups = [
   [
-    "Workspace acme",
+    "Workspace acme-co",
     [
-      "People /tenants/acme/settings/people",
-      "GitHub accounts /tenants/acme/settings/accounts",
-      "Permissions /tenants/acme/settings/permissions",
-      "Personal runners /tenants/acme/settings/runner",
-      "Usage /tenants/acme/settings/usage",
+      "People /tenants/acme-co/settings/people",
+      "GitHub accounts /tenants/acme-co/settings/accounts",
+      "Permissions /tenants/acme-co/settings/permissions",
+      "Personal runners /tenants/acme-co/settings/runner",
+      "Usage /tenants/acme-co/settings/usage",
     ],
   ],
 ];
 
 test.each([
   {
-    bare: "/acme/atlas/settings",
-    first: "/acme/atlas/settings/lead",
+    bare: "/acme-co/atlas-web/settings",
+    first: "/acme-co/atlas-web/settings/lead",
   },
   {
-    bare: "/tenants/acme/settings",
-    first: "/tenants/acme/settings/people",
+    bare: "/tenants/acme-co/settings",
+    first: "/tenants/acme-co/settings/people",
   },
   {
-    bare: "/acme/atlas/settings/workspace",
-    first: "/acme/atlas/settings/workspace/people",
+    bare: "/acme-co/atlas-web/settings/workspace",
+    first: "/acme-co/atlas-web/settings/workspace/people",
   },
 ])(
   "$bare is replaced by $first, so going back leaves the settings",
@@ -262,38 +262,47 @@ test.each([
 );
 
 test("in a project the navigation draws the project's group then the workspace's, every link at its address in the project", async () => {
-  await drawnSettings("/acme/atlas/settings/permissions");
+  await drawnSettings("/acme-co/atlas-web/settings/permissions");
   expect(groupsDrawn()).toStrictEqual(projectGroups);
 });
 
 test("outside a project the navigation draws the workspace's group alone, every link at the workspace's own address", async () => {
-  await drawnSettings("/tenants/acme/settings/permissions");
+  await drawnSettings("/tenants/acme-co/settings/permissions");
   expect(groupsDrawn()).toStrictEqual(workspaceGroups);
 });
 
 test.each([
-  { address: "/acme/atlas/settings/lead", group: "Project atlas" },
-  { address: "/acme/atlas/settings/placement", group: "Project atlas" },
-  { address: "/acme/atlas/settings/permissions", group: "Project atlas" },
+  { address: "/acme-co/atlas-web/settings/lead", group: "Project atlas-web" },
   {
-    address: "/acme/atlas/settings/workspace/people",
-    group: "Workspace acme",
+    address: "/acme-co/atlas-web/settings/placement",
+    group: "Project atlas-web",
   },
   {
-    address: "/acme/atlas/settings/workspace/accounts",
-    group: "Workspace acme",
+    address: "/acme-co/atlas-web/settings/permissions",
+    group: "Project atlas-web",
   },
   {
-    address: "/acme/atlas/settings/workspace/permissions",
-    group: "Workspace acme",
+    address: "/acme-co/atlas-web/settings/workspace/people",
+    group: "Workspace acme-co",
   },
-  { address: "/acme/atlas/settings/site/workspaces", group: "Site" },
-  { address: "/acme/atlas/settings/site/permissions", group: "Site" },
-  { address: "/tenants/acme/settings/people", group: "Workspace acme" },
-  { address: "/tenants/acme/settings/accounts", group: "Workspace acme" },
-  { address: "/tenants/acme/settings/permissions", group: "Workspace acme" },
-  { address: "/tenants/acme/settings/site/workspaces", group: "Site" },
-  { address: "/tenants/acme/settings/site/permissions", group: "Site" },
+  {
+    address: "/acme-co/atlas-web/settings/workspace/accounts",
+    group: "Workspace acme-co",
+  },
+  {
+    address: "/acme-co/atlas-web/settings/workspace/permissions",
+    group: "Workspace acme-co",
+  },
+  { address: "/acme-co/atlas-web/settings/site/workspaces", group: "Site" },
+  { address: "/acme-co/atlas-web/settings/site/permissions", group: "Site" },
+  { address: "/tenants/acme-co/settings/people", group: "Workspace acme-co" },
+  { address: "/tenants/acme-co/settings/accounts", group: "Workspace acme-co" },
+  {
+    address: "/tenants/acme-co/settings/permissions",
+    group: "Workspace acme-co",
+  },
+  { address: "/tenants/acme-co/settings/site/workspaces", group: "Site" },
+  { address: "/tenants/acme-co/settings/site/permissions", group: "Site" },
 ])(
   "at $address the page's own link in $group is the current one and no other is",
   async ({ address, group }) => {
@@ -340,16 +349,16 @@ test.each([
   "a reader whose site abilities say $held is drawn the site's group last with $pages alone, in either frame",
   async ({ held, pages }) => {
     const answered = siteAbilitiesAnswered({ ...siteAbilitiesNone, ...held });
-    await drawnSettings("/acme/atlas/settings/permissions", answered);
+    await drawnSettings("/acme-co/atlas-web/settings/permissions", answered);
     expect(groupsDrawn()).toStrictEqual([
       ...projectGroups,
-      siteGroup("/acme/atlas/settings", pages),
+      siteGroup("/acme-co/atlas-web/settings", pages),
     ]);
     cleanup();
-    await drawnSettings("/tenants/acme/settings/permissions", answered);
+    await drawnSettings("/tenants/acme-co/settings/permissions", answered);
     expect(groupsDrawn()).toStrictEqual([
       ...workspaceGroups,
-      siteGroup("/tenants/acme/settings", pages),
+      siteGroup("/tenants/acme-co/settings", pages),
     ]);
   },
 );
@@ -365,7 +374,7 @@ test.each([
   "site abilities answering $answered draw no site group and no fault",
   async ({ abilities }) => {
     const drawn = await drawnSettings(
-      "/acme/atlas/settings/permissions",
+      "/acme-co/atlas-web/settings/permissions",
       (request) =>
         request.url === siteAbilitiesPath ? abilities() : undefined,
     );
@@ -377,18 +386,18 @@ test.each([
 
 test.each([
   {
-    address: "/acme/atlas/settings/workspace/people",
+    address: "/acme-co/atlas-web/settings/workspace/people",
     reads: permissionsPeoplePath,
   },
   {
-    address: "/acme/atlas/settings/workspace/accounts",
-    reads: "/api/v1/tenants/acme/forge-installations",
+    address: "/acme-co/atlas-web/settings/workspace/accounts",
+    reads: "/api/v1/tenants/acme-co/forge-installations",
   },
   {
-    address: "/acme/atlas/settings/workspace/permissions",
+    address: "/acme-co/atlas-web/settings/workspace/permissions",
     reads: tenantAuthoritiesPath,
   },
-  { address: "/tenants/acme/settings/people", reads: permissionsPeoplePath },
+  { address: "/tenants/acme-co/settings/people", reads: permissionsPeoplePath },
 ])(
   "the page at $address reads the workspace its address names",
   async ({ address, reads }) => {
@@ -398,8 +407,8 @@ test.each([
 );
 
 test.each([
-  { address: "/acme/atlas/settings/site/workspaces" },
-  { address: "/tenants/acme/settings/site/workspaces" },
+  { address: "/acme-co/atlas-web/settings/site/workspaces" },
+  { address: "/tenants/acme-co/settings/site/workspaces" },
 ])(
   "the page at $address is the site's workspaces, its list and its action drawn to a reader who may make one",
   async ({ address }) => {
@@ -420,7 +429,7 @@ test.each([
 
 test("the site's page in a project offers the address's workspace, sends it, and reads the site's abilities again", async () => {
   const drawn = await drawnSettings(
-    "/acme/atlas/settings/site/permissions",
+    "/acme-co/atlas-web/settings/site/permissions",
     (request) => {
       if (request.method === "POST") return new Response(null, { status: 204 });
       if (request.url === siteAbilitiesPath)
@@ -445,7 +454,7 @@ test("the site's page in a project offers the address's workspace, sends it, and
   expect(additionsSent(drawn)).toStrictEqual([
     {
       method: "POST",
-      url: `${siteAuthoritiesPath}/AccountCreators/tenants/acme`,
+      url: `${siteAuthoritiesPath}/AccountCreators/tenants/acme-co`,
       body: undefined,
     },
   ]);
@@ -475,7 +484,7 @@ async function linkCopied(opener: string): Promise<void> {
 }
 
 test("a link made on a workspace's People page outside a project is drawn with the control that copies its address", async () => {
-  await drawnSettings("/tenants/acme/settings/people", (request) => {
+  await drawnSettings("/tenants/acme-co/settings/people", (request) => {
     if (request.url === linksPath) return linksKept(request);
     if (request.url === peoplePath) return answer(peopleListed);
     if (request.url === abilitiesPath) return answer(peopleAbilitiesAll());
@@ -485,13 +494,16 @@ test("a link made on a workspace's People page outside a project is drawn with t
 });
 
 test("a workspace link made on the site's Workspaces page outside a project is drawn with the control that copies its address", async () => {
-  await drawnSettings("/tenants/acme/settings/site/workspaces", (request) => {
-    if (request.url === siteWorkspaceLinksPath) return linksKept(request);
-    if (request.url === siteWorkspacesPath) return answer(workspacesListed);
-    if (request.url === siteAbilitiesPath)
-      return answer({ ...siteAbilitiesNone, createTenant: true });
-    return undefined;
-  });
+  await drawnSettings(
+    "/tenants/acme-co/settings/site/workspaces",
+    (request) => {
+      if (request.url === siteWorkspaceLinksPath) return linksKept(request);
+      if (request.url === siteWorkspacesPath) return answer(workspacesListed);
+      if (request.url === siteAbilitiesPath)
+        return answer({ ...siteAbilitiesNone, createTenant: true });
+      return undefined;
+    },
+  );
   await linkCopied("New workspace");
 });
 

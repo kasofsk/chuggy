@@ -99,9 +99,8 @@ export default tseslint.config(
       "no-restricted-syntax": ["error", ...consoleQueriesKept],
     },
   },
-  // What a reader is shown is the copy catalog's. A file not yet moved onto it
-  // carries a disable of this one rule at its top, and an unused disable is an
-  // error, so the mark leaves with the last literal it excused.
+  // What a reader is shown is the copy catalog's, and no file opts out:
+  // `.chug/tasks/check-comments.sh` refuses any disable of this rule.
   {
     files: ["app/**/*.tsx"],
     plugins: { copy: copyPlugin },

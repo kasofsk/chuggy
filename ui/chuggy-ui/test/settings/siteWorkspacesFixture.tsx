@@ -59,14 +59,14 @@ export const workspacesAbilitiesCreator: AccessSiteAbilities = {
 export const workspacesListed: AccessSiteTenants = {
   tenants: [
     {
-      tenant: "globex",
+      tenant: "globex-co",
       administrators: [
         {
           subject: "s-bob",
           mine: false,
           account: true,
           email: "bob@example.com",
-          githubLogin: "bob",
+          githubLogin: "bob-k",
         },
         { subject: "s-robot", mine: false, account: false },
       ],
@@ -74,14 +74,14 @@ export const workspacesListed: AccessSiteTenants = {
       createAccounts: false,
     },
     {
-      tenant: "acme",
+      tenant: "acme-co",
       administrators: [
         {
           subject: "s-ada",
           mine: true,
           account: true,
           email: "ada@example.com",
-          githubLogin: "ada",
+          githubLogin: "ada-l",
         },
         { subject: "s-dan", mine: false },
       ],
@@ -89,13 +89,13 @@ export const workspacesListed: AccessSiteTenants = {
       createAccounts: true,
     },
     {
-      tenant: "umbrella",
+      tenant: "umbrella-co",
       administrators: [],
       unnamed: 3,
       createAccounts: true,
     },
     {
-      tenant: "initech",
+      tenant: "initech-co",
       administrators: [],
       unnamed: 0,
       createAccounts: false,
@@ -114,7 +114,7 @@ const workspaceLinkMade: Omit<WorkspaceLinkUnused, "link" | "state"> = {
     subject: "s-ada",
     account: true,
     email: "ada@example.com",
-    githubLogin: "ada",
+    githubLogin: "ada-l",
   },
   mintedAtMs: Date.UTC(2026, 7, 20, 9, 0),
   expiresAtMs: Date.UTC(2026, 7, 27, 9, 0),
@@ -134,17 +134,17 @@ export function workspaceLinkListed(
 export const workspaceLinksListed: AccessWorkspaceLinks = {
   links: [
     workspaceLinkListed("w-open", {
-      note: "For the Lisbon team",
+      note: "note-for-lisbon",
       createAccounts: true,
     }),
     {
       ...workspaceLinkMade,
       link: "w-used",
       state: "Used",
-      note: "Sent to Grace",
+      note: "note-for-grace",
       usedBy: { subject: "s-grace" },
       usedAtMs: Date.UTC(2026, 7, 21, 9, 0),
-      workspace: "northwind",
+      workspace: "northwind-co",
     },
     workspaceLinkListed("w-revoked", { state: "Revoked" }),
     workspaceLinkListed("w-expired", {
@@ -157,7 +157,7 @@ export const workspaceLinksListed: AccessWorkspaceLinks = {
 /** What the plane answers a creation with: made, or found already theirs. */
 export function workspaceCreated(status = 201): Response {
   return answer(
-    { tenant: "northwind", subject: "s-owner", created: status === 201 },
+    { tenant: "northwind-co", subject: "s-owner", created: status === 201 },
     status,
   );
 }

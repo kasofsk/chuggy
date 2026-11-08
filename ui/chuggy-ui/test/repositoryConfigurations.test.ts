@@ -161,7 +161,7 @@ test("the revisions are walked to the cursor's end, and no further than the budg
   );
   expect(walked.outcome === "Ok" && walked.value.partial).toBe(true);
   expect(calls[0]).toBe(
-    `${nativeHttpBasePath}/tenants/acme/projects/atlas/configurations`,
+    `${nativeHttpBasePath}/tenants/acme-co/projects/atlas-web/configurations`,
   );
   expect(calls.length).toBe(configurationPagesMax);
 });
@@ -242,7 +242,7 @@ test("a repository past the budget's reach of every revision is its page's rows 
   if (read.outcome !== "Ok") throw new Error("the read was refused");
   expect(read.value.partial).toBe(false);
   expect(calls).toStrictEqual([
-    `${nativeHttpBasePath}/tenants/acme/projects/atlas/configurations?latest=true`,
+    `${nativeHttpBasePath}/tenants/acme-co/projects/atlas-web/configurations?latest=true`,
   ]);
   expect(
     repositoryConfigurations(read.value.configurations, chuggy).map(

@@ -11,7 +11,7 @@
  * from the copy catalog is read for the message's id, and the catalog for the
  * words. A ticket's page draws
  * each action under the action's own name, so that name is read where the
- * action is made; the workspace's accounts page draws the connect button as
+ * action is made; the workspace's GitHub accounts page draws the connect button as
  * the one component that writes it, so the page is read for the component;
  * and the Add picker draws the line for an app not granted a repository from
  * the roster the program's own sentence is made from, so the picker is read
@@ -151,7 +151,7 @@ test("a ticket's page draws each action it offers as a button under the action's
   assert.match(source, /props\.noRunner \? <NoRunnerLine /u);
 });
 
-test("the workspace's accounts page, where the program sends a person whose account lacks the portal app, draws the connect button", () => {
+test("the workspace's GitHub accounts page, where the program sends a person whose account lacks the portal app, draws the connect button", () => {
   assert.equal(drawnFromCatalog.connect.page, connectButton);
   const source = readFileSync(accountsPage, "utf8");
   assert.match(

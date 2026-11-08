@@ -206,7 +206,7 @@ test("a thread of the reader's own chat is the page, with its project threads of
   ).toBeDefined();
   const conversation = screen.getByRole("region", { name: "Conversation" });
   expect(conversation.closest(".chat-reading")).not.toBeNull();
-  expect(screen.getByText("a member's question")).toBeDefined();
+  expect(screen.getByText("question-1")).toBeDefined();
   expect(screen.getByRole("textbox", { name: "Message" })).toBeDefined();
   const menu = await historyOpened();
   expect(within(menu).getByText("In projects")).toBeDefined();

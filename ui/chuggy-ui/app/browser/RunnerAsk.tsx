@@ -43,11 +43,13 @@ function RunnerMachine(props: {
   return (
     <ToggleGroup
       label={text({ id: "runners-ask-machine" })}
-      options={runnerPackageNames.map((name) => runnerPackages[name].label)}
-      value={offered.label}
+      options={runnerPackageNames.map((name) =>
+        text(runnerPackages[name].label),
+      )}
+      value={text(offered.label)}
       onChange={(label) => {
         const name = runnerPackageNames.find(
-          (each) => runnerPackages[each].label === label,
+          (each) => text(runnerPackages[each].label) === label,
         );
         if (name !== undefined) props.onChoose(name);
       }}

@@ -41,7 +41,7 @@ import type { Answer, Sent } from "./answeringApi.ts";
 import { ticketInstants } from "./ticketInstants.ts";
 import { copyTextEn } from "../app/copy/catalog.ts";
 
-const partitionBase = `${nativeHttpBasePath}/tenants/acme/projects/atlas`;
+const partitionBase = `${nativeHttpBasePath}/tenants/acme-co/projects/atlas-web`;
 
 function ok(body: unknown): Answer {
   return { status: 200, body };

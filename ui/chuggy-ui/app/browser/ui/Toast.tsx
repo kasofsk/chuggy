@@ -17,6 +17,10 @@ import { buttonLookClassName } from "./Button.tsx";
 import { Tooltip } from "./Tooltip.tsx";
 import "./Toast.css";
 
+/** What Radix replaces with the viewport's keys, handed to the catalog as
+ * data so a wording keeps it whole. */
+const toastHotkeyPlaceholder = "{hotkey}";
+
 export interface ToastLine {
   readonly id: number;
   readonly line: string;
@@ -53,7 +57,13 @@ export function Toasts(props: {
           </RadixToast.Close>
         </RadixToast.Root>
       ))}
-      <RadixToast.Viewport className="toast-viewport" />
+      <RadixToast.Viewport
+        className="toast-viewport"
+        label={text({
+          id: "ui-refusals-held",
+          args: { hotkey: toastHotkeyPlaceholder },
+        })}
+      />
     </RadixToast.Provider>
   );
 }

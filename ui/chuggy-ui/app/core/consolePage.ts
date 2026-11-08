@@ -215,7 +215,7 @@ const consolePageSectionWords: Readonly<
   ],
   WorkspaceAccounts: [
     { id: "settings-nav-workspace" },
-    { id: "pages-settings-accounts" },
+    { id: "settings-nav-accounts" },
   ],
   WorkspacePermissions: [
     { id: "settings-nav-workspace" },

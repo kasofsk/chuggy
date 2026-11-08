@@ -15,8 +15,8 @@
 ##     }
 ##
 ## The comment beside a term says what it covers. Its `rejects:` line lists
-## the words it replaces, which no message spells without the exemption a
-## homonym carries.
+## the words it replaces, which no message spells without an exemption naming
+## that word.
 
 ## Brands, each in its one spelling.
 
@@ -28,6 +28,13 @@
 
 # The agent a run drives.
 -claude-code = Claude Code
+
+# The maker's name for the agent and its models, as an account and a
+# credential are named.
+-claude = Claude
+
+# The other agent a run drives.
+-codex = Codex
 
 ## What the work is organised into.
 
