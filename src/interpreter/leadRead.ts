@@ -305,7 +305,8 @@ export function sessionHeldWalkAsks(batchesRead: number): number {
 /**
  * The page one stream's drawn batches make, against what the whole stream says
  * is held. `held` is absent exactly where that walk could not reach the stream's
- * end, and `truncated` says only that this page's own entries were cut.
+ * end, and `truncated` says that this page's own entries, or its compaction
+ * boundaries, were cut at their bound.
  */
 export function leadTranscriptPage(input: {
   readonly stream: SessionStoreStream;
