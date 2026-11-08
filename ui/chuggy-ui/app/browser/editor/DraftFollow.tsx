@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * An editor following the server draft it is open on: the form held over the
  * draft as the project's cache has it, and the notice drawn where a revision
@@ -165,10 +164,10 @@ export function DraftFollowNotice(props: {
         >
           <div className="flex flex-wrap gap-2">
             <Button size="sm" onClick={props.onTaken}>
-              Take theirs
+              {text({ id: "ticket-authoring-take-theirs" })}
             </Button>
             <Button size="sm" onClick={props.onKept}>
-              Keep mine
+              {text({ id: "ticket-authoring-keep-mine" })}
             </Button>
           </div>
         </Notice>

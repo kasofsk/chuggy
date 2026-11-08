@@ -837,7 +837,7 @@ function legacyOverridesOf(
     ),
     ...[...overridden]
       .filter((field) => !legacyDetailFields.has(field))
-      .map(overrideFieldLabel),
+      .map((field) => overrideFieldLabel(field)),
   ];
 }
 

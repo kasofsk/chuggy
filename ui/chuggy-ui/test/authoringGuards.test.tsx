@@ -15,7 +15,7 @@ import {
   RouterProvider,
   useParams,
 } from "@tanstack/react-router";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, expect, test, vi } from "vitest";
 
@@ -31,6 +31,7 @@ import {
   useAuthoringGuards,
 } from "../app/browser/editor/authoringGuards.tsx";
 import { CreationTicketLink } from "../app/browser/TicketCreation.tsx";
+import { renderCopied } from "./copied.tsx";
 
 afterEach(() => {
   cleanup();
@@ -85,7 +86,7 @@ function drawn(dirty: boolean): void {
       away,
     ]),
   });
-  render(<RouterProvider router={router} />);
+  renderCopied(<RouterProvider router={router} />);
 }
 
 function confirming(answer: boolean) {
@@ -163,7 +164,7 @@ function drawnLinked(): void {
       component: leaf === "new" ? Creation : Ticket,
     }),
   );
-  render(
+  renderCopied(
     <RouterProvider
       router={createRouter({
         history: createMemoryHistory({

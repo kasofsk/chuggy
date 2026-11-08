@@ -23,6 +23,7 @@ import {
 import { Decoration, EditorView, WidgetType } from "@codemirror/view";
 import { highlightCode } from "@lezer/highlight";
 
+import type { Copy, CopyText } from "../../core/copy.ts";
 import {
   ticketYamlMaterializable,
   ticketYamlMaterialized,
@@ -75,9 +76,10 @@ function chugFragmentsMaterialize(
   view: EditorView,
   reference: TicketYamlReference,
   catalog: TicketYamlCatalog,
+  text: CopyText,
 ): void {
   const source = view.state.doc.toString();
-  const next = ticketYamlMaterialized(source, reference, catalog);
+  const next = ticketYamlMaterialized(source, reference, catalog, text);
   if (next === undefined || next === source) return;
   view.dispatch({
     changes: { from: 0, to: source.length, insert: next },
@@ -158,10 +160,31 @@ function chugFragmentsHighlighted(
   return lines;
 }
 
-interface ChugFragmentsPreviewOptions {
-  readonly catalog: TicketYamlCatalog;
+/** How a fragment is drawn: its highlighting, and the words of its controls. */
+interface ChugFragmentsDrawing {
   readonly highlighter: HighlightStyle;
+  readonly text: CopyText;
+}
+
+interface ChugFragmentsPreviewOptions extends ChugFragmentsDrawing {
+  readonly catalog: TicketYamlCatalog;
   readonly view: EditorView;
+}
+
+/** What a preview is headed with: the kind of fragment, and its name. */
+function chugFragmentsLabel(root: TicketYamlFragmentRoot, name: string): Copy {
+  switch (root) {
+    case "Ticket":
+      return { id: "ticket-authoring-fragment-ticket", args: { name } };
+    case "Workload":
+      return { id: "ticket-authoring-fragment-workload", args: { name } };
+    case "Plan":
+      return { id: "ticket-authoring-fragment-plan", args: { name } };
+    case "Finalizer":
+      return { id: "ticket-authoring-fragment-landing", args: { name } };
+    case "Prompt":
+      return { id: "ticket-authoring-fragment-prompt", args: { name } };
+  }
 }
 
 /** One fragment looked through: its text, each reference in it able to open beneath its own line. */
@@ -175,7 +198,7 @@ function chugFragmentsPreview(
   section.className = "cm-fragment-preview";
   const label = document.createElement("div");
   label.className = "cm-fragment-label";
-  label.textContent = `${root.toLowerCase()} ${name}`;
+  label.textContent = options.text(chugFragmentsLabel(root, name));
   section.append(label);
   const text =
     root === "Ticket" ? undefined : options.catalog.fragment(root, name);
@@ -223,7 +246,10 @@ function chugFragmentsNestedActions(
   if (depth >= chugFragmentsDepthMax) return [];
   let open: HTMLElement | undefined;
   const toggle = chugFragmentsButton(
-    `Look through ${reference.name}`,
+    options.text({
+      id: "ticket-authoring-fragment-look-through",
+      args: { name: reference.name },
+    }),
     "▸",
     () => {
       if (open === undefined) {
@@ -248,10 +274,18 @@ function chugFragmentsNestedActions(
     ? [
         toggle,
         chugFragmentsButton(
-          `Edit ${reference.name} in this ticket`,
+          options.text({
+            id: "ticket-authoring-fragment-edit",
+            args: { name: reference.name },
+          }),
           "◆",
           () => {
-            chugFragmentsMaterialize(options.view, reference, options.catalog);
+            chugFragmentsMaterialize(
+              options.view,
+              reference,
+              options.catalog,
+              options.text,
+            );
           },
         ),
       ]
@@ -262,15 +296,18 @@ class ChugFragmentsActions extends WidgetType {
   readonly reference: TicketYamlReference;
   readonly expanded: boolean;
   readonly catalog: TicketYamlCatalog;
+  readonly text: CopyText;
   constructor(
     reference: TicketYamlReference,
     expanded: boolean,
     catalog: TicketYamlCatalog,
+    text: CopyText,
   ) {
     super();
     this.reference = reference;
     this.expanded = expanded;
     this.catalog = catalog;
+    this.text = text;
   }
   override eq(other: ChugFragmentsActions): boolean {
     return (
@@ -286,7 +323,12 @@ class ChugFragmentsActions extends WidgetType {
     const { reference } = this;
     span.append(
       chugFragmentsButton(
-        `${this.expanded ? "Close" : "Look through"} ${reference.name}`,
+        this.text({
+          id: this.expanded
+            ? "ticket-authoring-fragment-close"
+            : "ticket-authoring-fragment-look-through",
+          args: { name: reference.name },
+        }),
         this.expanded ? "▾" : "▸",
         () => {
           view.dispatch({
@@ -298,12 +340,16 @@ class ChugFragmentsActions extends WidgetType {
     if (ticketYamlMaterializable("Ticket", reference))
       span.append(
         chugFragmentsButton(
-          reference.kind === "Prompt"
-            ? `Edit the text of ${reference.name} in this ticket`
-            : `Edit ${reference.name} in this ticket`,
+          this.text({
+            id:
+              reference.kind === "Prompt"
+                ? "ticket-authoring-fragment-edit-text"
+                : "ticket-authoring-fragment-edit",
+            args: { name: reference.name },
+          }),
           "◆",
           () => {
-            chugFragmentsMaterialize(view, reference, this.catalog);
+            chugFragmentsMaterialize(view, reference, this.catalog, this.text);
           },
         ),
       );
@@ -317,16 +363,16 @@ class ChugFragmentsActions extends WidgetType {
 class ChugFragmentsShown extends WidgetType {
   readonly reference: TicketYamlReference;
   readonly catalog: TicketYamlCatalog;
-  readonly highlighter: HighlightStyle;
+  readonly drawing: ChugFragmentsDrawing;
   constructor(
     reference: TicketYamlReference,
     catalog: TicketYamlCatalog,
-    highlighter: HighlightStyle,
+    drawing: ChugFragmentsDrawing,
   ) {
     super();
     this.reference = reference;
     this.catalog = catalog;
-    this.highlighter = highlighter;
+    this.drawing = drawing;
   }
   override eq(other: ChugFragmentsShown): boolean {
     return (
@@ -339,7 +385,7 @@ class ChugFragmentsShown extends WidgetType {
     return chugFragmentsPreview(
       this.reference.kind,
       this.reference.name,
-      { catalog: this.catalog, highlighter: this.highlighter, view },
+      { ...this.drawing, catalog: this.catalog, view },
       0,
     );
   }
@@ -351,7 +397,7 @@ class ChugFragmentsShown extends WidgetType {
 function chugFragmentsDecorations(
   state: EditorState,
   value: ChugFragmentsState,
-  highlighter: HighlightStyle,
+  drawing: ChugFragmentsDrawing,
 ) {
   const { catalog } = value;
   if (catalog === undefined) return Decoration.none;
@@ -371,13 +417,18 @@ function chugFragmentsDecorations(
           reference.to,
         ),
         Decoration.widget({
-          widget: new ChugFragmentsActions(reference, expanded, catalog),
+          widget: new ChugFragmentsActions(
+            reference,
+            expanded,
+            catalog,
+            drawing.text,
+          ),
           side: 1,
         }).range(end),
         ...(expanded
           ? [
               Decoration.widget({
-                widget: new ChugFragmentsShown(reference, catalog, highlighter),
+                widget: new ChugFragmentsShown(reference, catalog, drawing),
                 block: true,
                 side: 2,
               }).range(end),
@@ -390,7 +441,7 @@ function chugFragmentsDecorations(
 }
 
 /** The state the references are drawn from: the catalog, which are open, and what that draws. */
-function chugFragmentsField(highlighter: HighlightStyle) {
+function chugFragmentsField(drawing: ChugFragmentsDrawing) {
   return StateField.define<
     ChugFragmentsState & {
       readonly decorations: ReturnType<typeof Decoration.set>;
@@ -423,11 +474,7 @@ function chugFragmentsField(highlighter: HighlightStyle) {
       const next = { catalog, expanded };
       return {
         ...next,
-        decorations: chugFragmentsDecorations(
-          transaction.state,
-          next,
-          highlighter,
-        ),
+        decorations: chugFragmentsDecorations(transaction.state, next, drawing),
       };
     },
     provide: (held) =>
@@ -436,13 +483,16 @@ function chugFragmentsField(highlighter: HighlightStyle) {
 }
 
 /** The references a ticket's text writes, as an extension and the two ways it is told of a catalog and of expanding. */
-export function chugFragments(highlighter: HighlightStyle): {
+export function chugFragments(
+  highlighter: HighlightStyle,
+  text: CopyText,
+): {
   readonly extension: Extension;
   setCatalog(view: EditorView, catalog: TicketYamlCatalog | undefined): void;
   expandAll(view: EditorView): void;
   collapseAll(view: EditorView): void;
 } {
-  const field = chugFragmentsField(highlighter);
+  const field = chugFragmentsField({ highlighter, text });
   return {
     extension: field,
     setCatalog(view, catalog) {

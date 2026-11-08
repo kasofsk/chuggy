@@ -139,6 +139,7 @@ function useCreationDraftSaving(
 
 /** The form over the draft, following it as it is revised. */
 function CreationDraftForm(props: DraftFormProps): ReactNode {
+  const text = useCopyText();
   const [faults, setFaults] = useState<readonly CreationFault[]>([]);
   const bound = props.context.repositories;
   const repositories = useMemo(() => creationRepositories(bound), [bound]);
@@ -194,7 +195,7 @@ function CreationDraftForm(props: DraftFormProps): ReactNode {
       lead={
         <>
           {dropped === undefined ? null : (
-            <Notice tone="info" detail={dropped} />
+            <Notice tone="info" detail={text(dropped)} />
           )}
           <DraftFollowNotice
             standing={follow.standing}

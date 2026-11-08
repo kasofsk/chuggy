@@ -25,6 +25,7 @@ import {
   workloadShownOf,
   workloadWrittenOf,
 } from "../../core/workloadOverrides.ts";
+import type { CopyText } from "../../core/copy.ts";
 import { ticketYamlWorkloadUnset } from "./ticketYamlWorkloads.ts";
 
 /** What a reference names in its catalog. */
@@ -217,6 +218,7 @@ export function ticketYamlMaterialized(
   source: string,
   reference: TicketYamlReference,
   catalog: TicketYamlCatalog,
+  text: CopyText,
 ): string | undefined {
   const document = parseDocument(source);
   if (document.errors.length > 0 || !isMap(document.contents)) return undefined;
@@ -224,10 +226,10 @@ export function ticketYamlMaterialized(
   if (fragment === undefined) return undefined;
   if (reference.kind === "Prompt") {
     if (document.getIn(reference.path) !== reference.name) return undefined;
-    const text = new Scalar(fragment);
-    text.type = Scalar.BLOCK_LITERAL;
+    const written = new Scalar(fragment);
+    written.type = Scalar.BLOCK_LITERAL;
     document.setIn(reference.path.slice(0, -1), document.createNode({}));
-    document.setIn([...reference.path.slice(0, -1), "text"], text);
+    document.setIn([...reference.path.slice(0, -1), "text"], written);
     return document.toString({ lineWidth: 0, nullStr: "" });
   }
   if (reference.kind !== "Workload") return undefined;
@@ -235,7 +237,8 @@ export function ticketYamlMaterialized(
   if (document.hasIn(path)) return source;
   const parsed = parseDocument(fragment);
   if (!isMap(parsed.contents)) return undefined;
-  parsed.contents.comment = ticketYamlWorkloadUnset(parsed.toJSON()) ?? null;
+  parsed.contents.comment =
+    ticketYamlWorkloadUnset(parsed.toJSON(), text) ?? null;
   if (!isMap(document.get("workloads", true)))
     document.set("workloads", document.createNode({}));
   document.setIn(path, parsed.contents);

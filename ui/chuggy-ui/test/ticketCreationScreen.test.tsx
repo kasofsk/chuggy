@@ -51,6 +51,7 @@ import { sessionPlacementBody } from "./sessionPlacementFixture.ts";
 import { workRunnerOver, workRunnerUnreadable } from "./workRunnerReads.ts";
 import type { WorkRunnerReads } from "./workRunnerReads.ts";
 import type * as BrowserPorts from "../app/browser/ports.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
@@ -198,8 +199,10 @@ test("a submit the project moved under, whose re-read fails, keeps the form and 
       .value,
   ).toBe("ship it");
   expect(screen.queryByText(/^Failed to load · /u)).toBeNull();
-  expect(screen.queryByText(creationStaleSentence)).toBeNull();
-  expect(screen.getByText(creationStaleUnreadSentence)).toBeTruthy();
+  expect(screen.queryByText(copyTextEn(creationStaleSentence))).toBeNull();
+  expect(
+    screen.getByText(copyTextEn(creationStaleUnreadSentence)),
+  ).toBeTruthy();
 });
 
 /** The project's reads failing from here on, and every read asked again, as a
@@ -274,7 +277,9 @@ test("a submit in flight keeps its outcome through a read of the project that fa
   await rereadFailing(failing, client);
   drafted.release(answer({ error: { code: "ProjectNotActive" } }, 409));
   await settled();
-  expect(screen.getByText(creationProjectNotActiveSentence)).toBeTruthy();
+  expect(
+    screen.getByText(copyTextEn(creationProjectNotActiveSentence)),
+  ).toBeTruthy();
   expect(purposeBox().value).toBe("ship it");
   expect(drafts).toBe(1);
 });

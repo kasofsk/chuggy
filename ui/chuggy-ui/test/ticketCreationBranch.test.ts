@@ -35,6 +35,7 @@ import {
   creationPullRequestMerge,
   creationPush,
 } from "./ticketCreationFixture.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 
 const titled = "Fix the login page";
 const named = "fix-the-login-page";
@@ -198,7 +199,9 @@ function branchSent(form: TicketCreationForm): string | undefined {
 
 function refusals(assembled: CreationAssembly): readonly string[] {
   return assembled.assembled === "Faults"
-    ? assembled.faults.map((fault) => `${fault.field}: ${fault.reason}`)
+    ? assembled.faults.map(
+        (fault) => `${fault.field}: ${copyTextEn(fault.reason)}`,
+      )
     : [];
 }
 
@@ -220,21 +223,21 @@ test.each(["", "!!!"])(
   "with a title of %j the refusal stands as it was",
   (title) => {
     expect(refusals(sent(proposing({ title })))).toStrictEqual([
-      `branch: ${creationLandingBranchSentence}`,
+      `branch: ${copyTextEn(creationLandingBranchSentence)}`,
     ]);
   },
 );
 
 test("a branch box holding only a space is refused, not filled", () => {
   expect(refusals(sent(proposing({ branchName: " " })))).toStrictEqual([
-    `branch: ${creationLandingBranchSentence}`,
+    `branch: ${copyTextEn(creationLandingBranchSentence)}`,
   ]);
 });
 
 test("a pasted reference is refused for its prefix, not replaced", () => {
   expect(
     refusals(sent(proposing({ branchName: `${briefBranchPrefix}mine` }))),
-  ).toStrictEqual([`branch: ${creationBranchPrefixedSentence}`]);
+  ).toStrictEqual([`branch: ${copyTextEn(creationBranchPrefixedSentence)}`]);
 });
 
 /** A proposal that is the target's own name is a pull request into itself,
@@ -252,5 +255,5 @@ test("a proposal naming the target branch is refused at the target", () => {
 test("the assembly itself proposes nothing: the same form is refused unproposed", () => {
   expect(
     refusals(creationBodyFrom(creationOffers, proposing(), [])),
-  ).toStrictEqual([`branch: ${creationLandingBranchSentence}`]);
+  ).toStrictEqual([`branch: ${copyTextEn(creationLandingBranchSentence)}`]);
 });

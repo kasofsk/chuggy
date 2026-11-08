@@ -26,6 +26,7 @@ import type { draftRevisionSchema } from "../../../../../src/contract/requests.t
 import type { z } from "zod";
 
 import type { ApiPorts } from "../../core/apiRequest.ts";
+import type { Copy } from "../../core/copy.ts";
 import type { CreationFault } from "../../core/ticketCreation.ts";
 import { draftRevisionSaved } from "../../core/ticketCreationRun.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
@@ -103,7 +104,9 @@ export type DraftSaveAssembled =
   | { readonly assembled: "Faults"; readonly faults: readonly CreationFault[] };
 
 /** The line a form whose edits do not assemble says in place of a save. */
-export const draftSaveFaultsSentence = "Draft not saved · Fix the form to send";
+export const draftSaveFaultsSentence: Copy = {
+  id: "ticket-authoring-draft-unsaved",
+};
 
 /** What a form following a draft hands the save it offers. */
 export interface DraftSaveOffer {
@@ -146,7 +149,7 @@ export function useDraftSaveOffered(offer: DraftSaveOffer): DraftSaving {
       const assembled = now.assemble();
       if (assembled.assembled === "Faults") {
         now.onFaults(assembled.faults);
-        setRefusal(draftSaveFaultsSentence);
+        setRefusal(text(draftSaveFaultsSentence));
         return "Refused";
       }
       const ended = await draftRevisionSaved(
