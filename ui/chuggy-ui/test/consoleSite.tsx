@@ -29,6 +29,7 @@ import { renderCopied } from "./copied.tsx";
 import { StrictMode, useState } from "react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, expect, vi } from "vitest";
+import { toJSONSchema } from "zod";
 import type { z } from "zod";
 
 import { ticketActionReachResponseSchema } from "../../../src/contract/actionReach.ts";
@@ -671,6 +672,9 @@ export interface ConsoleSite extends ConsoleNetwork {
   readonly unrouted: string[];
   /** Every fixture its route's schema refused, with why. */
   readonly drifted: string[];
+  /** Every string a read answered with but the codes its schema fixes: the
+   * data a screen may draw. */
+  readonly served: string[];
   /** Every component whose state was set while a different one rendered,
    * with the one rendering. */
   readonly updatesInRender: string[];
@@ -706,6 +710,46 @@ function consoleSiteLate<T>(answered: () => T | Promise<T>): Promise<T> {
   });
 }
 
+/** Every string a schema fixes, as an enumerated or constant value: a code,
+ * which a screen draws through its label and never as it is. */
+function consoleSiteCodes(schema: z.ZodType): ReadonlySet<string> {
+  const codes = new Set<string>();
+  const walked = (node: unknown): void => {
+    if (typeof node !== "object" || node === null) return;
+    if (Array.isArray(node)) {
+      for (const item of node) walked(item);
+      return;
+    }
+    const held = node as Readonly<Record<string, unknown>>;
+    const enumerated: unknown = held["enum"];
+    const fixedValues: readonly unknown[] = Array.isArray(enumerated)
+      ? enumerated
+      : [];
+    for (const fixed of [...fixedValues, held["const"]])
+      if (typeof fixed === "string") codes.add(fixed);
+    for (const value of Object.values(held)) walked(value);
+  };
+  walked(toJSONSchema(schema, { io: "input", unrepresentable: "any" }));
+  return codes;
+}
+
+/** Every string in a body its schema answered with, but the codes it fixes. */
+export function consoleSiteServedOf(
+  schema: z.ZodType,
+  body: unknown,
+): readonly string[] {
+  const codes = consoleSiteCodes(schema);
+  const served: string[] = [];
+  const walked = (node: unknown): void => {
+    if (typeof node === "string") {
+      if (!codes.has(node)) served.push(node);
+    } else if (typeof node === "object" && node !== null)
+      for (const value of Object.values(node)) walked(value);
+  };
+  walked(body);
+  return served;
+}
+
 function consoleSiteRead(site: ConsoleSite, url: string): Response {
   const address = new URL(url, "http://console.test");
   site.reads.push(`${address.pathname}${address.search}`);
@@ -717,6 +761,7 @@ function consoleSiteRead(site: ConsoleSite, url: string): Response {
   if (site.failing?.test(address.pathname) === true)
     return answer({ error: { code: "InternalError" } }, 500);
   const body = read.body(address);
+  site.served.push(...consoleSiteServedOf(read.schema, body));
   const parsed = read.schema.safeParse(body);
   if (!parsed.success) site.drifted.push(`${url}: ${parsed.error.message}`);
   return answer(body);
@@ -795,6 +840,7 @@ export function consoleSiteOpened(): ConsoleSite {
     reads: [],
     unrouted: [],
     drifted: [],
+    served: [],
     updatesInRender: [],
     cursorsDropped: [],
     stream: streamServer(() => {
