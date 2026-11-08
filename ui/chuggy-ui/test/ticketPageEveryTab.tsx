@@ -31,14 +31,23 @@ export function TicketPageEveryTab(): ReactNode {
   );
 }
 
-/** The ticket page at one run's own page, on the sub-tab a case names. */
+/** The ticket page at one run's own page, on the sub-tab a case names and at
+ * the call it names where it names one. */
 export function TicketRunPageAt(props: {
   readonly task: number;
   readonly view?: TicketRunView;
+  readonly step?: string;
 }): ReactNode {
+  const { view, step } = props;
   return (
     <TicketPage>
-      <TicketRunAt task={props.task} asked={props.view} />
+      <TicketRunAt
+        task={props.task}
+        asked={{
+          ...(view === undefined ? {} : { view }),
+          ...(step === undefined ? {} : { step }),
+        }}
+      />
     </TicketPage>
   );
 }

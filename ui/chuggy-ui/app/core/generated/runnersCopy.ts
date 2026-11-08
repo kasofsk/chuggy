@@ -52,6 +52,8 @@ export interface RunnersCopy {
   readonly "runners-ask-advanced": Record<never, never>;
   readonly "runners-ask-create": Record<never, never>;
   readonly "runners-ask-cancel": Record<never, never>;
+  readonly "runners-package-linux": Record<never, never>;
+  readonly "runners-package-darwin": Record<never, never>;
   readonly "runners-package-needs-linux": Record<never, never>;
   readonly "runners-package-needs-darwin": Record<never, never>;
   readonly "runners-capability-refused": {

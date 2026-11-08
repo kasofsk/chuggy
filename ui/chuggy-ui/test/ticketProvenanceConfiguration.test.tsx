@@ -295,7 +295,7 @@ test("the Work row reads the model off its own flag, and opens onto its settings
       ],
       ["Tools", "Bash · Edit · Read · Write · Glob · Grep"],
       ["Credentials", "chuggy-github-worker · claude-code · track-record"],
-      ["Access", "Network · Workspace writable"],
+      ["Access", "Network · Working directory writable"],
       ["Image", "worker@sha256:0efb9a93"],
       ["Setup", "npm ci"],
       ["Practices", "Regression coverage · Acceptance criteria"],

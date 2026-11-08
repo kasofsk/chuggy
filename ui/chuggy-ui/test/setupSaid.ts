@@ -8,7 +8,15 @@
  * are written once.
  */
 
-import type { SetupStepState } from "../app/core/setupReport.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
+import { copyOrDataText } from "../app/core/copy.ts";
+import type { CopyOrData } from "../app/core/copy.ts";
+import type {
+  SetupNext,
+  SetupStepSaid,
+  SetupStepState,
+  SetupThing,
+} from "../app/core/setupReport.ts";
 import { setupSiteAt, setupSiteHeld, setupSiteWorkspace } from "./setupSite.ts";
 import type {
   SetupSite,
@@ -21,6 +29,63 @@ import type {
 
 /** A step as it is said: how it stands, and the few words beside it. */
 export type Said = readonly [SetupStepState, string];
+
+/** A step's few words as the program prints them, and nothing where it says none. */
+export function saidDetail(detail: CopyOrData | undefined): string {
+  return detail === undefined ? "" : copyOrDataText(copyTextEn, detail);
+}
+
+/** A step as it is said, in the catalog's words. */
+export function saidStep(step: SetupStepSaid): Said {
+  return [step.state, saidDetail(step.detail)];
+}
+
+/** A next thing as the program words it, each descriptor in it formatted. */
+export type SaidThing =
+  | { readonly thing: "Done"; readonly tell: string }
+  | { readonly thing: "Hand"; readonly tell: string; readonly when: string }
+  | {
+      readonly thing: "Offer";
+      readonly tell: string;
+      readonly when: string;
+      readonly workspace: string;
+      readonly project: string;
+    }
+  | {
+      readonly thing: "Ask";
+      readonly ask: string;
+      readonly flag: "workspace" | "project";
+    }
+  | {
+      readonly thing: "Failed";
+      readonly found: string;
+      readonly stale: boolean;
+    };
+
+export function saidThing(thing: SetupThing): SaidThing {
+  switch (thing.thing) {
+    case "Done":
+      return { ...thing, tell: copyTextEn(thing.tell) };
+    case "Hand":
+    case "Offer":
+      return {
+        ...thing,
+        tell: copyTextEn(thing.tell),
+        when: copyTextEn(thing.when),
+      };
+    case "Ask":
+      return { ...thing, ask: copyTextEn(thing.ask) };
+    case "Failed":
+      return { ...thing, found: copyTextEn(thing.found) };
+  }
+}
+
+export function saidNext(next: SetupNext): {
+  readonly carried: SetupNext["carried"];
+  readonly thing: SaidThing;
+} {
+  return { carried: next.carried, thing: saidThing(next.thing) };
+}
 
 export const saidTodo: Said = ["todo", ""];
 export const saidAcme: Said = ["done", "acme"];
@@ -129,7 +194,7 @@ export function saidLandingSite(): SetupSite {
 
 export const saidLanding: readonly Said[] = [
   ...saidReady,
-  ["waiting", "ticket 1 is in Finalization"],
+  ["waiting", "ticket 1 is in Landing"],
 ];
 
 /** The step each read leaves unread, and what the read is called there. */

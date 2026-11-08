@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * One catalog as the Catalog page draws it, whichever version it is: its
  * entries grouped and listed, and the chosen one beside them with what it
@@ -17,12 +16,16 @@ import {
   catalogDefaultLabel,
   catalogEntryFields,
   catalogEntrySummary,
+  catalogKindLabel,
+  catalogReferenceAt,
 } from "../../core/catalogEntries.ts";
 import type {
   CatalogEntries,
   CatalogEntry,
   CatalogReference,
 } from "../../core/catalogEntries.ts";
+import type { Copy } from "../../core/copy.ts";
+import { copyOrDataText } from "../../core/copy.ts";
 import { navRoutes } from "../../core/shellNav.ts";
 import { MarkdownReport } from "../ui/MarkdownReport.tsx";
 import { catalogEntrySource } from "./catalogSource.ts";
@@ -56,12 +59,13 @@ export function CatalogLink(props: {
 }
 
 function CatalogBadges(props: { readonly entry: CatalogEntry }): ReactNode {
+  const text = useCopyText();
   if (props.entry.defaults.length === 0) return null;
   return (
     <span className="catalog-badges">
       {props.entry.defaults.map((role) => (
         <span key={role} className="catalog-badge">
-          {catalogDefaultLabel(role)}
+          {text(catalogDefaultLabel(role))}
         </span>
       ))}
     </span>
@@ -80,10 +84,10 @@ function CatalogList(props: {
         <section
           key={group.kind}
           className="catalog-group"
-          aria-label={group.title}
+          aria-label={text(group.title)}
         >
           <h2 className="catalog-group-title">
-            {group.title}{" "}
+            {text(group.title)}{" "}
             <span className="catalog-count">{group.entries.length}</span>
           </h2>
           <ul className="catalog-list">
@@ -113,21 +117,23 @@ function CatalogList(props: {
 }
 
 function CatalogReferences(props: {
-  readonly title: string;
-  readonly none: string;
+  readonly title: Copy;
+  readonly none: Copy;
   readonly base: CatalogQuery;
   readonly references: readonly CatalogReference[];
   readonly entries: CatalogEntries;
 }): ReactNode {
+  const text = useCopyText();
+  const title = text(props.title);
   return (
-    <section className="catalog-references" aria-label={props.title}>
-      <h4>{props.title}</h4>
+    <section className="catalog-references" aria-label={title}>
+      <h4>{title}</h4>
       {props.references.length === 0 ? (
-        <p className="catalog-none">{props.none}</p>
+        <p className="catalog-none">{text(props.none)}</p>
       ) : (
         <ul>
           {props.references.map((reference) => (
-            <li key={`${reference.key}\u0000${reference.field}`}>
+            <li key={catalogReferenceAt(reference)}>
               {props.entries.byKey.has(reference.key) ? (
                 <CatalogLink query={{ ...props.base, entry: reference.key }}>
                   {reference.name}
@@ -135,7 +141,9 @@ function CatalogReferences(props: {
               ) : (
                 <span>{reference.name}</span>
               )}
-              <span className="catalog-field">{reference.field}</span>
+              <span className="catalog-field">
+                {copyOrDataText(text, reference.field)}
+              </span>
             </li>
           ))}
         </ul>
@@ -157,7 +165,9 @@ function CatalogDetail(props: {
     <article className="catalog-detail" aria-label={entry.name}>
       <header className="catalog-detail-head">
         <h3 className="catalog-detail-name">{entry.name}</h3>
-        <span className="catalog-detail-kind">{entry.detail.kind}</span>
+        <span className="catalog-detail-kind">
+          {text(catalogKindLabel(entry.detail.kind))}
+        </span>
         <CatalogBadges entry={entry} />
       </header>
       <dl className="catalog-fields">
@@ -169,15 +179,15 @@ function CatalogDetail(props: {
         ))}
       </dl>
       <CatalogReferences
-        title="Uses"
-        none="Nothing."
+        title={{ id: "configuration-catalog-uses" }}
+        none={{ id: "configuration-catalog-uses-none" }}
         base={props.base}
         references={entries.uses.get(entry.key) ?? []}
         entries={entries}
       />
       <CatalogReferences
-        title="Used by"
-        none="Nothing in the catalog."
+        title={{ id: "configuration-catalog-used-by" }}
+        none={{ id: "configuration-catalog-used-by-none" }}
         base={props.base}
         references={entries.usedBy.get(entry.key) ?? []}
         entries={entries}
@@ -190,6 +200,26 @@ function CatalogDetail(props: {
     </article>
   );
 }
+
+/** An address naming an entry this catalog does not hold, the name drawn as
+ * the code it is wherever the line places it. */
+function CatalogEntryAbsent(props: { readonly entry: string }): ReactNode {
+  const text = useCopyText();
+  const [before, after] = text({
+    id: "configuration-catalog-entry-absent",
+    args: { entry: catalogEntryAbsentMark },
+  }).split(catalogEntryAbsentMark);
+  return (
+    <p className="catalog-none" role="alert">
+      {before}
+      <code>{props.entry}</code>
+      {after}
+    </p>
+  );
+}
+
+/** What stands in the line for the entry's name until it is drawn as code. */
+const catalogEntryAbsentMark = "\u0000";
 
 /** One version as a catalog: its entries listed, and the chosen one beside them. */
 export function CatalogShown(props: {
@@ -212,9 +242,7 @@ export function CatalogShown(props: {
       {list}
       <div className="catalog-pane">
         {entry === undefined ? (
-          <p className="catalog-none" role="alert">
-            Nothing in this catalog is <code>{props.selected}</code>.
-          </p>
+          <CatalogEntryAbsent entry={props.selected} />
         ) : (
           <CatalogDetail
             base={props.base}

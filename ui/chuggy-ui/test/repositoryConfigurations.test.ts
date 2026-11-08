@@ -9,6 +9,8 @@
 
 import { expect, test } from "vitest";
 
+import { copiedWords } from "./copiedWords.ts";
+
 import { nativeHttpBasePath } from "../../../src/contract/http.ts";
 import type { ApiPorts } from "../app/core/apiRequest.ts";
 import { configurationPagesMax } from "../app/core/apiRoutes.ts";
@@ -97,9 +99,27 @@ test("a catalog's row names the work a ticket selecting none runs, among the wor
     defaults: { work: "build", evaluation: "review" },
   };
   expect(
-    repositoryConfigurationRow({ ...ready, catalog } as typeof ready).facts
-      ?.worker,
+    copiedWords(
+      repositoryConfigurationRow({ ...ready, catalog } as typeof ready).facts
+        ?.worker,
+    ),
   ).toStrictEqual({ text: "build of 2 workloads", title: "build, review" });
+});
+
+test("a catalog holding one workload names it in the singular", () => {
+  const ready = declared("r8", chuggy, "chuggy");
+  const catalog = {
+    workloads: ["build"],
+    plans: [],
+    finalizers: [],
+    defaults: { work: "build", evaluation: "build" },
+  };
+  expect(
+    copiedWords(
+      repositoryConfigurationRow({ ...ready, catalog } as typeof ready).facts
+        ?.worker,
+    ),
+  ).toStrictEqual({ text: "build of 1 workload", title: "build" });
 });
 
 /**
@@ -141,7 +161,7 @@ test("the revisions are walked to the cursor's end, and no further than the budg
   );
   expect(walked.outcome === "Ok" && walked.value.partial).toBe(true);
   expect(calls[0]).toBe(
-    `${nativeHttpBasePath}/tenants/acme/projects/atlas/configurations`,
+    `${nativeHttpBasePath}/tenants/acme-co/projects/atlas-web/configurations`,
   );
   expect(calls.length).toBe(configurationPagesMax);
 });
@@ -222,7 +242,7 @@ test("a repository past the budget's reach of every revision is its page's rows 
   if (read.outcome !== "Ok") throw new Error("the read was refused");
   expect(read.value.partial).toBe(false);
   expect(calls).toStrictEqual([
-    `${nativeHttpBasePath}/tenants/acme/projects/atlas/configurations?latest=true`,
+    `${nativeHttpBasePath}/tenants/acme-co/projects/atlas-web/configurations?latest=true`,
   ]);
   expect(
     repositoryConfigurations(read.value.configurations, chuggy).map(

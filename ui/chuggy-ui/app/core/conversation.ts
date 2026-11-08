@@ -532,6 +532,24 @@ export function conversationExchangeParts(
   return parts;
 }
 
+/** Whether a step is the tool call an identity names. */
+export function conversationStepIsCall(
+  step: ConversationStep,
+  call: string,
+): boolean {
+  return step.step === "ToolCall" && step.id === call;
+}
+
+/** Whether any exchange holds the tool call an identity names. */
+export function conversationExchangesHoldCall(
+  exchanges: readonly ConversationExchange[],
+  call: string,
+): boolean {
+  return exchanges.some((exchange) =>
+    exchange.work.some((step) => conversationStepIsCall(step, call)),
+  );
+}
+
 /** Everything an exchange's assistant wrote as text, as one text a reader
  * can take away: its texts in order, a paragraph apart. */
 export function conversationExchangeSaid(

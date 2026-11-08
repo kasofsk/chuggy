@@ -35,7 +35,7 @@ import {
 import type { TicketDispatching } from "./ticketDispatching.ts";
 import { copyTextEn } from "../app/copy/catalog.ts";
 
-const partitionBase = `${nativeHttpBasePath}/tenants/acme/projects/atlas`;
+const partitionBase = `${nativeHttpBasePath}/tenants/acme-co/projects/atlas-web`;
 
 /** A submit by a reader who may not dispatch, and the same by one who may. */
 const releasing: TicketCreationRequest = {

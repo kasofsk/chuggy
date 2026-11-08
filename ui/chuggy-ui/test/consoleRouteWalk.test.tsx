@@ -9,6 +9,11 @@
  * build mounts it, and none of the reads it was once joined from: the tickets
  * an inbox phase holds, the project's open actions, the lead's refusals, its
  * held decisions, or a ticket the inbox holds read on its own.
+ *
+ * UNDER THE PSEUDO WORDING EVERY ROUTE SAYS NOTHING BUT DATA beside the
+ * catalog's altered words, in its text and in what a reader hears of it, which
+ * holds the copy no lint can see. The site's fixtures are written to read as
+ * data, so the check needs no list of words it allows.
  */
 
 import { screen } from "@testing-library/react";
@@ -16,6 +21,7 @@ import { createMemoryHistory } from "@tanstack/react-router";
 import { expect, test, vi } from "vitest";
 
 import { consoleRouterOver } from "../app/browser/routes.tsx";
+import { copyPseudoLocale } from "../app/copy/copyPseudo.ts";
 import { inboxProposalsPolledMs } from "../app/core/inboxProposals.ts";
 import { inboxPhases } from "../../../src/contract/http.ts";
 import {
@@ -67,6 +73,84 @@ const consoleRoutePaths = Object.values(
 test("the router declares routes for the walk to visit", () => {
   expect(consoleRoutePaths.length).toBeGreaterThan(1);
 });
+
+/** The elements whose text is data whatever it spells: code, and what is
+ * marked as no words to translate, as an address is. */
+const consoleRouteCode = 'code, pre, kbd, samp, [translate="no"]';
+
+/** The attributes a reader is shown or hears beside an element's text. */
+const consoleRouteAttributes = ["aria-label", "title", "placeholder"] as const;
+
+/** Whether a word is data rather than copy: it holds no plain letter, as a
+ * pseudo word or a figure does; it holds a digit or joins its letters with a
+ * mark no sentence puts inside a word, as an id, a path or a name written as
+ * an identifier does; or it is capitals alone, as a format's name is. */
+function consoleRouteWordData(word: string): boolean {
+  const bare = word.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "");
+  return (
+    !/[A-Za-z]/u.test(bare) ||
+    /\p{N}/u.test(bare) ||
+    /[\p{L}\p{N}][-_/.@:#=+~][\p{L}\p{N}]/u.test(bare) ||
+    /^[A-Z]{2,}$/u.test(bare)
+  );
+}
+
+/** Every word a reader is shown under the pseudo wording that is neither the
+ * catalog's, altered, nor data, with the text or attribute it was in. */
+function consoleRoutePlain(root: HTMLElement): readonly string[] {
+  const found: string[] = [];
+  const said = (text: string, where: string): void => {
+    const plain = text
+      .split(/\s+/u)
+      .filter((word) => word !== "" && !consoleRouteWordData(word));
+    if (plain.length > 0) found.push(`${where} "${text.trim()}"`);
+  };
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  for (let node = walker.nextNode(); node !== null; node = walker.nextNode()) {
+    const parent = node.parentElement;
+    if (parent === null || parent.closest(consoleRouteCode) !== null) continue;
+    if (parent.closest("script, style") !== null) continue;
+    said(node.textContent ?? "", "text");
+  }
+  for (const element of root.querySelectorAll("*"))
+    for (const name of consoleRouteAttributes) {
+      const value = element.getAttribute(name);
+      if (value !== null) said(value, name);
+    }
+  return found;
+}
+
+test("the pseudo check names plain English, and passes pseudo words and data", () => {
+  const drawn = document.createElement("div");
+  drawn.innerHTML = [
+    "<p>[Ƞḗḗẇ ŧīīƈķḗḗŧ] acme-co #42 PNG</p>",
+    "<p>Billing</p>",
+    '<code>npm ci</code><span translate="no">settings</span>',
+    '<button aria-label="Close" title="[Ƈŀǿǿşḗḗ]"></button>',
+  ].join("");
+  expect(consoleRoutePlain(drawn)).toStrictEqual([
+    'text "Billing"',
+    'aria-label "Close"',
+  ]);
+});
+
+test.each(consoleRoutePaths)(
+  "%s says nothing but data outside the catalog under the pseudo wording",
+  async (path) => {
+    consoleMounted(
+      consoleRouteAddress(path),
+      consoleSession(),
+      true,
+      undefined,
+      copyPseudoLocale,
+    );
+    await consoleAdvanced(consoleRouteWalkSettleMs);
+    expect(
+      consoleRoutePlain(document.body),
+      `plain English on ${path}`,
+    ).toStrictEqual([]);
+  },
+);
 
 test.each(consoleRoutePaths)("%s draws over the site", async (path) => {
   consoleMounted(consoleRouteAddress(path));

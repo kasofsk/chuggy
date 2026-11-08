@@ -30,7 +30,6 @@ export interface PagesCopy {
     readonly repository: unknown;
   };
   readonly "pages-settings": Record<never, never>;
-  readonly "pages-settings-accounts": Record<never, never>;
   readonly "pages-settings-section": {
     readonly level: unknown;
     readonly section: unknown;

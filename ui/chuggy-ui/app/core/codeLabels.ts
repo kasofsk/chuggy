@@ -17,6 +17,7 @@
 
 import {
   blockedReasons,
+  type AccountAgent,
   gitEvidences,
   type changeProposalCreations,
   type changeProposalMergeabilities,
@@ -65,6 +66,16 @@ import type {
 import type { ClosedSet, StageNames } from "./ticketLedger.ts";
 import { stageLabel } from "./ticketLedger.ts";
 import type { TicketActionName } from "./ticketActions.ts";
+
+/** Which agent an account is lent for, by its maker's name. */
+export function accountAgentLabel(agent: AccountAgent): Copy {
+  switch (agent) {
+    case "Claude":
+      return { id: "codes-agent-claude" };
+    case "Codex":
+      return { id: "codes-agent-codex" };
+  }
+}
 
 /** Which wall the ticket hit, as the noun the reader scans for. */
 export function escalationKindLabel(kind: EscalationKind): Copy {

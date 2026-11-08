@@ -1014,6 +1014,34 @@ export const apiRunConfiguration = apiProjectEndpoint(
   }),
 );
 
+/** A page of a run's per-turn series, ascending after the row named. */
+export const apiRunTurns = apiProjectEndpoint(
+  nativeHttpEndpoints.runTurns,
+  (
+    partition,
+    execution: string,
+    attempt: string,
+    page: { readonly after?: number | undefined; readonly limit: number },
+  ) => ({
+    parameters: { ...partition, execution, attempt },
+    query: { after: page.after, limit: page.limit },
+  }),
+);
+
+/** A page of a run's context readings, ascending after the one named. */
+export const apiRunContext = apiProjectEndpoint(
+  nativeHttpEndpoints.runContext,
+  (
+    partition,
+    execution: string,
+    attempt: string,
+    page: { readonly after?: number | undefined; readonly limit: number },
+  ) => ({
+    parameters: { ...partition, execution, attempt },
+    query: { after: page.after, limit: page.limit },
+  }),
+);
+
 export const apiRunError = apiProjectEndpoint(
   nativeHttpEndpoints.runError,
   (partition, execution: string, attempt: string) => ({
@@ -1162,12 +1190,27 @@ export interface LeadTranscriptPage {
   readonly limit?: number | undefined;
 }
 
+/** Which page of a session's context readings a read asks for. */
+export interface SessionContextPage {
+  readonly after: number;
+  readonly limit: number;
+}
+
 /** The chain over the batches above the one named, with the held subset marked. */
 export const apiLeadTranscript = apiProjectEndpoint(
   nativeHttpEndpoints.leadTranscript,
   (partition, page: LeadTranscriptPage = {}) => ({
     parameters: partition,
     query: { stream: page.stream, after: page.after, limit: page.limit },
+  }),
+);
+
+/** A page of the lead's context readings by turn, after the turn named. */
+export const apiLeadContext = apiProjectEndpoint(
+  nativeHttpEndpoints.leadContext,
+  (partition, page: SessionContextPage) => ({
+    parameters: partition,
+    query: { after: page.after, limit: page.limit },
   }),
 );
 
@@ -1212,6 +1255,15 @@ export const apiThreadTranscript = apiProjectEndpoint(
   (partition, session: string, page: LeadTranscriptPage = {}) => ({
     parameters: { ...partition, session },
     query: { stream: page.stream, after: page.after, limit: page.limit },
+  }),
+);
+
+/** A page of one thread's context readings by turn, after the turn named. */
+export const apiThreadContext = apiProjectEndpoint(
+  nativeHttpEndpoints.threadContext,
+  (partition, session: string, page: SessionContextPage) => ({
+    parameters: { ...partition, session },
+    query: { after: page.after, limit: page.limit },
   }),
 );
 
@@ -1336,6 +1388,14 @@ export const apiChatThreadTranscript = apiTenantEndpoint(
   (tenant, session: string, page: LeadTranscriptPage = {}) => ({
     parameters: { tenant, session },
     query: { stream: page.stream, after: page.after, limit: page.limit },
+  }),
+);
+
+export const apiChatThreadContext = apiTenantEndpoint(
+  nativeHttpEndpoints.chatThreadContext,
+  (tenant, session: string, page: SessionContextPage) => ({
+    parameters: { tenant, session },
+    query: { after: page.after, limit: page.limit },
   }),
 );
 

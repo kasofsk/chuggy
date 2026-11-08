@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * What a repository declares, one row per configuration name: what it runs the
  * work on, how many stages judge it, and what finalizing it takes.
@@ -11,6 +10,7 @@
 
 import type { ReactNode } from "react";
 
+import { copyOrDataText } from "../../core/copy.ts";
 import { configurationsPartialLabel } from "../../core/repositoryConfigurations.ts";
 import type { RepositoryConfigurationRow } from "../../core/repositoryConfigurations.ts";
 import { EmptyState } from "../ui/EmptyState.tsx";
@@ -27,14 +27,14 @@ function RepositoryConfigurationFacts(props: {
   if (facts === undefined)
     return (
       <td colSpan={3}>
-        <Pill tone="neutral">Incomplete</Pill>
+        <Pill tone="neutral">{text({ id: "repositories-incomplete" })}</Pill>
       </td>
     );
   return (
     <>
       <td>
         <Tooltip text={facts.worker.title}>
-          <span>{facts.worker.text}</span>
+          <span>{copyOrDataText(text, facts.worker.text)}</span>
         </Tooltip>
       </td>
       <td className="tabular-nums">{facts.stages}</td>
@@ -45,28 +45,34 @@ function RepositoryConfigurationFacts(props: {
 
 /** What the budget left unread, which is a fact about the table, not a row. */
 function RepositoryConfigurationsPartial(): ReactNode {
-  return <p className="text-ink-3 text-sm">{configurationsPartialLabel}</p>;
+  const text = useCopyText();
+  return (
+    <p className="text-ink-3 text-sm">{text(configurationsPartialLabel)}</p>
+  );
 }
 
 export function RepositoryConfigurationTable(props: {
   readonly rows: readonly RepositoryConfigurationRow[];
   readonly partial: boolean;
 }): ReactNode {
+  const text = useCopyText();
   if (props.rows.length === 0)
     return props.partial ? (
       <RepositoryConfigurationsPartial />
     ) : (
-      <EmptyState label="No configuration declared" />
+      <EmptyState label={text({ id: "repositories-configurations-none" })} />
     );
   return (
     <>
-      <Table caption="Declared configurations">
+      <Table caption={text({ id: "repositories-configurations-caption" })}>
         <thead>
           <tr>
-            <th scope="col">Configuration</th>
-            <th scope="col">Worker</th>
-            <th scope="col">Stages</th>
-            <th scope="col">Approval</th>
+            <th scope="col">
+              {text({ id: "repositories-col-configuration" })}
+            </th>
+            <th scope="col">{text({ id: "repositories-col-worker" })}</th>
+            <th scope="col">{text({ id: "repositories-col-stages" })}</th>
+            <th scope="col">{text({ id: "repositories-col-approval" })}</th>
           </tr>
         </thead>
         <tbody>

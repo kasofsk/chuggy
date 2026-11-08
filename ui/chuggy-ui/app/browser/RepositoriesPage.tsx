@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The project's repositories: what it binds, and what it could bind from the
  * tenant's own connected accounts.
@@ -44,6 +43,7 @@ import type {
   ForgeInstallationResponse,
   ProjectRepositoryListedResponse,
 } from "../../../../src/contract/responses.ts";
+import { useCopyText } from "../copy/CopyProvider.tsx";
 import { instantFigure } from "../core/figures.ts";
 import {
   forgePortalInstallations,
@@ -172,6 +172,7 @@ function BindingTable(props: {
   readonly bindings: readonly ProjectRepositoryListedResponse[];
   readonly action: ReactNode;
 }): ReactNode {
+  const text = useCopyText();
   const nowMs = useNowMs();
   const unbinding = useBindingUnbinding(
     props.partition,
@@ -179,24 +180,26 @@ function BindingTable(props: {
   );
   if (props.bindings.length === 0)
     return props.action === undefined ? (
-      <EmptyState label="No repository bound" />
+      <EmptyState label={text({ id: "repositories-none" })} />
     ) : (
       <div className="grid justify-items-start gap-3">
-        <EmptyState label="No repository bound" />
-        <Notice tone="info" inline detail={repositoryAddHow} />
+        <EmptyState label={text({ id: "repositories-none" })} />
+        <Notice tone="info" inline detail={text(repositoryAddHow)} />
         {props.action}
       </div>
     );
   return (
     <>
-      <Table caption="Bound repositories">
+      <Table caption={text({ id: "repositories-bound-caption" })}>
         <thead>
           <tr>
-            <th scope="col">Repository</th>
-            <th scope="col">Bound</th>
+            <th scope="col">{text({ id: "repositories-col-repository" })}</th>
+            <th scope="col">{text({ id: "repositories-bound" })}</th>
             {unbinding === undefined ? null : (
               <th scope="col">
-                <span className="visually-hidden">Unbind</span>
+                <span className="visually-hidden">
+                  {text({ id: "repositories-unbind" })}
+                </span>
               </th>
             )}
           </tr>
@@ -246,11 +249,12 @@ function OffersLine(props: {
   readonly tenant: string;
   readonly line: RepositoryOffersLine | undefined;
 }): ReactNode {
+  const text = useCopyText();
   const line = props.line;
   if (line === undefined) return null;
   return (
     <>
-      <Notice tone="parked" inline detail={line.status} />
+      <Notice tone="parked" inline detail={text(line.status)} />
       {line.step === undefined ? null : (
         <div className="flex">
           <OffersStep tenant={props.tenant} step={line.step} />
@@ -298,6 +302,7 @@ function RepositoriesSection(props: {
   readonly unready: ReactNode;
   readonly runner: WorkRunner;
 }): ReactNode {
+  const text = useCopyText();
   const bindings = props.bindings?.filter(
     (binding) => binding.retiredAt === undefined,
   );
@@ -310,8 +315,8 @@ function RepositoriesSection(props: {
   return (
     <Panel
       variant="section"
-      title="Repositories"
-      about="What this project binds. A ticket names one of these."
+      title={text({ id: "repositories-title" })}
+      about={text({ id: "repositories-about" })}
       meta={
         <AddRepository
           partition={props.partition}
@@ -341,7 +346,7 @@ function RepositoriesSection(props: {
                   picker.opened(true);
                 }}
               >
-                Add
+                {text({ id: "repositories-add" })}
               </Button>
             ) : undefined
           }
@@ -352,6 +357,7 @@ function RepositoriesSection(props: {
 }
 
 export function RepositoriesPage(): ReactNode {
+  const text = useCopyText();
   const params = useParams({ from: repositoriesRoutePath });
   const partition: PartitionIdentity = {
     tenant: params.tenant,
@@ -364,7 +370,7 @@ export function RepositoriesPage(): ReactNode {
   const runner = useWorkRunner(partition, "Reader");
   return (
     <div className="grid min-w-0 max-w-settings gap-4">
-      <ScreenTitle>Repositories</ScreenTitle>
+      <ScreenTitle>{text({ id: "repositories-title" })}</ScreenTitle>
       <RepositoriesSection
         partition={partition}
         installations={

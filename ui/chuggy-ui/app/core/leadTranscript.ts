@@ -92,6 +92,11 @@ export type LeadTranscriptEntry = LeadTranscriptResponse["entries"][number];
 
 export type LeadTranscriptCompaction = LeadTranscriptResponse["compaction"];
 
+/** One cut among the entries a page sent, with what the store kept of it. */
+export type LeadTranscriptCut = NonNullable<
+  LeadTranscriptResponse["compactions"]
+>[number];
+
 /**
  * What one walk has gathered of one stream, under one cut. Every field here was
  * decided against `cut`, which is why a cut that moves replaces the whole of it
@@ -101,6 +106,9 @@ export interface LeadTranscriptFold {
   readonly entries: readonly LeadTranscriptEntry[];
   readonly holding: readonly string[];
   readonly compaction: LeadTranscriptCompaction;
+  /** Every cut among the entries gathered, each once, in the order the chain
+   * gave them. */
+  readonly compactions: readonly LeadTranscriptCut[];
   /** The batch the compaction this fold's answers are decided against falls in,
    * so a page answered under a different one can be told from one answered
    * under this. */
@@ -132,6 +140,7 @@ export const leadTranscriptFoldEmpty: LeadTranscriptFold = {
   entries: [],
   holding: [],
   compaction: undefined,
+  compactions: [],
   cut: undefined,
   elided: 0,
   truncated: false,
@@ -308,6 +317,22 @@ function leadTranscriptCutMoved(
   return fold.readTo !== undefined && page.cut !== fold.cut;
 }
 
+/** Each cut once, by its boundary, in the order the chain gave them, and no
+ * more of them than the entries a pane keeps. */
+function leadTranscriptCutsMerged(
+  held: readonly LeadTranscriptCut[],
+  arriving: readonly LeadTranscriptCut[],
+): readonly LeadTranscriptCut[] {
+  const seen = new Set(held.map((cut) => cut.boundary));
+  const merged = [...held];
+  for (const cut of arriving) {
+    if (seen.has(cut.boundary)) continue;
+    seen.add(cut.boundary);
+    merged.push(cut);
+  }
+  return merged.slice(-leadTranscriptEntriesHeldMax);
+}
+
 /** The uuids still worth holding: what is gathered, less any whose entry has
  * left at the cap, so the set is bounded by the entries and not by the walk. */
 function leadTranscriptHoldingPruned(
@@ -339,6 +364,10 @@ function leadTranscriptGathered(
     ),
     cut: page.held === undefined ? fold.cut : page.cut,
     compaction: page.compaction ?? fold.compaction,
+    compactions: leadTranscriptCutsMerged(
+      fold.compactions,
+      page.compactions ?? [],
+    ),
     elided: fold.elided + page.elided,
     truncated: fold.truncated || page.truncated,
     holdingUnknown: fold.holdingUnknown || page.held === undefined,

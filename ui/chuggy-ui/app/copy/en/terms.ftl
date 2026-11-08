@@ -15,8 +15,8 @@
 ##     }
 ##
 ## The comment beside a term says what it covers. Its `rejects:` line lists
-## the words it replaces, which no message spells without the exemption a
-## homonym carries.
+## the words it replaces, which no message spells without an exemption naming
+## that word.
 
 ## Brands, each in its one spelling.
 
@@ -28,6 +28,13 @@
 
 # The agent a run drives.
 -claude-code = Claude Code
+
+# The maker's name for the agent and its models, as an account and a
+# credential are named.
+-claude = Claude
+
+# The other agent a run drives.
+-codex = Codex
 
 ## What the work is organised into.
 
@@ -201,6 +208,66 @@
         [plural] turns
         [a] a turn
        *[one] turn
+    }
+}
+
+## What an agent's model holds.
+
+# Everything an agent's model is handed on one call: its prompt, its tools, its files and the conversation so far.
+# rejects: context size, prompt size
+-context = { $case ->
+    [upper] Context
+   *[lower] context
+}
+
+# The most tokens a context holds, the noun of a context's capacity only; an account's usage window is no term.
+# rejects: context limit, context length, max tokens
+-window = { $case ->
+    [upper] { $form ->
+        [plural] Windows
+        [a] A window
+       *[one] Window
+    }
+   *[lower] { $form ->
+        [plural] windows
+        [a] a window
+       *[one] window
+    }
+}
+
+# The runtime cutting a context down to a summary of itself so it fits its window; "base" is to compact.
+# rejects: summarization, summarisation, compression, compress, compressed
+-compaction = { $case ->
+    [upper] { $form ->
+        [plural] Compactions
+        [a] A compaction
+        [base] Compact
+        [s] Compacts
+        [ed] Compacted
+       *[one] Compaction
+    }
+   *[lower] { $form ->
+        [plural] compactions
+        [a] a compaction
+        [base] compact
+        [s] compacts
+        [ed] compacted
+       *[one] compaction
+    }
+}
+
+# An agent a run's own agent starts for one of its calls, whose calls are a series of their own.
+# rejects: sub-agent, sub-agents, child agent, child agents
+-subagent = { $case ->
+    [upper] { $form ->
+        [plural] Subagents
+        [a] A subagent
+       *[one] Subagent
+    }
+   *[lower] { $form ->
+        [plural] subagents
+        [a] a subagent
+       *[one] subagent
     }
 }
 

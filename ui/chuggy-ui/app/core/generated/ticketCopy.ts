@@ -180,6 +180,7 @@ export interface TicketCopy {
   readonly "ticket-run-view-transcript": Record<never, never>;
   readonly "ticket-run-view-details": Record<never, never>;
   readonly "ticket-run-view-output": Record<never, never>;
+  readonly "ticket-run-view-context": Record<never, never>;
   readonly "ticket-run-no-summary": Record<never, never>;
   readonly "ticket-run-no-transcript": Record<never, never>;
   readonly "ticket-run-runner": Record<never, never>;

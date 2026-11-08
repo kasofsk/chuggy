@@ -8,7 +8,11 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 
-import { forgeReturnTake } from "../../core/forgeReturn.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
+import {
+  forgeReturnStatusLabel,
+  forgeReturnTake,
+} from "../../core/forgeReturn.ts";
 import type {
   ForgeReturnStanding,
   ForgeReturnWord,
@@ -36,13 +40,14 @@ export function useForgeReturned(tenant: string): ForgeReturnWord | undefined {
 export function ForgeReturned(props: {
   readonly word: ForgeReturnWord | undefined;
 }): ReactNode {
+  const text = useCopyText();
   const word = props.word;
   if (word === undefined) return null;
   return (
     <Notice
       tone={forgeReturnedTone(word.standing)}
       inline
-      detail={word.status}
+      detail={text(forgeReturnStatusLabel(word.status))}
     />
   );
 }

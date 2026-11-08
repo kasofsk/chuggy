@@ -24,10 +24,9 @@
 # directive line; `prettier-ignore`; `@ts-expect-error` with a description; and
 # `eslint-disable-next-line` naming a rule that is not one of this tree's
 # boundary, purity or exhaustiveness rules — those exist to be unsuppressible.
-# One block directive is on the list: `/* eslint-disable copy/no-literal-text */`
-# as a file's first line, the console's mark on a file whose copy is not yet in
-# its catalog. It names that rule and no other, and its own lint fails it once
-# the file has nothing left for it to excuse.
+# The console's copy rule, `copy/no-literal-text`, is sealed with them: every
+# word a reader is shown is in its catalog, so no file and no line opts out of
+# it, and a mark that tries is a finding whatever form it takes.
 #
 # A DIRECTIVE IS ONE LINE. A wrapped second line is an ordinary comment and is
 # rejected as one: the half the tool ignores is where an explanation grows that
@@ -125,10 +124,12 @@ const sealed = new Set([
 	"no-restricted-properties",
 	"@typescript-eslint/no-floating-promises",
 	"@typescript-eslint/no-misused-promises",
+	"copy/no-literal-text",
 ]);
 
-/* The one file-wide disable admitted: a console file not yet in its catalog. */
-const copyMark = "/* eslint-disable copy/no-literal-text */";
+/* The console copy rule, named anywhere in a comment, as a mark excusing it. */
+const copyRule = "copy/no-literal-text";
+const copyRefused = copyRule + " is not suppressible: what a reader is shown is the copy catalog\x27s";
 
 /* Every comment is trivia before some token, and JSX text is a token whose
    content is never trivia: so the parser tree, read leaf by leaf, finds each
@@ -179,15 +180,19 @@ function judgeLine(rest) {
 		return;
 	}
 	if (/^eslint-disable-next-line[ \t]/.test(trimmed)) {
-		const rule = trimmed
+		const rules = trimmed
 			.replace(/^eslint-disable-next-line[ \t]+/, "")
 			.replace(/[ \t]*--.*$/, "")
-			.replace(/[ \t]+$/, "");
-		if (rule === "") return "eslint-disable-next-line names the rule it disables";
-		if (sealed.has(rule))
+			.split(",")
+			.map((rule) => rule.trim());
+		if (rules.every((rule) => rule === "")) return "eslint-disable-next-line names the rule it disables";
+		const rule = rules.find((named) => sealed.has(named));
+		if (rule === copyRule) return copyRefused;
+		if (rule !== undefined)
 			return rule + " is a boundary, purity or exhaustiveness rule and is not suppressible";
 		return;
 	}
+	if (/^eslint-/.test(trimmed) && trimmed.includes(copyRule)) return copyRefused;
 	return "a line comment; /** */ is the only prose a source file carries";
 }
 
@@ -197,9 +202,7 @@ for (const file of process.argv.slice(1)) {
 		let finding;
 		if (body.startsWith("//")) finding = judgeLine(body.slice(2));
 		else if (body.length < 4 || !body.endsWith("*/")) finding = "unterminated comment";
-		else if (body === copyMark) {
-			if (line !== 1) finding = "the copy mark is a file\x27s first line";
-		}
+		else if (!body.startsWith("/**") && body.includes(copyRule)) finding = copyRefused;
 		else if (!body.startsWith("/**") || body === "/**/") finding = "a block comment that is not a doc comment";
 		/* The first doc comment in a file is the module header and carries no cap. */
 		else if (!seenHeader) seenHeader = true;

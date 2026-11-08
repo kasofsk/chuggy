@@ -36,7 +36,7 @@
 
 import type { RunTotals } from "../../../../src/contract/responses.ts";
 import type { RunRollupBasis, RunTime } from "./runTotals.ts";
-import type { Copy } from "./copy.ts";
+import type { Copy, CopyOrData } from "./copy.ts";
 
 export const figureKinds = [
   "Cost",
@@ -58,7 +58,11 @@ export type Figure =
       readonly text: string;
       readonly unit: Copy;
     }
-  | { readonly kind: "Instant"; readonly text: string; readonly iso: string }
+  | {
+      readonly kind: "Instant";
+      readonly text: CopyOrData;
+      readonly iso: string;
+    }
   | { readonly kind: "Ago"; readonly text: Copy; readonly full: string }
   | {
       readonly kind: "Span";
@@ -94,10 +98,23 @@ const million = 1_000_000;
 /** Above this a scaled figure is whole; below it one decimal tells two apart. */
 const scaledDecimalBelow = 10;
 
-/** A month as a date within the year names it, in the language the console
- * is written in rather than the reader's locale, for the reason
+/** Each month as a date within the year names it, January first: the
+ * catalog's word rather than the reader's locale's, for the reason
  * `groupedDigits` gives. */
-const monthFormat = new Intl.DateTimeFormat("en", { month: "short" });
+const monthLabels: readonly Copy[] = [
+  { id: "figures-month-january" },
+  { id: "figures-month-february" },
+  { id: "figures-month-march" },
+  { id: "figures-month-april" },
+  { id: "figures-month-may" },
+  { id: "figures-month-june" },
+  { id: "figures-month-july" },
+  { id: "figures-month-august" },
+  { id: "figures-month-september" },
+  { id: "figures-month-october" },
+  { id: "figures-month-november" },
+  { id: "figures-month-december" },
+];
 
 /** The basis in the reader's own case, total over the roster and the rollup's own arm. */
 function costBasisTag(basis: RunRollupBasis): Copy {
@@ -286,6 +303,15 @@ export function shareFigure(share: number): Figure {
   return countFigure(Math.floor(percent), { id: "figures-unit-percent" });
 }
 
+/** A share as `shareFigure` reads it, except that a part short of a whole
+ * percent reads as under one rather than as none of it. */
+export function sharePartFigure(share: number): Figure {
+  const whole = shareFigure(share);
+  return share > 0 && whole.kind === "Quantity" && whole.text === "0"
+    ? { ...whole, text: "<1" }
+    : whole;
+}
+
 const msPerMinute = msPerSecond * secondsPerMinute;
 
 const msPerHour = msPerMinute * minutesPerHour;
@@ -333,7 +359,7 @@ function instantFullText(at: Date): string {
  * whole date before it. Browser-local, because the reader's day is the one they
  * are comparing rows against.
  */
-export function instantText(at: Date, now: Date): string {
+export function instantText(at: Date, now: Date): CopyOrData {
   const clock = clockOf(at);
   if (
     at.getFullYear() === now.getFullYear() &&
@@ -341,9 +367,14 @@ export function instantText(at: Date, now: Date): string {
     at.getDate() === now.getDate()
   )
     return clock;
-  const month = monthFormat.format(at);
+  const month = monthLabels[at.getMonth()];
+  if (month === undefined)
+    throw new Error(`no month ${String(at.getMonth())} in a year`);
   if (at.getFullYear() === now.getFullYear())
-    return `${month} ${String(at.getDate())} ${clock}`;
+    return {
+      id: "figures-instant-in-year",
+      args: { month, day: String(at.getDate()), clock },
+    };
   return instantFullText(at);
 }
 

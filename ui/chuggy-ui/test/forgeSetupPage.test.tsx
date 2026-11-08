@@ -144,7 +144,7 @@ test("a deployment that answers no client returns with Not configured, sending n
   expect(heldWord()).toStrictEqual({
     tenant: transaction.tenant,
     standing: "Failed",
-    status: "Not configured",
+    status: "NotConfigured",
   });
 });
 

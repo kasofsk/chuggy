@@ -9,7 +9,9 @@ usage-agent-about = When this { -agent } pauses
 
 usage-paused = Paused
 usage-pressed = Trying once
+# spells -window: an account's usage window, not a context's
 usage-window-five-hour = Five-hour window
+# spells -window: an account's usage window, not a context's
 usage-window-seven-day = Weekly window
 usage-provider-limit = Provider limit
 usage-joined = { $lead } · { $rest }
@@ -22,6 +24,7 @@ usage-press-unheld = No limit holds it
 
 usage-no-reading = No reading
 usage-stale = Stale
+# spells -window: an account's usage window, not a context's
 usage-stale-line = Its window has reset; it pauses nothing until the next reading
 usage-pauses-at = pauses at
 usage-window-pauses-at = { $window } pauses at

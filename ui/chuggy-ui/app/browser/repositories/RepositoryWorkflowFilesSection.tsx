@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * Whether the jobs this project runs may change this repository's GitHub
  * workflow files, written through the finalization's own route and fenced the
@@ -9,6 +8,7 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ProjectRepositoryResponse } from "../../../../../src/contract/responses.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { repositoryFinalizationPipelinesChosen } from "../../core/repositoryFinalization.ts";
 import { RadioGroup } from "../ui/RadioGroup.tsx";
 import { RepositorySettingSection } from "./RepositoryFinalizationSection.tsx";
@@ -16,24 +16,24 @@ import { RepositorySettingSection } from "./RepositoryFinalizationSection.tsx";
 const workflowFilesOff = "Off";
 const workflowFilesOn = "On";
 
-const workflowFilesOptions = [
-  { value: workflowFilesOff, text: workflowFilesOff },
-  { value: workflowFilesOn, text: workflowFilesOn },
-];
-
 export function RepositoryWorkflowFilesSection(props: {
   readonly partition: PartitionIdentity;
   readonly binding: ProjectRepositoryResponse;
 }): ReactNode {
+  const text = useCopyText();
+  const workflowFilesOptions = [
+    { value: workflowFilesOff, text: text({ id: "repositories-off" }) },
+    { value: workflowFilesOn, text: text({ id: "repositories-on" }) },
+  ];
   return (
     <RepositorySettingSection
       partition={props.partition}
       binding={props.binding}
-      title="Workflow files"
-      about="Lets jobs change workflow files · App needs Workflows"
+      title={{ id: "repositories-workflow-files" }}
+      about={{ id: "repositories-workflow-files-about" }}
       body={(held, editing) => (
         <RadioGroup
-          label="Workflow files"
+          label={text({ id: "repositories-workflow-files" })}
           value={
             held.draft.pipelinesWritable ? workflowFilesOn : workflowFilesOff
           }

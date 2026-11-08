@@ -60,6 +60,7 @@ import {
 } from "./leadFixture.ts";
 import type { LeadServed } from "./leadFixture.ts";
 import { fillerMessage, fillerSentence } from "./interruptionFixture.ts";
+import { contextSessionBody } from "./contextFixture.ts";
 import {
   abilitiesEvery,
   abilitiesFetch,
@@ -251,6 +252,26 @@ test("the head names the session, its state and the cursor it stands on", async 
   expect(screen.getByText("1204")).toBeDefined();
 });
 
+test("the details open on the lead's context, its window at its newest reading, above its turns", async () => {
+  await drawLead(() => ({
+    ...opening,
+    context: contextSessionBody([{ ordinal: 1, total: 96_721 }]),
+  }));
+  const titles = [...document.querySelectorAll(".panel-title")].map(
+    (title) => title.textContent,
+  );
+  expect(titles.indexOf("Context")).toBeLessThan(titles.indexOf("Turns"));
+  const window = screen.getByRole("region", { name: "Window" });
+  expect(within(window).getByText("96,721")).toBeDefined();
+  expect(within(window).getByText("Turn 1")).toBeDefined();
+  expect(within(window).getByText("Compacts at 167,000")).toBeDefined();
+  expect(
+    within(screen.getByRole("region", { name: "Inputs" })).getByText(
+      "Appended prompt",
+    ),
+  ).toBeDefined();
+});
+
 /** One word beside the state, and only where the lead runs on runners the
  * project has none of live: the reader's own runner is not what the lead
  * waits on. */
@@ -437,7 +458,7 @@ test("the mailbox tail draws what the pod measured of each turn", async () => {
  */
 test("the transcript's entries draw as exchanges", async () => {
   await drawLead(() => opening);
-  expect(screen.getByText("an observation before the cut")).toBeDefined();
+  expect(screen.getByText("observation-1-before-cut")).toBeDefined();
   expect(screen.getByText("first observation")).toBeDefined();
   expect(screen.getByText("compaction summary")).toBeDefined();
   expect(exchangeCount()).toBe(3);

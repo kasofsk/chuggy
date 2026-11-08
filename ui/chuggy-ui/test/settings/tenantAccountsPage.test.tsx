@@ -207,7 +207,7 @@ test("a return's word is drawn on the Accounts panel once, and not on the next v
 /** A press goes on to the portal's install once, so a return that still reached
  * no account the person owns leaves that install to be asked for by name. */
 test("a return that reached no account the person owns offers Add account beside Connect GitHub", async () => {
-  returnedWith({ standing: "Uninstalled", status: "Not installed" });
+  returnedWith({ standing: "Uninstalled", status: "NotInstalled" });
   await drawAccounts({
     claimed: { truncated: false, installations: [] },
     described: { apps: forgeApps, authorization: client },

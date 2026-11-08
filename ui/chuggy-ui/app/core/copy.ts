@@ -14,6 +14,7 @@ import type { ChatCopy } from "./generated/chatCopy.ts";
 import type { CodesCopy } from "./generated/codesCopy.ts";
 import type { ConfigurationCatalogCopy } from "./generated/configurationCatalogCopy.ts";
 import type { ConfigurationStepsCopy } from "./generated/configurationStepsCopy.ts";
+import type { ContextCopy } from "./generated/contextCopy.ts";
 import type { ConversationCopy } from "./generated/conversationCopy.ts";
 import type { DraftsCopy } from "./generated/draftsCopy.ts";
 import type { EpicsCopy } from "./generated/epicsCopy.ts";
@@ -49,6 +50,7 @@ type CopyVariables = ApiCopy &
   CodesCopy &
   ConfigurationCatalogCopy &
   ConfigurationStepsCopy &
+  ContextCopy &
   ConversationCopy &
   DraftsCopy &
   EpicsCopy &

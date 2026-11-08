@@ -88,6 +88,7 @@ import {
   leadStreamReplaced,
   leadTranscriptReached,
 } from "../../core/leadTranscript.ts";
+import type { LeadTranscriptHeld } from "../../core/leadTranscript.ts";
 import {
   sessionConversationItems,
   sessionConversationTurns,
@@ -283,6 +284,8 @@ interface ThreadConversationProps {
   /** Whether the reader named this thread rather than arriving at it, which is
    * what puts the caret in the composer as it mounts. */
   readonly named?: boolean;
+  /** What a page draws beside the conversation from the transcript it walks. */
+  readonly beside?: ((held: LeadTranscriptHeld) => ReactNode) | undefined;
 }
 
 /** What a thread's composer is made from, out of its own read. */
@@ -364,6 +367,35 @@ export function MemberThreadConversation(
   );
 }
 
+/** The thread's exchanges with what is being sent over them, and whether the
+ * walk is still reading toward its first draw. */
+function useThreadSent(
+  home: ThreadHome,
+  thread: ThreadResponse,
+  walked: LeadTranscriptWalk,
+  sends: ThreadSendHeld,
+): {
+  readonly exchanges: readonly ConversationExchange[];
+  readonly reading: boolean;
+} {
+  const sent = useMemo(
+    () => sends.sending.map(conversationExchangeSent),
+    [sends.sending],
+  );
+  const drawn = useThreadExchanges(home, thread, walked, sends);
+  const [read, setRead] = useState(false);
+  if (!walked.reading && !read) setRead(true);
+  const exchanges = useThreadStood(
+    conversationExchangesStopped(
+      conversationExchangesWithSent(drawn.exchanges, sent),
+      sends.stopping,
+    ),
+    walked.reading && !read,
+    drawn.joined,
+  );
+  return { exchanges, reading: walked.reading && !read };
+}
+
 function ThreadConversationAt(
   props: ThreadConversationProps & {
     readonly home: ThreadHome;
@@ -384,53 +416,42 @@ function ThreadConversationAt(
     stream: thread.agentReference,
     highWaterBatch: leadStreamBatches(thread),
   });
-  const sent = useMemo(
-    () => sends.sending.map(conversationExchangeSent),
-    [sends.sending],
-  );
-  const drawn = useThreadExchanges(home, thread, walked, sends);
-  const [read, setRead] = useState(false);
-  if (!walked.reading && !read) setRead(true);
-  const exchanges = useThreadStood(
-    conversationExchangesStopped(
-      conversationExchangesWithSent(drawn.exchanges, sent),
-      sends.stopping,
-    ),
-    walked.reading && !read,
-    drawn.joined,
-  );
+  const { exchanges, reading } = useThreadSent(home, thread, walked, sends);
   return (
-    <div
-      role="region"
-      aria-label={text({ id: "chat-conversation" })}
-      data-fills-page
-      className="min-h-0 min-w-0 flex-1"
-    >
-      {props.navigates === true ? (
-        <ThreadNavigateFollowed
-          home={home}
-          thread={thread}
-          exchanges={exchanges}
+    <>
+      <div
+        role="region"
+        aria-label={text({ id: "chat-conversation" })}
+        data-fills-page
+        className="min-h-0 min-w-0 flex-1"
+      >
+        {props.navigates === true ? (
+          <ThreadNavigateFollowed
+            home={home}
+            thread={thread}
+            exchanges={exchanges}
+          />
+        ) : null}
+        <Conversation
+          exchanges={
+            thread.mine && threadTurnsWait(door)
+              ? conversationExchangesWaiting(exchanges)
+              : exchanges
+          }
+          {...(thread.mine
+            ? props.foot({
+                ...sends.composer,
+                focusOnMount: props.named === true,
+              })
+            : {})}
+          reading={reading}
+          {...(props.image === undefined ? {} : { image: props.image })}
+          {...(props.offer === undefined ? {} : { offer: props.offer })}
+          paced
+          pane
         />
-      ) : null}
-      <Conversation
-        exchanges={
-          thread.mine && threadTurnsWait(door)
-            ? conversationExchangesWaiting(exchanges)
-            : exchanges
-        }
-        {...(thread.mine
-          ? props.foot({
-              ...sends.composer,
-              focusOnMount: props.named === true,
-            })
-          : {})}
-        reading={walked.reading && !read}
-        {...(props.image === undefined ? {} : { image: props.image })}
-        {...(props.offer === undefined ? {} : { offer: props.offer })}
-        paced
-        pane
-      />
-    </div>
+      </div>
+      {props.beside?.(walked.held)}
+    </>
   );
 }

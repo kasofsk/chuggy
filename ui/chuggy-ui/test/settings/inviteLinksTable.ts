@@ -6,6 +6,8 @@
 
 import { fireEvent, screen, within } from "@testing-library/react";
 
+import { copyTextEn } from "../../app/copy/catalog.ts";
+import { copyOrDataText } from "../../app/core/copy.ts";
 import { instantText } from "../../app/core/figures.ts";
 import { turned } from "../screenHarness.tsx";
 
@@ -51,7 +53,7 @@ export function linkStatuses(): readonly (string | undefined)[] {
 
 /** An instant as a row draws it now. */
 export function linkWhen(atMs: number): string {
-  return instantText(new Date(atMs), new Date());
+  return copyOrDataText(copyTextEn, instantText(new Date(atMs), new Date()));
 }
 
 /** Each row that offers its link's revocation, as its text. */

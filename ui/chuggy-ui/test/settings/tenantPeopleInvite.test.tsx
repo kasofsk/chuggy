@@ -83,7 +83,7 @@ function typed(label: string, value: string): void {
 async function invitedWith(drawing: PeopleDrawing): Promise<DrawnStrict> {
   const drawn = await drawPeople(drawing);
   await press("Invite");
-  typed("GitHub username", "ada");
+  typed("GitHub username", "ada-l");
   typed("Email", "ada@example.com");
   await turned();
   return drawn;
@@ -101,15 +101,15 @@ test("an invitation sends the fields the contract states, as it states them", as
     changed: () => answer({ subject: "s-new", created: true }, 201),
   });
   fireEvent.click(within(dialog()).getByRole("radio", { name: "Admin" }));
-  chosen("beacon Developer");
-  chosen("beacon Dispatcher");
-  chosen("beacon Viewer");
+  chosen("beacon-api Developer");
+  chosen("beacon-api Dispatcher");
+  chosen("beacon-api Viewer");
   await turned();
-  expect(boxesIn(dialog(), "beacon")).toStrictEqual([
-    "beacon Admin",
-    "beacon Developer+",
-    "beacon Dispatcher+",
-    "beacon Viewer+",
+  expect(boxesIn(dialog(), "beacon-api")).toStrictEqual([
+    "beacon-api Admin",
+    "beacon-api Developer+",
+    "beacon-api Dispatcher+",
+    "beacon-api Viewer+",
   ]);
   await sent();
   expect(changesSent(drawn)).toStrictEqual([
@@ -117,11 +117,14 @@ test("an invitation sends the fields the contract states, as it states them", as
       method: "POST",
       url: invitationPath,
       body: {
-        github: "ada",
+        github: "ada-l",
         email: "ada@example.com",
         role: "Admin",
         projects: [
-          { project: "beacon", roles: ["Developer", "Dispatcher", "Viewer"] },
+          {
+            project: "beacon-api",
+            roles: ["Developer", "Dispatcher", "Viewer"],
+          },
         ],
       },
     },
@@ -131,7 +134,7 @@ test("an invitation sends the fields the contract states, as it states them", as
 test("a username or an email the schema refuses sends nothing and draws its fault", async () => {
   const drawn = await invitedWith({});
   typed("GitHub username", "-ada");
-  typed("Email", "ada");
+  typed("Email", "ada-l");
   await turned();
   expect(within(dialog()).getByText("Not a GitHub username")).toBeTruthy();
   expect(within(dialog()).getByText("Not an email")).toBeTruthy();
@@ -280,7 +283,7 @@ test("a reader who may grant Admin and not Member opens on Admin, and sends it",
   expect(radios()).toStrictEqual(["Admin+"]);
   await sent();
   expect(changesSent(drawn).map((request) => request.body)).toStrictEqual([
-    { github: "ada", email: "ada@example.com", role: "Admin" },
+    { github: "ada-l", email: "ada@example.com", role: "Admin" },
   ]);
 });
 
@@ -301,10 +304,10 @@ test("a reader who may grant on one project of two is offered that project alone
     abilities: () =>
       answer({
         ...peopleAbilitiesAll(),
-        projects: peopleAbilitiesAll(["beacon"]).projects,
+        projects: peopleAbilitiesAll(["beacon-api"]).projects,
       }),
   });
-  expect(projectsOffered(dialog())).toStrictEqual(["beacon"]);
+  expect(projectsOffered(dialog())).toStrictEqual(["beacon-api"]);
 });
 
 /** What each role's cell of a project's row draws as text, in the roles' order. */
@@ -325,7 +328,7 @@ function invitedGrantingViewerOnAtlas(): Promise<DrawnStrict> {
       answer({
         ...every,
         projects: every.projects.map((offered) =>
-          offered.project === "atlas"
+          offered.project === "atlas-web"
             ? { ...offered, roles: ["Viewer"] }
             : offered,
         ),
@@ -335,9 +338,9 @@ function invitedGrantingViewerOnAtlas(): Promise<DrawnStrict> {
 
 test("a box stands with its role's word, and a role the reader may not grant draws neither", async () => {
   await invitedGrantingViewerOnAtlas();
-  expect(roleWords("atlas")).toStrictEqual(["", "", "", "Viewer"]);
-  expect(boxesIn(dialog(), "atlas")).toStrictEqual(["atlas Viewer"]);
-  expect(roleWords("beacon")).toStrictEqual([
+  expect(roleWords("atlas-web")).toStrictEqual(["", "", "", "Viewer"]);
+  expect(boxesIn(dialog(), "atlas-web")).toStrictEqual(["atlas-web Viewer"]);
+  expect(roleWords("beacon-api")).toStrictEqual([
     "Admin",
     "Developer",
     "Dispatcher",
@@ -348,13 +351,15 @@ test("a box stands with its role's word, and a role the reader may not grant dra
 test("a role's word is not read out beside its box's own name", async () => {
   await invitedGrantingViewerOnAtlas();
   expect(
-    within(dialog()).getAllByRole("cell", { name: "atlas Viewer" }),
+    within(dialog()).getAllByRole("cell", { name: "atlas-web Viewer" }),
   ).toHaveLength(1);
 });
 
 test("a press on a role's word is a press on its box", async () => {
   await invitedGrantingViewerOnAtlas();
-  const box = within(dialog()).getByRole("checkbox", { name: "atlas Viewer" });
+  const box = within(dialog()).getByRole("checkbox", {
+    name: "atlas-web Viewer",
+  });
   expect(box.getAttribute("aria-checked")).toBe("false");
   await turned(() => {
     fireEvent.click(within(box.closest("td") ?? box).getByText("Viewer"));
@@ -396,7 +401,7 @@ test("a dialog opened again starts from nothing typed and nothing said", async (
   await invitedWith({
     changed: () => refused(422, accessInvitationCodes.GithubAccountUnknown),
   });
-  chosen("beacon Developer");
+  chosen("beacon-api Developer");
   await sent();
   expect(within(dialog()).getByText("No such GitHub user")).toBeTruthy();
   await press("Cancel");
@@ -406,5 +411,7 @@ test("a dialog opened again starts from nothing typed and nothing said", async (
       .value,
   ).toBe("");
   expect(within(dialog()).queryByText("No such GitHub user")).toBeNull();
-  expect(boxesIn(dialog(), "beacon")).not.toContain("beacon Developer+");
+  expect(boxesIn(dialog(), "beacon-api")).not.toContain(
+    "beacon-api Developer+",
+  );
 });

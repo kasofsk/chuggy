@@ -1,3 +1,390 @@
-## The setup program's lines, each the text after its word and colon.
+## The setup program's lines, each the text after its word and colon. A
+## line's word, a step's name and state, `stop`, a flag and a command line
+## are the program's own grammar, so each is handed in as data. A condition a
+## rule names begins with once, if or when and has no full stop, since the
+## rule ends the sentence.
+
+# spells -brand-name: the command's own name
+setup-program = chuggy setup
+
+## Shared words.
+
+setup-came-nothing = did nothing
+setup-came-no-further = went no further
+setup-came-unchanged = nothing was changed
+setup-when-sign-in-again = if the person asks to try signing in again
+setup-site = { -brand-name } { -site }
+setup-stale = this copy of { setup-program } may be older than the { -site }
+
+## How a site stands, after its address.
 
 setup-site-unknown = no { -brand-name } { -site } is remembered on this machine yet
+setup-site-signed-in = { $site }, signed in
+setup-site-signed-out = { $site }, not signed in
+setup-site-unconfirmed = { $site }, sign-in not confirmed
+setup-site-unreachable = { $site }, no answer
+setup-site-unconfigured = { $site }, not a { setup-site } this program can read
+setup-site-issuer = { $site }, its sign-in server is not answering
+
+## How the program is driven, said to whoever has not yet signed in.
+
+# The words before each colon are the lines' own, which the agent reads.
+# spells -run: to run is a verb here
+setup-rule-drive = Run the command on the next: line exactly as written, and stop where it says { $stop }. Say each tell: line to the person as it is written. Put each ask: line to the person, and pass their answer in the flag it names.
+setup-rule-directory = Never read or print anything under { $directory }: it holds the sign-in.
+# spells -run: to run is a verb here
+setup-rule-site = Run { $command } with the address of the person's { setup-site } after it, such as { $example }. Ask the person for the address if you do not have it.
+# spells -run: to run is a verb here
+setup-rule-ask = Run { $command } with the person's answer after it, only once the person has answered.
+
+## The arguments, asked wrongly. Each flag and command word is the program's own.
+
+# spells -run: to run is a verb here
+setup-asked-command = { setup-program } has no such command; it runs bare, as { $signIn } or as { $runner }
+setup-asked-flag = { setup-program } takes { $site }, { $workspace }, { $project } and { $wait }, each once with a value, and no other flag
+setup-asked-site = { $flag } takes the address of a { setup-site }, such as { $example }
+setup-asked-wait-secs = { $flag } takes a whole number of seconds, at most { $secs }
+setup-asked-name = { $workspace } and { $project } each take one name, as the { setup-site } writes it
+setup-asked-project = { $runner } takes { $workspace } and { $project }, both: the { -project } the { -runner } is for
+
+## A machine the program is not served on, or a Node too old to run it.
+
+setup-platforms-and = { $one } and { $other }
+# spells -run: to run is a verb here
+setup-unserved-found = { setup-program } runs on { $served }, and this machine is { $platform }
+# spells -run: to run is a verb here
+setup-unserved-tell = { setup-program } runs on { $served } and this machine is neither, so it did nothing. Run it from a machine that is one of those.
+setup-node-needs = Node { $major } or newer
+setup-node-unsaid = this Node did not say its version
+setup-node-is = this is Node { $major }
+setup-node-found = { $found }; { setup-program } needs { $needs }
+setup-node-tell = { setup-program } needs { $needs } on this machine, so it did nothing. Tell me once one is installed, or if you want me to install it.
+setup-node-when = once node on this machine is { $needs }
+
+## A sign-in page waiting.
+
+setup-waiting-finish = Sign in with { -github } there and allow { setup-program }. If the page is gone, open { $address } on this machine.
+setup-waiting-opened = opened { $address } in a browser
+setup-waiting-unfinished = nobody finished signing in within { $secs } s
+setup-waiting-open-tell = A sign-in page is open in your browser. { $finish }
+setup-waiting-attached = the sign-in page opened earlier is still waiting
+setup-waiting-unopened = no browser could be opened from here
+setup-waiting-unopened-tell = Open { $address } in a browser on this machine, sign in with { -github } and allow { setup-program }.
+
+## How a sign-in ended, where nothing is run after it until the person asks.
+
+setup-ended-no-renewal-found = the sign-in was allowed without leave to stay signed in
+setup-ended-no-renewal-tell = The sign-in went through without the permission that keeps { setup-program } signed in, so it was not kept. Next time, tick every box on the page that asks before pressing Allow. Tell me when you are ready to sign in again.
+setup-ended-no-renewal-when = when the person says they are ready to sign in again
+setup-ended-declined-found = the sign-in was declined in the browser
+setup-ended-declined-tell = The sign-in was declined in the browser, so { setup-program } is not signed in and { $left }. Tell me if you want to sign in after all.
+setup-ended-declined-when = if the person asks to sign in after all
+setup-ended-refused-found = the sign-in server refused the request
+setup-ended-refused-tell = The sign-in server refused the sign-in, so { setup-program } is not signed in. Tell me if you want to try signing in again.
+setup-ended-mismatched-found = the answer that came back did not belong to this sign-in
+setup-ended-mismatched-tell = The answer the browser brought back was not this sign-in's, so { setup-program } is not signed in. Tell me if you want to try signing in again.
+setup-ended-exchange-found = the sign-in server did not accept the answer
+setup-ended-exchange-tell = The sign-in server did not accept the answer the browser brought back, so { setup-program } is not signed in. Tell me if you want to try signing in again.
+setup-ended-site-refused-found = the sign-in went through, but the { -site } refused it, so nothing is remembered
+setup-ended-site-refused-tell = The sign-in went through, but the { setup-site } did not accept it, so { setup-program } is not signed in. Tell me if you want to try signing in again.
+setup-ended-expired-found = nobody finished the sign-in page before it closed
+setup-ended-expired-tell = The sign-in page expired before anyone signed in. Tell me when you are ready and I will open a new one.
+setup-ended-expired-when = when the person says they are ready to sign in
+setup-ended-unusable-found = the { -site } stopped answering before the sign-in page could open
+setup-ended-unusable-tell = The { setup-site } stopped answering before the sign-in page could open, so nothing was signed in. Tell me if you want to try signing in again.
+setup-ended-busy-found = another { setup-program } command held the sign-in
+setup-ended-busy-tell = The sign-in was answered while another { setup-program } command was running, so it was not kept. Tell me if you want to try signing in again.
+setup-ended-faulted-found = the sign-in page stopped on something it did not expect
+setup-ended-faulted-tell = The sign-in page stopped before the sign-in finished, so { setup-program } is not signed in. Tell me if you want to try signing in again.
+
+## How a sign-in ended, where the bare command says how the site stands.
+
+setup-ended-site-changed = another { -site } was chosen on this machine while the sign-in page waited, so nothing was signed in
+setup-ended-workspaces-unread = the sign-in went through, but the { -site } did not say which { -workspace(form: "plural") } are yours
+
+## A run that stopped on this machine.
+
+setup-fault-unwritable-found = { setup-program } could not make or write { $path }
+setup-fault-unwritable-tell = { setup-program } stopped because it could not write { $path } on this machine. Tell me once it can.
+setup-fault-unwritable-when = once { $path } can be made and written
+setup-fault-unreadable-found = { setup-program } could not read { $path }
+setup-fault-unreadable-tell = { setup-program } stopped because it could not read { $path } on this machine. Tell me once it can.
+setup-fault-unreadable-when = once { $path } can be read
+setup-fault-unkept-found = the sign-in was renewed and could not be kept: { setup-program } could not write { $path }
+setup-fault-unkept-tell = { setup-program } renewed your sign-in and then could not write it to { $path } on this machine, so it was not kept and you may have to sign in again. Tell me once that path can be written.
+# HOME is the variable's own name, which is code.
+setup-fault-homeless-found = this machine did not say where the person's home directory is
+setup-fault-homeless-tell = { setup-program } keeps its sign-in in your home directory, and this machine did not say where that is. Tell me once HOME is set.
+setup-fault-homeless-when = once HOME names the person's home directory
+setup-fault-unstarted-found = the sign-in page could not be started on this machine
+setup-fault-unstarted-tell = I could not start the sign-in page on this machine. Tell me if you want me to try again.
+setup-fault-unexpected-found = { setup-program } stopped on something it did not expect
+setup-fault-unexpected-tell = { setup-program } stopped on something it did not expect. Tell me if you want me to try again.
+setup-busy-found = another { setup-program } command is running on this machine
+setup-busy-found-pid = { $running }, as process { $pid }
+# spells -run: to run is a verb here
+setup-busy-tell = Another { setup-program } command is still running on this machine, so this one { $came }. I will run it again once the other has ended.
+setup-busy-when = once that command has ended
+
+## A site, or its sign-in server, that could not be worked with.
+
+setup-issuer-found = the sign-in server did not answer
+setup-issuer-tell = The { setup-site }'s sign-in server is not answering, so I cannot tell whether { setup-program } is signed in. Tell me if you want me to try again.
+setup-unreachable-found = the { -site } did not answer
+# spells -brief-check: to check is a verb here
+setup-unreachable-tell = { $site } did not answer, so { setup-program } { $came }. Check the address and that this machine can reach it, and tell me if you want me to try again.
+setup-unconfigured-found = the address answered, and not as a { setup-site }
+# spells -brief-check: to check is a verb here
+setup-unconfigured-tell = What answered at { $site } is not a { setup-site } this program can read, so { setup-program } { $came }. Check the address, and tell me if you want me to try again.
+
+## A read that failed, or that this copy of the program could not read.
+
+setup-forgotten = the { -site } refused the remembered sign-in, so it was forgotten
+# The outcome is the request's own name for how it failed, which is code.
+setup-workspaces-unread-found = the { -site } did not say which { -workspace(form: "plural") } are yours ({ $outcome })
+setup-workspaces-unread-tell = The { setup-site } did not answer when I asked which { -workspace(form: "plural") } are yours, so I cannot say where you stand. Tell me if you want me to look again.
+setup-failed-tell = The { setup-site } did not answer everything I asked it, so I cannot say what comes next. Tell me if you want me to look again.
+setup-failed-stale = { $found }; { setup-stale }
+setup-stale-tell = This copy of { setup-program } could not read what the { setup-site } sent, and may be older than the { -site }. Tell me if you want me to fetch the { -site }'s own copy.
+setup-stale-when = if the person asks to fetch { setup-program } again
+
+## A run of the runner command that found no runner is needed.
+
+# spells -work-stage: the work in general
+setup-hosted-found = { -hosted-runs } take the work of { $project }, so it needs no { -runner }
+
+## Each step, in its few words. A step whose subject was not read says
+## which, and how.
+
+setup-step-unread = { $subject } { $fate }
+setup-step-named = { $name }: { $detail }
+setup-read-workspaces = your { -workspace(form: "plural") } were
+setup-read-inventory = your { -project(form: "plural") } were
+setup-read-settings = its { -lead } settings were
+setup-read-installations = its { -github } accounts were
+setup-read-portal-grant = what the { -portal-app } is granted on { -github } was
+setup-read-worker-grant = what the { -worker-app } is granted on { -github } was
+setup-read-repositories = its { -repository(form: "plural") } were
+# spells -work-stage: the work in general
+# spells -run: to run is a verb here
+setup-read-work = where its work runs was
+setup-read-placement = its { -runner(form: "plural") } were
+setup-read-tickets = its { -ticket(form: "plural") } were
+setup-read-drafts = its { -draft(form: "plural") } were
+setup-read-landings = { -ticket(form: "a") }'s { -landing(form: "plural") } were
+setup-fate-refused = not shown to you
+setup-fate-cut = sent only in part
+setup-fate-unasked = not read
+# The outcome is the request's own name for how it failed, which is code.
+setup-fate-failed = not answered ({ $outcome })
+setup-step-workspace-none = you are in no { -workspace } yet
+setup-step-workspace-unnamed = you are in no { -workspace } named { $workspace }
+setup-step-workspace-seen = { $workspace }, where you see { -project(form: "a") } and are not { -role-admin(form: "a") }
+setup-step-workspace-member = { $workspace }, where you are { -role-member(form: "a") } and not { -role-admin(form: "a") }
+setup-step-projectless = { $workspace } has no { -project } yet
+setup-step-projectless-named = { $workspace } has no { -project } named { $project }
+setup-step-projectless-unshown = no { -project } of { $workspace } is shown to you
+setup-step-projectless-unshown-named = no { -project } of { $workspace } named { $project } is shown to you
+setup-step-north-star = { $project } has no { $section } yet
+setup-app-portal = { -portal-app }
+setup-app-worker = { -worker-app }
+setup-step-apps-none = { $account } has neither app
+setup-step-apps-none-owner = { $account }, which owns { $repository }, has neither app
+setup-step-app-lacked = { $account } has the { $has }, not the { $lacks }
+setup-step-app-lacked-owner = { $account }, which owns { $repository }, has the { $has }, not the { $lacks }
+setup-step-ungranted = the { $app } on { $account } is not granted { $repository }
+setup-step-granted = { $account }, both apps granted { $repository }
+setup-step-remote = { $remote } (this folder's remote)
+setup-step-unconfigured = { $repository } is added, its { -configuration } not read yet
+setup-step-runner-offline = registered, not running
+setup-step-runner-live = live
+# spells -work-stage: the work in general
+setup-step-runner-hosted = { -hosted-runs } take its work
+setup-step-chat-host-offline = { $runner }; your { -chat-host } is registered, not running
+setup-step-chat-host-none = { $runner }; you have no { -chat-host } for your { -thread(form: "plural") } in it
+setup-step-ticket-done = { -ticket } { $ticket } is done
+setup-step-ticket-landed = { -ticket } { $ticket } { -landing(form: "ed") }
+setup-step-ticket-proposed = { -ticket } { $ticket } opened { -pull-request(form: "a") }
+setup-step-ticket-escalated = { -ticket } { $ticket } is { -escalation }
+setup-step-ticket-unstarted = { -ticket } { $ticket } is { -release(form: "ed") }, not started
+setup-step-ticket-moving = { -ticket } { $ticket } is in { $phase }
+setup-step-ticket-draft = { -ticket } { $ticket } is { -draft(form: "a") }, not { -release(form: "ed") }
+
+## What the folder's remote came to, among the projects it was looked for in.
+
+setup-remote-among = { -project } the { -site } shows you
+setup-remote-among-within = { -project } of { $workspace } the { -site } shows you
+setup-remote-unbound = this folder's remote { $remote } is added to no { $among }, so it proposes none
+setup-remote-one = this folder's remote { $remote } is added to { $project } and to no other { $among }, so this checklist is of { $project }: proposed and not chosen, and { $workspaceFlag } with { $projectFlag } names another
+setup-remote-several = this folder's remote { $remote } is added to more than one { $among } ({ $projects }), so it proposes none
+setup-remote-unread = this folder's remote { $remote } could not be looked for in every { $among }, so it proposes none
+
+## What is pressed on a console page that spells its own name, by that name.
+
+# spells -dispatch: a ticket's page draws the action under its code's name
+setup-pressed-dispatch = Dispatch
+
+## The one next thing: a step the person does by hand, and the condition the
+## checklist may be read again under. A name pressed or seen on a page is
+## handed in as the message that page draws.
+
+setup-mend-admin-tell = Setting { -brand-name } up takes { -role-admin(form: "a") } of the { -workspace }, and you are not one in { $workspace }. Ask { -role-admin(form: "a") } of { $workspace } to make you one on its People page, { $people }. Tell me once you are { -role-admin(form: "a") }.
+setup-mend-admin-when = once the person says they are { -role-admin(form: "a") } of { $workspace }
+setup-mend-workspace-none = You are not in a { -brand-name } { -workspace } yet.
+setup-mend-workspace-unnamed = You are not in a { -brand-name } { -workspace } named { $workspace }.
+setup-mend-workspace-tell = { $none } A new { -workspace } is made from { -invite(form: "a") } link: open the one you were sent (it starts { $invites }), and under { $naming } name the { -workspace } and press { $create }. Tell me once it is made.
+setup-mend-workspace-when = once the person says their { -workspace } is made
+setup-mend-project-tell = Open { $page }, the { $named } page, name the { -project } and press { $create }. Tell me once it is made.
+setup-mend-project-when = once the person says the { -project } is made
+setup-mend-north-star-tell = Open { $page }, press { $edit } beside { $section }, write a paragraph that says what the { -project } is for, and press { $save }. Tell me once it is saved.
+setup-mend-north-star-when = once the person says the { $section } is saved
+# The status and the label are the picker's own words, which another section holds.
+setup-mend-grant-tell = The { $app } is installed on { $account }, and { -github } does not let it into { $repository }. Open { $page }, press { $add }, and under the list find { $status }. Follow the link beside it, { $label }, and on { -github } add { $repository } to the { -repository(form: "plural") } the app may reach. Tell me once it is granted.
+setup-mend-grant-when = once the person says the { $app } is granted { $repository }
+setup-mend-account-tell = Open { $page } and press { $connect }, then install the { -brand-name } app on the { -github } account that owns your { -repository }. Tell me once { -github } is connected.
+setup-mend-github-when = once the person says { -github } is connected
+# The install button's label is the accounts page's own, which another section holds.
+setup-mend-worker-tell = Open { $page } and press { $install }, then install it on { $account }. Where { $account } is an organisation you do not own, { -github } asks its owner for you and this waits on them. Tell me once it is installed.
+setup-mend-worker-when = once the person says the { -worker-app } is installed on { $account }
+setup-mend-portal-tell = Open { $page }, the { -workspace }'s { -github } accounts page, and press { $connect }, so { -brand-name } is shown { $account }. Tell me once { -github } is connected.
+setup-mend-binding-yours = your { -repository }
+setup-mend-binding-mine = { $repository }, this folder's { -repository }
+setup-mend-binding-tell = Open { $page }, press { $add } and choose { $repository }. Tell me once it is added.
+setup-mend-binding-when = once the person says the { -repository } is added
+setup-mend-configuration-tell = { $repository } is added, but { -brand-name } has not read its { -configuration }. Open { $page } and press { $retry } on the row for { $repository }; if it still cannot, the row then says why. Tell me once { $retry } has answered.
+setup-mend-configuration-when = once the person says { $retry } has answered for { $repository }
+
+## The runner's step, which the runner command does on this machine with the
+## person's yes.
+
+setup-offer-when = once the person says yes to { -runner(form: "a") } on this machine
+setup-claude-on-subscription = your { -claude } plan
+setup-claude-on-api-key = your Anthropic API key
+setup-claude-on-bedrock = your Amazon Bedrock account
+# spells -project: a Google Cloud project is Google's
+setup-claude-on-vertex = your Google Cloud project
+setup-claude-on-foundry = your Microsoft Foundry resource
+setup-runs-in-containers = in containers
+setup-runs-on = in containers, on { $claude }
+# spells -work-stage: the work in general
+setup-next-runner = The next step is { -runner(form: "a") }: the machine that does the work on your { -ticket(form: "plural") }
+setup-mend-runner-running-when = once the person says the { -runner } is running
+# spells -release: a package's release
+setup-mend-package-newer = If the { -runner } package here, { $program }, is older than { setup-program } needs, I install its latest release first.
+# spells -run: to run is a verb here
+setup-mend-chat-too = Your { -thread(form: "plural") } run only on your { -chat-host }, a machine of yours, so I will also make this machine it, as a second service of yours.
+# spells -brief-check: to check is a verb here
+# spells -work-stage: the work in general
+# spells -run: to run is a verb here
+setup-mend-runner-live-offer = { -runner(case: "upper", form: "a") } is registered for { $project } and is not running, and this machine holds a registration for that { -project }. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the { -site } no longer knows that registration, so work on your { -ticket(form: "plural") } runs on this machine { $runs }. { setup-mend-package-newer }{ $chat ->
+    [with] { " " }{ setup-mend-chat-too }
+   *[without] { "" }
+} Tell me yes to go ahead.
+setup-mend-runner-live-tell = { -runner(case: "upper", form: "a") } is registered and is not running. Start it on its machine and tell me once it is running.
+# spells -work-stage: the work in general
+# spells -run: to run is a verb here
+setup-mend-runner-put-chat = That puts here the { -runner } package, { $program }, and two background services of yours that start when you log in: one for the work on your { -project }'s { -ticket(form: "plural") }, one your { -chat-host }, which your { -thread(form: "plural") } run on and only on. Both run on this machine { $runs }.
+# spells -work-stage: the work in general
+# spells -run: to run is a verb here
+setup-mend-runner-put = That puts here the { -runner } package, { $program }, and a background service of yours that starts when you log in; work on your { -ticket(form: "plural") } then runs on this machine { $runs }.
+# The commands are the runner packages' own, which is code.
+# spells -run: to run is a verb here
+# spells -agent: a Mac's launch agent is the Mac's, not a run's
+setup-mend-chat-by-hand = open { $page }, press { $register } and copy the token it shows. Then, with the { -runner } package installed there, on Linux run { $linux }, which starts its service where it can and otherwise prints what is left, and on a Mac run { $darwin }, then { $agent } with the file it wrote, and load the agent as that prints
+# spells -run: to run is a verb here
+setup-mend-chats = Your { -thread(form: "plural") } in { $project } run only on your { -chat-host }, one machine of yours
+# spells -work-stage: the work in general
+setup-mend-chat-besides = The work on { $project } has { -runner(form: "a") } elsewhere, and this machine is made one of it too, a second service of yours.
+# spells -brief-check: to check is a verb here
+setup-mend-chat-live-offer = { $chats }, which is registered and not running, and this machine holds a registration of one. With your yes I will check it and start it here as a background service of yours that starts when you log in, where the registration it holds is the one the { -site } holds. { setup-mend-package-newer }{ $besides ->
+    [with] { " " }{ setup-mend-chat-besides }
+   *[without] { "" }
+} Tell me yes to go ahead.
+setup-mend-chat-live-tell = { $chats }, which is registered and not running. Start it on its machine and tell me once it is running.
+setup-mend-chat-host-when = once the person says their { -chat-host } is running
+# spells -run: to run is a verb here
+setup-mend-chat-offer = { $chats }, and you have none yet. I can make this machine it: that puts here the { -runner } package, { $program }, where it is not here yet or is older than { setup-program } needs, and a background service of yours that starts when you log in, which your { -thread(form: "plural") } then run on, { $runs }.{ $besides ->
+    [with] { " " }{ setup-mend-chat-besides }
+   *[without] { "" }
+} Tell me yes to go ahead.
+setup-mend-chat-tell = { $chats }, and you have none yet{ $here ->
+    [seen] ; { setup-program } cannot make this machine it
+   *[unseen] { "" }
+}. On the machine that will be it, { $byHand }. Tell me once it is running.
+# spells -work-stage: the work in general
+# spells -run: to run is a verb here
+setup-mend-runner-elsewhere = Open { $page } and press { $add }, then do what it shows on the machine that will run the work. Tell me once the { -runner } is running.
+setup-mend-runner-instead = For { -runner(form: "a") } on another machine instead, open { $page } there and press { $add }, and tell me once it is running.
+setup-mend-runner-offer = { setup-next-runner }. I can make this machine one. { $put } Tell me yes to go ahead. For { -runner(form: "a") } on another machine instead, that machine's own browser opens { $page }, where you press { $add }.
+# spells -run: to run is a verb here
+setup-mend-runner-mac = { setup-next-runner }. This machine is a Mac and { setup-runner-mac-none }, but a Mac runs one with { $program }, added by hand: open { $page }, press { $add }, choose Mac and do what it shows there. Tell me once the { -runner } is running.
+# spells -run: to run is a verb here
+setup-mend-runner-serviceless = { setup-next-runner }. { setup-program } runs one as a background service of yours, and this machine's user services did not answer, so it cannot set one up here. { $elsewhere }
+setup-mend-runner-engineless = { setup-next-runner }, in containers. This machine cannot be one yet: { $none } here without a password. { setup-runner-engine-needs-password } Tell me once one answers you here. { $instead }
+setup-mend-runner-docker = { setup-next-runner }, in containers. This machine cannot be one yet. { $why } { $state }. { $mend } { $instead }
+setup-mend-runner-or-running = { $when }, or that { -runner(form: "a") } is running
+
+## The ticket's step.
+
+setup-mend-ticket-create = Open { $page }, say what you want done and press { $create }
+setup-mend-ticket-tell = { $create }. Tell me once it is created.
+setup-mend-ticket-when = once the person says the { -ticket } is created
+setup-mend-release-tell = { -ticket(case: "upper") } { $ticket } was drafted and never { -release(form: "ed") }, so nothing is working on it, and the console has no page that { -release(form: "s") } it. { $create }, which makes { -ticket(form: "a") } and { -release(form: "s") } it at once. Tell me once it is created.
+setup-mend-dispatch-tell = { -ticket(case: "upper") } { $ticket } is { -release(form: "ed") } and has not started. Open { $page } and press { $dispatch } to start it. Tell me once it has started.
+setup-mend-dispatch-when = once the person says { -ticket } { $ticket } has started
+setup-mend-landing-tell = { -ticket(case: "upper") } { $ticket } is in { $phase }, and setup is done when it { -landing(form: "s") }. { $page } shows where it is. Tell me when you want me to look again.
+setup-mend-decision-tell = { -ticket(case: "upper") } { $ticket } is { -escalation }: it waits on a decision of yours at { $page }. Tell me once it is moving again.
+setup-mend-decision-when = once the person says { -ticket } { $ticket } is moving again
+
+## A step that was not read. The step's name is the checklist's own.
+
+setup-mend-unread-found = the { $step } step is not read: { $detail }
+setup-mend-unread-refused-tell = The { setup-site } does not show you what the { $step } step is read from, so I cannot say whether it is done. { -role-admin(case: "upper", form: "a") } of the { -workspace } can see it, or can give you the access to. Tell me if your access changes.
+setup-mend-unread-cut-tell = The { setup-site } sent only part of what the { $step } step is read from, so I cannot say whether it is done. Tell me if you want me to look again.
+
+## A question only the person answers, and the flag the answer is passed in.
+
+setup-ask-workspace = Which { -workspace }
+setup-ask-project = Which { -project } of { $workspace }
+setup-ask-more = { $names } and { $more } more
+setup-listed = { $names } or { $last }
+setup-ask-part = The { -site } sent only part of the list, so the one meant may not be named here.
+setup-ask = { $of } is this for: { $names }?{ $whole ->
+    [whole] { "" }
+   *[part] { " " }{ setup-ask-part }
+} Pass the name as { $flag }.
+setup-ask-unnamed = { $of } is this for?{ $whole ->
+    [whole] { "" }
+   *[part] { " " }{ setup-ask-part }
+} Pass the name as { $flag }.
+
+## Setup done.
+
+# spells -run: to run is a verb here
+setup-done = { -brand-name } is set up for { $project }{ $how ->
+    [said] : { $detail }
+   *[unsaid] { "" }
+}.{ $merge ->
+    [unmerged] { " " }Its { -pull-request }, { $url }, holds the { -repository }'s own { -configuration }: merge it on { -github } so later { -ticket(form: "plural") } run on that { -configuration } rather than each writing it again.
+   *[merged] { "" }
+} The next { -ticket } is made at { $page }.
+
+## The page a sign-in returns to, in the person's browser.
+
+setup-page-signed-in = Signed in to { -brand-name }. You can close this tab and go back to your terminal.
+setup-page-unfinished = This sign-in did not finish. Close this tab and go back to your terminal.
+setup-page-answered = This sign-in page has already been answered.
+setup-page-nothing = There is nothing here.
+
+## The build's last step, which starts the program it built. A first run is
+## this program's, not a stage's.
+
+# spells -run: a run of this program
+setup-built-starts = the setup program at { $path } starts as a first run does
+setup-built-absent = the setup program at { $path } is not there
+# spells -run: a run of this program
+setup-built-unended = the setup program at { $path } did not run to its end within its bounds
+# spells -run: a run of this program
+setup-built-unstarted = the setup program at { $path } did not start as a first run does: exit { $exit }
+# spells -run: a run of this program
+setup-built-unstarted-said = the setup program at { $path } did not start as a first run does: exit { $exit }, saying { $said }

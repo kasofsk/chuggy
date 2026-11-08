@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * Why the worker app cannot be said to reach a bound repository, on that
  * binding's row: the word, why on hover, and the installation's own page on
@@ -8,6 +7,7 @@
 import type { ReactNode } from "react";
 
 import type { ProjectRepositoryWorkerReachResponse } from "../../../../../src/contract/responses.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { repositoryWorkerReachLine } from "../../core/projectRepositories.ts";
 import { repositoryWorkerReachTone } from "../../core/tones.ts";
 import { buttonLookClassName } from "../ui/Button.tsx";
@@ -17,13 +17,14 @@ import { Tooltip } from "../ui/Tooltip.tsx";
 export function BindingWorkerReach(props: {
   readonly reach: ProjectRepositoryWorkerReachResponse;
 }): ReactNode {
+  const text = useCopyText();
   const line = repositoryWorkerReachLine(props.reach);
   return (
     <>
       <Tooltip text={line.detail}>
         <span>
           <Pill tone={repositoryWorkerReachTone(props.reach.reach)}>
-            {line.status}
+            {text(line.status)}
           </Pill>
         </span>
       </Tooltip>
@@ -34,7 +35,7 @@ export function BindingWorkerReach(props: {
           rel="noopener noreferrer"
           target="_blank"
         >
-          Review on GitHub
+          {text({ id: "repositories-reach-review" })}
         </a>
       )}
     </>

@@ -15,7 +15,7 @@ import type {
 import type { RepositoryConfigurationFault } from "../../../../src/contract/rosters.ts";
 
 import type { ApiFailure, ApiResult } from "./apiRequest.ts";
-import { groupedDigits } from "./figures.ts";
+import type { Copy } from "./copy.ts";
 import { commitLabel, type Label } from "./labels.ts";
 import { repositoryRefusalStatus } from "./projectRepositories.ts";
 
@@ -47,14 +47,42 @@ export function repositoryImportFaultless(
   return (repositoryImportFaultlessWords as readonly string[]).includes(word);
 }
 
+/** An attempt's word, or that none was attempted, as the line's pill says it. */
+export function repositoryImportWordLabel(
+  word: RepositoryImportWord | typeof repositoryImportNever,
+): Copy {
+  switch (word) {
+    case "Imported":
+      return { id: "repositories-import-imported" };
+    case "Undeclared":
+      return { id: "repositories-import-undeclared" };
+    case "Missing":
+      return { id: "repositories-import-missing" };
+    case "Empty":
+      return { id: "repositories-import-empty" };
+    case "Unavailable":
+      return { id: "repositories-unavailable" };
+    case "Unreadable":
+      return { id: "repositories-unreadable" };
+    case "Invalid":
+      return { id: "repositories-import-invalid" };
+    case "Conflict":
+      return { id: "repositories-conflict" };
+    case "Stale":
+      return { id: "repositories-import-stale" };
+    case "Never":
+      return { id: "repositories-import-never" };
+  }
+}
+
 /** What the line's label is. */
-export const repositoryImportLabel = "Last import";
+export const repositoryImportLabel: Copy = { id: "repositories-import-label" };
 
 /** What the button says, idle and while its request runs. */
 export const repositoryImportPress = {
-  idle: "Import now",
-  busy: "Importing…",
-} as const;
+  idle: { id: "repositories-import-now" },
+  busy: { id: "repositories-importing" },
+} as const satisfies Readonly<Record<string, Copy>>;
 
 /**
  * A commit holding no configuration directory is Undeclared. One the snapshot
@@ -117,14 +145,28 @@ const repositoryImportRefusals: Readonly<
   RepositoryBindingChanged: "Stale",
 };
 
-/** A refused import's answer as one word, the line's own where the route names the outcome it kept. */
-function repositoryImportRefusal(result: ApiFailure): string {
+/** A refused import's answer as one word, the line's own where the route
+ * names the outcome it kept, and the word of a refusal that says nothing about
+ * the repository otherwise. */
+function repositoryImportRefusal(
+  result: ApiFailure,
+): RepositoryImportWord | Copy {
   if (result.outcome === "Rejected")
-    return repositoryImportRefusals[result.code] ?? "Refused";
+    return (
+      repositoryImportRefusals[result.code] ?? { id: "repositories-refused" }
+    );
   if (result.outcome === "Conflict")
     return repositoryImportRefusals[result.code] ?? "Conflict";
   if (result.outcome === "Retryable") return "Unavailable";
   return repositoryRefusalStatus(result);
+}
+
+function repositoryImportRefusalLabel(
+  refusal: RepositoryImportWord | Copy,
+): Copy {
+  return typeof refusal === "string"
+    ? repositoryImportWordLabel(refusal)
+    : refusal;
 }
 
 /** One Import now's answer, and the instant of the attempt the line held when it was pressed. */
@@ -143,51 +185,64 @@ export interface RepositoryImportPressed {
 export function repositoryImportNote(
   pressed: RepositoryImportPressed | undefined,
   line: RepositoryImportLine,
-): string | undefined {
+): Copy | undefined {
   if (pressed === undefined || pressed.answered.outcome === "Ok")
     return undefined;
   const kept = "attemptedAt" in line && line.attemptedAt !== pressed.over;
   if (kept && repositoryImportFaultless(line.word)) return undefined;
-  const word = repositoryImportRefusal(pressed.answered);
-  return repositoryImportFaultless(word) ? undefined : word;
+  const refusal = repositoryImportRefusal(pressed.answered);
+  return typeof refusal === "string" && repositoryImportFaultless(refusal)
+    ? undefined
+    : repositoryImportRefusalLabel(refusal);
 }
 
 /** What a refused Import now says under the line, where it says anything. */
-export function repositoryImportRefused(failure: ApiFailure): string {
-  return `Not imported · ${repositoryImportRefusal(failure)}`;
+export function repositoryImportRefused(failure: ApiFailure): Copy {
+  return {
+    id: "repositories-import-refused-now",
+    args: {
+      word: repositoryImportRefusalLabel(repositoryImportRefusal(failure)),
+    },
+  };
 }
 
 /** Each fault a refused file is refused for, in the console's words. */
 const repositoryImportFaultWords: Readonly<
-  Record<RepositoryConfigurationFault, string>
+  Record<RepositoryConfigurationFault, Copy>
 > = {
-  TooManyDeclarations: "Too many files",
-  PathInvalid: "Path not allowed",
-  SymlinkRefused: "Symlink",
-  ContentTooLarge: "File too large",
-  DocumentUnreadable: "Not JSON",
-  EnvelopeInvalid: "Not a configuration file",
-  NameInvalid: "Name invalid",
-  ConfigurationInvalid: "Configuration invalid",
-  ConfigurationTooLong: "Too long",
-  DuplicateName: "Name declared twice",
-  DuplicatePath: "File listed twice",
-  ReferenceAbsent: "Referenced file missing",
-  TooManyReferences: "Too many referenced files",
+  TooManyDeclarations: { id: "repositories-fault-too-many-declarations" },
+  PathInvalid: { id: "repositories-fault-path-invalid" },
+  SymlinkRefused: { id: "repositories-fault-symlink-refused" },
+  ContentTooLarge: { id: "repositories-fault-content-too-large" },
+  DocumentUnreadable: { id: "repositories-fault-document-unreadable" },
+  EnvelopeInvalid: { id: "repositories-fault-envelope-invalid" },
+  NameInvalid: { id: "repositories-fault-name-invalid" },
+  ConfigurationInvalid: { id: "repositories-fault-configuration-invalid" },
+  ConfigurationTooLong: { id: "repositories-fault-configuration-too-long" },
+  DuplicateName: { id: "repositories-fault-duplicate-name" },
+  DuplicatePath: { id: "repositories-fault-duplicate-path" },
+  ReferenceAbsent: { id: "repositories-fault-reference-absent" },
+  TooManyReferences: { id: "repositories-fault-too-many-references" },
 };
 
 /** One refusal's fault in words: a configuration too long as its length against the limit, and a missing reference by its path. */
 export function repositoryImportFault(
   refusal: RepositoryConfigurationRefusalResponse,
-): string {
+): Copy {
   if (
     refusal.fault === "ConfigurationTooLong" &&
     refusal.chars !== undefined &&
     refusal.charsMax !== undefined
   )
-    return `${groupedDigits(refusal.chars)} of ${groupedDigits(refusal.charsMax)} characters`;
+    return {
+      id: "repositories-fault-chars",
+      args: { chars: refusal.chars, charsMax: refusal.charsMax },
+    };
   if (refusal.fault === "ReferenceAbsent" && refusal.reference !== undefined)
-    return `Missing ${refusal.reference}`;
+    return {
+      id: "repositories-fault-reference-named",
+      args: { reference: refusal.reference },
+    };
   return repositoryImportFaultWords[refusal.fault];
 }
 
@@ -198,21 +253,31 @@ export function repositoryImportFault(
  */
 export function repositoryImportRefusedFile(
   lastImport: RepositoryConfigurationImportAttemptResponse | undefined,
-): string | undefined {
+): Copy | undefined {
   const outcome = lastImport?.outcome;
   if (outcome?.result !== "DeclarationsRefused") return undefined;
   const [first] = outcome.refusals ?? [];
   if (first === undefined) return undefined;
   const more = (outcome.refusalCount ?? 1) - 1;
-  return [
-    first.path,
-    repositoryImportFault(first),
-    ...(more > 0 ? [`${groupedDigits(more)} more`] : []),
-  ].join(" · ");
+  const file = {
+    path: first.path,
+    fault: repositoryImportFault(first),
+  };
+  return more > 0
+    ? { id: "repositories-import-refused-files", args: { ...file, more } }
+    : { id: "repositories-import-refused-file", args: file };
 }
 
-/** What the notice over a project's tickets and its Inbox says of a refused import. */
-export const repositoryImportRefusedLabel = "Import refused";
+/** What the notice over a project's tickets and its Inbox says of a refused
+ * import, before the first repository refused. */
+export const repositoryImportRefusedLabel: Copy = {
+  id: "repositories-import-refused-label",
+};
+
+/** How many more repositories the notice counts refused, after the first. */
+export function repositoryImportRefusedMore(count: number): Copy {
+  return { id: "repositories-more", args: { count } };
+}
 
 /**
  * The live bindings whose newest import was refused, oldest bound first. A

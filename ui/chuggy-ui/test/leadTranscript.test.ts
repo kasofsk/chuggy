@@ -400,6 +400,61 @@ test("a reset past the entries cap keeps the chain's order and its uniqueness", 
   expect(rebuilt.fold.entriesDropped).toBe(1);
 });
 
+/** A page whose entries carry these cuts, each named by its boundary. */
+function cutsPage(
+  cut: number,
+  entries: readonly string[],
+  boundaries: readonly string[],
+  nextAfter?: number,
+): LeadTranscriptResponse {
+  return {
+    ...cutPage(cut, entries, entries, nextAfter),
+    compactions: boundaries.map((boundary) => ({ boundary })),
+  };
+}
+
+/** A cut two pages both carry, which a re-read page does, is one compaction
+ * and not two, and the cuts keep the order the chain gave them. */
+test("a cut carried by two pages is gathered once, in chain order", () => {
+  const first = paged(
+    leadTranscriptPaneEmpty,
+    cutsPage(1, ["uuid-a", "uuid-b"], ["uuid-a"], 1),
+    2,
+  );
+  const second = paged(
+    first,
+    cutsPage(1, ["uuid-c", "uuid-d"], ["uuid-a", "uuid-c"]),
+    2,
+  );
+  expect(
+    leadTranscriptDrawn(second).compactions.map((cut) => cut.boundary),
+  ).toStrictEqual(["uuid-a", "uuid-c"]);
+});
+
+/** Cuts gathered under a cut that has moved are gathered again by the re-walk,
+ * so the reset drops them with everything else. */
+test("a reset starts the gathered cuts over", () => {
+  const first = paged(
+    leadTranscriptPaneEmpty,
+    cutsPage(1, ["uuid-a", "uuid-b"], ["uuid-a"], 1),
+    1,
+  );
+  expect(first.fold.compactions.map((cut) => cut.boundary)).toStrictEqual([
+    "uuid-a",
+  ]);
+  const reset = paged(first, cutsPage(3, ["uuid-c", "uuid-d"], ["uuid-c"]), 2);
+  expect(reset.fold.compactions).toStrictEqual([]);
+  const rebuilt = paged(
+    paged(reset, cutsPage(3, ["uuid-a", "uuid-b"], ["uuid-a"], 1), 2),
+    cutsPage(3, ["uuid-c", "uuid-d"], ["uuid-c"]),
+    2,
+  );
+  expect(rebuilt.fold.compactions.map((cut) => cut.boundary)).toStrictEqual([
+    "uuid-a",
+    "uuid-c",
+  ]);
+});
+
 /**
  * ONE PAGE CAN CARRY ONE ENTRY TWICE. The route builds a page's entries by
  * walking a chain, and a walk that met one entry by two paths would send it

@@ -46,6 +46,7 @@ import {
 import { viewportAtEm, viewportDeskEm } from "./viewport.ts";
 import type { ViewportFrame } from "./viewport.ts";
 import { readFailedLines } from "./readFailedLines.ts";
+import { contextSessionBody } from "./contextFixture.ts";
 
 beforeEach(() => {
   resizeObserverStubbed();
@@ -187,7 +188,7 @@ test("a thread's address draws its conversation as the page, with no chat pane a
   expect(screen.queryByRole("button", { name: "Expand chat" })).toBeNull();
   const conversation = screen.getByRole("region", { name: "Conversation" });
   expect(conversation.closest(".chat-reading")).not.toBeNull();
-  expect(screen.getByText("a member's question")).toBeDefined();
+  expect(screen.getByText("question-1")).toBeDefined();
   expect(screen.getByRole("textbox", { name: "Message" })).toBeDefined();
   expect(await threadMenuOffers()).toStrictEqual([
     "Copy link",
@@ -195,6 +196,30 @@ test("a thread's address draws its conversation as the page, with no chat pane a
     "Close",
   ]);
   styleless();
+});
+
+test("the bar's Context opens the thread's context beside its conversation, and its close takes it away", async () => {
+  await mountedAt(
+    threadPath(threadMineSession),
+    (served) =>
+      ((url: string, init?: RequestInit) =>
+        url.includes("/context")
+          ? Promise.resolve(
+              answer(contextSessionBody([{ ordinal: 1, total: 125_280 }])),
+            )
+          : served(url, init)) as typeof fetch,
+  );
+  expect(screen.queryByRole("complementary", { name: "Context" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Context" }));
+  await settled();
+  const panel = screen.getByRole("complementary", { name: "Context" });
+  expect(panel.closest(".context-beside")).not.toBeNull();
+  expect(screen.getByRole("region", { name: "Conversation" })).toBeDefined();
+  const window = within(panel).getByRole("region", { name: "Window" });
+  expect(within(window).getByText("125,280")).toBeDefined();
+  expect(within(window).getByText("Turn 1")).toBeDefined();
+  fireEvent.click(within(panel).getByRole("button", { name: "Close" }));
+  expect(screen.queryByRole("complementary", { name: "Context" })).toBeNull();
 });
 
 test("a thread that cannot be read draws the read's own line, and no pane", async () => {
@@ -246,7 +271,7 @@ test("another member's thread is read without a composer", async () => {
   expect(
     screen.getByRole("heading", { level: 1, name: "theirs" }),
   ).toBeDefined();
-  expect(screen.getByText("a member's question")).toBeDefined();
+  expect(screen.getByText("question-1")).toBeDefined();
   expect(screen.queryByRole("textbox", { name: "Message" })).toBeNull();
   expect(chatDrawn()).toBeNull();
   expect(await threadMenuOffers()).toStrictEqual(["Copy link", "Close"]);

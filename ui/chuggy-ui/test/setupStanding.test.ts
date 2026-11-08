@@ -23,11 +23,13 @@ import { setupLandingsMax } from "../app/core/setupReads.ts";
 import type { SetupRead } from "../app/core/setupReads.ts";
 import { setupSteps } from "../app/core/setupReport.ts";
 import { setupStanding } from "../app/core/setupStanding.ts";
+import type { SetupStep } from "../app/core/setupStanding.ts";
 import { workRunner } from "../app/core/workRunner.ts";
 import type { WorkRunnerRead } from "../app/core/workRunner.ts";
 import {
   saidAcme,
   saidAccountsUnshown,
+  saidDetail,
   saidFailures,
   saidFated,
   saidGranted,
@@ -41,6 +43,7 @@ import {
   saidRepository,
   saidRunnable,
   saidStages,
+  saidStep,
   saidTodo,
   saidUnread,
   saidViewer,
@@ -70,6 +73,13 @@ import { siteRead, stood } from "./setupStood.ts";
 import type { Asking } from "./setupStood.ts";
 import { workRunnerUnnamed } from "./workRunnerFixture.ts";
 
+/** A step with its few words as the program prints them. */
+function worded(step: SetupStep | undefined) {
+  return step === undefined
+    ? undefined
+    : { ...step, detail: saidDetail(step.detail) };
+}
+
 /** Every step of a site as it is said, in order. */
 async function column(
   site: SetupSite,
@@ -79,7 +89,7 @@ async function column(
   expect(steps.map((step) => step.step)).toEqual(setupSteps);
   for (const step of steps)
     expect(step.lacks === undefined, step.step).toBe(step.state === "done");
-  return steps.map((step): Said => [step.state, step.detail]);
+  return steps.map(saidStep);
 }
 
 test.each(Object.entries(saidStages))(
@@ -99,12 +109,16 @@ async function ticketed(
   return (await column(site)).at(-1);
 }
 
-test.each(["Work", "Evaluation", "Finalization"] as const)(
-  "a ticket in %s is waited on, by its number and its phase",
-  async (phase) => {
+test.each([
+  ["Work", "Work"],
+  ["Evaluation", "Evaluation"],
+  ["Finalization", "Landing"],
+] as const)(
+  "a ticket in %s is waited on, by its number and its phase as the ticket page names its step",
+  async (phase, step) => {
     expect(await ticketed([{ ticket: 7, phase }])).toEqual([
       "waiting",
-      `ticket 7 is in ${phase}`,
+      `ticket 7 is in ${step}`,
     ]);
   },
 );
@@ -112,7 +126,7 @@ test.each(["Work", "Evaluation", "Finalization"] as const)(
 test("a ticket that is released and has not started waits on a press that starts it, and is said as that and not as a phase", async () => {
   const { site, project } = saidRunnable();
   project.tickets.push({ ticket: 7, phase: "Pending" });
-  const step = (await stood(site)).steps.at(-1);
+  const step = worded((await stood(site)).steps.at(-1));
   expect(step).toEqual({
     step: "ticket",
     state: "waiting",
@@ -159,10 +173,10 @@ test("a ticket being landed is done once a landing of it landed or opened a pull
     ticketed([saidLandingTicket(6)], (project) => {
       project.landings.set(6, landings);
     });
-  expect(await landed([])).toEqual(["waiting", "ticket 6 is in Finalization"]);
+  expect(await landed([])).toEqual(["waiting", "ticket 6 is in Landing"]);
   expect(await landed([setupSiteHeld])).toEqual([
     "waiting",
-    "ticket 6 is in Finalization",
+    "ticket 6 is in Landing",
   ]);
   expect(await landed([setupSiteHeld, setupSiteLanded])).toEqual([
     "done",
@@ -217,7 +231,7 @@ test("a pull request counts only on a landing that has neither failed nor been i
   ]);
   expect(await landed([proposedIn("Failed")])).toEqual([
     "waiting",
-    "ticket 6 is in Finalization",
+    "ticket 6 is in Landing",
   ]);
   expect(await landed([proposedIn("Failed"), proposedIn("Running")])).toEqual([
     "done",
@@ -251,7 +265,7 @@ test("landings are read for a bounded few of the tickets being landed, and past 
   ]);
   expect(await ticketed(many.slice(1))).toEqual([
     "waiting",
-    "ticket 2 is in Finalization",
+    "ticket 2 is in Landing",
   ]);
 });
 
@@ -353,7 +367,7 @@ test("a standing over a list of projects that was not whole never says a workspa
     ...reads,
     inventory: { read: "Got", value: [], whole: false },
   });
-  expect(steps.map((step): Said => [step.state, step.detail])).toEqual([
+  expect(steps.map(saidStep)).toEqual([
     saidAcme,
     ["unread", "your projects were sent only in part"],
     unasked("its repositories were"),
@@ -501,7 +515,8 @@ const personal = [
 ] as const;
 
 test("once a repository is added GitHub is held to the account that owns it, whatever another account holds, and waits on the app that account lacks", async () => {
-  const github = async (site: SetupSite) => (await stood(site)).steps[2];
+  const github = async (site: SetupSite) =>
+    worded((await stood(site)).steps[2]);
   const waiting = (detail: string, app: "portal" | "worker") => ({
     step: "github",
     state: "waiting",
@@ -587,7 +602,8 @@ function granting(
 const elsewhere = "https://github.com/acme-org/gadgets";
 
 test("with both apps on the owner's account, GitHub waits on whichever is not granted this repository, the portal app said first, and is done only where both are", async () => {
-  const github = async (site: SetupSite) => (await stood(site)).steps[2];
+  const github = async (site: SetupSite) =>
+    worded((await stood(site)).steps[2]);
   const mine = setupSiteRepositoryAddress;
   const waiting = (app: "portal" | "worker") => ({
     step: "github",
@@ -804,7 +820,7 @@ test("for every route a project's work can take and every standing its runners c
       );
       said[`${route} ${runner}`] = step;
     }
-  const hosted: Said = ["done", "the cluster runs its work"];
+  const hosted: Said = ["done", "hosted runs take its work"];
   expect(said).toEqual({
     "InCluster Unregistered": hosted,
     "InCluster Offline": hosted,
@@ -821,7 +837,7 @@ test("a project whose work the cluster runs needs no runner of its own, and its 
     held.work = "InCluster";
     held.runner = "Unregistered";
   }
-  const hosted: Said = ["done", "the cluster runs its work"];
+  const hosted: Said = ["done", "hosted runs take its work"];
   expect((await column(site)).slice(4)).toEqual([
     hosted,
     ["done", "ticket 1 is done"],
@@ -829,7 +845,7 @@ test("a project whose work the cluster runs needs no runner of its own, and its 
   site.chat.clear();
   expect((await column(site))[4]).toEqual([
     "todo",
-    "the cluster runs its work; you have no chat host for your chats in it",
+    "hosted runs take its work; you have no chat host for your chats in it",
   ]);
   for (const held of site.projects) held.threads = "InCluster";
   expect((await column(site))[4]).toEqual(hosted);
@@ -850,7 +866,11 @@ test("where the person's chats run on runners the runner step is done only once 
       else
         site.chat.set("acme", { id: "chuggy-chat-1", live: mine === "Live" });
       const step = (await stood(site)).steps[4];
-      said[`${runner} ${mine}`] = [step?.state, step?.detail, step?.lacks];
+      said[`${runner} ${mine}`] = [
+        step?.state,
+        saidDetail(step?.detail),
+        step?.lacks,
+      ];
     }
   const chat = (lacks: "ChatHost" | "ChatHostLive") => ({
     lacks,

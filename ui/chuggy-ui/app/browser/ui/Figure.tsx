@@ -14,6 +14,7 @@ import type { ReactNode } from "react";
 import type { Figure as FigureValue } from "../../core/figures.ts";
 import { Tooltip } from "./Tooltip.tsx";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
+import { copyOrDataText } from "../../core/copy.ts";
 import type { Copy } from "../../core/copy.ts";
 
 import "./Figure.css";
@@ -83,7 +84,7 @@ export function Figure(props: { readonly figure: FigureValue }): ReactNode {
     case "Instant":
       return (
         <Tooltip text={figure.iso}>
-          <span className="fig">{figure.text}</span>
+          <span className="fig">{copyOrDataText(text, figure.text)}</span>
         </Tooltip>
       );
     case "Ago":

@@ -66,30 +66,17 @@ terminal program may reach beyond those.
 
 ## Copy
 
-Every word a reader is shown belongs in `ui/chuggy-ui/app/copy/en/`, in
-Project Fluent. `copy/no-literal-text` reports what a component spells as JSX
-text or in an attribute `lint/copyText.js` lists, and a file it still reports
-carries the exemption step 4 deletes. It reads no other prop, no `.ts` file and
-nothing in `app/core/`, so copy there is unmarked and a section finds it by
-reading its files. `terms.ftl` holds the product's nouns, its header says how
-a term's forms are asked for, and each other file is a section whose ids are
-kebab-case under its name. `app/core/` hands out a descriptor, `{ id, args }`,
-typed by `app/core/generated/`, a descriptor among its args formatted in its
-place; `useCopyText` in `app/copy/CopyProvider.tsx` formats one in a
-component. A vernacular is a directory `en-x-<name>` beside `en/`, layered
-over it, and once generated it is a choice under the gear's Wording, offered
-to a site administrator beside `en-x-pseudo`: the base language with every
-catalogued word altered, so what is still spelled outside the catalog reads
-as plain English. To move a file:
-
-1. Put its strings in its section's `.ftl`, naming each term as `{ -term }`.
-2. Run `node ui/chuggy-ui/tools/copyCatalog.ts`; a new section's two modules
-   join `app/copy/catalog.ts` and `app/core/copy.ts`.
-3. Return descriptors from `app/core/`, format them where they are drawn.
-4. Delete the file's first line, `/* eslint-disable copy/no-literal-text */`.
-5. Render its suites through `renderCopied` in `ui/chuggy-ui/test/copied.tsx`.
-
-`.chug/tasks/check-console-copy.sh` holds the catalog to its rules.
+Every word a reader is shown is a message in `app/copy/en/`, in Project Fluent: a
+file per section, ids kebab-case under its name. No file opts out of
+`copy/no-literal-text`. To add a message, write it in its section, run
+`node ui/chuggy-ui/tools/copyCatalog.ts`, return it from `app/core/` as `{ id, args }`
+and format it where it is drawn with `useCopyText`; a new section's two modules
+join `app/copy/catalog.ts` and `app/core/copy.ts`. To add a term, give `terms.ftl`
+the noun, its forms as its header says, and a `rejects:` line of the words it
+replaces; messages name it as `{ -term }`, and one that must spell its English
+says why in `# spells -term: …`, or a rejected word in `# spells word: …`. A
+vernacular is `app/copy/en-x-<name>/` overriding what it renames, chosen under the
+gear's Wording, where Pseudo shows what is still English outside the catalog.
 
 ## The contract is imported, never restated
 

@@ -22,6 +22,7 @@
  */
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
+import type { Copy, CopyArgument } from "./copy.ts";
 import { forgeInstallLabel } from "./forgeInstallation.ts";
 import { inviteRoutePath } from "./inviteLinks.ts";
 import { projectCreationPathIn } from "./projectCreation.ts";
@@ -39,46 +40,32 @@ import type { SetupAnswers } from "./setupArguments.ts";
 import type { SetupChoice } from "./setupReads.ts";
 import type { SetupNext, SetupThing } from "./setupReport.ts";
 import type { SetupRunnerHere } from "./setupRunnerMachine.ts";
-import type {
-  SetupClaudeKind,
-  SetupDockerBarred,
-  SetupEngine,
-  SetupEngineAsked,
-} from "./setupRunnerSaid.ts";
-import { setupJobUser } from "./setupRunnerSaid.ts";
+import type { SetupClaudeKind } from "./setupRunnerSaid.ts";
+import { setupDockerBarredTold, setupEnginesNone } from "./setupRunnerSaid.ts";
+import { setupAppNames, setupPhaseSaid, setupSeen } from "./setupStanding.ts";
 import type { SetupLack, SetupStanding, SetupStep } from "./setupStanding.ts";
-import { setupListed } from "./setupText.ts";
+import { setupFlat } from "./setupText.ts";
 import { navRoutes } from "./shellNav.ts";
 
 /**
- * What is pressed on the console's pages, by the name each page draws. The
- * pages write these names themselves and core has no constant for them, so a
- * case reads each page's source for its name and fails where a page renamed it.
+ * What is pressed on the console's pages, by the message each page draws it
+ * as, or the program's own where a page spells the name itself. A case reads
+ * each page for it and fails where a page renamed it.
  */
 export const setupPressed = {
-  projectPage: "New project",
-  projectCreate: "Create project",
-  edit: "Edit",
-  save: "Save changes",
-  connect: "Connect GitHub",
-  add: "Add",
-  retry: "Retry",
-  runner: "Add runner",
-  chatHost: "Register chat host",
-  ticket: "Create ticket",
-  dispatch: "Dispatch",
-  workspaceCreate: "Create",
-} as const;
-
-/**
- * What the program names on the console's pages beside what is pressed there,
- * by the name each page draws. A page draws these from the copy catalog, which
- * core cannot reach, so a case holds each against the catalog's words.
- */
-export const setupSeen = {
-  northStar: "North Star",
-  workspaceNaming: "New workspace",
-} as const;
+  projectPage: { id: "project-creation-new-title" },
+  projectCreate: { id: "project-creation-submit" },
+  edit: { id: "ui-edit" },
+  save: { id: "ui-save" },
+  connect: { id: "repositories-connect-github" },
+  add: { id: "repositories-add" },
+  retry: { id: "repositories-retry" },
+  runner: { id: "runners-add" },
+  chatHost: { id: "runners-chat-host-register" },
+  ticket: { id: "ticket-authoring-create-ticket" },
+  dispatch: { id: "setup-pressed-dispatch" },
+  workspaceCreate: { id: "settings-invite-create" },
+} as const satisfies Readonly<Record<string, Copy>>;
 
 /** How many names a question lists before it says how many more there are. */
 export const setupAskNamesMax = 12;
@@ -100,28 +87,51 @@ function setupTicketPage(at: SetupAt, ticket: number): string {
   return `${setupPage(at, navRoutes.overview)}/tickets/${String(ticket)}`;
 }
 
-function setupHand(tell: string, when: string): SetupThing {
+function setupNamed(at: SetupAt): string {
+  return `${at.workspace}/${at.project}`;
+}
+
+function setupHand(tell: Copy, when: Copy): SetupThing {
   return { thing: "Hand", tell, when };
 }
 
-const setupLookAgain = "if the person asks to look again";
+const setupLookAgain: Copy = { id: "setup-runner-when-look-again" };
 
 function setupWorkspaceMend(
   lack: Extract<SetupLack, { readonly lacks: "Workspace" | "Administration" }>,
   at: SetupAt,
 ): SetupThing {
-  if (lack.lacks === "Administration")
+  if (lack.lacks === "Administration") {
+    const { workspace } = lack;
     return setupHand(
-      `Setting chuggy up takes an admin of the workspace, and you are not one in ${lack.workspace}. Ask an admin of ${lack.workspace} to make you one on its People page, ${setupPage(at, settingsRoutes.workspace.people)}. Tell me once you are an admin.`,
-      `once the person says they are an admin of ${lack.workspace}`,
+      {
+        id: "setup-mend-admin-tell",
+        args: {
+          workspace,
+          people: setupPage(at, settingsRoutes.workspace.people),
+        },
+      },
+      { id: "setup-mend-admin-when", args: { workspace } },
     );
-  const none =
+  }
+  const none: Copy =
     lack.workspace === undefined
-      ? "You are not in a chuggy workspace yet."
-      : `You are not in a chuggy workspace named ${lack.workspace}.`;
+      ? { id: "setup-mend-workspace-none" }
+      : {
+          id: "setup-mend-workspace-unnamed",
+          args: { workspace: lack.workspace },
+        };
   return setupHand(
-    `${none} A new workspace is made from an invite link: open the one you were sent (it starts ${at.site}${inviteRoutePath}), and under ${setupSeen.workspaceNaming} name the workspace and press ${setupPressed.workspaceCreate}. Tell me once it is made.`,
-    "once the person says their workspace is made",
+    {
+      id: "setup-mend-workspace-tell",
+      args: {
+        none,
+        invites: `${at.site}${inviteRoutePath}`,
+        naming: setupSeen.workspaceNaming,
+        create: setupPressed.workspaceCreate,
+      },
+    },
+    { id: "setup-mend-workspace-when" },
   );
 }
 
@@ -131,13 +141,30 @@ function setupProjectMend(
 ): SetupThing {
   if (lack.lacks === "Project")
     return setupHand(
-      `Open ${at.site}${projectCreationPathIn(at.workspace)}, the ${setupPressed.projectPage} page, name the project and press ${setupPressed.projectCreate}. Tell me once it is made.`,
-      "once the person says the project is made",
+      {
+        id: "setup-mend-project-tell",
+        args: {
+          page: `${at.site}${projectCreationPathIn(at.workspace)}`,
+          named: setupPressed.projectPage,
+          create: setupPressed.projectCreate,
+        },
+      },
+      { id: "setup-mend-project-when" },
     );
-  const section = setupSeen.northStar;
   return setupHand(
-    `Open ${setupPage(at, settingsRoutes.project.lead)}, press ${setupPressed.edit} beside ${section}, write a paragraph that says what the project is for, and press ${setupPressed.save}. Tell me once it is saved.`,
-    `once the person says the ${section} is saved`,
+    {
+      id: "setup-mend-north-star-tell",
+      args: {
+        page: setupPage(at, settingsRoutes.project.lead),
+        edit: setupPressed.edit,
+        section: setupSeen.northStar,
+        save: setupPressed.save,
+      },
+    },
+    {
+      id: "setup-mend-north-star-when",
+      args: { section: setupSeen.northStar },
+    },
   );
 }
 
@@ -147,9 +174,22 @@ function setupGrantMend(
   page: string,
 ): SetupThing {
   const line = repositoryGrantLines[lack.app];
+  const app = setupAppNames[lack.app];
+  const { account, repository } = lack;
   return setupHand(
-    `The ${lack.app} app is installed on ${lack.account}, and GitHub does not let it into ${lack.repository}. Open ${page}, press ${setupPressed.add}, and under the list find ${line.status}. Follow the link beside it, ${line.label}, and on GitHub add ${lack.repository} to the repositories the app may reach. Tell me once it is granted.`,
-    `once the person says the ${lack.app} app is granted ${lack.repository}`,
+    {
+      id: "setup-mend-grant-tell",
+      args: {
+        app,
+        account,
+        repository,
+        page,
+        add: setupPressed.add,
+        status: line.status,
+        label: line.label,
+      },
+    },
+    { id: "setup-mend-grant-when", args: { app, repository } },
   );
 }
 
@@ -158,22 +198,35 @@ function setupGithubMend(
   at: SetupAt,
 ): SetupThing {
   const page = setupPage(at, navRoutes.repositories);
+  const connected: Copy = { id: "setup-mend-github-when" };
   if (lack.lacks === "Grant") return setupGrantMend(lack, page);
   if (lack.lacks === "Account")
     return setupHand(
-      `Open ${page} and press ${setupPressed.connect}, then install the chuggy app on the GitHub account that owns your repository. Tell me once GitHub is connected.`,
-      "once the person says GitHub is connected",
+      {
+        id: "setup-mend-account-tell",
+        args: { page, connect: setupPressed.connect },
+      },
+      connected,
     );
-  if (lack.app === "worker") {
-    const install = forgeInstallLabel(lack.app);
+  const { account } = lack;
+  if (lack.app === "worker")
     return setupHand(
-      `Open ${page} and press ${install}, then install it on ${lack.account}. Where ${lack.account} is an organisation you do not own, GitHub asks its owner for you and this waits on them. Tell me once it is installed.`,
-      `once the person says the worker app is installed on ${lack.account}`,
+      {
+        id: "setup-mend-worker-tell",
+        args: { page, install: forgeInstallLabel(lack.app), account },
+      },
+      { id: "setup-mend-worker-when", args: { account } },
     );
-  }
   return setupHand(
-    `Open ${setupPage(at, settingsRoutes.workspace.accounts)}, the workspace's accounts page, and press ${setupPressed.connect}, so chuggy is shown ${lack.account}. Tell me once GitHub is connected.`,
-    "once the person says GitHub is connected",
+    {
+      id: "setup-mend-portal-tell",
+      args: {
+        page: setupPage(at, settingsRoutes.workspace.accounts),
+        connect: setupPressed.connect,
+        account,
+      },
+    },
+    connected,
   );
 }
 
@@ -185,109 +238,69 @@ function setupRepositoryMend(
   const page = setupPage(at, navRoutes.repositories);
   if (lack.lacks === "Binding")
     return setupHand(
-      `Open ${page}, press ${setupPressed.add} and choose ${mine === undefined ? "your repository" : `${mine}, this folder's repository`}. Tell me once it is added.`,
-      "once the person says the repository is added",
+      {
+        id: "setup-mend-binding-tell",
+        args: {
+          page,
+          add: setupPressed.add,
+          repository:
+            mine === undefined
+              ? { id: "setup-mend-binding-yours" }
+              : { id: "setup-mend-binding-mine", args: { repository: mine } },
+        },
+      },
+      { id: "setup-mend-binding-when" },
     );
+  const { repository } = lack;
   return setupHand(
-    `${lack.repository} is added, but chuggy has not read its configuration. Open ${page} and press ${setupPressed.retry} on the row for ${lack.repository}; if it still cannot, the row then says why. Tell me once ${setupPressed.retry} has answered.`,
-    `once the person says ${setupPressed.retry} has answered for ${lack.repository}`,
+    {
+      id: "setup-mend-configuration-tell",
+      args: { repository, page, retry: setupPressed.retry },
+    },
+    {
+      id: "setup-mend-configuration-when",
+      args: { repository, retry: setupPressed.retry },
+    },
   );
 }
 
 /** Something `runner` would do on this machine for the checklist's project, which waits on the person's yes. */
-function setupOffer(tell: string, at: SetupAt): SetupThing {
+function setupOffer(tell: Copy, at: SetupAt): SetupThing {
   const { workspace, project } = at;
   return {
     thing: "Offer",
     tell,
-    when: "once the person says yes to a runner on this machine",
+    when: { id: "setup-offer-when" },
     workspace,
     project,
   };
 }
 
 /** What work on a runner whose credential is of `kind` runs on, as an offer says it. */
-const setupClaudeOn: Readonly<Record<SetupClaudeKind, string>> = {
-  Subscription: "your Claude plan",
-  ApiKey: "your Anthropic API key",
-  Bedrock: "your Amazon Bedrock account",
-  Vertex: "your Google Cloud project",
-  Foundry: "your Microsoft Foundry resource",
+const setupClaudeOn: Readonly<Record<SetupClaudeKind, Copy>> = {
+  Subscription: { id: "setup-claude-on-subscription" },
+  ApiKey: { id: "setup-claude-on-api-key" },
+  Bedrock: { id: "setup-claude-on-bedrock" },
+  Vertex: { id: "setup-claude-on-vertex" },
+  Foundry: { id: "setup-claude-on-foundry" },
 };
 
-/** Why setup puts no runner on a Mac. */
-const setupMacNone = "chuggy setup puts a runner only on Linux";
+const setupRunnerRunning: Copy = { id: "setup-mend-runner-running-when" };
 
-const setupEngineNames: Readonly<Record<SetupEngine, string>> = {
-  docker: "Docker",
-  podman: "Podman",
-};
-
-/** Which engines did not answer, as a sentence says it: the one the runner is set to use, or each the package runs on. */
-function setupEnginesNone(asked: readonly SetupEngineAsked[]): string {
-  const names = asked.map(({ engine }) => setupEngineNames[engine]);
-  return names.length < 2
-    ? `${names.join("")}, the engine the runner is set to use, did not answer`
-    : `neither ${names.join(" nor ")} answered`;
+/** Whether a sentence an offer may add is said: `with` where it is. */
+function setupWith(said: boolean): string {
+  return said ? "with" : "without";
 }
-
-/** What taking a password would mend and this program does not do. */
-const setupEngineNeedsPassword =
-  "Installing a container engine, or letting your user reach one, takes a password, and chuggy setup never takes one.";
-
-function setupEngineNone({ engine, answered }: SetupEngineAsked): string {
-  return answered === "Absent"
-    ? `${engine} is not installed`
-    : `${engine} did not answer you without a password`;
-}
-
-const setupPodmanInstead =
-  "The package's own answer for any other user is rootless podman";
-
-/** The package's rule as a person barred from docker is told it: its reason, what leaves them no engine, what mends it, and what that waits on. */
-function setupDockerBarredTold(
-  user: string | undefined,
-  how: SetupDockerBarred,
-): {
-  readonly why: string;
-  readonly state: string;
-  readonly mend: string;
-  readonly when: string;
-} {
-  const why = `Under docker a runner's work runs as this machine's user ${setupJobUser}, which could not read the file your Claude credential is in, so the runner package takes docker only from that user, and you are ${user === undefined ? "not that user" : `user ${user}`}.`;
-  if (how.barred === "Named")
-    return {
-      why,
-      state: `The runner's settings, ${how.settings}, set it to use docker`,
-      mend: `${setupPodmanInstead}: once podman answers you, set "engine" to "podman" in that file, and tell me once you have.`,
-      when: `once the person says ${how.settings} names podman`,
-    };
-  return {
-    why,
-    state: `${setupPodmanInstead}, and ${setupEngineNone({ engine: "podman", answered: how.answered })}`,
-    mend: `${setupEngineNeedsPassword} Tell me once podman answers you.`,
-    when: "once the person says podman answers them on this machine",
-  };
-}
-
-const setupRunnerIs =
-  "The next step is a runner: the machine that does the work on your tickets";
-
-const setupRunnerRunning = "once the person says the runner is running";
-
-/** What `runner` also does where the person's chat host is lacking beside the project's runner. */
-const setupChatToo =
-  " Your chats run only on your chat host, a machine of yours, so I will also make this machine it, as a second service of yours.";
-
-/** What `runner` does first where the package here is older than it needs, which an offer to start a service says because the person is told what is put here. */
-const setupPackageNewer = ` If the runner package here, ${runnerPackageOffered.program}, is older than chuggy setup needs, I install its latest release first.`;
 
 /** Where an offer says work here runs: in containers, and on the Claude credential the runner would use, where its settings could be read. */
-function setupRunsOn(claude: SetupClaudeKind | undefined): string {
+function setupRunsOn(claude: SetupClaudeKind | undefined): Copy {
   return claude === undefined
-    ? "in containers"
-    : `in containers, on ${setupClaudeOn[claude]}`;
+    ? { id: "setup-runs-in-containers" }
+    : { id: "setup-runs-on", args: { claude: setupClaudeOn[claude] } };
 }
+
+/** The runner package an offer would put here, by the name its program goes by. */
+const setupProgram = runnerPackageOffered.program;
 
 /** A runner registered and not running: started here on the person's yes where this machine holds a registration for the project, and otherwise theirs to start where it is. */
 function setupRunnerLiveMend(
@@ -297,28 +310,33 @@ function setupRunnerLiveMend(
 ): SetupThing {
   return here?.held === true
     ? setupOffer(
-        `A runner is registered for ${at.workspace}/${at.project} and is not running, and this machine holds a registration for that project. With your yes I will check it and start it here as a background service of yours that starts when you log in, registering this machine again first if the site no longer knows that registration, so work on your tickets runs on this machine ${setupRunsOn(here.claude)}.${setupPackageNewer}${chat ? setupChatToo : ""} Tell me yes to go ahead.`,
+        {
+          id: "setup-mend-runner-live-offer",
+          args: {
+            project: setupNamed(at),
+            runs: setupRunsOn(here.claude),
+            program: setupProgram,
+            chat: setupWith(chat),
+          },
+        },
         at,
       )
-    : setupHand(
-        "A runner is registered and is not running. Start it on its machine and tell me once it is running.",
-        setupRunnerRunning,
-      );
+    : setupHand({ id: "setup-mend-runner-live-tell" }, setupRunnerRunning);
 }
 
 /** What `runner` puts here where the project's runner is lacking: its service, and beside it the person's chat host where that is lacking too. */
 function setupRunnerPut(
   chat: boolean,
   claude: SetupClaudeKind | undefined,
-): string {
-  const put = `That puts here the runner package, ${runnerPackageOffered.program}, and`;
+): Copy {
+  const args = { program: setupProgram, runs: setupRunsOn(claude) };
   return chat
-    ? `${put} two background services of yours that start when you log in: one for the work on your project's tickets, one your chat host, which your chats run on and only on. Both run on this machine ${setupRunsOn(claude)}.`
-    : `${put} a background service of yours that starts when you log in; work on your tickets then runs on this machine ${setupRunsOn(claude)}.`;
+    ? { id: "setup-mend-runner-put-chat", args }
+    : { id: "setup-mend-runner-put", args };
 }
 
 /** How a chat host is registered on a machine `runner` does not set one up on, by each runner package's own commands, with the token the console's page shows in place of `<token>`. */
-function setupChatByHand(at: SetupAt): string {
+function setupChatByHand(at: SetupAt): Copy {
   const token = "<token>";
   const linux = runnerRegisterCommand(
     runnerPackages.linux,
@@ -332,7 +350,16 @@ function setupChatByHand(at: SetupAt): string {
     token,
     "ChatHost",
   );
-  return `open ${setupPage(at, settingsRoutes.project.myRunner)}, press ${setupPressed.chatHost} and copy the token it shows. Then, with the runner package installed there, on Linux run ${linux}, which starts its service where it can and otherwise prints what is left, and on a Mac run ${darwin}, then ${runnerPackages.darwin.program} install-agent --pool with the file it wrote, and load the agent as that prints`;
+  return {
+    id: "setup-mend-chat-by-hand",
+    args: {
+      page: setupPage(at, settingsRoutes.project.myRunner),
+      register: setupPressed.chatHost,
+      linux,
+      darwin,
+      agent: `${runnerPackages.darwin.program} install-agent --pool`,
+    },
+  };
 }
 
 /**
@@ -347,30 +374,47 @@ function setupChatMend(
   at: SetupAt,
   here: SetupRunnerHere | undefined,
 ): SetupThing {
-  const named = `${at.workspace}/${at.project}`;
-  const chats = `Your chats in ${named} run only on your chat host, one machine of yours`;
-  const besides =
-    lack.pooled && here?.held !== true
-      ? ` The work on ${named} has a runner elsewhere, and this machine is made one of it too, a second service of yours.`
-      : "";
+  const project = setupNamed(at);
+  const chats: Copy = { id: "setup-mend-chats", args: { project } };
+  const besides = setupWith(lack.pooled && here?.held !== true);
+  const running: Copy = { id: "setup-mend-chat-host-when" };
   if (lack.lacks === "ChatHostLive")
     return here?.chat === true
       ? setupOffer(
-          `${chats}, which is registered and not running, and this machine holds a registration of one. With your yes I will check it and start it here as a background service of yours that starts when you log in, where the registration it holds is the one the site holds.${setupPackageNewer}${besides} Tell me yes to go ahead.`,
+          {
+            id: "setup-mend-chat-live-offer",
+            args: { chats, program: setupProgram, besides, project },
+          },
           at,
         )
       : setupHand(
-          `${chats}, which is registered and not running. Start it on its machine and tell me once it is running.`,
-          "once the person says their chat host is running",
+          { id: "setup-mend-chat-live-tell", args: { chats } },
+          running,
         );
   if (here?.room.room === "Open")
     return setupOffer(
-      `${chats}, and you have none yet. I can make this machine it: that puts here the runner package, ${runnerPackageOffered.program}, where it is not here yet or is older than chuggy setup needs, and a background service of yours that starts when you log in, which your chats then run on, ${setupRunsOn(here.claude)}.${besides} Tell me yes to go ahead.`,
+      {
+        id: "setup-mend-chat-offer",
+        args: {
+          chats,
+          program: setupProgram,
+          runs: setupRunsOn(here.claude),
+          besides,
+          project,
+        },
+      },
       at,
     );
   return setupHand(
-    `${chats}, and you have none yet${here === undefined ? "" : "; chuggy setup cannot make this machine it"}. On the machine that will be it, ${setupChatByHand(at)}. Tell me once it is running.`,
-    "once the person says their chat host is running",
+    {
+      id: "setup-mend-chat-tell",
+      args: {
+        chats,
+        here: here === undefined ? "unseen" : "seen",
+        byHand: setupChatByHand(at),
+      },
+    },
+    running,
   );
 }
 
@@ -392,41 +436,70 @@ function setupRunnerMend(
   if (lack.lacks === "RunnerLive")
     return setupRunnerLiveMend(at, here, lack.chat);
   const page = setupPage(at, navRoutes.runners);
-  const pressed = `press ${setupPressed.runner}`;
-  const elsewhere = `Open ${page} and ${pressed}, then do what it shows on the machine that will run the work. Tell me once the runner is running.`;
-  const instead = `For a runner on another machine instead, open ${page} there and ${pressed}, and tell me once it is running.`;
+  const add = setupPressed.runner;
+  const elsewhere: Copy = {
+    id: "setup-mend-runner-elsewhere",
+    args: { page, add },
+  };
+  const instead: Copy = {
+    id: "setup-mend-runner-instead",
+    args: { page, add },
+  };
   const room = here?.room;
   switch (room?.room) {
     case undefined:
       return setupHand(elsewhere, setupRunnerRunning);
     case "Open":
       return setupOffer(
-        `${setupRunnerIs}. I can make this machine one. ${setupRunnerPut(lack.chat, here?.claude)} Tell me yes to go ahead. For a runner on another machine instead, that machine's own browser opens ${page}, where you ${pressed}.`,
+        {
+          id: "setup-mend-runner-offer",
+          args: { put: setupRunnerPut(lack.chat, here?.claude), page, add },
+        },
         at,
       );
     case "Mac":
       return setupHand(
-        `${setupRunnerIs}. This machine is a Mac and ${setupMacNone}, but a Mac runs one with ${runnerPackages.darwin.program}, added by hand: open ${page}, ${pressed}, choose Mac and do what it shows there. Tell me once the runner is running.`,
+        {
+          id: "setup-mend-runner-mac",
+          args: { program: runnerPackages.darwin.program, page, add },
+        },
         setupRunnerRunning,
       );
     case "Serviceless":
       return setupHand(
-        `${setupRunnerIs}. chuggy setup runs one as a background service of yours, and this machine's user services did not answer, so it cannot set one up here. ${elsewhere}`,
+        { id: "setup-mend-runner-serviceless", args: { elsewhere } },
         setupRunnerRunning,
       );
     case "Engineless":
-      return setupHand(
-        `${setupRunnerIs}, in containers. This machine cannot be one yet: ${setupEnginesNone(room.asked)} here without a password. ${setupEngineNeedsPassword} Tell me once one answers you here. ${instead}`,
-        "once the person says a container engine answers them on this machine, or that a runner is running",
-      );
-    case "DockerBarred": {
-      const told = setupDockerBarredTold(room.user, room.how);
-      return setupHand(
-        `${setupRunnerIs}, in containers. This machine cannot be one yet. ${told.why} ${told.state}. ${told.mend} ${instead}`,
-        `${told.when}, or that a runner is running`,
-      );
-    }
+    case "DockerBarred":
+      return setupRunnerBarredMend(room, instead);
   }
+}
+
+/** A machine that could hold a runner once its engine is mended, told what to mend, with `instead` for not mending it. */
+function setupRunnerBarredMend(
+  room: Extract<
+    NonNullable<SetupRunnerHere["room"]>,
+    { readonly room: "Engineless" | "DockerBarred" }
+  >,
+  instead: Copy,
+): SetupThing {
+  if (room.room === "Engineless")
+    return setupHand(
+      {
+        id: "setup-mend-runner-engineless",
+        args: { none: setupEnginesNone(room.asked), instead },
+      },
+      {
+        id: "setup-mend-runner-or-running",
+        args: { when: { id: "setup-runner-engineless-when" } },
+      },
+    );
+  const { why, state, mend, when } = setupDockerBarredTold(room.user, room.how);
+  return setupHand(
+    { id: "setup-mend-runner-docker", args: { why, state, mend, instead } },
+    { id: "setup-mend-runner-or-running", args: { when } },
+  );
 }
 
 function setupTicketMend(
@@ -439,30 +512,47 @@ function setupTicketMend(
   >,
   at: SetupAt,
 ): SetupThing {
-  const create = `Open ${setupPage(at, navRoutes.ticketNew)}, say what you want done and press ${setupPressed.ticket}`;
-  const created = "once the person says the ticket is created";
+  const create: Copy = {
+    id: "setup-mend-ticket-create",
+    args: {
+      page: setupPage(at, navRoutes.ticketNew),
+      create: setupPressed.ticket,
+    },
+  };
+  const created: Copy = { id: "setup-mend-ticket-when" };
+  if (lack.lacks === "Ticket")
+    return setupHand(
+      { id: "setup-mend-ticket-tell", args: { create } },
+      created,
+    );
+  const ticket = String(lack.ticket);
+  const page = setupTicketPage(at, lack.ticket);
   switch (lack.lacks) {
-    case "Ticket":
-      return setupHand(`${create}. Tell me once it is created.`, created);
     case "Release":
       return setupHand(
-        `Ticket ${String(lack.ticket)} was drafted and never released, so nothing is working on it, and the console has no page that releases it. ${create}, which makes a ticket and releases it at once. Tell me once it is created.`,
+        { id: "setup-mend-release-tell", args: { ticket, create } },
         created,
       );
     case "Dispatch":
       return setupHand(
-        `Ticket ${String(lack.ticket)} is released and has not started. Open ${setupTicketPage(at, lack.ticket)} and press ${setupPressed.dispatch} to start it. Tell me once it has started.`,
-        `once the person says ticket ${String(lack.ticket)} has started`,
+        {
+          id: "setup-mend-dispatch-tell",
+          args: { ticket, page, dispatch: setupPressed.dispatch },
+        },
+        { id: "setup-mend-dispatch-when", args: { ticket } },
       );
     case "Landing":
       return setupHand(
-        `Ticket ${String(lack.ticket)} is in ${lack.phase}, and setup is done when it lands. ${setupTicketPage(at, lack.ticket)} shows where it is. Tell me when you want me to look again.`,
+        {
+          id: "setup-mend-landing-tell",
+          args: { ticket, phase: setupPhaseSaid(lack.phase), page },
+        },
         setupLookAgain,
       );
     case "Decision":
       return setupHand(
-        `Ticket ${String(lack.ticket)} is escalated: it waits on a decision of yours at ${setupTicketPage(at, lack.ticket)}. Tell me once it is moving again.`,
-        `once the person says ticket ${String(lack.ticket)} is moving again`,
+        { id: "setup-mend-decision-tell", args: { ticket, page } },
+        { id: "setup-mend-decision-when", args: { ticket } },
       );
   }
 }
@@ -472,7 +562,10 @@ function setupUnreadMend(
   lack: Extract<SetupLack, { readonly lacks: "Read" }>,
   step: SetupStep,
 ): SetupThing {
-  const said = `the ${step.step} step is not read: ${step.detail}`;
+  const said: Copy = {
+    id: "setup-mend-unread-found",
+    args: { step: step.step, detail: step.detail ?? "" },
+  };
   switch (lack.fate.fate) {
     case "Failed":
       return {
@@ -484,12 +577,12 @@ function setupUnreadMend(
       return { thing: "Failed", found: said, stale: false };
     case "Refused":
       return setupHand(
-        `The chuggy site does not show you what the ${step.step} step is read from, so I cannot say whether it is done. An admin of the workspace can see it, or can give you the access to. Tell me if your access changes.`,
-        "if the person says their access has changed",
+        { id: "setup-mend-unread-refused-tell", args: { step: step.step } },
+        { id: "setup-runner-unread-refused-when" },
       );
     case "Cut":
       return setupHand(
-        `The chuggy site sent only part of what the ${step.step} step is read from, so I cannot say whether it is done. Tell me if you want me to look again.`,
+        { id: "setup-mend-unread-cut-tell", args: { step: step.step } },
         setupLookAgain,
       );
   }
@@ -537,27 +630,49 @@ function setupMend(
   }
 }
 
+/** Names as a sentence lists them, the last after `or`. */
+function setupListed(names: readonly string[]): CopyArgument {
+  const flat = names.map(setupFlat);
+  const last = flat.at(-1) ?? "";
+  return flat.length < 2
+    ? last
+    : {
+        id: "setup-listed",
+        args: { names: flat.slice(0, -1).join(", "), last },
+      };
+}
+
 /** The question a choice still open is put as, with the names it is among as far as the site sent them. */
 function setupAsk(
   choice: Extract<SetupChoice, { readonly choice: "Open" }>,
 ): SetupThing {
-  const of =
+  const of: Copy =
     choice.open === "workspace"
-      ? "Which workspace"
-      : `Which project of ${choice.workspace ?? ""}`;
+      ? { id: "setup-ask-workspace" }
+      : {
+          id: "setup-ask-project",
+          args: { workspace: choice.workspace ?? "" },
+        };
   const shown = choice.among.slice(0, setupAskNamesMax);
   const more = choice.among.length - shown.length;
-  const names =
+  const names: CopyArgument =
     more > 0
-      ? `${shown.join(", ")} and ${String(more)} more`
+      ? {
+          id: "setup-ask-more",
+          args: { names: shown.join(", "), more: String(more) },
+        }
       : setupListed(shown);
-  const part = choice.whole
-    ? ""
-    : " The site sent only part of the list, so the one meant may not be named here.";
-  const among = shown.length === 0 ? "?" : `: ${names}?`;
+  const args = {
+    of,
+    whole: choice.whole ? "whole" : "part",
+    flag: `--${choice.open}`,
+  };
   return {
     thing: "Ask",
-    ask: `${of} is this for${among}${part} Pass the name as --${choice.open}.`,
+    ask:
+      shown.length === 0
+        ? { id: "setup-ask-unnamed", args }
+        : { id: "setup-ask", args: { ...args, names } },
     flag: choice.open,
   };
 }
@@ -578,15 +693,20 @@ function setupCarried(
 
 /** Setup said to be done in the ticket step's own words, so a pull request that was opened is not said to have landed, and with the pull request to merge where one writes the repository's own configuration. */
 function setupDoneThing(standing: SetupStanding, at: SetupAt): SetupThing {
-  const ticket = standing.steps.find((step) => step.step === "ticket");
-  const how = ticket === undefined ? "" : `: ${ticket.detail}`;
-  const merge =
-    standing.unmerged === undefined
-      ? ""
-      : ` Its pull request, ${standing.unmerged}, holds the repository's own configuration: merge it on GitHub so later tickets run on that configuration rather than each writing it again.`;
+  const detail = standing.steps.find((step) => step.step === "ticket")?.detail;
   return {
     thing: "Done",
-    tell: `chuggy is set up for ${at.workspace}/${at.project}${how}.${merge} The next ticket is made at ${setupPage(at, navRoutes.ticketNew)}.`,
+    tell: {
+      id: "setup-done",
+      args: {
+        project: setupNamed(at),
+        how: detail === undefined ? "unsaid" : "said",
+        detail: detail ?? "",
+        merge: standing.unmerged === undefined ? "merged" : "unmerged",
+        url: standing.unmerged ?? "",
+        page: setupPage(at, navRoutes.ticketNew),
+      },
+    },
   };
 }
 

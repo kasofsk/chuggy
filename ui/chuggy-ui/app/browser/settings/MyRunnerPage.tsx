@@ -30,6 +30,7 @@ import type {
 } from "../../../../../src/contract/responses.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { agentAccountsPaused } from "../../core/agentAccounts.ts";
+import { accountAgentLabel } from "../../core/codeLabels.ts";
 import type { ApiFailure, ApiResult } from "../../core/apiRequest.ts";
 import {
   apiDeregisterPersonalRunner,
@@ -642,7 +643,7 @@ function MyRunnerPauses(props: { readonly tenant: string }): ReactNode {
           key={account.agent}
           pause={account.pause}
           nowMs={nowMs}
-          named={account.agent}
+          named={text(accountAgentLabel(account.agent))}
         >
           {" · "}
           <MyRunnerUsageLink tenant={props.tenant} />

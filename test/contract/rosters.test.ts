@@ -131,8 +131,8 @@ import {
 import {
   runEndedEvidences as interpretedRunEndedEvidences,
   runStepEvidences as interpretedRunStepEvidences,
-  runTurnsPageLimitMax,
 } from "../../src/interpreter/runEvidence.ts";
+import { runTurnsPageLimitMax } from "../../src/contract/runTurns.ts";
 import type { RunTotals } from "../../src/interpreter/runEvidence.ts";
 import { projectChangeKinds } from "../../src/contract/events.ts";
 import { inquiryObjectivesFixedChars } from "../../src/interpreter/inquiry.ts";

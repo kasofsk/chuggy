@@ -15,6 +15,9 @@ export interface UiCopy {
   readonly "ui-locomotive": Record<never, never>;
   readonly "ui-no-match": Record<never, never>;
   readonly "ui-refusals": Record<never, never>;
+  readonly "ui-refusals-held": {
+    readonly hotkey: unknown;
+  };
   readonly "ui-reload": Record<never, never>;
   readonly "ui-save": Record<never, never>;
 }

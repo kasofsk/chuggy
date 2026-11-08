@@ -9,7 +9,7 @@ export const setupRunnerFtl = `## Setting up a runner: what a run of the setup p
 ## Shared words.
 
 setup-runner-unchanged = so nothing was changed on this machine
-setup-runner-mac-none = { -brand-name } setup puts { -runner(form: "a") } only on Linux
+setup-runner-mac-none = { setup-program } puts { -runner(form: "a") } only on Linux
 setup-runner-picked-up = What was done before it stays done, and running again picks up from there. Tell me if you want me to try again.
 setup-runner-unknown = so I cannot say the { -runner } is set up. What was done before stays done
 setup-runner-when-try-again = if the person asks to try again
@@ -24,11 +24,12 @@ setup-runner-rule = Run { $command } only { $when }.
 
 ## Each kind of Claude credential: what it is called, and what makes one.
 
-setup-runner-claude-subscription = Claude login
-setup-runner-claude-subscription-made = the login the command claude setup-token makes, which needs a Claude plan that allows it
+setup-runner-claude-subscription = { -claude } login
+# spells -claude: claude setup-token is the command
+setup-runner-claude-subscription-made = the login the command claude setup-token makes, which needs a { -claude } plan that allows it
 setup-runner-claude-api-key = Anthropic API key
 # spells -workspace: a Claude Console workspace is Anthropic's, not the tenant
-setup-runner-claude-api-key-made = a key from the Claude Console, made in a workspace
+setup-runner-claude-api-key-made = a key from the { -claude } Console, made in a workspace
 setup-runner-claude-bedrock = Bedrock credential
 setup-runner-claude-bedrock-made = a Bedrock API key
 setup-runner-claude-vertex = Google Cloud service account key
@@ -44,8 +45,8 @@ setup-runner-claude-saved-profile = It is an AWS credentials file, saved in { $p
 
 setup-runner-note-engine = { $engine } answers you without a password
 setup-runner-note-package = the { -runner } package is installed: { $versioned }, at { $command }
-setup-runner-note-outdated = the { -runner } package is installed: { $versioned }, at { $command }, and { -brand-name } setup needs { $least } or later
-setup-runner-note-outdated-unread = the { -runner } package is installed: { $versioned }, at { $command }, and { -brand-name } setup needs { $least } or later and could not read its version
+setup-runner-note-outdated = the { -runner } package is installed: { $versioned }, at { $command }, and { setup-program } needs { $least } or later
+setup-runner-note-outdated-unread = the { -runner } package is installed: { $versioned }, at { $command }, and { setup-program } needs { $least } or later and could not read its version
 setup-runner-note-installed = installed the { -runner } package, { $versioned }, at { $command }
 setup-runner-note-installed-kept = installed the { -runner } package, { $versioned }, at { $command }, and { $kept } is still at { $where }
 setup-runner-note-settings = the { -runner }'s settings are in { $path }
@@ -96,7 +97,7 @@ setup-runner-engine-each = { $one }; { $other }
 setup-runner-engines-one = { $engine }, the engine the { -runner } is set to use, did not answer
 setup-runner-engines-nor = { $one } nor { $other }
 setup-runner-engines-neither = neither { $engines } answered
-setup-runner-engine-needs-password = Installing a container engine, or letting your user reach one, takes a password, and { -brand-name } setup never takes one.
+setup-runner-engine-needs-password = Installing a container engine, or letting your user reach one, takes a password, and { setup-program } never takes one.
 # spells -work-stage: the work in general
 setup-runner-engineless-tell = { -runner(case: "upper", form: "a") } does its work in containers, and { $none } on this machine without a password, { setup-runner-unchanged }. { setup-runner-engine-needs-password } Tell me once one answers you.
 setup-runner-engineless-when = once the person says a container engine answers them on this machine
@@ -105,7 +106,7 @@ setup-runner-engineless-when = once the person says a container engine answers t
 
 # spells -work-stage: the work in general
 # spells -run: to run is a verb here
-setup-runner-docker-why = Under docker { -runner(form: "a") }'s work runs as this machine's user { $job }, which could not read the file your Claude credential is in, so the { -runner } package takes docker only from that user, and you are { $who }.
+setup-runner-docker-why = Under docker { -runner(form: "a") }'s work runs as this machine's user { $job }, which could not read the file your { -claude } credential is in, so the { -runner } package takes docker only from that user, and you are { $who }.
 setup-runner-docker-who = user { $user }
 setup-runner-docker-who-unnumbered = not that user
 setup-runner-docker-podman-instead = The package's own answer for any other user is rootless podman
@@ -149,21 +150,21 @@ setup-runner-mac-tell = { setup-runner-mac-none } and cannot set one up here, { 
 setup-runner-mac-when = once the person says { -runner(form: "a") } is running
 setup-runner-serviceless-found = this machine's user services did not answer { $command }
 # spells -run: to run is a verb here
-setup-runner-serviceless-tell = { -brand-name } setup runs the { -runner } as a service of yours, and this machine's user services did not answer, { setup-runner-unchanged }. The { -runner }'s guide says how it is run by hand: { $guide }. Tell me if you want me to try again.
+setup-runner-serviceless-tell = { setup-program } runs the { -runner } as a service of yours, and this machine's user services did not answer, { setup-runner-unchanged }. The { -runner }'s guide says how it is run by hand: { $guide }. Tell me if you want me to try again.
 setup-runner-settings-unread-found = { $path } is there and does not read as the { -runner }'s settings
-setup-runner-settings-unread-tell = The { -runner }'s settings file, { $path }, is there, and { -brand-name } setup could not read from it which engine and which Claude credential the { -runner } uses, { setup-runner-unchanged }. The { -runner }'s guide says what the file holds: { $guide }. Tell me once it is mended.
+setup-runner-settings-unread-tell = The { -runner }'s settings file, { $path }, is there, and { setup-program } could not read from it which engine and which { -claude } credential the { -runner } uses, { setup-runner-unchanged }. The { -runner }'s guide says what the file holds: { $guide }. Tell me once it is mended.
 setup-runner-settings-unread-when = once the person says { $path } is mended
 setup-runner-login-missing-found = the { -runner } has no { $credential } on this machine: nothing is at { $path }
-setup-runner-login-missing-tell = The { -runner } needs a Claude login of its own on this machine, and there is none at { $path }, { setup-runner-unchanged }. { $saved } An Anthropic API key or a cloud provider's credential can be used instead; the { -runner }'s guide says how: { $guide }. Tell me once one is there.
+setup-runner-login-missing-tell = The { -runner } needs a { -claude } login of its own on this machine, and there is none at { $path }, { setup-runner-unchanged }. { $saved } An Anthropic API key or a cloud provider's credential can be used instead; the { -runner }'s guide says how: { $guide }. Tell me once one is there.
 setup-runner-login-missing-named-tell = The { -runner }'s settings name its { $credential } as { $path }, and nothing is there, { setup-runner-unchanged }. { $saved } Tell me once it is there.
 setup-runner-login-missing-when = once the person says the { -runner }'s { $credential } is on this machine
-setup-runner-npmless-found = the { -runner } package is not installed at a version { -brand-name } setup can use, and npm did not answer
+setup-runner-npmless-found = the { -runner } package is not installed at a version { setup-program } can use, and npm did not answer
 # spells -run: to run is a verb here
 setup-runner-npmless-tell = The { -runner } package is installed with npm, and npm did not answer on this machine, { setup-runner-unchanged }. npm comes with Node. Tell me once npm runs here.
 # spells -run: to run is a verb here
 setup-runner-npmless-when = once the person says npm runs on this machine
-setup-runner-unwritten-found = { -brand-name } setup could not make { $path }
-setup-runner-unwritten-tell = { -brand-name } setup could not write the { -runner }'s settings to { $path } on this machine, so the { -runner } is not set up yet. { setup-runner-picked-up }
+setup-runner-unwritten-found = { setup-program } could not make { $path }
+setup-runner-unwritten-tell = { setup-program } could not write the { -runner }'s settings to { $path } on this machine, so the { -runner } is not set up yet. { setup-runner-picked-up }
 setup-runner-unwritten-when = once { $path } can be made
 
 ## The programs a run runs, as a sentence names each; \`case\` is "upper" where
@@ -227,10 +228,10 @@ setup-runner-act-tell = { $act } did not work, so the { -runner } is not set up 
 # spells -work-stage: to work is a verb here
 setup-runner-service-refused-tell = { $act } did not work, so the { -runner } is not set up yet: the { -runner } package would not write it over the service already at { $path }. If that one is left from { -runner(form: "a") } set up before, remove it, and tell me once you have or if you want me to try again.
 setup-runner-service-refused-when = once the person says { $path } is removed, or asks to try again
-setup-runner-behind-found = installing the { -runner } package left { $left } at { $command }, and { -brand-name } setup needs { $least } or later
-setup-runner-behind-found-unread = installing the { -runner } package left { $left } at { $command }, and { -brand-name } setup needs { $least } or later and could not read its version
+setup-runner-behind-found = installing the { -runner } package left { $left } at { $command }, and { setup-program } needs { $least } or later
+setup-runner-behind-found-unread = installing the { -runner } package left { $left } at { $command }, and { setup-program } needs { $least } or later and could not read its version
 # spells -release: a package's release
-setup-runner-behind-tell = Installing the { -runner } package left { $left }, and { -brand-name } setup needs { $least } or later here, so the { -runner } is not set up yet. { -brand-name } setup installs the package's latest release, so running again now would install the same one. Tell me once a newer { $program } is out.
+setup-runner-behind-tell = Installing the { -runner } package left { $left }, and { setup-program } needs { $least } or later here, so the { -runner } is not set up yet. { setup-program } installs the package's latest release, so running again now would install the same one. Tell me once a newer { $program } is out.
 setup-runner-behind-when = once the person says a newer { $program } is out
 
 ## The runner package's refusals to register, each in this program's words.
@@ -248,7 +249,7 @@ setup-runner-lasting-node-tell = The { -runner } package needs a newer Node than
 setup-runner-lasting-node-when = once the person says node on this machine is newer
 # spells -run: to run is a verb here
 # spells -work-stage: the work in general
-setup-runner-lasting-processor-tell = The { -runner } package does not run on this machine's kind of processor, so { -brand-name } setup cannot set { -runner(form: "a") } up here. The work on your { -ticket(form: "plural") } needs { -runner(form: "a") } on a Linux machine it does run on. Tell me once one is running there.
+setup-runner-lasting-processor-tell = The { -runner } package does not run on this machine's kind of processor, so { setup-program } cannot set { -runner(form: "a") } up here. The work on your { -ticket(form: "plural") } needs { -runner(form: "a") } on a Linux machine it does run on. Tell me once one is running there.
 setup-runner-lasting-hostname-tell = The { -runner } package names { -runner(form: "a") } after its machine, and this machine's name makes no name for one, so the { -runner } is not set up yet. Running again as the machine is named now would end the same way. Tell me once this machine's name starts with a letter from a to z or a digit.
 setup-runner-lasting-hostname-when = once the person says this machine's name starts with a letter from a to z or a digit
 
@@ -271,13 +272,13 @@ setup-runner-check-pool-file = this machine's registration could not be read
 setup-runner-check-configuration = the { -runner }'s settings are not as it needs them
 # spells -run: to run is a verb here
 setup-runner-check-runtime = the { -runner } has nowhere to keep what it runs with
-setup-runner-check-credential = the { -runner }'s Claude credential is not as it needs it
+setup-runner-check-credential = the { -runner }'s { -claude } credential is not as it needs it
 setup-runner-check-helpers = podman would present logins of its own
 setup-runner-check-engine = the { -runner } could not use the container engine
 setup-runner-check-network = the { -runner } could not read its containers' network
 setup-runner-check-pool-token = { -brand-name }'s sign-in server did not take this machine's registration
 setup-runner-check-plane = { -brand-name } did not answer this machine as { -runner(form: "a") }
-setup-runner-check-chat-credential = the Claude credential is not alone in a directory of its own, which { -chat-host(form: "a") } needs
+setup-runner-check-chat-credential = the { -claude } credential is not alone in a directory of its own, which { -chat-host(form: "a") } needs
 setup-runner-check-chat-settings = the { -chat-host }'s settings are not as it needs them
 # spells -run: to run is a verb here
 setup-runner-check-chat-users = the container engine cannot run each { -thread } as a user of its own
@@ -294,10 +295,10 @@ setup-runner-check-failed-when = once the person says it is mended or asks to tr
 
 ## The runner's service.
 
-setup-runner-linger-found = your services stop when you log out, and { -brand-name } setup could not change that
-setup-runner-linger-found-said = your services stop when you log out, and { -brand-name } setup could not change that: loginctl said { $excerpt }
+setup-runner-linger-found = your services stop when you log out, and { setup-program } could not change that
+setup-runner-linger-found-said = your services stop when you log out, and { setup-program } could not change that: loginctl said { $excerpt }
 # spells -run: to run is a verb here
-setup-runner-linger-tell = The { -runner } is installed and registered on this machine. For it to keep running after you log out, one command is yours to run, because it may ask for your password and { -brand-name } setup never takes one. In a terminal of your own, run { $command } and tell me once you have.
+setup-runner-linger-tell = The { -runner } is installed and registered on this machine. For it to keep running after you log out, one command is yours to run, because it may ask for your password and { setup-program } never takes one. In a terminal of your own, run { $command } and tell me once you have.
 # spells -run: "have run" is the verb, not the noun
 setup-runner-linger-when = once the person says they have run it
 setup-runner-inactive-started = was started and

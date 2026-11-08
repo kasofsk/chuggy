@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The project's catalog: the configurations its repositories declare, as
  * their imports stored them, and for one version of one of them every
@@ -17,6 +16,7 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ConfigurationSummary } from "../../../../../src/contract/responses.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import {
   catalogConfigurationHolding,
   catalogConfigurationNewestFrom,
@@ -37,7 +37,10 @@ import {
 import { instantFigure } from "../../core/figures.ts";
 import { configurationCommitShort } from "../../core/labels.ts";
 import { repositoryLabel } from "../../core/projectRepositories.ts";
-import { configurationsPartialLabel } from "../../core/repositoryConfigurations.ts";
+import {
+  configurationsPartialLabel,
+  repositoryConfigurationsDirectory,
+} from "../../core/repositoryConfigurations.ts";
 import { usePanelState } from "../api.ts";
 import { PanelUnready } from "../DataPanel.tsx";
 import { useNowMs } from "../Freshness.tsx";
@@ -69,6 +72,7 @@ function catalogVersionText(summary: ConfigurationSummary): string {
 function CatalogProvenance(props: {
   readonly summary: ConfigurationSummary;
 }): ReactNode {
+  const text = useCopyText();
   const nowMs = useNowMs();
   const { provenance } = props.summary;
   return (
@@ -82,10 +86,10 @@ function CatalogProvenance(props: {
           <code>{provenance.path}</code>
         </>
       ) : (
-        <span>Authored</span>
+        <span>{text({ id: "configuration-catalog-authored" })}</span>
       )}
       <span>
-        Imported{" "}
+        {text({ id: "configuration-catalog-imported" })}{" "}
         <Figure figure={instantFigure(props.summary.createdAt, nowMs)} />
       </span>
     </p>
@@ -129,6 +133,7 @@ function CatalogChooser(props: {
   readonly revision: string;
   readonly query: CatalogQuery;
 }): ReactNode {
+  const text = useCopyText();
   const navigate = useNavigate();
   const partition = useCatalogPartition();
   const holding = catalogConfigurationHolding(
@@ -154,7 +159,7 @@ function CatalogChooser(props: {
     <div className="catalog-chooser">
       <div className="catalog-chooser-pickers">
         <Picker
-          label="Configuration"
+          label={text({ id: "configuration-catalog-picker-configuration" })}
           value={holding?.versions[0]?.revision ?? props.revision}
           placeholder={props.revision}
           options={props.configurations.flatMap((configuration) =>
@@ -168,7 +173,7 @@ function CatalogChooser(props: {
         />
         {holding === undefined || holding.versions.length < 2 ? null : (
           <Picker
-            label="Version"
+            label={text({ id: "configuration-catalog-picker-revision" })}
             value={version?.revision ?? props.revision}
             options={holding.versions.map((held) => ({
               value: held.revision,
@@ -197,6 +202,7 @@ function CatalogRevision(props: {
   readonly revision: string;
   readonly selected: string | undefined;
 }): ReactNode {
+  const text = useCopyText();
   const state = usePanelState(
     configurationQuery(props.partition, props.revision, "Streamed"),
   );
@@ -205,7 +211,10 @@ function CatalogRevision(props: {
   const catalog = configurationCatalogOf(configuration.canonical);
   if (catalog === undefined)
     return (
-      <Panel variant="section" title="Version 1 configuration">
+      <Panel
+        variant="section"
+        title={text({ id: "configuration-catalog-version-one" })}
+      >
         <ConfigurationBody
           configuration={configuration}
           overrides={undefined}
@@ -269,6 +278,7 @@ function CatalogDrawn(props: {
 export function CatalogPage(props: {
   readonly query: CatalogQuery;
 }): ReactNode {
+  const text = useCopyText();
   const partition = useCatalogPartition();
   const state = usePanelState(catalogConfigurationsQuery(partition));
   const read = state.state === "Ready" ? state.value : undefined;
@@ -278,13 +288,16 @@ export function CatalogPage(props: {
     props.query.configuration ?? catalogConfigurationOpening(configurations);
   return (
     <div className="catalog-page" data-fills-width>
-      <ScreenTitle>Catalog</ScreenTitle>
+      <ScreenTitle>{text({ id: "configuration-catalog-title" })}</ScreenTitle>
       <PanelUnready state={state} />
       {read === undefined ? null : revision === undefined ? (
         <EmptyState
           variant="page"
-          label="No configuration imported"
-          detail="Import one from .chug/configurations"
+          label={text({ id: "configuration-catalog-none" })}
+          detail={text({
+            id: "configuration-catalog-none-detail",
+            args: { directory: repositoryConfigurationsDirectory },
+          })}
         />
       ) : (
         <>
@@ -294,7 +307,7 @@ export function CatalogPage(props: {
             query={props.query}
           />
           {read.partial ? (
-            <p className="catalog-none">{configurationsPartialLabel}</p>
+            <p className="catalog-none">{text(configurationsPartialLabel)}</p>
           ) : null}
           <CatalogDrawn
             key={revision}
