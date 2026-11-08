@@ -22,7 +22,6 @@ import {
 } from "../app/core/setupNext.ts";
 import type { SetupChoice } from "../app/core/setupReads.ts";
 import { setupRepositoryRead } from "../app/core/setupRemote.ts";
-import type { SetupThing } from "../app/core/setupReport.ts";
 import type {
   SetupRunnerHere,
   SetupRunnerRoom,
@@ -34,7 +33,13 @@ import type {
   SetupStanding,
   SetupStep,
 } from "../app/core/setupStanding.ts";
-import { saidLandingTicket, saidRunnable } from "./setupSaid.ts";
+import {
+  saidLandingTicket,
+  saidNext,
+  saidRunnable,
+  saidThing,
+} from "./setupSaid.ts";
+import type { SaidThing } from "./setupSaid.ts";
 import {
   setupSiteAt,
   setupSiteBootstrap,
@@ -45,6 +50,7 @@ import {
 } from "./setupSite.ts";
 import type { SetupSite, SetupSiteStage } from "./setupSite.ts";
 import { nextOf, stoodSite } from "./setupStood.ts";
+import type { Asking } from "./setupStood.ts";
 
 const chosen: SetupChoice = {
   choice: "Made",
@@ -74,8 +80,13 @@ function lacking(
   };
 }
 
-function thing(lack: SetupLack, given?: Partial<SetupStanding>): SetupThing {
-  return setupNext(lacking(lack, given), setupAnswersNone).thing;
+function thing(lack: SetupLack, given?: Partial<SetupStanding>): SaidThing {
+  return saidThing(setupNext(lacking(lack, given), setupAnswersNone).thing);
+}
+
+/** The next thing for a site, in the catalog's words. */
+async function nextSaid(site: SetupSite, asking?: Asking) {
+  return saidNext(await nextOf(site, asking));
 }
 
 /** What the person is told of a lack, which is nothing where it is not hers to mend. */
@@ -84,7 +95,7 @@ function told(lack: SetupLack, given?: Partial<SetupStanding>): string {
   return next.thing === "Hand" ? next.tell : "";
 }
 
-const hand = (tell: string, when: string): SetupThing => ({
+const hand = (tell: string, when: string): SaidThing => ({
   thing: "Hand",
   tell,
   when,
@@ -100,7 +111,7 @@ const create = `Open ${pages}/tickets/new, say what you want done and press Crea
 const mends: {
   readonly [Kind in Exclude<SetupLack["lacks"], "Read">]: readonly [
     Extract<SetupLack, { readonly lacks: Kind }>,
-    SetupThing,
+    SaidThing,
   ];
 } = {
   Workspace: [
@@ -361,9 +372,11 @@ test("with every step done, setup is said to be done in the ticket step's own wo
       { step: "ticket", state: "done", detail, lacks: undefined },
     ];
     expect(
-      setupNext(
-        lacking({ lacks: "Runner", chat: false }, { steps }),
-        setupAnswersNone,
+      saidNext(
+        setupNext(
+          lacking({ lacks: "Runner", chat: false }, { steps }),
+          setupAnswersNone,
+        ),
       ),
     ).toEqual({
       carried: setupAnswersNone,
@@ -378,7 +391,7 @@ test("with every step done, setup is said to be done in the ticket step's own wo
 const pullRequest = "https://github.com/acme-org/widgets/pull/2";
 
 /** Setup said to be done in the ticket step's words, naming the pull request to merge where there is one. */
-function closing(detail: string, unmerged?: string): SetupThing {
+function closing(detail: string, unmerged?: string): SaidThing {
   const merge =
     unmerged === undefined
       ? ""
@@ -412,23 +425,23 @@ function landingWith(
 
 test("where the repository holds only the bootstrap, setup done on a ticket whose pull request stands closes on that pull request, by its address, as the one to merge so later tickets run on the repository's own configuration", async () => {
   expect(
-    (await nextOf(doneWith([setupSiteOpened(pullRequest)]))).thing,
+    (await nextSaid(doneWith([setupSiteOpened(pullRequest)]))).thing,
   ).toEqual(closing("ticket 1 is done", pullRequest));
   expect(
-    (await nextOf(landingWith([setupSiteProposed(pullRequest)]))).thing,
+    (await nextSaid(landingWith([setupSiteProposed(pullRequest)]))).thing,
   ).toEqual(closing("ticket 6 opened a pull request", pullRequest));
   const older = setupSiteProposed("https://github.com/acme-org/widgets/pull/1");
   expect(
-    (await nextOf(doneWith([older, setupSiteOpened(pullRequest)]))).thing,
+    (await nextSaid(doneWith([older, setupSiteOpened(pullRequest)]))).thing,
   ).toEqual(closing("ticket 1 is done", pullRequest));
 });
 
 test("where the repository holds its own configuration, setup done closes as it always has, whatever pull request the ticket opened", async () => {
   expect(
-    (await nextOf(doneWith([setupSiteOpened(pullRequest)], true))).thing,
+    (await nextSaid(doneWith([setupSiteOpened(pullRequest)], true))).thing,
   ).toEqual(closing("ticket 1 is done"));
   expect(
-    (await nextOf(landingWith([setupSiteProposed(pullRequest)], true))).thing,
+    (await nextSaid(landingWith([setupSiteProposed(pullRequest)], true))).thing,
   ).toEqual(closing("ticket 6 opened a pull request"));
 });
 
@@ -452,11 +465,11 @@ test("where the repository holds only the bootstrap and no pull request of the t
   ];
   for (const landings of unstanding)
     expect(
-      (await nextOf(doneWith(landings))).thing,
+      (await nextSaid(doneWith(landings))).thing,
       JSON.stringify(landings),
     ).toEqual(closing("ticket 1 is done"));
   expect(
-    (await nextOf(landingWith([{ ...setupSiteLanded, proposal }]))).thing,
+    (await nextSaid(landingWith([{ ...setupSiteLanded, proposal }]))).thing,
   ).toEqual(closing("ticket 6 landed"));
 });
 
@@ -465,11 +478,11 @@ test.each(["Refused", "Failed", "Garbled", "Unauthenticated", "Cut"] as const)(
   async (fate) => {
     const site = doneWith([setupSiteOpened(pullRequest)]);
     site.fates.set("landings", fate);
-    expect((await nextOf(site)).thing).toEqual(closing("ticket 1 is done"));
+    expect((await nextSaid(site)).thing).toEqual(closing("ticket 1 is done"));
   },
 );
 
-const offered = (tell: string): SetupThing => ({
+const offered = (tell: string): SaidThing => ({
   thing: "Offer",
   tell,
   when: "once the person says yes to a runner on this machine",
@@ -483,9 +496,9 @@ function here(
   room: SetupRunnerRoom,
   held = false,
   chat = false,
-): SetupThing {
+): SaidThing {
   const looked: SetupRunnerHere = { room, held, chat, claude: "Subscription" };
-  return setupNext(lacking(lack), setupAnswersNone, looked).thing;
+  return saidThing(setupNext(lacking(lack), setupAnswersNone, looked).thing);
 }
 
 const roomy: SetupRunnerRoom = { room: "Open", engine: "docker" };
@@ -655,12 +668,14 @@ test("an offer names a Claude plan only where the runner's credential is a subsc
         [{ lacks: "ChatHost", pooled: false }, false],
       ] as const
     ).map(([lack, held]) => {
-      const { thing } = setupNext(lacking(lack), setupAnswersNone, {
-        room: roomy,
-        held,
-        chat: false,
-        claude,
-      });
+      const { thing } = saidNext(
+        setupNext(lacking(lack), setupAnswersNone, {
+          room: roomy,
+          held,
+          chat: false,
+          claude,
+        }),
+      );
       return thing.thing === "Offer" ? thing.tell : "";
     });
   for (const tell of said("Subscription"))
@@ -760,7 +775,7 @@ const deciding: Readonly<Record<SetupSiteStage, keyof typeof mends | "Done">> =
 
 test("at each stage of a site the first step that is not done decides what is next, and with one workspace and one project no command carries a name", async () => {
   for (const stage of setupSiteStages) {
-    const next = await nextOf(setupSiteAt(stage));
+    const next = await nextSaid(setupSiteAt(stage));
     const kind = deciding[stage];
     expect(next.carried, stage).toEqual(setupAnswersNone);
     if (kind === "Done") expect(next.thing.thing, stage).toBe("Done");
@@ -775,7 +790,7 @@ test("a ticket released and not started is what is next only once the project ha
   const pending = (stage: SetupSiteStage) => {
     const site = setupSiteAt(stage);
     site.projects[0]?.tickets.push({ ticket: 4, phase: "Pending" });
-    return nextOf(site);
+    return nextSaid(site);
   };
   expect((await pending("Live")).thing).toEqual(mends.Dispatch[1]);
   expect((await pending("Configured")).thing).toEqual(mends.Runner[1]);
@@ -803,7 +818,9 @@ const open = (
 
 test("a choice that is the person's is asked one flag at a time, among the names the site gave", () => {
   expect(
-    setupNext(open("workspace", ["acme", "globex"]), setupAnswersNone),
+    saidNext(
+      setupNext(open("workspace", ["acme", "globex"]), setupAnswersNone),
+    ),
   ).toEqual({
     carried: setupAnswersNone,
     thing: {
@@ -813,9 +830,11 @@ test("a choice that is the person's is asked one flag at a time, among the names
     },
   });
   expect(
-    setupNext(
-      open("project", ["gadgets", "sprockets", "widgets"]),
-      setupAnswersNone,
+    saidNext(
+      setupNext(
+        open("project", ["gadgets", "sprockets", "widgets"]),
+        setupAnswersNone,
+      ),
     ),
   ).toEqual({
     carried: { workspace: "acme", project: undefined },
@@ -830,7 +849,7 @@ test("a choice that is the person's is asked one flag at a time, among the names
 test("a question about the workspace keeps the project the run named, and one about the project keeps the workspace it is of", () => {
   const named = { workspace: undefined, project: "widgets" };
   expect(
-    setupNext(open("workspace", ["acme", "globex"]), named).carried,
+    saidNext(setupNext(open("workspace", ["acme", "globex"]), named)).carried,
   ).toEqual(named);
   expect(
     setupNext(open("project", ["gadgets"]), {
@@ -842,12 +861,13 @@ test("a question about the workspace keeps the project the run named, and one ab
 
 test("a question says where the site sent only part of the names, and lists a bounded few of a long list", () => {
   expect(
-    setupNext(open("project", ["widgets"], false), setupAnswersNone).thing,
+    saidNext(setupNext(open("project", ["widgets"], false), setupAnswersNone))
+      .thing,
   ).toMatchObject({
     ask: "Which project of acme is this for: widgets? The site sent only part of the list, so the one meant may not be named here. Pass the name as --project.",
   });
   expect(
-    setupNext(open("project", [], false), setupAnswersNone).thing,
+    saidNext(setupNext(open("project", [], false), setupAnswersNone)).thing,
   ).toMatchObject({
     ask: "Which project of acme is this for? The site sent only part of the list, so the one meant may not be named here. Pass the name as --project.",
   });
@@ -857,7 +877,7 @@ test("a question says where the site sent only part of the names, and lists a bo
   );
   const shown = many.slice(0, setupAskNamesMax).join(", ");
   expect(
-    setupNext(open("project", many), setupAnswersNone).thing,
+    saidNext(setupNext(open("project", many), setupAnswersNone)).thing,
   ).toMatchObject({
     ask: `Which project of acme is this for: ${shown} and 3 more? Pass the name as --project.`,
   });
@@ -865,8 +885,8 @@ test("a question says where the site sent only part of the names, and lists a bo
 
 test("a project that was named or proposed is carried by name with its workspace, so the next command means the same one", async () => {
   const site = setupSiteAt("Live");
-  const named = await nextOf(site, { answers: { project: "widgets" } });
+  const named = await nextSaid(site, { answers: { project: "widgets" } });
   expect(named.carried).toEqual({ workspace: "acme", project: "widgets" });
-  const only = await nextOf(site, { answers: { workspace: "acme" } });
+  const only = await nextSaid(site, { answers: { workspace: "acme" } });
   expect(only.carried).toEqual({ workspace: "acme", project: "widgets" });
 });

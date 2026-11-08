@@ -2,13 +2,15 @@
  * The page a sign-in returns to: an HTTP listener on this machine that hands
  * each request to whoever decides the answer.
  *
- * It reads no body and writes plain text. Every answer closes its connection,
- * so closing the listener waits on answers under way and on nothing else.
+ * It reads no body and writes plain text, in the words of the console's own
+ * catalog. Every answer closes its connection, so closing the listener waits
+ * on answers under way and on nothing else.
  */
 
 import { createServer } from "node:http";
 import type { IncomingMessage, Server, ServerResponse } from "node:http";
 
+import { copyTextEn } from "../app/copy/catalog.ts";
 import type {
   SetupAnswered,
   SetupHeard,
@@ -32,7 +34,9 @@ function answer(response: ServerResponse, answered: SetupAnswered): void {
     connection: "close",
     ...(answered.location === undefined ? {} : { location: answered.location }),
   });
-  response.end(answered.text);
+  response.end(
+    answered.page === undefined ? "" : `${copyTextEn(answered.page)}\n`,
+  );
 }
 
 function closed(server: Server, waitMs: number): Promise<void> {
@@ -59,7 +63,7 @@ export const listen: SetupListenPort = (host, decide) =>
             answer(response, answered);
           },
           () => {
-            answer(response, { status: 500, text: "" });
+            answer(response, { status: 500 });
           },
         );
     });

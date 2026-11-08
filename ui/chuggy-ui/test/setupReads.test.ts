@@ -15,6 +15,8 @@
 
 import { expect, test } from "vitest";
 
+import { copyTextEn } from "../app/copy/catalog.ts";
+
 import type { ApiPorts } from "../app/core/apiRequest.ts";
 import {
   apiCreateProject,
@@ -215,7 +217,7 @@ test("a remote added to exactly one of the projects it could mean proposes that 
   const site = bound(["acme"], pair, ["acme/gadgets"]);
   const reads = await siteRead(site, { remote });
   expect(reads.choice).toEqual(made("Remote", "acme", "gadgets"));
-  expect((await stood(site, { remote })).found).toEqual([
+  expect((await stood(site, { remote })).found.map(copyTextEn)).toEqual([
     `${said} is added to acme/gadgets and to no other project of acme the site shows you, so this checklist is of acme/gadgets: proposed and not chosen, and --workspace with --project names another`,
   ]);
   expect((await nextOf(site, { remote })).carried).toEqual({
@@ -241,7 +243,7 @@ test("a remote proposes across workspaces, and within the one named", async () =
 
 test("what a remote came to is said of the projects it was looked for in and of no others: those of the one workspace named, or every one the site shows", async () => {
   const found = async (site: SetupSite, asking: Asking) =>
-    (await stood(site, asking)).found;
+    (await stood(site, asking)).found.map(copyTextEn);
   const named = { remote, answers: { workspace: "globex" } };
   const elsewhere = bound(both, spread, ["acme/widgets"]);
   expect(await found(elsewhere, named)).toEqual([
@@ -272,7 +274,7 @@ test("a remote added to two projects, or to none, proposes neither and says whic
   const asked = open("project", ["gadgets", "widgets"], "acme");
   const two = bound(["acme"], pair, pair);
   expect((await siteRead(two, { remote })).choice).toEqual(asked);
-  expect((await stood(two, { remote })).found).toEqual([
+  expect((await stood(two, { remote })).found.map(copyTextEn)).toEqual([
     `${said} is added to more than one project of acme the site shows you (acme/widgets, acme/gadgets), so it proposes none`,
   ]);
   for (const none of [
@@ -280,7 +282,7 @@ test("a remote added to two projects, or to none, proposes neither and says whic
     bound(["acme"], pair, ["acme/widgets"], true),
   ]) {
     expect((await siteRead(none, { remote })).choice).toEqual(asked);
-    expect((await stood(none, { remote })).found).toEqual([
+    expect((await stood(none, { remote })).found.map(copyTextEn)).toEqual([
       `${said} is added to no project of acme the site shows you, so it proposes none`,
     ]);
   }
@@ -294,7 +296,7 @@ test.each(["Refused", "Failed", "Cut"] as const)(
     expect((await siteRead(site, { remote })).choice).toEqual(
       open("project", ["gadgets", "widgets"], "acme"),
     );
-    expect((await stood(site, { remote })).found).toEqual([
+    expect((await stood(site, { remote })).found.map(copyTextEn)).toEqual([
       `${said} could not be looked for in every project of acme the site shows you, so it proposes none`,
     ]);
   },
@@ -324,7 +326,7 @@ test("where there is nothing to choose, or the project was named, the remote is 
   const reads = await siteRead(one, { remote, sent });
   expect(reads.proposal).toEqual({ proposal: "Unsought" });
   expect(reads.choice).toEqual(made("Only", "acme", "widgets"));
-  expect((await stood(one, { remote })).found).toEqual([]);
+  expect((await stood(one, { remote })).found.map(copyTextEn)).toEqual([]);
   expect(
     sent.filter((asked) => asked.endsWith("/repositories?reach=false")),
   ).toHaveLength(1);
@@ -333,7 +335,7 @@ test("where there is nothing to choose, or the project was named, the remote is 
   expect((await siteRead(two, named)).choice).toEqual(
     made("Named", "acme", "widgets"),
   );
-  expect((await stood(two, named)).found).toEqual([]);
+  expect((await stood(two, named)).found.map(copyTextEn)).toEqual([]);
   const twice = await siteRead(bound(both, spread, ["globex/widgets"]), named);
   expect(twice.choice).toEqual(open("workspace", both));
   expect(twice.proposal).toEqual({ proposal: "Unsought" });

@@ -17,6 +17,7 @@
  */
 
 import type { ApiFetchPort } from "./apiRequest.ts";
+import type { Copy } from "./copy.ts";
 import type { PkceDigestPort } from "./pkce.ts";
 import type { FetchJsonPort } from "./sessionHolder.ts";
 
@@ -88,11 +89,11 @@ export interface SetupHeard {
   readonly search: string;
 }
 
-/** What the browser is answered: a page of plain text, or somewhere else to go. */
+/** What the browser is answered: a page of plain text, somewhere else to go, or neither. */
 export interface SetupAnswered {
   readonly status: number;
   readonly location?: string;
-  readonly text: string;
+  readonly page?: Copy;
 }
 
 export interface SetupListening {

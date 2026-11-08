@@ -32,6 +32,7 @@
  * first without the second is a sign-in that lasts one command.
  */
 
+import type { Copy } from "./copy.ts";
 import { sessionRefreshTokenKey } from "./sessionHolder.ts";
 import {
   setupListenArguments,
@@ -438,16 +439,14 @@ async function setupCallbackExchanged(
 }
 
 const setupPages = {
-  signedIn:
-    "Signed in to chuggy. You can close this tab and go back to your terminal.",
-  unfinished:
-    "This sign-in did not finish. Close this tab and go back to your terminal.",
-  answered: "This sign-in page has already been answered.",
-  nothing: "There is nothing here.",
-} as const;
+  signedIn: { id: "setup-page-signed-in" },
+  unfinished: { id: "setup-page-unfinished" },
+  answered: { id: "setup-page-answered" },
+  nothing: { id: "setup-page-nothing" },
+} as const satisfies Readonly<Record<string, Copy>>;
 
-function setupPage(status: number, text: string): SetupAnswered {
-  return { status, text: `${text}\n` };
+function setupPage(status: number, page: Copy): SetupAnswered {
+  return { status, page };
 }
 
 interface SetupListener {
@@ -488,8 +487,7 @@ async function setupListenerAnswered(
   heard: SetupHeard,
 ): Promise<SetupAnswered> {
   if (heard.method !== "GET") return setupPage(405, setupPages.nothing);
-  if (heard.path === "/")
-    return { status: 302, location: listener.authorize, text: "" };
+  if (heard.path === "/") return { status: 302, location: listener.authorize };
   if (heard.path !== setupCallbackPath)
     return setupPage(404, setupPages.nothing);
   const query = new URLSearchParams(heard.search);
