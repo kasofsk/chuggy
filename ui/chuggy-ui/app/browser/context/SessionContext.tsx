@@ -33,6 +33,7 @@ import type { ThreadHome } from "../../core/threadHome.ts";
 import { usePanelState } from "../api.ts";
 import { DataPanel, PanelUnready } from "../DataPanel.tsx";
 import { ChatPaneIconButton } from "../shell/chatPaneIcons.tsx";
+import { Button } from "../ui/Button.tsx";
 import { ContextSessionView } from "./ContextView.tsx";
 
 /** A session's panel from its readings, where it has any, and what its
@@ -100,6 +101,26 @@ function ThreadContextBody(props: {
       held={props.held}
       seed={props.seed}
     />
+  );
+}
+
+/** A thread bar's Context, pressed while its panel is open. */
+export function ContextToggle(props: {
+  readonly open: boolean;
+  readonly onToggle: (open: boolean) => void;
+}): ReactNode {
+  const text = useCopyText();
+  return (
+    <Button
+      size="sm"
+      variant={props.open ? "primary" : "default"}
+      pressed={props.open}
+      onClick={() => {
+        props.onToggle(!props.open);
+      }}
+    >
+      {text({ id: "context-open" })}
+    </Button>
   );
 }
 

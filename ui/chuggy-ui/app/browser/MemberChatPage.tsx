@@ -35,7 +35,10 @@ import {
   memberChatWithheld,
 } from "../core/memberChat.ts";
 import type { MemberChatProjectThread } from "../core/memberChat.ts";
-import { ThreadContextPanel } from "./context/SessionContext.tsx";
+import {
+  ContextToggle,
+  ThreadContextPanel,
+} from "./context/SessionContext.tsx";
 import { Conversation } from "./conversation/Conversation.tsx";
 import { PanelUnready } from "./DataPanel.tsx";
 import { clipboardWritten, elapsedMs, syntaxWorkerOpened } from "./ports.ts";
@@ -54,7 +57,7 @@ import {
   useMemberThread,
 } from "./thread/threadRead.ts";
 import { useMemberThreadSend } from "./thread/threadSend.tsx";
-import { Button, buttonLookClassName } from "./ui/Button.tsx";
+import { buttonLookClassName } from "./ui/Button.tsx";
 import { CopyProvider } from "./ui/copyHeld.tsx";
 import { MarkdownProvider } from "./ui/markdownHeld.ts";
 import { Tooltip } from "./ui/Tooltip.tsx";
@@ -177,16 +180,7 @@ function MemberChatThread(props: {
                 at="Page"
               />
             </div>
-            <Button
-              size="sm"
-              variant={context ? "primary" : "default"}
-              pressed={context}
-              onClick={() => {
-                setContext(!context);
-              }}
-            >
-              {text({ id: "context-open" })}
-            </Button>
+            <ContextToggle open={context} onToggle={setContext} />
           </>
         ) : (
           <h1 className="text-ink-1 font-strong min-w-0 flex-1 truncate text-md">
