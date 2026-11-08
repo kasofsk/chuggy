@@ -33,10 +33,11 @@ import type { ThreadHome } from "../../core/threadHome.ts";
 import { usePanelState } from "../api.ts";
 import { DataPanel, PanelUnready } from "../DataPanel.tsx";
 import { ChatPaneIconButton } from "../shell/chatPaneIcons.tsx";
+import { Button } from "../ui/Button.tsx";
 import { ContextSessionView } from "./ContextView.tsx";
 
-/** A session's panel once its readings have answered, or failed to: a failed
- * read still draws what the transcript says. */
+/** A session's panel from its readings, where it has any, and what its
+ * transcript holds. */
 function SessionContextDrawn(props: {
   readonly context: SessionContextResponse | undefined;
   readonly held: LeadTranscriptHeld;
@@ -85,6 +86,8 @@ export function LeadContextPanel(props: {
   );
 }
 
+/** A thread's panel once its readings have answered, or failed to: a failed
+ * read still draws what the transcript says. */
 function ThreadContextBody(props: {
   readonly state: PanelState<SessionContextResponse>;
   readonly held: LeadTranscriptHeld;
@@ -98,6 +101,26 @@ function ThreadContextBody(props: {
       held={props.held}
       seed={props.seed}
     />
+  );
+}
+
+/** A thread bar's Context, pressed while its panel is open. */
+export function ContextToggle(props: {
+  readonly open: boolean;
+  readonly onToggle: (open: boolean) => void;
+}): ReactNode {
+  const text = useCopyText();
+  return (
+    <Button
+      size="sm"
+      variant={props.open ? "primary" : "default"}
+      pressed={props.open}
+      onClick={() => {
+        props.onToggle(!props.open);
+      }}
+    >
+      {text({ id: "context-open" })}
+    </Button>
   );
 }
 

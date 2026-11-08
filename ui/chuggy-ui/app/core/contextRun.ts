@@ -19,11 +19,11 @@ import type {
   RunTurnsResponse,
 } from "../../../../src/contract/responses.ts";
 import {
-  nativeHttpPageItemsMax,
   runContextPageReadingsMax,
   runContextReadingsMax,
   runTurnSeriesMax,
 } from "../../../../src/contract/http.ts";
+import { runTurnsPageLimitMax } from "../../../../src/contract/runTurns.ts";
 import type { ApiResult } from "./apiRequest.ts";
 import type {
   ContextCompactionMark,
@@ -265,7 +265,7 @@ export function contextRunTiles(
 }
 
 /** The rows one page of a run's series is asked for: the most a page answers. */
-export const contextRunTurnsPageRows = nativeHttpPageItemsMax;
+export const contextRunTurnsPageRows = runTurnsPageLimitMax;
 /** The most pages of a run's series one read walks: the whole series, at
  * `contextRunTurnsPageRows` a page. */
 const contextRunTurnsPagesMax =

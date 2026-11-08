@@ -15,13 +15,15 @@ import type { PartitionIdentity } from "../../../../src/contract/http.ts";
 import { useCopyText } from "../copy/CopyProvider.tsx";
 import { projectAbilityRefused } from "../core/projectAbilities.ts";
 import { threadHomeOf } from "../core/threadHome.ts";
-import { ThreadContextPanel } from "./context/SessionContext.tsx";
+import {
+  ContextToggle,
+  ThreadContextPanel,
+} from "./context/SessionContext.tsx";
 import { PanelUnready } from "./DataPanel.tsx";
 import { useProjectAbilities } from "./projectAbilities.tsx";
 import { ChatPaneThreadActions } from "./shell/ChatPaneHistory.tsx";
 import { ScreenTitle, TopBarSlot } from "./shell/slots.tsx";
 import { ThreadConversation } from "./thread/ThreadConversation.tsx";
-import { Button } from "./ui/Button.tsx";
 import { useThread } from "./thread/threadRead.ts";
 
 import "./shell/shell.css";
@@ -55,16 +57,7 @@ export function ThreadPage(props: {
             at="Page"
           />
         </div>
-        <Button
-          size="sm"
-          variant={context ? "primary" : "default"}
-          pressed={context}
-          onClick={() => {
-            setContext(!context);
-          }}
-        >
-          {text({ id: "context-open" })}
-        </Button>
+        <ContextToggle open={context} onToggle={setContext} />
       </TopBarSlot>
       <div
         className="chat-reading context-beside flex min-h-0 min-w-0 flex-1"

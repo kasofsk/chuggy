@@ -242,7 +242,7 @@ export function ContextRunInputsSection(props: {
               names={inputs.skills}
             />
             <ContextNamesRow
-              name={{ id: "context-subagents" }}
+              name={{ id: "context-agents" }}
               names={inputs.agents}
             />
             <ContextNamesRow

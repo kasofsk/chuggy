@@ -148,6 +148,7 @@ test("a run with no reading draws used against the snapshot's window, every cate
   const growth = section("Growth");
   expect(within(growth).getByText("Threshold not recorded")).toBeDefined();
   expect(within(section("Inputs")).getByText("Snapshot")).toBeDefined();
+  expect(within(section("Inputs")).getByText("Agents")).toBeDefined();
   const heaviest = section("Heaviest");
   expect(
     within(heaviest).getByText(
@@ -373,4 +374,27 @@ test("a largest call links to its step where the pane holds the tool call it ans
       "One result whose tool call is not held is left out.",
     ),
   ).toBeDefined();
+});
+
+test("a file's path breaks only after its slashes", () => {
+  const snapshot = contextSnapshot({
+    files: [
+      {
+        source: "ProjectInstruction",
+        path: "/work/repo/src/adapters/postgres/AGENTS.md",
+        bytes: 396,
+        content: "# Adapters",
+      },
+    ],
+  });
+  renderCopied(
+    <ContextRunView
+      drawn={drawnOf(rows, [], lines, snapshot)}
+      callLink={() => null}
+    />,
+  );
+  const toggle = within(section("Inputs")).getByRole("button", {
+    name: "src/adapters/postgres/AGENTS.md",
+  });
+  expect(toggle.querySelectorAll("wbr")).toHaveLength(3);
 });
