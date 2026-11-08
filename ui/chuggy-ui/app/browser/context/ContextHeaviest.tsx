@@ -102,9 +102,15 @@ function ContextByTool(props: {
   );
 }
 
+/** What a result whose call is counted is drawn as: a link to the
+ * transcript's step that asked it, by the result's own `tool_use_id`. */
+export type ContextCallLink = (
+  result: ContextResult & { readonly call: number },
+) => ReactNode;
+
 function ContextLargest(props: {
   readonly results: readonly ContextResult[];
-  readonly callLink: (result: ContextResult) => ReactNode;
+  readonly callLink: ContextCallLink;
 }): ReactNode {
   const text = useCopyText();
   return (
@@ -119,7 +125,7 @@ function ContextLargest(props: {
                   {text({ id: "context-result-uncounted" })}
                 </span>
               ) : (
-                props.callLink(result)
+                props.callLink({ ...result, call: result.call })
               )}
             </span>
             <span className="context-largest-tool">{result.tool}</span>
@@ -149,8 +155,7 @@ function ContextLargest(props: {
 
 export function ContextHeaviestSection(props: {
   readonly heaviest: ContextHeaviest;
-  /** The link a result's call is drawn as, to the step that asked it. */
-  readonly callLink: (result: ContextResult) => ReactNode;
+  readonly callLink: ContextCallLink;
 }): ReactNode {
   const text = useCopyText();
   const titleId = useId();

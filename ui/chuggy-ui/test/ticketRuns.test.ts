@@ -329,6 +329,16 @@ test("a sub-tab's address is its word, read in any case, and an unknown word is 
   expect(ticketRunQueryOf({})).toEqual({});
 });
 
+test("an address names the call its transcript opens at, and an empty or unwritten one names none", () => {
+  expect(ticketRunQueryOf({ view: "Transcript", step: "toolu_1" })).toEqual({
+    view: "Transcript",
+    step: "toolu_1",
+  });
+  expect(ticketRunQueryOf({ step: "toolu_1" })).toEqual({ step: "toolu_1" });
+  expect(ticketRunQueryOf({ step: "" })).toEqual({});
+  expect(ticketRunQueryOf({ step: 7 })).toEqual({});
+});
+
 test("a run page opens on Summary, a live run on Transcript, and an asked sub-tab only where it is offered", () => {
   const offered = ["Summary", "Transcript", "Details"] as const;
   expect(ticketRunViewShown(undefined, offered, false)).toBe("Summary");

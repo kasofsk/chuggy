@@ -39,6 +39,7 @@ import {
 import type {
   TicketRunDetails as TicketRunDetailsFacts,
   TicketRunStep,
+  TicketRunQuery,
   TicketRunView,
 } from "../../core/ticketRuns.ts";
 import { verdictTone } from "../../core/tones.ts";
@@ -277,6 +278,7 @@ function TicketRunSummary(props: {
 function TicketRunTranscript(props: {
   readonly partition: PartitionIdentity;
   readonly read: ExecutionResponse;
+  readonly call: string | undefined;
 }): ReactNode {
   const attempt = runTranscriptAttempt(props.read);
   const text = useCopyText();
@@ -290,6 +292,7 @@ function TicketRunTranscript(props: {
       attempt={attempt}
       highWaterBatch={attempt.run.transcript.highWaterBatch}
       turns={attempt.run.totals?.turns ?? attempt.run.turnsRecorded}
+      call={props.call}
     />
   );
 }
@@ -376,11 +379,11 @@ function TicketRunDetails(props: {
   );
 }
 
-/** A result's call, as a link to the run's transcript it was asked in. */
+/** A result's call, as a link to the run's transcript opened at that call. */
 function TicketRunCallLink(props: {
   readonly held: TicketPageHeld;
   readonly task: number;
-  readonly result: ContextResult;
+  readonly result: ContextResult & { readonly call: number };
 }): ReactNode {
   const text = useCopyText();
   return (
@@ -391,10 +394,10 @@ function TicketRunCallLink(props: {
         ticket: String(props.held.ticket),
         task: String(props.task),
       }}
-      search={{ view: "Transcript" }}
+      search={{ view: "Transcript", step: props.result.id }}
       className="context-largest-call"
     >
-      {text(contextAtLabel("Call", props.result.call ?? 0))}
+      {text(contextAtLabel("Call", props.result.call))}
     </Link>
   );
 }
@@ -406,6 +409,8 @@ function TicketRunViewBody(props: {
   readonly read: ExecutionResponse;
   readonly opened: RunResultOpened | undefined;
   readonly shown: TicketRunView;
+  /** The tool call its transcript is opened at, where the address names one. */
+  readonly step: string | undefined;
   readonly live: boolean;
   readonly nowMs: number;
 }): ReactNode {
@@ -414,7 +419,11 @@ function TicketRunViewBody(props: {
       return <TicketRunSummary {...props} />;
     case "Transcript":
       return (
-        <TicketRunTranscript partition={props.partition} read={props.read} />
+        <TicketRunTranscript
+          partition={props.partition}
+          read={props.read}
+          call={props.step}
+        />
       );
     case "Details":
       return (
@@ -453,13 +462,13 @@ function TicketRunRead(props: {
   readonly held: TicketPageHeld;
   readonly step: TicketRunStep;
   readonly read: ExecutionResponse;
-  readonly asked: TicketRunView | undefined;
+  readonly asked: TicketRunQuery;
 }): ReactNode {
   const { held, step, read } = props;
   const opened = useRunResultOpened(held.partition, read.execution, read);
   const offered = ticketRunViewsOffered(opened, read);
   const live = ticketRunLive(step.verdict);
-  const shown = ticketRunViewShown(props.asked, offered, live);
+  const shown = ticketRunViewShown(props.asked.view, offered, live);
   return (
     <>
       <TicketRunViewTabs
@@ -476,6 +485,7 @@ function TicketRunRead(props: {
           read={read}
           opened={opened}
           shown={shown}
+          step={props.asked.step}
           live={live}
           nowMs={held.nowMs}
         />
@@ -487,7 +497,7 @@ function TicketRunRead(props: {
 function TicketRunFound(props: {
   readonly held: TicketPageHeld;
   readonly step: TicketRunStep;
-  readonly asked: TicketRunView | undefined;
+  readonly asked: TicketRunQuery;
 }): ReactNode {
   const { held, step } = props;
   const state = usePanelState(
@@ -514,7 +524,7 @@ function TicketRunFound(props: {
 function TicketRunOf(props: {
   readonly held: TicketPageHeld;
   readonly task: number | undefined;
-  readonly asked: TicketRunView | undefined;
+  readonly asked: TicketRunQuery;
 }): ReactNode {
   const runs = useTicketRuns(props.held);
   const text = useCopyText();
@@ -533,7 +543,7 @@ function TicketRunOf(props: {
  * it, beside the rail of every run the ticket holds. */
 export function TicketRunAt(props: {
   readonly task: number | undefined;
-  readonly asked: TicketRunView | undefined;
+  readonly asked: TicketRunQuery;
 }): ReactNode {
   const held = useTicketPageHeld();
   return (
@@ -554,5 +564,5 @@ export function TicketRunTab(): ReactNode {
   const query = useSearch({
     from: "/$tenant/$project/tickets/$ticket/runs/$task",
   });
-  return <TicketRunAt task={ticketRunTaskOf(params.task)} asked={query.view} />;
+  return <TicketRunAt task={ticketRunTaskOf(params.task)} asked={query} />;
 }

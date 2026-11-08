@@ -24,8 +24,12 @@ import type { ApiResult } from "../core/apiRequest.ts";
 import { apiRunTranscript } from "../core/apiRoutes.ts";
 import type { CopyText } from "../core/copy.ts";
 import { runConfigurationQuery } from "../core/executionQueries.ts";
-import { conversationExchanges } from "../core/conversation.ts";
+import {
+  conversationExchanges,
+  conversationExchangesHoldCall,
+} from "../core/conversation.ts";
 import { runPromptOfPanel } from "../core/runConfiguration.ts";
+import type { ConversationExchange } from "../core/conversation.ts";
 import type { RunPrompt } from "../core/runConfiguration.ts";
 import {
   runTranscriptEarlierMerged,
@@ -47,6 +51,7 @@ import type {
 } from "../core/runTranscript.ts";
 import { useApiPorts, usePanelState } from "./api.ts";
 import { Conversation } from "./conversation/Conversation.tsx";
+import { ConversationCallAsked } from "./conversation/ConversationWorkCard.tsx";
 import { ReadFailed } from "./DataPanel.tsx";
 import { Button } from "./ui/Button.tsx";
 import { Disclosure } from "./ui/Disclosure.tsx";
@@ -201,11 +206,32 @@ function RunConversationEvery(props: {
   );
 }
 
+/** While the call a pane was opened at is not among what it holds, the batches
+ * beneath are read, a bounded number of times, until it is or none are left. */
+function useRunTranscriptCallSought(
+  walk: RunTranscriptWalk,
+  exchanges: readonly ConversationExchange[],
+  call: string | undefined,
+): void {
+  const sought = useRef(0);
+  const earlier = walk.reading.earlier;
+  const missing =
+    call !== undefined && !conversationExchangesHoldCall(exchanges, call);
+  const { readingEarlier, readEarlier } = walk;
+  useEffect(() => {
+    if (!missing || earlier === undefined || readingEarlier) return;
+    if (sought.current >= runTranscriptReadsMax) return;
+    sought.current += 1;
+    readEarlier(earlier.after);
+  }, [missing, earlier, readingEarlier, readEarlier]);
+}
+
 function RunConversationDrawn(props: {
   readonly walk: RunTranscriptWalk;
   readonly attempt: ExecutionAttempt;
   readonly prompt: RunPrompt | undefined;
   readonly cut?: RunConversationCut | undefined;
+  readonly call?: string | undefined;
 }): ReactNode {
   const { walk, prompt, cut } = props;
   const text = useCopyText();
@@ -214,13 +240,14 @@ function RunConversationDrawn(props: {
     () => runTranscriptEnded(conversationExchanges(walk.reading.items), state),
     [walk.reading, state],
   );
+  useRunTranscriptCallSought(walk, ended, props.call);
   const { exchanges, hidden } =
     cut === undefined || cut.every
       ? { exchanges: ended, hidden: 0 }
       : runTranscriptStepsCut(ended, runTranscriptStepsFirst);
   const earlier = walk.reading.earlier;
   return (
-    <>
+    <ConversationCallAsked.Provider value={props.call}>
       <Conversation
         exchanges={exchanges}
         empty={text({ id: "ticket-transcript-empty" })}
@@ -238,7 +265,7 @@ function RunConversationDrawn(props: {
             })}
       />
       <RunConversationEvery hidden={hidden} cut={cut} />
-    </>
+    </ConversationCallAsked.Provider>
   );
 }
 
@@ -250,6 +277,7 @@ function RunConversationPrompted(props: {
   readonly attempt: ExecutionAttempt;
   readonly walk: RunTranscriptWalk;
   readonly cut?: RunConversationCut | undefined;
+  readonly call?: string | undefined;
 }): ReactNode {
   const { partition, execution } = props;
   const attempt = props.attempt.attempt;
@@ -262,6 +290,7 @@ function RunConversationPrompted(props: {
       attempt={props.attempt}
       prompt={runPromptOfPanel(state)}
       cut={props.cut}
+      call={props.call}
     />
   );
 }
@@ -275,6 +304,8 @@ export function RunConversation(props: {
   readonly attempt: ExecutionAttempt;
   readonly walk: RunTranscriptWalk;
   readonly cut?: RunConversationCut | undefined;
+  /** The tool call it is opened at, by the call's own identity. */
+  readonly call?: string | undefined;
 }): ReactNode {
   const failure = props.walk.held.failure;
   const text = useCopyText();
@@ -295,6 +326,7 @@ export function RunConversation(props: {
             attempt={props.attempt}
             prompt={{ prompt: "NotKept" }}
             cut={props.cut}
+            call={props.call}
           />
         ) : (
           <RunConversationPrompted {...props} />
@@ -322,12 +354,15 @@ function useRunTranscriptOf(props: RunTranscriptProps): RunTranscriptWalk {
 
 /** A run's transcript as its own page draws it: how many turns it took, the
  * records it wrote as they were read, and its first steps until a reader asks
- * for every one. */
+ * for every one — or every step, opened at the call an address names. */
 export function RunTranscriptOfRun(
-  props: RunTranscriptProps & { readonly turns: number | undefined },
+  props: RunTranscriptProps & {
+    readonly turns: number | undefined;
+    readonly call?: string | undefined;
+  },
 ): ReactNode {
   const walk = useRunTranscriptOf(props);
-  const [every, setEvery] = useState(false);
+  const [every, setEvery] = useState(props.call !== undefined);
   const [raw, setRaw] = useState(false);
   const text = useCopyText();
   return (
@@ -354,6 +389,7 @@ export function RunTranscriptOfRun(
         execution={props.execution}
         attempt={props.attempt}
         walk={walk}
+        call={props.call}
         cut={{
           every,
           onEvery: () => {

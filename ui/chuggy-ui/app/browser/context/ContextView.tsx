@@ -11,10 +11,7 @@ import type { ReactNode } from "react";
 
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import type { ContextInputs } from "../../core/contextInputs.ts";
-import type {
-  ContextHeaviest,
-  ContextResult,
-} from "../../core/contextResults.ts";
+import type { ContextHeaviest } from "../../core/contextResults.ts";
 import type { ContextSessionInputs } from "../../core/contextSession.ts";
 import type {
   ContextGrowthView,
@@ -23,6 +20,7 @@ import type {
 } from "../../core/contextView.ts";
 import { ContextGrowthSection } from "./ContextGrowth.tsx";
 import { ContextHeaviestSection } from "./ContextHeaviest.tsx";
+import type { ContextCallLink } from "./ContextHeaviest.tsx";
 import {
   ContextRunInputsSection,
   ContextSessionInputsSection,
@@ -41,7 +39,7 @@ export interface ContextRunDrawn {
 
 export function ContextRunView(props: {
   readonly drawn: ContextRunDrawn;
-  readonly callLink: (result: ContextResult) => ReactNode;
+  readonly callLink: ContextCallLink;
 }): ReactNode {
   const text = useCopyText();
   const { drawn } = props;

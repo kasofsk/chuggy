@@ -88,7 +88,14 @@ import type {
   MessageStatus,
   ThreadMessageLike,
 } from "@assistant-ui/react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { ReactNode } from "react";
 
 import { useCopyText } from "../../copy/CopyProvider.tsx";
@@ -137,6 +144,7 @@ import {
 } from "./ConversationPrompt.tsx";
 import type { ConversationEarlierProps } from "./ConversationPrompt.tsx";
 import { ConversationWaiting } from "./ConversationWaiting.tsx";
+import { ConversationCallAsked } from "./ConversationWorkCard.tsx";
 import { Notice } from "../ui/Notice.tsx";
 
 export type {
@@ -723,6 +731,24 @@ function ConversationFoot(props: {
  * it, and an unbounded one — a transcript inside a panel — leaves both in
  * normal flow.
  */
+/** The conversation's scroll, which stays where a call it was opened at
+ * scrolled it, rather than at the newest entry. */
+function ConversationViewport(props: {
+  readonly children: ReactNode;
+}): ReactNode {
+  const asked = useContext(ConversationCallAsked);
+  return (
+    <ThreadPrimitive.Viewport
+      className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto"
+      {...(asked === undefined
+        ? {}
+        : { autoScroll: false, scrollToBottomOnInitialize: false })}
+    >
+      {props.children}
+    </ThreadPrimitive.Viewport>
+  );
+}
+
 export function Conversation(props: ConversationProps): ReactNode {
   const reading = props.reading === true;
   const activeExchanges = reading ? [] : props.exchanges;
@@ -750,7 +776,7 @@ export function Conversation(props: ConversationProps): ReactNode {
   return (
     <AssistantRuntimeProvider runtime={runtime}>
       <ThreadPrimitive.Root className="conversation flex h-full min-h-0 flex-col">
-        <ThreadPrimitive.Viewport className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
+        <ConversationViewport>
           <div
             className={`conversation-column mx-auto flex w-full flex-col gap-6 ${inset}`}
           >
@@ -777,7 +803,7 @@ export function Conversation(props: ConversationProps): ReactNode {
             </ConversationDrawn>
             {indicator.indicator === "Engine" ? <ConversationWaiting /> : null}
           </div>
-        </ThreadPrimitive.Viewport>
+        </ConversationViewport>
         <ConversationBottom />
         <ConversationFoot
           composer={props.composer}

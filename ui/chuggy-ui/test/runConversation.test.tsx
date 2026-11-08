@@ -256,3 +256,61 @@ test("a long transcript draws its first steps and its final message until every 
   expect(callsDrawn(conversation)).toBe(6);
   expect(screen.queryByRole("button", { name: "Show every turn" })).toBeNull();
 });
+
+/** A link from the Context tab names a call by its own identity, and the
+ * transcript it opens reads down to that call, draws it open among every step
+ * and rings it, whichever batch it was recorded in. */
+test("a transcript opened at a call reads down to it and draws it open, ringed and scrolled to", async () => {
+  const scrolledTo: Element[] = [];
+  Element.prototype.scrollIntoView = function scrolled(this: Element) {
+    scrolledTo.push(this);
+  };
+  const content = (batch: number): string =>
+    batch === 1
+      ? [
+          toolCall("call-asked"),
+          JSON.stringify({
+            type: "user",
+            message: {
+              content: [
+                {
+                  type: "tool_result",
+                  tool_use_id: "call-asked",
+                  content: "found it",
+                },
+              ],
+            },
+          }),
+        ].join("\n")
+      : assistantLine(`batch ${String(batch)}`);
+  const pages = (from: number, to: number): readonly number[] =>
+    Array.from({ length: to - from + 1 }, (_, at) => from + at);
+  const drawn = await runPageDrawn(
+    atlas,
+    settledRun({
+      ...attemptServed(
+        runEvidenceOf(17, { configuration: runConfigurationRef }),
+      ),
+      transcripts: [
+        runTranscriptPage(pages(2, 9), false, content),
+        runTranscriptPage(pages(10, 17), true, content),
+        runTranscriptPage([1], true, content),
+      ],
+    }),
+    <TicketRunPageAt task={1} view="Transcript" step="call-asked" />,
+  );
+  await settled();
+  expect(
+    drawn.reads.filter((read) => read.includes("/transcript")),
+  ).toHaveLength(3);
+  const asked = drawn.container.querySelector('[aria-current="location"]');
+  expect(asked?.textContent).toContain("Read");
+  expect(asked?.textContent).toContain("found it");
+  expect(scrolledTo).toStrictEqual([asked]);
+  expect(screen.queryByRole("button", { name: "Show every turn" })).toBeNull();
+});
+
+test("a transcript opened at no call rings none", async () => {
+  const drawn = await runPage(settledRun());
+  expect(drawn.container.querySelector('[aria-current="location"]')).toBeNull();
+});

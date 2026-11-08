@@ -21,7 +21,6 @@ import {
   contextInputsOf,
   contextSettingsWindowOf,
 } from "../../core/contextInputs.ts";
-import type { ContextResult } from "../../core/contextResults.ts";
 import {
   contextHeaviestOf,
   contextLinesOf,
@@ -41,6 +40,7 @@ import type { RunTranscriptHeld } from "../../core/runTranscript.ts";
 import { runTranscriptHeldEmpty } from "../../core/runTranscript.ts";
 import type { PanelState } from "../../core/freshness.ts";
 import { usePanelState } from "../api.ts";
+import type { ContextCallLink } from "./ContextHeaviest.tsx";
 import { PanelUnready } from "../DataPanel.tsx";
 import { useRunTranscript } from "../RunTranscript.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
@@ -106,7 +106,7 @@ function ContextRunHeld(props: {
   readonly readings: PanelState<RunContextResponse>;
   readonly configuration: PanelState<RunConfigurationResponse>;
   readonly transcript: RunTranscriptHeld;
-  readonly callLink: (result: ContextResult) => ReactNode;
+  readonly callLink: ContextCallLink;
 }): ReactNode {
   const { turns, readings, configuration } = props;
   if (turns.state !== "Ready") return <PanelUnready state={turns} />;
@@ -132,7 +132,7 @@ interface ContextRunAt {
   readonly attempt: RunAttempt & {
     readonly run: NonNullable<RunAttempt["run"]>;
   };
-  readonly callLink: (result: ContextResult) => ReactNode;
+  readonly callLink: ContextCallLink;
 }
 
 function ContextRunReads(
@@ -192,7 +192,7 @@ function ContextRunTranscribed(
 export function RunContext(props: {
   readonly partition: PartitionIdentity;
   readonly read: ExecutionResponse;
-  readonly callLink: (result: ContextResult) => ReactNode;
+  readonly callLink: ContextCallLink;
 }): ReactNode {
   const text = useCopyText();
   const attempt = contextRunAttempt(props.read);

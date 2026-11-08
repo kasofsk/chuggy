@@ -17,7 +17,13 @@ import {
   consoleSiteEachCase,
 } from "./consoleSite.tsx";
 import type { ConsoleSite } from "./consoleSite.tsx";
-import { runAttempt, runSummary } from "./runPageFixture.tsx";
+import { contextToolLines } from "./contextFixture.ts";
+import {
+  runAttempt,
+  runEvidenceOf,
+  runSummary,
+  runTranscriptPage,
+} from "./runPageFixture.tsx";
 import { answer } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
 
@@ -196,6 +202,53 @@ test("a run's sub-tab is its own address", async () => {
   expect(runViewCurrent()).toBe("Details");
   expect(screen.getByText("Run ID", { selector: "dt" })).toBeDefined();
   consoleSiteClean(site);
+});
+
+/** The site's answers with the ticket's one run an agent's, whose transcript
+ * is one call billed as the site's first series row and the result it got. */
+function agentRunServed(): void {
+  const summary = runSummary({
+    ticket: Number(ticket),
+    task: 1,
+    carrier: "Agent",
+  });
+  const lines = contextToolLines("toolu_big", "Bash", "ls", "listed", {
+    read: 10_000,
+  });
+  const content = lines.map((line) => JSON.stringify(line)).join("\n");
+  const answered = site.apiFetch;
+  (site as { apiFetch: typeof site.apiFetch }).apiFetch = (url, init) => {
+    const path = new URL(url, "http://console.test").pathname;
+    if (path.endsWith("/transcript"))
+      return Promise.resolve(
+        answer(runTranscriptPage([1], true, () => content)),
+      );
+    if (path.endsWith("/executions/e1"))
+      return Promise.resolve(
+        answer({
+          ...summary,
+          attempts: [runAttempt("a1", { run: runEvidenceOf(1) })],
+        }),
+      );
+    if (path.endsWith("/executions"))
+      return Promise.resolve(answer({ executions: [summary] }));
+    return answered(url, init);
+  };
+}
+
+test("a result's call on the Context tab links to its step, and the transcript opens at it", async () => {
+  agentRunServed();
+  await mountedAt(`${ticketPath}/runs/1?view=Context`);
+  const link = screen.getByRole("link", { name: "Call 1" });
+  expect(link.getAttribute("href")).toBe(
+    `${ticketPath}/runs/1?view=Transcript&step=toolu_big`,
+  );
+  fireEvent.click(link);
+  await consoleAdvanced(ticketPageSettleMs);
+  expect(runViewCurrent()).toBe("Transcript");
+  const asked = document.querySelector('[aria-current="location"]');
+  expect(asked?.textContent).toContain("Bash");
+  expect(asked?.textContent).toContain("listed");
 });
 
 test("a run's address naming no run the ticket holds draws an empty tab, not a failed page", async () => {
