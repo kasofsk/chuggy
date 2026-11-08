@@ -174,7 +174,10 @@ test("the Add picker draws, under its list, the line and the link the program se
       },
     },
     {
-      portal: { status: "Not listed · grant it on GitHub", label: "Portal app" },
+      portal: {
+        status: "Not listed · grant it on GitHub",
+        label: "Portal app",
+      },
       worker: {
         status: "Worker app missing · grant it on GitHub",
         label: "Worker app",
