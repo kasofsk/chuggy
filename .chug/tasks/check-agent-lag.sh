@@ -19,10 +19,10 @@
 # a bump outside their scope. Never reused: npm moves under a tree that does
 # not.
 #
-# AN IMAGE BUILT FROM images/worker/Dockerfile RUNS IT ON ITS OWN TREE. The
-# `agent-lag` stage does, and the runtime stage binds that stage's verdict, so a
-# build of the runtime, or of the worker image built on it, refuses pins past
-# the cap.
+# THE RUNTIME IMAGE, AND THE WORKER IMAGE BUILT ON IT, ARE HELD TO IT. The
+# `agent-lag` stage of images/worker/Dockerfile runs it on the tree being
+# built, and the runtime stage binds that stage's verdict, so a build of either
+# refuses pins past the cap.
 #
 # Exits 0 clean, 1 when either is further behind, 2 when it could not run. Two
 # is not a pass.
@@ -69,14 +69,16 @@ work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
 # Each read is of the registry `just bump-claude-code` reads, whatever npm is
-# set to, and each is bounded here rather than by npm's settings, so a registry
-# that stalls ends as a could-not-run.
+# set to, through a cache of this run's own, since npm answers from a cache it
+# cannot refresh, and each is bounded here rather than by npm's settings: a
+# registry that cannot be reached, or that stalls, ends as a could-not-run.
 read_npm() { # <file> <npm view arguments...>
 	file="$1"
 	shift
-	if ! npm view --registry=https://registry.npmjs.org/ --fetch-timeout=60000 --fetch-retries=2 "$@" >"$work/$file" 2>"$work/$file.err"; then
+	if ! npm view --registry=https://registry.npmjs.org/ --cache="$work/npm" --logs-max=0 \
+		--fetch-timeout=60000 --fetch-retries=2 "$@" >"$work/$file" 2>"$work/$file.err"; then
 		echo "check-agent-lag: LINTER ERROR — npm view $* failed:"
-		tail -n 3 "$work/$file.err" | sed 's/^/check-agent-lag: | /'
+		grep -v 'Log files were not written' "$work/$file.err" | tail -n 3 | sed 's/^/check-agent-lag: | /'
 		exit 2
 	fi
 }

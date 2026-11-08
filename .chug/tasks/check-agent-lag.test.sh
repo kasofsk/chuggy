@@ -3,7 +3,8 @@
 #
 # npm is stubbed by an `npm` earlier on PATH than the real one, answering each
 # `npm view` the gate makes from a fixture directory, so the cases fix what the
-# registry holds. The version lists keep the registry's own shape: prereleases
+# registry holds. The gate runs with a TMPDIR of the suite's, so the stub can
+# hold each read to a cache under the run's own directory. The version lists keep the registry's own shape: prereleases
 # and platform builds beside the stable releases, and releases past the newest
 # a bump can reach.
 #
@@ -42,9 +43,9 @@ stub_npm() { # [failing view]
 	cat >"$BIN/npm" <<EOF
 #!/bin/sh
 [ "\$1" = view ] || exit 127
-case "\$2 \$3 \$4" in
-"--registry=https://registry.npmjs.org/ --fetch-timeout=60000 --fetch-retries=2") shift 4 ;;
-*) echo "an npm view of another registry, or with no bound of its own" >&2; exit 1 ;;
+case "\$2 \$3 \$4 \$5 \$6" in
+"--registry=https://registry.npmjs.org/ --cache=$WORK/tmp/"*"/npm --logs-max=0 --fetch-timeout=60000 --fetch-retries=2") shift 6 ;;
+*) echo "an npm view of another registry or cache, or with no bound of its own" >&2; exit 1 ;;
 esac
 if [ "\$*" = "${1:-none}" ]; then echo "npm error code E404" >&2; exit 1; fi
 case "\$*" in
@@ -63,7 +64,8 @@ run_in() { # <dir> [VAR=value...]
 	shift
 	OUT="$WORK/.out"
 	set +e
-	(cd "$dir" && env PATH="$BIN:$PATH" "$@" "$SUT") >"$OUT" 2>&1
+	mkdir -p "$WORK/tmp"
+	(cd "$dir" && env PATH="$BIN:$PATH" TMPDIR="$WORK/tmp" "$@" "$SUT") >"$OUT" 2>&1
 	RC=$?
 	set -e
 }

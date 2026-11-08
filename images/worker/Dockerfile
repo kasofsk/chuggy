@@ -77,11 +77,15 @@ RUN --mount=type=bind,source=package-lock.json,target=/tmp/package-lock.json \
 # The pins' lag behind npm, read by `.chug/tasks/check-agent-lag.sh` on the tree
 # being built. The runtime stage binds this stage's verdict, so a build of the
 # runtime, or of an image built on it, refuses a Claude Code or Codex past that
-# gate's cap. The whole tree is copied, as the roster copies it, so that the
-# stage runs again for each tree; a tree built before replays the verdict its
-# cache holds. The gate finds the root through git, so the copy is made a
+# gate's cap. The verdict is the pins' and the newest versions npm names a bump
+# reaching, so the stage is keyed on both: the documents naming those versions
+# are added, and nothing reads them, so that it runs again when either moves,
+# and the whole tree is copied, as the roster copies it, so that it runs again
+# for each tree. The gate finds the root through git, so the copy is made a
 # repository.
 FROM base AS agent-lag
+ADD https://registry.npmjs.org/@anthropic-ai/claude-agent-sdk/latest /tmp/agent-lag/claude-agent-sdk.json
+ADD https://registry.npmjs.org/@openai/codex/latest /tmp/agent-lag/codex.json
 COPY . /tree
 RUN cd /tree \
   && git init --quiet \
