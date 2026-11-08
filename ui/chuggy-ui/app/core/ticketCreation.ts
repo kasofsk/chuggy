@@ -1334,14 +1334,17 @@ export function creationStart(
 
 /** What creating a ticket does beyond making it, for the reader pressing: work
  * starts, waits on someone who dispatches, or has no runner to start on. */
-export function creationSubmitEffect(start: CreationStart): string {
+export function creationSubmitEffect(
+  start: CreationStart,
+  text: CopyText,
+): string {
   switch (start) {
     case "Starts":
       return "Starts work";
     case "Waits":
       return "Released for a dispatcher to start";
     case "NoRunner":
-      return sessionRunnerShortWord("NoRunner");
+      return text(sessionRunnerShortWord("NoRunner"));
   }
 }
 

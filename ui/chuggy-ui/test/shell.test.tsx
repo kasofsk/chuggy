@@ -2586,7 +2586,9 @@ test("a reader with no chat host is pointed at their own runners' page", async (
     }),
   );
   expect(
-    within(conversationRegion()).getByRole("link", { name: "My runners" }),
+    within(conversationRegion()).getByRole("link", {
+      name: "Personal runners",
+    }),
   ).toBeTruthy();
   styleless();
 });
@@ -2614,7 +2616,7 @@ test("a held thread that takes no messages points a reader with no runner at the
   const conversation = within(conversationRegion());
   expect(conversation.getByText("Closed")).toBeTruthy();
   expect(conversation.queryByText("No chat host")).toBeNull();
-  expect(screen.getByRole("link", { name: "My runners" })).toBeTruthy();
+  expect(screen.getByRole("link", { name: "Personal runners" })).toBeTruthy();
   styleless();
 });
 

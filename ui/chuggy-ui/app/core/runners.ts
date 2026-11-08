@@ -24,6 +24,7 @@ import type {
   SessionRunnerStanding,
 } from "../../../../src/contract/rosters.ts";
 import type { ApiFailure } from "./apiRequest.ts";
+import type { Copy, CopyOrData } from "./copy.ts";
 import { failureWords } from "./failureWords.ts";
 import type { PanelState } from "./freshness.ts";
 
@@ -34,7 +35,7 @@ export interface RunnerPackage {
   /** The program the package installs, which registers the machine. */
   readonly program: string;
   /** What a machine needs before the install, in one line. */
-  readonly needs: string;
+  readonly needs: Copy;
   /** The command that installs the package's current release. */
   readonly installCommand: string;
   /** Where the package says what is left to do after registering. */
@@ -69,7 +70,7 @@ export const runnerPackages = {
   linux: {
     label: "Linux",
     program: "chuggy-linux",
-    needs: "Linux · Node 24 · Docker or Podman",
+    needs: { id: "runners-package-needs-linux" },
     installCommand:
       "npm i -g https://github.com/kasofsk/chuggy-linux/releases/latest/download/chuggy-linux.tgz",
     guideAddress: "https://github.com/kasofsk/chuggy-linux#configure",
@@ -77,7 +78,7 @@ export const runnerPackages = {
   darwin: {
     label: "Mac",
     program: "chuggy-darwin",
-    needs: "macOS · Node 24 · Colima",
+    needs: { id: "runners-package-needs-darwin" },
     installCommand:
       "npm i -g https://github.com/kasofsk/chuggy-darwin/releases/latest/download/chuggy-darwin.tgz",
     guideAddress: "https://github.com/kasofsk/chuggy-darwin#run",
@@ -107,11 +108,15 @@ export const runnerAskDefault: RunnerAsk = {
 };
 
 /** What is wrong with a word that is not a capability, in a few words. */
-function runnerCapabilityFault(capability: string): string {
+function runnerCapabilityFault(capability: string): Copy {
   if (capability.length > workerPoolTokenCharsMax)
-    return `at most ${String(workerPoolTokenCharsMax)} characters`;
-  if (!/^[A-Za-z0-9]/u.test(capability)) return "start with a letter or digit";
-  return "use letters, digits, _, : and -";
+    return {
+      id: "runners-capability-too-long",
+      args: { chars: workerPoolTokenCharsMax },
+    };
+  if (!/^[A-Za-z0-9]/u.test(capability))
+    return { id: "runners-capability-start" };
+  return { id: "runners-capability-characters" };
 }
 
 /**
@@ -121,55 +126,58 @@ function runnerCapabilityFault(capability: string): string {
  */
 export function runnerCapabilitiesTyped(
   typed: string,
-): { readonly capabilities: readonly string[] } | { readonly refused: string } {
+): { readonly capabilities: readonly string[] } | { readonly refused: Copy } {
   const capabilities = typed.split(/[\s,]+/u).filter((word) => word !== "");
   for (const capability of capabilities) {
     if (!workerPoolCapabilitySchema.safeParse(capability).success)
       return {
-        refused: `${capability} · ${runnerCapabilityFault(capability)}`,
+        refused: {
+          id: "runners-capability-refused",
+          args: { capability, fault: runnerCapabilityFault(capability) },
+        },
       };
     if (capability.startsWith("Platform:"))
       return {
-        refused: `${capability} is detected, not typed`,
+        refused: { id: "runners-capability-detected", args: { capability } },
       };
   }
   if (new Set(capabilities).size !== capabilities.length)
-    return { refused: "A capability is listed twice" };
+    return { refused: { id: "runners-capability-twice" } };
   return { capabilities };
 }
 
 /** How long a minted token stays redeemable, which is the time a reader has to paste it. */
 export const runnerTokenLifetimeSecs = 3600;
 
-export function runnerRouteLabel(route: PlacementRoute): string {
+export function runnerRouteLabel(route: PlacementRoute): Copy {
   switch (route) {
     case "InCluster":
-      return "Hosted";
+      return { id: "runners-route-hosted" };
     case "Pool":
-      return "Runners";
+      return { id: "runners-route-pool" };
   }
 }
 
-export function runnerRouteSourceLabel(source: PlacementRouteSource): string {
+export function runnerRouteSourceLabel(source: PlacementRouteSource): Copy {
   switch (source) {
     case "Override":
-      return "Deployment";
+      return { id: "runners-source-override" };
     case "Project":
-      return "Project";
+      return { id: "runners-source-project" };
     case "Default":
-      return "Default";
+      return { id: "runners-source-default" };
   }
 }
 
 /** Whether the runners a session would run on are there, in one word. */
-export function runnerStandingLabel(standing: SessionRunnerStanding): string {
+export function runnerStandingLabel(standing: SessionRunnerStanding): Copy {
   switch (standing) {
     case "Unregistered":
-      return "None";
+      return { id: "runners-standing-none" };
     case "Offline":
-      return "Offline";
+      return { id: "runners-standing-offline" };
     case "Live":
-      return "Live";
+      return { id: "runners-standing-live" };
   }
 }
 
@@ -189,7 +197,7 @@ export function runnerAskRead(
   chosen: RunnerPackageName,
   host: boolean,
   typed: string,
-): { readonly ask: RunnerAsk } | { readonly refused: string } {
+): { readonly ask: RunnerAsk } | { readonly refused: Copy } {
   const read = runnerCapabilitiesTyped(typed);
   if ("refused" in read) return read;
   return { ask: { package: chosen, host, capabilities: read.capabilities } };
@@ -329,8 +337,8 @@ export function runnersPlacementUnhosted(failure: ApiFailure): boolean {
 }
 
 /** The line a refused placement's write leaves in the section. */
-export function runnersPlacementRefusal(failure: ApiFailure): string {
+export function runnersPlacementRefusal(failure: ApiFailure): CopyOrData {
   return runnersPlacementUnhosted(failure)
-    ? "Needs hosted runs"
+    ? { id: "runners-placement-unhosted" }
     : failureWords(failure).word;
 }

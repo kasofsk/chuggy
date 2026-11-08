@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The reader's chat host in this workspace, the one machine of theirs their
  * questions run on and their threads run on first: a row saying when it
@@ -19,6 +18,7 @@ import type {
   ChatHostResponse,
   WorkerPoolTokenResponse,
 } from "../../../../../src/contract/responses.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import {
   apiDeregisterChatHost,
   apiMintChatHostToken,
@@ -115,6 +115,7 @@ function ChatHostRow(props: {
   readonly busy: boolean;
   readonly onRemove: () => void;
 }): ReactNode {
+  const text = useCopyText();
   const { host } = props;
   const nowMs = useNowMs();
   const short = myRunnerShort(host.id);
@@ -127,35 +128,44 @@ function ChatHostRow(props: {
         </span>
       </th>
       <td data-none={settingsListingNone(host.runner === undefined)}>
-        <span className="people-stacked-label">Version</span>
+        <span className="people-stacked-label">
+          {text({ id: "runners-col-version" })}
+        </span>
         <RunnerVersion runner={host.runner} named />
       </td>
       <td>
-        <span className="people-stacked-label">Registered</span>
+        <span className="people-stacked-label">
+          {text({ id: "runners-col-registered" })}
+        </span>
         <Figure figure={instantFigure(host.registeredAt, nowMs)} />
       </td>
       <td>
-        <span className="people-stacked-label">Last polled</span>
+        <span className="people-stacked-label">
+          {text({ id: "runners-col-last-polled" })}
+        </span>
         {host.polledAt === undefined ? (
-          "Never"
+          text({ id: "runners-never" })
         ) : (
           <Figure figure={instantFigure(host.polledAt, nowMs)} />
         )}
       </td>
       <td>
         <Pill tone={runnerStandingTone(standing)}>
-          {runnerStandingLabel(standing)}
+          {text(runnerStandingLabel(standing))}
         </Pill>
       </td>
       <td className="people-edit">
         <Button
           variant="quiet"
           size="sm"
-          named={`Remove chat host ${short}`}
+          named={text({
+            id: "runners-chat-host-remove-named",
+            args: { short },
+          })}
           disabled={props.busy}
           onClick={props.onRemove}
         >
-          Remove
+          {text({ id: "runners-remove" })}
         </Button>
       </td>
     </tr>
@@ -164,22 +174,25 @@ function ChatHostRow(props: {
 
 /** The head of a listing of a member's registered hosts: runners, or a chat host. */
 export function HostListingHead(props: { readonly name: string }): ReactNode {
+  const text = useCopyText();
   return (
     <thead>
       <tr>
         <th scope="col">{props.name}</th>
-        <th scope="col">Version</th>
+        <th scope="col">{text({ id: "runners-col-version" })}</th>
         <th scope="col" className="w-[9em]">
-          Registered
+          {text({ id: "runners-col-registered" })}
         </th>
         <th scope="col" className="w-[9em]">
-          Last polled
+          {text({ id: "runners-col-last-polled" })}
         </th>
         <th scope="col" className="people-col-status">
-          Status
+          {text({ id: "runners-col-status" })}
         </th>
         <th scope="col" className="w-[8em]">
-          <span className="visually-hidden">Remove</span>
+          <span className="visually-hidden">
+            {text({ id: "runners-col-remove" })}
+          </span>
         </th>
       </tr>
     </thead>
@@ -191,9 +204,11 @@ function ChatHostTable(props: {
   readonly busy: boolean;
   readonly onRemove: () => void;
 }): ReactNode {
+  const text = useCopyText();
+  const title = text({ id: "runners-chat-host-title" });
   return (
-    <SettingsListingTable caption="Chat host">
-      <HostListingHead name="Chat host" />
+    <SettingsListingTable caption={title}>
+      <HostListingHead name={title} />
       <tbody>
         <ChatHostRow
           host={props.host}
@@ -211,13 +226,14 @@ function ChatHostMinted(props: {
   readonly short: string | undefined;
   readonly onDone: () => void;
 }): ReactNode {
+  const text = useCopyText();
   const nowMs = useNowMs();
   return (
     <div className="grid min-w-0 gap-2">
       <CopyBox
         about={
           <>
-            Registers your chat host once · expires{" "}
+            {text({ id: "runners-chat-host-token-about" })}{" "}
             <Figure
               figure={instantFigure(
                 new Date(props.minted.expiresAtMs).toISOString(),
@@ -227,16 +243,19 @@ function ChatHostMinted(props: {
           </>
         }
         text={props.minted.token}
-        copyLabel="Copy token"
+        copyLabel={text({ id: "runners-chat-host-copy-token" })}
       />
       {props.short === undefined ? null : (
         <p className="text-sm text-ink-3">
-          {`Replaces chat host ${props.short} · Ends its sessions`}
+          {text({
+            id: "runners-chat-host-replaces",
+            args: { short: props.short },
+          })}
         </p>
       )}
       <div>
         <Button size="sm" onClick={props.onDone}>
-          Done
+          {text({ id: "runners-done" })}
         </Button>
       </div>
     </div>
@@ -249,18 +268,25 @@ function ChatHostWritten(props: {
   /** The short id of the host the reader holds, where they hold one. */
   readonly short: string | undefined;
 }): ReactNode {
+  const text = useCopyText();
   const { writing, short } = props;
   const minted = writing.minting.data;
   if (writing.asking)
     return (
       <Confirm
-        question={`Remove chat host ${short ?? ""}?`}
-        confirm="Remove"
+        question={text({
+          id: "runners-chat-host-remove-question",
+          args: { short: short ?? "" },
+        })}
+        confirm={text({ id: "runners-remove" })}
         busy={false}
         onConfirm={writing.remove}
         onCancel={writing.done}
       >
-        {`Chat host ${short ?? ""} stops taking your chats and questions in this workspace, and the sessions it is running now end.`}
+        {text({
+          id: "runners-chat-host-removal",
+          args: { short: short ?? "" },
+        })}
       </Confirm>
     );
   if (minted !== undefined)
@@ -327,13 +353,15 @@ export function MyChatHost(props: {
   readonly host: PanelState<ChatHostResponse>;
   readonly granted: boolean;
 }): ReactNode {
+  const text = useCopyText();
   const writing = useChatHostWriting(props.tenant);
   const { host } = props;
   const held = host.state === "Ready" ? host.value : undefined;
+  const empty = text({ id: "runners-chat-host-empty" });
   return (
     <SettingsListingSection
-      heading="Chat host"
-      about="The machine of yours your threads and questions run on."
+      heading={text({ id: "runners-chat-host-title" })}
+      about={text({ id: "runners-chat-host-about" })}
       action={
         props.granted ? (
           <Button
@@ -342,7 +370,7 @@ export function MyChatHost(props: {
             disabled={writing.busy}
             onClick={writing.mint}
           >
-            Register chat host
+            {text({ id: "runners-chat-host-register" })}
           </Button>
         ) : null
       }
@@ -354,9 +382,9 @@ export function MyChatHost(props: {
       {held !== undefined ? (
         <ChatHostTable host={held} busy={writing.busy} onRemove={writing.ask} />
       ) : host.state === "Absent" ? (
-        <EmptyState label="No chat host yet" />
+        <EmptyState label={empty} />
       ) : (
-        <SettingsListingUnread state={host} withheld="No chat host yet" />
+        <SettingsListingUnread state={host} withheld={empty} />
       )}
     </SettingsListingSection>
   );

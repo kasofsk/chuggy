@@ -1,5 +1,5 @@
 /**
- * The My runners page, mounted: a member the workspace has not let register one
+ * The personal runners page, mounted: a member the workspace has not let register one
  * is told why and offered nothing; one it has is handed the personal command;
  * and a member with runners sees a row for each, registers another while under
  * the bound, gives them projects they read, takes them away, and takes one
@@ -23,6 +23,7 @@ import {
   personalRunnersMax,
 } from "../../../../src/contract/http.ts";
 import { MyRunnerPage } from "../../app/browser/settings/MyRunnerPage.tsx";
+import { copyTextEn } from "../../app/copy/catalog.ts";
 import {
   myRunnerRemovalLine,
   myRunnerWithheld,
@@ -187,7 +188,7 @@ function written(sent: readonly SentRequest[]): readonly string[] {
 test("a member the workspace has not let register a runner is told why and offered nothing", async () => {
   drawing = { granted: false, runner: undefined };
   await drawMyRunner();
-  expect(screen.getByText(myRunnerWithheld)).toBeTruthy();
+  expect(screen.getByText(copyTextEn(myRunnerWithheld))).toBeTruthy();
   expect(screen.queryByRole("button", { name: "Register runner" })).toBeNull();
   expect(
     screen.queryByRole("button", { name: "Register chat host" }),
@@ -274,7 +275,7 @@ test("a runner is drawn with what it declared and whether it is polling, though 
   expect(row?.textContent).toContain("3f2a9c1e");
   expect(row?.textContent).toContain("Linux Amd64");
   expect(row?.textContent).toContain("Live");
-  expect(screen.queryByText(myRunnerWithheld)).toBeNull();
+  expect(screen.queryByText(copyTextEn(myRunnerWithheld))).toBeNull();
   expect(screen.queryByRole("button", { name: "Register runner" })).toBeNull();
 });
 
@@ -294,7 +295,7 @@ test("each of a member's runners is a row of its own, saying whether it is polli
     ["3f2a9c1e", "Live"],
     ["a81c04d2", "Offline"],
   ]);
-  expect(screen.getByText("2 runners")).toBeTruthy();
+  expect(screen.getByText("2 personal runners")).toBeTruthy();
 });
 
 test("a member holding a runner may register another, and one holding as many as a member may is told so", async () => {
@@ -346,13 +347,13 @@ test("taking one of two runners off is asked first, then sent by its id, and lea
   expect(written(sent)).toStrictEqual([]);
   expect(
     screen.getByRole("group", { name: "Remove runner a81c04d2?" }).textContent,
-  ).toContain(myRunnerRemovalLine("a81c04d2", false));
+  ).toContain(copyTextEn(myRunnerRemovalLine("a81c04d2", false)));
   drawing.runner = runnerHeld;
   await press("Remove");
   expect(written(sent)).toStrictEqual([
     "DELETE /personal-runner/runners/chuggy-personal-a81c04d2-0000-4000-8000-000000000000",
   ]);
-  expect(screen.getByText("1 runner")).toBeTruthy();
+  expect(screen.getByText("1 personal runner")).toBeTruthy();
   expect(screen.queryByText(/a81c04d2/u)).toBeNull();
   expect(screen.getByText("3f2a9c1e")).toBeTruthy();
 });
@@ -363,7 +364,7 @@ test("taking one runner off a list another removal emptied meanwhile leaves none
   await press("Remove runner 3f2a9c1e");
   drawing.runner = undefined;
   await press("Remove");
-  expect(screen.getByText("0 runners")).toBeTruthy();
+  expect(screen.getByText("0 personal runners")).toBeTruthy();
   expect(screen.queryByText(/a81c04d2/u)).toBeNull();
 });
 
@@ -374,7 +375,7 @@ test("a runner already taken off elsewhere is answered as removed, and leaves no
   drawing.runner = undefined;
   await press("Remove");
   expect(screen.queryByText(/^Refused/u)).toBeNull();
-  expect(screen.getByText("0 runners")).toBeTruthy();
+  expect(screen.getByText("0 personal runners")).toBeTruthy();
 });
 
 test("taking the last runner off says the projects go with it, and leaves none listed", async () => {
@@ -383,13 +384,13 @@ test("taking the last runner off says the projects go with it, and leaves none l
   await press("Remove runner 3f2a9c1e");
   expect(
     screen.getByRole("group", { name: "Remove runner 3f2a9c1e?" }).textContent,
-  ).toContain(myRunnerRemovalLine("3f2a9c1e", true));
+  ).toContain(copyTextEn(myRunnerRemovalLine("3f2a9c1e", true)));
   drawing.runner = undefined;
   await press("Remove");
   expect(written(sent)).toStrictEqual([
     "DELETE /personal-runner/runners/chuggy-personal-3f2a9c1e-0000-4000-8000-000000000000",
   ]);
-  expect(screen.getByText("0 runners")).toBeTruthy();
+  expect(screen.getByText("0 personal runners")).toBeTruthy();
   expect(screen.queryByRole("table", { name: "Runners" })).toBeNull();
   expect(screen.getByRole("button", { name: "Register runner" })).toBeTruthy();
 });

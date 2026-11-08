@@ -1183,6 +1183,7 @@ export interface CreationFormDrawnProps extends CreationFormProps {
 
 /** The form as drawn, fields or YAML, over what its caller holds. */
 export function CreationFormDrawn(props: CreationFormDrawnProps): ReactNode {
+  const text = useCopyText();
   const { held, repositories } = props;
   const { offers, partial } = props.context;
   const standing = props.standing ?? { mayOverride: true };
@@ -1199,7 +1200,7 @@ export function CreationFormDrawn(props: CreationFormDrawnProps): ReactNode {
         proposed={creationFormProposed}
         storeKey={props.storeKey}
         submitLabel="Create ticket"
-        submitEffect={creationSubmitEffect(props.start)}
+        submitEffect={creationSubmitEffect(props.start, text)}
         submitStep={
           props.start === "NoRunner" ? (
             <AddRunnerLink partition={props.partition} />

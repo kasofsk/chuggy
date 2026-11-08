@@ -34,6 +34,7 @@ import {
 import type { Figure } from "./figures.ts";
 import { failureWords, readFailedLine } from "./failureWords.ts";
 import type { FailureWords } from "./failureWords.ts";
+import type { CopyText } from "./copy.ts";
 import type { PanelState } from "./freshness.ts";
 import {
   runnerRouteLabel,
@@ -60,6 +61,7 @@ export function threadModel(
  * own runner, whether that runner is there. */
 function threadStatusPlacement(
   placement: PanelState<SessionPlacementResponse>,
+  text: CopyText,
 ): readonly ThreadStatusFact[] {
   switch (placement.state) {
     case "Pending":
@@ -73,13 +75,13 @@ function threadStatusPlacement(
     case "Ready": {
       const thread = placement.value.thread;
       return [
-        { term: "Runs on", said: runnerRouteLabel(thread.route) },
-        { term: "Set by", said: runnerRouteSourceLabel(thread.source) },
+        { term: "Runs on", said: text(runnerRouteLabel(thread.route)) },
+        { term: "Set by", said: text(runnerRouteSourceLabel(thread.source)) },
         ...(thread.route === "Pool"
           ? [
               {
                 term: "Runner",
-                said: runnerStandingLabel(placement.value.runners.mine),
+                said: text(runnerStandingLabel(placement.value.runners.mine)),
               },
             ]
           : []),
@@ -93,11 +95,12 @@ function threadStatusPlacement(
 export function threadStatusFacts(
   thread: ThreadResponse | undefined,
   placement: PanelState<SessionPlacementResponse>,
+  text: CopyText,
 ): readonly ThreadStatusFact[] {
   const model = thread === undefined ? undefined : threadModel(thread.turns);
   return [
     { term: "Thread", said: thread?.state ?? "Not opened" },
-    ...threadStatusPlacement(placement),
+    ...threadStatusPlacement(placement, text),
     { term: "Model", said: model ?? "None reported yet" },
   ];
 }

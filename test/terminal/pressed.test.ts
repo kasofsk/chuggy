@@ -38,7 +38,8 @@ import {
 type SetupPressed = keyof typeof setupPressed;
 
 /** The names a page draws from the catalog. */
-type SetupPressedCatalogued = "edit" | "save" | "projectPage" | "projectCreate";
+type SetupPressedCatalogued =
+  "edit" | "save" | "projectPage" | "projectCreate" | "runner" | "chatHost";
 
 /** The names the invite page draws from the catalog, as its card's words. */
 type SetupPressedInvite = "workspaceCreate";
@@ -58,8 +59,6 @@ const drawnIn: Readonly<
   connect: "ui/chuggy-ui/app/browser/repositories/ConnectGithub.tsx",
   add: "ui/chuggy-ui/app/browser/repositories/AddRepository.tsx",
   retry: "ui/chuggy-ui/app/browser/repositories/BindingConfigurations.tsx",
-  runner: "ui/chuggy-ui/app/browser/RunnersPage.tsx",
-  chatHost: "ui/chuggy-ui/app/browser/settings/MyChatHost.tsx",
   ticket: "ui/chuggy-ui/app/browser/TicketCreation.tsx",
   dispatch: "ui/chuggy-ui/app/core/ticketActions.ts",
 };
@@ -73,6 +72,14 @@ const drawnFromCatalog: Readonly<
   save: { page: settingsSection, id: "ui-save" },
   projectPage: { page: projectCreationPage, id: "project-creation-new-title" },
   projectCreate: { page: projectCreationPage, id: "project-creation-submit" },
+  runner: {
+    page: "ui/chuggy-ui/app/browser/RunnersPage.tsx",
+    id: "runners-add",
+  },
+  chatHost: {
+    page: "ui/chuggy-ui/app/browser/settings/MyChatHost.tsx",
+    id: "runners-chat-host-register",
+  },
 };
 
 const leadTextSection =

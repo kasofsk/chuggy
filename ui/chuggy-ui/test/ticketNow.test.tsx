@@ -284,7 +284,9 @@ const ownRunner = {
 test("the reader's own run that their offline runner holds says it waits on it, and where it is managed", async () => {
   await runPageDrawn(atlas, ownRunStarting(ownRunner));
   const card = nowCard();
-  expect(card.textContent).toContain("Waiting on your runners · offline");
+  expect(card.textContent).toContain(
+    "Waiting on your personal runners · offline",
+  );
   expect(
     within(card).getByRole("link", { name: "Personal runners" }),
   ).toBeTruthy();
@@ -308,7 +310,7 @@ test("the reader's own run waits on their runners, not offline, while any one of
     }),
   );
   const card = nowCard();
-  expect(card.textContent).toContain("Waiting on your runners");
+  expect(card.textContent).toContain("Waiting on your personal runners");
   expect(card.textContent).not.toContain("offline");
 });
 
@@ -348,7 +350,7 @@ test("the reader's own waiting run whose agent their account has paused says so,
   await runPageDrawn(atlas, pausedRun(true));
   const card = nowCard();
   expect(card.textContent).toContain("Paused · Five-hour window · until ");
-  expect(card.textContent).not.toContain("Waiting on your runners");
+  expect(card.textContent).not.toContain("Waiting on your personal runners");
   expect(within(card).getByRole("link", { name: "Usage" })).toBeTruthy();
 });
 

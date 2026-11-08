@@ -20,6 +20,7 @@ import {
 import { renderCopied } from "./copied.tsx";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
+import { copyTextEn } from "../app/copy/catalog.ts";
 import { briefChecksMax, briefLinksMax } from "../../../src/contract/brief.ts";
 import { bootstrapConfigurationName } from "../../../src/contract/responses.ts";
 import type {
@@ -287,7 +288,7 @@ test("each field is named by its label, and a line beside one describes it", () 
   expect(
     screen.getByRole("button", {
       name: "Create ticket",
-      description: creationSubmitEffect("Waits"),
+      description: creationSubmitEffect("Waits", copyTextEn),
     }),
   ).toBeDefined();
 });

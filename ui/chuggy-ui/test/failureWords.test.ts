@@ -9,6 +9,7 @@
 import { expect, test } from "vitest";
 
 import type { ApiFailure } from "../app/core/apiRequest.ts";
+import { copyOrDataText } from "../app/core/copy.ts";
 import type { CopyOrData } from "../app/core/copy.ts";
 import { copyTextEn } from "../app/copy/catalog.ts";
 import {
@@ -122,9 +123,15 @@ const writeLines: readonly (readonly [
   string,
   (failure: ApiFailure) => string,
 ])[] = [
-  ["a member's runners removed", (failure) => memberRunnerRemoved(failure)],
+  [
+    "a member's runners removed",
+    (failure) => copyOrDataText(copyTextEn, memberRunnerRemoved(failure)),
+  ],
   ["a finalization saved", repositoryFinalizationRefusal],
-  ["a placement saved", runnersPlacementRefusal],
+  [
+    "a placement saved",
+    (failure) => copyOrDataText(copyTextEn, runnersPlacementRefusal(failure)),
+  ],
   [
     "selector settings saved",
     (failure) => selectorSettingsRefusal(failure, 0, copyTextEn),

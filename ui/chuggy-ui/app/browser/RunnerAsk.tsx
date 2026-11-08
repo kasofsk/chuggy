@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * What the register command a token is handed over in declares, asked before
  * the token is minted: the package the machine runs and, folded away since few
@@ -11,7 +10,9 @@ import { useId, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { WorkerPoolTokenResponse } from "../../../../src/contract/responses.ts";
+import { useCopyText } from "../copy/CopyProvider.tsx";
 import type { ApiFailure } from "../core/apiRequest.ts";
+import type { Copy } from "../core/copy.ts";
 import type { ConsoleWrite } from "../core/consoleWrite.ts";
 import { failureWords } from "../core/failureWords.ts";
 import { runnerAskRead, runnerPackages } from "../core/runners.ts";
@@ -38,9 +39,10 @@ function RunnerMachine(props: {
   readonly onChoose: (chosen: RunnerPackageName) => void;
 }): ReactNode {
   const offered = runnerPackages[props.chosen];
+  const text = useCopyText();
   return (
     <ToggleGroup
-      label="Machine"
+      label={text({ id: "runners-ask-machine" })}
       options={runnerPackageNames.map((name) => runnerPackages[name].label)}
       value={offered.label}
       onChange={(label) => {
@@ -57,15 +59,16 @@ function RunnerHost(props: {
   readonly host: boolean;
   readonly onHost: (host: boolean) => void;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <div className="grid gap-1">
       <Checkbox
-        label="Run jobs without a container"
+        label={text({ id: "runners-ask-host" })}
         checked={props.host}
         onChange={props.onHost}
       />
       <span className="text-xs font-regular">
-        Jobs with no image run directly on this machine, as you.
+        {text({ id: "runners-ask-host-about" })}
       </span>
     </div>
   );
@@ -74,14 +77,16 @@ function RunnerHost(props: {
 function RunnerCapabilities(props: {
   readonly typed: string;
   readonly onType: (typed: string) => void;
-  readonly fault: string | undefined;
+  readonly fault: Copy | undefined;
 }): ReactNode {
+  const text = useCopyText();
   const faultId = useId();
+  const label = text({ id: "runners-ask-capabilities" });
   return (
     <label className="grid w-full max-w-md gap-1 text-sm font-medium text-ink-3">
-      Capabilities
+      {label}
       <Input
-        label="Capabilities"
+        label={label}
         value={props.typed}
         onChange={props.onType}
         invalid={props.fault !== undefined}
@@ -91,7 +96,12 @@ function RunnerCapabilities(props: {
         id={faultId}
         className={`text-xs ${props.fault === undefined ? "font-regular" : "text-tone-fail"}`}
       >
-        {props.fault ?? "Optional · what a task may require, like Tool:Bazel"}
+        {text(
+          props.fault ?? {
+            id: "runners-ask-capabilities-about",
+            args: { example: "Tool:Bazel" },
+          },
+        )}
       </span>
     </label>
   );
@@ -105,13 +115,14 @@ function RunnerAdvanced(props: {
   readonly onHost: (host: boolean) => void;
   readonly typed: string;
   readonly onType: (typed: string) => void;
-  readonly fault: string | undefined;
+  readonly fault: Copy | undefined;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <Disclosure
       open={props.open}
       onOpenChange={props.onOpen}
-      label="Advanced"
+      label={text({ id: "runners-ask-advanced" })}
       look={{ variant: "quiet", size: "sm" }}
       chevron
     >
@@ -131,6 +142,7 @@ function RunnerAskPresses(props: {
   readonly busy: boolean;
   readonly onCancel: () => void;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <div className="flex gap-2">
       <Button
@@ -140,10 +152,10 @@ function RunnerAskPresses(props: {
         busy={props.busy}
         disabled={props.busy}
       >
-        Create token
+        {text({ id: "runners-ask-create" })}
       </Button>
       <Button size="sm" disabled={props.busy} onClick={props.onCancel}>
-        Cancel
+        {text({ id: "runners-ask-cancel" })}
       </Button>
     </div>
   );
@@ -197,15 +209,16 @@ function RunnerAskForm(props: { readonly minting: RunnerMinting }): ReactNode {
   const [chosen, setChosen] = useState<RunnerPackageName>("linux");
   const [host, setHost] = useState(false);
   const [typed, setTyped] = useState("");
-  const [fault, setFault] = useState<string | undefined>(undefined);
+  const [fault, setFault] = useState<Copy | undefined>(undefined);
   const [advanced, setAdvanced] = useState(false);
   const writing = props.minting.writing;
   const form = useFocusedUnheld<HTMLFormElement>();
+  const text = useCopyText();
   return (
     <form
       ref={form}
       tabIndex={-1}
-      aria-label="Runner"
+      aria-label={text({ id: "runners-ask-aria" })}
       className="border-edge grid min-w-0 justify-items-start gap-3 border-b pt-3 pb-4"
       onSubmit={(event) => {
         event.preventDefault();

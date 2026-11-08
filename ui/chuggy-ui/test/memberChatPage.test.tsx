@@ -256,7 +256,7 @@ test("abilities whose read failed say so, and draw no composer", async () => {
 test("a reader with no chat host is told so, with where one is registered", async () => {
   await mountedAt(`/tenants/${tenant}/chat`, { host: undefined });
   expect(screen.getByText("No chat host")).toBeDefined();
-  const runners = screen.getByRole("link", { name: "My runners" });
+  const runners = screen.getByRole("link", { name: "Personal runners" });
   expect(runners.getAttribute("href")).toBe(
     `/tenants/${tenant}/settings/runner`,
   );

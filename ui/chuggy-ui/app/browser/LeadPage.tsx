@@ -159,7 +159,9 @@ function LeadTopBar(props: {
           {text(leadSessionStateLabel(lead.state))}
         </Pill>
         {props.runner === undefined ? null : (
-          <Pill tone="parked">{sessionRunnerShortWord(props.runner)}</Pill>
+          <Pill tone="parked">
+            {text(sessionRunnerShortWord(props.runner))}
+          </Pill>
         )}
         <Pill tone={selectorAttentionTone(lead.attention)}>
           {text(selectorAttentionLabel(lead.attention))}

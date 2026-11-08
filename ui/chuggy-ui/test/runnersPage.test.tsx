@@ -174,7 +174,7 @@ async function addRunner(
   if (asked.host === true)
     await turned(() => {
       fireEvent.click(
-        screen.getByRole("checkbox", { name: "Run jobs without a container" }),
+        screen.getByRole("checkbox", { name: "Run runs without a container" }),
       );
     });
   if (asked.typed !== undefined)

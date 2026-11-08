@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The project's runners: the machines registered to run its agents, and the
  * steps that add one, from installing a runner package to registering the
@@ -18,6 +17,7 @@ import type {
   WorkerPoolsResponse,
   WorkerPoolTokenResponse,
 } from "../../../../src/contract/responses.ts";
+import { useCopyText } from "../copy/CopyProvider.tsx";
 import { apiMintWorkerPoolToken } from "../core/apiRoutes.ts";
 import { instantFigure } from "../core/figures.ts";
 import type { PanelState } from "../core/freshness.ts";
@@ -59,22 +59,23 @@ function RunnerRoster(props: {
   readonly listed: WorkerPoolsResponse;
   readonly action: ReactNode;
 }): ReactNode {
+  const text = useCopyText();
   const nowMs = useNowMs();
   if (props.listed.pools.length === 0)
     return (
       <div className="grid justify-items-start gap-3">
-        <EmptyState label="No runner registered" />
+        <EmptyState label={text({ id: "runners-none" })} />
         {props.action}
       </div>
     );
   return (
-    <Table caption="Registered runners">
+    <Table caption={text({ id: "runners-caption" })}>
       <thead>
         <tr>
-          <th scope="col">Runner</th>
-          <th scope="col">Platforms</th>
-          <th scope="col">Version</th>
-          <th scope="col">Registered</th>
+          <th scope="col">{text({ id: "runners-col-runner" })}</th>
+          <th scope="col">{text({ id: "runners-col-platforms" })}</th>
+          <th scope="col">{text({ id: "runners-col-version" })}</th>
+          <th scope="col">{text({ id: "runners-col-registered" })}</th>
         </tr>
       </thead>
       <tbody>
@@ -120,6 +121,7 @@ function AddRunner(props: {
   /** Drawn as the one thing to do, which it is under an empty roster. */
   readonly leading: boolean;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <Button
       size="sm"
@@ -127,7 +129,7 @@ function AddRunner(props: {
       disabled={props.minting.opened}
       onClick={props.minting.open}
     >
-      Add runner
+      {text({ id: "runners-add" })}
     </Button>
   );
 }
@@ -138,6 +140,7 @@ function RunnersSection(props: {
   /** Whether the reader administers the project, which minting needs. */
   readonly administers: boolean;
 }): ReactNode {
+  const text = useCopyText();
   const client = useQueryClient();
   const { partition, roster } = props;
   const minting = useRunnerMinting(runnersPoolTokenWrite(partition), {
@@ -152,8 +155,8 @@ function RunnersSection(props: {
   return (
     <Panel
       variant="section"
-      title="Runners"
-      about="Machines that run this project's agents."
+      title={text({ id: "runners-title" })}
+      about={text({ id: "runners-about" })}
       {...(place === "Head" ? { meta: add } : {})}
     >
       <RunnerMintOpened
@@ -174,13 +177,14 @@ function RunnersSection(props: {
         />
       ) : null}
       {roster.state === "Ready" && roster.value.truncated ? (
-        <Notice tone="info" inline detail="More not shown" />
+        <Notice tone="info" inline detail={text({ id: "runners-more" })} />
       ) : null}
     </Panel>
   );
 }
 
 export function RunnersPage(): ReactNode {
+  const text = useCopyText();
   const params = useParams({ from: runnersRoutePath });
   const partition: PartitionIdentity = {
     tenant: params.tenant,
@@ -190,7 +194,7 @@ export function RunnersPage(): ReactNode {
   const pools = usePanelState(workerPoolsQuery(partition));
   return (
     <div className="grid min-w-0 max-w-settings gap-4">
-      <ScreenTitle>Runners</ScreenTitle>
+      <ScreenTitle>{text({ id: "runners-title" })}</ScreenTitle>
       <RunnersSection
         partition={partition}
         roster={pools}

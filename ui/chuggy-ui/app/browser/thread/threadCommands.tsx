@@ -20,6 +20,7 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ThreadResponse } from "../../../../../src/contract/responses.ts";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import {
   conversationCommandLabel,
   conversationCommandNames,
@@ -81,10 +82,11 @@ function ThreadStatusSaid(props: {
   readonly partition: PartitionIdentity;
   readonly thread: ThreadResponse | undefined;
 }): ReactNode {
+  const text = useCopyText();
   const placement = useSessionPlacement(props.partition);
   return (
     <ThreadCommandLine name="status">
-      {threadStatusFacts(props.thread, placement).map((fact) => (
+      {threadStatusFacts(props.thread, placement, text).map((fact) => (
         <span key={fact.term}>
           <span className="text-ink-3">{fact.term}</span> {fact.said}
         </span>

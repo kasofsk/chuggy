@@ -12,7 +12,14 @@ import type {
   SessionPlacementResponse,
   WorkerPoolsResponse,
 } from "../../../src/contract/responses.ts";
-import { sessionRunnerStandings } from "../../../src/contract/rosters.ts";
+import {
+  placementRouteSources,
+  placementRoutes,
+  sessionRunnerStandings,
+} from "../../../src/contract/rosters.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
+import type { Copy } from "../app/core/copy.ts";
+import { copyOrDataText } from "../app/core/copy.ts";
 import type { PanelState } from "../app/core/freshness.ts";
 import {
   runnerAddPlace,
@@ -23,6 +30,8 @@ import {
   runnerPackageOffered,
   runnerPackages,
   runnerRegisterCommand,
+  runnerRouteLabel,
+  runnerRouteSourceLabel,
   runnerStandingLabel,
   runnersPlacementDraft,
   runnersPlacementMoved,
@@ -31,6 +40,13 @@ import {
   runnersPlacementUnhosted,
   runnersPlacementWrites,
 } from "../app/core/runners.ts";
+
+/** What a read of typed capabilities says, its refusal in the catalog's words. */
+function typedSaid<T extends object>(
+  read: T | { readonly refused: Copy },
+): T | { readonly refused: string } {
+  return "refused" in read ? { refused: copyTextEn(read.refused) } : read;
+}
 
 const hosted: ExecutionPlacementResponse = {
   work: { route: "InCluster", source: "Project" },
@@ -126,12 +142,21 @@ test("a save writes only the placements the draft moved, each whole", () => {
   });
 });
 
+test("a route is named hosted runs or runners, and an override of the site's is the site", () => {
+  expect(
+    placementRoutes.map((route) => copyTextEn(runnerRouteLabel(route))),
+  ).toStrictEqual(["Hosted runs", "Runners"]);
+  expect(
+    placementRouteSources.map((source) =>
+      copyTextEn(runnerRouteSourceLabel(source)),
+    ),
+  ).toStrictEqual(["Site", "Project", "Default"]);
+});
+
 test("a runner standing is one word, and no runner at all is None", () => {
-  expect(sessionRunnerStandings.map(runnerStandingLabel)).toStrictEqual([
-    "None",
-    "Offline",
-    "Live",
-  ]);
+  expect(
+    sessionRunnerStandings.map((each) => copyTextEn(runnerStandingLabel(each))),
+  ).toStrictEqual(["None", "Offline", "Live"]);
 });
 
 test("a write refused for the hosted grant is told apart from any other refusal", () => {
@@ -148,9 +173,13 @@ test("a write refused for the hosted grant is told apart from any other refusal"
     body: undefined,
   } as const;
   expect(runnersPlacementUnhosted(unhosted)).toBe(true);
-  expect(runnersPlacementRefusal(unhosted)).toBe("Needs hosted runs");
+  expect(copyOrDataText(copyTextEn, runnersPlacementRefusal(unhosted))).toBe(
+    "Needs hosted runs",
+  );
   expect(runnersPlacementUnhosted(invalid)).toBe(false);
-  expect(runnersPlacementRefusal(invalid)).toBe("Refused");
+  expect(copyOrDataText(copyTextEn, runnersPlacementRefusal(invalid))).toBe(
+    "Refused",
+  );
 });
 
 test("setup offers the Linux package: what it needs, the command that installs its current release, and its guide", () => {
@@ -158,22 +187,28 @@ test("setup offers the Linux package: what it needs, the command that installs i
   expect(runnerPackageOffered).toStrictEqual({
     label: "Linux",
     program: "chuggy-linux",
-    needs: "Linux · Node 24 · Docker or Podman",
+    needs: { id: "runners-package-needs-linux" },
     installCommand:
       "npm i -g https://github.com/kasofsk/chuggy-linux/releases/latest/download/chuggy-linux.tgz",
     guideAddress: "https://github.com/kasofsk/chuggy-linux#configure",
   });
+  expect(copyTextEn(runnerPackageOffered.needs)).toBe(
+    "Linux · Node 24 · Docker or Podman",
+  );
 });
 
 test("a Mac's package is the reader's other choice, and what they ask of either is read as they asked it", () => {
   expect(runnerPackages.darwin).toStrictEqual({
     label: "Mac",
     program: "chuggy-darwin",
-    needs: "macOS · Node 24 · Colima",
+    needs: { id: "runners-package-needs-darwin" },
     installCommand:
       "npm i -g https://github.com/kasofsk/chuggy-darwin/releases/latest/download/chuggy-darwin.tgz",
     guideAddress: "https://github.com/kasofsk/chuggy-darwin#run",
   });
+  expect(copyTextEn(runnerPackages.darwin.needs)).toBe(
+    "macOS · Node 24 · Colima",
+  );
   const asked = runnerAskRead("darwin", true, "Agent:Claude, Tool:Xcode");
   expect(asked).toStrictEqual({
     ask: {
@@ -188,26 +223,38 @@ test("a Mac's package is the reader's other choice, and what they ask of either 
 });
 
 test("capabilities typed are refused where one is not a capability, is a platform, or is named twice", () => {
-  expect(runnerCapabilitiesTyped("  ")).toStrictEqual({ capabilities: [] });
-  expect(runnerCapabilitiesTyped("has-dash, Tool:Bazel\nx_1")).toStrictEqual({
+  expect(typedSaid(runnerCapabilitiesTyped("  "))).toStrictEqual({
+    capabilities: [],
+  });
+  expect(
+    typedSaid(runnerCapabilitiesTyped("has-dash, Tool:Bazel\nx_1")),
+  ).toStrictEqual({
     capabilities: ["has-dash", "Tool:Bazel", "x_1"],
   });
-  expect(runnerCapabilitiesTyped("Tool:Ba.zel")).toStrictEqual({
+  expect(typedSaid(runnerCapabilitiesTyped("Tool:Ba.zel"))).toStrictEqual({
     refused: "Tool:Ba.zel · use letters, digits, _, : and -",
   });
-  expect(runnerCapabilitiesTyped("Tool:Bazel - Tool:Go")).toStrictEqual({
+  expect(
+    typedSaid(runnerCapabilitiesTyped("Tool:Bazel - Tool:Go")),
+  ).toStrictEqual({
     refused: "- · start with a letter or digit",
   });
-  expect(runnerCapabilitiesTyped(`T${"o".repeat(63)}`)).toStrictEqual({
+  expect(
+    typedSaid(runnerCapabilitiesTyped(`T${"o".repeat(63)}`)),
+  ).toStrictEqual({
     refused: `T${"o".repeat(63)} · at most 63 characters`,
   });
-  expect(runnerCapabilitiesTyped("Platform:MacOS:Arm64")).toStrictEqual({
+  expect(
+    typedSaid(runnerCapabilitiesTyped("Platform:MacOS:Arm64")),
+  ).toStrictEqual({
     refused: "Platform:MacOS:Arm64 is detected, not typed",
   });
-  expect(runnerCapabilitiesTyped("a a")).toStrictEqual({
+  expect(typedSaid(runnerCapabilitiesTyped("a a"))).toStrictEqual({
     refused: "A capability is listed twice",
   });
-  expect(runnerAskRead("linux", false, "Tool:Bazel Tool:Bazel")).toStrictEqual({
+  expect(
+    typedSaid(runnerAskRead("linux", false, "Tool:Bazel Tool:Bazel")),
+  ).toStrictEqual({
     refused: "A capability is listed twice",
   });
 });

@@ -9,6 +9,7 @@ import { describe, expect, test } from "vitest";
 
 import type { ThreadResponse } from "../../../src/contract/responses.ts";
 import { threadTurnsAnsweredMax } from "../../../src/contract/http.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 import type { ApiResult } from "../app/core/apiRequest.ts";
 import type { PanelState } from "../app/core/freshness.ts";
 import type { SessionPlacementResponse } from "../../../src/contract/responses.ts";
@@ -34,6 +35,13 @@ function placed(
   return { state: "Ready", value, observedAtMs: undefined };
 }
 
+function statusFacts(
+  thread: ThreadResponse | undefined,
+  placement: PanelState<SessionPlacementResponse>,
+): ReturnType<typeof threadStatusFacts> {
+  return threadStatusFacts(thread, placement, copyTextEn);
+}
+
 function said(
   facts: readonly { readonly term: string; readonly said: string }[],
 ): Record<string, string> {
@@ -48,10 +56,7 @@ describe("the status line", () => {
     });
     expect(
       said(
-        threadStatusFacts(
-          thread,
-          placed(sessionPlacementBody({ mine: "Offline" })),
-        ),
+        statusFacts(thread, placed(sessionPlacementBody({ mine: "Offline" }))),
       ),
     ).toStrictEqual({
       Thread: "Open",
@@ -64,22 +69,22 @@ describe("the status line", () => {
 
   test("a hosted thread names no runner, because none is waited on", () => {
     const facts = said(
-      threadStatusFacts(
+      statusFacts(
         threadBody({}),
         placed(sessionPlacementBody({ thread: "InCluster" })),
       ),
     );
-    expect(facts["Runs on"]).toBe("Hosted");
+    expect(facts["Runs on"]).toBe("Hosted runs");
     expect(facts["Runner"]).toBeUndefined();
   });
 
   test("a placement not read yet or refused says so where the route would be", () => {
     expect(
-      said(threadStatusFacts(threadBody({}), { state: "Pending" }))["Runs on"],
+      said(statusFacts(threadBody({}), { state: "Pending" }))["Runs on"],
     ).toBe("Loading…");
     expect(
       said(
-        threadStatusFacts(threadBody({}), {
+        statusFacts(threadBody({}), {
           state: "Failed",
           failure: { outcome: "Unreachable", reason: "connection refused" },
         }),
@@ -88,9 +93,7 @@ describe("the status line", () => {
   });
 
   test("a box with no thread behind it yet says so, and names no model", () => {
-    expect(
-      said(threadStatusFacts(undefined, { state: "Pending" })),
-    ).toMatchObject({
+    expect(said(statusFacts(undefined, { state: "Pending" }))).toMatchObject({
       Thread: "Not opened",
       Model: "None reported yet",
     });

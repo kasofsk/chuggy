@@ -683,8 +683,13 @@ export interface TicketHeaderActionsProps {
 function NoRunnerLine(props: {
   readonly partition: PartitionIdentity;
 }): ReactNode {
+  const text = useCopyText();
   return (
-    <Notice tone="parked" inline detail={sessionRunnerShortWord("NoRunner")}>
+    <Notice
+      tone="parked"
+      inline
+      detail={text(sessionRunnerShortWord("NoRunner"))}
+    >
       {" · "}
       <AddRunnerLink partition={props.partition} />
     </Notice>

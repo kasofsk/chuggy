@@ -16,6 +16,7 @@ import type {
   SessionRunnerStanding,
 } from "../../../../src/contract/rosters.ts";
 import type { ApiResult } from "./apiRequest.ts";
+import type { Copy } from "./copy.ts";
 
 /**
  * How often a project's session placement is read again. No frame says a
@@ -72,12 +73,12 @@ export function sessionRunnerAdded(
   }
 }
 
-export function sessionRunnerShortWord(short: SessionRunnerShort): string {
+export function sessionRunnerShortWord(short: SessionRunnerShort): Copy {
   switch (short) {
     case "NoRunner":
-      return "No runner";
+      return { id: "runners-short-none" };
     case "RunnerOffline":
-      return "Runner offline";
+      return { id: "runners-short-offline" };
   }
 }
 
@@ -87,13 +88,13 @@ export function sessionRunnerShortWord(short: SessionRunnerShort): string {
 export function sessionRunnerNoticeWord(
   short: SessionRunnerShort,
   session: SessionRunnerSession,
-): string {
+): Copy {
   if (session === "Lead") return sessionRunnerShortWord(short);
   switch (short) {
     case "NoRunner":
-      return "No chat host";
+      return { id: "runners-chat-host-none" };
     case "RunnerOffline":
-      return "Chat host offline";
+      return { id: "runners-chat-host-offline" };
   }
 }
 

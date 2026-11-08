@@ -245,7 +245,7 @@ export function inquiryAskRefusalSentence(
     case "Refused":
       return text(refusal.word);
     case "NoRunner":
-      return sessionRunnerNoticeWord("NoRunner", "Inquiry");
+      return text(sessionRunnerNoticeWord("NoRunner", "Inquiry"));
     case "Failed":
       return refusal.words.word;
   }
