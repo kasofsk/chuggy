@@ -4,12 +4,7 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import {
-  cleanup,
-  render as drawn,
-  screen,
-  waitFor,
-} from "@testing-library/react";
+import { cleanup, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
@@ -20,6 +15,7 @@ import {
 import { TicketBriefImages } from "../app/browser/TicketProvenance.tsx";
 import { SessionProvider } from "../app/browser/session.tsx";
 import { answer, holderDouble } from "./screenHarness.tsx";
+import { renderCopied as drawn } from "./copied.tsx";
 import { ticketInstants } from "./ticketInstants.ts";
 
 /** The runner has no globals, so the tree one case rendered is torn down here

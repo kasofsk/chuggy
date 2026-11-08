@@ -43,6 +43,7 @@ import type {
   ConversationMeasures,
   ConversationStanding,
 } from "../../core/conversation.ts";
+import type { CopyOrData } from "../../core/copy.ts";
 import { failureWords, readFailedLine } from "../../core/failureWords.ts";
 import type { Figure as FigureValue } from "../../core/figures.ts";
 import {
@@ -75,7 +76,7 @@ export type ConversationStandingDrawn = Exclude<
  */
 export function ConversationSystemLine(props: {
   readonly words: string;
-  readonly detail?: string | undefined;
+  readonly detail?: CopyOrData | undefined;
   readonly ruled?: boolean;
 }): ReactNode {
   const rule =
@@ -122,7 +123,7 @@ export function conversationMarkerWords(marker: ConversationMarker): string {
 /** What a marker carries beyond its words, for a reader reporting it. */
 export function conversationMarkerDetail(
   marker: ConversationMarker,
-): string | undefined {
+): CopyOrData | undefined {
   return marker.marker === "Failure"
     ? failureWords(marker.failure).detail
     : undefined;

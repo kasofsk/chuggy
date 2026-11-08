@@ -8,10 +8,11 @@
  */
 
 import type { ApiFailure } from "./apiRequest.ts";
+import type { CopyOrData } from "./copy.ts";
 
 export interface FailureWords {
   readonly word: string;
-  readonly detail?: string;
+  readonly detail?: CopyOrData;
 }
 
 export function failureWords(result: ApiFailure): FailureWords {

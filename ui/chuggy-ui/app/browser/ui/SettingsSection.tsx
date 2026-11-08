@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * One setting group as a card: what it is, the Edit that opens it, the foot its
  * cancel and save sit in, and the line its last write left.
@@ -12,6 +11,7 @@
 
 import type { ReactNode } from "react";
 
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { Button } from "./Button.tsx";
 import { Panel } from "./Panel.tsx";
 
@@ -21,13 +21,14 @@ function SettingsSectionSaved(props: {
   readonly notice: ReactNode;
   readonly onReload: (() => void) | undefined;
 }): ReactNode {
+  const text = useCopyText();
   if (props.notice === undefined) return null;
   return (
     <div className="flex items-center gap-2">
       {props.notice}
       {props.onReload === undefined ? null : (
         <Button size="sm" onClick={props.onReload}>
-          Reload
+          {text({ id: "ui-reload" })}
         </Button>
       )}
     </div>
@@ -40,12 +41,13 @@ function SettingsSectionFoot(props: {
   readonly onCancel: () => void;
   readonly onSave: () => void;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <>
       {props.lead}
       <span className="grow" />
       <Button variant="quiet" size="sm" onClick={props.onCancel}>
-        Cancel
+        {text({ id: "ui-cancel" })}
       </Button>
       <Button
         variant="primary"
@@ -53,7 +55,7 @@ function SettingsSectionFoot(props: {
         disabled={!props.savable}
         onClick={props.onSave}
       >
-        Save changes
+        {text({ id: "ui-save" })}
       </Button>
     </>
   );
@@ -75,6 +77,7 @@ export function SettingsSection(props: {
   readonly onReload?: () => void;
   readonly children: ReactNode;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <Panel
       variant="section"
@@ -88,7 +91,7 @@ export function SettingsSection(props: {
             disabled={!props.editable}
             onClick={props.onEdit}
           >
-            Edit
+            {text({ id: "ui-edit" })}
           </Button>
         )
       }

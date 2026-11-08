@@ -13,7 +13,7 @@
  * marks is drawn after them; and code is audited once it has its colours.
  */
 
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { cleanup, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
 import type { ReactNode } from "react";
 
@@ -24,6 +24,7 @@ import {
   MarkdownReport,
 } from "../app/browser/ui/MarkdownReport.tsx";
 import { syntaxDoubleReading } from "./markdownSyntaxDouble.ts";
+import { renderCopied } from "./copied.tsx";
 
 afterEach(cleanup);
 
@@ -262,7 +263,7 @@ const payloads: readonly string[] = [
 ];
 
 function drawnAudit(text: string, writing: boolean): readonly string[] {
-  const view = render(
+  const view = renderCopied(
     <CopyProvider write={() => Promise.resolve(true)}>
       <MarkdownReport text={text} writing={writing} />
     </CopyProvider>,
@@ -282,7 +283,7 @@ describe("a text written to get something into the document", () => {
   test("draws nothing outside the lists at any moment it is written, with prose before and after it", () => {
     const findings = new Set<string>();
     for (const payload of payloads) {
-      const view = render(<MarkdownReport text="" bare writing />);
+      const view = renderCopied(<MarkdownReport text="" bare writing />);
       const text = `Before.\n\n${payload}\n\nAfter <script>alert(2)</script> [y](javascript:alert(3)).`;
       for (let length = 1; length <= text.length; length += 1) {
         const written = text.slice(0, length);
@@ -300,7 +301,7 @@ describe("a text written to get something into the document", () => {
 
   test("draws nothing outside the lists as one line of a note", () => {
     const findings = payloads.flatMap((payload) => {
-      const view = render(
+      const view = renderCopied(
         <p className="run-report">
           <MarkdownLine text={payload} />
         </p>,
@@ -433,7 +434,7 @@ describe("code written to get something into the document", () => {
       </MarkdownProvider>
     );
     for (const text of fences) {
-      const view = render(<MarkdownReport text={text} />, { wrapper });
+      const view = renderCopied(<MarkdownReport text={text} />, { wrapper });
       await waitFor(() => {
         expect(view.container.querySelector('[class^="hljs-"]')).not.toBeNull();
       });

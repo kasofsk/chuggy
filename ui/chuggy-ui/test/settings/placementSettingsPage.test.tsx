@@ -13,13 +13,7 @@
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
 import { QueryClient } from "@tanstack/react-query";
-import {
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-  within,
-} from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -37,6 +31,7 @@ import {
 import type { SentRequest } from "../screenHarness.tsx";
 import { leadPartition } from "../leadFixture.ts";
 import type * as BrowserPorts from "../../app/browser/ports.ts";
+import { renderCopied } from "../copied.tsx";
 
 vi.mock("../../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
@@ -108,7 +103,7 @@ async function drawPage(
     return answer(placement);
   });
   vi.stubGlobal("fetch", scripted.fetch);
-  render(
+  renderCopied(
     <ScreenHarness
       partition={leadPartition}
       client={

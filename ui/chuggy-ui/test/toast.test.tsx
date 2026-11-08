@@ -3,16 +3,11 @@
  * Dismiss and is not closed by Radix's timer.
  */
 
-import {
-  act,
-  cleanup,
-  fireEvent,
-  render,
-  screen,
-} from "@testing-library/react";
+import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { Toasts } from "../app/browser/ui/Toast.tsx";
+import { renderCopied } from "./copied.tsx";
 
 /** What `Toast.Provider` closes a toast after where it is given no duration. */
 const radixToastDurationMsDefault = 5000;
@@ -25,7 +20,7 @@ afterEach(() => {
 test("a toast is still open after Radix's default duration, and closes on its Dismiss", () => {
   vi.useFakeTimers();
   const dismissed = vi.fn();
-  render(
+  renderCopied(
     <Toasts
       toasts={[{ id: 1, line: "Cancel refused · terminal" }]}
       onDismiss={dismissed}

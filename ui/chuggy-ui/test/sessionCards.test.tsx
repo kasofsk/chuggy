@@ -12,7 +12,7 @@
  */
 
 import { QueryClient } from "@tanstack/react-query";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { App } from "../app/browser/App.tsx";
@@ -32,6 +32,7 @@ import {
   sessionHarnessConfiguration as configuration,
   sessionHarnessDiscovery as discovery,
 } from "./sessionHolderHarness.ts";
+import { renderCopied } from "./copied.tsx";
 
 vi.mock("../app/browser/routes.tsx", () => ({ consoleRouter: {} }));
 vi.mock(import("../app/browser/ports.ts"), async (original) => ({
@@ -80,7 +81,7 @@ async function mounted(
   if (refreshToken !== undefined)
     harness.persistent.held.set(sessionRefreshTokenKey, refreshToken);
   const holder = createSessionHolder({ ...harness.ports, fetchJson, ...ports });
-  render(
+  renderCopied(
     <SessionProvider holder={holder}>
       <App
         queryClient={

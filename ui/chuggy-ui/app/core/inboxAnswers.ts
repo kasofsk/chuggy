@@ -14,7 +14,7 @@ import {
 } from "./codeSentences.ts";
 import type { OperationStep } from "./operationFollow.ts";
 import type { TicketAction } from "./ticketActions.ts";
-import type { CopyText } from "./copy.ts";
+import type { CopyOrData, CopyText } from "./copy.ts";
 
 export interface InboxAnswer {
   readonly action: TicketAction;
@@ -53,7 +53,7 @@ export function inboxStepSentence(step: OperationStep, text: CopyText): string {
 }
 
 /** What a reader reporting an abandoned answer reads on hover of its word. */
-export function inboxStepDetail(step: OperationStep): string | undefined {
+export function inboxStepDetail(step: OperationStep): CopyOrData | undefined {
   return step.step === "Abandoned"
     ? operationAbandonWords(step.cause).detail
     : undefined;

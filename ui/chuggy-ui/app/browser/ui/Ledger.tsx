@@ -13,6 +13,8 @@
 
 import type { ReactNode } from "react";
 
+import { useCopyText } from "../../copy/CopyProvider.tsx";
+import type { Copy } from "../../core/copy.ts";
 import type { Figure as FigureValue, Spend } from "../../core/figures.ts";
 import type { Label } from "../../core/labels.ts";
 import type { Tone } from "../../core/tones.ts";
@@ -27,6 +29,11 @@ import "./Ledger.css";
 export const ledgerStandings = ["Current", "Superseded"] as const;
 
 export type LedgerStanding = (typeof ledgerStandings)[number];
+
+const ledgerStandingWords: Readonly<Record<LedgerStanding, Copy>> = {
+  Current: { id: "ui-ledger-current" },
+  Superseded: { id: "ui-ledger-superseded" },
+};
 
 export interface LedgerMark {
   readonly tone: Tone;
@@ -55,6 +62,7 @@ export function LedgerGroup(props: {
   readonly open: boolean;
   readonly children: ReactNode;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <details
       className={`ledger-group ledger-group-${props.standing.toLowerCase()}`}
@@ -64,7 +72,7 @@ export function LedgerGroup(props: {
         <span className="ledger-group-head">
           <h3>{props.title}</h3>
           <Pill tone={props.standing === "Current" ? "live" : "retired"}>
-            {props.standing}
+            {text(ledgerStandingWords[props.standing])}
           </Pill>
           <span className="ledger-group-summary">{props.summary}</span>
         </span>

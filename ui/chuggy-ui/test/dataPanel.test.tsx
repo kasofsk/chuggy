@@ -7,7 +7,7 @@
  * differently.
  */
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, expect, test } from "vitest";
 
 import {
@@ -16,11 +16,12 @@ import {
   ReadFailed,
 } from "../app/browser/DataPanel.tsx";
 import type { ApiFailure } from "../app/core/apiRequest.ts";
+import { renderCopied } from "./copied.tsx";
 
 afterEach(cleanup);
 
 test("a pending read says it is loading and draws no value", () => {
-  render(
+  renderCopied(
     <DataPanel title="Cycles" state={{ state: "Pending" }}>
       {(value: string) => <p>{value}</p>}
     </DataPanel>,
@@ -29,7 +30,7 @@ test("a pending read says it is loading and draws no value", () => {
 });
 
 test("an absent read and a failed read say which they are, each in its word under the panel's title", () => {
-  const view = render(
+  const view = renderCopied(
     <>
       <DataPanel title="Draft" state={{ state: "Absent" }}>
         {(value: string) => <p>{value}</p>}
@@ -56,7 +57,7 @@ test("an absent read and a failed read say which they are, each in its word unde
 });
 
 test("a panel's failed read does not repeat its title", () => {
-  const view = render(
+  const view = renderCopied(
     <DataPanel
       title="Tickets"
       state={{
@@ -74,7 +75,7 @@ test("a panel's failed read does not repeat its title", () => {
 });
 
 test("a failed read's detail is on hover of its word and in no line", async () => {
-  render(
+  renderCopied(
     <DataPanel
       title="Cycles"
       state={{
@@ -107,7 +108,9 @@ test("no failed read's drawn line carries a code, a reason or the API", () => {
     { outcome: "Unreadable", reason: "expected string" },
   ];
   for (const failure of failures) {
-    const view = render(<ReadFailed subject="Tickets" failure={failure} />);
+    const view = renderCopied(
+      <ReadFailed subject="Tickets" failure={failure} />,
+    );
     const drawn = view.container.textContent;
     expect(drawn, failure.outcome).toMatch(/^Tickets · /u);
     for (const internal of [
@@ -121,7 +124,7 @@ test("no failed read's drawn line carries a code, a reason or the API", () => {
 });
 
 test("a read with no noun of its own says only that it was not read, and why", () => {
-  render(
+  renderCopied(
     <DataSection
       state={{
         state: "Failed",
@@ -137,7 +140,7 @@ test("a read with no noun of its own says only that it was not read, and why", (
 });
 
 test("a ready read draws its value and when it was observed", () => {
-  render(
+  renderCopied(
     <DataPanel
       title="Cycles"
       state={{ state: "Ready", value: "Cycle 3", observedAtMs: Date.now() }}
@@ -151,7 +154,7 @@ test("a ready read draws its value and when it was observed", () => {
 
 test("a ready read whose last read failed keeps its value and says Not updated where its freshness was, with Retry", () => {
   let retried = 0;
-  const view = render(
+  const view = renderCopied(
     <DataPanel
       title="Cycles"
       state={{
@@ -177,7 +180,7 @@ test("a ready read whose last read failed keeps its value and says Not updated w
 
 test("a failed read offers Retry beside its line where it can be read again, and nothing where it cannot", () => {
   let retried = 0;
-  render(
+  renderCopied(
     <DataPanel
       title="Cycles"
       state={{
@@ -194,7 +197,7 @@ test("a failed read offers Retry beside its line where it can be read again, and
   fireEvent.click(screen.getByRole("button", { name: "Retry" }));
   expect(retried).toBe(1);
   cleanup();
-  render(
+  renderCopied(
     <DataPanel
       title="Cycles"
       state={{

@@ -12,12 +12,13 @@ import {
   Outlet,
   RouterProvider,
 } from "@tanstack/react-router";
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { consoleRouter } from "../app/browser/routes.tsx";
 import { settled, turned } from "./screenHarness.tsx";
+import { renderCopied } from "./copied.tsx";
 
 /** The router restores a scroll position on every load, and jsdom scrolls
  * nothing; React reports every caught throw, which is the case's own. */
@@ -71,7 +72,7 @@ async function drawnAt(address: string): Promise<void> {
     history: createMemoryHistory({ initialEntries: [address] }),
     ...consoleFallbacks,
   });
-  render(<RouterProvider router={router} />);
+  renderCopied(<RouterProvider router={router} />);
   await settled();
 }
 

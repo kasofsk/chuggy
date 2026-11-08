@@ -4,11 +4,12 @@
  * the end has been sent, only the busy one, which does nothing.
  */
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { Confirm } from "../app/browser/ui/Confirm.tsx";
 import { styleless } from "./styleless.ts";
+import { renderCopied } from "./copied.tsx";
 
 afterEach(() => {
   styleless();
@@ -21,7 +22,7 @@ function drawn(busy: boolean): {
 } {
   const confirmed = vi.fn();
   const cancelled = vi.fn();
-  render(
+  renderCopied(
     <Confirm
       question="End this?"
       confirm="End it"

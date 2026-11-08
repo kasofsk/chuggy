@@ -218,7 +218,7 @@ test("a held draft's line says whether it was released, settled or not", () => {
 });
 
 test("a panel never read says so in one word", () => {
-  expect(freshnessLabel(Date.now(), undefined)).toBe("Unknown");
+  expect(copyTextEn(freshnessLabel(Date.now(), undefined))).toBe("Unknown");
 });
 
 test("a part of a line over the limit or in the repository's own words is caught, and a joined line holds each part to it", () => {

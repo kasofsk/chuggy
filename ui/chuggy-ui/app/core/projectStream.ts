@@ -41,6 +41,7 @@ import type {
   StreamPorts,
 } from "./streamConnection.ts";
 import type { StreamFrame } from "./streamFrames.ts";
+import type { Copy } from "./copy.ts";
 
 export const streamPathSegment = "events";
 
@@ -104,16 +105,16 @@ export function projectStreamUnanswered(status: ProjectStreamStatus): boolean {
 export type ProjectStreamNotice =
   | { readonly notice: "Quiet" }
   | { readonly notice: "Reconnecting" }
-  | { readonly notice: "NotLive"; readonly detail?: string };
+  | { readonly notice: "NotLive"; readonly detail?: Copy };
 
 /** Why the stream is not live, where a reader can act on or wait out why. */
 function projectStreamNotLive(
   status: ProjectStreamStatus,
 ): ProjectStreamNotice {
   if (status.source === "degraded")
-    return { notice: "NotLive", detail: "Updates delayed" };
+    return { notice: "NotLive", detail: { id: "stream-delayed" } };
   if (status.cause === "Refused")
-    return { notice: "NotLive", detail: "Refused" };
+    return { notice: "NotLive", detail: { id: "stream-refused" } };
   return { notice: "NotLive" };
 }
 
@@ -130,7 +131,7 @@ export function projectStreamNotice(
 ): ProjectStreamNotice {
   if (!lapsed || projectStreamCarrying(status)) return { notice: "Quiet" };
   if (projectStreamUnanswered(status)) return { notice: "Quiet" };
-  if (exhausted) return { notice: "NotLive", detail: "Reload to catch up" };
+  if (exhausted) return { notice: "NotLive", detail: { id: "stream-reload" } };
   const reconnecting =
     status.connection === "Opening" || status.connection === "Waiting";
   return reconnecting

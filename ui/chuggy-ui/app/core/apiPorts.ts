@@ -47,7 +47,7 @@ export function apiPortsOver(
 ): ApiPorts {
   const abandon = async (): Promise<void> => {
     await holder.signOut();
-    holder.refuse("the API refused this session, so it was signed out");
+    holder.refuse({ id: "session-refused" });
   };
   return {
     fetch,

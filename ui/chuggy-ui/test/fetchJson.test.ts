@@ -108,7 +108,7 @@ test("a request that got no answer rejects as unanswered, with what the network 
   expect(failure).toBeInstanceOf(FetchJsonError);
   expect(failure).toMatchObject({
     fault: { fault: "Unanswered" },
-    message: "Failed to fetch",
+    said: "Failed to fetch",
   });
 });
 
@@ -124,7 +124,7 @@ test("a failure that is no Error rejects as unanswered, with wording of its own"
   expect(failure).toBeInstanceOf(FetchJsonError);
   expect(failure).toMatchObject({
     fault: { fault: "Unanswered" },
-    message: "the request got no answer",
+    said: { id: "session-request-unanswered" },
   });
 });
 
@@ -136,7 +136,10 @@ test("a refused status rejects with that status and the address asked, its body 
   expect(failure).toBeInstanceOf(FetchJsonError);
   expect(failure).toMatchObject({
     fault: { fault: "Status", status: 404 },
-    message: `${tokenRequest.url} answered 404`,
+    said: {
+      id: "session-answered",
+      args: { source: tokenRequest.url, status: "404" },
+    },
   });
   expect(held.read()).toBe(0);
 });

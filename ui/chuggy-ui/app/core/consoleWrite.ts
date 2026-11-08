@@ -23,6 +23,7 @@ import {
 import type { MutationKey } from "@tanstack/query-core";
 
 import type { ApiFailure, ApiPorts, ApiResult } from "./apiRequest.ts";
+import type { CopyOrData } from "./copy.ts";
 import { failureWords } from "./failureWords.ts";
 import { panelQueryDefaults } from "./panelQueryDefaults.ts";
 
@@ -42,7 +43,7 @@ export class ConsoleWriteRefused extends Error {
  * detail of the outcome the API answered, where it answered. */
 export function consoleWriteRefusedDetail(
   refused: ConsoleWriteRefused,
-): string | undefined {
+): CopyOrData | undefined {
   return refused.failure === undefined
     ? undefined
     : failureWords(refused.failure).detail;
@@ -126,7 +127,7 @@ export class ConsoleWriteProgress<S> {
 export interface ConsoleWriteUnseen {
   readonly id: number;
   readonly sentence: string;
-  readonly detail: string | undefined;
+  readonly detail: CopyOrData | undefined;
 }
 
 /** The refusals no screen took, and how many have been kept, which names the

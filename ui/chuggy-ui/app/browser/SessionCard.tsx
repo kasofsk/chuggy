@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The card a reader is drawn where there is no console to draw: a title, one
  * line, and at most one action.
@@ -17,6 +16,8 @@
 
 import type { ReactNode } from "react";
 
+import { useCopyText } from "../copy/CopyProvider.tsx";
+import { copyOrDataText } from "../core/copy.ts";
 import { sessionChangedReason } from "../core/sessionHolder.ts";
 import { currentPath, reloadLocation } from "./ports.ts";
 import { useSessionHolder, useSessionSnapshot } from "./session.tsx";
@@ -42,11 +43,15 @@ export function SessionCard(props: {
 export function SignedOutCard(): ReactNode {
   const holder = useSessionHolder();
   const snapshot = useSessionSnapshot();
+  const text = useCopyText();
   const changed = snapshot.reason === sessionChangedReason;
   return (
     <SessionCard
-      title="chuggy"
-      detail={snapshot.reason ?? "Signed out"}
+      title={text({ id: "session-brand" })}
+      detail={copyOrDataText(
+        text,
+        snapshot.reason ?? { id: "session-signed-out" },
+      )}
       action={
         <Button
           variant="primary"
@@ -55,7 +60,7 @@ export function SignedOutCard(): ReactNode {
             else void holder.signIn(currentPath());
           }}
         >
-          {changed ? "Reload" : "Sign in"}
+          {text(changed ? { id: "session-reload" } : { id: "session-sign-in" })}
         </Button>
       }
     />

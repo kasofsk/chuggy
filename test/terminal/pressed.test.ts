@@ -7,7 +7,9 @@
  * cannot reach them. Each page's source is read here for the name the
  * program says, so a page that renames a button fails this and not her.
  *
- * Some names are not written where they are drawn. A ticket's page draws
+ * Some names are not written where they are drawn. A page that draws a name
+ * from the copy catalog is read for the message's id, and the catalog for the
+ * words. A ticket's page draws
  * each action under the action's own name, so that name is read where the
  * action is made; the workspace's accounts page draws the connect button as
  * the one component that writes it, so the page is read for the component;
@@ -24,14 +26,24 @@ import {
   repositoryGrantLines,
   repositoryWorkerLine,
 } from "../../ui/chuggy-ui/app/core/projectRepositories.ts";
+import { copyTextEn } from "../../ui/chuggy-ui/app/copy/catalog.ts";
+import type { Copy, CopyId } from "../../ui/chuggy-ui/app/core/copy.ts";
 import { setupPressed } from "../../ui/chuggy-ui/app/core/setupNext.ts";
 
-/** The page that draws each name, by its path from the root of this tree. */
-const drawnIn: Readonly<Record<keyof typeof setupPressed, string>> = {
+type SetupPressed = keyof typeof setupPressed;
+
+/** The names a page draws from the catalog. */
+type SetupPressedCatalogued = "edit" | "save";
+
+const settingsSection = "ui/chuggy-ui/app/browser/ui/SettingsSection.tsx";
+
+/** The page that draws each name the catalog does not, by its path from the
+ * root of this tree. */
+const drawnIn: Readonly<
+  Record<Exclude<SetupPressed, SetupPressedCatalogued>, string>
+> = {
   projectPage: "ui/chuggy-ui/app/browser/ProjectCreation.tsx",
   projectCreate: "ui/chuggy-ui/app/browser/ProjectCreation.tsx",
-  edit: "ui/chuggy-ui/app/browser/ui/SettingsSection.tsx",
-  save: "ui/chuggy-ui/app/browser/ui/SettingsSection.tsx",
   connect: "ui/chuggy-ui/app/browser/repositories/ConnectGithub.tsx",
   add: "ui/chuggy-ui/app/browser/repositories/AddRepository.tsx",
   retry: "ui/chuggy-ui/app/browser/repositories/BindingConfigurations.tsx",
@@ -39,6 +51,15 @@ const drawnIn: Readonly<Record<keyof typeof setupPressed, string>> = {
   chatHost: "ui/chuggy-ui/app/browser/settings/MyChatHost.tsx",
   ticket: "ui/chuggy-ui/app/browser/TicketCreation.tsx",
   dispatch: "ui/chuggy-ui/app/core/ticketActions.ts",
+};
+
+/** The page that draws each name the catalog holds, and the message it draws
+ * the name as. */
+const drawnFromCatalog: Readonly<
+  Record<SetupPressedCatalogued, { readonly page: string; readonly id: CopyId }>
+> = {
+  edit: { page: settingsSection, id: "ui-edit" },
+  save: { page: settingsSection, id: "ui-save" },
 };
 
 const ticketPage = "ui/chuggy-ui/app/browser/TicketActions.tsx";
@@ -53,9 +74,20 @@ function draws(source: string, name: string): boolean {
 
 for (const [key, page] of Object.entries(drawnIn))
   test(`the page ${page} draws what the program says is pressed there (${key})`, () => {
-    const name = setupPressed[key as keyof typeof setupPressed];
+    const name = setupPressed[key as SetupPressed];
     const source = readFileSync(page, "utf8");
     assert.ok(draws(source, name), `${page} draws no "${name}"`);
+  });
+
+for (const [key, drawn] of Object.entries(drawnFromCatalog))
+  test(`the page ${drawn.page} draws, from the catalog, what the program says is pressed there (${key})`, () => {
+    const name = setupPressed[key as SetupPressed];
+    const source = readFileSync(drawn.page, "utf8");
+    assert.ok(
+      source.includes(`{ id: "${drawn.id}" }`),
+      `${drawn.page} draws no ${drawn.id}`,
+    );
+    assert.equal(copyTextEn({ id: drawn.id } as Copy), name);
   });
 
 test("a ticket's page draws each action it offers as a button under the action's own name, and has a line of its own for a project with no runner", () => {

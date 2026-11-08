@@ -9,21 +9,66 @@
  * own, does not compile.
  */
 
+import type { ApiCopy } from "./generated/apiCopy.ts";
+import type { ChatCopy } from "./generated/chatCopy.ts";
 import type { CodesCopy } from "./generated/codesCopy.ts";
+import type { ConfigurationCatalogCopy } from "./generated/configurationCatalogCopy.ts";
+import type { ConversationCopy } from "./generated/conversationCopy.ts";
 import type { FiguresCopy } from "./generated/figuresCopy.ts";
+import type { InboxCopy } from "./generated/inboxCopy.ts";
+import type { LeadCopy } from "./generated/leadCopy.ts";
+import type { OperationCopy } from "./generated/operationCopy.ts";
+import type { PanelCopy } from "./generated/panelCopy.ts";
+import type { PermissionsCopy } from "./generated/permissionsCopy.ts";
+import type { ProjectCopy } from "./generated/projectCopy.ts";
+import type { RepositoriesCopy } from "./generated/repositoriesCopy.ts";
+import type { RunnersCopy } from "./generated/runnersCopy.ts";
 import type { SentencesCopy } from "./generated/sentencesCopy.ts";
+import type { SessionCopy } from "./generated/sessionCopy.ts";
+import type { SettingsCopy } from "./generated/settingsCopy.ts";
 import type { SetupCopy } from "./generated/setupCopy.ts";
+import type { SetupRunnerCopy } from "./generated/setupRunnerCopy.ts";
 import type { ShellCopy } from "./generated/shellCopy.ts";
 import type { StandingCopy } from "./generated/standingCopy.ts";
+import type { StreamCopy } from "./generated/streamCopy.ts";
+import type { TicketCopy } from "./generated/ticketCopy.ts";
+import type { TicketAuthoringCopy } from "./generated/ticketAuthoringCopy.ts";
 import type { TonesCopy } from "./generated/tonesCopy.ts";
+import type { UiCopy } from "./generated/uiCopy.ts";
 
-type CopyCatalog = CodesCopy<CopyArgument> &
-  FiguresCopy<CopyArgument> &
-  SentencesCopy<CopyArgument> &
+/** Each message's variables by name, as its section's module names them. */
+type CopyVariables = ApiCopy &
+  ChatCopy &
+  CodesCopy &
+  ConfigurationCatalogCopy &
+  ConversationCopy &
+  FiguresCopy &
+  InboxCopy &
+  LeadCopy &
+  OperationCopy &
+  PanelCopy &
+  PermissionsCopy &
+  ProjectCopy &
+  RepositoriesCopy &
+  RunnersCopy &
+  SentencesCopy &
+  SessionCopy &
+  SettingsCopy &
   SetupCopy &
-  ShellCopy<CopyArgument> &
+  SetupRunnerCopy &
+  ShellCopy &
   StandingCopy &
-  TonesCopy<CopyArgument>;
+  StreamCopy &
+  TicketCopy &
+  TicketAuthoringCopy &
+  TonesCopy &
+  UiCopy;
+
+type CopyCatalog = {
+  readonly [Id in keyof CopyVariables]: {
+    readonly [Name in keyof CopyVariables[Id]]: CopyArgument;
+  };
+};
 
 export type CopyId = keyof CopyCatalog;
 
@@ -49,3 +94,11 @@ export interface CopyHanded {
 /** The port a decision that needs the words themselves, to measure or to
  * print them, is handed. */
 export type CopyText = (copy: Copy) => string;
+
+/** A line that is the catalog's, or text that is data: what a browser's error
+ * or another server said, drawn as it arrived. */
+export type CopyOrData = Copy | string;
+
+export function copyOrDataText(text: CopyText, line: CopyOrData): string {
+  return typeof line === "string" ? line : text(line);
+}

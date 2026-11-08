@@ -20,7 +20,7 @@ import type { ApiPorts } from "../app/core/apiRequest.ts";
 import type { SessionPhase } from "../app/core/sessionHolder.ts";
 
 const installation = { method: "GET", path: "/api/v1/installation" } as const;
-const refused = "refuse: the API refused this session, so it was signed out";
+const refused = "refuse: session-refused";
 
 interface Held {
   readonly ports: ApiPorts;
@@ -79,7 +79,9 @@ function held(
         asked.push("signedOut");
       },
       refuse: (reason) => {
-        asked.push(`refuse: ${reason}`);
+        asked.push(
+          `refuse: ${typeof reason === "string" ? reason : reason.id}`,
+        );
       },
     },
     (_url, init) => {

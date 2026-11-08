@@ -11,7 +11,6 @@ import {
   act,
   cleanup,
   fireEvent,
-  render,
   screen,
   within,
 } from "@testing-library/react";
@@ -37,6 +36,7 @@ import {
   threadOtherSession,
   threadPartition,
 } from "./threadFixture.ts";
+import { renderCopied } from "./copied.tsx";
 
 beforeEach(() => {
   resizeObserverStubbed();
@@ -61,7 +61,7 @@ async function historyOpened(
   onChoose: (session: string) => void,
   rows = threads,
 ): Promise<void> {
-  render(
+  renderCopied(
     <ChatPaneHistory
       threads={rows}
       session={threadMineSession}
@@ -188,7 +188,7 @@ test("each row names its standing and how long ago it moved", async () => {
 });
 
 test("a listing still being read draws the control, loading in its menu", async () => {
-  render(
+  renderCopied(
     <ChatPaneHistory
       threads={undefined}
       session={undefined}
@@ -202,7 +202,7 @@ test("a listing still being read draws the control, loading in its menu", async 
 });
 
 test("a listing with nothing to offer says so in its menu", async () => {
-  render(
+  renderCopied(
     <ChatPaneHistory threads={[]} session={undefined} onChoose={vi.fn()} />,
   );
   fireEvent.keyDown(screen.getByRole("button", { name: "History" }), {
@@ -215,7 +215,7 @@ test("a listing with nothing to offer says so in its menu", async () => {
  * reveals, so a reader who does not use a screen reader learns what History
  * means before ever opening the menu. */
 test("the History trigger names itself again as a tooltip on focus", async () => {
-  render(
+  renderCopied(
     <ChatPaneHistory
       threads={threads}
       session={threadMineSession}
@@ -239,7 +239,7 @@ async function renderedActions(
     readonly write?: CopyWrite;
   } = {},
 ): Promise<void> {
-  render(
+  renderCopied(
     <QueryClientProvider client={consoleQueryClient()}>
       <SessionProvider holder={holderDouble()}>
         <CopyProvider write={drawn.write ?? (() => Promise.resolve(true))}>

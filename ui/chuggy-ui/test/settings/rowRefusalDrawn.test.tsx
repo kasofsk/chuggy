@@ -233,12 +233,12 @@ test("a revocation refused whose own reread takes its row away is the shell's to
 
 const developers: PermissionRow<"DeveloperGranters"> = {
   authority: "DeveloperGranters",
-  name: "Grant Developer",
+  name: { id: "permissions-grant-developer" },
   holders: [
     {
       kind: "Person",
       person: { subject: "s-ada", mine: false },
-      words: "s-ada",
+      words: { id: "permissions-person-named", args: { name: "s-ada" } },
     },
   ],
 };
@@ -252,7 +252,7 @@ function permissions(
       label="Project permissions"
       read={read}
       rows={() => [developers]}
-      withheld="Not yours to read"
+      withheld={{ id: "permissions-withheld-project" }}
       removal={{ removable: () => true, write }}
       addition={{
         addable: () => false,

@@ -6,12 +6,13 @@
  * drawn with no provider around it.
  */
 
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, screen } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
 import { Breadcrumb, BreadcrumbLink } from "../app/browser/ui/Breadcrumb.tsx";
 import { styleless } from "./styleless.ts";
+import { renderCopied } from "./copied.tsx";
 
 interface LinkStub {
   readonly className?: string;
@@ -25,7 +26,7 @@ vi.mock("@tanstack/react-router", () => ({
 afterEach(cleanup);
 
 test("a breadcrumb is a labelled nav holding its one link and a separator", () => {
-  const view = render(
+  const view = renderCopied(
     <Breadcrumb>
       <BreadcrumbLink to="/">Overview</BreadcrumbLink>
     </Breadcrumb>,

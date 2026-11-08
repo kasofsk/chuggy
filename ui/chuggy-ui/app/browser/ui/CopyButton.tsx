@@ -14,6 +14,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { useCopyHeld } from "./copyHeld.tsx";
 
 import "./CopyButton.css";
@@ -75,12 +76,13 @@ export function CopySaid(props: {
   readonly copied: boolean;
   readonly worded?: boolean;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <span
       role="status"
       className={props.worded === true ? "copy-said" : "visually-hidden"}
     >
-      {props.copied ? "Copied" : ""}
+      {props.copied ? text({ id: "ui-copied" }) : ""}
     </span>
   );
 }

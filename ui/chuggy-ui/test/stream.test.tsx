@@ -23,7 +23,6 @@ import {
   act,
   cleanup,
   fireEvent,
-  render,
   screen,
   within,
 } from "@testing-library/react";
@@ -72,6 +71,7 @@ import { ConsoleStoreProvided } from "./consoleStoreProvided.tsx";
 import { frame, streamServer } from "./streamDouble.ts";
 import type { StreamServer } from "./streamDouble.ts";
 import { ticketInstants } from "./ticketInstants.ts";
+import { renderCopied } from "./copied.tsx";
 
 const graces = vi.hoisted(() => ({ parked: [] as (() => void)[] }));
 const platform = vi.hoisted(() => ({
@@ -209,7 +209,7 @@ test("a live frame is written into the cache and nothing is refetched", async ()
       hold: true,
     },
   ]);
-  render(
+  renderCopied(
     <Harness
       holder={holderDouble()}
       client={client}
@@ -227,7 +227,7 @@ test("a live frame is written into the cache and nothing is refetched", async ()
  * refusal is read as the API refusing the session. */
 test("a stream under a session with no bearer to send is not opened", async () => {
   const server = streamServer([{ status: 200, hold: true }]);
-  render(
+  renderCopied(
     <Harness
       holder={{ ...holderDouble(), bearer: () => Promise.resolve(undefined) }}
       client={
@@ -280,7 +280,7 @@ async function refreshedEntry<T>(
     useProjectListRefresh(list);
     return null;
   }
-  render(
+  renderCopied(
     <Harness
       holder={holderDouble()}
       client={client}
@@ -403,7 +403,7 @@ test("a project change abandons the connection and opens the next one", async ()
     { status: 200, chunks: [], hold: true },
   ]);
   const holder = holderDouble();
-  const view = render(
+  const view = renderCopied(
     <Harness
       holder={holder}
       client={client}
@@ -434,7 +434,7 @@ test("a renewed token reopens the stream rather than carrying the old one", asyn
     { status: 200, chunks: [], hold: true },
   ]);
   const holder = holderDouble();
-  render(
+  renderCopied(
     <Harness
       holder={holder}
       client={client}
@@ -459,7 +459,7 @@ test("a stream that is not live says so where a reader will see it", async () =>
       hold: true,
     },
   ]);
-  render(
+  renderCopied(
     <Harness
       holder={holderDouble()}
       client={client}
@@ -478,7 +478,7 @@ test("a stream that is not live says so where a reader will see it", async () =>
 async function banner(
   transport: Parameters<typeof ProjectStreamProvider>[0]["transport"],
 ): Promise<Element | null> {
-  const view = render(
+  const view = renderCopied(
     <Harness
       holder={holderDouble()}
       client={
@@ -499,7 +499,7 @@ async function banner(
 async function shellStream(
   transport: Parameters<typeof ProjectStreamProvider>[0]["transport"],
 ): Promise<string | null | undefined> {
-  const view = render(
+  const view = renderCopied(
     <Harness
       holder={holderDouble()}
       client={
@@ -588,7 +588,7 @@ test("a reopen after a token renewal is not read as a first open", async () => {
       hold: true,
     },
   ]);
-  const view = render(
+  const view = renderCopied(
     <Harness
       holder={holder}
       client={
@@ -634,7 +634,7 @@ test("a project change is a first open again rather than a reopen", async () => 
     defaultOptions: { queries: { retry: false } },
   });
   const transport = openingThenHanging(server);
-  const view = render(
+  const view = renderCopied(
     <Harness
       holder={holder}
       client={client}
@@ -675,7 +675,7 @@ function shellDrawn(
   readonly banner: () => Element | null;
   readonly stream: () => string | null | undefined;
 } {
-  const view = render(
+  const view = renderCopied(
     <Harness
       holder={holder}
       client={client}
@@ -800,7 +800,7 @@ test("a stream that carries again after a gap reads again what failed, and leave
   const holder = holderDouble();
   const live = { status: 200, chunks: [ready, sourceLive], hold: true };
   const renewal = renewalHeld(streamServer([live, live]));
-  render(
+  renderCopied(
     <Harness
       holder={holder}
       client={client}
@@ -838,7 +838,7 @@ test("frames nothing on screen reads draw no list holder again, nor does a statu
     );
     return null;
   }
-  render(
+  renderCopied(
     <Harness
       holder={holderDouble()}
       client={clientMade()}
@@ -893,7 +893,7 @@ test("a tombstone leaves what is mounted on its key in place until the read agai
   const server = streamServer([
     { status: 200, chunks: [ready, sourceLive], hold: true },
   ]);
-  render(
+  renderCopied(
     <Harness
       holder={holderDouble()}
       client={client}
@@ -964,7 +964,7 @@ function versionDrawn(
   server: StreamServer,
   children?: ReactNode,
 ) {
-  const view = render(
+  const view = renderCopied(
     <Harness
       holder={holderDouble()}
       client={client}
@@ -1030,7 +1030,7 @@ function projectsVisited(
       </QueryClientProvider>
     </SessionProvider>
   );
-  const view = render(tree(atlas));
+  const view = renderCopied(tree(atlas));
   return {
     container: view.container,
     visited: (partition) => {
@@ -1139,7 +1139,7 @@ test("a list registered past the budget is logged, still drawn, and still offere
     useProjectListRefresh(props.list);
     return null;
   }
-  const view = render(
+  const view = renderCopied(
     <Harness
       holder={holderDouble()}
       client={client}

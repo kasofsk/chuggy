@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * One frame for every screen: the bar across the top, and under it the pages
  * and the chat dividing what is left.
@@ -58,6 +57,8 @@ import type {
 
 import type { ConsolePage } from "../../../../src/contract/consolePage.ts";
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
+
+import { useCopyText } from "../copy/CopyProvider.tsx";
 import {
   chatPaneBarCovered,
   chatPaneDragged,
@@ -132,6 +133,7 @@ import "./shell/shell.css";
 /** What the reader is told, as `projectStreamNotice` decides it: the other
  * half of what the fallback reads on, after the same grace. */
 export function StreamBanner(): ReactNode {
+  const text = useCopyText();
   const notice = projectStreamNotice(
     useProjectStreamStatus(),
     useProjectStreamLapsed(),
@@ -142,9 +144,13 @@ export function StreamBanner(): ReactNode {
     <Notice
       tone="parked"
       role="status"
-      heading={notice.notice === "Reconnecting" ? "Reconnecting" : "Not live"}
+      heading={text(
+        notice.notice === "Reconnecting"
+          ? { id: "shell-stream-reconnecting" }
+          : { id: "shell-stream-not-live" },
+      )}
       {...(notice.notice === "NotLive" && notice.detail !== undefined
-        ? { detail: notice.detail }
+        ? { detail: text(notice.detail) }
         : {})}
     />
   );
@@ -156,17 +162,18 @@ export function StreamBanner(): ReactNode {
  * someone is typing.
  */
 export function VersionBanner(): ReactNode {
+  const text = useCopyText();
   if (!useConsoleSelector(consoleOutdatedOf)) return null;
   return (
     <Notice
       tone="info"
       role="status"
-      heading="New version"
-      detail="The API has changed since this console loaded"
+      heading={text({ id: "shell-version" })}
+      detail={text({ id: "shell-version-detail" })}
     >
       <div className="flex">
         <Button size="sm" onClick={reloadLocation}>
-          Reload
+          {text({ id: "shell-reload" })}
         </Button>
       </div>
     </Notice>
@@ -326,6 +333,7 @@ function shellBodyDrawn(props: {
   readonly panelIds: readonly string[];
   readonly chatPanel: RefObject<PanelImperativeHandle | null>;
   readonly shareText: string | undefined;
+  readonly chatSizeLabel: string;
 }): readonly ReactNode[] {
   return props.panelIds.flatMap((id, index) => [
     ...(index === 0
@@ -333,7 +341,7 @@ function shellBodyDrawn(props: {
       : [
           <PanelSeparator
             key="separator"
-            aria-label="Chat size"
+            aria-label={props.chatSizeLabel}
             aria-valuetext={props.shareText}
             disableDoubleClick
             className="chat-separator"
@@ -430,6 +438,7 @@ function ShellBody(props: {
   readonly pane: ChatPaneState | undefined;
   readonly page: ConsolePage | undefined;
 }): ReactNode {
+  const text = useCopyText();
   const held = useChatPane();
   const group = useGroupRef();
   const chatPanel = usePanelRef();
@@ -486,6 +495,7 @@ function ShellBody(props: {
         panelIds,
         chatPanel,
         shareText,
+        chatSizeLabel: text({ id: "shell-chat-size" }),
       })}
     </Group>
   );

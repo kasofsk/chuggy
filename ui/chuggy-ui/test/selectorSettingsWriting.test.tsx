@@ -5,7 +5,7 @@
  */
 
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
 import type { RenderResult } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
@@ -30,6 +30,7 @@ import {
   turned,
 } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
+import { renderCopied } from "./copied.tsx";
 
 vi.mock("../app/browser/ports.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof BrowserPorts>()),
@@ -95,7 +96,7 @@ test("a refusal of one page's write, landing while the other page is drawn, is a
       <ConsoleWriteToasts />
     </ScreenHarness>
   );
-  const view: RenderResult = render(tree("Lead"));
+  const view: RenderResult = renderCopied(tree("Lead"));
   await settled();
   await turned(() => {
     fireEvent.click(screen.getByRole("button", { name: "Save" }));

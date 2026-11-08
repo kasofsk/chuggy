@@ -10,7 +10,10 @@
 
 import { expect, test } from "vitest";
 
+import { copyTextEn } from "../app/copy/catalog.ts";
 import { sessionRefreshFailuresMax } from "../app/core/authorization.ts";
+import { copyOrDataText } from "../app/core/copy.ts";
+import type { CopyOrData } from "../app/core/copy.ts";
 import {
   FetchJsonError,
   createSessionHolder,
@@ -27,6 +30,21 @@ import {
   sessionHarnessConfiguration as configuration,
   sessionHarnessDiscovery as discovery,
 } from "./sessionHolderHarness.ts";
+
+/** A snapshot with its reason as a reader is drawn it. */
+function sessionDrawn<
+  Snapshot extends { readonly reason: CopyOrData | undefined },
+>(
+  snapshot: Snapshot,
+): Omit<Snapshot, "reason"> & { readonly reason: string | undefined } {
+  return {
+    ...snapshot,
+    reason:
+      snapshot.reason === undefined
+        ? undefined
+        : copyOrDataText(copyTextEn, snapshot.reason),
+  };
+}
 
 /** A callback arriving at the address this client is registered with. */
 function signedInAt(search: string): { pathname: string; search: string } {
@@ -78,7 +96,7 @@ test("a configuration that answered with something unusable is not configured, a
   };
   const holder = createSessionHolder(held.ports);
   await holder.load();
-  expect(holder.snapshot()).toMatchObject({
+  expect(sessionDrawn(holder.snapshot())).toMatchObject({
     phase: "Unconfigured",
     reason: "/config.json answered nothing usable",
   });
@@ -91,7 +109,7 @@ test("a load that got no answer is asked once more after a pause, and no more", 
   held.answer = unanswered;
   const holder = createSessionHolder(held.ports);
   await holder.load();
-  expect(holder.snapshot()).toMatchObject({
+  expect(sessionDrawn(holder.snapshot())).toMatchObject({
     phase: "Unreachable",
     reason: "No answer from /config.json",
   });
@@ -128,7 +146,7 @@ test("a gateway's answer is unreachable and asked once more; a server's own erro
     };
     const holder = createSessionHolder(held.ports);
     await holder.load();
-    expect(holder.snapshot()).toMatchObject({
+    expect(sessionDrawn(holder.snapshot())).toMatchObject({
       phase,
       reason: `/config.json answered ${String(status)}`,
     });
@@ -141,7 +159,7 @@ test("an issuer that got no answer is unreachable, named by its host", async () 
   held.answer = failingAt(isDiscovery, unanswered, held.answer);
   const holder = createSessionHolder(held.ports);
   await holder.load();
-  expect(holder.snapshot()).toMatchObject({
+  expect(sessionDrawn(holder.snapshot())).toMatchObject({
     phase: "Unreachable",
     reason: "No answer from auth.example",
   });
@@ -162,7 +180,7 @@ test("an issuer that answered with something unusable is named by its host, not 
   );
   const holder = createSessionHolder(held.ports);
   await holder.load();
-  expect(holder.snapshot()).toMatchObject({
+  expect(sessionDrawn(holder.snapshot())).toMatchObject({
     phase: "Unconfigured",
     reason: "auth.example answered 500",
   });
@@ -171,7 +189,7 @@ test("an issuer that answered with something unusable is named by its host, not 
       ? { ...discovery, issuer: "https://elsewhere" }
       : answered(request);
   await holder.load();
-  expect(holder.snapshot()).toMatchObject({
+  expect(sessionDrawn(holder.snapshot())).toMatchObject({
     phase: "Unconfigured",
     reason: "auth.example answered nothing usable",
   });
@@ -188,7 +206,7 @@ test("a configuration whose issuer is not an absolute address is not configured"
       : answered(request);
   const holder = createSessionHolder(held.ports);
   await holder.load();
-  expect(holder.snapshot()).toMatchObject({
+  expect(sessionDrawn(holder.snapshot())).toMatchObject({
     phase: "Unconfigured",
     reason: "/config.json answered nothing usable",
   });
@@ -249,10 +267,10 @@ test("a callback whose state does not match this tab is refused", async () => {
   const answer = await holder.completeCallback(
     signedInAt("?code=abc&state=someone-else"),
   );
-  expect(answer).toEqual({
-    result: "Denied",
-    reason: "the callback did not match this tab",
-  });
+  expect(answer.result).toBe("Denied");
+  expect(
+    answer.result === "Denied" && copyOrDataText(copyTextEn, answer.reason),
+  ).toBe("the callback did not match this tab");
   expect(held.transient.held.has(sessionTransactionKey)).toBe(false);
 });
 
@@ -511,7 +529,21 @@ test("a sign-in the issuer refused is drawn with the reason it gave", async () =
   );
   expect(answer.result).toBe("Denied");
   holder.refuse(answer.result === "Denied" ? answer.reason : "");
-  expect(holder.snapshot().reason).toContain("the operator said no");
+  expect(copyOrDataText(copyTextEn, holder.snapshot().reason ?? "")).toContain(
+    "the operator said no",
+  );
+});
+
+test("a sign-in the issuer refused without a reason is drawn with its code", async () => {
+  const held = harness();
+  const holder = createSessionHolder(held.ports);
+  await holder.load();
+  const answer = await holder.completeCallback(
+    signedInAt("?error=access_denied"),
+  );
+  expect(
+    answer.result === "Denied" && copyOrDataText(copyTextEn, answer.reason),
+  ).toBe("access_denied: the authorization server declined");
 });
 
 test("a renewal changes the generation, which is what reopens a stream", async () => {

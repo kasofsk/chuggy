@@ -10,7 +10,7 @@
  * hold is known from how the text was made and never from a reading of it.
  */
 
-import { cleanup, render } from "@testing-library/react";
+import { cleanup } from "@testing-library/react";
 import { afterEach, describe, expect, test } from "vitest";
 
 import { MarkdownReport } from "../app/browser/ui/MarkdownReport.tsx";
@@ -27,6 +27,7 @@ import type { MarkdownReading } from "../app/browser/ui/markdownReading.ts";
 import { markdownBlocksParsed } from "../app/browser/ui/markdownTree.ts";
 import type { MarkdownNode } from "../app/browser/ui/markdownTree.ts";
 import { prefixes } from "./markdownShape.ts";
+import { renderCopied } from "./copied.tsx";
 
 /** One part of an answer: what is written, and either the code a fence holds
  * or what a reader is drawn of the words. */
@@ -142,7 +143,9 @@ function explained(count: number, lines: number): Answer {
 }
 
 function mounted(text: string, writing: boolean): Element {
-  const view = render(<MarkdownReport text={text} bare writing={writing} />);
+  const view = renderCopied(
+    <MarkdownReport text={text} bare writing={writing} />,
+  );
   return view.container;
 }
 
@@ -169,7 +172,7 @@ function written(
   stride: number,
   each: (root: Element) => void,
 ): Element {
-  const view = render(<MarkdownReport text="" bare writing />);
+  const view = renderCopied(<MarkdownReport text="" bare writing />);
   for (const prefix of prefixes(text, stride)) {
     view.rerender(<MarkdownReport text={prefix} bare writing />);
     each(view.container);

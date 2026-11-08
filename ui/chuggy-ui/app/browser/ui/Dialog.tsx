@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * A short interruption over the page: a roster to pick from, a choice to make
  * before going on, a form or a grid to fill.
@@ -31,6 +30,7 @@
 import { Dialog as RadixDialog } from "radix-ui";
 import type { ReactNode } from "react";
 
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { buttonLookClassName } from "./Button.tsx";
 import "./Dialog.css";
 import { Notice } from "./Notice.tsx";
@@ -40,12 +40,13 @@ function DialogFoot(props: {
   readonly foot: ReactNode;
   readonly note: string | undefined;
 }): ReactNode {
+  const text = useCopyText();
   if (props.foot === undefined)
     return (
       <RadixDialog.Close
         className={buttonLookClassName({ variant: "quiet", size: "sm" })}
       >
-        Close
+        {text({ id: "ui-close" })}
       </RadixDialog.Close>
     );
   return (

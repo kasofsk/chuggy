@@ -9,6 +9,7 @@
 import { expect, test } from "vitest";
 
 import type { ApiFailure } from "../app/core/apiRequest.ts";
+import type { CopyOrData } from "../app/core/copy.ts";
 import {
   failureOfThrown,
   failureWords,
@@ -47,7 +48,7 @@ const every: { readonly [O in ApiFailure["outcome"]]: ApiFailure } = {
 const failures = Object.values(every);
 
 /** What a failure carries that only a person reporting it should read. */
-function failureInternals(failure: ApiFailure): readonly string[] {
+function failureInternals(failure: ApiFailure): readonly CopyOrData[] {
   return [
     "API",
     ...("code" in failure ? [failure.code] : []),

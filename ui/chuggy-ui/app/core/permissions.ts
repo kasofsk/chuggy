@@ -28,42 +28,48 @@ import {
   type AccessTenantAuthority,
 } from "../../../../src/contract/accessPlane.ts";
 
+import type { Copy } from "./copy.ts";
 import { tenantPersonName } from "./tenantPeople.ts";
 
 /** What the page draws for a reader the workspace's list is not answered to. */
-export const tenantPermissionsWithheld =
-  "A workspace admin manages permissions";
+export const tenantPermissionsWithheld: Copy = {
+  id: "permissions-withheld-workspace",
+};
 
 /** What the page draws for a reader the project's list is not answered to. */
-export const projectPermissionsWithheld = "A project admin manages permissions";
+export const projectPermissionsWithheld: Copy = {
+  id: "permissions-withheld-project",
+};
 
 /** What the page draws for a reader the site's list is not answered to. */
-export const sitePermissionsWithheld = "A site admin manages permissions";
+export const sitePermissionsWithheld: Copy = {
+  id: "permissions-withheld-site",
+};
 
-export const permissionsNobody = "Nobody";
+export const permissionsNobody: Copy = { id: "permissions-nobody" };
 
 /** One holder of one permission, `words` what it is drawn as. */
 export type PermissionHolder =
-  | { readonly kind: "SiteStanding"; readonly words: string }
+  | { readonly kind: "SiteStanding"; readonly words: Copy }
   | {
       readonly kind: "Group";
       readonly group: AccessGroup;
-      readonly words: string;
+      readonly words: Copy;
     }
   | {
       readonly kind: "TenantAdmins";
       readonly tenant: string;
-      readonly words: string;
+      readonly words: Copy;
     }
   | {
       readonly kind: "Person";
       readonly person: AccessAuthorityPerson;
-      readonly words: string;
+      readonly words: Copy;
     }
   | {
       readonly kind: "Unnamed";
       readonly count: number;
-      readonly words: string;
+      readonly words: Copy;
     };
 
 export type PermissionAuthority =
@@ -74,7 +80,7 @@ export interface PermissionRow<
   Authority extends PermissionAuthority = PermissionAuthority,
 > {
   readonly authority: Authority;
-  readonly name: string;
+  readonly name: Copy;
   readonly holders: readonly PermissionHolder[];
 }
 
@@ -120,68 +126,69 @@ export function permissionRemovalAsks(row: PermissionRow): boolean {
   return row.authority === "AuthorityManagers";
 }
 
-export const permissionRemovalQuestion = {
-  question: "Remove permission manager",
-  line: "This may lock people out of this page.",
-} as const;
+export const permissionRemovalQuestion: {
+  readonly question: Copy;
+  readonly line: Copy;
+} = {
+  question: { id: "permissions-removal-question" },
+  line: { id: "permissions-removal-line" },
+};
 
-export function tenantPermissionName(authority: AccessTenantAuthority): string {
+export function tenantPermissionName(authority: AccessTenantAuthority): Copy {
   switch (authority) {
     case "AdminGranters":
-      return "Grant Admin";
+      return { id: "permissions-grant-admin" };
     case "MemberGranters":
-      return "Grant Member";
+      return { id: "permissions-grant-member" };
     case "HostedRunsGranters":
-      return "Grant hosted runs";
+      return { id: "permissions-grant-hosted-runs" };
     case "PersonalRunnersGranters":
-      return "Grant personal runners";
+      return { id: "permissions-grant-personal-runners" };
     case "UnscopedChatGranters":
-      return "Grant unscoped chat";
+      return { id: "permissions-grant-unscoped-chat" };
     case "AuthorityManagers":
-      return "Change permissions";
+      return { id: "permissions-change" };
   }
 }
 
-export function projectPermissionName(
-  authority: AccessProjectAuthority,
-): string {
+export function projectPermissionName(authority: AccessProjectAuthority): Copy {
   switch (authority) {
     case "AdminGranters":
-      return "Grant Admin";
+      return { id: "permissions-grant-admin" };
     case "DeveloperGranters":
-      return "Grant Developer";
+      return { id: "permissions-grant-developer" };
     case "DispatcherGranters":
-      return "Grant Dispatcher";
+      return { id: "permissions-grant-dispatcher" };
     case "ViewerGranters":
-      return "Grant Viewer";
+      return { id: "permissions-grant-viewer" };
     case "AuthorityManagers":
-      return "Change permissions";
+      return { id: "permissions-change" };
   }
 }
 
-export function sitePermissionName(authority: AccessSiteAuthority): string {
+export function sitePermissionName(authority: AccessSiteAuthority): Copy {
   switch (authority) {
     case "AccountCreators":
-      return "Create accounts";
+      return { id: "permissions-create-accounts" };
     case "TenantCreators":
-      return "Create workspaces";
+      return { id: "permissions-create-workspaces" };
     case "AuthorityManagers":
-      return "Change permissions";
+      return { id: "permissions-change" };
   }
 }
 
-export function permissionGroupName(group: AccessGroup): string {
+export function permissionGroupName(group: AccessGroup): Copy {
   switch (group) {
     case "SiteAdmins":
-      return "Site admins";
+      return { id: "permissions-group-site-admins" };
     case "TenantAdmins":
-      return "Workspace admins";
+      return { id: "permissions-group-workspace-admins" };
     case "TenantMembers":
-      return "Workspace members";
+      return { id: "permissions-group-workspace-members" };
     case "ProjectAdmins":
-      return "Project admins";
+      return { id: "permissions-group-project-admins" };
     case "ProjectDevelopers":
-      return "Project developers";
+      return { id: "permissions-group-project-developers" };
   }
 }
 
@@ -189,10 +196,12 @@ export function permissionGroupName(group: AccessGroup): string {
  * account, and that they are the reader. */
 export function permissionPersonMarks(
   person: AccessAuthorityPerson,
-): readonly string[] {
+): readonly Copy[] {
+  const unaccounted: Copy = { id: "permissions-person-unaccounted" };
+  const mine: Copy = { id: "permissions-person-mine" };
   return [
-    ...(person.account ? [] : ["No account"]),
-    ...(person.mine ? ["You"] : []),
+    ...(person.account ? [] : [unaccounted]),
+    ...(person.mine ? [mine] : []),
   ];
 }
 
@@ -208,13 +217,24 @@ function permissionGroupHolder(group: AccessGroup): PermissionHolder {
 }
 
 function permissionTenantHolder(tenant: string): PermissionHolder {
-  return { kind: "TenantAdmins", tenant, words: `${tenant} admins` };
+  return {
+    kind: "TenantAdmins",
+    tenant,
+    words: { id: "permissions-tenant-admins", args: { tenant } },
+  };
 }
 
 function permissionPersonHolder(
   person: AccessAuthorityPerson,
 ): PermissionHolder {
-  return { kind: "Person", person, words: tenantPersonName(person).name };
+  return {
+    kind: "Person",
+    person,
+    words: {
+      id: "permissions-person-named",
+      args: { name: tenantPersonName(person).name },
+    },
+  };
 }
 
 /** The unnamed count, where there is one. */
@@ -227,7 +247,7 @@ function permissionUnnamedHolders(
         {
           kind: "Unnamed",
           count: unnamed,
-          words: `${String(unnamed)} unnamed`,
+          words: { id: "permissions-unnamed", args: { count: unnamed } },
         },
       ];
 }
@@ -250,7 +270,7 @@ function permissionHolders(
 /** A level whose holders are its groups, people and unnamed count alone, each row named. */
 function permissionRowsNamed<Authority extends PermissionAuthority>(
   authorities: readonly (PermissionHeld & { readonly authority: Authority })[],
-  name: (authority: Authority) => string,
+  name: (authority: Authority) => Copy,
 ): readonly PermissionRow<Authority>[] {
   return authorities.map((held) => ({
     authority: held.authority,
@@ -323,29 +343,32 @@ export type PermissionChoice =
   | {
       readonly kind: "Group";
       readonly group: AccessGroup;
-      readonly words: string;
-      readonly line: string | undefined;
+      readonly words: Copy;
+      readonly line: Copy | undefined;
     }
   | {
       readonly kind: "TenantAdmins";
       readonly tenant: string;
-      readonly words: string;
+      readonly words: Copy;
       readonly line: undefined;
     }
-  | { readonly kind: "Person"; readonly words: string; readonly line: string };
+  | { readonly kind: "Person"; readonly words: Copy; readonly line: Copy };
 
-export const permissionMembersGrantLine =
-  "Members will see people and can remove other members.";
+export const permissionMembersGrantLine: Copy = {
+  id: "permissions-members-grant",
+};
 
-export const permissionDevelopersGrantLine =
-  "Developers will see people and can remove other developers.";
+export const permissionDevelopersGrantLine: Copy = {
+  id: "permissions-developers-grant",
+};
 
-export const permissionDevelopersViewerGrantLine =
-  "Developers will see people and can remove viewers.";
+export const permissionDevelopersViewerGrantLine: Copy = {
+  id: "permissions-developers-viewer-grant",
+};
 
 /** The line `ProjectDevelopers` carries on each project authority whose grant opens the people list to it. */
 const permissionProjectDevelopersLines: Partial<
-  Record<PermissionAuthority, string>
+  Record<PermissionAuthority, Copy>
 > = {
   DeveloperGranters: permissionDevelopersGrantLine,
   ViewerGranters: permissionDevelopersViewerGrantLine,
@@ -356,7 +379,7 @@ function permissionChoiceGroupLine(
   level: PermissionLevel,
   row: PermissionRow,
   group: AccessGroup,
-): string | undefined {
+): Copy | undefined {
   switch (level) {
     case "Project":
       return group === "ProjectDevelopers"
@@ -372,13 +395,13 @@ function permissionChoiceGroupLine(
 }
 
 /** Where a level's people are chosen from, said beside `Person`. */
-function permissionPersonLine(level: PermissionLevel): string {
+function permissionPersonLine(level: PermissionLevel): Copy {
   switch (level) {
     case "Project":
-      return "From this project's people";
+      return { id: "permissions-from-project" };
     case "Tenant":
     case "Site":
-      return "From the People list";
+      return { id: "permissions-from-people" };
   }
 }
 
@@ -414,7 +437,7 @@ export function permissionAdditionChoices(
           {
             kind: "TenantAdmins" as const,
             tenant,
-            words: "This workspace's admins",
+            words: { id: "permissions-this-workspace-admins" } as const,
             line: undefined,
           },
         ]
@@ -424,7 +447,7 @@ export function permissionAdditionChoices(
       : [
           {
             kind: "Person" as const,
-            words: "Person",
+            words: { id: "permissions-person" } as const,
             line: permissionPersonLine(level),
           },
         ]),

@@ -11,6 +11,7 @@
  */
 
 import { ApiOutcomeError } from "./apiRequest.ts";
+import type { Copy } from "./copy.ts";
 import type { ApiFailure } from "./apiRequest.ts";
 import { agoText } from "./figures.ts";
 import { failureOfThrown } from "./failureWords.ts";
@@ -85,9 +86,12 @@ export function panelStateFromQuery<T>(query: PanelQuery<T>): PanelState<T> {
 export function freshnessLabel(
   nowMs: number,
   observedAtMs: number | undefined,
-): string {
-  if (observedAtMs === undefined) return "Unknown";
-  return `${agoText(nowMs, observedAtMs)} ago`;
+): Copy {
+  if (observedAtMs === undefined) return { id: "panel-freshness-unknown" };
+  return {
+    id: "panel-freshness-ago",
+    args: { ago: agoText(nowMs, observedAtMs) },
+  };
 }
 
 export function freshnessIsStale(

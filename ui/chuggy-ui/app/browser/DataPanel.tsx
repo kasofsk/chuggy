@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The panel a read is drawn in: the chrome, when what it holds was observed,
  * and the three states a read is in when it is not ready, under a title that
@@ -13,6 +12,7 @@
 
 import type { ReactNode } from "react";
 
+import { useCopyText } from "../copy/CopyProvider.tsx";
 import type { ApiFailure } from "../core/apiRequest.ts";
 import { failureWords, readFailedLead } from "../core/failureWords.ts";
 import type { PanelState } from "../core/freshness.ts";
@@ -26,10 +26,11 @@ import { Tooltip } from "./ui/Tooltip.tsx";
 function PanelRetry(props: {
   readonly retry: (() => void) | undefined;
 }): ReactNode {
+  const text = useCopyText();
   if (props.retry === undefined) return null;
   return (
     <Button size="sm" variant="quiet" onClick={props.retry}>
-      Retry
+      {text({ id: "panel-retry" })}
     </Button>
   );
 }
@@ -70,10 +71,13 @@ export function ReadFailed(props: {
 export function PanelUnready<T>(props: {
   readonly state: PanelState<T>;
 }): ReactNode {
+  const text = useCopyText();
   const state = props.state;
   switch (state.state) {
     case "Pending":
-      return <Notice tone="info" inline detail="Loading…" />;
+      return (
+        <Notice tone="info" inline detail={text({ id: "panel-loading" })} />
+      );
     case "Absent":
       return <ReadFailed failure={{ outcome: "Absent" }} />;
     case "Failed":
@@ -90,11 +94,14 @@ function PanelFreshness(props: {
   readonly rereadFailed: boolean | undefined;
   readonly retry: (() => void) | undefined;
 }): ReactNode {
+  const text = useCopyText();
   if (props.rereadFailed !== true)
     return <Freshness observedAtMs={props.observedAtMs} />;
   return (
     <span className="inline-flex items-center gap-2">
-      <span className="freshness freshness-stale">Not updated</span>
+      <span className="freshness freshness-stale">
+        {text({ id: "panel-not-updated" })}
+      </span>
       <PanelRetry retry={props.retry} />
     </span>
   );

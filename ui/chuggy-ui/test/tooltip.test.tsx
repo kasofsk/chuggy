@@ -8,6 +8,7 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { Tooltip } from "../app/browser/ui/Tooltip.tsx";
+import { renderCopied } from "./copied.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import { styleless } from "./styleless.ts";
 
@@ -44,4 +45,15 @@ test("absent text draws the child alone", () => {
   expect(drawn.hasAttribute("tabindex")).toBe(false);
   expect(screen.queryByRole("tooltip")).toBeNull();
   styleless();
+});
+
+test("a descriptor is drawn in the catalog's words", async () => {
+  renderCopied(
+    <Tooltip text={{ id: "api-reason-deadline" }}>
+      <span>short</span>
+    </Tooltip>,
+  );
+  fireEvent.focus(screen.getByText("short"));
+  const content = await screen.findByRole("tooltip");
+  expect(content.textContent).toBe("the request outlived its deadline");
 });

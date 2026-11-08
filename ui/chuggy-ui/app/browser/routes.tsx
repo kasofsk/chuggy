@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The route tree, which carries the partition in the path.
  *
@@ -25,6 +24,7 @@ import type {
 import { useCallback, useEffect } from "react";
 import type { ReactNode } from "react";
 
+import { useCopyText } from "../copy/CopyProvider.tsx";
 import { projectsInventoryQuery } from "../core/tenantQueries.ts";
 import { catalogQueryOf } from "../core/catalogConfigurations.ts";
 import type { CatalogQuery } from "../core/catalogConfigurations.ts";
@@ -94,6 +94,7 @@ import { Button } from "./ui/Button.tsx";
 import { EmptyState } from "./ui/EmptyState.tsx";
 
 export function Landing(): ReactNode {
+  const text = useCopyText();
   const navigate = useNavigate();
   const state = usePanelState(projectsInventoryQuery());
   const chosen =
@@ -116,8 +117,8 @@ export function Landing(): ReactNode {
             lead={
               <EmptyState
                 variant="page"
-                label="No projects"
-                detail="Create one to start"
+                label={text({ id: "shell-projects-none" })}
+                detail={text({ id: "shell-projects-none-detail" })}
               />
             }
           />
@@ -126,8 +127,10 @@ export function Landing(): ReactNode {
     );
   return (
     <ProjectlessFrame>
-      <DataPanel title="projects" state={state}>
-        {() => <p className="panel-note">Loading…</p>}
+      <DataPanel title={text({ id: "shell-projects" })} state={state}>
+        {() => (
+          <p className="panel-note">{text({ id: "shell-projects-loading" })}</p>
+        )}
       </DataPanel>
     </ProjectlessFrame>
   );
@@ -462,10 +465,11 @@ const routeTree = rootRoute.addChildren([
  * the shell itself. Reload draws the screen again. */
 function RouteFailed(props: ErrorComponentProps): ReactNode {
   const router = useRouter();
+  const text = useCopyText();
   return (
     <EmptyState
       variant="page"
-      label="Page failed"
+      label={text({ id: "shell-page-failed" })}
       action={
         <Button
           onClick={() => {
@@ -473,7 +477,7 @@ function RouteFailed(props: ErrorComponentProps): ReactNode {
             void router.invalidate();
           }}
         >
-          Reload
+          {text({ id: "shell-page-reload" })}
         </Button>
       }
     />
@@ -481,7 +485,10 @@ function RouteFailed(props: ErrorComponentProps): ReactNode {
 }
 
 function RouteNotFound(): ReactNode {
-  return <EmptyState variant="page" label="Not found" />;
+  const text = useCopyText();
+  return (
+    <EmptyState variant="page" label={text({ id: "shell-page-absent" })} />
+  );
 }
 
 /** The router over whichever history it is handed: the browser's for the

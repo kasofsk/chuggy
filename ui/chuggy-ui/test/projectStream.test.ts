@@ -477,7 +477,7 @@ test("a stream past the grace is reconnecting while it climbs, and not live once
   ).toBe("NotLive");
   expect(
     projectStreamNotice(statusAt("Open", "degraded"), true, false),
-  ).toEqual({ notice: "NotLive", detail: "Updates delayed" });
+  ).toEqual({ notice: "NotLive", detail: { id: "stream-delayed" } });
 });
 
 /** The decision as it stood while the banner still drew a sentence, kept as
@@ -539,13 +539,13 @@ test("reconnecting is its heading alone, and not live says why only where a read
   ).toEqual({ notice: "Reconnecting" });
   expect(
     projectStreamNotice(status("Stopped", "live", "Refused"), true, false),
-  ).toEqual({ notice: "NotLive", detail: "Refused" });
+  ).toEqual({ notice: "NotLive", detail: { id: "stream-refused" } });
   expect(
     projectStreamNotice(status("Stopped", "degraded", "Refused"), true, false),
-  ).toEqual({ notice: "NotLive", detail: "Updates delayed" });
+  ).toEqual({ notice: "NotLive", detail: { id: "stream-delayed" } });
   expect(
     projectStreamNotice(status("Waiting", "live", "Failed"), true, true),
-  ).toEqual({ notice: "NotLive", detail: "Reload to catch up" });
+  ).toEqual({ notice: "NotLive", detail: { id: "stream-reload" } });
   expect(
     projectStreamNotice(status("Stopped", "live", "Closed"), true, false),
   ).toEqual({ notice: "NotLive" });

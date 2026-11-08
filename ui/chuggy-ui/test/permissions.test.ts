@@ -7,6 +7,9 @@
 
 import { expect, test } from "vitest";
 
+import { copyTextEn } from "../app/copy/catalog.ts";
+import type { Copy } from "../app/core/copy.ts";
+
 import {
   accessProjectAuthorities,
   accessProjectGroups,
@@ -39,8 +42,25 @@ import {
   tenantPermissionRows,
 } from "../app/core/permissions.ts";
 
+/** A value with every descriptor in it formatted, as a reader is drawn it. */
+function drawn(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(drawn);
+  if (typeof value !== "object" || value === null) return value;
+  const keys = Object.keys(value);
+  if (
+    keys.includes("id") &&
+    keys.every((key) => key === "id" || key === "args")
+  )
+    return copyTextEn(value as Copy);
+  return Object.fromEntries(
+    Object.entries(value).map(([key, held]) => [key, drawn(held)]),
+  );
+}
+
 test("every authority each level rosters has its own name", () => {
-  expect(accessTenantAuthorities.map(tenantPermissionName)).toStrictEqual([
+  expect(
+    drawn(accessTenantAuthorities.map(tenantPermissionName)),
+  ).toStrictEqual([
     "Grant Admin",
     "Grant Member",
     "Grant hosted runs",
@@ -48,7 +68,7 @@ test("every authority each level rosters has its own name", () => {
     "Grant unscoped chat",
     "Change permissions",
   ]);
-  expect(accessSiteAuthorities.map(sitePermissionName)).toStrictEqual([
+  expect(drawn(accessSiteAuthorities.map(sitePermissionName))).toStrictEqual([
     "Create accounts",
     "Create workspaces",
     "Change permissions",
@@ -56,7 +76,7 @@ test("every authority each level rosters has its own name", () => {
 });
 
 test("every group the contract rosters has its own name", () => {
-  expect(accessProjectGroups.map(permissionGroupName)).toStrictEqual([
+  expect(drawn(accessProjectGroups.map(permissionGroupName))).toStrictEqual([
     "Site admins",
     "Workspace admins",
     "Workspace members",
@@ -88,7 +108,7 @@ test("a workspace's holders are its groups, then its people, then the unnamed co
   expect(rows.map((row) => row.authority)).toStrictEqual([
     ...accessTenantAuthorities,
   ]);
-  expect(rows[0]?.holders).toStrictEqual([
+  expect(drawn(rows[0]?.holders)).toStrictEqual([
     { kind: "Group", group: "SiteAdmins", words: "Site admins" },
     { kind: "Group", group: "TenantAdmins", words: "Workspace admins" },
     { kind: "Person", person: ada, words: "ada@example.com" },
@@ -114,9 +134,9 @@ test("the site's permission changes lead with its standing admins, and a workspa
     { kind: "TenantAdmins", tenant: "acme", words: "acme admins" },
     { kind: "Person", person: ada, words: "ada@example.com" },
   ];
-  expect(creators?.holders).toStrictEqual(held);
-  expect(tenantCreators?.holders).toStrictEqual(held);
-  expect(managers?.holders).toStrictEqual([
+  expect(drawn(creators?.holders)).toStrictEqual(held);
+  expect(drawn(tenantCreators?.holders)).toStrictEqual(held);
+  expect(drawn(managers?.holders)).toStrictEqual([
     { kind: "SiteStanding", words: "Site admins" },
     ...held,
   ]);
@@ -135,7 +155,7 @@ test("the site's permission changes name its standing admins where the answer na
     ],
     truncated: false,
   });
-  expect(rows[0]?.holders).toStrictEqual([
+  expect(drawn(rows[0]?.holders)).toStrictEqual([
     { kind: "SiteStanding", words: "Site admins" },
   ]);
 });
@@ -211,11 +231,13 @@ test("a route removes a group, a person and a workspace's account creation, and 
 });
 
 test("a person is marked where they are no account and where they are the reader, in that order", () => {
-  const marks = (account: boolean, mine: boolean): readonly string[] =>
-    permissionPersonMarks(
-      account
-        ? { subject: "s-ada", mine, account, email: "ada@example.com" }
-        : { subject: "s-ada", mine, account },
+  const marks = (account: boolean, mine: boolean): unknown =>
+    drawn(
+      permissionPersonMarks(
+        account
+          ? { subject: "s-ada", mine, account, email: "ada@example.com" }
+          : { subject: "s-ada", mine, account },
+      ),
     );
   expect(marks(true, false)).toStrictEqual([]);
   expect(marks(true, true)).toStrictEqual(["You"]);
@@ -266,7 +288,7 @@ function tenantChoicesWords(
       tenantPermissionAdmits(row.authority),
       "acme",
       people,
-    ).map((choice) => choice.words),
+    ).map((choice) => copyTextEn(choice.words)),
   );
 }
 
@@ -300,7 +322,10 @@ test("only Workspace members on Grant Member, and Person, carry a line", () => {
       [ada],
     )
       .filter((choice) => choice.line !== undefined)
-      .map((choice) => `${row.name}: ${choice.words}: ${choice.line ?? ""}`),
+      .map(
+        (choice) =>
+          `${copyTextEn(row.name)}: ${copyTextEn(choice.words)}: ${choice.line === undefined ? "" : copyTextEn(choice.line)}`,
+      ),
   );
   expect(lines).toStrictEqual([
     "Grant Admin: Person: From the People list",
@@ -333,7 +358,7 @@ test("the site's account creation offers this workspace's admins only where they
         undefined,
       ),
     );
-  expect(rows(["globex"])).toStrictEqual([
+  expect(drawn(rows(["globex"]))).toStrictEqual([
     [
       {
         kind: "Group",
@@ -419,18 +444,18 @@ test("a choice is sent as its holder, a person only once one is chosen, and each
     "Person",
   ]);
   const [group, admins, person] = choices;
-  expect(permissionChoiceHolder(group, undefined)).toStrictEqual({
+  expect(drawn(permissionChoiceHolder(group, undefined))).toStrictEqual({
     kind: "Group",
     group: "SiteAdmins",
     words: "Site admins",
   });
-  expect(permissionChoiceHolder(admins, undefined)).toStrictEqual({
+  expect(drawn(permissionChoiceHolder(admins, undefined))).toStrictEqual({
     kind: "TenantAdmins",
     tenant: "acme",
     words: "acme admins",
   });
   expect(permissionChoiceHolder(person, undefined)).toBeUndefined();
-  expect(permissionChoiceHolder(person, ada)).toStrictEqual({
+  expect(drawn(permissionChoiceHolder(person, ada))).toStrictEqual({
     kind: "Person",
     person: ada,
     words: "ada@example.com",
@@ -452,7 +477,9 @@ const projectRowsStarting = projectPermissionRows({
 });
 
 test("every authority a project rosters has its own name, its rows in roster order", () => {
-  expect(accessProjectAuthorities.map(projectPermissionName)).toStrictEqual([
+  expect(
+    drawn(accessProjectAuthorities.map(projectPermissionName)),
+  ).toStrictEqual([
     "Grant Admin",
     "Grant Developer",
     "Grant Dispatcher",
@@ -460,10 +487,12 @@ test("every authority a project rosters has its own name, its rows in roster ord
     "Change permissions",
   ]);
   expect(
-    projectRowsStarting.map((row) => [
-      row.name,
-      row.holders.map((holder) => holder.words),
-    ]),
+    drawn(
+      projectRowsStarting.map((row) => [
+        row.name,
+        row.holders.map((holder) => holder.words),
+      ]),
+    ),
   ).toStrictEqual([
     ["Grant Admin", ["Workspace admins", "Project admins", "ada@example.com"]],
     ["Grant Developer", ["Workspace admins", "Project admins"]],
@@ -496,7 +525,10 @@ test("a project permission offers its record's groups less those held, Project d
       projectPermissionAdmits(row.authority),
       "acme",
       [ada],
-    ).map((choice) => `${choice.words}: ${choice.line ?? ""}`),
+    ).map(
+      (choice) =>
+        `${copyTextEn(choice.words)}: ${choice.line === undefined ? "" : copyTextEn(choice.line)}`,
+    ),
   );
   const person = "Person: From this project's people";
   expect(lines).toStrictEqual([

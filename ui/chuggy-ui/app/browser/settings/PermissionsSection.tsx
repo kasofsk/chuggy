@@ -16,7 +16,9 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import type { ConsoleWrite } from "../../core/consoleWrite.ts";
+import type { Copy } from "../../core/copy.ts";
 import type { PanelState } from "../../core/freshness.ts";
 import {
   permissionHolderRemovable,
@@ -109,7 +111,7 @@ function permissionHolderKey(holder: PermissionHolder): string {
     case "Group":
     case "TenantAdmins":
     case "Unnamed":
-      return `${holder.kind}:${holder.words}`;
+      return `${holder.kind}:${JSON.stringify(holder.words)}`;
   }
 }
 
@@ -118,14 +120,15 @@ function permissionHolderKey(holder: PermissionHolder): string {
 function PermissionHolderWords(props: {
   readonly holder: PermissionHolder;
 }): ReactNode {
+  const text = useCopyText();
   const holder = props.holder;
-  if (holder.kind !== "Person") return holder.words;
+  if (holder.kind !== "Person") return text(holder.words);
   return (
     <>
       <PermissionPersonName person={holder.person} />
       {permissionPersonMarks(holder.person).map((mark) => (
-        <span key={mark} className="text-ink-3">
-          {` ${mark}`}
+        <span key={mark.id} className="text-ink-3">
+          {` ${text(mark)}`}
         </span>
       ))}
     </>
@@ -139,6 +142,7 @@ function PermissionHolderItem(props: {
   readonly busy: boolean;
   readonly onRemove: () => void;
 }): ReactNode {
+  const text = useCopyText();
   const holder = props.holder;
   return (
     <li className="flex max-w-full min-w-0">
@@ -146,7 +150,7 @@ function PermissionHolderItem(props: {
         removal={
           props.removable
             ? {
-                name: `Remove ${holder.words} from ${props.permission}`,
+                name: `Remove ${text(holder.words)} from ${props.permission}`,
                 disabled: props.busy,
                 onRemove: props.onRemove,
               }
@@ -165,6 +169,7 @@ function PermissionRowAsked<Authority extends PermissionAuthority>(props: {
   readonly row: PermissionRow<Authority>;
   readonly removing: PermissionsRemovalState<Authority>;
 }): ReactNode {
+  const text = useCopyText();
   const removing = props.removing;
   const asking = removing.asking;
   const note = removing.note;
@@ -176,7 +181,7 @@ function PermissionRowAsked<Authority extends PermissionAuthority>(props: {
       {asking?.row.authority !== props.row.authority ? null : (
         <div className="max-w-aside">
           <Confirm
-            question={permissionRemovalQuestion.question}
+            question={text(permissionRemovalQuestion.question)}
             confirm="Remove"
             busy={removing.busy}
             onConfirm={() => {
@@ -184,7 +189,7 @@ function PermissionRowAsked<Authority extends PermissionAuthority>(props: {
             }}
             onCancel={removing.cancel}
           >
-            {permissionRemovalQuestion.line}
+            {text(permissionRemovalQuestion.line)}
           </Confirm>
         </div>
       )}
@@ -198,23 +203,24 @@ function PermissionRowDrawn<Authority extends PermissionAuthority>(props: {
   readonly removing: PermissionsRemovalState<Authority>;
   readonly addition: PermissionsAddition<Authority>;
 }): ReactNode {
+  const text = useCopyText();
   const row = props.row;
   const removing = props.removing;
   return (
     <tr>
-      <th scope="row">{row.name}</th>
+      <th scope="row">{text(row.name)}</th>
       <td>
         <div className="grid min-w-0 gap-2">
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             {row.holders.length === 0 ? (
-              <span className="text-ink-3">{permissionsNobody}</span>
+              <span className="text-ink-3">{text(permissionsNobody)}</span>
             ) : (
               <ul className="contents">
                 {row.holders.map((holder) => (
                   <PermissionHolderItem
                     key={permissionHolderKey(holder)}
                     holder={holder}
-                    permission={row.name}
+                    permission={text(row.name)}
                     removable={
                       props.removable && permissionHolderRemovable(row, holder)
                     }
@@ -299,14 +305,15 @@ export function PermissionsSection<
   readonly read: PanelState<Answer>;
   readonly rows: (answer: Answer) => readonly PermissionRow<Authority>[];
   /** The one line for a reader the level's list is not answered to. */
-  readonly withheld: string;
+  readonly withheld: Copy;
   readonly removal: PermissionsRemoval<Authority>;
   readonly addition: PermissionsAddition<Authority>;
 }): ReactNode {
+  const text = useCopyText();
   const read = props.read;
   const rows = read.state === "Ready" ? props.rows(read.value) : [];
   const removing = usePermissionsSectionRemoval(props.removal, rows);
-  const line = permissionsLine(read, props.withheld);
+  const line = permissionsLine(read, text(props.withheld));
   return (
     <section
       aria-label={props.label}
