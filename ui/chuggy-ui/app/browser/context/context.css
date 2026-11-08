@@ -726,9 +726,20 @@
       max-width: none;
     }
 
-    .context-legend td,
-    .context-legend th {
-      padding-inline: var(--space-1);
+    /* A table fits the width rather than scrolling: its columns close up,
+       the outer ones flush with the section, and a row's name wraps. */
+    .context-view .tabular th,
+    .context-view .tabular td {
+      padding-inline: var(--space-2);
+    }
+
+    .context-view .tabular :is(th, td):first-child {
+      padding-inline-start: 0;
+      white-space: normal;
+    }
+
+    .context-view .tabular :is(th, td):last-child {
+      padding-inline-end: 0;
     }
 
     .context-meter svg {

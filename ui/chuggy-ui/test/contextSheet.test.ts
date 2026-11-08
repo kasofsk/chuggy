@@ -1,7 +1,8 @@
 /**
  * The Context view's sheet as far as a suite with no layout can follow it:
  * the view draws inside the frame the page gives it rather than a second one
- * of its own, and a bar span's label is shown whole or not at all.
+ * of its own, a bar span's label is shown whole or not at all, and a table
+ * closes up to a phone's width rather than scrolling.
  */
 
 import { afterEach, expect, test } from "vitest";
@@ -45,4 +46,20 @@ test("a bar span's label wraps beneath an empty first line as tall as the span, 
     (rule) => rule.selectorText === ".context-seg-label::before",
   );
   expect(first?.style.getPropertyValue("height")).toBe("100%");
+});
+
+test("at a phone's width a table's outer columns sit flush with the section and its names wrap", () => {
+  const view = document.createElement("div");
+  view.className = "context-view";
+  view.innerHTML =
+    '<table class="tabular"><tbody><tr><td>StructuredOutput</td><td class="num">9</td><td class="num">1,825</td></tr></tbody></table>';
+  document.body.append(view);
+  const [name, middle, last] = [...view.querySelectorAll("td")];
+  if (name === undefined || middle === undefined || last === undefined)
+    throw new Error("no row");
+  const rules = sheetRules(contextSheet, [sheetNarrowCondition]);
+  expect(sheetDeclared(rules, name, "padding-inline-start")).toBe("0px");
+  expect(sheetDeclared(rules, name, "white-space")).toBe("normal");
+  expect(sheetDeclared(rules, middle, "padding-inline")).toBe("var(--space-2)");
+  expect(sheetDeclared(rules, last, "padding-inline-end")).toBe("0px");
 });
