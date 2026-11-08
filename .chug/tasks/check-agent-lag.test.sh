@@ -42,9 +42,9 @@ stub_npm() { # [failing view]
 	cat >"$BIN/npm" <<EOF
 #!/bin/sh
 [ "\$1" = view ] || exit 127
-case "\$2 \$3" in
-"--fetch-timeout="*" --fetch-retries="*) shift 3 ;;
-*) echo "an npm view with no bound of its own" >&2; exit 1 ;;
+case "\$2 \$3 \$4" in
+"--registry=https://registry.npmjs.org/ --fetch-timeout=60000 --fetch-retries=2") shift 4 ;;
+*) echo "an npm view of another registry, or with no bound of its own" >&2; exit 1 ;;
 esac
 if [ "\$*" = "${1:-none}" ]; then echo "npm error code E404" >&2; exit 1; fi
 case "\$*" in
@@ -68,7 +68,7 @@ run_in() { # <dir> [VAR=value...]
 	set -e
 }
 
-CLAUDE='["2.1.1","2.1.2","2.1.3","2.1.4","2.1.5","2.1.6","2.1.7","2.1.8","2.1.9","2.1.10"]'
+CLAUDE='["2.1.1","2.1.2","2.1.3","2.1.4","2.1.5","2.1.6","2.1.7","2.1.8","2.1.9","2.1.10","2.1.11","2.1.12"]'
 CODEX='["0.1.0","0.2.0","0.2.0-linux-x64","0.3.0-alpha.1","0.3.0","0.3.0-linux-arm64"]'
 
 fixture 2.1.5 0.2.0
@@ -164,22 +164,17 @@ run_in "$R"
 check "versions that are not a list could not run, and say so" 2 "$RC" "Claude Code: npm's list of its versions is not a list"
 refute "versions that are not a list are read, not crashed on" 2 "$RC" "TypeError"
 
-for list in '[]' '["2.1.1","2.1.5","2.1.9"]'; do
+for case in '[]|2.1.5' '["2.1.9","2.1.10"]|2.1.5' '["2.1.1","2.1.5","2.1.9"]|2.1.10'; do
 	fixture 2.1.5 0.2.0
-	registry 2.1.10 "$list" 0.3.0 "$CODEX"
+	registry 2.1.10 "${case%|*}" 0.3.0 "$CODEX"
 	run_in "$R"
-	check "a list of $list, without the ceiling, could not run" 2 "$RC" "Claude Code: npm's list of its versions does not hold 2.1.10"
+	check "a list of ${case%|*}, without ${case#*|}, could not run" 2 "$RC" "Claude Code: npm's list of its versions does not hold ${case#*|}"
 done
 
 fixture 2.1.5 0.2.0
 registry 2.1.10 "$CLAUDE" 0.3.0 '[{"version":"0.3.0"},"0.3.0"]'
 run_in "$R"
 check "a list holding what is not a version could not run" 2 "$RC" "Codex: npm's list of its versions holds something other than versions"
-
-fixture 2.1.10 0.3.0
-registry 2.1.10 '["2.1.10"]' 0.3.0 '[]'
-run_in "$R"
-check "a pin at the ceiling needs nothing more of the list" 0 "$RC" "Codex 0.3.0 is not behind 0.3.0"
 
 fixture 2.1.5 0.2.0
 registry 2.1.10 'not json' 0.3.0 "$CODEX"

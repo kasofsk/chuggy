@@ -74,6 +74,20 @@ RUN --mount=type=bind,source=package-lock.json,target=/tmp/package-lock.json \
     console.log(version); \
   ' > /playwright-version
 
+# The pins' lag behind npm, read by `.chug/tasks/check-agent-lag.sh` on the tree
+# being built. The runtime stage binds this stage's verdict, so a build of the
+# runtime, or of an image built on it, refuses a Claude Code or Codex past that
+# gate's cap. The whole tree is copied, as the roster copies it, so that the
+# stage runs again for each tree; a tree built before replays the verdict its
+# cache holds. The gate finds the root through git, so the copy is made a
+# repository.
+FROM base AS agent-lag
+COPY . /tree
+RUN cd /tree \
+  && git init --quiet \
+  && ./.chug/tasks/check-agent-lag.sh \
+  && touch /agent-lag-clean
+
 # The worker core: kasofsk/chuggy-common at the commit `core.json` pins, which
 # `core.sh` fetches and refuses unless that commit is on the core's main. Only
 # what the later stages copy leaves this one: the core's tree, for its suites;
@@ -398,6 +412,11 @@ RUN copy="$(mktemp -d)" \
   && CHUG_WORKER_WORKSPACE="$workspace" /bin/sh "$copy/chuggy/check.sh" check \
   && rm -rf "$copy" "$workspace"
 
+# The bind is what makes the runtime refuse to finish without the `agent-lag`
+# stage's verdict, and it leaves nothing behind.
+RUN --mount=type=bind,from=agent-lag,source=/agent-lag-clean,target=/tmp/agent-lag-clean \
+  true
+
 # What the `worker` stage and the core suites build on: chuggy's runtime, and
 # the tools a tree is worked on with.
 #
@@ -587,9 +606,7 @@ RUN cd /opt/chuggy/lib/chuggy/core-suites \
 # move it. So this stage stages the tree the image was built from, installs it
 # and runs the whole roster, and the final stage binds this stage's verdict,
 # which is what makes the build depend on it. Nothing installed here ships: it
-# is a stage FROM the image, not the image. The roster holds
-# `.chug/tasks/check-agent-lag.sh`, which reads npm, so a build that runs this
-# stage refuses pins past that gate's cap; the runtime target does not run it.
+# is a stage FROM the image, not the image.
 #
 # WHAT THIS PROVES IS THE IMAGE, NOT THE POD. A build has no sidecars, so the
 # PostgreSQL the server gates are given is the stage's own: Debian's, started

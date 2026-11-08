@@ -14,11 +14,15 @@
 # neither is a platform build, whose version carries its platform as a suffix.
 #
 # A CHANGE UNDER `images/worker` SELECTS IT, where the pins are, as does a
-# change to this script, and so do a full run, the roster stage of
-# images/worker/Dockerfile's among them, and a change to the sequencer, which
-# selects every gate. Other changes do not, so most tickets are not made to take
-# on a bump outside their scope. Never reused: npm moves under a tree that does
+# change to this script or to the sequencer, which selects every gate, and so
+# does a full run. Other changes do not, so most tickets are not made to take on
+# a bump outside their scope. Never reused: npm moves under a tree that does
 # not.
+#
+# AN IMAGE BUILT FROM images/worker/Dockerfile RUNS IT ON ITS OWN TREE. The
+# `agent-lag` stage does, and the runtime stage binds that stage's verdict, so a
+# build of the runtime, or of the worker image built on it, refuses pins past
+# the cap.
 #
 # Exits 0 clean, 1 when either is further behind, 2 when it could not run. Two
 # is not a pass.
@@ -32,10 +36,10 @@ if [ -z "$root" ]; then
 fi
 cd "$root" || exit 2
 
-max="${CHUG_AGENT_LAG_RELEASES_MAX:-5}"
-case "$max" in
+releases_max="${CHUG_AGENT_LAG_RELEASES_MAX:-5}"
+case "$releases_max" in
 *[!0-9]*)
-	echo "check-agent-lag: LINTER ERROR — CHUG_AGENT_LAG_RELEASES_MAX is $max, not a whole number"
+	echo "check-agent-lag: LINTER ERROR — CHUG_AGENT_LAG_RELEASES_MAX is $releases_max, not a whole number"
 	exit 2
 	;;
 esac
@@ -64,13 +68,13 @@ fi
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
-# Each read is npm's own, so a registry the user's npm is set to is the one read,
-# and each is bounded here rather than by whatever npm is set to, so a registry
+# Each read is of the registry `just bump-claude-code` reads, whatever npm is
+# set to, and each is bounded here rather than by npm's settings, so a registry
 # that stalls ends as a could-not-run.
 read_npm() { # <file> <npm view arguments...>
 	file="$1"
 	shift
-	if ! npm view --fetch-timeout=60000 --fetch-retries=2 "$@" >"$work/$file" 2>"$work/$file.err"; then
+	if ! npm view --registry=https://registry.npmjs.org/ --fetch-timeout=60000 --fetch-retries=2 "$@" >"$work/$file" 2>"$work/$file.err"; then
 		echo "check-agent-lag: LINTER ERROR — npm view $* failed:"
 		tail -n 3 "$work/$file.err" | sed 's/^/check-agent-lag: | /'
 		exit 2
@@ -83,7 +87,7 @@ read_npm codex-versions @openai/codex versions --json
 
 # How many stable releases lie after the pin, up to and including the ceiling,
 # and the ceiling; or, exiting 3, which input is not what it should be.
-behind() { # <pin> <ceiling file> <versions file>
+report_behind() { # <pin> <ceiling file> <versions file>
 	node -e '
 const fs = require("fs")
 const [pin, ceilingFile, versionsFile] = process.argv.slice(1)
@@ -96,27 +100,29 @@ if (!stable.test(pin)) refuse("the pin " + pin + " is not a release")
 if (!stable.test(ceiling)) refuse("npm names " + JSON.stringify(ceiling) + " as the newest a bump reaches, which is not a release")
 if (!Array.isArray(versions)) refuse("npm'"'"'s list of its versions is not a list")
 if (versions.some((v) => typeof v !== "string")) refuse("npm'"'"'s list of its versions holds something other than versions")
-const order = (a, b) => {
-  const [x, y] = [a, b].map((v) => v.split(".").map(Number))
-  return x[0] - y[0] || x[1] - y[1] || x[2] - y[2]
+// The image installs the pin from npm and npm names the ceiling, so a list
+// without either is not npm'"'"'s. A list missing what lies between them is not
+// seen, since npm'"'"'s own skips versions.
+const missing = [pin, ceiling].find((version) => !versions.includes(version))
+if (missing !== undefined) refuse("npm'"'"'s list of its versions does not hold " + missing)
+const order = (left, right) => {
+  const [leftParts, rightParts] = [left, right].map((version) => version.split(".").map(Number))
+  return leftParts[0] - rightParts[0] || leftParts[1] - rightParts[1] || leftParts[2] - rightParts[2]
 }
-// The ceiling is a release after the pin whenever it is newer, so a list
-// without it is not npm'"'"'s whole list.
-if (order(ceiling, pin) > 0 && !versions.includes(ceiling)) refuse("npm'"'"'s list of its versions does not hold " + ceiling)
-const after = versions.filter((v) => stable.test(v) && order(v, pin) > 0 && order(v, ceiling) <= 0)
+const after = versions.filter((version) => stable.test(version) && order(version, pin) > 0 && order(version, ceiling) <= 0)
 console.log(after.length + " " + ceiling)
 ' "$1" "$2" "$3"
 }
 
 findings=0
 report() { # <name> <pin> <ceiling file> <versions file> <remedy>
-	if ! result="$(behind "$2" "$work/$3" "$work/$4")"; then
+	if ! result="$(report_behind "$2" "$work/$3" "$work/$4")"; then
 		echo "check-agent-lag: LINTER ERROR — $1: ${result:-its releases could not be counted}"
 		exit 2
 	fi
 	count="${result% *}"
 	ceiling="${result#* }"
-	if [ "$count" -gt "$max" ]; then
+	if [ "$count" -gt "$releases_max" ]; then
 		echo "ERROR $1 $2 is $count release(s) behind $ceiling: $5"
 		findings=$((findings + 1))
 	elif [ "$count" = 0 ]; then
@@ -131,7 +137,7 @@ report "Codex" "$codex_pin" codex-ceiling codex-versions \
 	"move ARG CODEX_VERSION in $dockerfile to it"
 
 if [ "$findings" -gt 0 ]; then
-	echo "check-agent-lag: FAILED — more than $max release(s) behind (CHUG_AGENT_LAG_RELEASES_MAX); the rig runs the new one once the worker image and its runtime are built from it and admitted"
+	echo "check-agent-lag: FAILED — more than $releases_max release(s) behind (CHUG_AGENT_LAG_RELEASES_MAX); the rig runs the new one once the worker image and its runtime are built from it and admitted"
 	exit 1
 fi
-echo "check-agent-lag: both within $max release(s) (CHUG_AGENT_LAG_RELEASES_MAX)"
+echo "check-agent-lag: both within $releases_max release(s) (CHUG_AGENT_LAG_RELEASES_MAX)"
