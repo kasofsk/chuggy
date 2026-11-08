@@ -12,12 +12,15 @@ import test from "node:test";
 
 import {
   nativeHttpPageItemsMax,
+  runContextPageReadingsMax,
+  runContextReadingsMax,
   runTranscriptBatchesMax,
   runTurnSeriesMax,
 } from "../../src/contract/http.ts";
 import { allAttemptStates } from "../../src/interpreter/executionScheduler.ts";
 import { artifactPathRejection } from "../../src/interpreter/resultManifest.ts";
 import {
+  checkedRunContextQuery,
   checkedRunTranscriptAfter,
   checkedRunTurnsQuery,
   runConfigurationPath,
@@ -66,6 +69,23 @@ test("a turn page is refused outside the wire's page and series bounds", () => {
     assert.throws(() => checkedRunTurnsQuery({ limit }), RangeError);
   for (const after of [-1, 1.5, runTurnSeriesMax + 1])
     assert.throws(() => checkedRunTurnsQuery({ after, limit: 1 }), RangeError);
+});
+
+test("a context page is refused outside the wire's page bound and the run's readings", () => {
+  assert.deepEqual(
+    checkedRunContextQuery({
+      after: runContextReadingsMax,
+      limit: runContextPageReadingsMax,
+    }),
+    { after: runContextReadingsMax, limit: runContextPageReadingsMax },
+  );
+  for (const limit of [0, -1, 1.5, runContextPageReadingsMax + 1])
+    assert.throws(() => checkedRunContextQuery({ limit }), RangeError);
+  for (const after of [-1, 1.5, runContextReadingsMax + 1])
+    assert.throws(
+      () => checkedRunContextQuery({ after, limit: 1 }),
+      RangeError,
+    );
 });
 
 test("a transcript cursor is refused outside the run's own batch bound", () => {

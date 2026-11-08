@@ -5,6 +5,7 @@ import {
   nativeHttpEndpoints,
 } from "../../src/contract/endpoints.ts";
 import {
+  runContextPageReadingsMax,
   sessionStorePageBatchesMax,
   threadOpenKeyCharsMax,
   threadTurnsAnsweredMax,
@@ -30,6 +31,9 @@ test("query defaults and absent cursors retain their transport meaning", () => {
     limit: sessionStorePageBatchesMax,
   });
   assert.deepEqual(nativeHttpEndpoints.runTurns.query.parse({}), { limit: 50 });
+  assert.deepEqual(nativeHttpEndpoints.runContext.query.parse({}), {
+    limit: runContextPageReadingsMax,
+  });
   assert.deepEqual(nativeHttpEndpoints.runTranscript.query.parse({}), {
     after: 0,
   });

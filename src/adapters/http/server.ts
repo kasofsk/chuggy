@@ -206,6 +206,7 @@ import {
   runConfigurationResponse,
   runErrorResponse,
   runTranscriptResponse,
+  runContextResponse,
   runTurnsResponse,
   submissionResponse,
   askLeadResponse,
@@ -352,6 +353,7 @@ type InitialNativeWeb = Pick<
   | "uploadProjectArtifact"
   | "projectArtifact"
   | "runTurns"
+  | "runContext"
   | "runTranscript"
   | "runConfiguration"
   | "runError"
@@ -1017,7 +1019,8 @@ function registerSelectorProposals(
   );
 }
 
-function registerRunEvidenceRoutes(
+/** The two paged series a run keeps, its turns and its context readings. */
+function registerRunEvidenceSeries(
   app: FastifyInstance,
   web: InitialNativeWeb,
 ): void {
@@ -1040,6 +1043,30 @@ function registerRunEvidenceRoutes(
     },
     runTurnsResponse,
   );
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.runContext,
+    (request, principal, partition) => {
+      const query = nativeHttpEndpoints.runContext.query.parse(request.query);
+      return web.runContext(
+        principal,
+        partition,
+        ...registerRunEvidenceAttempt(request),
+        {
+          ...(query.after === undefined ? {} : { after: query.after }),
+          limit: query.limit,
+        },
+      );
+    },
+    runContextResponse,
+  );
+}
+
+function registerRunEvidenceRoutes(
+  app: FastifyInstance,
+  web: InitialNativeWeb,
+): void {
+  registerRunEvidenceSeries(app, web);
   registerEndpoint(
     app,
     nativeHttpEndpoints.runTranscript,

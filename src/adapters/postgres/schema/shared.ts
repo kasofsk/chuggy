@@ -148,6 +148,7 @@ export const workerRunConfigurationFunction = "record_worker_run_configuration";
 export const workerRunTranscriptFunction = "record_worker_run_transcript_batch";
 export const workerRunTurnsFunction = "record_worker_run_turns";
 export const workerRunTotalFunction = "record_worker_run_total";
+export const workerRunContextFunction = "record_worker_run_context";
 /** The account an attempt spent and the agent it spent it on, each derived from the attempt's own row. */
 export const agentAccountFunction = "execution_attempt_agent_account";
 export const workerRunUsageFunction = "record_worker_run_usage";

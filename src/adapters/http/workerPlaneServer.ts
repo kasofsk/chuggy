@@ -8,8 +8,13 @@ import {
   nativeHttpPathSegmentCharsMax,
   repositoryIdentityCharsMax,
   runConfigurationBytesMax,
+  runContextItemsMax,
+  runContextNameCharsMax,
+  runContextPageReadingsMax,
+  runContextPathCharsMax,
   runModelCharsMax,
   runOutcomeLabelCharsMax,
+  runToolUseIdCharsMax,
   runTranscriptBatchBytesMax,
   runTranscriptBatchesMax,
   sessionIdentityCharsMax,
@@ -47,6 +52,7 @@ import {
   workerHeldCredentialsMax,
   workerHeldCredentialsSchema,
   workerPlaneRoutes,
+  workerRunContextSchema,
   workerRunEndedSchema,
   workerRunTotalsSchema,
   workerRunTurnsSchema,
@@ -97,6 +103,7 @@ import {
   type RunTotals,
   type RunUsage,
   type WorkerRunConfigurationPort,
+  type WorkerRunContextPort,
   type WorkerRunEndedPort,
   type WorkerRunTotalPort,
   type WorkerRunTranscriptPort,
@@ -233,9 +240,62 @@ const workerPlaneBodyless = {
 /** The widest code point UTF-8 writes, which is what a text bounded in code points weighs per code point. */
 const utf8CodePointBytesMax = 4;
 
-/** A page of turns or of model usages, each one object naming its model. */
+/** A page of model usages, each one object naming its model. */
 const workerRunPageBytesMax =
   nativeHttpPageItemsMax * planeJsonObjectBytesMax(runModelCharsMax);
+
+/** A page of turns, each one object naming its model and the subagent call it was made under. */
+const workerRunTurnsPageBytesMax =
+  nativeHttpPageItemsMax *
+  planeJsonObjectBytesMax(runModelCharsMax, runToolUseIdCharsMax);
+
+/** One list of a context reading, full, each entry one object naming `texts`. */
+function workerRunContextListBytesMax(...texts: readonly number[]): number {
+  return runContextItemsMax * planeJsonObjectBytesMax(...texts);
+}
+
+/**
+ * One context reading at its heaviest: the reading, its compaction and its
+ * window's objects, and every list of the window full.
+ */
+const workerRunContextReadingBytesMax =
+  planeJsonObjectBytesMax(runModelCharsMax) +
+  4 * planeJsonObjectBytesMax() +
+  workerRunContextListBytesMax(runContextPathCharsMax) +
+  workerRunContextListBytesMax(runContextNameCharsMax, runContextNameCharsMax) +
+  6 * workerRunContextListBytesMax(runContextNameCharsMax);
+
+/** The job routes a run's figures are posted to, each a JSON body bounded by the most it may carry. */
+const workerPlaneServedRunFigures = {
+  runTurns: {
+    caller: "LiveAttempt",
+    stored: false,
+    bodyBytesMax: planeJsonObjectBytesMax() + workerRunTurnsPageBytesMax,
+  },
+  runTotals: {
+    caller: "LiveAttempt",
+    stored: false,
+    bodyBytesMax:
+      planeJsonObjectBytesMax(
+        runOutcomeLabelCharsMax,
+        runOutcomeLabelCharsMax,
+      ) +
+      planeJsonObjectBytesMax() +
+      workerRunPageBytesMax,
+  },
+  runContext: {
+    caller: "LiveAttempt",
+    stored: false,
+    bodyBytesMax:
+      planeJsonObjectBytesMax() +
+      runContextPageReadingsMax * workerRunContextReadingBytesMax,
+  },
+  runEnded: {
+    caller: "LiveAttempt",
+    stored: false,
+    bodyBytesMax: planeJsonObjectBytesMax(),
+  },
+} as const;
 
 /** Every job route as it is served, an artifact bounded by the upload bound its deployment chose. */
 export function workerPlaneServed(uploadBytesMax: number) {
@@ -264,27 +324,7 @@ export function workerPlaneServed(uploadBytesMax: number) {
       stored: true,
       bodyBytesMax: runTranscriptBatchBytesMax,
     },
-    runTurns: {
-      caller: "LiveAttempt",
-      stored: false,
-      bodyBytesMax: planeJsonObjectBytesMax() + workerRunPageBytesMax,
-    },
-    runTotals: {
-      caller: "LiveAttempt",
-      stored: false,
-      bodyBytesMax:
-        planeJsonObjectBytesMax(
-          runOutcomeLabelCharsMax,
-          runOutcomeLabelCharsMax,
-        ) +
-        planeJsonObjectBytesMax() +
-        workerRunPageBytesMax,
-    },
-    runEnded: {
-      caller: "LiveAttempt",
-      stored: false,
-      bodyBytesMax: planeJsonObjectBytesMax(),
-    },
+    ...workerPlaneServedRunFigures,
     credential: {
       caller: "LiveAttempt",
       stored: false,
@@ -474,12 +514,13 @@ function workerPlaneRegistrar<
   };
 }
 
-/** The ports a run's own evidence is written through, all five attempt-fenced. */
+/** The ports a run's own evidence is written through, every one attempt-fenced. */
 export interface WorkerRunEvidencePorts {
   readonly configurations: WorkerRunConfigurationPort;
   readonly transcripts: WorkerRunTranscriptPort;
   readonly turns: WorkerRunTurnsPort;
   readonly totals: WorkerRunTotalPort;
+  readonly context: WorkerRunContextPort;
   readonly endings: WorkerRunEndedPort;
 }
 
@@ -985,6 +1026,18 @@ function workerRunFigureRoutes(
       : reply
           .code(workerRunStatus(stored))
           .send({ action: "stop", reason: stored });
+  });
+  register("runContext", async (request, reply, writer) => {
+    const offered = workerRunContextSchema.safeParse(request.body);
+    if (!offered.success) return reply.code(400).send({ action: "stop" });
+    const stored = await service.runEvidence.context.record({
+      secret: writer.secret,
+      generation: writer.authority.generation,
+      readings: offered.data.readings,
+    });
+    return stored === "Stored" || stored === "AlreadyStored"
+      ? reply.code(204).send()
+      : reply.code(409).send({ action: "stop", reason: stored });
   });
   register("runEnded", async (request, reply, writer) => {
     const offered = workerRunEndedSchema.safeParse(request.body);

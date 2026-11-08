@@ -118,6 +118,7 @@ export const unservedNativeWeb: Parameters<typeof createNativeHttpApp>[0] = {
   uploadProjectArtifact: unserved("upload project artifact"),
   projectArtifact: unserved("project artifact"),
   runTurns: unserved("run turns"),
+  runContext: unserved("run context"),
   runTranscript: unserved("run transcript"),
   runConfiguration: unserved("run configuration"),
   runError: unserved("run error"),

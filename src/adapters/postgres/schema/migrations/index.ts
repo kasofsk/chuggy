@@ -128,6 +128,7 @@ import { migration127 } from "./127-draft-member.ts";
 import { migration128 } from "./128-epic-notifications.ts";
 import { migration129 } from "./129-finalization-kinds.ts";
 import { migration130 } from "./130-lead-pauses-with-its-account.ts";
+import { migration131 } from "./131-run-context-readings.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -261,4 +262,5 @@ export const migrations: readonly Migration[] = [
   migration128,
   migration129,
   migration130,
+  migration131,
 ];

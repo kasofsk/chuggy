@@ -110,6 +110,7 @@
     "projectArtifacts": "/api/v1/tenants/:tenant/projects/:project/artifacts",
     "projectArtifact": "/api/v1/tenants/:tenant/projects/:project/artifacts/:artifact",
     "runTurns": "/api/v1/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/turns",
+    "runContext": "/api/v1/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/context",
     "runTranscript": "/api/v1/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/transcript",
     "runConfiguration": "/api/v1/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/configuration",
     "runError": "/api/v1/tenants/:tenant/projects/:project/executions/:execution/attempts/:attempt/error",

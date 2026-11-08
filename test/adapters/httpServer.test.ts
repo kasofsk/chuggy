@@ -11,6 +11,7 @@ import {
   imageMediaTypes,
   nativeHttpBodyBytesMax,
   nativeHttpMediaType,
+  runContextPageReadingsMax,
   ticketSearchCharsMax,
 } from "../../src/contract/http.ts";
 import {
@@ -230,6 +231,7 @@ function fakeOperations(
   | "uploadProjectArtifact"
   | "projectArtifact"
   | "runTurns"
+  | "runContext"
   | "runTranscript"
   | "runConfiguration"
   | "runError"
@@ -268,9 +270,29 @@ function fakeOperations(
       return Promise.resolve({ read: "NotFound" });
     },
     ...fakeProjectArtifacts(calls),
+    ...fakeOperationsRunEvidence(calls),
+  };
+}
+
+/** The run-evidence reads, each recording the attempt and the cursor it was asked for. */
+function fakeOperationsRunEvidence(
+  calls: string[],
+): Pick<
+  NativeWeb,
+  "runTurns" | "runContext" | "runTranscript" | "runConfiguration" | "runError"
+> {
+  return {
     runTurns: (_principal, _partition, execution, attempt, query) => {
       calls.push(`runTurns:${execution}:${attempt}:${String(query.limit)}`);
       return Promise.resolve(undefined);
+    },
+    runContext: (_principal, _partition, execution, attempt, query) => {
+      calls.push(
+        `runContext:${execution}:${attempt}:${String(query.after ?? "")}:${String(query.limit)}`,
+      );
+      return Promise.resolve(
+        query.after === 1 ? undefined : { readings: [], nextAfter: 1 },
+      );
     },
     runTranscript: (_principal, _partition, execution, attempt, after) => {
       calls.push(`runTranscript:${execution}:${attempt}:${String(after)}`);
@@ -1524,6 +1546,27 @@ test("an attempt's error text is read by the execution and attempt its route nam
   assert.equal(served.statusCode, 200);
   assert.deepEqual(served.json(), { read: "Content", content: "killed\n" });
   assert.deepEqual(calls, ["runError:execution-1:attempt-2"]);
+});
+
+test("a run's context readings are paged by the attempt and the cursor the route names", async () => {
+  const calls: string[] = [];
+  await using app = appOf(calls);
+  const context =
+    "/api/v1/tenants/tenant/projects/project/executions/execution-1/attempts/attempt-2/context";
+  const read = (query: string) =>
+    app.inject({
+      url: `${context}${query}`,
+      headers: { authorization: "Bearer valid" },
+    });
+  const first = await read("");
+  assert.equal(first.statusCode, 200);
+  assert.deepEqual(first.json(), { readings: [], nextAfter: 1 });
+  assert.equal((await read("?after=1&limit=2")).statusCode, 404);
+  assert.equal((await read("?limit=nine")).statusCode, 400);
+  assert.deepEqual(calls, [
+    `runContext:execution-1:attempt-2::${String(runContextPageReadingsMax)}`,
+    "runContext:execution-1:attempt-2:1:2",
+  ]);
 });
 
 const projectArtifactsRoot =

@@ -31,6 +31,7 @@ import {
   postgresWorkerArtifactReservations,
   postgresWorkerReportStore,
   postgresWorkerRunConfiguration,
+  postgresWorkerRunContext,
   postgresWorkerRunEnded,
   postgresWorkerRunTotal,
   postgresWorkerRunTranscript,
@@ -288,6 +289,7 @@ async function main(): Promise<void> {
       transcripts: postgresWorkerRunTranscript(pool),
       turns: postgresWorkerRunTurns(pool),
       totals: postgresWorkerRunTotal(pool),
+      context: postgresWorkerRunContext(pool),
       endings: postgresWorkerRunEnded(pool),
     },
     reports: {

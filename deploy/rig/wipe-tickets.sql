@@ -82,6 +82,7 @@ TRUNCATE TABLE
   public.execution_result_report,
   public.execution_result_source,
   public.execution_run,
+  public.execution_run_context,
   public.execution_run_model_usage,
   public.execution_run_total,
   public.execution_run_transcript_batch,

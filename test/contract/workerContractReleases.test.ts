@@ -28,8 +28,10 @@ import {
 } from "../../src/contract/workerContract.ts";
 import {
   runEndedEvidences,
+  workerPlaneRoutes,
   workerRunEndedSchema,
   workerRunTotalsSchema,
+  workerRunTurnsSchema,
 } from "../../src/contract/workerPlane.ts";
 import {
   sessionFactsAnswerSchema,
@@ -41,6 +43,7 @@ import {
   contractVersionAccepted,
   workerContractAccepted,
   workerContractEvaluatedTrees,
+  workerContractRunContexts,
   workerContractRunUsages,
   workerContractTargetRefs,
   workerContractThreadOffer,
@@ -205,6 +208,47 @@ test("a run sends its account's usage and its limit from the version a runner ho
         contractVersionAccepted(workerContractRunUsages, release),
         `${release} ${name}`,
       );
+});
+
+/** Whether a turn page's schema lets a turn name the subagent call it was made under. */
+function workerRunTurnNamesParent(schema: z.ZodType): boolean {
+  if (!(schema instanceof z.ZodObject)) return false;
+  const turns: unknown = schema.shape["turns"];
+  return (
+    turns instanceof z.ZodArray &&
+    turns.element instanceof z.ZodObject &&
+    Object.hasOwn(turns.element.shape, "parentToolUseId")
+  );
+}
+
+test("a run offers its context readings and a turn its subagent call from the version a runner holds a plane's release to, and no release below it takes either", async () => {
+  assert.ok(Object.hasOwn(workerPlaneRoutes, "runContext"));
+  assert.ok(workerRunTurnNamesParent(workerRunTurnsSchema));
+  assert.ok(
+    contractVersionAccepted(workerContractRunContexts, workerContractRelease),
+  );
+  for (const release of workerContractReplayed("job")) {
+    const taken = contractVersionAccepted(workerContractRunContexts, release);
+    const routes = await workerContractReleaseExport(
+      release,
+      "workerPlane",
+      "workerPlaneRoutes",
+      z.record(z.string(), z.unknown()),
+    );
+    assert.equal(Object.hasOwn(routes, "runContext"), taken, release);
+    assert.equal(
+      workerRunTurnNamesParent(
+        await workerContractReleaseExport(
+          release,
+          "workerPlane",
+          "workerRunTurnsSchema",
+          workerContractReleaseSchema,
+        ),
+      ),
+      taken,
+      release,
+    );
+  }
 });
 
 test("a work task names the ref its finalization lands on from the version a plane answers it to, and no release below it carries that field", async () => {

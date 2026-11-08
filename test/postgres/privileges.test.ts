@@ -45,6 +45,7 @@ import {
   workerRunBindingFunction,
   workerRunConfigurationFunction,
   workerRunLimitFunction,
+  workerRunContextFunction,
   workerRunTotalFunction,
   workerRunUsageFunction,
   workerRunTranscriptFunction,
@@ -72,13 +73,14 @@ const sessionRoutingColumns =
   "lead_route,project_routes,published_at,singleton,thread_route";
 const sessionLaunchColumns =
   "authority,backoff_secs,bounds,deadline_secs,idle_secs_max,image,mirrors,model,published_at,singleton";
-/** The five relations one run's evidence lives in, named once for every case. */
+/** The relations one run's evidence lives in, named once for every case. */
 const runEvidenceRelations = [
   "execution_run",
   "execution_run_transcript_batch",
   "execution_run_turn",
   "execution_run_total",
   "execution_run_model_usage",
+  "execution_run_context",
 ];
 const schedulerReportInsertPrivilege = {
   table_name: "execution_result_report",
@@ -1377,8 +1379,8 @@ test("the scheduler is non-login and non-escalating", async () => {
 });
 
 /**
- * The worker plane reaches run evidence through four functions and holds no
- * table privilege on the five relations behind them, so a bearer that got past
+ * The worker plane reaches run evidence through its functions alone and holds
+ * no table privilege on the relations behind them, so a bearer that got past
  * one boundary still cannot write a row the others own.
  */
 test("run evidence is written through its boundary and read by the API alone", async () => {
@@ -1387,6 +1389,7 @@ test("run evidence is written through its boundary and read by the API alone", a
     `${workerRunTranscriptFunction}('digest',1,1,'path','digest',1,1)`,
     `${workerRunTurnsFunction}('digest',1,'[]'::jsonb)`,
     `${workerRunTotalFunction}('digest',1,1,1,1,1,1,1,1,1,'List',1,NULL,NULL,'[]'::jsonb)`,
+    `${workerRunContextFunction}('digest',1,'[]'::jsonb)`,
     `${workerRunUsageFunction}('digest',1,'{}'::jsonb)`,
     `${workerRunLimitFunction}('digest',1,NULL,NULL)`,
   ]) {

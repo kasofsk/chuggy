@@ -21,6 +21,8 @@ import {
   workerContractVersionText,
 } from "../../src/contract/workerContract.ts";
 import {
+  runCompactionTriggers,
+  runContextCategoryKinds,
   runEndedEvidences,
   runUsageInstantSecsMax,
   runUsageWindows,
@@ -35,10 +37,16 @@ import {
   nativeHttpPathSegmentCharsMax,
   repositoryIdentityCharsMax,
   runConfigurationBytesMax,
+  runContextItemsMax,
+  runContextNameCharsMax,
+  runContextPageReadingsMax,
+  runContextPathCharsMax,
+  runContextReadingsMax,
   runTranscriptBatchBytesMax,
   runTranscriptBatchesMax,
   runModelCharsMax,
   runOutcomeLabelCharsMax,
+  runToolUseIdCharsMax,
   runTurnSeriesMax,
   workerPlaneUploadBytesMax,
 } from "../../src/contract/http.ts";
@@ -88,8 +96,10 @@ import {
   inertSessionPlane,
   inertTasks,
   inertWorkerPlane,
+  runContextReadingBody,
   runTotalsBody,
 } from "./workerPlaneFixtures.ts";
+import type { RunContextStored } from "../../src/interpreter/runEvidence.ts";
 import {
   planeHeaviestTaken,
   planeJsonHeaviest,
@@ -846,6 +856,7 @@ test("no run evidence route answers a bearer that is not a live attempt", async 
       },
     },
     totals: { record: counted },
+    context: { record: counted },
     endings: {
       end: () => {
         reached += 1;
@@ -859,6 +870,7 @@ test("no run evidence route answers a bearer that is not a live attempt", async 
     ["PUT", "/v1/run/transcript/1", Buffer.from("{}"), octets],
     ["POST", "/v1/run/turns", { turns: [] }, {}],
     ["POST", "/v1/run/totals", {}, {}],
+    ["POST", "/v1/run/context", { readings: [] }, {}],
     ["POST", "/v1/run/ended", { evidence: "RunFailed" }, {}],
   ] as const) {
     const response = await app.inject({
@@ -1153,6 +1165,83 @@ function workerRunPageHeaviest(item: object): readonly object[] {
   return Array.from({ length: nativeHttpPageItemsMax }, () => item);
 }
 
+/** The member of `roster` whose name is longest, which is the heaviest a body names of it. */
+function workerRunLongest(roster: readonly string[]): string {
+  return roster.reduce((longest, member) =>
+    member.length > longest.length ? member : longest,
+  );
+}
+
+/** A list of a context reading, as full as one may be. */
+function workerRunContextListHeaviest(item: object): readonly object[] {
+  return Array.from({ length: runContextItemsMax }, () => item);
+}
+
+/** A name a context reading gives anything, as heavy as one may be. */
+const workerRunContextNameHeaviest = planeTextHeaviest(runContextNameCharsMax);
+
+/** One named figure of a context window, as heavy as one may be. */
+const workerRunContextNamedHeaviest = {
+  name: workerRunContextNameHeaviest,
+  tokens: Number.MAX_SAFE_INTEGER,
+};
+
+/** A compaction's reading whose every list is full and every text and figure as long as any may be. */
+const workerRunContextReadingHeaviest = {
+  ordinal: runContextReadingsMax,
+  afterTurn: runTurnSeriesMax,
+  cause: "Compaction",
+  compaction: {
+    trigger: workerRunLongest(runCompactionTriggers),
+    tokensBefore: Number.MAX_SAFE_INTEGER,
+    tokensAfter: Number.MAX_SAFE_INTEGER,
+  },
+  window: {
+    model: planeTextHeaviest(runModelCharsMax),
+    totalTokens: Number.MAX_SAFE_INTEGER,
+    maxTokens: Number.MAX_SAFE_INTEGER,
+    autoCompactThreshold: Number.MAX_SAFE_INTEGER,
+    categories: workerRunContextListHeaviest({
+      ...workerRunContextNamedHeaviest,
+      kind: workerRunLongest(runContextCategoryKinds),
+    }),
+    memoryFiles: workerRunContextListHeaviest({
+      path: planeTextHeaviest(runContextPathCharsMax),
+      tokens: Number.MAX_SAFE_INTEGER,
+    }),
+    mcpTools: workerRunContextListHeaviest({
+      server: workerRunContextNameHeaviest,
+      ...workerRunContextNamedHeaviest,
+    }),
+    systemTools: workerRunContextListHeaviest(workerRunContextNamedHeaviest),
+    systemPromptSections: workerRunContextListHeaviest(
+      workerRunContextNamedHeaviest,
+    ),
+    skills: {
+      total: Number.MAX_SAFE_INTEGER,
+      included: Number.MAX_SAFE_INTEGER,
+      tokens: Number.MAX_SAFE_INTEGER,
+      items: workerRunContextListHeaviest(workerRunContextNamedHeaviest),
+    },
+    agents: workerRunContextListHeaviest({
+      type: workerRunContextNameHeaviest,
+      tokens: Number.MAX_SAFE_INTEGER,
+    }),
+    messages: {
+      toolCalls: Number.MAX_SAFE_INTEGER,
+      toolResults: Number.MAX_SAFE_INTEGER,
+      attachments: Number.MAX_SAFE_INTEGER,
+      assistant: Number.MAX_SAFE_INTEGER,
+      user: Number.MAX_SAFE_INTEGER,
+      byTool: workerRunContextListHeaviest({
+        name: workerRunContextNameHeaviest,
+        callTokens: Number.MAX_SAFE_INTEGER,
+        resultTokens: Number.MAX_SAFE_INTEGER,
+      }),
+    },
+  },
+};
+
 /** The heaviest body each job route is sent, or nothing where the route reads none. */
 const workerPlaneHeaviest: Readonly<
   Record<WorkerPlaneRouteName, PlaneHeaviest | undefined>
@@ -1190,6 +1279,7 @@ const workerPlaneHeaviest: Readonly<
         ordinal: runTurnSeriesMax,
         model: planeTextHeaviest(runModelCharsMax),
         ...workerRunTokensHeaviest,
+        parentToolUseId: planeTextHeaviest(runToolUseIdCharsMax),
       }),
     }),
     status: 200,
@@ -1213,6 +1303,19 @@ const workerPlaneHeaviest: Readonly<
       stopReason: planeTextHeaviest(runOutcomeLabelCharsMax),
       usage: Object.fromEntries(
         runUsageWindows.map((window) => [window, workerRunReadingHeaviest]),
+      ),
+    }),
+    status: 204,
+  },
+  runContext: {
+    headers: json,
+    payload: planeJsonHeaviest({
+      readings: Array.from(
+        { length: runContextPageReadingsMax },
+        (_unused, index) => ({
+          ...workerRunContextReadingHeaviest,
+          ordinal: runContextReadingsMax - index,
+        }),
       ),
     }),
     status: 204,
@@ -1324,6 +1427,155 @@ test("a turn page answers with the high-water the boundary stored", async () => 
     assert.equal(refused.statusCode, 400, JSON.stringify(payload));
   }
   assert.equal(offered.length, 1);
+  await app.close();
+});
+
+test("a turn naming its subagent call reaches the boundary with it, and an old turn naming none reaches it as it did", async () => {
+  const offered: unknown[] = [];
+  const app = runEvidencePlane({
+    turns: {
+      record: (input) => {
+        offered.push(input.turns);
+        return Promise.resolve({ recorded: "Recorded", turnsRecorded: 2 });
+      },
+    },
+  });
+  const main = {
+    ordinal: 1,
+    model: "claude-fixture",
+    tokensInput: 1,
+    tokensOutput: 2,
+    tokensCacheCreation: 3,
+    tokensCacheRead: 4,
+  };
+  const subagent = { ...main, ordinal: 2, parentToolUseId: "toolu_fixture" };
+  const recorded = await app.inject({
+    method: "POST",
+    url: "/v1/run/turns",
+    headers: held,
+    payload: { turns: [main, subagent] },
+  });
+  assert.equal(recorded.statusCode, 200);
+  assert.deepEqual(offered, [[main, subagent]]);
+  for (const parentToolUseId of [
+    "",
+    "x".repeat(runToolUseIdCharsMax + 1),
+    "a\u0000b",
+    null,
+  ]) {
+    const refused = await app.inject({
+      method: "POST",
+      url: "/v1/run/turns",
+      headers: held,
+      payload: { turns: [{ ...subagent, parentToolUseId }] },
+    });
+    assert.equal(refused.statusCode, 400, JSON.stringify(parentToolUseId));
+  }
+  assert.equal(offered.length, 1);
+  await app.close();
+});
+
+test("a page of context readings reaches the boundary whole, and its verdict is answered", async () => {
+  const offered: unknown[] = [];
+  let verdict: RunContextStored = "Stored";
+  const app = runEvidencePlane({
+    context: {
+      record: (input) => {
+        offered.push(input.readings);
+        return Promise.resolve(verdict);
+      },
+    },
+  });
+  const start = { ordinal: 1, afterTurn: 0, cause: "Start" };
+  const page = { readings: [start, runContextReadingBody] };
+  const post = () =>
+    app.inject({
+      method: "POST",
+      url: "/v1/run/context",
+      headers: held,
+      payload: page,
+    });
+  assert.equal((await post()).statusCode, 204);
+  assert.deepEqual(offered, [page.readings]);
+  verdict = "AlreadyStored";
+  assert.equal((await post()).statusCode, 204);
+  for (const refusal of ["OutOfOrder", "Conflict", "Fenced"] as const) {
+    verdict = refusal;
+    const refused = await post();
+    assert.equal(refused.statusCode, 409);
+    assert.deepEqual(refused.json(), { action: "stop", reason: refusal });
+  }
+  await app.close();
+});
+
+/** Pages that each break one bound of a context reading, or of the page it is offered in. */
+function workerRunContextPastBounds(): readonly object[] {
+  const reading = runContextReadingBody;
+  const window = reading.window;
+  const listed = (item: object) =>
+    Array.from({ length: runContextItemsMax + 1 }, () => item);
+  const windowed = (over: object) => ({
+    readings: [{ ...reading, window: { ...window, ...over } }],
+  });
+  return [
+    { readings: [] },
+    {
+      readings: Array.from(
+        { length: runContextPageReadingsMax + 1 },
+        (_unused, index) => ({ ...reading, ordinal: index + 1 }),
+      ),
+    },
+    { readings: [{ ...reading, ordinal: 0 }] },
+    { readings: [{ ...reading, ordinal: runContextReadingsMax + 1 }] },
+    { readings: [{ ...reading, afterTurn: runTurnSeriesMax + 1 }] },
+    { readings: [{ ...reading, cause: "Resume" }] },
+    { readings: [{ ...reading, cause: "Start" }] },
+    { readings: [{ ...reading, compaction: { trigger: "Auto" } }] },
+    { readings: [{ ...reading, extra: 1 }] },
+    windowed({ gridRows: [] }),
+    windowed({ categories: listed(window.categories[0]) }),
+    windowed({ mcpTools: listed(window.mcpTools[0]) }),
+    windowed({
+      systemTools: [
+        { name: "x".repeat(runContextNameCharsMax + 1), tokens: 1 },
+      ],
+    }),
+    windowed({
+      memoryFiles: [
+        { path: "x".repeat(runContextPathCharsMax + 1), tokens: 1 },
+      ],
+    }),
+    windowed({
+      skills: { ...window.skills, items: listed(window.skills.items[0]) },
+    }),
+    windowed({ categories: [{ ...window.categories[0], kind: "Other" }] }),
+  ];
+}
+
+test("a context reading past any bound is refused whole and reaches no boundary", async () => {
+  const offered: unknown[] = [];
+  const app = runEvidencePlane({
+    context: {
+      record: (input) => {
+        offered.push(input.readings);
+        return Promise.resolve("Stored");
+      },
+    },
+  });
+  for (const payload of workerRunContextPastBounds()) {
+    const refused = await app.inject({
+      method: "POST",
+      url: "/v1/run/context",
+      headers: held,
+      payload,
+    });
+    assert.equal(
+      refused.statusCode,
+      400,
+      JSON.stringify(payload).slice(0, 200),
+    );
+  }
+  assert.deepEqual(offered, []);
   await app.close();
 });
 

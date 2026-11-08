@@ -363,6 +363,7 @@ function transcriptBoundary(draws: readonly TranscriptDraw[]) {
   }));
   const reads: RunEvidenceReadStore = {
     turns: () => Promise.resolve(undefined),
+    context: () => Promise.resolve(undefined),
     transcript: () =>
       Promise.resolve({ objects, observedAt: recordedAt, complete: true }),
     configuration: () => Promise.resolve(undefined),
@@ -1981,6 +1982,8 @@ test("every run evidence read authorizes before it reaches a store", async () =>
     (web: NativeWeb) =>
       web.runTurns(principal, partition, execution, attempt, { limit: 10 }),
     (web: NativeWeb) =>
+      web.runContext(principal, partition, execution, attempt, { limit: 1 }),
+    (web: NativeWeb) =>
       web.runTranscript(principal, partition, execution, attempt, 0),
     (web: NativeWeb) =>
       web.runConfiguration(principal, partition, execution, attempt),
@@ -2012,6 +2015,7 @@ test("an attempt's error text is the bytes its worker uploaded, and none where i
       undefined,
       {
         turns: () => Promise.resolve(undefined),
+        context: () => Promise.resolve(undefined),
         transcript: () => Promise.resolve(undefined),
         configuration: () => Promise.resolve(undefined),
         error: (_partition, named, numbered) =>
