@@ -11,6 +11,7 @@ import { chatFtl } from "./generated/chatFtl.ts";
 import { codesFtl } from "./generated/codesFtl.ts";
 import { configurationCatalogFtl } from "./generated/configurationCatalogFtl.ts";
 import { configurationStepsFtl } from "./generated/configurationStepsFtl.ts";
+import { contextFtl } from "./generated/contextFtl.ts";
 import { conversationFtl } from "./generated/conversationFtl.ts";
 import { draftsFtl } from "./generated/draftsFtl.ts";
 import { epicsFtl } from "./generated/epicsFtl.ts";
@@ -50,6 +51,7 @@ export const copyCatalogEn: readonly string[] = [
   codesFtl,
   configurationCatalogFtl,
   configurationStepsFtl,
+  contextFtl,
   conversationFtl,
   draftsFtl,
   epicsFtl,

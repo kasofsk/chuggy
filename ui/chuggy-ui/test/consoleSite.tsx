@@ -62,6 +62,9 @@ import {
   epicViewResponseSchema,
   executionPlacementResponseSchema,
   executionsResponseSchema,
+  runContextResponseSchema,
+  runTurnsResponseSchema,
+  sessionContextResponseSchema,
   forgeAppsResponseSchema,
   forgeInstallationPermissionsResponseSchema,
   forgeInstallationsResponseSchema,
@@ -100,6 +103,12 @@ import type {
 } from "../app/core/sessionHolder.ts";
 import type { StreamResponse } from "../app/core/streamConnection.ts";
 import { consoleNetworkHeld } from "./consoleNetwork.ts";
+import {
+  contextReading,
+  contextRow,
+  contextSessionBody,
+  contextWindow,
+} from "./contextFixture.ts";
 import type { ConsoleNetwork } from "./consoleNetwork.ts";
 import { forgeInstallationsFixture } from "./forgeInstallationsFixture.ts";
 import { inviteBrowser } from "./inviteDouble.ts";
@@ -316,6 +325,11 @@ const consoleReads: readonly ConsoleRead[] = [
     body: () => leadTranscriptPage(0, 1),
   },
   {
+    path: consoleReadAt(`${projectPath}/lead/context`),
+    schema: sessionContextResponseSchema,
+    body: () => contextSessionBody([{ ordinal: 1, total: 96_721 }]),
+  },
+  {
     path: consoleReadAt(`${projectPath}/inbox`),
     schema: inboxResponseSchema,
     body: () => consoleInbox,
@@ -352,6 +366,11 @@ const consoleReads: readonly ConsoleRead[] = [
     path: consoleReadUnder(`${projectPath}/threads/`, "[^/]+/transcript"),
     schema: threadTranscriptResponseSchema,
     body: () => threadTranscriptPage(0),
+  },
+  {
+    path: consoleReadUnder(`${projectPath}/threads/`, "[^/]+/context"),
+    schema: sessionContextResponseSchema,
+    body: () => contextSessionBody([{ ordinal: 1, total: 125_280 }]),
   },
   {
     path: consoleReadAt(`${projectPath}/session-placement`),
@@ -409,6 +428,24 @@ const consoleReads: readonly ConsoleRead[] = [
         revision: decodeURIComponent(url.pathname.split("/").at(-1) ?? ""),
       },
     }),
+  },
+  {
+    path: consoleReadUnder(
+      `${projectPath}/executions/`,
+      "[^/]+/attempts/[^/]+/turns",
+    ),
+    schema: runTurnsResponseSchema,
+    body: () => ({
+      turns: [contextRow(1, { read: 10_000 }), contextRow(2, { read: 14_000 })],
+    }),
+  },
+  {
+    path: consoleReadUnder(
+      `${projectPath}/executions/`,
+      "[^/]+/attempts/[^/]+/context",
+    ),
+    schema: runContextResponseSchema,
+    body: () => ({ readings: [contextReading(1, 2, contextWindow())] }),
   },
   {
     path: consoleReadAt(`${projectPath}/executions`),
@@ -478,6 +515,11 @@ const consoleReads: readonly ConsoleRead[] = [
     path: consoleReadUnder(`${tenantPath}/chat/threads/`, "[^/]+/transcript"),
     schema: threadTranscriptResponseSchema,
     body: () => threadTranscriptPage(0),
+  },
+  {
+    path: consoleReadUnder(`${tenantPath}/chat/threads/`, "[^/]+/context"),
+    schema: sessionContextResponseSchema,
+    body: () => contextSessionBody([{ ordinal: 1, total: 125_280 }]),
   },
   {
     path: consoleReadAt(`${tenantPath}/forge-installations`),

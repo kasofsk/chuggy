@@ -273,6 +273,7 @@ export const ticketRunViews = [
   "Transcript",
   "Details",
   "Output",
+  "Context",
 ] as const;
 
 export type TicketRunView = (typeof ticketRunViews)[number];

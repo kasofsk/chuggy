@@ -1,8 +1,8 @@
 /**
  * One run's own page under the ticket's Runs tab: the rail of the ticket's
  * runs with this one marked, its heading and figures, and its Summary,
- * Transcript, Details and, for a command run that wrote some, Output, each at
- * an address of its own.
+ * Transcript, Details, for a command run that wrote some, Output, and for an
+ * agent's run, Context, each at an address of its own.
  *
  * A run is found by its task's number in the page the ticket already holds,
  * and its execution is read under the key every row reads it by, so nothing
@@ -14,6 +14,8 @@ import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type { ExecutionResponse } from "../../../../../src/contract/responses.ts";
+import type { ContextResult } from "../../core/contextResults.ts";
+import { contextAtLabel } from "../../core/contextView.ts";
 import { executionQuery } from "../../core/executionQueries.ts";
 import {
   runTimeLineOf,
@@ -41,6 +43,7 @@ import type {
 } from "../../core/ticketRuns.ts";
 import { verdictTone } from "../../core/tones.ts";
 import { usePanelState } from "../api.ts";
+import { RunContext, contextRunOffered } from "../context/RunContext.tsx";
 import { PanelUnready } from "../DataPanel.tsx";
 import { ExecutionArtifacts } from "../ExecutionArtifacts.tsx";
 import { RunReasonText } from "../RunEvidence.tsx";
@@ -165,13 +168,16 @@ function TicketRunHead(props: {
   );
 }
 
-/** The sub-tabs a run offers: Output only where a command run wrote some. */
+/** The sub-tabs a run offers: Output only where a command run wrote some, and
+ * Context only where an agent carried the run out. */
 function ticketRunViewsOffered(
   opened: RunResultOpened | undefined,
+  read: ExecutionResponse,
 ): readonly TicketRunView[] {
-  return ticketRunViews.filter(
-    (view) => view !== "Output" || opened?.opened === "Commands",
-  );
+  return ticketRunViews.filter((view) => {
+    if (view === "Output") return opened?.opened === "Commands";
+    return view !== "Context" || contextRunOffered(read);
+  });
 }
 
 /** A run's sub-tab, in the word its own link says. */
@@ -185,6 +191,8 @@ function ticketRunViewLabel(view: TicketRunView): Copy {
       return { id: "ticket-run-view-details" };
     case "Output":
       return { id: "ticket-run-view-output" };
+    case "Context":
+      return { id: "ticket-run-view-context" };
   }
 }
 
@@ -368,7 +376,32 @@ function TicketRunDetails(props: {
   );
 }
 
+/** A result's call, as a link to the run's transcript it was asked in. */
+function TicketRunCallLink(props: {
+  readonly held: TicketPageHeld;
+  readonly task: number;
+  readonly result: ContextResult;
+}): ReactNode {
+  const text = useCopyText();
+  return (
+    <Link
+      to="/$tenant/$project/tickets/$ticket/runs/$task"
+      params={{
+        ...props.held.partition,
+        ticket: String(props.held.ticket),
+        task: String(props.task),
+      }}
+      search={{ view: "Transcript" }}
+      className="context-largest-call"
+    >
+      {text(contextAtLabel("Call", props.result.call ?? 0))}
+    </Link>
+  );
+}
+
 function TicketRunViewBody(props: {
+  readonly held: TicketPageHeld;
+  readonly task: number;
   readonly partition: PartitionIdentity;
   readonly read: ExecutionResponse;
   readonly opened: RunResultOpened | undefined;
@@ -399,6 +432,20 @@ function TicketRunViewBody(props: {
           opened={props.opened}
         />
       );
+    case "Context":
+      return (
+        <RunContext
+          partition={props.partition}
+          read={props.read}
+          callLink={(result) => (
+            <TicketRunCallLink
+              held={props.held}
+              task={props.task}
+              result={result}
+            />
+          )}
+        />
+      );
   }
 }
 
@@ -410,7 +457,7 @@ function TicketRunRead(props: {
 }): ReactNode {
   const { held, step, read } = props;
   const opened = useRunResultOpened(held.partition, read.execution, read);
-  const offered = ticketRunViewsOffered(opened);
+  const offered = ticketRunViewsOffered(opened, read);
   const live = ticketRunLive(step.verdict);
   const shown = ticketRunViewShown(props.asked, offered, live);
   return (
@@ -423,6 +470,8 @@ function TicketRunRead(props: {
       />
       <div className="ticket-run-body" data-view={shown.toLowerCase()}>
         <TicketRunViewBody
+          held={held}
+          task={step.task}
           partition={held.partition}
           read={read}
           opened={opened}

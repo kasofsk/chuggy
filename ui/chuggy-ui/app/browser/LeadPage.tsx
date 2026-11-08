@@ -33,6 +33,7 @@ import {
   tokenCountFigure,
 } from "../core/figures.ts";
 import type { PanelState } from "../core/freshness.ts";
+import type { LeadTranscriptHeld } from "../core/leadTranscript.ts";
 import {
   leadSessionStateLabel,
   leadStreamBatches,
@@ -66,6 +67,7 @@ import {
 import { usePanelState } from "./api.ts";
 import { Conversation } from "./conversation/Conversation.tsx";
 import { DataPanel, PanelUnready } from "./DataPanel.tsx";
+import { LeadContextPanel } from "./context/SessionContext.tsx";
 import { useNowMs } from "./Freshness.tsx";
 import { LeadDecisions } from "./lead/LeadDecisions.tsx";
 import { LeadInquiries } from "./lead/LeadInquiries.tsx";
@@ -319,12 +321,18 @@ function LeadTurns(props: { readonly lead: LeadResponse }): ReactNode {
 function LeadDetails(props: {
   readonly partition: PartitionIdentity;
   readonly state: PanelState<LeadResponse>;
+  readonly held: LeadTranscriptHeld;
   readonly nowMs: number;
 }): ReactNode {
   const text = useCopyText();
   const lead = props.state.state === "Ready" ? props.state.value : undefined;
   return (
     <DetailsSlot openFirst>
+      <LeadContextPanel
+        partition={props.partition}
+        lead={lead}
+        held={props.held}
+      />
       <DataPanel title={text({ id: "lead-turns-title" })} state={props.state}>
         {(value) => <LeadTurns lead={value} />}
       </DataPanel>
@@ -373,6 +381,7 @@ function LeadBody(props: {
       <LeadDetails
         partition={props.partition}
         state={props.state}
+        held={walked.held}
         nowMs={props.nowMs}
       />
       <LeadNote note={lead?.handoffNote} />

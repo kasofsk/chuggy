@@ -21,6 +21,8 @@ import {
   instantFigure,
   instantFigureAtMs,
   instantText,
+  shareFigure,
+  sharePartFigure,
   sinceFigure,
   spanSetFigure,
   spendFigures,
@@ -267,4 +269,11 @@ test("a set size takes the largest binary unit that is still exact", () => {
   expect(unitOf(bytesSetFigure(2048))).toBe("KiB");
   expect(unitOf(bytesSetFigure(1500))).toBe("bytes");
   expect(unitOf(bytesSetFigure(0))).toBe("bytes");
+});
+
+test("a part short of a whole percent reads as under one, where a share rounded down would read as none of it", () => {
+  expect(textOf(shareFigure(0.004))).toBe("0");
+  expect(textOf(sharePartFigure(0.004))).toBe("<1");
+  expect(textOf(sharePartFigure(0))).toBe("0");
+  expect(textOf(sharePartFigure(0.349))).toBe("34");
 });

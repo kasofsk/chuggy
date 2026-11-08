@@ -42,6 +42,7 @@ export const runConfigurationSnapshotSchema = z.object({
   argv: z.array(z.string()).max(runConfigurationArgvMax),
   argvTruncated: truncationMarkerSchema.optional(),
   agent: z.string().optional(),
+  brief: z.string().optional().catch(undefined),
   claudeVersion: z.string().optional(),
   init: z.unknown(),
   files: z.array(snapshotFileSchema).max(runConfigurationFilesMax),
