@@ -254,6 +254,15 @@ test("the words a small label is sized by, and the widest count a count's number
   expect(count?.style.getPropertyValue("visibility")).toBe("hidden");
 });
 
+test("a small state label centres its word in its box whatever element carries the label", () => {
+  const word = sheetRules(ticketSheet, []).find(
+    (rule) =>
+      rule.selectorText ===
+      '.ticket-state[data-size="small"] .ticket-state-word',
+  );
+  expect(word?.style.getPropertyValue("text-align")).toBe("center");
+});
+
 test("counts drawn beside each other hold their numbers at the widest one's width", () => {
   renderCopied(
     <>

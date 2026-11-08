@@ -699,6 +699,10 @@
     font-size: var(--text-sm);
   }
 
+  .ticket-state[data-size="small"] .ticket-state-word {
+    text-align: center;
+  }
+
   /* A small label's word is as wide as the widest it could say: every word,
      a line each, stacked under it with no height and no text to read. */
   .ticket-state-word[data-words]::before {
