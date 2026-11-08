@@ -215,13 +215,13 @@ done
 fixture 2.1.5 0.2.0
 registry "" "$CLAUDE" 0.3.0 "$CODEX"
 run_in "$R"
-check "an SDK naming no Claude Code could not run, and say so" 2 "$RC" 'npm names "" as the newest a bump reaches'
+check "an SDK naming no Claude Code could not run, and says so" 2 "$RC" 'npm names "" as the newest a bump reaches'
 answer /@anthropic-ai/claude-agent-sdk/latest '{"claudeCodeVersion":["2.1.10"]}'
 run_in "$R"
-check "an SDK naming what is not a version could not run, and say so" 2 "$RC" 'npm names ["2.1.10"] as the newest a bump reaches'
+check "an SDK naming what is not a version could not run, and says so" 2 "$RC" 'npm names ["2.1.10"] as the newest a bump reaches'
 answer /@anthropic-ai/claude-agent-sdk/latest '{"version":"0.3.1"}'
 run_in "$R"
-check "an SDK naming nothing could not run, and say so" 2 "$RC" "npm names null as the newest a bump reaches"
+check "an SDK naming nothing could not run, and says so" 2 "$RC" "npm names null as the newest a bump reaches"
 
 # A node that says more than the gate asked, or nothing, as one a preload in
 # NODE_OPTIONS makes.
@@ -243,7 +243,7 @@ check "no count at all could not run" 2 "$RC" "Claude Code: counted '', not a co
 fixture 2.1.5-beta 0.2.0
 registry 2.1.10 "$CLAUDE" 0.3.0 "$CODEX"
 run_in "$R"
-check "a pin that is not a release could not run, and say so" 2 "$RC" "Claude Code: the pin 2.1.5-beta is not a release"
+check "a pin that is not a release could not run, and says so" 2 "$RC" "Claude Code: the pin 2.1.5-beta is not a release"
 
 # A PATH holding only the tools named, each the one this shell finds, so a case
 # can leave out node and keep what the gate needs before it asks for it.

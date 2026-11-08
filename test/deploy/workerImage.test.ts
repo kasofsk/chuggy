@@ -2,8 +2,9 @@
  * The worker image against this tree. The image runs the worker core at the
  * commit `images/worker/core.json` pins, and its build holds everything it can
  * read off itself; what it cannot read is the server its pods call, the
- * variable the work launcher leaves to the image, and an artifact outside the
- * runtime fetched for the wrong architecture.
+ * variable the work launcher leaves to the image, an artifact outside the
+ * runtime fetched for the wrong architecture, and whether the runtime waits on
+ * the pins' lag behind npm, read again when npm moves.
  *
  * THE PIN'S RELEASE IS HELD TO THE RANGE THE PLANES ACCEPT, which is what a
  * pod's every request is refused against. Raising a plane's floor past it turns
@@ -204,7 +205,7 @@ test("the runtime is built only on the pins' lag behind npm, read again whenever
   const text = readFileSync(dockerfilePath, "utf8");
   const lag = dockerStageInstructions(text, "agent-lag");
   const gate = lag.findIndex((instruction) =>
-    /^RUN .*\.\/\.chug\/tasks\/check-agent-lag\.sh .*&& touch \/agent-lag-clean$/u.test(
+    /^RUN cd \/tree +&& git init --quiet +&& \.\/\.chug\/tasks\/check-agent-lag\.sh +&& touch \/agent-lag-clean$/u.test(
       instruction,
     ),
   );
