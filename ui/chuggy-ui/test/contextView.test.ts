@@ -9,6 +9,7 @@
 import { expect, test } from "vitest";
 
 import {
+  contextChartAt,
   contextChartBroken,
   contextChartOf,
   contextChartRuns,
@@ -239,6 +240,7 @@ test("the hover's note stands beside its point where a side has the room, and ab
 
 test("the vertical scale is the window where one is named, and a counted step otherwise", () => {
   expect(contextChartTop({ ...growth, window: 1_000_000 })).toBe(1_000_000);
+  expect(contextChartTop({ ...growth, window: 317_189 })).toBe(317_189);
   expect(
     contextChartTop({ ...growth, window: undefined, threshold: undefined }),
   ).toBe(350_000);
@@ -248,6 +250,21 @@ test("the vertical scale is the window where one is named, and a counted step ot
   expect(contextChartTicksX(173)).toStrictEqual([
     1, 20, 40, 60, 80, 100, 120, 140, 160,
   ]);
+});
+
+test("a window smaller than the context reached raises the scale above both, so no mark is cut flat at the window", () => {
+  const overfull = { ...growth, window: 250_000, threshold: undefined };
+  const top = contextChartTop(overfull);
+  expect(top).toBe(350_000);
+  const chart = contextChartOf(overfull, 640);
+  const ys = overfull.points.map(
+    (point) => contextChartAt(overfull, chart, point).y,
+  );
+  expect(Math.min(...ys)).toBeGreaterThan(chart.plot.top);
+  const [high, higher] = [...overfull.points]
+    .sort((left, right) => right.tokens - left.tokens)
+    .map((point) => contextChartAt(overfull, chart, point).y);
+  expect(high).toBeLessThan(higher ?? 0);
 });
 
 test("a hover says the context, the call, and how far it moved from the call before it in its series", () => {

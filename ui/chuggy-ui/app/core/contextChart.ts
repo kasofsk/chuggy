@@ -82,16 +82,18 @@ function contextChartStep(about: number, steps: readonly number[]): number {
   return Math.max(...fitting, decade);
 }
 
-/** The top of the vertical scale: the window, or the highest mark rounded up
- * to a whole step. */
+/** The top of the vertical scale: the window where every mark fits in it, and
+ * otherwise the highest mark, or the window above them, rounded up to a whole
+ * step. */
 export function contextChartTop(view: ContextGrowthView): number {
-  if (view.window !== undefined && view.window > 0) return view.window;
   const highest = Math.max(
     1,
+    view.window ?? 0,
     view.threshold ?? 0,
     ...view.points.map((point) => point.tokens),
     ...view.compactions.map((mark) => mark.before),
   );
+  if (view.window === highest) return view.window;
   const step = contextChartStep(
     highest / contextChartStepsY,
     contextChartStepsNice,
@@ -190,8 +192,7 @@ function contextChartScaleOf(
   return {
     x: (ordinal) =>
       plot.left + ((ordinal - 1) / span) * (plot.right - plot.left),
-    y: (tokens) =>
-      plot.bottom - (Math.min(tokens, top) / top) * (plot.bottom - plot.top),
+    y: (tokens) => plot.bottom - (tokens / top) * (plot.bottom - plot.top),
   };
 }
 
