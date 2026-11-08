@@ -28,8 +28,8 @@
 # THE RUNTIME IMAGE, AND THE WORKER IMAGE BUILT ON IT, ARE HELD TO IT. The
 # `agent-lag` stage of images/worker/Dockerfile runs it on the pins that file
 # sets, and the runtime stage binds that stage's verdict, so a build of either
-# refuses them past the cap. A pin a build overrides with `--build-arg` is not
-# read.
+# refuses them past the cap, but for the cached verdict that stage describes. A
+# pin a build overrides with `--build-arg` is not read.
 #
 # Exits 0 clean, 1 when either is further behind, 2 when it could not run. Two
 # is not a pass.
@@ -124,6 +124,17 @@ report() { # <name> <pin> <ceiling's document> <ceiling's field> <package's docu
 	fi
 	count="${result% *}"
 	ceiling="${result#* }"
+	case "$count" in
+	'' | *[!0-9]*) unread=1 ;;
+	*) unread=0 ;;
+	esac
+	case "$ceiling" in
+	'' | *[!0-9.]*) unread=1 ;;
+	esac
+	if [ "$unread" = 1 ]; then
+		echo "check-agent-lag: LINTER ERROR — $1: counted '$result', not a count and a version"
+		exit 2
+	fi
 	if [ "$count" -gt "$releases_max" ]; then
 		echo "ERROR $1 $2 is $count release(s) behind $ceiling: $6"
 		findings=$((findings + 1))

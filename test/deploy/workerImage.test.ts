@@ -82,7 +82,7 @@ function dockerStages(text: string): DockerStage[] {
 }
 
 /** The instructions of the stage a name names, from its FROM to the next. */
-function stageInstructions(text: string, name: string): string[] {
+function dockerStageInstructions(text: string, name: string): string[] {
   const instructions = dockerInstructions(text);
   const start = instructions.findIndex((instruction) =>
     new RegExp(`^FROM .* AS ${name}$`, "u").test(instruction),
@@ -199,10 +199,10 @@ test("whatever is made for one architecture is chosen by TARGETARCH, and for eac
     );
 });
 
-/** Catches a runtime built without the pins' lag read, or on a verdict cached while npm moved. */
+/** Catches a runtime built without the pins' lag read, or on a verdict cached while npm's newest moved. */
 test("the runtime is built only on the pins' lag behind npm, read again whenever npm's newest moves", () => {
   const text = readFileSync(dockerfilePath, "utf8");
-  const lag = stageInstructions(text, "agent-lag");
+  const lag = dockerStageInstructions(text, "agent-lag");
   const gate = lag.findIndex((instruction) =>
     /^RUN .*\.\/\.chug\/tasks\/check-agent-lag\.sh .*&& touch \/agent-lag-clean$/u.test(
       instruction,
@@ -223,7 +223,7 @@ test("the runtime is built only on the pins' lag behind npm, read again whenever
     );
   }
   assert.ok(
-    stageInstructions(text, "runtime").some((instruction) =>
+    dockerStageInstructions(text, "runtime").some((instruction) =>
       instruction.startsWith(
         "RUN --mount=type=bind,from=agent-lag,source=/agent-lag-clean,",
       ),

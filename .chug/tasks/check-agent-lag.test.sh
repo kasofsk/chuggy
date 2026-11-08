@@ -223,6 +223,23 @@ answer /@anthropic-ai/claude-agent-sdk/latest '{"version":"0.3.1"}'
 run_in "$R"
 check "an SDK naming nothing could not run, and say so" 2 "$RC" "npm names null as the newest a bump reaches"
 
+# A node that says more than the gate asked, or nothing, as one a preload in
+# NODE_OPTIONS makes.
+printf 'console.log("preloaded")\n' >"$WORK/noisy.cjs"
+printf 'process.on("exit", () => console.log("goodbye"))\n' >"$WORK/trailing.cjs"
+printf 'const log = console.log\nconsole.log = (line) => log(String(line).replace(/^([0-9]+) /, "$1.5 "))\n' >"$WORK/fraction.cjs"
+printf 'process.exit(0)\n' >"$WORK/silent.cjs"
+fixture 2.1.4 0.2.0
+registry 2.1.10 "$CLAUDE" 0.3.0 "$CODEX"
+run_in "$R" NODE_OPTIONS="--require $WORK/noisy.cjs"
+check "a count the gate cannot read could not run" 2 "$RC" "Claude Code: counted 'preloaded"
+run_in "$R" NODE_OPTIONS="--require $WORK/trailing.cjs"
+check "a ceiling the gate cannot read could not run" 2 "$RC" "Claude Code: counted '6 2.1.10"
+run_in "$R" NODE_OPTIONS="--require $WORK/fraction.cjs"
+check "a count that is not whole could not run" 2 "$RC" "Claude Code: counted '6.5 2.1.10'"
+run_in "$R" NODE_OPTIONS="--require $WORK/silent.cjs"
+check "no count at all could not run" 2 "$RC" "Claude Code: counted '', not a count and a version"
+
 fixture 2.1.5-beta 0.2.0
 registry 2.1.10 "$CLAUDE" 0.3.0 "$CODEX"
 run_in "$R"
