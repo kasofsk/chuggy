@@ -23,7 +23,6 @@ import {
 } from "./screenHarness.tsx";
 import type { ApiDouble } from "./screenHarness.tsx";
 import type * as BrowserPorts from "../app/browser/ports.ts";
-import { ticketHeaderMenuLabel } from "../app/browser/ticket/TicketHeaderMenu.tsx";
 import {
   abilitiesEvery,
   abilitiesOver,
@@ -157,7 +156,7 @@ test("one press of Revoke sends nothing and asks what it ends", async () => {
 
   expect(api.submissions()).toBe(0);
   expect(group.textContent).toContain(
-    "Ends this ticket and parks its dependents. Can't be undone.",
+    "Ends this ticket and blocks its dependents. Can't be undone.",
   );
   expect(header.contains(group)).toBe(false);
 });
@@ -247,7 +246,7 @@ test("a revoke the actor refuses closes the ask and says so where any refusal is
 
 async function parkedAnswers(): Promise<readonly boolean[]> {
   const resume = screen.queryByRole("button", { name: "Resume" }) !== null;
-  const menu = screen.queryByRole("button", { name: ticketHeaderMenuLabel });
+  const menu = screen.queryByRole("button", { name: "More actions" });
   const revoke =
     menu !== null &&
     within(await ticketHeaderMenuOpened()).queryByRole("menuitem", {

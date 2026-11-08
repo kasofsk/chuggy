@@ -8,13 +8,14 @@
 import { expect, test } from "vitest";
 
 import { outputRenderers } from "../../../src/contract/rosters.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 import { artifactPreviewOffer } from "../app/core/artifactPreview.ts";
 
 test("an artifact no output declares is not offered a preview", () => {
   const offer = artifactPreviewOffer({ ordinal: 0, bytes: 12 });
   expect(offer.offer).toBe("Unpreviewable");
   if (offer.offer === "Unpreviewable")
-    expect(offer.note.length).toBeGreaterThan(0);
+    expect(copyTextEn(offer.note)).toBe("No preview");
 });
 
 test("an artifact whose output is undefined is treated the same way", () => {

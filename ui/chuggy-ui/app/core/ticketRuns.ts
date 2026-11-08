@@ -23,6 +23,8 @@ import type {
   ExecutionResponse,
   ExecutionSummary,
 } from "../../../../src/contract/responses.ts";
+import { copyOrDataText } from "./copy.ts";
+import type { CopyText } from "./copy.ts";
 import { durationFigure, tokenCountText } from "./figures.ts";
 import type { Figure } from "./figures.ts";
 import { digestShortened } from "./labels.ts";
@@ -129,8 +131,9 @@ function ticketRunsEvaluatorSteps(
 function ticketRunsStageRows(
   row: StageRow,
   names: StageNames,
+  text: CopyText,
 ): readonly TicketRunsRow[] {
-  const name = stageLabel(row.stage, names);
+  const name = copyOrDataText(text, stageLabel(row.stage, names));
   switch (row.kind) {
     case "Ran":
       return ticketRunsEvaluatorSteps(name, row.evaluators);
@@ -143,9 +146,15 @@ function ticketRunsStageRows(
 }
 
 /** The step a cycle stopped at: its stage as the plan names it, or work. */
-function ticketRunsCycleStep(cycle: Cycle, names: StageNames): string {
+function ticketRunsCycleStep(
+  cycle: Cycle,
+  names: StageNames,
+  text: CopyText,
+): string {
   const last = cycleLastSet(cycle);
-  return last?.stage === undefined ? "work" : stageLabel(last.stage, names);
+  return last?.stage === undefined
+    ? "work"
+    : copyOrDataText(text, stageLabel(last.stage, names));
 }
 
 /** What a cycle came to: where it stopped, who sent it back, or its landing. */
@@ -153,10 +162,11 @@ export function ticketRunsCycleOutcome(
   cycle: Cycle,
   names: StageNames,
   landing: TicketLanding | undefined,
+  text: CopyText,
 ): string {
   const last = cycleLastSet(cycle);
   if (last === undefined) return "Work not on this page";
-  const step = ticketRunsCycleStep(cycle, names);
+  const step = ticketRunsCycleStep(cycle, names, text);
   switch (last.verdict) {
     case "Starting":
     case "Running":
@@ -178,13 +188,14 @@ function ticketRunsCycleOf(
   cycle: Cycle,
   plan: TicketRunsPlan,
   landings: TicketLandingsJoined,
+  text: CopyText,
 ): TicketRunsCycle {
   const landing = landings.byCycle.get(cycle.ordinal)?.at(-1);
   const work = (cycle.work?.executions ?? []).map((execution) =>
     ticketRunsStep(execution, "Work", false),
   );
   const stages = cycle.stages.flatMap((row) =>
-    ticketRunsStageRows(row, plan.names),
+    ticketRunsStageRows(row, plan.names, text),
   );
   const landed: readonly TicketRunsRow[] =
     landing !== undefined || cycle.standing === "Current"
@@ -196,7 +207,7 @@ function ticketRunsCycleOf(
   return {
     ordinal: cycle.ordinal,
     standing: cycle.standing,
-    outcome: ticketRunsCycleOutcome(cycle, plan.names, landing),
+    outcome: ticketRunsCycleOutcome(cycle, plan.names, landing, text),
     executions: runs.map((row) => row.execution),
     spend: cycle.spend,
     rows: [...work, ...stages, ...landed],
@@ -208,10 +219,11 @@ export function ticketRunsOf(
   ledger: Ledger,
   landings: TicketLandingsJoined,
   plan: TicketRunsPlan,
+  text: CopyText,
 ): readonly TicketRunsCycle[] {
   return [...ledger.cycles]
     .reverse()
-    .map((cycle) => ticketRunsCycleOf(cycle, plan, landings));
+    .map((cycle) => ticketRunsCycleOf(cycle, plan, landings, text));
 }
 
 /** The run a task's number names, and none where the page holds no such run. */

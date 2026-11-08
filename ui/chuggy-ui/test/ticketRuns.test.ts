@@ -91,6 +91,7 @@ function runsOf(
       ledger.cycles.map((cycle) => cycle.ordinal),
     ),
     { names: named.names, lands },
+    copyTextEn,
   );
 }
 

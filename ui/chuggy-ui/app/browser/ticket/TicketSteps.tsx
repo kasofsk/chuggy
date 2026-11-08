@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The Overview's steps block: the current cycle's Work, Evaluation and
  * Finalization as columns of boxes, each box a step with its mark and one
@@ -20,11 +19,14 @@ import type {
   TicketStepColumn,
   TicketStepEvaluator,
   TicketStepLine,
+  TicketStepPhase,
   TicketSteps,
 } from "../../core/ticketSteps.ts";
 import { Chevron } from "../ui/Chevron.tsx";
 import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
 import { TicketRunTime } from "./TicketRunTime.tsx";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
+import type { Copy } from "../../core/copy.ts";
 
 import "./ticket.css";
 
@@ -145,6 +147,18 @@ function TicketStepBoxDrawn(props: {
   );
 }
 
+/** A phase as the noun its column is headed by. */
+function ticketStepsPhaseLabel(phase: TicketStepPhase): Copy {
+  switch (phase) {
+    case "Work":
+      return { id: "ticket-steps-phase-work" };
+    case "Evaluation":
+      return { id: "ticket-steps-phase-evaluation" };
+    case "Finalization":
+      return { id: "ticket-steps-phase-landing" };
+  }
+}
+
 /** One phase: its heading over its first box, marked "in order" where it
  * holds several, and every box after it in a track of its own. */
 function TicketStepColumnDrawn(props: {
@@ -154,10 +168,11 @@ function TicketStepColumnDrawn(props: {
   readonly nowMs: number;
 }): ReactNode {
   const { column } = props;
+  const text = useCopyText();
   return (
     <div
       role="group"
-      aria-label={column.phase}
+      aria-label={text(ticketStepsPhaseLabel(column.phase))}
       className="ticket-steps-column"
       data-edge={column.edge}
     >
@@ -169,9 +184,11 @@ function TicketStepColumnDrawn(props: {
         >
           {index === 0 ? (
             <p className="ticket-steps-phase">
-              {column.phase}
+              {text(ticketStepsPhaseLabel(column.phase))}
               {column.boxes.length > 1 ? (
-                <span className="ticket-steps-order">in order</span>
+                <span className="ticket-steps-order">
+                  {text({ id: "ticket-steps-in-order" })}
+                </span>
               ) : null}
             </p>
           ) : (
@@ -201,14 +218,19 @@ export function TicketStepsDrawn(props: {
 }): ReactNode {
   const { steps } = props;
   const params = { ...props.partition, ticket: String(props.ticket) };
+  const text = useCopyText();
   return (
     <section className="ticket-steps" aria-labelledby="ticket-steps-title">
       <header className="ticket-steps-head">
         <h2 id="ticket-steps-title">
-          {steps.cycle === undefined ? "Steps" : cycleLabel(steps.cycle)}
+          {steps.cycle === undefined
+            ? text({ id: "ticket-steps-heading" })
+            : text(cycleLabel(steps.cycle))}
         </h2>
         <span className="ticket-steps-aside">
-          {steps.cycle === undefined ? "None run yet" : steps.previous}
+          {steps.cycle === undefined
+            ? text({ id: "ticket-steps-none-run-yet" })
+            : steps.previous}
         </span>
         {steps.cycle === undefined ? null : (
           <Link
@@ -216,7 +238,7 @@ export function TicketStepsDrawn(props: {
             params={params}
             className="ticket-steps-all"
           >
-            All runs
+            {text({ id: "ticket-all-runs" })}
             <Chevron className="ticket-steps-chevron" />
           </Link>
         )}

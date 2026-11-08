@@ -44,9 +44,9 @@
  * `evaluator` are each unbounded counts and are never loop bounds, because one
  * row naming a stage in the millions would otherwise build that many rows.
  *
- * WHAT IT EMITS IS FACTS, and the labels at the end are the only strings
- * in it: each names a row the ledger numbered, and every word a reader is given
- * about what those facts mean belongs to whatever draws them. Money is a fact
+ * WHAT IT EMITS IS FACTS, and the labels at the end are the only words in it,
+ * each a descriptor naming a row the ledger numbered; every word a reader is
+ * given about what those facts mean belongs to whatever draws them. Money is a fact
  * like any other, so a cycle and the page each carry what the executions under
  * them spent, unrounded, unformatted and in the units the wire sends; time is
  * read off the executions against a clock, by whatever draws it.
@@ -63,6 +63,7 @@ import type {
   TicketResponse,
 } from "../../../../src/contract/responses.ts";
 import type { ExecutionTaskKind } from "../../../../src/contract/rosters.ts";
+import type { Copy, CopyOrData } from "./copy.ts";
 import { identityCycle, runSpendOf } from "./runTotals.ts";
 import type { RunSpend } from "./runTotals.ts";
 
@@ -511,10 +512,44 @@ export type StageNames = readonly string[] | undefined;
  * from one as the form a ticket is authored on numbers them — the identity's
  * own stage, with nothing added to it.
  */
-export function stageLabel(stage: number, names: StageNames): string {
-  return names?.[stage - 1] ?? `Stage ${String(stage)}`;
+export function stageLabel(stage: number, names: StageNames): CopyOrData {
+  return (
+    names?.[stage - 1] ?? {
+      id: "ticket-stage-number",
+      args: { stage: String(stage) },
+    }
+  );
 }
 
-export function cycleLabel(ordinal: number): string {
-  return `Cycle ${String(ordinal)}`;
+export function cycleLabel(ordinal: number): Copy {
+  return { id: "ticket-cycle-number", args: { cycle: String(ordinal) } };
+}
+
+/** A set's verdict as the one word its pill says. */
+export function setVerdictLabel(verdict: SetVerdict): Copy {
+  switch (verdict) {
+    case "Passed":
+      return { id: "ticket-verdict-passed" };
+    case "Failed":
+      return { id: "ticket-verdict-failed" };
+    case "Starting":
+      return { id: "ticket-verdict-starting" };
+    case "Running":
+      return { id: "ticket-verdict-running" };
+    case "Cancelled":
+      return { id: "ticket-verdict-cancelled" };
+    case "Blocked":
+      return { id: "ticket-verdict-blocked" };
+  }
+}
+
+/** Whether the cycle is the ticket's current one, the one word a pill says
+ * beside it where it is; a superseded cycle's pill says nothing. */
+export function cycleStandingLabel(standing: CycleStanding): Copy | undefined {
+  switch (standing) {
+    case "Current":
+      return { id: "ticket-cycle-current" };
+    case "Superseded":
+      return undefined;
+  }
 }

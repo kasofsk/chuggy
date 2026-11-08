@@ -33,11 +33,6 @@ export function runCountLabel(value: number): string {
   return Math.trunc(value).toLocaleString("en-US");
 }
 
-/** A count and its noun, the noun plural unless the count is one. */
-export function countedLabel(value: number, noun: string): string {
-  return `${runCountLabel(value)} ${noun}${value === 1 ? "" : "s"}`;
-}
-
 type RunModelUsage = RunTotals["models"][number];
 
 function runModelsMerged(totals: readonly RunTotals[]): RunModelUsage[] {

@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The head of every tab of the ticket page: the title with its number, the
  * epics it belongs to, the state label and the one fragment beside it, the actions, and the tabs. Once
@@ -18,6 +17,7 @@ import type {
 import { TicketRunMarkDrawn } from "./TicketRunMark.tsx";
 import { TicketRunTime } from "./TicketRunTime.tsx";
 import { TicketStateLabel } from "./TicketStateLabel.tsx";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 
 import "./ticket.css";
 
@@ -170,18 +170,22 @@ export function TicketTabs(props: {
 }): ReactNode {
   const params = { ...props.partition, ticket: String(props.ticket) };
   const runCount = props.runCount ?? 0;
+  const text = useCopyText();
   return (
-    <nav aria-label="Ticket" className="ticket-tabs">
+    <nav
+      aria-label={text({ id: "ticket-tabs-nav-label" })}
+      className="ticket-tabs"
+    >
       <ul>
         <TicketTab to="/$tenant/$project/tickets/$ticket" params={params}>
-          Overview
+          {text({ id: "ticket-tab-overview" })}
         </TicketTab>
         <TicketTab
           to="/$tenant/$project/tickets/$ticket/runs"
           params={params}
           within={props.runsWithin}
         >
-          Runs
+          {text({ id: "ticket-tab-runs" })}
           {runCount === 0 ? null : (
             <span className="ticket-tab-count">
               {props.runCountCut ? `${String(runCount)}+` : runCount}
@@ -192,10 +196,10 @@ export function TicketTabs(props: {
           to="/$tenant/$project/tickets/$ticket/configuration"
           params={params}
         >
-          Configuration
+          {text({ id: "ticket-tab-configuration" })}
         </TicketTab>
         <TicketTab to="/$tenant/$project/tickets/$ticket/usage" params={params}>
-          Usage
+          {text({ id: "ticket-tab-usage" })}
         </TicketTab>
       </ul>
     </nav>

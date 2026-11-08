@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The Overview tab: the content, and beside it the ticket's properties, as an
  * issue tracker draws an issue. The content is the one card the slot holds,
@@ -81,7 +80,8 @@ function TicketDependencies(props: {
     readonly phase?: TicketPhase;
   }[];
 }): ReactNode {
-  if (props.dependencies.length === 0) return "None";
+  const text = useCopyText();
+  if (props.dependencies.length === 0) return text({ id: "ticket-value-none" });
   return (
     <ul className="ticket-sidebar-dependencies">
       {props.dependencies.map((dependency) => (
@@ -123,8 +123,12 @@ function TicketSidebarRepository(props: {
 
 /** A figure that is still growing while a run is live. */
 function TicketSoFar(props: { readonly running: boolean }): ReactNode {
+  const text = useCopyText();
   return props.running ? (
-    <span className="ticket-sidebar-so-far"> so far</span>
+    <span className="ticket-sidebar-so-far">
+      {" "}
+      {text({ id: "ticket-overview-so-far" })}
+    </span>
   ) : null;
 }
 
@@ -135,12 +139,13 @@ function TicketSidebarRuns(props: {
 }): ReactNode {
   const executions = readValue(props.held.reads.pageState)?.executions ?? [];
   const runTime = ticketOverviewRunTime(executions, props.held.nowMs);
+  const text = useCopyText();
   if (runTime === undefined) return null;
   const running = ticketOverviewRunning(executions);
   const totals = props.ticket.runTotals;
   return (
     <>
-      <Field name="Cost">
+      <Field name={text({ id: "ticket-field-cost" })}>
         <Link
           to="/$tenant/$project/tickets/$ticket/usage"
           params={props.params}
@@ -155,11 +160,11 @@ function TicketSidebarRuns(props: {
         </Link>
         <TicketSoFar running={running} />
       </Field>
-      <Field name="Run time">
+      <Field name={text({ id: "ticket-field-run-time" })}>
         <Figure figure={runTime.ran} />
         <TicketSoFar running={running} />
       </Field>
-      <Field name="Waited">
+      <Field name={text({ id: "ticket-field-waited" })}>
         <Figure figure={runTime.waited} />
         <TicketSoFar running={running} />
       </Field>
@@ -180,6 +185,30 @@ interface TicketSidebarFacts {
   readonly version: TicketResponse["configurationVersion"];
 }
 
+/** The Branch field: the branch name, and its target where the wire names one. */
+function TicketSidebarBranch(props: {
+  readonly branch: TicketOverviewBranch;
+}): ReactNode {
+  const { branch } = props;
+  const text = useCopyText();
+  return (
+    <Field name={text({ id: "ticket-overview-branch" })}>
+      <code className="ticket-sidebar-branch">
+        {branch.branch}
+        {branch.target === undefined ? null : (
+          <span className="ticket-sidebar-target">
+            {" "}
+            {text({
+              id: "ticket-overview-branch-target",
+              args: { target: branch.target },
+            })}
+          </span>
+        )}
+      </code>
+    </Field>
+  );
+}
+
 /** What the ticket is, and under it whatever the caller adds of its runs. */
 function TicketSidebarDrawn(props: {
   readonly held: TicketPageHeld;
@@ -189,43 +218,41 @@ function TicketSidebarDrawn(props: {
   const { held, facts } = props;
   const { repository, branch, creator, revision } = facts;
   const params = { ...held.partition, ticket: String(held.ticket) };
+  const text = useCopyText();
   const configuration =
     revision === undefined
       ? undefined
       : configurationLabel(revision, facts.version);
   return (
-    <aside className="ticket-sidebar" aria-label="Properties">
+    <aside
+      className="ticket-sidebar"
+      aria-label={text({ id: "ticket-overview-properties" })}
+    >
       <Fields>
-        <Field name="Repository" absent={repository === undefined}>
+        <Field
+          name={text({ id: "ticket-overview-repository" })}
+          absent={repository === undefined}
+        >
           {repository === undefined ? (
-            "None"
+            text({ id: "ticket-value-none" })
           ) : (
             <TicketSidebarRepository repository={repository} />
           )}
         </Field>
-        {branch === undefined ? null : (
-          <Field name="Branch">
-            <code className="ticket-sidebar-branch">
-              {branch.branch}
-              {branch.target === undefined ? null : (
-                <span className="ticket-sidebar-target">{` → ${branch.target}`}</span>
-              )}
-            </code>
-          </Field>
-        )}
+        {branch === undefined ? null : <TicketSidebarBranch branch={branch} />}
         {creator === undefined ? null : (
-          <Field name="Filed by">
+          <Field name={text({ id: "ticket-overview-filed-by" })}>
             <TicketFiledBy partition={held.partition} creator={creator} />
           </Field>
         )}
-        <Field name="Depends on">
+        <Field name={text({ id: "ticket-overview-depends-on" })}>
           <TicketDependencies
             partition={held.partition}
             dependencies={facts.dependencies}
           />
         </Field>
         {configuration === undefined ? null : (
-          <Field name="Configuration">
+          <Field name={text({ id: "ticket-overview-configuration" })}>
             <Link
               to="/$tenant/$project/tickets/$ticket/configuration"
               params={params}
@@ -273,9 +300,13 @@ function TicketRevisionLine(props: {
   readonly nowMs: number;
 }): ReactNode {
   const { ticket } = props;
+  const text = useCopyText();
   return (
     <span className="ticket-revision">
-      {`Revision ${String(ticket.revision)}`}
+      {text({
+        id: "ticket-overview-revision",
+        args: { revision: String(ticket.revision) },
+      })}
       {ticket.releasedAt === undefined ? null : (
         <>
           {" · "}
@@ -295,16 +326,20 @@ function TicketUnreleased(props: {
     props.draft === undefined
       ? undefined
       : ticketOverviewUnreleased(props.draft);
+  const text = useCopyText();
   if (line === undefined) return null;
   return (
-    <section className="ticket-unreleased" aria-label="Unreleased changes">
+    <section
+      className="ticket-unreleased"
+      aria-label={text({ id: "ticket-overview-unreleased-changes" })}
+    >
       <strong>{line}</strong>
       <Link
         to="/$tenant/$project/tickets/$ticket/edit"
         params={props.params}
         className="ticket-unreleased-open"
       >
-        Open draft
+        {text({ id: "ticket-overview-open-draft" })}
       </Link>
     </section>
   );
@@ -372,7 +407,11 @@ function TicketDraftOverview(props: {
         <TicketInstructions
           partition={held.partition}
           brief={draft.brief}
-          aside={<span className="ticket-revision">Draft</span>}
+          aside={
+            <span className="ticket-revision">
+              {text({ id: "ticket-overview-draft-badge" })}
+            </span>
+          }
         />
       </div>
       <TicketSidebarDrawn

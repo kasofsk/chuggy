@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The mutations this ticket's phase enables, submitted and followed to
  * settlement.
@@ -43,6 +42,7 @@ import {
   operationFailureLabel,
   operationStepLabel,
   ticketActionEffect,
+  ticketActionLabel,
 } from "../core/codeLabels.ts";
 import type { ResumeOffer } from "../core/codeLabels.ts";
 import {
@@ -104,7 +104,8 @@ import { Notice } from "./ui/Notice.tsx";
 import { Tooltip } from "./ui/Tooltip.tsx";
 import { AddRunnerLink, useWorkRunner } from "./workRunner.tsx";
 import { useCopyText } from "../copy/CopyProvider.tsx";
-import type { CopyText } from "../core/copy.ts";
+import { copyOrDataText } from "../core/copy.ts";
+import type { CopyOrData, CopyText } from "../core/copy.ts";
 
 interface Attempt {
   readonly action: TicketAction;
@@ -153,12 +154,9 @@ async function cancelOperation(
       ? { accepted: true }
       : { accepted: false, said: text(operationFailureLabel(answered)) };
   } catch (thrown: unknown) {
-    return { accepted: false, said: faultReason(thrown) };
+    return { accepted: false, said: copyOrDataText(text, faultReason(thrown)) };
   }
 }
-
-/** The reason a request carries when the reader is the one who stopped it. */
-const attemptCancelledReason = "this attempt was cancelled";
 
 /**
  * Why a request threw, so that a throw is drawn where a returned failure is:
@@ -169,8 +167,10 @@ const attemptCancelledReason = "this attempt was cancelled";
  * is a thrown message and is somebody else's words, so every caller puts the
  * console's own subject in front of it.
  */
-function faultReason(thrown: unknown): string {
-  return thrown instanceof Error ? thrown.message : "the request failed";
+function faultReason(thrown: unknown): CopyOrData {
+  return thrown instanceof Error
+    ? thrown.message
+    : { id: "ticket-actions-request-failed" };
 }
 
 /** What the follow learned, written into the caches this page reads from and
@@ -345,6 +345,7 @@ function attemptCancelled(
   partition: PartitionIdentity,
   ticket: number,
   standing: TicketActionPressed,
+  text: CopyText,
 ): void {
   const step = standing.progress.step;
   if (step === undefined || !operationFinished(step))
@@ -354,7 +355,9 @@ function attemptCancelled(
       state: "Cancelled",
       refusal: undefined,
     });
-  standing.controller.abort(new Error(attemptCancelledReason));
+  standing.controller.abort(
+    new Error(text({ id: "ticket-actions-attempt-cancelled" })),
+  );
   dispatch(ticketAttemptDroppedAt({ partition, ticket }));
 }
 
@@ -397,12 +400,20 @@ function ticketCancelWrite(
       )
         return { outcome: "Ok", value: undefined };
       if (!answered.accepted)
-        throw new ConsoleWriteRefused(`Cancel refused · ${answered.said}`);
-      attemptCancelled(dispatch, partition, ticket, standing);
+        throw new ConsoleWriteRefused(
+          text({
+            id: "ticket-cancel-refused",
+            args: { reason: answered.said },
+          }),
+        );
+      attemptCancelled(dispatch, partition, ticket, standing, text);
       return { outcome: "Ok", value: undefined };
     },
     refusal: (failure) =>
-      `Cancel refused · ${text(operationFailureLabel(failure))}`,
+      text({
+        id: "ticket-cancel-refused",
+        args: { reason: text(operationFailureLabel(failure)) },
+      }),
   };
 }
 
@@ -448,8 +459,11 @@ function ActionButtons(props: {
       >
         {asks ? (
           <TicketActionConfirm
-            title={`Dispatch ticket #${String(props.ticket)}?`}
-            confirm="Dispatch"
+            title={text({
+              id: "ticket-dispatch-confirm-title",
+              args: { number: String(props.ticket) },
+            })}
+            confirm={text(ticketActionLabel("Dispatch"))}
             open={asking === action.action}
             onOpenChange={(open) => {
               setAsking(open ? action.action : undefined);
@@ -620,6 +634,7 @@ export function FollowNotes(props: {
   const attempt = props.submitting.attempt;
   const step = attempt?.step;
   const pending = step?.step === "Following" ? step.operation : undefined;
+  const text = useCopyText();
   return (
     <>
       {attempt === undefined ? null : (
@@ -633,7 +648,7 @@ export function FollowNotes(props: {
             props.submitting.cancel(pending);
           }}
         >
-          Cancel
+          {text({ id: "ticket-cancel" })}
         </Button>
       )}
       {props.submitting.refused === undefined ? null : (
@@ -680,6 +695,7 @@ function TicketDuplicateLink(props: {
   readonly partition: PartitionIdentity;
   readonly ticket: number;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <ButtonLink
       to="/$tenant/$project/tickets/new"
@@ -687,7 +703,7 @@ function TicketDuplicateLink(props: {
       search={{ from: props.ticket }}
       variant="primary"
     >
-      Duplicate
+      {text({ id: "ticket-duplicate" })}
     </ButtonLink>
   );
 }
@@ -748,6 +764,7 @@ export function TicketHeaderActions(
 /** What stands in the way of the actions, and the follow of whichever was
  * pressed, wherever it was pressed. */
 export function TicketHeaderNotes(props: TicketHeaderActionsProps): ReactNode {
+  const text = useCopyText();
   return (
     <div className="ticket-header-notes">
       {props.noRunner ? <NoRunnerLine partition={props.partition} /> : null}
@@ -755,10 +772,17 @@ export function TicketHeaderNotes(props: TicketHeaderActionsProps): ReactNode {
         <PanelUnready state={props.openState} />
       ) : null}
       {props.dispatchState.state === "Failed" ? (
-        <ReadFailed subject="Dispatch" failure={props.dispatchState.failure} />
+        <ReadFailed
+          subject={text(ticketActionLabel("Dispatch"))}
+          failure={props.dispatchState.failure}
+        />
       ) : null}
       {props.byHand ? (
-        <Notice tone="info" inline detail="No lead · Dispatched by hand" />
+        <Notice
+          tone="info"
+          inline
+          detail={text({ id: "ticket-no-lead-dispatched-by-hand" })}
+        />
       ) : null}
       <FollowNotes submitting={props.acting.submitting} />
     </div>

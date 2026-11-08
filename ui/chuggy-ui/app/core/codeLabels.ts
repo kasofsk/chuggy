@@ -482,7 +482,7 @@ export interface WallFacts {
   readonly names: StageNames;
 }
 
-function walledStageLabel(facts: WallFacts): string | undefined {
+function walledStageLabel(facts: WallFacts): CopyOrData | undefined {
   const set = facts.lastSet;
   if (set === undefined || set.taskKind !== "Evaluation") return undefined;
   if (set.stage === undefined) return undefined;

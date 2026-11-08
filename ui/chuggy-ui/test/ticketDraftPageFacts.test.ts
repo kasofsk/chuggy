@@ -7,6 +7,8 @@
 
 import { expect, test } from "vitest";
 
+import { copyTextEn } from "../app/copy/catalog.ts";
+
 import { briefTitleCharsMax } from "../../../src/contract/brief.ts";
 import { textCodePointsCount } from "../../../src/contract/http.ts";
 import type {
@@ -111,6 +113,7 @@ test("a draft's plan is its own program, and it has run nothing", () => {
       },
     },
     undefined,
+    copyTextEn,
   );
   expect(
     facts.plan.stages.map((stage) => [stage.name, stage.evaluators.length]),

@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * Revoke, asked before it is sent, because a revoked ticket is final. Anything
  * else submitted for the ticket closes the ask, and a revoke in flight keeps it
@@ -12,6 +11,7 @@ import { operationFinished } from "../../core/operationFollow.ts";
 import type { OperationStep } from "../../core/operationFollow.ts";
 import type { TicketAction } from "../../core/ticketActions.ts";
 import { Confirm } from "../ui/Confirm.tsx";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 
 /** What was last pressed for the ticket and how far its follow has got. */
 export interface TicketRevokeStanding {
@@ -55,15 +55,16 @@ export function TicketRevokeConfirm(props: {
   readonly ask: TicketRevokeAsk;
   readonly onRevoke: () => void;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <Confirm
-      question="Revoke this ticket?"
-      confirm="Revoke ticket"
+      question={text({ id: "ticket-revoke-confirm-title" })}
+      confirm={text({ id: "ticket-revoke-confirm" })}
       busy={props.ask.busy}
       onConfirm={props.onRevoke}
       onCancel={props.ask.cancel}
     >
-      Ends this ticket and parks its dependents. Can't be undone.
+      {text({ id: "ticket-revoke-warning" })}
     </Confirm>
   );
 }

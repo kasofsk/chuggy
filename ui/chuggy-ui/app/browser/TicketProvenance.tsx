@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * Where this ticket came from: the brief's images, and what the live revision
  * runs with, one row per step of the configuration it pinned with its
@@ -46,6 +45,7 @@ export function TicketBriefImages(props: {
   readonly brief: TicketResponse["brief"];
 }): ReactNode {
   const images = props.brief?.images;
+  const text = useCopyText();
   if (images === undefined || images.length === 0) return null;
   return (
     <ul className="flex flex-wrap gap-2">
@@ -54,7 +54,10 @@ export function TicketBriefImages(props: {
           <ProjectImage
             partition={props.partition}
             artifact={artifact}
-            alt={`Brief image ${String(at + 1)}`}
+            alt={text({
+              id: "ticket-provenance-brief-image-alt",
+              args: { number: at + 1 },
+            })}
             className="rounded-2 border-edge block max-h-(--height-clip) max-w-full border"
           />
         </li>
@@ -96,10 +99,13 @@ export function SummaryCell(props: {
 
 /** What a field the ticket overrode carries beside its name. */
 function OverriddenMark(): ReactNode {
+  const text = useCopyText();
   return (
     <>
       {" "}
-      <span className="ticket-config-chip">Overridden</span>
+      <span className="ticket-config-chip">
+        {text({ id: "ticket-provenance-overridden" })}
+      </span>
     </>
   );
 }
@@ -130,10 +136,13 @@ export function FinalizationMethod(props: {
   const text = useCopyText();
   return (
     <>
-      <SummaryCell name="Method" value={text(finalizationLine(finalization))} />
+      <SummaryCell
+        name={text({ id: "ticket-provenance-method" })}
+        value={text(finalizationLine(finalization))}
+      />
       {finalization.kind === "GitMerge" ? (
         <SummaryCell
-          name="Policy"
+          name={text({ id: "ticket-provenance-policy" })}
           value={text(gitMergePolicyLabel(finalization.policy))}
         />
       ) : null}
@@ -163,9 +172,10 @@ function ConfigurationFoot(props: {
   readonly revision: string;
   readonly digest: string;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <p className="config-foot">
-      <span>Digest</span>{" "}
+      <span>{text({ id: "ticket-provenance-digest" })}</span>{" "}
       <Tooltip text={props.digest}>
         <code>{digestShortened(props.digest)}</code>
       </Tooltip>
@@ -180,11 +190,12 @@ function ConfigurationCanonical(props: {
   readonly canonical: string;
 }): ReactNode {
   const [open, setOpen] = useState(false);
+  const text = useCopyText();
   return (
     <Disclosure
       open={open}
       onOpenChange={setOpen}
-      label="Canonical JSON"
+      label={text({ id: "ticket-provenance-canonical-json" })}
       look={{ variant: "quiet", size: "sm" }}
     >
       <pre className="ticket-config-canonical">{props.canonical}</pre>
@@ -251,6 +262,7 @@ function ConfigurationCatalogLink(props: {
   readonly partition: PartitionIdentity;
   readonly revision: string;
 }): ReactNode {
+  const text = useCopyText();
   return (
     <Link
       to={navRoutes.catalog}
@@ -258,7 +270,7 @@ function ConfigurationCatalogLink(props: {
       search={{ configuration: props.revision }}
       className="config-heading-link"
     >
-      Catalog
+      {text({ id: "ticket-provenance-catalog-link" })}
       <span aria-hidden="true"> ↗</span>
     </Link>
   );

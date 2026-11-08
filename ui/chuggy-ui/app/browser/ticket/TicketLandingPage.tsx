@@ -1,4 +1,3 @@
-/* eslint-disable copy/no-literal-text */
 /**
  * The ticket's landing as a page of its Runs tab: the rail with Landing
  * marked, the newest landing's state, its pull request and the commits it
@@ -25,6 +24,7 @@ import { Field, Fields } from "../ui/Fields.tsx";
 import { Figure } from "../ui/Figure.tsx";
 import { Identity } from "../ui/Identity.tsx";
 import { Pill } from "../ui/Pill.tsx";
+import { useCopyText } from "../../copy/CopyProvider.tsx";
 import { useTicketPageHeld } from "./TicketPageHeld.tsx";
 import type { TicketPageHeld } from "./TicketPageHeld.tsx";
 import { LandingBlock } from "./TicketLandings.tsx";
@@ -39,14 +39,17 @@ function TicketLandingHead(props: {
   readonly nowMs: number;
 }): ReactNode {
   const { landing } = props;
+  const text = useCopyText();
   const prepared = landing.detail.preparedAt;
   const marked = ticketRunLandingMarked(landing);
   return (
     <div className="ticket-run-head">
       <div className="ticket-run-heading">
         <TicketRunMarkDrawn mark={marked.mark} tone={marked.tone} />
-        <h2>Landing</h2>
-        <span className="ticket-run-cycle">{cycleLabel(landing.cycle)}</span>
+        <h2>{text({ id: "ticket-landing-heading" })}</h2>
+        <span className="ticket-run-cycle">
+          {text(cycleLabel(landing.cycle))}
+        </span>
         <Pill tone={landing.tone}>{landing.word}</Pill>
       </div>
       {prepared === undefined ? null : (
@@ -66,13 +69,17 @@ function TicketLandingFields(props: {
   readonly landing: TicketLanding;
 }): ReactNode {
   const { landing } = props;
+  const text = useCopyText();
   const proposal = landing.detail.proposal;
   const merge = proposal?.mergeCommit ?? landing.landedCommit;
   return (
     <Fields>
-      <Field name="Pull request" absent={landing.link === undefined}>
+      <Field
+        name={text({ id: "ticket-landing-pull-request-field" })}
+        absent={landing.link === undefined}
+      >
         {landing.link === undefined ? (
-          "None"
+          text({ id: "ticket-value-none" })
         ) : (
           <>
             <a
@@ -88,25 +95,27 @@ function TicketLandingFields(props: {
       </Field>
       {proposal === undefined ? null : (
         <>
-          <Field name="From">
+          <Field name={text({ id: "ticket-landing-from" })}>
             <code title={proposal.head}>{branchName(proposal.head)}</code>
           </Field>
-          <Field name="Into">
+          <Field name={text({ id: "ticket-landing-into" })}>
             <code title={proposal.base}>{branchName(proposal.base)}</code>
           </Field>
         </>
       )}
       {landing.detail.candidateCommit === undefined ? null : (
-        <Field name="Head">
+        <Field name={text({ id: "ticket-landing-head" })}>
           <Identity label={landing.detail.candidateCommit} />
         </Field>
       )}
       {merge === undefined ? null : (
-        <Field name="Merge commit">
+        <Field name={text({ id: "ticket-landing-merge-commit" })}>
           <Identity label={merge} />
         </Field>
       )}
-      <Field name="Attempts">{landing.detail.attempts}</Field>
+      <Field name={text({ id: "ticket-landing-attempts" })}>
+        {landing.detail.attempts}
+      </Field>
     </Fields>
   );
 }
@@ -115,11 +124,13 @@ function TicketLandingOf(props: {
   readonly held: TicketPageHeld;
   readonly state: TicketLandingsState;
 }): ReactNode {
+  const text = useCopyText();
   if (props.state.state !== "Ready")
     return <PanelUnready state={props.state} />;
   const landings = props.state.value;
   const landing = landings.at(-1);
-  if (landing === undefined) return <EmptyState label="No landing" />;
+  if (landing === undefined)
+    return <EmptyState label={text({ id: "ticket-landing-none" })} />;
   return (
     <>
       <TicketLandingHead landing={landing} nowMs={props.held.nowMs} />

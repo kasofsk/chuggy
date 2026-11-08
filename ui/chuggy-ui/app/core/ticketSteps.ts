@@ -43,6 +43,7 @@ import {
 import type { TicketRunMark } from "./ticketRuns.ts";
 import { verdictTone } from "./tones.ts";
 import type { Tone } from "./tones.ts";
+import { copyOrDataText } from "./copy.ts";
 import type { CopyText } from "./copy.ts";
 
 /** What a box says under its name: the runs whose times and waits it sums,
@@ -265,12 +266,13 @@ function ticketStepsStage(
 function ticketStepsStages(
   plan: TicketPlan,
   cycle: Cycle | undefined,
+  text: CopyText,
 ): readonly TicketPlanStage[] {
   const beyond = (cycle?.stages ?? [])
     .filter((row) => row.stage > plan.stages.length)
     .map((row) => ({
       stage: row.stage,
-      name: stageLabel(row.stage, plan.names),
+      name: copyOrDataText(text, stageLabel(row.stage, plan.names)),
       evaluators: [],
     }));
   return [...plan.stages, ...beyond];
@@ -282,6 +284,7 @@ function ticketStepsStages(
 function ticketStepsLandingWords(
   landing: TicketLanding,
   nowMs: number,
+  text: CopyText,
 ): string {
   switch (landing.state) {
     case "Failed":
@@ -290,11 +293,14 @@ function ticketStepsLandingWords(
     case "Proposed":
       return landing.link === undefined
         ? landing.word
-        : ticketLandingPullLabel(landing.link);
+        : ticketLandingPullLabel(landing.link, text);
     case "Held":
     case "AwaitingMerge":
     case "Unavailable":
-      return ticketLandingFragment(landing, nowMs).text ?? landing.word;
+      return copyOrDataText(
+        text,
+        ticketLandingFragment(landing, nowMs).text ?? landing.word,
+      );
     case "Running":
     case "AwaitingApproval":
     case "Invalidated":
@@ -327,7 +333,7 @@ function ticketStepsLanding(
   return {
     name: "Landing",
     ...ticketRunLandingMarked(landing),
-    line: ticketStepsWords(ticketStepsLandingWords(landing, nowMs)),
+    line: ticketStepsWords(ticketStepsLandingWords(landing, nowMs, text)),
     address: { to: "Landing" },
     evaluators: [],
   };
@@ -381,15 +387,19 @@ function ticketStepsEdges(
 }
 
 /** What the cycle before the current one came to, as its heading's aside. */
-function ticketStepsPrevious(reads: TicketStepsReads): string | undefined {
+function ticketStepsPrevious(
+  reads: TicketStepsReads,
+  text: CopyText,
+): string | undefined {
   const previous = reads.ledger?.cycles.at(-2);
   if (previous === undefined) return undefined;
   const outcome = ticketRunsCycleOutcome(
     previous,
     reads.plan.names,
     reads.landings.get(previous.ordinal)?.at(-1),
+    text,
   );
-  return `${cycleLabel(previous.ordinal)} ${outcome.charAt(0).toLowerCase()}${outcome.slice(1)}`;
+  return `${text(cycleLabel(previous.ordinal))} ${outcome.charAt(0).toLowerCase()}${outcome.slice(1)}`;
 }
 
 export function ticketStepsOf(
@@ -408,13 +418,13 @@ export function ticketStepsOf(
       : { ...ticketStepsRan("Work", cycle.work), evaluators: [] };
   return {
     cycle: cycle?.ordinal,
-    previous: ticketStepsPrevious(reads),
+    previous: ticketStepsPrevious(reads, text),
     columns: [
       { phase: "Work", edge: edges.Work, boxes: [work] },
       {
         phase: "Evaluation",
         edge: edges.Evaluation,
-        boxes: ticketStepsStages(plan, cycle).map((stage) =>
+        boxes: ticketStepsStages(plan, cycle, text).map((stage) =>
           ticketStepsStage(
             stage,
             cycle?.stages.find((row) => row.stage === stage.stage),

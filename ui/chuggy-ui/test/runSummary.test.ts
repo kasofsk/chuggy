@@ -38,37 +38,23 @@ test("a reported run draws the summary its own result carries", () => {
   });
 });
 
-/** #363: a worker below the schema that carries a summary reports none, and an
- * empty pane says nothing about why. */
-test("a result older than the summary field says so rather than drawing nothing", () => {
-  const summary = runSummaryOf(
-    { attempt: "a1", state: "Reported" },
-    result({ schemaVersion: 2, report: undefined }),
-  );
-  expect(summary.summary).toBe("SchemaTooOld");
-  expect(summary.summary === "Report" ? "" : summary.note).toContain(
-    "older worker",
-  );
+/** #363: a worker below the schema that carries a summary reports none. */
+test("a result older than the summary field is told apart from an absent one", () => {
+  expect(
+    runSummaryOf(
+      { attempt: "a1", state: "Reported" },
+      result({ schemaVersion: 2, report: undefined }),
+    ),
+  ).toEqual({ summary: "SchemaTooOld" });
 });
 
-test("a run that ended without a result names the reason the wire gave", () => {
-  const summary = runSummaryOf(
-    { attempt: "a2", state: "Lost", evidence: "LeaseExpired" },
-    result(),
-  );
-  expect(summary).toEqual({
+test("a run that ended without a result has ended, whoever's result is held", () => {
+  expect(runSummaryOf({ attempt: "a2", state: "Lost" }, result())).toEqual({
     summary: "Ended",
-    note: "No result · LeaseExpired",
   });
-});
-
-test("a run that ended without a reason on the wire admits there is none", () => {
   expect(
     runSummaryOf({ attempt: "a2", state: "Withdrawn" }, undefined),
-  ).toEqual({
-    summary: "Ended",
-    note: "No result",
-  });
+  ).toEqual({ summary: "Ended" });
 });
 
 test("a run still going has no summary yet and is not an absence", () => {

@@ -186,15 +186,17 @@ function ticketHeaderMoving(slot: TicketSlot): TicketHeaderFragment {
 
 function ticketHeaderLinkOf(
   link: TicketLanding["link"],
+  text: CopyText,
 ): TicketHeaderLink | undefined {
   return link === undefined
     ? undefined
-    : { href: link.href, label: ticketLandingPullLabel(link) };
+    : { href: link.href, label: ticketLandingPullLabel(link, text) };
 }
 
 /** What the newest landing came to: merged into its base, or proposed. */
 function ticketHeaderLanded(
   landings: readonly TicketLanding[],
+  text: CopyText,
 ): TicketHeaderFragment {
   const newest = landings.at(-1);
   if (newest?.state !== "Landed" && newest?.state !== "Proposed")
@@ -209,7 +211,7 @@ function ticketHeaderLanded(
         : base === undefined
           ? "Merged"
           : `Merged into ${base}`,
-    link: ticketHeaderLinkOf(newest.link),
+    link: ticketHeaderLinkOf(newest.link, text),
   };
 }
 
@@ -240,7 +242,7 @@ export function ticketHeaderFragment(
         ? ticketHeaderNone
         : ticketHeaderWords(text(escalationDetail(ticket.escalation)));
     case "Done":
-      return ticketHeaderLanded(reads.landings);
+      return ticketHeaderLanded(reads.landings, text);
     case "Revoked":
       return ticketHeaderNone;
   }

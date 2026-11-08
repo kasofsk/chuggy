@@ -266,7 +266,7 @@ test("an answer's button still opens the sentence it sends", async () => {
   if (trigger === null) throw new Error("no tooltip trigger around resume");
   fireEvent.focus(trigger);
   expect((await screen.findByRole("tooltip")).textContent).toBe(
-    "rejoin the pipeline at the point this ticket was parked at",
+    "continue this ticket from where it was escalated",
   );
 });
 

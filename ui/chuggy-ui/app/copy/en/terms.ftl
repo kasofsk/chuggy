@@ -221,6 +221,20 @@
     }
 }
 
+# One try at a run, which a lost or withdrawn try leaves for another.
+-attempt = { $case ->
+    [upper] { $form ->
+        [plural] Attempts
+        [a] An attempt
+       *[one] Attempt
+    }
+   *[lower] { $form ->
+        [plural] attempts
+        [a] an attempt
+       *[one] attempt
+    }
+}
+
 # A machine that takes runs.
 -runner = { $case ->
     [upper] { $form ->

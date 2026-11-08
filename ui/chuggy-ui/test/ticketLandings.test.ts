@@ -35,14 +35,39 @@ import {
   landingsRead,
 } from "./ticketLandingsFixture.ts";
 import { copyTextEn } from "../app/copy/catalog.ts";
+import { copyOrDataText } from "../app/core/copy.ts";
+import type { TicketLanding } from "../app/core/ticketLandings.ts";
 
 const nowMs = Date.parse("2026-10-07T15:00:00Z");
+
+/** A landing's fragment in the words the base language draws it in. */
+function fragmentWords(landing: TicketLanding, at: number) {
+  const fragment = ticketLandingFragment(landing, at);
+  const commit = fragment.commit;
+  return {
+    text:
+      fragment.text === undefined
+        ? undefined
+        : copyOrDataText(copyTextEn, fragment.text),
+    link: fragment.link,
+    commit:
+      commit === undefined
+        ? undefined
+        : {
+            name:
+              commit.name === undefined ? undefined : copyTextEn(commit.name),
+            label: commit.label,
+          },
+    caveat:
+      fragment.caveat === undefined ? undefined : copyTextEn(fragment.caveat),
+  };
+}
 
 test("a landing that failed on a conflict says so and how many files it names", () => {
   const landing = ticketLandingOf(landingConflicted(2), copyTextEn);
   expect(landing.word).toBe("Failed");
   expect(landing.tone).toBe("fail");
-  expect(ticketLandingFragment(landing, nowMs)).toEqual({
+  expect(fragmentWords(landing, nowMs)).toEqual({
     text: "Merge conflict · 1 file",
     link: undefined,
     commit: undefined,
@@ -57,7 +82,7 @@ test("a held landing says how long it has been held and on what", () => {
     copyTextEn,
   );
   expect(landing.word).toBe("Held");
-  expect(ticketLandingFragment(landing, nowMs).text).toBe(
+  expect(fragmentWords(landing, nowMs).text).toBe(
     "Held 12m · Target unreadable",
   );
 });
@@ -65,7 +90,7 @@ test("a held landing says how long it has been held and on what", () => {
 test("an escalated landing names the hold it escalated from, with who removed its pull request from the merge queue and why where that hold says", () => {
   const since = "2026-10-07T14:48:00Z";
   const said = (read: Parameters<typeof ticketLandingOf>[0]) =>
-    ticketLandingFragment(ticketLandingOf(read, copyTextEn), nowMs);
+    fragmentWords(ticketLandingOf(read, copyTextEn), nowMs);
   expect(
     said(
       landingEscalated(2, since, "ProposalDequeued", {
@@ -130,7 +155,7 @@ test("a landing whose merge waits on the forge says on what, what the forge said
   );
   expect(landing.word).toBe("Waiting");
   expect(landing.tone).toBe("parked");
-  expect(ticketLandingFragment(landing, nowMs)).toEqual({
+  expect(fragmentWords(landing, nowMs)).toEqual({
     text: "Blocked · behind · checked 3m ago",
     link: { href: landingPullRequest, host: "forge.example.test" },
     commit: undefined,
@@ -142,7 +167,7 @@ test("a landing whose merge waits on the forge says on what, what the forge said
 
 test("a required check that failed reads as the forge's own word, which the fragment does not say twice", () => {
   expect(
-    ticketLandingFragment(
+    fragmentWords(
       ticketLandingOf(
         landingAwaitingMerge(2, "2026-10-07T14:59:30Z", "Blocked", "blocked"),
         copyTextEn,
@@ -151,7 +176,7 @@ test("a required check that failed reads as the forge's own word, which the frag
     ).text,
   ).toBe("Blocked · checked 30s ago");
   expect(
-    ticketLandingFragment(
+    fragmentWords(
       ticketLandingOf(
         landingAwaitingMerge(2, "2026-10-07T14:00:00Z", "HeadMoved", "clean"),
         copyTextEn,
@@ -162,7 +187,7 @@ test("a required check that failed reads as the forge's own word, which the frag
 });
 
 test("a landed landing offers its pull request under its host and its commit short", () => {
-  const fragment = ticketLandingFragment(
+  const fragment = fragmentWords(
     ticketLandingOf(landingLanded(2), copyTextEn),
     nowMs,
   );
@@ -183,7 +208,7 @@ test("a landed landing offers its pull request under its host and its commit sho
 test("a pull request a person merged at a head it was not opened at names its merge commit as the row always does, says the head was not evaluated, and names both heads in its detail", () => {
   const landing = ticketLandingOf(landingMergedElsewhere(2), copyTextEn);
   expect(landing.word).toBe("Landed");
-  const fragment = ticketLandingFragment(landing, nowMs);
+  const fragment = fragmentWords(landing, nowMs);
   expect(fragment.commit).toEqual({
     name: "Merged",
     label: { text: "e0f3a7c", title: landingLandedCommit },
@@ -213,11 +238,11 @@ test("a pull request held on being closed is labelled closed, and an absent one 
     copyTextEn,
   );
   expect(closed.word).toBe("Held");
-  expect(ticketLandingFragment(closed, nowMs).text).toBe("Held 2m · Closed");
+  expect(fragmentWords(closed, nowMs).text).toBe("Held 2m · Closed");
   expect(closed.detail.proposal?.status).toBe("Closed");
   const absent = landingClosed(2, "2026-10-07T14:58:00Z");
   expect(
-    ticketLandingFragment(
+    fragmentWords(
       ticketLandingOf(
         {
           ...absent,

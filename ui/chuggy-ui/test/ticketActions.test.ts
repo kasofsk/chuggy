@@ -11,6 +11,7 @@ import { expect, test } from "vitest";
 
 import { escalationKinds, phaseRoster } from "../../../src/contract/rosters.ts";
 import type { TicketPhase } from "../../../src/contract/rosters.ts";
+import { copyTextEn } from "../app/copy/catalog.ts";
 import {
   actionsFor,
   manualDispatchActionOf,
@@ -73,18 +74,20 @@ test("an escalation offers the same two answers whatever wall it hit", () => {
 
 test("resume says what its own wall does, and one wall reworks", () => {
   const said = new Set(
-    escalationKinds.map((kind) => ticketActionSentence("Resume", { kind })),
+    escalationKinds.map((kind) => ticketActionSentence("Resume", { kind }).id),
   );
   expect(said.size).toBe(2);
   expect(
-    ticketActionSentence("Resume", { kind: "EvaluationFailureEscalated" }),
+    copyTextEn(
+      ticketActionSentence("Resume", { kind: "EvaluationFailureEscalated" }),
+    ),
   ).toBe("rework this ticket with a fresh cycle");
-  expect(ticketActionSentence("Resume", { kind: "WorkFailureEscalated" })).toBe(
-    ticketActionSentence("Resume"),
-  );
+  expect(
+    ticketActionSentence("Resume", { kind: "WorkFailureEscalated" }),
+  ).toEqual(ticketActionSentence("Resume"));
   expect(
     ticketActionSentence("Resume", { kind: "EvaluationBlockedEscalated" }),
-  ).toBe(ticketActionSentence("Resume"));
+  ).toEqual(ticketActionSentence("Resume"));
 });
 
 test("manual dispatch echoes only the candidate version the view supplied", () => {
