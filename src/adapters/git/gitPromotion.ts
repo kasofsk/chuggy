@@ -323,6 +323,7 @@ async function gitPromotionRemoveStack(
   return stackRemove(own.scratch, authorized.credential, {
     repository: removal.repository.repository,
     ref: removal.ref,
+    commit: removal.commit,
   });
 }
 

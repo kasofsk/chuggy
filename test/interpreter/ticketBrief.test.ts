@@ -135,6 +135,31 @@ test("a branch is a reference name by the one grammar this tree states", () => {
     assert.throws(() => asBriefBranch(value), RangeError, `refused: ${value}`);
 });
 
+test("the namespace stacks are published under is no branch or target", () => {
+  for (const value of [
+    "refs/heads/chuggy/stack",
+    "refs/heads/chuggy/stack/7/1",
+    "refs/heads/chuggy/stack/anything",
+  ]) {
+    assert.throws(() => asBriefBranch(value), RangeError, `refused: ${value}`);
+    assert.throws(
+      () =>
+        asBriefFinalization({
+          kind: "GitMerge",
+          mode: "Push",
+          policy: "Direct",
+          target: value,
+        }),
+      RangeError,
+      `refused as a target: ${value}`,
+    );
+  }
+  assert.equal(
+    asBriefBranch("refs/heads/chuggy/stacked"),
+    "refs/heads/chuggy/stacked",
+  );
+});
+
 test("a branch's bound counts code points, matching the schema in front of it", () => {
   const atBound = `${briefBranchPrefix}${"😀".repeat(briefBranchCharsMax - briefBranchPrefix.length)}`;
   assert.equal(asBriefBranch(atBound), atBound);

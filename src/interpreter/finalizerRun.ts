@@ -317,7 +317,9 @@ import type { ResultManifestId } from "./resultManifest.ts";
 import {
   stackRefOf,
   type EvaluatingStack,
+  type EvaluationStack,
   type EvaluationStackStore,
+  type UnpreparedStack,
 } from "./evaluationStack.ts";
 import { stackPrepared } from "./evaluationStacking.ts";
 import { stackInvalidations } from "./stackInvalidation.ts";
@@ -346,6 +348,7 @@ export interface FinalizerService {
     | "removable"
     | "remove"
     | "current"
+    | "read"
     | "unprepared"
     | "prepare"
     | "queue"
@@ -2746,8 +2749,36 @@ async function finalizerPrepareStacks(
       epoch,
       due,
     );
-    if (prepared !== undefined) await stacks.prepare(due.partition, prepared);
+    if (prepared === undefined) continue;
+    const left = await stacks.prepare(due.partition, prepared);
+    if (left !== "Written" && prepared.prepared === "Stack")
+      await finalizerStackUnheld(service, epoch, due, prepared.stack);
   }
+}
+
+/**
+ * Takes down the ref a pass published for a stack no record was written for,
+ * unless the record that stands is that very commit.
+ */
+async function finalizerStackUnheld(
+  service: FinalizerService,
+  epoch: RecoveryEpoch,
+  due: UnpreparedStack,
+  stack: EvaluationStack,
+): Promise<void> {
+  const held = await service.stacks?.read(due.partition, due.ticket, due.cycle);
+  if (held?.stackCommit === stack.stackCommit) return;
+  await service.git
+    .removeStack({
+      repository: {
+        partition: due.partition,
+        repository: asRepositoryId(due.repository),
+        recoveryEpoch: epoch,
+      },
+      ref: stackRefOf(due.ticket, due.cycle),
+      commit: stack.stackCommit,
+    })
+    .catch((): undefined => undefined);
 }
 
 /**
@@ -2770,6 +2801,7 @@ async function finalizerSweepStacks(
         recoveryEpoch: epoch,
       },
       ref: stackRefOf(due.ticket, due.cycle),
+      commit: due.commit,
     });
     if (removed.removed === "Removed")
       await stacks.remove(due.partition, due.ticket, due.cycle);

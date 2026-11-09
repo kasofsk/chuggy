@@ -122,6 +122,7 @@ interface RemovableRow {
   readonly ticket: string;
   readonly work_cycle: string;
   readonly repository: string;
+  readonly stack_commit: string;
 }
 
 interface LandingRow {
@@ -725,7 +726,7 @@ async function stackRemovable(
 ): Promise<readonly RemovableStack[]> {
   const found = await pool.query<RemovableRow>(
     sql`SELECT s.tenant, s.project, s.ticket::text AS ticket,
-                   s.work_cycle::text AS work_cycle, s.repository
+                   s.work_cycle::text AS work_cycle, s.repository, s.stack_commit
               FROM evaluation_stack s
               JOIN ticket_projection p
                 ON p.tenant = s.tenant AND p.project = s.project
@@ -755,6 +756,7 @@ async function stackRemovable(
     ticket: asTicketId(projectRowCounter(row.ticket, "stack ticket")),
     cycle: projectRowCounter(row.work_cycle, "stack cycle"),
     repository: row.repository,
+    commit: asGitObjectId(row.stack_commit),
   }));
 }
 

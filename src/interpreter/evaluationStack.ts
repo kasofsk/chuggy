@@ -15,6 +15,7 @@
 import type { TicketId } from "../domain/ids.ts";
 import {
   asGitRefName,
+  gitStackRefPrefix,
   type GitObjectId,
   type GitRefName,
 } from "./finalizer.ts";
@@ -23,9 +24,7 @@ import type { StackEntry, StackMember, StackStanding } from "./stackChoice.ts";
 
 /** The ref a cycle's stack commit is published at, which a plain clone fetches. */
 export function stackRefOf(ticket: number, cycle: number): GitRefName {
-  return asGitRefName(
-    `refs/heads/chuggy/stack/${String(ticket)}/${String(cycle)}`,
-  );
+  return asGitRefName(`${gitStackRefPrefix}${String(ticket)}/${String(cycle)}`);
 }
 
 /** One cycle's stack, as it was written. */
@@ -82,6 +81,8 @@ export interface RemovableStack {
   readonly ticket: TicketId;
   readonly cycle: number;
   readonly repository: string;
+  /** The commit the stack was recorded at, which is all the ref may be taken down from. */
+  readonly commit: GitObjectId;
 }
 
 /** A Stacked ticket being evaluated over a stack, with what decides whether the stack still stands. */

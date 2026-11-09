@@ -5061,6 +5061,7 @@ function stacksDue(
   return {
     noted,
     current: () => Promise.resolve(undefined),
+    read: () => Promise.resolve(undefined),
     unprepared: () => Promise.resolve([]),
     prepare: () => Promise.resolve("Present"),
     queue: () => Promise.resolve([]),
@@ -5074,6 +5075,7 @@ function stacksDue(
           ticket: asTicketId(1),
           cycle,
           repository: "repository-run",
+          commit: asGitObjectId(`${String(cycle)}`.repeat(40)),
         })),
       ),
     remove: (_partition, _ticket, cycle) => {
@@ -5161,6 +5163,54 @@ test("a pass prepares each cycle of a Stacked ticket's accepted work, as the dec
       ["Unstacked", "Conflicted"],
     ],
   );
+});
+
+test("a stack published for a cycle whose record was not written is taken down, unless the record that stands is that commit", async () => {
+  const minted = asGitObjectId(commitOf("d"));
+  const run = async (
+    left: "Written" | "Present" | "Evaluated",
+    standing: "Same" | "Other" | "None",
+  ) => {
+    const remote = recordingGit();
+    remote.mintStack = () =>
+      Promise.resolve({
+        minted: "Stack",
+        commit: minted,
+        tree: asGitObjectId(commitOf("e")),
+      });
+    const stacks = stacksUnprepared([1]);
+    stacks.prepare = () => Promise.resolve(left);
+    stacks.read = (_partition, ticket, cycle) =>
+      Promise.resolve(
+        standing === "None"
+          ? undefined
+          : {
+              ticket,
+              cycle,
+              repository: "repository-run",
+              target: "refs/heads/main",
+              tip: asGitObjectId(commitOf("a")),
+              beneath: [],
+              stackCommit:
+                standing === "Same" ? minted : asGitObjectId(commitOf("f")),
+              stackTree: asGitObjectId(commitOf("e")),
+            },
+      );
+    await passOver({
+      ...serviceOf(recordingStore([]), remote),
+      ticketBriefs: stackedBriefs(),
+      stacks,
+    });
+    return remote.stackRemovals;
+  };
+  assert.deepEqual(await run("Written", "Same"), []);
+  assert.deepEqual(await run("Present", "Same"), []);
+  assert.deepEqual(await run("Present", "Other"), [
+    "refs/heads/chuggy/stack/1/1",
+  ]);
+  assert.deepEqual(await run("Evaluated", "None"), [
+    "refs/heads/chuggy/stack/1/1",
+  ]);
 });
 
 test("a pass prepares nothing for a ticket that is not Stacked", async () => {

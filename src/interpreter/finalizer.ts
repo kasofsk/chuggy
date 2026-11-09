@@ -222,11 +222,16 @@ function gitRefNameHasInvalidCharacter(value: string): boolean {
   return false;
 }
 
+/** The namespace the finalizer publishes stacks under, which no branch or target may name. */
+export const gitStackRefPrefix = "refs/heads/chuggy/stack/";
+
 /** The one reference-name grammar this tree accepts, wherever a ref is written. */
 export function parsedGitRefName(value: unknown): GitRefName | undefined {
   if (
     typeof value !== "string" ||
     !value.startsWith(gitRefNamePrefix) ||
+    value.startsWith(gitStackRefPrefix) ||
+    `${value}/` === gitStackRefPrefix ||
     value.endsWith("/") ||
     value.endsWith(".") ||
     value.includes("..") ||
@@ -1277,10 +1282,11 @@ export interface GitPromotionPort {
   /** Merges a stack deterministically and publishes it at its ref. */
   mintStack(minting: StackMinting): Promise<StackMinted>;
 
-  /** Deletes a published stack's ref. */
+  /** Deletes a published stack's ref, only while it still holds the commit the stack was recorded at. */
   removeStack(removal: {
     readonly repository: RepositoryBinding;
     readonly ref: GitRefName;
+    readonly commit: GitObjectId;
   }): Promise<StackRemoved>;
 
   /** Advances the target ref to the candidate under a permit, conditionally on the target it observed. */

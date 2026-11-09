@@ -148,19 +148,45 @@ export async function stackMint(
     !(await scratchKeepCommit(scratch, repository, running))
   )
     return { minted: "Failed", evidence: "IntegrationFailed" };
-  const evidence = stackPushEvidence(
-    await scratchPush(scratch, repository, credential, running, minting.ref),
+  const held = await scratchReadRef(
+    scratch,
+    repository,
+    credential,
+    minting.ref,
   );
+  if (held.read === "Unreachable")
+    return { minted: "Failed", evidence: "RemoteUnreachable" };
+  const evidence =
+    held.read === "Value" && held.value === running
+      ? undefined
+      : stackPushEvidence(
+          await scratchPush(
+            scratch,
+            repository,
+            credential,
+            running,
+            minting.ref,
+            held.read === "Value" ? held.value : "Absent",
+          ),
+        );
   return evidence === undefined
     ? { minted: "Stack", commit: running, tree: shape.tree }
     : { minted: "Failed", evidence };
 }
 
-/** Deletes the ref a stack was published at, unless the remote holds none. */
+/**
+ * Deletes the ref a stack was published at while it holds the commit the stack
+ * was recorded at. A ref the remote holds none of, or holds at another commit,
+ * has nothing of this stack to take down.
+ */
 export async function stackRemove(
   scratch: GitScratch,
   credential: RepositoryCredential,
-  removal: { readonly repository: RepositoryId; readonly ref: GitRefName },
+  removal: {
+    readonly repository: RepositoryId;
+    readonly ref: GitRefName;
+    readonly commit: GitObjectId;
+  },
 ): Promise<StackRemoved> {
   const repository = removal.repository;
   const read = await scratchReadRef(
@@ -172,8 +198,15 @@ export async function stackRemove(
   if (read.read === "Absent") return { removed: "Removed" };
   if (read.read === "Unreachable")
     return { removed: "Failed", evidence: "RemoteUnreachable" };
+  if (read.value !== removal.commit) return { removed: "Removed" };
   const evidence = stackPushEvidence(
-    await scratchPushDelete(scratch, repository, credential, removal.ref),
+    await scratchPushDelete(
+      scratch,
+      repository,
+      credential,
+      removal.ref,
+      removal.commit,
+    ),
   );
   return evidence === undefined
     ? { removed: "Removed" }

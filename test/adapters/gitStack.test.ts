@@ -189,18 +189,6 @@ test("a textual conflict is no stack and publishes nothing", async (t) => {
   );
 });
 
-test("a ref the remote holds elsewhere is a failed push, not a stack", async (t) => {
-  const fixture = open(t);
-  const below = branchCommit(fixture, "below", "below.txt", "below\n");
-  const top = branchCommit(fixture, "top", "top.txt", "top\n");
-  const other = branchCommit(fixture, "other", "other.txt", "other\n");
-  run(fixture.remote, "update-ref", "refs/heads/chuggy/stack/7/1", other);
-  const minted = await port(fixture, "scratch").mintStack(
-    minting(fixture, [below], top),
-  );
-  assert.deepEqual(minted, { minted: "Failed", evidence: "RemoteDeclined" });
-});
-
 test("a commit nobody can fetch is a failure", async (t) => {
   const fixture = open(t);
   const top = branchCommit(fixture, "top", "top.txt", "top\n");
@@ -230,12 +218,72 @@ test("a published stack is taken down, and one already gone is too", async (t) =
   const top = branchCommit(fixture, "top", "top.txt", "top\n");
   const git = port(fixture, "scratch");
   await git.mintStack(minting(fixture, [], top));
-  const removal = { repository: fixture.binding, ref: stackRefOf(7, 1) };
+  const published = asGitObjectId(
+    run(fixture.remote, "rev-parse", "refs/heads/chuggy/stack/7/1"),
+  );
+  const removal = {
+    repository: fixture.binding,
+    ref: stackRefOf(7, 1),
+    commit: published,
+  };
   assert.deepEqual(await git.removeStack(removal), { removed: "Removed" });
   assert.throws(() =>
     run(fixture.remote, "rev-parse", "--verify", "refs/heads/chuggy/stack/7/1"),
   );
   assert.deepEqual(await git.removeStack(removal), { removed: "Removed" });
+});
+
+test("a ref that holds another commit than the one recorded is left alone", async (t) => {
+  const fixture = open(t);
+  const top = branchCommit(fixture, "top", "top.txt", "top\n");
+  const other = branchCommit(fixture, "other", "other.txt", "other\n");
+  const git = port(fixture, "scratch");
+  await git.mintStack(minting(fixture, [], top));
+  const removed = await git.removeStack({
+    repository: fixture.binding,
+    ref: stackRefOf(7, 1),
+    commit: other,
+  });
+  assert.deepEqual(removed, { removed: "Removed" });
+  assert.ok(run(fixture.remote, "rev-parse", "refs/heads/chuggy/stack/7/1"));
+});
+
+test("a stack minted again to a ref that holds a different commit replaces it, and one already published stays", async (t) => {
+  const fixture = open(t);
+  const below = branchCommit(fixture, "below", "below.txt", "below\n");
+  const top = branchCommit(fixture, "top", "top.txt", "top\n");
+  const git = port(fixture, "scratch");
+  const first = await git.mintStack(minting(fixture, [], top));
+  const second = await git.mintStack(minting(fixture, [below], top));
+  assert.equal(first.minted, "Stack");
+  assert.equal(second.minted, "Stack");
+  if (first.minted !== "Stack" || second.minted !== "Stack") return;
+  assert.notEqual(first.commit, second.commit);
+  assert.equal(
+    run(fixture.remote, "rev-parse", "refs/heads/chuggy/stack/7/1"),
+    second.commit,
+  );
+  assert.deepEqual(await git.mintStack(minting(fixture, [below], top)), second);
+});
+
+test("a stack ref is taken down only under a lease on the commit it was recorded at", async (t) => {
+  const fixture = open(t);
+  const top = branchCommit(fixture, "top", "top.txt", "top\n");
+  const git = port(fixture, "scratch");
+  const first = await git.mintStack(minting(fixture, [], top));
+  assert.equal(first.minted, "Stack");
+  if (first.minted !== "Stack") return;
+  const remote = fixture.remote;
+  const moved = branchCommit(fixture, "moved", "moved.txt", "moved\n");
+  const raced = (): Promise<{ removed: string }> =>
+    git.removeStack({
+      repository: fixture.binding,
+      ref: stackRefOf(7, 1),
+      commit: first.commit,
+    });
+  run(remote, "update-ref", "refs/heads/chuggy/stack/7/1", moved);
+  assert.deepEqual(await raced(), { removed: "Removed" });
+  assert.equal(run(remote, "rev-parse", "refs/heads/chuggy/stack/7/1"), moved);
 });
 
 /** The merge of `candidate` over the reference's present tip, as a stacked landing computes it. */
