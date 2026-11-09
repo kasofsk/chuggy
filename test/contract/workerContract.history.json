@@ -231,7 +231,17 @@
   },
   {
     "release": "1.46.0",
-    "wire": "f11eea52c58968b7cb433f84662380bed98bf4dbfa37fbd47cf0613c217b7001",
-    "files": "b420e78b5f9ce7d0c700a5fb49b30b23006d6fedfda366f0a417e340b5b4c8dd"
+    "wire": "9cc9d0de2607730edc4f4b9afa4f9f8b6a9938c28489bc5b520ee2c8e226398f",
+    "files": "203eee2dcde9ae26fd6ab4c591840e95acdac48949db24ae2023ef91106e8b79"
+  },
+  {
+    "release": "1.47.0",
+    "wire": "a233ec1f02e2eb5c5500aa7fb3bad102e5d2c4f3ddedeb4c97446fd5ec209ffd",
+    "files": "80f01f62fe05a47287fbaf4e4d23c69bbb23834a0e6181b7e6e6bdc7aba2f4c8"
+  },
+  {
+    "release": "1.48.0",
+    "wire": "1f85da81beba5d55691271c820d2fd9cd6a4d42534a95e44ec8ac18599d059ea",
+    "files": "3f28a4da12eb1c6ab75271df89cb346340287f5687b04232e077d7859e3576b4"
   }
 ]

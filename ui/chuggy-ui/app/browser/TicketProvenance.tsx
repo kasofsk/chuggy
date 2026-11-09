@@ -62,6 +62,7 @@ export function TicketBriefImages(props: {
               args: { number: at + 1 },
             })}
             className="rounded-2 border-edge block max-h-(--height-clip) max-w-full border"
+            opens
           />
         </li>
       ))}

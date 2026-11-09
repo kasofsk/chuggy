@@ -21,24 +21,24 @@ import { conversationBase64 } from "../core/conversationAttachments.ts";
 import { projectImageQuery } from "../core/projectQueries.ts";
 import { usePanelState } from "./api.ts";
 import { PanelUnready } from "./DataPanel.tsx";
+import { Lightbox } from "./ui/Lightbox.tsx";
 
 export function ProjectImage(props: {
   readonly partition: PartitionIdentity;
   readonly artifact: string;
   readonly alt: string;
   readonly className: string;
+  /** Pressing it opens it at its own size. */
+  readonly opens?: boolean;
 }): ReactNode {
   const state = usePanelState(
     projectImageQuery(props.partition, props.artifact),
   );
   if (state.state !== "Ready") return <PanelUnready state={state} />;
-  return (
-    <img
-      className={props.className}
-      src={`data:${state.value.mediaType};base64,${state.value.content}`}
-      alt={props.alt}
-    />
-  );
+  const src = `data:${state.value.mediaType};base64,${state.value.content}`;
+  if (props.opens === true)
+    return <Lightbox src={src} alt={props.alt} className={props.className} />;
+  return <img className={props.className} src={src} alt={props.alt} />;
 }
 
 /** Where the bytes an upload sent are written as the read of what it answered. */

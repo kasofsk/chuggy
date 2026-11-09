@@ -14,6 +14,7 @@ import {
   chatSupervisorRefusals,
   parseChatHostFrame,
   parseChatSupervisorFrame,
+  type ChatHostCredential,
   type ChatHostFrame,
   type ChatSupervisorFrame,
 } from "../../src/contract/chatHost.ts";
@@ -36,8 +37,15 @@ const start = {
   },
 } as const satisfies ChatHostFrame;
 
+const credential = {
+  agent: "Claude",
+  type: "OAuth",
+  name: "team-max_2",
+} as const satisfies ChatHostCredential;
+
 const hostFrames: readonly ChatHostFrame[] = [
   start,
+  { ...start, credential },
   { frame: "Start", assignment: "01HZ", envelope: { ...start.envelope } },
   { frame: "Stop", assignment: "01HZ" },
   { frame: "Drain" },
@@ -256,4 +264,59 @@ test("a host speaks to a supervisor only where its `Ready` names this version", 
     true,
   );
   assert.equal(chatProtocolSpoken(ready([chatProtocolVersion + 1])), false);
+});
+
+test("a version-1 `Start`, naming no credential, is read as it was written", () => {
+  const line = JSON.stringify(start);
+  assert.deepEqual(parseChatHostFrame(line), start);
+  assert.equal("credential" in parseChatHostFrame(line), false);
+});
+
+test("a `Start` names its credential by agent, type and name, and nothing else", () => {
+  for (const agent of ["Claude", "Codex"] as const)
+    for (const type of [
+      "OAuth",
+      "ApiKey",
+      "Bedrock",
+      "Vertex",
+      "Foundry",
+    ] as const) {
+      const frame = { ...start, credential: { agent, type, name: "a" } };
+      assert.deepEqual(parseChatHostFrame(JSON.stringify(frame)), frame);
+    }
+  const named = "n".repeat(64);
+  assert.equal(
+    parseChatHostFrame(
+      JSON.stringify({ ...start, credential: { ...credential, name: named } }),
+    ).frame,
+    "Start",
+  );
+  for (const wrong of [
+    { ...credential, name: "" },
+    { ...credential, name: "n".repeat(65) },
+    { ...credential, name: "team max" },
+    { ...credential, name: "../provider" },
+    { ...credential, agent: "Gemini" },
+    { ...credential, type: "Subscription" },
+    { agent: "Claude", type: "OAuth" },
+    { ...credential, file: "/run/chuggy/provider-credential" },
+    { ...credential, secret: "sk-ant-secret" },
+    "team-max_2",
+    null,
+  ])
+    assert.throws(() =>
+      parseChatHostFrame(JSON.stringify({ ...start, credential: wrong })),
+    );
+});
+
+test("a host of version 2 speaks to a supervisor of its window, and not to one of version 1 alone", () => {
+  const ready = (protocols: number[]) => ({
+    frame: "Ready" as const,
+    protocols,
+    sessionsMax: 1,
+    contractRelease: workerContractRelease,
+  });
+  assert.equal(chatProtocolVersion, 2);
+  assert.equal(chatProtocolSpoken(ready([1, 2])), true);
+  assert.equal(chatProtocolSpoken(ready([1])), false);
 });

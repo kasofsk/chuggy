@@ -356,7 +356,7 @@ function TenantInviteDialog(props: {
   };
   return (
     <Dialog
-      wide
+      size="form"
       title={text({
         id: "settings-invitation-title",
         args: { tenant: props.tenant },

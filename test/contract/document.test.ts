@@ -111,6 +111,7 @@ const documentRouteNames = [
   "runError",
   "runTranscript",
   "runTurns",
+  "runnerReleases",
   "selectorContext",
   "selectorHistory",
   "selectorProposalReview",

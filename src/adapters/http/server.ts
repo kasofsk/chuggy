@@ -100,6 +100,11 @@ import {
   selectorProposalDispatchesAnsweredMax,
   ticketSearchCharsMax,
 } from "../../contract/http.ts";
+import {
+  workerRunnerReleasesPinnedRoute,
+  type WorkerRunnerReleasesPinned,
+} from "../../contract/workerPool.ts";
+import type { WorkerRunnerReleases } from "../../interpreter/workerRunnerRelease.ts";
 import { asProjectArtifactId } from "../../interpreter/finalizerPreparation.ts";
 import {
   parseConfigurationCursor,
@@ -643,6 +648,36 @@ function registerContract(app: FastifyInstance): void {
         .send(configurationDocumentJsonSchema());
     },
   );
+}
+
+/** The release pinned for each runner package, answered to anyone, as the pins are kept. */
+function registerRunnerReleases(
+  app: FastifyInstance,
+  releases: WorkerRunnerReleases,
+): void {
+  const answer: WorkerRunnerReleasesPinned = {
+    releases: [...releases.values()],
+  };
+  app.get(
+    workerRunnerReleasesPinnedRoute,
+    { config: { public: true } },
+    (_request, reply) => {
+      void reply.type(nativeHttpMediaType).send(answer);
+    },
+  );
+}
+
+/** The reads answered to anyone: health, the contract, the installation, and the pinned runner releases where given. */
+function registerPublic(
+  app: FastifyInstance,
+  readiness: NativeHttpReadiness,
+  authority: InstallationAuthorityRead,
+  runnerReleases: WorkerRunnerReleases | undefined,
+): void {
+  registerHealth(app, readiness);
+  registerContract(app);
+  registerInstallation(app, authority);
+  if (runnerReleases !== undefined) registerRunnerReleases(app, runnerReleases);
 }
 
 function registerInstallation(
@@ -3204,14 +3239,13 @@ export function createNativeHttpApp(
   chat?: MemberChat,
   inbox?: ProjectInbox,
   agentAccounts?: AgentAccountService,
+  runnerReleases?: WorkerRunnerReleases,
 ): FastifyInstance {
   const app = nativeHttpServer(limits);
   const partitionRoot = "/api/v1/tenants/:tenant/projects/:project";
   registerCapacity(app, limits.concurrentRequestsMax);
   registerAuthentication(app, authentication, chat);
-  registerHealth(app, readiness);
-  registerContract(app);
-  registerInstallation(app, authority);
+  registerPublic(app, readiness, authority, runnerReleases);
   registerInventory(app, web);
   if (creation !== undefined) registerProjectCreation(app, creation);
   registerProject(app, web);
