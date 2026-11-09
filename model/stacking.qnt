@@ -6,13 +6,21 @@
 /// would hold, so trees compare by equality, a merge result's tree is the
 /// history with the candidate appended, and the reference's tip is the history.
 ///
-/// QUEUE. One queue per reference, landing one ticket at a time. The holder is
-/// the lowest-numbered ticket whose re-check is in flight, else the pending
-/// finalization that entered first. A Direct ticket is in no queue.
+/// QUEUE. One queue per reference, landing one ticket at a time, in rank order.
+/// A ticket takes its rank once, at its first finalization request of a work
+/// cycle, and keeps it through a re-check, a re-evaluation and an invalidation:
+/// the hold runs from the send-back through the re-check, the re-evaluation and
+/// the landing, and nothing ranked later lands ahead of it. A failed evaluation,
+/// a rework, an ejection or a landing releases the rank. The holder is the lowest
+/// rank, whatever phase it is in. A Direct ticket is in no queue.
+///
+/// KNOWN LIMIT. An invalidated ticket that has not started evaluating still
+/// holds its rank and blocks every ticket behind it, with no timeout.
 ///
 /// SERIALIZED. The holder lands only if its merge result is the tree it
 /// evaluated, which is its accepted commit containing the tip; otherwise it is
-/// sent back to be re-checked, and its new request enters at the back.
+/// sent back to be re-checked at the same rank. Only a Direct landing moves the
+/// tip under it afterwards, so its re-checks are bounded by those.
 ///
 /// STACKED. A Stacked ticket evaluates over the queue ahead of it when every
 /// entry ahead is a member of one stack that stands: the holder, which may still be
@@ -42,7 +50,7 @@ module stacking {
   /// that is not a rework sent the ticket back. `expected` is the tree the
   /// evaluation started over.
   type Ticket = {
-    policy: Policy, phase: Phase, entry: int, rechecking: bool, commit: int,
+    policy: Policy, phase: Phase, entry: int, rechecks: int, commit: int,
     stacking: Stacking, expected: Tree, stackFailures: int, reworks: int,
     invalidations: int, landedEntry: int
   }
@@ -59,7 +67,7 @@ module stacking {
 
   pure def initial(policies: int -> Policy): State = {
     tickets: policies.keys().mapBy(i => {
-      policy: policies.get(i), phase: Work, entry: 0, rechecking: false,
+      policy: policies.get(i), phase: Work, entry: 0, rechecks: 0,
       commit: 0, stacking: Unstacked, expected: List(), stackFailures: 0,
       reworks: 0, invalidations: 0, landedEntry: 0 }),
     history: List(), nextEntry: 1, landedStep: 0, rankKept: true, invalidated: List()
@@ -68,10 +76,10 @@ module stacking {
   pure def pairOf(s: State, i: int): Pair = { ticket: i, commit: s.tickets.get(i).commit }
   pure def queued(t: Ticket): bool = t.policy != Direct
   pure def ranked(t: Ticket): bool = and {
-    queued(t), t.entry > 0, or { t.phase == Ready, t.phase == Evaluation, t.phase == Pending } }
-  /// The queue is the in-flight re-checks by ticket, then the ranked tickets by entry. A ticket is ranked from its finalization request until it fails, is ejected, lands or is sent back to re-check, and an invalidation keeps its rank.
-  pure def inQueue(t: Ticket): bool = or { t.rechecking, ranked(t) }
-  pure def queueKey(t: Ticket, i: int): int = if (t.rechecking) i else 1000 + t.entry
+    queued(t), t.entry > 0, or { t.phase == Work, t.phase == Ready, t.phase == Evaluation, t.phase == Pending } }
+  /// The queue is the ranked tickets by rank. A ticket is ranked from its first finalization request of a work cycle until it fails, is ejected or lands; a re-check and an invalidation keep its rank, and a ticket in Work with a rank is the one whose re-check is in flight.
+  pure def inQueue(t: Ticket): bool = ranked(t)
+  pure def queueKey(t: Ticket, i: int): int = t.entry
   pure def queueSet(s: State): Set[int] = s.tickets.keys().filter(i => inQueue(s.tickets.get(i)))
   pure def queueRank(s: State, i: int): int =
     queueSet(s).filter(j => queueKey(s.tickets.get(j), j) < queueKey(s.tickets.get(i), i)).size()
@@ -185,24 +193,24 @@ module stacking {
     if (queued(t))
       settle(s,
         withTicket({ ...s, nextEntry: s.nextEntry + (if (t.entry > 0) 0 else 1) }, i,
-          { ...t, phase: Pending, entry: if (t.entry > 0) t.entry else s.nextEntry, rechecking: false }))
+          { ...t, phase: Pending, entry: if (t.entry > 0) t.entry else s.nextEntry }))
     else settle(s, withTicket(s, i, { ...t, phase: Pending }))
 
   pure def canFail(s: State, i: int): bool = phaseIs(s, i, Evaluation)
   pure def failEvaluation(s: State, i: int): State =
-    settle(s, withTicket(s, i, { ...s.tickets.get(i), phase: Failed, entry: 0, rechecking: false }))
+    settle(s, withTicket(s, i, { ...s.tickets.get(i), phase: Failed, entry: 0 }))
 
   pure def canRework(s: State, i: int): bool = phaseIs(s, i, Failed)
   pure def rework(s: State, i: int): State =
     val t = s.tickets.get(i)
     val stackedFail = match t.stacking { | StackedOn(_) => 1 | Unstacked => 0 }
-    settle(s, withTicket(s, i, { ...t, phase: Work, stacking: Unstacked, reworks: t.reworks + 1,
+    settle(s, withTicket(s, i, { ...t, phase: Work, rechecks: 0, stacking: Unstacked, reworks: t.reworks + 1,
                           stackFailures: t.stackFailures + stackedFail }))
 
   pure def canEject(s: State, i: int): bool =
     not(or { phaseIs(s, i, Landed), phaseIs(s, i, Ejected) })
   pure def eject(s: State, i: int): State =
-    settle(s, withTicket(s, i, { ...s.tickets.get(i), phase: Ejected, entry: 0, rechecking: false, stacking: Unstacked }))
+    settle(s, withTicket(s, i, { ...s.tickets.get(i), phase: Ejected, entry: 0, stacking: Unstacked }))
 
   /// A Direct ticket lands whenever it is evaluated; a queued one only as holder.
   pure def canLand(s: State, i: int): bool =
@@ -215,7 +223,7 @@ module stacking {
   pure def land(s: State, i: int): State =
     val t = s.tickets.get(i)
     if (needsRecheck(s, i))
-      settle(s, withTicket(s, i, { ...t, phase: Work, entry: 0, rechecking: true, stacking: Unstacked,
+      settle(s, withTicket(s, i, { ...t, phase: Work, rechecks: t.rechecks + 1, stacking: Unstacked,
                             reworks: t.reworks + 1 }))
     else
       settle(s, withTicket({ ...s, history: mergeTree(s, i) }, i, { ...t, phase: Landed, landedEntry: t.entry }))
@@ -292,8 +300,13 @@ module stacking {
     s.tickets.keys().forall(i => s.tickets.keys().forall(j => or { i == j, not(ranked(s.tickets.get(i))),
       s.tickets.get(i).entry != s.tickets.get(j).entry })) }
 
+  /// A ticket re-checks once for the tickets that ranked ahead of it, and then only
+  /// for a Direct landing: nothing ranked later can land ahead of it.
+  pure def recheckBounded(s: State): bool =
+    s.tickets.keys().forall(i => s.tickets.get(i).rechecks <= 1 + s.history.indices().filter(k => s.tickets.get(s.history[k].ticket).policy == Direct).size())
+
   pure def invariants(s: State): bool = and {
-    landsOneAtATime(s), landsInQueueOrder(s), historyFollowsEntries(s), landedAsEvaluated(s), landedOnce(s), ranksHold(s),
+    landsOneAtATime(s), landsInQueueOrder(s), historyFollowsEntries(s), landedAsEvaluated(s), landedOnce(s), ranksHold(s), recheckBounded(s),
     liveStacksStand(s), stackBaseIsPrefix(s), serializedOnlyHolderBeneath(s),
     invalidatedOnlyStacked(s), reworksAreReturnsToWork(s), failureCapHolds(s), depthHolds(s)
   }

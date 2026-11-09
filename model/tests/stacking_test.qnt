@@ -31,7 +31,7 @@ module stacking_test {
       .then(holds(and { holder(st) == 2, mergeTree(st, 2) != st.tickets.get(2).expected }))
       .then(lands(2))
       .then(holds(and {
-        phaseOf(st, 2) == Work, st.tickets.get(2).rechecking, st.tickets.get(2).reworks == 1,
+        phaseOf(st, 2) == Work, st.tickets.get(2).entry > 0, st.tickets.get(2).reworks == 1,
         st.history == List(pair(1, 1)), holder(st) == 2 }))
       .then(enter(2)).then(lands(2))
       .then(holds(and { phaseOf(st, 2) == Landed, st.history == List(pair(1, 1), pair(2, 2)),
@@ -90,10 +90,12 @@ module stacking_test {
       .then(holds(and { phaseOf(st, 2) == Work, holder(st) == 2 }))
       .then(holds(not(canLand(st, 3))))
       .then(enter(2))
-      .then(holds(holder(st) == 3))
+      .then(holds(and { holder(st) == 2, st.tickets.get(2).entry == 2, not(canLand(st, 3)) }))
+      .then(lands(2))
+      .then(holds(st.history == List(pair(1, 1), pair(2, 2))))
       .then(lands(3))
-      .then(holds(and { phaseOf(st, 3) == Work, st.tickets.get(3).rechecking,
-                        st.tickets.get(3).reworks == 1, st.history == List(pair(1, 1)) }))
+      .then(holds(and { phaseOf(st, 3) == Work, st.tickets.get(3).entry == 3,
+                        st.tickets.get(3).reworks == 1 }))
 
   run failureCapUnstacksTheNextEvaluationTest =
     setup(Map(1 -> Serialized, 2 -> Stacked))
@@ -106,7 +108,7 @@ module stacking_test {
       .then(rep(2)).then(begin(2))
       .then(holds(unstacked(st, 2)))
       .then(pass(2)).then(lands(1)).then(lands(2))
-      .then(holds(and { phaseOf(st, 2) == Work, st.tickets.get(2).rechecking }))
+      .then(holds(and { phaseOf(st, 2) == Work, st.tickets.get(2).entry > 0 }))
 
   run stackDepthIsBoundedTest =
     setup(Map(1 -> Serialized, 2 -> Stacked, 3 -> Stacked, 4 -> Stacked, 5 -> Stacked))
@@ -116,7 +118,7 @@ module stacking_test {
       .then(lands(1)).then(lands(2)).then(lands(3)).then(lands(4))
       .then(holds(st.history.length() == 4))
       .then(lands(5))
-      .then(holds(and { phaseOf(st, 5) == Work, st.tickets.get(5).rechecking }))
+      .then(holds(and { phaseOf(st, 5) == Work, st.tickets.get(5).entry > 0 }))
 
   run invalidatedTicketsLandInRankOrderTest =
     setup(Map(1 -> Stacked, 2 -> Stacked, 3 -> Stacked))
@@ -131,7 +133,7 @@ module stacking_test {
       .then(lands(2))
       .then(holds(st.history == List(pair(2, 1))))
       .then(lands(3))
-      .then(holds(and { phaseOf(st, 3) == Work, st.tickets.get(3).rechecking }))
+      .then(holds(and { phaseOf(st, 3) == Work, st.tickets.get(3).entry > 0 }))
 
   run newerTicketCannotOvertakeAnInvalidatedOneTest =
     setup(Map(1 -> Stacked, 2 -> Stacked, 3 -> Serialized))
@@ -149,4 +151,34 @@ module stacking_test {
       .then(rep(2)).then(begin(2))
       .then(rep(4)).then(begin(4))
       .then(holds(and { phaseOf(st, 2) == Evaluation, beneathOf(st, 4) == List(pair(2, 2)) }))
+
+  run recheckedTicketIsNotOvertakenTest =
+    setup(Map(1 -> Serialized, 2 -> Serialized, 3 -> Serialized, 4 -> Direct))
+      .then(enter(1)).then(enter(2)).then(enter(3)).then(enter(4)).then(lands(4))
+      .then(lands(1))
+      .then(holds(and { phaseOf(st, 1) == Work, st.tickets.get(1).entry == 1, holder(st) == 1,
+                        not(canLand(st, 2)), not(canLand(st, 3)) }))
+      .then(enter(1))
+      .then(holds(and { st.tickets.get(1).entry == 1, holder(st) == 1, not(canLand(st, 2)) }))
+      .then(lands(1))
+      .then(holds(st.history == List(pair(4, 1), pair(1, 2))))
+
+  run freshTicketCannotLandAheadOfARecheckingHolderTest =
+    setup(Map(1 -> Direct, 2 -> Serialized, 3 -> Serialized))
+      .then(enter(2)).then(enter(1)).then(lands(1)).then(lands(2))
+      .then(enter(3))
+      .then(holds(and { mergeTree(st, 3) == st.tickets.get(3).expected, holder(st) == 2,
+                        not(canLand(st, 3)) }))
+      .then(enter(2)).then(lands(2)).then(lands(3))
+      .then(holds(and { st.history == List(pair(1, 1), pair(2, 2)), phaseOf(st, 3) == Work,
+                        st.tickets.get(3).entry == 2 }))
+
+  run recheckCountIsBoundedByDirectLandingsTest =
+    setup(Map(1 -> Direct, 2 -> Serialized, 3 -> Direct))
+      .then(enter(2)).then(enter(1)).then(lands(1)).then(lands(2))
+      .then(holds(st.tickets.get(2).rechecks == 1))
+      .then(enter(2)).then(lands(2))
+      .then(holds(and { st.tickets.get(2).rechecks == 1, phaseOf(st, 2) == Landed }))
+      .then(enter(3)).then(lands(3))
+      .then(holds(recheckBounded(st)))
 }
