@@ -48,6 +48,11 @@ export interface EvaluationStackStore {
     ticket: TicketId,
     cycle: number,
   ): Promise<EvaluationStack | undefined>;
+  /** The record of the work cycle of the ticket's latest passed work, absent where that cycle was evaluated unstacked. */
+  current(
+    partition: Partition,
+    ticket: TicketId,
+  ): Promise<EvaluationStack | undefined>;
   /** Whether an evaluation of the cycle has been registered, which is when its stack is no longer chosen. */
   evaluated(
     partition: Partition,

@@ -20,6 +20,7 @@ import {
   stackDepthMax,
   type StackMember,
 } from "../../src/interpreter/stackChoice.ts";
+import { stackedSubject } from "./evaluationStackLandings.ts";
 import {
   finalizerCommit,
   finalizerProject,
@@ -209,4 +210,22 @@ test("the failure cap counts the reworks of cycles that ran over a stack, and no
     0,
     "another ticket's failures are its own",
   );
+});
+
+test("the current stack is the record of the cycle of the ticket's latest passed work, and none where that cycle ran unstacked", async () => {
+  const { project: plain } = await stackedSubject(rig, "stack-current");
+  const ticket = asTicketId(plain.ticket);
+  assert.equal(await store.current(plain.partition, ticket), undefined);
+  await store.record(
+    plain.partition,
+    stackOf(plain, [member(7)], { cycle: 2 }),
+  );
+  assert.equal(
+    await store.current(plain.partition, ticket),
+    undefined,
+    "a cycle with no passed work is not the current one",
+  );
+  const recorded = stackOf(plain, [member(7)]);
+  await store.record(plain.partition, recorded);
+  assert.deepEqual(await store.current(plain.partition, ticket), recorded);
 });

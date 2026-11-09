@@ -237,3 +237,51 @@ test("a published stack is taken down, and one already gone is too", async (t) =
   );
   assert.deepEqual(await git.removeStack(removal), { removed: "Removed" });
 });
+
+/** The merge of `candidate` over the reference's present tip, as a stacked landing computes it. */
+async function landed(
+  fixture: Fixture,
+  git: GitPromotionPort,
+  candidate: GitObjectId,
+) {
+  const integrated = await git.integrateCandidate({
+    repository: fixture.binding,
+    target: minting(fixture, [], candidate).tip,
+    candidate,
+    strategy: "Merge",
+  });
+  if (integrated.integrated !== "Candidate") {
+    assert.fail(`the merge did not integrate: ${JSON.stringify(integrated)}`);
+  }
+  return integrated;
+}
+
+test("landsWhenTreeEqual: once the tickets beneath have landed, the merge of the top one is the tree its stack was minted with", async (t) => {
+  const fixture = open(t);
+  const below = branchCommit(fixture, "below", "below.txt", "below\n");
+  const top = branchCommit(fixture, "top", "top.txt", "top\n");
+  const git = port(fixture, "scratch");
+  const minted = await git.mintStack(minting(fixture, [below], top));
+  if (minted.minted !== "Stack") return assert.fail("no stack was minted");
+  run(fixture.remote, "update-ref", "refs/heads/main", below);
+
+  const integrated = await landed(fixture, git, top);
+
+  assert.equal(integrated.tree, minted.tree);
+  assert.notEqual(integrated.candidate, minted.commit, "another commit");
+});
+
+test("directLandingInvalidatesAStack: a landing that is not beneath moves the merge to another tree than the stack's", async (t) => {
+  const fixture = open(t);
+  const below = branchCommit(fixture, "below", "below.txt", "below\n");
+  const top = branchCommit(fixture, "top", "top.txt", "top\n");
+  const direct = branchCommit(fixture, "direct", "direct.txt", "direct\n");
+  const git = port(fixture, "scratch");
+  const minted = await git.mintStack(minting(fixture, [below], top));
+  if (minted.minted !== "Stack") return assert.fail("no stack was minted");
+  run(fixture.remote, "update-ref", "refs/heads/main", direct);
+
+  const integrated = await landed(fixture, git, top);
+
+  assert.notEqual(integrated.tree, minted.tree);
+});

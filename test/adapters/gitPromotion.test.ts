@@ -671,7 +671,15 @@ test("a target the candidate already contains integrates to the candidate itself
     candidate,
     strategy: "Merge",
   });
-  assert.deepEqual(integrated, { integrated: "Candidate", candidate });
+  assert.deepEqual(integrated, {
+    integrated: "Candidate",
+    candidate,
+    tree: fixtureGit(
+      fixtureScratch(fixture),
+      "rev-parse",
+      `${candidate}^{tree}`,
+    ),
+  });
 });
 
 test("a target that moved without conflicting is merged into the candidate", async (t) => {
@@ -694,6 +702,10 @@ test("a target that moved without conflicting is merged into the candidate", asy
     assert.fail(`the merge did not integrate: ${JSON.stringify(integrated)}`);
   }
   const scratch = fixtureScratch(fixture);
+  assert.equal(
+    integrated.tree,
+    fixtureGit(scratch, "rev-parse", `${integrated.candidate}^{tree}`),
+  );
   assert.deepEqual(
     fixtureGit(
       scratch,

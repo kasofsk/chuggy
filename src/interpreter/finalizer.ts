@@ -1117,12 +1117,16 @@ export interface ConflictSummary {
 }
 
 /**
- * What integrating found: an integrated candidate, a genuine conflict, or a git
- * refusal. A conflict carries the merge base it was computed against, absent
- * only where the two commits share no history at all.
+ * What integrating found: an integrated candidate and the tree it records, a
+ * genuine conflict, or a git refusal. A conflict carries the merge base it was
+ * computed against, absent only where the two commits share no history at all.
  */
 export type CandidateIntegrated =
-  | { readonly integrated: "Candidate"; readonly candidate: GitObjectId }
+  | {
+      readonly integrated: "Candidate";
+      readonly candidate: GitObjectId;
+      readonly tree: GitObjectId;
+    }
   | {
       readonly integrated: "Conflicted";
       readonly conflict: ConflictSummary;

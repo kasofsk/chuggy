@@ -264,7 +264,7 @@ async function candidateIntegrateMerge(
       ) {
         return { integrated: "Failed", evidence: "IntegrationFailed" };
       }
-      return { integrated: "Candidate", candidate };
+      return { integrated: "Candidate", candidate, tree: merged.tree };
     }
     default:
       return assertNever(merged);
@@ -310,7 +310,18 @@ export async function candidateIntegrate(
     return { integrated: "Failed", evidence: "IntegrationFailed" };
   }
   if (contains) {
-    return { integrated: "Candidate", candidate: integration.candidate };
+    const shape = await scratchCommitShape(
+      scratch,
+      repository,
+      integration.candidate,
+    );
+    return shape === undefined
+      ? { integrated: "Failed", evidence: "IntegrationFailed" }
+      : {
+          integrated: "Candidate",
+          candidate: integration.candidate,
+          tree: shape.tree,
+        };
   }
   switch (integration.strategy) {
     case "Merge":

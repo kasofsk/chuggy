@@ -335,8 +335,11 @@ export interface FinalizerService {
   readonly git: GitPromotionPort;
   readonly forges: ChangeProposalForges;
   readonly ticketBriefs: TicketBriefPort;
-  /** Where the stacks evaluations ran over are kept, which a pass takes down once their cycle is over. */
-  readonly stacks?: Pick<EvaluationStackStore, "removable" | "remove">;
+  /** Where the stacks evaluations ran over are kept: read to land a stacked ticket, taken down once their cycle is over. */
+  readonly stacks?: Pick<
+    EvaluationStackStore,
+    "removable" | "remove" | "current"
+  >;
   readonly handoffs: HandoffContentPort;
   readonly artifacts: ProjectArtifactPort;
   readonly identities: FinalizerIdentityFactory;
@@ -956,7 +959,9 @@ async function finalizerIntegrated(
   subject: FinalizerPreparation,
   target: ObservedTarget,
   candidate: GitObjectId,
-  integrated: CandidateIntegrated,
+  integrated:
+    | CandidateIntegrated
+    | { readonly integrated: "Candidate"; readonly candidate: GitObjectId },
   tally: FinalizerTally,
 ): Promise<void> {
   recordFinalizer(service.metrics, (metrics) => {
@@ -1126,6 +1131,30 @@ async function finalizerUnlanded(
   }
 }
 
+/**
+ * Re-observes the target a candidate lands on. Where it cannot be read the
+ * pass is held, and where it already holds the candidate the attempt is
+ * concluded; both answer `undefined`, and anything else answers the target.
+ */
+async function finalizerLandable(
+  service: FinalizerService,
+  subject: FinalizerPreparation,
+  candidate: GitObjectId,
+  tally: FinalizerTally,
+): Promise<ObservedTarget | undefined> {
+  const target = finalizerIntegrationTarget(
+    subject,
+    await service.git.observeTarget(subject.repository),
+  );
+  if (target === undefined) {
+    finalizerHold(service, tally, "TargetUnobserved");
+    return undefined;
+  }
+  return (await finalizerUnlanded(service, subject, target, candidate, tally))
+    ? target
+    : undefined;
+}
+
 /** Re-observes and integrates one candidate, however that candidate was prepared. */
 async function finalizerIntegratePrepared(
   service: FinalizerService,
@@ -1133,16 +1162,8 @@ async function finalizerIntegratePrepared(
   candidate: GitObjectId,
   tally: FinalizerTally,
 ): Promise<void> {
-  const target = finalizerIntegrationTarget(
-    subject,
-    await service.git.observeTarget(subject.repository),
-  );
-  if (target === undefined) {
-    finalizerHold(service, tally, "TargetUnobserved");
-    return;
-  }
-  if (!(await finalizerUnlanded(service, subject, target, candidate, tally)))
-    return;
+  const target = await finalizerLandable(service, subject, candidate, tally);
+  if (target === undefined) return;
   const integrated = await service.git.integrateCandidate({
     repository: subject.repository,
     target,
@@ -1204,16 +1225,8 @@ async function finalizerContainedPrepared(
   accepted: GitObjectId,
   tally: FinalizerTally,
 ): Promise<void> {
-  const target = finalizerIntegrationTarget(
-    subject,
-    await service.git.observeTarget(subject.repository),
-  );
-  if (target === undefined) {
-    finalizerHold(service, tally, "TargetUnobserved");
-    return;
-  }
-  if (!(await finalizerUnlanded(service, subject, target, accepted, tally)))
-    return;
+  const target = await finalizerLandable(service, subject, accepted, tally);
+  if (target === undefined) return;
   const contained = await service.git.proveTargetContained({
     repository: subject.repository,
     target,
@@ -1241,6 +1254,66 @@ async function finalizerContainedPrepared(
   }
 }
 
+/**
+ * Prepares a stacked landing: the merge of the accepted commit with the target
+ * lands only when its tree is the stack's, which is what the evaluation saw,
+ * and otherwise the ticket goes back to be re-checked at its rank. A ticket
+ * evaluated over no stack lands as a serialized one does.
+ */
+async function finalizerStackedPrepared(
+  service: FinalizerService,
+  subject: FinalizerPreparation,
+  accepted: GitObjectId,
+  tally: FinalizerTally,
+): Promise<void> {
+  const { claim } = subject.view;
+  const stack = await service.stacks?.current(claim.partition, claim.ticket);
+  if (stack === undefined) {
+    await finalizerContainedPrepared(service, subject, accepted, tally);
+    return;
+  }
+  const target = await finalizerLandable(service, subject, accepted, tally);
+  if (target === undefined) return;
+  const integrated = await service.git.integrateCandidate({
+    repository: subject.repository,
+    target,
+    candidate: accepted,
+    strategy: finalizerStrategy,
+  });
+  if (
+    integrated.integrated === "Candidate" &&
+    integrated.tree !== stack.stackTree
+  ) {
+    await finalizerRecheckRequired(service, subject, target, accepted, tally);
+    return;
+  }
+  await finalizerIntegrated(
+    service,
+    subject,
+    target,
+    accepted,
+    integrated,
+    tally,
+  );
+}
+
+/** How a source candidate is prepared for landing under the brief's policy. */
+function finalizerPreparedBy(
+  finalization: FinalizationView["finalization"],
+): typeof finalizerIntegratePrepared {
+  if (finalization?.kind !== "GitMerge") return finalizerIntegratePrepared;
+  switch (finalization.policy) {
+    case "Direct":
+      return finalizerIntegratePrepared;
+    case "Serialized":
+      return finalizerContainedPrepared;
+    case "Stacked":
+      return finalizerStackedPrepared;
+    default:
+      return assertNever(finalization.policy);
+  }
+}
+
 /** Verifies and integrates the immutable source commit a worker published. */
 async function finalizerBuildSource(
   service: FinalizerService,
@@ -1261,11 +1334,12 @@ async function finalizerBuildSource(
   switch (prepared.prepared) {
     case "Candidate": {
       const { finalization } = subject.view;
-      await (
-        finalization?.kind === "GitMerge" && finalization.policy !== "Direct"
-          ? finalizerContainedPrepared
-          : finalizerIntegratePrepared
-      )(service, subject, prepared.candidate, tally);
+      await finalizerPreparedBy(finalization)(
+        service,
+        subject,
+        prepared.candidate,
+        tally,
+      );
       return;
     }
     case "Undescended":

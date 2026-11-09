@@ -392,6 +392,42 @@ async function stackEvaluated(
   return found.rowCount !== 0;
 }
 
+async function stackCurrentRead(
+  pool: pg.Pool,
+  partition: Partition,
+  ticket: number,
+): Promise<EvaluationStack | undefined> {
+  const found = await pool.query<RecordRow>(
+    sql`SELECT s.ticket::text AS ticket, s.work_cycle::text AS work_cycle,
+               s.repository, s.target_ref, s.tip, s.stack_commit, s.stack_tree,
+               b.depth, b.beneath_ticket::text AS beneath_ticket, b.beneath_commit
+          FROM evaluation_stack s
+          LEFT JOIN evaluation_stack_beneath b
+            ON b.tenant = s.tenant AND b.project = s.project
+           AND b.ticket = s.ticket AND b.work_cycle = s.work_cycle
+         WHERE s.tenant = ${partition.tenant} AND s.project = ${partition.project}
+           AND s.ticket = ${ticket}
+           AND s.work_cycle = (
+                 SELECT max(t.cycle)
+                   FROM execution e
+                   JOIN execution_request_task t
+                     ON t.tenant = e.tenant AND t.project = e.project
+                        AND t.request = e.source_request AND t.task = e.task
+                   JOIN execution_result r
+                     ON r.tenant = e.tenant AND r.project = e.project
+                        AND r.execution = e.execution
+                   JOIN execution_result_source x
+                     ON x.tenant = r.tenant AND x.project = r.project
+                        AND x.manifest = r.manifest
+                  WHERE e.tenant = s.tenant AND e.project = s.project
+                    AND e.ticket = s.ticket AND t.kind = 'Work'
+                    AND e.status = 'Terminal' AND e.outcome = 'Passed'
+                    AND r.verdict = 'Pass')
+         ORDER BY b.depth`,
+  );
+  return stackRecordsOf(found.rows)[0];
+}
+
 async function stackRemovable(
   pool: pg.Pool,
   limit: number,
@@ -439,6 +475,7 @@ export function postgresEvaluationStack(pool: pg.Pool): EvaluationStackStore {
       ),
     read: async (partition, ticket, cycle) =>
       (await stackRecordsRead(pool, partition, [ticket], [cycle]))[0],
+    current: (partition, ticket) => stackCurrentRead(pool, partition, ticket),
     evaluated: (partition, ticket, cycle) =>
       stackEvaluated(pool, partition, ticket, cycle),
     removable: (limit) => stackRemovable(pool, limit),
