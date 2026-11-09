@@ -71,8 +71,8 @@ function held(
         return Promise.resolve(renews);
       },
       snapshot: () => ({ phase, reason: undefined, configuration: undefined }),
-      signOut: async () => {
-        asked.push("signOut");
+      signOut: async (scope) => {
+        asked.push(`signOut: ${scope ?? "Issuer"}`);
         await new Promise<void>((resolve) => {
           setTimeout(resolve, 0);
         });
@@ -126,7 +126,7 @@ test("a session the issuer will not renew is forgotten, then said to be, and is 
   expect(over.asked).toEqual([
     "bearer",
     "refresh",
-    "signOut",
+    "signOut: Console",
     "signedOut",
     refused,
   ]);
@@ -198,7 +198,7 @@ test("a fresh bearer the API refuses too ends the session the same way", async (
     "bearer",
     "refresh",
     "bearer",
-    "signOut",
+    "signOut: Console",
     "signedOut",
     refused,
   ]);
