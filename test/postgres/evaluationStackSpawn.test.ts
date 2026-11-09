@@ -10,7 +10,10 @@ import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 import type pg from "pg";
 
-import { postgresEvaluationStack } from "../../src/adapters/postgres/evaluationStack.ts";
+import {
+  postgresEvaluationStack,
+  stackPrepareLockKey,
+} from "../../src/adapters/postgres/evaluationStack.ts";
 import { ticketServiceRole } from "../../src/adapters/postgres/schema/shared.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import type {
@@ -143,6 +146,37 @@ test("a cycle is prepared once, as a record or as none, and only while it has no
     reason: "Conflicted",
   });
   assert.equal(await service.decision(project.partition, ticket, 3), undefined);
+});
+
+test("a cycle is prepared under a lock keyed on it, so a record and a decision never both stand", async () => {
+  const { project } = await stackedSubject(rig, "service-prepare-race");
+  const ticket = asTicketId(project.ticket);
+  await finalizerSpawnTasks(rig, project, [2]);
+  const holder = await rig.pool.connect();
+  let settled = false;
+  try {
+    await holder.query("BEGIN");
+    await holder.query(
+      `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
+      [stackPrepareLockKey(project.partition, project.ticket, 2)],
+    );
+    const waiting = finalizer
+      .prepare(project.partition, {
+        prepared: "Unstacked",
+        ticket,
+        cycle: 2,
+        reason: "Conflicted",
+      })
+      .finally(() => {
+        settled = true;
+      });
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.equal(settled, false, "a preparation waits on one in flight");
+    await holder.query("COMMIT");
+    assert.equal(await waiting, "Written");
+  } finally {
+    holder.release();
+  }
 });
 
 test("a cycle of accepted work with nothing prepared and no evaluation is found until it is prepared", async () => {

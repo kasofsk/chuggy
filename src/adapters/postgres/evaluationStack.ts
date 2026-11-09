@@ -8,7 +8,8 @@
  * EVALUATING. The record, its beneath rows or the decision are written
  * together, and nothing is written for a cycle that has an evaluation
  * registered, which is what keeps a late preparation from stacking an
- * evaluation that already ran unstacked.
+ * evaluation that already ran unstacked. A lock keyed on the cycle is taken
+ * first, so two replicas cannot leave a record and a decision for one cycle.
  *
  * STANDING IS DERIVED HERE AND STORED NOWHERE. A recorded stack's landings are
  * the finalization attempts promoted onto its reference since its tip, followed
@@ -302,6 +303,15 @@ async function stackUnstackedWrite(
   return written.rowCount === 0 ? "Present" : "Written";
 }
 
+/** The name the lock that serializes the preparation of one cycle is taken under. */
+export function stackPrepareLockKey(
+  partition: Partition,
+  ticket: number,
+  cycle: number,
+): string {
+  return `evaluation-stack:${partition.tenant}:${partition.project}:${String(ticket)}:${String(cycle)}`;
+}
+
 async function stackPrepare(
   pool: pg.Pool,
   partition: Partition,
@@ -312,6 +322,9 @@ async function stackPrepare(
   const cycle =
     prepared.prepared === "Stack" ? prepared.stack.cycle : prepared.cycle;
   return postgresTransaction(pool, async (client) => {
+    await client.query(
+      sql`SELECT pg_advisory_xact_lock(hashtextextended(${stackPrepareLockKey(partition, ticket, cycle)}, 0))`,
+    );
     if (await stackEvaluated(client, partition, ticket, cycle))
       return "Evaluated";
     const decided = await client.query<{ found: number }>(
