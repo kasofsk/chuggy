@@ -41,6 +41,7 @@ import type {
 import {
   composeFinalizerService,
   composeForgeRepositoryMinting,
+  composeTicketServiceStackCredentials,
   composeSelectorRuntime,
   composeTicketServiceCredentials,
   type FinalizerServiceRuntime,
@@ -85,7 +86,9 @@ import {
   postgresPriorEvaluationReports,
   postgresPriorWorkReports,
 } from "../adapters/postgres/evaluationReports.ts";
+import { postgresEvaluationStack } from "../adapters/postgres/evaluationStack.ts";
 import { postgresTicketBrief } from "../adapters/postgres/ticketBrief.ts";
+import { evaluationStacking } from "../interpreter/evaluationStacking.ts";
 import { postgresTicketLandings } from "../adapters/postgres/ticketLandings.ts";
 import {
   postgresDependencyPins,
@@ -513,15 +516,36 @@ export interface TicketServiceProcessRootConfig {
   readonly forge?: ForgeAppKey;
 }
 
+/** The choice of a stack to evaluate over, which mints through the one write-permission composition the ticket service holds. */
+function ticketServiceStacking(
+  pool: pg.Pool,
+  config: TicketServiceProcessRootConfig,
+  git: ReturnType<typeof gitPromotion>,
+  bindings: ReturnType<typeof postgresProjectRepositoryBinding>,
+  minting: ReturnType<typeof composeForgeRepositoryMinting>,
+): ReturnType<typeof evaluationStacking> {
+  const stackGit = gitPromotion({
+    ...config.source,
+    credentials: composeTicketServiceStackCredentials(config.source, minting),
+  });
+  return evaluationStacking({
+    store: postgresEvaluationStack(pool),
+    briefs: postgresTicketBrief(pool),
+    bindings,
+    git: {
+      observeTarget: (repository) => git.observeTarget(repository),
+      mintStack: (stack) => stackGit.mintStack(stack),
+    },
+  });
+}
+
 /** Owns the writer-role pool and composes the independently deployable ticket service. */
 export function ticketServiceProcessRoot(
   config: TicketServiceProcessRootConfig,
 ): ServiceRuntime {
   const pool = processPool(config.database);
-  const credentials = composeTicketServiceCredentials(
-    config.source,
-    composeForgeRepositoryMinting(pool, config.forge, "Settled"),
-  );
+  const minting = composeForgeRepositoryMinting(pool, config.forge, "Settled");
+  const credentials = composeTicketServiceCredentials(config.source, minting);
   const git = gitPromotion({ ...config.source, credentials });
   const bindings = postgresProjectRepositoryBinding(pool);
   const ancestry = gitCommitAncestry({
@@ -546,6 +570,7 @@ export function ticketServiceProcessRoot(
       git,
       postgresExecutionSourceHistory(pool),
       ancestry,
+      ticketServiceStacking(pool, config, git, bindings, minting),
     ),
     ticketBriefs: postgresTicketBrief(pool),
     projectArtifacts: artifactStore({ root: config.artifacts.root }),

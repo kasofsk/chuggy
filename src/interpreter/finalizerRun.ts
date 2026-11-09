@@ -283,6 +283,7 @@ import {
   type InputBundleReference,
   type ObservedTarget,
   type PromotionDecline,
+  asRepositoryId,
   type RepositoryBinding,
   type TargetObserved,
   inputBundleReferencesMax,
@@ -313,6 +314,8 @@ import {
   type FinalizerTelemetry,
 } from "./finalizerTelemetry.ts";
 import type { ResultManifestId } from "./resultManifest.ts";
+import type { EvaluationStackStore } from "./evaluationStack.ts";
+import { stackRefOf } from "./evaluationStacking.ts";
 import type { Partition, RecoveryEpoch } from "./projectStore.ts";
 import {
   finalizerLandingOf,
@@ -332,6 +335,8 @@ export interface FinalizerService {
   readonly git: GitPromotionPort;
   readonly forges: ChangeProposalForges;
   readonly ticketBriefs: TicketBriefPort;
+  /** Where the stacks evaluations ran over are kept, which a pass takes down once their cycle is over. */
+  readonly stacks?: Pick<EvaluationStackStore, "removable" | "remove">;
   readonly handoffs: HandoffContentPort;
   readonly artifacts: ProjectArtifactPort;
   readonly identities: FinalizerIdentityFactory;
@@ -2593,6 +2598,35 @@ async function finalizerAdvanceDecided(
   }
 }
 
+/** The most stacks one pass takes down. */
+const stackRemovalsPerPassMax = 8;
+
+/**
+ * Takes down the published stack of every cycle that is over: its ticket is
+ * Done or Revoked or has begun a later work cycle. The removal is noted after
+ * the ref is gone, so a pass that stops between the two deletes nothing twice
+ * that matters, and a ref the remote will not release is tried again.
+ */
+async function finalizerSweepStacks(
+  service: FinalizerService,
+  epoch: RecoveryEpoch,
+): Promise<void> {
+  const stacks = service.stacks;
+  if (stacks === undefined) return;
+  for (const due of await stacks.removable(stackRemovalsPerPassMax)) {
+    const removed = await service.git.removeStack({
+      repository: {
+        partition: due.partition,
+        repository: asRepositoryId(due.repository),
+        recoveryEpoch: epoch,
+      },
+      ref: stackRefOf(due.ticket, due.cycle),
+    });
+    if (removed.removed === "Removed")
+      await stacks.remove(due.partition, due.ticket, due.cycle);
+  }
+}
+
 /** One bounded pass over every durable move the finalizer owns, in dependency order. */
 export async function finalizerPass(
   service: FinalizerService,
@@ -2623,6 +2657,7 @@ export async function finalizerPass(
     metrics.claiming(claims.length, config.requestsPerPassMax);
   });
   for (const claim of claims) await finalizerAdvance(service, claim, tally);
+  await finalizerSweepStacks(service, epoch);
   return {
     reopened,
     rereadings: tally.rereadings,

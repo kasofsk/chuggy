@@ -9,6 +9,11 @@ import type {
   ExecutionSourceHistoryPort,
   TicketSourceRow,
 } from "../../src/interpreter/executionSourceObservation.ts";
+import { asTicketId } from "../../src/domain/ids.ts";
+import type {
+  EvaluationStacking,
+  StackedEvaluation,
+} from "../../src/interpreter/evaluationStacking.ts";
 import { unsourcedTicketReference } from "../../src/interpreter/executionSource.ts";
 import type {
   CommitAncestry,
@@ -681,4 +686,130 @@ test("a commit whose ancestry question rejects keeps the walked-back base", asyn
     ).changeBase,
     dispatchedCommit,
   );
+});
+
+const stackedCommit = asGitObjectId("5".repeat(40));
+const stackedTree = asGitObjectId("6".repeat(40));
+
+/** A stacking over a fixed answer, recording each ask. */
+function stackingAnswering(
+  answer: StackedEvaluation | undefined,
+  asked: unknown[] = [],
+): EvaluationStacking {
+  return {
+    stackOf: (input) => {
+      asked.push(input);
+      return Promise.resolve(answer);
+    },
+  };
+}
+
+/** The accepted source spawned with a stacking over it. */
+function spawnStacked(
+  kind: "Work" | "Evaluation",
+  stacking: EvaluationStacking,
+  cycle: number | null = 3,
+) {
+  return executionSourceObservation(
+    {
+      binding: (asking, repository) =>
+        Promise.resolve({
+          partition: asking,
+          repository: repository ?? asRepositoryId("project-default"),
+          recoveryEpoch: asRecoveryEpoch("epoch"),
+        }),
+    },
+    {
+      observeTarget: () => {
+        throw new Error("mutable Git must not be observed");
+      },
+    },
+    {
+      workSource: () =>
+        Promise.resolve({ manifests: [asResultManifestId("manifest-one")] }),
+      ticketSource: () =>
+        Promise.resolve({
+          repository: asRepositoryId("work-repository"),
+          commit: acceptedCommit,
+          ref: asGitRefName("refs/heads/work"),
+        }),
+      workResultBases: (_partition, _ticket, commit) =>
+        Promise.resolve(acceptedOnce(commit)),
+      failedLandingBase: () => Promise.resolve(undefined),
+    },
+    { ...noAncestry, tree: () => Promise.resolve(acceptedTree) },
+    stacking,
+  ).spawnSource({
+    partition,
+    ticket: 1,
+    source: acceptedReference,
+    kind,
+    ...(cycle === null ? {} : { cycle }),
+  });
+}
+
+const stackedRecord: StackedEvaluation = {
+  fresh: true,
+  record: {
+    ticket: asTicketId(1),
+    cycle: 3,
+    repository: "work-repository",
+    target: "refs/heads/main",
+    tip: asGitObjectId("a".repeat(40)),
+    beneath: [{ ticket: asTicketId(9), commit: asGitObjectId("9".repeat(40)) }],
+    stackCommit: stackedCommit,
+    stackTree: stackedTree,
+  },
+};
+
+/** Catches an evaluation that is stacked and still judges the candidate's own commit and tree. */
+test("an evaluation over a stack runs on the stack's commit and ref, bound to the stack's tree", async () => {
+  const asked: unknown[] = [];
+  const sourced = await spawnStacked(
+    "Evaluation",
+    stackingAnswering(stackedRecord, asked),
+  );
+  assert.deepEqual(sourced?.target, {
+    commit: stackedCommit,
+    ref: "refs/heads/chuggy/stack/1/3",
+  });
+  assert.equal(sourced?.expectedTree, stackedTree);
+  assert.deepEqual(sourced?.stack, stackedRecord);
+  assert.equal(asked.length, 1);
+});
+
+/** Catches a stacking that leaves a mark on an evaluation it chose no stack for. */
+test("an evaluation with no stack runs on the accepted commit, bound to its tree, exactly as before", async () => {
+  const sourced = await spawnStacked(
+    "Evaluation",
+    stackingAnswering(undefined),
+  );
+  assert.deepEqual(sourced?.target, {
+    commit: acceptedCommit,
+    ref: "refs/heads/work",
+  });
+  assert.equal(sourced?.expectedTree, acceptedTree);
+  assert.equal(sourced?.stack, undefined);
+});
+
+/** Catches a work cycle, or an evaluation not told its cycle, being stacked. */
+test("only an evaluation told its cycle asks for a stack", async () => {
+  const asked: unknown[] = [];
+  const stacking = stackingAnswering(stackedRecord, asked);
+  assert.equal((await spawnStacked("Work", stacking))?.stack, undefined);
+  assert.equal(
+    (await spawnStacked("Evaluation", stacking, null))?.stack,
+    undefined,
+  );
+  assert.deepEqual(asked, []);
+});
+
+/** Catches a stack that was already recorded being handed back to be written again. */
+test("a stack already recorded is read for the target and not handed back as fresh", async () => {
+  const sourced = await spawnStacked(
+    "Evaluation",
+    stackingAnswering({ ...stackedRecord, fresh: false }),
+  );
+  assert.equal(sourced?.target.commit, stackedCommit);
+  assert.equal(sourced?.stack?.fresh, false);
 });

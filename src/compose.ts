@@ -167,6 +167,7 @@ import {
   type SelectorProposalReviews,
 } from "./interpreter/selectorReview.ts";
 import { postgresFinalizer } from "./adapters/postgres/finalizer.ts";
+import { postgresEvaluationStack } from "./adapters/postgres/evaluationStack.ts";
 import { postgresTicketBrief } from "./adapters/postgres/ticketBrief.ts";
 import {
   asFinalizationAttemptId,
@@ -526,6 +527,21 @@ export function composeTicketServiceCredentials(
 }
 
 /**
+ * What the ticket service asks a forge for to publish the stack an evaluation
+ * runs over: it pushes a branch under `refs/heads/chuggy/stack/` and nothing else.
+ */
+export function composeTicketServiceStackCredentials(
+  options: CredentialFilesOptions,
+  minting: RepositoryCredentialMinting | undefined,
+): RepositoryCredentialPort {
+  return composeRepositoryCredentials({
+    ...(minting === undefined ? {} : { minting }),
+    permissions: "write",
+    ...options,
+  });
+}
+
+/**
  * What the API asks a forge for: it proves a binding and reads a repository's
  * declarations, and opens nothing and pushes nothing under its own credential.
  */
@@ -749,6 +765,7 @@ export function composeFinalizerService(
     git: runtime.git,
     forges: runtime.forges,
     ticketBriefs: postgresTicketBrief(finalizerPool),
+    stacks: postgresEvaluationStack(finalizerPool),
     handoffs: artifacts,
     artifacts,
     identities: finalizerIdentities(),

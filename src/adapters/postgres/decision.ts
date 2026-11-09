@@ -120,6 +120,7 @@ import {
   postgresInputBundleOf,
   postgresInputBundleWrite,
 } from "./inputBundle.ts";
+import { stackRecordWrite } from "./evaluationStack.ts";
 import { postgresJournalWrite } from "./journal.ts";
 import {
   postgresOwnershipHonours,
@@ -591,6 +592,9 @@ async function decisionMaterialize(
   configuration: DecisionConfiguration,
 ): Promise<void> {
   await decisionTicketSource(client, lease.partition, outcome);
+  const stack = outcome.materialization.evaluationStack;
+  if (stack !== undefined)
+    await stackRecordWrite(client, lease.partition, stack);
   await decisionExecution(client, lease.partition, outcome, configuration);
   await decisionFinalization(client, lease.partition, outcome);
   await decisionActions(client, lease.partition, outcome);

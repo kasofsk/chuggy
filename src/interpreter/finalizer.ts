@@ -1130,6 +1130,37 @@ export type CandidateIntegrated =
     }
   | { readonly integrated: "Failed"; readonly evidence: GitEvidence };
 
+/**
+ * The stack an evaluation is to run over: the candidate merged on the accepted
+ * commits beneath it, bottom first, over the tip of the reference they land on,
+ * and published at `ref` so a plain clone fetches it.
+ */
+export interface StackMinting {
+  readonly repository: RepositoryBinding;
+  readonly tip: ObservedTarget;
+  readonly beneath: readonly GitObjectId[];
+  readonly candidate: GitObjectId;
+  readonly ref: GitRefName;
+}
+
+/**
+ * What minting found. The commit is a function of the tip, the commits and the
+ * candidate alone, so a second mint of the same stack is the same commit.
+ */
+export type StackMinted =
+  | {
+      readonly minted: "Stack";
+      readonly commit: GitObjectId;
+      readonly tree: GitObjectId;
+    }
+  | { readonly minted: "Conflicted" }
+  | { readonly minted: "Failed"; readonly evidence: GitEvidence };
+
+/** What taking a published stack down found; a ref the remote no longer holds is `Removed` too. */
+export type StackRemoved =
+  | { readonly removed: "Removed" }
+  | { readonly removed: "Failed"; readonly evidence: GitEvidence };
+
 /** The one irreversible act, which names the permit that authorizes it so an unpermitted one is unspellable. */
 export interface CandidatePromotion {
   readonly repository: RepositoryBinding;
@@ -1238,6 +1269,15 @@ export interface GitPromotionPort {
   integrateCandidate(
     integration: CandidateIntegration,
   ): Promise<CandidateIntegrated>;
+
+  /** Merges a stack deterministically and publishes it at its ref. */
+  mintStack(minting: StackMinting): Promise<StackMinted>;
+
+  /** Deletes a published stack's ref. */
+  removeStack(removal: {
+    readonly repository: RepositoryBinding;
+    readonly ref: GitRefName;
+  }): Promise<StackRemoved>;
 
   /** Advances the target ref to the candidate under a permit, conditionally on the target it observed. */
   promoteCandidate(promotion: CandidatePromotion): Promise<CandidatePromoted>;

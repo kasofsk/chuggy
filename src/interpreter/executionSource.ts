@@ -10,6 +10,7 @@
  * `spawnSource` answers everything else out of the ticket's own history.
  */
 
+import type { EvaluationStack } from "./evaluationStack.ts";
 import type {
   GitObjectId,
   ObservedTarget,
@@ -39,6 +40,15 @@ export interface ExecutionSourceObservation {
    * one that names no tree.
    */
   readonly expectedTree?: GitObjectId;
+  /**
+   * The stack the evaluation runs over, where its work cycle has one: the
+   * target above is then the stack's commit and the expected tree its tree. It
+   * is `fresh` where this spawn chose it and it is yet to be written.
+   */
+  readonly stack?: {
+    readonly record: EvaluationStack;
+    readonly fresh: boolean;
+  };
 }
 
 /**
@@ -86,5 +96,7 @@ export interface ExecutionSourceObservationPort {
     readonly ticket: number;
     readonly source: number;
     readonly kind: "Work" | "Evaluation";
+    /** The work cycle an evaluation judges, which keys its stack. */
+    readonly cycle?: number;
   }): Promise<ExecutionSourceObservation | undefined>;
 }

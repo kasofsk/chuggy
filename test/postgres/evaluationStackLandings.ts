@@ -10,11 +10,14 @@
  */
 
 import {
+  finalizerBriefLanding,
   finalizerCommit,
   finalizerDeclareSource,
   finalizerGrantPermit,
   finalizerIdentity,
+  finalizerPassedWork,
   finalizerPrepare,
+  finalizerProject,
   type FinalizerProject,
   type FinalizerRig,
 } from "./finalizerHarness.ts";
@@ -168,4 +171,23 @@ export async function landingWrite(
       WHERE tenant=$1 AND project=$2 AND permit=$3`,
     [tenant, named, permit],
   );
+}
+
+/** A Stacked ticket whose work, accepted at `accepted`, passed and awaits its landing. */
+export async function stackedSubject(
+  rig: FinalizerRig,
+  label: string,
+  accepted = finalizerCommit(),
+) {
+  const project = await finalizerProject(rig, label);
+  await finalizerBriefLanding(
+    rig,
+    project.partition,
+    project.ticket,
+    "Stacked",
+    project.repository,
+  );
+  const work = await finalizerPassedWork(rig, project, label, []);
+  await finalizerDeclareSource(rig, project, work, "refs/heads/work", accepted);
+  return { project, work };
 }

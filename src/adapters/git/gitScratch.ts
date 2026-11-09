@@ -96,6 +96,7 @@ export interface GitScratchCall {
   readonly timeoutMsMax: number;
   readonly credential?: RepositoryCredential;
   readonly indexFile?: string;
+  readonly environment?: GitEnvironment;
   readonly input?: Uint8Array | string;
   readonly outputBytesMax?: number;
 }
@@ -230,10 +231,11 @@ export function scratchRun(
     scratch.options.credentialUsername,
     call.credential,
   );
-  const environment =
-    call.indexFile === undefined
-      ? resolved
-      : { ...resolved, GIT_INDEX_FILE: call.indexFile };
+  const environment = {
+    ...resolved,
+    ...(call.indexFile === undefined ? {} : { GIT_INDEX_FILE: call.indexFile }),
+    ...call.environment,
+  };
   const prefix =
     call.credential === undefined
       ? []
@@ -778,6 +780,42 @@ export async function scratchCommitTree(
   );
 }
 
+/**
+ * Writes the commit for an already-written tree under an identity and a date
+ * given rather than read from the scratch and the clock, so the same tree,
+ * parents and message are the same commit wherever and however often it is written.
+ */
+export async function scratchCommitTreeFixed(
+  scratch: GitScratch,
+  repository: RepositoryId,
+  tree: GitObjectId,
+  parents: readonly GitObjectId[],
+  message: string,
+  identity: GitCommitIdentity & { readonly date: string },
+): Promise<GitObjectId | undefined> {
+  return scratchWrittenObjectOf(
+    await scratchRun(scratch, {
+      repository,
+      timeoutMsMax: scratch.options.localTimeoutMsMax,
+      environment: {
+        GIT_AUTHOR_NAME: identity.name,
+        GIT_AUTHOR_EMAIL: identity.email,
+        GIT_AUTHOR_DATE: identity.date,
+        GIT_COMMITTER_NAME: identity.name,
+        GIT_COMMITTER_EMAIL: identity.email,
+        GIT_COMMITTER_DATE: identity.date,
+      },
+      argv: [
+        "commit-tree",
+        tree,
+        ...parents.flatMap((parent) => ["-p", parent]),
+        "-m",
+        message,
+      ],
+    }),
+  );
+}
+
 /** Gives one written commit a ref, because an unreachable object is a collectable one. */
 export async function scratchKeepCommit(
   scratch: GitScratch,
@@ -871,6 +909,33 @@ export async function scratchPush(
       "--porcelain",
       "--atomic",
       ...scratchRemoteArguments(repository, `${candidate}:${ref}`),
+    ],
+  });
+  if (ran.ran === "Stopped") {
+    return ran.stopped === "Timeout"
+      ? { pushed: "TimedOut" }
+      : { pushed: "Unknown" };
+  }
+  if (ran.code === 0) return { pushed: "Advanced" };
+  return scratchPushFailed(ran.stdout);
+}
+
+/** Deletes one ref of the remote; a remote that holds none already reports it done. */
+export async function scratchPushDelete(
+  scratch: GitScratch,
+  repository: RepositoryId,
+  credential: RepositoryCredential,
+  ref: GitRefName,
+): Promise<ScratchPushed> {
+  const ran = await scratchRun(scratch, {
+    repository,
+    credential,
+    timeoutMsMax: scratch.options.promotionTimeoutMsMax,
+    argv: [
+      "push",
+      "--porcelain",
+      "--atomic",
+      ...scratchRemoteArguments(repository, `:${ref}`),
     ],
   });
   if (ran.ran === "Stopped") {

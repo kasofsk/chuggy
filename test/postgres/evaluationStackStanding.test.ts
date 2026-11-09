@@ -14,11 +14,7 @@ import type { EvaluationStackStore } from "../../src/interpreter/evaluationStack
 import { asGitObjectId } from "../../src/interpreter/finalizer.ts";
 import { stackFor, stackStands } from "../../src/interpreter/stackChoice.ts";
 import {
-  finalizerBriefLanding,
   finalizerCommit,
-  finalizerDeclareSource,
-  finalizerPassedWork,
-  finalizerProject,
   finalizerRigOpen,
   type FinalizerProject,
   type FinalizerRig,
@@ -27,6 +23,7 @@ import {
   landingCommits,
   landingTarget,
   landingWrite,
+  stackedSubject,
 } from "./evaluationStackLandings.ts";
 
 let rig: FinalizerRig;
@@ -39,21 +36,6 @@ before(async () => {
 after(async () => {
   await rig.close();
 });
-
-/** A Stacked ticket whose work, accepted at `accepted`, passed and awaits its landing. */
-async function stackedSubject(label: string, accepted = finalizerCommit()) {
-  const project = await finalizerProject(rig, label);
-  await finalizerBriefLanding(
-    rig,
-    project.partition,
-    project.ticket,
-    "Stacked",
-    project.repository,
-  );
-  const work = await finalizerPassedWork(rig, project, label, []);
-  await finalizerDeclareSource(rig, project, work, "refs/heads/work", accepted);
-  return { project, work };
-}
 
 /** The stack row of `project`'s ticket over `beneath`, built on `tip`. */
 async function stackedOn(
@@ -79,7 +61,7 @@ async function stackedOn(
 
 test("the landings since the tip are the promoted attempts that followed it, in order, at their accepted commits", async () => {
   const own = finalizerCommit();
-  const { project, work } = await stackedSubject("stack-standing", own);
+  const { project, work } = await stackedSubject(rig, "stack-standing", own);
   const c = landingCommits(
     "tip",
     "first",
@@ -139,7 +121,7 @@ test("the landings since the tip are the promoted attempts that followed it, in 
 });
 
 test("a stack read from the database stands while the tickets still beneath are pending at their commits", async () => {
-  const { project, work } = await stackedSubject("stack-stands");
+  const { project, work } = await stackedSubject(rig, "stack-stands");
   const c = landingCommits("tip", "first", "a7", "a8");
   await landingWrite(rig, project, work, "stands-7", {
     ticket: 7,
@@ -171,7 +153,7 @@ test("a stack read from the database stands while the tickets still beneath are 
 });
 
 test("a stack whose tip nothing landed on has no landings and stands only over pending tickets", async () => {
-  const { project } = await stackedSubject("stack-no-landings");
+  const { project } = await stackedSubject(rig, "stack-no-landings");
   await stackedOn(project, finalizerCommit(), [
     { ticket: 7, commit: finalizerCommit() },
   ]);
@@ -188,7 +170,7 @@ test("a stack whose tip nothing landed on has no landings and stands only over p
 });
 
 test("a ticket evaluated unstacked in its cycle has no stack, whatever an earlier cycle recorded", async () => {
-  const { project } = await stackedSubject("stack-unstacked-cycle");
+  const { project } = await stackedSubject(rig, "stack-unstacked-cycle");
   await stackedOn(
     project,
     finalizerCommit(),
@@ -215,7 +197,7 @@ test("a ticket evaluated unstacked in its cycle has no stack, whatever an earlie
 });
 
 test("a reference other than the one asked is not in the queue", async () => {
-  const { project } = await stackedSubject("stack-reference");
+  const { project } = await stackedSubject(rig, "stack-reference");
   const asked = (repository: string, ref?: string) =>
     store.queue(project.partition, repository, ref);
   assert.equal((await asked(project.repository)).length, 1);

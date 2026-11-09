@@ -32,9 +32,14 @@ import { asTicketId } from "../../domain/ids.ts";
 import type {
   EvaluationStack,
   EvaluationStackStore,
+  RemovableStack,
 } from "../../interpreter/evaluationStack.ts";
 import { asGitObjectId } from "../../interpreter/finalizer.ts";
-import type { Partition } from "../../interpreter/projectStore.ts";
+import {
+  asProjectId,
+  asTenantId,
+  type Partition,
+} from "../../interpreter/projectStore.ts";
 import {
   stackDepthMax,
   type StackEntry,
@@ -73,6 +78,14 @@ interface RecordRow {
   readonly depth: number | null;
   readonly beneath_ticket: string | null;
   readonly beneath_commit: string | null;
+}
+
+interface RemovableRow {
+  readonly tenant: string;
+  readonly project: string;
+  readonly ticket: string;
+  readonly work_cycle: string;
+  readonly repository: string;
 }
 
 interface LandingRow {
@@ -200,7 +213,7 @@ async function stackLandingsSince(
   return landings;
 }
 
-async function stackRecordWrite(
+export async function stackRecordWrite(
   client: pg.PoolClient,
   partition: Partition,
   stack: EvaluationStack,
@@ -359,6 +372,65 @@ async function stackStandingOf(
   };
 }
 
+async function stackEvaluated(
+  pool: pg.Pool,
+  partition: Partition,
+  ticket: number,
+  cycle: number,
+): Promise<boolean> {
+  const found = await pool.query(
+    sql`SELECT 1
+              FROM execution_request r
+              JOIN execution_request_task t
+                ON t.tenant = r.tenant AND t.project = r.project
+                   AND t.request = r.request
+             WHERE r.tenant = ${partition.tenant} AND r.project = ${partition.project}
+               AND r.ticket = ${ticket} AND t.kind = 'Evaluation'
+               AND t.cycle = ${cycle}
+             LIMIT 1`,
+  );
+  return found.rowCount !== 0;
+}
+
+async function stackRemovable(
+  pool: pg.Pool,
+  limit: number,
+): Promise<readonly RemovableStack[]> {
+  const found = await pool.query<RemovableRow>(
+    sql`SELECT s.tenant, s.project, s.ticket::text AS ticket,
+                   s.work_cycle::text AS work_cycle, s.repository
+              FROM evaluation_stack s
+              JOIN ticket_projection p
+                ON p.tenant = s.tenant AND p.project = s.project
+                   AND p.ticket = s.ticket
+             WHERE NOT EXISTS (
+                     SELECT 1 FROM evaluation_stack_removal r
+                      WHERE r.tenant = s.tenant AND r.project = s.project
+                        AND r.ticket = s.ticket AND r.work_cycle = s.work_cycle)
+               AND (p.phase IN ('Done', 'Revoked')
+                    OR EXISTS (
+                      SELECT 1
+                        FROM execution q
+                        JOIN execution_request_task t
+                          ON t.tenant = q.tenant AND t.project = q.project
+                             AND t.request = q.source_request AND t.task = q.task
+                       WHERE q.tenant = s.tenant AND q.project = s.project
+                         AND q.ticket = s.ticket AND t.kind = 'Work'
+                         AND t.cycle > s.work_cycle))
+             ORDER BY s.recorded_at, s.ticket, s.work_cycle
+             LIMIT ${limit}`,
+  );
+  return found.rows.map((row) => ({
+    partition: {
+      tenant: asTenantId(row.tenant),
+      project: asProjectId(row.project),
+    },
+    ticket: asTicketId(projectRowCounter(row.ticket, "stack ticket")),
+    cycle: projectRowCounter(row.work_cycle, "stack cycle"),
+    repository: row.repository,
+  }));
+}
+
 export function postgresEvaluationStack(pool: pg.Pool): EvaluationStackStore {
   return {
     record: (partition, stack) =>
@@ -367,6 +439,9 @@ export function postgresEvaluationStack(pool: pg.Pool): EvaluationStackStore {
       ),
     read: async (partition, ticket, cycle) =>
       (await stackRecordsRead(pool, partition, [ticket], [cycle]))[0],
+    evaluated: (partition, ticket, cycle) =>
+      stackEvaluated(pool, partition, ticket, cycle),
+    removable: (limit) => stackRemovable(pool, limit),
     remove: async (partition, ticket, cycle) => {
       const removed = await pool.query(
         sql`INSERT INTO evaluation_stack_removal (tenant, project, ticket, work_cycle)

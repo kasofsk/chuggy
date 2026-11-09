@@ -478,7 +478,16 @@ test("the finalizer's four doors are its own and no prior role may open them", a
     ],
   ] as readonly (readonly [string, string])[];
   for (const [door, name] of doors) {
-    for (const role of [apiRole, ticketServiceRole, schedulerRole]) {
+    const stacking = name === ticketFinalizationRankFunction;
+    if (stacking)
+      assert.equal(
+        await harness.attemptAs(ticketServiceRole, door),
+        undefined,
+        `${ticketServiceRole} counts the queue it stacks over: ${name}`,
+      );
+    for (const role of stacking
+      ? [apiRole, schedulerRole]
+      : [apiRole, ticketServiceRole, schedulerRole]) {
       assert.match(
         (await harness.attemptAs(role, door)) ?? "",
         postgresHarnessDenial(name),

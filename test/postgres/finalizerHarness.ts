@@ -1130,6 +1130,8 @@ export function finalizerGit(target: ObservedTarget): FinalizerGitFake {
       fake.acts.push("adopt");
       return Promise.resolve("Unadoptable");
     },
+    mintStack: () => Promise.resolve({ minted: "Conflicted" }),
+    removeStack: () => Promise.resolve({ removed: "Removed" }),
   };
   return fake;
 }

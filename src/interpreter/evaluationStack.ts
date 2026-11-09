@@ -29,6 +29,14 @@ export interface EvaluationStack {
   readonly stackTree: GitObjectId;
 }
 
+/** A stack due to be taken down, with the project it was written in. */
+export interface RemovableStack {
+  readonly partition: Partition;
+  readonly ticket: TicketId;
+  readonly cycle: number;
+  readonly repository: string;
+}
+
 export interface EvaluationStackStore {
   /** Writes the record unless the cycle has one, and says which it was. */
   record(
@@ -40,6 +48,17 @@ export interface EvaluationStackStore {
     ticket: TicketId,
     cycle: number,
   ): Promise<EvaluationStack | undefined>;
+  /** Whether an evaluation of the cycle has been registered, which is when its stack is no longer chosen. */
+  evaluated(
+    partition: Partition,
+    ticket: TicketId,
+    cycle: number,
+  ): Promise<boolean>;
+  /**
+   * The stacks not yet taken down whose ticket is Done or Revoked or has begun
+   * a later work cycle, at most `limit` of them.
+   */
+  removable(limit: number): Promise<readonly RemovableStack[]>;
   /** Notes that a cycle's stack commit was taken down, and says whether this was the first note. */
   remove(
     partition: Partition,

@@ -95,6 +95,8 @@ import {
   type FinalizerStore,
   type GitObjectId,
   type GitPromotionPort,
+  type GitRefName,
+  type StackRemoved,
   type HeadAdoption,
   type HeadAdoptionQuestion,
   type HeldPermit,
@@ -1010,6 +1012,8 @@ interface GitRecorder extends GitPromotionPort {
   readonly adoptions: HeadAdoptionQuestion[];
   readonly heldQuestions: CandidateHeldQuestion[];
   readonly containedQuestions: CandidateHeldQuestion[];
+  readonly stackRemovals: GitRefName[];
+  stackRemoved: StackRemoved;
   promoted: CandidatePromoted;
   proved: AncestryProved;
   observed: TargetObserved;
@@ -1056,6 +1060,7 @@ function recordingGit(): GitRecorder {
     adoptions: [],
     heldQuestions: [],
     ...recordingContainment(() => own),
+    ...recordingStacks(() => own),
     adoptable: "Adoptable",
     held: "Unheld",
     promoted: { promoted: "Advanced" },
@@ -1113,6 +1118,24 @@ function recordingGit(): GitRecorder {
     },
   };
   return own;
+}
+
+/** The stack half of the recorder: removals noted, minting that always conflicts. */
+function recordingStacks(
+  recorder: () => GitRecorder,
+): Pick<
+  GitRecorder,
+  "stackRemovals" | "stackRemoved" | "mintStack" | "removeStack"
+> {
+  return {
+    stackRemovals: [],
+    stackRemoved: { removed: "Removed" },
+    mintStack: () => Promise.resolve({ minted: "Conflicted" }),
+    removeStack: (removal) => {
+      recorder().stackRemovals.push(removal.ref);
+      return Promise.resolve(recorder().stackRemoved);
+    },
+  };
 }
 
 /** The two artifact ports one case drives, each answering whatever it chose. */
@@ -4818,4 +4841,47 @@ test("a project closing while its proposal is queued gives it up, reads where it
     "the read after it is what is written",
   );
   assert.equal(store.attempts.at(-1)?.outcome, "Failed");
+});
+
+/** A store of stacks due to be taken down, noting each removal it is told of. */
+function stacksDue(
+  cycles: readonly number[],
+): NonNullable<FinalizerService["stacks"]> & { noted: number[] } {
+  const noted: number[] = [];
+  return {
+    noted,
+    removable: () =>
+      Promise.resolve(
+        cycles.map((cycle) => ({
+          partition,
+          ticket: asTicketId(1),
+          cycle,
+          repository: "repository-run",
+        })),
+      ),
+    remove: (_partition, _ticket, cycle) => {
+      noted.push(cycle);
+      return Promise.resolve("Removed");
+    },
+  };
+}
+
+test("a pass takes down the stack of every cycle that is over and notes each removal", async () => {
+  const remote = recordingGit();
+  const stacks = stacksDue([1, 2]);
+  await passOver({ ...serviceOf(recordingStore([]), remote), stacks });
+  assert.deepEqual(remote.stackRemovals, [
+    "refs/heads/chuggy/stack/1/1",
+    "refs/heads/chuggy/stack/1/2",
+  ]);
+  assert.deepEqual(stacks.noted, [1, 2]);
+});
+
+test("a stack whose ref would not come down is not noted, so a later pass tries it again", async () => {
+  const remote = recordingGit();
+  remote.stackRemoved = { removed: "Failed", evidence: "RemoteUnreachable" };
+  const stacks = stacksDue([1]);
+  await passOver({ ...serviceOf(recordingStore([]), remote), stacks });
+  assert.equal(remote.stackRemovals.length, 1);
+  assert.deepEqual(stacks.noted, []);
 });

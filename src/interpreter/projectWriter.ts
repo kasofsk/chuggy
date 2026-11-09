@@ -830,11 +830,12 @@ export function projectWriterSpawnSourceRef(state: TicketState): number {
  * already carries, read out of this partition's own rows, and its brief's
  * images, pinned as a dispatch pins them because every task is briefed with
  * them and its worker reads only what its own bundle names. NOTHING HERE READS
- * A REF — a rework runs at the commit its work was judged at, and an
+ * A TARGET REF — a rework runs at the commit its work was judged at, and an
  * evaluation at the commit the result it judges was produced at, both of which
  * are facts already written down, and its change base may also rest on an
  * ancestry answer, which may fetch history from the remote, about whether that
- * commit descends from a failed landing's base.
+ * commit descends from a failed landing's base, save that a Stacked ticket's
+ * first evaluation of a cycle may mint the stack it runs over.
  */
 async function projectWriterSpawnSources(
   writer: ProjectTicketWriter,
@@ -846,13 +847,15 @@ async function projectWriterSpawnSources(
   );
   if (spawn?.type !== "ExecuteTask") return {};
   const ticket = asTicketId(spawn.value.ticket);
+  const state = ticketAt(evolve(memory.graph, decision.event), ticket).state;
   const source = await writer.executionSources.spawnSource({
     partition: memory.lease.partition,
     ticket,
-    source: projectWriterSpawnSourceRef(
-      ticketAt(evolve(memory.graph, decision.event), ticket).state,
-    ),
+    source: projectWriterSpawnSourceRef(state),
     kind: spawn.value.task.task.type === "WorkTask" ? "Work" : "Evaluation",
+    ...(typeof state !== "string" && state.type === "Evaluation"
+      ? { cycle: state.value.workCycle }
+      : {}),
   });
   const brief = await writer.ticketBriefs.brief(memory.lease.partition, ticket);
   const images = await projectWriterBriefImages(
@@ -862,6 +865,7 @@ async function projectWriterSpawnSources(
   );
   return {
     ...(source === undefined ? {} : { source }),
+    ...(source?.stack?.fresh === true ? { stack: source.stack.record } : {}),
     ...(images.length === 0 ? {} : { images }),
   };
 }
