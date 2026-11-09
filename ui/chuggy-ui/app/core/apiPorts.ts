@@ -48,7 +48,7 @@ export function apiPortsOver(
   sleepMs: ApiPorts["sleepMs"],
 ): ApiPorts {
   const abandon = async (): Promise<void> => {
-    await holder.signOut();
+    await holder.signOut("Console");
     holder.refuse({ id: "session-refused" });
   };
   return {

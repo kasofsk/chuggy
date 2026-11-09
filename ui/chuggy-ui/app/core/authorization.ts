@@ -30,6 +30,7 @@ export interface AuthorizationEndpoints {
   readonly authorize: string;
   readonly token: string;
   readonly revoke: string | undefined;
+  readonly endSession: string | undefined;
 }
 
 export interface AuthorizationTransaction {
@@ -70,6 +71,7 @@ export function parseDiscovery(
     authorize: document.authorization_endpoint,
     token: document.token_endpoint,
     revoke: document.revocation_endpoint,
+    endSession: document.end_session_endpoint,
   };
 }
 

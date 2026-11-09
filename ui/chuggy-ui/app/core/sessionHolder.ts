@@ -236,6 +236,8 @@ export interface SessionLocation {
   readonly search: string;
 }
 
+export type SessionSignOutScope = "Console" | "Issuer";
+
 export interface SessionHolder {
   /** Loads the configuration and the stored session. Given the address the
    * document was loaded at, it leaves the stored session untaken where that
@@ -245,7 +247,9 @@ export interface SessionHolder {
     location: SessionLocation,
   ) => Promise<SessionCallback>;
   readonly signIn: (returnPath?: string) => Promise<void>;
-  readonly signOut: () => Promise<void>;
+  /** A sign-out the person asked for ends the issuer's session too, where the
+   * issuer offers to; one the console decided on ends only its own. */
+  readonly signOut: (scope?: SessionSignOutScope) => Promise<void>;
   readonly bearer: () => Promise<string | undefined>;
   readonly refresh: () => Promise<boolean>;
   readonly refuse: (reason: CopyOrData) => void;
@@ -850,13 +854,19 @@ async function sessionCompleteCallback(
  * holds has nothing to sign out of, and what the store holds is not its to
  * clear or to revoke.
  */
-async function sessionSignOut(inner: SessionInner): Promise<void> {
+async function sessionSignOut(
+  inner: SessionInner,
+  scope: SessionSignOutScope,
+): Promise<void> {
   sessionFollow(inner);
   const held = sessionHeldNow(inner);
   if (held === undefined) return;
   sessionForget(inner, undefined);
   if (held.refreshToken !== undefined)
     await sessionRevoke(inner, held.refreshToken);
+  const endSession = inner.endpoints?.endSession;
+  if (scope === "Issuer" && endSession !== undefined)
+    inner.ports.redirect(endSession);
 }
 
 /** What the sign-in was refused for, kept where the tree that draws it reads. */
@@ -900,7 +910,8 @@ export function createSessionHolder(ports: SessionHolderPorts): SessionHolder {
     completeCallback: (location: SessionLocation) =>
       sessionCompleteCallback(inner, location),
     signIn: (returnPath?: string) => sessionSignIn(inner, returnPath),
-    signOut: () => sessionSignOut(inner),
+    signOut: (scope: SessionSignOutScope = "Issuer") =>
+      sessionSignOut(inner, scope),
     bearer: () => sessionBearer(inner),
     refresh: () => sessionRefresh(inner),
     refuse: (reason: CopyOrData) => {
