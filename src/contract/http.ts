@@ -973,6 +973,16 @@ export const changeResourceSchema = z
   .max(projectChangeResourceCharsMax);
 
 export const countSchema = z.number().int().safe().nonnegative();
+
+/** The last Unix second a reading or a limit may name, which is the last a date can. */
+export const runUsageInstantSecsMax = 8_640_000_000_000;
+
+/** An instant the agent runtime names, in whole Unix seconds. */
+export const runUsageInstantSchema = z
+  .number()
+  .int()
+  .positive()
+  .max(runUsageInstantSecsMax);
 export const ticketNumberSchema = z.number().int().safe().positive();
 export const digestSchema = z.string().regex(/^[0-9a-f]{64}$/u);
 /**
