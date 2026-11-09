@@ -54,7 +54,10 @@ import {
   asTenantId,
   type Partition,
 } from "../../interpreter/projectStore.ts";
-import { leadAutoCompactWindowTokensDefault } from "../../contract/http.ts";
+import {
+  leadAutoCompactWindowTokensDefault,
+  sessionEfforts,
+} from "../../contract/http.ts";
 import { notificationSchema } from "../../contract/responses.ts";
 import {
   selectorDeliveryStates,
@@ -64,7 +67,7 @@ import type { ProjectNotification } from "../../interpreter/notifications.ts";
 import { parseProjectCommand } from "../../interpreter/wire.ts";
 import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter } from "./rows.ts";
-import { sessionRowText } from "./sessionRows.ts";
+import { sessionRowMember, sessionRowText } from "./sessionRows.ts";
 import {
   decodeDispatchProgram,
   dispatchCandidatesByConfiguration,
@@ -831,6 +834,10 @@ interface SelectorProjectOverrideRow {
   readonly candidate_pages_per_decision: string | null;
   readonly auto_compact_window: string | null;
   readonly operational_context_max_age_ms: string | null;
+  readonly lead_model: string | null;
+  readonly lead_effort: string | null;
+  readonly thread_model: string | null;
+  readonly thread_effort: string | null;
 }
 
 /**
@@ -946,6 +953,26 @@ function selectorProjectOverridesOf(
     ...(contextMaxAge === undefined
       ? {}
       : { operationalContextMaxAgeMs: contextMaxAge }),
+    ...(row.lead_model === null ? {} : { leadModel: row.lead_model }),
+    ...(row.lead_effort === null
+      ? {}
+      : {
+          leadEffort: sessionRowMember(
+            sessionEfforts,
+            row.lead_effort,
+            "selector leadEffort",
+          ),
+        }),
+    ...(row.thread_model === null ? {} : { threadModel: row.thread_model }),
+    ...(row.thread_effort === null
+      ? {}
+      : {
+          threadEffort: sessionRowMember(
+            sessionEfforts,
+            row.thread_effort,
+            "selector threadEffort",
+          ),
+        }),
   };
 }
 
@@ -1001,6 +1028,8 @@ async function readProjectSettings(
          overrides.candidate_pages_per_decision::text,
          overrides.auto_compact_window::text,
          overrides.operational_context_max_age_ms::text,
+         overrides.lead_model,overrides.lead_effort,
+         overrides.thread_model,overrides.thread_effort,
          installation.revision::text AS installation_revision,
          installation.mode AS installation_mode,
          installation.dispatch_mode AS installation_dispatch_mode,
@@ -1041,6 +1070,8 @@ async function readStandingProjectSettings(
          overrides.candidate_pages_per_decision::text,
          overrides.auto_compact_window::text,
          overrides.operational_context_max_age_ms::text,
+         overrides.lead_model,overrides.lead_effort,
+         overrides.thread_model,overrides.thread_effort,
          installation.revision::text AS installation_revision,
          installation.mode AS installation_mode,
          installation.dispatch_mode AS installation_dispatch_mode,
@@ -1132,7 +1163,9 @@ async function writeProjectSettings(
            dispatches_per_decision::text,
            input_bytes_per_decision::text,candidate_pages_per_decision::text,
            auto_compact_window::text,
-           operational_context_max_age_ms::text,installation_revision::text,
+           operational_context_max_age_ms::text,
+           lead_model,lead_effort,thread_model,thread_effort,
+           installation_revision::text,
            installation_mode,installation_dispatch_mode,installation_base_prompt,
            installation_controls
          FROM update_selector_project_settings(
@@ -1150,6 +1183,8 @@ async function writeProjectSettings(
            ${limits.candidatePagesPerDecision ?? null},
            ${limits.autoCompactWindow ?? null},
            ${overrides.operationalContextMaxAgeMs ?? null},
+           ${overrides.leadModel ?? null},${overrides.leadEffort ?? null},
+           ${overrides.threadModel ?? null},${overrides.threadEffort ?? null},
            ${administrator.kind},${administrator.subject})`,
     );
   } catch (failure) {
@@ -1195,6 +1230,8 @@ async function projectSettingsHistory(
          history.candidate_pages_per_decision::text,
          history.auto_compact_window::text,
          history.operational_context_max_age_ms::text,
+         history.lead_model,history.lead_effort,
+         history.thread_model,history.thread_effort,
          history.administrator_kind,history.administrator_subject,
          history.recorded_at
        FROM selector_project_settings_history history

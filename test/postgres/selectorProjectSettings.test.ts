@@ -1156,7 +1156,7 @@ test("a project's dispatch budget is a column, and a budget of none is not one",
     harness.query(
       `SELECT revision::text FROM update_selector_project_settings(
          $1,$2,$3,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,$4,
-         NULL,NULL,NULL,NULL,'User','selector-admin')`,
+         NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,'User','selector-admin')`,
       [partition.tenant, partition.project, revision, dispatches],
     );
   try {
@@ -1206,7 +1206,7 @@ test("a project's dispatch budget stops at the ceiling its decisions are parsed 
     harness.query(
       `SELECT revision::text FROM update_selector_project_settings(
          $1,$2,$3,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,$4,
-         NULL,NULL,NULL,NULL,'User','selector-admin')`,
+         NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,'User','selector-admin')`,
       [partition.tenant, partition.project, revision, dispatches],
     );
   await assert.rejects(
@@ -1259,7 +1259,7 @@ test("a project's compaction window is a column bounded as the runtime's setting
     harness.query(
       `SELECT revision::text FROM update_selector_project_settings(
          $1,$2,$3,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,
-         NULL,NULL,$4,NULL,'User','selector-admin')`,
+         NULL,NULL,$4,NULL,NULL,NULL,NULL,NULL,'User','selector-admin')`,
       [partition.tenant, partition.project, revision, window],
     );
   try {

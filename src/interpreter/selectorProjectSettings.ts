@@ -19,6 +19,8 @@
 import {
   leadAutoCompactWindowTokensMax,
   leadAutoCompactWindowTokensMin,
+  sessionEfforts,
+  sessionModelSchema,
   textCodePointsCount,
 } from "../contract/http.ts";
 import { assertNever } from "../domain/assertNever.ts";
@@ -203,6 +205,20 @@ export function checkedAutoCompactWindow(value: number | undefined): void {
     );
 }
 
+/** Refuses a model no session could be handed, by the wire's own rule. */
+function checkedSessionModel(value: string | undefined, what: string): void {
+  if (value === undefined) return;
+  if (!sessionModelSchema.safeParse(value).success)
+    throw new RangeError(`${what} must be a bounded model name`);
+}
+
+/** Refuses an effort the runtime does not name. */
+function checkedSessionEffort(value: string | undefined, what: string): void {
+  if (value === undefined) return;
+  if (!(sessionEfforts as readonly string[]).includes(value))
+    throw new RangeError(`${what} must be one of ${sessionEfforts.join(", ")}`);
+}
+
 /** Refuses an override no column would hold, before the row is offered one. */
 export function checkedSelectorProjectOverrides(
   overrides: SelectorProjectOverrides,
@@ -220,6 +236,10 @@ export function checkedSelectorProjectOverrides(
     "selector operationalContextMaxAgeMs",
   );
   checkedAutoCompactWindow(limits.autoCompactWindow);
+  checkedSessionModel(overrides.leadModel, "leadModel");
+  checkedSessionEffort(overrides.leadEffort, "leadEffort");
+  checkedSessionModel(overrides.threadModel, "threadModel");
+  checkedSessionEffort(overrides.threadEffort, "threadEffort");
   if (
     limits.candidatePagesPerDecision !== undefined &&
     limits.candidatePagesPerDecision !== 1

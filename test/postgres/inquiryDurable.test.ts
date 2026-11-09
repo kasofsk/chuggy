@@ -621,6 +621,36 @@ test("a fork is told the reference it forks from, and a lead is told none", asyn
 });
 
 /**
+ * An inquiry forks the lead's own conversation, so it runs on the lead's model
+ * and effort. It holds none of its own: the fork is told its lead's, as it is
+ * told the lead's reference.
+ */
+test("an inquiry is told its lead's model and effort, and holds none of its own", async () => {
+  const { partition, lead, member } = await inquirySubject("runtime");
+  await rig.sessions.harness.query(
+    `UPDATE agent_session SET model='claude-sonnet-5-5',effort='medium'
+      WHERE session=$1`,
+    [lead.session],
+  );
+  const opened = await inquiryAsk(partition, member, "runtime");
+  assert.equal(opened.opened.opened, "Opened");
+  const attempt = await inquiryAttempt(partition, opened.session, "runtime");
+
+  const facts = await rig.sessions.plane.authenticate(attempt.secret);
+  assert.deepEqual(
+    [facts?.kind, facts?.model, facts?.effort],
+    ["Inquiry", "claude-sonnet-5-5", "medium"],
+  );
+  assert.deepEqual(
+    await rig.sessions.harness.query(
+      `SELECT model,effort FROM agent_session WHERE session=$1`,
+      [opened.session],
+    ),
+    [{ model: null, effort: null }],
+  );
+});
+
+/**
  * A fork that has ALREADY BOUND a reference is still told the parent's. The
  * case above reads the fork before one exists, so a `fork_from` that preferred
  * the session's own would pass it — and an attempt following a lost one would

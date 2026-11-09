@@ -63,6 +63,7 @@ import {
   leadTurnTokensMax,
   selectorHandoffNoteBytesMax,
   selectorSettingsTextCharsMax,
+  type SessionEffort,
 } from "../../src/contract/http.ts";
 import { projectAccessSiteRefused } from "./projectAccessFixture.ts";
 
@@ -141,6 +142,7 @@ const request: SelectorPolicyRequest = {
       concurrentDecisions: 4,
       selectionsPerMinute: 60,
     },
+    lead: {},
   },
 };
 
@@ -201,6 +203,9 @@ interface MailboxOptions {
   readonly systemPrompt?: string | null;
   /** The lead's stored compaction window, the resolved one unless a case says otherwise; null is none. */
   readonly autoCompactWindow?: number | null;
+  /** The model and effort the lead was opened under, none unless a case says otherwise. */
+  readonly model?: string;
+  readonly effort?: SessionEffort;
   readonly decisionTurnTokens?: number;
   /** What the closing door answers, which closes the lead only where it is `Closed`. */
   readonly closed?: LeadClosed;
@@ -233,6 +238,8 @@ function mailboxStanding(
       : { agentReference: options.agentReference }),
     ...(systemPrompt === null ? {} : { systemPrompt }),
     ...(autoCompactWindow === null ? {} : { autoCompactWindow }),
+    ...(options.model === undefined ? {} : { model: options.model }),
+    ...(options.effort === undefined ? {} : { effort: options.effort }),
     ...(options.decisionTurnTokens === undefined
       ? {}
       : { decisionTurnTokens: options.decisionTurnTokens }),
@@ -261,6 +268,8 @@ function mailboxDouble(options: MailboxOptions = {}): MailboxDouble {
             state: "Open",
             systemPrompt: opening.systemPrompt,
             autoCompactWindow: opening.autoCompactWindow,
+            ...(opening.model === undefined ? {} : { model: opening.model }),
+            ...(opening.effort === undefined ? {} : { effort: opening.effort }),
           };
         return Promise.resolve({
           opened: "Opened" as const,
@@ -570,7 +579,7 @@ test("a lead is replaced where it is spent or its prompt or window is not this d
   ];
   for (const [label, standing, replaced] of cases)
     assert.equal(
-      leadStandingReplaced(standing, composedPrompt, resolvedWindow),
+      leadStandingReplaced(standing, composedPrompt, resolvedWindow, {}),
       replaced,
       label,
     );
@@ -653,6 +662,67 @@ test("a lead holding the resolved window takes the decision itself", async () =>
   });
   await policyOf(double).execute(request, new AbortController().signal);
   assert.deepEqual([double.closings, double.openings], [[], []]);
+});
+
+/** `request` deciding under a project that chose its lead's model and effort. */
+const chosenRequest: SelectorPolicyRequest = {
+  ...request,
+  constraints: {
+    ...request.constraints,
+    lead: { model: "claude-sonnet-5-5", effort: "medium" },
+  },
+};
+
+test("a lead holding another model or effort than this decision's is replaced by one opened under this decision's", async () => {
+  const cases: readonly (readonly [string, MailboxOptions])[] = [
+    ["none", {}],
+    ["another model", { model: "opus", effort: "medium" }],
+    ["another effort", { model: "claude-sonnet-5-5", effort: "max" }],
+  ];
+  for (const [label, held] of cases) {
+    const double = mailboxDouble({
+      agentReference: "agent-session-9",
+      ...held,
+    });
+    await policyOf(double).execute(chosenRequest, new AbortController().signal);
+    assert.deepEqual(double.closings, ["lead-session"], label);
+    assert.deepEqual(
+      double.openings.map((opening) => [opening.model, opening.effort]),
+      [["claude-sonnet-5-5", "medium"]],
+      label,
+    );
+  }
+});
+
+test("a lead holding this decision's model and effort takes the decision itself", async () => {
+  const chosen = mailboxDouble({
+    agentReference: "agent-session-9",
+    model: "claude-sonnet-5-5",
+    effort: "medium",
+  });
+  await policyOf(chosen).execute(chosenRequest, new AbortController().signal);
+  assert.deepEqual([chosen.closings, chosen.openings], [[], []]);
+
+  const unset = mailboxDouble({ agentReference: "agent-session-9" });
+  await policyOf(unset).execute(request, new AbortController().signal);
+  assert.deepEqual(
+    [unset.closings, unset.openings],
+    [[], []],
+    "a lead holding none, under a project that chose none",
+  );
+});
+
+test("a lead cleared of its model is replaced by one opened under none", async () => {
+  const double = mailboxDouble({
+    agentReference: "agent-session-9",
+    model: "claude-sonnet-5-5",
+  });
+  await policyOf(double).execute(request, new AbortController().signal);
+  assert.deepEqual(double.closings, ["lead-session"]);
+  assert.deepEqual(
+    double.openings.map((opening) => ["model" in opening, "effort" in opening]),
+    [[false, false]],
+  );
 });
 
 test("a lead the door will not close takes the decision itself, under the prompt it holds", async () => {

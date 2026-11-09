@@ -1334,6 +1334,14 @@ const sessionPlaneCases: Readonly<
       service: sessionAuthority({ ...liveSession, autoCompactWindow: 300_000 }),
     },
     {
+      name: "a session told the model and effort it runs on",
+      service: sessionAuthority({
+        ...liveSession,
+        model: "claude-sonnet-5-5",
+        effort: "medium",
+      }),
+    },
+    {
       name: "a session bound, told what it is, and forking",
       service: sessionAuthority({
         ...liveSession,

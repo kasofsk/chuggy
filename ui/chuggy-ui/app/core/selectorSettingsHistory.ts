@@ -25,8 +25,10 @@ import type {
 import type { Copy, CopyOrData } from "./copy.ts";
 import { groupedDigits } from "./figures.ts";
 import {
+  selectorSettingsEffortLabel,
   selectorSettingsLimitLabel,
   selectorSettingsLimitNames,
+  selectorSettingsModelLabel,
   selectorSettingsTextNames,
 } from "./selectorSettingsForm.ts";
 import type { SelectorProjectOverrides } from "./selectorSettingsForm.ts";
@@ -167,6 +169,37 @@ function selectorSettingsHistoryFields(
       text: selectorSettingsHistoryNumber(overrides.operationalContextMaxAgeMs),
       mono: false,
     },
+    ...selectorSettingsHistoryModels(overrides),
+  ];
+}
+
+/** The model and effort rows, a model drawn as the name it is and an effort as its word. */
+function selectorSettingsHistoryModels(
+  overrides: SelectorProjectOverrides,
+): readonly SelectorSettingsHistoryField[] {
+  const absent = selectorSettingsHistoryDefaultWord;
+  const model = (
+    name: "leadModel" | "threadModel",
+  ): SelectorSettingsHistoryField => ({
+    label: selectorSettingsModelLabel(name),
+    text: overrides[name] ?? absent,
+    mono: false,
+  });
+  const effort = (
+    name: "leadEffort" | "threadEffort",
+  ): SelectorSettingsHistoryField => {
+    const held = overrides[name];
+    return {
+      label: selectorSettingsModelLabel(name),
+      text: held === undefined ? absent : selectorSettingsEffortLabel(held),
+      mono: false,
+    };
+  };
+  return [
+    model("leadModel"),
+    effort("leadEffort"),
+    model("threadModel"),
+    effort("threadEffort"),
   ];
 }
 
