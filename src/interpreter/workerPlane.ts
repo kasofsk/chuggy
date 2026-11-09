@@ -86,7 +86,7 @@ export const workerContractRunnerJobsWaiting: WorkerContractRange = {
   max: workerContractAccepted.max,
 };
 
-/** The versions in which a poll's answer may name how a credential stopped each of its runner's jobs, a field a pool of an earlier one refuses its whole answer over. */
+/** The versions in which a personal runner's poll may be answered with how a credential stopped each job the answer stops, a field a pool of an earlier one refuses its whole answer over. */
 export const workerContractRunnerCredentialOutcomes: WorkerContractRange = {
   min: workerContractCredentialOutcome,
   max: workerContractAccepted.max,

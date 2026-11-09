@@ -73,7 +73,7 @@ export const workerContractSessionContext: WorkerContractVersion = {
   minor: 45,
 };
 
-/** The first version whose pool plane may answer a poll with how a credential stopped each of its runner's jobs: a plane names those outcomes only to a poll whose release names this version or a later one. */
+/** The first version whose job plane takes a run ended `RunCreditsExhausted`, which a harness sends only to a plane whose answers name this version or a later one, and whose pool plane may answer a member's personal runner with how a credential stopped each job it stops, which a plane names only to a poll whose release names this version or a later one. */
 export const workerContractCredentialOutcome: WorkerContractVersion = {
   major: 1,
   minor: 48,

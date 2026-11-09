@@ -258,11 +258,15 @@ const credentialOutcomes = [
   { assignment: "01HX", outcome: "CreditsExhausted" },
 ] as const;
 
-test("a reconciliation may name how a credential stopped each of its runner's jobs, and reads back what it was given", () => {
+const credentialStopped = credentialOutcomes.map(
+  (outcome) => outcome.assignment,
+);
+
+test("a reconciliation may name how a credential stopped each job it stops, and reads back what it was given", () => {
   const answer = {
     assignments: [],
     sessions: [],
-    stop: [],
+    stop: [...credentialStopped, "01HW"],
     credentialOutcomes,
   };
   const read = workerPoolReconciliationSchema.parse(answer);
@@ -342,8 +346,40 @@ test("a usage limit names its reset where the runtime named one and is whole wit
     );
 });
 
+test("a reconciliation names an outcome only for an assignment it stops, and none twice, so outcomes are bounded by its stops", () => {
+  const answer = { assignments: [], sessions: [], stop: credentialStopped };
+  assert.ok(
+    workerPoolReconciliationSchema.safeParse({ ...answer, credentialOutcomes })
+      .success,
+  );
+  for (const invalid of [
+    { ...answer, stop: credentialStopped.slice(1), credentialOutcomes },
+    { ...answer, stop: [], credentialOutcomes },
+    {
+      ...answer,
+      credentialOutcomes: [
+        ...credentialOutcomes,
+        { assignment: "01HZ", outcome: "CreditsExhausted" },
+      ],
+    },
+    {
+      ...answer,
+      credentialOutcomes: [credentialOutcomes[1], credentialOutcomes[1]],
+    },
+  ])
+    assert.equal(
+      workerPoolReconciliationSchema.safeParse(invalid).success,
+      false,
+      JSON.stringify(invalid),
+    );
+});
+
 test("a runner of a release before the credential-outcome range refuses a whole answer naming an outcome, so a plane names one only to a release the range accepts", async () => {
-  const unnamed = { assignments: [assignment], sessions: [], stop: [] };
+  const unnamed = {
+    assignments: [assignment],
+    sessions: [],
+    stop: credentialStopped,
+  };
   const answer = { ...unnamed, credentialOutcomes };
   assert.ok(
     contractVersionAccepted(
