@@ -15,6 +15,7 @@ import {
   finalizerRole,
   schedulerRole,
   selectorServiceRole,
+  stackInvalidationFunction,
   ticketFinalizationRankFunction,
   ticketServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
@@ -438,6 +439,7 @@ test("the finalizer's read surface is exactly the relations its view is gathered
       "configuration_revision",
       "evaluation_stack",
       "evaluation_stack_beneath",
+      "evaluation_stack_dead",
       "evaluation_stack_none",
       "evaluation_stack_removal",
       "execution",
@@ -465,7 +467,7 @@ test("the finalizer's read surface is exactly the relations its view is gathered
   );
 });
 
-test("the finalizer's four doors are its own and no prior role may open them", async () => {
+test("the finalizer's five doors are its own and no prior role may open them", async () => {
   const doors = [
     [
       `SELECT * FROM ${finalizationFunction}('t','p','r','a','FinalizationNeedsWork','MergeConflict',1,'e','o','s')`,
@@ -478,6 +480,10 @@ test("the finalizer's four doors are its own and no prior role may open them", a
     [
       `SELECT * FROM ${holdFunction}('t','p','r','RepositoryUnbound','o',1,1,'e')`,
       holdFunction,
+    ],
+    [
+      `SELECT * FROM ${stackInvalidationFunction}('t','p',1,1,'e','o','s')`,
+      stackInvalidationFunction,
     ],
     [
       `SELECT * FROM ${ticketFinalizationRankFunction}('t','p',1)`,
@@ -496,7 +502,7 @@ test("the finalizer's four doors are its own and no prior role may open them", a
   }
 });
 
-test("all four doors are security definer, boundary-owned and search-path pinned", async () => {
+test("all five doors are security definer, boundary-owned and search-path pinned", async () => {
   assert.deepEqual(
     await harness.query(
       `SELECT p.proname, p.prosecdef, r.rolname AS owner,
@@ -508,6 +514,7 @@ test("all four doors are security definer, boundary-owned and search-path pinned
           finalizationFunction,
           approvalRequestFunction,
           holdFunction,
+          stackInvalidationFunction,
           ticketFinalizationRankFunction,
         ],
       ],
@@ -527,6 +534,12 @@ test("all four doors are security definer, boundary-owned and search-path pinned
       },
       {
         proname: finalizationFunction,
+        prosecdef: true,
+        owner: "chuggy_boundary_owner",
+        settings: "search_path=pg_catalog, public, pg_temp",
+      },
+      {
+        proname: stackInvalidationFunction,
         prosecdef: true,
         owner: "chuggy_boundary_owner",
         settings: "search_path=pg_catalog, public, pg_temp",

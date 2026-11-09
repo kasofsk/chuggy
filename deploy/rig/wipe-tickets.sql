@@ -75,6 +75,7 @@ TRUNCATE TABLE
   public.epic_ticket,
   public.evaluation_stack,
   public.evaluation_stack_beneath,
+  public.evaluation_stack_dead,
   public.evaluation_stack_none,
   public.evaluation_stack_removal,
   public.execution,

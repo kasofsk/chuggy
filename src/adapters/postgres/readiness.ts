@@ -70,6 +70,7 @@ import {
   isSchedulerCompletion,
   type FinalizationSubmission,
   type ProjectCommand,
+  type StackInvalidationSubmission,
 } from "../../interpreter/projectCommand.ts";
 import { ticketCommandOf } from "../../interpreter/commandMap.ts";
 import {
@@ -572,6 +573,24 @@ async function nativeActionSource(
   };
 }
 
+/** The ticket command a finalizer's stack invalidation is, which the envelope carries whole. */
+function stackInvalidationSource(
+  operation: string,
+  command: StackInvalidationSubmission,
+): DecisionInput["source"] {
+  return {
+    kind: "Operation",
+    operation: asOperationId(operation),
+    command,
+    ticketCommand: ticketCommandOf({
+      envelope: "SubmitStackInvalidation",
+      ticket: command.ticket,
+      workCycle: command.workCycle,
+      evidence: command.evidence,
+    }),
+  };
+}
+
 async function operationSource(
   pool: pg.Pool,
   partition: Partition,
@@ -588,6 +607,8 @@ async function operationSource(
   if (command.command === "SubmitFinalizationResult") {
     return finalizationRequestSource(pool, partition, row.input_id, command);
   }
+  if (command.command === "SubmitStackInvalidation")
+    return stackInvalidationSource(row.input_id, command);
   if (isSchedulerCompletion(command)) {
     /**
      * A completion needs no join because `accept_operation` answers

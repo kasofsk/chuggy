@@ -314,8 +314,13 @@ import {
   type FinalizerTelemetry,
 } from "./finalizerTelemetry.ts";
 import type { ResultManifestId } from "./resultManifest.ts";
-import { stackRefOf, type EvaluationStackStore } from "./evaluationStack.ts";
+import {
+  stackRefOf,
+  type EvaluatingStack,
+  type EvaluationStackStore,
+} from "./evaluationStack.ts";
 import { stackPrepared } from "./evaluationStacking.ts";
+import { stackInvalidations } from "./stackInvalidation.ts";
 import type { Partition, RecoveryEpoch } from "./projectStore.ts";
 import {
   finalizerLandingOf,
@@ -345,6 +350,8 @@ export interface FinalizerService {
     | "prepare"
     | "queue"
     | "stackFailures"
+    | "evaluating"
+    | "invalidate"
   >;
   readonly handoffs: HandoffContentPort;
   readonly artifacts: ProjectArtifactPort;
@@ -2684,6 +2691,42 @@ const stackRemovalsPerPassMax = 8;
 /** The most work cycles one pass prepares a stack for. */
 const stackPreparationsPerPassMax = 8;
 
+/** The most evaluations over a stack one pass looks at. */
+const stackEvaluatingPerPassMax = 16;
+
+/**
+ * Offers the invalidation of every evaluation whose stack stopped standing,
+ * from here because this is the one principal that reads the queue and the landings.
+ * A queue that cannot be read is left for the next pass.
+ */
+async function finalizerInvalidateStacks(
+  service: FinalizerService,
+  epoch: RecoveryEpoch,
+): Promise<void> {
+  const stacks = service.stacks;
+  if (stacks === undefined) return;
+  const groups = new Map<string, EvaluatingStack[]>();
+  for (const each of await stacks.evaluating(stackEvaluatingPerPassMax)) {
+    const key = JSON.stringify([
+      each.partition.tenant,
+      each.partition.project,
+      each.repository,
+      each.target ?? null,
+    ]);
+    groups.set(key, [...(groups.get(key) ?? []), each]);
+  }
+  for (const group of groups.values()) {
+    const [first] = group;
+    if (first === undefined) continue;
+    const queue = await stacks
+      .queue(first.partition, first.repository, first.target)
+      .catch((): undefined => undefined);
+    if (queue === undefined) continue;
+    for (const dead of stackInvalidations(group, queue))
+      await stacks.invalidate(dead.partition, dead.ticket, dead.cycle, epoch);
+  }
+}
+
 /**
  * Prepares the stack of every Stacked ticket's accepted work whose first
  * evaluation has not spawned: it chooses, mints and publishes, and leaves the
@@ -2763,6 +2806,7 @@ export async function finalizerPass(
     metrics.claiming(claims.length, config.requestsPerPassMax);
   });
   for (const claim of claims) await finalizerAdvance(service, claim, tally);
+  await finalizerInvalidateStacks(service, epoch);
   await finalizerPrepareStacks(service, epoch);
   await finalizerSweepStacks(service, epoch);
   return {

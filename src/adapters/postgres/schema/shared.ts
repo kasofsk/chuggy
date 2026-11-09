@@ -322,6 +322,8 @@ export const ticketEvaluationReworkedSinceFunction =
 export const ticketFinalizationRankFunction = "ticket_finalization_rank";
 /** How many evaluations of a ticket that ran over a stack sent it back to work. */
 export const ticketStackedFailuresFunction = "ticket_stacked_failures";
+/** The finalizer's door for abandoning an evaluation whose stack no longer stands. */
+export const stackInvalidationFunction = "submit_stack_invalidation";
 export const activeWorkFunction = "project_active_work";
 export const backlogFunction = "execution_backlog";
 export const statusMoveFunction = "execution_status_move_is_legal";

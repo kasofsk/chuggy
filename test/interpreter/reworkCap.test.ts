@@ -27,6 +27,7 @@ import type { EvaluationFailureDisposition } from "../../src/domain/generated/mo
 import {
   checkedReworkCap,
   reworkDisposition,
+  reworkPolicy,
 } from "../../src/interpreter/reworkCap.ts";
 import { plainDefinitionOf, plainPolicy } from "../actor/harness.ts";
 import { aDispatchSource } from "../../src/domain/config.ts";
@@ -127,4 +128,34 @@ test("a cap that is not a whole count of cycles is refused where it is configure
       /non-negative whole number of cycles/u,
       String(cyclesMax),
     );
+});
+
+test("a failing verdict of a work cycle whose stack was found dead is invalidated at that position and counted nowhere", () => {
+  const created = replayStep(
+    { graph: genesis, ledgers: genesisLedgers },
+    acceptedOf(
+      decide(genesis, createTicketCommand(plainDefinitionOf(1)), plainPolicy),
+    ).event,
+  );
+  const ticket = ticketAt(created.graph, id(1));
+  const ledger = ledgerAt(created.ledgers, 1);
+  const instance = (workCycle: number) =>
+    ({ workCycle }) as unknown as Parameters<
+      ReturnType<typeof reworkPolicy>
+    >[0];
+  const none = reworkPolicy(ticket, ledger, 2);
+  const dead = reworkPolicy(ticket, ledger, 2, new Map([[1, 17]]));
+
+  assert.deepEqual(dead(instance(1)), {
+    type: "InvalidateEvaluationFailure",
+    value: 17,
+  });
+  assert.deepEqual(dead(instance(2)), none(instance(2)), "another cycle");
+  assert.equal(none(instance(1)), reworkDisposition(ticket, ledger, 2));
+  const exhausted = reworkPolicy(ticket, ledger, 0, new Map([[1, 17]]));
+  assert.deepEqual(
+    exhausted(instance(1)),
+    { type: "InvalidateEvaluationFailure", value: 17 },
+    "the marker is taken before the cap",
+  );
 });

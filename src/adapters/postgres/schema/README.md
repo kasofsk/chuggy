@@ -697,3 +697,10 @@ is, to the finalizer alone. Its identity is that of the stack it points at. It h
 unstacked, and why. Granted and refused as `evaluation_stack` is, and a cycle is
 left this or a stack, never both. Its identity is `(tenant, project, ticket,
 work_cycle)` and it points at `project`. It has no unfinished work.
+
+`evaluation_stack_dead` — that a stack stopped standing under an evaluation
+that was running over it, and the journal position it was found at. Written
+only by `submit_stack_invalidation`, in the transaction that files the
+invalidation, and never changed. The finalizer and the ticket service read it,
+the second to take a failing verdict of that cycle as no rework. Its identity is
+that of the stack it points at. It has no unfinished work.

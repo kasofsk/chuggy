@@ -23,6 +23,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import type pg from "pg";
 import type { ConfigurationOverrides } from "../../src/contract/configurationOverrides.ts";
 import { postgresAuthoring } from "../../src/adapters/postgres/authoring.ts";
+import { postgresEvaluationStack } from "../../src/adapters/postgres/evaluationStack.ts";
 import { postgresDomainConfigurationPrecondition } from "../../src/adapters/postgres/domainConfiguration.ts";
 
 import {
@@ -1037,6 +1038,7 @@ export function postgresHarnessWriter(
       bindings: postgresProjectRepositoryBinding(harness.writerPool),
       ancestry: { ancestry: () => Promise.resolve("Unknown") },
     }),
+    stacks: postgresEvaluationStack(harness.writerPool),
   };
 }
 

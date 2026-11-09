@@ -13,6 +13,16 @@
  * release and the next applies to the ticket in flight instead of to whatever
  * a release froze onto it.
  *
+ * A FAILED VERDICT ON A STACK KNOWN TO BE DEAD IS NO REWORK. The finalizer marks
+ * the work cycle of an evaluation whose stack stopped standing in the
+ * transaction that offers its invalidation, and a failure of a marked cycle is
+ * taken as `InvalidateEvaluationFailure`, which counts nothing and is no
+ * attempt of the ticket's own. The marker is all this reads of a stack: a
+ * cycle's stack record exists only where the choice found the ticket under its
+ * stacked-failure cap, and that count cannot change before the cycle ends. A
+ * verdict that reached the journal before the marker was written is an
+ * ordinary rework, which is accepted.
+ *
  * THE CAP IS OVER EVALUATION FAILURES, AND THE INSTANCES SAY WHICH THOSE ARE.
  * A `FinalizationNeedsWork` re-enters Work too, and the finalizer is what
  * handles that loop; a cap consulted only on a failing evaluation could never
@@ -66,11 +76,22 @@ export function reworkDisposition(
     : "ReworkEvaluationFailure";
 }
 
-/** The policy `decide` is handed for this ticket: the disposition its count earns, whatever instance failed. */
+/**
+ * The policy `decide` is handed for this ticket: the disposition its count
+ * earns, whatever instance failed, except for an instance of a work cycle in
+ * `dead`, which is invalidated at the journal position it was found dead at.
+ */
 export function reworkPolicy(
   ticket: Ticket,
   ledger: TicketLedger,
   cyclesMax: number,
+  dead: ReadonlyMap<number, number> = new Map(),
 ): EvaluationFailurePolicy {
-  return alwaysPolicy(reworkDisposition(ticket, ledger, cyclesMax));
+  const counted = alwaysPolicy(reworkDisposition(ticket, ledger, cyclesMax));
+  return (instance) => {
+    const found = dead.get(instance.workCycle);
+    return found === undefined
+      ? counted(instance)
+      : { type: "InvalidateEvaluationFailure", value: found };
+  };
 }

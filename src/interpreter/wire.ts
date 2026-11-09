@@ -41,6 +41,7 @@ import {
   completionCommandTypes,
   isCompletionTicketCommand,
   type FinalizationSubmission,
+  type StackInvalidationSubmission,
   type ProjectCommand,
   type SchedulerCompletion,
   type StoredProjectCommand,
@@ -369,6 +370,43 @@ function checkedFinalizationSubmission(
   return { ...record, outcome } as unknown as FinalizationSubmission;
 }
 
+/** The fields `submit_stack_invalidation` writes into its envelope, and the only ones. */
+const storedInvalidationFields = [
+  "version",
+  "command",
+  "ticket",
+  "workCycle",
+  "evidence",
+] as const;
+
+/** Reads the finalizer's stack invalidation, refusing a field it does not write. */
+function checkedStackInvalidation(
+  record: Record<string, unknown>,
+): StackInvalidationSubmission {
+  const { ticket, workCycle, evidence } = record;
+  if (
+    record["version"] !== 1 ||
+    carriesUnwrittenField(record, storedInvalidationFields) ||
+    typeof ticket !== "number" ||
+    !Number.isSafeInteger(ticket) ||
+    ticket < 1 ||
+    typeof workCycle !== "number" ||
+    !Number.isSafeInteger(workCycle) ||
+    workCycle < 1 ||
+    typeof evidence !== "number" ||
+    !Number.isSafeInteger(evidence) ||
+    evidence < 1
+  )
+    throw new TypeError("stack invalidation fields are invalid");
+  return {
+    version: 1,
+    command: "SubmitStackInvalidation",
+    ticket: asTicketId(ticket),
+    workCycle,
+    evidence,
+  };
+}
+
 /**
  * Whether a stored envelope claims to be the scheduler's completion, read off
  * the undecoded command so an ordinary one is not decoded twice on the way to
@@ -446,6 +484,9 @@ export function parseStoredProjectCommand(
     }
     if (record?.["command"] === "SubmitFinalizationResult") {
       return { parsed: "Ok", value: checkedFinalizationSubmission(record) };
+    }
+    if (record?.["command"] === "SubmitStackInvalidation") {
+      return { parsed: "Ok", value: checkedStackInvalidation(record) };
     }
     if (record !== undefined && claimsCompletion(record)) {
       return { parsed: "Ok", value: storedSchedulerCompletion(record) };

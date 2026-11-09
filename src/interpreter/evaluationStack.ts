@@ -18,8 +18,8 @@ import {
   type GitObjectId,
   type GitRefName,
 } from "./finalizer.ts";
-import type { Partition } from "./projectStore.ts";
-import type { StackEntry, StackMember } from "./stackChoice.ts";
+import type { Partition, RecoveryEpoch } from "./projectStore.ts";
+import type { StackEntry, StackMember, StackStanding } from "./stackChoice.ts";
 
 /** The ref a cycle's stack commit is published at, which a plain clone fetches. */
 export function stackRefOf(ticket: number, cycle: number): GitRefName {
@@ -84,6 +84,21 @@ export interface RemovableStack {
   readonly repository: string;
 }
 
+/** A Stacked ticket being evaluated over a stack, with what decides whether the stack still stands. */
+export interface EvaluatingStack {
+  readonly partition: Partition;
+  readonly ticket: TicketId;
+  readonly cycle: number;
+  readonly repository: string;
+  /** The reference its brief lands on, absent for the repository's default. */
+  readonly target: string | undefined;
+  readonly standing: StackStanding;
+}
+
+/** What offering an invalidation to the finalizer's door answered. */
+export type StackInvalidationOffered =
+  "Submitted" | "AlreadySubmitted" | "Refused";
+
 export interface EvaluationStackStore {
   /**
    * Leaves the cycle its preparation, in one transaction, unless the cycle
@@ -137,4 +152,25 @@ export interface EvaluationStackStore {
   ): Promise<readonly StackEntry[]>;
   /** The evaluations of a ticket that ran over a stack and sent it back to work. */
   stackFailures(partition: Partition, ticket: TicketId): Promise<number>;
+  /**
+   * The Stacked tickets being evaluated over a stack that no invalidation has
+   * been offered for, at most `limit` of them.
+   */
+  evaluating(limit: number): Promise<readonly EvaluatingStack[]>;
+  /**
+   * Offers the invalidation of a ticket's evaluation of the cycle to the one
+   * door that submits it, which marks the stack dead in the same transaction.
+   * Offering it again, for the same ticket and cycle, submits nothing new.
+   */
+  invalidate(
+    partition: Partition,
+    ticket: TicketId,
+    cycle: number,
+    epoch: RecoveryEpoch,
+  ): Promise<StackInvalidationOffered>;
+  /** The cycles of the ticket whose stack was found no longer standing, each with the journal position it was found at. */
+  dead(
+    partition: Partition,
+    ticket: TicketId,
+  ): Promise<ReadonlyMap<number, number>>;
 }

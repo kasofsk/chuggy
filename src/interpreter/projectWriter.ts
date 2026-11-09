@@ -93,6 +93,7 @@ import type {
   DispatchSource,
   ExecutionSourceObservationPort,
 } from "./executionSource.ts";
+import type { EvaluationStackStore } from "./evaluationStack.ts";
 import type { GitEvidence } from "./finalizer.ts";
 import type {
   ProjectArtifactId,
@@ -148,6 +149,8 @@ export interface ProjectTicketWriter {
   readonly projectArtifacts: Pick<ProjectArtifactPort, "readArtifact">;
   /** What a dispatch pins of what its ticket's dependencies delivered. */
   readonly dependencyPinning: DependencyPinningPort;
+  /** The stacks the finalizer found dead, which only a failing verdict's disposition reads. */
+  readonly stacks?: Pick<EvaluationStackStore, "dead">;
 }
 
 /** What a writer holds between decisions: the lease that authorizes it, and the state it replayed. */
@@ -443,6 +446,7 @@ function projectWriterFailurePolicy(
   writer: ProjectTicketWriter,
   memory: ProjectMemory,
   command: TicketCommand,
+  dead: ReadonlyMap<number, number>,
 ): EvaluationFailurePolicy {
   const subject = commandSubject(command);
   const held = memory.graph.tickets.get(subject);
@@ -452,7 +456,20 @@ function projectWriterFailurePolicy(
         held,
         ledgerAt(memory.ledgers, subject),
         writer.rework.cyclesMax,
+        dead,
       );
+}
+
+/** The cycles of the ticket a task report is about whose stack the finalizer found dead. */
+async function projectWriterDeadStacks(
+  writer: ProjectTicketWriter,
+  memory: ProjectMemory,
+  item: DecisionInput,
+): Promise<ReadonlyMap<number, number>> {
+  const command = item.source.ticketCommand;
+  return writer.stacks === undefined || command?.type !== "ReportTaskTerminal"
+    ? new Map()
+    : writer.stacks.dead(memory.lease.partition, commandSubject(command));
 }
 
 /**
@@ -479,6 +496,7 @@ function projectWriterDecision(
   writer: ProjectTicketWriter,
   memory: ProjectMemory,
   command: TicketCommand,
+  dead: ReadonlyMap<number, number>,
 ):
   | TicketDecision
   | {
@@ -501,7 +519,7 @@ function projectWriterDecision(
   const decision = decide(
     memory.graph,
     command,
-    projectWriterFailurePolicy(writer, memory, command),
+    projectWriterFailurePolicy(writer, memory, command, dead),
   );
   if (!decisionValid(memory.graph, decision))
     throw new Error(
@@ -627,6 +645,7 @@ function projectWriterPreflight(
   writer: ProjectTicketWriter,
   memory: ProjectMemory,
   item: DecisionInput,
+  dead: ReadonlyMap<number, number>,
 ):
   | ProjectPlan
   | {
@@ -667,7 +686,7 @@ function projectWriterPreflight(
           post: projectWriterReplayed(memory),
         };
   }
-  const decision = projectWriterDecision(writer, memory, command);
+  const decision = projectWriterDecision(writer, memory, command, dead);
   if (decision.type === "Boundary")
     return refusedPlan(memory, boundaryRefusal(decision.code));
   if (closed)
@@ -976,7 +995,7 @@ async function projectWriterDispatchPlan(
     ticket,
     source: observed.source.reference,
   });
-  const decision = projectWriterDecision(writer, memory, command);
+  const decision = projectWriterDecision(writer, memory, command, new Map());
   if (decision.type === "Boundary")
     throw new IntegrityContradiction(
       "project writer: an observed source is not one a dispatch may carry",
@@ -1056,7 +1075,12 @@ export async function projectWriterDecide(
   memory: ProjectMemory,
   item: DecisionInput,
 ): Promise<ProjectDecided> {
-  const preflight = projectWriterPreflight(writer, memory, item);
+  const preflight = projectWriterPreflight(
+    writer,
+    memory,
+    item,
+    await projectWriterDeadStacks(writer, memory, item),
+  );
   const plan =
     "command" in preflight
       ? await projectWriterPlan(

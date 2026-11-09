@@ -256,9 +256,27 @@ export interface SchedulerCompletion {
   readonly ticketCommand: CompletionTicketCommand;
 }
 
-/** What a stored operation may carry: a public command, or one of the two envelopes only a boundary writes. */
+/**
+ * The finalizer's own submission that the stack an evaluation runs over no
+ * longer stands, which its authenticated boundary builds from the stack record
+ * it marked dead. It names the ticket and the work cycle whose evaluation is
+ * abandoned, and the journal position it was found at, which is the evidence the
+ * invalidation records.
+ */
+export interface StackInvalidationSubmission {
+  readonly version: 1;
+  readonly command: "SubmitStackInvalidation";
+  readonly ticket: TicketId;
+  readonly workCycle: number;
+  readonly evidence: number;
+}
+
+/** What a stored operation may carry: a public command, or one of the three envelopes only a boundary writes. */
 export type StoredProjectCommand =
-  ProjectCommand | FinalizationSubmission | SchedulerCompletion;
+  | ProjectCommand
+  | FinalizationSubmission
+  | SchedulerCompletion
+  | StackInvalidationSubmission;
 
 /**
  * Whether a stored envelope is the scheduler's completion, which its command's

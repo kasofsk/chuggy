@@ -5065,6 +5065,8 @@ function stacksDue(
     prepare: () => Promise.resolve("Present"),
     queue: () => Promise.resolve([]),
     stackFailures: () => Promise.resolve(0),
+    evaluating: () => Promise.resolve([]),
+    invalidate: () => Promise.resolve("Submitted"),
     removable: () =>
       Promise.resolve(
         cycles.map((cycle) => ({
@@ -5180,4 +5182,76 @@ test("a cycle whose target nobody could read is left unprepared for the next pas
     stacks,
   });
   assert.deepEqual(stacks.prepared, []);
+});
+
+/** A store of evaluations over stacks, noting each invalidation it is told of. */
+function stacksEvaluating(
+  over: readonly {
+    readonly ticket: number;
+    readonly beneath: readonly number[];
+    readonly repository?: string;
+  }[],
+  queued: readonly number[],
+): NonNullable<FinalizerService["stacks"]> & { offered: number[] } {
+  const offered: number[] = [];
+  return {
+    ...stacksDue([]),
+    offered,
+    evaluating: () =>
+      Promise.resolve(
+        over.map((each) => ({
+          partition,
+          ticket: asTicketId(each.ticket),
+          cycle: 1,
+          repository: each.repository ?? "repository-run",
+          target: undefined,
+          standing: {
+            beneath: each.beneath.map((ticket) => ({
+              ticket: asTicketId(ticket),
+              commit: asGitObjectId(commitOf("b")),
+            })),
+            landings: [],
+          },
+        })),
+      ),
+    queue: () =>
+      Promise.resolve(
+        queued.map((ticket) => ({
+          ticket: asTicketId(ticket),
+          policy: "Stacked" as const,
+          phase: "Evaluation" as const,
+          rank: ticket,
+          commit: asGitObjectId(commitOf("b")),
+          stack: undefined,
+        })),
+      ),
+    invalidate: (_partition, ticket) => {
+      offered.push(ticket);
+      return Promise.resolve("Submitted");
+    },
+  };
+}
+
+test("a pass offers the invalidation of each evaluation whose stack no longer stands, and of no other", async () => {
+  const stacks = stacksEvaluating(
+    [
+      { ticket: 3, beneath: [1] },
+      { ticket: 4, beneath: [9] },
+    ],
+    [1],
+  );
+  await passOver({ ...serviceOf(recordingStore([]), recordingGit()), stacks });
+  assert.deepEqual(stacks.offered, [4]);
+});
+
+test("a queue that cannot be read leaves the stacks over it for the next pass", async () => {
+  const stacks = stacksEvaluating([{ ticket: 4, beneath: [9] }], []);
+  await passOver({
+    ...serviceOf(recordingStore([]), recordingGit()),
+    stacks: {
+      ...stacks,
+      queue: () => Promise.reject(new Error("the queue is too large")),
+    },
+  });
+  assert.deepEqual(stacks.offered, []);
 });

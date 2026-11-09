@@ -31,15 +31,19 @@
  * chosen over a queue that is not there.
  */
 
+import { randomUUID } from "node:crypto";
+
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
 import { phaseRoster } from "../../contract/rosters.ts";
 import { asTicketId } from "../../domain/ids.ts";
 import type {
+  EvaluatingStack,
   EvaluationStack,
   EvaluationStackStore,
   RemovableStack,
+  StackInvalidationOffered,
   StackDecision,
   StackPrepared,
   UnpreparedStack,
@@ -51,6 +55,7 @@ import {
   asProjectId,
   asTenantId,
   type Partition,
+  type RecoveryEpoch,
 } from "../../interpreter/projectStore.ts";
 import {
   stackDepthMax,
@@ -61,6 +66,7 @@ import {
   type StackStanding,
 } from "../../interpreter/stackChoice.ts";
 import { briefLandsOn } from "../../interpreter/ticketBrief.ts";
+import { finalizerRole } from "./schema.ts";
 import { finalizerRowPresent } from "./finalizerRows.ts";
 import { postgresTransaction } from "./pool.ts";
 import { projectRowCounter } from "./rows.ts";
@@ -98,6 +104,14 @@ interface UnpreparedRow {
   readonly ticket: string;
   readonly repository: string | null;
   readonly commit: string;
+  readonly cycle: string;
+}
+
+interface EvaluatingRow {
+  readonly tenant: string;
+  readonly project: string;
+  readonly ticket: string;
+  readonly brief: string | null;
   readonly cycle: string;
 }
 
@@ -582,6 +596,116 @@ async function stackCurrentRead(
   return stackRecordsOf(found.rows)[0];
 }
 
+/**
+ * The Stacked tickets in an evaluation of their latest accepted work whose
+ * cycle was stacked, and whose stack nobody has yet offered an invalidation
+ * for: a stack offered once is marked dead, and is not looked at again.
+ */
+async function stackEvaluating(
+  pool: pg.Pool,
+  limit: number,
+): Promise<readonly EvaluatingStack[]> {
+  const found = await pool.query<EvaluatingRow>(
+    sql`SELECT d.tenant, d.project, d.ticket::text AS ticket, d.brief::text AS brief,
+               w.cycle::text AS cycle
+          FROM ticket_definition d
+          JOIN ticket_projection p
+            ON p.tenant = d.tenant AND p.project = d.project AND p.ticket = d.ticket
+          JOIN LATERAL (
+            SELECT max(t.cycle) AS cycle
+              FROM execution e
+              JOIN execution_request_task t
+                ON t.tenant = e.tenant AND t.project = e.project
+                   AND t.request = e.source_request AND t.task = e.task
+              JOIN execution_result r
+                ON r.tenant = e.tenant AND r.project = e.project
+                   AND r.execution = e.execution
+             WHERE e.tenant = d.tenant AND e.project = d.project
+               AND e.ticket = d.ticket AND t.kind = 'Work'
+               AND e.status = 'Terminal' AND e.outcome = 'Passed'
+               AND r.verdict = 'Pass') w ON w.cycle IS NOT NULL
+          JOIN evaluation_stack s
+            ON s.tenant = d.tenant AND s.project = d.project
+               AND s.ticket = d.ticket AND s.work_cycle = w.cycle
+         WHERE d.brief->>'landing' = 'Stacked'
+           AND p.phase = 'Evaluation'
+           AND EXISTS (
+                 SELECT 1
+                   FROM execution_request q
+                   JOIN execution_request_task xt
+                     ON xt.tenant = q.tenant AND xt.project = q.project
+                        AND xt.request = q.request
+                  WHERE q.tenant = d.tenant AND q.project = d.project
+                    AND q.ticket = d.ticket AND xt.kind = 'Evaluation'
+                    AND xt.cycle = w.cycle)
+           AND NOT EXISTS (
+                 SELECT 1 FROM evaluation_stack_dead k
+                  WHERE k.tenant = s.tenant AND k.project = s.project
+                    AND k.ticket = s.ticket AND k.work_cycle = s.work_cycle)
+         ORDER BY d.tenant, d.project, d.ticket
+         LIMIT ${limit}`,
+  );
+  const evaluating: EvaluatingStack[] = [];
+  for (const row of found.rows) {
+    const partition = {
+      tenant: asTenantId(row.tenant),
+      project: asProjectId(row.project),
+    };
+    const ticket = projectRowCounter(row.ticket, "evaluating ticket");
+    const cycle = projectRowCounter(row.cycle, "evaluating cycle");
+    const [record] = await stackRecordsRead(pool, partition, [ticket], [cycle]);
+    const brief = releasedBriefOf(row.brief);
+    if (record === undefined || brief === undefined) continue;
+    evaluating.push({
+      partition,
+      ticket: asTicketId(ticket),
+      cycle,
+      repository: record.repository,
+      target: briefLandsOn(brief),
+      standing: await stackStandingOf(pool, partition, record),
+    });
+  }
+  return evaluating;
+}
+
+async function stackInvalidate(
+  pool: pg.Pool,
+  partition: Partition,
+  ticket: number,
+  cycle: number,
+  epoch: RecoveryEpoch,
+): Promise<StackInvalidationOffered> {
+  const operation = `stack-invalidation-${randomUUID()}`;
+  const offered = await pool.query<{ result: string }>(
+    sql`SELECT result FROM submit_stack_invalidation(
+      ${partition.tenant},${partition.project},${ticket},${cycle},
+      ${epoch},${operation},${finalizerRole})`,
+  );
+  const result = offered.rows[0]?.result;
+  return result === "Submitted" || result === "AlreadySubmitted"
+    ? result
+    : "Refused";
+}
+
+async function stackDead(
+  pool: pg.Pool,
+  partition: Partition,
+  ticket: number,
+): Promise<ReadonlyMap<number, number>> {
+  const found = await pool.query<{ work_cycle: string; observed_seq: string }>(
+    sql`SELECT work_cycle::text AS work_cycle, observed_seq::text AS observed_seq
+          FROM evaluation_stack_dead
+         WHERE tenant = ${partition.tenant} AND project = ${partition.project}
+           AND ticket = ${ticket}`,
+  );
+  return new Map(
+    found.rows.map((row) => [
+      projectRowCounter(row.work_cycle, "dead stack cycle"),
+      projectRowCounter(row.observed_seq, "dead stack position"),
+    ]),
+  );
+}
+
 async function stackRemovable(
   pool: pg.Pool,
   limit: number,
@@ -627,6 +751,10 @@ export function postgresEvaluationStack(pool: pg.Pool): EvaluationStackStore {
     unprepared: (limit) => stackUnprepared(pool, limit),
     decision: (partition, ticket, cycle) =>
       stackDecision(pool, partition, ticket, cycle),
+    evaluating: (limit) => stackEvaluating(pool, limit),
+    invalidate: (partition, ticket, cycle, epoch) =>
+      stackInvalidate(pool, partition, ticket, cycle, epoch),
+    dead: (partition, ticket) => stackDead(pool, partition, ticket),
     read: async (partition, ticket, cycle) =>
       (await stackRecordsRead(pool, partition, [ticket], [cycle]))[0],
     current: (partition, ticket) => stackCurrentRead(pool, partition, ticket),

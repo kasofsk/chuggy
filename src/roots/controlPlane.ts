@@ -566,6 +566,7 @@ export function ticketServiceProcessRoot(
       bindings,
       ancestry,
     }),
+    stacks: postgresEvaluationStack(pool),
     ...(config.ticket === undefined ? {} : { ticketConfig: config.ticket }),
   };
   return ownedProcess(

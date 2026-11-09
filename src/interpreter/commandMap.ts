@@ -19,6 +19,7 @@
 import {
   createTicketCommand,
   dispatchTicketCommand,
+  invalidateEvaluationCommand,
   reportFinalizationResultCommand,
   resumeTicketCommand,
   revokeTicketCommand,
@@ -82,6 +83,13 @@ export type CommandMaterials =
       readonly outcome: FinalizationOutcome;
       /** The reference the settled attempt folds to. */
       readonly evidence: number;
+    }
+  | {
+      readonly envelope: "SubmitStackInvalidation";
+      readonly ticket: TicketId;
+      readonly workCycle: number;
+      /** The journal position the stack was found no longer standing at. */
+      readonly evidence: number;
     };
 
 /** The ticket command one answer to an escalation asks for. */
@@ -132,6 +140,12 @@ export function ticketCommandOf(materials: CommandMaterials): TicketCommand {
         materials.workCycle,
         materials.generation,
         { type: materials.outcome, value: materials.evidence },
+      );
+    case "SubmitStackInvalidation":
+      return invalidateEvaluationCommand(
+        materials.ticket,
+        materials.workCycle,
+        materials.evidence,
       );
     default:
       return assertNever(materials);
