@@ -4066,6 +4066,17 @@ test("a serialized landing whose accepted commit holds the target's tip lands th
   assert.equal(store.attempts[0]?.failureKind, undefined);
 });
 
+/** The one attempt a landing sent back to re-check the accepted commit leaves. */
+function recheckRecorded(store: FinalizerRecorder): void {
+  assert.equal(store.attempts.length, 1);
+  const recorded = store.attempts[0];
+  assert.equal(recorded?.outcome, "Failed");
+  assert.equal(recorded?.failureKind, "RecheckRequired");
+  assert.equal(recorded?.recheckCommit, commitOf("c"));
+  assert.equal(recorded?.candidate, undefined);
+  assert.deepEqual(recorded?.target, attemptOf("any").target);
+}
+
 test("a serialized landing whose target moved past the accepted commit is sent back to re-check it, naming that commit", async () => {
   const store = sourcedStore();
   const git = recordingGit();
@@ -4076,13 +4087,7 @@ test("a serialized landing whose target moved past the accepted commit is sent b
   assert.equal(report.holds, 0);
   assert.deepEqual(git.integrations, [], "no merge candidate is built");
   assert.deepEqual(git.promotions, []);
-  assert.equal(store.attempts.length, 1);
-  const recorded = store.attempts[0];
-  assert.equal(recorded?.outcome, "Failed");
-  assert.equal(recorded?.failureKind, "RecheckRequired");
-  assert.equal(recorded?.recheckCommit, commitOf("c"));
-  assert.equal(recorded?.candidate, undefined);
-  assert.deepEqual(recorded?.target, attemptOf("any").target);
+  recheckRecorded(store);
 
   const settling = recordingStore([
     {
@@ -4226,13 +4231,7 @@ test("rechecksWhenTreeDiffers: a stacked landing whose merge result is not the s
 
   assert.equal(report.holds, 0);
   assert.deepEqual(git.promotions, []);
-  assert.equal(store.attempts.length, 1);
-  const recorded = store.attempts[0];
-  assert.equal(recorded?.outcome, "Failed");
-  assert.equal(recorded?.failureKind, "RecheckRequired");
-  assert.equal(recorded?.recheckCommit, commitOf("c"));
-  assert.equal(recorded?.candidate, undefined);
-  assert.deepEqual(recorded?.target, attemptOf("any").target);
+  recheckRecorded(store);
 });
 
 test("directLandingInvalidatesAStack: a stack evaluated over a tip that has since moved gives another tree, so the ticket is re-checked at its rank and bounded like a serialized one", async () => {
