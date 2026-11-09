@@ -391,7 +391,8 @@ export const workerPoolCredentialOutcomeSchema = z.discriminatedUnion(
 /** Whether each credential outcome names an assignment the same answer stops, and no assignment twice. */
 function workerPoolReconciliationOutcomesStopped(answer: {
   readonly stop: readonly string[];
-  readonly credentialOutcomes?: readonly WorkerPoolCredentialOutcome[] | undefined;
+  readonly credentialOutcomes?:
+    readonly WorkerPoolCredentialOutcome[] | undefined;
 }): boolean {
   const named = (answer.credentialOutcomes ?? []).map(
     (outcome) => outcome.assignment,
@@ -442,11 +443,10 @@ export const workerPoolReconciliationSchema = z
     /**
      * How the credential stopped each job this answer stops whose run ended
      * under an outcome, one for each such assignment of `stop` and none for any
-     * other, so it is bounded by `stop`. An outcome is named in every answer
-     * that stops its assignment, and so in none once the runner stops naming it
-     * held, and a runner that reads outcomes names a job held until an answer
-     * stops it. It is named only to a member's personal runner whose poll's
-     * release reads it, and absent is the default: no job named an outcome.
+     * other, named in every answer that stops it and so in none once the
+     * runner, which names a job held until an answer stops it, stops naming
+     * it. It is named only to a member's personal runner whose poll's release
+     * reads it, and absent is the default: no job named an outcome.
      */
     credentialOutcomes: z.array(workerPoolCredentialOutcomeSchema).optional(),
   })
