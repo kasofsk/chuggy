@@ -491,6 +491,57 @@ test("signing out clears the store and revokes where the issuer offers it", asyn
   );
 });
 
+test("signing out ends the issuer's session where the issuer offers to, after revoking", async () => {
+  const held = harness();
+  const endSession = "https://auth.example/oauth2/sessions/logout";
+  held.answer = (request) =>
+    request === "/config.json"
+      ? configuration
+      : typeof request === "string"
+        ? { ...discovery, end_session_endpoint: endSession }
+        : { access_token: "access", refresh_token: "renew", expires_in: 600 };
+  held.persistent.held.set(sessionRefreshTokenKey, "renew");
+  const holder = createSessionHolder(held.ports);
+  await holder.load();
+  await holder.bearer();
+  await holder.signOut();
+  expect(held.redirects).toEqual([endSession]);
+  const revocation = held.asked.at(-1);
+  expect(typeof revocation === "object" ? revocation.url : "").toBe(
+    discovery.revocation_endpoint,
+  );
+});
+
+test("signing out leaves the issuer's session where the issuer offers no end to it", async () => {
+  const held = harness();
+  held.persistent.held.set(sessionRefreshTokenKey, "renew");
+  const holder = createSessionHolder(held.ports);
+  await holder.load();
+  await holder.bearer();
+  await holder.signOut();
+  expect(held.redirects).toEqual([]);
+});
+
+test("a sign-out the console decided on leaves the issuer's session, though the issuer offers to end it", async () => {
+  const held = harness();
+  held.answer = (request) =>
+    request === "/config.json"
+      ? configuration
+      : typeof request === "string"
+        ? {
+            ...discovery,
+            end_session_endpoint: "https://auth.example/oauth2/sessions/logout",
+          }
+        : { access_token: "access", refresh_token: "renew", expires_in: 600 };
+  held.persistent.held.set(sessionRefreshTokenKey, "renew");
+  const holder = createSessionHolder(held.ports);
+  await holder.load();
+  await holder.bearer();
+  await holder.signOut("Console");
+  expect(holder.snapshot().phase).toBe("SignedOut");
+  expect(held.redirects).toEqual([]);
+});
+
 test("concurrent callers share one renewal rather than spending the token twice", async () => {
   const held = harness();
   held.persistent.held.set(sessionRefreshTokenKey, "renew");
