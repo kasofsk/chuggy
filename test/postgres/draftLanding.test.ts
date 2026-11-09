@@ -29,6 +29,7 @@ test("a repository's landing no roster names is refused by the row's own constra
     for (const [kind, mode, policy] of [
       ["GitMerge", "Push", "Direct"],
       ["GitMerge", "PullRequestMerge", "Serialized"],
+      ["GitMerge", "Push", "Stacked"],
       ["PullRequest", null, null],
       ["None", null, null],
     ] as const)
@@ -44,7 +45,7 @@ test("a repository's landing no roster names is refused by the row's own constra
         "project_repository_landing_mode_is_known",
       ],
       [
-        `landing_kind='GitMerge',landing_mode='Push',landing_policy='Stacked'`,
+        `landing_kind='GitMerge',landing_mode='Push',landing_policy='Ordered'`,
         "project_repository_landing_policy_is_known",
       ],
     ] as const)
@@ -461,6 +462,9 @@ test("a draft's git merge carries the policy it is written with, and only a git 
           [encodeDraftAuthoring(plainAuthoring), mode, kind, policy],
         )
       ).rows;
+    assert.deepEqual(await revise("Push", "GitMerge", "Stacked"), [
+      { result: "Revised" },
+    ]);
     assert.deepEqual(await revise("Push", "GitMerge", "Serialized"), [
       { result: "Revised" },
     ]);
@@ -481,7 +485,7 @@ test("a draft's git merge carries the policy it is written with, and only a git 
       [["Push", "None", null], /draft_brief_finalization_is_by_kind/u],
       [["Push", "GitMerge", null], /draft_brief_finalization_is_by_kind/u],
       [
-        ["Push", "GitMerge", "Stacked"],
+        ["Push", "GitMerge", "Ordered"],
         /draft_brief_finalization_policy_is_known/u,
       ],
     ] as const)

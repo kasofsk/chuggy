@@ -1257,8 +1257,7 @@ async function finalizerBuildSource(
     case "Candidate": {
       const { finalization } = subject.view;
       await (
-        finalization?.kind === "GitMerge" &&
-          finalization.policy === "Serialized"
+        finalization?.kind === "GitMerge" && finalization.policy !== "Direct"
           ? finalizerContainedPrepared
           : finalizerIntegratePrepared
       )(service, subject, prepared.candidate, tally);

@@ -65,7 +65,7 @@ function serializedHolds(candidate: SerializedCandidate): boolean {
   const { finalization } = candidate;
   return (
     finalization?.kind === "GitMerge" &&
-    finalization.policy === "Serialized" &&
+    finalization.policy !== "Direct" &&
     candidate.repository !== undefined &&
     serializedPathPhases.includes(candidate.phase) &&
     candidate.rank !== undefined

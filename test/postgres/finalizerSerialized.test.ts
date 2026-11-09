@@ -58,7 +58,7 @@ after(async () => {
 
 /** What a sibling ticket is written with. */
 interface Sibling {
-  readonly landing: "Direct" | "Serialized";
+  readonly landing: "Direct" | "Serialized" | "Stacked";
   readonly phase: string;
   /** Whether its finalization request is still to be drawn. */
   readonly pending: boolean;
@@ -208,6 +208,19 @@ test("a Serialized finalization waits for the holder and stays open, unheld and 
     pending: true,
   });
   const claims = await drawn([first, second], "hold");
+  assert.equal(includes(claims, first), true);
+  assert.equal(includes(claims, second), false);
+  assert.equal(await untouched(second), true);
+});
+
+test("a Stacked finalization shares the queue of a Serialized one and waits for its holder alike", async () => {
+  const first = await serialized("stacked-first");
+  const second = await sibling(first, "stacked-second", {
+    landing: "Stacked",
+    phase: "Finalization",
+    pending: true,
+  });
+  const claims = await drawn([first, second], "stacked");
   assert.equal(includes(claims, first), true);
   assert.equal(includes(claims, second), false);
   assert.equal(await untouched(second), true);

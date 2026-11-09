@@ -49,6 +49,11 @@ test("a landing write names the repository, and each setting as read and as want
     pipelinesWritable: { expected: false, wanted: true },
   };
   assert.deepEqual(projectRepositoryLandingSchema.parse(body), body);
+  const stacked = {
+    ...body,
+    landing: { kind: "GitMerge", mode: "PullRequestMerge", policy: "Stacked" },
+  };
+  assert.deepEqual(projectRepositoryLandingSchema.parse(stacked), stacked);
   const { pipelinesWritable, ...landingOnly } = body;
   for (const value of [
     { ...landingOnly, landing: undefined },
@@ -86,6 +91,7 @@ test("a landing default names a kind, a git merge's mode and policy beside it, a
       target: "refs/heads/main",
     },
     { kind: "PullRequest", policy: "Serialized" },
+    { kind: "PullRequest", policy: "Stacked" },
     { kind: "PullRequest", target: "refs/heads/main" },
     { kind: "None", mode: "Push" },
   ])

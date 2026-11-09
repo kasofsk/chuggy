@@ -844,7 +844,7 @@ export async function finalizerBriefLanding(
   rig: FinalizerRig,
   partition: Partition,
   ticket: number,
-  landing: "Direct" | "Serialized",
+  landing: "Direct" | "Serialized" | "Stacked",
   repository: string,
 ): Promise<void> {
   await finalizerReleasedBrief(rig, partition, ticket, (brief) =>

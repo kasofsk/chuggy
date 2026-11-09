@@ -17,7 +17,7 @@ const partition = {
 
 /** A git merge onto one reference, ordered under `policy`. */
 function gitMerge(
-  policy: "Direct" | "Serialized",
+  policy: "Direct" | "Serialized" | "Stacked",
   mode: "Push" | "PullRequestMerge" = "Push",
 ): SerializedCandidate["finalization"] {
   return { kind: "GitMerge", mode, policy };
@@ -53,6 +53,22 @@ test("the lowest rank holds and the others wait on it in rank order", () => {
     holderOf([candidate(3, 30), candidate(1, 10), candidate(2, 20)]),
     [{ holder: asTicketId(1), waiting: [asTicketId(2), asTicketId(3)] }],
   );
+});
+
+test("a Stacked and a Serialized ticket on one reference share one queue and wait alike", () => {
+  const stacked = (ticket: number, rank: number) =>
+    candidate(ticket, rank, { finalization: gitMerge("Stacked") });
+  assert.deepEqual(
+    holderOf([candidate(1, 10), stacked(2, 20), candidate(3, 30)]),
+    [{ holder: asTicketId(1), waiting: [asTicketId(2), asTicketId(3)] }],
+  );
+  const queues = serializedQueues([stacked(2, 20), candidate(1, 10)]);
+  assert.deepEqual(serializedWaiting(queues), [
+    { partition, ticket: asTicketId(2) },
+  ]);
+  assert.deepEqual(holderOf([stacked(2, 10), candidate(1, 20)]), [
+    { holder: asTicketId(2), waiting: [asTicketId(1)] },
+  ]);
 });
 
 test("a tie on rank is broken by ticket", () => {

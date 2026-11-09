@@ -328,7 +328,7 @@ async function finalizerSerializedCandidates(
           FROM ticket_definition d
           JOIN ticket_projection p
             ON p.tenant = d.tenant AND p.project = d.project AND p.ticket = d.ticket
-         WHERE d.brief->>'landing' = 'Serialized'
+         WHERE d.brief->>'landing' IN ('Serialized', 'Stacked')
            AND d.brief->'finalization'->>'mode' IN ('Push', 'PullRequestMerge')
            AND p.phase IN ('Work', 'Evaluation', 'Finalization')`,
   );

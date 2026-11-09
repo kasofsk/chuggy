@@ -366,6 +366,8 @@ test("a finalization missing what its kind names, or naming what it does not, is
     { kind: "None", policy: "Direct" },
     { kind: "PullRequest", policy: "Direct" },
     { kind: "PullRequest", policy: "Serialized" },
+    { kind: "PullRequest", policy: "Stacked" },
+    { kind: "None", policy: "Stacked" },
     { kind: "PullRequest", mode: "PullRequest" },
     { kind: "Push" },
     ...proposing.map((finalization) => ({
@@ -386,6 +388,8 @@ test("a finalization written by its mode is read, and maps forward to its kind",
   for (const [finalization, landing] of [
     [{ mode: "Push" }, undefined],
     [{ mode: "PullRequestMerge", target }, "Serialized"],
+    [{ mode: "Push" }, "Stacked"],
+    [{ mode: "PullRequestMerge", target }, "Stacked"],
     [{ mode: "PullRequest", target }, "Direct"],
     [{ mode: "None" }, undefined],
   ] as const)
@@ -438,17 +442,23 @@ test("a finalization written by its mode that its kind cannot represent is refus
   assert.deepEqual(
     refusal({ finalization: { mode: "PullRequest" }, landing: "Serialized" }),
     [
-      "a pull request is merged by a person and nothing orders it, so it lands under no Serialized landing",
+      "a pull request is merged by a person and nothing orders it, so it lands under no Serialized or Stacked landing",
     ],
   );
   assert.deepEqual(
     refusal({ finalization: { mode: "None" }, landing: "Serialized" }),
     [
-      "a landing of nothing has nothing to order, so it lands under no Serialized landing",
+      "a landing of nothing has nothing to order, so it lands under no Serialized or Stacked landing",
     ],
   );
+  for (const landing of ["Serialized", "Stacked"] as const)
+    for (const mode of ["PullRequest", "None"] as const)
+      assert.equal(refusal({ finalization: { mode }, landing })?.length, 1);
+  assert.deepEqual(refusal({ landing: "Stacked" }), [
+    "a Serialized or Stacked landing orders a finalization, so a brief naming one names the finalization it orders",
+  ]);
   assert.deepEqual(refusal({ landing: "Serialized" }), [
-    "a Serialized landing orders a finalization, so a brief naming one names the finalization it orders",
+    "a Serialized or Stacked landing orders a finalization, so a brief naming one names the finalization it orders",
   ]);
   for (const landing of briefGitMergePolicies)
     assert.deepEqual(
@@ -645,7 +655,7 @@ test("a draft creation names a brief beside its authoring and not inside it", ()
   );
 });
 
-test("a git merge names how it is ordered against the others on its reference, and Stacked is not yet a way", () => {
+test("a git merge names how it is ordered against the others on its reference, and nothing else is a way", () => {
   for (const policy of briefGitMergePolicies) {
     const finalization = { kind: "GitMerge", mode: "Push", policy } as const;
     const written = briefSchema.parse({
@@ -660,9 +670,9 @@ test("a git merge names how it is ordered against the others on its reference, a
   }
   for (const brief of [
     {
-      finalization: { kind: "GitMerge", mode: "Push", policy: "Stacked" },
+      finalization: { kind: "GitMerge", mode: "Push", policy: "Ordered" },
     },
-    { finalization: { mode: "Push" }, landing: "Stacked" },
+    { finalization: { mode: "Push" }, landing: "Ordered" },
   ])
     assert.equal(
       briefSchema.safeParse({ intent: "Do it.", links: [], ...brief }).success,

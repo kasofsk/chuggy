@@ -450,6 +450,13 @@ test("a write moves the policy alone, and is fenced on it as on the rest of the 
     written.outcome === "Written" ? written.binding.landing : undefined,
     serialized,
   );
+  const stacked: RepositoryFinalization = { ...push, policy: "Stacked" };
+  const restacked = await write(serialized, stacked);
+  assert.deepEqual(
+    restacked.outcome === "Written" ? restacked.binding.landing : undefined,
+    stacked,
+  );
+  assert.equal((await write(stacked, serialized)).outcome, "Written");
   const stale = await write(push, { kind: "None" });
   assert.deepEqual(
     stale.outcome === "LandingMoved" ? stale.binding.landing : stale.outcome,
