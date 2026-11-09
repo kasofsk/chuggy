@@ -11,7 +11,6 @@
 import type { ReactNode } from "react";
 import { useId } from "react";
 
-import { countFigure } from "../../../core/figures.ts";
 import {
   selectorSettingsLimitEdited,
   selectorSettingsLimitFigure,
@@ -20,9 +19,6 @@ import {
   selectorSettingsLimitOverridden,
   selectorSettingsLimitTyped,
   selectorSettingsLimitUnitWord,
-  selectorSettingsSection,
-  selectorSettingsSectionChangedCount,
-  selectorSettingsSectionInherited,
 } from "../../../core/selectorSettingsForm.ts";
 import type {
   SelectorSettingsDraft,
@@ -35,8 +31,8 @@ import { Button } from "../../ui/Button.tsx";
 import { Figure } from "../../ui/Figure.tsx";
 import { Input } from "../../ui/Input.tsx";
 import { Pill } from "../../ui/Pill.tsx";
-import type { SelectorSettingsShown } from "../../selectorSettingsWriting.ts";
-import { SelectorSection } from "./SelectorSection.tsx";
+import { SelectorRowsSection } from "./SelectorRowsSection.tsx";
+import type { SelectorRowsChrome } from "./SelectorRowsSection.tsx";
 
 import "./selector.css";
 
@@ -130,62 +126,28 @@ function SelectorLimit(props: { readonly row: SelectorLimitRow }): ReactNode {
   );
 }
 
-export function SelectorLimitsSection(props: {
-  readonly draft: SelectorSettingsDraft;
-  readonly settings: SelectorProjectSettingsResponse;
-  readonly faults: Readonly<Record<string, Copy>>;
-  readonly editing: boolean;
-  readonly editable: boolean;
-  readonly savable: boolean;
-  readonly saved: SelectorSettingsShown | undefined;
-  readonly onChange: (draft: SelectorSettingsDraft) => void;
-  readonly onEdit: () => void;
-  readonly onCancel: () => void;
-  readonly onSave: () => void;
-  readonly onReload: () => void;
-}): ReactNode {
-  const text = useCopyText();
-  const section = selectorSettingsSection("limits");
-  const changed = selectorSettingsSectionChangedCount(props.draft, "limits");
+export function SelectorLimitsSection(
+  props: SelectorRowsChrome & {
+    readonly settings: SelectorProjectSettingsResponse;
+  },
+): ReactNode {
   return (
-    <SelectorSection
-      title={text(section.title)}
-      about={text(section.about)}
-      inherited={selectorSettingsSectionInherited(props.draft, "limits")}
-      editing={props.editing}
-      editable={props.editable}
-      savable={props.savable}
-      saved={props.saved}
-      onEdit={props.onEdit}
-      onCancel={props.onCancel}
-      onSave={props.onSave}
-      onReload={props.onReload}
-      footLead={
-        <Figure
-          figure={countFigure(changed, {
-            id: "figures-unit-changes",
-            args: { count: changed },
-          })}
+    <SelectorRowsSection {...props} name="limits">
+      {selectorSettingsLimitNames.map((name) => (
+        <SelectorLimit
+          key={name}
+          row={{
+            name,
+            draft: props.draft,
+            effective: props.settings.effective.limits[name],
+            installationEffective:
+              props.settings.effective.installationLimits[name],
+            fault: props.faults[`limits.${name}`],
+            editing: props.editing,
+            onChange: props.onChange,
+          }}
         />
-      }
-    >
-      <div className="selector-limits">
-        {selectorSettingsLimitNames.map((name) => (
-          <SelectorLimit
-            key={name}
-            row={{
-              name,
-              draft: props.draft,
-              effective: props.settings.effective.limits[name],
-              installationEffective:
-                props.settings.effective.installationLimits[name],
-              fault: props.faults[`limits.${name}`],
-              editing: props.editing,
-              onChange: props.onChange,
-            }}
-          />
-        ))}
-      </div>
-    </SelectorSection>
+      ))}
+    </SelectorRowsSection>
   );
 }

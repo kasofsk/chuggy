@@ -9,29 +9,10 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import type pg from "pg";
 
-import {
-  postgresMigrate,
-  postgresMigrateCompatible,
-} from "../../src/adapters/postgres/pool.ts";
-import { migrations } from "../../src/adapters/postgres/schema.ts";
+import { postgresMigrate } from "../../src/adapters/postgres/pool.ts";
 import { encodeDraftAuthoring } from "../../src/interpreter/authoring.ts";
 import { plainAuthoring } from "../actor/harness.ts";
-import { migrationDatabase } from "./migrationHarness.ts";
-
-/** Migrates an empty database through every migration before 129, and no further. */
-async function finalizationKindsBefore(subject: pg.Pool): Promise<void> {
-  const before = migrations
-    .filter(({ version }) => version < 129)
-    .map(({ version, name }) => ({ version, name }));
-  const contract = { required: before, compatible: before };
-  assert.deepEqual(
-    await postgresMigrateCompatible(subject, {
-      current: contract,
-      retainedPrevious: contract,
-    }),
-    { migrated: "Applied", versions: before.map(({ version }) => version) },
-  );
-}
+import { migratedBefore, migrationDatabase } from "./migrationHarness.ts";
 
 /** A project binding one repository at each mode 128 lands by, and a configuration to draft against. */
 async function finalizationKindsSeeded(subject: pg.Pool): Promise<void> {
@@ -76,7 +57,7 @@ async function finalizationKindsDrafted(
 
 test("a brief and a binding stored by mode are stored by kind once 129 has run", async () => {
   await migrationDatabase("finalization_kinds", async (subject) => {
-    await finalizationKindsBefore(subject);
+    await migratedBefore(subject, 129);
     await finalizationKindsSeeded(subject);
     for (const [mode, target, landing] of [
       ["Push", null, null],

@@ -3026,6 +3026,40 @@
               "type": "integer",
               "exclusiveMinimum": 0,
               "maximum": 9007199254740991
+            },
+            "leadModel": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "allOf": [
+                {
+                  "pattern": "^[^-]"
+                },
+                {
+                  "pattern": "^[^\\s\\p{Cc}\\p{Cs}]*$"
+                }
+              ]
+            },
+            "leadEffort": {
+              "type": "string",
+              "enum": ["low", "medium", "high", "xhigh", "max"]
+            },
+            "threadModel": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 128,
+              "allOf": [
+                {
+                  "pattern": "^[^-]"
+                },
+                {
+                  "pattern": "^[^\\s\\p{Cc}\\p{Cs}]*$"
+                }
+              ]
+            },
+            "threadEffort": {
+              "type": "string",
+              "enum": ["low", "medium", "high", "xhigh", "max"]
             }
           },
           "additionalProperties": false

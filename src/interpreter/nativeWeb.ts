@@ -2274,6 +2274,8 @@ function nativeOpenThreadMethod(
         standingRules: resolvedThreadStandingRules(texts.standingRules),
       }),
       credentialSlot: ports.credentialSlot,
+      ...(texts.model === undefined ? {} : { model: texts.model }),
+      ...(texts.effort === undefined ? {} : { effort: texts.effort }),
     });
     if (opened.opened === "ThreadLimitReached")
       return { result: opened.opened, threadsMax: opened.threadsMax };

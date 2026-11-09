@@ -37,6 +37,7 @@ const readDrawn: SelectorSettingsDrawn = {
     candidatePagesPerDecision: "",
     autoCompactWindow: "",
   },
+  models: { leadModel: "", leadEffort: "", threadModel: "", threadEffort: "" },
 };
 
 function draftOf(
@@ -129,6 +130,52 @@ test("a limit accepts grouped digits and refuses anything else", () => {
     const fault = malformed.faults["limits.tokensPerDecision"];
     expect(fault === undefined ? undefined : copyTextEn(fault)).toBe("Invalid");
   }
+});
+
+test("a model and an effort are written as the overrides they name, and an empty row as none", () => {
+  const written = selectorSettingsWrite(
+    draftOf({
+      models: {
+        leadModel: "sonnet",
+        leadEffort: "medium",
+        threadModel: "claude-opus-5-5",
+        threadEffort: "",
+      },
+    }),
+  );
+  expect(written.faults).toEqual({});
+  expect(written.overrides?.leadModel).toBe("sonnet");
+  expect(written.overrides?.leadEffort).toBe("medium");
+  expect(written.overrides?.threadModel).toBe("claude-opus-5-5");
+  expect(
+    written.overrides !== undefined && "threadEffort" in written.overrides,
+  ).toBe(false);
+});
+
+test("a model the wire refuses is marked with why", () => {
+  const cases: readonly (readonly [string, string])[] = [
+    ["claude opus", "No spaces or control characters"],
+    ["claude\topus", "No spaces or control characters"],
+    ["-p", "Cannot start with -"],
+    ["m".repeat(129), "At most 128 characters"],
+  ];
+  for (const [model, why] of cases) {
+    const refused = selectorSettingsWrite(
+      draftOf({ models: { ...readDrawn.models, leadModel: model } }),
+    );
+    expect(refused.overrides).toBeUndefined();
+    const fault = refused.faults["leadModel"];
+    expect(fault === undefined ? undefined : copyTextEn(fault)).toBe(why);
+  }
+});
+
+test("an effort outside the five is refused", () => {
+  const refused = selectorSettingsWrite(
+    draftOf({ models: { ...readDrawn.models, threadEffort: "ultra" } }),
+  );
+  expect(refused.overrides).toBeUndefined();
+  const fault = refused.faults["threadEffort"];
+  expect(fault === undefined ? undefined : copyTextEn(fault)).toBe("Invalid");
 });
 
 /** The wire carries no installation prose, so a section's placeholder asks

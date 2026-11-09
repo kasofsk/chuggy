@@ -685,6 +685,122 @@ test("a compaction window outside the runtime's bounds marks its own box with th
   }
 });
 
+test("the Models section reads Default for a row the project never set, and the value for one it did", async () => {
+  await drawSettings({
+    read: settingsBody(12, { leadModel: "sonnet", threadEffort: "high" }),
+  });
+  const models = sectionOf("Models");
+  for (const [row, value] of [
+    ["Lead model", "sonnet"],
+    ["Lead effort", "Default"],
+    ["Chat model", "Default"],
+    ["Chat effort", "High"],
+  ] as const) {
+    const line = within(models).getByText(row).closest(".selector-limit");
+    expect(line?.textContent, row).toContain(value);
+  }
+});
+
+test("a lead model and effort chosen in the Models section are written beside every other override", async () => {
+  const server = await drawSettings({
+    answering: () => ({
+      body: settingsBody(13, {
+        northStar: "ship the console",
+        leadModel: "claude-sonnet-5-5",
+        leadEffort: "medium",
+      }),
+      status: 200,
+    }),
+  });
+  await turned(() => {
+    edit("Models");
+  });
+  await turned(() => {
+    fireEvent.change(box("Lead model"), {
+      target: { value: "claude-sonnet-5-5" },
+    });
+  });
+  await turned(() => {
+    fireEvent.keyDown(screen.getByRole("button", { name: /^Lead effort/u }), {
+      key: "ArrowDown",
+    });
+  });
+  const menu = await screen.findByRole("menu");
+  expect(
+    within(menu)
+      .getAllByRole("menuitemradio")
+      .map((item) => item.textContent),
+  ).toStrictEqual(["Default", "Low", "Medium", "High", "Extra high", "Max"]);
+  await turned(() => {
+    within(menu).getByRole("menuitemradio", { name: "Medium" }).click();
+  });
+  await turned(save);
+  await settled();
+  expect(server.written()).toStrictEqual({
+    expectedRevision: 12,
+    overrides: {
+      northStar: "ship the console",
+      leadModel: "claude-sonnet-5-5",
+      leadEffort: "medium",
+    },
+  });
+});
+
+test("a model row offers the aliases and fills the box with the one chosen", async () => {
+  await drawSettings();
+  await turned(() => {
+    edit("Models");
+  });
+  const aliases = within(
+    box("Chat model").closest(".selector-limit") as HTMLElement,
+  ).getByRole("button", { name: /^Alias/u });
+  await turned(() => {
+    fireEvent.keyDown(aliases, { key: "ArrowDown" });
+  });
+  const menu = await screen.findByRole("menu");
+  expect(
+    within(menu)
+      .getAllByRole("menuitemradio")
+      .map((item) => item.textContent),
+  ).toStrictEqual(["opus", "sonnet", "haiku"]);
+  await turned(() => {
+    within(menu).getByRole("menuitemradio", { name: "haiku" }).click();
+  });
+  expect(box("Chat model").value).toBe("haiku");
+});
+
+test("a model the door refuses marks its own box with why and blocks the save", async () => {
+  await drawSettings();
+  await turned(() => {
+    edit("Models");
+  });
+  const model = () => box("Lead model");
+  const fault = () =>
+    document.getElementById(model().getAttribute("aria-describedby") ?? "")
+      ?.textContent;
+  for (const [typed, said] of [
+    ["claude sonnet", "No spaces or control characters"],
+    ["-p", "Cannot start with -"],
+    ["m".repeat(129), "At most 128 characters"],
+  ] as const) {
+    await turned(() => {
+      fireEvent.change(model(), { target: { value: typed } });
+    });
+    expect(model().getAttribute("aria-invalid"), typed).toBe("true");
+    expect(fault(), typed).toBe(said);
+    expect(
+      screen
+        .getByRole("button", { name: "Save changes" })
+        .hasAttribute("disabled"),
+      typed,
+    ).toBe(true);
+  }
+  await turned(() => {
+    fireEvent.change(model(), { target: { value: "claude-opus-5-5" } });
+  });
+  expect(model().getAttribute("aria-invalid")).toBe("false");
+});
+
 /**
  * The route replaces the whole override set, so an override no section draws is
  * deleted by any save that does not carry it. Nothing on the page shows an
