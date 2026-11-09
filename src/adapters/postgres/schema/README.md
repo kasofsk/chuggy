@@ -683,15 +683,16 @@ Its identity is `(tenant, project, ticket, work_cycle)` and it points at
 stands is derived from the landings since its tip and the tickets still
 beneath it, and stored nowhere. It has no unfinished work.
 
-`evaluation_stack_beneath` — the tickets beneath one stack, bottom first at
-depth 1 to 3, each with the accepted commit it must land. Granted and refused as
+`evaluation_stack_beneath` — the tickets beneath one stack, bottom first by
+depth, each with the accepted commit it must land. Granted and refused as
 `evaluation_stack` is. Its identity is `(tenant, project, ticket, work_cycle,
 depth)`, a ticket is beneath a stack once, and it points at `evaluation_stack`.
 It has no unfinished work.
 
 `evaluation_stack_removal` — that a stack's commit was taken down from the
 reference it was published on, once. Granted and refused as `evaluation_stack`
-is, to the finalizer alone. Its identity is that of the stack it points at. It has no unfinished work.
+is, to the finalizer alone. Its identity is that of the stack it points at. It
+has no unfinished work.
 
 `evaluation_stack_none` — that the finalizer decided a work cycle is evaluated
 unstacked, and why. Granted and refused as `evaluation_stack` is, and a cycle is

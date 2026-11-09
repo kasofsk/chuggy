@@ -745,7 +745,7 @@ test("a finalization's kind, a git merge's mode and its policy are each named as
   ).toStrictEqual([
     "Lands as soon as it is accepted",
     "Lands alone on its reference, evaluated on what it lands",
-    "Lands alone on its reference, evaluated on what it lands",
+    "Evaluated over the tickets ahead, lands if its base held",
   ]);
 });
 

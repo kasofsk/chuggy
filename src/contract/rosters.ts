@@ -564,7 +564,8 @@ export type BriefGitMergeMode = (typeof briefGitMergeModes)[number];
  * `Direct` enforces no order and merges without requiring the evaluation to
  * have run on what it merges into, and `Serialized` lands one ticket at a time
  * per repository and target reference, each re-checked against the merge
- * result, and `Stacked` queues as `Serialized` does.
+ * result, and `Stacked` evaluates each over the tickets queued ahead of it
+ * and lands it only when what it lands on is what was evaluated.
  */
 export const briefGitMergePolicies = [
   "Direct",
