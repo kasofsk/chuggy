@@ -94,6 +94,7 @@ function settingsFor(
     operationalContextMaxAgeMs: 9_000_000_000_000_000,
     limits,
     installationLimits: limits,
+    lead: {},
   };
 }
 

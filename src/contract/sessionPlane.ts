@@ -20,8 +20,10 @@ import {
   leadAutoCompactWindowTokensMin,
   nativeHttpPageItemsMax,
   sessionCapabilitiesMax,
+  sessionEfforts,
   sessionIdentityCharsMax,
   sessionLiveEventsMax,
+  sessionModelSchema,
   sessionStoreBatchBytesMax,
   sessionStoreBatchesMax,
   sessionStorePageBatchesMax,
@@ -243,8 +245,10 @@ export const sessionEndedSchema = z.strictObject({
 
 /**
  * What a pod is told of its own session, each optional fact absent where the
- * session has none. `autoCompactWindow` is a lead's alone: the context, in
- * tokens, at which its runtime compacts the conversation.
+ * session has none, as `model` and `effort` are where it opened under the
+ * site's session model and the runtime's own effort. `autoCompactWindow` is a
+ * lead's alone: the context, in tokens, at which its runtime compacts the
+ * conversation.
  */
 export const sessionFactsAnswerSchema = z.object({
   tenant: identitySchema,
@@ -263,6 +267,8 @@ export const sessionFactsAnswerSchema = z.object({
     .min(leadAutoCompactWindowTokensMin)
     .max(leadAutoCompactWindowTokensMax)
     .optional(),
+  model: sessionModelSchema.optional(),
+  effort: z.enum(sessionEfforts).optional(),
   forkFrom: sessionIdentitySchema.optional(),
 });
 

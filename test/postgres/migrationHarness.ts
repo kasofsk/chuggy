@@ -12,11 +12,13 @@ import {
   apiRole,
   boundaryOwnerRole,
   draftCreateFunction,
+  migrations,
 } from "../../src/adapters/postgres/schema.ts";
 import { encodeDraftAuthoring } from "../../src/interpreter/authoring.ts";
 import { plainAuthoring } from "../actor/harness.ts";
 import {
   postgresMigrate,
+  postgresMigrateCompatible,
   postgresPool,
 } from "../../src/adapters/postgres/pool.ts";
 import { postgresHarnessUrl } from "./harness.ts";
@@ -89,6 +91,27 @@ export async function migratedDatabase(
   body: (subject: pg.Pool, url: string) => Promise<void>,
 ): Promise<void> {
   await migrationDatabase(label, body, await migratedTemplateBuilt());
+}
+
+/** Migrates an empty database through every migration before `version`, and no further. */
+export async function migratedBefore(
+  subject: pg.Pool,
+  version: number,
+): Promise<void> {
+  const before = migrations
+    .filter((migration) => migration.version < version)
+    .map(({ version: at, name }) => ({ version: at, name }));
+  const contract = { required: before, compatible: before };
+  assert.deepEqual(
+    await postgresMigrateCompatible(subject, {
+      current: contract,
+      retainedPrevious: contract,
+    }),
+    {
+      migrated: "Applied",
+      versions: before.map((migration) => migration.version),
+    },
+  );
 }
 
 export async function seedLandinglessBinding(subject: pg.Pool): Promise<void> {

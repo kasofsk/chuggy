@@ -30,6 +30,7 @@
  * with no provenance rather than a decision that spent nothing.
  */
 
+import type { SessionEffort } from "../contract/http.ts";
 import type { PlacementRoute } from "../contract/rosters.ts";
 import type {
   SessionId,
@@ -51,6 +52,10 @@ export interface LeadSessionStanding {
   readonly systemPrompt?: string;
   /** The context, in tokens, its runtime was told to compact at, absent where it was opened before it was told one. */
   readonly autoCompactWindow?: number;
+  /** The model it runs on, absent where it takes the site's session model. */
+  readonly model?: string;
+  /** The effort it runs at, absent where the runtime chooses. */
+  readonly effort?: SessionEffort;
   /**
    * What the pod measured of the newest answered decision turn, absent where
    * there is none or it measured nothing. An inquiry's turns are not the lead's.
@@ -103,6 +108,8 @@ export interface LeadOpening {
   readonly credentialSlot: string;
   readonly systemPrompt: string;
   readonly autoCompactWindow: number;
+  readonly model?: string;
+  readonly effort?: SessionEffort;
 }
 
 /** What opening found: a successor written, or the open lead that was already there. */

@@ -24,6 +24,8 @@ import {
   selectorAllowlistNamesMax,
   selectorReviewFeedbackCharsMax,
   selectorSettingsTextCharsMax,
+  sessionEfforts,
+  sessionModelSchema,
   threadMessageCharsMax,
   threadMessageImagesMax,
   threadOpenKeyCharsMax,
@@ -358,9 +360,10 @@ const selectorAllowlistSchema = z
 
 /**
  * What one project sets for itself, an absent field meaning the installation
- * default, so a write clears an override by omitting it. `concurrentDecisions`
- * and `selectionsPerMinute` are not here, because they bound one shared pool
- * rather than one project's behaviour.
+ * default (for a model the site's session model, for an effort the runtime's
+ * own choice), so a write clears an override by omitting it.
+ * `concurrentDecisions` and `selectionsPerMinute` are not here, because they
+ * bound one shared pool rather than one project's behaviour.
  */
 export const selectorProjectOverridesSchema = z.strictObject({
   northStar: selectorSettingsTextSchema.optional(),
@@ -387,6 +390,10 @@ export const selectorProjectOverridesSchema = z.strictObject({
     })
     .optional(),
   operationalContextMaxAgeMs: selectorLimitSchema.optional(),
+  leadModel: sessionModelSchema.optional(),
+  leadEffort: z.enum(sessionEfforts).optional(),
+  threadModel: sessionModelSchema.optional(),
+  threadEffort: z.enum(sessionEfforts).optional(),
 });
 
 /** The whole override set, written under the revision the writer read it at. */

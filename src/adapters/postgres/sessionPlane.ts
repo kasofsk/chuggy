@@ -21,7 +21,10 @@ import { createHash } from "node:crypto";
 import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
-import { sessionStoreStreamsAnswered } from "../../contract/http.ts";
+import {
+  sessionEfforts,
+  sessionStoreStreamsAnswered,
+} from "../../contract/http.ts";
 import {
   allSessionKinds,
   allSessionScopes,
@@ -111,6 +114,8 @@ interface SessionAuthorityRow extends SessionIdentityRow {
   readonly agent_reference: string | null;
   readonly system_prompt: string | null;
   readonly auto_compact_window: string | null;
+  readonly model: string | null;
+  readonly effort: string | null;
   readonly fork_from: string | null;
   readonly live: boolean | null;
 }
@@ -164,6 +169,16 @@ function sessionAuthorityOf(row: SessionAuthorityRow): SessionPlaneIdentity {
           autoCompactWindow: projectRowCounter(
             row.auto_compact_window,
             "session auto-compact window",
+          ),
+        }),
+    ...(row.model === null ? {} : { model: row.model }),
+    ...(row.effort === null
+      ? {}
+      : {
+          effort: sessionRowMember(
+            sessionEfforts,
+            row.effort,
+            "session effort",
           ),
         }),
     ...(row.fork_from === null ? {} : { forkFrom: row.fork_from }),
@@ -230,7 +245,7 @@ async function sessionPlaneAuthenticate(
     sql`SELECT tenant,project,session,attempt,generation::text AS generation,
                kind,principal,capabilities,credential_slot,agent_reference,
                system_prompt,auto_compact_window::text AS auto_compact_window,
-               fork_from,live
+               model,effort,fork_from,live
           FROM read_session_attempt(${sessionSecretDigest(secret)})`,
   );
   const row = found.rows[0];

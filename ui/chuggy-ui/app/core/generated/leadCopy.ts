@@ -121,6 +121,11 @@ export interface LeadCopy {
   readonly "lead-settings-fault-at-most": {
     readonly max: unknown;
   };
+  readonly "lead-settings-fault-at-most-characters": {
+    readonly max: unknown;
+  };
+  readonly "lead-settings-fault-model-flag": Record<never, never>;
+  readonly "lead-settings-fault-model-spaced": Record<never, never>;
   readonly "lead-settings-limit-tokens": Record<never, never>;
   readonly "lead-settings-limit-time": Record<never, never>;
   readonly "lead-settings-limit-tool-calls": Record<never, never>;
@@ -128,6 +133,16 @@ export interface LeadCopy {
   readonly "lead-settings-limit-input": Record<never, never>;
   readonly "lead-settings-limit-candidate-pages": Record<never, never>;
   readonly "lead-settings-limit-compaction-window": Record<never, never>;
+  readonly "lead-settings-model-lead-model": Record<never, never>;
+  readonly "lead-settings-model-lead-effort": Record<never, never>;
+  readonly "lead-settings-model-thread-model": Record<never, never>;
+  readonly "lead-settings-model-thread-effort": Record<never, never>;
+  readonly "lead-settings-model-alias": Record<never, never>;
+  readonly "lead-settings-effort-low": Record<never, never>;
+  readonly "lead-settings-effort-medium": Record<never, never>;
+  readonly "lead-settings-effort-high": Record<never, never>;
+  readonly "lead-settings-effort-xhigh": Record<never, never>;
+  readonly "lead-settings-effort-max": Record<never, never>;
   readonly "lead-settings-unit-tokens": Record<never, never>;
   readonly "lead-settings-unit-ms": Record<never, never>;
   readonly "lead-settings-unit-calls": Record<never, never>;
@@ -142,6 +157,8 @@ export interface LeadCopy {
   readonly "lead-settings-section-base-prompt-about": Record<never, never>;
   readonly "lead-settings-section-limits-title": Record<never, never>;
   readonly "lead-settings-section-limits-about": Record<never, never>;
+  readonly "lead-settings-section-models-title": Record<never, never>;
+  readonly "lead-settings-section-models-about": Record<never, never>;
   readonly "lead-settings-reset-default": Record<never, never>;
   readonly "lead-settings-reset": Record<never, never>;
   readonly "lead-settings-writing": Record<never, never>;

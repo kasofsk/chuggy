@@ -93,6 +93,7 @@ import {
 } from "./leadTurn.ts";
 import { asProjectId, asTenantId, type Partition } from "./projectStore.ts";
 import type {
+  SelectorLeadRuntime,
   SelectorInteractionRecord,
   SelectorStateStore,
   SelectorPolicyExecution,
@@ -338,18 +339,22 @@ interface LeadPolicyPorts {
 
 /**
  * Whether an open lead is replaced before this decision: its newest decision
- * turn spent more than the bound, or it holds a system prompt or a compaction
- * window other than the one this decision runs under. A turn that measured
- * nothing says nothing.
+ * turn spent more than the bound, or it holds a system prompt, a compaction
+ * window, a model or an effort other than the one this decision runs under. A
+ * turn that measured nothing says nothing, and a lead holding no model or no
+ * effort holds what an unset one resolves to.
  */
 export function leadStandingReplaced(
   standing: LeadSessionStanding,
   systemPrompt: string,
   autoCompactWindow: number,
+  runtime: SelectorLeadRuntime,
 ): boolean {
   return (
     standing.systemPrompt !== systemPrompt ||
     standing.autoCompactWindow !== autoCompactWindow ||
+    standing.model !== runtime.model ||
+    standing.effort !== runtime.effort ||
     (standing.decisionTurnTokens !== undefined &&
       standing.decisionTurnTokens > leadTurnTokensMax)
   );
@@ -383,9 +388,10 @@ async function leadStanding(
 ): Promise<LeadSessionStanding> {
   const systemPrompt = leadTurnInstructions(request);
   const { autoCompactWindow } = request.constraints.limits;
+  const runtime = request.constraints.lead;
   const held = await ports.mailbox.lead(partition);
   if (held !== undefined && held.state === "Open") {
-    if (!leadStandingReplaced(held, systemPrompt, autoCompactWindow))
+    if (!leadStandingReplaced(held, systemPrompt, autoCompactWindow, runtime))
       return held;
     const closed = await ports.mailbox.closeLead(partition, held.session);
     if (!leadClosedReplaces(closed)) return held;
@@ -397,6 +403,7 @@ async function leadStanding(
     credentialSlot: ports.config.credentialSlot,
     systemPrompt,
     autoCompactWindow,
+    ...runtime,
   });
   const opened = await ports.mailbox.lead(partition);
   if (opened === undefined || opened.state !== "Open")

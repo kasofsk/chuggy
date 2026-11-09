@@ -3818,6 +3818,7 @@ test("the selector policy host starts once and bounds cancellation evidence", as
       models: Object.freeze(["model"]),
       tools: Object.freeze([]),
       limits: Object.freeze(selectorRuntimeSettings.limits),
+      lead: Object.freeze({}),
     }),
   };
   const first = host.start(request);

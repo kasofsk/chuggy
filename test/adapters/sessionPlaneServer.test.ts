@@ -214,6 +214,31 @@ test("a session pod is told what its own session is, and nothing it has not got"
   await compacting.close();
 });
 
+test("a session pod of every kind is told the model and effort it runs on", async () => {
+  for (const kind of ["Lead", "Thread", "Inquiry"] as const) {
+    const chosen = sessionPlane({
+      authority: {
+        authenticate: () =>
+          Promise.resolve({
+            ...identity,
+            kind,
+            model: "claude-sonnet-5-5",
+            effort: "medium",
+          }),
+      },
+    });
+    const facts = (
+      await chosen.inject({ method: "GET", url: "/v1/session", headers: held })
+    ).json<{ model: string; effort: string }>();
+    assert.deepEqual(
+      [facts.model, facts.effort],
+      ["claude-sonnet-5-5", "medium"],
+      `a ${kind} is told the model and effort it runs on`,
+    );
+    await chosen.close();
+  }
+});
+
 /** The plane over a thread holding `capabilities`, and the roster it names to a pod offering `release`. */
 function sessionPlaneNamed(capabilities: readonly SessionCapability[]) {
   const app = sessionPlane({

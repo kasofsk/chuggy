@@ -9,6 +9,7 @@ import {
   sessionTurnInputCharsMax,
   sessionTurnResultCharsMax,
   textCodePointsCount,
+  type SessionEffort,
 } from "../contract/http.ts";
 import type {
   LeadAdmissionRefusal,
@@ -569,6 +570,14 @@ export interface SelectorProjectOverrides {
   readonly toolAllowlist?: readonly string[];
   readonly limits?: SelectorProjectLimitOverrides;
   readonly operationalContextMaxAgeMs?: number;
+  /** The model the lead runs on, in place of the site's session model. */
+  readonly leadModel?: string;
+  /** The effort the lead runs at, in place of the runtime's own. */
+  readonly leadEffort?: SessionEffort;
+  /** The model a thread opened from now runs on, in place of the site's session model. */
+  readonly threadModel?: string;
+  /** The effort a thread opened from now runs at, in place of the runtime's own. */
+  readonly threadEffort?: SessionEffort;
 }
 
 /**
@@ -587,6 +596,14 @@ export interface SelectorResolvedSettings extends SelectorRuntimeSettings {
   readonly northStar?: string;
   /** Always a value: a project that overrides nothing runs its threads under the code default. */
   readonly threadStandingRules: string;
+  /** What the lead runs on, absent where it takes the site's session model and the runtime's effort. */
+  readonly lead: SelectorLeadRuntime;
+}
+
+/** The model and the effort a lead is opened under, each absent where the project chose none. */
+export interface SelectorLeadRuntime {
+  readonly model?: string;
+  readonly effort?: SessionEffort;
 }
 
 /** The revisions an in-flight decision is conditioned on, which is both rows it read. */
@@ -669,6 +686,14 @@ export function resolvedSelectorSettings(
     threadStandingRules: resolvedThreadStandingRules(
       overrides.threadStandingRules,
     ),
+    lead: {
+      ...(overrides.leadModel === undefined
+        ? {}
+        : { model: overrides.leadModel }),
+      ...(overrides.leadEffort === undefined
+        ? {}
+        : { effort: overrides.leadEffort }),
+    },
   };
 }
 
@@ -744,6 +769,7 @@ export interface SelectorPolicyRequest {
     readonly models: readonly string[];
     readonly tools: readonly string[];
     readonly limits: Readonly<SelectorRuntimeSettings["limits"]>;
+    readonly lead: SelectorLeadRuntime;
   };
 }
 
@@ -813,15 +839,17 @@ class SelectorExecutionRejected extends Error {
 }
 
 function policyConstraints(
-  settings: SelectorRuntimeSettings,
+  settings: SelectorResolvedSettings,
 ): SelectorPolicyRequest["constraints"] {
   const models = Object.freeze([...settings.modelAllowlist]);
   const tools = Object.freeze([...settings.toolAllowlist]);
   const limits = Object.freeze({ ...settings.limits });
+  const lead = Object.freeze({ ...settings.lead });
   return Object.freeze({
     models,
     tools,
     limits,
+    lead,
   });
 }
 

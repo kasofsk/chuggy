@@ -12,6 +12,8 @@ import {
 import {
   leadAutoCompactWindowTokensMax,
   leadAutoCompactWindowTokensMin,
+  runModelCharsMax,
+  sessionEfforts,
 } from "../../src/contract/http.ts";
 import { asPrincipal } from "../../src/interpreter/nativeWeb.ts";
 import type { ProjectAccess } from "../../src/interpreter/nativeWeb.ts";
@@ -377,6 +379,87 @@ test("the override door refuses a dispatch budget above the parse ceiling", () =
  * takes: its bounds are admitted and kept, and one past either is refused by
  * the wire and by the check behind it.
  */
+/**
+ * A model is a name Claude Code's `--model` takes, judged by the runtime and
+ * by no list here; the door refuses only what could not be one or would read
+ * as a flag. An effort is one of the agent SDK's five.
+ */
+test("the door keeps a model name and one of the five efforts, and refuses what could not be either", () => {
+  const admits = (overrides: unknown) =>
+    selectorProjectSettingsSchema.safeParse({ expectedRevision: 0, overrides })
+      .success;
+  const kept = [
+    "opus",
+    "claude-sonnet-5-5",
+    "claude-opus-5-5[1m]",
+    "m".repeat(runModelCharsMax),
+  ];
+  for (const name of ["leadModel", "threadModel"] as const) {
+    for (const model of kept) {
+      assert.equal(admits({ [name]: model }), true, `${name} ${model}`);
+      assert.deepEqual(checkedSelectorProjectOverrides({ [name]: model }), {
+        [name]: model,
+      });
+    }
+    for (const model of [
+      "claude sonnet",
+      " opus",
+      "opus\n",
+      "op\u0000us",
+      "-p",
+      "--model",
+      "",
+      "m".repeat(runModelCharsMax + 1),
+    ]) {
+      assert.equal(admits({ [name]: model }), false, `${name} ${model}`);
+      assert.throws(
+        () => checkedSelectorProjectOverrides({ [name]: model }),
+        RangeError,
+        `${name} ${model}`,
+      );
+    }
+  }
+  for (const name of ["leadEffort", "threadEffort"] as const) {
+    for (const effort of sessionEfforts)
+      assert.equal(admits({ [name]: effort }), true, `${name} ${effort}`);
+    for (const effort of ["none", "minimal", "ultra", "Medium", ""]) {
+      assert.equal(admits({ [name]: effort }), false, `${name} ${effort}`);
+      assert.throws(
+        () =>
+          checkedSelectorProjectOverrides({
+            [name]: effort,
+          }),
+        RangeError,
+        `${name} ${effort}`,
+      );
+    }
+  }
+});
+
+test("a project's lead model and effort resolve to the lead's, and its thread's never do", () => {
+  assert.deepEqual(
+    resolvedSelectorSettings(partition, defaults, 1, {}).lead,
+    {},
+    "an unset override is the site's model and the runtime's effort",
+  );
+  assert.deepEqual(
+    resolvedSelectorSettings(partition, defaults, 1, {
+      leadModel: "claude-sonnet-5-5",
+      leadEffort: "medium",
+      threadModel: "claude-opus-5-5",
+      threadEffort: "max",
+    }).lead,
+    { model: "claude-sonnet-5-5", effort: "medium" },
+  );
+  assert.deepEqual(
+    resolvedSelectorSettings(partition, defaults, 1, {
+      threadModel: "claude-opus-5-5",
+      threadEffort: "max",
+    }).lead,
+    {},
+  );
+});
+
 test("a compaction window inside the runtime's bounds is kept, and one outside them is refused", () => {
   const admits = (autoCompactWindow: number) =>
     selectorProjectSettingsSchema.safeParse({
