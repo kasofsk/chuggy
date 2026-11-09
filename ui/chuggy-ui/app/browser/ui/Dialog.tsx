@@ -5,18 +5,19 @@
  * Radix's dialog in its non-modal form, which is the one that mounts no
  * `<style>` element — the modal form's scroll lock appends one and the served
  * `style-src 'self'` refuses it. The trigger is drawn as a button so a caller
- * hands a label rather than a control, and the whole of what is open is the
- * caller's own state.
+ * hands a label rather than a control, or bare around what it holds, and the
+ * whole of what is open is the caller's own state.
  *
  * Total over a foot of its own and one the caller hands it, each at a roster's
- * width or a form's. Its own foot is Close; a caller's is the dialog's
- * actions, drawn at the right, and closing is then one of them. Beside those
- * actions stands the line a refusal left, where no length of body hides it,
- * and while the caller's request is unanswered nothing closes the dialog, so
- * that line always has somewhere to be drawn. A press outside is refused
- * before Radix counts it, so the next close still returns the focus to the
- * trigger. A body that cannot be shown again is `kept`: a press outside is
- * refused the same way, and the caller's own action or Escape closes it.
+ * width, a form's, or an image's own: as wide as what it holds and never wider
+ * than the viewport. Its own foot is Close; a caller's is the dialog's actions,
+ * drawn at the right, and closing is then one of them. Beside those actions
+ * stands the line a refusal left, where no length of body hides it, and while
+ * the caller's request is unanswered nothing closes the dialog, so that line
+ * always has somewhere to be drawn. A press outside is refused before Radix
+ * counts it, so the next close still returns the focus to the trigger. A body
+ * that cannot be shown again is `kept`: a press outside is refused the same
+ * way, and the caller's own action or Escape closes it.
  *
  * It is never taller than the viewport. The title and the foot stand at its
  * edges and the caller's body scrolls between them, so a roster of any length
@@ -35,6 +36,14 @@ import { buttonLookClassName } from "./Button.tsx";
 import "./Dialog.css";
 import { Notice } from "./Notice.tsx";
 import type { ButtonSize, ButtonVariant } from "./Button.tsx";
+
+export type DialogSize = "roster" | "form" | "image";
+
+const dialogSizeClassNames: Record<DialogSize, string> = {
+  roster: "max-w-aside",
+  form: "max-w-measure",
+  image: "w-fit max-w-full",
+};
 
 function DialogFoot(props: {
   readonly foot: ReactNode;
@@ -70,8 +79,10 @@ export function Dialog(props: {
   readonly triggerDisabled?: boolean;
   /** The trigger's name where its word is one several triggers on a page say. */
   readonly triggerNamed?: string;
-  /** A form's width, where a roster's is too narrow for what the body holds. */
-  readonly wide?: boolean;
+  /** The trigger is drawn as what it holds, without a button's look. */
+  readonly triggerBare?: boolean;
+  /** A roster's width where absent. */
+  readonly size?: DialogSize;
   /** The dialog's own actions, in place of Close. */
   readonly foot?: ReactNode;
   /** What a refusal left, drawn beside the caller's actions. */
@@ -84,7 +95,7 @@ export function Dialog(props: {
   readonly onOpenChange: (open: boolean) => void;
   readonly children: ReactNode;
 }): ReactNode {
-  const width = props.wide === true ? "max-w-measure" : "max-w-aside";
+  const width = dialogSizeClassNames[props.size ?? "roster"];
   const busy = props.busy === true;
   return (
     <RadixDialog.Root
@@ -98,10 +109,14 @@ export function Dialog(props: {
         <RadixDialog.Trigger
           disabled={props.triggerDisabled ?? false}
           aria-label={props.triggerNamed}
-          className={buttonLookClassName({
-            variant: props.triggerVariant,
-            size: props.triggerSize ?? "sm",
-          })}
+          className={
+            props.triggerBare === true
+              ? "dialog-trigger-bare block max-w-full"
+              : buttonLookClassName({
+                  variant: props.triggerVariant,
+                  size: props.triggerSize ?? "sm",
+                })
+          }
         >
           {props.trigger}
         </RadixDialog.Trigger>

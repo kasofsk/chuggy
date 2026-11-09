@@ -21,6 +21,7 @@ import { runCountLabel } from "../core/runTotals.ts";
 import { usePanelState } from "./api.ts";
 import { DataPanel } from "./DataPanel.tsx";
 import { Disclosure } from "./ui/Disclosure.tsx";
+import { Lightbox } from "./ui/Lightbox.tsx";
 import { MarkdownReport } from "./ui/MarkdownReport.tsx";
 import { useCopyText } from "../copy/CopyProvider.tsx";
 
@@ -39,12 +40,13 @@ function ArtifactPreviewContent(props: {
   switch (preview.renderer) {
     case "Image":
       return (
-        <img
-          className="preview"
-          data-renderer={preview.renderer}
-          alt={props.name}
-          src={`data:${preview.mediaType};base64,${preview.content}`}
-        />
+        <div data-renderer={preview.renderer}>
+          <Lightbox
+            className="preview"
+            alt={props.name}
+            src={`data:${preview.mediaType};base64,${preview.content}`}
+          />
+        </div>
       );
     case "Markdown":
       return (

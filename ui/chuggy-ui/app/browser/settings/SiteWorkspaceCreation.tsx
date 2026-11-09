@@ -348,7 +348,7 @@ export function SiteWorkspaceNew(props: {
   };
   return (
     <Dialog
-      wide
+      size="form"
       title={text({ id: "settings-workspaces-new" })}
       trigger={text({ id: "settings-workspaces-new" })}
       open={open}

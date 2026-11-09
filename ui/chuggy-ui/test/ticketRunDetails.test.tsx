@@ -1,5 +1,5 @@
 // jscpd:ignore-start -- renderer tests must declare their own hoisted mock factories
-import { cleanup, within } from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import type { ReactNode } from "react";
 
@@ -234,7 +234,8 @@ const screenshot = {
   },
 };
 
-test("an Image artifact previews as an img of a data URI carrying its declared media type", async () => {
+/** The screenshot's row, its preview opened. */
+async function screenshotPreviewed(): Promise<HTMLElement> {
   const drawn = await details({
     ...passed([runAttempt("a1", { openedAt, endedAt })], [screenshot]),
     artifactContent: {
@@ -251,11 +252,38 @@ test("an Image artifact previews as an img of a data URI carrying its declared m
     within(row).getByRole("button", { name: "Preview" }).click();
   });
   await settled();
+  return row;
+}
+
+test("an Image artifact previews as an img of a data URI carrying its declared media type", async () => {
+  const row = await screenshotPreviewed();
   const image = within(row).getByRole("img", {
     name: "artifacts/screenshot.png",
   });
   expect(image.getAttribute("src")).toBe("data:image/png;base64,QQ==");
   expect(row.querySelector("pre.preview")).toBeNull();
+});
+
+test("an Image artifact's preview opens as the same image under its name, and Escape closes it back to the preview", async () => {
+  const row = await screenshotPreviewed();
+  const preview = within(row).getByRole("button", {
+    name: "artifacts/screenshot.png",
+  });
+  await turned(() => {
+    fireEvent.click(preview);
+  });
+  const dialog = screen.getByRole("dialog", {
+    name: "artifacts/screenshot.png",
+  });
+  const opened = within(dialog).getByRole("img", {
+    name: "artifacts/screenshot.png",
+  });
+  expect(opened.getAttribute("src")).toBe("data:image/png;base64,QQ==");
+  await turned(() => {
+    fireEvent.keyDown(dialog, { key: "Escape" });
+  });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(document.activeElement).toBe(preview);
 });
 
 test("an undeclared artifact other than the run's result keeps its row, with a quiet note", async () => {
