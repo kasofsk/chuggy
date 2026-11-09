@@ -543,6 +543,7 @@ export const nativeHttpRoutes = {
   contract: `${nativeHttpBasePath}/contract`,
   configurationSchema: `${nativeHttpBasePath}/configuration-schema`,
   installation: `${nativeHttpBasePath}/installation`,
+  runnerReleases: `${nativeHttpBasePath}/runner-releases`,
   forgeApps: `${nativeHttpBasePath}/forge/github`,
   forgeAuthorizations: `${nativeHttpBasePath}/tenants/:tenant/forge-authorizations`,
   forgeInstallations: `${nativeHttpBasePath}/tenants/:tenant/forge-installations`,

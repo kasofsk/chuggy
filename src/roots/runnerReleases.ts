@@ -2,7 +2,7 @@
  * The release chuggy pins for each runner package, kept beside the roots that
  * read it because the image they run in ships `src/` and nothing else. The
  * pool plane answers a runner's poll with its package's pin, and the API shows
- * it beside the version each runner named.
+ * it beside the version each runner named and answers every pin to anyone.
  *
  * A PIN THAT DOES NOT PARSE REFUSES THE START, so a malformed one is never
  * served as a site that pins nothing. `just pin-runner-release` writes it.
