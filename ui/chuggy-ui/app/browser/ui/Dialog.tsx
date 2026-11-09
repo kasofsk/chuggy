@@ -111,7 +111,7 @@ export function Dialog(props: {
           aria-label={props.triggerNamed}
           className={
             props.triggerBare === true
-              ? "block max-w-full cursor-pointer border-0 bg-transparent p-0"
+              ? "dialog-trigger-bare block max-w-full"
               : buttonLookClassName({
                   variant: props.triggerVariant,
                   size: props.triggerSize ?? "sm",

@@ -1,10 +1,18 @@
 /* Dialog: the body between the title and Close. Each child keeps its own
    height and the body scrolls instead, since a child that clips its overflow
    would otherwise be squeezed first; a utility outranks this layer, so a
-   child that should give way says so with `shrink`. */
+   child that should give way says so with `shrink`. A bare trigger is only
+   what it holds, with a button's own paint taken off. */
 
 @layer ui {
   .dialog-body > * {
     flex-shrink: 0;
+  }
+
+  .dialog-trigger-bare {
+    background: none;
+    border: 0;
+    padding: 0;
+    cursor: pointer;
   }
 }

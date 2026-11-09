@@ -234,7 +234,8 @@ const screenshot = {
   },
 };
 
-test("an Image artifact previews as an img of a data URI carrying its declared media type", async () => {
+/** The screenshot's row, its preview opened. */
+async function screenshotPreviewed(): Promise<HTMLElement> {
   const drawn = await details({
     ...passed([runAttempt("a1", { openedAt, endedAt })], [screenshot]),
     artifactContent: {
@@ -251,6 +252,11 @@ test("an Image artifact previews as an img of a data URI carrying its declared m
     within(row).getByRole("button", { name: "Preview" }).click();
   });
   await settled();
+  return row;
+}
+
+test("an Image artifact previews as an img of a data URI carrying its declared media type", async () => {
+  const row = await screenshotPreviewed();
   const image = within(row).getByRole("img", {
     name: "artifacts/screenshot.png",
   });
@@ -259,22 +265,7 @@ test("an Image artifact previews as an img of a data URI carrying its declared m
 });
 
 test("an Image artifact's preview opens as the same image under its name, and Escape closes it back to the preview", async () => {
-  const drawn = await details({
-    ...passed([runAttempt("a1", { openedAt, endedAt })], [screenshot]),
-    artifactContent: {
-      read: "Content",
-      mediaType: "image/png",
-      renderer: "Image",
-      encoding: "Base64",
-      content: "QQ==",
-    },
-  });
-  const row = within(drawn).getByText("artifacts/screenshot.png")
-    .parentElement as HTMLElement;
-  await turned(() => {
-    within(row).getByRole("button", { name: "Preview" }).click();
-  });
-  await settled();
+  const row = await screenshotPreviewed();
   const preview = within(row).getByRole("button", {
     name: "artifacts/screenshot.png",
   });

@@ -103,7 +103,7 @@ test("an image's dialog is as wide as what it holds, under a trigger drawn bare"
   );
   expect(classesOf(dialog)).not.toContain("max-w-aside");
   const trigger = screen.getByRole("button", { name: "Screenshot" });
-  expect(classesOf(trigger)).toContain("cursor-pointer");
+  expect(classesOf(trigger)).toContain("dialog-trigger-bare");
   expect(classesOf(trigger)).not.toContain("btn");
   styleless();
 });
