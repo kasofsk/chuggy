@@ -1596,6 +1596,7 @@ async function main(): Promise<void> {
     composeMemberChat(pool, access, threads),
     composeProjectInbox(pool, selectorReviewPool, access, usageResume),
     postgresAgentAccounts(pool),
+    runnerReleasesPinned(),
   );
   nativeStopping(app, pools, [hub, threadLive]);
   await nativeListening(app);

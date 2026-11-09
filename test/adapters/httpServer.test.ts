@@ -6,6 +6,11 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import { principalCharsMax } from "../../src/interpreter/principal.ts";
 import { configurationDocumentJsonSchema } from "../../src/contract/configurationDocument.ts";
+import {
+  workerRunnerReleasesPinnedRoute,
+  workerRunnerReleasesPinnedSchema,
+} from "../../src/contract/workerPool.ts";
+import { workerRunnerReleasesRead } from "../../src/interpreter/workerRunnerRelease.ts";
 import type { HttpErrorEnvelope } from "../../src/contract/http.ts";
 import {
   imageMediaTypes,
@@ -1089,6 +1094,88 @@ test("the schema of a configuration file is a public read served as a JSON Schem
   );
   assert.deepEqual(found.json(), configurationDocumentJsonSchema());
   assert.deepEqual(calls, []);
+});
+
+/** Two runner packages' pins, kept as a site keeps them. */
+const pinnedFixture = workerRunnerReleasesRead({
+  "chuggy-darwin": {
+    version: "0.16.0",
+    url: "https://example.invalid/chuggy-darwin-0.16.0.tgz",
+    integrity: `sha512-${"a".repeat(86)}==`,
+  },
+  "chuggy-linux": {
+    version: "0.47.0",
+    url: "https://example.invalid/chuggy-linux-0.47.0.tgz",
+    integrity: `sha512-${"b".repeat(86)}==`,
+  },
+});
+
+/** An app serving `releases` as its pins, every optional service but them left out. */
+function appPinning(calls: string[], releases = pinnedFixture) {
+  return createNativeHttpApp(
+    fakeWeb(calls),
+    {
+      authenticateBearer: () =>
+        Promise.resolve({ authenticated: "InvalidToken" as const }),
+    },
+    { ready: () => Promise.resolve(true) },
+    authority,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    releases,
+  );
+}
+
+test("a site answers every runner package's pinned release to a caller with no credentials", async () => {
+  const calls: string[] = [];
+  await using app = appPinning(calls);
+  const found = await app.inject({ url: workerRunnerReleasesPinnedRoute });
+  assert.equal(found.statusCode, 200);
+  assert.match(
+    String(found.headers["content-type"]),
+    /^application\/vnd\.chuggy\.v1\+json\b/u,
+  );
+  const answered = workerRunnerReleasesPinnedSchema.parse(found.json());
+  assert.deepEqual(answered.releases, [...pinnedFixture.values()]);
+  assert.deepEqual(calls, []);
+});
+
+test("a site's pinned runner releases are answered whatever bearer is presented", async () => {
+  await using app = appPinning([]);
+  const found = await app.inject({
+    url: workerRunnerReleasesPinnedRoute,
+    headers: { authorization: "Bearer unknown" },
+  });
+  assert.equal(found.statusCode, 200);
+  assert.deepEqual(
+    workerRunnerReleasesPinnedSchema.parse(found.json()).releases,
+    [...pinnedFixture.values()],
+  );
+});
+
+test("a site that pins nothing answers no release rather than refusing", async () => {
+  await using app = appPinning([], new Map());
+  const found = await app.inject({ url: workerRunnerReleasesPinnedRoute });
+  assert.equal(found.statusCode, 200);
+  assert.deepEqual(found.json(), { releases: [] });
 });
 
 test("valid submission reaches only the NativeWeb submission method", async () => {

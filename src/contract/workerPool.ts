@@ -23,6 +23,7 @@
 
 import { z } from "zod";
 
+import { nativeHttpRoutes } from "./http.ts";
 import { sessionContainerEnds } from "./rosters.ts";
 import { workerImageFaults } from "./workerEnvironment.ts";
 
@@ -349,6 +350,19 @@ export const workerRunnerReleaseSchema = workerRunnerSchema.extend({
 });
 
 /**
+ * The public API route a site answers the release it pins for each runner
+ * package on, to anyone: the pins are public, and a machine that only serves
+ * the tools, holding no registration and before any sign-in, keeps its install
+ * on them by this alone.
+ */
+export const workerRunnerReleasesPinnedRoute = nativeHttpRoutes.runnerReleases;
+
+/** What that route answers: the release pinned for each runner package, one per package, and none where the site pins nothing. */
+export const workerRunnerReleasesPinnedSchema = z.strictObject({
+  releases: z.array(workerRunnerReleaseSchema),
+});
+
+/**
  * What a poll is answered with: the executions and the sessions the pool may
  * now place, and the assignments of either kind it must stop. Each list is as
  * long as the plane's own bounds allow and no longer, so a reader bounds the
@@ -547,6 +561,9 @@ export type WorkerPoolReconciliation = z.infer<
 >;
 export type WorkerRunner = z.infer<typeof workerRunnerSchema>;
 export type WorkerRunnerRelease = z.infer<typeof workerRunnerReleaseSchema>;
+export type WorkerRunnerReleasesPinned = z.infer<
+  typeof workerRunnerReleasesPinnedSchema
+>;
 export type WorkerRunnerReport = z.infer<typeof workerRunnerReportSchema>;
 export type WorkerPoolRegistration = z.infer<
   typeof workerPoolRegistrationSchema
