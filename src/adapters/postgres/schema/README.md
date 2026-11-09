@@ -672,3 +672,22 @@ INSERT and SELECT, read by the API, and `epic_change_is_immutable` refuses every
 delete. Its identity is `(tenant, project, epic, revision)` and it points at
 `project`. Its newest row per epic is the content `epic` holds, which is why a
 save writes both in one transaction. It has no unfinished work.
+
+`evaluation_stack` — the stack one ticket's work cycle was first evaluated over:
+the tip of its reference, and the commit and tree of the stack. Owned by the
+migration owner and granted SELECT and INSERT to the finalizer, with
+`evaluation_stack_is_immutable` refusing every change and delete of every role.
+Its identity is `(tenant, project, ticket, work_cycle)` and it points at
+`project`. A cycle with no row was evaluated unstacked. Whether a stack still
+stands is derived from the landings since its tip and the tickets still
+beneath it, and stored nowhere. It has no unfinished work.
+
+`evaluation_stack_beneath` — the tickets beneath one stack, bottom first at
+depth 1 to 3, each with the accepted commit it must land. Granted and refused as
+`evaluation_stack` is. Its identity is `(tenant, project, ticket, work_cycle,
+depth)`, a ticket is beneath a stack once, and it points at `evaluation_stack`.
+It has no unfinished work.
+
+`evaluation_stack_removal` — that a stack's commit was taken down from the
+reference it was published on, once. Granted and refused as `evaluation_stack`
+is. Its identity is that of the stack it points at. It has no unfinished work.
