@@ -39,18 +39,19 @@ import { postgresHarnessDenial, postgresHarnessRolePool } from "./harness.ts";
 
 let rig: FinalizerRig;
 let servicePool: pg.Pool;
-let service: EvaluationStackStore;
-let finalizer: EvaluationStackStore;
+
+const finalizerStore = (): EvaluationStackStore =>
+  postgresEvaluationStack(rig.pool);
+const serviceStore = (): EvaluationStackStore =>
+  postgresEvaluationStack(servicePool);
 
 before(async () => {
-  rig = await finalizerRigOpen();
   servicePool = postgresHarnessRolePool(ticketServiceRole);
-  service = postgresEvaluationStack(servicePool);
-  finalizer = postgresEvaluationStack(rig.pool);
+  rig = await finalizerRigOpen();
 });
 after(async () => {
-  await servicePool.end();
   await rig.close();
+  await servicePool.end();
 });
 
 /** A Stacked ticket evaluating over a stack whose one ticket beneath is nowhere in the queue. */
@@ -92,7 +93,7 @@ async function evaluatingOverGone(label: string): Promise<FinalizerProject> {
 }
 
 async function ownEvaluating(project: FinalizerProject) {
-  return (await finalizer.evaluating(256)).filter(
+  return (await finalizerStore().evaluating(256)).filter(
     (each) =>
       each.partition.tenant === project.partition.tenant &&
       each.partition.project === project.partition.project,
@@ -113,7 +114,7 @@ test("the sweep finds the evaluation over a stack that no longer stands, and off
   const [found] = await ownEvaluating(project);
   assert.equal(found?.cycle, 1);
   assert.ok(found !== undefined);
-  const queue = await finalizer.queue(
+  const queue = await finalizerStore().queue(
     project.partition,
     found.repository,
     found.target,
@@ -122,11 +123,21 @@ test("the sweep finds the evaluation over a stack that no longer stands, and off
   assert.equal(dead.length, 1);
 
   assert.equal(
-    await finalizer.invalidate(project.partition, found.ticket, 1, epoch),
+    await finalizerStore().invalidate(
+      project.partition,
+      found.ticket,
+      1,
+      epoch,
+    ),
     "Submitted",
   );
   assert.equal(
-    await finalizer.invalidate(project.partition, found.ticket, 1, epoch),
+    await finalizerStore().invalidate(
+      project.partition,
+      found.ticket,
+      1,
+      epoch,
+    ),
     "AlreadySubmitted",
   );
   assert.equal((await operationsOf(project)).length, 1);
@@ -139,7 +150,7 @@ test("the sweep finds the evaluation over a stack that no longer stands, and off
     [],
     "a stack offered is not looked at again",
   );
-  const marked = await service.dead(project.partition, found.ticket);
+  const marked = await serviceStore().dead(project.partition, found.ticket);
   assert.deepEqual([...marked.keys()], [1]);
   assert.ok((marked.get(1) ?? -1) >= 0);
 });
@@ -149,7 +160,7 @@ test("the writer abandons the evaluation, opens a new cycle and counts no rework
   const epoch = asRecoveryEpoch(project.epoch);
   assert.equal(await finalizerPhase(rig, project.partition), "Evaluation");
   assert.equal(
-    await finalizer.invalidate(
+    await finalizerStore().invalidate(
       project.partition,
       asTicketId(project.ticket),
       1,
@@ -178,7 +189,7 @@ test("a stack is refused under an epoch that is not current, and for a ticket th
   const project = await evaluatingOverGone("invalidate-refused");
   const ticket = asTicketId(project.ticket);
   assert.equal(
-    await finalizer.invalidate(
+    await finalizerStore().invalidate(
       project.partition,
       ticket,
       1,
@@ -187,7 +198,7 @@ test("a stack is refused under an epoch that is not current, and for a ticket th
     "Refused",
   );
   assert.equal(
-    await finalizer.invalidate(
+    await finalizerStore().invalidate(
       project.partition,
       ticket,
       2,
@@ -197,7 +208,7 @@ test("a stack is refused under an epoch that is not current, and for a ticket th
     "a cycle with no stack record",
   );
   assert.equal((await operationsOf(project)).length, 0);
-  assert.equal((await service.dead(project.partition, ticket)).size, 0);
+  assert.equal((await serviceStore().dead(project.partition, ticket)).size, 0);
 });
 
 test("only the finalizer opens the door, and the ticket service reads the marker and nothing more", async () => {
