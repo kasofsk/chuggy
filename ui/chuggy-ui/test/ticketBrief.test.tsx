@@ -4,7 +4,13 @@
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, screen, waitFor } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
@@ -14,7 +20,8 @@ import {
 } from "../../../src/contract/responses.ts";
 import { TicketBriefImages } from "../app/browser/TicketProvenance.tsx";
 import { SessionProvider } from "../app/browser/session.tsx";
-import { answer, holderDouble } from "./screenHarness.tsx";
+import { answer, holderDouble, turned } from "./screenHarness.tsx";
+import { styleless } from "./styleless.ts";
 import { renderCopied as drawn } from "./copied.tsx";
 import { ticketInstants } from "./ticketInstants.ts";
 
@@ -102,6 +109,45 @@ test("a brief's images are drawn as images, from the project's read of each", as
       .map((url) => url.split("/").at(-1))
       .filter((last) => last?.startsWith("artifact")),
   ).toStrictEqual(["artifact-1", "artifact-2"]);
+});
+
+/** The image opened is the one the thumbnail drew, from the bytes it already
+ * held, and closing returns the reader to the thumbnail. */
+test("a brief's image opens under its alt as the same image, without another read, and Escape closes it back to the image", async () => {
+  const read: string[] = [];
+  vi.stubGlobal("fetch", (url: string) => {
+    read.push(url);
+    return Promise.resolve(
+      answer({ content: "AQID", mediaType: "image/png", encoding: "base64" }),
+    );
+  });
+  render(
+    <TicketBriefImages
+      partition={briefPartition}
+      brief={released({
+        intent: "an intent",
+        links: [],
+        images: ["artifact-1"],
+      })}
+    />,
+  );
+  const thumbnail = await screen.findByRole("button", {
+    name: "Brief image 1",
+  });
+  const readsBefore = read.length;
+  await turned(() => {
+    fireEvent.click(thumbnail);
+  });
+  const dialog = screen.getByRole("dialog", { name: "Brief image 1" });
+  const opened = within(dialog).getByRole("img", { name: "Brief image 1" });
+  expect(opened.getAttribute("src")).toBe("data:image/png;base64,AQID");
+  expect(read).toHaveLength(readsBefore);
+  await turned(() => {
+    fireEvent.keyDown(dialog, { key: "Escape" });
+  });
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(document.activeElement).toBe(thumbnail);
+  styleless();
 });
 
 test("a ticket with no brief, or a brief with no images, draws nothing", () => {

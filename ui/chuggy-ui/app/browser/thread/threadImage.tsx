@@ -23,6 +23,7 @@ export function useThreadImage(
         artifact={artifact}
         alt={text({ id: "chat-image-sent" })}
         className="rounded-2 block max-h-(--height-clip) max-w-full"
+        opens
       />
     ),
     [tenant, project, text],

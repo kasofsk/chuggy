@@ -63,7 +63,7 @@ test("the scrim stacks in the overlay band, under the dialog's own frame", () =>
 test("a caller's foot stands in place of Close, at the width a form takes", () => {
   renderCopied(
     <Dialog
-      wide
+      size="form"
       title="Invite"
       trigger="Invite"
       open
@@ -81,6 +81,30 @@ test("a caller's foot stands in place of Close, at the width a form takes", () =
   expect(classesOf(foot ?? null)).toContain("justify-end");
   expect(screen.queryByRole("button", { name: "Close" })).toBeNull();
   expect(dialog.children).toHaveLength(3);
+  styleless();
+});
+
+test("an image's dialog is as wide as what it holds, under a trigger drawn bare", () => {
+  renderCopied(
+    <Dialog
+      size="image"
+      title="Screenshot"
+      trigger={<img src="data:image/png;base64,QQ==" alt="Screenshot" />}
+      triggerBare
+      open
+      onOpenChange={() => undefined}
+    >
+      <p>image</p>
+    </Dialog>,
+  );
+  const dialog = screen.getByRole("dialog", { name: "Screenshot" });
+  expect(classesOf(dialog)).toEqual(
+    expect.arrayContaining(["w-fit", "max-w-full"]),
+  );
+  expect(classesOf(dialog)).not.toContain("max-w-aside");
+  const trigger = screen.getByRole("button", { name: "Screenshot" });
+  expect(classesOf(trigger)).toContain("cursor-pointer");
+  expect(classesOf(trigger)).not.toContain("btn");
   styleless();
 });
 

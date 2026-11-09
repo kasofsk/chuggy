@@ -302,7 +302,7 @@ export function TenantPersonEditor(props: {
   const busy = changing.unanswered;
   return (
     <Dialog
-      wide
+      size="form"
       title={name}
       trigger={text({ id: "settings-edit" })}
       triggerNamed={text({ id: "settings-people-edit-named", args: { name } })}
