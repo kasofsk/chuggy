@@ -16,6 +16,7 @@ import {
   apiRole,
 } from "../../src/adapters/postgres/schema/shared.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
+import { asGitObjectId } from "../../src/interpreter/finalizer.ts";
 import type { EvaluationStackStore } from "../../src/interpreter/evaluationStack.ts";
 import { asRecoveryEpoch } from "../../src/interpreter/projectStore.ts";
 import { stackInvalidations } from "../../src/interpreter/stackInvalidation.ts";
@@ -34,7 +35,11 @@ import {
   type FinalizerProject,
   type FinalizerRig,
 } from "./finalizerHarness.ts";
-import { recordStackBeneathNobody } from "./evaluationStackLandings.ts";
+import {
+  landingTarget,
+  recordStack,
+  recordStackBeneathNobody,
+} from "./evaluationStackLandings.ts";
 import { postgresHarnessDenial, postgresHarnessRolePool } from "./harness.ts";
 
 let rig: FinalizerRig;
@@ -209,6 +214,35 @@ test("a stack is refused under an epoch that is not current, and for a ticket th
   );
   assert.equal((await operationsOf(project)).length, 0);
   assert.equal((await serviceStore().dead(project.partition, ticket)).size, 0);
+});
+
+test("a cycle that is not the ticket's current one writes no marker and consumes no key", async () => {
+  const project = await evaluatingOverGone("invalidate-stale");
+  const ticket = asTicketId(project.ticket);
+  const epoch = asRecoveryEpoch(project.epoch);
+  await recordStack(rig.pool, project.partition, {
+    ticket,
+    cycle: 2,
+    repository: project.repository,
+    target: landingTarget,
+    tip: asGitObjectId(finalizerCommit()),
+    beneath: [
+      { ticket: asTicketId(999), commit: asGitObjectId(finalizerCommit()) },
+    ],
+    stackCommit: asGitObjectId(finalizerCommit()),
+    stackTree: asGitObjectId(finalizerCommit()),
+  });
+  assert.equal(
+    await finalizerStore().invalidate(project.partition, ticket, 2, epoch),
+    "Refused",
+  );
+  assert.equal((await operationsOf(project)).length, 0);
+  assert.equal((await serviceStore().dead(project.partition, ticket)).size, 0);
+  assert.equal(
+    await finalizerStore().invalidate(project.partition, ticket, 1, epoch),
+    "Submitted",
+    "the stale offer left the key of the cycle that stands",
+  );
 });
 
 test("only the finalizer opens the door, and the ticket service reads the marker and nothing more", async () => {

@@ -10,7 +10,10 @@
  * cycle was offered before (the idempotency key is the ticket and the cycle,
  * not the operation id), `BindingMismatch` under an epoch that is not current,
  * `UnknownStack` for a cycle with no stack record, `NotEvaluating` for a
- * ticket not in an evaluation, and `NotAdmitted` for a project in retention.
+ * ticket not in an evaluation, `StaleCycle` for a cycle that is not the
+ * ticket's latest accepted work with an evaluation registered, and
+ * `NotAdmitted` for a project in retention. A stale cycle neither writes the
+ * marker nor consumes the key.
  *
  * `evaluation_stack_dead` IS WRITTEN IN THE SAME TRANSACTION AS THE OPERATION,
  * and is the only thing the writer's failure policy reads of an invalidation:
@@ -239,6 +242,30 @@ END) NOT VALID`,
                        WHERE t.tenant = in_tenant AND t.project = in_project
                          AND t.ticket = in_ticket AND t.phase = 'Evaluation') THEN
          RETURN QUERY SELECT 'NotEvaluating'::text, NULL::text, NULL::bigint; RETURN;
+       END IF;
+       IF in_work_cycle IS DISTINCT FROM (
+            SELECT max(t.cycle)
+              FROM execution e
+              JOIN execution_request_task t
+                ON t.tenant = e.tenant AND t.project = e.project
+                   AND t.request = e.source_request AND t.task = e.task
+              JOIN execution_result r
+                ON r.tenant = e.tenant AND r.project = e.project
+                   AND r.execution = e.execution
+             WHERE e.tenant = in_tenant AND e.project = in_project
+               AND e.ticket = in_ticket AND t.kind = 'Work'
+               AND e.status = 'Terminal' AND e.outcome = 'Passed'
+               AND r.verdict = 'Pass')
+          OR NOT EXISTS (
+            SELECT 1
+              FROM execution_request q
+              JOIN execution_request_task xt
+                ON xt.tenant = q.tenant AND xt.project = q.project
+                   AND xt.request = q.request
+             WHERE q.tenant = in_tenant AND q.project = in_project
+               AND q.ticket = in_ticket AND xt.kind = 'Evaluation'
+               AND xt.cycle = in_work_cycle) THEN
+         RETURN QUERY SELECT 'StaleCycle'::text, NULL::text, NULL::bigint; RETURN;
        END IF;
        IF project_lifecycle = 'Retention' THEN
          RETURN QUERY SELECT 'NotAdmitted'::text, NULL::text, NULL::bigint; RETURN;
