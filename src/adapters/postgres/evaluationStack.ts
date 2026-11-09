@@ -378,8 +378,8 @@ async function stackEvaluated(
   ticket: number,
   cycle: number,
 ): Promise<boolean> {
-  const found = await pool.query(
-    sql`SELECT 1
+  const found = await pool.query<{ found: number }>(
+    sql`SELECT 1 AS found
               FROM execution_request r
               JOIN execution_request_task t
                 ON t.tenant = r.tenant AND t.project = r.project
