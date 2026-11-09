@@ -23,7 +23,7 @@
 
 import { z } from "zod";
 
-import { nativeHttpRoutes } from "./http.ts";
+import { nativeHttpRoutes, runUsageInstantSchema } from "./http.ts";
 import { sessionContainerEnds } from "./rosters.ts";
 import { workerImageFaults } from "./workerEnvironment.ts";
 
@@ -363,6 +363,29 @@ export const workerRunnerReleasesPinnedSchema = z.strictObject({
 });
 
 /**
+ * How the agent credential a job ran on stopped it, as the job's harness told
+ * the plane: `UsageLimited`, the provider refused it until its usage limit
+ * resets, at `resetsAt` in whole Unix seconds where the runtime named that
+ * instant; `CreditsExhausted`, its account has no credit left, which names no
+ * instant. Neither names the credential, which the runner chose and handed the
+ * job itself.
+ */
+export const workerPoolCredentialOutcomeSchema = z.discriminatedUnion(
+  "outcome",
+  [
+    z.strictObject({
+      assignment: workerPoolAssignmentIdentitySchema,
+      outcome: z.literal("UsageLimited"),
+      resetsAt: runUsageInstantSchema.exactOptional(),
+    }),
+    z.strictObject({
+      assignment: workerPoolAssignmentIdentitySchema,
+      outcome: z.literal("CreditsExhausted"),
+    }),
+  ],
+);
+
+/**
  * What a poll is answered with: the executions and the sessions the pool may
  * now place, and the assignments of either kind it must stop. Each list is as
  * long as the plane's own bounds allow and no longer, so a reader bounds the
@@ -397,6 +420,12 @@ export const workerPoolReconciliationSchema = z.strictObject({
    * no launch yet, where the host starts nothing and polls again.
    */
   chatImage: workerPoolImageSchema.optional(),
+  /**
+   * The jobs of this runner whose credential stopped them, at most one
+   * outcome for each assignment. It is named only to a poll whose release
+   * reads it, and absent is the default: no job named an outcome.
+   */
+  credentialOutcomes: z.array(workerPoolCredentialOutcomeSchema).optional(),
 });
 
 /**
@@ -558,6 +587,9 @@ export type WorkerPoolSessionAssignment = z.infer<
 export type AssignmentOutcome = z.infer<typeof assignmentOutcomeSchema>;
 export type WorkerPoolReconciliation = z.infer<
   typeof workerPoolReconciliationSchema
+>;
+export type WorkerPoolCredentialOutcome = z.infer<
+  typeof workerPoolCredentialOutcomeSchema
 >;
 export type WorkerRunner = z.infer<typeof workerRunnerSchema>;
 export type WorkerRunnerRelease = z.infer<typeof workerRunnerReleaseSchema>;

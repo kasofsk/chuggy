@@ -1,4 +1,5 @@
 import {
+  workerContractCredentialOutcome,
   workerContractEvaluatedTree,
   workerContractMemoryRoom,
   workerContractRelease,
@@ -82,6 +83,12 @@ export const workerContractRunnerProjects: WorkerContractRange = {
 /** The versions in which a poll's answer may say whether a job its runner fits is waiting, a field a pool of an earlier one refuses its whole answer over. */
 export const workerContractRunnerJobsWaiting: WorkerContractRange = {
   min: workerContractMemoryRoom,
+  max: workerContractAccepted.max,
+};
+
+/** The versions in which a poll's answer may name how a credential stopped each of its runner's jobs, a field a pool of an earlier one refuses its whole answer over. */
+export const workerContractRunnerCredentialOutcomes: WorkerContractRange = {
+  min: workerContractCredentialOutcome,
   max: workerContractAccepted.max,
 };
 

@@ -12,6 +12,7 @@ import { workerImageFaults } from "../../src/contract/workerEnvironment.ts";
 import {
   assignmentOutcomeSchema,
   workerPoolAssignmentSchema,
+  workerPoolCredentialOutcomeSchema,
   workerPoolCapabilitiesMax,
   workerPoolIdentityCharsMax,
   workerPoolPollQuerySchema,
@@ -33,9 +34,11 @@ import {
   workerRunnerReportBytesMax,
   workerRunnerReportSchema,
 } from "../../src/contract/workerPool.ts";
+import { runUsageInstantSecsMax } from "../../src/contract/workerPlane.ts";
 import { workerContractRelease } from "../../src/contract/workerContract.ts";
 import {
   contractVersionAccepted,
+  workerContractRunnerCredentialOutcomes,
   workerContractRunnerProjects,
   workerContractRunnerReleases,
 } from "../../src/interpreter/workerPlane.ts";
@@ -247,6 +250,131 @@ test("a reconciliation carries what to place of each kind and what to stop, each
       workerPoolReconciliationSchema.safeParse(invalid).success,
       false,
     );
+});
+
+const credentialOutcomes = [
+  { assignment: "01HZ", outcome: "UsageLimited", resetsAt: 1_767_225_600 },
+  { assignment: "01HY", outcome: "UsageLimited" },
+  { assignment: "01HX", outcome: "CreditsExhausted" },
+] as const;
+
+test("a reconciliation may name how a credential stopped each of its runner's jobs, and reads back what it was given", () => {
+  const answer = {
+    assignments: [],
+    sessions: [],
+    stop: [],
+    credentialOutcomes,
+  };
+  const read = workerPoolReconciliationSchema.parse(answer);
+  assert.deepEqual(read, answer);
+  assert.deepEqual(
+    workerPoolReconciliationSchema.parse(JSON.parse(JSON.stringify(read))),
+    answer,
+  );
+});
+
+test("a reconciliation naming no credential outcome reads as one in which no job named any", () => {
+  const read = workerPoolReconciliationSchema.parse({
+    assignments: [assignment],
+    sessions: [],
+    stop: [],
+  });
+  assert.equal(read.credentialOutcomes, undefined);
+  assert.equal(Object.hasOwn(read, "credentialOutcomes"), false);
+});
+
+test("a usage limit names its reset where the runtime named one and is whole without it, and an exhausted credit names none", () => {
+  assert.deepEqual(
+    workerPoolCredentialOutcomeSchema.parse({
+      assignment: "01HZ",
+      outcome: "UsageLimited",
+      resetsAt: runUsageInstantSecsMax,
+    }),
+    {
+      assignment: "01HZ",
+      outcome: "UsageLimited",
+      resetsAt: runUsageInstantSecsMax,
+    },
+  );
+  assert.deepEqual(
+    workerPoolCredentialOutcomeSchema.parse({
+      assignment: "01HZ",
+      outcome: "UsageLimited",
+    }),
+    { assignment: "01HZ", outcome: "UsageLimited" },
+  );
+  assert.deepEqual(
+    workerPoolCredentialOutcomeSchema.parse({
+      assignment: "01HZ",
+      outcome: "CreditsExhausted",
+    }),
+    { assignment: "01HZ", outcome: "CreditsExhausted" },
+  );
+  for (const invalid of [
+    {
+      assignment: "01HZ",
+      outcome: "CreditsExhausted",
+      resetsAt: 1_767_225_600,
+    },
+    { assignment: "01HZ", outcome: "UsageLimited", resetsAt: undefined },
+    { assignment: "01HZ", outcome: "UsageLimited", resetsAt: 0 },
+    { assignment: "01HZ", outcome: "UsageLimited", resetsAt: 1.5 },
+    {
+      assignment: "01HZ",
+      outcome: "UsageLimited",
+      resetsAt: runUsageInstantSecsMax + 1,
+    },
+    { assignment: "01HZ", outcome: "UsageLimited", window: "five_hour" },
+    { assignment: "01HZ", outcome: "UsageLimited", credential: "claude-oauth" },
+    {
+      assignment: "01HZ",
+      outcome: "CreditsExhausted",
+      path: "/var/run/chuggy/credentials/claude",
+    },
+    { assignment: "01HZ", outcome: "Failed" },
+    { assignment: "", outcome: "CreditsExhausted" },
+    { outcome: "CreditsExhausted" },
+  ])
+    assert.equal(
+      workerPoolCredentialOutcomeSchema.safeParse(invalid).success,
+      false,
+      JSON.stringify(invalid),
+    );
+});
+
+test("a runner of a release before the credential-outcome range refuses a whole answer naming an outcome, so a plane names one only to a release the range accepts", async () => {
+  const unnamed = { assignments: [assignment], sessions: [], stop: [] };
+  const answer = { ...unnamed, credentialOutcomes };
+  assert.ok(
+    contractVersionAccepted(
+      workerContractRunnerCredentialOutcomes,
+      workerContractRelease,
+    ),
+  );
+  for (const older of workerContractReplayed("pool")) {
+    const { reconciliation } = await workerContractReleasePool(older);
+    assert.equal(
+      reconciliation.safeParse(answer).success,
+      contractVersionAccepted(workerContractRunnerCredentialOutcomes, older),
+      older,
+    );
+    assert.ok(reconciliation.safeParse(unnamed).success, older);
+  }
+});
+
+test("a runner of this release reads an answer as a plane of any earlier release writes it, with no credential outcome", async () => {
+  const answer = { assignments: [assignment], sessions: [], stop: [] };
+  for (const older of workerContractReplayed("pool")) {
+    const { reconciliation } = await workerContractReleasePool(older);
+    const written: unknown = JSON.parse(
+      JSON.stringify(reconciliation.parse(answer)),
+    );
+    assert.equal(
+      workerPoolReconciliationSchema.parse(written).credentialOutcomes,
+      undefined,
+      older,
+    );
+  }
 });
 
 const release = {
