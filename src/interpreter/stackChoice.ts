@@ -38,6 +38,8 @@ export interface StackStanding {
   readonly beneath: readonly StackMember[];
   /** At most one more than `beneath` holds: a longer run cannot be a prefix of it. */
   readonly landings: readonly StackMember[];
+  /** Set where the landings cannot be followed, two having landed on one commit or one having no accepted commit: no such stack stands. */
+  readonly unreadable?: true;
 }
 
 /** One ranked ticket of a reference's queue. */
@@ -90,6 +92,7 @@ export function stackStands(
   queue: readonly StackEntry[],
 ): boolean {
   const { beneath, landings } = standing;
+  if (standing.unreadable === true) return false;
   if (landings.length > beneath.length) return false;
   if (!stackMembersSame(landings, beneath.slice(0, landings.length)))
     return false;

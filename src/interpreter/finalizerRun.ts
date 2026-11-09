@@ -2709,7 +2709,10 @@ async function finalizerInvalidateStacks(
   const stacks = service.stacks;
   if (stacks === undefined) return;
   const groups = new Map<string, EvaluatingStack[]>();
-  for (const each of await stacks.evaluating(stackEvaluatingPerPassMax)) {
+  const evaluating = await stacks
+    .evaluating(stackEvaluatingPerPassMax)
+    .catch((): readonly EvaluatingStack[] => []);
+  for (const each of evaluating) {
     const key = JSON.stringify([
       each.partition.tenant,
       each.partition.project,

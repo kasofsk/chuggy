@@ -200,13 +200,13 @@ async function stackRecordsRead(
   return stackRecordsOf(found.rows);
 }
 
-/** The landings on a reference since `tip`, in order, at most `limit` of them. */
+/** The landings on a reference since `tip`, in order, at most `limit` of them, or that they cannot be followed. */
 async function stackLandingsSince(
   pool: pg.Pool,
   partition: Partition,
   stack: EvaluationStack,
   limit: number,
-): Promise<readonly StackMember[]> {
+): Promise<StackStanding["landings"] | "Unreadable"> {
   const found = await pool.query<LandingRow>(
     sql`WITH RECURSIVE promoted AS (
           SELECT a.ticket, a.target_commit,
@@ -246,14 +246,11 @@ async function stackLandingsSince(
   );
   const landings: StackMember[] = [];
   for (const row of found.rows) {
-    if (row.depth !== landings.length + 1) {
-      throw new Error(
-        `evaluation stack: two landings follow ${stack.tip} at once`,
-      );
-    }
+    if (row.depth !== landings.length + 1 || row.accepted === null)
+      return "Unreadable";
     landings.push({
       ticket: asTicketId(projectRowCounter(row.ticket, "landed ticket")),
-      commit: asGitObjectId(finalizerRowPresent(row.accepted, "landed commit")),
+      commit: asGitObjectId(row.accepted),
     });
   }
   return landings;
@@ -543,15 +540,15 @@ async function stackStandingOf(
   partition: Partition,
   record: EvaluationStack,
 ): Promise<StackStanding> {
-  return {
-    beneath: record.beneath,
-    landings: await stackLandingsSince(
-      pool,
-      partition,
-      record,
-      record.beneath.length + 1,
-    ),
-  };
+  const landings = await stackLandingsSince(
+    pool,
+    partition,
+    record,
+    record.beneath.length + 1,
+  );
+  return landings === "Unreadable"
+    ? { beneath: record.beneath, landings: [], unreadable: true }
+    : { beneath: record.beneath, landings };
 }
 
 async function stackEvaluated(
@@ -667,17 +664,26 @@ async function stackEvaluating(
     };
     const ticket = projectRowCounter(row.ticket, "evaluating ticket");
     const cycle = projectRowCounter(row.cycle ?? "", "evaluating cycle");
-    const [record] = await stackRecordsRead(pool, partition, [ticket], [cycle]);
-    const brief = releasedBriefOf(row.brief);
-    if (record === undefined || brief === undefined) continue;
-    evaluating.push({
-      partition,
-      ticket: asTicketId(ticket),
-      cycle,
-      repository: record.repository,
-      target: briefLandsOn(brief),
-      standing: await stackStandingOf(pool, partition, record),
-    });
+    try {
+      const [record] = await stackRecordsRead(
+        pool,
+        partition,
+        [ticket],
+        [cycle],
+      );
+      const brief = releasedBriefOf(row.brief);
+      if (record === undefined || brief === undefined) continue;
+      evaluating.push({
+        partition,
+        ticket: asTicketId(ticket),
+        cycle,
+        repository: record.repository,
+        target: briefLandsOn(brief),
+        standing: await stackStandingOf(pool, partition, record),
+      });
+    } catch {
+      continue;
+    }
   }
   return evaluating;
 }

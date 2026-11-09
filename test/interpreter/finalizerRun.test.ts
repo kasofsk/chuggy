@@ -5294,6 +5294,19 @@ test("a pass offers the invalidation of each evaluation whose stack no longer st
   assert.deepEqual(stacks.offered, [4]);
 });
 
+test("evaluations that cannot be read leave the pass standing and the stacks for the next one", async () => {
+  const stacks = {
+    ...stacksEvaluating([{ ticket: 4, beneath: [9] }], []),
+    evaluating: () => Promise.reject(new Error("a row the read cannot hold")),
+  };
+  const report = await passOver({
+    ...serviceOf(recordingStore([]), recordingGit()),
+    stacks,
+  });
+  assert.ok(report !== undefined);
+  assert.deepEqual(stacks.offered, []);
+});
+
 test("a queue that cannot be read leaves the stacks over it for the next pass", async () => {
   const stacks = stacksEvaluating([{ ticket: 4, beneath: [9] }], []);
   await passOver({

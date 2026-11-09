@@ -39,6 +39,8 @@ export interface Landing {
   readonly onto: string;
   readonly candidate: string;
   readonly verdict?: "Promoted" | "NotPromoted";
+  /** Whether the attempt's bundle pins a result manifest, which it does unless a case says it does not. */
+  readonly pinned?: false;
 }
 
 /** The passed work the landings are copied from. */
@@ -152,13 +154,14 @@ export async function landingWrite(
     target: landing.onto,
     candidate: landing.candidate,
   });
-  await rig.as(
-    `INSERT INTO input_bundle_reference
-       (tenant, project, bundle, ordinal, reference_kind, reference_id)
-     SELECT tenant, project, input_bundle, 2, 'ResultManifest', $4
-       FROM finalization_attempt WHERE tenant=$1 AND project=$2 AND attempt=$3`,
-    [tenant, named, attempt, manifest],
-  );
+  if (landing.pinned !== false)
+    await rig.as(
+      `INSERT INTO input_bundle_reference
+         (tenant, project, bundle, ordinal, reference_kind, reference_id)
+       SELECT tenant, project, input_bundle, 2, 'ResultManifest', $4
+         FROM finalization_attempt WHERE tenant=$1 AND project=$2 AND attempt=$3`,
+      [tenant, named, attempt, manifest],
+    );
   const permit = await finalizerGrantPermit(rig, prepared, attempt, label);
   await rig.as(
     `INSERT INTO finalization_reconciliation

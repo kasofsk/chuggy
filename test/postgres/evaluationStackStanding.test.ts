@@ -121,6 +121,45 @@ test("the landings since the tip are the promoted attempts that followed it, in 
   assert.equal(mine?.stack?.beneath.length, 3);
 });
 
+test("landings that cannot be followed are a stack that does not stand, and the read still answers", async () => {
+  for (const [label, second] of [
+    ["fork", {}],
+    ["unpinned", { pinned: false as const }],
+  ] as const) {
+    const { project, work } = await stackedSubject(rig, `stack-${label}`);
+    const c = landingCommits("tip", "first", "other", "a7", "a8");
+    await landingWrite(rig, project, work, `${label}-7`, {
+      ticket: 7,
+      accepted: c.a7,
+      onto: c.tip,
+      candidate: c.first,
+      ...(label === "unpinned" ? second : {}),
+    });
+    if (label === "fork")
+      await landingWrite(rig, project, work, `${label}-8`, {
+        ticket: 8,
+        accepted: c.a8,
+        onto: c.tip,
+        candidate: c.other,
+      });
+    await stackedOn(project, c.tip, [{ ticket: 7, commit: c.a7 }]);
+    const [mine] = await store.queue(
+      project.partition,
+      project.repository,
+      undefined,
+    );
+    assert.equal(mine?.stack?.unreadable, true, label);
+    assert.equal(
+      stackStands(mine?.stack ?? { beneath: [], landings: [] }, []),
+      false,
+    );
+    const evaluating = (await store.evaluating(256)).filter(
+      (each) => each.partition.project === project.partition.project,
+    );
+    assert.ok(evaluating.every((each) => each.standing.unreadable === true));
+  }
+});
+
 test("a stack read from the database stands while the tickets still beneath are pending at their commits", async () => {
   const { project, work } = await stackedSubject(rig, "stack-stands");
   const c = landingCommits("tip", "first", "a7", "a8");
