@@ -77,6 +77,7 @@
     "contract": "/api/v1/contract",
     "configurationSchema": "/api/v1/configuration-schema",
     "installation": "/api/v1/installation",
+    "runnerReleases": "/api/v1/runner-releases",
     "forgeApps": "/api/v1/forge/github",
     "forgeAuthorizations": "/api/v1/tenants/:tenant/forge-authorizations",
     "forgeInstallations": "/api/v1/tenants/:tenant/forge-installations",

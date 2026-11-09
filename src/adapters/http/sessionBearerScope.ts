@@ -62,6 +62,7 @@ export const sessionBearerRouteClasses = {
   contract: "Public",
   configurationSchema: "Public",
   installation: "Public",
+  runnerReleases: "Public",
   workerPoolRegistrations: "Public",
   personalRunnerRegistrations: "Public",
   actionReports: "Public",
