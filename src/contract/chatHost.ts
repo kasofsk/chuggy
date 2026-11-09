@@ -33,7 +33,14 @@
  * writes its `Ended`, and exits.
  *
  * A SESSION'S BEARER CROSSES ONLY IN `Start`, and no refusal raised here
- * repeats the line it read.
+ * repeats the line it read. A credential crosses only by name: a `Start` may
+ * name which of the credentials its host handed the supervisor the session
+ * runs on, and one that names none runs on the one it was handed, as every
+ * session of version 1 did. A named credential the supervisor holds no file
+ * for is refused `Unprepared`.
+ *
+ * VERSION 2 added the credential a `Start` names. Every frame of version 1
+ * reads unchanged in version 2.
  */
 
 import { z } from "zod";
@@ -45,7 +52,7 @@ import { workerPoolAssignmentIdentitySchema } from "./workerPool.ts";
 import { poolEnvelopeSchema } from "./workerTask.ts";
 
 /** The version of the protocol this release describes. */
-export const chatProtocolVersion = 1;
+export const chatProtocolVersion = 2;
 
 /** The longest frame either side writes, in UTF-8, its newline left out. */
 export const chatProtocolFrameBytesMax = 16_384;
@@ -55,11 +62,19 @@ export const chatHostSessionEnvelopeSchema = z.strictObject(
   poolEnvelopeSchema.omit({ workspace: true }).shape,
 );
 
-/** Start the session the pool's poll handed the host under `assignment`. */
+/** A credential as a host names it to its supervisor: its agent, its type, and its name, which is unique across the host's agents and is never the secret. */
+export const chatHostCredentialSchema = z.strictObject({
+  agent: z.enum(["Claude", "Codex"]),
+  type: z.enum(["OAuth", "ApiKey", "Bedrock", "Vertex", "Foundry"]),
+  name: z.string().regex(/^[A-Za-z0-9_-]{1,64}$/u),
+});
+
+/** Start the session the pool's poll handed the host under `assignment`, on the credential it names where it names one. */
 export const chatHostStartSchema = z.strictObject({
   frame: z.literal("Start"),
   assignment: workerPoolAssignmentIdentitySchema,
   envelope: chatHostSessionEnvelopeSchema,
+  credential: chatHostCredentialSchema.exactOptional(),
 });
 
 /** End a session, or cancel one being prepared. */
@@ -150,6 +165,7 @@ export const chatSupervisorFrameSchema = z.discriminatedUnion("frame", [
 export type ChatHostSessionEnvelope = z.infer<
   typeof chatHostSessionEnvelopeSchema
 >;
+export type ChatHostCredential = z.infer<typeof chatHostCredentialSchema>;
 export type ChatHostFrame = z.infer<typeof chatHostFrameSchema>;
 export type ChatSupervisorReady = z.infer<typeof chatSupervisorReadySchema>;
 export type ChatSupervisorFrame = z.infer<typeof chatSupervisorFrameSchema>;
