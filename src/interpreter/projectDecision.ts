@@ -78,7 +78,6 @@ import type {
   ProjectArtifactId,
 } from "./finalizerPreparation.ts";
 import type { NativeActionResolution } from "./projectCommand.ts";
-import type { EvaluationStack } from "./evaluationStack.ts";
 import type { GitObjectId } from "./finalizer.ts";
 import type { ResultManifestId } from "./resultManifest.ts";
 import type { DraftBrief } from "./ticketBrief.ts";
@@ -304,8 +303,6 @@ export interface DecisionMaterialization {
   readonly resolveAction?: NativeActionAnswer;
   /** The source a dispatch observed, recorded so every later spawn reads it back. */
   readonly ticketSource?: TicketSourceRecord;
-  /** The stack a Stacked ticket's first evaluation of a work cycle runs over, written with the spawn that starts it. */
-  readonly evaluationStack?: EvaluationStack;
 }
 
 /**

@@ -20,7 +20,7 @@ import {
   stackDepthMax,
   type StackMember,
 } from "../../src/interpreter/stackChoice.ts";
-import { stackedSubject } from "./evaluationStackLandings.ts";
+import { recordStack, stackedSubject } from "./evaluationStackLandings.ts";
 import {
   finalizerCommit,
   finalizerProject,
@@ -76,10 +76,13 @@ const tables = [
 test("a stack is written once and read back as it was written", async () => {
   const project = await finalizerProject(rig, "stack-once");
   const stack = stackOf(project, [member(7), member(8)]);
-  assert.equal(await store.record(project.partition, stack), "Written");
+  assert.equal(
+    await recordStack(rig.pool, project.partition, stack),
+    "Written",
+  );
   assert.deepEqual(await store.read(project.partition, stack.ticket, 1), stack);
   assert.equal(
-    await store.record(project.partition, {
+    await recordStack(rig.pool, project.partition, {
       ...stack,
       beneath: [member(9)],
       tip: asGitObjectId(finalizerCommit()),
@@ -93,7 +96,7 @@ test("a stack is written once and read back as it was written", async () => {
 test("a stack removal is noted once", async () => {
   const project = await finalizerProject(rig, "stack-removal");
   const stack = stackOf(project, [member(7)]);
-  await store.record(project.partition, stack);
+  await recordStack(rig.pool, project.partition, stack);
   assert.equal(
     await store.remove(project.partition, stack.ticket, 1),
     "Removed",
@@ -110,7 +113,7 @@ test("a stack removal is noted once", async () => {
 test("no role changes or deletes a stack, a beneath ticket or a removal", async () => {
   const project = await finalizerProject(rig, "stack-immutable");
   const stack = stackOf(project, [member(7)]);
-  await store.record(project.partition, stack);
+  await recordStack(rig.pool, project.partition, stack);
   await store.remove(project.partition, stack.ticket, 1);
   for (const table of tables) {
     const keys = [project.partition.tenant, project.partition.project];
@@ -130,7 +133,7 @@ test("no role changes or deletes a stack, a beneath ticket or a removal", async 
 
 test("a beneath ticket is in a stack once, at a depth the stack's bound allows", async () => {
   const project = await finalizerProject(rig, "stack-beneath");
-  await store.record(project.partition, stackOf(project, [member(7)]));
+  await recordStack(rig.pool, project.partition, stackOf(project, [member(7)]));
   const keys = [
     project.partition.tenant,
     project.partition.project,
@@ -162,7 +165,7 @@ test("a stack of none or of more than the depth is refused before any row is wri
   for (const count of [0, stackDepthMax + 1]) {
     const beneath = Array.from({ length: count }, (_, at) => member(at + 7));
     await assert.rejects(
-      store.record(project.partition, stackOf(project, beneath)),
+      recordStack(rig.pool, project.partition, stackOf(project, beneath)),
       RangeError,
     );
   }
@@ -172,7 +175,7 @@ test("a stack of none or of more than the depth is refused before any row is wri
   );
   const full = Array.from({ length: stackDepthMax }, (_, at) => member(at + 7));
   assert.equal(
-    await store.record(project.partition, stackOf(project, full)),
+    await recordStack(rig.pool, project.partition, stackOf(project, full)),
     "Written",
   );
 });
@@ -188,7 +191,8 @@ test("the failure cap counts the reworks of cycles that ran over a stack, and no
   );
   assert.equal(reworked[0]?.["held"], 1, "the fixture reworked once");
   assert.equal(await store.stackFailures(project.partition, ticket), 0);
-  await store.record(
+  await recordStack(
+    rig.pool,
     project.partition,
     stackOf(project, [member(7)], { cycle: 2 }),
   );
@@ -197,7 +201,8 @@ test("the failure cap counts the reworks of cycles that ran over a stack, and no
     0,
     "a cycle that was not sent back is no failure",
   );
-  await store.record(
+  await recordStack(
+    rig.pool,
     project.partition,
     stackOf(project, [member(7)], { cycle: 1 }),
   );
@@ -216,7 +221,8 @@ test("the current stack is the record of the cycle of the ticket's latest passed
   const { project: plain } = await stackedSubject(rig, "stack-current");
   const ticket = asTicketId(plain.ticket);
   assert.equal(await store.current(plain.partition, ticket), undefined);
-  await store.record(
+  await recordStack(
+    rig.pool,
     plain.partition,
     stackOf(plain, [member(7)], { cycle: 2 }),
   );
@@ -226,6 +232,6 @@ test("the current stack is the record of the cycle of the ticket's latest passed
     "a cycle with no passed work is not the current one",
   );
   const recorded = stackOf(plain, [member(7)]);
-  await store.record(plain.partition, recorded);
+  await recordStack(rig.pool, plain.partition, recorded);
   assert.deepEqual(await store.current(plain.partition, ticket), recorded);
 });

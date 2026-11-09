@@ -8,7 +8,7 @@
 import assert from "node:assert/strict";
 import { after, before, test } from "node:test";
 
-import { postgresEvaluationStack } from "../../src/adapters/postgres/evaluationStack.ts";
+import { recordStack } from "./evaluationStackLandings.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import { asGitObjectId } from "../../src/interpreter/finalizer.ts";
 import {
@@ -73,7 +73,7 @@ async function stackRecorded(
   project: FinalizerProject,
   stackTree: string,
 ): Promise<void> {
-  await postgresEvaluationStack(rig.pool).record(project.partition, {
+  await recordStack(rig.pool, project.partition, {
     ticket: asTicketId(project.ticket),
     cycle: 1,
     repository: project.repository,

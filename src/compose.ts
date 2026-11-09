@@ -527,21 +527,6 @@ export function composeTicketServiceCredentials(
 }
 
 /**
- * What the ticket service asks a forge for to publish the stack an evaluation
- * runs over: it pushes a branch under `refs/heads/chuggy/stack/` and nothing else.
- */
-export function composeTicketServiceStackCredentials(
-  options: CredentialFilesOptions,
-  minting: RepositoryCredentialMinting | undefined,
-): RepositoryCredentialPort {
-  return composeRepositoryCredentials({
-    ...(minting === undefined ? {} : { minting }),
-    permissions: "write",
-    ...options,
-  });
-}
-
-/**
  * What the API asks a forge for: it proves a binding and reads a repository's
  * declarations, and opens nothing and pushes nothing under its own credential.
  */

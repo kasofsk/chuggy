@@ -1,8 +1,9 @@
 /**
- * The stack an evaluation runs over, as the ticket service holds it: the queue
- * read with its landings and the record written under the ticket-service role,
- * whether a cycle has started evaluating, and the stacks due to be taken down
- * read as the finalizer.
+ * The stack an evaluation runs over, as the finalizer prepares it and the ticket
+ * service reads it: a cycle prepared once as a record or as the decision to
+ * evaluate unstacked, only while it has not begun evaluating, found when it is
+ * due, read and nothing else by the ticket service, and the stacks due to be
+ * taken down.
  */
 
 import assert from "node:assert/strict";
@@ -19,6 +20,7 @@ import type {
 import { asGitObjectId } from "../../src/interpreter/finalizer.ts";
 import {
   finalizerCommit,
+  finalizerDeclareSource,
   finalizerPassedWork,
   finalizerRigOpen,
   finalizerSpawnTasks,
@@ -29,6 +31,7 @@ import {
   landingCommits,
   landingTarget,
   landingWrite,
+  recordStack,
   stackedSubject,
 } from "./evaluationStackLandings.ts";
 import { postgresHarnessRolePool } from "./harness.ts";
@@ -68,7 +71,7 @@ function stackOf(
   };
 }
 
-test("the ticket service reads the queue with its landings and the failures, and writes and reads a stack", async () => {
+test("the finalizer reads the queue with its landings and the failures, and the ticket service reads what it prepared", async () => {
   const own = finalizerCommit();
   const { project, work } = await stackedSubject(rig, "service-reads", own);
   const c = landingCommits("tip", "first", "a7");
@@ -79,12 +82,19 @@ test("the ticket service reads the queue with its landings and the failures, and
     candidate: c.first,
   });
   const stack = stackOf(project, c.tip);
-  assert.equal(await service.record(project.partition, stack), "Written");
+  assert.equal(
+    await recordStack(rig.pool, project.partition, stack),
+    "Written",
+  );
   assert.deepEqual(
     await service.read(project.partition, stack.ticket, 1),
     stack,
   );
-  const [mine] = await service.queue(
+  assert.deepEqual(await service.decision(project.partition, stack.ticket, 1), {
+    decided: "Stack",
+    record: stack,
+  });
+  const [mine] = await finalizer.queue(
     project.partition,
     project.repository,
     undefined,
@@ -94,7 +104,125 @@ test("the ticket service reads the queue with its landings and the failures, and
     mine?.stack?.landings.map((one) => [one.ticket, one.commit]),
     [[7, c.a7]],
   );
-  assert.equal(await service.stackFailures(project.partition, stack.ticket), 0);
+  assert.equal(
+    await finalizer.stackFailures(project.partition, stack.ticket),
+    0,
+  );
+});
+
+test("a cycle is prepared once, as a record or as none, and only while it has not begun evaluating", async () => {
+  const { project } = await stackedSubject(rig, "service-prepare");
+  const ticket = asTicketId(project.ticket);
+  assert.equal(
+    await finalizer.prepare(project.partition, {
+      prepared: "Stack",
+      stack: stackOf(project),
+    }),
+    "Evaluated",
+    "the fixture's cycle 1 has an evaluation registered",
+  );
+  await finalizerSpawnTasks(rig, project, [2]);
+  const none = {
+    prepared: "Unstacked",
+    ticket,
+    cycle: 2,
+    reason: "Conflicted",
+  } as const;
+  assert.equal(await finalizer.prepare(project.partition, none), "Written");
+  assert.equal(await finalizer.prepare(project.partition, none), "Present");
+  assert.equal(
+    await finalizer.prepare(project.partition, {
+      prepared: "Stack",
+      stack: stackOf(project, finalizerCommit(), 2),
+    }),
+    "Present",
+    "a cycle decided unstacked is not given a stack",
+  );
+  assert.deepEqual(await service.decision(project.partition, ticket, 2), {
+    decided: "Unstacked",
+    reason: "Conflicted",
+  });
+  assert.equal(await service.decision(project.partition, ticket, 3), undefined);
+});
+
+test("a cycle of accepted work with nothing prepared and no evaluation is found until it is prepared", async () => {
+  const { project } = await stackedSubject(rig, "service-unprepared");
+  const ticket = asTicketId(project.ticket);
+  const found = async () =>
+    (await finalizer.unprepared(1000)).filter(
+      (each) =>
+        each.partition.project === project.partition.project &&
+        each.ticket === ticket,
+    );
+  assert.deepEqual(await found(), [], "cycle 1 already evaluates");
+  await finalizerSpawnTasks(rig, project, [2]);
+  const work = await finalizerPassedWork(
+    rig,
+    project,
+    "service-unprepared-2",
+    [],
+  );
+  const accepted = finalizerCommit();
+  await finalizerDeclareSource(rig, project, work, "refs/heads/work", accepted);
+  await rig.harness.query(
+    `UPDATE ticket_projection SET phase='Work'
+      WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+    [project.partition.tenant, project.partition.project, project.ticket],
+  );
+  assert.deepEqual(
+    (await found()).map((each) => [each.cycle, each.commit, each.repository]),
+    [[2, accepted, project.repository]],
+  );
+  await finalizer.prepare(project.partition, {
+    prepared: "Unstacked",
+    ticket,
+    cycle: 2,
+    reason: "Unchosen",
+  });
+  assert.deepEqual(await found(), []);
+});
+
+test("the ticket service holds no write, queue read or door of the stack", async () => {
+  const { project } = await stackedSubject(rig, "service-denied");
+  for (const statement of [
+    "INSERT INTO evaluation_stack_none DEFAULT VALUES",
+    "INSERT INTO evaluation_stack DEFAULT VALUES",
+    "INSERT INTO evaluation_stack_removal DEFAULT VALUES",
+    "UPDATE evaluation_stack_none SET reason = reason",
+    "DELETE FROM evaluation_stack",
+  ])
+    assert.match(
+      (await rig.harness.attemptAs(ticketServiceRole, statement)) ?? "",
+      /permission denied/u,
+      statement,
+    );
+  for (const statement of [
+    "SELECT * FROM evaluation_stack LIMIT 1",
+    "SELECT * FROM evaluation_stack_beneath LIMIT 1",
+    "SELECT * FROM evaluation_stack_none LIMIT 1",
+  ])
+    assert.equal(
+      await rig.harness.attemptAs(ticketServiceRole, statement),
+      undefined,
+      statement,
+    );
+  assert.match(
+    (await rig.harness.attemptAs(
+      ticketServiceRole,
+      `SELECT * FROM ticket_finalization_rank('${project.partition.tenant}','${project.partition.project}',1)`,
+    )) ?? "",
+    /permission denied/u,
+  );
+  for (const statement of [
+    "SELECT permit FROM commit_permit LIMIT 1",
+    "SELECT verdict FROM finalization_reconciliation LIMIT 1",
+    "SELECT merge FROM finalization_change_proposal LIMIT 1",
+  ])
+    assert.match(
+      (await rig.harness.attemptAs(ticketServiceRole, statement)) ?? "",
+      /permission denied/u,
+      statement,
+    );
 });
 
 test("an evaluation is registered for the cycle it judges and no other", async () => {
@@ -118,7 +246,7 @@ test("an evaluation is registered for the cycle it judges and no other", async (
 test("a stack is due to be taken down once its ticket has begun a later cycle, and until it is noted", async () => {
   const { project } = await stackedSubject(rig, "service-removable");
   const ticket = asTicketId(project.ticket);
-  await finalizer.record(project.partition, stackOf(project));
+  await recordStack(rig.pool, project.partition, stackOf(project));
   const due = async () =>
     (await finalizer.removable(1000)).filter(
       (each) =>
@@ -140,7 +268,7 @@ test("a stack is due to be taken down once its ticket has begun a later cycle, a
 test("a stack of a Done or Revoked ticket is due to be taken down", async () => {
   for (const phase of ["Done", "Revoked"]) {
     const { project } = await stackedSubject(rig, `service-${phase}`);
-    await finalizer.record(project.partition, stackOf(project));
+    await recordStack(rig.pool, project.partition, stackOf(project));
     const due = async () =>
       (await finalizer.removable(1000)).filter(
         (each) => each.partition.project === project.partition.project,

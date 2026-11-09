@@ -346,6 +346,11 @@ const writeSurface = [
       "beneath_commit,beneath_ticket,depth,project,tenant,ticket,work_cycle",
   },
   {
+    table_name: "evaluation_stack_none",
+    privilege_type: "INSERT",
+    columns: "decided_at,project,reason,tenant,ticket,work_cycle",
+  },
+  {
     table_name: "evaluation_stack_removal",
     privilege_type: "INSERT",
     columns: "project,removed_at,tenant,ticket,work_cycle",
@@ -433,8 +438,10 @@ test("the finalizer's read surface is exactly the relations its view is gathered
       "configuration_revision",
       "evaluation_stack",
       "evaluation_stack_beneath",
+      "evaluation_stack_none",
       "evaluation_stack_removal",
       "execution",
+      "execution_request",
       "execution_request_task",
       "execution_result",
       "execution_result_artifact",
@@ -478,16 +485,7 @@ test("the finalizer's four doors are its own and no prior role may open them", a
     ],
   ] as readonly (readonly [string, string])[];
   for (const [door, name] of doors) {
-    const stacking = name === ticketFinalizationRankFunction;
-    if (stacking)
-      assert.equal(
-        await harness.attemptAs(ticketServiceRole, door),
-        undefined,
-        `${ticketServiceRole} counts the queue it stacks over: ${name}`,
-      );
-    for (const role of stacking
-      ? [apiRole, schedulerRole]
-      : [apiRole, ticketServiceRole, schedulerRole]) {
+    for (const role of [apiRole, ticketServiceRole, schedulerRole]) {
       assert.match(
         (await harness.attemptAs(role, door)) ?? "",
         postgresHarnessDenial(name),

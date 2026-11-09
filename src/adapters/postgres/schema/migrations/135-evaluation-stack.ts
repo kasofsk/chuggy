@@ -2,14 +2,14 @@
  * An evaluation of a Stacked ticket may run over the tickets ahead of it on
  * its reference, and the stack it ran over is kept.
  *
- * `evaluation_stack` HOLDS ONE ROW PER TICKET AND WORK CYCLE, WRITTEN ONCE
- * WHEN THE CYCLE'S FIRST EVALUATION SPAWNS: the tip of the reference it was
- * built on, and the commit and tree of the stack. `evaluation_stack_beneath`
- * holds the tickets beneath it, bottom first at depth 1, each with the accepted
- * commit it must land. A cycle with no row was evaluated unstacked. Neither is
- * ever changed, so a stack that stopped standing is not edited: whether it
- * stands is derived from the landings since the tip and the tickets still
- * beneath, and stored nowhere.
+ * `evaluation_stack` HOLDS ONE ROW PER TICKET AND WORK CYCLE, WRITTEN ONCE BY
+ * THE FINALIZER BEFORE THE CYCLE'S FIRST EVALUATION SPAWNS: the tip of the
+ * reference it was built on, and the commit and tree of the stack.
+ * `evaluation_stack_beneath` holds the tickets beneath it, bottom first at depth
+ * 1, each with the accepted commit it must land. A cycle with no row was
+ * evaluated unstacked. Neither is ever changed, so a stack that stopped
+ * standing is not edited: whether it stands is derived from the landings since
+ * the tip and the tickets still beneath, and stored nowhere.
  *
  * `evaluation_stack_removal` RECORDS THAT A STACK'S COMMIT WAS TAKEN DOWN from
  * the reference it was published on, once, so a sweep does not take it down

@@ -32,7 +32,6 @@ import type {
 } from "../domain/generated/modelTypes.ts";
 import type { TicketId } from "../domain/ids.ts";
 import type { DecisionInput } from "./projectDiscovery.ts";
-import type { EvaluationStack } from "./evaluationStack.ts";
 import type { ExecutionSourceObservation } from "./executionSource.ts";
 import {
   inputBundleReferencesMax,
@@ -477,8 +476,8 @@ function materializationWithdrawals(
 export interface SpawnSources {
   readonly source?: ExecutionSourceObservation;
   readonly pinned?: TicketSourceRecord;
-  /** The stack the spawn's evaluation runs over where this spawn is the first to choose it. */
-  readonly stack?: EvaluationStack;
+  /** Set where the spawn's evaluation waits for a stack the finalizer has yet to prepare. */
+  readonly stackPending?: true;
   /** The ticket's own brief images, read at the same gather and carried onto every spawn's bundle alike. */
   readonly images?: readonly BriefImageReference[];
   /** What a dispatch pins of its ticket's dependencies, which only a dispatch carries. */
@@ -527,6 +526,5 @@ export function materializationOf(
       ? {}
       : { resolveAction: input.source.nativeAction }),
     ...(spawn.pinned === undefined ? {} : { ticketSource: spawn.pinned }),
-    ...(spawn.stack === undefined ? {} : { evaluationStack: spawn.stack }),
   };
 }

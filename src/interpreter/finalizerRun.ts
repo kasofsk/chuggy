@@ -314,8 +314,8 @@ import {
   type FinalizerTelemetry,
 } from "./finalizerTelemetry.ts";
 import type { ResultManifestId } from "./resultManifest.ts";
-import type { EvaluationStackStore } from "./evaluationStack.ts";
-import { stackRefOf } from "./evaluationStacking.ts";
+import { stackRefOf, type EvaluationStackStore } from "./evaluationStack.ts";
+import { stackPrepared } from "./evaluationStacking.ts";
 import type { Partition, RecoveryEpoch } from "./projectStore.ts";
 import {
   finalizerLandingOf,
@@ -335,10 +335,16 @@ export interface FinalizerService {
   readonly git: GitPromotionPort;
   readonly forges: ChangeProposalForges;
   readonly ticketBriefs: TicketBriefPort;
-  /** Where the stacks evaluations ran over are kept: read to land a stacked ticket, taken down once their cycle is over. */
+  /** Where the stacks evaluations run over are prepared and kept: read to land a stacked ticket, taken down once their cycle is over. */
   readonly stacks?: Pick<
     EvaluationStackStore,
-    "removable" | "remove" | "current"
+    | "removable"
+    | "remove"
+    | "current"
+    | "unprepared"
+    | "prepare"
+    | "queue"
+    | "stackFailures"
   >;
   readonly handoffs: HandoffContentPort;
   readonly artifacts: ProjectArtifactPort;
@@ -2675,6 +2681,32 @@ async function finalizerAdvanceDecided(
 /** The most stacks one pass takes down. */
 const stackRemovalsPerPassMax = 8;
 
+/** The most work cycles one pass prepares a stack for. */
+const stackPreparationsPerPassMax = 8;
+
+/**
+ * Prepares the stack of every Stacked ticket's accepted work whose first
+ * evaluation has not spawned: it chooses, mints and publishes, and leaves the
+ * cycle a record or the decision to evaluate it unstacked in one transaction.
+ * A cycle nothing could be asked about is left for the next pass, and a cycle
+ * that began evaluating meanwhile is left alone.
+ */
+async function finalizerPrepareStacks(
+  service: FinalizerService,
+  epoch: RecoveryEpoch,
+): Promise<void> {
+  const stacks = service.stacks;
+  if (stacks === undefined) return;
+  for (const due of await stacks.unprepared(stackPreparationsPerPassMax)) {
+    const prepared = await stackPrepared(
+      { store: stacks, briefs: service.ticketBriefs, git: service.git },
+      epoch,
+      due,
+    );
+    if (prepared !== undefined) await stacks.prepare(due.partition, prepared);
+  }
+}
+
 /**
  * Takes down the published stack of every cycle that is over: its ticket is
  * Done or Revoked or has begun a later work cycle. The removal is noted after
@@ -2731,6 +2763,7 @@ export async function finalizerPass(
     metrics.claiming(claims.length, config.requestsPerPassMax);
   });
   for (const claim of claims) await finalizerAdvance(service, claim, tally);
+  await finalizerPrepareStacks(service, epoch);
   await finalizerSweepStacks(service, epoch);
   return {
     reopened,

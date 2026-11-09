@@ -9,6 +9,11 @@
  * the project released switched off for that one transaction.
  */
 
+import type pg from "pg";
+
+import { stackRecordWrite } from "../../src/adapters/postgres/evaluationStack.ts";
+import type { Partition } from "../../src/interpreter/projectStore.ts";
+import type { EvaluationStack } from "../../src/interpreter/evaluationStack.ts";
 import {
   finalizerBriefLanding,
   finalizerCommit,
@@ -190,4 +195,24 @@ export async function stackedSubject(
   const work = await finalizerPassedWork(rig, project, label, []);
   await finalizerDeclareSource(rig, project, work, "refs/heads/work", accepted);
   return { project, work };
+}
+
+/** Writes a stack record as the finalizer role, for a cycle whatever its evaluations are. */
+export async function recordStack(
+  pool: pg.Pool,
+  partition: Partition,
+  stack: EvaluationStack,
+): Promise<"Written" | "Present"> {
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const written = await stackRecordWrite(client, partition, stack);
+    await client.query("COMMIT");
+    return written;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
 }

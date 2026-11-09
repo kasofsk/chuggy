@@ -1,22 +1,20 @@
 /**
- * The choice made when a Stacked ticket's first evaluation of a work cycle
- * spawns, over fakes of what it reads and mints: a stack is chosen and minted
- * once, a cycle that has begun reads what it began with, and anything that
- * keeps a stack from being minted leaves the evaluation unstacked and records
- * nothing.
+ * What the finalizer prepares for a Stacked ticket's accepted work, over fakes
+ * of what it reads and mints: a stack is chosen and minted, anything that keeps
+ * one from being minted is a decision to evaluate unstacked with its reason,
+ * and what cannot be asked about is left for the next pass.
  */
 
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { asTicketId } from "../../src/domain/ids.ts";
-import type {
-  EvaluationStack,
-  EvaluationStackStore,
+import {
+  stackRefOf,
+  type EvaluationStackStore,
 } from "../../src/interpreter/evaluationStack.ts";
 import {
-  evaluationStacking,
-  stackRefOf,
+  stackPrepared,
   type EvaluationStackingPorts,
 } from "../../src/interpreter/evaluationStacking.ts";
 import {
@@ -66,8 +64,6 @@ interface Case {
 interface Over {
   queue?: readonly StackEntry[];
   policy?: "Direct" | "Serialized" | "Stacked";
-  recorded?: EvaluationStack;
-  evaluated?: boolean;
   failures?: number;
   observed?: TargetObserved;
   minted?: StackMinted;
@@ -80,14 +76,6 @@ function storeOf(
   reads: string[],
 ): EvaluationStackingPorts["store"] {
   return {
-    read: () => {
-      reads.push("read");
-      return Promise.resolve(over.recorded);
-    },
-    evaluated: () => {
-      reads.push("evaluated");
-      return Promise.resolve(over.evaluated ?? false);
-    },
     queue: () => {
       reads.push("queue");
       return over.queueFails === true
@@ -95,10 +83,7 @@ function storeOf(
         : Promise.resolve(over.queue ?? [holderEntry]);
     },
     stackFailures: () => Promise.resolve(over.failures ?? 0),
-  } satisfies Pick<
-    EvaluationStackStore,
-    "read" | "evaluated" | "queue" | "stackFailures"
-  >;
+  } satisfies Pick<EvaluationStackStore, "queue" | "stackFailures">;
 }
 
 /** The ports over a queue, a brief policy and a mint, each recording that it was asked. */
@@ -131,14 +116,6 @@ function caseOf(over: Over = {}): Case {
     ports: {
       store,
       git,
-      bindings: {
-        binding: () =>
-          Promise.resolve({
-            partition,
-            repository,
-            recoveryEpoch: asRecoveryEpoch("epoch"),
-          }),
-      },
       briefs: {
         brief: () =>
           Promise.resolve(
@@ -156,7 +133,7 @@ function caseOf(over: Over = {}): Case {
 }
 
 const ask = (c: Case, cycle = 1) =>
-  evaluationStacking(c.ports).stackOf({
+  stackPrepared(c.ports, asRecoveryEpoch("epoch"), {
     partition,
     ticket,
     cycle,
@@ -164,12 +141,18 @@ const ask = (c: Case, cycle = 1) =>
     commit: own,
   });
 
-test("the first evaluation of a cycle chooses the stack, mints it and hands back the record to write", async () => {
+const unstacked = (reason: "Unchosen" | "Conflicted" | "Unpublished") => ({
+  prepared: "Unstacked",
+  ticket,
+  cycle: 1,
+  reason,
+});
+
+test("a Stacked ticket's accepted work chooses the stack, mints it and hands back the record", async () => {
   const c = caseOf();
-  const stacked = await ask(c);
-  assert.deepEqual(stacked, {
-    fresh: true,
-    record: {
+  assert.deepEqual(await ask(c), {
+    prepared: "Stack",
+    stack: {
       ticket,
       cycle: 1,
       repository,
@@ -187,42 +170,18 @@ test("the first evaluation of a cycle chooses the stack, mints it and hands back
   assert.equal(c.mints[0]?.ref, "refs/heads/chuggy/stack/2/1");
 });
 
-test("a cycle that has a record reads it and mints nothing", async () => {
-  const record: EvaluationStack = {
-    ticket,
-    cycle: 1,
-    repository,
-    target: "refs/heads/main",
-    tip,
-    beneath: [{ ticket: asTicketId(1), commit: holder }],
-    stackCommit,
-    stackTree,
-  };
-  const c = caseOf({ recorded: record });
-  assert.deepEqual(await ask(c), { record, fresh: false });
-  assert.deepEqual(c.mints, []);
-  assert.deepEqual(c.reads, ["read"]);
-});
-
-test("a cycle that began evaluating unstacked stays unstacked and mints nothing", async () => {
-  const c = caseOf({ evaluated: true });
-  assert.equal(await ask(c), undefined);
-  assert.deepEqual(c.mints, []);
-  assert.deepEqual(c.reads, ["read", "evaluated"]);
-});
-
 test("only a Stacked ticket stacks, and the queue is not read for any other", async () => {
   for (const policy of ["Serialized", "Direct"] as const) {
     const c = caseOf({ policy });
     assert.equal(await ask(c), undefined, policy);
     assert.deepEqual(c.mints, []);
-    assert.ok(!c.reads.includes("queue"));
+    assert.deepEqual(c.reads, []);
   }
 });
 
 test("nothing ahead, or a ticket at its failure cap, is evaluated unstacked", async () => {
   for (const c of [caseOf({ queue: [] }), caseOf({ failures: 2 })]) {
-    assert.equal(await ask(c), undefined);
+    assert.deepEqual(await ask(c), unstacked("Unchosen"));
     assert.deepEqual(c.mints, []);
   }
 });
@@ -235,22 +194,23 @@ test("a barrier ahead is evaluated unstacked", async () => {
     rank: 2,
   };
   const c = caseOf({ queue: [holderEntry, barrier] });
-  assert.equal(await ask(c), undefined);
+  assert.deepEqual(await ask(c), unstacked("Unchosen"));
   assert.deepEqual(c.mints, []);
 });
 
 test("a merge that conflicts or a push the remote refuses is evaluated unstacked", async () => {
-  for (const minted of [
-    { minted: "Conflicted" },
-    { minted: "Failed", evidence: "RemoteDeclined" },
-  ] as const) {
+  const cases = [
+    [{ minted: "Conflicted" }, "Conflicted"],
+    [{ minted: "Failed", evidence: "RemoteDeclined" }, "Unpublished"],
+  ] as const;
+  for (const [minted, reason] of cases) {
     const c = caseOf({ minted });
-    assert.equal(await ask(c), undefined);
+    assert.deepEqual(await ask(c), unstacked(reason));
     assert.equal(c.mints.length, 1);
   }
 });
 
-test("a target nobody can read, or a queue too large to read, is evaluated unstacked", async () => {
+test("a target nobody can read, or a queue too large to read, is left for the next pass", async () => {
   const unread = caseOf({
     observed: { observed: "Unreadable", evidence: "RemoteUnreachable" },
   });

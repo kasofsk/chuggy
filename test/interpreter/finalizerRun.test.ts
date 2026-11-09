@@ -5061,6 +5061,10 @@ function stacksDue(
   return {
     noted,
     current: () => Promise.resolve(undefined),
+    unprepared: () => Promise.resolve([]),
+    prepare: () => Promise.resolve("Present"),
+    queue: () => Promise.resolve([]),
+    stackFailures: () => Promise.resolve(0),
     removable: () =>
       Promise.resolve(
         cycles.map((cycle) => ({
@@ -5095,4 +5099,85 @@ test("a stack whose ref would not come down is not noted, so a later pass tries 
   await passOver({ ...serviceOf(recordingStore([]), remote), stacks });
   assert.equal(remote.stackRemovals.length, 1);
   assert.deepEqual(stacks.noted, []);
+});
+
+type StackPreparation = Parameters<
+  NonNullable<FinalizerService["stacks"]>["prepare"]
+>[1];
+
+/** A store of stacks to prepare, noting each preparation it is told of. */
+function stacksUnprepared(cycles: readonly number[]): NonNullable<
+  FinalizerService["stacks"]
+> & {
+  prepared: StackPreparation[];
+} {
+  const prepared: StackPreparation[] = [];
+  return {
+    ...stacksDue([]),
+    prepared,
+    queue: () =>
+      Promise.resolve([
+        {
+          ticket: asTicketId(2),
+          policy: "Serialized",
+          phase: "Pending",
+          rank: 1,
+          commit: asGitObjectId(commitOf("a")),
+          stack: undefined,
+        },
+      ]),
+    unprepared: () =>
+      Promise.resolve(
+        cycles.map((cycle) => ({
+          partition,
+          ticket: asTicketId(1),
+          cycle,
+          repository: "repository-run",
+          commit: asGitObjectId(commitOf("c")),
+        })),
+      ),
+    prepare: (_partition, one) => {
+      prepared.push(one);
+      return Promise.resolve("Written");
+    },
+  };
+}
+
+const stackedBriefs = () => briefsOf(undefined, undefined, "Push", "Stacked");
+
+test("a pass prepares each cycle of a Stacked ticket's accepted work, as the decision to evaluate it unstacked where the merge conflicts", async () => {
+  const stacks = stacksUnprepared([1, 2]);
+  await passOver({
+    ...serviceOf(recordingStore([]), recordingGit()),
+    ticketBriefs: stackedBriefs(),
+    stacks,
+  });
+  assert.deepEqual(
+    stacks.prepared.map((one) => [one.prepared, "reason" in one && one.reason]),
+    [
+      ["Unstacked", "Conflicted"],
+      ["Unstacked", "Conflicted"],
+    ],
+  );
+});
+
+test("a pass prepares nothing for a ticket that is not Stacked", async () => {
+  const stacks = stacksUnprepared([1]);
+  await passOver({
+    ...serviceOf(recordingStore([]), recordingGit()),
+    stacks,
+  });
+  assert.deepEqual(stacks.prepared, []);
+});
+
+test("a cycle whose target nobody could read is left unprepared for the next pass", async () => {
+  const remote = recordingGit();
+  remote.observed = { observed: "Unreadable", evidence: "RemoteUnreachable" };
+  const stacks = stacksUnprepared([1]);
+  await passOver({
+    ...serviceOf(recordingStore([]), remote),
+    ticketBriefs: stackedBriefs(),
+    stacks,
+  });
+  assert.deepEqual(stacks.prepared, []);
 });

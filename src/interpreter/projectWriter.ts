@@ -167,7 +167,11 @@ export class IntegrityContradiction extends Error {}
  * A deferred input is still pending, so a later quantum decides it.
  */
 export type InputDecided =
-  Decided | { readonly decided: "Deferred"; readonly evidence: GitEvidence };
+  | Decided
+  | { readonly decided: "Deferred"; readonly evidence: DeferralEvidence };
+
+/** Why an input is left pending: a source nobody could read, or a stack the finalizer has yet to prepare. */
+export type DeferralEvidence = GitEvidence | "StackPending";
 
 /** A decision's outcome and the memory it leaves behind, which is the old one unless it committed. */
 export interface ProjectDecided {
@@ -835,12 +839,14 @@ export function projectWriterSpawnSourceRef(state: TicketState): number {
  * are facts already written down, and its change base may also rest on an
  * ancestry answer, which may fetch history from the remote, about whether that
  * commit descends from a failed landing's base, save that a Stacked ticket's
- * first evaluation of a cycle may mint the stack it runs over.
+ * first evaluation of a cycle reads the stack the finalizer prepared for it,
+ * and is deferred while there is none.
  */
 async function projectWriterSpawnSources(
   writer: ProjectTicketWriter,
   memory: ProjectMemory,
   decision: SuccessfulTicketDecision,
+  deferredPasses: number,
 ): Promise<SpawnSources> {
   const spawn = decision.obligations.find(
     (obligation) => obligation.type === "ExecuteTask",
@@ -853,6 +859,7 @@ async function projectWriterSpawnSources(
     ticket,
     source: projectWriterSpawnSourceRef(state),
     kind: spawn.value.task.task.type === "WorkTask" ? "Work" : "Evaluation",
+    deferredPasses,
     ...(typeof state !== "string" && state.type === "Evaluation"
       ? { cycle: state.value.workCycle }
       : {}),
@@ -865,7 +872,7 @@ async function projectWriterSpawnSources(
   );
   return {
     ...(source === undefined ? {} : { source }),
-    ...(source?.stack?.fresh === true ? { stack: source.stack.record } : {}),
+    ...(source?.stackPending === true ? { stackPending: true as const } : {}),
     ...(images.length === 0 ? {} : { images }),
   };
 }
@@ -953,7 +960,7 @@ async function projectWriterDispatchPlan(
   memory: ProjectMemory,
   item: DecisionInput,
   ticket: TicketId,
-): Promise<ProjectPlan | { readonly deferred: GitEvidence }> {
+): Promise<ProjectPlan | { readonly deferred: DeferralEvidence }> {
   const observed = await projectWriterDispatchSource(writer, memory, ticket);
   if (observed.observed !== "Source") {
     const landing = projectWriterUnreadableLanding(
@@ -1028,14 +1035,16 @@ async function projectWriterPlan(
   item: DecisionInput,
   command: TicketCommand,
   decision: SuccessfulTicketDecision,
-): Promise<ProjectPlan> {
-  return journaledPlan(
+): Promise<ProjectPlan | { readonly deferred: DeferralEvidence }> {
+  const spawn = await projectWriterSpawnSources(
+    writer,
     memory,
-    item,
-    command,
     decision,
-    await projectWriterSpawnSources(writer, memory, decision),
+    item.deferredPasses,
   );
+  return spawn.stackPending === true
+    ? { deferred: "StackPending" }
+    : journaledPlan(memory, item, command, decision, spawn);
 }
 
 /**

@@ -1,18 +1,32 @@
 /**
- * The stack an evaluation ran over, kept once per ticket and work cycle, and
- * the facts a choice of the next stack is made from. `stackChoice.ts` decides;
- * this is the door it is gathered through and the record it leaves.
+ * The stack an evaluation runs over, prepared once per ticket and work cycle
+ * by the finalizer before the cycle's first evaluation spawns, and the facts a
+ * choice of the next stack is made from. `stackChoice.ts` decides; this is the
+ * door it is gathered through and what it leaves.
  *
- * A cycle with no record was evaluated unstacked. A record is written when the
- * cycle's first evaluation spawns and never changes: whether it stands is
- * derived each time from the landings since its tip and the tickets still
- * beneath, and kept nowhere.
+ * A cycle is left either a record or an explicit decision to evaluate
+ * unstacked, never both, and neither ever changes. A cycle with neither is not
+ * yet prepared: its spawn waits, up to a bound, and then evaluates unstacked
+ * and is never prepared afterwards. Whether a record stands is derived each
+ * time from the landings since its tip and the tickets still beneath, and kept
+ * nowhere.
  */
 
 import type { TicketId } from "../domain/ids.ts";
-import type { GitObjectId } from "./finalizer.ts";
+import {
+  asGitRefName,
+  type GitObjectId,
+  type GitRefName,
+} from "./finalizer.ts";
 import type { Partition } from "./projectStore.ts";
 import type { StackEntry, StackMember } from "./stackChoice.ts";
+
+/** The ref a cycle's stack commit is published at, which a plain clone fetches. */
+export function stackRefOf(ticket: number, cycle: number): GitRefName {
+  return asGitRefName(
+    `refs/heads/chuggy/stack/${String(ticket)}/${String(cycle)}`,
+  );
+}
 
 /** One cycle's stack, as it was written. */
 export interface EvaluationStack {
@@ -29,6 +43,39 @@ export interface EvaluationStack {
   readonly stackTree: GitObjectId;
 }
 
+/** Why a cycle was decided unstacked. */
+export const unstackedReasons = [
+  "Unchosen",
+  "Conflicted",
+  "Unpublished",
+] as const;
+export type UnstackedReason = (typeof unstackedReasons)[number];
+
+/** What preparing a cycle left: the stack, or the reason it is evaluated unstacked. */
+export type StackPrepared =
+  | { readonly prepared: "Stack"; readonly stack: EvaluationStack }
+  | {
+      readonly prepared: "Unstacked";
+      readonly ticket: TicketId;
+      readonly cycle: number;
+      readonly reason: UnstackedReason;
+    };
+
+/** What a cycle was prepared as, absent where it has not been. */
+export type StackDecision =
+  | { readonly decided: "Stack"; readonly record: EvaluationStack }
+  | { readonly decided: "Unstacked"; readonly reason: UnstackedReason };
+
+/** A Stacked ticket's accepted work whose cycle has no evaluation, record or decision yet. */
+export interface UnpreparedStack {
+  readonly partition: Partition;
+  readonly ticket: TicketId;
+  readonly cycle: number;
+  readonly repository: string;
+  /** The commit the work was accepted at. */
+  readonly commit: GitObjectId;
+}
+
 /** A stack due to be taken down, with the project it was written in. */
 export interface RemovableStack {
   readonly partition: Partition;
@@ -38,11 +85,23 @@ export interface RemovableStack {
 }
 
 export interface EvaluationStackStore {
-  /** Writes the record unless the cycle has one, and says which it was. */
-  record(
+  /**
+   * Leaves the cycle its preparation, in one transaction, unless the cycle
+   * already has one (`Present`) or has already begun evaluating
+   * (`Evaluated`), in which case nothing is written.
+   */
+  prepare(
     partition: Partition,
-    stack: EvaluationStack,
-  ): Promise<"Written" | "Present">;
+    prepared: StackPrepared,
+  ): Promise<"Written" | "Present" | "Evaluated">;
+  /** The accepted work of Stacked tickets nothing has yet prepared, at most `limit` of them. */
+  unprepared(limit: number): Promise<readonly UnpreparedStack[]>;
+  /** What the cycle was prepared as. */
+  decision(
+    partition: Partition,
+    ticket: TicketId,
+    cycle: number,
+  ): Promise<StackDecision | undefined>;
   read(
     partition: Partition,
     ticket: TicketId,

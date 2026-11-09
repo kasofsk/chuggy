@@ -23,7 +23,7 @@ import {
   type RepositoryBinding,
   type StackMinting,
 } from "../../src/interpreter/finalizer.ts";
-import { stackRefOf } from "../../src/interpreter/evaluationStacking.ts";
+import { stackRefOf } from "../../src/interpreter/evaluationStack.ts";
 import {
   asProjectId,
   asRecoveryEpoch,

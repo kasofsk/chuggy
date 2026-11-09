@@ -41,14 +41,16 @@ export interface ExecutionSourceObservation {
    */
   readonly expectedTree?: GitObjectId;
   /**
-   * The stack the evaluation runs over, where its work cycle has one: the
-   * target above is then the stack's commit and the expected tree its tree. It
-   * is `fresh` where this spawn chose it and it is yet to be written.
+   * The stack the evaluation runs over, where its work cycle was prepared with
+   * one: the target above is then the stack's commit and the expected tree its
+   * tree.
    */
-  readonly stack?: {
-    readonly record: EvaluationStack;
-    readonly fresh: boolean;
-  };
+  readonly stack?: { readonly record: EvaluationStack };
+  /**
+   * Set where the cycle has been prepared neither with a stack nor without, and
+   * the spawn is to wait for the finalizer rather than choose.
+   */
+  readonly stackPending?: true;
 }
 
 /**
@@ -98,5 +100,7 @@ export interface ExecutionSourceObservationPort {
     readonly kind: "Work" | "Evaluation";
     /** The work cycle an evaluation judges, which keys its stack. */
     readonly cycle?: number;
+    /** How many passes have already waited on this input, which bounds a wait for a stack. */
+    readonly deferredPasses?: number;
   }): Promise<ExecutionSourceObservation | undefined>;
 }

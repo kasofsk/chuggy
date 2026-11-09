@@ -41,7 +41,6 @@ import type {
 import {
   composeFinalizerService,
   composeForgeRepositoryMinting,
-  composeTicketServiceStackCredentials,
   composeSelectorRuntime,
   composeTicketServiceCredentials,
   type FinalizerServiceRuntime,
@@ -88,7 +87,7 @@ import {
 } from "../adapters/postgres/evaluationReports.ts";
 import { postgresEvaluationStack } from "../adapters/postgres/evaluationStack.ts";
 import { postgresTicketBrief } from "../adapters/postgres/ticketBrief.ts";
-import { evaluationStacking } from "../interpreter/evaluationStacking.ts";
+import { evaluationStackSpawn } from "../interpreter/evaluationStackSpawn.ts";
 import { postgresTicketLandings } from "../adapters/postgres/ticketLandings.ts";
 import {
   postgresDependencyPins,
@@ -516,26 +515,18 @@ export interface TicketServiceProcessRootConfig {
   readonly forge?: ForgeAppKey;
 }
 
-/** The choice of a stack to evaluate over, which mints through the one write-permission composition the ticket service holds. */
-function ticketServiceStacking(
-  pool: pg.Pool,
-  config: TicketServiceProcessRootConfig,
-  git: ReturnType<typeof gitPromotion>,
-  bindings: ReturnType<typeof postgresProjectRepositoryBinding>,
-  minting: ReturnType<typeof composeForgeRepositoryMinting>,
-): ReturnType<typeof evaluationStacking> {
-  const stackGit = gitPromotion({
-    ...config.source,
-    credentials: composeTicketServiceStackCredentials(config.source, minting),
-  });
-  return evaluationStacking({
-    store: postgresEvaluationStack(pool),
-    briefs: postgresTicketBrief(pool),
-    bindings,
-    git: {
-      observeTarget: (repository) => git.observeTarget(repository),
-      mintStack: (stack) => stackGit.mintStack(stack),
-    },
+function ticketServiceAncestry(
+  source: TicketServiceProcessRootConfig["source"],
+  credentials: ReturnType<typeof composeTicketServiceCredentials>,
+) {
+  return gitCommitAncestry({
+    scratchDirectory: source.scratchDirectory,
+    identity: source.identity,
+    environment: source.environment,
+    credentials,
+    ...(source.credentialUsername === undefined
+      ? {}
+      : { credentialUsername: source.credentialUsername }),
   });
 }
 
@@ -544,19 +535,14 @@ export function ticketServiceProcessRoot(
   config: TicketServiceProcessRootConfig,
 ): ServiceRuntime {
   const pool = processPool(config.database);
-  const minting = composeForgeRepositoryMinting(pool, config.forge, "Settled");
-  const credentials = composeTicketServiceCredentials(config.source, minting);
+  const credentials = composeTicketServiceCredentials(
+    config.source,
+    composeForgeRepositoryMinting(pool, config.forge, "Settled"),
+  );
   const git = gitPromotion({ ...config.source, credentials });
   const bindings = postgresProjectRepositoryBinding(pool);
-  const ancestry = gitCommitAncestry({
-    scratchDirectory: config.source.scratchDirectory,
-    identity: config.source.identity,
-    environment: config.source.environment,
-    credentials,
-    ...(config.source.credentialUsername === undefined
-      ? {}
-      : { credentialUsername: config.source.credentialUsername }),
-  });
+  const briefs = postgresTicketBrief(pool);
+  const ancestry = ticketServiceAncestry(config.source, credentials);
   const service: TicketServiceRuntimeService = {
     domain: config.domain,
     rework: checkedReworkCap(config.rework),
@@ -570,9 +556,9 @@ export function ticketServiceProcessRoot(
       git,
       postgresExecutionSourceHistory(pool),
       ancestry,
-      ticketServiceStacking(pool, config, git, bindings, minting),
+      evaluationStackSpawn({ store: postgresEvaluationStack(pool), briefs }),
     ),
-    ticketBriefs: postgresTicketBrief(pool),
+    ticketBriefs: briefs,
     projectArtifacts: artifactStore({ root: config.artifacts.root }),
     dependencyPinning: dependencyPinning({
       results: postgresDependencyResults(pool),

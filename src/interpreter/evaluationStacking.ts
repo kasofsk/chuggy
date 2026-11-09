@@ -1,135 +1,123 @@
 /**
- * What a Stacked ticket's evaluation runs over, decided when the first
- * evaluation of a work cycle spawns and read, never decided again, by every
- * spawn after it.
+ * What a Stacked ticket's evaluation runs over, decided by the finalizer once
+ * per work cycle, before the cycle's first evaluation spawns, and read, never
+ * decided again, by that spawn and every one after it.
  *
- * A CYCLE'S STACK IS CHOSEN ONCE. The first spawn computes `stackFor` from the
- * queue, mints the stack commit and hands back the record to be written with
- * that spawn's own decision. A cycle that has already started an evaluation
- * keeps what it started with, so a later stage, a re-ask of a blocked evaluator
- * and a re-preparation read the record, and where there is none the cycle was
- * evaluated unstacked and stays so.
+ * A CYCLE'S STACK IS CHOSEN ONCE. `stackPrepared` computes `stackFor` from the
+ * queue, mints the stack commit, publishes it, and hands back what the finalizer
+ * writes in one transaction: the record, or the reason the cycle is evaluated
+ * unstacked. A cycle that has begun evaluating keeps what it began with.
  *
- * A STACK THAT CANNOT BE MINTED IS NO STACK. A merge that conflicts, a push the
- * remote refuses, a target or an object that cannot be read: the evaluation
- * runs unstacked over the candidate's accepted commit, nothing is recorded and
- * no failure is counted.
+ * A STACK THAT CANNOT BE MINTED IS A DECISION, AND ONE THAT CANNOT BE ASKED
+ * ABOUT IS NOT. A merge that conflicts, a push the remote refuses, a queue with
+ * nothing to stack over, a failure cap and a barrier each leave the cycle
+ * decided unstacked. A target nobody could read, or a queue too large to read,
+ * leaves nothing, and the next pass asks again.
  */
 
-import type { TicketId } from "../domain/ids.ts";
-import type {
-  EvaluationStack,
-  EvaluationStackStore,
+import {
+  stackRefOf,
+  type EvaluationStackStore,
+  type StackPrepared,
+  type UnpreparedStack,
+  type UnstackedReason,
 } from "./evaluationStack.ts";
 import {
-  asGitRefName,
+  asRepositoryId,
   repositoryTargetObserved,
-  type GitObjectId,
   type GitPromotionPort,
-  type GitRefName,
-  type RepositoryId,
 } from "./finalizer.ts";
-import type { Partition } from "./projectStore.ts";
-import type { ProjectRepositoryBindingRead } from "./repositoryConfiguration.ts";
+import type { RecoveryEpoch } from "./projectStore.ts";
 import { stackFor } from "./stackChoice.ts";
 import { briefLandsOn, type TicketBriefPort } from "./ticketBrief.ts";
 
-/** The ref a cycle's stack commit is published at, which a plain clone fetches. */
-export function stackRefOf(ticket: number, cycle: number): GitRefName {
-  return asGitRefName(
-    `refs/heads/chuggy/stack/${String(ticket)}/${String(cycle)}`,
-  );
-}
-
-/** The stack a spawn's evaluation runs over, and whether this spawn is the one to record it. */
-export interface StackedEvaluation {
-  readonly record: EvaluationStack;
-  readonly fresh: boolean;
-}
-
-export interface EvaluationStacking {
-  stackOf(input: {
-    readonly partition: Partition;
-    readonly ticket: TicketId;
-    readonly cycle: number;
-    readonly repository: RepositoryId;
-    /** The commit the candidate's work was accepted at. */
-    readonly commit: GitObjectId;
-  }): Promise<StackedEvaluation | undefined>;
-}
-
 export interface EvaluationStackingPorts {
-  readonly store: Pick<
-    EvaluationStackStore,
-    "read" | "evaluated" | "queue" | "stackFailures"
-  >;
+  readonly store: Pick<EvaluationStackStore, "queue" | "stackFailures">;
   readonly briefs: TicketBriefPort;
-  readonly bindings: ProjectRepositoryBindingRead;
   readonly git: Pick<GitPromotionPort, "observeTarget" | "mintStack">;
 }
 
-export function evaluationStacking(
+async function queueRead(
   ports: EvaluationStackingPorts,
-): EvaluationStacking {
+  due: UnpreparedStack,
+  target: ReturnType<typeof briefLandsOn>,
+) {
+  return Promise.all([
+    ports.store.queue(due.partition, due.repository, target),
+    ports.store.stackFailures(due.partition, due.ticket),
+  ]).catch((): undefined => undefined);
+}
+
+/**
+ * What the cycle of a ticket whose work was accepted is to be left, or nothing
+ * where the question cannot be answered now.
+ */
+export async function stackPrepared(
+  ports: EvaluationStackingPorts,
+  epoch: RecoveryEpoch,
+  due: UnpreparedStack,
+): Promise<StackPrepared | undefined> {
+  const { partition, ticket, cycle, commit } = due;
+  const brief = await ports.briefs.brief(partition, ticket);
+  if (
+    brief?.finalization?.kind !== "GitMerge" ||
+    brief.finalization.policy !== "Stacked"
+  )
+    return undefined;
+  const unstacked = (reason: UnstackedReason): StackPrepared => ({
+    prepared: "Unstacked",
+    ticket,
+    cycle,
+    reason,
+  });
+  const binding = {
+    partition,
+    repository: asRepositoryId(due.repository),
+    recoveryEpoch: epoch,
+  };
+  const target = briefLandsOn(brief);
+  const observed = await repositoryTargetObserved(
+    ports.git,
+    binding,
+    target,
+  ).catch((): undefined => undefined);
+  if (observed?.observed !== "Target") return undefined;
+  const read = await queueRead(ports, due, target);
+  if (read === undefined) return undefined;
+  const [queue, stackFailures] = read;
+  const beneath = stackFor(
+    {
+      ticket,
+      policy: "Stacked",
+      stackFailures,
+      rank: queue.find((entry) => entry.ticket === ticket)?.rank,
+    },
+    queue,
+  );
+  if (beneath === undefined) return unstacked("Unchosen");
+  const minted = await ports.git
+    .mintStack({
+      repository: binding,
+      tip: observed.target,
+      beneath: beneath.map((member) => member.commit),
+      candidate: commit,
+      ref: stackRefOf(ticket, cycle),
+    })
+    .catch((): undefined => undefined);
+  if (minted === undefined || minted.minted === "Failed")
+    return unstacked("Unpublished");
+  if (minted.minted === "Conflicted") return unstacked("Conflicted");
   return {
-    stackOf: async (input) => {
-      const { partition, ticket, cycle, repository, commit } = input;
-      const recorded = await ports.store.read(partition, ticket, cycle);
-      if (recorded !== undefined) return { record: recorded, fresh: false };
-      if (await ports.store.evaluated(partition, ticket, cycle))
-        return undefined;
-      const brief = await ports.briefs.brief(partition, ticket);
-      if (
-        brief?.finalization?.kind !== "GitMerge" ||
-        brief.finalization.policy !== "Stacked"
-      )
-        return undefined;
-      const binding = await ports.bindings.binding(partition, repository);
-      if (binding === undefined) return undefined;
-      const target = briefLandsOn(brief);
-      const observed = await repositoryTargetObserved(
-        ports.git,
-        binding,
-        target,
-      );
-      if (observed.observed !== "Target") return undefined;
-      const read = await Promise.all([
-        ports.store.queue(partition, repository, target),
-        ports.store.stackFailures(partition, ticket),
-      ]).catch((): undefined => undefined);
-      if (read === undefined) return undefined;
-      const [queue, stackFailures] = read;
-      const beneath = stackFor(
-        {
-          ticket,
-          policy: "Stacked",
-          stackFailures,
-          rank: queue.find((entry) => entry.ticket === ticket)?.rank,
-        },
-        queue,
-      );
-      if (beneath === undefined) return undefined;
-      const minted = await ports.git.mintStack({
-        repository: binding,
-        tip: observed.target,
-        beneath: beneath.map((member) => member.commit),
-        candidate: commit,
-        ref: stackRefOf(ticket, cycle),
-      });
-      if (minted.minted !== "Stack") return undefined;
-      return {
-        record: {
-          ticket,
-          cycle,
-          repository,
-          target: observed.target.ref,
-          tip: observed.target.commit,
-          beneath,
-          stackCommit: minted.commit,
-          stackTree: minted.tree,
-        },
-        fresh: true,
-      };
+    prepared: "Stack",
+    stack: {
+      ticket,
+      cycle,
+      repository: due.repository,
+      target: observed.target.ref,
+      tip: observed.target.commit,
+      beneath,
+      stackCommit: minted.commit,
+      stackTree: minted.tree,
     },
   };
 }

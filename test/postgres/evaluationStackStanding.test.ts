@@ -24,6 +24,7 @@ import {
   landingTarget,
   landingWrite,
   stackedSubject,
+  recordStack,
 } from "./evaluationStackLandings.ts";
 
 let rig: FinalizerRig;
@@ -44,7 +45,7 @@ async function stackedOn(
   beneath: readonly { ticket: number; commit: string }[],
   cycle = 1,
 ): Promise<void> {
-  await store.record(project.partition, {
+  await recordStack(rig.pool, project.partition, {
     ticket: asTicketId(project.ticket),
     cycle,
     repository: project.repository,

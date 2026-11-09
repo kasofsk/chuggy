@@ -1,7 +1,14 @@
 /**
- * PostgreSQL's side of the stack an evaluation runs over: the record written
- * once per ticket and work cycle, and the plain data `stackChoice.ts` chooses
- * from, gathered for one reference.
+ * PostgreSQL's side of the stack an evaluation runs over: what the finalizer
+ * leaves once per ticket and work cycle, a record or the decision to evaluate
+ * unstacked, and the plain data `stackChoice.ts` chooses from, gathered for one
+ * reference.
+ *
+ * A CYCLE IS PREPARED IN ONE TRANSACTION, AND ONLY WHILE IT HAS NOT BEGUN
+ * EVALUATING. The record, its beneath rows or the decision are written
+ * together, and nothing is written for a cycle that has an evaluation
+ * registered, which is what keeps a late preparation from stacking an
+ * evaluation that already ran unstacked.
  *
  * STANDING IS DERIVED HERE AND STORED NOWHERE. A recorded stack's landings are
  * the finalization attempts promoted onto its reference since its tip, followed
@@ -33,7 +40,12 @@ import type {
   EvaluationStack,
   EvaluationStackStore,
   RemovableStack,
+  StackDecision,
+  StackPrepared,
+  UnpreparedStack,
+  UnstackedReason,
 } from "../../interpreter/evaluationStack.ts";
+import { unstackedReasons } from "../../interpreter/evaluationStack.ts";
 import { asGitObjectId } from "../../interpreter/finalizer.ts";
 import {
   asProjectId,
@@ -80,6 +92,15 @@ interface RecordRow {
   readonly beneath_commit: string | null;
 }
 
+interface UnpreparedRow {
+  readonly tenant: string;
+  readonly project: string;
+  readonly ticket: string;
+  readonly repository: string | null;
+  readonly commit: string;
+  readonly cycle: string;
+}
+
 interface RemovableRow {
   readonly tenant: string;
   readonly project: string;
@@ -100,6 +121,15 @@ function stackPhaseOf(phase: string, evaluating: boolean): StackPhase {
   if (known === "Evaluation") return evaluating ? "Evaluation" : "Ready";
   if (known === "Finalization") return "Pending";
   throw new Error(`evaluation stack: a ticket in ${phase} is in no queue`);
+}
+
+function stackReasonOf(reason: string): UnstackedReason {
+  const known = unstackedReasons.find((word) => word === reason);
+  if (known === undefined)
+    throw new Error(
+      `evaluation stack: ${reason} is no reason to evaluate unstacked`,
+    );
+  return known;
 }
 
 function stackRecordsOf(rows: readonly RecordRow[]): EvaluationStack[] {
@@ -244,6 +274,130 @@ export async function stackRecordWrite(
   return "Written";
 }
 
+async function stackUnstackedWrite(
+  client: pg.PoolClient,
+  partition: Partition,
+  prepared: Extract<StackPrepared, { readonly prepared: "Unstacked" }>,
+): Promise<"Written" | "Present"> {
+  const written = await client.query(
+    sql`INSERT INTO evaluation_stack_none (tenant, project, ticket, work_cycle, reason)
+        VALUES (${partition.tenant}, ${partition.project}, ${prepared.ticket},
+                ${prepared.cycle}, ${prepared.reason})
+        ON CONFLICT (tenant, project, ticket, work_cycle) DO NOTHING`,
+  );
+  return written.rowCount === 0 ? "Present" : "Written";
+}
+
+async function stackPrepare(
+  pool: pg.Pool,
+  partition: Partition,
+  prepared: StackPrepared,
+): Promise<"Written" | "Present" | "Evaluated"> {
+  const ticket =
+    prepared.prepared === "Stack" ? prepared.stack.ticket : prepared.ticket;
+  const cycle =
+    prepared.prepared === "Stack" ? prepared.stack.cycle : prepared.cycle;
+  return postgresTransaction(pool, async (client) => {
+    if (await stackEvaluated(client, partition, ticket, cycle))
+      return "Evaluated";
+    const decided = await client.query(
+      sql`SELECT 1 AS found FROM evaluation_stack
+           WHERE tenant = ${partition.tenant} AND project = ${partition.project}
+             AND ticket = ${ticket} AND work_cycle = ${cycle}
+          UNION ALL
+          SELECT 1 FROM evaluation_stack_none
+           WHERE tenant = ${partition.tenant} AND project = ${partition.project}
+             AND ticket = ${ticket} AND work_cycle = ${cycle}`,
+    );
+    if (decided.rowCount !== 0) return "Present";
+    return prepared.prepared === "Stack"
+      ? stackRecordWrite(client, partition, prepared.stack)
+      : stackUnstackedWrite(client, partition, prepared);
+  });
+}
+
+async function stackUnprepared(
+  pool: pg.Pool,
+  limit: number,
+): Promise<readonly UnpreparedStack[]> {
+  const found = await pool.query<UnpreparedRow>(
+    sql`SELECT d.tenant, d.project, d.ticket::text AS ticket,
+               d.brief->>'repository' AS repository, w.commit, w.cycle::text AS cycle
+          FROM ticket_definition d
+          JOIN ticket_projection p
+            ON p.tenant = d.tenant AND p.project = d.project AND p.ticket = d.ticket
+          JOIN LATERAL (
+            SELECT s.commit, t.cycle
+              FROM execution e
+              JOIN execution_request_task t
+                ON t.tenant = e.tenant AND t.project = e.project
+                   AND t.request = e.source_request AND t.task = e.task
+              JOIN execution_result r
+                ON r.tenant = e.tenant AND r.project = e.project
+                   AND r.execution = e.execution
+              JOIN execution_result_source s
+                ON s.tenant = r.tenant AND s.project = r.project
+                   AND s.manifest = r.manifest
+             WHERE e.tenant = d.tenant AND e.project = d.project
+               AND e.ticket = d.ticket AND t.kind = 'Work'
+               AND e.status = 'Terminal' AND e.outcome = 'Passed'
+               AND r.verdict = 'Pass'
+             ORDER BY t.cycle DESC, e.task DESC LIMIT 1) w ON true
+         WHERE d.brief->>'landing' = 'Stacked'
+           AND d.brief->'finalization'->>'mode' IN ('Push', 'PullRequestMerge')
+           AND p.phase = 'Work'
+           AND d.brief->>'repository' IS NOT NULL
+           AND NOT EXISTS (
+                 SELECT 1 FROM evaluation_stack k
+                  WHERE k.tenant = d.tenant AND k.project = d.project
+                    AND k.ticket = d.ticket AND k.work_cycle = w.cycle)
+           AND NOT EXISTS (
+                 SELECT 1 FROM evaluation_stack_none k
+                  WHERE k.tenant = d.tenant AND k.project = d.project
+                    AND k.ticket = d.ticket AND k.work_cycle = w.cycle)
+           AND NOT EXISTS (
+                 SELECT 1
+                   FROM execution_request q
+                   JOIN execution_request_task t
+                     ON t.tenant = q.tenant AND t.project = q.project
+                        AND t.request = q.request
+                  WHERE q.tenant = d.tenant AND q.project = d.project
+                    AND q.ticket = d.ticket AND t.kind = 'Evaluation'
+                    AND t.cycle = w.cycle)
+         ORDER BY d.tenant, d.project, d.ticket
+         LIMIT ${limit}`,
+  );
+  return found.rows.map((row) => ({
+    partition: {
+      tenant: asTenantId(row.tenant),
+      project: asProjectId(row.project),
+    },
+    ticket: asTicketId(projectRowCounter(row.ticket, "unprepared ticket")),
+    cycle: projectRowCounter(row.cycle, "unprepared cycle"),
+    repository: finalizerRowPresent(row.repository, "unprepared repository"),
+    commit: asGitObjectId(row.commit),
+  }));
+}
+
+async function stackDecision(
+  pool: pg.Pool,
+  partition: Partition,
+  ticket: number,
+  cycle: number,
+): Promise<StackDecision | undefined> {
+  const [record] = await stackRecordsRead(pool, partition, [ticket], [cycle]);
+  if (record !== undefined) return { decided: "Stack", record };
+  const found = await pool.query<{ reason: string }>(
+    sql`SELECT reason FROM evaluation_stack_none
+         WHERE tenant = ${partition.tenant} AND project = ${partition.project}
+           AND ticket = ${ticket} AND work_cycle = ${cycle}`,
+  );
+  const reason = found.rows[0]?.reason;
+  return reason === undefined
+    ? undefined
+    : { decided: "Unstacked", reason: stackReasonOf(reason) };
+}
+
 /** The ranked-or-not tickets of one repository on the path to landing, as the database holds them. */
 async function stackQueueRows(
   pool: pg.Pool,
@@ -373,7 +527,7 @@ async function stackStandingOf(
 }
 
 async function stackEvaluated(
-  pool: pg.Pool,
+  pool: pg.Pool | pg.PoolClient,
   partition: Partition,
   ticket: number,
   cycle: number,
@@ -469,10 +623,10 @@ async function stackRemovable(
 
 export function postgresEvaluationStack(pool: pg.Pool): EvaluationStackStore {
   return {
-    record: (partition, stack) =>
-      postgresTransaction(pool, (client) =>
-        stackRecordWrite(client, partition, stack),
-      ),
+    prepare: (partition, prepared) => stackPrepare(pool, partition, prepared),
+    unprepared: (limit) => stackUnprepared(pool, limit),
+    decision: (partition, ticket, cycle) =>
+      stackDecision(pool, partition, ticket, cycle),
     read: async (partition, ticket, cycle) =>
       (await stackRecordsRead(pool, partition, [ticket], [cycle]))[0],
     current: (partition, ticket) => stackCurrentRead(pool, partition, ticket),
