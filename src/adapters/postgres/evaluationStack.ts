@@ -112,7 +112,7 @@ interface EvaluatingRow {
   readonly project: string;
   readonly ticket: string;
   readonly brief: string | null;
-  readonly cycle: string;
+  readonly cycle: string | null;
 }
 
 interface RemovableRow {
@@ -314,7 +314,7 @@ async function stackPrepare(
   return postgresTransaction(pool, async (client) => {
     if (await stackEvaluated(client, partition, ticket, cycle))
       return "Evaluated";
-    const decided = await client.query(
+    const decided = await client.query<{ found: number }>(
       sql`SELECT 1 AS found FROM evaluation_stack
            WHERE tenant = ${partition.tenant} AND project = ${partition.project}
              AND ticket = ${ticket} AND work_cycle = ${cycle}
@@ -652,7 +652,7 @@ async function stackEvaluating(
       project: asProjectId(row.project),
     };
     const ticket = projectRowCounter(row.ticket, "evaluating ticket");
-    const cycle = projectRowCounter(row.cycle, "evaluating cycle");
+    const cycle = projectRowCounter(row.cycle ?? "", "evaluating cycle");
     const [record] = await stackRecordsRead(pool, partition, [ticket], [cycle]);
     const brief = releasedBriefOf(row.brief);
     if (record === undefined || brief === undefined) continue;
@@ -676,7 +676,7 @@ async function stackInvalidate(
   epoch: RecoveryEpoch,
 ): Promise<StackInvalidationOffered> {
   const operation = `stack-invalidation-${randomUUID()}`;
-  const offered = await pool.query<{ result: string }>(
+  const offered = await pool.query<{ result: string | null }>(
     sql`SELECT result FROM submit_stack_invalidation(
       ${partition.tenant},${partition.project},${ticket},${cycle},
       ${epoch},${operation},${finalizerRole})`,

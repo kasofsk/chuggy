@@ -11,6 +11,8 @@
 
 import type pg from "pg";
 
+import { asTicketId } from "../../src/domain/ids.ts";
+import { asGitObjectId } from "../../src/interpreter/finalizer.ts";
 import { stackRecordWrite } from "../../src/adapters/postgres/evaluationStack.ts";
 import type { Partition } from "../../src/interpreter/projectStore.ts";
 import type { EvaluationStack } from "../../src/interpreter/evaluationStack.ts";
@@ -215,4 +217,24 @@ export async function recordStack(
   } finally {
     client.release();
   }
+}
+
+/** Records the first cycle's stack over one ticket beneath that is in no queue, with the tree the stack was. */
+export async function recordStackBeneathNobody(
+  pool: pg.Pool,
+  project: FinalizerProject,
+  stackTree: string = finalizerCommit(),
+): Promise<void> {
+  await recordStack(pool, project.partition, {
+    ticket: asTicketId(project.ticket),
+    cycle: 1,
+    repository: project.repository,
+    target: landingTarget,
+    tip: asGitObjectId(finalizerCommit()),
+    beneath: [
+      { ticket: asTicketId(999), commit: asGitObjectId(finalizerCommit()) },
+    ],
+    stackCommit: asGitObjectId(finalizerCommit()),
+    stackTree: asGitObjectId(stackTree),
+  });
 }

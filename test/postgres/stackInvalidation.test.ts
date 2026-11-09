@@ -17,7 +17,6 @@ import {
 } from "../../src/adapters/postgres/schema/shared.ts";
 import { asTicketId } from "../../src/domain/ids.ts";
 import type { EvaluationStackStore } from "../../src/interpreter/evaluationStack.ts";
-import { asGitObjectId } from "../../src/interpreter/finalizer.ts";
 import { asRecoveryEpoch } from "../../src/interpreter/projectStore.ts";
 import { stackInvalidations } from "../../src/interpreter/stackInvalidation.ts";
 import {
@@ -35,7 +34,7 @@ import {
   type FinalizerProject,
   type FinalizerRig,
 } from "./finalizerHarness.ts";
-import { recordStack } from "./evaluationStackLandings.ts";
+import { recordStackBeneathNobody } from "./evaluationStackLandings.ts";
 import { postgresHarnessDenial, postgresHarnessRolePool } from "./harness.ts";
 
 let rig: FinalizerRig;
@@ -88,18 +87,7 @@ async function evaluatingOverGone(label: string): Promise<FinalizerProject> {
     "refs/heads/work",
     finalizerCommit(),
   );
-  await recordStack(rig.pool, project.partition, {
-    ticket: asTicketId(project.ticket),
-    cycle: 1,
-    repository: project.repository,
-    target: "refs/heads/main",
-    tip: asGitObjectId(finalizerCommit()),
-    beneath: [
-      { ticket: asTicketId(999), commit: asGitObjectId(finalizerCommit()) },
-    ],
-    stackCommit: asGitObjectId(finalizerCommit()),
-    stackTree: asGitObjectId(finalizerCommit()),
-  });
+  await recordStackBeneathNobody(rig.pool, project);
   return project;
 }
 
