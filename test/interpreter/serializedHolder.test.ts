@@ -23,11 +23,11 @@ function gitMerge(
   return { kind: "GitMerge", mode, policy };
 }
 
-/** A Serialized ticket finalizing on `main` of one repository, entered at `entry`. */
+/** A Serialized ticket finalizing on `main` of one repository, ranked at `rank`. */
 function candidate(
   ticket: number,
-  entry: number | undefined,
-  over: Partial<Omit<SerializedCandidate, "ticket" | "entry">> = {},
+  rank: number | undefined,
+  over: Partial<Omit<SerializedCandidate, "ticket" | "rank">> = {},
 ): SerializedCandidate {
   return {
     partition,
@@ -36,8 +36,7 @@ function candidate(
     finalization: gitMerge("Serialized"),
     repository: "repo",
     target: "main",
-    entry,
-    rechecking: false,
+    rank,
     ...over,
   };
 }
@@ -49,42 +48,70 @@ function holderOf(candidates: readonly SerializedCandidate[]) {
   }));
 }
 
-test("the first pending finalization by entry holds and the others wait on it", () => {
+test("the lowest rank holds and the others wait on it in rank order", () => {
   assert.deepEqual(
     holderOf([candidate(3, 30), candidate(1, 10), candidate(2, 20)]),
     [{ holder: asTicketId(1), waiting: [asTicketId(2), asTicketId(3)] }],
   );
 });
 
-test("a tie on entry is broken by ticket", () => {
+test("a tie on rank is broken by ticket", () => {
   assert.deepEqual(holderOf([candidate(5, 10), candidate(4, 10)]), [
     { holder: asTicketId(4), waiting: [asTicketId(5)] },
   ]);
 });
 
-test("a re-check in flight holds ahead of an earlier entry", () => {
+test("a ticket sent back to re-check keeps its rank and is not overtaken", () => {
+  for (const phase of ["Work", "Evaluation", "Finalization"] as const)
+    assert.deepEqual(
+      holderOf([
+        candidate(1, 10, { phase: "Finalization" }),
+        candidate(2, 5, { phase }),
+        candidate(3, 20),
+      ]),
+      [
+        {
+          holder: asTicketId(2),
+          waiting: [asTicketId(1), asTicketId(3)],
+        },
+      ],
+      phase,
+    );
+});
+
+test("a fresh ticket cannot land ahead of a re-checking holder, and lands once the holder has", () => {
+  const rechecking = candidate(2, 10, { phase: "Work" });
+  const fresh = candidate(3, 30);
+  assert.deepEqual(holderOf([rechecking, fresh]), [
+    { holder: asTicketId(2), waiting: [asTicketId(3)] },
+  ]);
+  assert.deepEqual(serializedWaiting(serializedQueues([rechecking, fresh])), [
+    { partition, ticket: asTicketId(3) },
+  ]);
   assert.deepEqual(
-    holderOf([
-      candidate(1, 10),
-      candidate(2, undefined, { phase: "Work", rechecking: true }),
-    ]),
-    [{ holder: asTicketId(2), waiting: [asTicketId(1)] }],
+    holderOf([{ ...rechecking, phase: "Done", rank: undefined }, fresh]),
+    [{ holder: asTicketId(3), waiting: [] }],
   );
 });
 
-test("a re-check holds through evaluation and, once it has its request, finalization", () => {
-  for (const phase of ["Work", "Evaluation"] as const)
-    assert.deepEqual(
-      holderOf([
-        candidate(1, 10),
-        candidate(2, undefined, { phase, rechecking: true }),
-      ])[0]?.holder,
-      asTicketId(2),
-      phase,
-    );
+test("a ticket in evaluation behind the holder waits and is no barrier to the holder", () => {
   assert.deepEqual(
-    holderOf([candidate(1, 10), candidate(2, 50, { rechecking: true })]),
-    [{ holder: asTicketId(2), waiting: [asTicketId(1)] }],
+    holderOf([
+      candidate(1, 10, { phase: "Work" }),
+      candidate(2, 20, { phase: "Evaluation" }),
+      candidate(3, 30),
+    ]),
+    [{ holder: asTicketId(1), waiting: [asTicketId(2), asTicketId(3)] }],
+  );
+});
+
+test("a Direct landing moves no rank, so a re-check follows only the holder's own landing", () => {
+  const queued = [candidate(1, 10, { phase: "Work" }), candidate(2, 20)];
+  const direct = candidate(3, 5, { finalization: gitMerge("Direct") });
+  assert.deepEqual(holderOf(queued), holderOf([...queued, direct]));
+  assert.deepEqual(
+    holderOf([...queued, { ...direct, phase: "Done", rank: undefined }]),
+    holderOf(queued),
   );
 });
 
@@ -95,24 +122,15 @@ test("a ticket stops holding when it leaves the path", () => {
     "Revoked",
     "Pending",
   ];
-  for (const phase of away) {
+  for (const phase of away)
     assert.deepEqual(
       holderOf([candidate(1, 10, { phase }), candidate(2, 20)]),
       [{ holder: asTicketId(2), waiting: [] }],
-      `pending in ${phase}`,
+      phase,
     );
-    assert.deepEqual(
-      holderOf([
-        candidate(1, undefined, { phase, rechecking: true }),
-        candidate(2, 20),
-      ]),
-      [{ holder: asTicketId(2), waiting: [] }],
-      `re-checking in ${phase}`,
-    );
-  }
 });
 
-test("a ticket with neither a pending request nor a re-check holds nothing", () => {
+test("a ticket without a rank holds nothing", () => {
   assert.deepEqual(
     holderOf([candidate(1, undefined, { phase: "Work" }), candidate(2, 20)]),
     [{ holder: asTicketId(2), waiting: [] }],
@@ -167,7 +185,7 @@ test("a pull request, a landing of nothing and a ticket carrying no brief are in
       holderOf([
         candidate(1, 10, { finalization }),
         candidate(2, 20),
-        candidate(3, undefined, { finalization, rechecking: true }),
+        candidate(3, 5, { finalization, phase: "Work" }),
       ]),
       [{ holder: asTicketId(2), waiting: [] }],
       JSON.stringify(finalization),

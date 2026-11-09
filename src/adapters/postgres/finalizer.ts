@@ -309,15 +309,14 @@ interface SerializedRow {
   readonly ticket: string;
   readonly phase: string;
   readonly brief: string | null;
-  readonly entry: string | null;
-  readonly rechecking: boolean | null;
+  readonly rank: string | null;
 }
 
 /**
- * Every Serialized ticket between a send-back to re-check and its landing,
- * across partitions. The filter on the brief, which a release stores by mode,
- * only keeps Direct tickets, which are most, and any that is no git merge out
- * of the read; whether a ticket queues is `serializedQueues`' to say.
+ * Every Serialized ticket on the path to its landing, across partitions. The
+ * filter on the brief, which a release stores by mode, only keeps Direct
+ * tickets, which are most, and any that is no git merge out of the read;
+ * whether a ticket queues is `serializedQueues`' to say.
  */
 async function finalizerSerializedCandidates(
   client: pg.PoolClient,
@@ -325,20 +324,7 @@ async function finalizerSerializedCandidates(
   const found = await client.query<SerializedRow>(
     sql`SELECT d.tenant, d.project, d.ticket::text AS ticket, p.phase,
                d.brief::text AS brief,
-               (SELECT min(f.authorizing_seq)::text FROM finalization_request f
-                 WHERE f.tenant = d.tenant AND f.project = d.project
-                   AND f.ticket = d.ticket AND f.kind = 'RunFinalizer'
-                   AND f.state IN ('Open', 'Registered')) AS entry,
-               (SELECT x.failure_kind = 'RecheckRequired'
-                       AND NOT ticket_evaluation_reworked_since(
-                             x.tenant, x.project, x.ticket, r.authorizing_seq)
-                  FROM finalization_attempt x
-                  JOIN finalization_request r
-                    ON r.tenant = x.tenant AND r.project = x.project
-                   AND r.request = x.request
-                 WHERE x.tenant = d.tenant AND x.project = d.project
-                   AND x.ticket = d.ticket AND x.outcome = 'Failed'
-                 ORDER BY x.prepared_at DESC, x.attempt DESC LIMIT 1) AS rechecking
+               ticket_finalization_rank(d.tenant, d.project, d.ticket)::text AS rank
           FROM ticket_definition d
           JOIN ticket_projection p
             ON p.tenant = d.tenant AND p.project = d.project AND p.ticket = d.ticket
@@ -363,11 +349,10 @@ async function finalizerSerializedCandidates(
       finalization: brief?.finalization,
       repository: brief?.repository,
       target: brief === undefined ? undefined : briefLandsOn(brief),
-      entry:
-        row.entry === null
+      rank:
+        row.rank === null
           ? undefined
-          : projectRowCounter(row.entry, "serialized entry"),
-      rechecking: row.rechecking === true,
+          : projectRowCounter(row.rank, "serialized rank"),
     };
   });
 }

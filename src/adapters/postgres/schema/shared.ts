@@ -318,6 +318,8 @@ export const approvalRequestFunction = "request_finalization_approval";
 /** Whether an evaluation sent a ticket back to work after a journal position. */
 export const ticketEvaluationReworkedSinceFunction =
   "ticket_evaluation_reworked_since";
+/** The journal position a ticket's rank on its reference was taken at. */
+export const ticketFinalizationRankFunction = "ticket_finalization_rank";
 export const activeWorkFunction = "project_active_work";
 export const backlogFunction = "execution_backlog";
 export const statusMoveFunction = "execution_status_move_is_legal";

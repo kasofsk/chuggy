@@ -15,7 +15,7 @@ import {
   finalizerRole,
   schedulerRole,
   selectorServiceRole,
-  ticketEvaluationReworkedSinceFunction,
+  ticketFinalizationRankFunction,
   ticketServiceRole,
 } from "../../src/adapters/postgres/schema.ts";
 import {
@@ -453,8 +453,8 @@ test("the finalizer's four doors are its own and no prior role may open them", a
       holdFunction,
     ],
     [
-      `SELECT * FROM ${ticketEvaluationReworkedSinceFunction}('t','p',1,0)`,
-      ticketEvaluationReworkedSinceFunction,
+      `SELECT * FROM ${ticketFinalizationRankFunction}('t','p',1)`,
+      ticketFinalizationRankFunction,
     ],
   ] as readonly (readonly [string, string])[];
   for (const [door, name] of doors) {
@@ -481,7 +481,7 @@ test("all four doors are security definer, boundary-owned and search-path pinned
           finalizationFunction,
           approvalRequestFunction,
           holdFunction,
-          ticketEvaluationReworkedSinceFunction,
+          ticketFinalizationRankFunction,
         ],
       ],
     ),
@@ -505,7 +505,7 @@ test("all four doors are security definer, boundary-owned and search-path pinned
         settings: "search_path=pg_catalog, public, pg_temp",
       },
       {
-        proname: ticketEvaluationReworkedSinceFunction,
+        proname: ticketFinalizationRankFunction,
         prosecdef: true,
         owner: "chuggy_boundary_owner",
         settings: "search_path=pg_catalog, public, pg_temp",
