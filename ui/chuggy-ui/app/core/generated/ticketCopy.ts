@@ -174,6 +174,20 @@ export interface TicketCopy {
   readonly "ticket-dispatch-aria-label": {
     readonly number: unknown;
   };
+  readonly "ticket-queue-place": {
+    readonly position: unknown;
+    readonly total: unknown;
+  };
+  readonly "ticket-queue-holding": {
+    readonly holder: unknown;
+    readonly position: unknown;
+    readonly total: unknown;
+  };
+  readonly "ticket-queue-waiting": {
+    readonly position: unknown;
+    readonly total: unknown;
+    readonly holder: unknown;
+  };
   readonly "ticket-nothing-has-run": Record<never, never>;
   readonly "ticket-run-nav-label": Record<never, never>;
   readonly "ticket-run-view-summary": Record<never, never>;

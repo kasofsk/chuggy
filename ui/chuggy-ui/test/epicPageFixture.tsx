@@ -1,6 +1,6 @@
 /**
  * One epic as its page reads it: the epic, its graph, its history, the
- * project's ticket list and its people, each a value a case may move as
+ * project's ticket list, its landing queues and its people, each a value a case may move as
  * another's write would, and the page drawn over them with the tab a case
  * names.
  */
@@ -130,6 +130,8 @@ export const epicServing = {
   history: epicHistory as unknown,
   older: { revisions: [] } as unknown,
   rows: [] as readonly unknown[],
+  queues: { queues: [], truncated: false } as unknown,
+  queuesStatus: 200,
 };
 
 export function epicServingReset(): void {
@@ -139,6 +141,8 @@ export function epicServingReset(): void {
   epicServing.history = epicHistory;
   epicServing.older = { revisions: [] };
   epicServing.rows = [];
+  epicServing.queues = { queues: [], truncated: false };
+  epicServing.queuesStatus = 200;
 }
 
 function epicServed(
@@ -153,6 +157,8 @@ function epicServed(
       return answer(
         url.includes("after=") ? epicServing.older : epicServing.history,
       );
+    if (url.endsWith("/landing-queues"))
+      return answer(epicServing.queues, epicServing.queuesStatus);
     if (url.endsWith("/epics/8")) return answer(epicOtherView);
     if (url.endsWith("/people"))
       return answer({

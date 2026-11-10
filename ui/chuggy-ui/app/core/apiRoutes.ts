@@ -901,6 +901,12 @@ export const apiTicketLandings = apiProjectEndpoint(
   (partition, ticket: number) => ({ parameters: { ...partition, ticket } }),
 );
 
+/** Who holds and who waits on each reference the project's tickets land on. */
+export const apiLandingQueues = apiProjectEndpoint(
+  nativeHttpEndpoints.landingQueues,
+  (partition) => ({ parameters: partition }),
+);
+
 export interface InboxPage {
   readonly cursor?: string | undefined;
   readonly limit?: number | undefined;

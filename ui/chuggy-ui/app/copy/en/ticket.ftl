@@ -196,6 +196,13 @@ ticket-situation-step-repositories = { -repository(case: "upper", form: "plural"
 
 ticket-dispatch-aria-label = { -dispatch(case: "upper") } { -ticket } #{ $number }
 
+## A ticket's place in its landing queue: `LandingQueueChip.tsx`,
+## `app/core/landingQueues.ts`.
+
+ticket-queue-place = { $position }/{ $total }
+ticket-queue-holding = { -landing(case: "upper", form: "s") } next: #{ $holder } holds the target, { $position } of { $total } in its queue
+ticket-queue-waiting = Waiting { $position } of { $total } to { -landing(form: "base") }: #{ $holder } holds the target
+
 ## The Runs tab, its rail and one run's own page: `TicketRuns.tsx`,
 ## `TicketRunPage.tsx`.
 

@@ -87,6 +87,7 @@ import {
   threadsResponseSchema,
   threadTranscriptResponseSchema,
   ticketLandingsResponseSchema,
+  landingQueuesResponseSchema,
   ticketNativeActionsResponseSchema,
   ticketResponseSchema,
   workerPoolsResponseSchema,
@@ -489,6 +490,11 @@ const consoleReads: readonly ConsoleRead[] = [
     path: consoleReadUnder(ticketPath, "[0-9]+/landings"),
     schema: ticketLandingsResponseSchema,
     body: () => ticketLandingsNone,
+  },
+  {
+    path: consoleReadAt(`${projectPath}/landing-queues`),
+    schema: landingQueuesResponseSchema,
+    body: () => ({ queues: [], truncated: false }),
   },
   {
     path: consoleReadUnder(ticketPath, "[0-9]+/action-reach"),
