@@ -17,7 +17,8 @@ module mc_stacking {
     queue' = initial(Map(1 -> p1, 2 -> p2, 3 -> p3, 4 -> p4, 5 -> p5))
   }
   action reportWork = nondet i = ticketIds.oneOf()
-    all { canReport(queue, i), queue' = report(queue, i) }
+    nondet keptDiff = Set(true, false).oneOf()
+    all { canReport(queue, i, keptDiff), queue' = report(queue, i, keptDiff) }
   action startEvaluation = nondet i = ticketIds.oneOf()
     all { canStart(queue, i), queue' = start(queue, i) }
   action evaluationPasses = nondet i = ticketIds.oneOf()

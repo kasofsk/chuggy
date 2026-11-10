@@ -7,7 +7,9 @@ module stacking_test {
 
   action setup(policies: int -> Policy): bool = all { invariants(initial(policies)), st' = initial(policies) }
   action move(after: State): bool = all { invariants(after), st' = after }
-  action rep(i: int): bool = all { canReport(st, i), move(report(st, i)) }
+  action rep(i: int): bool = all { canReport(st, i, false), move(report(st, i, false)) }
+  /// The work is reported keeping the ticket's own diff.
+  action repKept(i: int): bool = all { canReport(st, i, true), move(report(st, i, true)) }
   action begin(i: int): bool = all { canStart(st, i), move(start(st, i)) }
   action pass(i: int): bool = all { canPass(st, i), move(passEvaluation(st, i)) }
   action failsAt(i: int): bool = all { canFail(st, i), move(failEvaluation(st, i)) }
@@ -24,6 +26,7 @@ module stacking_test {
     match s.tickets.get(i).stacking { | StackedOn(r) => r.beneath | Unstacked => List() }
   pure def unstacked(s: State, i: int): bool =
     match s.tickets.get(i).stacking { | StackedOn(_) => false | Unstacked => true }
+  pure def verdictOf(s: State, i: int): Verdict = s.tickets.get(i).verdict
 
   run serializedRechecksAfterDirectLandingTest =
     setup(Map(1 -> Direct, 2 -> Serialized))
@@ -181,4 +184,48 @@ module stacking_test {
       .then(holds(and { st.tickets.get(2).rechecks == 1, phaseOf(st, 2) == Landed }))
       .then(enter(3)).then(lands(3))
       .then(holds(recheckBounded(st)))
+
+  run recheckKeepingTheDiffKeepsTheVerdictTest =
+    setup(Map(1 -> Direct, 2 -> Serialized))
+      .then(enter(2)).then(enter(1)).then(lands(1)).then(lands(2))
+      .then(holds(and { phaseOf(st, 2) == Work, not(canReport(st, 1, true)) }))
+      .then(repKept(2)).then(begin(2))
+      .then(holds(verdictOf(st, 2) == Carried({ over: Unstacked, patch: 1 })))
+      .then(pass(2)).then(lands(2))
+      .then(holds(and { phaseOf(st, 2) == Landed, st.history == List(pair(1, 1), pair(2, 2)),
+                        verdictOf(st, 2) == Carried({ over: Unstacked, patch: 1 }) }))
+
+  run recheckChangingTheDiffDropsTheVerdictTest =
+    setup(Map(1 -> Direct, 2 -> Serialized))
+      .then(enter(2)).then(enter(1)).then(lands(1)).then(lands(2))
+      .then(rep(2)).then(begin(2))
+      .then(holds(verdictOf(st, 2) == NoVerdict))
+      .then(pass(2)).then(lands(2))
+      .then(holds(and { phaseOf(st, 2) == Landed,
+                        verdictOf(st, 2) == Carried({ over: Unstacked, patch: 2 }) }))
+
+  run ejectionBeneathDropsAStackedVerdictTest =
+    setup(Map(1 -> Stacked, 2 -> Stacked, 3 -> Stacked))
+      .then(enter(1)).then(enter(2)).then(enter(3))
+      .then(holds(verdictOf(st, 3) == Carried({ over: StackedOn({ base: List(), beneath: List(pair(1, 1), pair(2, 1)) }), patch: 1 })))
+      .then(ejectIt(2)).then(begin(3))
+      .then(holds(verdictOf(st, 3) == NoVerdict))
+      .then(pass(3)).then(lands(1)).then(lands(3))
+      .then(holds(and { st.history == List(pair(1, 1), pair(3, 1)),
+                        verdictOf(st, 3) == Carried({ over: StackedOn({ base: List(), beneath: List(pair(1, 1)) }), patch: 1 }) }))
+
+  run recheckAfterTheStackLandedKeepsAStackedVerdictTest =
+    setup(Map(1 -> Serialized, 2 -> Stacked, 3 -> Direct, 4 -> Direct))
+      .then(enter(1)).then(enter(2))
+      .then(holds(verdictOf(st, 2) == Carried({ over: StackedOn({ base: List(), beneath: List(pair(1, 1)) }), patch: 1 })))
+      .then(lands(1)).then(enter(3)).then(lands(3))
+      .then(holds(and { phaseOf(st, 2) == Ready, st.history == List(pair(1, 1), pair(3, 1)) }))
+      .then(begin(2)).then(pass(2)).then(enter(4)).then(lands(4)).then(lands(2))
+      .then(holds(phaseOf(st, 2) == Work))
+      .then(repKept(2)).then(begin(2))
+      .then(holds(and { unstacked(st, 2),
+                        verdictOf(st, 2) == Carried({ over: StackedOn({ base: List(), beneath: List(pair(1, 1)) }), patch: 1 }) }))
+      .then(pass(2)).then(lands(2))
+      .then(holds(and { phaseOf(st, 2) == Landed,
+                        st.history == List(pair(1, 1), pair(3, 1), pair(4, 1), pair(2, 2)) }))
 }
