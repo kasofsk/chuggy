@@ -17,6 +17,7 @@
  */
 
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { test } from "node:test";
 
 import { kubernetesNameCharsMax } from "../../src/adapters/kubernetes/kubernetesSite.ts";
@@ -25,6 +26,7 @@ import {
   sessionConfigDirectoryVariable,
   sessionModelVariable,
   sessionTaskVariable,
+  workerClaudeCredentialVariable,
   workerCredentialFilesSchema,
   workerCredentialFilesVariable,
   workerTaskVariable,
@@ -407,6 +409,7 @@ test("a site environment cannot replace any variable the launcher writes itself"
     workerWorkspaceVariable,
     sessionConfigDirectoryVariable,
     sessionModelVariable,
+    workerClaudeCredentialVariable,
   ]);
   for (const variable of populated(
     kubernetesSessionReservedVariables,
@@ -511,4 +514,148 @@ test("a configuration that cannot address a cluster or bound a pod is refused", 
     TypeError,
   );
   assert.deepEqual(checkedKubernetesSessionLaunchConfig(config), config);
+});
+
+/** A site whose two Claude credentials each name their kind, the API key with its own bounds, beside a kindless git credential. */
+const apiKeyCredential = {
+  secretName: "anthropic-api-credential",
+  key: "key",
+  mountPath: "/var/run/chuggy/anthropic-api/key",
+  claudeCredential: "ApiKey",
+  sessionBounds: { budgetUsd: 1, turnsMax: 50 },
+} as const;
+
+const kindedConfig: KubernetesSessionLaunchConfig = {
+  ...config,
+  credentialMounts: {
+    "claude-code": { ...agentCredential, claudeCredential: "Subscription" },
+    "anthropic-api": apiKeyCredential,
+    forge: forgeCredential,
+  },
+};
+
+const kindedPlacement: SessionPlacement = {
+  ...placement,
+  authority: {
+    ...grant,
+    credentials: ["claude-code", "anthropic-api", "forge"],
+  },
+};
+
+/** The one value the container is given under `name`. */
+function renderedVariable(
+  container: ReturnType<typeof renderedContainer>,
+  name: string,
+): string | undefined {
+  const variable = container.env.find((entry) => entry.name === name);
+  return variable !== undefined && "value" in variable
+    ? variable.value
+    : undefined;
+}
+
+/** Every Secret the pod projects a credential from. */
+function renderedCredentialSecrets(
+  pod: ReturnType<typeof renderedPod>,
+): readonly string[] {
+  return pod.spec.volumes.flatMap(
+    (volume) =>
+      volume.projected?.sources.map((source) => source.secret.name) ?? [],
+  );
+}
+
+test("a session on the API key's slot mounts that Claude credential and the kindless one alone, is told its kind and runs under its bounds", () => {
+  const placed = { ...kindedPlacement, credentialSlot: "anthropic-api" };
+  const container = renderedContainer(kindedConfig, placed);
+  assert.deepEqual(
+    JSON.parse(
+      renderedVariable(container, workerCredentialFilesVariable) ?? "null",
+    ),
+    {
+      "anthropic-api": apiKeyCredential.mountPath,
+      forge: forgeCredential.mountPath,
+    },
+  );
+  assert.deepEqual(
+    renderedCredentialSecrets(renderedPod(kindedConfig, placed)),
+    [apiKeyCredential.secretName, forgeCredential.secretName],
+  );
+  assert.equal(
+    renderedVariable(container, workerClaudeCredentialVariable),
+    '{"kind":"ApiKey"}',
+  );
+  assert.deepEqual(
+    sessionTaskDocumentSchema.parse(
+      JSON.parse(renderedVariable(container, sessionTaskVariable) ?? "null"),
+    ).bounds,
+    { ...config.bounds, budgetUsd: 1, turnsMax: 50 },
+  );
+});
+
+test("a session on the subscription's slot is told its kind, runs under the site's bounds and mounts no API key", () => {
+  const container = renderedContainer(kindedConfig, kindedPlacement);
+  assert.equal(
+    renderedVariable(container, workerClaudeCredentialVariable),
+    '{"kind":"Subscription"}',
+  );
+  assert.deepEqual(
+    kubernetesSessionTask(kindedConfig, kindedPlacement).bounds,
+    config.bounds,
+  );
+  assert.deepEqual(
+    JSON.parse(
+      renderedVariable(container, workerCredentialFilesVariable) ?? "null",
+    ),
+    {
+      "claude-code": agentCredential.mountPath,
+      forge: forgeCredential.mountPath,
+    },
+  );
+  assert.deepEqual(
+    renderedCredentialSecrets(renderedPod(kindedConfig, kindedPlacement)),
+    [agentCredential.secretName, forgeCredential.secretName],
+  );
+});
+
+/**
+ * The digest is of the pod this site and placement built before a mount could
+ * name a kind, so a site naming none is held to the very bytes it placed then.
+ */
+test("a site whose mounts name no kind builds the pod it built before mounts could", () => {
+  const pod = renderedPod(config, {
+    ...placement,
+    authority: { ...grant, credentials: ["claude-code", "forge"] },
+  });
+  assert.equal(
+    createHash("sha256").update(JSON.stringify(pod)).digest("hex"),
+    "2a5a5158a6150c601ace22486f31aecb6c730d22e99f438c26972cf62e8102d9",
+  );
+});
+
+test("a mount's session bounds are held to the rules the site's own are", () => {
+  const withBounds = (budgetUsd: number, turnsMax: number) => ({
+    ...kindedConfig,
+    credentialMounts: {
+      ...kindedConfig.credentialMounts,
+      "anthropic-api": {
+        ...apiKeyCredential,
+        sessionBounds: { budgetUsd, turnsMax },
+      },
+    },
+  });
+  assert.deepEqual(
+    checkedKubernetesSessionLaunchConfig(kindedConfig),
+    kindedConfig,
+  );
+  for (const [budgetUsd, turnsMax] of [
+    [0, 50],
+    [kubernetesSessionBudgetUsdMin / 10, 50],
+    [1, 0],
+    [1, 1.5],
+  ] as const)
+    assert.throws(
+      () =>
+        checkedKubernetesSessionLaunchConfig(withBounds(budgetUsd, turnsMax)),
+      RangeError,
+      `${String(budgetUsd)} ${String(turnsMax)}`,
+    );
 });

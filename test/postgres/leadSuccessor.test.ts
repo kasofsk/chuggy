@@ -571,6 +571,7 @@ test("a lead opened before it held a window still serves its facts, and the sele
       "the windowless objectives",
       successorOpening.autoCompactWindow,
       {},
+      successorOpening.credentialSlot,
     ),
     true,
     "a lead holding no window is replaced at the next decision",

@@ -776,6 +776,15 @@ export const sessionCapabilities = [
 ] as const;
 export type SessionCapability = (typeof sessionCapabilities)[number];
 
+/**
+ * The kinds of Claude credential a site's mount may say its file is, spelled
+ * as the image's credential setting spells them: the two that need nothing
+ * named beside the file.
+ */
+export const claudeCredentialMountKinds = ["Subscription", "ApiKey"] as const;
+export type ClaudeCredentialMountKind =
+  (typeof claudeCredentialMountKinds)[number];
+
 /** Whose a session is: a project's, or its member's own, opened with no project selected. */
 export const sessionScopes = ["Project", "Member"] as const;
 export type SessionScope = (typeof sessionScopes)[number];

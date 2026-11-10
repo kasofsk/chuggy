@@ -211,6 +211,8 @@ interface MailboxOptions {
   readonly model?: string;
   readonly effort?: SessionEffort;
   readonly decisionTurnTokens?: number;
+  /** The slot the lead was opened on, the decision's own unless a case says otherwise. */
+  readonly credentialSlot?: string;
   /** What the closing door answers, which closes the lead only where it is `Closed`. */
   readonly closed?: LeadClosed;
 }
@@ -244,6 +246,7 @@ function mailboxStanding(
     ...(autoCompactWindow === null ? {} : { autoCompactWindow }),
     ...(options.model === undefined ? {} : { model: options.model }),
     ...(options.effort === undefined ? {} : { effort: options.effort }),
+    credentialSlot: options.credentialSlot ?? leadCredentialSlot,
     ...(options.decisionTurnTokens === undefined
       ? {}
       : { decisionTurnTokens: options.decisionTurnTokens }),
@@ -274,6 +277,7 @@ function mailboxDouble(options: MailboxOptions = {}): MailboxDouble {
             autoCompactWindow: opening.autoCompactWindow,
             ...(opening.model === undefined ? {} : { model: opening.model }),
             ...(opening.effort === undefined ? {} : { effort: opening.effort }),
+            credentialSlot: opening.credentialSlot,
           };
         return Promise.resolve({
           opened: "Opened" as const,
@@ -373,7 +377,10 @@ const hostedEverywhere: ProjectAccess = {
   authorizeSite: projectAccessSiteRefused,
 };
 
-function policyOf(double: MailboxDouble) {
+function policyOf(
+  double: MailboxDouble,
+  credentialSlot: string = leadCredentialSlot,
+) {
   return leadSelectorPolicy(
     double.mailbox,
     decisionTail(),
@@ -381,7 +388,7 @@ function policyOf(double: MailboxDouble) {
     clock(),
     hostedEverywhere,
     sessionRoutesAt(),
-    leadPolicyConfig,
+    { ...leadPolicyConfig, credentialSlot },
   );
 }
 
@@ -543,6 +550,7 @@ test("a lead is replaced where it is spent or its prompt or window is not this d
     session: asSessionId("lead-session"),
     state: "Open",
     autoCompactWindow: resolvedWindow,
+    credentialSlot: leadCredentialSlot,
   } as const;
   const cases: readonly (readonly [string, LeadSessionStanding, boolean])[] = [
     ["composed, unmeasured", { ...open, systemPrompt: composedPrompt }, false],
@@ -557,7 +565,12 @@ test("a lead is replaced where it is spent or its prompt or window is not this d
     ],
     [
       "no window",
-      { session: open.session, state: "Open", systemPrompt: composedPrompt },
+      {
+        session: open.session,
+        state: "Open",
+        systemPrompt: composedPrompt,
+        credentialSlot: leadCredentialSlot,
+      },
       true,
     ],
     [
@@ -583,7 +596,13 @@ test("a lead is replaced where it is spent or its prompt or window is not this d
   ];
   for (const [label, standing, replaced] of cases)
     assert.equal(
-      leadStandingReplaced(standing, composedPrompt, resolvedWindow, {}),
+      leadStandingReplaced(
+        standing,
+        composedPrompt,
+        resolvedWindow,
+        {},
+        leadCredentialSlot,
+      ),
       replaced,
       label,
     );
@@ -608,6 +627,32 @@ test("a spent lead is closed before the decision, and a seeded successor takes i
     "the successor's first turn is told the record",
   );
   assert.equal(execution.policyRevision, "Unbound");
+});
+
+test("a lead on another slot than the decision opens with is replaced before it by one on that slot, and one on the same slot is not", async () => {
+  const moved = mailboxDouble({
+    agentReference: "agent-session-9",
+    credentialSlot: "claude-code",
+  });
+  await policyOf(moved, "anthropic-api").execute(
+    request,
+    new AbortController().signal,
+  );
+  assert.deepEqual(moved.closings, ["lead-session"]);
+  assert.deepEqual(
+    moved.openings.map((opening) => [opening.session, opening.credentialSlot]),
+    [["lead-successor-1", "anthropic-api"]],
+  );
+
+  const kept = mailboxDouble({
+    agentReference: "agent-session-9",
+    credentialSlot: "claude-code",
+  });
+  await policyOf(kept, "claude-code").execute(
+    request,
+    new AbortController().signal,
+  );
+  assert.deepEqual([kept.closings, kept.openings], [[], []]);
 });
 
 test("a lead at the bound, or with nothing measured, takes the decision itself", async () => {

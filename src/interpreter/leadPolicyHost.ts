@@ -344,7 +344,8 @@ interface LeadPolicyPorts {
 /**
  * Whether an open lead is replaced before this decision: its newest decision
  * turn spent more than the bound, or it holds a system prompt, a compaction
- * window, a model or an effort other than the one this decision runs under. A
+ * window, a model, an effort or a credential slot other than the one this
+ * decision runs under. A
  * turn that measured nothing says nothing, and a lead holding no model or no
  * effort holds what an unset one resolves to.
  */
@@ -353,9 +354,11 @@ export function leadStandingReplaced(
   systemPrompt: string,
   autoCompactWindow: number,
   runtime: SelectorLeadRuntime,
+  credentialSlot: string,
 ): boolean {
   return (
     standing.systemPrompt !== systemPrompt ||
+    standing.credentialSlot !== credentialSlot ||
     standing.autoCompactWindow !== autoCompactWindow ||
     standing.model !== runtime.model ||
     standing.effort !== runtime.effort ||
@@ -395,7 +398,15 @@ async function leadStanding(
   const runtime = request.constraints.lead;
   const held = await ports.mailbox.lead(partition);
   if (held !== undefined && held.state === "Open") {
-    if (!leadStandingReplaced(held, systemPrompt, autoCompactWindow, runtime))
+    if (
+      !leadStandingReplaced(
+        held,
+        systemPrompt,
+        autoCompactWindow,
+        runtime,
+        ports.config.credentialSlot,
+      )
+    )
       return held;
     const closed = await ports.mailbox.closeLead(partition, held.session);
     if (!leadClosedReplaces(closed)) return held;
