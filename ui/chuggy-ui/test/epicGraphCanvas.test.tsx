@@ -17,6 +17,7 @@ import {
   epicTrainEmergingMs,
   epicTrainRestingAt,
 } from "../app/core/epicTrains.ts";
+import { landingQueuesQuery } from "../app/core/ticketQueries.ts";
 import {
   epicGraph,
   epicPageDrawn,
@@ -144,11 +145,14 @@ test("a queued member with no run draws a footer holding its place alone", async
 
 test("a queue read that fails draws no chip and leaves every card drawn", async () => {
   epicServing.queuesStatus = 500;
-  const { sent } = await epicPageDrawn(abilitiesNone);
+  const { client } = await epicPageDrawn(abilitiesNone);
+  await vi.waitFor(() => {
+    expect(
+      client.getQueryState(landingQueuesQuery(leadPartition).queryKey)?.status,
+    ).toBe("error");
+  });
+  await settled();
   const graphic = await canvas();
-  expect(sent.some((request) => request.url.endsWith("/landing-queues"))).toBe(
-    true,
-  );
   expect(graphic.querySelectorAll(".epic-card")).toHaveLength(3);
   expect(graphic.querySelector(".landing-queue-chip")).toBeNull();
 });

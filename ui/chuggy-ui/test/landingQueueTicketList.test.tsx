@@ -14,6 +14,7 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
 import { ProjectTable } from "../app/browser/ProjectTable.tsx";
 import type { TicketListQuery } from "../app/core/ticketListView.ts";
+import { landingQueuesQuery } from "../app/core/ticketQueries.ts";
 import { renderCopied } from "./copied.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import {
@@ -68,7 +69,7 @@ const queued = {
   truncated: false,
 };
 
-async function listDrawn(queues: () => Response): Promise<void> {
+async function listDrawn(queues: () => Response): Promise<QueryClient> {
   const api = apiDouble({
     operation: { operation: "op-one", state: "Pending" },
     route: () => answer({ partition: atlas, sequence: 8, tickets }),
@@ -79,18 +80,20 @@ async function listDrawn(queues: () => Response): Promise<void> {
     const [query, setQuery] = useState<TicketListQuery>({});
     return <ProjectTable query={query} onQuery={setQuery} />;
   }
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   renderCopied(
     <ScreenHarness
       partition={atlas}
-      client={
-        new QueryClient({ defaultOptions: { queries: { retry: false } } })
-      }
+      client={client}
       transport={openedStream().ports.fetch}
     >
       <Addressed />
     </ScreenHarness>,
   );
   await settled();
+  return client;
 }
 
 function rowOf(ticket: number): HTMLElement {
@@ -122,12 +125,15 @@ test("a queued row draws its place just before its state chip, and a row in no q
 });
 
 test("a queue read that fails draws no chip and leaves every row drawn", async () => {
-  let asked = 0;
-  await listDrawn(() => {
-    asked += 1;
-    return answer({ error: { code: "InternalError" } }, 500);
+  const client = await listDrawn(() =>
+    answer({ error: { code: "InternalError" } }, 500),
+  );
+  await vi.waitFor(() => {
+    expect(
+      client.getQueryState(landingQueuesQuery(atlas).queryKey)?.status,
+    ).toBe("error");
   });
-  expect(asked).toBeGreaterThan(0);
+  await settled();
   expect(screen.getByText("Row 11")).toBeTruthy();
   expect(screen.getByText("Row 13")).toBeTruthy();
   expect(document.querySelector(".landing-queue-chip")).toBeNull();
