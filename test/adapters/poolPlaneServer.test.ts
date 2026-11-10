@@ -336,25 +336,35 @@ const linuxPin = {
   integrity: `sha512-${"A".repeat(85)}g==`,
 };
 
-/** Records the runner and the capabilities each poll named, by the kind of caller that named them. */
+/** Records the runner, the capabilities and whether they advertise its agents, each poll named, by the kind of caller that named them. */
 function runnerCalls(): {
   readonly named: unknown[];
   readonly advertised: unknown[];
   readonly ceilings: unknown[];
+  readonly agents: unknown[];
   readonly runners: WorkerPoolRunners;
 } {
   const named: unknown[] = [];
   const advertised: unknown[] = [];
   const ceilings: unknown[] = [];
+  const agents: unknown[] = [];
   return {
     named,
     advertised,
     ceilings,
+    agents,
     runners: {
-      named: (caller: PoolPlaneIdentity, runner, capabilities, ceiling) => {
+      named: (
+        caller: PoolPlaneIdentity,
+        runner,
+        capabilities,
+        ceiling,
+        agentsAdvertised,
+      ) => {
         named.push([caller.kind, runner]);
         advertised.push([caller.kind, capabilities]);
         ceilings.push([caller.kind, ceiling]);
+        agents.push([caller.kind, agentsAdvertised]);
         return Promise.resolve();
       },
     },
@@ -596,6 +606,25 @@ test("a poll naming its capabilities has them kept as one list however its heade
     ).inject({ method: "GET", url: polling([], 0), headers });
     assert.equal(answered.statusCode, 200, why);
     assert.deepEqual(recorded.advertised, [kept], why);
+  }
+});
+
+test("every poll of a personal runner records whether its release advertises its agents, and a pool's records that it does not", async () => {
+  for (const [why, headers, kept] of [
+    ["a personal runner of this release", runnerSpeaking, ["Personal", true]],
+    [
+      "a personal runner of the release before",
+      { ...runnerSpeaking, [workerContractHeader]: "1.49.0" },
+      ["Personal", false],
+    ],
+    ["a pool of this release", speaking, ["Dedicated", false]],
+  ] as const) {
+    const recorded = runnerCalls();
+    const answered = await createPoolPlaneApp(
+      plane(calls().ports, authority("Allow"), undefined, recorded.runners),
+    ).inject({ method: "GET", url: polling([], 0), headers });
+    assert.equal(answered.statusCode, 200, why);
+    assert.deepEqual(recorded.agents, [kept], why);
   }
 });
 
@@ -1161,6 +1190,16 @@ const poolReplayPolls = [
     undefined,
   ],
   [
+    "a personal runner's job stopped where its credential ran out",
+    runnerToken,
+    ["benched"],
+    0,
+    0,
+    undefined,
+    undefined,
+    undefined,
+  ],
+  [
     "a personal runner's session",
     runnerToken,
     [],
@@ -1181,6 +1220,28 @@ const poolReplayPolls = [
     undefined,
   ],
 ] as const;
+
+/** The durable side one replayed poll reaches: each claim taking `claimed`, a runner's where it names a project, and the job `benched` stopped where its credential ran out. */
+function poolReplayPorts(
+  ports: WorkerPoolAssignments,
+  claimed: (typeof poolReplayPolls)[number][5],
+): WorkerPoolAssignments {
+  return {
+    ...ports,
+    claim: () => Promise.resolve(claimed),
+    claimPersonal: () =>
+      Promise.resolve(
+        claimed !== undefined && "project" in claimed ? claimed : undefined,
+      ),
+    allowlisted: () => Promise.resolve([asProjectId("project")]),
+    credentialOutcomes: (_caller, stopped) =>
+      Promise.resolve(
+        stopped.includes("benched")
+          ? [{ assignment: "benched", outcome: "CreditsExhausted" }]
+          : [],
+      ),
+  };
+}
 
 /**
  * Every poll a pool built with `older` makes, through the names its own
@@ -1206,15 +1267,7 @@ function poolReplayPolled(older: WorkerContractReleasePool): void {
         contractVersionAccepted(workerContractChatHost, older.release),
     )) {
       const recorded = calls();
-      const ports = {
-        ...recorded.ports,
-        claim: () => Promise.resolve(claimed),
-        claimPersonal: () =>
-          Promise.resolve(
-            claimed !== undefined && "project" in claimed ? claimed : undefined,
-          ),
-        allowlisted: () => Promise.resolve([asProjectId("project")]),
-      };
+      const ports = poolReplayPorts(recorded.ports, claimed);
       const offering = sessionCalls([], ["session-waiting"]);
       const query = new URLSearchParams([
         ...held.map((assignment) => [older.pollQuery.held, assignment]),

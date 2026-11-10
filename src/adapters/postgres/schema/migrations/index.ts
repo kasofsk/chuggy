@@ -132,6 +132,7 @@ import { migration131 } from "./131-run-context-readings.ts";
 import { migration132 } from "./132-session-context-readings.ts";
 import { migration133 } from "./133-session-model-effort.ts";
 import { migration134 } from "./134-attempt-credential-outcome.ts";
+import { migration135 } from "./135-runner-agents-advertised.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -269,4 +270,5 @@ export const migrations: readonly Migration[] = [
   migration132,
   migration133,
   migration134,
+  migration135,
 ];
