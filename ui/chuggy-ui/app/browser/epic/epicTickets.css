@@ -1,0 +1,184 @@
+/* The epic page's Tickets tab: the filter and Add tickets over the groups,
+   each a head over its rows. A row is its mark, its number, its title over
+   the line of what it comes after, and its state at the right; the title and
+   that line wrap in their own column, so on a phone the line stays under the
+   title. */
+
+@layer page {
+  .epic-tickets {
+    display: grid;
+    gap: var(--space-4);
+    min-width: 0;
+  }
+
+  .epic-tickets-bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+  }
+
+  .epic-tickets-filter {
+    flex: 0 1 20em;
+    min-width: 0;
+  }
+
+  .epic-tickets-filter > .input {
+    width: 100%;
+  }
+
+  .epic-tickets-group {
+    display: grid;
+    min-width: 0;
+  }
+
+  .epic-tickets-group-head {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 0;
+    padding-bottom: var(--space-2);
+    border-bottom: var(--hairline) solid var(--edge-strong);
+    color: var(--ink-1);
+    font-size: var(--text-sm);
+    font-weight: var(--weight-medium);
+  }
+
+  .epic-tickets-rows {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .epic-tickets-row {
+    display: grid;
+    grid-template-columns: auto 4em minmax(0, 1fr) auto auto;
+    align-items: start;
+    column-gap: var(--space-3);
+    padding-block: var(--space-3);
+    border-bottom: var(--hairline) solid var(--edge);
+  }
+
+  .epic-tickets-group-mark {
+    display: flex;
+  }
+
+  /* What stands beside the title is centred on its first line. */
+  .epic-tickets-mark,
+  .epic-tickets-number,
+  .epic-tickets-state,
+  .epic-tickets-actions {
+    display: flex;
+    align-items: center;
+    min-height: 1lh;
+    font-size: var(--text-md);
+    line-height: var(--leading-tight);
+  }
+
+  .epic-tickets-number a {
+    color: var(--ink-3);
+    font: var(--weight-regular) var(--text-sm) var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    text-decoration: none;
+  }
+
+  .epic-tickets-number a::before,
+  .epic-tickets-after a::before {
+    content: "#";
+  }
+
+  .epic-tickets-body {
+    display: grid;
+    gap: var(--space-1);
+    min-width: 0;
+  }
+
+  .epic-tickets-title {
+    margin: 0;
+    color: var(--ink-1);
+    font-size: var(--text-md);
+    font-weight: var(--weight-regular);
+    line-height: var(--leading-tight);
+    overflow-wrap: anywhere;
+  }
+
+  .epic-tickets-title a {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .epic-tickets-title a:hover {
+    text-decoration: underline;
+  }
+
+  .epic-tickets-meta {
+    margin: 0;
+    color: var(--ink-3);
+    font-size: var(--text-sm);
+  }
+
+  .epic-tickets-after a {
+    color: var(--ink-2);
+    font-family: var(--font-mono);
+  }
+
+  .epic-tickets-state {
+    flex-direction: column;
+    align-items: flex-end;
+    justify-content: center;
+    gap: var(--space-1);
+    font-size: var(--text-sm);
+  }
+
+  /* A control taller than the title's first line is centred on it, and takes
+     no more of the row than that line does. */
+  .epic-tickets-actions {
+    height: 1lh;
+  }
+
+  .epic-tickets-state .ticket-list-standing {
+    width: auto;
+    height: auto;
+    margin-block: calc((1lh - var(--height-state-small)) / 2);
+  }
+
+  /* The row's mark stands at its left, so its state at the right is its word. */
+  .epic-tickets-state .ticket-state-mark {
+    display: none;
+  }
+
+  /* The words stand right-aligned in their own column, so a chip is as wide
+     as its own word rather than the widest any state says. */
+  .epic-tickets-state .ticket-state-word::before {
+    display: none;
+  }
+
+  .epic-tickets-notes:empty {
+    display: none;
+  }
+
+  .epic-tickets-found {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-2);
+  }
+
+  .epic-tickets-found-member {
+    flex: none;
+    color: var(--ink-3);
+    font-size: var(--text-sm);
+  }
+
+  @media (max-width: 40em) {
+    .epic-tickets-filter {
+      flex-basis: 100%;
+    }
+
+    .epic-tickets-row {
+      grid-template-columns: auto 3em minmax(0, 1fr) auto auto;
+      column-gap: var(--space-2);
+    }
+  }
+}
