@@ -121,6 +121,8 @@ export interface GitCall {
   readonly environment: GitEnvironment;
   readonly outputBytesMax?: number;
   readonly input?: Uint8Array | string;
+  /** How stdout is decoded; `latin1` keeps every byte as one character, so output handed back to git is the bytes git wrote. */
+  readonly stdoutEncoding?: "utf8" | "latin1";
 }
 
 const gitRunIgnored = (): void => undefined;
@@ -172,12 +174,13 @@ function gitRunExited(
   code: number | null,
   stdout: readonly Buffer[],
   stderr: readonly Buffer[],
+  stdoutEncoding: "utf8" | "latin1",
 ): GitRan {
   if (code === null) return { ran: "Stopped", stopped: "Killed" };
   return {
     ran: "Exited",
     code,
-    stdout: Buffer.concat(stdout).toString("utf8"),
+    stdout: Buffer.concat(stdout).toString(stdoutEncoding),
     stderr: Buffer.concat(stderr).toString("utf8"),
   };
 }
@@ -234,16 +237,17 @@ export function gitRun(call: GitCall): Promise<GitRan> {
       settle({ ran: "Stopped", stopped: "OutputCeiling" });
     };
     const bytesMax = call.outputBytesMax ?? gitOutputBytesMax;
+    const stdoutEncoding = call.stdoutEncoding ?? "utf8";
     gitRunCollect(child.stdout, stdout, bytesMax, ceiling);
     gitRunCollect(child.stderr, stderr, bytesMax, ceiling);
     child.on("exit", (code) => {
       if (settled) return;
       drain = setTimeout(() => {
-        settle(gitRunExited(code, stdout, stderr));
+        settle(gitRunExited(code, stdout, stderr, stdoutEncoding));
       }, gitRunDrainSecs * 1000);
     });
     child.on("close", (code) => {
-      settle(gitRunExited(code, stdout, stderr));
+      settle(gitRunExited(code, stdout, stderr, stdoutEncoding));
     });
     child.on("error", (failure: Error) => {
       if (settled) return;

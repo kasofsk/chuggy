@@ -564,6 +564,7 @@ export function ticketServiceProcessRoot(
       postgresExecutionSourceHistory(pool),
       ancestry,
       evaluationStackSpawn({ store: postgresEvaluationStack(pool), briefs }),
+      briefs,
     ),
     ticketBriefs: briefs,
     projectArtifacts: artifactStore({ root: config.artifacts.root }),

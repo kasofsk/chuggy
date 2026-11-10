@@ -924,6 +924,30 @@ test("an evaluation spawns at the source its ticket carries and judges the work'
   });
 });
 
+/** Catches the identity of the change dropped between the observation and the bundle the evaluation pins. */
+test("an evaluation's bundle carries the change identity its source observed", async () => {
+  const pinned = pinnedSources([]);
+  const identity = "8".repeat(40);
+  const { offered } = await decidedWith(
+    dispatchedMemory(),
+    completionInput(workCompletion),
+    {
+      ...pinned,
+      spawnSource: async (request) => {
+        const source = await pinned.spawnSource(request);
+        return source === undefined
+          ? undefined
+          : { ...source, changeIdentity: identity };
+      },
+    },
+  );
+  const spawn =
+    offered?.outcome.outcome === "Journaled"
+      ? offered.outcome.materialization.execution[0]
+      : undefined;
+  assert.equal(spawn?.bundle?.source?.changeIdentity, identity);
+});
+
 /** A ticket dispatched into work, which is the phase a settled block interrupts. */
 function dispatchedState(): ActorState {
   const config = refinementInstance;

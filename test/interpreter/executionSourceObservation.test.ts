@@ -16,6 +16,12 @@ import type {
 } from "../../src/interpreter/evaluationStackSpawn.ts";
 import type { EvaluationStack } from "../../src/interpreter/evaluationStack.ts";
 import { unsourcedTicketReference } from "../../src/interpreter/executionSource.ts";
+import type { ChangeIdentityQuestion } from "../../src/interpreter/changeIdentity.ts";
+import {
+  asBriefIntent,
+  type DraftBrief,
+  type TicketBriefPort,
+} from "../../src/interpreter/ticketBrief.ts";
 import type {
   CommitAncestry,
   CommitAncestryQuestion,
@@ -705,6 +711,21 @@ function stackingAnswering(
   };
 }
 
+/** The accepted source's history, at its work's own branch. */
+const acceptedAtWorkHistory: ExecutionSourceHistoryPort = {
+  workSource: () =>
+    Promise.resolve({ manifests: [asResultManifestId("manifest-one")] }),
+  ticketSource: () =>
+    Promise.resolve({
+      repository: asRepositoryId("work-repository"),
+      commit: acceptedCommit,
+      ref: asGitRefName("refs/heads/work"),
+    }),
+  workResultBases: (_partition, _ticket, commit) =>
+    Promise.resolve(acceptedOnce(commit)),
+  failedLandingBase: () => Promise.resolve(undefined),
+};
+
 /** The accepted source spawned with a stacking over it. */
 function spawnStacked(
   kind: "Work" | "Evaluation",
@@ -726,19 +747,7 @@ function spawnStacked(
         throw new Error("mutable Git must not be observed");
       },
     },
-    {
-      workSource: () =>
-        Promise.resolve({ manifests: [asResultManifestId("manifest-one")] }),
-      ticketSource: () =>
-        Promise.resolve({
-          repository: asRepositoryId("work-repository"),
-          commit: acceptedCommit,
-          ref: asGitRefName("refs/heads/work"),
-        }),
-      workResultBases: (_partition, _ticket, commit) =>
-        Promise.resolve(acceptedOnce(commit)),
-      failedLandingBase: () => Promise.resolve(undefined),
-    },
+    acceptedAtWorkHistory,
     { ...noAncestry, tree: () => Promise.resolve(acceptedTree) },
     stacking,
   ).spawnSource({
@@ -820,4 +829,161 @@ test("only an evaluation told its cycle reads a stack", async () => {
     undefined,
   );
   assert.deepEqual(asked, []);
+});
+
+/** The tip of the reference the ticket lands on, and the identity of its change over it. */
+const landedTip = asGitObjectId("7".repeat(40));
+const landedIdentity = "8".repeat(40);
+
+/** How one spawn of the accepted source reads the identity of its change. */
+interface IdentifiedSpawn {
+  readonly kind?: "Work" | "Evaluation";
+  readonly identity?: string | undefined | Error;
+  readonly target?: TargetObserved | Error;
+  readonly brief?: Pick<DraftBrief, "branch" | "finalization"> | null;
+  readonly stacking?: EvaluationStackSpawn;
+  readonly bound?: boolean;
+}
+
+/** A brief port answering a brief naming what `brief` does, and none for `null`. */
+function identifiedBriefs(
+  brief: Pick<DraftBrief, "branch" | "finalization"> | null,
+): TicketBriefPort {
+  return {
+    brief: () =>
+      Promise.resolve(
+        brief === null
+          ? undefined
+          : {
+              intent: asBriefIntent("Pin the change."),
+              links: [],
+              images: [],
+              checks: [],
+              ...brief,
+            },
+      ),
+  };
+}
+
+/** A spawn of the accepted source over ports `given` describes, and the refs and identities it asked for. */
+async function identifiedSpawn(given: IdentifiedSpawn = {}) {
+  const observed: (string | undefined)[] = [];
+  const asked: ChangeIdentityQuestion[] = [];
+  const target = given.target ?? {
+    observed: "Target",
+    target: { ref: asGitRefName("refs/heads/main"), commit: landedTip },
+  };
+  const identity = "identity" in given ? given.identity : landedIdentity;
+  const sourced = await executionSourceObservation(
+    {
+      binding: (asking, repository) =>
+        Promise.resolve(
+          given.bound === false
+            ? undefined
+            : {
+                partition: asking,
+                repository: repository ?? asRepositoryId("project-default"),
+                recoveryEpoch: asRecoveryEpoch("epoch"),
+              },
+        ),
+    },
+    {
+      observeTarget: (binding) => {
+        observed.push(binding.targetRef);
+        return target instanceof Error
+          ? Promise.reject(target)
+          : Promise.resolve(target);
+      },
+    },
+    acceptedAtWorkHistory,
+    {
+      ...noAncestry,
+      tree: () => Promise.resolve(acceptedTree),
+      changeIdentity: (question) => {
+        asked.push(question);
+        return identity instanceof Error
+          ? Promise.reject(identity)
+          : Promise.resolve(identity);
+      },
+    },
+    given.stacking,
+    identifiedBriefs(given.brief === undefined ? {} : given.brief),
+  ).spawnSource({
+    partition,
+    ticket: 1,
+    source: acceptedReference,
+    kind: given.kind ?? "Evaluation",
+    cycle: 3,
+  });
+  return { sourced, observed, asked };
+}
+
+/** Catches an evaluation spawned without the identity of the change it judges. */
+test("an evaluation pins the identity of its work commit over the tip of the repository's default", async () => {
+  const { sourced, observed, asked } = await identifiedSpawn({
+    brief: { branch: asGitRefName("refs/heads/work") },
+  });
+  assert.equal(sourced?.changeIdentity, landedIdentity);
+  assert.deepEqual(observed, [undefined]);
+  assert.deepEqual(
+    asked.map(({ work, target }) => ({ work, target })),
+    [{ work: acceptedCommit, target: landedTip }],
+  );
+  assert.equal(asked[0]?.repository.repository, "work-repository");
+});
+
+/** Catches the change read over the branch its work happens on rather than where it lands. */
+test("the target a change is read over is the reference its finalization names, and never its work's branch", async () => {
+  const release = asGitRefName("refs/heads/release");
+  for (const finalization of [
+    { kind: "GitMerge", mode: "Push", policy: "Direct", target: release },
+    { kind: "PullRequest", target: release },
+  ] as const) {
+    const { observed } = await identifiedSpawn({
+      brief: { branch: asGitRefName("refs/heads/work"), finalization },
+    });
+    assert.deepEqual(observed, [release], finalization.kind);
+  }
+  assert.deepEqual((await identifiedSpawn({ brief: null })).observed, [
+    undefined,
+  ]);
+});
+
+/** Catches a stacked evaluation pinning the identity of the stack's commit, which holds other tickets' changes. */
+test("a stacked evaluation pins the identity of the ticket's own work commit", async () => {
+  const { sourced, asked } = await identifiedSpawn({
+    stacking: stackingAnswering(stackRead),
+  });
+  assert.equal(sourced?.target.commit, stackedCommit);
+  assert.equal(sourced?.changeIdentity, landedIdentity);
+  assert.deepEqual(
+    asked.map(({ work }) => work),
+    [acceptedCommit],
+  );
+});
+
+/** Catches a work cycle reading a remote for a pin only an evaluation carries. */
+test("a work cycle pins no change identity and reads no remote for one", async () => {
+  const { sourced, observed, asked } = await identifiedSpawn({ kind: "Work" });
+  assert.equal(sourced?.changeIdentity, undefined);
+  assert.deepEqual(observed, []);
+  assert.deepEqual(asked, []);
+});
+
+/** Catches an identity nobody could read failing the spawn or changing anything else it pins. */
+test("an identity that cannot be read leaves the spawn without one and otherwise unchanged", async () => {
+  const { sourced: read } = await identifiedSpawn();
+  const { changeIdentity, ...rest } = read ?? {};
+  assert.equal(changeIdentity, landedIdentity);
+  const unreadable: readonly IdentifiedSpawn[] = [
+    { identity: undefined },
+    { identity: new Error("the scratch is full") },
+    { target: { observed: "Unreadable", evidence: "RefUnreadable" } },
+    { target: new Error("the credential source raised") },
+  ];
+  for (const given of unreadable)
+    assert.deepEqual((await identifiedSpawn(given)).sourced, rest);
+  const unbound = await identifiedSpawn({ bound: false });
+  assert.equal(unbound.sourced?.changeIdentity, undefined);
+  assert.deepEqual(unbound.asked, []);
 });

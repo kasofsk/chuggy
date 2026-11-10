@@ -79,6 +79,11 @@
 
 import { assertNever } from "../../domain/assertNever.ts";
 import type {
+  ChangeIdentity,
+  ChangeIdentityPort,
+  ChangeIdentityQuestion,
+} from "../../interpreter/changeIdentity.ts";
+import type {
   CommitAncestry,
   CommitAncestryPort,
   CommitAncestryQuestion,
@@ -93,6 +98,7 @@ import type {
   RepositoryCredentialPort,
   RepositoryId,
 } from "../../interpreter/finalizer.ts";
+import { gitChangeIdentityRead } from "./gitChangeIdentity.ts";
 import { gitTimeoutMs, type GitEnvironment } from "./gitRun.ts";
 import {
   scratchFetchHistory,
@@ -463,13 +469,43 @@ async function gitCommitAncestryTree(
 }
 
 /**
+ * The identity of a change, read once the whole histories of its work commit
+ * and its target are held as an ancestry answer needs them, and nothing where
+ * either did not come to be held while the asker waited or the scratch could
+ * not answer.
+ */
+async function gitCommitAncestryChangeIdentity(
+  own: GitCommitAncestryState,
+  question: ChangeIdentityQuestion,
+  asker: GitCommitAncestryBound,
+): Promise<ChangeIdentity | undefined> {
+  for (const commit of [question.work, question.target]) {
+    const held = await gitCommitAncestryHeld(
+      own,
+      { repository: question.repository, candidate: commit, tip: commit },
+      asker,
+    );
+    if (!held) return undefined;
+  }
+  return Promise.race([
+    gitChangeIdentityRead(
+      own.scratch,
+      question.repository.repository,
+      question.work,
+      question.target,
+    ),
+    asker.then((): undefined => undefined),
+  ]);
+}
+
+/**
  * Composes the adapter over a scratch of its own opening. An ask rejects only
  * where the credential source itself raises; whatever else it could not find
  * out, a git that could not be run included, is `Unknown`.
  */
 export function gitCommitAncestry(
   options: GitCommitAncestryOptions,
-): CommitAncestryPort & CommitTreePort {
+): CommitAncestryPort & CommitTreePort & ChangeIdentityPort {
   const resolved = { ...gitCommitAncestryDefaults, ...options };
   const localTimeoutMsMax = gitTimeoutMs(
     options.localTimeoutSecsMax,
@@ -526,6 +562,10 @@ export function gitCommitAncestry(
     tree: (question) =>
       gitCommitAncestryBounded(own.answerTimeoutMsMax, (asker) =>
         gitCommitAncestryTree(own, question, asker),
+      ),
+    changeIdentity: (question) =>
+      gitCommitAncestryBounded(own.answerTimeoutMsMax, (asker) =>
+        gitCommitAncestryChangeIdentity(own, question, asker),
       ),
   };
 }
