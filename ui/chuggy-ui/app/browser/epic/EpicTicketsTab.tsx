@@ -35,7 +35,7 @@ import { TicketListState } from "../ProjectTable.tsx";
 import { TicketRowDispatchScope } from "../TicketActions.tsx";
 import { TicketTitleNumber, TicketTitleWords } from "../TicketCells.tsx";
 import {
-  TicketStateInkMark,
+  TicketStateMark,
   TicketStateWord,
 } from "../ticket/TicketStateLabel.tsx";
 import { readValue } from "../ticket/TicketPageHeld.tsx";
@@ -196,8 +196,11 @@ function EpicTicketsRow(props: {
       data-ticket={member.ticket}
       data-standing={member.standing}
     >
-      <span className="epic-tickets-mark">
-        <TicketStateInkMark standing={member.standing} />
+      <span
+        className="epic-tickets-mark ticket-state-ink"
+        data-tone={ticketStateLabelOf(member.standing).tone}
+      >
+        <TicketStateMark standing={member.standing} />
       </span>
       <span className="epic-tickets-number">
         <TicketTitleNumber partition={partition} ticket={member.ticket} />
@@ -239,10 +242,16 @@ function EpicTicketsGroupList(props: {
   const word = text(epicTicketsGroupWord(props.group));
   const count = props.members.length;
   const { onRemove } = props;
+  const standing = epicTicketsGroupStandings[props.group];
   return (
     <section className="epic-tickets-group" data-group={props.group}>
       <h3 className="epic-tickets-group-head">
-        <TicketStateInkMark standing={epicTicketsGroupStandings[props.group]} />
+        <span
+          className="epic-tickets-group-mark ticket-state-ink"
+          data-tone={ticketStateLabelOf(standing).tone}
+        >
+          <TicketStateMark standing={standing} />
+        </span>
         <span>{word}</span>
         <span className="ticket-tab-count">{count}</span>
       </h3>

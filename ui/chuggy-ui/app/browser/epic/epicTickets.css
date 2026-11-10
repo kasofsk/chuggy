@@ -60,6 +60,10 @@
     border-bottom: var(--hairline) solid var(--edge);
   }
 
+  .epic-tickets-group-mark {
+    display: flex;
+  }
+
   /* What stands beside the title is centred on its first line. */
   .epic-tickets-mark,
   .epic-tickets-number,
