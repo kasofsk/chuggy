@@ -13,3 +13,4 @@ export const leadOpenSignature =
   "text,text,text,text,text,text,bigint,text,text";
 export const sessionRouteSignature = "text,text,text";
 export const leadRunnerStandingSignature = "text,text,bigint";
+export const leadOfferingSignature = "text,text";

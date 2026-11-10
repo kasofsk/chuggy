@@ -48,6 +48,7 @@ import {
   forgeIds,
   nativeActionResolutions,
   ownerFallbacks,
+  leadOfferings,
   placementRoutes,
   selectorDispatchModes,
   selectorModes,
@@ -275,10 +276,15 @@ export const executionPlacementSchema = z.strictObject({
   evaluation: z.enum(placementRoutes),
 });
 
-/** Where a project's threads and its lead run, both written whole. */
+/**
+ * Where a project's threads and its lead run, both written whole, and the
+ * lead's offering. One not named is kept while the lead stays `InCluster`, and
+ * is `Own` where it moves to `Pool`.
+ */
 export const sessionPlacementSchema = z.strictObject({
   thread: z.enum(placementRoutes),
   lead: z.enum(placementRoutes),
+  leadOffering: z.enum(leadOfferings).optional(),
 });
 
 /** Whether a project's members' personal runners serve them there, and under which fallback; a body naming none takes them out. */

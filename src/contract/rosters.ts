@@ -852,6 +852,14 @@ export const placementRouteSources = [
 ] as const;
 export type PlacementRouteSource = (typeof placementRouteSources)[number];
 
+/**
+ * How a project's lead runs on its route: on the members' own Claude login or
+ * the deployment's credential, or subsidized, in cluster on a profile the
+ * deployment publishes.
+ */
+export const leadOfferings = ["Own", "Subsidized"] as const;
+export type LeadOffering = (typeof leadOfferings)[number];
+
 /** Whether runners are registered on a project and whether one has polled lately. */
 export const sessionRunnerStandings = [
   "Unregistered",
@@ -933,6 +941,9 @@ export type ProjectArtifactUploadRefusalCode =
  * the turn would be offered to runners; shared for the same reason.
  */
 export const noRunnerCode = "NoRunner";
+
+/** What a placement naming a lead offering the deployment does not admit on its route is answered with; shared for the same reason. */
+export const leadOfferingNotAdmittedCode = "LeadOfferingNotAdmitted";
 
 /** What a review of a decision no longer held is answered with; shared for the same reason. */
 export const selectorProposalNotHeldCode = "ProposalNotHeld";

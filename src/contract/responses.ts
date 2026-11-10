@@ -148,6 +148,7 @@ import {
   ownerFallbacks,
   phaseRoster,
   placementRouteSources,
+  leadOfferings,
   placementRoutes,
   repositoryConfigurationFaults,
   requirementSources,
@@ -2501,14 +2502,17 @@ export type ExecutionPlacementResponse = z.infer<
 >;
 
 /**
- * Where a project's threads and its lead run and what decided each, the routes
- * this caller may choose, and the runners each would run on: the caller's own
- * for their thread, their chat host for their inquiry, and any of the
- * project's pools for the lead.
+ * Where a project's threads and its lead run and what decided each, the lead's
+ * offering and the ones the deployment admits, the routes this caller may
+ * choose, and the runners each would run on: the caller's own for their
+ * thread, their chat host for their inquiry, and any of the project's pools
+ * for the lead.
  */
 export const sessionPlacementResponseSchema = z.object({
   thread: placementRouteResolvedSchema,
   lead: placementRouteResolvedSchema,
+  leadOffering: z.enum(leadOfferings),
+  leadOfferings: z.array(z.enum(leadOfferings)).max(leadOfferings.length),
   choices: z.array(z.enum(placementRoutes)).max(placementRoutes.length),
   runners: z.object({
     mine: z.enum(sessionRunnerStandings),

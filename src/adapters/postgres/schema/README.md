@@ -461,14 +461,24 @@ work: a limit lowered below what a member holds closes nothing, and refuses
 their next open until they are under it.
 
 `project_session_placement` — where one project's threads and its lead run,
-and who set it; an inquiry runs where the lead does. Owned by the boundary
-owner, which is what `set_project_session_placement` runs as; the API role
-writes it through that door alone, and every reader reaches it through
-`session_route`. Its key and identity are `(tenant, project)` and it points at
-`project`. It is changed by that door alone, which answers `Unchanged` and
-keeps the setter where nothing moved; a row backfilled for a project that ran
-before it names no setter. It has no unfinished work: a project with no row
-runs where the published routing's default sends it.
+the lead's offering, and who set it; an inquiry runs where the lead does.
+Owned by the boundary owner, which is what `set_project_session_placement`
+runs as; the API role writes it through that door alone, and every reader
+reaches it through `session_route`, `session_lead_offering` and
+`stored_lead_offering`. Its key and identity are `(tenant, project)` and it points at `project`. It is changed by
+that door alone, which answers `Unchanged` and keeps the setter where nothing
+moved; a row backfilled for a project that ran before it names no setter.
+`project_session_placement_subsidized_lead_is_in_cluster` holds a `Subsidized`
+offering to an `InCluster` lead. It has no unfinished work: a project with no
+row runs where the published routing's default sends it.
+
+`subsidized_lead` — the subsidized lead the selector offers: its credential
+slot, model, effort and bounds. Owned by the selector service, which writes it
+at boot and deletes it at a boot that offers none; the API role reads it
+through `read_subsidized_lead` alone. It has no project key, being the
+deployment's: it is a single row, keyed `singleton` and held to it by a CHECK.
+It has no unfinished work: `session_lead_offering` reads it when asked, so a
+stored `Subsidized` reads `Own` while no row stands.
 
 `session_routing` — the session routing the scheduler last published: the
 default per kind and each project's override. It is a single row, keyed

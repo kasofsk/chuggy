@@ -22,13 +22,19 @@ export type PlacementRead<View> =
   | { readonly result: "NotFound" }
   | { readonly result: "Found"; readonly view: View };
 
-export type PlacementWritten<View> =
+/** A write's answer, and the refusal of its own kind of placement where it has one. */
+export type PlacementWritten<View, Refusal extends string = never> =
   | { readonly result: "NotFound" }
   | { readonly result: "HostedRunsNotGranted" }
+  | ([Refusal] extends [never] ? never : { readonly result: Refusal })
   | { readonly result: "Written" | "Unchanged"; readonly view: View };
 
 /** One project's placement of some kind of work, read under `Read` and written whole by an administrator. */
-export interface PlacementAdministration<Routes, View> {
+export interface PlacementAdministration<
+  Routes,
+  View,
+  Written = PlacementWritten<View>,
+> {
   read(
     principal: Principal,
     partition: Partition,
@@ -37,7 +43,7 @@ export interface PlacementAdministration<Routes, View> {
     principal: Principal,
     partition: Partition,
     placement: Routes,
-  ): Promise<PlacementWritten<View>>;
+  ): Promise<Written>;
 }
 
 /** The routes a caller may choose: none unless it administers, and a hosted one only under the grant. */
@@ -90,21 +96,42 @@ export async function placementReader(
   return { administers, hosted };
 }
 
-/** A placement an administrator writes, refused where it names a hosted route the tenant does not grant them, and answered with the view read after it. */
-export async function placementWritten<View>(
+/** The placement a write stores, and the routes the hosted grant is decided on for it. */
+export interface PlacementHeld<Placement> {
+  readonly placement: Placement;
+  readonly routes: readonly PlacementRoute[];
+}
+
+/**
+ * A placement an administrator writes, refused where it names a hosted route
+ * the tenant does not grant them, and answered with the view read after it.
+ * `held` is asked only of an administrator, and answers the placement to write
+ * with the routes the grant decides, or the write's own refusal.
+ */
+export async function placementWritten<
+  Placement,
+  View,
+  Refusal extends string = never,
+>(
   access: ProjectAccess,
   principal: Principal,
   partition: Partition,
-  routes: readonly PlacementRoute[],
-  write: (authority: Authority) => Promise<PlacementWrite>,
+  held: () => Promise<PlacementHeld<Placement> | Refusal>,
+  write: (
+    authority: Authority,
+    placement: Placement,
+  ) => Promise<PlacementWrite>,
   view: (hosted: boolean) => Promise<View>,
-): Promise<PlacementWritten<View>> {
+): Promise<PlacementWritten<View, Refusal>> {
   const authority = await access.authorize(principal, partition, "Administer");
   if (authority === undefined) return { result: "NotFound" };
+  const decided = await held();
+  if (typeof decided === "string")
+    return { result: decided } as PlacementWritten<View, Refusal>;
   const hosted = await hostedRunsGranted(access, principal, partition.tenant);
-  if (placementRefused(routes, hosted))
+  if (placementRefused(decided.routes, hosted))
     return { result: "HostedRunsNotGranted" };
-  const written = await write(authority);
+  const written = await write(authority, decided.placement);
   if (written === "NotFound") return { result: "NotFound" };
   return { result: written, view: await view(hosted) };
 }
