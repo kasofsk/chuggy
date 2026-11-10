@@ -160,6 +160,7 @@ test("the golden names every request schema", () => {
     "forgeCredential",
     "leadInquiry",
     "ownerFallback",
+    "personalRunnerProject",
     "personalRunnerRedemption",
     "projectCreation",
     "projectRepositoryBind",

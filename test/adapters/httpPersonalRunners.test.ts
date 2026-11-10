@@ -101,7 +101,7 @@ function fakeRunnersRead(tenant: TenantId): PersonalRunnerRead {
               executionsLive: false,
             },
           ],
-          projects: [asProjectId("atlas")],
+          projects: [{ project: asProjectId("atlas"), priority: "High" }],
         },
       }
     : { result: "NotFound" };
@@ -134,8 +134,10 @@ function fakeRunners(calls: string[]): PersonalRunnerService {
       calls.push(`permitted:${principal}:${tenant}`);
       return Promise.resolve(tenant === "acme");
     },
-    allow: (principal, tenant, project) => {
-      calls.push(`allow:${principal}:${tenant}:${project}`);
+    allow: (principal, tenant, project, priority) => {
+      calls.push(
+        `allow:${principal}:${tenant}:${project}${priority === undefined ? "" : `:${priority}`}`,
+      );
       if (project === "full") return Promise.resolve("LimitReached");
       return Promise.resolve(project === "atlas" ? "Allowed" : "NotFound");
     },
@@ -413,7 +415,7 @@ test("a member reads their own runners, each by its id, beside the projects they
         executionsLive: false,
       },
     ],
-    projects: ["atlas"],
+    projects: [{ project: "atlas", priority: "High" }],
   });
   assert.equal(
     (await app.inject({ url: runner("other"), headers: bearer })).statusCode,
@@ -512,7 +514,43 @@ test("an allowlist write reaches the service however a bodyless request is frame
         `${method} ${JSON.stringify(framing)}`,
       );
     }
-  assert.equal(calls.length, 6);
+  assert.deepEqual(calls, [
+    ...Array<string>(3).fill(`allow:${caller}:acme:atlas`),
+    ...Array<string>(3).fill(`disallow:${caller}:acme:atlas`),
+  ]);
+});
+
+test("an allowlist write's body names the project's priority, and one off the roster or not the API's media type is refused before the service is asked", async () => {
+  const calls: string[] = [];
+  await using app = runnersApp(calls);
+  const put = (headers: Record<string, string>, payload: string) =>
+    app.inject({
+      method: "PUT",
+      url: allowed("acme", "atlas"),
+      headers: { ...bearer, ...headers },
+      payload,
+    });
+  for (const priority of ["High", "Normal", "Low"])
+    assert.equal(
+      (await put(json, JSON.stringify({ priority }))).statusCode,
+      204,
+      priority,
+    );
+  for (const [headers, payload, status] of [
+    [json, JSON.stringify({ priority: "Urgent" }), 400],
+    [json, JSON.stringify({ priority: "High", weight: 2 }), 400],
+    [json, JSON.stringify({}), 400],
+    [json, "{", 400],
+    [{ "content-type": "application/json" }, '{"priority":"High"}', 415],
+  ] as const) {
+    const refused = await put(headers, payload);
+    assert.equal(refused.statusCode, status, payload);
+  }
+  assert.deepEqual(calls, [
+    `allow:${caller}:acme:atlas:High`,
+    `allow:${caller}:acme:atlas:Normal`,
+    `allow:${caller}:acme:atlas:Low`,
+  ]);
 });
 
 test("runners are taken off by their owner, one by its id or all at once, or by their member's subject", async () => {

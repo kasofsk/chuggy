@@ -1406,7 +1406,10 @@ export function personalRunnerResponse(
           executionsLive: runner.executionsLive,
           ...runnerListedBody(runner.runner),
         })),
-        projects: [...result.value.projects],
+        projects: result.value.projects.map(({ project, priority }) => ({
+          project,
+          priority,
+        })),
       } satisfies PersonalRunnerResponse);
     default:
       return assertNever(result);

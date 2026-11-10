@@ -42,7 +42,10 @@ const held = {
   executionsLive: true,
 };
 
-const runner: PersonalRunnerResponse = { runners: [held], projects: ["atlas"] };
+const runner: PersonalRunnerResponse = {
+  runners: [held],
+  projects: [{ project: "atlas", priority: "Normal" }],
+};
 
 /** The reader's runners, each live for threads and for executions as named. */
 function runnersLive(

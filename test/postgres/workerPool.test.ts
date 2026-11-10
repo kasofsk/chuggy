@@ -669,13 +669,13 @@ const poolPlaneColumns = [
   [
     "execution",
     "SELECT",
-    "cpu_millis,execution,memory_mib,owner,owner_fallback,placement,project,requirement_value,status,tenant",
+    "cpu_millis,execution,memory_mib,owner,owner_fallback,placement,project,registered_at,requirement_value,status,tenant,ticket",
   ],
   ["execution", "UPDATE", "placement_backoff_from"],
   [
     "execution_attempt",
     "SELECT",
-    "agent,assignment,attempt,evidence,execution,generation,invoked,lease_expires_at,lease_owner,opened_at,personal,pool,pool_principal,pool_refusal,project,recovery_epoch,runner_benches_credential,runtime,state,tenant",
+    "agent,assignment,attempt,claimed_at,evidence,execution,generation,invoked,lease_expires_at,lease_owner,opened_at,personal,pool,pool_principal,pool_refusal,project,recovery_epoch,runner_benches_credential,runtime,state,tenant",
   ],
   [
     "execution_attempt",
@@ -697,7 +697,7 @@ const poolPlaneColumns = [
     "UPDATE",
     "agents_advertised,capabilities,executions_polled_at,last_polled_at,memory_ceiling_mib,runner_package,runner_version",
   ],
-  ["personal_runner_project", "SELECT", "owner,project,tenant"],
+  ["personal_runner_project", "SELECT", "owner,priority,project,tenant"],
   ["project", "SELECT", "lifecycle,project,tenant"],
   ["recovery_epoch", "SELECT", "epoch,established_at,ordinal"],
   ["schema_migration", "SELECT", "applied_at,name,version"],

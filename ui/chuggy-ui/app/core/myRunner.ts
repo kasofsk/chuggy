@@ -17,8 +17,14 @@ import type {
   ExecutionSummary,
   PersonalRunnerResponse,
 } from "../../../../src/contract/responses.ts";
-import { ownerFallbacks } from "../../../../src/contract/rosters.ts";
-import type { OwnerFallback } from "../../../../src/contract/rosters.ts";
+import {
+  ownerFallbacks,
+  personalRunnerPriorities,
+} from "../../../../src/contract/rosters.ts";
+import type {
+  OwnerFallback,
+  PersonalRunnerPriority,
+} from "../../../../src/contract/rosters.ts";
 import type { ApiResult } from "./apiRequest.ts";
 import type { Copy, CopyOrData } from "./copy.ts";
 import { failureWords } from "./failureWords.ts";
@@ -26,6 +32,25 @@ import { executionStarting } from "./ticketLedger.ts";
 
 /** What a member is told where the workspace has not let them register one. */
 export const myRunnerWithheld: Copy = { id: "runners-personal-withheld" };
+
+/** What a project's priority among the reader's runners' others is called. */
+export function myRunnerPriorityLabel(priority: PersonalRunnerPriority): Copy {
+  switch (priority) {
+    case "High":
+      return { id: "runners-personal-project-priority-high" };
+    case "Normal":
+      return { id: "runners-personal-project-priority-normal" };
+    case "Low":
+      return { id: "runners-personal-project-priority-low" };
+  }
+}
+
+/** The priority a menu answered, where it is one this wire knows. */
+export function myRunnerPriorityChosen(
+  value: string,
+): PersonalRunnerPriority | undefined {
+  return personalRunnerPriorities.find((each) => each === value);
+}
 
 /** The radio value a project naming no fallback is chosen by. */
 export const ownerFallbackNone = "None";
@@ -109,7 +134,7 @@ export function myRunnerAddable(
   tenant: string,
   runner: PersonalRunnerResponse,
 ): readonly string[] {
-  const served = new Set(runner.projects);
+  const served = new Set(runner.projects.map((each) => each.project));
   return readable
     .filter((each) => each.tenant === tenant && !served.has(each.project))
     .map((each) => each.project)
@@ -135,7 +160,10 @@ export function runnerWait(
     return undefined;
   if (execution.status === "Queued" || !executionStarting(execution))
     return undefined;
-  if (runner === undefined || !runner.projects.includes(project))
+  if (
+    runner === undefined ||
+    !runner.projects.some((each) => each.project === project)
+  )
     return undefined;
   if (runner.runners.some((each) => each.executionsLive)) return "Waiting";
   return execution.ownerFallback === "Strict" ? "Offline" : undefined;

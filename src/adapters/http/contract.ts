@@ -39,6 +39,7 @@ import type { ReleaseAuthoringBody } from "../../contract/authoring.ts";
 import {
   accountAgents,
   type AccountAgent,
+  type PersonalRunnerPriority,
   type SelectorReviewOutcome,
 } from "../../contract/rosters.ts";
 import type { AgentAccountSettings } from "../../interpreter/agentAccount.ts";
@@ -60,6 +61,7 @@ import {
   repositoryConfigurationImportSchema,
   selectorProjectSettingsSchema,
   sessionPlacementSchema,
+  personalRunnerProjectSchema,
   projectOwnerFallbackSchema,
   threadLimitSchema,
   type PublicMutation,
@@ -319,6 +321,15 @@ export function parseProjectOwnerFallback(
   body: unknown,
 ): WorkerPoolOwnerFallback | undefined {
   return projectOwnerFallbackSchema.parse(body).fallback;
+}
+
+/** The priority an allowlist write names, or none where it came with no body. */
+export function parsePersonalRunnerProject(
+  body: unknown,
+): PersonalRunnerPriority | undefined {
+  return body === undefined
+    ? undefined
+    : personalRunnerProjectSchema.parse(body).priority;
 }
 
 /** One session placement as the wire carries it, keyed by the session kind each route is for, and the lead's offering where it names one. */
