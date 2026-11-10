@@ -82,10 +82,12 @@ import {
   workerPoolsAnsweredMax,
   ticketLandingsAnsweredMax,
   ticketNumberSchema,
+  landingQueueTicketsAnsweredMax,
 } from "./http.ts";
 import { actionReportDocumentSchema } from "./actionReport.ts";
 import { authoringResponseSchema, programStageSchema } from "./authoring.ts";
 import {
+  briefBranchSchema,
   briefFinalizationResponseSchema,
   briefRepositorySchema,
   briefResponseSchema,
@@ -3018,3 +3020,22 @@ export const ticketLandingsResponseSchema = z.strictObject({
 export type TicketLandingsResponse = z.infer<
   typeof ticketLandingsResponseSchema
 >;
+
+/**
+ * One reference's landing queue: its repository, the target its briefs name,
+ * absent where they name none, the ticket holding it, and the tickets waiting
+ * on it in rank order.
+ */
+export const landingQueueSchema = z.strictObject({
+  repository: briefRepositorySchema,
+  target: briefBranchSchema.optional(),
+  holder: ticketNumberSchema,
+  waiting: z.array(ticketNumberSchema).max(landingQueueTicketsAnsweredMax - 1),
+});
+
+/** A project's landing queues, `truncated` where more tickets were ranked than one read answers. */
+export const landingQueuesResponseSchema = z.strictObject({
+  queues: z.array(landingQueueSchema).max(landingQueueTicketsAnsweredMax),
+  truncated: z.boolean(),
+});
+export type LandingQueuesResponse = z.infer<typeof landingQueuesResponseSchema>;

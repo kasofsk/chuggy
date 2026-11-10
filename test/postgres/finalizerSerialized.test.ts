@@ -38,11 +38,12 @@ import {
   finalizerRemotePort,
   finalizerRigOpen,
   finalizerSerializedSubject,
-  finalizerStoreReleasedBrief,
+  finalizerSibling,
   finalizerSubject,
   finalizerTaskDone,
   type FinalizerProject,
   type FinalizerRig,
+  type FinalizerSibling,
 } from "./finalizerHarness.ts";
 
 let rig: FinalizerRig;
@@ -56,75 +57,13 @@ after(async () => {
   await rig.close();
 });
 
-/** What a sibling ticket is written with. */
-interface Sibling {
-  readonly landing: "Direct" | "Serialized" | "Stacked";
-  readonly phase: string;
-  /** Whether its finalization request is still to be drawn. */
-  readonly pending: boolean;
-  readonly target?: string;
-  /** How far from the project's request it entered the journal, before it when negative. */
-  readonly after?: number;
-}
-
-/**
- * Writes a second ticket beside `project`'s, entering at the same journal entry and
- * so after it by ticket, and answers it as
- * a project so the attempt helpers can write beside it.
- */
-async function sibling(
+/** A second ticket beside `project`'s, written by hand. */
+function sibling(
   project: FinalizerProject,
   label: string,
-  how: Sibling,
+  how: FinalizerSibling,
 ): Promise<FinalizerProject> {
-  const ticket = project.ticket + 1;
-  const request = finalizerIdentity(`request-${label}`);
-  const keys = [project.partition.tenant, project.partition.project, ticket];
-  const found = await rig.harness.query(
-    `SELECT brief FROM ticket_definition WHERE tenant=$1 AND project=$2 AND ticket=$3`,
-    [project.partition.tenant, project.partition.project, project.ticket],
-  );
-  const brief = found[0]?.["brief"] as Record<string, unknown> | undefined;
-  assert.ok(brief !== undefined, "the project's ticket has no brief");
-  const rest = Object.fromEntries(
-    Object.entries(brief).filter(
-      ([field]) => field !== "landing" && field !== "finalization",
-    ),
-  );
-  await finalizerStoreReleasedBrief(
-    (sql, values) => rig.harness.query(sql, [...values]),
-    keys,
-    {
-      ...rest,
-      repository: project.repository,
-      ...(how.landing === "Direct" ? {} : { landing: how.landing }),
-      finalization: {
-        mode: "Push",
-        ...(how.target === undefined ? {} : { target: how.target }),
-      },
-    },
-  );
-  await rig.harness.query(
-    `INSERT INTO ticket_projection (tenant, project, ticket, phase, seq)
-     VALUES ($1,$2,$3,$4,$5)`,
-    [...keys, how.phase, project.authorizingSeq + 100],
-  );
-  await rig.harness.query(
-    `INSERT INTO finalization_request
-       (tenant, project, request, authorizing_seq, effect_position, ticket,
-        ticket_version, request_generation, kind, state, work_cycle,
-        finalization_generation)
-     VALUES ($1,$2,$3,$4,1,$5,$4,1,'RunFinalizer',$6,1,1)`,
-    [
-      project.partition.tenant,
-      project.partition.project,
-      request,
-      project.authorizingSeq + (how.after ?? 0),
-      ticket,
-      how.pending ? "Open" : "Fulfilled",
-    ],
-  );
-  return { ...project, ticket, request };
+  return finalizerSibling(rig, project, label, how);
 }
 
 /** The requests of `projects` one draw returns, which is everything the installation has open. */

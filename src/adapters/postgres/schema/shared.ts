@@ -322,6 +322,9 @@ export const ticketEvaluationReworkedSinceFunction =
   "ticket_evaluation_reworked_since";
 /** The journal position a ticket's rank on its reference was taken at. */
 export const ticketFinalizationRankFunction = "ticket_finalization_rank";
+/** The API's door for one project's tickets on a landing queue, each with its rank. */
+export const projectLandingQueueCandidatesFunction =
+  "project_landing_queue_candidates";
 /** How many evaluations of a ticket that ran over a stack sent it back to work. */
 export const ticketStackedFailuresFunction = "ticket_stacked_failures";
 /** The finalizer's door for abandoning an evaluation whose stack no longer stands. */

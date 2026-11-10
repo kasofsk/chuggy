@@ -261,10 +261,12 @@ import {
   actionReportResponse,
   ticketActionReachResponse,
   ticketLandingsResponse,
+  landingQueuesResponse,
 } from "./outcomes.ts";
 import type { ActionReports } from "../../interpreter/actionReport.ts";
 import type { TicketActionReaches } from "../../interpreter/ticketActionReach.ts";
 import type { TicketLandingReads } from "../../interpreter/ticketLandings.ts";
+import type { LandingQueueReads } from "../../interpreter/landingQueues.ts";
 import type { WorkerPoolRegistrationService } from "../../interpreter/workerPoolRegistrationToken.ts";
 import type { PersonalRunnerService } from "../../interpreter/personalRunnerRegistration.ts";
 import type { AgentAccountService } from "../../interpreter/agentAccount.ts";
@@ -2474,6 +2476,28 @@ function registerTicketLandings(
   );
 }
 
+function registerLandingQueues(
+  app: FastifyInstance,
+  queues: LandingQueueReads,
+): void {
+  registerEndpoint(
+    app,
+    nativeHttpEndpoints.landingQueues,
+    (_request, principal, partition) => queues.read(principal, partition),
+    landingQueuesResponse,
+  );
+}
+
+/** Where a project's work is landing: each ticket's landings, and the project's queues. */
+function registerLandingReads(
+  app: FastifyInstance,
+  landings: TicketLandingReads | undefined,
+  landingQueues: LandingQueueReads | undefined,
+): void {
+  if (landings !== undefined) registerTicketLandings(app, landings);
+  if (landingQueues !== undefined) registerLandingQueues(app, landingQueues);
+}
+
 function registerEndpointSession(request: FastifyRequest): SessionId {
   return asSessionId(textField(record(request.params), "session"));
 }
@@ -3240,6 +3264,7 @@ export function createNativeHttpApp(
   inbox?: ProjectInbox,
   agentAccounts?: AgentAccountService,
   runnerReleases?: WorkerRunnerReleases,
+  landingQueues?: LandingQueueReads,
 ): FastifyInstance {
   const app = nativeHttpServer(limits);
   const partitionRoot = "/api/v1/tenants/:tenant/projects/:project";
@@ -3278,7 +3303,7 @@ export function createNativeHttpApp(
   registerPlacements(app, placement, sessionPlacement, ownerFallback);
   if (actionReports !== undefined) registerActionReports(app, actionReports);
   if (actionReach !== undefined) registerActionReach(app, actionReach);
-  if (landings !== undefined) registerTicketLandings(app, landings);
+  registerLandingReads(app, landings, landingQueues);
   if (agentAccounts !== undefined) registerAgentAccounts(app, agentAccounts);
   registerFailures(app);
   return app;

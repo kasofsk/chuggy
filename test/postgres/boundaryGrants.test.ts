@@ -32,6 +32,7 @@ import {
   metricsPlaneRole,
   poolPlaneRole,
   projectChangeAppendFunction,
+  projectLandingQueueCandidatesFunction,
   projectChangeRetainedFunction,
   projectChangeSweepFunction,
   projectCreateFunction,
@@ -745,6 +746,11 @@ const boundaryGrantsDoors: readonly DoorDeclared[] = [
     `${ticketLandingsReadFunction}(text,text,bigint,integer)`,
     [apiRole, ticketServiceRole, schedulerRole],
     [finalizerRole],
+  ),
+  boundaryGrantsDoor(
+    `${projectLandingQueueCandidatesFunction}(text,text)`,
+    [apiRole],
+    [finalizerRole, ticketServiceRole, schedulerRole],
   ),
   {
     signature: `${agentAccountFunction}(text,text,text,text)`,

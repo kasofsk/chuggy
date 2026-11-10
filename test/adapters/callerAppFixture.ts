@@ -12,6 +12,7 @@ import type { Principal } from "../../src/interpreter/principal.ts";
 import type { ProjectOwnerFallbackAdministration } from "../../src/interpreter/projectOwnerFallback.ts";
 import type { TicketActionReaches } from "../../src/interpreter/ticketActionReach.ts";
 import type { TicketLandingReads } from "../../src/interpreter/ticketLandings.ts";
+import type { LandingQueueReads } from "../../src/interpreter/landingQueues.ts";
 import { unservedNativeWeb } from "./threadFixtures.ts";
 
 /** The services one app serves, each absent where its suite composes none. */
@@ -22,6 +23,7 @@ export interface CallerAppServices {
   readonly ownerFallback?: ProjectOwnerFallbackAdministration;
   readonly chat?: MemberChat;
   readonly agentAccounts?: AgentAccountService;
+  readonly landingQueues?: LandingQueueReads;
 }
 
 /** The app serving `services`, where `Bearer valid` authenticates `caller` and any other bearer nobody. */
@@ -66,5 +68,7 @@ export function callerApp(caller: Principal, services: CallerAppServices) {
     services.chat,
     undefined,
     services.agentAccounts,
+    undefined,
+    services.landingQueues,
   );
 }
