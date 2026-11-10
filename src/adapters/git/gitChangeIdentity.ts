@@ -4,8 +4,10 @@
  *
  * THE DIFF IS READ WHOLE AND HANDED TO `patch-id` BYTE FOR BYTE, never decoded
  * on the way back in, so two edits differing only in bytes that are not UTF-8
- * are two identities. Renames, external diff drivers and text conversion are
- * turned off, so no configuration of the scratch's git changes the answer.
+ * are two identities. It is written by `diff-tree`, which reads none of the
+ * configuration `diff` reads for a person, with renames, external diff drivers
+ * and text conversion turned off, so prefixes, algorithm and drivers set on the
+ * host's git do not change the answer.
  *
  * A READ THAT DID NOT END WITH GIT'S ANSWER ANSWERS NOTHING: a commit pair
  * sharing no history, a diff past the output bound, and a git stopped at its
@@ -58,7 +60,8 @@ async function gitChangeIdentityDiff(
     stdoutEncoding: "latin1",
     argv: [
       "--no-replace-objects",
-      "diff",
+      "diff-tree",
+      "-p",
       "--no-renames",
       "--no-ext-diff",
       "--no-textconv",

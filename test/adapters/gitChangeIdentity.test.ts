@@ -5,7 +5,7 @@
  */
 
 import assert from "node:assert/strict";
-import { writeFileSync } from "node:fs";
+import { appendFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { test, type TestContext } from "node:test";
 
@@ -135,6 +135,24 @@ test("a conflict resolved against a moved target gives the change another identi
   );
   assert.notEqual(after, undefined);
   assert.notEqual(after, before);
+});
+
+test("the user-interface configuration of the scratch's git leaves the identity as it was", async (t) => {
+  const { fixture, landed, work } = changeOpen(t);
+  const port = fixturePort(fixture);
+  const before = await port.changeIdentity(
+    changeQuestion(fixture, work, landed),
+  );
+  appendFileSync(
+    join(fixture.directory, "gitconfig"),
+    "[diff]\n\tnoprefix = true\n\tmnemonicPrefix = true\n\talgorithm = patience\n",
+  );
+  assert.equal(
+    await fixturePort(fixture).changeIdentity(
+      changeQuestion(fixture, work, landed),
+    ),
+    before,
+  );
 });
 
 test("a work commit the target already holds is the empty change, which is an answer", async (t) => {
