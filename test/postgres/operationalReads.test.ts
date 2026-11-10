@@ -4,6 +4,7 @@ import { after, before, test } from "node:test";
 import type pg from "pg";
 
 import { postgresOperationalReads } from "../../src/adapters/postgres/operationalReads.ts";
+import { postgresExecutionContextRead } from "../../src/adapters/postgres/schedulerContext.ts";
 import { projectChangeRepresentationSchemas } from "../../src/contract/events.ts";
 import { nativeHttpPageItemsMax } from "../../src/contract/http.ts";
 import { workerPlaneRole } from "../../src/adapters/postgres/schema.ts";
@@ -969,6 +970,86 @@ test("an execution whose open attempt's run started reads, and is selected, as r
     launching: ["Launching"],
     running: [],
   });
+});
+
+/** Two executions of one project with attempts opened by no fabric, the first's run started. */
+async function operationalOneStarted(label: string) {
+  const project = await schedulerProject(rig, label, { tasks: 2 });
+  await operationalRegistered(project, project.request, label);
+  const started = await schedulerOpenedAttempt(rig, project, label);
+  const unstarted = await schedulerOpenedAttempt(rig, project, label);
+  return { project, started, unstarted };
+}
+
+/** The project's status and its executions' statuses by execution, as the API reads them. */
+async function operationalStatusAndList(project: SchedulerProject) {
+  const reads = postgresOperationalReads(ingress);
+  const listed = await reads.executions(
+    project.partition,
+    {
+      limit: 10,
+      ticket: id(project.ticket),
+      selection: { selection: "NonTerminal" },
+    },
+    reader,
+  );
+  return {
+    status: await reads.status(project.partition),
+    listed: new Map(
+      listed.executions.map((each) => [each.execution, each.status]),
+    ),
+  };
+}
+
+test("a project's status and its lead's context count a launching execution whose run started as running, as its list does", async () => {
+  const { project, started, unstarted } = await operationalOneStarted(
+    "operational-status-started",
+  );
+  await operationalRunRecorded(started.attempt);
+  const { status, listed } = await operationalStatusAndList(project);
+  assert.deepEqual(
+    { launching: status.launching, running: status.running },
+    { launching: 1, running: 1 },
+  );
+  const lead = await postgresExecutionContextRead(ingress).context(
+    project.partition,
+  );
+  assert.deepEqual(
+    { launching: lead.activeWork.launching, running: lead.activeWork.running },
+    { launching: 1, running: 1 },
+  );
+  assert.equal(listed.get(started.execution), "Running");
+  assert.equal(listed.get(unstarted.execution), "Launching");
+  assert.deepEqual(
+    {
+      launching: [...listed.values()].filter((each) => each === "Launching")
+        .length,
+      running: [...listed.values()].filter((each) => each === "Running").length,
+    },
+    { launching: status.launching, running: status.running },
+  );
+  const stored = await schedulerExecutions(rig, project.partition);
+  assert.deepEqual(
+    stored.map((each) => each.status),
+    ["Launching", "Launching"],
+  );
+});
+
+test("a run starting moves no execution in or out of the cluster's and account's active totals", async () => {
+  const { project, started } = await operationalOneStarted(
+    "operational-status-capacity",
+  );
+  const totals = async () => {
+    const { status } = await operationalStatusAndList(project);
+    return {
+      clusterActive: status.clusterActive,
+      accountActive: status.accountActive,
+    };
+  };
+  const unstartedTotals = await totals();
+  assert.deepEqual(unstartedTotals, { clusterActive: 2, accountActive: 2 });
+  await operationalRunRecorded(started.attempt);
+  assert.deepEqual(await totals(), unstartedTotals);
 });
 
 /** UTC ISO 8601, the form every instant a read answers takes. */
