@@ -12,10 +12,9 @@ import {
   epicFormFaults,
   epicFormFrom,
   epicPickerOptions,
-  epicProgressBar,
-  epicProgressCounts,
-  epicProgressLine,
-  epicProgressMovingAny,
+  epicProgressGroupTone,
+  epicProgressSaid,
+  epicProgressSegments,
   epicStatusLook,
   epicTicketsParsed,
   epicWriteFrom,
@@ -94,24 +93,6 @@ test("an epic needing attention is drawn in the hue an Escalated ticket is", () 
   expect(epicStatusLook("attention").tone).toBe(phaseTone("Escalated"));
 });
 
-test("progress is said as what is done of what there is", () => {
-  const byPhase = {
-    Pending: 0,
-    Work: 0,
-    Evaluation: 0,
-    Finalization: 0,
-    Done: 0,
-    Escalated: 0,
-    Revoked: 0,
-  };
-  expect(
-    saidEn(epicProgressLine({ byPhase, drafts: 0, done: 0, total: 0 })),
-  ).toBe("no tickets");
-  expect(
-    saidEn(epicProgressLine({ byPhase, drafts: 0, done: 2, total: 5 })),
-  ).toBe("2 of 5 done");
-});
-
 const counted = {
   Pending: 0,
   Work: 0,
@@ -122,66 +103,71 @@ const counted = {
   Revoked: 0,
 };
 
-test("a bar's fill is the rounded share done of the total, and an empty epic's is none", () => {
-  expect(
-    epicProgressBar({
-      byPhase: { ...counted, Done: 1, Pending: 2 },
-      drafts: 0,
-      done: 1,
-      total: 3,
-    }),
-  ).toStrictEqual({ sharePercent: 33, moving: "Still" });
-  expect(
-    epicProgressBar({ byPhase: counted, drafts: 0, done: 0, total: 0 })
-      .sharePercent,
-  ).toBe(0);
-});
-
-test("a bar shimmers while a member moves, and sweeps its empty track while nothing is done", () => {
-  for (const phase of ["Work", "Evaluation", "Finalization"] as const) {
-    const moving = { ...counted, [phase]: 1, Done: 1 };
-    expect(
-      epicProgressBar({ byPhase: moving, drafts: 0, done: 1, total: 2 }).moving,
-      phase,
-    ).toBe("Shimmer");
-    expect(
-      epicProgressMovingAny({ byPhase: moving, drafts: 0, done: 1, total: 2 }),
-    ).toBe(true);
-  }
-  expect(
-    epicProgressBar({
-      byPhase: { ...counted, Work: 2 },
-      drafts: 0,
-      done: 0,
-      total: 2,
-    }).moving,
-  ).toBe("Sweep");
-  expect(
-    epicProgressMovingAny({
-      byPhase: { ...counted, Escalated: 1, Pending: 1 },
-      drafts: 0,
-      done: 0,
-      total: 2,
-    }),
-  ).toBe(false);
-});
-
-test("the counts name each phase a member is in, in the phases' order, and none for an empty epic", () => {
-  expect(
-    epicProgressCounts({
-      byPhase: { ...counted, Revoked: 1, Pending: 2, Done: 3 },
-      drafts: 0,
-      done: 3,
-      total: 5,
-    }),
-  ).toStrictEqual([
-    { phase: "Pending", count: 2 },
-    { phase: "Done", count: 3 },
-    { phase: "Revoked", count: 1 },
+test("progress is said as what is done of what there is, then what runs and what is escalated where any are", () => {
+  const said = (byPhase: typeof counted, done: number, total: number) =>
+    epicProgressSaid({ byPhase, drafts: 0, done, total }).map(saidEn);
+  expect(said(counted, 0, 0)).toStrictEqual(["no tickets"]);
+  expect(said({ ...counted, Done: 2, Pending: 3 }, 2, 5)).toStrictEqual([
+    "2 of 5 done",
   ]);
   expect(
-    epicProgressCounts({ byPhase: counted, drafts: 0, done: 0, total: 0 }),
+    said({ ...counted, Done: 1, Work: 1, Finalization: 1, Escalated: 2 }, 1, 5),
+  ).toStrictEqual(["1 of 5 done", "2 running", "2 escalated"]);
+});
+
+test("the segments are the groups with members, Running holding every moving phase and Pending the drafts, Revoked in none", () => {
+  const segments = epicProgressSegments({
+    byPhase: {
+      ...counted,
+      Done: 1,
+      Evaluation: 1,
+      Finalization: 1,
+      Pending: 0,
+      Revoked: 3,
+    },
+    drafts: 1,
+    done: 1,
+    total: 4,
+  });
+  expect(
+    segments.map(({ group, count, tone, startPercent, sharePercent }) => ({
+      group,
+      count,
+      tone,
+      startPercent,
+      sharePercent,
+    })),
+  ).toStrictEqual([
+    {
+      group: "Done",
+      count: 1,
+      tone: "pass",
+      startPercent: 0,
+      sharePercent: 25,
+    },
+    {
+      group: "Running",
+      count: 2,
+      tone: "live",
+      startPercent: 25,
+      sharePercent: 50,
+    },
+    {
+      group: "Pending",
+      count: 1,
+      tone: "Track",
+      startPercent: 75,
+      sharePercent: 25,
+    },
+  ]);
+  expect(
+    epicProgressSegments({ byPhase: counted, drafts: 0, done: 0, total: 0 }),
   ).toStrictEqual([]);
+});
+
+test("Escalated is drawn in the console's tone for Escalated", () => {
+  expect(epicProgressGroupTone("Escalated")).toBe(phaseTone("Escalated"));
+  expect(epicProgressGroupTone("Escalated")).toBe("parked");
 });
 
 test("tickets are read from numbers, commas, spaces and hashes", () => {

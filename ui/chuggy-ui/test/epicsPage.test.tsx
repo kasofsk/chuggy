@@ -127,12 +127,37 @@ test("each epic is a row with its status, progress and a link to its page", asyn
     throw new Error("two rows are drawn");
   expect(within(first).getByText("In progress")).toBeTruthy();
   const bar = within(first).getByRole("progressbar", { name: "1 of 2 done" });
-  expect(bar.dataset["size"]).toBe("row");
-  expect(bar.textContent).toBe("1/2");
+  expect(
+    [...bar.querySelectorAll<SVGRectElement>(".epic-progress-segment")].map(
+      (segment) => segment.dataset["group"],
+    ),
+  ).toStrictEqual(["Done", "Pending"]);
+  expect(first.querySelector(".epic-progress-said")?.textContent).toBe(
+    "1 of 2 done",
+  );
   expect(
     within(first).getByRole("link", { name: "Billing" }).getAttribute("href"),
   ).toBe("/acme/atlas/epics/7");
   expect(within(second).getByText("Done")).toBeTruthy();
+});
+
+test("a row's bar has its words beside it, naming what runs", async () => {
+  const running = {
+    ...summary(7, "Billing"),
+    progress: {
+      byPhase: { ...byPhase, Pending: 10, Done: 3, Work: 1 },
+      drafts: 0,
+      done: 3,
+      total: 14,
+    },
+  };
+  await drawn(abilitiesNone, { first: { epics: [running] } });
+  expect(
+    screen.getByRole("progressbar", { name: "3 of 14 done, 1 running" }),
+  ).toBeTruthy();
+  expect(document.querySelector(".epic-progress-said")?.textContent).toBe(
+    "3 of 14 done · 1 running",
+  );
 });
 
 test("a project with no epic says so", async () => {

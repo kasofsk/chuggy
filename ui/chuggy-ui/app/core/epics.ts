@@ -13,8 +13,6 @@ import {
   ticketSearchCharsMax,
   type PartitionIdentity,
 } from "../../../../src/contract/http.ts";
-import { phaseRoster } from "../../../../src/contract/rosters.ts";
-import type { TicketPhase } from "../../../../src/contract/rosters.ts";
 import type {
   EpicGraphResponse,
   EpicListResponse,
@@ -39,7 +37,7 @@ import { consolePartitionQuery } from "./consoleQuery.ts";
 import type { ConsoleWrite } from "./consoleWrite.ts";
 import { consoleWriteKey } from "./consoleWrite.ts";
 import type { Copy } from "./copy.ts";
-import { epicStatusTone, type Tone } from "./tones.ts";
+import { epicStatusTone, phaseTone, type Tone } from "./tones.ts";
 
 export type EpicStatusWord = EpicSummaryResponse["status"];
 
@@ -153,59 +151,125 @@ export function epicStatusLook(status: EpicStatusWord): {
   return { word: epicStatusWords[status], tone: epicStatusTone(status) };
 }
 
-/** What an epic's progress says, as `done of total`, or that it holds nothing. */
-export function epicProgressLine(
-  progress: EpicSummaryResponse["progress"],
-): Copy {
-  return progress.total === 0
-    ? { id: "epics-progress-none" }
-    : {
-        id: "epics-progress",
-        args: { done: String(progress.done), total: String(progress.total) },
-      };
-}
-
 type EpicProgress = EpicSummaryResponse["progress"];
 
-/** The phases a member is moving in, which a bar draws as alive. */
-const epicProgressMoving: readonly TicketPhase[] = [
-  "Work",
-  "Evaluation",
-  "Finalization",
-];
+/** The groups an epic's progress is drawn in, in the order its bar runs. */
+export const epicProgressGroups = [
+  "Done",
+  "Running",
+  "Escalated",
+  "Pending",
+] as const;
 
-/** How a progress bar is drawn: its filled share, in whole percent of the
- * total, and how it says that something is moving. A bar with nothing done
- * has no fill to shimmer, so its empty track sweeps instead. */
-export interface EpicProgressBar {
-  readonly sharePercent: number;
-  readonly moving: "Still" | "Shimmer" | "Sweep";
-}
+export type EpicProgressGroup = (typeof epicProgressGroups)[number];
 
-export function epicProgressBar(progress: EpicProgress): EpicProgressBar {
-  const sharePercent =
-    progress.total === 0
-      ? 0
-      : Math.round(
-          (100 * Math.min(progress.done, progress.total)) / progress.total,
-        );
-  if (!epicProgressMovingAny(progress))
-    return { sharePercent, moving: "Still" };
-  return { sharePercent, moving: progress.done === 0 ? "Sweep" : "Shimmer" };
-}
-
-/** Whether any member is in a phase that moves on its own. */
-export function epicProgressMovingAny(progress: EpicProgress): boolean {
-  return epicProgressMoving.some((phase) => progress.byPhase[phase] > 0);
-}
-
-/** Each phase at least one member is in, with how many, in the phases' order. */
-export function epicProgressCounts(
+/** How many members a group holds: Running is every phase that moves on its
+ * own, and Pending holds the drafts with the released Pending ones. Revoked
+ * is in none, as the total leaves it out. */
+function epicProgressGroupCount(
   progress: EpicProgress,
-): readonly { readonly phase: TicketPhase; readonly count: number }[] {
-  return phaseRoster
-    .map((phase) => ({ phase, count: progress.byPhase[phase] }))
-    .filter((counted) => counted.count > 0);
+  group: EpicProgressGroup,
+): number {
+  const { byPhase } = progress;
+  switch (group) {
+    case "Done":
+      return byPhase.Done;
+    case "Running":
+      return byPhase.Work + byPhase.Evaluation + byPhase.Finalization;
+    case "Escalated":
+      return byPhase.Escalated;
+    case "Pending":
+      return byPhase.Pending + progress.drafts;
+  }
+}
+
+/** The tone a group's segment is drawn in, the phase's own where it has one;
+ * Pending is the bar's track. */
+export function epicProgressGroupTone(
+  group: EpicProgressGroup,
+): Tone | "Track" {
+  switch (group) {
+    case "Done":
+      return phaseTone("Done");
+    case "Running":
+      return phaseTone("Work");
+    case "Escalated":
+      return phaseTone("Escalated");
+    case "Pending":
+      return "Track";
+  }
+}
+
+const epicProgressGroupWords: Readonly<Record<EpicProgressGroup, Copy>> = {
+  Done: { id: "epics-progress-done" },
+  Running: { id: "epics-progress-running" },
+  Escalated: { id: "epics-progress-escalated" },
+  Pending: { id: "epics-progress-pending" },
+};
+
+/** One segment of the bar: a group with members, how many, and where it
+ * starts and how much of the bar it takes, each in percent of the total. */
+export interface EpicProgressSegment {
+  readonly group: EpicProgressGroup;
+  readonly count: number;
+  readonly word: Copy;
+  readonly tone: Tone | "Track";
+  readonly startPercent: number;
+  readonly sharePercent: number;
+}
+
+/** Each group with members, in the bar's order; none for an empty epic. */
+export function epicProgressSegments(
+  progress: EpicProgress,
+): readonly EpicProgressSegment[] {
+  if (progress.total === 0) return [];
+  let startPercent = 0;
+  return epicProgressGroups.flatMap((group) => {
+    const count = epicProgressGroupCount(progress, group);
+    if (count === 0) return [];
+    const sharePercent = (100 * count) / progress.total;
+    const segment = {
+      group,
+      count,
+      word: epicProgressGroupWords[group],
+      tone: epicProgressGroupTone(group),
+      startPercent,
+      sharePercent,
+    };
+    startPercent += sharePercent;
+    return [segment];
+  });
+}
+
+/** What an epic's progress says: what is done of what there is, then how
+ * many run and how many are escalated where any are, or that it holds
+ * nothing. */
+export function epicProgressSaid(progress: EpicProgress): readonly Copy[] {
+  if (progress.total === 0) return [{ id: "epics-progress-none" }];
+  const running = epicProgressGroupCount(progress, "Running");
+  const escalated = epicProgressGroupCount(progress, "Escalated");
+  return [
+    {
+      id: "epics-progress",
+      args: { done: String(progress.done), total: String(progress.total) },
+    },
+    ...(running === 0
+      ? []
+      : [
+          {
+            id: "epics-progress-said-running",
+            args: { count: String(running) },
+          } as const,
+        ]),
+    ...(escalated === 0
+      ? []
+      : [
+          {
+            id: "epics-progress-said-escalated",
+            args: { count: String(escalated) },
+          } as const,
+        ]),
+  ];
 }
 
 export const epicVisibilityChoices = [

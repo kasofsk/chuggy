@@ -1,18 +1,21 @@
 /**
- * One epic, as a header over three tabs: its title, where its tickets stand
- * and what may be done to it, and under the tabs its overview with the graph
- * first, its tickets as the ticket list draws them, and its revisions.
+ * One epic, as a header over four tabs: its title, where its tickets stand
+ * and what may be done to it, and under the tabs its overview, its tickets as
+ * the ticket list draws them, its graph, and its revisions; or, under no tab,
+ * its edit page.
  *
  * Every read is made here, once, and handed to whichever tab is drawn, so a
  * tab switch reads nothing again, and one clock ticks the whole page. The
- * graph is read again whenever the epic's revision moves or the ticket list's
- * rows do, which is how a card's state and its train keep up with the tickets.
- * The figures are the API's and nothing here derives them.
+ * members' rows are the ticket list's read under the epic's filter, one page
+ * of the most a page holds, which is as many as an epic may hold. The graph
+ * is read again whenever the epic's revision moves or those rows do, which is
+ * how a card's state keeps up with the tickets. The figures are the API's and
+ * nothing here derives them.
  */
 
 import { useQueryClient } from "@tanstack/react-query";
 import { useParams } from "@tanstack/react-router";
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -73,9 +76,8 @@ function EpicPageOf(props: {
   const historyState = usePanelState(
     epicHistoryQuery(partition, epic, undefined),
   );
-  const rowsState = usePanelState(
-    ticketRowsQuery(partition, ticketListAskDefault),
-  );
+  const ask = useMemo(() => ({ ...ticketListAskDefault, epic }), [epic]);
+  const rowsState = usePanelState(ticketRowsQuery(partition, ask));
   const creatorEmails = useCreatorEmails(partition);
   const queues = useLandingQueues(partition);
   const writing = !projectAbilityRefused(
@@ -118,6 +120,7 @@ function EpicPageOf(props: {
           partition={partition}
           epic={epic}
           memberCount={view?.tickets.length}
+          revisionCount={view?.revision}
         />
         <EpicPageHeldProvider value={held}>
           {props.children}
