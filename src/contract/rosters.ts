@@ -923,6 +923,14 @@ export const ownerFallbacks = ["Strict", "Preferred"] as const;
 export type OwnerFallback = (typeof ownerFallbacks)[number];
 
 /**
+ * Where a project stands among the others its member's personal runners
+ * serve, first to last: of what one could start now, a higher project's goes
+ * first, and work already started goes before any of them.
+ */
+export const personalRunnerPriorities = ["High", "Normal", "Low"] as const;
+export type PersonalRunnerPriority = (typeof personalRunnerPriorities)[number];
+
+/**
  * What a door answers a caller holding no hosted-runs grant on the project's
  * tenant with. A console shows its own words in place of the control refused,
  * so the code is shared rather than spelled at each end.

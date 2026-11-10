@@ -250,7 +250,9 @@ test("a second registration stands beside the first, each read by its client, an
       [second, ["macos"]],
     ],
   );
-  assert.deepEqual(read?.projects, [partition.project]);
+  assert.deepEqual(read?.projects, [
+    { project: partition.project, priority: "Normal" },
+  ]);
 });
 
 test("a runner is read with its newest poll, live only while that poll is inside the window, live with no room for an execution, and live for executions only by its poll for them", async () => {
@@ -391,7 +393,9 @@ test("a project joins an allowlist only for a registered runner, while it is act
   assert.equal(await runners.allow(key, suspended.project), "NotFound");
   assert.equal(await runners.allow(key, partition.project), "Allowed");
   assert.equal(await runners.allow(key, partition.project), "Allowed");
-  assert.deepEqual((await runners.runners(key))?.projects, [partition.project]);
+  assert.deepEqual((await runners.runners(key))?.projects, [
+    { project: partition.project, priority: "Normal" },
+  ]);
   assert.equal(await runners.disallow(key, partition.project), true);
   assert.deepEqual((await runners.runners(key))?.projects, []);
   assert.equal(
@@ -401,6 +405,40 @@ test("a project joins an allowlist only for a registered runner, while it is act
     ),
     false,
   );
+});
+
+test("a project joins an allowlist at the priority its write names, Normal where it names none, and a write naming none leaves the priority it has", async () => {
+  const partition = await project("runner-priority");
+  const second = await projectIn(partition.tenant, "runner-priority-second");
+  const runners = postgresPersonalRunnerRegistry(api);
+  const key = { tenant: partition.tenant, owner: member };
+  await runners.register(registration(key, `client-${partition.tenant}`));
+  const read = async () => (await runners.runners(key))?.projects;
+  assert.equal(await runners.allow(key, partition.project, "High"), "Allowed");
+  assert.equal(await runners.allow(key, second.project), "Allowed");
+  assert.deepEqual(await read(), [
+    { project: partition.project, priority: "High" },
+    { project: second.project, priority: "Normal" },
+  ]);
+  assert.equal(await runners.allow(key, partition.project), "Allowed");
+  assert.equal(await runners.allow(key, second.project, "Low"), "Allowed");
+  assert.deepEqual(await read(), [
+    { project: partition.project, priority: "High" },
+    { project: second.project, priority: "Low" },
+  ]);
+  assert.equal(
+    await runners.allow(
+      { tenant: partition.tenant, owner: other },
+      second.project,
+      "High",
+    ),
+    "NotFound",
+    "a member with no runner writes no priority",
+  );
+  assert.deepEqual(await read(), [
+    { project: partition.project, priority: "High" },
+    { project: second.project, priority: "Low" },
+  ]);
 });
 
 test("an allowlist holds at most its bound of projects", async () => {

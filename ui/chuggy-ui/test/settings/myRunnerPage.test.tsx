@@ -72,12 +72,12 @@ function runnerListed(tail: string, live = true): unknown {
 
 const runnerHeld = {
   runners: [runnerListed("3f2a9c1e")],
-  projects: ["atlas"],
+  projects: [{ project: "atlas", priority: "Normal" }],
 };
 
 const runnersTwo = {
   runners: [runnerListed("3f2a9c1e"), runnerListed("a81c04d2", false)],
-  projects: ["atlas"],
+  projects: [{ project: "atlas", priority: "Normal" }],
 };
 
 /** Projects the reader reads: two in this workspace, one in another. */
@@ -337,6 +337,38 @@ test("a runner is given only a project of this workspace the reader reads, and t
   expect(written(sent)).toStrictEqual([
     "PUT /personal-runner/projects/borealis",
     "DELETE /personal-runner/projects/atlas",
+  ]);
+});
+
+test("a project's priority is drawn and chosen from High, Normal and Low, and only a change is written, naming it", async () => {
+  drawing = { granted: true, runner: runnerHeld };
+  const sent = await drawMyRunner();
+  const priority = screen.getByRole("button", {
+    name: /^Priority of atlas/u,
+  });
+  expect(priority.textContent).toContain("Normal");
+  const choose = async (name: string) => {
+    fireEvent.keyDown(
+      screen.getByRole("button", { name: /^Priority of atlas/u }),
+      { key: "ArrowDown" },
+    );
+    const menu = await screen.findByRole("menu");
+    expect(
+      within(menu)
+        .getAllByRole("menuitemradio")
+        .map((item) => item.textContent),
+    ).toStrictEqual(["High", "Normal", "Low"]);
+    fireEvent.click(within(menu).getByRole("menuitemradio", { name }));
+    await settled();
+  };
+  await choose("Normal");
+  await choose("High");
+  expect(
+    sent
+      .filter((one) => one.method !== "GET")
+      .map((one) => [one.method, one.url.slice(tenantPath.length), one.body]),
+  ).toStrictEqual([
+    ["PUT", "/personal-runner/projects/atlas", { priority: "High" }],
   ]);
 });
 

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 
 import { personalRunnersMax } from "../../src/contract/http.ts";
+import type { PersonalRunnerPriority } from "../../src/contract/rosters.ts";
 import type {
   ChatHostRegistry,
   ChatHostView,
@@ -9,6 +10,7 @@ import type {
 import {
   personalRunnerService,
   type PersonalRunnerPorts,
+  type PersonalRunnerOwnerView,
   type PersonalRunnerRegistry,
   type PersonalRunnerTokenMinting,
   type PersonalRunnerTokenTerms,
@@ -117,10 +119,19 @@ function memberAt(key: PersonalRunnerKey): string {
   return `${key.tenant}\n${key.owner}`;
 }
 
+/** One member's allowlist as the registry reads it, in project order. */
+function allowlistViewed(
+  held: ReadonlyMap<string, PersonalRunnerPriority> | undefined,
+): PersonalRunnerOwnerView["projects"] {
+  return [...(held ?? [])]
+    .sort(([one], [two]) => one.localeCompare(two))
+    .map(([named, priority]) => ({ project: asProjectId(named), priority }));
+}
+
 /** The registry a case drives, its rows and allowlists in sight, failing its next registration where `failNext` is set. */
 type FakeRegistry = PersonalRunnerRegistry & {
   readonly rows: Map<string, Row[]>;
-  readonly allowed: Map<string, Set<string>>;
+  readonly allowed: Map<string, Map<string, PersonalRunnerPriority>>;
   failNext?: Error;
 };
 
@@ -131,7 +142,7 @@ type FakeRegistry = PersonalRunnerRegistry & {
  */
 function registry(): FakeRegistry {
   const rows = new Map<string, Row[]>();
-  const allowed = new Map<string, Set<string>>();
+  const allowed = new Map<string, Map<string, PersonalRunnerPriority>>();
   const fake: FakeRegistry = {
     rows,
     allowed,
@@ -174,17 +185,17 @@ function registry(): FakeRegistry {
         rows.has(memberAt(key))
           ? {
               runners: (rows.get(memberAt(key)) ?? []).map(rowViewed),
-              projects: [...(allowed.get(memberAt(key)) ?? [])]
-                .sort()
-                .map(asProjectId),
+              projects: allowlistViewed(allowed.get(memberAt(key))),
             }
           : undefined,
       ),
-    allow: (key, named) => {
+    allow: (key, named, priority) => {
       if (!rows.has(memberAt(key))) return Promise.resolve("NotFound");
+      const held =
+        allowed.get(memberAt(key)) ?? new Map<string, PersonalRunnerPriority>();
       allowed.set(
         memberAt(key),
-        (allowed.get(memberAt(key)) ?? new Set()).add(named),
+        held.set(named, priority ?? held.get(named) ?? "Normal"),
       );
       return Promise.resolve("Allowed");
     },
@@ -537,7 +548,7 @@ test("registering again adds a runner beside the member's first, which keeps its
     ],
   );
   assert.deepEqual(read.result === "Found" ? read.value.projects : undefined, [
-    project,
+    { project, priority: "Normal" },
   ]);
 });
 
@@ -686,9 +697,18 @@ test("a project joins the allowlist only where its owner may read it, asked in t
     "NotFound",
     "a project of another tenant is asked about there, where the member reads nothing",
   );
+  assert.equal(
+    await composed.runners.allow(member, tenant, elsewhere, "High"),
+    "NotFound",
+    "a priority is written only where its owner may read the project",
+  );
+  assert.equal(
+    await composed.runners.allow(member, tenant, project, "Low"),
+    "Allowed",
+  );
   const read = await composed.runners.runners(member, tenant);
   assert.deepEqual(read.result === "Found" ? read.value.projects : undefined, [
-    project,
+    { project, priority: "Low" },
   ]);
   assert.equal(
     await composed.runners.disallow(member, tenant, project),
@@ -738,7 +758,7 @@ test("an owner takes one runner off by its client, the client first, and the oth
     read.result === "Found"
       ? [read.value.runners.map((runner) => runner.id), read.value.projects]
       : undefined,
-    [["chuggy-personal-2"], [project]],
+    [["chuggy-personal-2"], [{ project, priority: "Normal" }]],
   );
   assert.equal(
     await composed.runners.deregisterRunner(
