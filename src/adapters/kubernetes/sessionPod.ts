@@ -36,6 +36,7 @@ import {
   sessionConfigDirectoryVariable,
   sessionModelVariable,
   sessionTaskVariable,
+  workerClaudeCredentialVariable,
   workerCredentialFilesVariable,
   workerTaskVariable,
   workerWorkspaceDirectory,
@@ -63,6 +64,7 @@ import {
   kubernetesPositive,
   kubernetesPositiveNumber,
   kubernetesReservedVariables,
+  type KubernetesContainerVariable,
   type KubernetesCredentialSelection,
   type KubernetesPod,
   type KubernetesPodRequested,
@@ -174,6 +176,7 @@ export const kubernetesSessionReservedVariables = [
   workerWorkspaceVariable,
   sessionConfigDirectoryVariable,
   sessionModelVariable,
+  workerClaudeCredentialVariable,
 ] as const;
 
 /** The volume a session's bearer is projected from, and the one it works in. */
@@ -205,6 +208,12 @@ export function checkedKubernetesSessionLaunchConfig(
       config.bounds[bound],
       `session ${bound}`,
     );
+  for (const [credential, mount] of Object.entries(config.credentialMounts))
+    for (const [bound, value] of Object.entries(mount.sessionBounds ?? {}))
+      kubernetesSessionBoundChecks[bound as keyof SessionBounds](
+        value,
+        `session credential ${credential} ${bound}`,
+      );
   return config;
 }
 
@@ -256,6 +265,15 @@ export function kubernetesSessionSecret(
   };
 }
 
+/** The site's bounds, with the placement's slot's own in place of any it names. */
+function kubernetesSessionBounds(
+  config: KubernetesSessionLaunchConfig,
+  placement: SessionPlacement,
+): SessionBounds {
+  const slot = config.credentialMounts[placement.credentialSlot]?.sessionBounds;
+  return slot === undefined ? config.bounds : { ...config.bounds, ...slot };
+}
+
 /** Everything the placement supplied, as the one document a session is handed: the task a fetch answers, and the site data around it. */
 export function kubernetesSessionTask(
   config: KubernetesSessionLaunchConfig,
@@ -273,7 +291,7 @@ export function kubernetesSessionTask(
     },
     api: { url: config.apiUrl },
     ...(repository === undefined ? {} : { repository }),
-    bounds: config.bounds,
+    bounds: kubernetesSessionBounds(config, placement),
   };
 }
 
@@ -303,6 +321,42 @@ function kubernetesSessionAnnotations(
   };
 }
 
+/** The kind the placement's slot names, as the setting the image reads it in, or nothing where it names none. */
+function kubernetesSessionClaudeCredential(
+  config: KubernetesSessionLaunchConfig,
+  placement: SessionPlacement,
+): readonly KubernetesContainerVariable[] {
+  const kind =
+    config.credentialMounts[placement.credentialSlot]?.claudeCredential;
+  return kind === undefined
+    ? []
+    : [
+        {
+          name: workerClaudeCredentialVariable,
+          value: JSON.stringify({ kind }),
+        },
+      ];
+}
+
+/**
+ * The grant's credentials a session on the placement's slot mounts: every one
+ * but a Claude credential of another slot, which a session holding
+ * `RunCommands` could otherwise read whatever its slot.
+ */
+function kubernetesSessionAuthority(
+  config: KubernetesSessionLaunchConfig,
+  placement: SessionPlacement,
+): SessionPlacement["authority"] {
+  return {
+    ...placement.authority,
+    credentials: placement.authority.credentials.filter(
+      (credential) =>
+        credential === placement.credentialSlot ||
+        config.credentialMounts[credential]?.claudeCredential === undefined,
+    ),
+  };
+}
+
 /** The one session container, separated from its pod so both documents stay reviewable. */
 function kubernetesSessionContainer(
   config: KubernetesSessionLaunchConfig,
@@ -327,6 +381,7 @@ function kubernetesSessionContainer(
         value: join(workerWorkspaceDirectory, kubernetesSessionConfigDirectory),
       },
       { name: sessionModelVariable, value: config.model },
+      ...kubernetesSessionClaudeCredential(config, placement),
       ...Object.entries(config.environment).map(([name, value]) => ({
         name,
         value,
@@ -365,7 +420,7 @@ export function kubernetesSessionPodRequest(
 ): KubernetesPodRequested {
   const credentials = kubernetesCredentials(
     config,
-    placement.authority,
+    kubernetesSessionAuthority(config, placement),
     kubernetesSessionContainerName,
   );
   if (

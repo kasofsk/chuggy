@@ -254,6 +254,7 @@ test("a lead holding the resolved model and effort is kept, and one holding anot
       leadOpened.systemPrompt,
       leadOpened.autoCompactWindow,
       runtime,
+      leadOpened.credentialSlot,
     );
   assert.equal(replaced({ model: "sonnet", effort: "low" }), false);
   assert.equal(replaced({ model: "opus", effort: "low" }), true, "model");
@@ -277,6 +278,7 @@ test("a lead opened before a project could choose a model is served its facts an
       leadOpened.systemPrompt,
       leadOpened.autoCompactWindow,
       {},
+      leadOpened.credentialSlot,
     ),
     false,
   );

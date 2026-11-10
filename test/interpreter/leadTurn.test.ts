@@ -57,6 +57,8 @@ const document: LeadObservationDocument = {
   token,
   operationalContext,
   handoffNote: observation.handoffNote,
+  attention: "Attention",
+  dispatchesMax: 2,
   refusals: leadObservedRefusals(standing, observation.candidates),
 };
 
@@ -102,6 +104,35 @@ test("an observation whose objectives are the session's own still reads", () => 
         JSON.stringify({ ...document, instructions: "select" }),
       ),
     TypeError,
+  );
+});
+
+test("an observation retained without an attention or a dispatch budget still reads", () => {
+  const retained: LeadObservationDocument = { ...document };
+  delete (retained as { attention?: unknown }).attention;
+  delete (retained as { dispatchesMax?: unknown }).dispatchesMax;
+  assert.deepEqual(parseLeadObservation(JSON.stringify(retained)), retained);
+});
+
+test("an observation naming an unknown attention, or a budget no decision may spend, is refused", () => {
+  for (const named of [
+    { attention: "Urgent" },
+    { attention: null },
+    { dispatchesMax: 0 },
+    { dispatchesMax: 1.5 },
+    { dispatchesMax: "2" },
+    { dispatchesMax: leadDispatchesMax + 1 },
+  ])
+    assert.throws(
+      () => parseLeadObservation(JSON.stringify({ ...document, ...named })),
+      TypeError,
+      JSON.stringify(named),
+    );
+  assert.equal(
+    parseLeadObservation(
+      JSON.stringify({ ...document, dispatchesMax: leadDispatchesMax }),
+    ).dispatchesMax,
+    leadDispatchesMax,
   );
 });
 

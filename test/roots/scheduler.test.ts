@@ -408,6 +408,58 @@ async function parsedSessionBound(
   };
 }
 
+test("a credential mount may name its Claude credential's kind and its session bounds, and only as the site's own bounds are held", async () => {
+  const mounted = async (mount: Readonly<Record<string, unknown>>) =>
+    JSON.parse(
+      await schedulerProgram(
+        parseProgram({
+          ...environment,
+          CHUG_SCHEDULER_WORKER_CREDENTIAL_MOUNTS: JSON.stringify({
+            "anthropic-api": {
+              secretName: "anthropic-api",
+              key: "key",
+              mountPath: "/var/run/chuggy/anthropic-api/key",
+              ...mount,
+            },
+          }),
+        }),
+      ),
+    ) as {
+      readonly parsed?: {
+        readonly sessions: { readonly credentialMounts: unknown };
+      };
+      readonly refused?: string;
+    };
+  const named = {
+    claudeCredential: "ApiKey",
+    sessionBounds: { budgetUsd: 1, turnsMax: 50 },
+  };
+  assert.deepEqual((await mounted(named)).parsed?.sessions.credentialMounts, {
+    "anthropic-api": {
+      secretName: "anthropic-api",
+      key: "key",
+      mountPath: "/var/run/chuggy/anthropic-api/key",
+      ...named,
+    },
+  });
+  for (const refused of [
+    { claudeCredential: "Bedrock" },
+    { sessionBounds: { budgetUsd: 1 } },
+    {
+      sessionBounds: {
+        budgetUsd: kubernetesSessionBudgetUsdMin / 10,
+        turnsMax: 50,
+      },
+    },
+    { sessionBounds: { budgetUsd: 1, turnsMax: 1.5 } },
+  ])
+    assert.equal(
+      (await mounted(refused)).parsed,
+      undefined,
+      JSON.stringify(refused),
+    );
+});
+
 test("a site may hold one session turn to a fraction of a dollar", async () => {
   const found = await parsedSessionBound("budgetUsd", 0.5);
   assert.equal(found.refused, undefined);

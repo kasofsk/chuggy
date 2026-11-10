@@ -30,10 +30,12 @@ import { createHash } from "node:crypto";
 import { basename, dirname, isAbsolute, resolve } from "node:path";
 
 import { textCodePointsCount } from "../../contract/http.ts";
+import type { ClaudeCredentialMountKind } from "../../contract/rosters.ts";
 import {
   mintedCredentialDirectory,
   workerWorkspaceDirectory,
 } from "../../contract/workerEnvironment.ts";
+import type { SessionBounds } from "../../contract/workerTask.ts";
 import type { BlockedReason } from "../../interpreter/executionScheduler.ts";
 import type { Partition } from "../../interpreter/projectStore.ts";
 import type { PolicyAuthorityGrant } from "../../interpreter/taskAuthority.ts";
@@ -48,11 +50,18 @@ export interface KubernetesResourceBudget {
   readonly ephemeralStorageLimit: string;
 }
 
-/** One site-owned Secret key that may satisfy a policy's named credential. */
+/**
+ * One site-owned Secret key that may satisfy a policy's named credential. Only
+ * a session pod reads the last two fields: one placed on this slot is told its
+ * kind and runs under its bounds, and no session pod on another slot mounts a
+ * credential that names a kind.
+ */
 export interface KubernetesWorkerCredentialMount {
   readonly secretName: string;
   readonly key: string;
   readonly mountPath: string;
+  readonly claudeCredential?: ClaudeCredentialMountKind;
+  readonly sessionBounds?: Pick<SessionBounds, "budgetUsd" | "turnsMax">;
 }
 
 /**
