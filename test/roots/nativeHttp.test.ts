@@ -339,7 +339,8 @@ test("the thread bundle the root composes reaches the thread reads", async () =>
 
 /**
  * The inquiry routes over the composition the root builds, driven against pools
- * that record what they were asked and place the lead in cluster as its own:
+ * that record what they were asked and place the lead in cluster as a
+ * subsidized one, asked by a member the tenant grants no hosted runs:
  * `nativeHttp.ts` reaches its three doors, the session route and the lead's
  * offering through `composeNativeWeb` and passes no bundle for them, because
  * there is nothing about an inquiry for a deployment to choose, so what a case
@@ -357,7 +358,7 @@ const inquiryComposedProgram = `
         rows: text.includes('session_route')
           ? [{ route: 'InCluster', source: 'Default' }]
           : text.includes('session_lead_offering')
-            ? [{ offering: 'Own' }]
+            ? [{ offering: 'Subsidized' }]
             : [],
       };
     },
@@ -368,7 +369,7 @@ const inquiryComposedProgram = `
     { digest: () => 'digest' },
     {
       authorize: async () => ({ kind: 'OidcUser', subject: 'geoff' }),
-      authorizeTenant: async () => ({ kind: 'OidcUser', subject: 'geoff' }),
+      authorizeTenant: async () => undefined,
     },
     { admits: async () => ({ admitted: 'Admitted' }) },
   );
