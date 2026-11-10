@@ -847,11 +847,6 @@ interface SelectorProjectOverrideRow {
   readonly thread_effort: string | null;
 }
 
-/**
- * One project's override columns beside the installation defaults they fall
- * back to, which is what the read and the write both answer with. The project's
- * revision is NULL for a project that has never overridden anything.
- */
 /** The subsidized lead the project's lead runs as, every column NULL where it runs as its own. */
 interface SelectorProjectProfileRow {
   readonly profile_credential_slot: string | null;
@@ -862,6 +857,11 @@ interface SelectorProjectProfileRow {
   readonly profile_turn_tokens_max: string | null;
 }
 
+/**
+ * One project's override columns beside the installation defaults they fall
+ * back to, which is what the read and the write both answer with. The project's
+ * revision is NULL for a project that has never overridden anything.
+ */
 interface SelectorProjectSettingsRow
   extends SelectorProjectOverrideRow, SelectorProjectProfileRow {
   readonly revision: string | null;
