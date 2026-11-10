@@ -68,11 +68,11 @@ test("the epic's address draws the header and marks Overview current", async () 
   consoleSiteClean(site);
 });
 
-test("the Tickets address marks Tickets current and draws the members as ticket-list rows", async () => {
+test("the Tickets address marks Tickets current and draws the members", async () => {
   await mountedAt(`${epicPath}/tickets`);
   expect(tabCurrent()).toMatch(/^Tickets/u);
   expect(document.querySelector("header.ticket-header")).not.toBeNull();
-  expect(screen.getByRole("list", { name: "Tickets" })).toBeDefined();
+  expect(screen.getByRole("region", { name: "Tickets" })).toBeDefined();
   consoleSiteClean(site);
 });
 

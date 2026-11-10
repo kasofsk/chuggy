@@ -4,7 +4,7 @@
  * page read and returns to the Overview, and whose Cancel writes nothing.
  */
 
-import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { EpicEditPage } from "../app/browser/epic/EpicEditPage.tsx";
@@ -77,9 +77,11 @@ test("the epic is drawn with its figures, its graph and its history", async () =
     graphic.querySelector("[data-outside] button")?.getAttribute("aria-label"),
   ).toMatch(/^#2 Schema: .+, outside the epic$/u);
   expect(graphic.querySelectorAll("[data-member]")).toHaveLength(2);
-  expect(document.querySelector(".epic-header-saved")?.textContent).toContain(
-    "Revision 3 · saved by",
-  );
+  expect(
+    within(screen.getByRole("navigation", { name: "Epic" }))
+      .getAllByRole("link")
+      .map((link) => link.textContent),
+  ).toContain("History3");
 });
 
 test("a reader who may not write epics is sent from the edit page to the Overview", async () => {
@@ -88,7 +90,7 @@ test("a reader who may not write epics is sent from the edit page to the Overvie
   expect(epicNavigated).toStrictEqual([overviewPath(7)]);
 });
 
-test("the edit page holds the epic's title, its summary counted against the most it may hold, and its description as Markdown", async () => {
+test("the edit page holds the epic's title, its summary counted against the most it may hold, and its description as Markdown, and not its tickets", async () => {
   await editDrawn(abilitiesEvery);
   expect(title().value).toBe("Billing");
   expect(
@@ -101,6 +103,7 @@ test("the edit page holds the epic's title, its summary counted against the most
   expect(description.value).toBe("The **whole** of billing");
   expect(description.hasAttribute("data-mono")).toBe(true);
   expect(screen.getByText("Markdown")).toBeTruthy();
+  expect(screen.queryByRole("textbox", { name: "Tickets" })).toBeNull();
 });
 
 test("Save sends at the revision the page read and returns to the Overview", async () => {

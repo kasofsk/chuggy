@@ -2,8 +2,7 @@
  * The head of every tab of the epic page, drawn in the ticket page's frame:
  * the title with its number, its status and whether it is archived; its
  * summary; a bar of where its tickets stand; what this reader may do to it;
- * the notes that apply; and the revision it is at, with who saved that and
- * when. Where the reader is narrow, the actions wrap under the title.
+ * and the notes that apply. Where the reader is narrow, the actions wrap under the title.
  *
  * An archive and a reactivation are each sent at the revision the page read,
  * so one made over another's is refused as stale.
@@ -26,8 +25,6 @@ import {
   epicVisibilityWrite,
   epicWriteFrom,
 } from "../../core/epics.ts";
-import { epicActorLabel } from "../../core/epicHistory.ts";
-import { instantFigure } from "../../core/figures.ts";
 import { ConsoleWriteRefusedWords, useConsoleWrite } from "../consoleWrite.tsx";
 import { currentOrigin } from "../ports.ts";
 import { TicketActionConfirm } from "../ticket/TicketActionConfirm.tsx";
@@ -39,7 +36,6 @@ import { readValue } from "../ticket/TicketPageHeld.tsx";
 import { buttonLookClassName } from "../ui/Button.tsx";
 import { CopySaid, useCopyPress } from "../ui/CopyButton.tsx";
 import type { CopyPress } from "../ui/CopyButton.tsx";
-import { Figure } from "../ui/Figure.tsx";
 import { MenuContent, menuItemClassName } from "../ui/Menu.tsx";
 import { Pill } from "../ui/Pill.tsx";
 import type { EpicPageHeld } from "./EpicPageHeld.tsx";
@@ -249,10 +245,9 @@ function EpicHeaderTicket(props: {
   );
 }
 
-/** Each escalated member, and the tickets outside that members wait on. */
+/** Each escalated member. */
 function EpicHeaderNotes(props: {
   readonly held: EpicPageHeld;
-  readonly view: EpicViewResponse;
   readonly writing: EpicHeaderWriting;
 }): ReactNode {
   const text = useCopyText();
@@ -261,7 +256,6 @@ function EpicHeaderNotes(props: {
   const escalated = (graph?.nodes ?? []).filter(
     (node) => node.member && node.phase === "Escalated",
   );
-  const outside = props.view.waitingOnOutside;
   return (
     <div className="ticket-header-notes">
       {escalated.map((node) => (
@@ -275,60 +269,12 @@ function EpicHeaderNotes(props: {
           {text({ id: "epics-note-attention-escalated" })}
         </p>
       ))}
-      {outside.length === 0 ? null : (
-        <p className="epic-header-note" data-note="waiting">
-          {text({ id: "epics-note-waiting", args: { count: outside.length } })}{" "}
-          {outside.map((ticket, at) => (
-            <span key={ticket}>
-              {at === 0 ? null : ", "}
-              <EpicHeaderTicket
-                partition={partition}
-                ticket={ticket}
-                graph={graph}
-              />
-            </span>
-          ))}
-        </p>
-      )}
       {props.writing.error === null ? null : (
         <p className="notice notice-danger notice-inline" role="alert">
           <ConsoleWriteRefusedWords refused={props.writing.error} />
         </p>
       )}
     </div>
-  );
-}
-
-/** The revision the epic is at, and who saved it when, where the newest page
- * of its history holds that revision. */
-function EpicHeaderSaved(props: {
-  readonly held: EpicPageHeld;
-  readonly view: EpicViewResponse;
-}): ReactNode {
-  const text = useCopyText();
-  const saved = readValue(props.held.historyState)?.revisions.find(
-    (revision) => revision.revision === props.view.revision,
-  );
-  return (
-    <p className="epic-header-saved">
-      {saved === undefined ? (
-        text({
-          id: "epics-revision",
-          args: { revision: String(props.view.revision) },
-        })
-      ) : (
-        <>
-          {text({
-            id: "epics-saved",
-            args: {
-              revision: String(props.view.revision),
-              actor: epicActorLabel(saved.actor, props.held.creatorEmails).text,
-            },
-          })}{" "}
-          <Figure figure={instantFigure(saved.changedAt, props.held.nowMs)} />
-        </>
-      )}
-    </p>
   );
 }
 
@@ -360,8 +306,7 @@ export function EpicHeader(props: {
         <p className="epic-header-summary">{view.summary}</p>
       )}
       <EpicProgressPage progress={view.progress} />
-      <EpicHeaderNotes held={held} view={view} writing={writing} />
-      <EpicHeaderSaved held={held} view={view} />
+      <EpicHeaderNotes held={held} writing={writing} />
     </TicketHeaderFrame>
   );
 }

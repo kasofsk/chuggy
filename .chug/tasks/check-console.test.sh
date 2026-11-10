@@ -172,6 +172,34 @@ check "a script that fails is a finding" 1 "$RC" "npm run lint\` failed"
 check "the failing run's own output is shown" 1 "$RC" "boom"
 check "the finding line counts what it found" 1 "$RC" "1 finding(s) across 1 built console(s)"
 
+# --- How long each script took ----------------------------------------------
+
+# Every script that ran has one line naming its console, the script, the whole
+# seconds it took and how it ended. A script the console does not declare did
+# not run, so it has none.
+timed() { # <name> <script> <outcome>
+	if grep -qxE "check-console: ui/built $2 took [0-9]+s, $3" "$OUT"; then
+		echo "ok   - $1"
+		pass=$((pass + 1))
+	else
+		echo "FAIL - $1: no timing line for $2 ending $3"
+		echo "----- output -----"; cat "$OUT"; echo "------------------"
+		fail=$((fail + 1))
+	fi
+}
+
+fixture
+console built '{ "name": "c", "version": "0.0.0", "private": true, "scripts": {
+	"typecheck": "true", "lint": "echo boom; exit 1", "test": "true",
+	"build": "true" } }'
+seal
+check "a run with a failed script still exits 1" 1 "$RC" "npm run lint\` failed"
+timed "a passing script's time is printed" typecheck ok
+timed "a failed script's time is printed too" lint failed
+timed "the scripts after a failure are timed" test ok
+timed "the last script is timed" build ok
+refute "a script the console does not declare is not timed" "ui/built format took"
+
 # A script nobody declared is a finding and not a skip: the gate cannot report
 # a verdict it never asked for.
 fixture

@@ -1,8 +1,233 @@
-/* The epic page's Overview tab: the description at reading width. */
+/* The epic page's Overview tab: the description at reading width and, beside
+   it, what is running and next, the graph in small and the details. Narrow,
+   that side comes first, its lists side by side and without the graph. */
 
 @layer page {
   .epic-overview {
-    max-width: var(--width-reading);
+    display: grid;
+    grid-template-columns: minmax(0, var(--measure)) var(
+        --width-epic-overview-aside
+      );
+    grid-template-areas: "description aside";
+    justify-content: space-between;
+    gap: var(--space-6);
+    align-items: start;
+  }
+
+  .epic-overview-description {
+    grid-area: description;
     min-width: 0;
+  }
+
+  .epic-overview-aside {
+    grid-area: aside;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-5);
+    min-width: 0;
+  }
+
+  .epic-overview-part {
+    display: grid;
+    gap: var(--space-2);
+    min-width: 0;
+  }
+
+  .epic-overview-heading {
+    margin: 0;
+    color: var(--ink-3);
+    font-size: var(--text-xs);
+    font-weight: var(--weight-medium);
+    letter-spacing: var(--tracking-label);
+    text-transform: uppercase;
+  }
+
+  .epic-overview-none {
+    margin: 0;
+    color: var(--ink-3);
+    font-size: var(--text-sm);
+  }
+
+  .epic-overview-tickets {
+    display: grid;
+    gap: var(--space-3);
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  /* The mark's column runs on under the link, so what the ticket comes
+     after lines up with its title. */
+  .epic-overview-ticket {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: var(--space-1) var(--space-2);
+    min-width: 0;
+  }
+
+  .epic-overview-ticket-link {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+    align-items: start;
+    color: var(--ink-1);
+    font-size: var(--text-sm);
+    line-height: var(--leading-dense);
+    text-decoration: none;
+  }
+
+  .epic-overview-ticket-link:hover .epic-overview-ticket-title {
+    text-decoration: underline;
+  }
+
+  .epic-overview-ticket-mark {
+    display: flex;
+    padding-top: var(--space-1);
+  }
+
+  .epic-overview-ticket-title {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
+
+  .epic-overview-ticket-number {
+    color: var(--ink-3);
+  }
+
+  .epic-overview-after {
+    grid-column: 2;
+    margin: 0;
+    color: var(--ink-3);
+    font-size: var(--text-xs);
+  }
+
+  .epic-overview-graph {
+    display: block;
+    padding: var(--space-3);
+    border: var(--hairline) solid var(--edge);
+    border-radius: var(--radius-2);
+    background: var(--surface-1);
+  }
+
+  .epic-overview-graph:hover {
+    border-color: var(--edge-strong);
+  }
+
+  .epic-overview-graph-canvas {
+    display: block;
+    height: auto;
+  }
+
+  .epic-overview-graph-line {
+    fill: none;
+    stroke: var(--edge-strong);
+    stroke-width: 4;
+  }
+
+  /* A block drawn in its state's form: filled in its tone, tinted with its
+     wash and edged in it, or outlined; the form, not hue alone, sets them
+     apart. */
+  .epic-overview-graph-block {
+    --epic-overview-tone: var(--ink-3);
+    --epic-overview-wash: var(--surface-1);
+    stroke-width: 3;
+  }
+
+  .epic-overview-graph-block[data-form="Filled"] {
+    fill: var(--epic-overview-tone);
+    stroke: var(--epic-overview-tone);
+  }
+
+  .epic-overview-graph-block[data-form="Tinted"] {
+    fill: var(--epic-overview-wash);
+    stroke: var(--epic-overview-tone);
+  }
+
+  .epic-overview-graph-block[data-form="Outlined"] {
+    fill: var(--surface-1);
+    stroke: var(--epic-overview-tone);
+    stroke-dasharray: 8 6;
+  }
+
+  .epic-overview-graph-block[data-tone="pass"] {
+    --epic-overview-tone: var(--tone-pass);
+    --epic-overview-wash: var(--wash-pass);
+  }
+
+  .epic-overview-graph-block[data-tone="queued"] {
+    --epic-overview-tone: var(--tone-queued);
+    --epic-overview-wash: var(--wash-queued);
+  }
+
+  .epic-overview-graph-block[data-tone="live"] {
+    --epic-overview-tone: var(--tone-live);
+    --epic-overview-wash: var(--wash-live);
+  }
+
+  .epic-overview-graph-block[data-tone="evaluation"] {
+    --epic-overview-tone: var(--tone-evaluation);
+    --epic-overview-wash: var(--wash-evaluation);
+  }
+
+  .epic-overview-graph-block[data-tone="finalization"] {
+    --epic-overview-tone: var(--tone-finalization);
+    --epic-overview-wash: var(--wash-finalization);
+  }
+
+  .epic-overview-graph-block[data-tone="parked"] {
+    --epic-overview-tone: var(--tone-parked);
+    --epic-overview-wash: var(--wash-parked);
+  }
+
+  .epic-overview-graph-block[data-tone="retired"] {
+    --epic-overview-tone: var(--tone-retired);
+  }
+
+  .epic-overview-details {
+    display: grid;
+    gap: var(--space-1);
+    margin: 0;
+    font-size: var(--text-sm);
+  }
+
+  .epic-overview-detail {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-3);
+  }
+
+  .epic-overview-detail dt {
+    color: var(--ink-3);
+  }
+
+  .epic-overview-detail dd {
+    margin: 0;
+    color: var(--ink-1);
+    text-align: end;
+    overflow-wrap: anywhere;
+  }
+
+  @media (max-width: 40em) {
+    .epic-overview {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-areas:
+        "aside"
+        "description";
+    }
+
+    .epic-overview-aside {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .epic-overview-part[data-part="graph"] {
+      display: none;
+    }
+
+    .epic-overview-part[data-part="details"] {
+      grid-column: 1 / -1;
+    }
   }
 }

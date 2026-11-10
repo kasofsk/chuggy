@@ -73,15 +73,43 @@ export interface EpicsCopy {
   readonly "epics-reactivate-body": Record<never, never>;
   readonly "epics-note-attention": Record<never, never>;
   readonly "epics-note-attention-escalated": Record<never, never>;
-  readonly "epics-note-waiting": {
+  readonly "epics-overview-description": Record<never, never>;
+  readonly "epics-overview-no-description": Record<never, never>;
+  readonly "epics-overview-running": Record<never, never>;
+  readonly "epics-overview-next": Record<never, never>;
+  readonly "epics-overview-none": Record<never, never>;
+  readonly "epics-overview-after": {
+    readonly tickets: unknown;
+  };
+  readonly "epics-overview-graph": Record<never, never>;
+  readonly "epics-overview-graph-open": Record<never, never>;
+  readonly "epics-overview-details": Record<never, never>;
+  readonly "epics-overview-outside": Record<never, never>;
+  readonly "epics-overview-revision": Record<never, never>;
+  readonly "epics-overview-updated": Record<never, never>;
+  readonly "epics-tickets-none": Record<never, never>;
+  readonly "epics-tickets-filter": Record<never, never>;
+  readonly "epics-tickets-no-match": Record<never, never>;
+  readonly "epics-tickets-running": Record<never, never>;
+  readonly "epics-tickets-group": {
+    readonly word: unknown;
     readonly count: unknown;
   };
-  readonly "epics-saved": {
-    readonly revision: unknown;
-    readonly actor: unknown;
+  readonly "epics-tickets-after": Record<never, never>;
+  readonly "epics-tickets-blocks": {
+    readonly count: unknown;
   };
-  readonly "epics-overview-description": Record<never, never>;
-  readonly "epics-tickets-none": Record<never, never>;
+  readonly "epics-tickets-menu": {
+    readonly ticket: unknown;
+  };
+  readonly "epics-tickets-remove": Record<never, never>;
+  readonly "epics-tickets-add": Record<never, never>;
+  readonly "epics-tickets-add-search": Record<never, never>;
+  readonly "epics-tickets-add-none": Record<never, never>;
+  readonly "epics-tickets-add-member": Record<never, never>;
+  readonly "epics-tickets-add-chosen": {
+    readonly count: unknown;
+  };
   readonly "epics-graph-empty": Record<never, never>;
   readonly "epics-graph-loading": Record<never, never>;
   readonly "epics-graph-failed": Record<never, never>;

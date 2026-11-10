@@ -105,7 +105,7 @@ function header(): HTMLElement {
   return drawn;
 }
 
-test("the header draws the title, the status, the summary under them, the bar and a muted line naming the revision and who saved it", async () => {
+test("the header draws the title, the status, the summary under them and the bar", async () => {
   await epicPageDrawn(abilitiesNone);
   const title = within(header()).getByRole("heading", { level: 1 });
   expect(title.textContent).toBe("Billing #7");
@@ -118,9 +118,12 @@ test("the header draws the title, the status, the summary under them, the bar an
     within(header()).getByRole("progressbar", { name: "1 of 2 done" }),
   ).toBeTruthy();
   expect(within(header()).queryByText("Archived")).toBeNull();
-  expect(header().querySelector(".epic-header-saved")?.textContent).toMatch(
-    /^Revision 3 · saved by .+/u,
-  );
+});
+
+test("the header draws neither the tickets outside the epic it waits on nor its revision, which the Overview draws", async () => {
+  await epicPageDrawn(abilitiesNone);
+  expect(header().textContent).not.toMatch(/Waiting|outside|Revision/u);
+  expect(within(header()).queryByRole("link", { name: /#2/u })).toBeNull();
 });
 
 test("New ticket goes to a new ticket in the epic, and Edit to the edit page", async () => {
@@ -199,7 +202,7 @@ test("a reader who may not write is offered no edit and no archive", async () =>
   ).toBeNull();
 });
 
-test("the notes link the escalated member and the tickets outside the epic it waits on", async () => {
+test("the notes link the escalated member", async () => {
   epicServing.graph = {
     ...epicGraph,
     nodes: epicGraph.nodes.map((node) =>
@@ -213,13 +216,6 @@ test("the notes link the escalated member and the tickets outside the epic it wa
   );
   expect(attention?.querySelector("a")?.getAttribute("href")).toBe(
     `/${leadPartition.tenant}/${leadPartition.project}/tickets/5`,
-  );
-  const waiting = document.querySelector('[data-note="waiting"]');
-  expect(waiting?.textContent).toBe(
-    "Waiting on 1 ticket outside this epic: #2 Schema",
-  );
-  expect(waiting?.querySelector("a")?.getAttribute("href")).toBe(
-    `/${leadPartition.tenant}/${leadPartition.project}/tickets/2`,
   );
 });
 
@@ -236,14 +232,28 @@ test("the sticky bar holding the status and the title shows once the header has 
   expect(within(bar as HTMLElement).getByText("In progress")).toBeTruthy();
 });
 
-test("the Tickets tab draws each member as a row of the ticket list", async () => {
+function memberRows(): readonly HTMLElement[] {
+  return [
+    ...screen
+      .getByRole("region", { name: "Tickets" })
+      .querySelectorAll<HTMLElement>("li[data-ticket]"),
+  ];
+}
+
+function memberRow(ticket: number): HTMLElement {
+  const row = memberRows().find(
+    (drawn) => drawn.dataset["ticket"] === String(ticket),
+  );
+  if (row === undefined) throw new Error(`#${String(ticket)} has a row`);
+  return row;
+}
+
+test("the Tickets tab draws each member as a row", async () => {
   epicServing.rows = [epicRow(4, "Done"), epicRow(5, "Pending")];
   await epicPageDrawn(abilitiesNone, { tab: <EpicTicketsTab /> });
-  const list = screen.getByRole("list", { name: "Tickets" });
-  const rows = within(list).getAllByRole("listitem");
-  expect(rows).toHaveLength(2);
-  expect(rows[0]?.textContent).toContain("Row 4");
-  expect(rows[1]?.textContent).toContain("Row 5");
+  expect(memberRows()).toHaveLength(2);
+  expect(memberRow(4).textContent).toContain("Row 4");
+  expect(memberRow(5).textContent).toContain("Row 5");
 });
 
 test("the members' rows are read once, under the epic's filter, a page of the most a page holds", async () => {
@@ -265,11 +275,8 @@ test("a member past the first page of the project's tickets has its row", async 
   );
   epicServing.rows = [epicRow(4, "Done"), epicRow(5, "Pending")];
   await epicPageDrawn(abilitiesNone, { tab: <EpicTicketsTab /> });
-  const rows = within(screen.getByRole("list", { name: "Tickets" }))
-    .getAllByRole("listitem")
-    .map((row) => row.textContent);
-  expect(rows).toHaveLength(2);
-  expect(rows[1]).toContain("Row 5");
+  expect(memberRows()).toHaveLength(2);
+  expect(memberRow(5).textContent).toContain("Row 5");
 });
 
 test("a draft member, which has no row, is drawn by its title and the graph's word for it", async () => {
@@ -280,11 +287,9 @@ test("a draft member, which has no row, is drawn by its title and the graph's wo
   };
   epicServing.rows = [epicRow(4, "Done"), epicRow(5, "Pending")];
   await epicPageDrawn(abilitiesNone, { tab: <EpicTicketsTab /> });
-  const draft = within(screen.getByRole("list", { name: "Tickets" }))
-    .getAllByRole("listitem")
-    .at(-1);
-  expect(draft?.textContent).toContain("Ledger");
-  expect(draft?.textContent).toContain("Draft");
+  const draft = memberRow(6);
+  expect(draft.textContent).toContain("Ledger");
+  expect(draft.textContent).toContain("Draft");
 });
 
 test("the Tickets tab of an epic holding none says so", async () => {
@@ -349,7 +354,7 @@ function historyRevision(
   };
 }
 
-test("a revision's actor, in a row and in the header, is drawn by the email the project's people name, and otherwise by the subject shortened", async () => {
+test("a revision's actor is drawn by the email the project's people name, and otherwise by the subject shortened", async () => {
   epicServing.people = [
     {
       subject: "dana",
@@ -369,9 +374,6 @@ test("a revision's actor, in a row and in the header, is drawn by the email the 
   await epicPageDrawn(abilitiesNone, { tab: <EpicHistoryTab /> });
   expect(historyRows()[0]).toContain("dana@example.com");
   expect(historyRows()[1]).toContain(`${"x".repeat(12)}…${"x".repeat(6)}`);
-  expect(header().querySelector(".epic-header-saved")?.textContent).toMatch(
-    /^Revision 3 · saved by dana@example\.com/u,
-  );
 });
 
 test("a burst of one actor's ticket edits folds into one row, and Show each lists every revision in it", async () => {
