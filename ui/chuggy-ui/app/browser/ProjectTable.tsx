@@ -32,6 +32,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
+import type { LandingQueuesResponse } from "../../../../src/contract/responses.ts";
 import { phaseRoster } from "../../../../src/contract/rosters.ts";
 import { apiProject } from "../core/apiRoutes.ts";
 import { phaseLabel } from "../core/codeLabels.ts";
@@ -40,6 +41,7 @@ import type { ApiFailure } from "../core/apiRequest.ts";
 import type { CopyText } from "../core/copy.ts";
 import { creatorLabel } from "../core/labels.ts";
 import type { PanelState } from "../core/freshness.ts";
+import { landingQueuePlaceOf } from "../core/landingQueues.ts";
 import { projectAbilityRefused } from "../core/projectAbilities.ts";
 import { repositoryLabel } from "../core/projectRepositories.ts";
 import {
@@ -113,6 +115,10 @@ import {
   TicketStateChip,
   TicketStateCount,
 } from "./ticket/TicketStateChip.tsx";
+import {
+  LandingQueueChip,
+  useLandingQueues,
+} from "./ticket/LandingQueueChip.tsx";
 import { useHeadroom } from "./useHeadroom.ts";
 import "./ProjectTable.css";
 
@@ -284,12 +290,59 @@ function TicketListWaits(props: {
   );
 }
 
+/** The row's foot: who filed it where the list is narrow, then its place in a
+ * landing queue just before its state, which a ready row's dispatch is. */
+function TicketListFoot(props: {
+  readonly row: ProjectTableRow;
+  readonly partition: PartitionIdentity;
+  readonly creatorEmails: ReadonlyMap<string, string>;
+  readonly queues: LandingQueuesResponse | undefined;
+}): ReactNode {
+  const row = props.row;
+  const queued = (
+    <LandingQueueChip place={landingQueuePlaceOf(props.queues, row.ticket)} />
+  );
+  return (
+    <div className="ticket-list-foot">
+      <TicketListCreator
+        row={row}
+        creatorEmails={props.creatorEmails}
+        className="ticket-list-foot-creator"
+      />
+      {ticketListStandingOf(row) === "Ready" ? (
+        <TicketRowDispatchScope
+          partition={props.partition}
+          ticket={row.ticket}
+          sequence={row.sequence}
+        >
+          {(dispatch, notes) => (
+            <>
+              <div className="ticket-list-notes">{notes}</div>
+              <span className="ticket-list-foot-standing">
+                {queued}
+                <TicketListState row={row} dispatch={dispatch} />
+              </span>
+            </>
+          )}
+        </TicketRowDispatchScope>
+      ) : (
+        <span className="ticket-list-foot-standing">
+          {queued}
+          <TicketListState row={row} />
+        </span>
+      )}
+    </div>
+  );
+}
+
 export function TicketListRow(props: {
   readonly row: ProjectTableRow;
   readonly standings: ReadonlyMap<number, TicketListStanding>;
   readonly partition: PartitionIdentity;
   readonly nowMs: number;
   readonly creatorEmails: ReadonlyMap<string, string>;
+  /** The project's landing queues, where the page holds them. */
+  readonly queues: LandingQueuesResponse | undefined;
 }): ReactNode {
   const row = props.row;
   return (
@@ -327,29 +380,12 @@ export function TicketListRow(props: {
             <TicketListWaits {...props} />
           </div>
         </div>
-        <div className="ticket-list-foot">
-          <TicketListCreator
-            row={row}
-            creatorEmails={props.creatorEmails}
-            className="ticket-list-foot-creator"
-          />
-          {ticketListStandingOf(row) === "Ready" ? (
-            <TicketRowDispatchScope
-              partition={props.partition}
-              ticket={row.ticket}
-              sequence={row.sequence}
-            >
-              {(dispatch, notes) => (
-                <>
-                  <div className="ticket-list-notes">{notes}</div>
-                  <TicketListState row={row} dispatch={dispatch} />
-                </>
-              )}
-            </TicketRowDispatchScope>
-          ) : (
-            <TicketListState row={row} />
-          )}
-        </div>
+        <TicketListFoot
+          row={row}
+          partition={props.partition}
+          creatorEmails={props.creatorEmails}
+          queues={props.queues}
+        />
       </article>
     </li>
   );
@@ -759,6 +795,7 @@ function TicketListRows(props: {
 }): ReactNode {
   const text = useCopyText();
   const creatorEmails = useCreatorEmails(props.partition);
+  const queues = useLandingQueues(props.partition);
   const state = props.state;
   if (state.state !== "Ready") return <PanelUnready state={state} />;
   const rows = state.value.tickets.map(projectTableRow);
@@ -796,6 +833,7 @@ function TicketListRows(props: {
               partition={props.partition}
               nowMs={props.nowMs}
               creatorEmails={creatorEmails}
+              queues={queues}
             />
           ))}
         </ul>

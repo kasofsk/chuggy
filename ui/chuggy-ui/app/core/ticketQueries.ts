@@ -1,7 +1,8 @@
 /**
  * A ticket's reads: the ticket and its draft, which their frames carry whole,
  * the parts under it no frame names, and the lists a ticket's frames stale or
- * fold into — its dispatch view, its landings, and the project's rows.
+ * fold into — its dispatch view, its landings, the project's rows and the
+ * project's landing queues.
  */
 
 import type { PartitionIdentity } from "../../../../src/contract/http.ts";
@@ -10,6 +11,7 @@ import type { ApiPorts, ApiResult } from "./apiRequest.ts";
 import {
   apiDraft,
   apiInbox,
+  apiLandingQueues,
   apiProject,
   apiTicket,
   apiTicketActionReach,
@@ -18,6 +20,7 @@ import {
   apiTicketNativeActions,
 } from "./apiRoutes.ts";
 import { inboxList, inboxPage, inboxRowsRead } from "./inboxList.ts";
+import { landingQueuesList, landingQueuesPolledMs } from "./landingQueues.ts";
 import { inboxProposalsPolledMs } from "./inboxProposals.ts";
 import { consoleListQuery, consoleProjectQuery } from "./consoleQuery.ts";
 import type { ConsoleQueryKept } from "./consoleQuery.ts";
@@ -122,6 +125,15 @@ export function ticketLandingsQuery(
     ),
     (ports) => apiTicketLandings(ports, partition, ticket),
     ticketLandingsPolledMs,
+  );
+}
+
+/** The project's landing queues, staled by every ticket frame and polled. */
+export function landingQueuesQuery(partition: PartitionIdentity) {
+  return consoleListQuery(
+    landingQueuesList(partition),
+    (ports) => apiLandingQueues(ports, partition),
+    landingQueuesPolledMs,
   );
 }
 

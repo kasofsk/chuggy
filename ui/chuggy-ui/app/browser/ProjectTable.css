@@ -374,6 +374,15 @@
     min-width: 0;
   }
 
+  /* The row's place in its landing queue stands just before its state. */
+  .ticket-list-foot-standing {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: var(--space-2);
+    margin-inline-start: auto;
+  }
+
   /* The row's state label sits at the end of a slot as wide and as tall on
      every row whatever it says, so the column lines up and the row keeps its
      height; a ready row's slot is the button that dispatches it. */

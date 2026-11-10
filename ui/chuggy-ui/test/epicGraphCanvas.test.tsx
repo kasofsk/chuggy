@@ -17,6 +17,7 @@ import {
   epicTrainEmergingMs,
   epicTrainRestingAt,
 } from "../app/core/epicTrains.ts";
+import { landingQueuesQuery } from "../app/core/ticketQueries.ts";
 import {
   epicGraph,
   epicPageDrawn,
@@ -98,6 +99,62 @@ test("a member with a run under way names it in its footer, and one without has 
   expect(run?.textContent).toBe("Work");
   expect(run?.getAttribute("title")).toBe("Work in cycle 2");
   expect(graphic.querySelector('[data-ticket="4"] .epic-card-foot')).toBeNull();
+});
+
+test("a queued member's footer draws its place beside its run, and a member in no queue draws neither", async () => {
+  epicServing.rows = [
+    epicRow(4, "Done"),
+    epicRow(5, "Work", { status: "Running", cycle: 2 }),
+  ];
+  epicServing.queues = {
+    queues: [
+      {
+        repository: "https://forge.test/acme/billing",
+        holder: 9,
+        waiting: [5],
+      },
+    ],
+    truncated: false,
+  };
+  await epicPageDrawn(abilitiesNone);
+  const graphic = await canvas();
+  const foot = graphic.querySelector('[data-ticket="5"] .epic-card-foot');
+  const chip = foot?.querySelector<HTMLElement>(".landing-queue-chip");
+  expect(chip?.previousElementSibling?.className).toBe("epic-card-run");
+  expect(chip?.textContent).toBe("2/2");
+  expect(chip?.getAttribute("aria-label")).toBe(
+    "Waiting 2 of 2 to land: #9 holds the target",
+  );
+  expect(chip?.getAttribute("title")).toBe(chip?.getAttribute("aria-label"));
+  expect(graphic.querySelector('[data-ticket="4"] .epic-card-foot')).toBeNull();
+});
+
+test("a queued member with no run draws a footer holding its place alone", async () => {
+  epicServing.queues = {
+    queues: [
+      { repository: "https://forge.test/acme/billing", holder: 4, waiting: [] },
+    ],
+    truncated: false,
+  };
+  await epicPageDrawn(abilitiesNone);
+  const graphic = await canvas();
+  const foot = graphic.querySelector('[data-ticket="4"] .epic-card-foot');
+  expect(foot?.querySelector(".epic-card-run")).toBeNull();
+  expect(foot?.querySelector(".landing-queue-chip")?.textContent).toBe("1/1");
+});
+
+test("a queue read that fails draws no chip and leaves every card drawn", async () => {
+  epicServing.queuesStatus = 500;
+  const { client } = await epicPageDrawn(abilitiesNone);
+  await vi.waitFor(() => {
+    expect(
+      client.getQueryState(landingQueuesQuery(leadPartition).queryKey)?.status,
+    ).toBe("error");
+  });
+  await settled();
+  const graphic = await canvas();
+  expect(graphic.querySelectorAll(".epic-card")).toHaveLength(3);
+  expect(graphic.querySelector(".landing-queue-chip")).toBeNull();
 });
 
 test("the tickets outside the epic are drawn dashed and smaller, and the toggle leaves them out", async () => {

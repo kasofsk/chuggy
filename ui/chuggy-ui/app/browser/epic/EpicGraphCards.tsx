@@ -17,11 +17,13 @@ import type { ReactNode } from "react";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import type {
   EpicGraphResponse,
+  LandingQueuesResponse,
   ProjectTicket,
 } from "../../../../../src/contract/responses.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import type { Copy } from "../../core/copy.ts";
 import { epicGraphStandingOf } from "../../core/epicGraph.ts";
+import { landingQueuePlaceOf } from "../../core/landingQueues.ts";
 import type { EpicGraphCard, EpicGraphRun } from "../../core/epicGraph.ts";
 import { projectTableRow } from "../../core/projectTableRows.ts";
 import type { ProjectTableRow } from "../../core/projectTableRows.ts";
@@ -31,6 +33,7 @@ import {
 } from "../../core/ticketListView.ts";
 import { TicketListDependencies, TicketListState } from "../ProjectTable.tsx";
 import { TicketRowDispatchScope } from "../TicketActions.tsx";
+import { LandingQueueChip } from "../ticket/LandingQueueChip.tsx";
 import {
   dependencyStandingOf,
   TicketStateChip,
@@ -47,13 +50,16 @@ export interface EpicGraphCardsHeld {
   readonly graph: EpicGraphResponse;
   readonly rows: ReadonlyMap<number, ProjectTableRow>;
   readonly standings: ReadonlyMap<number, TicketListStanding>;
+  readonly queues: LandingQueuesResponse | undefined;
 }
 
-/** What the cards are drawn against: each ticket's row of the list. */
+/** What the cards are drawn against: each ticket's row of the list, and the
+ * project's landing queues. */
 export function epicGraphCardsHeldOf(
   partition: PartitionIdentity,
   graph: EpicGraphResponse,
   tickets: readonly ProjectTicket[] | undefined,
+  queues: LandingQueuesResponse | undefined,
 ): EpicGraphCardsHeld {
   const rows = new Map(
     (tickets ?? []).map((ticket) => [ticket.ticket, projectTableRow(ticket)]),
@@ -65,6 +71,7 @@ export function epicGraphCardsHeldOf(
     standings: new Map(
       [...rows.values()].map((row) => [row.ticket, ticketListStandingOf(row)]),
     ),
+    queues,
   };
 }
 
@@ -143,6 +150,7 @@ export function EpicGraphMemberCard(props: {
   const title = node.title ?? text({ id: "epics-card-untitled" });
   const row = props.held.rows.get(node.ticket);
   const runWords = run === undefined ? undefined : epicGraphRunWords(run);
+  const place = landingQueuePlaceOf(props.held.queues, node.ticket);
   return (
     <foreignObject
       x={card.x}
@@ -163,11 +171,14 @@ export function EpicGraphMemberCard(props: {
         >
           <span className="epic-card-number">{`#${String(node.ticket)}`}</span>
           <span className="epic-card-title">{title}</span>
-          {runWords === undefined ? null : (
+          {runWords === undefined && place === undefined ? null : (
             <span className="epic-card-foot">
-              <span className="epic-card-run" title={text(runWords.detail)}>
-                {text(runWords.label)}
-              </span>
+              {runWords === undefined ? null : (
+                <span className="epic-card-run" title={text(runWords.detail)}>
+                  {text(runWords.label)}
+                </span>
+              )}
+              <LandingQueueChip place={place} inLink />
             </span>
           )}
         </Link>

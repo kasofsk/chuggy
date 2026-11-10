@@ -56,11 +56,11 @@ function EpicGraphReady(props: {
 }): ReactNode {
   const text = useCopyText();
   const [outsideShown, setOutsideShown] = useState(true);
-  const { partition, rowsState } = props.held;
+  const { partition, rowsState, queues } = props.held;
   const tickets = readValue(rowsState)?.tickets;
   const cardsHeld = useMemo(
-    () => epicGraphCardsHeldOf(partition, props.graph, tickets),
-    [partition, props.graph, tickets],
+    () => epicGraphCardsHeldOf(partition, props.graph, tickets, queues),
+    [partition, props.graph, tickets, queues],
   );
   const outside = props.graph.nodes.filter((node) => !node.member).length;
   if (props.graph.nodes.length === 0)
@@ -231,6 +231,7 @@ export function EpicTicketsTab(): ReactNode {
               partition={held.partition}
               nowMs={held.nowMs}
               creatorEmails={held.creatorEmails}
+              queues={held.queues}
             />
           );
         })}
