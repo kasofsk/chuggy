@@ -14,6 +14,7 @@ import {
 import type { TicketYamlContext } from "../app/browser/editor/ticketYaml.ts";
 import { ticketYamlReadWorded } from "./ticketYamlReadWorded.ts";
 import { codexReasoningEfforts } from "../../../src/contract/workerTask.ts";
+import { workloadReevaluations } from "../../../src/contract/configurationDocument.ts";
 import {
   creationConfigurationChosen,
   creationFaultSentence,
@@ -719,6 +720,41 @@ test("the vocabulary offers a workload's Codex effort as the efforts Codex names
   expect(effort?.values.map((value) => value.label)).toStrictEqual([
     ...codexReasoningEfforts,
   ]);
+});
+
+test("the vocabulary offers when a workload runs again as an evaluator, and a workload overriding it reads back as the same form", () => {
+  const reevaluate = ticketYamlVocabulary(
+    catalogContext.base,
+    catalogContext,
+    copyTextEn,
+  ).find((key) => key.key === "reevaluate");
+  expect(reevaluate?.place).toBe("Workload");
+  expect(reevaluate?.values.map((value) => value.label)).toStrictEqual([
+    ...workloadReevaluations,
+  ]);
+  const form = {
+    ...catalogContext.base,
+    title: "t",
+    intent: "i",
+    workloads: { quick: { reevaluate: "OnChange" as const } },
+  };
+  const text = ticketYamlOf(form, catalogContext, copyTextEn);
+  expect(text).toContain("    reevaluate: OnChange\n");
+  const read = ticketYamlReadWorded(text, catalogContext);
+  expect(read.problems).toStrictEqual([]);
+  expect(read.form).toStrictEqual(form);
+});
+
+test("a workload that leaves reevaluate out is shown it as a skeleton naming its default", () => {
+  const form = {
+    ...catalogContext.base,
+    title: "t",
+    intent: "i",
+    workloads: { quick: { prompt: { text: "Do it slowly." } } },
+  };
+  expect(ticketYamlOf(form, catalogContext, copyTextEn)).toContain(
+    "# reevaluate: OnChange  # Always where left out",
+  );
 });
 
 test("a workloads key that is no map, or names a workload the catalog lacks, is refused", () => {

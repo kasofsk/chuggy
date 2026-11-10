@@ -45,6 +45,7 @@ configuration-steps-purpose = Purpose
 configuration-steps-authority = Authority
 configuration-steps-framing = Framing
 configuration-steps-brief = { -brief(case: "upper") }
+configuration-steps-reevaluate = Reevaluates
 configuration-steps-run-requirement = { -run(case: "upper") } requirement
 configuration-steps-tools = Tools
 configuration-steps-credentials = Credentials

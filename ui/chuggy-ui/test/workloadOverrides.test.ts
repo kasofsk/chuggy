@@ -45,6 +45,19 @@ test("a replaced field is held alone, and writes back as the same override", () 
   );
 });
 
+test("when a workload runs again as an evaluator is a field like any other, written back as the same override", () => {
+  for (const name of ["quick", "gates"]) {
+    const override: WorkloadOverride = { reevaluate: "OnChange" };
+    expect(writtenOf(name, override)).toMatchObject(override);
+    expect(overrideOf(name, writtenOf(name, override))).toStrictEqual(override);
+  }
+  const refused = workloadOverrideRead(creationCatalogCanonical, "gates", {
+    ...(writtenOf("gates", {}) as object),
+    reevaluate: "Never",
+  });
+  expect(refused.read).not.toBe("Override");
+});
+
 test("a prompt names new text or another stored file's path, and a path is written as the path alone", () => {
   const text: WorkloadOverride = { prompt: { text: "Do it slowly." } };
   expect(overrideOf("quick", writtenOf("quick", text))).toStrictEqual(text);

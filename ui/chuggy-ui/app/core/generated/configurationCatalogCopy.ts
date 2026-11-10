@@ -72,6 +72,7 @@ export interface ConfigurationCatalogCopy {
   readonly "configuration-catalog-field-file": Record<never, never>;
   readonly "configuration-catalog-field-runner": Record<never, never>;
   readonly "configuration-catalog-field-evaluator": Record<never, never>;
+  readonly "configuration-catalog-field-reevaluate": Record<never, never>;
   readonly "configuration-catalog-field-model": Record<never, never>;
   readonly "configuration-catalog-field-prompt": Record<never, never>;
   readonly "configuration-catalog-field-approval": Record<never, never>;

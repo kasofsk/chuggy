@@ -12,6 +12,7 @@ import {
   allArchitectures,
   allOperatingSystems,
   allPracticeIds,
+  workloadReevaluations,
 } from "../../../../../src/contract/configurationDocument.ts";
 import {
   codexReasoningEfforts,
@@ -26,6 +27,10 @@ const ticketYamlWorkloadSlots = {
   purpose: {
     id: "ticket-authoring-skeleton-default",
     args: { default: "Review" },
+  },
+  reevaluate: {
+    id: "ticket-authoring-skeleton-default",
+    args: { default: "Always" },
   },
   setup: { id: "ticket-authoring-placeholder-setup" },
   path: { id: "ticket-authoring-placeholder-path" },
@@ -89,6 +94,7 @@ const ticketYamlWorkloadSkeletons: readonly (readonly [
       "    - <{constraint}>",
     ],
   ],
+  ["reevaluate", "Both", ["reevaluate: OnChange  # {reevaluate}"]],
   ["image", "Both", ["image: <registry/path:tag@sha256:digest>"]],
   [
     "executionRequirement",
@@ -220,6 +226,11 @@ const ticketYamlWorkloadFields: readonly (readonly [
   ["practices", { id: "ticket-authoring-workload-practices" }, allPracticeIds],
   ["brief", { id: "ticket-authoring-workload-brief" }],
   ["commands", { id: "ticket-authoring-workload-commands" }],
+  [
+    "reevaluate",
+    { id: "ticket-authoring-workload-reevaluate", args: { default: "Always" } },
+    workloadReevaluations,
+  ],
   ["image", { id: "ticket-authoring-workload-image" }],
   ["executionRequirement", { id: "ticket-authoring-workload-execution" }],
   [

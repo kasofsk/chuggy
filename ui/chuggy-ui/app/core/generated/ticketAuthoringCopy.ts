@@ -495,6 +495,9 @@ export interface TicketAuthoringCopy {
   readonly "ticket-authoring-workload-practices": Record<never, never>;
   readonly "ticket-authoring-workload-brief": Record<never, never>;
   readonly "ticket-authoring-workload-commands": Record<never, never>;
+  readonly "ticket-authoring-workload-reevaluate": {
+    readonly default: unknown;
+  };
   readonly "ticket-authoring-workload-image": Record<never, never>;
   readonly "ticket-authoring-workload-execution": Record<never, never>;
   readonly "ticket-authoring-workload-operating-system": Record<never, never>;
