@@ -80,7 +80,8 @@ function TicketHeaderFragmentDrawn(props: {
   }
 }
 
-function TicketHeaderTitle(props: {
+/** The title with the number after it, as every page's header opens. */
+export function TicketHeaderTitle(props: {
   readonly title: string;
   readonly ticket: number;
 }): ReactNode {
@@ -89,6 +90,33 @@ function TicketHeaderTitle(props: {
       {props.title}{" "}
       <span className="ticket-header-number">{`#${String(props.ticket)}`}</span>
     </h1>
+  );
+}
+
+/**
+ * A page's header and the thin bar that stands in for it once it has scrolled
+ * away, holding the small label and the title: the ticket's, and every page
+ * laid out as the ticket's is.
+ */
+export function TicketHeaderFrame(props: {
+  readonly label: ReactNode;
+  readonly title: string;
+  readonly children: ReactNode;
+}): ReactNode {
+  const header = useRef<HTMLElement>(null);
+  const away = useScrolledAway(header);
+  return (
+    <>
+      <div className="ticket-sticky">
+        <div className="ticket-sticky-bar" hidden={!away}>
+          {props.label}
+          <span className="ticket-sticky-title">{props.title}</span>
+        </div>
+      </div>
+      <header ref={header} className="ticket-header">
+        {props.children}
+      </header>
+    </>
   );
 }
 
@@ -102,32 +130,25 @@ export function TicketHeader(props: {
   readonly actions: ReactNode;
   readonly notes: ReactNode;
 }): ReactNode {
-  const header = useRef<HTMLElement>(null);
-  const away = useScrolledAway(header);
   return (
-    <>
-      <div className="ticket-sticky">
-        <div className="ticket-sticky-bar" hidden={!away}>
-          <TicketStateLabel standing={props.standing} size="small" />
-          <span className="ticket-sticky-title">{props.title}</span>
+    <TicketHeaderFrame
+      label={<TicketStateLabel standing={props.standing} size="small" />}
+      title={props.title}
+    >
+      <TicketHeaderTitle title={props.title} ticket={props.ticket} />
+      {props.epics}
+      <div className="ticket-header-standing">
+        <div className="ticket-header-state">
+          <TicketStateLabel standing={props.standing} size="page" />
+          <TicketHeaderFragmentDrawn
+            fragment={props.fragment}
+            nowMs={props.nowMs}
+          />
         </div>
+        {props.actions}
       </div>
-      <header ref={header} className="ticket-header">
-        <TicketHeaderTitle title={props.title} ticket={props.ticket} />
-        {props.epics}
-        <div className="ticket-header-standing">
-          <div className="ticket-header-state">
-            <TicketStateLabel standing={props.standing} size="page" />
-            <TicketHeaderFragmentDrawn
-              fragment={props.fragment}
-              nowMs={props.nowMs}
-            />
-          </div>
-          {props.actions}
-        </div>
-        {props.notes}
-      </header>
-    </>
+      {props.notes}
+    </TicketHeaderFrame>
   );
 }
 

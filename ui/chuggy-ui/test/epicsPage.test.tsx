@@ -126,7 +126,9 @@ test("each epic is a row with its status, progress and a link to its page", asyn
   if (first === undefined || second === undefined)
     throw new Error("two rows are drawn");
   expect(within(first).getByText("In progress")).toBeTruthy();
-  expect(within(first).getByText("1 of 2 done")).toBeTruthy();
+  const bar = within(first).getByRole("progressbar", { name: "1 of 2 done" });
+  expect(bar.dataset["size"]).toBe("row");
+  expect(bar.textContent).toBe("1/2");
   expect(
     within(first).getByRole("link", { name: "Billing" }).getAttribute("href"),
   ).toBe("/acme/atlas/epics/7");

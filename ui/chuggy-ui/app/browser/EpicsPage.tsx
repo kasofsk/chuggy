@@ -1,8 +1,9 @@
 /**
  * A project's epics: a search, a visibility filter and a sort, each the
- * address's so a link holds the view, and one row an epic with its status and
- * how much of it is done. Each page of rows is read under its own cursor, and
- * "Show more" mounts the next, so a page already read is not read again.
+ * address's so a link holds the view, and one row an epic with its status,
+ * how much of it is done and where its tickets stand. Each page of rows is
+ * read under its own cursor, and "Show more" mounts the next, so a page
+ * already read is not read again.
  */
 
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
@@ -14,9 +15,7 @@ import type { EpicSummaryResponse } from "../../../../src/contract/responses.ts"
 import { useCopyText } from "../copy/CopyProvider.tsx";
 import { projectAbilityRefused } from "../core/projectAbilities.ts";
 import {
-  epicProgressLine,
   epicSortChoices,
-  epicStatusLook,
   epicVisibilityChoices,
   epicsAskOf,
   epicsQuery,
@@ -27,6 +26,7 @@ import type { EpicsQuery } from "../core/epics.ts";
 import { usePanelState } from "./api.ts";
 import { PanelUnready } from "./DataPanel.tsx";
 import { EpicFormPanel } from "./EpicForm.tsx";
+import { EpicStanding } from "./epic/EpicProgress.tsx";
 import { useProjectAbilities } from "./projectAbilities.tsx";
 import { ScreenTitle } from "./shell/slots.tsx";
 import { Button } from "./ui/Button.tsx";
@@ -37,34 +37,6 @@ import { Picker } from "./ui/Picker.tsx";
 import { Pill } from "./ui/Pill.tsx";
 
 import "./Epic.css";
-
-export function EpicStatusPill(props: {
-  readonly status: EpicSummaryResponse["status"];
-}): ReactNode {
-  const text = useCopyText();
-  const look = epicStatusLook(props.status);
-  return <Pill tone={look.tone}>{text(look.word)}</Pill>;
-}
-
-/** How much of the epic is done, as a bar and in words. */
-export function EpicProgress(props: {
-  readonly progress: EpicSummaryResponse["progress"];
-}): ReactNode {
-  const text = useCopyText();
-  return (
-    <>
-      <progress
-        className="epic-progress"
-        aria-label={text({ id: "epics-progress-label" })}
-        max={Math.max(props.progress.total, 1)}
-        value={props.progress.done}
-      />
-      <span className="text-ink-3 text-sm">
-        {text(epicProgressLine(props.progress))}
-      </span>
-    </>
-  );
-}
 
 function EpicRow(props: {
   readonly partition: PartitionIdentity;
@@ -84,7 +56,6 @@ function EpicRow(props: {
           </Link>
         </h3>
         <span className="text-ink-3 text-sm">{`#${String(epic.number)}`}</span>
-        <EpicStatusPill status={epic.status} />
         {epic.visibility === "Archived" ? (
           <Pill tone="retired">
             {text({ id: "epics-visibility-archived" })}
@@ -94,7 +65,7 @@ function EpicRow(props: {
       {epic.summary === undefined ? null : (
         <p className="text-ink-2 text-sm">{epic.summary}</p>
       )}
-      <EpicProgress progress={epic.progress} />
+      <EpicStanding epic={epic} size="row" />
     </li>
   );
 }
