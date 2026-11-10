@@ -19,6 +19,7 @@ import {
   type FinalizationClaim,
   type FinalizerStore,
 } from "../../src/interpreter/finalizer.ts";
+import { type ProjectMemory } from "../../src/interpreter/projectWriter.ts";
 import { asRecoveryEpoch } from "../../src/interpreter/projectStore.ts";
 import {
   finalizerAccept,
@@ -32,11 +33,13 @@ import {
   finalizerPassOnce,
   finalizerPrepare,
   finalizerProject,
+  finalizerMovingPort,
   finalizerRemoteCommit,
   finalizerRemotePort,
   finalizerRigOpen,
   finalizerSerializedSubject,
   finalizerStoreReleasedBrief,
+  finalizerSubject,
   finalizerTaskDone,
   type FinalizerProject,
   type FinalizerRig,
@@ -55,11 +58,13 @@ after(async () => {
 
 /** What a sibling ticket is written with. */
 interface Sibling {
-  readonly landing: "Direct" | "Serialized";
+  readonly landing: "Direct" | "Serialized" | "Stacked";
   readonly phase: string;
   /** Whether its finalization request is still to be drawn. */
   readonly pending: boolean;
   readonly target?: string;
+  /** How far from the project's request it entered the journal, before it when negative. */
+  readonly after?: number;
 }
 
 /**
@@ -114,7 +119,7 @@ async function sibling(
       project.partition.tenant,
       project.partition.project,
       request,
-      project.authorizingSeq,
+      project.authorizingSeq + (how.after ?? 0),
       ticket,
       how.pending ? "Open" : "Fulfilled",
     ],
@@ -208,6 +213,19 @@ test("a Serialized finalization waits for the holder and stays open, unheld and 
   assert.equal(await untouched(second), true);
 });
 
+test("a Stacked finalization shares the queue of a Serialized one and waits for its holder alike", async () => {
+  const first = await serialized("stacked-first");
+  const second = await sibling(first, "stacked-second", {
+    landing: "Stacked",
+    phase: "Finalization",
+    pending: true,
+  });
+  const claims = await drawn([first, second], "stacked");
+  assert.equal(includes(claims, first), true);
+  assert.equal(includes(claims, second), false);
+  assert.equal(await untouched(second), true);
+});
+
 test("the waiting finalization is drawn once the holder leaves the path", async () => {
   for (const phase of ["Done", "Escalated", "Revoked"]) {
     const first = await serialized(`release-${phase}`);
@@ -225,7 +243,7 @@ test("the waiting finalization is drawn once the holder leaves the path", async 
   }
 });
 
-test("a finalization that was drawn and is settled holds nothing", async () => {
+test("a finalization that was drawn and is settled holds until its ticket leaves the path", async () => {
   const first = await serialized("settled-first");
   const second = await sibling(first, "settled-second", {
     landing: "Serialized",
@@ -237,7 +255,16 @@ test("a finalization that was drawn and is settled holds nothing", async () => {
       WHERE tenant=$1 AND project=$2 AND request=$3`,
     [first.partition.tenant, first.partition.project, first.request],
   );
-  assert.equal(includes(await drawn([second], "settled"), second), true);
+  assert.equal(
+    includes(await drawn([second], "settled"), second),
+    false,
+    "a settled request holds until its ticket has left the path",
+  );
+  await rig.harness.query(
+    `UPDATE ticket_projection SET phase='Done' WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+    [first.partition.tenant, first.partition.project, first.ticket],
+  );
+  assert.equal(includes(await drawn([second], "landed"), second), true);
 });
 
 test("a Direct finalization is drawn whatever is queued beside it", async () => {
@@ -271,12 +298,13 @@ test("two references are queued apart", async () => {
   assert.equal(includes(claims, second), true);
 });
 
-test("a re-check in flight holds the reference ahead of an earlier entry, until it is sent back for another reason", async () => {
+test("a re-check in flight holds the reference ahead of an earlier entry", async () => {
   const first = await serialized("recheck-first");
   const rechecking = await sibling(first, "recheck-flight", {
     landing: "Serialized",
     phase: "Work",
     pending: false,
+    after: -1,
   });
   await finalizerPrepare(rig, rechecking, "recheck-flight", {
     outcome: "Failed",
@@ -289,14 +317,39 @@ test("a re-check in flight holds the reference ahead of an earlier entry, until 
     "the re-check cycle holds the reference",
   );
   assert.equal(await untouched(first), true);
-  await finalizerPrepare(rig, rechecking, "recheck-conflict", {
+});
+
+test("the holder is the lowest rank, whatever its ticket number or phase", async () => {
+  const later = await serialized("rank-order");
+  await finalizerPrepare(rig, later, "rank-order-later", {
     outcome: "Failed",
-    failureKind: "MergeConflict",
+    failureKind: "RecheckRequired",
+    recheckCommit: finalizerCommit(),
+  });
+  await rig.harness.query(
+    `UPDATE finalization_request SET state='Fulfilled'
+      WHERE tenant=$1 AND project=$2 AND request=$3`,
+    [later.partition.tenant, later.partition.project, later.request],
+  );
+  await rig.harness.query(
+    `UPDATE ticket_projection SET phase='Work' WHERE tenant=$1 AND project=$2 AND ticket=$3`,
+    [later.partition.tenant, later.partition.project, later.ticket],
+  );
+  const earlier = await sibling(later, "rank-order-earlier", {
+    landing: "Serialized",
+    phase: "Finalization",
+    pending: true,
+    after: -1,
+  });
+  await finalizerPrepare(rig, earlier, "rank-order-earlier", {
+    outcome: "Failed",
+    failureKind: "RecheckRequired",
+    recheckCommit: finalizerCommit(),
   });
   assert.equal(
-    includes(await drawn([first], "recheck-released"), first),
+    includes(await drawn([earlier], "rank-order"), earlier),
     true,
-    "a conflict send-back releases it",
+    "the lower rank holds although its ticket is the higher",
   );
 });
 
@@ -307,6 +360,7 @@ test("a re-check cycle that leaves the path releases the reference", async () =>
       landing: "Serialized",
       phase: "Evaluation",
       pending: false,
+      after: -1,
     });
     await finalizerPrepare(rig, rechecking, `leaves-${phase}`, {
       outcome: "Failed",
@@ -420,4 +474,145 @@ test("a rework before the re-check's request does not end the re-check", async (
     false,
   );
   assert.equal(await untouched(waiting), true);
+});
+
+/** A Serialized ticket sent back to re-check because the target moved, with a sibling that entered after its first request waiting on the reference. */
+async function rechecked(label: string): Promise<{
+  project: FinalizerProject;
+  waiting: FinalizerProject;
+  memory: ProjectMemory;
+}> {
+  const { project, remote } = await finalizerSerializedSubject(rig, label);
+  finalizerRemoteCommit(remote, "other.txt", "other\n", "other");
+  const port = finalizerRemotePort(rig);
+  await finalizerPassOnce(rig, project, port, label);
+  await finalizerExpireClaim(rig, project);
+  await finalizerPassOnce(rig, project, port, `${label}-conclude`);
+  const sent = await finalizerDrain(
+    rig.harness,
+    project.partition,
+    project.memory,
+  );
+  assert.deepEqual(sent.decided, ["Committed"]);
+  const waiting = await sibling(project, `${label}-waiting`, {
+    landing: "Serialized",
+    phase: "Finalization",
+    pending: true,
+    after: 1,
+  });
+  return { project, waiting, memory: sent.memory };
+}
+
+/** Reports a re-checked ticket's work and then its evaluation, each as its verdict. */
+async function reported(
+  project: FinalizerProject,
+  memory: ProjectMemory,
+  label: string,
+  evaluation: "Pass" | "Fail",
+): Promise<void> {
+  let carried = memory;
+  for (const [step, task, verdict] of [
+    ["work", workTaskIdentity(1, 2), "Pass"],
+    ["evaluation", finalizerEvaluation(2), evaluation],
+  ] as const) {
+    assert.equal(
+      await finalizerAccept(
+        rig.harness,
+        project.partition,
+        `${label}-${step}`,
+        finalizerTaskDone(carried.graph, task, verdict),
+      ),
+      "Accepted",
+    );
+    const drained = await finalizerDrain(
+      rig.harness,
+      project.partition,
+      carried,
+    );
+    assert.ok(
+      drained.decided.every((each) => each === "Committed"),
+      step,
+    );
+    carried = drained.memory;
+  }
+}
+
+test("a re-checked ticket keeps its place through its second request, ahead of one that entered between", async () => {
+  const { project, waiting, memory } = await rechecked("rank-kept");
+  await reported(project, memory, "rank-kept", "Pass");
+  assert.equal(await phaseOf(project, project.ticket), "Finalization");
+  const [again] = await rig.harness.query(
+    `SELECT request, authorizing_seq::text AS seq FROM finalization_request
+      WHERE tenant=$1 AND project=$2 AND ticket=$3 AND state='Open'`,
+    [project.partition.tenant, project.partition.project, project.ticket],
+  );
+  assert.ok(again !== undefined, "the evaluation left a second request");
+  assert.ok(
+    Number(again["seq"]) > waiting.authorizingSeq,
+    "the second request entered after the waiting one",
+  );
+  const claims = await drawn(
+    [{ ...project, request: String(again["request"]) }, waiting],
+    "rank-kept",
+  );
+  assert.equal(
+    claims.some((claim) => claim.request === again["request"]),
+    true,
+    "the re-checked ticket lands first",
+  );
+  assert.equal(includes(claims, waiting), false);
+  assert.equal(await untouched(waiting), true);
+});
+
+test("a re-checked ticket whose evaluation fails loses its place", async () => {
+  const { project, waiting, memory } = await rechecked("rank-lost");
+  await reported(project, memory, "rank-lost", "Fail");
+  assert.equal(await phaseOf(project, project.ticket), "Work");
+  assert.equal(
+    includes(await drawn([waiting], "rank-lost"), waiting),
+    true,
+    "the rework released the reference",
+  );
+});
+
+test("a ticket sent back by a merge conflict loses its place", async () => {
+  const { project, remote } = await finalizerSubject(rig, "rank-conflict", [
+    { path: "base.txt", content: "candidate\n" },
+  ]);
+  await finalizerBriefLanding(
+    rig,
+    project.partition,
+    project.ticket,
+    "Serialized",
+    project.repository,
+  );
+  const port = finalizerMovingPort(finalizerRemotePort(rig), () => {
+    finalizerRemoteCommit(remote, "base.txt", "moved\n", "moved");
+  });
+  await finalizerPassOnce(rig, project, port, "rank-conflict");
+  await finalizerExpireClaim(rig, project);
+  await finalizerPassOnce(rig, project, port, "rank-conflict-conclude");
+  const sent = await finalizerDrain(
+    rig.harness,
+    project.partition,
+    project.memory,
+  );
+  assert.deepEqual(sent.decided, ["Committed"]);
+  assert.equal(await phaseOf(project, project.ticket), "Work");
+  const [attempt] = await rig.harness.query(
+    `SELECT failure_kind FROM finalization_attempt WHERE tenant=$1 AND project=$2`,
+    [project.partition.tenant, project.partition.project],
+  );
+  assert.equal(attempt?.["failure_kind"], "MergeConflict");
+  const waiting = await sibling(project, "rank-conflict-waiting", {
+    landing: "Serialized",
+    phase: "Finalization",
+    pending: true,
+    after: 1,
+  });
+  assert.equal(
+    includes(await drawn([waiting], "rank-conflict"), waiting),
+    true,
+    "the conflict released the reference",
+  );
 });

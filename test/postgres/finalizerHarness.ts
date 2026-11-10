@@ -79,6 +79,7 @@ import type {
 import { postgresFinalizer } from "../../src/adapters/postgres/finalizer.ts";
 import type { BriefFinalizationMode } from "../../src/contract/rosters.ts";
 import type { ChangeProposalForges } from "../../src/interpreter/changeProposal.ts";
+import { postgresEvaluationStack } from "../../src/adapters/postgres/evaluationStack.ts";
 import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
 import { materialDigest } from "../../src/interpreter/ticketDefinition.ts";
 import { gitPromotion } from "../../src/adapters/git/gitPromotion.ts";
@@ -844,7 +845,7 @@ export async function finalizerBriefLanding(
   rig: FinalizerRig,
   partition: Partition,
   ticket: number,
-  landing: "Direct" | "Serialized",
+  landing: "Direct" | "Serialized" | "Stacked",
   repository: string,
 ): Promise<void> {
   await finalizerReleasedBrief(rig, partition, ticket, (brief) =>
@@ -1130,6 +1131,12 @@ export function finalizerGit(target: ObservedTarget): FinalizerGitFake {
       fake.acts.push("adopt");
       return Promise.resolve("Unadoptable");
     },
+    readCommitTree: () => {
+      throw new Error("finalizer harness: the pass asked for a commit's tree");
+    },
+    mintStack: () => Promise.resolve({ minted: "Conflicted" }),
+    removeStack: () => Promise.resolve({ removed: "Removed" }),
+    removeUnrecordedStack: () => Promise.resolve({ removed: "Removed" }),
   };
   return fake;
 }
@@ -1168,6 +1175,7 @@ export function finalizerService(
     git,
     forges: forges ?? finalizerNoForges,
     ticketBriefs: postgresTicketBrief(rig.pool),
+    stacks: postgresEvaluationStack(rig.pool),
     handoffs: artifacts,
     artifacts,
     identities: finalizerIdentities(),

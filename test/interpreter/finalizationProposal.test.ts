@@ -481,6 +481,7 @@ test("a proposal somebody else already merged is the success only a merging land
     ),
     {
       decide: "Conclude",
+      merged: mergeCommit,
     },
   );
   assert.deepEqual(
@@ -522,7 +523,7 @@ test("what the merge answered is what the finalization does next", () => {
   mergesDecided([
     [
       { merging: "Answered", merge: { merged: "Merged", mergeCommit } },
-      { decide: "Conclude" },
+      { decide: "Conclude", merged: mergeCommit },
     ],
     [
       { merging: "Moved", reading: undefined, heardAgeSecs: 0 },
@@ -548,7 +549,7 @@ test("what the merge answered is what the finalization does next", () => {
         reconciled: "Accepted",
         evidence: evidence({ status: "Merged", mergeCommit }),
       }),
-      { decide: "Conclude" },
+      { decide: "Conclude", merged: mergeCommit },
     ],
     [
       unheard(1, 1, {
@@ -617,7 +618,7 @@ test("a merge anybody made concludes the landing at whatever head it was made, a
   mergesDecided([
     [
       waitingOn(0, { status: "Merged", head: later, mergeCommit }),
-      { decide: "Conclude" },
+      { decide: "Conclude", merged: mergeCommit },
     ],
     [
       {
@@ -628,7 +629,7 @@ test("a merge anybody made concludes the landing at whatever head it was made, a
         },
         heardAgeSecs: 0,
       },
-      { decide: "Conclude" },
+      { decide: "Conclude", merged: mergeCommit },
     ],
     [
       waitingOn(0, { ...edited, mergeability: "Blocked" }),
@@ -636,7 +637,7 @@ test("a merge anybody made concludes the landing at whatever head it was made, a
     ],
     [
       waitingOn(0, { ...edited, status: "Merged", mergeCommit }),
-      { decide: "Conclude" },
+      { decide: "Conclude", merged: mergeCommit },
     ],
   ]);
 });
@@ -659,7 +660,10 @@ test("a merge waiting on the forge holds until it is due, is read then, and land
       waitingOn(0, { status: "Closed" }, "Closed"),
       { decide: "Hold", hold: "ProposalAbsent" },
     ],
-    [waitingOn(0, { status: "Merged", mergeCommit }), { decide: "Conclude" }],
+    [
+      waitingOn(0, { status: "Merged", mergeCommit }),
+      { decide: "Conclude", merged: mergeCommit },
+    ],
   ]);
 });
 
@@ -711,7 +715,7 @@ test("a project that will admit no further act aborts rather than merging", () =
         }),
         bounds,
       ),
-      { decide: "Conclude" },
+      { decide: "Conclude", merged: mergeCommit },
       "and a merge that landed is the success it is whatever became of the project",
     );
   }

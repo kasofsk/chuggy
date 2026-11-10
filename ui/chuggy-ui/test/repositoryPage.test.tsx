@@ -403,6 +403,25 @@ test("a git merge's policy is offered only under a git merge, and is written wit
   });
 });
 
+test("a git merge's policy can be Stacked, and is written as chosen", async () => {
+  const stacked = { ...push, policy: "Stacked" } as const;
+  const sent = await drawPage({
+    written: [answer({ repository: binding(stacked) })],
+  });
+  await edit("Landing");
+  const section = sectionOf("Landing");
+  await turned(() => {
+    fireEvent.click(within(section).getByRole("radio", { name: "Stacked" }));
+  });
+  await press("Save changes");
+  expect(sent.find((one) => one.method === "PUT")?.body).toStrictEqual({
+    repository: chuggy,
+    expected: push,
+    landing: stacked,
+    pipelinesWritable: { expected: false, wanted: false },
+  });
+});
+
 /**
  * The conflict answers the row as it now stands, and the reader chose the same
  * mode it moved to — so the draft takes it, the section says so, and the reload

@@ -6,6 +6,7 @@ import {
   projectTicketWriterRun,
   type ProjectTicketWriter,
 } from "./projectWriter.ts";
+import type { EvaluationStackStore } from "./evaluationStack.ts";
 import type { ExecutionSourceObservationPort } from "./executionSource.ts";
 import type { ProjectArtifactPort } from "./finalizerPreparation.ts";
 import type { TicketBriefPort } from "./ticketBrief.ts";
@@ -35,6 +36,7 @@ export interface TicketServiceRuntimeService {
   readonly ticketBriefs: TicketBriefPort;
   readonly projectArtifacts: Pick<ProjectArtifactPort, "readArtifact">;
   readonly dependencyPinning: DependencyPinningPort;
+  readonly stacks?: Pick<EvaluationStackStore, "dead">;
   readonly owner: OwnerId;
   readonly monotonicNow: () => number;
   readonly ticketConfig?: TicketServiceConfig;
@@ -181,6 +183,7 @@ export async function ticketServiceRunOnce(
     ticketBriefs: service.ticketBriefs,
     projectArtifacts: service.projectArtifacts,
     dependencyPinning: service.dependencyPinning,
+    ...(service.stacks === undefined ? {} : { stacks: service.stacks }),
   };
   let activated = 0;
   let failed = 0;

@@ -10,6 +10,7 @@
  * `spawnSource` answers everything else out of the ticket's own history.
  */
 
+import type { EvaluationStack } from "./evaluationStack.ts";
 import type {
   GitObjectId,
   ObservedTarget,
@@ -39,6 +40,17 @@ export interface ExecutionSourceObservation {
    * one that names no tree.
    */
   readonly expectedTree?: GitObjectId;
+  /**
+   * The stack the evaluation runs over, where its work cycle was prepared with
+   * one: the target above is then the stack's commit and the expected tree its
+   * tree.
+   */
+  readonly stack?: { readonly record: EvaluationStack };
+  /**
+   * Set where the cycle has been prepared neither with a stack nor without, and
+   * the spawn is to wait for the finalizer rather than choose.
+   */
+  readonly stackPending?: true;
 }
 
 /**
@@ -86,5 +98,9 @@ export interface ExecutionSourceObservationPort {
     readonly ticket: number;
     readonly source: number;
     readonly kind: "Work" | "Evaluation";
+    /** The work cycle an evaluation judges, which keys its stack. */
+    readonly cycle?: number;
+    /** How many passes have already waited on this input, which bounds a wait for a stack. */
+    readonly deferredPasses?: number;
   }): Promise<ExecutionSourceObservation | undefined>;
 }

@@ -596,3 +596,31 @@ test("a revocation's revision fence is stored as it was offered, and no other co
       JSON.stringify(broken),
     );
 });
+
+test("the finalizer's stack invalidation is read only by the parse a writer reads its inbox with, and only whole", () => {
+  const submitted = {
+    version: 1,
+    command: "SubmitStackInvalidation",
+    ticket: 3,
+    workCycle: 2,
+    evidence: 17,
+  };
+  const parsed = parseStoredProjectCommand(JSON.stringify(submitted));
+  assert.deepEqual(parsed, { parsed: "Ok", value: submitted });
+  assert.equal(
+    parseProjectCommand(JSON.stringify(submitted)).parsed,
+    "Refused",
+  );
+  for (const broken of [
+    { ...submitted, version: 2 },
+    { ...submitted, ticket: 0 },
+    { ...submitted, workCycle: 1.5 },
+    { ...submitted, evidence: 0 },
+    { ...submitted, extra: true },
+  ])
+    assert.equal(
+      parseStoredProjectCommand(JSON.stringify(broken)).parsed,
+      "Refused",
+      JSON.stringify(broken),
+    );
+});

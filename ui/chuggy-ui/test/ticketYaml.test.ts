@@ -129,6 +129,9 @@ test("a finalization is written by its kind, its policy inside a GitMerge alone,
       targetBranchName: "release",
     }),
     creationForm({ finalization: { kind: "None" } }),
+    creationForm({
+      finalization: { kind: "GitMerge", mode: "Push", policy: "Stacked" },
+    }),
   ];
   for (const form of forms) {
     const text = ticketYamlOf(form, context, copyTextEn);
@@ -147,6 +150,9 @@ test("a finalization is written by its kind, its policy inside a GitMerge alone,
   );
   expect(proposal).not.toContain("policy");
   expect(
+    ticketYamlOf(forms[3] ?? creationForm(), context, copyTextEn),
+  ).toContain("  policy: Stacked\n");
+  expect(
     ticketYamlOf(forms[2] ?? creationForm(), context, copyTextEn),
   ).toContain("finalization:\n  kind: None\n");
 });
@@ -163,8 +169,8 @@ test("a finalization's kind, mode and policy name the roster each is one of", ()
     messages("  kind: GitMerge\n  mode: Rebase\n  policy: Direct\n"),
   ).toStrictEqual(["merge by one of Push, PullRequestMerge"]);
   expect(
-    messages("  kind: GitMerge\n  mode: Push\n  policy: Stacked\n"),
-  ).toStrictEqual(["order the merge as one of Direct, Serialized"]);
+    messages("  kind: GitMerge\n  mode: Push\n  policy: Ordered\n"),
+  ).toStrictEqual(["order the merge as one of Direct, Serialized, Stacked"]);
   expect(messages("  mode: Push\n")).toStrictEqual([
     "a landing names its kind: one of GitMerge, PullRequest, None",
   ]);
@@ -290,7 +296,7 @@ test("the vocabulary offers what this project's form draws", () => {
     ["GitMerge", "PullRequest", "None"],
     ["Push", "PullRequestMerge"],
     [],
-    ["Direct", "Serialized"],
+    ["Direct", "Serialized", "Stacked"],
   ]);
   expect(
     keys.find((key) => key.key === "dependencies")?.values.map((v) => v.label),

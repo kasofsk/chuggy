@@ -476,6 +476,8 @@ function materializationWithdrawals(
 export interface SpawnSources {
   readonly source?: ExecutionSourceObservation;
   readonly pinned?: TicketSourceRecord;
+  /** Set where the spawn's evaluation waits for a stack the finalizer has yet to prepare. */
+  readonly stackPending?: true;
   /** The ticket's own brief images, read at the same gather and carried onto every spawn's bundle alike. */
   readonly images?: readonly BriefImageReference[];
   /** What a dispatch pins of its ticket's dependencies, which only a dispatch carries. */

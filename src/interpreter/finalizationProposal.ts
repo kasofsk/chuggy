@@ -66,7 +66,9 @@
  * merges a change nobody evaluated; a merge the forge reports, by whoever made
  * it and at whatever head, is a person's decision at the forge and concludes
  * `FinalizationSucceeded`, and the landing's read names the head that was
- * merged wherever it is not the one proposed.
+ * merged wherever it is not the one proposed. The conclusion names the merge
+ * commit, because a Stacked ticket evaluated over a stack concludes only where
+ * that commit is the stack's tree, and is otherwise re-checked.
  *
  * THIS STEP AWAITS NOTHING AND REACHES NO FORGE. The request, the durable row
  * and any observation they needed are gathered before it runs, so what it reads
@@ -210,7 +212,7 @@ export type FinalizationProposalDecision =
       readonly groupCommit?: GitObjectId;
     }
   | { readonly decide: "Abort"; readonly dequeue?: ChangeProposalMergeRequest }
-  | { readonly decide: "Conclude" }
+  | { readonly decide: "Conclude"; readonly merged?: GitObjectId }
   | { readonly decide: "Hold"; readonly hold: FinalizationHoldKind };
 
 /** What the finalization itself brings to this step: how its brief lands, and what its project will still admit. */
@@ -328,7 +330,7 @@ function finalizationProposalMerged(
 ): FinalizationProposalDecision {
   switch (merge.merged) {
     case "Merged":
-      return { decide: "Conclude" };
+      return { decide: "Conclude", merged: merge.mergeCommit };
     case "NotMergeable":
       return { decide: "RecordMergeConflict", base: request.base.ref };
     default:
@@ -445,7 +447,7 @@ function finalizationProposalMergeNext(
   bounds: ChangeProposalMergingBounds,
 ): FinalizationProposalDecision {
   if (evidence.status === "Merged" && evidence.mergeCommit !== undefined)
-    return { decide: "Conclude" };
+    return { decide: "Conclude", merged: evidence.mergeCommit };
   const next = changeProposalMergeNext(request, merging, merge, bounds);
   const closing = allClosingLifecycles.includes(finalization.lifecycle);
   switch (next.next) {

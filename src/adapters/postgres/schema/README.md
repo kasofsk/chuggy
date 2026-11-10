@@ -673,3 +673,37 @@ INSERT and SELECT, read by the API, and `epic_change_is_immutable` refuses every
 delete. Its identity is `(tenant, project, epic, revision)` and it points at
 `project`. Its newest row per epic is the content `epic` holds, which is why a
 save writes both in one transaction. It has no unfinished work.
+
+`evaluation_stack` — the stack one ticket's work cycle was first evaluated over:
+the tip of its reference, and the commit and tree of the stack. Owned by the
+migration owner and granted SELECT and INSERT to the finalizer, which writes it
+before the cycle's first evaluation spawns, and SELECT to the ticket service, with
+`evaluation_stack_is_immutable` refusing every change and delete of every role.
+Its identity is `(tenant, project, ticket, work_cycle)` and it points at
+`project`. A cycle with no row was evaluated unstacked. Whether a stack still
+stands is derived from the landings since its tip and the tickets still
+beneath it, and stored nowhere. It has no unfinished work.
+
+`evaluation_stack_beneath` — the tickets beneath one stack, bottom first by
+depth, each with the accepted commit it must land. Granted and refused as
+`evaluation_stack` is. Its identity is `(tenant, project, ticket, work_cycle,
+depth)`, a ticket is beneath a stack once, and it points at `evaluation_stack`.
+It has no unfinished work.
+
+`evaluation_stack_removal` — that a stack's commit was taken down from the
+reference it was published on, once, or that the reference of a cycle decided
+unstacked as `Unpublished` was. Granted and refused as `evaluation_stack` is, to
+the finalizer alone. Its identity is that of the cycle it names, which holds a
+stack or a decision. It has no unfinished work.
+
+`evaluation_stack_none` — that the finalizer decided a work cycle is evaluated
+unstacked, and why. Granted and refused as `evaluation_stack` is, and a cycle is
+left this or a stack, never both. Its identity is `(tenant, project, ticket,
+work_cycle)` and it points at `project`. It has no unfinished work.
+
+`evaluation_stack_dead` — that a stack stopped standing under an evaluation
+that was running over it, and the journal position it was found at. Written
+only by `submit_stack_invalidation`, in the transaction that files the
+invalidation, and never changed. The finalizer and the ticket service read it,
+the second to take a failing verdict of that cycle as no rework. Its identity is
+that of the stack it points at. It has no unfinished work.

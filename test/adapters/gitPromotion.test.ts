@@ -671,7 +671,42 @@ test("a target the candidate already contains integrates to the candidate itself
     candidate,
     strategy: "Merge",
   });
-  assert.deepEqual(integrated, { integrated: "Candidate", candidate });
+  assert.deepEqual(integrated, {
+    integrated: "Candidate",
+    candidate,
+    tree: fixtureGit(
+      fixtureScratch(fixture),
+      "rev-parse",
+      `${candidate}^{tree}`,
+    ),
+  });
+});
+
+test("a commit's tree is read from the remote by its hash, and one the remote does not hold, or a credential refused, reads as nothing", async (t) => {
+  const fixture = fixtureOpen(t);
+  const binding = fixtureBinding(fixture.remote);
+  const moved = fixtureCommit(fixture, "moved.txt", "moved\n", "moved");
+
+  assert.equal(
+    await fixturePort(fixture).readCommitTree({
+      repository: binding,
+      commit: asGitObjectId(moved),
+    }),
+    fixtureGit(fixture.remote, "rev-parse", `${moved}^{tree}`),
+  );
+  assert.equal(
+    await fixturePort(fixture).readCommitTree({
+      repository: binding,
+      commit: asGitObjectId("e".repeat(40)),
+    }),
+    undefined,
+  );
+  assert.equal(
+    await fixturePort(fixture, { resolved: "Denied" }, "denied").readCommitTree(
+      { repository: binding, commit: asGitObjectId(moved) },
+    ),
+    undefined,
+  );
 });
 
 test("a target that moved without conflicting is merged into the candidate", async (t) => {
@@ -694,6 +729,10 @@ test("a target that moved without conflicting is merged into the candidate", asy
     assert.fail(`the merge did not integrate: ${JSON.stringify(integrated)}`);
   }
   const scratch = fixtureScratch(fixture);
+  assert.equal(
+    integrated.tree,
+    fixtureGit(scratch, "rev-parse", `${integrated.candidate}^{tree}`),
+  );
   assert.deepEqual(
     fixtureGit(
       scratch,

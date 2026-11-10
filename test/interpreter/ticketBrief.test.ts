@@ -135,6 +135,31 @@ test("a branch is a reference name by the one grammar this tree states", () => {
     assert.throws(() => asBriefBranch(value), RangeError, `refused: ${value}`);
 });
 
+test("the namespace stacks are published under is no branch or target", () => {
+  for (const value of [
+    "refs/heads/chuggy/stack",
+    "refs/heads/chuggy/stack/7/1",
+    "refs/heads/chuggy/stack/anything",
+  ]) {
+    assert.throws(() => asBriefBranch(value), RangeError, `refused: ${value}`);
+    assert.throws(
+      () =>
+        asBriefFinalization({
+          kind: "GitMerge",
+          mode: "Push",
+          policy: "Direct",
+          target: value,
+        }),
+      RangeError,
+      `refused as a target: ${value}`,
+    );
+  }
+  assert.equal(
+    asBriefBranch("refs/heads/chuggy/stacked"),
+    "refs/heads/chuggy/stacked",
+  );
+});
+
 test("a branch's bound counts code points, matching the schema in front of it", () => {
   const atBound = `${briefBranchPrefix}${"😀".repeat(briefBranchCharsMax - briefBranchPrefix.length)}`;
   assert.equal(asBriefBranch(atBound), atBound);
@@ -326,7 +351,7 @@ test("a finalization target takes the branch's own grammar and no other kind lan
     { kind: "Push" },
     { kind: "GitMerge", mode: "PullRequest", policy: "Direct" },
     { kind: "GitMerge", mode: "Push" },
-    { kind: "GitMerge", mode: "Push", policy: "Stacked" },
+    { kind: "GitMerge", mode: "Push", policy: "Ordered" },
     { kind: "PullRequest", policy: "Direct" },
     { kind: "PullRequest", mode: "PullRequest" },
     { kind: "None", policy: "Direct" },
@@ -503,7 +528,10 @@ test("a brief stored by its mode is read forward to its kind, its landing the gi
     { finalization: { mode: "PullRequest" }, landing: "Serialized" },
     { finalization: { mode: "None" }, landing: "Serialized" },
     { landing: "Serialized" },
-    { finalization: { mode: "Push" }, landing: "Stacked" },
+    { finalization: { mode: "PullRequest" }, landing: "Stacked" },
+    { finalization: { mode: "None" }, landing: "Stacked" },
+    { landing: "Stacked" },
+    { finalization: { mode: "Push" }, landing: "Ordered" },
     { finalization: { mode: "Pushed" } },
     { finalization: { mode: "None", target: "refs/heads/rt/landing" } },
     {
@@ -528,6 +556,7 @@ test("a brief is stored Serialized only where its git merge says so, and Direct,
   assert.equal(draftBriefByMode(asDraftBrief(brief)).landing, undefined);
   assert.equal(draftBriefByMode(gitMerge("Direct")).landing, undefined);
   assert.equal(draftBriefByMode(gitMerge("Serialized")).landing, "Serialized");
+  assert.equal(draftBriefByMode(gitMerge("Stacked")).landing, "Stacked");
   assert.equal(
     draftBriefByMode(asDraftBrief({ ...brief, finalization: { kind: "None" } }))
       .landing,
@@ -536,6 +565,10 @@ test("a brief is stored Serialized only where its git merge says so, and Direct,
   assert.notEqual(
     briefContentDigest(gitMerge("Serialized")),
     briefContentDigest(gitMerge("Direct")),
+  );
+  assert.notEqual(
+    briefContentDigest(gitMerge("Stacked")),
+    briefContentDigest(gitMerge("Serialized")),
   );
 });
 

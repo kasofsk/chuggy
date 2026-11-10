@@ -133,6 +133,11 @@ import { migration132 } from "./132-session-context-readings.ts";
 import { migration133 } from "./133-session-model-effort.ts";
 import { migration134 } from "./134-attempt-credential-outcome.ts";
 import { migration135 } from "./135-runner-agents-advertised.ts";
+import { migration136 } from "./136-finalization-rank.ts";
+import { migration137 } from "./137-stacked-policy.ts";
+import { migration138 } from "./138-evaluation-stack.ts";
+import { migration139 } from "./139-ticket-service-stacks.ts";
+import { migration140 } from "./140-stack-invalidation.ts";
 import type { Migration } from "../shared.ts";
 
 export const migrations: readonly Migration[] = [
@@ -271,4 +276,9 @@ export const migrations: readonly Migration[] = [
   migration133,
   migration134,
   migration135,
+  migration136,
+  migration137,
+  migration138,
+  migration139,
+  migration140,
 ];

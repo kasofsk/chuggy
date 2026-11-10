@@ -196,25 +196,25 @@ export type BriefFinalizationForward<Target> =
     }
   | { readonly forward: "Refused"; readonly reason: string };
 
-/** Why a `Serialized` landing written with no finalization has no representation by kind. */
+/** Why a `Serialized` or `Stacked` landing written with no finalization has no representation by kind. */
 export const briefSerializedUnfinalizedError =
-  "a Serialized landing orders a finalization, so a brief naming one names the finalization it orders";
+  "a Serialized or Stacked landing orders a finalization, so a brief naming one names the finalization it orders";
 
-/** Why a pull request written by its mode and ordered `Serialized` has no representation by kind. */
+/** Why a pull request written by its mode and ordered `Serialized` or `Stacked` has no representation by kind. */
 export const briefPullRequestSerializedError =
-  "a pull request is merged by a person and nothing orders it, so it lands under no Serialized landing";
+  "a pull request is merged by a person and nothing orders it, so it lands under no Serialized or Stacked landing";
 
-/** Why a landing of nothing written by its mode and ordered `Serialized` has no representation by kind. */
+/** Why a landing of nothing written by its mode and ordered `Serialized` or `Stacked` has no representation by kind. */
 export const briefNoneSerializedError =
-  "a landing of nothing has nothing to order, so it lands under no Serialized landing";
+  "a landing of nothing has nothing to order, so it lands under no Serialized or Stacked landing";
 
 /**
  * Maps a finalization written by its mode, and the landing written beside it,
  * forward to its kind: a push or a merged proposal is a `GitMerge` under that
  * landing, `Direct` where it names none, a pull request is a `PullRequest` and
  * landing nothing is `None`. A pull request or a landing of nothing ordered
- * `Serialized` has no representation, and nor has a `Serialized` landing with
- * no finalization to order, so each is refused with the reason.
+ * `Serialized` or `Stacked` has no representation, and nor has one of those
+ * landings with no finalization to order, so each is refused with the reason.
  */
 export function briefFinalizationForward<Target extends string>(
   finalization:
@@ -225,7 +225,7 @@ export function briefFinalizationForward<Target extends string>(
     | undefined,
   landing: BriefGitMergePolicy | undefined,
 ): BriefFinalizationForward<Target> {
-  const serialized = landing === "Serialized";
+  const serialized = landing === "Serialized" || landing === "Stacked";
   if (finalization === undefined)
     return serialized
       ? {

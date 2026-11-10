@@ -40,10 +40,12 @@ async function seededEpoch(harness: PostgresHarness): Promise<string> {
   return epoch;
 }
 
+/** The event a seeded entry carries where a case names none, because no case here replays one. */
+const seededEvent: unknown = { type: "TicketRevoked", value: 1 };
+
 /**
  * Settles the operation the inbox accepted and journals the entry that decided
- * it, which is the fence the action is raised at. The entry's body is empty
- * because no case here replays one.
+ * it, carrying `event`, which is the fence the action is raised at.
  */
 async function seededFence(
   seeding: PostgresTransaction,
@@ -52,6 +54,7 @@ async function seededFence(
   sequence: number,
   operation: string,
   epoch: string,
+  event: unknown = seededEvent,
 ): Promise<void> {
   await seeding.query(
     `UPDATE decision_input SET state='Journaled', decided_seq=$3, terminal_at=now()
@@ -62,8 +65,7 @@ async function seededFence(
     `INSERT INTO journal_entry
        (tenant,project,seq,entry,entry_digest,prev_digest,owner,fencing_epoch,
         recovery_epoch,cause_kind,cause_id)
-     VALUES ($1,$2,$3,jsonb_build_object('seq',$3::bigint,'event',
-               jsonb_build_object('type','TicketRevoked','value',1))::text,
+     VALUES ($1,$2,$3,jsonb_build_object('seq',$3::bigint,'event',$7::jsonb)::text,
              $4,'genesis','owner',1,$5,'Operation',$6)`,
     [
       partition.tenant,
@@ -72,16 +74,18 @@ async function seededFence(
       `digest-${label}`,
       epoch,
       operation,
+      JSON.stringify(event),
     ],
   );
 }
 
-/** One journal entry at `sequence`, deciding an operation the real inbox accepted, for a row a case dates by it. */
+/** One journal entry at `sequence` carrying `event`, deciding an operation the real inbox accepted, for a row a case dates by it. */
 export async function seedJournalEntry(
   harness: PostgresHarness,
   partition: Partition,
   label: string,
   sequence: number,
+  event: unknown = seededEvent,
 ): Promise<void> {
   const submission = postgresHarnessSubmission(partition, label);
   await harness.inbox.accept(submission);
@@ -94,6 +98,7 @@ export async function seedJournalEntry(
     sequence,
     submission.operation,
     epoch,
+    event,
   );
   await seeding.commit();
 }

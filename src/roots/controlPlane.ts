@@ -85,7 +85,9 @@ import {
   postgresPriorEvaluationReports,
   postgresPriorWorkReports,
 } from "../adapters/postgres/evaluationReports.ts";
+import { postgresEvaluationStack } from "../adapters/postgres/evaluationStack.ts";
 import { postgresTicketBrief } from "../adapters/postgres/ticketBrief.ts";
+import { evaluationStackSpawn } from "../interpreter/evaluationStackSpawn.ts";
 import { postgresTicketLandings } from "../adapters/postgres/ticketLandings.ts";
 import {
   postgresDependencyPins,
@@ -513,6 +515,21 @@ export interface TicketServiceProcessRootConfig {
   readonly forge?: ForgeAppKey;
 }
 
+function ticketServiceAncestry(
+  source: TicketServiceProcessRootConfig["source"],
+  credentials: ReturnType<typeof composeTicketServiceCredentials>,
+) {
+  return gitCommitAncestry({
+    scratchDirectory: source.scratchDirectory,
+    identity: source.identity,
+    environment: source.environment,
+    credentials,
+    ...(source.credentialUsername === undefined
+      ? {}
+      : { credentialUsername: source.credentialUsername }),
+  });
+}
+
 /** Owns the writer-role pool and composes the independently deployable ticket service. */
 export function ticketServiceProcessRoot(
   config: TicketServiceProcessRootConfig,
@@ -524,15 +541,8 @@ export function ticketServiceProcessRoot(
   );
   const git = gitPromotion({ ...config.source, credentials });
   const bindings = postgresProjectRepositoryBinding(pool);
-  const ancestry = gitCommitAncestry({
-    scratchDirectory: config.source.scratchDirectory,
-    identity: config.source.identity,
-    environment: config.source.environment,
-    credentials,
-    ...(config.source.credentialUsername === undefined
-      ? {}
-      : { credentialUsername: config.source.credentialUsername }),
-  });
+  const briefs = postgresTicketBrief(pool);
+  const ancestry = ticketServiceAncestry(config.source, credentials);
   const service: TicketServiceRuntimeService = {
     domain: config.domain,
     rework: checkedReworkCap(config.rework),
@@ -546,8 +556,9 @@ export function ticketServiceProcessRoot(
       git,
       postgresExecutionSourceHistory(pool),
       ancestry,
+      evaluationStackSpawn({ store: postgresEvaluationStack(pool), briefs }),
     ),
-    ticketBriefs: postgresTicketBrief(pool),
+    ticketBriefs: briefs,
     projectArtifacts: artifactStore({ root: config.artifacts.root }),
     dependencyPinning: dependencyPinning({
       results: postgresDependencyResults(pool),
@@ -555,6 +566,7 @@ export function ticketServiceProcessRoot(
       bindings,
       ancestry,
     }),
+    stacks: postgresEvaluationStack(pool),
     ...(config.ticket === undefined ? {} : { ticketConfig: config.ticket }),
   };
   return ownedProcess(

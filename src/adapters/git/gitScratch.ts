@@ -96,6 +96,7 @@ export interface GitScratchCall {
   readonly timeoutMsMax: number;
   readonly credential?: RepositoryCredential;
   readonly indexFile?: string;
+  readonly environment?: GitEnvironment;
   readonly input?: Uint8Array | string;
   readonly outputBytesMax?: number;
 }
@@ -230,10 +231,11 @@ export function scratchRun(
     scratch.options.credentialUsername,
     call.credential,
   );
-  const environment =
-    call.indexFile === undefined
-      ? resolved
-      : { ...resolved, GIT_INDEX_FILE: call.indexFile };
+  const environment = {
+    ...resolved,
+    ...(call.indexFile === undefined ? {} : { GIT_INDEX_FILE: call.indexFile }),
+    ...call.environment,
+  };
   const prefix =
     call.credential === undefined
       ? []
@@ -576,6 +578,38 @@ export async function scratchHasCommit(
   return ran.ran === "Exited" && ran.code === 0;
 }
 
+/** Who wrote one commit and the first line of its message, as the object itself records them. */
+export interface ScratchCommitWritten {
+  readonly name: string;
+  readonly email: string;
+  readonly subject: string;
+}
+
+/** The author and subject one commit records, or `undefined` where git could not answer. */
+export async function scratchCommitWritten(
+  scratch: GitScratch,
+  repository: RepositoryId,
+  commit: GitObjectId,
+): Promise<ScratchCommitWritten | undefined> {
+  const ran = await scratchRun(scratch, {
+    repository,
+    timeoutMsMax: scratch.options.localTimeoutMsMax,
+    argv: [
+      "--no-replace-objects",
+      "show",
+      "--no-patch",
+      "--format=%an%n%ae%n%s",
+      commit,
+      "--",
+    ],
+  });
+  if (ran.ran === "Stopped" || ran.code !== 0) return undefined;
+  const [name, email, subject] = ran.stdout.split("\n");
+  return name === undefined || email === undefined || subject === undefined
+    ? undefined
+    : { name, email, subject };
+}
+
 /** One commit's tree and its parents in order, as the object itself records them. */
 export interface ScratchCommitShape {
   readonly tree: GitObjectId;
@@ -778,6 +812,42 @@ export async function scratchCommitTree(
   );
 }
 
+/**
+ * Writes the commit for an already-written tree under an identity and a date
+ * given rather than read from the scratch and the clock, so the same tree,
+ * parents and message are the same commit wherever and however often it is written.
+ */
+export async function scratchCommitTreeFixed(
+  scratch: GitScratch,
+  repository: RepositoryId,
+  tree: GitObjectId,
+  parents: readonly GitObjectId[],
+  message: string,
+  identity: GitCommitIdentity & { readonly date: string },
+): Promise<GitObjectId | undefined> {
+  return scratchWrittenObjectOf(
+    await scratchRun(scratch, {
+      repository,
+      timeoutMsMax: scratch.options.localTimeoutMsMax,
+      environment: {
+        GIT_AUTHOR_NAME: identity.name,
+        GIT_AUTHOR_EMAIL: identity.email,
+        GIT_AUTHOR_DATE: identity.date,
+        GIT_COMMITTER_NAME: identity.name,
+        GIT_COMMITTER_EMAIL: identity.email,
+        GIT_COMMITTER_DATE: identity.date,
+      },
+      argv: [
+        "commit-tree",
+        tree,
+        ...parents.flatMap((parent) => ["-p", parent]),
+        "-m",
+        message,
+      ],
+    }),
+  );
+}
+
 /** Gives one written commit a ref, because an unreachable object is a collectable one. */
 export async function scratchKeepCommit(
   scratch: GitScratch,
@@ -849,11 +919,20 @@ export function scratchPushFailed(stdout: string): ScratchPushed {
   };
 }
 
+/** What a push expects the remote's ref to hold: a commit, or nothing at all. */
+export type ScratchLease = GitObjectId | "Absent";
+
+/** The option that makes a push move the ref only while it holds what the caller read. */
+function scratchLeaseArgument(ref: GitRefName, lease: ScratchLease): string {
+  return `--force-with-lease=${ref}:${lease === "Absent" ? "" : lease}`;
+}
+
 /**
  * The one ref movement this adapter makes: a single-refspec push the receiving
- * repository applies atomically and refuses when it is not a fast-forward. A
- * push stopped at its deadline timed out and one stopped otherwise is unknown,
- * and one git ended is read off its porcelain line.
+ * repository applies atomically, refused when it is not a fast-forward unless
+ * a `lease` names what the remote must still hold there. A push stopped at its
+ * deadline timed out, one stopped otherwise is unknown, and one git ended is
+ * read off its porcelain line.
  */
 export async function scratchPush(
   scratch: GitScratch,
@@ -861,6 +940,7 @@ export async function scratchPush(
   credential: RepositoryCredential,
   candidate: GitObjectId,
   ref: GitRefName,
+  lease?: ScratchLease,
 ): Promise<ScratchPushed> {
   const ran = await scratchRun(scratch, {
     repository,
@@ -870,7 +950,37 @@ export async function scratchPush(
       "push",
       "--porcelain",
       "--atomic",
+      ...(lease === undefined ? [] : [scratchLeaseArgument(ref, lease)]),
       ...scratchRemoteArguments(repository, `${candidate}:${ref}`),
+    ],
+  });
+  if (ran.ran === "Stopped") {
+    return ran.stopped === "Timeout"
+      ? { pushed: "TimedOut" }
+      : { pushed: "Unknown" };
+  }
+  if (ran.code === 0) return { pushed: "Advanced" };
+  return scratchPushFailed(ran.stdout);
+}
+
+/** Deletes one ref of the remote, only while it holds `lease`. */
+export async function scratchPushDelete(
+  scratch: GitScratch,
+  repository: RepositoryId,
+  credential: RepositoryCredential,
+  ref: GitRefName,
+  lease: GitObjectId,
+): Promise<ScratchPushed> {
+  const ran = await scratchRun(scratch, {
+    repository,
+    credential,
+    timeoutMsMax: scratch.options.promotionTimeoutMsMax,
+    argv: [
+      "push",
+      "--porcelain",
+      "--atomic",
+      scratchLeaseArgument(ref, lease),
+      ...scratchRemoteArguments(repository, `:${ref}`),
     ],
   });
   if (ran.ran === "Stopped") {

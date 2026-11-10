@@ -309,15 +309,14 @@ interface SerializedRow {
   readonly ticket: string;
   readonly phase: string;
   readonly brief: string | null;
-  readonly entry: string | null;
-  readonly rechecking: boolean | null;
+  readonly rank: string | null;
 }
 
 /**
- * Every Serialized ticket between a send-back to re-check and its landing,
- * across partitions. The filter on the brief, which a release stores by mode,
- * only keeps Direct tickets, which are most, and any that is no git merge out
- * of the read; whether a ticket queues is `serializedQueues`' to say.
+ * Every Serialized ticket on the path to its landing, across partitions. The
+ * filter on the brief, which a release stores by mode, only keeps Direct
+ * tickets, which are most, and any that is no git merge out of the read;
+ * whether a ticket queues is `serializedQueues`' to say.
  */
 async function finalizerSerializedCandidates(
   client: pg.PoolClient,
@@ -325,24 +324,11 @@ async function finalizerSerializedCandidates(
   const found = await client.query<SerializedRow>(
     sql`SELECT d.tenant, d.project, d.ticket::text AS ticket, p.phase,
                d.brief::text AS brief,
-               (SELECT min(f.authorizing_seq)::text FROM finalization_request f
-                 WHERE f.tenant = d.tenant AND f.project = d.project
-                   AND f.ticket = d.ticket AND f.kind = 'RunFinalizer'
-                   AND f.state IN ('Open', 'Registered')) AS entry,
-               (SELECT x.failure_kind = 'RecheckRequired'
-                       AND NOT ticket_evaluation_reworked_since(
-                             x.tenant, x.project, x.ticket, r.authorizing_seq)
-                  FROM finalization_attempt x
-                  JOIN finalization_request r
-                    ON r.tenant = x.tenant AND r.project = x.project
-                   AND r.request = x.request
-                 WHERE x.tenant = d.tenant AND x.project = d.project
-                   AND x.ticket = d.ticket AND x.outcome = 'Failed'
-                 ORDER BY x.prepared_at DESC, x.attempt DESC LIMIT 1) AS rechecking
+               ticket_finalization_rank(d.tenant, d.project, d.ticket)::text AS rank
           FROM ticket_definition d
           JOIN ticket_projection p
             ON p.tenant = d.tenant AND p.project = d.project AND p.ticket = d.ticket
-         WHERE d.brief->>'landing' = 'Serialized'
+         WHERE d.brief->>'landing' IN ('Serialized', 'Stacked')
            AND d.brief->'finalization'->>'mode' IN ('Push', 'PullRequestMerge')
            AND p.phase IN ('Work', 'Evaluation', 'Finalization')`,
   );
@@ -363,11 +349,10 @@ async function finalizerSerializedCandidates(
       finalization: brief?.finalization,
       repository: brief?.repository,
       target: brief === undefined ? undefined : briefLandsOn(brief),
-      entry:
-        row.entry === null
+      rank:
+        row.rank === null
           ? undefined
-          : projectRowCounter(row.entry, "serialized entry"),
-      rechecking: row.rechecking === true,
+          : projectRowCounter(row.rank, "serialized rank"),
     };
   });
 }
@@ -871,7 +856,12 @@ function postgresFinalizerPreparation(
   };
 }
 
-/** Counts the attempts of the ticket's requests that recorded a target moved past what was evaluated. */
+/**
+ * Counts the attempts of the ticket's requests that recorded a target moved
+ * past what was evaluated, leaving out those whose evaluated work cycle has a
+ * stack record: such an attempt was sent back because a stack stopped being
+ * what the target holds, which queue activity bounds without this cap.
+ */
 async function finalizerRecheckFailures(
   client: pg.PoolClient,
   claim: FinalizationClaim,
@@ -881,7 +871,25 @@ async function finalizerRecheckFailures(
          FROM finalization_attempt a
         WHERE a.tenant = ${claim.partition.tenant} AND a.project = ${claim.partition.project}
           AND a.ticket = ${claim.ticket}
-          AND a.failure_kind = 'RecheckRequired'`,
+          AND a.failure_kind = 'RecheckRequired'
+          AND NOT EXISTS (
+                SELECT 1
+                  FROM input_bundle_reference m
+                  JOIN execution_result r
+                    ON r.tenant = m.tenant AND r.project = m.project
+                       AND r.manifest = m.reference_id
+                  JOIN execution e
+                    ON e.tenant = r.tenant AND e.project = r.project
+                       AND e.execution = r.execution
+                  JOIN execution_request_task t
+                    ON t.tenant = e.tenant AND t.project = e.project
+                       AND t.request = e.source_request AND t.task = e.task
+                  JOIN evaluation_stack s
+                    ON s.tenant = a.tenant AND s.project = a.project
+                       AND s.ticket = a.ticket AND s.work_cycle = t.cycle
+                 WHERE m.tenant = a.tenant AND m.project = a.project
+                   AND m.bundle = a.input_bundle
+                   AND m.reference_kind = 'ResultManifest')`,
   );
   return projectRowCounter(
     found.rows[0]?.failures ?? "0",

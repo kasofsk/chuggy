@@ -222,11 +222,16 @@ function gitRefNameHasInvalidCharacter(value: string): boolean {
   return false;
 }
 
+/** The namespace the finalizer publishes stacks under, which no branch or target may name. */
+export const gitStackRefPrefix = "refs/heads/chuggy/stack/";
+
 /** The one reference-name grammar this tree accepts, wherever a ref is written. */
 export function parsedGitRefName(value: unknown): GitRefName | undefined {
   if (
     typeof value !== "string" ||
     !value.startsWith(gitRefNamePrefix) ||
+    value.startsWith(gitStackRefPrefix) ||
+    `${value}/` === gitStackRefPrefix ||
     value.endsWith("/") ||
     value.endsWith(".") ||
     value.includes("..") ||
@@ -1117,18 +1122,53 @@ export interface ConflictSummary {
 }
 
 /**
- * What integrating found: an integrated candidate, a genuine conflict, or a git
- * refusal. A conflict carries the merge base it was computed against, absent
- * only where the two commits share no history at all.
+ * What integrating found: an integrated candidate and the tree it records, a
+ * genuine conflict, or a git refusal. A conflict carries the merge base it was
+ * computed against, absent only where the two commits share no history at all.
  */
 export type CandidateIntegrated =
-  | { readonly integrated: "Candidate"; readonly candidate: GitObjectId }
+  | {
+      readonly integrated: "Candidate";
+      readonly candidate: GitObjectId;
+      readonly tree: GitObjectId;
+    }
   | {
       readonly integrated: "Conflicted";
       readonly conflict: ConflictSummary;
       readonly base?: GitObjectId;
     }
   | { readonly integrated: "Failed"; readonly evidence: GitEvidence };
+
+/**
+ * The stack an evaluation is to run over: the candidate merged on the accepted
+ * commits beneath it, bottom first, over the tip of the reference they land on,
+ * and published at `ref` so a plain clone fetches it.
+ */
+export interface StackMinting {
+  readonly repository: RepositoryBinding;
+  readonly tip: ObservedTarget;
+  readonly beneath: readonly GitObjectId[];
+  readonly candidate: GitObjectId;
+  readonly ref: GitRefName;
+}
+
+/**
+ * What minting found. The commit is a function of the tip, the commits and the
+ * candidate alone, so a second mint of the same stack is the same commit.
+ */
+export type StackMinted =
+  | {
+      readonly minted: "Stack";
+      readonly commit: GitObjectId;
+      readonly tree: GitObjectId;
+    }
+  | { readonly minted: "Conflicted" }
+  | { readonly minted: "Failed"; readonly evidence: GitEvidence };
+
+/** What taking a published stack down found; a ref the remote no longer holds is `Removed` too. */
+export type StackRemoved =
+  | { readonly removed: "Removed" }
+  | { readonly removed: "Failed"; readonly evidence: GitEvidence };
 
 /** The one irreversible act, which names the permit that authorizes it so an unpermitted one is unspellable. */
 export interface CandidatePromotion {
@@ -1239,6 +1279,26 @@ export interface GitPromotionPort {
     integration: CandidateIntegration,
   ): Promise<CandidateIntegrated>;
 
+  /** Merges a stack deterministically and publishes it at its ref. */
+  mintStack(minting: StackMinting): Promise<StackMinted>;
+
+  /** Deletes a published stack's ref, only while it still holds the commit the stack was recorded at. */
+  removeStack(removal: {
+    readonly repository: RepositoryBinding;
+    readonly ref: GitRefName;
+    readonly commit: GitObjectId;
+  }): Promise<StackRemoved>;
+
+  /**
+   * Deletes the ref a stack may have been published at without being recorded,
+   * only while it holds the candidate itself or a stack commit that contains it.
+   */
+  removeUnrecordedStack(removal: {
+    readonly repository: RepositoryBinding;
+    readonly ref: GitRefName;
+    readonly candidate: GitObjectId;
+  }): Promise<StackRemoved>;
+
   /** Advances the target ref to the candidate under a permit, conditionally on the target it observed. */
   promoteCandidate(promotion: CandidatePromotion): Promise<CandidatePromoted>;
 
@@ -1247,6 +1307,12 @@ export interface GitPromotionPort {
 
   /** Reads whether a proposal's head is its pinned head brought up to date with its base. */
   proveHeadAdoptable(question: HeadAdoptionQuestion): Promise<HeadAdoption>;
+
+  /** Reads the tree a commit of the repository records, and nothing where it could not be read. */
+  readCommitTree(question: {
+    readonly repository: RepositoryBinding;
+    readonly commit: GitObjectId;
+  }): Promise<GitObjectId | undefined>;
 }
 
 /** What resolving a repository credential found, a denial kept apart from an outage. */

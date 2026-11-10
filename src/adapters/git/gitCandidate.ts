@@ -51,6 +51,7 @@ import {
   type CandidatePrepared,
   type CandidatePreparation,
   type GitObjectId,
+  type GitPromotionPort,
   type GitRefName,
   type HeadAdoption,
   type HeadAdoptionQuestion,
@@ -264,7 +265,7 @@ async function candidateIntegrateMerge(
       ) {
         return { integrated: "Failed", evidence: "IntegrationFailed" };
       }
-      return { integrated: "Candidate", candidate };
+      return { integrated: "Candidate", candidate, tree: merged.tree };
     }
     default:
       return assertNever(merged);
@@ -310,7 +311,18 @@ export async function candidateIntegrate(
     return { integrated: "Failed", evidence: "IntegrationFailed" };
   }
   if (contains) {
-    return { integrated: "Candidate", candidate: integration.candidate };
+    const shape = await scratchCommitShape(
+      scratch,
+      repository,
+      integration.candidate,
+    );
+    return shape === undefined
+      ? { integrated: "Failed", evidence: "IntegrationFailed" }
+      : {
+          integrated: "Candidate",
+          candidate: integration.candidate,
+          tree: shape.tree,
+        };
   }
   switch (integration.strategy) {
     case "Merge":
@@ -415,6 +427,26 @@ async function candidateAdoptableBase(
   return (await scratchHasCommit(scratch, repository, base.value))
     ? base.value
     : undefined;
+}
+
+/** The tree a commit records, brought into the scratch by its hash where it is not there, and nothing where either could not be read. */
+export async function candidateCommitTree(
+  scratch: GitScratch,
+  credential: RepositoryCredential,
+  question: Parameters<GitPromotionPort["readCommitTree"]>[0],
+): Promise<GitObjectId | undefined> {
+  const repository = question.repository.repository;
+  if (!(await scratchHasCommit(scratch, repository, question.commit)))
+    await scratchFetchHistory(
+      scratch,
+      repository,
+      credential,
+      question.commit,
+      scratch.options.remoteTimeoutMsMax,
+    );
+  if (!(await scratchHasCommit(scratch, repository, question.commit)))
+    return undefined;
+  return (await scratchCommitShape(scratch, repository, question.commit))?.tree;
 }
 
 /** Brings the head read into the scratch, by its branch and then by its hash where the branch has moved past it. */

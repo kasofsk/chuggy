@@ -635,6 +635,8 @@ export function gitMergePolicyLabel(policy: BriefGitMergePolicy): Copy {
       return { id: "codes-merge-policy-direct" };
     case "Serialized":
       return { id: "codes-merge-policy-serialized" };
+    case "Stacked":
+      return { id: "codes-merge-policy-stacked" };
   }
 }
 
@@ -645,6 +647,8 @@ export function gitMergePolicyEffect(policy: BriefGitMergePolicy): Copy {
       return { id: "codes-merge-policy-direct-effect" };
     case "Serialized":
       return { id: "codes-merge-policy-serialized-effect" };
+    case "Stacked":
+      return { id: "codes-merge-policy-stacked-effect" };
   }
 }
 

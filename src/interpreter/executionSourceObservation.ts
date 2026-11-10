@@ -45,6 +45,9 @@ import {
 } from "./finalizer.ts";
 import type { CommitAncestry, CommitAncestryPort } from "./commitAncestry.ts";
 import type { CommitTreePort } from "./commitTree.ts";
+import { asTicketId } from "../domain/ids.ts";
+import { stackRefOf } from "./evaluationStack.ts";
+import type { EvaluationStackSpawn } from "./evaluationStackSpawn.ts";
 import type { Partition } from "./projectStore.ts";
 import type { ProjectRepositoryBindingRead } from "./repositoryConfiguration.ts";
 import { digestFold, type ResultManifestId } from "./resultManifest.ts";
@@ -211,6 +214,7 @@ export function executionSourceObservation(
   git: Pick<GitPromotionPort, "observeTarget">,
   history: ExecutionSourceHistoryPort,
   ancestry: CommitAncestryPort & Partial<CommitTreePort>,
+  stacks?: EvaluationStackSpawn,
 ): ExecutionSourceObservationPort {
   return {
     observe: (request) => executionSourceObserved(bindings, git, request),
@@ -234,21 +238,36 @@ export function executionSourceObservation(
         request,
         at,
       );
-      const expectedTree = await executionExpectedTree(
-        bindings,
-        ancestry,
-        request,
-        at,
-      );
+      const stack =
+        request.kind === "Evaluation" && request.cycle !== undefined
+          ? await stacks?.spawned({
+              partition: request.partition,
+              ticket: asTicketId(request.ticket),
+              cycle: request.cycle,
+              deferredPasses: request.deferredPasses ?? 0,
+            })
+          : undefined;
+      const record = stack?.stack === "Stack" ? stack.record : undefined;
+      const expectedTree =
+        record?.stackTree ??
+        (await executionExpectedTree(bindings, ancestry, request, at));
       return {
         repository: row.repository,
-        target: {
-          commit: row.commit,
-          ...(row.ref === undefined ? {} : { ref: row.ref }),
-        },
+        target:
+          record === undefined
+            ? {
+                commit: row.commit,
+                ...(row.ref === undefined ? {} : { ref: row.ref }),
+              }
+            : {
+                commit: record.stackCommit,
+                ref: stackRefOf(request.ticket, record.cycle),
+              },
         manifests: work?.manifests ?? [],
         ...(changeBase === undefined ? {} : { changeBase }),
         ...(expectedTree === undefined ? {} : { expectedTree }),
+        ...(record === undefined ? {} : { stack: { record } }),
+        ...(stack?.stack === "Pending" ? { stackPending: true as const } : {}),
       } satisfies ExecutionSourceObservation;
     },
   };

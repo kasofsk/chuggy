@@ -65,16 +65,21 @@ import type {
   RepositoryCredential,
   RepositoryCredentialPort,
   RepositoryId,
+  StackMinted,
+  StackMinting,
+  StackRemoved,
   TargetContained,
   TargetObserved,
 } from "../../interpreter/finalizer.ts";
 import {
   candidateAdoptable,
+  candidateCommitTree,
   candidateContains,
   candidateHeld,
   candidateIntegrate,
   candidatePrepare,
 } from "./gitCandidate.ts";
+import { stackMint, stackRemove, stackRemoveUnrecorded } from "./gitStack.ts";
 import {
   scratchFetchRef,
   scratchHasCommit,
@@ -297,6 +302,47 @@ async function gitPromotionIntegrate(
   return candidateIntegrate(own.scratch, authorized.credential, integration);
 }
 
+/** Merges a stack and publishes it, a credential refused being a stack not minted. */
+async function gitPromotionMintStack(
+  own: GitPromotionState,
+  minting: StackMinting,
+): Promise<StackMinted> {
+  const authorized = await gitPromotionCredentialOf(own, minting.repository);
+  if (authorized.authorized === "Refused")
+    return { minted: "Failed", evidence: authorized.evidence };
+  return stackMint(own.scratch, authorized.credential, minting);
+}
+
+/** Deletes a published stack's ref. */
+async function gitPromotionRemoveStack(
+  own: GitPromotionState,
+  removal: Parameters<GitPromotionPort["removeStack"]>[0],
+): Promise<StackRemoved> {
+  const authorized = await gitPromotionCredentialOf(own, removal.repository);
+  if (authorized.authorized === "Refused")
+    return { removed: "Failed", evidence: authorized.evidence };
+  return stackRemove(own.scratch, authorized.credential, {
+    repository: removal.repository.repository,
+    ref: removal.ref,
+    commit: removal.commit,
+  });
+}
+
+/** Deletes the ref of a stack that may have been published unrecorded. */
+async function gitPromotionRemoveUnrecordedStack(
+  own: GitPromotionState,
+  removal: Parameters<GitPromotionPort["removeUnrecordedStack"]>[0],
+): Promise<StackRemoved> {
+  const authorized = await gitPromotionCredentialOf(own, removal.repository);
+  if (authorized.authorized === "Refused")
+    return { removed: "Failed", evidence: authorized.evidence };
+  return stackRemoveUnrecorded(own.scratch, authorized.credential, {
+    repository: removal.repository.repository,
+    ref: removal.ref,
+    candidate: removal.candidate,
+  });
+}
+
 /** The reason GitHub declines a push with where the credential behind it may not create or update a workflow file. */
 const gitPromotionWorkflowsRefusal =
   "refusing to allow a GitHub App to create or update workflow ";
@@ -477,6 +523,16 @@ async function gitPromotionAdoptable(
   return candidateAdoptable(own.scratch, authorized.credential, question);
 }
 
+/** Reads the tree one commit records, a credential refused being no answer. */
+async function gitPromotionCommitTree(
+  own: GitPromotionState,
+  question: Parameters<GitPromotionPort["readCommitTree"]>[0],
+): Promise<GitObjectId | undefined> {
+  const authorized = await gitPromotionCredentialOf(own, question.repository);
+  if (authorized.authorized === "Refused") return undefined;
+  return candidateCommitTree(own.scratch, authorized.credential, question);
+}
+
 /** The adapter over its options, refusing at construction what it could never serve. */
 export function gitPromotion(options: GitPromotionOptions): GitPromotionPort {
   const own: GitPromotionState = {
@@ -512,8 +568,13 @@ export function gitPromotion(options: GitPromotionOptions): GitPromotionPort {
     proveTargetContained: (question) => gitPromotionContained(own, question),
     integrateCandidate: (integration) =>
       gitPromotionIntegrate(own, integration),
+    mintStack: (minting) => gitPromotionMintStack(own, minting),
+    removeStack: (removal) => gitPromotionRemoveStack(own, removal),
+    removeUnrecordedStack: (removal) =>
+      gitPromotionRemoveUnrecordedStack(own, removal),
     promoteCandidate: (promotion) => gitPromotionPromote(own, promotion),
     proveCandidateAncestry: (proof) => gitPromotionProve(own, proof),
     proveHeadAdoptable: (question) => gitPromotionAdoptable(own, question),
+    readCommitTree: (question) => gitPromotionCommitTree(own, question),
   };
 }

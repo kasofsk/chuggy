@@ -167,6 +167,7 @@ import {
   type SelectorProposalReviews,
 } from "./interpreter/selectorReview.ts";
 import { postgresFinalizer } from "./adapters/postgres/finalizer.ts";
+import { postgresEvaluationStack } from "./adapters/postgres/evaluationStack.ts";
 import { postgresTicketBrief } from "./adapters/postgres/ticketBrief.ts";
 import {
   asFinalizationAttemptId,
@@ -749,6 +750,7 @@ export function composeFinalizerService(
     git: runtime.git,
     forges: runtime.forges,
     ticketBriefs: postgresTicketBrief(finalizerPool),
+    stacks: postgresEvaluationStack(finalizerPool),
     handoffs: artifacts,
     artifacts,
     identities: finalizerIdentities(),

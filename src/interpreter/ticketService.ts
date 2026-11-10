@@ -27,6 +27,14 @@ export const ticketServiceDefaults: TicketServiceConfig = {
  */
 export const sourceDeferralPassesMax = 10;
 
+/**
+ * How many passes a Stacked ticket's first evaluation of a work cycle waits for
+ * the finalizer to prepare its stack before it runs unstacked. It is small
+ * because a wait holds the input at the head of its class, and a stack that is
+ * late costs an evaluation its stack, never its correctness.
+ */
+export const stackDeferralPassesMax = 5;
+
 export function checkedTicketServiceConfig(
   config: TicketServiceConfig,
 ): TicketServiceConfig {

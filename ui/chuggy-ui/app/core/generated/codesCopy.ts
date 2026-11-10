@@ -135,8 +135,10 @@ export interface CodesCopy {
   readonly "codes-merge-mode-pull-request-effect": Record<never, never>;
   readonly "codes-merge-policy-direct": Record<never, never>;
   readonly "codes-merge-policy-serialized": Record<never, never>;
+  readonly "codes-merge-policy-stacked": Record<never, never>;
   readonly "codes-merge-policy-direct-effect": Record<never, never>;
   readonly "codes-merge-policy-serialized-effect": Record<never, never>;
+  readonly "codes-merge-policy-stacked-effect": Record<never, never>;
   readonly "codes-landing-onto": {
     readonly method: unknown;
     readonly target: unknown;

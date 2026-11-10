@@ -1039,7 +1039,9 @@ test("a git merge is offered its mode and its policy, and sends the policy chose
   expect(chosenIn("Merge", ["Push", "Pull request, then merge"])).toBe(
     "Pull request, then merge",
   );
-  expect(chosenIn("Policy", ["Direct", "Serialized"])).toBe("Direct");
+  expect(chosenIn("Policy", ["Direct", "Serialized", "Stacked"])).toBe(
+    "Direct",
+  );
   fireEvent.click(screen.getByRole("radio", { name: "Push" }));
   fireEvent.click(screen.getByRole("radio", { name: "Serialized" }));
   typeIntent("ship it");
@@ -1051,6 +1053,25 @@ test("a git merge is offered its mode and its policy, and sends the policy chose
     kind: "GitMerge",
     mode: "Push",
     policy: "Serialized",
+  });
+});
+
+test("a git merge's Stacked policy is sent as chosen", async () => {
+  const held = api({ state: "Succeeded" });
+  draw(held.ports, [], creationInitialization, [
+    creationBinding(chuggy, "PullRequestMerge"),
+  ]);
+  fireEvent.click(screen.getByRole("radio", { name: "Push" }));
+  fireEvent.click(screen.getByRole("radio", { name: "Stacked" }));
+  typeIntent("ship it");
+  submit();
+  await waitFor(() => {
+    expect(drafts(held.sent).length).toBe(1);
+  });
+  expect(briefOf(held.sent)?.["finalization"]).toStrictEqual({
+    kind: "GitMerge",
+    mode: "Push",
+    policy: "Stacked",
   });
 });
 

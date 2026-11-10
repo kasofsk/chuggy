@@ -93,6 +93,7 @@ import type {
   DispatchSource,
   ExecutionSourceObservationPort,
 } from "./executionSource.ts";
+import type { EvaluationStackStore } from "./evaluationStack.ts";
 import type { GitEvidence } from "./finalizer.ts";
 import type {
   ProjectArtifactId,
@@ -148,6 +149,8 @@ export interface ProjectTicketWriter {
   readonly projectArtifacts: Pick<ProjectArtifactPort, "readArtifact">;
   /** What a dispatch pins of what its ticket's dependencies delivered. */
   readonly dependencyPinning: DependencyPinningPort;
+  /** The stacks the finalizer found dead, which only a failing verdict's disposition reads. */
+  readonly stacks?: Pick<EvaluationStackStore, "dead">;
 }
 
 /** What a writer holds between decisions: the lease that authorizes it, and the state it replayed. */
@@ -167,7 +170,11 @@ export class IntegrityContradiction extends Error {}
  * A deferred input is still pending, so a later quantum decides it.
  */
 export type InputDecided =
-  Decided | { readonly decided: "Deferred"; readonly evidence: GitEvidence };
+  | Decided
+  | { readonly decided: "Deferred"; readonly evidence: DeferralEvidence };
+
+/** Why an input is left pending: a source nobody could read, or a stack the finalizer has yet to prepare. */
+export type DeferralEvidence = GitEvidence | "StackPending";
 
 /** A decision's outcome and the memory it leaves behind, which is the old one unless it committed. */
 export interface ProjectDecided {
@@ -439,6 +446,7 @@ function projectWriterFailurePolicy(
   writer: ProjectTicketWriter,
   memory: ProjectMemory,
   command: TicketCommand,
+  dead: ReadonlyMap<number, number>,
 ): EvaluationFailurePolicy {
   const subject = commandSubject(command);
   const held = memory.graph.tickets.get(subject);
@@ -448,7 +456,20 @@ function projectWriterFailurePolicy(
         held,
         ledgerAt(memory.ledgers, subject),
         writer.rework.cyclesMax,
+        dead,
       );
+}
+
+/** The cycles of the ticket a task report is about whose stack the finalizer found dead. */
+async function projectWriterDeadStacks(
+  writer: ProjectTicketWriter,
+  memory: ProjectMemory,
+  item: DecisionInput,
+): Promise<ReadonlyMap<number, number>> {
+  const command = item.source.ticketCommand;
+  return writer.stacks === undefined || command?.type !== "ReportTaskTerminal"
+    ? new Map()
+    : writer.stacks.dead(memory.lease.partition, commandSubject(command));
 }
 
 /**
@@ -475,6 +496,7 @@ function projectWriterDecision(
   writer: ProjectTicketWriter,
   memory: ProjectMemory,
   command: TicketCommand,
+  dead: ReadonlyMap<number, number>,
 ):
   | TicketDecision
   | {
@@ -497,7 +519,7 @@ function projectWriterDecision(
   const decision = decide(
     memory.graph,
     command,
-    projectWriterFailurePolicy(writer, memory, command),
+    projectWriterFailurePolicy(writer, memory, command, dead),
   );
   if (!decisionValid(memory.graph, decision))
     throw new Error(
@@ -623,6 +645,7 @@ function projectWriterPreflight(
   writer: ProjectTicketWriter,
   memory: ProjectMemory,
   item: DecisionInput,
+  dead: ReadonlyMap<number, number>,
 ):
   | ProjectPlan
   | {
@@ -663,7 +686,7 @@ function projectWriterPreflight(
           post: projectWriterReplayed(memory),
         };
   }
-  const decision = projectWriterDecision(writer, memory, command);
+  const decision = projectWriterDecision(writer, memory, command, dead);
   if (decision.type === "Boundary")
     return refusedPlan(memory, boundaryRefusal(decision.code));
   if (closed)
@@ -830,29 +853,35 @@ export function projectWriterSpawnSourceRef(state: TicketState): number {
  * already carries, read out of this partition's own rows, and its brief's
  * images, pinned as a dispatch pins them because every task is briefed with
  * them and its worker reads only what its own bundle names. NOTHING HERE READS
- * A REF — a rework runs at the commit its work was judged at, and an
+ * A TARGET REF — a rework runs at the commit its work was judged at, and an
  * evaluation at the commit the result it judges was produced at, both of which
  * are facts already written down, and its change base may also rest on an
  * ancestry answer, which may fetch history from the remote, about whether that
- * commit descends from a failed landing's base.
+ * commit descends from a failed landing's base, save that a Stacked ticket's
+ * first evaluation of a cycle reads the stack the finalizer prepared for it,
+ * and is deferred while there is none.
  */
 async function projectWriterSpawnSources(
   writer: ProjectTicketWriter,
   memory: ProjectMemory,
   decision: SuccessfulTicketDecision,
+  deferredPasses: number,
 ): Promise<SpawnSources> {
   const spawn = decision.obligations.find(
     (obligation) => obligation.type === "ExecuteTask",
   );
   if (spawn?.type !== "ExecuteTask") return {};
   const ticket = asTicketId(spawn.value.ticket);
+  const state = ticketAt(evolve(memory.graph, decision.event), ticket).state;
   const source = await writer.executionSources.spawnSource({
     partition: memory.lease.partition,
     ticket,
-    source: projectWriterSpawnSourceRef(
-      ticketAt(evolve(memory.graph, decision.event), ticket).state,
-    ),
+    source: projectWriterSpawnSourceRef(state),
     kind: spawn.value.task.task.type === "WorkTask" ? "Work" : "Evaluation",
+    deferredPasses,
+    ...(typeof state !== "string" && state.type === "Evaluation"
+      ? { cycle: state.value.workCycle }
+      : {}),
   });
   const brief = await writer.ticketBriefs.brief(memory.lease.partition, ticket);
   const images = await projectWriterBriefImages(
@@ -862,6 +891,7 @@ async function projectWriterSpawnSources(
   );
   return {
     ...(source === undefined ? {} : { source }),
+    ...(source?.stackPending === true ? { stackPending: true as const } : {}),
     ...(images.length === 0 ? {} : { images }),
   };
 }
@@ -949,7 +979,7 @@ async function projectWriterDispatchPlan(
   memory: ProjectMemory,
   item: DecisionInput,
   ticket: TicketId,
-): Promise<ProjectPlan | { readonly deferred: GitEvidence }> {
+): Promise<ProjectPlan | { readonly deferred: DeferralEvidence }> {
   const observed = await projectWriterDispatchSource(writer, memory, ticket);
   if (observed.observed !== "Source") {
     const landing = projectWriterUnreadableLanding(
@@ -965,7 +995,7 @@ async function projectWriterDispatchPlan(
     ticket,
     source: observed.source.reference,
   });
-  const decision = projectWriterDecision(writer, memory, command);
+  const decision = projectWriterDecision(writer, memory, command, new Map());
   if (decision.type === "Boundary")
     throw new IntegrityContradiction(
       "project writer: an observed source is not one a dispatch may carry",
@@ -1024,14 +1054,16 @@ async function projectWriterPlan(
   item: DecisionInput,
   command: TicketCommand,
   decision: SuccessfulTicketDecision,
-): Promise<ProjectPlan> {
-  return journaledPlan(
+): Promise<ProjectPlan | { readonly deferred: DeferralEvidence }> {
+  const spawn = await projectWriterSpawnSources(
+    writer,
     memory,
-    item,
-    command,
     decision,
-    await projectWriterSpawnSources(writer, memory, decision),
+    item.deferredPasses,
   );
+  return spawn.stackPending === true
+    ? { deferred: "StackPending" }
+    : journaledPlan(memory, item, command, decision, spawn);
 }
 
 /**
@@ -1043,7 +1075,12 @@ export async function projectWriterDecide(
   memory: ProjectMemory,
   item: DecisionInput,
 ): Promise<ProjectDecided> {
-  const preflight = projectWriterPreflight(writer, memory, item);
+  const preflight = projectWriterPreflight(
+    writer,
+    memory,
+    item,
+    await projectWriterDeadStacks(writer, memory, item),
+  );
   const plan =
     "command" in preflight
       ? await projectWriterPlan(

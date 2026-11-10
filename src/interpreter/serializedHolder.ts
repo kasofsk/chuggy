@@ -1,22 +1,22 @@
 /**
  * Which Serialized ticket may land on a reference, and who waits on it. The
- * holder is derived from the projection every time and stored nowhere, so
- * releasing it is not a move anyone makes: a ticket stops holding when the facts
- * below stop being true of it.
+ * holder is derived from the projection and the journal every time and stored
+ * nowhere, so releasing it is not a move anyone makes: a ticket stops holding
+ * when the facts below stop being true of it.
  *
- * A TICKET HOLDS ONLY WHILE IT IS ON THE WORK, EVALUATION, FINALIZATION PATH AND
- * HAS A REASON TO. The reason is a finalization request still pending, or its
- * latest failed finalization attempt having been `RecheckRequired` with no
- * evaluation sending it back to work since, which is the re-check cycle in
- * flight between a send-back and the request that follows evaluation. A
- * landing, a merge conflict send-back, an evaluation failure returning the
- * ticket to rework, a revoke, an escalation, a blocked evaluator and an
- * `Unavailable` finalization each leave the path or drop both reasons, and so
- * release with no code of their own.
+ * A TICKET HOLDS A RANK WHILE IT IS ON THE WORK, EVALUATION, FINALIZATION PATH
+ * AND ITS CHAIN OF WORK CYCLES HAS ONE. The rank is the position of its first
+ * finalization request since the chain last broke. A chain is the work cycles
+ * a `RecheckRequired` send-back links, so a re-check, the re-evaluation after
+ * it and an invalidation keep the rank, and a landing, a merge conflict or
+ * other non-re-check send-back, an evaluation failure returning the ticket to
+ * rework, a revoke, an escalation and a blocked evaluator each end the chain or
+ * leave the path, and so release it with no code of their own.
  *
- * THE HOLDER OF A REFERENCE IS THE TICKET WHOSE RE-CHECK IS IN FLIGHT, ELSE THE
- * FIRST PENDING FINALIZATION BY WHERE IT ENTERED. A re-check goes first because
- * the tickets that entered earlier are waiting on it. Only a `GitMerge` names a
+ * THE HOLDER OF A REFERENCE IS THE LOWEST RANK, IN WHATEVER PHASE. Only the
+ * holder can reach a landing or a re-check, so a ticket sent back to re-check
+ * is always the lowest, and nothing that ranked after it lands ahead of it.
+ * Waiting does not escalate and has no timeout. Only a `GitMerge` names a
  * policy, so a Direct one, a pull request and a landing of nothing are in no
  * queue, and a ticket naming no repository is in none either: nothing it does
  * can collide on a reference it does not name.
@@ -32,7 +32,7 @@ import type { TicketPhase } from "../contract/rosters.ts";
 import type { TicketId } from "../domain/ids.ts";
 import type { Partition } from "./projectStore.ts";
 
-/** The phases a ticket passes through between a send-back to re-check and its landing. */
+/** The phases a ticket passes through between its work and its landing. */
 export const serializedPathPhases: readonly TicketPhase[] = [
   "Work",
   "Evaluation",
@@ -48,13 +48,11 @@ export interface SerializedCandidate {
   readonly finalization: BriefFinalizationOf<string> | undefined;
   readonly repository: string | undefined;
   readonly target: string | undefined;
-  /** The journal position its finalization request was authorized at, absent where none is pending. */
-  readonly entry: number | undefined;
-  /** Whether its latest failed finalization attempt was `RecheckRequired` and no evaluation has sent it back to work since. */
-  readonly rechecking: boolean;
+  /** The journal position of its first finalization request since its chain of work cycles last broke, absent where it has none. */
+  readonly rank: number | undefined;
 }
 
-/** One reference's queue: who holds it, and who each other pending finalization waits on. */
+/** One reference's queue: who holds it, and the other ranked tickets in rank order, who wait on it. */
 export interface SerializedQueue {
   readonly partition: Partition;
   readonly repository: string;
@@ -67,10 +65,10 @@ function serializedHolds(candidate: SerializedCandidate): boolean {
   const { finalization } = candidate;
   return (
     finalization?.kind === "GitMerge" &&
-    finalization.policy === "Serialized" &&
+    finalization.policy !== "Direct" &&
     candidate.repository !== undefined &&
     serializedPathPhases.includes(candidate.phase) &&
-    (candidate.entry !== undefined || candidate.rechecking)
+    candidate.rank !== undefined
   );
 }
 
@@ -83,13 +81,13 @@ function serializedKey(candidate: SerializedCandidate): string {
   ]);
 }
 
-/** Orders by where the finalization entered, then by ticket, so no two orders disagree. */
+/** Orders by rank, then by ticket, so no two orders disagree. */
 function serializedBefore(
   left: SerializedCandidate,
   right: SerializedCandidate,
 ): number {
   return (
-    (left.entry ?? 0) - (right.entry ?? 0) ||
+    (left.rank ?? 0) - (right.rank ?? 0) ||
     Number(left.ticket) - Number(right.ticket)
   );
 }
@@ -106,23 +104,15 @@ export function serializedQueues(
   }
   const queues: SerializedQueue[] = [];
   for (const members of grouped.values()) {
-    const rechecking = members
-      .filter((member) => member.rechecking)
-      .sort((left, right) => Number(left.ticket) - Number(right.ticket))[0];
-    const pending = members
-      .filter((member) => member.entry !== undefined)
-      .sort(serializedBefore);
-    const holder = rechecking ?? pending[0];
-    const first = members[0];
-    if (holder === undefined || first === undefined) continue;
+    const ranked = [...members].sort(serializedBefore);
+    const holder = ranked[0];
+    if (holder === undefined) continue;
     queues.push({
-      partition: first.partition,
-      repository: first.repository ?? "",
-      target: first.target,
+      partition: holder.partition,
+      repository: holder.repository ?? "",
+      target: holder.target,
       holder: holder.ticket,
-      waiting: pending
-        .filter((member) => member.ticket !== holder.ticket)
-        .map((member) => member.ticket),
+      waiting: ranked.slice(1).map((member) => member.ticket),
     });
   }
   return queues;
