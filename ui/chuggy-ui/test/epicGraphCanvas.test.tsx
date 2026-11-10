@@ -9,6 +9,8 @@ import type { QueryClient } from "@tanstack/react-query";
 import { act, cleanup, fireEvent, screen } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
+import type { EpicGraphResponse } from "../../../src/contract/responses.ts";
+
 import { epicGraphDrawn } from "../app/core/epicGraph.ts";
 import { epicGraphQuery } from "../app/core/epics.ts";
 import {
@@ -394,9 +396,11 @@ test("a train that has come to rest stays at rest on its card when a read moves 
     frames.ran(1000 + epicTrainEmergingMs);
   });
   expect(train?.dataset["phase"]).toBe("Resting");
-  const moved = {
+  const moved: EpicGraphResponse = {
     nodes: [
-      ...epicGraph.nodes,
+      { ticket: 2, title: "Schema", phase: "Work", member: false },
+      { ticket: 4, title: "Charge", phase: "Done", member: true },
+      { ticket: 5, title: "Refund", phase: "Pending", member: true },
       { ticket: 6, title: "Ledger", phase: "Pending", member: true },
     ],
     edges: [
