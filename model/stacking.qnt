@@ -330,6 +330,12 @@ module stacking {
     landedTickets(s).forall(i => or { not(queued(s.tickets.get(i))),
       match s.tickets.get(i).verdict { | Carried(v) => verdictHolds(s, i, v) | NoVerdict => false } })
 
+  /// No stacked evaluation carries a verdict earned unstacked.
+  pure def stackedCarriesNoUnstackedVerdict(s: State): bool =
+    s.tickets.keys().forall(i => val t = s.tickets.get(i)
+      or { t.phase != Evaluation, t.stacking == Unstacked,
+           match t.verdict { | Carried(v) => v.over != Unstacked | NoVerdict => true } })
+
   /// No step moved the rank of a ticket that was ranked before it and after it, and
   /// ranks are unique and issued.
   pure def ranksHold(s: State): bool = and {
@@ -347,6 +353,6 @@ module stacking {
     landsOneAtATime(s), landsInQueueOrder(s), historyFollowsEntries(s), landedAsEvaluated(s), landedOnce(s), ranksHold(s), recheckBounded(s),
     liveStacksStand(s), stackBaseIsPrefix(s), serializedOnlyHolderBeneath(s),
     invalidatedOnlyStacked(s), reworksAreReturnsToWork(s), failureCapHolds(s), depthHolds(s),
-    landsOnAHoldingVerdict(s)
+    landsOnAHoldingVerdict(s), stackedCarriesNoUnstackedVerdict(s)
   }
 }
