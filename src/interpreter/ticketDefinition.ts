@@ -32,6 +32,11 @@
  * it. A catalog's evaluators each run their own workload, so its release
  * resolves one task per evaluator, keyed `Evaluation:S/E`; a reader asks for
  * the evaluator's key and takes the stage's where the release resolved none.
+ *
+ * AN APPROVAL RUNS NOWHERE. An approval evaluator's task names who may answer
+ * it in place of an image and a requirement, and that is what its workload and
+ * requirement references fold; its inputs fold the workload whole, as every
+ * other evaluator's do.
  */
 
 import { createHash } from "node:crypto";
@@ -71,7 +76,10 @@ import {
   type TaskResources,
 } from "./taskResources.ts";
 import {
+  approvalWorkloadApprovers,
   selectedEvaluatorWorkload,
+  type ApprovalApprovers,
+  type ApprovalWorkload,
   type SelectedWorkload,
 } from "./workloadConfiguration.ts";
 
@@ -79,8 +87,8 @@ import {
 export type TicketTaskKey =
   ExecutionTaskKindKey | `Evaluation:${number}/${number}`;
 
-/** What one resolved task definition names, in the order the model's record spells it. */
-export interface TicketTaskMaterial {
+/** What one resolved task a runner takes names, in the order the model's record spells it. */
+export interface TicketPlacedTaskMaterial {
   readonly key: TicketTaskKey;
   /** The image the task runs in and the size it runs with where it names one, which is what `workload` folds. */
   readonly workload: {
@@ -99,6 +107,26 @@ export interface TicketTaskMaterial {
     readonly digest: string;
   };
 }
+
+/** What an approval evaluator's resolved task names: who may answer it, and the workload it was resolved from. */
+export interface TicketApprovalTaskMaterial {
+  readonly key: TicketTaskKey;
+  /** Who may answer the approval, which is what both `workload` and `executionRequirements` fold. */
+  readonly approvers: {
+    readonly value: ApprovalApprovers;
+    readonly digest: string;
+  };
+  /** The approval workload whole, by the digest `inputs` folds. */
+  readonly inputs: { readonly digest: string };
+  readonly resultContract: {
+    readonly schemaVersion: number;
+    readonly digest: string;
+  };
+}
+
+/** What one resolved task definition names. */
+export type TicketTaskMaterial =
+  TicketPlacedTaskMaterial | TicketApprovalTaskMaterial;
 
 /** Everything one release resolved, which is what `ticket_definition` holds. */
 export interface TicketDefinitionMaterial {
@@ -236,6 +264,28 @@ function ticketTaskMaterial(
   };
 }
 
+/** The manifest schema every task's result is attested against, and its digest. */
+function ticketResultContract(): TicketTaskMaterial["resultContract"] {
+  return {
+    schemaVersion: resultManifestSchemaVersion,
+    digest: materialDigest({ schemaVersion: resultManifestSchemaVersion }),
+  };
+}
+
+/** One approval evaluator's task, resolved from its workload alone. */
+function approvalTaskMaterial(
+  key: TicketTaskKey,
+  workload: ApprovalWorkload,
+): TicketApprovalTaskMaterial {
+  const approvers = approvalWorkloadApprovers(workload);
+  return {
+    key,
+    approvers: { value: approvers, digest: materialDigest({ approvers }) },
+    inputs: { digest: materialDigest(workload) },
+    resultContract: ticketResultContract(),
+  };
+}
+
 /** One catalog workload's task, resolved from the workload alone and the catalog's image. */
 function workloadTaskMaterial(
   catalogImage: string,
@@ -243,6 +293,8 @@ function workloadTaskMaterial(
   selected: SelectedWorkload,
 ): TicketTaskMaterial {
   const { workload } = selected;
+  if (workload.runner === "Approval")
+    return approvalTaskMaterial(key, workload);
   const image = workload.image ?? catalogImage;
   const requirement = materializeWorkloadExecutionRequirement(
     workload,
@@ -261,10 +313,7 @@ function workloadTaskMaterial(
       ...requirement,
       digest: materialDigest(requirement.value),
     },
-    resultContract: {
-      schemaVersion: resultManifestSchemaVersion,
-      digest: materialDigest({ schemaVersion: resultManifestSchemaVersion }),
-    },
+    resultContract: ticketResultContract(),
   };
 }
 
@@ -461,6 +510,13 @@ export function releasedTicketBrief(
 
 /** The four references one resolved task definition is, each a fold of its own digest. */
 function taskDefinitionOf(task: TicketTaskMaterial): TaskDefinition {
+  if ("approvers" in task)
+    return {
+      workload: digestFold(task.approvers.digest),
+      inputs: digestFold(task.inputs.digest),
+      executionRequirements: digestFold(task.approvers.digest),
+      resultContract: digestFold(task.resultContract.digest),
+    };
   return {
     workload: digestFold(task.workload.digest),
     inputs: digestFold(task.inputs.digest),

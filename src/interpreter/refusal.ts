@@ -35,7 +35,10 @@ export type BoundaryRefusalCode =
   | "OverridesUnknown"
   | "TicketCapacityReached"
   | "FinalizationRequestClosed"
-  | "OverridesMoveDefinition";
+  | "OverridesMoveDefinition"
+  | "ApprovalAsWork"
+  | "OverridesChangeApprovalRunner"
+  | "ApprovalNotRunnable";
 
 /** Every boundary refusal, in the order this file declares them, so a suite and a CHECK can iterate rather than restate. */
 export const allBoundaryRefusalCodes: readonly BoundaryRefusalCode[] = [
@@ -57,6 +60,9 @@ export const allBoundaryRefusalCodes: readonly BoundaryRefusalCode[] = [
   "TicketCapacityReached",
   "FinalizationRequestClosed",
   "OverridesMoveDefinition",
+  "ApprovalAsWork",
+  "OverridesChangeApprovalRunner",
+  "ApprovalNotRunnable",
 ];
 
 /**

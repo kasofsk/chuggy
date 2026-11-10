@@ -225,7 +225,7 @@ function executionSummaryCarrier(
   );
 }
 
-/** What carries out a catalog's task: the runner of the workload its ticket's selection puts there. */
+/** What carries out a catalog's task: the runner of the workload its ticket's selection puts there, and none for an approval, which no briefing carries. */
 function executionSummaryWorkloadCarrier(
   row: ExecutionViewRow,
   configuration: unknown,
@@ -249,7 +249,13 @@ function executionSummaryWorkloadCarrier(
           position,
         );
   if (task === undefined) return undefined;
-  return task.workload.runner === "Commands" ? "Commands" : "Agent";
+  switch (task.workload.runner) {
+    case "Agent":
+    case "Commands":
+      return task.workload.runner;
+    case "Approval":
+      return undefined;
+  }
 }
 
 function executionSummary(row: ExecutionViewRow): ExecutionSummary {

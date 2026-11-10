@@ -63,6 +63,7 @@ import {
   catalogPlansCommanded,
   declaredConfigurationIsCatalog,
   selectedCatalogEntries,
+  selectedEvaluatorWorkload,
   selectedFirstCommandsEvaluator,
   workloadConfigurationReadiness,
   type CatalogSelection,
@@ -364,6 +365,25 @@ function workloadTicketOverridesUnknown(
 }
 
 /**
+ * Whether a catalog ticket's overrides make a workload an approval or one no
+ * longer: an approval is answered by a person and every other runner by a
+ * machine, so no field of either carries over to the other.
+ */
+function workloadTicketOverridesChangeApproval(
+  catalog: WorkloadConfiguration,
+  workloads: NonNullable<ConfigurationOverrides["workloads"]>,
+): boolean {
+  return Object.entries(workloads).some(([name, override]) => {
+    const runner = catalog.workloads[name]?.runner;
+    return (
+      override.runner !== undefined &&
+      override.runner !== runner &&
+      (override.runner === "Approval" || runner === "Approval")
+    );
+  });
+}
+
+/**
  * A version 2 ticket: the catalog with the ticket's workload overrides
  * applied, and the entries the ticket selected from it. A catalog ticket
  * overrides workloads alone, since every other field it could name is one a
@@ -385,6 +405,11 @@ function workloadTicketReadiness(
     workloadTicketOverridesUnknown(pinned.configuration, workloads)
   )
     return { readiness: "Incomplete", fault: "OverridesUnknown" };
+  if (
+    workloads !== undefined &&
+    workloadTicketOverridesChangeApproval(pinned.configuration, workloads)
+  )
+    return { readiness: "Incomplete", fault: "OverridesChangeApprovalRunner" };
   const readiness =
     workloads === undefined
       ? pinned
@@ -395,6 +420,8 @@ function workloadTicketReadiness(
   const selected = selectedCatalogEntries(readiness.configuration, selection);
   if (selected.selected === "Unknown")
     return { readiness: "Incomplete", fault: "SelectionUnknown" };
+  if (selected.selected === "ApprovalAsWork")
+    return { readiness: "Incomplete", fault: "ApprovalAsWork" };
   if (
     brief !== undefined &&
     brief.checks.length > 0 &&
@@ -487,6 +514,24 @@ export function ticketProgramShort(
 }
 
 /**
+ * Whether a program draws an evaluator whose workload is an approval, which
+ * nothing runs yet. A document has no approvals to draw.
+ */
+function ticketProgramRunsApproval(
+  ticket: TicketConfiguration,
+  program: ReleaseAuthoringProgram,
+): boolean {
+  if (ticket.version === 1) return false;
+  return program.some((stage) =>
+    stage.evaluators.some(
+      (entry) =>
+        selectedEvaluatorWorkload(ticket.selection, stage.key, entry.key)
+          ?.workload.runner === "Approval",
+    ),
+  );
+}
+
+/**
  * Whether a program runs the task a brief's own check lines join: the stage
  * `ticketCommandedCheckStage` names, and for a catalog the evaluator in it that
  * runs commands. A configuration commanding none has nothing to leave out.
@@ -530,6 +575,11 @@ export function draftReleaseReadiness(
   if (readiness.readiness === "Incomplete") return readiness;
   if (program !== undefined && !ticketProgramFits(readiness.ticket, program))
     return { readiness: "Incomplete", fault: "ProgramExceedsPlan" };
+  if (
+    program !== undefined &&
+    ticketProgramRunsApproval(readiness.ticket, program)
+  )
+    return { readiness: "Incomplete", fault: "ApprovalNotRunnable" };
   if (
     program !== undefined &&
     brief !== undefined &&

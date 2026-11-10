@@ -41,6 +41,7 @@ import {
   escalationTags,
   type TicketEvent,
 } from "../domain/generated/modelTypes.ts";
+import type { WorkloadRunner } from "../contract/rosters.ts";
 import { oidcPrincipalSubject } from "./principal.ts";
 
 /** The bounds, in seconds, an attempt's and a session turn's duration is counted under. */
@@ -93,7 +94,7 @@ export interface MetricsPlaneTask {
   readonly owner: string;
   readonly phase: "Work" | "Evaluation";
   readonly stage: string;
-  readonly runner: "Agent" | "Commands" | "";
+  readonly runner: WorkloadRunner | "";
   readonly workload: string;
   readonly placement: "Cluster" | "Pool" | "Personal";
 }

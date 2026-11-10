@@ -10,6 +10,10 @@
  * catalog says reaches a workload except the image a workload naming none runs
  * in. Every framing a version 1 briefing imposes is opt-in here.
  *
+ * AN APPROVAL IS AN EVALUATOR AND NEVER THE WORK. A person approving or
+ * rejecting a change has no change to make, so a catalog whose defaults name
+ * one as the work is not ready, and a selection naming one is refused.
+ *
  * READY MEANS RESOLVED. A repository's catalog names workload files and prompt
  * files by path, and the import stores what it read inline beside each path;
  * only a document holding every workload inline and every prompt's text is
@@ -30,6 +34,8 @@ import {
 } from "../contract/brief.ts";
 import {
   type agentWorkloadSchema,
+  type approvalApproversSchema,
+  type approvalWorkloadSchema,
   type commandsWorkloadSchema,
   type ConfigurationFollowing,
   type EvaluationPlanStageNameFault,
@@ -78,8 +84,28 @@ export type CommandsWorkload = WorkloadReadonly<
   z.output<typeof commandsWorkloadSchema>
 >;
 
+/** A workload a person answers, which names no runner, image or worker. */
+export type ApprovalWorkload = WorkloadReadonly<
+  z.output<typeof approvalWorkloadSchema>
+>;
+
+/** Who may answer an approval workload. */
+export type ApprovalApprovers = WorkloadReadonly<
+  z.output<typeof approvalApproversSchema>
+>;
+
+/** A workload placed on a runner, which is every one but an approval. */
+export type PlacedWorkload = AgentWorkload | CommandsWorkload;
+
 /** One resolved workload. */
-export type Workload = AgentWorkload | CommandsWorkload;
+export type Workload = PlacedWorkload | ApprovalWorkload;
+
+/** Who may answer an approval workload, `Developer` where it names nobody. */
+export function approvalWorkloadApprovers(
+  workload: ApprovalWorkload,
+): ApprovalApprovers {
+  return workload.approvers ?? "Developer";
+}
 
 /**
  * One finalizer of a catalog, its finalization named whole. A version 2
@@ -112,12 +138,13 @@ export type WorkloadConfiguration = Readonly<Record<string, unknown>> & {
   readonly outputs?: unknown;
 };
 
-/** Why a catalog is not ready: its shape or a stage's name, an entry still named by path, a name it lacks, or a workload's placement. */
+/** Why a catalog is not ready: its shape or a stage's name, an entry still named by path, a name it lacks, an approval as its default work, or a workload's placement. */
 export type WorkloadConfigurationFault =
   | "ReleaseShapeInvalid"
   | EvaluationPlanStageNameFault
   | "WorkloadUnresolved"
   | "CatalogNameUnknown"
+  | "ApprovalAsWork"
   | "WorkloadPlacementInvalid";
 
 export type WorkloadConfigurationReadiness =
@@ -172,9 +199,13 @@ function workloadConfigurationResolved(
   entry: ParsedCatalog["workloads"][string],
 ): Workload | undefined {
   if (typeof entry === "string") return undefined;
-  return entry.runner === "Commands" || entry.prompt.text !== undefined
-    ? (entry as Workload)
-    : undefined;
+  switch (entry.runner) {
+    case "Agent":
+      return entry.prompt.text === undefined ? undefined : (entry as Workload);
+    case "Commands":
+    case "Approval":
+      return entry;
+  }
 }
 
 /** Whether every name the plans and the defaults use is one the catalog holds. */
@@ -206,8 +237,9 @@ function workloadConfigurationShapeFault(
   );
 }
 
-/** Whether a workload names where it runs at most once: by image, or by a requirement carrying its own. */
+/** Whether a workload names where it runs at most once: by image, or by a requirement carrying its own. An approval runs nowhere. */
 function workloadPlacementSingular(workload: Workload): boolean {
+  if (workload.runner === "Approval") return true;
   return (
     workload.image === undefined || workload.executionRequirement === undefined
   );
@@ -216,7 +248,8 @@ function workloadPlacementSingular(workload: Workload): boolean {
 /**
  * Whether one parsed document is a ready catalog, and the first fault where it
  * is not. The order is the order a reader fixes them in: the shape, then what
- * an import still has to read, then the names, then each workload's placement.
+ * an import still has to read, then the names, then the default work, then
+ * each workload's placement.
  */
 export function workloadConfigurationReadiness(
   value: unknown,
@@ -238,6 +271,9 @@ export function workloadConfigurationReadiness(
     return { readiness: "Incomplete", fault: "WorkloadUnresolved" };
   if (!workloadConfigurationNamesKnown(parsed.data))
     return { readiness: "Incomplete", fault: "CatalogNameUnknown" };
+  const work = parsed.data.workloads[parsed.data.defaults.work];
+  if (typeof work !== "string" && work?.runner === "Approval")
+    return { readiness: "Incomplete", fault: "ApprovalAsWork" };
   if (!resolved.every(workloadPlacementSingular))
     return { readiness: "Incomplete", fault: "WorkloadPlacementInvalid" };
   const finalizers = workloadConfigurationFinalizers(parsed.data);
@@ -277,7 +313,8 @@ export type CatalogSelectionRead =
   | {
       readonly selected: "Unknown";
       readonly field: Exclude<keyof ConfigurationSelection, "configuration">;
-    };
+    }
+  | { readonly selected: "ApprovalAsWork" };
 
 /** The workload a catalog holds under a name, which readiness has already held to exist. */
 function selectedCatalogWorkload(
@@ -290,7 +327,7 @@ function selectedCatalogWorkload(
   return { name, workload };
 }
 
-/** Resolves one ticket's selection against a ready catalog, each absent field the default. */
+/** Resolves one ticket's selection against a ready catalog, each absent field the default, refusing an approval as the work. */
 export function selectedCatalogEntries(
   configuration: WorkloadConfiguration,
   selection: ConfigurationSelection | undefined,
@@ -298,6 +335,8 @@ export function selectedCatalogEntries(
   const workName = selection?.work ?? configuration.defaults.work;
   if (!Object.hasOwn(configuration.workloads, workName))
     return { selected: "Unknown", field: "work" };
+  if (configuration.workloads[workName]?.runner === "Approval")
+    return { selected: "ApprovalAsWork" };
   const planName = selection?.evaluation ?? configuration.defaults.evaluation;
   const stages = Object.hasOwn(configuration.plans, planName)
     ? configuration.plans[planName]
