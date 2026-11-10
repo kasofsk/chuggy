@@ -37,6 +37,7 @@ import {
   selectorProjectSettingsSchema,
   sessionPlacementSchema,
   threadLimitSchema,
+  personalRunnerProjectSchema,
   personalRunnerRedemptionSchema,
   projectOwnerFallbackSchema,
   registrationTokenRequestSchema,
@@ -65,6 +66,9 @@ function nativeHttpContractDocumentSchemas(): unknown {
     ),
     sessionPlacement: nativeHttpContractDocumentInput(sessionPlacementSchema),
     ownerFallback: nativeHttpContractDocumentInput(projectOwnerFallbackSchema),
+    personalRunnerProject: nativeHttpContractDocumentInput(
+      personalRunnerProjectSchema,
+    ),
     forgeCredential: nativeHttpContractDocumentInput(
       forgeCredentialRequestSchema,
     ),
@@ -154,7 +158,7 @@ const runnerNotes = {
     "a project names no fallback until an administrator writes one, and while it names none no personal runner takes its work; an execution routed to runners whose ticket a member wrote may then be taken by any of that member's personal runners where they serve the project; under Strict no pool takes it while they have any, and under Preferred a pool takes it while none of theirs has polled lately; an execution keeps the fallback it was registered under, and the read says whether the caller may change it",
   workerPoolRegistration:
     "an administrator mints a single-use token for one project; redeeming it registers the pool and answers once with the file a runner keeps, its secret included; a reader of the project reads each pool's newest poll and whether it is live",
-  personalRunnerRegistration: `a member the tenant permits to register a personal runner mints a single-use token for the tenant; redeeming it adds one more runner of that member's there, each held to its own bound on the work it takes, refused while they hold ${String(personalRunnersMax)}, and answers once with a file of kind Personal naming the tenant and the member and no project; a member's runners serve one list of projects, and serve none until their owner adds one they may read; a runner is taken off by its owner, by its id or with all of theirs, and every runner of a member by an administrator of the tenant, and the list goes with the last of them; a member reads whether the tenant permits them, and each of their runners' newest poll and whether it is live`,
+  personalRunnerRegistration: `a member the tenant permits to register a personal runner mints a single-use token for the tenant; redeeming it adds one more runner of that member's there, each held to its own bound on the work it takes, refused while they hold ${String(personalRunnersMax)}, and answers once with a file of kind Personal naming the tenant and the member and no project; a member's runners serve one list of projects, and serve none until their owner adds one they may read, each at a priority, High, Normal or Low, Normal where the addition names none; of the work they could take now, a ticket's that a runner has already started is taken first, then a higher project's; a runner is taken off by its owner, by its id or with all of theirs, and every runner of a member by an administrator of the tenant, and the list goes with the last of them; a member reads whether the tenant permits them, and each of their runners' newest poll and whether it is live`,
   agentAccounts:
     "a caller reads and sets their own agent accounts alone, the logins their runners spend, and no route names another principal: for each agent, the share of each window a reading at or over pauses it at, a whole percentage held at its default until they write their own, whether their threads and inquiries pause with it, the lead of a pool they registered always pausing with it, each window's newest reading and when it was read, the newest limit a provider stopped it at, and the pause these come to now, which lasts until the latest reason holding it ends; a paused agent's work is taken by none of their runners and pools; a press tries the agent once past a limit, letting one claim through it and no threshold, and is refused NotHardPaused where no limit holds the agent",
   chatHostRegistration:

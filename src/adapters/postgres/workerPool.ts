@@ -48,6 +48,11 @@
  * A PERSONAL RUNNER'S CLAIM IS THE SAME GUARD FOR ITS CLASS, in
  * `./personalExecutions.ts`.
  *
+ * OF WHAT A POOL MAY TAKE, IT TAKES A STARTED TICKET'S FIRST, then the oldest
+ * ticket's: `execution_attempt_started`, then `execution_ticket_registered`,
+ * as a personal runner's claim takes them with no priority between, and the
+ * attempt's own opening breaks a tie.
+ *
  * A CLAIM PASSES OVER AN ATTEMPT WHOSE AGENT ITS ACCOUNT HAS PAUSED, the
  * account being the member who registered the pool, and asks
  * `agent_account_pause` whether it has: that function is the rule, and nothing
@@ -480,7 +485,8 @@ async function workerPoolClaimLocked(
 
 /**
  * One opened-but-unplaced attempt whose invocation is recorded, taken for this
- * pool where `workerPoolCanAssign` would take it and no larger than the room
+ * pool where `workerPoolCanAssign` would take it, in the order the header
+ * states, and no larger than the room
  * the terms name, which chooses among what that allows as the order does
  * rather than being a term of it, bound to the assignment it will be cancelled
  * by and to the bearer its harness answers under. The epoch is not moved:
@@ -539,7 +545,7 @@ async function workerPoolClaimed(
           AND EXISTS(SELECT 1 FROM project p
             WHERE p.tenant=q.tenant AND p.project=q.project AND p.lifecycle='Active')
           AND (held.paused_until IS NULL OR held.admitted_by_press)
-        ORDER BY q.opened_at,q.attempt
+        ORDER BY execution_attempt_started(q.tenant,q.project,q.execution,q.attempt) DESC,execution_ticket_registered(x.tenant,x.project,x.ticket),q.opened_at,q.attempt
         LIMIT 1 FOR UPDATE OF q, x SKIP LOCKED),
       spent AS (UPDATE agent_account_press p SET spent_at=now() FROM chosen c
         WHERE c.admitted_by_press AND p.principal=c.account AND p.agent=c.agent

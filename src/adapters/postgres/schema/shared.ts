@@ -139,6 +139,10 @@ export const personalExecutionReleaseFunction =
 export const workerPoolInventoryFunction = "worker_pool_inventory_matches";
 /** Whether a runner takes an attempt's agent now, by what it advertises. */
 export const workerPoolAgentFunction = "worker_pool_agent_offered";
+/** Whether an attempt's ticket is started: an execution of it registered before the attempt's own, or an earlier attempt of that execution claimed. */
+export const executionAttemptStartedFunction = "execution_attempt_started";
+/** When a ticket's first execution was registered, which is its age to a claim. */
+export const executionTicketRegisteredFunction = "execution_ticket_registered";
 export const projectOwnerFallbackSetFunction = "set_project_owner_fallback";
 /** When a session's oldest queued turn could first be claimed: its enqueue, the end of the turn before it, or its return to the queue by an attempt that had claimed it. */
 export const sessionClaimableSinceFunction = "session_turn_claimable_since";

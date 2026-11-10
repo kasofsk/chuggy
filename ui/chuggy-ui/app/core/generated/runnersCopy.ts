@@ -103,6 +103,13 @@ export interface RunnersCopy {
   readonly "runners-personal-project-remove": {
     readonly project: unknown;
   };
+  readonly "runners-personal-project-priority-col": Record<never, never>;
+  readonly "runners-personal-project-priority": {
+    readonly project: unknown;
+  };
+  readonly "runners-personal-project-priority-high": Record<never, never>;
+  readonly "runners-personal-project-priority-normal": Record<never, never>;
+  readonly "runners-personal-project-priority-low": Record<never, never>;
   readonly "runners-personal-paused": Record<never, never>;
   readonly "runners-personal-usage": Record<never, never>;
   readonly "runners-chat-host-title": Record<never, never>;

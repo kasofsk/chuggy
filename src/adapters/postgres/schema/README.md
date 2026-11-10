@@ -509,8 +509,10 @@ committed or it was rolled back.
 Written by the API role alone, for the runners' owner; the pool plane, the
 scheduler and the boundary owner read it. Its key and identity are `(tenant,
 owner, project)`, and it points at `project` through the same `tenant`, so a
-runner serves only its own tenant's projects. It is changed by its owner adding
-and removing a project, which the API does only while they hold a runner, and
+runner serves only its own tenant's projects. Its `priority`, `High`, `Normal`
+or `Low`, orders a personal runner's claim among the projects, and the pool
+plane reads it. It is changed by its owner adding and removing a project and
+writing its priority, which the API does only while they hold a runner, and
 the API deletes it with their last runner. It has no unfinished work: an owner
 with no row has runners that serve nothing.
 

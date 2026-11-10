@@ -35,8 +35,11 @@
  * BESIDE THE TABLE is what no row of it states: a pool reporting less than it
  * holds, two claims of one pool made at once, a claim and a registration of
  * its pool made at once, the image a claim hands out reaching the pod a site
- * places, and a claim passing over a job whose account has paused its agent,
- * which the model leaves to be chosen outside it.
+ * places, a claim passing over a job whose account has paused its agent, and
+ * the order a claim takes what it may in, both of which the model leaves to be
+ * chosen outside it. A ticket's age and whether it was started are read from
+ * its executions' registrations, which a case plants by moving them back; a
+ * second ticket in one project is an execution planted under another number.
  */
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
@@ -46,7 +49,10 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
 
-import type { AccountAgent } from "../../src/contract/rosters.ts";
+import type {
+  AccountAgent,
+  PersonalRunnerPriority,
+} from "../../src/contract/rosters.ts";
 import type { WorkerPoolAssignment } from "../../src/contract/workerPool.ts";
 import { workerContractRelease } from "../../src/contract/workerContract.ts";
 import { sessionAttemptMint } from "../../src/adapters/crypto/sessionAttemptMint.ts";
@@ -76,6 +82,7 @@ import {
   type Partition,
   type ProjectId,
 } from "../../src/interpreter/projectStore.ts";
+import { asExecutionId } from "../../src/interpreter/schedulerIdentity.ts";
 import { sessionRunnerPolledSecsMax } from "../../src/interpreter/sessionPlacement.ts";
 import { materialDigest } from "../../src/interpreter/ticketDefinition.ts";
 import type { TaskResources } from "../../src/interpreter/taskResources.ts";
@@ -112,6 +119,7 @@ import {
   postgresHarnessAdvisoryWaiting,
   postgresHarnessConfiguration,
   postgresHarnessHeldAtCommit,
+  postgresHarnessPartition,
   postgresHarnessRolePool,
 } from "./harness.ts";
 import {
@@ -332,8 +340,15 @@ async function releasedUnder(
   requirement: ExecutionRequirement,
   tasks: number,
   resources?: TaskResources,
+  partition?: Partition,
 ): Promise<SchedulerProject> {
-  const project = await schedulerProject(rig, label, { tasks });
+  const project = await schedulerProject(
+    rig,
+    label,
+    { tasks },
+    undefined,
+    partition,
+  );
   if (resources !== undefined)
     await rig.harness.query(
       `UPDATE ticket_definition d SET definition=jsonb_set(d.definition,'{tasks}',
@@ -606,13 +621,31 @@ async function takes(
   assignment = `assignment-${randomUUID()}`,
   memoryRoomMib?: number,
 ): Promise<boolean> {
+  return takesAmong(
+    identity,
+    home === undefined ? [] : [home.project],
+    assignment,
+    memoryRoomMib,
+  );
+}
+
+/** Whether a pool or runner claims an attempt, a runner across `projects`, under `assignment` and within `memoryRoomMib` where it is named, the probe asked first and held to the claim's answer. */
+async function takesAmong(
+  identity: PlantedIdentity,
+  projects: readonly ProjectId[],
+  assignment: string,
+  memoryRoomMib?: number,
+): Promise<boolean> {
   const terms: WorkerPoolClaimTerms = {
     leaseSecs,
     heldMax: Number.MAX_SAFE_INTEGER,
     memoryMibDefault,
     ...(memoryRoomMib === undefined ? {} : { memoryRoomMib }),
   };
-  const asked = await waiting(identity, terms, home);
+  const asked =
+    identity.kind === "Dedicated"
+      ? await assignments.waiting(identity, terms, [])
+      : await assignments.waitingPersonal(identity, terms, projects);
   const bearer = `bearer-${randomUUID()}`;
   const claimed =
     identity.kind === "Dedicated"
@@ -622,7 +655,7 @@ async function takes(
           terms,
           assignment,
           bearer,
-          home === undefined ? [] : [home.project],
+          projects,
         );
   assert.equal(asked, claimed !== undefined, "the probe answers the claim");
   return claimed !== undefined;
@@ -2067,3 +2100,248 @@ for (const fallback of ["Preferred", "Strict"] as const)
       "the runner takes what waited for it",
     );
   });
+
+/** How many claims a case asking for an order makes at most, past the attempts any of them opens. */
+const orderClaimsMax = 8;
+
+/**
+ * Moves an execution's registration `secsAgo` back, under `ticket` where one
+ * is named: a ticket and a registration nothing writes after registering, so
+ * they are written past the triggers that hold them.
+ */
+async function registeredAs(
+  project: SchedulerProject,
+  execution: string,
+  secsAgo: number,
+  ticket?: number,
+): Promise<void> {
+  const client = await rig.harness.pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query("SET LOCAL session_replication_role=replica");
+    await client.query(
+      `UPDATE execution SET ticket=COALESCE($4::bigint,ticket),
+          registered_at=now()-make_interval(secs=>$5::double precision)
+        WHERE tenant=$1 AND project=$2 AND execution=$3`,
+      [
+        project.partition.tenant,
+        project.partition.project,
+        execution,
+        ticket ?? null,
+        secsAgo,
+      ],
+    );
+    await client.query("COMMIT");
+  } finally {
+    client.release();
+  }
+}
+
+/** What a case planted at `index` of `list`. */
+function plantedAt<Planted>(list: readonly Planted[], index: number): Planted {
+  const found = list[index];
+  if (found === undefined)
+    throw new Error("worker pool claim suite: nothing was planted there");
+  return found;
+}
+
+/** The execution an assignment bound. */
+async function executionAssigned(assignment: string): Promise<string> {
+  const [row] = (await rig.harness.query(
+    `SELECT execution FROM execution_attempt WHERE assignment=$1`,
+    [assignment],
+  )) as readonly { execution: string }[];
+  if (row === undefined)
+    throw new Error("worker pool claim suite: an assignment bound nothing");
+  return row.execution;
+}
+
+/** The executions a pool or runner takes, a runner across `projects`, one claim after another until one takes nothing, each within `memoryRoomMib` where it is named. */
+async function takenInTurn(
+  identity: PlantedIdentity,
+  projects: readonly SchedulerProject[],
+  memoryRoomMib?: number,
+): Promise<readonly string[]> {
+  const taken: string[] = [];
+  for (let claim = 0; claim < orderClaimsMax; claim += 1) {
+    const assignment = `order-${randomUUID()}`;
+    if (
+      !(await takesAmong(
+        identity,
+        projects.map((project) => project.partition.project),
+        assignment,
+        memoryRoomMib,
+      ))
+    )
+      return taken;
+    taken.push(await executionAssigned(assignment));
+  }
+  throw new Error("worker pool claim suite: an order took more than its bound");
+}
+
+/** An owner's runner across projects of one tenant, each released with `tasks` executions sized as `resources` names and on the runner's allowlist at its priority. */
+async function prioritizedRunner(
+  label: string,
+  priorities: readonly PersonalRunnerPriority[],
+  tasks = 1,
+  resources: readonly (TaskResources | undefined)[] = [],
+): Promise<{
+  readonly runner: PersonalPlaneIdentity;
+  readonly owned: Owned;
+  readonly projects: readonly SchedulerProject[];
+}> {
+  const home = postgresHarnessPartition(label);
+  const projects: SchedulerProject[] = [];
+  for (const [at, priority] of priorities.entries())
+    projects.push(
+      await releasedUnder(
+        `${label}-${priority.toLowerCase()}`,
+        pinned,
+        tasks,
+        resources[at],
+        { tenant: home.tenant, project: asProjectId(`${home.project}-${at}`) },
+      ),
+    );
+  const runner: PersonalPlaneIdentity = {
+    kind: "Personal",
+    tenant: home.tenant,
+    owner: asPrincipal(`https://issuer.invalid#${label}-owner-${randomUUID()}`),
+    principal: asPrincipal(`https://issuer.invalid#${label}-${randomUUID()}`),
+  };
+  await plantedRunnerRows(
+    runner,
+    declaringAll(pinned),
+    0,
+    projects.map((project) => project.partition.project),
+  );
+  for (const [at, priority] of priorities.entries())
+    await rig.harness.query(
+      `UPDATE personal_runner_project SET priority=$4
+        WHERE tenant=$1 AND owner=$2 AND project=$3`,
+      [
+        runner.tenant,
+        runner.owner,
+        plantedAt(projects, at).partition.project,
+        priority,
+      ],
+    );
+  return {
+    runner,
+    owned: { owner: runner.owner, fallback: "Strict" },
+    projects,
+  };
+}
+
+/**
+ * A ticket a runner has started: of a project's two executions, the first,
+ * registered an hour back, ended without a claim, and the second opened,
+ * which is its ticket's next stage.
+ */
+async function startedOpened(
+  project: SchedulerProject,
+  owned: Owned,
+): Promise<string> {
+  const work = await opened(project, false, owned);
+  await withdrawnUnclaimed(work.attempt);
+  await registeredAs(project, work.execution, 3_600);
+  return (await opened(project, false, owned)).execution;
+}
+
+test("a runner takes a High project's new ticket before an older Normal one's, and a Low project's only once nothing above it could be taken", async () => {
+  const { runner, owned, projects } = await prioritizedRunner("order-high", [
+    "Low",
+    "Normal",
+    "High",
+  ]);
+  const opening: string[] = [];
+  for (const project of projects)
+    opening.push((await opened(project, false, owned)).execution);
+  await registeredAs(plantedAt(projects, 0), plantedAt(opening, 0), 7_200);
+  await registeredAs(plantedAt(projects, 1), plantedAt(opening, 1), 3_600);
+  assert.deepEqual(await takenInTurn(runner, projects), [
+    opening[2],
+    opening[1],
+    opening[0],
+  ]);
+});
+
+test("a runner takes a smaller Low project's attempt into room a High project's waiting one does not fit, and the High one once it fits", async () => {
+  const { runner, owned, projects } = await prioritizedRunner(
+    "order-room",
+    ["High", "Low"],
+    1,
+    [{ memoryMib: 4_096 }, { memoryMib: 1_024 }],
+  );
+  const high = (await opened(plantedAt(projects, 0), false, owned)).execution;
+  const low = (await opened(plantedAt(projects, 1), false, owned)).execution;
+  assert.deepEqual(await takenInTurn(runner, projects, 2_048), [low]);
+  assert.deepEqual(await takenInTurn(runner, projects, 4_096), [high]);
+});
+
+test("a runner takes a started ticket's next stage before an older new ticket's Work, and a Low project's started ticket before a High project's new one", async () => {
+  for (const [label, priorities] of [
+    ["order-started", ["Normal", "Normal"]],
+    ["order-started-low", ["High", "Low"]],
+  ] as const) {
+    const { runner, owned, projects } = await prioritizedRunner(
+      label,
+      priorities,
+      2,
+    );
+    const fresh = (await opened(plantedAt(projects, 0), false, owned))
+      .execution;
+    await registeredAs(plantedAt(projects, 0), fresh, 7_200);
+    const review = await startedOpened(plantedAt(projects, 1), owned);
+    assert.deepEqual(
+      await takenInTurn(runner, projects),
+      [review, fresh],
+      label,
+    );
+  }
+});
+
+test("a pool takes a started ticket's next stage before an older new ticket's Work", async () => {
+  const project = await releasedUnder("order-pool", pinned, 3);
+  const pool = await pollingPool(project, "order-pool", pinned);
+  const fresh = (await opened(project)).execution;
+  await registeredAs(project, fresh, 7_200, project.ticket + 1);
+  const review = await startedOpened(project, unowned);
+  assert.deepEqual(await takenInTurn(pool, [project]), [review, fresh]);
+});
+
+test("an execution an earlier attempt of was claimed is started, and one whose earlier attempt was withdrawn unclaimed, as a runtime roll withdraws one, is not", async () => {
+  for (const claimed of [true, false]) {
+    const label = `order-reopened-${String(claimed)}`;
+    const project = await releasedUnder(label, pinned, 2);
+    const pool = await pollingPool(project, label, pinned);
+    const fresh = (await opened(project)).execution;
+    await registeredAs(project, fresh, 7_200, project.ticket + 1);
+    const first = await opened(project);
+    if (claimed)
+      await rig.harness.query(
+        `UPDATE execution_attempt SET claimed_at=opened_at WHERE attempt=$1`,
+        [first.attempt],
+      );
+    await withdrawnUnclaimed(first.attempt);
+    const reopened = await rig.store.openAttempt({
+      partition: project.partition,
+      execution: asExecutionId(first.execution),
+      epoch: project.epoch,
+      leaseSecs,
+      retriesMax: 3,
+      placementBackoffSecs: 1,
+      runtime: schedulerRuntime,
+    });
+    if (reopened.opened !== "Opened")
+      throw new Error(`worker pool claim suite: ${reopened.opened}`);
+    assert.equal(
+      await rig.store.attemptInvoked(reopened.attempt, schedulerInvocation),
+      true,
+    );
+    assert.deepEqual(
+      await takenInTurn(pool, [project]),
+      claimed ? [first.execution, fresh] : [fresh, first.execution],
+      label,
+    );
+  }
+});
