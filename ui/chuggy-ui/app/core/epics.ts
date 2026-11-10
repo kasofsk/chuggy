@@ -4,8 +4,7 @@
  * edited through.
  *
  * Progress and status are the API's, derived from the members' phases; nothing
- * here recomputes them. What is decided here is how they are said and where the
- * graph's nodes stand.
+ * here recomputes them. What is decided here is how they are said and drawn.
  */
 
 import type { QueryClient } from "@tanstack/query-core";
@@ -14,6 +13,8 @@ import {
   ticketSearchCharsMax,
   type PartitionIdentity,
 } from "../../../../src/contract/http.ts";
+import { phaseRoster } from "../../../../src/contract/rosters.ts";
+import type { TicketPhase } from "../../../../src/contract/rosters.ts";
 import type {
   EpicGraphResponse,
   EpicListResponse,
@@ -37,8 +38,7 @@ import type { ApiFailure } from "./apiRequest.ts";
 import { consolePartitionQuery } from "./consoleQuery.ts";
 import type { ConsoleWrite } from "./consoleWrite.ts";
 import { consoleWriteKey } from "./consoleWrite.ts";
-import { phaseLabel } from "./codeLabels.ts";
-import type { Copy, CopyText } from "./copy.ts";
+import type { Copy } from "./copy.ts";
 import { epicStatusTone, type Tone } from "./tones.ts";
 
 export type EpicStatusWord = EpicSummaryResponse["status"];
@@ -165,6 +165,49 @@ export function epicProgressLine(
       };
 }
 
+type EpicProgress = EpicSummaryResponse["progress"];
+
+/** The phases a member is moving in, which a bar draws as alive. */
+const epicProgressMoving: readonly TicketPhase[] = [
+  "Work",
+  "Evaluation",
+  "Finalization",
+];
+
+/** How a progress bar is drawn: its filled share, in whole percent of the
+ * total, and how it says that something is moving. A bar with nothing done
+ * has no fill to shimmer, so its empty track sweeps instead. */
+export interface EpicProgressBar {
+  readonly sharePercent: number;
+  readonly moving: "Still" | "Shimmer" | "Sweep";
+}
+
+export function epicProgressBar(progress: EpicProgress): EpicProgressBar {
+  const sharePercent =
+    progress.total === 0
+      ? 0
+      : Math.round(
+          (100 * Math.min(progress.done, progress.total)) / progress.total,
+        );
+  if (!epicProgressMovingAny(progress))
+    return { sharePercent, moving: "Still" };
+  return { sharePercent, moving: progress.done === 0 ? "Sweep" : "Shimmer" };
+}
+
+/** Whether any member is in a phase that moves on its own. */
+export function epicProgressMovingAny(progress: EpicProgress): boolean {
+  return epicProgressMoving.some((phase) => progress.byPhase[phase] > 0);
+}
+
+/** Each phase at least one member is in, with how many, in the phases' order. */
+export function epicProgressCounts(
+  progress: EpicProgress,
+): readonly { readonly phase: TicketPhase; readonly count: number }[] {
+  return phaseRoster
+    .map((phase) => ({ phase, count: progress.byPhase[phase] }))
+    .filter((counted) => counted.count > 0);
+}
+
 export const epicVisibilityChoices = [
   { value: "Active", text: { id: "epics-visibility-active" } },
   { value: "Archived", text: { id: "epics-visibility-archived" } },
@@ -231,152 +274,6 @@ export function epicsAskOf(query: EpicsQuery): EpicsPage {
     visibility: query.visibility ?? "Active",
     sort: query.sort ?? "newest",
     limit: epicsPageSize,
-  };
-}
-
-/** One node of the graph as it is placed, its phase absent for a draft. */
-export interface EpicGraphPlaced {
-  readonly ticket: number;
-  readonly title: string | undefined;
-  readonly phase: EpicGraphResponse["nodes"][number]["phase"];
-  readonly member: boolean;
-  /** What the node says, cut to fit its box. */
-  readonly label: string;
-  readonly x: number;
-  readonly y: number;
-}
-
-export interface EpicGraphLayout {
-  readonly nodes: readonly EpicGraphPlaced[];
-  readonly edges: readonly {
-    readonly from: EpicGraphPlaced;
-    readonly to: EpicGraphPlaced;
-  }[];
-  readonly width: number;
-  readonly height: number;
-}
-
-export const epicGraphColumnWidth = 200;
-export const epicGraphRowHeight = 48;
-export const epicGraphNodeWidth = 160;
-export const epicGraphNodeHeight = 32;
-
-/** The most code points a node's label holds before it is cut, which its box fits. */
-export const epicGraphLabelCharsMax = 22;
-
-/** Where a node stands: its phase, or a draft where it has none. */
-export function epicGraphStanding(node: {
-  readonly phase?: EpicGraphPlaced["phase"];
-}): Copy {
-  return node.phase === undefined
-    ? { id: "standing-draft" }
-    : phaseLabel(node.phase);
-}
-
-/** What a node says: its number and its title, or where it stands where it
- * has none, cut with an ellipsis past what its box holds. */
-export function epicGraphLabel(
-  ticket: number,
-  title: string | undefined,
-  standing: string,
-): string {
-  const whole = [...`#${String(ticket)} ${title ?? standing}`];
-  return whole.length <= epicGraphLabelCharsMax
-    ? whole.join("")
-    : `${whole.slice(0, epicGraphLabelCharsMax - 1).join("")}…`;
-}
-
-/**
- * The column of each node: one past the deepest of its dependencies, found by
- * taking each node once its dependencies are placed, so every pass is bounded
- * by the nodes and edges given. A node on a cycle is never freed that way and
- * stands in the first column.
- */
-function epicGraphLayoutColumns(
-  tickets: readonly number[],
-  edges: readonly { readonly from: number; readonly to: number }[],
-): ReadonlyMap<number, number> {
-  const waiting = new Map(tickets.map((ticket) => [ticket, 0]));
-  const outgoing = new Map<number, number[]>();
-  for (const edge of edges) {
-    waiting.set(edge.to, (waiting.get(edge.to) ?? 0) + 1);
-    outgoing.set(edge.from, [...(outgoing.get(edge.from) ?? []), edge.to]);
-  }
-  const column = new Map(tickets.map((ticket) => [ticket, 0]));
-  const freed = tickets.filter((ticket) => waiting.get(ticket) === 0);
-  for (let next = 0; next < freed.length; next += 1) {
-    const ticket = freed[next];
-    if (ticket === undefined) break;
-    const at = column.get(ticket) ?? 0;
-    for (const to of outgoing.get(ticket) ?? []) {
-      column.set(to, Math.max(column.get(to) ?? 0, at + 1));
-      const left = (waiting.get(to) ?? 0) - 1;
-      waiting.set(to, left);
-      if (left === 0) freed.push(to);
-    }
-  }
-  for (const ticket of tickets)
-    if ((waiting.get(ticket) ?? 0) > 0) column.set(ticket, 0);
-  return column;
-}
-
-/**
- * Each node in the column of its longest chain of dependencies, so every edge
- * runs left to right, and in a row of its own within the column, by ticket
- * number. An edge into a node the graph does not hold, or one on a cycle, is
- * left undrawn rather than looped on.
- */
-export function epicGraphLayout(
-  graph: EpicGraphResponse,
-  text: CopyText,
-): EpicGraphLayout {
-  const tickets = [...new Set(graph.nodes.map((node) => node.ticket))].sort(
-    (left, right) => left - right,
-  );
-  const held = new Set(tickets);
-  const edges = graph.edges.filter(
-    (edge) => held.has(edge.from) && held.has(edge.to) && edge.from !== edge.to,
-  );
-  const columns = epicGraphLayoutColumns(tickets, edges);
-  const columnOf = (ticket: number) => columns.get(ticket) ?? 0;
-  const ordered = [...graph.nodes].sort(
-    (left, right) =>
-      columnOf(left.ticket) - columnOf(right.ticket) ||
-      left.ticket - right.ticket,
-  );
-  const rows = new Map<number, number>();
-  const placed = ordered.map((node): EpicGraphPlaced => {
-    const column = columnOf(node.ticket);
-    const row = rows.get(column) ?? 0;
-    rows.set(column, row + 1);
-    return {
-      ticket: node.ticket,
-      title: node.title,
-      phase: node.phase,
-      member: node.member,
-      label: epicGraphLabel(
-        node.ticket,
-        node.title,
-        text(epicGraphStanding(node)),
-      ),
-      x: column * epicGraphColumnWidth,
-      y: row * epicGraphRowHeight,
-    };
-  });
-  const byTicket = new Map(placed.map((node) => [node.ticket, node]));
-  const drawn = edges.flatMap((edge) => {
-    const from = byTicket.get(edge.from);
-    const to = byTicket.get(edge.to);
-    return from === undefined || to === undefined || from.x >= to.x
-      ? []
-      : [{ from, to }];
-  });
-  return {
-    nodes: placed,
-    edges: drawn,
-    width: Math.max(0, ...placed.map((node) => node.x)) + epicGraphNodeWidth,
-    height:
-      Math.max(0, ...rows.values()) * epicGraphRowHeight || epicGraphRowHeight,
   };
 }
 
@@ -524,5 +421,21 @@ export function epicWrite(
     write: (ports, body) => apiWriteEpic(ports, partition, body),
     refusal: epicWriteRefusal,
     landed: (client) => epicsInvalidated(client, partition),
+  };
+}
+
+/** The write that archives an epic or makes it active again: an epic's
+ * write under a key of its own, so the form revising the same epic and the
+ * press that archives it each draw only their own answer. */
+export function epicVisibilityWrite(
+  partition: PartitionIdentity,
+): ReturnType<typeof epicWrite> {
+  return {
+    ...epicWrite(partition),
+    mutationKey: consoleWriteKey(
+      "epic-visibility",
+      partition.tenant,
+      partition.project,
+    ),
   };
 }

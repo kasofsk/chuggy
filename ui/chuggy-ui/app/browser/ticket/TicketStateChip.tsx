@@ -1,7 +1,8 @@
 /**
  * A ticket's state where the ticket list draws it: the row's state label, a
  * dependency's number in its state's colours, and each state's count. Where a
- * dispatch is offered the row's label is the button that asks for it.
+ * dispatch is offered the row's label is the button that asks for it, which
+ * cannot be pressed while one is going or this tab is offline.
  */
 
 import type { ReactNode } from "react";
@@ -32,6 +33,7 @@ function standingWord(standing: TicketListStanding, text: CopyText): string {
 
 export interface TicketStateDispatch {
   readonly busy: boolean;
+  readonly offline: boolean;
   readonly effect: string;
   readonly press: () => void;
 }
@@ -58,7 +60,7 @@ export function TicketStateChip(props: {
             args: { number: String(props.ticket) },
           })}
           aria-busy={dispatch.busy || undefined}
-          disabled={dispatch.busy}
+          disabled={dispatch.busy || dispatch.offline}
           onClick={dispatch.press}
         >
           {label}

@@ -154,7 +154,7 @@ test("a ready chip that dispatches is the button around the label, which presses
       ticket={7}
       standing="Ready"
       hint={undefined}
-      dispatch={{ busy: false, effect: "Starts work", press }}
+      dispatch={{ busy: false, offline: false, effect: "Starts work", press }}
     />,
   );
   const button = screen.getByRole("button", { name: "Dispatch ticket #7" });
@@ -163,13 +163,47 @@ test("a ready chip that dispatches is the button around the label, which presses
   expect(press).toHaveBeenCalledTimes(1);
 });
 
+test("a ready chip cannot be pressed while its dispatch is going, which it says, nor while this tab is offline", () => {
+  const press = vi.fn();
+  const { rerender } = renderCopied(
+    <TicketStateChip
+      ticket={7}
+      standing="Ready"
+      hint={undefined}
+      dispatch={{ busy: true, offline: false, effect: "Starts work", press }}
+    />,
+  );
+  const button = screen.getByRole<HTMLButtonElement>("button", {
+    name: "Dispatch ticket #7",
+  });
+  expect(button.disabled).toBe(true);
+  expect(button.getAttribute("aria-busy")).toBe("true");
+  rerender(
+    <TicketStateChip
+      ticket={7}
+      standing="Ready"
+      hint={undefined}
+      dispatch={{ busy: false, offline: true, effect: "Starts work", press }}
+    />,
+  );
+  expect(button.disabled).toBe(true);
+  expect(button.hasAttribute("aria-busy")).toBe(false);
+  fireEvent.click(button);
+  expect(press).not.toHaveBeenCalled();
+});
+
 test("a ticket's number is named as it is written, never grouped as a count is", () => {
   renderCopied(
     <TicketStateChip
       ticket={1345}
       standing="Ready"
       hint={undefined}
-      dispatch={{ busy: false, effect: "Starts work", press: vi.fn() }}
+      dispatch={{
+        busy: false,
+        offline: false,
+        effect: "Starts work",
+        press: vi.fn(),
+      }}
     />,
   );
   expect(

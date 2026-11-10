@@ -14,7 +14,6 @@ export interface EpicsCopy {
   readonly "epics-show-more": Record<never, never>;
   readonly "epics-show-older": Record<never, never>;
   readonly "epics-reload": Record<never, never>;
-  readonly "epics-progress-label": Record<never, never>;
   readonly "epics-chip-archived": {
     readonly title: unknown;
   };
@@ -27,6 +26,10 @@ export interface EpicsCopy {
   readonly "epics-progress": {
     readonly done: unknown;
     readonly total: unknown;
+  };
+  readonly "epics-progress-count": {
+    readonly count: unknown;
+    readonly phase: unknown;
   };
   readonly "epics-visibility": Record<never, never>;
   readonly "epics-visibility-active": Record<never, never>;
@@ -41,25 +44,61 @@ export interface EpicsCopy {
   readonly "epics-field-description": Record<never, never>;
   readonly "epics-field-tickets": Record<never, never>;
   readonly "epics-field-tickets-placeholder": Record<never, never>;
-  readonly "epics-field-waiting-outside": Record<never, never>;
-  readonly "epics-field-revision": Record<never, never>;
   readonly "epics-faults-label": Record<never, never>;
-  readonly "epics-none-value": Record<never, never>;
-  readonly "epics-graph": Record<never, never>;
-  readonly "epics-graph-empty": Record<never, never>;
-  readonly "epics-graph-label": Record<never, never>;
-  readonly "epics-graph-node": {
-    readonly ticket: unknown;
-    readonly standing: unknown;
+  readonly "epics-tabs-label": Record<never, never>;
+  readonly "epics-tab-overview": Record<never, never>;
+  readonly "epics-tab-tickets": Record<never, never>;
+  readonly "epics-tab-history": Record<never, never>;
+  readonly "epics-tickets-none": Record<never, never>;
+  readonly "epics-edit": Record<never, never>;
+  readonly "epics-archive": Record<never, never>;
+  readonly "epics-archive-title": Record<never, never>;
+  readonly "epics-archive-body": Record<never, never>;
+  readonly "epics-reactivate": Record<never, never>;
+  readonly "epics-reactivate-title": Record<never, never>;
+  readonly "epics-reactivate-body": Record<never, never>;
+  readonly "epics-note-attention": Record<never, never>;
+  readonly "epics-note-attention-escalated": Record<never, never>;
+  readonly "epics-note-waiting": {
+    readonly count: unknown;
   };
-  readonly "epics-graph-node-titled": {
+  readonly "epics-saved": {
+    readonly revision: unknown;
+    readonly actor: unknown;
+  };
+  readonly "epics-graph-empty": Record<never, never>;
+  readonly "epics-graph-loading": Record<never, never>;
+  readonly "epics-graph-failed": Record<never, never>;
+  readonly "epics-graph-outside-shown": {
+    readonly count: unknown;
+  };
+  readonly "epics-graph-controls": Record<never, never>;
+  readonly "epics-graph-zoom-in": Record<never, never>;
+  readonly "epics-graph-zoom-out": Record<never, never>;
+  readonly "epics-graph-fit": Record<never, never>;
+  readonly "epics-graph-full-enter": Record<never, never>;
+  readonly "epics-graph-full-exit": Record<never, never>;
+  readonly "epics-card-untitled": Record<never, never>;
+  readonly "epics-card-open": {
     readonly ticket: unknown;
     readonly title: unknown;
-    readonly standing: unknown;
   };
-  readonly "epics-graph-node-outside": {
-    readonly node: unknown;
+  readonly "epics-card-open-outside": {
+    readonly ticket: unknown;
+    readonly title: unknown;
   };
+  readonly "epics-card-run-work": Record<never, never>;
+  readonly "epics-card-run-work-detail": {
+    readonly cycle: unknown;
+  };
+  readonly "epics-card-run-evaluation": {
+    readonly stage: unknown;
+  };
+  readonly "epics-card-run-evaluation-detail": {
+    readonly stage: unknown;
+    readonly cycle: unknown;
+  };
+  readonly "epics-graph-label": Record<never, never>;
   readonly "epics-history": Record<never, never>;
   readonly "epics-revisions-label": Record<never, never>;
   readonly "epics-revision": {
