@@ -59,3 +59,15 @@ test("a draft that is no ticket leaves the duplicate it was named beside", () =>
     from: 4,
   });
 });
+
+test("an epic is read as a number or as text, and a draft or a duplicate wins over it", () => {
+  expect(ticketCreationQueryOf({ epic: 3 })).toStrictEqual({ epic: 3 });
+  expect(ticketCreationQueryOf({ epic: "3" })).toStrictEqual({ epic: 3 });
+  expect(ticketCreationQueryOf({ epic: "three" })).toStrictEqual({});
+  expect(ticketCreationQueryOf({ epic: 3, from: 4 })).toStrictEqual({
+    from: 4,
+  });
+  expect(ticketCreationQueryOf({ epic: 3, draft: 12 })).toStrictEqual({
+    draft: 12,
+  });
+});

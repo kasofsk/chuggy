@@ -796,6 +796,8 @@ export interface ProjectPage {
   readonly after?: number | undefined;
   readonly creator?: string | undefined;
   readonly cursor?: string | undefined;
+  /** The epic whose members alone the page holds. */
+  readonly epic?: number | undefined;
   readonly limit?: number | undefined;
   readonly minimumSequence?: number | undefined;
   readonly order?: "RecentActivity" | "Newest" | "Oldest" | undefined;
@@ -816,6 +818,7 @@ export function apiProject(
       after: page.after,
       creator: page.creator,
       cursor: page.cursor,
+      epic: page.epic,
       limit: page.limit,
       minimumSequence: page.minimumSequence,
       order: page.order,

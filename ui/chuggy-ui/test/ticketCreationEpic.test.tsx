@@ -57,6 +57,7 @@ const billing = {
 function drawnOver(
   epics: readonly unknown[],
   paged: (after: string | null) => unknown = () => ({ epics }),
+  epic?: number,
 ): string[] {
   const asked: string[] = [];
   vi.stubGlobal("fetch", (input: RequestInfo | URL) => {
@@ -69,7 +70,13 @@ function drawnOver(
     );
   });
   const { ports } = answeringApi(() => ({ status: 404, body: {} }));
-  renderCopied(creationFormDrawn(ports, creationOffers));
+  renderCopied(
+    creationFormDrawn(
+      ports,
+      creationOffers,
+      epic === undefined ? {} : { epic },
+    ),
+  );
   return asked;
 }
 
@@ -83,6 +90,16 @@ test("the creation form offers the project's Active epics, by title", async () =
       (url) => url.includes("/epics?") && url.includes("visibility=Active"),
     ),
   ).toBe(true);
+});
+
+test("a form opened from an epic starts its picker on that epic", async () => {
+  const shipping = { ...billing, number: 9, title: "Shipping" };
+  drawnOver([billing, shipping], undefined, 9);
+  await waitFor(() => {
+    expect(
+      screen.getByRole("button", { name: /^Epic/u }).textContent,
+    ).toContain("Shipping");
+  });
 });
 
 async function epicMenuOpened(): Promise<HTMLElement> {

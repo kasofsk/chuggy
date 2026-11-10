@@ -1131,6 +1131,7 @@ function useCreationHeld(
     readonly partition: PartitionIdentity;
     readonly context: Extract<CreationContext, { context: "Ready" }>;
     readonly duplicate?: CreationDuplicate | undefined;
+    readonly epic?: number | undefined;
   },
   repositories: readonly ProjectRepositoryResponse[],
 ): CreationHeld {
@@ -1141,10 +1142,12 @@ function useCreationHeld(
   const { offers, partial } = context;
   const seeded = props.duplicate?.seed.form;
   const [preferred] = useState(() => ticketConfigurationStored(partition));
-  const initial = useMemo(
-    () => seeded ?? creationFormFrom(offers, repositories, preferred, partial),
-    [seeded, offers, repositories, preferred, partial],
-  );
+  const epic = props.epic;
+  const initial = useMemo(() => {
+    if (seeded !== undefined) return seeded;
+    const fresh = creationFormFrom(offers, repositories, preferred, partial);
+    return epic === undefined ? fresh : { ...fresh, epic: String(epic) };
+  }, [seeded, offers, repositories, preferred, partial, epic]);
   const form = edited ?? initial;
   return {
     initial,
@@ -1229,6 +1232,8 @@ export interface CreationFormProps {
   readonly existing: (ticket: number) => ReactNode;
   readonly onDirty?: (dirty: boolean) => void;
   readonly duplicate?: CreationDuplicate;
+  /** The epic the form's picker starts on. */
+  readonly epic?: number | undefined;
 }
 
 /** What one creation form needs beyond its screen's props, from whichever
@@ -1508,11 +1513,14 @@ export function CreationScreen(props: {
   );
 }
 
-export function TicketCreation(): ReactNode {
+/** A new ticket, its epic picker starting on the epic named, where one is. */
+export function TicketCreation(props: {
+  readonly epic?: number | undefined;
+}): ReactNode {
   const text = useCopyText();
   return (
     <CreationScreen heading={text({ id: "ticket-authoring-new-ticket" })} named>
-      {(ready) => <CreationForm {...ready} />}
+      {(ready) => <CreationForm {...ready} epic={props.epic} />}
     </CreationScreen>
   );
 }

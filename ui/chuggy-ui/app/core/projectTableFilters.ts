@@ -82,13 +82,15 @@ export function ticketFilterPhases(
 /** The order a list is read in: by last activity, or by ticket number from either end. */
 export type TicketListOrder = "RecentActivity" | "Newest" | "Oldest";
 
-/** What the list asks the wire for: the filter's phases, the order its sort reads in, and the search and the creator, where there is one. */
+/** What the list asks the wire for: the filter's phases, the order its sort reads in, and the search, the creator and the epic, where there is one. */
 export interface TicketListAsk {
   readonly filter: TicketFilter;
   readonly order: TicketListOrder;
   readonly search: string | undefined;
   /** The principal of the member whose tickets alone the list holds. */
   readonly creator?: string | undefined;
+  /** The epic whose members alone the list holds. */
+  readonly epic?: number | undefined;
 }
 
 /** The list a reader who has chosen nothing is drawn, which a ticket reference and a mention read too. */
@@ -98,11 +100,12 @@ export const ticketListAskDefault: TicketListAsk = {
   search: undefined,
 };
 
-/** Whether the list is the active one: no search, no creator, by recent activity, kept live by folding frames. */
+/** Whether the list is the active one: no search, no creator, no epic, by recent activity, kept live by folding frames. */
 function ticketListAskActive(ask: TicketListAsk): boolean {
   return (
     ask.search === undefined &&
     ask.creator === undefined &&
+    ask.epic === undefined &&
     ask.order === "RecentActivity"
   );
 }
@@ -112,7 +115,7 @@ function ticketListAskActive(ask: TicketListAsk): boolean {
  * let one's page walk answer another's; the filters reading one phase share
  * its entry. The active list folds a frame in, within the phases its filter
  * admits, and reads again for a ticket it has not got; a list under a search,
- * a creator or an order by number is read again on a ticket's frame, because whether the ticket
+ * a creator, an epic or an order by number is read again on a ticket's frame, because whether the ticket
  * belongs to it, and where, is the server's to say; every one folds an
  * execution's frame into its ticket's row.
  */
@@ -120,7 +123,7 @@ export function ticketFilterList(
   partition: PartitionIdentity,
   ask: TicketListAsk,
 ): ProjectList<ProjectTicketRows> {
-  const name = `table:${ticketFilterRead(ask.filter)}:${ask.order}:${JSON.stringify([ask.search ?? null, ask.creator ?? null])}`;
+  const name = `table:${ticketFilterRead(ask.filter)}:${ask.order}:${JSON.stringify([ask.search ?? null, ask.creator ?? null, ask.epic ?? null])}`;
   if (!ticketListAskActive(ask))
     return projectTicketRowsLive(
       projectListReread<ProjectTicketRows>(partition, "Ticket", name),
@@ -145,6 +148,7 @@ function ticketFilterReads(ask: TicketListAsk): readonly ProjectPage[] {
     limit: nativeHttpPageItemsMax,
     ...(phases === undefined ? {} : { phase: phases }),
     ...(ask.creator === undefined ? {} : { creator: ask.creator }),
+    ...(ask.epic === undefined ? {} : { epic: ask.epic }),
   };
   if (ask.search !== undefined) return [{ ...asked, q: ask.search }];
   if (!ticketListAskActive(ask)) return [asked];
@@ -184,6 +188,7 @@ export function ticketFilterProjectEmpty(
     ask.filter === ticketFilterAll &&
     ask.search === undefined &&
     ask.creator === undefined &&
+    ask.epic === undefined &&
     rows.tickets.length === 0 &&
     rows.next === undefined &&
     rows.failure === undefined
