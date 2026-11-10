@@ -28,7 +28,10 @@ import {
   textCodePointsCount,
 } from "../contract/http.ts";
 import { leadRefusalsPerDecisionMax } from "../contract/sessionTools.ts";
-import { leadTurnDocumentVersion } from "../contract/workerDocuments.ts";
+import {
+  leadTurnDocumentVersion,
+  selectorAttentions,
+} from "../contract/workerDocuments.ts";
 import {
   agenticRefusalIsSuperseded,
   type AgenticRefusalRecord,
@@ -115,6 +118,13 @@ export interface LeadObservationDocument {
   readonly token: DispatchViewToken;
   readonly operationalContext: SelectorOperationalContext;
   readonly handoffNote: JsonValue;
+  /** The project's standing attention, which a retained document may lack. */
+  readonly attention?: SelectorProjectState["attention"];
+  /**
+   * The most tickets this turn's decision may dispatch, the project's resolved
+   * `dispatchesPerDecision`, which a retained document may lack.
+   */
+  readonly dispatchesMax?: number;
   readonly refusals: readonly LeadObservedRefusal[];
 }
 
@@ -192,6 +202,22 @@ export function parseLeadObservation(text: string): LeadObservationDocument {
     throw new TypeError("lead observation names no decision");
   if (!("handoffNote" in found))
     throw new TypeError("lead observation carries no handoff note");
+  const attention = found["attention"];
+  if (
+    attention !== undefined &&
+    !selectorAttentions.some((member) => member === attention)
+  )
+    throw new TypeError("lead observation names no attention this tree knows");
+  const dispatchesMax = found["dispatchesMax"];
+  if (
+    dispatchesMax !== undefined &&
+    (!Number.isSafeInteger(dispatchesMax) ||
+      Number(dispatchesMax) < 1 ||
+      Number(dispatchesMax) > leadDispatchesMax)
+  )
+    throw new TypeError(
+      "lead observation dispatch budget is not a count one decision may spend",
+    );
   return found as unknown as LeadObservationDocument;
 }
 

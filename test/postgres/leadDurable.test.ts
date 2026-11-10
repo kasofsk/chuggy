@@ -40,7 +40,9 @@ import {
   sessionTurnModelCharsMax,
   sessionTurnToolNameCharsMax,
   sessionTurnToolsMax,
+  leadDispatchesMax,
 } from "../../src/contract/http.ts";
+import { selectorAttentions } from "../../src/contract/rosters.ts";
 import {
   asSessionId,
   asSessionStoreStream,
@@ -1331,6 +1333,10 @@ function widestObservation(partition: Partition, decision: string): string {
       (_unused, at) => maximalCandidate(at + 1),
     ),
     handoffNote: escapedText(selectorHandoffNoteBytesMax / 6),
+    attention: selectorAttentions.reduce((widest, attention) =>
+      attention.length > widest.length ? attention : widest,
+    ),
+    dispatchesMax: leadDispatchesMax,
     refusals,
     operationalContext: { version: 2 },
   };
@@ -1368,8 +1374,14 @@ test("the widest observation the parts admit is one the mailbox row holds", asyn
     )
   )[0]?.["input"];
   assert.equal(held, input, "the row claims back what was offered, whole");
-  const parsed = JSON.parse(String(held)) as { candidates: unknown[] };
+  const parsed = JSON.parse(String(held)) as {
+    candidates: unknown[];
+    attention: unknown;
+    dispatchesMax: unknown;
+  };
   assert.equal(parsed.candidates.length, dispatchViewPageLimitMax);
+  assert.equal(parsed.attention, "Monitoring");
+  assert.equal(parsed.dispatchesMax, leadDispatchesMax);
 });
 
 test("one candidate at its ceiling is one the derivation makes room for", () => {

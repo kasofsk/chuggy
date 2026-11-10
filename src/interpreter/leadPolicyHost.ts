@@ -263,6 +263,10 @@ function leadObservationDocument(
     token: request.observation.token,
     operationalContext: request.observation.operationalContext,
     handoffNote: request.observation.handoffNote,
+    ...(request.observation.attention === undefined
+      ? {}
+      : { attention: request.observation.attention }),
+    dispatchesMax: request.constraints.limits.dispatchesPerDecision,
     refusals,
   };
 }

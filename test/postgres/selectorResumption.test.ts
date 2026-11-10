@@ -289,6 +289,37 @@ test("an unfinished attempt reads back its observation and revision, aged by the
   );
 });
 
+test("a stored observation reads back its attention, and one stored without it reads back without it", async () => {
+  const partition = await leadRigProject(rig, "attention-observed");
+  const observation: SelectorObservation = {
+    ...observationOf(partition),
+    attention: "Attention",
+  };
+  const { store, attempt } = await runningOver(
+    partition,
+    "attention",
+    observation,
+  );
+  const unfinished = async () =>
+    (await store.unfinishedAttempts(100)).find(
+      (found) => found.attempt === attempt,
+    )?.observation;
+  assert.deepEqual(await unfinished(), observation);
+  const earlier = JSON.parse(await storedObservationOf(attempt)) as Record<
+    string,
+    unknown
+  >;
+  delete earlier["attention"];
+  await rig.sessions.harness.query(
+    `UPDATE selector_observation SET observation=$2 WHERE attempt=$1`,
+    [attempt, JSON.stringify(earlier)],
+  );
+  const withoutAttention: SelectorObservation = { ...observation };
+  delete (withoutAttention as { attention?: unknown }).attention;
+  assert.deepEqual(await unfinished(), withoutAttention);
+  await store.terminateAttempt(attempt, "test cleanup");
+});
+
 /** The longest a stored observation may be, as the live schema checks it. */
 async function observationCharsMax(): Promise<number> {
   const constraint = await rig.sessions.harness.query(
@@ -702,6 +733,7 @@ async function assertInteractionLeft(
   assert.deepEqual(interaction?.context, {
     operationalContext: first.contexts[0],
     handoffNote: {},
+    attention: "Monitoring",
     changes,
   });
   assert.equal(interaction?.implementationRevision, "instance-b");

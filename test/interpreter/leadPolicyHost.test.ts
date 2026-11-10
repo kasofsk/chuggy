@@ -47,10 +47,14 @@ import {
 import {
   leadObservationBytesMax,
   leadRefusalsObservedMax,
+  observeSelectorProject,
+  resolvedSelectorSettings,
   type SelectorInteractionRecord,
   type SelectorObservation,
   type SelectorPolicyExecution,
   type SelectorPolicyRequest,
+  type SelectorProjectState,
+  type SelectorRuntimeSettings,
 } from "../../src/interpreter/selector.ts";
 import type { LeadRouteReads } from "../../src/interpreter/sessionPlacement.ts";
 import { selectorOperationalContext } from "./selectorFixture.ts";
@@ -1129,6 +1133,88 @@ test("a session with no agent reference is seeded and one with a reference is no
     parseLeadObservation(bound.offers[0]?.input ?? "").seeding,
     undefined,
   );
+});
+
+/** The observation a project at this attention gives, from a view that moved. */
+async function observedAt(
+  attention: SelectorProjectState["attention"],
+): Promise<SelectorObservation> {
+  const observed = await observeSelectorProject(
+    {
+      partition,
+      notificationCursor: 0,
+      revision: 0,
+      attention,
+      handoffNote: {},
+      candidateScan: { state: "Unstarted" },
+    },
+    {
+      dispatchView: () =>
+        Promise.resolve({
+          result: "Page",
+          token,
+          candidates: [candidate],
+          notificationCursor: 1,
+        } as const),
+      operationalContext: () => Promise.resolve(operationalContext),
+    },
+    { standingAmong: () => Promise.resolve([]) },
+    { heldAmong: () => Promise.resolve([]) },
+    { result: "Events", cursor: 1, events: [] },
+  );
+  assert.ok(observed, "a moved view is an observation");
+  return observed;
+}
+
+test("an unseeded turn shows the lead the project's standing attention", async () => {
+  for (const attention of ["Attention", "Monitoring"] as const) {
+    const observed = await observedAt(attention);
+    assert.equal(observed.attention, attention);
+    const double = mailboxDouble({
+      agentReference: "agent-session-9",
+      result: JSON.stringify({ version: 1, attention, handoffNote: {} }),
+    });
+    await policyOf(double).execute(
+      { ...request, observation: observed },
+      new AbortController().signal,
+    );
+    const document = parseLeadObservation(double.offers[0]?.input ?? "");
+    assert.equal(document.seeding, undefined, "a bound lead is not seeded");
+    assert.equal(document.attention, attention);
+  }
+});
+
+test("a turn shows the lead the project's resolved dispatch budget", async () => {
+  const defaults: SelectorRuntimeSettings = {
+    revision: 1,
+    mode: "Running",
+    dispatchMode: "Automatic",
+    basePrompt: "select",
+    modelAllowlist: ["*"],
+    toolAllowlist: ["*"],
+    limits: { ...request.constraints.limits, dispatchesPerDecision: 2 },
+    operationalContextMaxAgeMs: 1,
+  };
+  for (const [overrides, budget] of [
+    [{}, 2],
+    [{ limits: { dispatchesPerDecision: 5 } }, 5],
+  ] as const) {
+    const { limits } = resolvedSelectorSettings(
+      partition,
+      defaults,
+      0,
+      overrides,
+    );
+    const double = mailboxDouble({ agentReference: "agent-session-9" });
+    await policyOf(double).execute(
+      { ...request, constraints: { ...request.constraints, limits } },
+      new AbortController().signal,
+    );
+    assert.equal(
+      parseLeadObservation(double.offers[0]?.input ?? "").dispatchesMax,
+      budget,
+    );
+  }
 });
 
 test("a seeding block the mailbox could not hold sheds its oldest decisions", async () => {

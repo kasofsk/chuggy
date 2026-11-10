@@ -8,7 +8,7 @@
 
 import { z } from "zod";
 
-import type { TicketPhase } from "./rosters.ts";
+import { selectorAttentions, type TicketPhase } from "./rosters.ts";
 
 /** How many code points `text` holds, which is what zod's `.max()` reads on a
  * string past its bound — not `String.length`'s UTF-16 units. */
@@ -936,6 +936,15 @@ export const sessionTurnInputCharsMax = stringifiedObjectChars([
     ]),
   ],
   ["handoffNote", selectorHandoffNoteBytesMax],
+  [
+    "attention",
+    Math.max(
+      ...selectorAttentions.map(
+        (attention) => JSON.stringify(attention).length,
+      ),
+    ),
+  ],
+  ["dispatchesMax", String(leadDispatchesMax).length],
   ["refusals", leadObservedRefusalsChars],
   [
     "seeding",

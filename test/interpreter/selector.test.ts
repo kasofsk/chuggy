@@ -4439,6 +4439,44 @@ async function cycleDispatching(
   return { proposals, recorded, interaction };
 }
 
+test("a decision's request and record carry the project's standing attention", async () => {
+  let asked: SelectorPolicyRequest | undefined;
+  let interaction: SelectorInteraction | undefined;
+  await runSelectorCycle(
+    {
+      partition,
+      notificationCursor: 0,
+      revision: 0,
+      attention: "Attention",
+      handoffNote: {},
+    },
+    candidateSource(offered),
+    refusalWrites(),
+    {
+      ...stateStore(() => undefined),
+      recordInteraction: (written) => {
+        interaction = written;
+        return Promise.resolve(true);
+      },
+      record: (written) => {
+        interaction = written.interaction;
+        return Promise.resolve({ retained: true, dispatched: [] });
+      },
+    },
+    policyHost((request) => {
+      asked = request;
+      return Promise.resolve(waitingExecution());
+    }),
+    {
+      operation: asOperationId("cycle-operation"),
+      selectorDecisionReference: "cycle-decision",
+    },
+    resolved(),
+  );
+  assert.equal(asked?.observation.attention, "Attention", "the request");
+  assert.equal(interaction?.context.attention, "Attention", "the record");
+});
+
 /**
  * The policy control, judged on the finished turn beside the token and
  * tool-call budgets. The whole decision is refused rather than truncated: a

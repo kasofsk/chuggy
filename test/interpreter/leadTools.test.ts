@@ -167,6 +167,17 @@ test("the objectives say what a candidate is, require attention and a note every
   assert.ok(leadObjectivesFixedChars <= leadObjectivesFixedCharsMax);
 });
 
+test("the objectives say every turn shows the standing attention and the dispatch budget, and a turn stays within it", () => {
+  const bare = leadSystemPrompt(settings("Select."));
+  for (const rule of [
+    "the standing attention\n  (`attention`)",
+    "the dispatch budget (`dispatchesMax`)",
+    "a turn\n  dispatches no more than that budget",
+  ])
+    assert.ok(bare.includes(rule), `the objectives state ${rule}`);
+  assert.ok(leadObjectivesFixedChars <= leadObjectivesFixedCharsMax);
+});
+
 test("the largest objectives a project may legally set are ones the session row holds", () => {
   const legal = "x".repeat(selectorSettingsTextCharsMax);
   const composed = leadSystemPrompt(settings(legal, legal)).length;
