@@ -35,6 +35,15 @@
 /// DIRECT. A Direct landing moves the tip, so every stack built on the old one
 /// stops standing.
 ///
+/// CARRIED VERDICT. A ticket carries the passing verdict of the evaluators that
+/// rerun only on a change, with the stacking it was earned under and the patch
+/// it was earned on. A work report after a re-check may keep the patch, and any
+/// other changes it. An evaluation keeps the verdict while the patch is the same
+/// and it was earned unstacked or over a stack whose beneath all landed at the
+/// commits it names; otherwise it earns a fresh one. A failed evaluation, a
+/// rework or an ejection clears it. The expected tree is what the evaluators
+/// that always rerun guarantee of the landed one.
+///
 /// STANDING RULE: DERIVE, DON'T STORE. Whether a stack stands, who holds and
 /// the queue order are functions of the state and are stored nowhere.
 module stacking {
@@ -45,14 +54,17 @@ module stacking {
   type Stack = { base: Tree, beneath: List[Pair] }
   type Stacking = Unstacked | StackedOn(Stack)
   type Invalidation = InvalidateEvaluation | InvalidateEvaluationFailure
+  type Verdict = NoVerdict | Carried({ over: Stacking, patch: int })
   /// `entry` is zero outside the queue. `commit` counts work reports and
   /// `reworks` the returns to Work, so the two stay in step unless something
   /// that is not a rework sent the ticket back. `expected` is the tree the
-  /// evaluation started over.
+  /// evaluation started over. `patch` counts the work reports that changed the
+  /// ticket's own diff, the stand-in for its patch-id, and `verdict` is the
+  /// carried verdict.
   type Ticket = {
     policy: Policy, phase: Phase, entry: int, rechecks: int, commit: int,
     stacking: Stacking, expected: Tree, stackFailures: int, reworks: int,
-    invalidations: int, landedEntry: int
+    invalidations: int, landedEntry: int, patch: int, verdict: Verdict
   }
   /// `landedStep` is how many tickets the latest step landed.
   type State = {
@@ -69,7 +81,7 @@ module stacking {
     tickets: policies.keys().mapBy(i => {
       policy: policies.get(i), phase: Work, entry: 0, rechecks: 0,
       commit: 0, stacking: Unstacked, expected: List(), stackFailures: 0,
-      reworks: 0, invalidations: 0, landedEntry: 0 }),
+      reworks: 0, invalidations: 0, landedEntry: 0, patch: 0, verdict: NoVerdict }),
     history: List(), nextEntry: 1, landedStep: 0, rankKept: true, invalidated: List()
   }
 
@@ -176,20 +188,40 @@ module stacking {
   pure def withTicket(s: State, i: int, t: Ticket): State = { ...s, tickets: s.tickets.set(i, t) }
   pure def phaseIs(s: State, i: int, p: Phase): bool = s.tickets.get(i).phase == p
 
-  pure def canReport(s: State, i: int): bool = phaseIs(s, i, Work)
-  pure def report(s: State, i: int): State =
+  /// A report either keeps the ticket's own diff, a clean merge, or changes it;
+  /// only the report of a re-check, a ranked ticket in Work, may keep it.
+  pure def canReport(s: State, i: int, keptDiff: bool): bool =
+    and { phaseIs(s, i, Work), or { not(keptDiff), s.tickets.get(i).entry > 0 } }
+  pure def report(s: State, i: int, keptDiff: bool): State =
     val t = s.tickets.get(i)
-    settle(s, withTicket(s, i, { ...t, phase: Ready, commit: t.commit + 1 }))
+    settle(s, withTicket(s, i, { ...t, phase: Ready, commit: t.commit + 1,
+                                  patch: if (keptDiff) t.patch else t.patch + 1 }))
 
+  /// Whether every stack entry beneath landed, right after its base, at the commit it names.
+  pure def beneathLanded(s: State, r: Stack): bool =
+    val n = r.base.length() + r.beneath.length()
+    and { s.history.length() >= n, s.history.slice(0, n) == r.base.concat(r.beneath) }
+  /// Whether the verdict `v` still holds for ticket `i`.
+  pure def verdictHolds(s: State, i: int, v: { over: Stacking, patch: int }): bool = and {
+    v.patch == s.tickets.get(i).patch,
+    match v.over { | StackedOn(r) => beneathLanded(s, r) | Unstacked => true } }
+
+  /// An evaluation keeps the carried verdict that still holds and drops any other.
   pure def canStart(s: State, i: int): bool = phaseIs(s, i, Ready)
   pure def start(s: State, i: int): State =
     val t = s.tickets.get(i)
     val st = stackFor(s, i)
-    settle(s, withTicket(s, i, { ...t, phase: Evaluation, stacking: st, expected: expectedOf(s, i, st) }))
+    val kept = match t.verdict { | Carried(v) => verdictHolds(s, i, v) | NoVerdict => false }
+    settle(s, withTicket(s, i, { ...t, phase: Evaluation, stacking: st, expected: expectedOf(s, i, st),
+                                  verdict: if (kept) t.verdict else NoVerdict }))
 
   pure def canPass(s: State, i: int): bool = phaseIs(s, i, Evaluation)
+  /// A pass without a carried verdict earned a fresh one over its stacking.
   pure def passEvaluation(s: State, i: int): State =
-    val t = s.tickets.get(i)
+    val t0 = s.tickets.get(i)
+    val t = match t0.verdict {
+      | NoVerdict => { ...t0, verdict: Carried({ over: t0.stacking, patch: t0.patch }) }
+      | Carried(_) => t0 }
     if (queued(t))
       settle(s,
         withTicket({ ...s, nextEntry: s.nextEntry + (if (t.entry > 0) 0 else 1) }, i,
@@ -198,19 +230,19 @@ module stacking {
 
   pure def canFail(s: State, i: int): bool = phaseIs(s, i, Evaluation)
   pure def failEvaluation(s: State, i: int): State =
-    settle(s, withTicket(s, i, { ...s.tickets.get(i), phase: Failed, entry: 0 }))
+    settle(s, withTicket(s, i, { ...s.tickets.get(i), phase: Failed, entry: 0, verdict: NoVerdict }))
 
   pure def canRework(s: State, i: int): bool = phaseIs(s, i, Failed)
   pure def rework(s: State, i: int): State =
     val t = s.tickets.get(i)
     val stackedFail = match t.stacking { | StackedOn(_) => 1 | Unstacked => 0 }
     settle(s, withTicket(s, i, { ...t, phase: Work, rechecks: 0, stacking: Unstacked, reworks: t.reworks + 1,
-                          stackFailures: t.stackFailures + stackedFail }))
+                          stackFailures: t.stackFailures + stackedFail, verdict: NoVerdict }))
 
   pure def canEject(s: State, i: int): bool =
     not(or { phaseIs(s, i, Landed), phaseIs(s, i, Ejected) })
   pure def eject(s: State, i: int): State =
-    settle(s, withTicket(s, i, { ...s.tickets.get(i), phase: Ejected, entry: 0, stacking: Unstacked }))
+    settle(s, withTicket(s, i, { ...s.tickets.get(i), phase: Ejected, entry: 0, stacking: Unstacked, verdict: NoVerdict }))
 
   /// A Direct ticket lands whenever it is evaluated; a queued one only as holder.
   pure def canLand(s: State, i: int): bool =
@@ -291,6 +323,18 @@ module stacking {
     s.tickets.keys().forall(i => match s.tickets.get(i).stacking {
       | StackedOn(r) => r.beneath.length() <= stackDepthMax
       | Unstacked => true })
+  /// Each landed queued ticket landed on a carried verdict that still holds: over
+  /// its own patch, earned unstacked or over a stack whose beneath all landed at
+  /// the commits it names, so never over an entry ejected or reworked since.
+  pure def landsOnAHoldingVerdict(s: State): bool =
+    landedTickets(s).forall(i => or { not(queued(s.tickets.get(i))),
+      match s.tickets.get(i).verdict { | Carried(v) => verdictHolds(s, i, v) | NoVerdict => false } })
+
+  /// No stacked evaluation carries a verdict earned unstacked.
+  pure def stackedCarriesNoUnstackedVerdict(s: State): bool =
+    s.tickets.keys().forall(i => val t = s.tickets.get(i)
+      or { t.phase != Evaluation, t.stacking == Unstacked,
+           match t.verdict { | Carried(v) => v.over != Unstacked | NoVerdict => true } })
 
   /// No step moved the rank of a ticket that was ranked before it and after it, and
   /// ranks are unique and issued.
@@ -308,6 +352,7 @@ module stacking {
   pure def invariants(s: State): bool = and {
     landsOneAtATime(s), landsInQueueOrder(s), historyFollowsEntries(s), landedAsEvaluated(s), landedOnce(s), ranksHold(s), recheckBounded(s),
     liveStacksStand(s), stackBaseIsPrefix(s), serializedOnlyHolderBeneath(s),
-    invalidatedOnlyStacked(s), reworksAreReturnsToWork(s), failureCapHolds(s), depthHolds(s)
+    invalidatedOnlyStacked(s), reworksAreReturnsToWork(s), failureCapHolds(s), depthHolds(s),
+    landsOnAHoldingVerdict(s), stackedCarriesNoUnstackedVerdict(s)
   }
 }
