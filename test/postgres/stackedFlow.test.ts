@@ -7,16 +7,15 @@
  * front of the queue, with nothing counted toward its re-check cap.
  *
  * B IS THE TICKET THE WRITER AND THE FINALIZER DRIVE, AND A IS WRITTEN BY HAND.
- * The harness drives one ticket through the writer, so A's definition, phase
- * and the request it is ranked by are rows a case places directly, its landing
- * is the rows `evaluationStackLandings.ts` writes, and its entry in the queue
- * is the case's own, beside the entries the store reads, as
- * `evaluationStackStanding.test.ts` gives the tickets beneath. A's evaluation
- * failing is A leaving the queue: it is back in Work, and the request its rank
- * was taken at is gone, which is what the rework's journal entry does to the
- * derived rank. B's evaluation has passed before its stack is recorded, so the
- * record is written as the finalizer role writes it; that a spawn reads it is
- * `evaluationStackDecision.test.ts`'s.
+ * The harness drives one ticket through the writer, so A's definition, phase,
+ * the request it is ranked by, its passed work and its started evaluation are
+ * rows a case places directly, and its landing is the rows
+ * `evaluationStackLandings.ts` writes. The queue both tickets are in is the
+ * one the store reads. A's evaluation failing is A back in Work, and the
+ * `TicketEvaluationReworkStarted` entry journaled after its request, which is
+ * what releases its derived rank. B's evaluation has passed before its stack
+ * is recorded, so the record is written as the finalizer role writes it; that
+ * a spawn reads it is `evaluationStackDecision.test.ts`'s.
  */
 
 import assert from "node:assert/strict";
@@ -38,7 +37,6 @@ import { asRecoveryEpoch } from "../../src/interpreter/projectStore.ts";
 import {
   stackStands,
   type StackEntry,
-  type StackPhase,
 } from "../../src/interpreter/stackChoice.ts";
 import { postgresTicketBrief } from "../../src/adapters/postgres/ticketBrief.ts";
 import {
@@ -46,11 +44,14 @@ import {
   landingWrite,
   recordStack,
 } from "./evaluationStackLandings.ts";
+import { releasedEvaluatorDefinition } from "./migrationHarness.ts";
+import { seedJournalEntry } from "./nativeActionFixture.ts";
 import {
   finalizerBriefLanding,
   finalizerDeclareSource,
   finalizerGitVerb,
   finalizerIdentity,
+  finalizerPassedWork,
   finalizerPassOnce,
   finalizerRemoteAttempt,
   finalizerRemotePort,
@@ -90,12 +91,103 @@ function keysOf(project: FinalizerProject, ticket: number) {
   return [project.partition.tenant, project.partition.project, ticket] as const;
 }
 
-/** Writes A beside B in `phase`, released with B's brief and ranked ahead of it by a request of its own. */
+/** A's own tasks, numbered apart from B's work task, which `landingWrite` copies onto A. */
+const aWorkTask = 3;
+const aEvaluationTask = 4;
+
+/**
+ * A spawn request of A's, copied from B's spawn of the same kind at an effect
+ * position past B's, holding the one task it names.
+ */
+async function aSpawn(
+  project: FinalizerProject,
+  ticket: number,
+  kind: "SpawnWork" | "SpawnEvaluation",
+  task: { readonly task: number; readonly kind: "Work" | "Evaluation" },
+  label: string,
+): Promise<string> {
+  const request = finalizerIdentity(`spawn-a-${kind}-${label}`);
+  const copied = await rig.harness.query(
+    `INSERT INTO execution_request
+       (tenant, project, request, authorizing_seq, effect_position, ticket,
+        ticket_version, kind, state, capacity_account, configuration_revision,
+        configuration_digest, input_bundle, input_bundle_digest)
+     SELECT tenant, project, $4, authorizing_seq, effect_position + 100, $5,
+            ticket_version, kind, 'Fulfilled', capacity_account,
+            configuration_revision, configuration_digest, input_bundle,
+            input_bundle_digest
+       FROM execution_request
+      WHERE tenant=$1 AND project=$2 AND ticket=$3 AND kind=$6
+      ORDER BY authorizing_seq LIMIT 1
+     RETURNING request`,
+    [...keysOf(project, project.ticket), request, ticket, kind],
+  );
+  assert.equal(copied.length, 1, `B has a ${kind} request to copy`);
+  const evaluation = task.kind === "Evaluation";
+  await rig.harness.query(
+    `INSERT INTO execution_request_task
+       (tenant, project, request, task, kind, stage, cycle, generation, evaluator)
+     VALUES ($1,$2,$3,$4,$5,$6,1,$6,$6)`,
+    [
+      project.partition.tenant,
+      project.partition.project,
+      request,
+      task.task,
+      task.kind,
+      evaluation ? 1 : null,
+    ],
+  );
+  return request;
+}
+
+/** A's evaluation of its first cycle, started and not yet reported, which is what the store reads as evaluating. */
+async function aEvaluating(
+  project: FinalizerProject,
+  ticket: number,
+  label: string,
+): Promise<void> {
+  const task = aEvaluationTask;
+  const request = await aSpawn(
+    project,
+    ticket,
+    "SpawnEvaluation",
+    { task, kind: "Evaluation" },
+    label,
+  );
+  await rig.harness.query(
+    `INSERT INTO execution
+       (tenant, project, execution, ticket, task, source_request, account, cluster,
+        configuration_revision, configuration_digest, status)
+     SELECT r.tenant, r.project, $4, r.ticket, $5, r.request, a.account, a.cluster,
+            r.configuration_revision, r.configuration_digest, 'Running'
+       FROM execution_request r
+       JOIN capacity_account a ON a.account = r.capacity_account
+      WHERE r.tenant=$1 AND r.project=$2 AND r.request=$3`,
+    [
+      project.partition.tenant,
+      project.partition.project,
+      request,
+      finalizerIdentity(`evaluation-a-${label}`),
+      task,
+    ],
+  );
+}
+
+/**
+ * Writes A beside B in `phase`, released with B's brief, its work passed at
+ * `commit` off `tip` and its evaluation started where `phase` is Evaluation,
+ * and ranked ahead of B by a request of its own.
+ */
 async function aPlaced(
   project: FinalizerProject,
   ticket: number,
   phase: string,
   label: string,
+  source: {
+    readonly ref: string;
+    readonly commit: string;
+    readonly tip: string;
+  },
 ): Promise<string> {
   const [brief] = await rig.harness.query(
     `SELECT brief FROM ticket_definition WHERE tenant=$1 AND project=$2 AND ticket=$3`,
@@ -111,6 +203,24 @@ async function aPlaced(
      VALUES ($1,$2,$3,$4,$5)`,
     [...keysOf(project, ticket), phase, project.authorizingSeq + 100],
   );
+  await aSpawn(
+    project,
+    ticket,
+    "SpawnWork",
+    { task: aWorkTask, kind: "Work" },
+    label,
+  );
+  const a = { ...project, ticket };
+  const work = await finalizerPassedWork(rig, a, `a-${label}`, []);
+  await finalizerDeclareSource(
+    rig,
+    a,
+    work,
+    source.ref,
+    source.commit,
+    source.tip,
+  );
+  if (phase === "Evaluation") await aEvaluating(project, ticket, label);
   const request = finalizerIdentity(`request-a-${label}`);
   await rig.harness.query(
     `INSERT INTO finalization_request
@@ -148,13 +258,13 @@ async function pairOpened(label: string, phase: string): Promise<Pair> {
     project.repository,
   );
   const aTicket = ticket + 1;
-  const aCommit = finalizerRemoteAttempt(
-    remote,
-    "a.txt",
-    "a\n",
-    `refs/heads/chuggy/tickets/${String(aTicket)}/attempts/a`,
-  );
-  const aRequest = await aPlaced(project, aTicket, phase, label);
+  const aRef = `refs/heads/chuggy/tickets/${String(aTicket)}/attempts/a`;
+  const aCommit = finalizerRemoteAttempt(remote, "a.txt", "a\n", aRef);
+  const aRequest = await aPlaced(project, aTicket, phase, label, {
+    ref: aRef,
+    commit: aCommit,
+    tip,
+  });
   return {
     b: project,
     bWork: work,
@@ -168,37 +278,27 @@ async function pairOpened(label: string, phase: string): Promise<Pair> {
   };
 }
 
-/** A's entry in the queue, in `phase` at the commit it was accepted at. */
-function aEntry(pair: Pair, phase: StackPhase): StackEntry {
-  return {
-    ticket: asTicketId(pair.aTicket),
-    policy: "Stacked",
-    phase,
-    rank: pair.aRank,
-    commit: asGitObjectId(pair.aCommit),
-    stack: undefined,
-  };
-}
-
-/** The queue of B's reference as the store reads it, with A's entry where it is in one. */
-async function queueOf(
-  pair: Pair,
-  a: StackEntry | undefined,
-): Promise<readonly StackEntry[]> {
-  const read = await postgresEvaluationStack(rig.pool).queue(
+/** The queue of B's reference as the store reads it. */
+function queueOf(pair: Pair): Promise<readonly StackEntry[]> {
+  return postgresEvaluationStack(rig.pool).queue(
     pair.b.partition,
     pair.b.repository,
     undefined,
   );
-  return a === undefined ? read : [a, ...read];
 }
 
-/** Chooses and mints B's stack from the queue A is in, and records it. */
-async function bStacked(pair: Pair, a: StackEntry): Promise<EvaluationStack> {
-  const stacks = postgresEvaluationStack(rig.pool);
+/** The queue's tickets in rank order, and each one's phase. */
+async function queued(pair: Pair) {
+  return [...(await queueOf(pair))]
+    .sort((left, right) => left.rank - right.rank)
+    .map((entry) => [entry.ticket, entry.phase]);
+}
+
+/** Chooses and mints B's stack from the queue the store reads, and records it. */
+async function bStacked(pair: Pair): Promise<EvaluationStack> {
   const prepared = await stackPrepared(
     {
-      store: { ...stacks, queue: () => queueOf(pair, a) },
+      store: postgresEvaluationStack(rig.pool),
       briefs: postgresTicketBrief(rig.pool),
       git: finalizerRemotePort(rig),
     },
@@ -220,9 +320,9 @@ async function bStacked(pair: Pair, a: StackEntry): Promise<EvaluationStack> {
   return prepared.stack;
 }
 
-/** The queue with A's entry where it is in one, and whether the stack B was evaluated over stands over it. */
-async function bStanding(pair: Pair, a: StackEntry | undefined) {
-  const queue = await queueOf(pair, a);
+/** The queue, and whether the stack B was evaluated over stands over it. */
+async function bStanding(pair: Pair) {
+  const queue = await queueOf(pair);
   const entry = queue.find((each) => each.ticket === pair.b.ticket);
   assert.ok(entry?.stack !== undefined, "B's stack is read with the queue");
   return { queue, stands: stackStands(entry.stack, queue) };
@@ -248,6 +348,49 @@ async function bAttempts(pair: Pair) {
   );
 }
 
+/** A's evaluation sending it back to rework, journaled after the request its rank was taken at. */
+async function aReworked(pair: Pair, label: string): Promise<void> {
+  const [last] = await rig.harness.query(
+    `SELECT max(seq)::int AS seq FROM journal_entry WHERE tenant=$1 AND project=$2`,
+    [pair.b.partition.tenant, pair.b.partition.project],
+  );
+  const obligation = {
+    task: {
+      type: "EvaluationTask",
+      value: {
+        ticket: pair.aTicket,
+        workCycle: 1,
+        stage: 1,
+        generation: 1,
+        evaluator: 1,
+      },
+    },
+    definition: releasedEvaluatorDefinition,
+    contextRef: 1,
+  };
+  await seedJournalEntry(
+    rig.harness,
+    pair.b.partition,
+    `rework-a-${label}`,
+    Number(last?.["seq"]) + 1,
+    {
+      type: "TicketEvaluationReworkStarted",
+      value: {
+        ticket: pair.aTicket,
+        report: {
+          type: "EvaluationResultReport",
+          value: {
+            ticket: pair.aTicket,
+            result: { obligation, resultRef: 1 },
+            verdict: "EvaluatorFail",
+          },
+        },
+        evidence: [{ evaluator: 1, resultRef: 1 }],
+      },
+    },
+  );
+}
+
 function bClaim(pair: Pair): FinalizationClaim {
   return {
     partition: pair.b.partition,
@@ -258,7 +401,11 @@ function bClaim(pair: Pair): FinalizationClaim {
 test("B evaluates over a stack holding A, and once A lands B lands as its merge is the stack's tree, with no re-check", async () => {
   const pair = await pairOpened("flow-lands", "Finalization");
 
-  const stack = await bStacked(pair, aEntry(pair, "Pending"));
+  assert.deepEqual(await queued(pair), [
+    [pair.aTicket, "Pending"],
+    [pair.b.ticket, "Pending"],
+  ]);
+  const stack = await bStacked(pair);
 
   assert.deepEqual(stack.beneath, [
     { ticket: pair.aTicket, commit: pair.aCommit },
@@ -296,11 +443,7 @@ test("B evaluates over a stack holding A, and once A lands B lands as its merge 
     `UPDATE ticket_projection SET phase='Done' WHERE tenant=$1 AND project=$2 AND ticket=$3`,
     [...keysOf(pair.b, pair.aTicket)],
   );
-  assert.equal(
-    (await bStanding(pair, undefined)).stands,
-    true,
-    "A landed as stacked",
-  );
+  assert.equal((await bStanding(pair)).stands, true, "A landed as stacked");
 
   await finalizerPassOnce(rig, pair.b, finalizerRemotePort(rig), "flow-lands");
 
@@ -328,7 +471,11 @@ test("B evaluates over a stack holding A, and once A lands B lands as its merge 
 test("B evaluates over a stack holding A, and once A's evaluation fails B is re-checked at its rank and the front, counting nothing", async () => {
   const pair = await pairOpened("flow-fails", "Evaluation");
 
-  const stack = await bStacked(pair, aEntry(pair, "Evaluation"));
+  assert.deepEqual(await queued(pair), [
+    [pair.aTicket, "Evaluation"],
+    [pair.b.ticket, "Pending"],
+  ]);
+  const stack = await bStacked(pair);
 
   assert.deepEqual(stack.beneath, [
     { ticket: pair.aTicket, commit: pair.aCommit },
@@ -340,15 +487,17 @@ test("B evaluates over a stack holding A, and once A's evaluation fails B is re-
     `UPDATE ticket_projection SET phase='Work' WHERE tenant=$1 AND project=$2 AND ticket=$3`,
     [...keysOf(pair.b, pair.aTicket)],
   );
-  await rig.harness.query(
-    `DELETE FROM finalization_request WHERE tenant=$1 AND project=$2 AND request=$3`,
-    [pair.b.partition.tenant, pair.b.partition.project, pair.aRequest],
+  await aReworked(pair, "flow-fails");
+  assert.equal(
+    await rankOf(pair.b, pair.aTicket),
+    null,
+    "A's rank is released",
   );
-  const standing = await bStanding(pair, aEntry(pair, "Work"));
+  const standing = await bStanding(pair);
   assert.equal(standing.stands, false, "B's stack died with A's evaluation");
   assert.deepEqual(
-    (await queueOf(pair, undefined)).map((entry) => entry.ticket),
-    [pair.b.ticket],
+    await queued(pair),
+    [[pair.b.ticket, "Pending"]],
     "B is the front of its queue once A's rank is released",
   );
 
@@ -366,8 +515,8 @@ test("B evaluates over a stack holding A, and once A's evaluation fails B is re-
   );
   assert.equal(await rankOf(pair.b, pair.b.ticket), rank, "B keeps its rank");
   assert.deepEqual(
-    (await queueOf(pair, undefined)).map((entry) => entry.ticket),
-    [pair.b.ticket],
+    await queued(pair),
+    [[pair.b.ticket, "Pending"]],
     "and the front",
   );
 });
