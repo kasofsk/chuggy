@@ -1,13 +1,13 @@
 /**
  * The trains an epic's graph draws its work in motion with, found by setting
- * one read of the graph beside the read before it.
+ * each read of the graph beside the reads before it.
  *
  * A train rests on every member with a run under way. A member whose run
  * began since the read before has one that emerges from its card, unless a
- * dependency of it finished in the same span: then the train leaves that
- * dependency's card, travels the connector between them along its curve, and
- * enters the member's. The first read has nothing before it, so its trains
- * only rest.
+ * dependency of it finished within the latest reads: then the train leaves
+ * that dependency's card, travels the connector between them along its curve,
+ * and enters the member's. The first read has nothing before it, so its
+ * trains only rest.
  *
  * Each phase lasts its own span, and where a train stands at a moment is
  * decided here from how long it has been moving, so a reader who takes no
@@ -54,33 +54,75 @@ export function epicTrainsReadSame(
   return same(left.running, right.running) && same(left.done, right.done);
 }
 
-/** Whether a ticket's run ended, or it came to be Done, between two reads. */
-function epicTrainsFinished(
-  previous: EpicTrainsRead,
-  next: EpicTrainsRead,
-  ticket: number,
-): boolean {
-  return (
-    (previous.running.includes(ticket) && !next.running.includes(ticket)) ||
-    (!previous.done.includes(ticket) && next.done.includes(ticket))
-  );
+/** How many of the latest reads, the one a dependent starts in counted, a
+ * dependency's finish still sends a train to it from: a ticket leaves its run, comes to be Done and has its
+ * dependent dispatched in reads of their own, and other tickets' moves fall
+ * between them. */
+export const epicTrainsFinishedReadsMax = 8;
+
+/** The trains the reads so far draw, and what they were found from. */
+export interface EpicTrainsSeen {
+  readonly read: EpicTrainsRead;
+  readonly trains: readonly EpicTrain[];
+  /** The tickets that finished in each of the latest reads, newest first,
+   * no more than `epicTrainsFinishedReadsMax` of them. */
+  readonly finished: readonly (readonly number[])[];
 }
 
-/** One train for each member with a run under way, by what it was doing in
- * the read before. */
-export function epicTrainsOf(
-  previous: EpicTrainsRead | undefined,
+/** The ticket a train comes to rest on, which is what it is. */
+export function epicTrainTicket(train: EpicTrain): number {
+  return train.train === "Relaying" ? train.to : train.ticket;
+}
+
+/** The first read has nothing before it, so its trains only rest. */
+export function epicTrainsSeenFirst(read: EpicTrainsRead): EpicTrainsSeen {
+  return {
+    read,
+    trains: read.running.map((ticket) => ({ train: "Resting", ticket })),
+    finished: [],
+  };
+}
+
+/** The tickets whose run ended, or that came to be Done, between two reads. */
+function epicTrainsSeenFinished(
+  previous: EpicTrainsRead,
+  next: EpicTrainsRead,
+): readonly number[] {
+  const left = previous.running.filter(
+    (ticket) => !next.running.includes(ticket),
+  );
+  const done = next.done.filter((ticket) => !previous.done.includes(ticket));
+  return [...new Set([...left, ...done])].sort((a, b) => a - b);
+}
+
+/** The trains a read draws after the reads seen so far. A member still
+ * running keeps the train it had, so a read that changes nothing of it
+ * restarts nothing. A member whose run began has its train sent along the
+ * connector from the lowest numbered dependency that finished within the
+ * window and is not running again, and emerge from its own card where none
+ * did. */
+export function epicTrainsSeenNext(
+  seen: EpicTrainsSeen,
   next: EpicTrainsRead,
   connectors: readonly Pick<EpicGraphConnector, "from" | "to">[],
-): readonly EpicTrain[] {
-  return next.running.map((ticket): EpicTrain => {
-    if (previous === undefined || previous.running.includes(ticket))
-      return { train: "Resting", ticket };
+): EpicTrainsSeen {
+  const finished = [
+    epicTrainsSeenFinished(seen.read, next),
+    ...seen.finished,
+  ].slice(0, epicTrainsFinishedReadsMax);
+  const recent = new Set(finished.flat());
+  const trains = next.running.map((ticket): EpicTrain => {
+    const kept = seen.read.running.includes(ticket)
+      ? seen.trains.find((train) => epicTrainTicket(train) === ticket)
+      : undefined;
+    if (kept !== undefined) return kept;
+    if (seen.read.running.includes(ticket)) return { train: "Resting", ticket };
     const from = connectors
       .filter(
         (connector) =>
           connector.to === ticket &&
-          epicTrainsFinished(previous, next, connector.from),
+          recent.has(connector.from) &&
+          !next.running.includes(connector.from),
       )
       .map((connector) => connector.from)
       .sort((left, right) => left - right)[0];
@@ -88,6 +130,7 @@ export function epicTrainsOf(
       ? { train: "Emerging", ticket }
       : { train: "Relaying", from, to: ticket };
   });
+  return { read: next, trains, finished };
 }
 
 export type EpicTrainPhase =

@@ -1,8 +1,9 @@
 /**
  * A project's epics: a search, a visibility filter and a sort, each the
  * address's so a link holds the view, and one row an epic with its status,
- * how much of it is done and where its tickets stand. Each page of rows is read under its own cursor, and
- * "Show more" mounts the next, so a page already read is not read again.
+ * how much of it is done and where its tickets stand. Each page of rows is
+ * read under its own cursor, and "Show more" mounts the next, so a page
+ * already read is not read again.
  */
 
 import { Link, useNavigate, useParams } from "@tanstack/react-router";

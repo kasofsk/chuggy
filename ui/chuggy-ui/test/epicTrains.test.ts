@@ -1,5 +1,5 @@
 /**
- * The trains on an epic's graph: found by setting a read beside the one
+ * The trains on an epic's graph: found by setting a read beside the ones
  * before, each phase lasting its own span, a travelling train on its
  * connector's curve, and every train at rest where no motion is drawn.
  */
@@ -18,11 +18,16 @@ import {
   epicTrainPhaseAt,
   epicTrainPose,
   epicTrainRestingAt,
-  epicTrainsOf,
+  epicTrainsFinishedReadsMax,
   epicTrainsReadSame,
+  epicTrainsSeenFirst,
+  epicTrainsSeenNext,
   epicTrainTravellingMs,
 } from "../app/core/epicTrains.ts";
-import type { EpicTrainGround } from "../app/core/epicTrains.ts";
+import type {
+  EpicTrainGround,
+  EpicTrainsSeen,
+} from "../app/core/epicTrains.ts";
 
 const drawn = epicGraphDrawn(
   {
@@ -53,9 +58,20 @@ function restingOn(ticket: number) {
   return epicTrainRestingAt(card);
 }
 
+function seenAfter(
+  ...reads: readonly { running: number[]; done: number[] }[]
+): EpicTrainsSeen {
+  const [first, ...rest] = reads;
+  if (first === undefined) throw new Error("a read is given");
+  return rest.reduce(
+    (seen, read) => epicTrainsSeenNext(seen, read, drawn.connectors),
+    epicTrainsSeenFirst(first),
+  );
+}
+
 test("the first read only places a resting train on every member with a run under way", () => {
   expect(
-    epicTrainsOf(undefined, { running: [1, 3], done: [] }, drawn.connectors),
+    epicTrainsSeenFirst({ running: [1, 3], done: [] }).trains,
   ).toStrictEqual([
     { train: "Resting", ticket: 1 },
     { train: "Resting", ticket: 3 },
@@ -63,34 +79,71 @@ test("the first read only places a resting train on every member with a run unde
 });
 
 test("a member whose run began since the read before has a train emerge, unless a dependency of it finished", () => {
-  const before = { running: [], done: [] };
   expect(
-    epicTrainsOf(before, { running: [1], done: [] }, drawn.connectors),
+    seenAfter({ running: [], done: [] }, { running: [1], done: [] }).trains,
   ).toStrictEqual([{ train: "Emerging", ticket: 1 }]);
   expect(
-    epicTrainsOf(
-      { running: [1], done: [] },
-      { running: [1], done: [] },
-      drawn.connectors,
-    ),
+    seenAfter({ running: [1], done: [] }, { running: [1], done: [] }).trains,
   ).toStrictEqual([{ train: "Resting", ticket: 1 }]);
 });
 
 test("a dependency finishing as its dependent starts sends its train along the connector between them", () => {
   expect(
-    epicTrainsOf(
-      { running: [1], done: [] },
-      { running: [2], done: [1] },
-      drawn.connectors,
-    ),
+    seenAfter({ running: [1], done: [] }, { running: [2], done: [1] }).trains,
   ).toStrictEqual([{ train: "Relaying", from: 1, to: 2 }]);
   expect(
-    epicTrainsOf(
-      { running: [], done: [] },
-      { running: [3], done: [1] },
-      drawn.connectors,
-    ),
+    seenAfter({ running: [], done: [] }, { running: [3], done: [1] }).trains,
   ).toStrictEqual([{ train: "Relaying", from: 1, to: 3 }]);
+});
+
+test("a dependency that finished in reads of its own before its dependent starts still sends its train", () => {
+  const seen = seenAfter(
+    { running: [1], done: [] },
+    { running: [], done: [] },
+    { running: [], done: [1] },
+    { running: [2], done: [1] },
+  );
+  expect(seen.trains).toStrictEqual([{ train: "Relaying", from: 1, to: 2 }]);
+});
+
+test("a dependency's finish sends no train once it is further back than the window of reads, the one its dependent starts in included", () => {
+  const finishing = [
+    { running: [1], done: [] },
+    { running: [], done: [1] },
+  ];
+  const between = Array.from(
+    { length: epicTrainsFinishedReadsMax - 1 },
+    (_, at) => ({ running: [], done: [1, 10 + at] }),
+  );
+  const starting = {
+    running: [2],
+    done: [1, ...between.map((read) => read.done[1] ?? 0)],
+  };
+  expect(seenAfter(...finishing, ...between, starting).trains).toStrictEqual([
+    { train: "Emerging", ticket: 2 },
+  ]);
+  const within = between.slice(1);
+  expect(
+    seenAfter(...finishing, ...within, {
+      running: [2],
+      done: [1, ...within.map((read) => read.done[1] ?? 0)],
+    }).trains,
+  ).toStrictEqual([{ train: "Relaying", from: 1, to: 2 }]);
+});
+
+test("a read that leaves a member running keeps the very train it had", () => {
+  const relayed = seenAfter(
+    { running: [1], done: [] },
+    { running: [2], done: [1] },
+  );
+  const [train] = relayed.trains;
+  const after = epicTrainsSeenNext(
+    relayed,
+    { running: [2, 3], done: [1] },
+    drawn.connectors,
+  );
+  expect(after.trains[0]).toBe(train);
+  expect(after.trains[1]).toStrictEqual({ train: "Relaying", from: 1, to: 3 });
 });
 
 test("two reads draw the same trains when the same members run and the same tickets are done", () => {

@@ -249,33 +249,66 @@ test("a running member carries a resting train, hidden and never in the way of a
   expect(train?.dataset["phase"]).toBe("Resting");
 });
 
-async function relayed(motion: boolean): Promise<SVGGElement | null> {
+/** Each read of the project's tickets a ticket's life makes in turn: #4's
+ * run ends as it enters Finalization, it comes to be Done, #5 is Ready, and
+ * then #5's run begins. */
+const relayedReads = [
+  [
+    epicRow(4, "Finalization", { status: "Terminal", cycle: 1 }),
+    epicRow(5, "Pending"),
+  ],
+  [epicRow(4, "Done", { status: "Terminal", cycle: 1 }), epicRow(5, "Pending")],
+  [epicRow(4, "Done", { status: "Terminal", cycle: 1 }), epicRow(5, "Ready")],
+  [
+    epicRow(4, "Done", { status: "Terminal", cycle: 1 }),
+    epicRow(5, "Work", { status: "Running", cycle: 1 }),
+  ],
+];
+
+async function relayed(
+  motion: boolean,
+): Promise<{ train: SVGGElement | null; client: QueryClient }> {
   epicServing.rows = [
     epicRow(4, "Work", { status: "Running", cycle: 1 }),
     epicRow(5, "Pending"),
   ];
   const { client } = await epicPageDrawn(abilitiesNone, { motion });
   const graphic = await canvas();
-  epicServing.rows = [
-    epicRow(4, "Done", { status: "Terminal", cycle: 1 }),
-    epicRow(5, "Work", { status: "Running", cycle: 1 }),
-  ];
-  await client.refetchQueries();
-  await settled();
-  await settled();
-  return graphic.querySelector<SVGGElement>(".epic-train");
+  for (const rows of relayedReads) {
+    epicServing.rows = rows;
+    await client.refetchQueries();
+    await settled();
+    await settled();
+  }
+  return { train: graphic.querySelector<SVGGElement>(".epic-train"), client };
 }
 
 test("a dependency finishing as its dependent starts sends a train along the connector between them", async () => {
   vi.stubGlobal("requestAnimationFrame", () => 0);
   vi.stubGlobal("cancelAnimationFrame", () => undefined);
-  const train = await relayed(true);
+  const { train } = await relayed(true);
+  expect(train?.dataset["train"]).toBe("Relaying");
+  expect(train?.dataset["phase"]).toBe("Departing");
+});
+
+test("a read that leaves a relaying train's member running keeps the same train moving", async () => {
+  vi.stubGlobal("requestAnimationFrame", () => 0);
+  vi.stubGlobal("cancelAnimationFrame", () => undefined);
+  const { train, client } = await relayed(true);
+  epicServing.rows = [
+    epicRow(2, "Done", { status: "Terminal", cycle: 1 }),
+    ...(relayedReads.at(-1) ?? []),
+  ];
+  await client.refetchQueries();
+  await settled();
+  await settled();
+  expect(train?.isConnected).toBe(true);
   expect(train?.dataset["train"]).toBe("Relaying");
   expect(train?.dataset["phase"]).toBe("Departing");
 });
 
 test("a reader who takes no motion is drawn the relayed train already at rest on its dependent", async () => {
-  const train = await relayed(false);
+  const { train } = await relayed(false);
   expect(train?.dataset["train"]).toBe("Relaying");
   expect(train?.dataset["phase"]).toBe("Resting");
 });

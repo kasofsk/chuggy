@@ -4,9 +4,8 @@
  * stands over the link's corner rather than inside it, drawn as the ticket
  * list draws a row's, so a ready member's dispatch is pressed without leaving
  * the page, with its follow drawn on the card, and what a blocked one waits on
- * is named. A ticket outside the epic
- * is a smaller, dashed card, so which tickets the epic holds does not rest on
- * hue alone.
+ * is named. A ticket outside the epic is a smaller, dashed card, so which
+ * tickets the epic holds does not rest on hue alone.
  *
  * The page hands these to the canvas, with the rows they are drawn against,
  * so the canvas's own chunk carries none of the ticket list's modules.

@@ -232,7 +232,10 @@ function EpicGraphControls(props: {
   );
 }
 
-/** The run each member has under way, and what the trains are found from. */
+/** The run each member has under way, and what the trains are found from:
+ * which members run and which tickets are Done, both from the ticket list's
+ * rows where they hold the ticket, so a ticket's run ending and its coming to
+ * be Done are seen in the order they happened. */
 function useEpicGraphHeld(held: EpicPageHeld, drawn: EpicGraphDrawn) {
   const tickets = readValue(held.rowsState)?.tickets;
   return useMemo(() => {
@@ -252,7 +255,11 @@ function useEpicGraphHeld(held: EpicPageHeld, drawn: EpicGraphDrawn) {
         .map((card) => card.node.ticket)
         .sort((left, right) => left - right),
       done: drawn.cards
-        .filter((card) => card.node.phase === "Done")
+        .filter(
+          (card) =>
+            (byTicket.get(card.node.ticket)?.phase ?? card.node.phase) ===
+            "Done",
+        )
         .map((card) => card.node.ticket)
         .sort((left, right) => left - right),
     };
