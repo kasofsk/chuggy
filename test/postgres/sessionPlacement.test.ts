@@ -340,7 +340,7 @@ test("a member's personal runner is no runner of theirs or of the project's, how
 test("only the API writes a placement, the API and the selector resolve one, and only the scheduler publishes a routing", async () => {
   const partition = await postgresHarnessProject(harness.store, "privileges");
   const project = `'${partition.tenant}','${partition.project}'`;
-  const door = `SELECT ${sessionPlacementSetFunction}(${project},'Pool','Pool','Member','someone')`;
+  const door = `SELECT ${sessionPlacementSetFunction}(${project},'Pool','Pool',NULL,'Member','someone')`;
   const reads = [
     [
       sessionRouteFunction,

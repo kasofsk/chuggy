@@ -10,6 +10,7 @@ import type { AccessTokenSource } from "../adapters/http/accessToken.ts";
 import { clientCredentialsTokenSource } from "../adapters/http/clientCredentials.ts";
 import { selectorContextHttp } from "../adapters/http/selectorContext.ts";
 import { asPrincipal, type Principal } from "../interpreter/nativeWeb.ts";
+import type { LeadPolicyConfig } from "../interpreter/leadPolicyHost.ts";
 import { checkedProjectAccessSettings } from "../interpreter/projectAccess.ts";
 import {
   selectorNativeSource,
@@ -25,7 +26,12 @@ import {
   type ServiceStopResult,
 } from "../interpreter/serviceRuntime.ts";
 import {
+  leadAutoCompactWindowTokensMax,
+  leadAutoCompactWindowTokensMin,
+  leadTurnTokensMax,
+  sessionEfforts,
   sessionIdentityCharsMax,
+  sessionModelSchema,
   threadWakesPerPassMax,
 } from "../contract/http.ts";
 import {
@@ -69,6 +75,24 @@ const credential = z
   })
   .strict()
   .refine((value) => value.mintCooldownMs < value.refreshMarginMs);
+/**
+ * The subsidized lead a deployment offers, each field held to the bounds its
+ * counterpart for every lead already has: the lead's credential slot, a
+ * project's lead model, effort and compaction window, a decision's input
+ * budget, and the turn spend past which a lead is replaced.
+ */
+const subsidizedLead = z
+  .object({
+    credentialSlot: z.string().min(1).max(sessionIdentityCharsMax),
+    model: sessionModelSchema,
+    effort: z.enum(sessionEfforts),
+    autoCompactWindow: positiveInteger
+      .min(leadAutoCompactWindowTokensMin)
+      .max(leadAutoCompactWindowTokensMax),
+    inputBytesPerDecision: positiveInteger.safe(),
+    turnTokensMax: positiveInteger.max(leadTurnTokensMax),
+  })
+  .strict();
 const configurationSchema = z
   .object({
     database: commandDatabaseSchema,
@@ -103,6 +127,7 @@ const configurationSchema = z
         credentialSlot: z.string().min(1).max(sessionIdentityCharsMax),
       })
       .strict(),
+    subsidizedLead: subsidizedLead.optional(),
   })
   .strict();
 
@@ -121,6 +146,7 @@ export interface SelectorCommandConfig {
   readonly identity: { readonly principal: string; readonly instance: string };
   readonly source: SelectorSourceCommandConfig;
   readonly lead: z.infer<typeof configurationSchema>["lead"];
+  readonly subsidizedLead?: z.infer<typeof subsidizedLead>;
 }
 
 export type SelectorCommandResult =
@@ -188,6 +214,9 @@ export function selectorConfiguration(
       credential: { ...data.source.credential, clientSecret },
     },
     lead: data.lead,
+    ...(data.subsidizedLead === undefined
+      ? {}
+      : { subsidizedLead: data.subsidizedLead }),
   };
 }
 
@@ -265,6 +294,21 @@ export function selectorSourceAccessToken(
   });
 }
 
+/** The lead host's configuration, which carries the subsidized lead the process publishes as it starts. */
+export function selectorLeadPolicy(
+  config: SelectorCommandConfig,
+): LeadPolicyConfig {
+  return {
+    pollIntervalMs: config.lead.pollIntervalMs,
+    implementationRevision: config.identity.instance,
+    principal: config.identity.principal,
+    credentialSlot: config.lead.credentialSlot,
+    ...(config.subsidizedLead === undefined
+      ? {}
+      : { subsidizedLead: config.subsidizedLead }),
+  };
+}
+
 export function selectorCommandRoot(
   config: SelectorCommandConfig,
 ): ServiceRuntime {
@@ -308,12 +352,7 @@ export function selectorCommandRoot(
         after: (milliseconds, signal) => deadline(milliseconds, signal),
       },
       sessions: leadSessionMint(),
-      policy: {
-        pollIntervalMs: config.lead.pollIntervalMs,
-        implementationRevision: config.identity.instance,
-        principal: config.identity.principal,
-        credentialSlot: config.lead.credentialSlot,
-      },
+      policy: selectorLeadPolicy(config),
       controlDeadlineMs: config.lead.controlDeadlineMs,
     },
     selectorIdentities(config.identity.instance),

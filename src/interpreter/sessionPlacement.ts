@@ -2,11 +2,14 @@
 
 import {
   leadAdmissionRefusals,
+  leadOfferings,
   type LeadAdmissionRefusal,
+  type LeadOffering,
   type PlacementRoute,
   type PlacementRouteSource,
   type SessionRunnerStanding,
 } from "../contract/rosters.ts";
+import type { SessionEffort } from "../contract/http.ts";
 import { memberScopeReserved, type SessionKind } from "./agentSession.ts";
 import type { Authority } from "./operationInbox.ts";
 import {
@@ -112,31 +115,69 @@ export interface LeadRouteReads extends Pick<SessionRouteReads, "route"> {
   leadRunners(partition: Partition): Promise<LeadRunnerStanding>;
 }
 
+/**
+ * What a deployment's subsidized lead runs on: a credential slot of its own, a
+ * pinned model and effort, and the bounds one of its decisions is held to.
+ */
+export interface SubsidizedLeadProfile {
+  readonly credentialSlot: string;
+  readonly model: string;
+  readonly effort: SessionEffort;
+  readonly autoCompactWindow: number;
+  readonly inputBytesPerDecision: number;
+  readonly turnTokensMax: number;
+}
+
+/** A session placement as an administrator writes it: each kind's route, and the lead's offering where it names one. */
+export interface SessionPlacementChoice extends SessionRoutes {
+  readonly leadOffering?: LeadOffering;
+}
+
 export interface SessionPlacementStore extends SessionRouteReads {
+  /** The offering the project's lead resolves to, which is `Own` wherever its stored choice does not hold. */
+  leadOffering(partition: Partition): Promise<LeadOffering>;
+  /** Whether the deployment publishes a subsidized lead. */
+  subsidizedLeadOffered(): Promise<boolean>;
   write(
     partition: Partition,
-    placement: SessionRoutes,
+    placement: SessionPlacementChoice,
     authority: Authority,
   ): Promise<PlacementWrite>;
 }
 
-/** Each kind's route and where it came from, the routes this caller may choose, and the runners each would run on. */
+/** Each kind's route and where it came from, the lead's offering and the ones the deployment admits, the routes this caller may choose, and the runners each would run on. */
 export interface SessionPlacementView {
   readonly routes: Readonly<Record<SessionRouteKind, SessionRouteResolved>>;
+  readonly leadOffering: LeadOffering;
+  readonly leadOfferings: readonly LeadOffering[];
   readonly choices: readonly PlacementRoute[];
   readonly runners: SessionRunners;
 }
 
-export type SessionPlacementRead = PlacementRead<SessionPlacementView>;
-export type SessionPlacementWritten = PlacementWritten<SessionPlacementView>;
+/** What a write naming an offering its lead's route does not admit on this deployment is refused with. */
+export type SessionPlacementRefusal = "LeadOfferingNotAdmitted";
 
-export type SessionPlacementAdministration = PlacementAdministration<
-  SessionRoutes,
-  SessionPlacementView
+export type SessionPlacementRead = PlacementRead<SessionPlacementView>;
+export type SessionPlacementWritten = PlacementWritten<
+  SessionPlacementView,
+  SessionPlacementRefusal
 >;
 
+export type SessionPlacementAdministration = PlacementAdministration<
+  SessionPlacementChoice,
+  SessionPlacementView,
+  SessionPlacementWritten
+>;
+
+/** The offerings the deployment admits a lead: `Subsidized` only while it publishes the profile. */
+export function sessionPlacementLeadOfferings(
+  offered: boolean,
+): readonly LeadOffering[] {
+  return leadOfferings.filter((each) => offered || each !== "Subsidized");
+}
+
 async function sessionPlacementView(
-  store: SessionRouteReads,
+  store: SessionPlacementStore,
   principal: Principal,
   partition: Partition,
   choices: readonly PlacementRoute[],
@@ -146,9 +187,40 @@ async function sessionPlacementView(
       Thread: await store.route(partition, "Thread"),
       Lead: await store.route(partition, "Lead"),
     },
+    leadOffering: await store.leadOffering(partition),
+    leadOfferings: sessionPlacementLeadOfferings(
+      await store.subsidizedLeadOffered(),
+    ),
     choices,
     runners: await store.runners(partition, principal),
   };
+}
+
+/**
+ * The routes a write is held to the hosted grant for, or its refusal: a
+ * subsidized lead needs no grant, and is admitted only in cluster while the
+ * profile is published. An offering not named is the one the lead resolves to
+ * while it stays in cluster, which is the one the store keeps.
+ */
+async function sessionPlacementHeld(
+  store: SessionPlacementStore,
+  partition: Partition,
+  placement: SessionPlacementChoice,
+): Promise<readonly PlacementRoute[] | SessionPlacementRefusal> {
+  const offering =
+    placement.leadOffering ??
+    (placement.Lead === "InCluster"
+      ? await store.leadOffering(partition)
+      : "Own");
+  switch (offering) {
+    case "Own":
+      return [placement.Thread, placement.Lead];
+    case "Subsidized":
+      return placement.Lead === "InCluster" &&
+        (await store.subsidizedLeadOffered())
+        ? [placement.Thread]
+        : "LeadOfferingNotAdmitted";
+  }
 }
 
 export function sessionPlacementAdministration(
@@ -170,11 +242,11 @@ export function sessionPlacementAdministration(
       };
     },
     write: (principal, partition, placement) =>
-      placementWritten(
+      placementWritten<SessionPlacementView, SessionPlacementRefusal>(
         access,
         principal,
         partition,
-        [placement.Thread, placement.Lead],
+        () => sessionPlacementHeld(store, partition, placement),
         (authority) => store.write(partition, placement, authority),
         (hosted) =>
           sessionPlacementView(

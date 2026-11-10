@@ -88,11 +88,11 @@ function executionPlacementWrite(
   partition: Partition,
   placement: ExecutionRoutes,
 ): Promise<ExecutionPlacementWritten> {
-  return placementWritten(
+  return placementWritten<ExecutionPlacementView>(
     access,
     principal,
     partition,
-    [placement.Work, placement.Evaluation],
+    () => Promise.resolve([placement.Work, placement.Evaluation]),
     (authority) => store.write(partition, placement, authority),
     async (hosted) =>
       executionPlacementView(await store.standing(partition), true, hosted),
