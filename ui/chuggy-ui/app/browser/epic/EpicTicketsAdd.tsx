@@ -26,7 +26,7 @@ import { Checkbox } from "../ui/Checkbox.tsx";
 import { Dialog } from "../ui/Dialog.tsx";
 import { EmptyState } from "../ui/EmptyState.tsx";
 import { Input } from "../ui/Input.tsx";
-import type { EpicTicketsWriting } from "./EpicTicketsTab.tsx";
+import type { EpicTicketsWriting } from "./epicTicketsWriting.ts";
 
 /** What was typed, once it has stood long enough to be asked. */
 function useEpicTicketsAddSearch(typed: string): string | undefined {

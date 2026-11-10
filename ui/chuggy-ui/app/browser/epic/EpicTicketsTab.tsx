@@ -10,21 +10,17 @@
  * read; one refused as stale reads the epic again.
  */
 
-import { useQueryClient } from "@tanstack/react-query";
 import { DropdownMenu } from "radix-ui";
 import { useState } from "react";
 import type { ReactNode } from "react";
 
-import type { EpicWriteRequest } from "../../../../../src/contract/epics.ts";
 import type { PartitionIdentity } from "../../../../../src/contract/http.ts";
 import { useCopyText } from "../../copy/CopyProvider.tsx";
 import type { Copy } from "../../core/copy.ts";
-import { epicsInvalidated } from "../../core/epics.ts";
 import {
   epicTicketsGrouped,
   epicTicketsMembersOf,
   epicTicketsRemoved,
-  epicTicketsWrite,
 } from "../../core/epicTickets.ts";
 import type {
   EpicTicketsGroup,
@@ -33,7 +29,7 @@ import type {
 import { projectTableRow } from "../../core/projectTableRows.ts";
 import { ticketStateLabelOf } from "../../core/ticketHeader.ts";
 import type { TicketStateStanding } from "../../core/ticketHeader.ts";
-import { ConsoleWriteRefusedWords, useConsoleWrite } from "../consoleWrite.tsx";
+import { ConsoleWriteRefusedWords } from "../consoleWrite.tsx";
 import { PanelUnready } from "../DataPanel.tsx";
 import { TicketListState } from "../ProjectTable.tsx";
 import { TicketRowDispatchScope } from "../TicketActions.tsx";
@@ -49,30 +45,10 @@ import { Input } from "../ui/Input.tsx";
 import { MenuContent, menuItemClassName } from "../ui/Menu.tsx";
 import { EpicTicketsAdd } from "./EpicTicketsAdd.tsx";
 import { useEpicPageHeld } from "./EpicPageHeld.tsx";
+import { useEpicTicketsWriting } from "./epicTicketsWriting.ts";
 
 import "../ProjectTable.css";
 import "./epicTickets.css";
-
-function useEpicTicketsWriting(partition: PartitionIdentity) {
-  const client = useQueryClient();
-  const writing = useConsoleWrite(epicTicketsWrite(partition), {
-    drawn: true,
-  });
-  /** Sends a revision, and reads the epic again where it was stale. */
-  const send = (request: EpicWriteRequest, onSent?: () => void): void => {
-    writing.mutate(request, {
-      onSuccess: () => onSent?.(),
-      onError: (refused) => {
-        const failure = refused.failure;
-        if (failure?.outcome === "Conflict" && failure.code === "StaleRevision")
-          void epicsInvalidated(client, partition);
-      },
-    });
-  };
-  return { writing, send };
-}
-
-export type EpicTicketsWriting = ReturnType<typeof useEpicTicketsWriting>;
 
 /** The standing a group's head is drawn by: Running is drawn as work is. */
 const epicTicketsGroupStandings: Readonly<
