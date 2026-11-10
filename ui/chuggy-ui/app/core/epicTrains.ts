@@ -95,11 +95,11 @@ function epicTrainsSeenFinished(
   return [...new Set([...left, ...done])].sort((a, b) => a - b);
 }
 
-/** The trains a read draws after the reads seen so far. A member still
+/** The trains a read draws after the reads seen so far: a member still
  * running keeps the train it had, so a read that changes nothing of it
  * restarts nothing. A member whose run began has its train sent along the
  * connector from the lowest numbered dependency that finished within the
- * window and is not running again, and emerge from its own card where none
+ * window and is not running again, or emerge from its own card where none
  * did. */
 export function epicTrainsSeenNext(
   seen: EpicTrainsSeen,
