@@ -73,7 +73,11 @@ test("142 leaves a default an owner wrote as they wrote it", async () => {
 
     const ownedRows = async (): Promise<readonly unknown[]> =>
       (
-        await subject.query(
+        await subject.query<{
+          kept: string;
+          revision: number;
+          base_prompt: string;
+        }>(
           `SELECT 'settings' AS kept,revision::int,base_prompt
              FROM selector_runtime_settings
            UNION ALL
