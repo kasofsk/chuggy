@@ -188,6 +188,20 @@ export interface TicketCopy {
     readonly total: unknown;
     readonly holder: unknown;
   };
+  readonly "ticket-queue-place-cut": {
+    readonly position: unknown;
+    readonly total: unknown;
+  };
+  readonly "ticket-queue-holding-cut": {
+    readonly holder: unknown;
+    readonly position: unknown;
+    readonly total: unknown;
+  };
+  readonly "ticket-queue-waiting-cut": {
+    readonly position: unknown;
+    readonly total: unknown;
+    readonly holder: unknown;
+  };
   readonly "ticket-nothing-has-run": Record<never, never>;
   readonly "ticket-run-nav-label": Record<never, never>;
   readonly "ticket-run-view-summary": Record<never, never>;

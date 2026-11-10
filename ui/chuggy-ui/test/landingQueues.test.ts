@@ -1,7 +1,7 @@
 /**
  * A ticket's place in its project's landing queues: the holder first, a waiter
  * at its position, a ticket in no queue at none, and each queue of a project
- * counted on its own.
+ * counted on its own, and a read cut by rank giving each total as a least.
  */
 
 import { expect, test } from "vitest";
@@ -29,6 +29,7 @@ test("the holder is first of its queue's total, and holds it", () => {
     holding: true,
     position: 1,
     total: 3,
+    truncated: false,
     holder: 4,
   });
 });
@@ -38,6 +39,7 @@ test("a waiter is at its rank counted from one with the holder first, and names 
     holding: false,
     position: 3,
     total: 3,
+    truncated: false,
     holder: 4,
   });
 });
@@ -55,17 +57,20 @@ test("two queues of one project are each counted on their own", () => {
     holding: true,
     position: 1,
     total: 2,
+    truncated: false,
     holder: 7,
   });
   expect(landingQueuePlaceOf(queues, 3)).toStrictEqual({
     holding: false,
     position: 2,
     total: 2,
+    truncated: false,
     holder: 7,
   });
   expect(landingQueuePlaceOf(queues, 9)).toMatchObject({
     position: 2,
     total: 3,
+    truncated: false,
     holder: 4,
   });
 });
@@ -86,4 +91,25 @@ test("the holder is toned and worded as landing next, a waiter as waiting", () =
     id: "ticket-queue-waiting",
     args: { position: "3", total: "3", holder: "4" },
   });
+});
+
+test("a read cut by rank gives each total as the least its queue holds, in figure and words", () => {
+  const cut: LandingQueuesResponse = { ...queues, truncated: true };
+  const holder = landingQueuePlaceOf(cut, 7);
+  const waiter = landingQueuePlaceOf(cut, 9);
+  if (holder === undefined || waiter === undefined)
+    throw new Error("both are queued");
+  expect(waiter).toStrictEqual({
+    holding: false,
+    position: 2,
+    total: 3,
+    truncated: true,
+    holder: 4,
+  });
+  expect(landingQueuePlaceFigure(waiter)).toStrictEqual({
+    id: "ticket-queue-place-cut",
+    args: { position: "2", total: "3" },
+  });
+  expect(landingQueuePlaceWords(waiter).id).toBe("ticket-queue-waiting-cut");
+  expect(landingQueuePlaceWords(holder).id).toBe("ticket-queue-holding-cut");
 });

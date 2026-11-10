@@ -8,9 +8,11 @@
 import { QueryClient } from "@tanstack/react-query";
 import { cleanup, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import type { QueryStatus } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
 import type { PartitionIdentity } from "../../../src/contract/http.ts";
+import { landingQueuesQuery } from "../app/core/ticketQueries.ts";
 import { renderCopied } from "./copied.tsx";
 import { resizeObserverStubbed } from "./resizeObserver.ts";
 import {
@@ -48,7 +50,12 @@ afterEach(() => {
 
 const repository = "https://github.com/acme/widgets.git";
 
-async function pageDrawn(queues: () => Response): Promise<HTMLElement> {
+/** The page drawn once its queue read has come to `status`, so a case
+ * asserting what the read drew asserts it over an answered read. */
+async function pageDrawn(
+  queues: () => Response,
+  status: QueryStatus,
+): Promise<HTMLElement> {
   const api = apiDouble({
     operation: { operation: "op-one", state: "Pending" },
     route: (url) => {
@@ -68,17 +75,24 @@ async function pageDrawn(queues: () => Response): Promise<HTMLElement> {
     queues,
   });
   vi.stubGlobal("fetch", api.fetch);
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
   renderCopied(
     <ScreenHarness
       partition={atlas}
-      client={
-        new QueryClient({ defaultOptions: { queries: { retry: false } } })
-      }
+      client={client}
       transport={openedStream().ports.fetch}
     >
       <TicketPageEveryTab />
     </ScreenHarness>,
   );
+  await settled();
+  await vi.waitFor(() => {
+    expect(
+      client.getQueryState(landingQueuesQuery(atlas).queryKey)?.status,
+    ).toBe(status);
+  });
   await settled();
   const state = document.querySelector<HTMLElement>(
     "header.ticket-header .ticket-header-state",
@@ -88,11 +102,13 @@ async function pageDrawn(queues: () => Response): Promise<HTMLElement> {
 }
 
 test("a queued ticket's header draws its place after its state label's fragment", async () => {
-  const state = await pageDrawn(() =>
-    answer({
-      queues: [{ repository, holder: 8, waiting: [21] }],
-      truncated: false,
-    }),
+  const state = await pageDrawn(
+    () =>
+      answer({
+        queues: [{ repository, holder: 8, waiting: [21] }],
+        truncated: false,
+      }),
+    "success",
   );
   const chip = within(state).getByRole("img", {
     name: "Waiting 2 of 2 to land: #8 holds the target",
@@ -103,11 +119,13 @@ test("a queued ticket's header draws its place after its state label's fragment"
 });
 
 test("a ticket in no queue draws no chip in its header", async () => {
-  const state = await pageDrawn(() =>
-    answer({
-      queues: [{ repository, holder: 8, waiting: [9] }],
-      truncated: false,
-    }),
+  const state = await pageDrawn(
+    () =>
+      answer({
+        queues: [{ repository, holder: 8, waiting: [9] }],
+        truncated: false,
+      }),
+    "success",
   );
   expect(state.querySelector(".landing-queue-chip")).toBeNull();
 });
@@ -117,7 +135,7 @@ test("a queue read that fails draws no chip and leaves the page drawn", async ()
   const state = await pageDrawn(() => {
     asked += 1;
     return answer({ error: { code: "InternalError" } }, 500);
-  });
+  }, "error");
   expect(asked).toBeGreaterThan(0);
   expect(state.querySelector(".landing-queue-chip")).toBeNull();
   expect(screen.getByRole("heading", { level: 1 }).textContent).toContain(

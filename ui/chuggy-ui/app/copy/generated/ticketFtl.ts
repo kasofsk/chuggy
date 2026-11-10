@@ -205,6 +205,9 @@ ticket-dispatch-aria-label = { -dispatch(case: "upper") } { -ticket } #{ $number
 ticket-queue-place = { $position }/{ $total }
 ticket-queue-holding = { -landing(case: "upper", form: "s") } next: #{ $holder } holds the target, { $position } of { $total } in its queue
 ticket-queue-waiting = Waiting { $position } of { $total } to { -landing(form: "base") }: #{ $holder } holds the target
+ticket-queue-place-cut = { $position }/{ $total }+
+ticket-queue-holding-cut = { -landing(case: "upper", form: "s") } next: #{ $holder } holds the target, { $position } of at least { $total } in its queue
+ticket-queue-waiting-cut = Waiting { $position } of at least { $total } to { -landing(form: "base") }: #{ $holder } holds the target
 
 ## The Runs tab, its rail and one run's own page: \`TicketRuns.tsx\`,
 ## \`TicketRunPage.tsx\`.

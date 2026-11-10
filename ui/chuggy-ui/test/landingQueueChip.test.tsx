@@ -2,8 +2,9 @@
  * A ticket's place in its landing queue as its chip draws it: the merge mark
  * and `position/total`, named in words that say a holder lands next and a
  * waiter waits at its place, each naming the ticket that holds the reference;
- * a title rather than a focusable tooltip inside a link; and nothing at all
- * for a ticket in no queue.
+ * a total read from a cut read drawn and named as a least; a title rather
+ * than a focusable tooltip inside a link; and nothing at all for a ticket in
+ * no queue.
  */
 
 import { cleanup, screen } from "@testing-library/react";
@@ -21,7 +22,13 @@ const waiterWords = "Waiting 3 of 3 to land: #4 holds the target";
 test("a holder's chip draws the merge mark and 1/total, and is named as landing next", () => {
   renderCopied(
     <LandingQueueChip
-      place={{ holding: true, position: 1, total: 3, holder: 4 }}
+      place={{
+        holding: true,
+        position: 1,
+        total: 3,
+        truncated: false,
+        holder: 4,
+      }}
     />,
   );
   const chip = screen.getByRole("img", { name: holderWords });
@@ -36,7 +43,13 @@ test("a holder's chip draws the merge mark and 1/total, and is named as landing 
 test("a waiter's chip draws its position of the total, and is named as waiting behind the holder", () => {
   renderCopied(
     <LandingQueueChip
-      place={{ holding: false, position: 3, total: 3, holder: 4 }}
+      place={{
+        holding: false,
+        position: 3,
+        total: 3,
+        truncated: false,
+        holder: 4,
+      }}
     />,
   );
   const chip = screen.getByRole("img", { name: waiterWords });
@@ -45,11 +58,35 @@ test("a waiter's chip draws its position of the total, and is named as waiting b
   expect(chip.className).toContain("pill-queued");
 });
 
+test("a place from a cut read draws its total as a least, and names it so", () => {
+  renderCopied(
+    <LandingQueueChip
+      place={{
+        holding: false,
+        position: 3,
+        total: 3,
+        truncated: true,
+        holder: 4,
+      }}
+    />,
+  );
+  const chip = screen.getByRole("img", {
+    name: "Waiting 3 of at least 3 to land: #4 holds the target",
+  });
+  expect(chip.textContent).toBe("3/3+");
+});
+
 test("inside a link the chip says its words as a title and takes no focus of its own", () => {
   renderCopied(
     <a href="/">
       <LandingQueueChip
-        place={{ holding: false, position: 3, total: 3, holder: 4 }}
+        place={{
+          holding: false,
+          position: 3,
+          total: 3,
+          truncated: false,
+          holder: 4,
+        }}
         inLink
       />
     </a>,

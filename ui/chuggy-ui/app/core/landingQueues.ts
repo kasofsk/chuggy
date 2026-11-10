@@ -4,6 +4,10 @@
  * at most, so the first queue naming it is its only one; a ticket in none,
  * which is every Direct one, has no place.
  *
+ * A READ CUT BY RANK MAY HAVE LEFT WAITERS OUT OF ANY QUEUE IT ANSWERS, so
+ * every total it gives is the least the queue holds, and is worded so. A
+ * ticket ranked after the cut is named by no queue, and so has no place here.
+ *
  * THE RESPONSE'S FIELDS ARE READ HERE AND NOWHERE ELSE, so a field the read
  * renames is one module's change.
  *
@@ -40,6 +44,8 @@ export interface LandingQueuePlace {
   readonly holding: boolean;
   readonly position: number;
   readonly total: number;
+  /** Whether the read was cut, so the queue may hold more than `total`. */
+  readonly truncated: boolean;
   /** The ticket holding the reference, which is this one where it holds it. */
   readonly holder: number;
 }
@@ -57,6 +63,7 @@ export function landingQueuePlaceOf(
       holding: index === 0,
       position: index + 1,
       total: order.length,
+      truncated: queues?.truncated ?? false,
       holder: queue.holder,
     };
   }
@@ -67,10 +74,11 @@ export function landingQueuePlaceTone(place: LandingQueuePlace): Tone {
   return place.holding ? "finalization" : "queued";
 }
 
-/** The place as its chip draws it, `position/total`. */
+/** The place as its chip draws it, `position/total`, the total marked as a
+ * least where the read was cut. */
 export function landingQueuePlaceFigure(place: LandingQueuePlace): Copy {
   return {
-    id: "ticket-queue-place",
+    id: place.truncated ? "ticket-queue-place-cut" : "ticket-queue-place",
     args: { position: String(place.position), total: String(place.total) },
   };
 }
@@ -82,6 +90,10 @@ export function landingQueuePlaceWords(place: LandingQueuePlace): Copy {
     total: String(place.total),
     holder: String(place.holder),
   };
+  if (place.truncated)
+    return place.holding
+      ? { id: "ticket-queue-holding-cut", args }
+      : { id: "ticket-queue-waiting-cut", args };
   return place.holding
     ? { id: "ticket-queue-holding", args }
     : { id: "ticket-queue-waiting", args };
