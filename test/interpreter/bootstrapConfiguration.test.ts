@@ -461,7 +461,7 @@ function briefed(
       ...(publicOrigin === undefined ? {} : { publicOrigin }),
     }),
   );
-  const configuration = pinnedWorkloadTask(
+  const read = pinnedWorkloadTask(
     document,
     pin,
     undefined,
@@ -470,7 +470,8 @@ function briefed(
       ? { taskKind: "Work" }
       : { taskKind: "Evaluation", stage: 0, evaluator: 1 },
   );
-  assert.ok(configuration !== undefined);
+  assert.ok(read.read === "Configuration");
+  const { configuration } = read;
   const outcome = composeTaskInvocation(blessedPracticeCatalog, {
     purpose,
     ...(purpose === "Review" ? { stage: 0 } : {}),
@@ -883,7 +884,7 @@ function publishedConfigurationFields(): readonly string[] {
   const workloads = (
     variant?.properties?.["workloads"]?.additionalProperties?.anyOf ?? []
   ).flatMap((each) => each.oneOf ?? []);
-  assert.equal(workloads.length, 2);
+  assert.equal(workloads.length, 3);
   return [variant, ...workloads].flatMap((each) =>
     Object.keys(each?.properties ?? {}),
   );

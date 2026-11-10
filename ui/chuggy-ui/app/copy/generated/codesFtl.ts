@@ -255,6 +255,9 @@ codes-refusal-overrides-unknown = { -override(case: "upper", form: "plural") } n
 codes-refusal-capacity-reached = { -ticket(case: "upper") } capacity reached
 codes-refusal-landing-request-closed = { -landing(case: "upper") } request closed
 codes-refusal-overrides-move-definition = { -override(case: "upper", form: "plural") } would change the definition
+codes-refusal-approval-as-work = { -approval(case: "upper") } selected as the { -work-stage }
+codes-refusal-overrides-change-approval = { -override(case: "upper", form: "plural") } make or unmake { -approval(form: "a") }
+codes-refusal-approval-not-runnable = { -approval(case: "upper") } { -stage(form: "plural") } not supported yet
 
 ## Why the boundary would not carry a request, or asked for it again.
 

@@ -47,7 +47,7 @@ interface PinnedConfigurationRow {
   readonly selection: string | null;
 }
 
-/** The one workload a catalog's task runs, or the fault of a catalog that names none for it. */
+/** The one workload a catalog's task runs, or the fault of a catalog that names none a runner can take. */
 function postgresPinnedWorkloadTask(
   document: unknown,
   row: PinnedConfigurationRow,
@@ -62,19 +62,15 @@ function postgresPinnedWorkloadTask(
     task.stage,
     task.evaluator,
   );
-  const pinned =
-    position === undefined
-      ? undefined
-      : pinnedWorkloadTask(
-          document,
-          pin,
-          storedOverridesOf(row.overrides),
-          storedSelectionOf(row.selection),
-          position,
-        );
-  return pinned === undefined
+  return position === undefined
     ? { read: "Incompatible", fault: "WorkloadUnselected" }
-    : { read: "Configuration", configuration: pinned };
+    : pinnedWorkloadTask(
+        document,
+        pin,
+        storedOverridesOf(row.overrides),
+        storedSelectionOf(row.selection),
+        position,
+      );
 }
 
 /** Answers the exact revision a scheduler pass pinned, without a mutable-current read. */

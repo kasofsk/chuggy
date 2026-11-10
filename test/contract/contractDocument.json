@@ -458,7 +458,7 @@
                     "properties": {
                       "runner": {
                         "type": "string",
-                        "enum": ["Agent", "Commands"]
+                        "enum": ["Agent", "Commands", "Approval"]
                       },
                       "purpose": {
                         "description": "What the workload is as an evaluator; absent is Review. A workload run as the work is the work whatever it says here.",
@@ -746,6 +746,32 @@
                         },
                         "description": "Each line runs under /bin/sh -eu at the repository root, with CHUG_CHANGE_BASE set to the full hash of the commit the ticket's change started from where the worker knows it, and unset otherwise. Since -u refuses an unset variable, a line that runs only what changed reads it as ${CHUG_CHANGE_BASE-} and runs everything where that is empty, e.g. if [ -n \"${CHUG_CHANGE_BASE-}\" ]; then git diff --name-only --diff-filter=d \"$CHUG_CHANGE_BASE\" HEAD; else git ls-files; fi. Each line also finds which job it runs in: CHUG_TENANT, CHUG_PROJECT, CHUG_TICKET and CHUG_ATTEMPT, its tenant, project, ticket number and attempt; CHUG_REPOSITORY, the clone URL of the repository it runs in; and CHUG_STAGE, Work or Evaluation:N for the Nth evaluation stage, counted from one. A job run in an image always has them; a job on its runner's own host has them only where the runner installed there sets them, so a line that may run there reads them as ${CHUG_STAGE-}."
                       },
+                      "approvers": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": ["Developer", "Admin"]
+                          },
+                          {
+                            "minItems": 1,
+                            "maxItems": 64,
+                            "type": "array",
+                            "items": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 256
+                            }
+                          }
+                        ],
+                        "description": "Developer is anyone holding the project's develop permit and Admin anyone holding its administer permit; a list names each principal who may answer, encoded as a ticket's creator is. Absent is Developer."
+                      },
+                      "instructions": {
+                        "description": "What the approver is shown to look at.",
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 4096,
+                        "pattern": "^[^\\u0000-\\u0008\\u000b-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                      },
                       "image": {
                         "type": "string",
                         "maxLength": 512,
@@ -842,7 +868,7 @@
                       }
                     },
                     "additionalProperties": false,
-                    "description": "An image or an execution requirement replaces where the workload runs, so naming either drops the other. The workload it makes is held to the workload schema."
+                    "description": "An image or an execution requirement replaces where the workload runs, so naming either drops the other. The workload it makes is held to the workload schema, and a release refuses one changing a runner to or from Approval."
                   }
                 }
               },
@@ -1383,7 +1409,7 @@
                 "properties": {
                   "runner": {
                     "type": "string",
-                    "enum": ["Agent", "Commands"]
+                    "enum": ["Agent", "Commands", "Approval"]
                   },
                   "purpose": {
                     "description": "What the workload is as an evaluator; absent is Review. A workload run as the work is the work whatever it says here.",
@@ -1671,6 +1697,32 @@
                     },
                     "description": "Each line runs under /bin/sh -eu at the repository root, with CHUG_CHANGE_BASE set to the full hash of the commit the ticket's change started from where the worker knows it, and unset otherwise. Since -u refuses an unset variable, a line that runs only what changed reads it as ${CHUG_CHANGE_BASE-} and runs everything where that is empty, e.g. if [ -n \"${CHUG_CHANGE_BASE-}\" ]; then git diff --name-only --diff-filter=d \"$CHUG_CHANGE_BASE\" HEAD; else git ls-files; fi. Each line also finds which job it runs in: CHUG_TENANT, CHUG_PROJECT, CHUG_TICKET and CHUG_ATTEMPT, its tenant, project, ticket number and attempt; CHUG_REPOSITORY, the clone URL of the repository it runs in; and CHUG_STAGE, Work or Evaluation:N for the Nth evaluation stage, counted from one. A job run in an image always has them; a job on its runner's own host has them only where the runner installed there sets them, so a line that may run there reads them as ${CHUG_STAGE-}."
                   },
+                  "approvers": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": ["Developer", "Admin"]
+                      },
+                      {
+                        "minItems": 1,
+                        "maxItems": 64,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        }
+                      }
+                    ],
+                    "description": "Developer is anyone holding the project's develop permit and Admin anyone holding its administer permit; a list names each principal who may answer, encoded as a ticket's creator is. Absent is Developer."
+                  },
+                  "instructions": {
+                    "description": "What the approver is shown to look at.",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096,
+                    "pattern": "^[^\\u0000-\\u0008\\u000b-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                  },
                   "image": {
                     "type": "string",
                     "maxLength": 512,
@@ -1767,7 +1819,7 @@
                   }
                 },
                 "additionalProperties": false,
-                "description": "An image or an execution requirement replaces where the workload runs, so naming either drops the other. The workload it makes is held to the workload schema."
+                "description": "An image or an execution requirement replaces where the workload runs, so naming either drops the other. The workload it makes is held to the workload schema, and a release refuses one changing a runner to or from Approval."
               }
             }
           },
@@ -2202,7 +2254,7 @@
                 "properties": {
                   "runner": {
                     "type": "string",
-                    "enum": ["Agent", "Commands"]
+                    "enum": ["Agent", "Commands", "Approval"]
                   },
                   "purpose": {
                     "description": "What the workload is as an evaluator; absent is Review. A workload run as the work is the work whatever it says here.",
@@ -2490,6 +2542,32 @@
                     },
                     "description": "Each line runs under /bin/sh -eu at the repository root, with CHUG_CHANGE_BASE set to the full hash of the commit the ticket's change started from where the worker knows it, and unset otherwise. Since -u refuses an unset variable, a line that runs only what changed reads it as ${CHUG_CHANGE_BASE-} and runs everything where that is empty, e.g. if [ -n \"${CHUG_CHANGE_BASE-}\" ]; then git diff --name-only --diff-filter=d \"$CHUG_CHANGE_BASE\" HEAD; else git ls-files; fi. Each line also finds which job it runs in: CHUG_TENANT, CHUG_PROJECT, CHUG_TICKET and CHUG_ATTEMPT, its tenant, project, ticket number and attempt; CHUG_REPOSITORY, the clone URL of the repository it runs in; and CHUG_STAGE, Work or Evaluation:N for the Nth evaluation stage, counted from one. A job run in an image always has them; a job on its runner's own host has them only where the runner installed there sets them, so a line that may run there reads them as ${CHUG_STAGE-}."
                   },
+                  "approvers": {
+                    "anyOf": [
+                      {
+                        "type": "string",
+                        "enum": ["Developer", "Admin"]
+                      },
+                      {
+                        "minItems": 1,
+                        "maxItems": 64,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        }
+                      }
+                    ],
+                    "description": "Developer is anyone holding the project's develop permit and Admin anyone holding its administer permit; a list names each principal who may answer, encoded as a ticket's creator is. Absent is Developer."
+                  },
+                  "instructions": {
+                    "description": "What the approver is shown to look at.",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096,
+                    "pattern": "^[^\\u0000-\\u0008\\u000b-\\u001f\\u007f-\\u009f\\ud800-\\udfff]*$"
+                  },
                   "image": {
                     "type": "string",
                     "maxLength": 512,
@@ -2586,7 +2664,7 @@
                   }
                 },
                 "additionalProperties": false,
-                "description": "An image or an execution requirement replaces where the workload runs, so naming either drops the other. The workload it makes is held to the workload schema."
+                "description": "An image or an execution requirement replaces where the workload runs, so naming either drops the other. The workload it makes is held to the workload schema, and a release refuses one changing a runner to or from Approval."
               }
             }
           },
