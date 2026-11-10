@@ -140,6 +140,8 @@ export const epicServing = {
   unfiltered: [] as readonly unknown[],
   queues: { queues: [], truncated: false } as unknown,
   queuesStatus: 200,
+  /** The project's people, whose emails a revision's actor is drawn by. */
+  people: [] as readonly unknown[],
 };
 
 export function epicServingReset(): void {
@@ -152,6 +154,7 @@ export function epicServingReset(): void {
   epicServing.unfiltered = [];
   epicServing.queues = { queues: [], truncated: false };
   epicServing.queuesStatus = 200;
+  epicServing.people = [];
 }
 
 function epicServed(
@@ -172,7 +175,7 @@ function epicServed(
     if (url.endsWith("/people"))
       return answer({
         ...leadPartition,
-        people: [],
+        people: epicServing.people,
         otherIssuers: 0,
         truncated: false,
       });
