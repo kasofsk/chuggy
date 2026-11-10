@@ -76,5 +76,6 @@ export function operationRefusalSamples(
     ApprovalAsWork: { type: "ApprovalAsWork" },
     OverridesChangeApprovalRunner: { type: "OverridesChangeApprovalRunner" },
     ApprovalNotRunnable: { type: "ApprovalNotRunnable" },
+    ApprovalNotAnswerable: { type: "ApprovalNotAnswerable" },
   };
 }

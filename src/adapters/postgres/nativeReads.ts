@@ -4,7 +4,10 @@ import { sql } from "@ts-safeql/sql-tag";
 import type pg from "pg";
 
 import { briefTitleCharsMax } from "../../contract/brief.ts";
-import { ticketActiveFinishedHours } from "../../contract/http.ts";
+import {
+  nativeHttpDraftEvaluatorsMax,
+  ticketActiveFinishedHours,
+} from "../../contract/http.ts";
 import {
   blockedReasons,
   escalationKinds,
@@ -20,6 +23,7 @@ import {
 import { asSafeInteger, asTicketId, type TicketId } from "../../domain/ids.ts";
 import {
   asPublicInstant,
+  type EvaluationApprovalAsked,
   type NativeActionPage,
   type NativeReadStore,
   type OperationResource,
@@ -77,6 +81,8 @@ import {
   type ConfigurationFollowingTicket,
 } from "../../interpreter/configurationFollowing.ts";
 import { asRepositoryId } from "../../interpreter/finalizer.ts";
+import { approvalWorkloadApprovers } from "../../interpreter/workloadConfiguration.ts";
+import { catalogNamedWorkloadTask } from "../../interpreter/workloadTask.ts";
 import {
   configurationVersionOf,
   type ConfigurationVersionRow,
@@ -200,6 +206,19 @@ interface ProjectNativeActionRow {
   readonly kind: string;
   readonly authorizing_seq: string;
   readonly resolutions: string[] | null;
+}
+
+/** What one evaluation approval stands for: its execution, that execution's place, and the configuration it was released under. */
+interface EvaluationApprovalRow {
+  readonly action: string;
+  readonly execution: string;
+  readonly cycle: string;
+  readonly stage: string | null;
+  readonly generation: string | null;
+  readonly evaluator: string | null;
+  readonly canonical: string;
+  readonly overrides: string | null;
+  readonly selection: string | null;
 }
 
 function operationState(value: string): OperationState {
@@ -635,6 +654,97 @@ function nativeActionAdmits(
       `native read: a ${kind} offers an answer it cannot ask for`,
     );
   return admits;
+}
+
+/**
+ * What an evaluation approval asks, its instructions and approvers read out of
+ * the configuration its execution was registered under, with the overrides
+ * and selection its ticket was released with, which is where the release read
+ * them.
+ */
+function evaluationApprovalAsked(
+  row: EvaluationApprovalRow,
+): EvaluationApprovalAsked {
+  if (row.stage === null || row.generation === null || row.evaluator === null)
+    throw new Error("native read: an evaluation approval names no evaluator");
+  const stage = projectRowCounter(row.stage, "evaluation approval stage");
+  const evaluator = projectRowCounter(
+    row.evaluator,
+    "evaluation approval evaluator",
+  );
+  const task = catalogNamedWorkloadTask(
+    JSON.parse(row.canonical) as unknown,
+    storedOverridesOf(row.overrides),
+    storedSelectionOf(row.selection),
+    { taskKind: "Evaluation", stage: stage - 1, evaluator },
+  );
+  if (task?.workload.runner !== "Approval")
+    throw new Error(
+      "native read: an evaluation approval's configuration names no approval",
+    );
+  return {
+    execution: asExecutionId(row.execution),
+    workCycle: projectRowCounter(row.cycle, "evaluation approval cycle"),
+    stage,
+    generation: projectRowCounter(
+      row.generation,
+      "evaluation approval generation",
+    ),
+    evaluator,
+    ...(task.workload.instructions === undefined
+      ? {}
+      : { instructions: task.workload.instructions }),
+    approvers: approvalWorkloadApprovers(task.workload),
+  };
+}
+
+/** What each of `actions` that is an evaluation approval asks, by its action. */
+async function evaluationApprovalsAsked(
+  client: pg.Pool | pg.PoolClient,
+  partition: Partition,
+  actions: readonly { readonly action: string; readonly kind: string }[],
+): Promise<ReadonlyMap<string, EvaluationApprovalAsked>> {
+  const asked = actions
+    .filter((action) => action.kind === "EvaluationApproval")
+    .map((action) => action.action);
+  if (asked.length === 0) return new Map();
+  const found = await client.query<EvaluationApprovalRow>(
+    sql`SELECT a.action,e.execution,k.cycle::text AS cycle,k.stage::text AS stage,
+               k.generation::text AS generation,k.evaluator::text AS evaluator,
+               c.canonical,d.overrides,d.selection
+          FROM native_action a
+          JOIN execution e
+            ON e.tenant=a.tenant AND e.project=a.project AND e.execution=a.execution
+          JOIN execution_request_task k
+            ON k.tenant=e.tenant AND k.project=e.project
+           AND k.request=e.source_request AND k.task=e.task
+          JOIN configuration_revision c
+            ON c.tenant=e.tenant AND c.project=e.project
+           AND c.revision=e.configuration_revision
+          JOIN ticket_definition d
+            ON d.tenant=e.tenant AND d.project=e.project AND d.ticket=e.ticket
+         WHERE a.tenant=${partition.tenant} AND a.project=${partition.project}
+           AND a.action = ANY(${[...asked]}::text[])`,
+  );
+  return new Map(
+    found.rows.map((row) => [row.action, evaluationApprovalAsked(row)]),
+  );
+}
+
+/** `actions` with what each evaluation approval among them asks beside it. */
+async function nativeActionsAsking<T extends TicketNativeAction>(
+  client: pg.Pool | pg.PoolClient,
+  partition: Partition,
+  actions: readonly T[],
+): Promise<readonly T[]> {
+  const asked = await evaluationApprovalsAsked(client, partition, actions);
+  return actions.map((action) => {
+    if (action.kind !== "EvaluationApproval") return action;
+    const approval = asked.get(action.action);
+    if (approval === undefined)
+      throw new Error("native read: an evaluation approval stands for nothing");
+    return { ...action, approval };
+  });
 }
 
 function openNativeAction(row: OpenNativeActionRow): TicketNativeAction {
@@ -1255,9 +1365,11 @@ function nativeReadsActions(
           ORDER BY a.action`,
       );
       if (found.rows.length === 0) return undefined;
-      return found.rows
-        .filter((row) => row.action !== null)
-        .map(openNativeAction);
+      return nativeActionsAsking(
+        pool,
+        partition,
+        found.rows.filter((row) => row.action !== null).map(openNativeAction),
+      );
     },
     nativeActions: async (partition, query) => {
       const found = await pool.query<ProjectNativeActionRow>(
@@ -1276,7 +1388,11 @@ function nativeReadsActions(
           ORDER BY a.authorizing_seq DESC,a.action DESC
           LIMIT ${query.limit + 1}`,
       );
-      return nativeActionPage(found.rows, query.limit);
+      const page = nativeActionPage(found.rows, query.limit);
+      return {
+        ...page,
+        actions: await nativeActionsAsking(pool, partition, page.actions),
+      };
     },
   };
 }
@@ -1332,12 +1448,18 @@ async function readInboxPositions(
   };
 }
 
-/** The open actions of the page's tickets, which is one each at the most. */
+/**
+ * The open actions of the page's tickets. A ticket holds one escalation or
+ * finalization approval, or an evaluation approval for each approval evaluator
+ * of the stage it evaluates, and a stage lists no more evaluators than a draft
+ * may.
+ */
 async function readInboxActions(
   client: pg.PoolClient,
   partition: Partition,
   tickets: readonly string[],
 ): Promise<InboxReadPage["actions"]> {
+  const held = tickets.length * nativeHttpDraftEvaluatorsMax;
   const found = await client.query<ProjectNativeActionRow>(
     sql`SELECT a.ticket::text AS ticket,a.action,a.kind,
                a.authorizing_seq::text AS authorizing_seq,
@@ -1349,11 +1471,17 @@ async function readInboxActions(
            AND a.state='Open' AND a.ticket = ANY(${[...tickets]}::bigint[])
          GROUP BY a.ticket,a.action,a.kind,a.authorizing_seq
          ORDER BY a.authorizing_seq DESC,a.action DESC
-         LIMIT ${tickets.length + 1}`,
+         LIMIT ${held + 1}`,
   );
-  if (found.rows.length > tickets.length)
-    throw new Error("inbox read: a ticket has two open actions");
-  return nativeActionPage(found.rows, tickets.length).actions;
+  if (found.rows.length > held)
+    throw new Error(
+      "inbox read: a ticket has more open actions than a stage has evaluators",
+    );
+  return nativeActionsAsking(
+    client,
+    partition,
+    nativeActionPage(found.rows, held).actions,
+  );
 }
 
 /** A page of the inbox, its positions picked first and its rows and actions read by them. */

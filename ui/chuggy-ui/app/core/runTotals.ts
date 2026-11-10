@@ -148,7 +148,7 @@ export function runSpendOf(summaries: readonly ExecutionSummary[]): RunSpend {
 /** What a run's time and its wait are read off. */
 export type RunTimed = Pick<
   ExecutionSummary,
-  "registeredAt" | "takenAt" | "terminalAt"
+  "requirement" | "registeredAt" | "takenAt" | "terminalAt"
 >;
 
 /** A run's time and its wait, or a set's sums of them; `ranMs` is absent
@@ -164,7 +164,10 @@ function runTimeInstantMs(stated: string | undefined): number | undefined {
   return Number.isFinite(at) ? at : undefined;
 }
 
+/** A run's time and wait added. An approval's execution names no requirement
+ * and is placed on no runner, so its wait on a person counts as neither. */
 function runTimeAdded(held: RunTime, run: RunTimed, nowMs: number): RunTime {
+  if (run.requirement === undefined) return held;
   const registeredMs = runTimeInstantMs(run.registeredAt);
   const takenMs = runTimeInstantMs(run.takenAt);
   const endMs = runTimeInstantMs(run.terminalAt) ?? nowMs;

@@ -63,7 +63,6 @@ import {
   catalogPlansCommanded,
   declaredConfigurationIsCatalog,
   selectedCatalogEntries,
-  selectedEvaluatorWorkload,
   selectedFirstCommandsEvaluator,
   workloadConfigurationReadiness,
   type CatalogSelection,
@@ -514,24 +513,6 @@ export function ticketProgramShort(
 }
 
 /**
- * Whether a program draws an evaluator whose workload is an approval, which
- * nothing runs yet. A document has no approvals to draw.
- */
-function ticketProgramRunsApproval(
-  ticket: TicketConfiguration,
-  program: ReleaseAuthoringProgram,
-): boolean {
-  if (ticket.version === 1) return false;
-  return program.some((stage) =>
-    stage.evaluators.some(
-      (entry) =>
-        selectedEvaluatorWorkload(ticket.selection, stage.key, entry.key)
-          ?.workload.runner === "Approval",
-    ),
-  );
-}
-
-/**
  * Whether a program runs the task a brief's own check lines join: the stage
  * `ticketCommandedCheckStage` names, and for a catalog the evaluator in it that
  * runs commands. A configuration commanding none has nothing to leave out.
@@ -575,11 +556,6 @@ export function draftReleaseReadiness(
   if (readiness.readiness === "Incomplete") return readiness;
   if (program !== undefined && !ticketProgramFits(readiness.ticket, program))
     return { readiness: "Incomplete", fault: "ProgramExceedsPlan" };
-  if (
-    program !== undefined &&
-    ticketProgramRunsApproval(readiness.ticket, program)
-  )
-    return { readiness: "Incomplete", fault: "ApprovalNotRunnable" };
   if (
     program !== undefined &&
     brief !== undefined &&

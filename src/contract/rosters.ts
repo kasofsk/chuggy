@@ -138,6 +138,11 @@ export const resumePoints = [
 ] as const;
 export type ResumePoint = (typeof resumePoints)[number];
 
+/**
+ * Where an execution stands. `Queued` through `Running` are a runner's;
+ * `Awaiting` is an approval evaluator's execution waiting on a person, which no
+ * runner is asked to take and no slot is held for.
+ */
 export const executionStatuses = [
   "Queued",
   "Admitted",
@@ -145,6 +150,7 @@ export const executionStatuses = [
   "Running",
   "Terminal",
   "Cancelled",
+  "Awaiting",
 ] as const;
 export type ExecutionStatus = (typeof executionStatuses)[number];
 
@@ -376,6 +382,7 @@ export const operationBoundaryRefusalCodes = [
   "ApprovalAsWork",
   "OverridesChangeApprovalRunner",
   "ApprovalNotRunnable",
+  "ApprovalNotAnswerable",
 ] as const;
 export type OperationBoundaryRefusalCode =
   (typeof operationBoundaryRefusalCodes)[number];
@@ -387,9 +394,8 @@ export type OperationBoundaryRefusalCode =
  * repository has nothing to pair with, a configuration imported from a
  * repository contradicts a brief working in a different one, a program
  * leaving out the task a brief's check lines join would never run them, an
- * approval selected as the work has no change to make, an override may not
- * make a workload an approval or one no longer, and a program drawing an
- * approval evaluator draws one nothing runs yet. A revision of the draft mends
+ * approval selected as the work has no change to make, and an override may not
+ * make a workload an approval or one no longer. A revision of the draft mends
  * each, so each is refused under its own code rather than as the
  * configuration's.
  */
@@ -405,7 +411,6 @@ export const releasePairingFaults = [
   "OverridesUnknown",
   "ApprovalAsWork",
   "OverridesChangeApprovalRunner",
-  "ApprovalNotRunnable",
 ] as const satisfies readonly OperationBoundaryRefusalCode[];
 export type ReleasePairingFault = (typeof releasePairingFaults)[number];
 
@@ -734,6 +739,7 @@ export type RepositoryConfigurationFault =
 export const nativeActionKinds = [
   "TicketEscalation",
   "FinalizationApproval",
+  "EvaluationApproval",
 ] as const;
 export type NativeActionKind = (typeof nativeActionKinds)[number];
 
@@ -745,12 +751,16 @@ export type NativeActionKind = (typeof nativeActionKinds)[number];
 export const nativeActionKindResolutions = {
   TicketEscalation: ["Resume", "Revoke"],
   FinalizationApproval: ["Approve", "Decline"],
+  EvaluationApproval: ["Approve", "Reject"],
 } as const;
 
-/** Every resolution the wire names, which is every kind's flattened in kind order. */
+/** Every resolution the wire names, each once, in the order the kinds first name them. */
 export const nativeActionResolutions = [
-  ...nativeActionKindResolutions.TicketEscalation,
-  ...nativeActionKindResolutions.FinalizationApproval,
+  "Resume",
+  "Revoke",
+  "Approve",
+  "Decline",
+  "Reject",
 ] as const;
 export type NativeActionResolution = (typeof nativeActionResolutions)[number];
 

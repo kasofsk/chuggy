@@ -166,6 +166,19 @@ export const allExecutionStatuses: readonly ExecutionStatus[] = [
 ];
 
 /**
+ * Where an execution stands as its readers are told: its capacity status, but
+ * `Awaiting` for an approval evaluator's queued execution, which waits on a
+ * person, is never admitted and holds no slot.
+ */
+export type ExecutionStanding = ExecutionStatus | "Awaiting";
+
+/** Every standing a reader is told, the capacity statuses first. */
+export const allExecutionStandings: readonly ExecutionStanding[] = [
+  ...allExecutionStatuses,
+  "Awaiting",
+];
+
+/**
  * What one logical task settled as. `ProcessFailed` is the death of the
  * process behind a failed manifest this scheduler authored itself, which is
  * not the verdict `Failed` reports: what the ticket is told of either is the

@@ -157,6 +157,7 @@ codes-detail-evaluation-blocked = Resume asks it again
 
 codes-native-escalation = { -escalation(case: "upper") }
 codes-native-approval = Awaiting { -approval }
+codes-native-evaluation-approval = Awaiting { -evaluation } { -approval }
 codes-revoked-dependencies = Blocked by { -revoke(form: "ed") } { $count ->
     [one] { -dependency }
    *[other] { -dependency(form: "plural") }
@@ -258,6 +259,7 @@ codes-refusal-overrides-move-definition = { -override(case: "upper", form: "plur
 codes-refusal-approval-as-work = { -approval(case: "upper") } selected as the { -work-stage }
 codes-refusal-overrides-change-approval = { -override(case: "upper", form: "plural") } make or unmake { -approval(form: "a") }
 codes-refusal-approval-not-runnable = { -approval(case: "upper") } { -stage(form: "plural") } not supported yet
+codes-refusal-approval-not-answerable = { -approval(case: "upper") } answers not accepted yet
 
 ## Why the boundary would not carry a request, or asked for it again.
 

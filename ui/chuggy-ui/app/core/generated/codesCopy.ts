@@ -119,6 +119,7 @@ export interface CodesCopy {
   readonly "codes-detail-evaluation-blocked": Record<never, never>;
   readonly "codes-native-escalation": Record<never, never>;
   readonly "codes-native-approval": Record<never, never>;
+  readonly "codes-native-evaluation-approval": Record<never, never>;
   readonly "codes-revoked-dependencies": {
     readonly count: unknown;
     readonly tickets: unknown;
@@ -215,6 +216,7 @@ export interface CodesCopy {
   readonly "codes-refusal-approval-as-work": Record<never, never>;
   readonly "codes-refusal-overrides-change-approval": Record<never, never>;
   readonly "codes-refusal-approval-not-runnable": Record<never, never>;
+  readonly "codes-refusal-approval-not-answerable": Record<never, never>;
   readonly "codes-mutation-key-used": Record<never, never>;
   readonly "codes-mutation-invalid": Record<never, never>;
   readonly "codes-mutation-not-admitted": Record<never, never>;

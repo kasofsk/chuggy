@@ -1055,8 +1055,9 @@ export async function postgresHarnessHistory(
   authoring: ReleaseAuthoring = plainAuthoring,
   canonical: CanonicalConfiguration = postgresHarnessConfiguration,
   overrides?: ConfigurationOverrides,
+  config: Config = refinementInstance,
 ): Promise<ProjectMemory> {
-  const writer = postgresHarnessWriter(harness);
+  const writer = postgresHarnessWriter(harness, config);
   let memory = await projectWriterLoad(
     writer,
     await postgresHarnessHeld(harness.store, partition, label),
