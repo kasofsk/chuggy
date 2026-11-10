@@ -337,7 +337,8 @@ type TicketRunTotals = NonNullable<ExecutionSummary["runTotals"]>;
 
 /** What a run's Details list says of it; a field absent is one the wire did not carry. */
 export interface TicketRunDetails {
-  readonly runner: string;
+  /** What the run was placed on, absent for an approval's, which no runner takes. */
+  readonly runner: string | undefined;
   readonly image: Label | undefined;
   readonly worker: string | undefined;
   readonly cpus: string | undefined;
@@ -363,7 +364,7 @@ function ticketRunTokens(totals: TicketRunTotals, text: CopyText): string {
 }
 
 const ticketRunModeWords: Readonly<
-  Record<ExecutionResponse["requirement"]["mode"], Copy>
+  Record<NonNullable<ExecutionResponse["requirement"]>["mode"], Copy>
 > = {
   Container: { id: "ticket-run-mode-container" },
   Capability: { id: "ticket-run-mode-capability" },
@@ -384,13 +385,16 @@ export function ticketRunDetailsOf(
   const cpuMillis = execution.resources?.cpuMillis;
   const models = totals?.models.map((usage) => usage.model) ?? [];
   return {
-    runner: [
-      requirement.operatingSystem,
-      requirement.architecture,
-      text(ticketRunModeWords[requirement.mode]),
-    ].join(" · "),
+    runner:
+      requirement === undefined
+        ? undefined
+        : [
+            requirement.operatingSystem,
+            requirement.architecture,
+            text(ticketRunModeWords[requirement.mode]),
+          ].join(" · "),
     image:
-      requirement.mode === "Container"
+      requirement?.mode === "Container"
         ? ticketRunImageLabel(requirement.image)
         : undefined,
     worker:

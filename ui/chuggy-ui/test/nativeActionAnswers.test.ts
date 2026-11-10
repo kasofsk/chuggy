@@ -4,15 +4,15 @@
  * The rosters are walked rather than listed, so a kind or a resolution the wire
  * gains arrives here as a case with no expectation rather than as one nobody
  * looked at. The mapping is the pairing `src/contract/rosters.ts` publishes, so
- * an offer belonging to another kind is what these cases exist to catch.
+ * an offer belonging to another kind is what these cases exist to catch. The
+ * kinds walked are the ones the console answers.
  */
 
 import { expect, test } from "vitest";
 
 import {
   nativeActionKindResolutions,
-  nativeActionKinds,
-  nativeActionResolutions,
+  nativeActionKinds as allNativeActionKinds,
 } from "../../../src/contract/rosters.ts";
 import type {
   NativeActionKind,
@@ -20,10 +20,19 @@ import type {
 } from "../../../src/contract/rosters.ts";
 import type { NativeActionResponse } from "../../../src/contract/responses.ts";
 import {
+  nativeActionAnswered,
   nativeActionAnswerName,
   nativeActionAnswers,
   nativeActionsAnswers,
+  type NativeActionOffered,
 } from "../app/core/nativeActionAnswers.ts";
+
+const nativeActionKinds = allNativeActionKinds.filter(nativeActionAnswered);
+const nativeActionResolutions = [
+  ...new Set(
+    nativeActionKinds.flatMap((kind) => nativeActionKindResolutions[kind]),
+  ),
+];
 
 const fence = 42;
 
@@ -39,7 +48,7 @@ function openAction(
   };
 }
 
-const namedBy: Readonly<Record<NativeActionResolution, string>> = {
+const namedBy: Readonly<Record<NativeActionOffered, string>> = {
   Resume: "Resume",
   Revoke: "Revoke",
   Approve: "Approve",
@@ -125,4 +134,10 @@ test("the answers over a list are every action's, in the order it listed them", 
     "Revoke",
   ]);
   expect(nativeActionsAnswers([])).toStrictEqual([]);
+});
+
+test("an evaluation approval is offered no answer, which the API would refuse", () => {
+  expect(nativeActionAnswers(openAction("EvaluationApproval"))).toStrictEqual(
+    [],
+  );
 });

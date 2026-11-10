@@ -14,8 +14,8 @@
  * change is held to and never changes what any workload is.
  *
  * ONLY A PLACED WORKLOAD IS PINNED FOR A SCHEDULER. An approval evaluator is
- * answered by a person and runs on no runner, and nothing yet opens one, so a
- * scheduler reading one is told `ApprovalNotRunnable`.
+ * answered by a person and runs on no runner, so a scheduler reading one is
+ * told `ApprovalNotRunnable`.
  */
 
 import {

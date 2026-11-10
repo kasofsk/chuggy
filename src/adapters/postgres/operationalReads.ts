@@ -17,10 +17,10 @@ import {
 import {
   allAttemptStates,
   allExecutionOutcomes,
-  allExecutionStatuses,
+  allExecutionStandings,
   attemptEvidenceLabel,
   taskPurposeForKind,
-  type ExecutionStatus,
+  type ExecutionStanding,
 } from "../../interpreter/executionScheduler.ts";
 import {
   authoredTaskConfigurationReadiness,
@@ -98,10 +98,10 @@ interface ExecutionViewRow extends ConfigurationVersionRow {
   readonly configuration_revision: string;
   readonly requirement_identity: string;
   readonly requirement_value: unknown;
-  readonly requirement_digest: string;
-  readonly requirement_source: string;
+  readonly requirement_digest: string | null;
+  readonly requirement_source: string | null;
   readonly source_request: string;
-  readonly platform_default_version: string;
+  readonly platform_default_version: string | null;
   readonly cpu_millis: number | null;
   readonly memory_mib: number | null;
   readonly canonical: string;
@@ -258,6 +258,34 @@ function executionSummaryWorkloadCarrier(
   }
 }
 
+/** The requirement a runner must offer, which an approval's execution holds none of. */
+function executionSummaryRequirement(
+  row: ExecutionViewRow,
+): Pick<
+  ExecutionSummary,
+  | "requirement"
+  | "requirementDigest"
+  | "requirementSource"
+  | "platformDefaultVersion"
+> {
+  if (
+    row.requirement_value === null ||
+    row.requirement_digest === null ||
+    row.requirement_source === null ||
+    row.platform_default_version === null
+  )
+    return {};
+  return {
+    requirement: asExecutionRequirement(row.requirement_value),
+    requirementDigest: row.requirement_digest,
+    requirementSource: asRequirementSource(row.requirement_source),
+    platformDefaultVersion: projectRowCounter(
+      row.platform_default_version,
+      "platform default version",
+    ),
+  };
+}
+
 function executionSummary(row: ExecutionViewRow): ExecutionSummary {
   const configurationVersion = configurationVersionOf(row);
   const carrier = executionSummaryCarrier(row);
@@ -273,16 +301,10 @@ function executionSummary(row: ExecutionViewRow): ExecutionSummary {
     ),
     ...(configurationVersion === undefined ? {} : { configurationVersion }),
     requirementIdentity: row.requirement_identity,
-    requirement: asExecutionRequirement(row.requirement_value),
-    requirementDigest: row.requirement_digest,
-    requirementSource: asRequirementSource(row.requirement_source),
+    ...executionSummaryRequirement(row),
     request: row.source_request,
-    platformDefaultVersion: projectRowCounter(
-      row.platform_default_version,
-      "platform default version",
-    ),
     ...executionRowResources(row),
-    status: known(row.status, allExecutionStatuses, "execution status"),
+    status: known(row.status, allExecutionStandings, "execution status"),
     ...(row.outcome === null
       ? {}
       : {
@@ -374,10 +396,10 @@ function artifactResource(
 
 function selectedStatuses(
   query: ExecutionListQuery,
-): readonly ExecutionStatus[] {
-  if (query.selection === undefined) return allExecutionStatuses;
+): readonly ExecutionStanding[] {
+  if (query.selection === undefined) return allExecutionStandings;
   return query.selection.selection === "NonTerminal"
-    ? ["Queued", "Admitted", "Launching", "Running"]
+    ? ["Queued", "Admitted", "Launching", "Running", "Awaiting"]
     : query.selection.states;
 }
 
@@ -447,7 +469,7 @@ async function executionRows(
              WHERE a.tenant=${partition.tenant} AND a.project=${partition.project}
                AND a.execution=e.execution AND a.state IN ('Placing','Running')
              ORDER BY a.attempt_number DESC LIMIT 1) live ON true
-          CROSS JOIN LATERAL (SELECT (CASE WHEN e.status='Launching' AND live.started_at IS NOT NULL THEN 'Running' ELSE e.status END)::text AS status) s
+          CROSS JOIN LATERAL (SELECT (CASE WHEN e.status='Launching' AND live.started_at IS NOT NULL THEN 'Running' WHEN e.status='Queued' AND e.requirement_value IS NULL THEN 'Awaiting' ELSE e.status END)::text AS status) s
          WHERE e.tenant=${partition.tenant} AND e.project=${partition.project}
            AND (${query.after?.ticket ?? null}::bigint IS NULL
                 OR (e.ticket,e.task)>(${query.after?.ticket ?? null}::bigint,${query.after?.task ?? null}::bigint))
@@ -734,7 +756,7 @@ async function oneExecution(
              WHERE a.tenant=e.tenant AND a.project=e.project
                AND a.execution=e.execution AND a.state IN ('Placing','Running')
              ORDER BY a.attempt_number DESC LIMIT 1) live ON true
-          CROSS JOIN LATERAL (SELECT (CASE WHEN e.status='Launching' AND live.started_at IS NOT NULL THEN 'Running' ELSE e.status END)::text AS status) s
+          CROSS JOIN LATERAL (SELECT (CASE WHEN e.status='Launching' AND live.started_at IS NOT NULL THEN 'Running' WHEN e.status='Queued' AND e.requirement_value IS NULL THEN 'Awaiting' ELSE e.status END)::text AS status) s
          WHERE e.tenant=${partition.tenant} AND e.project=${partition.project}
            AND e.execution=${execution}`,
   );

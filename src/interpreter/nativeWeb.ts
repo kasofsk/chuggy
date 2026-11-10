@@ -40,6 +40,7 @@ import {
 } from "../contract/threadOffers.ts";
 import type { EscalationKind, ResumePoint } from "../contract/rosters.ts";
 import { assertNever } from "../domain/assertNever.ts";
+import type { ApprovalApprovers } from "./workloadConfiguration.ts";
 import { phaseTags, type Phase } from "../domain/phase.ts";
 import { asTicketId, type TicketId } from "../domain/ids.ts";
 import type {
@@ -498,6 +499,25 @@ export interface TicketNativeAction {
   readonly kind: NativeActionKind;
   readonly authorizingSequence: number;
   readonly admits: readonly NativeActionResolution[];
+  /** What an `EvaluationApproval` asks, which only that kind carries. */
+  readonly approval?: EvaluationApprovalAsked;
+}
+
+/**
+ * What an evaluation approval asks a person, and what an answer to it is
+ * authorized against: the execution it stands for, where that execution
+ * stands in the ticket's evaluation, and its workload's instructions and
+ * approvers as the ticket was released with them.
+ */
+export interface EvaluationApprovalAsked {
+  readonly execution: ExecutionId;
+  readonly workCycle: number;
+  /** The stage's positive key, as a task identity names it. */
+  readonly stage: number;
+  readonly generation: number;
+  readonly evaluator: number;
+  readonly instructions?: string;
+  readonly approvers: ApprovalApprovers;
 }
 
 /** The same action listed across a project, where the ticket is not the path. */

@@ -61,6 +61,7 @@ import {
   allNativeActionResolutions,
   isApprovalResolution,
   isCompletionTicketCommand,
+  isEscalationResolution,
   nativeActionResolutions,
   safetyResolution,
   type ProjectCommand,
@@ -314,10 +315,15 @@ test("every answer but the safety one is ordinary, and each belongs to one quest
     const asking = allNativeActionKinds.filter((kind) =>
       nativeActionResolutions[kind].some((each) => each === resolution),
     );
-    assert.deepEqual(asking.length, 1, resolution);
+    assert.ok(asking.length >= 1, resolution);
     assert.equal(
       isApprovalResolution(resolution),
-      asking[0] === "FinalizationApproval",
+      asking.includes("FinalizationApproval"),
+      resolution,
+    );
+    assert.equal(
+      isEscalationResolution(resolution),
+      asking.includes("TicketEscalation"),
       resolution,
     );
   }

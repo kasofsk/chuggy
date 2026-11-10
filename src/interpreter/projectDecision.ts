@@ -77,7 +77,10 @@ import type {
   FinalizationEvidence,
   ProjectArtifactId,
 } from "./finalizerPreparation.ts";
-import type { NativeActionResolution } from "./projectCommand.ts";
+import type {
+  NativeActionKind,
+  NativeActionResolution,
+} from "./projectCommand.ts";
 import type { GitObjectId } from "./finalizer.ts";
 import type { ResultManifestId } from "./resultManifest.ts";
 import type { DraftBrief } from "./ticketBrief.ts";
@@ -266,6 +269,8 @@ export interface NativeActionPlan {
 export interface NativeActionAnswer {
   readonly action: string;
   readonly authorizingSeq: number;
+  /** The kind of the action answered, which is what decides whether the answer names a ticket command. */
+  readonly kind: NativeActionKind;
   readonly resolution: NativeActionResolution;
   readonly open: boolean;
 }
