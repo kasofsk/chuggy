@@ -1,9 +1,10 @@
 /**
  * The epic's edit page, under the page's header with no tab current: its
- * title, its summary counted against the most it may hold, its description
- * as Markdown, and its tickets. Save sends at the revision the page read and
- * returns to the Overview; Cancel returns with nothing written. A reader who
- * may not write epics is sent to the Overview.
+ * title, its summary counted against the most it may hold, and its
+ * description as Markdown; which tickets it holds changes on its Tickets tab.
+ * Save sends at the revision the page read and returns to the Overview;
+ * Cancel returns with nothing written. A reader who may not write epics is
+ * sent to the Overview.
  */
 
 import { useNavigate } from "@tanstack/react-router";
@@ -51,7 +52,6 @@ function EpicEditFields(props: {
   const title = text({ id: "epics-field-title" });
   const summary = text({ id: "epics-field-summary" });
   const description = text({ id: "epics-field-description" });
-  const tickets = text({ id: "epics-field-tickets" });
   return (
     <div className="grid gap-4">
       <EpicEditField name={title}>
@@ -91,16 +91,6 @@ function EpicEditFields(props: {
           mono
           onChange={(typed) => {
             onChange({ ...form, description: typed });
-          }}
-        />
-      </EpicEditField>
-      <EpicEditField name={tickets}>
-        <Input
-          label={tickets}
-          placeholder={text({ id: "epics-field-tickets-placeholder" })}
-          value={form.tickets}
-          onChange={(typed) => {
-            onChange({ ...form, tickets: typed });
           }}
         />
       </EpicEditField>

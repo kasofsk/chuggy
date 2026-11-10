@@ -238,14 +238,28 @@ test("the sticky bar holding the status and the title shows once the header has 
   expect(within(bar as HTMLElement).getByText("In progress")).toBeTruthy();
 });
 
-test("the Tickets tab draws each member as a row of the ticket list", async () => {
+function memberRows(): readonly HTMLElement[] {
+  return [
+    ...screen
+      .getByRole("region", { name: "Tickets" })
+      .querySelectorAll<HTMLElement>("li[data-ticket]"),
+  ];
+}
+
+function memberRow(ticket: number): HTMLElement {
+  const row = memberRows().find(
+    (drawn) => drawn.dataset["ticket"] === String(ticket),
+  );
+  if (row === undefined) throw new Error(`#${String(ticket)} has a row`);
+  return row;
+}
+
+test("the Tickets tab draws each member as a row", async () => {
   epicServing.rows = [epicRow(4, "Done"), epicRow(5, "Pending")];
   await epicPageDrawn(abilitiesNone, { tab: <EpicTicketsTab /> });
-  const list = screen.getByRole("list", { name: "Tickets" });
-  const rows = within(list).getAllByRole("listitem");
-  expect(rows).toHaveLength(2);
-  expect(rows[0]?.textContent).toContain("Row 4");
-  expect(rows[1]?.textContent).toContain("Row 5");
+  expect(memberRows()).toHaveLength(2);
+  expect(memberRow(4).textContent).toContain("Row 4");
+  expect(memberRow(5).textContent).toContain("Row 5");
 });
 
 test("the members' rows are read once, under the epic's filter, a page of the most a page holds", async () => {
@@ -267,11 +281,8 @@ test("a member past the first page of the project's tickets has its row", async 
   );
   epicServing.rows = [epicRow(4, "Done"), epicRow(5, "Pending")];
   await epicPageDrawn(abilitiesNone, { tab: <EpicTicketsTab /> });
-  const rows = within(screen.getByRole("list", { name: "Tickets" }))
-    .getAllByRole("listitem")
-    .map((row) => row.textContent);
-  expect(rows).toHaveLength(2);
-  expect(rows[1]).toContain("Row 5");
+  expect(memberRows()).toHaveLength(2);
+  expect(memberRow(5).textContent).toContain("Row 5");
 });
 
 test("a draft member, which has no row, is drawn by its title and the graph's word for it", async () => {
@@ -282,11 +293,9 @@ test("a draft member, which has no row, is drawn by its title and the graph's wo
   };
   epicServing.rows = [epicRow(4, "Done"), epicRow(5, "Pending")];
   await epicPageDrawn(abilitiesNone, { tab: <EpicTicketsTab /> });
-  const draft = within(screen.getByRole("list", { name: "Tickets" }))
-    .getAllByRole("listitem")
-    .at(-1);
-  expect(draft?.textContent).toContain("Ledger");
-  expect(draft?.textContent).toContain("Draft");
+  const draft = memberRow(6);
+  expect(draft.textContent).toContain("Ledger");
+  expect(draft.textContent).toContain("Draft");
 });
 
 test("the Tickets tab of an epic holding none says so", async () => {
