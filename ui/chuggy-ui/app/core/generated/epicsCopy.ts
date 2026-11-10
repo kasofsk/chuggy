@@ -73,14 +73,20 @@ export interface EpicsCopy {
   readonly "epics-reactivate-body": Record<never, never>;
   readonly "epics-note-attention": Record<never, never>;
   readonly "epics-note-attention-escalated": Record<never, never>;
-  readonly "epics-note-waiting": {
-    readonly count: unknown;
-  };
-  readonly "epics-saved": {
-    readonly revision: unknown;
-    readonly actor: unknown;
-  };
   readonly "epics-overview-description": Record<never, never>;
+  readonly "epics-overview-no-description": Record<never, never>;
+  readonly "epics-overview-running": Record<never, never>;
+  readonly "epics-overview-next": Record<never, never>;
+  readonly "epics-overview-none": Record<never, never>;
+  readonly "epics-overview-after": {
+    readonly tickets: unknown;
+  };
+  readonly "epics-overview-graph": Record<never, never>;
+  readonly "epics-overview-graph-open": Record<never, never>;
+  readonly "epics-overview-details": Record<never, never>;
+  readonly "epics-overview-outside": Record<never, never>;
+  readonly "epics-overview-revision": Record<never, never>;
+  readonly "epics-overview-updated": Record<never, never>;
   readonly "epics-tickets-none": Record<never, never>;
   readonly "epics-tickets-filter": Record<never, never>;
   readonly "epics-tickets-no-match": Record<never, never>;

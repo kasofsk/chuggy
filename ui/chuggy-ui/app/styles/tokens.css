@@ -266,6 +266,7 @@
     --width-epic-history-revision: 8rem; /* epic: a history row's revision, before what changed */
     --size-progress-swatch: 0.5rem; /* epic: a group's key under the bar */
     --width-epic-graph-side: 17rem; /* epic: the selected ticket beside its graph */
+    --width-epic-overview-aside: 16rem; /* epic: what is running and next, beside the description */
   }
 
   :root[data-theme="light"] {

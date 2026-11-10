@@ -40,12 +40,6 @@
     font-size: var(--text-sm);
   }
 
-  .epic-header-saved {
-    margin: 0;
-    color: var(--ink-3);
-    font-size: var(--text-sm);
-  }
-
   .epic-progress {
     display: grid;
     gap: var(--space-2);

@@ -69,15 +69,21 @@ epics-reactivate-title = Reactivate this { -epic }?
 epics-reactivate-body = The { -epic } is active again and takes new { -ticket(form: "plural") }.
 epics-note-attention = Needs attention:
 epics-note-attention-escalated = is { -escalation }
-epics-note-waiting = Waiting on { $count ->
-    [one] { $count } { -ticket }
-   *[other] { $count } { -ticket(form: "plural") }
-} outside this { -epic }:
-epics-saved = { -revision(case: "upper") } { $revision } · saved by { $actor }
 
 ## The Overview tab.
 
 epics-overview-description = Description
+epics-overview-no-description = No description
+epics-overview-running = Running
+epics-overview-next = Next
+epics-overview-none = None
+epics-overview-after = after { $tickets }
+epics-overview-graph = Graph
+epics-overview-graph-open = Graph of the { -epic }
+epics-overview-details = Details
+epics-overview-outside = Waiting on outside
+epics-overview-revision = { -revision(case: "upper") }
+epics-overview-updated = Updated
 
 ## The Tickets tab.
 

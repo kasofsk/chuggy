@@ -4,7 +4,7 @@
  * page read and returns to the Overview, and whose Cancel writes nothing.
  */
 
-import { cleanup, fireEvent, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen, within } from "@testing-library/react";
 import { afterEach, expect, test, vi } from "vitest";
 
 import { EpicEditPage } from "../app/browser/epic/EpicEditPage.tsx";
@@ -77,9 +77,11 @@ test("the epic is drawn with its figures, its graph and its history", async () =
     graphic.querySelector("[data-outside] button")?.getAttribute("aria-label"),
   ).toMatch(/^#2 Schema: .+, outside the epic$/u);
   expect(graphic.querySelectorAll("[data-member]")).toHaveLength(2);
-  expect(document.querySelector(".epic-header-saved")?.textContent).toContain(
-    "Revision 3 · saved by",
-  );
+  expect(
+    within(screen.getByRole("navigation", { name: "Epic" }))
+      .getAllByRole("link")
+      .map((link) => link.textContent),
+  ).toContain("History3");
 });
 
 test("a reader who may not write epics is sent from the edit page to the Overview", async () => {
