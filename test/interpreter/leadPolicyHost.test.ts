@@ -1741,3 +1741,80 @@ test("a lead admitted as another offering than its settings opened it under offe
     assert.deepEqual(double.offers, [], admitted);
   }
 });
+
+test("a lead the door will not close offers no turn where it stands on a slot its offering does not pay for", async () => {
+  for (const closed of ["TurnInFlight", "InquiryOpen"] as const) {
+    for (const [held, offering, decided] of [
+      [{ credentialSlot: leadCredentialSlot }, "Subsidized", subsidizedRequest],
+      [
+        {
+          credentialSlot: subsidizedRuntime.credentialSlot,
+          model: subsidizedRuntime.model,
+          effort: subsidizedRuntime.effort,
+        },
+        "Own",
+        request,
+      ],
+    ] as const) {
+      const authority = hostedAuthority("Refused");
+      const double = mailboxDouble({
+        agentReference: "agent-session-9",
+        autoCompactWindow: decided.constraints.limits.autoCompactWindow,
+        ...held,
+        closed,
+      });
+      await assert.rejects(
+        hostedPolicyOf(
+          double,
+          authority.access,
+          offeredRoutes(() => offering),
+        ).execute(decided, new AbortController().signal),
+        /another slot or model/u,
+        `${closed} ${offering}`,
+      );
+      assert.deepEqual(double.closings, ["lead-session"], closed);
+      assert.deepEqual(double.openings, [], "no successor is opened");
+      assert.deepEqual(double.offers, [], "and no turn is offered");
+      assert.deepEqual(authority.asked, [], "nor any grant asked");
+    }
+  }
+});
+
+test("a subsidized lead the door will not close offers no turn where it is off the profile's model", async () => {
+  const double = mailboxDouble({
+    agentReference: "agent-session-9",
+    autoCompactWindow: subsidizedWindow,
+    credentialSlot: subsidizedRuntime.credentialSlot,
+    model: "claude-sonnet-5-5",
+    effort: subsidizedRuntime.effort,
+    closed: "InquiryOpen",
+  });
+  await assert.rejects(
+    hostedPolicyOf(
+      double,
+      hostedAuthority("Refused").access,
+      offeredRoutes(() => "Subsidized"),
+    ).execute(subsidizedRequest, new AbortController().signal),
+    /another slot or model/u,
+  );
+  assert.deepEqual(double.offers, []);
+});
+
+test("a subsidized lead on its profile the door will not close still takes the decision", async () => {
+  const double = mailboxDouble({
+    agentReference: "agent-session-9",
+    autoCompactWindow: subsidizedWindow,
+    credentialSlot: subsidizedRuntime.credentialSlot,
+    model: subsidizedRuntime.model,
+    effort: subsidizedRuntime.effort,
+    decisionTurnTokens: subsidizedRuntime.turnTokensMax + 1,
+    closed: "InquiryOpen",
+  });
+  await hostedPolicyOf(
+    double,
+    hostedAuthority("Refused").access,
+    offeredRoutes(() => "Subsidized"),
+  ).execute(subsidizedRequest, new AbortController().signal);
+  assert.deepEqual(double.openings, []);
+  assert.equal(double.offers.length, 1);
+});

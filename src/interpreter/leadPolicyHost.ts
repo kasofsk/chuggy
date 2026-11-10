@@ -17,7 +17,9 @@
  * other than the one this decision composes is replaced the same way. It is
  * taken lazily, when the next decision asks, so a quiet project keeps a lead
  * an inquiry can fork. The door refuses while a turn or an inquiry stands on
- * the lead, and the decision then goes ahead on the lead that stands. Closing a
+ * the lead, and the decision then goes ahead on the lead that stands, unless
+ * that lead is on a slot its offering does not pay for, or a subsidized one off
+ * its profile's model: that decision offers no turn. Closing a
  * lead for any other reason is still provisioning and is still no runtime
  * role's.
  *
@@ -408,6 +410,23 @@ export function leadStandingReplaced(
   );
 }
 
+/**
+ * Whether a lead the door would not close may still take this decision: it is
+ * on the slot this decision's offering pays for, and a subsidized one is on the
+ * profile's model and effort too, which its model check is held to.
+ */
+function leadStandsFor(
+  standing: LeadSessionStanding,
+  runtime: SelectorLeadRuntime,
+  runsOn: LeadRunsOn,
+): boolean {
+  if (standing.credentialSlot !== runsOn.credentialSlot) return false;
+  return (
+    runtime.offering === "Own" ||
+    (standing.model === runsOn.model && standing.effort === runsOn.effort)
+  );
+}
+
 /** Whether a successor is opened after the door answered, or the lead that stands decides. */
 function leadClosedReplaces(closed: LeadClosed): boolean {
   switch (closed) {
@@ -445,7 +464,14 @@ async function leadStanding(
     if (!leadStandingReplaced(held, systemPrompt, autoCompactWindow, runsOn))
       return held;
     const closed = await ports.mailbox.closeLead(partition, held.session);
-    if (!leadClosedReplaces(closed)) return held;
+    if (!leadClosedReplaces(closed)) {
+      if (!leadStandsFor(held, request.constraints.lead, runsOn))
+        throw new Error(
+          "the lead that stands runs on another slot or model than this decision's offering pays for",
+          { cause: closed },
+        );
+      return held;
+    }
   }
   await ports.mailbox.openLead({
     partition,
